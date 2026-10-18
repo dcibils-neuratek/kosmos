@@ -131,6 +131,20 @@ as what it is, By kind and By connection, a pill for driven or not. Steps
 M1 the USB driver's list (done in 0.11.276, `lsusb`), M2 `devices.lua`, M3
 the window, M4 the Deskbar's devices indicator (5q).
 
+**The Compute Kit, GPU Fractal, and Cafesa3D on the GPU** - Diego, 18
+October 2026: "build the compute kit so lua can run its own kernels and
+also i want a lua example program that visually shows the use of gpu
+compute", "I WANT CAFESA3e to use gpu compute for its rendering engine if
+possible beyond the cpu raytracing option", and "cafesa 3d should show the
+increased rendering speed from cpu to gpu right?". Designed first:
+`docs/compute.md`, `compute.html`, `compute-architecture.png` - a Lua
+assembler (`eu.lua`), the kit (`/Kosmos/Kits/compute`), two driver verbs
+with every kernel checked before it runs, GPU Fractal (the Mandelbrot set,
+GPU against the processor, the times side by side), then Cafesa3D's
+renderer on the GPU beside its processor's with both times shown. Steps C1
+to C6 there; D1 (how a kernel is written) and D2 (what keeps a kernel in
+its own memory) are Diego's.
+
 **Memory slots in This Machine** - Diego, 18 October 2026: "can we tell in
 the this machine app if the memory slots are all occupied ? because it can
 let the user know if there is room for more memory". The firmware's SMBIOS

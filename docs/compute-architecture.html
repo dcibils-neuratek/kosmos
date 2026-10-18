@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  The Compute Kit and GPU Fractal, and what they stand on: the example and
+  Cafesa3D on top, eu.lua and the kit in their process, the GPU's driver
+  with two new verbs and its kernel check, and Nebula as it is. A frame's
+  path drawn through it (F). Drawn on 18 October 2026, before any of it is
+  built; docs/compute.md is the argument and docs/compute.html the window.
+  Rendered to docs/compute-architecture.png by headless Chrome at twice its
+  size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Compute Kit architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --gpu: #f3ecfd; --gpu-line: #c4a8ef; --gpu-ink: #4b2a8a;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 390px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .88; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 42%; }
+</style>
+</head>
+<body>
+<h1>The Compute Kit - what it stands on</h1>
+<p class="sub">A Lua program writes a kernel as the GPU's own assembly, gives it buffers and a grid, and gets a ticket back. The assembler is Lua, in the program; the kit is C, in the program; the driver checks every kernel before it runs, so a kernel can touch only the buffers it was handed. Numbers and pixels never travel in a message: they are in buffers the program and the GPU both see.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits (C, in the program)</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>drivers</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>the GPU</span>
+  <span class="f">F</span><span>a frame of GPU Fractal</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr 0.9fr">
+        <div class="box new"><span class="tag">NEW</span><b>GPU Fractal - <code>fractal.lua</code></b><p>the Mandelbrot set, a kernel thread a pixel; GPU or processor, the two times side by side; the kernel's text in a panel. Sets the view <span class="f">F1</span>, runs <span class="f">F2</span>, paints <span class="f">F6</span>.</p></div>
+        <div class="box later-box"><span class="tag later">C5</span><b>Cafesa3D</b><p>its renderer on the GPU beside the processor's, chosen in the Render menu, the times side by side</p></div>
+        <div class="box later-box"><span class="tag later">C6</span><b>the IDE's lesson</b><p>written on GPU Fractal</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>eu.lua</code> - the assembler</b><p>text to the GPU's 128-bit instructions, the subset a compute kernel needs; the line a mistake is on said. Held bit for bit to Mesa's <code>gentool</code> on the Mac</p></div>
+        <div class="box"><b>the UI kit, <code>gfx</code></b><p>the window, the switch, the panel; the buffer shown as a surface - as they are</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in its process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>the Compute Kit - <code>/Kosmos/Kits/compute</code></b><p><code>compute.buffer(bytes)</code>, <code>compute.kernel(code)</code>, <code>compute.run{kernel, buffers, constants, grid}</code> → a ticket; <code>compute.done(t)</code>, <code>compute.wait(t)</code>, the GPU's time <span class="f">F2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>GPU Fractal's own C</b><p>the processor's Mandelbrot, for the comparison - a loop over pixels, never Lua</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Drivers</h2>
+      <div class="row" style="grid-template-columns:1.3fr 1fr">
+        <div class="box new"><span class="tag">+ 2 VERBS</span><b>intelgpu - <code>/Devices/gpu</code></b><p><code>GPU_OP_KERNEL</code>: a kernel's bytes, <em>checked</em> - every message may name only a binding table entry, never an address - and kept. <code>GPU_OP_RUN</code>: state page, <code>PIPELINE_SELECT</code>, <code>STATE_BASE_ADDRESS</code>, <code>MEDIA_VFE_STATE</code>, the descriptor, <code>GPGPU_WALKER</code> - 7b's machinery - and the fence <span class="f">F3</span></p></div>
+        <div class="box"><b><code>GPU_OP_BUFFER_IMPORT</code>, <code>_FORGET</code></b><p>a buffer's pages in the GPU's table - as the window server's pictures are</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">LATER</span><b>a GPU address space for each program (PPGTT)</b><p>the hardware's own isolation, after the check (<code>compute.md</code> D2)</p></div>
+      </div>
+    </div>
+    <div class="layer gpu"><h2>The GPU</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>the render engine's GPGPU pipeline</b><p>the walker spreads the grid over the threads <span class="f">F4</span> - as 7b ran the fill</p></div>
+        <div class="box"><b>24 execution units</b><p>each thread its pixels; the data port writes the colours into buffer 0 <span class="f">F5</span></p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box"><b>regions, capabilities, IPC</b><p>a buffer is a region handed to the driver; a run is one message - as they are</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame of GPU Fractal</h3><ol>
+      <li><span class="f">F1</span> the view - centre, scale, iterations - into the run's constants.</li>
+      <li><span class="f">F2</span> <code>compute.run</code>: one message - kernel, buffer 0, constants, 64 × 768 groups.</li>
+      <li><span class="f">F3</span> the driver writes about seventy dwords into a state page and the ring; answers with a ticket.</li>
+      <li><span class="f">F4</span> the walker hands out 786,432 threads.</li>
+      <li><span class="f">F5</span> each works out its pixel's escape and writes its colour.</li>
+      <li><span class="f">F6</span> the program asks for the ticket as the window paints; the pixels are already in the buffer the window shows.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>A kernel</td><td>once, in a region, to <code>GPU_OP_KERNEL</code></td></tr>
+      <tr><td>A run</td><td>one message in <code>gpuproto.h</code>'s shape</td></tr>
+      <tr><td>Numbers, pixels</td><td>buffers - write-combining regions both sides see</td></tr>
+      <tr><td>The time</td><td>the GPU's clock, in the reply</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>The Compute Kit</td><td>Cafesa3D's renderer; the IDE's lesson; video effects, the planet simulation</td></tr>
+      <tr><td><code>eu.lua</code></td><td>any program's kernel; a disassembler for the IDE after</td></tr>
+      <tr><td>The kernel check</td><td>every kernel, the window server's 7d included</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>
