@@ -139,8 +139,8 @@ end
 -- 301 by 203 picture blended onto an 800 by 600 target at (123, 77), every
 -- pixel of the target held to the compositor. { right, exact, outside,
 -- elapsed_us, ... } or nil and why, in `gpu.last_draw` either way.
-function gpu.draw_test()
-  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 18, 0, 0, 0, 0, 0, 0, 0), nil, "gpu")
+function gpu.draw_test(big)
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 18, 0, big and 1 or 0, 0, 0, 0, 0, 0), nil, "gpu")
 
   if not reply then return nil, tostring(why) end
   if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end

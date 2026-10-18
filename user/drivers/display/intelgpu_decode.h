@@ -108,6 +108,10 @@
 #define IGPU_PC_CS_STALL        (1u << 20)
 #define IGPU_PC_GLOBAL_GTT      (1u << 24)
 #define IGPU_PC_DC_FLUSH        (1u << 5)   /* the data port's writes out */
+#define IGPU_PC_FLUSH_ENABLE    (1u << 7)   /* a post-sync write waits for the flushes before it */
+#define IGPU_PC_TLB_INVALIDATE  (1u << 18)
+#define IGPU_PC_DEPTH_FLUSH     (1u << 0)
+#define IGPU_PC_VF_INVALIDATE   (1u << 4)   /* the vertex fetcher's cache */
 #define IGPU_PC_RT_FLUSH        (1u << 12)  /* the render target cache */
 #define IGPU_PC_INVALIDATE      ((1u << 11) | (1u << 10) | (1u << 3) | (1u << 2))
                                             /* instruction, texture, constant, state */
@@ -133,6 +137,24 @@
  * then the address, low and high. MI_BATCH_BUFFER_END ends one. */
 #define IGPU_MI_BB_START        ((0x31u << 23) | 1u)
 #define IGPU_MI_BB_END          (0x0au << 23)
+
+/*
+ * **The render engine's memory object controls** (MOCS; `intel_mocs.c`,
+ * `intel_gt_regs.h`): 64 entries at 0xc800 saying how a surface whose MOCS
+ * field names them is cached in the LLC, and their L3 halves two to a
+ * register at 0xb020. i915 programs Skylake's at start - 0 uncached, 1 as
+ * the page table says, 2 write-back in the LLC, every other one as the page
+ * table says, 62 and 63 the hardware's - and a reset does not leave them
+ * so. LLC: cacheability in bits 0-1, target cache 2-3, LRU 4-5; L3:
+ * cacheability in bits 4-5.
+ */
+#define IGPU_RCS_MOCS0          0xc800u
+#define IGPU_LNCFCMOCS0         0xb020u
+#define IGPU_MOCS_UNCACHED      (1u | (2u << 2))                /* LE_1_UC | LE_TC_2_LLC_ELLC */
+#define IGPU_MOCS_PTE           (3u << 4)                       /* LE_0_PAGETABLE, LE_LRUM(3) */
+#define IGPU_MOCS_CACHED        (3u | (2u << 2) | (3u << 4))    /* LE_3_WB, LLC/eLLC, LRUM(3) */
+#define IGPU_L3_UC              (1u << 4)
+#define IGPU_L3_WB              (3u << 4)
 /* A register's value stored to memory (`intel_gpu_commands.h`:
  * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
  * the register's offset, the address low and high. The blitter's busy time

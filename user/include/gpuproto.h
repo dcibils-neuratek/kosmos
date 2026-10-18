@@ -116,6 +116,17 @@
  */
 #define GPU_OP_DRAW_TEST     18u
 
+/*
+ * **Drawing by the 3D pipeline** (`m700-2d.md` 7d): `struct gpu_blit`'s
+ * rectangles, each from `sx`, `sy` in `src` to `x`, `y` in `dst`, drawn by
+ * the render engine - copied, or with DRAW_BLEND laid over what is there by
+ * their alpha, as the compositor lays a window. Answered at once with the
+ * render engine's fence in `engine.value`; GPU_OP_FENCE with `x` 1 says
+ * how far the render engine has got.
+ */
+#define GPU_OP_DRAW          19u
+#define GPU_OP_DRAW_BLEND    20u
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 

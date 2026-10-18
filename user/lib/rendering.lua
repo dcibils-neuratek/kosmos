@@ -66,14 +66,15 @@ rendering.MODES = {
   },
   [5] = {
     name = "GPU composing", needs = "the GPU's display engine and its 3D engine", tag = "not yet",
-    sentence = "The render engine composes the whole frame - blending, glass, animation - "
-               .. "into the screen; the processor only describes it.",
-    stages = { "cpu", "cpu", "gpu", "none", "display", "display" },
-    memory = "-", note = "step 7", unbuilt = true,
+    sentence = "As Blitter composing, on the render engine: windows' uncovered interiors drawn "
+               .. "by the 3D pipeline from their own buffers, and the copy to the screen too.",
+    stages = { "cpu", "cpu", "gpu+cpu", "gpu", "display", "display" },
+    memory = "one screen", note = "and windows' buffers shared", unbuilt = true,
   },
 }
 
-rendering.LAST = 4                      -- the highest that can be chosen today
+rendering.LAST = 4                      -- the highest that can be chosen today: 5 not
+                                        -- until its frames are held right (`testing.md` 18.686)
 
 -- A mode from a saved value: an integer in range, or the default.
 function rendering.valid(m)

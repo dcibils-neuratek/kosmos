@@ -27882,3 +27882,62 @@ measured (7d).
 
 **Tests.** Full gate 96/96 in 9:13. `x86-gpumon`, 15 checks: `gpu draw` says there is no Intel GPU
 under QEMU.
+
+## 18.686 GPU composing, first tries (`m700-2d.md` 7d) - not right yet
+
+Mode 5 built as 6b's shape on the render engine: the window server gives
+the 3D pipeline the windows' uncovered interiors (`GPU_OP_DRAW`, many
+rectangles a batch, batches in a pool of 32 pages, not waited for) and the
+copy of the back buffer to the hidden screen too, so a frame's work is one
+ring's, in order, and one fence - asked with `GPU_OP_FENCE` and `x` 1 - says
+it is done. `tools/render_batch.c` says where the vertex buffer's size and
+the vertex count are.
+
+**On the M700 its frames are wrong**, and Diego, using the machine while it
+was being tried, saw it: "the windows are all broken and textures are
+completely off". It was put back on Page flips at once, and mode 5 is not
+choosable again (`rendering.LAST` 4) until the window server's own checks
+say its frames are right. What those checks found, and what each change
+did to them, the copy to the screen counted over its first 20 frames:
+
+| change | copy, pixels different |
+|---|---|
+| first try | 406,997 of 19.5 M |
+| the render engine's MOCS table programmed as i915's (it had never been) | 124,578 |
+| the fence's PIPE_CONTROL with FLUSH_ENABLE, after i915's flushes | ~396,000 (it varies run to run) |
+| the source surface on MOCS index 2, cached in the LLC | 387,294 |
+| a screen's surface on index 0, uncached, as i915 keeps scanouts | ~395,000 |
+| the caches invalidated as `gen8_emit_flush_rcs` does - a null PIPE_CONTROL, the texture, vertex, constant, state, instruction caches and the TLB, with a post-sync write | 135,100 |
+| an `sfence` in the window server before every request | 132,712 |
+| the same with no pieces on the render engine at all - the copy alone | 121,536 |
+
+Ruled out on the way: the GPU's L3 (index 1 and 2 kept out of it, worse or
+the same); the check reading a stale line of its own (each row flushed from
+the processor's cache before reading, the same); and the 3D pipeline itself
+- a 1720x1440 copy inside the driver, in its own write-combining memory,
+is 2,476,800 of 2,476,800 right (`gpu draw big`). Mode 4's copy on the
+blitter, from the same back buffer, is 0 different.
+
+**What the wrong pixels are**: the frame before's, in whichever channels
+changed - antialiased text in a window that redraws, the background's red
+under a new glyph's green and blue. So the render engine's sampler reads
+the window server's back buffer - ordinary write-back memory the processor
+has just written - without seeing all of those writes, where the blitter
+reading the same memory does. Next: how i915 makes a buffer the CPU writes
+coherent for the sampler on Skylake (its cache domains, `clflush` and the
+GTT's PAT bits for such a buffer), against the GTT entries this driver
+writes when a region is imported.
+
+The composed pieces show 48 different pixels of 8.5 million in mode 4 and
+mode 5 alike - a 6b matter, not the render engine's, to look at with it.
+
+**Kept, because they are right whatever mode 5 turns out to need**: the
+MOCS table programmed as i915's; the render engine's fence as i915 ends a
+request; the caches invalidated as i915 does before a batch; and the copy's
+check naming the first pixels it finds wrong.
+
+**Tests.** `test_intelgpu_decode`, 44 checks: the MOCS entries as i915
+programs them, the fence's flushes, the vertex fetcher's invalidation. Full
+gate 95 of 96 in 9:44: `x86-film`'s sound was off by more than two steps in
+a third of a second of it - the suite load is known to upset - and passed
+alone, 13 of 13.

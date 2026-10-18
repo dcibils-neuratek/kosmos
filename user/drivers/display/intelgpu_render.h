@@ -24,6 +24,9 @@
 #define INTELGPU_RENDER_SS_DST   0x840u   /* the surfaces' state */
 #define INTELGPU_RENDER_SS_SRC   0x880u
 #define INTELGPU_RENDER_DRAWRECT 0x400u   /* the drawing rectangle */
+#define INTELGPU_RENDER_VBSIZE   0x420u   /* the vertex buffer's size, bytes */
+#define INTELGPU_RENDER_COUNT    0x464u   /* the vertices drawn */
+#define INTELGPU_RENDER_VERTEX   12u       /* bytes a vertex */
 
 static const struct { uint32_t at, kind; } intelgpu_render_relocs[] = {
     { 0x860, 2 },
@@ -125,7 +128,7 @@ static const uint32_t intelgpu_render[] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x23014100, 0x02000000, 0x003f003f, 0x000000ff, 0x00000000, 0x00000100,
     0x00000000, 0x09770000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x23014100, 0x02000000,
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x23014100, 0x04000000,
     0x003f003f, 0x000000ff, 0x00000000, 0x00000100, 0x00000000, 0x09770000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000092,

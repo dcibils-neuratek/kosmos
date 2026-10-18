@@ -2218,6 +2218,7 @@ function OUT.set_rendering(mode)
   local now = mode
 
   most = most or 1
+  if now >= 5 and most < 5 then now = 4 end
   if now >= 3 and most < 3 then now = 2 end
   if now >= 2 and most < 2 then now = 1 end
   if now >= 1 and not OUT.has_cursor_plane then now = 0 end
@@ -2225,8 +2226,9 @@ function OUT.set_rendering(mode)
   OUT.rendering, OUT.rendering_now = mode, now
 
   -- And the most this machine can have, the same steps from the top.
-  local top = 4
+  local top = 5
 
+  if most < 5 then top = 4 end
   if most < 3 then top = 2 end
   if most < 2 then top = 1 end
   if not OUT.has_cursor_plane then top = 0 end

@@ -735,6 +735,7 @@ static bool forcewake(bool on)
 #define RING_PAGES   4u                 /* 16 KB: sixty-four copies and room */
 #define RING_DWORDS  (RING_PAGES * 1024u)
 #define FENCE_AT     64u                /* the status page's dword the fence lands in: byte 256 */
+#define SCRATCH_AT   80u                /* a qword the invalidation's post-sync write lands in: byte 320 */
 #define TS_AT        96u                /* the engine's clock before and after each copy: */
 #define TS_SLOTS     16u                /*   two dwords a fence, sixteen fences round */
 #define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
@@ -945,17 +946,33 @@ static uint32_t submit(struct engine *e)
     uint32_t fence = ++e->issued;
 
     if (e->render) {
-        /* PIPE_CONTROL's post-sync write: a qword, at FENCE_AT (byte 256,
-         * 8-aligned), the dword after it written over and unused. */
+        /*
+         * **As i915 ends a request on the render engine**
+         * (`gen8_emit_fini_breadcrumb_rcs`): the caches flushed - render
+         * target, depth, data port, and the TLB invalidated - and then the
+         * fence, PIPE_CONTROL's post-sync write of a qword at FENCE_AT (byte
+         * 256, 8-aligned, the dword after it written over), with
+         * FLUSH_ENABLE so it waits for those flushes to finish. Without it
+         * the fence was written while a frame's pixels were still on their
+         * way out of the render cache, and the copy to the screen was read
+         * part old: 2% of its pixels, a channel or two each (7d).
+         */
+        uint32_t flush[6] = {
+            IGPU_PIPE_CONTROL,
+            IGPU_PC_CS_STALL | IGPU_PC_TLB_INVALIDATE | IGPU_PC_RT_FLUSH | IGPU_PC_DEPTH_FLUSH
+                | IGPU_PC_DC_FLUSH,
+            0, 0, 0, 0,
+        };
         uint32_t dw[6] = {
             IGPU_PIPE_CONTROL,
-            IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT,
+            IGPU_PC_FLUSH_ENABLE | IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT,
             e->status_gtt + FENCE_AT * 4u,
             0,
             fence,
             0,
         };
 
+        emit(e, flush, 6);
         emit(e, dw, 6);
     } else {
         uint32_t dw[4] = {
@@ -1293,6 +1310,55 @@ static volatile uint32_t *rs_batch;
 static uint32_t rs_batch_gtt;
 static bool rs_done;
 
+/*
+ * **The render engine's cache controls, as i915 leaves them** (7d): every
+ * MOCS field in the batches names index 1, "as the page table says", which
+ * is what the blitter does without being told - and a reset does not leave
+ * index 1 so. Said before and after, once.
+ */
+static bool mocs_done;
+
+static void mocs_program(long console)
+{
+    struct say_line line;
+    uint32_t i, before0 = reg(G.regs, IGPU_RCS_MOCS0), before1 = reg(G.regs, IGPU_RCS_MOCS0 + 4u),
+             l3before = reg(G.regs, IGPU_LNCFCMOCS0);
+
+    for (i = 0; i < 62u; i++) {
+        uint32_t v = i == 0 ? IGPU_MOCS_UNCACHED : i == 2 ? IGPU_MOCS_CACHED : IGPU_MOCS_PTE;
+
+        wreg(IGPU_RCS_MOCS0 + i * 4u, v);
+    }
+
+    for (i = 0; i < 31u; i++) {
+        /* Entry 2's L3 half - the low half of the second register - kept
+         * out of the GPU's L3 (7d experiment): it is the sampler's, and the
+         * L3 is not kept in step with the processor's writes. */
+        uint32_t lo = i == 0 || i == 1 ? IGPU_L3_UC : IGPU_L3_WB;
+        uint32_t hi = IGPU_L3_WB;
+
+        wreg(IGPU_LNCFCMOCS0 + i * 4u, lo | hi << 16);
+    }
+
+    mocs_done = true;
+    say_begin(&line);
+    say_text(&line, "intelgpu: the render engine's MOCS programmed as i915's; index 0 was ");
+    say_hex(&line, before0, 8);
+    say_text(&line, ", 1 ");
+    say_hex(&line, before1, 8);
+    say_text(&line, ", L3 ");
+    say_hex(&line, l3before, 8);
+    say_text(&line, "; now ");
+    say_hex(&line, reg(G.regs, IGPU_RCS_MOCS0), 8);
+    say_text(&line, ", ");
+    say_hex(&line, reg(G.regs, IGPU_RCS_MOCS0 + 4u), 8);
+    say_text(&line, ", L3 ");
+    say_hex(&line, reg(G.regs, IGPU_LNCFCMOCS0), 8);
+    say_send(console, &line);
+}
+
+static long mocs_console = -1;
+
 static uint32_t render_state(void)
 {
     uint32_t error, fence, i, r = 0;
@@ -1300,6 +1366,10 @@ static uint32_t render_state(void)
 
     if (rs_done) {
         return GPU_OK;
+    }
+
+    if (!mocs_done) {
+        mocs_program(mocs_console);
     }
 
     if ((error = engine_start(&RCS)) != GPU_OK) {
@@ -1415,8 +1485,8 @@ static void render_state_test(long console, struct gpu_reply *rep)
  */
 #define RT_PAGES  ((INTELGPU_RENDER_PITCH * INTELGPU_RENDER_H + 4095u) / 4096u)
 
-static volatile uint32_t *rt_batch, *rt_src, *rt_dst;
-static uint32_t rt_batch_gtt, rt_src_gtt, rt_dst_gtt;
+static volatile uint32_t *rt_src, *rt_dst;
+static uint32_t rt_src_gtt, rt_dst_gtt;
 
 static uint32_t rt_pattern(uint32_t x, uint32_t y)
 {
@@ -1467,7 +1537,24 @@ static uint32_t rt_apart(uint32_t a, uint32_t b)
 struct gpu_picture {
     uint32_t gtt;
     uint32_t width, height, pitch;
+    bool     scanout;                   /* a screen the display reads */
 };
+
+/*
+ * **How a surface is cached, by what it is** (7d): RENDER_SURFACE_STATE's
+ * MOCS, bits 24-30 of dword 1, an index shifted left one. A screen, index
+ * 0 - uncached, as i915 keeps every scanout: the display reads memory and
+ * not the LLC, and pixels the render engine left there were not shown -
+ * nor seen by the window server, whose mapping of the screen is uncached,
+ * which read 2% of a frame's pixels as the frame before. Anything else,
+ * index 2 - write-back in the LLC, which the processor's caches are kept in
+ * step with, so the sampler reads what the compositor wrote a moment ago
+ * and the compositor what the render engine drew.
+ */
+static uint32_t surface_mocs(const struct gpu_picture *p)
+{
+    return (p->scanout ? 0u : 2u) << 1;
+}
 
 static void put_float(volatile uint32_t *at, float f)
 {
@@ -1478,109 +1565,187 @@ static void put_float(volatile uint32_t *at, float f)
 }
 
 /*
- * **A rectangle of one picture drawn onto another by the 3D pipeline**
- * (`m700-2d.md` 7c): `w` by `h` from `sx`, `sy` in `src`, to `dx`, `dy` in
- * `dst`, copied or - `blend` - laid over it by its alpha, as the compositor
- * lays a window. The batch `tools/render_batch.c` wrote, with what depends
- * on the pictures filled in: each surface's address, size and pitch, the
- * drawing rectangle - the whole target - and the three vertices, the
- * destination in pixels and the source in coordinates from 0 to 1, a
- * pixel's centre falling on its texel so the nearest sampler takes it
- * whole. Runs after the starting state and waits for its fence.
+ * **Rectangles of one picture drawn onto another by the 3D pipeline**
+ * (`m700-2d.md` 7c, 7d): each `w` by `h` from `sx`, `sy` in `src` to `x`,
+ * `y` in `dst` - `struct gpu_blit`'s rectangles - copied or, `blend`, laid
+ * over it by its alpha as the compositor lays a window. The batch
+ * `tools/render_batch.c` wrote, with what depends on the pictures filled
+ * in: each surface's address, size and pitch, the drawing rectangle (the
+ * whole target), and three corners a rectangle in the vertex buffer - the
+ * target's in pixels, the source's in coordinates from 0 to 1, a pixel's
+ * centre falling on its texel so the nearest sampler takes it whole - with
+ * the buffer's size and the vertex count to match.
+ *
+ * **Not waited for**: the batch goes into a page of its own from a pool,
+ * so several can be in the ring at once - a frame's windows and the copy to
+ * the screen after them - and the answer is its fence. A page whose last
+ * batch has not finished is not written over: GPU_ERR_BUSY, and the caller
+ * tries again.
  */
-static uint32_t draw(const struct gpu_picture *dst, const struct gpu_picture *src,
-                     uint32_t sx, uint32_t sy, uint32_t w, uint32_t h,
-                     uint32_t dx, uint32_t dy, bool blend, unsigned long *took)
+#define DRAW_PAGES   32u
+#define DRAW_RECTS   ((4096u - INTELGPU_RENDER_VERTICES) / (3u * INTELGPU_RENDER_VERTEX))
+
+static volatile uint32_t *draw_page[DRAW_PAGES];
+static uint32_t draw_page_gtt[DRAW_PAGES], draw_page_fence[DRAW_PAGES];
+static unsigned draw_next;
+static uint32_t draws;                  /* batches given the render engine, since boot */
+
+struct draw_rect { int32_t x, y, w, h, sx, sy; };
+
+static uint32_t draw_batch(const struct gpu_picture *dst, const struct gpu_picture *src,
+                           const struct draw_rect *r, uint32_t n, bool blend, uint32_t *fence)
 {
     const uint32_t *batch = blend ? intelgpu_blend : intelgpu_render;
     const uint32_t words = blend ? sizeof(intelgpu_blend) / 4u : sizeof(intelgpu_render) / 4u;
-    volatile uint32_t *ss, *v;
-    uint32_t error, fence, i;
-    unsigned long t0;
+    volatile uint32_t *b, *ss, *v;
+    uint32_t error, i, page_gtt;
+    unsigned at;
 
     _Static_assert(INTELGPU_RENDER_SS_DST == INTELGPU_BLEND_SS_DST
                    && INTELGPU_RENDER_SS_SRC == INTELGPU_BLEND_SS_SRC
                    && INTELGPU_RENDER_VERTICES == INTELGPU_BLEND_VERTICES
                    && INTELGPU_RENDER_DRAWRECT == INTELGPU_BLEND_DRAWRECT
+                   && INTELGPU_RENDER_VBSIZE == INTELGPU_BLEND_VBSIZE
+                   && INTELGPU_RENDER_COUNT == INTELGPU_BLEND_COUNT
                    && sizeof(intelgpu_render_relocs) == sizeof(intelgpu_blend_relocs),
                    "the copy's batch and the blend's differ only in the blending");
 
-    if (w == 0 || h == 0 || sx + w > src->width || sy + h > src->height
-        || dx + w > dst->width || dy + h > dst->height
-        || dst->width > 16384u || dst->height > 16384u || src->width > 16384u || src->height > 16384u) {
+    if (n == 0 || n > DRAW_RECTS || dst->width > 16384u || dst->height > 16384u
+        || src->width > 16384u || src->height > 16384u || dst->width == 0 || src->width == 0) {
         return GPU_ERR_BAD_OP;
+    }
+
+    for (i = 0; i < n; i++) {
+        if (r[i].w <= 0 || r[i].h <= 0 || r[i].x < 0 || r[i].y < 0 || r[i].sx < 0 || r[i].sy < 0
+            || (uint32_t)(r[i].sx + r[i].w) > src->width || (uint32_t)(r[i].sy + r[i].h) > src->height
+            || (uint32_t)(r[i].x + r[i].w) > dst->width || (uint32_t)(r[i].y + r[i].h) > dst->height) {
+            return GPU_ERR_BAD_OP;
+        }
     }
 
     if ((error = render_state()) != GPU_OK) {
         return error;
     }
 
-    if (rt_batch == NULL && !gtt_pages(1, &rt_batch, &rt_batch_gtt)) {
+    at = draw_next;
+
+    if (draw_page[at] == NULL && !gtt_pages(1, &draw_page[at], &draw_page_gtt[at])) {
         return GPU_ERR_NO_MEMORY;
     }
 
-    if (!engine_idle(&RCS)) {
+    /* The page's last batch done, and room in the ring for this one. */
+    if ((int32_t)(fence_reached(&RCS) - draw_page_fence[at]) < 0
+        || RCS.in_flight + 48u > RING_ROOM) {
+        (void)engine_idle(&RCS);
         return GPU_ERR_BUSY;
     }
 
+    (void)engine_idle(&RCS);
+    b = draw_page[at];
+    page_gtt = draw_page_gtt[at];
+
     for (i = 0; i < words; i++) {
-        rt_batch[i] = batch[i];
+        b[i] = batch[i];
     }
 
     for (i = 0; i < sizeof(intelgpu_render_relocs) / sizeof(intelgpu_render_relocs[0]); i++) {
-        uint32_t at = (blend ? intelgpu_blend_relocs[i].at : intelgpu_render_relocs[i].at) / 4u;
+        uint32_t w = (blend ? intelgpu_blend_relocs[i].at : intelgpu_render_relocs[i].at) / 4u;
         uint32_t kind = blend ? intelgpu_blend_relocs[i].kind : intelgpu_render_relocs[i].kind;
 
-        rt_batch[at] += kind == 1u ? rt_batch_gtt : kind == 2u ? dst->gtt : src->gtt;
+        b[w] += kind == 1u ? page_gtt : kind == 2u ? dst->gtt : src->gtt;
     }
 
     /* Each surface's size and pitch: RENDER_SURFACE_STATE's dwords 2 and 3. */
-    ss = rt_batch + INTELGPU_RENDER_SS_DST / 4u;
+    ss = b + INTELGPU_RENDER_SS_DST / 4u;
+    ss[1] = (ss[1] & ~(0x7fu << 24)) | surface_mocs(dst) << 24;
     ss[2] = (dst->width - 1u) | (dst->height - 1u) << 16;
     ss[3] = dst->pitch - 1u;
-    ss = rt_batch + INTELGPU_RENDER_SS_SRC / 4u;
+    ss = b + INTELGPU_RENDER_SS_SRC / 4u;
+    ss[1] = (ss[1] & ~(0x7fu << 24)) | surface_mocs(src) << 24;
     ss[2] = (src->width - 1u) | (src->height - 1u) << 16;
     ss[3] = src->pitch - 1u;
 
     /* The drawing rectangle, the whole target: its maximum in dword 2. */
-    rt_batch[INTELGPU_RENDER_DRAWRECT / 4u + 2u] = (dst->width - 1u) | (dst->height - 1u) << 16;
+    b[INTELGPU_RENDER_DRAWRECT / 4u + 2u] = (dst->width - 1u) | (dst->height - 1u) << 16;
 
-    /* A rectangle list's three corners: bottom right, bottom left, top left. */
-    v = rt_batch + INTELGPU_RENDER_VERTICES / 4u;
-    v[0] = (dx + w) | (dy + h) << 16;
-    put_float(&v[1], (float)(sx + w) / (float)src->width);
-    put_float(&v[2], (float)(sy + h) / (float)src->height);
-    v[3] = dx | (dy + h) << 16;
-    put_float(&v[4], (float)sx / (float)src->width);
-    put_float(&v[5], (float)(sy + h) / (float)src->height);
-    v[6] = dx | dy << 16;
-    put_float(&v[7], (float)sx / (float)src->width);
-    put_float(&v[8], (float)sy / (float)src->height);
+    /* Each rectangle a rectangle list's three corners: bottom right, bottom
+     * left, top left. */
+    v = b + INTELGPU_RENDER_VERTICES / 4u;
+
+    for (i = 0; i < n; i++, v += 9) {
+        uint32_t x0 = (uint32_t)r[i].x, y0 = (uint32_t)r[i].y;
+        uint32_t x1 = x0 + (uint32_t)r[i].w, y1 = y0 + (uint32_t)r[i].h;
+        float u0 = (float)r[i].sx / (float)src->width, u1 = (float)(r[i].sx + r[i].w) / (float)src->width;
+        float v0 = (float)r[i].sy / (float)src->height, v1 = (float)(r[i].sy + r[i].h) / (float)src->height;
+
+        v[0] = x1 | y1 << 16;
+        put_float(&v[1], u1);
+        put_float(&v[2], v1);
+        v[3] = x0 | y1 << 16;
+        put_float(&v[4], u0);
+        put_float(&v[5], v1);
+        v[6] = x0 | y0 << 16;
+        put_float(&v[7], u0);
+        put_float(&v[8], v0);
+    }
+
+    b[INTELGPU_RENDER_VBSIZE / 4u] = 3u * n * INTELGPU_RENDER_VERTEX;
+    b[INTELGPU_RENDER_COUNT / 4u] = 3u * n;
 
     {
+        /*
+         * **The caches invalidated as i915 does it** (`gen8_emit_flush_rcs`):
+         * an empty PIPE_CONTROL first, which generation 9 wants before the
+         * vertex fetcher's invalidation; then the instruction, texture,
+         * vertex, constant and state caches and the TLB invalidated, with a
+         * post-sync write - without which the invalidation is not sure to
+         * happen. The texture cache kept the back buffer's lines from the
+         * frame before, and the copy to the screen read them where the
+         * compositor had drawn since (7d).
+         */
+        const uint32_t null_pc[6] = { IGPU_PIPE_CONTROL, 0, 0, 0, 0, 0 };
         const uint32_t before[6] = { IGPU_PIPE_CONTROL,
-                                     IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_INVALIDATE,
-                                     0, 0, 0, 0 };
-        const uint32_t start[3] = { IGPU_MI_BB_START, rt_batch_gtt, 0 };
+                                     IGPU_PC_CS_STALL | IGPU_PC_TLB_INVALIDATE | IGPU_PC_INVALIDATE
+                                         | IGPU_PC_VF_INVALIDATE | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT,
+                                     RCS.status_gtt + SCRATCH_AT * 4u, 0, 0, 0 };
+        const uint32_t start[3] = { IGPU_MI_BB_START, page_gtt, 0 };
         const uint32_t after[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_RT_FLUSH | IGPU_PC_DC_FLUSH,
                                     0, 0, 0, 0 };
 
 #if defined(__x86_64__)
         __asm__ volatile("sfence" ::: "memory");
 #endif
+        emit(&RCS, null_pc, 6);
         emit(&RCS, before, 6);
         emit(&RCS, start, 3);
         emit(&RCS, after, 6);
     }
 
-    t0 = kosmos_ticks();
-    fence = submit(&RCS);
+    *fence = submit(&RCS);
+    draw_page_fence[at] = *fence;
+    draw_next = (draw_next + 1u) % DRAW_PAGES;
+    draws++;
+    return GPU_OK;
+}
 
-    for (i = 0; i < 20000 && fence_reached(&RCS) != fence; i++) {
+/* One rectangle drawn and waited for: the tests'. */
+static uint32_t draw(const struct gpu_picture *dst, const struct gpu_picture *src,
+                     uint32_t sx, uint32_t sy, uint32_t w, uint32_t h,
+                     uint32_t dx, uint32_t dy, bool blend, unsigned long *took)
+{
+    const struct draw_rect r = { (int32_t)dx, (int32_t)dy, (int32_t)w, (int32_t)h, (int32_t)sx, (int32_t)sy };
+    uint32_t error, fence = 0, i;
+    unsigned long t0 = kosmos_ticks();
+
+    if ((error = draw_batch(dst, src, &r, 1, blend, &fence)) != GPU_OK) {
+        return error;
+    }
+
+    for (i = 0; i < 20000 && (int32_t)(fence_reached(&RCS) - fence) < 0; i++) {
         __asm__ volatile("" ::: "memory");
     }
 
-    for (i = 0; i < 200 && fence_reached(&RCS) != fence; i++) {
+    for (i = 0; i < 200 && (int32_t)(fence_reached(&RCS) - fence) < 0; i++) {
         kosmos_sleep(1);
     }
 
@@ -1593,9 +1758,54 @@ static uint32_t draw(const struct gpu_picture *dst, const struct gpu_picture *sr
         *took = (kosmos_ticks() - t0) / per_us;
     }
 
-    return fence_reached(&RCS) == fence ? GPU_OK : GPU_ERR_NO_ANSWER;
+    return (int32_t)(fence_reached(&RCS) - fence) >= 0 ? GPU_OK : GPU_ERR_NO_ANSWER;
 }
 
+/*
+ * **A request's rectangles drawn** (7d, `GPU_OP_DRAW`): from one buffer
+ * into another of the GPU's table, as `blit` copies them, in batches of
+ * DRAW_RECTS; the fence of the last in `rep->engine.value`.
+ */
+static uint32_t draw_request(const struct gpu_blit *q, bool blend, struct gpu_reply *rep)
+{
+    struct gpu_picture d, s;
+    struct draw_rect r[DRAW_RECTS];
+    uint32_t done = 0, error = GPU_OK, fence = 0;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (q->src >= BUFFERS_MAX || q->dst >= BUFFERS_MAX || !B[q->src].used || !B[q->dst].used
+        || q->n == 0 || q->n > GPU_BLIT_RECTS) {
+        return GPU_ERR_NO_BUFFER;
+    }
+
+    d = (struct gpu_picture){ B[q->dst].gtt, B[q->dst].width, B[q->dst].height, B[q->dst].pitch,
+                              B[q->dst].kind == GPU_BUFFER_SCANOUT };
+    s = (struct gpu_picture){ B[q->src].gtt, B[q->src].width, B[q->src].height, B[q->src].pitch,
+                              B[q->src].kind == GPU_BUFFER_SCANOUT };
+
+    if (!forcewake(true)) {
+        return GPU_ERR_NO_WAKE;
+    }
+
+    while (done < q->n && error == GPU_OK) {
+        uint32_t k = 0;
+
+        while (done + k < q->n && k < DRAW_RECTS) {
+            r[k] = (struct draw_rect){ q->rects[done + k].x, q->rects[done + k].y, q->rects[done + k].w,
+                                       q->rects[done + k].h, q->rects[done + k].sx, q->rects[done + k].sy };
+            k++;
+        }
+
+        error = draw_batch(&d, &s, r, k, blend, &fence);
+        done += k;
+    }
+
+    rep->engine.value = fence;
+    return error;
+}
 
 /*
  * **The pictures held to the compositor**, after a draw: every pixel of
@@ -1664,7 +1874,7 @@ static uint32_t rt_zero(uint32_t x, uint32_t y)
 static void render_test(long console, bool blend, struct gpu_reply *rep)
 {
     struct say_line line;
-    struct gpu_picture d = { 0, INTELGPU_RENDER_W, INTELGPU_RENDER_H, INTELGPU_RENDER_PITCH };
+    struct gpu_picture d = { 0, INTELGPU_RENDER_W, INTELGPU_RENDER_H, INTELGPU_RENDER_PITCH, false };
     struct gpu_picture s = d;
     struct held r = { 0, 0, 0, 0, 0 };
     uint32_t error = GPU_OK, past = 0, i;
@@ -1770,11 +1980,114 @@ static uint32_t dt_ground(uint32_t x, uint32_t y)
     return 0xff000000u | ((x * 7u) & 0xffu) << 16 | ((y * 3u) & 0xffu) << 8 | ((x + y) & 0xffu);
 }
 
+/*
+ * **A screen-sized copy, alone** (7d): a 1720 by 1440 pattern, in the
+ * driver's own write-combining memory, copied whole onto a target filled
+ * with a marker - so no processor's cache can be in it - and every pixel
+ * counted: written right, written wrong, or never written (the marker
+ * still there). `gpu draw big`.
+ */
+#define BIG_W     1720u
+#define BIG_H     1440u
+#define BIG_MARK  0x5a17c0deu
+
+static volatile uint32_t *big_src, *big_dst;
+static uint32_t big_src_gtt, big_dst_gtt;
+
+static void big_test(long console, struct gpu_reply *rep)
+{
+    struct say_line line;
+    struct gpu_picture d = { 0, BIG_W, BIG_H, BIG_W * 4u, false }, s = d;
+    uint32_t error = GPU_OK, right = 0, wrong = 0, unwritten = 0, first = ~0u, i;
+    unsigned long took = 0;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (!forcewake(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    if (big_src == NULL
+        && (!gtt_pages((BIG_W * BIG_H * 4u + 4095u) / 4096u, &big_src, &big_src_gtt)
+            || !gtt_pages((BIG_W * BIG_H * 4u + 4095u) / 4096u, &big_dst, &big_dst_gtt))) {
+        error = GPU_ERR_NO_MEMORY;
+    }
+
+    if (error == GPU_OK) {
+        d.gtt = big_dst_gtt;
+        s.gtt = big_src_gtt;
+
+        for (i = 0; i < BIG_W * BIG_H; i++) {
+            big_src[i] = rt_pattern(i % BIG_W, i / BIG_W) | 0xff000000u;
+            big_dst[i] = BIG_MARK;
+        }
+
+#if defined(__x86_64__)
+        __asm__ volatile("sfence" ::: "memory");
+#endif
+        error = draw(&d, &s, 0, 0, BIG_W, BIG_H, 0, 0, false, &took);
+
+        for (i = 0; i < BIG_W * BIG_H; i++) {
+            if (big_dst[i] == big_src[i]) {
+                right++;
+            } else {
+                if (first == ~0u) {
+                    first = i;
+                }
+
+                unwritten += big_dst[i] == BIG_MARK;
+                wrong += big_dst[i] != BIG_MARK;
+            }
+        }
+
+        if (error == GPU_OK && right != BIG_W * BIG_H) {
+            error = GPU_ERR_UNCHANGED;
+        }
+    }
+
+    rep->engine.value = right;
+    rep->engine.mode = unwritten;
+    rep->engine.ctl = wrong;
+    rep->engine.elapsed_us = (uint32_t)took;
+    rep->engine.esr = eng(&RCS, IGPU_RING_ESR);
+    rep->error = error;
+
+    for (i = 0; i < 100 && !engine_idle(&RCS); i++) {
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: a 1720x1440 copy: ");
+    say_dec(&line, right);
+    say_text(&line, " right, ");
+    say_dec(&line, unwritten);
+    say_text(&line, " never written, ");
+    say_dec(&line, wrong);
+    say_text(&line, " wrong");
+
+    if (first != ~0u && big_dst != NULL) {
+        say_text(&line, "; the first at ");
+        say_dec(&line, first % BIG_W);
+        say_text(&line, ",");
+        say_dec(&line, first / BIG_W);
+        say_text(&line, ": ");
+        say_hex(&line, big_dst[first], 8);
+        say_text(&line, " for ");
+        say_hex(&line, big_src[first], 8);
+    }
+
+    say_send(console, &line);
+}
+
 static void draw_test(long console, struct gpu_reply *rep)
 {
     struct say_line line;
-    struct gpu_picture d = { 0, DT_DST_W, DT_DST_H, DT_DST_PITCH };
-    struct gpu_picture s = { 0, DT_SRC_W, DT_SRC_H, DT_SRC_PITCH };
+    struct gpu_picture d = { 0, DT_DST_W, DT_DST_H, DT_DST_PITCH, false };
+    struct gpu_picture s = { 0, DT_SRC_W, DT_SRC_H, DT_SRC_PITCH, false };
     const uint32_t sx = 7, sy = 5, w = 280, h = 190, dx = 123, dy = 77;
     struct held r = { 0, 0, 0, 0, 0 };
     uint32_t error = GPU_OK, x, y, i;
@@ -2272,6 +2585,7 @@ static void stats(struct gpu_stats *st)
 
 void intelgpu_server(long console, long endpoint)
 {
+    mocs_console = console;
     look(console);
 
     for (;;) {
@@ -2336,7 +2650,11 @@ void intelgpu_server(long console, long endpoint)
                 render_test(console, rq.x == 1, &rep);
                 break;
             case GPU_OP_DRAW_TEST:
-                draw_test(console, &rep);
+                if (rq.x == 1) {
+                    big_test(console, &rep);
+                } else {
+                    draw_test(console, &rep);
+                }
                 break;
             case GPU_OP_BUFFER_IMPORT:
                 rep.error = buffer_import(console, cap, &rq, &rep);
@@ -2356,11 +2674,25 @@ void intelgpu_server(long console, long endpoint)
                           ? blit(&b, &rep) : GPU_ERR_BAD_OP;
                 break;
             }
-            case GPU_OP_FENCE:
-                rep.engine.value = BCS.ready ? fence_reached(&BCS) : 0;
-                rep.engine.tail = BCS.issued;
-                (void)engine_idle(&BCS);
+            case GPU_OP_FENCE: {
+                /* The blitter's, or with `x` 1 the render engine's (7d). */
+                struct engine *e = rq.x == 1 ? &RCS : &BCS;
+
+                rep.engine.value = e->ready ? fence_reached(e) : 0;
+                rep.engine.tail = e->issued;
+                (void)engine_idle(e);
                 break;
+            }
+            case GPU_OP_DRAW:
+            case GPU_OP_DRAW_BLEND: {
+                static struct gpu_blit q;
+
+                memset(&q, 0, sizeof q);
+                memcpy(&q, msg.data, msg.length < sizeof q ? msg.length : sizeof q);
+                rep.error = msg.length >= 16 && msg.length >= 16 + q.n * 24u
+                          ? draw_request(&q, rq.op == GPU_OP_DRAW_BLEND, &rep) : GPU_ERR_BAD_OP;
+                break;
+            }
             case GPU_OP_FLIPPED:
                 if (G.found && G.pipe >= 0) {
                     buffers_init();

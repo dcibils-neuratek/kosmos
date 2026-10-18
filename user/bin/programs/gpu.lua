@@ -35,6 +35,16 @@ if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "c
   return
 end
 
+if words[1] == "draw" and words[2] == "big" then
+  local r, why = gpu.draw_test(true)
+  local c = gpu.last_draw
+
+  print(r and ("gpu: a 1720x1440 copy, %d right, %d us"):format(r.right, r.elapsed_us)
+          or ("gpu: %s - %d right, %d never written, %d wrong"):format(tostring(why), c and c.right or 0,
+                                                                       c and c.exact or 0, c and c.outside or 0))
+  return
+end
+
 if words[1] == "draw" then
   local r, why = gpu.draw_test()
   local c = gpu.last_draw

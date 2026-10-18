@@ -88,6 +88,13 @@ uint64_t intel_bb_offset_reloc_with_delta(struct intel_bb *ibb, uint32_t handle,
  * genxml lets none of them be 0, and Kosmos programs no MOCS table, so the
  * index is only what the field requires. */
 #define PTE_MOCS    2
+/* The source's: index 2, i915's "cached" - write-back in the LLC, which the
+ * processor's caches are kept in step with, so the sampler reads what the
+ * compositor wrote a moment ago. Through index 1 it read memory, and where
+ * the processor's newest pixels were still in its cache it read the frame
+ * before (7d). The target stays on index 1: the display scans out from
+ * memory, not from the LLC. */
+#define CACHED_MOCS 4
 #define SURFACEFORMAT_B8G8R8A8_UNORM    0x0c0
 #define SURFACEFORMAT_R32G32B32A32_FLOAT 0x000
 #define SURFACEFORMAT_R16G16_SSCALED    0x0f6
@@ -127,6 +134,8 @@ static const uint32_t ps_kernel[][4] = {
 static uint32_t surface_at[2];          /* the destination's and the source's state */
 static uint32_t vertices_at;
 static uint32_t drawrect_at;            /* 3DSTATE_DRAWING_RECTANGLE, its maximum in dword 2 */
+static uint32_t vbsize_at;              /* VERTEX_BUFFER_STATE's BufferSize, a dword */
+static uint32_t count_at;               /* 3DPRIMITIVE's VertexCountPerInstance, a dword */
 
 static uint32_t bind(uint32_t kind)
 {
@@ -140,7 +149,7 @@ static uint32_t bind(uint32_t kind)
         ss.SurfaceFormat = SURFACEFORMAT_B8G8R8A8_UNORM;
         ss.SurfaceVerticalAlignment = GFX9_VALIGN_4;
         ss.SurfaceHorizontalAlignment = GFX9_HALIGN_4;
-        ss.MOCS = PTE_MOCS;
+        ss.MOCS = kind == BUF_SRC ? CACHED_MOCS : PTE_MOCS;
         ss.Width = W - 1u;
         ss.Height = H - 1u;
         ss.SurfacePitch = PITCH - 1u;
@@ -404,6 +413,7 @@ int main(int argc, char **argv)
 
         GFX9_3DSTATE_VERTEX_BUFFERS_pack(&bb, ptr(), &vbs);
         bb.used += 4u;
+        vbsize_at = bb.used + 3u * 4u;
         PACK(GFX9_VERTEX_BUFFER_STATE, ptr(), vb) {
             vb.VertexBufferIndex = 0;
             vb.AddressModifyEnable = true;
@@ -454,7 +464,13 @@ int main(int argc, char **argv)
     EMIT(GFX9_3DSTATE_VF_TOPOLOGY, t) { t.PrimitiveTopologyType = GFX9_3DPRIM_RECTLIST; }
     EMIT(GFX9_3DSTATE_VF, vf) { }
     EMIT(GFX9_3DSTATE_VF_INSTANCING, vfi) { }
+    count_at = bb.used + 2u * 4u;
     EMIT(GFX9_3DPRIMITIVE, prim) { prim.VertexCountPerInstance = 3; prim.InstanceCount = 1; }
+
+    if (words[vbsize_at / 4u] != 3u * VERTEX_SIZE || words[count_at / 4u] != 3u) {
+        fprintf(stderr, "render_batch: the buffer's size or the vertex count is not where it was taken to be\n");
+        return 1;
+    }
 
     out(0x05000000u);                   /* MI_BATCH_BUFFER_END */
 
@@ -483,7 +499,10 @@ int main(int argc, char **argv)
     printf("#define INTELGPU_%s_VERTICES 0x%03xu   /* the three vertices */\n", NAME, vertices_at);
     printf("#define INTELGPU_%s_SS_DST   0x%03xu   /* the surfaces' state */\n", NAME, surface_at[0]);
     printf("#define INTELGPU_%s_SS_SRC   0x%03xu\n", NAME, surface_at[1]);
-    printf("#define INTELGPU_%s_DRAWRECT 0x%03xu   /* the drawing rectangle */\n\n", NAME, drawrect_at);
+    printf("#define INTELGPU_%s_DRAWRECT 0x%03xu   /* the drawing rectangle */\n", NAME, drawrect_at);
+    printf("#define INTELGPU_%s_VBSIZE   0x%03xu   /* the vertex buffer's size, bytes */\n", NAME, vbsize_at);
+    printf("#define INTELGPU_%s_COUNT    0x%03xu   /* the vertices drawn */\n", NAME, count_at);
+    printf("#define INTELGPU_%s_VERTEX   %uu       /* bytes a vertex */\n\n", NAME, VERTEX_SIZE);
     printf("static const struct { uint32_t at, kind; } intelgpu_%s_relocs[] = {\n", name);
     for (i = 0; i < reloc_count; i++) {
         printf("    { 0x%03x, %u },\n", relocs[i].at, relocs[i].kind);

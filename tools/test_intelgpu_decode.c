@@ -132,6 +132,9 @@ int main(void)
     check(IGPU_PIPE_CONTROL == 0x7a000004u, "PIPE_CONTROL, six dwords");
     check(IGPU_PC_QW_WRITE == 0x4000u && IGPU_PC_CS_STALL == 0x100000u && IGPU_PC_GLOBAL_GTT == 0x1000000u,
           "its post-sync write: QW_WRITE 14, CS_STALL 20, GLOBAL_GTT 24");
+    check(IGPU_PC_FLUSH_ENABLE == 0x80u && IGPU_PC_TLB_INVALIDATE == 0x40000u && IGPU_PC_DEPTH_FLUSH == 1u,
+          "and the fence's flushes, as gen8_emit_fini_breadcrumb_rcs: FLUSH_ENABLE 7, TLB_INVALIDATE 18, depth 0");
+    check(IGPU_PC_VF_INVALIDATE == 0x10u, "the vertex fetcher's cache invalidated, bit 4");
 
     /* The GPGPU pipeline (7b): each command as intel-gpu-tools emits it
      * for Skylake, its words worked out by hand from GFXPIPE. */
@@ -144,6 +147,9 @@ int main(void)
     check(IGPU_GPGPU_WALKER == 0x7105000du, "GPGPU_WALKER, fifteen dwords");
     check(IGPU_MI_BB_START == 0x18800001u && IGPU_MI_BB_END == 0x05000000u,
           "MI_BATCH_BUFFER_START from the global GTT, and MI_BATCH_BUFFER_END");
+    check(IGPU_MOCS_UNCACHED == 0x09u && IGPU_MOCS_PTE == 0x30u && IGPU_MOCS_CACHED == 0x3bu
+          && IGPU_L3_UC == 0x10u && IGPU_L3_WB == 0x30u,
+          "Skylake's MOCS entries as i915 programs them: uncached, page table, cached; L3 UC and WB");
 
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;

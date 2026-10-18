@@ -393,6 +393,17 @@ static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
 static unsigned rendering = 2;      /* the mode asked for (`docs/rendering.md`); Page flips until told */
 static bool can_blit;               /* the back buffer is in the GPU's table */
 static bool flips_seen, blit_seen;  /* what this machine has shown it can do */
+static bool render_seen;            /* and the render engine drawing (7d) */
+
+/*
+ * **Which engine draws** (`m700-2d.md` 7d): 0 the blitter, for modes 3 and
+ * 4; 1 the render engine, for GPU composing, which also copies the back
+ * buffer to the hidden screen - so a frame's pieces and its copy are one
+ * ring's, in order, and the one fence that says the copy is done says the
+ * frame is. The same requests either way, `GPU_OP_DRAW` for `GPU_OP_BLIT`,
+ * and each fence asked of the engine that has the work.
+ */
+static unsigned gpu_engine;
 static bool blitting;               /* the copy is the blitter's */
 static bool blit_composing;         /* and composing's opaque parts (6b) */
 static uint32_t back_id;
@@ -449,6 +460,20 @@ static uint32_t gpu_send(const void *req, size_t bytes, long pass, struct gpu_re
     }
 
     return rep->error;
+}
+
+/*
+ * **This process's writes out before the GPU reads them** (7d): an
+ * `sfence` drains the processor's write-combining buffers, so a picture the
+ * compositor has just drawn is in memory, whole, when the engine it is
+ * handed to reads it - not a pixel some of whose bytes are still on their
+ * way, which is what the render engine's copy found.
+ */
+static void gpu_fence_writes(void)
+{
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");
+#endif
 }
 
 static uint32_t gpu_ask(uint32_t op, int32_t x, int32_t y, struct gpu_reply *rep, long *cap)
@@ -528,6 +553,14 @@ static void flips_start(void)
         rq.offset = 0;
         can_blit = gpu_send(&rq, sizeof rq, back_region.cap, &got, NULL) == GPU_OK;
         blit_seen = blit_seen || can_blit;
+
+        /* The render engine asked to start once (7d): its starting state
+         * run, and whether it answered is whether GPU composing can be. */
+        if (can_blit && !render_seen) {
+            struct gpu_reply ran;
+
+            render_seen = gpu_ask(GPU_OP_RENDER_STATE, 0, 0, &ran, NULL) == GPU_OK;
+        }
         flips_seen = true;
         blitting = can_blit && rendering >= 3;
         back_id = got.buffer.id;
@@ -650,7 +683,53 @@ static void check_blit(const struct gpu_blit *b, const struct surface *to, size_
 
             for (x = x0 < 0 ? 0 : x0; x < x0 + b->rects[k].w && x < (long)screen.width; x++) {
                 checked_px++;
-                wrong_px += (got[x] & 0x00ffffffu) != (want[x] & 0x00ffffffu);
+
+                if ((got[x] & 0x00ffffffu) != (want[x] & 0x00ffffffu)) {
+                    /* The first few said where, for the engine's sake. */
+                    if (wrong_px < 4) {
+                        struct say_line line;
+
+                        say_begin(&line);
+                        say_text(&line, "windowserver: copy differs at ");
+                        say_dec(&line, (unsigned long)x);
+                        say_text(&line, ",");
+                        say_dec(&line, (unsigned long)y);
+                        say_text(&line, " in a rect ");
+                        say_dec(&line, (unsigned long)b->rects[k].w);
+                        say_text(&line, "x");
+                        say_dec(&line, (unsigned long)b->rects[k].h);
+                        say_text(&line, " at ");
+                        say_dec(&line, (unsigned long)x0);
+                        say_text(&line, ",");
+                        say_dec(&line, (unsigned long)y0);
+                        say_text(&line, ": ");
+                        say_hex(&line, got[x], 8);
+                        say_text(&line, " for ");
+                        say_hex(&line, want[x], 8);
+
+                        /* Its neighbours in the back buffer, to see whether
+                         * the value is one of theirs. */
+                        if (wrong_px == 0 && y > 0 && y + 1 < (long)screen.height && x > 0) {
+                            const uint32_t *up = (const uint32_t *)((const uint8_t *)want - back.pitch);
+                            const uint32_t *down = (const uint32_t *)((const uint8_t *)want + back.pitch);
+
+                            say_text(&line, "; left ");
+                            say_hex(&line, want[x - 1], 8);
+                            say_text(&line, " right ");
+                            say_hex(&line, want[x + 1], 8);
+                            say_text(&line, " up ");
+                            say_hex(&line, up[x], 8);
+                            say_text(&line, " down ");
+                            say_hex(&line, down[x], 8);
+                            say_text(&line, "; the screen's up ");
+                            say_hex(&line, ((const volatile uint32_t *)((const volatile uint8_t *)got - to->pitch))[x], 8);
+                        }
+
+                        say_send(console, &line);
+                    }
+
+                    wrong_px++;
+                }
             }
         }
     }
@@ -698,7 +777,7 @@ static bool present(void)
 
     /* A blit given: flipped to once its fence is reached. */
     if (blit_pending) {
-        if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) != GPU_OK
+        if (gpu_ask(GPU_OP_FENCE, (int32_t)gpu_engine, 0, &rep, NULL) != GPU_OK
             || (int32_t)(rep.engine.value - blit_fence) < 0) {
             return true;
         }
@@ -721,12 +800,14 @@ static bool present(void)
         static struct gpu_blit b;
 
         memset(&b, 0, sizeof b);
-        b.op = GPU_OP_BLIT;
+        b.op = gpu_engine ? GPU_OP_DRAW : GPU_OP_BLIT;
         b.src = back_id;
         b.dst = buffer_id[hidden];
         b.n = 0;
         (void)blit_rects(&b, &given);
         (void)blit_rects(&b, &owed);
+
+        gpu_fence_writes();
 
         uint32_t error = gpu_send(&b, 16 + b.n * 24u, -1, &rep, NULL);
 
@@ -743,7 +824,7 @@ static bool present(void)
              * can be compared before anything else touches them. */
             if (checks_left > 0) {
                 for (unsigned i = 0; i < 250; i++) {
-                    if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) == GPU_OK
+                    if (gpu_ask(GPU_OP_FENCE, (int32_t)gpu_engine, 0, &rep, NULL) == GPU_OK
                         && (int32_t)(rep.engine.value - blit_fence) >= 0) {
                         check_blit(&b, &buffers[hidden],
                                    hidden == 0 ? (size_t)screen.pitch * screen.height
@@ -1112,7 +1193,7 @@ static bool blit_pieces(const struct piece *pc, int n, uint32_t *fence)
         const struct sc_window *w = &sc->win[win];
 
         memset(&b, 0, sizeof b);
-        b.op = GPU_OP_BLIT;
+        b.op = gpu_engine ? GPU_OP_DRAW : GPU_OP_BLIT;
         b.src = picture_gpu(w->picture_slot);
         b.dst = back_id;
 
@@ -1126,6 +1207,8 @@ static bool blit_pieces(const struct piece *pc, int n, uint32_t *fence)
             b.n++;
             i++;
         }
+
+        gpu_fence_writes();
 
         if (gpu_send(&b, 16 + b.n * 24u, -1, &rep, NULL) != GPU_OK) {
             return false;
@@ -1144,7 +1227,7 @@ static bool fence_wait(uint32_t fence)
     unsigned i;
 
     for (i = 0; i < 2000 + 250; i++) {
-        if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) == GPU_OK
+        if (gpu_ask(GPU_OP_FENCE, (int32_t)gpu_engine, 0, &rep, NULL) == GPU_OK
             && (int32_t)(rep.engine.value - fence) >= 0) {
             return true;
         }
@@ -1204,7 +1287,8 @@ static void check_pieces(const struct piece *pc, int n)
         free(scratch.pixels);
         scratch.pixels = NULL;
         say_begin(&line);
-        say_text(&line, "windowserver: the blitter's composing checked, 20 frames, ");
+        say_text(&line, gpu_engine ? "windowserver: the render engine's composing checked, 20 frames, "
+                                   : "windowserver: the blitter's composing checked, 20 frames, ");
         say_dec(&line, (unsigned long)compose_checked);
         say_text(&line, " pixels, ");
         say_dec(&line, (unsigned long)compose_wrong);
@@ -1387,7 +1471,7 @@ static uint32_t set_rendering(unsigned mode)
         }
     }
 
-    rendering = mode > 4 ? 4 : mode;
+    rendering = mode > 5 ? 5 : mode;
 
     if (rendering >= 2 && !flipping && screen_taken) {
         flips_start();
@@ -1397,6 +1481,7 @@ static uint32_t set_rendering(unsigned mode)
 
     blitting = flipping && can_blit && rendering >= 3;
     blit_composing = blitting && rendering >= 4;
+    gpu_engine = blit_composing && rendering >= 5 && render_seen ? 1u : 0u;
 
     /* Windows' pictures out of the GPU's table when the blitter no longer
      * composes from them: GPU Monitor showed eleven buffers, 63 MB, after
@@ -1421,11 +1506,12 @@ static uint32_t set_rendering(unsigned mode)
         say_dec(&line, rendering);
         say_text(&line, flipping ? ", flips" : ", the framebuffer");
         say_text(&line, blitting ? ", the copy on the blitter" : "");
-        say_text(&line, blit_composing ? ", composing's opaque parts on the blitter" : "");
+        say_text(&line, gpu_engine ? ", composing and the copy on the render engine"
+                        : blit_composing ? ", composing's opaque parts on the blitter" : "");
         say_send(console, &line);
     }
 
-    return blit_seen ? 4u : (flips_seen ? 2u : 1u);
+    return render_seen ? 5u : blit_seen ? 4u : (flips_seen ? 2u : 1u);
 }
 
 static void answer(const struct message *in, uint64_t sender)
