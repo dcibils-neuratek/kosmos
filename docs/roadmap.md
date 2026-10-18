@@ -142,8 +142,9 @@ assembler (`eu.lua`), the kit (`/Kosmos/Kits/compute`), two driver verbs
 with every kernel checked before it runs, GPU Fractal (the Mandelbrot set,
 GPU against the processor, the times side by side), then Cafesa3D's
 renderer on the GPU beside its processor's with both times shown. Steps C1
-to C6 there; D1 (how a kernel is written) and D2 (what keeps a kernel in
-its own memory) are Diego's.
+to C6 there. **Diego's decisions, the same day**: kernels as assembly,
+assembled on Kosmos by `eu.lua` (D1 A), and every kernel checked before it
+runs (D2 A). Building from C1.
 
 **Memory slots in This Machine** - Diego, 18 October 2026: "can we tell in
 the this machine app if the memory slots are all occupied ? because it can

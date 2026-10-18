@@ -84,7 +84,11 @@ both see.
 a program starts, and its bug is a stack trace; the kit's door is C; the
 driver is C. Nothing per pixel is Lua.
 
-## Two decisions, Diego's
+## Two decisions, Diego's - taken on 18 October 2026: A and A
+
+Diego chose **D1 A** - assembly text, assembled on Kosmos by `eu.lua` - and
+**D2 A** - every kernel checked before it runs. Recorded in `README.md`'s
+decision log.
 
 **D1 - how a kernel is written on Kosmos.**
 
