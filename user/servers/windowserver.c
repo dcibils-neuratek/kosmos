@@ -75,6 +75,7 @@ static struct held scene_region = { -1, 0, 0 };
 struct picture {
     struct held region;
     struct surface surface;
+    uint32_t gpu_id;                /* its buffer id in the GPU's table, 0 not yet, ~0 never (6b) */
 };
 
 static struct picture *pictures;
@@ -153,9 +154,13 @@ static void surface_over(struct surface *s, uintptr_t at, uint32_t width, uint32
     s->pitch = pitch;
 }
 
+static void picture_gpu_forget(unsigned slot);
+
 static void forget(unsigned slot)
 {
     if (slot < npictures) {
+        picture_gpu_forget(slot);
+
         if (pictures[slot].region.cap >= 0) {
             nheld--;
         }
@@ -386,6 +391,7 @@ static unsigned long copy_ticks;    /* since the last reply, for `copy_us` */
  * "busy" puts the copying back here, said once.
  */
 static bool blitting;               /* the copy is the blitter's */
+static bool blit_composing;         /* and composing's opaque parts (6b) */
 static uint32_t back_id;
 static bool blit_pending;           /* given, its fence not yet reached */
 static uint32_t blit_fence;
@@ -525,6 +531,16 @@ static void flips_start(void)
     say_begin(&line);
     say_text(&line, "windowserver: page flips, between the firmware's screen and buffer ");
     say_dec(&line, buffer_id[1]);
+    /*
+     * **Composing's opaque parts stay the processor's for now** (6b,
+     * `testing.md` 18.669): on the M700 they worked - 0 pixels different -
+     * and took the processor's composing from 0.80 ms a frame to 0.43, but
+     * the blitter could not keep up with them and the copy to the screen
+     * behind them, and the screen got 42 frames a second rather than 57.
+     * Diego: "it has some choppy moments". Responsiveness first: off, until
+     * the blitter copies faster (XY_FAST_COPY_BLT, next).
+     */
+    blit_composing = false;
     say_text(&line, blitting ? "; the copy into them on the blitter" : "; the copy into them here");
     say_send(console, &line);
 }
@@ -558,6 +574,8 @@ static unsigned blit_rects(struct gpu_blit *b, const struct damage *d)
         b->rects[0].y = 0;
         b->rects[0].w = (int32_t)screen.width;
         b->rects[0].h = (int32_t)screen.height;
+        b->rects[0].sx = 0;
+        b->rects[0].sy = 0;
         return 1;
     }
 
@@ -566,6 +584,8 @@ static unsigned blit_rects(struct gpu_blit *b, const struct damage *d)
         b->rects[b->n].y = (int32_t)d->r[k].y;
         b->rects[b->n].w = (int32_t)d->r[k].w;
         b->rects[b->n].h = (int32_t)d->r[k].h;
+        b->rects[b->n].sx = (int32_t)d->r[k].x;
+        b->rects[b->n].sy = (int32_t)d->r[k].y;
         b->n++;
     }
 
@@ -702,7 +722,7 @@ static bool present(void)
         (void)blit_rects(&b, &given);
         (void)blit_rects(&b, &owed);
 
-        uint32_t error = gpu_send(&b, 16 + b.n * 16u, -1, &rep, NULL);
+        uint32_t error = gpu_send(&b, 16 + b.n * 24u, -1, &rep, NULL);
 
 
         if (error == GPU_OK) {
@@ -836,6 +856,7 @@ static void flips_stop(void)
         blitting = false;
     }
 
+    blit_composing = false;
     blit_pending = false;
     flipping = false;
     flip_pending = false;
@@ -852,12 +873,402 @@ static uint32_t in_us(unsigned long ticks)
     return us > 0xffffffffu ? 0xffffffffu : (uint32_t)us;
 }
 
+/*--------------------------------------------------------------------------
+ * **The opaque parts of composing on the blitter** (`m700-2d.md` step 6b).
+ *
+ * A pixel's final value is a plain copy of a window's picture when that
+ * window is opaque, unscaled, not stale and has no bar there, the pixel is
+ * inside its corners, its lights and its grip, and nothing is above it -
+ * no window, no window's shadow, no menu, panel, level bar, badge, pointer
+ * or outline. Those pieces of each damaged rectangle are copied by the
+ * blitter, straight from the window's buffer into the back buffer, while
+ * the processor composes the rest of the rectangle as before; the two never
+ * touch the same pixel, so they run at the same time. The first frames are
+ * composed again here into a scratch buffer and compared.
+ *------------------------------------------------------------------------*/
+
+#define PIECES_MAX   64
+#define PIECE_LEAST  4096           /* pixels: a smaller piece is cheaper here */
+
+struct piece {
+    long x, y, w, h;
+    int  win;                       /* the window it is copied from */
+};
+
+static unsigned compose_checks = 20;
+static uint64_t compose_checked, compose_wrong;
+static struct surface scratch;      /* for the check, then freed */
+
+/* A picture in the GPU's table: imported the first time, its id after. */
+static uint32_t picture_gpu(int slot)
+{
+    struct picture *p;
+    struct gpu_request rq;
+    struct gpu_reply got;
+
+    if (slot < 0 || (unsigned)slot >= npictures || pictures[slot].region.cap < 0) {
+        return 0;
+    }
+
+    p = &pictures[slot];
+
+    if (p->gpu_id == 0) {
+        memset(&rq, 0, sizeof rq);
+        rq.op = GPU_OP_BUFFER_IMPORT;
+        rq.x = (int32_t)p->surface.width;
+        rq.y = (int32_t)p->surface.height;
+        rq.pitch = p->surface.pitch;
+        rq.offset = (uint32_t)((uintptr_t)p->surface.pixels - p->region.at);
+        p->gpu_id = gpu_send(&rq, sizeof rq, p->region.cap, &got, NULL) == GPU_OK
+                  ? got.buffer.id : ~0u;
+    }
+
+    return p->gpu_id == ~0u ? 0 : p->gpu_id;
+}
+
+/* A picture let go: out of the GPU's table first, once the blitter has
+ * stopped reading it - a second at most. */
+static void picture_gpu_forget(unsigned slot)
+{
+    struct gpu_reply rep;
+    unsigned i;
+
+    if (slot >= npictures || pictures[slot].gpu_id == 0) {
+        return;
+    }
+
+    if (pictures[slot].gpu_id != ~0u) {
+        for (i = 0; i < 250; i++) {
+            if (gpu_ask(GPU_OP_BUFFER_FORGET, (int32_t)pictures[slot].gpu_id, 0, &rep, NULL)
+                != GPU_ERR_BUSY) {
+                break;
+            }
+
+            kosmos_sleep(1);
+        }
+    }
+
+    pictures[slot].gpu_id = 0;
+}
+
+/* `list` less `b`: each rectangle cut into up to four around it. False
+ * when that would not fit. */
+static bool cut(struct piece *list, int *n, int max, long bx, long by, long bw, long bh)
+{
+    static struct piece out[PIECES_MAX * 8];
+    int k, m = 0;
+
+    if (bw <= 0 || bh <= 0) {
+        return true;
+    }
+
+    for (k = 0; k < *n; k++) {
+        struct piece p = list[k];
+
+        /* Four more at most from this one: never past `out`, nor `max`. */
+        if (m + 4 > (int)(sizeof out / sizeof out[0])) {
+            return false;
+        }
+
+        long x0 = bx > p.x ? bx : p.x, y0 = by > p.y ? by : p.y;
+        long x1 = bx + bw < p.x + p.w ? bx + bw : p.x + p.w;
+        long y1 = by + bh < p.y + p.h ? by + bh : p.y + p.h;
+
+        if (x1 <= x0 || y1 <= y0) {
+            out[m++] = p;
+            continue;
+        }
+
+        if (y0 > p.y) out[m++] = (struct piece){ p.x, p.y, p.w, y0 - p.y, p.win };
+        if (y1 < p.y + p.h) out[m++] = (struct piece){ p.x, y1, p.w, p.y + p.h - y1, p.win };
+        if (x0 > p.x) out[m++] = (struct piece){ p.x, y0, x0 - p.x, y1 - y0, p.win };
+        if (x1 < p.x + p.w) out[m++] = (struct piece){ x1, y0, p.x + p.w - x1, y1 - y0, p.win };
+    }
+
+    if (m > max) {
+        return false;
+    }
+
+    memcpy(list, out, (size_t)m * sizeof out[0]);
+    *n = m;
+    return true;
+}
+
+/* Everything that draws over `k`'s picture, cut out of `list`. */
+static bool uncovered(struct piece *list, int *n, int k)
+{
+    const struct sc_window *w = &sc->win[k];
+    long s = sc->shadow;
+    int j;
+
+    if ((w->flags & SC_LIGHTS) && !cut(list, n, PIECES_MAX, w->bx, w->by, sc->run, sc->box)) {
+        return false;
+    }
+
+    if ((w->flags & SC_GRIP)
+        && !cut(list, n, PIECES_MAX, w->x + w->w - sc->grip, w->y + w->h - sc->grip, sc->grip, sc->grip)) {
+        return false;
+    }
+
+    for (j = k + 1; j < sc->nwin; j++) {
+        const struct sc_window *a = &sc->win[j];
+
+        if (a->flags & SC_HIDDEN) {
+            continue;
+        }
+
+        if ((a->flags & SC_SHADOW) && s > 0) {
+            if (!cut(list, n, PIECES_MAX, a->x - s, a->y - s + s / 3, a->w + 2 * s, a->h + 2 * s)) {
+                return false;
+            }
+        }
+
+        if (!cut(list, n, PIECES_MAX, a->x, a->y, a->w, a->h)) {
+            return false;
+        }
+    }
+
+    for (j = 0; j < sc->nmenu; j++) {
+        if (!cut(list, n, PIECES_MAX, sc->menu[j].x, sc->menu[j].y, sc->menu[j].w, sc->menu[j].h)) {
+            return false;
+        }
+    }
+
+    return (sc->osd == NULL || sc->osd_alpha == 0
+            || cut(list, n, PIECES_MAX, sc->osd_x, sc->osd_y, (long)sc->osd->width, (long)sc->osd->height))
+        && (sc->panel == NULL
+            || cut(list, n, PIECES_MAX, sc->panel_x, sc->panel_y, (long)sc->panel->width, (long)sc->panel->height))
+        && (sc->cursor == NULL
+            || cut(list, n, PIECES_MAX, sc->cursor_x, sc->cursor_y, (long)sc->cursor->width, (long)sc->cursor->height))
+        && (sc->badge == NULL
+            || cut(list, n, PIECES_MAX, sc->badge_x, sc->badge_y, (long)sc->badge->width, (long)sc->badge->height))
+        && (!sc->outline_on || cut(list, n, PIECES_MAX, sc->ox, sc->oy, sc->ow, sc->oh));
+}
+
+/*
+ * The pieces of `r` the blitter can copy, into `out`, at most `max`; each
+ * window's from the top down, so a lower window's pieces are cut by the
+ * ones above it through `uncovered`.
+ */
+static int opaque_pieces(long rx, long ry, long rw, long rh, struct piece *out, int max)
+{
+    int k, total = 0;
+
+    for (k = sc->nwin - 1; k >= 0 && total < max; k--) {
+        const struct sc_window *w = &sc->win[k];
+        struct piece list[PIECES_MAX];
+        long c = (w->flags & SC_ROUNDED) ? sc->corner : 0;
+        long x0, y0, x1, y1;
+        int n = 1, p;
+
+        if ((w->flags & (SC_HIDDEN | SC_BLEND | SC_STALE)) || w->picture == NULL || w->bar != NULL
+            || w->src_w != w->w || w->src_h != w->h || picture_gpu(w->picture_slot) == 0) {
+            continue;
+        }
+
+        /* Inside its corners: a band of the corner's size off every side. */
+        x0 = w->x + c > rx ? w->x + c : rx;
+        y0 = w->y + c > ry ? w->y + c : ry;
+        x1 = w->x + w->w - c < rx + rw ? w->x + w->w - c : rx + rw;
+        y1 = w->y + w->h - c < ry + rh ? w->y + w->h - c : ry + rh;
+
+        if (x1 <= x0 || y1 <= y0) {
+            continue;
+        }
+
+        list[0] = (struct piece){ x0, y0, x1 - x0, y1 - y0, k };
+
+        if (!uncovered(list, &n, k)) {
+            continue;
+        }
+
+        for (p = 0; p < n && total < max; p++) {
+            if (list[p].w * list[p].h >= PIECE_LEAST) {
+                out[total++] = list[p];
+            }
+        }
+    }
+
+    return total;
+}
+
+/* The blitter's pieces of one rectangle given, a blit for each window;
+ * the fence of the last. False when it would not take them all. */
+static bool blit_pieces(const struct piece *pc, int n, uint32_t *fence)
+{
+    static struct gpu_blit b;
+    struct gpu_reply rep;
+    int i = 0;
+
+    while (i < n) {
+        int win = pc[i].win;
+        const struct sc_window *w = &sc->win[win];
+
+        memset(&b, 0, sizeof b);
+        b.op = GPU_OP_BLIT;
+        b.src = picture_gpu(w->picture_slot);
+        b.dst = back_id;
+
+        while (i < n && pc[i].win == win && b.n < GPU_BLIT_RECTS) {
+            b.rects[b.n].x = (int32_t)pc[i].x;
+            b.rects[b.n].y = (int32_t)pc[i].y;
+            b.rects[b.n].w = (int32_t)pc[i].w;
+            b.rects[b.n].h = (int32_t)pc[i].h;
+            b.rects[b.n].sx = (int32_t)(pc[i].x - w->x);
+            b.rects[b.n].sy = (int32_t)(pc[i].y - w->y);
+            b.n++;
+            i++;
+        }
+
+        if (gpu_send(&b, 16 + b.n * 24u, -1, &rep, NULL) != GPU_OK) {
+            return false;
+        }
+
+        *fence = rep.engine.value;
+    }
+
+    return true;
+}
+
+/* The fence reached, looked for at once and then a tick at a time. */
+static bool fence_wait(uint32_t fence)
+{
+    struct gpu_reply rep;
+    unsigned i;
+
+    for (i = 0; i < 2000 + 250; i++) {
+        if (gpu_ask(GPU_OP_FENCE, 0, 0, &rep, NULL) == GPU_OK
+            && (int32_t)(rep.engine.value - fence) >= 0) {
+            return true;
+        }
+
+        if (i >= 2000) {
+            kosmos_sleep(1);
+        }
+    }
+
+    return false;
+}
+
+/* The blitter's pieces composed again here, into the scratch buffer, and
+ * compared with what it copied. Said once, after twenty frames. */
+static void check_pieces(const struct piece *pc, int n)
+{
+    struct surface *was = sc->back;
+    int i;
+
+    if (compose_checks == 0 || n == 0) {
+        return;
+    }
+
+    if (scratch.pixels == NULL) {
+        scratch = back;
+        scratch.pixels = malloc((size_t)back.pitch * back.height);
+
+        if (scratch.pixels == NULL) {
+            compose_checks = 0;
+            return;
+        }
+    }
+
+    sc->back = &scratch;
+
+    for (i = 0; i < n; i++) {
+        long x, y;
+
+        (void)scene_compose(sc, pc[i].x, pc[i].y, pc[i].w, pc[i].h);
+
+        for (y = pc[i].y; y < pc[i].y + pc[i].h; y++) {
+            const uint32_t *want = (const uint32_t *)((const uint8_t *)scratch.pixels + (size_t)y * scratch.pitch);
+            const uint32_t *got = (const uint32_t *)((const uint8_t *)back.pixels + (size_t)y * back.pitch);
+
+            for (x = pc[i].x; x < pc[i].x + pc[i].w; x++) {
+                compose_checked++;
+                compose_wrong += (want[x] & 0x00ffffffu) != (got[x] & 0x00ffffffu);
+            }
+        }
+    }
+
+    sc->back = was;
+
+    if (--compose_checks == 0) {
+        struct say_line line;
+
+        free(scratch.pixels);
+        scratch.pixels = NULL;
+        say_begin(&line);
+        say_text(&line, "windowserver: the blitter's composing checked, 20 frames, ");
+        say_dec(&line, (unsigned long)compose_checked);
+        say_text(&line, " pixels, ");
+        say_dec(&line, (unsigned long)compose_wrong);
+        say_text(&line, " different");
+        say_send(console, &line);
+    }
+}
+
+/*
+ * One damaged rectangle composed: its opaque pieces given to the blitter,
+ * the rest composed here around them. The pixels drawn, or -1 out of room.
+ * `*fence` is the last fence given, untouched when nothing was.
+ */
+static long compose_rect(long x, long y, long w, long h, uint32_t *fence, bool *gave)
+{
+    static struct piece pc[PIECES_MAX];
+    static struct piece rest[PIECES_MAX * 2];
+    int n = 0, nrest = 1, i;
+    long drawn = 0, got;
+
+    if (blit_composing) {
+        n = opaque_pieces(x, y, w, h, pc, PIECES_MAX);
+    }
+
+    if (n > 0 && blit_pieces(pc, n, fence)) {
+        *gave = true;
+        rest[0] = (struct piece){ x, y, w, h, -1 };
+
+        for (i = 0; i < n; i++) {
+            if (!cut(rest, &nrest, PIECES_MAX * 2, pc[i].x, pc[i].y, pc[i].w, pc[i].h)) {
+                nrest = -1;
+                break;
+            }
+        }
+
+        /* Too many pieces left to compose: all of it here, the blitter's
+         * copies the same pixels the processor writes - harmless. */
+        if (nrest < 0) {
+            return scene_compose(sc, x, y, w, h);
+        }
+
+        for (i = 0; i < nrest; i++) {
+            got = scene_compose(sc, rest[i].x, rest[i].y, rest[i].w, rest[i].h);
+
+            if (got < 0) {
+                return -1;
+            }
+
+            drawn += got;
+        }
+
+        for (i = 0; i < n; i++) {
+            drawn += pc[i].w * pc[i].h;
+        }
+
+        return drawn;
+    }
+
+    return scene_compose(sc, x, y, w, h);
+}
+
 static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
 {
     const struct ws_rect *rects;
     uint32_t nrect, k;
     uint64_t drawn = 0;
     unsigned long composing = 0, copying = 0, t0, t1;
+    uint32_t fence = 0;
+    bool gave = false;
+    static struct piece checked[PIECES_MAX];
+    int nchecked = 0;
 
     if (back_region.cap < 0 || scene_region.cap < 0 || sc == NULL) {
         *error = WS_ERR_NO_SCENE;
@@ -885,8 +1296,13 @@ static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
         }
 
         t0 = kosmos_ticks();
-        got = scene_compose(sc, x, y, w, h);
+        got = compose_rect(x, y, w, h, &fence, &gave);
         t1 = kosmos_ticks();
+
+        /* For the check: this rectangle's pieces, worked out again. */
+        if (gave && compose_checks > 0 && nchecked < PIECES_MAX) {
+            nchecked += opaque_pieces(x, y, w, h, checked + nchecked, PIECES_MAX - nchecked);
+        }
         composing += t1 - t0;
 
         if (got < 0) {
@@ -903,6 +1319,24 @@ static uint32_t compose(bool show, uint32_t *error, struct ws_reply *rep)
             (void)kosmos_screen_flush((unsigned)x, (unsigned)y, (unsigned)w, (unsigned)h);
             copying += kosmos_ticks() - t1;
         }
+    }
+
+    /*
+     * **Not waited for** (`testing.md` 18.669): the copy to the screen is
+     * behind these in the ring, and the next frame is not composed until
+     * that copy's fence is reached (`ready_for_frame`) - so nothing here
+     * reads what the blitter is still writing, but VNC's mirror, which may
+     * be a frame behind. Waiting cost more than the blitter saved: 3.41 ms
+     * a frame against 0.80. Only the checked frames wait, to be compared.
+     */
+    if (gave && compose_checks > 0) {
+        t0 = kosmos_ticks();
+
+        if (fence_wait(fence)) {
+            check_pieces(checked, nchecked);
+        }
+
+        composing += kosmos_ticks() - t0;
     }
 
     if (show && flipping) {

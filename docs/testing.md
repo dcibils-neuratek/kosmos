@@ -27299,3 +27299,52 @@ imported back buffer is named "back buffer, shared" rather than "kind 2".
 nothing of it runs. Full gate 93 of 95: `x86-trackerlist` and `x86-film`
 failed at 488 s and 529 s and passed alone, 11 and 13 checks.
 
+## 18.669 Composing's opaque parts on the blitter: correct, and slower (`m700-2d.md` step 6b)
+
+**What was built.** The driver's blits take a source place of their own
+(`struct gpu_blit`'s rectangles six words now), several may be in flight
+at once - refused only when the ring could lap its head - and each is
+timed by the engine's clock in a slot of its own fence. The window server
+imports each window's picture into the GTT when it is first composed,
+forgets it with its slot, and splits each damaged rectangle: the pieces
+whose final pixels are a plain copy of an opaque window's picture - inside
+its corners, its lights and its grip, under no window, shadow, menu,
+panel, level bar, badge, pointer or outline - go to the blitter, straight
+from the window's buffer; the processor composes the rest around them.
+
+**It was right the first time**: the first 20 frames recomposed by the
+processor into a scratch buffer and compared - 8,149,544 pixels, and
+9,042,128 on the next boot, 0 different. Diego: "it works fine".
+
+**And it made the desktop worse.** A window dragged for 30 s:
+
+| | 6a (18.667) | 6b, waiting for its pieces | 6b, not waiting |
+|---|---|---|---|
+| the window server, a frame | 0.80 ms | 3.41 ms | **0.43 ms** |
+| busy, of 30 s | 4.8 s | 7.6 s | **3.9 s** |
+| worst pass | 3.9 ms | 14.5 ms | 3.0 ms |
+| **frames shown a second** | **57** | 43 | **42** |
+
+Waiting for the blitter's pieces before answering put the GPU's time on
+the processor's. Not waiting - the copy to the screen is behind them in the
+ring, and the next frame waits for that copy's fence anyway - gave the
+processor its best figure yet, and the screen fewer frames: the blitter
+could not finish the windows' copies and the copy to the screen inside a
+refresh. Diego, dragging: "it looks fast but it looks slower than before,
+it has some choppy moments". **At rest it held the blitter 81% busy** and
+the GT out of RC6, copying windows that redraw every second (Monitor,
+Processes) - where 6a's copy from the back buffer is 1.4%. The blitter
+reads applications' buffers far more slowly than the back buffer, which
+is the next thing to understand.
+
+**So it is off** (`blit_composing = false`, the reason beside it): the
+screen's frames come first. The code stays for one experiment,
+`XY_FAST_COPY_BLT` - the copy i915 uses on Gen9 - whose rules for linear
+buffers have to come from the PRM, not a guess: the back buffer's rows are
+6,880 bytes, not a multiple of 64. If it keeps up, 6b comes back on; if
+not, its code comes out. With it off, the M700 is back on 6a's figures:
+RC6 97%, the blitter 1.4%, 0.02 W.
+
+**Tests.** As 18.667: the checks on every M700 boot, the encodings on the
+host, the processor's path under QEMU. Full gate 95/95 in 9:08.
+

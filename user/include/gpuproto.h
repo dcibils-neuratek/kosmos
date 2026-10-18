@@ -70,9 +70,10 @@
  * **The blitter's copies** (`m700-2d.md` step 6). `BUFFER_IMPORT` enters a
  * region the caller hands over - `x` by `y` pixels at `pitch`, from
  * `offset` - in the GTT, page by page, and answers its buffer id; the
- * window server's back buffer is the first. `BLIT` copies rectangles from
- * one buffer to another, each to the same place, in `struct gpu_blit`'s
- * shape, and answers at once with the fence its last command will write;
+ * window server's back buffer is the first, a window's picture next (6b).
+ * `BLIT` copies rectangles from one buffer to another, each from its own
+ * place in the source, in `struct gpu_blit`'s shape, and answers at once
+ * with the fence its last command will write - several may be in flight;
  * `FENCE` says which fence the blitter has reached. `BUFFER_FORGET` gives
  * an imported buffer's slots back.
  */
@@ -102,7 +103,7 @@
 #define GPU_ERR_NO_WAKE      9u     /* forcewake asked for and not acknowledged */
 #define GPU_ERR_NO_RING      10u    /* the ring would not take RING_VALID */
 #define GPU_ERR_NO_ANSWER    11u    /* the command was given and its number never came */
-#define GPU_ERR_BUSY         12u    /* the blitter has not reached the last fence yet */
+#define GPU_ERR_BUSY         12u    /* the blitter has too much in flight, or is reading it */
 
 struct gpu_request {
     uint32_t op;
@@ -151,12 +152,13 @@ struct gpu_blit {
     uint32_t src, dst;              /* buffer ids */
     uint32_t n;                     /* rectangles that follow, up to GPU_BLIT_RECTS */
     struct {
-        int32_t x, y, w, h;         /* the same place in both */
+        int32_t x, y, w, h;         /* where, in the destination */
+        int32_t sx, sy;             /* and where from, in the source (6b) */
     } rects[GPU_BLIT_RECTS];
 };
 
-_Static_assert(sizeof(struct gpu_blit) == 16 + GPU_BLIT_RECTS * 16,
-               "a blit is four words and sixty-four rectangles of four");
+_Static_assert(sizeof(struct gpu_blit) == 16 + GPU_BLIT_RECTS * 24,
+               "a blit is four words and sixty-four rectangles of six");
 
 struct gpu_stats {
     uint32_t error;

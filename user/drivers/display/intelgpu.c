@@ -610,7 +610,7 @@ static void cursor_test(long console, unsigned seconds, struct gpu_reply *rep)
  * plane's surface pointed at one of them at the next vertical blank.
  *------------------------------------------------------------------------*/
 
-#define BUFFERS_MAX 16u                 /* the screen's two, and room after */
+#define BUFFERS_MAX 256u                /* the screens, the back buffer, every window's pictures */
 
 /* The screen shown by flips: from the moment a second screen is made,
  * since a screen buffer is made only to be flipped to - so the desktop's
@@ -730,8 +730,9 @@ static bool forcewake(bool on)
 #define RING_PAGES   4u                 /* 16 KB: sixty-four copies and room */
 #define RING_DWORDS  (RING_PAGES * 1024u)
 #define FENCE_AT     64u                /* the status page's dword the fence lands in: byte 256 */
-#define TS_START_AT  72u                /* the engine's clock before a copy, and after it */
-#define TS_END_AT    74u
+#define TS_AT        96u                /* the engine's clock before and after each copy: */
+#define TS_SLOTS     16u                /*   two dwords a fence, sixteen fences round */
+#define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
 
 static struct {
     bool              ready;
@@ -744,8 +745,9 @@ static struct {
     unsigned long     busy_counter;     /* the counter's ticks the blitter has worked, in all */
     uint32_t          blits;            /* copies given it, since boot */
     unsigned long     ts_hz;            /* RING_TIMESTAMP's rate, measured against the counter */
-    uint32_t          timed_fence;      /* the fence whose copy was timed, 0 when counted */
+    uint32_t          counted;          /* the last fence whose copy's time is added */
     uint64_t          busy_ts;          /* the engine's clock ticks spent copying, in all */
+    uint32_t          in_flight;        /* dwords given since the ring was last idle */
 } E;
 
 static uint32_t eng(uint32_t offset)
@@ -849,13 +851,22 @@ static uint32_t fence_reached(void)
  * the time it worked added to its count. */
 static bool engine_idle(void)
 {
-    /* A timed copy finished: its time, by the engine's own clock, added. */
-    if (E.ready && E.timed_fence != 0 && (int32_t)(fence_reached() - E.timed_fence) >= 0) {
-        E.busy_ts += (uint32_t)(E.status[TS_END_AT] - E.status[TS_START_AT]);
-        E.timed_fence = 0;
+    /* The copies finished since: each one's time, by the engine's own
+     * clock, added - fences the engine test made store no times and are
+     * skipped by having their slot zeroed. */
+    if (E.ready) {
+        uint32_t reached = fence_reached();
+
+        while ((int32_t)(reached - E.counted) > 0) {
+            volatile uint32_t *t = &E.status[TS_AT + 2u * (++E.counted % TS_SLOTS)];
+
+            E.busy_ts += (uint32_t)(t[1] - t[0]);
+            t[0] = t[1] = 0;
+        }
     }
 
     if (!E.ready || fence_reached() == E.issued) {
+        E.in_flight = 0;
         if (E.busy_since != 0) {
             E.busy_counter += kosmos_ticks() - E.busy_since;
             E.busy_since = 0;
@@ -872,19 +883,24 @@ static bool engine_idle(void)
  * Commands into the ring: `n` dwords at the tail, the rest of the ring
  * filled with MI_NOOP and the tail back at its start when they would not
  * fit before its end - the engine reads them in order and wraps as the
- * tail did. Only ever called on an idle ring, so all of it is free.
+ * tail did. What is written since the ring was last idle is counted, and
+ * a submission refused (`GPU_ERR_BUSY`) before it could reach the head.
  */
 static void emit(const uint32_t *dw, uint32_t n)
 {
     uint32_t i;
 
     if (E.tail + n > RING_DWORDS) {
+        E.in_flight += RING_DWORDS - E.tail;
+
         while (E.tail < RING_DWORDS) {
             E.ring[E.tail++] = IGPU_MI_NOOP;
         }
 
         E.tail = 0;
     }
+
+    E.in_flight += n;
 
     for (i = 0; i < n; i++) {
         E.ring[E.tail++] = dw[i];
@@ -1136,7 +1152,7 @@ static uint32_t buffer_forget(const struct gpu_request *rq)
 static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
 {
     const struct buffer *src, *dst;
-    uint32_t error, k, given = 0;
+    uint32_t error, k, given = 0, timed;
 
     if (!G.found) {
         return GPU_ERR_NO_DEVICE;
@@ -1154,33 +1170,50 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
         return error;
     }
 
-    if (!engine_idle()) {
+    (void)engine_idle();
+
+    /* Room for it all - ten dwords a copy and twenty around them - or not
+     * now: several may be in flight, never more than the ring holds. */
+    if (E.in_flight + b->n * 10u + 40u > RING_ROOM
+        || (int32_t)(E.issued + 1u - E.counted) > (int32_t)TS_SLOTS - 1) {
         return GPU_ERR_BUSY;
     }
 
     /* The engine's clock stored first, and again after the copies have
-     * been flushed to memory: the difference is their time (G3). */
+     * been flushed to memory: the difference is their time (G3), in the
+     * slot of the fence they end with. */
+    timed = TS_AT + 2u * ((E.issued + 1u) % TS_SLOTS);
+
     {
         uint32_t dw[4] = { IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
-                           E.status_gtt + TS_START_AT * 4u, 0 };
+                           E.status_gtt + timed * 4u, 0 };
         emit(dw, 4);
     }
 
     for (k = 0; k < b->n; k++) {
         long x = b->rects[k].x, y = b->rects[k].y;
-        long x1 = x + b->rects[k].w, y1 = y + b->rects[k].h;
-        long w_max = (long)(src->width < dst->width ? src->width : dst->width);
-        long h_max = (long)(src->height < dst->height ? src->height : dst->height);
+        long w = b->rects[k].w, h = b->rects[k].h;
+        long sx = b->rects[k].sx, sy = b->rects[k].sy;
+        long x1, y1;
         uint32_t dw[10];
 
-        if (x < 0) x = 0;
-        if (y < 0) y = 0;
-        if (x1 > w_max) x1 = w_max;
-        if (y1 > h_max) y1 = h_max;
+        /* Held to both buffers: the destination's place and the source's,
+         * each clipped, the other moved with it. */
+        if (x < 0) { sx -= x; w += x; x = 0; }
+        if (y < 0) { sy -= y; h += y; y = 0; }
+        if (sx < 0) { x -= sx; w += sx; sx = 0; }
+        if (sy < 0) { y -= sy; h += sy; sy = 0; }
+        if (x + w > (long)dst->width) w = (long)dst->width - x;
+        if (y + h > (long)dst->height) h = (long)dst->height - y;
+        if (sx + w > (long)src->width) w = (long)src->width - sx;
+        if (sy + h > (long)src->height) h = (long)src->height - sy;
 
-        if (x1 <= x || y1 <= y) {
+        if (w <= 0 || h <= 0) {
             continue;
         }
+
+        x1 = x + w;
+        y1 = y + h;
 
         dw[0] = IGPU_XY_SRC_COPY_BLT;
         dw[1] = IGPU_BLT_DEPTH_32 | IGPU_BLT_ROP_SRC_COPY | dst->pitch;
@@ -1188,7 +1221,7 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
         dw[3] = (uint32_t)y1 << 16 | (uint32_t)x1;
         dw[4] = dst->gtt;
         dw[5] = 0;
-        dw[6] = (uint32_t)y << 16 | (uint32_t)x;
+        dw[6] = (uint32_t)sy << 16 | (uint32_t)sx;
         dw[7] = src->pitch;
         dw[8] = src->gtt;
         dw[9] = 0;
@@ -1199,13 +1232,12 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
     {
         uint32_t dw[8] = { IGPU_MI_FLUSH_DW, 0, 0, 0,
                            IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
-                           E.status_gtt + TS_END_AT * 4u, 0 };
+                           E.status_gtt + (timed + 1u) * 4u, 0 };
         emit(dw, 8);
     }
 
     E.blits += given;
     rep->engine.value = submit();
-    E.timed_fence = rep->engine.value;
     rep->engine.head = given;
     return GPU_OK;
 }
@@ -1493,7 +1525,7 @@ void intelgpu_server(long console, long endpoint)
 
                 memset(&b, 0, sizeof b);
                 memcpy(&b, msg.data, msg.length < sizeof b ? msg.length : sizeof b);
-                rep.error = msg.length >= 16 && msg.length >= 16 + b.n * 16u
+                rep.error = msg.length >= 16 && msg.length >= 16 + b.n * 24u
                           ? blit(&b, &rep) : GPU_ERR_BAD_OP;
                 break;
             }
