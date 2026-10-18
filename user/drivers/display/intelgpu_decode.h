@@ -90,6 +90,13 @@
  * writes are flushed - the address 8-aligned and its bit 5 clear. */
 #define IGPU_MI_FLUSH_DW_STORE  ((((0x26u << 23) | 1u) + 1u) | (1u << 14))
 #define IGPU_MI_FLUSH_DW_GTT    (1u << 2)
+/* The same flush with nothing stored: it waits for the engine's writes. */
+#define IGPU_MI_FLUSH_DW        (((0x26u << 23) | 1u) + 1u)
+/* A register's value stored to memory (`intel_gpu_commands.h`:
+ * MI_STORE_REGISTER_MEM_GEN8, MI_SRM_LRM_GLOBAL_GTT): four dwords - itself,
+ * the register's offset, the address low and high. The blitter's busy time
+ * is its RING_TIMESTAMP stored before a copy and after it (G3). */
+#define IGPU_MI_STORE_REG_MEM   ((0x24u << 23) | 2u | (1u << 22))
 #define IGPU_PIPE_FLIPCOUNT_A   0x70044u    /* flips the pipe has latched */
 #define IGPU_CURCNTR_A          0x70080u
 #define IGPU_CURBASE_A          0x70084u

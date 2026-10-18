@@ -100,5 +100,7 @@ takes.
    QEMU and the window drawn; its picture in the dated screenshot.
    **Done in 0.11.267** (`testing.md` 18.665), its suite `x86-gpumon`.
 4. **G3 - an engine's busyness**, when the blitter has work (step 5).
+   **The blitter's done in 0.11.270** (`testing.md` 18.668), by its own
+   clock; render and video when they have work.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`).

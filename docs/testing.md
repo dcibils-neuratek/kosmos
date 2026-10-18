@@ -27271,3 +27271,31 @@ pixel check on every M700 boot is the blitter's test there. Full gate
 94 of 95, `x86-automations` - QEMU gone before its first step, 385 s in -
 passing alone, 31 checks in 57 s.
 
+## 18.668 The blitter's busy time, by its own clock (`gpumonitor.md` G3)
+
+GPU Monitor's Busy graph said "no engine has been sent work yet" after
+6a had given the blitter every frame - Diego: "but the gpu monitor says no
+engine has been sent work yet in the busy graph". Now each blit is
+bracketed by `MI_STORE_REGISTER_MEM` of the blit engine's `RING_TIMESTAMP`
+into the status page - before the copies, and after an `MI_FLUSH_DW` that
+waits for their writes - and the driver adds the difference when the
+fence is seen. The clock's rate is measured once against the processor's
+counter as the ring starts, not worked out from `CTC_MODE`
+(`intel_gt_clock_utils.c`: 24 MHz on Skylake, shifted by the firmware's
+choice). Polling would have counted up to a scheduler tick a frame and
+shown the blitter ten times busier than it is. `gpu_stats` carries it in
+its spare word, `blitter_busy_us`; `gpu.since` makes it a share; `gpustat`,
+GPU Monitor's Blitter chip, its Busy graph and its Utilisation say it. The
+imported back buffer is named "back buffer, shared" rather than "kind 2".
+
+**The M700, 17 October**, the desktop redrawing four frames a second:
+
+    asleep     97% of 3.0 s in RC6
+    power      0.02 W
+    engines    blitter 1.3% busy; render, video: no work sent yet
+    2    windowserver     1720x1440    9.5 MB  back buffer, shared
+
+**Tests.** The commands' encodings in `test_intelgpu_decode`; under QEMU
+nothing of it runs. Full gate 93 of 95: `x86-trackerlist` and `x86-film`
+failed at 488 s and 529 s and passed alone, 11 and 13 checks.
+

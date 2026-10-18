@@ -135,7 +135,7 @@ gpu.MODELS = {
   [0x9BC5] = "UHD Graphics 630", [0x9B41] = "UHD Graphics", [0x9A49] = "Iris Xe Graphics",
 }
 
-gpu.KINDS = { [0] = "scanned out", [1] = "cursor plane" }
+gpu.KINDS = { [0] = "scanned out", [1] = "cursor plane", [2] = "back buffer, shared" }
 
 function gpu.stats()
   local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, OP_STATS, 0, 0, 0, 0, 0, 0, 0),
@@ -145,7 +145,7 @@ function gpu.stats()
   if #reply < 64 then return nil, "the GPU's driver sent a reply of the wrong size" end
 
   local err, device, width, height, mhz, max_mhz, min_mhz, rpstat, rc6, flips, frames,
-        underrun, desktop, shown, n = string.unpack(STATS_HEAD, reply)
+        underrun, desktop, shown, n, blitter_us = string.unpack(STATS_HEAD, reply)
 
   if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
 
@@ -153,7 +153,8 @@ function gpu.stats()
               width = width, height = height, mhz = mhz, max_mhz = max_mhz, min_mhz = min_mhz,
               rpstat = rpstat, rc6 = rc6, flips = flips, frames = frames,
               underrun = underrun ~= 0, cursor = desktop & 1 ~= 0, page_flips = desktop & 2 ~= 0,
-              shown = shown ~= 0xffffffff and shown or nil, buffers = {}, ticks = sys.ticks() }
+              shown = shown ~= 0xffffffff and shown or nil, buffers = {}, ticks = sys.ticks(),
+              blitter_us = blitter_us }
 
   for i = 1, math.min(n, (#reply - 64) // 24) do
     local id, holder, w, h, pages, kind = string.unpack(STATS_ROW, reply, 64 + (i - 1) * 24 + 1)
@@ -176,7 +177,9 @@ function gpu.since(a, b, counter_hz)
   return { seconds = seconds,
            flips = d(a.flips, b.flips) / seconds,
            frames = d(a.frames, b.frames) / seconds,
-           asleep = math.min(1, d(a.rc6, b.rc6) * 1280e-9 / seconds) }
+           asleep = math.min(1, d(a.rc6, b.rc6) * 1280e-9 / seconds),
+           -- The blitter's share of the time, by its own clock (G3).
+           blitter = math.min(1, d(a.blitter_us or 0, b.blitter_us or 0) / 1e6 / seconds) }
 end
 
 -- What the desktop is drawn with, in the words of its label: nil when

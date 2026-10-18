@@ -82,7 +82,7 @@
 #define GPU_OP_BUFFER_FORGET 14u
 
 #define GPU_BLIT_RECTS       64u
-#define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in */
+#define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 
 #define GPU_STATS_BUFFERS    16u
 #define GPU_DESKTOP_CURSOR   1u     /* the pointer is on the cursor plane */
@@ -173,7 +173,7 @@ struct gpu_stats {
     uint32_t desktop;               /* GPU_DESKTOP_* */
     uint32_t shown;                 /* the buffer scanned out, ~0u for none of ours */
     uint32_t nbuffers;
-    uint32_t reserved;
+    uint32_t blitter_busy_us;       /* the blit engine's own clock, its copies' time; wrapping */
     struct {
         uint32_t id, holder;        /* the holder's process id; 0 the firmware */
         uint32_t width, height, pages, kind;

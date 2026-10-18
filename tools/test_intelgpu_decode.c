@@ -121,6 +121,9 @@ int main(void)
     check(IGPU_MI_FLUSH_DW_STORE == 0x13004002u, "MI_FLUSH_DW, a dword longer, storing a dword");
     check(IGPU_MI_FLUSH_DW_GTT == 4u, "its address in the global GTT, bit 2");
 
+    check(IGPU_MI_STORE_REG_MEM == 0x12400002u, "MI_STORE_REGISTER_MEM_GEN8 with the global GTT");
+    check(IGPU_MI_FLUSH_DW == 0x13000002u, "MI_FLUSH_DW, a dword longer, storing nothing");
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }

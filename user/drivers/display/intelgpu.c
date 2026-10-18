@@ -730,6 +730,8 @@ static bool forcewake(bool on)
 #define RING_PAGES   4u                 /* 16 KB: sixty-four copies and room */
 #define RING_DWORDS  (RING_PAGES * 1024u)
 #define FENCE_AT     64u                /* the status page's dword the fence lands in: byte 256 */
+#define TS_START_AT  72u                /* the engine's clock before a copy, and after it */
+#define TS_END_AT    74u
 
 static struct {
     bool              ready;
@@ -741,6 +743,9 @@ static struct {
     unsigned long     busy_since;       /* counter: when the work now running was given */
     unsigned long     busy_counter;     /* the counter's ticks the blitter has worked, in all */
     uint32_t          blits;            /* copies given it, since boot */
+    unsigned long     ts_hz;            /* RING_TIMESTAMP's rate, measured against the counter */
+    uint32_t          timed_fence;      /* the fence whose copy was timed, 0 when counted */
+    uint64_t          busy_ts;          /* the engine's clock ticks spent copying, in all */
 } E;
 
 static uint32_t eng(uint32_t offset)
@@ -803,6 +808,29 @@ static uint32_t engine_start(void)
     }
 
     eng_write(IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);     /* masked: STOP_RING off */
+
+    /*
+     * **The engine's clock's rate, measured** rather than worked out from
+     * CTC_MODE (`intel_gt_clock_utils.c`: 24 MHz on Skylake, divided by a
+     * shift the firmware chose): RING_TIMESTAMP read across five scheduler
+     * ticks against the processor's counter, whose rate the kernel knows.
+     */
+    {
+        static struct sysinfo machine;     /* large: not on the stack */
+        uint32_t ts0, ts1;
+        unsigned long c0, c1;
+
+        ts0 = eng(IGPU_RING_TIMESTAMP);
+        c0 = kosmos_ticks();
+        kosmos_sleep(5);
+        ts1 = eng(IGPU_RING_TIMESTAMP);
+        c1 = kosmos_ticks();
+
+        if (kosmos_sysinfo(&machine) == 0 && c1 > c0 && ts1 != ts0) {
+            E.ts_hz = (unsigned long)((uint64_t)(uint32_t)(ts1 - ts0) * machine.counter_hz / (c1 - c0));
+        }
+    }
+
     E.tail = 0;
     E.status[FENCE_AT] = 0;
     E.issued = 0;
@@ -821,6 +849,12 @@ static uint32_t fence_reached(void)
  * the time it worked added to its count. */
 static bool engine_idle(void)
 {
+    /* A timed copy finished: its time, by the engine's own clock, added. */
+    if (E.ready && E.timed_fence != 0 && (int32_t)(fence_reached() - E.timed_fence) >= 0) {
+        E.busy_ts += (uint32_t)(E.status[TS_END_AT] - E.status[TS_START_AT]);
+        E.timed_fence = 0;
+    }
+
     if (!E.ready || fence_reached() == E.issued) {
         if (E.busy_since != 0) {
             E.busy_counter += kosmos_ticks() - E.busy_since;
@@ -1124,6 +1158,14 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
         return GPU_ERR_BUSY;
     }
 
+    /* The engine's clock stored first, and again after the copies have
+     * been flushed to memory: the difference is their time (G3). */
+    {
+        uint32_t dw[4] = { IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
+                           E.status_gtt + TS_START_AT * 4u, 0 };
+        emit(dw, 4);
+    }
+
     for (k = 0; k < b->n; k++) {
         long x = b->rects[k].x, y = b->rects[k].y;
         long x1 = x + b->rects[k].w, y1 = y + b->rects[k].h;
@@ -1154,8 +1196,16 @@ static uint32_t blit(const struct gpu_blit *b, struct gpu_reply *rep)
         given++;
     }
 
+    {
+        uint32_t dw[8] = { IGPU_MI_FLUSH_DW, 0, 0, 0,
+                           IGPU_MI_STORE_REG_MEM, IGPU_BLT_BASE + IGPU_RING_TIMESTAMP,
+                           E.status_gtt + TS_END_AT * 4u, 0 };
+        emit(dw, 8);
+    }
+
     E.blits += given;
     rep->engine.value = submit();
+    E.timed_fence = rep->engine.value;
     rep->engine.head = given;
     return GPU_OK;
 }
@@ -1324,6 +1374,8 @@ static void stats(struct gpu_stats *st)
     st->freq_max_mhz = (cap & 0xFFu) * 50u;
     st->freq_min_mhz = ((cap >> 16) & 0xFFu) * 50u;
     st->rc6 = reg(G.regs, IGPU_RC6_RESIDENCY);
+    (void)engine_idle();
+    st->blitter_busy_us = E.ts_hz ? (uint32_t)(E.busy_ts * 1000000u / E.ts_hz) : 0u;
 
     if (G.pipe < 0) {
         st->shown = ~0u;

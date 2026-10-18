@@ -67,7 +67,7 @@ local now, rate = nil, nil              -- the latest snapshot, and rates from t
 local last, last_info = nil, nil
 local watts = nil                       -- the GPU's power, where it is known
 local why_not = nil                     -- the driver's sentence when there is no GPU
-local clock_h, mem_h, disp_h = {}, {}, {}
+local clock_h, mem_h, disp_h, busy_h = {}, {}, {}, {}
 local names = {}
 
 local function sample()
@@ -89,6 +89,7 @@ local function sample()
 
       for _, b in ipairs(s.buffers) do bytes = bytes + b.bytes end
 
+      ui.history.push(busy_h, { math.floor(rate.blitter * 100 + 0.5) }, COLUMNS)
       ui.history.push(clock_h, { s.max_mhz > 0 and math.floor(100 * s.mhz / s.max_mhz) or 0 },
                       COLUMNS)
       ui.history.push(mem_h, { math.min(100, math.floor(100 * bytes / MEMORY_SCALE + 0.5)) },
@@ -230,9 +231,12 @@ end
 
 local ENGINES = { "Render", "Blitter", "Video", "Video enhance" }
 
+-- Each engine's chip: the blitter's share now (G3), the others a dash -
+-- nothing sends them work yet.
 local function engines(g, x, y)
   for _, name in ipairs(ENGINES) do
-    local text = name .. "  -"
+    local text = name == "Blitter" and rate and ("Blitter  %.1f%%"):format(rate.blitter * 100)
+                 or (name .. "  -")
     local w = gfx.measure(text, "label") + 18
 
     g:frame_round(x, y, w, 22, theme.line_soft, 6)
@@ -283,7 +287,7 @@ local function side(g, x, y)
     y = y + gfx.height("heading") + 12
   end
 
-  fact("Utilisation", "no work sent yet")
+  fact("Utilisation", rate and ("blitter %.1f%%"):format(rate.blitter * 100) or "-")
   fact("Clock", s and (clock_words(s) .. " / " .. s.max_mhz .. " MHz") or "-", GPU_COLOUR)
   fact("Asleep (RC6)", rate and ("%.0f%%"):format(rate.asleep * 100) or "-")
   fact("Power", watts and ("%.2f W"):format(watts) or "not known here")
@@ -341,7 +345,9 @@ function body:draw(g)
 
   heading(g, x, M.busy_heading, "Busy", pace.heading:lower())
   engines(g, x, M.engines)
-  note(g, x, M.busy, SMALL_H, "No engine has been sent work yet - the processor draws, the display shows.")
+  -- The blitter's busy share over the minute, by its own clock; render and
+  -- video have no work yet, which their chips above say.
+  graph(g, x, M.busy, SMALL_H, busy_h, GPU_COLOUR, "100%")
 
   heading(g, x, M.clock_heading, "Clock", rate and ("asleep %.0f%% of the time"):format(rate.asleep * 100),
           GPU_COLOUR)
@@ -383,7 +389,7 @@ set_pace = function(p)
 
   -- Begun again: columns at one pace beside columns at another would be a
   -- time axis that lies.
-  clock_h, mem_h, disp_h, last = {}, {}, {}, nil
+  clock_h, mem_h, disp_h, busy_h, last = {}, {}, {}, {}, nil
   sample()
   print(("gpumon: %s"):format(p.menu:lower()))
 end
