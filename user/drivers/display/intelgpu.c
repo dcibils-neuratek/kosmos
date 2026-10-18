@@ -30,6 +30,7 @@
 #include "gpuproto.h"
 #include "intelgpu_decode.h"
 #include "intelgpu_fill.h"
+#include "intelgpu_kernel.h"
 #include "intelgpu_renderstate.h"
 #include "intelgpu_render.h"
 #include "intelgpu_blend.h"
@@ -1300,6 +1301,336 @@ static void compute_test(long console, uint32_t colour, struct gpu_reply *rep)
 }
 
 /*
+ * **A program's own kernels** (`docs/compute.md` C2): a kernel's
+ * instructions copied out of the region they came in, checked there
+ * (`intelgpu_kernel.c`, decision D2) - so nothing the program does to its
+ * region after can change what was checked - and copied again into pages
+ * of the driver's own, which are the instruction base of every run of it.
+ * A kernel let go keeps its pages for the next one that fits, since GTT
+ * slots are never given back.
+ */
+#define KERNELS_MAX   64u
+
+static struct kernel {
+    bool               used;
+    uint32_t           holder;          /* the process that handed it in */
+    volatile uint32_t *cpu;
+    uint32_t           gtt;             /* its pages' GTT address: a run's instruction base */
+    uint32_t           pages, bytes;
+    int32_t            bti_max;         /* a run must bind at least this many buffers, plus one */
+} K[KERNELS_MAX];
+
+static uint32_t kernel_words[IGPU_KERNEL_MAX_BYTES / 4u];
+
+static uint32_t kernel_new(long console, long cap, const struct gpu_request *rq, struct gpu_reply *rep)
+{
+    struct igpu_kernel_verdict v;
+    struct say_line line;
+    uint32_t bytes = (uint32_t)rq->x, pages = ((uint32_t)rq->x + 4095u) / 4096u, id, i, spare = KERNELS_MAX;
+    long size, at;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (cap < 0 || rq->x <= 0 || bytes > IGPU_KERNEL_MAX_BYTES || (size = kosmos_mem_size(cap)) <= 0
+        || (unsigned long)rq->offset + bytes > (unsigned long)size * 4096ul
+        || (at = kosmos_mem_map(cap)) < 0) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    __builtin_memcpy(kernel_words, (const char *)at + rq->offset, bytes);
+    kosmos_share_unmap((unsigned long)at, (unsigned long)size);
+
+    if (igpu_kernel_check(kernel_words, bytes, &v) != GPU_KERNEL_OK) {
+        rep->words[1] = v.at;
+        rep->words[2] = v.why;
+        return GPU_ERR_KERNEL;
+    }
+
+    /* A free slot - one whose pages are large enough first. */
+    for (id = 1; id < KERNELS_MAX; id++) {
+        if (!K[id].used && K[id].cpu != NULL && K[id].pages >= pages) {
+            break;
+        }
+
+        if (!K[id].used && K[id].cpu == NULL && spare == KERNELS_MAX) {
+            spare = id;
+        }
+    }
+
+    if (id == KERNELS_MAX) {
+        if (spare == KERNELS_MAX) {
+            return GPU_ERR_NO_MEMORY;
+        }
+
+        id = spare;
+
+        if (!gtt_pages(pages, &K[id].cpu, &K[id].gtt)) {
+            K[id].cpu = NULL;
+            return GPU_ERR_NO_MEMORY;
+        }
+
+        K[id].pages = pages;
+    }
+
+    for (i = 0; i < K[id].pages * 1024u; i++) {
+        K[id].cpu[i] = i < bytes / 4u ? kernel_words[i] : 0u;
+    }
+
+    K[id].used = true;
+    K[id].holder = holder_of_request();
+    K[id].bytes = bytes;
+    K[id].bti_max = v.bti_max;
+    rep->buffer.id = id;
+    rep->buffer.gtt = K[id].gtt;
+    rep->buffer.pages = K[id].pages;
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: kernel ");
+    say_dec(&line, id);
+    say_text(&line, " checked and kept, ");
+    say_dec(&line, bytes / 16u);
+    say_text(&line, " instructions, buffers up to ");
+    say_dec(&line, (unsigned long)(v.bti_max + 1));
+    say_send(console, &line);
+    return GPU_OK;
+}
+
+static uint32_t kernel_forget(const struct gpu_request *rq)
+{
+    uint32_t id = (uint32_t)rq->x;
+
+    if (rq->x <= 0 || id >= KERNELS_MAX || !K[id].used) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    if (K[id].holder != holder_of_request()) {
+        return GPU_ERR_NOT_YOURS;
+    }
+
+    if (!engine_idle(&RCS)) {
+        return GPU_ERR_BUSY;            /* a run of it may still be reading it */
+    }
+
+    K[id].used = false;
+    K[id].holder = 0;
+    return GPU_OK;
+}
+
+/*
+ * **A run** (`compute.md` C2): the kernel over a grid of thread groups, a
+ * thread a group, as 7b's fill - `PIPELINE_SELECT` GPGPU, the bases, the
+ * front end, the constants, the descriptor, the walker - with the kernel's
+ * own pages as the instruction base and the buffers it is handed in its
+ * binding table, each a surface the driver makes from what the buffer
+ * is: the hardware drops a message's reads and writes outside a surface,
+ * so the buffers are all a kernel reaches. Answered at once with the
+ * fence; one run at a time, since its state page is one.
+ *
+ * Its state page: the constants at 0, the descriptor at 0x100, the binding
+ * table at 0x140 and eight surface states from 0x180, 64 bytes each. The
+ * buffers are seen uncached (MOCS 0), so what the processor wrote is what
+ * the kernel reads and what it writes is in memory when the fence comes.
+ */
+#define RUN_CURBE_AT  0x000u
+#define RUN_IDD_AT    0x100u
+#define RUN_BT_AT     0x140u
+#define RUN_SS_AT     0x180u
+#define RUN_THREADS   168u              /* the HD 530's 24 EUs, seven threads each */
+
+#define SURFACEFORMAT_B8G8R8A8_UNORM 0x0c0u   /* isl_format.h */
+#define SURFACEFORMAT_R32_FLOAT      0x0d8u
+#define SURFACEFORMAT_RAW            0x1ffu
+
+static volatile uint32_t *run_state;
+static uint32_t run_state_gtt, run_fence;
+static bool run_given;
+
+/* A buffer as its kernel sees it, into 16 dwords of surface state. */
+static bool run_surface(volatile uint32_t *ss, const struct buffer *b, uint32_t view)
+{
+    unsigned i;
+
+    for (i = 0; i < 16; i++) {
+        ss[i] = 0;
+    }
+
+    if (view == GPU_VIEW_BYTES) {
+        uint32_t last = b->pitch * b->height - 1u;      /* elements of one byte, less one */
+
+        ss[0] = (4u << 29) | (SURFACEFORMAT_RAW << 18) | (1u << 8);
+        ss[2] = (last & 0x7fu) | (((last >> 7) & 0x3fffu) << 16);
+        ss[3] = ((last >> 21) & 0x7ffu) << 21;           /* the pitch: one byte, less one */
+    } else {
+        uint32_t format, width;
+
+        switch (view) {
+        case GPU_VIEW_BGRA: format = SURFACEFORMAT_B8G8R8A8_UNORM; width = b->width;      break;
+        case GPU_VIEW_R8:   format = IGPU_SURFACEFORMAT_R8_UNORM;  width = b->width * 4u; break;
+        case GPU_VIEW_R32F: format = SURFACEFORMAT_R32_FLOAT;      width = b->width;      break;
+        default:            return false;
+        }
+
+        ss[0] = (1u << 29) | (format << 18) | (1u << 16) | (1u << 14) | (1u << 8);
+        ss[2] = (width - 1u) | ((b->height - 1u) << 16);
+        ss[3] = b->pitch - 1u;
+    }
+
+    ss[7] = (4u << 25) | (5u << 22) | (6u << 19) | (7u << 16);   /* R, G, B, A */
+    ss[8] = b->gtt;
+    return true;
+}
+
+static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
+{
+    const uint32_t who = holder_of_request();
+    const struct kernel *k;
+    uint32_t error, i, regs;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (q->kernel == 0 || q->kernel >= KERNELS_MAX || !K[q->kernel].used
+        || (q->simd != 8u && q->simd != 16u) || q->groups_x == 0 || q->groups_y == 0
+        || q->groups_x > 65535u || q->groups_y > 65535u || q->nbuffers > GPU_RUN_BUFFERS
+        || q->nconstants > GPU_RUN_CONSTANTS || q->nconstants % 32u != 0) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    k = &K[q->kernel];
+
+    if (k->holder != who || who == 0) {
+        return GPU_ERR_NOT_YOURS;
+    }
+
+    if ((int32_t)q->nbuffers <= k->bti_max) {
+        return GPU_ERR_BAD_OP;          /* the kernel names an entry this run does not bind */
+    }
+
+    /* Each buffer imported, and imported by this program: never a screen,
+     * never another program's picture. */
+    for (i = 0; i < q->nbuffers; i++) {
+        uint32_t id = q->buffers[i].id;
+
+        if (id == 0 || id >= BUFFERS_MAX || !B[id].used || B[id].kind != GPU_BUFFER_IMPORTED
+            || q->buffers[i].view > GPU_VIEW_R32F) {
+            return GPU_ERR_NO_BUFFER;
+        }
+
+        if (B[id].holder != who) {
+            return GPU_ERR_NOT_YOURS;
+        }
+    }
+
+    if (!forcewake(true)) {
+        return GPU_ERR_NO_WAKE;
+    }
+
+    if ((error = engine_start(&RCS)) != GPU_OK) {
+        return error;
+    }
+
+    if (run_state == NULL && !gtt_pages(1, &run_state, &run_state_gtt)) {
+        run_state = NULL;
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    if ((run_given && (int32_t)(fence_reached(&RCS) - run_fence) < 0) || RCS.in_flight + 96u > RING_ROOM) {
+        (void)engine_idle(&RCS);
+        return GPU_ERR_BUSY;
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        run_state[i] = 0;
+    }
+
+    for (i = 0; i < q->nconstants / 4u; i++) {
+        uint32_t w;
+
+        __builtin_memcpy(&w, &q->constants[i * 4u], 4);
+        run_state[RUN_CURBE_AT / 4u + i] = w;
+    }
+
+    for (i = 0; i < q->nbuffers; i++) {
+        (void)run_surface(run_state + (RUN_SS_AT + i * 64u) / 4u, &B[q->buffers[i].id], q->buffers[i].view);
+        run_state[RUN_BT_AT / 4u + i] = RUN_SS_AT + i * 64u;
+    }
+
+    regs = q->nconstants / 32u;
+
+    {
+        volatile uint32_t *idd = run_state + RUN_IDD_AT / 4u;
+        const uint32_t sba_lo = run_state_gtt | 1u;     /* the base, and modify */
+
+        idd[0] = 0;                                     /* the kernel, from the instruction base */
+        idd[2] = 1u << 18;                              /* single program flow, IEEE */
+        idd[4] = RUN_BT_AT;                             /* from the surface base, 32-aligned */
+        idd[5] = regs << 16;                            /* registers of constants: r1 onwards */
+        idd[6] = 1u;                                    /* one thread a group */
+
+        {
+            const uint32_t before[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL | IGPU_PC_INVALIDATE, 0, 0, 0, 0 };
+            const uint32_t select = IGPU_PIPELINE_SELECT;
+            const uint32_t sba[19] = {
+                IGPU_STATE_BASE_ADDRESS,
+                1u, 0,                                  /* general: 0, modified */
+                1u,                                     /* stateless data port: no message reaches it */
+                sba_lo, 0,                              /* surface state */
+                sba_lo, 0,                              /* dynamic state */
+                0, 0,                                   /* indirect objects */
+                k->gtt | 1u, 0,                         /* instructions: the kernel's own pages */
+                0xfffff000u | 1u, 0x1000u | 1u,         /* sizes: general, dynamic - a page */
+                0xfffff000u | 1u, (k->pages << 12) | 1u,/*   indirect, instructions - the kernel's */
+                1u, 0, 0xfffff000u,                     /* bindless surface state */
+            };
+            const uint32_t vfe[9] = {
+                IGPU_MEDIA_VFE_STATE, 0, 0,
+                ((RUN_THREADS - 1u) << 16) | (1u << 8),     /* threads at once, less one; URB entries */
+                0,
+                regs > 0 ? regs : 1u,                       /* the constants' share, in registers */
+                0, 0, 0,
+            };
+            const uint32_t curbe[4] = { IGPU_MEDIA_CURBE_LOAD, 0, q->nconstants, RUN_CURBE_AT };
+            const uint32_t idl[4] = { IGPU_MEDIA_IDL, 0, 32u, RUN_IDD_AT };
+            const uint32_t walk[15] = {
+                IGPU_GPGPU_WALKER, 0, 0, 0,
+                q->simd == 16u ? 1u << 30 : 0u,         /* SIMD16 or SIMD8, a thread a group */
+                0, 0, q->groups_x,                      /* groups across */
+                0, 0, q->groups_y,                      /*   and down */
+                0, 1u,
+                q->simd == 16u ? 0xffffu : 0xffu,       /* every channel, right and bottom */
+                0xffffffffu,
+            };
+            const uint32_t flush[2] = { IGPU_MEDIA_STATE_FLUSH, 0 };
+
+            emit(&RCS, before, 6);
+            emit(&RCS, &select, 1);
+            emit(&RCS, sba, 19);
+            emit(&RCS, vfe, 9);
+
+            if (regs > 0) {
+                emit(&RCS, curbe, 4);
+            }
+
+            emit(&RCS, idl, 4);
+            emit(&RCS, walk, 15);
+            emit(&RCS, flush, 2);
+        }
+    }
+
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");    /* the state's writes out before the doorbell */
+#endif
+
+    run_fence = submit(&RCS);
+    run_given = true;
+    rep->engine.value = run_fence;
+    return GPU_OK;
+}
+
+/*
  * **The render engine's starting state** (`m700-2d.md` 7c): i915's batch
  * for a new context (`intelgpu_renderstate.h`), placed as
  * `render_state_setup` places it - each relocation the batch's own address
@@ -2255,8 +2586,12 @@ static uint32_t buffer_forget(const struct gpu_request *rq)
         return GPU_ERR_NO_BUFFER;
     }
 
-    if (!engine_idle(&BCS)) {
-        return GPU_ERR_BUSY;            /* the blitter may still be reading it */
+    if (B[id].holder != holder_of_request()) {
+        return GPU_ERR_NOT_YOURS;
+    }
+
+    if (!engine_idle(&BCS) || !engine_idle(&RCS)) {
+        return GPU_ERR_BUSY;            /* the blitter, or a draw or a run, may still be reading it */
     }
 
     for (i = 0; i < B[id].pages; i++) {
@@ -2691,6 +3026,20 @@ void intelgpu_server(long console, long endpoint)
                 memcpy(&q, msg.data, msg.length < sizeof q ? msg.length : sizeof q);
                 rep.error = msg.length >= 16 && msg.length >= 16 + q.n * 24u
                           ? draw_request(&q, rq.op == GPU_OP_DRAW_BLEND, &rep) : GPU_ERR_BAD_OP;
+                break;
+            }
+            case GPU_OP_KERNEL:
+                rep.error = kernel_new(console, cap, &rq, &rep);
+                break;
+            case GPU_OP_KERNEL_FORGET:
+                rep.error = kernel_forget(&rq);
+                break;
+            case GPU_OP_RUN: {
+                static struct gpu_run q;
+
+                memset(&q, 0, sizeof q);
+                memcpy(&q, msg.data, msg.length < sizeof q ? msg.length : sizeof q);
+                rep.error = msg.length == sizeof q ? run(&q, &rep) : GPU_ERR_BAD_OP;
                 break;
             }
             case GPU_OP_FLIPPED:

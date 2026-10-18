@@ -27969,3 +27969,80 @@ lines refused at their line numbers. **Control**: a destination's register
 put one bit higher fails 32 of the 58. `scratch.py`'s check caught the
 corpus tool making its own temporary directory; it uses
 `scratch.directory` now, and writes the same corpus. `host` passes.
+
+## 18.688 A program's own kernel, checked and run (`compute.md` C2)
+
+**Three verbs in the GPU's driver.** `GPU_OP_KERNEL` takes a kernel's bytes
+in a region, copies them out, checks every instruction there - so nothing
+the program does to its region afterwards changes what was checked - and
+copies them into pages of the driver's own, which are the instruction base
+of every run of it. `GPU_OP_RUN` runs one over a grid of thread groups, set
+up as 7b's fill is, with up to eight of the program's imported buffers in
+its binding table and up to 256 bytes of constants. Each buffer is a surface
+the driver makes from what was imported - bytes (`SURFTYPE_BUFFER`, RAW),
+BGRA, R8 or R32F - and the run answers at once with the render engine's
+fence. `GPU_OP_KERNEL_FORGET` lets a kernel go. A kernel and the buffers a
+run binds must be the asking program's own, and never a screen.
+`BUFFER_FORGET` now asks that too, and waits for the render engine as well
+as the blitter.
+
+**The check** (`intelgpu_kernel.c`, decision D2) works on one rule: a kernel
+reaches memory only by a send. So a send must go to the thread spawner to
+end the thread, unpredicated and from r112-r127, or to the data port by one
+of the message types listed (Mesa's `elk_eu_defines.h`) through
+binding-table entries 0 to 7. That leaves out stateless (255, 253),
+shared-local (254), 64-bit and scratch messages. Everything else is there so
+a kernel cannot get round that rule:
+- no compacted instructions, which are another encoding;
+- no breakpoints;
+- no indirect addressing;
+- no register file but GRF, and of the architecture registers only null,
+  the accumulators, the flags and the timestamp;
+- descriptors are immediates;
+- a branch goes to an instruction of the kernel;
+- the last instruction ends the thread.
+
+The opcode list is Mesa's for generation 9, without `movi`, `smov`, `wait`,
+`sends` and every branch but `jmpi`.
+
+**Two things that were wrong before the driver depended on them.**
+- **Where a jmpi lands.** intel-gpu-tools' assembler quotes the bspec:
+  "unlike other flow control instructions, the offset used by JMPI is
+  relative to the incremented instruction pointer". Mesa's new text
+  assembler counts labels from the branch itself, and `eu.lua` had copied
+  that, so every branch to a label would have landed one instruction late.
+  `eu.lua` and the check now both count from the instruction after the
+  branch.
+- **A send's operand types.** Mesa's text assembler leaves a send's
+  destination type and stride at 0. Mesa's compiler
+  (`elk_send_indirect_message`: "dst = retype(dst, UW)") and
+  intel-gpu-tools' kernels give `:uw` at stride 1. `eu.lua` now does the
+  same: assembled from text, the fill kernel is `intelgpu_fill.h` word for
+  word, which is what the M700 has run.
+
+**`gpu kernel [colour]`**. It runs two kernels from
+`user/lib/eukernels.lua`, assembled on Kosmos:
+- the same kernel sending stateless, which must be refused at its line;
+- the fill, run over a 16 by 4 buffer the program imported (at a pitch of
+  64, seen as R8), with every one of its 256 bytes held and none of the rest
+  of the page written.
+
+The second is the step's proof on the M700, still to be run there. Under
+QEMU it says there is no Intel GPU, after `eu.lua` and the kernels have
+loaded and assembled on Kosmos.
+
+**Tests.**
+- **`tools/test_intelgpu_kernel.c` in `host`, 33 checks.** intel-gpu-tools'
+  fill kernel passes and names entry 0 as its highest. Thirty kernels
+  assembled by `tools/eu_kernels.lua` each get the answer and the
+  instruction expected:
+  - four that may run: a Mandelbrot-shaped loop, branches to the first and
+    to the last instruction, and each kind of data-port message;
+  - twenty-six refused, nine of them by bits `eu.lua` will not write and a
+    hostile program would. **Control**: a check that lets entries up to 255
+    through, with jmpi counted from itself, fails five, each by name.
+- **`test_eu.lua`, 61 checks.** The labels now count from the next
+  instruction; an instruction's line comes back with the bytes, so a
+  refusal says the line; and the fill's text assembles to
+  `intelgpu_fill.h`.
+- **`x86-gpumon`**: `gpu kernel` says there is no Intel GPU here.

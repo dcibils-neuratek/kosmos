@@ -4,7 +4,8 @@
 -- instructions out, for Intel's generation 9 - Skylake, the M700's HD 530.
 --
 --   local eu = use("/Kosmos/Libraries/eu.lua")
---   local code, why = eu.assemble(text)      -- bytes, or nil and "line 7: ..."
+--   local code, lines = eu.assemble(text)    -- bytes and each one's line,
+--                                            -- or nil and "line 7: ..."
 --
 -- **The syntax is the one Mesa's tools print** (`gentool disasm -v`), so a
 -- kernel can be read beside what Mesa says of it:
@@ -19,8 +20,12 @@
 --   loop:
 --
 -- A label is a name and a colon on a line of its own; `//` begins a
--- comment. A branch to a label is an offset in bytes from the branch
--- itself, as Mesa's assembler takes it.
+-- comment. **A branch to a label is an offset in bytes from the
+-- instruction after the branch**: the bspec's rule for `jmpi`, "unlike
+-- other flow control instructions", as intel-gpu-tools' assembler quotes it
+-- (`assembler/gram.y`, `branch_offset`). Mesa's `gentool` counts from the
+-- branch itself, which would land one instruction late; a number written
+-- in the text is taken as it is, either way.
 --
 -- **The subset a compute kernel needs**, and every form of it held bit for
 -- bit to Mesa's assembler by `tools/test_eu.lua` over `tools/eu_corpus.txt`:
@@ -87,7 +92,7 @@ local PREDICATES = { [""] = 1, any2h = 2, all2h = 3, any4h = 4, all4h = 5, any8h
                      all8h = 7, any16h = 10, all16h = 11, any32h = 12, all32h = 13 }
 
 -- The units a send can address, by the name Mesa prints.
-local SFIDS = { ts = 7, hdc1 = 12, hdc0 = 10, hdc_ro = 9, sampler = 2 }
+local SFIDS = { ts = 7, hdc1 = 12, hdc0 = 10, hdc_ro = 9, smpl = 2 }
 
 -- The architecture registers this subset names.
 local ARF = { null = 0x00, acc0 = 0x20, ip = 0xa0 }
@@ -311,12 +316,19 @@ local function encode_send(ins)
   if ex.file ~= FILE_IMM or ex.imm ~= 0 then fail("this subset's sends take an ex-descriptor of 0") end
   if desc.file ~= FILE_IMM then fail("a send's descriptor is a number") end
 
+  -- The destination :uw at a stride of one unless the text says
+  -- otherwise, as Mesa's compiler gives every send
+  -- (`elk_send_indirect_message`: "dst = retype(dst, UW)") and
+  -- intel-gpu-tools' kernels have it - Mesa's text assembler leaves both
+  -- fields 0. The payload :ud unless written `r4:d`.
   controls(w, ins)
   field(w, 24, 27, ins.sfid)
   field(w, 35, 36, d.file)
-  field(w, 37, 40, TYPES[d.type or "ud"])
+  field(w, 37, 40, TYPES[d.type or "uw"] or fail("no type " .. tostring(d.type)))
   field(w, 53, 60, d.nr)
+  field(w, 61, 62, HSTRIDE[d.hstride or 1] or fail("no stride " .. tostring(d.hstride)))
   field(w, 41, 42, s0.file)
+  field(w, 43, 46, TYPES[s0.type or "ud"] or fail("no type " .. tostring(s0.type)))
   field(w, 69, 76, s0.nr)
   field(w, 89, 90, FILE_IMM)
   field(w, 96, 126, desc.imm & 0x7fffffff)
@@ -382,7 +394,7 @@ local function parse(text)
   end
 
   local op = t[i] or fail("no instruction")
-  local name, unit = op:match("^(%a+)%.?(%w*)$")
+  local name, unit = op:match("^(%a+)%.?([%w_]*)$")
 
   if not name or not eu.OPCODES[name] then fail("no instruction " .. op .. " in this assembler's subset") end
 
@@ -485,8 +497,10 @@ end
 --
 -- **A kernel's text to its bytes**: lines, labels, comments. Two passes -
 -- the first places every instruction and label, the second encodes, with
--- each branch's offset from itself to its label. Answers the bytes, or nil
--- and "line N: why".
+-- each branch's offset from the instruction after it to its label.
+-- Answers the bytes and, for each instruction, the line it came from - so
+-- what the GPU's driver refuses by its number can be said by its line - or
+-- nil and "line N: why".
 --
 function eu.assemble(text)
   local list, labels = {}, {}
@@ -524,7 +538,7 @@ function eu.assemble(text)
         return nil, ("line %d: no label %s"):format(ins.line, ins.label)
       end
 
-      offset = labels[ins.label] - at
+      offset = labels[ins.label] - (at + 16)
     end
 
     local ok, b = pcall(encode, ins, offset)
@@ -538,7 +552,11 @@ function eu.assemble(text)
 
   if #out == 0 then return nil, "no instructions" end
 
-  return table.concat(out)
+  local lines = {}
+
+  for k, ins in ipairs(list) do lines[k] = ins.line end
+
+  return table.concat(out), lines
 end
 
 return eu

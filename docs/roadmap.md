@@ -144,7 +144,10 @@ GPU against the processor, the times side by side), then Cafesa3D's
 renderer on the GPU beside its processor's with both times shown. Steps C1
 to C6 there. **Diego's decisions, the same day**: kernels as assembly,
 assembled on Kosmos by `eu.lua` (D1 A), and every kernel checked before it
-runs (D2 A). Building from C1. **And the lesson, C6** (Diego, the same
+runs (D2 A). **C1 done** (0.11.288, 18.687): `eu.lua`. **C2 built**
+(18.688): the driver's kernel, run and forget verbs, the check, `gpu
+kernel`; its run on the M700 waits for the machine. Next C3, the kit.
+**And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely
 complementary so its good to teach that".

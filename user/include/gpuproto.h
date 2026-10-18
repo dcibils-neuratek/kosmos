@@ -127,6 +127,48 @@
 #define GPU_OP_DRAW          19u
 #define GPU_OP_DRAW_BLEND    20u
 
+/*
+ * **A program's own kernel** (`compute.md` C2). `KERNEL` hands the driver
+ * a kernel's instructions - `x` bytes from `offset` in the region that
+ * comes with the message - which it checks instruction by instruction
+ * (`intelgpu_kernel.h`, decision D2) and copies into memory of its own, so
+ * nothing changes it after the check; answered with its id in
+ * `buffer.id`, or GPU_ERR_KERNEL with the instruction refused in
+ * `words[1]` and why, a GPU_KERNEL_*, in `words[2]`. `KERNEL_FORGET` lets
+ * go of kernel `x`. `RUN` runs one, in `struct gpu_run`'s shape, over a
+ * grid of thread groups with the buffers it names bound in its binding
+ * table, and answers at once with the render engine's fence in
+ * `engine.value` - GPU_OP_FENCE with `x` 1 says when it is reached. A
+ * kernel and the buffers a run binds are their holder's alone.
+ */
+#define GPU_OP_KERNEL        21u
+#define GPU_OP_KERNEL_FORGET 22u
+#define GPU_OP_RUN           23u
+
+#define GPU_RUN_BUFFERS      8u
+#define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */
+
+/* How a run's buffer is seen by its kernel: bytes by offset, or a picture. */
+#define GPU_VIEW_BYTES       0u     /* SURFTYPE_BUFFER, RAW: untyped and scattered messages */
+#define GPU_VIEW_BGRA        1u     /* 2D, B8G8R8A8_UNORM: media block reads and writes */
+#define GPU_VIEW_R8          2u     /* 2D, R8_UNORM */
+#define GPU_VIEW_R32F        3u     /* 2D, R32_FLOAT */
+
+/* Why a kernel was refused. */
+#define GPU_KERNEL_OK        0u
+#define GPU_KERNEL_SIZE      1u     /* empty, too large, or not whole instructions */
+#define GPU_KERNEL_COMPACT   2u     /* a compacted instruction */
+#define GPU_KERNEL_DEBUG     3u     /* a breakpoint */
+#define GPU_KERNEL_OPCODE    4u     /* an instruction outside what a kernel may use */
+#define GPU_KERNEL_INDIRECT  5u     /* a register addressed through a0 */
+#define GPU_KERNEL_REGISTER  6u     /* a register file or architecture register not allowed */
+#define GPU_KERNEL_UNIT      7u     /* a send to a unit a kernel may not use */
+#define GPU_KERNEL_MESSAGE   8u     /* a message, or an address, the unit may not be sent */
+#define GPU_KERNEL_DESC      9u     /* a send whose descriptor is in a register */
+#define GPU_KERNEL_BRANCH    10u    /* a branch outside the kernel, or through a register */
+#define GPU_KERNEL_END       11u    /* the last instruction does not end the thread */
+#define GPU_KERNEL_EOT       12u    /* a thread's end that is predicated, or not to the spawner */
+
 #define GPU_BLIT_RECTS       64u
 #define GPU_BUFFER_IMPORTED  2u     /* a buffer's kind: a region handed in, shared */
 
@@ -149,6 +191,8 @@
 #define GPU_ERR_NO_RING      10u    /* the ring would not take RING_VALID */
 #define GPU_ERR_NO_ANSWER    11u    /* the command was given and its number never came */
 #define GPU_ERR_BUSY         12u    /* the blitter has too much in flight, or is reading it */
+#define GPU_ERR_KERNEL       13u    /* a kernel refused: words[1] where, words[2] why */
+#define GPU_ERR_NOT_YOURS    14u    /* a kernel or buffer somebody else holds */
 
 struct gpu_request {
     uint32_t op;
@@ -204,6 +248,23 @@ struct gpu_blit {
 
 _Static_assert(sizeof(struct gpu_blit) == 16 + GPU_BLIT_RECTS * 24,
                "a blit is four words and sixty-four rectangles of six");
+
+struct gpu_run {
+    uint32_t op;                    /* GPU_OP_RUN */
+    uint32_t kernel;                /* from GPU_OP_KERNEL */
+    uint32_t simd;                  /* 8 or 16 lanes a thread */
+    uint32_t groups_x, groups_y;    /* the grid: a thread a group */
+    uint32_t nbuffers;              /* binding-table entries 0 to nbuffers - 1 */
+    struct {
+        uint32_t id;                /* from GPU_OP_BUFFER_IMPORT */
+        uint32_t view;              /* GPU_VIEW_* */
+    } buffers[GPU_RUN_BUFFERS];
+    uint32_t nconstants;            /* bytes, a multiple of 32: whole registers */
+    uint8_t  constants[GPU_RUN_CONSTANTS];
+};
+
+_Static_assert(sizeof(struct gpu_run) == 24 + GPU_RUN_BUFFERS * 8 + 4 + GPU_RUN_CONSTANTS,
+               "a run is six words, eight pairs, a count and 256 bytes");
 
 struct gpu_stats {
     uint32_t error;

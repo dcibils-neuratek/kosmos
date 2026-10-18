@@ -149,7 +149,11 @@ GPU wrote is read from memory after. The first run holds both to it.
    bit for bit. **Done in 0.11.288** (`testing.md` 18.687).
 2. **C2 - the driver's verbs**: `GPU_OP_KERNEL` with D2's check,
    `GPU_OP_RUN`; the fill kernel run through them, from Lua, its result held
-   as 7b's is.
+   as 7b's is. **Built** (`testing.md` 18.688): the verbs, the check in
+   `intelgpu_kernel.c` held to thirty kernels on the Mac, and `gpu kernel`;
+   its run on the M700 is what is left. Two corrections came out of it: a
+   `jmpi` counts from the instruction after it, and a send's destination is
+   `:uw` at a stride of one, as Mesa's compiler writes it.
 3. **C3 - the Compute Kit**: buffers, runs, tickets and the GPU's time, from
    Lua; a host-side check of what it sends.
 4. **C4 - GPU Fractal**, as drawn: the Mandelbrot kernel, the processor's in
