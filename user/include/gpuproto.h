@@ -291,14 +291,15 @@ struct gpu_stats {
     uint32_t shown;                 /* the buffer scanned out, ~0u for none of ours */
     uint32_t nbuffers;
     uint32_t blitter_busy_us;       /* the blit engine's own clock, its copies' time; wrapping */
+    uint32_t render_busy_us;        /* the render engine's own clock, programs' runs' time; wrapping */
     struct {
         uint32_t id, holder;        /* the holder's process id; 0 the firmware */
         uint32_t width, height, pages, kind;
     } buffers[GPU_STATS_BUFFERS];
 };
 
-_Static_assert(sizeof(struct gpu_stats) == 64 + GPU_STATS_BUFFERS * 24,
-               "gpu.lua unpacks sixteen words and then sixteen rows of six");
+_Static_assert(sizeof(struct gpu_stats) == 68 + GPU_STATS_BUFFERS * 24,
+               "gpu.lua unpacks seventeen words and then sixteen rows of six");
 
 _Static_assert(sizeof(struct gpu_request) == 32,
                "the GPU request is eight words, gpu.lua packs \"<I4I4i4i4I4I4I4I4\"");

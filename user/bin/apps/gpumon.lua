@@ -17,9 +17,11 @@
 -- **It measures nothing itself.** The GPU's driver reads its registers and
 -- keeps its buffers (`GPU_OP_STATS`, `gpu.stats`), Nebula reads the GPU's
 -- energy (`sys.info().gpu_energy_uj`), and this asks once a pace and takes
--- the difference between two readings, as the other monitors do. **No
--- engine is sent work yet**, so the busy graph says so rather than drawing
--- a 0% that looks like a measurement (`m700-2d.md` step 5 is the first).
+-- the difference between two readings, as the other monitors do. **Busy is
+-- each engine by its own clock**: the blitter's copies, and the render
+-- engine's runs - a program's compute kernel (`compute.md`). Until 18
+-- October only the blitter was counted, and GPU Fractal and lesson 15
+-- running on the GPU read as an idle GPU asleep.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
 local gpu = use("/Kosmos/Libraries/gpu.lua")
@@ -100,7 +102,9 @@ local function sample()
 
       for _, b in ipairs(s.buffers) do bytes = bytes + b.bytes end
 
-      ui.history.push(busy_h, { math.floor(rate.blitter * 100 + 0.5) }, COLUMNS)
+      -- Busy is either engine at work: the blitter's copies and the
+      -- render engine's runs, each by its own clock, the larger of the two.
+      ui.history.push(busy_h, { math.floor(math.max(rate.blitter, rate.render or 0) * 100 + 0.5) }, COLUMNS)
       ui.history.push(clock_h, { s.max_mhz > 0 and math.floor(100 * s.mhz / s.max_mhz) or 0 },
                       COLUMNS)
       ui.history.push(mem_h, { math.min(100, math.floor(100 * bytes / MEMORY_SCALE + 0.5)) },
@@ -242,11 +246,13 @@ end
 
 local ENGINES = { "Render", "Blitter", "Video", "Video enhance" }
 
--- Each engine's chip: the blitter's share now (G3), the others a dash -
--- nothing sends them work yet.
+-- Each engine's chip: the render engine's share now - a program's runs,
+-- a compute kernel's (`compute.md`) - and the blitter's (G3); the video
+-- engines a dash, nothing sends them work yet.
 local function engines(g, x, y)
   for _, name in ipairs(ENGINES) do
     local text = name == "Blitter" and rate and ("Blitter  %.1f%%"):format(rate.blitter * 100)
+                 or name == "Render" and rate and ("Render  %.1f%%"):format((rate.render or 0) * 100)
                  or (name .. "  -")
     local w = gfx.measure(text, "label") + 18
 
@@ -298,7 +304,8 @@ local function side(g, x, y)
     y = y + gfx.height("heading") + 12
   end
 
-  fact("Utilisation", rate and ("blitter %.1f%%"):format(rate.blitter * 100) or "-")
+  fact("Utilisation", rate and ("render %.1f%% \u{b7} blitter %.1f%%"):format((rate.render or 0) * 100,
+                                                                         rate.blitter * 100) or "-")
   fact("Clock", s and (clock_words(s) .. " / " .. s.max_mhz .. " MHz") or "-", GPU_COLOUR)
   fact("Asleep (RC6)", rate and ("%.0f%%"):format(rate.asleep * 100) or "-")
   fact("Power", watts and ("%.2f W"):format(watts) or "not known here")
@@ -369,8 +376,8 @@ function body:draw(g)
 
   heading(g, x, M.busy_heading, "Busy", pace.heading:lower())
   engines(g, x, M.engines)
-  -- The blitter's busy share over the minute, by its own clock; render and
-  -- video have no work yet, which their chips above say.
+  -- Either engine's busy share over the minute, by its own clock - the
+  -- blitter's copies, the render engine's runs; video has no work yet.
   graph(g, x, M.busy, SMALL_H, busy_h, GPU_COLOUR, "100%")
 
   heading(g, x, M.clock_heading, "Clock", rate and ("asleep %.0f%% of the time"):format(rate.asleep * 100),

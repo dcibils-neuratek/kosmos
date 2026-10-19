@@ -741,6 +741,10 @@ static bool forcewake(bool on)
 #define TS_SLOTS     16u                /*   two dwords a fence, sixteen fences round */
 #define RUN_TS_AT    128u               /* a run's clock before and after: two dwords a run, */
 #define RUN_TS_SLOTS 16u                /*   sixteen runs round, by fence, never zeroed */
+
+/* Which fence each run slot was last written for, so the render engine's
+ * busy time counts a run's clock readings once, and never a stale slot's. */
+static uint32_t run_fence_at[RUN_TS_SLOTS];
 #define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
 
 /*
@@ -892,6 +896,14 @@ static bool engine_idle(struct engine *e)
 
             e->busy_ts += (uint32_t)(t[1] - t[0]);
             t[0] = t[1] = 0;
+
+            /* And on the render engine, a program's run: its clock before
+             * its first thread and after its last (GPU_OP_RUN_TIME's). */
+            if (e->render && run_fence_at[e->counted % RUN_TS_SLOTS] == e->counted) {
+                volatile uint32_t *r = &e->status[RUN_TS_AT + 2u * (e->counted % RUN_TS_SLOTS)];
+
+                e->busy_ts += (uint32_t)(r[1] - r[0]);
+            }
         }
     }
 
@@ -1639,6 +1651,7 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
     __asm__ volatile("sfence" ::: "memory");    /* the state's writes out before the doorbell */
 #endif
 
+    run_fence_at[(RCS.issued + 1u) % RUN_TS_SLOTS] = RCS.issued + 1u;
     run_fence = submit(&RCS);
     run_given = true;
     rep->engine.value = run_fence;
@@ -2922,7 +2935,9 @@ static void stats(struct gpu_stats *st)
     st->freq_min_mhz = ((cap >> 16) & 0xFFu) * 50u;
     st->rc6 = reg(G.regs, IGPU_RC6_RESIDENCY);
     (void)engine_idle(&BCS);
+    (void)engine_idle(&RCS);
     st->blitter_busy_us = BCS.ts_hz ? (uint32_t)(BCS.busy_ts * 1000000u / BCS.ts_hz) : 0u;
+    st->render_busy_us = RCS.ts_hz ? (uint32_t)(RCS.busy_ts * 1000000u / RCS.ts_hz) : 0u;
 
     if (G.pipe < 0) {
         st->shown = ~0u;

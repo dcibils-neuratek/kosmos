@@ -48,8 +48,9 @@ else
   print("  power      not known on this processor")
 end
 
-print(r and ("  engines    blitter %.1f%% busy; render, video: no work sent yet"):format(r.blitter * 100)
-      or "  engines    blitter -; render, video: no work sent yet")
+print(r and ("  engines    render %.1f%% busy, blitter %.1f%%; video: no work sent yet")
+                :format((r.render or 0) * 100, r.blitter * 100)
+      or "  engines    render -, blitter -; video: no work sent yet")
 
 if b.width > 0 then
   print(("  display    %dx%d, %.1f frames a second, %.1f flips a second%s")

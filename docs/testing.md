@@ -28517,3 +28517,41 @@ which `vncd` already takes; that is how GPU Fractal was zoomed.
 **Tests.** The tutorial's checker, 743 checks over 7 pages and 16
 pictures. Cafesa3D's tracer waits for R6, which gives Cafesa3D the door to
 run it.
+
+## 18.698 GPU Monitor counts the render engine's work
+
+Diego, on the M700 with lesson 15's pattern running: "why is the gpu
+monitor saying the gpu is asleep although the gpu pattern app is running
+and using the gpu?". Two answers, one of them a fault:
+
+- **The fault: busy was the blitter's alone.** The driver timed the
+  blitter's copies (`blitter_busy_us`, G3) and nothing else, and a compute
+  kernel runs on the render engine. GPU Monitor's Render chip was a dash
+  and its Busy graph the blitter's, so GPU Fractal and the pattern were
+  invisible to it.
+- **The truth in it: the GPU does sleep.** The pattern is 1.29 ms of work
+  in every 16.7 ms frame, about 8%. Between frames the GT falls into RC6,
+  and the clock, sampled there, reads "asleep".
+
+**The fix.** Every run already stores the render engine's clock before
+its first thread and after its last (`GPU_OP_RUN_TIME`'s slots). The
+driver now remembers which fence each slot was written for, so a slot is
+counted once and a stale one never. As it counts the render engine's
+fences in `engine_idle`, it adds each run's time to the engine's total.
+`struct gpu_stats` gains `render_busy_us` beside `blitter_busy_us`:
+seventeen words before the rows now, as `gpu.lua` unpacks them.
+`gpu.since` gives `render` as well as `blitter`. GPU Monitor's Render chip
+shows its share, the Busy graph the larger of the two engines', and
+Utilisation both; `gpustat` says both.
+
+**Tests.** `x86-gpumon`, 17 checks, and `host` pass under QEMU, where
+there is no GPU and both read none. **On the M700**, with lesson 15's
+pattern running, `gpustat` says "render 4.2% busy, blitter 0.0%", and GPU
+Monitor shows Render 4.2% on its chip, in its Busy graph and in
+Utilisation, taken over VNC.
+
+The same window showed the pattern's buffer as a "back buffer, shared",
+the label the window server's back buffer had given every imported
+buffer. It is "shared" now; the holder column says whose.
+- **Full gate 96 of 97 in 9:32.** `x86-mouse`'s scrollbar drag did not
+  scroll under the gate's load; alone it passed its 13 checks.
