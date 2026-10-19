@@ -167,7 +167,9 @@ the suites, and then on the M700.
    25 checks through the emulator in SIMD8 and SIMD16.
 4. **R4 - the scene in buffers**, `k3d_gpu.c`: what `k3d_render_new`
    builds, flattened to arrays, held on the Mac to the processor's
-   structures.
+   structures. **Built** (18.695): the trees threaded - by skips, with no
+   stack, which the check would refuse - and twenty thousand rays meeting
+   what the processor's tracer meets.
 5. **R5 - Preview on the GPU**: the tracer in the language, held in the
    emulator to `k3d_trace.c`'s Preview on small scenes, then on the M700 to
    the full scene.

@@ -47,6 +47,7 @@
 #include <string.h>
 
 #include "k3d.h"
+#include "k3d_trace.h"
 
 #define PI      3.14159265358979323846f
 #define EPS     1e-4f
@@ -58,11 +59,8 @@
 #define CLAMP   4.0f        /* the most light a bounced path may bring back */
 
 /*--------------------------------------------------------------------------
- * Four lanes.
+ * Four lanes (the types are `k3d_trace.h`'s).
  *------------------------------------------------------------------------*/
-
-typedef float   f4 __attribute__((vector_size(16)));
-typedef int32_t i4 __attribute__((vector_size(16)));
 
 #if defined(__aarch64__)
 #include <arm_neon.h>
@@ -83,7 +81,6 @@ static inline bool any4(i4 m) { return (m[0] | m[1] | m[2] | m[3]) != 0; }
  * adding, subtracting and scaling one is one instruction.
  *------------------------------------------------------------------------*/
 
-typedef f4 v3;
 
 static inline v3 V(float x, float y, float z) { v3 r = { x, y, z, 0 }; return r; }
 static inline v3 mul(v3 a, float k) { return a * all4(k); }
@@ -135,11 +132,6 @@ static void seed(struct rng *r, uint32_t tile, uint32_t pass, uint32_t pixel)
  * collapsed into the four-wide one the rays use.
  *------------------------------------------------------------------------*/
 
-struct bnode {
-    float lo[3], hi[3];
-    uint32_t first;         /* an inner node's left child; a leaf's first item */
-    uint32_t count;         /* items in a leaf; nought for an inner node */
-};
 
 struct build {
     const float *lo, *hi;   /* three a thing */
@@ -289,24 +281,8 @@ static void subdivide(struct build *b, uint32_t at, uint32_t first, uint32_t n, 
  * The four-wide hierarchy.
  *------------------------------------------------------------------------*/
 
-struct wnode {
-    f4 box[2][3];           /* the four children's lows, then highs; x, y, z */
-    int32_t child[4];       /* an inner child's node, or -1 - a leaf's first */
-    uint32_t count[4];      /* a leaf's packets or objects; nought when empty */
-};
 
-struct tpack {              /* four triangles, one a lane */
-    f4 v0[3], e1[3], e2[3];
-    uint32_t tri[4];
-};
 
-struct wide {
-    struct wnode *node;
-    uint32_t nodes;
-    uint32_t *item;         /* the objects, over which the top one is built */
-    struct tpack *pack;     /* the triangles, for a mesh's */
-    uint32_t packs;
-};
 
 struct collapse {
     const struct bnode *bn;
@@ -434,6 +410,35 @@ static int32_t collapse(struct collapse *c, uint32_t at)
     return (int32_t)me;
 }
 
+bool k3d_bvh_binary(const float *lo, const float *hi, uint32_t n,
+                    struct bnode **node, uint32_t *used, uint32_t **item)
+{
+    struct build b;
+    uint32_t i;
+
+    b.lo = lo;
+    b.hi = hi;
+    b.item = malloc((n ? n : 1) * sizeof(uint32_t));
+    b.node = malloc((size_t)(2 * (n ? n : 1)) * sizeof(struct bnode));
+    b.used = 1;
+
+    if (b.item == NULL || b.node == NULL) {
+        free(b.item);
+        free(b.node);
+        return false;
+    }
+
+    for (i = 0; i < n; i++) {
+        b.item[i] = i;
+    }
+
+    subdivide(&b, 0, 0, n, 0);
+    *node = b.node;
+    *used = b.used;
+    *item = b.item;
+    return true;
+}
+
 /* The hierarchy over `n` boxes; over a mesh's triangles when `pos` is
  * given, packing them, and over objects when it is not. */
 static bool wide_build(struct wide *w, const float *lo, const float *hi, uint32_t n,
@@ -449,23 +454,9 @@ static bool wide_build(struct wide *w, const float *lo, const float *hi, uint32_
         return true;
     }
 
-    b.lo = lo;
-    b.hi = hi;
-    b.item = malloc(n * sizeof(uint32_t));
-    b.node = malloc((size_t)(2 * n) * sizeof(struct bnode));
-    b.used = 1;
-
-    if (b.item == NULL || b.node == NULL) {
-        free(b.item);
-        free(b.node);
+    if (!k3d_bvh_binary(lo, hi, n, &b.node, &b.used, &b.item)) {
         return false;
     }
-
-    for (i = 0; i < n; i++) {
-        b.item[i] = i;
-    }
-
-    subdivide(&b, 0, 0, n, 0);
 
     for (i = 0; i < b.used; i++) {
         packs += (b.node[i].count + 3) / 4;
@@ -636,41 +627,8 @@ static inline bool packet(const struct tpack *p, const struct ray4 *q, float *be
  * The snapshot.
  *------------------------------------------------------------------------*/
 
-enum shape { MESH, SPHERE, BOX, CYLINDER, PLANE };
 
-struct tobj {
-    enum shape shape;
-    bool smooth;
-    uint32_t id;
-    float M[12], I[12], N[9];   /* to the world, from it, and normals out */
-    float a, b, c;              /* a sphere's radius; a box's halves; ... */
-    float sc[3];                /* its scale, so a texture is in its metres */
-    struct k3d_material mat;
-    float lo[3], hi[3];         /* in the world */
 
-    float *pos, *nrm;           /* a mesh, in the object's own space */
-    uint32_t *tri, ntri;
-    struct wide bvh;
-};
-
-struct k3d_render {
-    struct k3d_render_setup how;
-    struct k3d_light *lights;
-    struct tobj *obj;
-    uint32_t nobj;
-    struct wide top;
-
-    v3 eye, r, u, f;            /* the camera */
-    float F;
-
-    uint32_t tiles_x, tiles_y, tiles;
-    float *acc;                 /* light so far, three a pixel */
-    uint32_t *seq;              /* twice a tile's passes; odd while adding one */
-    uint32_t *painted;          /* what `seq` was when each tile was painted */
-    uint32_t next;              /* the next job */
-    uint32_t stopped;
-    uint64_t rays;
-};
 
 /* The inverse of an affine 3x4. */
 static bool invert(const float M[12], float I[12])
@@ -1254,6 +1212,24 @@ static v3 world_normal(const struct hit *h)
     return norm(V(o->N[0] * n[0] + o->N[1] * n[1] + o->N[2] * n[2],
                   o->N[3] * n[0] + o->N[4] * n[1] + o->N[5] * n[2],
                   o->N[6] * n[0] + o->N[7] * n[1] + o->N[8] * n[2]));
+}
+
+bool k3d_trace_object_hit(const struct k3d_render *r, uint32_t obj, const float o[3],
+                          const float d[3], float *t)
+{
+    const struct tobj *ob = &r->obj[obj];
+    struct hit h;
+
+    h.t = *t;
+    h.o = NULL;
+    h.light = -1;
+
+    if (!shape_hit(ob, xpoint(ob->I, from(o)), xdir(ob->I, from(d)), false, &h)) {
+        return false;
+    }
+
+    *t = h.t;
+    return true;
 }
 
 bool k3d_render_first_hit(const struct k3d_render *r, const float o[3], const float d[3],

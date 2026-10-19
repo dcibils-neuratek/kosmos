@@ -28377,3 +28377,44 @@ by size or by their bytes, so the compiler's tests can be written in Lua.
 - **Controls**: an `if` whose failing lanes go to its `else` rather than
   past it leaves a thread that never ends; a `continue` sent to the loop's
   end rather than its `while` gets lane 0 wrong, 2001 for 2151.
+
+## 18.695 The scene laid out for the GPU (`cafesa3d-gpu.md` R4)
+
+`user/kits/3d/k3d_gpu.c`: what `k3d_render_new` snapshots - every object,
+mesh, lamp and the camera - as flat arrays of 32-bit words, each one a
+Compute Kit buffer the tracer's kernel will read by byte offset, the
+place of every number named once in `k3d_gpu.h`.
+
+**The hierarchies are threaded, not stacked.** The processor's rays walk
+a four-wide tree with a stack of up to 128 entries a ray. A kernel's lanes
+would need that stack in registers addressed through `a0`, which the
+driver's check refuses, or in memory: at 1280 by 720, hundreds of
+megabytes. So each tree is laid out depth first, every node carrying its
+**skip**, the next node outside it. A ray needs nothing but the node it is
+at: met, the next; missed, the skip; a leaf, its items and then the skip.
+The order is fixed rather than nearest first, which costs boxes and
+changes no answer.
+
+**One builder, not two.** The trees are the 3D Kit's own surface-area
+binary ones. `k3d_bvh_binary` is the half of `wide_build` that built
+them, split out, and `wide_build` now calls it too. The tracer's
+structures moved into `k3d_trace.h`, private to the kit, so `k3d_gpu.c`
+reads the snapshot rather than making another. Triangles are laid out as
+the processor packs them, a corner and two edges, so the kernel's
+Moller-Trumbore sees the same numbers.
+
+**Tests.**
+- **`tools/test_k3d_gpu.c` in `host`, 7 checks.** Sixty objects of every
+  kind, 18 exact shapes and 42 meshes, 16,888 triangles in 10,241 nodes,
+  turned and stretched. Twenty thousand rays are walked through the
+  threaded trees exactly as the kernel will walk them, by skips with no
+  stack, the triangles read from the laid-out words. **All 16,132 that
+  meet something meet the same object at the same distance as
+  `k3d_render_first_hit`**, and the 3,868 that miss miss there too, at
+  48 nodes a ray. Every skip goes forward.
+- **Controls**: a second edge laid out as the first loses most hits; a
+  skip one node late misplaces thousands. Both fail.
+- **`test_trace`**, the tracer's own 36 checks, passes after the split.
+- **Full gate 96 of 97 in 9:40.** `x86-pdfview` said its page 1 was not
+  drawn again at the new zoom, under the gate's load; alone it passed its
+  38 checks.
