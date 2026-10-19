@@ -3122,6 +3122,59 @@ static int l_differs(lua_State *L)
 }
 
 /*
+ * surface:likeness(other[, block]) - how alike two pictures of one size are
+ * where no pixel need agree: the worst `block` by `block` square's light
+ * (red, green and blue summed) apart, and the whole's, each as a share of
+ * the first picture's, or nil when their sizes differ. For two renders
+ * whose random numbers differ - Cafesa3D's Final on the processor and the
+ * GPU (`cafesa3d-gpu.md` R7a) - which agree in their light and not draw for
+ * draw. Blocks past the last whole one are left out.
+ */
+static int l_likeness(lua_State *L)
+{
+    struct surface *a = check_surface(L, 1);
+    struct surface *b = check_surface(L, 2);
+    lua_Integer block = luaL_optinteger(L, 3, 8);
+    double worst = 0, all_a = 0, all_b = 0;
+    unsigned bx, by, x, y, n;
+
+    luaL_argcheck(L, block >= 1 && block <= 256, 3, "a block of 1 to 256 pixels");
+    n = (unsigned)block;
+
+    if (a->width != b->width || a->height != b->height) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    for (by = 0; by + n <= a->height; by += n) {
+        for (bx = 0; bx + n <= a->width; bx += n) {
+            double sa = 0, sb = 0;
+
+            for (y = by; y < by + n; y++) {
+                const uint32_t *p = row_of(a, y) + bx;
+                const uint32_t *q = row_of(b, y) + bx;
+
+                for (x = 0; x < n; x++) {
+                    sa += ((p[x] >> 16) & 0xff) + ((p[x] >> 8) & 0xff) + (p[x] & 0xff);
+                    sb += ((q[x] >> 16) & 0xff) + ((q[x] >> 8) & 0xff) + (q[x] & 0xff);
+                }
+            }
+
+            all_a += sa;
+            all_b += sb;
+
+            if ((sa > sb ? sa - sb : sb - sa) / (sa + 1.0) > worst) {
+                worst = (sa > sb ? sa - sb : sb - sa) / (sa + 1.0);
+            }
+        }
+    }
+
+    lua_pushnumber(L, (lua_Number)worst);
+    lua_pushnumber(L, (lua_Number)((all_a > all_b ? all_a - all_b : all_b - all_a) / (all_a + 1.0)));
+    return 2;
+}
+
+/*
  * surface:flush([x, y, w, h]) - what was drawn in that rectangle, or in all
  * of it, to the screen (`SYS_SCREEN_FLUSH`, `roadmap.md` 4h a).
  *
@@ -3376,6 +3429,7 @@ static const luaL_Reg surface_methods[] = {
     { "flush",  l_flush },
     { "view",   l_view },
     { "differs", l_differs },
+    { "likeness", l_likeness },
     { "pitch",  l_pitch },
     { "fill",   l_fill },
     { "wash",   l_wash },

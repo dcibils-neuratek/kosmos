@@ -270,6 +270,235 @@ static void pack_v(uint8_t *c, size_t *at, const float v[3])
     pack_f(c, at, v[2]);
 }
 
+/* The still life both tests render, Preview's as it always was and
+ * Final's roughened (`testing.md` 18.706). */
+static void still_life(struct k3d_scene *sc, struct k3d_light *lamp, struct k3d_render_setup *how,
+                       int W, int H, bool final)
+{
+    struct k3d_object *o;
+    uint32_t i;
+
+    /* A still life: a floor, three spheres - matte, metal, glass - a box,
+     * a smooth mesh and a lamp, under a sky. */
+    k3d_scene_init(sc);
+    o = k3d_scene_add(sc, K3D_PLANE);
+    o->size[0] = 20;
+    o->mat.base[0] = 0.8f; o->mat.base[1] = 0.78f; o->mat.base[2] = 0.72f;
+    o = k3d_scene_add(sc, K3D_SPHERE);
+    o->loc[0] = -1.2f; o->loc[2] = 0.7f; o->radius = 0.7f; o->smooth = true;
+    o->mat.base[0] = 0.85f; o->mat.base[1] = 0.3f; o->mat.base[2] = 0.2f;
+    o = k3d_scene_add(sc, K3D_SPHERE);
+    o->loc[0] = 0.3f; o->loc[1] = 0.6f; o->loc[2] = 0.55f; o->radius = 0.55f; o->smooth = true;
+    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.9f; o->mat.metallic = 1;
+    o = k3d_scene_add(sc, K3D_SPHERE);
+    o->loc[0] = 1.4f; o->loc[1] = -0.4f; o->loc[2] = 0.45f; o->radius = 0.45f; o->smooth = true;
+    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.95f; o->mat.trans = 1; o->mat.ior = 1.5f;
+    o = k3d_scene_add(sc, K3D_BOX);
+    o->loc[0] = -0.2f; o->loc[1] = 1.8f; o->loc[2] = 0.4f; o->rot[2] = 30;
+    o->size[0] = o->size[1] = o->size[2] = 0.8f;
+    o->mat.base[0] = 0.3f; o->mat.base[1] = 0.55f; o->mat.base[2] = 0.9f;
+    o = k3d_scene_add(sc, K3D_ICO);
+    o->loc[0] = 2.2f; o->loc[1] = 1.5f; o->loc[2] = 0.6f; o->radius = 0.6f; o->smooth = true;
+    o->mat.base[0] = 0.4f; o->mat.base[1] = 0.8f; o->mat.base[2] = 0.4f;
+
+    /* For Final, rough enough that every lobe is taken: a glossy metal,
+     * a rough coat on the red ball and a little on the box (18.706). */
+    if (final) {
+        sc->obj[1].mat.rough = 0.5f;
+        sc->obj[2].mat.rough = 0.35f;
+        sc->obj[4].mat.rough = 0.2f;
+    }
+
+    for (i = 0; i < sc->count; i++) {
+        if (sc->obj[i].mat.ior == 0) { sc->obj[i].mat.ior = 1.5f; }
+    }
+
+    memset(lamp, 0, sizeof *lamp);
+    lamp->pos[0] = 2; lamp->pos[1] = -2; lamp->pos[2] = 4;
+    lamp->radius = 0.3f;
+    lamp->colour[0] = lamp->colour[1] = lamp->colour[2] = 1;
+    lamp->power = 900;
+
+    memset(how, 0, sizeof *how);
+    how->w = W;
+    how->h = H;
+    how->eye[0] = 0.5f; how->eye[1] = -7; how->eye[2] = 2.5f;
+    how->target[0] = 0.4f; how->target[1] = 0.4f; how->target[2] = 0.5f;
+    how->fov = 0.8f;
+    how->preview = !final;
+    how->bounces = 6;
+    how->passes = 2;                 /* the pixel's middle, then a jittered pass */
+    how->lights = lamp;
+    how->nlights = 1;
+    how->world.zenith[0] = 0.25f; how->world.zenith[1] = 0.45f; how->world.zenith[2] = 0.9f;
+    how->world.horizon[0] = 0.75f; how->world.horizon[1] = 0.8f; how->world.horizon[2] = 0.9f;
+    how->world.strength = 1;
+
+}
+
+/* Final's bounds: measured 1.1% a block and 0.07% the whole on the first
+ * run, and 68.4% and 43.7% with no lamps (18.706) - so five times the noise,
+ * and a twelfth of what a wrong picture is. */
+#define FINAL_BLOCK 0.05
+#define FINAL_WHOLE 0.02
+
+/*
+ * **Final, held to the processor's within the noise** (`cafesa3d-gpu.md`
+ * R7a, `testing.md` 18.706). The two draw their random numbers differently,
+ * so no pixel need agree: what must is the light of each block of 8 by 8
+ * pixels and of the whole, after 32 passes each. And a control that the
+ * measure can tell: the GPU's Final with no lamps is not the processor's.
+ */
+static void final_compare(const struct k3d_render *r, const struct eu_buffer *acc, int W, int H,
+                          double *worst_block, double *whole)
+{
+    int bx, by, x, y;
+    double all_c = 0, all_g = 0;
+
+    *worst_block = 0;
+
+    for (by = 0; by < H / 8; by++) {
+        for (bx = 0; bx < W / 8; bx++) {
+            double c = 0, g = 0;
+
+            for (y = by * 8; y < by * 8 + 8; y++) {
+                for (x = bx * 8; x < bx * 8 + 8; x++) {
+                    const float *cp = &r->acc[(y * W + x) * 3];
+                    float gp[3];
+
+                    memcpy(gp, &acc->bytes[(size_t)(y * W + x) * 12], 12);
+                    c += cp[0] + cp[1] + cp[2];
+                    g += gp[0] + gp[1] + gp[2];
+                }
+            }
+
+            all_c += c;
+            all_g += g;
+
+            if (fabs(g - c) / (c + 1e-3) > *worst_block) {
+                *worst_block = fabs(g - c) / (c + 1e-3);
+            }
+        }
+    }
+
+    *whole = fabs(all_g - all_c) / (all_c + 1e-3);
+}
+
+static void final_tracer(const char *kernels)
+{
+    static uint32_t code[65536];
+    struct k3d_scene sc;
+    struct k3d_render *r;
+    struct k3d_gpu_scene g;
+    struct k3d_render_setup how;
+    struct k3d_light lamp;
+    struct eu_buffer b[7];
+    struct eu_stats st;
+    uint8_t constants[GPU_RUN_CONSTANTS];
+    size_t at = 0, lamps_at;
+    uint32_t n, i, tile, pass, worst_at = 0;
+    const char *why;
+    const int W = 48, H = 32, P = 32;
+    double block = 1, whole = 1, dark_block = 0, dark_whole = 0;
+    char what[256];
+
+    n = kernel_named(kernels, "tracer-final", code, sizeof code);
+    snprintf(what, sizeof what, "Final's kernel is not in %s", kernels);
+    check(n > 0, what);
+
+    if (n == 0) {
+        return;
+    }
+
+    still_life(&sc, &lamp, &how, W, H, true);
+    how.passes = P;
+    r = k3d_render_new(&sc, &how);
+    check(r != NULL && k3d_gpu_scene(r, &g), "the still life was not laid out for Final");
+
+    if (r == NULL) {
+        return;
+    }
+
+    while (k3d_render_job(r, &tile, &pass, NULL)) {
+        k3d_render_tile(r, tile, pass);
+    }
+
+    memset(constants, 0, sizeof constants);
+    pack_v(constants, &at, g.eye);
+    pack_v(constants, &at, g.forward);
+    pack_v(constants, &at, g.right);
+    pack_v(constants, &at, g.up);
+    pack_f(constants, &at, g.F);
+    pack_i(constants, &at, g.w);
+    pack_i(constants, &at, g.h);
+    lamps_at = at;
+    pack_i(constants, &at, (int32_t)g.nlamps);
+    pack_i(constants, &at, (int32_t)g.root);
+    pack_i(constants, &at, g.bounces);
+    pack_i(constants, &at, 0);
+    pack_v(constants, &at, g.world.zenith);
+    pack_v(constants, &at, g.world.horizon);
+    pack_f(constants, &at, g.world.strength);
+    pack_i(constants, &at, P);                  /* runs: every pass in the one run */
+
+    b[0] = words_buffer(g.nodes, (size_t)g.nnodes * K3D_GPU_NODE_WORDS);
+    b[1] = words_buffer(g.items, g.nitems);
+    b[2] = words_buffer(g.objects, (size_t)g.nobjects * K3D_GPU_OBJ_WORDS);
+    b[3] = words_buffer(g.tris, (size_t)g.ntris * K3D_GPU_TRI_WORDS);
+    b[4] = words_buffer(g.normals, (size_t)g.nnormals * 3);
+    b[5] = words_buffer(g.lamps, (size_t)g.nlamps * K3D_GPU_LAMP_WORDS);
+
+    for (i = 0; i < 6; i++) {
+        b[i].view = GPU_VIEW_TABLE;
+    }
+
+    {
+        float *zero = calloc((size_t)W * H * 3, sizeof(float));
+
+        b[6] = words_buffer(zero, (size_t)W * H * 3);
+        free(zero);
+    }
+
+    {
+        struct eu_run run = { code, n, 8, (uint32_t)(W + 7) / 8, (uint32_t)H, b, 7, constants,
+                              (uint32_t)((at + 31) & ~31u), 2000000000u };
+
+        why = eu_emulate(&run, &st, &worst_at);
+        snprintf(what, sizeof what, "Final did not run: %s at instruction %u", why ? why : "", worst_at);
+        check(why == NULL, what);
+
+        final_compare(r, &b[6], W, H, &block, &whole);
+
+        /* The control: no lamps, the same 32 passes, from nought. */
+        if (why == NULL) {
+            int32_t none = 0;
+
+            memset(b[6].bytes, 0, (size_t)W * H * 12);
+            memcpy(constants + lamps_at, &none, 4);
+            why = eu_emulate(&run, &st, &worst_at);
+            final_compare(r, &b[6], W, H, &dark_block, &dark_whole);
+        }
+    }
+
+    printf("  the still life, %dx%d in Final, %d passes each: blocks of 8 by 8 within %.1f%%, the whole "
+           "within %.2f%% of the processor's; with no lamps %.1f%% and %.1f%% - %llu instructions\n",
+           W, H, P, block * 100, whole * 100, dark_block * 100, dark_whole * 100,
+           (unsigned long long)st.instructions);
+
+    check(why == NULL && block <= FINAL_BLOCK && whole <= FINAL_WHOLE,
+          "the GPU's Final is not the processor's within the noise");
+    check(dark_block > FINAL_BLOCK || dark_whole > FINAL_WHOLE,
+          "Final with no lamps passed as the processor's, so the measure tells nothing");
+
+    for (i = 0; i < 7; i++) {
+        free(b[i].bytes);
+    }
+
+    k3d_gpu_scene_free(&g);
+    k3d_render_free(r);
+    k3d_scene_free(&sc);
+}
+
 static void tracer(const char *kernels)
 {
     static uint32_t code[65536];
@@ -278,7 +507,6 @@ static void tracer(const char *kernels)
     struct k3d_gpu_scene g;
     struct k3d_render_setup how;
     struct k3d_light lamp;
-    struct k3d_object *o;
     struct eu_buffer b[7];
     struct eu_stats st;
     uint8_t constants[GPU_RUN_CONSTANTS];
@@ -297,53 +525,7 @@ static void tracer(const char *kernels)
         return;
     }
 
-    /* A still life: a floor, three spheres - matte, metal, glass - a box,
-     * a smooth mesh and a lamp, under a sky. */
-    k3d_scene_init(&sc);
-    o = k3d_scene_add(&sc, K3D_PLANE);
-    o->size[0] = 20;
-    o->mat.base[0] = 0.8f; o->mat.base[1] = 0.78f; o->mat.base[2] = 0.72f;
-    o = k3d_scene_add(&sc, K3D_SPHERE);
-    o->loc[0] = -1.2f; o->loc[2] = 0.7f; o->radius = 0.7f; o->smooth = true;
-    o->mat.base[0] = 0.85f; o->mat.base[1] = 0.3f; o->mat.base[2] = 0.2f;
-    o = k3d_scene_add(&sc, K3D_SPHERE);
-    o->loc[0] = 0.3f; o->loc[1] = 0.6f; o->loc[2] = 0.55f; o->radius = 0.55f; o->smooth = true;
-    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.9f; o->mat.metallic = 1;
-    o = k3d_scene_add(&sc, K3D_SPHERE);
-    o->loc[0] = 1.4f; o->loc[1] = -0.4f; o->loc[2] = 0.45f; o->radius = 0.45f; o->smooth = true;
-    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.95f; o->mat.trans = 1; o->mat.ior = 1.5f;
-    o = k3d_scene_add(&sc, K3D_BOX);
-    o->loc[0] = -0.2f; o->loc[1] = 1.8f; o->loc[2] = 0.4f; o->rot[2] = 30;
-    o->size[0] = o->size[1] = o->size[2] = 0.8f;
-    o->mat.base[0] = 0.3f; o->mat.base[1] = 0.55f; o->mat.base[2] = 0.9f;
-    o = k3d_scene_add(&sc, K3D_ICO);
-    o->loc[0] = 2.2f; o->loc[1] = 1.5f; o->loc[2] = 0.6f; o->radius = 0.6f; o->smooth = true;
-    o->mat.base[0] = 0.4f; o->mat.base[1] = 0.8f; o->mat.base[2] = 0.4f;
-
-    for (i = 0; i < sc.count; i++) {
-        if (sc.obj[i].mat.ior == 0) { sc.obj[i].mat.ior = 1.5f; }
-    }
-
-    memset(&lamp, 0, sizeof lamp);
-    lamp.pos[0] = 2; lamp.pos[1] = -2; lamp.pos[2] = 4;
-    lamp.radius = 0.3f;
-    lamp.colour[0] = lamp.colour[1] = lamp.colour[2] = 1;
-    lamp.power = 900;
-
-    memset(&how, 0, sizeof how);
-    how.w = W;
-    how.h = H;
-    how.eye[0] = 0.5f; how.eye[1] = -7; how.eye[2] = 2.5f;
-    how.target[0] = 0.4f; how.target[1] = 0.4f; how.target[2] = 0.5f;
-    how.fov = 0.8f;
-    how.preview = true;
-    how.bounces = 6;
-    how.passes = 2;                 /* the pixel's middle, then a jittered pass */
-    how.lights = &lamp;
-    how.nlights = 1;
-    how.world.zenith[0] = 0.25f; how.world.zenith[1] = 0.45f; how.world.zenith[2] = 0.9f;
-    how.world.horizon[0] = 0.75f; how.world.horizon[1] = 0.8f; how.world.horizon[2] = 0.9f;
-    how.world.strength = 1;
+    still_life(&sc, &lamp, &how, W, H, false);
 
     r = k3d_render_new(&sc, &how);
     check(r != NULL && k3d_gpu_scene(r, &g), "the still life was not laid out");
@@ -636,6 +818,7 @@ int main(int argc, char **argv)
 
     if (argc > 1) {
         tracer(argv[1]);
+        final_tracer(argv[1]);
     } else {
         check(0, "no kernels file for the tracer - tools/eu_kernels.lua writes it");
     }

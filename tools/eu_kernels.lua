@@ -217,6 +217,8 @@ do
   local code, info = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").preview, { simd = 8 })
 
   case("tracer-preview", OK, 0, assert(code, info))
+  local fcode, finfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").final, { simd = 8 })
+  case("tracer-final", OK, 0, assert(fcode, finfo))
 
   local pcode, pinfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").paint, { simd = 8 })
 

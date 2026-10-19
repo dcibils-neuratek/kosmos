@@ -28899,3 +28899,67 @@ serve many threads one line.
 that a view past `R32F` is refused: `TABLE` is the last now. It holds
 `TABLE + 1` refused and a table taken, and `host` passes (29 compute
 checks).
+
+## 18.706 Final on the GPU, held to the processor within the noise
+
+`cafesa3d-gpu.md` R7a (Diego: "Go with r7"). The tracer's helpers are now
+one source, shared by two kernels: `k3dgpu.preview`, and `k3dgpu.final`,
+which is new. Final is the processor's `radiance`, lobe for lobe:
+- **glass**, reflected or refracted by Fresnel's odds and spread by its
+  roughness;
+- **metal**, its glossy lobe's share of each lamp, and a fuzzed bounce;
+- **the clear coat**, Fresnel's share reflected over the coloured body;
+- **the matte bounce**, by the cosine, with Russian roulette from the
+  third;
+- **each lamp sampled** within its cone;
+- **the indirect clamp** at four, and the firefly clamp at forty.
+
+It also has:
+- **its own random numbers**: a counter through `mix`, seeded by pixel and
+  pass;
+- **arc functions in kc**: `atan1`, a minimax polynomial about 1e-5 out,
+  with `asin1` and `acos1` made from it;
+- **`fuzz`'s point in a ball, drawn directly** rather than by rejection,
+  which lanes would wait on.
+
+kc writes each call out in full, so Final calls `trace` in two places, as
+Preview does. One is the path's ray. The other is one shadow ray per lamp
+per lobe, through a single loop: each lamp's matte sample, then its glossy
+share. What is alive across that ray was cut down until it fit the
+thread's registers:
+- `o` becomes the point hit;
+- a lamp's light is worked out after its shadow ray;
+- the base colour is read again where it is wanted.
+
+The kernel is 3,703 instructions, against Preview's 2,749.
+
+**Held in the emulator** (`test_k3d_gpu`):
+- The still life, roughened for Final (the metal ball 0.35, the red ball
+  0.5, the box 0.2), 48 by 32, 32 passes on each renderer.
+- Every 8 by 8 block's light is within 1.1% of the processor's, and the
+  whole within 0.07%. The bounds are 5% and 2%.
+- **The control**, the GPU's Final with no lamps: 68.4% and 43.7%,
+  refused. 19 checks, 9 s.
+
+**`surface:likeness(other, block)`**, new in gfx: the worst block's light
+apart and the whole's, in C, for pictures whose pixels need not agree.
+`luatest` checks it:
+- a picture of the same light, laid out otherwise in every block (every
+  pixel apart), is alike;
+- a block twice as bright is not;
+- two sizes give nil;
+- `differs` with its tolerance and its second result is checked beside it.
+
+**The Render window in Final** compares by `likeness` in 16 by 16 blocks,
+within 5% and 2%, and says "held to the processor's within the noise".
+The Preview-only line and note are gone.
+
+**On the M700** (`cafesa3d-gpu-m700-final.png`), the still life, 640 by
+360, 64 Final samples:
+- **GPU 2.02 s, processor 2.05 s.**
+- Every 16 by 16 block within 1.8%, the whole within 0.00%.
+- A trace is 20.29 ms a pass on the GPU and 33.62 ms on the wall; the GPU
+  works 1.31 s of the 2.02.
+
+**Full gate 96 of 97 in 9:46.** `x86-mouse`'s scrollbar drag did not
+scroll under the gate's load, as in 18.698; alone it passed its 13 checks.

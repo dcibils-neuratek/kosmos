@@ -663,6 +663,32 @@ if role == R_GFX then
   check(dst:get(7, 7) == 0xff0000ff, "the blit did not fill its corner")
   check(dst:get(5, 5) == 0, "the blit wrote outside its rectangle")
 
+  -- Two pictures held to each other (`testing.md` 18.700, 18.706): differs
+  -- within a tolerance, with the largest channel apart; likeness by the
+  -- light of blocks, where no pixel need agree.
+  local pa, pb = gfx.surface { w = 32, h = 16 }, gfx.surface { w = 32, h = 16 }
+  pa:fill(0, 0, 32, 16, 0xff808080)
+  pb:fill(0, 0, 32, 16, 0xff808080)
+  pb:set(3, 3, 0xff828080)
+  local count, most = pa:differs(pb)
+  check(count == 1 and most == 2, "differs did not count the pixel two levels off")
+  check(pa:differs(pb, 2) == 0, "differs counted a pixel within its tolerance")
+  local block, whole = pa:likeness(pb, 8)
+  check(block < 0.002 and whole < 0.0002, "likeness found two near pictures apart")
+  -- A picture of the same light, laid out otherwise within each block:
+  -- every pixel apart, and every block alike.
+  for y = 0, 15 do
+    for x = 0, 31 do pb:set(x, y, ((x + y) % 2 == 0) and 0xff707070 or 0xff909090) end
+  end
+  block, whole = pa:likeness(pb, 8)
+  check(pa:differs(pb, 2) == 512 and block < 0.001 and whole < 0.001,
+        "likeness did not see the same light in each block")
+  pb:fill(0, 0, 8, 8, 0xffffffff)
+  block, whole = pa:likeness(pb, 8)
+  check(block > 0.9 and whole > 0.05, "likeness missed a block twice as bright")
+  check(pa:likeness(gfx.surface { w = 8, h = 8 }) == nil, "likeness compared pictures of two sizes")
+  pa:free() pb:free()
+
   -- A freed surface raises rather than faulting, and freeing twice is fine.
   local f = gfx.surface { w = 4, h = 4 }
   f:free()

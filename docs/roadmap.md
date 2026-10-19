@@ -181,7 +181,19 @@ instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
   **0.91 s on the GPU against 1.11 s on the processor**, the picture
   held. The GPU works 9.6 ms a pass and the wall still shows 16.5, so
   what is left is the wait between runs.
-- **Then R7**, Final and textures.
+- **R7, Final and textures** (Diego, 19 October: "Go with r7"). The
+  textures are the six procedural patterns (checker, brick, shingles,
+  noise, wood, marble) and their bump; there are no image textures.
+  - **R7a, Final on the GPU.** The GPU gets random numbers of its own;
+    kc gets the arc functions the glossy lobe needs; then every lobe the
+    processor's Final has - glass by Fresnel, rough metal, the clear coat,
+    the matte bounce, the lamps sampled, the indirect clamp, Russian
+    roulette. Held to the processor in the emulator statistically (blocks
+    of pixels alike), and the Render window's Final comparison says
+    "within the noise".
+  - **R7b, textures.** The pattern's parameters in the GPU's scene;
+    `k3d_pattern` and the noise in kc; the bump. Textured Preview is held
+    to the processor pixel for pixel.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**
   (18.703): F12 asks the window manager to `raise` it, which it already

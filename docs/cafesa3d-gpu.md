@@ -190,7 +190,11 @@ the suites, and then on the M700.
    time. Read through the sampler as `table`s, with several passes a run,
    the GPU is 1.2 times as fast as the processor on the still life
    (`cafesa3d-gpu-m700-sampler.png`).
-7. **R7 - Final on the GPU**, path tracing, and image textures.
+7. **R7 - Final on the GPU**, path tracing, and textures. There are no
+   image textures: Cafesa3D's are six procedural patterns and their bump.
+   **R7a**, Final's lobes and the GPU's own random numbers, held to the
+   processor statistically; **R7b**, the patterns in kc, textured Preview
+   held pixel for pixel.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is
 the M700's.

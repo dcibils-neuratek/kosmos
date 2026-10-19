@@ -23,7 +23,7 @@
 
 local k3dgpu = {}
 
-k3dgpu.preview = [[
+local COMMON = [[
 // Cafesa3D's ray tracer on the GPU: Preview, Whitted's (`docs/cafesa3d-gpu.md`
 // R5). The processor's `radiance` in `k3d_trace.c`, step for step, over the
 // scene `k3d_gpu.c` lays out - a lane a pixel, the trees walked by their
@@ -299,6 +299,9 @@ int mix(int v) {
   return x;
 }
 
+]]
+
+k3dgpu.preview = COMMON .. [[
 // --- A pixel -------------------------------------------------------------
 
 void main() {
@@ -412,6 +415,255 @@ void main() {
 }
 ]]
 
+-- **Final**, path tracing, on the same helpers (`cafesa3d-gpu.md` R7a).
+k3dgpu.final = COMMON .. [[
+// --- Final: random numbers, and the lobes ------------------------------
+//
+// R7a (`cafesa3d-gpu.md`): the processor's Final, lobe for lobe, with
+// random numbers of the GPU's own - a counter through `mix` - so the two
+// pictures agree within their noise and not draw for draw.
+
+// A number in [0, 1): the lane's counter moved on and hashed.
+float rnd(inout int s) {
+  s = s + 0x9e3779b9;
+  return float((mix(s) >> 8) & 0xffffff) * (1.0 / 16777216.0);
+}
+
+// atan on any number: a minimax polynomial on [0, 1], about 1e-5 out,
+// and pi/2 less it beyond one. The glossy lobe's sizes want no better.
+float atan1(float x) {
+  float a = abs(x);
+  float t = a > 1.0 ? 1.0 / a : a;
+  float t2 = t * t;
+  float r = t * (0.99997726 + t2 * (-0.33262347 + t2 * (0.19354346 + t2 * (-0.11643287
+            + t2 * (0.05265332 + t2 * -0.0117212)))));
+  float q = a > 1.0 ? 1.5707963268 - r : r;
+  return x < 0.0 ? -q : q;
+}
+
+float asin1(float x) {
+  float c = sqrt(max(0.0, 1.0 - x * x));
+  float a = abs(x);
+  float r = a <= c ? atan1(a / c) : 1.5707963268 - atan1(c / max(a, 1e-30));
+  return x < 0.0 ? -r : r;
+}
+
+float acos1(float x) { return 1.5707963268 - asin1(x); }
+
+// Two directions square to `n` and each other, as `basis` makes them.
+void basis(vec3 n, inout vec3 a, inout vec3 b) {
+  float sg = n.z >= 0.0 ? 1.0 : -1.0;
+  float k = -1.0 / (sg + n.z);
+  float m = n.x * n.y * k;
+  a = vec3(1.0 + sg * n.x * n.x * k, sg * m, -sg * n.x);
+  b = vec3(m, sg + n.y * n.y * k, -n.y);
+}
+
+// A direction near `dir`, spread by `amount`: the processor's point in a
+// ball, here drawn straight rather than by rejection, which lanes would
+// wait on.
+vec3 fuzz(inout int s, vec3 dir, float amount) {
+  float z = rnd(s) * 2.0 - 1.0;
+  float ph = 6.28318530718 * rnd(s);
+  float r = pow(rnd(s), 0.33333333);
+  float sz = sqrt(max(0.0, 1.0 - z * z)) * r;
+  vec3 pt = vec3(sz * cos(ph), sz * sin(ph), z * r);
+  return amount > 0.0 ? normalize(dir + pt * amount) : dir;
+}
+
+// Light from a path that has bounced off something rough, held to four:
+// Cycles' indirect clamp, as `held` does it.
+vec3 held(vec3 c, bool bounced) {
+  float most = max(c.x, max(c.y, c.z));
+  return bounced && most > 4.0 ? c * (4.0 / most) : c;
+}
+
+// --- A pixel, Final --------------------------------------------------------
+
+void main() {
+  int x = group_x * simd + lane;
+  int y = group_y;
+  if (x < width) {
+   vec3 total = vec3(0.0, 0.0, 0.0);
+   for (int q = 0; q < runs; q += 1) {
+    int pass = passes + q;
+    float jx = 0.5;
+    float jy = 0.5;
+    if (pass > 0) {
+      int h = mix(x * 1973 + y * 9277 + pass * 26699);
+      jx = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+      h = mix(h);
+      jy = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+    }
+    int s = mix(x * 7919 + y * 104729 + pass * 1299709 + 0x2545f491);
+    vec3 o = eye;
+    vec3 d = normalize(forward * focal + right * (float(x) + jx - float(width) / 2.0)
+                       - up * (float(y) + jy - float(height) / 2.0));
+    vec3 col = vec3(0.0, 0.0, 0.0);
+    vec3 thr = vec3(1.0, 1.0, 1.0);
+    bool specular = true;
+    bool bounced = false;
+    bool going = true;
+    for (int bounce = 0; bounce <= bounces && going; bounce += 1) {
+      float best = 0.0; int hit = -1; int lamp = -1; vec3 hn = vec3(0.0, 0.0, 0.0);
+      int tri = -1; float bu = 0.0; float bv = 0.0;
+      trace(o, d, 1e30, bounce > 0, false, best, hit, lamp, hn, tri, bu, bv);
+      if (hit == -1 && lamp == -1) {
+        col = col + held(thr * sky(d), bounced);
+        going = false;
+      } else if (lamp != -1) {
+        if (specular) { col = col + held(thr * lamp_radiance(lamp), bounced); }
+        going = false;
+      } else {
+        // What is kept across the shadow rays is only what is used after
+        // them, and the rest is worked out in blocks that end first, since
+        // kc keeps a variable until its block ends (18.706). So `o` becomes
+        // the point hit, a lamp's light is worked out after its shadow ray,
+        // and the base colour is read again where it is wanted.
+        vec3 n = world_normal(hit, hn, tri, bu, bv);
+        int oat = hit * 192;
+        float amount = load(objects, oat + 128);
+        amount = amount * amount * 2.0;
+        o = o + d * best;
+        if (load(objects, oat + 140) > 0.0) {
+          col = col + held(thr * load3(objects, oat + 112) * load(objects, oat + 140), bounced);
+          going = false;
+        } else if (load(objects, oat + 132) > 0.5) {
+          // Glass: reflected or refracted by Fresnel's odds.
+          float ior = load(objects, oat + 136);
+          bool into = dot(d, n) < 0.0;
+          vec3 nn = into ? n : -n;
+          float eta = into ? 1.0 / ior : ior;
+          float cosi = -dot(d, nn);
+          float k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+          float r0 = (1.0 - ior) / (1.0 + ior);
+          r0 = r0 * r0;
+          float R = k < 0.0 ? 1.0 : r0 + (1.0 - r0) * pow(1.0 - cosi, 5.0);
+          if (rnd(s) < R) {
+            d = d - nn * (2.0 * dot(d, nn));
+            o = o + nn * 0.001;
+          } else {
+            d = normalize(d * eta + nn * (eta * cosi - sqrt(max(k, 0.0))));
+            o = o - nn * 0.001;
+            thr = thr * load3(objects, oat + 112);
+          }
+          d = fuzz(s, d, amount);
+          specular = true;
+        } else {
+          if (dot(n, d) > 0.0) { n = -n; }
+          o = o + n * 0.001;
+          bool metal = load(objects, oat + 124) > 0.5;
+          // amount >= 1.62 is a roughness of 0.9 or more: no clear coat.
+          float F = metal ? 1.0 : (amount >= 1.62 ? 0.0 : 0.04 + 0.96 * pow(max(0.0, 1.0 + dot(d, n)), 5.0));
+          vec3 light = vec3(0.0, 0.0, 0.0);
+          // Every lamp twice through one shadow ray: the matte lobe's sample
+          // (`direct`), then the glossy lobe's share (`glossy`) - one trace
+          // for both, as kc writes each call out in full.
+          for (int qn = 0; qn < nlamps * 2; qn += 1) {
+            vec3 dir = vec3(0.0, 0.0, 1.0);
+            float tmax = 0.0;
+            bool want = false;
+            {
+              int i = qn >> 1;
+              vec3 to = load3(lamps, i * 32) - o;
+              float rr = load(lamps, i * 32 + 12);
+              float dist = sqrt(dot(to, to));
+              vec3 w = to * (1.0 / dist);
+              tmax = dist - rr;
+              dir = w;
+              if ((qn & 1) == 0) {
+                if (!metal) {
+                  if (rr <= 0.0 || rr >= dist) {
+                    want = dot(w, n) > 0.0;
+                  } else {
+                    float cosmax = sqrt(max(0.0, 1.0 - rr * rr / (dist * dist)));
+                    float ct = 1.0 - rnd(s) * (1.0 - cosmax);
+                    float st = sqrt(max(0.0, 1.0 - ct * ct));
+                    float ph = 6.28318530718 * rnd(s);
+                    vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+                    basis(w, ba, bb);
+                    dir = ba * (cos(ph) * st) + bb * (sin(ph) * st) + w * ct;
+                    want = dot(dir, n) > 0.0;
+                  }
+                }
+              } else {
+                want = amount >= 0.02 && F > 0.0 && dot(w, n) > 0.0 && rr < dist;
+              }
+            }
+            if (want) {
+              trace(o, dir, tmax, false, true, best, hit, lamp, hn, tri, bu, bv);
+              if (hit == -1) {
+                // The light this ray found, worked out now it is known
+                // to arrive.
+                int i = qn >> 1;
+                vec3 to = load3(lamps, i * 32) - o;
+                float rr = load(lamps, i * 32 + 12);
+                float d2 = dot(to, to);
+                float dist = sqrt(d2);
+                vec3 w = to * (1.0 / dist);
+                if ((qn & 1) == 0) {
+                  float c = dot(dir, n);
+                  float cosmax = sqrt(max(0.0, 1.0 - rr * rr / d2));
+                  float solid = (rr <= 0.0 || rr >= dist) ? 3.14159265358979 * rr * rr / d2
+                                                          : 6.28318530718 * (1.0 - cosmax);
+                  light = light + lamp_radiance(i) * load3(objects, oat + 112)
+                          * (c * solid * (1.0 - F) * (1.0 / 3.14159265358979));
+                } else {
+                  float alpha = atan1(amount);
+                  float lobe = 6.28318530718 * (1.0 - cos(alpha));
+                  float beta = asin1(rr / dist);
+                  float disc = 6.28318530718 * (1.0 - cos(beta));
+                  float phi = acos1(min(1.0, max(-1.0, dot(w, d - n * (2.0 * dot(d, n))))));
+                  if (phi < alpha + beta) {
+                    float share = min(disc, lobe) / lobe;
+                    float lo = abs(alpha - beta);
+                    if (phi > lo) { share = share * (alpha + beta - phi) / (alpha + beta - lo); }
+                    light = light + lamp_radiance(i) * share
+                            * (metal ? load3(objects, oat + 112) : vec3(F, F, F));
+                  }
+                }
+              }
+            }
+          }
+          col = col + held(thr * light, bounced);
+          if (metal || rnd(s) < F) {
+            // On along the reflection, spread by the roughness.
+            d = fuzz(s, d - n * (2.0 * dot(d, n)), amount);
+            if (dot(d, n) <= 0.0) {
+              going = false;
+            } else {
+              if (metal) { thr = thr * load3(objects, oat + 112); }
+              specular = amount < 0.02;
+              bounced = bounced || !specular;
+            }
+          } else {
+            // The matte bounce, by the cosine.
+            float ph = 6.28318530718 * rnd(s);
+            float r2 = rnd(s);
+            float sr = sqrt(r2);
+            vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+            basis(n, ba, bb);
+            d = ba * (cos(ph) * sr) + bb * (sin(ph) * sr) + n * sqrt(1.0 - r2);
+            thr = thr * load3(objects, oat + 112);
+            specular = false;
+            bounced = true;
+            if (bounce >= 2) {
+              float qq = min(0.95, max(0.08, max(thr.x, max(thr.y, thr.z))));
+              if (rnd(s) > qq) { going = false; } else { thr = thr * (1.0 / qq); }
+            }
+          }
+        }
+      }
+    }
+    total = total + vec3(min(col.x, 40.0), min(col.y, 40.0), min(col.z, 40.0));
+   }
+    int at = (y * width + x) * 12;
+    vec3 had = load3(acc, at);
+    store3(acc, at, had + total);
+  }
+}
+]]
+
 --
 -- **paint** turns the light a render has gathered into the picture's
 -- colours, as the processor's `k3d_render_paint` does: the light over the
@@ -448,9 +700,8 @@ void main() {
 --------------------------------------------------------------------------
 -- **A render on the GPU**, with the processor's render's door - `paint`,
 -- `passes`, `rays`, `workers`, `stop` - so Cafesa3D asks it the same
--- questions (`docs/cafesa3d-gpu.md` R6). Preview, Whitted's, whatever the
--- integrator asked for, until Final reaches the GPU (R7); `gpu` and
--- `preview_only` say so to whoever shows the facts.
+-- questions (`docs/cafesa3d-gpu.md` R6): Preview, Whitted's, or Final, path
+-- tracing (R7a), as the integrator asks; `gpu` says whose it is.
 --
 --   local job, why = k3dgpu.render(k3, scene, how)
 --
@@ -489,7 +740,8 @@ function k3dgpu.render(k3, scene, how)
 
   if not ok then return nil, why end
 
-  local tracer, twhy = kernel(compute, kc, "preview")
+  -- Preview's kernel or Final's, as asked (`cafesa3d-gpu.md` R7a).
+  local tracer, twhy = kernel(compute, kc, how.preview and "preview" or "final")
   if not tracer then return nil, "the tracer's kernel: " .. tostring(twhy) end
 
   local paint, pwhy = kernel(compute, kc, "paint")
@@ -497,13 +749,12 @@ function k3dgpu.render(k3, scene, how)
 
   local wanted = {}
   for k, v in pairs(how) do wanted[k] = v end
-  wanted.preview = true                     -- Final on the GPU is R7's
 
   local g, gwhy = k3.gpu_scene(scene, wanted)
   if not g then return nil, gwhy end
 
   local sizes = g:sizes()
-  local self = setmetatable({ gpu = true, preview_only = not how.preview, w = how.w, h = how.h,
+  local self = setmetatable({ gpu = true, w = how.w, h = how.h,
                               target = how.passes or 256, count = 0, painted = 0,
                               gpu_ns = 0, trace_ns = 0, paint_ns = 0, buffers = {},
                               camera = g:camera(),

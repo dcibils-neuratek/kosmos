@@ -246,8 +246,7 @@ local function gpu_available()
 end
 
 -- A render job from whichever renderer is chosen, and the same calls on
--- either: `paint`, `passes`, `rays`, `stop`. The GPU's traces Preview
--- whatever is asked until R7, and says so with `preview_only`.
+-- either: `paint`, `passes`, `rays`, `stop`, Preview or Final alike.
 local function render_job(how)
   if RENDER.gpu and gpu_available() then
     return use("/Kosmos/Libraries/k3dgpu.lua").render(k3, scene, how)
@@ -1885,8 +1884,6 @@ local function draw_props(s)
         gpu_said = true
         print("cafesa3d: the GPU cannot be chosen: " .. tostring(why))
       end
-    elseif RENDER.gpu and not RENDER.preview then
-      y = note(s, x, y - 4, w, "The GPU traces Preview until it learns Final.") + 8
     end
 
     s:text(x, y + 4, "INTEGRATOR", theme.text_dim, nil, tiny)
@@ -2522,13 +2519,24 @@ function final.keep()
 
   local them = final.last[other]
 
-  if them and them.key == final.key then
+  if them and them.key == final.key and final.preview then
     local count, worst = copy:differs(them.pic, 2)
 
     final.held = { key = final.key, count = count or pw * ph, worst = worst or 255,
                    pixels = pw * ph }
+    final.held.same = final.held.count <= final.held.pixels // 100
     print(("cafesa3d: the GPU's picture against the processor's: %d of %d pixels more than "
            .. "2 levels apart, the worst %d"):format(final.held.count, pw * ph, final.held.worst))
+  elseif them and them.key == final.key then
+    -- Final: the two drew different random numbers, so their pixels need
+    -- not agree, and their light must - each 16 by 16 square within 5%
+    -- and the whole within 2% (R7a; `test_k3d_gpu`'s bounds, 18.706).
+    local block, whole = copy:likeness(them.pic, 16)
+
+    final.held = { key = final.key, final = true, block = block or 1, whole = whole or 1 }
+    final.held.same = final.held.block <= 0.05 and final.held.whole <= 0.02
+    print(("cafesa3d: the GPU's picture against the processor's, Final: blocks of 16 within "
+           .. "%.1f%%, the whole within %.2f%%"):format(final.held.block * 100, final.held.whole * 100))
   end
 end
 
@@ -2557,7 +2565,7 @@ function final.times(s, x, y, w)
   end
 
   local held = final.held
-  local same = held and held.key == key and held.count <= held.pixels // 100
+  local same = held and held.key == key and held.same
 
   if same and gpu.took > 0 then
     local k = cpu.took / gpu.took
@@ -2567,7 +2575,14 @@ function final.times(s, x, y, w)
     y = y + gfx.height() + 6
   end
 
-  if held and held.key == key then
+  if held and held.key == key and held.final then
+    y = note(s, x, y, w, same and ("Held to the processor's within the noise: every 16 by 16 block's "
+                                   .. "light within %.1f%%, the whole within %.2f%%."):format(
+                                     held.block * 100, held.whole * 100)
+                         or ("Not the processor's picture: a block's light %.1f%% apart, the whole "
+                             .. "%.2f%%, so no speed is claimed."):format(held.block * 100,
+                                                                          held.whole * 100))
+  elseif held and held.key == key then
     y = note(s, x, y, w, same and ("Held to the processor's: %d of %d pixels within 2 levels, the "
                                    .. "worst %d apart."):format(held.pixels - held.count,
                                                                  held.pixels, held.worst)
@@ -2653,7 +2668,6 @@ function final.draw()
                  { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) } }
 
   if final.gpu then
-    if job and job.preview_only then rows[#rows + 1] = { "", "Preview only on the GPU until R7" } end
     rows[#rows + 1] = { "GPU time", job and ("%.2f s"):format(job:gpu_seconds()) or "-" }
   else
     rows[#rows + 1] = { "Cores", ("%d thread%s, a tile each"):format(final.threads or 0,
@@ -2719,10 +2733,6 @@ function final.begin()
   end
 
   final.job, final.threads, final.gpu = job, job:workers(), job.gpu == true
-
-  -- What it traced, which is Preview on the GPU until R7: the key two
-  -- renders must share for their times and pictures to be compared.
-  if job.preview_only then final.preview = true end
 
   final.key = ("%s|%.4f %.4f %.4f|%.4f %.4f %.4f|%s|%dx%d|%d|%d|%s"):format(
     render_key(), cam.loc[1], cam.loc[2], cam.loc[3], cam.target[1], cam.target[2],
