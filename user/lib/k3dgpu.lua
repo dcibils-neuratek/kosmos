@@ -600,7 +600,7 @@ void main() {
 ]]
 
 -- **Final**, path tracing, on the same helpers (`cafesa3d-gpu.md` R7a).
-k3dgpu.final = COMMON .. [[
+local FINALH = [[
 // --- Final: random numbers, and the lobes ------------------------------
 //
 // R7a (`cafesa3d-gpu.md`): the processor's Final, lobe for lobe, with
@@ -653,6 +653,9 @@ vec3 held(vec3 c, bool bounced) {
   return bounced && most > 4.0 ? c * (4.0 / most) : c;
 }
 
+]]
+
+k3dgpu.final = COMMON .. FINALH .. [[
 // --- A pixel, Final --------------------------------------------------------
 
 void main() {
@@ -843,6 +846,293 @@ void main() {
 ]]
 
 --
+-- **The wavefront** (`cafesa3d-gpu.md` R8 W3): Final split at its bounces
+-- into kernels a list of runs takes in turn (`compute.runs`) - `start`
+-- once, `path`, `shadow` and `bounce` for each bounce, `finish` once - so
+-- the shadow rays are cast by a kernel with no material code between them,
+-- and no lane waits on another's glass while it casts them. A pixel's
+-- path lives in `state` between the steps: 96 bytes at its own place, read
+-- and written by the thread that has it (18.709).
+--
+--   0 the ray's origin, 12 its direction, 24 the throughput, 36 the light
+--   so far, 48 the normal, 60 the colour, 72 F, 76 the lobe's spread
+--   (`amount`), 80 the random state, 84 the flags: 1 going, 2 specular,
+--   4 bounced, 8 metal, 16 a hit for `shadow` and `bounce`
+--
+-- The image in bands of rows: `y0` the band's first. `step` is the bounce.
+local WFH = [[
+const int y0, step;
+buffer state;
+
+int state_at(int x, int y) { return ((y - y0) * width + x) * 96; }
+]]
+
+k3dgpu.wf_start = COMMON .. FINALH .. WFH .. [[
+void main() {
+  int x = group_x * simd + lane;
+  int y = y0 + group_y;
+  if (x < width) {
+    float jx = 0.5;
+    float jy = 0.5;
+    if (passes > 0) {
+      int h = mix(x * 1973 + y * 9277 + passes * 26699);
+      jx = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+      h = mix(h);
+      jy = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+    }
+    int at = state_at(x, y);
+    store3(state, at, eye);
+    store3(state, at + 12, normalize(forward * focal + right * (float(x) + jx - float(width) / 2.0)
+                                     - up * (float(y) + jy - float(height) / 2.0)));
+    store3(state, at + 24, vec3(1.0, 1.0, 1.0));
+    store3(state, at + 36, vec3(0.0, 0.0, 0.0));
+    store(state, at + 80, mix(x * 7919 + y * 104729 + passes * 1299709 + 0x2545f491));
+    store(state, at + 84, 3);
+  }
+}
+]]
+
+k3dgpu.wf_path = COMMON .. FINALH .. WFH .. [[
+void main() {
+  int x = group_x * simd + lane;
+  int y = y0 + group_y;
+  if (x < width) {
+    int at = state_at(x, y);
+    int flags = loadi(state, at + 84);
+    if ((flags & 1) == 1) {
+      vec3 o = load3(state, at);
+      vec3 d = load3(state, at + 12);
+      vec3 thr = load3(state, at + 24);
+      int s = loadi(state, at + 80);
+      bool specular = (flags & 2) == 2;
+      bool bounced = (flags & 4) == 4;
+      bool going = true;
+      bool record = false;
+      bool metal = false;
+      vec3 add = vec3(0.0, 0.0, 0.0);
+      float best = 0.0; int hit = -1; int lamp = -1; vec3 hn = vec3(0.0, 0.0, 0.0);
+      int tri = -1; float bu = 0.0; float bv = 0.0;
+      trace(o, d, 1e30, step > 0, false, best, hit, lamp, hn, tri, bu, bv);
+      if (hit == -1 && lamp == -1) {
+        add = held(thr * sky(d), bounced);
+        going = false;
+      } else if (lamp != -1) {
+        if (specular) { add = held(thr * lamp_radiance(lamp), bounced); }
+        going = false;
+      } else {
+        vec3 n = world_normal(hit, hn, tri, bu, bv);
+        int oat = hit * 256;
+        float amount = load(objects, oat + 128);
+        amount = amount * amount * 2.0;
+        o = o + d * best;
+        vec3 base = load3(objects, oat + 112);
+        if (loadi(objects, oat + 144) != 0) { base = textured(oat, o, n); }
+        if (load(objects, oat + 140) > 0.0) {
+          add = held(thr * base * load(objects, oat + 140), bounced);
+          going = false;
+        } else if (load(objects, oat + 132) > 0.5) {
+          // Glass: reflected or refracted by Fresnel's odds, here.
+          float ior = load(objects, oat + 136);
+          bool into = dot(d, n) < 0.0;
+          vec3 nn = into ? n : -n;
+          float eta = into ? 1.0 / ior : ior;
+          float cosi = -dot(d, nn);
+          float k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+          float r0 = (1.0 - ior) / (1.0 + ior);
+          r0 = r0 * r0;
+          float R = k < 0.0 ? 1.0 : r0 + (1.0 - r0) * pow(1.0 - cosi, 5.0);
+          if (rnd(s) < R) {
+            d = d - nn * (2.0 * dot(d, nn));
+            o = o + nn * 0.001;
+          } else {
+            d = normalize(d * eta + nn * (eta * cosi - sqrt(max(k, 0.0))));
+            o = o - nn * 0.001;
+            thr = thr * base;
+          }
+          d = fuzz(s, d, amount);
+          specular = true;
+        } else {
+          // Opaque: left for `shadow` and `bounce`, with what they need.
+          if (dot(n, d) > 0.0) { n = -n; }
+          o = o + n * 0.001;
+          metal = load(objects, oat + 124) > 0.5;
+          store3(state, at + 48, n);
+          store3(state, at + 60, base);
+          store(state, at + 72, metal ? 1.0 : (amount >= 1.62 ? 0.0
+                : 0.04 + 0.96 * pow(max(0.0, 1.0 + dot(d, n)), 5.0)));
+          store(state, at + 76, amount);
+          record = true;
+        }
+      }
+      store3(state, at + 36, load3(state, at + 36) + add);
+      store3(state, at, o);
+      store3(state, at + 12, d);
+      store3(state, at + 24, thr);
+      store(state, at + 80, s);
+      store(state, at + 84, (going ? 1 : 0) | (specular ? 2 : 0) | (bounced ? 4 : 0)
+                            | (metal ? 8 : 0) | (record ? 16 : 0));
+    }
+  }
+}
+]]
+
+k3dgpu.wf_shadow = COMMON .. FINALH .. WFH .. [[
+void main() {
+  int x = group_x * simd + lane;
+  int y = y0 + group_y;
+  if (x < width) {
+    int at = state_at(x, y);
+    int flags = loadi(state, at + 84);
+    if ((flags & 16) == 16) {
+      vec3 o = load3(state, at);
+      vec3 d = load3(state, at + 12);
+      vec3 n = load3(state, at + 48);
+      float F = load(state, at + 72);
+      float amount = load(state, at + 76);
+      int s = loadi(state, at + 80);
+      bool metal = (flags & 8) == 8;
+      vec3 light = vec3(0.0, 0.0, 0.0);
+      float best = 0.0; int hit = -1; int lamp = -1; vec3 hn = vec3(0.0, 0.0, 0.0);
+      int tri = -1; float bu = 0.0; float bv = 0.0;
+      // Every lamp twice through one shadow ray, as Final's loop.
+      for (int qn = 0; qn < nlamps * 2; qn += 1) {
+        vec3 dir = vec3(0.0, 0.0, 1.0);
+        float tmax = 0.0;
+        bool want = false;
+        {
+          int i = qn >> 1;
+          vec3 to = load3(lamps, i * 32) - o;
+          float rr = load(lamps, i * 32 + 12);
+          float dist = sqrt(dot(to, to));
+          vec3 w = to * (1.0 / dist);
+          tmax = dist - rr;
+          dir = w;
+          if ((qn & 1) == 0) {
+            if (!metal) {
+              if (rr <= 0.0 || rr >= dist) {
+                want = dot(w, n) > 0.0;
+              } else {
+                float cosmax = sqrt(max(0.0, 1.0 - rr * rr / (dist * dist)));
+                float ct = 1.0 - rnd(s) * (1.0 - cosmax);
+                float st = sqrt(max(0.0, 1.0 - ct * ct));
+                float ph = 6.28318530718 * rnd(s);
+                vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+                basis(w, ba, bb);
+                dir = ba * (cos(ph) * st) + bb * (sin(ph) * st) + w * ct;
+                want = dot(dir, n) > 0.0;
+              }
+            }
+          } else {
+            want = amount >= 0.02 && F > 0.0 && dot(w, n) > 0.0 && rr < dist;
+          }
+        }
+        if (want) {
+          trace(o, dir, tmax, false, true, best, hit, lamp, hn, tri, bu, bv);
+          if (hit == -1) {
+            int i = qn >> 1;
+            vec3 to = load3(lamps, i * 32) - o;
+            float rr = load(lamps, i * 32 + 12);
+            float d2 = dot(to, to);
+            float dist = sqrt(d2);
+            vec3 w = to * (1.0 / dist);
+            if ((qn & 1) == 0) {
+              float c = dot(dir, n);
+              float cosmax = sqrt(max(0.0, 1.0 - rr * rr / d2));
+              float solid = (rr <= 0.0 || rr >= dist) ? 3.14159265358979 * rr * rr / d2
+                                                      : 6.28318530718 * (1.0 - cosmax);
+              light = light + lamp_radiance(i) * load3(state, at + 60)
+                      * (c * solid * (1.0 - F) * (1.0 / 3.14159265358979));
+            } else {
+              float alpha = atan1(amount);
+              float lobe = 6.28318530718 * (1.0 - cos(alpha));
+              float beta = asin1(rr / dist);
+              float disc = 6.28318530718 * (1.0 - cos(beta));
+              float phi = acos1(min(1.0, max(-1.0, dot(w, d - n * (2.0 * dot(d, n))))));
+              if (phi < alpha + beta) {
+                float share = min(disc, lobe) / lobe;
+                float lo = abs(alpha - beta);
+                if (phi > lo) { share = share * (alpha + beta - phi) / (alpha + beta - lo); }
+                light = light + lamp_radiance(i) * share
+                        * (metal ? load3(state, at + 60) : vec3(F, F, F));
+              }
+            }
+          }
+        }
+      }
+      store3(state, at + 36, load3(state, at + 36)
+                             + held(load3(state, at + 24) * light, (flags & 4) == 4));
+      store(state, at + 80, s);
+    }
+  }
+}
+]]
+
+k3dgpu.wf_bounce = COMMON .. FINALH .. WFH .. [[
+void main() {
+  int x = group_x * simd + lane;
+  int y = y0 + group_y;
+  if (x < width) {
+    int at = state_at(x, y);
+    int flags = loadi(state, at + 84);
+    if ((flags & 16) == 16) {
+      vec3 d = load3(state, at + 12);
+      vec3 n = load3(state, at + 48);
+      vec3 thr = load3(state, at + 24);
+      float F = load(state, at + 72);
+      float amount = load(state, at + 76);
+      int s = loadi(state, at + 80);
+      bool metal = (flags & 8) == 8;
+      bool going = true;
+      bool specular = (flags & 2) == 2;
+      bool bounced = (flags & 4) == 4;
+      if (metal || rnd(s) < F) {
+        // On along the reflection, spread by the roughness.
+        d = fuzz(s, d - n * (2.0 * dot(d, n)), amount);
+        if (dot(d, n) <= 0.0) {
+          going = false;
+        } else {
+          if (metal) { thr = thr * load3(state, at + 60); }
+          specular = amount < 0.02;
+          bounced = bounced || !specular;
+        }
+      } else {
+        // The matte bounce, by the cosine, and Russian roulette from the third.
+        float ph = 6.28318530718 * rnd(s);
+        float r2 = rnd(s);
+        float sr = sqrt(r2);
+        vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+        basis(n, ba, bb);
+        d = ba * (cos(ph) * sr) + bb * (sin(ph) * sr) + n * sqrt(1.0 - r2);
+        thr = thr * load3(state, at + 60);
+        specular = false;
+        bounced = true;
+        if (step >= 2) {
+          float qq = min(0.95, max(0.08, max(thr.x, max(thr.y, thr.z))));
+          if (rnd(s) > qq) { going = false; } else { thr = thr * (1.0 / qq); }
+        }
+      }
+      store3(state, at + 12, d);
+      store3(state, at + 24, thr);
+      store(state, at + 80, s);
+      store(state, at + 84, (going ? 1 : 0) | (specular ? 2 : 0) | (bounced ? 4 : 0));
+    }
+  }
+}
+]]
+
+k3dgpu.wf_finish = COMMON .. FINALH .. WFH .. [[
+void main() {
+  int x = group_x * simd + lane;
+  int y = y0 + group_y;
+  if (x < width) {
+    vec3 col = load3(state, state_at(x, y) + 36);
+    int at = (y * width + x) * 12;
+    vec3 had = load3(acc, at);
+    store3(acc, at, had + vec3(min(col.x, 40.0), min(col.y, 40.0), min(col.z, 40.0)));
+  }
+}
+]]
+
 -- **paint** turns the light a render has gathered into the picture's
 -- colours, as the processor's `k3d_render_paint` does: the light over the
 -- passes, the same filmic curve, then the paint's own sRGB table, looked up
@@ -959,6 +1249,33 @@ function k3dgpu.render(k3, scene, how)
   if not pic then self:stop() return nil, iwhy end
   self.picture, self.surface = pic, pic:surface()
 
+  -- **The wavefront** (R8), when asked for and Final: its five kernels,
+  -- the image in bands of rows a list each, and a path's 96 bytes a pixel
+  -- of the band. A list is 32 steps at most, two and three a bounce, so
+  -- past nine bounces Final's one kernel draws it instead.
+  if how.wavefront and not how.preview and self.camera.bounces <= 9 then
+    self.wavefront, self.wfk = true, {}
+
+    for _, name in ipairs { "wf_start", "wf_path", "wf_shadow", "wf_bounce", "wf_finish" } do
+      local k, kwhy = kernel(compute, kc, name)
+
+      if not k then self:stop() return nil, "the wavefront's " .. name .. ": " .. tostring(kwhy) end
+      self.wfk[name] = k
+    end
+
+    for _, c in ipairs(self.wfk.wf_path.info.constants) do
+      if c.name == "step" then self.step_at = c.off end
+    end
+
+    self.band_rows = math.max(1, math.min(how.h, 262144 // how.w))
+    self.nbands = (how.h + self.band_rows - 1) // self.band_rows
+    self.band = 0
+
+    local state, swhy = compute.buffer(self.band_rows * how.w * 96)
+    if not state then self:stop() return nil, swhy end
+    self.state = state
+  end
+
   self.started = sys.ticks()
   self.hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
   self:step()
@@ -982,7 +1299,16 @@ function job:step()
       self.paint_ns = self.paint_ns + ns
     end
 
+    -- The wavefront's next band, the pass not done until the last.
+    if self.phase == "trace" and self.wavefront and self.band + 1 < self.nbands then
+      self.band = self.band + 1
+      self.ticket, self.phase = nil, nil
+      self:launch_trace()
+      return
+    end
+
     if self.phase == "trace" then
+      self.band = 0
       self.count = self.count + self.runs
       self.ticket, self.phase = nil, nil
 
@@ -1029,7 +1355,42 @@ function job:step()
   if self.count < self.target then self:launch_trace() end
 end
 
+-- A pass of a band by the wavefront: one list, start, then path, shadow
+-- and bounce for each bounce, then finish (`compute.runs`).
+function job:launch_band()
+  local c = self.camera
+  local y0 = self.band * self.band_rows
+  local rows = math.min(self.band_rows, self.h - y0)
+  local gx = (self.w + 7) // 8
+  local k = self.wfk
+  local steps = { { kernel = k.wf_start.kernel, simd = 8, grid = { gx, rows }, step = 0 } }
+
+  for bounce = 0, c.bounces do
+    for _, name in ipairs { "wf_path", "wf_shadow", "wf_bounce" } do
+      steps[#steps + 1] = { kernel = k[name].kernel, simd = 8, grid = { gx, rows }, step = bounce }
+    end
+  end
+
+  steps[#steps + 1] = { kernel = k.wf_finish.kernel, simd = 8, grid = { gx, rows }, step = 0 }
+  self.runs = 1
+
+  local constants = self.kc.pack(k.wf_path.info, {
+    eye = c.eye, forward = c.forward, right = c.right, up = c.up, focal = c.focal,
+    width = c.width, height = c.height, nlamps = c.nlamps, root = c.root,
+    bounces = c.bounces, passes = self.count, runs = 1, zenith = c.zenith, horizon = c.horizon,
+    strength = c.strength, y0 = y0, step = 0 })
+  local b = self.buffers
+  local t, why = self.compute.runs{
+    buffers = { { b[1], "table" }, { b[2], "table" }, { b[3], "table" }, { b[4], "table" },
+                { b[5], "table" }, { b[6], "table" }, self.acc, self.state },
+    constants = constants, step_at = self.step_at, steps = steps }
+
+  if t then self.ticket, self.phase = t, "trace" else self.why = why end
+end
+
 function job:launch_trace()
+  if self.wavefront then return self:launch_band() end
+
   local c = self.camera
 
   self.runs = math.max(1, math.min(self.next_runs or 1, self.target - self.count))
@@ -1094,7 +1455,8 @@ function job:stop()
   if self.curve then self.curve:free() end
   if self.acc then self.acc:free() end
   if self.picture then self.picture:free() end
-  self.buffers, self.curve, self.acc, self.picture = {}, nil, nil, nil
+  if self.state then self.state:free() end
+  self.buffers, self.curve, self.acc, self.picture, self.state = {}, nil, nil, nil, nil
   self.ticket = nil
 end
 

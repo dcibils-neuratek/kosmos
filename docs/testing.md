@@ -29021,3 +29021,76 @@ which bound it used. The emulator's still life, 32 passes, keeps its own
 5% and 2%, measured at 1.1% and 0.07%.
 
 **Full gate 97 of 97 in 9:52.**
+
+## 18.708 How busy the GPU's lanes are
+
+`cafesa3d-gpu.md` R8 W1. The emulator already counted the lanes each
+instruction writes, so `test_k3d_gpu` now says how busy a thread's eight
+lanes were: the lanes written over eight per instruction. That is an
+under-count, since branches and messages count as instructions and write
+no lanes. On the still life, Preview is 51% and Final 37%, so nearly two
+thirds of Final's arithmetic is lanes waiting on other lanes.
+
+## 18.709 Lists of runs, and the wavefront tried
+
+`cafesa3d-gpu.md` R8 W2 to W5.
+
+**Lists of runs.** `GPU_OP_RUNS` carries up to 32 steps that share their
+buffers and constants, each with its own kernel, lanes, grid and number,
+in one submission (980 bytes). Between steps there is a stall with the
+data port's lines flushed, so each step reads what the last wrote. Each
+step has its own constants (its number at `step_at`) and its own
+interface descriptor, in a four-page state area, and its own base
+addresses, so a kernel's instructions are still only its own pages. The
+whole list is timed as one.
+
+`compute.runs{...}` is its door in the Compute Kit. `test_compute` holds
+the packing: the fields where the driver reads them, and 0 or 33 steps, a
+step number outside the constants or off a word, and a step of 4 lanes,
+each refused (36 checks).
+
+On the M700, `gpu runs` has each step double every word and add its own
+number, so the answer is right only if every step saw the last one's
+writes, in order. 16,384 words were right for 1, 16 and 32 steps.
+
+| steps | one list, on the wall | separate runs | GPU time |
+|---|---|---|---|
+| 16 | 7.4 ms | 126 ms | 298 µs |
+| 32 | 7.4 ms | 254 ms | 583 µs |
+
+**The wavefront.** Final was split into five kernels: `start`, then
+`path`, `shadow` and `bounce` for each bounce, then `finish`. A pixel's
+path lives in 96 bytes of a state buffer between steps, and the image goes
+in bands of rows, one list a band. "GPU wavefront" was a third renderer in
+the Render tab and the scene's file, beside Processor and GPU (Diego).
+- **In the emulator it held** to the processor within the noise: 16
+  passes, blocks within 1.8%, the whole within 0.16%.
+- **Lanes busy:** path 38%, shadow 38%, bounce 49%, barely above the
+  single kernel's 37%.
+- **It ran twice the instructions a pass.** Every step runs over every
+  pixel, finished paths included.
+
+**On the M700**, Final, 640 by 360:
+
+| scene | processor | GPU, one kernel | GPU wavefront |
+|---|---|---|---|
+| the still life, 64 samples | 2.0 s | 2.0 s | 5.5 s |
+| the House, 16 samples | 2.2 s | 8.8 s | 8.8 s |
+
+Each picture was held to the processor's.
+- On the still life the wavefront's trace was 59.6 ms a pass against the
+  one kernel's 20.3.
+- On the House the click meant for the one kernel's render did not take,
+  so its 8.8 s is the earlier run's (18.707).
+
+**What this says.** Without compaction the wavefront does more work, not
+less. With compaction and sorting it might gain 1.5 to 2 times on the
+House, which would at best bring it level with the processor. The HD 530
+is a small GPU without hardware for ray tracing, beside a strong eight-thread
+processor. So, as Diego agreed: the GPU stays a choice beside the
+processor, the wavefront leaves the Render tab, and the lists of runs
+stay for any work of several kernels. `tools/raise.lua`, used to bring
+Cafesa3D's window back over VNC while measuring, is kept.
+
+`host`, both `x86-cafesa3d` suites, `x86-gpumon` and `x86-fractal` pass
+(5:06).

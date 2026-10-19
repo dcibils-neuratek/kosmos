@@ -23,6 +23,7 @@
 --                       at (123, 77), every pixel held (7c)
 --   gpu read [words]    a kernel that reads a buffer into another, checked
 --   gpu kc FILE [n]     a kernel in kc from a file, its first words said
+--   gpu runs [steps]    a list of runs in one submission, held and timed
 --   gpu kernel [colour] a program's own kernel (`compute.md` C2): the fill
 --                       written as text, assembled here by eu.lua, checked
 --                       and kept by the driver, run over a buffer this
@@ -37,7 +38,7 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" then
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" then
   print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour] | kernel [colour]]")
   return
 end
@@ -259,6 +260,94 @@ void main() {
 
   from:free()
   to:free()
+  k:forget()
+  return
+end
+
+-- `gpu runs [steps]`: a list of runs in one submission (R8 W2) - each
+-- step doubling every word and adding its own number, so the answer is
+-- right only if every step saw the last one's writes, in order - and the
+-- same steps as separate runs, timed against it.
+if words[1] == "runs" then
+  local compute = use("/Kosmos/Kits/compute")
+  local kc = use("/Kosmos/Libraries/kc.lua")
+  local ok, why = compute.available()
+
+  if not ok then print("gpu: " .. tostring(why)) return end
+
+  local nsteps = math.min(32, tonumber(words[2] or "") or 16)
+  local n = 16384
+  local text, info = kc.compile([[
+const int n, step;
+buffer out;
+
+void main() {
+  int i = group_x * simd + lane;
+  if (i < n) {
+    store(out, i * 4, loadi(out, i * 4) * 2 + step);
+  }
+}
+]], { simd = 8 })
+
+  if not text then print("gpu: " .. tostring(info)) return end
+
+  local k, kwhy = compute.kernel(text)
+
+  if not k then print("gpu: " .. tostring(kwhy)) return end
+
+  local out = compute.buffer(n * 4)
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+  local want = 0
+
+  -- As the GPU's 32-bit words wrap, for a list long enough to.
+  for s = 1, nsteps do want = (want * 2 + s) & 0xffffffff end
+  want = want >= 0x80000000 and want - 0x100000000 or want
+
+  local function check(how)
+    local back, right = out:read(0, n * 4), 0
+
+    for i = 0, n - 1 do
+      if string.unpack("<i4", back, i * 4 + 1) == want then right = right + 1 end
+    end
+
+    return right
+  end
+
+  -- In one list.
+  out:write(0, string.rep("\0", n * 4))
+  local steps = {}
+
+  for s = 1, nsteps do
+    steps[s] = { kernel = k, simd = 8, grid = { n // 8, 1 }, step = s }
+  end
+
+  local t0 = sys.ticks()
+  local t, rwhy = compute.runs{ buffers = { out }, constants = kc.pack(info, { n = n, step = 0 }),
+                                step_at = 4, steps = steps }
+  local done = t and t:wait(5000)
+  local t1 = sys.ticks()
+  local listed = done and check() or 0
+  local gpu_us = t and t:time() and t:time() // 1000 or -1
+
+  -- And as separate runs, each waited for.
+  out:write(0, string.rep("\0", n * 4))
+  local t2 = sys.ticks()
+
+  for s = 1, nsteps do
+    local r = compute.run{ kernel = k, simd = 8, grid = { n // 8, 1 }, buffers = { out },
+                           constants = kc.pack(info, { n = n, step = s }) }
+    if r then r:wait(5000) end
+  end
+
+  local t3 = sys.ticks()
+  local separate = check()
+
+  print(("gpu: %d steps in one list: %d of %d words right, %d us on the GPU, %d us here; "
+         .. "as %d runs: %d right, %d us here"):format(nsteps, listed, n, gpu_us,
+         (t1 - t0) * 1000000 // hz, nsteps, separate, (t3 - t2) * 1000000 // hz))
+  if not t then print("gpu: " .. tostring(rwhy)) end
+  print((listed == n and separate == n) and "gpu: runs held" or "gpu: runs NOT held")
+  out:free()
   k:forget()
   return
 end

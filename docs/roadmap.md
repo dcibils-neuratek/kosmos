@@ -198,10 +198,22 @@ instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
     in Final: GPU 2.02 s, processor 2.05 s, held within the noise. The
     House, textured: held in both, but the processor is 1.6 times as fast
     in Preview and 4 in Final.
-  - **To do: Final made fast on the GPU.** Its paths scatter across lanes,
-    and each bounce casts a shadow ray per lamp per lobe, whether or not
-    the lobe wants one. The way forward is probably shadow rays gathered
-    and cast together, and fewer lanes idle.
+  - **R8, the wavefront** (Diego, 19 October: "go with the wavefront
+    shadow ray batching to explore the best way to use the gpu in
+    rendering"). Its steps are in `cafesa3d-gpu.md`:
+    - W1, the baseline: lanes busy 51% in Preview, 37% in Final (18.708);
+    - W2, the driver's run lists;
+    - W3, path and shadow kernels a bounce;
+    - W4, held to the processor;
+    - W5, measured on the M700, then compaction or sorting if lanes are
+      still idle.
+    - **The wavefront beside the others**, not instead (Diego, 19 October:
+      "are we adding this renderer to cafesa beside the raytracing one
+      right?", "so we can choose any render engine"): the Renderer row is
+      Processor, GPU and GPU wavefront, saved with the scene, and the
+      Render window shows the time of each that has drawn the same render,
+      held to the processor's picture. The wavefront is Final's; in
+      Preview it draws with the GPU's one kernel, and says so.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**
   (18.703): F12 asks the window manager to `raise` it, which it already

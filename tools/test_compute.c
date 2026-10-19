@@ -104,6 +104,37 @@ int main(void)
     b[0].view = GPU_VIEW_TABLE;
     check(compute_pack_run(&q, 3, 16, 1, 1, b, 1, NULL, 0) == NULL, "a table was refused");
 
+    /* A list of runs (R8 W2): the steps where the driver reads them - each
+     * five words from byte 340 - and what is refused. */
+    {
+        static struct gpu_runs qs;
+        struct compute_step st[GPU_RUN_STEPS + 1];
+        uint32_t k;
+
+        for (k = 0; k <= GPU_RUN_STEPS; k++) {
+            st[k].kernel = 3; st[k].simd = 8; st[k].groups_x = 80; st[k].groups_y = 360;
+            st[k].step = k;
+        }
+        st[1].kernel = 4; st[1].simd = 16;
+
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 36, st, 2) == NULL, "a good list was refused");
+        check(word(&qs, 0) == GPU_OP_RUNS && word(&qs, 4) == 1 && word(&qs, 72) == 64
+              && word(&qs, 76) == 36 && word(&qs, 336) == 2
+              && word(&qs, 340) == 3 && word(&qs, 344) == 8 && word(&qs, 348) == 80
+              && word(&qs, 352) == 360 && word(&qs, 356) == 0
+              && word(&qs, 360) == 4 && word(&qs, 364) == 16 && word(&qs, 376) == 1,
+              "a list's fields are not where the driver reads them");
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 36, st, 0) != NULL, "a list of no steps was taken");
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 36, st, GPU_RUN_STEPS + 1) != NULL,
+              "a list of 33 steps was taken");
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 64, st, 2) != NULL,
+              "a step's number past the constants was taken");
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 37, st, 2) != NULL,
+              "a step's number not on a word was taken");
+        st[0].simd = 4;
+        check(compute_pack_runs(&qs, b, 1, consts, 40, 36, st, 2) != NULL, "a step of 4 lanes was taken");
+    }
+
     if (failed) {
         printf("FAIL: %d of %d compute checks\n", failed, checks);
         return 1;

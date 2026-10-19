@@ -219,6 +219,11 @@ do
   case("tracer-preview", OK, 0, assert(code, info))
   local fcode, finfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").final, { simd = 8 })
   case("tracer-final", OK, 0, assert(fcode, finfo))
+  -- The wavefront's five (cafesa3d-gpu.md R8 W3).
+  for _, name in ipairs { "wf_start", "wf_path", "wf_shadow", "wf_bounce", "wf_finish" } do
+    local wcode, winfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua")[name], { simd = 8 })
+    case("tracer-" .. name:gsub("_", "-"), OK, 0, assert(wcode, winfo))
+  end
 
   local pcode, pinfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").paint, { simd = 8 })
 

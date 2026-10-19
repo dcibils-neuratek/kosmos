@@ -46,4 +46,16 @@ const char *compute_pack_run(struct gpu_run *out, uint32_t kernel, uint32_t simd
                              const struct compute_binding *buffers, uint32_t nbuffers,
                              const void *constants, size_t nconstants);
 
+/* A step of a list of runs: its kernel, lanes, grid and number. */
+struct compute_step {
+    uint32_t kernel, simd, groups_x, groups_y, step;
+};
+
+/* A list of runs (GPU_OP_RUNS) packed as the driver reads it, or why not:
+ * the steps sharing the buffers and the constants, each step's number at
+ * `step_at` of them. */
+const char *compute_pack_runs(struct gpu_runs *out, const struct compute_binding *buffers,
+                              uint32_t nbuffers, const void *constants, size_t nconstants,
+                              uint32_t step_at, const struct compute_step *steps, uint32_t nsteps);
+
 #endif

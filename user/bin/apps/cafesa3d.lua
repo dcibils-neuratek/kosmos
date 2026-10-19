@@ -226,7 +226,7 @@ end
 -- and who traces it, the processor's cores or the GPU's execution units
 -- (`docs/cafesa3d-gpu.md` R6).
 local RENDER = { name = "the render", w = 640, h = 360, samples = 256, view_samples = 64,
-                 bounces = 6, preview = false, gpu = false }
+                 bounces = 6, preview = false, gpu = false, wavefront = false }
 
 -- Whether the GPU can be chosen, and why not: asked of the Compute Kit
 -- once, since a machine does not grow a GPU while Cafesa3D runs.
@@ -249,6 +249,8 @@ end
 -- either: `paint`, `passes`, `rays`, `stop`, Preview or Final alike.
 local function render_job(how)
   if RENDER.gpu and gpu_available() then
+    -- The wavefront is Final's (R8); in Preview the GPU's one kernel.
+    how.wavefront = RENDER.wavefront and not how.preview
     return use("/Kosmos/Libraries/k3dgpu.lua").render(k3, scene, how)
   end
 
@@ -291,12 +293,17 @@ function choose.integrator(preview)
   print(("cafesa3d: set integrator of the render to %s"):format(preview and "Preview" or "Final"))
 end
 
-function choose.renderer(gpu)
-  if gpu and not gpu_available() then return end
+-- Who traces it: "processor", "gpu", or "wavefront" - the GPU's Final in
+-- kernels a bounce (`cafesa3d-gpu.md` R8), beside the others to choose.
+choose.names = { processor = "Processor", gpu = "GPU", wavefront = "GPU wavefront" }
+
+function choose.renderer(kind)
+  if kind ~= "processor" and not gpu_available() then return end
 
   will("set the renderer of the render")
-  RENDER.gpu = gpu
-  print(("cafesa3d: set renderer of the render to %s"):format(gpu and "GPU" or "Processor"))
+  RENDER.gpu = kind ~= "processor"
+  RENDER.wavefront = kind == "wavefront"
+  print(("cafesa3d: set renderer of the render to %s"):format(choose.names[kind]))
 end
 
 function choose.size(w, h)
@@ -628,7 +635,7 @@ end
 -- renderer starts the view again without being a change to the scene,
 -- which would keep the Render window from comparing the two renderers.
 local function view_key()
-  return render_key() .. (RENDER.gpu and "|GPU" or "|Processor")
+  return render_key() .. (RENDER.wavefront and "|wavefront" or RENDER.gpu and "|GPU" or "|Processor")
 end
 
 function shade.stop()
@@ -1872,9 +1879,11 @@ local function draw_props(s)
     y = y + gfx.height(tiny) + 10
     y = chip.row(s, x, y, w, {
       { text = "Processor", key = "renderer:Processor", on = not RENDER.gpu,
-        go = function() choose.renderer(false) end },
-      { text = "GPU", key = "renderer:GPU", on = RENDER.gpu, off = not can,
-        go = function() choose.renderer(true) end },
+        go = function() choose.renderer("processor") end },
+      { text = "GPU", key = "renderer:GPU", on = RENDER.gpu and not RENDER.wavefront, off = not can,
+        go = function() choose.renderer("gpu") end },
+      { text = "GPU wavefront", key = "renderer:Wavefront", on = RENDER.wavefront, off = not can,
+        go = function() choose.renderer("wavefront") end },
     })
 
     if not can then
@@ -2471,8 +2480,10 @@ local final = { side = 270, shown = -1, controls = {} }
 
 -- The last finished render of each renderer - `cpu` and `gpu` - with what
 -- it was a render of (`key`), its time and a copy of its picture; and
--- `held`, the two pictures compared once both are of the same render.
+-- `held`, each GPU renderer's picture held to the processor's, once both
+-- are of the same render.
 final.last = {}
+final.held = {}
 
 -- The window's size for the render's: the picture as it is, or shrunk to
 -- what the screen has room for beside the panel, and never shorter than
@@ -2503,57 +2514,88 @@ end
 -- last is of the same render, the two pictures held to each other: within
 -- two levels a channel in Preview, which is the rounding of two sets of
 -- arithmetic; Final's noise is R7's to judge.
+-- The renderers a render may be drawn by, as the Render window says them.
+final.names = { cpu = "Processor", gpu = "GPU", wavefront = "GPU wavefront" }
+
+function final.who()
+  return final.wavefront and "wavefront" or final.gpu and "gpu" or "cpu"
+end
+
+-- The GPU renderer `who`'s last picture held to the processor's, when both
+-- are of this render: in Preview pixel for pixel, within two levels; in
+-- Final within the noise - the whole within 2%, and each 16 by 16 square
+-- within 0.6 over the samples' square root, 5% at the least, since noise
+-- falls so: the House was 14.1% apart at 16 samples and 6.9% at 64 (18.707).
+function final.compare(who)
+  local mine, cpu = final.last[who], final.last.cpu
+
+  if not (mine and cpu and mine.key == final.key and cpu.key == final.key) then return end
+
+  local pw, ph = mine.pic:size()
+  local held
+
+  if final.preview then
+    local count, worst = mine.pic:differs(cpu.pic, 2)
+
+    held = { key = final.key, count = count or pw * ph, worst = worst or 255, pixels = pw * ph }
+    held.same = held.count <= held.pixels // 100
+    print(("cafesa3d: the %s's picture against the processor's: %d of %d pixels more than "
+           .. "2 levels apart, the worst %d"):format(final.names[who], held.count, pw * ph, held.worst))
+  else
+    local block, whole = mine.pic:likeness(cpu.pic, 16)
+    local bound = math.max(0.05, 0.6 / math.sqrt(math.max(1, final.samples or 1)))
+
+    held = { key = final.key, final = true, block = block or 1, whole = whole or 1, bound = bound }
+    held.same = held.block <= bound and held.whole <= 0.02
+    print(("cafesa3d: the %s's picture against the processor's, Final: blocks of 16 within "
+           .. "%.1f%%, the whole within %.2f%%"):format(final.names[who], held.block * 100,
+                                                         held.whole * 100))
+  end
+
+  final.held[who] = held
+end
+
+-- The finished render kept as its renderer's last, and each GPU picture of
+-- the same render held to the processor's.
 function final.keep()
-  local who, other = final.gpu and "gpu" or "cpu", final.gpu and "cpu" or "gpu"
+  local who = final.who()
   local was = final.last[who]
   local pw, ph = final.pic:size()
   local made, copy = pcall(gfx.surface, { w = pw, h = ph })
 
   if was and was.pic then was.pic:free() end
   final.last[who] = nil
+  final.held[who] = nil
 
   if not made then return end
 
   copy:blit(final.pic, 0, 0, pw, ph, 0, 0)
   final.last[who] = { key = final.key, took = final.took, pic = copy }
 
-  local them = final.last[other]
-
-  if them and them.key == final.key and final.preview then
-    local count, worst = copy:differs(them.pic, 2)
-
-    final.held = { key = final.key, count = count or pw * ph, worst = worst or 255,
-                   pixels = pw * ph }
-    final.held.same = final.held.count <= final.held.pixels // 100
-    print(("cafesa3d: the GPU's picture against the processor's: %d of %d pixels more than "
-           .. "2 levels apart, the worst %d"):format(final.held.count, pw * ph, final.held.worst))
-  elseif them and them.key == final.key then
-    -- Final: the two drew different random numbers, so their pixels need
-    -- not agree, and their light must - the whole within 2%, and each 16
-    -- by 16 square within its noise, which falls as one over the samples'
-    -- square root: the House was 14.1% apart at 16 samples and 6.9% at 64,
-    -- halved as noise is (18.707). 0.6 over the root, and 5% at the least.
-    local block, whole = copy:likeness(them.pic, 16)
-    local bound = math.max(0.05, 0.6 / math.sqrt(math.max(1, final.samples or 1)))
-
-    final.held = { key = final.key, final = true, block = block or 1, whole = whole or 1,
-                   bound = bound }
-    final.held.same = final.held.block <= bound and final.held.whole <= 0.02
-    print(("cafesa3d: the GPU's picture against the processor's, Final: blocks of 16 within "
-           .. "%.1f%%, the whole within %.2f%%"):format(final.held.block * 100, final.held.whole * 100))
+  if who == "cpu" then
+    final.compare("gpu")
+    final.compare("wavefront")
+  else
+    final.compare(who)
   end
 end
 
--- The two renderers' times for this render, when both have one, and what
--- the comparison found - drawn from `y`, and the `y` after.
+-- Every renderer's time for this render that there is, each GPU's against
+-- the processor's, and what holding its picture found - drawn from `y`,
+-- and the `y` after.
 function final.times(s, x, y, w)
-  local cpu, gpu = final.last.cpu, final.last.gpu
-  local key = final.key
+  local key, cpu = final.key, final.last.cpu
+  local have = {}
 
-  if not (cpu and gpu and cpu.key == key and gpu.key == key) then
+  for _, who in ipairs { "wavefront", "gpu", "cpu" } do
+    local l = final.last[who]
+
+    if l and l.key == key then have[#have + 1] = who end
+  end
+
+  if #have < 2 or not (cpu and cpu.key == key) then
     if final.gpu and final.done then
-      return note(s, x, y, w, "Render it on the processor too, and the two times are shown here.")
-             + 12
+      return note(s, x, y, w, "Render it on the processor too, and the times are shown here.") + 12
     end
 
     return y
@@ -2562,40 +2604,42 @@ function final.times(s, x, y, w)
   s:text(x, y, "THIS SCENE, BY EACH", theme.text_dim, nil, tiny)
   y = y + gfx.height(tiny) + 8
 
-  for _, row in ipairs({ { "GPU", gpu.took }, { "Processor", cpu.took } }) do
-    s:text(x, y, row[1], theme.text_dim, nil, "ui")
-    s:text(x + 96, y, ("%.2f s"):format(row[2]), theme.text, nil, "ui")
+  for _, who in ipairs(have) do
+    s:text(x, y, final.names[who], theme.text_dim, nil, "ui")
+    s:text(x + 116, y, ("%.2f s"):format(final.last[who].took), theme.text, nil, "ui")
     y = y + gfx.height() + 6
   end
 
-  local held = final.held
-  local same = held and held.key == key and held.same
+  for _, who in ipairs(have) do
+    local held = final.held[who]
 
-  if same and gpu.took > 0 then
-    local k = cpu.took / gpu.took
+    if who ~= "cpu" and held and held.key == key then
+      local mine = final.last[who]
+      local line
 
-    s:text(x, y, k >= 1 and ("%.1f times as fast on the GPU"):format(k)
-                 or ("%.1f times as fast on the processor"):format(1 / k), theme.accent, nil, "ui")
-    y = y + gfx.height() + 6
+      if held.same and mine.took > 0 then
+        local k = cpu.took / mine.took
+
+        line = k >= 1 and ("%s %.1f times as fast."):format(final.names[who], k)
+               or ("%s %.1f times slower."):format(final.names[who], 1 / k)
+        line = line .. (held.final and (" Held within the noise: blocks within %.1f%% (%.1f%% "
+                                        .. "allowed), the whole %.2f%%."):format(held.block * 100,
+                                          held.bound * 100, held.whole * 100)
+                        or (" Held: %d of %d pixels within 2 levels, the worst %d apart."):format(
+                                          held.pixels - held.count, held.pixels, held.worst))
+      else
+        line = held.final and ("%s: not the processor's picture - a block %.1f%% apart, the whole "
+                               .. "%.2f%% - so no speed is claimed."):format(final.names[who],
+                                 held.block * 100, held.whole * 100)
+               or ("%s: not the processor's picture - %d pixels more than 2 levels apart - so no "
+                   .. "speed is claimed."):format(final.names[who], held.count)
+      end
+
+      y = note(s, x, y, w, line) + 4
+    end
   end
 
-  if held and held.key == key and held.final then
-    y = note(s, x, y, w, same and ("Held to the processor's within the noise: every 16 by 16 block's "
-                                   .. "light within %.1f%% (%.1f%% allowed at these samples), the "
-                                   .. "whole within %.2f%%."):format(held.block * 100,
-                                                                    held.bound * 100, held.whole * 100)
-                         or ("Not the processor's picture: a block's light %.1f%% apart, the whole "
-                             .. "%.2f%%, so no speed is claimed."):format(held.block * 100,
-                                                                          held.whole * 100))
-  elseif held and held.key == key then
-    y = note(s, x, y, w, same and ("Held to the processor's: %d of %d pixels within 2 levels, the "
-                                   .. "worst %d apart."):format(held.pixels - held.count,
-                                                                 held.pixels, held.worst)
-                         or ("Not the processor's picture: %d pixels more than 2 levels apart, "
-                             .. "so no speed is claimed."):format(held.count))
-  end
-
-  return y + 14
+  return y + 10
 end
 
 function final.draw()
@@ -2667,7 +2711,8 @@ function final.draw()
   s:text(x, y, "LIGHT PATHS", theme.text_dim, nil, tiny)
   y = y + gfx.height(tiny) + 8
 
-  local rows = { { "Renderer", final.gpu and "GPU \u{b7} execution units" or "Processor" },
+  local rows = { { "Renderer", final.wavefront and "GPU \u{b7} wavefront"
+                               or final.gpu and "GPU \u{b7} execution units" or "Processor" },
                  { "Integrator", final.preview and "Preview \u{b7} Whitted's"
                                                or "Final \u{b7} path tracing" },
                  { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) } }
@@ -2738,6 +2783,7 @@ function final.begin()
   end
 
   final.job, final.threads, final.gpu = job, job:workers(), job.gpu == true
+  final.wavefront = job.wavefront == true
 
   final.key = ("%s|%.4f %.4f %.4f|%.4f %.4f %.4f|%s|%dx%d|%d|%d|%s"):format(
     render_key(), cam.loc[1], cam.loc[2], cam.loc[3], cam.target[1], cam.target[2],
@@ -3805,7 +3851,7 @@ function SAMPLES.take(loaded, file, adding)
     -- A scene rendered on a GPU, opened where there is none, renders on the
     -- processor, and the Render tab says so rather than showing GPU chosen.
     if RENDER.gpu and not gpu_available() then
-      RENDER.gpu = false
+      RENDER.gpu, RENDER.wavefront = false, false
       print("cafesa3d: the scene asks for the GPU, and there is none here: the processor renders it")
     end
 

@@ -198,6 +198,36 @@ the suites, and then on the M700.
    noise, the House's textures in both. On the still life the GPU equals
    the processor in Final; on the House the processor is faster, which is
    the next work (`roadmap.md`).
+8. **R8 - the wavefront** (Diego, 19 October 2026: "go with the wavefront
+   shadow ray batching to explore the best way to use the gpu in
+   rendering"). On the House the GPU is slower than the processor: 1.6
+   times in Preview, 4 in Final. The emulator says why: a thread's eight
+   lanes are busy 51% of the time in Preview and 37% in Final (18.708).
+   One kernel follows a pixel's whole path, so a thread runs every branch
+   any of its lanes takes, and a lane that wants no shadow ray waits while
+   others trace theirs. The wavefront splits the work, as GPU path
+   tracers do:
+   - **W1, the baseline**: lanes busy, measured in the emulator (done,
+     18.708).
+   - **W2, run lists**: the driver runs several kernels in one
+     submission, each its own grid, kernel and step, with the buffers and
+     constants shared, and a stall between them so each sees the last's
+     writes. Without this every split is a wait for the caller's next
+     look. The Compute Kit's door is `compute.runs{ ... }`.
+   - **W3, path and shadow kernels**, a run of each a bounce:
+     - **path** traces the bounce's ray, shades the hit, chooses the next
+       direction and leaves a *shading record*: where, facing which way,
+       the throughput, the material's lobes and the random state the
+       lamps will use;
+     - **shadow** reads the record and casts its shadow rays, with no
+       material code between them.
+
+     A pixel's path state - the ray, the throughput, the light so far -
+     lives in a buffer from one run to the next.
+   - **W4, held to the processor** in the emulator, as R7a's Final is.
+   - **W5, measured on the M700**, the still life and the House; then,
+     if lanes are still idle, the paths that are left compacted into a
+     queue each bounce, or sorted by material.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is
 the M700's.

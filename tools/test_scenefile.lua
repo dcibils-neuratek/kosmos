@@ -480,8 +480,10 @@ for _, name in ipairs({ "house", "car", "plane" }) do
 
   if first then
     first.things[3].hidden = true
+    -- The renderer of each kind in turn, one a sample: the GPU's wavefront
+    -- (R8) on the house, the GPU on the car, the processor on the plane.
     first.render = { w = 3440, h = 1440, samples = 512, view_samples = 32, bounces = 8,
-                     preview = true, gpu = true }
+                     preview = true, gpu = name ~= "plane", wavefront = name == "house" or nil }
     -- A script, and an object it made: every character of the text back,
     -- quotes, a backslash, a tab and a line with no end included.
     first.script = { name = "staircase",

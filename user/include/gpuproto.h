@@ -154,6 +154,17 @@
  */
 #define GPU_OP_RUN_TIME      24u
 
+/*
+ * **A list of runs in one submission** (`cafesa3d-gpu.md` R8 W2): steps
+ * that share their buffers and constants, each its own kernel, lanes, grid
+ * and step - the number the driver writes into the constants at `step_at`
+ * for it - one after another, a stall between them so each sees what the
+ * last wrote. Answered at once with the render engine's fence, as a run
+ * is, and timed as one by GPU_OP_RUN_TIME. A wavefront tracer's bounce is
+ * two kernels, and a run each was a wait for the caller's next look.
+ */
+#define GPU_OP_RUNS          25u
+#define GPU_RUN_STEPS        32u
 #define GPU_RUN_BUFFERS      8u
 #define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */
 
@@ -276,6 +287,29 @@ struct gpu_run {
 
 _Static_assert(sizeof(struct gpu_run) == 24 + GPU_RUN_BUFFERS * 8 + 4 + GPU_RUN_CONSTANTS,
                "a run is six words, eight pairs, a count and 256 bytes");
+
+struct gpu_runs {
+    uint32_t op;                    /* GPU_OP_RUNS */
+    uint32_t nbuffers;
+    struct {
+        uint32_t id;
+        uint32_t view;              /* GPU_VIEW_* */
+    } buffers[GPU_RUN_BUFFERS];
+    uint32_t nconstants;            /* bytes, a multiple of 32 */
+    uint32_t step_at;               /* the byte where each step's number goes, below nconstants */
+    uint8_t  constants[GPU_RUN_CONSTANTS];
+    uint32_t nsteps;                /* 1 to GPU_RUN_STEPS */
+    struct {
+        uint32_t kernel;            /* from GPU_OP_KERNEL */
+        uint32_t simd;              /* 8 or 16 */
+        uint32_t groups_x, groups_y;
+        uint32_t step;              /* written at step_at for this step */
+    } steps[GPU_RUN_STEPS];
+};
+
+_Static_assert(sizeof(struct gpu_runs) == 8 + GPU_RUN_BUFFERS * 8 + 8 + GPU_RUN_CONSTANTS + 4
+                                          + GPU_RUN_STEPS * 20,
+               "a list of runs is 980 bytes");
 
 struct gpu_stats {
     uint32_t error;

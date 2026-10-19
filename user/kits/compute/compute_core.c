@@ -121,3 +121,48 @@ const char *compute_pack_run(struct gpu_run *out, uint32_t kernel, uint32_t simd
 
     return NULL;
 }
+
+const char *compute_pack_runs(struct gpu_runs *out, const struct compute_binding *buffers,
+                              uint32_t nbuffers, const void *constants, size_t nconstants,
+                              uint32_t step_at, const struct compute_step *steps, uint32_t nsteps)
+{
+    struct gpu_run one;
+    uint32_t i;
+    const char *why;
+
+    memset(out, 0, sizeof *out);
+
+    if (nsteps == 0 || nsteps > GPU_RUN_STEPS) {
+        return "a list of runs is 1 to 32 steps";
+    }
+
+    /* The step's number is written into the constants, so it must be in
+     * them: a whole word, below their end. */
+    if (step_at % 4u != 0 || (size_t)step_at + 4u > ((nconstants + 31u) & ~(size_t)31u)) {
+        return "a step's number goes in a word of the constants";
+    }
+
+    /* Each step held to what a run is held to, by packing it as one. */
+    for (i = 0; i < nsteps; i++) {
+        if ((why = compute_pack_run(&one, steps[i].kernel, steps[i].simd, steps[i].groups_x,
+                                    steps[i].groups_y, buffers, nbuffers, constants,
+                                    nconstants)) != NULL) {
+            return why;
+        }
+
+        out->steps[i].kernel = steps[i].kernel;
+        out->steps[i].simd = steps[i].simd;
+        out->steps[i].groups_x = steps[i].groups_x;
+        out->steps[i].groups_y = steps[i].groups_y;
+        out->steps[i].step = steps[i].step;
+    }
+
+    out->op = GPU_OP_RUNS;
+    out->nbuffers = one.nbuffers;
+    memcpy(out->buffers, one.buffers, sizeof out->buffers);
+    out->nconstants = one.nconstants;
+    memcpy(out->constants, one.constants, sizeof out->constants);
+    out->step_at = step_at;
+    out->nsteps = nsteps;
+    return NULL;
+}

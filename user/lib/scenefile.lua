@@ -553,8 +553,9 @@ function scenefile.from_gltf(doc, has_bin)
       out.render.preview = render.integrator == "Preview"
     end
 
-    if render.renderer == "GPU" or render.renderer == "Processor" then
-      out.render.gpu = render.renderer == "GPU"
+    if render.renderer == "GPU" or render.renderer == "Processor" or render.renderer == "GPU wavefront" then
+      out.render.gpu = render.renderer ~= "Processor"
+      out.render.wavefront = render.renderer == "GPU wavefront" or nil
     end
   end
 
@@ -1062,7 +1063,7 @@ function scenefile.to_gltf(s, codec)
     own.render = { width = r.w, height = r.h, samples = r.samples,
                    view_samples = r.view_samples, bounces = r.bounces,
                    integrator = r.preview and "Preview" or "Final",
-                   renderer = r.gpu and "GPU" or "Processor" }
+                   renderer = r.wavefront and "GPU wavefront" or r.gpu and "GPU" or "Processor" }
   end
 
   if s.script then own.script = { name = s.script.name, text = s.script.text } end

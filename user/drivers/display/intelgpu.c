@@ -1741,6 +1741,214 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
  * `engine.head` the high. Busy until the fence is reached; refused for a
  * run more than sixteen ago, whose slot has been written again.
  */
+/*
+ * **A list of runs in one submission** (GPU_OP_RUNS, `cafesa3d-gpu.md` R8
+ * W2): each step as `run` makes one, one after the other, and a stall with
+ * the data port's lines flushed between them so each reads what the last
+ * wrote. The buffers' surfaces are shared; each step has its own constants
+ * - the shared ones with its number at `step_at` - and its own interface
+ * descriptor, in a state area of four pages: the surfaces in the first,
+ * the constants from 0x1000 (256 bytes a step) and the descriptors from
+ * 0x3000 (32 bytes a step). Its own base addresses a step, so a kernel's
+ * instructions are still its own pages and nothing else. Timed as one:
+ * the clock before the first walker and after the last stall.
+ */
+#define RUNS_PAGES     4u
+#define RUNS_CURBE_AT  0x1000u
+#define RUNS_IDD_AT    0x3000u
+
+static volatile uint32_t *runs_state;
+static uint32_t runs_state_gtt;
+
+static uint32_t runs(const struct gpu_runs *q, struct gpu_reply *rep)
+{
+    const uint32_t who = holder_of_request();
+    uint32_t error, i, j, regs;
+
+    if (!G.found) {
+        return GPU_ERR_NO_DEVICE;
+    }
+
+    if (q->nsteps == 0 || q->nsteps > GPU_RUN_STEPS || q->nbuffers > GPU_RUN_BUFFERS
+        || q->nconstants > GPU_RUN_CONSTANTS || q->nconstants % 32u != 0
+        || q->step_at % 4u != 0 || q->step_at + 4u > q->nconstants) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    for (i = 0; i < q->nsteps; i++) {
+        const struct kernel *k;
+        uint32_t id = q->steps[i].kernel;
+
+        if (id == 0 || id >= KERNELS_MAX || !K[id].used
+            || (q->steps[i].simd != 8u && q->steps[i].simd != 16u)
+            || q->steps[i].groups_x == 0 || q->steps[i].groups_y == 0
+            || q->steps[i].groups_x > 65535u || q->steps[i].groups_y > 65535u) {
+            return GPU_ERR_BAD_OP;
+        }
+
+        k = &K[id];
+
+        if (k->holder != who || who == 0) {
+            return GPU_ERR_NOT_YOURS;
+        }
+
+        if ((int32_t)q->nbuffers <= k->bti_max) {
+            return GPU_ERR_BAD_OP;
+        }
+    }
+
+    for (i = 0; i < q->nbuffers; i++) {
+        uint32_t id = q->buffers[i].id;
+
+        if (id == 0 || id >= BUFFERS_MAX || !B[id].used || B[id].kind != GPU_BUFFER_IMPORTED
+            || q->buffers[i].view > GPU_VIEW_TABLE) {
+            return GPU_ERR_NO_BUFFER;
+        }
+
+        if (B[id].holder != who) {
+            return GPU_ERR_NOT_YOURS;
+        }
+    }
+
+    if (!forcewake(true)) {
+        return GPU_ERR_NO_WAKE;
+    }
+
+    if (!mocs_done) {
+        mocs_program(mocs_console);
+    }
+
+    rps_up(mocs_console);
+
+    if ((error = engine_start(&RCS)) != GPU_OK) {
+        return error;
+    }
+
+    if (runs_state == NULL && !gtt_pages(RUNS_PAGES, &runs_state, &runs_state_gtt)) {
+        runs_state = NULL;
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    if ((run_given && (int32_t)(fence_reached(&RCS) - run_fence) < 0)
+        || RCS.in_flight + 80u * q->nsteps + 64u > RING_ROOM) {
+        (void)engine_idle(&RCS);
+        return GPU_ERR_BUSY;
+    }
+
+    for (i = 0; i < RUNS_PAGES * 1024u; i++) {
+        runs_state[i] = 0;
+    }
+
+    for (i = 0; i < q->nbuffers; i++) {
+        (void)run_surface(runs_state + (RUN_SS_AT + i * 64u) / 4u, &B[q->buffers[i].id], q->buffers[i].view);
+        runs_state[RUN_BT_AT / 4u + i] = RUN_SS_AT + i * 64u;
+    }
+
+    regs = q->nconstants / 32u;
+
+    for (i = 0; i < q->nsteps; i++) {
+        volatile uint32_t *curbe = runs_state + (RUNS_CURBE_AT + i * 256u) / 4u;
+        volatile uint32_t *idd = runs_state + (RUNS_IDD_AT + i * 32u) / 4u;
+
+        for (j = 0; j < q->nconstants / 4u; j++) {
+            uint32_t w;
+
+            __builtin_memcpy(&w, &q->constants[j * 4u], 4);
+            curbe[j] = w;
+        }
+
+        curbe[q->step_at / 4u] = q->steps[i].step;
+
+        idd[0] = 0;                                     /* the kernel, from the instruction base */
+        idd[2] = 0;                                     /* IEEE, not single program flow (run) */
+        idd[4] = RUN_BT_AT;
+        idd[5] = regs << 16;
+        idd[6] = 1u;
+    }
+
+    {
+        const uint32_t sba_lo = runs_state_gtt | 1u;
+        const uint32_t slot = RUN_TS_AT + 2u * ((RCS.issued + 1u) % RUN_TS_SLOTS);
+        const uint32_t t0[4] = { IGPU_MI_STORE_REG_MEM, IGPU_RENDER_BASE + IGPU_RING_TIMESTAMP,
+                                 RCS.status_gtt + slot * 4u, 0 };
+        const uint32_t t1[4] = { IGPU_MI_STORE_REG_MEM, IGPU_RENDER_BASE + IGPU_RING_TIMESTAMP,
+                                 RCS.status_gtt + (slot + 1u) * 4u, 0 };
+        const uint32_t stall[6] = { IGPU_PIPE_CONTROL, IGPU_PC_CS_STALL, 0, 0, 0, 0 };
+
+        for (i = 0; i < q->nsteps; i++) {
+            const struct kernel *k = &K[q->steps[i].kernel];
+            /* Before each step: the last one finished, its writes out of
+             * the data port's caches, and the caches it reads made fresh. */
+            const uint32_t before[6] = { IGPU_PIPE_CONTROL,
+                                         IGPU_PC_CS_STALL | IGPU_PC_INVALIDATE | IGPU_PC_DC_FLUSH,
+                                         0, 0, 0, 0 };
+            const uint32_t select = IGPU_PIPELINE_SELECT;
+            const uint32_t sba[19] = {
+                IGPU_STATE_BASE_ADDRESS,
+                1u, 0,
+                1u,
+                sba_lo, 0,
+                sba_lo, 0,
+                0, 0,
+                k->gtt | 1u, 0,
+                0xfffff000u | 1u, (RUNS_PAGES << 12) | 1u,
+                0xfffff000u | 1u, (k->pages << 12) | 1u,
+                1u, 0, 0xfffff000u,
+            };
+            const uint32_t vfe[9] = {
+                IGPU_MEDIA_VFE_STATE, 0, 0,
+                ((RUN_THREADS - 1u) << 16) | (1u << 8),
+                0,
+                regs > 0 ? regs : 1u,
+                0, 0, 0,
+            };
+            const uint32_t curbe[4] = { IGPU_MEDIA_CURBE_LOAD, 0, q->nconstants, RUNS_CURBE_AT + i * 256u };
+            const uint32_t idl[4] = { IGPU_MEDIA_IDL, 0, 32u, RUNS_IDD_AT + i * 32u };
+            const uint32_t walk[15] = {
+                IGPU_GPGPU_WALKER, 0, 0, 0,
+                q->steps[i].simd == 16u ? 1u << 30 : 0u,
+                0, 0, q->steps[i].groups_x,
+                0, 0, q->steps[i].groups_y,
+                0, 1u,
+                q->steps[i].simd == 16u ? 0xffffu : 0xffu,
+                0xffffffffu,
+            };
+            const uint32_t flush[2] = { IGPU_MEDIA_STATE_FLUSH, 0 };
+
+            emit(&RCS, before, 6);
+            emit(&RCS, &select, 1);
+            emit(&RCS, sba, 19);
+            emit(&RCS, vfe, 9);
+
+            if (regs > 0) {
+                emit(&RCS, curbe, 4);
+            }
+
+            emit(&RCS, idl, 4);
+
+            if (i == 0) {
+                emit(&RCS, t0, 4);
+            }
+
+            emit(&RCS, walk, 15);
+            emit(&RCS, flush, 2);
+        }
+
+        emit(&RCS, stall, 6);
+        emit(&RCS, t1, 4);
+    }
+
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");    /* the state's writes out before the doorbell */
+#endif
+
+    run_fence_at[(RCS.issued + 1u) % RUN_TS_SLOTS] = RCS.issued + 1u;
+    run_fence = submit(&RCS);
+    run_given = true;
+    rep->engine.value = run_fence;
+    return GPU_OK;
+}
+
 static uint32_t run_time(const struct gpu_request *rq, struct gpu_reply *rep)
 {
     uint32_t fence = (uint32_t)rq->x, slot, ticks;
@@ -3181,6 +3389,14 @@ void intelgpu_server(long console, long endpoint)
             case GPU_OP_RUN_TIME:
                 rep.error = run_time(&rq, &rep);
                 break;
+            case GPU_OP_RUNS: {
+                static struct gpu_runs qs;
+
+                memset(&qs, 0, sizeof qs);
+                memcpy(&qs, msg.data, msg.length < sizeof qs ? msg.length : sizeof qs);
+                rep.error = msg.length == sizeof qs ? runs(&qs, &rep) : GPU_ERR_BAD_OP;
+                break;
+            }
             case GPU_OP_RUN: {
                 static struct gpu_run q;
 

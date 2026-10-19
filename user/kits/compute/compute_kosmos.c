@@ -504,17 +504,85 @@ static uint32_t field_u32(lua_State *L, int table, const char *name, uint32_t fa
  * compute buffer, or { buffer, view }; a picture is seen as BGRA and bytes
  * as bytes unless the view says otherwise.
  */
+/*
+ * A run's buffers from `t.buffers` - each a compute buffer, or a buffer and
+ * its view's name - into `bind`, their number in `*n`; or why not. For
+ * `run` and `runs` alike.
+ */
+static const char *bindings(lua_State *L, struct compute_binding *bind, uint32_t *n)
+{
+    int i;
+
+    *n = 0;
+    lua_getfield(L, 1, "buffers");
+    if (lua_istable(L, -1)) {
+        int count = (int)lua_rawlen(L, -1);
+
+        if (count > (int)GPU_RUN_BUFFERS) {
+            lua_pop(L, 1);
+            return "a run binds eight buffers at most";
+        }
+
+        for (i = 1; i <= count; i++) {
+            struct buffer *b;
+            int view = -2;
+
+            lua_rawgeti(L, -1, i);
+
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, 2);
+                view = lua_isstring(L, -1) ? compute_view(lua_tostring(L, -1)) : -1;
+                lua_pop(L, 1);
+                lua_rawgeti(L, -1, 1);
+                lua_replace(L, -2);
+            }
+
+            b = luaL_testudata(L, -1, BUFFER_MT);
+            lua_pop(L, 1);
+
+            if (b == NULL || b->id == 0) {
+                lua_pop(L, 1);
+                return "a run's buffers are compute buffers, freed none";
+            }
+
+            if (view == -1) {
+                lua_pop(L, 1);
+                return "a view is \"bytes\", \"bgra\", \"r8\", \"r32f\" or \"table\"";
+            }
+
+            bind[*n].id = b->id;
+            bind[*n].view = view >= 0 ? (uint32_t)view : b->picture ? GPU_VIEW_BGRA : GPU_VIEW_BYTES;
+            (*n)++;
+        }
+    }
+    lua_pop(L, 1);
+    return NULL;
+}
+
+/* The ticket of a run or a list sent: its fence, and the table it was
+ * asked with, so no kernel or buffer in it is collected while the GPU may
+ * be reading it. */
+static int ticket(lua_State *L, long gpu, uint32_t fence)
+{
+    struct ticket *t = lua_newuserdatauv(L, sizeof *t, 1);
+
+    t->fence = fence;
+    t->gpu = gpu;
+    lua_pushvalue(L, 1);
+    lua_setiuservalue(L, -2, 1);
+    luaL_setmetatable(L, TICKET_MT);
+    return 1;
+}
+
 static int l_run(lua_State *L)
 {
     static struct gpu_run q;
     struct compute_binding bind[GPU_RUN_BUFFERS];
     struct gpu_reply rep;
     struct kernel *k;
-    struct ticket *t;
     const char *why, *constants = NULL;
     size_t nconst = 0;
     uint32_t gx = 1, gy = 1, n = 0, e;
-    int i;
 
     luaL_checktype(L, 1, LUA_TTABLE);
 
@@ -536,45 +604,9 @@ static int l_run(lua_State *L)
     }
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "buffers");
-    if (lua_istable(L, -1)) {
-        int count = (int)lua_rawlen(L, -1);
-
-        if (count > (int)GPU_RUN_BUFFERS) {
-            return fail(L, "a run binds eight buffers at most", 0);
-        }
-
-        for (i = 1; i <= count; i++) {
-            struct buffer *b;
-            int view = -2;
-
-            lua_rawgeti(L, -1, i);
-
-            if (lua_istable(L, -1)) {
-                lua_rawgeti(L, -1, 2);
-                view = lua_isstring(L, -1) ? compute_view(lua_tostring(L, -1)) : -1;
-                lua_pop(L, 1);
-                lua_rawgeti(L, -1, 1);
-                lua_replace(L, -2);
-            }
-
-            b = luaL_testudata(L, -1, BUFFER_MT);
-            lua_pop(L, 1);
-
-            if (b == NULL || b->id == 0) {
-                return fail(L, "a run's buffers are compute buffers, freed none", 0);
-            }
-
-            if (view == -1) {
-                return fail(L, "a view is \"bytes\", \"bgra\", \"r8\" or \"r32f\"", 0);
-            }
-
-            bind[n].id = b->id;
-            bind[n].view = view >= 0 ? (uint32_t)view : b->picture ? GPU_VIEW_BGRA : GPU_VIEW_BYTES;
-            n++;
-        }
+    if ((why = bindings(L, bind, &n)) != NULL) {
+        return fail(L, why, 0);
     }
-    lua_pop(L, 1);
 
     lua_getfield(L, 1, "constants");
     if (lua_isstring(L, -1)) {
@@ -594,15 +626,104 @@ static int l_run(lua_State *L)
         return fail(L, e == ~0u ? "no GPU's driver here" : gpu_why(e), e);
     }
 
-    /* The ticket, holding the run's table - its kernel and its buffers -
-     * so none of them is collected while the GPU may be reading it. */
-    t = lua_newuserdatauv(L, sizeof *t, 1);
-    t->fence = rep.engine.value;
-    t->gpu = k->gpu;
-    lua_pushvalue(L, 1);
-    lua_setiuservalue(L, -2, 1);
-    luaL_setmetatable(L, TICKET_MT);
-    return 1;
+    return ticket(L, k->gpu, rep.engine.value);
+}
+
+/*
+ * compute.runs{ buffers = { ... }, constants = s, step_at = byte,
+ *               steps = { { kernel = k, simd = 8, grid = { x, y }, step = n }, ... } }
+ * A list of runs in one submission (`cafesa3d-gpu.md` R8 W2): each step in
+ * turn, the buffers and constants shared, each step's number written into
+ * the constants at `step_at`. A ticket, as `run` gives.
+ */
+static int l_runs(lua_State *L)
+{
+    static struct gpu_runs q;
+    struct compute_binding bind[GPU_RUN_BUFFERS];
+    struct compute_step steps[GPU_RUN_STEPS];
+    struct gpu_reply rep;
+    const char *why, *constants = NULL;
+    size_t nconst = 0;
+    uint32_t n = 0, nsteps = 0, e;
+    long gpu = -1;
+    int i, count;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    if ((why = bindings(L, bind, &n)) != NULL) {
+        return fail(L, why, 0);
+    }
+
+    lua_getfield(L, 1, "steps");
+    if (!lua_istable(L, -1)) {
+        return fail(L, "a list of runs needs its steps", 0);
+    }
+
+    count = (int)lua_rawlen(L, -1);
+
+    if (count < 1 || count > (int)GPU_RUN_STEPS) {
+        return fail(L, "a list of runs is 1 to 32 steps", 0);
+    }
+
+    for (i = 1; i <= count; i++) {
+        struct kernel *k;
+        uint32_t gx = 0, gy = 1;
+
+        lua_rawgeti(L, -1, i);
+
+        if (!lua_istable(L, -1)) {
+            return fail(L, "a step is a table", 0);
+        }
+
+        lua_getfield(L, -1, "kernel");
+        k = luaL_testudata(L, -1, KERNEL_MT);
+        lua_pop(L, 1);
+
+        if (k == NULL || k->id == 0) {
+            return fail(L, "a step needs a kernel, from compute.kernel", 0);
+        }
+
+        lua_getfield(L, -1, "grid");
+        if (lua_istable(L, -1)) {
+            lua_rawgeti(L, -1, 1);
+            lua_rawgeti(L, -2, 2);
+            gx = lua_isinteger(L, -2) ? (uint32_t)lua_tointeger(L, -2) : 0u;
+            gy = lua_isnil(L, -1) ? 1u : lua_isinteger(L, -1) ? (uint32_t)lua_tointeger(L, -1) : 0u;
+            lua_pop(L, 2);
+        }
+        lua_pop(L, 1);
+
+        steps[nsteps].kernel = k->id;
+        steps[nsteps].simd = field_u32(L, lua_gettop(L), "simd", 16);
+        steps[nsteps].groups_x = gx;
+        steps[nsteps].groups_y = gy;
+        steps[nsteps].step = field_u32(L, lua_gettop(L), "step", 0);
+        nsteps++;
+        gpu = k->gpu;
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "constants");
+    if (lua_isstring(L, -1)) {
+        constants = lua_tolstring(L, -1, &nconst);
+    }
+
+    why = compute_pack_runs(&q, bind, n, constants, nconst, field_u32(L, 1, "step_at", 0),
+                            steps, nsteps);
+    lua_pop(L, 1);
+
+    if (why != NULL) {
+        return fail(L, why, 0);
+    }
+
+    e = ask(gpu, &q, sizeof q, -1, &rep);
+
+    if (e != GPU_OK) {
+        return fail(L, e == ~0u ? "no GPU's driver here" : gpu_why(e), e);
+    }
+
+    return ticket(L, gpu, rep.engine.value);
 }
 
 static bool ticket_done(struct ticket *t, bool *asked)
@@ -717,6 +838,7 @@ void kosmos_compute_kit(lua_State *L)
         { "buffer",    l_buffer },
         { "picture",   l_picture },
         { "run",       l_run },
+        { "runs",      l_runs },
         { NULL, NULL }
     };
 
