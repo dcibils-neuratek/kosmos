@@ -28418,3 +28418,54 @@ Moller-Trumbore sees the same numbers.
 - **Full gate 96 of 97 in 9:40.** `x86-pdfview` said its page 1 was not
   drawn again at the new zoom, under the gate's load; alone it passed its
   38 checks.
+
+## 18.696 Cafesa3D's tracer on the GPU: Preview (`cafesa3d-gpu.md` R5)
+
+`user/lib/k3dgpu.lua`: the 3D Kit's `radiance`, Whitted's Preview, in
+Kosmos's kernel language, over the scene `k3d_gpu.c` lays out. It covers:
+- the eye's ray through the threaded trees, the exact shapes - sphere,
+  box, cylinder, plane - and a mesh's triangles by Moller and Trumbore;
+- the smooth normal where it is on the face's side;
+- glass by Fresnel, reflecting or bending; mirrors;
+- each lamp's middle, with a shadow ray to it; the sky.
+
+The constants are the camera, the lamps and the sky. A lane is a pixel,
+SIMD8, so a value takes one register rather than two. It compiles to
+**3,071 instructions** and the driver's check takes it.
+
+**What the compiler learned on the way** (`kc.lua`):
+- **`inout` parameters**: a function hands back several things through
+  its caller's own variables - the distance, the object, the normal, the
+  triangle.
+- **A parameter the function never sets is not copied**: its value is the
+  caller's, as it is.
+- **A value in flight is given back at its last use**, not at its
+  statement's end. Each intermediate value has one use; where the compiler
+  reads one twice - a number spread into a vec3, `dot(a, a)`, `cross`,
+  `normalize`, a condition steering three components - it says so, and a
+  function's arguments are held until the call ends.
+- **Registers up to r127**: r112 onwards are the thread's end's only when
+  it ends.
+
+The tracer had needed more than 128 registers at its deepest point, the
+mesh walk inside the shadow ray inside the direct light inside the bounce
+loop. With these, and the direct light folded into `main` so its shadow
+rays reuse the bounce's hit variables, it fits.
+
+**Tests.**
+- **`test_k3d_gpu`, now 12 checks, the tracer among them.** A still life -
+  a floor, a matte sphere, a metal one, a glass one, a turned box, a smooth
+  ico sphere and a lamp, under a sky - is rendered by the processor's
+  Preview and laid out for the GPU. The kernel is run in the emulator, a
+  lane a pixel, 192 threads. **All 1,536 pixels of the GPU's light are the
+  processor's within 0.2%, the worst 0.09%.** More than half are lit, so
+  the comparison says something.
+- **Controls**: a tracer that ignores its shadow rays gets 57 pixels
+  wrong, the worst 866% off; glass that always reflects, 45, the worst
+  3000%. The limit is 7, a two-hundredth.
+- **`test_kc`, 29 checks**, `inout` and its two refusals among them; the
+  driver's check, 44, the tracer among them. `host` passes.
+
+The emulator's arithmetic is the processor's, exact `math` included, so
+on the M700 the GPU's own `math` will part it from the processor's by a
+little more. That is the M700's to measure.

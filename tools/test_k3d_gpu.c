@@ -7,6 +7,11 @@
  * GPU's kernel will walk them, by skips and with no stack, must meet the
  * same object at the same distance `k3d_render_first_hit` does.
  *
+ * And then the tracer itself (R5): the kernel `k3dgpu.lua` holds, compiled
+ * by `kc.lua`, run in the emulator of the execution units over a still life
+ * laid out the same way, every pixel's light held to the processor's
+ * Preview of it.
+ *
  * The walk is here, in C, as the kernel's is in Kosmos's kernel language.
  * Where a ray meets an exact shape the tracer's own test of it is asked
  * (`k3d_trace_object_hit`); a mesh's triangles are met from the laid-out
@@ -21,6 +26,8 @@
 #include "../user/kits/3d/k3d.h"
 #include "../user/kits/3d/k3d_gpu.h"
 #include "../user/kits/3d/k3d_trace.h"
+#include "../user/include/gpuproto.h"
+#include "eu_emu.h"
 
 static int checks, fails;
 
@@ -196,7 +203,235 @@ static int object_leaf(const struct k3d_gpu_scene *s, uint32_t i, const float *o
     return 0;
 }
 
-int main(void)
+/*--------------------------------------------------------------------------
+ * The GPU's Preview, in the emulator, held to the processor's
+ * (`cafesa3d-gpu.md` R5).
+ *------------------------------------------------------------------------*/
+
+static int nibble(int c)
+{
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+}
+
+/* A kernel by name from the file `tools/eu_kernels.lua` writes. */
+static uint32_t kernel_named(const char *path, const char *want, uint32_t *words, size_t room)
+{
+    static char line[1 << 20];
+    FILE *f = fopen(path, "r");
+    uint32_t got = 0;
+
+    if (f == NULL) {
+        return 0;
+    }
+
+    while (fgets(line, sizeof line, f) != NULL) {
+        unsigned why, at;
+        char name[128];
+        int skip;
+
+        if (sscanf(line, "%u %u %127s %n", &why, &at, name, &skip) == 3 && strcmp(name, want) == 0) {
+            const char *hex = line + skip;
+            size_t n = strcspn(hex, "\r\n") / 2, i;
+
+            for (i = 0; i < n && i < room; i++) {
+                ((unsigned char *)words)[i] = (unsigned char)(nibble(hex[2 * i]) << 4 | nibble(hex[2 * i + 1]));
+            }
+
+            got = (uint32_t)n;
+            break;
+        }
+    }
+
+    fclose(f);
+    return got;
+}
+
+/* An array of words as a buffer of bytes the kernel reads by offset. */
+static struct eu_buffer words_buffer(const void *words, size_t count)
+{
+    struct eu_buffer b;
+    size_t bytes = count * 4, rows = (bytes + 4095) / 4096;
+
+    b.bytes = calloc(rows ? rows : 1, 4096);
+    memcpy(b.bytes, words, bytes);
+    b.width = 1024;
+    b.height = (uint32_t)(rows ? rows : 1);
+    b.pitch = 4096;
+    b.view = GPU_VIEW_BYTES;
+    return b;
+}
+
+static void pack_f(uint8_t *c, size_t *at, float x) { memcpy(c + *at, &x, 4); *at += 4; }
+static void pack_i(uint8_t *c, size_t *at, int32_t x) { memcpy(c + *at, &x, 4); *at += 4; }
+static void pack_v(uint8_t *c, size_t *at, const float v[3])
+{
+    pack_f(c, at, v[0]);
+    pack_f(c, at, v[1]);
+    pack_f(c, at, v[2]);
+}
+
+static void tracer(const char *kernels)
+{
+    static uint32_t code[65536];
+    struct k3d_scene sc;
+    struct k3d_render *r;
+    struct k3d_gpu_scene g;
+    struct k3d_render_setup how;
+    struct k3d_light lamp;
+    struct k3d_object *o;
+    struct eu_buffer b[7];
+    struct eu_stats st;
+    uint8_t constants[GPU_RUN_CONSTANTS];
+    size_t at = 0;
+    uint32_t n, i, tile, pass, worst_at = 0;
+    const char *why;
+    int W = 48, H = 32, differ = 0, lit = 0;
+    double worst = 0;
+    char what[256];
+
+    n = kernel_named(kernels, "tracer-preview", code, sizeof code);
+    snprintf(what, sizeof what, "the tracer's kernel is not in %s", kernels);
+    check(n > 0, what);
+
+    if (n == 0) {
+        return;
+    }
+
+    /* A still life: a floor, three spheres - matte, metal, glass - a box,
+     * a smooth mesh and a lamp, under a sky. */
+    k3d_scene_init(&sc);
+    o = k3d_scene_add(&sc, K3D_PLANE);
+    o->size[0] = 20;
+    o->mat.base[0] = 0.8f; o->mat.base[1] = 0.78f; o->mat.base[2] = 0.72f;
+    o = k3d_scene_add(&sc, K3D_SPHERE);
+    o->loc[0] = -1.2f; o->loc[2] = 0.7f; o->radius = 0.7f; o->smooth = true;
+    o->mat.base[0] = 0.85f; o->mat.base[1] = 0.3f; o->mat.base[2] = 0.2f;
+    o = k3d_scene_add(&sc, K3D_SPHERE);
+    o->loc[0] = 0.3f; o->loc[1] = 0.6f; o->loc[2] = 0.55f; o->radius = 0.55f; o->smooth = true;
+    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.9f; o->mat.metallic = 1;
+    o = k3d_scene_add(&sc, K3D_SPHERE);
+    o->loc[0] = 1.4f; o->loc[1] = -0.4f; o->loc[2] = 0.45f; o->radius = 0.45f; o->smooth = true;
+    o->mat.base[0] = o->mat.base[1] = o->mat.base[2] = 0.95f; o->mat.trans = 1; o->mat.ior = 1.5f;
+    o = k3d_scene_add(&sc, K3D_BOX);
+    o->loc[0] = -0.2f; o->loc[1] = 1.8f; o->loc[2] = 0.4f; o->rot[2] = 30;
+    o->size[0] = o->size[1] = o->size[2] = 0.8f;
+    o->mat.base[0] = 0.3f; o->mat.base[1] = 0.55f; o->mat.base[2] = 0.9f;
+    o = k3d_scene_add(&sc, K3D_ICO);
+    o->loc[0] = 2.2f; o->loc[1] = 1.5f; o->loc[2] = 0.6f; o->radius = 0.6f; o->smooth = true;
+    o->mat.base[0] = 0.4f; o->mat.base[1] = 0.8f; o->mat.base[2] = 0.4f;
+
+    for (i = 0; i < sc.count; i++) {
+        if (sc.obj[i].mat.ior == 0) { sc.obj[i].mat.ior = 1.5f; }
+    }
+
+    memset(&lamp, 0, sizeof lamp);
+    lamp.pos[0] = 2; lamp.pos[1] = -2; lamp.pos[2] = 4;
+    lamp.radius = 0.3f;
+    lamp.colour[0] = lamp.colour[1] = lamp.colour[2] = 1;
+    lamp.power = 900;
+
+    memset(&how, 0, sizeof how);
+    how.w = W;
+    how.h = H;
+    how.eye[0] = 0.5f; how.eye[1] = -7; how.eye[2] = 2.5f;
+    how.target[0] = 0.4f; how.target[1] = 0.4f; how.target[2] = 0.5f;
+    how.fov = 0.8f;
+    how.preview = true;
+    how.bounces = 6;
+    how.passes = 1;
+    how.lights = &lamp;
+    how.nlights = 1;
+    how.world.zenith[0] = 0.25f; how.world.zenith[1] = 0.45f; how.world.zenith[2] = 0.9f;
+    how.world.horizon[0] = 0.75f; how.world.horizon[1] = 0.8f; how.world.horizon[2] = 0.9f;
+    how.world.strength = 1;
+
+    r = k3d_render_new(&sc, &how);
+    check(r != NULL && k3d_gpu_scene(r, &g), "the still life was not laid out");
+
+    if (r == NULL) {
+        return;
+    }
+
+    /* The processor's first pass. */
+    while (k3d_render_job(r, &tile, &pass, NULL)) {
+        k3d_render_tile(r, tile, pass);
+    }
+
+    /* The GPU's, in the emulator: the constants in the kernel's order. */
+    memset(constants, 0, sizeof constants);
+    pack_v(constants, &at, g.eye);
+    pack_v(constants, &at, g.forward);
+    pack_v(constants, &at, g.right);
+    pack_v(constants, &at, g.up);
+    pack_f(constants, &at, g.F);
+    pack_i(constants, &at, g.w);
+    pack_i(constants, &at, g.h);
+    pack_i(constants, &at, (int32_t)g.nlamps);
+    pack_i(constants, &at, (int32_t)g.root);
+    pack_i(constants, &at, g.bounces);
+    pack_i(constants, &at, 1);
+    pack_v(constants, &at, g.world.zenith);
+    pack_v(constants, &at, g.world.horizon);
+    pack_f(constants, &at, g.world.strength);
+
+    b[0] = words_buffer(g.nodes, (size_t)g.nnodes * K3D_GPU_NODE_WORDS);
+    b[1] = words_buffer(g.items, g.nitems);
+    b[2] = words_buffer(g.objects, (size_t)g.nobjects * K3D_GPU_OBJ_WORDS);
+    b[3] = words_buffer(g.tris, (size_t)g.ntris * K3D_GPU_TRI_WORDS);
+    b[4] = words_buffer(g.normals, (size_t)g.nnormals * 3);
+    b[5] = words_buffer(g.lamps, (size_t)g.nlamps * K3D_GPU_LAMP_WORDS);
+    {
+        float *zero = calloc((size_t)W * H * 3, sizeof(float));
+
+        b[6] = words_buffer(zero, (size_t)W * H * 3);
+        free(zero);
+    }
+
+    {
+        struct eu_run run = { code, n, 8, (uint32_t)(W + 7) / 8, (uint32_t)H, b, 7, constants,
+                              (uint32_t)((at + 31) & ~31u), 200000000u };
+
+        why = eu_emulate(&run, &st, &worst_at);
+        snprintf(what, sizeof what, "the tracer did not run: %s at instruction %u", why ? why : "", worst_at);
+        check(why == NULL, what);
+    }
+
+    /* Every pixel's light, the GPU's against the processor's. */
+    for (i = 0; i < (uint32_t)(W * H) && why == NULL; i++) {
+        const float *cpu = &r->acc[i * 3];
+        float gpu[3];
+        int k;
+
+        memcpy(gpu, &b[6].bytes[i * 12], 12);
+        lit += cpu[0] + cpu[1] + cpu[2] > 0.05f;
+
+        for (k = 0; k < 3; k++) {
+            double e = fabs((double)gpu[k] - cpu[k]) / (1e-3 + fabs((double)cpu[k]));
+
+            if (e > worst) { worst = e; worst_at = i; }
+            if (e > 2e-3) { differ++; break; }
+        }
+    }
+
+    printf("  the still life, %dx%d in Preview: %d of %d pixels as the processor's within 0.2%%, "
+           "the worst %.4f%% at %u,%u; %llu instructions in %llu threads\n",
+           W, H, W * H - differ, W * H, worst * 100, worst_at % (uint32_t)W, worst_at / (uint32_t)W,
+           (unsigned long long)st.instructions, (unsigned long long)st.threads);
+
+    snprintf(what, sizeof what, "%d of %d pixels of the GPU's Preview are not the processor's", differ, W * H);
+    check(why == NULL && differ <= W * H / 200, what);
+    check(lit > W * H / 2, "the still life is mostly dark, so the comparison says little");
+
+    for (i = 0; i < 7; i++) {
+        free(b[i].bytes);
+    }
+
+    k3d_gpu_scene_free(&g);
+    k3d_render_free(r);
+    k3d_scene_free(&sc);
+}
+
+int main(int argc, char **argv)
 {
     static const enum k3d_kind kinds[] = { K3D_PLANE, K3D_BOX, K3D_SPHERE, K3D_CYLINDER,
                                            K3D_ICO, K3D_CONE, K3D_TORUS, K3D_GRID };
@@ -313,12 +548,19 @@ int main(void)
     k3d_render_free(r);
     k3d_scene_free(&sc);
 
+    if (argc > 1) {
+        tracer(argv[1]);
+    } else {
+        check(0, "no kernels file for the tracer - tools/eu_kernels.lua writes it");
+    }
+
     if (fails) {
         printf("FAIL: %d of %d checks on the GPU's scene\n", fails, checks + fails);
         return 1;
     }
 
-    printf("PASS: %d checks on the GPU's scene (sixty objects laid out, the trees threaded, and twenty thousand "
-           "rays walked by skips meeting what the processor's tracer meets)\n", checks);
+    printf("PASS: %d checks on the GPU's scene (sixty objects laid out, the trees threaded, twenty thousand "
+           "rays walked by skips meeting what the processor's tracer meets, and the tracer's kernel drawing "
+           "the processor's Preview)\n", checks);
     return 0;
 }

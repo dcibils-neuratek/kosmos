@@ -172,7 +172,9 @@ the suites, and then on the M700.
    what the processor's tracer meets.
 5. **R5 - Preview on the GPU**: the tracer in the language, held in the
    emulator to `k3d_trace.c`'s Preview on small scenes, then on the M700 to
-   the full scene.
+   the full scene. **Built** (18.696): `k3dgpu.lua`, 3,071 instructions,
+   every pixel of a still life within 0.2% of the processor's in the
+   emulator; the M700 next.
 6. **R6 - Cafesa3D**: the Renderer choice, the times side by side, and
    the comparison line; its suite under QEMU, where GPU says why it cannot
    be chosen.

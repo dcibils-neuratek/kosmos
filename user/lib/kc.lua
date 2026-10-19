@@ -26,6 +26,10 @@
 --     store(out, x * 4, n);
 --   }
 --
+-- A parameter marked `inout` is the caller's own variable, so a function
+-- can give back more than one thing - a ray's distance, the object it met,
+-- the normal there.
+--
 -- `int`, `float`, `bool` and `vec3` (`.x`, `.y`, `.z`); the arithmetic,
 -- the comparisons, `&&`, `||`, `!`, `? :`; `if`, `else`, `while`, `for`,
 -- `break`, `continue`, `return`. Functions are inlined - the GPU has no
@@ -380,11 +384,12 @@ local function parser(toks)
 
         if not is(")") then
           repeat
+            local inout = is_id("inout") and next_tok() ~= nil
             local pt = next_tok()
 
             if not TYPES[pt.v] or pt.v == "void" then fail(pt.line, "a parameter's type expected") end
 
-            params[#params + 1] = { t = TYPES[pt.v], name = (name()) }
+            params[#params + 1] = { t = TYPES[pt.v], name = (name()), inout = inout }
           until not (is(",") and next_tok())
         end
 
@@ -411,7 +416,7 @@ end
 --------------------------------------------------------------------------
 
 local CONST_REG = 1               -- r1 onwards: the run's constants
-local LAST_REG = 111              -- r112 onwards: the thread's end
+local LAST_REG = 127              -- r112 onwards are the thread's end's only when it ends
 
 local function f32_hex(x)
   return ("0x%08x:f"):format(string.unpack("<I4", string.pack("<f", x)))
@@ -470,11 +475,62 @@ local function gen(prog, simd)
     for k = r, r + (count or R) - 1 do used[k] = nil end
   end
 
+  -- **A value in flight is given back at its last use**, not when its
+  -- statement ends: a tracer's statement nests inlined functions inside
+  -- inlined functions, and holding every one of their intermediate values
+  -- to the end was more registers than a thread has. Each comes with one
+  -- use; where the compiler reads one more than once - a number spread
+  -- into a vec3, dot(a, a), a cross product, a condition steering three
+  -- components - it says so (`retain`). What the statement still holds at
+  -- its end is given back then, as before.
+  local live = {}
+
+  local function hold(r)
+    temps[#temps + 1] = r
+    live[r] = true
+  end
+
   local function temp(t)
     local r = alloc()
 
-    temps[#temps + 1] = r
-    return { k = "reg", t = t, r = r }
+    hold(r)
+    return { k = "reg", t = t, r = r, tmp = true, uses = 1 }
+  end
+
+  local function retain(v, n)
+    if v.k == "vec" then
+      retain(v.x, n); retain(v.y, n); retain(v.z, n)
+    elseif v.tmp then
+      v.uses = v.uses + n
+    end
+  end
+
+  local function consume(v)
+    if v == nil then return end
+
+    if v.k == "vec" then
+      consume(v.x); consume(v.y); consume(v.z)
+      return
+    end
+
+    if v.tmp and not v.pinned then
+      v.uses = v.uses - 1
+
+      if v.uses <= 0 and live[v.r] then
+        live[v.r] = nil
+        release(v.r)
+      end
+    end
+  end
+
+  -- Held until its statement ends, whatever reads it: a function's
+  -- argument, which its body may read any number of times.
+  local function pin(v)
+    if v.k == "vec" then
+      pin(v.x); pin(v.y); pin(v.z)
+    elseif v.tmp then
+      v.pinned = true
+    end
   end
 
   -- Operands as eu.lua reads them.
@@ -512,6 +568,7 @@ local function gen(prog, simd)
     if t == "v" then
       local s = as(v, "f")
 
+      retain(s, 2)                                  -- read three times
       return { k = "vec", x = s, y = s, z = s }
     end
 
@@ -523,6 +580,7 @@ local function gen(prog, simd)
         -- An int as a condition: true when not nought.
         local r = temp("b")
         emit(("cmp %s (ne)f1.0 %s %s 0:d"):format(EX, dst(r), src(v)))
+        consume(v)
         return r
       end
       return v
@@ -535,6 +593,7 @@ local function gen(prog, simd)
 
     local r = temp(want)
     emit(("mov %s %s %s"):format(EX, dst(r), src(v)))
+    consume(v)
     if t == "b" then return as(r, "b") end
     return r
   end
@@ -615,13 +674,27 @@ local function gen(prog, simd)
   local function move(to, v)
     if to.k == "vec" then
       v = as(v, "v")
-      emit(("mov %s %s %s"):format(EX, dst(to.x), src(as(v.x, "f"))))
-      emit(("mov %s %s %s"):format(EX, dst(to.y), src(as(v.y, "f"))))
-      emit(("mov %s %s %s"):format(EX, dst(to.z), src(as(v.z, "f"))))
+
+      for _, c in ipairs { "x", "y", "z" } do
+        local s = as(v[c], "f")
+
+        if not (s.k == "reg" and s.r == to[c].r) then
+          emit(("mov %s %s %s"):format(EX, dst(to[c]), src(s)))
+        end
+
+        consume(s)
+      end
+
       return
     end
 
-    emit(("mov %s %s %s"):format(EX, dst(to), src(as(v, to.t))))
+    local s = as(v, to.t)
+
+    if not (s.k == "reg" and s.r == to.r) then
+      emit(("mov %s %s %s"):format(EX, dst(to), src(s)))
+    end
+
+    consume(s)
   end
 
   -- Arithmetic.
@@ -682,7 +755,10 @@ local function gen(prog, simd)
       end
 
       local r = temp("f")
-      emit(("math.fdiv %s %s %s %s"):format(EX, dst(r), src(reg(a)), src(full_reg(b))))
+      a, b = reg(a), full_reg(b)
+      emit(("math.fdiv %s %s %s %s"):format(EX, dst(r), src(a), src(b)))
+      consume(a)
+      consume(b)
       return r
     end
 
@@ -707,6 +783,8 @@ local function gen(prog, simd)
     local r = temp(t)
 
     emit(("%s %s %s %s %s"):format(name, EX, dst(r), src(a), src(b, neg)))
+    consume(a)
+    consume(b)
     return r
   end
 
@@ -724,7 +802,10 @@ local function gen(prog, simd)
     local r = temp(t)
 
     emit(("cmp %s (%s)f1.0 %s %s %s"):format(EX, cond, dst(r), src(a), src(b)))
-    return { k = "reg", t = "b", r = r.r }
+    consume(a)
+    consume(b)
+    r.t = "b"
+    return r
   end
 
   local function logic(op, a, b)
@@ -732,13 +813,17 @@ local function gen(prog, simd)
 
     local r = temp("b")
 
-    emit(("%s %s %s %s %s"):format(op == "&&" and "and" or "or", EX, dst(r), src(reg(a)), src(b)))
+    a = reg(a)
+    emit(("%s %s %s %s %s"):format(op == "&&" and "and" or "or", EX, dst(r), src(a), src(b)))
+    consume(a)
+    consume(b)
     return r
   end
 
   local function select(c, a, b)
     if a.k == "vec" or b.k == "vec" then
       a, b = as(a, "v"), as(b, "v")
+      retain(c, 2)                                  -- one condition, three components
       return { k = "vec", x = select(c, a.x, b.x), y = select(c, a.y, b.y), z = select(c, a.z, b.z) }
     end
 
@@ -749,8 +834,12 @@ local function gen(prog, simd)
 
     local r = temp(t)
 
-    emit(("cmp %s (ne)f1.0 null<1>:d %s 0:d"):format(EX, src(reg(c))))
+    c = reg(c)
+    emit(("cmp %s (ne)f1.0 null<1>:d %s 0:d"):format(EX, src(c)))
     emit(("(f1.0) sel %s %s %s %s"):format(EX, dst(r), src(a), src(b)))
+    consume(a)
+    consume(b)
+    consume(c)
     return r
   end
 
@@ -769,6 +858,8 @@ local function gen(prog, simd)
 
     emit(("cmp %s (%s)f1.0 null<1>:%s %s %s"):format(EX, which == "min" and "lt" or "gt", t, src(a), src(b)))
     emit(("(f1.0) sel %s %s %s %s"):format(EX, dst(r), src(a), src(b)))
+    consume(a)
+    consume(b)
     return r
   end
 
@@ -777,12 +868,15 @@ local function gen(prog, simd)
 
   local function math1(fn, v)
     local r = temp("f")
+    local a = full_reg(as(v, "f"))
 
-    emit(("math.%s %s %s %s null<8;8,1>:f"):format(fn, EX, dst(r), src(full_reg(as(v, "f")))))
+    emit(("math.%s %s %s %s null<8;8,1>:f"):format(fn, EX, dst(r), src(a)))
+    consume(a)
     return r
   end
 
   local function dot(a, b, line)
+    if a == b then retain(a, 1) end                 -- dot(v, v) reads each twice
     a, b = as(a, "v"), as(b, "v")
 
     return arith("+", arith("+", arith("*", a.x, b.x, line), arith("*", a.y, b.y, line), line),
@@ -812,16 +906,21 @@ local function gen(prog, simd)
     local addr = alloc(R)
     local back = alloc(R * n)
 
-    temps[#temps + 1] = addr
-    for k = 0, n - 1 do temps[#temps + 1] = back + k * R end
+    local off = as(eval(e.args[2]), "d")
 
-    emit(("mov %s r%d.0<1>:d %s"):format(EX, addr, src(as(eval(e.args[2]), "d"))))
+    hold(addr)
+    for k = 0, n - 1 do hold(back + k * R) end
+
+    emit(("mov %s r%d.0<1>:d %s"):format(EX, addr, src(off)))
+    consume(off)
     emit(("send.hdc1 %s r%d r%d 0x00000000 0x%08X"):format(EX, back, addr, desc(1, n, R, R * n, bti)))
+    consume({ k = "reg", r = addr, tmp = true, uses = 1 })
 
-    if n == 1 then return { k = "reg", t = t, r = back } end
+    local function out(r, ty) return { k = "reg", t = ty, r = r, tmp = true, uses = 1 } end
 
-    return { k = "vec", x = { k = "reg", t = "f", r = back }, y = { k = "reg", t = "f", r = back + R },
-             z = { k = "reg", t = "f", r = back + 2 * R } }
+    if n == 1 then return out(back, t) end
+
+    return { k = "vec", x = out(back, "f"), y = out(back + R, "f"), z = out(back + 2 * R, "f") }
   end
 
   local function store(e, n, line)
@@ -829,25 +928,32 @@ local function gen(prog, simd)
     local block = alloc(R * (1 + n))
     local v = eval(e.args[3])
 
-    for k = 0, n do temps[#temps + 1] = block + k * R end
+    for k = 0, n do hold(block + k * R) end
 
-    emit(("mov %s r%d.0<1>:d %s"):format(EX, block, src(as(eval(e.args[2]), "d"))))
+    local off = as(eval(e.args[2]), "d")
+
+    emit(("mov %s r%d.0<1>:d %s"):format(EX, block, src(off)))
+    consume(off)
 
     if n == 1 then
       local s = scalar_type(v) == "b" and as(v, "d") or v
-      emit(("mov %s r%d.0<1>:%s %s"):format(EX, block + R, s.t, src(s)))
+      emit(("mov %s r%d.0<1>:%s %s"):format(EX, block + R, s.t == "b" and "d" or s.t, src(s)))
+      consume(s)
     else
       v = as(v, "v")
-      emit(("mov %s r%d.0<1>:f %s"):format(EX, block + R, src(as(v.x, "f"))))
-      emit(("mov %s r%d.0<1>:f %s"):format(EX, block + 2 * R, src(as(v.y, "f"))))
-      emit(("mov %s r%d.0<1>:f %s"):format(EX, block + 3 * R, src(as(v.z, "f"))))
+
+      for k, c in ipairs { "x", "y", "z" } do
+        local s = as(v[c], "f")
+        emit(("mov %s r%d.0<1>:f %s"):format(EX, block + k * R, src(s)))
+        consume(s)
+      end
     end
 
     emit(("send.hdc1 %s null r%d 0x00000000 0x%08X"):format(EX, block, desc(9, n, R * (1 + n), 0, bti)))
     return { k = "imm", t = "d", v = 0 }
   end
 
-  local inline
+  local inline, assigned_names
 
   local function call(e)
     local n, args, line = e.name, e.args, e.line
@@ -860,7 +966,9 @@ local function gen(prog, simd)
     if ROUND[n] then
       want(1)
       local r = temp("f")
-      emit(("%s %s %s %s"):format(ROUND[n], EX, dst(r), src(full_reg(as(eval(args[1]), "f")))))
+      local a = full_reg(as(eval(args[1]), "f"))
+      emit(("%s %s %s %s"):format(ROUND[n], EX, dst(r), src(a)))
+      consume(a)
       return r
     end
 
@@ -869,6 +977,8 @@ local function gen(prog, simd)
       local r = temp("f")
       local a, b = full_reg(as(eval(args[1]), "f")), full_reg(as(eval(args[2]), "f"))
       emit(("math.pow %s %s %s %s"):format(EX, dst(r), src(a), src(b)))
+      consume(a)
+      consume(b)
       return r
     end
 
@@ -881,6 +991,7 @@ local function gen(prog, simd)
 
       local r = temp(v.t == "b" and "d" or v.t)
       emit(("mov %s %s (abs)%s"):format(EX, dst(r), src(v)))
+      consume(v)
       return r
     end
 
@@ -900,12 +1011,15 @@ local function gen(prog, simd)
     end
 
     if n == "dot" then want(2) return dot(eval(args[1]), eval(args[2]), line) end
-    if n == "length" then want(1) local v = eval(args[1]) return math1("sqt", dot(v, v, line)) end
+    if n == "length" then want(1) local v = as(eval(args[1]), "v") return math1("sqt", dot(v, v, line)) end
 
     if n == "cross" then
       want(2)
       local a, b = as(eval(args[1]), "v"), as(eval(args[2]), "v")
       local function m(p, q) return arith("*", p, q, line) end
+
+      retain(a, 1)                                  -- each component read twice
+      retain(b, 1)
 
       return { k = "vec", x = arith("-", m(a.y, b.z), m(a.z, b.y), line),
                y = arith("-", m(a.z, b.x), m(a.x, b.z), line),
@@ -916,7 +1030,10 @@ local function gen(prog, simd)
       want(1)
       -- As the 3D Kit's `norm`: a times 1/l where the length is more than nought.
       local a = as(eval(args[1]), "v")
+
+      retain(a, 2)                                  -- dot(a, a) takes two, a * k one, the else one
       local l = math1("sqt", dot(a, a, line))
+      retain(l, 1)                                  -- 1/l and the test
       local k = math1("inv", l)
       local scaled = arith("*", a, k, line)
 
@@ -967,18 +1084,22 @@ local function gen(prog, simd)
 
         local r = temp(a.t == "b" and "d" or a.t)
         emit(("mov %s %s %s"):format(EX, dst(r), src(a, true)))
+        consume(a)
         return r
       end
 
       if e.op == "!" then
-        local b = as(a, "b")
+        local b = reg(as(a, "b"))
         local r = temp("b")
-        emit(("not %s %s %s"):format(EX, dst(r), src(reg(b))))
+        emit(("not %s %s %s"):format(EX, dst(r), src(b)))
+        consume(b)
         return r
       end
 
+      local b = reg(as(a, "d"))
       local r = temp("d")
-      emit(("not %s %s %s"):format(EX, dst(r), src(reg(as(a, "d")))))
+      emit(("not %s %s %s"):format(EX, dst(r), src(b)))
+      consume(b)
       return r
     end
 
@@ -1016,15 +1137,18 @@ local function gen(prog, simd)
     temps = {}
     f()
 
-    for _, r in ipairs(temps) do release(r) end
+    for _, r in ipairs(temps) do
+      if live[r] then live[r] = nil release(r) end
+    end
     temps = saved
   end
 
   local function condition_flag(c, line, flag_true)
     -- Evaluated, then into f0.0: set where the lane takes the branch.
     statement_temps(function()
-      local b = as(eval(c), "b")
-      emit(("cmp %s (%s)f0.0 null<1>:d %s 0:d"):format(EX, flag_true and "ne" or "eq", src(reg(b))))
+      local b = reg(as(eval(c), "b"))
+      emit(("cmp %s (%s)f0.0 null<1>:d %s 0:d"):format(EX, flag_true and "ne" or "eq", src(b)))
+      consume(b)
     end)
   end
 
@@ -1158,6 +1282,42 @@ local function gen(prog, simd)
     end
   end
 
+  -- The names a function's body sets - by `=` or by giving them to an
+  -- inout parameter - which are the parameters it must have its own copy of.
+  function assigned_names(b)
+    local set = {}
+
+    local function expr(e)
+      if type(e) ~= "table" then return end
+      if e.e == "call" and prog.funcs[e.name] then
+        for i, a in ipairs(e.args) do
+          local p = prog.funcs[e.name].params[i]
+          if p and p.inout and a.e == "var" then set[a.name] = true end
+        end
+      end
+      for _, v in pairs(e) do
+        if type(v) == "table" then expr(v) end
+      end
+    end
+
+    local function walk(x)
+      if type(x) ~= "table" then return end
+      if x.s == "set" then
+        local t = x.target
+        while t.e == "comp" do t = t.of end
+        if t.e == "var" then set[t.name] = true end
+      end
+      for _, v in pairs(x) do
+        if type(v) == "table" then
+          if v.e then expr(v) else walk(v) end
+        end
+      end
+    end
+
+    walk(b)
+    return set
+  end
+
   -- A function, inlined: its parameters copies, its early returns a break
   -- out of a loop that runs once.
   local depth = 0
@@ -1187,9 +1347,29 @@ local function gen(prog, simd)
     depth = depth + 1
     if depth > 32 then fail(line, "a function that calls itself") end
 
+    -- An `inout` parameter is the caller's own variable, by another name:
+    -- what the function sets there, the caller sees. Anything else is a copy.
     local values = {}
 
-    for i, a in ipairs(args) do values[i] = eval(a) end
+    for i, a in ipairs(args) do
+      local p = f.params[i]
+
+      if p.inout then
+        if a.e ~= "var" then fail(line, ("%s's %s is inout: give it a variable"):format(f.name, p.name)) end
+
+        local v = lookup(a.name, a.line)
+
+        if v.k ~= "vec" and v.k ~= "reg" then fail(line, a.name .. " is a constant, which cannot be inout") end
+        if (p.t == "v") ~= (v.k == "vec") or (v.k == "reg" and v.t ~= p.t) then
+          fail(line, ("%s's %s and %s are not of one type"):format(f.name, p.name, a.name))
+        end
+
+        values[i] = v
+      else
+        values[i] = eval(a)
+        pin(values[i])                              -- the body may read it any number of times
+      end
+    end
 
     -- The result outlives the call: a register of the caller's statement.
     local result
@@ -1206,9 +1386,22 @@ local function gen(prog, simd)
     scopes = { scopes[1] }                                -- the program's, and the function's own
     push_scope()
 
+    -- A parameter the function never sets is the caller's value as it is,
+    -- with no copy: a tracer's functions take vectors by the dozen, and
+    -- copying each was more registers than a thread has.
+    f.assigned = f.assigned or assigned_names(f.body)
+
     for i, p in ipairs(f.params) do
-      local v = new_var(p.name, p.t, line)
-      move(v, values[i])
+      local v = values[i]
+
+      if p.inout then
+        scopes[#scopes].vars[p.name] = v
+      elseif not f.assigned[p.name] and (v.k == "vec" or (v.k ~= "imm" and (v.t == p.t or (p.t == "b" and v.t == "b")))) then
+        scopes[#scopes].vars[p.name] = p.t == "v" and as(v, "v") or v
+      else
+        local copy = new_var(p.name, p.t, line)
+        move(copy, v)
+      end
     end
 
     local ctx = { ret = f.ret, result = result }
@@ -1222,7 +1415,9 @@ local function gen(prog, simd)
       blocks[#blocks + 1] = ctx.once
       temps = {}
       stmt(f.body)
-      for _, r in ipairs(temps) do release(r) end
+      for _, r in ipairs(temps) do
+        if live[r] then live[r] = nil release(r) end
+      end
       table.remove(blocks)
       place(endl)
       emit(("cmp %s (ne)f1.1 null<1>:d r0.0<0;1,0>:d r0.0<0;1,0>:d"):format(EX))
@@ -1231,7 +1426,9 @@ local function gen(prog, simd)
     else
       temps = {}
       stmt(f.body)
-      for _, r in ipairs(temps) do release(r) end
+      for _, r in ipairs(temps) do
+        if live[r] then live[r] = nil release(r) end
+      end
     end
 
     table.remove(fnstack)

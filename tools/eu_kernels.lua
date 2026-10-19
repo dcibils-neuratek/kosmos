@@ -192,6 +192,14 @@ void main() {
   case("kc-collatz", OK, 0, assert(code, info))
 end
 
+-- Cafesa3D's tracer, Preview (cafesa3d-gpu.md R5), compiled by kc.lua: the
+-- driver must take it, and test_k3d_gpu.c runs it in the emulator.
+do
+  local code, info = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").preview, { simd = 8 })
+
+  case("tracer-preview", OK, 0, assert(code, info))
+end
+
 -- The bits eu.lua does not write, put in by hand.
 local plain = kernel("plain", OK, 0, "add (16|M0) r10.0<1>:d r11.0<8;8,1>:d 1:d\n" .. END_THREAD)
 

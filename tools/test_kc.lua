@@ -202,6 +202,24 @@ void main() {
   return s * 100 + math.min(math.max(x * 3 - 10, 0), 20)
 end, { groups = 3 })
 
+-- inout: a function giving back two things through its caller's variables.
+lanes("inout", [[
+buffer out;
+void split(int v, inout int hi, inout int lo, inout vec3 p) {
+  hi = v / 4; lo = v & 3;
+  p.y = p.y + float(v);
+}
+void main() {
+  int x = group_x * simd + lane;
+  int h = 0; int l = 0; vec3 p = vec3(1.0, 2.0, 3.0);
+  split(x * 3, h, l, p);
+  store(out, x * 4, h * 100 + l * 10 + int(p.y));
+}
+]], function(x)
+  local v = x * 3
+  return (v // 4) * 100 + (v & 3) * 10 + 2 + v
+end)
+
 -- vec3: the arithmetic, dot and cross, as the 3D Kit's.
 lanes("vectors", [[
 buffer out;
@@ -288,6 +306,8 @@ refused("buffer out;\nvoid main() {\n  int x = y + 1;\n}\n", 3, "no variable y")
 refused("void main() {\n  int x = 1;\n  x = x / 3;\n}\n", 3, "power of two")
 refused("int f(int v) {\n  while (v > 0) {\n    return v;\n  }\n  return 0;\n}\nvoid main() { int a = f(2); }\n", 3, "inside a loop")
 refused("void main() {\n  break;\n}\n", 2, "outside a loop")
+refused("void f(inout int v) { v = 1; }\nvoid main() {\n  f(3);\n}\n", 3, "give it a variable")
+refused("void f(inout int v) { v = 1; }\nvoid main() {\n  float a = 0.0;\n  f(a);\n}\n", 4, "not of one type")
 refused("void main() {\n  int x = 1\n}\n", 3, "; expected")
 refused("const float a;\nvoid main() {\n  a = 2.0;\n}\n", 3, "cannot be assigned")
 refused("int f(int v) { return f(v); }\nvoid main() { int a = f(1); }\n", 1, "calls itself")

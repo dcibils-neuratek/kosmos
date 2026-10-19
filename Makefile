@@ -2494,10 +2494,12 @@ $(HOSTDIR)/test_trace: tools/test_trace.c $(K3D_CORE) user/kits/3d/k3d_trace.c u
 # objects, the trees threaded, twenty thousand rays walked by skips meeting
 # what the processor's tracer meets (`tools/test_k3d_gpu.c`).
 $(HOSTDIR)/test_k3d_gpu: tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace.c user/kits/3d/k3d_trace.h \
-                         user/kits/3d/k3d_gpu.c user/kits/3d/k3d_gpu.h user/kits/3d/k3d.h
+                         user/kits/3d/k3d_gpu.c user/kits/3d/k3d_gpu.h user/kits/3d/k3d.h \
+                         tools/eu_emu.c tools/eu_emu.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
-	        tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace.c user/kits/3d/k3d_gpu.c -lm -lpthread
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Itools -o $@ \
+	        tools/test_k3d_gpu.c $(K3D_CORE) user/kits/3d/k3d_trace.c user/kits/3d/k3d_gpu.c tools/eu_emu.c \
+	        -lm -lpthread
 
 #
 # FFmpeg's H.264 decoder and the kit's core on this Mac, held to FFmpeg's
@@ -4724,7 +4726,6 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	python3 tools/fetch_conformance.py fbx
 	$(HOSTDIR)/test_fbx
 	$(HOSTDIR)/test_trace
-	$(HOSTDIR)/test_k3d_gpu
 	$(HOSTDIR)/test_yuv_x86
 	$(HOSTDIR)/test_pack
 	$(HOSTDIR)/test_pack_x86
@@ -4827,6 +4828,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	$(HOSTDIR)/lua tools/eu_kernels.lua $(HOSTDIR)/eu_kernels.txt
 	$(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/eu_kernels.txt
 	$(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_kernels.txt
+	@# And the scene laid out for the GPU, and Cafesa3D's tracer drawing in
+	@# the emulator what the processor draws (cafesa3d-gpu.md R4, R5).
+	$(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/eu_kernels.txt
 	@# And Kosmos's kernel language, its programs run in the emulator
 	@# (cafesa3d-gpu.md R3).
 	$(HOSTDIR)/lua tools/test_kc.lua $(HOSTDIR)/eu_run
