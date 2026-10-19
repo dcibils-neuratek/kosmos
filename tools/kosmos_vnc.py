@@ -417,6 +417,18 @@ def step(viewer, text):
             viewer.pointer(x, y, 0)
     elif verb == "move":
         viewer.pointer(*numbers(2))
+    elif verb == "wheel":
+        # `wheel X Y N`: N notches up (towards the page's top, a zoom in)
+        # or, negative, down - RFB's buttons 4 and 5, pressed and let go.
+        x, y, n = numbers(3)
+        mask = 8 if n > 0 else 16
+        viewer.pointer(x, y)
+
+        for _ in range(abs(n)):
+            viewer.pointer(x, y, mask)
+            time.sleep(0.05)
+            viewer.pointer(x, y, 0)
+            time.sleep(0.15)
     elif verb == "drag":
         # Spaced as a hand moves, as the browser's resize test drags its
         # grip: `vncd` folds pointer events with the same buttons into the
@@ -477,7 +489,7 @@ def main(argv):
 
     if verb == "do" and len(argv) == 3:
         steps = [s for s in argv[2].split(";") if s.strip()]
-    elif verb in ("shot", "click", "rclick", "dclick", "move", "drag", "type",
+    elif verb in ("shot", "click", "rclick", "dclick", "move", "wheel", "drag", "type",
                   "key", "wait") and len(argv) >= 3:
         steps = [" ".join(argv[1:])]
     else:

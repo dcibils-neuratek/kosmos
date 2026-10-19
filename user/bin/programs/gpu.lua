@@ -134,8 +134,11 @@ if words[1] == "kernel" then
 
   if not k then print("gpu: the fill kernel was not kept: " .. tostring(kwhy)) return end
 
-  -- 64 by 4 bytes, seen as R8; the rest of the page is what was written past.
-  local b, bwhy = compute.buffer(4096)
+  -- The fill's 64 by 4 bytes, in a picture 16 pixels - 64 bytes - wide and
+  -- 64 rows high, seen as R8: its first 256 bytes are the fill's four rows
+  -- and the 3840 after them what was written past. (A buffer of bytes is
+  -- one row a page wide, and the fill's rows 1 to 3 fell outside it.)
+  local b, bwhy = compute.picture(16, 64)
 
   if not b then print("gpu: " .. tostring(bwhy)) k:forget() return end
 

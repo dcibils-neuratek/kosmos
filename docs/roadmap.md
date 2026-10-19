@@ -154,8 +154,11 @@ M700 runs `gpu kernel` and GPU Fractal next; then C5, Cafesa3D's design.
 recommended choices for the lesson"): lesson 15, "A program for the GPU",
 the last of Part four - a moving pattern from a kernel with no loop, four
 diagrams of the two paradigms and a table. **Written** (18.691): the
-page, the diagrams and the `15-GPU` project; its screenshots of the pattern
-on the M700. **C5 designed** (18 October): `cafesa3d-gpu.md`,
+page, the diagrams and the `15-GPU` project, its picture taken on the M700
+(18.697). **On the M700** (18.697): `gpu kernel` held, 13 µs; GPU Fractal
+five times the processor, 588 of 480,000 pixels apart; the pattern 1.29 ms
+a frame. **To do**: the lesson's pattern shows the one picture while the
+GPU writes the next, a faint tear - two pictures in turn. **C5 designed** (18 October): `cafesa3d-gpu.md`,
 `cafesa3d-gpu.html`, `cafesa3d-gpu-architecture.png` - the tracer in a kernel
 language of Kosmos's own compiled on Kosmos, an emulator of the execution
 units for the tests, the scene packed by the 3D Kit, Preview first; steps R1

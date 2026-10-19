@@ -28469,3 +28469,51 @@ rays reuse the bounce's hit variables, it fits.
 The emulator's arithmetic is the processor's, exact `math` included, so
 on the M700 the GPU's own `math` will part it from the processor's by a
 little more. That is the M700's to measure.
+
+## 18.697 The Compute Kit on the M700's GPU
+
+The first runs on the real GPU, the HD 530, on Kosmos 0.11.297 netbooted.
+
+**`gpu kernel`** (C2, C3):
+- the kernel with a mistake comes back as "line 2: no instruction
+  frobnicate";
+- the stateless kernel is refused by the driver, "line 8: it sends a
+  message or an address the unit may not be sent - only buffers 0 to 7";
+- the fill, run through the Compute Kit: **256 of 256 bytes the colour,
+  none written past, 13 µs of the GPU's own time**.
+
+The first try said "64 of 256" and "NOT held", and the fault was the
+test's. Since C3, `gpu kernel` had used a bytes buffer, which is one row a
+page wide, and the fill writes four rows at their pitch. The hardware
+dropped rows 1 to 3 as outside the surface, which is the bound D2 relies
+on. It now runs over a picture 16 pixels - 64 bytes - wide and 64 rows
+high, seen as R8.
+
+**GPU Fractal** (C4), 800 by 600:
+
+| View | Iterations | GPU | Processor (one core) |
+|---|---|---|---|
+| The whole set | 128 | 11.45 ms | 53.6 ms |
+| Seahorse Valley, 1 : 36 | 375 | 88.7 ms | 485.8 ms |
+| The same, 1 : 87 | 437 | 82.2 ms | 440.4 ms |
+
+About five times as fast on the GPU. That is 24 execution units against
+one core at 3.4 GHz, and each sixteen-lane thread runs until its slowest
+lane escapes. **The GPU's picture and the processor's differ in 588 of
+480,000 pixels**, a point on the set's edge now and then, where the GPU's
+`mad` rounds once and C rounds twice. In the emulator, whose `mad` is the
+processor's fused one, they had been all alike.
+
+**Lesson 15's project**: the pattern moving at **1.29 ms a frame on the
+GPU**, frame 881 and on. Its window, taken over VNC, is now the lesson's
+picture (`ide-tutorial/pattern.png`, the licence line in its text
+chunk). One flaw is visible: a faint tear at the pattern's edges, the
+window showing the one picture while the GPU writes the next frame into
+it. Two pictures in turn would end it, which goes in the roadmap.
+
+**`kosmos_vnc.py`** gains a `wheel X Y N` step, RFB's buttons 4 and 5,
+which `vncd` already takes; that is how GPU Fractal was zoomed.
+
+**Tests.** The tutorial's checker, 743 checks over 7 pages and 16
+pictures. Cafesa3D's tracer waits for R6, which gives Cafesa3D the door to
+run it.
