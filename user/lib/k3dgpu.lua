@@ -39,12 +39,12 @@ buffer nodes, items, objects, tris, normals, lamps, acc;
 
 // --- Words ---------------------------------------------------------------
 
-float node_f(int n, int k) { return load(nodes, (n * 8 + k) * 4); }
-int node_i(int n, int k) { return loadi(nodes, (n * 8 + k) * 4); }
-float obj_f(int o, int k) { return load(objects, (o * 48 + k) * 4); }
-int obj_i(int o, int k) { return loadi(objects, (o * 48 + k) * 4); }
-vec3 obj_v(int o, int k) { return load3(objects, (o * 48 + k) * 4); }
-vec3 tri_v(int t, int k) { return load3(tris, (t * 12 + k) * 4); }
+float node_f(int n, int k) { return load(nodes, n * 32 + k * 4); }
+int node_i(int n, int k) { return loadi(nodes, n * 32 + k * 4); }
+float obj_f(int o, int k) { return load(objects, o * 192 + k * 4); }
+int obj_i(int o, int k) { return loadi(objects, o * 192 + k * 4); }
+vec3 obj_v(int o, int k) { return load3(objects, o * 192 + k * 4); }
+vec3 tri_v(int t, int k) { return load3(tris, t * 48 + k * 4); }
 
 // A point through an affine 3x4 at word `k` of an object's: I, from the world.
 vec3 to_own(int o, vec3 p) {
@@ -96,7 +96,7 @@ void mesh_hit(int o, vec3 ro, vec3 rd, bool any, inout float best, inout bool go
       if (leaf == 0) {
         node += 1;
       } else {
-        int count = loadi(items, (leaf - 1) * 4);
+        int count = loadi(items, leaf * 4 - 4);
         for (int k = 0; k < count; k += 1) {
           int t = loadi(items, (leaf + k) * 4);
           vec3 e1 = tri_v(t, 3); vec3 e2 = tri_v(t, 6);
@@ -133,7 +133,7 @@ void trace(vec3 o, vec3 d, float tmax, bool with_lamps, bool any,
       if (leaf == 0) {
         node += 1;
       } else {
-        int count = loadi(items, (leaf - 1) * 4);
+        int count = loadi(items, leaf * 4 - 4);
         for (int k = 0; k < count; k += 1) {
           int ob = loadi(items, (leaf + k) * 4);
           if (!(any && obj_f(ob, 33) > 0.5)) {
@@ -509,6 +509,7 @@ function k3dgpu.render(k3, scene, how)
   self.picture, self.surface = pic, pic:surface()
 
   self.started = sys.ticks()
+  self.hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
   self:step()
   return self
 end
@@ -533,18 +534,30 @@ function job:step()
     if self.phase == "trace" then
       self.count = self.count + 1
       self.ticket, self.phase = nil, nil
-      self:launch_paint()
+
+      -- Painted a few times a second and at the end, the traces between
+      -- run back to back: a paint each pass was a run more and a wait for
+      -- the caller's next look, 55 ms a pass on the wall (18.701).
+      local hz = self.hz
+
+      if self.count >= self.target or (sys.ticks() - (self.painted_at or 0)) / hz >= 0.25 then
+        self:launch_paint()
+      else
+        self:launch_trace()
+      end
+
       return
     end
 
     self.ticket, self.phase = nil, nil
     self.fresh = true
     self.painted = self.count
+    self.painted_at = sys.ticks()
 
     -- Where a pass's time went, said once: the GPU's own time for a trace
     -- and a paint, and the wall's for a whole pass.
     if self.painted >= self.target then
-      local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+      local hz = self.hz
       local n = self.painted
 
       print(("k3dgpu: %d passes, %dx%d: a trace %.2f ms and a paint %.2f ms on the GPU, "

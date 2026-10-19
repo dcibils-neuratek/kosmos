@@ -389,6 +389,13 @@ static void tracer(const char *kernels)
         free(zero);
     }
 
+    /* K3D_PROFILE=FILE: each of the tracer's instructions and how many
+     * times its threads ran it, over both passes - to lay beside kc's
+     * assembly and see where the time goes (`testing.md` 18.701). */
+    uint64_t *per_ip = getenv("K3D_PROFILE") ? calloc(n / 16u + 1u, sizeof(uint64_t)) : NULL;
+
+    eu_profile(per_ip);
+
     {
         struct eu_run run = { code, n, 8, (uint32_t)(W + 7) / 8, (uint32_t)H, b, 7, constants,
                               (uint32_t)((at + 31) & ~31u), 200000000u };
@@ -407,6 +414,19 @@ static void tracer(const char *kernels)
                      why ? why : "", worst_at);
             check(why == NULL, what);
         }
+    }
+
+    eu_profile(NULL);
+
+    if (per_ip) {
+        FILE *f = fopen(getenv("K3D_PROFILE"), "w");
+
+        for (i = 0; f && i < n / 16u; i++) {
+            fprintf(f, "%u %llu\n", i, (unsigned long long)per_ip[i]);
+        }
+
+        if (f) { fclose(f); }
+        free(per_ip);
     }
 
     /* Every pixel's light, the GPU's against the processor's. */

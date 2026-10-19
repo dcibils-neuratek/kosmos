@@ -730,6 +730,13 @@ static const char *structured(struct thread *t, const uint32_t *w, unsigned op, 
     return NULL;
 }
 
+static uint64_t *profile;
+
+void eu_profile(uint64_t *per_ip)
+{
+    profile = per_ip;
+}
+
 static const char *thread_run(struct thread *t, const struct eu_run *r, struct eu_stats *st, uint32_t *at)
 {
     uint32_t n = r->bytes / 16u;
@@ -751,6 +758,10 @@ static const char *thread_run(struct thread *t, const struct eu_run *r, struct e
         exec = 1u << bits(w, 21, 23);
         *at = t->ip;
         st->instructions++;
+
+        if (profile) {
+            profile[t->ip]++;
+        }
 
         if (bits(w, 29, 29)) {
             return "a compacted instruction";

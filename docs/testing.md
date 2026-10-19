@@ -28675,3 +28675,65 @@ more per ray than the processor's C. The roadmap has what would change
 that, and R7 waits on it.
 
 **Full gate 97 of 97 in 9:34.**
+
+## 18.701 kc writes less: the tracer a third shorter
+
+`cafesa3d-gpu.md` R6b, the first part. On the M700 a trace was 131 ms a
+pass, about 120,000 instructions per SIMD8 thread, and the processor was
+10.8 times as fast (18.700). The question was what those instructions
+are.
+
+**A profile.** `eu_profile(counts)` has the emulator count each
+instruction's executions, and `K3D_PROFILE=FILE` makes `test_k3d_gpu` write
+them out, to lay beside kc's assembly. A third of the tracer was `mov`,
+and the hottest blocks were loads: five to eight instructions around each
+`send`.
+
+**What kc no longer writes:**
+- **A copy after an assignment.** The instruction that computed the value
+  writes the variable's register, when it is in straight-line code and
+  nothing after it touches either register (`retarget`). It does not
+  cross a label, a branch, a `send` or a `(W)` line.
+- **A second compare.** A comparison steering an `if` or a loop is one
+  `cmp` into the flag. Turned about for a loop's exit, except a float's
+  `<`, `<=`, `>` or `>=`, which NaN does not turn about.
+- **A constant moved into a register** for a parameter the function never
+  sets: it stays a constant and folds.
+- **The address copied into the message.** It is written there directly.
+- **The reply copied into a new variable.** The variable adopts the
+  registers the value arrived in.
+- **A result register and a copy for a function that is one `return`.** Its
+  expression is the call's value.
+
+The tracer's accessors also write `o * 192 + k * 4` rather than
+`(o * 48 + k) * 4`, so a constant `k` folds.
+
+**Measured in the emulator**, the still life's two passes:
+
+| | instructions |
+|---|---|
+| before | 642,750 |
+| after | 421,528 |
+
+That is 34% fewer, and the picture is unchanged: 1,536 of 1,536 pixels
+within 0.2%. Statically, 3,130 instructions became 2,301, and 1,078 `mov`s
+became 314.
+
+**And the job:** the trace runs back to back, painted every quarter
+second and at the end. A paint each pass had been a run more and a wait
+for Cafesa3D's next look, 55 ms a pass on the wall.
+
+**Tests.** `test_kc.lua` gains three checks on the code itself, and each
+fails with the committed kc:
+- an assignment is written through a `mov` again;
+- a comparison in an `if` is two `cmp`s again;
+- a one-`return` call with a constant is copied about again.
+
+`host`, `x86-ide`, both `x86-cafesa3d` suites, `x86-fractal` and
+`x86-gpumon` pass, 3:49.
+
+**The M700 was not measured.** It did not come back from the restart that
+carried this build: no ping, no Telnet. The same kernel boots under QEMU
+and passes run_x86.py's 45 core checks, so the image is not broken. Whether
+the machine stopped in its firmware, at the network card, or in Kosmos
+waits for its screen. It needs a hand on its power button.

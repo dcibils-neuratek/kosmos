@@ -641,6 +641,8 @@ local function gen(prog, simd)
     fail(line, "no variable " .. n)
   end
 
+  local adopt
+
   local function new_var(n, t, line)
     local scope = scopes[#scopes]
 
@@ -663,12 +665,113 @@ local function gen(prog, simd)
     return v
   end
 
+  -- **A variable that takes the registers its first value arrived in**,
+  -- rather than registers of its own and a copy: `vec3 e1 = tri_v(t, 3)`
+  -- is the load's reply, and was three movs more (18.701). Only a value
+  -- nothing else reads - a temporary with its one use left - and only
+  -- whole: every component of a vec3 such a temporary.
+  local function adoptable(v, t)
+    return v.k == "reg" and v.tmp and v.uses == 1 and not v.pinned and live[v.r]
+           and (v.t == "b" and "d" or v.t) == (t == "b" and "d" or t)
+  end
+
+  function adopt(n, t, v, line)
+    local scope = scopes[#scopes]
+
+    if scope.vars[n] then fail(line, "the variable " .. n .. " twice") end
+
+    if t == "v" then
+      if not (v.k == "vec" and adoptable(v.x, "f") and adoptable(v.y, "f") and adoptable(v.z, "f")
+              and v.x.r ~= v.y.r and v.y.r ~= v.z.r and v.x.r ~= v.z.r) then
+        return nil
+      end
+
+      local out = { k = "vec" }
+
+      for _, c in ipairs { "x", "y", "z" } do
+        live[v[c].r] = nil
+        scope.regs[#scope.regs + 1] = v[c].r
+        out[c] = { k = "reg", t = "f", r = v[c].r }
+      end
+
+      scope.vars[n] = out
+      return out
+    end
+
+    if not adoptable(v, t) then return nil end
+
+    live[v.r] = nil
+    scope.regs[#scope.regs + 1] = v.r
+    scope.vars[n] = { k = "reg", t = t, r = v.r }
+    return scope.vars[n]
+  end
+
   local function push_scope() scopes[#scopes + 1] = { vars = {}, regs = {} } end
 
   local function pop_scope()
     local s = table.remove(scopes)
 
     for _, r in ipairs(s.regs) do release(r) end
+  end
+
+  -- **A value written straight into its variable.** A statement's value
+  -- arrives in a temporary and `move` would copy it across; when the
+  -- instruction that wrote the temporary is near enough, its destination
+  -- is made the variable's register instead, and there is no copy - a
+  -- third of the tracer's instructions were such copies (`testing.md`
+  -- 18.701). Only across straight-line code: not past a label or a
+  -- branch, which would change which lanes the write reaches, nor a send,
+  -- which writes several registers in a row; and only when nothing after
+  -- that instruction touches the temporary or the variable.
+  local function regs_in(line)
+    local out = {}
+
+    for n in line:gmatch("r(%d+)%.") do out[#out + 1] = tonumber(n) end
+    return out
+  end
+
+  local function touches(line, r)
+    for _, n in ipairs(regs_in(line)) do
+      if n >= r and n < r + R then return true end
+    end
+
+    return false
+  end
+
+  local STOPS = { ["if"] = true, ["else"] = true, endif = true, ["while"] = true, ["break"] = true,
+                  continue = true, jmpi = true }
+
+  local function retarget(s, to)
+    if not (s.k == "reg" and s.tmp and s.uses == 1 and not s.pinned and to.k == "reg") then return false end
+    if (s.t == "b" and "d" or s.t) ~= (to.t == "b" and "d" or to.t) then return false end
+
+    local out = G.out
+    local want = dst(s)
+
+    for i = #out, math.max(1, #out - 48), -1 do
+      local line = out[i]
+      local bare = line:gsub("^%([^)]*%)%s*", "")
+      local op = bare:match("^([%w%.]+)")
+
+      if line:match(":%s*$") or STOPS[op] or op == nil or op:match("^send") or line:match("^%(W%)") then
+        return false
+      end
+
+      local d = bare:match("^[%w%.]+ %([^)]*%) ([^ ]+)") or bare:match("^[%w%.]+ %([^)]*%) %([%w]+%)[%w%.]+ ([^ ]+)")
+
+      if d == want then
+        for k = i + 1, #out do
+          if touches(out[k], s.r) or touches(out[k], to.r) then return false end
+        end
+
+        local at = line:find(want, 1, true)
+
+        out[i] = line:sub(1, at - 1) .. dst(to) .. line:sub(at + #want)
+        return true
+      end
+    end
+
+    return false
   end
 
   local function move(to, v)
@@ -678,7 +781,7 @@ local function gen(prog, simd)
       for _, c in ipairs { "x", "y", "z" } do
         local s = as(v[c], "f")
 
-        if not (s.k == "reg" and s.r == to[c].r) then
+        if not (s.k == "reg" and s.r == to[c].r) and not retarget(s, to[c]) then
           emit(("mov %s %s %s"):format(EX, dst(to[c]), src(s)))
         end
 
@@ -690,7 +793,7 @@ local function gen(prog, simd)
 
     local s = as(v, to.t)
 
-    if not (s.k == "reg" and s.r == to.r) then
+    if not (s.k == "reg" and s.r == to.r) and not retarget(s, to) then
       emit(("mov %s %s %s"):format(EX, dst(to), src(s)))
     end
 
@@ -911,7 +1014,9 @@ local function gen(prog, simd)
     hold(addr)
     for k = 0, n - 1 do hold(back + k * R) end
 
-    emit(("mov %s r%d.0<1>:d %s"):format(EX, addr, src(off)))
+    if not retarget(off, { k = "reg", t = "d", r = addr }) then
+      emit(("mov %s r%d.0<1>:d %s"):format(EX, addr, src(off)))
+    end
     consume(off)
     emit(("send.hdc1 %s r%d r%d 0x00000000 0x%08X"):format(EX, back, addr, desc(1, n, R, R * n, bti)))
     consume({ k = "reg", r = addr, tmp = true, uses = 1 })
@@ -932,7 +1037,9 @@ local function gen(prog, simd)
 
     local off = as(eval(e.args[2]), "d")
 
-    emit(("mov %s r%d.0<1>:d %s"):format(EX, block, src(off)))
+    if not retarget(off, { k = "reg", t = "d", r = block }) then
+      emit(("mov %s r%d.0<1>:d %s"):format(EX, block, src(off)))
+    end
     consume(off)
 
     if n == 1 then
@@ -1143,9 +1250,41 @@ local function gen(prog, simd)
     temps = saved
   end
 
+  local INVERT = { lt = "ge", le = "gt", gt = "le", ge = "lt", eq = "ne", ne = "eq" }
+
   local function condition_flag(c, line, flag_true)
     -- Evaluated, then into f0.0: set where the lane takes the branch.
+    -- A comparison goes there in one cmp rather than through a register of
+    -- its own; turned about for a flag that is set where it is false,
+    -- unless that would be a float's <, <=, > or >=, which NaN does not
+    -- turn about (18.701).
     statement_temps(function()
+      if c.e == "bin" and CONDS[c.op] then
+        local a, b = eval(c.a), eval(c.b)
+        local t = (scalar_type(a) == "f" or scalar_type(b) == "f") and "f" or "d"
+        local cond = CONDS[c.op]
+
+        if flag_true or t == "d" or cond == "eq" or cond == "ne" then
+          if not flag_true then cond = INVERT[cond] end
+
+          a, b = as(a, t), as(b, t)
+
+          if a.k == "imm" then a, b, cond = b, a, SWAPPED[cond] end
+
+          a = reg(a)
+          emit(("cmp %s (%s)f0.0 null<1>:%s %s %s"):format(EX, cond, t, src(a), src(b)))
+          consume(a)
+          consume(b)
+          return
+        end
+
+        local r = compare(c.op, a, b, line)
+
+        emit(("cmp %s (eq)f0.0 null<1>:d %s 0:d"):format(EX, src(r)))
+        consume(r)
+        return
+      end
+
       local b = reg(as(eval(c), "b"))
       emit(("cmp %s (%s)f0.0 null<1>:d %s 0:d"):format(EX, flag_true and "ne" or "eq", src(b)))
       consume(b)
@@ -1211,9 +1350,14 @@ local function gen(prog, simd)
 
         if d.init then
           statement_temps(function()
-            local init = eval(d.init)
-            v = new_var(d.name, s.t == "b" and "b" or s.t, s.line)
-            move(v, init)
+            local init = as(eval(d.init), s.t)
+
+            v = adopt(d.name, s.t, init, s.line)
+
+            if not v then
+              v = new_var(d.name, s.t == "b" and "b" or s.t, s.line)
+              move(v, init)
+            end
           end)
         else
           v = new_var(d.name, s.t, s.line)
@@ -1371,10 +1515,19 @@ local function gen(prog, simd)
       end
     end
 
+    -- **A function that is one `return`** is its expression, evaluated
+    -- where it is called: its value the caller's, with no register set
+    -- aside for a result and no copy into one - every `obj_f` and `tri_v`
+    -- had both (18.701).
+    local single = f.ret ~= "void" and f.body.s == "block" and #f.body == 1
+                   and f.body[1].s == "return" and f.body[1].v
+
     -- The result outlives the call: a register of the caller's statement.
     local result
 
-    if f.ret == "v" then
+    if single then
+      result = nil
+    elseif f.ret == "v" then
       result = { k = "vec", x = temp("f"), y = temp("f"), z = temp("f") }
     elseif f.ret ~= "void" then
       result = temp(f.ret)
@@ -1396,12 +1549,45 @@ local function gen(prog, simd)
 
       if p.inout then
         scopes[#scopes].vars[p.name] = v
+      elseif not f.assigned[p.name] and v.k == "imm" and p.t ~= "v" and p.t ~= "b" then
+        -- A constant given to a parameter nothing sets stays a constant,
+        -- so `obj_f(o, 25)` folds and multiplies by it rather than first
+        -- moving 25 into a register (18.701).
+        scopes[#scopes].vars[p.name] = as(v, p.t)
       elseif not f.assigned[p.name] and (v.k == "vec" or (v.k ~= "imm" and (v.t == p.t or (p.t == "b" and v.t == "b")))) then
         scopes[#scopes].vars[p.name] = p.t == "v" and as(v, "v") or v
       else
         local copy = new_var(p.name, p.t, line)
         move(copy, v)
       end
+    end
+
+    if single then
+      local v = as(eval(single), f.ret)
+
+      -- A variable of the function's own goes when its scope does: the
+      -- value then copied out into a register of the caller's statement.
+      local function own(x, t)
+        if x.k == "reg" and not x.tmp then
+          local r = temp(t)
+
+          emit(("mov %s %s %s"):format(EX, dst(r), src(x)))
+          return r
+        end
+
+        return x
+      end
+
+      if v.k == "vec" then
+        v = { k = "vec", x = own(v.x, "f"), y = own(v.y, "f"), z = own(v.z, "f") }
+      else
+        v = own(v, v.t)
+      end
+
+      pop_scope()
+      scopes = saved_scopes
+      depth = depth - 1
+      return v
     end
 
     local ctx = { ret = f.ret, result = result }

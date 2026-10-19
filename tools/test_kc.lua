@@ -322,6 +322,45 @@ do
         and string.unpack("<f", packed, 17) == 3, "the constants were not packed as laid out")
 end
 
+-- **What the code is, not only what it computes** (`testing.md` 18.701):
+-- the copies and second compares that were a third of the tracer's
+-- instructions must not come back unnoticed. Counted in what kc writes.
+do
+  local function count(src, pattern)
+    local text = assert(kc.compile(src, { simd = 8 }))
+    local n = 0
+
+    for line in text:gmatch("[^\n]+") do
+      if line:gsub("^%([^)]*%)%s*", ""):match(pattern) then n = n + 1 end
+    end
+
+    return n
+  end
+
+  local head = "const int n;\nbuffer out;\n"
+
+  -- A sum into its variable: the add writes it, no mov. Four register
+  -- movs are the lane's widening, a and b set from it and the store's
+  -- payload; a fifth is the copy.
+  check(count(head .. "void main() {\n  int a = lane;\n  int b = lane;\n  a = a + b * 3;\n"
+              .. "  store(out, lane * 4, a);\n}\n", "^mov %([^)]*%) r%d+%.0<1>:d r%d+%.0<8") <= 4,
+        "an assignment is written through a mov again")
+
+  -- A comparison steering an if: one cmp, into the flag.
+  check(count(head .. "void main() {\n  int v = 0;\n  if (lane < n) { v = 1; }\n"
+              .. "  store(out, lane * 4, v);\n}\n", "^cmp") == 1,
+        "a comparison in an if is two cmps again")
+
+  -- An accessor of one return with a constant: a multiply, an add and the
+  -- load - no constant in a register, no result copied out. Six movs are
+  -- every kernel's five (the lanes, the group, the thread's end) and the
+  -- store's payload; the old way was nine.
+  check(count(head .. "float get(int o, int k) { return load(out, o * 192 + k * 4); }\n"
+              .. "void main() {\n  float f = get(lane, 25);\n  store(out, lane * 4, f);\n}\n",
+              "^mov") <= 6,
+        "a call of one return with a constant is copied about again")
+end
+
 if #fails > 0 then
   print(("FAIL: %d of %d kc checks"):format(#fails, checks))
   for _, f in ipairs(fails) do print("  " .. f) end
@@ -329,4 +368,5 @@ if #fails > 0 then
 end
 
 print(("PASS: %d kc checks (integers, floats, lanes that disagree, loops, functions, vec3, the GPU's "
-       .. "maths and buffers, in SIMD8 and SIMD16 through the emulator; and what is refused, by line)"):format(checks))
+       .. "maths and buffers, in SIMD8 and SIMD16 through the emulator; what is refused, by line; and "
+       .. "no copies or second compares where none are needed)"):format(checks))

@@ -46,6 +46,10 @@ struct eu_stats {
     uint64_t threads, instructions, lanes;  /* lanes: an instruction's enabled lanes, summed */
 };
 
+/* Each instruction's runs counted into `per_ip`, by its index, from the
+ * next eu_emulate on; NULL stops it. For a profile (`test_k3d_gpu.c`). */
+void eu_profile(uint64_t *per_ip);
+
 /* Runs every thread of the grid. NULL, or why it could not - with the
  * instruction it stopped at in `*at` when there is one. */
 const char *eu_emulate(const struct eu_run *run, struct eu_stats *stats, uint32_t *at);
