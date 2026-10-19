@@ -28737,3 +28737,35 @@ carried this build: no ping, no Telnet. The same kernel boots under QEMU
 and passes run_x86.py's 45 core checks, so the image is not broken. Whether
 the machine stopped in its firmware, at the network card, or in Kosmos
 waits for its screen. It needs a hand on its power button.
+
+## 18.702 min and max as one sel; each object's place taken once
+
+`cafesa3d-gpu.md` R6b, the second part, measured in the emulator: the
+M700 is still down (18.701).
+
+- **`min` and `max` are one `sel` with a condition**, where they were a
+  `cmp` into a flag and a `sel` by it, and those two made a quarter of what
+  the tracer ran. It is Mesa's `sel.l` and `sel.g`. kc keeps `gt` for
+  `max`, so it selects as the pair did, NaN included.
+  - The emulator selects by the condition and leaves the flag alone.
+  - Four `sel` lines with conditions joined the corpus. Mesa's `gentool`
+    assembled them, and `test_eu.lua` holds `eu.lua` to its bytes: 76 lines
+    bit for bit.
+  - **Not yet run on the GPU.** `gpu kc` with tonight's min/max kernel
+    shows it in one run once the M700 is back.
+- **A `!` steering a branch turns the flag about** rather than being
+  computed with a `not`.
+- **The tracer takes an object's, a node's, a triangle's and a lamp's place
+  once**, `int at = o * 192`, and adds constants to it. It had recomputed
+  `o * 192` for every word loaded.
+
+The still life's two passes: 421,528 instructions became 378,512.
+Since 18.700's 642,750 that is 41% fewer, with the picture unchanged.
+
+**What is left is arithmetic.** In the latest profile `mul` and `add` were
+47% of what ran. A `mad` would merge many of those pairs, but it rounds
+once where C rounds twice, and kc keeping C's rounding was a decision made
+on purpose (`cafesa3d-gpu.md`). Whether to change it is Diego's.
+
+`host`, `x86-ide`, both `x86-cafesa3d` suites, `x86-fractal` and
+`x86-gpumon` pass, 3:58.

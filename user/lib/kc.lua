@@ -959,8 +959,10 @@ local function gen(prog, simd)
 
     local r = temp(t)
 
-    emit(("cmp %s (%s)f1.0 null<1>:%s %s %s"):format(EX, which == "min" and "lt" or "gt", t, src(a), src(b)))
-    emit(("(f1.0) sel %s %s %s %s"):format(EX, dst(r), src(a), src(b)))
+    -- One instruction: sel with a condition, the first where it holds
+    -- against the second - Mesa's sel.l and sel.g - rather than a cmp into a
+    -- flag and a sel by it, which were a quarter of the tracer (18.702).
+    emit(("sel %s (%s)f1.0 %s %s %s"):format(EX, which == "min" and "lt" or "gt", dst(r), src(a), src(b)))
     consume(a)
     consume(b)
     return r
@@ -1258,6 +1260,11 @@ local function gen(prog, simd)
     -- its own; turned about for a flag that is set where it is false,
     -- unless that would be a float's <, <=, > or >=, which NaN does not
     -- turn about (18.701).
+    -- A `!` turns which way the flag is set, rather than being computed.
+    while c.e == "un" and c.op == "!" do
+      c, flag_true = c.a, not flag_true
+    end
+
     statement_temps(function()
       if c.e == "bin" and CONDS[c.op] then
         local a, b = eval(c.a), eval(c.b)

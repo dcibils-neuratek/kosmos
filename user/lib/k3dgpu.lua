@@ -47,15 +47,19 @@ vec3 obj_v(int o, int k) { return load3(objects, o * 192 + k * 4); }
 vec3 tri_v(int t, int k) { return load3(tris, t * 48 + k * 4); }
 
 // A point through an affine 3x4 at word `k` of an object's: I, from the world.
+// Each takes its object's place once and adds to it, rather than an
+// accessor working it out again for every word (`testing.md` 18.702).
 vec3 to_own(int o, vec3 p) {
-  vec3 r0 = obj_v(o, 4); vec3 r1 = obj_v(o, 8); vec3 r2 = obj_v(o, 12);
-  return vec3(r0.x * p.x + r0.y * p.y + r0.z * p.z + obj_f(o, 7),
-              r1.x * p.x + r1.y * p.y + r1.z * p.z + obj_f(o, 11),
-              r2.x * p.x + r2.y * p.y + r2.z * p.z + obj_f(o, 15));
+  int at = o * 192;
+  vec3 r0 = load3(objects, at + 16); vec3 r1 = load3(objects, at + 32); vec3 r2 = load3(objects, at + 48);
+  return vec3(r0.x * p.x + r0.y * p.y + r0.z * p.z + load(objects, at + 28),
+              r1.x * p.x + r1.y * p.y + r1.z * p.z + load(objects, at + 44),
+              r2.x * p.x + r2.y * p.y + r2.z * p.z + load(objects, at + 60));
 }
 
 vec3 to_own_dir(int o, vec3 d) {
-  vec3 r0 = obj_v(o, 4); vec3 r1 = obj_v(o, 8); vec3 r2 = obj_v(o, 12);
+  int at = o * 192;
+  vec3 r0 = load3(objects, at + 16); vec3 r1 = load3(objects, at + 32); vec3 r2 = load3(objects, at + 48);
   return vec3(r0.x * d.x + r0.y * d.y + r0.z * d.z,
               r1.x * d.x + r1.y * d.y + r1.z * d.z,
               r2.x * d.x + r2.y * d.y + r2.z * d.z);
@@ -64,8 +68,9 @@ vec3 to_own_dir(int o, vec3 d) {
 // --- A box of a tree, met before `best` ----------------------------------
 
 bool met_box(int n, vec3 o, vec3 inv, float best) {
-  vec3 lo = load3(nodes, (n * 8) * 4);
-  vec3 hi = load3(nodes, (n * 8 + 3) * 4);
+  int at = n * 32;
+  vec3 lo = load3(nodes, at);
+  vec3 hi = load3(nodes, at + 12);
   float x0 = (lo.x - o.x) * inv.x; float x1 = (hi.x - o.x) * inv.x;
   float y0 = (lo.y - o.y) * inv.y; float y1 = (hi.y - o.y) * inv.y;
   float z0 = (lo.z - o.z) * inv.z; float z1 = (hi.z - o.z) * inv.z;
@@ -231,8 +236,8 @@ void trace(vec3 o, vec3 d, float tmax, bool with_lamps, bool any,
 
   if (with_lamps) {
     for (int i = 0; i < nlamps; i += 1) {
-      vec3 lp = load3(lamps, (i * 8) * 4);
-      float lr = load(lamps, (i * 8 + 3) * 4);
+      vec3 lp = load3(lamps, i * 32);
+      float lr = load(lamps, i * 32 + 12);
       vec3 oc = o - lp;
       float qa = dot(d, d); float qb = dot(oc, d); float qc = dot(oc, oc) - lr * lr;
       float disc = qb * qb - qa * qc;
@@ -253,18 +258,19 @@ vec3 sky(vec3 d) {
 }
 
 vec3 lamp_radiance(int i) {
-  float r = load(lamps, (i * 8 + 3) * 4);
+  float r = load(lamps, i * 32 + 12);
   float rr = r > 0.001 ? r : 0.001;
-  return load3(lamps, (i * 8 + 4) * 4) * (load(lamps, (i * 8 + 7) * 4) / (4.0 * 3.14159265358979 * 3.14159265358979 * rr * rr));
+  return load3(lamps, i * 32 + 16) * (load(lamps, i * 32 + 28) / (4.0 * 3.14159265358979 * 3.14159265358979 * rr * rr));
 }
 
 // The world's unit normal at a hit: smooth or flat, out through N.
 vec3 world_normal(int ob, vec3 n, int tri, float bu, float bv) {
   vec3 m = n;
   if (obj_i(ob, 0) == 0 && obj_i(ob, 1) == 1) {
-    int c0 = loadi(tris, (tri * 12 + 9) * 4);
-    int c1 = loadi(tris, (tri * 12 + 10) * 4);
-    int c2 = loadi(tris, (tri * 12 + 11) * 4);
+    int at = tri * 48;
+    int c0 = loadi(tris, at + 36);
+    int c1 = loadi(tris, at + 40);
+    int c2 = loadi(tris, at + 44);
     vec3 s = load3(normals, c0 * 12) * (1.0 - bu - bv) + load3(normals, c1 * 12) * bu
              + load3(normals, c2 * 12) * bv;
     if (dot(s, n) > 0.0) { m = s; }
@@ -365,8 +371,8 @@ void main() {
             vec3 sum = vec3(0.0, 0.0, 0.0);
             vec3 start = p + n * 0.001;
             for (int i = 0; i < nlamps; i += 1) {
-              vec3 to = load3(lamps, (i * 8) * 4) - p;
-              float rr = load(lamps, (i * 8 + 3) * 4);
+              vec3 to = load3(lamps, i * 32) - p;
+              float rr = load(lamps, i * 32 + 12);
               float d2 = dot(to, to);
               float dist = sqrt(d2);
               vec3 w = to * (1.0 / dist);

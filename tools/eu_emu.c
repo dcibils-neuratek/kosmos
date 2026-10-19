@@ -383,12 +383,20 @@ static const char *two_source(struct thread *t, const uint32_t *w, unsigned op, 
             continue;
         }
 
-        if (op == 0x02) {                               /* sel: by the predicate */
+        if (op == 0x02) {                               /* sel: by the predicate, or by a condition */
             if (bits(w, 16, 19) == 0) {
-                return "sel with a condition rather than a predicate";
+                /* sel.l, sel.g and the rest: the first where it holds
+                 * against the second, as Mesa makes min and max; the flag
+                 * left as it was (`testing.md` 18.702). */
+                if (cond == 0) {
+                    return "sel with neither a predicate nor a condition";
+                }
+
+                out[lane] = compare(cond, a, b) ? a : b;
+            } else {
+                out[lane] = predicate(t, w, lane) ? a : b;
             }
 
-            out[lane] = predicate(t, w, lane) ? a : b;
             write[lane] = true;
             continue;
         }
