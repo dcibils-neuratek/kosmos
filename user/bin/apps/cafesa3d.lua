@@ -2529,12 +2529,16 @@ function final.keep()
            .. "2 levels apart, the worst %d"):format(final.held.count, pw * ph, final.held.worst))
   elseif them and them.key == final.key then
     -- Final: the two drew different random numbers, so their pixels need
-    -- not agree, and their light must - each 16 by 16 square within 5%
-    -- and the whole within 2% (R7a; `test_k3d_gpu`'s bounds, 18.706).
+    -- not agree, and their light must - the whole within 2%, and each 16
+    -- by 16 square within its noise, which falls as one over the samples'
+    -- square root: the House was 14.1% apart at 16 samples and 6.9% at 64,
+    -- halved as noise is (18.707). 0.6 over the root, and 5% at the least.
     local block, whole = copy:likeness(them.pic, 16)
+    local bound = math.max(0.05, 0.6 / math.sqrt(math.max(1, final.samples or 1)))
 
-    final.held = { key = final.key, final = true, block = block or 1, whole = whole or 1 }
-    final.held.same = final.held.block <= 0.05 and final.held.whole <= 0.02
+    final.held = { key = final.key, final = true, block = block or 1, whole = whole or 1,
+                   bound = bound }
+    final.held.same = final.held.block <= bound and final.held.whole <= 0.02
     print(("cafesa3d: the GPU's picture against the processor's, Final: blocks of 16 within "
            .. "%.1f%%, the whole within %.2f%%"):format(final.held.block * 100, final.held.whole * 100))
   end
@@ -2577,8 +2581,9 @@ function final.times(s, x, y, w)
 
   if held and held.key == key and held.final then
     y = note(s, x, y, w, same and ("Held to the processor's within the noise: every 16 by 16 block's "
-                                   .. "light within %.1f%%, the whole within %.2f%%."):format(
-                                     held.block * 100, held.whole * 100)
+                                   .. "light within %.1f%% (%.1f%% allowed at these samples), the "
+                                   .. "whole within %.2f%%."):format(held.block * 100,
+                                                                    held.bound * 100, held.whole * 100)
                          or ("Not the processor's picture: a block's light %.1f%% apart, the whole "
                              .. "%.2f%%, so no speed is claimed."):format(held.block * 100,
                                                                           held.whole * 100))

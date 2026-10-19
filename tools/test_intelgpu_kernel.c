@@ -36,8 +36,8 @@ static int nibble(int c)
 
 int main(int argc, char **argv)
 {
-    static uint32_t words[IGPU_KERNEL_MAX_BYTES / 4];
-    static char line[2 * IGPU_KERNEL_MAX_BYTES + 256];
+    static uint32_t words[(IGPU_KERNEL_MAX_BYTES + 64) / 4];   /* room for one past the most */
+    static char line[2 * (IGPU_KERNEL_MAX_BYTES + 64) + 256];
     struct igpu_kernel_verdict v;
     char what[512];
     int kernels = 0, refused = 0;

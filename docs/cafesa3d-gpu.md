@@ -194,7 +194,10 @@ the suites, and then on the M700.
    image textures: Cafesa3D's are six procedural patterns and their bump.
    **R7a**, Final's lobes and the GPU's own random numbers, held to the
    processor statistically; **R7b**, the patterns in kc, textured Preview
-   held pixel for pixel.
+   held pixel for pixel. **Done** (18.706-18.707): Final held within the
+   noise, the House's textures in both. On the still life the GPU equals
+   the processor in Final; on the House the processor is faster, which is
+   the next work (`roadmap.md`).
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is
 the M700's.

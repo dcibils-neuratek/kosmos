@@ -40,8 +40,8 @@
 /* The items: a leaf's count, then that many - objects for the top tree,
  * absolute triangles for a mesh's. */
 
-/* An object: 48 words. */
-#define K3D_GPU_OBJ_WORDS    48u
+/* An object: 64 words, 256 bytes. */
+#define K3D_GPU_OBJ_WORDS    64u
 #define K3D_GPU_OBJ_SHAPE    0u     /* K3D_GPU_MESH ... K3D_GPU_PLANE */
 #define K3D_GPU_OBJ_SMOOTH   1u
 #define K3D_GPU_OBJ_ROOT     2u     /* a mesh's tree's first node, or K3D_GPU_END */
@@ -57,7 +57,16 @@
 #define K3D_GPU_OBJ_TRANS    33u
 #define K3D_GPU_OBJ_IOR      34u
 #define K3D_GPU_OBJ_EMIT     35u
-#define K3D_GPU_OBJ_TEXTURED 36u    /* 1: a pattern, drawn in its base colour until R7 */
+#define K3D_GPU_OBJ_PATTERN  36u    /* enum k3d_pattern: K3D_PLAIN, nought, is none (R7b) */
+#define K3D_GPU_OBJ_COLOUR2  37u    /* three floats, linear: the pattern's second colour */
+#define K3D_GPU_OBJ_TSCALE   40u    /* struct k3d_texture's scale, detail, distortion, */
+#define K3D_GPU_OBJ_DETAIL   41u    /*   bump, mortar, ratio and offset, in its order */
+#define K3D_GPU_OBJ_DISTORT  42u
+#define K3D_GPU_OBJ_BUMP     43u
+#define K3D_GPU_OBJ_MORTAR   44u
+#define K3D_GPU_OBJ_RATIO    45u
+#define K3D_GPU_OBJ_OFFSET   46u
+#define K3D_GPU_OBJ_SCALE    47u    /* three floats: its scale, so a texture is in its metres */
 
 enum { K3D_GPU_MESH = 0, K3D_GPU_SPHERE = 1, K3D_GPU_BOX = 2, K3D_GPU_CYLINDER = 3, K3D_GPU_PLANE = 4 };
 

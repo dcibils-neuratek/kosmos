@@ -499,7 +499,35 @@ static void final_tracer(const char *kernels)
     k3d_scene_free(&sc);
 }
 
-static void tracer(const char *kernels)
+/* A pattern on each opaque thing (R7b, `testing.md` 18.707): every one of
+ * the six kinds the tracer's kernel reads, and a bump on two. */
+static void texture_still_life(struct k3d_scene *sc)
+{
+    struct k3d_texture *t;
+
+    t = &sc->obj[0].mat.tex;                    /* the floor: a checker */
+    t->pattern = K3D_CHECKER; t->scale = 2;
+    t->colour2[0] = 0.1f; t->colour2[1] = 0.1f; t->colour2[2] = 0.12f;
+
+    t = &sc->obj[1].mat.tex;                    /* the red ball: marble */
+    t->pattern = K3D_MARBLE; t->scale = 3; t->detail = 2; t->distortion = 1;
+    t->colour2[0] = 0.95f; t->colour2[1] = 0.9f; t->colour2[2] = 0.85f;
+
+    t = &sc->obj[2].mat.tex;                    /* the metal ball: wood */
+    t->pattern = K3D_WOOD; t->scale = 6; t->detail = 1; t->distortion = 0.5f;
+    t->colour2[0] = 0.4f; t->colour2[1] = 0.25f; t->colour2[2] = 0.1f;
+
+    t = &sc->obj[4].mat.tex;                    /* the box: bricks, bumped */
+    t->pattern = K3D_BRICK; t->scale = 6; t->ratio = 2; t->offset = 0.5f; t->mortar = 0.15f;
+    t->bump = 0.5f;
+    t->colour2[0] = 0.7f; t->colour2[1] = 0.7f; t->colour2[2] = 0.65f;
+
+    t = &sc->obj[5].mat.tex;                    /* the mesh: noise, bumped */
+    t->pattern = K3D_NOISE; t->scale = 4; t->detail = 3; t->distortion = 0.5f; t->bump = 0.3f;
+    t->colour2[0] = 0.1f; t->colour2[1] = 0.3f; t->colour2[2] = 0.1f;
+}
+
+static void tracer(const char *kernels, bool textured)
 {
     static uint32_t code[65536];
     struct k3d_scene sc;
@@ -526,6 +554,10 @@ static void tracer(const char *kernels)
     }
 
     still_life(&sc, &lamp, &how, W, H, false);
+
+    if (textured) {
+        texture_still_life(&sc);
+    }
 
     r = k3d_render_new(&sc, &how);
     check(r != NULL && k3d_gpu_scene(r, &g), "the still life was not laid out");
@@ -623,18 +655,20 @@ static void tracer(const char *kernels)
         }
     }
 
-    printf("  the still life, %dx%d in Preview, two passes: %d of %d pixels as the processor's within 0.2%%, "
+    printf("  the still life%s, %dx%d in Preview, two passes: %d of %d pixels as the processor's within 0.2%%, "
            "the worst %.4f%% at %u,%u; %llu instructions in %llu threads\n",
-           W, H, W * H - differ, W * H, worst * 100, worst_at % (uint32_t)W, worst_at / (uint32_t)W,
+           textured ? ", textured" : "", W, H, W * H - differ, W * H, worst * 100,
+           worst_at % (uint32_t)W, worst_at / (uint32_t)W,
            (unsigned long long)st.instructions, (unsigned long long)st.threads);
 
-    snprintf(what, sizeof what, "%d of %d pixels of the GPU's Preview are not the processor's", differ, W * H);
+    snprintf(what, sizeof what, "%d of %d pixels of the GPU's %sPreview are not the processor's", differ,
+             W * H, textured ? "textured " : "");
     check(why == NULL && differ <= W * H / 200, what);
     check(lit > W * H / 2, "the still life is mostly dark, so the comparison says little");
 
     /* The paint: the processor's own light through the GPU's paint
      * kernel, held to `k3d_render_paint`'s colours. */
-    {
+    if (!textured) {
         static uint32_t paint_code[4096];
         uint32_t pn = kernel_named(kernels, "tracer-paint", paint_code, sizeof paint_code);
         uint32_t *want = calloc((size_t)W * H, 4), level[K3D_CURVE];
@@ -817,7 +851,8 @@ int main(int argc, char **argv)
     k3d_scene_free(&sc);
 
     if (argc > 1) {
-        tracer(argv[1]);
+        tracer(argv[1], false);
+        tracer(argv[1], true);
         final_tracer(argv[1]);
     } else {
         check(0, "no kernels file for the tracer - tools/eu_kernels.lua writes it");

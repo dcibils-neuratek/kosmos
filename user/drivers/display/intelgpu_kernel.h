@@ -28,7 +28,8 @@
 
 #include <stdint.h>
 
-#define IGPU_KERNEL_MAX_BYTES   65536u   /* 4096 instructions */
+#define IGPU_KERNEL_MAX_BYTES   262144u  /* 16384 instructions: a bound, not the hardware's -
+                                            Final with textures is 4,688 (18.707) */
 
 struct igpu_kernel_verdict {
     uint32_t why;       /* GPU_KERNEL_*, 0 when it may run */

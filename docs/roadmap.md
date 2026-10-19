@@ -194,6 +194,14 @@ instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
   - **R7b, textures.** The pattern's parameters in the GPU's scene;
     `k3d_pattern` and the noise in kc; the bump. Textured Preview is held
     to the processor pixel for pixel.
+  - **Done**: R7a in 0.11.307 (18.706) and R7b (18.707). The still life
+    in Final: GPU 2.02 s, processor 2.05 s, held within the noise. The
+    House, textured: held in both, but the processor is 1.6 times as fast
+    in Preview and 4 in Final.
+  - **To do: Final made fast on the GPU.** Its paths scatter across lanes,
+    and each bounce casts a shadow ray per lamp per lobe, whether or not
+    the lobe wants one. The way forward is probably shadow rays gathered
+    and cast together, and fewer lanes idle.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**
   (18.703): F12 asks the window manager to `raise` it, which it already

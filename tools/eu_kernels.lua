@@ -242,5 +242,10 @@ case("descriptor-in-a-register", DESC, 6, poke(good, 6, 89, 90, 1))
 case("branch-through-a-register", BRANCH, 4, poke(good, 4, 89, 90, 1))
 case("not-whole", SIZE, 0, plain:sub(1, 24))
 
+-- The most a kernel may be, and one instruction more (18.707): 16,384
+-- instructions, the add repeated before the thread's end.
+case("at-the-most", OK, 0, plain:sub(1, 16):rep(16382) .. plain:sub(17))
+case("one-past-the-most", SIZE, 0, plain:sub(1, 16):rep(16383) .. plain:sub(17))
+
 out:close()
 print(("eu_kernels: %d kernels"):format(count))

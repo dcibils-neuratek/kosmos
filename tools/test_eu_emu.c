@@ -44,7 +44,7 @@ static int nibble(int c)
 /* The kernel named `want` in the file, into `words`: its bytes, or 0. */
 static uint32_t kernel(const char *path, const char *want, uint32_t *words, size_t room)
 {
-    static char line[200000];
+    static char line[1 << 20];
     FILE *f = fopen(path, "r");
     uint32_t got = 0;
 

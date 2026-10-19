@@ -28963,3 +28963,61 @@ The Preview-only line and note are gone.
 
 **Full gate 96 of 97 in 9:46.** `x86-mouse`'s scrollbar drag did not
 scroll under the gate's load, as in 18.698; alone it passed its 13 checks.
+
+## 18.707 Textures on the GPU, and Final's noise bound
+
+`cafesa3d-gpu.md` R7b. The six patterns of `k3d_texture.c` (checker,
+brick, shingles, noise, wood, marble) and their bump are in the tracer's
+shared helpers, operation for operation as the processor works them:
+- **`hash3` on 32-bit words**, each shift masked to a logical one.
+- **`h % 12` exactly.** kc divides only by powers of two, so the hash is
+  split into 16-bit halves (65536 is four more than a multiple of twelve)
+  and the remainder taken in floats, which hold the sum exactly.
+- **Perlin's twelve directions** as two selections and two signs.
+- **`textured`**: the facing in the object's own space, as I's rows on
+  `n` times the scale squared (`M = R S`); the five looks of the bump in
+  one loop, so the pattern is written out once.
+
+**The GPU's object grew from 48 words to 64** (a 256-byte stride): the
+pattern at word 36, where the old "textured" flag was; its parameters at
+37 to 46; the object's scale at 47 to 49.
+
+**Fitting it in the thread's registers.**
+- `noise1`'s eight corners are a statement each. kc holds a call's
+  arguments until its statement ends, and the eight in one expression
+  were too many.
+- `textured` re-reads the object's rows and scale where it uses them, and
+  keeps the bump as two differences.
+- Final keeps `base` again, read once: a textured colour cannot be
+  re-read.
+- Preview is 3,781 instructions and Final 4,688.
+
+**The driver's limit on a kernel's size** was 64 KB (4,096 instructions):
+a bound with no reason written beside it, not the hardware's. It is now
+256 KB (16,384), and `eu_kernels.lua` checks it from both sides:
+`at-the-most`, 16,384 instructions, is taken, and `one-past-the-most` is
+refused as too large. The test readers' buffers follow it (53 checks).
+
+**Held in the emulator.** The still life with a pattern on each opaque
+thing: the floor a checker, the red ball marble, the metal ball wood, the
+box bricks with bump, the mesh noise with bump. In Preview, 1,531 of 1,536
+pixels are within 0.2% of the processor's, inside the 0.5% allowed.
+
+**On the M700, the House** (202 objects, 43,482 triangles, bricks,
+shingles, paving and noise; `cafesa3d-gpu-m700-house.png`):
+- **Preview, 16 samples:** held, 230,379 of 230,400 pixels within 2
+  levels, the worst 13. **GPU 1.97 s, processor 1.24 s**: the processor
+  1.6 times as fast. A trace is 95 ms a pass.
+- **Final, 16 samples:** **GPU 8.8 s, processor 2.2 s.** A trace is
+  501 ms a pass: the paths scatter, the lanes diverge, and every bounce
+  casts a shadow ray per lamp per lobe.
+- **Final's comparison** said one 16 by 16 block was 14.1% apart, the
+  whole 0.04%. At 64 samples it was 6.9%, and the whole 0.01%: halved at
+  four times the samples, as noise is.
+
+So a fixed 5% for a block was wrong. The Render window's bound is now
+`max(5%, 0.6 / √samples)`, with the whole still held to 2%, and it says
+which bound it used. The emulator's still life, 32 passes, keeps its own
+5% and 2%, measured at 1.1% and 0.07%.
+
+**Full gate 97 of 97 in 9:52.**

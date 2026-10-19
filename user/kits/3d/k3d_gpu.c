@@ -233,7 +233,21 @@ bool k3d_gpu_scene(const struct k3d_render *r, struct k3d_gpu_scene *out)
         put_f(&w[K3D_GPU_OBJ_TRANS], o->mat.trans);
         put_f(&w[K3D_GPU_OBJ_IOR], o->mat.ior);
         put_f(&w[K3D_GPU_OBJ_EMIT], o->mat.emit);
-        w[K3D_GPU_OBJ_TEXTURED] = o->mat.tex.pattern != K3D_PLAIN ? 1u : 0u;
+        /* Its pattern, as `k3d_pattern` reads it, and its scale (R7b). */
+        w[K3D_GPU_OBJ_PATTERN] = (uint32_t)o->mat.tex.pattern;
+
+        for (k = 0; k < 3; k++) {
+            put_f(&w[K3D_GPU_OBJ_COLOUR2 + k], o->mat.tex.colour2[k]);
+            put_f(&w[K3D_GPU_OBJ_SCALE + k], o->sc[k]);
+        }
+
+        put_f(&w[K3D_GPU_OBJ_TSCALE], o->mat.tex.scale);
+        put_f(&w[K3D_GPU_OBJ_DETAIL], o->mat.tex.detail);
+        put_f(&w[K3D_GPU_OBJ_DISTORT], o->mat.tex.distortion);
+        put_f(&w[K3D_GPU_OBJ_BUMP], o->mat.tex.bump);
+        put_f(&w[K3D_GPU_OBJ_MORTAR], o->mat.tex.mortar);
+        put_f(&w[K3D_GPU_OBJ_RATIO], o->mat.tex.ratio);
+        put_f(&w[K3D_GPU_OBJ_OFFSET], o->mat.tex.offset);
 
         if (o->shape == MESH) {
             uint32_t nodes = 0, items = 0, t, nverts = 0;

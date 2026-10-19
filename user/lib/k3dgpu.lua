@@ -15,11 +15,12 @@
 -- values at once, and SIMD8 gives each one register rather than two. Its
 -- constants are, in this order: the eye, forward, right, up, the focal
 -- length, the width and height, the lamps, the top tree's first node, the
--- bounces, the passes so far, the zenith, the horizon and the sky's
--- strength. Its buffers: nodes, items, objects, triangles, normals,
--- lamps, and the light gathered, three floats a pixel, which each pass adds
--- to. A textured object is drawn in its base colour until the GPU has
--- textures (decision E4).
+-- bounces, the passes so far, the zenith, the horizon, the sky's strength,
+-- and the passes this run. Its buffers: nodes, items, objects, triangles,
+-- normals and lamps as tables the sampler reads, and the light gathered,
+-- three floats a pixel, which each pass adds to. Preview and Final are two
+-- kernels on the same helpers (R7a), and both draw the six patterns and
+-- their bump (R7b).
 
 local k3dgpu = {}
 
@@ -47,16 +48,16 @@ buffer acc;
 
 float node_f(int n, int k) { return load(nodes, n * 32 + k * 4); }
 int node_i(int n, int k) { return loadi(nodes, n * 32 + k * 4); }
-float obj_f(int o, int k) { return load(objects, o * 192 + k * 4); }
-int obj_i(int o, int k) { return loadi(objects, o * 192 + k * 4); }
-vec3 obj_v(int o, int k) { return load3(objects, o * 192 + k * 4); }
+float obj_f(int o, int k) { return load(objects, o * 256 + k * 4); }
+int obj_i(int o, int k) { return loadi(objects, o * 256 + k * 4); }
+vec3 obj_v(int o, int k) { return load3(objects, o * 256 + k * 4); }
 vec3 tri_v(int t, int k) { return load3(tris, t * 48 + k * 4); }
 
 // A point through an affine 3x4 at word `k` of an object's: I, from the world.
 // Each takes its object's place once and adds to it, rather than an
 // accessor working it out again for every word (`testing.md` 18.702).
 vec3 to_own(int o, vec3 p) {
-  int at = o * 192;
+  int at = o * 256;
   vec3 r0 = load3(objects, at + 16); vec3 r1 = load3(objects, at + 32); vec3 r2 = load3(objects, at + 48);
   return vec3(r0.x * p.x + r0.y * p.y + r0.z * p.z + load(objects, at + 28),
               r1.x * p.x + r1.y * p.y + r1.z * p.z + load(objects, at + 44),
@@ -64,7 +65,7 @@ vec3 to_own(int o, vec3 p) {
 }
 
 vec3 to_own_dir(int o, vec3 d) {
-  int at = o * 192;
+  int at = o * 256;
   vec3 r0 = load3(objects, at + 16); vec3 r1 = load3(objects, at + 32); vec3 r2 = load3(objects, at + 48);
   return vec3(r0.x * d.x + r0.y * d.y + r0.z * d.z,
               r1.x * d.x + r1.y * d.y + r1.z * d.z,
@@ -299,6 +300,188 @@ int mix(int v) {
   return x;
 }
 
+
+// Two directions square to `n` and each other, as `basis` makes them.
+void basis(vec3 n, inout vec3 a, inout vec3 b) {
+  float sg = n.z >= 0.0 ? 1.0 : -1.0;
+  float k = -1.0 / (sg + n.z);
+  float m = n.x * n.y * k;
+  a = vec3(1.0 + sg * n.x * n.x * k, sg * m, -sg * n.x);
+  b = vec3(m, sg + n.y * n.y * k, -n.y);
+}
+
+// --- Textures: k3d_texture.c's patterns ---------------------------------
+//
+// R7b (`cafesa3d-gpu.md`): the six patterns and their bump, arithmetic for
+// arithmetic as the processor works them, so textured Preview is the
+// processor's picture pixel for pixel. An object's pattern is word 36, its
+// parameters 37 to 46 and its scale 47 to 49 (`k3d_gpu.h`).
+
+// `hash3`, on 32-bit words: `>>` keeps the sign here, so each shift is
+// masked to what a logical one keeps.
+int hash3(int x, int y, int z) {
+  int h = (x * 0x8da6b343) ^ (y * 0xd8163841) ^ (z * 0xcb1ab31f);
+  h = h ^ ((h >> 13) & 0x7ffff);
+  h = h * 0x5bd1e995;
+  return h ^ ((h >> 15) & 0x1ffff);
+}
+
+// `h % 12` of an unsigned word: kc divides by powers of two only, so by its
+// halves - 65536 is four more than a multiple of twelve - and in floats,
+// which hold the sum exactly.
+int mod12(int h) {
+  float v = float(((h >> 16) & 0xffff) * 4 + (h & 0xffff));
+  return int(v - 12.0 * floor(v / 12.0));
+}
+
+// Perlin's twelve directions, the edges of a cube, as `grad`'s cases.
+float grad(int h, float x, float y, float z) {
+  int k = mod12(h);
+  float u = k < 8 ? x : y;
+  float v = k < 4 ? y : z;
+  return ((k & 1) == 1 ? -u : u) + ((k & 2) == 2 ? -v : v);
+}
+
+float fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+float noise1(float x, float y, float z) {
+  int X = int(floor(x)); int Y = int(floor(y)); int Z = int(floor(z));
+  float fx = x - float(X); float fy = y - float(Y); float fz = z - float(Z);
+  // A corner a statement: kc holds a call's arguments to its statement's
+  // end, and the eight in one expression were more than a thread holds.
+  float g000 = grad(hash3(X, Y, Z), fx, fy, fz);
+  float g100 = grad(hash3(X + 1, Y, Z), fx - 1.0, fy, fz);
+  float g010 = grad(hash3(X, Y + 1, Z), fx, fy - 1.0, fz);
+  float g110 = grad(hash3(X + 1, Y + 1, Z), fx - 1.0, fy - 1.0, fz);
+  float g001 = grad(hash3(X, Y, Z + 1), fx, fy, fz - 1.0);
+  float g101 = grad(hash3(X + 1, Y, Z + 1), fx - 1.0, fy, fz - 1.0);
+  float g011 = grad(hash3(X, Y + 1, Z + 1), fx, fy - 1.0, fz - 1.0);
+  float g111 = grad(hash3(X + 1, Y + 1, Z + 1), fx - 1.0, fy - 1.0, fz - 1.0);
+  float u = fade(fx); float v = fade(fy); float w = fade(fz);
+  return lerp(lerp(lerp(g000, g100, u), lerp(g010, g110, u), v),
+              lerp(lerp(g001, g101, u), lerp(g011, g111, u), v), w);
+}
+
+// Octaves, each twice as fine and half as strong: Blender's Detail.
+float noise(vec3 p, float detail) {
+  float sum = 0.0; float amp = 1.0; float nrm = 0.0; float f = 1.0;
+  int octaves = 1 + int(min(max(detail, 0.0), 8.0));
+  for (int o = 0; o < octaves; o += 1) {
+    sum = sum + amp * noise1(p.x * f, p.y * f, p.z * f);
+    nrm = nrm + amp;
+    amp = amp * 0.5;
+    f = f * 2.0;
+  }
+  return sum / nrm;
+}
+
+float clamp01(float x) { return min(max(x, 0.0), 1.0); }
+float frac1(float x) { return x - floor(x); }
+
+// The pattern at `q`, in the object's own metres, on a surface facing `nl`
+// in its own space: how far towards the second colour, and how high.
+void pattern(int oat, vec3 q, vec3 nl, inout float fac, inout float height) {
+  int kind = loadi(objects, oat + 144);
+  float scale = load(objects, oat + 160);
+  float detail = load(objects, oat + 164);
+  float distortion = load(objects, oat + 168);
+  float s = scale > 0.0 ? scale : 1.0;
+  fac = 0.0;
+  height = 0.0;
+  if (kind == 1) {                                          // checker
+    int c = int(floor(q.x * s)) + int(floor(q.y * s)) + int(floor(q.z * s));
+    fac = float(c & 1);
+    height = fac;
+  } else if (kind == 2 || kind == 3) {                      // brick, shingles
+    float H = 1.0 / max(scale, 0.001);
+    float W = H * max(load(objects, oat + 180), 0.1);
+    bool flr = abs(nl.z) > 0.7;
+    float u = flr ? q.x : q.x + q.y;
+    float v = flr ? q.y : q.z;
+    float row = floor(v / H);
+    float fv = frac1(v / H);
+    float along = u / W + row * load(objects, oat + 184);
+    float col = floor(along);
+    float fu = frac1(along);
+    float du = min(fu, 1.0 - fu) * W;
+    float dv = min(fv, 1.0 - fv) * H;
+    float m = load(objects, oat + 176) * H / 2.0;
+    float edge = min(du, dv);
+    int id = hash3(int(col), int(row), 7);
+    if (kind == 3) {
+      fac = du < m ? 1.0 : float(id & 255) / 255.0 * 0.35;
+      height = du < m ? 0.0 : 1.0 - fv;
+    } else if (edge < m) {
+      fac = 1.0;
+      height = 0.0;
+    } else {
+      fac = float(id & 255) / 255.0 * 0.3 - 0.15;
+      float t = clamp01((edge - m) / (H * 0.12));
+      height = t * t * (3.0 - 2.0 * t);
+    }
+  } else if (kind >= 4) {                                   // noise, wood, marble
+    // One noise for the three, at the place each takes it.
+    vec3 at = kind == 5 ? vec3(q.x * 2.0, q.y * 2.0, q.z * 0.25) : q * s;
+    float nz = noise(at, detail);
+    if (kind == 4) {
+      fac = clamp01(0.5 + nz * (1.0 + distortion));
+      height = fac;
+    } else if (kind == 5) {
+      float r = sqrt(q.x * q.x + q.y * q.y) * s + distortion * nz;
+      float ring = 0.5 + 0.5 * sin(6.28318530 * r);
+      fac = ring * ring * ring;
+      height = 1.0 - fac;
+    } else {
+      float vein = 0.5 + 0.5 * sin(q.x * s * 1.5 + distortion * 6.0 * nz);
+      fac = pow(vein, 6.0);
+      height = 0.0;
+    }
+  }
+}
+
+// A textured surface's colour at `p`, and `n` bent by the pattern's height:
+// `textured`, with the four looks two millimetres either side taken in the
+// one loop as the first, so the pattern is written out once.
+vec3 textured(int oat, vec3 p, inout vec3 n) {
+  // Held as little as can be, since this is written out where a hit is
+  // shaded with everything else alive (18.707): the object's rows and
+  // scale read again where they are used, the bump's directions made
+  // again, and its four looks kept as two differences.
+  vec3 sc = load3(objects, oat + 188);
+  vec3 nl = normalize(vec3(dot(load3(objects, oat + 16), n) * sc.x * sc.x,
+                           dot(load3(objects, oat + 32), n) * sc.y * sc.y,
+                           dot(load3(objects, oat + 48), n) * sc.z * sc.z));
+  float fac = 0.0; float gx = 0.0; float gy = 0.0;
+  int looks = load(objects, oat + 172) > 0.0 ? 5 : 1;
+  for (int k = 0; k < looks; k += 1) {
+    vec3 at = p;
+    if (k > 0) {
+      vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+      basis(n, ba, bb);
+      at = k == 1 ? p + ba * 0.002 : (k == 2 ? p - ba * 0.002 : (k == 3 ? p + bb * 0.002 : p - bb * 0.002));
+    }
+    vec3 q = vec3(dot(load3(objects, oat + 16), at) + load(objects, oat + 28),
+                  dot(load3(objects, oat + 32), at) + load(objects, oat + 44),
+                  dot(load3(objects, oat + 48), at) + load(objects, oat + 60)) * load3(objects, oat + 188);
+    float f = 0.0; float h = 0.0;
+    pattern(oat, q, nl, f, h);
+    if (k == 0) { fac = f; }
+    if (k == 1) { gx = h; }
+    if (k == 2) { gx = gx - h; }
+    if (k == 3) { gy = h; }
+    if (k == 4) { gy = gy - h; }
+  }
+  if (looks > 1) {
+    vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
+    basis(n, ba, bb);
+    vec3 g = ba * (gx / 0.004) + bb * (gy / 0.004);
+    n = normalize(n - g * load(objects, oat + 172));
+  }
+  vec3 base = load3(objects, oat + 112);
+  vec3 c = base + (load3(objects, oat + 148) - base) * fac;
+  return vec3(max(c.x, 0.0), max(c.y, 0.0), max(c.z, 0.0));
+}
 ]]
 
 k3dgpu.preview = COMMON .. [[
@@ -345,6 +528,7 @@ void main() {
         vec3 p = o + d * best;
         vec3 n = world_normal(hit, hn, tri, bu, bv);
         vec3 base = obj_v(hit, 28);
+        if (obj_i(hit, 36) != 0) { base = textured(hit * 256, p, n); }
         float emit = obj_f(hit, 35);
         if (emit > 0.0) {
           col = col + thr * base * emit;
@@ -450,15 +634,6 @@ float asin1(float x) {
 
 float acos1(float x) { return 1.5707963268 - asin1(x); }
 
-// Two directions square to `n` and each other, as `basis` makes them.
-void basis(vec3 n, inout vec3 a, inout vec3 b) {
-  float sg = n.z >= 0.0 ? 1.0 : -1.0;
-  float k = -1.0 / (sg + n.z);
-  float m = n.x * n.y * k;
-  a = vec3(1.0 + sg * n.x * n.x * k, sg * m, -sg * n.x);
-  b = vec3(m, sg + n.y * n.y * k, -n.y);
-}
-
 // A direction near `dir`, spread by `amount`: the processor's point in a
 // ball, here drawn straight rather than by rejection, which lanes would
 // wait on.
@@ -521,12 +696,15 @@ void main() {
         // the point hit, a lamp's light is worked out after its shadow ray,
         // and the base colour is read again where it is wanted.
         vec3 n = world_normal(hit, hn, tri, bu, bv);
-        int oat = hit * 192;
+        int oat = hit * 256;
         float amount = load(objects, oat + 128);
         amount = amount * amount * 2.0;
         o = o + d * best;
+        // The colour here: the base, or the pattern's (R7b), which bends n.
+        vec3 base = load3(objects, oat + 112);
+        if (loadi(objects, oat + 144) != 0) { base = textured(oat, o, n); }
         if (load(objects, oat + 140) > 0.0) {
-          col = col + held(thr * load3(objects, oat + 112) * load(objects, oat + 140), bounced);
+          col = col + held(thr * base * load(objects, oat + 140), bounced);
           going = false;
         } else if (load(objects, oat + 132) > 0.5) {
           // Glass: reflected or refracted by Fresnel's odds.
@@ -545,7 +723,7 @@ void main() {
           } else {
             d = normalize(d * eta + nn * (eta * cosi - sqrt(max(k, 0.0))));
             o = o - nn * 0.001;
-            thr = thr * load3(objects, oat + 112);
+            thr = thr * base;
           }
           d = fuzz(s, d, amount);
           specular = true;
@@ -606,7 +784,7 @@ void main() {
                   float cosmax = sqrt(max(0.0, 1.0 - rr * rr / d2));
                   float solid = (rr <= 0.0 || rr >= dist) ? 3.14159265358979 * rr * rr / d2
                                                           : 6.28318530718 * (1.0 - cosmax);
-                  light = light + lamp_radiance(i) * load3(objects, oat + 112)
+                  light = light + lamp_radiance(i) * base
                           * (c * solid * (1.0 - F) * (1.0 / 3.14159265358979));
                 } else {
                   float alpha = atan1(amount);
@@ -619,7 +797,7 @@ void main() {
                     float lo = abs(alpha - beta);
                     if (phi > lo) { share = share * (alpha + beta - phi) / (alpha + beta - lo); }
                     light = light + lamp_radiance(i) * share
-                            * (metal ? load3(objects, oat + 112) : vec3(F, F, F));
+                            * (metal ? base : vec3(F, F, F));
                   }
                 }
               }
@@ -632,7 +810,7 @@ void main() {
             if (dot(d, n) <= 0.0) {
               going = false;
             } else {
-              if (metal) { thr = thr * load3(objects, oat + 112); }
+              if (metal) { thr = thr * base; }
               specular = amount < 0.02;
               bounced = bounced || !specular;
             }
@@ -644,7 +822,7 @@ void main() {
             vec3 ba = vec3(0.0, 0.0, 0.0); vec3 bb = vec3(0.0, 0.0, 0.0);
             basis(n, ba, bb);
             d = ba * (cos(ph) * sr) + bb * (sin(ph) * sr) + n * sqrt(1.0 - r2);
-            thr = thr * load3(objects, oat + 112);
+            thr = thr * base;
             specular = false;
             bounced = true;
             if (bounce >= 2) {
