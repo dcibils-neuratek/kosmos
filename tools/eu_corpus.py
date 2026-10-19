@@ -75,6 +75,7 @@ shr (16|M0) r5.0<1>:ud r6.0<8;8,1>:ud 0x00000010:ud
 jmpi (1) -64:d
 send.ts (16|M0) null r112 a0.0 0x02000010 {EOT}
 send.hdc1 (16|M0) acc0 r4 a0.0 0x060A8000
+send.smpl (8|M0) r20 r10 a0.0 0x0243A003
 (f0.0) if (16|M0) jip: 32 uip: 64
 else (16|M0) jip: 32 uip: 32
 endif (16|M0) jip: 16

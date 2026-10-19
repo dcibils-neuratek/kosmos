@@ -529,6 +529,62 @@ static const char *send(struct thread *t, const uint32_t *w, unsigned exec, cons
         return NULL;
     }
 
+    /*
+     * The sampler's fetch from a table (`testing.md` 18.705): `ld_lz` (26)
+     * with U alone, or `ld` (7) with U, V and LOD, from a buffer seen as
+     * R32_UINT. Each lane's word at U into the first channel's register,
+     * nought into the second and third, and one into the fourth, as an
+     * unsigned format fills what it has not; past the table's end, all
+     * nought.
+     */
+    if (sfid == 2) {
+        uint32_t msg = (desc >> 12) & 0x1fu, simd = (desc >> 17) & 3u;
+        uint32_t lanes = simd == 2 ? 16u : 8u, regs = lanes / 8u, entries;
+
+        if ((msg != 26 && msg != 7) || (simd != 1 && simd != 2) || ((desc >> 19) & 1u)) {
+            return "a sampler message this emulator does not run";
+        }
+
+        if (bti >= r->nbuffers) {
+            return "a buffer the run does not bind";
+        }
+
+        b = &r->buffers[bti];
+
+        if (b->view != GPU_VIEW_TABLE) {
+            return "a sampler's fetch from a buffer not bound as a table";
+        }
+
+        if (dst_file != FILE_GRF || rlen < 4u * regs || mlen < (msg == 26 ? 1u : 3u) * regs) {
+            return "a sampler fetch with the wrong lengths";
+        }
+
+        entries = b->pitch * b->height / 4u;
+
+        for (lane = 0; lane < lanes; lane++) {
+            uint32_t u, v = 0, one = 1, zero = 0;
+
+            if (!lane_on(t, w, lane, exec)) {
+                continue;
+            }
+
+            memcpy(&u, &t->grf[(src + lane / 8u) * 32u + (lane % 8u) * 4u], 4);
+
+            if (u < entries) {
+                memcpy(&v, &b->bytes[(size_t)u * 4u], 4);
+            } else {
+                one = 0;
+            }
+
+            memcpy(&t->grf[(dst + lane / 8u) * 32u + (lane % 8u) * 4u], &v, 4);
+            memcpy(&t->grf[(dst + regs + lane / 8u) * 32u + (lane % 8u) * 4u], &zero, 4);
+            memcpy(&t->grf[(dst + 2u * regs + lane / 8u) * 32u + (lane % 8u) * 4u], &zero, 4);
+            memcpy(&t->grf[(dst + 3u * regs + lane / 8u) * 32u + (lane % 8u) * 4u], &one, 4);
+        }
+
+        return NULL;
+    }
+
     if (sfid != 12) {
         return "a message to a unit this emulator does not run";
     }

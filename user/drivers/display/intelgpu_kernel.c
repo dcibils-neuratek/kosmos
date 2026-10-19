@@ -32,6 +32,7 @@ static uint32_t bits(const uint32_t *w, unsigned lo, unsigned hi)
 #define OP_SEND         49u
 #define OP_SENDC        50u
 
+#define SFID_SAMPLER    2u      /* the sampler: ld and ld_lz only, a table's words */
 #define SFID_TS         7u      /* the thread spawner: a thread's end */
 #define SFID_CONST      9u      /* the data port's constant cache, read only */
 #define SFID_DC0        10u     /* the data cache */
@@ -147,7 +148,8 @@ static uint32_t two_source(const uint32_t *w)
 }
 
 /*
- * A message to a unit. Only the thread's end to the spawner, and the data
+ * A message to a unit. Only the thread's end to the spawner, the sampler's
+ * fetches by index from a table (`ld`, `ld_lz`), and the data
  * port's messages through a binding-table entry - each type listed, so a
  * scratch (bit 18 of the data cache's), 64-bit or stateless message is
  * not among them - and a table entry below the stateless and shared-local
@@ -199,6 +201,12 @@ static uint32_t send(const uint32_t *w, struct igpu_kernel_verdict *v)
         break;
     case SFID_CONST:    /* block and scattered reads */
         ok = type <= 3u;
+        break;
+    case SFID_SAMPLER:  /* gen_enums.h: SAMPLE_LD 7, SAMPLE_LD_LZ 26 - fetches by index, no
+                         * sampler state read; SIMD8 or SIMD16, sampler 0, no header */
+        ok = (((desc >> 12) & 0x1fu) == 7u || ((desc >> 12) & 0x1fu) == 26u)
+          && (((desc >> 17) & 3u) == 1u || ((desc >> 17) & 3u) == 2u)
+          && ((desc >> 8) & 0xfu) == 0u && ((desc >> 19) & 1u) == 0u;
         break;
     default:
         return GPU_KERNEL_UNIT;

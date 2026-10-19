@@ -282,7 +282,7 @@ static void tracer(const char *kernels)
     struct eu_buffer b[7];
     struct eu_stats st;
     uint8_t constants[GPU_RUN_CONSTANTS];
-    size_t at = 0, pass_at = 0;
+    size_t at = 0;
     uint32_t n, i, tile, pass, worst_at = 0;
     const char *why;
     int W = 48, H = 32, differ = 0, lit = 0;
@@ -370,11 +370,11 @@ static void tracer(const char *kernels)
     pack_i(constants, &at, (int32_t)g.nlamps);
     pack_i(constants, &at, (int32_t)g.root);
     pack_i(constants, &at, g.bounces);
-    pass_at = at;
     pack_i(constants, &at, 0);                  /* the pass: the first, the pixel's middle */
     pack_v(constants, &at, g.world.zenith);
     pack_v(constants, &at, g.world.horizon);
     pack_f(constants, &at, g.world.strength);
+    pack_i(constants, &at, 2);                  /* runs: both passes in the one run (18.705) */
 
     b[0] = words_buffer(g.nodes, (size_t)g.nnodes * K3D_GPU_NODE_WORDS);
     b[1] = words_buffer(g.items, g.nitems);
@@ -382,6 +382,11 @@ static void tracer(const char *kernels)
     b[3] = words_buffer(g.tris, (size_t)g.ntris * K3D_GPU_TRI_WORDS);
     b[4] = words_buffer(g.normals, (size_t)g.nnormals * 3);
     b[5] = words_buffer(g.lamps, (size_t)g.nlamps * K3D_GPU_LAMP_WORDS);
+
+    /* The scene's six as tables, which the tracer reads by the sampler. */
+    for (i = 0; i < 6; i++) {
+        b[i].view = GPU_VIEW_TABLE;
+    }
     {
         float *zero = calloc((size_t)W * H * 3, sizeof(float));
 
@@ -404,16 +409,6 @@ static void tracer(const char *kernels)
         snprintf(what, sizeof what, "the tracer did not run: %s at instruction %u", why ? why : "", worst_at);
         check(why == NULL, what);
 
-        /* And the second pass, into the same light. */
-        if (why == NULL) {
-            int32_t one = 1;
-
-            memcpy(constants + pass_at, &one, 4);
-            why = eu_emulate(&run, &st, &worst_at);
-            snprintf(what, sizeof what, "the tracer's second pass did not run: %s at instruction %u",
-                     why ? why : "", worst_at);
-            check(why == NULL, what);
-        }
     }
 
     eu_profile(NULL);
@@ -471,6 +466,7 @@ static void tracer(const char *kernels)
 
         pb[0] = words_buffer(r->acc, (size_t)W * H * 3);
         pb[1] = words_buffer(level, K3D_CURVE);
+        pb[1].view = GPU_VIEW_TABLE;                       /* the curve, a table */
         pb[2] = words_buffer(want, (size_t)W * H);         /* nought: the picture */
         memset(pc, 0, sizeof pc);
         pack_i(pc, &pat, W);

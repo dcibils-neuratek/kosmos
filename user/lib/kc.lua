@@ -369,10 +369,14 @@ local function parser(toks)
         until not (is(",") and next_tok())
 
         expect(";")
-      elseif t.v == "buffer" then
+      elseif t.v == "buffer" or t.v == "table" then
+        -- A table is a buffer only read, and read through the sampler,
+        -- whose caches serve many threads one line - the data port serves
+        -- them one at a time (`testing.md` 18.704-18.705). Numbered with
+        -- the buffers, in the order written.
         repeat
           local n, line = name()
-          prog.buffers[#prog.buffers + 1] = { name = n, line = line }
+          prog.buffers[#prog.buffers + 1] = { name = n, line = line, table = t.v == "table" }
         until not (is(",") and next_tok())
 
         expect(";")
@@ -993,10 +997,38 @@ local function gen(prog, simd)
     if e.e ~= "var" then fail(line, "a buffer by its name") end
 
     for i, b in ipairs(prog.buffers) do
-      if b.name == e.name then return i - 1 end
+      if b.name == e.name then return i - 1, b.table end
     end
 
     fail(line, "no buffer " .. e.name)
+  end
+
+  -- A table's words, by the sampler: `ld_lz`, U alone - the word's index
+  -- - in a register, the four channels back of which the first is the
+  -- word (gen_enums.h: SAMPLE_LD_LZ 26; the descriptor as Mesa's
+  -- brw_sampler_desc and brw_message_desc lay it).
+  local function fetch(bti, index, t)
+    local addr = alloc(R)
+    local back = alloc(R * 4)
+
+    hold(addr)
+    for k = 0, 3 do hold(back + k * R) end
+
+    if not retarget(index, { k = "reg", t = "d", r = addr }) then
+      emit(("mov %s r%d.0<1>:d %s"):format(EX, addr, src(index)))
+    end
+    consume(index)
+
+    local d = (R << 25) | ((4 * R) << 20) | ((W == 16 and 2 or 1) << 17) | (26 << 12) | bti
+
+    emit(("send.smpl %s r%d r%d 0x00000000 0x%08X"):format(EX, back, addr, d))
+    consume({ k = "reg", r = addr, tmp = true, uses = 1 })
+
+    -- The other three channels given back at once: a later write to them
+    -- waits for the send, as every register a send fills does.
+    for k = 1, 3 do consume({ k = "reg", r = back + k * R, tmp = true, uses = 1 }) end
+
+    return { k = "reg", t = t, r = back, tmp = true, uses = 1 }
   end
 
   local function desc(type_, channels, mlen, rlen, bti)
@@ -1007,7 +1039,28 @@ local function gen(prog, simd)
   end
 
   local function load(e, n, t, line)
-    local bti = buffer_index(e.args[1], line)
+    local bti, is_table = buffer_index(e.args[1], line)
+
+    if is_table then
+      -- One word at a time: the byte offset made a word's index, and a
+      -- vec3 three fetches.
+      local off = as(eval(e.args[2]), "d")
+
+      if n == 1 then
+        local index = arith(">>", off, { k = "imm", t = "d", v = 2 }, line)
+        return fetch(bti, index, t)
+      end
+
+      retain(off, 2)
+      local out = { k = "vec" }
+
+      for k, c in ipairs { "x", "y", "z" } do
+        local at = k == 1 and off or arith("+", off, { k = "imm", t = "d", v = (k - 1) * 4 }, line)
+        out[c] = fetch(bti, arith(">>", at, { k = "imm", t = "d", v = 2 }, line), "f")
+      end
+
+      return out
+    end
     local addr = alloc(R)
     local back = alloc(R * n)
 
@@ -1031,7 +1084,9 @@ local function gen(prog, simd)
   end
 
   local function store(e, n, line)
-    local bti = buffer_index(e.args[1], line)
+    local bti, is_table = buffer_index(e.args[1], line)
+
+    if is_table then fail(line, e.args[1].name .. " is a table, which is only read") end
     local block = alloc(R * (1 + n))
     local v = eval(e.args[3])
 
@@ -1665,7 +1720,12 @@ local function gen(prog, simd)
     info.constants[#info.constants + 1] = { name = c.name, t = c.t, off = layout[c.name].off }
   end
 
-  for _, b in ipairs(prog.buffers) do info.buffers[#info.buffers + 1] = b.name end
+  info.views = {}
+
+  for _, b in ipairs(prog.buffers) do
+    info.buffers[#info.buffers + 1] = b.name
+    info.views[#info.views + 1] = b.table and "table" or "bytes"
+  end
 
   return table.concat(G.out, "\n") .. "\n", info
 end

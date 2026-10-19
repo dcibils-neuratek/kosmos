@@ -295,11 +295,23 @@ if words[1] == "kc" then
 
   if not k then print("gpu: not kept: " .. tostring(kwhy)) return end
 
-  local out = compute.buffer(math.max(4096, n * 4))
+  -- A buffer for each the kernel declares, as it declares it - bytes, or a
+  -- table the sampler reads - each n words of 0xee; the first plain one is
+  -- what is said.
+  local bound, all, out = {}, {}, nil
 
-  out:write(0, string.rep("\xee", n * 4))
+  for i, view in ipairs(info.views or { "bytes" }) do
+    local b = compute.buffer(math.max(4096, n * 4))
 
-  local t = compute.run{ kernel = k, simd = 8, grid = { (n + 7) // 8, 1 }, buffers = { out },
+    b:write(0, string.rep("\xee", n * 4))
+    all[#all + 1] = b
+    bound[i] = view == "table" and { b, "table" } or b
+    if view ~= "table" and not out then out = b end
+  end
+
+  out = out or all[1]
+
+  local t = compute.run{ kernel = k, simd = 8, grid = { (n + 7) // 8, 1 }, buffers = bound,
                          constants = kc.pack(info, { n = n }) }
   local done, dwhy = false, "not run"
 
@@ -320,7 +332,7 @@ if words[1] == "kc" then
     print(("gpu: %d instructions, %d us on the GPU"):format(k.instructions, (t:time() or 0) // 1000))
   end
 
-  out:free()
+  for _, b in ipairs(all) do b:free() end
   k:forget()
   return
 end

@@ -95,7 +95,18 @@ kernel("shared-local", MESSAGE, 0, "send.hdc1 (16|M0) null r4 0x00000000 0x0A026
 kernel("past-eight-buffers", MESSAGE, 0, "send.hdc1 (16|M0) null r4 0x00000000 0x0A026008\n" .. END_THREAD)
 kernel("a64-write", MESSAGE, 0, "send.hdc1 (16|M0) null r4 0x00000000 0x0A064000\n" .. END_THREAD)
 kernel("scratch", MESSAGE, 0, "send.hdc0 (16|M0) null r4 0x00000000 0x0A040000\n" .. END_THREAD)
-kernel("sampler", UNIT, 0, "send.smpl (16|M0) r20 r4 0x00000000 0x04000000\n" .. END_THREAD)
+-- The sampler: only its fetches by index from a table, `ld` and `ld_lz`
+-- (`testing.md` 18.705) - a sample, which reads a sampler's state, a
+-- sampler's state named, or a header, refused; and a table past eight.
+kernel("sampler-fetch", OK, 0, [[
+send.smpl (8|M0) r20 r10 0x00000000 0x0243A003
+send.smpl (16|M0) r20 r10 0x00000000 0x0485A005
+send.smpl (8|M0) r20 r10 0x00000000 0x06427002
+]] .. END_THREAD)
+kernel("sampler", MESSAGE, 0, "send.smpl (16|M0) r20 r4 0x00000000 0x04000000\n" .. END_THREAD)
+kernel("sampler-state", MESSAGE, 0, "send.smpl (8|M0) r20 r10 0x00000000 0x0243A103\n" .. END_THREAD)
+kernel("sampler-header", MESSAGE, 0, "send.smpl (8|M0) r20 r10 0x00000000 0x024BA003\n" .. END_THREAD)
+kernel("sampler-past-eight", MESSAGE, 0, "send.smpl (8|M0) r20 r10 0x00000000 0x0243A008\n" .. END_THREAD)
 kernel("spawner-not-ending", MESSAGE, 0, "send.ts (16|M0) null r112 0x00000000 0x02000010\n" .. END_THREAD)
 kernel("end-from-r20", EOT, 0, "send.ts (16|M0) null r20 0x00000000 0x02000010 {EOT}\n" .. END_THREAD)
 kernel("predicated-end", EOT, 1, "mov (8|M0) r112.0<1>:ud r0.0<8;8,1>:ud\n"

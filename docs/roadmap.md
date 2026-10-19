@@ -176,10 +176,11 @@ instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
   a few times a second.
 - On the M700 that changed nothing (18.704). The cost is many threads
   reading one line through the data port, served one at a time.
-- **To do**: the scene read through the sampler, whose caches are built
-  for that - kc's loads as the `ld` message on buffer surfaces, the
-  driver's check allowing it, the emulator running it - then measured
-  with `tools/gpukc/` and the still life.
+- **Done** (18.705): the scene read through the sampler, as kc's
+  `table`s, and several passes a run. The still life on the M700 is
+  **0.91 s on the GPU against 1.11 s on the processor**, the picture
+  held. The GPU works 9.6 ms a pass and the wall still shows 16.5, so
+  what is left is the wait between runs.
 - **Then R7**, Final and textures.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**

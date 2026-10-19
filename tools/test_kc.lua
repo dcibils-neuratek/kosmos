@@ -34,7 +34,8 @@ local function run(src, simd, groups, constants, buffers)
   local args = {}
 
   for _, b in ipairs(buffers) do
-    args[#args + 1] = type(b) == "table" and ("%d:%s"):format(#b[1], hex(b[1])) or tostring(b)
+    args[#args + 1] = type(b) == "table" and ("%s%d:%s"):format(b.table and "t" or "", #b[1], hex(b[1]))
+                      or tostring(b)
   end
 
   local cmd = ("%s %d %d 1 %s %s %s"):format(RUN, simd, groups, constants ~= "" and hex(constants) or "-",
@@ -320,6 +321,57 @@ do
 
   check(#packed == 20 and string.unpack("<f", packed, 1) == 1.5 and string.unpack("<i4", packed, 5) == 7
         and string.unpack("<f", packed, 17) == 3, "the constants were not packed as laid out")
+end
+
+-- **Tables** (`testing.md` 18.705): a buffer only read, by the sampler's
+-- ld_lz - words, floats and vec3s at byte offsets, every lane its own,
+-- in SIMD8 and SIMD16; a store to one refused.
+do
+  local words, floats = {}, {}
+
+  for k = 0, 63 do
+    words[#words + 1] = string.pack("<i4", k * 3 + 1)
+    floats[#floats + 1] = string.pack("<f", k * 0.5)
+  end
+
+  local tab = { table.concat(words), table = true }
+  local ftab = { table.concat(floats), table = true }
+
+  for _, simd in ipairs { 8, 16 } do
+    local got, why = run([[
+table tab, ftab;
+buffer out;
+void main() {
+  int i = group_x * simd + lane;
+  vec3 v = load3(ftab, i * 4);
+  store(out, i * 4, loadi(tab, i * 4) + loadi(tab, 0));
+  store(out, 256 + i * 4, v.x + v.y * 10.0 + v.z * 100.0);
+}
+]], simd, 32 // simd, "", { tab, ftab, 512 })
+    local wrong
+
+    for i = 0, 31 do
+      local a = got and string.unpack("<i4", got[3], i * 4 + 1)
+      local f = got and string.unpack("<f", got[3], 256 + i * 4 + 1)
+      local want_f = i * 0.5 + (i + 1) * 0.5 * 10 + (i + 2) * 0.5 * 100
+
+      if not got or a ~= i * 3 + 1 + 1 or math.abs(f - want_f) > 1e-3 then
+        wrong = wrong or ("lane %d: %s, %s"):format(i, tostring(a), tostring(f))
+      end
+    end
+
+    check(got ~= nil and wrong == nil, ("tables, SIMD%d: %s"):format(simd, tostring(wrong or why)))
+  end
+
+  local _, why = kc.compile("table tab;\nvoid main() {\n  store(tab, 0, 1);\n}\n", { simd = 8 })
+
+  check(tostring(why):match("line 3: tab is a table, which is only read") ~= nil,
+        "a store to a table was not refused: " .. tostring(why))
+
+  local _, info = kc.compile("buffer a;\ntable b;\nbuffer c;\nvoid main() { }\n", { simd = 8 })
+
+  check(info and info.views[1] == "bytes" and info.views[2] == "table" and info.views[3] == "bytes",
+        "a kernel's tables and buffers were not said, in order")
 end
 
 -- **What the code is, not only what it computes** (`testing.md` 18.701):

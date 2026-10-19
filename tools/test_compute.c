@@ -63,7 +63,7 @@ int main(void)
 
     check(compute_view("bytes") == GPU_VIEW_BYTES && compute_view("bgra") == GPU_VIEW_BGRA
           && compute_view("r8") == GPU_VIEW_R8 && compute_view("r32f") == GPU_VIEW_R32F
-          && compute_view("rgba") == -1, "the views' names are not gpuproto.h's");
+          && compute_view("table") == GPU_VIEW_TABLE && compute_view("rgba") == -1, "the views' names are not gpuproto.h's");
 
     /* A run, where the driver reads each field. */
     for (i = 0; i < sizeof consts; i++) {
@@ -99,8 +99,10 @@ int main(void)
           "257 bytes of constants were not refused");
     b[0].id = 0;
     check(compute_pack_run(&q, 3, 16, 1, 1, b, 1, NULL, 0) != NULL, "buffer 0, the screen, was not refused");
-    b[0].id = 7; b[0].view = 4;
-    check(compute_pack_run(&q, 3, 16, 1, 1, b, 1, NULL, 0) != NULL, "a view past R32F was not refused");
+    b[0].id = 7; b[0].view = GPU_VIEW_TABLE + 1u;
+    check(compute_pack_run(&q, 3, 16, 1, 1, b, 1, NULL, 0) != NULL, "a view past TABLE was not refused");
+    b[0].view = GPU_VIEW_TABLE;
+    check(compute_pack_run(&q, 3, 16, 1, 1, b, 1, NULL, 0) == NULL, "a table was refused");
 
     if (failed) {
         printf("FAIL: %d of %d compute checks\n", failed, checks);

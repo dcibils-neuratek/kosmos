@@ -57,7 +57,7 @@ const char *compute_picture_shape(uint32_t width, uint32_t height, struct comput
 
 int compute_view(const char *name)
 {
-    static const char *const names[] = { "bytes", "bgra", "r8", "r32f" };
+    static const char *const names[] = { "bytes", "bgra", "r8", "r32f", "table" };
     unsigned i;
 
     for (i = 0; i < sizeof names / sizeof names[0]; i++) {
@@ -99,7 +99,7 @@ const char *compute_pack_run(struct gpu_run *out, uint32_t kernel, uint32_t simd
     }
 
     for (i = 0; i < nbuffers; i++) {
-        if (buffers[i].id == 0 || buffers[i].view > GPU_VIEW_R32F) {
+        if (buffers[i].id == 0 || buffers[i].view > GPU_VIEW_TABLE) {
             return "a buffer that is not one";
         }
 

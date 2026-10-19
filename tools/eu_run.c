@@ -7,11 +7,13 @@
  *   eu_run SIMD GX GY CONSTANTS-HEX KERNEL-HEX BYTES [BYTES ...]
  *
  * Each BYTES is a buffer of that many bytes, bound as bytes in the order
- * given: all nought, or `N:HEX` to start with those bytes. On the way out,
+ * given: all nought, or `N:HEX` to start with those bytes; `tN:HEX` binds
+ * it as a table, which the sampler reads (`testing.md` 18.705). On the way out,
  * a line a buffer of its bytes in hex; or "error: why at N" and a status
  * of 1.
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,7 +69,9 @@ int main(int argc, char **argv)
 
     for (i = 0; i < n; i++) {
         char *rest;
-        uint32_t size = (uint32_t)strtoul(argv[6 + i], &rest, 10);
+        const char *arg = argv[6 + i];
+        bool table = arg[0] == 't';
+        uint32_t size = (uint32_t)strtoul(arg + table, &rest, 10);
         uint32_t rows = (size + 4095u) / 4096u;
 
         buffers[i].bytes = calloc(rows ? rows : 1, 4096);
@@ -79,7 +83,7 @@ int main(int argc, char **argv)
         buffers[i].width = 1024;
         buffers[i].height = rows ? rows : 1;
         buffers[i].pitch = 4096;
-        buffers[i].view = GPU_VIEW_BYTES;
+        buffers[i].view = table ? GPU_VIEW_TABLE : GPU_VIEW_BYTES;
     }
 
     r.buffers = buffers;
@@ -91,7 +95,8 @@ int main(int argc, char **argv)
     }
 
     for (i = 0; i < n; i++) {
-        uint32_t size = (uint32_t)strtoul(argv[6 + i], NULL, 10), k;
+        const char *arg = argv[6 + i];
+        uint32_t size = (uint32_t)strtoul(arg + (arg[0] == 't'), NULL, 10), k;
 
         for (k = 0; k < size; k++) {
             printf("%02x", buffers[i].bytes[k]);

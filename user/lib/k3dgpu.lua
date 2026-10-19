@@ -34,8 +34,14 @@ const float focal;
 const int width, height, nlamps, root, bounces, passes;
 const vec3 zenith, horizon;
 const float strength;
+const int runs;          // passes this run, from `passes` on (18.705)
 
-buffer nodes, items, objects, tris, normals, lamps, acc;
+// The scene in tables, read through the sampler: every ray reads the
+// root, the objects and the lamps, and the data port served one thread at
+// a time what the sampler's caches serve at once - a hundred times the
+// loads a second (`testing.md` 18.705).
+table nodes, items, objects, tris, normals, lamps;
+buffer acc;
 
 // --- Words ---------------------------------------------------------------
 
@@ -299,12 +305,18 @@ void main() {
   int x = group_x * simd + lane;
   int y = group_y;
   if (x < width) {
+   // Several passes a run, summed here and added to the light once: a run
+   // is a wait for the caller's next look, and one pass a run left the GPU
+   // idle three quarters of the time (`testing.md` 18.705).
+   vec3 total = vec3(0.0, 0.0, 0.0);
+   for (int q = 0; q < runs; q += 1) {
+    int pass = passes + q;
     // The pixel's middle on the first pass, anywhere in it after - which is
     // what smooths the edges - from a hash of the pixel and the pass.
     float jx = 0.5;
     float jy = 0.5;
-    if (passes > 0) {
-      int h = mix(x * 1973 + y * 9277 + passes * 26699);
+    if (pass > 0) {
+      int h = mix(x * 1973 + y * 9277 + pass * 26699);
       jx = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
       h = mix(h);
       jy = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
@@ -391,9 +403,11 @@ void main() {
         }
       }
     }
+    total = total + vec3(min(col.x, 40.0), min(col.y, 40.0), min(col.z, 40.0));
+   }
     int at = (y * width + x) * 12;
     vec3 had = load3(acc, at);
-    store3(acc, at, had + vec3(min(col.x, 40.0), min(col.y, 40.0), min(col.z, 40.0)));
+    store3(acc, at, had + total);
   }
 }
 ]]
@@ -409,7 +423,9 @@ void main() {
 k3dgpu.paint = [[
 const int width, height, pitch, count;
 
-buffer acc, curve, picture;
+buffer acc;
+table curve;
+buffer picture;
 
 int level(float v) {
   float c = min(max(v, 0.0), 1.0);
@@ -538,8 +554,17 @@ function job:step()
     end
 
     if self.phase == "trace" then
-      self.count = self.count + 1
+      self.count = self.count + self.runs
       self.ticket, self.phase = nil, nil
+
+      -- As many passes next as fill about 100 ms of the GPU's time, judged
+      -- by this run's: one pass a run left it idle three quarters of the
+      -- time between the caller's looks, and 25 ms a run still half
+      -- (18.705). The run waits on nobody, so its length costs the desktop
+      -- nothing; the picture is painted between runs.
+      local per = ns / self.runs / 1e6
+
+      self.next_runs = math.max(1, math.min(64, per > 0 and math.floor(100 / per) or 1))
 
       -- Painted a few times a second and at the end, the traces between
       -- run back to back: a paint each pass was a run more and a wait for
@@ -577,15 +602,19 @@ end
 
 function job:launch_trace()
   local c = self.camera
+
+  self.runs = math.max(1, math.min(self.next_runs or 1, self.target - self.count))
   local constants = self.kc.pack(self.tracer.info, {
     eye = c.eye, forward = c.forward, right = c.right, up = c.up, focal = c.focal,
     width = c.width, height = c.height, nlamps = c.nlamps, root = c.root,
-    bounces = c.bounces, passes = self.count, zenith = c.zenith, horizon = c.horizon,
+    bounces = c.bounces, passes = self.count, runs = self.runs, zenith = c.zenith, horizon = c.horizon,
     strength = c.strength })
   local b = self.buffers
   local t, why = self.compute.run{ kernel = self.tracer.kernel, simd = 8,
                                    grid = { (self.w + 7) // 8, self.h },
-                                   buffers = { b[1], b[2], b[3], b[4], b[5], b[6], self.acc },
+                                   buffers = { { b[1], "table" }, { b[2], "table" }, { b[3], "table" },
+                                                { b[4], "table" }, { b[5], "table" }, { b[6], "table" },
+                                                self.acc },
                                    constants = constants }
 
   if t then self.ticket, self.phase = t, "trace" else self.why = why end
@@ -597,7 +626,7 @@ function job:launch_paint()
                                                       count = self.count })
   local t, why = self.compute.run{ kernel = self.paint_k.kernel, simd = 8,
                                    grid = { (self.w + 7) // 8, self.h },
-                                   buffers = { self.acc, self.curve, { self.picture, "bytes" } },
+                                   buffers = { self.acc, { self.curve, "table" }, { self.picture, "bytes" } },
                                    constants = constants }
 
   if t then self.ticket, self.phase = t, "paint" else self.why = why end

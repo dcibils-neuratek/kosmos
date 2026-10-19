@@ -184,7 +184,12 @@ the suites, and then on the M700.
    (18.700, `cafesa3d-gpu-m700.png`): the picture held, 230,398 of 230,400
    pixels within two levels, after three faults the emulator could not
    show were found and fixed; and the processor 10.8 times as fast.
-   R6b, making the kernel fast, comes before R7.
+   R6b, making the kernel fast, comes before R7. **R6b done** (18.701-
+   18.705): kc writes a third less, but what mattered was that thousands
+   of threads reading one line through the data port are served one at a
+   time. Read through the sampler as `table`s, with several passes a run,
+   the GPU is 1.2 times as fast as the processor on the still life
+   (`cafesa3d-gpu-m700-sampler.png`).
 7. **R7 - Final on the GPU**, path tracing, and image textures.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is

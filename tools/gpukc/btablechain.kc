@@ -1,0 +1,15 @@
+// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+// testing.md 18.705: bload's chain of dependent loads from a table, through the
+// sampler. Run on the M700 as `gpu kc /Temporary/btablechain.kc 16384`.
+const int n;
+buffer out;
+table tab;
+
+void main() {
+  int i = group_x * simd + lane;
+  if (i < n) {
+    int p = (i & 7) * 4;
+    for (int k = 0; k < 1000; k += 1) { p = loadi(tab, p) & 28; }
+    store(out, i * 4, p);
+  }
+}

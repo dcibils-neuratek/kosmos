@@ -28839,3 +28839,63 @@ root of the tree, the same objects and the same lamps.
 sampler, which has caches of its own built for many threads reading the
 same data, as a texture. The `ld` message on a buffer surface. That is
 R6b's real step now (`roadmap.md`).
+
+## 18.705 The scene through the sampler: the GPU faster than the processor
+
+Following 18.704, the scene is now read through the sampler, whose caches
+serve many threads one line.
+
+1. **eu.lua** already named the sampler (`send.smpl`). A corpus line of
+   `ld_lz`, SIMD8 into table 3 (`0x0243A003`), is held bit for bit to
+   Mesa's gentool: 77 lines.
+2. **The driver.** `GPU_VIEW_TABLE` binds a buffer as `SURFTYPE_BUFFER`,
+   `R32_UINT` (isl: 215), its words as entries, the pitch four bytes. The
+   kernel check allows the sampler `ld` (7) and `ld_lz` (26) only: SIMD8
+   or SIMD16, sampler 0, no header, a table below eight.
+   - The descriptor is laid out as Mesa's `brw_sampler_desc` and
+     `brw_message_desc` lay it, and the numbers come from `gen_enums.h`.
+   - `sampler-fetch` is accepted. Refused: `sampler` (a sample),
+     `sampler-state`, `sampler-header` and `sampler-past-eight`; 50 checks.
+3. **The emulator** runs `ld_lz` and `ld` on a table:
+   - the word into the first channel, 0 into the second and third, and
+     1 into the fourth;
+   - past the end, 0 in all four.
+
+   `eu_run` binds a table as `tN:HEX`.
+4. **kc**: `table a, b;` beside `buffer`, numbered with them in the order
+   written.
+   - A load is `ld_lz` at the word's index, and a vec3 three fetches.
+   - A store to a table is refused.
+   - `info.views` says how to bind each.
+   - `test_kc.lua` holds words, floats and vec3s from tables in SIMD8 and
+     SIMD16, the refusal and the views: 36 checks.
+5. **On the M700**, `tools/gpukc/btable.kc` and `btablechain.kc`, the
+   same loads as `bindep` and `bload` from a table: **2,657 µs and
+   2,624 µs, against 262,729 and 258,537 through the data port.** A
+   hundred times faster, and the values right.
+6. **The tracer's scene and the paint's curve are tables.**
+   - The emulator's still life still holds: 1,536 of 1,536 pixels within
+     0.2%, and the paint exact.
+   - On the M700 a trace is **9.66 ms a pass, against 146.6 ms**.
+7. **Passes in a run.**
+   - A run was one pass, then waited for Cafesa3D's next look: 45 ms a
+     pass on the wall for 9.7 ms of GPU work.
+   - The tracer now loops `runs` passes (a new constant, last), sums them
+     and adds once.
+   - The job asks for as many as fill about 100 ms of GPU time, judged by
+     the last run. 25 ms was 24.75 ms a pass on the wall; 100 ms is
+     16.45.
+   - `test_k3d_gpu` runs its two passes as one run of two.
+
+**The still life on the M700**, 640 by 360, 64 Preview samples
+(`cafesa3d-gpu-m700-sampler.png`):
+- **GPU 0.91 s, processor 1.11 s**: "1.2 times as fast on the GPU".
+- Held to the processor's: 230,398 of 230,400 pixels within 2 levels, the
+  worst 4 apart.
+- 11.95 s at 18.700. Trace 9.62 ms and paint 0.04 ms a pass on the GPU,
+  16.45 ms on the wall.
+
+**Full gate 96 of 97 in 9:55.** `host` failed on `test_compute`'s check
+that a view past `R32F` is refused: `TABLE` is the last now. It holds
+`TABLE + 1` refused and a table taken, and `host` passes (29 compute
+checks).

@@ -1456,6 +1456,7 @@ static uint32_t kernel_forget(const struct gpu_request *rq)
 
 #define SURFACEFORMAT_B8G8R8A8_UNORM 0x0c0u   /* isl_format.h */
 #define SURFACEFORMAT_R32_FLOAT      0x0d8u
+#define SURFACEFORMAT_R32_UINT       0x0d7u   /* isl.h: 215 */
 #define SURFACEFORMAT_RAW            0x1ffu
 
 static volatile uint32_t *run_state;
@@ -1477,6 +1478,15 @@ static bool run_surface(volatile uint32_t *ss, const struct buffer *b, uint32_t 
         ss[0] = (4u << 29) | (SURFACEFORMAT_RAW << 18) | (1u << 8);
         ss[2] = (last & 0x7fu) | (((last >> 7) & 0x3fffu) << 16);
         ss[3] = ((last >> 21) & 0x7ffu) << 21;           /* the pitch: one byte, less one */
+    } else if (view == GPU_VIEW_TABLE) {
+        /* A buffer of words the sampler reads with ld: its entries less
+         * one spread over width, height and depth as a buffer's are, each
+         * entry four bytes (`testing.md` 18.705). */
+        uint32_t last = b->pitch * b->height / 4u - 1u;
+
+        ss[0] = (4u << 29) | (SURFACEFORMAT_R32_UINT << 18) | (1u << 8);
+        ss[2] = (last & 0x7fu) | (((last >> 7) & 0x3fffu) << 16);
+        ss[3] = (((last >> 21) & 0x3fu) << 21) | 3u;     /* the pitch: four bytes, less one */
     } else {
         uint32_t format, width;
 
@@ -1582,7 +1592,7 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
         uint32_t id = q->buffers[i].id;
 
         if (id == 0 || id >= BUFFERS_MAX || !B[id].used || B[id].kind != GPU_BUFFER_IMPORTED
-            || q->buffers[i].view > GPU_VIEW_R32F) {
+            || q->buffers[i].view > GPU_VIEW_TABLE) {
             return GPU_ERR_NO_BUFFER;
         }
 

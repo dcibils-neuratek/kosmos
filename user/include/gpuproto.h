@@ -162,6 +162,8 @@
 #define GPU_VIEW_BGRA        1u     /* 2D, B8G8R8A8_UNORM: media block reads and writes */
 #define GPU_VIEW_R8          2u     /* 2D, R8_UNORM */
 #define GPU_VIEW_R32F        3u     /* 2D, R32_FLOAT */
+#define GPU_VIEW_TABLE       4u     /* SURFTYPE_BUFFER, R32_UINT: read by the sampler's ld,
+                                       whose caches serve many threads one line (18.705) */
 
 /* Why a kernel was refused. */
 #define GPU_KERNEL_OK        0u
