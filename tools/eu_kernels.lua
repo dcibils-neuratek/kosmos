@@ -198,6 +198,10 @@ do
   local code, info = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").preview, { simd = 8 })
 
   case("tracer-preview", OK, 0, assert(code, info))
+
+  local pcode, pinfo = dofile("user/lib/kc.lua").assemble(dofile("user/lib/k3dgpu.lua").paint, { simd = 8 })
+
+  case("tracer-paint", OK, 0, assert(pcode, pinfo))
 end
 
 -- The bits eu.lua does not write, put in by hand.

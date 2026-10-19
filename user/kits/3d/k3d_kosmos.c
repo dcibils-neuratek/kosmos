@@ -53,11 +53,15 @@
 
 #include "kosmos.h"
 #include "k3d.h"
+#include "k3d_gpu.h"
+#include "k3d_trace.h"
+#include "kits/compute/compute_door.h"
 #include "kits/gfx/gfx_draw.h"      /* kosmos_surface_pixels */
 
 #define SCENE_MT  "kosmos.3d.scene"
 #define VIEW_MT   "kosmos.3d.view"
 #define RENDER_MT "kosmos.3d.render"
+#define GPU_SCENE_MT "kosmos.3d.gpu_scene"
 
 #define WORKERS_MAX 64
 #define WORKER_BAND 1           /* SCHED_PRIO_LOW, `kernel/sched.h` */
@@ -847,6 +851,39 @@ static int lamps(lua_State *L, int t, struct k3d_light *out, int most)
     return n;
 }
 
+/* A render's settings, from the table at `t`: one reading of them for the
+ * processor's render and the GPU's scene alike. */
+static void setup(lua_State *L, int t, struct k3d_render_setup *how, struct k3d_light *lights, int most)
+{
+    luaL_checktype(L, t, LUA_TTABLE);
+    memset(how, 0, sizeof(*how));
+    how->w = (int)number(L, t, "w", 1, 8192);
+    how->h = (int)number(L, t, "h", 1, 8192);
+    three(L, t, "eye", how->eye);
+    three(L, t, "target", how->target);
+    how->fov = number(L, t, "fov", 0.01f, 3.1f);
+    how->passes = (uint32_t)opt_number(L, t, "passes", 256, 1, 65536);
+    how->bounces = (int)opt_number(L, t, "bounces", 6, 1, 32);
+
+    lua_getfield(L, t, "preview");
+    how->preview = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, t, "world");
+
+    if (lua_istable(L, -1)) {
+        int w = lua_gettop(L);
+
+        opt_linear(L, w, "zenith", 0x6d90c6, how->world.zenith);
+        opt_linear(L, w, "horizon", 0xdfe6ef, how->world.horizon);
+        how->world.strength = opt_number(L, w, "strength", 1, 0, 1000);
+    }
+
+    lua_pop(L, 1);
+    how->nlights = lamps(L, t, lights, most);
+    how->lights = lights;
+}
+
 static int l_render(lua_State *L)
 {
     struct k3d_scene *s = check_scene(L, 1);
@@ -857,33 +894,7 @@ static int l_render(lua_State *L)
     struct job *j;
     int want, i;
 
-    luaL_checktype(L, 2, LUA_TTABLE);
-    memset(&how, 0, sizeof(how));
-    how.w = (int)number(L, 2, "w", 1, 8192);
-    how.h = (int)number(L, 2, "h", 1, 8192);
-    three(L, 2, "eye", how.eye);
-    three(L, 2, "target", how.target);
-    how.fov = number(L, 2, "fov", 0.01f, 3.1f);
-    how.passes = (uint32_t)opt_number(L, 2, "passes", 256, 1, 65536);
-    how.bounces = (int)opt_number(L, 2, "bounces", 6, 1, 32);
-
-    lua_getfield(L, 2, "preview");
-    how.preview = lua_toboolean(L, -1);
-    lua_pop(L, 1);
-
-    lua_getfield(L, 2, "world");
-
-    if (lua_istable(L, -1)) {
-        int w = lua_gettop(L);
-
-        opt_linear(L, w, "zenith", 0x6d90c6, how.world.zenith);
-        opt_linear(L, w, "horizon", 0xdfe6ef, how.world.horizon);
-        how.world.strength = opt_number(L, w, "strength", 1, 0, 1000);
-    }
-
-    lua_pop(L, 1);
-    how.nlights = lamps(L, 2, lights, (int)(sizeof(lights) / sizeof(lights[0])));
-    how.lights = lights;
+    setup(L, 2, &how, lights, (int)(sizeof(lights) / sizeof(lights[0])));
 
     /* Every processor that runs threads, unless asked for fewer. */
     cores = kosmos_sysinfo(&info) == 0 && info.cpus > 0 ? info.cpus : 1;
@@ -934,6 +945,190 @@ static int l_render(lua_State *L)
     }
 
     return 1;
+}
+
+/*
+ * **The scene laid out for the GPU's tracer** (`docs/cafesa3d-gpu.md` R6):
+ * `k3.gpu_scene(scene, how)` - `how` as `k3.render` takes it - makes the
+ * render's snapshot, lays it out (`k3d_gpu.c`) and lets the snapshot go.
+ *
+ *   g:sizes()            -- the bytes of each part: nodes, items, objects,
+ *                        -- tris, normals, lamps, curve
+ *   g:copy(part, buffer) -- a part into a Compute Kit buffer, C to C
+ *   g:camera()           -- the tracer's constants by name
+ *
+ * The parts go into the buffers without passing through Lua, through the
+ * Compute Kit's door (`compute_door.h`). `curve` is the paint's sRGB
+ * table, a byte a word, so the GPU's colours are the processor's.
+ */
+struct gpu_scene {
+    struct k3d_gpu_scene g;
+    bool made;
+};
+
+static int l_gpu_scene(lua_State *L)
+{
+    struct k3d_scene *s = check_scene(L, 1);
+    struct k3d_light lights[16];
+    struct k3d_render_setup how;
+    struct k3d_render *r;
+    struct gpu_scene *gs;
+
+    setup(L, 2, &how, lights, (int)(sizeof(lights) / sizeof(lights[0])));
+    gs = (struct gpu_scene *)lua_newuserdatauv(L, sizeof(*gs), 0);
+    memset(gs, 0, sizeof(*gs));
+    luaL_setmetatable(L, GPU_SCENE_MT);
+
+    r = k3d_render_new(s, &how);
+
+    if (r == NULL || !k3d_gpu_scene(r, &gs->g)) {
+        k3d_render_free(r);
+        lua_pushnil(L);
+        lua_pushstring(L, "out of memory for the GPU's scene");
+        return 2;
+    }
+
+    k3d_render_free(r);
+    gs->made = true;
+    return 1;
+}
+
+static struct gpu_scene *check_gpu_scene(lua_State *L)
+{
+    struct gpu_scene *gs = (struct gpu_scene *)luaL_checkudata(L, 1, GPU_SCENE_MT);
+
+    if (!gs->made) {
+        luaL_error(L, "this GPU scene has been let go");
+    }
+
+    return gs;
+}
+
+/* A part's words, and how many. */
+static const void *gpu_part(struct gpu_scene *gs, const char *part, size_t *bytes)
+{
+    const struct k3d_gpu_scene *g = &gs->g;
+
+    if (strcmp(part, "nodes") == 0) { *bytes = (size_t)g->nnodes * K3D_GPU_NODE_WORDS * 4; return g->nodes; }
+    if (strcmp(part, "items") == 0) { *bytes = (size_t)g->nitems * 4; return g->items; }
+    if (strcmp(part, "objects") == 0) { *bytes = (size_t)g->nobjects * K3D_GPU_OBJ_WORDS * 4; return g->objects; }
+    if (strcmp(part, "tris") == 0) { *bytes = (size_t)g->ntris * K3D_GPU_TRI_WORDS * 4; return g->tris; }
+    if (strcmp(part, "normals") == 0) { *bytes = (size_t)g->nnormals * 12; return g->normals; }
+    if (strcmp(part, "lamps") == 0) { *bytes = (size_t)g->nlamps * K3D_GPU_LAMP_WORDS * 4; return g->lamps; }
+    if (strcmp(part, "curve") == 0) { *bytes = K3D_CURVE * 4; return NULL; }
+
+    *bytes = 0;
+    return NULL;
+}
+
+static const char *const GPU_PARTS[] = { "nodes", "items", "objects", "tris", "normals", "lamps", "curve", NULL };
+
+static int l_gpu_sizes(lua_State *L)
+{
+    struct gpu_scene *gs = check_gpu_scene(L);
+    int i;
+
+    lua_newtable(L);
+
+    for (i = 0; GPU_PARTS[i] != NULL; i++) {
+        size_t bytes;
+
+        (void)gpu_part(gs, GPU_PARTS[i], &bytes);
+        lua_pushinteger(L, (lua_Integer)bytes);
+        lua_setfield(L, -2, GPU_PARTS[i]);
+    }
+
+    return 1;
+}
+
+static int l_gpu_copy(lua_State *L)
+{
+    struct gpu_scene *gs = check_gpu_scene(L);
+    const char *part = luaL_checkstring(L, 2);
+    size_t bytes, room;
+    const void *from = gpu_part(gs, part, &bytes);
+    uint8_t *to = compute_buffer_bytes(L, 3, &room);
+
+    if (bytes == 0 && strcmp(part, "curve") != 0) {
+        luaL_argcheck(L, strcmp(part, "nodes") == 0 || strcmp(part, "items") == 0
+                      || strcmp(part, "objects") == 0 || strcmp(part, "tris") == 0
+                      || strcmp(part, "normals") == 0 || strcmp(part, "lamps") == 0, 2, "no such part");
+        return 0;
+    }
+
+    luaL_argcheck(L, bytes <= room, 3, "the buffer is smaller than the part");
+
+    if (strcmp(part, "curve") == 0) {
+        const uint8_t *c = k3d_render_curve();
+        uint32_t i;
+
+        for (i = 0; i < K3D_CURVE; i++) {
+            uint32_t w = c[i];
+
+            memcpy(to + i * 4, &w, 4);
+        }
+
+        return 0;
+    }
+
+    memcpy(to, from, bytes);
+    return 0;
+}
+
+static void push_three(lua_State *L, const float v[3], const char *name)
+{
+    int k;
+
+    lua_createtable(L, 3, 0);
+
+    for (k = 0; k < 3; k++) {
+        lua_pushnumber(L, v[k]);
+        lua_rawseti(L, -2, k + 1);
+    }
+
+    lua_setfield(L, -2, name);
+}
+
+static int l_gpu_camera(lua_State *L)
+{
+    const struct k3d_gpu_scene *g = &check_gpu_scene(L)->g;
+
+    lua_newtable(L);
+    push_three(L, g->eye, "eye");
+    push_three(L, g->forward, "forward");
+    push_three(L, g->right, "right");
+    push_three(L, g->up, "up");
+    lua_pushnumber(L, g->F);
+    lua_setfield(L, -2, "focal");
+    lua_pushinteger(L, g->w);
+    lua_setfield(L, -2, "width");
+    lua_pushinteger(L, g->h);
+    lua_setfield(L, -2, "height");
+    lua_pushinteger(L, (lua_Integer)g->nlamps);
+    lua_setfield(L, -2, "nlamps");
+    lua_pushinteger(L, g->root == K3D_GPU_END ? -1 : (lua_Integer)g->root);
+    lua_setfield(L, -2, "root");
+    lua_pushinteger(L, g->bounces);
+    lua_setfield(L, -2, "bounces");
+    push_three(L, g->world.zenith, "zenith");
+    push_three(L, g->world.horizon, "horizon");
+    lua_pushnumber(L, g->world.strength);
+    lua_setfield(L, -2, "strength");
+    lua_pushboolean(L, g->preview);
+    lua_setfield(L, -2, "preview");
+    return 1;
+}
+
+static int l_gpu_gc(lua_State *L)
+{
+    struct gpu_scene *gs = (struct gpu_scene *)luaL_checkudata(L, 1, GPU_SCENE_MT);
+
+    if (gs->made) {
+        k3d_gpu_scene_free(&gs->g);
+        gs->made = false;
+    }
+
+    return 0;
 }
 
 /*
@@ -1389,6 +1584,7 @@ void kosmos_3d_kit(lua_State *L)
         { "scene",  l_scene },
         { "view",   l_view },
         { "render", l_render },
+        { "gpu_scene", l_gpu_scene },
         { "bounds", l_bounds },
         { "gather", l_gather },
         { "sequence", l_sequence },
@@ -1422,6 +1618,22 @@ void kosmos_3d_kit(lua_State *L)
         luaL_newlib(L, job_methods);
         lua_setfield(L, -2, "__index");
         lua_pushcfunction(L, l_job_gc);
+        lua_setfield(L, -2, "__gc");
+    }
+
+    lua_pop(L, 1);
+
+    if (luaL_newmetatable(L, GPU_SCENE_MT)) {
+        static const luaL_Reg gpu_methods[] = {
+            { "sizes",  l_gpu_sizes },
+            { "copy",   l_gpu_copy },
+            { "camera", l_gpu_camera },
+            { NULL, NULL }
+        };
+
+        luaL_newlib(L, gpu_methods);
+        lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, l_gpu_gc);
         lua_setfield(L, -2, "__gc");
     }
 

@@ -481,7 +481,7 @@ for _, name in ipairs({ "house", "car", "plane" }) do
   if first then
     first.things[3].hidden = true
     first.render = { w = 3440, h = 1440, samples = 512, view_samples = 32, bounces = 8,
-                     preview = true }
+                     preview = true, gpu = true }
     -- A script, and an object it made: every character of the text back,
     -- quotes, a backslash, a tab and a line with no end included.
     first.script = { name = "staircase",

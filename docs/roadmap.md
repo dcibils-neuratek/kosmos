@@ -163,6 +163,10 @@ GPU writes the next, a faint tear - two pictures in turn. **C5 designed** (18 Oc
 language of Kosmos's own compiled on Kosmos, an emulator of the execution
 units for the tests, the scene packed by the 3D Kit, Preview first; steps R1
 to R7. **Agreed** the same evening - the four recommended ("go ahead with the recommended choices for C5"). Building from R1.
+**R1 to R5 built** (18.692-18.696). **R6 built** (18.699): Cafesa3D's
+Renderer choice, Processor or GPU, for the Rendered view and F12; the
+Render window's two times and its comparison of the pictures; the choice in
+the scene's file. **To do**: R6 on the M700, then R7, Final and textures.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

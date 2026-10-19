@@ -28555,3 +28555,58 @@ the label the window server's back buffer had given every imported
 buffer. It is "shared" now; the holder column says whose.
 - **Full gate 96 of 97 in 9:32.** `x86-mouse`'s scrollbar drag did not
   scroll under the gate's load; alone it passed its 13 checks.
+
+## 18.699 Cafesa3D chooses its renderer
+
+`cafesa3d-gpu.md` R6. Before this, the GPU's tracer from R5 had only ever
+run in the emulator. Now Cafesa3D can ask for it.
+
+- **The Render tab** gains a Renderer row, Processor or GPU, above the
+  integrator. The Compute Kit is asked once whether a GPU is there. Where
+  there is none, the GPU chip is drawn grey and does nothing when clicked.
+  Under it is the kit's reason; under QEMU that is "no GPU's driver here".
+  When the GPU is chosen with Final, a line says it traces Preview until
+  it learns Final (R7).
+- **One door for a render job.** `render_job` hands the same settings to
+  `k3dgpu.render` or `k3.render`, and both jobs answer `paint`, `passes`,
+  `rays` and `stop`. The Rendered view and F12 use it, and the log says
+  "on the GPU" where it said "on 4 threads". The view's corner says which
+  renderer drew it and how many samples a second.
+- **The Render window** keeps a copy of each renderer's last finished
+  picture, keyed by everything that makes the render:
+  - the scene's version, the sky and the lamps;
+  - the camera;
+  - the size, samples and bounces;
+  - the integrator it actually traced.
+
+  When both renderers have a picture for the same key, the window shows
+  the two times and how many times as fast. It also shows how close the
+  pictures are: `surface:differs` now takes a tolerance and returns the
+  largest channel difference, so the comparison is C over the pixels.
+  More than 1% of the pixels over two levels apart reads "Not the
+  processor's picture", and then no speed is claimed. The facts gain the
+  Renderer and, on the GPU, its own time.
+- **The scene's file** keeps the renderer, `renderer = "GPU"` beside
+  `integrator` in `extras.cafesa3d.render`. A scene that asks for the GPU,
+  opened where there is none, renders on the processor and says so.
+
+**Tests.**
+- `test_scenefile.lua` round-trips `gpu = true`. Its control, the writer
+  without the field, fails with "render settings came back otherwise:
+  render.gpu".
+- `x86-cafesa3d-1`, under QEMU:
+  - the Renderer chips are placed;
+  - the tab says why the GPU cannot be chosen;
+  - a click on GPU sets nothing;
+  - a click on Processor sets the renderer. This is the control: it shows
+    the clicks reach the chips.
+  The suite caught one fault on its first run: an off chip had no
+  action, so it was never listed as placed. It now has an action that
+  does nothing.
+
+**Full gate 91 of 97 in 13:01**, on a Mac that was busy outside it. Chrome
+held a core, two machines never finished booting in 120 s, and the second
+Cafesa3D suite took 609 s. The six that failed (`x86-cafesa3d-1`,
+`x86-cafesa3d-2`, `x86-display-4`, `x86-maps`, `x86-drawself`,
+`x86-tcpmtu`) then passed together with `host` in 4:06, with the chip's fix
+in.

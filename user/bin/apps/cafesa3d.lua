@@ -222,9 +222,46 @@ end
 
 -- How pictures are made, as the Render tab shows it and the scene's file
 -- keeps it: F12's size, samples and bounces, the Rendered view's samples,
--- and Final (path tracing) or Preview (Whitted's, quicker and harder).
+-- and Final (path tracing) or Preview (Whitted's, quicker and harder) -
+-- and who traces it, the processor's cores or the GPU's execution units
+-- (`docs/cafesa3d-gpu.md` R6).
 local RENDER = { name = "the render", w = 640, h = 360, samples = 256, view_samples = 64,
-                 bounces = 6, preview = false }
+                 bounces = 6, preview = false, gpu = false }
+
+-- Whether the GPU can be chosen, and why not: asked of the Compute Kit
+-- once, since a machine does not grow a GPU while Cafesa3D runs.
+local gpu_here, gpu_why, gpu_said
+
+local function gpu_available()
+  if gpu_here == nil then
+    local got, compute = pcall(use, "/Kosmos/Kits/compute")
+    local ok, why = false, "no Compute Kit here"
+
+    if got and compute then ok, why = compute.available() end
+
+    gpu_here, gpu_why = ok == true, why
+  end
+
+  return gpu_here, gpu_why
+end
+
+-- A render job from whichever renderer is chosen, and the same calls on
+-- either: `paint`, `passes`, `rays`, `stop`. The GPU's traces Preview
+-- whatever is asked until R7, and says so with `preview_only`.
+local function render_job(how)
+  if RENDER.gpu and gpu_available() then
+    return use("/Kosmos/Libraries/k3dgpu.lua").render(k3, scene, how)
+  end
+
+  return k3.render(scene, how)
+end
+
+-- Who drew a job, as its lines in the log say it.
+local function drawn_by(job)
+  if job.gpu then return "on the GPU" end
+
+  return ("on %d thread%s"):format(job:workers(), job:workers() == 1 and "" or "s")
+end
 
 -- `will` is further down with undo; these are only called once it exists.
 local will
@@ -253,6 +290,15 @@ function choose.integrator(preview)
   RENDER.preview = preview
   scene_version = scene_version + 1
   print(("cafesa3d: set integrator of the render to %s"):format(preview and "Preview" or "Final"))
+end
+
+function choose.renderer(gpu)
+  if gpu and not gpu_available() then return end
+
+  will("set the renderer of the render")
+  RENDER.gpu = gpu
+  scene_version = scene_version + 1
+  print(("cafesa3d: set renderer of the render to %s"):format(gpu and "GPU" or "Processor"))
 end
 
 function choose.size(w, h)
@@ -596,10 +642,10 @@ function shade.start(s)
   local job, why
 
   shade.surf = shade.surf or gfx.surface{ w = VW, h = VH }
-  job, why = k3.render(scene, { w = VW, h = VH, eye = e, target = t, fov = FOV,
-                                passes = RENDER.view_samples, bounces = RENDER.bounces,
-                                preview = RENDER.preview, world = world,
-                                lights = lamps() })
+  job, why = render_job({ w = VW, h = VH, eye = e, target = t, fov = FOV,
+                          passes = RENDER.view_samples, bounces = RENDER.bounces,
+                          preview = RENDER.preview, world = world,
+                          lights = lamps() })
 
   if not job then
     print("cafesa3d: " .. tostring(why))
@@ -609,8 +655,7 @@ function shade.start(s)
   shade.job, shade.key, shade.said, shade.first = job, render_key(), false, false
   shade.t0 = sys.ticks()
   shade.surf:blit(s, VX, VY, VW, VH, 0, 0)
-  print(("cafesa3d: rendering the view, %d by %d, on %d thread%s"):format(VW, VH, job:workers(),
-                                                                         job:workers() == 1 and "" or "s"))
+  print(("cafesa3d: rendering the view, %d by %d, %s"):format(VW, VH, drawn_by(job)))
 end
 
 --------------------------------------------------------------------------
@@ -1386,7 +1431,12 @@ local function draw_view(s)
   say(ty + step, "Collection | " .. (selected and selected.name or "nothing selected"), VP_DIM)
 
   if lit and shade.job then
-    say(ty + 2 * step, ("Sample %d/%d"):format(shade.job:passes(), RENDER.view_samples), VP_DIM)
+    local passes = shade.job:passes()
+    local secs = (sys.ticks() - shade.t0) / HZ
+
+    say(ty + 2 * step, ("Sample %d/%d \u{b7} %s \u{b7} %d samples a second"):format(
+      passes, RENDER.view_samples, shade.job.gpu and "GPU" or "Processor",
+      secs > 0 and math.floor(passes / secs + 0.5) or 0), VP_DIM)
   end
 
   if FILE.said then say(ty + 3 * step, FILE.said, VP_INK) end
@@ -1725,7 +1775,7 @@ function chip.row(s, x, y, w, items)
 
     if cx + cw > x + w then cx, y = x, y + 30 end
 
-    local held = controls[it.key] and controls[it.key].pressed
+    local held = not it.off and controls[it.key] and controls[it.key].pressed
 
     if it.swatch then
       if it.on then s:frame_round(cx - 2, y, 26, 26, theme.accent, 7) end
@@ -1744,12 +1794,13 @@ function chip.row(s, x, y, w, items)
         tx = cx + 22
       end
 
-      s:text(tx, y + (26 - gfx.height(small)) // 2, it.text, it.on and theme.accent or theme.text,
-             nil, small)
+      s:text(tx, y + (26 - gfx.height(small)) // 2, it.text, it.off and theme.text_dim
+             or it.on and theme.accent or theme.text, nil, small)
     end
 
+    -- One that cannot be chosen is drawn and placed, and does nothing.
     control(it.key, cx, y, cw, 26)
-    chip.actions[it.key] = it.go
+    chip.actions[it.key] = it.off and function() end or it.go
     cx = cx + cw + (it.swatch and 4 or 5)
   end
 
@@ -1809,6 +1860,31 @@ local function draw_props(s)
 
   if tab == "render" then
     y = heading(s, x, y, "Render")
+
+    local can, why = gpu_available()
+
+    s:text(x, y + 4, "RENDERER", theme.text_dim, nil, tiny)
+    y = y + gfx.height(tiny) + 10
+    y = chip.row(s, x, y, w, {
+      { text = "Processor", key = "renderer:Processor", on = not RENDER.gpu,
+        go = function() choose.renderer(false) end },
+      { text = "GPU", key = "renderer:GPU", on = RENDER.gpu, off = not can,
+        go = function() choose.renderer(true) end },
+    })
+
+    if not can then
+      y = note(s, x, y - 4, w, "The GPU cannot be chosen here: " .. tostring(why) .. ".") + 8
+
+      if not gpu_said then
+        gpu_said = true
+        print("cafesa3d: the GPU cannot be chosen: " .. tostring(why))
+      end
+    elseif RENDER.gpu and not RENDER.preview then
+      y = note(s, x, y - 4, w, "The GPU traces Preview until it learns Final.") + 8
+    end
+
+    s:text(x, y + 4, "INTEGRATOR", theme.text_dim, nil, tiny)
+    y = y + gfx.height(tiny) + 10
     y = chip.row(s, x, y, w, {
       { text = "Final", key = "integrator:Final", on = not RENDER.preview,
         go = function() choose.integrator(false) end },
@@ -1834,7 +1910,7 @@ local function draw_props(s)
     y = chip.row(s, x, y, w, sizes)
     y = field_row(s, x, y, w, "Width, height", { F(RENDER, "w", nil, "Width"),
                                                   F(RENDER, "h", nil, "Height") })
-    note(s, x, y + 4, w, "Final traces as Cycles does, on every processor; Preview is Whitted's, quicker and harder. Rendered shows the view that way; F12 renders through the camera at this size.")
+    note(s, x, y + 4, w, "Final traces as Cycles does; Preview is Whitted's, quicker and harder. The renderer is who traces it - the processor's cores or the GPU's execution units - and the picture is the same either way. Rendered shows the view that way; F12 renders through the camera at this size.")
   elseif tab == "world" then
     y = heading(s, x, y, "World")
     y = field_row(s, x, y, w, "Zenith", { F(WORLD, "zenith", nil, "Zenith", world, "colour") })
@@ -2390,6 +2466,11 @@ end
 -- stopped it, since a stopped job is gone; `controls`, where its buttons are.
 local final = { side = 270, shown = -1, controls = {} }
 
+-- The last finished render of each renderer - `cpu` and `gpu` - with what
+-- it was a render of (`key`), its time and a copy of its picture; and
+-- `held`, the two pictures compared once both are of the same render.
+final.last = {}
+
 -- The window's size for the render's: the picture as it is, or shrunk to
 -- what the screen has room for beside the panel, and never shorter than
 -- the panel needs.
@@ -2401,7 +2482,7 @@ function final.fit()
 
   final.dw = math.max(1, math.floor(RENDER.w * k))
   final.dh = math.max(1, math.floor(RENDER.h * k))
-  final.W, final.H = final.dw + final.side, L.head + math.max(final.dh, 360)
+  final.W, final.H = final.dw + final.side, L.head + math.max(final.dh, 480)
 end
 
 function final.camera()
@@ -2413,6 +2494,82 @@ end
 -- Still working on it: begun, not finished, and not stopped.
 function final.running()
   return final.job ~= nil and not final.done
+end
+
+-- The finished render kept as its renderer's last, and, when the other's
+-- last is of the same render, the two pictures held to each other: within
+-- two levels a channel in Preview, which is the rounding of two sets of
+-- arithmetic; Final's noise is R7's to judge.
+function final.keep()
+  local who, other = final.gpu and "gpu" or "cpu", final.gpu and "cpu" or "gpu"
+  local was = final.last[who]
+  local pw, ph = final.pic:size()
+  local made, copy = pcall(gfx.surface, { w = pw, h = ph })
+
+  if was and was.pic then was.pic:free() end
+  final.last[who] = nil
+
+  if not made then return end
+
+  copy:blit(final.pic, 0, 0, pw, ph, 0, 0)
+  final.last[who] = { key = final.key, took = final.took, pic = copy }
+
+  local them = final.last[other]
+
+  if them and them.key == final.key then
+    local count, worst = copy:differs(them.pic, 2)
+
+    final.held = { key = final.key, count = count or pw * ph, worst = worst or 255,
+                   pixels = pw * ph }
+    print(("cafesa3d: the GPU's picture against the processor's: %d of %d pixels more than "
+           .. "2 levels apart, the worst %d"):format(final.held.count, pw * ph, final.held.worst))
+  end
+end
+
+-- The two renderers' times for this render, when both have one, and what
+-- the comparison found - drawn from `y`, and the `y` after.
+function final.times(s, x, y, w)
+  local cpu, gpu = final.last.cpu, final.last.gpu
+  local key = final.key
+
+  if not (cpu and gpu and cpu.key == key and gpu.key == key) then
+    if final.gpu and final.done then
+      return note(s, x, y, w, "Render it on the processor too, and the two times are shown here.")
+             + 12
+    end
+
+    return y
+  end
+
+  s:text(x, y, "THIS SCENE, BY EACH", theme.text_dim, nil, tiny)
+  y = y + gfx.height(tiny) + 8
+
+  for _, row in ipairs({ { "GPU", gpu.took }, { "Processor", cpu.took } }) do
+    s:text(x, y, row[1], theme.text_dim, nil, "ui")
+    s:text(x + 96, y, ("%.2f s"):format(row[2]), theme.text, nil, "ui")
+    y = y + gfx.height() + 6
+  end
+
+  local held = final.held
+  local same = held and held.key == key and held.count <= held.pixels // 100
+
+  if same and gpu.took > 0 then
+    local k = cpu.took / gpu.took
+
+    s:text(x, y, k >= 1 and ("%.1f times as fast on the GPU"):format(k)
+                 or ("%.1f times as fast on the processor"):format(1 / k), theme.accent, nil, "ui")
+    y = y + gfx.height() + 6
+  end
+
+  if held and held.key == key then
+    y = note(s, x, y, w, same and ("Held to the processor's: %d of %d pixels within 2 levels, the "
+                                   .. "worst %d apart."):format(held.pixels - held.count,
+                                                                 held.pixels, held.worst)
+                         or ("Not the processor's picture: %d pixels more than 2 levels apart, "
+                             .. "so no speed is claimed."):format(held.count))
+  end
+
+  return y + 14
 end
 
 function final.draw()
@@ -2480,15 +2637,26 @@ function final.draw()
   end
 
   y = y + 2 * (gfx.height(small) + 2) + 20
+  y = final.times(s, x, y, w)
   s:text(x, y, "LIGHT PATHS", theme.text_dim, nil, tiny)
   y = y + gfx.height(tiny) + 8
 
-  for _, row in ipairs({ { "Integrator", final.preview and "Preview \u{b7} Whitted's"
-                                                           or "Final \u{b7} path tracing" },
-                         { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) },
-                         { "Cores", ("%d thread%s, a tile each"):format(final.threads or 0,
-                                   final.threads == 1 and "" or "s") },
-                         { "Denoise", "not yet" } }) do
+  local rows = { { "Renderer", final.gpu and "GPU \u{b7} execution units" or "Processor" },
+                 { "Integrator", final.preview and "Preview \u{b7} Whitted's"
+                                               or "Final \u{b7} path tracing" },
+                 { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) } }
+
+  if final.gpu then
+    if job and job.preview_only then rows[#rows + 1] = { "", "Preview only on the GPU until R7" } end
+    rows[#rows + 1] = { "GPU time", job and ("%.2f s"):format(job:gpu_seconds()) or "-" }
+  else
+    rows[#rows + 1] = { "Cores", ("%d thread%s, a tile each"):format(final.threads or 0,
+                                 final.threads == 1 and "" or "s") }
+  end
+
+  rows[#rows + 1] = { "Denoise", "not yet" }
+
+  for _, row in ipairs(rows) do
     s:text(x, y, row[1], theme.text_dim, nil, "ui")
     s:text(x + 96, y, row[2], theme.text, nil, "ui")
     y = y + gfx.height() + 8
@@ -2534,22 +2702,31 @@ function final.begin()
   -- What this render was asked for, kept: the tab may change under it.
   final.samples, final.bounces, final.preview = RENDER.samples, RENDER.bounces, RENDER.preview
 
-  job, why = k3.render(scene, { w = RENDER.w, h = RENDER.h, eye = cam.loc, target = cam.target,
-                                fov = 2 * math.atan(18 / (cam.focal or 50)),
-                                passes = RENDER.samples, bounces = RENDER.bounces,
-                                preview = RENDER.preview, world = world, lights = lamps() })
+  job, why = render_job({ w = RENDER.w, h = RENDER.h, eye = cam.loc, target = cam.target,
+                          fov = 2 * math.atan(18 / (cam.focal or 50)),
+                          passes = RENDER.samples, bounces = RENDER.bounces,
+                          preview = RENDER.preview, world = world, lights = lamps() })
 
   if not job then
     print("cafesa3d: " .. tostring(why))
     return false
   end
 
-  final.job, final.threads = job, job:workers()
+  final.job, final.threads, final.gpu = job, job:workers(), job.gpu == true
+
+  -- What it traced, which is Preview on the GPU until R7: the key two
+  -- renders must share for their times and pictures to be compared.
+  if job.preview_only then final.preview = true end
+
+  final.key = ("%s|%.4f %.4f %.4f|%.4f %.4f %.4f|%s|%dx%d|%d|%d|%s"):format(
+    render_key(), cam.loc[1], cam.loc[2], cam.loc[3], cam.target[1], cam.target[2],
+    cam.target[3], tostring(cam.focal), RENDER.w, RENDER.h, RENDER.samples, RENDER.bounces,
+    tostring(final.preview))
   final.pic:fill(0, 0, RENDER.w, RENDER.h, 0xff1d1f24)
   final.start, final.done, final.shown, final.first = sys.ticks(), false, -1, false
   final.took, final.stopped = nil, nil
-  print(("cafesa3d: rendering %s through the camera, %d by %d, on %d thread%s"):format(
-    FILE.name, RENDER.w, RENDER.h, job:workers(), job:workers() == 1 and "" or "s"))
+  print(("cafesa3d: rendering %s through the camera, %d by %d, %s"):format(
+    FILE.name, RENDER.w, RENDER.h, drawn_by(job)))
   return true
 end
 
@@ -2695,8 +2872,9 @@ function final.tend()
   if passes >= final.samples and not final.done then
     final.done = true
     final.took = (sys.ticks() - final.start) / HZ
-    print(("cafesa3d: rendered %d samples, %d rays in %.1f s on %d threads"):format(
-      passes, job:rays(), final.took, job:workers()))
+    print(("cafesa3d: rendered %d samples, %d rays in %.1f s %s"):format(
+      passes, job:rays(), final.took, drawn_by(job)))
+    final.keep()
     final.draw()                  -- the button, Render again now
 
     --
@@ -3596,6 +3774,13 @@ function SAMPLES.take(loaded, file, adding)
     end
 
     for k, v in pairs(loaded.render or {}) do RENDER[k] = v end
+
+    -- A scene rendered on a GPU, opened where there is none, renders on the
+    -- processor, and the Render tab says so rather than showing GPU chosen.
+    if RENDER.gpu and not gpu_available() then
+      RENDER.gpu = false
+      print("cafesa3d: the scene asks for the GPU, and there is none here: the processor renders it")
+    end
 
     SCRIPT.opened(loaded.script)
 
@@ -4961,8 +5146,8 @@ local function pass()
 
     if not shade.said and job:passes() >= RENDER.view_samples then
       shade.said = true
-      print(("cafesa3d: rendered the view, %d samples, %d rays, on %d threads"):format(
-        job:passes(), job:rays(), job:workers()))
+      print(("cafesa3d: rendered the view, %d samples, %d rays, %s"):format(
+        job:passes(), job:rays(), drawn_by(job)))
     end
   end
 

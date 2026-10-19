@@ -177,7 +177,10 @@ the suites, and then on the M700.
    emulator; the M700 next.
 6. **R6 - Cafesa3D**: the Renderer choice, the times side by side, and
    the comparison line; its suite under QEMU, where GPU says why it cannot
-   be chosen.
+   be chosen. **Built** (18.699): the Renderer chips in the Render tab, the
+   GPU's job behind the same calls as the processor's for the Rendered
+   view and F12, the two times and the pictures held to each other within
+   two levels, and the renderer kept in the scene's file. The M700 next.
 7. **R7 - Final on the GPU**, path tracing, and image textures.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is

@@ -369,7 +369,7 @@ static void tracer(const char *kernels)
     pack_i(constants, &at, (int32_t)g.nlamps);
     pack_i(constants, &at, (int32_t)g.root);
     pack_i(constants, &at, g.bounces);
-    pack_i(constants, &at, 1);
+    pack_i(constants, &at, 0);                  /* the pass: the first, the pixel's middle */
     pack_v(constants, &at, g.world.zenith);
     pack_v(constants, &at, g.world.horizon);
     pack_f(constants, &at, g.world.strength);
@@ -421,6 +421,63 @@ static void tracer(const char *kernels)
     snprintf(what, sizeof what, "%d of %d pixels of the GPU's Preview are not the processor's", differ, W * H);
     check(why == NULL && differ <= W * H / 200, what);
     check(lit > W * H / 2, "the still life is mostly dark, so the comparison says little");
+
+    /* The paint: the processor's own light through the GPU's paint
+     * kernel, held to `k3d_render_paint`'s colours. */
+    {
+        static uint32_t paint_code[4096];
+        uint32_t pn = kernel_named(kernels, "tracer-paint", paint_code, sizeof paint_code);
+        uint32_t *want = calloc((size_t)W * H, 4), level[K3D_CURVE];
+        const uint8_t *curve = k3d_render_curve();
+        struct eu_buffer pb[3];
+        uint8_t pc[32];
+        size_t pat = 0;
+        int off = 0, apart = 0;
+
+        for (i = 0; i < K3D_CURVE; i++) { level[i] = curve[i]; }
+
+        pb[0] = words_buffer(r->acc, (size_t)W * H * 3);
+        pb[1] = words_buffer(level, K3D_CURVE);
+        pb[2] = words_buffer(want, (size_t)W * H);         /* nought: the picture */
+        memset(pc, 0, sizeof pc);
+        pack_i(pc, &pat, W);
+        pack_i(pc, &pat, H);
+        pack_i(pc, &pat, W);
+        pack_i(pc, &pat, 1);
+        (void)k3d_render_paint(r, want, (size_t)W, true);
+
+        {
+            struct eu_run run = { paint_code, pn, 8, (uint32_t)(W + 7) / 8, (uint32_t)H, pb, 3, pc, 32, 0 };
+
+            why = eu_emulate(&run, &st, &worst_at);
+            snprintf(what, sizeof what, "the paint did not run: %s at %u", why ? why : "", worst_at);
+            check(pn > 0 && why == NULL, what);
+        }
+
+        for (i = 0; i < (uint32_t)(W * H) && why == NULL; i++) {
+            uint32_t got;
+            int k, most = 0;
+
+            memcpy(&got, &pb[2].bytes[i * 4], 4);
+
+            for (k = 0; k < 24; k += 8) {
+                int d = (int)((got >> k) & 0xff) - (int)((want[i] >> k) & 0xff);
+
+                most = d < 0 ? -d : d > most ? d : most;
+            }
+
+            off += most > 0;
+            apart = most > apart ? most : apart;
+        }
+
+        printf("  the paint: %d of %d pixels the processor's colour to the byte, at most %d apart\n",
+               W * H - off, W * H, apart);
+        snprintf(what, sizeof what, "the GPU's paint differs from the processor's by %d levels", apart);
+        check(why == NULL && apart <= 1, what);
+
+        for (i = 0; i < 3; i++) { free(pb[i].bytes); }
+        free(want);
+    }
 
     for (i = 0; i < 7; i++) {
         free(b[i].bytes);

@@ -3067,17 +3067,24 @@ static int l_view(lua_State *L)
 }
 
 /*
- * surface:differs(other) - how many pixels differ between two surfaces of
- * one size, or nil when their sizes differ. For a check that a window which
- * redrew only part of itself holds what a whole redraw would: the answer
- * has to be nought, and counting in Lua would be the pixels in a Lua loop
- * that `CLAUDE.md` rules out.
+ * surface:differs(other[, levels]) - how many pixels differ between two
+ * surfaces of one size, and the largest difference of any channel, or nil
+ * when their sizes differ. For a check that a window which redrew only
+ * part of itself holds what a whole redraw would: the answer has to be
+ * nought, and counting in Lua would be the pixels in a Lua loop that
+ * `CLAUDE.md` rules out.
+ *
+ * `levels` lets a pixel be that many levels off in each channel and still
+ * count as the same - for two renderers whose arithmetic rounds apart, as
+ * Cafesa3D's processor and GPU do (`cafesa3d-gpu.md` R6).
  */
 static int l_differs(lua_State *L)
 {
     struct surface *a = check_surface(L, 1);
     struct surface *b = check_surface(L, 2);
+    lua_Integer levels = luaL_optinteger(L, 3, 0);
     unsigned long count = 0;
+    unsigned worst = 0;
     unsigned row;
 
     if (a->width != b->width || a->height != b->height) {
@@ -3091,12 +3098,27 @@ static int l_differs(lua_State *L)
         unsigned i;
 
         for (i = 0; i < a->width; i++) {
-            count += p[i] != q[i];
+            unsigned most = 0, k;
+
+            if (p[i] == q[i]) {
+                continue;
+            }
+
+            for (k = 0; k < 32; k += 8) {
+                unsigned x = (p[i] >> k) & 0xff, y = (q[i] >> k) & 0xff;
+                unsigned d = x > y ? x - y : y - x;
+
+                most = d > most ? d : most;
+            }
+
+            count += (lua_Integer)most > levels;
+            worst = most > worst ? most : worst;
         }
     }
 
     lua_pushinteger(L, (lua_Integer)count);
-    return 1;
+    lua_pushinteger(L, (lua_Integer)worst);
+    return 2;
 }
 
 /*

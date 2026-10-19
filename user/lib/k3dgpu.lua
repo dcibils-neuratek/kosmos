@@ -275,15 +275,37 @@ vec3 world_normal(int ob, vec3 n, int tri, float bu, float bv) {
                         r2.x * m.x + r2.y * m.y + r2.z * m.z));
 }
 
+// An integer hash, Chris Wellons's lowbias32: a pass's place in its pixel.
+// `>>` keeps the sign here, so each shift is masked to what a logical one keeps.
+int mix(int v) {
+  int x = v;
+  x = x ^ ((x >> 16) & 0xffff);
+  x = x * 0x7feb352d;
+  x = x ^ ((x >> 15) & 0x1ffff);
+  x = x * 0x846ca68b;
+  x = x ^ ((x >> 16) & 0xffff);
+  return x;
+}
+
 // --- A pixel -------------------------------------------------------------
 
 void main() {
   int x = group_x * simd + lane;
   int y = group_y;
   if (x < width) {
+    // The pixel's middle on the first pass, anywhere in it after - which is
+    // what smooths the edges - from a hash of the pixel and the pass.
+    float jx = 0.5;
+    float jy = 0.5;
+    if (passes > 0) {
+      int h = mix(x * 1973 + y * 9277 + passes * 26699);
+      jx = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+      h = mix(h);
+      jy = float((h >> 8) & 0xffffff) * (1.0 / 16777216.0);
+    }
     vec3 o = eye;
-    vec3 d = normalize(forward * focal + right * (float(x) + 0.5 - float(width) / 2.0)
-                       - up * (float(y) + 0.5 - float(height) / 2.0));
+    vec3 d = normalize(forward * focal + right * (float(x) + jx - float(width) / 2.0)
+                       - up * (float(y) + jy - float(height) / 2.0));
     vec3 col = vec3(0.0, 0.0, 0.0);
     vec3 thr = vec3(1.0, 1.0, 1.0);
     bool specular = true;
@@ -369,5 +391,214 @@ void main() {
   }
 }
 ]]
+
+--
+-- **paint** turns the light a render has gathered into the picture's
+-- colours, as the processor's `k3d_render_paint` does: the light over the
+-- passes, the same filmic curve, then the paint's own sRGB table, looked up
+-- rather than worked out, so a colour is the processor's to the byte where
+-- the light is. Constants: the width, height, the picture's pitch in
+-- pixels, the passes. Buffers: the light, the table, the picture as bytes.
+--
+k3dgpu.paint = [[
+const int width, height, pitch, count;
+
+buffer acc, curve, picture;
+
+int level(float v) {
+  float c = min(max(v, 0.0), 1.0);
+  return loadi(curve, int(c * 8191.0 + 0.5) * 4);
+}
+
+void main() {
+  int x = group_x * simd + lane;
+  int y = group_y;
+  if (x < width) {
+    vec3 c = load3(acc, (y * width + x) * 12) * (1.0 / float(count));
+    vec3 v = c * 0.9;
+    vec3 t = (v * (v * 2.51 + 0.03)) / (v * (v * 2.43 + 0.59) + 0.14);
+    store(picture, (y * pitch + x) * 4,
+          0xff000000 | (level(t.x) << 16) | (level(t.y) << 8) | level(t.z));
+  }
+}
+]]
+
+--------------------------------------------------------------------------
+-- **A render on the GPU**, with the processor's render's door - `paint`,
+-- `passes`, `rays`, `workers`, `stop` - so Cafesa3D asks it the same
+-- questions (`docs/cafesa3d-gpu.md` R6). Preview, Whitted's, whatever the
+-- integrator asked for, until Final reaches the GPU (R7); `gpu` and
+-- `preview_only` say so to whoever shows the facts.
+--
+--   local job, why = k3dgpu.render(k3, scene, how)
+--
+-- Nothing here waits for the GPU: each question takes a step - a pass
+-- finished is painted into the picture, the next pass started - and
+-- answers from what has already happened, on the caller's clock.
+--------------------------------------------------------------------------
+
+local compiled = {}
+
+local function kernel(compute, kc, name)
+  if not compiled[name] then
+    local text, info = kc.compile(k3dgpu[name], { simd = 8 })
+
+    if not text then return nil, info end
+
+    local k, why = compute.kernel(text)
+
+    if not k then return nil, why end
+
+    compiled[name] = { kernel = k, info = info }
+  end
+
+  return compiled[name]
+end
+
+local job = {}
+job.__index = job
+
+local PARTS = { "nodes", "items", "objects", "tris", "normals", "lamps" }
+
+function k3dgpu.render(k3, scene, how)
+  local compute = use("/Kosmos/Kits/compute")
+  local kc = use("/Kosmos/Libraries/kc.lua")
+  local ok, why = compute.available()
+
+  if not ok then return nil, why end
+
+  local tracer, twhy = kernel(compute, kc, "preview")
+  if not tracer then return nil, "the tracer's kernel: " .. tostring(twhy) end
+
+  local paint, pwhy = kernel(compute, kc, "paint")
+  if not paint then return nil, "the paint's kernel: " .. tostring(pwhy) end
+
+  local wanted = {}
+  for k, v in pairs(how) do wanted[k] = v end
+  wanted.preview = true                     -- Final on the GPU is R7's
+
+  local g, gwhy = k3.gpu_scene(scene, wanted)
+  if not g then return nil, gwhy end
+
+  local sizes = g:sizes()
+  local self = setmetatable({ gpu = true, preview_only = not how.preview, w = how.w, h = how.h,
+                              target = how.passes or 256, count = 0, painted = 0,
+                              gpu_ns = 0, buffers = {}, camera = g:camera(),
+                              tracer = tracer, paint_k = paint, compute = compute, kc = kc }, job)
+
+  for _, part in ipairs(PARTS) do
+    local b, bwhy = compute.buffer(math.max(4, sizes[part]))
+
+    if not b then self:stop() return nil, bwhy end
+    g:copy(part, b)
+    self.buffers[#self.buffers + 1] = b
+  end
+
+  local curve, cwhy = compute.buffer(sizes.curve)
+  if not curve then self:stop() return nil, cwhy end
+  g:copy("curve", curve)
+  self.curve = curve
+
+  local acc, awhy = compute.buffer(how.w * how.h * 12)
+  if not acc then self:stop() return nil, awhy end
+  self.acc = acc
+
+  local pic, iwhy = compute.picture(how.w, how.h)
+  if not pic then self:stop() return nil, iwhy end
+  self.picture, self.surface = pic, pic:surface()
+
+  self.started = sys.ticks()
+  self:step()
+  return self
+end
+
+-- One step: a run finished is counted, the next begun.
+function job:step()
+  if self.stopped then return end
+
+  if self.ticket then
+    if not self.ticket:done() then return end
+
+    self.gpu_ns = self.gpu_ns + (self.ticket:time() or 0)
+
+    if self.phase == "trace" then
+      self.count = self.count + 1
+      self.ticket, self.phase = nil, nil
+      self:launch_paint()
+      return
+    end
+
+    self.ticket, self.phase = nil, nil
+    self.fresh = true
+    self.painted = self.count
+  end
+
+  if self.count < self.target then self:launch_trace() end
+end
+
+function job:launch_trace()
+  local c = self.camera
+  local constants = self.kc.pack(self.tracer.info, {
+    eye = c.eye, forward = c.forward, right = c.right, up = c.up, focal = c.focal,
+    width = c.width, height = c.height, nlamps = c.nlamps, root = c.root,
+    bounces = c.bounces, passes = self.count, zenith = c.zenith, horizon = c.horizon,
+    strength = c.strength })
+  local b = self.buffers
+  local t, why = self.compute.run{ kernel = self.tracer.kernel, simd = 8,
+                                   grid = { (self.w + 7) // 8, self.h },
+                                   buffers = { b[1], b[2], b[3], b[4], b[5], b[6], self.acc },
+                                   constants = constants }
+
+  if t then self.ticket, self.phase = t, "trace" else self.why = why end
+end
+
+function job:launch_paint()
+  local constants = self.kc.pack(self.paint_k.info, { width = self.w, height = self.h,
+                                                      pitch = self.picture.pitch // 4,
+                                                      count = self.count })
+  local t, why = self.compute.run{ kernel = self.paint_k.kernel, simd = 8,
+                                   grid = { (self.w + 7) // 8, self.h },
+                                   buffers = { self.acc, self.curve, { self.picture, "bytes" } },
+                                   constants = constants }
+
+  if t then self.ticket, self.phase = t, "paint" else self.why = why end
+end
+
+-- The picture so far onto `surface` at `x`, `y`: 1 when something new was
+-- painted, as the processor's paint counts its tiles.
+function job:paint(surface, x, y, all)
+  self:step()
+
+  if self.painted == 0 or not (self.fresh or all) then return 0 end
+
+  surface:blit(self.surface, 0, 0, self.w, self.h, x, y)
+  self.fresh = false
+  return 1
+end
+
+function job:passes()
+  self:step()
+  return self.painted
+end
+
+-- Rays from the eye, a pixel's a pass; the shadow rays are not counted.
+function job:rays() return self.painted * self.w * self.h end
+function job:workers() return 0 end
+
+-- The GPU's own time for every run so far, in seconds.
+function job:gpu_seconds() return self.gpu_ns / 1e9 end
+
+function job:stop()
+  self.stopped = true
+
+  if self.ticket then self.ticket:wait(2000) end
+
+  for _, b in ipairs(self.buffers or {}) do b:free() end
+  if self.curve then self.curve:free() end
+  if self.acc then self.acc:free() end
+  if self.picture then self.picture:free() end
+  self.buffers, self.curve, self.acc, self.picture = {}, nil, nil, nil
+  self.ticket = nil
+end
 
 return k3dgpu

@@ -1738,6 +1738,12 @@ static void curve(void)
     }
 }
 
+const uint8_t *k3d_render_curve(void)
+{
+    curve();
+    return srgb;
+}
+
 static inline uint32_t tone(v3 c)
 {
     v3 v = c * all4(0.9f);

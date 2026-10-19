@@ -47,6 +47,12 @@ bool k3d_bvh_binary(const float *lo, const float *hi, uint32_t n,
 bool k3d_trace_object_hit(const struct k3d_render *r, uint32_t obj, const float o[3],
                           const float d[3], float *t);
 
+/* The paint's sRGB curve: 8192 bytes, a linear level's byte from its
+ * place in [0, 1] times 8191 - what the GPU's paint looks up, so its
+ * colours are the processor's to the byte. */
+#define K3D_CURVE 8192
+const uint8_t *k3d_render_curve(void);
+
 /* The four-wide hierarchy the processor's rays walk. */
 struct wnode {
     f4 box[2][3];           /* the four children's lows, then highs; x, y, z */

@@ -39,6 +39,7 @@
 #include <gpuproto.h>
 
 #include "compute_core.h"
+#include "compute_door.h"
 #include "kits/kitenv.h"
 #include "kits/gfx/gfx_draw.h"
 
@@ -314,6 +315,14 @@ static struct buffer *live(lua_State *L, int index)
     }
 
     return b;
+}
+
+void *compute_buffer_bytes(lua_State *L, int index, size_t *size)
+{
+    struct buffer *b = live(L, index);
+
+    *size = b->size;
+    return (void *)b->at;
 }
 
 static int l_buffer_free(lua_State *L)

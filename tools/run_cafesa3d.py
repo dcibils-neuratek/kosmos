@@ -1150,6 +1150,25 @@ def main():
                   "the Render tab's fields and chips were not said: %r %r"
                   % (sorted(fields_now), sorted(chips_now)))
 
+            # **The renderer** (`docs/cafesa3d-gpu.md` R6): QEMU has no Intel
+            # GPU, so GPU is drawn, says why it cannot be chosen, and a click
+            # on it sets nothing - and Processor, clicked the same way, does,
+            # which is what says the click reached the chips at all.
+            check("renderer:GPU" in chips_now and "renderer:Processor" in chips_now,
+                  "the Render tab has no Renderer chips: %r" % sorted(chips_now))
+            why_not = said("cafesa3d: the GPU cannot be chosen: ", opened_at, 5)
+            check(why_not is not None, "the Render tab did not say why the GPU cannot be chosen")
+
+            if "renderer:GPU" in chips_now:
+                mark = len(guest.seen)
+                click(*chips_now["renderer:GPU"])
+                check(said("cafesa3d: set renderer of the render to ", mark, 3) is None,
+                      "the GPU was chosen on a machine without one")
+                mark = len(guest.seen)
+                click(*chips_now["renderer:Processor"])
+                check(said("cafesa3d: set renderer of the render to ", mark, 10) == "Processor",
+                      "the Processor chip did not set the renderer")
+
             for key, sets in (("integrator:Preview", "integrator of the render to Preview"),
                               ("size:1280x720", "size of the render to 1280 by 720")):
                 mark = len(guest.seen)
