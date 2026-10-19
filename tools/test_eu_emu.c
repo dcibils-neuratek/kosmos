@@ -214,6 +214,39 @@ int main(int argc, char **argv)
         }
 
         check(differ == 0, "the branches' lanes did not each keep their own count");
+
+    /* And the control: the same with each break aimed past its while, as
+     * this emulator once read a break's UIP. On the M700 the lanes that
+     * broke were never let out and wrote nothing (`testing.md` 18.700): the
+     * odd lanes, every one of which breaks, must come back untouched and
+     * the even ones, which leave by the while, right. */
+    {
+        uint32_t n = kernel(argv[1], "branches-past-the-while", words, sizeof words), lane;
+        struct eu_run r = { words, n, 16, 1, 1, &b, 1, constants, 32, 0 };
+        int odd_written = 0, even_wrong = 0;
+
+        memset(out, 0, 16 * 4);
+        why = eu_emulate(&r, &st, &at);
+        snprintf(what, sizeof what, "the branches past the while did not run: %s at %u", why ? why : "", at);
+        check(n > 0 && why == NULL, what);
+
+        for (lane = 0; lane < 16; lane++) {
+            int32_t got;
+
+            memcpy(&got, &out[lane * 4], 4);
+
+            if (lane & 1) {
+                odd_written += got != 0;
+            } else {
+                even_wrong += got != (int32_t)(lane + 1) * 10 + 2;
+            }
+        }
+
+        snprintf(what, sizeof what, "a break aimed past its while let %d lanes out, where the GPU "
+                 "lets none", odd_written);
+        check(odd_written == 0, what);
+        check(even_wrong == 0, "the lanes that left by the while were wrong with a break past it");
+    }
     }
 
     if (failed) {
@@ -222,6 +255,7 @@ int main(int argc, char **argv)
     }
 
     printf("PASS: %d emulator checks (the fill, GPU Fractal held to fractal.c, lesson 15's pattern, "
-           "and lanes through if, else, while and break)\n", checks);
+           "lanes through if, else, while and break, and a break aimed past its while losing its "
+           "lanes as the GPU does)\n", checks);
     return 0;
 }

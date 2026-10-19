@@ -119,6 +119,38 @@ static uint32_t next32(struct rng *r)
 
 static float rnd(struct rng *r) { return (float)(next32(r) >> 8) * (1.0f / 16777216.0f); }
 
+/*
+ * Where in its pixel a pass's ray starts: Chris Wellons's lowbias32 of the
+ * pixel and the pass, as the GPU's tracer has it (`k3dgpu.lua`'s `mix`), so
+ * the two renderers trace the same rays and Preview's pictures can be held
+ * to each other pixel for pixel. Drawn from PCG, the two pictures were
+ * each as good and 1.2% of their pixels apart (`testing.md` 18.700).
+ */
+static uint32_t lowbias32(uint32_t x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+static void jitter(int x, int y, uint32_t pass, float *jx, float *jy)
+{
+    uint32_t h;
+
+    if (pass == 0) {
+        *jx = *jy = 0.5f;
+        return;
+    }
+
+    h = lowbias32((uint32_t)x * 1973u + (uint32_t)y * 9277u + pass * 26699u);
+    *jx = (float)(h >> 8) * (1.0f / 16777216.0f);
+    h = lowbias32(h);
+    *jy = (float)(h >> 8) * (1.0f / 16777216.0f);
+}
+
 static void seed(struct rng *r, uint32_t tile, uint32_t pass, uint32_t pixel)
 {
     r->state = ((uint64_t)tile * 0x9e3779b97f4a7c15ull) ^ ((uint64_t)pass << 32)
@@ -1622,15 +1654,16 @@ void k3d_render_tile(struct k3d_render *r, uint32_t tile, uint32_t pass)
         for (x = x0; x < x0 + TILE && x < r->how.w; x++) {
             uint32_t at = (uint32_t)((y - y0) * TILE + (x - x0));
             struct rng g;
-            float sx, sy;
+            float sx, sy, jx, jy;
             v3 d, c;
 
             seed(&g, tile, pass, at);
 
             /* The pixel's middle on the first pass, anywhere in it after,
              * which is what smooths the edges. */
-            sx = (float)x + (pass == 0 ? 0.5f : rnd(&g)) - (float)r->how.w / 2;
-            sy = (float)y + (pass == 0 ? 0.5f : rnd(&g)) - (float)r->how.h / 2;
+            jitter(x, y, pass, &jx, &jy);
+            sx = (float)x + jx - (float)r->how.w / 2;
+            sy = (float)y + jy - (float)r->how.h / 2;
             d = norm(mul(r->f, r->F) + mul(r->r, sx) - mul(r->u, sy));
             c = radiance(r, &g, r->eye, d, &rays);
 

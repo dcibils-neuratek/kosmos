@@ -21,6 +21,8 @@
 --                       blended over a ground by its alpha (7c)
 --   gpu draw            a part of a 301x203 picture blended onto 800x600
 --                       at (123, 77), every pixel held (7c)
+--   gpu read [words]    a kernel that reads a buffer into another, checked
+--   gpu kc FILE [n]     a kernel in kc from a file, its first words said
 --   gpu kernel [colour] a program's own kernel (`compute.md` C2): the fill
 --                       written as text, assembled here by eu.lua, checked
 --                       and kept by the driver, run over a buffer this
@@ -35,7 +37,7 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" then
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" then
   print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour] | kernel [colour]]")
   return
 end
@@ -171,6 +173,154 @@ if words[1] == "kernel" then
   print((done and right == 256 and past == 0) and "gpu: kernel run held" or "gpu: kernel run NOT held")
 
   b:free()
+  k:forget()
+  return
+end
+
+-- `gpu read`: a kernel that reads a buffer - every word of one written
+-- into another, plus one - and the time it took. Every kernel the M700 had
+-- run before Cafesa3D's tracer only wrote; the tracer reads everything,
+-- and on the M700 drew black, slowly (`testing.md` 18.700).
+if words[1] == "read" then
+  local compute = use("/Kosmos/Kits/compute")
+  local kc = use("/Kosmos/Libraries/kc.lua")
+  local ok, why = compute.available()
+
+  if not ok then print("gpu: " .. tostring(why)) return end
+
+  local n = tonumber(words[2] or "") or 16384
+  local text, info = kc.compile([[
+const int n;
+buffer from, to;
+
+void main() {
+  int i = group_x * simd + lane;
+  if (i < n) {
+    store(to, i * 4, loadi(from, i * 4) + 1);
+  }
+}
+]], { simd = 8 })
+
+  if not text then print("gpu: the copy did not compile: " .. tostring(info)) return end
+
+  local k, kwhy = compute.kernel(text)
+
+  if not k then print("gpu: the copy was not kept: " .. tostring(kwhy)) return end
+
+  local from, fwhy = compute.buffer(n * 4)
+  local to, twhy = compute.buffer(n * 4)
+
+  if not (from and to) then print("gpu: " .. tostring(fwhy or twhy)) k:forget() return end
+
+  -- Words new to every run, so a cache that kept an earlier run's lines
+  -- at the same addresses shows as words wrong.
+  local seed = sys.ticks() & 0xffffff
+  local words_in = {}
+
+  for i = 0, n - 1 do words_in[#words_in + 1] = string.pack("<i4", i * 7 + seed) end
+
+  from:write(0, table.concat(words_in))
+  to:write(0, string.rep("\0", n * 4))
+
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz
+  local t0 = sys.ticks()
+  local t, rwhy = compute.run{ kernel = k, simd = 8, grid = { (n + 7) // 8, 1 },
+                               buffers = { from, to }, constants = kc.pack(info, { n = n }) }
+  local done, dwhy = false, rwhy
+
+  if t then done, dwhy = t:wait(5000) end
+
+  local t1 = sys.ticks()
+
+  if not done then
+    print("gpu: the copy did not finish: " .. tostring(dwhy))
+  else
+    local back, right, zero, first_wrong = to:read(0, n * 4), 0, 0, nil
+
+    for i = 0, n - 1 do
+      local v = string.unpack("<i4", back, i * 4 + 1)
+
+      if v == i * 7 + seed + 1 then
+        right = right + 1
+      else
+        if v == 0 then zero = zero + 1 end
+        first_wrong = first_wrong or ("word %d is %d, not %d"):format(i, v, i * 7 + seed + 1)
+      end
+    end
+
+    local ns = t:time()
+
+    print(("gpu: read %d of %d words right, %d nought%s; %s on the GPU, %s here")
+          :format(right, n, zero, first_wrong and ("; " .. first_wrong) or "",
+                  ns and ("%d us"):format(ns // 1000) or "time unknown",
+                  hz and ("%d us"):format((t1 - t0) * 1000000 // hz) or "time unknown"))
+    print(right == n and "gpu: read held" or "gpu: read NOT held")
+  end
+
+  from:free()
+  to:free()
+  k:forget()
+  return
+end
+
+-- `gpu kc FILE [n]`: a kernel in Kosmos's kernel language, from a file,
+-- run over `n` lanes with one buffer, `out`, of `n` words and the constant
+-- `n` - and its first words said as integers and as floats; or assembly,
+-- from a file ending .eu, with `n` in r1.0. For finding
+-- which instruction the GPU takes otherwise than the emulator does.
+if words[1] == "kc" then
+  local compute = use("/Kosmos/Kits/compute")
+  local kc = use("/Kosmos/Libraries/kc.lua")
+  local ok, why = compute.available()
+
+  if not ok then print("gpu: " .. tostring(why)) return end
+
+  local source = words[2] and fs.read(words[2])
+
+  if type(source) ~= "string" then print("gpu: no kernel at " .. tostring(words[2])) return end
+
+  local n = tonumber(words[3] or "") or 16
+  local text, info
+
+  -- A file ending .eu is assembly already, its one constant `n` in r1.0.
+  if words[2]:match("%.eu$") then
+    text, info = source, { constants = { { name = "n", t = "i" } } }
+  else
+    text, info = kc.compile(source, { simd = 8 })
+  end
+
+  if not text then print("gpu: " .. tostring(info)) return end
+
+  local k, kwhy = compute.kernel(text)
+
+  if not k then print("gpu: not kept: " .. tostring(kwhy)) return end
+
+  local out = compute.buffer(math.max(4096, n * 4))
+
+  out:write(0, string.rep("\xee", n * 4))
+
+  local t = compute.run{ kernel = k, simd = 8, grid = { (n + 7) // 8, 1 }, buffers = { out },
+                         constants = kc.pack(info, { n = n }) }
+  local done, dwhy = false, "not run"
+
+  if t then done, dwhy = t:wait(5000) end
+
+  if not done then
+    print("gpu: did not finish: " .. tostring(dwhy))
+  else
+    local back = out:read(0, n * 4)
+
+    for i = 0, math.min(n, 16) - 1 do
+      local v = string.unpack("<i4", back, i * 4 + 1)
+      local f = string.unpack("<f", back, i * 4 + 1)
+
+      print(("gpu: %2d  %08x  %d  %.6g"):format(i, v & 0xffffffff, v, f))
+    end
+
+    print(("gpu: %d instructions, %d us on the GPU"):format(k.instructions, (t:time() or 0) // 1000))
+  end
+
+  out:free()
   k:forget()
   return
 end

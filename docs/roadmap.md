@@ -166,7 +166,23 @@ to R7. **Agreed** the same evening - the four recommended ("go ahead with the re
 **R1 to R5 built** (18.692-18.696). **R6 built** (18.699): Cafesa3D's
 Renderer choice, Processor or GPU, for the Rendered view and F12; the
 Render window's two times and its comparison of the pictures; the choice in
-the scene's file. **To do**: R6 on the M700, then R7, Final and textures.
+the scene's file. **On the M700** (18.700): black at first, because of
+three faults the emulator could not show - single program flow, a `break`
+aimed past its `while`, a GT at 100 MHz - all fixed. Then the picture is
+held to the processor's (230,398 of 230,400 within 2 levels), and **the
+processor is 10.8 times as fast**: a trace is 131 ms a pass, about 120,000
+instructions per SIMD8 thread. **To do, before R7 - the GPU's tracer made
+fast** (R6b): kc writing a result straight into its variable rather than
+through a `mov`, `mad` where C would round the same, the paint run with
+the trace in one submission rather than waited for a tick apart (55 ms a
+pass on the wall), then measured again with the emulator's instruction
+count and the M700's clock. **Then R7**, Final and textures.
+**Found along the way**:
+- F12 with the Render window open leaves it behind Cafesa3D's own. The UI
+  kit has no way to bring a window forward, and the window manager needs
+  one.
+- The GPU's job counts only the rays from the eye, so its "rays a second"
+  reads low beside the processor's.
 **And the lesson, C6** (Diego, the same
 day): what a compute kernel is and how it differs from a processor's
 program, the two taught as complementary - "they are completely

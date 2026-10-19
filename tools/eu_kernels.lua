@@ -121,7 +121,7 @@ endif (8|M0) jip: loop
 loop:
 add (8|M0) r10.0<1>:f r10.0<8;8,1>:f 0x3f800000:f
 cmp (8|M0) (lt)f0.0 null<1>:f r10.0<8;8,1>:f 0x41000000:f
-(f0.0) break (8|M0) jip: wend uip: done
+(f0.0) break (8|M0) jip: wend uip: wend
 wend:
 while (8|M0) jip: loop
 done:
@@ -136,7 +136,7 @@ case("halt", OPCODE, 5, poke(shaped, 5, 0, 6, 42))
 -- Lanes through the structured branches, for the emulator (test_eu_emu.c):
 -- each its own count, odd lanes leaving the loop early by break, then each
 -- side of an if; written to buffer 0 by an untyped write.
-kernel("branches", OK, 0, [[
+local BRANCHES = [[
 // Each lane its own count: up until it passes the lane's number, odd
 // lanes leaving a step early by break; then ten times the count, plus one
 // on an odd lane and two on an even, written to buffer 0 at lane * 4.
@@ -151,7 +151,7 @@ add (16|M0) r18.0<1>:d r16.0<8;8,1>:d 1:d
 cmp (16|M0) (gt)f0.0 r20.0<1>:d r18.0<8;8,1>:d r12.0<8;8,1>:d
 and (16|M0) r22.0<1>:d r20.0<8;8,1>:d r14.0<8;8,1>:d
 cmp (16|M0) (ne)f0.0 null<1>:d r22.0<8;8,1>:d 0:d
-(f0.0) break (16|M0) jip: wend uip: done
+(f0.0) break (16|M0) jip: wend uip: wend
 cmp (16|M0) (le)f0.0 null<1>:d r16.0<8;8,1>:d r12.0<8;8,1>:d
 wend:
 (f0.0) while (16|M0) jip: loop
@@ -171,7 +171,15 @@ mov (16|M0) r32.0<1>:ud r24.0<8;8,1>:ud
 send.hdc1 (16|M0) null r30 0x00000000 0x08025E00
 mov (8|M0) r112.0<1>:ud r0.0<8;8,1>:ud
 send.ts (16|M0) null r112:d 0x00000000 0x02000010 {EOT}
-]])
+]]
+
+kernel("branches", OK, 0, BRANCHES)
+
+-- The same with its break aimed past the while, at `done` - the sixth
+-- generation's rule, which this file used until the M700 ran it: the lanes
+-- that broke are never let out, and their counts are never written
+-- (`testing.md` 18.700). The emulator must lose them as the GPU did.
+kernel("branches-past-the-while", OK, 0, (BRANCHES:gsub("uip: wend", "uip: done")))
 
 -- A kernel kc.lua compiled (cafesa3d-gpu.md R3): what the compiler writes
 -- is checked as any kernel is - Collatz's steps, lanes that disagree.

@@ -282,7 +282,7 @@ static void tracer(const char *kernels)
     struct eu_buffer b[7];
     struct eu_stats st;
     uint8_t constants[GPU_RUN_CONSTANTS];
-    size_t at = 0;
+    size_t at = 0, pass_at = 0;
     uint32_t n, i, tile, pass, worst_at = 0;
     const char *why;
     int W = 48, H = 32, differ = 0, lit = 0;
@@ -338,7 +338,7 @@ static void tracer(const char *kernels)
     how.fov = 0.8f;
     how.preview = true;
     how.bounces = 6;
-    how.passes = 1;
+    how.passes = 2;                 /* the pixel's middle, then a jittered pass */
     how.lights = &lamp;
     how.nlights = 1;
     how.world.zenith[0] = 0.25f; how.world.zenith[1] = 0.45f; how.world.zenith[2] = 0.9f;
@@ -352,7 +352,8 @@ static void tracer(const char *kernels)
         return;
     }
 
-    /* The processor's first pass. */
+    /* The processor's two passes: the second's rays start where the
+     * GPU's do, from the same hash of the pixel and the pass (18.700). */
     while (k3d_render_job(r, &tile, &pass, NULL)) {
         k3d_render_tile(r, tile, pass);
     }
@@ -369,6 +370,7 @@ static void tracer(const char *kernels)
     pack_i(constants, &at, (int32_t)g.nlamps);
     pack_i(constants, &at, (int32_t)g.root);
     pack_i(constants, &at, g.bounces);
+    pass_at = at;
     pack_i(constants, &at, 0);                  /* the pass: the first, the pixel's middle */
     pack_v(constants, &at, g.world.zenith);
     pack_v(constants, &at, g.world.horizon);
@@ -394,6 +396,17 @@ static void tracer(const char *kernels)
         why = eu_emulate(&run, &st, &worst_at);
         snprintf(what, sizeof what, "the tracer did not run: %s at instruction %u", why ? why : "", worst_at);
         check(why == NULL, what);
+
+        /* And the second pass, into the same light. */
+        if (why == NULL) {
+            int32_t one = 1;
+
+            memcpy(constants + pass_at, &one, 4);
+            why = eu_emulate(&run, &st, &worst_at);
+            snprintf(what, sizeof what, "the tracer's second pass did not run: %s at instruction %u",
+                     why ? why : "", worst_at);
+            check(why == NULL, what);
+        }
     }
 
     /* Every pixel's light, the GPU's against the processor's. */
@@ -413,7 +426,7 @@ static void tracer(const char *kernels)
         }
     }
 
-    printf("  the still life, %dx%d in Preview: %d of %d pixels as the processor's within 0.2%%, "
+    printf("  the still life, %dx%d in Preview, two passes: %d of %d pixels as the processor's within 0.2%%, "
            "the worst %.4f%% at %u,%u; %llu instructions in %llu threads\n",
            W, H, W * H - differ, W * H, worst * 100, worst_at % (uint32_t)W, worst_at / (uint32_t)W,
            (unsigned long long)st.instructions, (unsigned long long)st.threads);
@@ -443,7 +456,7 @@ static void tracer(const char *kernels)
         pack_i(pc, &pat, W);
         pack_i(pc, &pat, H);
         pack_i(pc, &pat, W);
-        pack_i(pc, &pat, 1);
+        pack_i(pc, &pat, 2);
         (void)k3d_render_paint(r, want, (size_t)W, true);
 
         {

@@ -28610,3 +28610,68 @@ Cafesa3D suite took 609 s. The six that failed (`x86-cafesa3d-1`,
 `x86-cafesa3d-2`, `x86-display-4`, `x86-maps`, `x86-drawself`,
 `x86-tcpmtu`) then passed together with `host` in 4:06, with the chip's fix
 in.
+
+## 18.700 The GPU's tracer on the M700: black, then right, then measured
+
+`cafesa3d-gpu.md` R6 on the real machine. Cafesa3D rendered the still life
+(640 by 360, 64 Preview samples) on each renderer. The GPU took 76.7 s
+against the processor's 1.3 s, and its picture was black. Each cause below
+was found by a kernel run on the M700. `gpu kc FILE`, new, runs a kernel in
+kc or assembly from a file and prints its first words; `gpu read`, new,
+checks the first kernel that reads a buffer.
+
+1. **Reads were fine.** `gpu read` copied 16,384 words right. Every kernel
+   before the tracer only wrote, so nothing had shown it. The buffers were
+   uncached (MOCS 0); run surfaces now name index 2, write-back in the LLC.
+2. **Single program flow.** The run's interface descriptor set bit 18. In
+   that mode a thread takes a branch as a whole when any lane does: an
+   `if` on `i < 4` gave lanes 0-7 one side and 8-15 the other. The emulator
+   masks lanes as the branches say, so it agreed with the processor and
+   not with the GPU. GPU Fractal and the pattern never diverge within a
+   thread, so they never showed it. Bit 18 is clear now.
+3. **`break` aimed past its `while`.** kc and the emulator both read a
+   break's UIP as the instruction after the `while`, which is the sixth
+   generation's rule. From the seventh, as Mesa's `brw_set_uip_jip` has
+   it, the UIP is the `while` itself, which lets out the lanes that broke.
+   Aimed past it, those lanes never came back and never stored: loops wrote
+   nothing. Aimed at it, every loop kernel matched on the hardware.
+   - kc aims `break` at the `while`, and so does an inlined function's
+     early `return`, whose label had sat on the `cmp` before its `while`.
+   - The emulator keeps a per-lane "broke" bit, woken only by a `while` at
+     the lane's UIP.
+   - `branches-past-the-while`, the old aim, is the control: the emulator
+     must lose its odd lanes, as the GPU did. With broken lanes woken
+     anywhere, it let 8 out and failed.
+4. **100 MHz.** Nothing asked the GT for a clock, so it ran a kernel at
+   100 MHz of its 350 to 1150. The driver now asks for RP0 (i915's
+   `gen6_rps_set`: GEN6_RPNSWREQ, 50/3 MHz from bit 23) as a run begins,
+   and says so: "asked for 1150 MHz, and running at 1100 MHz". `gpu read`
+   went from 176 µs to 21 µs, and a trace from 1,106 ms a pass to 131.
+5. **Two placements of a sample.** The processor placed each pass's ray in
+   its pixel by PCG and the GPU by a hash, so 2,749 pixels (1.2%) differed
+   by more than 2 levels, the worst by 137: noise, not error. The
+   processor now places them by the GPU's hash, lowbias32. Only *where in
+   the pixel* changes; Final's paths still draw from PCG.
+   - `test_k3d_gpu` holds two passes, one jittered: 1,536 of 1,536
+     pixels within 0.2%.
+   - Its control, the old placement put back, fails with 910 apart.
+
+**Tried and taken out.** Caching the run's buffers in the GPU's L3 as
+well, with a data-cache flush before each run, measured 132 ms a pass
+against 131. Since the L3 is not kept in step with the processor, it
+stays out.
+
+**On the M700**, the Render window says, in `cafesa3d-gpu-m700.png`:
+- GPU 11.95 s, processor 1.11 s: **10.8 times as fast on the processor**.
+- Held to the processor's: 230,398 of 230,400 pixels within 2 levels, the
+  worst 4 apart.
+- A pass: trace 134.6 ms and paint 1.07 ms on the GPU, 188.9 ms on the
+  wall.
+
+The emulator counts 3,248 instructions per SIMD8 thread for the test's
+six simple shapes. At 1.1 GHz, the still life's 2,062 triangles come to
+about 120,000 per thread. The GPU is busy, not waiting: kc's code does far
+more per ray than the processor's C. The roadmap has what would change
+that, and R7 waits on it.
+
+**Full gate 97 of 97 in 9:34.**

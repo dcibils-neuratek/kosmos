@@ -1444,8 +1444,9 @@ static uint32_t kernel_forget(const struct gpu_request *rq)
  *
  * Its state page: the constants at 0, the descriptor at 0x100, the binding
  * table at 0x140 and eight surface states from 0x180, 64 bytes each. The
- * buffers are seen uncached (MOCS 0), so what the processor wrote is what
- * the kernel reads and what it writes is in memory when the fence comes.
+ * buffers are cached in the LLC and not in the L3 (`run_surface`), so what
+ * the processor wrote is what the kernel reads and what it writes is
+ * there for the processor when the fence comes.
  */
 #define RUN_CURBE_AT  0x000u
 #define RUN_IDD_AT    0x100u
@@ -1491,9 +1492,61 @@ static bool run_surface(volatile uint32_t *ss, const struct buffer *b, uint32_t 
         ss[3] = b->pitch - 1u;
     }
 
+    /* MOCS index 2, write-back in the LLC and uncached in the GPU's L3
+     * (`surface_mocs`), where they had been uncached in both. The LLC is
+     * kept in step with the processor's caches, so what it wrote is what
+     * the kernel reads and what the kernel wrote is what it reads after the
+     * fence. The L3 is not, and caching there as well bought Cafesa3D's
+     * tracer nothing - 132 ms a pass either way - so it stays out
+     * (`testing.md` 18.700). */
+    ss[1] = (2u << 1) << 24;
     ss[7] = (4u << 25) | (5u << 22) | (6u << 19) | (7u << 16);   /* R, G, B, A */
     ss[8] = b->gtt;
     return true;
+}
+
+/*
+ * **The GT asked for its full clock** while it computes. Nothing had asked
+ * it for any, and it ran a kernel at 100 MHz of its 350 to 1150 - Cafesa3D's
+ * tracer a pass in 1.1 s (`testing.md` 18.700). RP0, the most the part
+ * says it does (RP_STATE_CAP 7:0, in 50 MHz), asked as i915's
+ * `gen6_rps_set` asks on generation 9: GEN6_RPNSWREQ, in 50/3 MHz from bit
+ * 23. Between runs the GT still falls asleep in RC6, so the request costs
+ * nothing while there is no work. Said once, with what the GT then reads.
+ */
+static bool rps_asked;
+static long mocs_console;                       /* where the driver says things; set below */
+static bool mocs_done;
+static void mocs_program(long console);
+
+static void rps_up(long console)
+{
+    struct say_line line;
+    uint32_t rp0 = reg(G.regs, IGPU_RP_STATE_CAP) & 0xffu;
+    unsigned i;
+
+    if (rps_asked || rp0 == 0) {
+        return;
+    }
+
+    rps_asked = true;
+    wreg(IGPU_RPNSWREQ, (rp0 * 3u) << 23);
+
+    for (i = 0; i < 20; i++) {
+        if (((reg(G.regs, IGPU_RPSTAT1) >> 23) & 0x1ffu) == rp0 * 3u) {
+            break;
+        }
+
+        kosmos_sleep(1);
+    }
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the GT asked for ");
+    say_dec(&line, rp0 * 50u);
+    say_text(&line, " MHz, and running at ");
+    say_dec(&line, ((reg(G.regs, IGPU_RPSTAT1) >> 23) & 0x1ffu) * 50u / 3u);
+    say_text(&line, " MHz");
+    say_send(console, &line);
 }
 
 static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
@@ -1542,6 +1595,15 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
         return GPU_ERR_NO_WAKE;
     }
 
+    rps_up(mocs_console);
+
+    /* The cache controls a run's surfaces name, programmed here too: the
+     * 3D path did it, and a machine that never drew had them as a reset
+     * leaves them. */
+    if (!mocs_done) {
+        mocs_program(mocs_console);
+    }
+
     if ((error = engine_start(&RCS)) != GPU_OK) {
         return error;
     }
@@ -1579,7 +1641,12 @@ static uint32_t run(const struct gpu_run *q, struct gpu_reply *rep)
         const uint32_t sba_lo = run_state_gtt | 1u;     /* the base, and modify */
 
         idd[0] = 0;                                     /* the kernel, from the instruction base */
-        idd[2] = 1u << 18;                              /* single program flow, IEEE */
+        /* IEEE, and not single program flow: with bit 18 set the hardware
+         * keeps no lane's mask through if, else and while, and a thread
+         * took a branch whole when any of its lanes did - Cafesa3D's tracer
+         * drew black on the M700 while the emulator, which masks lanes as
+         * the branches say, drew the processor's picture (18.700). */
+        idd[2] = 0;
         idd[4] = RUN_BT_AT;                             /* from the surface base, 32-aligned */
         idd[5] = regs << 16;                            /* registers of constants: r1 onwards */
         idd[6] = 1u;                                    /* one thread a group */

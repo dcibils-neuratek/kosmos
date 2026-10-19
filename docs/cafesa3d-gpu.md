@@ -180,7 +180,11 @@ the suites, and then on the M700.
    be chosen. **Built** (18.699): the Renderer chips in the Render tab, the
    GPU's job behind the same calls as the processor's for the Rendered
    view and F12, the two times and the pictures held to each other within
-   two levels, and the renderer kept in the scene's file. The M700 next.
+   two levels, and the renderer kept in the scene's file. **On the M700**
+   (18.700, `cafesa3d-gpu-m700.png`): the picture held, 230,398 of 230,400
+   pixels within two levels, after three faults the emulator could not
+   show were found and fixed; and the processor 10.8 times as fast.
+   R6b, making the kernel fast, comes before R7.
 7. **R7 - Final on the GPU**, path tracing, and image textures.
 
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is

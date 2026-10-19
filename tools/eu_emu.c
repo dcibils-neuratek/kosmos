@@ -42,6 +42,7 @@ struct thread {
     uint8_t  grf[GRF_BYTES];
     uint16_t flag[2][2];            /* f0.0, f0.1, f1.0, f1.1 */
     uint32_t pcip[LANES];
+    bool     broke[LANES];          /* left its loop by break: let out at the while */
     uint32_t ip;                    /* in instructions */
     unsigned simd;
 };
@@ -321,7 +322,7 @@ static struct val alu(unsigned op, unsigned math, struct val a, struct val b, bo
 
 static bool lane_on(const struct thread *t, const uint32_t *w, unsigned lane, unsigned exec)
 {
-    return lane < exec && (bits(w, 34, 34) != 0 || t->pcip[lane] == t->ip);
+    return lane < exec && (bits(w, 34, 34) != 0 || (t->pcip[lane] == t->ip && !t->broke[lane]));
 }
 
 /* An align1 instruction of one or two sources. */
@@ -643,7 +644,7 @@ static void advance(struct thread *t)
     unsigned lane;
 
     for (lane = 0; lane < LANES; lane++) {
-        if (t->pcip[lane] == t->ip) {
+        if (t->pcip[lane] == t->ip && !t->broke[lane]) {
             t->pcip[lane] = t->ip + 1u;
         }
     }
@@ -656,7 +657,7 @@ static bool any_at(const struct thread *t, uint32_t ip)
     unsigned lane;
 
     for (lane = 0; lane < t->simd; lane++) {
-        if (t->pcip[lane] == ip) {
+        if (t->pcip[lane] == ip && !t->broke[lane]) {
             return true;
         }
     }
@@ -664,7 +665,14 @@ static bool any_at(const struct thread *t, uint32_t ip)
     return false;
 }
 
-/* The structured branches, as the PRM's pseudocode has them. */
+/*
+ * The structured branches, as the M700's GPU runs them (`testing.md`
+ * 18.700). `break` and `continue` both wait at their UIP, which is the
+ * loop's `while` - as Mesa aims them from generation 7 - and the `while`
+ * lets out the lanes that broke and takes the rest round again where its
+ * predicate says. This read UIP as "past the while" for a break, the
+ * sixth generation's rule; the hardware kept those lanes off for good.
+ */
 static const char *structured(struct thread *t, const uint32_t *w, unsigned op, unsigned exec)
 {
     int32_t jip = (int32_t)bits(w, 96, 127), uip = (int32_t)bits(w, 64, 95);
@@ -679,7 +687,9 @@ static const char *structured(struct thread *t, const uint32_t *w, unsigned op, 
     to_u = (uint32_t)((int32_t)here + uip / 16);
 
     for (lane = 0; lane < LANES; lane++) {
-        bool on = lane < exec && t->pcip[lane] == here, en;
+        /* A lane that broke waits for a while at its UIP, and nothing else
+         * wakes it: aimed anywhere else, it is gone for good. */
+        bool on = lane < exec && t->pcip[lane] == here && (!t->broke[lane] || op == 0x27), en;
 
         if (!on) {
             if (lane >= exec && t->pcip[lane] == here) {
@@ -694,8 +704,14 @@ static const char *structured(struct thread *t, const uint32_t *w, unsigned op, 
         case 0x22: t->pcip[lane] = en ? next : to_j; break;                 /* if */
         case 0x24: t->pcip[lane] = to_j; break;                             /* else */
         case 0x25: t->pcip[lane] = next; break;                             /* endif */
-        case 0x27: t->pcip[lane] = en ? to_j : next; break;                 /* while */
-        case 0x28: case 0x29: t->pcip[lane] = en ? to_u : next; break;      /* break, continue */
+        case 0x27:                                                          /* while */
+            t->pcip[lane] = !t->broke[lane] && en ? to_j : next;
+            t->broke[lane] = false;
+            break;
+        case 0x28: case 0x29:                                               /* break, continue */
+            t->pcip[lane] = en ? to_u : next;
+            t->broke[lane] = en && op == 0x28;
+            break;
         }
     }
 
@@ -756,7 +772,7 @@ static const char *thread_run(struct thread *t, const struct eu_run *r, struct e
 
             if (predicate(t, w, 0)) {
                 for (lane = 0; lane < LANES; lane++) {
-                    if (t->pcip[lane] == t->ip) {
+                    if (t->pcip[lane] == t->ip && !t->broke[lane]) {
                         t->pcip[lane] = to;
                     }
                 }

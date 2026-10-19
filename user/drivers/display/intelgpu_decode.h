@@ -45,6 +45,7 @@
 #define IGPU_PIPE_FRMCOUNT_A    0x70040u    /* frames the pipe has scanned */
 /* The GT's clock and sleep (`intel_gt_regs.h`, `intel_mchbar_regs.h`, and
  * `intel_rps.c` and `intel_rc6.c` for their units on Gen9). */
+#define IGPU_RPNSWREQ           0x0a008u    /* GEN6_RPNSWREQ: gen9 asks in 31:23, 50/3 MHz */
 #define IGPU_RPSTAT1            0x0a01cu    /* GEN6_RPSTAT1: CAGF in 31:23, 50/3 MHz */
 #define IGPU_RP_STATE_CAP       0x145998u   /* MCHBAR mirror + 0x5998: RP0 7:0, RPn 23:16, 50 MHz */
 #define IGPU_RC6_RESIDENCY      0x138108u   /* GEN6_GT_GFX_RC6: 1280 ns a count */

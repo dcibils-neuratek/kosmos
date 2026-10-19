@@ -483,7 +483,8 @@ function k3dgpu.render(k3, scene, how)
   local sizes = g:sizes()
   local self = setmetatable({ gpu = true, preview_only = not how.preview, w = how.w, h = how.h,
                               target = how.passes or 256, count = 0, painted = 0,
-                              gpu_ns = 0, buffers = {}, camera = g:camera(),
+                              gpu_ns = 0, trace_ns = 0, paint_ns = 0, buffers = {},
+                              camera = g:camera(),
                               tracer = tracer, paint_k = paint, compute = compute, kc = kc }, job)
 
   for _, part in ipairs(PARTS) do
@@ -519,7 +520,15 @@ function job:step()
   if self.ticket then
     if not self.ticket:done() then return end
 
-    self.gpu_ns = self.gpu_ns + (self.ticket:time() or 0)
+    local ns = self.ticket:time() or 0
+
+    self.gpu_ns = self.gpu_ns + ns
+
+    if self.phase == "trace" then
+      self.trace_ns = self.trace_ns + ns
+    else
+      self.paint_ns = self.paint_ns + ns
+    end
 
     if self.phase == "trace" then
       self.count = self.count + 1
@@ -531,6 +540,17 @@ function job:step()
     self.ticket, self.phase = nil, nil
     self.fresh = true
     self.painted = self.count
+
+    -- Where a pass's time went, said once: the GPU's own time for a trace
+    -- and a paint, and the wall's for a whole pass.
+    if self.painted >= self.target then
+      local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+      local n = self.painted
+
+      print(("k3dgpu: %d passes, %dx%d: a trace %.2f ms and a paint %.2f ms on the GPU, "
+             .. "a pass %.2f ms on the wall"):format(n, self.w, self.h, self.trace_ns / n / 1e6,
+        self.paint_ns / n / 1e6, (sys.ticks() - self.started) / hz / n * 1e3))
+    end
   end
 
   if self.count < self.target then self:launch_trace() end

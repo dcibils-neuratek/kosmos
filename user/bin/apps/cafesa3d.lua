@@ -297,7 +297,6 @@ function choose.renderer(gpu)
 
   will("set the renderer of the render")
   RENDER.gpu = gpu
-  scene_version = scene_version + 1
   print(("cafesa3d: set renderer of the render to %s"):format(gpu and "GPU" or "Processor"))
 end
 
@@ -626,6 +625,13 @@ local function render_key()
   return table.concat(parts, "|")
 end
 
+-- The Rendered view's key: the render's, and who traces it - a change of
+-- renderer starts the view again without being a change to the scene,
+-- which would keep the Render window from comparing the two renderers.
+local function view_key()
+  return render_key() .. (RENDER.gpu and "|GPU" or "|Processor")
+end
+
 function shade.stop()
   if shade.job then
     shade.job:stop()
@@ -652,7 +658,7 @@ function shade.start(s)
     return
   end
 
-  shade.job, shade.key, shade.said, shade.first = job, render_key(), false, false
+  shade.job, shade.key, shade.said, shade.first = job, view_key(), false, false
   shade.t0 = sys.ticks()
   shade.surf:blit(s, VX, VY, VW, VH, 0, 0)
   print(("cafesa3d: rendering the view, %d by %d, %s"):format(VW, VH, drawn_by(job)))
@@ -1373,7 +1379,7 @@ local function draw_view(s)
     -- The Solid view is drawn only when the render starts again: it is
     -- what shows under tiles not yet traced, and what a click picks from,
     -- and neither changes until the eye or the scene does.
-    if not shade.job or render_key() ~= shade.key then
+    if not shade.job or view_key() ~= shade.key then
       view:draw(scene, s, VX, VY, { mode = "solid", selected = 0, grid = false })
       shade.start(s)
     end

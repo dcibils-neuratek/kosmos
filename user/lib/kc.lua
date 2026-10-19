@@ -1166,7 +1166,7 @@ local function gen(prog, simd)
 
     if cond then
       condition_flag(cond, line, false)
-      emit(("(f0.0) break %s jip: %s uip: %s"):format(EX, endl, after))
+      emit(("(f0.0) break %s jip: %s uip: %s"):format(EX, endl, endl))
     end
 
     blocks[#blocks + 1] = ctx
@@ -1195,7 +1195,7 @@ local function gen(prog, simd)
       pop_scope()
     end
 
-    emit(("%s %s jip: %s uip: %s"):format(kind, EX, innermost_end(), kind == "break" and l.after or l.endl))
+    emit(("%s %s jip: %s uip: %s"):format(kind, EX, innermost_end(), l.endl))
   end
 
   function stmt(s)
@@ -1275,7 +1275,7 @@ local function gen(prog, simd)
         local l = innermost_loop()
 
         if l ~= f.once then fail(s.line, "return from inside a loop; keep a flag and break") end
-        emit(("break %s jip: %s uip: %s"):format(EX, innermost_end(), f.once.after))
+        emit(("break %s jip: %s uip: %s"):format(EX, innermost_end(), f.once.endl))
       end
     else
       fail(s.line, "a statement the compiler does not know")
@@ -1419,8 +1419,10 @@ local function gen(prog, simd)
         if live[r] then live[r] = nil release(r) end
       end
       table.remove(blocks)
-      place(endl)
+      -- The early returns wait at the while itself, which lets them out:
+      -- aimed at the cmp before it, they waited for good (18.700).
       emit(("cmp %s (ne)f1.1 null<1>:d r0.0<0;1,0>:d r0.0<0;1,0>:d"):format(EX))
+      place(endl)
       emit(("(f1.1) while %s jip: %s"):format(EX, top))
       place(after)
     else
