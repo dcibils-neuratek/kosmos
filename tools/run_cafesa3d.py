@@ -1228,9 +1228,38 @@ def main():
                                                      r"\d+ bytes$", saved_png) is not None,
                   "Save as PNG did not write the render to /Home/Documents: %r" % saved_png)
 
+            # **F12 brings an open Render window to the front** (`testing.md`
+            # 18.703): a row across its picture, read while it is in front,
+            # is mostly Cafesa3D's own view once that is in front - the
+            # control that the row says which is - and the picture's again
+            # after F12, which renders the same one sample over.
+            row = None
+
+            if rat:
+                rx, ry = (int(v) for v in rat.split(","))
+                row = [(rx + 40 + 30 * k, ry + 140) for k in range(20)]
+                seen_front = screen()
+                head_px = [seen_front(*p) for p in row]
+
             # Cafesa3D in front again, by its own title in the header - the
             # larger Render window now covers the foot this suite clicks for it.
             click(ox + 40, oy + 22)
+
+            if row is not None:
+                seen_behind = screen()
+                behind = sum(seen_behind(*p) != c for p, c in zip(row, head_px))
+                check(behind >= 10, "the Render window's picture still shows with Cafesa3D in "
+                      "front (%d of 20 points changed), so the row says nothing" % behind)
+                mark = len(guest.seen)
+                keys("f12")
+                check(said("cafesa3d: render window raised", mark, 30) is not None,
+                      "F12 with the Render window open did not raise it")
+                said("cafesa3d: rendered 1 samples", mark, 300)
+                seen_again = screen()
+                back = sum(seen_again(*p) == c for p, c in zip(row, head_px))
+                check(back >= 18, "F12 left the Render window behind Cafesa3D: %d of 20 points "
+                      "its picture's" % back)
+                click(ox + 40, oy + 22)                         # Cafesa3D in front, as before
 
             # The dots' menu, and its `i`th row clicked: a click on the dots brings
             # Cafesa3D in front, whatever else has the focus.

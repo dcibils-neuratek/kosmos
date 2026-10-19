@@ -178,9 +178,9 @@ the trace in one submission rather than waited for a tick apart (55 ms a
 pass on the wall), then measured again with the emulator's instruction
 count and the M700's clock. **Then R7**, Final and textures.
 **Found along the way**:
-- F12 with the Render window open leaves it behind Cafesa3D's own. The UI
-  kit has no way to bring a window forward, and the window manager needs
-  one.
+- F12 with the Render window open left it behind Cafesa3D's own. **Done**
+  (18.703): F12 asks the window manager to `raise` it, which it already
+  could.
 - The GPU's job counts only the rays from the eye, so its "rays a second"
   reads low beside the processor's.
 **And the lesson, C6** (Diego, the same

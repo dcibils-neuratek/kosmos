@@ -2795,6 +2795,12 @@ function final.open()
 
     final.win = w
     print(("cafesa3d: render window at %d,%d"):format(w.origin_x or 0, w.origin_y or 0))
+  else
+    -- Open already, perhaps behind Cafesa3D's own window: F12 brings it to
+    -- the front as well as rendering again, or the render would go on
+    -- where nobody sees it (`testing.md` 18.703).
+    fs.send("/Running/wm", { type = "raise", window = final.win.handle })
+    print("cafesa3d: render window raised")
   end
 
   if final.begin() then

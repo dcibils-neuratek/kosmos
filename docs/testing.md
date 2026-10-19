@@ -28769,3 +28769,22 @@ on purpose (`cafesa3d-gpu.md`). Whether to change it is Diego's.
 
 `host`, `x86-ide`, both `x86-cafesa3d` suites, `x86-fractal` and
 `x86-gpumon` pass, 3:58.
+
+## 18.703 F12 brings the Render window forward
+
+On the M700 (18.700), F12 with the Render window open rendered again into
+a window hidden behind Cafesa3D's own. To see it, the main window had to
+be minimised. The window manager could always `raise` a window: Tile,
+the Deskbar and Linux ask for it. The note in the roadmap said the UI kit
+had no way, which was wrong. Now F12, with the window open, asks for
+`raise`, says "render window raised", and renders again.
+
+**Test.** `x86-cafesa3d-2` reads a row of twenty points across the Render
+window's picture while it is in front, then:
+- with Cafesa3D brought in front, at least 10 of the 20 must change. That
+  is the control showing the row tells which window is in front.
+- after F12, at least 18 of the 20 must be the picture's again. The
+  re-render is the same one sample.
+
+With the `raise` taken out and its line kept, it fails: "0 of 20 points
+its picture's". 62 checks pass in 4:13.
