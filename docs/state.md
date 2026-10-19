@@ -2,7 +2,71 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-17, night (0.11.267; the M700's GPU: flips, pacing, GPU Monitor)
+Last updated: 2026-10-19, early morning (0.11.304; the GPU computes: the Compute Kit, kc,
+Cafesa3D's tracer on the M700)
+
+---
+
+## 18-19 October: the GPU computes, and Cafesa3D traces on it
+
+**Not pushed: 0.11.268 to 0.11.304**, 46 commits on top of `origin/main`
+(0.11.267). The last full gate was 97 of 97 in 9:34, at 0.11.301. After
+it, 0.11.302 to 0.11.304 ran the suites for what they changed: `host`,
+`x86-ide`, both `x86-cafesa3d`, `x86-fractal` and `x86-gpumon`.
+
+- **The GPU's engines** (0.11.268-0.11.287, `m700-2d.md`):
+  - the blitter: a first number written, then the copy to the screen and
+    its busy time;
+  - rendering modes, switchable live and in Preferences, with page flips
+    the default;
+  - the render engine running commands, the first program on the
+    execution units, textures, blending, and rectangles anywhere;
+  - GPU composing, tried and not yet choosable.
+  - Along the way: This Machine redesigned as cards of every device, and
+    the USB indicator in the Deskbar.
+- **The Compute Kit** (`compute.md`, C1-C6, 0.11.288-0.11.292):
+  - kernels in assembly, assembled on Kosmos by `eu.lua`, which is held to
+    Mesa's `gentool` bit for bit;
+  - every kernel checked by the driver before it runs;
+  - GPU Fractal; and the IDE's lesson 15, "A program for the GPU".
+- **Cafesa3D on the GPU** (`cafesa3d-gpu.md`, R1-R7):
+  - R1-R5 (0.11.293-0.11.297): the structured branches and maths; an
+    emulator of the execution units (`tools/eu_emu.c`); `kc.lua`, Kosmos's
+    kernel language; the scene laid out for the GPU; and the tracer as a
+    kernel, Preview.
+  - R6 (0.11.300): the Renderer choice in the Render tab, Processor or
+    GPU; the Render window's two times; the pictures compared.
+- **R6 on the M700** (0.11.301, 18.700). The GPU drew black, from three
+  faults the emulator could not show, all fixed:
+  - single program flow set in the run's descriptor;
+  - `break` aimed past its `while` (gen7+ aims at the `while`);
+  - the GT left at 100 MHz (the driver now asks for RP0).
+
+  The processor now places its samples by the GPU's hash. Result: the
+  picture held (230,398 of 230,400 pixels within 2 levels), and **the
+  processor 10.8 times as fast** (GPU 11.95 s, processor 1.11 s).
+  `cafesa3d-gpu-m700.png`.
+- **R6b, a faster kernel** (0.11.302-0.11.303, 18.701-18.702): kc writes a
+  third less, measured in the emulator: copies gone, conditions in one
+  `cmp`, constants folded, min and max as one `sel` with a condition.
+  642,750 instructions became 378,512 on the test's still life.
+- **F12 raises the Render window** (0.11.304, 18.703).
+
+**The M700 is down.** It did not come back from the restart that carried
+0.11.302's build: no ping at 01:00 or for an hour after. The same kernel
+boots under QEMU and passes the 45 core checks. It needs its power
+button pressed.
+
+**Next, on the M700 once it is up:**
+1. `gpu kc` with a min/max kernel, to see `sel` with a condition run on
+   the GPU. It is held to Mesa's bytes, but not yet run there.
+2. Cafesa3D's still life on both renderers, for R6b's real number.
+3. Then R6b's remaining choice is Diego's: `mad`, which rounds once where
+   C rounds twice. kc keeps C's rounding on purpose. Then R7, Final on the
+   GPU, and textures.
+
+Also open: the lesson pattern's tear (two pictures in turn), and the GPU
+job's "rays a second", which counts only the rays from the eye.
 
 ---
 
