@@ -1,0 +1,13 @@
+// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+// testing.md 18.704: run on the M700 as `gpu kc /Temporary/bnostore.kc 16384`.
+const int n;
+buffer out;
+
+void main() {
+  int i = group_x * simd + lane;
+  if (i < n) {
+    int s = 0;
+    for (int k = 0; k < 1000; k += 1) { s = s + loadi(out, (k & 7) * 4); }
+    if (s == 12345) { store(out, i * 4, s); }
+  }
+}

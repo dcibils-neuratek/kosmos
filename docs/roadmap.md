@@ -171,12 +171,16 @@ three faults the emulator could not show - single program flow, a `break`
 aimed past its `while`, a GT at 100 MHz - all fixed. Then the picture is
 held to the processor's (230,398 of 230,400 within 2 levels), and **the
 processor is 10.8 times as fast**: a trace is 131 ms a pass, about 120,000
-instructions per SIMD8 thread. **To do, before R7 - the GPU's tracer made
-fast** (R6b): kc writing a result straight into its variable rather than
-through a `mov`, `mad` where C would round the same, the paint run with
-the trace in one submission rather than waited for a tick apart (55 ms a
-pass on the wall), then measured again with the emulator's instruction
-count and the M700's clock. **Then R7**, Final and textures.
+instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
+- kc writes 41% fewer instructions (18.701-18.702), and the paint is run
+  a few times a second.
+- On the M700 that changed nothing (18.704). The cost is many threads
+  reading one line through the data port, served one at a time.
+- **To do**: the scene read through the sampler, whose caches are built
+  for that - kc's loads as the `ld` message on buffer surfaces, the
+  driver's check allowing it, the emulator running it - then measured
+  with `tools/gpukc/` and the still life.
+- **Then R7**, Final and textures.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**
   (18.703): F12 asks the window manager to `raise` it, which it already

@@ -28788,3 +28788,54 @@ window's picture while it is in front, then:
 
 With the `raise` taken out and its line kept, it fails: "0 of 20 points
 its picture's". 62 checks pass in 4:13.
+
+## 18.704 Why the GPU's tracer is slow: many threads, one line
+
+On the M700, with 18.701's and 18.702's kc, the still life's trace was
+146.6 ms a pass, no faster than 131 ms before. The emulator counted 41%
+fewer instructions, and the picture still held: 2 pixels more than 2
+levels apart, the worst 4. The new `sel` with a condition ran right on the
+GPU: clamp(i − 4, 0, 5) gave 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 5, …
+
+So the GPU is not short of instructions. Micro-kernels, in
+`tools/gpukc/`, run as `gpu kc FILE 16384`: 2,048 SIMD8 threads, 1,000 steps
+each, at 1100 MHz.
+
+| kernel | each step | µs on the GPU |
+|---|---|---|
+| `bnone` | an add | 537 |
+| `bmul` | a mul | 538 |
+| `bdiv` | an fdiv | 780 |
+| `binv` | 1/x | 886 |
+| `bsqrt` | a sqrt | 742 |
+| `bload` | a load the next depends on, all threads one line | 266,157 |
+| `bindep` | independent loads, all threads one line | 248,898 |
+| `bnostore` | the same with no store anywhere | 266,685 |
+| `bcoal` | lanes reading consecutive words, all threads one line | 262,260 |
+| `bspread` | each lane its own line | 27,383 |
+| `bwarp` | a thread's lanes one address, each thread its own line | 4,004 |
+
+Two more runs: one thread, 100 dependent loads, 23 µs, about 250 cycles a
+load, which is normal. And 1,000 loads in one thread, 227 µs.
+
+**The cost is many threads reading one line.** Lanes sharing an address
+cost nothing (`bwarp`). Writes have nothing to do with it (`bnostore`).
+Through the data port, the GPU serves one line to one thread at a time,
+about every 140 cycles. A tracer is exactly that: every ray reads the
+root of the tree, the same objects and the same lamps.
+
+**What it is not**, each tried on the M700 and taken out again:
+- The L3's cacheability. Last night's experiment never had it: the
+  LNCFCMOCS write had not held, and read back `0x1f`, uncached. Written
+  with the GT awake at each run, it reads `0x30`, write-back, and the
+  loads still take 249 ms.
+- The L3's shares. `L3CNTLREG` (0x7034, from Mesa's genxml) reads
+  `0x60000060` by default: URB 48, All 48, so the data port has its
+  share. Set as Mesa's SKL list has it for compute, through
+  `MI_LOAD_REGISTER_IMM` in the run, it reads `0x80000040` (URB 32,
+  All 64), and the loads take 264 ms.
+
+**What would**: reading the scene the way GPUs read a tree, through the
+sampler, which has caches of its own built for many threads reading the
+same data, as a texture. The `ld` message on a buffer surface. That is
+R6b's real step now (`roadmap.md`).

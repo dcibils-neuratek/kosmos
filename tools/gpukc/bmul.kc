@@ -1,0 +1,13 @@
+// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+// testing.md 18.704: run on the M700 as `gpu kc /Temporary/bmul.kc 16384`.
+const int n;
+buffer out;
+
+void main() {
+  int i = group_x * simd + lane;
+  if (i < n) {
+    float x = float(i) + 1.0;
+    for (int k = 0; k < 1000; k += 1) { x = x * 1.0001; }
+    store(out, i * 4, x);
+  }
+}
