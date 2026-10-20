@@ -32,6 +32,8 @@
 
 #include "../user/drivers/usb/btusb_decode.h"
 #include "../user/drivers/bluetooth/hci_decode.h"
+#include "../user/drivers/bluetooth/btsim.h"
+#include "../user/include/hciring.h"
 
 static int checks;
 static int fails;
@@ -400,6 +402,98 @@ static void test_assembly(void)
     }
 }
 
+/* ---- btsim ---------------------------------------------------------- */
+
+/* A command as the stack puts it in the ring: its type, then the packet. */
+static unsigned ring_command(uint8_t *out, uint16_t opcode)
+{
+    out[0] = HCI_PACKET_COMMAND;
+    return 1u + hci_command(out + 1, 300, opcode, 0, 0);
+}
+
+/* The simulator's next packet, read as the stack reads it. */
+static bool sim_answer(struct btsim *s, struct hci_answer *a, uint8_t *keep)
+{
+    unsigned n = btsim_next(s, keep, BTSIM_PACKET_MAX);
+    struct hci_event e;
+
+    return n > 1 && keep[0] == HCI_PACKET_EVENT
+        && hci_decode_event(keep + 1, n - 1, &e) && hci_decode_answer(&e, a);
+}
+
+static void test_btsim(void)
+{
+    static struct btsim s;
+    uint8_t packet[300], keep[BTSIM_PACKET_MAX];
+    struct hci_answer a;
+    struct hci_version v;
+    struct hci_buffers b;
+    uint8_t address[6], features[8];
+    char text[18];
+    unsigned i;
+
+    btsim_start(&s);
+    check(btsim_next(&s, keep, sizeof keep) == 0, "btsim: silent until asked");
+
+    btsim_take(&s, packet, ring_command(packet, HCI_RESET));
+    check(sim_answer(&s, &a, keep) && a.opcode == HCI_RESET && a.status == 0
+          && s.reset, "btsim: Reset answered");
+
+    /* The setup the stack sends, in its order, each answer read back by the
+     * decoders the stack uses. */
+    btsim_take(&s, packet, ring_command(packet, HCI_READ_LOCAL_VERSION));
+    btsim_take(&s, packet, ring_command(packet, HCI_READ_BD_ADDR));
+    btsim_take(&s, packet, ring_command(packet, HCI_READ_LOCAL_FEATURES));
+    btsim_take(&s, packet, ring_command(packet, HCI_READ_BUFFER_SIZE));
+
+    check(sim_answer(&s, &a, keep) && hci_decode_version(&a, &v)
+          && v.hci_version == BTSIM_VERSION && v.manufacturer == BTSIM_COMPANY,
+          "btsim: Bluetooth 5.1, the testing company");
+    check(strcmp(hci_version_name(v.hci_version), "5.1") == 0
+          && hci_manufacturer_name(v.manufacturer) != 0,
+          "btsim: its version and company have names");
+    check(sim_answer(&s, &a, keep) && hci_decode_address(&a, address),
+          "btsim: an address");
+    hci_format_address(address, text);
+    check(strcmp(text, "02:4B:4F:53:4D:4F") == 0,
+          "btsim: 02:4B:4F:53:4D:4F, locally administered");
+    check(sim_answer(&s, &a, keep) && hci_decode_features(&a, features)
+          && hci_feature(features, HCI_FEATURE_LE)
+          && hci_feature(features, HCI_FEATURE_SSP)
+          && !hci_feature(features, HCI_FEATURE_BREDR_NOT_SUPPORTED),
+          "btsim: Classic and LE, with SSP");
+    check(sim_answer(&s, &a, keep) && hci_decode_buffers(&a, &b)
+          && b.acl_length == BTSIM_ACL_LENGTH && b.acl_packets == BTSIM_ACL_PACKETS,
+          "btsim: 8 ACL buffers of 1021 bytes");
+    check(btsim_next(&s, keep, sizeof keep) == 0, "btsim: each answered once");
+
+    /* What it does not know, it says so as a controller does. */
+    btsim_take(&s, packet, ring_command(packet, 0x0C13));
+    check(sim_answer(&s, &a, keep) && a.complete && a.opcode == 0x0C13
+          && a.status == 0x01, "btsim: Unknown HCI Command for the rest");
+
+    /* What is not a whole command is dropped, as a controller drops it. */
+    i = ring_command(packet, HCI_RESET);
+    btsim_take(&s, packet, i - 1u);
+    packet[0] = HCI_PACKET_ACL;
+    btsim_take(&s, packet, i);
+    btsim_take(&s, packet, 0);
+    check(btsim_next(&s, keep, sizeof keep) == 0 && s.commands == 6,
+          "btsim: short packets and non-commands ignored");
+
+    /* More than it holds: the rest counted, never written past the queue. */
+    for (i = 0; i < BTSIM_QUEUE + 3u; i++) {
+        btsim_take(&s, packet, ring_command(packet, HCI_READ_BD_ADDR));
+    }
+    check(s.count == BTSIM_QUEUE && s.dropped == 3,
+          "btsim: a full queue counts what it drops");
+
+    /* A Reset ends what was waiting, and is answered alone. */
+    btsim_take(&s, packet, ring_command(packet, HCI_RESET));
+    check(s.count == 1 && sim_answer(&s, &a, keep) && a.opcode == HCI_RESET,
+          "btsim: Reset clears what was waiting");
+}
+
 int main(void)
 {
     test_adapter();
@@ -413,6 +507,7 @@ int main(void)
     test_answers();
     test_bad_answers();
     test_assembly();
+    test_btsim();
 
     printf("btdecode: %d checks, %d failed\n", checks + fails, fails);
 

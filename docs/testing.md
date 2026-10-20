@@ -29151,3 +29151,45 @@ request and answered on the interrupt IN; then a line in the log -
 "Bluetooth 5.1, Realtek (subversion ...), address ..., Classic and Low
 Energy, Secure Simple Pairing" - and `lsusb` says Bluetooth. That part
 waits on an adapter on the M700 to be seen working.
+
+## 18.712 Bluetooth B2: the host stack as a process, against btsim
+
+The stack (`bluetooth.c`) is a process of its own, its packets in a ring
+in a shared region (`hciring.h`), its transport told with a request and
+the stack told with pulses (`hciproto.h`); `xhci.c` carries packets and no
+longer names the adapter itself. `btsim` stands in for an adapter under
+`opt/kosmos/bluetooth=simulated`, which every boot of the harness now has.
+
+**On the Mac**, `test_btdecode` grows to 63 checks: `btsim` answers the
+setup the stack sends, in its order, each answer read back by the decoders
+the stack uses - Bluetooth 5.1, company 0xFFFF (kept for testing), address
+02:4B:4F:53:4D:4F, Classic and LE with SSP, eight ACL buffers of 1021 bytes
+- Unknown HCI Command for what it does not know, short packets and
+non-commands ignored, a full queue counting what it drops, and Reset
+clearing what waited. One check was wrong at first: it counted seven
+commands taken where six had been.
+
+**In QEMU**, `x86-bluetooth`, 8 checks over two boots - without a
+controller, where the driver serves the stack from the wait it keeps when
+there is none, and with one: the stack named the simulated adapter through
+the ring; no command went unanswered or was refused; the kernel took the
+driver's wait on its seventh endpoint; init started the stack.
+
+**The first gate failed six suites, and was right to.** `x86-core` holds
+that a machine with no xHCI controller hears nothing from the USB driver,
+and the driver said it had taken the stack's ring. And the display suites
+look for the boot narration's blue stage numbers at the top left of the
+screen: three new lines at boot - that one and the stack's two - scrolled
+them away. So the driver says nothing of the stack, and the stack says what
+it found in one line: "bluetooth: simulated, Bluetooth 5.1 from a test
+company, 02:4B:4F:53:4D:4F: Classic and Low Energy, SSP, 8 ACL buffers of
+1021 bytes". Before that the suite's own first run had failed three checks
+that were its own or the build's: an image older than the testing
+company's name, a line past the console's 160 characters, and "answered"
+matching xhci's "answered a No-Op command".
+
+**Control**, run again on the final suite: `btsim` made to refuse Read
+Buffer Size. The stack said "the adapter answered 1005 with status 1; it is
+not used", and the suite failed in both boots. Restored and rebuilt.
+
+Full gate: 98 suites in 9:16.

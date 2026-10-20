@@ -34,7 +34,8 @@ All of it in **the Bluetooth app**, an application of its own (Diego, 20
 October: "Also we neeed a Bluetooth app to add and manage devices"). Its
 window is drawn in `docs/bluetooth.html` and agreed before it is written.
 
-Not now: audio, files, phones, tethering. The stack is shaped so that they
+Not now: files, phones, tethering. Sound to headphones is B8, after the
+rest. The stack is shaped so that they
 can come later, and nothing here is built for them.
 
 ---
@@ -195,8 +196,12 @@ need the host to do the pairing's cryptography (SMP), and to find the
 device's HID service by GATT before a report arrives. Low Energy is more
 work and more common in new devices.
 
-**Which first is decided by the keyboard and mouse Diego will pair.** Until
-those are known, the steps below that serve both come first.
+**Which first is decided by the keyboard and mouse Diego will pair.** The
+keyboard is a **Logitech K380** (Diego, 20 October, with a photograph):
+Bluetooth Classic, a HID device of Bluetooth 3.0's time with three
+Easy-Switch channels, which pairs by Secure Simple Pairing with a passkey
+typed on it - the sheet in the agreed mockup. So **Classic comes first**,
+B5 before B6, as the steps stand. The mouse is still to be named.
 
 ---
 
@@ -229,8 +234,13 @@ QEMU dropped its Bluetooth dongle years ago, and this Mac's QEMU has no
   the USB transport would be. It answers HCI as an adapter does, and has a
   keyboard and a mouse behind it that pair, connect and send reports. The
   suite checks a key reaching a program and the pointer moving, every gate.
-- **On the M700**: the real dongle, for the USB transport, the chip's
-  firmware, and real devices.
+- **On the ThinkPad T14**, first (Diego, 20 October: "The IBM thinkpad
+  t14 I have has Bluetooth chip", "We can use that to test"): its Intel
+  AX201 is Wi-Fi and Bluetooth 5.1 on one card, and the Bluetooth half is
+  a USB device on the machine's own xHCI - `8087:0026`, class E0h, which
+  Kosmos already saw on port 10 (`usb.md`). No dongle needed.
+- **On the M700**, with a dongle, later: the same transport on another
+  machine, and Realtek's firmware if the dongle is a UB500.
 
 ---
 
@@ -243,9 +253,10 @@ QEMU dropped its Bluetooth dongle years ago, and this Mac's QEMU has no
 - **B2, the stack as a process.** `user/drivers/bluetooth/`, the rings
   between it and `xhci.c`, and `btsim` in QEMU behind the same rings; the
   controller set up as Linux's `hci_core.c` sets one up.
-- **B3, the chip's firmware**, for the dongle Diego buys: Realtek's
-  download, or Intel's, from its specification and Linux's `btrtl.c` or
-  `btintel.c`.
+- **B3, the chip's firmware**: Intel's first, for the T14's AX201 - it
+  starts in a bootloader that answers Intel's own commands, and is a
+  controller only once its `ibt-` file from `linux-firmware` is sent to it,
+  as Linux's `btintel.c` does; Realtek's (`btrtl.c`) for a dongle after.
 - **B4, what is nearby.** Inquiry and LE scanning, names and kinds;
   `/Devices/bluetooth` and `btproto.h`, and `user/lib/bluetooth.lua` over
   them; a `bt` program at the prompt to list, pair and forget.
@@ -258,7 +269,16 @@ QEMU dropped its Bluetooth dongle years ago, and this Mac's QEMU has no
   `docs/bluetooth-architecture.png` drawn and agreed before it is built -
   This Machine and the devices indicator.
 
-B5 and B6 swap places if Diego's devices are Low Energy.
+- **B8, sound to headphones.** Diego, 20 October: "I also have AirPods
+  and google airbuds that use Bluetooth for audio". Both play over
+  Classic's A2DP: AVDTP over L2CAP to agree a stream, an SBC encoder -
+  every A2DP device takes SBC, AAC is the better codec both also take -
+  and AVRCP for the volume and play and pause. SBC is a loop over samples,
+  so it is C and a kit (`CLAUDE.md`, *Kits supply*), and the headphones
+  are one more output of the audio server, its periods in a region as
+  every period is. After B7, on the Classic stack B5 builds.
+
+B5 comes before B6: the K380 is Classic, and so is A2DP.
 
 ---
 
@@ -294,3 +314,46 @@ kind `USB_KIND_BLUETOOTH`, which `lsusb` calls Bluetooth.
 A Realtek chip answers these four before its firmware is loaded - which
 is how Linux's `btrtl.c` tells which firmware it needs - so B1 names
 Diego's adapter whichever he buys, and B3 is what makes it work.
+
+## B2: the stack as a process
+
+Built 20 October (`testing.md` 18.712).
+
+**The host stack** is `user/drivers/bluetooth/bluetooth.c`, the role
+`bluetooth`, which init starts after the USB driver and only with one. It
+makes the ring (`hciring.h`), hands it to the transport with ATTACH
+(`hciproto.h`), and sets the controller up as Linux's `hci_core.c` begins
+to: Reset, Read Local Version, Read BD_ADDR, Read Local Supported Features
+and Read Buffer Size, one at a time, each sent when the last is answered.
+Then one line in the log, what the adapter is and what it can do -
+"bluetooth: USB port 10, Bluetooth 5.1 from Intel, ...: Classic and Low
+Energy, SSP, 8 ACL buffers of 1021 bytes". The USB driver says nothing of
+the stack: a machine with no controller hears nothing from it.
+
+**It never waits on the controller.** A command goes into the ring and the
+transport is told with SEND; the answer comes back into `up`, and the
+transport says so with a pulse, which the stack hears on the receive where
+it hears everything else - so a controller that never answers costs the
+stack nothing but a line in the log, two seconds later.
+
+**Three pulses, one per thing that happens.** An adapter is ready; there is
+something in `up`; the adapter left. Each carries the adapter's generation,
+a number the transport gives each one as it arrives, so news from one that
+has since left is told apart. The transport never calls the stack, and a
+pulse never waits, so neither process can hold the other.
+
+**`xhci.c` is the transport and nothing more.** B1's naming left it: it
+configures the three endpoints, keeps an event read always out on the
+interrupt IN, puts each whole event into the ring, and sends each command
+from the ring on the control endpoint. ACL data waits for B5: its
+endpoints are configured, and a packet sent before then is counted and
+dropped. One adapter for the stack; a second plugged in is said and left
+alone.
+
+**`btsim`** (`btsim.c`) is a controller in software, pure C, held on the Mac
+by `test_btdecode` against the decoders the stack reads it with. Under
+`opt/kosmos/bluetooth=simulated` the USB driver puts it where an adapter
+would be, so the stack, the ring, the requests and the pulses are the real
+ones. Every boot of the test harness has it, so the stack sets an adapter
+up in every suite; `x86-bluetooth` checks it, with a controller and
+without.

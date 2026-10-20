@@ -255,6 +255,7 @@ X86_ARGS = [
     "-fw_cfg", "name=opt/kosmos/bar,string=top",
     "-fw_cfg", "name=opt/kosmos/camera,string=pattern+silent",   # `QEMU_ARGS` says
     "-fw_cfg", "name=opt/kosmos/midi,string=virtual",            # and MIDI's
+    "-fw_cfg", "name=opt/kosmos/bluetooth,string=simulated",     # and Bluetooth's
     "-display", "none",
     "-vga", "none",
     "-device", "virtio-gpu-pci" if _VIRTIO_GPU else "ramfb",
@@ -324,6 +325,12 @@ QEMU_ARGS = [
     # its own events, so a check can play it.
     #
     "-fw_cfg", "name=opt/kosmos/midi,string=virtual",
+    #
+    # And a simulated Bluetooth adapter, `btsim` (`bluetooth.md` B2): QEMU
+    # has none, so the host stack sets this one up in every boot, through
+    # the same rings and pulses a USB adapter's packets take.
+    #
+    "-fw_cfg", "name=opt/kosmos/bluetooth,string=simulated",
     "-display", "none",
     "-device", "virtio-gpu-device" if _VIRTIO_GPU else "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports

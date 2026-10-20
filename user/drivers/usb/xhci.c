@@ -89,6 +89,9 @@
 #include "midi_decode.h"
 #include "btusb_decode.h"
 #include "../bluetooth/hci_decode.h"
+#include "../bluetooth/btsim.h"
+#include "hciproto.h"
+#include "hciring.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -615,18 +618,18 @@ struct usbmidi {
 };
 
 /*
- * **A Bluetooth adapter** (`bluetooth.md` B1): its three endpoints made
- * ready and the controller behind them named - who made it, which
- * Bluetooth, its address and what it can do. The host stack takes the
- * endpoints at B2, through rings; until then nothing is read from them
- * after the four answers.
+ * **A Bluetooth adapter** (`bluetooth.md` B1, B2): its three endpoints made
+ * ready, an event read always out on its interrupt IN, and each whole event
+ * put into the host stack's ring. What the adapter is, the stack asks it.
  */
 struct btadapter {
     bool               on;
+    bool               receiving;       /* an event read is out */
     unsigned           port;
+    uint32_t           generation;      /* as the stack's pulses carry it */
     unsigned           event_dci;       /* interrupt IN: HCI events */
     unsigned           event_packet;
-    unsigned           in_dci;          /* bulk IN and OUT: ACL */
+    unsigned           in_dci;          /* bulk IN and OUT: ACL, from B5 */
     unsigned           out_dci;
     struct ring        events;
     struct ring        in;
@@ -634,10 +637,7 @@ struct btadapter {
     uint8_t           *event_data;      /* the next event read lands here */
     uint64_t           event_bus;
     struct hci_assembler assembler;
-    struct hci_version version;
-    uint8_t            address[6];
-    uint8_t            features[8];
-    bool               named;           /* all four answered */
+    unsigned long      events_up;       /* whole events put in the ring */
     struct device      dev;
 };
 
@@ -1184,6 +1184,8 @@ static void camera_bells(const struct controller *c);
 /* A MIDI device's events coming in (`usb.md` §12). */
 static bool is_midi(const struct controller *c, const uint32_t *event);
 static void take_midi(struct controller *c, const uint32_t *event);
+static void take_bt(struct controller *c, const uint32_t *event);
+static bool is_bt(const struct controller *c, const uint32_t *event);
 
 /*
  * **A wait that goes on reading mice.** Until `c` has an event that is not a
@@ -1252,7 +1254,8 @@ static bool wait_serving(struct controller *c, unsigned long ms,
             while (take_event(o, event)) {
                 if (o == c && out != NULL && !is_report(o, event)
                     && !is_note(o, event) && !is_frame(o, event)
-                    && !is_video(o, event) && !is_midi(o, event)) {
+                    && !is_video(o, event) && !is_midi(o, event)
+                    && !is_bt(o, event)) {
                     camera_bells(o);
                     memcpy(out, event, sizeof(event));
                     return true;
@@ -1263,6 +1266,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
                 take_frame(o, event);
                 take_video(o, event);
                 take_midi(o, event);
+                take_bt(o, event);
             }
 
             camera_bells(o);
@@ -4726,83 +4730,325 @@ static void midi_gone(struct controller *c, unsigned slot,
 }
 
 /*
- * **A Bluetooth adapter** (`bluetooth.md` B1, Core Volume 4 Part B 2.1,
- * Part E 5.4). A command goes on the control endpoint as a class request
- * to the device - bmRequestType 20h, bRequest 0, the HCI packet as the
- * data - and its answer comes back on the interrupt IN as an event, cut
- * into packets of that endpoint's size, which `hci_assemble` puts back
- * together.
+ * **A Bluetooth adapter, carried for the host stack** (`bluetooth.md` B1,
+ * B2; Core Volume 4 Part B 2.1, Part E 5.4). This driver is the transport
+ * and nothing more: the stack is a process of its own and speaks HCI
+ * through a ring (`hciring.h`), and what an adapter is, the stack asks it.
  *
- * Synchronous, as a device's setup is everywhere in this driver:
- * `wait_serving` goes on reading every other device while it waits. The
- * stack is a process of its own from B2, and reads the events from a ring.
+ * - A **command** from the ring goes on the control endpoint as a class
+ *   request to the device - bmRequestType 20h, bRequest 0, the packet as
+ *   the data - synchronously, as every control transfer here is.
+ * - An **event** comes on the interrupt IN, cut into packets of that
+ *   endpoint's size: a read is always out, `hci_assemble` puts each event
+ *   back together, and a whole one goes into the ring with the stack
+ *   pulsed - "more" - which never waits.
+ * - **ACL data** is B5's: its endpoints are configured now, and a packet
+ *   the stack sends before then is counted and dropped.
+ *
+ * **One adapter for the one stack.** A second plugged in beside the first
+ * is said and left alone. Under `opt/kosmos/bluetooth=simulated`, `btsim`
+ * is the adapter and a USB one is left alone, so a suite always has the
+ * same controller to talk to.
  */
+static long hci_endpoint = -1;          /* the stack asks on this */
+static long bluetooth_endpoint = -1;    /* and is pulsed on this */
+static struct hci_ring *hci_ring;       /* the stack's, once attached */
+static uint32_t hci_generation;         /* the last adapter's number */
+static struct controller *hci_on;       /* the USB adapter, or none */
+static unsigned hci_slot;
+static bool hci_simulated;              /* `btsim` is the adapter */
+static struct btsim hci_sim;
+static unsigned long hci_acl_dropped;   /* ACL sent before B5 reads it */
+
+#define HCI_COMMAND_REQUEST  0x20u      /* class, host to device; bRequest 0 */
+
 static bool control_out(struct controller *c, struct device *d,
                         uint32_t request, uint16_t value, uint16_t index,
                         const uint8_t *bytes, uint16_t length);
 
-#define HCI_COMMAND_REQUEST  0x20u      /* class, host to device; bRequest 0 */
-#define HCI_ANSWER_MS        1000u      /* Reset is the slowest: 250 ms on some */
-#define HCI_EVENTS_SKIPPED   16u        /* unasked events passed over */
-
-/* One whole event into `a->assembler`, from as many reads as it takes. */
-static bool bt_event(struct controller *c, struct btadapter *a)
+static void hci_options(void)
 {
-    unsigned reads;
+    char option[16] = { 0 };
+    long n = kosmos_boot_option("opt/kosmos/bluetooth", option, sizeof(option));
 
-    for (reads = 0; reads < HCI_EVENT_MAX; reads++) {
-        unsigned moved, off = 0;
+    hci_simulated = n == 9 && memcmp(option, "simulated", 9) == 0;
 
-        if (!bulk(c, a->dev.slot, a->event_dci, &a->events, a->event_bus,
-                  a->event_packet, &moved, HCI_ANSWER_MS)) {
-            return false;
-        }
-
-        /* An interrupt read is one packet at most, and an event never
-         * shares one with the next before the first is answered: what is
-         * left after a whole event would be a second the adapter sent
-         * unasked, and is dropped with a word in the log rather than kept. */
-        while (off < moved) {
-            unsigned used;
-
-            if (hci_assemble(&a->assembler, a->event_data + off, moved - off,
-                             &used)) {
-                return true;
-            }
-            off += used;
-        }
+    if (hci_simulated) {
+        btsim_start(&hci_sim);
+        hci_generation = 1;
     }
-
-    return false;
 }
 
-/* A command sent, and its Command Complete; false for anything else. */
-static bool bt_command(struct controller *c, struct btadapter *a,
-                       uint16_t opcode, struct hci_answer *answer)
+/* News for the stack, about the adapter there is now. */
+static void hci_pulse(uint32_t code)
 {
-    uint8_t packet[3];
-    unsigned skipped;
+    if (bluetooth_endpoint >= 0) {
+        (void)kosmos_pulse(bluetooth_endpoint, code, hci_generation);
+    }
+}
 
-    if (hci_command(packet, sizeof packet, opcode, 0, 0) == 0
-        || !control_out(c, &a->dev, HCI_COMMAND_REQUEST, 0, 0, packet,
-                        sizeof packet)) {
+/* One packet into the ring's `up`, its type first; false when the stack
+ * has no ring yet or no room, which the ring counts. */
+static bool hci_up(uint8_t type, const uint8_t *bytes, unsigned length)
+{
+    uint32_t write, read;
+    uint8_t *slot;
+
+    if (hci_ring == NULL) {
         return false;
     }
 
-    for (skipped = 0; skipped < HCI_EVENTS_SKIPPED; skipped++) {
-        struct hci_event e;
+    write = hci_ring->up_write;
+    read = hci_ring_acquire(&hci_ring->up_read);
 
-        if (!bt_event(c, a)) {
-            return false;
-        }
-
-        if (hci_decode_event(a->assembler.bytes, a->assembler.have, &e)
-            && hci_decode_answer(&e, answer) && answer->opcode == opcode) {
-            return answer->complete && answer->status == 0;
-        }
+    if (hci_ring_space(write, read) == 0 || 1u + length > HCI_RING_SLOT) {
+        hci_ring->up_dropped++;
+        return false;
     }
 
-    return false;
+    slot = hci_ring_up(hci_ring, write);
+    slot[0] = type;
+    memcpy(slot + 1, bytes, length);
+    hci_ring->up_length[write % HCI_RING_SLOTS] = 1u + length;
+    hci_ring_publish(&hci_ring->up_write, write + 1u);
+
+    return true;
+}
+
+/* Whatever `btsim` has said since it was last asked, into the ring. */
+static void hci_sim_up(void)
+{
+    uint8_t packet[BTSIM_PACKET_MAX];
+    unsigned n;
+    bool any = false;
+
+    while ((n = btsim_next(&hci_sim, packet, sizeof(packet))) != 0) {
+        any |= hci_up(packet[0], packet + 1, n - 1u);
+    }
+
+    if (any) {
+        hci_pulse(HCI_PULSE_MORE);
+    }
+}
+
+/* One event read out on the interrupt IN, for whatever comes next. */
+static void bt_ask(struct controller *c, unsigned slot)
+{
+    struct btadapter *a = &c->bt[slot];
+
+    if (!a->on) {
+        return;
+    }
+
+    a->receiving = true;
+    (void)ring_push(&a->events, (uint32_t)a->event_bus,
+                    (uint32_t)(a->event_bus >> 32), a->event_packet,
+                    TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, a->event_dci);
+}
+
+static bool is_bt(const struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+
+    return TRB_TYPE_OF(event[3]) == TRB_TRANSFER && slot != 0
+        && slot <= DEVICES_MAX && c->bt[slot].on && c->bt[slot].receiving
+        && TRB_ENDPOINT_OF(event[3]) == c->bt[slot].event_dci;
+}
+
+/*
+ * **A piece of an event**, put together with the pieces before it; a whole
+ * event into the ring, and the stack told. An interrupt read is one packet
+ * at most, and the end of one event and the start of the next can share
+ * it, so whatever is left after a whole event is the next one's start.
+ */
+static void take_bt(struct controller *c, const uint32_t *event)
+{
+    struct say_line line;
+    struct btadapter *a;
+    unsigned slot, got, off = 0;
+    uint32_t code, left;
+    bool any = false;
+
+    if (!is_bt(c, event)) {
+        return;
+    }
+
+    slot = TRB_SLOT_OF(event[3]);
+    a = &c->bt[slot];
+    a->receiving = false;
+    code = TRB_CODE_OF(event[2]);
+    left = TRB_LEFT_OF(event[2]);
+
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, a->port);
+        say_text(&line, ": a Bluetooth event read failed: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); nothing is read from it until it is plugged in "
+                        "again");
+        say_send(console, &line);
+        return;
+    }
+
+    got = left < a->event_packet ? a->event_packet - left : 0u;
+
+    while (off < got) {
+        unsigned used;
+
+        if (hci_assemble(&a->assembler, a->event_data + off, got - off,
+                         &used)) {
+            /* Only the adapter the stack has: a second is read, and its
+             * events go nowhere. */
+            if (hci_on == c && hci_slot == slot && !hci_simulated
+                && hci_up(HCI_PACKET_EVENT, a->assembler.bytes,
+                          a->assembler.have)) {
+                a->events_up++;
+                any = true;
+            }
+        }
+        off += used;
+    }
+
+    if (any) {
+        hci_pulse(HCI_PULSE_MORE);
+    }
+
+    bt_ask(c, slot);
+}
+
+/* Everything the stack has put in `down`, sent. */
+static void hci_down(void)
+{
+    uint32_t read, write;
+
+    if (hci_ring == NULL) {
+        return;
+    }
+
+    read = hci_ring->down_read;
+    write = hci_ring_acquire(&hci_ring->down_write);
+
+    while (read != write) {
+        const uint8_t *packet = hci_ring_down(hci_ring, read);
+        uint32_t length = hci_ring->down_length[read % HCI_RING_SLOTS];
+
+        if (hci_ring_length_ok(length)) {
+            if (hci_simulated) {
+                btsim_take(&hci_sim, packet, length);
+            } else if (hci_on != NULL && packet[0] == HCI_PACKET_COMMAND
+                       && length >= 4u) {
+                struct btadapter *a = &hci_on->bt[hci_slot];
+
+                (void)control_out(hci_on, &a->dev, HCI_COMMAND_REQUEST, 0, 0,
+                                  packet + 1, (uint16_t)(length - 1u));
+            } else if (packet[0] == HCI_PACKET_ACL) {
+                hci_acl_dropped++;
+            }
+        }
+
+        read++;
+        hci_ring_publish(&hci_ring->down_read, read);
+    }
+
+    if (hci_simulated) {
+        hci_sim_up();
+    }
+}
+
+/* What the stack is told of the adapter there is now. */
+static void hci_about(struct hci_reply *rep)
+{
+    rep->generation = hci_generation;
+
+    if (hci_simulated) {
+        rep->present = 1;
+        rep->bus = HCI_BUS_SIMULATED;
+    } else if (hci_on != NULL) {
+        rep->present = 1;
+        rep->bus = HCI_BUS_USB;
+        rep->port = (uint16_t)hci_on->bt[hci_slot].port;
+        rep->vendor = hci_on->vendor[hci_slot];
+        rep->product = hci_on->product[hci_slot];
+    }
+}
+
+static void hci_answer(const struct message *msg, uint64_t sender, long cap)
+{
+    struct hci_request req;
+    struct hci_reply rep;
+    struct message out;
+
+    memset(&req, 0, sizeof(req));
+    memset(&rep, 0, sizeof(rep));
+
+    if (msg->length >= sizeof(req)) {
+        memcpy(&req, msg->data, sizeof(req));
+    }
+
+    switch (msg->length >= sizeof(req) ? req.op : 0u) {
+    case HCI_OP_ATTACH: {
+        long at;
+
+        if (hci_ring != NULL) {
+            rep.error = HCI_ERR_TAKEN;
+            break;
+        }
+
+        at = cap < 0 ? -1 : kosmos_mem_map(cap);
+
+        if (at < 0 || !hci_ring_valid((struct hci_ring *)(uintptr_t)at)) {
+            rep.error = HCI_ERR_NO_RING;
+            break;
+        }
+
+        hci_ring = (struct hci_ring *)(uintptr_t)at;
+        hci_about(&rep);
+
+        /* Nothing said: the stack says what came of it, and a machine
+         * with no controller hears nothing from this driver. */
+        break;
+    }
+
+    case HCI_OP_SEND:
+        if (hci_ring == NULL) {
+            rep.error = HCI_ERR_NO_RING;
+            break;
+        }
+        hci_down();
+        hci_about(&rep);
+        break;
+
+    case HCI_OP_ABOUT:
+        hci_about(&rep);
+        break;
+
+    default:
+        rep.error = HCI_ERR_BAD_OP;
+        break;
+    }
+
+    memset(&out, 0, sizeof(out));
+    out.tag = msg->tag;
+    out.length = sizeof(rep);
+    memcpy(out.data, &rep, sizeof(rep));
+    (void)kosmos_reply(sender, &out);
+}
+
+/* Whatever the stack has asked for since the last look, answered. */
+static void serve_hci(void)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (hci_endpoint >= 0
+           && kosmos_receive(hci_endpoint, &msg, &sender, 1, 0) == 0) {
+        hci_answer(&msg, sender,
+                   msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1);
+    }
 }
 
 /* An endpoint's context, for a bulk endpoint or an interrupt IN (6.2.3). */
@@ -4820,18 +5066,21 @@ static void bt_endpoint(struct controller *c, struct device *d, unsigned dci,
     ep[4] = type == 7u ? ((uint32_t)packet << 16) | packet : packet;
 }
 
+/*
+ * **The adapter made ready**, in the order an adapter of any class is
+ * (4.3.5): its endpoints' contexts, Configure Endpoint, SET_CONFIGURATION;
+ * then the first event read, and the stack told it is there.
+ */
 static void use_bluetooth(struct controller *c, struct device *d,
                           const struct usb_bluetooth *info,
                           struct say_line *line)
 {
     struct btadapter *a = &c->bt[d->slot];
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
-    struct hci_answer answer;
     uint32_t done[4];
     uint32_t *icc, *slot;
     unsigned last;
-    char address[18];
-    const char *name;
+    bool ours;
 
     memset(a, 0, sizeof(*a));
     a->dev = *d;
@@ -4887,68 +5136,33 @@ static void use_bluetooth(struct controller *c, struct device *d,
     }
 
     a->on = true;
+    ours = hci_on == NULL && !hci_simulated;
 
-    /* Reset, then the three reads, in Linux's `hci_init1_req` order. */
-    if (!bt_command(c, a, HCI_RESET, &answer)) {
-        say_failure(c, d->port, "HCI Reset",
-                    "; the Bluetooth adapter did not answer", line);
-        return;
+    if (ours) {
+        hci_on = c;
+        hci_slot = d->slot;
+        a->generation = ++hci_generation;
     }
-
-    a->named = bt_command(c, a, HCI_READ_LOCAL_VERSION, &answer)
-            && hci_decode_version(&answer, &a->version)
-            && bt_command(c, a, HCI_READ_BD_ADDR, &answer)
-            && hci_decode_address(&answer, a->address)
-            && bt_command(c, a, HCI_READ_LOCAL_FEATURES, &answer)
-            && hci_decode_features(&answer, a->features);
 
     about(line, c);
     say_text(line, " port ");
     say_dec(line, d->port);
-
-    if (!a->named) {
-        say_text(line, ": Bluetooth, and it did not say what it is");
-        say_send(console, line);
-        return;
-    }
-
-    say_text(line, ": Bluetooth ");
-    name = hci_version_name(a->version.hci_version);
-    if (name != 0) {
-        say_text(line, name);
-    } else {
-        say_text(line, "version ");
-        say_dec(line, a->version.hci_version);
-    }
-
-    say_text(line, ", ");
-    name = hci_manufacturer_name(a->version.manufacturer);
-    if (name != 0) {
-        say_text(line, name);
-    } else {
-        say_text(line, "company ");
-        say_dec(line, a->version.manufacturer);
-    }
-    say_text(line, " (subversion ");
-    say_hex(line, a->version.lmp_subversion, 4);
-    say_text(line, "), address ");
-    hci_format_address(a->address, address);
-    say_text(line, address);
-
-    say_text(line, hci_feature(a->features, HCI_FEATURE_BREDR_NOT_SUPPORTED)
-                   ? ", Low Energy only"
-                   : hci_feature(a->features, HCI_FEATURE_LE)
-                     ? ", Classic and Low Energy" : ", Classic only");
-    if (hci_feature(a->features, HCI_FEATURE_SSP)) {
-        say_text(line, ", Secure Simple Pairing");
-    }
-    say_text(line, "; events on ");
+    say_text(line, ": a Bluetooth adapter, events on ");
     say_dec(line, info->event_endpoint);
-    say_text(line, ", ACL on ");
+    say_text(line, " and ACL on ");
     say_dec(line, info->acl_in);
     say_text(line, " and ");
     say_dec(line, info->acl_out);
+    say_text(line, ours ? "; the host stack is told"
+                        : hci_simulated ? "; left alone, the simulated one is in use"
+                                        : "; left alone, another is in use");
     say_send(console, line);
+
+    bt_ask(c, d->slot);
+
+    if (ours) {
+        hci_pulse(HCI_PULSE_ADAPTER);
+    }
 }
 
 static void bluetooth_gone(struct controller *c, unsigned slot,
@@ -4963,8 +5177,16 @@ static void bluetooth_gone(struct controller *c, unsigned slot,
     about(line, c);
     say_text(line, " port ");
     say_dec(line, a->port);
-    say_text(line, ": the Bluetooth adapter gone");
+    say_text(line, ": the Bluetooth adapter gone, after ");
+    say_dec(line, a->events_up);
+    say_text(line, a->events_up == 1 ? " event" : " events");
     say_send(console, line);
+
+    if (hci_on == c && hci_slot == slot) {
+        hci_pulse(HCI_PULSE_GONE);
+        hci_on = NULL;
+        hci_slot = 0;
+    }
 
     memset(a, 0, sizeof(*a));
 }
@@ -6968,6 +7190,7 @@ static void service(struct controller *c, struct say_line *line)
         take_frame(c, trb);
         take_video(c, trb);
         take_midi(c, trb);
+        take_bt(c, trb);
     }
 
     camera_bells(c);
@@ -7510,14 +7733,14 @@ static void serve_without_controllers(int code)
     /* And the device list's (`/Devices/usb`): asked on a machine with no
      * controller as on any other, and a call to an endpoint not on this
      * wait waits for ever - `lsusb` did, and This Machine with it. */
-    const long ends[5] = { blocks_endpoint, frames_endpoint,
+    const long ends[6] = { blocks_endpoint, frames_endpoint,
                            camera_endpoint_now(), midi_endpoint_now(),
-                           usb_endpoint };
+                           usb_endpoint, hci_endpoint };
 
     say_begin(&line);
 
     if (blocks_endpoint < 0 && frames_endpoint < 0 && ends[2] < 0
-        && ends[3] < 0 && usb_endpoint < 0) {
+        && ends[3] < 0 && usb_endpoint < 0 && hci_endpoint < 0) {
         kosmos_exit(code);
     }
 
@@ -7534,7 +7757,7 @@ static void serve_without_controllers(int code)
         /* Forever, unless a stream wants looking at: the test pattern's
          * frames, and a lease, come round on the clock (`/Devices/camera`). */
         long woke = kosmos_irq_wait_any(NULL, 0, ticks_for(camera_wait_ms(0)),
-                                        ends, 5u);
+                                        ends, 6u);
 
         if (woke < 0 && woke != SYS_NO_INTERRUPT) {
             kosmos_exit(code);
@@ -7551,6 +7774,7 @@ static void serve_without_controllers(int code)
         serve_camera(&line);
         serve_midi(&line);
         serve_usb();
+        serve_hci();
     }
 }
 
@@ -8905,14 +9129,14 @@ static void watch(struct controller *list, unsigned count,
          * which is what watching one cost and is why the kernel now watches
          * three. A caller answers IRQ_WAIT_CALLER + its place, a line with
          * an interrupt first; all three are served after every wake. */
-        const long ends[6] = { writes_endpoint, blocks_endpoint,
+        const long ends[7] = { writes_endpoint, blocks_endpoint,
                                frames_endpoint, camera_endpoint,
-                               midi_endpoint, usb_endpoint };
+                               midi_endpoint, usb_endpoint, hci_endpoint };
 
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited,
                                        ticks_for(camera_wait_ms(WATCH_MS)),
-                                       ends, 6u);
+                                       ends, 7u);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun.
@@ -8949,6 +9173,7 @@ static void watch(struct controller *list, unsigned count,
         serve_camera(line);
         serve_midi(line);
         serve_usb();
+        serve_hci();
     }
 }
 
@@ -8959,7 +9184,8 @@ static long camera_endpoint_now(void)
 
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
                  long frames_cap, long camera_cap, long midi_cap,
-                 long notify_cap, long usb_cap)
+                 long notify_cap, long usb_cap, long hci_cap,
+                 long bluetooth_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -8978,6 +9204,9 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     midi_endpoint = midi_cap;
     midi_options();
     usb_endpoint = usb_cap;
+    hci_endpoint = hci_cap;
+    bluetooth_endpoint = bluetooth_cap;
+    hci_options();
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

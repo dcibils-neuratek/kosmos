@@ -9739,9 +9739,17 @@ in the devices indicator (5m). **Designed** 20 October (`docs/bluetooth.md`; Die
 "Can you start building the Bluetooth stack?"): `xhci.c` the transport,
 the host stack a driver process of its own, rings between them, `btsim`
 for the suites, steps B1 to B7. The M700 has no Bluetooth inside
-(`lsusb`); the TP-Link TL-WN725N Diego has is Wi-Fi, so a dongle is to be
-bought - a TP-Link UB500 (Realtek RTL8761B) suggested. Which of Classic
-and Low Energy comes first waits on the keyboard and mouse he pairs.
+(`lsusb`); the TP-Link TL-WN725N Diego has is Wi-Fi. **The T14 is the test
+machine** (Diego, 20 October): its Intel AX201 carries Bluetooth 5.1 as a
+USB device, `8087:0026`, so B3 is Intel's firmware first. For the M700 a
+dongle is still to be
+bought - a TP-Link UB500 (Realtek RTL8761B) suggested. The keyboard is a
+Logitech K380, which is Classic, so Classic HID (B5) comes before Low
+Energy (B6); the mouse is still to be named. **Sound to Bluetooth
+headphones**, B8 (Diego, 20 October: "I also have AirPods and google
+airbuds that use Bluetooth for audio"): A2DP over the Classic stack, an
+SBC encoder as a kit, AVRCP for volume, the headphones an output of the
+audio server - after B7.
 **A Bluetooth app**, agreed 20 October (Diego: "Also we neeed a Bluetooth
 app to add and manage devices"): an application of its own in place of
 the Preferences page B7 had - turn Bluetooth on and off, see what is

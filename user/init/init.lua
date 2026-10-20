@@ -40,6 +40,7 @@ local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are a
 local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read only
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_INTELGPU   = 34 -- an Intel GPU's display engine, looked at once
+local ROLE_BLUETOOTH  = 35 -- the Bluetooth host stack (`bluetooth.md` B2)
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
@@ -6087,6 +6088,15 @@ if role == ROLE_INIT then
   local MIDI_EP = sys.endpoint()
 
   --
+  -- **Bluetooth** (`bluetooth.md` B2): the USB driver's HCI door, which the
+  -- host stack asks through, and the stack's own endpoint - `/Devices/
+  -- bluetooth` from B4 - which the driver is given too, so it can pulse the
+  -- stack that an adapter arrived or a packet came, and never wait on it.
+  --
+  local HCI_EP = sys.endpoint()
+  local BLUETOOTH_EP = sys.endpoint()
+
+  --
   -- **`/Notifications`** (`roadmap.md`, *Notifications*): what applications
   -- have said, kept in order with who said it. Mounted for everybody, as
   -- `/Devices/audio` is and for its reason - any program may have something
@@ -6281,7 +6291,8 @@ if role == ROLE_INIT then
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
-                               FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP, USB_EP },
+                               FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP, USB_EP,
+                               HCI_EP, BLUETOOTH_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -6289,6 +6300,18 @@ if role == ROLE_INIT then
     else
       usb_driver = true
     end
+  end
+
+  --
+  -- **The Bluetooth host stack**, after the driver that carries its
+  -- packets, and only with one: its first act is a call to `HCI_EP`, which
+  -- would wait for ever on a door nobody receives on. It touches no
+  -- hardware, so it is not given the devices.
+  --
+  if usb_driver then
+    local _, err = sys.spawn(ROLE_BLUETOOTH, { CONSOLE_EP, BLUETOOTH_EP, HCI_EP })
+
+    if err then line("init: no Bluetooth stack: " .. tostring(err)) end
   end
 
   --

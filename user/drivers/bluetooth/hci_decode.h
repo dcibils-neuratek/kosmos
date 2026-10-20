@@ -26,6 +26,7 @@
 #define HCI_RESET                   0x0C03u   /* 7.3.2 */
 #define HCI_READ_LOCAL_VERSION      0x1001u   /* 7.4.1 */
 #define HCI_READ_LOCAL_FEATURES     0x1003u   /* 7.4.3 */
+#define HCI_READ_BUFFER_SIZE        0x1005u   /* 7.4.5 */
 #define HCI_READ_BD_ADDR            0x1009u   /* 7.4.6 */
 
 /* Events (7.7). */
@@ -113,6 +114,18 @@ struct hci_version {
 bool hci_decode_version(const struct hci_answer *a, struct hci_version *out);
 bool hci_decode_address(const struct hci_answer *a, uint8_t address[6]);
 bool hci_decode_features(const struct hci_answer *a, uint8_t features[8]);
+
+/* Read Buffer Size's return parameters (7.4.5): how long an ACL packet the
+ * controller takes, and how many it holds before the host must wait for
+ * Number Of Completed Packets. */
+struct hci_buffers {
+    uint16_t acl_length;
+    uint8_t  sco_length;
+    uint16_t acl_packets;
+    uint16_t sco_packets;
+};
+
+bool hci_decode_buffers(const struct hci_answer *a, struct hci_buffers *out);
 
 /* One bit of the features, numbered as `HCI_FEATURE_` above. */
 bool hci_feature(const uint8_t features[8], unsigned bit);

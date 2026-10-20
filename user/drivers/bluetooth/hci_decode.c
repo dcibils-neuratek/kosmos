@@ -154,6 +154,20 @@ bool hci_decode_features(const struct hci_answer *a, uint8_t features[8])
     return true;
 }
 
+bool hci_decode_buffers(const struct hci_answer *a, struct hci_buffers *out)
+{
+    if (!answered(a, HCI_READ_BUFFER_SIZE, 7u)) {
+        return false;
+    }
+
+    out->acl_length = get_le16(a->ret);
+    out->sco_length = a->ret[2];
+    out->acl_packets = get_le16(a->ret + 3);
+    out->sco_packets = get_le16(a->ret + 5);
+
+    return true;
+}
+
 bool hci_feature(const uint8_t features[8], unsigned bit)
 {
     return bit < 64u && ((features[bit / 8u] >> (bit % 8u)) & 1u) != 0;
@@ -188,6 +202,7 @@ const char *hci_manufacturer_name(uint16_t company)
     case 76:  return "Apple";
     case 93:  return "Realtek";
     case 305: return "Cypress";
+    case 0xFFFF: return "a test company";
     default:  return 0;
     }
 }

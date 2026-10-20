@@ -77,7 +77,13 @@ void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
 void intelgpu_server(long console, long endpoint);
 void xhci_server(long console, long blocks, long writes, long frames,
-                 long camera, long midi, long notify, long usb);
+                 long camera, long midi, long notify, long usb, long hci,
+                 long bluetooth);
+
+/* The Bluetooth host stack (`bluetooth.md` B2): the console's endpoint,
+ * its own - `/Devices/bluetooth`, which its transport pulses too - and the
+ * transport's, the USB driver's HCI door. */
+void bluetooth_server(long console, long endpoint, long transport);
 void e1000_server(long console, long frames);
 void ahci_server(long console);
 
@@ -142,6 +148,7 @@ void vmm_server(long running, long ram, long setup, long more1, long more2, long
 #define ROLE_VMTEST   32UL    /* a guest entered and left, said (`vmtest.c`) */
 #define ROLE_SANDBOXFS 33UL   /* serves /Sandboxes: guests' disks (`docs/linux.md`) */
 #define ROLE_INTELGPU 34UL    /* an Intel GPU's display, looked at (`m700-2d.md`) */
+#define ROLE_BLUETOOTH 35UL   /* the Bluetooth host stack (`bluetooth.md`) */
 
 /* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
 int vm_selftest(uint64_t detail[4]);
@@ -846,7 +853,13 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2, 3, 4, 5, 6, 7);
+        xhci_server(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    }
+
+    if (arg == ROLE_BLUETOOTH) {
+        named("bluetooth");
+        bluetooth_server(0, 1, 2);
+        kosmos_exit(0);             /* never into init's chunk below */
     }
 
     if (arg == ROLE_E1000) {

@@ -625,6 +625,9 @@ SUITES = [
     Suite("x86-fbsize", ["python3", "tools/run_fbsize.py", X86], x86=True),
     Suite("arm-midi", ["python3", "tools/run_midi.py", ARM]),
     Suite("x86-midi", ["python3", "tools/run_midi.py", X86]),
+    # The Bluetooth host stack, through its ring to `btsim` (`bluetooth.md`
+    # B2): with a controller and without, as most suites boot.
+    Suite("x86-bluetooth", ["python3", "tools/run_bluetooth.py", X86]),
 
     # The Game Kit's rasterizer against the portable one it was ported
     # from: every primitive, both ways, and all 368,640 pixels compared
