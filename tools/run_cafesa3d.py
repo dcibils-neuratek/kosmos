@@ -1154,9 +1154,8 @@ def main():
             # GPU, so GPU is drawn, says why it cannot be chosen, and a click
             # on it sets nothing - and Processor, clicked the same way, does,
             # which is what says the click reached the chips at all.
-            check("renderer:GPU" in chips_now and "renderer:Processor" in chips_now
-                  and "renderer:Wavefront" in chips_now,
-                  "the Render tab has not its three Renderer chips: %r" % sorted(chips_now))
+            check("renderer:GPU" in chips_now and "renderer:Processor" in chips_now,
+                  "the Render tab has no Renderer chips: %r" % sorted(chips_now))
             why_not = said("cafesa3d: the GPU cannot be chosen: ", opened_at, 5)
             check(why_not is not None, "the Render tab did not say why the GPU cannot be chosen")
 
@@ -1166,11 +1165,6 @@ def main():
                 check(said("cafesa3d: set renderer of the render to ", mark, 3) is None,
                       "the GPU was chosen on a machine without one")
 
-            if "renderer:Wavefront" in chips_now:
-                mark = len(guest.seen)
-                click(*chips_now["renderer:Wavefront"])
-                check(said("cafesa3d: set renderer of the render to ", mark, 3) is None,
-                      "the GPU's wavefront was chosen on a machine without a GPU")
                 mark = len(guest.seen)
                 click(*chips_now["renderer:Processor"])
                 check(said("cafesa3d: set renderer of the render to ", mark, 10) == "Processor",

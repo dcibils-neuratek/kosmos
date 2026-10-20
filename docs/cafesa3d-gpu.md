@@ -229,5 +229,12 @@ the suites, and then on the M700.
      if lanes are still idle, the paths that are left compacted into a
      queue each bounce, or sorted by material.
 
+   **The outcome** (18.709-18.710): the lists of runs work, sixteen steps
+   in 7.4 ms against 126 as runs, and they stay. The wavefront held its
+   picture and was slower everywhere, so it was taken out, and the GPU
+   stays a renderer to choose beside the processor. On the M700 the
+   processor ties or beats the GPU at ray tracing, and Cafesa3D defaults
+   to it.
+
 Only x86-64 runs the tests for now (`CLAUDE.md`), and the GPU itself is
 the M700's.

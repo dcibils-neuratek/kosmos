@@ -226,7 +226,7 @@ end
 -- and who traces it, the processor's cores or the GPU's execution units
 -- (`docs/cafesa3d-gpu.md` R6).
 local RENDER = { name = "the render", w = 640, h = 360, samples = 256, view_samples = 64,
-                 bounces = 6, preview = false, gpu = false, wavefront = false }
+                 bounces = 6, preview = false, gpu = false }
 
 -- Whether the GPU can be chosen, and why not: asked of the Compute Kit
 -- once, since a machine does not grow a GPU while Cafesa3D runs.
@@ -249,8 +249,6 @@ end
 -- either: `paint`, `passes`, `rays`, `stop`, Preview or Final alike.
 local function render_job(how)
   if RENDER.gpu and gpu_available() then
-    -- The wavefront is Final's (R8); in Preview the GPU's one kernel.
-    how.wavefront = RENDER.wavefront and not how.preview
     return use("/Kosmos/Libraries/k3dgpu.lua").render(k3, scene, how)
   end
 
@@ -293,16 +291,15 @@ function choose.integrator(preview)
   print(("cafesa3d: set integrator of the render to %s"):format(preview and "Preview" or "Final"))
 end
 
--- Who traces it: "processor", "gpu", or "wavefront" - the GPU's Final in
--- kernels a bounce (`cafesa3d-gpu.md` R8), beside the others to choose.
-choose.names = { processor = "Processor", gpu = "GPU", wavefront = "GPU wavefront" }
+-- Who traces it: "processor" or "gpu". A third, the GPU's Final in kernels
+-- a bounce, was tried and taken out: slower in every scene (18.709-18.710).
+choose.names = { processor = "Processor", gpu = "GPU" }
 
 function choose.renderer(kind)
   if kind ~= "processor" and not gpu_available() then return end
 
   will("set the renderer of the render")
   RENDER.gpu = kind ~= "processor"
-  RENDER.wavefront = kind == "wavefront"
   print(("cafesa3d: set renderer of the render to %s"):format(choose.names[kind]))
 end
 
@@ -635,7 +632,7 @@ end
 -- renderer starts the view again without being a change to the scene,
 -- which would keep the Render window from comparing the two renderers.
 local function view_key()
-  return render_key() .. (RENDER.wavefront and "|wavefront" or RENDER.gpu and "|GPU" or "|Processor")
+  return render_key() .. (RENDER.gpu and "|GPU" or "|Processor")
 end
 
 function shade.stop()
@@ -1880,10 +1877,8 @@ local function draw_props(s)
     y = chip.row(s, x, y, w, {
       { text = "Processor", key = "renderer:Processor", on = not RENDER.gpu,
         go = function() choose.renderer("processor") end },
-      { text = "GPU", key = "renderer:GPU", on = RENDER.gpu and not RENDER.wavefront, off = not can,
+      { text = "GPU", key = "renderer:GPU", on = RENDER.gpu, off = not can,
         go = function() choose.renderer("gpu") end },
-      { text = "GPU wavefront", key = "renderer:Wavefront", on = RENDER.wavefront, off = not can,
-        go = function() choose.renderer("wavefront") end },
     })
 
     if not can then
@@ -2515,10 +2510,10 @@ end
 -- two levels a channel in Preview, which is the rounding of two sets of
 -- arithmetic; Final's noise is R7's to judge.
 -- The renderers a render may be drawn by, as the Render window says them.
-final.names = { cpu = "Processor", gpu = "GPU", wavefront = "GPU wavefront" }
+final.names = { cpu = "Processor", gpu = "GPU" }
 
 function final.who()
-  return final.wavefront and "wavefront" or final.gpu and "gpu" or "cpu"
+  return final.gpu and "gpu" or "cpu"
 end
 
 -- The GPU renderer `who`'s last picture held to the processor's, when both
@@ -2574,7 +2569,6 @@ function final.keep()
 
   if who == "cpu" then
     final.compare("gpu")
-    final.compare("wavefront")
   else
     final.compare(who)
   end
@@ -2587,7 +2581,7 @@ function final.times(s, x, y, w)
   local key, cpu = final.key, final.last.cpu
   local have = {}
 
-  for _, who in ipairs { "wavefront", "gpu", "cpu" } do
+  for _, who in ipairs { "gpu", "cpu" } do
     local l = final.last[who]
 
     if l and l.key == key then have[#have + 1] = who end
@@ -2711,8 +2705,7 @@ function final.draw()
   s:text(x, y, "LIGHT PATHS", theme.text_dim, nil, tiny)
   y = y + gfx.height(tiny) + 8
 
-  local rows = { { "Renderer", final.wavefront and "GPU \u{b7} wavefront"
-                               or final.gpu and "GPU \u{b7} execution units" or "Processor" },
+  local rows = { { "Renderer", final.gpu and "GPU \u{b7} execution units" or "Processor" },
                  { "Integrator", final.preview and "Preview \u{b7} Whitted's"
                                                or "Final \u{b7} path tracing" },
                  { "Bounces", ("up to %d"):format(final.bounces or RENDER.bounces) } }
@@ -2783,7 +2776,6 @@ function final.begin()
   end
 
   final.job, final.threads, final.gpu = job, job:workers(), job.gpu == true
-  final.wavefront = job.wavefront == true
 
   final.key = ("%s|%.4f %.4f %.4f|%.4f %.4f %.4f|%s|%dx%d|%d|%d|%s"):format(
     render_key(), cam.loc[1], cam.loc[2], cam.loc[3], cam.target[1], cam.target[2],
@@ -3851,7 +3843,7 @@ function SAMPLES.take(loaded, file, adding)
     -- A scene rendered on a GPU, opened where there is none, renders on the
     -- processor, and the Render tab says so rather than showing GPU chosen.
     if RENDER.gpu and not gpu_available() then
-      RENDER.gpu, RENDER.wavefront = false, false
+      RENDER.gpu = false
       print("cafesa3d: the scene asks for the GPU, and there is none here: the processor renders it")
     end
 

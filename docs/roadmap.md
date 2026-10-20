@@ -214,6 +214,19 @@ instructions per SIMD8 thread. **R6b, the GPU's tracer made fast**:
       Render window shows the time of each that has drawn the same render,
       held to the processor's picture. The wavefront is Final's; in
       Preview it draws with the GPU's one kernel, and says so.
+    - **Done, and decided** (18.709-18.710): the lists of runs work and
+      stay. The wavefront held its picture but was slower in every scene:
+      the still life 5.5 s against the one kernel's 2.0, the House 8.8 s
+      against the processor's 2.2. Diego, 19 October, on the results: "i
+      think there is no real use for the gpu in rendering in cafesa
+      right?" - then "go with your suggestion": the GPU stays a choice
+      beside the processor, the processor the default, and the wavefront
+      is taken out. On this machine the HD 530 has no hardware for ray
+      tracing and the processor is strong; the GPU's place is work that
+      is the same at every pixel.
+  - **Found along the way**: the gate ran 10:16 on 19 October, past its
+    ten minutes, with `x86-cafesa3d-2` at 335 s; that suite is to be split
+    or shortened before the gate grows again.
 **Found along the way**:
 - F12 with the Render window open left it behind Cafesa3D's own. **Done**
   (18.703): F12 asks the window manager to `raise` it, which it already

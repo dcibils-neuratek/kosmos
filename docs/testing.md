@@ -29094,3 +29094,24 @@ Cafesa3D's window back over VNC while measuring, is kept.
 
 `host`, both `x86-cafesa3d` suites, `x86-gpumon` and `x86-fractal` pass
 (5:06).
+
+## 18.710 The wavefront taken out
+
+Diego, on 18.709's results: "i think there is no real use for the gpu in
+renreding in cafesa right?". I suggested the GPU stay a choice beside the
+processor, the wavefront leave the Render tab, and the lists of runs stay;
+he said "go with your suggestion".
+
+So the five wavefront kernels, the job's bands and the "GPU wavefront"
+chip are gone, along with the tests that held them. 0.11.309 keeps them
+in history. A scene saved with "GPU wavefront" opens with the GPU. What
+stays:
+- `GPU_OP_RUNS` and `compute.runs`, with `test_compute`'s checks and
+  `gpu runs`;
+- the lanes-busy measure in `test_k3d_gpu`;
+- Final's helpers as a source of their own.
+
+`test_k3d_gpu` passes 24 checks, `test_intelgpu_kernel` 53 and
+`test_scenefile` 102.
+
+**Full gate 97 of 97 in 10:16** - past the ten minutes. `x86-cafesa3d-2` took 335 s, against 216 to 289 before, and is the suite to split or shorten (`roadmap.md`).
