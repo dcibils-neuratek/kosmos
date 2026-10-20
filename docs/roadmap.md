@@ -9749,7 +9749,8 @@ nearby, add a keyboard or a mouse (a passkey shown to type), see what is
 paired and connected and its battery, forget one. Designed before it is
 written, as every app is: its feature set and architecture in
 `docs/bluetooth.md`, its mockup `docs/bluetooth.html`, its diagram
-`docs/bluetooth-architecture.png`, agreed with Diego before its code. It
+`docs/bluetooth-architecture.png` - **agreed** 20 October ("Mockup is
+perfect"), and built at B7 as drawn. It
 speaks `/Devices/bluetooth` (`btproto.h`, B4) through
 `user/lib/bluetooth.lua`, so the `bt` program and the app are two users of
 one door.

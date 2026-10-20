@@ -116,8 +116,8 @@ Mac, a simulated controller for the suites, and the Bluetooth app.
 
 Diego, 20 October: "Also we neeed a Bluetooth app to add and manage
 devices". Its window is `docs/bluetooth.html`, its diagram
-`docs/bluetooth-architecture.png`; both are for Diego to agree before any
-of it is written.
+`docs/bluetooth-architecture.png`. **Agreed** the same day - Diego: "Mockup
+is perfect" - and built at B7 as drawn.
 
 **What a person does in it**, one window:
 
