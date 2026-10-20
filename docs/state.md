@@ -2,8 +2,46 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-19, early morning (0.11.304; the GPU computes: the Compute Kit, kc,
-Cafesa3D's tracer on the M700)
+Last updated: 2026-10-19, night (0.11.310, pushed; the GPU at ray tracing: tried to the end)
+
+---
+
+## 19 October, the day: the GPU at ray tracing, to the end
+
+**Pushed: up to 0.11.310**, with `make prepush` green and
+`docs/screenshots/2026-10-19-2209-85a6a7d0.png`.
+
+- **0.11.305-0.11.306, R6b.** kc's leaner code did not speed the M700 up.
+  Micro-kernels (`tools/gpukc/`) found why: thousands of threads reading
+  one line through the data port are served one at a time. The scene is
+  now read through the sampler, as kc's `table`s, at 2.6 ms where it was
+  260; and several passes go in a run. The still life is 0.91 s on the GPU
+  against 1.11 on the processor (18.704-18.705).
+- **0.11.307-0.11.308, R7.**
+  - Final on the GPU, held to the processor within the noise:
+    `surface:likeness`, and a block bound that falls with the samples.
+  - The six texture patterns and their bump, in both kernels.
+  - The kernel limit raised to 16,384 instructions.
+  - The House renders on the GPU and is held, but the processor is 1.6
+    times as fast in Preview and 4 in Final (18.706-18.707).
+- **0.11.309-0.11.310, R8.**
+  - Lists of runs (`GPU_OP_RUNS`, `compute.runs`): 16 kernels in one
+    submission, 7.4 ms against 126.
+  - The wavefront tracer was tried. It held its picture and was slower
+    everywhere, so it was taken out.
+  - Diego: "no real use for the gpu in rendering in cafesa", then "go
+    with your suggestion". The GPU stays a renderer beside the processor,
+    which is the default (18.708-18.710).
+- **The M700** runs 0.11.308 plus the wavefront build. It went down once
+  overnight on a restart and came back after a power cycle.
+
+**Next, Diego's to decide**:
+- **A GL Kit on the GPU**, for 3D games such as Quake 3, which is the
+  coherent work the GPU is built for. Proposed: our own OpenGL subset
+  rather than porting Mesa, designed before any code. Diego: "let me think
+  about the gl kit first".
+- **Open**: `x86-cafesa3d-2` pushed the gate to 10:16, so it is to be
+  shortened; the lesson pattern's tear; Memory slots in This Machine.
 
 ---
 
