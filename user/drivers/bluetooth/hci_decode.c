@@ -168,6 +168,26 @@ bool hci_decode_buffers(const struct hci_answer *a, struct hci_buffers *out)
     return true;
 }
 
+bool hci_decode_intel_version(const struct hci_answer *a,
+                              struct hci_intel_version *out)
+{
+    if (!answered(a, HCI_INTEL_READ_VERSION, 9u) || a->ret_length != 9u) {
+        return false;
+    }
+
+    out->hw_platform = a->ret[0];
+    out->hw_variant = a->ret[1];
+    out->hw_revision = a->ret[2];
+    out->fw_variant = a->ret[3];
+    out->fw_revision = a->ret[4];
+    out->fw_build_num = a->ret[5];
+    out->fw_build_ww = a->ret[6];
+    out->fw_build_yy = a->ret[7];
+    out->fw_patch_num = a->ret[8];
+
+    return true;
+}
+
 bool hci_feature(const uint8_t features[8], unsigned bit)
 {
     return bit < 64u && ((features[bit / 8u] >> (bit % 8u)) & 1u) != 0;

@@ -46,7 +46,13 @@ static const uint16_t SETUP[] = {
     HCI_READ_BUFFER_SIZE,
 };
 
-#define SETUP_STEPS (sizeof SETUP / sizeof SETUP[0])
+#define SETUP_COMMON (sizeof SETUP / sizeof SETUP[0])
+#define SETUP_MOST   (SETUP_COMMON + 1u)
+
+/* Intel's vendor ID on USB: its chips are asked what they are first, as
+ * Linux's `btintel.c` asks, because one still in its bootloader may not be
+ * a controller at all until its firmware is sent (`bluetooth.md` B3). */
+#define USB_VENDOR_INTEL 0x8087u
 
 static long console = -1;
 static long transport = -1;
@@ -63,8 +69,11 @@ static struct {
     uint32_t         generation;
     struct hci_reply about;         /* what the transport said of it */
 
-    /* Its setup: the step whose answer is awaited, or SETUP_STEPS when
-     * done; and when the command went, on the counter. */
+    /* Its setup: the commands for this adapter, the step whose answer is
+     * awaited, or `steps` when done; and when the command went, on the
+     * counter. */
+    uint16_t         setup[SETUP_MOST];
+    unsigned         steps;
     unsigned         step;
     bool             waiting;
     unsigned long    sent_counter;
@@ -182,21 +191,33 @@ static bool command(uint16_t opcode)
 
 static void next_step(void)
 {
-    if (bt.step >= SETUP_STEPS) {
+    if (bt.step >= bt.steps) {
         bt.waiting = false;
         return;
     }
 
-    bt.waiting = command(SETUP[bt.step]);
+    bt.waiting = command(bt.setup[bt.step]);
     bt.sent_counter = kosmos_ticks();
 }
 
 /* An adapter, from the start: what the transport said, and Reset. */
 static void begin(const struct hci_reply *about)
 {
+    unsigned i;
+
     bt.present = true;
     bt.generation = about->generation;
     bt.about = *about;
+    bt.steps = 0;
+
+    if (about->bus == HCI_BUS_USB && about->vendor == USB_VENDOR_INTEL) {
+        bt.setup[bt.steps++] = HCI_INTEL_READ_VERSION;
+    }
+
+    for (i = 0; i < SETUP_COMMON; i++) {
+        bt.setup[bt.steps++] = SETUP[i];
+    }
+
     bt.step = 0;
     bt.ready = false;
     next_step();
@@ -258,11 +279,67 @@ static void say_adapter(struct say_line *line)
     say_send(console, line);
 }
 
+/*
+ * **Intel's own account of the chip**: its answer's bytes as they came, and
+ * read, when they are the fixed form, as Linux's `struct intel_version`.
+ */
+static void say_intel(const struct hci_answer *a, struct say_line *line)
+{
+    struct hci_intel_version v;
+    unsigned i;
+
+    say_text(line, "bluetooth: Intel Read Version: status ");
+    say_dec(line, a->status);
+    say_text(line, ", ");
+    say_dec(line, a->ret_length);
+    say_text(line, " bytes:");
+    for (i = 0; i < a->ret_length && i < 24u; i++) {
+        say_text(line, " ");
+        say_hex(line, a->ret[i], 2);
+    }
+    say_send(console, line);
+
+    if (!hci_decode_intel_version(a, &v)) {
+        return;
+    }
+
+    say_text(line, "bluetooth: Intel hardware variant ");
+    say_hex(line, v.hw_variant, 2);
+    say_text(line, " revision ");
+    say_hex(line, v.hw_revision, 2);
+    say_text(line, v.fw_variant == HCI_INTEL_BOOTLOADER
+                   ? ", in its bootloader: it waits for firmware"
+                   : v.fw_variant == HCI_INTEL_OPERATIONAL
+                     ? ", its firmware running" : ", firmware variant ");
+    if (v.fw_variant != HCI_INTEL_BOOTLOADER
+        && v.fw_variant != HCI_INTEL_OPERATIONAL) {
+        say_hex(line, v.fw_variant, 2);
+    }
+    say_text(line, " (build ");
+    say_dec(line, v.fw_build_num);
+    say_text(line, ", week ");
+    say_dec(line, v.fw_build_ww);
+    say_text(line, " of 20");
+    say_dec(line, v.fw_build_yy);
+    say_text(line, ")");
+    say_send(console, line);
+}
+
 /* An answer to the step that was waiting, read; the next step sent. */
 static void answered(const struct hci_answer *a, struct say_line *line)
 {
-    uint16_t want = SETUP[bt.step];
+    uint16_t want = bt.setup[bt.step];
     bool ok = a->complete && a->status == 0;
+
+    /* Intel's answer is said whatever it is, and the setup goes on: what
+     * it says is what B3 needs, and the standard commands after it say
+     * whether the chip is a controller yet. */
+    if (want == HCI_INTEL_READ_VERSION) {
+        say_intel(a, line);
+        bt.step++;
+        next_step();
+        return;
+    }
 
     if (ok) {
         switch (want) {
@@ -291,13 +368,13 @@ static void answered(const struct hci_answer *a, struct say_line *line)
         say_text(line, "; it is not used");
         say_send(console, line);
         bt.waiting = false;
-        bt.step = SETUP_STEPS;
+        bt.step = bt.steps;
         return;
     }
 
     bt.step++;
 
-    if (bt.step == SETUP_STEPS) {
+    if (bt.step == bt.steps) {
         bt.waiting = false;
         bt.ready = true;
         say_adapter(line);
@@ -324,7 +401,7 @@ static void drain(struct say_line *line)
             bt.events++;
 
             if (bt.waiting && hci_decode_answer(&e, &a)
-                && a.opcode == SETUP[bt.step]) {
+                && a.opcode == bt.setup[bt.step]) {
                 answered(&a, line);
             } else {
                 bt.unasked++;
@@ -389,11 +466,11 @@ void bluetooth_server(long console_cap, long endpoint, long transport_cap)
         if (got != 0) {
             if (bt.waiting && waited_ms() >= ANSWER_MS) {
                 say_text(&line, "bluetooth: the adapter did not answer ");
-                say_hex(&line, SETUP[bt.step], 4);
+                say_hex(&line, bt.setup[bt.step], 4);
                 say_text(&line, " in two seconds; it is not used");
                 say_send(console, &line);
                 bt.waiting = false;
-                bt.step = SETUP_STEPS;
+                bt.step = bt.steps;
             }
             continue;
         }

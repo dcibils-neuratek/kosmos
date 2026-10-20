@@ -402,6 +402,42 @@ static void test_assembly(void)
     }
 }
 
+/* Intel Read Version in its fixed form, composed from Linux's `struct
+ * intel_version`: platform 37h, hardware variant 13h revision 03h, in its
+ * bootloader (06h), built in week 30 of 2018. Not a chip's own bytes; the
+ * T14's go beside these when it has said them. */
+static const uint8_t INTEL_DONE[] = {
+    0x0E, 13, 1, 0x05, 0xFC, 0x00,
+    0x37, 0x13, 0x03, 0x06, 0x10, 0x00, 30, 18, 0x00,
+};
+
+static void test_intel(void)
+{
+    static const uint8_t longer[] = {
+        0x0E, 14, 1, 0x05, 0xFC, 0x00,
+        0x37, 0x13, 0x03, 0x06, 0x10, 0x00, 30, 18, 0x00, 0x00,
+    };
+    static const uint8_t failed[] = {
+        0x0E, 13, 1, 0x05, 0xFC, 0x01,
+        0x37, 0x13, 0x03, 0x06, 0x10, 0x00, 30, 18, 0x00,
+    };
+    struct hci_intel_version v;
+    struct hci_answer a;
+
+    check(answer_of(INTEL_DONE, sizeof INTEL_DONE, &a)
+          && a.opcode == HCI_INTEL_READ_VERSION
+          && hci_decode_intel_version(&a, &v), "Intel Read Version: read");
+    check(v.hw_platform == 0x37 && v.hw_variant == 0x13 && v.hw_revision == 3
+          && v.fw_variant == HCI_INTEL_BOOTLOADER && v.fw_build_ww == 30
+          && v.fw_build_yy == 18, "Intel Read Version: each field");
+    check(answer_of(longer, sizeof longer, &a)
+          && !hci_decode_intel_version(&a, &v),
+          "Intel Read Version: a longer answer is not the fixed form");
+    check(answer_of(failed, sizeof failed, &a)
+          && !hci_decode_intel_version(&a, &v),
+          "Intel Read Version: a failed status is not read");
+}
+
 /* ---- btsim ---------------------------------------------------------- */
 
 /* A command as the stack puts it in the ring: its type, then the packet. */
@@ -508,6 +544,7 @@ int main(void)
     test_bad_answers();
     test_assembly();
     test_btsim();
+    test_intel();
 
     printf("btdecode: %d checks, %d failed\n", checks + fails, fails);
 

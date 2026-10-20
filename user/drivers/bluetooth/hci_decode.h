@@ -29,6 +29,10 @@
 #define HCI_READ_BUFFER_SIZE        0x1005u   /* 7.4.5 */
 #define HCI_READ_BD_ADDR            0x1009u   /* 7.4.6 */
 
+/* Intel's own (OGF 3Fh), from Linux's `btintel.c`: what the chip is and
+ * whether it is running its bootloader or its firmware. */
+#define HCI_INTEL_READ_VERSION      0xFC05u
+
 /* Events (7.7). */
 #define HCI_EVENT_COMMAND_COMPLETE  0x0Eu     /* 7.7.14 */
 #define HCI_EVENT_COMMAND_STATUS    0x0Fu     /* 7.7.15 */
@@ -126,6 +130,31 @@ struct hci_buffers {
 };
 
 bool hci_decode_buffers(const struct hci_answer *a, struct hci_buffers *out);
+
+/*
+ * Intel Read Version's answer in its older, fixed form (Linux's `struct
+ * intel_version`): nine bytes after the status. Newer chips answer in
+ * type-length-value form instead, which this refuses - the stack logs the
+ * raw bytes either way.
+ */
+#define HCI_INTEL_BOOTLOADER   0x06u     /* fw_variant: waiting for firmware */
+#define HCI_INTEL_OPERATIONAL  0x23u     /* fw_variant: firmware running */
+
+struct hci_intel_version {
+    uint8_t hw_platform;
+    uint8_t hw_variant;
+    uint8_t hw_revision;
+    uint8_t fw_variant;
+    uint8_t fw_revision;
+    uint8_t fw_build_num;
+    uint8_t fw_build_ww;
+    uint8_t fw_build_yy;
+    uint8_t fw_patch_num;
+};
+
+/* True only for exactly the fixed form: nine bytes after the status. */
+bool hci_decode_intel_version(const struct hci_answer *a,
+                              struct hci_intel_version *out);
 
 /* One bit of the features, numbered as `HCI_FEATURE_` above. */
 bool hci_feature(const uint8_t features[8], unsigned bit);
