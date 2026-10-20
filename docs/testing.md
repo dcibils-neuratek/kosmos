@@ -29115,3 +29115,39 @@ stays:
 `test_scenefile` 102.
 
 **Full gate 97 of 97 in 10:16** - past the ten minutes. `x86-cafesa3d-2` took 335 s, against 216 to 289 before, and is the suite to split or shorten (`roadmap.md`).
+
+## 18.711 Bluetooth B1: the adapter named, held on the Mac
+
+Diego, 20 October: "Can you start building the Bluetooth stack?" - the
+design is `bluetooth.md`, and this is its first step. QEMU has no
+Bluetooth adapter and the M700 has none inside, so the test is
+`test_btdecode`, on the Mac:
+- **`btusb_decode.c`** finds the HCI interface (E0h/01h/01h, setting 0)
+  and its three endpoints in a configuration laid out as the Core
+  specification's Volume 4 Part B 2.1 gives it; every length cut short
+  against an unmapped page; a descriptor of length zero; a length past
+  the end; vendor-specific bytes in the same shape; setting 1 before
+  setting 0; a second radio's interface after a first that lacks an
+  endpoint;
+- **`hci_decode.c`** builds commands (Reset, the three reads, 248 bytes
+  of parameters, too much refused), reads Command Complete and Command
+  Status, decodes a CSR8510's version, address and features, refuses a
+  failed status, an answer a byte short and the wrong command's answer;
+- **events put back together** from 16-byte interrupt packets: Read
+  Local Name's 254 bytes across sixteen, and two events beginning in the
+  name's last packet - then at every packet size from one byte to the
+  whole stream.
+
+50 checks. **Controls**, each on a copy of the decoder: the address
+printed in wire order fails one check; an assembler that never lets a
+whole event go fails four (it crashed the test at first, overrunning
+the harness's slots, so the harness now counts that as a failure); and
+any setting of the interface taken for setting 0 fails one.
+
+`xhci.c` claims an adapter as it claims a MIDI device: the three
+endpoints configured, HCI Reset, Read Local Version, Read BD_ADDR and
+Read Local Supported Features, sent on the control endpoint as a class
+request and answered on the interrupt IN; then a line in the log -
+"Bluetooth 5.1, Realtek (subversion ...), address ..., Classic and Low
+Energy, Secure Simple Pairing" - and `lsusb` says Bluetooth. That part
+waits on an adapter on the M700 to be seen working.

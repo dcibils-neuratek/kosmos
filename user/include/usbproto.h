@@ -28,6 +28,7 @@
 #define USB_KIND_MIDI        7u
 #define USB_KIND_HID         8u     /* HID, and not one this reads */
 #define USB_KIND_STORAGE     9u     /* mass storage this does not speak to */
+#define USB_KIND_BLUETOOTH   10u    /* a Bluetooth adapter (`bluetooth.md`) */
 
 #define USB_LIST_MAX         16u    /* devices a reply holds */
 #define USB_NAME_MAX         32u

@@ -22,7 +22,7 @@ assert(#string.pack(DEVICE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "") == 48,
        "usb: the device layout does not match usbproto.h")
 
 usb.KINDS = { [0] = "none", "keyboard", "mouse", "game controller", "stick", "network",
-              "camera", "MIDI", "HID device", "storage" }
+              "camera", "MIDI", "HID device", "storage", "Bluetooth" }
 
 usb.SPEEDS = { "full speed", "low speed", "high speed", "SuperSpeed", "SuperSpeed+" }
 

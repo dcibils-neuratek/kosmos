@@ -1,0 +1,206 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The Bluetooth app, before it is built. Drawn on 20 October 2026 from
+  Diego's ask: "Also we neeed a Bluetooth app to add and manage devices".
+  docs/bluetooth.md has its feature set and architecture, and
+  docs/bluetooth-architecture.png what it stands on. The devices, names
+  and numbers in it are made up.
+-->
+<title>Bluetooth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Astra's dark look, as Monitor and Network Monitor are drawn. */
+  --a-win: #1f2430; --a-raised: #262c39; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-blue: #4f8df7; --a-ok: #4cc27a;
+  --a-warn: #f2b233;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 72ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 76ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 12px 0 0; max-width: 84ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 780px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+.win { width: 560px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line);
+       border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; position: relative; }
+.head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.switch { width: 38px; height: 22px; border-radius: 11px; background: var(--a-blue); position: relative; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 19px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+.switch.off { background: #4a5263; }
+.switch.off::after { left: 3px; }
+.onoff { color: var(--a-dim); font-size: 12px; }
+.body { padding: 14px 16px 16px; }
+
+.adapter { display: flex; gap: 12px; align-items: center; color: var(--a-dim); font-size: 12px;
+           padding: 0 2px 12px; border-bottom: 1px solid var(--a-line); font-variant-numeric: tabular-nums; }
+.adapter b { color: var(--a-ink); font-weight: 500; }
+.adapter code { color: var(--a-dim); font-size: 12px; }
+.heading { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 2px 6px; }
+.heading b { font-family: var(--display); font-size: 15px; font-weight: 600; }
+.heading span { color: var(--a-dim); font-size: 12px; }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--a-faint); border-top-color: var(--a-blue);
+        border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+@media (prefers-reduced-motion: no-preference) { .spin { animation: turn 1s linear infinite; } }
+@keyframes turn { to { transform: rotate(360deg); } }
+
+.list { background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 10px; }
+.dev { display: grid; grid-template-columns: 34px 1fr auto auto; gap: 12px; align-items: center; padding: 9px 12px; }
+.dev + .dev { border-top: 1px solid var(--a-line); }
+.dev.sel { background: #2d3a55; }
+.ico { width: 34px; height: 34px; border-radius: 8px; background: #323a4b; display: grid; place-items: center; }
+.ico svg { width: 22px; height: 22px; stroke: var(--a-ink); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dev .n { font-weight: 500; font-size: 13.5px; }
+.dev .s { color: var(--a-dim); font-size: 12px; }
+.dev .s.on { color: var(--a-ok); }
+.batt { display: flex; align-items: center; gap: 6px; color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 64px; justify-content: flex-end; }
+.batt i { width: 22px; height: 11px; border: 1.5px solid var(--a-dim); border-radius: 3px; position: relative; display: block; }
+.batt i::before { content: ""; position: absolute; left: 1px; top: 1px; bottom: 1px; width: calc(var(--b) * 17px / 100); background: var(--a-ok); border-radius: 1px; }
+.batt i.low::before { background: var(--a-warn); }
+.batt i::after { content: ""; position: absolute; right: -4px; top: 2.5px; width: 2px; height: 4px; background: var(--a-dim); border-radius: 0 1px 1px 0; }
+.more { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; padding: 0 4px; }
+.btn { border: 1px solid #4a5468; background: #323a4b; color: var(--a-ink); border-radius: 7px; padding: 4px 12px; font-size: 12.5px; font-weight: 500; }
+.btn.primary { background: var(--a-blue); border-color: var(--a-blue); color: #fff; }
+.btn.busy { color: var(--a-dim); }
+.foot { color: var(--a-faint); font-size: 12px; margin: 12px 2px 0; }
+
+.menu { position: absolute; background: #2a3140; border: 1px solid #485165; border-radius: 9px; padding: 5px;
+        box-shadow: 0 10px 28px rgba(0,0,0,.4); font-size: 13px; min-width: 150px; }
+.menu div { padding: 5px 12px; border-radius: 5px; }
+.menu div.hl { background: var(--a-blue); color: #fff; }
+.menu hr { border: 0; border-top: 1px solid #485165; margin: 4px 6px; }
+.menu .danger { color: #ff8a80; }
+
+.sheet { position: absolute; left: 50px; right: 50px; top: 70px; background: #2a3140; border: 1px solid #485165;
+         border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); padding: 20px 22px 18px; text-align: center; }
+.sheet h3 { margin: 0 0 4px; font-family: var(--display); font-size: 18px; font-weight: 600; }
+.sheet p { color: var(--a-dim); margin: 0 auto 16px; font-size: 13px; }
+.digits { display: flex; justify-content: center; gap: 8px; margin-bottom: 8px; }
+.digits span { width: 38px; height: 48px; border-radius: 8px; border: 1px solid #4a5468; background: #1f2430;
+               display: grid; place-items: center; font: 500 26px var(--mono); color: var(--a-faint); }
+.digits span.typed { color: var(--a-ink); border-color: var(--a-blue); }
+.digits .gap { width: 10px; border: 0; background: none; }
+.sheet .then { color: var(--a-dim); font-size: 12.5px; margin-bottom: 16px; }
+.sheet .then kbd { font: 500 12px var(--mono); border: 1px solid #4a5468; border-radius: 4px; padding: 1px 6px; color: var(--a-ink); }
+.sheet .row { display: flex; justify-content: flex-end; }
+.dim { opacity: .35; }
+
+.stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Bluetooth</h1>
+<p class="sub">One window to turn Bluetooth on, see what is near, add a keyboard or a mouse, and look after the ones that are yours. Drawn on 20 October 2026, before any of it is built; <code>docs/bluetooth.md</code> has what it is made of. For Diego to change until it is right.</p>
+
+<div class="q"><b>Diego, 20 October:</b> "Also we neeed a Bluetooth app to add and manage devices".</div>
+
+<h2>The window, scanning</h2>
+<div class="scroller"><div class="stage"><div class="win" id="w1"></div></div></div>
+<p class="cap"><b>My devices</b> are the ones paired, connected or not, each with its battery where it reports one. <b>Nearby</b> is what is pairable around the machine, nearest first, while the window is open; scanning stops when it closes. The line under the header is the adapter, as the log says it at B1. The switch in the header turns the radio off, and every device with it.</p>
+
+<h2>Adding a keyboard</h2>
+<div class="scroller"><div class="stage"><div class="win" id="w2"></div></div></div>
+<p class="cap">A keyboard proves it is the one in front of you: the six digits are typed on it, and each one fills in as it is typed - the keyboard reports every keypress while it pairs, though the keys reach no window. Return finishes. A mouse has no keys to type on, so it is added with no sheet at all, and the row reads <i>Adding</i> and then <i>Connected</i>.</p>
+
+<h2>A device's menu</h2>
+<div class="scroller"><div class="stage"><div class="win" id="w3"></div></div></div>
+<p class="cap">The <b>&middot;&middot;&middot;</b> on a row, or a right click on it. <b>Disconnect</b> lets it go until it wakes and asks again; <b>Forget</b> removes its keys, and it must be added again.</p>
+
+<h2>Off</h2>
+<div class="scroller"><div class="stage"><div class="win" id="w4"></div></div></div>
+<p class="cap">Off says what that means and nothing else. With no adapter plugged in the window says so, and how to get one, in the same place.</p>
+
+<h2>Left out, on purpose</h2>
+<ul>
+  <li><b>Making Kosmos visible to others.</b> Kosmos connects to keyboards and mice; nothing connects to it, so there is no switch for it.</li>
+  <li><b>A name for this machine.</b> Nobody is shown it.</li>
+  <li><b>Sound, phones, files.</b> Not now, as <code>bluetooth.md</code> says; the window has room for them when they come.</li>
+</ul>
+</div>
+
+<script>
+const ICON = {
+  keyboard: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7 14h10"/></svg>',
+  mouse: '<svg viewBox="0 0 24 24"><rect x="6.5" y="3" width="11" height="18" rx="5.5"/><path d="M12 3v6"/></svg>',
+  other: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg>',
+};
+
+function head(on) {
+  return `<div class="head"><span class="lights"><i style="background:#ee5048"></i><i style="background:#f2b233"></i><i style="background:#3fbf4f"></i></span>
+    <span class="t">Bluetooth</span><span class="onoff">${on ? "On" : "Off"}</span><span class="switch${on ? "" : " off"}"></span></div>`;
+}
+
+const ADAPTER = `<div class="adapter"><span><b>Realtek RTL8761B</b> &middot; Bluetooth 5.1</span><code>8C:90:2D:4A:17:E3</code></div>`;
+
+function mine(selected) {
+  const rows = [
+    ["keyboard", "Logitech K380", "Connected", true, 72],
+    ["mouse", "MX Anywhere 3", "Connected", true, 18],
+    ["keyboard", "Apple Magic Keyboard", "Not connected", false, null],
+  ];
+  return `<div class="heading"><b>My devices</b><span>3</span></div><div class="list">` + rows.map(([k, n, s, on, b], i) =>
+    `<div class="dev${selected === i ? " sel" : ""}"><span class="ico">${ICON[k]}</span>
+      <div><div class="n">${n}</div><div class="s${on ? " on" : ""}">${s}</div></div>
+      <span class="batt">${b === null ? "" : `<i class="${b < 20 ? "low" : ""}" style="--b:${b}"></i>${b}%`}</span>
+      <span class="more">&middot;&middot;&middot;</span></div>`).join("") + `</div>`;
+}
+
+function nearby(adding) {
+  const rows = [
+    ["keyboard", "Keychron K2", "Keyboard"],
+    ["mouse", "Logitech Pebble M350", "Mouse"],
+    ["other", "Unnamed device", "Not a keyboard or a mouse"],
+  ];
+  return `<div class="heading"><b>Nearby</b><span><i class="spin"></i>Looking</span></div><div class="list">` + rows.map(([k, n, s], i) =>
+    `<div class="dev"><span class="ico">${ICON[k]}</span><div><div class="n">${n}</div><div class="s">${s}</div></div><span></span>
+      ${k === "other" ? '<span class="btn busy" style="visibility:hidden">Add</span>'
+        : adding === i ? '<span class="btn busy">Adding</span>' : '<span class="btn primary">Add</span>'}</div>`).join("") + `</div>`;
+}
+
+function body(selected, adding) {
+  return `<div class="body">${ADAPTER}${mine(selected)}${nearby(adding)}
+    <div class="foot">Put a keyboard or a mouse in pairing mode to see it here.</div></div>`;
+}
+
+document.getElementById("w1").innerHTML = head(true) + body(-1, -1);
+
+document.getElementById("w2").innerHTML = head(true) + `<div class="dim">${body(-1, 0)}</div>` +
+  `<div class="sheet"><h3>Adding Keychron K2</h3><p>Type these digits on the keyboard</p>
+    <div class="digits"><span class="typed">4</span><span class="typed">8</span><span class="typed">2</span><span class="gap"></span><span class="typed">9</span><span>1</span><span>3</span></div>
+    <div class="then">then press <kbd>Return</kbd></div>
+    <div class="row"><span class="btn">Cancel</span></div></div>`;
+
+document.getElementById("w3").innerHTML = head(true) + body(1, -1) +
+  `<div class="menu" style="right:24px;top:196px"><div class="hl">Disconnect</div><hr><div class="danger">Forget&hellip;</div></div>`;
+
+document.getElementById("w4").innerHTML = head(false) + `<div class="body">${ADAPTER}
+  <div style="padding:34px 10px 26px;text-align:center;color:var(--a-dim)">Bluetooth is off.<br>Keyboards and mice paired with this machine are not connected.</div></div>`;
+</script>
+</body>
+</html>

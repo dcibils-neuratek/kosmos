@@ -9735,7 +9735,24 @@ pairing and its keys kept in the keyring, and HID over Bluetooth: a
 Bluetooth mouse moving the one pointer as a USB mouse does
 (`hal_pointer_move`) and a keyboard giving characters as any other. Its
 feature set and architecture before it is built; a paired device listed
-in the devices indicator (5m).
+in the devices indicator (5m). **Designed** 20 October (`docs/bluetooth.md`; Diego:
+"Can you start building the Bluetooth stack?"): `xhci.c` the transport,
+the host stack a driver process of its own, rings between them, `btsim`
+for the suites, steps B1 to B7. The M700 has no Bluetooth inside
+(`lsusb`); the TP-Link TL-WN725N Diego has is Wi-Fi, so a dongle is to be
+bought - a TP-Link UB500 (Realtek RTL8761B) suggested. Which of Classic
+and Low Energy comes first waits on the keyboard and mouse he pairs.
+**A Bluetooth app**, agreed 20 October (Diego: "Also we neeed a Bluetooth
+app to add and manage devices"): an application of its own in place of
+the Preferences page B7 had - turn Bluetooth on and off, see what is
+nearby, add a keyboard or a mouse (a passkey shown to type), see what is
+paired and connected and its battery, forget one. Designed before it is
+written, as every app is: its feature set and architecture in
+`docs/bluetooth.md`, its mockup `docs/bluetooth.html`, its diagram
+`docs/bluetooth-architecture.png`, agreed with Diego before its code. It
+speaks `/Devices/bluetooth` (`btproto.h`, B4) through
+`user/lib/bluetooth.lua`, so the `bt` program and the app are two users of
+one door.
 
 **The Sandboxes window, as drawn, and every setting editable** - Diego,
 13 October 2026, using it on the M700: "the sandboxes app still is not

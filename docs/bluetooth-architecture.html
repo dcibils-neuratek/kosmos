@@ -1,0 +1,143 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The Bluetooth app and the stack it stands on: the app and the `bt`
+  program over one Lua library, the host stack a driver process in C, the
+  USB driver its transport through two rings, and the kernel as it is. The
+  busiest path - a key - drawn through it (K), and the window (W). Drawn
+  on 20 October 2026, before the app is built; `docs/bluetooth.md` is the
+  argument and `docs/bluetooth.html` the window.
+
+  Rendered to docs/bluetooth-architecture.png by headless Chrome at twice
+  its size, as docs/netmonitor-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Bluetooth architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Bluetooth - what it stands on</h1>
+<p class="sub">The app holds nothing: it asks the host stack through one door and draws the answer. The stack is a driver process of its own, in C - HCI, L2CAP, pairing, HID - and the USB driver only carries its packets, through two rings in a shared region. A key pressed on a Bluetooth keyboard (K) never comes near the window; the window (W) asks on its own clock.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">K</span><span>a key pressed</span><span class="f">W</span><span>the window</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Bluetooth - <code>bluetooth.lua</code></b><p>the switch, the adapter, My devices with their batteries, Nearby with Add, the passkey sheet, Disconnect and Forget. Asks a quarter-second while scanning or pairing, a second otherwise <span class="f">W1</span>; paints a click at once <span class="f">W3</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>bt</code></b><p>the same at the prompt: list, add, forget</p></div>
+        <div class="box"><b>This Machine, the Deskbar</b><p>the adapter's line; the devices indicator's batteries</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the caller's process)</h2>
+      <div class="row" style="grid-template-columns:1fr 2fr">
+        <div class="box"><b>ui.lua</b><p>window, switch, list, menu, sheet</p></div>
+        <div class="box new"><span class="tag">NEW</span><b><code>bluetooth.lua</code></b><p>the one door from Lua: <code>/Devices/bluetooth</code> in the shape <code>btproto.h</code> declares, as <code>usb.lua</code> speaks <code>usbproto.h</code> <span class="f">W1</span></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Drivers and servers</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>the host stack - <code>user/drivers/bluetooth/</code></b><p>HCI and the chip's firmware; L2CAP; Classic: SSP, SDP, HID's channels; LE: ATT/GATT, HID over GATT, SMP. Keeps what is near and how a pairing goes, and answers from memory <span class="f">W2</span>. A report's keys to the kernel <span class="f">K3</span></p></div>
+        <div class="box"><b>the keyring server</b><p>link keys and long-term keys, written by the stack</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:2fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW</span><b>xhci.c - the transport</b><p>claims class E0h/01h/01h (B1, built); commands on the control endpoint, events on the interrupt IN, ACL on the bulk pair; writes what arrives into the ring and says "more" once <span class="f">K1</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>btsim</b><p>a controller with a keyboard and a mouse behind it, in QEMU test builds, behind the same rings</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in the stack's process)</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box new"><span class="tag">NEW</span><b>hci_decode.c, btusb_decode.c</b><p>and a decoder a layer after them: held on the Mac</p></div>
+        <div class="box"><b>BearSSL's P-256</b><p>LE Secure Connections</p></div>
+        <div class="box"><b>the Crypto Kit</b><p>AES, AES-CMAC for SMP</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>the two rings between xhci and the stack <span class="f">K2</span></p></div>
+        <div class="box"><b>IPC</b><p>"more", and every request from the app</p></div>
+        <div class="box"><b>keys and the pointer</b><p><code>kosmos_key_push</code>, <code>hal_pointer_move</code>, as USB's keyboard and mouse use them</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>K - a key pressed</h3>
+      <ol><li><b>K1</b> The adapter's bulk IN completes an ACL packet; xhci writes it into the ring and sends "more" if the ring was empty.</li>
+          <li><b>K2</b> The stack takes it from the ring: L2CAP's header off, the HID channel found, the report read.</li>
+          <li><b>K3</b> Each key that changed to <code>kosmos_key_push</code>, as a USB keyboard's. Two processes, one copy; the radio's 7.5 to 30 ms dwarfs it.</li></ol></div>
+    <div class="card"><h3>W - the window</h3>
+      <ol><li><b>W1</b> One request: the state, the adapter, a page of devices.</li>
+          <li><b>W2</b> The stack answers from what it keeps; nothing waits on the radio.</li>
+          <li><b>W3</b> The lists redrawn when they changed; a click painted before its reply.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>HCI packets</td><td>a region: two single-producer rings</td></tr>
+        <tr><td>"More"</td><td>a message, once a ring has something</td></tr>
+        <tr><td>The app's requests</td><td>messages in <code>btproto.h</code>'s shape</td></tr>
+        <tr><td>Keys, movement</td><td>the stack to the kernel; never near the app</td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>bluetooth.lua</td><td>the app, <code>bt</code>, This Machine, the indicator</td></tr>
+        <tr><td>the host stack</td><td>later: sound, a game controller, the Pi's UART radio</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

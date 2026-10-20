@@ -87,6 +87,8 @@
 #include "usb_decode.h"
 #include "uvc_decode.h"
 #include "midi_decode.h"
+#include "btusb_decode.h"
+#include "../bluetooth/hci_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -264,6 +266,10 @@
 #define DEVICE_PAGE_NOTE    7u          /* ...and the notifications it reads */
 #define DEVICE_PAGE_MIDI_OUT 6u         /* a MIDI device's bytes out */
 #define DEVICE_PAGE_MIDI_IN  7u         /* ...and its events in */
+#define DEVICE_PAGE_BT_EVENTS 4u        /* a Bluetooth adapter's event ring */
+#define DEVICE_PAGE_BT_EVENT  5u        /* ...what each event read lands in */
+#define DEVICE_PAGE_BT_OUT    6u        /* ...its ACL OUT ring */
+#define DEVICE_PAGE_BT_IN     7u        /* ...and its ACL IN ring */
 #define PAD_SAY_SLOT        64u         /* bytes a message, a page of them */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
@@ -609,6 +615,33 @@ struct usbmidi {
 };
 
 /*
+ * **A Bluetooth adapter** (`bluetooth.md` B1): its three endpoints made
+ * ready and the controller behind them named - who made it, which
+ * Bluetooth, its address and what it can do. The host stack takes the
+ * endpoints at B2, through rings; until then nothing is read from them
+ * after the four answers.
+ */
+struct btadapter {
+    bool               on;
+    unsigned           port;
+    unsigned           event_dci;       /* interrupt IN: HCI events */
+    unsigned           event_packet;
+    unsigned           in_dci;          /* bulk IN and OUT: ACL */
+    unsigned           out_dci;
+    struct ring        events;
+    struct ring        in;
+    struct ring        out;
+    uint8_t           *event_data;      /* the next event read lands here */
+    uint64_t           event_bus;
+    struct hci_assembler assembler;
+    struct hci_version version;
+    uint8_t            address[6];
+    uint8_t            features[8];
+    bool               named;           /* all four answered */
+    struct device      dev;
+};
+
+/*
  * **How many unit numbers have been given out.** A stick takes the next as it
  * becomes ready and keeps it until it leaves, and no other stick is ever given
  * it (USB step 5e). The disk server keeps the unit its partition is on, so a
@@ -686,6 +719,9 @@ struct controller {
 
     /* ...and its MIDI keyboard. */
     struct usbmidi midi[DEVICES_MAX + 1];
+
+    /* ...and its Bluetooth adapter. */
+    struct btadapter bt[DEVICES_MAX + 1];
 };
 
 static long console = -1;
@@ -4690,6 +4726,250 @@ static void midi_gone(struct controller *c, unsigned slot,
 }
 
 /*
+ * **A Bluetooth adapter** (`bluetooth.md` B1, Core Volume 4 Part B 2.1,
+ * Part E 5.4). A command goes on the control endpoint as a class request
+ * to the device - bmRequestType 20h, bRequest 0, the HCI packet as the
+ * data - and its answer comes back on the interrupt IN as an event, cut
+ * into packets of that endpoint's size, which `hci_assemble` puts back
+ * together.
+ *
+ * Synchronous, as a device's setup is everywhere in this driver:
+ * `wait_serving` goes on reading every other device while it waits. The
+ * stack is a process of its own from B2, and reads the events from a ring.
+ */
+static bool control_out(struct controller *c, struct device *d,
+                        uint32_t request, uint16_t value, uint16_t index,
+                        const uint8_t *bytes, uint16_t length);
+
+#define HCI_COMMAND_REQUEST  0x20u      /* class, host to device; bRequest 0 */
+#define HCI_ANSWER_MS        1000u      /* Reset is the slowest: 250 ms on some */
+#define HCI_EVENTS_SKIPPED   16u        /* unasked events passed over */
+
+/* One whole event into `a->assembler`, from as many reads as it takes. */
+static bool bt_event(struct controller *c, struct btadapter *a)
+{
+    unsigned reads;
+
+    for (reads = 0; reads < HCI_EVENT_MAX; reads++) {
+        unsigned moved, off = 0;
+
+        if (!bulk(c, a->dev.slot, a->event_dci, &a->events, a->event_bus,
+                  a->event_packet, &moved, HCI_ANSWER_MS)) {
+            return false;
+        }
+
+        /* An interrupt read is one packet at most, and an event never
+         * shares one with the next before the first is answered: what is
+         * left after a whole event would be a second the adapter sent
+         * unasked, and is dropped with a word in the log rather than kept. */
+        while (off < moved) {
+            unsigned used;
+
+            if (hci_assemble(&a->assembler, a->event_data + off, moved - off,
+                             &used)) {
+                return true;
+            }
+            off += used;
+        }
+    }
+
+    return false;
+}
+
+/* A command sent, and its Command Complete; false for anything else. */
+static bool bt_command(struct controller *c, struct btadapter *a,
+                       uint16_t opcode, struct hci_answer *answer)
+{
+    uint8_t packet[3];
+    unsigned skipped;
+
+    if (hci_command(packet, sizeof packet, opcode, 0, 0) == 0
+        || !control_out(c, &a->dev, HCI_COMMAND_REQUEST, 0, 0, packet,
+                        sizeof packet)) {
+        return false;
+    }
+
+    for (skipped = 0; skipped < HCI_EVENTS_SKIPPED; skipped++) {
+        struct hci_event e;
+
+        if (!bt_event(c, a)) {
+            return false;
+        }
+
+        if (hci_decode_event(a->assembler.bytes, a->assembler.have, &e)
+            && hci_decode_answer(&e, answer) && answer->opcode == opcode) {
+            return answer->complete && answer->status == 0;
+        }
+    }
+
+    return false;
+}
+
+/* An endpoint's context, for a bulk endpoint or an interrupt IN (6.2.3). */
+static void bt_endpoint(struct controller *c, struct device *d, unsigned dci,
+                        unsigned type, unsigned packet, unsigned interval,
+                        const struct ring *r)
+{
+    uint32_t *ep = context(c, d->input, dci + 1u);
+
+    memset(ep, 0, c->context);
+    ep[0] = type == 7u ? interval_for(d->speed, interval) << 16 : 0u;
+    ep[1] = ((uint32_t)packet << 16) | (type << 3) | (3u << 1);
+    ep[2] = (uint32_t)r->bus | 1u;
+    ep[3] = (uint32_t)(r->bus >> 32);
+    ep[4] = type == 7u ? ((uint32_t)packet << 16) | packet : packet;
+}
+
+static void use_bluetooth(struct controller *c, struct device *d,
+                          const struct usb_bluetooth *info,
+                          struct say_line *line)
+{
+    struct btadapter *a = &c->bt[d->slot];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    struct hci_answer answer;
+    uint32_t done[4];
+    uint32_t *icc, *slot;
+    unsigned last;
+    char address[18];
+    const char *name;
+
+    memset(a, 0, sizeof(*a));
+    a->dev = *d;
+    d = &a->dev;                        /* the kept device, from here on */
+    a->port = d->port;
+
+    a->event_dci = 2u * info->event_endpoint + 1u;
+    a->in_dci = 2u * info->acl_in + 1u;
+    a->out_dci = 2u * info->acl_out;
+    a->event_packet = info->event_packet;
+    last = a->event_dci;
+    if (a->in_dci > last) last = a->in_dci;
+    if (a->out_dci > last) last = a->out_dci;
+
+    ring_start(&a->events,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_BT_EVENTS) * PAGE),
+               c->bus + (page + DEVICE_PAGE_BT_EVENTS) * PAGE);
+    ring_start(&a->out,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_BT_OUT) * PAGE),
+               c->bus + (page + DEVICE_PAGE_BT_OUT) * PAGE);
+    ring_start(&a->in,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_BT_IN) * PAGE),
+               c->bus + (page + DEVICE_PAGE_BT_IN) * PAGE);
+    a->event_data = (uint8_t *)(c->mem + (page + DEVICE_PAGE_BT_EVENT) * PAGE);
+    a->event_bus = c->bus + (page + DEVICE_PAGE_BT_EVENT) * PAGE;
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+
+    icc[0] = 0;
+    icc[1] = 1u | (1u << a->event_dci) | (1u << a->in_dci)
+           | (1u << a->out_dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | (last << 27);
+
+    bt_endpoint(c, d, a->event_dci, 7u, info->event_packet,
+                info->event_interval, &a->events);
+    bt_endpoint(c, d, a->in_dci, EP_TYPE_BULK_IN, info->acl_in_packet, 0,
+                &a->in);
+    bt_endpoint(c, d, a->out_dci, EP_TYPE_BULK_OUT, info->acl_out_packet, 0,
+                &a->out);
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        say_failure(c, d->port, "Configure Endpoint",
+                    "; the Bluetooth adapter is not driven", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_CONFIGURATION, info->configuration, 0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION",
+                    "; the Bluetooth adapter is not driven", line);
+        return;
+    }
+
+    a->on = true;
+
+    /* Reset, then the three reads, in Linux's `hci_init1_req` order. */
+    if (!bt_command(c, a, HCI_RESET, &answer)) {
+        say_failure(c, d->port, "HCI Reset",
+                    "; the Bluetooth adapter did not answer", line);
+        return;
+    }
+
+    a->named = bt_command(c, a, HCI_READ_LOCAL_VERSION, &answer)
+            && hci_decode_version(&answer, &a->version)
+            && bt_command(c, a, HCI_READ_BD_ADDR, &answer)
+            && hci_decode_address(&answer, a->address)
+            && bt_command(c, a, HCI_READ_LOCAL_FEATURES, &answer)
+            && hci_decode_features(&answer, a->features);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+
+    if (!a->named) {
+        say_text(line, ": Bluetooth, and it did not say what it is");
+        say_send(console, line);
+        return;
+    }
+
+    say_text(line, ": Bluetooth ");
+    name = hci_version_name(a->version.hci_version);
+    if (name != 0) {
+        say_text(line, name);
+    } else {
+        say_text(line, "version ");
+        say_dec(line, a->version.hci_version);
+    }
+
+    say_text(line, ", ");
+    name = hci_manufacturer_name(a->version.manufacturer);
+    if (name != 0) {
+        say_text(line, name);
+    } else {
+        say_text(line, "company ");
+        say_dec(line, a->version.manufacturer);
+    }
+    say_text(line, " (subversion ");
+    say_hex(line, a->version.lmp_subversion, 4);
+    say_text(line, "), address ");
+    hci_format_address(a->address, address);
+    say_text(line, address);
+
+    say_text(line, hci_feature(a->features, HCI_FEATURE_BREDR_NOT_SUPPORTED)
+                   ? ", Low Energy only"
+                   : hci_feature(a->features, HCI_FEATURE_LE)
+                     ? ", Classic and Low Energy" : ", Classic only");
+    if (hci_feature(a->features, HCI_FEATURE_SSP)) {
+        say_text(line, ", Secure Simple Pairing");
+    }
+    say_text(line, "; events on ");
+    say_dec(line, info->event_endpoint);
+    say_text(line, ", ACL on ");
+    say_dec(line, info->acl_in);
+    say_text(line, " and ");
+    say_dec(line, info->acl_out);
+    say_send(console, line);
+}
+
+static void bluetooth_gone(struct controller *c, unsigned slot,
+                           struct say_line *line)
+{
+    struct btadapter *a = &c->bt[slot];
+
+    if (!a->on) {
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, a->port);
+    say_text(line, ": the Bluetooth adapter gone");
+    say_send(console, line);
+
+    memset(a, 0, sizeof(*a));
+}
+
+/*
  * **Packets out**, on the device's bulk OUT: as many as fit in the page
  * they go from. Synchronous, as an adapter's frame is: `wait_serving` goes
  * on reading everything else while it waits.
@@ -5838,6 +6118,20 @@ static void use_device(struct controller *c, struct device *d,
             }
         }
 
+        /* A Bluetooth adapter (`bluetooth.md` B1). */
+        {
+            struct usb_bluetooth bt;
+
+            btusb_decode_config(d->buffer, total, &bt);
+
+            if (bt.ok) {
+                c->kind_of[d->slot] = USB_KIND_BLUETOOTH;
+                c->driven_of[d->slot] = true;
+                use_bluetooth(c, d, &bt, line);
+                return;
+            }
+        }
+
         /* A MIDI keyboard or controller (`usb.md` §12). */
         {
             static struct usb_midi midi;
@@ -6522,6 +6816,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
     if (slot != 0 && slot != PORT_FAILED) {
         camera_gone(c, slot);
         midi_gone(c, slot, line);
+        bluetooth_gone(c, slot, line);
         stick_release_buffer(&c->stick[slot]);
         memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);

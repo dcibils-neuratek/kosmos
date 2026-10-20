@@ -126,6 +126,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Shortcuts - an index of every system-wide key, grouped and searchable - before it is built: `docs/shortcuts.md`, `docs/shortcuts.html`, `docs/shortcuts-architecture.png`
 - Automations - tasks run on a trigger, and every application scriptable by its controls' names - before it is built: `docs/automations.md`, `docs/automations.html`, `docs/automations-architecture.png`
 - Packages - every package from a server, installed, updated and removed with dependencies, APT's shape - before its window is built: `docs/packages.md`, `docs/packages.html`, `docs/packages-architecture.png`
+- Bluetooth - keyboards and mice, the host stack, and the Bluetooth app - its feature set and architecture, the window, the diagram, B1 built and the rest before it is: `docs/bluetooth.md`, `docs/bluetooth.html`, `docs/bluetooth-architecture.png`
 - Kosmos Write as drawn: `docs/write.html`; its kits - the document, its file, pages, PDF - before they are built: `docs/write.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
