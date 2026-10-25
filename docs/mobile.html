@@ -1,0 +1,732 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  Kosmos Mobile, playable, before any of it is built. Drawn on 25 October
+  2026 from Diego's asks: a mobile Kosmos on ARM phones; "a lot of gestures
+  work on mobile as it's the primary way of interfacing"; "a rather
+  disruptive ui", "Not replicate iPhone or android"; modes - "focus, do not
+  disturb, dumb phone (calls and messaging only), etc"; "phones to help us
+  have a better life that is not necessarily always connected and scrolling
+  feeds"; and "mockup the ui in HTML and make it playable to use it before
+  we code a single line in the real kosmos". roadmap.md, "Kosmos Mobile".
+  On a computer it is a phone with a panel beside it; opened on a phone it
+  is the phone, and takes touch. Every person, message and song in it is
+  made up.
+-->
+<title>Kosmos Mobile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff; --chip: #e6eaf0;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  /* The phone is one visual world in either theme: night, and the mode's
+     colour at its edge. */
+  --p-ground: #07090e; --p-ink: #eef1f6; --p-dim: #9aa3b2; --p-faint: #5f6878;
+  --p-raised: #161b25; --p-line: #262d3a;
+  --halo: #f2a93b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; --chip: #222833; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; --chip: #222833; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 4px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 24px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+
+.play { display: grid; grid-template-columns: auto 1fr; gap: 36px; align-items: start; }
+.panel h3 { font-family: var(--display); font-size: 16px; margin: 0 0 6px; }
+.panel section { margin-bottom: 22px; }
+.panel .k { font-family: var(--mono); font-size: 12px; background: var(--chip); border-radius: 5px; padding: 1px 6px; }
+.gest { display: grid; grid-template-columns: 132px 1fr; gap: 6px 12px; font-size: 14px; }
+.gest b { font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.controls button { font: 500 13px var(--body); color: var(--ink); background: var(--card); border: 1px solid var(--rule);
+                   border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+.controls button:hover { border-color: var(--accent); }
+.controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.log { font-family: var(--mono); font-size: 12px; color: var(--muted); min-height: 40px; }
+
+/* ---- the phone -------------------------------------------------------- */
+.phone { width: 360px; height: 760px; border-radius: 46px; background: #000; padding: 10px; flex: none;
+         box-shadow: 0 20px 50px rgba(0,0,0,.35), inset 0 0 0 1.5px #2a2f3a; }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 37px; overflow: hidden;
+          background: var(--p-ground); color: var(--p-ink); font-family: var(--body); font-size: 13px;
+          touch-action: none; user-select: none; -webkit-user-select: none; overscroll-behavior: none;
+          transition: filter .5s; cursor: default; }
+.screen.grey { filter: grayscale(1); }
+.screen.dim .orbitwrap, .screen.dim .strip { opacity: .55; }
+/* The halo: the mode's colour at the screen's edge, always. */
+.halo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 30;
+        box-shadow: inset 0 0 0 1.5px var(--halo), inset 0 0 22px -10px var(--halo); opacity: .7; transition: box-shadow .6s; }
+
+.strip { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center; gap: 8px;
+         padding: 8px 26px 0; font-size: 12.5px; font-weight: 500; z-index: 20; font-variant-numeric: tabular-nums; }
+.strip .time { flex: 1; }
+.strip .mode { display: flex; align-items: center; gap: 6px; color: var(--p-dim); font-size: 11.5px; }
+.strip .mode i { width: 7px; height: 7px; border-radius: 50%; background: var(--halo); display: block; }
+.strip .batt { font-size: 11.5px; color: var(--p-dim); }
+.lease { position: absolute; top: 40px; left: 26px; right: 26px; height: 2px; border-radius: 1px; background: var(--p-line); z-index: 20; display: none; }
+.lease i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--halo); border-radius: 1px; }
+
+.handle { position: absolute; bottom: 9px; left: 50%; width: 110px; height: 5px; margin-left: -55px; border-radius: 3px;
+          background: rgba(238,241,246,.7); z-index: 20; }
+
+/* The orbit: home. */
+.orbitwrap { position: absolute; inset: 40px 0 0; transition: opacity .4s; }
+.centre { position: absolute; left: 50%; top: 44%; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+          background: radial-gradient(circle at 50% 40%, rgba(255,255,255,.07), rgba(255,255,255,.015) 70%);
+          box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 0 60px -10px var(--halo); cursor: pointer; }
+.centre .clock { font-family: var(--display); font-size: 44px; font-weight: 400; line-height: 1; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.centre .mname { font-family: var(--display); font-size: 15px; font-weight: 600; color: var(--halo); margin-top: 6px; letter-spacing: .02em; }
+.centre .msub { font-size: 10.5px; color: var(--p-dim); margin-top: 2px; max-width: 120px; line-height: 1.3; }
+.ring { position: absolute; left: 50%; top: 44%; border-radius: 50%; border: 1px dashed rgba(255,255,255,.08); pointer-events: none; }
+.body { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+        transform: translate(-50%, -50%); font-size: 11px; color: var(--p-dim); transition: left .5s, top .5s, opacity .4s; }
+.planet { border-radius: 50%; display: grid; place-items: center; background: var(--p-raised);
+          box-shadow: 0 0 0 1px var(--p-line); position: relative; }
+.planet svg { stroke: var(--p-ink); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.planet.lit::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid var(--halo);
+                     opacity: .8; animation: breathe 3.2s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: .25; } 50% { transform: scale(1.08); opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .planet.lit::after { animation: none; } .body { transition: none; } }
+.person { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 14px; color: #0b0d12; }
+.hint { position: absolute; bottom: 30px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--p-faint); }
+.held { position: absolute; top: 74%; left: 0; right: 0; text-align: center; font-size: 11.5px; color: var(--p-dim); }
+
+/* Panels from the edges. */
+.sheet { position: absolute; z-index: 25; background: rgba(12,15,22,.97); transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.people { top: 0; bottom: 0; left: 0; width: 86%; transform: translateX(-102%); padding: 54px 20px 20px; border-right: 1px solid var(--p-line); }
+.people.open { transform: none; }
+.day { top: 0; left: 0; right: 0; height: 88%; transform: translateY(-102%); padding: 52px 20px 20px; border-bottom: 1px solid var(--p-line);
+       overflow: hidden; display: flex; flex-direction: column; }
+.day.open { transform: none; }
+.sheet h4 { font-family: var(--display); font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sheet .small { color: var(--p-dim); font-size: 11.5px; margin-bottom: 14px; }
+.who { display: grid; grid-template-columns: 44px 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--p-line); }
+.who b { font-weight: 500; font-size: 13.5px; }
+.who span { display: block; color: var(--p-dim); font-size: 11px; }
+.round { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--p-raised); border: 1px solid var(--p-line); cursor: pointer; }
+.round svg { width: 16px; height: 16px; stroke: var(--p-ink); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.ribbon { position: relative; height: 34px; border-radius: 8px; overflow: hidden; display: flex; margin: 4px 0 4px; }
+.ribbon div { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #0b0d12; font-weight: 600; }
+.ribbon .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 6px #fff; }
+.hours { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--p-faint); margin-bottom: 18px; font-variant-numeric: tabular-nums; }
+.post { flex: 1; overflow: auto; }
+.post .item { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--p-line); }
+.post .item .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--p-raised); }
+.post .item .ic svg { width: 15px; height: 15px; stroke: var(--p-ink); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.post .item b { font-size: 12.5px; font-weight: 500; display: block; }
+.post .item span { font-size: 11.5px; color: var(--p-dim); }
+.end { text-align: center; color: var(--p-faint); font-size: 11.5px; padding: 18px 0 8px; }
+.holdbtn { margin-top: 10px; align-self: center; position: relative; overflow: hidden; border: 1px solid var(--p-line); background: var(--p-raised);
+           color: var(--p-ink); border-radius: 18px; padding: 8px 16px; font: 500 12px var(--body); cursor: pointer; }
+.holdbtn i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--halo); opacity: .35; }
+
+/* The dial: up from the bottom edge, and hold. */
+.dial { position: absolute; left: 0; right: 0; bottom: 0; height: 330px; z-index: 26; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.dial.open { opacity: 1; }
+.dial .shade { position: absolute; inset: -500px 0 0; background: linear-gradient(to top, rgba(4,6,10,.96) 45%, rgba(4,6,10,.0)); }
+.dial .arc { position: absolute; left: 50%; bottom: -150px; width: 440px; height: 440px; margin-left: -220px; border-radius: 50%;
+             border: 1px solid rgba(255,255,255,.12); }
+.dial .stop { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 5px;
+              font-family: var(--display); font-size: 13px; color: var(--p-dim); transition: color .15s, transform .15s; }
+.dial .stop i { width: 16px; height: 16px; border-radius: 50%; display: block; background: var(--c); opacity: .5; transition: opacity .15s, box-shadow .15s; }
+.dial .stop.sel { color: var(--p-ink); transform: translate(-50%, -50%) scale(1.15); }
+.dial .stop.sel i { opacity: 1; box-shadow: 0 0 18px var(--c); }
+.dial .says { position: absolute; left: 24px; right: 24px; bottom: 34px; text-align: center; font-size: 12px; color: var(--p-dim); line-height: 1.4; }
+.dial .says b { color: var(--p-ink); font-family: var(--display); font-size: 17px; font-weight: 500; display: block; }
+
+/* Asked when opening: for how long. */
+.ask { position: absolute; inset: 0; z-index: 27; background: rgba(4,6,10,.94); display: none; flex-direction: column; align-items: center;
+       justify-content: center; gap: 16px; padding: 30px; text-align: center; }
+.ask.open { display: flex; }
+.ask h4 { font-family: var(--display); font-size: 24px; font-weight: 500; margin: 0; }
+.ask p { color: var(--p-dim); font-size: 12.5px; margin: 0; line-height: 1.45; }
+.ask .opts { display: flex; gap: 10px; }
+.ask .opts button, .ask .cancel { font: 500 14px var(--body); color: var(--p-ink); background: var(--p-raised); border: 1px solid var(--p-line);
+                                   border-radius: 22px; padding: 10px 16px; cursor: pointer; }
+.ask .opts button:hover { border-color: var(--halo); }
+.ask .cancel { background: none; border: none; color: var(--p-dim); font-size: 12.5px; }
+
+/* An application, full screen, one at a time. */
+.app { position: absolute; inset: 0; z-index: 15; background: #0d1018; display: flex; flex-direction: column; padding-top: 44px;
+       transform: translateY(100%); transition: transform .32s cubic-bezier(.2,.8,.2,1); }
+.app.open { transform: none; }
+.app .head { padding: 6px 22px 12px; display: flex; align-items: baseline; gap: 10px; }
+.app .head h5 { font-family: var(--display); font-size: 26px; font-weight: 500; margin: 0; flex: 1; }
+.app .head span { color: var(--p-dim); font-size: 11.5px; }
+.app .content { flex: 1; overflow: auto; padding: 0 22px 40px; }
+.thread { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--p-line); }
+.thread b { font-size: 13px; font-weight: 500; }
+.thread span { display: block; font-size: 11.5px; color: var(--p-dim); }
+.thread time { font-size: 10.5px; color: var(--p-faint); }
+.bubble { max-width: 76%; padding: 8px 12px; border-radius: 16px; margin: 6px 0; font-size: 13px; line-height: 1.4; }
+.bubble.them { background: var(--p-raised); border-bottom-left-radius: 4px; }
+.bubble.me { background: #2b4e93; margin-left: auto; border-bottom-right-radius: 4px; }
+.doc { font-family: Georgia, "Times New Roman", serif; font-size: 15px; line-height: 1.6; color: #e6e9ee; }
+.doc h6 { font-family: var(--display); font-size: 20px; margin: 0 0 8px; font-weight: 500; }
+.nowplaying { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 10px; }
+.cover { width: 220px; height: 220px; border-radius: 22px; background: linear-gradient(135deg, #ff8a3d, #c2185b 70%); box-shadow: 0 18px 40px -10px rgba(194,24,91,.5); }
+.bar2 { width: 230px; height: 4px; border-radius: 2px; background: var(--p-line); position: relative; }
+.bar2 i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: var(--p-ink); border-radius: 2px; }
+.mapart { height: 380px; border-radius: 16px; background: #10202a; position: relative; overflow: hidden; }
+.viewfinder { height: 470px; border-radius: 18px; background: radial-gradient(circle at 40% 40%, #2c3a4d, #0c1018); position: relative; }
+.viewfinder::after { content: ""; position: absolute; left: 50%; bottom: 18px; width: 58px; height: 58px; margin-left: -29px; border-radius: 50%;
+                     border: 4px solid #fff; }
+.pagebox { border: 1px solid var(--p-line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.pagebox b { display: block; font-size: 13px; font-weight: 500; }
+.pagebox span { font-size: 11.5px; color: var(--p-dim); }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 10px 20px; }
+.keypad div { height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: var(--p-raised); width: 56px; margin: 0 auto; }
+
+/* What comes in. */
+.banner { position: absolute; top: 46px; left: 12px; right: 12px; z-index: 28; background: rgba(28,33,44,.97); border: 1px solid var(--p-line);
+          border-left: 3px solid var(--halo); border-radius: 14px; padding: 10px 12px; display: grid; grid-template-columns: 34px 1fr; gap: 10px;
+          transform: translateY(calc(-100% - 70px)); transition: transform .35s cubic-bezier(.2,.8,.2,1); cursor: pointer; }
+.banner.open { transform: none; }
+.banner b { font-size: 12.5px; font-weight: 600; display: block; }
+.banner span { font-size: 12px; color: var(--p-dim); }
+.toast { position: absolute; bottom: 64px; left: 50%; transform: translate(-50%, 30px); opacity: 0; z-index: 28; background: rgba(28,33,44,.97);
+         border: 1px solid var(--p-line); border-radius: 18px; padding: 8px 14px; font-size: 12px; white-space: nowrap; transition: all .3s; }
+.toast.open { transform: translate(-50%, 0); opacity: 1; }
+
+/* What a mode allows: a long press on its name. */
+.allows { position: absolute; left: 14px; right: 14px; bottom: 30px; z-index: 27; background: rgba(20,24,33,.98); border: 1px solid var(--p-line);
+          border-radius: 20px; padding: 16px 18px; transform: translateY(130%); transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+.allows.open { transform: none; }
+.allows h4 { font-family: var(--display); font-size: 19px; font-weight: 500; margin: 0 0 8px; color: var(--halo); }
+.allows li { font-size: 12.5px; color: var(--p-dim); margin: 3px 0; max-width: none; }
+.allows ul { margin: 0; padding-left: 18px; }
+
+/* Rest: almost nothing. */
+.restmsg { position: absolute; left: 0; right: 0; top: 64%; text-align: center; color: var(--p-faint); font-size: 12px; line-height: 1.5; padding: 0 40px; }
+
+/* On a phone: the prototype is the phone. */
+@media (max-width: 560px) {
+  .wrap { padding: 0; }
+  .wrap > h1, .wrap > .sub, .panel, .wrap > h2, .wrap > p, .wrap > .tablewrap, .wrap > ul { display: none; }
+  .play { display: block; }
+  .phone { width: 100vw; height: 100dvh; border-radius: 0; padding: 0; box-shadow: none; }
+  .screen { border-radius: 0; }
+  body { overflow: hidden; background: #000; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-write" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></symbol>
+  <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2 2M5 4L2 7M19 4l3 3"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h3M3 9h18"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></symbol>
+  <symbol id="i-news" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></symbol>
+  <symbol id="i-shop" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8a3 3 0 0 1 6 0"/></symbol>
+</svg>
+
+<div class="wrap">
+<h1>Kosmos Mobile</h1>
+<p class="sub">A phone that is calm by default. Not a grid of applications and a stream of numbers, but a mode at its centre - what you are doing now - and only what that mode allows around it. Playable: on this page with the pointer, and on a phone with your fingers. Drawn on 25 October 2026, before any of it is built; for Diego to change until it is right.</p>
+
+<div class="play">
+  <div class="phone"><div class="screen" id="screen">
+    <div class="halo"></div>
+    <div class="strip"><span class="time" id="stime">9:41</span><span class="mode"><i></i><span id="smode">Focus</span></span><span class="batt">84%</span></div>
+    <div class="lease" id="lease"><i id="leasebar"></i></div>
+    <div class="orbitwrap" id="orbit"></div>
+    <div class="hint" id="hint">Up from the bottom and hold: modes</div>
+
+    <div class="sheet people" id="people"></div>
+    <div class="sheet day" id="day"></div>
+    <div class="app" id="app"></div>
+    <div class="dial" id="dial"></div>
+    <div class="ask" id="ask"></div>
+    <div class="allows" id="allows"></div>
+    <div class="banner" id="banner"></div>
+    <div class="toast" id="toast"></div>
+    <div class="handle"></div>
+  </div></div>
+
+  <div class="panel">
+    <section>
+      <h3>The gestures</h3>
+      <div class="gest">
+        <b>Up from the bottom</b><span>Home: the orbit, from anywhere.</span>
+        <b>Up and hold</b><span>The mode dial. Slide along it, let go to choose.</span>
+        <b>In from the left</b><span>Your people, in every mode.</span>
+        <b>Down from the top</b><span>The day: its shape, and the post.</span>
+        <b>Hold the centre</b><span>What this mode lets through.</span>
+        <b>Tap a planet</b><span>Open it. One thing at a time.</span>
+        <b>Face down</b><span>Rest, on a phone that can feel it.</span>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-top:10px">With a keyboard: <span class="k">H</span> home, <span class="k">M</span> modes, <span class="k">P</span> people, <span class="k">D</span> the day.</p>
+    </section>
+    <section>
+      <h3>Make something happen</h3>
+      <div class="controls">
+        <button data-sim="circle">A message from Ana (your circle)</button>
+        <button data-sim="mail">A mail from a shop</button>
+        <button data-sim="news">News</button>
+        <button data-sim="call">Tomás calls</button>
+        <button data-sim="post">Deliver the post now</button>
+        <button data-sim="face">Lay it face down</button>
+        <button data-sim="fast">Time: ×60</button>
+      </div>
+    </section>
+    <section>
+      <h3>What it just did</h3>
+      <div class="log" id="log">-</div>
+    </section>
+  </div>
+</div>
+
+<h2>What this phone believes</h2>
+<ul>
+  <li><b>A mode is what you are doing, and it is the interface.</b> Essential, Focus, Out, Rest, Open: each decides what is on the screen, who can reach you and what waits. The colour at the screen's edge says which, always.</li>
+  <li><b>Calm is the default; Open is a lease.</b> Going calmer is one gesture. Opening everything asks for how long, and gives itself back when the time is up.</li>
+  <li><b>People come straight; everything else comes by post.</b> Your circle reaches you in every mode but Rest's quietest hours. Mail, news and the rest are held and delivered together at the times you choose, as a list that ends.</li>
+  <li><b>Nothing is endless.</b> No feed scrolls for ever; every list has a last line that says it is the last.</li>
+  <li><b>No red numbers.</b> Something that has news for you glows softly. It never says how many.</li>
+  <li><b>Gestures first, and each edge means one thing.</b> Left is people, top is the day, bottom is home and the modes.</li>
+  <li><b>Kept by the system, not by willpower.</b> In Kosmos a program reaches only what it was handed (<code>CLAUDE.md</code>, capabilities). In Essential the browser is not hidden behind a tap - it is not handed the network. A mode is a set of capabilities, which no other phone can say.</li>
+</ul>
+
+<h2>The modes</h2>
+<div class="tablewrap"><table class="plain">
+  <tr><th>Mode</th><th>On the screen</th><th>Who reaches you</th><th>What waits</th></tr>
+  <tr><td><b>Essential</b></td><td>Calls and messages, in grey, large</td><td>Everyone who calls or writes</td><td>Everything else, until you leave it</td></tr>
+  <tr><td><b>Focus</b></td><td>The one thing you chose - Writing here - and music</td><td>Your circle</td><td>The rest, until the focus ends</td></tr>
+  <tr><td><b>Out</b></td><td>Maps, the camera, music, calls and messages, your wallet</td><td>Your circle</td><td>Mail and news, until the post</td></tr>
+  <tr><td><b>Rest</b></td><td>Almost nothing: the time, dim</td><td>Your circle's calls, and your alarms</td><td>Everything</td></tr>
+  <tr><td><b>Open</b></td><td>All of Kosmos, for the minutes you gave it</td><td>Everyone</td><td>Still the post: news comes in batches here too</td></tr>
+</table></div>
+
+<h2>What it is made of</h2>
+<p>A phone is one more board for the same system; the new pieces are the ones a phone has and a desktop does not.</p>
+<div class="tablewrap"><table class="plain">
+  <tr><th>Piece</th><th>Supplied by</th><th>New or as it is</th></tr>
+  <tr><td>Modes, and what each hands out</td><td>a <b>modes server</b>: which capabilities a program is given in each mode, asked by the launcher before it starts one, and by <code>/Notifications</code> before it shows one</td><td><b>new</b>, and the desktop wants it too - Do Not Disturb hours are already on the roadmap</td></tr>
+  <tr><td>The post</td><td><code>/Notifications</code>, holding and delivering in batches at the times the person chose</td><td>a change to what exists</td></tr>
+  <tr><td>Your circle</td><td>Contacts, a kit any application can read</td><td><b>new</b> (Mail and Calendar want it)</td></tr>
+  <tr><td>The orbit, the dial, the edges</td><td>Astra on a phone: the window manager taking touch and gestures, the launcher pad made the orbit</td><td><b>new</b> layouts and gestures</td></tr>
+  <tr><td>Messages and calls</td><td>applications of their own; calls over the network first, the cellular modem out of scope</td><td><b>new</b></td></tr>
+  <tr><td>The applications on the orbit</td><td>Kosmos's own - Write, Music, Maps, Mail, the camera, Tracker - laid out to a narrow window by the UI kit</td><td>as they are, and the kit learning a narrow window</td></tr>
+</table></div>
+<p>And before any phone: all of it in QEMU, with a phone-shaped screen and a multi-touch tablet, held by the gate as the desktop is (<code>roadmap.md</code>, P1).</p>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const I = (id, size) => `<svg style="width:${size}px;height:${size}px"><use href="#i-${id}"/></svg>`;
+const screen = $('screen');
+
+/* ---- the world, made up -------------------------------------------- */
+const APPS = {
+  phone: ['Phone', 'phone'], messages: ['Messages', 'msg'], write: ['Write', 'write'], music: ['Music', 'music'],
+  maps: ['Maps', 'map'], camera: ['Camera', 'camera'], mail: ['Mail', 'mail'], web: ['Web', 'globe'],
+  files: ['Tracker', 'folder'], calendar: ['Calendar', 'cal'], photos: ['Photos', 'photo'], alarm: ['Alarm', 'alarm'],
+  wallet: ['Wallet', 'wallet'], cafesa: ['Cafesa3D', 'cube'], terminal: ['Terminal', 'term'], reader: ['Reader', 'book'],
+};
+const CIRCLE = [
+  { n: 'Ana', c: '#f2a93b', s: 'Partner' }, { n: 'Tomás', c: '#4cc27a', s: 'Brother' },
+  { n: 'Sofía', c: '#e87fa8', s: 'Daughter' }, { n: 'Leo', c: '#6fb3ff', s: 'Friend' },
+];
+const MODES = {
+  rest:      { name: 'Rest', color: '#8b7cf6', sub: 'until 7:00', apps: ['alarm'],
+               says: 'Nothing reaches you but your circle’s calls and your alarms.',
+               allows: ['Your circle’s calls, and only calls', 'Your alarms', 'Nothing else; the post waits for morning'] },
+  essential: { name: 'Essential', color: '#d9dde4', sub: 'calls and messages', apps: ['phone', 'messages'], grey: true, people: true,
+               says: 'Calls and messages. Nothing else.',
+               allows: ['Calls and messages from anyone', 'No network for anything else: the browser is not dimmed, it is not handed it', 'Everything else waits until you leave'] },
+  focus:     { name: 'Focus', color: '#f2a93b', sub: 'Writing, until 12:00', apps: ['write', 'music'],
+               says: 'One thing, and music. Your circle can still reach you.',
+               allows: ['Write, and Music', 'Messages and calls from your circle', 'Mail and news wait for 12:00'] },
+  out:       { name: 'Out', color: '#4cc27a', sub: 'out of the house', apps: ['maps', 'camera', 'music', 'phone', 'messages', 'wallet'],
+               says: 'Maps, the camera, music, your wallet, and the people who matter.',
+               allows: ['Maps, Camera, Music, Wallet, Phone, Messages', 'Your circle reaches you; others wait', 'Mail and news wait for the post'] },
+  open:      { name: 'Open', color: '#4f8df7', sub: 'everything', apps: ['messages', 'phone', 'mail', 'web', 'music', 'write', 'maps', 'camera', 'photos', 'calendar', 'files', 'reader', 'cafesa', 'terminal'],
+               says: 'All of Kosmos, for as long as you say.', lease: true,
+               allows: ['Every application', 'Everyone reaches you', 'News still comes by post: in batches, never a stream'] },
+};
+const ORDER = ['rest', 'essential', 'focus', 'out', 'open'];
+
+const state = {
+  mode: 'focus', back: 'focus', leaseEnd: 0, leaseStart: 0, speed: 1,
+  lit: new Set(), held: [], delivered: [], banners: [], faceDown: false, app: null,
+};
+
+/* ---- the clock: real, unless time is quickened ------------------------ */
+let base = Date.now(), virt = Date.now();
+function now() { return virt + (Date.now() - base) * state.speed; }
+function quicken(x) { virt = now(); base = Date.now(); state.speed = x; }
+const hm = (t) => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function nextPost() {
+  const d = new Date(now()); const h = d.getHours() + d.getMinutes() / 60;
+  for (const p of [9, 13, 18]) if (h < p) return p;
+  return 9;
+}
+
+function log(s) { $('log').textContent = s; }
+function toast(s) { const t = $('toast'); t.textContent = s; t.classList.add('open'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('open'), 2600); }
+
+/* ---- drawing ---------------------------------------------------------- */
+function paintMode() {
+  const m = MODES[state.mode];
+  screen.style.setProperty('--halo', m.color);
+  screen.classList.toggle('grey', !!m.grey);
+  screen.classList.toggle('dim', state.mode === 'rest');
+  $('smode').textContent = m.name;
+  $('lease').style.display = m.lease ? 'block' : 'none';
+  drawOrbit();
+}
+
+function drawOrbit() {
+  const m = MODES[state.mode], o = $('orbit');
+  const w = screen.clientWidth, h = screen.clientHeight - 40;
+  const cx = w / 2, cy = h * 0.44;
+  let html = `<div class="centre" id="centre"><div class="clock" id="clock">${hm(now())}</div><div class="mname">${m.name}</div><div class="msub">${state.mode === 'open' ? leaseText() : m.sub}</div></div>`;
+
+  if (state.mode === 'rest') {
+    html += `<div class="restmsg">Rest until 7:00.<br>Only ${CIRCLE.map(p => p.n).slice(0, 2).join(' and ')} can call.<br>Everything else is held for the morning.</div>`;
+  } else {
+    /* Orbits are ellipses, as orbits are, and a phone is tall: an inner
+       one of up to six, and an outer one for the rest, offset by half a
+       step so no two line up. */
+    const apps = m.apps;
+    const rings = apps.length > 7 ? [apps.slice(0, 6), apps.slice(6)] : [apps];
+    rings.forEach((ring, ri) => {
+      const rx = w * (ri === 0 ? (rings.length > 1 ? 0.29 : 0.33) : 0.43);
+      const ry = rx * (ri === 0 ? 1.25 : 1.5);
+      html += `<div class="ring" style="width:${2 * rx}px;height:${2 * ry}px;margin:${-ry}px 0 0 ${-rx}px"></div>`;
+      ring.forEach((id, i) => {
+        const a = -Math.PI / 2 + (2 * Math.PI * i) / ring.length + (ri ? Math.PI / ring.length : 0) + (ring.length === 2 ? Math.PI / 2 : 0);
+        const x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a);
+        const size = ri === 0 && i === 0 && ring.length <= 3 ? 64 : ri ? 40 : 50;
+        html += `<div class="body" data-app="${id}" style="left:${x}px;top:${y}px"><div class="planet${state.lit.has(id) ? ' lit' : ''}" style="width:${size}px;height:${size}px">${I(APPS[id][1], size * 0.42)}</div>${APPS[id][0]}</div>`;
+      });
+    });
+
+    if (m.people) {
+      CIRCLE.forEach((p, i) => {
+        const x = cx + (i - 1.5) * 64, y = h * 0.86;
+        html += `<div class="body" data-call="${p.n}" style="left:${x}px;top:${y}px"><div class="person" style="background:${p.c}">${p.n[0]}</div>${p.n}</div>`;
+      });
+    }
+
+    if (state.held.length && state.mode !== 'open') {
+      html += `<div class="held" style="top:${m.people ? 70 : 80}%">Some things are held for ${nextPost()}:00.</div>`;
+    }
+  }
+  o.innerHTML = html;
+}
+
+function leaseText() {
+  const left = Math.max(0, state.leaseEnd - now());
+  return `${Math.ceil(left / 60000)} min left, then ${MODES[state.back].name}`;
+}
+
+function drawPeople() {
+  $('people').innerHTML = `<h4>People</h4><div class="small">Your circle reaches you in every mode. In from the left, wherever you are.</div>` +
+    CIRCLE.map(p => `<div class="who"><div class="person" style="background:${p.c}">${p.n[0]}</div><div><b>${p.n}</b><span>${p.s}</span></div>
+      <div class="round" data-call="${p.n}">${I('phone', 16)}</div><div class="round" data-write="${p.n}">${I('msg', 16)}</div></div>`).join('') +
+    `<div class="small" style="margin-top:16px">Everyone else is in Contacts, reached in Essential and Open.</div>`;
+}
+
+function drawDay() {
+  const segs = [[0, 7, 'rest'], [7, 9, 'essential'], [9, 12, 'focus'], [12, 13, 'open'], [13, 18, 'out'], [18, 22, 'essential'], [22, 24, 'rest']];
+  const d = new Date(now()); const h = d.getHours() + d.getMinutes() / 60;
+  const delivered = state.delivered;
+  $('day').innerHTML = `<h4>Sunday</h4><div class="small">The day's shape - the modes it moves through by itself - and the post.</div>
+    <div class="ribbon">${segs.map(([a, b, m]) => `<div style="width:${(b - a) / 24 * 100}%;background:${MODES[m].color}">${b - a >= 3 ? MODES[m].name : ''}</div>`).join('')}
+      <div class="now" style="left:${h / 24 * 100}%"></div></div>
+    <div class="hours"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+    <h4 style="font-size:17px">The post</h4><div class="small">${state.held.length ? 'Some things are held, and come at ' + nextPost() + ':00 together.' : 'Nothing is waiting. The next post is at ' + nextPost() + ':00.'}</div>
+    <div class="post">${delivered.length ? delivered.map(it => `<div class="item"><div class="ic">${I(it.ic, 15)}</div><div><b>${it.t}</b><span>${it.s}</span></div></div>`).join('') +
+      `<div class="end">That is everything since the last post.</div>` : `<div class="end">Nothing delivered yet today.</div>`}</div>
+    ${state.held.length ? `<button class="holdbtn" id="early"><i></i>Hold to deliver now</button>` : ''}`;
+  const early = $('early');
+  if (early) holdButton(early, 900, () => { deliver(); drawDay(); });
+}
+
+function holdButton(el, ms, done) {
+  let t0 = 0, raf = 0;
+  const fill = el.querySelector('i');
+  const tick = () => { const p = Math.min(1, (performance.now() - t0) / ms); fill.style.width = p * 100 + '%'; if (p >= 1) { stop(); done(); } else raf = requestAnimationFrame(tick); };
+  const stop = () => { cancelAnimationFrame(raf); fill.style.width = '0'; };
+  el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t0 = performance.now(); raf = requestAnimationFrame(tick); });
+  el.addEventListener('pointerup', stop); el.addEventListener('pointerleave', stop);
+}
+
+/* ---- applications ----------------------------------------------------- */
+function appBody(id) {
+  switch (id) {
+    case 'messages':
+      return state.app?.who
+        ? `<div class="bubble them">Are you still writing? Lunch at 1?</div><div class="bubble me">Until 12. Then yes.</div><div class="bubble them">Perfect.</div><div class="end">That is the whole conversation.</div>`
+        : CIRCLE.map((p, i) => `<div class="thread" data-thread="${p.n}"><div class="person" style="background:${p.c}">${p.n[0]}</div><div><b>${p.n}</b><span>${['Lunch at 1?', 'Sent a photo', 'Can you pick me up at 6?', 'Sunday football?'][i]}</span></div><time>${['9:38', '8:12', 'Sat', 'Fri'][i]}</time></div>`).join('') + `<div class="end">That is everyone.</div>`;
+    case 'phone':
+      return `<div class="keypad">${'123456789*0#'.split('').map(k => `<div>${k}</div>`).join('')}</div>`;
+    case 'write':
+      return `<div class="doc"><h6>Chapter four</h6>The lake was flat enough to hold the whole sky, and Ana had stopped talking for the first time since the car. Neither of them looked at a phone. Afterwards, nobody could say how long they had stayed.<p>I want the next part to begin there<span style="border-left:2px solid var(--halo);margin-left:1px"></span></p></div>`;
+    case 'music':
+      return `<div class="nowplaying"><div class="cover"></div><b style="font-size:17px;font-weight:500">Holocene</b><span style="color:var(--p-dim)">Bon Iver</span><div class="bar2"><i></i></div><span style="color:var(--p-faint);font-size:11px">1:42 of 5:36 &middot; Pixel Buds</span></div>`;
+    case 'maps':
+      return `<div class="mapart"><svg viewBox="0 0 300 380" width="100%" height="100%"><path d="M-10 300 Q80 240 150 260 T310 210" stroke="#2a4b5a" stroke-width="18" fill="none"/><path d="M40 -10 L90 400 M200 -10 Q170 200 260 400" stroke="#1d3440" stroke-width="10" fill="none"/>
+        <path d="M80 330 Q120 220 165 190 T225 80" stroke="var(--halo)" stroke-width="4" fill="none" stroke-dasharray="2 8" stroke-linecap="round"/><circle cx="80" cy="330" r="8" fill="#fff"/><circle cx="225" cy="80" r="9" fill="var(--halo)"/></svg></div>
+        <div class="pagebox" style="margin-top:12px"><b>The lake, 24 min walking</b><span>The quiet way, by the river</span></div>`;
+    case 'camera':
+      return `<div class="viewfinder"></div>`;
+    case 'mail':
+      return (state.delivered.filter(d => d.ic === 'mail').map(d => `<div class="pagebox"><b>${d.t}</b><span>${d.s}</span></div>`).join('') || '<div class="pagebox"><b>Nothing new</b><span>The next post is at ' + nextPost() + ':00</span></div>') + `<div class="end">That is everything since the last post.</div>`;
+    case 'web':
+      return `<div class="pagebox"><b>The long read: why cities are planting forests</b><span>12 min &middot; read to the end</span></div><div class="pagebox"><b>Weather</b><span>Sunny, 19°</span></div><div class="end">The page ends here. Nothing loads by itself below this line.</div>`;
+    default:
+      return `<div class="pagebox"><b>${APPS[id][0]}</b><span>As on the desktop, laid out for a narrow window.</span></div>`;
+  }
+}
+
+function openApp(id, extra) {
+  if (!MODES[state.mode].apps.includes(id) && id !== 'messages' && id !== 'phone') { toast(`${APPS[id][0]} is not in ${MODES[state.mode].name}`); return; }
+  state.app = Object.assign({ id }, extra || {});
+  state.lit.delete(id);
+  const a = $('app');
+  a.innerHTML = `<div class="head"><h5>${state.app.who ? state.app.who : APPS[id][0]}</h5><span>${MODES[state.mode].name}</span></div><div class="content">${appBody(id)}</div>`;
+  a.classList.add('open');
+  log(`Opened ${APPS[id][0]}. Up from the bottom to come home.`);
+}
+function closeApp() { $('app').classList.remove('open'); state.app = null; drawOrbit(); }
+
+/* ---- what arrives ----------------------------------------------------- */
+function arrive(kind) {
+  if (kind === 'circle' || kind === 'call') {
+    const p = kind === 'call' ? CIRCLE[1] : CIRCLE[0];
+    if (state.mode === 'rest' && kind !== 'call') { state.held.push({ ic: 'msg', t: p.n, s: 'Are you still writing? Lunch at 1?' }); log(`${p.n} wrote; Rest holds even your circle's messages - only calls come through.`); drawOrbit(); return; }
+    state.lit.add('messages');
+    showBanner(p, kind === 'call' ? 'is calling' : 'Are you still writing? Lunch at 1?', kind);
+    log(`${p.n} is in your circle: straight through, in ${MODES[state.mode].name}.`);
+    drawOrbit();
+    return;
+  }
+  const it = kind === 'mail' ? { ic: 'mail', t: 'Northwind Outfitters', s: 'Your order has shipped' }
+                             : { ic: 'news', t: 'The Morning Paper', s: 'Five stories, and nothing after them' };
+  state.held.push(it);
+  log(`${it.t}: held for the ${nextPost()}:00 post. No sound, no number, nothing on the screen but a quiet line.`);
+  drawOrbit();
+}
+function deliver() {
+  if (!state.held.length) { log('The post had nothing to bring.'); return; }
+  state.delivered = state.held.concat(state.delivered).slice(0, 12);
+  state.held.filter(h => h.ic === 'mail').forEach(() => state.lit.add('mail'));
+  state.held = [];
+  toast('The post came. It is in the day, from the top.');
+  log('Delivered together, as one finite list.');
+  drawOrbit();
+}
+function showBanner(p, text, kind) {
+  const b = $('banner');
+  b.innerHTML = `<div class="person" style="background:${p.c};width:34px;height:34px;font-size:13px">${p.n[0]}</div><div><b>${p.n}</b><span>${text}</span></div>`;
+  b.onclick = () => { b.classList.remove('open'); if (kind === 'call') openApp('phone'); else openApp('messages', { who: p.n }); };
+  b.classList.add('open');
+  clearTimeout(showBanner.t); showBanner.t = setTimeout(() => b.classList.remove('open'), 4200);
+}
+
+/* ---- modes ------------------------------------------------------------ */
+function setMode(id, minutes) {
+  if (id === state.mode) return;
+  if (id === 'open') {
+    state.back = state.mode;
+    state.leaseStart = now(); state.leaseEnd = now() + minutes * 60000;
+  }
+  state.mode = id;
+  closeApp();
+  paintMode();
+  toast(MODES[id].says);
+  log(id === 'open' ? `Open for ${minutes} min; then back to ${MODES[state.back].name} by itself.` : `${MODES[id].name}: ${MODES[id].says}`);
+}
+
+function askHowLong() {
+  const a = $('ask');
+  a.innerHTML = `<h4>Open, for how long?</h4><p>Everything, for a while. When it is up, the phone goes back to ${MODES[state.mode].name} by itself.</p>
+    <div class="opts">${[5, 15, 30].map(m => `<button data-min="${m}">${m} min</button>`).join('')}</div><button class="cancel">Not now</button>`;
+  a.classList.add('open');
+  a.querySelectorAll('[data-min]').forEach(b => b.onclick = (e) => { e.stopPropagation(); a.classList.remove('open'); setMode('open', +b.dataset.min); });
+  a.querySelector('.cancel').onclick = (e) => { e.stopPropagation(); a.classList.remove('open'); };
+}
+
+/* The dial: the modes on an arc above the thumb, calmest to the left. Its
+   centre is the bottom edge's middle; each stop is on the arc. */
+function drawDial(sel) {
+  const d = $('dial'), w = screen.clientWidth, H = 330 - 80, r = Math.min(170, w / 2 - 20);
+  const stops = ORDER.map((id, i) => {
+    const a = Math.PI + 0.5 + (Math.PI - 1.0) * i / (ORDER.length - 1);
+    const x = w / 2 + r * Math.cos(a), y = H + r * Math.sin(a);
+    return `<div class="stop${id === sel ? ' sel' : ''}" style="left:${x}px;top:${y}px;--c:${MODES[id].color}"><i></i>${MODES[id].name}</div>`;
+  }).join('');
+  d.innerHTML = `<div class="shade"></div><div class="arc" style="left:${w / 2 - r}px;top:${H - r}px;width:${2 * r}px;height:${2 * r}px;margin:0;bottom:auto"></div>`
+    + stops + `<div class="says"><b>${MODES[sel].name}</b>${MODES[sel].says}</div>`;
+}
+function dialPick(x) {
+  const w = screen.getBoundingClientRect();
+  const f = Math.min(0.999, Math.max(0, (x - w.left) / w.width));
+  return ORDER[Math.floor(f * ORDER.length)];
+}
+
+/* ---- gestures --------------------------------------------------------- */
+const EDGE = 26, FAR = 60, HOLD = 380;
+let g = null;
+screen.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.ask.open, .holdbtn')) return;
+  const r = screen.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  g = { x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: false, dial: false,
+        edge: y > r.height - EDGE - 10 ? 'bottom' : x < EDGE ? 'left' : y < EDGE + 14 ? 'top' : x > r.width - EDGE ? 'right' : null,
+        centre: !!e.target.closest('.centre') };
+  screen.setPointerCapture(e.pointerId);
+  if (g.edge === 'bottom') g.timer = setTimeout(() => { if (g && g.y0 - g.y > 20) openDial(g.x); else if (g) g.wantDial = true; }, HOLD);
+  if (g.centre) g.press = setTimeout(() => { if (g && !g.moved) showAllows(); }, 550);
+});
+screen.addEventListener('pointermove', (e) => {
+  if (!g) return;
+  g.x = e.clientX; g.y = e.clientY;
+  const dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+  if (Math.hypot(dx, dy) > 10) g.moved = true;
+  if (g.edge === 'bottom' && g.wantDial && -dy > 20 && !g.dial) openDial(e.clientX);
+  if (g.dial) drawDial(g.sel = dialPick(e.clientX));
+});
+screen.addEventListener('pointerup', (e) => {
+  if (!g) return;
+  clearTimeout(g.timer); clearTimeout(g.press);
+  const dx = e.clientX - g.x0, dy = e.clientY - g.y0, fast = performance.now() - g.t0 < HOLD;
+  const sheetOpen = $('people').classList.contains('open') ? 'people' : $('day').classList.contains('open') ? 'day' : null;
+
+  if (g.dial) {
+    $('dial').classList.remove('open');
+    const pick = g.sel;
+    if (pick === 'open' && state.mode !== 'open') askHowLong(); else if (pick) setMode(pick);
+  } else if (g.edge === 'bottom' && -dy > FAR) {
+    goHome();
+  } else if (g.edge === 'left' && dx > FAR) {
+    closeSheets(); drawPeople(); $('people').classList.add('open'); log('Your people. In every mode.');
+  } else if (g.edge === 'top' && dy > FAR) {
+    closeSheets(); drawDay(); $('day').classList.add('open'); log('The day: its shape, and the post.');
+  } else if (sheetOpen === 'people' && dx < -FAR) {
+    closeSheets();
+  } else if (sheetOpen === 'day' && dy < -FAR) {
+    closeSheets();
+  } else if (!g.moved && fast) {
+    tap(e);
+  }
+  g = null;
+});
+screen.addEventListener('pointercancel', () => { if (g) { clearTimeout(g.timer); clearTimeout(g.press); } g = null; $('dial').classList.remove('open'); });
+
+function openDial(x) { g.dial = true; $('dial').classList.add('open'); drawDial(g.sel = dialPick(x)); log('The modes. Slide along, let go to choose.'); }
+function closeSheets() { $('people').classList.remove('open'); $('day').classList.remove('open'); $('allows').classList.remove('open'); }
+function goHome() { closeSheets(); closeApp(); log('Home: the orbit.'); }
+function showAllows() {
+  const m = MODES[state.mode];
+  $('allows').innerHTML = `<h4>${m.name} lets through</h4><ul>${m.allows.map(a => `<li>${a}</li>`).join('')}</ul>`;
+  $('allows').classList.add('open');
+  log(`What ${m.name} lets through. Tap anywhere to close.`);
+}
+function tap(e) {
+  const t = document.elementFromPoint(e.clientX, e.clientY);
+  if (!t) return;
+  if ($('allows').classList.contains('open')) { $('allows').classList.remove('open'); return; }
+  const app = t.closest('[data-app]'), call = t.closest('[data-call]'), write = t.closest('[data-write]'), thread = t.closest('[data-thread]');
+  if (app) openApp(app.dataset.app);
+  else if (call) { closeSheets(); openApp('phone'); log(`Calling ${call.dataset.call}…`); }
+  else if (write) { closeSheets(); openApp('messages', { who: write.dataset.write }); }
+  else if (thread) openApp('messages', { who: thread.dataset.thread });
+  else if (t.closest('.banner')) $('banner').click();
+}
+
+/* With a keyboard, for the desk. */
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input, textarea')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'h') goHome();
+  if (k === 'p') { closeSheets(); drawPeople(); $('people').classList.add('open'); }
+  if (k === 'd') { closeSheets(); drawDay(); $('day').classList.add('open'); }
+  if (k === 'm') { const i = (ORDER.indexOf(state.mode) + 1) % ORDER.length; if (ORDER[i] === 'open') askHowLong(); else setMode(ORDER[i]); }
+});
+
+/* ---- the panel's buttons ---------------------------------------------- */
+document.querySelectorAll('[data-sim]').forEach(b => b.addEventListener('click', () => {
+  const s = b.dataset.sim;
+  if (s === 'post') deliver();
+  else if (s === 'face') faceDown(!state.faceDown);
+  else if (s === 'fast') { quicken(state.speed === 1 ? 60 : 1); b.textContent = state.speed === 1 ? 'Time: ×60' : 'Time: real'; log(state.speed === 1 ? 'Time runs at its own pace.' : 'A minute a second: watch a lease run out.'); }
+  else arrive(s);
+}));
+
+/* Face down: Rest; picked up: back, deliberately. */
+function faceDown(down) {
+  if (down === state.faceDown) return;
+  state.faceDown = down;
+  if (down) { state.back = state.mode === 'rest' ? state.back : state.mode; setMode('rest'); log('Face down: Rest. Picking it up does not undo it; you choose.'); }
+  else { toast(`Rest. Turn the dial to go back to ${MODES[state.back].name}.`); }
+  document.querySelector('[data-sim="face"]').textContent = down ? 'Pick it up' : 'Lay it face down';
+}
+window.addEventListener('deviceorientation', (e) => {
+  if (e.beta == null) return;
+  const down = Math.abs(e.beta) > 150;
+  if (down !== state.faceDown) faceDown(down);
+});
+
+/* ---- the clock's tick -------------------------------------------------- */
+setInterval(() => {
+  const t = hm(now());
+  $('stime').textContent = t;
+  const c = $('clock'); if (c) c.textContent = t;
+  if (state.mode === 'open') {
+    const total = state.leaseEnd - state.leaseStart, left = state.leaseEnd - now();
+    $('leasebar').style.width = Math.max(0, left / total * 100) + '%';
+    const sub = document.querySelector('.centre .msub'); if (sub) sub.textContent = leaseText();
+    if (left <= 0) { const back = state.back; state.mode = 'open'; setMode(back); toast(`Open is over. Back to ${MODES[back].name}.`); }
+  }
+  const d = new Date(now());
+  if (state.held.length && d.getMinutes() === 0 && [9, 13, 18].includes(d.getHours())) deliver();
+}, 250);
+
+window.addEventListener('resize', drawOrbit);
+paintMode();
+log('Focus: one thing, and music. Try the edges.');
+})();
+</script>
+</body>
+</html>

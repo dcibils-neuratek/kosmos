@@ -9749,7 +9749,12 @@ Energy (B6); the mouse is still to be named. **Sound to Bluetooth
 headphones**, B8 (Diego, 20 October: "I also have AirPods and google
 airbuds that use Bluetooth for audio"): A2DP over the Classic stack, an
 SBC encoder as a kit, AVRCP for volume, the headphones an output of the
-audio server - after B7.
+audio server - after B7. **DONE: B1** (0.11.311), **B2** (0.11.312), **B4**
+against `btsim` (25 October): `/Devices/bluetooth`, `bluetooth.lua`, `bt`.
+**BLOCKED on Diego: B3**, Intel's firmware for the T14's AX201, waits on a
+boot of the T14 stick 0.11.313 saying what the chip answers. **NEXT: B5**,
+the K380 simulated in `btsim` - connection, Secure Simple Pairing, L2CAP,
+HID - so the real keyboard meets a stack that already pairs.
 **A Bluetooth app**, agreed 20 October (Diego: "Also we neeed a Bluetooth
 app to add and manage devices"): an application of its own in place of
 the Preferences page B7 had - turn Bluetooth on and off, see what is
@@ -10118,6 +10123,73 @@ a roadmap question; nothing decided. What it would take, honestly:
   question - a program that blocks is supposed to be woken and run - and
   wants reproducing on ARM with one core and on the M700 before any theory;
   the second may be QEMU's x86-64 TSC under TCG and nothing of ours.
+
+**WANTED, not scheduled - Kosmos Mobile, on ARM phones.** Diego, 25
+October 2026: "add a plan to create a mobile version of kosmos to run on
+arm android devices like the google pixel or Samsung Galaxy". Written down
+as a plan, to be designed as an application is - feature set, mockup,
+architecture, diagram - and agreed before any of it is built.
+
+*What is in its favour.* A phone is AArch64, and Kosmos is AArch64 first:
+the kernel, the exception levels, the GICv3, the generic timer and PSCI for
+the other cores are what the QEMU board already uses. A phone's bootloader
+leaves the screen lit and says where its pixels are (a `simple-framebuffer`
+in the device tree), which is `hal_fb_init`'s model exactly. So the first
+picture costs a `hal/` and a boot image, not a graphics driver.
+
+*What is against it*, and why it is a large piece of work:
+- **Getting in.** The bootloader has to be unlocked: a Pixel bought
+  unlocked allows `fastboot flashing unlock` and `fastboot boot` of an
+  image of our own, without touching Android on the phone; most Galaxy
+  phones sold in the US do not unlock at all, and those that do trip
+  Knox for good. **The first target is therefore a Pixel**, an older one
+  that Linux's mainline kernel (postmarketOS) already drives, so its
+  device tree and drivers are something to read.
+- **No serial port.** A phone has no UART a person can reach (some Pixels
+  carry one on the USB-C connector's sideband pins with a debug cable).
+  The way in is the USB port the other way round: Kosmos as a USB
+  *device* - a gadget - that the Mac sees as an Ethernet adapter, and then
+  the Telnet console and netboot the M700 already has. A device-side USB
+  controller (DWC3) is new work.
+- **Addresses from the device tree.** Every board so far has had its
+  peripherals at addresses `hal/` knows; a phone's are in the device tree
+  its bootloader hands over, and reading it is needed for the Raspberry Pi
+  5 as well - the place to start, and useful twice.
+- **Touch, and a phone-sized Astra.** A touchscreen on I2C or SPI, a power
+  button and volume keys on the PMIC, an on-screen keyboard, gestures, and
+  Astra laid out for one hand: a launcher, one application at a time,
+  notifications pulled down. Most of this can be built and held in QEMU
+  first, with a phone-shaped screen and a multi-touch tablet - **simulate,
+  don't wait**.
+- **And what a phone is.** Storage (UFS), Wi-Fi and Bluetooth chips with
+  firmware of their own, the battery and charging, sleep, and a GPU that
+  would be software rendering at first. The cellular modem is out of scope.
+
+*Steps, when it starts*:
+- P0, the phone chosen;
+- P1, Astra for touch and a phone's screen, in QEMU;
+- P2, device-tree-driven `hal/` (the Pi 5 shares it);
+- P3, Kosmos booted by `fastboot boot` on the Pixel, the console on its
+  screen;
+- P4, the USB gadget - Telnet, netboot, the log - so the loop with the
+  Mac works on the phone;
+- P5, the touchscreen, buttons and battery;
+- P6, storage, Wi-Fi.
+
+Not before Bluetooth is finished (Diego, 25 October: "Let's finish
+Bluetooth first"), and the order beside the Mac Pro is his.
+
+*Its direction*, Diego, the same day: "We need to do a lot of gestures work
+on mobile as it's the primary way of interfacing", "I want to design a
+rather disruptive ui", "Not replicate iPhone or android", "I want a way to
+have the mobile understand that I have modes like focus, do not disturb,
+dumb phone (calls and messaging only), etc", and "We need a way for our
+phones to help us have a better life that is not necessarily always
+connected and scrolling feeds". So the phone is designed around **modes**
+- Essential (calls and messages only), Focus, Rest, Out, Open - with
+**gestures** as the way in, and the design begins as a mockup,
+`docs/mobile.html`, for him to change until it is right. Its first draft
+copied a phone's home grid and shade, and was redrawn the same hour.
 
 ### Smaller, and wanted
 
