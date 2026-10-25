@@ -20,7 +20,7 @@
 <title>Kosmos Mobile</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <style>
 :root {
   --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
@@ -29,6 +29,7 @@
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans: "Geist", "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   /* The phone is paper, in either theme. Each mode tints it and inks its
      word; Rest turns it to paper under a lamp. */
@@ -252,6 +253,41 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .allows h4 em { font-style: italic; color: var(--m); }
 .allows li { font-size: 16px; font-weight: 300; margin: 6px 0; max-width: none; }
 .allows ul { margin: 0; padding-left: 18px; }
+
+/* ---- Type: a modern sans for the working parts, the serif for the voice --
+   The sans carries the clock, names, lists and labels; the serif is kept for
+   what the phone says - the mode's word, a page's title, a list's last line,
+   your people's names, what someone wrote, and the book you are writing. */
+.screen { font-family: var(--sans); --body: var(--sans); }
+.clock { font-weight: 200; letter-spacing: -4px; font-size: 88px; }
+.lampclock { font-weight: 200; letter-spacing: -2px; }
+.sentence { font-weight: 400; font-size: 26px; letter-spacing: -.4px; line-height: 1.22; }
+.sentence em { font-family: var(--serif); font-size: 1.12em; letter-spacing: 0; }
+.thing b { font-weight: 500; font-size: 21px; letter-spacing: -.3px; }
+.index .thing b { font-size: 17px; }
+.people { font-size: 14px; }
+.people i { font-family: var(--serif); font-size: 15.5px; }
+.wait, .date, .nav, .back, .closer, .paperpick, .letter { font-family: var(--sans); }
+.sheet h4, .ask h4, .allows h4, .app .head h5 { font-family: var(--serif); font-weight: 300; }
+.sheet .small, .ask p { font-family: var(--sans); }
+.name b { font-weight: 500; font-size: 24px; letter-spacing: -.3px; }
+.entry b { font-weight: 500; font-size: 18px; letter-spacing: -.2px; }
+.entry.out b { font-weight: 400; }
+.entry.out span { font-family: var(--serif); }
+.post .item b { font-weight: 500; font-size: 16px; }
+.thread b { font-weight: 500; font-size: 19px; letter-spacing: -.2px; }
+.end, .lampline, .note, .dial .says, .artist, .slip span { font-family: var(--serif); }
+.find { font-family: var(--sans); font-size: 18px; }
+.dial .w { font-weight: 400; font-size: 17px; }
+.dial .w.sel { font-family: var(--serif); }
+.modelist .mrow b { font-weight: 500; font-size: 21px; letter-spacing: -.3px; }
+.modelist .mrow.now b { font-family: var(--serif); font-weight: 400; font-size: 25px; }
+.ask .opt { font-weight: 400; font-size: 20px; }
+.said { font-weight: 400; font-size: 16.5px; }
+.doc { font-family: var(--serif); }
+.track { font-weight: 300; font-size: 32px; letter-spacing: -.6px; }
+.keypad div { font-weight: 200; }
+.slip b { font-weight: 600; font-size: 16px; }
 
 /* A phone shows no scrollbars; a page that scrolls moves under the finger. */
 .screen *, .screen { scrollbar-width: none; }
