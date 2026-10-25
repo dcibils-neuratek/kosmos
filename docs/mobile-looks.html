@@ -1,0 +1,254 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Kosmos Mobile: three looks to choose between, drawn on 25 October 2026
+  after Diego, of the first playable phone: "I don't like the ui", "We need
+  a nicer ui". The same two moments in each - Focus, and the calmest mode -
+  so the looks can be compared and not the content. The chosen one becomes
+  docs/mobile.html's. Everything on them is made up.
+-->
+<title>Kosmos Mobile Looks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Figtree:wght@300;400;500;600&family=DotGothic16&family=Archivo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff; --accent: #2f6bdc;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 36px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; }
+.sub { color: var(--muted); max-width: 74ch; margin: 0 0 10px; }
+.look { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 300px 300px 1fr; gap: 28px; align-items: start; }
+.look h2 { font-family: var(--display); font-size: 24px; margin: 0 0 4px; }
+.look .letter { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--ground); font-size: 15px; margin-right: 8px; vertical-align: 3px; }
+.look p { margin: 0 0 10px; max-width: 46ch; }
+.look ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+.scroller { overflow-x: auto; }
+@media (max-width: 980px) { .look { grid-template-columns: 300px 300px; } .look .words { grid-column: 1 / -1; } }
+@media (max-width: 660px) { .look { grid-template-columns: 300px; justify-content: center; } }
+
+.phone { width: 300px; height: 640px; border-radius: 40px; background: #000; padding: 8px; box-shadow: 0 18px 44px rgba(0,0,0,.28); }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 32px; overflow: hidden; }
+.cam { position: absolute; top: 10px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #000; z-index: 9; }
+.handle { position: absolute; bottom: 8px; left: 50%; width: 92px; height: 4px; margin-left: -46px; border-radius: 2px; z-index: 9; }
+.status { position: absolute; top: 0; left: 0; right: 0; height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 8px 22px 0; font-size: 11px; z-index: 8; }
+
+/* ---- A. Paper ------------------------------------------------------------ */
+.paper { background: #f4efe6; color: #221d17; font-family: "Fraunces", Georgia, serif; }
+.paper .status { font-family: "IBM Plex Sans", sans-serif; color: #6b6055; font-weight: 500; }
+.paper .handle { background: #221d17; opacity: .5; }
+.paper .in { position: absolute; inset: 44px 26px 30px; display: flex; flex-direction: column; }
+.paper .date { font-family: "IBM Plex Sans", sans-serif; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #8a7d70; }
+.paper .clock { font-size: 72px; font-weight: 300; line-height: 1; margin: 10px 0 0; letter-spacing: -2px; font-variant-numeric: lining-nums; }
+.paper .sentence { font-size: 25px; font-weight: 300; line-height: 1.22; margin: 16px 0 0; }
+.paper .sentence em { font-style: italic; color: var(--m); font-weight: 400; }
+.paper .things { margin-top: 30px; border-top: 1px solid #d9cfc2; }
+.paper .thing { display: flex; justify-content: space-between; align-items: baseline; padding: 13px 0; border-bottom: 1px solid #d9cfc2; }
+.paper .thing b { font-size: 22px; font-weight: 400; }
+.paper .thing span { font-family: "IBM Plex Sans", sans-serif; font-size: 11px; color: #8a7d70; }
+.paper .people { margin-top: auto; font-size: 14px; line-height: 1.45; color: #4a4037; }
+.paper .people i { font-style: italic; }
+.paper .wait { margin-top: 10px; font-family: "IBM Plex Sans", sans-serif; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #a08f7e; display: flex; align-items: center; gap: 8px; }
+.paper .wait::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--m); }
+.paper.essential { background: #ece8e1; filter: grayscale(1); }
+.paper .names { margin-top: 26px; }
+.paper .name { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid #d3cdc4; }
+.paper .name b { font-size: 30px; font-weight: 300; }
+.paper .name span { font-family: "IBM Plex Sans", sans-serif; font-size: 11px; color: #6b6055; letter-spacing: .06em; }
+
+/* ---- B. Sky -------------------------------------------------------------- */
+.sky { color: #fff; font-family: "Figtree", system-ui, sans-serif; }
+.sky .status { color: rgba(255,255,255,.85); font-weight: 500; }
+.sky .handle { background: rgba(255,255,255,.8); }
+.sky.focus { background:
+    radial-gradient(130% 70% at 50% 108%, #ffb26b 0%, #ff7a59 22%, rgba(196,74,110,.9) 42%, rgba(70,38,110,.95) 65%, #1a1236 100%); }
+.sky.rest { background: radial-gradient(120% 80% at 50% 120%, #1d2b6b 0%, #111a45 40%, #070b22 75%, #04060f 100%); }
+.sky .stars { position: absolute; inset: 0; background-image:
+    radial-gradient(1px 1px at 20% 18%, #fff, transparent), radial-gradient(1px 1px at 72% 12%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 85% 34%, #fff, transparent), radial-gradient(1px 1px at 38% 40%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1px 1px at 12% 58%, rgba(255,255,255,.7), transparent), radial-gradient(1.2px 1.2px at 60% 64%, #fff, transparent),
+    radial-gradient(1px 1px at 90% 72%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 28% 82%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1px 1px at 50% 22%, rgba(255,255,255,.6), transparent), radial-gradient(1.3px 1.3px at 8% 30%, #fff, transparent); }
+.sky .clock { position: absolute; top: 52px; left: 24px; font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -1.5px; }
+.sky .day { position: absolute; top: 122px; left: 26px; font-size: 13px; color: rgba(255,255,255,.75); }
+.sky .planet { position: absolute; left: 50%; top: 58%; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%;
+               box-shadow: 0 0 60px 6px rgba(255,190,120,.35); display: grid; place-items: center; text-align: center; }
+.sky.focus .planet { background: radial-gradient(circle at 35% 30%, #ffe3b8, #ffb055 38%, #d46a2f 70%, #8a3b1c); }
+.sky.rest .planet { background: radial-gradient(circle at 70% 35%, #fbf7e8, #d9d3bd 45%, #9d977f 80%); box-shadow: 0 0 70px 10px rgba(220,220,255,.18); width: 92px; height: 92px; margin: -46px 0 0 -46px; }
+.sky .planet b { font-size: 18px; font-weight: 600; color: rgba(60,25,10,.85); display: block; letter-spacing: .02em; }
+.sky .planet span { font-size: 10.5px; color: rgba(60,25,10,.7); }
+.sky .orbit { position: absolute; left: 50%; top: 58%; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; transform: translate(-50%, -50%) rotate(-12deg); }
+.sky .moon { position: absolute; display: flex; align-items: center; gap: 8px; padding: 7px 12px 7px 7px; border-radius: 22px;
+             background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+             font-size: 12.5px; font-weight: 500; }
+.sky .moon i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.9); }
+.sky .moon svg { width: 14px; height: 14px; stroke: #5a2a1a; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sky .glass { position: absolute; left: 14px; right: 14px; bottom: 26px; border-radius: 20px; padding: 11px 14px; background: rgba(20,10,30,.28);
+              border: 1px solid rgba(255,255,255,.18); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+.sky .glass span { color: rgba(255,255,255,.75); }
+.sky .faces { display: flex; }
+.sky .faces i { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); margin-left: -6px; display: grid; place-items: center; font-style: normal; font-size: 10px; font-weight: 600; color: #22122a; }
+.sky.rest .clock { font-weight: 200; color: rgba(255,255,255,.7); }
+.sky .quiet { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-size: 13px; color: rgba(220,225,255,.6); line-height: 1.6; }
+
+/* ---- C. Cards -------------------------------------------------------------- */
+.cards { background: #111; font-family: "Archivo", system-ui, sans-serif; color: #111; }
+.cards .status { color: #eee; font-family: "Archivo", sans-serif; font-weight: 500; }
+.cards .handle { background: #eee; }
+.cards .peek { position: absolute; left: 14px; right: 14px; height: 30px; border-radius: 22px 22px 0 0; }
+.cards .card { position: absolute; left: 10px; right: 10px; top: 88px; bottom: 24px; border-radius: 28px; padding: 22px 20px; display: flex; flex-direction: column; }
+.cards .mode { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
+.cards .mode span { font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 12px; opacity: .7; }
+.cards .dots { font-family: "DotGothic16", monospace; font-size: 86px; line-height: .95; margin: 18px 0 2px; letter-spacing: 2px; }
+.cards .until { font-size: 13px; font-weight: 500; opacity: .75; }
+.cards .btns { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cards .b { border-radius: 18px; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 22px; font-weight: 700; font-size: 15px; }
+.cards .b svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cards .b small { font-weight: 500; font-size: 11px; opacity: .65; display: block; margin-top: -18px; }
+.cards .row { display: flex; gap: 8px; margin-top: 12px; }
+.cards .chip { flex: 1; border-radius: 14px; padding: 9px 0; text-align: center; font-weight: 700; font-size: 13px; }
+.cards .swipe { position: absolute; bottom: 30px; left: 0; right: 0; text-align: center; color: #888; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+.cards.focus .card { background: #ff6b35; }
+.cards.focus .b { background: rgba(255,255,255,.88); }
+.cards.focus .chip { background: rgba(0,0,0,.12); }
+.cards.essential .card { background: #f3f1ec; }
+.cards.essential .b { background: #111; color: #f3f1ec; }
+.cards .person { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 2px solid #111; font-weight: 700; font-size: 20px; }
+.cards .person i { width: 34px; height: 34px; border-radius: 50%; background: #111; color: #f3f1ec; display: grid; place-items: center; font-style: normal; font-size: 14px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-write" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+</svg>
+
+<div class="wrap">
+<h1>Kosmos Mobile: three looks</h1>
+<p class="sub">The same two moments in each - Focus, and the calmest mode - so that the looks are what differ. The ideas underneath stay: the mode at the centre, people straight through, the post, the edges. Pick one, or take parts of two, and the playable phone is rebuilt in it.</p>
+
+<!-- A -->
+<div class="look">
+  <div class="phone"><div class="screen paper" style="--m:#c2632a"><div class="cam"></div>
+    <div class="status"><span>11:24</span><span>84%</span></div>
+    <div class="in">
+      <div class="date">Sunday, 25 October</div>
+      <div class="clock">11:24</div>
+      <div class="sentence">You are <em>writing</em><br>until noon.</div>
+      <div class="things">
+        <div class="thing"><b>Write</b><span>Chapter four</span></div>
+        <div class="thing"><b>Music</b><span>Holocene, Bon Iver</span></div>
+      </div>
+      <div class="people"><i>Ana, Tomás, Sofía</i> and <i>Leo</i> can reach you.</div>
+      <div class="wait">A few things wait for one o'clock</div>
+    </div>
+    <div class="handle"></div></div></div>
+
+  <div class="phone"><div class="screen paper essential" style="--m:#555"><div class="cam"></div>
+    <div class="status"><span>8:12</span><span>91%</span></div>
+    <div class="in">
+      <div class="date">Monday, 26 October</div>
+      <div class="sentence" style="font-size:31px;margin-top:22px">Calls and<br>messages.<br><em style="color:#6b6055">Nothing else.</em></div>
+      <div class="names">
+        <div class="name"><b>Ana</b><span>CALL &middot; WRITE</span></div>
+        <div class="name"><b>Tomás</b><span>CALL &middot; WRITE</span></div>
+        <div class="name"><b>Sofía</b><span>CALL &middot; WRITE</span></div>
+        <div class="name"><b>Everyone else</b><span>&rarr;</span></div>
+      </div>
+      <div class="wait" style="margin-top:auto">Essential until nine</div>
+    </div>
+    <div class="handle"></div></div></div>
+
+  <div class="words">
+    <h2><span class="letter">A</span>Paper</h2>
+    <p>Warm paper, a serif that reads like a book, and the mode said as a sentence: <i>you are writing until noon</i>. Things are named in words, not icons. It asks for nothing; it is the opposite of a screen that wants to be looked at.</p>
+    <ul><li>Essential goes grey and larger, like a phone from before phones</li><li>Calm, legible, quietly beautiful</li><li>Least like any phone there is</li></ul>
+  </div>
+</div>
+
+<!-- B -->
+<div class="look">
+  <div class="phone"><div class="screen sky focus"><div class="cam"></div>
+    <div class="status"><span></span><span>84%</span></div>
+    <div class="clock">11:24</div>
+    <div class="day">Sunday &middot; Focus until noon</div>
+    <div class="orbit" style="width:250px;height:190px"></div>
+    <div class="planet"><div><b>Focus</b><span>writing</span></div></div>
+    <div class="moon" style="left:20px;top:300px"><i><svg><use href="#i-write"/></svg></i>Write</div>
+    <div class="moon" style="right:18px;top:430px"><i><svg><use href="#i-music"/></svg></i>Music</div>
+    <div class="glass"><div class="faces"><i style="background:#f2a93b;margin:0">A</i><i style="background:#4cc27a">T</i><i style="background:#e87fa8">S</i><i style="background:#6fb3ff">L</i></div><span>A few things wait for 13:00</span></div>
+    <div class="handle"></div></div></div>
+
+  <div class="phone"><div class="screen sky rest"><div class="cam"></div><div class="stars"></div>
+    <div class="status"><span></span><span>62%</span></div>
+    <div class="clock">23:40</div>
+    <div class="day" style="color:rgba(220,225,255,.55)">Rest until seven</div>
+    <div class="planet"><div></div></div>
+    <div class="quiet">Only Ana and Tomás can call.<br>Everything else is held for morning.</div>
+    <div class="handle" style="opacity:.4"></div></div></div>
+
+  <div class="words">
+    <h2><span class="letter">B</span>Sky</h2>
+    <p>The mode is a sky that fills the screen and changes with the day: a warm dusk while you focus, a night with a moon when you rest, a clear blue when you are out. The mode is a planet; what it allows are its moons, on glass.</p>
+    <ul><li>The most alive and the most beautiful of the three</li><li>Kosmos is in its name: it is the one only this system would have</li><li>Rest dims to almost nothing</li></ul>
+  </div>
+</div>
+
+<!-- C -->
+<div class="look">
+  <div class="phone"><div class="screen cards focus"><div class="cam"></div>
+    <div class="status"><span>11:24</span><span>84%</span></div>
+    <div class="peek" style="top:58px;background:#2f6bdc;left:30px;right:30px"></div>
+    <div class="peek" style="top:72px;background:#4cc27a;left:22px;right:22px"></div>
+    <div class="card">
+      <div class="mode">Focus<span>until noon</span></div>
+      <div class="dots">11:24</div>
+      <div class="until">Writing. Your circle can reach you.</div>
+      <div class="btns">
+        <div class="b"><svg><use href="#i-write"/></svg>Write<small>Chapter four</small></div>
+        <div class="b"><svg><use href="#i-music"/></svg>Music<small>Holocene</small></div>
+      </div>
+      <div class="row"><div class="chip">Ana</div><div class="chip">Tomás</div><div class="chip">Sofía</div><div class="chip">Leo</div></div>
+    </div>
+    <div class="handle"></div></div></div>
+
+  <div class="phone"><div class="screen cards essential"><div class="cam"></div>
+    <div class="status"><span>8:12</span><span>91%</span></div>
+    <div class="peek" style="top:58px;background:#7b6cf6;left:30px;right:30px"></div>
+    <div class="peek" style="top:72px;background:#ff6b35;left:22px;right:22px"></div>
+    <div class="card">
+      <div class="mode">Essential<span>until nine</span></div>
+      <div class="dots" style="font-size:70px">08:12</div>
+      <div class="person"><i>A</i>Ana</div>
+      <div class="person"><i>T</i>Tomás</div>
+      <div class="person" style="border-bottom:0"><i>S</i>Sofía</div>
+      <div class="btns">
+        <div class="b"><svg><use href="#i-phone"/></svg>Call</div>
+        <div class="b"><svg><use href="#i-msg"/></svg>Write</div>
+      </div>
+    </div>
+    <div class="handle"></div></div></div>
+
+  <div class="words">
+    <h2><span class="letter">C</span>Cards</h2>
+    <p>Each mode is a card in its own strong colour, and the others peek out behind it: swipe the card away to change mode, as if dealing from a deck. Dot-matrix numerals, chunky buttons with words on them, nothing small.</p>
+    <ul><li>Playful and physical; you always know where you are</li><li>Changing mode is the most direct of the three</li><li>Bold; the loudest of the three</li></ul>
+  </div>
+</div>
+</div>
+</body>
+</html>
