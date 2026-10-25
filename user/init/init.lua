@@ -4338,7 +4338,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
-                          usb_cap, gpu_cap, sandboxes_cap)
+                          usb_cap, gpu_cap, bluetooth_cap, sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -5207,6 +5207,7 @@ query. `find` and `watch` are built on exactly these two calls.
                     and ns.getattr("/Running/wm") ~= nil
     local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
     local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
+    local bluetooth = nil
     local sharing = nil
     -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
     -- is: what is on the network is part of having it.
@@ -5228,6 +5229,7 @@ query. `find` and `watch` are built on exactly these two calls.
 
       if want == "camera" then camera = camera_cap end
       if want == "midi" then midi = midi_cap end
+      if want == "bluetooth" then bluetooth = bluetooth_cap end
       if want == "keyring" and keyring_cap and keyring_grant(path) then
         keyring = keyring_cap
       end
@@ -5274,6 +5276,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
     local usb_at = nil
     if usb then caps[#caps + 1] = usb; usb_at = #caps - 1 end
+    local bluetooth_at = nil
+    if bluetooth then caps[#caps + 1] = bluetooth; bluetooth_at = #caps - 1 end
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5292,6 +5296,7 @@ query. `find` and `watch` are built on exactly these two calls.
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
       sharing = sharing_at, sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
+      bluetooth = bluetooth_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -6613,7 +6618,7 @@ if role == ROLE_INIT then
                         KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
                         -- Before `/Sandboxes`, which a machine may not have:
                         -- a list with a gap in it ends at the gap.
-                        USB_EP, GPU_EP, SANDBOXES_EP },
+                        USB_EP, GPU_EP, BLUETOOTH_EP, SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6687,7 +6692,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22, 23, 24)
+             22, 23, 24, 25)
   return
 end
 
@@ -6883,6 +6888,9 @@ if role == ROLE_RUNNER then
   end
   if req.camera  then ns.mount("/Devices/camera",  req.camera, nil, "camera") end
   if req.midi    then ns.mount("/Devices/midi",    req.midi, nil, "midi") end
+  if req.bluetooth then
+    ns.mount("/Devices/bluetooth", req.bluetooth, nil, "bluetooth")
+  end
   if req.notify  then ns.mount("/Notifications",   req.notify, nil, "notify") end
   if req.keyring then ns.keyring_door(req.keyring) end
   if req.tiles   then ns.mount("/Tiles",           req.tiles, nil, "tiles") end
@@ -7064,6 +7072,7 @@ if role == ROLE_RUNNER then
     local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
     local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
     local mdns_at, sharing_at = nil, nil
+    local bluetooth_at = nil
 
     -- /Discovery on, to whatever this starts, as `/Network` is (N11c).
     if req.mdns then
@@ -7119,6 +7128,12 @@ if role == ROLE_RUNNER then
         midi_at = #caps - 1
       end
 
+      -- Bluetooth (`bluetooth.md` B4), as MIDI: declared, and held.
+      if want == "bluetooth" and req.bluetooth then
+        caps[#caps + 1] = req.bluetooth
+        bluetooth_at = #caps - 1
+      end
+
       -- The keyring's `manage` door: only from a launcher that holds it,
       -- and only to a file the image serves (`keyring_grant`).
       if want == "keyring" and req.keyring and keyring_grant(path) then
@@ -7166,6 +7181,7 @@ if role == ROLE_RUNNER then
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
       sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
+      bluetooth = bluetooth_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

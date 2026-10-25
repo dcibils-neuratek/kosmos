@@ -832,6 +832,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/drivers/usb/btusb_decode.c \
              user/drivers/bluetooth/hci_decode.c \
              user/drivers/bluetooth/btsim.c \
+             user/drivers/bluetooth/gap_decode.c \
              user/drivers/bluetooth/bluetooth.c \
              user/drivers/usb/storage_decode.c \
              user/drivers/display/backlight.c \
@@ -2242,12 +2243,13 @@ $(HOSTDIR)/test_mididecode: tools/test_mididecode.c user/drivers/usb/midi_decode
 # A Bluetooth adapter's configuration and HCI's packets (`bluetooth.md`
 # B1): QEMU has no adapter, so the Core specification's layout and answers
 # are the fixtures.
-$(HOSTDIR)/test_btdecode: tools/test_btdecode.c user/drivers/usb/btusb_decode.c user/drivers/usb/btusb_decode.h user/drivers/bluetooth/hci_decode.c user/drivers/bluetooth/hci_decode.h user/drivers/bluetooth/btsim.c user/drivers/bluetooth/btsim.h user/include/hciring.h
+$(HOSTDIR)/test_btdecode: tools/test_btdecode.c user/drivers/usb/btusb_decode.c user/drivers/usb/btusb_decode.h user/drivers/bluetooth/hci_decode.c user/drivers/bluetooth/hci_decode.h user/drivers/bluetooth/btsim.c user/drivers/bluetooth/btsim.h user/include/hciring.h user/drivers/bluetooth/gap_decode.c user/drivers/bluetooth/gap_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -D_DARWIN_C_SOURCE -D_DEFAULT_SOURCE -Wall -Wextra \
 	        -Werror -O1 -g -fsanitize=undefined -fno-sanitize-recover=all \
 	        -o $@ tools/test_btdecode.c user/drivers/usb/btusb_decode.c \
-	        user/drivers/bluetooth/hci_decode.c user/drivers/bluetooth/btsim.c
+	        user/drivers/bluetooth/hci_decode.c user/drivers/bluetooth/btsim.c \
+	        user/drivers/bluetooth/gap_decode.c
 
 # `depth.h` on the Mac: the rule the Synth Kit keeps its ring by and the audio
 # server the device (`roadmap.md` 4i, `testing.md` 18.269).

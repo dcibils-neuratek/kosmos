@@ -33,6 +33,7 @@
 #include "../user/drivers/usb/btusb_decode.h"
 #include "../user/drivers/bluetooth/hci_decode.h"
 #include "../user/drivers/bluetooth/btsim.h"
+#include "../user/drivers/bluetooth/gap_decode.h"
 #include "../user/include/hciring.h"
 
 static int checks;
@@ -530,6 +531,206 @@ static void test_btsim(void)
           "btsim: Reset clears what was waiting");
 }
 
+/* ---- what is nearby ------------------------------------------------ */
+
+struct seen {
+    struct gap_found f[8];
+    unsigned n;
+};
+
+static void keep(void *ctx, const struct gap_found *f)
+{
+    struct seen *s = ctx;
+
+    if (s->n < 8) {
+        s->f[s->n++] = *f;
+    }
+}
+
+/* A command with parameters, as the stack puts it in the ring. */
+static unsigned ring_command_with(uint8_t *out, uint16_t opcode,
+                                  const uint8_t *params, unsigned length)
+{
+    out[0] = HCI_PACKET_COMMAND;
+    return 1u + hci_command(out + 1, 300, opcode, params, length);
+}
+
+/* The simulator's next event, decoded. */
+static bool sim_event(struct btsim *s, uint8_t *keep_bytes, struct hci_event *e)
+{
+    unsigned n = btsim_next(s, keep_bytes, BTSIM_PACKET_MAX);
+
+    return n > 1 && keep_bytes[0] == HCI_PACKET_EVENT
+        && hci_decode_event(keep_bytes + 1, n - 1, e);
+}
+
+static void test_nearby(void)
+{
+    static struct btsim s;
+    static const uint8_t inquiry[5] = { 0x33, 0x8B, 0x9E, 4, 0 };
+    static const uint8_t on[2] = { 1, 1 }, off[2] = { 0, 0 };
+    uint8_t packet[300], bytes[BTSIM_PACKET_MAX], address[6];
+    uint8_t name_request[10];
+    char name[GAP_NAME_BYTES], text[18];
+    struct hci_answer a;
+    struct hci_event e;
+    struct seen seen = { .n = 0 };
+    uint8_t status = 0xFF;
+
+    btsim_start(&s);
+
+    /* An inquiry: taken, the two Classic neighbours, complete. */
+    btsim_take(&s, packet, ring_command_with(packet, 0x0401, inquiry, 5));
+    check(sim_event(&s, bytes, &e) && hci_decode_answer(&e, &a) && !a.complete
+          && a.opcode == 0x0401 && a.status == 0, "inquiry: taken, by Command Status");
+    check(sim_event(&s, bytes, &e) && gap_decode_inquiry(&e, keep, &seen) == 1
+          && sim_event(&s, bytes, &e) && gap_decode_inquiry(&e, keep, &seen) == 1,
+          "inquiry: two Extended Inquiry Results");
+    check(sim_event(&s, bytes, &e) && gap_decode_inquiry_complete(&e, &status)
+          && status == 0, "inquiry: complete");
+    check(seen.n == 2 && strcmp(seen.f[0].name, "Keyboard K380") == 0
+          && seen.f[0].name_complete && seen.f[0].has_rssi && seen.f[0].rssi == -48
+          && seen.f[0].transport == GAP_CLASSIC
+          && gap_kind(&seen.f[0]) == GAP_KIND_KEYBOARD,
+          "inquiry: the K380, a keyboard, named in its EIR");
+    hci_format_address(seen.f[0].address, text);
+    check(strcmp(text, "02:4B:53:00:03:80") == 0, "inquiry: the K380's address");
+    check(seen.f[1].name[0] == 0 && gap_kind(&seen.f[1]) == GAP_KIND_HEADPHONES
+          && seen.f[1].rssi == -71, "inquiry: headphones, with no name yet");
+
+    /* Their name, asked: Page_Scan_Repetition_Mode R1, reserved, offset. */
+    memcpy(name_request, seen.f[1].address, 6);
+    name_request[6] = 1;
+    name_request[7] = 0;
+    name_request[8] = name_request[9] = 0;
+    btsim_take(&s, packet, ring_command_with(packet, 0x0419, name_request, 10));
+    check(sim_event(&s, bytes, &e) && hci_decode_answer(&e, &a) && !a.complete
+          && a.opcode == 0x0419, "remote name: taken");
+    check(sim_event(&s, bytes, &e) && gap_decode_remote_name(&e, address, name)
+          && memcmp(address, seen.f[1].address, 6) == 0
+          && strcmp(name, "Pixel Buds") == 0, "remote name: Pixel Buds");
+
+    /* Someone who is not there: Page Timeout, and no name read. */
+    name_request[0] ^= 0xFF;
+    btsim_take(&s, packet, ring_command_with(packet, 0x0419, name_request, 10));
+    check(sim_event(&s, bytes, &e) && sim_event(&s, bytes, &e)
+          && e.code == HCI_EVENT_REMOTE_NAME
+          && !gap_decode_remote_name(&e, address, name),
+          "remote name: nobody there, Page Timeout");
+
+    /* A Low Energy scan: on, then the mouse. */
+    seen.n = 0;
+    btsim_take(&s, packet, ring_command_with(packet, 0x200C, on, 2));
+    check(sim_event(&s, bytes, &e) && hci_decode_answer(&e, &a) && a.complete
+          && a.opcode == 0x200C && a.status == 0, "LE scan: on");
+    check(sim_event(&s, bytes, &e) && gap_decode_advertising(&e, keep, &seen) == 1,
+          "LE scan: an advertising report");
+    check(seen.n == 1 && strcmp(seen.f[0].name, "MX Anywhere 3") == 0
+          && seen.f[0].transport == GAP_LE_RANDOM && seen.f[0].connectable
+          && seen.f[0].hid && seen.f[0].has_appearance
+          && seen.f[0].appearance == 0x03C2 && seen.f[0].rssi == -60
+          && gap_kind(&seen.f[0]) == GAP_KIND_MOUSE,
+          "LE scan: the mouse - random address, HID, appearance Mouse");
+    btsim_take(&s, packet, ring_command_with(packet, 0x200C, on, 2));
+    check(sim_event(&s, bytes, &e) && btsim_next(&s, bytes, sizeof bytes) == 0,
+          "LE scan: on again repeats nothing");
+    btsim_take(&s, packet, ring_command_with(packet, 0x200C, off, 2));
+    check(sim_event(&s, bytes, &e) && !s.scanning, "LE scan: off");
+    check(s.inquiries == 1 && s.names_asked == 2 && s.dropped == 0,
+          "btsim: one inquiry, two names asked, nothing dropped");
+}
+
+/* Bytes btsim does not send: the older inquiry results, two reports in an
+ * event, and every shape cut short. */
+static void test_gap_bytes(void)
+{
+    /* Inquiry Result (02h): two, each its own 14 bytes - a mouse and a
+     * gamepad. */
+    static const uint8_t two[] = {
+        2,
+        1, 2, 3, 4, 5, 6, 1, 0, 0, 0x80, 0x25, 0x00, 0, 0,
+        7, 8, 9, 10, 11, 12, 1, 0, 0, 0x08, 0x05, 0x00, 0, 0,
+    };
+    /* With RSSI (22h): a keyboard and mouse together, at -55. */
+    static const uint8_t rssi[] = {
+        1, 1, 2, 3, 4, 5, 6, 1, 0, 0xC0, 0x05, 0x00, 0, 0, (uint8_t)-55,
+    };
+    /* Two LE reports: the second a scan response with only a name, the
+     * shortened one, and a connectable flag it does not have. */
+    static const uint8_t reports[] = {
+        HCI_LE_ADVERTISING_REPORT, 2,
+        0x00, 0x00, 1, 2, 3, 4, 5, 6, 3, 2, 0x01, 0x06, (uint8_t)-40,
+        0x04, 0x00, 1, 2, 3, 4, 5, 7, 4, 3, 0x08, 'A', 'B', 127,
+    };
+    struct seen seen = { .n = 0 };
+    struct hci_event e = { HCI_EVENT_INQUIRY_RESULT, sizeof two, two };
+    struct gap_found f;
+    uint8_t utf8[80];
+    unsigned i;
+
+    check(gap_decode_inquiry(&e, keep, &seen) == 2
+          && gap_kind(&seen.f[0]) == GAP_KIND_MOUSE
+          && gap_kind(&seen.f[1]) == GAP_KIND_GAMEPAD && !seen.f[0].has_rssi,
+          "Inquiry Result: a mouse and a gamepad, no RSSI");
+    e.length = sizeof two - 1;
+    check(gap_decode_inquiry(&e, keep, &seen) == 0, "Inquiry Result: cut short, none");
+
+    seen.n = 0;
+    e.code = HCI_EVENT_INQUIRY_RESULT_RSSI;
+    e.params = rssi;
+    e.length = sizeof rssi;
+    check(gap_decode_inquiry(&e, keep, &seen) == 1 && seen.f[0].rssi == -55
+          && gap_kind(&seen.f[0]) == GAP_KIND_KEYBOARD_MOUSE,
+          "with RSSI: a keyboard and mouse together, at -55");
+
+    seen.n = 0;
+    e.code = HCI_EVENT_LE_META;
+    e.params = reports;
+    e.length = sizeof reports;
+    check(gap_decode_advertising(&e, keep, &seen) == 2 && seen.f[0].connectable
+          && seen.f[0].transport == GAP_LE_PUBLIC && seen.f[0].rssi == -40
+          && !seen.f[1].connectable && strcmp(seen.f[1].name, "AB") == 0
+          && !seen.f[1].name_complete && !seen.f[1].has_rssi,
+          "LE: two reports, a scan response's short name, RSSI not available");
+    seen.n = 0;
+    e.length = sizeof reports - 1;
+    check(gap_decode_advertising(&e, keep, &seen) == 1,
+          "LE: the second report cut short, the first kept");
+
+    /* Advertising data whose length walks off its end. */
+    memset(&f, 0, sizeof f);
+    {
+        static const uint8_t bad[] = { 3, 0x19, 0xC1, 0x03, 9, 0x09, 'x' };
+
+        f.transport = GAP_CLASSIC;
+        gap_read_data(bad, sizeof bad, &f);
+        check(f.has_appearance && f.appearance == 0x03C1 && f.name[0] == 0
+              && gap_kind(&f) == GAP_KIND_OTHER,
+              "data: a name past the end not read; Classic class wins");
+        f.transport = GAP_LE_PUBLIC;
+        check(gap_kind(&f) == GAP_KIND_KEYBOARD, "data: appearance Keyboard");
+        f.appearance = 0x0941;
+        check(gap_kind(&f) == GAP_KIND_HEADPHONES, "data: appearance Earbud");
+        f.has_appearance = false;
+        f.hid = true;
+        check(gap_kind(&f) == GAP_KIND_INPUT, "data: HID and nothing more");
+    }
+
+    /* A name longer than kept, cut where a character starts: 61 bytes,
+     * then a two-byte character over the edge. */
+    for (i = 0; i < 61; i++) utf8[i] = 'a';
+    utf8[61] = 0xC3; utf8[62] = 0xB1;       /* n with a tilde */
+    utf8[63] = 0xC3; utf8[64] = 0xB1;
+    gap_copy_name(f.name, sizeof f.name, utf8, 65);
+    check(strlen(f.name) == 63 && (uint8_t)f.name[62] == 0xB1,
+          "name: 63 bytes, the character before the cut whole");
+    utf8[61] = 'a';
+    utf8[62] = 0xC3; utf8[63] = 0xB1;       /* now across the cut */
+    gap_copy_name(f.name, sizeof f.name, utf8, 64);
+    check(strlen(f.name) == 62 && f.name[61] == 'a',
+          "name: a character across the cut left out whole");
+}
+
 int main(void)
 {
     test_adapter();
@@ -545,6 +746,8 @@ int main(void)
     test_assembly();
     test_btsim();
     test_intel();
+    test_nearby();
+    test_gap_bytes();
 
     printf("btdecode: %d checks, %d failed\n", checks + fails, fails);
 

@@ -357,3 +357,97 @@ would be, so the stack, the ring, the requests and the pulses are the real
 ones. Every boot of the test harness has it, so the stack sets an adapter
 up in every suite; `x86-bluetooth` checks it, with a controller and
 without.
+
+## B4: what is nearby
+
+Built 25 October (`testing.md` 18.713), against `btsim`; the radio's half
+waits for the T14.
+
+**The stack keeps a queue of commands** and sends the next when the last
+is answered, by Command Complete or - for an inquiry and a name, whose
+results come later as events of their own - by Command Status. The setup
+became the first commands in it; after the adapter's line come the two
+discovery needs: the event mask, with Low Energy's events in it (bit 61,
+without which a controller keeps every advertising report to itself), and
+inquiry mode 2, Extended Inquiry Result, which brings each device's name
+with it when the controller can.
+
+**Looking is a lease.** `BT_OP_SCAN` asks for so many milliseconds more,
+thirty seconds at most; the stack starts Low Energy scanning - active, so
+a device's scan response, where many keep their name, is asked for - and a
+Classic inquiry of 5.12 seconds, and runs another inquiry after each while
+the lease lasts. A Classic device that gave no name is asked for it by
+Remote Name Request after the inquiry that found it, one at a time. When
+nobody renews the lease, scanning stops by itself, so a window that closes
+or a program that dies leaves no radio busy.
+
+**What is heard is kept**: 64 devices at most, the one heard longest ago
+giving way to a new one - a cache of what is near, not a limit on it. A
+name, a class or an appearance once said is kept until said otherwise.
+
+**The decoders** are `gap_decode.c`: Inquiry Result in its three forms,
+LE Advertising Report, Remote Name Request Complete, the length-type-value
+data both kinds of device describe themselves in, and what a device is -
+a keyboard, a mouse, headphones - from Classic's Class of Device or Low
+Energy's appearance and services. Several devices to an event are read
+one after another, as Linux's `hci_event.c` reads them and controllers
+send them, though the specification draws Inquiry Result as parallel
+arrays.
+
+**`/Devices/bluetooth`** (`btproto.h`): STATE, SCAN, STOP and LIST, a
+page of 24 devices nearest first, answered from memory. It reaches a
+program that declares `kosmos: needs bluetooth` as `/Devices/midi` does -
+the shell holds it, the desktop declares it to pass it on.
+`user/lib/bluetooth.lua` is the one place in Lua that knows the shape, and
+`bt` at the prompt the smallest thing that uses it: `bt`, `bt scan
+[seconds]`, `bt stop`.
+
+**`btsim` has neighbours**, made up, one for each path: a K380 keyboard
+on Classic, named in its EIR; a mouse on Low Energy with the HID service
+and the mouse appearance; and headphones on Classic that give no name
+until asked.
+
+## B5, planned: the K380, simulated first
+
+What the stack does with a Classic keyboard, in the order it happens, and
+what `btsim`'s K380 answers at each step - so the real keyboard meets a
+stack that already pairs, and only the radio is new.
+
+1. **Connection.** Create Connection (Volume 4 Part E 7.1.5), Command
+   Status, then Connection Complete with a handle. And Write Scan Enable,
+   page scan only (7.3.18), so a paired keyboard can call back when it
+   wakes - which is how a K380 reconnects - and Accept Connection Request
+   when it does (7.1.8).
+2. **Pairing, Secure Simple Pairing with a passkey** (Volume 3 Part C 5.2,
+   Volume 2 Part H 7): Authentication Requested; Link Key Request answered
+   negative the first time; IO Capability Request answered DisplayOnly,
+   since this machine shows the digits and the keyboard types them; User
+   Passkey Notification - the six digits, which `/Devices/bluetooth`
+   carries to the app's sheet; a Keypress Notification as each is typed,
+   which fills the sheet's boxes; Simple Pairing Complete, Link Key
+   Notification - the key, kept - and Authentication Complete; then Set
+   Connection Encryption. The controller does the cryptography; the host
+   answers questions.
+3. **L2CAP** (Volume 3 Part A): the signalling channel, then two channels
+   to the keyboard's HID PSMs, 11h for control and 13h for interrupt -
+   Connection Request and Response, Configuration both ways. ACL data
+   reassembled by its packet-boundary flag, and sent within the buffers
+   Read Buffer Size gave, counted back by Number Of Completed Packets.
+4. **HID, boot protocol first** (Bluetooth HID 1.1): SET_PROTOCOL boot on
+   the control channel, after which an input report on the interrupt
+   channel is a USB boot keyboard's eight bytes behind a DATA header - so
+   `usb_decode_keys` and `usb_decode_key` read it, and each key that
+   changed goes to `kosmos_key_push`, exactly as a USB keyboard's. Report
+   mode, with its descriptor read through SDP, is for the K380's media keys
+   after.
+5. **The transport carries ACL** both ways: a bulk IN read always out in
+   `xhci.c`, and the ring's ACL packets sent on the bulk OUT.
+
+**How the suite knows a key arrived**: `btsim`'s K380, once its HID
+channels are open, types `bt` and Return - which reach the prompt as any
+keyboard's keys do, and run `bt`, whose output the suite reads. A key from
+a simulated Bluetooth keyboard, through the stack, into the system, and a
+program run by it.
+
+Keys are kept in memory at B5; the keyring, so they survive a restart, is
+B7's.

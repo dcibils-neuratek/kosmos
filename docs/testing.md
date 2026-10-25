@@ -29193,3 +29193,38 @@ Buffer Size. The stack said "the adapter answered 1005 with status 1; it is
 not used", and the suite failed in both boots. Restored and rebuilt.
 
 Full gate: 98 suites in 9:16.
+
+## 18.713 Bluetooth B4: what is nearby, against btsim
+
+**On the Mac**, `test_btdecode` grows to 93 checks:
+- an inquiry through `btsim` read back with `gap_decode.c` - taken by
+  Command Status, two Extended Inquiry Results, complete: the K380 a
+  keyboard named in its EIR at -48 dBm, the headphones with no name;
+- their name asked and answered, "Pixel Buds", and a device that is not
+  there answering Page Timeout;
+- an LE scan's report: the mouse, a random address, connectable, HID,
+  appearance Mouse, -60 dBm; scanning on again repeating nothing, off;
+- bytes `btsim` does not send: Inquiry Result with two devices (a mouse
+  and a gamepad), with RSSI (a keyboard and mouse together), two LE
+  reports - a scan response with a shortened name and RSSI not available -
+  each cut short; advertising data whose length walks off its end; kinds
+  from appearance (Keyboard, Earbud) and from HID alone; and a name cut
+  where a UTF-8 character starts, never halving one.
+
+Two checks were wrong at first, and the decoders right: a zeroed device
+was taken for Classic when its transport said neither, and a check on the
+name's cut had been written backwards.
+
+**In QEMU**, `x86-bluetooth` grows to 24 checks over its two boots: `bt
+scan 2` says the adapter looking and finds the three neighbours with their
+kinds, transports, addresses and RSSI - the headphones named once their
+Remote Name Request is answered - and ends with three heard; `bt` then
+lists them nearest first, and says "not looking", the lease having run
+out by itself; and a program that did not declare `needs bluetooth` finds
+no door.
+
+**Control**: `btsim` made to answer the headphones' name with Page
+Timeout. Both boots failed two checks each: "bt scan did not find Pixel
+Buds", and the list's third row "(no name yet)". Restored and rebuilt.
+
+Full gate: 98 suites in 9:30.

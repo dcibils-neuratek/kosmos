@@ -12,11 +12,17 @@
  * `opt/kosmos/bluetooth=simulated`, so the stack, the rings and the pulses
  * are the real ones, and only the radio is pretended.
  *
- * At B2 it answers the controller's setup: Reset, the version, the
- * address, the features and the buffers, and Command Complete with
- * Unknown HCI Command for anything else, as a real controller does. The
- * keyboard and mouse behind it come at B4 to B6, with the steps that
- * need them.
+ * It answers the controller's setup: Reset, the version, the address,
+ * the features and the buffers, the event mask and the inquiry mode, and
+ * Command Complete with Unknown HCI Command for anything else, as a real
+ * controller does.
+ *
+ * **And it has neighbours** (B4), made up, each for a path the stack must
+ * take: a Logitech K380 keyboard on Classic that names itself in its
+ * extended inquiry response; a mouse on Low Energy that advertises HID and
+ * its appearance; and headphones on Classic that say no name until a
+ * Remote Name Request asks. An inquiry finds the two Classic ones, a scan
+ * the mouse. Pairing and connecting to them come at B5 and B6.
  *
  * No hardware and no system calls: `tools/test_btdecode.c` holds it on the
  * Mac, against the same decoders the stack reads it with.
@@ -33,8 +39,9 @@
 #define BTSIM_ACL_LENGTH    1021u
 #define BTSIM_ACL_PACKETS   8u
 
-/* Packets waiting to go up: a whole setup's answers and more. */
-#define BTSIM_QUEUE         16u
+/* Packets waiting to go up: a whole setup's answers, a scan's results and
+ * more. */
+#define BTSIM_QUEUE         24u
 #define BTSIM_PACKET_MAX    260u
 
 struct btsim {
@@ -45,6 +52,9 @@ struct btsim {
     unsigned dropped;               /* answers there was no room for */
     unsigned commands;              /* commands taken, since its start */
     bool     reset;                 /* a Reset has been taken */
+    bool     scanning;              /* LE scanning is on */
+    unsigned inquiries;             /* inquiries started */
+    unsigned names_asked;           /* Remote Name Requests taken */
 };
 
 void btsim_start(struct btsim *s);

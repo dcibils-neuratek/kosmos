@@ -16,7 +16,14 @@ path with only the radio pretended:
   back - Bluetooth 5.1, the testing company, `btsim`'s address, Classic and
   Low Energy with Secure Simple Pairing, eight ACL buffers of 1021 bytes;
 - **nothing refused or lost on the way**: no wait the kernel would not
-  take (the driver's seventh endpoint), and no command unanswered.
+  take (the driver's seventh endpoint), and no command unanswered;
+- **what is nearby** (B4), through `bt` and `bluetooth.lua`: `bt scan`
+  finds `btsim`'s three made-up neighbours - the K380 by Classic inquiry,
+  named in its EIR; the mouse by Low Energy scan, a random address and the
+  mouse appearance; the headphones by inquiry, named only once a Remote
+  Name Request is answered - each with its kind, address and RSSI; `bt`
+  then lists them nearest first and says the lease has run out; and a
+  program that did not declare `needs bluetooth` has no door to ask.
 
 Twice: with an xHCI controller, where the driver serves the stack from the
 wait it keeps over its controllers, and without one, where it serves it from
@@ -26,6 +33,7 @@ Usage: run_bluetooth.py IMAGE
 """
 
 import os
+import re
 import sys
 import time
 
@@ -33,6 +41,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
+
+SCANNED = [
+    ("Keyboard K380", "keyboard", "classic", "02:4B:53:00:03:80", "-48 dBm"),
+    ("MX Anywhere 3", "mouse", "le", "F2:4B:53:4D:58:33", "-60 dBm"),
+    ("Pixel Buds", "headphones", "classic", "02:4B:53:00:D5:5B", "-71 dBm"),
+]
 
 READY = ("bluetooth: simulated, Bluetooth 5.1 from a test company, "
          "02:4B:4F:53:4D:4F: Classic and Low Energy, SSP, 8 ACL buffers of "
@@ -72,6 +86,46 @@ def boot(with_controller, failed):
         check("bluetooth: the adapter did not answer" not in said
               and "bluetooth: the adapter answered" not in said,
               "a command went unanswered or failed:\n" + said[-800:])
+        def run(line, until, seconds=30):
+            at = len(guest.seen)
+            guest.type(line)
+            end = time.monotonic() + seconds
+
+            while time.monotonic() < end and until not in guest.seen[at:]:
+                time.sleep(0.2)
+                guest._read_available()
+
+            return guest.seen[at:]
+
+        said = run("bt scan 2", "bt: done")
+        check("bt: simulated adapter, Bluetooth 5.1 from a test company, "
+              "02:4B:4F:53:4D:4F: Classic and Low Energy, SSP; looking" in said,
+              "bt scan did not say the adapter, looking:\n" + said[-800:])
+
+        for name, kind, transport, addr, rssi in SCANNED:
+            line = re.search(r"bt:   %s\s+%s\s+%s\s+%s  %s" % (
+                re.escape(name), re.escape(kind), transport, addr, rssi), said)
+            check(line, "bt scan did not find %s as a %s on %s:\n%s" % (
+                name, kind, transport, said[-900:]))
+
+        check("bt: done, 3 devices heard" in said,
+              "bt scan did not end with three devices:\n" + said[-600:])
+
+        said = run("bt", "devices heard")
+        rows = re.findall(r"bt:   (\S.*?)\s{2,}", said)
+        check(rows[:3] == [n for n, *_ in SCANNED],
+              "bt did not list them nearest first: %r" % rows)
+        check("; not looking" in said,
+              "the scan's lease did not end by itself:\n" + said[-600:])
+
+        # No door for a program that did not ask for one.
+        run('fs.write("/Temporary/nobt.lua", [[local b = use("/Kosmos/Libraries/bluetooth.lua") '
+            'local s, why = b.state() print("nobt: " .. tostring(s) .. " " .. tostring(why))]]) '
+            'print("no" .. "bt-written")', "nobt-written")
+        said = run("run /Temporary/nobt.lua", "nobt: ")
+        check("nobt: nil " in said,
+              "a program that did not ask for Bluetooth reached it:\n" + said[-400:])
+
         check("refused the wait" not in guest.seen,
               "the kernel refused the driver's wait on its endpoints")
         check("no Bluetooth stack" not in guest.seen,
