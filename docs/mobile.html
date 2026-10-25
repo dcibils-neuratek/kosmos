@@ -87,7 +87,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .lease i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--m); }
 
 /* Home: a page. */
-.page { position: absolute; inset: 50px 30px 34px; display: flex; flex-direction: column; z-index: 2; transition: opacity .3s; }
+.page { position: absolute; inset: 50px 30px 78px; display: flex; flex-direction: column; z-index: 2; transition: opacity .3s; }
 .date { font: 500 10.5px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--pdim); }
 .clock { font-size: 84px; font-weight: 300; line-height: 1; margin-top: 10px; letter-spacing: -2.5px; font-variant-numeric: lining-nums; }
 .sentence { font-size: 28px; font-weight: 300; line-height: 1.2; margin-top: 16px; text-wrap: balance; }
@@ -113,7 +113,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .sheet { position: absolute; z-index: 25; background: var(--paper); transition: transform .34s cubic-bezier(.2,.8,.2,1); }
 .sheet::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
   background-image: radial-gradient(rgba(120,95,60,.07) .6px, transparent .7px); background-size: 3px 3px; }
-.people-sheet { top: 0; bottom: 0; left: 0; width: 88%; transform: translateX(-104%); padding: 56px 26px 24px; box-shadow: 8px 0 30px rgba(40,30,20,.18); }
+.people-sheet { top: 0; bottom: 0; left: 0; width: 88%; transform: translateX(-104%); padding: 56px 26px 70px; box-shadow: 8px 0 30px rgba(40,30,20,.18); }
 .people-sheet.open { transform: none; }
 .day-sheet { top: 0; left: 0; right: 0; height: 90%; transform: translateY(-104%); padding: 54px 26px 20px; box-shadow: 0 8px 30px rgba(40,30,20,.18);
              display: flex; flex-direction: column; overflow: hidden; }
@@ -125,6 +125,35 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .name .acts { display: flex; gap: 12px; font: 500 11px var(--body); letter-spacing: .08em; color: var(--pdim); }
 .name .acts span { cursor: pointer; }
 .name .acts span:hover { color: var(--m); }
+.index-sheet { top: 0; bottom: 0; right: 0; width: 88%; transform: translateX(104%); padding: 56px 26px 70px; box-shadow: -8px 0 30px rgba(40,30,20,.18);
+               display: flex; flex-direction: column; }
+.index-sheet.open { transform: none; }
+.find { font: 300 20px var(--serif); color: var(--pink); background: transparent; border: 0; border-bottom: 1px solid var(--prule);
+        padding: 6px 0 8px; outline: none; width: 100%; margin-bottom: 4px; }
+.find::placeholder { color: var(--pfaint); font-style: italic; }
+.alist { flex: 1; overflow: auto; }
+.letter { font: 500 10px var(--body); letter-spacing: .16em; color: var(--pfaint); padding: 14px 0 2px; }
+.entry { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--prule); cursor: pointer; }
+.entry b { font-size: 21px; font-weight: 400; }
+.entry span { font: 400 10.5px var(--body); color: var(--pdim); text-align: right; }
+.entry.out b { color: var(--pfaint); font-weight: 300; }
+.entry.out span { font-style: italic; font-family: var(--serif); font-size: 12px; }
+/* The foot of every page: what the edges do, as words to tap. */
+.nav { position: absolute; left: 24px; right: 24px; bottom: 24px; z-index: 22; display: flex; justify-content: space-between; align-items: baseline;
+       border-top: 1px solid var(--prule); padding-top: 10px; font: 500 10.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pdim); }
+.nav span { cursor: pointer; padding: 4px 0; }
+.nav span:hover { color: var(--pink); }
+.nav .modeword { font: italic 400 17px var(--serif); letter-spacing: 0; text-transform: none; color: var(--m); }
+.nav .modeword::after { content: " \25BE"; font-size: 10px; font-style: normal; }
+.back { font: 500 10.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pdim); cursor: pointer; }
+.back:hover { color: var(--m); }
+.closer { position: absolute; top: 52px; right: 26px; font: 500 10.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pdim); cursor: pointer; z-index: 2; }
+.closer:hover { color: var(--m); }
+.modelist .mrow { padding: 12px 0; border-bottom: 1px solid var(--prule); cursor: pointer; }
+.modelist .mrow b { font-size: 28px; font-weight: 300; color: var(--c); }
+.modelist .mrow.now b { font-style: italic; font-weight: 400; }
+.modelist .mrow span { display: block; font: 400 12px var(--body); color: var(--pdim); margin-top: 2px; }
+.foot { margin-top: 10px; align-self: flex-end; font: 500 10.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--pdim); cursor: pointer; }
 .ribbon { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0 4px; position: relative; }
 .ribbon div { height: 100%; }
 .ribbon .now { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pink); }
@@ -151,7 +180,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .dial .says { position: absolute; left: 30px; right: 30px; bottom: 40px; text-align: center; font-size: 16px; font-weight: 300; line-height: 1.4; font-style: italic; color: var(--pink); }
 
 /* Asked when opening: for how long. */
-.ask { position: absolute; inset: 0; z-index: 27; background: var(--paper); display: none; flex-direction: column; justify-content: center; gap: 12px; padding: 34px; }
+.ask { position: absolute; inset: 0; z-index: 27; overflow: auto; background: var(--paper); display: none; flex-direction: column; justify-content: center; gap: 12px; padding: 34px; }
 .ask.open { display: flex; }
 .ask h4 { font-size: 36px; font-weight: 300; margin: 0; line-height: 1.1; }
 .ask h4 em { font-style: italic; color: var(--m); }
@@ -170,7 +199,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 .app .head { padding: 4px 28px 10px; }
 .app .head h5 { font-size: 40px; font-weight: 300; margin: 0; letter-spacing: -.8px; line-height: 1.05; }
 .app .head span { font: 500 10.5px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--pdim); }
-.app .content { flex: 1; overflow: auto; padding: 6px 28px 40px; position: relative; }
+.app .content { flex: 1; overflow: auto; padding: 6px 28px 90px; position: relative; }
 .thread { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--prule); cursor: pointer; }
 .thread b { font-size: 22px; font-weight: 400; display: block; }
 .thread span { font: 400 12px var(--body); color: var(--pdim); }
@@ -241,10 +270,12 @@ table.plain th { font-family: var(--display); font-weight: 600; }
 
     <div class="sheet people-sheet" id="people"></div>
     <div class="sheet day-sheet" id="day"></div>
+    <div class="sheet index-sheet" id="index"></div>
     <div class="app" id="app"></div>
     <div class="dial" id="dial"></div>
     <div class="ask" id="ask"></div>
     <div class="allows" id="allows"></div>
+    <div class="nav" id="nav"><span data-go="people">People</span><span data-go="day">The day</span><span class="modeword" data-go="modes" id="navmode">Focus</span><span data-go="everything">Everything</span></div>
     <div class="slip" id="slip"></div>
     <div class="note" id="note"></div>
     <div class="handle"></div>
@@ -258,11 +289,12 @@ table.plain th { font-family: var(--display); font-weight: 600; }
         <b>Up and hold</b><span>The modes. Slide along them, let go to choose.</span>
         <b>In from the left</b><span>Your people, in every mode.</span>
         <b>Down from the top</b><span>The day: its shape, and the post.</span>
+        <b>In from the right</b><span>Everything: every application, to find and open.</span>
         <b>Hold the sentence</b><span>What this mode lets through.</span>
         <b>Tap a word</b><span>Open it. One thing at a time.</span>
         <b>Face down</b><span>Rest, on a phone that can feel it.</span>
       </div>
-      <p style="font-size:13px;color:var(--muted);margin-top:10px">With a keyboard: <span class="k">H</span> home, <span class="k">M</span> modes, <span class="k">P</span> people, <span class="k">D</span> the day.</p>
+      <p style="font-size:13px;color:var(--muted);margin-top:10px">Every gesture is also a word to tap: the line at the foot of every page - People, The day, the mode, Everything - and Home and Close at the top. With a keyboard: <span class="k">H</span> home, <span class="k">M</span> modes, <span class="k">P</span> people, <span class="k">D</span> the day, <span class="k">A</span> everything.</p>
     </section>
     <section>
       <h3>Make something happen</h3>
@@ -290,8 +322,9 @@ table.plain th { font-family: var(--display); font-weight: 600; }
   <li><b>People come straight; everything else comes by post.</b> Your circle reaches you in every mode, and calls in Rest's. Mail, news and the rest are held and delivered together at the times you choose, as a list that ends.</li>
   <li><b>Nothing is endless.</b> No feed scrolls for ever; every list has a last line that says it is the last.</li>
   <li><b>No red numbers.</b> Something new is a small inked mark beside its name. It never says how many.</li>
+  <li><b>Everything is one swipe away, and asks for how long.</b> In from the right is every application. What the mode includes opens at once; what it leaves out asks for how long, and only that application is given the minutes - the rest of the phone stays where it was.</li>
   <li><b>Words, not icons.</b> A page reads like a page: things are named, and the phone does not try to be looked at.</li>
-  <li><b>Gestures first, and each edge means one thing.</b> Left is people, top is the day, bottom is home and the modes.</li>
+  <li><b>Everything can be tapped; gestures are shortcuts.</b> The foot of every page says where things are - People, The day, the mode, Everything - and an application has Home at its top. Each edge is the same thing as a shortcut: left is people, top is the day, right is everything, bottom is home and, held, the modes.</li>
   <li><b>Kept by the system, not by willpower.</b> In Kosmos a program reaches only what it was handed (<code>CLAUDE.md</code>, capabilities). In Essential the browser is not hidden behind a tap - it is not handed the network. A mode is a set of capabilities, which no other phone can say.</li>
 </ul>
 
@@ -312,6 +345,7 @@ table.plain th { font-family: var(--display); font-weight: 600; }
   <tr><td>Modes, and what each hands out</td><td>a <b>modes server</b>: which capabilities a program is given in each mode, asked by the launcher before it starts one, and by <code>/Notifications</code> before it shows one</td><td><b>new</b>, and the desktop wants it too - Do Not Disturb hours are already on the roadmap</td></tr>
   <tr><td>The post</td><td><code>/Notifications</code>, holding and delivering in batches at the times the person chose</td><td>a change to what exists</td></tr>
   <tr><td>Your circle</td><td>Contacts, a kit any application can read</td><td><b>new</b> (Mail and Calendar want it)</td></tr>
+  <tr><td>Everything, and an application's own minutes</td><td>the launcher: the index of what is installed, and a lease on one application's capabilities outside the mode, from the modes server</td><td><b>new</b></td></tr>
   <tr><td>The page, the dial, the edges</td><td>Astra on a phone: a new look - Paper - and the window manager taking touch and gestures</td><td><b>new</b></td></tr>
   <tr><td>Messages and calls</td><td>applications of their own; calls over the network first, the cellular modem out of scope</td><td><b>new</b></td></tr>
   <tr><td>Everything else</td><td>Kosmos's own applications - Write, Music, Maps, Mail, the camera, Tracker - in the Paper look, laid out to a narrow window by the UI kit</td><td>as they are, and the kit learning a narrow window</td></tr>
@@ -361,7 +395,8 @@ const WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight
                'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'twenty-one', 'twenty-two', 'twenty-three', 'twenty-four', 'twenty-five',
                'twenty-six', 'twenty-seven', 'twenty-eight', 'twenty-nine', 'thirty'];
 
-const state = { mode: 'focus', back: 'focus', leaseEnd: 0, leaseStart: 0, speed: 1, lit: new Set(), held: [], delivered: [], faceDown: false, app: null };
+const state = { mode: 'focus', back: 'focus', leaseEnd: 0, leaseStart: 0, speed: 1, lit: new Set(), held: [], delivered: [], faceDown: false, app: null,
+                appLease: {} };   /* an application outside the mode, given minutes of its own: id -> until */
 
 /* ---- the clock: real, unless time is quickened ------------------------- */
 let base = Date.now(), virt = Date.now();
@@ -382,6 +417,7 @@ function paintMode() {
   screen.classList.toggle('grey', !!m.grey);
   screen.classList.toggle('lamp', state.mode === 'rest');
   $('lease').style.display = m.lease ? 'block' : 'none';
+  $('navmode').textContent = m.name;
   drawPage();
 }
 
@@ -423,15 +459,57 @@ function drawPage() {
 }
 
 function drawPeople() {
-  $('people').innerHTML = `<h4>People</h4><div class="small">Your circle reaches you in every mode. In from the left, wherever you are.</div>` +
+  $('people').innerHTML = `<div class="closer" data-close="1">Close</div><h4>People</h4><div class="small">Your circle reaches you in every mode. In from the left, wherever you are.</div>` +
     CIRCLE.map(p => `<div class="name"><div><b>${p.n}</b><div class="small" style="margin:0">${p.s}</div></div><div class="acts"><span data-call="${p.n}">CALL</span><span data-write="${p.n}">WRITE</span></div></div>`).join('') +
     `<div class="end">Everyone else is in Contacts.</div>`;
+}
+
+/* Everything: every application, alphabetical, found by typing. What the
+   mode includes is in ink; what it leaves out is lighter, and says so. */
+const inMode = (id) => MODES[state.mode].apps.includes(id) || ((id === 'messages' || id === 'phone') && state.mode !== 'rest')
+                       || (state.appLease[id] || 0) > now();
+function drawIndex(filter) {
+  const sheet = $('index');
+  if (!sheet.querySelector('.find')) {
+    sheet.innerHTML = `<div class="closer" data-close="1">Close</div><h4>Everything</h4><div class="small">Wherever you are, in from the right. What ${MODES[state.mode].name} leaves out asks for how long.</div>
+      <input class="find" id="find" placeholder="Find…" autocomplete="off" spellcheck="false"><div class="alist" id="alist"></div>`;
+    $('find').addEventListener('input', (e) => drawIndex(e.target.value));
+    $('find').addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+  sheet.querySelector('.small').textContent = `Wherever you are, in from the right. What ${MODES[state.mode].name} leaves out asks for how long.`;
+  const q = (filter || '').trim().toLowerCase();
+  const ids = Object.keys(APPS).sort((a, b) => APPS[a][0].localeCompare(APPS[b][0])).filter(id => APPS[id][0].toLowerCase().includes(q));
+  let last = '', html = '';
+  for (const id of ids) {
+    const first = APPS[id][0][0].toUpperCase();
+    if (first !== last) { html += `<div class="letter">${first}</div>`; last = first; }
+    const ok = inMode(id);
+    html += `<div class="entry${ok ? '' : ' out'}" data-entry="${id}"><b>${APPS[id][0]}</b><span>${ok ? (state.appLease[id] > now() ? 'for a few minutes' : 'in ' + MODES[state.mode].name) : 'not in ' + MODES[state.mode].name}</span></div>`;
+  }
+  $('alist').innerHTML = html || `<div class="end">Nothing is called that.</div>`;
+}
+function showIndex() { closeSheets(); const f = $('find'); if (f) f.value = ''; drawIndex(''); $('index').classList.add('open'); log('Everything: every application. Up from the bottom, or back to the right, to close.'); }
+
+function askApp(id) {
+  const a = $('ask');
+  a.innerHTML = `<h4><em>${APPS[id][0]}</em> is not<br>part of ${MODES[state.mode].name}.</h4><p>Open it for a while, and only it: the rest of the phone stays in ${MODES[state.mode].name}.</p>
+    ${[[5, 'five minutes'], [15, 'a quarter of an hour']].map(([m, w]) => `<div class="opt" data-min="${m}">${w}<span>${m} min</span></div>`).join('')}
+    <div class="cancel">Not now</div>`;
+  a.classList.add('open');
+  a.querySelectorAll('[data-min]').forEach(o => o.onclick = () => {
+    a.classList.remove('open');
+    state.appLease[id] = now() + (+o.dataset.min) * 60000;
+    closeSheets();
+    openApp(id);
+    log(`${APPS[id][0]} for ${o.dataset.min} minutes; ${MODES[state.mode].name} goes on around it.`);
+  });
+  a.querySelector('.cancel').onclick = () => a.classList.remove('open');
 }
 
 function drawDay() {
   const segs = [[0, 7, 'rest'], [7, 9, 'essential'], [9, 12, 'focus'], [12, 13, 'open'], [13, 18, 'out'], [18, 22, 'essential'], [22, 24, 'rest']];
   const d = new Date(now()); const h = d.getHours() + d.getMinutes() / 60;
-  $('day').innerHTML = `<h4>${d.toLocaleDateString('en-GB', { weekday: 'long' })}</h4>
+  $('day').innerHTML = `<div class="closer" data-close="1">Close</div><h4>${d.toLocaleDateString('en-GB', { weekday: 'long' })}</h4>
     <div class="small">The day's shape: the modes it moves through by itself.</div>
     <div class="ribbon">${segs.map(([a, b, m]) => `<div style="width:${(b - a) / 24 * 100}%;background:${MODES[m].color};opacity:.75"></div>`).join('')}
       <div class="now" style="left:${h / 24 * 100}%"></div></div>
@@ -489,12 +567,11 @@ function appBody(id) {
 }
 
 function openApp(id, extra) {
-  const allowed = MODES[state.mode].apps.includes(id) || ((id === 'messages' || id === 'phone') && state.mode !== 'rest');
-  if (!allowed) { note(`${APPS[id][0]} is not part of ${MODES[state.mode].name}.`); return; }
+  if (!inMode(id)) { askApp(id); return; }
   state.app = Object.assign({ id }, extra || {});
   state.lit.delete(id);
   const a = $('app');
-  a.innerHTML = `<div class="head"><span>${MODES[state.mode].name}</span><h5>${state.app.who ? state.app.who : APPS[id][0]}</h5></div><div class="content">${appBody(id)}</div>`;
+  a.innerHTML = `<div class="head"><span class="back" data-home="1">&lsaquo; Home</span> &nbsp; <span>${MODES[state.mode].name}</span><h5>${state.app.who ? state.app.who : APPS[id][0]}</h5></div><div class="content">${appBody(id)}</div>`;
   a.classList.add('open');
   log(`Opened ${APPS[id][0]}. Up from the bottom to come home.`);
 }
@@ -547,6 +624,25 @@ function setMode(id, minutes) {
   note(MODES[id].says);
   log(id === 'open' ? `Open for ${minutes} min; then back to ${MODES[state.back].name} by itself.` : `${MODES[id].name}: ${MODES[id].says}`);
 }
+/* The modes, as a page: what the dial is, for a tap. */
+function showModes() {
+  closeSheets();
+  const a = $('ask');
+  a.innerHTML = `<div class="closer" data-close="1" style="top:52px">Close</div><h4 style="margin-top:20px">Modes</h4>
+    <p>What you are doing now. The day moves through them by itself; choose one to change it.</p>
+    <div class="modelist">${ORDER.map(id => `<div class="mrow${id === state.mode ? ' now' : ''}" data-mode="${id}" style="--c:${MODES[id].color}"><b>${MODES[id].name}</b><span>${MODES[id].says}</span></div>`).join('')}</div>`;
+  a.style.justifyContent = 'flex-start';
+  a.classList.add('open');
+  a.querySelectorAll('[data-mode]').forEach(r => r.onclick = () => {
+    const id = r.dataset.mode;
+    a.classList.remove('open'); a.style.justifyContent = '';
+    if (id === state.mode) return;
+    if (id === 'open') askHowLong(); else setMode(id);
+  });
+  a.querySelector('[data-close]').onclick = () => { a.classList.remove('open'); a.style.justifyContent = ''; };
+  log('The modes, as a page. The dial - up from the bottom and hold - is the shortcut.');
+}
+
 function askHowLong() {
   const a = $('ask');
   a.innerHTML = `<h4><em>Everything</em>,<br>for how long?</h4><p>When it is up, the phone goes back to ${MODES[state.mode].name} by itself.</p>
@@ -575,10 +671,10 @@ function dialPick(x) {
 const EDGE = 26, FAR = 60, HOLD = 380;
 let g = null;
 screen.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.ask.open, .holdbtn')) return;
+  if (e.target.closest('.ask.open, .holdbtn, .find')) return;
   const r = screen.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   g = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), moved: false, dial: false,
-        edge: y > r.height - EDGE - 10 ? 'bottom' : x < EDGE ? 'left' : y < EDGE + 14 ? 'top' : null,
+        edge: y > r.height - EDGE - 10 ? 'bottom' : x < EDGE ? 'left' : x > r.width - EDGE ? 'right' : y < EDGE + 14 ? 'top' : null,
         sentence: !!e.target.closest('#sentence, .lampline') };
   screen.setPointerCapture(e.pointerId);
   if (g.edge === 'bottom') g.timer = setTimeout(() => { if (g && g.y0 - g.y > 20) openDial(g.x); else if (g) g.wantDial = true; }, HOLD);
@@ -596,13 +692,16 @@ screen.addEventListener('pointerup', (e) => {
   if (!g) return;
   clearTimeout(g.timer); clearTimeout(g.press);
   const dx = e.clientX - g.x0, dy = e.clientY - g.y0, fast = performance.now() - g.t0 < HOLD;
-  const sheet = $('people').classList.contains('open') ? 'people' : $('day').classList.contains('open') ? 'day' : null;
+  const sheet = $('people').classList.contains('open') ? 'people' : $('day').classList.contains('open') ? 'day'
+              : $('index').classList.contains('open') ? 'index' : null;
   if (g.dial) {
     $('dial').classList.remove('open');
     if (g.sel === 'open' && state.mode !== 'open') askHowLong(); else if (g.sel) setMode(g.sel);
   } else if (g.edge === 'bottom' && -dy > FAR) goHome();
   else if (g.edge === 'left' && dx > FAR) { closeSheets(); drawPeople(); $('people').classList.add('open'); log('Your people. In every mode.'); }
   else if (g.edge === 'top' && dy > FAR) { closeSheets(); drawDay(); $('day').classList.add('open'); log('The day: its shape, and the post.'); }
+  else if (g.edge === 'right' && dx < -FAR) showIndex();
+  else if (sheet === 'index' && dx > FAR) closeSheets();
   else if (sheet === 'people' && dx < -FAR) closeSheets();
   else if (sheet === 'day' && dy < -FAR) closeSheets();
   else if (!g.moved && fast) tap(e);
@@ -611,7 +710,7 @@ screen.addEventListener('pointerup', (e) => {
 screen.addEventListener('pointercancel', () => { if (g) { clearTimeout(g.timer); clearTimeout(g.press); } g = null; $('dial').classList.remove('open'); });
 
 function openDial(x) { g.dial = true; $('dial').classList.add('open'); drawDial(g.sel = dialPick(x)); log('The modes. Slide along them, let go to choose.'); }
-function closeSheets() { $('people').classList.remove('open'); $('day').classList.remove('open'); $('allows').classList.remove('open'); }
+function closeSheets() { ['people', 'day', 'index', 'allows'].forEach(id => $(id).classList.remove('open')); }
 function goHome() { closeSheets(); closeApp(); log('Home: the page.'); }
 function showAllows() {
   const m = MODES[state.mode];
@@ -624,6 +723,19 @@ function tap(e) {
   if (!t) return;
   if ($('allows').classList.contains('open')) { $('allows').classList.remove('open'); return; }
   const app = t.closest('[data-app]'), call = t.closest('[data-call]'), write = t.closest('[data-write]'), thread = t.closest('[data-thread]');
+  const entry = t.closest('[data-entry]'), go = t.closest('[data-go]');
+  if (go) {
+    const w = go.dataset.go;
+    if (w === 'people') { closeSheets(); drawPeople(); $('people').classList.add('open'); }
+    else if (w === 'day') { closeSheets(); drawDay(); $('day').classList.add('open'); }
+    else if (w === 'modes') showModes();
+    else if (w === 'everything') showIndex();
+    return;
+  }
+  if (t.closest('[data-close]')) { closeSheets(); return; }
+  if (t.closest('[data-home]')) { goHome(); return; }
+  if (t.closest('[data-everything]')) { showIndex(); return; }
+  if (entry) { const id = entry.dataset.entry; if (inMode(id)) { closeSheets(); openApp(id); } else askApp(id); return; }
   if (call) { closeSheets(); openApp('phone'); log(`Calling ${call.dataset.call}…`); }
   else if (write) { closeSheets(); openApp('messages', { who: write.dataset.write }); }
   else if (thread) openApp('messages', { who: thread.dataset.thread });
@@ -632,7 +744,9 @@ function tap(e) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (e.target && e.target.id === 'find') return;
   const k = e.key.toLowerCase();
+  if (k === 'a') showIndex();
   if (k === 'h') goHome();
   if (k === 'p') { closeSheets(); drawPeople(); $('people').classList.add('open'); }
   if (k === 'd') { closeSheets(); drawDay(); $('day').classList.add('open'); }
@@ -665,6 +779,12 @@ setInterval(() => {
     $('leasebar').style.width = Math.max(0, left / total * 100) + '%';
     const s = $('sentence'); if (s) s.innerHTML = openSentence();
     if (left <= 0) { const back = state.back; setMode(back); note(`Open is over. Back to ${MODES[back].name}.`); }
+  }
+  for (const [id, until] of Object.entries(state.appLease)) {
+    if (until <= now()) {
+      delete state.appLease[id];
+      if (state.app && state.app.id === id && !MODES[state.mode].apps.includes(id)) { closeApp(); note(`${APPS[id][0]}'s minutes are up.`); }
+    }
   }
   const d = new Date(now());
   if (state.held.length && d.getMinutes() === 0 && [9, 13, 18].includes(d.getHours())) deliver();
