@@ -2,13 +2,13 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-01 (0.11.311, pushed; the Graph Kit designed, nothing built)
+Last updated: 2026-11-01 (0.11.312, pushed; the Graph Kit designed and animated, nothing built)
 
 ---
 
 ## 1 November: the Graph Kit, designed
 
-**Pushed: 0.11.311**, documents only, no code and no suite touched.
+**Pushed: 0.11.311-0.11.312**, documents only, no code and no suite touched.
 
 Diego, after an afternoon on what an operating system that lived on a
 GPU would be: keep Kosmos as it is, and add a GPU backend for the programs
@@ -26,6 +26,9 @@ and plan its first stage on the processor alone before any code.
   pseudocode, the busiest path, steps S1-S7, and the first program,
   Contact Sheet.
 - **`docs/graph-architecture.png`**, from its `.html`.
+- **`docs/sheet-flow.html`** (0.11.312): the program animated - records through
+  the window, the kit, four workers, the sheet buffer and the GPU; play,
+  step, stage 1 or 2.
 
 **Next, Diego's to decide: G1-G5** in `graph.md` (the name, a state a
 worker, Contact Sheet first, the scheduler on the processor with the GPU
