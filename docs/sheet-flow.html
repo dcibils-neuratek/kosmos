@@ -136,6 +136,7 @@
   const DEC_MS = () => 18 + Math.random() * 30;   // a JPEG decode in C, tens of ms
   const PLACE_MS = 2.5;                             // a scale into one cell
   const SHADE_CPU_MS = 9, SHADE_GPU_MS = 1.4, GPU_SUBMIT_MS = 0.3;
+  const GPU_SHOW = 40;                              // the run is 1.4 ms; drawn long enough to see
   const TRAVEL = 20;                                // a record's hop, drawn (not a cost)
   const TICK = 16.7;                                // the window's tick
   const hues = [];
@@ -182,7 +183,7 @@
         ch.landed = true;
         if (ch.land === 'ring') S.workers[ch.w].ring.push(ch);
         else if (ch.land === 'window') S.events.push(ch);
-        else if (ch.land === 'gpu') S.gpu = { at: S.t, dur: SHADE_GPU_MS, done: false };
+        else if (ch.land === 'gpu') S.gpu = { at: S.t, dur: SHADE_GPU_MS, show: GPU_SHOW, done: false };
       }
     }
     S.chips = S.chips.filter((c) => !c.landed || c.keep);
@@ -192,7 +193,7 @@
       if (!w.task && w.ring.length) start(w, i, w.ring.shift());
     });
     // the GPU run
-    if (S.gpu && !S.gpu.done && t1 >= S.gpu.at + S.gpu.dur) {
+    if (S.gpu && !S.gpu.done && t1 >= S.gpu.at + S.gpu.show) {
       S.gpu.done = true; S.shaded = 1;
       S.chips.push({ task: 'shade', from: pt(GPU.x + GPU.w / 2, GPU.y + 60), to: pt(WIN.x + 300, WIN.y + 56), at: S.t, dur: TRAVEL, land: 'window' });
       say('gpu', 'shade: ticket done, ' + SHADE_GPU_MS + ' ms by the GPU\'s own clock');
@@ -202,7 +203,7 @@
       S.tickAt += TICK;
       if (S.events.length) {
         let placed = 0, shaded = false;
-        for (const ev of S.events) { if (ev.task === 'place') { S.damage[ev.slot - 1] = S.t; placed++; } else shaded = true; }
+        for (const ev of S.events) { if (ev.task === 'event') { S.damage[ev.slot - 1] = S.t; placed++; } else shaded = true; }
         S.events = []; S.winFlash = S.t;
         say('window', 'tick: g:events() → ' + (placed ? placed + ' thumbnail' + (placed > 1 ? 's' : '') + ' damaged' : '') + (shaded ? (placed ? ', ' : '') + 'the whole sheet damaged' : ''));
         if (shaded) { S.finished = true; say('window', 'done: ' + N + ' pictures, ' + S.t.toFixed(1) + ' ms simulated'); }
@@ -340,12 +341,12 @@
     }
     // GPU
     const gActive = stage === 2;
-    band(GPU, gActive ? C.gpu : C.card, gActive ? C['gpu-line'] : C.line, gActive ? C['gpu-ink'] : C.dim, 'The GPU · stage 2', gActive ? 'shade.kc over 25 × 150 groups; the sheet is already in its table' : 'not used in stage 1: shade runs as four ranges on the workers');
+    band(GPU, gActive ? C.gpu : C.card, gActive ? C['gpu-line'] : C.line, gActive ? C['gpu-ink'] : C.dim, 'The GPU · stage 2', gActive ? 'shade.kc over 25 × 150 groups; the sheet is already in its table' : 'idle in stage 1, where shade runs as four ranges on the workers; choose Stage 2 above to see the run');
     if (gActive) {
       ctx.fillStyle = C.card; ctx.strokeStyle = C['gpu-line']; rr(GPU.x + 12, GPU.y + 44, GPU.w - 24, 50, 8); ctx.fill(); ctx.stroke();
       ctx.fillStyle = C['gpu-ink']; ctx.font = '500 10.5px ' + css('--mono');
-      const gp = S.gpu ? Math.min(1, (S.t - S.gpu.at) / S.gpu.dur) : 0;
-      ctx.fillText(S.gpu ? (S.gpu.done ? 'run done · ticket answered' : 'execution units: ' + (gp * 100 | 0) + '%') : 'waiting for a run', GPU.x + 22, GPU.y + 52);
+      const gp = S.gpu ? Math.min(1, (S.t - S.gpu.at) / S.gpu.show) : 0;
+      ctx.fillText(S.gpu ? (S.gpu.done ? 'run done · ticket answered · 1.4 ms' : 'execution units · 25 × 150 groups · ' + (gp * 100 | 0) + '%') : 'waiting for a run: after the join', GPU.x + 22, GPU.y + 52);
       ctx.fillStyle = C.paper; rr(GPU.x + 22, GPU.y + 72, GPU.w - 44, 8, 4); ctx.fill();
       ctx.fillStyle = C['gpu-line']; rr(GPU.x + 22, GPU.y + 72, (GPU.w - 44) * gp, 8, 4); ctx.fill();
     }
@@ -396,5 +397,6 @@
 
   addEventListener('resize', resize);
   resize(); reset(); requestAnimationFrame(frame);
+  window.__sheet = { advance, setStage, state: () => S };    // for a test harness; the page never uses it
 })();
 </script>
