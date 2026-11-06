@@ -1845,8 +1845,20 @@ it was left, at the size and in the view it was left in, which the folder
 keeps as attributes of its own. The indicators - battery, sound, network,
 the clock - sit in the menu bar's right-hand end, before the Application
 menu; the Control Strip is the other thing, at the bottom of the screen,
-for what you change rather than what you watch. The name is still open:
-"Pewter" is a working one.
+for what you change rather than what you watch.
+
+**It is 2026's Platinum, and it is called Pewter** - Diego, 5 November:
+"Keep all the 2026 changes, and keep the name Pewter". The mockup's
+1999 / 2026 switch was for feeling the difference, not a setting to ship:
+what is built is the reimagined one - Platinum drawn for today's screens,
+dark as well as light, search in the Kosmos menu, the indicators and modes
+in the menu bar, Quick Look, halves of the screen, Network Places. The
+same day it grew what a new system wants and 9.2 never had, to be felt
+before any of it is agreed: notifications under the clock that Focus and
+Rest hold, every window at once on F3, the menus searched from Help, Undo
+in Tracker, 9.2's labels back, a screenshot key, and an application that
+must ask before it reaches the microphone, with the menu bar saying so
+while it does - the consent step `kosmos: needs` does not have yet.
 
 ## 16.10 What we do not copy from BeOS
 

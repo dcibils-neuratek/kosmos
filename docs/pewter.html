@@ -407,6 +407,35 @@ body.e26.dark .place small,body.e26.dark .footer{color:#a6a6ae}
 body.e26.dark .fragile .st,body.e26.dark .about .top div{color:#c6c6cc!important}
 body.e26.dark .term .body{color:#d8f5dd}
 body.e26.dark .term input{color:#d8f5dd}
+/* ---------- 2026, second round: notifications, every window, labels, screenshots ---------- */
+#banners{position:fixed;right:10px;top:34px;z-index:150000;display:flex;flex-direction:column;gap:8px;width:330px;max-width:calc(100vw - 20px);pointer-events:none}
+.banner{pointer-events:auto;display:grid;grid-template-columns:auto 1fr;gap:1px 10px;align-items:start;padding:10px 12px;background:var(--plat);color:inherit;border:1px solid rgba(0,0,0,.35);border-radius:10px;
+  box-shadow:inset 0 1px 0 #fff,0 12px 30px rgba(0,0,0,.25);font:12px/16px var(--app);animation:bin .22s ease-out;cursor:default}
+.banner svg{grid-row:span 2}
+.banner b{font:600 12px var(--sys)}
+@keyframes bin{from{transform:translateX(30px);opacity:0}}
+.menu.notes{width:350px;max-height:70vh;overflow:auto;padding:8px;font:12px var(--app)}
+.notes h4{margin:2px 6px;font:600 18px var(--sys)}
+.notes .sub{margin:0 6px 8px;color:#777}
+.notes .note{display:grid;grid-template-columns:auto 1fr auto;gap:1px 10px;padding:8px 6px;border-radius:7px;line-height:16px}
+.notes .note b{font:600 12px var(--sys)}
+.notes .note small{color:#888;white-space:nowrap}
+.notes .note svg{grid-row:span 2}
+.notes .none{padding:14px 6px;color:#777}
+.notes .clr{display:flex;justify-content:flex-end;padding:4px 6px 2px}
+#clock.held::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--acc);display:inline-block;margin-left:6px}
+.ovshade{position:absolute;inset:0;background:rgba(8,10,28,.5);z-index:5}
+.win.ov{cursor:pointer}
+.win.ov *{pointer-events:none}
+.win.ov:hover{outline:3px solid var(--acc);outline-offset:4px}
+.ovlabel{position:fixed;z-index:200500;font:600 12px var(--sys);color:#fff;text-align:center;text-shadow:0 1px 3px #000;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;border:1px solid rgba(0,0,0,.35);vertical-align:0}
+.flash{position:fixed;inset:0;background:#fff;z-index:600000;pointer-events:none;animation:flash .28s ease-out forwards}
+@keyframes flash{from{opacity:.9}to{opacity:0}}
+#menubar .ind.rec{color:#d9822b;font-weight:600}
+body.e26.dark .banner{background:#33343a;color:#ececf0;border-color:#000;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 12px 30px rgba(0,0,0,.5)}
+body.e26.dark .notes .sub,body.e26.dark .notes .none,body.e26.dark .notes .note small{color:#9a9aa2}
+@media (prefers-reduced-motion:reduce){.banner{animation:none}.flash{animation:none;display:none}}
 @media (prefers-reduced-motion:reduce){.zoomrect{display:none}.icon.fresh .g{animation:none}#strip .mods{transition:none}.barber{animation:none}#boot{transition:none}}
 </style>
 </head>
@@ -417,6 +446,7 @@ body.e26.dark .term input{color:#d8f5dd}
 <div id="strip" class="" data-tip="The Control Strip: a module for each thing you change often. Click the tab at its end to tuck it away."></div>
 <div id="shield"></div>
 <div id="balloon"></div>
+<div id="banners" aria-live="polite"></div>
 <div id="boot"><div class="welcome"><div class="in">
   <div class="word"><span id="bootlogo"></span>Kosmos</div>
   <div class="tag">Version <span class="ver"></span> · Nebula on four processors</div>
@@ -462,9 +492,10 @@ const ART = {
   caution: `<path d="M16 3L30 28H2z" fill="#f2cc2a" stroke="#333"/><path d="M14.4 11h3.2l-.6 9h-2zM14.6 22h2.8v2.8h-2.8z" fill="#111"/>`,
   note: `<path d="M4.5 5.5h23v16h-12l-6 5.5v-5.5h-5z" fill="#fff" stroke="#333"/><path d="M15 9h2.4v2.4H15zM15 12.8h2.4v6H15z" fill="#3b5fd0"/>`,
   power: `<circle cx="16" cy="16" r="13" fill="#d8d8d8" stroke="#333"/><path d="M11.2 10.6a7.5 7.5 0 1 0 9.6 0" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"/><path d="M16 7v9" stroke="#333" stroke-width="2.2" stroke-linecap="round"/>`,
+  picture: `<rect x="3.5" y="6.5" width="25" height="19" fill="#fff" stroke="#333"/><rect x="6" y="9" width="20" height="14" fill="#8fc4ef"/><path d="M6 23l6-7 4 4 3-3 7 6z" fill="#3f8f4a"/><circle cx="21" cy="12.5" r="2" fill="#ffd34d"/>`,
   tracker: `<rect x="3.5" y="5.5" width="25" height="20" fill="#d8d8d8" stroke="#333"/><path d="M3.5 9.5h25" stroke="#333"/><rect x="7" y="13" width="6" height="5" fill="#9c9cf0" stroke="#262680"/><rect x="17" y="13" width="6" height="5" fill="#9c9cf0" stroke="#262680"/><path d="M5.5 7.5h3" stroke="#777"/>`,
 };
-const KIND_ART = { folder: "folder", disk: "disk", home: "home", trash: "trash", doc: "doc", song: "song", movie: "movie", kit: "kit", server: "server", driver: "driver", cpanel: "folder" };
+const KIND_ART = { folder: "folder", disk: "disk", home: "home", trash: "trash", doc: "doc", song: "song", movie: "movie", kit: "kit", server: "server", driver: "driver", cpanel: "folder", picture: "picture" };
 function artOf(n) {
   if (n.kind === "app") return ART[APPS[n.app].icon];
   if (n.kind === "trash") return n.children.length ? ART.trashfull : ART.trash;
@@ -516,8 +547,15 @@ The switch in the menu bar belongs to the mockup, not to Kosmos. 1999 is Mac OS 
 - Drag a window to the screen's left or right edge for half of it, to the top for all of it.
 - Live folders: open Home ▸ Downloads and wait. In 2026 a file appears as it arrives; in 1999 the window only catches up when you click it.
 - Network Places in the Kosmos menu, where the Chooser was.
+- Notifications: a banner at the top right, and the day's list when you click the clock. Focus and Rest hold them, and the clock wears a dot.
+- F3, or Show All Windows in the Application menu: every window at once, side by side, still running. Click one.
+- Help ▸ the search field finds any menu item by what it says, and does it.
+- Undo in Tracker: a move, the Trash, a rename, a label, a new folder.
+- Ctrl⇧3 takes a screenshot into Home ▸ Screenshots (the Mac keeps ⌘⇧3 for itself).
+- Player ▸ Controls ▸ Record from Microphone asks you first. An application reaches the microphone only when you say so, the menu bar shows it while it does, and Get Info on Player changes your answer.
 
 IN BOTH
+- Labels, as 9.2 had them: File ▸ Label, seven colours. The search finds them too ("Personal").
 - Spring-loaded folders: drag something, hold it over a folder, and the folder opens.
 - Pop-up windows: View ▸ as Pop-up Window turns a folder into a tab along the bottom of the screen. Drag a file onto the tab and it slides up.
 - A window opened from an icon grows out of it.
@@ -543,8 +581,8 @@ function buildFS() {
   mk("Kosmos HD", "disk", { id: "hd", free: "212.4 GB" }, [sys, apps]);
 
   const docs = mk("Documents", "folder", {}, [
-    mk("Letter to Ana", "doc", { size: 4200, text: "Dear Ana,\n\nThe machine on my desk is called Kosmos now. It starts in a few seconds, and when a program misbehaves it is the only thing that falls over.\n\nMore when I see you,\nDiego\n" }),
-    mk("Ideas", "doc", { size: 1900, text: "- A planet simulation, in Cafesa3D\n- Music that answers a key before the ear can tell\n- The desktop on the M700's GPU\n" }),
+    mk("Letter to Ana", "doc", { size: 4200, label: "personal", text: "Dear Ana,\n\nThe machine on my desk is called Kosmos now. It starts in a few seconds, and when a program misbehaves it is the only thing that falls over.\n\nMore when I see you,\nDiego\n" }),
+    mk("Ideas", "doc", { size: 1900, label: "progress", text: "- A planet simulation, in Cafesa3D\n- Music that answers a key before the ear can tell\n- The desktop on the M700's GPU\n" }),
   ]);
   const music = mk("Music", "folder", {}, [
     mk("Arrival.mp3", "song", { size: 7.8e6, len: 192, artist: "The Night Shift" }),
@@ -561,7 +599,7 @@ function buildFS() {
 }
 
 const KINDS = { folder: "folder", cpanel: "folder", disk: "disk", home: "your Home", trash: "Trash", doc: "Write document",
-  song: "MP3 audio", movie: "MPEG-4 film", kit: "kit", server: "server", driver: "driver", app: "application" };
+  song: "MP3 audio", movie: "MPEG-4 film", picture: "PNG picture", kit: "kit", server: "server", driver: "driver", app: "application" };
 function fmtSize(b) {
   if (b == null) return "—";
   if (b < 1024) return b + " bytes";
@@ -580,6 +618,7 @@ const S = {
   sel: null, selWin: null, balloons: false, sounds: true, liveDrag: true, dblShade: true, menus: [], modal: null,
   recentApps: [], recentDocs: [], vol: 5, accent: "lavender", hilite: "lavender", pattern: "kosmos", font: "charcoal",
   bootAt: Date.now(), hung: false, era: "2026", dark: false, mode: "everything", openFrom: null,
+  notes: [], unseen: 0, heldN: 0, undo: [], undoing: false, mic: undefined, recording: false, recAt: 0, recN: 0,
 };
 // The menu bar is 20 points in 1999 and 26 in 2026; everything that sits below it asks.
 const MBH = () => S.era === "2026" ? 26 : 20;
@@ -695,7 +734,7 @@ function togglePopup(w, open = !w.popupOpen) {
   if (!w.popup) return;
   w.popupOpen = open;
   w.el.style.top = (open ? innerHeight - 280 : innerHeight - 31) + "px";
-  whoosh();
+  tone([520, 780], .06, "sine", .03);
 }
 
 function wireWin(w) {
@@ -871,11 +910,12 @@ function appMenu() {
     SEP,
     ...S.running.map(a => ({ t: APPS[a].name, ico: APPS[a].icon, c: a === S.active, dim: S.hidden.has(a), a: () => activate(a) })),
     SEP,
+    ...(S.era === "2026" ? [{ t: "Show All Windows", kraw: "F3", a: overview }] : []),
     { t: "Force Quit…", k: "⌥⎋", key: "Escape", alt: true, a: forceQuitDialog },
   ] };
 }
-const editMenu = (sel) => ({ t: "Edit", items: [
-  { t: "Undo", k: "Z", d: true }, SEP,
+const editMenu = (sel, undo) => ({ t: "Edit", items: [
+  undo || { t: "Undo", k: "Z", d: true }, SEP,
   { t: "Cut", k: "X", d: !sel }, { t: "Copy", k: "C", d: !sel }, { t: "Paste", k: "V", d: true }, { t: "Clear", d: true },
   { t: "Select All", k: "A", a: sel ? () => sel() : null, d: !sel },
 ] });
@@ -887,6 +927,7 @@ function basicMenus(app) {
 }
 function helpMenu() {
   return { t: "Help", items: [
+    ...(S.era === "2026" ? [{ search: "menus" }, SEP] : []),
     { t: "Help Center", k: "?", a: () => openNode("readme") },
     SEP,
     { t: S.balloons ? "Hide Balloons" : "Show Balloons", a: () => { S.balloons = !S.balloons; hideBalloon(); renderMenubar(); } },
@@ -927,16 +968,23 @@ const IND = {
 };
 function indicatorsHTML() {
   const tips = { mode: "The mode you are in. Choose one to put away what does not belong to it.", net: "The network: wired, connected.", vol: "Sound. Kosmos plays it above every program.", bat: "The battery." };
-  return Object.keys(IND).map(k => `<div class="mt ind" data-ind="${k}" data-tip="${tips[k]}">${IND[k]()}</div>`).join("");
+  return (S.recording ? `<div class="mt ind rec" data-ind="mic" data-tip="Player is using the microphone. Click to stop it.">● Microphone</div>` : "") +
+    Object.keys(IND).map(k => `<div class="mt ind" data-ind="${k}" data-tip="${tips[k]}">${IND[k]()}</div>`).join("");
 }
 function indicatorMenu(k) {
   if (k === "mode") return Object.entries(MODES).map(([m, d]) => ({ t: d.t, where: d.where, c: S.mode === m, a: () => setMode(m) }));
   if (k === "net") return [{ t: "Wired: connected", c: true }, { t: "192.168.1.28", d: true }, { t: "Wireless: not here yet", d: true }, SEP, { t: "Network Places…", a: openNetwork }];
   if (k === "vol") return [...Array(8).keys()].reverse().map(v => ({ t: v === 0 ? "Mute" : "Volume " + v, c: S.vol === v, a: () => { S.vol = v; renderStrip(); renderMenubar(); tick(); } }));
+  if (k === "mic") return [{ t: "Player is using the microphone", d: true }, { t: "Stop Recording", a: stopRec }];
   if (k === "bat") return [{ t: "82%, about 5 hours left", d: true }, { t: "On battery", d: true }, SEP, { t: "Sleep", a: sleep }];
 }
 function setMode(m) {
+  const was = S.mode;
   S.mode = m;
+  if ((was === "focus" || was === "rest") && m !== "focus" && m !== "rest" && S.heldN) {
+    banner({ app: "tracker", title: `${S.heldN} notification${S.heldN === 1 ? "" : "s"} waited while you were in ${MODES[was].t}`, body: "Click the clock to see them." });
+    S.heldN = 0;
+  }
   const keep = MODES[m].apps;
   if (keep === null) S.hidden.clear();
   else {
@@ -970,7 +1018,9 @@ let CL = { date: false };
 function updateClock() {
   const c = $("#clock"); if (!c) return;
   const d = new Date();
-  c.textContent = CL.date ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+  c.classList.toggle("held", S.era === "2026" && S.unseen > 0);
+  c.dataset.tip = S.era === "2026" ? "The time. Click it for today, and the notifications that came." : "The time. Click it for the date.";
+  c.textContent = CL.date && S.era !== "2026" ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })
     : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 setInterval(updateClock, 10e3);
@@ -1011,11 +1061,12 @@ function buildMenu(items, level) {
 }
 function menuItem(it, m, level) {
   if (it.sep) { const s = document.createElement("div"); s.className = "msep"; return s; }
-  if (it.search) return menuSearch(m, level);
+  if (it.search) return menuSearch(m, level, it.search);
   const d = document.createElement("div");
   d.className = "mi" + (it.d ? " dis" : "") + (it.sub ? " sub" : "");
   d.innerHTML = (it.c ? `<span class="chk">✓</span>` : "") + (it.ico ? `<span class="ico" style="${it.dim ? "opacity:.45" : ""}">${icon(it.ico, 16)}</span>` : "") +
-    `<span>${esc(it.t)}</span>` + (it.where ? `<span class="wh">${esc(it.where)}</span>` : "") + (it.k ? `<span class="k">${K}${it.k}</span>` : "");
+    (it.dot ? `<span class="ico"><i class="tag" style="background:${it.dot};margin:0"></i></span>` : "") +
+    `<span>${esc(it.t)}</span>` + (it.where ? `<span class="wh">${esc(it.where)}</span>` : "") + (it.k ? `<span class="k">${K}${it.k}</span>` : it.kraw ? `<span class="k">${it.kraw}</span>` : "");
   d.addEventListener("mouseenter", () => {
     $$(".mi.on", m).forEach(x => x.classList.remove("on"));
     // a submenu below this level closes when another item is pointed at
@@ -1039,17 +1090,17 @@ function menuItem(it, m, level) {
 }
 // 2026: the Kosmos menu opens on a search field. Type, and what matches -
 // applications first, then files - replaces the menu below it.
-function menuSearch(m, level) {
+function menuSearch(m, level, kind) {
   const box = document.createElement("div"); box.className = "msearch";
-  box.innerHTML = `<input placeholder="Search applications and files" spellcheck="false" autocomplete="off"><div class="mres"></div>`;
+  box.innerHTML = `<input placeholder="${kind === "menus" ? "Search the menus" : "Search applications, files and labels"}" spellcheck="false" autocomplete="off"><div class="mres"></div>`;
   const inp = $("input", box), res = $(".mres", box);
   let found = [];
   inp.addEventListener("input", () => {
     const q = inp.value.trim();
     m.classList.toggle("searching", !!q);
     res.innerHTML = "";
-    found = q ? searchAll(q) : [];
-    if (q && !found.length) res.innerHTML = `<div class="mi dis"><span>Nothing called “${esc(q)}”</span></div>`;
+    found = !q ? [] : kind === "menus" ? searchMenus(q) : searchAll(q);
+    if (q && !found.length) res.innerHTML = `<div class="mi dis"><span>${kind === "menus" ? "No menu item says" : "Nothing called"} “${esc(q)}”</span></div>`;
     found.forEach((it, i) => { const d = menuItem(it, m, level); if (i === 0) d.classList.add("on"); res.appendChild(d); });
   });
   inp.addEventListener("keydown", e => { if (e.key === "Enter" && found[0]) { e.preventDefault(); choose($(".mi", res), found[0].a); } });
@@ -1059,9 +1110,21 @@ function searchAll(q) {
   q = q.toLowerCase();
   const apps = Object.keys(APPS).filter(a => APPS[a].name.toLowerCase().includes(q))
     .map(a => ({ t: APPS[a].name, ico: APPS[a].icon, where: "Application", a: () => launch(a) }));
-  const files = Object.values(FS).filter(n => n.kind !== "desk" && n.kind !== "app" && !isGone(n.id) && n.name.toLowerCase().includes(q)).slice(0, 8)
-    .map(n => ({ t: n.name, ico: KIND_ART[n.kind] || "doc", where: pathOf(n.id), a: () => openNode(n.id) }));
+  const lab = n => n.label && LABELS[n.label][0].toLowerCase().includes(q);
+  const files = Object.values(FS).filter(n => n.kind !== "desk" && n.kind !== "app" && !isGone(n.id) && (n.name.toLowerCase().includes(q) || lab(n))).slice(0, 8)
+    .map(n => ({ t: n.name, ico: KIND_ART[n.kind] || "doc", where: lab(n) && !n.name.toLowerCase().includes(q) ? LABELS[n.label][0] : pathOf(n.id), a: () => openNode(n.id) }));
   return [...apps, ...files].slice(0, 10);
+}
+// Help ▸ search the menus: every item the menu bar holds now, found by what it says.
+function searchMenus(q) {
+  q = q.toLowerCase(); const out = [];
+  const walk = (items, path) => items.forEach(it => {
+    if (it.sep || it.search) return;
+    if (it.sub) return walk(it.sub, path + " ▸ " + it.t);
+    if (it.a && !it.d && it.t.toLowerCase().includes(q)) out.push({ t: it.t, where: path, a: it.a, ico: it.ico, k: it.k, kraw: it.kraw });
+  });
+  S.menus.forEach(m => { if (m.t !== "Help") walk(m.items, m.logo ? "Kosmos" : m.appmenu ? APPS[S.active].name : m.t); });
+  return out.slice(0, 10);
 }
 // A chosen item blinks, as it did, and then does what it says.
 function choose(d, act) {
@@ -1079,7 +1142,7 @@ $("#menubar").addEventListener("mousedown", e => {
   if (era) { e.preventDefault(); setEra(era.dataset.era); return; }
   const t = e.target.closest(".mt");
   if (!t) return;
-  if (t.id === "clock") { CL.date = !CL.date; updateClock(); return; }
+  if (t.id === "clock") { if (S.era === "2026") { e.preventDefault(); if (t.classList.contains("open")) closeMenus(); else notesPanel(t); } else { CL.date = !CL.date; updateClock(); } return; }
   if (t.dataset.ind) {
     e.preventDefault();
     if (t.classList.contains("open")) { closeMenus(); return; }
@@ -1106,6 +1169,9 @@ addEventListener("mouseup", e => {
 
 function allItems(list = S.menus.flatMap(m => m.items)) { return list.flatMap(it => it.sub ? allItems(it.sub) : [it]); }
 addEventListener("keydown", e => {
+  if (OV) { if (e.key === "Escape" || e.key === "F3") { e.preventDefault(); endOverview(); } return; }
+  if (isCmd(e) && e.shiftKey && e.code === "Digit3") { e.preventDefault(); screenshot(); return; }
+  if (e.key === "F3" && S.era === "2026" && !S.modal) { e.preventDefault(); overview(); return; }
   if (e.key === "Escape" && e.altKey && isCmd(e)) { e.preventDefault(); forceQuitDialog(); return; }
   if (S.modal) { S.modal.key(e); return; }
   if (e.key === "Escape" && MS.open !== -1) { closeMenus(); return; }
@@ -1169,6 +1235,7 @@ function openNode(id) {
   if (n.kind === "app") return launch(n.app);
   if (n.kind === "doc") { S.recentDocs = [id, ...S.recentDocs.filter(x => x !== id)].slice(0, 6); return launch("write", id); }
   if (n.kind === "song" || n.kind === "movie") { S.recentDocs = [id, ...S.recentDocs.filter(x => x !== id)].slice(0, 6); return launch("player", id); }
+  if (n.kind === "picture") return S.era === "2026" ? quickLook(id) : alertBox({ icon: "note", msg: `“${esc(n.name)}” is a picture.`, sub: "Pictures open in a viewer that is not in this mockup. In 2026, the space bar shows it." });
   if (n.kind === "kit") return alertBox({ icon: "note", msg: `“${esc(n.name)}” is a kit.`, sub: "A kit is code an application runs inside its own memory, so it does not open by itself. Get Info says which applications use it." });
   if (n.kind === "server" || n.kind === "driver") return alertBox({ icon: "note", msg: `“${esc(n.name)}” is already running.`, sub: `A ${n.kind} is started by Kosmos and answers whoever was given it. It has no window. About This Kosmos shows what it is using.` });
 }
@@ -1185,7 +1252,7 @@ function iconHTML(id, inWin) {
   const n = FS[id];
   const opened = n.children && S.wins.has("f:" + id);
   const sel = S.sel === id && (inWin ? S.selWin && S.selWin.folder === FS[id].parent : !S.selWin);
-  return `<div class="icon${sel ? " sel" : ""}${opened ? " opened" : ""}" data-id="${id}" style="left:${n.pos.x}px;top:${n.pos.y}px" data-tip="${esc(tipFor(n))}"><div class="g">${iconOf(n)}</div><div class="lb"><span>${esc(n.name)}</span></div></div>`;
+  return `<div class="icon${sel ? " sel" : ""}${opened ? " opened" : ""}" data-id="${id}" style="left:${n.pos.x}px;top:${n.pos.y}px" data-tip="${esc(tipFor(n))}"><div class="g">${iconOf(n)}</div><div class="lb"><span>${tagHTML(n)}${esc(n.name)}</span></div></div>`;
 }
 function tipFor(n) {
   if (n.kind === "trash") return "The Trash. Drag things here to throw them away; Special ▸ Empty Trash removes them for good.";
@@ -1219,7 +1286,7 @@ function renderFolder(w) {
       sorted.forEach(id => {
         const c = FS[id], open = w.expanded.has(id);
         const sel = S.sel === id && S.selWin === w;
-        rows.push(`<tr class="row${sel ? " sel" : ""}" data-id="${id}"><td style="padding-left:${6 + depth * 16}px">${c.children ? `<span class="tri${open ? " open" : ""}" data-tri="${id}" data-tip="Click the triangle to see what is inside without opening a window."></span>` : `<span class="tri" style="visibility:hidden"></span>`}<span class="mini">${iconOf(c, 16)}</span><span class="nm">${esc(c.name)}</span></td><td class="${sortKey === "date" ? "sortcol" : ""}">${esc(c.date)}</td><td class="${sortKey === "size" ? "sortcol" : ""}">${c.children ? "—" : fmtSize(c.size)}</td><td class="${sortKey === "kind" ? "sortcol" : ""}">${KINDS[c.kind]}</td></tr>`);
+        rows.push(`<tr class="row${sel ? " sel" : ""}" data-id="${id}"><td style="padding-left:${6 + depth * 16}px">${c.children ? `<span class="tri${open ? " open" : ""}" data-tri="${id}" data-tip="Click the triangle to see what is inside without opening a window."></span>` : `<span class="tri" style="visibility:hidden"></span>`}<span class="mini">${iconOf(c, 16)}</span>${tagHTML(c)}<span class="nm">${esc(c.name)}</span></td><td class="${sortKey === "date" ? "sortcol" : ""}">${esc(c.date)}</td><td class="${sortKey === "size" ? "sortcol" : ""}">${c.children ? "—" : fmtSize(c.size)}</td><td class="${sortKey === "kind" ? "sortcol" : ""}">${KINDS[c.kind]}</td></tr>`);
         if (c.children && open) walk(c.children, depth + 1);
       });
     };
@@ -1360,6 +1427,8 @@ function moveInto(id, dest, pos) {
   }
   for (let p = dest; p; p = FS[p].parent) if (p === id) return alertBox({ icon: "stop", msg: `“${esc(n.name)}” cannot go inside itself.` });
   if (dest !== n.parent) {
+    const was = n.parent, wpos = n.pos ? { ...n.pos } : null;
+    pushUndo(dest === "trash" ? "Undo Move to Trash" : `Undo Move of “${n.name}”`, () => { if (FS[id] && FS[was]) moveInto(id, was, wpos); });
     const from = FS[n.parent]; from.children = from.children.filter(c => c !== id);
     FS[dest].children.push(id); n.parent = dest;
     if (dest === "trash") n.from = from.id;
@@ -1377,6 +1446,26 @@ function toTrash(id) {
   if (n.kind === "trash") return;
   if (n.kind === "app" && S.running.includes(n.app)) return alertBox({ icon: "caution", msg: `“${esc(n.name)}” is running.`, sub: "Quit it first, then put it in the Trash." });
   moveInto(id, "trash");
+}
+// 2026: Tracker can undo what it did - a move, the Trash, a rename, a new
+// folder. Emptying the Trash is the one thing that says it cannot be undone.
+function pushUndo(t, f) { if (S.undoing) return; S.undo.push({ t, f }); if (S.undo.length > 30) S.undo.shift(); }
+function doUndo() {
+  const u = S.undo.pop(); if (!u) return;
+  S.undoing = true;
+  try { u.f(); } finally { S.undoing = false; }
+  renderAll(); renderMenubar();
+}
+// Labels, as 9.2 had them: seven, each a name and a colour.
+const LABELS = { essential: ["Essential", "#e8a33c"], hot: ["Hot", "#d6302a"], progress: ["In Progress", "#8a5cc7"], cool: ["Cool", "#3b6fd6"],
+  personal: ["Personal", "#2f9a4a"], p1: ["Project 1", "#2f9090"], p2: ["Project 2", "#b05a8a"] };
+const tagHTML = n => n.label ? `<i class="tag" style="background:${LABELS[n.label][1]}" title="${LABELS[n.label][0]}"></i>` : "";
+function setLabel(id, k) {
+  const n = FS[id]; if (!n) return;
+  const old = n.label || null;
+  pushUndo("Undo Label", () => { n.label = old; });
+  n.label = k; if (!k) delete n.label;
+  renderAll();
 }
 function putAway(id) { const n = FS[id]; if (!n || n.parent !== "trash") return; moveInto(id, n.from && FS[n.from] && !isGone(n.from) ? n.from : "desk"); }
 function emptyTrash() {
@@ -1396,6 +1485,7 @@ function newFolder() {
   while (FS[dest].children.some(c => FS[c].name === name)) name = "untitled folder " + (++i);
   const id = mk(name, "folder", {}, []);
   FS[id].parent = dest; FS[dest].children.push(id);
+  pushUndo("Undo New Folder", () => { const p = FS[FS[id].parent]; if (p) p.children = p.children.filter(c => c !== id); delete FS[id]; });
   if (dest === "desk") FS[id].pos = { x: innerWidth - 180, y: 40 + (NID % 6) * 70 };
   renderAll();
   setSel(id, dest === "desk" ? null : S.front);
@@ -1411,7 +1501,12 @@ function startRename() {
   const inp = document.createElement("input");
   inp.value = n.name; span.replaceWith(inp); inp.focus(); inp.select();
   let done = false;
-  const commit = ok => { if (done) return; done = true; if (ok && inp.value.trim()) n.name = inp.value.trim().slice(0, 64); renderAll(); };
+  const commit = ok => {
+    if (done) return; done = true;
+    const v = inp.value.trim().slice(0, 64);
+    if (ok && v && v !== n.name) { const old = n.name; pushUndo("Undo Rename", () => { n.name = old; }); n.name = v; }
+    renderAll();
+  };
   inp.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") commit(true); if (e.key === "Escape") commit(false); });
   inp.addEventListener("blur", () => commit(true));
 }
@@ -1434,6 +1529,16 @@ function quickLook(id) {
     fill: w => {
       w.ql = id;
       if (doc) { w.body.innerHTML = `<div class="prose" style="white-space:pre-wrap;flex:1;overflow:auto;background:var(--paper,#fff);color:inherit;border-radius:4px"></div><div class="footer"><span>Space or Esc to close</span><span>Double-click the file to open it</span></div>`; $(".prose", w.body).textContent = n.text || ""; if (S.dark) $(".prose", w.body).style.background = "#1f2025"; return; }
+      if (n.kind === "picture") {
+        w.body.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px">
+          <div style="width:320px;height:200px;border:1px solid rgba(0,0,0,.4);border-radius:4px;position:relative;overflow:hidden;background:${getPatternCss(S.pattern)};background-size:${getPatternSize(S.pattern)}">
+            <div style="position:absolute;left:0;right:0;top:0;height:7px;background:#e8e8ec"></div>
+            <div style="position:absolute;left:14px;top:20px;width:120px;height:80px;background:#e4e4e8;border:1px solid #333;border-radius:3px"></div>
+            <div style="position:absolute;left:150px;top:36px;width:140px;height:110px;background:#e4e4e8;border:1px solid #333;border-radius:3px"><div style="margin:12px 6px 6px;height:88px;background:#fff"></div></div>
+            <div style="position:absolute;right:10px;bottom:12px;width:70px;height:50px;background:#0b0f26;border:1px solid #333;border-radius:3px"></div></div>
+          <b style="font:600 13px var(--sys)">${esc(n.name)}</b><div style="color:#888">${fmtSize(n.size)} · ${esc(pathOf(id))}</div></div><div class="footer"><span>Space or Esc to close</span></div>`;
+        return;
+      }
       const A = n.kind === "app" ? APPS[n.app] : null;
       const line = isBox(n) ? `${n.children.length} item${n.children.length === 1 ? "" : "s"}, ${fmtSize(sizeOf(id))}: ${n.children.slice(0, 5).map(c => esc(FS[c].name)).join(", ")}${n.children.length > 5 ? "…" : ""}`
         : A ? `An application. It can reach ${esc(A.needs)}.` : n.len ? `${esc(n.artist || "a film")}, ${Math.floor(n.len / 60)}:${String(n.len % 60).padStart(2, "0")}` : esc(KINDS[n.kind]);
@@ -1475,13 +1580,13 @@ function copyWindow(name, bytes, finish) {
         pct = Math.min(100, pct + 100 / (total * 10));
         fill.style.width = pct + "%";
         eta.textContent = pct < 100 ? `${fmtSize(bytes * pct / 100)} of ${fmtSize(bytes)} · about ${Math.ceil(total * (1 - pct / 100))} seconds` : "Done";
-        if (pct >= 100) { clearInterval(iv); setTimeout(() => { closeWin(w); finish(); }, 250); }
+        if (pct >= 100) { clearInterval(iv); setTimeout(() => { closeWin(w); finish(); notify("tracker", "Copy finished", `${name}, ${fmtSize(bytes)}, copied while you worked.`); }, 250); }
       }, 100);
     } });
 }
 function openInfo(id) {
   const n = FS[id];
-  makeWin({ key: "i:" + id, app: "tracker", title: `${n.name} Info`, w: 300, h: n.kind === "app" ? 390 : 300, cls: "info plain", zoom: false,
+  makeWin({ key: "i:" + id, app: "tracker", title: `${n.name} Info`, w: 300, h: n.app === "player" ? 470 : n.kind === "app" ? 390 : 300, cls: "info plain", zoom: false,
     fill: w => {
       const A = n.kind === "app" ? APPS[n.app] : null;
       w.body.innerHTML = `<div style="display:flex;gap:12px;align-items:center">${iconOf(n)}<b style="font:bold 12px var(--sys)">${esc(n.name)}</b></div>
@@ -1490,7 +1595,10 @@ function openInfo(id) {
       ${n.kind === "doc" ? `<b>Opens with:</b><span>Write</span>` : ""}${n.kind === "song" || n.kind === "movie" ? `<b>Opens with:</b><span>Player</span>` : ""}</div>
       ${A ? `<div class="group" style="margin-top:16px"><span class="gt">Memory</span>Kosmos gives an application the memory it asks for, while it runs, and takes it back when it quits. There is no partition to set, and nothing to make larger when it runs out.</div>
       <div class="group" style="margin-top:16px"><span class="gt">What it can reach</span>${esc(A.needs)}. What it was not given it cannot name, so it cannot touch another application's files or memory.</div>` : ""}
+      ${n.app === "player" ? `<div class="group" style="margin-top:16px"><span class="gt">Microphone</span><select class="pop micsel"><option value="ask"${S.mic === undefined || S.mic === "once-used" ? " selected" : ""}>Ask each time</option><option value="always"${S.mic === "always" ? " selected" : ""}>Always allowed</option><option value="never"${S.mic === "never" ? " selected" : ""}>Not allowed</option></select></div>` : ""}
       ${n.kind === "kit" ? `<div class="group" style="margin-top:16px"><span class="gt">Used by</span>A kit runs inside each application that uses it, in that application's memory. Write, Player and Orbits use ${esc(n.name)}.</div>` : ""}`;
+      const ms = $(".micsel", w.body);
+      if (ms) ms.onchange = () => { S.mic = ms.value === "ask" ? undefined : ms.value; };
     } });
 }
 function cleanUp(w, by) {
@@ -1518,10 +1626,12 @@ function trackerMenus() {
       { t: "Duplicate", k: "D", a: () => duplicate(sel), d: !sel || fixed(sn) },
       { t: "Make Alias", k: "M", d: true },
       { t: "Put Away", k: "Y", a: () => putAway(sel), d: !(sn && sn.parent === "trash") },
+      { t: "Label", d: !sel || fixed(sn), sub: [{ t: "None", c: !!sn && !sn.label, a: () => setLabel(sel, null) }, SEP,
+        ...Object.entries(LABELS).map(([k, [t, c]]) => ({ t, dot: c, c: !!sn && sn.label === k, a: () => setLabel(sel, k) }))] },
       SEP,
       { t: "Find…", k: "F", d: true },
     ] },
-    editMenu(),
+    editMenu(null, S.era === "2026" ? { t: S.undo.length ? S.undo[S.undo.length - 1].t : "Can't Undo", k: "Z", a: doUndo, d: !S.undo.length } : null),
     { t: "View", items: [
       { t: "as Icons", c: view === "icon", a: () => setView("icon"), d: !w },
       { t: "as List", c: view === "list", a: () => setView("list"), d: !w },
@@ -1535,6 +1645,8 @@ function trackerMenus() {
       SEP,
       { t: "Eject", k: "E", d: true },
       { t: "Erase Disk…", d: true },
+      SEP,
+      { t: "Take Screenshot", kraw: `${K}⇧3`, a: screenshot },
       SEP,
       { t: "Sleep", a: sleep },
       { t: "Restart", a: () => restart() },
@@ -1758,17 +1870,21 @@ function plRender() {
   const mm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   $(".pi", w.body).innerHTML = iconOf(n);
   $(".pt", w.body).textContent = n.name.replace(/\.(mp3|mp4)$/, "");
-  $(".pa", w.body).textContent = n.artist || (n.kind === "movie" ? "a film, its sound only in this mockup" : "");
+  const rs = Math.floor((Date.now() - S.recAt) / 1000);
+  $(".pa", w.body).textContent = S.recording ? `● Recording from the microphone, ${mm(rs)}` : n.artist || (n.kind === "movie" ? "a film, its sound only in this mockup" : "");
+  $(".pa", w.body).style.color = S.recording ? "#d9822b" : "";
   $(".pp", w.body).textContent = PL.playing ? "Pause" : "Play";
   $(".pf", w.body).style.width = (PL.at / n.len * 100) + "%";
   $(".pt2", w.body).textContent = `${mm(PL.at)} / ${mm(n.len)}`;
+  if (S.recording) { const t = Date.now() / 160; $$(".spec i", w.body).forEach((b, i) => { b.style.height = (8 + 70 * Math.abs(Math.sin(t * (.9 + i * .21) + i * 1.3)) * (1 - i / 30)) + "%"; }); return; }
   $$(".spec i", w.body).forEach((b, i) => { b.style.height = PL.playing ? (12 + 80 * Math.abs(Math.sin(PL.at * (1.3 + i * .37) + i)) * (1 - i / 34)) + "%" : "4%"; });
 }
 function playerMenus() {
   return [
     { t: "File", items: [{ t: "Open…", k: "O", a: () => openFolder(FS.home.children[1]) }, { t: "Close", k: "W", a: () => S.front && closeWin(S.front) }, SEP, { t: "Quit", k: "Q", a: () => quit("player") }] },
     editMenu(),
-    { t: "Controls", items: [{ t: PL.playing ? "Pause" : "Play", k: "P", a: () => PL.toggle() }, { t: "Stop", k: ".", a: () => { PL.playing = false; PL.at = 0; plRender(); renderMenubar(); } }] },
+    { t: "Controls", items: [{ t: PL.playing ? "Pause" : "Play", k: "P", a: () => PL.toggle() }, { t: "Stop", k: ".", a: () => { PL.playing = false; PL.at = 0; plRender(); renderMenubar(); } },
+      SEP, { t: S.recording ? "Stop Recording" : "Record from Microphone…", k: "R", a: () => S.recording ? stopRec() : askMic() }] },
     helpMenu(),
   ];
 }
@@ -1916,6 +2032,137 @@ function getPatternCss(k) {
 }
 function getPatternSize(k) { return { kosmos: "6px 6px", tiles: "4px 4px", grey: "3px 3px" }[k] || "auto"; }
 
+/* ============================================================ notifications */
+// 2026: a banner at the top right, and the day's list under the clock.
+// Focus and Rest hold them, and say how many waited when they end. In 1999
+// the Application menu's icon blinks, as the Notification Manager did.
+function notify(app, title, body) {
+  const n = { app, title, body, at: new Date() };
+  S.notes.unshift(n); S.notes = S.notes.slice(0, 40);
+  if (S.era !== "2026") { flashAppMenu(); return; }
+  S.unseen++; updateClock();
+  if (S.mode === "focus" || S.mode === "rest" || $("#sleep").classList.contains("on")) { S.heldN++; return; }
+  banner(n);
+}
+function banner(n) {
+  const b = $("#banners"), d = document.createElement("div");
+  d.className = "banner";
+  d.innerHTML = `${icon(APPS[n.app] ? APPS[n.app].icon : "logo", 30)}<b>${esc(n.title)}</b><span>${esc(n.body)}</span>`;
+  d.onclick = () => d.remove();
+  b.prepend(d);
+  while (b.children.length > 3) b.lastChild.remove();
+  setTimeout(() => d.remove(), 5500);
+  tone([1320, 1760], .05, "triangle", .025);
+}
+function flashAppMenu() {
+  const t = $$("#menubar .mt").pop(); if (!t) return;
+  let n = 0; const iv = setInterval(() => { t.classList.toggle("open"); if (++n === 6) clearInterval(iv); }, 260);
+}
+function notesPanel(t) {
+  closeMenus();
+  const m = document.createElement("div");
+  m.className = "menu notes";
+  const d = new Date(), hm = x => x.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  m.innerHTML = `<h4>${d.toLocaleDateString(undefined, { weekday: "long" })}</h4><div class="sub">${d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })} · ${MODES[S.mode].t}</div>` +
+    (S.notes.length ? S.notes.map(n => `<div class="note">${icon(APPS[n.app] ? APPS[n.app].icon : "logo", 26)}<b>${esc(n.title)}</b><small>${hm(n.at)}</small><span style="grid-column:2/4">${esc(n.body)}</span></div>`).join("") + `<div class="clr"><button class="btn">Clear</button></div>`
+      : `<div class="none">Nothing has come today.</div>`);
+  document.body.appendChild(m);
+  const r = t.getBoundingClientRect();
+  m.style.left = clamp(r.right - m.offsetWidth, 4, innerWidth - m.offsetWidth - 4) + "px"; m.style.top = MBH() + "px";
+  const c = $(".clr .btn", m); if (c) c.onclick = () => { S.notes = []; closeMenus(); };
+  MS.stack[0] = m; MS.open = -2;
+  t.classList.add("open");
+  S.unseen = 0; S.heldN = 0; updateClock();
+}
+// Kosmos itself has something to say, once, a little after it starts.
+setTimeout(() => { if (DESK_STARTED) notify("tracker", `Kosmos ${VERSION.replace(/\d+$/, d => +d + 1)} is ready`, "It goes in when you next restart. Nothing has to quit for it now."); }, 45000);
+
+/* ============================================================ every window at once */
+// 2026, F3: every window, side by side and smaller, while it keeps running.
+let OV = null;
+function overview() {
+  if (OV) return endOverview();
+  closeMenus();
+  const ws = [...S.wins.values()].filter(w => !S.hidden.has(w.app) && !w.popup);
+  if (!ws.length) return;
+  ws.sort((a, b) => a.el.offsetLeft - b.el.offsetLeft || a.el.offsetTop - b.el.offsetTop);
+  const top = MBH() + 30, W = innerWidth - 60, H = innerHeight - top - 30;
+  const cols = Math.max(1, Math.round(Math.sqrt(ws.length * W / H))), rows = Math.ceil(ws.length / cols);
+  const cw = W / cols, ch = H / rows;
+  const shade = document.createElement("div"); shade.className = "ovshade"; $("#desktop").appendChild(shade);
+  OV = { ws, shade, labels: [] };
+  ws.forEach((w, i) => {
+    const el = w.el, r = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    const c = i % cols, ro = Math.floor(i / cols);
+    const sc = Math.min(1, (cw - 36) / r.w, (ch - 44) / r.h);
+    const tx = 30 + c * cw + (cw - r.w * sc) / 2, ty = top + ro * ch + (ch - 26 - r.h * sc) / 2;
+    el.style.transition = "transform .22s cubic-bezier(.2,.8,.2,1)"; el.style.transformOrigin = "0 0";
+    el.style.transform = `translate(${tx - r.x}px,${ty - r.y}px) scale(${sc})`;
+    el.classList.add("ov");
+    const lb = document.createElement("div"); lb.className = "ovlabel";
+    lb.textContent = APPS[w.app].name === w.title ? w.title : `${APPS[w.app].name} · ${w.title}`;
+    Object.assign(lb.style, { left: tx + "px", top: (ty + r.h * sc + 8) + "px", width: (r.w * sc) + "px" });
+    document.body.appendChild(lb); OV.labels.push(lb);
+  });
+  tone([520, 780], .06, "sine", .03);
+}
+function endOverview(pick) {
+  if (!OV) return;
+  OV.ws.forEach(w => { w.el.style.transform = ""; w.el.classList.remove("ov"); setTimeout(() => { w.el.style.transition = ""; }, 260); });
+  OV.shade.remove(); OV.labels.forEach(l => l.remove()); OV = null;
+  if (pick) focusWin(pick);
+}
+document.addEventListener("mousedown", e => {
+  if (!OV) return;
+  e.preventDefault(); e.stopPropagation();
+  const wel = e.target.closest(".win");
+  endOverview(wel ? [...S.wins.values()].find(x => x.el === wel) : null);
+}, true);
+
+/* ============================================================ screenshots */
+function screenshot() {
+  closeMenus();
+  const f = document.createElement("div"); f.className = "flash"; document.body.appendChild(f); setTimeout(() => f.remove(), 300);
+  tone([1900, 950], .03, "square", .03);
+  let dir = FS.home.children.find(c => FS[c].name === "Screenshots");
+  if (!dir) { dir = mk("Screenshots", "folder", {}, []); FS[dir].parent = "home"; FS.home.children.push(dir); }
+  const d = new Date(), p = x => String(x).padStart(2, "0");
+  const name = `Screenshot ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}.png`;
+  const id = mk(name, "picture", { size: 1.9e6 + Math.round(Math.random() * 6e5), date: "Today, just now" });
+  FS[id].parent = dir; FS[dir].children.push(id);
+  renderAll();
+  notify("tracker", "Screenshot saved", `${name}, in Home ▸ Screenshots.`);
+}
+
+/* ============================================================ the microphone, asked for */
+// An application reaches the microphone only when the person says so, and
+// the menu bar shows it while it does.
+function askMic() {
+  if (S.mic === "always") return startRec();
+  if (S.mic === "never") return alertBox({ icon: "stop", msg: "Player is not allowed to use the microphone.", sub: "You said no when it asked. Get Info on Player changes that." });
+  alertBox({ icon: "caution", msg: "“Player” wants to use the microphone.",
+    sub: "It was not given the microphone when it was installed, so it cannot reach it until you say so. Get Info on Player changes your answer later.",
+    buttons: [{ t: "Don't Allow", cancel: true, left: true, a: () => { S.mic = "never"; } }, { t: "Allow Once", a: () => { S.mic = "once-used"; startRec(); } }, { t: "Always Allow", def: true, a: () => { S.mic = "always"; startRec(); } }] });
+}
+function startRec() {
+  S.recording = true; S.recAt = Date.now();
+  if (!S.wins.has("player")) launch("player");
+  renderMenubar(); plRender();
+}
+function stopRec() {
+  if (!S.recording) return;
+  S.recording = false;
+  const secs = Math.max(1, Math.round((Date.now() - S.recAt) / 1000));
+  const music = FS.home.children.find(c => FS[c].name === "Music") || "home";
+  const name = `Recording ${++S.recN}.mp3`;
+  const id = mk(name, "song", { size: secs * 24000, len: secs, artist: "you, from the microphone", date: "Today, just now" });
+  FS[id].parent = music; FS[music].children.push(id);
+  if (S.mic === "once-used") S.mic = undefined;
+  renderAll(); plRender();
+  notify("player", "Recording saved", `${name}, ${secs} seconds, in Home ▸ Music. Player no longer has the microphone.`);
+}
+APPS.player.onQuit = () => { if (S.recording) stopRec(); };
+
 /* ============================================================ Servers */
 // Where Extensions Manager was: every server, live, and each one restartable
 // while the applications that use it carry on.
@@ -1981,6 +2228,7 @@ function arrive() {
     const song = name.includes(".mp3");
     const id = mk(name, song ? "song" : "doc", { size: Math.round(2e5 + Math.random() * 4e6), len: 214, artist: song ? "Ana Tomé" : undefined, date: "Today, just now", text: song ? undefined : "(the file's contents are not in this mockup)" });
     FS[id].parent = "downloads"; FS.downloads.children.push(id);
+    notify("tracker", "Downloaded", `${name} is in Home ▸ Downloads.`);
     const w = S.wins.get("f:downloads");
     if (w) {
       if (S.era === "2026") { renderFolder(w); const el = $(`[data-id="${id}"]`, w.body); if (el) { el.classList.add("fresh"); tone([1320, 1760], .05, "triangle", .025); } }

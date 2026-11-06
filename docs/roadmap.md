@@ -395,8 +395,14 @@ drawn for today's screens, dark Platinum, search in the Kosmos menu, the
 indicators and modes in the menu bar, Quick Look, windows snapped to half
 the screen, a live Downloads folder, Network Places for the Chooser - with
 spring-loaded folders, pop-up windows, zoom rectangles and a Servers panel
-for Extensions Manager in both. Still his: which of the 2026 changes
-stay, and the name. He does not want it coded yet.
+for Extensions Manager in both. **All of 2026 stays, and the name is
+Pewter** - Diego, 5 November: "Keep all the 2026 changes, and keep the
+name Pewter", and "lets keep evolving the 2026 design with more and useful
+features for a new os". Drawn that day, for him to keep or drop:
+notifications (banners, the day's list under the clock, held by Focus and
+Rest), F3 for every window at once, Help's search over every menu item,
+Undo in Tracker, labels, a screenshot key, and the microphone asked for
+with an indicator while it is used. He does not want it coded yet.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
