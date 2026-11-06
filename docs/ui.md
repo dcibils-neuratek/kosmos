@@ -1811,6 +1811,36 @@ pressed anywhere in it - the window manager's own move, which needs
 nothing from the application; Diego, asked how a hung window should move
 once the tab went: "Super+drag, anywhere". It was Super and Control.
 
+## 16.26 Pewter: a second desktop, with a menu bar
+
+Diego, 5 November 2026, having used `docs/pewter.html`, asked whether
+Mac OS 9.2's manner should be one more look or a desktop of its own: "a
+desktop of its own, with the menu bar".
+
+**So Pewter is not a look.** A look (16.9) changes colours, faces,
+corners and shadows and leaves where everything is alone: the Deskbar,
+the windows' tabs, Tracker's one browsing window. Pewter changes where
+things are. One menu bar across the top of the screen carries the menus
+of whichever application is in front, with a Kosmos menu at its left and
+the Application menu, which lists what is running, at its right. There is
+no Deskbar. Windows have a title bar the whole width, with close, zoom and
+collapse boxes.
+
+**It is a choice between two desktops, made in Appearance**: the Deskbar
+desktop as it is, or Pewter. One window manager draws both. What differs
+is the chrome it draws and where an application's menus are shown, so an
+application is written once and is in both. Half of that exists: 16.8h
+has a direct window send its menu titles to the window manager, which
+draws the strip, while an ordinary window's `ui.menubar` is drawn by the
+kit inside the window. Pewter needs every window to do what a direct one
+does - hand its titles to the window manager - so that the window manager
+can put them in the window on one desktop and in the bar at the top on
+the other.
+
+Still open, and Diego's to decide: whether Tracker turns spatial there (a
+window for each folder, which remembers where it was), the Control Strip
+against the indicators, and the name - "Pewter" is a working one.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

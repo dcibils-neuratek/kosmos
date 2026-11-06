@@ -382,10 +382,13 @@ server marching along the bottom - and in it what Mac OS 9 never had:
 Fragile crashing or hanging alone, four processors in About This Kosmos,
 nothing stopping while a menu is down, a copy that does not hold the desk,
 Get Info with no memory partition. "Pewter" is a working name, not a
-decision. Nothing is agreed and nothing is to be built until it is; the
-questions are his - whether it is a look beside the others or a desktop of
-its own (a menu bar instead of the Deskbar), whether Tracker turns spatial,
-and the Control Strip against the indicators.
+decision. **Decided the same day: a desktop of its own, with the menu
+bar** - "a desktop of its own, with the menu bar" - not a look beside the
+others: Appearance chooses it or the Deskbar desktop, and one window
+manager draws both, placing each application's menus in its window or in
+the bar (`ui.md` 16.26). Still his before anything is built: whether
+Tracker turns spatial, the Control Strip against the indicators, and the
+name. He does not want it coded yet.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
