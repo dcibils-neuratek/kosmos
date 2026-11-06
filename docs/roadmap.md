@@ -386,9 +386,10 @@ decision. **Decided the same day: a desktop of its own, with the menu
 bar** - "a desktop of its own, with the menu bar" - not a look beside the
 others: Appearance chooses it or the Deskbar desktop, and one window
 manager draws both, placing each application's menus in its window or in
-the bar (`ui.md` 16.26). Still his before anything is built: whether
-Tracker turns spatial, the Control Strip against the indicators, and the
-name. He does not want it coded yet.
+the bar (`ui.md` 16.26). **Tracker spatial there, and the Control Strip beside the indicators**,
+the same day: "Spatial Tracker yes, Control Strip beside the indicators"
+(`ui.md` 16.26). Still his: the name, and how far it is reimagined rather
+than replicated. He does not want it coded yet.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it

@@ -1837,9 +1837,16 @@ does - hand its titles to the window manager - so that the window manager
 can put them in the window on one desktop and in the bar at the top on
 the other.
 
-Still open, and Diego's to decide: whether Tracker turns spatial there (a
-window for each folder, which remembers where it was), the Control Strip
-against the indicators, and the name - "Pewter" is a working one.
+**Tracker is spatial there, and the Control Strip sits beside the
+indicators** - Diego, the same day: "Spatial Tracker yes, Control Strip
+beside the indicators". On Pewter a folder is one window and always the
+same one: opening it again brings that window forward, and it opens where
+it was left, at the size and in the view it was left in, which the folder
+keeps as attributes of its own. The indicators - battery, sound, network,
+the clock - sit in the menu bar's right-hand end, before the Application
+menu; the Control Strip is the other thing, at the bottom of the screen,
+for what you change rather than what you watch. The name is still open:
+"Pewter" is a working one.
 
 ## 16.10 What we do not copy from BeOS
 
