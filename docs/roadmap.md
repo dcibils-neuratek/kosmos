@@ -388,8 +388,15 @@ others: Appearance chooses it or the Deskbar desktop, and one window
 manager draws both, placing each application's menus in its window or in
 the bar (`ui.md` 16.26). **Tracker spatial there, and the Control Strip beside the indicators**,
 the same day: "Spatial Tracker yes, Control Strip beside the indicators"
-(`ui.md` 16.26). Still his: the name, and how far it is reimagined rather
-than replicated. He does not want it coded yet.
+(`ui.md` 16.26). **Reimagined beside it, the same evening** - "draw the
+reimagined mockup with the 1999 / 2026 switch": the mockup's own switch in
+the menu bar flips one desktop between 9.2 as it was and 2026 - Platinum
+drawn for today's screens, dark Platinum, search in the Kosmos menu, the
+indicators and modes in the menu bar, Quick Look, windows snapped to half
+the screen, a live Downloads folder, Network Places for the Chooser - with
+spring-loaded folders, pop-up windows, zoom rectangles and a Servers panel
+for Extensions Manager in both. Still his: which of the 2026 changes
+stay, and the name. He does not want it coded yet.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it

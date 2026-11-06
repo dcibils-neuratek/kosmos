@@ -1,6 +1,9 @@
 <!doctype html>
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 <!--
+  Kosmos in Pewter, 1999 and 2026. Diego, 5 November 2026, of the 2026 half:
+  "draw the reimagined mockup with the 1999 / 2026 switch".
+
   Kosmos in Pewter: Astra drawn as Mac OS 9.2 drew its desktop, to be used
   before a line of it is written. A mockup, and only that: nothing here is
   Kosmos code. Diego, 5 November 2026: "i want to see how kosmos would look
@@ -12,6 +15,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
 <title>Kosmos in Pewter</title>
 <style>
 :root{
@@ -123,7 +128,6 @@ body[data-pattern="grey"] #desktop{background-color:#8c8c99;background-image:
 .icon .g svg{display:block;width:32px;height:32px}
 .icon .lb{max-width:76px;font:11px var(--app);line-height:13px}
 .icon .lb span{padding:0 2px;background:#fff;word-break:break-word}
-#desktop .icon .lb span{background:#fff}
 .icon.sel .g{filter:brightness(.45) saturate(1.2)}
 .icon.sel .lb span{background:#000;color:#fff}
 .icon.opened .g{opacity:.55;filter:grayscale(.4)}
@@ -264,10 +268,149 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acc)
 .fragile .body{padding:12px;display:flex;flex-direction:column;gap:10px;font:11px/15px var(--app)}
 .copy .body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;font:11px var(--app)}
 .prose{font:12px/1.45 var(--app);padding:10px 14px}
-@media (prefers-reduced-motion:reduce){#strip .mods{transition:none}.barber{animation:none}#boot{transition:none}}
+
+/* ---------- in both: pop-up windows, zoom rectangles, places, the switch ---------- */
+.win.popup{transition:top .16s ease-out;border-radius:9px 9px 0 0}
+.win.popup .box.zoom,.win.popup .box.shade,.win.popup .grow{display:none}
+.win.popup .tb{cursor:pointer}
+.zoomrect{position:fixed;z-index:250000;pointer-events:none;border:1px dotted #111;outline:1px dotted #fff;transition:all .18s steps(5)}
+.snap{position:fixed;z-index:240000;pointer-events:none;border:2px solid var(--acc);border-radius:9px;background:color-mix(in srgb,var(--acc) 20%,transparent)}
+.place{position:absolute;width:124px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;font:11px var(--app)}
+.place small{color:#666}
+@keyframes fresh{0%{box-shadow:0 0 0 0 var(--acc)}40%{box-shadow:0 0 0 8px color-mix(in srgb,var(--acc) 40%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.icon.fresh .g{animation:fresh 1.2s ease-out 2;border-radius:8px}
+#menubar .era{display:flex;align-items:center;margin:0 10px 0 4px}
+#menubar .era button{font:bold 10px var(--app);line-height:12px;padding:1px 7px;border:1px solid #444;background:#f2f2f2;color:#222;cursor:pointer}
+#menubar .era button:first-child{border-radius:9px 0 0 9px}
+#menubar .era button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
+#menubar .era button.on{background:#222;color:#fff}
+#menubar .ind{font-weight:500;gap:4px}
+.msearch{padding:3px 6px 5px}
+.msearch input{width:100%;min-width:250px;font:13px var(--app);padding:4px 8px;border:1px solid rgba(0,0,0,.35);border-radius:6px;background:#fff;color:#000;outline:none}
+.msearch input:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 30%,transparent)}
+.menu.searching>.mi,.menu.searching>.msep{display:none}
+.mi .wh{margin-left:auto;padding-left:22px;font-weight:400;font-size:11px;color:#777}
+.mi.on .wh{color:#e6e6ff}
+.servers .body{padding:12px;display:flex;flex-direction:column;gap:8px;font:11px var(--app)}
+.servers table{border-collapse:collapse;width:100%;background:#fff;border:1px solid;border-color:#777 #fff #fff #777}
+.servers td{padding:3px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+.servers .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2bb24c;margin-right:4px}
+.servers .dot.re{background:#e8a33c}
+.servers .btn{padding:0 8px;min-width:0;font-size:11px}
+.ql .body{display:flex;flex-direction:column}
+
+/* ---------- 2026: the same desktop, drawn for today ---------- */
+body.e26{--plat:#e4e4e8;--sys:"Schibsted Grotesk","Helvetica Neue",Arial,sans-serif;--app:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;--mono:"IBM Plex Mono","Menlo",monospace;font-size:12px}
+body.e26 #menubar{height:26px;padding:0 8px;font:600 13px var(--sys);background:linear-gradient(#f6f6f8,#e3e3e7);border-bottom:1px solid rgba(0,0,0,.3);box-shadow:inset 0 1px 0 #fff}
+body.e26 #menubar .mt{line-height:22px;margin:2px 0;padding:0 9px;border-radius:5px}
+body.e26 #menubar .mt.open{background:var(--acc)}
+body.e26 #menubar .era button{font:600 10px var(--app);padding:2px 8px}
+body.e26 .corner{display:none}
+body.e26 .menu{font:500 13px var(--sys);background:#f3f3f5;border:1px solid rgba(0,0,0,.28);border-radius:8px;padding:5px;box-shadow:inset 0 1px 0 #fff,0 12px 34px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.12)}
+body.e26 .mi{line-height:25px;border-radius:5px;padding:0 14px 0 24px}
+body.e26 .mi.on{background:var(--acc)}
+body.e26 .msep{margin:4px 6px;border-top-color:rgba(0,0,0,.14);border-bottom:0}
+body.e26 .win{border:1px solid rgba(0,0,0,.42);border-radius:8px;padding:0 6px 6px;box-shadow:inset 0 1px 0 #fff,0 1px 2px rgba(0,0,0,.2)}
+body.e26 .win.active{box-shadow:inset 0 1px 0 #fff,0 20px 54px rgba(0,0,0,.32),0 3px 8px rgba(0,0,0,.18)}
+body.e26 .win.popup{border-radius:10px 10px 0 0}
+body.e26 .tb{height:30px;gap:7px;padding:0 2px}
+body.e26 .tb .bar{height:12px;background:repeating-linear-gradient(to bottom,#fff 0 1px,rgba(0,0,0,.15) 1px 2px,transparent 2px 3px);background-size:100% 3px;background-position:0 0}
+body.e26 .tb .title{font:600 13px var(--sys);line-height:14px;padding:0 10px}
+body.e26 .box{width:14px;height:14px;border-radius:4px;border-color:rgba(0,0,0,.48);background:linear-gradient(#fff,#d6d6db);box-shadow:inset 0 1px 0 #fff}
+body.e26 .box.zoom::after{left:2px;top:2px;width:6px;height:6px;border-radius:1px;border-color:rgba(0,0,0,.6)}
+body.e26 .box.shade::after{border-color:rgba(0,0,0,.6)}
+body.e26 .body{border:1px solid rgba(0,0,0,.22);border-radius:4px}
+body.e26 .win.plain .body{border-color:transparent}
+body.e26 .hdr{font:12px var(--app);border:0;color:#555;padding:0 4px 5px}
+body.e26 .grow{border:0;background:linear-gradient(135deg,transparent 0 45%,rgba(0,0,0,.3) 45% 50%,transparent 50% 62%,rgba(0,0,0,.3) 62% 67%,transparent 67%);right:7px;bottom:7px}
+body.e26 .icon{width:96px}
+body.e26 .icon .g,body.e26 .icon .g svg{width:44px;height:44px}
+body.e26 .icon .lb{font:12px var(--app);line-height:15px;max-width:96px}
+body.e26 .icon .lb span{border-radius:4px;padding:1px 5px;background:rgba(255,255,255,.9)}
+body.e26 .icon.sel .g{filter:none;background:rgba(0,0,0,.14);border-radius:8px;box-shadow:0 0 0 4px rgba(0,0,0,.14)}
+body.e26 .icon.sel .lb span{background:var(--acc);color:#fff}
+body.e26 .icon.opened .g{opacity:.45}
+body.e26 table.list{font:12px var(--app)}
+body.e26 table.list th{font:600 11px var(--app);color:#444;padding:4px 8px;box-shadow:none;border-right:1px solid rgba(0,0,0,.1);border-bottom:1px solid rgba(0,0,0,.2)}
+body.e26 table.list td{padding:3px 8px}
+body.e26 tr.row.sel td{background:var(--acc)}
+body.e26 .btn{font:600 13px var(--sys);border-radius:7px;border-color:rgba(0,0,0,.42);background:linear-gradient(#fff,#e2e2e6);box-shadow:inset 0 1px 0 #fff;padding:3px 16px}
+body.e26 .btn.def{background:linear-gradient(color-mix(in srgb,var(--acc) 70%,#fff),var(--acc));color:#fff;border-color:var(--acc-d);box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+body.e26 .btn:active,body.e26 .btn.press{background:var(--acc-d);color:#fff}
+body.e26 .alert{border-radius:12px;border-color:rgba(0,0,0,.4);padding:6px;box-shadow:inset 0 1px 0 #fff,0 24px 70px rgba(0,0,0,.4)}
+body.e26 .alert>.in{border:0;padding:16px 16px 12px}
+body.e26 .alert .msg{font:600 13px/18px var(--sys)}
+body.e26 .alert .sub{font:12px/17px var(--app)}
+body.e26 .field{border:1px solid rgba(0,0,0,.35);border-radius:5px;box-shadow:none;font:13px var(--app)}
+body.e26 .group{border:1px solid rgba(0,0,0,.16);border-radius:7px;box-shadow:none;padding:12px}
+body.e26 .group>.gt{font:600 12px var(--sys)}
+body.e26 .tabs button{font:600 12px var(--sys);border-color:rgba(0,0,0,.4);border-radius:7px 7px 0 0;background:linear-gradient(#f1f1f4,#dadade);box-shadow:inset 0 1px 0 #fff}
+body.e26 .tabs button.on{background:var(--plat)}
+body.e26 .tabpanel{border-color:rgba(0,0,0,.35);border-radius:0 7px 7px 7px;box-shadow:inset 0 1px 0 #fff}
+body.e26 .bar-track{border-color:rgba(0,0,0,.45);border-radius:6px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.18)}
+body.e26 .body::-webkit-scrollbar{width:13px;height:13px}
+body.e26 .body::-webkit-scrollbar-button{display:none}
+body.e26 .body::-webkit-scrollbar-track{background:transparent;box-shadow:none}
+body.e26 .body::-webkit-scrollbar-thumb{border:3px solid transparent;background-clip:padding-box;border-radius:8px;background-color:color-mix(in srgb,var(--acc) 75%,transparent);background-image:none;box-shadow:none}
+body.e26 .body::-webkit-scrollbar-corner{background:transparent}
+body.e26 #strip{bottom:18px;height:28px;filter:drop-shadow(0 4px 10px rgba(0,0,0,.25))}
+body.e26 #strip .mods{border-color:rgba(0,0,0,.4)}
+body.e26 #strip .mod{height:26px;padding:0 6px;border-right-color:rgba(0,0,0,.12);font:600 11px var(--sys)}
+body.e26 #strip .tab{width:15px;border-color:rgba(0,0,0,.4);border-radius:0 9px 9px 0}
+body.e26 #boot .welcome{border-radius:12px;border-color:rgba(0,0,0,.4);box-shadow:0 24px 70px rgba(0,0,0,.35)}
+body.e26 #boot .welcome .in{border:0}
+body.e26 .zoomrect{border:1px solid var(--acc);outline:0;border-radius:8px;background:color-mix(in srgb,var(--acc) 12%,transparent);transition:all .12s cubic-bezier(.2,.8,.2,1)}
+body.e26 .calc .keys button{border-radius:6px;font:600 13px var(--sys);border-color:rgba(0,0,0,.4)}
+body.e26 .calc .disp{border-radius:5px;font:500 17px var(--mono)}
+body.e26 .write textarea{font-family:var(--app);font-size:13px;padding:12px 16px;line-height:1.5}
+body.e26 .servers table,body.e26 .about .apps{border:1px solid rgba(0,0,0,.18);border-radius:6px}
+body.rest #desktop{filter:sepia(.3) saturate(.85) brightness(.88)}
+
+/* dark Platinum: the same bevels, not an inversion */
+body.e26.dark{--plat:#36373d;--ink:#ececf0;color:#ececf0}
+body.e26.dark #menubar{background:linear-gradient(#36373d,#2b2c31);color:#ececf0;border-bottom-color:#000;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+body.e26.dark #menubar .era button{background:#2a2b30;color:#ccc;border-color:#111}
+body.e26.dark #menubar .era button.on{background:#ececf0;color:#111}
+body.e26.dark .menu{background:#2f3035;color:#ececf0;border-color:#000;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 12px 34px rgba(0,0,0,.55)}
+body.e26.dark .mi.dis{color:#76777e}
+body.e26.dark .msep{border-top-color:rgba(255,255,255,.1)}
+body.e26.dark .mi .wh{color:#9a9aa2}
+body.e26.dark .msearch input{background:#1f2025;color:#ececf0;border-color:#111}
+body.e26.dark .win{border-color:#000;color:#ececf0;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 1px 2px rgba(0,0,0,.5)}
+body.e26.dark .win.active{box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 20px 54px rgba(0,0,0,.6)}
+body.e26.dark .tb .bar{background:repeating-linear-gradient(to bottom,rgba(255,255,255,.13) 0 1px,rgba(0,0,0,.6) 1px 2px,transparent 2px 3px);background-size:100% 3px}
+body.e26.dark .tb .title{color:#ececf0}
+body.e26.dark .win:not(.active) .title{color:#86878e}
+body.e26.dark .box{background:linear-gradient(#5d5e65,#404147);border-color:#0d0d10;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+body.e26.dark .box.zoom::after,body.e26.dark .box.shade::after{border-color:#d8d8de}
+body.e26.dark .body{background:#1f2025;color:#ececf0;border-color:#0d0d10}
+body.e26.dark .win.plain .body{background:transparent}
+body.e26.dark .hdr{color:#a6a6ae}
+body.e26.dark .icon .lb span{background:rgba(22,22,28,.8);color:#ececf0}
+body.e26.dark table.list th{background:#2b2c31;color:#c9c9cf;border-color:#111}
+body.e26.dark table.list td{border-bottom-color:#2a2b30}
+body.e26.dark table.list td.sortcol{background:#25262b}
+body.e26.dark .tri::before{border-left-color:#c9c9cf}
+body.e26.dark .btn{background:linear-gradient(#57585e,#414248);color:#fff;border-color:#0d0d10;box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+body.e26.dark .btn.def{background:linear-gradient(color-mix(in srgb,var(--acc) 80%,#fff),var(--acc));border-color:#0d0d10}
+body.e26.dark .field,body.e26.dark .write textarea,body.e26.dark .bar-track,body.e26.dark .servers table,body.e26.dark .about .apps{background:#1f2025;color:#ececf0;border-color:#0d0d10}
+body.e26.dark .servers td,body.e26.dark .about .apps td{border-bottom-color:#2a2b30}
+body.e26.dark .alert{color:#ececf0;border-color:#000;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 24px 70px rgba(0,0,0,.6)}
+body.e26.dark .alert .sub{color:#c6c6cc}
+body.e26.dark .group{border-color:rgba(255,255,255,.12)}
+body.e26.dark .tabs button{background:linear-gradient(#4a4b51,#3a3b41);color:#ececf0;border-color:#0d0d10;box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+body.e26.dark .tabs button.on{background:var(--plat)}
+body.e26.dark .tabpanel{border-color:#0d0d10;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+body.e26.dark #strip .mods,body.e26.dark #strip .tab{background-color:#34353b;color:#ececf0;border-color:#000}
+body.e26.dark .calc .keys button{background:linear-gradient(#57585e,#414248);color:#fff;border-color:#0d0d10}
+body.e26.dark .place small,body.e26.dark .footer{color:#a6a6ae}
+body.e26.dark .fragile .st,body.e26.dark .about .top div{color:#c6c6cc!important}
+body.e26.dark .term .body{color:#d8f5dd}
+body.e26.dark .term input{color:#d8f5dd}
+@media (prefers-reduced-motion:reduce){.zoomrect{display:none}.icon.fresh .g{animation:none}#strip .mods{transition:none}.barber{animation:none}#boot{transition:none}}
 </style>
 </head>
-<body data-pattern="kosmos">
+<body data-pattern="kosmos" class="e26">
 <div id="desktop"></div>
 <div id="menubar"></div>
 <div class="corner l"></div><div class="corner r"></div>
@@ -363,6 +506,23 @@ TRY
 - Help ▸ Show Balloons, then point at things.
 - Special ▸ Restart, to see Kosmos start again.
 
+THE SWITCH: 1999 AND 2026
+The switch in the menu bar belongs to the mockup, not to Kosmos. 1999 is Mac OS 9.2 as it was, with Kosmos underneath. 2026 is the same desktop reimagined, and it is where the page starts:
+- Platinum drawn for today's screens: finer pinstripes, larger and sharper type (Schibsted Grotesk for the system, Plex for what you read), rounder corners, and a soft shadow under the front window only. Dark Platinum is in Appearance.
+- Search at the top of the Kosmos menu: type an application's or a file's name, and Return opens the first.
+- Indicators in the menu bar: the mode, the network, sound, the battery. The Control Strip stays beside them, for what you change.
+- Modes, from Kosmos Mobile: Work, Focus and Rest put away what does not belong to them. Rest warms the screen.
+- The space bar looks at the selected thing without opening it.
+- Drag a window to the screen's left or right edge for half of it, to the top for all of it.
+- Live folders: open Home ▸ Downloads and wait. In 2026 a file appears as it arrives; in 1999 the window only catches up when you click it.
+- Network Places in the Kosmos menu, where the Chooser was.
+
+IN BOTH
+- Spring-loaded folders: drag something, hold it over a folder, and the folder opens.
+- Pop-up windows: View ▸ as Pop-up Window turns a folder into a tab along the bottom of the screen. Drag a file onto the tab and it slides up.
+- A window opened from an icon grows out of it.
+- Kosmos menu ▸ Control Panels ▸ Servers, where Extensions Manager was: every server, live, and one can be restarted without an application quitting.
+
 KEYS
 ⌘ or Ctrl with a letter does what the menu says beside it. The browser keeps ⌘W, ⌘N and ⌘Q for itself, so use Ctrl for those, or the menus.
 `;
@@ -392,7 +552,8 @@ function buildFS() {
     mk("Paper Moons.mp3", "song", { size: 6.2e6, len: 158, artist: "Ana Tomé" }),
   ]);
   const films = mk("Films", "folder", {}, [mk("Magic Word.mp4", "movie", { size: 1.42e9, len: 312 })]);
-  mk("Home", "home", { id: "home", free: "61.3 GB" }, [docs, music, films]);
+  const dl = mk("Downloads", "folder", { id: "downloads" }, [mk("kosmos-usb-0.11.313-development.img", "doc", { size: 1.12e9, date: "Wed, Nov 4, 2026, 22:40" })]);
+  mk("Home", "home", { id: "home", free: "61.3 GB" }, [docs, music, films, dl]);
 
   mk("Trash", "trash", { id: "trash" }, []);
   const rm = mk("Read Me", "doc", { id: "readme", size: 3100, text: README });
@@ -418,8 +579,11 @@ const S = {
   z: 10, wins: new Map(), front: null, active: "tracker", running: ["tracker"], hidden: new Set(), started: { tracker: Date.now() - 7 * 60e3 },
   sel: null, selWin: null, balloons: false, sounds: true, liveDrag: true, dblShade: true, menus: [], modal: null,
   recentApps: [], recentDocs: [], vol: 5, accent: "lavender", hilite: "lavender", pattern: "kosmos", font: "charcoal",
-  bootAt: Date.now(), hung: false,
+  bootAt: Date.now(), hung: false, era: "2026", dark: false, mode: "everything", openFrom: null,
 };
+// The menu bar is 20 points in 1999 and 26 in 2026; everything that sits below it asks.
+const MBH = () => S.era === "2026" ? 26 : 20;
+const GRID = () => S.era === "2026" ? [100, 86] : [84, 74];
 const ACCENTS = {
   lavender: ["#c8c8f2", "#6b6bc4", "#3c3c96"], blue: ["#c4d4f6", "#3d6ad8", "#1d3f9c"], graphite: ["#d6d9de", "#7c8490", "#4a515c"],
   teal: ["#c2e6e4", "#2f9090", "#1b5f5e"], gold: ["#f3e2b4", "#c99a2e", "#8a6614"], rose: ["#f1cfdb", "#c25a7c", "#8a2f50"],
@@ -470,7 +634,7 @@ function makeWin(o) {
   const W = innerWidth, H = innerHeight;
   let w0 = Math.min(o.w, W - 16), h0 = Math.min(o.h, H - 40);
   let x = o.x != null ? o.x : 60 + (S.wins.size % 6) * 24, y = o.y != null ? o.y : 52 + (S.wins.size % 6) * 22;
-  x = clamp(x, 4, Math.max(4, W - w0 - 4)); y = clamp(y, 24, Math.max(24, H - h0 - 8));
+  x = clamp(x, 4, Math.max(4, W - w0 - 4)); y = clamp(y, MBH() + 4, Math.max(MBH() + 4, H - h0 - 8));
   Object.assign(el.style, { left: x + "px", top: y + "px", width: w0 + "px", height: h0 + "px" });
   el.innerHTML = `<div class="tb"><span class="box close" data-tip="Close box. Click it to close this window."></span><div class="bar"><span class="title"></span></div>` +
     (o.zoom !== false ? `<span class="box zoom" data-tip="Zoom box. Click it to make the window as large as what it holds, and again to put it back."></span>` : "") +
@@ -485,7 +649,53 @@ function makeWin(o) {
   wireWin(w);
   if (o.fill) o.fill(w);
   focusWin(w);
+  zoomRect(el);
   return w;
+}
+// A window opened from an icon grows out of it, as it did in 1999: a
+// rectangle in a few steps then, and one smooth one in 2026.
+function zoomRect(el) {
+  const f = S.openFrom; S.openFrom = null;
+  if (!f || Date.now() - f.t > 500 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const to = el.getBoundingClientRect();
+  const z = document.createElement("div"); z.className = "zoomrect";
+  Object.assign(z.style, { left: f.r.left + "px", top: f.r.top + "px", width: f.r.width + "px", height: f.r.height + "px" });
+  document.body.appendChild(z);
+  el.style.visibility = "hidden";
+  requestAnimationFrame(() => requestAnimationFrame(() => Object.assign(z.style, { left: to.left + "px", top: to.top + "px", width: to.width + "px", height: to.height + "px" })));
+  setTimeout(() => { z.remove(); el.style.visibility = ""; }, S.era === "2026" ? 140 : 200);
+}
+function snapRect(z) {
+  const top = MBH() + 5, h = innerHeight - top - 6, half = Math.floor(innerWidth / 2);
+  if (z === "left") return { left: "6px", top: top + "px", width: (half - 9) + "px", height: h + "px" };
+  if (z === "right") return { left: (half + 3) + "px", top: top + "px", width: (innerWidth - half - 9) + "px", height: h + "px" };
+  return { left: "6px", top: top + "px", width: (innerWidth - 12) + "px", height: h + "px" };
+}
+// A folder's window as a tab along the bottom of the screen: a click on the
+// tab slides it up, and a click anywhere else puts it back.
+function popupSlots() { return [...S.wins.values()].filter(w => w.popup); }
+function setPopup(w, on) {
+  const el = w.el;
+  if (on) {
+    w.popup = { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height };
+    el.classList.remove("shaded");
+    el.classList.add("popup");
+    const n = popupSlots().length - 1, wd = Math.min(380, innerWidth - 240);
+    Object.assign(el.style, { left: Math.min(innerWidth - wd - 8, 230 + n * (wd + 12)) + "px", width: wd + "px", height: "280px", top: (innerHeight - 31) + "px" });
+    w.popupOpen = false;
+  } else {
+    el.classList.remove("popup");
+    Object.assign(el.style, w.popup);
+    w.popup = null; w.popupOpen = false;
+  }
+  if (w.folder) renderFolder(w);
+  renderMenubar();
+}
+function togglePopup(w, open = !w.popupOpen) {
+  if (!w.popup) return;
+  w.popupOpen = open;
+  w.el.style.top = (open ? innerHeight - 280 : innerHeight - 31) + "px";
+  whoosh();
 }
 
 function wireWin(w) {
@@ -498,14 +708,30 @@ function wireWin(w) {
   tb.addEventListener("mousedown", e => {
     if (e.button !== 0 || e.target.classList.contains("box")) return;
     e.preventDefault();
-    const r = el.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
-    let ol = null;
+    if (w.popup) return togglePopup(w);
+    // a snapped window, dragged away, goes back to its own size
+    if (w.snapped) { el.style.width = w.snapped.width; el.style.height = w.snapped.height; w.snapped = null; if (w.onResize) w.onResize(); }
+    const r = el.getBoundingClientRect(), ox = Math.min(e.clientX - r.left, r.width - 30), oy = e.clientY - r.top;
+    let ol = null, snap = null, sp = null;
     if (!S.liveDrag) { ol = document.createElement("div"); ol.className = "outline"; Object.assign(ol.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" }); document.body.appendChild(ol); }
     const move = ev => {
-      const nx = clamp(ev.clientX - ox, 40 - r.width, innerWidth - 40), ny = clamp(ev.clientY - oy, 21, innerHeight - 20);
+      const nx = clamp(ev.clientX - ox, 40 - r.width, innerWidth - 40), ny = clamp(ev.clientY - oy, MBH() + 1, innerHeight - 20);
       if (ol) { ol.style.left = nx + "px"; ol.style.top = ny + "px"; } else { el.style.left = nx + "px"; el.style.top = ny + "px"; }
+      if (S.era === "2026") {
+        const z = ev.clientX <= 6 ? "left" : ev.clientX >= innerWidth - 6 ? "right" : ev.clientY <= MBH() + 2 ? "full" : null;
+        if (z !== snap) {
+          snap = z; if (sp) { sp.remove(); sp = null; }
+          if (z) { sp = document.createElement("div"); sp.className = "snap"; Object.assign(sp.style, snapRect(z)); document.body.appendChild(sp); }
+        }
+      }
     };
-    const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); if (ol) { el.style.left = ol.style.left; el.style.top = ol.style.top; ol.remove(); } remember(w); };
+    const up = () => {
+      removeEventListener("mousemove", move); removeEventListener("mouseup", up);
+      if (ol) { el.style.left = ol.style.left; el.style.top = ol.style.top; ol.remove(); }
+      if (sp) sp.remove();
+      if (snap) { w.snapped = { width: r.width + "px", height: r.height + "px" }; Object.assign(el.style, snapRect(snap)); if (w.onResize) w.onResize(); tick(); }
+      remember(w);
+    };
     addEventListener("mousemove", move); addEventListener("mouseup", up);
   });
   const g = $(".grow", el);
@@ -538,7 +764,9 @@ function focusWin(w) {
   if (!w) return;
   S.z += 1; w.el.style.zIndex = S.z;
   for (const x of S.wins.values()) x.el.classList.toggle("active", x === w);
-  if (S.selWin !== w && S.sel) { S.sel = null; S.selWin = null; $$(".icon.sel, tr.row.sel").forEach(x => x.classList.remove("sel")); }
+  for (const x of S.wins.values()) if (x.popup && x.popupOpen && x !== w) togglePopup(x, false);
+  if (w.stale) { w.stale = false; if (w.folder) renderFolder(w); }
+  if (S.selWin !== w && S.sel && w.key !== "ql") { S.sel = null; S.selWin = null; $$(".icon.sel, tr.row.sel").forEach(x => x.classList.remove("sel")); }
   S.front = w;
   if (S.active !== w.app) S.active = w.app;
   renderMenubar();
@@ -614,16 +842,21 @@ const SEP = { sep: 1 };
 const K = MAC ? "⌘" : "Ctrl+";
 function kosmosMenu() {
   const appItem = (a) => ({ t: APPS[a].name, ico: APPS[a].icon, a: () => launch(a) });
+  const e26 = S.era === "2026";
   return { logo: true, items: [
+    ...(e26 ? [{ search: true }, SEP] : []),
     { t: "About This Kosmos…", a: openAbout },
     SEP,
     appItem("calc"),
     { t: "Control Panels", ico: "folder", sub: [
       { t: "Appearance", ico: "appearance", a: () => launch("appearance") },
       { t: "Memory and Processors", ico: "server", a: openAbout },
+      { t: "Servers", ico: "server", a: openServers },
       { t: "Sound", ico: "player", a: () => launch("appearance", "sound") },
     ] },
-    appItem("fragile"), appItem("orbits"), appItem("player"),
+    appItem("fragile"),
+    ...(e26 ? [{ t: "Network Places", ico: "disk", a: openNetwork }] : []),
+    appItem("orbits"), appItem("player"),
     { t: "Recent Applications", ico: "folder", sub: S.recentApps.length ? S.recentApps.map(appItem) : [{ t: "None yet", d: true }] },
     { t: "Recent Documents", ico: "folder", sub: S.recentDocs.length ? S.recentDocs.filter(id => FS[id]).map(id => ({ t: FS[id].name, ico: "doc", a: () => openNode(id) })) : [{ t: "None yet", d: true }] },
     appItem("term"), appItem("write"),
@@ -668,7 +901,7 @@ function renderMenubar() {
   const mb = $("#menubar");
   mb.innerHTML = "";
   S.menus.forEach((m, i) => {
-    if (m.appmenu) { const sp = document.createElement("div"); sp.className = "sp"; mb.appendChild(sp); const c = document.createElement("div"); c.className = "mt clock"; c.id = "clock"; c.dataset.tip = "The time. Click it for the date."; mb.appendChild(c); updateClock(); }
+    if (m.appmenu) { const sp = document.createElement("div"); sp.className = "sp"; mb.appendChild(sp); mb.insertAdjacentHTML("beforeend", eraHTML() + (S.era === "2026" ? indicatorsHTML() : "")); const c = document.createElement("div"); c.className = "mt clock"; c.id = "clock"; c.dataset.tip = "The time. Click it for the date."; mb.appendChild(c); updateClock(); }
     const t = document.createElement("div");
     t.className = "mt"; t.dataset.idx = i;
     if (m.logo) { t.innerHTML = icon("logo", 17); t.dataset.tip = "The Kosmos menu: About This Kosmos, the control panels, your applications, what you used recently."; }
@@ -676,6 +909,62 @@ function renderMenubar() {
     else t.textContent = m.t;
     mb.appendChild(t);
   });
+}
+function eraHTML() {
+  return `<div class="era" data-tip="The mockup's switch, not part of Kosmos: 1999 is Mac OS 9.2 as it was, 2026 the same desktop reimagined.">${["1999", "2026"].map(e => `<button data-era="${e}" class="${S.era === e ? "on" : ""}">${e}</button>`).join("")}</div>`;
+}
+const MODES = {
+  everything: { t: "Everything", where: "every application", apps: null },
+  work: { t: "Work", where: "Write, Terminal, Calculator", apps: ["tracker", "write", "term", "calc"] },
+  focus: { t: "Focus", where: "only what is in front", apps: "front" },
+  rest: { t: "Rest", where: "Player and Orbits, warmer", apps: ["tracker", "player", "orbits"] },
+};
+const IND = {
+  mode: () => `<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg><span>${MODES[S.mode].t}</span>`,
+  net: () => `<svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 13.5V10M6.3 13.5V7.5M9.7 13.5V5M13 13.5V2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  vol: () => `<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/>${S.vol ? `<path d="M11 5.5a3.5 3.5 0 0 1 0 5" stroke="currentColor" fill="none" stroke-width="1.4"/>` : ""}${S.vol > 4 ? `<path d="M12.8 3.5a6 6 0 0 1 0 9" stroke="currentColor" fill="none" stroke-width="1.4"/>` : ""}</svg>`,
+  bat: () => `<svg width="22" height="14" viewBox="0 0 22 14"><rect x="1" y="2.5" width="17" height="9" rx="2.5" fill="none" stroke="currentColor"/><rect x="2.8" y="4.3" width="${(13.4 * .82).toFixed(1)}" height="5.4" rx="1" fill="currentColor"/><path d="M19.5 5.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>82%</span>`,
+};
+function indicatorsHTML() {
+  const tips = { mode: "The mode you are in. Choose one to put away what does not belong to it.", net: "The network: wired, connected.", vol: "Sound. Kosmos plays it above every program.", bat: "The battery." };
+  return Object.keys(IND).map(k => `<div class="mt ind" data-ind="${k}" data-tip="${tips[k]}">${IND[k]()}</div>`).join("");
+}
+function indicatorMenu(k) {
+  if (k === "mode") return Object.entries(MODES).map(([m, d]) => ({ t: d.t, where: d.where, c: S.mode === m, a: () => setMode(m) }));
+  if (k === "net") return [{ t: "Wired: connected", c: true }, { t: "192.168.1.28", d: true }, { t: "Wireless: not here yet", d: true }, SEP, { t: "Network Places…", a: openNetwork }];
+  if (k === "vol") return [...Array(8).keys()].reverse().map(v => ({ t: v === 0 ? "Mute" : "Volume " + v, c: S.vol === v, a: () => { S.vol = v; renderStrip(); renderMenubar(); tick(); } }));
+  if (k === "bat") return [{ t: "82%, about 5 hours left", d: true }, { t: "On battery", d: true }, SEP, { t: "Sleep", a: sleep }];
+}
+function setMode(m) {
+  S.mode = m;
+  const keep = MODES[m].apps;
+  if (keep === null) S.hidden.clear();
+  else {
+    const allow = keep === "front" ? ["tracker", S.active] : keep;
+    S.running.forEach(a => { if (!allow.includes(a)) S.hidden.add(a); else S.hidden.delete(a); });
+  }
+  applyHidden();
+  document.body.classList.toggle("rest", m === "rest" && S.era === "2026");
+  if (S.hidden.has(S.active)) { const w = topWin(); if (w) focusWin(w); else activate("tracker"); }
+  renderMenubar();
+}
+function setEra(e) {
+  if (S.era === e) return;
+  S.era = e;
+  document.body.classList.toggle("e26", e === "2026");
+  document.body.classList.toggle("dark", e === "2026" && S.dark);
+  document.body.classList.toggle("rest", e === "2026" && S.mode === "rest");
+  if (e === "1999") { const q = S.wins.get("ql"); if (q) closeWin(q); }
+  // icons Tracker placed go to the new grid; icons a person placed stay
+  for (const n of Object.values(FS)) if (n.autop) { delete n.pos; n.autop = false; }
+  for (const w of S.wins.values()) {
+    if (w.snapped) w.snapped = null;
+    if (!w.popup && w.el.offsetTop < MBH() + 4) w.el.style.top = (MBH() + 4) + "px";
+    if (w.onResize) w.onResize();
+  }
+  closeMenus(); renderAll(); renderStrip();
+  const aw = S.wins.get("appearance"); if (aw) renderAppearance(aw);
+  tick();
 }
 let CL = { date: false };
 function updateClock() {
@@ -702,7 +991,8 @@ function openMenu(i) {
   document.body.appendChild(m);
   let x = r.left; const mw = m.offsetWidth;
   if (x + mw > innerWidth - 2) x = Math.max(2, r.right - mw);
-  m.style.left = x + "px"; m.style.top = "20px";
+  m.style.left = x + "px"; m.style.top = MBH() + "px";
+  const si = $(".msearch input", m); if (si) setTimeout(() => si.focus(), 0);
 }
 function popupMenu(items, x, y, above) {
   closeMenus();
@@ -715,35 +1005,63 @@ function popupMenu(items, x, y, above) {
 function buildMenu(items, level) {
   const m = document.createElement("div");
   m.className = "menu";
-  items.forEach(it => {
-    if (it.sep) { const s = document.createElement("div"); s.className = "msep"; m.appendChild(s); return; }
-    const d = document.createElement("div");
-    d.className = "mi" + (it.d ? " dis" : "") + (it.sub ? " sub" : "");
-    d.innerHTML = (it.c ? `<span class="chk">✓</span>` : "") + (it.ico ? `<span class="ico" style="${it.dim ? "opacity:.45" : ""}">${icon(it.ico, 16)}</span>` : "") +
-      `<span>${esc(it.t)}</span>` + (it.k ? `<span class="k">${K}${it.k}</span>` : "");
-    d.addEventListener("mouseenter", () => {
-      $$(".mi.on", m).forEach(x => x.classList.remove("on"));
-      // a submenu below this level closes when another item is pointed at
-      while (MS.stack.length > level + 1) MS.stack.pop().remove();
-      if (it.d) return;
-      d.classList.add("on");
-      if (it.sub) {
-        const r = d.getBoundingClientRect();
-        const sm = buildMenu(it.sub, level + 1);
-        document.body.appendChild(sm);
-        let x = r.right - 2; if (x + sm.offsetWidth > innerWidth) x = r.left - sm.offsetWidth + 2;
-        sm.style.left = x + "px"; sm.style.top = clamp(r.top - 4, 21, innerHeight - sm.offsetHeight - 2) + "px";
-      }
-    });
-    d.addEventListener("mouseup", e => {
-      e.stopPropagation();
-      if (it.d || it.sub || !it.a) return;
-      choose(d, it.a);
-    });
-    m.appendChild(d);
-  });
+  items.forEach(it => m.appendChild(menuItem(it, m, level)));
   MS.stack[level] = m;
   return m;
+}
+function menuItem(it, m, level) {
+  if (it.sep) { const s = document.createElement("div"); s.className = "msep"; return s; }
+  if (it.search) return menuSearch(m, level);
+  const d = document.createElement("div");
+  d.className = "mi" + (it.d ? " dis" : "") + (it.sub ? " sub" : "");
+  d.innerHTML = (it.c ? `<span class="chk">✓</span>` : "") + (it.ico ? `<span class="ico" style="${it.dim ? "opacity:.45" : ""}">${icon(it.ico, 16)}</span>` : "") +
+    `<span>${esc(it.t)}</span>` + (it.where ? `<span class="wh">${esc(it.where)}</span>` : "") + (it.k ? `<span class="k">${K}${it.k}</span>` : "");
+  d.addEventListener("mouseenter", () => {
+    $$(".mi.on", m).forEach(x => x.classList.remove("on"));
+    // a submenu below this level closes when another item is pointed at
+    while (MS.stack.length > level + 1) MS.stack.pop().remove();
+    if (it.d) return;
+    d.classList.add("on");
+    if (it.sub) {
+      const r = d.getBoundingClientRect();
+      const sm = buildMenu(it.sub, level + 1);
+      document.body.appendChild(sm);
+      let x = r.right - 2; if (x + sm.offsetWidth > innerWidth) x = r.left - sm.offsetWidth + 2;
+      sm.style.left = x + "px"; sm.style.top = clamp(r.top - 4, MBH() + 1, innerHeight - sm.offsetHeight - 2) + "px";
+    }
+  });
+  d.addEventListener("mouseup", e => {
+    e.stopPropagation();
+    if (it.d || it.sub || !it.a) return;
+    choose(d, it.a);
+  });
+  return d;
+}
+// 2026: the Kosmos menu opens on a search field. Type, and what matches -
+// applications first, then files - replaces the menu below it.
+function menuSearch(m, level) {
+  const box = document.createElement("div"); box.className = "msearch";
+  box.innerHTML = `<input placeholder="Search applications and files" spellcheck="false" autocomplete="off"><div class="mres"></div>`;
+  const inp = $("input", box), res = $(".mres", box);
+  let found = [];
+  inp.addEventListener("input", () => {
+    const q = inp.value.trim();
+    m.classList.toggle("searching", !!q);
+    res.innerHTML = "";
+    found = q ? searchAll(q) : [];
+    if (q && !found.length) res.innerHTML = `<div class="mi dis"><span>Nothing called “${esc(q)}”</span></div>`;
+    found.forEach((it, i) => { const d = menuItem(it, m, level); if (i === 0) d.classList.add("on"); res.appendChild(d); });
+  });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter" && found[0]) { e.preventDefault(); choose($(".mi", res), found[0].a); } });
+  return box;
+}
+function searchAll(q) {
+  q = q.toLowerCase();
+  const apps = Object.keys(APPS).filter(a => APPS[a].name.toLowerCase().includes(q))
+    .map(a => ({ t: APPS[a].name, ico: APPS[a].icon, where: "Application", a: () => launch(a) }));
+  const files = Object.values(FS).filter(n => n.kind !== "desk" && n.kind !== "app" && !isGone(n.id) && n.name.toLowerCase().includes(q)).slice(0, 8)
+    .map(n => ({ t: n.name, ico: KIND_ART[n.kind] || "doc", where: pathOf(n.id), a: () => openNode(n.id) }));
+  return [...apps, ...files].slice(0, 10);
 }
 // A chosen item blinks, as it did, and then does what it says.
 function choose(d, act) {
@@ -757,9 +1075,19 @@ function choose(d, act) {
 let menuDownAt = 0;
 $("#menubar").addEventListener("mousedown", e => {
   if (S.modal) { beep(); return; }
+  const era = e.target.closest("[data-era]");
+  if (era) { e.preventDefault(); setEra(era.dataset.era); return; }
   const t = e.target.closest(".mt");
   if (!t) return;
   if (t.id === "clock") { CL.date = !CL.date; updateClock(); return; }
+  if (t.dataset.ind) {
+    e.preventDefault();
+    if (t.classList.contains("open")) { closeMenus(); return; }
+    const r = t.getBoundingClientRect();
+    popupMenu(indicatorMenu(t.dataset.ind), r.left, MBH(), false);
+    t.classList.add("open");
+    return;
+  }
   e.preventDefault();
   const i = +t.dataset.idx;
   if (MS.open === i) { closeMenus(); return; }
@@ -767,7 +1095,7 @@ $("#menubar").addEventListener("mousedown", e => {
   openMenu(i);
 });
 $("#menubar").addEventListener("mouseover", e => {
-  const t = e.target.closest(".mt"); if (!t || t.id === "clock") return;
+  const t = e.target.closest(".mt"); if (!t || t.id === "clock" || t.dataset.idx == null) return;
   if (MS.open >= 0) openMenu(+t.dataset.idx);
 });
 addEventListener("mousedown", e => { if (MS.open !== -1 && !e.target.closest(".menu") && !e.target.closest("#menubar")) closeMenus(); });
@@ -852,7 +1180,7 @@ function openFolder(id) {
   renderDesktop();
   return w;
 }
-function autoPos(parentId, i, cols) { return { x: 14 + (i % cols) * 84, y: 10 + Math.floor(i / cols) * 74 }; }
+function autoPos(parentId, i, cols) { const g = GRID(); return { x: 14 + (i % cols) * g[0], y: 10 + Math.floor(i / cols) * g[1] }; }
 function iconHTML(id, inWin) {
   const n = FS[id];
   const opened = n.children && S.wins.has("f:" + id);
@@ -873,8 +1201,8 @@ function renderFolder(w) {
   if (w.hdr) w.hdr.textContent = `${kids.length} item${kids.length === 1 ? "" : "s"}${avail ? ", " + avail + " available" : ""}`;
   const sl = w.body.scrollLeft, st = w.body.scrollTop;
   if (n.view === "icon") {
-    const cols = Math.max(1, Math.floor((w.body.clientWidth || 400) / 84));
-    kids.forEach((k, i) => { if (!FS[k].pos) FS[k].pos = autoPos(w.folder, i, cols); });
+    const cols = Math.max(1, Math.floor((w.body.clientWidth || 400) / GRID()[0]));
+    kids.forEach((k, i) => { if (!FS[k].pos) { FS[k].pos = autoPos(w.folder, i, cols); FS[k].autop = true; } });
     const maxX = Math.max(0, ...kids.map(k => FS[k].pos.x + 80)), maxY = Math.max(0, ...kids.map(k => FS[k].pos.y + 70));
     w.body.innerHTML = `<div class="iconview" style="width:${maxX + 10}px;height:${maxY + 10}px">${kids.map(k => iconHTML(k, true)).join("")}</div>`;
   } else {
@@ -908,7 +1236,8 @@ function renderDesktop() {
   const kids = FS.desk.children;
   kids.forEach((k, i) => {
     const n = FS[k];
-    if (!n.pos) n.pos = n.kind === "trash" ? { x: innerWidth - 88, y: innerHeight - 96 } : { x: innerWidth - 88, y: 34 + i * 78 };
+    const e26 = S.era === "2026";
+    if (!n.pos) { n.pos = n.kind === "trash" ? { x: innerWidth - (e26 ? 104 : 88), y: innerHeight - (e26 ? 112 : 96) } : { x: innerWidth - (e26 ? 104 : 88), y: (e26 ? 42 : 34) + i * (e26 ? 88 : 78) }; n.autop = true; }
   });
   d.insertAdjacentHTML("afterbegin", kids.map(k => iconHTML(k, false)).join(""));
 }
@@ -956,7 +1285,7 @@ document.addEventListener("mousedown", e => {
   if (!w) deskFocus();
   setSel(id, w && w.folder ? w : null);
   const sx = e.clientX, sy = e.clientY, r = ic.getBoundingClientRect(), offX = sx - r.left, offY = sy - r.top;
-  let ghost = null, over = null;
+  let ghost = null, over = null, spring = 0, popT = 0;
   const move = ev => {
     if (!ghost && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
     if (!ghost) {
@@ -971,10 +1300,18 @@ document.addEventListener("mousedown", e => {
     ghost.style.display = "";
     const tgt = t && t.closest(".icon[data-id], tr.row[data-id]");
     const okT = tgt && tgt.dataset.id !== id && FS[tgt.dataset.id].children ? tgt : null;
-    if (over !== okT) { if (over) over.classList.remove("droptarget"); over = okT; if (over) over.classList.add("droptarget"); }
+    if (over !== okT) {
+      if (over) over.classList.remove("droptarget"); over = okT; if (over) over.classList.add("droptarget");
+      // spring-loaded: hold a dragged thing over a folder and the folder opens
+      clearTimeout(spring);
+      if (okT && FS[okT.dataset.id].kind !== "trash") { const tid = okT.dataset.id; spring = setTimeout(() => { if (over === okT) { tick(); openFolder(tid); } }, 750); }
+    }
+    const pwin = t && t.closest(".win.popup"), pw = pwin && [...S.wins.values()].find(v => v.el === pwin);
+    if (pw && !pw.popupOpen && !popT) popT = setTimeout(() => { togglePopup(pw, true); popT = 0; }, 450);
   };
   const up = ev => {
     removeEventListener("mousemove", move); removeEventListener("mouseup", up);
+    clearTimeout(spring); clearTimeout(popT);
     if (over) over.classList.remove("droptarget");
     if (!ghost) return;
     ghost.remove();
@@ -985,9 +1322,10 @@ document.addEventListener("mousedown", e => {
 document.addEventListener("dblclick", e => {
   if (S.modal) return;
   const ic = e.target.closest(".icon[data-id], tr.row[data-id]");
-  if (ic && !e.target.closest("[data-tri]")) { tick(); openNode(ic.dataset.id); }
+  if (ic && !e.target.closest("[data-tri]")) { S.openFrom = { r: ($(".g", ic) || ic).getBoundingClientRect(), t: Date.now() }; tick(); openNode(ic.dataset.id); }
 });
 function deskFocus() {
+  for (const x of S.wins.values()) if (x.popup && x.popupOpen) togglePopup(x, false);
   S.active = "tracker"; S.front = null;
   for (const x of S.wins.values()) x.el.classList.remove("active");
   renderMenubar();
@@ -1028,6 +1366,7 @@ function moveInto(id, dest, pos) {
     if (S.selWin && S.selWin.folder !== dest) S.sel = null;
   }
   n.pos = pos || null;
+  n.autop = false;
   if (!n.pos) delete n.pos;
   renderAll();
 }
@@ -1077,8 +1416,30 @@ function startRename() {
   inp.addEventListener("blur", () => commit(true));
 }
 function trackerKey(e) {
+  const q = S.wins.get("ql");
+  if (q && e.key === "Escape") return closeWin(q);
   if (!S.sel) return;
   if (e.key === "Enter") { e.preventDefault(); startRename(); }
+  if (e.key === " " && S.era === "2026") { e.preventDefault(); quickLook(S.sel); }
+}
+// 2026: the space bar looks at the selected thing without opening it.
+function quickLook(id) {
+  const open = S.wins.get("ql");
+  if (open && open.ql === id) return closeWin(open);
+  if (open) closeWin(open, true);
+  const n = FS[id];
+  const doc = n.kind === "doc";
+  makeWin({ key: "ql", app: "tracker", title: n.name, w: doc ? 460 : 380, h: doc ? 420 : 250, cls: "plain ql", zoom: false,
+    x: Math.round(innerWidth / 2 - (doc ? 230 : 190)), y: 90,
+    fill: w => {
+      w.ql = id;
+      if (doc) { w.body.innerHTML = `<div class="prose" style="white-space:pre-wrap;flex:1;overflow:auto;background:var(--paper,#fff);color:inherit;border-radius:4px"></div><div class="footer"><span>Space or Esc to close</span><span>Double-click the file to open it</span></div>`; $(".prose", w.body).textContent = n.text || ""; if (S.dark) $(".prose", w.body).style.background = "#1f2025"; return; }
+      const A = n.kind === "app" ? APPS[n.app] : null;
+      const line = isBox(n) ? `${n.children.length} item${n.children.length === 1 ? "" : "s"}, ${fmtSize(sizeOf(id))}: ${n.children.slice(0, 5).map(c => esc(FS[c].name)).join(", ")}${n.children.length > 5 ? "…" : ""}`
+        : A ? `An application. It can reach ${esc(A.needs)}.` : n.len ? `${esc(n.artist || "a film")}, ${Math.floor(n.len / 60)}:${String(n.len % 60).padStart(2, "0")}` : esc(KINDS[n.kind]);
+      w.body.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:10px">${iconOf(n, 96)}<b style="font:600 14px var(--sys)">${esc(n.name)}</b><div style="max-width:300px;line-height:1.45">${line}</div><div style="color:#888">${fmtSize(sizeOf(id))} · ${esc(pathOf(id))}</div></div><div class="footer"><span>Space or Esc to close</span></div>`;
+    } });
+  S.sel = id;
 }
 function duplicate(id) {
   const n = FS[id]; if (fixed(n)) return;
@@ -1164,6 +1525,7 @@ function trackerMenus() {
     { t: "View", items: [
       { t: "as Icons", c: view === "icon", a: () => setView("icon"), d: !w },
       { t: "as List", c: view === "list", a: () => setView("list"), d: !w },
+      { t: "as Pop-up Window", c: !!(w && w.popup), a: () => setPopup(w, !w.popup), d: !w },
       SEP,
       { t: "Clean Up", a: () => cleanUp(w), d: !!w && view !== "icon" },
       { t: "Arrange", sub: [{ t: "by Name", a: () => cleanUp(w, "name") }, { t: "by Size", a: () => cleanUp(w, "size") }, { t: "by Kind", a: () => cleanUp(w, "kind") }], d: !!w && view !== "icon" },
@@ -1510,7 +1872,8 @@ function renderAppearance(w) {
   const pats = { kosmos: "Kosmos Blue", tiles: "Tiles", teal: "Teal", nebula: "Nebula", grey: "Pewter" };
   let panel = "";
   if (w.tab === "look") panel = `<div class="group"><span class="gt">Accent colour</span><div class="row2">Scroll bars, the chosen menu item and progress bars take it.</div><div class="swatches">${sw(ACCENTS, S.accent, "acc")}</div></div>
-    <div class="group" style="margin-top:18px"><span class="gt">Highlight colour</span><div class="row2">Selected text takes it. Select some in Write to see.</div><div class="swatches">${sw(HILITES, S.hilite, "hil")}</div></div>`;
+    <div class="group" style="margin-top:18px"><span class="gt">Highlight colour</span><div class="row2">Selected text takes it. Select some in Write to see.</div><div class="swatches">${sw(HILITES, S.hilite, "hil")}</div></div>
+    ${S.era === "2026" ? `<div class="group" style="margin-top:18px"><span class="gt">Dark Platinum</span><label class="row2"><input type="checkbox" data-opt="dark"${S.dark ? " checked" : ""}> The same bevels on dark surfaces</label></div>` : ""}`;
   if (w.tab === "desk") panel = `<div class="pats">${Object.entries(pats).map(([k, t]) => `<button data-pat="${k}" class="${S.pattern === k ? "on" : ""}"><div style="position:absolute;inset:2px" class="pv-${k}"></div><span>${t}</span></button>`).join("")}</div>`;
   if (w.tab === "fonts") panel = `<div class="group"><span class="gt">Large system font</span><div class="row2">For menus, titles and buttons.</div>
     ${[["charcoal", "Charcoal-like (bold Geneva where Charcoal is missing)"], ["geneva", "Geneva"], ["plex", "Plex Sans, as Kosmos's other looks"]].map(([k, t]) => `<label class="row2"><input type="radio" name="f" data-font="${k}"${S.font === k ? " checked" : ""}> ${t}</label>`).join("")}</div>
@@ -1534,6 +1897,7 @@ function renderAppearance(w) {
     if (b.dataset.test != null) return beep();
     const o = b.dataset.opt;
     if (o === "smooth") document.body.classList.toggle("crisp", !b.checked);
+    if (o === "dark") { S.dark = b.checked; document.body.classList.toggle("dark", S.era === "2026" && S.dark); }
     if (o === "sounds") S.sounds = b.checked;
     if (o === "dblshade") S.dblShade = b.checked;
     if (o === "live") S.liveDrag = b.checked;
@@ -1551,6 +1915,81 @@ function getPatternCss(k) {
   }[k];
 }
 function getPatternSize(k) { return { kosmos: "6px 6px", tiles: "4px 4px", grey: "3px 3px" }[k] || "auto"; }
+
+/* ============================================================ Servers */
+// Where Extensions Manager was: every server, live, and each one restartable
+// while the applications that use it carry on.
+const SRV = ["devices", "console", "ramfs", "diskfs", "binfs", "appfs", "audio", "net", "xhci", "e1000e", "bluetooth", "wm", "vncd"]
+  .map((n, i) => ({ n, up: Date.now() - (420 + i * 3) * 1000, state: "running" }));
+let SRVIV = 0, SRVSAID = "";
+function openServers() {
+  makeWin({ key: "servers", app: "tracker", title: "Servers", w: 500, h: 440, cls: "plain servers", zoom: false,
+    onClose: () => clearInterval(SRVIV),
+    fill: w => {
+      w.body.innerHTML = `<div>Every server Kosmos runs, each in memory of its own. One that dies is started again by its supervisor; Restart does the same, and no application quits for it.</div>
+        <div style="flex:1;min-height:0;overflow:auto"><table><tbody>${SRV.map((s, i) => `<tr data-i="${i}"><td><span class="dot"></span><b>${s.n}</b></td><td class="st"></td><td class="cpu" style="text-align:right"></td><td class="up"></td><td style="text-align:right"><button class="btn" data-re="${i}">Restart</button></td></tr>`).join("")}</tbody></table></div>
+        <div class="said" style="min-height:15px;color:#444"></div>`;
+      w.body.onclick = e => {
+        const b = e.target.closest("[data-re]"); if (!b) return;
+        const sv = SRV[+b.dataset.re]; if (sv.state !== "running") return;
+        sv.state = "restarting"; updServers(); tick();
+        const t0 = Date.now();
+        setTimeout(() => { sv.state = "running"; sv.up = Date.now(); SRVSAID = `${sv.n} restarted in ${((Date.now() - t0) / 1000).toFixed(1)} s. No application quit${sv.n === "audio" && PL.playing ? ", and Player did not lose its place" : ""}.`; updServers(); }, 1100 + Math.random() * 500);
+      };
+      clearInterval(SRVIV); SRVIV = setInterval(updServers, 1000); updServers();
+    } });
+}
+function updServers() {
+  const w = S.wins.get("servers"); if (!w) return;
+  const up = s => { const m = Math.floor((Date.now() - s.up) / 60000), sec = Math.floor((Date.now() - s.up) / 1000) % 60; return m ? `up ${m} min` : `up ${sec} s`; };
+  $$("tr[data-i]", w.body).forEach(tr => {
+    const s = SRV[+tr.dataset.i];
+    $(".dot", tr).classList.toggle("re", s.state !== "running");
+    $(".st", tr).textContent = s.state;
+    const c = s.state !== "running" ? 0 : s.n === "wm" ? 2 + Math.random() * 2 : s.n === "audio" && PL.playing ? .6 + Math.random() * .4 : Math.random() * .3;
+    $(".cpu", tr).textContent = c.toFixed(1) + "%";
+    $(".up", tr).textContent = s.state === "running" ? up(s) : "";
+  });
+  $(".said", w.body).textContent = SRVSAID;
+}
+
+/* ============================================================ Network Places */
+function openNetwork() {
+  makeWin({ key: "net", app: "tracker", title: "Network Places", w: 450, h: 230, header: true, cls: "tracker netw",
+    fill: w => {
+      w.hdr.textContent = "3 places, found by asking the network";
+      const places = [["M700", "its screen, by VNC", "term"], ["Diego's Mac", "shared folders, by SMB", "disk"], ["Living room TV", "a screen to cast to", "player"]];
+      w.body.innerHTML = `<div class="iconview">${places.map((p, i) => `<div class="place" data-place="${i}" style="left:${12 + i * 140}px;top:14px">${icon(p[2], S.era === "2026" ? 44 : 32)}<span>${esc(p[0])}</span><small>${esc(p[1])}</small></div>`).join("")}</div>`;
+      w.body.ondblclick = e => {
+        const pl = e.target.closest("[data-place]"); if (!pl) return;
+        const p = places[+pl.dataset.place];
+        alertBox({ icon: "note", msg: `${esc(p[0])}: ${esc(p[1])}.`, sub: "Opening it would start Remote Screen, Tracker over SMB or the cast to the television - each its own piece of Kosmos, and none of them in this mockup." });
+      };
+    } });
+}
+
+/* ============================================================ a live folder */
+// Home ▸ Downloads takes a file now and then. In 2026 its window shows it
+// the moment it arrives (Tracker live, `pulses.md`); in 1999 the window
+// catches up only when it is next clicked.
+const ARRIVALS = ["Statement, November.pdf", "Paper Moons (live).mp3", "photo-from-ana.jpg", "m700-gpu-notes.pdf", "boarding-pass.pdf"];
+let ARRIVED = 0;
+function arrive() {
+  if (DESK_STARTED && FS.downloads && !isGone("downloads")) {
+    const name = ARRIVALS[ARRIVED % ARRIVALS.length] + (ARRIVED >= ARRIVALS.length ? ` (${Math.floor(ARRIVED / ARRIVALS.length) + 1})` : "");
+    ARRIVED++;
+    const song = name.includes(".mp3");
+    const id = mk(name, song ? "song" : "doc", { size: Math.round(2e5 + Math.random() * 4e6), len: 214, artist: song ? "Ana Tomé" : undefined, date: "Today, just now", text: song ? undefined : "(the file's contents are not in this mockup)" });
+    FS[id].parent = "downloads"; FS.downloads.children.push(id);
+    const w = S.wins.get("f:downloads");
+    if (w) {
+      if (S.era === "2026") { renderFolder(w); const el = $(`[data-id="${id}"]`, w.body); if (el) { el.classList.add("fresh"); tone([1320, 1760], .05, "triangle", .025); } }
+      else w.stale = true;
+    }
+  }
+  setTimeout(arrive, 35000);
+}
+setTimeout(arrive, 20000);
 
 /* ============================================================ Control Strip */
 let STRIP_OPEN = true;
