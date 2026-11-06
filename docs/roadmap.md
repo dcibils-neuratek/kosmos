@@ -368,6 +368,25 @@ already encodes H.264 - a "cast the screen" that finds the television by
 UPnP's discovery (datagrams, N11a) and serves it the desktop as a stream.
 To be looked into and written up before anything is built.
 
+**Astra in Mac OS 9.2's manner - an idea, being felt out** - Diego, 5 November
+2026: "i want to see how kosmos would look with a mac os 9.2 user
+interface", "i love UIs of that era but with modern capabilities like multi
+processing, memory protection etc", "lets build kosmos UI replicating macos
+9.2 as much as possible", and "i dont want to code it yet, but mock up the
+UI in html usable and playable to get a feel before coding it". **Drawn the
+same day: `docs/pewter.html`**, playable - the menu bar with a Kosmos menu
+and an Application menu, pinstriped windows with close, zoom and collapse
+boxes, a spatial Tracker with list views and triangles, the Control Strip,
+Balloon Help, Appearance's accent and desktop, and the start-up with every
+server marching along the bottom - and in it what Mac OS 9 never had:
+Fragile crashing or hanging alone, four processors in About This Kosmos,
+nothing stopping while a menu is down, a copy that does not hold the desk,
+Get Info with no memory partition. "Pewter" is a working name, not a
+decision. Nothing is agreed and nothing is to be built until it is; the
+questions are his - whether it is a look beside the others or a desktop of
+its own (a menu bar instead of the Deskbar), whether Tracker turns spatial,
+and the Control Strip against the indicators.
+
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
 might need some optimizations on drawing and else"; its log says what each

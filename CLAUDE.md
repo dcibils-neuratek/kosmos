@@ -123,6 +123,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The desktop on the M700's GPU, 2D first - the plan, for Diego to decide: `docs/m700-2d.md`
 - `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`
 - Maps - its feature set and architecture, the window, the diagram, before it is built: `docs/maps.md`, `docs/maps.html`, `docs/maps-architecture.png`
+- Astra in Mac OS 9.2's manner - "Pewter", a playable mockup for the feel, nothing agreed: `docs/pewter.html`
 - Shortcuts - an index of every system-wide key, grouped and searchable - before it is built: `docs/shortcuts.md`, `docs/shortcuts.html`, `docs/shortcuts-architecture.png`
 - Automations - tasks run on a trigger, and every application scriptable by its controls' names - before it is built: `docs/automations.md`, `docs/automations.html`, `docs/automations-architecture.png`
 - Packages - every package from a server, installed, updated and removed with dependencies, APT's shape - before its window is built: `docs/packages.md`, `docs/packages.html`, `docs/packages-architecture.png`

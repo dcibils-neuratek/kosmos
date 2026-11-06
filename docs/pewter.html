@@ -1,0 +1,1666 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Kosmos in Pewter: Astra drawn as Mac OS 9.2 drew its desktop, to be used
+  before a line of it is written. A mockup, and only that: nothing here is
+  Kosmos code. Diego, 5 November 2026: "i want to see how kosmos would look
+  with a mac os 9.2 user interface", "with modern capabilities like multi
+  processing, memory protection etc", "mock up the UI in html usable and
+  playable to get a feel before coding it".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kosmos in Pewter</title>
+<style>
+:root{
+  --plat:#dddddd; --plat2:#cccccc; --hi:#ffffff; --mid:#aaaaaa; --lo:#808080; --edge:#262626; --ink:#000000;
+  --acc:#6b6bc4; --acc-d:#3c3c96; --acc-l:#c8c8f2; --sel:#ccccff;
+  --sys:"Charcoal","ChicagoFLF","Chicago","Geneva","Lucida Grande","Verdana",sans-serif;
+  --app:"Geneva","Verdana","Lucida Grande",sans-serif;
+  --mono:"Monaco","Menlo","Courier New",monospace;
+  --desk:#3c4f8c;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--desk)}
+body{font:11px var(--app);color:var(--ink);user-select:none;-webkit-user-select:none;cursor:default}
+body.crisp, body.crisp *{-webkit-font-smoothing:none;-moz-osx-font-smoothing:auto}
+::selection{background:var(--sel);color:#000}
+button{font:inherit;color:inherit}
+
+/* ---------- the desktop and its patterns ---------- */
+#desktop{position:fixed;inset:0;overflow:hidden}
+body[data-pattern="kosmos"] #desktop{background-color:#3c4f8c;background-image:
+  radial-gradient(#5b6fb4 0.8px,transparent 1.3px),radial-gradient(#2f3f76 0.8px,transparent 1.3px);
+  background-size:6px 6px,6px 6px;background-position:0 0,3px 3px}
+body[data-pattern="tiles"] #desktop{background-color:#7782b3;background-image:
+  conic-gradient(#8792c3 25%,#6c77a8 0 50%,#8792c3 0 75%,#6c77a8 0);background-size:4px 4px}
+body[data-pattern="teal"] #desktop{background-color:#2c7a78;background-image:
+  repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 1px,transparent 1px 4px)}
+body[data-pattern="nebula"] #desktop{background:
+  radial-gradient(ellipse at 70% 30%,#c06aa0 0,transparent 40%),
+  radial-gradient(ellipse at 25% 70%,#3f78c9 0,transparent 45%),
+  radial-gradient(circle at 50% 50%,#2a2160 0,#0d0b26 80%)}
+body[data-pattern="grey"] #desktop{background-color:#8c8c99;background-image:
+  radial-gradient(#9a9aa6 0.7px,transparent 1.2px);background-size:3px 3px}
+
+/* ---------- menu bar ---------- */
+#menubar{position:fixed;top:0;left:0;right:0;height:20px;z-index:100000;display:flex;align-items:stretch;
+  background:var(--plat);border-bottom:1px solid #3a3a3a;box-shadow:inset 0 1px 0 #fff;font:bold 12px var(--sys);padding:0 6px}
+#menubar .mt{padding:0 9px;line-height:19px;white-space:nowrap;display:flex;align-items:center;gap:5px}
+#menubar .mt.open{background:var(--acc-d);color:#fff}
+#menubar .mt svg{display:block}
+#menubar .sp{flex:1}
+#menubar .clock{font-weight:bold}
+.corner{position:fixed;top:0;width:8px;height:8px;z-index:100001;pointer-events:none}
+.corner.l{left:0;background:radial-gradient(circle at 100% 100%,transparent 7px,#000 7.5px)}
+.corner.r{right:0;background:radial-gradient(circle at 0 100%,transparent 7px,#000 7.5px)}
+
+/* ---------- menus ---------- */
+.menu{position:fixed;z-index:300000;background:var(--plat);border:1px solid #3a3a3a;padding:3px 0;min-width:170px;
+  box-shadow:inset 1px 1px 0 #fff,2px 2px 0 rgba(0,0,0,.28);font:bold 12px var(--sys)}
+.mi{position:relative;display:flex;align-items:center;padding:0 16px 0 20px;line-height:18px;white-space:nowrap}
+.mi .k{margin-left:auto;padding-left:26px;font-weight:bold}
+.mi .chk{position:absolute;left:6px}
+.mi .ico{margin-right:6px;display:flex}
+.mi.on{background:var(--acc-d);color:#fff}
+.mi.dis{color:#9a9a9a}
+.mi.sub::after{content:"";margin-left:auto;padding-left:22px;border:4px solid transparent;border-left:5px solid currentColor;border-right:0}
+.msep{height:2px;margin:3px 1px;border-top:1px solid #9a9a9a;border-bottom:1px solid #fff}
+
+/* ---------- windows ---------- */
+.win{position:absolute;display:flex;flex-direction:column;background:var(--plat);border:1px solid var(--edge);
+  padding:0 5px 5px;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #999,1px 1px 0 rgba(0,0,0,.4);min-width:120px}
+.tb{height:21px;flex:none;display:flex;align-items:center;gap:5px;margin:0 -2px;padding:0 1px}
+.tb .bar{flex:1;height:13px;display:flex;justify-content:center;align-items:center;
+  background:repeating-linear-gradient(to bottom,#fff 0 1px,#a7a7a7 1px 2px);background-size:100% 2px;background-position:0 1px;
+  box-shadow:inset 0 0 0 0 transparent;overflow:hidden}
+.tb .title{background:var(--plat);padding:0 7px;font:bold 12px var(--sys);line-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90%}
+.box{flex:none;width:13px;height:13px;border:1px solid #4a4a4a;position:relative;
+  background:linear-gradient(135deg,#ffffff 0,#e2e2e2 45%,#a9a9a9 100%);box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #8a8a8a}
+.box:active{background:#7a7a7a;box-shadow:inset 1px 1px 0 #555}
+.box.zoom::after{content:"";position:absolute;left:1px;top:1px;width:6px;height:6px;border:1px solid #4a4a4a;background:transparent}
+.box.shade::after{content:"";position:absolute;left:1px;right:1px;top:4px;height:3px;border-top:1px solid #4a4a4a;border-bottom:1px solid #4a4a4a}
+.win:not(.active) .bar{background:none}
+.win:not(.active) .box{visibility:hidden}
+.win:not(.active) .title{color:#8a8a8a}
+.win:not(.active){box-shadow:inset 1px 1px 0 #f4f4f4,inset -1px -1px 0 #b5b5b5}
+.win.shaded{height:auto!important;min-height:0;padding-bottom:0}
+.win.shaded>*:not(.tb){display:none!important}
+.win.busy, .win.busy *{cursor:wait!important}
+
+.hdr{flex:none;font:11px var(--app);text-align:center;padding:2px 4px 3px;margin-bottom:3px;
+  border:1px solid;border-color:#9c9c9c #fff #fff #9c9c9c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.body{position:relative;flex:1;min-height:0;background:#fff;border:1px solid;border-color:#6f6f6f #fff #fff #6f6f6f;overflow:auto}
+.win.plain .body{background:var(--plat);border-color:transparent;overflow:hidden}
+.grow{position:absolute;right:6px;bottom:6px;width:15px;height:15px;z-index:3;
+  background:linear-gradient(135deg,transparent 0 40%,#fff 40% 46%,#888 46% 52%,transparent 52% 60%,#fff 60% 66%,#888 66% 72%,transparent 72%),var(--plat);
+  border-left:1px solid #888;border-top:1px solid #888}
+.win.plain .grow{background:linear-gradient(135deg,transparent 0 40%,#fff 40% 46%,#888 46% 52%,transparent 52% 60%,#fff 60% 66%,#888 66% 72%,transparent 72%);border:0}
+.outline{position:fixed;border:2px solid #555;outline:1px dotted #fff;z-index:250000;pointer-events:none}
+
+/* scroll bars: the accent on the thumb, as Appearance chose */
+.body::-webkit-scrollbar{width:16px;height:16px;background:var(--plat)}
+.body::-webkit-scrollbar-track{background:#c4c4c4;box-shadow:inset 1px 1px 2px #8a8a8a,inset -1px -1px 0 #e8e8e8}
+.body::-webkit-scrollbar-thumb{border:1px solid #333;background:
+  repeating-linear-gradient(to bottom,transparent 0 calc(50% - 4px),rgba(255,255,255,.75) calc(50% - 4px) calc(50% - 3px),rgba(0,0,0,.35) calc(50% - 3px) calc(50% - 2px),transparent calc(50% - 2px) calc(50% + 2px)),
+  linear-gradient(to right,var(--acc-l),var(--acc) 60%,var(--acc-d));box-shadow:inset 1px 1px 0 rgba(255,255,255,.6)}
+.body::-webkit-scrollbar-thumb:horizontal{background:linear-gradient(to bottom,var(--acc-l),var(--acc) 60%,var(--acc-d))}
+.body::-webkit-scrollbar-button:single-button{display:block;width:16px;height:16px;background-color:var(--plat);
+  border:1px solid #555;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #999;background-repeat:no-repeat;background-position:center}
+.body::-webkit-scrollbar-button:single-button:vertical:decrement{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M4 0l4 5H0z'/%3E%3C/svg%3E")}
+.body::-webkit-scrollbar-button:single-button:vertical:increment{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0h8L4 5z'/%3E%3C/svg%3E")}
+.body::-webkit-scrollbar-button:single-button:horizontal:decrement{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='8'%3E%3Cpath d='M0 4l5-4v8z'/%3E%3C/svg%3E")}
+.body::-webkit-scrollbar-button:single-button:horizontal:increment{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='5' height='8'%3E%3Cpath d='M0 0l5 4-5 4z'/%3E%3C/svg%3E")}
+.body::-webkit-scrollbar-corner{background:var(--plat)}
+.body{scrollbar-color:var(--acc) #c4c4c4}
+
+/* ---------- icons ---------- */
+.icon{position:absolute;width:76px;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
+.icon .g{width:32px;height:32px}
+.icon .g svg{display:block;width:32px;height:32px}
+.icon .lb{max-width:76px;font:11px var(--app);line-height:13px}
+.icon .lb span{padding:0 2px;background:#fff;word-break:break-word}
+#desktop .icon .lb span{background:#fff}
+.icon.sel .g{filter:brightness(.45) saturate(1.2)}
+.icon.sel .lb span{background:#000;color:#fff}
+.icon.opened .g{opacity:.55;filter:grayscale(.4)}
+.icon.opened.sel .g{filter:brightness(.4)}
+.icon input,.row input{font:11px var(--app);width:84px;border:1px solid #000;padding:0 2px;text-align:center}
+.iconview{position:relative;min-width:100%;min-height:100%}
+.ghost{position:fixed;z-index:260000;pointer-events:none;opacity:.6}
+.droptarget .g{filter:brightness(.45)!important}
+tr.droptarget td{background:var(--sel)}
+
+/* list view */
+table.list{border-collapse:collapse;width:100%;font:11px var(--app)}
+table.list th{position:sticky;top:0;z-index:1;text-align:left;font:11px var(--app);padding:2px 6px;background:var(--plat);
+  border-right:1px solid #999;border-bottom:1px solid #777;box-shadow:inset 1px 1px 0 #fff;white-space:nowrap}
+table.list th.sorted{background:#bdbdbd}
+table.list td{padding:1px 6px;white-space:nowrap;border-bottom:1px solid #f0f0f0}
+table.list td:first-child{display:flex;align-items:center;gap:4px}
+table.list td.sortcol{background:#eef0f5}
+tr.row.sel td{background:#000;color:#fff}
+.tri{width:10px;height:10px;display:inline-flex;align-items:center;justify-content:center}
+.tri::before{content:"";border:4px solid transparent;border-left:6px solid #444;border-right:0;transition:transform .08s}
+.tri.open::before{transform:rotate(90deg)}
+tr.row.sel .tri::before{border-left-color:#fff}
+.mini svg{width:16px;height:16px;display:block}
+
+/* ---------- controls ---------- */
+.btn{display:inline-block;font:bold 12px var(--sys);padding:2px 14px;min-width:66px;text-align:center;border:1px solid #1f1f1f;border-radius:5px;
+  background:linear-gradient(#f6f6f6,#d2d2d2);box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #9a9a9a}
+.btn:active,.btn.press{background:linear-gradient(#6f6f6f,#8f8f8f);color:#fff;box-shadow:inset 1px 1px 0 #444}
+.btn.def{box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #9a9a9a,0 0 0 2px var(--plat),0 0 0 4px #1f1f1f}
+.btn:disabled{color:#9a9a9a;border-color:#9a9a9a}
+.btn:focus-visible,.field:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.field{font:12px var(--app);border:1px solid;border-color:#555 #ddd #ddd #555;box-shadow:inset 1px 1px 0 #999;padding:2px 4px;background:#fff}
+select.pop{font:bold 12px var(--sys);border:1px solid #333;border-radius:4px;padding:1px 4px;background:linear-gradient(#f6f6f6,#d2d2d2)}
+input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acc)}
+.group{border:1px solid;border-color:#9a9a9a #fff #fff #9a9a9a;box-shadow:inset 1px 1px 0 #fff,1px 1px 0 #9a9a9a;padding:10px;position:relative;margin-top:8px}
+.group>.gt{position:absolute;top:-8px;left:8px;background:var(--plat);padding:0 4px;font:bold 12px var(--sys)}
+.bar-track{height:10px;border:1px solid #333;background:#fff;box-shadow:inset 1px 1px 0 #aaa}
+.bar-fill{height:100%;background:linear-gradient(var(--acc-l),var(--acc) 50%,var(--acc-d))}
+.barber{background:repeating-linear-gradient(-45deg,var(--acc) 0 6px,var(--acc-l) 6px 12px);animation:barber .6s linear infinite;background-size:17px 17px}
+@keyframes barber{to{background-position:17px 0}}
+
+/* tabs, as Appearance has them */
+.tabs{display:flex;gap:0;padding-left:8px;position:relative;z-index:1}
+.tabs button{font:bold 12px var(--sys);padding:3px 11px 2px;border:1px solid #555;border-bottom:0;border-radius:5px 5px 0 0;margin-right:-1px;
+  background:linear-gradient(#e8e8e8,#c9c9c9);box-shadow:inset 1px 1px 0 #fff}
+.tabs button.on{background:var(--plat);position:relative;top:1px;padding-bottom:3px}
+.tabpanel{border:1px solid #555;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #999;padding:12px;flex:1;min-height:0;overflow:auto}
+
+/* ---------- alerts ---------- */
+#shield{position:fixed;inset:0;z-index:200000;display:none}
+#shield.on{display:block}
+.alert{position:fixed;z-index:200001;background:var(--plat);border:1px solid #1f1f1f;padding:4px;
+  box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #999,2px 2px 0 rgba(0,0,0,.35)}
+.alert>.in{border:2px solid;border-color:#fff #8a8a8a #8a8a8a #fff;padding:14px 14px 12px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;width:min(420px,calc(100vw - 32px))}
+.alert .ai svg{width:32px;height:32px}
+.alert .msg{font:bold 12px var(--sys);line-height:16px}
+.alert .sub{font:11px var(--app);line-height:15px;grid-column:2;color:#222}
+.alert .btns{grid-column:1/3;display:flex;justify-content:flex-end;gap:12px;margin-top:12px;flex-wrap:wrap}
+.alert .btns .left{margin-right:auto}
+
+/* ---------- control strip ---------- */
+#strip{position:fixed;left:0;bottom:14px;z-index:99999;display:flex;height:22px;filter:drop-shadow(1px 1px 0 rgba(0,0,0,.35))}
+#strip .mods{display:flex;background:var(--plat);border:1px solid #333;border-left:0;overflow:hidden;transition:max-width .18s ease-out;max-width:600px}
+#strip.closed .mods{max-width:0;border-width:1px 0}
+#strip .mod{height:20px;min-width:26px;padding:0 4px;display:flex;align-items:center;gap:3px;border-right:1px solid #999;box-shadow:inset 1px 1px 0 #fff;font:bold 11px var(--sys)}
+#strip .mod:active{background:#999}
+#strip .tab{width:13px;background:var(--plat);border:1px solid #333;border-left:0;border-radius:0 7px 7px 0;
+  box-shadow:inset 1px 1px 0 #fff;background-image:repeating-linear-gradient(to right,transparent 0 3px,#999 3px 4px,#fff 4px 5px);background-size:9px 8px;background-repeat:repeat-x;background-position:1px center}
+#strip .cpu{display:flex;gap:2px;align-items:flex-end;height:14px}
+#strip .cpu i{display:block;width:4px;background:#2c8a3a;border:1px solid #333;border-bottom:0}
+
+/* balloons */
+#balloon{position:fixed;z-index:400000;max-width:230px;background:#ffffe8;border:1px solid #000;border-radius:12px;padding:8px 10px;
+  font:11px var(--app);line-height:14px;box-shadow:2px 2px 0 rgba(0,0,0,.3);display:none;pointer-events:none}
+#balloon::before{content:"";position:absolute;left:-12px;top:10px;border:7px solid transparent;border-right:12px solid #000}
+#balloon::after{content:"";position:absolute;left:-10px;top:11px;border:6px solid transparent;border-right:11px solid #ffffe8}
+
+/* boot, sleep, off */
+#boot,#sleep,#off{position:fixed;inset:0;z-index:500000;display:none}
+#boot{background:#9a9a9a;background-image:radial-gradient(#a6a6a6 .8px,transparent 1.2px);background-size:3px 3px;transition:opacity .35s}
+#boot.on,#sleep.on,#off.on{display:block}
+#boot .welcome{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:330px;background:var(--plat);border:1px solid #1f1f1f;
+  padding:4px;box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #999,2px 2px 0 rgba(0,0,0,.35)}
+#boot .welcome .in{border:2px solid;border-color:#fff #8a8a8a #8a8a8a #fff;padding:22px 26px 18px;text-align:center}
+#boot .word{font:bold 30px var(--sys);letter-spacing:-.5px;display:flex;align-items:center;justify-content:center;gap:10px}
+#boot .tag{font:12px var(--app);margin:6px 0 14px;color:#333}
+#boot .now{font:11px var(--app);margin-top:6px;height:14px;color:#333;text-align:left}
+#boot .exts{position:absolute;left:14px;bottom:14px;right:14px;display:flex;flex-wrap:wrap;gap:8px}
+#boot .exts div{display:flex;flex-direction:column;align-items:center;font:9px var(--app);width:44px;color:#111}
+#boot .exts svg{width:32px;height:32px}
+#boot .skip{position:absolute;right:16px;top:12px;font:11px var(--app);color:#333}
+#sleep{background:#000;cursor:pointer}
+#off{background:#000;color:#777;font:12px var(--app)}
+#off .c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;display:grid;gap:14px;justify-items:center}
+#off .power{width:44px;height:44px;border-radius:50%;border:2px solid #555;background:#1a1a1a;display:grid;place-items:center;color:#9a9a9a;cursor:pointer}
+#off .power:hover{color:#ddd;border-color:#888}
+
+/* applications' own insides */
+.write textarea{width:100%;height:100%;border:0;resize:none;outline:none;padding:8px 10px;font:12px var(--app);line-height:1.35;user-select:text;-webkit-user-select:text;background:#fff;color:#000;display:block}
+.calc .body{display:flex;flex-direction:column;gap:6px;padding:8px}
+.calc .disp{background:#cfe3cf;border:1px solid;border-color:#555 #ddd #ddd #555;box-shadow:inset 1px 1px 0 #999;font:bold 16px var(--mono);text-align:right;padding:3px 6px;overflow:hidden;white-space:nowrap}
+.calc .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;flex:1}
+.calc .keys button{font:bold 12px var(--sys);border:1px solid #222;border-radius:3px;background:linear-gradient(#f6f6f6,#cfcfcf);box-shadow:inset 1px 1px 0 #fff,inset -1px -1px 0 #9a9a9a;min-height:22px}
+.calc .keys button:active,.calc .keys button.press{background:#6f6f6f;color:#fff}
+.calc .keys .tall{grid-row:span 2}
+.calc .keys .wide{grid-column:span 2}
+.orbits canvas{display:block;width:100%;height:100%}
+.footer{flex:none;font:10px var(--app);padding:3px 2px 0;color:#222;display:flex;justify-content:space-between;gap:10px;white-space:nowrap;overflow:hidden}
+.term .body{font:11px/14px var(--mono);padding:6px 8px;user-select:text;-webkit-user-select:text;cursor:text}
+.term .line{white-space:pre-wrap;word-break:break-word}
+.term input{font:11px var(--mono);border:0;outline:none;padding:0;background:transparent;width:70%}
+.win.info .body{padding:10px;font:11px var(--app);overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin-top:10px}
+.kv b{font:bold 11px var(--app);text-align:right;white-space:nowrap}
+.win.about .body{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.about .top{display:flex;gap:14px;align-items:center;border-bottom:1px solid #999;box-shadow:0 1px 0 #fff;padding-bottom:10px}
+.about .apps{border:1px solid;border-color:#777 #fff #fff #777;background:#fff;flex:1;min-height:0;overflow:auto}
+.about .apps table{border-collapse:collapse;width:100%;font:11px var(--app)}
+.about .apps td{padding:3px 6px;border-bottom:1px solid #eee;white-space:nowrap}
+.about .apps td.b{width:44%}
+.about .cores{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.about .core{font:10px var(--app)}
+.about .core .bar-track{height:8px;margin-top:2px}
+.player .body{padding:10px;display:flex;flex-direction:column;gap:7px}
+.player .ctl{display:flex;gap:6px;align-items:center}
+.player .spec{display:flex;gap:2px;align-items:flex-end;height:26px;background:#141a3a;padding:3px;border:1px solid;border-color:#555 #ddd #ddd #555}
+.player .spec i{flex:1;background:linear-gradient(to top,#4fd06a,#e8d44a 70%,#ff6a4a);display:block}
+.appearance .body{display:flex;flex-direction:column;padding:8px 4px 4px}
+.pats{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:10px}
+.pats button{height:58px;border:1px solid #333;box-shadow:inset 0 0 0 2px #fff;cursor:default;padding:0;position:relative}
+.pats button.on{outline:3px solid #000;outline-offset:1px}
+.pats span{position:absolute;left:0;right:0;bottom:-16px;font:10px var(--app);color:#000}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatches button{width:34px;height:20px;border:1px solid #333;border-radius:3px}
+.swatches button.on{outline:2px solid #000;outline-offset:2px}
+.row2{display:flex;gap:10px;align-items:center;margin:6px 0;font:11px var(--app)}
+.fragile .body{padding:12px;display:flex;flex-direction:column;gap:10px;font:11px/15px var(--app)}
+.copy .body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;font:11px var(--app)}
+.prose{font:12px/1.45 var(--app);padding:10px 14px}
+@media (prefers-reduced-motion:reduce){#strip .mods{transition:none}.barber{animation:none}#boot{transition:none}}
+</style>
+</head>
+<body data-pattern="kosmos">
+<div id="desktop"></div>
+<div id="menubar"></div>
+<div class="corner l"></div><div class="corner r"></div>
+<div id="strip" class="" data-tip="The Control Strip: a module for each thing you change often. Click the tab at its end to tuck it away."></div>
+<div id="shield"></div>
+<div id="balloon"></div>
+<div id="boot"><div class="welcome"><div class="in">
+  <div class="word"><span id="bootlogo"></span>Kosmos</div>
+  <div class="tag">Version <span class="ver"></span> · Nebula on four processors</div>
+  <div class="bar-track" style="height:12px"><div class="bar-fill" id="bootbar" style="width:0"></div></div>
+  <div class="now" id="bootnow">Starting Nebula…</div>
+</div></div><div class="exts" id="bootexts"></div><div class="skip">Click to skip</div></div>
+<div id="sleep"></div>
+<div id="off"><div class="c"><div>Kosmos is off.</div><div class="power" id="poweron" title="Turn on">&#x23FB;</div></div></div>
+
+<script>
+"use strict";
+const VERSION = "0.11.314";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+const isCmd = e => e.metaKey || e.ctrlKey;   // Ctrl too: the browser keeps ⌘W, ⌘N and ⌘Q for itself
+
+/* ============================================================ icons */
+const SV = (inner, vb = 32) => `<svg viewBox="0 0 ${vb} ${vb}" xmlns="http://www.w3.org/2000/svg" stroke-linejoin="round">${inner}</svg>`;
+const ART = {
+  logo: `<ellipse cx="16" cy="16" rx="14" ry="5" fill="none" stroke="#d9822b" stroke-width="2.2" transform="rotate(-22 16 16)"/><circle cx="16" cy="16" r="8.5" fill="#4459c9" stroke="#1d2668"/><path d="M10 13.5a7 7 0 0 1 8.5-5" stroke="#9fb0ff" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.6 21.6A14 5 -22 0 0 28.4 10.4" fill="none" stroke="#d9822b" stroke-width="2.2" transform="rotate(0)"/>`,
+  folder: `<path d="M2.5 7.5h9.5l2 2.5h15.5v4h-27z" fill="#b9b9ff" stroke="#262680"/><path d="M2.5 12.5h27v15h-27z" fill="#9c9cf0" stroke="#262680"/><path d="M3.5 13.5h25" stroke="#d6d6ff"/>`,
+  home: `<path d="M2.5 7.5h9.5l2 2.5h15.5v4h-27z" fill="#b9b9ff" stroke="#262680"/><path d="M2.5 12.5h27v15h-27z" fill="#9c9cf0" stroke="#262680"/><path d="M3.5 13.5h25" stroke="#d6d6ff"/><path d="M11 25v-5.5l5-4.2 5 4.2V25h-3.3v-3.4h-3.4V25z" fill="#fff" stroke="#262680"/>`,
+  disk: `<path d="M3.5 15.5l4-6h17l4 6z" fill="#efefef" stroke="#333"/><path d="M3.5 15.5h25v8h-25z" fill="#cdcdcd" stroke="#333"/><rect x="6" y="18.5" width="3" height="2" fill="#2bb24c"/><path d="M12 19.5h13" stroke="#7a7a7a"/><path d="M11 12.5h10" stroke="#bbb"/>`,
+  trash: `<path d="M8.5 10.5h15l-1.6 18h-11.8z" fill="#dadada" stroke="#333"/><path d="M6.5 7.5h19v3h-19z" fill="#c2c2c2" stroke="#333"/><path d="M13.5 5.5h5v2h-5z" fill="none" stroke="#333"/><path d="M12.5 13v13M16 13v13M19.5 13v13" stroke="#8a8a8a"/>`,
+  trashfull: `<path d="M8 9l3-5 5 3 4-3 4 4" fill="#fff" stroke="#333"/><path d="M8.5 10.5h15l-1.6 18h-11.8z" fill="#dadada" stroke="#333"/><path d="M6 6.5l18.5-3 .5 3-18.5 3z" fill="#c2c2c2" stroke="#333"/><path d="M12.5 13v13M16 13v13M19.5 13v13" stroke="#8a8a8a"/>`,
+  doc: `<path d="M7.5 3.5h12l5 5v20h-17z" fill="#fff" stroke="#333"/><path d="M19.5 3.5v5h5" fill="#e0e0e0" stroke="#333"/><path d="M10 13h11M10 16h11M10 19h11M10 22h7" stroke="#8b8bb8"/>`,
+  song: `<path d="M7.5 3.5h12l5 5v20h-17z" fill="#fff" stroke="#333"/><path d="M19.5 3.5v5h5" fill="#e0e0e0" stroke="#333"/><path d="M13 12.5v9" stroke="#b04a6e" stroke-width="1.5"/><path d="M13 12.5l6-1.8v8" stroke="#b04a6e" stroke-width="1.5" fill="none"/><circle cx="11.6" cy="21.8" r="2" fill="#b04a6e"/><circle cx="17.6" cy="19" r="2" fill="#b04a6e"/>`,
+  movie: `<path d="M7.5 3.5h12l5 5v20h-17z" fill="#fff" stroke="#333"/><path d="M19.5 3.5v5h5" fill="#e0e0e0" stroke="#333"/><rect x="10" y="12" width="12" height="11" fill="#222"/><path d="M11 13.5h1M11 16h1M11 18.5h1M11 21h1M20 13.5h1M20 16h1M20 18.5h1M20 21h1" stroke="#fff"/><rect x="13" y="14" width="6" height="7" fill="#5f86d6"/>`,
+  write: `<path d="M5.5 5.5h15v22h-15z" fill="#fff" stroke="#333"/><path d="M8 10.5h10M8 13.5h10M8 16.5h7M8 19.5h9" stroke="#8b8bb8"/><path d="M27.5 6.5l-11 13-3.6 1.6 1.3-3.8 11-13z" fill="#e8a33c" stroke="#333"/><path d="M14.2 17.3l2.3 2.2" stroke="#333"/>`,
+  calc: `<rect x="7.5" y="3.5" width="17" height="25" rx="2" fill="#cfcfcf" stroke="#333"/><rect x="10" y="6" width="12" height="5" fill="#bfe0bf" stroke="#333"/><g fill="#fff" stroke="#333" stroke-width=".8"><rect x="10" y="13.5" width="3" height="2.5"/><rect x="14.5" y="13.5" width="3" height="2.5"/><rect x="19" y="13.5" width="3" height="2.5"/><rect x="10" y="18" width="3" height="2.5"/><rect x="14.5" y="18" width="3" height="2.5"/><rect x="19" y="18" width="3" height="7" fill="#e8a33c"/><rect x="10" y="22.5" width="7.5" height="2.5"/></g>`,
+  orbits: `<circle cx="16" cy="16" r="13.5" fill="#141a3a" stroke="#333"/><ellipse cx="16" cy="16" rx="10.5" ry="4.5" fill="none" stroke="#e8a33c" transform="rotate(-20 16 16)"/><ellipse cx="16" cy="16" rx="6.5" ry="2.6" fill="none" stroke="#7fb0ff" transform="rotate(-20 16 16)"/><circle cx="16" cy="16" r="3.4" fill="#ffd34d"/><circle cx="25.5" cy="12.6" r="1.8" fill="#7fb0ff"/><circle cx="10" cy="17.6" r="1.2" fill="#f07a7a"/>`,
+  term: `<rect x="3.5" y="4.5" width="25" height="19" rx="1.5" fill="#d8d8d8" stroke="#333"/><rect x="6" y="7" width="20" height="13.5" fill="#1d1f24"/><path d="M8.5 10.5l3 2.3-3 2.3M13.5 16h5" stroke="#7CFC9A" fill="none" stroke-width="1.3"/><path d="M11 23.5l-2 4h14l-2-4" fill="#bbb" stroke="#333"/>`,
+  fragile: `<path d="M9.5 3.5h13l-2.2 10.5a4.3 4.3 0 0 1-8.6 0z" fill="#e8f3ff" stroke="#333"/><path d="M16 18.6v7M11 27.5h10" stroke="#333" stroke-width="1.4"/><path d="M13.6 5l2 3-1.4 2 2.2 2.5" stroke="#c33" fill="none" stroke-width="1.2"/>`,
+  appearance: `<path d="M16 4.5C8.3 4.5 3.5 9.3 3.5 15.3S8.4 27.5 14.5 27.5c2 0 2.4-1.7 1.4-2.8-1-1-.4-3 1.6-3h4c4.3 0 8-2.8 8-7.2 0-5.5-6-10-13.5-10z" fill="#ead8b8" stroke="#333"/><circle cx="9.5" cy="15" r="2.2" fill="#c33"/><circle cx="12.5" cy="9.5" r="2.2" fill="#e8a33c"/><circle cx="18.5" cy="8.5" r="2.2" fill="#2f8f3f"/><circle cx="23.5" cy="12.5" r="2.2" fill="#3b5fd0"/>`,
+  player: `<circle cx="16" cy="16" r="12.5" fill="#b04a6e" stroke="#333"/><circle cx="16" cy="16" r="9" fill="none" stroke="#d98aa6"/><path d="M13 10.5l9 5.5-9 5.5z" fill="#fff" stroke="#333" stroke-width=".8"/>`,
+  kit: `<path d="M16 3.5l12 6v13l-12 6-12-6v-13z" fill="#c9c9ea" stroke="#333"/><path d="M4 9.5l12 6 12-6M16 15.5v13" stroke="#333" fill="none"/><path d="M4 9.5l12-6 12 6-12 6z" fill="#e4e4fa" stroke="#333"/>`,
+  server: `<rect x="9.5" y="3.5" width="13" height="25" rx="1" fill="#d0d0d0" stroke="#333"/><path d="M12 7.5h8M12 10.5h8M12 13.5h8" stroke="#777"/><circle cx="16" cy="23" r="1.6" fill="#2bb24c" stroke="#333" stroke-width=".6"/>`,
+  driver: `<rect x="8.5" y="8.5" width="15" height="15" fill="#3a3a3a" stroke="#111"/><rect x="11.5" y="11.5" width="9" height="9" fill="#5a5a5a"/><path d="M11 8.5v-3M14.5 8.5v-3M18 8.5v-3M21 8.5v-3M11 23.5v3M14.5 23.5v3M18 23.5v3M21 23.5v3M8.5 11h-3M8.5 14.5h-3M8.5 18h-3M8.5 21h-3M23.5 11h3M23.5 14.5h3M23.5 18h3M23.5 21h3" stroke="#999"/>`,
+  stop: `<path d="M10.5 2.5h11l8 8v11l-8 8h-11l-8-8v-11z" fill="#d6302a" stroke="#5a0d0a"/><path d="M14.3 8h3.4l-.6 11h-2.2zM14.6 21.5h2.8v2.8h-2.8z" fill="#fff"/>`,
+  caution: `<path d="M16 3L30 28H2z" fill="#f2cc2a" stroke="#333"/><path d="M14.4 11h3.2l-.6 9h-2zM14.6 22h2.8v2.8h-2.8z" fill="#111"/>`,
+  note: `<path d="M4.5 5.5h23v16h-12l-6 5.5v-5.5h-5z" fill="#fff" stroke="#333"/><path d="M15 9h2.4v2.4H15zM15 12.8h2.4v6H15z" fill="#3b5fd0"/>`,
+  power: `<circle cx="16" cy="16" r="13" fill="#d8d8d8" stroke="#333"/><path d="M11.2 10.6a7.5 7.5 0 1 0 9.6 0" fill="none" stroke="#333" stroke-width="2.2" stroke-linecap="round"/><path d="M16 7v9" stroke="#333" stroke-width="2.2" stroke-linecap="round"/>`,
+  tracker: `<rect x="3.5" y="5.5" width="25" height="20" fill="#d8d8d8" stroke="#333"/><path d="M3.5 9.5h25" stroke="#333"/><rect x="7" y="13" width="6" height="5" fill="#9c9cf0" stroke="#262680"/><rect x="17" y="13" width="6" height="5" fill="#9c9cf0" stroke="#262680"/><path d="M5.5 7.5h3" stroke="#777"/>`,
+};
+const KIND_ART = { folder: "folder", disk: "disk", home: "home", trash: "trash", doc: "doc", song: "song", movie: "movie", kit: "kit", server: "server", driver: "driver", cpanel: "folder" };
+function artOf(n) {
+  if (n.kind === "app") return ART[APPS[n.app].icon];
+  if (n.kind === "trash") return n.children.length ? ART.trashfull : ART.trash;
+  return ART[KIND_ART[n.kind] || "doc"];
+}
+const icon = (name, px = 32) => `<svg viewBox="0 0 32 32" width="${px}" height="${px}" xmlns="http://www.w3.org/2000/svg" stroke-linejoin="round">${ART[name]}</svg>`;
+const iconOf = (n, px = 32) => `<svg viewBox="0 0 32 32" width="${px}" height="${px}" xmlns="http://www.w3.org/2000/svg" stroke-linejoin="round">${artOf(n)}</svg>`;
+
+/* ============================================================ the file system */
+const FS = {};
+let NID = 0;
+function mk(name, kind, extra = {}, kids) {
+  const id = extra.id || "n" + (++NID);
+  FS[id] = Object.assign({ id, name, kind, parent: null, children: kids ? [] : null, view: "icon",
+    date: "Thu, Nov 5, 2026, 9:12", size: 0 }, extra);
+  if (kids) kids.forEach(k => { FS[k].parent = id; FS[id].children.push(k); });
+  return id;
+}
+const README = `Kosmos, in Pewter
+
+This is a mockup. It is Kosmos's desktop drawn the way Mac OS 9.2 drew its own, so we can use it for a while before anything is written for Astra. Nothing here is Kosmos code.
+
+FROM MAC OS 9
+The menu bar, with the Kosmos menu at its left and the Application menu at its right. Windows with pinstriped title bars and a close box, a zoom box and a collapse box. Tracker opening each folder in a window of its own, which remembers where it was and how it was viewed. List views with triangles. The Control Strip. Balloon Help. Alerts that beep.
+
+FROM KOSMOS, AND NEVER MAC OS 9
+- Every application has memory of its own. Open Fragile and make it write past its memory: it quits, and nothing else notices. On Mac OS 9 that was a bomb and a restart.
+- Nothing waits for anything else. Hold a menu open or drag a window around: Orbits keeps turning and Player keeps playing. On Mac OS 9 the whole machine stopped while a menu was down.
+- Four processors, each one the scheduler's. About This Kosmos and the Control Strip show all four. Make Fragile stop answering and watch one processor fill while the other three carry on, then press Ctrl⌥Esc to force it to quit (the Mac keeps ⌘⌥Esc for itself), or choose Force Quit in the Application menu.
+- No memory partitions. Get Info on an application says what it is allowed to reach, not how many kilobytes to give it.
+- Copying does not hold the desktop. Duplicate the film in Home ▸ Films and keep working while it copies.
+- A command line, in Terminal.
+
+TRY
+- Double-click a title bar.
+- Drag this Read Me into the Trash, then Special ▸ Empty Trash.
+- View ▸ as List, and the triangles.
+- Kosmos menu ▸ Control Panels ▸ Appearance: the accent colour, the desktop, the fonts.
+- Help ▸ Show Balloons, then point at things.
+- Special ▸ Restart, to see Kosmos start again.
+
+KEYS
+⌘ or Ctrl with a letter does what the menu says beside it. The browser keeps ⌘W, ⌘N and ⌘Q for itself, so use Ctrl for those, or the menus.
+`;
+function buildFS() {
+  const apps = mk("Applications", "folder", {}, [
+    mk("Write", "app", { app: "write", size: 2.4e6, ver: "1.0" }),
+    mk("Calculator", "app", { app: "calc", size: 0.31e6, ver: "1.0" }),
+    mk("Orbits", "app", { app: "orbits", size: 1.2e6, ver: "1.0" }),
+    mk("Player", "app", { app: "player", size: 3.1e6, ver: "1.0" }),
+    mk("Terminal", "app", { app: "term", size: 0.9e6, ver: "1.0" }),
+    mk("Fragile", "app", { app: "fragile", size: 0.05e6, ver: "0.1" }),
+  ]);
+  const kits = mk("Kits", "folder", {}, ["gfx", "audio", "pdf", "crypto", "compress", "3d", "ffmpeg"].map(k => mk(k, "kit", { size: (k.length * 0.21 + 0.3) * 1e6 })));
+  const servers = mk("Servers", "folder", {}, ["devices", "audio", "diskfs", "net", "wm", "bluetooth", "console"].map(k => mk(k, "server", { size: (k.length * 0.07 + 0.1) * 1e6 })));
+  const drivers = mk("Drivers", "folder", {}, ["xhci", "e1000e", "virtio-gpu", "hda", "ahci"].map(k => mk(k, "driver", { size: (k.length * 0.05 + 0.08) * 1e6 })));
+  const cps = mk("Control Panels", "cpanel", {}, [mk("Appearance", "app", { app: "appearance", size: 0.6e6, ver: "1.0" })]);
+  const sys = mk("Kosmos", "folder", {}, [kits, servers, drivers, cps]);
+  mk("Kosmos HD", "disk", { id: "hd", free: "212.4 GB" }, [sys, apps]);
+
+  const docs = mk("Documents", "folder", {}, [
+    mk("Letter to Ana", "doc", { size: 4200, text: "Dear Ana,\n\nThe machine on my desk is called Kosmos now. It starts in a few seconds, and when a program misbehaves it is the only thing that falls over.\n\nMore when I see you,\nDiego\n" }),
+    mk("Ideas", "doc", { size: 1900, text: "- A planet simulation, in Cafesa3D\n- Music that answers a key before the ear can tell\n- The desktop on the M700's GPU\n" }),
+  ]);
+  const music = mk("Music", "folder", {}, [
+    mk("Arrival.mp3", "song", { size: 7.8e6, len: 192, artist: "The Night Shift" }),
+    mk("Low Orbit.mp3", "song", { size: 9.1e6, len: 227, artist: "The Night Shift" }),
+    mk("Paper Moons.mp3", "song", { size: 6.2e6, len: 158, artist: "Ana Tomé" }),
+  ]);
+  const films = mk("Films", "folder", {}, [mk("Magic Word.mp4", "movie", { size: 1.42e9, len: 312 })]);
+  mk("Home", "home", { id: "home", free: "61.3 GB" }, [docs, music, films]);
+
+  mk("Trash", "trash", { id: "trash" }, []);
+  const rm = mk("Read Me", "doc", { id: "readme", size: 3100, text: README });
+  mk("Desktop", "desk", { id: "desk" }, ["hd", "home", rm, "trash"]);
+}
+
+const KINDS = { folder: "folder", cpanel: "folder", disk: "disk", home: "your Home", trash: "Trash", doc: "Write document",
+  song: "MP3 audio", movie: "MPEG-4 film", kit: "kit", server: "server", driver: "driver", app: "application" };
+function fmtSize(b) {
+  if (b == null) return "—";
+  if (b < 1024) return b + " bytes";
+  if (b < 1e6) return Math.round(b / 1024) + " K";
+  if (b < 1e9) return (b / 1048576).toFixed(1) + " MB";
+  return (b / 1073741824).toFixed(2) + " GB";
+}
+function sizeOf(id) { const n = FS[id]; return n.children ? n.children.reduce((s, c) => s + sizeOf(c), 0) : (n.size || 0); }
+const isBox = n => !!n.children && n.kind !== "desk";
+const fixed = n => ["disk", "home", "trash", "desk"].includes(n.kind);
+function pathOf(id) { const p = []; let n = FS[FS[id].parent]; while (n && n.kind !== "desk") { p.unshift(n.name); n = FS[n.parent]; } return p.join(" ▸ ") || "Desktop"; }
+
+/* ============================================================ state */
+const S = {
+  z: 10, wins: new Map(), front: null, active: "tracker", running: ["tracker"], hidden: new Set(), started: { tracker: Date.now() - 7 * 60e3 },
+  sel: null, selWin: null, balloons: false, sounds: true, liveDrag: true, dblShade: true, menus: [], modal: null,
+  recentApps: [], recentDocs: [], vol: 5, accent: "lavender", hilite: "lavender", pattern: "kosmos", font: "charcoal",
+  bootAt: Date.now(), hung: false,
+};
+const ACCENTS = {
+  lavender: ["#c8c8f2", "#6b6bc4", "#3c3c96"], blue: ["#c4d4f6", "#3d6ad8", "#1d3f9c"], graphite: ["#d6d9de", "#7c8490", "#4a515c"],
+  teal: ["#c2e6e4", "#2f9090", "#1b5f5e"], gold: ["#f3e2b4", "#c99a2e", "#8a6614"], rose: ["#f1cfdb", "#c25a7c", "#8a2f50"],
+};
+const HILITES = { lavender: "#ccccff", blue: "#b8d0ff", gold: "#ffe9a8", green: "#c8f0c0", rose: "#ffd0dc", grey: "#d6d6d6" };
+function applyLook() {
+  const a = ACCENTS[S.accent], r = document.documentElement.style;
+  r.setProperty("--acc-l", a[0]); r.setProperty("--acc", a[1]); r.setProperty("--acc-d", a[2]);
+  r.setProperty("--sel", HILITES[S.hilite]);
+  document.body.dataset.pattern = S.pattern;
+  const sys = { charcoal: '"Charcoal","ChicagoFLF","Chicago","Geneva","Lucida Grande","Verdana",sans-serif',
+    geneva: '"Geneva","Verdana","Lucida Grande",sans-serif', plex: '"IBM Plex Sans","Helvetica Neue",Arial,sans-serif' }[S.font];
+  r.setProperty("--sys", sys);
+}
+
+/* ============================================================ sound */
+let AC = null;
+function tone(freqs, dur, type = "square", gain = .05) {
+  if (!S.sounds || S.vol === 0) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const t = AC.currentTime;
+    freqs.forEach((f, i) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+      const at = t + i * dur, v = gain * S.vol / 7;
+      g.gain.setValueAtTime(v, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.start(at); o.stop(at + dur + .01);
+    });
+  } catch (e) { /* no audio here: the page works silently */ }
+}
+const beep = () => tone([880, 660], .09);
+const tick = () => tone([2400], .012, "square", .02);
+const whoosh = () => tone([520, 390], .04, "triangle", .04);
+
+/* ============================================================ windows */
+function topWin(filter = () => true) {
+  let best = null;
+  for (const w of S.wins.values()) if (!S.hidden.has(w.app) && filter(w) && (!best || +w.el.style.zIndex > +best.el.style.zIndex)) best = w;
+  return best;
+}
+function winsOf(app) { return [...S.wins.values()].filter(w => w.app === app); }
+
+function makeWin(o) {
+  if (S.wins.has(o.key)) { const w = S.wins.get(o.key); S.hidden.delete(w.app); applyHidden(); focusWin(w); return w; }
+  const el = document.createElement("div");
+  el.className = "win " + (o.cls || "");
+  const W = innerWidth, H = innerHeight;
+  let w0 = Math.min(o.w, W - 16), h0 = Math.min(o.h, H - 40);
+  let x = o.x != null ? o.x : 60 + (S.wins.size % 6) * 24, y = o.y != null ? o.y : 52 + (S.wins.size % 6) * 22;
+  x = clamp(x, 4, Math.max(4, W - w0 - 4)); y = clamp(y, 24, Math.max(24, H - h0 - 8));
+  Object.assign(el.style, { left: x + "px", top: y + "px", width: w0 + "px", height: h0 + "px" });
+  el.innerHTML = `<div class="tb"><span class="box close" data-tip="Close box. Click it to close this window."></span><div class="bar"><span class="title"></span></div>` +
+    (o.zoom !== false ? `<span class="box zoom" data-tip="Zoom box. Click it to make the window as large as what it holds, and again to put it back."></span>` : "") +
+    `<span class="box shade" data-tip="Collapse box. Click it to roll the window up into its title bar."></span></div>` +
+    (o.header ? `<div class="hdr"></div>` : "") + `<div class="body"></div>` + (o.grow !== false ? `<div class="grow" data-tip="Size box. Drag it to change the window's size."></div>` : "") +
+    (o.footer ? `<div class="footer"></div>` : "");
+  document.getElementById("desktop").appendChild(el);
+  const w = { key: o.key, app: o.app, el, body: $(".body", el), hdr: $(".hdr", el), foot: $(".footer", el), onClose: o.onClose, minW: o.minW || 160, minH: o.minH || 90 };
+  w.setTitle = t => { w.title = t; $(".title", el).textContent = t; };
+  w.setTitle(o.title);
+  S.wins.set(o.key, w);
+  wireWin(w);
+  if (o.fill) o.fill(w);
+  focusWin(w);
+  return w;
+}
+
+function wireWin(w) {
+  const el = w.el, tb = $(".tb", el);
+  el.addEventListener("mousedown", e => { if (S.modal) return; if (S.front !== w) focusWin(w); }, true);
+  $(".close", el).addEventListener("click", () => { if (w.app === "fragile" && S.hung) return beep(); closeWin(w); });
+  const z = $(".zoom", el); if (z) z.addEventListener("click", () => zoomWin(w));
+  $(".shade", el).addEventListener("click", () => shadeWin(w));
+  tb.addEventListener("dblclick", e => { if (!e.target.classList.contains("box") && S.dblShade) shadeWin(w); });
+  tb.addEventListener("mousedown", e => {
+    if (e.button !== 0 || e.target.classList.contains("box")) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
+    let ol = null;
+    if (!S.liveDrag) { ol = document.createElement("div"); ol.className = "outline"; Object.assign(ol.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" }); document.body.appendChild(ol); }
+    const move = ev => {
+      const nx = clamp(ev.clientX - ox, 40 - r.width, innerWidth - 40), ny = clamp(ev.clientY - oy, 21, innerHeight - 20);
+      if (ol) { ol.style.left = nx + "px"; ol.style.top = ny + "px"; } else { el.style.left = nx + "px"; el.style.top = ny + "px"; }
+    };
+    const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); if (ol) { el.style.left = ol.style.left; el.style.top = ol.style.top; ol.remove(); } remember(w); };
+    addEventListener("mousemove", move); addEventListener("mouseup", up);
+  });
+  const g = $(".grow", el);
+  if (g) g.addEventListener("mousedown", e => {
+    e.preventDefault(); e.stopPropagation();
+    const r = el.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+    const move = ev => {
+      el.style.width = Math.max(w.minW, r.width + ev.clientX - sx) + "px";
+      el.style.height = Math.max(w.minH, r.height + ev.clientY - sy) + "px";
+      if (w.onResize) w.onResize();
+    };
+    const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); remember(w); if (w.onResize) w.onResize(); };
+    addEventListener("mousemove", move); addEventListener("mouseup", up);
+  });
+}
+// A folder's window remembers where it was and how big: Tracker is spatial.
+function remember(w) { if (w.folder) FS[w.folder].rect = { x: w.el.offsetLeft, y: w.el.offsetTop, w: w.el.offsetWidth, h: w.el.offsetHeight }; }
+function zoomWin(w) {
+  const el = w.el;
+  if (w.zoomed) { Object.assign(el.style, w.zoomed); w.zoomed = null; }
+  else {
+    w.zoomed = { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height };
+    const W = Math.min(innerWidth - 120, w.idealW || 760), H = Math.min(innerHeight - 70, w.idealH || 560);
+    Object.assign(el.style, { left: clamp(el.offsetLeft, 6, innerWidth - W - 6) + "px", top: "26px", width: W + "px", height: H + "px" });
+  }
+  remember(w); if (w.onResize) w.onResize(); tick();
+}
+function shadeWin(w) { w.el.classList.toggle("shaded"); whoosh(); }
+function focusWin(w) {
+  if (!w) return;
+  S.z += 1; w.el.style.zIndex = S.z;
+  for (const x of S.wins.values()) x.el.classList.toggle("active", x === w);
+  if (S.selWin !== w && S.sel) { S.sel = null; S.selWin = null; $$(".icon.sel, tr.row.sel").forEach(x => x.classList.remove("sel")); }
+  S.front = w;
+  if (S.active !== w.app) S.active = w.app;
+  renderMenubar();
+  if (w.onFocus) w.onFocus();
+}
+function closeWin(w, quitting) {
+  if (!S.wins.has(w.key)) return;
+  if (w.onClose) w.onClose();
+  w.el.remove(); S.wins.delete(w.key);
+  if (S.selWin === w) { S.sel = null; S.selWin = null; }
+  if (quitting && S.front === w) S.front = null;
+  if (w.folder) renderAll();
+  if (quitting) return;
+  if (S.front === w) {
+    S.front = null;
+    const mine = topWin(x => x.app === w.app);
+    if (mine) return focusWin(mine);
+    if (APPS[w.app].quitOnClose) return quit(w.app);
+    for (const x of S.wins.values()) x.el.classList.remove("active");
+    renderMenubar();
+  }
+}
+function applyHidden() { for (const w of S.wins.values()) w.el.style.display = S.hidden.has(w.app) ? "none" : ""; }
+function activate(app) {
+  S.hidden.delete(app); applyHidden();
+  const w = topWin(x => x.app === app);
+  if (w) { for (const x of winsOf(app)) { S.z++; x.el.style.zIndex = S.z; } focusWin(w); }
+  else { S.active = app; S.front = null; for (const x of S.wins.values()) x.el.classList.remove("active"); renderMenubar(); }
+}
+function hideApp(app) {
+  if (app === "tracker" && S.running.length === 1) return;
+  S.hidden.add(app); applyHidden();
+  if (S.active === app) {
+    const w = topWin(); if (w) focusWin(w); else activate("tracker");
+  }
+  renderMenubar();
+}
+
+/* ============================================================ applications */
+const APPS = {
+  tracker: { name: "Tracker", icon: "tracker", mem: 22, cpu: .6, menus: trackerMenus, needs: "the file system, the display" },
+  write: { name: "Write", icon: "write", mem: 26, cpu: .2, open: openWrite, menus: writeMenus, needs: "the file system, the display" },
+  calc: { name: "Calculator", icon: "calc", mem: 5, cpu: 0, open: openCalc, menus: () => basicMenus("calc"), quitOnClose: true, needs: "the display" },
+  orbits: { name: "Orbits", icon: "orbits", mem: 48, cpu: 8, open: openOrbits, menus: orbitsMenus, quitOnClose: true, needs: "the display, the GPU" },
+  player: { name: "Player", icon: "player", mem: 31, cpu: 2, open: openPlayer, menus: playerMenus, quitOnClose: true, needs: "the file system, the display, sound (above every program)" },
+  term: { name: "Terminal", icon: "term", mem: 12, cpu: .1, open: openTerm, menus: () => basicMenus("term"), quitOnClose: true, needs: "the file system, the display, the processes list" },
+  fragile: { name: "Fragile", icon: "fragile", mem: 9, cpu: 0, open: openFragile, menus: fragileMenus, quitOnClose: true, needs: "the display, and nothing else" },
+  appearance: { name: "Appearance", icon: "appearance", mem: 7, cpu: 0, open: openAppearance, menus: () => basicMenus("appearance"), quitOnClose: true, needs: "the display, your preferences" },
+};
+function launch(app, arg) {
+  if (!S.running.includes(app)) { S.running.push(app); S.started[app] = Date.now(); }
+  S.recentApps = [app, ...S.recentApps.filter(a => a !== app)].slice(0, 6);
+  S.hidden.delete(app); applyHidden();
+  APPS[app].open(arg);
+  renderStrip();
+}
+function quit(app) {
+  if (app === "tracker") return;
+  const A = APPS[app];
+  if (A.onQuit) A.onQuit();
+  for (const w of winsOf(app)) closeWin(w, true);
+  S.running = S.running.filter(a => a !== app);
+  S.hidden.delete(app);
+  if (S.active === app || !S.front || !S.wins.has(S.front.key)) {
+    S.front = null;
+    const w = topWin(); if (w) focusWin(w); else activate("tracker");
+  }
+  renderMenubar(); renderStrip();
+}
+
+/* ============================================================ menus */
+const SEP = { sep: 1 };
+const K = MAC ? "⌘" : "Ctrl+";
+function kosmosMenu() {
+  const appItem = (a) => ({ t: APPS[a].name, ico: APPS[a].icon, a: () => launch(a) });
+  return { logo: true, items: [
+    { t: "About This Kosmos…", a: openAbout },
+    SEP,
+    appItem("calc"),
+    { t: "Control Panels", ico: "folder", sub: [
+      { t: "Appearance", ico: "appearance", a: () => launch("appearance") },
+      { t: "Memory and Processors", ico: "server", a: openAbout },
+      { t: "Sound", ico: "player", a: () => launch("appearance", "sound") },
+    ] },
+    appItem("fragile"), appItem("orbits"), appItem("player"),
+    { t: "Recent Applications", ico: "folder", sub: S.recentApps.length ? S.recentApps.map(appItem) : [{ t: "None yet", d: true }] },
+    { t: "Recent Documents", ico: "folder", sub: S.recentDocs.length ? S.recentDocs.filter(id => FS[id]).map(id => ({ t: FS[id].name, ico: "doc", a: () => openNode(id) })) : [{ t: "None yet", d: true }] },
+    appItem("term"), appItem("write"),
+  ] };
+}
+function appMenu() {
+  const A = APPS[S.active];
+  return { appmenu: true, items: [
+    { t: `Hide ${A.name}`, k: "H", a: () => hideApp(S.active), d: S.active === "tracker" && S.running.length === 1 },
+    { t: "Hide Others", a: () => { S.running.forEach(a => { if (a !== S.active) S.hidden.add(a); }); applyHidden(); renderMenubar(); } },
+    { t: "Show All", a: () => { S.hidden.clear(); applyHidden(); renderMenubar(); } },
+    SEP,
+    ...S.running.map(a => ({ t: APPS[a].name, ico: APPS[a].icon, c: a === S.active, dim: S.hidden.has(a), a: () => activate(a) })),
+    SEP,
+    { t: "Force Quit…", k: "⌥⎋", key: "Escape", alt: true, a: forceQuitDialog },
+  ] };
+}
+const editMenu = (sel) => ({ t: "Edit", items: [
+  { t: "Undo", k: "Z", d: true }, SEP,
+  { t: "Cut", k: "X", d: !sel }, { t: "Copy", k: "C", d: !sel }, { t: "Paste", k: "V", d: true }, { t: "Clear", d: true },
+  { t: "Select All", k: "A", a: sel ? () => sel() : null, d: !sel },
+] });
+function basicMenus(app) {
+  return [
+    { t: "File", items: [{ t: "Close", k: "W", a: () => S.front && closeWin(S.front), d: !S.front }, SEP, { t: "Quit", k: "Q", a: () => quit(app) }] },
+    editMenu(), helpMenu(),
+  ];
+}
+function helpMenu() {
+  return { t: "Help", items: [
+    { t: "Help Center", k: "?", a: () => openNode("readme") },
+    SEP,
+    { t: S.balloons ? "Hide Balloons" : "Show Balloons", a: () => { S.balloons = !S.balloons; hideBalloon(); renderMenubar(); } },
+    SEP,
+    { t: "What Kosmos adds to this", a: () => openNode("readme") },
+  ] };
+}
+
+function renderMenubar() {
+  const app = APPS[S.active];
+  S.menus = [kosmosMenu(), ...app.menus(), appMenu()];
+  const mb = $("#menubar");
+  mb.innerHTML = "";
+  S.menus.forEach((m, i) => {
+    if (m.appmenu) { const sp = document.createElement("div"); sp.className = "sp"; mb.appendChild(sp); const c = document.createElement("div"); c.className = "mt clock"; c.id = "clock"; c.dataset.tip = "The time. Click it for the date."; mb.appendChild(c); updateClock(); }
+    const t = document.createElement("div");
+    t.className = "mt"; t.dataset.idx = i;
+    if (m.logo) { t.innerHTML = icon("logo", 17); t.dataset.tip = "The Kosmos menu: About This Kosmos, the control panels, your applications, what you used recently."; }
+    else if (m.appmenu) { t.innerHTML = icon(app.icon, 16) + `<span>${esc(app.name)}</span>`; t.dataset.tip = "The Application menu. Every running application is here: choose one to bring it forward, or hide the ones you are not using."; }
+    else t.textContent = m.t;
+    mb.appendChild(t);
+  });
+}
+let CL = { date: false };
+function updateClock() {
+  const c = $("#clock"); if (!c) return;
+  const d = new Date();
+  c.textContent = CL.date ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+    : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+setInterval(updateClock, 10e3);
+
+const MS = { open: -1, stack: [] };
+function closeMenus() {
+  MS.stack.forEach(m => m.remove()); MS.stack = [];
+  $$("#menubar .mt.open").forEach(t => t.classList.remove("open"));
+  MS.open = -1;
+}
+function openMenu(i) {
+  if (MS.open === i) return;
+  closeMenus();
+  const t = $(`#menubar .mt[data-idx="${i}"]`); if (!t) return;
+  t.classList.add("open"); MS.open = i;
+  const r = t.getBoundingClientRect();
+  const m = buildMenu(S.menus[i].items, 0);
+  document.body.appendChild(m);
+  let x = r.left; const mw = m.offsetWidth;
+  if (x + mw > innerWidth - 2) x = Math.max(2, r.right - mw);
+  m.style.left = x + "px"; m.style.top = "20px";
+}
+function popupMenu(items, x, y, above) {
+  closeMenus();
+  const m = buildMenu(items, 0);
+  document.body.appendChild(m);
+  m.style.left = clamp(x, 2, innerWidth - m.offsetWidth - 2) + "px";
+  m.style.top = (above ? y - m.offsetHeight : y) + "px";
+  MS.open = -2;
+}
+function buildMenu(items, level) {
+  const m = document.createElement("div");
+  m.className = "menu";
+  items.forEach(it => {
+    if (it.sep) { const s = document.createElement("div"); s.className = "msep"; m.appendChild(s); return; }
+    const d = document.createElement("div");
+    d.className = "mi" + (it.d ? " dis" : "") + (it.sub ? " sub" : "");
+    d.innerHTML = (it.c ? `<span class="chk">✓</span>` : "") + (it.ico ? `<span class="ico" style="${it.dim ? "opacity:.45" : ""}">${icon(it.ico, 16)}</span>` : "") +
+      `<span>${esc(it.t)}</span>` + (it.k ? `<span class="k">${K}${it.k}</span>` : "");
+    d.addEventListener("mouseenter", () => {
+      $$(".mi.on", m).forEach(x => x.classList.remove("on"));
+      // a submenu below this level closes when another item is pointed at
+      while (MS.stack.length > level + 1) MS.stack.pop().remove();
+      if (it.d) return;
+      d.classList.add("on");
+      if (it.sub) {
+        const r = d.getBoundingClientRect();
+        const sm = buildMenu(it.sub, level + 1);
+        document.body.appendChild(sm);
+        let x = r.right - 2; if (x + sm.offsetWidth > innerWidth) x = r.left - sm.offsetWidth + 2;
+        sm.style.left = x + "px"; sm.style.top = clamp(r.top - 4, 21, innerHeight - sm.offsetHeight - 2) + "px";
+      }
+    });
+    d.addEventListener("mouseup", e => {
+      e.stopPropagation();
+      if (it.d || it.sub || !it.a) return;
+      choose(d, it.a);
+    });
+    m.appendChild(d);
+  });
+  MS.stack[level] = m;
+  return m;
+}
+// A chosen item blinks, as it did, and then does what it says.
+function choose(d, act) {
+  tick();
+  let n = 0;
+  const iv = setInterval(() => {
+    d.classList.toggle("on");
+    if (++n === 4) { clearInterval(iv); closeMenus(); act(); }
+  }, 45);
+}
+let menuDownAt = 0;
+$("#menubar").addEventListener("mousedown", e => {
+  if (S.modal) { beep(); return; }
+  const t = e.target.closest(".mt");
+  if (!t) return;
+  if (t.id === "clock") { CL.date = !CL.date; updateClock(); return; }
+  e.preventDefault();
+  const i = +t.dataset.idx;
+  if (MS.open === i) { closeMenus(); return; }
+  menuDownAt = Date.now();
+  openMenu(i);
+});
+$("#menubar").addEventListener("mouseover", e => {
+  const t = e.target.closest(".mt"); if (!t || t.id === "clock") return;
+  if (MS.open >= 0) openMenu(+t.dataset.idx);
+});
+addEventListener("mousedown", e => { if (MS.open !== -1 && !e.target.closest(".menu") && !e.target.closest("#menubar")) closeMenus(); });
+// Press, drag to an item, release - as Mac OS 9 menus also worked.
+addEventListener("mouseup", e => {
+  if (MS.open >= 0 && Date.now() - menuDownAt > 350 && !e.target.closest(".menu") && !e.target.closest("#menubar")) closeMenus();
+});
+
+function allItems(list = S.menus.flatMap(m => m.items)) { return list.flatMap(it => it.sub ? allItems(it.sub) : [it]); }
+addEventListener("keydown", e => {
+  if (e.key === "Escape" && e.altKey && isCmd(e)) { e.preventDefault(); forceQuitDialog(); return; }
+  if (S.modal) { S.modal.key(e); return; }
+  if (e.key === "Escape" && MS.open !== -1) { closeMenus(); return; }
+  const editing = e.target.matches("textarea,input");
+  if (isCmd(e)) {
+    const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    if (editing && ["A", "C", "V", "X", "Z"].includes(k)) return;
+    const it = allItems().find(it => !it.d && it.a && (it.key ? it.key === e.key : it.k === k) && !!it.alt === e.altKey);
+    if (it) {
+      e.preventDefault();
+      const idx = S.menus.findIndex(m => allItems(m.items).includes(it));
+      const t = $(`#menubar .mt[data-idx="${idx}"]`);
+      if (t) { t.classList.add("open"); setTimeout(() => t.classList.remove("open"), 110); }
+      tick(); it.a();
+    }
+    return;
+  }
+  if (editing) return;
+  if (S.active === "tracker") trackerKey(e);
+  if (S.active === "calc" && S.front && S.front.app === "calc") calcKey(e);
+  if (S.active === "player" && e.key === " ") { e.preventDefault(); PL.toggle(); }
+});
+
+/* ============================================================ alerts */
+function alertBox({ icon: ic = "caution", msg, sub = "", buttons = [{ t: "OK", def: true }], html = "", onOpen }) {
+  closeMenus(); hideBalloon();
+  const shield = $("#shield"); shield.classList.add("on");
+  const a = document.createElement("div");
+  a.className = "alert";
+  a.innerHTML = `<div class="in"><div class="ai">${icon(ic)}</div><div class="msg">${msg}</div>${sub ? `<div class="sub">${sub}</div>` : ""}${html ? `<div class="sub">${html}</div>` : ""}<div class="btns"></div></div>`;
+  const bx = $(".btns", a);
+  const done = (b) => { a.remove(); shield.classList.remove("on"); S.modal = null; if (b && b.a) b.a(a); };
+  buttons.forEach(b => {
+    const x = document.createElement("button");
+    x.className = "btn" + (b.def ? " def" : "") + (b.left ? " left" : "");
+    x.textContent = b.t;
+    x.addEventListener("click", () => done(b));
+    bx.appendChild(x);
+  });
+  document.body.appendChild(a);
+  a.style.left = Math.round((innerWidth - a.offsetWidth) / 2) + "px";
+  a.style.top = Math.round(Math.max(60, innerHeight * .28 - a.offsetHeight / 2)) + "px";
+  beep();
+  S.modal = { el: a, key: e => {
+    if (e.key === "Enter") { e.preventDefault(); const b = buttons.find(b => b.def); if (b) press(b); }
+    if (e.key === "Escape" || (isCmd(e) && e.key === ".")) { e.preventDefault(); const b = buttons.find(b => b.cancel); if (b) press(b); }
+  } };
+  const press = b => { const x = [...bx.children][buttons.indexOf(b)]; x.classList.add("press"); setTimeout(() => done(b), 110); };
+  if (onOpen) onOpen(a);
+  return a;
+}
+$("#shield").addEventListener("mousedown", () => beep());
+
+/* ============================================================ Tracker */
+function openNode(id) {
+  const n = FS[id]; if (!n) return;
+  if (n.parent === "trash" && n.kind !== "folder") {
+    return alertBox({ icon: "note", msg: `“${esc(n.name)}” is in the Trash.`, sub: "Drag it out of the Trash, or choose Put Away, to open it." });
+  }
+  if (isBox(n)) return openFolder(id);
+  if (n.kind === "app") return launch(n.app);
+  if (n.kind === "doc") { S.recentDocs = [id, ...S.recentDocs.filter(x => x !== id)].slice(0, 6); return launch("write", id); }
+  if (n.kind === "song" || n.kind === "movie") { S.recentDocs = [id, ...S.recentDocs.filter(x => x !== id)].slice(0, 6); return launch("player", id); }
+  if (n.kind === "kit") return alertBox({ icon: "note", msg: `“${esc(n.name)}” is a kit.`, sub: "A kit is code an application runs inside its own memory, so it does not open by itself. Get Info says which applications use it." });
+  if (n.kind === "server" || n.kind === "driver") return alertBox({ icon: "note", msg: `“${esc(n.name)}” is already running.`, sub: `A ${n.kind} is started by Kosmos and answers whoever was given it. It has no window. About This Kosmos shows what it is using.` });
+}
+function openFolder(id) {
+  const n = FS[id];
+  const r = n.rect || { x: 80 + (NID % 5) * 26, y: 70 + (NID % 5) * 20, w: 440, h: 270 };
+  const w = makeWin({ key: "f:" + id, app: "tracker", title: n.name, x: r.x, y: r.y, w: r.w, h: r.h, header: true, cls: "tracker",
+    fill: w => { w.folder = id; w.idealW = 620; w.idealH = 420; renderFolder(w); } });
+  renderDesktop();
+  return w;
+}
+function autoPos(parentId, i, cols) { return { x: 14 + (i % cols) * 84, y: 10 + Math.floor(i / cols) * 74 }; }
+function iconHTML(id, inWin) {
+  const n = FS[id];
+  const opened = n.children && S.wins.has("f:" + id);
+  const sel = S.sel === id && (inWin ? S.selWin && S.selWin.folder === FS[id].parent : !S.selWin);
+  return `<div class="icon${sel ? " sel" : ""}${opened ? " opened" : ""}" data-id="${id}" style="left:${n.pos.x}px;top:${n.pos.y}px" data-tip="${esc(tipFor(n))}"><div class="g">${iconOf(n)}</div><div class="lb"><span>${esc(n.name)}</span></div></div>`;
+}
+function tipFor(n) {
+  if (n.kind === "trash") return "The Trash. Drag things here to throw them away; Special ▸ Empty Trash removes them for good.";
+  if (n.kind === "disk") return "Kosmos HD: the disk Kosmos runs from. Double-click it to see what it holds.";
+  if (n.kind === "home") return "Home: your own files. Everything you make lives here.";
+  if (n.kind === "app") return `${n.name}, an application. Double-click it to open it; it runs in memory of its own.`;
+  return `${n.name}: ${KINDS[n.kind]}. Double-click to open it.`;
+}
+function renderFolder(w) {
+  const n = FS[w.folder];
+  const kids = n.children;
+  const avail = (n.kind === "disk" || n.kind === "home") ? n.free : (topOf(w.folder).free || "");
+  if (w.hdr) w.hdr.textContent = `${kids.length} item${kids.length === 1 ? "" : "s"}${avail ? ", " + avail + " available" : ""}`;
+  const sl = w.body.scrollLeft, st = w.body.scrollTop;
+  if (n.view === "icon") {
+    const cols = Math.max(1, Math.floor((w.body.clientWidth || 400) / 84));
+    kids.forEach((k, i) => { if (!FS[k].pos) FS[k].pos = autoPos(w.folder, i, cols); });
+    const maxX = Math.max(0, ...kids.map(k => FS[k].pos.x + 80)), maxY = Math.max(0, ...kids.map(k => FS[k].pos.y + 70));
+    w.body.innerHTML = `<div class="iconview" style="width:${maxX + 10}px;height:${maxY + 10}px">${kids.map(k => iconHTML(k, true)).join("")}</div>`;
+  } else {
+    w.expanded = w.expanded || new Set();
+    const sortKey = n.sort || "name";
+    const rows = [];
+    const walk = (ids, depth) => {
+      const sorted = [...ids].sort((a, b) => {
+        const A = FS[a], B = FS[b];
+        if (sortKey === "size") return sizeOf(b) - sizeOf(a);
+        if (sortKey === "kind") return KINDS[A.kind].localeCompare(KINDS[B.kind]) || A.name.localeCompare(B.name);
+        return A.name.localeCompare(B.name);
+      });
+      sorted.forEach(id => {
+        const c = FS[id], open = w.expanded.has(id);
+        const sel = S.sel === id && S.selWin === w;
+        rows.push(`<tr class="row${sel ? " sel" : ""}" data-id="${id}"><td style="padding-left:${6 + depth * 16}px">${c.children ? `<span class="tri${open ? " open" : ""}" data-tri="${id}" data-tip="Click the triangle to see what is inside without opening a window."></span>` : `<span class="tri" style="visibility:hidden"></span>`}<span class="mini">${iconOf(c, 16)}</span><span class="nm">${esc(c.name)}</span></td><td class="${sortKey === "date" ? "sortcol" : ""}">${esc(c.date)}</td><td class="${sortKey === "size" ? "sortcol" : ""}">${c.children ? "—" : fmtSize(c.size)}</td><td class="${sortKey === "kind" ? "sortcol" : ""}">${KINDS[c.kind]}</td></tr>`);
+        if (c.children && open) walk(c.children, depth + 1);
+      });
+    };
+    walk(kids, 0);
+    const th = (k, t) => `<th data-sort="${k}" class="${sortKey === k ? "sorted" : ""}">${t}</th>`;
+    w.body.innerHTML = `<table class="list"><thead><tr>${th("name", "Name")}${th("date", "Date Modified")}${th("size", "Size")}${th("kind", "Kind")}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+  w.body.scrollLeft = sl; w.body.scrollTop = st;
+}
+function topOf(id) { let n = FS[id]; while (n.parent && FS[n.parent].kind !== "desk") n = FS[n.parent]; return n; }
+function renderDesktop() {
+  const d = $("#desktop");
+  $$(":scope > .icon", d).forEach(x => x.remove());
+  const kids = FS.desk.children;
+  kids.forEach((k, i) => {
+    const n = FS[k];
+    if (!n.pos) n.pos = n.kind === "trash" ? { x: innerWidth - 88, y: innerHeight - 96 } : { x: innerWidth - 88, y: 34 + i * 78 };
+  });
+  d.insertAdjacentHTML("afterbegin", kids.map(k => iconHTML(k, false)).join(""));
+}
+function renderAll() {
+  renderDesktop();
+  for (const w of S.wins.values()) if (w.folder) {
+    if (!FS[w.folder] || isGone(w.folder)) { closeWin(w, true); continue; }
+    w.setTitle(FS[w.folder].name); renderFolder(w);
+  }
+  renderMenubar();
+}
+function isGone(id) { let n = FS[id]; while (n) { if (n.kind === "desk") return false; n = FS[n.parent]; } return true; }
+
+function setSel(id, w) {
+  S.sel = id; S.selWin = w || null;
+  $$(".icon.sel, tr.row.sel").forEach(x => x.classList.remove("sel"));
+  if (id) {
+    const root = w ? w.body : $("#desktop");
+    const el = w ? $(`[data-id="${id}"]`, root) : $(`:scope > .icon[data-id="${id}"]`, root);
+    if (el) el.classList.add("sel");
+  }
+  renderMenubar();
+}
+
+// Pointing, choosing, dragging - icons and rows alike.
+document.addEventListener("mousedown", e => {
+  if (S.modal || e.button !== 0) return;
+  const ae = document.activeElement;
+  if (ae && ae.matches(".icon input, .row input") && e.target !== ae) ae.blur();
+  const tri = e.target.closest("[data-tri]");
+  const winEl = e.target.closest(".win");
+  const w = winEl ? [...S.wins.values()].find(x => x.el === winEl) : null;
+  if (tri && w) { e.preventDefault(); const id = tri.dataset.tri; w.expanded.has(id) ? w.expanded.delete(id) : w.expanded.add(id); renderFolder(w); return; }
+  const th = e.target.closest("th[data-sort]");
+  if (th && w && w.folder) { FS[w.folder].sort = th.dataset.sort; renderFolder(w); return; }
+  const ic = e.target.closest(".icon, tr.row");
+  if (!ic) {
+    if (e.target.id === "desktop") { setSel(null); deskFocus(); }
+    else if (w && w.folder && e.target.closest(".body")) setSel(null, w);
+    return;
+  }
+  if (e.target.matches("input")) return;
+  e.preventDefault();
+  const id = ic.dataset.id;
+  if (!w) deskFocus();
+  setSel(id, w && w.folder ? w : null);
+  const sx = e.clientX, sy = e.clientY, r = ic.getBoundingClientRect(), offX = sx - r.left, offY = sy - r.top;
+  let ghost = null, over = null;
+  const move = ev => {
+    if (!ghost && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+    if (!ghost) {
+      ghost = document.createElement("div"); ghost.className = "ghost";
+      ghost.innerHTML = `<div class="icon" style="position:static">${$(".g", ic) ? $(".g", ic).outerHTML : `<div class="g">${iconOf(FS[id])}</div>`}<div class="lb"><span>${esc(FS[id].name)}</span></div></div>`;
+      document.body.appendChild(ghost);
+    }
+    ghost.style.left = (ev.clientX - (ic.matches(".icon") ? offX : 38)) + "px";
+    ghost.style.top = (ev.clientY - (ic.matches(".icon") ? offY : 16)) + "px";
+    ghost.style.display = "none";
+    const t = document.elementFromPoint(ev.clientX, ev.clientY);
+    ghost.style.display = "";
+    const tgt = t && t.closest(".icon[data-id], tr.row[data-id]");
+    const okT = tgt && tgt.dataset.id !== id && FS[tgt.dataset.id].children ? tgt : null;
+    if (over !== okT) { if (over) over.classList.remove("droptarget"); over = okT; if (over) over.classList.add("droptarget"); }
+  };
+  const up = ev => {
+    removeEventListener("mousemove", move); removeEventListener("mouseup", up);
+    if (over) over.classList.remove("droptarget");
+    if (!ghost) return;
+    ghost.remove();
+    drop(id, ev.clientX, ev.clientY, ic.matches(".icon") ? offX : 38, ic.matches(".icon") ? offY : 16);
+  };
+  addEventListener("mousemove", move); addEventListener("mouseup", up);
+});
+document.addEventListener("dblclick", e => {
+  if (S.modal) return;
+  const ic = e.target.closest(".icon[data-id], tr.row[data-id]");
+  if (ic && !e.target.closest("[data-tri]")) { tick(); openNode(ic.dataset.id); }
+});
+function deskFocus() {
+  S.active = "tracker"; S.front = null;
+  for (const x of S.wins.values()) x.el.classList.remove("active");
+  renderMenubar();
+}
+function drop(id, x, y, offX, offY) {
+  const t = document.elementFromPoint(x, y);
+  if (!t) return;
+  const tIc = t.closest(".icon[data-id], tr.row[data-id]");
+  if (tIc && tIc.dataset.id !== id) {
+    const tn = FS[tIc.dataset.id];
+    if (tn.kind === "trash") return toTrash(id);
+    if (tn.children) return moveInto(id, tn.id);
+  }
+  const winEl = t.closest(".win");
+  if (winEl) {
+    const w = [...S.wins.values()].find(v => v.el === winEl);
+    if (w && w.folder && t.closest(".body")) {
+      const view = $(".iconview", w.body);
+      let pos = null;
+      if (view) { const r = view.getBoundingClientRect(); pos = { x: Math.max(0, Math.round(x - r.left - offX)), y: Math.max(0, Math.round(y - r.top - offY)) }; }
+      return moveInto(id, w.folder, pos);
+    }
+    return;
+  }
+  if (t.id === "desktop" || t.closest("#desktop")) moveInto(id, "desk", { x: Math.round(x - offX), y: Math.max(24, Math.round(y - offY)) });
+}
+function moveInto(id, dest, pos) {
+  const n = FS[id];
+  if (fixed(n) && dest !== n.parent) {
+    if (dest === "trash" || FS[dest].kind === "trash") return toTrash(id);
+    return;
+  }
+  for (let p = dest; p; p = FS[p].parent) if (p === id) return alertBox({ icon: "stop", msg: `“${esc(n.name)}” cannot go inside itself.` });
+  if (dest !== n.parent) {
+    const from = FS[n.parent]; from.children = from.children.filter(c => c !== id);
+    FS[dest].children.push(id); n.parent = dest;
+    if (dest === "trash") n.from = from.id;
+    if (S.selWin && S.selWin.folder !== dest) S.sel = null;
+  }
+  n.pos = pos || null;
+  if (!n.pos) delete n.pos;
+  renderAll();
+}
+function toTrash(id) {
+  const n = FS[id];
+  if (n.kind === "disk") return alertBox({ icon: "caution", msg: "Kosmos HD cannot be put away.", sub: "Kosmos is running from it. A disk you plugged in would be ejected here instead." });
+  if (n.kind === "home") return alertBox({ icon: "caution", msg: "Home cannot go in the Trash.", sub: "It holds everything that is yours. You can throw away what is inside it." });
+  if (n.kind === "trash") return;
+  if (n.kind === "app" && S.running.includes(n.app)) return alertBox({ icon: "caution", msg: `“${esc(n.name)}” is running.`, sub: "Quit it first, then put it in the Trash." });
+  moveInto(id, "trash");
+}
+function putAway(id) { const n = FS[id]; if (!n || n.parent !== "trash") return; moveInto(id, n.from && FS[n.from] && !isGone(n.from) ? n.from : "desk"); }
+function emptyTrash() {
+  const t = FS.trash;
+  if (!t.children.length) return alertBox({ icon: "note", msg: "The Trash is empty." });
+  const count = (ids) => ids.reduce((s, c) => s + 1 + (FS[c].children ? count(FS[c].children) : 0), 0);
+  alertBox({ icon: "caution", msg: `The Trash contains ${count(t.children)} item${count(t.children) === 1 ? "" : "s"}, which use ${fmtSize(sizeOf("trash"))} of disk space.`,
+    sub: "Are you sure you want to remove these items permanently?",
+    buttons: [{ t: "Cancel", cancel: true }, { t: "OK", def: true, a: () => {
+      const del = id => { const n = FS[id]; if (n.children) n.children.forEach(del); delete FS[id]; };
+      t.children.forEach(del); t.children = []; tone([300, 200], .06, "sawtooth", .03); renderAll();
+    } }] });
+}
+function newFolder() {
+  const dest = S.front && S.front.folder ? S.front.folder : "desk";
+  let name = "untitled folder", i = 1;
+  while (FS[dest].children.some(c => FS[c].name === name)) name = "untitled folder " + (++i);
+  const id = mk(name, "folder", {}, []);
+  FS[id].parent = dest; FS[dest].children.push(id);
+  if (dest === "desk") FS[id].pos = { x: innerWidth - 180, y: 40 + (NID % 6) * 70 };
+  renderAll();
+  setSel(id, dest === "desk" ? null : S.front);
+  startRename();
+}
+function startRename() {
+  const id = S.sel; if (!id) return;
+  const n = FS[id]; if (n.kind === "trash") return;
+  const root = S.selWin ? S.selWin.body : $("#desktop");
+  const el = S.selWin ? $(`[data-id="${id}"]`, root) : $(`:scope > .icon[data-id="${id}"]`, root);
+  if (!el) return;
+  const span = el.matches(".icon") ? $(".lb span", el) : $(".nm", el);
+  const inp = document.createElement("input");
+  inp.value = n.name; span.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const commit = ok => { if (done) return; done = true; if (ok && inp.value.trim()) n.name = inp.value.trim().slice(0, 64); renderAll(); };
+  inp.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") commit(true); if (e.key === "Escape") commit(false); });
+  inp.addEventListener("blur", () => commit(true));
+}
+function trackerKey(e) {
+  if (!S.sel) return;
+  if (e.key === "Enter") { e.preventDefault(); startRename(); }
+}
+function duplicate(id) {
+  const n = FS[id]; if (fixed(n)) return;
+  const copyOf = (src, parent) => {
+    const s = FS[src];
+    const { id: _i, name: _n, children: _c, pos: _p, rect: _r, parent: _pa, ...rest } = s;
+    const c = mk(src === id ? s.name + " copy" : s.name, s.kind, rest, s.children ? [] : undefined);
+    if (s.children) s.children.forEach(k => { const cc = copyOf(k, c); FS[cc].parent = c; FS[c].children.push(cc); });
+    return c;
+  };
+  const finish = () => {
+    if (!FS[id]) return;
+    const c = copyOf(id); FS[c].parent = n.parent; FS[n.parent].children.push(c);
+    if (n.pos) FS[c].pos = { x: n.pos.x + 16, y: n.pos.y + 16 };
+    renderAll();
+  };
+  const bytes = sizeOf(id);
+  if (bytes < 50e6) return finish();
+  copyWindow(n.name, bytes, finish);
+}
+// A copy is a window of its own, and nothing waits for it.
+function copyWindow(name, bytes, finish) {
+  const key = "copy:" + (++NID);
+  let pct = 0, iv = null;
+  makeWin({ key, app: "tracker", title: "Copy", w: 360, h: 128, cls: "plain copy", zoom: false, grow: false,
+    onClose: () => clearInterval(iv),
+    fill: w => {
+      w.body.innerHTML = `<div>Copying: <b>${esc(name)}</b></div><div class="rem">Items remaining to be copied: 1</div><div class="bar-track"><div class="bar-fill" style="width:0"></div></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="eta">Working out the time…</span><button class="btn">Stop</button></div>`;
+      const fill = $(".bar-fill", w.body), eta = $(".eta", w.body);
+      $(".btn", w.body).onclick = () => closeWin(w);
+      const total = 7.5;
+      iv = setInterval(() => {
+        pct = Math.min(100, pct + 100 / (total * 10));
+        fill.style.width = pct + "%";
+        eta.textContent = pct < 100 ? `${fmtSize(bytes * pct / 100)} of ${fmtSize(bytes)} · about ${Math.ceil(total * (1 - pct / 100))} seconds` : "Done";
+        if (pct >= 100) { clearInterval(iv); setTimeout(() => { closeWin(w); finish(); }, 250); }
+      }, 100);
+    } });
+}
+function openInfo(id) {
+  const n = FS[id];
+  makeWin({ key: "i:" + id, app: "tracker", title: `${n.name} Info`, w: 300, h: n.kind === "app" ? 390 : 300, cls: "info plain", zoom: false,
+    fill: w => {
+      const A = n.kind === "app" ? APPS[n.app] : null;
+      w.body.innerHTML = `<div style="display:flex;gap:12px;align-items:center">${iconOf(n)}<b style="font:bold 12px var(--sys)">${esc(n.name)}</b></div>
+      <div class="kv"><b>Kind:</b><span>${KINDS[n.kind]}</span><b>Size:</b><span>${fmtSize(sizeOf(id))}${n.children ? `, for ${n.children.length} item${n.children.length === 1 ? "" : "s"}` : ""}</span>
+      <b>Where:</b><span>${esc(pathOf(id))}</span><b>Created:</b><span>${esc(n.date)}</span><b>Modified:</b><span>${esc(n.date)}</span>${n.ver ? `<b>Version:</b><span>${n.ver}</span>` : ""}
+      ${n.kind === "doc" ? `<b>Opens with:</b><span>Write</span>` : ""}${n.kind === "song" || n.kind === "movie" ? `<b>Opens with:</b><span>Player</span>` : ""}</div>
+      ${A ? `<div class="group" style="margin-top:16px"><span class="gt">Memory</span>Kosmos gives an application the memory it asks for, while it runs, and takes it back when it quits. There is no partition to set, and nothing to make larger when it runs out.</div>
+      <div class="group" style="margin-top:16px"><span class="gt">What it can reach</span>${esc(A.needs)}. What it was not given it cannot name, so it cannot touch another application's files or memory.</div>` : ""}
+      ${n.kind === "kit" ? `<div class="group" style="margin-top:16px"><span class="gt">Used by</span>A kit runs inside each application that uses it, in that application's memory. Write, Player and Orbits use ${esc(n.name)}.</div>` : ""}`;
+    } });
+}
+function cleanUp(w, by) {
+  const id = w ? w.folder : "desk";
+  const kids = [...FS[id].children];
+  if (by) kids.sort((a, b) => by === "size" ? sizeOf(b) - sizeOf(a) : by === "kind" ? KINDS[FS[a].kind].localeCompare(KINDS[FS[b].kind]) : FS[a].name.localeCompare(FS[b].name));
+  if (id === "desk") { kids.forEach((k, i) => FS[k].pos = FS[k].kind === "trash" ? { x: innerWidth - 88, y: innerHeight - 96 } : { x: innerWidth - 88, y: 34 + i * 78 }); }
+  else { const cols = Math.max(1, Math.floor(w.body.clientWidth / 84)); FS[id].children = kids; kids.forEach((k, i) => FS[k].pos = autoPos(id, i, cols)); }
+  renderAll();
+}
+function trackerMenus() {
+  const w = S.front && S.front.folder ? S.front : null;
+  const sel = S.sel, sn = sel && FS[sel];
+  const view = w ? FS[w.folder].view : "icon";
+  const setView = v => { if (!w) return; FS[w.folder].view = v; renderFolder(w); renderMenubar(); };
+  return [
+    { t: "File", items: [
+      { t: "New Folder", k: "N", a: newFolder },
+      { t: "Open", k: "O", a: () => openNode(sel), d: !sel },
+      { t: "Print", k: "P", d: true },
+      { t: "Move to Trash", k: "⌫", key: "Backspace", a: () => toTrash(sel), d: !sel || fixed(sn) || sn.parent === "trash" },
+      { t: "Close Window", k: "W", a: () => closeWin(S.front), d: !S.front },
+      SEP,
+      { t: "Get Info", k: "I", a: () => openInfo(sel), d: !sel },
+      { t: "Duplicate", k: "D", a: () => duplicate(sel), d: !sel || fixed(sn) },
+      { t: "Make Alias", k: "M", d: true },
+      { t: "Put Away", k: "Y", a: () => putAway(sel), d: !(sn && sn.parent === "trash") },
+      SEP,
+      { t: "Find…", k: "F", d: true },
+    ] },
+    editMenu(),
+    { t: "View", items: [
+      { t: "as Icons", c: view === "icon", a: () => setView("icon"), d: !w },
+      { t: "as List", c: view === "list", a: () => setView("list"), d: !w },
+      SEP,
+      { t: "Clean Up", a: () => cleanUp(w), d: !!w && view !== "icon" },
+      { t: "Arrange", sub: [{ t: "by Name", a: () => cleanUp(w, "name") }, { t: "by Size", a: () => cleanUp(w, "size") }, { t: "by Kind", a: () => cleanUp(w, "kind") }], d: !!w && view !== "icon" },
+    ] },
+    { t: "Special", items: [
+      { t: "Empty Trash…", a: emptyTrash },
+      SEP,
+      { t: "Eject", k: "E", d: true },
+      { t: "Erase Disk…", d: true },
+      SEP,
+      { t: "Sleep", a: sleep },
+      { t: "Restart", a: () => restart() },
+      { t: "Shut Down", a: shutDownDialog },
+    ] },
+    helpMenu(),
+  ];
+}
+
+/* ============================================================ About This Kosmos */
+const LOAD = { cores: [3, 2, 1, 1], t: 0 };
+function appCpu(a) {
+  if (a === "orbits") return 6 + ORB.speed * 2.5 + Math.random() * 2;
+  if (a === "player") return PL.playing ? 2 + Math.random() * 1.5 : 0.1;
+  if (a === "fragile") return S.hung ? 100 : 0;
+  return APPS[a].cpu * (0.6 + Math.random() * .8);
+}
+function appMem(a) {
+  let m = APPS[a].mem;
+  if (a === "write") m += winsOf("write").length * 4;
+  if (a === "tracker") m += winsOf("tracker").length * 1.5;
+  if (a === "player" && PL.node && FS[PL.node] && FS[PL.node].kind === "movie") m += 140;
+  if (a === "fragile" && S.hung) m += (Date.now() % 4000) / 40;
+  return m;
+}
+const HOMES = { tracker: 0, write: 1, calc: 2, orbits: 1, player: 2, term: 3, fragile: 3, appearance: 0 };
+function sampleLoad() {
+  const c = [2.5 + Math.random() * 2, 1 + Math.random(), .8 + Math.random(), .5 + Math.random()];
+  for (const a of S.running) c[HOMES[a]] += appCpu(a) * (a === "fragile" ? 1 : 1);
+  LOAD.cores = c.map(v => Math.min(100, v));
+}
+setInterval(() => { sampleLoad(); renderStrip(true); updateAbout(); }, 1000);
+function openAbout() {
+  makeWin({ key: "about", app: "tracker", title: "About This Kosmos", w: 520, h: 410, cls: "about plain", zoom: false,
+    fill: w => {
+      w.body.innerHTML = `<div class="top">${icon("logo", 56)}<div><div style="font:bold 24px var(--sys)">Kosmos</div><div>Version ${VERSION} · Nebula, Astra</div><div style="color:#444">© 2026 Diego Cibils</div></div>
+        <div class="kv" style="margin:0 0 0 auto"><b>Built-in Memory:</b><span>16 GB</span><b>In use:</b><span class="inuse"></span><b>Processors:</b><span>4, every application on any of them</span><b>Memory protection:</b><span>every application, always</span></div></div>
+        <div class="cores"></div>
+        <div class="apps"><table><tbody></tbody></table></div>`;
+      updateAbout();
+    } });
+}
+function updateAbout() {
+  const w = S.wins.get("about"); if (!w) return;
+  const sys = 214;
+  const rows = [["Kosmos", "logo", sys, LOAD.cores.reduce((s, v) => s + v, 0) / 4 * .12 + .4, "Nebula and its servers"]]
+    .concat(S.running.map(a => [APPS[a].name, APPS[a].icon, appMem(a), appCpu(a), a === "fragile" && S.hung ? "not answering" : ""]));
+  const used = rows.reduce((s, r) => s + r[2], 0);
+  $(".inuse", w.body).textContent = `${(used / 1024).toFixed(2)} GB, and the rest free`;
+  $(".cores", w.body).innerHTML = LOAD.cores.map((v, i) => `<div class="core">Processor ${i + 1} · ${Math.round(v)}%<div class="bar-track"><div class="bar-fill" style="width:${v}%;${v > 90 ? "background:linear-gradient(#ffb4a8,#d6402a 50%,#8a1f12)" : ""}"></div></div></div>`).join("");
+  const max = 420;
+  $("tbody", w.body).innerHTML = rows.map(r => `<tr><td style="display:flex;gap:6px;align-items:center">${icon(r[1], 16)}${esc(r[0])}${r[4] ? `<span style="color:${r[4] === "not answering" ? "#b0201a" : "#666"}"> — ${r[4]}</span>` : ""}</td><td>${r[2] >= 1024 ? (r[2] / 1024).toFixed(1) + " GB" : Math.round(r[2]) + " MB"}</td><td class="b"><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, r[2] / max * 100)}%"></div></div></td><td style="text-align:right">${r[3] >= 10 ? Math.round(r[3]) : r[3].toFixed(1)}%</td></tr>`).join("");
+}
+
+/* ============================================================ Write */
+let UNTITLED = 0;
+function openWrite(id) {
+  if (!id) {
+    if (S.active !== "write" && winsOf("write").length) return activate("write");
+    id = null;
+  }
+  const n = id ? FS[id] : null;
+  const key = id ? "w:" + id : "w:new" + (++UNTITLED);
+  makeWin({ key, app: "write", title: n ? n.name : (UNTITLED === 1 ? "untitled" : "untitled " + UNTITLED), w: 470, h: 380, cls: "write", x: id === "readme" ? Math.round(innerWidth * .36) : undefined, y: id === "readme" ? 64 : undefined,
+    fill: w => {
+      w.doc = id; w.fontFace = "geneva"; w.fontSize = 12; w.style = new Set();
+      w.body.innerHTML = `<textarea spellcheck="false"></textarea>`;
+      w.ta = $("textarea", w.body); w.ta.value = n ? n.text || "" : "";
+      w.ta.addEventListener("input", () => { if (w.doc && FS[w.doc]) { FS[w.doc].text = w.ta.value; FS[w.doc].size = w.ta.value.length; } w.dirty = !w.doc; });
+      w.onFocus = () => setTimeout(() => w.ta && w.ta.focus({ preventScroll: true }), 0);
+      w.idealW = 640; w.idealH = 620;
+      styleWrite(w);
+    } });
+}
+const FACES = { geneva: ["Geneva", '"Geneva","Verdana",sans-serif'], charcoal: ["Charcoal", 'var(--sys)'], times: ["Times", '"Times New Roman",Times,serif'], palatino: ["Palatino", '"Palatino","Palatino Linotype","Book Antiqua",serif'], monaco: ["Monaco", 'var(--mono)'] };
+function styleWrite(w) {
+  Object.assign(w.ta.style, { fontFamily: FACES[w.fontFace][1], fontSize: w.fontSize + "px", fontWeight: w.style.has("b") ? "bold" : "normal",
+    fontStyle: w.style.has("i") ? "italic" : "normal", textDecoration: w.style.has("u") ? "underline" : "none" });
+  renderMenubar();
+}
+function saveAs(w) {
+  alertBox({ icon: "doc", msg: "Save this document as:", html: `<input class="field sa" style="width:100%;margin:6px 0" value="${esc(w.title)}"><div class="row2">In: <select class="pop where"><option value="${FS.home.children[0]}">Home ▸ Documents</option><option value="desk">Desktop</option></select></div>`,
+    buttons: [{ t: "Cancel", cancel: true }, { t: "Save", def: true, a: a => {
+      const name = $(".sa", a).value.trim() || "untitled", dest = $(".where", a).value;
+      const id = mk(name, "doc", { size: w.ta.value.length, text: w.ta.value });
+      FS[id].parent = dest; FS[dest].children.push(id);
+      S.wins.delete(w.key); w.key = "w:" + id; S.wins.set(w.key, w); w.doc = id; w.setTitle(name); w.dirty = false;
+      renderAll();
+    } }],
+    onOpen: a => setTimeout(() => { const i = $(".sa", a); i.focus(); i.select(); }, 0) });
+}
+function writeMenus() {
+  const w = S.front && S.front.app === "write" ? S.front : null;
+  const f = (k) => ({ t: FACES[k][0], c: w && w.fontFace === k, d: !w, a: () => { w.fontFace = k; styleWrite(w); } });
+  const z = (s) => ({ t: s + " Point", c: w && w.fontSize === s, d: !w, a: () => { w.fontSize = s; styleWrite(w); } });
+  const st = (k, t, key) => ({ t, k: key, c: w && (k === "p" ? w.style.size === 0 : w.style.has(k)), d: !w, a: () => { if (k === "p") w.style.clear(); else w.style.has(k) ? w.style.delete(k) : w.style.add(k); styleWrite(w); } });
+  return [
+    { t: "File", items: [
+      { t: "New", k: "N", a: () => openWriteNew() },
+      { t: "Open…", k: "O", a: () => openFolder(FS.home.children[0]) },
+      { t: "Close", k: "W", a: () => S.front && closeWin(S.front), d: !S.front },
+      { t: "Save", k: "S", a: () => w && (w.doc ? alertBox({ icon: "note", msg: `“${esc(w.title)}” is saved.`, sub: "Write keeps a document as you type; Save is here for the habit." }) : saveAs(w)), d: !w },
+      { t: "Save As…", a: () => w && saveAs(w), d: !w },
+      SEP,
+      { t: "Page Setup…", d: true }, { t: "Print…", k: "P", d: true },
+      SEP,
+      { t: "Quit", k: "Q", a: () => quit("write") },
+    ] },
+    editMenu(w ? () => { w.ta.focus(); w.ta.select(); } : null),
+    { t: "Font", items: Object.keys(FACES).map(f) },
+    { t: "Size", items: [9, 10, 12, 14, 18, 24].map(z) },
+    { t: "Style", items: [st("p", "Plain Text", "T"), SEP, st("b", "Bold", "B"), st("i", "Italic", "I"), st("u", "Underline", "U")] },
+    helpMenu(),
+  ];
+}
+function openWriteNew() { const k = "w:new" + (++UNTITLED); makeWin({ key: k, app: "write", title: "untitled " + UNTITLED, w: 470, h: 380, cls: "write", fill: w => { w.fontFace = "geneva"; w.fontSize = 12; w.style = new Set(); w.body.innerHTML = `<textarea spellcheck="false"></textarea>`; w.ta = $("textarea", w.body); w.onFocus = () => setTimeout(() => w.ta.focus(), 0); styleWrite(w); } }); }
+
+/* ============================================================ Calculator */
+const CALC = { cur: "0", acc: null, op: null, fresh: true };
+function openCalc() {
+  makeWin({ key: "calc", app: "calc", title: "Calculator", w: 170, h: 236, cls: "calc plain", zoom: false, grow: false,
+    fill: w => {
+      const keys = ["C", "=", "/", "*", "7", "8", "9", "-", "4", "5", "6", "+", "1", "2", "3", "⏎", "0", "."];
+      w.body.innerHTML = `<div class="disp">0</div><div class="keys">${keys.map(k => `<button data-k="${k}" class="${k === "⏎" ? "tall" : k === "0" ? "wide" : ""}">${k === "⏎" ? "=" : k === "*" ? "×" : k === "/" ? "÷" : k === "-" ? "−" : k}</button>`).join("")}</div>`;
+      $(".keys", w.body).addEventListener("click", e => { const b = e.target.closest("button"); if (b) calcPress(b.dataset.k); });
+      calcShow();
+    } });
+}
+function calcShow() { const w = S.wins.get("calc"); if (w) $(".disp", w.body).textContent = CALC.cur.length > 12 ? Number(CALC.cur).toExponential(6) : CALC.cur; }
+function calcPress(k) {
+  const C = CALC;
+  if (k === "⏎") k = "=";
+  if (/[0-9]/.test(k)) { C.cur = C.fresh || C.cur === "0" ? k : C.cur + k; C.fresh = false; }
+  else if (k === ".") { if (C.fresh) { C.cur = "0."; C.fresh = false; } else if (!C.cur.includes(".")) C.cur += "."; }
+  else if (k === "C") { C.cur = "0"; C.acc = null; C.op = null; C.fresh = true; }
+  else {
+    const v = parseFloat(C.cur);
+    if (C.op && !C.fresh) {
+      const r = C.op === "+" ? C.acc + v : C.op === "-" ? C.acc - v : C.op === "*" ? C.acc * v : v === 0 ? NaN : C.acc / v;
+      C.cur = isFinite(r) ? String(+r.toPrecision(12)) : "Error";
+    }
+    C.acc = parseFloat(C.cur); C.op = k === "=" ? null : k; C.fresh = true;
+  }
+  calcShow();
+  const w = S.wins.get("calc");
+  if (w) { const b = $(`[data-k="${CSS.escape(k === "=" ? "=" : k)}"]`, w.body); if (b) { b.classList.add("press"); setTimeout(() => b.classList.remove("press"), 90); } }
+}
+function calcKey(e) {
+  const map = { Enter: "=", "=": "=", Escape: "C", c: "C", C: "C", Backspace: "C" };
+  const k = map[e.key] || ("0123456789.+-*/".includes(e.key) ? e.key : null);
+  if (k) { e.preventDefault(); calcPress(k); }
+}
+
+/* ============================================================ Orbits */
+const ORB = { speed: 1, trails: false, raf: 0, fps: 0 };
+function openOrbits() {
+  makeWin({ key: "orbits", app: "orbits", title: "Orbits", x: innerWidth - 470, y: Math.max(300, innerHeight - 380), w: 340, h: 300, cls: "orbits", footer: true,
+    onClose: () => cancelAnimationFrame(ORB.raf),
+    fill: w => {
+      w.body.innerHTML = `<canvas></canvas>`; w.body.style.background = "#0b0f26"; w.body.style.overflow = "hidden";
+      const cv = $("canvas", w.body), ctx = cv.getContext("2d");
+      const planets = [[38, 3.1, 3.5, "#f07a7a"], [62, 1.9, 5, "#7fb0ff"], [92, 1.15, 6.5, "#8fe0a0"], [124, .7, 4.5, "#e8a33c"]];
+      const stars = Array.from({ length: 70 }, () => [Math.random(), Math.random(), Math.random() * 1.2]);
+      let t = 0, last = performance.now(), frames = 0, acc = 0;
+      const fit = () => { const r = w.body.getBoundingClientRect(); cv.width = Math.max(1, r.width * devicePixelRatio); cv.height = Math.max(1, r.height * devicePixelRatio); };
+      w.onResize = fit; fit();
+      const draw = now => {
+        const dt = Math.min(.05, (now - last) / 1000); last = now; t += dt * ORB.speed; frames++; acc += dt;
+        if (acc > .5) { ORB.fps = Math.round(frames / acc); frames = 0; acc = 0; if (w.foot) w.foot.innerHTML = `<span>${ORB.fps} frames a second, on processor ${HOMES.orbits + 1}</span><span>Hold a menu open: it keeps turning</span>`; }
+        const W = cv.width, H = cv.height, s = Math.min(W, H) / 300, cx = W / 2, cy = H / 2;
+        ctx.fillStyle = ORB.trails ? "rgba(11,15,38,.12)" : "#0b0f26"; ctx.fillRect(0, 0, W, H);
+        if (!ORB.trails) for (const st of stars) { ctx.fillStyle = `rgba(255,255,255,${.3 + st[2] * .5})`; ctx.fillRect(st[0] * W, st[1] * H, devicePixelRatio, devicePixelRatio); }
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(1, .42);
+        if (!ORB.trails) { ctx.strokeStyle = "rgba(160,170,255,.18)"; ctx.lineWidth = devicePixelRatio; planets.forEach(p => { ctx.beginPath(); ctx.arc(0, 0, p[0] * s, 0, Math.PI * 2); ctx.stroke(); }); }
+        ctx.restore();
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22 * s); g.addColorStop(0, "#fff4c0"); g.addColorStop(.5, "#ffd34d"); g.addColorStop(1, "rgba(255,180,40,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 22 * s, 0, Math.PI * 2); ctx.fill();
+        planets.forEach((p, i) => {
+          const a = t * p[1] + i * 1.7, x = cx + Math.cos(a) * p[0] * s, y = cy + Math.sin(a) * p[0] * s * .42;
+          ctx.fillStyle = p[3]; ctx.beginPath(); ctx.arc(x, y, p[2] * s * (0.85 + .15 * Math.sin(a)), 0, Math.PI * 2); ctx.fill();
+        });
+        ORB.raf = requestAnimationFrame(draw);
+      };
+      ORB.raf = requestAnimationFrame(draw);
+      w.idealW = 640; w.idealH = 520;
+    } });
+}
+function orbitsMenus() {
+  const sp = (v, t) => ({ t, c: ORB.speed === v, a: () => { ORB.speed = v; renderMenubar(); } });
+  return [
+    { t: "File", items: [{ t: "Close", k: "W", a: () => S.front && closeWin(S.front) }, SEP, { t: "Quit", k: "Q", a: () => quit("orbits") }] },
+    editMenu(),
+    { t: "Speed", items: [sp(.3, "Slow"), sp(1, "Normal"), sp(3, "Fast")] },
+    { t: "View", items: [{ t: "Trails", k: "T", c: ORB.trails, a: () => { ORB.trails = !ORB.trails; renderMenubar(); } }] },
+    helpMenu(),
+  ];
+}
+
+/* ============================================================ Player */
+const PL = { node: null, playing: false, at: 0, iv: 0, toggle() { PL.playing = !PL.playing; plRender(); renderMenubar(); } };
+function openPlayer(id) {
+  if (id) { PL.node = id; PL.at = 0; PL.playing = true; }
+  else if (!PL.node) { PL.node = FS[FS.home.children[1]].children[0]; }
+  makeWin({ key: "player", app: "player", title: "Player", w: 310, h: 196, cls: "player plain", zoom: false,
+    onClose: () => { clearInterval(PL.iv); PL.playing = false; },
+    fill: w => {
+      w.body.innerHTML = `<div style="display:flex;gap:10px;align-items:center"><span class="pi"></span><div style="min-width:0"><b class="pt" style="font:bold 12px var(--sys);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></b><span class="pa" style="color:#444"></span></div></div>
+        <div class="spec">${"<i></i>".repeat(24)}</div>
+        <div class="bar-track"><div class="bar-fill pf" style="width:0"></div></div>
+        <div class="ctl"><button class="btn pp" style="min-width:74px"></button><button class="btn ps" style="min-width:0">Stop</button><span class="pt2" style="margin-left:auto;font:11px var(--mono)"></span></div>`;
+      $(".pp", w.body).onclick = () => PL.toggle();
+      $(".ps", w.body).onclick = () => { PL.playing = false; PL.at = 0; plRender(); renderMenubar(); };
+      clearInterval(PL.iv);
+      PL.iv = setInterval(() => { if (PL.playing) { PL.at += .1; const n = FS[PL.node]; if (n && PL.at >= n.len) PL.at = 0; } plRender(); }, 100);
+    } });
+  plRender();
+}
+function plRender() {
+  const w = S.wins.get("player"); if (!w) return;
+  const n = FS[PL.node]; if (!n) return;
+  const mm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+  $(".pi", w.body).innerHTML = iconOf(n);
+  $(".pt", w.body).textContent = n.name.replace(/\.(mp3|mp4)$/, "");
+  $(".pa", w.body).textContent = n.artist || (n.kind === "movie" ? "a film, its sound only in this mockup" : "");
+  $(".pp", w.body).textContent = PL.playing ? "Pause" : "Play";
+  $(".pf", w.body).style.width = (PL.at / n.len * 100) + "%";
+  $(".pt2", w.body).textContent = `${mm(PL.at)} / ${mm(n.len)}`;
+  $$(".spec i", w.body).forEach((b, i) => { b.style.height = PL.playing ? (12 + 80 * Math.abs(Math.sin(PL.at * (1.3 + i * .37) + i)) * (1 - i / 34)) + "%" : "4%"; });
+}
+function playerMenus() {
+  return [
+    { t: "File", items: [{ t: "Open…", k: "O", a: () => openFolder(FS.home.children[1]) }, { t: "Close", k: "W", a: () => S.front && closeWin(S.front) }, SEP, { t: "Quit", k: "Q", a: () => quit("player") }] },
+    editMenu(),
+    { t: "Controls", items: [{ t: PL.playing ? "Pause" : "Play", k: "P", a: () => PL.toggle() }, { t: "Stop", k: ".", a: () => { PL.playing = false; PL.at = 0; plRender(); renderMenubar(); } }] },
+    helpMenu(),
+  ];
+}
+
+/* ============================================================ Terminal */
+function openTerm() {
+  makeWin({ key: "term:" + (winsOf("term").length + 1), app: "term", title: "Terminal", w: 520, h: 300, cls: "term",
+    fill: w => {
+      w.body.innerHTML = `<div class="out"></div><div class="line">kosmos&gt; <input spellcheck="false" autocomplete="off"></div>`;
+      const out = $(".out", w.body), inp = $("input", w.body);
+      const say = s => { out.insertAdjacentHTML("beforeend", `<div class="line">${esc(s)}</div>`); w.body.scrollTop = 1e9; };
+      say(`Kosmos ${VERSION}. Say help.`);
+      w.body.addEventListener("mouseup", () => { if (!getSelection().toString()) inp.focus(); });
+      w.onFocus = () => setTimeout(() => inp.focus({ preventScroll: true }), 0);
+      inp.addEventListener("keydown", e => {
+        if (e.key !== "Enter") return;
+        const line = inp.value.trim(); inp.value = ""; say("kosmos> " + line);
+        const [cmd, ...rest] = line.split(/\s+/);
+        const arg = rest.join(" ");
+        const up = s => { const m = Math.floor(s / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+        switch (cmd) {
+          case "": break;
+          case "help": say("ps, mem, cpus, uptime, ls, open <application>, quit <application>, about, clear"); break;
+          case "ps": say("  application     memory   processor  cpu   running for"); S.running.forEach(a => say(`  ${APPS[a].name.padEnd(15)} ${String(Math.round(appMem(a))).padStart(5)} MB   ${HOMES[a] + 1}          ${appCpu(a).toFixed(1).padStart(5)}%  ${up((Date.now() - S.started[a]) / 1000)}`)); break;
+          case "mem": { const u = 214 + S.running.reduce((s, a) => s + appMem(a), 0); say(`16 GB in all; ${Math.round(u)} MB in use, every application in memory of its own.`); break; }
+          case "cpus": LOAD.cores.forEach((v, i) => say(`processor ${i + 1}  ${"#".repeat(Math.round(v / 5)).padEnd(20, ".")}  ${Math.round(v)}%`)); break;
+          case "uptime": say(`up ${up((Date.now() - S.bootAt) / 1000 + 420)}`); break;
+          case "ls": FS.home.children.forEach(c => say(`${FS[c].name}/`)); break;
+          case "about": case "version": say(`Kosmos ${VERSION}: Nebula, the servers, Astra in Pewter.`); break;
+          case "clear": out.innerHTML = ""; break;
+          case "open": case "quit": {
+            const a = Object.keys(APPS).find(k => APPS[k].name.toLowerCase() === arg.toLowerCase());
+            if (!a) say(`${cmd}: there is no application called “${arg}”`);
+            else if (cmd === "open") { launch(a); say(`opened ${APPS[a].name}`); setTimeout(() => focusWin(w), 0); }
+            else if (a === "tracker") say("quit: Tracker is the desktop, and stays");
+            else { quit(a); say(`${APPS[a].name} quit`); }
+            break;
+          }
+          default: say(`${cmd}: not a command here. Say help.`);
+        }
+      });
+    } });
+}
+
+/* ============================================================ Fragile */
+let HANG = 0;
+function openFragile() {
+  makeWin({ key: "fragile", app: "fragile", title: "Fragile", w: 340, h: 214, cls: "fragile plain", zoom: false,
+    fill: w => {
+      w.body.innerHTML = `<div style="display:flex;gap:12px">${icon("fragile")}<div>An application written to misbehave, to see what the rest of Kosmos does about it.</div></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn crash">Write past its memory</button><button class="btn hang">Stop answering</button></div>
+        <div class="st" style="color:#444">Running on processor ${HOMES.fragile + 1}, in memory of its own.</div>`;
+      $(".crash", w.body).onclick = crashFragile;
+      $(".hang", w.body).onclick = hangFragile;
+    } });
+}
+function fragileMenus() {
+  return [
+    { t: "File", items: [{ t: "Close", k: "W", a: () => S.front && closeWin(S.front) }, SEP, { t: "Quit", k: "Q", a: () => quit("fragile"), d: S.hung }] },
+    editMenu(),
+    { t: "Misbehave", items: [{ t: "Write Past Its Memory", a: crashFragile, d: S.hung }, { t: "Stop Answering", a: hangFragile, d: S.hung }] },
+    helpMenu(),
+  ];
+}
+APPS.fragile.onQuit = () => { S.hung = false; clearTimeout(HANG); };
+function crashFragile() {
+  quit("fragile");
+  tone([200, 140], .12, "sawtooth", .04);
+  alertBox({ icon: "stop", msg: "“Fragile” wrote outside its own memory, and Kosmos stopped it.",
+    sub: "Nothing else was touched: every application has memory of its own, and Nebula said no at the first byte that was not Fragile's. On Mac OS 9 this was a bomb, and a restart.",
+    buttons: [{ t: "Reopen", left: true, a: () => launch("fragile") }, { t: "OK", def: true }] });
+}
+function hangFragile() {
+  const w = S.wins.get("fragile"); if (!w) return;
+  S.hung = true; w.el.classList.add("busy");
+  $$("button", w.body).forEach(b => b.disabled = true);
+  $(".st", w.body).innerHTML = `<b style="color:#b0201a">Not answering.</b> It is spinning on processor ${HOMES.fragile + 1}. The other three, and every other application, carry on. Press Ctrl⌥Esc to make it quit, or use Force Quit in the Application menu.`;
+  HANG = setTimeout(() => { if (S.hung) w.setTitle("Fragile (not answering)"); }, 1800);
+  renderMenubar();
+}
+function forceQuitDialog() {
+  if (S.modal) return;
+  const apps = S.running.filter(a => a !== "tracker");
+  if (!apps.length) return alertBox({ icon: "note", msg: "No application is running, apart from Tracker.", sub: "Tracker is the desktop itself, so it is not forced to quit." });
+  const pick = S.hung ? "fragile" : (S.active !== "tracker" ? S.active : apps[0]);
+  alertBox({ icon: "caution", msg: "Force an application to quit?", sub: "It loses whatever it had not saved. Nothing else does: no other application waits on it, and its memory goes back to Kosmos.",
+    html: `<select class="field fq" style="margin-top:8px;width:100%" size="${Math.min(5, apps.length)}">${apps.map(a => `<option value="${a}"${a === pick ? " selected" : ""}>${esc(APPS[a].name)}${a === "fragile" && S.hung ? " (not answering)" : ""}</option>`).join("")}</select>`,
+    buttons: [{ t: "Cancel", cancel: true }, { t: "Force Quit", def: true, a: a => { const v = $(".fq", a).value; quit(v); } }] });
+}
+
+/* ============================================================ Appearance */
+function openAppearance(tab) {
+  const w = makeWin({ key: "appearance", app: "appearance", title: "Appearance", w: 470, h: 360, cls: "appearance plain", zoom: false,
+    fill: w => { w.tab = "look"; } });
+  if (tab) w.tab = tab;
+  renderAppearance(w);
+}
+function renderAppearance(w) {
+  const tabs = [["look", "Appearance"], ["desk", "Desktop"], ["fonts", "Fonts"], ["sound", "Sound"], ["opts", "Options"]];
+  const sw = (set, cur, attr) => Object.entries(set).map(([k, v]) => `<button data-${attr}="${k}" class="${cur === k ? "on" : ""}" title="${k}" style="background:${Array.isArray(v) ? `linear-gradient(${v[0]},${v[1]} 50%,${v[2]})` : v}"></button>`).join("");
+  const pats = { kosmos: "Kosmos Blue", tiles: "Tiles", teal: "Teal", nebula: "Nebula", grey: "Pewter" };
+  let panel = "";
+  if (w.tab === "look") panel = `<div class="group"><span class="gt">Accent colour</span><div class="row2">Scroll bars, the chosen menu item and progress bars take it.</div><div class="swatches">${sw(ACCENTS, S.accent, "acc")}</div></div>
+    <div class="group" style="margin-top:18px"><span class="gt">Highlight colour</span><div class="row2">Selected text takes it. Select some in Write to see.</div><div class="swatches">${sw(HILITES, S.hilite, "hil")}</div></div>`;
+  if (w.tab === "desk") panel = `<div class="pats">${Object.entries(pats).map(([k, t]) => `<button data-pat="${k}" class="${S.pattern === k ? "on" : ""}"><div style="position:absolute;inset:2px" class="pv-${k}"></div><span>${t}</span></button>`).join("")}</div>`;
+  if (w.tab === "fonts") panel = `<div class="group"><span class="gt">Large system font</span><div class="row2">For menus, titles and buttons.</div>
+    ${[["charcoal", "Charcoal-like (bold Geneva where Charcoal is missing)"], ["geneva", "Geneva"], ["plex", "Plex Sans, as Kosmos's other looks"]].map(([k, t]) => `<label class="row2"><input type="radio" name="f" data-font="${k}"${S.font === k ? " checked" : ""}> ${t}</label>`).join("")}</div>
+    <div class="group" style="margin-top:18px"><span class="gt">Smoothing</span><label class="row2"><input type="checkbox" data-opt="smooth"${document.body.classList.contains("crisp") ? "" : " checked"}> Smooth all fonts on screen</label></div>`;
+  if (w.tab === "sound") panel = `<div class="group"><span class="gt">Sound track</span><label class="row2"><input type="checkbox" data-opt="sounds"${S.sounds ? " checked" : ""}> Platinum-style clicks and beeps</label>
+    <div class="row2">Volume <input type="range" min="0" max="7" step="1" value="${S.vol}" data-opt="vol"> <span>${S.vol}</span></div><button class="btn" data-test>Alert sound</button></div>
+    <div class="group" style="margin-top:18px"><span class="gt">Kosmos's own</span>Sound runs above every program, so a click is never late, however busy the processors are.</div>`;
+  if (w.tab === "opts") panel = `<div class="group"><span class="gt">Windows</span>
+    <label class="row2"><input type="checkbox" data-opt="dblshade"${S.dblShade ? " checked" : ""}> Double-click a title bar to collapse its window</label>
+    <label class="row2"><input type="checkbox" data-opt="live"${S.liveDrag ? " checked" : ""}> Move a window with what is in it, not as an outline</label></div>
+    <div class="group" style="margin-top:18px"><span class="gt">Help</span><label class="row2"><input type="checkbox" data-opt="balloons"${S.balloons ? " checked" : ""}> Show Balloon Help</label></div>`;
+  w.body.innerHTML = `<div class="tabs">${tabs.map(([k, t]) => `<button data-tab="${k}" class="${w.tab === k ? "on" : ""}">${t}</button>`).join("")}</div><div class="tabpanel">${panel}</div>`;
+  $$(".pats [class^=pv-]", w.body).forEach(d => { const k = d.className.slice(3); d.style.background = getPatternCss(k); d.style.backgroundSize = getPatternSize(k); });
+  w.body.onclick = e => {
+    const b = e.target.closest("button, input"); if (!b) return;
+    if (b.dataset.tab) { w.tab = b.dataset.tab; return renderAppearance(w); }
+    if (b.dataset.acc) { S.accent = b.dataset.acc; applyLook(); return renderAppearance(w); }
+    if (b.dataset.hil) { S.hilite = b.dataset.hil; applyLook(); return renderAppearance(w); }
+    if (b.dataset.pat) { S.pattern = b.dataset.pat; applyLook(); renderStrip(); return renderAppearance(w); }
+    if (b.dataset.font) { S.font = b.dataset.font; applyLook(); return; }
+    if (b.dataset.test != null) return beep();
+    const o = b.dataset.opt;
+    if (o === "smooth") document.body.classList.toggle("crisp", !b.checked);
+    if (o === "sounds") S.sounds = b.checked;
+    if (o === "dblshade") S.dblShade = b.checked;
+    if (o === "live") S.liveDrag = b.checked;
+    if (o === "balloons") { S.balloons = b.checked; hideBalloon(); renderMenubar(); }
+  };
+  w.body.oninput = e => { if (e.target.dataset.opt === "vol") { S.vol = +e.target.value; e.target.nextElementSibling.textContent = S.vol; tick(); } };
+}
+function getPatternCss(k) {
+  return {
+    kosmos: "radial-gradient(#5b6fb4 0.8px,transparent 1.3px) 0 0,radial-gradient(#2f3f76 0.8px,transparent 1.3px) 3px 3px,#3c4f8c",
+    tiles: "conic-gradient(#8792c3 25%,#6c77a8 0 50%,#8792c3 0 75%,#6c77a8 0)",
+    teal: "repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 1px,transparent 1px 4px),#2c7a78",
+    nebula: "radial-gradient(ellipse at 70% 30%,#c06aa0 0,transparent 40%),radial-gradient(ellipse at 25% 70%,#3f78c9 0,transparent 45%),radial-gradient(circle at 50% 50%,#2a2160 0,#0d0b26 80%)",
+    grey: "radial-gradient(#9a9aa6 0.7px,transparent 1.2px),#8c8c99",
+  }[k];
+}
+function getPatternSize(k) { return { kosmos: "6px 6px", tiles: "4px 4px", grey: "3px 3px" }[k] || "auto"; }
+
+/* ============================================================ Control Strip */
+let STRIP_OPEN = true;
+function renderStrip(onlyCpu) {
+  const s = $("#strip");
+  if (onlyCpu && $(".cpu", s)) { $$(".cpu i", s).forEach((b, i) => { const v = LOAD.cores[i]; b.style.height = Math.max(2, v / 100 * 14) + "px"; b.style.background = v > 90 ? "#d6402a" : "#2c8a3a"; }); return; }
+  s.className = STRIP_OPEN ? "" : "closed";
+  s.innerHTML = `<div class="mods">
+    <div class="mod" data-m="cpu" data-tip="Processors: one bar for each of the four. Click for About This Kosmos."><span class="cpu">${"<i></i>".repeat(4)}</span></div>
+    <div class="mod" data-m="vol" data-tip="Sound volume. Click to change it.">${icon("player", 16)}<span>${S.vol}</span></div>
+    <div class="mod" data-m="desk" data-tip="Desktop picture. Click to choose another.">${icon("appearance", 16)}</div>
+    <div class="mod" data-m="apps" data-tip="Applications. Click to open one.">${icon("folder", 16)}</div>
+    <div class="mod" data-m="net" data-tip="Network: wired, 192.168.1.28. Click for its details.">${icon("server", 16)}</div>
+    <div class="mod" data-m="sleep" data-tip="Sleep. Click to put the screen to sleep; click again to wake it.">${icon("power", 16)}</div>
+  </div><div class="tab" data-tip="Click to tuck the Control Strip away, or to bring it back."></div>`;
+  renderStrip(true);
+}
+$("#strip").addEventListener("mousedown", e => {
+  if (S.modal) return;
+  e.stopPropagation();
+  if (e.target.closest(".tab")) { STRIP_OPEN = !STRIP_OPEN; renderStrip(); whoosh(); return; }
+  const m = e.target.closest(".mod"); if (!m) return;
+  const r = m.getBoundingClientRect();
+  const pop = items => popupMenu(items, r.left, r.top - 2, true);
+  const k = m.dataset.m;
+  if (k === "cpu") openAbout();
+  if (k === "vol") pop([...Array(8).keys()].reverse().map(v => ({ t: v === 0 ? "Mute" : "Volume " + v, c: S.vol === v, a: () => { S.vol = v; renderStrip(); tick(); } })));
+  if (k === "desk") pop(Object.entries({ kosmos: "Kosmos Blue", tiles: "Tiles", teal: "Teal", nebula: "Nebula", grey: "Pewter" }).map(([p, t]) => ({ t, c: S.pattern === p, a: () => { S.pattern = p; applyLook(); const w = S.wins.get("appearance"); if (w) renderAppearance(w); } })));
+  if (k === "apps") pop(["write", "calc", "orbits", "player", "term", "fragile"].map(a => ({ t: APPS[a].name, ico: APPS[a].icon, c: S.running.includes(a), a: () => launch(a) })));
+  if (k === "net") pop([{ t: "Wired: connected", c: true }, { t: "192.168.1.28", d: true }, { t: "Gateway 192.168.1.1", d: true }, SEP, { t: "Wireless: not here yet", d: true }]);
+  if (k === "sleep") sleep();
+});
+
+/* ============================================================ balloons */
+const BAL = $("#balloon");
+function hideBalloon() { BAL.style.display = "none"; }
+document.addEventListener("mouseover", e => {
+  if (!S.balloons || MS.open !== -1 || S.modal) return hideBalloon();
+  const t = e.target.closest("[data-tip]");
+  if (!t) return hideBalloon();
+  BAL.textContent = t.dataset.tip; BAL.style.display = "block";
+  const r = t.getBoundingClientRect();
+  let x = r.right + 14, y = r.top + Math.min(r.height / 2, 14) - 14;
+  if (x + BAL.offsetWidth > innerWidth - 6) x = Math.max(6, r.left - BAL.offsetWidth - 14);
+  y = clamp(y, 24, innerHeight - BAL.offsetHeight - 6);
+  BAL.style.left = x + "px"; BAL.style.top = y + "px";
+});
+
+/* ============================================================ start, sleep, stop */
+const SERVERS = [["Nebula", "logo"], ["init", "server"], ["devices", "server"], ["console", "server"], ["ramfs", "server"], ["diskfs", "server"], ["binfs", "server"], ["audio", "player"],
+  ["xhci", "driver"], ["e1000e", "driver"], ["net", "server"], ["bluetooth", "server"], ["wm", "server"], ["Astra", "appearance"], ["Tracker", "tracker"]];
+let BOOT = null;
+function boot(first) {
+  const b = $("#boot"); b.classList.add("on"); b.style.opacity = 1;
+  $("#off").classList.remove("on");
+  $(".ver", b).textContent = VERSION;
+  $("#bootlogo").innerHTML = icon("logo", 40);
+  const ex = $("#bootexts"); ex.innerHTML = "";
+  let i = 0;
+  clearInterval(BOOT);
+  BOOT = setInterval(() => {
+    if (i < SERVERS.length) {
+      const [n, ic] = SERVERS[i];
+      ex.insertAdjacentHTML("beforeend", `<div>${icon(ic)}<span>${n}</span></div>`);
+      $("#bootnow").textContent = i === 0 ? "Starting Nebula…" : `Starting ${n}…`;
+      $("#bootbar").style.width = ((i + 1) / SERVERS.length * 100) + "%";
+      i++;
+    } else finishBoot(first);
+  }, 150);
+}
+function finishBoot(first) {
+  clearInterval(BOOT); BOOT = null;
+  const b = $("#boot");
+  b.style.opacity = 0;
+  setTimeout(() => { b.classList.remove("on"); }, 360);
+  S.bootAt = Date.now();
+  if (first) startDesktop();
+  else { tone([523, 659, 784, 1046], .09, "triangle", .05); }
+}
+$("#boot").addEventListener("mousedown", () => { if (BOOT) finishBoot(!DESK_STARTED); });
+let DESK_STARTED = false;
+function startDesktop() {
+  if (DESK_STARTED) return; DESK_STARTED = true;
+  renderDesktop(); renderStrip();
+  FS.hd.rect = { x: 24, y: 40, w: Math.min(430, innerWidth - 40), h: 250 };
+  openFolder("hd");
+  launch("orbits");
+  launch("write", "readme");
+  tone([523, 659, 784, 1046], .09, "triangle", .05);
+}
+function sleep() { closeMenus(); $("#sleep").classList.add("on"); }
+$("#sleep").addEventListener("click", () => $("#sleep").classList.remove("on"));
+function shutDownDialog() {
+  alertBox({ icon: "power", msg: "Are you sure you want to shut down your computer now?", sub: "Every application is asked to save and quit first; none of them can hold the others up.",
+    buttons: [{ t: "Restart", left: true, a: () => restart() }, { t: "Sleep", a: sleep }, { t: "Cancel", cancel: true }, { t: "Shut Down", def: true, a: shutDown }] });
+}
+function closeAllApps() { [...S.running].forEach(a => a !== "tracker" && quit(a)); }
+function shutDown() { closeAllApps(); setTimeout(() => $("#off").classList.add("on"), 200); }
+function restart() { closeAllApps(); setTimeout(() => boot(false), 200); }
+$("#poweron").addEventListener("click", () => boot(false));
+
+addEventListener("resize", () => {
+  for (const k of FS.desk.children) { const n = FS[k]; if (n.pos) { n.pos.x = clamp(n.pos.x, 0, innerWidth - 80); n.pos.y = clamp(n.pos.y, 24, innerHeight - 80); } }
+  if (DESK_STARTED) renderDesktop();
+});
+
+/* ============================================================ go */
+buildFS(); applyLook(); renderMenubar();
+if (/[?&]noboot/.test(location.search)) { DESK_STARTED = false; startDesktop(); }
+else boot(true);
+</script>
+</body>
+</html>
