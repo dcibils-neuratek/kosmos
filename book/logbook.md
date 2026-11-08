@@ -1248,6 +1248,67 @@ edges are refused, and that every page comes back when the program ends.
 It was deliberately broken twice to be sure it notices: once by copying
 nothing, once by not giving the heap back.
 
+## 8 November - Pewter's menus move to the top of the screen
+
+**In short:** On Pewter there is now one menu bar across the top of the
+screen, as on a Mac. At its left is the Kosmos menu. Next come the menus
+of whichever application is in front, and they change as you click
+from one window to another. At its right are the sound, the network and
+the clock, and the Application menu, which lists what is running. Press
+a title and that application's own menu drops down under it. No
+application was changed for this. Astra is unchanged: its menus stay
+inside the windows.
+
+**What.** A desktop's file now also says where menus go: in the window,
+or on the screen. Under Pewter every window tells the window manager the
+names of its menus, and only the names. A window with a real menu bar
+(the PDF viewer has File, Edit, View and Go) sends those. One whose menu
+is the "…" button in its header sends that button, named after the
+application. The new menu bar program draws the names for the window in
+front. A press on one is passed back to that window, which opens its own
+menu under it. So what the menu does still happens inside the
+application that wrote it.
+
+**Moved, not copied.** The Deskbar already read the battery, the sound
+and the network, and built the Kosmos menu. Pewter's bar wanted the
+same, so both now live in two small libraries that both bars use, rather
+than in two copies.
+
+**A detail that mattered.** The first picture showed the PDF viewer
+losing its title bar's boxes when its menu was opened from the bar.
+Pressing the bar had given the bar the focus, so the keys would have
+gone there too. The bar is now pressed without taking the focus from the
+application in front, as a Mac's menu bar is.
+
+**Measured.** The kit now says, for every menu it opens, how long after
+the press it was drawn. Under QEMU: about 30 ms from Pewter's bar,
+against 11 from a title inside the window on Astra. Drawing the menu
+takes about 14 on both. The rest is a wait: the window manager hands the
+bar its press, then composes the screen, and only then reads the bar's
+request. On Astra the application draws its menu while the window
+manager composes. QEMU's composing is many times slower than the M700's,
+so it is measured there before anything changes. If it shows, there is a
+fix: the window manager sends a press on a title straight to the
+application.
+
+**How it is checked.** A new test of 11 checks, two machines at once,
+in about seventeen seconds. On Pewter:
+- the PDF viewer and the Text Editor hand their menus over and draw none
+  themselves;
+- the bar follows whichever is clicked;
+- View opens from the bar with the PDF viewer still in front;
+- New window, chosen from the Text Editor's menu in the bar, opens a
+  second window;
+- the Kosmos menu opens.
+
+On Astra the PDF viewer keeps its menus in its own title bar. Two
+controls each fail it: a window manager that passes nothing on, and a
+bar that takes the focus.
+
+**Left for later.** The "…" button stays in the window as well as in the
+bar. A title in the bar is not highlighted while its menu is open. The
+Kosmos menu has no search yet.
+
 ## 8 November - Pewter's windows get Mac OS's title bar
 
 **In short:** On Pewter, every window now wears a title bar in the manner

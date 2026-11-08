@@ -1181,7 +1181,7 @@ local FAILED_COUNTS = FAILED_FOR * COUNTER_HZ
 --
 -- The desktop being started, and what starts it, in one table: this
 -- chunk is at Lua's two hundred locals.
-local D = { loading = nil, chrome = "astra" }   -- loading: { watcher, rows, background, startup, over }
+local D = { loading = nil, chrome = "astra", menus = "window" }   -- loading: { watcher, rows, background, startup, over }
 
 function D.post_row(row)
   if not D.loading or not D.loading.watcher then return end
@@ -3605,8 +3605,10 @@ handlers.open = function(req, who, cap)
     end
   end
 
-  -- And a menu bar above it, when one was asked for (`strips`).
-  strips.accept(win, req.menubar)
+  -- And a menu bar above it, when one was asked for (`strips`) - unless
+  -- the desktop puts every menu at the top of the screen, where the kit
+  -- hands its titles over instead (`handlers.menus`).
+  if D.menus ~= "screen" then strips.accept(win, req.menubar) end
 
   --
   -- **A header that can be the title bar** (`roadmap.md` 6zj): the window
@@ -3887,6 +3889,10 @@ handlers.open = function(req, who, cap)
   if req.strip == "top" then
     win.strip = "top"
     win.pinned = true
+
+    -- Pressed without being raised, so the window in front stays there
+    -- (`pointer.lua`): Pewter's menu bar.
+    win.keeps_front = req.keeps_front and true or nil
     win.x, win.y = 0, 0
     reserved_top = win.h
     fit_backdrop()
@@ -4141,6 +4147,7 @@ handlers.open = function(req, who, cap)
            palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts, headed = win.headed or false,
            lights = OUT.lights_size(pct), chrome = win.chrome,
+           menus = D.menus,
            double_click_ms = OUT.mouse.double_click_ms,
            draws_itself = win.draws_itself or nil }
 end
@@ -4489,6 +4496,10 @@ function D.start(name, watcher)
   D.chrome = d.chrome or "astra"
   print(("wm: chrome %s"):format(D.chrome))
 
+  -- And where its windows' menus go (P3): in them, or the bar at the top.
+  D.menus = d.menus or "window"
+  print(("wm: menus in the %s"):format(D.menus))
+
   D.loading = { name = d.name, watcher = watcher, rows = {},
               background = d.background, startup = true, over = false,
                 part = "desktop" }
@@ -4705,7 +4716,20 @@ handlers.windows = function(req)
     names[i] = { program = s.path, failed = s.failed }
   end
 
-  return { ok = true, windows = out, starting = names,
+  -- The application in front and its menus, with the first page: what
+  -- the bar at the top draws between the Kosmos menu and the indicators.
+  local front = nil
+
+  if from == 1 then
+    local f = OUT.front_app()
+
+    if f then
+      front = { handle = f.handle, title = f.title, program = f.program,
+                menus = f.menu_titles }
+    end
+  end
+
+  return { ok = true, windows = out, starting = names, front = front,
            more = (last < #windows) and (last + 1) or nil }
 end
 
@@ -4739,7 +4763,8 @@ end
 -- pass, and it allocates nothing unless something changed - it is on the
 -- frame path.
 --
-local told = { n = 0, handle = {}, title = {}, hidden = {}, starting = "" }
+local told = { n = 0, handle = {}, title = {}, hidden = {}, starting = "",
+               front = nil, front_menus = nil }
 local told_focus = nil
 
 local function already_told(win)
@@ -4770,6 +4795,16 @@ local function tell_watchers()
   end
 
   told.n = n
+
+  -- The application in front, and which of its menus it last said: the
+  -- bar at the top draws those.
+  local f = OUT.front_app()
+  local fm = f and f.menu_version
+
+  if f ~= told.front or fm ~= told.front_menus then
+    told.front, told.front_menus = f, fm
+    changed = true
+  end
 
   -- What is starting, as one string to compare: a handful of paths at most.
   if #starting > 0 or told.starting ~= "" then
@@ -5430,6 +5465,72 @@ function OUT.shade(win)
   print(("wm: %s %s"):format(tostring(win.title), win.shaded and "collapsed" or "opened out"))
 
   return true
+end
+
+--
+-- **A window's menus, at the top of the screen** (`docs/pewter.md` P3).
+--
+-- Under `menus = screen` the kit says its window's titles here - on open
+-- and when they change - and they are kept with the window, at most eight
+-- of at most thirty-two characters as a direct window's strip takes them
+-- (`strips.titles`). The bar at the top hears them in the `windows` reply,
+-- as `front`, and a press on one comes back as `menu_open`.
+--
+handlers.menus = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  local kept = strips.titles(req.titles)
+
+  win.menu_titles = kept
+  win.menu_version = (win.menu_version or 0) + 1
+
+  print(("wm: %s's menus: %s"):format(tostring(win.title),
+        kept and table.concat(kept, ", ") or "none"))
+
+  return { ok = true }
+end
+
+--
+-- A title pressed in the bar at the top: the window that said it is
+-- posted the `menubar` event a direct window's strip sends, and opens its
+-- own menu under the title. Posted - the bar asks for nothing back, and
+-- a window that has stopped answering opens nothing and holds nobody.
+--
+handlers.menu_open = function(req)
+  local win = by_handle[req.window]
+  local i = math.floor(tonumber(req.index) or 0)
+  local titles = win and win.menu_titles
+
+  if not (titles and titles[i]) then
+    return { ok = false, error = "that window has no such menu" }
+  end
+
+  local x, y = math.floor(tonumber(req.x) or 0), math.floor(tonumber(req.y) or 0)
+
+  print(("wm: menu %s of %s from the menu bar at %d,%d"):format(titles[i],
+        tostring(win.title), x, y))
+  -- `at`, the counter when the bar saw the press, carried through for the
+  -- kit's measure of the whole path (`window:open_menu`).
+  post(win, { type = "menubar", index = i, title = titles[i], x = x, y = y,
+              at = math.tointeger(tonumber(req.at)) })
+
+  return { ok = true }
+end
+
+-- The application in front, whose menus the bar at the top shows: the
+-- highest window that is not chrome, a tip, the loader or put away.
+function OUT.front_app()
+  for i = #windows, 1, -1 do
+    local w = windows[i]
+
+    if not (w.tip or w.backdrop or w.strip or w.popup or w.hidden
+            or (D.loading and D.loading.watcher == w)) then
+      return w
+    end
+  end
+
+  return nil
 end
 
 handlers.shade = function(req)

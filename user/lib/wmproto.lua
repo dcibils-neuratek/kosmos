@@ -53,7 +53,7 @@ wmproto.WM = "/Running/wm"
 -- the Deskbar, the one that watches, is told to.
 --
 function wmproto.windows(watch)
-  local all, from, starting = {}, 1, nil
+  local all, from, starting, front = {}, 1, nil, nil
 
   while from do
     local reply, why = fs.send(wmproto.WM, { type = "windows", from = from,
@@ -66,10 +66,14 @@ function wmproto.windows(watch)
 
     -- What is starting (`docs/launching.html`), the same on every page.
     starting = starting or reply.starting
+
+    -- The application in front and its menus' titles, with the first page
+    -- (`docs/pewter.md` P3): what the bar at the top of the screen draws.
+    front = front or reply.front
     from = tonumber(reply.more)
   end
 
-  return { ok = true, windows = all, starting = starting or {} }
+  return { ok = true, windows = all, starting = starting or {}, front = front }
 end
 
 --

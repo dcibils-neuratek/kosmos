@@ -72,8 +72,10 @@ return function(ctx)
   -- at most thirty-two characters, on a window that draws its own pixels. A
   -- window manager is a server, and a server takes what it expects.
   --
-  function strips.accept(win, titles)
-    if not win.shared or type(titles) ~= "table" then return end
+  -- The titles alone, checked: the list kept, or nil when there is none.
+  -- The bar at the top of the screen takes the same (`handlers.menus`).
+  function strips.titles(titles)
+    if type(titles) ~= "table" then return nil end
 
     local kept = {}
 
@@ -83,7 +85,15 @@ return function(ctx)
       end
     end
 
-    if #kept == 0 then return end
+    return #kept > 0 and kept or nil
+  end
+
+  function strips.accept(win, titles)
+    if not win.shared then return end
+
+    local kept = strips.titles(titles)
+
+    if not kept then return end
 
     local h = strips.height()
 

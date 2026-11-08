@@ -3,11 +3,13 @@
 # across the top, Platinum windows, the Control Strip (`docs/pewter.md`).
 #
 # Being built, a step at a time (P1 to P6). Until its own pieces land it
-# starts Astra's, so choosing it works from the first step and each step
-# changes what this file names rather than how a desktop is chosen.
+# starts Astra's - Tracker's desktop, until P4's - so choosing it works
+# from the first step and each step changes what this file names rather
+# than how a desktop is chosen.
 
 name       = Pewter
-says       = Mac OS 9.2's manner, for 2026 - Platinum windows, being built
-shell      = notifications, desktop, deskbar
+says       = One menu bar for everything, and Platinum - being built
+shell      = notifications, desktop, menubar
 background = notifications
 chrome     = platinum
+menus      = screen

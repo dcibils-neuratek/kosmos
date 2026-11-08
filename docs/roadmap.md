@@ -445,8 +445,47 @@ is `handlers.shade`, from its box or a double click on the bar. Held by
 `x86-platinum` (`tools/run_platinum.py`). Two things left for later: the
 kit told when its window leaves the front, so the stripes go from a
 window behind as Platinum's did; and close at the window's own left in a
-window whose title bar is its right-hand pane. **P3, menus at the top, is
-next.**
+window whose title bar is its right-hand pane.
+
+**P3 built, 8 November 2026.** A desktop file says where its menus go,
+and Pewter's are on the `screen`: every window hands its titles to the
+window manager (`handlers.menus`) - its menu bar's, or, with none, the
+buttons that open a menu, the dots by the application's name - and draws
+none of them itself; `menubar.lua`, Pewter's shell in the Deskbar's place,
+draws the front application's titles between the Kosmos menu and the
+indicators, the clock and the Application menu, hears the front from the
+`windows` reply's `front`, and a press on a title is `menu_open`, posted on
+to the window as the `menubar` event, which opens its own menu under the
+title. The bar is pressed without taking the front (`keeps_front`). The
+indicators moved out of the Deskbar into `indicators.lua` and the Kosmos
+menu into `kosmosmenu.lua`, for both bars. Held by `x86-menus`
+(`tools/run_menus.py`). **P4, Pewter's desktop, is next.**
+
+**A title pressed straight to its window, if the M700 says so** (P3, to
+measure). Under QEMU a press on a title in Pewter's bar reaches its menu
+drawn in about 30 ms, against 11 for a title in the window under Astra:
+the bar's `menu_open` waits for the window manager's current pass to end
+- it is answering the press and then composing - and only then is posted
+on, where Astra's window draws its menu while the window manager composes.
+QEMU's composing is many times the M700's, so the extra hop is measured
+there before anything changes. If it shows, the bar tells the window
+manager where its titles are once a front, and the window manager posts
+a press on one straight to the window in the pass that read it - the
+strip's way (`strips.press`) - so Pewter's path is Astra's.
+
+**smbd's visitor told before it is known** (seen in P3's gate, 8
+November): the Servers window listed a visitor as "10.0.2.2 as  in
+nothing" - its account and share not yet set when the page asked - and
+`x86-smbd` waited 120 s for the row with them; alone it passed. The page
+should list a connection once it has signed in, or say its name when it
+arrives.
+
+**Menus at the top, what P3 left** (to do with P6 or when a person wants
+it): the dots stay in a window's header under Pewter as well as the bar,
+which is twice; a title in the bar is not lit while its menu is open (the
+menu is the application's, and the bar is not told when it closes); the
+Kosmos menu has no search yet (P6's menus searched); and a kit window
+with a `ui.menubar` view keeps it in the window - no application has one.
 
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old

@@ -58,7 +58,40 @@ Last updated: 2026-11-08 (0.11.315, not pushed; Pewter P1: desktops as files, th
 - Left for later: stripes off a window behind (the kit has no focus
   event), and close at the window's left where the title bar is a pane.
 
-**Next**: P3, menus at the top.
+**Built, 0.11.317 - P3, menus at the top** (not pushed):
+- **A desktop's `menus`**: `screen` in `Pewter.desktop`, `window` in
+  Astra's (`desktops.lua`, `D.menus`, the `open` reply).
+- **The kit hands titles over** (`window:screen_menus`, `tell_menus`, on a
+  paint and when a given menu bar opens): its `menubar` spec, or the
+  buttons that open a menu - the dots by `window:app_title()`, the part
+  of the title after the last ` - `. A direct window's band draws none.
+  A press comes back as `menubar`, opened by `open_screen_menu`.
+- **wm**: `handlers.menus` keeps them (`strips.titles` checks them),
+  `handlers.menu_open` posts the `menubar` event, `OUT.front_app` and the
+  `windows` reply's `front`, and `tell_watchers` tells when the front or
+  its titles change. A strip that `keeps_front` is pressed without being
+  raised.
+- **`menubar.lua`**: Kosmos, the front's titles, then from the right the
+  Application menu (running windows to bring forward, Hide, Show All),
+  the clock and the sound, network and battery. `Pewter.desktop`'s shell
+  is `notifications, desktop, menubar`.
+- **Moved, not copied**: `indicators.lua` (what the bar hears, once a
+  second) and `kosmosmenu.lua` (the Kosmos menu's items and sections),
+  both used by the Deskbar too.
+- **Platinum on a direct window's band** (P2's gap, seen in P3's first
+  picture): close at the left over the PDF viewer's title. The band now
+  centres its title with pinstripes either side, one `platinum_stripes`
+  for the band and `ui.header`.
+- **Press to menu drawn**, said by the kit on every menu
+  (`window:open_menu`): under QEMU about 30 ms on Pewter's bar against 11
+  in the window on Astra - the bar's request waits for the window
+  manager's pass to finish composing. To measure on the M700 (roadmap).
+- **The suite is `x86-menus`** (`tools/run_menus.py`): 11 checks, two
+  machines, about seventeen seconds. Its controls - `menu_open` posting
+  nothing, and the bar without `keeps_front` - each fail it.
+  `x86-desktops` opens Switch Desktop from Pewter's bar now.
+
+**Next**: P4, Pewter's desktop - `tracker pewterdesk` and spatial folders.
 
 ---
 

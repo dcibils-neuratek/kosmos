@@ -206,6 +206,15 @@ one copy.
 This is the one real change to how applications work, and it is a general
 form of something already built.
 
+**As built (P3)** a window's menus are the menu bar it was given, or,
+with none - which is nearly every application, Astra's menu being the
+dots in a header - the buttons in it that open a menu, in the order they
+are drawn: the dots go by the application's name (its title after the
+last ` - `), any other by its words. So every application has its menus at
+the top on Pewter without a line of it changing. The bar is a strip that
+`keeps_front`: pressed, it does not take the keys or the boxes from the
+application whose menus it shows.
+
 **16.8h, as it is.** A window that draws its own pixels can carry a menu
 bar: `ui.window{ direct = true, menubar = ... }` sends the titles - only
 the titles - to the window manager, which draws the strip above the
@@ -326,8 +335,20 @@ person on Pewter does more than anything else.
 Against Astra's menu inside the window, that is two posts more (steps 2
 and 3), each a message of a few dozen bytes and a context switch. The
 budget is the same as Astra's: the menu drawn inside the frame after the
-press, 16 ms. Step 4 is most of it on both desktops. `wmlatency` measures
-it on both before P3 is called done.
+press, 16 ms. Step 4 is most of it on both desktops.
+
+**As built, measured** (P3): the kit says, for every menu it opens, how
+long after the press it was drawn - from the press the bar saw, under
+Pewter, so steps 2 and 3 are in it. Under QEMU, two machines side by
+side: about 30 ms on Pewter, 11 on Astra. Drawing the menu is about 14
+on both. **The rest is not the two posts but a wait**: the window manager
+hands the bar its press at the end of a pass and then composes, and the
+bar's `menu_open` is read only once that is done - 10 to 17 ms of QEMU's
+composing. Astra's window draws its menu while the window manager
+composes. QEMU's composing is many times the M700's, so it is measured
+there first; if it shows, the bar tells the window manager where its
+titles are, and a press on one is posted to the window in the pass that
+read it, as a direct window's strip is (`roadmap.md`).
 
 The other path worth naming is F3: every window scaled, every frame while
 it animates. That is the compositor's pixel loop, in C, and it is measured
@@ -376,11 +397,32 @@ Each is built, held by a test that stays, and lived with before the next.
   kit is not told when its window loses the front; and a window whose
   title bar is its right-hand pane (Tracker, Preferences) has close at that
   pane's left rather than the window's.
-- **P3 - Menus at the top.** The kit hands every window's titles over;
-  `watch` carries the front window's; `menubar.lua` with the Kosmos and
-  Application menus; `indicators.lua` out of the Deskbar. Test: a menu of
-  Write's opened from the top of the screen and an item chosen, Astra's
-  menus still inside the window; `wmlatency` on both.
+- **P3 - Menus at the top. Built, 8 November 2026**; `tools/run_menus.py`,
+  `x86-menus`, 11 checks in two machines side by side, about seventeen
+  seconds. `menus = screen` in `Pewter.desktop` (`window` in Astra's);
+  the kit hands every window's titles over (`handlers.menus`) - a menu
+  bar it was given, or the buttons that open a menu, the dots by the
+  application's name - and draws none itself; the `windows` reply's
+  `front` carries the application in front and its titles, and `watch`
+  says when they change; `menubar.lua`, in the Deskbar's place, with the
+  Kosmos and Application menus, the clock and the indicators;
+  `indicators.lua` and `kosmosmenu.lua` out of the Deskbar for both bars.
+  A press on the bar does not take the front (`keeps_front`). Test: the
+  PDF viewer (a direct window) and the Text Editor (a kit window, its
+  menu the dots) under Pewter - titles handed over and none in the
+  window, the bar following the front, View opened from the bar with the
+  PDF viewer still in front, New window chosen from the Text Editor's
+  menu there, the Kosmos menu - and the PDF viewer under Astra, its titles
+  in its header and nothing handed over. Write has no menus of its own
+  to test - its ribbon is its own - so the PDF viewer took its place.
+  **`wmlatency` measures a poll's round trip, not this path**, so the
+  kit says instead how long each menu took from the press to drawn: under
+  QEMU about 30 ms from Pewter's bar, 11 from Astra's window, the
+  difference the bar's request waiting for the window manager's pass to
+  finish composing - see *The busiest path*, and `roadmap.md` for what to
+  do if the M700 shows it too. **Left for later:** the dots stay in the
+  header as well as in the bar; a title in the bar is not lit while its
+  menu is open; the Kosmos menu has no search yet (P6).
 - **P4 - Pewter's desktop.** `tracker pewterdesk`: the arrangement, and
   spatial folders with their rects kept as attributes. Test: a folder
   closed and opened again, in the same place, at the same size, in the

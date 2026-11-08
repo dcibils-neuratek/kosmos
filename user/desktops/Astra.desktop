@@ -13,9 +13,13 @@
 #               them: a name, or a name and its words after a colon
 #   background  those of them that open no window when they start, and are
 #               ready as soon as they are running
+#   chrome      which title bar the kit draws: astra, or platinum
+#   menus       where an application's menus go: in its window, or on the
+#               screen - the bar across the top
 
 name       = Astra
 says       = The Deskbar, the dock and the launcher pad
 shell      = notifications, desktop, deskbar
 background = notifications
 chrome     = astra
+menus      = window

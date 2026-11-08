@@ -3677,6 +3677,26 @@ end
 -- Placed from its own width every time it is drawn, so a window that is
 -- resized keeps its controls in the corner without a `follow` of their own.
 --
+--
+-- **Platinum's pinstripes** (`docs/pewter.md` P2) between `a` and `b`
+-- across a header `L.head` tall: a light row and a dark one every three,
+-- `L.platinum_band` tall in its middle. On anything with `fill` - a
+-- header's drawing, or the band a direct window's surface carries.
+--
+local function platinum_stripes(g, a, b)
+  if b <= a then return end
+
+  local ground = theme.sunken
+  local hi, lo = theme.lift(ground, 40), theme.lift(ground, -30)
+  local band = L.platinum_band
+  local top = (L.head - 1 - band) // 2
+
+  for y = top, top + band - 1, 3 do
+    g:fill(a, y, b - a, 1, hi)
+    g:fill(a, y + 1, b - a, 1, lo)
+  end
+end
+
 function ui.header(spec)
   --
   -- **The default `follow` goes in before the view is made**, because
@@ -3869,9 +3889,6 @@ function ui.header(spec)
   --
   function v:draw_platinum(g)
     local ground = theme.sunken
-    local hi, lo = theme.lift(ground, 40), theme.lift(ground, -30)
-    local band = L.platinum_band
-    local top = (L.head - 1 - band) // 2
 
     g:fill(0, 0, self.w, L.head - 1, ground)
     g:fill(0, L.head - 1, self.w, 1, theme.line_soft)
@@ -3894,14 +3911,7 @@ function ui.header(spec)
     -- Controls after the words take the rest of the bar from them.
     if #self.after > 0 then patch_r = to end
 
-    local function stripes(a, b)
-      if b <= a then return end
-
-      for y = top, top + band - 1, 3 do
-        g:fill(a, y, b - a, 1, hi)
-        g:fill(a, y + 1, b - a, 1, lo)
-      end
-    end
+    local function stripes(a, b) platinum_stripes(g, a, b) end
 
     if title ~= "" then
       stripes(from, patch_l)
@@ -7664,6 +7674,11 @@ function ui.window(spec)
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
 
+    -- A strip a press does not give the keys to: Pewter's menu bar, whose
+    -- titles open the menus of the application in front and must leave it
+    -- in front, its keys and its boxes with it (`docs/pewter.md` P3).
+    keeps_front = (spec.strip and spec.keeps_front) or nil,
+
     -- A strip at the foot of the screen that floats above the edge and is
     -- centred rather than across it - the dock (`roadmap.md`, a dock at the
     -- bottom) - and a strip blended over what is behind it, as the desktop
@@ -7786,6 +7801,19 @@ function ui.window(spec)
 
     -- A direct window's menu bar - titles and items - for `direct_event`.
     direct_menus = spec.direct and spec.menubar or nil,
+
+    --
+    -- **Where its menus go** (`docs/pewter.md` P3): `window`, in it as on
+    -- Astra, or `screen` - every window's titles handed to the window
+    -- manager and drawn in the bar across the top, the items kept here.
+    -- `spec_menus` is a menu bar it was given; without one, its menus are
+    -- the buttons that open one (`window:screen_menus`).
+    --
+    menus_at = reply.menus == "screen" and "screen" or "window",
+    spec_menus = spec.menubar,
+
+    -- None, told: a window with no menus says nothing.
+    menus_told = "",
 
     -- Where this window's content begins on the screen. The window manager
     -- says so in the reply because it clamps what it was asked for, and
@@ -7940,6 +7968,10 @@ function ui.window(spec)
     w:prime_band()
   end
 
+  -- A menu bar it was given, at the top of the screen from the start: a
+  -- window that runs its own loop may never paint through the kit.
+  if w.menus_at == "screen" and w.spec_menus then w:tell_menus() end
+
   return w
 end
 
@@ -8012,6 +8044,26 @@ function window:draw_band(s, slot)
   local x = L.head_in
   local title = tostring(self.title or "")
 
+  --
+  -- **Under Platinum** (P2), as `ui.header` draws it: close alone at the
+  -- left and the pair at the right - the window manager's, where it puts
+  -- them by default (`OUT.lights_at`) - the title centred on a patch of
+  -- plain ground, and the pinstripes the rest of the way.
+  --
+  local platinum = self.chrome == "platinum" and self.lights
+  local stripes_to = nil
+
+  if platinum then
+    local lt = self.lights
+    local from = L.platinum_in + (lt.close or lt.h or 0) + L.platinum_gap
+    local tw = title ~= "" and gfx.measure(title, "title") or 0
+
+    stripes_to = w - L.platinum_in - (lt.pair or lt.w or 0) - L.platinum_gap
+    x = math.max(from + L.platinum_gap, (w - tw) // 2)
+
+    if title ~= "" then platinum_stripes(s, from, x - L.platinum_gap) end
+  end
+
   if title ~= "" then
     s:text(x, (hh - 1 - gfx.height("title")) // 2, title, theme.text, nil, "title")
     x = x + gfx.measure(title, "title") + 2 * BAND_MENU_GAP
@@ -8019,13 +8071,20 @@ function window:draw_band(s, slot)
 
   self.band.spans = {}
 
-  for i, m in ipairs(self.direct_menus or {}) do
+  -- Under `menus = screen` the titles are in the bar at the top instead.
+  for i, m in ipairs(self.menus_at ~= "screen" and self.direct_menus or {}) do
     local words = tostring(m.title)
     local mw = gfx.measure(words)
 
     s:text(x, (hh - 1 - gfx.height()) // 2, words, theme.text_dim, nil, "ui")
     self.band.spans[#self.band.spans + 1] = { i = i, x = x - 8, w = mw + 16 }
     x = x + mw + BAND_MENU_GAP
+  end
+
+  if stripes_to then
+    platinum_stripes(s, title ~= "" and (x - 2 * BAND_MENU_GAP + L.platinum_gap)
+                        or (L.platinum_in + (self.lights.close or 0) + L.platinum_gap),
+                     stripes_to)
   end
 
   self.band.drawn[slot] = self.band.version
@@ -8083,7 +8142,8 @@ function window:band_events(events)
             -- opens it as it always has: under the title, on the screen.
             events[i] = { type = "menubar", index = hit.i,
                           title = tostring(self.direct_menus[hit.i].title),
-                          x = self.origin_x + hit.x, y = self.origin_y + hh }
+                          x = self.origin_x + hit.x, y = self.origin_y + hh,
+                          at = sys.ticks() }
             ev = events[i]
             drop = false
           else
@@ -9363,9 +9423,14 @@ function window:direct_event(ev)
   end
 
   if ev.type == "menubar" then
-    local m = self.direct_menus and self.direct_menus[ev.index]
+    if not self:open_screen_menu(ev) then
+      local m = self.direct_menus and self.direct_menus[ev.index]
 
-    if m then self:open_menu(ev.x, ev.y, menu_items(m)) end
+      if m then
+        self.menu_from = tonumber(ev.at)
+        self:open_menu(ev.x, ev.y, menu_items(m))
+      end
+    end
 
     return true
   end
@@ -9475,10 +9540,33 @@ end
 -- the dock's Kosmos menu, which opens upwards from the foot of the screen
 -- (`roadmap.md`, a dock at the bottom).
 --
+--
+-- **How long from the press to the menu drawn** (`docs/pewter.md` P3,
+-- *The busiest path*), said each time a menu opens: from the counter at
+-- the press this process saw last - or, for a title in the bar at the top
+-- of the screen, the one the bar saw (`ev.at`), so the two posts between
+-- them are in it. Committed is drawn: `push_menu` paints and commits
+-- before it returns, and composing it is the window manager's next pass.
+--
+local COUNTER_HZ = (sys.info() or {}).counter_hz or 62500000
+
 function window:open_menu(x, y, items, above)
   self:close_menus()
 
-  return self:push_menu(x, y, items, above)
+  local m = self:push_menu(x, y, items, above)
+  local from = self.menu_from or self.input_at
+
+  self.menu_from = nil
+
+  if m and from then
+    local ms = (sys.ticks() - from) * 1000 / COUNTER_HZ
+
+    if ms >= 0 and ms < 10000 then
+      print(("ui: %s's menu drawn %.2f ms after the press"):format(tostring(self.title), ms))
+    end
+  end
+
+  return m
 end
 
 function window:close_menu()
@@ -9575,7 +9663,107 @@ function window:menu_mouse(ev)
   return true
 end
 
+--------------------------------------------------------------------------
+-- **Menus at the top of the screen** (`docs/pewter.md` P3).
+--
+-- Under a desktop that says `menus = screen` every window hands its menus'
+-- titles - only the titles - to the window manager, which tells the bar at
+-- the top which window is in front and what it said; a press on a title
+-- there comes back as the `menubar` event a direct window's strip has
+-- always sent, and the menu opened under it is this kit's, its items'
+-- `on_choose` run here where they were written.
+--
+-- A window's menus are the menu bar it was given (`menubar` in
+-- `ui.window`'s spec), or, with none, the buttons in it that open a menu -
+-- the dots in a header, a button with a `menu` - in the order they are
+-- drawn: the dots go by the window's own title, a button by its words. So
+-- an application written for Astra has its menus at the top on Pewter
+-- without a line of it changing.
+--------------------------------------------------------------------------
+
+function window:screen_menus()
+  if self.spec_menus then return self.spec_menus end
+
+  local out = {}
+
+  local function walk(v)
+    if v.hidden or #out >= 8 then return end
+
+    local m = v.menu
+
+    if v ~= self.root and (type(m) == "table" or type(m) == "function") then
+      local words = v.name or v.text
+
+      if type(words) ~= "string" or words == "" or words == "more" then
+        words = self:app_title()
+      end
+
+      out[#out + 1] = { title = tostring(words), items = m }
+    end
+
+    for _, c in ipairs(v.children or {}) do walk(c) end
+  end
+
+  walk(self.frame or self.root)
+
+  return out
+end
+
+-- The application's name from its window's title: what follows the last
+-- ` - `, since a document window is "notes.txt - Text Editor".
+function window:app_title()
+  local t = tostring(self.title or "")
+
+  return t:match(".* %- (.+)$") or t
+end
+
+-- Said to the window manager when the titles differ from what it was last
+-- told - on a paint, which is when a window's buttons could have changed -
+-- and never otherwise, so a frame asks nothing. The list told is the one a
+-- press is answered from, so the index the bar sends is the index meant.
+function window:tell_menus()
+  if self.menus_at ~= "screen" or not self.handle then return end
+
+  local list = self:screen_menus()
+  local titles = {}
+
+  for i, m in ipairs(list) do titles[i] = tostring(m.title):sub(1, 32) end
+
+  local key = table.concat(titles, "\n")
+
+  self.menus_list = list
+
+  if key == self.menus_told then return end
+
+  self.menus_told = key
+
+  local reply, why = fs.send("/Running/wm", { type = "menus", window = self.handle,
+                                              titles = titles })
+
+  if not (reply and reply.ok) then
+    print(("ui: %s's menus were not handed over: %s"):format(
+          tostring(self.title), tostring(reply and reply.error or why)))
+  end
+end
+
+-- A title pressed in the bar at the top: its menu, under it. False when
+-- there is no such menu - the list changed since it was told.
+function window:open_screen_menu(ev)
+  local m = (self.menus_list or {})[tonumber(ev.index) or 0]
+
+  if not m then return false end
+
+  print(("ui: %s's menu %s opened from the menu bar at %d,%d"):format(
+        tostring(self.title), tostring(m.title), tonumber(ev.x) or 0, tonumber(ev.y) or 0))
+  self.menu_from = tonumber(ev.at)
+  self:open_menu(tonumber(ev.x) or 0, tonumber(ev.y) or 0, menu_items(m))
+
+  return true
+end
+
 function window:paint()
+  if self.menus_at == "screen" then self:tell_menus() end
+
   --
   -- **A window that draws itself** (D2): the same frame as below, its
   -- commands drawn here into the buffer the screen is not showing, and that
@@ -9754,6 +9942,10 @@ local function dispatch_context(self, ev)
 end
 
 local function dispatch_mouse(self, ev)
+  -- When this window last saw the pointer pressed or let go, for a menu
+  -- that opens from it (`window:open_menu`).
+  if ev.action == "press" or ev.action == "release" then self.input_at = sys.ticks() end
+
   if ev.button == "right" then
     return dispatch_context(self, ev)
   end
@@ -10148,6 +10340,9 @@ function window:run()
         self:menus_gone(ev.menus)
 
         changed = true
+      elseif ev.type == "menubar" then
+        -- A title pressed in the bar at the top (`menus = screen`).
+        if self:open_screen_menu(ev) then changed = true end
       elseif ev.type == "mouse" and ev.menu then
         -- Tagged with a menu handle by the window manager, so it belongs to
         -- the open menu rather than to any widget in this window.

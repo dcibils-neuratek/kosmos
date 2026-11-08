@@ -17,8 +17,9 @@ that does not exist; then `wm`, and:
   - the loader goes once everything has settled, and the Deskbar is up;
   - Switch Desktop in the Deskbar's menu, clicked: every window closed, the
     chooser again on an empty screen;
-  - Right and Return start Pewter, and the chooser after it says Pewter was
-    chosen last - the choice kept.
+  - Right and Return start Pewter, and the chooser after it - Switch Desktop
+    in its menu bar's Kosmos menu - says Pewter was chosen last: the choice
+    kept.
 
 The control is the failure: a row that could not start is told as one,
 which a loader that took every arrival for success would not.
@@ -147,9 +148,11 @@ def main():
         if not pewter:
             fails.append("Right and Return did not start Pewter")
 
+        # Pewter's Kosmos menu is its menu bar's, at the same end of the
+        # screen and the same menu (`kosmosmenu.lua`).
         mark = len(guest.seen)
-        click(50, 16, width, height)
-        menu = line(r"wm: menu of Deskbar at (\d+),(\d+) (\d+)x(\d+)", mark, 20)
+        click(30, 12, width, height)
+        menu = line(r"wm: menu of Menu bar at (\d+),(\d+) (\d+)x(\d+)", mark, 20)
 
         if menu:
             mx, my, mw, mh = (int(menu.group(k)) for k in range(1, 5))

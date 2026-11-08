@@ -289,7 +289,9 @@ return function(ctx)
       local win, fx, fy = window_at(nx, ny)
 
       if win then
-        raise(win)
+        -- A strip that keeps the front - Pewter's menu bar - is pressed
+        -- without taking the keys from the application its titles belong to.
+        if not win.keeps_front then raise(win) end
 
         --
         -- Super held: the window moves, from wherever it was

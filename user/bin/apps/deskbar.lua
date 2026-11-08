@@ -75,9 +75,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local menudata = use("/Kosmos/Libraries/deskbarmenu.lua")
 local files = use("/Kosmos/Libraries/files.lua")
-local types = use("/Kosmos/Libraries/filetypes.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
-local notify = use("/Kosmos/Libraries/notify.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -242,9 +240,7 @@ local sections = {}
 -- says the same (`ns.program` starts it from its new place).
 --
 local function read_sections()
-  sections = menudata.layers(fs,
-                             menudata.installed(types.installed(fs), types.declared),
-                             menudata.present(programs))
+  sections = use("/Kosmos/Libraries/kosmosmenu.lua").sections(programs)
 end
 
 retire_seed()
@@ -290,215 +286,18 @@ read_sections()
 
 
 --------------------------------------------------------------------------
--- What the machine is doing, asked carefully.
+-- What the machine is doing, and what the bar last heard of it.
 --
--- **Both of these may be unanswerable, and that is not an error.** A
--- capability this process was not granted means the device is not in its
--- namespace at all - `/Devices/audio` is not denied, it is absent - so the
--- honest answer is "no indicator" rather than a picture of silence or a
--- crossed-out aerial. `topbar.lua` refused to draw indicators for
--- subsystems that did not exist and was right; the difference now is that
--- the kernel decides, not a comment.
---
--- Wrapped in `pcall` because a library that reaches a server it cannot see
--- raises rather than returning nil, and a bar that stops drawing because
--- the sound card is missing would be a worse failure than no speaker.
+-- `indicators.lua` asks - the sound, the network, the battery, the ports,
+-- the processor and memory, the clock and the notifications' newest - on
+-- the bar's own second, and a repaint draws what was heard. It was here,
+-- and left for a library when Pewter's menu bar wanted the same
+-- (`docs/pewter.md` P3): two bars, one copy.
 --------------------------------------------------------------------------
 
-local audio_lib = nil
-
-do
-  local ok, got = pcall(use, "/Kosmos/Libraries/audio.lua")
-
-  audio_lib = ok and got or nil
-end
-
---
--- The master gain, 0 to 256, or nil when there is no audio to ask about.
---
-local function volume_now()
-  if not audio_lib then return nil end
-
-  local ok, stats = pcall(audio_lib.stats)
-
-  if not ok or not stats or not stats.master then return nil end
-
-  return stats.master, stats.master_muted
-end
-
---
--- Whether there is a card, which is the one thing about the network a bar
--- can say in an icon. `network.lua` is where the rest of it lives, and
--- clicking the icon opens it.
---
--- `fs.net_info("/Network")` is what that program asks, and it is the only thing
--- that answers: there is no `/Devices/net`. The devices server serves `cpu`,
--- `clock`, `screen`, `keyboard`, `memory` and `cores`, and the network is
--- not one of them - it is reached through the capability rather than
--- through a device file, which is why `needs network` is the whole of the
--- access check.
---
---
--- How busy the machine is, as a percentage, and how much memory is in use.
---
--- The same two readings `monitor.lua` draws, from the same two device
--- files: `/Devices/kernel` counts idle and busy ticks and `/Devices/memory` says
--- how much there is. Busy is a *difference* between two readings, so the
--- first pass has nothing to say and reports nothing rather than nought -
--- which would be a bar claiming an idle machine before it had looked.
---
--- No battery here, and it is the one indicator that would be a lie: this
--- machine cannot read one. It arrives when the ThinkPad's embedded
--- controller does, which is its own piece of work.
---
-local last_idle, last_busy = nil, nil
-
-local function load_now()
-  local ok, k = pcall(fs.read, "/Devices/kernel")
-
-  if not ok or type(k) ~= "table" then return nil end
-
-  local pct = nil
-
-  if last_idle then
-    local di = (k.idle_ticks or 0) - last_idle
-    local db = (k.busy_ticks or 0) - last_busy
-
-    if di + db > 0 then pct = (db * 100) // (di + db) end
-  end
-
-  last_idle, last_busy = k.idle_ticks, k.busy_ticks
-
-  return pct
-end
-
-local function memory_now()
-  local ok, m = pcall(fs.read, "/Devices/memory")
-
-  if not ok or type(m) ~= "table" or not m.total_mb then return nil end
-
-  return m.total_mb - m.free_mb, m.total_mb
-end
-
---
--- The battery, from `/Devices/battery`, or nil when the machine reads none -
--- the devices server lists that node only when the board has a reading.
---
---
--- **The devices on the USB ports**, from the USB driver's list (`usb.lua`,
--- `roadmap.md` 5q; Diego: "a usb top bar indicator that upon clicking
--- shows all things connected and detected on the usb ports"): how many,
--- and how many of them Kosmos drives - the icon counts every one, as he
--- chose, and This Machine says which is which. nil where no USB driver
--- answers, and then nothing is drawn.
---
-local have_usb, usb = pcall(use, "/Kosmos/Libraries/usb.lua")
-
-local function usb_now()
-  if not have_usb then return nil end
-
-  local ok, list = pcall(usb.devices)
-
-  if not ok or type(list) ~= "table" then return nil end
-
-  local driven = 0
-
-  for _, d in ipairs(list) do if d.driven then driven = driven + 1 end end
-
-  return { count = #list, driven = driven }
-end
-
-local function battery_now()
-  local ok, b = pcall(fs.read, "/Devices/battery")
-
-  if not ok or type(b) ~= "table" or b.present ~= 1 or not b.percent then
-    return nil
-  end
-
-  return b
-end
-
---
--- A card, not merely a stack: the stack answers `net_info` with no card to
--- drive, and says so in `card`. This read only that the stack answered, so
--- the picture was drawn on every PC, card or not - found on 27 September
--- by the x86 suite's first machine with `-nic none`, once "offline" was a
--- thing the bar says (`roadmap.md` 6zl).
---
-local function network_now()
-  local ok, info = pcall(fs.net_info, "/Network")
-
-  if not ok or type(info) ~= "table" or not info.card then return nil end
-
-  return info
-end
-
---
--- **What the bar last heard, which is all it draws from** (`testing.md`
--- 18.345; Diego, 2 October: "all that needs to be programmed async so it
--- does not wait or hang waiting for network or anything").
---
--- The draw asked five servers on every repaint - the clock, the sound, the
--- network, the battery, the processor and memory - so a repaint was only
--- as quick as the slowest of them. On 2 October the slowest was the network
--- stack, held four seconds and more at a time by a card that would not
--- send, and the bar's first picture came 23 seconds late, its menu with it:
--- a click is a repaint too. Now the questions are asked on the bar's own
--- second (`clockwork:tick`), a repaint draws what was heard, and an
--- indicator nobody has answered yet is a gap - the honest picture of "not
--- yet", as the meters already were. The first second is asked at once,
--- after the first picture rather than before it.
---
--- Asking is still a call, and a server that never answered would still hold
--- the tick; that is what a call with a deadline is for (`roadmap.md`), and
--- a server that answers at once is the rule the network stack's card driver
--- was brought back to the same day.
---
-local heard = {}
-
---
--- **The notifications' history, from the clock** (`roadmap.md`,
--- *Notifications*, step 2): a press on the clock opens it - the
--- `notifications` program's panel - and a dot beside the date says
--- something has arrived since it was last opened. What has arrived is the
--- server's newest number, asked on the bar's second with the rest; what
--- was looked at is the newest when the panel was last opened, or when this
--- bar started, so a Deskbar starting again does not call old news new.
---
-local looked = nil
-
-local function open_history()
-  looked = heard.newest or looked
-  fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/notifications.lua",
-                           args = "panel" })
-  print("deskbar: the notifications' history asked for")
-end
-
-local function news()
-  return heard.newest and looked and heard.newest > looked
-end
-
-local netprogram = use("/Kosmos/Libraries/netprogram.lua")
-
-local function listen()
-  heard.at = sys.ticks()
-  heard.newest = notify.newest()
-  looked = looked or heard.newest
-  heard.now = clock.now()
-  heard.level, heard.muted = volume_now()
-  heard.network = network_now() and "wired" or "offline"
-  heard.battery = battery_now()
-  heard.usb = usb_now()
-  heard.busy = load_now()
-  heard.used, heard.total = memory_now()
-
-  -- Who is reaching this machine: VNC's viewers and Telnet's sessions,
-  -- from what each server publishes for the Servers window (`netprogram`).
-  local vnc, telnet = netprogram.status("vncd"), netprogram.status("telnetd")
-
-  heard.vnc = vnc and #(vnc.viewers or {}) or nil
-  heard.telnet = telnet and #(telnet.sessions or {}) or nil
-end
+local indicators = use("/Kosmos/Libraries/indicators.lua").new("deskbar")
+local heard = indicators.heard
+local listen, news, open_history = indicators.listen, indicators.news, indicators.open_history
 
 
 local H = theme.metrics.deskbar
@@ -1066,92 +865,27 @@ end
 
 
 --
--- One button, and the menu comes out of it.
+-- A launcher's row and a folder's rows, and the menu they make, are
+-- `kosmosmenu.lua`'s - Pewter's menu bar opens the same menu. What is the
+-- Deskbar's is the button it puts up as a launcher is chosen, from what
+-- the row already knows - its name and its picture - before the window
+-- manager has answered (`docs/launching.html`).
 --
--- Opened downward from the button's bottom-left corner, which is where a
--- menu belongs relative to the thing that opened it. `win.origin_x` is
--- where this window's content starts on the screen; a menu is a window of
--- its own and is placed on the screen, not inside this one.
---
---
--- One launcher, as a row.
---
--- The file's name is what the row says, so renaming the launcher renames
--- the item - which is the whole point of the menu being files. The program
--- it starts and the arguments it starts with are attributes, and both go in
--- the `launch` message: this is the same message Tracker sends when a
--- launcher on the desktop is opened, and the same one the menu has always
--- sent. What is new is only that there is something to put in `args`.
---
-local function launcher(item)
-  return {
-    text = menudata.shown(item),
-    icon = item.icon or "App_Generic",
+local kosmosmenu = use("/Kosmos/Libraries/kosmosmenu.lua")
 
-    -- The file this row came from, so a right press on it has something to
-    -- edit. It is the one piece of the tree that has to survive into the
-    -- menu: everything else a row needs is already on it.
-    path = item.path,
-    on_choose = function()
-      if item.program == "" then
-        say(item.name .. ": a launcher that names no program")
-        return
-      end
-
-      --
-      -- **The button first, from what this row already knows** - its name
-      -- and its picture - and then the request, not waited for: the window
-      -- manager answers at once and says in its list what happened, so this
-      -- bar is free to breathe while the program starts (`docs/launching.html`).
-      --
-      local already = false
-
-      for _, w_ in ipairs(running) do
-        if w_.starting and w_.program == item.program then already = true end
-      end
-
-      if not already then
-        running[#running + 1] = { starting = true, program = item.program,
-                                  title = menudata.shown(item),
-                                  icon = item.icon or picture(item.program) }
-        pace_breathing()
-        win.dirty = true
-      end
-
-      local ok, why = fs.send("/Running/wm", { type = "launch",
-                                           program = item.program,
-                                           args = item.args, wait = false })
-
-      say(ok and ("starting " .. item.program)
-          or ("could not: " .. tostring(why)))
-    end,
-  }
-end
-
---
--- A folder's rows, and a folder inside it is a submenu.
---
--- Ordering is `read_folder`'s: submenus first, then launchers, each sorted
--- by name. Nothing is sorted here, because the order a person sees should
--- be the order the tree has.
---
-local function folder_items(items)
-  local out = {}
-
-  for _, item in ipairs(items) do
-    if item.folder then
-      out[#out + 1] = { text = item.name, icon = "Folder_generic",
-                        folder = true, path = item.path,
-                        submenu = folder_items(item.items) }
-    else
-      out[#out + 1] = launcher(item)
-    end
+local function launching(item)
+  for _, w_ in ipairs(running) do
+    if w_.starting and w_.program == item.program then return end
   end
 
-  if #out == 0 then out[1] = { text = "(nothing here)" } end
-
-  return out
+  running[#running + 1] = { starting = true, program = item.program,
+                            title = menudata.shown(item),
+                            icon = item.icon or picture(item.program) }
+  pace_breathing()
+  win.dirty = true
 end
+
+local HOW = { say = say, launching = launching }
 
 --
 -- The Kosmos menu, opened from the left end of the bar.
@@ -1161,71 +895,7 @@ end
 -- when a press lands left of `kosmos_w()`.
 --
 local function open_kosmos_menu()
-    local items = {}
-
-    for _, section in ipairs(sections) do
-      items[#items + 1] = {
-        -- The folder's own name, which is what the menu shows. There is no
-        -- capitalising left to do here: `seed` did it once, when a
-        -- program's lower-case `kosmos: section` became a folder, and from
-        -- then on the name on the screen is the name on the disk.
-        text = section.name,
-        icon = "Folder_generic",
-        submenu = folder_items(section.items),
-      }
-    end
-
-    if #items == 0 then
-      items[1] = { text = "(no " .. DESKBAR .. ")" }
-    end
-
-    --
-    -- Restart and Shut Down, at the bottom behind a separator.
-    --
-    -- BeOS put them here and so does every desktop since, which is reason
-    -- enough on its own - but the separator is doing real work: everything
-    -- above it starts something and these two end everything, and a menu
-    -- that mixed the two would eventually be a machine somebody turned off
-    -- while reaching for a calculator.
-    --
-    -- A *request to the window manager*, not an action taken here. That
-    -- process holds `owns_procctl`; this one does not, and asking is the
-    -- whole point - see `handlers.power`.
-    --
-    items[#items + 1] = { separator = true }
-
-    --
-    -- **Switch Desktop...** (`docs/pewter.md` P1): every window asked to
-    -- close, and the chooser again on an empty screen - another desktop
-    -- without restarting the machine. Above the two that end everything,
-    -- since it ends only what is open.
-    --
-    items[#items + 1] = {
-      text = "Switch Desktop...",
-      icon = "Prefs_Backgrounds",
-      on_choose = function()
-        say("switching desktop")
-        fs.send("/Running/wm", { type = "desktop", name = false })
-      end,
-    }
-
-    items[#items + 1] = {
-      text = "Restart",
-      icon = "App_Generic",   -- the three cubes (Diego: "like the ones used for demos like snes")
-      on_choose = function()
-        say("restarting")
-        fs.send("/Running/wm", { type = "power", action = "restart" })
-      end,
-    }
-
-    items[#items + 1] = {
-      text = "Shut Down",
-      icon = "App_Generic",   -- the three cubes (Diego: "like the ones used for demos like snes")
-      on_choose = function()
-        say("shutting down")
-        fs.send("/Running/wm", { type = "power", action = "off" })
-      end,
-    }
+    local items = kosmosmenu.items(sections, HOW)
 
     if DOCKED then
       -- Upwards, from above the dock's Kosmos button - where it was drawn,
@@ -1508,14 +1178,9 @@ local function task_spans()
   return out
 end
 
--- The battery's line glyph: the bolt while it charges, else how full. The
+-- The battery's line glyph (`indicators.lua`). The
 -- bar and the dock's strip both draw it.
-local function battery_glyph(bat)
-  return bat.state == "charging" and "battery-charging"
-         or (bat.percent >= 80 and "battery-full")
-         or (bat.percent >= 30 and "battery-medium")
-         or "battery-low"
-end
+local battery_glyph = indicators.battery_glyph
 
 function bar:draw(g)
   for row = 0, self.h - 1 do

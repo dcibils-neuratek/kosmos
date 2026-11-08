@@ -1897,6 +1897,14 @@ to work in", "in the future i would also like to add a 3rd one", and then
   draw and to press, in either chrome, so a window that has stopped
   answering can still be closed; a double click on a Platinum bar
   collapses the window to it (`handlers.shade`) where Astra's maximises.
+- **A window's menus go where its desktop says, told in the same reply**
+  (P3, 8 November): `menus = "screen"` and the kit hands the window
+  manager its titles - a menu bar it was given, or the buttons that open
+  a menu, the dots by the application's name - draws none itself, and
+  opens its own menu when a title in the bar at the top is pressed
+  (`menubar` event, `window:open_screen_menu`). An application changes
+  nothing for it. The bar is `menubar.lua`, a top strip that
+  `keeps_front`: pressing it leaves the application in front.
 
 `docs/pewter.md` is the design and its steps, P1 to P6, and
 `docs/pewter-architecture.png` the picture.
