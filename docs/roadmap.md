@@ -539,7 +539,14 @@ Diego boots Kosmos on next, with two AMD FirePro cards** ("we have amd
 gpus", "dual"): a GCN 1.0 driver and Compute Kit backend of our own, the
 model's layers split across both cards or one card the model and one the
 desktop, designed in a document of its own first (`xavier.md`, *All the
-acceleration there is*). And **light coding, as Claude Code does it** ("It's also key that we can
+acceleration there is*). **And the order to make it fast, AGREED on
+8 November 2026** (Diego, asked "What can we do to make llm work super
+fast?", then "Yes" to the order proposed): measure on the M700; then
+threads, AVX2 and the question read in batches as one push, to bring phi-2
+near the memory's ceiling, about 15 tokens a second there; weights laid out
+for the vector unit when a model is loaded; then a smaller Qwen and a draft
+model checked in batches; the GPUs last, the Mac Pro's cards the largest
+(`xavier.md`, *Making it fast*). And **light coding, as Claude Code does it** ("It's also key that we can
 do some light coding with Xavier like Claude code"): code read, edits
 shown as diffs and accepted file by file, programs run and their output
 read back, only in the project it is handed, on Qwen2.5-Coder - a second

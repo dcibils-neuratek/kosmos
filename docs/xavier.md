@@ -602,6 +602,52 @@ plainest one give the same answer.
   between them, half each, or one card the model and the other the
   desktop. Its own design document before any of it.
 
+## Making it fast (8 November 2026)
+
+**Agreed** - Diego asked "What can we do to make llm work super fast?",
+and said "Yes" to the order below. The section above lists every
+acceleration there is; this one says which come first, and why.
+
+**What bounds it.** There are two speeds, bounded by different things:
+
+- **Writing the answer is bound by memory.** Every token reads every
+  weight once: 1.6 GB for phi-2 at Q4_0. The M700's two channels of DDR4
+  give about 25-30 GB/s in practice, so its ceiling is about 15-18 tokens
+  a second. That is an estimate from the hardware, to be held to a
+  measurement.
+- **Reading the question is bound by arithmetic.** Its tokens can share
+  one read of the weights, so it is where vector width and a GPU pay. It
+  decides how long a person waits before the first word.
+
+**The order:**
+
+1. **Measure on the M700**: X3's first real tok/s, and X2's loops on GCC's
+   code rather than the Mac's clang. Every step after is chosen by that
+   number.
+2. **One push, three parts**, to bring phi-2 near the ceiling:
+   - **every core**: a product's rows split across threads (`threads.md`),
+     since one core cannot draw the whole of the memory's bandwidth;
+   - **AVX2 (X2b)**: `xsave` in Nebula and the loops compiled a second
+     time, chosen where CPUID says so;
+   - **the question read in batches**: a matrix by a matrix, the weights
+     read once a batch rather than once a token.
+3. **Weights laid out for the vector unit** when a model is loaded - Q4_0
+   blocks interleaved, as llama.cpp's repack does - so the inner loop does
+   no shuffling.
+4. **Fewer bytes a token**: a smaller Qwen (0.5B or 1.5B, in step with the
+   vision models chosen for X7), and **speculative decoding** - a small
+   model drafts a few tokens and the large one checks them in one batched
+   pass.
+5. **The GPUs**: the M700's EUs for reading questions (X9), since they
+   share its memory and cannot speed up writing an answer; the Mac Pro's
+   two FirePro cards, at 160-264 GB/s, about ten times the M700's
+   ceiling, in a document of their own first.
+
+**What costs almost nothing, and is felt:** the answer is already written
+word by word, and the cache already held across a conversation. The model
+can also stay loaded between questions, and the LLM server's band keep the
+desktop first while it works.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go
