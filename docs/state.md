@@ -2,7 +2,44 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-10-19, night (0.11.310, pushed; the GPU at ray tracing: tried to the end)
+Last updated: 2026-11-08 (0.11.315, not pushed; Pewter P1: desktops as files, the chooser and its loader)
+
+---
+
+## 5-8 November: Pewter designed, and its first step built
+
+**Designed and agreed** (Diego, 5 and 7 November):
+- **Pewter**, a second desktop in Mac OS 9.2's manner for 2026:
+  `docs/pewter.md` (features, architecture, steps P1-P6), `docs/pewter.html`
+  (the mockup), `docs/pewter-architecture.png`.
+- **The chooser and its loader**, as drawn in `docs/desktops.html`.
+- **Corona**, a third desktop in CDE's manner with a 1999 / 2026 switch:
+  `docs/corona.html`, a mockup only and not to be coded yet.
+
+**Built, 0.11.315 - P1, desktops as files and the chooser** (not pushed):
+- `user/desktops/Astra.desktop` and `Pewter.desktop`, served as
+  `/Kosmos/Desktops`. Pewter's starts Astra's shell until P2-P6.
+- `desktops.lua` reads them; `theme.lines` is the line reader that
+  `theme.read` now uses too.
+- **A bare `wm` starts `chooser.lua`**, full screen, so every boot shows
+  it. `wm Astra.desktop` skips it: the harnesses that typed a bare `wm`,
+  or booted `boot=wm`, now say that (`run_screenshot`, `run_shortcuts`,
+  `run_x86`, `run_scene`, `run_servers`).
+- **`wm`'s `handlers.desktop`** starts the chosen shell through `launch`,
+  then the Startup page's items. Those moved out of `deskbar.lua`, with
+  `maild` and `autod`.
+- **The loader** is the chooser kept over the screen. Each entry in
+  `starting` carries a row, and a `loading` event is posted as each moves.
+  The state lives in one table, `D`, because `wm.lua`'s main chunk is at
+  Lua's 200 locals.
+- **Switch Desktop...** is in the Deskbar's menu.
+- The choice is kept in the `desktop` setting.
+- **The suite is `x86-desktops`** (`tools/run_desktops.py`): 13 checks in
+  about twenty seconds. Its control, a failed launch reported as ready,
+  fails it.
+
+**Next**: P2, Platinum's title bar (`chrome = platinum` in the kit, and
+collapse with `handlers.shade`).
 
 ---
 

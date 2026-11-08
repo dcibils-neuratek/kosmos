@@ -1247,3 +1247,40 @@ until touched, that a touched page holds exactly the right bytes, that the
 edges are refused, and that every page comes back when the program ends.
 It was deliberately broken twice to be sure it notices: once by copying
 nothing, once by not giving the heap back.
+
+## 8 November - a desktop is a file, and the machine asks which one
+
+**In short:** Kosmos now asks which desktop you want each time it starts.
+It shows a card for each one, Astra and Pewter, with the one you used last
+already picked. Once you choose, the same screen stays up as a loader. It
+lists each piece of that desktop and each application that opens with it
+as it starts, with how long it took, and goes away once all of them have
+arrived. Switch Desktop... in the Kosmos menu closes everything and brings
+the chooser back without restarting.
+
+**What.** A desktop is now a small text file in `/Kosmos/Desktops`, listing
+the programs that make it up. Astra's names what has always run: the
+notification banners, the desktop's icons and the Deskbar. Pewter's names
+the same three for now, until Pewter's own menu bar and Control Strip are
+built. There is still one window manager. A third desktop would be a third
+file.
+
+**The part that moved.** The applications that open when the desktop does
+(Tracker, the monitor, the log), plus Mail's and Automations' background
+helpers, used to be started by the Deskbar. Pewter will have no Deskbar,
+so it would have opened none of them, and the loader could not have listed
+them. The window manager starts them now. A name on the Startup page that
+is no longer a program used to be skipped silently. Now it is tried, and
+the loader says it did not start, so a stale tick is visible.
+
+**The surprise.** The window manager's main file had reached the limit
+of 200 local names the Lua language allows in one chunk. Adding the new
+code failed to compile until its pieces were gathered into one table.
+
+**How it is checked.** A new test of 13 checks, in about twenty seconds.
+It boots to the chooser, starts Astra, and checks that the loader heard
+each piece arrive and that a program that does not exist was reported as
+failed. It then switches desktop from the menu, starts Pewter, and checks
+that the choice was remembered. To show the test notices, it was run
+against a window manager that reports a failed start as a success, and it
+failed.

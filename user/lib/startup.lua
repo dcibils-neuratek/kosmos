@@ -4,7 +4,8 @@
 --
 -- **A module rather than the same four lines in both**, and the reason is
 -- what happens when they drift. Preferences' Startup page draws the tick
--- boxes; `deskbar.lua` opens what is ticked. If one of them decided on a
+-- boxes; the window manager opens what is ticked (`wm.lua`, `D.open_startup`;
+-- the Deskbar did, until `docs/pewter.md` P1). If one of them decided on a
 -- default and the other did not, the desktop would come up with three
 -- windows on it and the panel would show nothing ticked - which is not a
 -- cosmetic disagreement, it is a machine telling you two different things
@@ -37,9 +38,9 @@ M.NAME = "startup"
 -- Deskbar is that strip now: the Kosmos menu, a button per window, and the
 -- indicators. One bar rather than two, so there is nothing to open first.
 --
--- The Deskbar itself is not in this list and never was: the window manager
--- starts it, because a desktop with no way to start anything is not a
--- desktop.
+-- The Deskbar itself is not in this list and never was: the desktop's own
+-- file names it (`/Kosmos/Desktops/Astra.desktop`), because a desktop with
+-- no way to start anything is not a desktop.
 --
 M.DEFAULT = { "tracker", "sysmon", "procs", "logview" }
 

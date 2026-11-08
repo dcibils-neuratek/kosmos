@@ -1164,15 +1164,56 @@ local COUNTER_HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local STARTING_COUNTS = STARTING_FOR * COUNTER_HZ
 local FAILED_COUNTS = FAILED_FOR * COUNTER_HZ
 
-local function stop_starting(match)
+--
+-- **The loader's rows** (`docs/pewter.md` P1): while a desktop is being
+-- started, each launch is a row, and the chooser that asked for the
+-- desktop is posted one `loading` event as each row moves - `starting`,
+-- then `ready` at its first window, `failed`, `ended` (it ran and went
+-- without opening one, as `desktop` does when it has started Tracker) or
+-- `slow` (still starting when `STARTING_FOR` ran out). The rows are the
+-- `starting` list's own entries, which is where every one of those moments
+-- is already noticed, so there is no second account of what is starting
+-- to fall out of step with the Deskbar's buttons.
+--
+-- Posted, never sent: this is the compositor's loop.
+--
+-- The desktop being started, and what starts it, in one table: this
+-- chunk is at Lua's two hundred locals.
+local D = { loading = nil }   -- loading: { watcher, rows, background, startup, over }
+
+function D.post_row(row)
+  if not D.loading or not D.loading.watcher then return end
+
+  D.post(D.loading.watcher, { type = "loading", index = row.index,
+                          program = row.program, state = row.state,
+                          part = row.part,
+                          ms = row.ms, error = row.error })
+end
+
+function D.settle(s, state, err)
+  local row = s and s.row
+
+  if not row or row.state ~= "starting" then return end
+
+  row.state = state
+  row.ms = (sys.ticks() - row.since) * 1000 // COUNTER_HZ
+  row.error = err and tostring(err):sub(1, 80) or nil
+
+  print(("wm: loading %s %s %d ms%s"):format(row.program, state, row.ms,
+        err and (" (" .. row.error .. ")") or ""))
+  D.post_row(row)
+end
+
+local function stop_starting(match, state)
   for i, s in ipairs(starting) do
     if match(s) then
       table.remove(starting, i)
-      return true
+      if state then D.settle(s, state) end
+      return s
     end
   end
 
-  return false
+  return nil
 end
 
 -- Decoded pictures, by name. `false` means it was tried and would not
@@ -1964,6 +2005,9 @@ local resizable, resize_window, move_window
 -- reports where a window ended up, and it is written above the function
 -- that does the reporting.
 local post
+
+-- And the loader's rows (`D.post_row`), which are written above this.
+function D.post(win, event) return post(win, event) end
 
 -- The Deskbar's Kosmos menu, opened as if its button were pressed: the
 -- Super key's, and the power button's when Preferences asks for the menu.
@@ -3928,7 +3972,11 @@ handlers.open = function(req, who, cap)
 
   -- Its first window: no longer starting.
   if win.program then
-    stop_starting(function(s) return s.path == win.program end)
+    stop_starting(function(s) return s.path == win.program end, "ready")
+
+    if D.startup_on_deskbar and win.program:match("/deskbar%.lua$") then
+      D.startup_on_deskbar, D.startup_due = false, true
+    end
   end
 
   remember(win)
@@ -4032,12 +4080,23 @@ local function finish_launch(l, ok, err, id)
     -- Said on its button for a moment, whoever asked: the Deskbar shows
     -- this for a program a desktop icon or Tracker started as well.
     for _, s in ipairs(starting) do
-      if s.launch == l then s.failed, s.since = tostring(err), sys.ticks() end
+      if s.launch == l then
+        s.failed, s.since = tostring(err), sys.ticks()
+        D.settle(s, "failed", err)
+      end
     end
   else
     for _, s in ipairs(starting) do
-      if s.launch == l then s.pid = id end
+      if s.launch == l then
+        s.pid = id
+        if s.row then s.row.pid = id end
+      end
     end
+
+    -- A program of the desktop that opens no window is ready once it runs.
+    stop_starting(function(s)
+      return s.launch == l and s.row and s.row.background
+    end, "ready")
 
     -- Remembered so that the *next* window to open can be tied to it, when
     -- the kernel cannot say whose an `open` is - which it now can
@@ -4128,6 +4187,26 @@ handlers.launch = function(req, who)
   stop_starting(function(s) return s.path == path end)
   starting[#starting + 1] = { path = path, launch = l, since = sys.ticks() }
 
+  -- A row of the loader, while a desktop is being started: whoever asked -
+  -- the desktop's own list, its startup items, or one of those starting
+  -- another, as `desktop` starts Tracker.
+  if D.loading and not D.loading.over then
+    local row = { index = #D.loading.rows + 1, since = sys.ticks(),
+                  program = name .. ((req.args and req.args ~= "") and (" " .. tostring(req.args)) or ""),
+                  state = "starting",
+                  -- The desktop's own programs, or what opens with it.
+                  part = D.loading.part,
+                  -- Ready once it runs: one the desktop's file says opens
+                  -- no window, and a program rather than an application -
+                  -- `maild`, `autod` - which opens none by being one.
+                  background = (D.loading.background[name]
+                                or path:find("^/Kosmos/Programs/") ~= nil) or nil }
+
+    D.loading.rows[row.index] = row
+    starting[#starting].row = row
+    D.post_row(row)
+  end
+
   -- The desktop lent, to a program that declares it needs it (above).
   local shares = { ["/Running/wm"] = ep }
   local attrs = remote.ep and fs.getattr(path)
@@ -4151,6 +4230,234 @@ handlers.launch = function(req, who)
   end
 
   return DEFER
+end
+
+--
+-- **A desktop, chosen** (`docs/pewter.md` P1).
+--
+-- `{ type = "desktop", name = "Pewter", watch = handle }` starts the
+-- programs `/Kosmos/Desktops/Pewter.desktop` names, through `launch` like
+-- everything else, and then the Startup page's items once those have
+-- settled - so the chooser's loader, the window `watch` names, is posted a
+-- row for each as it starts and as it arrives. The choice is kept, for the
+-- chooser to start on next time.
+--
+-- `{ type = "desktop", name = false }` is Switch Desktop: every window is
+-- asked to close, as a window's close box asks, and ended a second later if
+-- it has not; what the desktop started that has no window is ended; and
+-- when the screen is empty the chooser is started again.
+--
+-- What this lets a caller do is what `launch` already does - start a
+-- program by name - and close windows, which `power` does to every one.
+--
+D.desktops = use("/Kosmos/Libraries/desktops.lua")
+D.startup = use("/Kosmos/Libraries/startup.lua")
+
+D.switching = false
+
+-- A list given to `wm` with the Deskbar in it opens the startup items as
+-- the Deskbar did, once the Deskbar's window is up (the boot, below).
+D.startup_on_deskbar = false
+D.startup_due = false
+
+-- A program the shell names as `wm` takes it: a name, or a name and words.
+function D.launch_entry(entry)
+  local name, argument = entry:match("^([^:]+):(.*)$")
+
+  return handlers.launch({ program = name or entry, args = argument, wait = false })
+end
+
+--
+-- **The Startup page's items, opened by the window manager.** The Deskbar
+-- opened them once its own window was up, which made them the Deskbar's -
+-- a desktop with no Deskbar, as Pewter will be, would open none - and the
+-- loader could list only what this process starts.
+--
+function D.open_startup()
+  local items = D.startup.items()
+  local n = 0
+
+  --
+  -- **Each one tried, a name that is no program included**: it fails as a
+  -- launch fails, and the loader shows it as one that did not start, with
+  -- why - a stale tick on the Startup page is said where a person sees it
+  -- rather than skipped where nobody does.
+  --
+  for _, name in ipairs(items) do
+    D.launch_entry(tostring(name))
+    n = n + 1
+  end
+
+  if n > 0 then
+    print(("wm: started %d at login"):format(n))
+  end
+
+  --
+  -- **Mail's half that runs without the window** (`docs/mail.md`, M4):
+  -- `maild`, when `/Home/Mail` holds an account, so new mail is said with
+  -- Mail closed - lent the keyring's mail door because its header asks.
+  --
+  for _, name in ipairs(fs.list("/Home/Mail") or {}) do
+    if type(fs.read("/Home/Mail/" .. name .. "/account")) == "table" then
+      if not fs.getattr("/Running/maild") then D.launch_entry("maild") end
+      break
+    end
+  end
+
+  --
+  -- **The automations' runner** (`docs/automations.md` A3): `autod`, when
+  -- `/Home/Automations` holds one, so they run on their triggers whether
+  -- the Automations window is open or not.
+  --
+  for _, name in ipairs(fs.list("/Home/Automations") or {}) do
+    if tostring(type(name) == "table" and name.name or name):match("%.automation$") then
+      if not fs.getattr("/Running/autod") then D.launch_entry("autod") end
+      break
+    end
+  end
+end
+
+--
+-- Once a pass while a desktop loads: when the shell's rows have settled the
+-- startup items are opened, and when every row has, the loading ends - said
+-- to the chooser, which takes its window away. A pass rather than the
+-- moment a row settles, because a row settles inside `step_launches`, and
+-- a launch started from in there would be lost when that step finished.
+--
+function D.loading_step()
+  if not D.loading or D.loading.over then return end
+
+  for _, row in ipairs(D.loading.rows) do
+    if row.state == "starting" then return end
+  end
+
+  if D.loading.startup then
+    D.loading.startup = false
+    D.loading.part = "startup"
+
+    local before = #D.loading.rows
+
+    D.open_startup()
+
+    -- Something to start: its rows are under way. Nothing: the end.
+    if #D.loading.rows > before then return end
+  end
+
+  -- `startup` is still true only while the shell has not settled.
+  if D.loading.startup ~= false then return end
+
+  D.loading.over = true
+
+  local ready, failed = 0, 0
+
+  for _, row in ipairs(D.loading.rows) do
+    if row.state == "failed" then failed = failed + 1 else ready = ready + 1 end
+  end
+
+  print(("wm: desktop %s loaded, %d started, %d failed"):format(D.loading.name, ready, failed))
+
+  if D.loading.watcher then
+    post(D.loading.watcher, { type = "loading", done = true,
+                            ready = ready, failed = failed })
+  end
+end
+
+function D.start(name, watcher)
+  local d, why, said = D.desktops.read(name)
+
+  if not d then
+    print(("wm: desktop %s: %s"):format(tostring(name), tostring(why)))
+    return nil, why
+  end
+
+  for _, line in ipairs(said or {}) do
+    print(("wm: %s.desktop %s"):format(name, line))
+  end
+
+  print(("wm: desktop %s chosen"):format(d.name))
+
+  D.loading = { name = d.name, watcher = watcher, rows = {},
+              background = d.background, startup = true, over = false,
+                part = "desktop" }
+
+  for _, entry in ipairs(d.shell) do
+    D.launch_entry(entry)
+  end
+
+  D.desktops.remember(name)
+
+  return d
+end
+
+handlers.desktop = function(req)
+  if req.name == false then
+    if D.switching then return { ok = true } end
+
+    D.switching = true
+    print("wm: switching desktop")
+
+    local now = sys.ticks()
+
+    for _, win in ipairs(windows) do
+      win.closing = win.closing or (now + OUT.close_grace)
+      post(win, { type = "close" })
+    end
+
+    -- What the desktop started with no window to close: ended.
+    for _, row in ipairs(D.loading and D.loading.rows or {}) do
+      if row.background and row.pid then sys.kill(row.pid) end
+    end
+
+    D.loading = nil
+
+    for i = #starting, 1, -1 do starting[i] = nil end
+
+    return { ok = true }
+  end
+
+  if type(req.name) ~= "string" then
+    return { ok = false, error = "a desktop is named, or false to choose again" }
+  end
+
+  if D.loading and not D.loading.over then
+    return { ok = false, error = "a desktop is already being started" }
+  end
+
+  local d, why = D.start(req.name, by_handle[tonumber(req.watch) or -1])
+
+  if not d then return { ok = false, error = tostring(why) } end
+
+  return { ok = true, name = d.name }
+end
+
+-- A pass's look at the desktop: the loading's next step, and the chooser
+-- again once Switch Desktop has emptied the screen.
+function D.step()
+  if D.loading and not D.loading.over then D.loading_step() end
+
+  --
+  -- **The loader in front until it goes.** What it is starting opens its
+  -- windows while it is up - the Deskbar's strip, Tracker, the startup
+  -- items - and each new window comes to the front, as a window does. A
+  -- loader they opened over would be listing what is already in front of
+  -- it, so it is raised again while it is on the screen.
+  --
+  local w = D.loading and D.loading.watcher
+
+  if w and by_handle[w.handle] == w and windows[#windows] ~= w then
+    raise(w)
+  end
+
+  if D.startup_due then
+    D.startup_due = false
+    D.open_startup()
+  end
+
+  if D.switching and #windows == 0 then
+    D.switching = false
+    print("wm: the screen is empty, choosing again")
+    D.launch_entry("chooser")
+  end
 end
 
 --
@@ -4238,7 +4545,10 @@ handlers.windows = function(req)
                -- started or can switch to, so it filters on this rather
                -- than on titles - which is what it did for its own window
                -- and does not scale to a second one.
-               chrome = (win.backdrop or win.strip or win.popup or win.tip) and true or nil,
+               -- And the loader, over the screen while a desktop starts:
+               -- not something you started or would switch to.
+               chrome = (win.backdrop or win.strip or win.popup or win.tip
+                         or (D.loading and D.loading.watcher == win)) and true or nil,
 
                -- Which *kind* of chrome, because "is there a desktop
                -- already" is a question with an answer only this process
@@ -6821,7 +7131,14 @@ do
 
   wanted = table.concat(rest, ",")
 
-  if wanted == "" then wanted = "notifications,desktop,deskbar" end
+  --
+  -- **Nothing named: the chooser** (`docs/pewter.md` P1, agreed 7
+  -- November 2026: "every boot"), which offers the desktops in
+  -- `/Kosmos/Desktops` and asks for one - `wm Astra.desktop` starts one
+  -- without it, and a list of programs starts those and nothing else, as
+  -- it always has.
+  --
+  if wanted == "" then wanted = "chooser" end
 
   if TRACE then
     print(("wm: tracing, screen %dx%d"):format(W, H))
@@ -6902,8 +7219,17 @@ for _, entry in entries(wanted) do
     name = name or entry
 
     local path = fs.program(name)
-    local ok, err, id = run(path, argument or "", true,
-                            { ["/Running/wm"] = ep })
+    local ok, err, id
+
+    if name:match("%.desktop$") and not argument then
+      -- A desktop by its file, started as the chooser would start it.
+      ok, err = D.start(name:match("^(.-)%.desktop$"), nil)
+      path, id = name, "a desktop"
+    else
+      ok, err, id = run(path, argument or "", true, { ["/Running/wm"] = ep })
+
+      if ok and name == "deskbar" then D.startup_on_deskbar = true end
+    end
 
     if not ok then
       print(("wm: could not start %s: %s"):format(path, tostring(err)))
@@ -7305,7 +7631,7 @@ while OUT.running do
     if not gone then break end
 
     -- A program that ended before it opened a window is no longer starting.
-    stop_starting(function(s) return s.pid == gone end)
+    stop_starting(function(s) return s.pid == gone end, "ended")
   end
 
   if #starting > 0 then
@@ -7316,9 +7642,12 @@ while OUT.running do
 
       if now - s.since > (s.failed and FAILED_COUNTS or STARTING_COUNTS) then
         table.remove(starting, i)
+        D.settle(s, "slow")
       end
     end
   end
+
+  D.step()
 
   if P.measuring then t, heap = P.charge("collect", t, heap) end
 

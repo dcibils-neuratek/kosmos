@@ -3094,6 +3094,11 @@ FORCE:
 # never include. A file name without a space: make cannot hold one.
 THEMES := $(wildcard user/themes/*.theme)
 
+# **The desktops** (`docs/pewter.md` P1): `user/desktops/*.desktop`, the
+# same way and shown as `/Kosmos/Desktops` - which programs are each
+# desktop, for the chooser to offer and the window manager to start.
+DESKTOPS := $(wildcard user/desktops/*.desktop)
+
 # **Pages the menu opens** (`user/pages/*.page`): a launcher in the shipped
 # menu that starts the browser at an address - the cheat sheet, a tutorial -
 # made by `binfs` from the file's lines as an application's is from its
@@ -3111,10 +3116,11 @@ TEMPLATES := $(wildcard user/templates/*/*)
 EXAMPLE_INPUTS := tools/examples.py $(wildcard user/examples/*/*) \
                   $(wildcard runtime/upstream/tinygl/examples/*) user/bin/apps/cube3d.lua
 
-$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(PAGES) $(TEMPLATES) $(LESSONS) $(EXAMPLE_INPUTS) tools/progs2c.py $(HOSTDIR)/lua.ok
+$(GEN)/programs.c: $(BIN_LUA) $(THEMES) $(DESKTOPS) $(PAGES) $(TEMPLATES) $(LESSONS) $(EXAMPLE_INPUTS) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(BIN_LUA) \
 	    --rooted user/themes themes/ $(THEMES) \
+	    --rooted user/desktops desktops/ $(DESKTOPS) \
 	    --rooted user/pages pages/ $(PAGES) \
 	    --rooted user/templates templates/ $(TEMPLATES) \
 	    --rooted user/tutorial tutorial/ $(LESSONS) \

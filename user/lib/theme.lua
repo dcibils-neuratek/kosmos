@@ -408,6 +408,47 @@ local function colour(v)
 end
 
 --
+-- **The format's lines, for whoever reads a file in it**: each line that
+-- says something, as its number, its key and its value - or its number
+-- and no key, when it is not `key = value`. A look is the first file in
+-- this format and a desktop (`desktops.lua`) the second, so the lines are
+-- read here, once, and each reader decides what its keys mean.
+--
+-- Comments and blank lines are skipped, and a comment may follow a value.
+--
+-- **A line that starts with `#` is a comment whatever follows it**, a bare
+-- `#` included. The trailing rule wants a space after the `#` so that
+-- `#ffffff` is a colour rather than a comment, and applied to a whole line
+-- it made every bare `#` - the blank line inside a block of comments, which
+-- every shipped theme has - a line that was "not `key = value`".
+-- `tools/test_theme.lua` found five themes read with complaints on 22
+-- September.
+--
+function theme.lines(text)
+  local next_line = tostring(text or ""):gmatch("([^\n]*)\n?")
+  local n = 0
+
+  return function()
+    while true do
+      local line = next_line()
+
+      if line == nil then return nil end
+
+      n = n + 1
+
+      local body = line:match("^%s*#") and ""
+                   or line:gsub("#%s.*$", ""):match("^%s*(.-)%s*$")
+
+      if body ~= "" then
+        local key, value = body:match("^([%w_%.]+)%s*=%s*(.-)$")
+
+        return n, key, value
+      end
+    end
+  end
+end
+
+--
 -- Read a theme from text. Returns a palette table, plus a list of
 -- complaints - lines that were not understood and keys that are not
 -- tokens. The caller decides whether to care; `appearance` shows them,
@@ -435,23 +476,10 @@ function theme.read(text, base)
     out.fonts[r] = { font = d.font, px = d.px }
   end
 
-  for line in tostring(text or ""):gmatch("([^\n]*)\n?") do
-    n = n + 1
+  for n_, key, value in theme.lines(text) do
+    n = n_
 
-    -- Comments and blank lines, and a comment may follow a value.
-    --
-    -- **A line that starts with `#` is a comment whatever follows it**,
-    -- a bare `#` included. The trailing rule wants a space after the `#`
-    -- so that `#ffffff` is a colour rather than a comment, and applied to
-    -- a whole line it made every bare `#` - the blank line inside a block
-    -- of comments, which every shipped theme has - a line that was "not
-    -- `key = value`". `tools/test_theme.lua` found five themes read with
-    -- complaints on 22 September.
-    local body = line:match("^%s*#") and ""
-                 or line:gsub("#%s.*$", ""):match("^%s*(.-)%s*$")
-
-    if body ~= "" then
-      local key, value = body:match("^([%w_%.]+)%s*=%s*(.-)$")
+    do
       local role = key and key:match("^font%.([%w_]+)$")
 
       if not key then

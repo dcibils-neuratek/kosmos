@@ -426,6 +426,18 @@ chooser stays over the screen and lists the desktop's pieces and the
 Startup page's applications as each starts, with its state and time; one
 that fails or is slow does not hold the desktop. Part of P1.
 
+**P1 built, 8 November 2026.** `/Kosmos/Desktops` holds `Astra.desktop`
+and `Pewter.desktop` (which starts Astra's shell until P2-P6 give it its
+own); `desktops.lua` reads them over `theme.lines`; a bare `wm` - every
+boot - starts `chooser.lua`, full screen; the window manager's
+`handlers.desktop` starts the chosen shell and then the Startup page's
+items, which moved there from the Deskbar with `maild` and `autod`; the
+loader is the chooser kept over the screen and posted a `loading` row as
+each piece starts and arrives; **Switch Desktop...** in the Deskbar's menu
+closes every window and shows the chooser again; the choice is kept in
+the `desktop` setting. Held by `x86-desktops` (`tools/run_desktops.py`).
+**P2, Platinum's title bar, is next.**
+
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old
 solaris desktop from SUN", "can we do a mockup of a 3rd desktop that

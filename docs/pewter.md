@@ -122,14 +122,23 @@ app_server, with the window decorator a piece that can be exchanged.
 
 `/Kosmos/Desktops/<Name>.desktop`, `user/desktops/` in the tree, carried in
 the image beside the looks. Text, in the same `key = value` form a
-`.theme` file uses, read by the same parser (`theme.lua`), so the format is
-one format:
+`.theme` file uses, its lines read by the same reader (`theme.lines`), so
+the format is one format. `desktops.lua` is the kit both its readers use -
+the chooser lists them, the window manager starts one - so the two cannot
+disagree about what a desktop is.
+
+**As built in P1** a file says four things, and nothing it does not yet
+act on: `name`, `says` (the chooser's line under it), `shell`, and
+`background` - those of the shell's programs that open no window when they
+start, and are ready as soon as they run. A key it does not know is a
+complaint in the log rather than silence. The rest arrive with the step
+that reads them - `chrome` with P2, `menus` with P3, `looks` and `picture`
+when Pewter has its own - and Pewter's file when it is drawn will read:
 
 ```
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 # Pewter: Mac OS 9.2's manner, reimagined for 2026 (docs/pewter.md).
-name        = pewter
-title       = Pewter
+name        = Pewter
 says        = One menu bar for everything, and Platinum.
 shell       = notifications, pewterdesk, menubar, controlstrip
 chrome      = platinum
@@ -151,9 +160,9 @@ picture     = Pewter.png
 - **`picture`** is what the chooser shows.
 
 `Astra.desktop` says what runs today and nothing new:
-`shell = notifications, desktop, deskbar`, `chrome = astra`,
-`menus = window`. Building P1 must leave Astra exactly as it is, and the
-gate is how that is known.
+`shell = notifications, desktop, deskbar`, `background = notifications`.
+Building P1 had to leave Astra exactly as it is, and the gate is how that
+is known.
 
 **A third desktop** is a third file and the shell programs it names. If it
 needs a new kind of title bar, that is one more `chrome` in the kit; if it
@@ -165,7 +174,9 @@ anything.
 | Piece | What supplies it | New or existing |
 |---|---|---|
 | Composing, input, focus, clipboard, drag, strips | `wm.lua` | existing, unchanged |
-| Reading a `.desktop` file, starting its shell | `wm.lua`, `handlers.desktop` | new, small |
+| Reading a `.desktop` file | `desktops.lua`, over `theme.lines` | new kit, the format's reader shared |
+| Starting its shell, the loader's rows | `wm.lua`, `handlers.desktop`, on the `starting` list | new, small |
+| The Startup page's items, `maild`, `autod` | `wm.lua`, moved out of `deskbar.lua` | moved, not copied |
 | The chooser | `chooser.lua`, a program `wm` starts when no desktop is named | new |
 | Which desktop was used last | `prefs.lua`, the `desktop` setting | existing kit, new key |
 | Platinum's title bar | UI kit, `ui.header` with `chrome = "platinum"` | new style in the kit |
@@ -238,33 +249,52 @@ the application knows which.
 would start Astra's list. Every harness and scripted run names what it
 wants, so what they start is what they started before - the same argument
 as when the desktop became the default (`wm.lua`, *With nothing asked for,
-a desktop*). A test that wants a desktop names it: `wm desktop:pewter`.
+a desktop*). A test that wants a desktop names its file: `wm Astra.desktop`
+- which the harnesses that typed a bare `wm`, or booted with `boot=wm`,
+now do.
 
 1. The chooser lists `/Kosmos/Desktops` and reads each file, and the
    `desktop` setting for the one used last.
 2. It draws a card for each, full screen, as `docs/desktops.html` has it.
-3. On a choice it saves the setting and posts `desktop{ name = "pewter" }`
-   to the window manager, and ends.
-4. The window manager reads the file, applies its chrome, its menus and its
-   look - before the first window of that desktop opens, so nothing is
-   drawn twice - and starts its shell, then what the Startup page opens
-   (`startup.lua`), which the Deskbar opens today.
-5. **The chooser stays, as the loader**, a window over everything, and the
-   window manager tells it how each launch goes. It already keeps that for
-   the Deskbar - `starting`, each launch's program, its process and why it
-   failed (`wm.lua`, `finish_launch`) - and the new part is saying it to a
-   watcher: a `launch` event, `{ program, state, ms }`, posted when a
-   launch starts, when it fails, and when the program's first window is
-   committed. A piece that opens no window at start - the banners - is
-   ready when its process has started.
-6. When every piece is ready or has failed, or a second and a half has
-   passed for the last one, the loader ends, and the desktop is under it.
-   It draws what it has been told and never asks, so a launch that hangs
-   cannot hang it - *nothing on the desktop waits on a server*.
+3. On a choice it sends `desktop{ name = "Pewter", watch = <its window> }`
+   to the window manager, which answers at once and keeps the choice in the
+   `desktop` setting.
+4. The window manager reads the file - and, from P2, applies its chrome,
+   menus and look before the first window opens, so nothing is drawn twice
+   - and starts its shell through `launch`, as everything is started. Once
+   the shell has settled it opens the Startup page's items (`startup.lua`)
+   and `maild` and `autod` when they have something to do. **The Deskbar
+   opened those, and does not any more**: a desktop with no Deskbar would
+   have opened none, and the loader could list only what the window
+   manager starts. A list given to `wm` with the Deskbar in it opens them
+   when the Deskbar's window is up, as before. Every item is tried, a name
+   that is no program included, and fails as a launch fails - a stale tick
+   is shown where a person sees it rather than skipped where nobody does.
+5. **The chooser stays, as the loader**, and the window manager tells it
+   how each launch goes. It already kept that for the Deskbar - `starting`,
+   each launch's program, its process and why it failed - so each entry
+   there carries a row, and the moments it already noticed post a
+   `loading` event: `{ index, program, part, state, ms, error }`, `part`
+   the desktop's own or what opens with it, `state` one of `starting`,
+   `ready` (its first window), `ended` (it ran and went without one, as
+   `desktop` does once it has started Tracker), `failed`, or `slow` (still
+   starting when the Deskbar would give up on it). A piece that opens no
+   window - the file's `background`, and any program rather than an
+   application - is ready once it runs. Posted, never sent, and the next
+   step is taken once a pass: a row settles inside `step_launches`, and a
+   launch begun from in there would be lost.
+6. When every row has settled the window manager posts `done`; and when
+   nothing has moved for a second and a half the loader stops waiting for
+   a slow one. It lingers for 0.7 s and closes, and the desktop is under
+   it. While it is up it is raised over each window the desktop opens, and
+   the `windows` list calls it chrome, so the Deskbar lists no button for
+   it. It draws what it was posted and asks nothing.
 
-**Switch Desktop…** posts `desktop{ name = false }`. The window manager
-asks every window to close, the way Restart does, waits for the shell to
-end, and starts the chooser again.
+**Switch Desktop…**, in the Deskbar's menu above Restart, sends
+`desktop{ name = false }`. The window manager asks every window to close,
+as a close box does - and ends it a second later if it has not - ends what
+the desktop started that has no window, and when the screen is empty
+starts the chooser again.
 
 The chrome is told to each window in the reply to its `open`, beside
 `headed` (`ui.lua` line 7713), so a window learns how to draw itself before
@@ -309,7 +339,10 @@ on the M700 with the GPU's composing and without.
 
 Each is built, held by a test that stays, and lived with before the next.
 
-- **P1 - Desktops as files, and the chooser.** `Astra.desktop` describes
+- **P1 - Desktops as files, and the chooser. Built, 8 November 2026**;
+  `tools/run_desktops.py`, `x86-desktops`, 13 checks in about twenty
+  seconds, its control a failed launch reported as ready, which fails it.
+  `Astra.desktop` describes
   what runs today; `chooser.lua`; `handlers.desktop`; the `desktop`
   setting; Switch Desktop… in the Deskbar. The loader, and the window
   manager's `launch` events. Pewter's file exists and starts Astra's

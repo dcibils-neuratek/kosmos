@@ -1871,12 +1871,20 @@ to work in", "in the future i would also like to add a 3rd one", and then
   draws, and where menus go. A second `wm.lua` would be seven thousand
   lines kept in step to change a few hundred.
 - **A desktop is a file**, `/Kosmos/Desktops/<Name>.desktop`, in the
-  `.theme` format and read by its parser: `shell`, `chrome`, `menus`,
-  `looks`, `picture`. Astra's says what runs today. A third desktop is a
-  third file and the programs it names.
+  `.theme` format and read by its line reader (`theme.lines`) through
+  `desktops.lua`: `name`, `says`, `shell` and `background` since P1, and
+  `chrome`, `menus`, `looks`, `picture` with the steps that read them.
+  Astra's says what runs today. A third desktop is a third file and the
+  programs it names.
 - **A chooser at every boot**, the one used last already chosen
-  (`docs/desktops.html`), and Switch Desktop… inside each, which closes
-  the windows and shows it again without restarting.
+  (`docs/desktops.html`): a bare `wm` starts `chooser`, and `wm
+  Astra.desktop` starts a desktop without it. It stays over the screen as
+  the loader, posted a `loading` row by the window manager as each piece
+  starts and arrives. Switch Desktop... inside each closes the windows and
+  shows it again without restarting. Built in P1, 8 November 2026.
+- **The Startup page's items are the window manager's**, opened once the
+  desktop's own programs have settled - not the Deskbar's, which a
+  desktop without one would not have.
 - **Kosmos's own applications in Pewter's chrome**, not the mockup's.
   Their menus are one table on both desktops: the kit draws them in the
   window on Astra and hands the titles over on Pewter, which is 16.8h made

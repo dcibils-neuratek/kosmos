@@ -214,7 +214,7 @@ def boot(image, telnet, web, vnc=None, extra=()):
         "-netdev", "user,id=net0," + forward,
         "-device", R.device(image, "net") + ",netdev=net0",
         "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
-        "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+        "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop",
     ] + list(extra))
 
     try:

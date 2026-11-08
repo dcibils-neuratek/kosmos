@@ -1,0 +1,20 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Astra: the desktop Kosmos has had all along - the Deskbar across the top,
+# the dock, the launcher pad, your files behind everything.
+#
+# A desktop is a file (`docs/pewter.md`, agreed 7 November 2026): which
+# programs make it up, started by the window manager in this order when it
+# is chosen. The window manager is the same one under every desktop; what
+# differs is what it starts and, as Pewter is built, how it draws.
+#
+#   name        what the chooser calls it
+#   says        a line under the name
+#   shell       the programs that are the desktop, in order, as `wm` takes
+#               them: a name, or a name and its words after a colon
+#   background  those of them that open no window when they start, and are
+#               ready as soon as they are running
+
+name       = Astra
+says       = The Deskbar, the dock and the launcher pad
+shell      = notifications, desktop, deskbar
+background = notifications

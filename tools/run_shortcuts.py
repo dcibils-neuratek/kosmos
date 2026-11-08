@@ -421,7 +421,7 @@ def main():
         line(r"kosmos> ", mark, 20)
         time.sleep(1)
         mark = len(guest.seen)
-        guest.type("wm")
+        guest.type("wm Astra.desktop")
         again = line(r"wm: shortcuts: (\d+) keys, (\d+) of them a person's own", mark, 60)
         line(r"wm: window Deskbar at ", mark, 60)
         time.sleep(4)

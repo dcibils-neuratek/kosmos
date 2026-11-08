@@ -8216,7 +8216,7 @@ def check_deskbar(guest):
     demonstrations here do - has a window and no registration, and would be
     missing from a list built the other way.
     """
-    guest.type("wm")
+    guest.type("wm Astra.desktop")
     started(guest)
 
     #
@@ -8313,6 +8313,20 @@ def check_deskbar(guest):
     time.sleep(0.3)
     guest.mouse_button(False)
     time.sleep(1.2)
+
+    #
+    # **The menu's width as the window manager says it opened**, rather
+    # than as its widest name was guessed: the guess was `Applications`,
+    # and Switch Desktop... (`docs/pewter.md` P1) is wider, so the submenu
+    # opened further right than the pointer went and the press landed in
+    # the menu itself.
+    #
+    guest._read_available()
+    said = re.search(r"wm: menu of Deskbar at \d+,\d+ (\d+)x\d+",
+                     guest.seen[opened_at:])
+
+    if said:
+        top_w = int(said.group(1))
 
     # Applications is the first row; hovering it opens its submenu, which
     # the window manager forwards because a menu is open.

@@ -4448,6 +4448,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- And the looks that ship, a folder of the same store.
   ns.mount("/Kosmos/Themes", bin_cap, "/themes", "bin")
+  ns.mount("/Kosmos/Desktops", bin_cap, "/desktops", "bin")
   ns.mount("/Kosmos/Templates", bin_cap, "/templates", "bin")
   ns.mount("/Kosmos/Examples", bin_cap, "/examples", "bin")
   ns.mount("/Kosmos/Tutorial", bin_cap, "/tutorial", "bin")
@@ -6847,6 +6848,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
   if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
   if req.bin     then ns.mount("/Kosmos/Themes",     req.bin, "/themes", "bin") end
+  if req.bin     then ns.mount("/Kosmos/Desktops",   req.bin, "/desktops", "bin") end
   if req.bin     then ns.mount("/Kosmos/Templates",  req.bin, "/templates", "bin") end
   if req.bin     then ns.mount("/Kosmos/Examples",   req.bin, "/examples", "bin") end
   if req.bin     then ns.mount("/Kosmos/Tutorial",   req.bin, "/tutorial", "bin") end

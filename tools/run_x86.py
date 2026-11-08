@@ -2796,7 +2796,7 @@ def pointer(image, check):
                "-display", "none", "-vga", "none", "-device", "ramfb",
                "-monitor", "unix:%s,server,nowait" % path,
                "-serial", serial,
-               "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+               "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop",
                "-fw_cfg", "name=opt/kosmos/irq,string=pic",
                "-kernel", binary]
 
@@ -2976,7 +2976,7 @@ def power_button(image, check):
            "-display", "none", "-vga", "none", "-device", "ramfb",
            "-monitor", "unix:%s,server,nowait" % path,
            "-serial", "stdio",
-           "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+           "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop",
            "-kernel", binary]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -3127,7 +3127,7 @@ def battery(image, check):
                "-display", "none", "-vga", "none", "-device", "ramfb",
                "-monitor", "unix:%s,server,nowait" % path,
                "-serial", "stdio",
-               "-fw_cfg", "name=opt/kosmos/boot,string=wm"] + option(value) \
+               "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop"] + option(value) \
               + list(extra) + ["-kernel", binary]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,
@@ -3293,7 +3293,7 @@ def usb_mouse(image, check):
            "-device", "qemu-xhci,id=usb0",
            "-device", "qemu-xhci,id=usb1",
            "-device", "usb-mouse,bus=usb1.0,port=1,id=mouse0",
-           "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+           "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop",
            # Every doorbell the driver rings for an endpoint, with its time.
            "-msg", "timestamp=on", "-trace", "usb_xhci_ep_kick",
            "-D", traced,

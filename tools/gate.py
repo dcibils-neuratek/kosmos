@@ -311,6 +311,9 @@ SUITES = [
     Suite("x86-mdns", ["python3", "tools/run_mdns.py", X86], x86=True),
     Suite("x86-switcher", ["python3", "tools/run_switcher.py", X86], x86=True),
     Suite("x86-shortcuts", ["python3", "tools/run_shortcuts.py", X86], x86=True),
+    # Desktops (`docs/pewter.md` P1): the chooser a bare `wm` starts, its
+    # loader told of each piece, Switch Desktop, and the choice kept.
+    Suite("x86-desktops", ["python3", "tools/run_desktops.py", X86], x86=True),
     Suite("x86-tracker", ["python3", "tools/run_tracker.py", X86], x86=True),
     Suite("x86-trackerlist", ["python3", "tools/run_trackerlist.py", X86], x86=True),
     Suite("x86-wallpapers", ["python3", "tools/run_wallpapers.py", X86], x86=True),

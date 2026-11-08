@@ -712,8 +712,8 @@ win:publish("menu",
 -- **Asked for, then done from the loop**: the setter only notes the words,
 -- so the write that asked is answered by a Deskbar still there to answer
 -- it - closing from inside the setter left `setprop` holding an error from
--- a process that had gone. `--again` is what keeps the new one from opening
--- the login items a second time.
+-- a process that had gone. The login items are not opened again: the
+-- window manager opens them, once (`docs/pewter.md` P1).
 --
 local leaving = nil         -- { bar, dock } once a new place has been asked for
 
@@ -721,7 +721,7 @@ local function again(bar_is, dock_is, size_is)
   size_is = size_is or DOCK_SIZE
 
   local reply = fs.send("/Running/wm", { type = "launch", program = "deskbar",
-                                         args = ("--bar %s --dock %s --size %s --again")
+                                         args = ("--bar %s --dock %s --size %s")
                                                 :format(bar_is, dock_is, size_is) })
 
   if reply and reply.ok then
@@ -1193,6 +1193,21 @@ local function open_kosmos_menu()
     -- whole point - see `handlers.power`.
     --
     items[#items + 1] = { separator = true }
+
+    --
+    -- **Switch Desktop...** (`docs/pewter.md` P1): every window asked to
+    -- close, and the chooser again on an empty screen - another desktop
+    -- without restarting the machine. Above the two that end everything,
+    -- since it ends only what is open.
+    --
+    items[#items + 1] = {
+      text = "Switch Desktop...",
+      icon = "Prefs_Backgrounds",
+      on_choose = function()
+        say("switching desktop")
+        fs.send("/Running/wm", { type = "desktop", name = false })
+      end,
+    }
 
     items[#items + 1] = {
       text = "Restart",
@@ -2596,102 +2611,13 @@ end
 win:add(bar)
 
 --------------------------------------------------------------------------
--- Startup items.
---
--- What Preferences' Startup page ticked, opened once, here, after the
--- Deskbar's own window exists.
---
--- **Here rather than anywhere earlier on the boot path**, and that is the
--- whole point of the feature living in this file. `init.lua` runs one
--- program from a firmware option and refuses to read a setting off the
--- disk, because a machine that will not reach a prompt because of something
--- written in a file is a machine you cannot fix from the prompt. Nothing
--- here changes that: by the time this line runs there is a shell, a window
--- manager and a Deskbar, so the worst a bad entry can do is open a window
--- that dies - and the panel that unticks it is two clicks away.
---
--- Started through the same `launch` message the menu sends, so an item that
--- opens at startup and the same item chosen by hand are the same thing.
+-- Startup items are the window manager's now (`docs/pewter.md` P1): it
+-- opens what Preferences' Startup page ticked, and `maild` and `autod`,
+-- once this window is up - as this file did - or, when a desktop was
+-- chosen, once that desktop's programs have arrived. A desktop with no
+-- Deskbar, as Pewter will be, opens them too, and the chooser's loader
+-- lists them as they start.
 --------------------------------------------------------------------------
-if not tostring(args or ""):match("%-%-again") then
-  -- The list, or what a machine nobody has told opens. `/Kosmos/Libraries/startup.lua`
-  -- holds both so that this and the panel cannot disagree about it.
-  local items = use("/Kosmos/Libraries/startup.lua").items()
-
-  local started = 0
-
-  for _, name in ipairs(items) do
-    name = tostring(name)
-
-    -- Only what this Deskbar would list. A name in the file that is no
-    -- longer in `/bin` is a stale tick, not a reason to send the window
-    -- manager a program it cannot find.
-    local known = programs[name] ~= nil
-
-    -- Narrated, because this is the step nobody could see. Four windows
-    -- opening at login is four `launch` messages from here, and when one of
-    -- them does not arrive there is nothing on the screen to say which - so
-    -- each is announced with what came back. `log deskbar` at the prompt
-    -- reads them after the desktop has been left.
-    if not known then
-      print(("deskbar: %s is not in /bin, so it was not started"):format(name))
-    else
-      local sent = fs.send("/Running/wm", { type = "launch", program = name })
-
-      print(("deskbar: launch %s -> %s"):format(name, tostring(sent)))
-
-      if sent then
-        started = started + 1
-      end
-    end
-  end
-
-  if started > 0 then
-    say(("started %d at login"):format(started))
-  end
-
-  --
-  -- **Mail's half that runs without the window** (`docs/mail.md`, M4):
-  -- `maild`, started at login when `/Home/Mail` holds an account, so new
-  -- mail is said with Mail closed. Through `launch`, as everything above,
-  -- and the window manager lends it the keyring's mail door because its
-  -- header asks for it.
-  --
-  local has_mail = false
-
-  for _, name in ipairs(fs.list("/Home/Mail") or {}) do
-    if type(fs.read("/Home/Mail/" .. name .. "/account")) == "table" then
-      has_mail = true
-      break
-    end
-  end
-
-  if has_mail and not fs.getattr("/Running/maild") then
-    local sent = fs.send("/Running/wm", { type = "launch", program = "maild" })
-
-    print(("deskbar: launch maild -> %s"):format(tostring(sent)))
-  end
-
-  --
-  -- **The automations' runner** (`docs/automations.md` A3): `autod`, started
-  -- the same way when `/Home/Automations` holds one, so they run on their
-  -- triggers whether the Automations window is open or not.
-  --
-  local has_automation = false
-
-  for _, name in ipairs(fs.list("/Home/Automations") or {}) do
-    if tostring(type(name) == "table" and name.name or name):match("%.automation$") then
-      has_automation = true
-      break
-    end
-  end
-
-  if has_automation and not fs.getattr("/Running/autod") then
-    local sent = fs.send("/Running/wm", { type = "launch", program = "autod" })
-
-    print(("deskbar: launch autod -> %s"):format(tostring(sent)))
-  end
-end
 
 -- Repainted every pass while a program breathes on the bar - the passes
 -- themselves come twelve times a second then (`pace_breathing`) - and on
