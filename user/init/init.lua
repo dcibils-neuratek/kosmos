@@ -41,6 +41,7 @@ local ROLE_DRIVES     = 20 -- serves /Drives: every volume on every drive, read 
 local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /Devices/backlight
 local ROLE_INTELGPU   = 34 -- an Intel GPU's display engine, looked at once
 local ROLE_BLUETOOTH  = 35 -- the Bluetooth host stack (`bluetooth.md` B2)
+local ROLE_LLM        = 36 -- /Running/llm: a language model held (`xavier.md` X3)
 local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
@@ -6029,6 +6030,9 @@ if role == ROLE_INIT then
   -- `/Home/Cache/Maps` alone.
   local MAPS_CACHE_DISK_EP = sys.endpoint()
   local TILES_EP = sys.endpoint()
+  -- And a fourth (`docs/xavier.md` X3): the LLM server's, reaching
+  -- `/Home/Models` alone.
+  local MODELS_DISK_EP = sys.endpoint()
   -- The window server's manager door (`docs/astra-display.md` D3b-2).
   local WINDOW_EP = sys.endpoint()
 
@@ -6185,7 +6189,8 @@ if role == ROLE_INIT then
   -- one reaches `/Keyring` alone, for the keyring and nothing else.
   local diskfs  = start("the disk server", ROLE_DISKFS,
                         { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
-                          CONSOLE_EP, KEYRING_DISK_EP, MAPS_CACHE_DISK_EP },
+                          CONSOLE_EP, KEYRING_DISK_EP, MAPS_CACHE_DISK_EP,
+                          MODELS_DISK_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
@@ -6391,6 +6396,14 @@ if role == ROLE_INIT then
   --
   start("the map's tiles", ROLE_TILES, { TILES_EP, NET_EP, MAPS_CACHE_DISK_EP,
                                          CONSOLE_EP })
+
+  --
+  -- **The LLM server** (`docs/xavier.md` X3): one language model in memory
+  -- for every application that asks, named `/Running/llm`, and reading
+  -- `/Home/Models` through the disk server's fourth door and nothing else.
+  -- Idle, and holding nothing, until something asks it to load a model.
+  --
+  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP })
 
   --
   -- **The window server** (`docs/astra-display.md` D3b-2; Diego, 10 October:

@@ -1722,7 +1722,9 @@ def check_registry(guest):
             f"could not reach it through /Running/wm: {said}. /Running held {names}. "
             "The registry is handing out a name whose holder has ended.")
 
-    if names != ["wm"]:
+    # The window manager's names only: system servers register there too -
+    # `llm` since `docs/xavier.md` X3 - and are not what this is about.
+    if [n for n in names if n.lower().startswith("wm")] != ["wm"]:
         raise Failure(
             f"/Running held {names} under the second window manager, where `wm` "
             "alone belongs. The first one's name was kept after it ended, so "

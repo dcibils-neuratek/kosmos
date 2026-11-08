@@ -66,7 +66,8 @@
 #include "packflat.h"
 
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
-                   long devices, long console, long keyring, long maps_cache);
+                   long devices, long console, long keyring, long maps_cache,
+                   long models);
 void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
                       long devices, long console);
 
@@ -142,7 +143,9 @@ static uint64_t generation;
  * **A list since 8 October** (`docs/maps.md` M6d): `/Keyring` for the
  * keyring was the only one, and the map's `tiles` server needed the same -
  * a door reaching its cache, `/Home/Cache/Maps`, and nothing else. A root
- * may be several folders deep now.
+ * may be several folders deep now. The LLM server's is the third
+ * (`docs/xavier.md` X3): `/Home/Models`, the language models, and nothing
+ * else on the disk.
  */
 static const char HOME_ROOT[] = "Home";
 
@@ -187,6 +190,7 @@ static struct progcount programs;
 static struct door doors[] = {
     { "Keyring", -1, 0, false, 0 },
     { "Home/Cache/Maps", -1, 0, false, 0 },
+    { "Home/Models", -1, 0, false, 0 },
 };
 
 #define DOORS (sizeof doors / sizeof doors[0])
@@ -1902,7 +1906,7 @@ static void door_main(unsigned long which)
 }
 
 static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
-                  long console_ep, long keyring_ep, long maps_cache_ep)
+                  long console_ep, long keyring_ep, long maps_cache_ep, long models_ep)
 {
     long at = kosmos_map((sizeof(struct arena) + 4095u) / 4096u);
     struct kfs_disk dev = { NULL, device_read, device_write, 1 };
@@ -1957,6 +1961,7 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
     main_door = endpoint;
     doors[0].ep = keyring_ep;
     doors[1].ep = maps_cache_ep;
+    doors[2].ep = models_ep;
 
     for (size_t d = 0; d < DOORS; d++) {
         if (doors[d].ep < 0) {
@@ -1996,10 +2001,10 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
 }
 
 void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
-                   long console_ep, long keyring_ep, long maps_cache_ep)
+                   long console_ep, long keyring_ep, long maps_cache_ep, long models_ep)
 {
     serve(endpoint, read_ep, write_ep, devices_ep, console_ep, keyring_ep,
-          maps_cache_ep);
+          maps_cache_ep, models_ep);
 }
 
 /* `/Sandboxes`: the same server on the partition `opt/kosmos/sandboxes`
@@ -2012,5 +2017,5 @@ void sandboxfs_server(long endpoint, long read_ep, long write_ep, long devices_e
     drive.layout = SANDBOXES_LAYOUT;
     drive.called = "/Sandboxes";
     drive.sandboxes = true;
-    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1);
+    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1, -1);
 }

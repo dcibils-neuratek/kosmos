@@ -172,6 +172,11 @@ SUITES = [
     # no keyring suite to notice; taking a set-aside one back is its fourth.
     Suite("x86-keyring", ["python3", "tools/run_keyring.py", X86], x86=True),
 
+    # The LLM server (`docs/xavier.md` X3): the tiny phi-2 in all three
+    # forms, every answer from /Running/llm the kit's own byte for byte, the
+    # refusals, a stop, and every answer's region given back.
+    Suite("x86-llm", ["python3", "tools/run_llm.py", X86], x86=True),
+
     # Passwords (K6): a keyring made on the Mac, the window used as a person
     # would - sorted, a row, Show, a note, search, Delete asked and done.
     Suite("arm-passwords", ["python3", "tools/run_passwords.py", ARM]),

@@ -96,10 +96,12 @@ void drives_server(long endpoint, long blocks, long console);
  * and write endpoints for a stick's partition, the devices server's for the
  * clock, and the console's to say what it did. */
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
-                   long devices, long console, long keyring, long maps_cache);
+                   long devices, long console, long keyring, long maps_cache,
+                   long models);
 void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
                       long devices, long console);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
+void llm_server(long running_cap, long models_disk_ep, long console_ep);
 
 /* The window server (`docs/astra-display.md` D3b-2): its endpoint, the
  * manager door, and the console's. Given the screen when it is spawned. */
@@ -149,6 +151,7 @@ void vmm_server(long running, long ram, long setup, long more1, long more2, long
 #define ROLE_SANDBOXFS 33UL   /* serves /Sandboxes: guests' disks (`docs/linux.md`) */
 #define ROLE_INTELGPU 34UL    /* an Intel GPU's display, looked at (`m700-2d.md`) */
 #define ROLE_BLUETOOTH 35UL   /* the Bluetooth host stack (`bluetooth.md`) */
+#define ROLE_LLM      36UL    /* /Running/llm: a language model held (`xavier.md` X3) */
 
 /* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
 int vm_selftest(uint64_t detail[4]);
@@ -891,7 +894,8 @@ int main(unsigned long arg)
     if (arg == ROLE_DISKFS) {
         named("diskfs");
         diskfs_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1,
-                      kosmos_cap_check(6) == 0 ? 6 : -1);
+                      kosmos_cap_check(6) == 0 ? 6 : -1,
+                      kosmos_cap_check(7) == 0 ? 7 : -1);
     }
 
     if (arg == ROLE_SANDBOXFS) {
@@ -919,6 +923,12 @@ int main(unsigned long arg)
     if (arg == ROLE_TILES) {
         named("tiles");
         tiles_server(0, 1, 2, 3);
+    }
+
+    if (arg == ROLE_LLM) {
+        named("llm");
+        llm_server(0, 1, 2);
+        kosmos_exit(0);
     }
 
     if (arg == ROLE_WINDOWSERVER) {

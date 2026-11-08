@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.319, not pushed; Xavier X1: the LLM Kit held to llama.cpp)
+Last updated: 2026-11-08 (0.11.319, not pushed; Xavier X3: /Running/llm answering under QEMU)
 
 ---
 
@@ -34,9 +34,22 @@ converted once a product. On the Mac the plain loop wins (clang makes it
 `sdot`), which says nothing about GCC on the M700: **measure there next**,
 then X2b (AVX2 with `xsave`). Diego, same day: every acceleration, chosen
 at run time, and the **Mac Pro 2013 with two AMD FirePro cards** he boots
-next (`xavier.md`, *All the acceleration there is*). Then then X3, the server and `xavier "question"` on Kosmos, which
-needs the model on `/Home` (512 MB on the stick: Q4_0 does not fit, so
-`/Home/Models` on the QEMU disk first).
+next (`xavier.md`, *All the acceleration there is*).
+
+**X3, built under QEMU** (`xavier.md`, *X3, as built*; Diego: "M700 is
+off now", "Let's continue with qemu for now"): `user/servers/llm.c`
+(role 36) registers `/Running/llm` and reads `/Home/Models` through
+`diskfs`'s fourth door; `llmproto.h` is LOAD, ASK, WAIT, STOP and STATS,
+and the answer accumulates in a region (`llmring.h`). `user/lib/llm.lua`
+is the client and `xavier` at the prompt its first user. `x86-llm`
+(`tools/run_llm.py`, 33 s) holds fifteen answers from the server to the
+kit's own on the Mac (`tools/llm_answer.c`), byte for byte, on the tiny
+phi-2 (`tools/llm_tiny.py`, `make llm-tiny`; it SKIPs without them, as
+`test_llm` does). **Next**: phi-2 itself asked - on the M700 when it is
+on, where `/Home/Models` needs the model on a `/Home` larger than the
+stick's 512 MB, or under QEMU on a disk of its own; the tok/s there is
+X3's first real number. Then X2's measurement on the same machine. A shut
+disk door hangs whoever asks it (roadmap, *A disk door shut*).
 
 ---
 

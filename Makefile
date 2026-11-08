@@ -917,6 +917,9 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/network/netclient.c \
              user/kits/network/httpc.c \
              user/servers/tiles.c \
+             user/servers/llm.c \
+             user/kits/llm/llm_core.c \
+             user/kits/llm/llm_dot.c \
              user/servers/windowserver.c \
              user/servers/mdnsd.c \
              user/servers/vmm.c \
@@ -2475,6 +2478,13 @@ $(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h u
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
 	        tools/test_llm.c $(LLM_KIT_SRCS) -lm
+
+# The kit's own answer to a prompt, which `tools/run_llm.py` holds the LLM
+# server inside Kosmos to, byte for byte (`docs/xavier.md` X3).
+$(HOSTDIR)/llm_answer: tools/llm_answer.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
+	        tools/llm_answer.c $(LLM_KIT_SRCS) -lm
 
 # The kit's vector dot products against its scalar ones, to the bit:
 # natively (NEON) and as x86-64 under Rosetta (SSE2), as `test_yuv` is.
@@ -4969,7 +4979,7 @@ J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 # the suites' roles as well, which nothing asks it for. A stick and
 # `install-apps` still link against the lean one.
 #
-gate-images: $(TARGET) $(HOSTDIR)/lua
+gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 apps
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \

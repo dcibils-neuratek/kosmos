@@ -514,7 +514,10 @@ with a `ui.menubar` view keeps it in the window - no application has one.
 **Xavier, an assistant on this machine - AGREED on 8 November 2026: E1,
 our own LLM Kit, a server, phi-2 converted ("E1, server yes, convert
 phi-2, go ahead"); X1 built - the LLM Kit's core in C, held to llama.cpp
-on the Mac (`xavier.md`, *X1, as built*); X2, vectors, under way.** And
+on the Mac (`xavier.md`, *X1, as built*); X2, vectors, under way; X3
+built under QEMU - `/Running/llm` serving the model, `llm.lua`, and
+`xavier` at the prompt, held by `x86-llm` (`xavier.md`, *X3, as built*);
+its speed on the M700 next.** And
 the same day **every acceleration there is, chosen when it runs** (Diego:
 "Make sure we make the most performant llm inference using all available
 acceleration", "for the hardware you are running on every time"): AVX2
@@ -556,6 +559,18 @@ Vulkan or OpenCL. It needs threads (`threads.md` 4-8), AVX2 through
 `xsave`, and a microphone, none of which exist yet. Five decisions are
 Diego's, at the end of the document. The mockup and the diagram follow
 them.
+
+**A disk door shut is an endpoint nobody answers - found 8 November 2026,
+to fix.** `diskfs` opens a further door (`/Keyring`, `/Home/Cache/Maps`,
+`/Home/Models`) only with a token from the entropy source, and on a
+machine with none - QEMU without `virtio-rng` - it says "no entropy for a
+door; it is shut" and leaves the endpoint with nobody receiving on it. The
+server holding that door's other end then waits on its first request for
+good, which is what the LLM server did at start (`xavier.md`, *X3, as
+built*). A shut door should answer, refusing - its thread receiving and
+replying DISK_ERR_NO_DISK with why - so the keyring, the map's tiles and
+the LLM server each hear no rather than nothing. `design.md` §2's rule:
+nothing waits on a server that will not answer.
 
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old

@@ -194,17 +194,23 @@ when they land.
 
 ### Data, regions and messages
 
-- **The model is a region**, read from `/Home/Models/<name>.gguf` once
-  when the server starts and mapped into the GPU's buffers from there.
-  About 3 seconds at `diskfs`'s 500 MB/s.
+- **The model is a region**, read from `/Home/Models/<name>` when
+  something asks for it (`LLM_OP_LOAD`), four megabytes at a time through
+  the disk server's own door to that folder, and later mapped into the
+  GPU's buffers from there. About 3 seconds at `diskfs`'s 500 MB/s.
 - **The answer is a stream.** The words come because a clock is running,
-  not because someone asked for each, so they go into a single-producer,
-  single-consumer ring in a region the server shares with the window, and
-  a message says only how far it has written. The same holds for the
+  not because someone asked for each, so they go into a region the server
+  makes for the answer and hands back with the reply to ASK
+  (`llmring.h`): append only - one side writes, one side reads, and
+  `written` is the one number both touch, which only grows - so there is
+  no read index to hand back and nothing to wrap. WAIT is a message held
+  by the server until `written` has moved. The same will hold for the
   microphone's samples and the speech going out.
-- **A question is one message** (a declared shape in `llmproto.h`): the
-  conversation's handle, where its text starts in the shared region, and
-  how long it is. Stop is a message.
+- **A question is one message** (a declared shape in `llmproto.h`): up
+  to 1536 bytes of text, the most tokens to answer with, and whether to
+  stop at a blank line. A one-shot payload, asked because a person asked,
+  which is what a message is for. A conversation longer than that is X4's,
+  and moves into a region with it. Stop is a message.
 
 ### C or Lua
 
@@ -226,9 +232,10 @@ first two without booting anything.
    SSE2, with the scalar loop kept as the reference the host test holds
    them to. *Under way* (*X2, as it stands*): the lanes and their test are
    written; which form wins is measured on the M700.
-3. **X3 - an answer on Kosmos.** The LLM server, the model from
-   `/Home/Models`, and `xavier "question"` at the prompt printing the
-   answer. Then its speed on the M700, measured.
+3. **X3 - an answer on Kosmos. Built under QEMU, 8 November 2026** (*X3,
+   as built*, below). The LLM server, the model from `/Home/Models`, and
+   `xavier "question"` at the prompt printing the answer. Its speed on the
+   M700 is still to be measured.
 4. **X4 - the window.** Chat, streaming, stop, conversations kept, drawn
    first in `xavier.html` and agreed.
 5. **X5 - four cores.** After `threads.md` steps 4 to 8: the products split
@@ -434,6 +441,66 @@ lanes; the float sum across blocks stays in order.
   and GCC's x86 output for the plain loop is already `pmaddwd`, four of
   them a block. Which form is faster there is measured on the M700, and
   the kit chooses it - which is the run-time choice X2b needs anyway.
+
+## X3, as built
+
+**`/Running/llm`** (`user/servers/llm.c`, role 36): one process, started
+by init and idle, holding nothing, until something asks for a model. It
+reaches the disk through a fourth door of `diskfs`'s (after `/Home`,
+`/Keyring` and `/Home/Cache/Maps`), which reaches `/Home/Models` and
+nothing else, so the server can read a model and no other file.
+
+- **The protocol** (`user/include/llmproto.h`): LOAD a model by its file's
+  name, never a path; ASK, answered at once with the answer's region; WAIT,
+  held until the answer has moved; STOP; STATS. One answer at a time - a
+  second ASK is refused as BUSY.
+- **Nothing makes a caller wait behind work.** A LOAD's reply is held
+  while the file comes in, four megabytes a turn; the answer is made a
+  token a turn; between turns the server receives without waiting, and it
+  blocks only when there is nothing to do. And it asks the disk nothing
+  until somebody asks for a model.
+- **The kit's memory is regions**, one for each table it asks for, so
+  letting a model go gives back every page - tables, attention cache and
+  file - with no heap to fragment between one model and the next. A LOAD
+  refused (a name mistyped, a file that is not a model) leaves the model
+  that was loaded where it was.
+- **`llm.lua`** is the client - `load`, `ask`, an answer's `wait`, `all`
+  and `stop`, `stats` - and **`xavier`** at the prompt is its first user:
+  phi-2's `Instruct: ... Output:` and the words as they come.
+
+**Held by `x86-llm`** (`tools/run_llm.py`, 45 checks, 33 seconds). The
+tiny phi-2 in its three forms goes into `/Home/Models`, and fifteen answers
+read out of the server's regions are the kit's own answers on the Mac
+(`tools/llm_answer.c`), **byte for byte**. Byte for byte and not
+llama.cpp's tokens, because the tiny model's two best tokens are often a
+hundredth apart - inside the kit's own error against llama.cpp - while the
+kit against itself on another processor differs in the fifth digit. So the
+chain is: `test_llm` holds the kit to llama.cpp, and `x86-llm` holds the
+server to the kit. Then the refusals, a model kept, a stop, a paragraph
+not cut short, and every answer's region given back over thirty answers.
+The control - the prompt's first token skipped and no region given back -
+fails fourteen checks.
+
+**What it does not show yet.** The tiny model's random weights never
+write a blank line, so the stop at one is seen only in what phi-2 answers;
+and phi-2 itself has not been asked under QEMU, where a token of it is
+about a minute.
+
+| under QEMU (TCG), the tiny phi-2 Q4_0 | |
+|---|---|
+| a load, 3.7 MB | 37 ms |
+| the first token, after a one-token prompt | 14 ms |
+| answering | 86 tokens a second |
+
+Those are QEMU's numbers and say nothing of a real core (`CLAUDE.md`).
+
+**Found on the way.** A diskfs door shut for want of entropy - QEMU with
+no `virtio-rng` - is an endpoint nobody receives on, and a caller waits on
+it for good; the LLM server did, at start, until it was made to ask the
+disk nothing until a model is wanted; the door is in `roadmap.md`. And
+on one core the shell's prompt comes before the servers init starts after
+it have run at all, so a program typed at once finds no `/Running/llm`;
+the suite waits for the server's line.
 
 ## All the acceleration there is
 

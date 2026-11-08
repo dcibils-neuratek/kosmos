@@ -1494,3 +1494,48 @@ thinnest check.
 tokens a second at 8 bits, 4.1 at 4. The 4-bit model is slower here
 because unpacking its half-bytes costs more than it saves without vector
 instructions. Vector instructions are step X2.
+
+## 8 November - Xavier's engine answers inside Kosmos
+
+**In short:** The language model now runs inside Kosmos, not only on the
+Mac. One server holds it, `/Running/llm`, and anything may ask it a
+question. `xavier "question"` at the prompt is the first thing that does.
+Under QEMU it answers with the tiny test model, and every answer is
+exactly the one the same engine gives on the Mac.
+
+**What.** A server in C, `user/servers/llm.c`. It loads a model from
+`/Home/Models` when asked, four megabytes at a time, and answers one
+question at a time. The answer is written into a piece of shared memory
+the asker reads, a word at a time as the words are made, so the text
+never travels in a message. A program waiting for more words is answered
+when there are some, so nothing checks again and again. The server can
+read `/Home/Models` and no other file on the disk, through a door of its
+own in the disk server. `llm.lua` is how a program asks.
+
+**Why one server.** A model and its memory of the conversation are
+hundreds of megabytes. One copy, held by one process, is what every
+application asks, rather than a copy in each. That is the rule Kosmos
+keeps for everything: kits and servers supply, applications orchestrate.
+
+**How it is checked.** The tiny model (two layers, random weights, phi-2's
+own shape and words) goes onto a test disk in all three of its forms. Fifteen
+answers come back from the server, and each must be exactly, byte for
+byte, what the same engine answers on the Mac. Not llama.cpp's answer:
+the tiny model's two best words are often a hundredth apart, closer than
+our engine's own difference from llama.cpp, so the test would decide
+nothing. The chain is the host test holding the engine to llama.cpp, and
+this one holding the server to the engine. It also checks the refusals,
+that a mistyped model name keeps the loaded model, that a stopped answer
+ends, and that thirty answers give all their memory back. Breaking the
+server on purpose, skipping one word of the question and keeping the
+memory, fails fourteen checks. 33 seconds.
+
+**Found on the way.** On QEMU with no source of randomness the disk
+server keeps its extra doors shut, and whoever asks through one waits
+for ever. The LLM server did, the first time it ran. It now asks the disk
+nothing until somebody wants a model, and the shut door is on the
+roadmap to answer "no" instead of nothing.
+
+**Measured.** Under QEMU, which is not a real speed: the tiny model loads
+in 37 ms and answers 86 words a second. phi-2 itself is next, on the M700
+when it is on.
