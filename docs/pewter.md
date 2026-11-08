@@ -1,0 +1,320 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+# Pewter, and desktops as a thing Kosmos has several of
+
+Written on 7 November 2026, before any of it is built. The desktop as it
+should look is `docs/pewter.html`; the chooser shown at boot is
+`docs/desktops.html`; the picture of what it stands on is
+`docs/pewter-architecture.png`, drawn from `docs/pewter-architecture.html`.
+
+Diego, that day: "lets add this new desktop ui as an option for kosmos. so
+now we have the astra desktop and i want to have this new added called
+Pewter", "upon launching i can select one of the two desktops to work in",
+and "in the future i would also like to add a 3rd one to try new ideas for
+desktop UI". Asked whether the chooser comes up on every boot and whether
+Pewter brings applications of its own: "every boot, real apps in pewter
+chrome, go ahead".
+
+So this document is about two things, and the first one matters more:
+**a desktop becomes something Kosmos has several of**, and Pewter is the
+second. The third should cost a file and the programs it brings, and
+nothing else.
+
+---
+
+## What a person can do
+
+### At every boot
+
+- **Choose a desktop.** A chooser fills the screen once the machine is up
+  and before any desktop starts: one card for each desktop, with a small
+  picture of it, its name and a line saying what it is. The one used last
+  is already chosen. A click, or the arrow keys and Return, starts it.
+- **See every desktop the system has**, the ones that ship and any added
+  later, without the chooser being changed to know about them.
+- **Leave without choosing**: Restart and Shut Down at the foot of the
+  chooser, as on any desktop.
+
+### Once inside, on either desktop
+
+- **Switch Desktop…**, in Astra's Deskbar menu and Pewter's Kosmos menu.
+  It asks every application to quit, as Restart does - one that has a
+  document unsaved asks its own question - and then shows the chooser
+  again. The machine does not restart.
+
+### On Pewter
+
+As drawn in `docs/pewter.html`, which Diego has used and agreed as the
+2026 design ("Keep all the 2026 changes, and keep the name Pewter"):
+
+- **One menu bar across the top of the screen.** The Kosmos menu at its
+  left, with search; then the menus of whichever application is in front;
+  then the indicators and modes, the clock, and the Application menu, which
+  lists what is running and hides or shows it.
+- **Kosmos's own applications, in Pewter's chrome.** Tracker, Write,
+  Terminal, Music, the IDE and the rest, the same programs Astra runs: a
+  title bar the whole width, the close box at its left and zoom and
+  collapse at its right, and no menu bar inside the window, because the
+  menus are in the bar at the top.
+- **Collapse a window to its title bar** - a double click on the bar, or
+  its box - and back.
+- **A Tracker desktop in 9.2's arrangement**: the disks at the top right,
+  the Trash at the bottom right, and folders that open spatially - a
+  folder is one window, always the same one, opening where it was left, at
+  the size and in the view it was left in.
+- **The Control Strip** at the bottom left, for what a person changes:
+  volume, the screen, the network, the modes.
+- **Notifications**: banners at the top right, the day's list under the
+  clock, held while Focus or Rest is on.
+- **Every window at once** on F3, and a click on one brings it forward.
+- **The menus searched**, from the Help menu: any item of the application
+  in front, by what it says.
+- **Quick Look** on the space bar, Undo and labels in Tracker, a
+  screenshot key - each of these exists or is planned for Astra already,
+  and Pewter uses the same one.
+- **An application asks before it reaches the microphone**, and the menu
+  bar says so while it does.
+
+What the mockup has that Pewter does not: its own Write, Player, Calculator
+and Terminal. They were drawn to show the chrome on something; the real
+desktop runs the real applications.
+
+---
+
+## Architecture
+
+### There is one window manager, not one per desktop
+
+The question Diego asked first was whether this means two `wm.lua` files.
+It does not, and the reason is in what `wm.lua` does today. It is 7,374
+lines, and nearly all of them are mechanism: composing, damage, input and
+focus, the pointer and its cursor, the clipboard, drag and drop, launching
+and reaping, strips, game mode, the power button. None of that depends on
+what a desktop looks like.
+
+**And it no longer draws any window's chrome.** Since one chrome's step 3
+(8 October, `ui.md` 16.25) every window is headed: its title bar is a
+`ui.header` the UI kit draws inside the window's own pixels, and the
+window manager draws no tab and no border round anything. The look of a
+window is the kit's already.
+
+**What makes a desktop is the programs `wm` starts**. With nothing asked
+for, `wm.lua` starts `notifications,desktop,deskbar` (line 6824): the
+banners, Tracker as the backdrop, and the Deskbar. That list is Astra.
+
+A copy of `wm.lua` for Pewter would therefore be seven thousand lines kept
+in step to change a few hundred, which is the second copy the premise
+calls a defect. Haiku made the same choice for the same reason: one
+app_server, with the window decorator a piece that can be exchanged.
+
+### A desktop is a file
+
+`/Kosmos/Desktops/<Name>.desktop`, `user/desktops/` in the tree, carried in
+the image beside the looks. Text, in the same `key = value` form a
+`.theme` file uses, read by the same parser (`theme.lua`), so the format is
+one format:
+
+```
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Pewter: Mac OS 9.2's manner, reimagined for 2026 (docs/pewter.md).
+name        = pewter
+title       = Pewter
+says        = One menu bar for everything, and Platinum.
+shell       = notifications, pewterdesk, menubar, controlstrip
+chrome      = platinum
+menus       = screen
+looks       = platinum, platinum-dark
+picture     = Pewter.png
+```
+
+- **`shell`** is what `wm` starts, in order, and restarts if one dies,
+  exactly as it treats the Deskbar now.
+- **`chrome`** is which title bar the kit draws: `astra` (the headers of
+  today, the three circles at the right) or `platinum`.
+- **`menus`** is where an application's menu bar goes: `window`, drawn by
+  the kit inside the window as now, or `screen`, handed to the window
+  manager and shown by whoever draws the bar at the top.
+- **`looks`** is which looks Appearance offers on this desktop. Astra's
+  are the eleven it has; Pewter's are its own two, light and dark, because
+  Platinum's bevels are part of the desktop rather than a colour on it.
+- **`picture`** is what the chooser shows.
+
+`Astra.desktop` says what runs today and nothing new:
+`shell = notifications, desktop, deskbar`, `chrome = astra`,
+`menus = window`. Building P1 must leave Astra exactly as it is, and the
+gate is how that is known.
+
+**A third desktop** is a third file and the shell programs it names. If it
+needs a new kind of title bar, that is one more `chrome` in the kit; if it
+puts menus somewhere new, one more `menus` value. Neither is a fork of
+anything.
+
+### Who supplies each piece
+
+| Piece | What supplies it | New or existing |
+|---|---|---|
+| Composing, input, focus, clipboard, drag, strips | `wm.lua` | existing, unchanged |
+| Reading a `.desktop` file, starting its shell | `wm.lua`, `handlers.desktop` | new, small |
+| The chooser | `chooser.lua`, a program `wm` starts when no desktop is named | new |
+| Which desktop was used last | `prefs.lua`, the `desktop` setting | existing kit, new key |
+| Platinum's title bar | UI kit, `ui.header` with `chrome = "platinum"` | new style in the kit |
+| Collapse to the title bar | `wm.lua`, `handlers.shade`; the kit's double click | new, small |
+| Menus handed to the screen | UI kit (`ui.window`, `ui.menubar`); `wm.lua` carries them | 16.8h made general |
+| The menu bar | `menubar.lua`, a top strip | new shell program |
+| Indicators, modes, the clock | the code the Deskbar uses for them, moved to a library both read | moved, not copied |
+| The Kosmos menu and its search | `deskbarmenu.lua` (the folder that is the menu) and Tracker's query | existing |
+| Application menu | `wm.lua`'s `windows` list, as the Deskbar reads it | existing |
+| Pewter's desktop and spatial folders | Tracker, `tracker pewterdesk`; folders' rects as attributes | Tracker, new mode |
+| Control Strip | `controlstrip.lua`, a bottom strip; its modules the same library as the indicators | new shell program |
+| Banners and the day's list | `notifications.lua` and the notification server, drawn in the desktop's chrome | existing |
+| Every window at once (F3) | `wm.lua`, composing each window scaled | new in the compositor |
+| Searching the menus | the kit answers the window manager with the focused window's items | new, one request |
+| Quick Look, screenshots, Undo, labels | Tracker, `wm.lua`'s screenshot key | existing or planned for Astra |
+| Asking for the microphone | the consent step in `roadmap.md` (*Per-launcher permissions*) | planned, shared |
+
+**What moves rather than copies.** The Deskbar draws the battery, sound,
+network and the clock today, inside `deskbar.lua`. Pewter's menu bar and
+its Control Strip want the same indicators, so the code that reads them and
+draws them leaves the Deskbar for a library - `indicators.lua` - that the
+Deskbar, the menu bar and the Control Strip all use. Three applications,
+one copy.
+
+### Menus at the top of the screen
+
+This is the one real change to how applications work, and it is a general
+form of something already built.
+
+**16.8h, as it is.** A window that draws its own pixels can carry a menu
+bar: `ui.window{ direct = true, menubar = ... }` sends the titles - only
+the titles - to the window manager, which draws the strip above the
+window. A press on a title is a `menubar` event to the window, and the kit
+opens its own menu there. The items never leave the application, so their
+`on_choose` runs where it was written.
+
+**On Pewter every window does that.** When the desktop says
+`menus = screen`:
+
+1. `ui.window` sends its menu bar's titles to the window manager on open,
+   for every window rather than only a direct one, and again when they
+   change. The kit draws no menu bar inside the window.
+2. The window manager keeps them with the window, and when the focus moves
+   it tells its watchers - the `watch` events the Deskbar already hears for
+   the focus (`tell_watchers`) - with the titles of the window in front.
+3. `menubar.lua` draws them between the Kosmos menu and the indicators.
+4. A press on a title is a `menu_open` posted to the window manager: which
+   window, which title, where. The window manager posts the `menubar` event
+   to that window, as it does now for a direct one.
+5. The kit opens its menu under the title, at the top of the screen. It is
+   the application's own menu, as on Astra.
+
+Everything in that is a message, once, because somebody pressed or the
+focus moved. Nothing recurs on a clock, so nothing needs a region.
+
+**Nothing waits.** The menu bar never asks the window manager anything on a
+press or in a repaint: it draws the titles it was last told, and posts.
+That is *Nothing on the desktop waits on a server*. An application that has
+stopped answering still shows its titles, a press opens nothing, and after
+five seconds the Application menu offers Force Quit, which it does already
+on Astra.
+
+**An application written once.** Its menus are the same table on both
+desktops. Astra draws them in the window, Pewter at the top, and nothing in
+the application knows which.
+
+### The chooser
+
+`wm` starts `chooser` when it is given nothing to start, where today it
+would start Astra's list. Every harness and scripted run names what it
+wants, so what they start is what they started before - the same argument
+as when the desktop became the default (`wm.lua`, *With nothing asked for,
+a desktop*). A test that wants a desktop names it: `wm desktop:pewter`.
+
+1. The chooser lists `/Kosmos/Desktops` and reads each file, and the
+   `desktop` setting for the one used last.
+2. It draws a card for each, full screen, as `docs/desktops.html` has it.
+3. On a choice it saves the setting and posts `desktop{ name = "pewter" }`
+   to the window manager, and ends.
+4. The window manager reads the file, applies its chrome, its menus and its
+   look - before the first window of that desktop opens, so nothing is
+   drawn twice - and starts its shell.
+
+**Switch Desktop…** posts `desktop{ name = false }`. The window manager
+asks every window to close, the way Restart does, waits for the shell to
+end, and starts the chooser again.
+
+The chrome is told to each window in the reply to its `open`, beside
+`headed` (`ui.lua` line 7713), so a window learns how to draw itself before
+its first frame. A window cannot outlive a switch, which is why changing
+desktop closes them: telling every open window to redraw in another
+chrome, with its menu bar leaving or arriving, is a feature nobody asked for
+and a second path through every layout.
+
+### C or Lua
+
+| What | Which | Why |
+|---|---|---|
+| The chooser, the menu bar, the Control Strip | Lua | applications: what a person does, a few dozen rectangles |
+| Reading a `.desktop` file | Lua, `theme.lua`'s parser | ten lines of text, once a boot |
+| Platinum's title bar | Lua decides, `gfx` draws | as every header is now |
+| F3, windows drawn scaled | C, in the compositor | a loop over pixels: a scaled blit in `gfx`, vectorised |
+
+### The busiest path
+
+**A press on a menu title, to the menu drawn**, which is the thing a
+person on Pewter does more than anything else.
+
+1. The press reaches the menu bar: the window manager's ordinary routing.
+2. The menu bar posts `menu_open` - one message, no reply waited for.
+3. The window manager posts `menubar` to the window in front.
+4. The application's kit opens its menu: a new window, drawn, committed.
+5. The window manager composes it.
+
+Against Astra's menu inside the window, that is two posts more (steps 2
+and 3), each a message of a few dozen bytes and a context switch. The
+budget is the same as Astra's: the menu drawn inside the frame after the
+press, 16 ms. Step 4 is most of it on both desktops. `wmlatency` measures
+it on both before P3 is called done.
+
+The other path worth naming is F3: every window scaled, every frame while
+it animates. That is the compositor's pixel loop, in C, and it is measured
+on the M700 with the GPU's composing and without.
+
+---
+
+## The steps
+
+Each is built, held by a test that stays, and lived with before the next.
+
+- **P1 - Desktops as files, and the chooser.** `Astra.desktop` describes
+  what runs today; `chooser.lua`; `handlers.desktop`; the `desktop`
+  setting; Switch Desktop… in the Deskbar. Pewter's file exists and starts
+  Astra's shell, so the choice can be made before Pewter is drawn. Test: a
+  suite boots to the chooser, picks each desktop and checks its shell is
+  running; the gate's suites, which name what they start, unchanged.
+- **P2 - Platinum's title bar.** `chrome = platinum` in the kit; collapse
+  (`handlers.shade`). Test: every application in the gallery opened under
+  Pewter, its title bar's boxes found where Platinum puts them.
+- **P3 - Menus at the top.** The kit hands every window's titles over;
+  `watch` carries the front window's; `menubar.lua` with the Kosmos and
+  Application menus; `indicators.lua` out of the Deskbar. Test: a menu of
+  Write's opened from the top of the screen and an item chosen, Astra's
+  menus still inside the window; `wmlatency` on both.
+- **P4 - Pewter's desktop.** `tracker pewterdesk`: the arrangement, and
+  spatial folders with their rects kept as attributes. Test: a folder
+  closed and opened again, in the same place, at the same size, in the
+  same view.
+- **P5 - The Control Strip**, and notifications drawn in Pewter's chrome.
+- **P6 - The 2026 pieces that are Pewter's**: F3, the menus searched, the
+  modes in the menu bar. The ones that are not Pewter's - the screenshot
+  key, Undo and labels in Tracker, asking for the microphone - are built
+  for both desktops, where `roadmap.md` already has them.
+
+---
+
+## What this does not do
+
+- **Change desktop with windows open.** A switch closes them; see the
+  chooser above.
+- **Mix desktops**: Pewter's menu bar with Astra's Deskbar. A desktop is
+  chosen whole, as a look is (`ui.md` 16.9).
+- **Recreate Mac OS 9.** Pewter takes 9.2's manner and is drawn fresh: its
+  own art, its own name, Kosmos's applications.

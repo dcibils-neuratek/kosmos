@@ -1,0 +1,202 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The desktop chooser, shown at every boot before any desktop starts
+  (docs/pewter.md, "The chooser"; Diego, 7 November 2026: "every boot").
+  One card a desktop, read from /Kosmos/Desktops; the one used last already
+  chosen. Arrows and Return, or a click. Drawn before it is built.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desktop Chooser</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
+<style>
+  :root {
+    --ground: #10131c; --ground2: #1a1f2d; --ink: #eef0f6; --dim: #9aa1b3;
+    --card: #1e2433; --card-line: #2e364a; --sel: #7fb0ff; --sel-glow: rgba(127,176,255,.28);
+    --foot: #79809a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: radial-gradient(1200px 700px at 50% 30%, var(--ground2), var(--ground)); color: var(--ink);
+    font: 400 15px/1.45 "IBM Plex Sans", "Helvetica Neue", sans-serif; overflow: hidden; user-select: none; }
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px; padding: 16px; transition: opacity .35s; }
+  .screen.gone { opacity: 0; pointer-events: none; }
+  .head { text-align: center; }
+  .head .mark { font: 600 13px "IBM Plex Mono", monospace; letter-spacing: .3em; color: var(--dim); text-transform: uppercase; }
+  .head h1 { font-weight: 500; font-size: 30px; margin-top: 8px; text-wrap: balance; }
+  .cards { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+  .card { width: 300px; background: var(--card); border: 1.5px solid var(--card-line); border-radius: 16px; padding: 14px 14px 16px; cursor: pointer;
+    transition: transform .15s, border-color .15s, box-shadow .15s; outline: none; }
+  .card:hover { transform: translateY(-2px); }
+  .card.sel { border-color: var(--sel); box-shadow: 0 0 0 5px var(--sel-glow), 0 18px 40px rgba(0,0,0,.4); }
+  .card:focus-visible { box-shadow: 0 0 0 3px #fff; }
+  .pic { height: 172px; border-radius: 9px; overflow: hidden; position: relative; }
+  .card h2 { font-weight: 600; font-size: 19px; margin: 12px 4px 2px; display: flex; align-items: baseline; gap: 10px; }
+  .card h2 small { font: 500 11px "IBM Plex Mono", monospace; color: var(--sel); letter-spacing: .06em; text-transform: uppercase; }
+  .card p { color: var(--dim); font-size: 13.5px; margin: 0 4px; }
+  .card.later { border-style: dashed; cursor: default; opacity: .6; }
+  .card.later:hover { transform: none; }
+  .foot { display: flex; gap: 22px; align-items: center; color: var(--foot); font-size: 13px; flex-wrap: wrap; justify-content: center; }
+  .foot button { background: none; border: 1px solid #333b50; color: var(--dim); border-radius: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  .foot button:hover { color: var(--ink); border-color: #4a5470; }
+  .hint { font: 12px "IBM Plex Mono", monospace; color: var(--foot); }
+  kbd { font: 11px "IBM Plex Mono", monospace; border: 1px solid #3a4258; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--dim); }
+
+  /* Astra in miniature: Endeavour's blue, the bar at the top, headed windows with three lights */
+  .astra { background: #2e5cb8; }
+  .astra .bar { position: absolute; left: 0; right: 0; top: 0; height: 13px; background: #a7c7ee; display: flex; align-items: center; gap: 5px; padding: 0 6px; }
+  .astra .bar i { width: 18px; height: 5px; border-radius: 3px; background: #2e5cb8; opacity: .55; }
+  .astra .bar i:first-child { width: 8px; height: 8px; border-radius: 50%; opacity: .9; }
+  .astra .bar .r { margin-left: auto; width: 26px; }
+  .astra .w { position: absolute; background: #f6f5f4; border-radius: 6px; box-shadow: 0 3px 10px rgba(0,0,0,.3); overflow: hidden; }
+  .astra .w .t { height: 12px; background: #ffffff; border-bottom: 1px solid #e3e0dd; display: flex; justify-content: flex-end; gap: 3px; padding: 3px 5px; }
+  .astra .w .t b { width: 6px; height: 6px; border-radius: 50%; }
+  .astra .w .m { height: 9px; background: #efeeec; border-bottom: 1px solid #e3e0dd; display: flex; gap: 5px; padding: 2px 6px; }
+  .astra .w .m i, .pewter .mb i { width: 14px; height: 4px; background: #9a9aa2; border-radius: 2px; margin-top: 1px; }
+  .astra .ic { position: absolute; width: 14px; height: 14px; border-radius: 3px; background: rgba(255,255,255,.75); }
+
+  /* Pewter in miniature: the pattern, one menu bar, Platinum windows, the Control Strip */
+  .pewter { background-color: #1b2347; background-image: radial-gradient(rgba(255,255,255,.08) 1px, transparent 1.2px); background-size: 6px 6px; }
+  .pewter .mb { position: absolute; left: 0; right: 0; top: 0; height: 12px; background: linear-gradient(#f4f4f6, #dcdce0); border-bottom: 1px solid #555; display: flex; align-items: center; gap: 6px; padding: 0 6px; }
+  .pewter .mb .k { width: 9px; height: 9px; border-radius: 50%; background: linear-gradient(135deg, #6c8cff, #2b3fa8); margin-right: 2px; }
+  .pewter .mb .r { margin-left: auto; width: 22px; }
+  .pewter .w { position: absolute; background: #e4e4e8; border: 1px solid #333; border-radius: 3px; box-shadow: 0 4px 12px rgba(0,0,0,.45); overflow: hidden; }
+  .pewter .w .t { height: 11px; background: repeating-linear-gradient(#d0d0d6 0 1px, #ececf0 1px 2px); border-bottom: 1px solid #888; display: flex; justify-content: space-between; padding: 2px 3px; }
+  .pewter .w .t b { width: 7px; height: 7px; border: 1px solid #555; background: #f2f2f4; }
+  .pewter .w .t span { display: flex; gap: 2px; }
+  .pewter .w .c { margin: 3px; background: #fff; border: 1px solid #999; position: absolute; inset: 14px 0 0 0; }
+  .pewter .ic { position: absolute; width: 13px; height: 13px; border-radius: 2px; background: rgba(230,230,236,.85); }
+  .pewter .cs { position: absolute; left: 0; bottom: 6px; height: 11px; width: 74px; background: linear-gradient(#ececf0, #cfcfd6); border: 1px solid #333; border-left: 0; border-radius: 0 3px 3px 0; display: flex; gap: 3px; padding: 2px 4px; }
+  .pewter .cs i { width: 9px; height: 5px; background: #8a8ea0; border-radius: 1px; margin-top: 1px; }
+
+  .later .pic { background: repeating-linear-gradient(45deg, #232a3b 0 10px, #1f2535 10px 20px); display: flex; align-items: center; justify-content: center; color: var(--foot); font: 12px "IBM Plex Mono", monospace; text-align: center; padding: 20px; }
+
+  /* What happens after a choice, for the mockup */
+  .started { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 16px; text-align: center; }
+  .started.on { display: flex; }
+  .started .big { width: min(720px, 92vw); height: min(420px, 52vh); border-radius: 12px; overflow: hidden; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .started p { color: var(--dim); max-width: 560px; }
+  .started button { background: #2a3248; color: var(--ink); border: 1px solid #44507a; border-radius: 8px; padding: 8px 16px; font: inherit; cursor: pointer; }
+  .mockbar { position: fixed; left: 12px; bottom: 10px; z-index: 2; font: 11px "IBM Plex Mono", monospace; color: #565d73; display: flex; gap: 12px; align-items: center; }
+  .mockbar label { cursor: pointer; display: flex; gap: 5px; align-items: center; }
+  @media (max-height: 640px) { .mockbar { display: none; } .screen { gap: 18px; } }
+  @media (prefers-reduced-motion: reduce) { .card, .screen { transition: none; } }
+</style>
+</head>
+<body>
+<div class="screen" id="chooser">
+  <div class="head">
+    <div class="mark">Kosmos 0.11.316</div>
+    <h1>Which desktop would you like?</h1>
+  </div>
+  <div class="cards" id="cards" role="listbox" aria-label="Desktops"></div>
+  <div class="foot">
+    <span class="hint"><kbd>←</kbd> <kbd>→</kbd> to choose, <kbd>Return</kbd> to start</span>
+    <button id="restart">Restart</button>
+    <button id="shutdown">Shut Down</button>
+  </div>
+</div>
+
+<div class="started" id="started">
+  <div class="big" id="bigpic"></div>
+  <h2 id="startedTitle" style="font-weight:500"></h2>
+  <p>In Kosmos the desktop would be running now, with Tracker, Write and the rest in its chrome. <b>Switch Desktop…</b> is in Astra's Deskbar menu and in Pewter's Kosmos menu. It asks every application to quit, then shows this chooser again, without restarting.</p>
+  <button id="switch">Switch Desktop…</button>
+</div>
+
+<div class="mockbar">
+  <span>mockup:</span>
+  <label><input type="checkbox" id="third"> show how a third desktop would appear</label>
+</div>
+
+<script>
+// What /Kosmos/Desktops would hold. Each card is one .desktop file:
+// its title, its line and its picture. Nothing here knows about Astra or Pewter by name.
+const DESKTOPS = [
+  { name: "astra", title: "Astra", says: "The Deskbar, the dock and the launcher pad. Kosmos as it is.", pic: astraPic },
+  { name: "pewter", title: "Pewter", says: "One menu bar for everything, in Platinum. Mac OS 9.2's manner, made for 2026.", pic: pewterPic },
+];
+const THIRD = { name: "next", title: "A third", says: "Another file in /Kosmos/Desktops, and the programs it names.", later: true };
+
+let last = "pewter";
+try { last = localStorage.getItem("kosmos-desktop") || last; } catch (e) {}
+let sel = 0;
+
+function astraPic() {
+  return `<div class="pic astra">
+    <div class="bar"><i></i><i></i><i></i><i></i><i class="r"></i></div>
+    <div class="ic" style="right:10px;top:22px"></div><div class="ic" style="right:10px;top:44px"></div>
+    <div class="w" style="left:18px;top:28px;width:150px;height:104px"><div class="t"><b style="background:#f2c14e"></b><b style="background:#5cc46a"></b><b style="background:#e8605a"></b></div><div class="m"><i></i><i></i><i></i></div></div>
+    <div class="w" style="left:120px;top:58px;width:140px;height:96px"><div class="t"><b style="background:#f2c14e"></b><b style="background:#5cc46a"></b><b style="background:#e8605a"></b></div><div class="m"><i></i><i></i></div></div>
+  </div>`;
+}
+function pewterPic() {
+  return `<div class="pic pewter">
+    <div class="mb"><span class="k"></span><i></i><i></i><i></i><i></i><i class="r"></i></div>
+    <div class="ic" style="right:9px;top:20px"></div><div class="ic" style="right:9px;bottom:10px"></div>
+    <div class="w" style="left:16px;top:26px;width:150px;height:100px"><div class="t"><b></b><span><b></b><b></b></span></div><div class="c"></div></div>
+    <div class="w" style="left:118px;top:56px;width:136px;height:94px"><div class="t"><b></b><span><b></b><b></b></span></div><div class="c"></div></div>
+    <div class="cs"><i></i><i></i><i></i><i></i></div>
+  </div>`;
+}
+
+function list() { return document.getElementById("third").checked ? [...DESKTOPS, THIRD] : DESKTOPS; }
+
+function render() {
+  const box = document.getElementById("cards");
+  box.innerHTML = "";
+  list().forEach((d, i) => {
+    const c = document.createElement("div");
+    c.className = "card" + (d.later ? " later" : "") + (i === sel ? " sel" : "");
+    c.tabIndex = d.later ? -1 : 0;
+    c.setAttribute("role", "option");
+    c.setAttribute("aria-selected", i === sel);
+    c.innerHTML = (d.later ? `<div class="pic">/Kosmos/Desktops/<br>Next.desktop</div>` : d.pic()) +
+      `<h2>${d.title}${d.name === last ? "<small>Used last</small>" : ""}</h2><p>${d.says}</p>`;
+    if (!d.later) {
+      c.onclick = () => { if (sel === i) start(); else { sel = i; render(); } };
+      c.ondblclick = () => { sel = i; start(); };
+    }
+    box.appendChild(c);
+  });
+}
+
+function start() {
+  const d = list()[sel];
+  if (!d || d.later) return;
+  last = d.name;
+  try { localStorage.setItem("kosmos-desktop", last); } catch (e) {}
+  document.getElementById("chooser").classList.add("gone");
+  const s = document.getElementById("started");
+  document.getElementById("bigpic").innerHTML = d.pic().replace('class="pic', 'style="position:absolute;inset:0;height:auto;transform:scale(2.4);transform-origin:0 0;width:41.6%" class="pic');
+  document.getElementById("startedTitle").textContent = `${d.title} is starting`;
+  setTimeout(() => s.classList.add("on"), 300);
+}
+
+function back() {
+  document.getElementById("started").classList.remove("on");
+  document.getElementById("chooser").classList.remove("gone");
+  sel = Math.max(0, list().findIndex(d => d.name === last));
+  render();
+}
+
+addEventListener("keydown", e => {
+  if (document.getElementById("started").classList.contains("on")) return;
+  const n = list().filter(d => !d.later).length;
+  if (e.key === "ArrowRight") { sel = (sel + 1) % n; render(); e.preventDefault(); }
+  if (e.key === "ArrowLeft") { sel = (sel - 1 + n) % n; render(); e.preventDefault(); }
+  if (e.key === "Enter") { start(); e.preventDefault(); }
+});
+document.getElementById("switch").onclick = back;
+document.getElementById("third").onchange = render;
+document.getElementById("restart").onclick = () => alert("Restart: the machine starts again, and comes back to this chooser.");
+document.getElementById("shutdown").onclick = () => alert("Shut Down: the machine turns off.");
+
+sel = Math.max(0, DESKTOPS.findIndex(d => d.name === last));
+render();
+</script>
+</body>
+</html>

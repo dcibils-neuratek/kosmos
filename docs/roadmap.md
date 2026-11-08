@@ -386,9 +386,9 @@ decision. **Decided the same day: a desktop of its own, with the menu
 bar** - "a desktop of its own, with the menu bar" - not a look beside the
 others: Appearance chooses it or the Deskbar desktop, and one window
 manager draws both, placing each application's menus in its window or in
-the bar (`ui.md` 16.26). **Tracker spatial there, and the Control Strip beside the indicators**,
+the bar (`ui.md` 16.32). **Tracker spatial there, and the Control Strip beside the indicators**,
 the same day: "Spatial Tracker yes, Control Strip beside the indicators"
-(`ui.md` 16.26). **Reimagined beside it, the same evening** - "draw the
+(`ui.md` 16.32). **Reimagined beside it, the same evening** - "draw the
 reimagined mockup with the 1999 / 2026 switch": the mockup's own switch in
 the menu bar flips one desktop between 9.2 as it was and 2026 - Platinum
 drawn for today's screens, dark Platinum, search in the Kosmos menu, the
@@ -413,9 +413,13 @@ one to try new ideas for desktop UI". So a desktop becomes a thing Kosmos
 has several of, chosen before it starts, and the third is planned for
 from the first. Proposed the same day, for him to agree: one window
 manager for all of them, and a desktop as a file naming its shell
-programs, its chrome and where menus go - not a second `wm.lua`. Before
-code, as for an application: `docs/pewter.md` (features and
-architecture), `docs/pewter-architecture.png`, and the chooser drawn.
+programs, its chrome and where menus go - not a second `wm.lua`. Then
+"every boot, real apps in pewter chrome, go ahead": the chooser at every
+boot with the last one chosen, and Kosmos's own applications in Pewter's
+title bar with their menus at the top. Designed the same day:
+`docs/pewter.md` (features, architecture, steps P1-P6),
+`docs/pewter-architecture.png` and the chooser, `docs/desktops.html`. P1,
+desktops as files and the chooser, is first.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it

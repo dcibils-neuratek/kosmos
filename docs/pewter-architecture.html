@@ -1,0 +1,169 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Pewter, and desktops as files, as one picture: the applications unchanged
+  on top, the shell programs a desktop file names, the kit's new title bar
+  and menus handed to the screen, the one window manager, and Nebula at the
+  bottom. The boot's choice (B) and a menu title pressed (M) drawn through
+  it. Drawn on 7 November 2026, before any of it is built; docs/pewter.md is
+  the argument, docs/pewter.html the desktop and docs/desktops.html the
+  chooser.
+
+  Rendered to docs/pewter-architecture.png by headless Chrome at twice its
+  size, as docs/shortcuts-architecture.png is (H from the title):
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/pewter-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/pewter-architecture.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Pewter architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Pewter - what it stands on</h1>
+<p class="sub">A second desktop for Kosmos, and the first time there is more than one. A desktop is a file in <code>/Kosmos/Desktops</code> naming its shell programs, the title bar the UI kit draws and where menus go; one window manager draws every desktop, and a chooser at every boot picks one. Kosmos's own applications run on Pewter unchanged, in its Platinum chrome, with their menus at the top of the screen. A third desktop is a third file and the programs it names.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries and kit</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">B</span><span>a desktop chosen at boot</span>
+  <span class="f">M</span><span>a menu title pressed</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications - the same programs on every desktop</h2>
+      <div class="row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="box"><b>Tracker</b><p>windows, and the backdrop</p></div>
+        <div class="box"><b>Write</b><p>its menus one table</p></div>
+        <div class="box"><b>Terminal</b><p>unchanged</p></div>
+        <div class="box"><b>Music, IDE, &hellip;</b><p>unchanged</p></div>
+        <div class="box"><b>Preferences</b><p>Appearance offers the desktop's looks</p></div>
+      </div>
+    </div>
+    <div class="layer app"><h2>The shell - what a desktop file names</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>chooser.lua</b><p>at every boot: a card a desktop, the last one chosen <span class="f">B1</span>; posts <code>desktop</code> <span class="f">B2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>menubar.lua</b><p>Pewter's top strip: Kosmos menu and search, the front window's titles <span class="f">M1</span>, indicators, modes, clock, Application menu</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>controlstrip.lua</b><p>Pewter's bottom strip: volume, screen, network, modes</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW</span><b>tracker pewterdesk</b><p>9.2's arrangement; spatial folders, their rects as attributes</p></div>
+        <div class="box"><b>desktop, deskbar</b><p>Astra's shell, as it is</p></div>
+        <div class="box"><b>notifications</b><p>banners and the day's list, on both, in each one's chrome</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries and the UI kit (in each application's process)</h2>
+      <div class="row" style="grid-template-columns:1.5fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>UI kit - <code>ui.lua</code></b><p><code>ui.header</code> with <code>chrome = platinum</code>: the bar the whole width, close at the left, zoom and collapse at the right<br><code>menus = screen</code>: the titles handed over, none drawn in the window <span class="f">M4</span> - 16.8h for every window</p></div>
+        <div class="box new"><span class="tag">MOVED</span><b>indicators.lua</b><p>battery, sound, network, clock - out of <code>deskbar.lua</code>, for the Deskbar, the menu bar and the Control Strip</p></div>
+        <div class="box"><b>theme.lua, prefs.lua</b><p>the <code>.theme</code> parser reads a <code>.desktop</code> file <span class="f">B3</span>; the <code>desktop</code> setting</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits (in each application's process, and the compositor's)</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>gfx</b><p>every title bar and menu, as now</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>gfx - a scaled blit</b><p>F3, every window at once: vectorised, a loop over pixels</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:1.6fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>window manager - one, for every desktop</b><p>As it is: composing, input, focus, clipboard, drag, strips, launching.<br><i>New:</i> the chooser started when nothing is named; <code>handlers.desktop</code> reads the file and starts its shell <span class="f">B3</span>, the chrome told in each <code>open</code>'s reply <span class="f">B4</span>; each window's menu titles kept, the front one's in the <code>watch</code> event <span class="f">M1</span>; <code>menu_open</code> <span class="f">M2</span> posted on as <code>menubar</code> <span class="f">M3</span>; <code>handlers.shade</code>.</p></div>
+        <div class="box"><b>diskfs, the notification server</b><p><code>/Kosmos/Desktops/*.desktop</code> in the image; <code>/Home/Preferences/desktop</code>; notifications as they are</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>posts between the menu bar, the window manager and an application; each window's region</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>B - a desktop chosen at boot</h3>
+      <ol>
+        <li><b>B1</b> The window manager is asked for nothing, so it starts the chooser, which reads <code>/Kosmos/Desktops</code> and the <code>desktop</code> setting.</li>
+        <li><b>B2</b> A click or Return: the setting saved, <code>desktop{name="pewter"}</code> posted, the chooser ends.</li>
+        <li><b>B3</b> The window manager reads <code>Pewter.desktop</code>, applies its chrome, menus and look, and starts its shell.</li>
+        <li><b>B4</b> Each window learns its chrome in the reply to its <code>open</code>, before its first frame.</li>
+      </ol>
+    </div>
+    <div class="card"><h3>M - a menu title pressed, inside a frame</h3>
+      <ol>
+        <li><b>M1</b> The menu bar draws the titles the last <code>watch</code> event brought: no asking in a repaint.</li>
+        <li><b>M2</b> A press: <code>menu_open</code> posted - which window, which title, where. Nothing waited for.</li>
+        <li><b>M3</b> The window manager posts <code>menubar</code> to that window, as for a direct one today.</li>
+        <li><b>M4</b> The application's kit opens its own menu under the title; its items never left it.</li>
+      </ol>
+    </div>
+    <div class="card"><h3>A desktop file</h3>
+      <table>
+        <tr><td><code>shell</code></td><td>notifications, pewterdesk, menubar, controlstrip</td></tr>
+        <tr><td><code>chrome</code></td><td>platinum (Astra: astra)</td></tr>
+        <tr><td><code>menus</code></td><td>screen (Astra: window)</td></tr>
+        <tr><td><code>looks</code></td><td>platinum, platinum-dark</td></tr>
+        <tr><td><code>picture</code></td><td>what the chooser shows</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>Region or message, C or Lua</h3>
+      <table>
+        <tr><td>Titles, presses, the choice</td><td>messages, once each - nothing on a clock</td></tr>
+        <tr><td>Windows' pixels</td><td>their regions, as now</td></tr>
+        <tr><td>The shell, the chooser</td><td>Lua: applications</td></tr>
+        <tr><td>F3's scaled windows</td><td>C, in gfx</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

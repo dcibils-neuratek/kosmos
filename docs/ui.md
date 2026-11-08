@@ -1811,7 +1811,7 @@ pressed anywhere in it - the window manager's own move, which needs
 nothing from the application; Diego, asked how a hung window should move
 once the tab went: "Super+drag, anywhere". It was Super and Control.
 
-## 16.26 Pewter: a second desktop, with a menu bar
+## 16.32 Pewter: a second desktop, with a menu bar
 
 Diego, 5 November 2026, having used `docs/pewter.html`, asked whether
 Mac OS 9.2's manner should be one more look or a desktop of its own: "a
@@ -1859,6 +1859,31 @@ Rest hold, every window at once on F3, the menus searched from Help, Undo
 in Tracker, 9.2's labels back, a screenshot key, and an application that
 must ask before it reaches the microphone, with the menu bar saying so
 while it does - the consent step `kosmos: needs` does not have yet.
+
+**Then it is to be built, and a desktop becomes something Kosmos has
+several of** - Diego, 7 November: "lets add this new desktop ui as an
+option for kosmos", "upon launching i can select one of the two desktops
+to work in", "in the future i would also like to add a 3rd one", and then
+"every boot, real apps in pewter chrome, go ahead". So:
+
+- **One window manager for every desktop.** It draws no chrome since
+  16.25; a desktop is the shell programs it starts, the title bar the kit
+  draws, and where menus go. A second `wm.lua` would be seven thousand
+  lines kept in step to change a few hundred.
+- **A desktop is a file**, `/Kosmos/Desktops/<Name>.desktop`, in the
+  `.theme` format and read by its parser: `shell`, `chrome`, `menus`,
+  `looks`, `picture`. Astra's says what runs today. A third desktop is a
+  third file and the programs it names.
+- **A chooser at every boot**, the one used last already chosen
+  (`docs/desktops.html`), and Switch Desktop… inside each, which closes
+  the windows and shows it again without restarting.
+- **Kosmos's own applications in Pewter's chrome**, not the mockup's.
+  Their menus are one table on both desktops: the kit draws them in the
+  window on Astra and hands the titles over on Pewter, which is 16.8h made
+  general.
+
+`docs/pewter.md` is the design and its steps, P1 to P6, and
+`docs/pewter-architecture.png` the picture.
 
 ## 16.10 What we do not copy from BeOS
 
