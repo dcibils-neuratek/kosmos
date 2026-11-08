@@ -435,9 +435,18 @@ Panel with its subpanels, four workspaces with a backdrop each and names
 that can be changed, Motif windows with the window menu, minimised windows
 as icons, the Workspace Menu, the Style Manager's palettes, and Kosmos
 showing through - a Performance Meter with every processor, a Terminal
-whose `ps` says each program has its own address space. "Corona" is a
-working name. It is the third desktop file `docs/pewter.md` plans for;
-nothing of it is agreed or coded.
+whose `ps` says each program has its own address space. **Then "keep
+Corona, CDE, and give it a 2026 pass too"**, the same day: the name is
+Corona, it is CDE rather than OpenWindows, and a 1999 / 2026 switch at the
+Front Panel's right end flips it, as Pewter's does. 2026 keeps every part
+and adds: the four workspace buttons drawn as miniatures of their
+windows, a window dropped on one sent there, F3 for every workspace at
+once, Alt and a number or an arrow sliding between them; windows that
+move themselves and snap to halves; Find, Today (the day's appointments
+and notifications, banners above the panel), Status (network, volume,
+brightness, battery, holding notifications) and a live Processors meter
+in the panel; a palette for one workspace, and Night. It is the third
+desktop file `docs/pewter.md` plans for; nothing of it is coded.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it

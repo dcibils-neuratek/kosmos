@@ -6,8 +6,10 @@
   subpanels, the Style Manager. Diego, 7 November 2026: "a desktop that i
   always loved is the old solaris desktop from SUN", "can we do a mockup of
   a 3rd desktop that replicates the solaris experience?". Playable, drawn
-  before anything is agreed; "Corona" is a working name. Every picture here
-  is drawn fresh, in CSS and SVG.
+  before anything is agreed. Diego, the same day: "keep Corona, CDE, and give
+  it a 2026 pass too" - so the switch at the Front Panel's right end flips it
+  between CDE as Solaris drew it and CDE reimagined for 2026. Every picture
+  here is drawn fresh, in CSS and SVG.
 -->
 <html lang="en">
 <head>
@@ -186,13 +188,79 @@
   #ended button { background: #222; color: #dde; border: 1px solid #555; padding: 6px 14px; font: inherit; cursor: pointer; }
   #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 700000; padding: 6px 14px; display: none; }
   #toast.on { display: block; }
-  @media (prefers-reduced-motion: reduce) { #lock .msg { transition: none; } }
+  /* ---------- the switch, and 2026 ---------- */
+  .era { display: flex; flex-direction: column; justify-content: center; gap: 4px; margin: 0 3px 0 5px; }
+  .era button { border: 0; background: var(--bg); box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); font: 600 10px var(--mono); padding: 5px 6px; cursor: pointer; }
+  .era button.on { box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); background: var(--field); }
+  body.e26 { font-size: 13px; }
+  body.e26 .win { padding: 4px; border-radius: 3px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.55), 0 14px 34px rgba(0,0,0,.3); }
+  body.e26 .win.act { box-shadow: inset 1px 1px 0 var(--act-top), inset -1px -1px 0 var(--act-bot), 0 0 0 1px rgba(0,0,0,.6), 0 18px 44px rgba(0,0,0,.42); }
+  body.e26 .tb { height: 28px; }
+  body.e26 .tb .b { width: 28px; height: 28px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  body.e26 .tb .t { font-size: 13px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  body.e26 .win.act .tb .b, body.e26 .win.act .tb .t { box-shadow: inset 1px 1px 0 var(--act-top), inset -1px -1px 0 var(--act-bot); }
+  body.e26 .win.act .tb .t { background: linear-gradient(var(--act-top), var(--act) 65%); text-shadow: 0 1px 0 rgba(0,0,0,.3); }
+  body.e26 .rz { box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  body.e26 .sk { box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); }
+  body.e26 .menu { border-radius: 3px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.45), 0 10px 26px rgba(0,0,0,.3); }
+  body.e26 .menu .it { padding: 4px 12px 4px 20px; }
+  body.e26 .menu .it.hot { box-shadow: none; background: var(--act); color: var(--act-ink); }
+  body.e26 .menu .tear { display: none; }
+  body.e26 #panel { bottom: 0; border-radius: 6px 6px 0 0; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.5), 0 -6px 24px rgba(0,0,0,.25); }
+  body.e26 .sw { width: 300px; }
+  body.e26 .wsb { height: 46px; flex-direction: column; gap: 2px; padding: 3px; font-size: 11px; }
+  body.e26 .wsb .mini { width: 100%; flex: 1; position: relative; overflow: hidden; border: 1px solid rgba(0,0,0,.45); }
+  body.e26 .wsb .mini i { position: absolute; background: var(--bg); border: 1px solid rgba(0,0,0,.6); }
+  body.e26 .wsb .mini i.a { background: var(--act); }
+  body.e26 .sub { border-radius: 4px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.3); }
+  .sub.wide { width: 300px; }
+  .sbody { padding: 4px 4px 2px; }
+  .sbody input[type=search] { width: 100%; border: 0; padding: 6px 8px; font: 13px var(--sys); background: #fff; color: #000; outline: none; }
+  .sbody .res { margin-top: 4px; }
+  .sbody .res .row small { margin-left: auto; color: #555; font-size: 10.5px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sbody .none { padding: 8px 6px; color: #444; }
+  .sbody h4 { margin: 2px 4px 0; font-size: 15px; }
+  .sbody .dt { margin: 0 4px 6px; color: #444; font-size: 11.5px; }
+  .sbody .lbl { font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #444; margin: 8px 4px 3px; }
+  .sbody .ap { display: flex; gap: 8px; padding: 2px 6px; }
+  .sbody .ap b { font-family: var(--mono); font-weight: 600; width: 42px; }
+  .sbody .nt { display: grid; grid-template-columns: 26px 1fr; gap: 0 8px; padding: 4px 6px; }
+  .sbody .nt svg { width: 26px; height: 26px; grid-row: span 2; }
+  .sbody .nt small { color: #444; }
+  .sbody .ctl { display: grid; grid-template-columns: 88px 1fr auto; align-items: center; gap: 8px; padding: 5px 6px; }
+  .sbody .ctl input[type=range] { width: 100%; accent-color: var(--act); }
+  .sbody .ctl small { color: #333; font-family: var(--mono); font-size: 11px; }
+  .sbody .clr { display: flex; justify-content: flex-end; padding: 4px; }
+  #banners { position: fixed; left: 50%; transform: translateX(-50%); bottom: 112px; z-index: 650000; display: flex; flex-direction: column-reverse; gap: 8px; width: 360px; max-width: calc(100vw - 16px); pointer-events: none; }
+  .banner { pointer-events: auto; display: grid; grid-template-columns: 34px 1fr; gap: 0 10px; padding: 10px 12px; background: var(--bg); color: var(--ink); border-radius: 4px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.5), 0 12px 30px rgba(0,0,0,.35); animation: bup .25s ease-out; }
+  .banner svg { width: 34px; height: 34px; grid-row: span 2; }
+  @keyframes bup { from { transform: translateY(16px); opacity: 0; } }
+  #ovw { position: fixed; inset: 0; z-index: 800000; background: rgba(8,12,22,.74); display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 26px 40px; padding: 36px 8vw 130px; }
+  #ovw .tile { display: flex; flex-direction: column; gap: 8px; align-items: center; cursor: pointer; min-height: 0; }
+  #ovw .scr { position: relative; width: 100%; flex: 1; border: 2px solid rgba(255,255,255,.22); overflow: hidden; }
+  #ovw .tile:hover .scr { border-color: rgba(255,255,255,.6); }
+  #ovw .tile.cur .scr { border-color: var(--act-top); }
+  #ovw .scr i { position: absolute; background: var(--bg); border: 1px solid #000; font: 600 10px var(--sys); font-style: normal; color: #000; padding: 1px 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #ovw .scr i.a { background: var(--act); color: #fff; }
+  #ovw .nm { color: #fff; font-weight: 600; font-size: 14px; }
+  #ovw .nm small { color: #aab; font-weight: 400; margin-left: 8px; }
+  #desk.sl-r { animation: slr .22s ease-out; } #desk.sl-l { animation: sll .22s ease-out; }
+  @keyframes slr { from { transform: translateX(70px); opacity: .25; } }
+  @keyframes sll { from { transform: translateX(-70px); opacity: .25; } }
+  .outline.snap { mix-blend-mode: normal; border-color: var(--act-top); background: rgba(255,255,255,.12); }
+  body.night .term, body.night .pad, body.night .helpv, body.night .mail .read { background: #15171d; color: #dde1ea; }
+  body.night .term .cur { background: #dde1ea; color: #15171d; }
+  body.night .helpv h3 { color: #e3a3c3; }
+  body.night .sbody input[type=search] { background: #15171d; color: #dde1ea; }
+  body.night .sbody .dt, body.night .sbody .lbl, body.night .sbody .nt small, body.night .sbody .none, body.night .sbody .ctl small, body.night .menu .it .k { color: #aab; }
+  @media (prefers-reduced-motion: reduce) { #lock .msg { transition: none; } .banner, #desk.sl-r, #desk.sl-l { animation: none; } }
 </style>
 </head>
 <body>
 <div id="desk"></div>
 <div id="panel"></div>
 <div id="toast" class="rz"></div>
+<div id="banners" aria-live="polite"></div>
 <div id="lock"><div class="msg">Kosmos - this display is locked<br><small>Click to unlock (in the mockup, nothing is asked)</small></div></div>
 <div id="ended"><div>The session has ended.</div><div style="color:#889">In Kosmos, the desktop chooser would come back now.</div><button id="again">Start Corona again</button></div>
 
@@ -226,6 +294,8 @@ const ICO = {
   warn: `<svg viewBox="0 0 40 40"><path d="M20 4l17 31H3z" fill="#e6c36a" stroke="#000"/><path d="M20 14v11" stroke="#000" stroke-width="3"/><circle cx="20" cy="30" r="1.8"/></svg>`,
   panel: `<svg viewBox="0 0 40 40"><rect x="3" y="14" width="34" height="14" fill="#aeb2c3" stroke="#000"/><rect x="6" y="17" width="6" height="8" fill="#e6c36a" stroke="#000"/><rect x="14" y="17" width="12" height="8" fill="#c9ccd8" stroke="#000"/><rect x="28" y="17" width="6" height="8" fill="#a65d82" stroke="#000"/></svg>`,
 };
+ICO.find = `<svg viewBox="0 0 40 40"><circle cx="17" cy="17" r="10" fill="#dfe9f5" stroke="#000" stroke-width="2.4"/><path d="M24.5 24.5l9 9" stroke="#000" stroke-width="4.5" stroke-linecap="round"/><path d="M12 14a6 6 0 016-5" stroke="#fff" stroke-width="2" fill="none"/></svg>`;
+ICO.status = `<svg viewBox="0 0 40 40"><path d="M6 15a20 20 0 0128 0M10 19a14 14 0 0120 0M14 23a8 8 0 0112 0" stroke="#000" stroke-width="2.2" fill="none"/><circle cx="20" cy="27" r="2.2"/><rect x="8" y="31" width="20" height="6" fill="#fff" stroke="#000"/><rect x="9.5" y="32.5" width="13" height="3" fill="#3a3"/><rect x="28" y="32.6" width="2" height="2.8"/></svg>`;
 const picOf = k => ICO[k] || ICO.doc;
 
 /* ============================================================ files */
@@ -255,7 +325,8 @@ const fsize = n => isDir(n) ? Object.keys(n.kids).length + " items" : (n.bin ? n
 
 /* ============================================================ state */
 const S = { ws: 0, wsNames: ["One", "Two", "Three", "Four"], wins: new Map(), z: 10, focus: null, seq: 0,
-  backs: ["teal", "slate", "sand", "moss"], palette: "kosmos", pointerFocus: false, panelMin: false, trash: [] };
+  backs: ["teal", "slate", "sand", "moss"], palette: "kosmos", pointerFocus: false, panelMin: false, trash: [],
+  era: "2026", notes: [], wsPal: [null, null, null, null], palOnly: false, hold: false, vol: 70, bright: 80 };
 
 function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("on"), 2200); }
 let AC = null;
@@ -342,7 +413,7 @@ function placeIcons() {
 function maximize(w) {
   const el = w.el;
   if (w.saved) { Object.assign(el.style, w.saved); w.saved = null; }
-  else { w.saved = { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height }; Object.assign(el.style, { left: "0px", top: "0px", width: innerWidth + "px", height: (innerHeight - (S.panelMin ? 0 : 0)) + "px" }); }
+  else { w.saved = { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height }; Object.assign(el.style, { left: "0px", top: "0px", width: innerWidth + "px", height: (innerHeight - panelRoom()) + "px" }); }
   if (w.onResize) w.onResize(w);
 }
 function lower(w) { w.el.style.zIndex = 1; $$(".win").forEach(e => { if (e !== w.el) e.style.zIndex = +e.style.zIndex + 1; }); focusWin(topWin()); }
@@ -382,15 +453,33 @@ function wireWin(w) {
   t.oncontextmenu = e => { e.preventDefault(); openMenu(winMenu(w), e.clientX, e.clientY, {}); };
   $$(".grip", el).forEach(g => g.onmousedown = e => { e.stopPropagation(); drag(w, e, g.dataset.g); });
 }
-// The workspace manager moves and sizes an outline, and the window follows when the button comes up.
+// The workspace manager moves and sizes an outline, and the window follows
+// when the button comes up. In 2026 the window itself moves, it snaps to a
+// half of the screen at an edge, and dropped on a workspace's button it goes
+// to that workspace.
+const panelRoom = () => S.era === "2026" && !S.panelMin ? $("#panel").offsetHeight + 4 : 0;
+function snapRect(k) {
+  const W = innerWidth, H = innerHeight - panelRoom();
+  return k === "left" ? { x: 0, y: 0, w: W / 2, h: H } : k === "right" ? { x: W / 2, y: 0, w: W / 2, h: H } : { x: 0, y: 0, w: W, h: H };
+}
 function drag(w, e, how, sticky) {
+  const live = S.era === "2026" && !sticky;
   const el = w.el, r0 = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
   const sx = e ? e.clientX : r0.x + r0.w / 2, sy = e ? e.clientY : r0.y + 12;
-  const o = document.createElement("div"); o.className = "outline"; document.body.appendChild(o);
+  let lx = sx, ly = sy, snap = null;
+  const o = document.createElement("div"); o.className = "outline";
+  if (!live) document.body.appendChild(o);
   let r = { ...r0 };
-  const put = () => Object.assign(o.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  const px = q => ({ left: q.x + "px", top: q.y + "px", width: q.w + "px", height: q.h + "px" });
+  const put = () => Object.assign(live ? el.style : o.style, px(r));
+  const snapTo = k => {
+    if (k === snap) return; snap = k;
+    if (!k) { o.remove(); o.className = "outline"; return; }
+    o.className = "outline snap"; Object.assign(o.style, px(snapRect(k))); document.body.appendChild(o);
+  };
   put();
   const mv = ev => {
+    lx = ev.clientX; ly = ev.clientY;
     const dx = ev.clientX - sx, dy = ev.clientY - sy; r = { ...r0 };
     if (how === "move") { r.x = r0.x + dx; r.y = clamp(r0.y + dy, 0, innerHeight - 30); }
     else {
@@ -399,13 +488,26 @@ function drag(w, e, how, sticky) {
       if (how.includes("w")) { r.w = Math.max(180, r0.w - dx); r.x = r0.x + r0.w - r.w; }
       if (how.includes("n")) { r.h = Math.max(90, r0.h - dy); r.y = r0.y + r0.h - r.h; }
     }
+    if (live && how === "move") snapTo(lx <= 2 ? "left" : lx >= innerWidth - 3 ? "right" : ly <= 2 ? "full" : null);
     put();
   };
   const up = () => {
     removeEventListener("mousemove", mv); removeEventListener(sticky ? "mousedown" : "mouseup", up, true); o.remove();
-    Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
-    w.saved = null;
+    const hit = live && how === "move" && document.elementFromPoint(lx, ly);
+    const wsb = hit && hit.closest && hit.closest(".wsb");
+    if (wsb) {
+      Object.assign(el.style, px(r0));
+      w.ws = +wsb.dataset.i; show();
+      toast(`“${w.title}” is in ${S.wsNames[w.ws]} now`);
+      return;
+    }
+    if (snap) {
+      w.saved = px(r0); Object.assign(el.style, px(snapRect(snap)));
+    } else {
+      Object.assign(el.style, px(r)); w.saved = null;
+    }
     if (w.onResize) w.onResize(w);
+    refreshMinis();
   };
   addEventListener("mousemove", mv);
   setTimeout(() => addEventListener(sticky ? "mousedown" : "mouseup", up, true), sticky ? 50 : 0);
@@ -467,8 +569,46 @@ function show() {
   placeIcons();
   $$(".wsb").forEach((x, i) => x.classList.toggle("cur", i === S.ws));
   if (S.focus && !visible(S.focus)) focusWin(topWin());
+  paint(); refreshMinis();
 }
-function goWs(i) { if (i === S.ws) return; S.ws = (i + 4) % 4; closeSub(); show(); }
+function goWs(i) {
+  i = (i + 4) % 4; if (i === S.ws) return;
+  const dir = i > S.ws ? "sl-r" : "sl-l";
+  S.ws = i; closeSub(); show();
+  if (S.era === "2026") { const d = $("#desk"); d.classList.remove("sl-r", "sl-l"); void d.offsetWidth; d.classList.add(dir); }
+}
+const wsLabel = i => S.era === "2026" ? `<div class="mini"></div><span>${esc(S.wsNames[i])}</span>` : esc(S.wsNames[i]);
+// A workspace's windows, drawn small, from where each one is.
+function wsRects(i, W, H, labels) {
+  const sx = W / innerWidth, sy = H / innerHeight;
+  return [...S.wins.values()].filter(w => !w.min && !w.dialog && (w.ws === i || w.ws === -1))
+    .sort((a, b) => +a.el.style.zIndex - +b.el.style.zIndex)
+    .map(w => { const st = w.el.style; return `<i class="${w === S.focus && i === S.ws ? "a" : ""}" style="left:${parseFloat(st.left) * sx}px;top:${parseFloat(st.top) * sy}px;width:${parseFloat(st.width) * sx}px;height:${parseFloat(st.height) * sy}px">${labels ? esc(w.title) : ""}</i>`; }).join("");
+}
+const backCss = i => { const b = BACKS[S.backs[i]]; return `background:${b[1]}, ${b[0]};background-color:${b[0]}`; };
+function refreshMinis() {
+  if (S.era !== "2026") return;
+  $$(".wsb .mini").forEach((m, i) => { m.setAttribute("style", backCss(i)); m.innerHTML = wsRects(i, m.clientWidth, m.clientHeight); });
+}
+setInterval(refreshMinis, 800);
+let OVW = null;
+function overview() {
+  if (OVW) return endOverview();
+  closeMenus(); closeSub();
+  OVW = document.createElement("div"); OVW.id = "ovw";
+  OVW.innerHTML = S.wsNames.map((n, i) => `<div class="tile${i === S.ws ? " cur" : ""}" data-i="${i}"><div class="scr" style="${backCss(i)}"></div><div class="nm">${esc(n)}<small>${(k => k === 1 ? "1 window" : k + " windows")([...S.wins.values()].filter(w => !w.min && !w.dialog && (w.ws === i || w.ws === -1)).length)}</small></div></div>`).join("");
+  document.body.appendChild(OVW);
+  $$(".tile", OVW).forEach(t => { const sc = $(".scr", t); sc.innerHTML = wsRects(+t.dataset.i, sc.clientWidth, sc.clientHeight, true); t.onclick = e => { e.stopPropagation(); endOverview(); goWs(+t.dataset.i); }; });
+  OVW.onclick = endOverview;
+}
+function endOverview() { if (OVW) { OVW.remove(); OVW = null; } }
+addEventListener("keydown", e => {
+  if (S.era !== "2026") return;
+  if (e.altKey && /^Digit[1-4]$/.test(e.code)) { e.preventDefault(); goWs(+e.code.slice(5) - 1); }
+  else if (e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); goWs(S.ws + (e.key === "ArrowRight" ? 1 : -1)); }
+  else if (e.key === "F3") { e.preventDefault(); overview(); }
+  else if (e.key === "Escape") endOverview();
+});
 function occupyDialog(w) {
   dialog({ title: "Occupy Workspace", icon: "q", msg: `Which workspaces should “${esc(w.title)}” be in?`,
     extra: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:10px">${S.wsNames.map((n, i) => `<label><input type="radio" name="ows" value="${i}" ${i === (w.ws === -1 ? S.ws : w.ws) ? "checked" : ""}> ${esc(n)}</label>`).join("")}<label style="grid-column:span 2"><input type="radio" name="ows" value="-1" ${w.ws === -1 ? "checked" : ""}> All workspaces</label></div>`,
@@ -706,12 +846,17 @@ const PALETTES = {
   ocean: { n: "Ocean", bg: "#9fb5bd", top: "#dbe7eb", bot: "#4f6870", field: "#bfd0d6", act: "#2f6f8a", acttop: "#6fa8c0", actbot: "#173d4e", sel: "#2f6f8a" },
   orchid: { n: "Orchid", bg: "#b9aec4", top: "#e8e2ee", bot: "#635873", field: "#d0c7d9", act: "#7a4f9a", acttop: "#b08bcc", actbot: "#3f2556", sel: "#7a4f9a" },
   lichen: { n: "Lichen", bg: "#a9b59e", top: "#e0e7d8", bot: "#5a6650", field: "#c6cfbc", act: "#5c7a3a", acttop: "#93b06e", actbot: "#2f421c", sel: "#5c7a3a" },
+  night: { n: "Night", e26: true, bg: "#3b3f4b", top: "#5d6272", bot: "#1d1f26", field: "#2b2e37", act: "#c0729a", acttop: "#e3a3c3", actbot: "#6e3354", sel: "#c0729a", ink: "#e6e8ee" },
   charcoal: { n: "Charcoal", bg: "#7d808a", top: "#b5b8c2", bot: "#3c3e45", field: "#959aa5", act: "#b4573c", acttop: "#e08f75", actbot: "#6b2a18", sel: "#b4573c" },
 };
-function applyPalette(k) {
-  const p = PALETTES[k]; S.palette = k; const r = document.documentElement.style;
+// In 2026 a workspace can have a palette of its own: work in Ocean, music in Night.
+function curPal() { return (S.era === "2026" && S.wsPal[S.ws]) || (PALETTES[S.palette].e26 && S.era !== "2026" ? "kosmos" : S.palette); }
+function applyPalette(k) { if (S.era === "2026" && S.palOnly) S.wsPal[S.ws] = k; else S.palette = k; paint(); }
+function paint() {
+  const p = PALETTES[curPal()]; const r = document.documentElement.style;
   r.setProperty("--bg", p.bg); r.setProperty("--panel", p.bg); r.setProperty("--inact", p.bg); r.setProperty("--top", p.top); r.setProperty("--bot", p.bot);
   r.setProperty("--field", p.field); r.setProperty("--act", p.act); r.setProperty("--act-top", p.acttop); r.setProperty("--act-bot", p.actbot); r.setProperty("--sel", p.sel);
+  r.setProperty("--ink", p.ink || "#000"); document.body.classList.toggle("night", !!p.ink);
 }
 function openStyle() {
   makeWin({ key: "style", app: "style", icon: "style", title: "Style Manager", w: 420, h: 250, menus: [
@@ -724,10 +869,12 @@ function openStyle() {
   } });
 }
 function styleColor() {
-  makeWin({ key: "color", app: "style", icon: "style", title: "Style Manager - Color", w: 440, h: 280, init: w => {
-    w.body.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column"><div class="pal"></div><div style="padding:0 10px;color:#333;font-size:11px">A palette is chosen whole: the frames, the panel and the fields together.</div><div style="flex:1"></div><div class="dlg-b"><button class="btn def">OK</button></div></div>`;
-    const draw = () => { $(".pal", w.body).innerHTML = Object.entries(PALETTES).map(([k, p]) => `<div class="pi${k === S.palette ? " on" : ""}" data-k="${k}"><div class="sw4"><i style="background:${p.bg}"></i><i style="background:${p.act}"></i><i style="background:${p.field}"></i><i style="background:${p.bot}"></i></div><span>${p.n}</span></div>`).join(""); $$(".pi", w.body).forEach(x => x.onclick = () => { applyPalette(x.dataset.k); draw(); }); };
+  makeWin({ key: "color", app: "style", icon: "style", title: "Style Manager - Color", w: 440, h: 320, init: w => {
+    w.body.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column"><div class="pal"></div><div style="padding:0 10px;font-size:11px">A palette is chosen whole: the frames, the panel and the fields together.</div>${S.era === "2026" ? `<label style="padding:8px 10px 0;display:flex;gap:6px;align-items:center"><input type="checkbox" class="only" ${S.palOnly ? "checked" : ""}> Only for workspace ${esc(S.wsNames[S.ws])}</label>` : ""}<div style="flex:1"></div><div class="dlg-b"><button class="btn def">OK</button></div></div>`;
+    const draw = () => { $(".pal", w.body).innerHTML = Object.entries(PALETTES).filter(([, p]) => !p.e26 || S.era === "2026").map(([k, p]) => `<div class="pi${k === curPal() ? " on" : ""}" data-k="${k}"><div class="sw4"><i style="background:${p.bg}"></i><i style="background:${p.act}"></i><i style="background:${p.field}"></i><i style="background:${p.bot}"></i></div><span>${p.n}</span></div>`).join(""); $$(".pi", w.body).forEach(x => x.onclick = () => { applyPalette(x.dataset.k); draw(); }); };
     draw(); $(".btn", w.body).onclick = () => closeWin(w);
+    const on = $(".only", w.body);
+    if (on) on.onchange = () => { S.palOnly = on.checked; if (on.checked) S.wsPal[S.ws] = curPal(); else S.wsPal[S.ws] = null; paint(); draw(); };
   } });
 }
 function styleBackdrop() {
@@ -805,7 +952,7 @@ function refreshTrash() {
 }
 function putBack() { const t = S.trash.pop(); if (!t) return; nodeAt(t.from).kids[t.name] = t.node; refreshTrash(); refreshFiles(); }
 function emptyTrash() {
-  dialog({ title: "Trash Can - Shred", icon: "warn", msg: `Shred ${S.trash.length} item${S.trash.length === 1 ? "" : "s"}?<br><small>Shredded files cannot be put back.</small>`, buttons: [{ t: "OK", def: true, a: () => { S.trash = []; refreshTrash(); } }, { t: "Cancel" }] });
+  dialog({ title: "Trash Can - Shred", icon: "warn", msg: `Shred ${S.trash.length} item${S.trash.length === 1 ? "" : "s"}?<br><small>Shredded files cannot be put back.</small>`, buttons: [{ t: "OK", def: true, a: () => { const n = S.trash.length; S.trash = []; refreshTrash(); notify("trash", "Shredded", `${n} item${n === 1 ? "" : "s"} gone for good.`); } }, { t: "Cancel" }] });
 }
 
 // ---------- Help Viewer: the Read Me
@@ -835,12 +982,28 @@ function openHelp() {
         <li>Every program in its own address space: <code>ps</code> in the Terminal says so.</li>
         <li>Exit ends the session; in Kosmos the desktop chooser would come back.</li>
       </ul>
+      <h3>The switch: 1999 and 2026</h3>
+      <ul>
+        <li>At the Front Panel's right end. <b>1999</b> is CDE as Solaris drew it. <b>2026</b> keeps its manner and every part of it, reimagined for today's screens.</li>
+      </ul>
+      <h3>In 2026</h3>
+      <ul>
+        <li><b>The four buttons show their workspaces</b>, windows and all, drawn small. Drag a window by its title onto one to send it there.</li>
+        <li><b>Every workspace at once</b>: F3. Click one to go to it. <kbd>Alt</kbd>+1 to 4, or <kbd>Alt</kbd>+arrows, slide between them.</li>
+        <li><b>Windows move themselves</b> rather than an outline, and snap to half the screen at the left or right edge, or fill it at the top.</li>
+        <li><b>Find</b>, in the Front Panel: applications and files, as you type.</li>
+        <li><b>Today</b>, the subpanel above the calendar: the day's appointments and the notifications that came. Banners rise above the panel.</li>
+        <li><b>Status</b>: the network, volume, brightness, the battery, and holding notifications until you say.</li>
+        <li><b>Processors</b>: four bars in the panel, live. Click them for the Performance Meter.</li>
+        <li><b>A palette for one workspace</b>: Style Manager, Color, "Only for workspace". And Night, a dark one.</li>
+      </ul>
       <h3>Try</h3>
       <ul>
         <li>Open the Terminal from the subpanel above the editor, and type <code>ls</code>, <code>cat Documents/readme.txt</code>, <code>ps</code>.</li>
         <li>Put a window in every workspace: window menu, Occupy All Workspaces, then click Two.</li>
         <li>Style Manager, Color, and try Charcoal or Ocean.</li>
         <li>Click the padlock.</li>
+        <li>Press F3. Then drag the Help Viewer onto Three.</li>
       </ul>
     </div>`;
   } });
@@ -851,16 +1014,19 @@ const ARROW_UP = `<svg viewBox="0 0 11 8"><path d="M1 7L5.5 1 10 7z" fill="var(-
 const ARROW_DN = `<svg viewBox="0 0 11 8"><path d="M1 1L5.5 7 10 1z" fill="var(--bot)" stroke="var(--top)"/></svg>`;
 const FPL = [
   { id: "clock", label: "", art: () => `<svg viewBox="0 0 100 100" class="fpclock">${clockSvg()}</svg>`, a: () => launch("clockapp"), sub: null },
-  { id: "cal", label: "", art: () => calArt(), a: () => launch("cal"), sub: null },
+  { id: "cal", label: "", art: () => calArt(), a: () => launch("cal"), sub: () => S.era === "2026" ? { t: "Today", wide: true, html: todayPanel } : null },
   { id: "files", label: "Home", art: () => ICO.files, a: () => launch("files"), sub: { t: "Files", items: [["files", "Home Folder"], ["trash", "Trash Can"]] } },
   { id: "editor", label: "Text Editor", art: () => ICO.editor, a: () => launch("editor"), sub: { t: "Personal Applications", items: [["term", "Terminal"], ["editor", "Text Editor"], ["perf", "Performance Meter"], ["web", "Web Browser"]] } },
   { id: "mail", label: "Mail", art: () => ICO.mail, a: () => launch("mail"), sub: { t: "Mail", items: [["mail", "Mailer"]] } },
+  { id: "find", era: "2026", label: "Find", art: () => ICO.find, a: e => toggleSub(FPL.find(c => c.id === "find"), $("#fp-find")), sub: { t: "Find", wide: true, html: findPanel } },
   { id: "SWITCH" },
   { id: "printer", label: "Printer", art: () => ICO.printer, a: () => launch("printer"), sub: { t: "Personal Printers", items: [["printer", "Print Manager"]] } },
   { id: "style", label: "Style", art: () => ICO.style, a: () => launch("style"), sub: { t: "Tools", items: [["style", "Style Manager"], ["perf", "Performance Meter"]] } },
   { id: "apps", label: "Applications", art: () => ICO.apps, a: () => launch("apps"), sub: { t: "Applications", items: [["apps", "Application Manager"], ["term", "Terminal"], ["files", "File Manager"]] } },
   { id: "help", label: "Help", art: () => ICO.help, a: () => launch("help"), sub: { t: "Help", items: [["help", "Help Viewer"]] } },
   { id: "trash", label: "Trash", art: () => ICO.trash, a: () => launch("trash"), sub: null },
+  { id: "meter", era: "2026", label: "Processors", art: () => `<canvas class="fpmeter" width="44" height="38"></canvas>`, a: () => launch("perf"), sub: null },
+  { id: "status", era: "2026", label: "Status", art: () => ICO.status, a: e => toggleSub(FPL.find(c => c.id === "status"), $("#fp-status")), sub: { t: "Status", wide: true, html: statusPanel } },
 ];
 function calArt() {
   const d = new Date();
@@ -871,25 +1037,30 @@ function buildPanel() {
   const hdl = side => { const h = document.createElement("div"); h.className = "hdl"; h.innerHTML = `<div class="hb rz1">${side === "l" ? '<i class="ic-menu" style="width:9px"></i>' : '<i class="ic-min"></i>'}</div><div class="bar"></div>`; return h; };
   const L = hdl("l"); p.appendChild(L);
   $(".hb", L).onmousedown = e => { e.stopPropagation(); openMenu([{ t: "Minimize", a: minPanel }, { t: "Move", d: true }, { t: "Lower", d: true }, { sep: true }, { t: "Restart Workspace Manager…", a: restartWm }], e.clientX, e.clientY - 120, { title: "Front Panel", noTear: true }); };
-  FPL.forEach(c => {
+  FPL.filter(c => !c.era || c.era === S.era).forEach(c => {
     if (c.id === "SWITCH") { p.appendChild(buildSwitch()); return; }
+    const sub = typeof c.sub === "function" ? c.sub() : c.sub;
     const d = document.createElement("div"); d.className = "fp"; d.id = "fp-" + c.id;
-    d.innerHTML = `<div class="arr rz1${c.sub ? "" : " none"}">${ARROW_UP}</div><div class="cv rz" data-tip="${esc(c.label)}">${c.art()}${c.label ? `<small>${esc(c.label)}</small>` : ""}</div>`;
-    $(".cv", d).onclick = c.a;
-    if (c.sub) $(".arr", d).onclick = e => { e.stopPropagation(); toggleSub(c, d); };
+    d.innerHTML = `<div class="arr rz1${sub ? "" : " none"}">${ARROW_UP}</div><div class="cv rz" data-tip="${esc(c.label)}">${c.art()}${c.label ? `<small>${esc(c.label)}</small>` : ""}</div>`;
+    $(".cv", d).onclick = e => { e.stopPropagation(); c.a(e); };
+    if (sub) $(".arr", d).onclick = e => { e.stopPropagation(); toggleSub(c, d); };
     p.appendChild(d);
   });
+  const era = document.createElement("div"); era.className = "era";
+  era.innerHTML = `<button class="${S.era === "1999" ? "on" : ""}" title="Corona as Solaris drew it">1999</button><button class="${S.era === "2026" ? "on" : ""}" title="Corona reimagined">2026</button>`;
+  const [b99, b26] = $$("button", era); b99.onclick = () => setEra("1999"); b26.onclick = () => setEra("2026");
+  p.appendChild(era);
   const R = hdl("r"); p.appendChild(R);
   $(".hb", R).onclick = minPanel;
 }
 function buildSwitch() {
   const s = document.createElement("div"); s.className = "sw sk";
-  s.innerHTML = `<div class="side"><div class="cv rz" id="lockb" title="Lock the display">${ICO.lock.replace('viewBox', 'width="26" height="26" viewBox')}</div><div class="busy-l"></div></div><div class="wsg">${S.wsNames.map((n, i) => `<div class="wsb rz" data-i="${i}">${esc(n)}</div>`).join("")}</div><div class="side"><div class="cv rz" id="exitb" title="Exit">${ICO.exit.replace('viewBox', 'width="26" height="26" viewBox')}</div><small style="text-align:center;font-size:9.5px">Exit</small></div>`;
+  s.innerHTML = `<div class="side"><div class="cv rz" id="lockb" title="Lock the display">${ICO.lock.replace('viewBox', 'width="26" height="26" viewBox')}</div><div class="busy-l"></div></div><div class="wsg">${S.wsNames.map((n, i) => `<div class="wsb rz" data-i="${i}" title="${S.era === "2026" ? "Drop a window here to send it to this workspace" : ""}">${wsLabel(i)}</div>`).join("")}</div><div class="side"><div class="cv rz" id="exitb" title="Exit">${ICO.exit.replace('viewBox', 'width="26" height="26" viewBox')}</div><small style="text-align:center;font-size:9.5px">Exit</small></div>`;
   $$(".wsb", s).forEach(b => {
     b.onclick = () => goWs(+b.dataset.i);
     b.ondblclick = () => {
       const i = +b.dataset.i; b.innerHTML = `<input value="${esc(S.wsNames[i])}" maxlength="12">`; const inp = $("input", b); inp.focus(); inp.select();
-      const done = () => { S.wsNames[i] = inp.value.trim() || S.wsNames[i]; b.textContent = S.wsNames[i]; };
+      const done = () => { S.wsNames[i] = inp.value.trim() || S.wsNames[i]; b.innerHTML = wsLabel(i); refreshMinis(); };
       inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { inp.value = S.wsNames[i]; inp.blur(); } };
       inp.onblur = done; inp.onmousedown = e => e.stopPropagation();
     };
@@ -900,21 +1071,107 @@ function buildSwitch() {
 }
 let SUB = null;
 function toggleSub(c, d) {
+  const sub = typeof c.sub === "function" ? c.sub() : c.sub;
+  if (!sub || !d) return;
   if (SUB && SUB.c === c) return closeSub();
   closeSub();
-  const m = document.createElement("div"); m.className = "sub";
-  m.innerHTML = `<div class="stb"><div class="b rz1"><i class="ic-menu" style="width:9px"></i></div><div class="t rz1">${esc(c.sub.t)}</div></div><div class="inst sk">Install Icon</div>` +
-    c.sub.items.map(([k, n]) => `<div class="row" data-k="${k}">${picOf(APPS[k].icon)}<span>${esc(n)}</span></div>`).join("");
+  const m = document.createElement("div"); m.className = "sub" + (sub.wide ? " wide" : "");
+  m.innerHTML = `<div class="stb"><div class="b rz1"><i class="ic-menu" style="width:9px"></i></div><div class="t rz1">${esc(sub.t)}</div></div>` +
+    (sub.html ? `<div class="sbody"></div>` : `<div class="inst sk">Install Icon</div>` +
+      sub.items.map(([k, n]) => `<div class="row" data-k="${k}">${picOf(APPS[k].icon)}<span>${esc(n)}</span></div>`).join(""));
   document.body.appendChild(m);
   const r = d.getBoundingClientRect();
-  m.style.left = clamp(r.left + r.width / 2 - 100, 4, innerWidth - 204) + "px";
-  m.style.top = (r.top - m.offsetHeight + 2) + "px";
-  $$(".row", m).forEach(x => x.onclick = () => { closeSub(); launch(x.dataset.k); });
-  $(".inst", m).onclick = () => toast("Drop an application here to put it in this subpanel");
+  const place = () => {
+    m.style.left = clamp(r.left + r.width / 2 - m.offsetWidth / 2, 4, innerWidth - m.offsetWidth - 4) + "px";
+    m.style.top = Math.max(4, r.top - m.offsetHeight + 2) + "px";
+  };
+  if (sub.html) sub.html($(".sbody", m), place);
+  place();
+  $$(".row[data-k]", m).forEach(x => x.onclick = () => { closeSub(); launch(x.dataset.k); });
+  const inst = $(".inst", m); if (inst) inst.onclick = () => toast("Drop an application here to put it in this subpanel");
   $(".arr", d).innerHTML = ARROW_DN;
   SUB = { c, m, d };
 }
-function closeSub() { if (!SUB) return; SUB.m.remove(); $(".arr", SUB.d).innerHTML = ARROW_UP; SUB = null; }
+function closeSub() { if (!SUB) return; SUB.m.remove(); const a = $(".arr", SUB.d); if (a) a.innerHTML = ARROW_UP; SUB = null; }
+
+// ---------- 2026's subpanels
+function findAll(q) {
+  q = q.toLowerCase(); const out = [];
+  Object.entries(APPS).forEach(([k, a]) => { if (a.name.toLowerCase().includes(q)) out.push({ t: a.name, ic: a.icon, where: "application", a: () => launch(k) }); });
+  const walk = (n, p) => Object.entries(n.kids || {}).forEach(([k, c]) => {
+    const cp = join(p, k);
+    if (k.toLowerCase().includes(q)) out.push({ t: k, ic: isDir(c) ? "folder" : "doc", where: p, a: () => isDir(c) ? openFiles(cp) : c.bin ? toast(`${k} is not text`) : openEditor(cp) });
+    walk(c, cp);
+  });
+  walk(FS, "/");
+  return out.slice(0, 9);
+}
+function findPanel(b, place) {
+  b.innerHTML = `<input type="search" class="sk" placeholder="Applications and files" spellcheck="false" autocomplete="off"><div class="res"></div>`;
+  const inp = $("input", b), res = $(".res", b);
+  inp.oninput = () => {
+    const q = inp.value.trim(), f = q ? findAll(q) : [];
+    res.innerHTML = q && !f.length ? `<div class="none">Nothing called “${esc(q)}”</div>` : f.map((x, i) => `<div class="row" data-i="${i}">${picOf(x.ic)}<span>${esc(x.t)}</span><small>${esc(x.where)}</small></div>`).join("");
+    $$(".row", res).forEach(r => r.onclick = () => { closeSub(); f[+r.dataset.i].a(); });
+    place();
+  };
+  inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") { const r = $(".row", res); if (r) r.click(); } if (e.key === "Escape") closeSub(); };
+  setTimeout(() => inp.focus(), 20);
+}
+function todayPanel(b) {
+  const d = new Date(), ap = APPTS[d.getDate()] || [], hm = x => x.toLocaleTimeString("en", { hour: "numeric", minute: "2-digit" });
+  b.innerHTML = `<h4>${d.toLocaleDateString("en", { weekday: "long" })}</h4><div class="dt">${d.toLocaleDateString("en", { day: "numeric", month: "long", year: "numeric" })}${S.hold ? " · notifications held" : ""}</div>
+    <div class="lbl">Appointments</div>${ap.length ? ap.map(a => `<div class="ap"><b>${a[0]}</b><span>${esc(a[1])}</span></div>`).join("") : `<div class="none">None today.</div>`}
+    <div class="lbl">Notifications</div>${S.notes.length ? S.notes.map(n => `<div class="nt">${picOf(n.ic)}<b>${esc(n.t)} <small style="font-weight:400">${hm(n.at)}</small></b><small>${esc(n.b)}</small></div>`).join("") + `<div class="clr"><button class="btn">Clear</button></div>` : `<div class="none">Nothing has come today.</div>`}`;
+  const c = $(".clr .btn", b); if (c) c.onclick = () => { S.notes = []; closeSub(); };
+}
+function statusPanel(b) {
+  b.innerHTML = `<div class="ctl"><span>Network</span><span>Wired, 192.168.1.40</span><small>1 Gb/s</small></div>
+    <div class="ctl"><span>Volume</span><input type="range" min="0" max="100" value="${S.vol}" class="v"><small class="vv">${S.vol}</small></div>
+    <div class="ctl"><span>Brightness</span><input type="range" min="10" max="100" value="${S.bright}" class="br"><small class="bv">${S.bright}</small></div>
+    <div class="ctl"><span>Battery</span><span>82%, charging</span><small>1:10</small></div>
+    <div class="ctl"><span>Hold</span><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="hold" ${S.hold ? "checked" : ""}> notifications, until I say</label><small></small></div>`;
+  $(".v", b).oninput = e => { S.vol = +e.target.value; $(".vv", b).textContent = S.vol; };
+  $(".v", b).onchange = () => beep(660, .05);
+  $(".br", b).oninput = e => { S.bright = +e.target.value; $(".bv", b).textContent = S.bright; document.body.style.filter = `brightness(${.55 + S.bright / 220})`; };
+  $(".hold", b).onchange = e => { S.hold = e.target.checked; if (!S.hold && S.heldN) { banner({ t: "Corona", ic: "panel", b: `${S.heldN} notification${S.heldN === 1 ? "" : "s"} came while they were held. They are under the calendar.` }); S.heldN = 0; } };
+}
+
+// ---------- notifications: above the Front Panel in 2026; in 1999, the busy light only
+function notify(ic, t, b) {
+  const n = { ic, t, b, at: new Date() };
+  S.notes.unshift(n); S.notes = S.notes.slice(0, 30);
+  if (S.era !== "2026") { let k = 0; const l = $(".busy-l"); const iv = setInterval(() => { if (l) l.classList.toggle("on"); if (++k === 6) clearInterval(iv); }, 220); return; }
+  if (S.hold) { S.heldN = (S.heldN || 0) + 1; return; }
+  banner(n);
+}
+function banner(n) {
+  const box = $("#banners"), d = document.createElement("div");
+  d.className = "banner"; d.innerHTML = `${picOf(n.ic)}<b>${esc(n.t)}</b><span>${esc(n.b)}</span>`;
+  d.onclick = () => d.remove();
+  box.prepend(d); while (box.children.length > 3) box.lastChild.remove();
+  box.style.bottom = (S.panelMin ? 14 : $("#panel").offsetHeight + 14) + "px";
+  setTimeout(() => d.remove(), 5500);
+  beep(1320, .04);
+}
+// The panel's meter: the four processors, live.
+const METER = [20, 12, 30, 8];
+setInterval(() => {
+  const c = $(".fpmeter"); if (!c) return;
+  const x = c.getContext("2d"); x.clearRect(0, 0, 44, 38); x.fillStyle = "#0f1d22"; x.fillRect(0, 0, 44, 38);
+  METER.forEach((v, i) => { METER[i] = clamp(v + (Math.random() - .5) * 22 + S.wins.size * .4, 3, 96); const h = METER[i] / 100 * 32; x.fillStyle = METER[i] > 75 ? "#ffcf4a" : "#7fe0a0"; x.fillRect(4 + i * 10, 35 - h, 7, h); });
+}, 600);
+// Things that happen while the mockup is open.
+setTimeout(() => { MAIL.unshift({ f: "Ana", s: "Corona!", d: "Today", n: true, b: "You put the four buttons back. Can workspace Two be mine?\n\n- A\n" }); S.wins.forEach(w => { if (w.app === "mail") { closeWin(w); openMail(); } }); notify("mail", "Mail from Ana", "Corona!"); }, 22000);
+setTimeout(() => notify("apps", "Three updates are ready", "They go in at the next restart. Nothing has to quit for it now."), 48000);
+
+function setEra(e) {
+  S.era = e; document.body.classList.toggle("e26", e === "2026");
+  closeSub(); closeMenus(); endOverview();
+  buildPanel(); show();
+  if (e !== "2026") document.body.style.filter = "";
+  toast(e === "2026" ? "2026: Corona reimagined" : "1999: Corona as Solaris drew it");
+}
 function minPanel() {
   closeSub(); $("#panel").style.display = "none"; S.panelMin = true;
   const ic = document.createElement("div"); ic.className = "dicon"; ic.id = "panelicon";
@@ -969,7 +1226,7 @@ setInterval(() => {
 }, 1000);
 
 function startSession() {
-  S.ws = 0; buildPanel(); show();
+  S.ws = 0; document.body.classList.toggle("e26", S.era === "2026"); buildPanel(); show();
   // What a session comes back to: the File Manager in One, the Help Viewer over it.
   const go = () => { openFiles("/Home"); setTimeout(() => openHelp(), 60); };
   // A page opened in a hidden tab has no size yet; wait until it has one.
