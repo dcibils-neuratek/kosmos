@@ -275,11 +275,20 @@ that adds a button has given Xavier the button.
 2. **Applications by their controls' names.** Automations' steps: open
    Mail, press "New mail", type into "To", choose View > Zoom. Exact too,
    because a name does not move when a window does.
-3. **The screen, when nothing above reaches.** The screen as a picture
-   (the same frame `screenshot` and `vncd` borrow), and a pointer and keys
-   driven as a process drives them (`hal_pointer_move`, the input that
-   VNC already injects). Needs a model that can see, which phi-2 cannot;
-   a vision model is a third architecture for the kit, later.
+3. **The screen, when nothing above reaches** - built already, for VNC,
+   and Xavier's as it stands. The window manager's `/Running/wm/remote`
+   lends the screen (`watch` and `watched`: each composed frame copied
+   into a region the borrower shares, with the rectangles that changed -
+   `wmproto.screen()`, which `screenshot` uses too) and takes a pointer
+   and keys (`pointer` {x, y, buttons}, `key` {code, chars}) the desktop
+   cannot tell from a real mouse and keyboard. It is mounted only in a
+   program the desktop launches whose header says `kosmos: needs
+   desktop`, so Xavier is lent it as `vncd` is, and nothing else can
+   drive the screen at all. While Xavier drives, the desktop shows the
+   banner `vncd` shows for a viewer allowed the keys and the pointer.
+   Last, because a click at a place lands on something else once a window
+   moves - and because seeing the picture needs a model that can see,
+   which phi-2 cannot: a vision model, a third architecture for the kit.
 
 **One catalogue the model reads.** Every method above is described in one
 declared shape - its name, what it does, its arguments, and whether it
