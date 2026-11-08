@@ -1033,6 +1033,54 @@ static float row_dot(const struct llm_model *m, const struct llm_tensor *w, uint
   }
 }
 
+/* A product, as `matmul` hands it out: everything a part needs. */
+struct product {
+  struct llm_model *m;
+  const struct llm_tensor *w;
+  const float *b, *x;
+  size_t x_room, out_room;
+  float *out;
+  uint32_t n;
+};
+
+/* Rows `r0` up to `r1` of a product, for every input. */
+static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
+{
+  struct llm_model *m = p->m;
+  const struct llm_tensor *w = p->w;
+  const float *b = p->b;
+  llm_dot4_fn *four = w->type == LLM_Q8_0 ? m->dot4_q8_0 : w->type == LLM_Q4_0 ? m->dot4_q4_0 : NULL;
+  const uint64_t row_bytes = w->type == LLM_Q8_0 ? w->ne[0] / LLM_QK * 34 : w->ne[0] / LLM_QK * 18;
+
+  for (uint64_t r = r0; r < r1; r++) {
+    uint32_t t = 0;
+
+    /* Four inputs at a time where the row's kind has the loop for it. */
+    for (; four && t + LLM_DOT4 <= p->n; t += LLM_DOT4) {
+      float v[LLM_DOT4];
+
+      four(w->data + r * row_bytes, m->xq + t * m->xq_room, m->xq_room, m->xs + t * m->xs_room,
+           m->xs_room, w->ne[0] / LLM_QK, v);
+      for (int i = 0; i < LLM_DOT4; i++) p->out[(t + i) * p->out_room + r] = b ? v[i] + b[r] : v[i];
+    }
+
+    for (; t < p->n; t++) {
+      float v = row_dot(m, w, r, p->x + t * p->x_room, m->xq + t * m->xq_room,
+                        m->xs + t * m->xs_room);
+      p->out[t * p->out_room + r] = b ? v + b[r] : v;
+    }
+  }
+}
+
+/* Part `part` of `parts`: its share of the rows, cut evenly. */
+static void product_part(void *job, uint32_t part, uint32_t parts)
+{
+  const struct product *p = job;
+  uint64_t rows = p->w->ne[1];
+
+  product_rows(p, rows * part / parts, rows * (part + 1) / parts);
+}
+
 /*
  * out = W x + b for each of `n` inputs: input `t` at `x + t * x_room`, its
  * answer at `out + t * out_room`. With `quantised`, `m->xq` already holds
@@ -1043,6 +1091,11 @@ static float row_dot(const struct llm_model *m, const struct llm_tensor *w, uint
  * cache, where one input at a time read every row again for each. Each
  * (row, input) is the same `row_dot` on the same bytes either way, so the
  * order the loops run in changes no answer.
+ *
+ * **And the rows cut across the cores**, where the caller gave a way to
+ * (`llm_parallel`): each part a run of whole rows, so no sum is split and
+ * none is taken in another order. A product of fewer than 256 rows a part
+ * stays on this thread, where handing it out would cost more than it is.
  */
 static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct llm_tensor *bias,
                    const float *x, size_t x_room, float *out, size_t out_room, uint32_t n,
@@ -1053,27 +1106,20 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
       quantize_q8_0(x + t * x_room, m->xq + t * m->xq_room, m->xs + t * m->xs_room,
                     (uint32_t)w->ne[0]);
 
-  const float *b = bias ? (const float *)(const void *)bias->data : NULL;
-  llm_dot4_fn *four = w->type == LLM_Q8_0 ? m->dot4_q8_0 : w->type == LLM_Q4_0 ? m->dot4_q4_0 : NULL;
-  const uint64_t row_bytes = w->type == LLM_Q8_0 ? w->ne[0] / LLM_QK * 34 : w->ne[0] / LLM_QK * 18;
+  struct product p = { m, w, bias ? (const float *)(const void *)bias->data : NULL, x, x_room,
+                       out_room, out, n };
 
-  for (uint64_t r = 0; r < w->ne[1]; r++) {
-    uint32_t t = 0;
+  if (m->run && m->parts > 1 && w->ne[1] >= 256u * m->parts)
+    m->run(m->run_ctx, product_part, &p, m->parts);
+  else
+    product_rows(&p, 0, w->ne[1]);
+}
 
-    /* Four inputs at a time where the row's kind has the loop for it. */
-    for (; four && t + LLM_DOT4 <= n; t += LLM_DOT4) {
-      float v[LLM_DOT4];
-
-      four(w->data + r * row_bytes, m->xq + t * m->xq_room, m->xq_room, m->xs + t * m->xs_room,
-           m->xs_room, w->ne[0] / LLM_QK, v);
-      for (int i = 0; i < LLM_DOT4; i++) out[(t + i) * out_room + r] = b ? v[i] + b[r] : v[i];
-    }
-
-    for (; t < n; t++) {
-      float v = row_dot(m, w, r, x + t * x_room, m->xq + t * m->xq_room, m->xs + t * m->xs_room);
-      out[t * out_room + r] = b ? v + b[r] : v;
-    }
-  }
+void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts)
+{
+  m->run = parts > 1 ? run : NULL;
+  m->run_ctx = ctx;
+  m->parts = parts;
 }
 
 /* A row of the embedding, as floats (`get_rows`, `dequantize_row_*`). */

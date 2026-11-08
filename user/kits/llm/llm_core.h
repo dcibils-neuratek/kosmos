@@ -68,6 +68,18 @@ struct llm_layer {
  * NULL. */
 typedef void *(*llm_alloc_fn)(void *ctx, size_t bytes);
 
+/*
+ * **Every core** (`docs/xavier.md`, *Making it fast*): the caller's way to
+ * run `parts` pieces of a job at once - `fn(job, part, parts)` for each
+ * part from 0, on as many cores as it has - and return when all are done.
+ * The kit cuts a product's rows into the parts and nothing else: each row
+ * is the same arithmetic wherever it runs, so the answer is the one a
+ * single thread gives, to the bit. Given at `llm_parallel`; without it the
+ * kit runs on the thread that calls it.
+ */
+typedef void llm_part_fn(void *job, uint32_t part, uint32_t parts);
+typedef void llm_run_fn(void *ctx, llm_part_fn *fn, void *job, uint32_t parts);
+
 struct llm_model {
   /* The file. */
   const uint8_t *file;
@@ -120,7 +132,16 @@ struct llm_model {
    * says whether the explicit lanes beat them there. */
   llm_dot_fn *dot_q8_0, *dot_q4_0;
   llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs */
+
+  /* How a product is run in parts, or NULL for this thread alone. */
+  llm_run_fn *run;
+  void *run_ctx;
+  uint32_t parts;
 };
+
+/* Products in `parts` pieces through `run` from now on; NULL, or 1 part,
+ * for the calling thread alone. */
+void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts);
 
 /*
  * The model in `file`, of `size` bytes, for a cache of `n_ctx` positions

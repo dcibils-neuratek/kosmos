@@ -407,7 +407,123 @@ static void load_step(void)
 }
 
 /* ------------------------------------------------------------------------
- * Answering: the prompt read a token at a time, then the answer made one.
+ * Every core (`docs/xavier.md`, *Making it fast*): a worker a core, for as
+ * long as an answer is being made.
+ *
+ * The kit cuts each product's rows into one part a worker and hands them
+ * here (`llm_parallel`); the server's own thread hands them out and waits.
+ * A product is about two milliseconds, and there are a hundred and thirty
+ * of them a token, so a part is handed over by a counter in memory rather
+ * than by a message or a new thread: the server's thread adds one to
+ * `gen`, each worker sees it, does its rows and adds one to `finished`.
+ * Between products a worker looks again with `kosmos_yield`, which gives
+ * its core to anything else that wants it - and when the answer ends the
+ * workers end, so a server with nothing to answer runs nothing at all.
+ * --------------------------------------------------------------------- */
+
+#define WORKERS_MAX 64
+
+static struct {
+    llm_part_fn *fn;
+    void *job;
+    uint32_t gen, finished, quit;       /* touched only atomically */
+    uint32_t base;                      /* `gen` when this answer's workers began */
+    uint32_t n;
+    long thread[WORKERS_MAX];
+    bool said;
+} pool;
+
+static void pool_worker(unsigned long part)
+{
+    /* **From the count as it stood when the workers were made**, never 0:
+     * `gen` counts every product of every answer, so a worker of the second
+     * answer that began at 0 saw a product at once - the first answer's
+     * last, through a pointer to a `struct product` long gone - and wrote
+     * through it (`testing.md` 18.719). `base` is set before any worker is
+     * made and `gen` does not move until all of them are. */
+    uint32_t seen = pool.base, g;
+
+    for (;;) {
+        while ((g = __atomic_load_n(&pool.gen, __ATOMIC_ACQUIRE)) == seen) {
+            if (__atomic_load_n(&pool.quit, __ATOMIC_ACQUIRE)) kosmos_thread_exit(0);
+            kosmos_yield();
+        }
+
+        seen = g;
+        pool.fn(pool.job, (uint32_t)part, pool.n);
+        __atomic_add_fetch(&pool.finished, 1, __ATOMIC_RELEASE);
+    }
+}
+
+/* The kit's way to run a product's parts: one a worker, and wait for all. */
+static void pool_run(void *ctx, llm_part_fn *fn, void *job, uint32_t parts)
+{
+    (void)ctx;
+    (void)parts;                        /* always `pool.n`: `llm_parallel` said so */
+
+    pool.fn = fn;
+    pool.job = job;
+    __atomic_store_n(&pool.finished, 0, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&pool.gen, 1, __ATOMIC_RELEASE);
+
+    while (__atomic_load_n(&pool.finished, __ATOMIC_ACQUIRE) < pool.n) kosmos_yield();
+}
+
+/* A worker on each core, where there is more than one. */
+static void pool_start(void)
+{
+    struct sysinfo info;
+    uint32_t cores = kosmos_sysinfo(&info) == 0 && info.cpus > 0 ? info.cpus : 1;
+
+    if (cores < 2) return;
+    if (cores > WORKERS_MAX) cores = WORKERS_MAX;
+
+    __atomic_store_n(&pool.quit, 0, __ATOMIC_RELEASE);
+    pool.base = __atomic_load_n(&pool.gen, __ATOMIC_ACQUIRE);
+    pool.n = 0;
+
+    for (uint32_t i = 0; i < cores; i++) {
+        long t = kosmos_thread_start_on(pool_worker, i, i);
+
+        if (t < 0) t = kosmos_thread_start(pool_worker, i);
+        if (t < 0) break;               /* as many as the machine would give */
+        pool.thread[pool.n++] = t;
+    }
+
+    if (pool.n < 2) {
+        /* One worker is no faster than this thread: let it go. */
+        __atomic_store_n(&pool.quit, 1, __ATOMIC_RELEASE);
+        for (uint32_t i = 0; i < pool.n; i++) (void)kosmos_thread_wait((unsigned long)pool.thread[i]);
+        pool.n = 0;
+        return;
+    }
+
+    llm_parallel(&model.m, pool_run, NULL, pool.n);
+
+    if (!pool.said) {
+        char line[96];
+
+        snprintf(line, sizeof line, "llm: each product cut across %u cores\n", pool.n);
+        say(console, line);
+        pool.said = true;
+    }
+}
+
+static void pool_stop(void)
+{
+    if (pool.n == 0) return;
+
+    llm_parallel(&model.m, NULL, NULL, 1);
+    __atomic_store_n(&pool.quit, 1, __ATOMIC_RELEASE);
+
+    for (uint32_t i = 0; i < pool.n; i++) (void)kosmos_thread_wait((unsigned long)pool.thread[i]);
+
+    pool.n = 0;
+}
+
+/* ------------------------------------------------------------------------
+ * Answering: the prompt read a batch at a time, then the answer made a
+ * token at a time.
  * --------------------------------------------------------------------- */
 
 static void answer_end(void)
@@ -415,6 +531,7 @@ static void answer_end(void)
     if (!ans.on) return;
 
     ans.on = false;
+    pool_stop();
 
     if (ans.began_answer != 0) ans.answer_us = micros(kosmos_ticks() - ans.began_answer);
 
@@ -509,6 +626,7 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
     ans.began_answer = 0;
     ans.prompt_us = ans.answer_us = ans.first_us = 0;
     model.state = LLM_STATE_ANSWERING;
+    pool_start();
     *cap = ans.region.cap;
     return LLM_OK;
 }

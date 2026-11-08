@@ -29393,3 +29393,40 @@ checks.
 **Control**: the four-input Q4_0 loop given input 0's scales for all four:
 3510 of `test_llmdot`'s rows fail, and all four batch checks in `test_llm`.
 Restored, all pass.
+
+## 18.719 Every core: a product's rows cut across the cores
+
+**What** (8 November 2026, `docs/xavier.md`, *Every core, as built*):
+`llm_parallel` lets the kit hand a product to its caller in parts, each a
+run of whole rows. The LLM server runs them on a worker a core, for as
+long as an answer is made. On this Mac with four parts, phi-2 Q4_0 writes
+12.5 tokens a second instead of 4.0, and Q8_0 19.9 instead of 9.4.
+
+**The tests**: `test_llm` reads a question in batches and writes 12
+tokens, with one thread and then with four parts through a pthread pool.
+The tokens made, the last logits and every position of the cache must be
+the single thread's, byte for byte. The logits are poisoned before each
+step, so a row no part wrote cannot pass for one that was. `x86-llm` now
+boots four cores and checks that the server said "each product cut across
+4 cores". Its 15 answers are the kit's single-threaded ones on the Mac,
+byte for byte. 48 checks.
+
+**Two faults found on the way.**
+
+- **The pool had never run in a suite.** The x86 harness boots one core,
+  so the server rightly started no workers, and `x86-llm` passed either
+  way. Its new check failed, saying exactly that, until the suite booted
+  four.
+- **With four, the second question crashed the LLM server.** Three
+  workers page-faulted at once, writing to an address nothing mapped. An
+  answer's workers began counting products from 0, but `gen` counts every
+  product of every answer. So a worker of the second answer saw a product
+  at once: the first answer's last, through a pointer to its `struct
+  product`, gone with its stack frame. They now begin from `pool.base`,
+  the count when they were made. That crash is the control for the fix.
+
+**Control** for the kit: each part dropping its last row fails
+`test_llm`'s parallel checks on the tiny phi-2 and on phi-2 itself. On the
+tiny model it passed until the logits were poisoned: its only product
+large enough to cut is the one onto the logits, and the dropped row kept
+the single thread's value from before.

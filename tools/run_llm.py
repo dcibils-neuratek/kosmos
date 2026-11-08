@@ -186,7 +186,19 @@ def main():
         if not ok:
             fails.append(what)
 
-    guest = R.Guest(image, 240)
+    # **Four cores** (`docs/xavier.md`, *Making it fast*): the x86 harness
+    # boots one, and the server cuts its products across the cores there
+    # are - so with one, the pool was never started and nothing here could
+    # have told. The board's list is restored before the second machine.
+    board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
+    one_core = getattr(R, board)
+    if "-smp" not in one_core:
+        setattr(R, board, one_core + ["-smp", "4"])
+
+    try:
+        guest = R.Guest(image, 240)
+    finally:
+        setattr(R, board, one_core)
 
     try:
         guest.wait_for("kosmos>", "a prompt")
@@ -236,6 +248,11 @@ def main():
                 for m in re.finditer(r"^" + tag + r"\t(.*?)\r?$", said, re.M)]
 
     check(line("LLM-EMPTY") == ["empty"], "before a load the server was not empty: %s" % line("LLM-EMPTY"))
+    # **Every core** (`docs/xavier.md`, *Making it fast*): the guest has
+    # four, and the answers below - the kit's own on the Mac, made there on
+    # one thread - were made with each product cut across all of them.
+    check("llm: each product cut across 4 cores" in said,
+          "the server did not cut its products across the guest's four cores")
     nm = line("LLM-NOMODEL")
     check(nm and nm[0] == "true" and "no model is loaded" in nm[1],
           "a question with no model was not refused as such: %s" % nm)

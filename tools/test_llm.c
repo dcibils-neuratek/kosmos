@@ -46,6 +46,7 @@
 #include "llm_core.h"
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -309,6 +310,148 @@ static void check_batch(struct llm_model *m)
   free(v1);
 }
 
+/*
+ * **A pool of threads, as the server will have one a core** - here the
+ * Mac's, through pthreads: `pool_run` hands each part to a worker and
+ * waits for all of them.
+ */
+#define POOL 4
+
+static struct {
+  pthread_mutex_t lock;
+  pthread_cond_t go, done;
+  llm_part_fn *fn;
+  void *job;
+  uint32_t parts, gen, finished;
+  pthread_t thread[POOL];
+} pool = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER,
+           NULL, NULL, 0, 0, 0, { 0 } };
+
+static void *pool_worker(void *arg)
+{
+  uint32_t part = (uint32_t)(uintptr_t)arg, seen = 0;
+
+  for (;;) {
+    pthread_mutex_lock(&pool.lock);
+    while (pool.gen == seen) pthread_cond_wait(&pool.go, &pool.lock);
+    seen = pool.gen;
+    pthread_mutex_unlock(&pool.lock);
+
+    if (part < pool.parts) pool.fn(pool.job, part, pool.parts);
+
+    pthread_mutex_lock(&pool.lock);
+    if (++pool.finished == POOL) pthread_cond_signal(&pool.done);
+    pthread_mutex_unlock(&pool.lock);
+  }
+  return NULL;
+}
+
+static void pool_run(void *ctx, llm_part_fn *fn, void *job, uint32_t parts)
+{
+  (void)ctx;
+  pthread_mutex_lock(&pool.lock);
+  pool.fn = fn;
+  pool.job = job;
+  pool.parts = parts;
+  pool.finished = 0;
+  pool.gen++;
+  pthread_cond_broadcast(&pool.go);
+  while (pool.finished < POOL) pthread_cond_wait(&pool.done, &pool.lock);
+  pthread_mutex_unlock(&pool.lock);
+}
+
+/*
+ * **The products cut across cores give the single thread's answer, to the
+ * bit** (`docs/xavier.md`, *Making it fast*): a question read in batches
+ * and an answer written a token at a time, each with one thread and with
+ * four parts. The logits and every position of the cache must be equal.
+ */
+static void check_parallel(struct llm_model *m)
+{
+  static int32_t t[2048];
+  static float one_logits[60000];
+  const char *q = "Instruct: Name three planets and say one thing about each.\nOutput:";
+  int n = llm_tokenize(m, q, strlen(q), 1, t, 2048);
+  const int steps = 12;
+  double read[2], wrote[2];
+  int32_t made[2][16] = { { 0 } };
+  char what[200];
+
+  if (n <= 0 || m->n_vocab > sizeof one_logits / sizeof *one_logits
+      || (uint32_t)(n + steps) > m->n_ctx) {
+    check(0, "parallel: the question would not fit");
+    return;
+  }
+
+  for (uint32_t p = 0; p < POOL; p++)
+    if (!pool.thread[p]) pthread_create(&pool.thread[p], NULL, pool_worker, (void *)(uintptr_t)p);
+
+  size_t used = (size_t)(n + steps) * m->n_embd, cache = (size_t)m->n_layer * m->n_ctx * m->n_embd;
+  uint16_t *k1 = malloc(cache * 2), *v1 = malloc(cache * 2);
+
+  if (!k1 || !v1) { check(0, "parallel: no memory to compare the cache"); free(k1); free(v1); return; }
+
+  for (int way = 0; way < 2; way++) {
+    llm_parallel(m, way ? pool_run : NULL, NULL, way ? POOL : 1);
+    llm_reset(m);
+
+    double t0 = now();
+    for (int done = 0; done < n; ) {
+      int k = n - done > LLM_BATCH ? LLM_BATCH : n - done;
+      if (llm_step_batch(m, t + done, (uint32_t)k) != 0) { check(0, "parallel: a batch refused"); goto out; }
+      done += k;
+    }
+    read[way] = now() - t0;
+
+    t0 = now();
+    for (int i = 0; i < steps; i++) {
+      made[way][i] = llm_greedy(m);
+      /* Poisoned, so a row no part wrote cannot pass for one that was. */
+      memset(m->logits, 0xff, m->n_vocab * sizeof *m->logits);
+      if (llm_step(m, made[way][i]) != 0) { check(0, "parallel: a step refused"); goto out; }
+    }
+    wrote[way] = now() - t0;
+
+    if (way == 0) {
+      memcpy(one_logits, m->logits, m->n_vocab * sizeof *one_logits);
+      memcpy(k1, m->k_cache, cache * 2);
+      memcpy(v1, m->v_cache, cache * 2);
+    }
+  }
+
+  int cached = 1;
+  for (uint32_t l = 0; l < m->n_layer; l++) {
+    size_t o = (size_t)l * m->n_ctx * m->n_embd;
+    cached = cached && memcmp(k1 + o, m->k_cache + o, used * 2) == 0
+             && memcmp(v1 + o, m->v_cache + o, used * 2) == 0;
+  }
+
+  snprintf(what, sizeof what, "parallel: %d parts, the same %d tokens made and the last logits "
+           "the single thread's to the bit", POOL, steps);
+  check(memcmp(made[0], made[1], (size_t)steps * sizeof made[0][0]) == 0
+        && memcmp(one_logits, m->logits, m->n_vocab * sizeof *one_logits) == 0, what);
+  check(cached, "parallel: and every position of the cache");
+  if (getenv("LLM_DEBUG")) {
+    int d = 0;
+    for (uint32_t i = 0; i < m->n_vocab && d < 5; i++)
+      if (memcmp(&one_logits[i], &m->logits[i], 4) != 0) {
+        printf("  logit %u: %.9g against %.9g\n", i, one_logits[i], m->logits[i]);
+        d++;
+      }
+  }
+
+  printf("parallel: %d parts on the Mac: a %d-token question %.2f s -> %.2f s (%.1fx), "
+         "%d tokens written %.2f s -> %.2f s (%.1fx; %.1f -> %.1f tokens a second)\n",
+         POOL, n, read[0], read[1], read[0] / read[1], steps, wrote[0], wrote[1],
+         wrote[0] / wrote[1], steps / wrote[0], steps / wrote[1]);
+
+out:
+  llm_parallel(m, NULL, NULL, 1);
+  llm_reset(m);
+  free(k1);
+  free(v1);
+}
+
 int main(int argc, char **argv)
 {
   if (argc < 3) {
@@ -471,6 +614,7 @@ int main(int argc, char **argv)
 
   check_held(&m);
   check_batch(&m);
+  check_parallel(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);
   printf("%d steps in %.1f s: %.2f tokens a second, scalar, one thread, on the Mac\n", steps,

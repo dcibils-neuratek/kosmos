@@ -680,6 +680,41 @@ of `test_llm`'s batch checks.
 Writing an answer is unchanged, one token at a time. Its turn comes with
 threads, where the memory's ceiling is what bounds it.
 
+### Every core, as built (0.11.324)
+
+**The kit cuts and the caller runs.** `llm_parallel` gives the kit a way
+to run a job in parts. The kit cuts each product of 256 rows a part or
+more into one run of whole rows a part. No sum is split, so the answer is
+a single thread's to the bit. The kit calls no thread itself: on the Mac
+the test gives it a pthread pool, and in Kosmos the server gives it a
+worker a core.
+
+**The server's workers live as long as an answer.** `ask_begin` starts one
+on each core (`kosmos_thread_start_on`), and `answer_end` stops them. A
+product is about two milliseconds and there are about 130 a token, so a
+part is handed over by a counter in memory rather than by a message: the
+server's thread adds one to `gen`, and each worker does its rows and adds
+one to `finished`. A worker waiting between products gives its core away
+with `kosmos_yield`. A server with nothing to answer runs nothing.
+
+On this Mac, four parts, scalar loops:
+
+| phi-2 | reading a 15-token question | writing 12 tokens |
+|---|---|---|
+| Q4_0 | 1.23 s -> 0.50 s (2.5x) | 4.0 -> 12.5 tokens a second (3.1x) |
+| Q8_0 | 0.80 s -> 0.36 s (2.2x) | 9.4 -> 19.9 tokens a second (2.1x) |
+
+These are the Mac's cores and the Mac's memory; the M700's are the number
+that matters, and its memory is the ceiling there (*What bounds it*).
+
+**Found on the way, in the harness and in the server** (`testing.md`
+18.719). The x86 machine every suite boots has one core, so the pool never
+started and `x86-llm` passed without it. The suite now boots four and checks
+that the server said it cut across them. With four, the second question
+crashed the server: its workers began counting from 0, saw the first
+answer's last product at once, and wrote through a pointer to it, long
+gone. They now begin from the count as it stands when they are made.
+
 **What costs almost nothing, and is felt:** the answer is already written
 word by word, and the cache already held across a conversation. The model
 can also stay loaded between questions, and the LLM server's band keep the
