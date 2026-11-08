@@ -292,6 +292,43 @@ static void light(struct scene *sc, long x, long y, int slot, bool lit, bool off
     }
 }
 
+/*
+ * **One of Platinum's boxes** (`OUT.platinum_box`, `docs/pewter.md` P2): a
+ * square with softened corners in the look's colours for its slot, and its
+ * mark always shown, as Mac OS drew them - close is the plain box, zoom a
+ * smaller square inside it, collapse two lines across. Nothing at all on a
+ * window that is not in front: Platinum takes the boxes off a window behind
+ * rather than greying them.
+ */
+static void platinum_box(struct scene *sc, long x, long y, int slot, bool held)
+{
+    long d = sc->d;
+    long dx = x + (sc->box - d) / 2, dy = y + (sc->box - d) / 2;
+    long r = d / 5, k = d / 4;
+
+    fill_round_on(sc->back, dx, dy, d, d, held ? sc->held_fill[slot] : sc->fill[slot], r);
+    frame_round_on(sc->back, dx, dy, d, d, sc->ring[slot], r);
+
+    if (slot == 0) {                                    /* zoom */
+        long s = d - 2 * k;
+
+        frame_round_on(sc->back, dx + k, dy + k, s, s, sc->mark[slot], 1);
+    } else if (slot == 1) {                             /* collapse */
+        fill_on(sc->back, dx + k - 1, dy + d / 2 - 2, d - 2 * k + 2, 1, sc->mark[slot]);
+        fill_on(sc->back, dx + k - 1, dy + d / 2 + 1, d - 2 * k + 2, 1, sc->mark[slot]);
+    }
+}
+
+/* Where a window's box in `slot` is, across its title bar. */
+static long box_left(const struct scene *sc, const struct sc_window *w, int slot)
+{
+    if (w->flags & SC_PLATINUM) {
+        return slot == 2 ? w->bx : w->bx2 + sc->box_w * slot;
+    }
+
+    return w->bx + sc->box_w * slot;
+}
+
 /* A window's part of `r` (what `drawwindow.lua` did, before D3b-2). */
 /*
  * **A picture from before a resize** (`SC_STALE`): shown at its own size in
@@ -426,16 +463,26 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
     }
 
     /* The three, over its header. */
-    if ((w->flags & SC_LIGHTS) && w->bx < r->x + r->w && w->bx + sc->run > r->x
-        && w->by < r->y + r->h && w->by + sc->box > r->y) {
+    if ((w->flags & SC_LIGHTS) && w->by < r->y + r->h && w->by + sc->box > r->y) {
         int slot;
 
         for (slot = 0; slot < SC_SLOTS; slot++) {
+            long x = box_left(sc, w, slot);
             bool held = w->held == slot;
             bool off = !(w->flags & SC_FOCUSED) || (slot == 0 && !(w->flags & SC_MAXIMISE));
 
-            light(sc, w->bx + sc->box_w * slot, w->by, slot,
-                  (w->flags & SC_LIT) || held, off, held);
+            if (x >= r->x + r->w || x + sc->box <= r->x) {
+                continue;
+            }
+
+            if (!(w->flags & SC_PLATINUM)) {
+                light(sc, x, w->by, slot, (w->flags & SC_LIT) || held, off, held);
+            } else if (w->flags & SC_FOCUSED) {
+                /* Zoom on a window that cannot be zoomed is not there. */
+                if (slot != 0 || (w->flags & SC_MAXIMISE)) {
+                    platinum_box(sc, x, w->by, slot, held);
+                }
+            }
         }
     }
 

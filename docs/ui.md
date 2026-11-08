@@ -1890,6 +1890,14 @@ to work in", "in the future i would also like to add a 3rd one", and then
   window on Astra and hands the titles over on Pewter, which is 16.8h made
   general.
 
+- **A window's chrome is its desktop's, told in its `open` reply**
+  (P2, 8 November): `chrome = "platinum"` and `ui.header` draws
+  Platinum's bar - pinstripes, the title centred, room for close at the
+  left and the pair at the right. The boxes stay the window manager's to
+  draw and to press, in either chrome, so a window that has stopped
+  answering can still be closed; a double click on a Platinum bar
+  collapses the window to it (`handlers.shade`) where Astra's maximises.
+
 `docs/pewter.md` is the design and its steps, P1 to P6, and
 `docs/pewter-architecture.png` the picture.
 

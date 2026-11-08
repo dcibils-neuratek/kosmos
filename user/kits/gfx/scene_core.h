@@ -28,9 +28,13 @@ enum {
     SC_FOCUSED  = 1u << 8,
     SC_MAXIMISE = 1u << 9,      /* it can be maximised */
     SC_STALE    = 1u << 10,     /* its picture is from before a resize */
+    SC_PLATINUM = 1u << 11,     /* Platinum's boxes (`docs/pewter.md` P2):
+                                   close alone at `bx`, zoom and collapse
+                                   at `bx2` */
 };
 
-/* The lights, from the left: maximise, minimise, close (`OUT.SLOT`). */
+/* The lights, from the left: maximise, minimise, close (`OUT.SLOT`) - and
+ * under Platinum zoom, collapse and close, in the same slots. */
 #define SC_SLOTS 3
 
 struct sc_window {
@@ -41,6 +45,7 @@ struct sc_window {
     struct surface *bar;        /* a menu bar above the picture, or NULL */
     long bar_h;
     long bx, by;
+    long bx2;                   /* the second run, under `SC_PLATINUM` */
     int held;                   /* the light pressed, its slot, or -1 */
 
     /* Described for the window server (`scene.c`), the pictures by slot -

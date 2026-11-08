@@ -3139,6 +3139,9 @@ ui.layout = {
   head_edge = 10,   -- controls, in from either edge
   head_gap  = 4,    -- between two controls
   lights_in = 12,   -- a title bar's three, in from the right (6zj)
+  platinum_in   = 10,   -- Platinum's boxes, in from either end (P2)
+  platinum_band = 12,   --   its pinstripes, how tall
+  platinum_gap  = 7,    --   and the plain ground kept round what is on them
   page_top  = 22,   -- a page of cards: from the header to the first name
   page_side = 26,   --   and in from either side
   page_foot = 26,   --   and below the last card
@@ -3717,6 +3720,26 @@ function ui.header(spec)
 
   function v:measure()
     local x = edge_l
+    local _, _, win = self:in_window()
+
+    --
+    -- **Platinum's bar** (`docs/pewter.md` P2): close alone at the left,
+    -- before every control, and zoom and collapse together at the right.
+    --
+    self.platinum = self.title_bar and win and win.headed and win.lights
+                    and win.chrome == "platinum" or nil
+
+    if self.platinum then
+      local ly = (L.head - 1 - win.lights.h) // 2
+      local close = win.lights.close or win.lights.h
+      local pair = win.lights.pair or win.lights.w
+
+      self.close_x = L.platinum_in
+      self.pair_x = self.w - L.platinum_in - pair
+      self.close_w = close
+      win:place_lights(self, self.close_x, ly, self.pair_x, L.head)
+      x = self.close_x + close + L.head_edge
+    end
 
     -- A hidden control takes no room on either side: Tracker's place
     -- button and its search field share one slot, one of them hidden.
@@ -3731,6 +3754,13 @@ function ui.header(spec)
     self.title_x = (#self.left > 0) and (x + L.head_edge - L.head_gap)
                    or L.head_in
 
+    -- Under Platinum the stripes start after the last control at the left,
+    -- or after close where there is none, and so do the words.
+    if self.platinum then
+      self.left_end = x
+      if #self.left == 0 then self.title_x = x + L.platinum_gap end
+    end
+
     local r = self.w - edge_r
 
     --
@@ -3738,9 +3768,9 @@ function ui.header(spec)
     -- control, as `docs/nochrome.html` draws them; the controls move left
     -- to make the room.
     --
-    local _, _, win = self:in_window()
-
-    if self.title_bar and win and win.headed and win.lights then
+    if self.platinum then
+      r = self.pair_x - L.head_edge
+    elseif self.title_bar and win and win.headed and win.lights then
       local lx = self.w - L.lights_in - win.lights.w
 
       win:place_lights(self, lx, (L.head - 1 - win.lights.h) // 2)
@@ -3758,6 +3788,20 @@ function ui.header(spec)
     end
 
     self.room = r - L.head_edge
+    if self.platinum then self.right_start = r end
+
+    --
+    -- Platinum's words are centred on the bar - in the room between the
+    -- controls, where the bar is wide enough, and after the left ones where
+    -- it is not.
+    --
+    if self.platinum and #self.after == 0 then
+      local title = tostring(self.title or "")
+      local w = title ~= "" and gfx.measure(title, "title") or 0
+      local free_l = self.title_x
+
+      self.title_x = math.max(free_l, math.min(self.room - w, (self.w - w) // 2))
+    end
 
     --
     -- After the subject and its words, or after the room kept for them: the
@@ -3786,6 +3830,8 @@ function ui.header(spec)
   end
 
   function v:draw(g)
+    if self.platinum then return self:draw_platinum(g) end
+
     g:fill(0, 0, self.w, L.head - 1, theme.sunken)
     g:fill(0, L.head - 1, self.w, 1, theme.line_soft)
 
@@ -3810,6 +3856,66 @@ function ui.header(spec)
 
       g:text(x, (L.head - 1 - gfx.height()) // 2, ui.fitted(sub, room),
              theme.text_dim)
+    end
+  end
+
+  --
+  -- **Platinum's bar**: the look's ground, pinstripes across the middle of
+  -- it - a light row, a dark one and a gap, every three - and the title on
+  -- a patch of plain ground in the middle of them. The stripes stop short
+  -- of the boxes, which the window manager draws in the gaps left for them
+  -- (`OUT.platinum_box_at`), and of the controls, so nothing a person
+  -- presses sits on a stripe.
+  --
+  function v:draw_platinum(g)
+    local ground = theme.sunken
+    local hi, lo = theme.lift(ground, 40), theme.lift(ground, -30)
+    local band = L.platinum_band
+    local top = (L.head - 1 - band) // 2
+
+    g:fill(0, 0, self.w, L.head - 1, ground)
+    g:fill(0, L.head - 1, self.w, 1, theme.line_soft)
+
+    local title = tostring(self.title or "")
+    local x = self.title_x or L.head_in
+    local tw = title ~= "" and gfx.measure(title, "title") or 0
+    local sub = tostring(self.sub or "")
+    local room = (self.room or self.w) - x
+    local words = (sub ~= "" and tw + 8 < room) and ui.fitted(sub, room - tw - 8) or ""
+    local sw = words ~= "" and gfx.measure(words) + 8 or 0
+
+    -- Where the stripes run: from the last thing at the left to the first
+    -- at the right, less the title's patch.
+    local from = self.left_end or (self.close_x + (self.close_w or 0) + L.platinum_gap)
+    local to = self.right_start or (self.pair_x - L.platinum_gap)
+    local patch_l = x - L.platinum_gap
+    local patch_r = x + tw + sw + L.platinum_gap
+
+    -- Controls after the words take the rest of the bar from them.
+    if #self.after > 0 then patch_r = to end
+
+    local function stripes(a, b)
+      if b <= a then return end
+
+      for y = top, top + band - 1, 3 do
+        g:fill(a, y, b - a, 1, hi)
+        g:fill(a, y + 1, b - a, 1, lo)
+      end
+    end
+
+    if title ~= "" then
+      stripes(from, patch_l)
+      stripes(patch_r, to)
+    else
+      stripes(from, to)
+    end
+
+    if title ~= "" then
+      g:text(x, (L.head - 1 - gfx.height("title")) // 2, title, theme.text, nil, "title")
+    end
+
+    if words ~= "" then
+      g:text(x + tw + 8, (L.head - 1 - gfx.height()) // 2, words, theme.text_dim)
     end
   end
 
@@ -7713,6 +7819,10 @@ function ui.window(spec)
     headed = reply.headed == true,
     lights = type(reply.lights) == "table" and reply.lights or nil,
 
+    -- Which title bar its header draws, the desktop's (`docs/pewter.md`
+    -- P2): `astra`, or `platinum` under Pewter.
+    chrome = reply.chrome == "platinum" and "platinum" or "astra",
+
     focus = 1,
     running = true,
     title = spec.title or "window",
@@ -8682,20 +8792,27 @@ end
 -- place changes - a header measures itself on every paint, and a message
 -- per paint would be a round trip for nothing.
 --
-function window:place_lights(view, x, y)
+--
+-- `x2`, under Platinum, is where the pair at the right starts - close being
+-- at `x`, alone at the left - and `band` how tall the header is, which is
+-- what the window is collapsed to.
+--
+function window:place_lights(view, x, y, x2, band)
   local vx, vy = view:in_window()
 
   x, y = vx + x, vy + y
+  x2 = x2 and vx + x2 or nil
 
   local told = self.lights_told
 
-  if told and told.x == x and told.y == y then return end
+  if told and told.x == x and told.y == y and told.x2 == x2 then return end
 
-  self.lights_told = { x = x, y = y }
+  self.lights_told = { x = x, y = y, x2 = x2 }
 
   local reply, why = fs.send("/Running/wm", { type = "lights",
                                               window = self.handle,
-                                              x = x, y = y })
+                                              x = x, y = y, x2 = x2,
+                                              band = band })
 
   if not (reply and reply.ok) then
     print(("ui: %s's three were not placed: %s"):format(
@@ -8715,7 +8832,11 @@ function window:take_hold(x, y)
 
   if self.held_at and now - self.held_at < ui_again() then
     self.held_at = nil
-    fs.send("/Running/wm", { type = "maximise", window = self.handle })
+
+    -- Platinum's bar collapses the window to itself, as Mac OS's did; the
+    -- zoom is its box's.
+    fs.send("/Running/wm", { type = self.chrome == "platinum" and "shade" or "maximise",
+                             window = self.handle })
     return
   end
 

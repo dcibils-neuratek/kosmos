@@ -127,9 +127,9 @@ static void scene(void)
     sc->corner = 8;
     check(scene_set_windows(sc, 3) && scene_set_menus(sc, 1), "room for three windows and a menu");
 
-    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
-    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
-    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, -1, -1 };
+    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, 0, -1, -1 };
+    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, -1, -1 };
     sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu, -1 };
 
     drawn = scene_compose(sc, 0, 0, 200, 120);
@@ -217,7 +217,7 @@ static void stale(void)
     scene_init(sc, &back);
     sc->desktop = 0xff808080u;
     check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for one window");
-    sc->win[0] = (struct sc_window){ 10, 10, 60, 50, SC_STALE, &pic, 40, 30, NULL, 0, 0, 0, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 10, 10, 60, 50, SC_STALE, &pic, 40, 30, NULL, 0, 0, 0, -1, 0, -1, -1 };
     (void)scene_compose(sc, 0, 0, 100, 80);
 
     for (y = 0; y < 30; y++) {

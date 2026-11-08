@@ -229,6 +229,7 @@ static int l_scene_window(lua_State *L)
     w->bx      = (long)luaL_optinteger(L, 13, 0);
     w->by      = (long)luaL_optinteger(L, 14, 0);
     w->held    = (int)luaL_optinteger(L, 15, -1);
+    w->bx2     = (long)luaL_optinteger(L, 16, 0);
 
     hold(L, UV_WINDOWS, k, 8);
     hold(L, UV_BARS, k, 11);
@@ -433,7 +434,7 @@ static int l_scene_wire(lua_State *L)
             (int32_t)w->x, (int32_t)w->y, (int32_t)w->w, (int32_t)w->h, w->flags,
             (int32_t)w->picture_slot, (int32_t)w->src_w, (int32_t)w->src_h,
             (int32_t)w->bar_slot, (int32_t)w->bar_h,
-            (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, 0
+            (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, (int32_t)w->bx2
         };
     }
 

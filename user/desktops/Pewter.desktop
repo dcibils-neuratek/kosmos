@@ -7,6 +7,7 @@
 # changes what this file names rather than how a desktop is chosen.
 
 name       = Pewter
-says       = Mac OS 9.2's manner, for 2026 - being built
+says       = Mac OS 9.2's manner, for 2026 - Platinum windows, being built
 shell      = notifications, desktop, deskbar
 background = notifications
+chrome     = platinum

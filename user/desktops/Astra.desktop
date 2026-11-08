@@ -18,3 +18,4 @@ name       = Astra
 says       = The Deskbar, the dock and the launcher pad
 shell      = notifications, desktop, deskbar
 background = notifications
+chrome     = astra

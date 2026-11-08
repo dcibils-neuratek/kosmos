@@ -1248,6 +1248,50 @@ edges are refused, and that every page comes back when the program ends.
 It was deliberately broken twice to be sure it notices: once by copying
 nothing, once by not giving the heap back.
 
+## 8 November - Pewter's windows get Mac OS's title bar
+
+**In short:** On Pewter, every window now wears a title bar in the manner
+of Mac OS 9's Platinum: fine horizontal stripes, the window's name in the
+middle, the close box alone at the left, and the zoom and collapse boxes
+together at the right. Collapse - the box, or a double click on the bar -
+folds the window up to just its title bar, and does it again to open it
+out. Astra's windows are unchanged.
+
+**What.** A desktop's file now says which kind of title bar its windows
+wear, and Pewter's says Platinum. The window manager tells each window
+which one when it opens, so it draws the right bar from its first frame.
+The bar itself is drawn by the window, like every title bar since October.
+
+**A choice worth knowing.** The three boxes are drawn and pressed by the
+window manager, not by the application, which is how Astra's coloured
+circles already work. The reason is a window that has stopped answering:
+it can still be closed, because the thing under the close box is the
+window manager rather than the application. The cost was teaching the
+compositor a second layout - one box at the left and two at the right
+instead of three together - which fitted in a spare field the message
+already carried, so no message grew.
+
+**Collapse costs the application nothing.** The window manager just shows
+the window as tall as its title bar, and everything below is the desktop
+again. The application keeps its size and is not even told, so opening
+it out shows whatever it drew in the meantime.
+
+**How it is checked.** A new test of 9 checks, two machines at once, in
+about fifteen seconds. One opens all 25 applications of the gallery under
+Pewter and checks that each placed its boxes Platinum's way. The other
+opens Calculator and presses it: the close box's colour on the screen,
+collapse by its box, open again by a double click, close by the close
+box. To show the test notices, it was run against a window manager that
+treated the whole title bar as boxes - the way Astra's run of three is
+measured - and it failed, because the double click on the bar never
+reached the window.
+
+**Left for later.** In Platinum a window behind loses its stripes; here
+it keeps them, because an application is not yet told when its window
+stops being in front. And Tracker's and Preferences' title bars are their
+right-hand pane, so their close box sits at that pane's left rather than
+at the window's.
+
 ## 8 November - a desktop is a file, and the machine asks which one
 
 **In short:** Kosmos now asks which desktop you want each time it starts.

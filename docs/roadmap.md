@@ -436,7 +436,17 @@ loader is the chooser kept over the screen and posted a `loading` row as
 each piece starts and arrives; **Switch Desktop...** in the Deskbar's menu
 closes every window and shows the chooser again; the choice is kept in
 the `desktop` setting. Held by `x86-desktops` (`tools/run_desktops.py`).
-**P2, Platinum's title bar, is next.**
+
+**P2 built, 8 November 2026.** A desktop file says its `chrome`, and
+Pewter's is `platinum`: every window's header draws Platinum's bar, close
+alone at its left and zoom and collapse at its right, still drawn and
+pressed by the window manager (`SC_PLATINUM`); collapse to the title bar
+is `handlers.shade`, from its box or a double click on the bar. Held by
+`x86-platinum` (`tools/run_platinum.py`). Two things left for later: the
+kit told when its window leaves the front, so the stripes go from a
+window behind as Platinum's did; and close at the window's own left in a
+window whose title bar is its right-hand pane. **P3, menus at the top, is
+next.**
 
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old

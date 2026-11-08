@@ -38,8 +38,27 @@ Last updated: 2026-11-08 (0.11.315, not pushed; Pewter P1: desktops as files, th
   about twenty seconds. Its control, a failed launch reported as ready,
   fails it.
 
-**Next**: P2, Platinum's title bar (`chrome = platinum` in the kit, and
-collapse with `handlers.shade`).
+**Built, 0.11.316 - P2, Platinum's title bar** (not pushed):
+- **A desktop's `chrome`**: `platinum` in `Pewter.desktop`, `astra` in
+  Astra's, read by `desktops.lua`. `wm` keeps it in `D.chrome` from the
+  moment the desktop is chosen and puts it in every `open` reply.
+- **`ui.header` under Platinum** (`v:draw_platinum`): the ground,
+  pinstripes, the title centred, close at the left before every control
+  and the pair at the right; `place_lights` now says `x2` and `band`.
+- **wm still draws and presses the boxes.** `OUT.platinum_box_at` is the
+  hit test, three squares apart; `SC_PLATINUM` and `bx2` (the wire's
+  spare word in `ws_scene_window`) tell the scene where; grey boxes on a
+  light look and dark ones on a dark look (`OUT.platinum_colours`).
+- **Collapse**: `OUT.shade` and `handlers.shade`. `frame_of` answers the
+  collapsed height, so the pointer, damage and the compositor all agree.
+  A double click on a Platinum bar collapses rather than maximises.
+- **The suite is `x86-platinum`** (`tools/run_platinum.py`): 9 checks,
+  two machines at once, about fifteen seconds. Its control - Astra's
+  one-run hit test on a Platinum window - fails it.
+- Left for later: stripes off a window behind (the kit has no focus
+  event), and close at the window's left where the title bar is a pane.
+
+**Next**: P3, menus at the top.
 
 ---
 

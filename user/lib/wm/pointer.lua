@@ -72,7 +72,10 @@ return function(ctx)
   -- Which of the three is at `nx`, `mx` being where the first starts; nil
   -- for none.
   --
-  local function box_at(nx, mx)
+  local function box_at(win, nx, mx)
+    -- Platinum's are apart, close at the left and the pair at the right.
+    if win.chrome == "platinum" then return OUT.platinum_box_at(win, nx) end
+
     local slot = nx >= mx and OUT.IN_SLOT[(nx - mx) // OUT.BOX_W]
 
     if slot then return slot end
@@ -92,7 +95,7 @@ return function(ctx)
   -- pressed; let go anywhere else and nothing happens, as everywhere else.
   --
   local function press_box(win, nx, mx)
-    local slot = box_at(nx, mx)
+    local slot = box_at(win, nx, mx)
 
     if not slot then return false end
 
@@ -114,7 +117,7 @@ return function(ctx)
     PT.box, OUT.held_box = nil, nil
     OUT.damage_boxes(held.win)
 
-    if OUT.boxes_under(nx, ny) ~= held.win or box_at(nx, held.mx) ~= held.slot then
+    if OUT.boxes_under(nx, ny) ~= held.win or box_at(held.win, nx, held.mx) ~= held.slot then
       print(("wm: let go off the %s box of %s"):format(held.slot, tostring(held.win.title)))
       return
     end
@@ -123,6 +126,8 @@ return function(ctx)
 
     if slot == "minimise" then
       minimise(win)
+    elseif slot == "shade" then
+      OUT.shade(win)
     elseif slot == "maximise" then
       maximise(win)
     else

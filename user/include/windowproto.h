@@ -131,7 +131,7 @@ struct ws_scene_window {
     int32_t  picture, src_w, src_h;
     int32_t  bar, bar_h;
     int32_t  bx, by, held;
-    int32_t  reserved;
+    int32_t  bx2;               /* Platinum's zoom and collapse (`SC_PLATINUM`) */
 };
 
 struct ws_scene_menu {

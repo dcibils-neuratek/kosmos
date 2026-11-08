@@ -319,6 +319,7 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         w->bar_h = clamp(in.bar_h, w->bar ? (long)w->bar->height : 0);
         w->bx = in.bx;
         w->by = in.by;
+        w->bx2 = in.bx2;
         w->held = in.held >= 0 && in.held < SC_SLOTS ? in.held : -1;
         w->picture_slot = in.picture;
         w->bar_slot = in.bar;

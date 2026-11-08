@@ -227,6 +227,7 @@ OUT.TITLE_IN   = 18
 OUT.GRIP       = 16
 OUT.BOX_W      = OUT.BOX + 4        -- minimise and maximise, at the right
 OUT.RUN        = OUT.BOX_W * 2 + OUT.BOX    -- the three, end to end
+OUT.PAIR       = OUT.BOX_W + OUT.BOX        -- Platinum's zoom and collapse
 
 -- Nothing may be resized smaller than `scale.MIN_W` by `scale.MIN_H`, 120 by
 -- 60 at 100 per cent. Below it a window is all decoration and no window.
@@ -280,6 +281,7 @@ function scale.chrome()
   OUT.GRIP    = scale.px(16)
   OUT.BOX_W   = OUT.BOX + scale.px(4)
   OUT.RUN     = OUT.BOX_W * 2 + OUT.BOX
+  OUT.PAIR    = OUT.BOX_W + OUT.BOX
   scale.MIN_W = scale.px(120)
   scale.MIN_H = scale.px(60)
 end
@@ -1179,7 +1181,7 @@ local FAILED_COUNTS = FAILED_FOR * COUNTER_HZ
 --
 -- The desktop being started, and what starts it, in one table: this
 -- chunk is at Lua's two hundred locals.
-local D = { loading = nil }   -- loading: { watcher, rows, background, startup, over }
+local D = { loading = nil, chrome = "astra" }   -- loading: { watcher, rows, background, startup, over }
 
 function D.post_row(row)
   if not D.loading or not D.loading.watcher then return end
@@ -1433,7 +1435,11 @@ local function frame_of(win)
   -- rounded, and with its shadow, which the others here do not have.
   -- **Since one chrome's step 3 (8 October) every window is this**: no
   -- window has a tab or a border the window manager draws round it.
-  return win.x, win.y, win.w, win.h
+  --
+  -- **A window collapsed to its title bar is that tall** (`OUT.shade`), and
+  -- below the bar is whatever is under it: to the pointer, to the damage
+  -- and to the compositor alike, because all three ask here.
+  return win.x, win.y, win.w, win.shaded or win.h
 end
 
 --
@@ -1713,7 +1719,8 @@ end
 -- The room the three take, in a window's points: what its header leaves
 -- free for this process to draw them in (`handlers.lights`).
 function OUT.lights_size(pct)
-  return { w = scale.pt(OUT.RUN, pct), h = scale.pt(OUT.BOX, pct) }
+  return { w = scale.pt(OUT.RUN, pct), h = scale.pt(OUT.BOX, pct),
+           close = scale.pt(OUT.BOX, pct), pair = scale.pt(OUT.PAIR, pct) }
 end
 
 
@@ -1736,9 +1743,18 @@ function OUT.lights_at(win)
   if win.lights_at then return win.lights_at end
 
   local pct = win.pct or 100
+  local y = (scale.px(46, pct) - 1 - OUT.BOX) // 2
 
-  return { x = win.w - scale.px(12, pct) - OUT.RUN,
-           y = (scale.px(46, pct) - 1 - OUT.BOX) // 2 }
+  --
+  -- **Platinum's** (`docs/pewter.md` P2): close alone at the left, and zoom
+  -- and collapse together at the right, each 10 in from its edge - where
+  -- Mac OS put them, and where a header puts them until it has said.
+  --
+  if win.chrome == "platinum" then
+    return { x = scale.px(10, pct), x2 = win.w - scale.px(10, pct) - OUT.PAIR, y = y }
+  end
+
+  return { x = win.w - scale.px(12, pct) - OUT.RUN, y = y }
 end
 
 local function boxes_x(win)
@@ -1814,6 +1830,51 @@ OUT.SLOT = { maximise = 0, minimise = 1, close = 2 }
 OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 
 --
+-- **Platinum's three in the same slots** (`docs/pewter.md` P2): zoom where
+-- maximise is, collapse where minimise is, close where close is - so the
+-- compositor's colours and its held box are one table either way, and
+-- only where each is drawn differs (`SC_PLATINUM`). There is no minimise:
+-- Mac OS's was the collapse.
+--
+OUT.PLATINUM_SLOT = { maximise = 0, shade = 1, close = 2 }
+
+--
+-- Their colours, one set for every slot: a box is grey in Platinum, and
+-- which is which is said by where it is and what is drawn in it. A light
+-- one on a light look, a dark one on a dark look - as the mockup's 2026
+-- pass has them (`docs/pewter.html`).
+--
+function OUT.platinum_colours()
+  local c = theme.sunken or 0xffe0e0e0
+  local r, g, b = (c >> 16) & 255, (c >> 8) & 255, c & 255
+
+  if (r * 3 + g * 6 + b) < 1280 then
+    return { fill = 0xff55565c, ring = 0xff2a2b30, mark = 0xffd8d8de, held = 0xff3c3d42 }
+  end
+
+  return { fill = 0xffe6e6ea, ring = 0xff7a7a80, mark = 0xff4a4a50, held = 0xffb4b4bc }
+end
+
+--
+-- Which of Platinum's boxes is at `nx` on the screen, or nil: each is a
+-- `BOX` square of its own, with nothing between close and the pair but the
+-- title bar - which is the window's, and a press there is its drag.
+--
+function OUT.platinum_box_at(win, nx)
+  local bx = boxes_x(win)
+
+  if not bx then return nil end
+
+  local x2 = win.x + OUT.lights_at(win).x2
+
+  if nx >= bx and nx < bx + OUT.BOX then return "close" end
+  if nx >= x2 and nx < x2 + OUT.BOX then return "maximise" end
+  if nx >= x2 + OUT.BOX_W and nx < x2 + OUT.BOX_W + OUT.BOX then return "shade" end
+
+  return nil
+end
+
+--
 -- The window whose three the pointer is over, or nil - and the rectangle
 -- they take, so a change of which is repainted without the whole tab.
 --
@@ -1823,7 +1884,16 @@ function OUT.boxes_rect(win)
   if not bx then return nil end
 
   if win.headed then
-    return bx, win.y + OUT.lights_at(win).y, OUT.RUN, OUT.BOX
+    local at = OUT.lights_at(win)
+
+    -- Platinum's span the bar, from close to the end of the pair: what a
+    -- change to one of them repaints. Which is under a point is
+    -- `OUT.platinum_box_at`'s to say.
+    if win.chrome == "platinum" then
+      return bx, win.y + at.y, win.x + at.x2 + OUT.PAIR - bx, OUT.BOX
+    end
+
+    return bx, win.y + at.y, OUT.RUN, OUT.BOX
   end
 
   return nil
@@ -2434,7 +2504,7 @@ end
 -- pass, a call a window and no tables made, so the scene cannot fall out of
 -- step with what this process decided.
 --
-local SCENE_SLOT = { maximise = 0, minimise = 1, close = 2 }
+local SCENE_SLOT = { maximise = 0, minimise = 1, shade = 1, close = 2 }
 local stamp_picture, stamp_made = nil, {}
 
 local function stamp_now()
@@ -2476,12 +2546,27 @@ function OUT.describe()
   local lift = theme.lift
   local pic = OUT.pic
 
-  scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
-             OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(4), theme.track,
-             theme.line_soft, OUTLINE,
-             L.maximise.fill, L.maximise.ring, L.maximise.mark, lift(L.maximise.fill, -40),
-             L.minimise.fill, L.minimise.ring, L.minimise.mark, lift(L.minimise.fill, -40),
-             L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40))
+  if D.chrome == "platinum" then
+    --
+    -- Platinum's boxes are grey, all three alike (`OUT.platinum_colours`):
+    -- one desktop's windows wear one chrome, so the look's colours for the
+    -- three slots are that chrome's.
+    --
+    local P = OUT.platinum_colours()
+
+    scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
+               OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(6), theme.track,
+               theme.line_soft, OUTLINE,
+               P.fill, P.ring, P.mark, P.held, P.fill, P.ring, P.mark, P.held,
+               P.fill, P.ring, P.mark, P.held)
+  else
+    scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
+               OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(4), theme.track,
+               theme.line_soft, OUTLINE,
+               L.maximise.fill, L.maximise.ring, L.maximise.mark, lift(L.maximise.fill, -40),
+               L.minimise.fill, L.minimise.ring, L.minimise.mark, lift(L.minimise.fill, -40),
+               L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40))
+  end
 
   local stamped, sx, sy = stamp_now()
 
@@ -2507,11 +2592,12 @@ function OUT.describe()
 
     local can = resizable(win)
 
-    if can then flags = flags | 32 | 512 end
+    -- No grip on a window collapsed to its bar: it has no corner to pull.
+    if can then flags = flags | (win.shaded and 0 or 32) | 512 end
     if i == #windows then flags = flags | 256 end
     if win.stale then flags = flags | 1024 end
 
-    local bx, by, held = 0, 0, -1
+    local bx, by, held, bx2 = 0, 0, -1, 0
 
     if win.headed and not win.pinned then
       local x, y = OUT.boxes_rect(win)
@@ -2519,6 +2605,11 @@ function OUT.describe()
       if x then
         bx, by = x, y
         flags = flags | 64
+
+        if win.chrome == "platinum" then
+          flags = flags | 2048
+          bx2 = win.x + OUT.lights_at(win).x2
+        end
 
         if OUT.hover_boxes == win then flags = flags | 128 end
 
@@ -2531,10 +2622,21 @@ function OUT.describe()
     local bar = win.menubar
     local shown = win.shared and win.shared[win.shared.live] or win.surface
     local lower = bar and (win.h - bar.h) or win.h
+    local h = win.h
 
-    scene:window(k, win.x, win.y, win.w, win.h, flags, pic(shown),
-                 win.src_w or win.w, win.src_h or lower,
-                 pic(bar and bar.surface or nil), bar and bar.h or 0, bx, by, held)
+    --
+    -- **Collapsed to its title bar** (`OUT.shade`): the same picture, only
+    -- its top rows shown, and the window that tall. Nothing is asked of the
+    -- application, which keeps its size and goes on drawing.
+    --
+    if win.shaded then
+      h = win.shaded
+      lower = math.min(lower, h)
+    end
+
+    scene:window(k, win.x, win.y, win.w, h, flags, pic(shown),
+                 win.src_w or win.w, win.shaded and lower or (win.src_h or lower),
+                 pic(bar and bar.surface or nil), bar and bar.h or 0, bx, by, held, bx2)
   end
 
   scene:menus(#menus)
@@ -2587,6 +2689,9 @@ function OUT.maximised(win)
 end
 
 local function maximise(win)
+  -- A collapsed window is opened out first, and then zoomed.
+  if win.shaded then OUT.shade(win) end
+
   if not resizable(win) then return false end
 
   if win.restore then
@@ -3512,6 +3617,10 @@ handlers.open = function(req, who, cap)
   win.can_head = OUT.wants_head(req) or nil
   win.headed = OUT.headed(win)
 
+  -- Which title bar it wears, the desktop's (`docs/pewter.md` P2): told in
+  -- the reply, so it draws the right one from its first frame.
+  win.chrome = win.headed and D.chrome or nil
+
   --
   -- Cascaded, if something is already there.
   --
@@ -4031,7 +4140,7 @@ handlers.open = function(req, who, cap)
            screen_w = scale.pt(W, pct), screen_h = scale.pt(H, pct),
            palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts, headed = win.headed or false,
-           lights = OUT.lights_size(pct),
+           lights = OUT.lights_size(pct), chrome = win.chrome,
            double_click_ms = OUT.mouse.double_click_ms,
            draws_itself = win.draws_itself or nil }
 end
@@ -4375,6 +4484,10 @@ function D.start(name, watcher)
   end
 
   print(("wm: desktop %s chosen"):format(d.name))
+
+  -- Its chrome before its first window, so nothing is drawn twice.
+  D.chrome = d.chrome or "astra"
+  print(("wm: chrome %s"):format(D.chrome))
 
   D.loading = { name = d.name, watcher = watcher, rows = {},
               background = d.background, startup = true, over = false,
@@ -5193,14 +5306,46 @@ handlers.lights = function(req)
 
   local pct = win.pct or 100
 
-  x = math.max(0, math.min(scale.px(x, pct), win.w - OUT.RUN))
   y = math.max(0, math.min(scale.px(y, pct), win.h - OUT.BOX))
 
+  local at = { y = y }
+
+  --
+  -- **Platinum's are two places**: `x` is the close box, at the left, and
+  -- `x2` the pair at the right (`OUT.platinum_box_at`).
+  --
+  --
+  -- A window that draws its own bar and knows only Astra's run - Groove -
+  -- says where the three go at its right, and is given the pair at the end
+  -- of that room and close at the left, where Platinum puts it.
+  --
+  if win.chrome == "platinum" then
+    local x2 = tonumber(req.x2)
+
+    if x2 then
+      at.x = math.max(0, math.min(scale.px(x, pct), win.w - OUT.BOX))
+      at.x2 = math.max(0, math.min(scale.px(x2, pct), win.w - OUT.PAIR))
+    else
+      at.x = scale.px(10, pct)
+      at.x2 = math.max(0, math.min(scale.px(x, pct) + OUT.RUN - OUT.PAIR, win.w - OUT.PAIR))
+    end
+  else
+    at.x = math.max(0, math.min(scale.px(x, pct), win.w - OUT.RUN))
+  end
+
+  -- How tall the header is, and so the window collapsed to it (`OUT.shade`).
+  if tonumber(req.band) then win.band = scale.px(tonumber(req.band), pct) end
+
   OUT.damage_boxes(win)
-  win.lights_at = { x = x, y = y }
+  win.lights_at = at
   OUT.damage_boxes(win)
 
-  print(("wm: %s's three at %d,%d in it"):format(tostring(win.title), x, y))
+  if at.x2 then
+    print(("wm: %s's close at %d,%d and its pair at %d in it"):format(
+          tostring(win.title), at.x, y, at.x2))
+  else
+    print(("wm: %s's three at %d,%d in it"):format(tostring(win.title), at.x, y))
+  end
 
   return { ok = true }
 end
@@ -5263,6 +5408,43 @@ end
 -- **Maximise, and back, asked by the window** - a double click on its
 -- header's band, which is where a title bar's double click went.
 --
+--
+-- **Collapse a window to its title bar, and back** (`docs/pewter.md` P2):
+-- Mac OS's window shade, which Platinum's right-hand box and a double click
+-- on its bar do. Only the window manager changes - the window is shown that
+-- tall, and everything below its bar is the desktop's again - and the
+-- application keeps its size and is told nothing, so opening it out shows
+-- what it drew meanwhile. Its bar is as tall as its header said
+-- (`handlers.lights`' `band`), or as every header is until it has.
+--
+function OUT.shade(win)
+  damage_window(win)
+
+  if win.shaded then
+    win.shaded = nil
+  else
+    win.shaded = math.min(win.h, win.band or scale.px(46, win.pct or 100))
+  end
+
+  damage_window(win)
+  print(("wm: %s %s"):format(tostring(win.title), win.shaded and "collapsed" or "opened out"))
+
+  return true
+end
+
+handlers.shade = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if not win.headed then
+    return { ok = false, error = "this window has no title bar to collapse to" }
+  end
+
+  OUT.shade(win)
+
+  return { ok = true, shaded = win.shaded ~= nil }
+end
+
 handlers.maximise = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -6962,7 +7144,8 @@ function OUT.boxes_under(x, y)
 
   local bx, by, bw, bh = OUT.boxes_rect(win)
 
-  if bx and x >= bx and x < bx + bw and y >= by and y < by + bh then
+  if bx and x >= bx and x < bx + bw and y >= by and y < by + bh
+     and (win.chrome ~= "platinum" or OUT.platinum_box_at(win, x)) then
     return win
   end
 

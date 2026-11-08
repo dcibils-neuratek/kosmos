@@ -27,10 +27,15 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 
 PREFIX = "kosmos-"
 
 _root = None
+
+# Held while the directory is made: two threads asking at once - a suite
+# that runs two machines side by side - made two, and one was left behind.
+_lock = threading.Lock()
 
 
 def _remove_root():
@@ -42,12 +47,15 @@ def root():
     """This process's scratch directory, made on first use."""
     global _root
 
-    if _root is None:
-        _root = tempfile.mkdtemp(prefix=PREFIX)
-        atexit.register(_remove_root)
+    with _lock:
+        if _root is None:
+            made = tempfile.mkdtemp(prefix=PREFIX)
 
-        with open(os.path.join(_root, "made-by"), "w") as f:
-            f.write(" ".join(sys.argv) + "\n")
+            with open(os.path.join(made, "made-by"), "w") as f:
+                f.write(" ".join(sys.argv) + "\n")
+
+            _root = made
+            atexit.register(_remove_root)
 
     return _root
 

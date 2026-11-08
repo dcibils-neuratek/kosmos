@@ -350,9 +350,32 @@ Each is built, held by a test that stays, and lived with before the next.
   boots to the chooser, picks each desktop and checks its shell is
   running, the loader having listed each piece as ready; a startup item
   that names no program shown as failed, and the desktop opened anyway; the gate's suites, which name what they start, unchanged.
-- **P2 - Platinum's title bar.** `chrome = platinum` in the kit; collapse
-  (`handlers.shade`). Test: every application in the gallery opened under
-  Pewter, its title bar's boxes found where Platinum puts them.
+- **P2 - Platinum's title bar. Built, 8 November 2026**;
+  `tools/run_platinum.py`, `x86-platinum`, 9 checks in two machines side
+  by side, about fifteen seconds. `chrome = platinum` in `Pewter.desktop`
+  (`chrome = astra` in Astra's); the window manager keeps it and tells it
+  to each window in its `open` reply; `ui.header` draws Platinum's bar -
+  the look's ground, pinstripes, the title centred on a patch of plain
+  ground - and leaves room for close at its left and the pair at its
+  right. **The window manager still draws and presses the boxes**, as it
+  does Astra's three, so a window that has stopped answering can still be
+  closed: `SC_PLATINUM` in the scene draws close alone at `bx` and zoom
+  and collapse at `bx2` (the wire's spare word), grey boxes with their
+  marks always shown and none at all on a window behind. Collapse is
+  `handlers.shade`, from the right-hand box or a double click on the bar:
+  the window is shown as tall as its header, nothing asked of the
+  application. A window that knows only Astra's run - Groove's own bar - is
+  given the pair at the end of that room and close at the left. Test: the
+  gallery's 25 applications opened under Pewter, each that places its
+  boxes placing them Platinum's way and none Astra's; Calculator's close
+  box drawn in Platinum's grey, collapsed by its box, opened out by a
+  double click, closed by its close box. Its control is a press between
+  the boxes: measured as Astra's one run, the whole bar was boxes and the
+  bar's double click never reached the window, which fails it.
+  **Left for later:** the pinstripes stay on a window behind, because the
+  kit is not told when its window loses the front; and a window whose
+  title bar is its right-hand pane (Tracker, Preferences) has close at that
+  pane's left rather than the window's.
 - **P3 - Menus at the top.** The kit hands every window's titles over;
   `watch` carries the front window's; `menubar.lua` with the Kosmos and
   Application menus; `indicators.lua` out of the Deskbar. Test: a menu of

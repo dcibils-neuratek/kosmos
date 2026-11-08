@@ -29,7 +29,12 @@ M.DEFAULT = "Astra"
 
 -- The keys a desktop file may say. Anything else is a complaint, so a
 -- word misspelt is told rather than quietly doing nothing.
-local KEYS = { name = true, says = true, shell = true, background = true }
+local KEYS = { name = true, says = true, shell = true, background = true,
+               chrome = true }
+
+-- The title bars the kit can draw (`ui.header`): Astra's, and Platinum's
+-- since Pewter's P2.
+M.CHROMES = { astra = true, platinum = true }
 
 -- A comma-separated list, each word trimmed, the empty ones dropped.
 local function words(value)
@@ -46,12 +51,12 @@ end
 
 --
 -- A desktop from a file's text: `{ name, says, shell = { "a", "b:words" },
--- background = { a = true } }`, and the lines it did not understand. A
+-- background = { a = true }, chrome }`, and the lines it did not understand. A
 -- desktop that names no shell is refused, since choosing it would start
 -- nothing and leave a screen with no way to start anything.
 --
 function M.parse(text, stem)
-  local d = { name = stem, says = "", shell = {}, background = {} }
+  local d = { name = stem, says = "", shell = {}, background = {}, chrome = "astra" }
   local said = {}
 
   for n, key, value in theme.lines(text) do
@@ -63,6 +68,12 @@ function M.parse(text, stem)
       d.shell = words(value)
     elseif key == "background" then
       for _, w in ipairs(words(value)) do d.background[w] = true end
+    elseif key == "chrome" then
+      if M.CHROMES[value] then
+        d.chrome = value
+      else
+        said[#said + 1] = ("line %d: the kit draws no `%s` chrome"):format(n, value)
+      end
     else
       d[key] = value
     end
