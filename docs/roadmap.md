@@ -477,6 +477,13 @@ the desktop lists itself again on every move; a folder deeper than 127
 bytes is not found by `doc` and can open twice; and **Astra's desktop
 starts under the Deskbar** - its first row, the Trash, is under the bar
 (seen by `x86-spatial`, which opens the Drive under Astra instead).
+**And the Drive's window does not keep its place**: it is `/`, the
+namespace's root, which no filesystem serves, so `fs.setattr("/")` is "no
+such path" (seen in P4's screenshot, 8 November). Its rect wants a home
+of its own - a Preferences file of spatial windows by path, for any
+folder that refuses attributes - or the Drive opens `/Home`. Also seen
+there: a spatial window still shows Back and Forward, which have nowhere
+to go, and Tracker hands the menu bar no menus of its own.
 
 **A title pressed straight to its window, if the M700 says so** (P3, to
 measure). Under QEMU a press on a title in Pewter's bar reaches its menu
