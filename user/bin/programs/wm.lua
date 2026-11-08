@@ -4082,6 +4082,13 @@ handlers.open = function(req, who, cap)
   win.program = said or pending_program
   pending_program = nil
 
+  -- The document it is, as a path, when it says: a spatial folder's.
+  -- Held to a program's length, since six of each go in a `windows` page
+  -- of 2048 bytes; a folder deeper than that is not found by it, and a
+  -- second window opens on it.
+  win.doc = type(req.doc) == "string" and #req.doc < 128
+            and req.doc:match("^/[^%c]*$") and req.doc or nil
+
   -- A game's window: game mode for it (`wm/gamemode.lua`).
   if OUT.game then OUT.game.opened(win) end
 
@@ -4687,6 +4694,10 @@ handlers.windows = function(req)
                -- not say, because a title is whatever the application feels
                -- like calling itself today.
                program = win.program,
+
+               -- The document it is, when it said: one window a folder
+               -- under Pewter (`docs/pewter.md` P4) is asked by this.
+               doc = win.doc,
 
                -- And whether it is minimised, which the bar needs for two
                -- reasons: to draw the button differently, and to know that

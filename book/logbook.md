@@ -1248,6 +1248,61 @@ edges are refused, and that every page comes back when the program ends.
 It was deliberately broken twice to be sure it notices: once by copying
 nothing, once by not giving the heap back.
 
+## 8 November - Pewter's desktop, and folders that stay where they were left
+
+**In short:** Pewter's desktop is now arranged as Mac OS's was: the
+Drive at the top right, the Trash at the bottom right. Open a folder there
+and it opens in a window of its own, named for it. Move that window,
+make it bigger, switch it to a list, close it - and the next time you
+open that folder it comes back exactly so. Open it while it is already
+open and the window you have is brought forward, rather than a second
+one. Astra's desktop is unchanged, and its icons stay where you put them
+there.
+
+**What.** There is no new program. Pewter's desktop is Tracker's desktop
+told one more word, `pewter`. The rule for where an icon goes gained two
+options: start the columns from the right, and keep the bottom right
+corner for the Trash. Where each icon has been dragged is kept in its own
+pair of attributes for Pewter, so the same Desktop folder has two
+arrangements and dragging on one desktop does not move anything on the
+other.
+
+A folder opened from it is a *spatial* Tracker: no sidebar, and a folder
+inside opens another window rather than this one going there. What the
+window keeps - where it is, its size and how it shows the files - is
+written onto the folder itself, as attributes, whenever one of them
+changes and when it closes.
+
+**One window a folder.** Before a spatial window opens, it asks the
+window manager whether a window already is that folder, and if so brings
+it forward and ends. A title could not answer that, because two folders
+can have the same name; so a window can now say which document it is, a
+path, and the window manager keeps it and lists it.
+
+**A detail that mattered.** Tracker's main file had exactly as many local
+variables as Lua allows, two hundred, and the first build refused it.
+Pewter's flags went into one small table, with one of the old ones.
+
+**How it is checked.** A new test of 9 checks, two machines at once. On
+Pewter:
+- the Drive is at the top right and the Trash at the bottom right;
+- the Trash opens as a spatial folder, with no sidebar;
+- opened again, it is the same window, brought forward;
+- moved by its title bar, resized by its corner and made a list, and each
+  is kept;
+- closed by its box and opened again, it is in the same place, at the
+  same size, in the same view.
+
+On Astra the desktop keeps its own arrangement, and the Drive opens in
+an ordinary window. Two controls each fail it: a window that never
+writes what it keeps, and a window manager that forgets which folder a
+window is.
+
+**Left for later.** Every keep writes to the folder, which tells the
+folder above it that something changed, so the desktop lists itself
+again. And on Astra the first row of the desktop sits under the Deskbar,
+which this test found and which is older than it.
+
 ## 8 November - Pewter's menus move to the top of the screen
 
 **In short:** On Pewter there is now one menu bar across the top of the

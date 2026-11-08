@@ -1905,6 +1905,12 @@ to work in", "in the future i would also like to add a 3rd one", and then
   (`menubar` event, `window:open_screen_menu`). An application changes
   nothing for it. The bar is `menubar.lua`, a top strip that
   `keeps_front`: pressing it leaves the application in front.
+- **A window can say which document it is** (P4, 8 November): `doc`, a
+  path, in its `ui.window` spec, kept by the window manager and in the
+  `windows` reply - so "is that folder open already" has an answer a
+  title, which is a name, cannot give. Pewter's spatial folders are its
+  first user. And `on_moved`, beside `on_resize`, for a window that keeps
+  where it is.
 
 `docs/pewter.md` is the design and its steps, P1 to P6, and
 `docs/pewter-architecture.png` the picture.

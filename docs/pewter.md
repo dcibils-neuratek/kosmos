@@ -423,10 +423,41 @@ Each is built, held by a test that stays, and lived with before the next.
   do if the M700 shows it too. **Left for later:** the dots stay in the
   header as well as in the bar; a title in the bar is not lit while its
   menu is open; the Kosmos menu has no search yet (P6).
-- **P4 - Pewter's desktop.** `tracker pewterdesk`: the arrangement, and
-  spatial folders with their rects kept as attributes. Test: a folder
-  closed and opened again, in the same place, at the same size, in the
-  same view.
+- **P4 - Pewter's desktop. Built, 0.11.318, 8 November.** Not a program
+  of its own but Tracker's desktop with a word: `Pewter.desktop`'s shell
+  starts `desktop:pewter`, which is `tracker desktop pewter`.
+  - **The arrangement**: `iconlayout.place` with `from = "right"` - the
+    columns from the right edge inward, so the Drive is at the top right -
+    and an item with `corner = "bottom_right"`, the Trash, placed there
+    before anything else. Each icon's place is kept in `pewter_x` and
+    `pewter_y`, beside Astra's `desktop_x` and `desktop_y`: one folder,
+    two arrangements, and neither desktop disturbs the other's.
+  - **Spatial folders**: a folder opened from Pewter's desktop, and the
+    Drive, open as `tracker <path> spatial` - a window named for the
+    folder, with no sidebar, where a folder inside opens a window of its
+    own rather than this one wandering. Before it opens it asks the
+    window manager whether a Tracker window already is that folder - the
+    window's `doc`, a path, since a title is a name and two folders can
+    share one - and if one is, brings it forward and ends.
+  - **What it keeps**, on the folder as attributes: `spatial_x`,
+    `spatial_y`, `spatial_w`, `spatial_h` and `spatial_view`, written when
+    the window is moved (the kit's new `on_moved`), resized, made icons or
+    a list, and when it closes - only when one of them differs.
+  - Test: `x86-spatial` (`tools/run_spatial.py`), 9 checks, two machines
+    at once. Under Pewter, the Drive at the top right and the Trash at the
+    bottom right; the Trash opened spatially and with no sidebar; opened
+    again, the same window brought forward; moved, resized and made a
+    list, each kept; closed by its box and opened again in the same
+    place, at the same size, in the same view. Under Astra its own
+    arrangement and an ordinary window. Its controls - `keep` writing
+    nothing, and the window manager forgetting `doc` - each fail it.
+  - **Left for later**: writing to a folder's attributes changes the
+    folder it is in, so the desktop lists itself again on every move of a
+    window of one of its folders; a `doc` longer than 127 bytes is not
+    kept (six windows go in a `windows` page of 2048), so a folder that
+    deep can open twice; a spatial window has no Back or Forward to use;
+    and Astra's desktop starts under the Deskbar, so its Trash is under
+    the bar - seen by this suite, older than it.
 - **P5 - The Control Strip**, and notifications drawn in Pewter's chrome.
 - **P6 - The 2026 pieces that are Pewter's**: F3, the menus searched, the
   modes in the menu bar. The ones that are not Pewter's - the screenshot

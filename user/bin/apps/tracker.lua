@@ -121,13 +121,17 @@ end
 -- Tracker is what opens a `.zip` (`-- kosmos: opens zip`): the folder it is
 -- in, and the zip extracted there once the window is up.
 --
-local opened_zip = nil
+--
+-- (`P.zip` rather than a local of its own, with Pewter's words below: this
+-- chunk is at Lua's two hundred locals.)
+--
+local P = { pewter = false, spatial = false, kept = {}, zip = nil }
 
 if where:lower():match("%.zip$") then
   local attrs = fs.getattr(where)
 
   if attrs and attrs.kind ~= "directory" then
-    opened_zip, where = where, (where:match("^(.*)/[^/]+$") or "/Home")
+    P.zip, where = where, (where:match("^(.*)/[^/]+$") or "/Home")
     if where == "" then where = "/" end
   end
 end
@@ -135,9 +139,67 @@ end
 local as_icons  = false
 local backdrop  = false
 
+-- Pewter's desktop and its spatial folders, below, in `P` too.
+
 for _, w in ipairs(words) do
   if w == "icons"   then as_icons = true end
   if w == "desktop" then as_icons, backdrop = true, true end
+  if w == "pewter"  then P.pewter = true end
+  if w == "spatial" then P.spatial = true end
+end
+
+--
+-- **Pewter's desktop** (`docs/pewter.md` P4): `desktop pewter`, Mac OS's
+-- arrangement - the disks from the top right down, the Trash at the bottom
+-- right - and each icon's place kept in attributes of its own, so Astra's
+-- desktop and Pewter's are two arrangements of one folder rather than one
+-- that each disturbs.
+--
+P.pewter = P.pewter and backdrop
+P.at_x = P.pewter and "pewter_x" or "desktop_x"
+P.at_y = P.pewter and "pewter_y" or "desktop_y"
+
+--
+-- **A spatial folder** (P4): one window, always the same one, opening where
+-- it was left, at its size and in its view - Mac OS's Finder. The folder is
+-- the window: no sidebar to wander with, a folder in it opens a window of
+-- its own, and where the window is lives on the folder, as attributes.
+--
+-- **One window a folder**, asked of the window manager before this one
+-- opens: a folder already open is brought to the front and this process
+-- ends. The window says which folder it is (`doc`), because a title is a
+-- name and two folders can share one.
+--
+P.spatial = P.spatial and not backdrop
+
+if P.spatial then
+  SIDE_W = 0
+
+  local seen = use("/Kosmos/Libraries/wmproto.lua").windows()
+
+  for _, w in ipairs(seen and seen.windows or {}) do
+    if w.doc == where and tostring(w.program or ""):match("/tracker%.lua$") then
+      fs.send("/Running/wm", { type = "raise", window = w.handle })
+      print(("tracker: %s is open already, brought to the front"):format(where))
+      return
+    end
+  end
+
+  P.kept = fs.getattr(where) or {}
+  local kept = P.kept
+
+  local function size(v, least)
+    v = math.floor(tonumber(v) or 0)
+    return v >= least and v or nil
+  end
+
+  W = size(kept.spatial_w, 200) or 640
+  H = size(kept.spatial_h, 120) or 400
+  if kept.spatial_view == "icons" or kept.spatial_view == "list" then
+    as_icons = kept.spatial_view == "icons"
+  else
+    as_icons = true
+  end
 end
 
 --
@@ -232,9 +294,14 @@ for _, p in ipairs(placelib.STANDARD) do
 end
 
 local win, err = ui.window{
-  title = "Tracker", w = W, h = H,
-  x = backdrop and 0 or 80, y = backdrop and 0 or 60,
+  title = P.spatial and (where:match("([^/]+)$") or "/") or "Tracker", w = W, h = H,
+  x = backdrop and 0 or (P.spatial and tonumber(P.kept.spatial_x)) or 80,
+  y = backdrop and 0 or (P.spatial and tonumber(P.kept.spatial_y)) or 60,
   backdrop = backdrop or nil,
+
+  -- The folder a spatial window is, for the window manager to answer
+  -- "is it open already" with.
+  doc = P.spatial and where or nil,
 
   -- Files dragged out of another window land here. The desktop outlines
   -- this window while one is overhead because of this flag, so it is a
@@ -1810,10 +1877,29 @@ local function draw_icons(self, g, list)
     for i, e in ipairs(list) do
       local a = e.attrs or {}
 
-      items[i] = { x = a.desktop_x, y = a.desktop_y }
+      items[i] = { x = a[P.at_x], y = a[P.at_y],
+                   corner = (P.pewter and path_of(e) == files.TRASH) and "bottom_right" or nil }
     end
 
-    self.rects = layout.place(items, CELL_W, CELL_H, self.w, self.h, 2)
+    self.rects = layout.place(items, CELL_W, CELL_H, self.w, self.h, 2,
+                              { from = P.pewter and "right" or nil })
+
+    -- Where the Trash and the Drive landed, once a size, for the suite
+    -- that holds Pewter's arrangement to Mac OS's.
+    local said = {}
+
+    for i, e in ipairs(list) do
+      if (e.name == "Trash" or e.name == "Drive") and self.rects[i] then
+        said[#said + 1] = ("%s at %d,%d"):format(e.name, self.rects[i].x, self.rects[i].y)
+      end
+    end
+
+    said = table.concat(said, ", ")
+
+    if said ~= self.said_places then
+      self.said_places = said
+      print(("tracker: the desktop %dx%d, %s"):format(self.w, self.h, said))
+    end
     self.per, self.first, self.bar = #list, 1, nil
   else
     local per_row = math.max(1, (self.w - 4) // CELL_W)
@@ -2092,8 +2178,15 @@ local function start_launcher(path, name)
     return
   end
 
+  local args = tostring(a.args or "")
+
+  -- Under Pewter a disk opens as a folder does, spatially.
+  if (P.pewter or P.spatial) and program:match("/tracker%.lua$") then
+    args = args .. " spatial"
+  end
+
   local ok, why = fs.send("/Running/wm", { type = "launch", program = program,
-                                       args = tostring(a.args or "") })
+                                       args = args })
 
   status.text = ok and ("started " .. program)
                 or ("could not start " .. program .. ": " .. tostring(why))
@@ -2111,7 +2204,8 @@ local function open_selected()
     -- desktop. A folder opened from it opens in a Tracker window of its
     -- own, which is what BeOS did and what a person reaching for one means.
     local ok, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
-                                         args = files.quote(path_of(e)) })
+                                         args = files.quote(path_of(e))
+                                                .. (P.pewter and " spatial" or "") })
 
     status.text = ok and ("opened " .. e.name)
                   or ("could not open it: " .. tostring(why))
@@ -2473,9 +2567,9 @@ function rows:drop(kind, payload, x, y)
           local nx, ny = r.x + dx, r.y + dy
 
           it.attrs = it.attrs or {}
-          it.attrs.desktop_x, it.attrs.desktop_y = nx, ny
+          it.attrs[P.at_x], it.attrs[P.at_y] = nx, ny
 
-          fs.setattr(path_of(it), { desktop_x = nx, desktop_y = ny })
+          fs.setattr(path_of(it), { [P.at_x] = nx, [P.at_y] = ny })
         end
       end
 
@@ -2513,8 +2607,8 @@ function rows:drop(kind, payload, x, y)
         -- one under it, rather than in whichever cell happened to be free.
         if backdrop and into == where then
           fs.setattr(files.join(into, name), {
-            desktop_x = x - CELL_W // 2,
-            desktop_y = y - icons:size() // 2 + (moved - 1) * CELL_H,
+            [P.at_x] = x - CELL_W // 2,
+            [P.at_y] = y - icons:size() // 2 + (moved - 1) * CELL_H,
           })
         end
       else
@@ -2930,6 +3024,16 @@ function visit(path)
   -- place (a server not signed into), which going there puts away.
   if path == where and not net.seen then return end
 
+  -- A spatial window is its folder and does not wander: another folder is
+  -- another window - or the one it already has, brought forward.
+  if P.spatial then
+    local ok, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
+                                         args = files.quote(path) .. " spatial" })
+
+    if not ok then status.text = "could not open it: " .. tostring(why) end
+    return
+  end
+
   -- A click in the folder left behind is not half of one here.
   last_click = nil
 
@@ -3140,8 +3244,9 @@ end
 -- call sites, the widgets that make up the frame go through here and the
 -- test is in one place.
 --
-local function chrome(widget)
-  if not backdrop then win:add(widget) end
+-- And `side`: the sidebar, which a spatial window does not have either.
+local function chrome(widget, side)
+  if not (backdrop or (side and P.spatial)) then win:add(widget) end
 end
 
 
@@ -4593,15 +4698,15 @@ side_menu.on_click = function()
   })
 end
 
-chrome(side_ground)
+chrome(side_ground, "side")
 chrome(pane_ground)
 win:add(rows)
 chrome(banner)
 chrome(seen_card)
 chrome(machines)
-chrome(places)
-chrome(side_head)
-chrome(side_menu)
+chrome(places, "side")
+chrome(side_head, "side")
+chrome(side_menu, "side")
 chrome(header)
 chrome(rename_field)
 chrome(status)
@@ -4613,8 +4718,8 @@ chrome(stop_button)
 refresh_places()
 
 -- The sidebar's rows, once, for the display harness, which holds them to
--- the drawing's order (`roadmap.md` 6w).
-if not backdrop then
+-- the drawing's order (`roadmap.md` 6w). A spatial window has none.
+if not (backdrop or P.spatial) then
   local names = {}
 
   for _, it in ipairs(places.items or {}) do
@@ -4628,6 +4733,65 @@ end
 
 show(where)
 
-if opened_zip then extract_zip(opened_zip) end
+if P.zip then extract_zip(P.zip) end
+
+--
+-- **What a spatial window keeps**, on its folder: where it is, how large,
+-- and how it shows the files - written when one of them changes and when
+-- it closes, and only when something differs, so a folder is not written
+-- to on every pass.
+--
+if P.spatial then
+  local said = nil
+
+  local function keep(why)
+    local k = { spatial_x = win.origin_x, spatial_y = win.origin_y,
+                spatial_w = win.w, spatial_h = win.h, spatial_view = mode }
+    local line = ("%d,%d %dx%d %s"):format(k.spatial_x or 0, k.spatial_y or 0,
+                                           k.spatial_w or 0, k.spatial_h or 0, mode)
+
+    if line == said then return end
+    said = line
+
+    local ok, err = fs.setattr(where, k)
+
+    print(("tracker: %s kept at %s, %s%s"):format(where, line, why,
+                                                ok and "" or (": " .. tostring(err))))
+  end
+
+  print(("tracker: %s opened spatially at %d,%d %dx%d %s"):format(
+        where, win.origin_x or 0, win.origin_y or 0, win.w, win.h, mode))
+  said = ("%d,%d %dx%d %s"):format(win.origin_x or 0, win.origin_y or 0,
+                                   win.w, win.h, mode)
+
+  local resized = win.on_resize
+  function win:on_resize(w, h)
+    if resized then resized(self, w, h) end
+    keep("resized")
+  end
+
+  function win:on_moved() keep("moved") end
+
+  local closing = win.on_close
+  win.on_close = function(...)
+    keep("closed")
+    if closing then return closing(...) end
+  end
+
+  local chose = view_menu
+  function view_menu()
+    local items = chose()
+
+    for i = 1, 2 do
+      local was = items[i].on_choose
+      items[i].on_choose = function(...)
+        was(...)
+        keep("the view")
+      end
+    end
+
+    return items
+  end
+end
 
 win:run()

@@ -126,6 +126,18 @@ local many = {}
 for i = 1, 40 do many[i] = {} end
 r = layout.place(many, CW, CH, 200, 160, M)
 
+-- Mac OS's arrangement (Pewter, P4): from the right, the Trash at the
+-- bottom right before anything else.
+r = layout.place({ {}, {}, { corner = "bottom_right" } }, CW, CH, 400, 300, M,
+                 { from = "right" })
+check(r[1].x == 400 - M - CW and r[1].y == M, "the first icon at the top right")
+check(r[2].x == r[1].x and r[2].y == M + CH, "the next below it")
+check(r[3].x == 400 - M - CW and r[3].y == 300 - M - CH, "the Trash at the bottom right")
+check(none_overlap(r, CW, CH), "nothing on the Trash")
+r = layout.place({ { corner = "bottom_right", x = 10, y = 10 } }, CW, CH, 400, 300, M,
+                 { from = "right" })
+check(r[1].x == 10 and r[1].y == 10, "a Trash that was dragged stays where it was put")
+
 local inside = true
 for _, rect in ipairs(r) do
   if rect.x < 0 or rect.y < 0 or rect.x + CW > 200 or rect.y + CH > 160 then

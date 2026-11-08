@@ -143,6 +143,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - LuaJIT, measured against Lua 5.4 for Diego to decide: `docs/luajit.md`
 - Virtual machines and sandboxes - small operating systems for a task - explored for Diego to decide: `docs/virtualization.md`, drawn in `docs/sandboxes.html`; the Sandboxes application's feature set and architecture: `docs/sandboxes.md`, `docs/sandboxes-architecture.png`
 - The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
+- Xavier - an assistant answering in a window and aloud, on an LLM engine run here - planned for Diego to decide: `docs/xavier.md`
 - Glossary: `docs/glossary.md`
 
 ---

@@ -139,8 +139,14 @@ end
 -- Once every cell is taken there is nowhere left, and the rest share the
 -- last one rather than landing off the screen.
 --
-function layout.place(items, cell_w, cell_h, w, h, margin)
+-- **`from = "right"`** is Mac OS's arrangement (`docs/pewter.md` P4): the
+-- columns from the right edge inward, the disks first at the top right.
+-- And an item that says `corner = "bottom_right"` and was never placed
+-- goes to the bottom right cell before anything else is - the Trash.
+--
+function layout.place(items, cell_w, cell_h, w, h, margin, how)
   margin = margin or 0
+  how = how or {}
 
   local rects, placed = {}, {}
 
@@ -173,10 +179,28 @@ function layout.place(items, cell_w, cell_h, w, h, margin)
   local columns = math.max(1, (w - margin) // cell_w)
   local last = per_column * columns
   local cell = 0
+  local right = how.from == "right"
 
   local function cell_xy(c)
-    return margin + (c // per_column) * cell_w,
-           margin + (c % per_column) * cell_h
+    local col = c // per_column
+
+    if right then
+      return math.max(0, w - margin - (col + 1) * cell_w),
+             margin + (c % per_column) * cell_h
+    end
+
+    return margin + col * cell_w, margin + (c % per_column) * cell_h
+  end
+
+  -- The corner's first, so the arrangement does not take it.
+  for i, it in ipairs(items) do
+    if not rects[i] and it.corner == "bottom_right" then
+      local r = { x = math.max(0, w - margin - cell_w),
+                  y = math.max(0, h - margin - cell_h) }
+
+      rects[i] = r
+      placed[#placed + 1] = r
+    end
   end
 
   for i in ipairs(items) do

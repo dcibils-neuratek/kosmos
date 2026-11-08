@@ -7679,6 +7679,11 @@ function ui.window(spec)
     -- in front, its keys and its boxes with it (`docs/pewter.md` P3).
     keeps_front = (spec.strip and spec.keeps_front) or nil,
 
+    -- The document the window is, as a path: a spatial folder's
+    -- (`docs/pewter.md` P4), so "is that folder open already" has an
+    -- answer a title cannot give.
+    doc = type(spec.doc) == "string" and spec.doc or nil,
+
     -- A strip at the foot of the screen that floats above the edge and is
     -- centred rather than across it - the dock (`roadmap.md`, a dock at the
     -- bottom) - and a strip blended over what is behind it, as the desktop
@@ -9558,6 +9563,11 @@ function window:open_menu(x, y, items, above)
 
   self.menu_from = nil
 
+  -- And how high its rows are, so a suite can press one by where it is.
+  if m and m.row then
+    print(("ui: %s's menu, rows of %d"):format(tostring(self.title), m.row))
+  end
+
   if m and from then
     local ms = (sys.ticks() - from) * 1000 / COUNTER_HZ
 
@@ -10332,6 +10342,9 @@ function window:run()
         --
         self.origin_x, self.origin_y = ev.x, ev.y
         self.x, self.y = ev.x, ev.y
+
+        -- And the application, if it keeps where it is: a spatial folder.
+        if self.on_moved then pcall(self.on_moved, self, ev.x, ev.y) end
       elseif ev.type == "menus_gone" then
         --
         -- Menus the window manager closed - a press outside them - which

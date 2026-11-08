@@ -459,7 +459,24 @@ to the window as the `menubar` event, which opens its own menu under the
 title. The bar is pressed without taking the front (`keeps_front`). The
 indicators moved out of the Deskbar into `indicators.lua` and the Kosmos
 menu into `kosmosmenu.lua`, for both bars. Held by `x86-menus`
-(`tools/run_menus.py`). **P4, Pewter's desktop, is next.**
+(`tools/run_menus.py`).
+
+**P4 built, 8 November 2026.** Pewter's desktop is Tracker's with a word,
+`desktop:pewter`: the Drive at the top right and the Trash at the bottom
+right (`iconlayout.place`'s `from = "right"` and `corner`), their places
+kept apart from Astra's (`pewter_x`, `pewter_y`). A folder opened from it
+is spatial - `tracker <path> spatial`, one window a folder, found by the
+window's `doc`, with no sidebar, opening where it was left, at its size
+and in its view, kept on the folder as `spatial_*` attributes. Held by
+`x86-spatial` (`tools/run_spatial.py`). **P5, the Control Strip, is
+next.**
+
+**What P4 left** (when a person wants it): a window's keeping writes to
+its folder's attributes, which tells the folder above that it changed, so
+the desktop lists itself again on every move; a folder deeper than 127
+bytes is not found by `doc` and can open twice; and **Astra's desktop
+starts under the Deskbar** - its first row, the Trash, is under the bar
+(seen by `x86-spatial`, which opens the Drive under Astra instead).
 
 **A title pressed straight to its window, if the M700 says so** (P3, to
 measure). Under QEMU a press on a title in Pewter's bar reaches its menu
@@ -486,6 +503,22 @@ which is twice; a title in the bar is not lit while its menu is open (the
 menu is the application's, and the bar is not told when it closes); the
 Kosmos menu has no search yet (P6's menus searched); and a kit window
 with a `ui.menubar` view keeps it in the window - no application has one.
+
+**Xavier, an assistant on this machine - ASKED FOR on 8 November 2026,
+being planned.** Diego: "i want to add an llm powered assistant called
+Xavier", "a chat and audio interface to chat with Xavier to general
+questions and answers and in the following versions, do stuff in the OS
+like write an email, open settings, open files and else", with phi-2
+first, "small enought to run on CPU but my plan is to be able to run a lot
+of it on the available GPU" - and "we can use other llm engine if needed",
+"not just llama.cpp". `docs/xavier.md` is the feature set, the
+architecture and the steps X1 to X10. The recommendation is an LLM Kit of
+our own in C, held to llama.cpp by a host test, and a server holding the
+model. The GPU part is ours with any engine, since Kosmos has no CUDA,
+Vulkan or OpenCL. It needs threads (`threads.md` 4-8), AVX2 through
+`xsave`, and a microphone, none of which exist yet. Five decisions are
+Diego's, at the end of the document. The mockup and the diagram follow
+them.
 
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old

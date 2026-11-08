@@ -316,6 +316,7 @@ SUITES = [
     Suite("x86-desktops", ["python3", "tools/run_desktops.py", X86], x86=True),
     Suite("x86-platinum", ["python3", "tools/run_platinum.py", X86], x86=True),
     Suite("x86-menus", ["python3", "tools/run_menus.py", X86], x86=True),
+    Suite("x86-spatial", ["python3", "tools/run_spatial.py", X86], x86=True),
     Suite("x86-tracker", ["python3", "tools/run_tracker.py", X86], x86=True),
     Suite("x86-trackerlist", ["python3", "tools/run_trackerlist.py", X86], x86=True),
     Suite("x86-wallpapers", ["python3", "tools/run_wallpapers.py", X86], x86=True),

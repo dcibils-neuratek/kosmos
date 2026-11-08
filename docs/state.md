@@ -91,7 +91,27 @@ Last updated: 2026-11-08 (0.11.315, not pushed; Pewter P1: desktops as files, th
   nothing, and the bar without `keeps_front` - each fail it.
   `x86-desktops` opens Switch Desktop from Pewter's bar now.
 
-**Next**: P4, Pewter's desktop - `tracker pewterdesk` and spatial folders.
+**Built, 0.11.318 - P4, Pewter's desktop** (not pushed):
+- **`desktop:pewter`** in `Pewter.desktop`'s shell - `desktop.lua` passes
+  its words to Tracker - is Mac OS's arrangement: `iconlayout.place`'s
+  `from = "right"` and an item's `corner = "bottom_right"` (the Trash),
+  with its places in `pewter_x` and `pewter_y`, apart from Astra's. Host
+  checks in `tools/test_iconlayout.lua`.
+- **Spatial folders**: `tracker <path> spatial`, opened from Pewter's
+  desktop - no sidebar, a folder inside opens its own window, and one
+  window a folder: the kit's new `doc` (a path, kept by wm and in the
+  `windows` reply) is asked first, and an open one is raised. Its place,
+  size and view are `spatial_*` attributes on the folder, written on a
+  move (the kit's new `on_moved`), a resize, a view and a close.
+- Tracker's main chunk was at Lua's 200 locals: Pewter's words and
+  `opened_zip` are fields of one table, `P`.
+- The kit says a menu's row height (`ui: T's menu, rows of N`), so a
+  suite presses a row by where it is.
+- **The suite is `x86-spatial`** (`tools/run_spatial.py`): 9 checks, two
+  machines. Its controls - `keep` writing nothing, wm forgetting `doc` -
+  each fail it.
+
+**Next**: P5, the Control Strip, and notifications in Pewter's chrome.
 
 ---
 

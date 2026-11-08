@@ -67,8 +67,12 @@ end
 -- find whichever one holds the name, which is only the same thing while
 -- there is one.
 --
+-- Its words go with it: `desktop:pewter` is Pewter's arrangement. None is
+-- `desktop` alone, as it was, which is what the loader shows.
+local words = tostring(args or ""):match("^%s*(.-)%s*$")
 local ok, why = fs.send("/Running/wm", { type = "launch", program = "tracker",
-                                     args = "desktop" })
+                                     args = (words == "") and "desktop"
+                                            or ("desktop " .. words) })
 
 if not ok then
   print("desktop: " .. tostring(why))
