@@ -11,9 +11,10 @@ available GPU". And on the engine: "we can use other llm engine if needed",
 "not just llama.cpp".
 
 **A plan, written before anything is built, for Diego to decide.** Its
-feature set and architecture are here. The mockup (`xavier.html`) and the
-diagram (`xavier-architecture.png`) follow once the decisions at the end
-are taken, because the diagram is what the first decision draws.
+feature set and architecture are here. The mockup is `xavier.html`, drawn
+on 8 November when Diego asked to see it ("I need to see the mockup of
+the Xavier app"); the diagram (`xavier-architecture.png`) follows the
+decisions still open at the end.
 
 ## What a person can do
 

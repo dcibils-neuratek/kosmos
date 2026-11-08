@@ -1,0 +1,319 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Xavier, drawn on 8 November 2026 when Diego asked "I need to see the
+  mockup of the Xavier app", from the feature set in docs/xavier.md. The
+  answer about the capital of France is what the LLM Kit said under X1 on
+  the Mac; every speed on this page is an illustration until X3 measures
+  one on Kosmos.
+-->
+<title>Xavier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunk: #191d26; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-accent: #3b82f6; --a-sel: #2a3a5c;
+  --x: #8b7cf6; --x-soft: #2c2850;
+  --good: #3fb950; --warn: #d4a72c; --bad: #e5484d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 860px; }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 900px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+
+.win { background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; flex: none; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; font-size: 14px; }
+.head .crumb { color: var(--a-dim); flex: 1; }
+.btn { border: 1px solid var(--a-line); background: var(--a-raised); color: var(--a-ink); border-radius: 7px; padding: 4px 11px; font-size: 13px; white-space: nowrap; display: inline-block; }
+.btn.primary { background: var(--a-accent); border-color: var(--a-accent); color: #fff; }
+.btn.stop { border-color: #6b3438; color: #ff9b9e; }
+.dots { color: var(--a-dim); font-weight: 700; letter-spacing: 1px; padding: 0 4px; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.model { border: 1px solid #4a4380; background: var(--x-soft); color: #d6d0ff; border-radius: 999px; padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+
+.main { display: grid; grid-template-columns: 230px 1fr; height: 620px; }
+.side { border-right: 1px solid var(--a-line); background: var(--a-sunk); padding: 10px 8px; overflow: hidden; }
+.side .new { display: block; text-align: center; margin: 2px 4px 10px; }
+.side .group { color: var(--a-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 12px 10px 6px; }
+.side .it { padding: 7px 10px; border-radius: 7px; }
+.side .it.on { background: var(--a-sel); }
+.side .it .w { color: var(--a-faint); font-size: 11.5px; }
+
+.chat { display: flex; flex-direction: column; min-width: 0; }
+.talk { flex: 1; padding: 18px 26px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.you { align-self: flex-end; max-width: 70%; background: var(--a-sel); border-radius: 12px 12px 3px 12px; padding: 9px 13px; }
+.you .heard { display: block; color: var(--a-faint); font-size: 11px; margin-bottom: 2px; }
+.xa { display: grid; grid-template-columns: 28px 1fr; gap: 10px; max-width: 86%; }
+.av { width: 28px; height: 28px; border-radius: 50%; background: var(--x); color: #fff; display: grid; place-items: center; font-weight: 600; font-size: 13px; font-family: var(--display); }
+.xa .say { padding-top: 3px; }
+.xa .note { color: var(--a-faint); font-size: 11.5px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+pre.code { margin: 6px 0 0; padding: 10px 12px; background: #151922; border: 1px solid var(--a-line); border-radius: 8px; font: 12.5px/1.55 var(--mono); color: #d7dde8; overflow-x: auto; }
+.caret { display: inline-block; width: 7px; height: 14px; background: var(--x); vertical-align: -2px; margin-left: 2px; }
+.box { margin: 0 20px 12px; border: 1px solid var(--a-line); background: var(--a-sunk); border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; }
+.box .ph { flex: 1; color: var(--a-faint); }
+.mic { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--a-line); background: var(--a-raised); display: grid; place-items: center; color: var(--a-dim); }
+.mic svg { width: 15px; height: 15px; }
+.foot { padding: 9px 16px; border-top: 1px solid var(--a-line); color: var(--a-dim); font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.foot b { color: var(--a-ink); font-weight: 500; }
+.foot .sp { flex: 1; }
+
+.row2 { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.listen { width: 520px; }
+.listen .body { padding: 26px 24px 20px; text-align: center; }
+.wave { display: flex; gap: 4px; justify-content: center; align-items: center; height: 56px; margin-bottom: 12px; }
+.wave i { width: 5px; border-radius: 3px; background: var(--x); display: block; }
+.listen .heardnow { font-size: 16px; margin: 0 0 4px; }
+.listen .hint { color: var(--a-faint); font-size: 12px; }
+.spot { width: 520px; border-radius: 14px; }
+.spot .in { display: flex; align-items: center; gap: 10px; padding: 14px 16px; font-size: 16px; border-bottom: 1px solid var(--a-line); }
+.spot .in .av { width: 24px; height: 24px; font-size: 12px; }
+.spot .ans { padding: 12px 16px 14px 50px; color: var(--a-ink); }
+.spot .keys { padding: 8px 16px; border-top: 1px solid var(--a-line); color: var(--a-faint); font-size: 11.5px; display: flex; justify-content: space-between; }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--a-line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--a-dim); }
+
+.mrow { display: grid; grid-template-columns: 1fr 90px 110px 160px; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #2a303d; }
+.mrow.h { color: var(--a-faint); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding-top: 12px; padding-bottom: 6px; }
+.mrow b { font-weight: 600; }
+.mrow .about { color: var(--a-dim); font-size: 12px; }
+.mrow .n { font-variant-numeric: tabular-nums; color: var(--a-dim); }
+.ok { color: var(--good); }
+.bar { height: 6px; border-radius: 3px; background: var(--a-sunk); border: 1px solid var(--a-line); overflow: hidden; margin-top: 4px; }
+.bar i { display: block; height: 100%; background: var(--a-accent); }
+.search { border: 1px solid var(--a-line); background: var(--a-sunk); color: var(--a-ink); border-radius: 7px; padding: 4px 10px; width: 220px; }
+
+.mon { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--a-line); }
+.tile { padding: 14px 16px; border-right: 1px solid var(--a-line); }
+.tile:last-child { border-right: 0; }
+.tile .k { color: var(--a-faint); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.tile .v { font-family: var(--display); font-size: 26px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tile .v small { font-size: 13px; color: var(--a-dim); font-family: var(--body); }
+.tile .s { color: var(--a-dim); font-size: 12px; }
+.graph { padding: 12px 16px 4px; }
+.graph svg { display: block; width: 100%; height: 130px; }
+.sect { color: var(--a-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 12px 16px 4px; }
+.urow { display: grid; grid-template-columns: 140px 110px 1fr 120px; gap: 12px; padding: 7px 16px; border-bottom: 1px solid #2a303d; font-variant-numeric: tabular-nums; align-items: center; }
+.urow .st { font-size: 12px; }
+.run { color: var(--x); }
+.wait { color: var(--warn); }
+
+.act { width: 560px; }
+.act .body { padding: 18px 20px; }
+.act h4 { margin: 0 0 6px; font-size: 15px; }
+.act p { color: var(--a-dim); margin: 0 0 12px; font-size: 13px; }
+.step { background: #151922; border: 1px solid var(--a-line); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.6 var(--mono); color: #d7dde8; margin-bottom: 12px; }
+.step .c { color: #6b7486; }
+.act .bt { display: flex; gap: 8px; justify-content: flex-end; }
+
+pre.term { margin: 0; padding: 14px 18px; font: 12.5px/1.6 var(--mono); color: #d7dde8; background: #11141b; overflow-x: auto; }
+pre.term .p { color: #82aaff; }
+pre.term .d { color: #6b7486; }
+.tag { display: inline-block; font-size: 11px; border: 1px solid var(--rule); color: var(--muted); border-radius: 999px; padding: 0 8px; margin-left: 6px; vertical-align: 3px; font-family: var(--body); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Xavier</h1>
+  <p class="sub">An assistant that answers in a window and aloud, run on this machine, on a language model the LLM server holds. Type a question or hold a key and say it, and the answer is written a word at a time and, if you want, read out. Each conversation is a file in <code>/Home/Xavier</code>. The window's foot says what each answer cost and where it ran. Models come from Hugging Face with <code>models</code>, and what the engine is doing is a window of its own. In later versions Xavier does things, each one shown and confirmed first.</p>
+  <div class="q"><b>Diego, 8 November 2026:</b> "a chat and audio interface to chat with Xavier to general questions and answers and in the following versions, do stuff in the OS like write an email, open settings, open files and else", "a way to load models from huggingface easily", "a way yo see LLM inference engine metrics like models loaded, usage, tokens per second, etc" - and, for this page, "I need to see the mockup of the Xavier app".</div>
+  <p class="cap">The first answer, about Paris, is what the LLM Kit wrote on the Mac under X1, word for word; the rest of the words on this page are written to show the window. Every speed on this page is an illustration until X3 measures one on Kosmos.</p>
+
+  <h2>As it opens: a conversation, and an answer being written</h2>
+  <div class="scroller">
+  <div class="win" style="width:1080px">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; Questions, 8 November</span>
+      <span class="model">phi-2 &middot; Q4_0 &middot; processor</span><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fb950"></i><i style="background:#f0b429"></i><i style="background:#e5484d"></i></span></div>
+    <div class="main">
+      <div class="side">
+        <span class="btn new">New conversation</span>
+        <div class="group">Today</div>
+        <div class="it on">Questions, 8 November<div class="w">4 turns &middot; 412 of 2048 tokens</div></div>
+        <div class="it">A Fibonacci in Lua<div class="w">2 turns</div></div>
+        <div class="group">This week</div>
+        <div class="it">What a microkernel is<div class="w">6 turns</div></div>
+        <div class="it">Words for a release note<div class="w">3 turns</div></div>
+        <div class="it">Capitals of South America<div class="w">8 turns</div></div>
+        <div class="group">Older</div>
+        <div class="it">Converting Celsius<div class="w">2 turns</div></div>
+      </div>
+      <div class="chat">
+        <div class="talk">
+          <div class="you">What is the capital of France?</div>
+          <div class="xa"><span class="av">X</span><div class="say">The capital of France is Paris.
+            <div class="note">7 words &middot; read in 0.4 s &middot; 9.8 words a second</div></div></div>
+          <div class="you">Write me a Python function for the Fibonacci numbers.</div>
+          <div class="xa"><span class="av">X</span><div class="say">Here is one that counts up from the first two:
+<pre class="code">def fibonacci(n):
+    if n &lt;= 1:
+        return n
+    a, b = 0, 1
+    for _ in range(n - 1):
+        a, b = b, a + b<span class="caret"></span></pre>
+            <div class="note">writing &middot; 61 tokens so far &middot; 9.6 a second</div></div></div>
+        </div>
+        <div class="box"><span class="ph">Ask Xavier a follow-up&hellip;</span>
+          <span class="btn stop">Stop</span>
+          <span class="mic" title="Hold to speak"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg></span>
+          <span class="btn">Read aloud: off</span></div>
+        <div class="foot"><span>Last answer <b>9.8</b> words a second</span><span>question read in <b>0.4 s</b></span><span>first word after <b>0.5 s</b></span><span>ran on the <b>processor</b>, 4 cores</span><span class="sp"></span><span>412 of 2048 tokens of memory used</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <p class="cap">On the left, the conversations, newest first. Each is a file in <code>/Home/Xavier</code> that opens again where it was left and goes to the Trash like anything else. In the middle, the conversation: your words on the right, Xavier's on the left, written as they arrive, with a block of code drawn as code. <b>Stop</b> ends an answer where it is. The model in the header is the one the server holds; pressing it opens the Models page. The foot says what the last answer cost: words a second writing, how long the question took to read, the wait for the first word, where it ran, and how much of the model's 2048 tokens of memory the conversation has used. When that fills, the oldest turns are dropped first, and the sidebar says so.</p>
+
+  <h2>Asking aloud</h2>
+  <div class="row2">
+  <div class="win listen">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; listening</span></div>
+    <div class="body">
+      <div class="wave"><i style="height:14px"></i><i style="height:26px"></i><i style="height:40px"></i><i style="height:22px"></i><i style="height:50px"></i><i style="height:34px"></i><i style="height:18px"></i><i style="height:44px"></i><i style="height:30px"></i><i style="height:12px"></i><i style="height:24px"></i><i style="height:38px"></i><i style="height:16px"></i></div>
+      <p class="heardnow">"How far is the Moon from the Earth&hellip;"</p>
+      <div class="hint">Let go of <kbd>Space</kbd> to ask &middot; <kbd>Esc</kbd> to cancel</div>
+    </div>
+  </div>
+  <div class="win listen">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; reading the answer aloud</span><span class="btn">Silence</span></div>
+    <div class="talk" style="padding:16px 20px">
+      <div class="you"><span class="heard">heard</span>How far is the Moon from the Earth?</div>
+      <div class="xa"><span class="av">X</span><div class="say">About 384,000 kilometres on average, a little closer at its nearest and a little further at its furthest.<div class="note">spoken &middot; 2 of 3 sentences</div></div></div>
+    </div>
+  </div>
+  </div>
+  <p class="cap">Hold the mic button, or <kbd>Space</kbd> with the question box empty, and speak. What is heard appears as you say it, and becomes the question when you let go, marked <b>heard</b> so a mishearing is visible. The answer is written and read out a sentence at a time, the reading starting as the first sentence is done. <b>Silence</b> stops the voice and leaves the words. This needs a microphone driver, a speech-to-text model and a voice, none of which exist yet (<code>xavier.md</code> X6-X7, and decision 5).</p>
+
+  <h2>Asking from anywhere</h2>
+  <div class="scroller">
+  <div class="win spot">
+    <div class="in"><span class="av">X</span><span>How many days until the 1st of December?</span></div>
+    <div class="ans">Twenty-three: today is the 8th of November.</div>
+    <div class="keys"><span><kbd>Return</kbd> ask &middot; <kbd>Tab</kbd> open in Xavier &middot; <kbd>Esc</kbd> close</span><span>a new conversation, kept</span></div>
+  </div>
+  </div>
+  <p class="cap">A system key opens a box over whatever is in front, as the launcher pad opens. Ask, read the answer, <kbd>Esc</kbd>, and you are back where you were; <kbd>Tab</kbd> carries the conversation into the window. Which key it is goes into <code>shortcuts.md</code> with the others. The date in the answer is something the model cannot know: Xavier tells it the date, the machine and the user's name at the start of every conversation, which is a few lines of the prompt, not a tool.</p>
+
+  <h2>Models: from Hugging Face, checked, and loaded</h2>
+  <div class="scroller">
+  <div class="win" style="width:1000px">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; Models &middot; /Home/Models, 3.1 GB free</span><span class="search">phi</span><span class="btn">Search Hugging Face</span></div>
+    <div class="mrow h"><span>Model</span><span>Size</span><span>Kind</span><span></span></div>
+    <div class="mrow"><div><b>phi-2</b> <span class="ok">&#9679; loaded</span><div class="about">Microsoft, 2.7 billion parameters &middot; /Home/Models/phi-2.Q4_0.gguf &middot; sha256 7607d87d&hellip; checked</div></div><span class="n">1.57 GB</span><span class="n">Q4_0</span><span><span class="btn">Unload</span></span></div>
+    <div class="mrow"><div><b>phi-2</b><div class="about">the same, at 8 bits: slower to read, a little closer to the original</div></div><span class="n">2.96 GB</span><span class="n">Q8_0</span><span><span class="btn primary">Load</span> <span class="btn">Remove</span></span></div>
+    <div class="mrow"><div><b>TinyLlama 1.1B Chat</b><div class="about">TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF &middot; downloading, resumed after a cut &middot; 412 of 638 MB</div><div class="bar"><i style="width:64.6%"></i></div></div><span class="n">638 MB</span><span class="n">Q4_0</span><span><span class="btn">Pause</span></span></div>
+    <div class="sect">On Hugging Face, as GGUF, matching "phi"</div>
+    <div class="mrow"><div><b>microsoft/Phi-3-mini-4k-instruct-gguf</b><div class="about">3.8 billion parameters &middot; Q4 and F16 files &middot; needs a forward pass the kit does not have yet</div></div><span class="n">2.2 GB</span><span class="n">Q4</span><span><span class="btn">Get</span></span></div>
+    <div class="mrow"><div><b>TheBloke/phi-2-GGUF</b><div class="about">phi-2 at a dozen quantisations &middot; the kit reads Q4_0, Q8_0, F16 and F32</div></div><span class="n">1.6 GB</span><span class="n">Q4_0</span><span><span class="btn">Get</span></span></div>
+    <div class="foot"><span>3 models in /Home/Models &middot; one loaded, 1.57 GB of the 8 GB</span><span class="sp"></span><span><code>models</code> at the prompt does all of this too</span></div>
+  </div>
+  </div>
+  <p class="cap">What is on the disk first, then a search of Hugging Face's public API, listing only repositories that publish GGUF. A download resumes where it was cut and is held to the SHA-256 that Hugging Face lists for the file before it can be loaded. A file Kosmos cannot run is listed with the reason, not a Load button: a kind of model the kit has no forward pass for, or a quantisation it does not read. A model published only as safetensors, phi-2 itself among them, is converted on the Mac by <code>tools/hfmodel.py</code>, because converting needs PyTorch. The model names here are real repositories, but which of them Kosmos will run is decided by X8b.</p>
+
+  <h2>What the engine is doing</h2>
+  <div class="scroller">
+  <div class="win" style="width:1000px">
+    <div class="head"><span class="t">LLM Monitor</span><span class="crumb">&middot; the LLM server, up 2 hours 14 minutes</span><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fb950"></i><i style="background:#f0b429"></i><i style="background:#e5484d"></i></span></div>
+    <div class="mon">
+      <div class="tile"><div class="k">Loaded</div><div class="v">phi-2 <small>Q4_0</small></div><div class="s">1.57 GB mapped &middot; 0.33 GB cache &middot; processor</div></div>
+      <div class="tile"><div class="k">Writing</div><div class="v">9.6 <small>tokens / s</small></div><div class="s">last minute 9.4 &middot; best 10.1</div></div>
+      <div class="tile"><div class="k">Reading</div><div class="v">38 <small>tokens / s</small></div><div class="s">a question of 31 tokens in 0.8 s</div></div>
+      <div class="tile"><div class="k">First word</div><div class="v">0.5 <small>s</small></div><div class="s">last minute 0.4 - 0.9</div></div>
+    </div>
+    <div class="graph">
+      <svg viewBox="0 0 960 130" preserveAspectRatio="none" role="img" aria-label="Tokens a second over the last five minutes">
+        <g stroke="#333b4a" stroke-width="1"><line x1="40" y1="20" x2="960" y2="20"/><line x1="40" y1="60" x2="960" y2="60"/><line x1="40" y1="100" x2="960" y2="100"/></g>
+        <g fill="#6b7486" font-size="11" font-family="IBM Plex Mono, monospace"><text x="0" y="24">12</text><text x="0" y="64">6</text><text x="0" y="104">0</text><text x="40" y="124">5 min ago</text><text x="900" y="124">now</text></g>
+        <path d="M40 100 L120 100 L130 40 L200 38 L230 41 L240 100 L400 100 L410 39 L470 37 L520 40 L530 100 L700 100 L710 42 L780 38 L840 36 L900 39 L960 38 L960 100 Z" fill="#8b7cf6" fill-opacity=".22"/>
+        <path d="M40 100 L120 100 L130 40 L200 38 L230 41 L240 100 L400 100 L410 39 L470 37 L520 40 L530 100 L700 100 L710 42 L780 38 L840 36 L900 39 L960 38" fill="none" stroke="#8b7cf6" stroke-width="2"/>
+        <circle cx="960" cy="38" r="3.5" fill="#8b7cf6"/>
+      </svg>
+    </div>
+    <div class="sect">Who is asking</div>
+    <div class="urow" style="color:var(--a-faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em"><span>Application</span><span>State</span><span>Conversation</span><span>Tokens today</span></div>
+    <div class="urow"><span>Xavier</span><span class="st run">&#9679; writing</span><span>Questions, 8 November &middot; 412 of 2048<div class="bar"><i style="width:20%;background:var(--x)"></i></div></span><span>3,140</span></div>
+    <div class="urow"><span>xavier, at the prompt</span><span class="st wait">&#9679; waiting, 1st</span><span>a new one &middot; 24 tokens to read</span><span>880</span></div>
+    <div class="urow"><span>Mail</span><span class="st" style="color:var(--a-dim)">idle</span><span>none held</span><span>0</span></div>
+    <div class="foot"><span>one request at a time: the model is one, and the others wait their turn in order</span><span class="sp"></span><span><code>llm</code> at the prompt prints this</span></div>
+  </div>
+  </div>
+  <p class="cap">Across the top: which model is loaded, how much memory it holds and where it runs, then the three speeds that matter. <b>Writing</b> is tokens a second for the answer, bound by how fast memory can be read. <b>Reading</b> is tokens a second through the question, which is where the GPU earns its place. <b>First word</b> is how long a person waits. The graph is the last five minutes, gaps between answers included. Below, every application asking, by name, with what its conversation holds. A server answers one request at a time, so a second asker waits and is shown waiting. All of it is the server's <code>stats</code>: a declared struct, read by this window on its own clock, as GPU Monitor reads the GPU.</p>
+
+  <h2>Later: Xavier does something, after you say yes <span class="tag">a later version</span></h2>
+  <div class="row2">
+  <div class="win act">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; wants to do something</span></div>
+    <div class="body"><h4>Write a mail to Ana?</h4>
+      <p>You asked: "write Ana that the build is ready and I will bring the stick on Monday". Xavier would open a new mail in Mail with this in it, and not send it:</p>
+      <div class="step"><span class="c"># the Automations step it would run</span><br>open Mail<br>press "New mail"<br>type "ana@example.com" into "To"<br>type "The build is ready" into "Subject"<br>type "Hi Ana, the build is ready. I'll bring the stick on Monday." into "Message"</div>
+      <div class="bt"><span class="btn">Change it</span><span class="btn">No</span><span class="btn primary">Yes, open the mail</span></div></div>
+  </div>
+  </div>
+  <p class="cap">Everything Xavier does is said as the Automations step it would run, controls named as a person sees them, and shown before it happens. So what Xavier can do is exactly what a person could automate, and nothing it does is hidden. Sending is a second step and a second yes. This is a later version; version 1 answers questions and does nothing else.</p>
+
+  <h2>The same, at the prompt</h2>
+  <div class="scroller">
+  <div class="win" style="width:760px">
+    <div class="head"><span class="t">Terminal</span><span class="crumb">&middot; /Home</span></div>
+<pre class="term"><span class="p">kosmos&gt;</span> xavier "What is the capital of France?"
+The capital of France is Paris.
+<span class="d">xavier: 7 tokens in 0.7 s, 9.8 a second, phi-2 Q4_0 on the processor</span>
+<span class="p">kosmos&gt;</span> llm
+llm: phi-2 Q4_0, /Home/Models/phi-2.Q4_0.gguf, 1.57 GB, processor
+  writing   9.6 tokens a second (last minute 9.4)
+  reading   38 tokens a second
+  first     0.5 s
+  asking    Xavier (writing), xavier (waiting)
+<span class="p">kosmos&gt;</span> models
+  phi-2.Q4_0.gguf        1.57 GB  loaded
+  phi-2.Q8_0.gguf        2.96 GB
+<span class="p">kosmos&gt;</span> models get TheBloke/phi-2-GGUF phi-2.Q4_0.gguf
+models: 1.60 GB from huggingface.co, sha256 checked, /Home/Models/phi-2-thebloke.Q4_0.gguf</pre>
+  </div>
+  </div>
+  <p class="cap"><code>xavier</code> asks a question and prints the answer as it comes. <code>llm</code> is LLM Monitor's other face, as <code>netstat</code> is Network Monitor's. <code>models</code> is the Models page's. The window and the programs call the same libraries, so they cannot disagree.</p>
+
+  <h2>What it is made of</h2>
+  <table class="plain">
+    <tr><th>Piece</th><th>Supplied by</th><th>New or as it is</th></tr>
+    <tr><td>The window, the conversation, the sidebar, the Models page</td><td>the UI kit</td><td>as it is; a conversation view that writes as words arrive is <b>new</b> in the kit, because another application could want one</td></tr>
+    <tr><td>Running the model: GGUF, the tokenizer, the forward pass</td><td><b>the LLM Kit</b>, <code>user/kits/llm/</code></td><td><b>new</b>; its core is built and held to llama.cpp (X1)</td></tr>
+    <tr><td>Holding the model once for every application, one request at a time, and its <code>stats</code></td><td><b>the LLM server</b>, C, a declared struct</td><td><b>new</b> (X3)</td></tr>
+    <tr><td>The question reading faster on the GPU</td><td>the Compute Kit</td><td><b>grows</b> (X9)</td></tr>
+    <tr><td>Conversations as files</td><td><code>/Home/Xavier</code>, through the namespace</td><td>as it is</td></tr>
+    <tr><td>Hearing and speaking</td><td>a microphone driver, and a Speech Kit for speech to text and a voice</td><td><b>new</b> (X6-X7)</td></tr>
+    <tr><td>Models from Hugging Face</td><td><code>models.lua</code> and the Network Kit's download to a file; <code>tools/hfmodel.py</code> on the Mac</td><td><b>new</b> (X8b)</td></tr>
+    <tr><td>LLM Monitor and <code>llm</code></td><td>the server's <code>stats</code>, read on the window's own clock</td><td><b>new</b> (X8b)</td></tr>
+    <tr><td>Doing things, later</td><td>Automations' steps and its confirmation</td><td>as Automations builds them</td></tr>
+  </table>
+  <p class="cap">Xavier itself is Lua and thin: the window, the files, and calls. The model's arithmetic is C in the kit. The words arrive in the window as messages, a few bytes each, because a token is something somebody asked for and not something a clock sends. The weights and the cache stay in the server's memory and never cross to the application.</p>
+</div>
+</body>
+</html>
