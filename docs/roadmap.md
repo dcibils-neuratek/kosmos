@@ -404,6 +404,19 @@ Rest), F3 for every window at once, Help's search over every menu item,
 Undo in Tracker, labels, a screenshot key, and the microphone asked for
 with an indicator while it is used. He does not want it coded yet.
 
+**Pewter to be built, as a second desktop chosen at start** - Diego, 7
+November 2026: "this is really good", "lets add this new desktop ui as an
+option for kosmos. so now we have the astra desktop and i want to have
+this new added called Pewter", "upon launching i can select one of the two
+desktops to work in", and "in the future i would also like to add a 3rd
+one to try new ideas for desktop UI". So a desktop becomes a thing Kosmos
+has several of, chosen before it starts, and the third is planned for
+from the first. Proposed the same day, for him to agree: one window
+manager for all of them, and a desktop as a file naming its shell
+programs, its chrome and where menus go - not a second `wm.lua`. Before
+code, as for an application: `docs/pewter.md` (features and
+architecture), `docs/pewter-architecture.png`, and the chooser drawn.
+
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
 might need some optimizations on drawing and else"; its log says what each
