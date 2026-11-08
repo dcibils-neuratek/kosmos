@@ -33,6 +33,37 @@ are taken, because the diagram is what the first decision draws.
 - **Ask from anywhere.** A system key opens Xavier over whatever is in
   front, as the launcher pad opens.
 
+**Models from Hugging Face, with a tool** - Diego, the same day: "we need
+a way to load models from huggingface easily", "with a tool":
+
+- **`models search phi`** - the models on Hugging Face that come as GGUF,
+  with their sizes and quantisations, from its public API.
+- **`models get <repo> [file]`** - a model into `/Home/Models`, resumed if
+  it was cut off, and held to the SHA-256 Hugging Face lists for the file
+  before it is used.
+- **`models`** - what is in `/Home/Models`, how large, and which one the
+  server has loaded; **`models load <name>`** and **`models rm <name>`**.
+- **A model that is not published as GGUF** - phi-2 is one, safetensors
+  only - **is converted on the Mac**: `tools/hfmodel.py microsoft/phi-2
+  Q4_0` downloads it, runs llama.cpp's converter and quantiser, and puts
+  the file where a Kosmos disk or the M700 can take it. Converting needs
+  PyTorch, which is not coming to Kosmos.
+- Later, a Models page in Xavier's window, drawn in its mockup.
+
+**What the engine is doing, to be seen** - Diego, the same day: "a way yo
+see LLM inference engine metrics like models loaded, usage, tokens per
+second, etc":
+
+- **The models loaded**: name, file, size, quantisation, memory held, and
+  where it runs - processor, GPU, or both.
+- **Its use**: who is asking (each application by name), the requests
+  waiting and running, the context each conversation holds.
+- **Its speed**: tokens a second reading the question and writing the
+  answer, for the last request and over the last minute, and the time to
+  the first word.
+- **`llm` at the prompt** prints it, and a window shows it live, as GPU
+  Monitor shows the GPU - drawn first, as every window is.
+
 **Later versions, Xavier does things:** writes a mail in Mail, opens a
 page of Preferences, finds and opens a file, starts an application.
 **Every action is shown and confirmed before it happens**, and is said as
@@ -56,6 +87,10 @@ piece: does another application want this? Most of Xavier is yes.
 | The microphone | **the audio server**, a capture ring beside the playback ring | **new**. Nothing in Kosmos records sound yet. A recorder, the Camera's sound, a call want it |
 | Speech to text | **the Speech Kit**: Whisper on the LLM Kit's tensor code | **new**. A dictation key in every text field wants it |
 | Text to speech | **the Speech Kit**: eSpeak NG first, vendored C | **new**. Reading a page or a notification aloud wants it |
+| Downloading a model into a file | **the Network Kit**: an HTTPS download streamed into a file in C, with ranges to resume, and a running SHA-256 from the **Crypto Kit** | **new**. Packages and the browser's downloads want it; `fetch.lua` holds a reply in a Lua string, which is no way to carry 1.6 GB |
+| Finding models | **`models.lua`**, a program, asking Hugging Face's API with `http.lua` | **new** |
+| Converting one | **`tools/hfmodel.py`**, on the Mac, around llama.cpp's own converter | **new**, a host tool |
+| The engine's numbers | **the LLM server**, answering `stats` in a declared shape (`llmproto.h`) | **new**. `llm` at the prompt and the monitor window read the same reply |
 | The window, the conversation, the actions | **`xavier.lua`**, an application in Lua | the only part that is Xavier's |
 | Doing things in the OS | **Automations' steps** (`docs/automations.md`) | Automations is designed and not built yet |
 
@@ -155,9 +190,11 @@ is Lua. No pixel, sample or weight goes through a Lua table.
 Each step has its own test before the next starts, and the host does the
 first two without booting anything.
 
-1. **X1 - the LLM Kit on the Mac.** GGUF, the tokenizer, phi-2's forward
-   pass in scalar C. The host test is against llama.cpp built on the Mac:
-   the same tokens, and the same greedy answer to a fixed question.
+1. **X1 - the LLM Kit on the Mac. Built, 8 November 2026** (*X1, as
+   built*, below). GGUF, the tokenizer, phi-2's forward pass in scalar C.
+   The host test is against llama.cpp built on the Mac: the same tokens,
+   and its answers - within what llama.cpp gives against itself, which is
+   not the same answer token for token.
 2. **X2 - vectors.** Q4_0 and Q8_0 matrix-vector products in vector types,
    SSE2, with the scalar loop kept as the reference the host test holds
    them to.
@@ -174,13 +211,102 @@ first two without booting anything.
    answer, each measured against the processor on the M700.
 8. **X8 - the microphone.** HDA capture in the audio server, the ring, and
    the Realtek ALC on the M700 and the T14.
-9. **X9 - speech.** Whisper (tiny or base, English) on the LLM Kit's tensor
+9. **X8b - models and metrics.** The download into a file in C,
+   `models` against Hugging Face, `tools/hfmodel.py`, the server's `stats`,
+   `llm` at the prompt, and the monitor window, drawn first. `stats` comes
+   with X3, because the speed of X3 is its first number.
+10. **X9 - speech.** Whisper (tiny or base, English) on the LLM Kit's tensor
    code, and eSpeak NG out. Hold a key, speak, hear the answer.
-10. **X10 - doing things.** Xavier proposes an Automations step, shows it,
+11. **X10 - doing things.** Xavier proposes an Automations step, shows it,
     and runs it when confirmed. After Automations is built, and with a
     model that is good at it, which phi-2 is not.
 
+## X1, as built
+
+`user/kits/llm/llm_core.c`, about 1,300 lines with its comments, and
+`llm_core.h`. C that compiles for the Mac and for Kosmos alike, takes no
+memory of its own after `llm_open` - the file is read where it lies, and
+the tokenizer's tables, the F16 attention cache and the working vectors
+come from the caller's allocator once - and trusts nothing in the file:
+every count, length, offset and type is held to the buffer first.
+
+- **GGUF** versions 2 and 3; tensors in F32, F16, Q8_0 and Q4_0.
+- **The tokenizer**: GPT-2's byte-level BPE, the pre-tokenizer phi-2's
+  file names (GPT-2's own split), user-defined tokens - phi-2's runs of
+  spaces - always taken whole, and `<|endoftext|>` only when asked for, as
+  llama.cpp's `parse_special`.
+- **phi-2's forward pass**: LayerNorm, Q, K and V with their biases, NeoX
+  RoPE on 32 of each head's 80 numbers, attention over an F16 cache, and
+  the MLP beside it off the same norm, GELU, the output with its bias.
+- **llama.cpp's arithmetic, where it decides a rounding**: each input
+  quantized to Q8_0 and dotted in integers block by block, q and the
+  softmax's weights rounded to F16, GELU through F16, RoPE's angle a
+  running product in float, LayerNorm's sums in double.
+
+**The models** are made on the Mac, from Microsoft's safetensors, by
+llama.cpp b12205's own tools (`build/downloads/llama.cpp-b12205`):
+`convert_hf_to_gguf.py --outtype q8_0` in `build/venv-gguf`, then
+`llama-quantize --pure` to Q4_0. `build/models/phi-2.Q8_0.gguf` is 2.96
+GB and `phi-2.Q4_0.gguf` 1.57 GB, with their SHA-256 in
+`build/models/SHA256SUMS`; the safetensors were held to Hugging Face's
+sums before they were converted, and deleted after. X8b makes this a tool.
+
+**The test** is `tools/test_llm.c`, in `make host-check` for both models
+(a skip that says so where there is no model), 62 checks each, about 20
+seconds for the two. llama.cpp's answers are in the tree
+(`tools/llm_reference_phi-2.Q8_0.txt`, `.Q4_0.txt`), written by
+`tools/llm_reference.cpp` against libllama - `make llm-reference` - so the
+test needs the model and our C, and not llama.cpp:
+
+- every text's tokens, ten of them chosen to be awkward, plain and with
+  special tokens - **exactly the same ids**, all twenty;
+- one token's ten largest logits within 0.10; each longer prompt's top
+  token llama.cpp's or a near-tie, and its ten largest within 2.0;
+- twelve answer tokens a prompt, fed llama.cpp's own so the two cannot
+  wander apart: at each, the kit's choice llama.cpp's, or both rating the
+  other's within 0.5 of their best.
+
+**Why not the same answer token for token: llama.cpp does not give it
+against itself.** The first trace put layers 0 and 1 bit for bit on
+llama.cpp's and the difference growing from about layer 10, so llama.cpp
+was built a second way - plain C, no NEON, no repacking - and the two
+compared on the same prompts:
+
+| | one token | 12-token prompt | 7-token prompt | answers |
+|---|---|---|---|---|
+| llama.cpp plain against its NEON | 0.052 | 0.18 - 0.24 | 0.61 - 0.62 | part at near-ties: Q8_0's prompt 2 at its first token, 14.69 against 14.66 |
+| the kit against llama.cpp NEON | 0.028 - 0.052 | 0.20 - 0.45 | 0.34 - 1.36 | 1 near-tie in 72 steps |
+| the kit against llama.cpp plain | 0.032 - 0.056 | 0.21 - 0.30 | 0.73 - 0.82 | 1 near-tie |
+
+The order a sum is taken in moves a Q8_0 rounding, and over 32 layers that
+grows. The kit is a third order and sits as far from either build as they
+sit from each other, so the bounds are about twice llama.cpp's own spread.
+
+**And the bounds bite.** Four copies of the kit, one mistake each, all
+fail: GELU without its cubic term is 1.37 out on the first token and the
+MLP's down bias left out 1.25, against 0.10; BPE merging the highest rank
+first fails every text; and RoPE paired GPT-J's way fails two answer steps
+and no logit bound - phi-2 turns only 32 of 80 numbers, none at position
+0, on short prompts. That is the thinnest of the checks, and a longer
+prompt is the way to thicken it when X2 runs fast enough to afford one.
+
+**The answers**: "The capital of France is Paris." to `Instruct: What is
+the capital of France?\nOutput:`, and a Fibonacci body to `def
+fibonacci(n):`.
+
+**How fast**, scalar, one thread, on the Mac's M-series core - a reference
+for X2, not a figure about Kosmos: **4.1 tokens a second on Q4_0, 9.0 on
+Q8_0.** Q4_0 is slower here, against the bandwidth argument above, because
+its nibbles cost scalar shifts and masks that Q8_0's bytes do not; that is
+exactly the loop X2 puts in vectors.
+
 ## Decisions that are Diego's
+
+**Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go
+ahead". So: the engine is our own LLM Kit in C (1), one server holds the
+model for every application (2), and phi-2 is converted on the Mac with
+llama.cpp's converter, at Q8_0 and Q4_0 (3). The kernel's AVX2 (4) and
+the voice (5) are still open, and neither is needed before X6 and X9.
 
 1. **The engine**: E1, our own LLM Kit in C *(recommended)*, or E2,
    llama.cpp with a C++ runtime ported.

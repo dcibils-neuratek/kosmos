@@ -2,7 +2,33 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.315, not pushed; Pewter P1: desktops as files, the chooser and its loader)
+Last updated: 2026-11-08 (0.11.319, not pushed; Xavier X1: the LLM Kit held to llama.cpp)
+
+---
+
+## 8 November: Xavier planned, agreed, and X1 built
+
+**Agreed** (Diego: "E1, server yes, convert phi-2, go ahead"): an LLM Kit
+of our own in C, one server holding the model, phi-2 first.
+`docs/xavier.md` is the plan, X1 to X10, with X8b added the same day for
+models from Hugging Face by a tool and the engine's metrics. Diego still
+decides AVX2 through `xsave` (decision 4) and the voice (decision 5), and
+the mockup and diagram come before the window (X4).
+
+**Built, 0.11.319 - X1** (not pushed): `user/kits/llm/llm_core.c` and
+`.h`, GGUF + GPT-2 BPE + phi-2's forward pass, scalar. `tools/test_llm.c`
+holds it to llama.cpp's answers in `tools/llm_reference_phi-2.Q*.txt`
+(`make llm-reference` writes them, from llama.cpp b12205 in
+`build/downloads`), in `make host-check`. The models are in
+`build/models/` (not in git): Q8_0 2.96 GB, Q4_0 1.57 GB. Bounds are
+twice llama.cpp's spread against itself - its plain and NEON builds
+differ by 0.62 - and four controls fail it; RoPE's is the thinnest. 9.0
+tok/s Q8_0, 4.1 Q4_0, scalar on the Mac.
+
+**Next: X2**, Q4_0 and Q8_0 dots in vector types with the scalar loop as
+reference; then X3, the server and `xavier "question"` on Kosmos, which
+needs the model on `/Home` (512 MB on the stick: Q4_0 does not fit, so
+`/Home/Models` on the QEMU disk first).
 
 ---
 

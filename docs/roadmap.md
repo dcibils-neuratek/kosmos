@@ -511,8 +511,16 @@ menu is the application's, and the bar is not told when it closes); the
 Kosmos menu has no search yet (P6's menus searched); and a kit window
 with a `ui.menubar` view keeps it in the window - no application has one.
 
-**Xavier, an assistant on this machine - ASKED FOR on 8 November 2026,
-being planned.** Diego: "i want to add an llm powered assistant called
+**Xavier, an assistant on this machine - AGREED on 8 November 2026: E1,
+our own LLM Kit, a server, phi-2 converted ("E1, server yes, convert
+phi-2, go ahead"); X1 built - the LLM Kit's core in C, held to llama.cpp
+on the Mac (`xavier.md`, *X1, as built*); X2, vectors, next.** Then, the same day: **models from Hugging Face
+with a tool** ("we need a way to load models from huggingface easily",
+"with a tool") - `models search/get/load/rm` on Kosmos, held to Hugging
+Face's SHA-256, and `tools/hfmodel.py` converting a safetensors model on
+the Mac - and **the engine's metrics to be seen** ("models loaded, usage,
+tokens per second, etc"): the server's `stats`, `llm` at the prompt, and
+a monitor window. Both are step X8b in `xavier.md`. Diego: "i want to add an llm powered assistant called
 Xavier", "a chat and audio interface to chat with Xavier to general
 questions and answers and in the following versions, do stuff in the OS
 like write an email, open settings, open files and else", with phi-2

@@ -1444,3 +1444,53 @@ failed. It then switches desktop from the menu, starts Pewter, and checks
 that the choice was remembered. To show the test notices, it was run
 against a window manager that reports a failed start as a success, and it
 failed.
+
+## 8 November - Xavier's engine answers its first question, on the Mac
+
+**In short:** Xavier, the assistant planned this morning, needs an engine
+that runs a language model. We wrote our own in C rather than port one,
+and it now runs Microsoft's phi-2 on the Mac. Asked "What is the capital
+of France?", it answers "The capital of France is Paris." It is checked
+against llama.cpp, the best-known engine. Both cut the text into the same
+pieces every time, and at every word of an answer they agree on what
+comes next, or both find two words almost equally likely. Nothing of
+this runs on Kosmos yet; that is the next steps.
+
+**What.** The LLM Kit's core, `user/kits/llm/llm_core.c`. It reads a GGUF
+file, the format llama.cpp writes, in place. It turns text into tokens as
+GPT-2 does and runs phi-2's 32 layers one token at a time. It allocates
+nothing once the model is open, and it checks every number in the file
+against the file before using it. The model was converted on the Mac
+twice, at 8 bits a weight (2.96 GB) and at 4 (1.57 GB), and checked
+against Hugging Face's checksums before the originals were deleted.
+
+**Why our own.** Kosmos has no POSIX, no threads library and no GPU API,
+so any engine would have been rewritten around its edges. One we wrote
+can be read from end to end, and the GPU part was always going to be
+ours whichever engine we used (`docs/xavier.md`, E1 to E3).
+
+**The finding: llama.cpp does not agree with itself.** The first test
+asked for llama.cpp's numbers exactly and failed. A trace showed the
+first two layers identical to the last bit and the difference growing
+from about the tenth. So llama.cpp was built a second way, plain C instead
+of the Mac's vector instructions, and compared with itself. Its two builds
+differ by up to 0.62 on a score of about 20 and choose different words
+where two are nearly tied. Adding numbers in a different order changes
+how they round, and 32 layers make that grow. Our engine is a third
+order of adding, and it lands as far from either build as they land from
+each other. So the test asks what llama.cpp can promise about itself,
+about twice over.
+
+**How it is checked.** 62 checks a model, in the host suite, about 20
+seconds for both. Each check of llama.cpp's answers runs against a file
+in the tree, so llama.cpp itself is needed only to write them again. Four
+broken copies of the engine each fail it: a wrong GELU, a missing bias,
+a tokenizer merging in the wrong order, and RoPE pairing the wrong
+numbers. The last fails by only two words, because phi-2 rotates few of
+its numbers and the test prompts are short. That is written down as the
+thinnest check.
+
+**Measured.** On one core of the Mac, with no vector instructions: 9.0
+tokens a second at 8 bits, 4.1 at 4. The 4-bit model is slower here
+because unpacking its half-bytes costs more than it saves without vector
+instructions. Vector instructions are step X2.
