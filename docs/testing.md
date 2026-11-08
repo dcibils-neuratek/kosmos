@@ -29430,3 +29430,48 @@ byte for byte. 48 checks.
 tiny model it passed until the logits were poisoned: its only product
 large enough to cut is the one onto the logits, and the dropped row kept
 the single thread's value from before.
+
+## 18.720 AVX2: Nebula keeps the upper halves, and the kit's loops use them
+
+**What** (8 November 2026, `docs/xavier.md`, *AVX2, as built*). Nebula's
+x86 switch saved FP with FXSAVE, which keeps the XMM registers and nothing
+above them. Any AVX instruction in a program would have had its upper
+halves overwritten by whichever thread ran next. Where the processor has
+XSAVE, `fp_init` now sets CR4.OSXSAVE and puts x87, SSE and AVX into XCR0,
+and the switch is `xsave64`/`xrstor64` into a 1024-byte, 64-aligned area in
+the context. A new thread's area says its x87 and SSE state is valid
+(XSTATE_BV = 3), so its first restore is the clean state FXSAVE gave it.
+Without XSAVE, or where CPUID's size is more than the area holds, the switch
+stays FXSAVE.
+
+The LLM Kit then has its four loops a second time in `llm_dot_avx2.c`,
+compiled with `target("avx2")`. A block is one 32-byte register there, two
+in SSE2. The loops are chosen at `llm_open` only where CPUID says AVX and
+AVX2, OSXSAVE is set, and XGETBV says SSE and AVX are kept. The LLM server
+says "its loops in AVX2" when it loads a model that way.
+
+**The tests**:
+
+- **`fp: a preemption preserves AVX's upper halves`** (`x86-kernel`). Two
+  threads put different 64-bit patterns into bits 128-191 of ymm0 and spin
+  through preemptions, 240 times each. Each must find its own pattern every
+  time. The x86 kernel suite now boots `-cpu max`, because QEMU's default
+  qemu64 has no XSAVE and no AVX. On a processor without them the test says
+  so and passes by not running.
+- **`test_llmdot`** holds every set of loops this machine can run to the
+  scalar reference, to the bit, on 2352 rows each.
+- **`x86-llm`** boots its guest `-cpu max` as well. It checks that the
+  server chose AVX2's loops, and that every answer is the reference's byte
+  for byte. `x86-xavier` keeps qemu64, so SSE2's loops are held there.
+
+**Rosetta has no AVX** (CPUID leaf 1 says neither OSXSAVE nor AVX), so on
+this Mac AVX2's loops can only be held in a guest. `test_llmdot_x86` says it
+did not ask them.
+
+**Control** for the kernel: the switch made to take the FXSAVE path always,
+with `fp_xsave` still set, so the test still runs. `fp: a preemption
+preserves AVX's upper halves` fails, 1 of 209. Restored, 209 of 209.
+
+**Control** for the kit: the AVX2 Q4_0 four-input loop given a block's
+high nibbles where its low ones go. `x86-llm` fails 4 of 49, every Q4_0
+answer, and Q8_0's and F16's stay the reference's. Restored, 49 of 49.

@@ -50,6 +50,16 @@ static struct regs cpuid(uint32_t leaf, uint32_t sub)
     return r;
 }
 
+void cpu_cpuid(uint32_t leaf, uint32_t sub, uint32_t out[4])
+{
+    struct regs r = cpuid(leaf, sub);
+
+    out[0] = r.eax;
+    out[1] = r.ebx;
+    out[2] = r.ecx;
+    out[3] = r.edx;
+}
+
 /*
  * What the board measured, when CPUID would not say. Written once at boot,
  * before there is a second thread, and read-only after - the same argument

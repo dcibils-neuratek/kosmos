@@ -35,6 +35,10 @@
 #define CPU_RAW_FEAT7_ECX 7
 #define CPU_RAW_ADDRESS   8     /* CPUID.80000008 EAX: address widths */
 
+/* CPUID `leaf`, `sub`: eax, ebx, ecx and edx into `out`. The one way this
+ * kernel asks; `fp.c` asks it which register files to save. */
+void cpu_cpuid(uint32_t leaf, uint32_t sub, uint32_t out[4]);
+
 struct cpu_info {
     /* Raw, exactly as read. */
     uint64_t vendor0, vendor1;

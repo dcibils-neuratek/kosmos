@@ -2,9 +2,27 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.322, not pushed; Xavier's window, `/Models`, SMB writable from a Mac)
+Last updated: 2026-11-08 (0.11.325, not pushed; the LLM made fast: batches, every core, AVX2)
 
 ---
+
+## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
+
+The agreed order (`xavier.md`, *Making it fast*) is measure, then
+threads, AVX2 and batched prompts, then repacking the weights. The M700
+was off, so the steps that do not need it went first:
+
+- **0.11.323, the question in batches**: up to 32 tokens a pass. On the Mac,
+  Q4_0 reads 5x faster (18.718).
+- **0.11.324, every core**: the server's workers split a product's rows.
+  On the Mac, Q4_0 writes 12.5 tokens a second instead of 4.0 (18.719).
+- **0.11.325, AVX2**: Nebula's x86 switch is XSAVE with AVX in XCR0, and
+  the kit has AVX2 loops, chosen by CPUID (18.720). The kernel suite
+  and `x86-llm` boot `-cpu max`.
+
+**Next**: measure all three on the M700. Then repack the weights, which is
+step 3. Left over from the AVX2 step: a Sandboxes guest's AVX, in
+`vcpu.c` (roadmap 6l).
 
 ## 8 November, later: Xavier's window, phi-2 on the M700, `/Models`
 

@@ -230,6 +230,36 @@ static inline double test_fp_scratch_get(void)
 #endif
 
 /*
+ * **The same, for AVX's upper halves** (x86 only, `docs/xavier.md`,
+ * *Making it fast*). `want` goes into bits 128-191 of ymm0 - above what
+ * FXSAVE keeps, so only XSAVE with AVX in XCR0 brings it back - across the
+ * same spin, and is read back from there. The low half holds nothing.
+ */
+#if !defined(__aarch64__)
+#define TEST_AVX_SPIN(got, want)                                            \
+    __asm__ volatile(                                                       \
+        "vpxor  %%xmm1, %%xmm1, %%xmm1\n"                                    \
+        "movq   %1, %%xmm1\n"                                               \
+        "vpxor  %%xmm0, %%xmm0, %%xmm0\n"                                    \
+        "vinsertf128 $1, %%xmm1, %%ymm0, %%ymm0\n"                           \
+        "vpxor  %%xmm1, %%xmm1, %%xmm1\n"                                    \
+        "movq   $24, %%r10\n"                                               \
+        "1:\n"                                                              \
+        "movq   $0xffff, %%r9\n"                                            \
+        "2:\n"                                                              \
+        "decq   %%r9\n"                                                     \
+        "jnz    2b\n"                                                       \
+        "decq   %%r10\n"                                                    \
+        "jnz    1b\n"                                                       \
+        "vextractf128 $1, %%ymm0, %%xmm1\n"                                  \
+        "movq   %%xmm1, %0\n"                                               \
+        "vzeroupper\n"                                                      \
+        : "=r"(got)                                                         \
+        : "r"(want)                                                         \
+        : "xmm0", "xmm1", "r9", "r10", "cc")
+#endif
+
+/*
  * Are interrupts arriving?
  *
  * `cpu_interrupts_save` hands back the whole word and also *masks*, which

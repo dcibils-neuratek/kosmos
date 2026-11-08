@@ -635,6 +635,18 @@ bad_tensor:
   m->dot4_q8_0 = llm_dot4_q8_0;
   m->dot4_q4_0 = llm_dot4_q4_0;
 
+#if defined(__x86_64__)
+  /* AVX2 where the processor has it and the system keeps it: the same
+   * answers to the bit (`llm_dot_avx2.c`), a block in one register. */
+  if (llm_avx2_present()) {
+    m->dot_q8_0 = llm_dot_q8_0_avx2;
+    m->dot_q4_0 = llm_dot_q4_0_avx2;
+    m->dot4_q8_0 = llm_dot4_q8_0_avx2;
+    m->dot4_q4_0 = llm_dot4_q4_0_avx2;
+    m->avx2 = true;
+  }
+#endif
+
   return 0;
 }
 

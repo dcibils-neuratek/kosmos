@@ -715,6 +715,28 @@ crashed the server: its workers began counting from 0, saw the first
 answer's last product at once, and wrote through a pointer to it, long
 gone. They now begin from the count as it stands when they are made.
 
+### AVX2, as built (0.11.325)
+
+**Nebula first.** An AVX register is twice an SSE one, and the switch kept
+only the SSE half (FXSAVE). Where the processor has XSAVE, Nebula now puts
+AVX into XCR0 and switches with `xsave64`/`xrstor64`. A kernel test holds
+it: two threads' upper halves survive their preemptions (`testing.md`
+18.720).
+
+**Then the kit, a second time.** `llm_dot_avx2.c` is the same four loops
+in the same vector types, compiled with `target("avx2")`: a block is one
+register where SSE2 needed two. Each byte widens to 16 bits and `pmaddwd`
+does the multiplying, which is exact. `pmaddubsw` is quicker and saturates
+when both values are -128, so it is not used. FMA is left out of the
+target, because the compiler could then round a sum once where the
+reference rounds twice. `llm_open` chooses these loops only where CPUID
+and XGETBV both say yes, and the answer is the scalar's to the bit either
+way.
+
+**Not measured yet where it counts.** Rosetta has no AVX and QEMU's AVX2 is
+emulated, so this Mac cannot say what it buys. The M700 can, and it is the
+first thing to measure when it is back on the network.
+
 **What costs almost nothing, and is felt:** the answer is already written
 word by word, and the cache already held across a conversation. The model
 can also stay loaded between questions, and the LLM server's band keep the

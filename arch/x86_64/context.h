@@ -29,8 +29,9 @@
 #define CTX_RIP     56
 #define CTX_RFLAGS  64
 #define CTX_KSTACK  72
-#define CTX_FX      80      /* 512 bytes, and 16-byte aligned or it faults */
-#define CTX_SIZE    592
+#define CTX_FX      128     /* 1024 bytes, 64-byte aligned: XSAVE's rule */
+#define CTX_FX_SIZE 1024
+#define CTX_SIZE    1152
 
 #ifndef __ASSEMBLER__
 
@@ -112,13 +113,22 @@ struct context {
      * down without one. Correct first, and 36% of a number nobody has taken
      * is not an argument.
      *
-     * 512 bytes, aligned to 16, because that is what FXSAVE requires of its
-     * operand - and an unaligned one is a general protection fault rather
-     * than a slow path. The alignment on this member is what gives the
-     * whole struct its alignment, which is what makes the offset above
-     * true for every thread.
+     * **XSAVE where the processor has it, and AVX's upper halves with it**
+     * (8 November 2026, `docs/xavier.md`, *Making it fast*). FXSAVE keeps
+     * x87 and SSE, 512 bytes, and nothing of a YMM register above its low
+     * 128 bits: a thread using AVX2 would have resumed with another's upper
+     * halves. XSAVE keeps what XCR0 names - `fp.c` names x87, SSE and AVX -
+     * in the same 512-byte legacy area, a 64-byte header after it, and
+     * AVX's upper halves at 576: 832 bytes, in an area of 1024.
+     *
+     * Aligned to 64, because that is what XSAVE requires of its operand,
+     * where FXSAVE wanted 16 - and an unaligned one is a general protection
+     * fault rather than a slow path. The alignment on this member is what
+     * gives the whole struct its alignment, which is what makes the offset
+     * above true for every thread: a pool's slot is a multiple of its size
+     * from a page (`kernel/pool.c`), and its size a multiple of 64.
      */
-    uint8_t fx[512] __attribute__((aligned(16)));
+    uint8_t fx[CTX_FX_SIZE] __attribute__((aligned(64)));
 };
 
 _Static_assert(sizeof(struct context) == CTX_SIZE, "context size vs switch.S");
@@ -134,7 +144,7 @@ _Static_assert(offsetof(struct context, rflags) == CTX_RFLAGS, "CTX_RFLAGS");
 _Static_assert(offsetof(struct context, kernel_stack) == CTX_KSTACK,
                "CTX_KSTACK");
 _Static_assert(offsetof(struct context, fx) == CTX_FX, "CTX_FX");
-_Static_assert(offsetof(struct context, fx) % 16 == 0, "FXSAVE wants 16");
+_Static_assert(offsetof(struct context, fx) % 64 == 0, "XSAVE wants 64");
 
 /* Saves into prev, loads from next, and returns inside next. */
 void context_switch(struct context *prev, struct context *next);
@@ -197,6 +207,11 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
         ctx->fx[1] = 0x03;
         ctx->fx[24] = 0x80;     /* MXCSR, at offset 24 */
         ctx->fx[25] = 0x1f;
+        /* XSAVE's header, at 512: XSTATE_BV says x87 and SSE are in the
+         * legacy area above, so XRSTOR loads them from it exactly as
+         * FXRSTOR does; AVX's bit is clear, so its upper halves begin as
+         * zeros. FXRSTOR never reads past 512. */
+        ctx->fx[512] = 0x03;
     }
 }
 

@@ -47,4 +47,17 @@ typedef void llm_dot4_fn(const uint8_t *w, const uint8_t *xq, uint64_t xq_room, 
 
 llm_dot4_fn llm_dot4_q8_0, llm_dot4_q4_0;
 
+/*
+ * **The same four loops, 32 bytes wide, for AVX2** (`llm_dot_avx2.c`,
+ * x86-64 only), and whether this processor and this system can run them:
+ * AVX2 in CPUID and the upper halves kept, which XGETBV says.
+ */
+#if defined(__x86_64__)
+#include <stdbool.h>
+
+llm_dot_fn llm_dot_q8_0_avx2, llm_dot_q4_0_avx2;
+llm_dot4_fn llm_dot4_q8_0_avx2, llm_dot4_q4_0_avx2;
+bool llm_avx2_present(void);
+#endif
+
 #endif

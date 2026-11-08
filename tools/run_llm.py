@@ -190,10 +190,19 @@ def main():
     # boots one, and the server cuts its products across the cores there
     # are - so with one, the pool was never started and nothing here could
     # have told. The board's list is restored before the second machine.
+    #
+    # **And AVX2, on x86** (X2b): QEMU's default qemu64 has none, so the
+    # kit's AVX2 loops would never be chosen here. `-cpu max` has it, and
+    # every answer below is then theirs, held to the reference byte for
+    # byte. `x86-xavier` keeps the default processor, so SSE2's are held
+    # there. Rosetta has no AVX2, so a guest is the only place the Mac can.
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
     one_core = getattr(R, board)
     if "-smp" not in one_core:
-        setattr(R, board, one_core + ["-smp", "4"])
+        wider = one_core + ["-smp", "4"]
+        if board == "X86_ARGS" and "-cpu" not in one_core:
+            wider += ["-cpu", "max"]
+        setattr(R, board, wider)
 
     try:
         guest = R.Guest(image, 240)
@@ -253,6 +262,10 @@ def main():
     # one thread - were made with each product cut across all of them.
     check("llm: each product cut across 4 cores" in said,
           "the server did not cut its products across the guest's four cores")
+    # And on x86 in AVX2's loops, which `-cpu max` above gives it.
+    if R.machine(image) == "x86_64":
+        check(re.search(r"llm: \S+ is loaded, its loops in AVX2", said) is not None,
+              "the server did not choose AVX2's loops on a processor that has it")
     nm = line("LLM-NOMODEL")
     check(nm and nm[0] == "true" and "no model is loaded" in nm[1],
           "a question with no model was not refused as such: %s" % nm)

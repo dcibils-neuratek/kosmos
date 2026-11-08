@@ -271,7 +271,7 @@ static void load_done(uint32_t error)
         model.load_us = micros(kosmos_ticks() - model.load_began);
         say(console, "llm: ");
         say(console, model.name);
-        say(console, " is loaded\n");
+        say(console, model.m.avx2 ? " is loaded, its loops in AVX2\n" : " is loaded\n");
     }
 
     if (model.loader != 0) {

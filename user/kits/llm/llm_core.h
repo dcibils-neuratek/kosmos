@@ -24,6 +24,7 @@
 #ifndef KOSMOS_LLM_CORE_H
 #define KOSMOS_LLM_CORE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -132,6 +133,7 @@ struct llm_model {
    * says whether the explicit lanes beat them there. */
   llm_dot_fn *dot_q8_0, *dot_q4_0;
   llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs */
+  bool avx2;                            /* the loops above are AVX2's */
 
   /* How a product is run in parts, or NULL for this thread alone. */
   llm_run_fn *run;

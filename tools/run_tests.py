@@ -113,6 +113,14 @@ X86_ARGS = [
     # and panicked (`testing.md`). QEMU backs only what the guest touches.
     #
     "-m", "5G",
+    #
+    # A processor with AVX, so `fp: a preemption preserves AVX's upper
+    # halves` has an upper half to ask about: QEMU's default qemu64 has no
+    # XSAVE and no AVX, and the switch's XSAVE path would never run here
+    # (`docs/xavier.md`, *Making it fast*). The ThinkPad and the M700 both
+    # have AVX2, so this is the machine the kernel meets.
+    #
+    "-cpu", "max",
     "-nographic",
     # The display, so the framebuffer tests work rather than being skipped.
     "-vga", "none",

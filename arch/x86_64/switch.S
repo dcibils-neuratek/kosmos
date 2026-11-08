@@ -64,7 +64,17 @@ context_switch:
      * the ARM switch from touching a Q register. `context.h` says why this
      * is here at all and why it is eager.
      */
-    fxsave  CTX_FX(%rdi)
+    /* XSAVE of what XCR0 names, where `fp_init` turned it on: EDX:EAX is
+     * the mask of what to save, and all of it is wanted. RAX and RDX are
+     * caller-saved, and the `call` here has given them up. */
+    cmpb    $0, fp_xsave(%rip)
+    je      1f
+    movl    $0xffffffff, %eax
+    movl    $0xffffffff, %edx
+    xsave64 CTX_FX(%rdi)
+    jmp     2f
+1:  fxsave  CTX_FX(%rdi)
+2:
 
     movq    %rbx, CTX_RBX(%rdi)
     movq    %rbp, CTX_RBP(%rdi)
@@ -85,7 +95,14 @@ context_switch:
     movq    %rax, CTX_RSP(%rdi)
 
     /* From here nothing may touch the outgoing thread's stack again. */
-    fxrstor CTX_FX(%rsi)
+    cmpb    $0, fp_xsave(%rip)
+    je      3f
+    movl    $0xffffffff, %eax
+    movl    $0xffffffff, %edx
+    xrstor64 CTX_FX(%rsi)
+    jmp     4f
+3:  fxrstor CTX_FX(%rsi)
+4:
 
     movq    CTX_RBX(%rsi), %rbx
     movq    CTX_RBP(%rsi), %rbp

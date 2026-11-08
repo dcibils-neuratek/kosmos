@@ -9653,6 +9653,77 @@ static bool test_fp_survives_a_preemption(void)
            && fp_preempt_wrong == 0;
 }
 
+#if !defined(__aarch64__)
+/*
+ * **AVX's upper halves survive a preemption** (8 November 2026,
+ * `docs/xavier.md`, *Making it fast*): the guarantee above, for the bits
+ * FXSAVE never kept. Two threads put different patterns above bit 128 of
+ * ymm0 and spin through preemptions; each must find its own. Asked only
+ * where the switch uses XSAVE with AVX in XCR0 - on a processor without
+ * AVX there is no ymm0 to ask about, and the test says it passed by not
+ * running rather than by pretending: `fp: AVX` is booted with a processor
+ * that has it (`x86-kernel`, `-cpu max`).
+ */
+extern unsigned char fp_xsave;
+static volatile unsigned avx_checks, avx_wrong, avx_switches;
+
+static void avx_spinner(void *arg)
+{
+    unsigned long want = (unsigned long)(uintptr_t)arg;
+    unsigned last = thread_current()->switches;
+
+    for (unsigned i = 0; i < 240u; i++) {
+        unsigned long got;
+
+        TEST_AVX_SPIN(got, want);
+
+        unsigned now = thread_current()->switches;
+        avx_switches += now - last;
+        last = now;
+        avx_checks++;
+
+        if (got != want) {
+            avx_wrong++;
+        }
+    }
+}
+
+static bool avx_in_xcr0(void)
+{
+    uint32_t lo, hi;
+
+    if (!fp_xsave) {
+        return false;
+    }
+
+    __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+    return (lo & 0x6u) == 0x6u;
+}
+
+static bool test_avx_survives_a_preemption(void)
+{
+    unsigned i;
+
+    if (!avx_in_xcr0()) {
+        kputs("  (no AVX on this processor: nothing to keep)\n");
+        return true;
+    }
+
+    avx_checks = avx_wrong = avx_switches = 0;
+
+    if (thread_create("avx-a", avx_spinner, (void *)0x1111222233334444UL) == NULL
+     || thread_create("avx-b", avx_spinner, (void *)0x5555666677778888UL) == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 200000u && avx_checks < 480u; i++) {
+        thread_yield();
+    }
+
+    return avx_checks >= 480u && avx_switches >= 4u && avx_wrong == 0;
+}
+#endif
+
 /* Lazy FP save, from arch/aarch64/fp.c. */
 bool fp_owned_by(const struct thread *t);
 void fp_reset(void);
@@ -11123,6 +11194,9 @@ static const struct test tests[] = {
     { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
     { "ipc: a reply token names a call, and nothing forged does", test_a_reply_token_names_a_call_and_nothing_forged_does },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
+#if !defined(__aarch64__)
+    { "fp: a preemption preserves AVX's upper halves", test_avx_survives_a_preemption },
+#endif
 #if defined(__aarch64__)
     { "fp: disarmed until it is wanted",       test_fp_is_disarmed_until_it_is_wanted },
 #endif

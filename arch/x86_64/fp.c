@@ -36,6 +36,29 @@
 
 #include <stdint.h>
 
+#include "context.h"
+#include "cpu.h"
+
+/*
+ * **Whether `switch.S` uses XSAVE**, and with it AVX's registers (8
+ * November 2026, `docs/xavier.md`, *Making it fast*). Set by `fp_init` on
+ * every core, the same on each since they are the same processor, before
+ * any thread is switched; read by the switch on every switch after.
+ *
+ * What XCR0 names is what a thread may use: x87 and SSE always, and AVX
+ * where CPUID says the processor has it - which is what lets a program
+ * ask CPUID and XGETBV whether AVX2 is there, as the LLM Kit does, and get
+ * an answer the switch keeps true. Nothing past AVX: AVX-512 is another
+ * 1.6 KB a thread, and no processor Kosmos runs on has it.
+ */
+unsigned char fp_xsave;
+
+#define CPUID1_ECX_XSAVE (1u << 26)
+#define CPUID1_ECX_AVX   (1u << 28)
+#define XCR0_X87         (1u << 0)
+#define XCR0_SSE         (1u << 1)
+#define XCR0_AVX         (1u << 2)
+
 /*
  * Turning the floating-point unit on, which x86 requires and ARM does not.
  *
@@ -63,7 +86,39 @@ void fp_init(void)
     cr4 |= (1UL << 9) | (1UL << 10);    /* OSFXSR, OSXMMEXCPT */
     __asm__ volatile("movq %0, %%cr4" :: "r"(cr4));
 
-    /* And a known x87 state, so the first FXSAVE writes something sane
+    /*
+     * XSAVE, where there is one. CR4.OSXSAVE is this file saying the switch
+     * keeps what XCR0 names, which is what makes XSETBV legal and AVX
+     * executable; and the size CPUID gives for that XCR0 is held to the
+     * room `context.h` has, so a processor that wanted more is refused
+     * XSAVE rather than given an area that overruns into the next thread.
+     */
+    {
+        uint32_t r[4], xcr0 = XCR0_X87 | XCR0_SSE;
+
+        cpu_cpuid(1, 0, r);
+
+        if (r[2] & CPUID1_ECX_XSAVE) {
+            if (r[2] & CPUID1_ECX_AVX) {
+                xcr0 |= XCR0_AVX;
+            }
+
+            __asm__ volatile("movq %%cr4, %0" : "=r"(cr4));
+            cr4 |= (1UL << 18);                     /* OSXSAVE */
+            __asm__ volatile("movq %0, %%cr4" :: "r"(cr4));
+            __asm__ volatile("xsetbv" :: "c"(0), "a"(xcr0), "d"(0));
+
+            cpu_cpuid(0xd, 0, r);                   /* EBX: the size for XCR0 now */
+
+            if (r[1] != 0 && r[1] <= CTX_FX_SIZE) {
+                fp_xsave = 1;
+            } else {
+                __asm__ volatile("xsetbv" :: "c"(0), "a"(XCR0_X87 | XCR0_SSE), "d"(0));
+            }
+        }
+    }
+
+    /* And a known x87 state, so the first save writes something sane
      * rather than whatever the firmware left. */
     __asm__ volatile("fninit");
 }

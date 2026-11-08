@@ -920,6 +920,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/llm.c \
              user/kits/llm/llm_core.c \
              user/kits/llm/llm_dot.c \
+             user/kits/llm/llm_dot_avx2.c \
              user/servers/windowserver.c \
              user/servers/mdnsd.c \
              user/servers/vmm.c \
@@ -2472,7 +2473,7 @@ $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits
 # The LLM Kit's core against llama.cpp's own answers (`docs/xavier.md`
 # X1). The answers are in the tree; llama.cpp is needed only to write them
 # again, by `make llm-reference`, from a llama.cpp built in build/downloads.
-LLM_KIT_SRCS := user/kits/llm/llm_core.c user/kits/llm/llm_dot.c
+LLM_KIT_SRCS := user/kits/llm/llm_core.c user/kits/llm/llm_dot.c user/kits/llm/llm_dot_avx2.c
 
 $(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
 	@mkdir -p $(dir $@)

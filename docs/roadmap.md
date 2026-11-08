@@ -4958,7 +4958,8 @@ processors, and still what follows USB:
      **SSE** on x86-64 now, and **AVX and AVX2** once the kernel saves
      their registers (6l's first step: `xsave`, CR4.OSXSAVE and XCR0 -
      before that an AVX register would be overwritten by any other
-     process). **Every core, from the start** - Diego: "We can't use all
+     process). **That step is done** (0.11.325, `testing.md` 18.720): the
+     LLM Kit was first through it. **Every core, from the start** - Diego: "We can't use all
      cores for ray tracing now?", "We currently support multi core and
      multi threading", "So I expect cafesa3d uses all available cores".
      He is right, and the first answer here was read from `threads.md`
@@ -7754,7 +7755,14 @@ not static**, since a static one is in every process.
    kernel's `fxsave` already preserves; then **the kernel saving AVX
    state** - `xsave`/`xrstor` on the lazy FP path, CR4.OSXSAVE and XCR0 -
    without which a program's 256-bit registers are overwritten whenever
-   another process runs; then AVX and AVX2. MathLab (4k) needs the second
+   another process runs (**done in 0.11.325**, for the LLM Kit: the switch
+   is XSAVE with AVX in XCR0 where the processor has it, `testing.md`
+   18.720); then AVX and AVX2.
+   **Left from that step: a guest's AVX.** `arch/x86_64/vcpu.c` still keeps
+   a guest's and the VMM thread's FP with `fxsave64`, which keeps no upper
+   halves, and does not handle a guest's `xsetbv`. A Sandboxes guest using
+   AVX would leave its upper halves in the VMM thread's registers. XSAVE
+   there, and XCR0 switched at entry and exit, when a guest asks for AVX. MathLab (4k) needs the second
    step too. An aligned allocator was the first thing either needed:
    `posix_memalign` and `aligned_alloc` in `malloc.c` (18.186).
 

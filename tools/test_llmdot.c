@@ -70,8 +70,27 @@ static int same(float a, float b)
   return memcmp(&a, &b, sizeof a) == 0;
 }
 
+/* Each set of loops the kit can choose, and whether this machine runs it. */
+struct loops {
+  const char *name;
+  llm_dot_fn *q8, *q4;
+  llm_dot4_fn *four8, *four4;
+};
+
 int main(void)
 {
+  struct loops sets[2] = { { "SSE2/NEON", llm_dot_q8_0, llm_dot_q4_0, llm_dot4_q8_0, llm_dot4_q4_0 } };
+  int nsets = 1;
+
+#if defined(__x86_64__)
+  if (llm_avx2_present()) {
+    sets[nsets++] = (struct loops){ "AVX2", llm_dot_q8_0_avx2, llm_dot_q4_0_avx2,
+                                    llm_dot4_q8_0_avx2, llm_dot4_q4_0_avx2 };
+  } else {
+    printf("  (no AVX2 here: its loops are not asked - the x86 guest suites are)\n");
+  }
+#endif
+
   static uint8_t w8[320 * 34], w4[320 * 18], xq[320 * 34];
   uint64_t lengths[100];
   int n = 0;
@@ -83,7 +102,9 @@ int main(void)
   int mism8 = 0, mism4 = 0;
   static float xs[320];
 
+  for (int set = 0; set < nsets; set++)
   for (int l = 0; l < n; l++) {
+    const struct loops *L = &sets[set];
     for (int how = 0; how < 5; how++) {
       for (int again = 0; again < (how ? 1 : 8); again++) {
         uint64_t blocks = lengths[l];
@@ -92,8 +113,8 @@ int main(void)
         fill(xq, blocks, 34, (how + again) % 5);
         for (uint64_t b = 0; b < blocks; b++) xs[b] = llm_f16_to_f32((uint16_t)(xq[b * 34] | xq[b * 34 + 1] << 8));
 
-        float v8 = llm_dot_q8_0(w8, xq, xs, blocks), s8 = llm_dot_q8_0_scalar(w8, xq, xs, blocks);
-        float v4 = llm_dot_q4_0(w4, xq, xs, blocks), s4 = llm_dot_q4_0_scalar(w4, xq, xs, blocks);
+        float v8 = L->q8(w8, xq, xs, blocks), s8 = llm_dot_q8_0_scalar(w8, xq, xs, blocks);
+        float v4 = L->q4(w4, xq, xs, blocks), s4 = llm_dot_q4_0_scalar(w4, xq, xs, blocks);
         checks += 2;
 
         /* Four inputs against the row at once: each the scalar's bits
@@ -110,28 +131,28 @@ int main(void)
               s4x[t][b] = llm_f16_to_f32((uint16_t)(x4[t][b * 34] | x4[t][b * 34 + 1] << 8));
           }
 
-          llm_dot4_q8_0(w8, x4[0], sizeof x4[0], s4x[0], 320, blocks, o8);
-          llm_dot4_q4_0(w4, x4[0], sizeof x4[0], s4x[0], 320, blocks, o4);
+          L->four8(w8, x4[0], sizeof x4[0], s4x[0], 320, blocks, o8);
+          L->four4(w4, x4[0], sizeof x4[0], s4x[0], 320, blocks, o4);
 
           for (int t = 0; t < LLM_DOT4; t++) {
             checks += 2;
             if (!same(o8[t], llm_dot_q8_0_scalar(w8, x4[t], s4x[t], blocks))
                 || !same(o4[t], llm_dot_q4_0_scalar(w4, x4[t], s4x[t], blocks))) {
-              if (failed < 5) printf("  FAIL: four inputs at once, %llu blocks, kind %d, input %d: "
-                                     "not the scalar's bits\n", (unsigned long long)blocks, how, t);
+              if (failed < 5) printf("  FAIL: %s, four inputs at once, %llu blocks, kind %d, input %d: "
+                                     "not the scalar's bits\n", L->name, (unsigned long long)blocks, how, t);
               failed++;
             }
           }
         }
 
         if (!same(v8, s8)) {
-          if (mism8++ < 5) printf("  FAIL: Q8_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
-                                  (unsigned long long)blocks, how, v8, s8);
+          if (mism8++ < 5) printf("  FAIL: %s Q8_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
+                                  L->name, (unsigned long long)blocks, how, v8, s8);
           failed++;
         }
         if (!same(v4, s4)) {
-          if (mism4++ < 5) printf("  FAIL: Q4_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
-                                  (unsigned long long)blocks, how, v4, s4);
+          if (mism4++ < 5) printf("  FAIL: %s Q4_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
+                                  L->name, (unsigned long long)blocks, how, v4, s4);
           failed++;
         }
       }
@@ -163,13 +184,27 @@ int main(void)
          "(%.1fx) - this Mac's core, not Kosmos's\n",
          t[0], t[1], t[0] / t[1], t[2], t[3], t[2] / t[3]);
 
+  if (nsets > 1) {
+    double ta[2];
+    llm_dot_fn *const fa[2] = { sets[1].q8, sets[1].q4 };
+
+    for (int f = 0; f < 2; f++) {
+      const uint8_t *w = f == 0 ? w8 : w4;
+      double t0 = now();
+      for (int r = 0; r < reps; r++) sink += fa[f](w, xq, xs, 320);
+      ta[f] = (now() - t0) / reps * 1e9 / (320 * 32);
+    }
+    printf("a value in AVX2: Q8_0 %.3f ns (%.1fx the scalar), Q4_0 %.3f (%.1fx)\n",
+           ta[0], t[0] / ta[0], ta[1], t[2] / ta[1]);
+  }
+
   if (failed) {
     printf("FAIL: %d of %d rows where the vector dot product is not the scalar one's bits\n", failed,
            checks);
     return 1;
   }
   printf("PASS: %d rows, Q8_0 and Q4_0, the vector dot product and four inputs at once the scalar "
-         "one's bits every time (1 to 96 blocks, phi-2's 80 and 320, random and the corners)\n",
-         checks);
+         "one's bits every time (1 to 96 blocks, phi-2's 80 and 320, random and the corners; %s)\n",
+         checks, nsets > 1 ? "SSE2 and AVX2" : sets[0].name);
   return 0;
 }
