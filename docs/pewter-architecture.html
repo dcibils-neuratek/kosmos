@@ -95,7 +95,7 @@
     </div>
     <div class="layer app"><h2>The shell - what a desktop file names</h2>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>chooser.lua</b><p>at every boot: a card a desktop, the last one chosen <span class="f">B1</span>; posts <code>desktop</code> <span class="f">B2</span></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>chooser.lua</b><p>at every boot: a card a desktop, the last one chosen <span class="f">B1</span>; posts <code>desktop</code> <span class="f">B2</span>; then the loader, each piece and application as it starts <span class="f">B5</span></p></div>
         <div class="box new"><span class="tag">NEW</span><b>menubar.lua</b><p>Pewter's top strip: Kosmos menu and search, the front window's titles <span class="f">M1</span>, indicators, modes, clock, Application menu</p></div>
         <div class="box new"><span class="tag">NEW</span><b>controlstrip.lua</b><p>Pewter's bottom strip: volume, screen, network, modes</p></div>
       </div>
@@ -120,7 +120,7 @@
     </div>
     <div class="layer srv"><h2>Servers</h2>
       <div class="row" style="grid-template-columns:1.6fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>window manager - one, for every desktop</b><p>As it is: composing, input, focus, clipboard, drag, strips, launching.<br><i>New:</i> the chooser started when nothing is named; <code>handlers.desktop</code> reads the file and starts its shell <span class="f">B3</span>, the chrome told in each <code>open</code>'s reply <span class="f">B4</span>; each window's menu titles kept, the front one's in the <code>watch</code> event <span class="f">M1</span>; <code>menu_open</code> <span class="f">M2</span> posted on as <code>menubar</code> <span class="f">M3</span>; <code>handlers.shade</code>.</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>window manager - one, for every desktop</b><p>As it is: composing, input, focus, clipboard, drag, strips, launching.<br><i>New:</i> the chooser started when nothing is named; <code>handlers.desktop</code> reads the file and starts its shell <span class="f">B3</span>, the chrome told in each <code>open</code>'s reply <span class="f">B4</span>; each window's menu titles kept, the front one's in the <code>watch</code> event <span class="f">M1</span>; <code>menu_open</code> <span class="f">M2</span> posted on as <code>menubar</code> <span class="f">M3</span>; <code>handlers.shade</code>; a <code>launch</code> event to watchers, from the <code>starting</code> list it keeps <span class="f">B5</span>.</p></div>
         <div class="box"><b>diskfs, the notification server</b><p><code>/Kosmos/Desktops/*.desktop</code> in the image; <code>/Home/Preferences/desktop</code>; notifications as they are</p></div>
       </div>
     </div>
@@ -135,6 +135,7 @@
         <li><b>B2</b> A click or Return: the setting saved, <code>desktop{name="pewter"}</code> posted, the chooser ends.</li>
         <li><b>B3</b> The window manager reads <code>Pewter.desktop</code>, applies its chrome, menus and look, and starts its shell.</li>
         <li><b>B4</b> Each window learns its chrome in the reply to its <code>open</code>, before its first frame.</li>
+        <li><b>B5</b> The chooser stays as the loader: a <code>launch</code> event for each piece and startup application - starting, ready at its first window, or failed - and it ends when all are in, or a second and a half on.</li>
       </ol>
     </div>
     <div class="card"><h3>M - a menu title pressed, inside a frame</h3>

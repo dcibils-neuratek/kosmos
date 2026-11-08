@@ -31,6 +31,18 @@ nothing else.
   is already chosen. A click, or the arrow keys and Return, starts it.
 - **See every desktop the system has**, the ones that ship and any added
   later, without the chooser being changed to know about them.
+- **Watch it start.** Once a desktop is chosen, the chooser becomes a
+  loader (Diego, 7 November: "a loader that shows what component and app
+  is being loaded when selecting the desktop"). It lists the pieces of
+  that desktop - for Pewter the banners, the desktop, the menu bar and the
+  Control Strip - and then the applications the Startup page opens with
+  it, each with what it is, its state - waiting, starting, ready, did not
+  start - and how long it took. A bar under the list fills as they come
+  up, and when they have, the loader goes and the desktop is there.
+- **Not be held by one that fails or is slow.** One that does not start
+  says why, in red, and the desktop opens without it; one still starting
+  after a second and a half is left starting, says so, and opens when it
+  is ready. The loader never waits for longer than that on anything.
 - **Leave without choosing**: Restart and Shut Down at the foot of the
   chooser, as on any desktop.
 
@@ -235,7 +247,20 @@ a desktop*). A test that wants a desktop names it: `wm desktop:pewter`.
    to the window manager, and ends.
 4. The window manager reads the file, applies its chrome, its menus and its
    look - before the first window of that desktop opens, so nothing is
-   drawn twice - and starts its shell.
+   drawn twice - and starts its shell, then what the Startup page opens
+   (`startup.lua`), which the Deskbar opens today.
+5. **The chooser stays, as the loader**, a window over everything, and the
+   window manager tells it how each launch goes. It already keeps that for
+   the Deskbar - `starting`, each launch's program, its process and why it
+   failed (`wm.lua`, `finish_launch`) - and the new part is saying it to a
+   watcher: a `launch` event, `{ program, state, ms }`, posted when a
+   launch starts, when it fails, and when the program's first window is
+   committed. A piece that opens no window at start - the banners - is
+   ready when its process has started.
+6. When every piece is ready or has failed, or a second and a half has
+   passed for the last one, the loader ends, and the desktop is under it.
+   It draws what it has been told and never asks, so a launch that hangs
+   cannot hang it - *nothing on the desktop waits on a server*.
 
 **Switch Desktop…** posts `desktop{ name = false }`. The window manager
 asks every window to close, the way Restart does, waits for the shell to
@@ -286,10 +311,12 @@ Each is built, held by a test that stays, and lived with before the next.
 
 - **P1 - Desktops as files, and the chooser.** `Astra.desktop` describes
   what runs today; `chooser.lua`; `handlers.desktop`; the `desktop`
-  setting; Switch Desktop… in the Deskbar. Pewter's file exists and starts
-  Astra's shell, so the choice can be made before Pewter is drawn. Test: a
-  suite boots to the chooser, picks each desktop and checks its shell is
-  running; the gate's suites, which name what they start, unchanged.
+  setting; Switch Desktop… in the Deskbar. The loader, and the window
+  manager's `launch` events. Pewter's file exists and starts Astra's
+  shell, so the choice can be made before Pewter is drawn. Test: a suite
+  boots to the chooser, picks each desktop and checks its shell is
+  running, the loader having listed each piece as ready; a startup item
+  that names no program shown as failed, and the desktop opened anyway; the gate's suites, which name what they start, unchanged.
 - **P2 - Platinum's title bar.** `chrome = platinum` in the kit; collapse
   (`handlers.shade`). Test: every application in the gallery opened under
   Pewter, its title bar's boxes found where Platinum puts them.

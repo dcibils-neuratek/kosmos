@@ -419,7 +419,12 @@ boot with the last one chosen, and Kosmos's own applications in Pewter's
 title bar with their menus at the top. Designed the same day:
 `docs/pewter.md` (features, architecture, steps P1-P6),
 `docs/pewter-architecture.png` and the chooser, `docs/desktops.html`. P1,
-desktops as files and the chooser, is first.
+desktops as files and the chooser, is first. **And a loader after the
+choice** - Diego, the same day: "can we add a loader that shows what
+component and app is being loaded when selecting the desktop": the
+chooser stays over the screen and lists the desktop's pieces and the
+Startup page's applications as each starts, with its state and time; one
+that fails or is slow does not hold the desktop. Part of P1.
 
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it

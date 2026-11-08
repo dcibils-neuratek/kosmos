@@ -80,6 +80,30 @@
   .started .big { width: min(720px, 92vw); height: min(420px, 52vh); border-radius: 12px; overflow: hidden; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
   .started p { color: var(--dim); max-width: 560px; }
   .started button { background: #2a3248; color: var(--ink); border: 1px solid #44507a; border-radius: 8px; padding: 8px 16px; font: inherit; cursor: pointer; }
+  /* The loader: what the desktop is made of, each piece as it starts */
+  .loader { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 16px; }
+  .loader.on { display: flex; }
+  .loader .head h1 { font-size: 26px; }
+  .lpanel { width: min(560px, 100%); background: var(--card); border: 1.5px solid var(--card-line); border-radius: 16px; padding: 10px 8px; }
+  .lgroup { font: 600 11px "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--foot); padding: 8px 12px 4px; }
+  .lrow { display: grid; grid-template-columns: 26px 1fr auto 64px; align-items: center; gap: 12px; padding: 7px 12px; border-radius: 9px; }
+  .lrow .ic { width: 24px; height: 24px; border-radius: 6px; background: #2c3448; display: flex; align-items: center; justify-content: center; font: 600 12px "IBM Plex Sans"; color: var(--dim); }
+  .lrow b { font-weight: 500; display: block; }
+  .lrow small { color: var(--foot); font-size: 12.5px; }
+  .lrow .st { font: 12px "IBM Plex Mono", monospace; color: var(--foot); text-align: right; white-space: nowrap; }
+  .lrow .ms { font: 12px "IBM Plex Mono", monospace; color: var(--foot); text-align: right; font-variant-numeric: tabular-nums; }
+  .lrow.wait { opacity: .45; }
+  .lrow.run { background: rgba(127,176,255,.08); }
+  .lrow.run .st { color: var(--sel); }
+  .lrow.run .st::before { content: ""; display: inline-block; width: 9px; height: 9px; border: 2px solid var(--sel); border-right-color: transparent; border-radius: 50%; margin-right: 6px; vertical-align: -1px; animation: spin .8s linear infinite; }
+  .lrow.ok .st { color: #7fd69b; }
+  .lrow.bad .st { color: #ff8f84; }
+  .lrow.slow .st { color: #f0c36a; }
+  .lrow.bad small { color: #ff8f84; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .lbar { width: min(560px, 100%); height: 4px; background: #262d3f; border-radius: 3px; overflow: hidden; }
+  .lbar i { display: block; height: 100%; width: 0; background: var(--sel); transition: width .2s; }
+  .lfoot { color: var(--foot); font-size: 13px; text-align: center; max-width: 560px; }
   .mockbar { position: fixed; left: 12px; bottom: 10px; z-index: 2; font: 11px "IBM Plex Mono", monospace; color: #565d73; display: flex; gap: 12px; align-items: center; }
   .mockbar label { cursor: pointer; display: flex; gap: 5px; align-items: center; }
   @media (max-height: 640px) { .mockbar { display: none; } .screen { gap: 18px; } }
@@ -100,6 +124,16 @@
   </div>
 </div>
 
+<div class="loader" id="loader" aria-live="polite">
+  <div class="head">
+    <div class="mark" id="lmark">Starting</div>
+    <h1 id="ltitle"></h1>
+  </div>
+  <div class="lpanel" id="lpanel"></div>
+  <div class="lbar"><i id="lbar"></i></div>
+  <div class="lfoot" id="lfoot"></div>
+</div>
+
 <div class="started" id="started">
   <div class="big" id="bigpic"></div>
   <h2 id="startedTitle" style="font-weight:500"></h2>
@@ -110,14 +144,18 @@
 <div class="mockbar">
   <span>mockup:</span>
   <label><input type="checkbox" id="third"> show how a third desktop would appear</label>
+  <label><input type="checkbox" id="fail"> a startup application fails</label>
+  <label><input type="checkbox" id="slowly"> one is slow</label>
 </div>
 
 <script>
 // What /Kosmos/Desktops would hold. Each card is one .desktop file:
 // its title, its line and its picture. Nothing here knows about Astra or Pewter by name.
 const DESKTOPS = [
-  { name: "astra", title: "Astra", says: "The Deskbar, the dock and the launcher pad. Kosmos as it is.", pic: astraPic },
-  { name: "pewter", title: "Pewter", says: "One menu bar for everything, in Platinum. Mac OS 9.2's manner, made for 2026.", pic: pewterPic },
+  { name: "astra", title: "Astra", says: "The Deskbar, the dock and the launcher pad. Kosmos as it is.", pic: astraPic,
+    shell: [["notifications", "Notifications", "the banners, and the day's list", 14], ["desktop", "Desktop", "Tracker, drawing your files behind everything", 190], ["deskbar", "Deskbar", "the bar: the menu, what is running, the indicators", 120]] },
+  { name: "pewter", title: "Pewter", says: "One menu bar for everything, in Platinum. Mac OS 9.2's manner, made for 2026.", pic: pewterPic,
+    shell: [["notifications", "Notifications", "the banners, and the day's list", 14], ["pewterdesk", "Desktop", "Tracker in 9.2's arrangement, spatial folders", 210], ["menubar", "Menu bar", "the Kosmos menu, the menus in front, the clock", 95], ["controlstrip", "Control Strip", "volume, the screen, the network, the modes", 60]] },
 ];
 const THIRD = { name: "next", title: "A third", says: "Another file in /Kosmos/Desktops, and the programs it names.", later: true };
 
@@ -164,15 +202,67 @@ function render() {
   });
 }
 
+// What opens with every desktop: the Startup page's ticks (startup.lua), the same on both.
+const STARTUP = [["tracker", "Tracker", "a window on /Home", 160], ["procs", "Processes", "what is running", 110], ["logview", "Log View", "what the machine said", 130]];
+
 function start() {
   const d = list()[sel];
   if (!d || d.later) return;
   last = d.name;
   try { localStorage.setItem("kosmos-desktop", last); } catch (e) {}
   document.getElementById("chooser").classList.add("gone");
+  load(d);
+}
+
+// The loader. In Kosmos this is the chooser itself, kept over the screen
+// after the choice and told by the window manager how each launch goes.
+function load(d) {
+  const L = document.getElementById("loader");
+  document.getElementById("ltitle").textContent = d.title;
+  const rows = [...d.shell.map(r => ({ g: "The desktop", r })), ...STARTUP.map(r => ({ g: "Opening with it", r }))];
+  const fail = document.getElementById("fail").checked, slowly = document.getElementById("slowly").checked;
+  let html = "", g = "";
+  rows.forEach((x, i) => {
+    if (x.g !== g) { g = x.g; html += `<div class="lgroup">${g}</div>`; }
+    html += `<div class="lrow wait" id="lr${i}"><span class="ic">${x.r[1][0]}</span><div><b>${x.r[1]}</b><small>${x.r[2]}</small></div><span class="st">waiting</span><span class="ms"></span></div>`;
+  });
+  document.getElementById("lpanel").innerHTML = html;
+  document.getElementById("lfoot").textContent = "Each piece is ready when its first window is drawn. Slowed here so it can be read.";
+  setTimeout(() => L.classList.add("on"), 250);
+  let i = 0;
+  const bar = document.getElementById("lbar");
+  const next = () => {
+    if (i >= rows.length) {
+      document.getElementById("lmark").textContent = "Ready";
+      setTimeout(() => { L.classList.remove("on"); shown(d); }, 700);
+      return;
+    }
+    const el = document.getElementById("lr" + i), x = rows[i];
+    el.className = "lrow run"; el.querySelector(".st").textContent = "starting";
+    const isFail = fail && x.r[0] === "procs", isSlow = slowly && x.r[0] === "logview";
+    let ms = Math.round(x.r[3] * (0.85 + Math.random() * 0.3));
+    if (isSlow) ms = 5000;
+    const shownMs = isSlow ? 1900 : Math.min(ms, 600) * 2.2;
+    if (isSlow) setTimeout(() => { el.querySelector(".st").textContent = "still starting"; }, 1000);
+    setTimeout(() => {
+      if (isFail) { el.className = "lrow bad"; el.querySelector(".st").textContent = "did not start"; el.querySelector("small").textContent = "no such program: /Kosmos/Apps/procs.lua"; }
+      else if (isSlow) { el.className = "lrow slow"; el.querySelector(".st").textContent = "left starting"; el.querySelector("small").textContent = "the desktop does not wait for it; it opens when it is ready"; }
+      else { el.className = "lrow ok"; el.querySelector(".st").textContent = "ready"; }
+      el.querySelector(".ms").textContent = isFail ? "" : isSlow ? "> 1.5 s" : ms + " ms";
+      i++; bar.style.width = (100 * i / rows.length) + "%";
+      if (isFail || isSlow) document.getElementById("lfoot").textContent = isFail ? "One did not start. The desktop opens anyway, and the log says why." : "One is slow. The desktop opens without it.";
+      next();
+    }, shownMs);
+  };
+  document.getElementById("lmark").textContent = "Starting";
+  bar.style.width = "0";
+  setTimeout(next, 500);
+}
+
+function shown(d) {
   const s = document.getElementById("started");
   document.getElementById("bigpic").innerHTML = d.pic().replace('class="pic', 'style="position:absolute;inset:0;height:auto;transform:scale(2.4);transform-origin:0 0;width:41.6%" class="pic');
-  document.getElementById("startedTitle").textContent = `${d.title} is starting`;
+  document.getElementById("startedTitle").textContent = `${d.title} is running`;
   setTimeout(() => s.classList.add("on"), 300);
 }
 
