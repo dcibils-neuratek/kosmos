@@ -135,6 +135,25 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--a-line)
 pre.term { margin: 0; padding: 14px 18px; font: 12.5px/1.6 var(--mono); color: #d7dde8; background: #11141b; overflow-x: auto; }
 pre.term .p { color: #82aaff; }
 pre.term .d { color: #6b7486; }
+.code-win { width: 100%; max-width: 1080px; }
+.cw { display: grid; grid-template-columns: 1fr 1fr; min-height: 470px; }
+.cw .left { border-right: 1px solid var(--a-line); display: flex; flex-direction: column; min-width: 0; }
+.cw .right { display: flex; flex-direction: column; min-width: 0; }
+.proj { padding: 8px 14px; border-bottom: 1px solid var(--a-line); color: var(--a-dim); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+.proj code { color: var(--a-ink); }
+.diffhead { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--a-line); background: var(--a-raised); }
+.diffhead .f { font-family: var(--mono); font-size: 12.5px; flex: 1; }
+.diffhead .n { color: var(--a-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+pre.diff { margin: 0; padding: 10px 0; font: 12.5px/1.6 var(--mono); color: #c9d1dd; background: #151922; overflow-x: auto; flex: 1; }
+pre.diff span { display: block; padding: 0 14px; white-space: pre; }
+pre.diff .ln { color: #5d6678; }
+pre.diff .add { background: rgba(63,185,80,.14); color: #b9f0c2; }
+pre.diff .del { background: rgba(229,72,77,.14); color: #ffc3c5; }
+pre.diff .hunk { color: #82aaff; }
+.runbox { border-top: 1px solid var(--a-line); padding: 10px 14px; background: var(--a-sunk); }
+.runbox .cmd { font: 12.5px var(--mono); color: #d7dde8; margin: 4px 0 8px; }
+.runbox .bt { display: flex; gap: 8px; justify-content: flex-end; }
+.tool { font: 11.5px var(--mono); color: var(--a-faint); border-left: 2px solid var(--a-line); padding-left: 8px; margin-top: 6px; }
 .tag { display: inline-block; font-size: 11px; border: 1px solid var(--rule); color: var(--muted); border-radius: 999px; padding: 0 8px; margin-left: 6px; vertical-align: 3px; font-family: var(--body); font-weight: 500; }
 </style>
 </head>
@@ -277,6 +296,33 @@ pre.term .d { color: #6b7486; }
   </div>
   </div>
   <p class="cap">Everything Xavier does is said as the Automations step it would run, controls named as a person sees them, and shown before it happens. So what Xavier can do is exactly what a person could automate, and nothing it does is hidden. Sending is a second step and a second yes. This is a later version; version 1 answers questions and does nothing else.</p>
+
+  <h2 id="x11">Light coding: a change, shown before it is made <span class="tag">X11</span></h2>
+  <div class="win code-win">
+    <div class="head"><div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div><span class="t">Xavier</span><span class="crumb">&middot; in the IDE, on Weather</span><span class="model">qwen2.5-coder-3b &middot; Q4_0 &middot; 32K</span></div>
+    <div class="cw">
+      <div class="left">
+        <div class="proj">Reaches <code>/Home/Projects/Weather</code> and nothing else</div>
+        <div class="talk" style="padding:14px 18px">
+          <div class="you">The forecast shows yesterday's temperatures after midnight. Can you fix it and run the tests?</div>
+          <div class="xa"><div class="av">X</div><div class="say">I read <code>forecast.lua</code> and <code>test_forecast.lua</code>. The day is worked out from the time the forecast was fetched, not the time now, so a forecast fetched before midnight still says "today" after it. I would compare the day against <code>clock.now()</code> instead, and add a test for a fetch at 23:50 read at 00:10.
+            <div class="tool">read forecast.lua &middot; 212 lines</div>
+            <div class="tool">read test_forecast.lua &middot; 88 lines</div>
+            <div class="note">2 files changed, waiting for you &middot; 1,940 tokens read, 310 written</div></div></div>
+        </div>
+        <div class="box"><span class="ph">Ask about this project&hellip;</span><span class="mic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5"/><path d="M3 8a5 5 0 0 0 10 0M8 13v2"/></svg></span></div>
+      </div>
+      <div class="right">
+        <div class="diffhead"><span class="f">forecast.lua</span><span class="n">1 of 2 &middot; +2 &minus;1</span><span class="btn">Refuse</span><span class="btn primary">Accept</span></div>
+<pre class="diff"><span class="hunk">@@ 41,9 @@ local function day_of(entry)</span><span class="ln"> 41  local function label(entry)</span><span class="ln"> 42    local day = day_of(entry.time)</span><span class="del">-43    local today = day_of(forecast.fetched)</span><span class="add">+43    -- "today" is today now, not on the day it was fetched</span><span class="add">+44    local today = day_of(clock.now())</span><span class="ln"> 45    if day == today then return "Today" end</span><span class="ln"> 46    if day == today + 1 then return "Tomorrow" end</span><span class="ln"> 47    return names[weekday(entry.time)]</span><span class="ln"> 48  end</span></pre>
+        <div class="diffhead"><span class="f">test_forecast.lua</span><span class="n">2 of 2 &middot; +11</span><span class="btn">Refuse</span><span class="btn">Accept</span></div>
+        <div class="runbox"><b>Then run the tests?</b><div class="cmd">run test_forecast.lua</div>
+          <div class="bt"><span class="btn">Not now</span><span class="btn primary">Run</span></div></div>
+      </div>
+    </div>
+    <div class="foot"><span>Edits written: <b>0</b>, until accepted</span><span>Runs: <b>0</b>, each confirmed</span><span class="sp"></span><span>32K context &middot; 6% used</span></div>
+  </div>
+  <p class="cap">Xavier is opened on a project and reaches that folder and nothing else - a capability, not a promise. It reads the files it needs and says so under its answer. A change is a diff, file by file, with Accept and Refuse on each; nothing is written that a person has not accepted. Running a program or a test is a step of its own and asked first; its output is read back, and a failure becomes the next proposal. The model is one trained for code and for calling tools, with room to hold a file - Qwen2.5-Coder, not phi-2. The project, the bug and the edit are written to show the window.</p>
 
   <h2>The same, at the prompt</h2>
   <div class="scroller">

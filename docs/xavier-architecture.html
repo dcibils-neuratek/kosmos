@@ -1,0 +1,148 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Xavier and what it stands on: the window and `xavier` over `llm.lua`,
+  the LLM server holding the model, the LLM Kit doing the arithmetic, and
+  the later steps dashed. The busiest path - a word of the answer - drawn
+  through it (A), and the window (W). Drawn on 8 November 2026, after X3;
+  `docs/xavier.md` is the argument and `docs/xavier.html` the window.
+
+  Rendered to docs/xavier-architecture.png by headless Chrome at twice its
+  size, as docs/bluetooth-architecture.png is.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Xavier architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+</style>
+</head>
+<body>
+<h1>Xavier - what it stands on</h1>
+<p class="sub">Xavier holds no model: it asks one server, <code>/Running/llm</code>, through one door, and reads the answer out of the region the server hands back. The model is loaded once for every application that asks - Write, Mail and the IDE after Xavier. The LLM Kit does the arithmetic in C; the window is Lua and no weight passes through it. A word of the answer (A) never travels in a message; the window (W) waits on the server and draws what arrived.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new, built (X1-X3)</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>new, a later step</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">A</span><span>a word of the answer</span><span class="f">W</span><span>the window</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications and programs</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new later-box"><span class="tag later">X4</span><b>Xavier - the window</b><p>the conversation, the words as they arrive, Stop, the models; asking aloud (X8-X9); a step shown and confirmed before it runs (X10); a project's files (X11) <span class="f">W1</span></p></div>
+        <div class="box new"><span class="tag">X3</span><b><code>xavier</code> at the prompt</b><p>phi-2's <code>Instruct:</code> format, the answer printed as it comes</p></div>
+        <div class="box later-box"><b>Write, Mail, the IDE</b><p>"rewrite this", "draft a reply": the same door, later</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in the caller's process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">X3</span><b><code>llm.lua</code></b><p>the one door from Lua: <code>load</code>, <code>ask</code>, an answer's <code>wait</code> and <code>stop</code>, <code>stats</code> - in <code>llmproto.h</code>'s shapes <span class="f">W2</span></p></div>
+        <div class="box"><b>ui.lua</b><p>the window, the list, the text</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr">
+        <div class="box new"><span class="tag">X3</span><b>the LLM server - <code>/Running/llm</code>, <code>llm.c</code></b><p>one model and one attention cache for every caller. LOAD is held while the file comes in; ASK is answered at once with the answer's region; a token a turn between messages; WAIT held until the answer moves <span class="f">A1</span> <span class="f">W3</span></p></div>
+        <div class="box new"><span class="tag">X3</span><b>diskfs's fourth door</b><p>reaches <code>/Home/Models</code> and nothing else; refuses in words when shut</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">X8</span><b>the audio server - capture</b><p>a ring beside the playback ring; HDA's microphone</p></div>
+        <div class="box later-box"><span class="tag later">X10</span><b>Automations, the window manager's remote door</b><p>the system's own doors, controls by name, the screen and keys last</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in the server's process)</h2>
+      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
+        <div class="box new"><span class="tag">X1-X2</span><b>the LLM Kit - <code>llm_core.c</code>, <code>llm_dot.c</code></b><p>GGUF in place, GPT-2's BPE, phi-2's forward pass; Q8_0 and Q4_0 rows in vector types, held to the scalar ones to the bit</p></div>
+        <div class="box later-box"><span class="tag later">X7</span><b>the Compute Kit</b><p>the prompt as a matrix product on the EUs; the Mac Pro's GCN cards</p></div>
+        <div class="box later-box"><span class="tag later">X9</span><b>the Speech Kit</b><p>Whisper on the LLM Kit; eSpeak NG out</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>regions</b><p>the model's file; the answer, append only (<code>llmring.h</code>) <span class="f">A2</span></p></div>
+        <div class="box"><b>IPC, held replies</b><p>LOAD and WAIT answered later; every request a declared shape <span class="f">A3</span></p></div>
+        <div class="box later-box"><span class="tag later">X2b, X5</span><b>xsave, threads</b><p>AVX2's registers saved; one answer across every core</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>A - a word of the answer</h3>
+      <ol><li><b>A1</b> The server steps the model one token - every weight read once, 1.6 GB at 4 bits - and takes the likeliest.</li>
+          <li><b>A2</b> Its text is appended to the answer's region and <code>written</code> published after a barrier. Nothing is copied into a message.</li>
+          <li><b>A3</b> A held WAIT is answered: only how far it got.</li></ol></div>
+    <div class="card"><h3>W - the window</h3>
+      <ol><li><b>W1</b> A question is one ASK: the text, the most tokens, stop at a blank line.</li>
+          <li><b>W2</b> WAIT, held by the server until there is more; then the new bytes read from the region.</li>
+          <li><b>W3</b> Stop is a message, answered at once.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3>
+      <table>
+        <tr><td>The model</td><td>a region, read 4 MB a turn through the door</td></tr>
+        <tr><td>A question</td><td>one message, up to 1536 bytes</td></tr>
+        <tr><td>The answer</td><td>a region the asker maps; append only</td></tr>
+        <tr><td>"How far"</td><td>WAIT's reply, held until it moved</td></tr>
+      </table></div>
+    <div class="card"><h3>Where the time goes</h3>
+      <table>
+        <tr><td>Writing an answer</td><td>memory: every weight a token; the M700 tops near 20 tokens a second, whatever does the arithmetic</td></tr>
+        <tr><td>Reading the question</td><td>arithmetic: a matrix product, the GPU's work</td></tr>
+      </table></div>
+    <div class="card"><h3>Who else uses what is new</h3>
+      <table>
+        <tr><td>the LLM server and kit</td><td>Write, Mail, the IDE; Whisper's tensors</td></tr>
+        <tr><td>the capture ring</td><td>a recorder, the Camera's sound, a call</td></tr>
+      </table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

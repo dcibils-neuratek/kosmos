@@ -561,7 +561,7 @@ Diego's, at the end of the document. The mockup and the diagram follow
 them.
 
 **A disk door shut is an endpoint nobody answers - found 8 November 2026,
-to fix.** `diskfs` opens a further door (`/Keyring`, `/Home/Cache/Maps`,
+fixed the same day.** `diskfs` opens a further door (`/Keyring`, `/Home/Cache/Maps`,
 `/Home/Models`) only with a token from the entropy source, and on a
 machine with none - QEMU without `virtio-rng` - it says "no entropy for a
 door; it is shut" and leaves the endpoint with nobody receiving on it. The
@@ -571,6 +571,12 @@ built*). A shut door should answer, refusing - its thread receiving and
 replying DISK_ERR_NO_DISK with why - so the keyring, the map's tiles and
 the LLM server each hear no rather than nothing. `design.md` §2's rule:
 nothing waits on a server that will not answer.
+
+**Fixed:** a shut door's thread is started all the same and answers every
+request with DISK_ERR_NO_DISK and the sentence "this door to the disk is
+shut: there was no entropy for its word", which the LLM server hands on as
+its reason. `x86-llm` boots a second time without `virtio-rng` and holds
+both lines to it; its control, the old door, fails it.
 
 **A third desktop in the Solaris desktop's manner - an idea, being felt
 out** - Diego, 7 November 2026: "a desktop that i always loved is the old

@@ -26,7 +26,10 @@ of its forms, Q8_0, Q4_0 and F16, and a program asks `/Running/llm` through
 - **the numbers**: STATS says the model's shape as the file has it, and
   tokens and times for the last answer;
 - **and every region given back**: thirty answers asked and read, and the
-  kernel's count of regions in use where it was before them.
+  kernel's count of regions in use where it was before them;
+- **a door shut answers**: on a second boot with no entropy, where
+  `diskfs` cannot make its doors' words, a load is refused at once in the
+  door's own words. It waited for good until 8 November.
 
 Usage: run_llm.py IMAGE
 """
@@ -163,7 +166,13 @@ def main():
                 .replace("TOKENS", str(TOKENS))
                 .replace('"PARAGRAPH"', '"%s"' % PARAGRAPH.encode().hex()))
 
-    kfs("create", disk, "48", script + ":/Home/llmtest.lua",
+    shut_script = os.path.join(work, "llmshut.lua")
+
+    with open(shut_script, "w") as f:
+        f.write('local r, why = use("/Kosmos/Libraries/llm.lua").load("tiny-phi2.Q4_0.gguf")\n'
+                'print("LLM-SHUT", r == nil, why)\n')
+
+    kfs("create", disk, "48", script + ":/Home/llmtest.lua", shut_script + ":/Home/llmshut.lua",
         *[m + ":/Home/Models/" + os.path.basename(m) for m in models])
 
     os.environ["KOSMOS_DISK"] = disk
@@ -192,6 +201,31 @@ def main():
         guest.close()
 
     said = guest.seen
+
+    # **A door shut** (`roadmap.md`, *A disk door shut*): the machine with
+    # no entropy, where diskfs cannot make its doors' words. A load is
+    # refused in the door's words, at once - it used to wait for good.
+    args, R.X86_ARGS = R.X86_ARGS, []
+    for a in args:
+        if a == "virtio-rng-pci":
+            R.X86_ARGS.pop()            # its "-device"
+        else:
+            R.X86_ARGS.append(a)
+
+    shut = R.Guest(image, 120)
+
+    try:
+        shut.wait_for("kosmos>", "a prompt with no entropy")
+        shut.wait_for("llm: serving /Running/llm", "the LLM server with no entropy")
+        shut.type("run /Home/llmshut.lua")
+        shut.wait_for("LLM-SHUT\t", "an answer from a shut door")
+        time.sleep(0.3)
+        shut._read_available()
+    finally:
+        shut.close()
+        R.X86_ARGS = args
+
+    said_shut = shut.seen
 
     def line(tag):
         m = re.search(r"^" + tag + r"\t(.*?)\r?$", said, re.M)
@@ -256,6 +290,13 @@ def main():
     st = line("LLM-STATS")
     check(st and all(int(x) > 0 for x in st), "STATS gave a time of nothing: %s" % st)
 
+    m = re.search(r"^LLM-SHUT\t(.*?)\r?$", said_shut, re.M)
+    sh = m.group(1).split("\t") if m else None
+    check(sh and sh[0] == "true" and "door to the disk is shut" in sh[1],
+          "with no entropy, a load was not refused in the shut door's words: %s" % sh)
+    check("diskfs: no entropy for a door; it is shut, and refuses" in said_shut,
+          "with no entropy, diskfs did not say its doors are shut and refusing")
+
     for f in fails:
         print("FAIL: " + f)
 
@@ -264,7 +305,8 @@ def main():
         return 1
 
     print("PASS: %d checks - %d answers from /Running/llm the kit's own, byte for byte, in %s; "
-          "refusals, a model kept, a stop, a paragraph and every region given back" %
+          "refusals, a model kept, a stop, a paragraph, every region given back, and a "
+          "shut door refusing" %
           (checks, answers, ", ".join(MODELS)))
     return 0
 

@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.319, not pushed; Xavier X3: /Running/llm answering under QEMU)
+Last updated: 2026-11-08 (0.11.320, not pushed; phi-2 answers in Kosmos; memory above 4 GB reached)
 
 ---
 
@@ -45,11 +45,15 @@ is the client and `xavier` at the prompt its first user. `x86-llm`
 (`tools/run_llm.py`, 33 s) holds fifteen answers from the server to the
 kit's own on the Mac (`tools/llm_answer.c`), byte for byte, on the tiny
 phi-2 (`tools/llm_tiny.py`, `make llm-tiny`; it SKIPs without them, as
-`test_llm` does). **Next**: phi-2 itself asked - on the M700 when it is
-on, where `/Home/Models` needs the model on a `/Home` larger than the
-stick's 512 MB, or under QEMU on a disk of its own; the tok/s there is
-X3's first real number. Then X2's measurement on the same machine. A shut
-disk door hangs whoever asks it (roadmap, *A disk door shut*).
+`test_llm` does). **phi-2 itself answered under QEMU** - "The capital of
+France is Paris.", 0.11 tok/s under TCG - once the kernel could reach
+memory above 4 GB (`testing.md` 18.714: the physical window stopped at the
+kernel's own range; `x86-kernel` boots 5 GB now). A shut disk door answers,
+refusing (`x86-llm`'s second boot, 47 checks). The light-coding window is
+drawn (`xavier.html`, X11). **Next**: phi-2 on a real core - the M700 when
+it is on, with the model on a `/Home` larger than the stick's 512 MB - for
+X3's first real tok/s, then X2's measurement there; X4's window is drawn
+and waits for its code.
 
 ---
 

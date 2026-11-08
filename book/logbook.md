@@ -1539,3 +1539,33 @@ roadmap to answer "no" instead of nothing.
 **Measured.** Under QEMU, which is not a real speed: the tiny model loads
 in 37 ms and answers 86 words a second. phi-2 itself is next, on the M700
 when it is on.
+
+## 8 November - phi-2 answers inside Kosmos, and memory above four gigabytes
+
+**In short.** Xavier asked the real phi-2 a question inside Kosmos for the
+first time, and it answered: "The capital of France is Paris." The first
+try crashed the whole machine instead, and finding out why fixed a fault
+any PC with more than about three gigabytes would have met: the kernel
+could not reach memory above four gigabytes, although it handed it out.
+
+**What happened.** The model is 1.5 GB, held in one region. A PC's memory
+is not one block - devices take a hole below four gigabytes and the rest
+of the RAM sits above it - and the page allocator managed both pieces. But
+the kernel's window onto physical memory, the one it writes pages through,
+was drawn only over the first piece. The first page anyone asked for above
+the hole was a page the kernel could not touch, and clearing it was a
+crash. Nothing had asked for that much memory at once before.
+
+**Why no test caught it.** There was a test for exactly this, and it was
+right; every test machine had 512 MB, which is one piece. The kernel's
+suite now boots with 5 GB, so the hole and the memory above it are there
+every run - and with the old window that suite crashes on the same line.
+
+**What a person notices.** Nothing, until an application wants a lot of
+memory - a model, a large picture, a game - on a machine with a lot of it.
+Then it works rather than stopping the computer.
+
+**Measured.** Under QEMU's emulated cores: the model in in 1.8 s, the
+12-token question read in 109 s, the answer written at 0.11 tokens a
+second. Those are an emulator's numbers; a real core is the next question
+(`docs/xavier.md`).

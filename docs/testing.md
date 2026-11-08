@@ -29228,3 +29228,36 @@ Timeout. Both boots failed two checks each: "bt scan did not find Pixel
 Buds", and the list's third row "(no name yet)". Restored and rebuilt.
 
 Full gate: 98 suites in 9:30.
+
+## 18.714 Memory above four gigabytes, which the kernel could not reach
+
+**Found asking phi-2 a question in a 6 GB QEMU guest** (8 November 2026,
+`docs/xavier.md` X3). `xavier` said "loading phi-2.Q4_0.gguf..." and the
+kernel panicked a few seconds later, in `memset`:
+
+```
+PANIC: page fault
+  cr2      0xffff800100000000
+  not present, write, kernel
+```
+
+That address is the physical window (`PHYS_WINDOW_BASE`) plus exactly four
+gigabytes. q35 puts 2 GB of a large guest below the PCI hole and the rest
+above 4 GB, so memory comes in two ranges. `pmm` manages every range
+`hal_ram_ranges` reports (5zd-d step four), but `mmu_init` mapped the
+window only to the end of `hal_ram_range` - the range the kernel was
+loaded into. The allocator's first page above the hole was a page nothing
+mapped, and zeroing it was the panic. The LLM server's model region,
+1.6 GB in one piece, was the first thing to ask for that many pages.
+
+**Fixed**: the window runs to the end of the highest range.
+
+**Why no test saw it**: `test_phys_window_reaches_the_top_of_ram` already
+wrote the last page of the *highest* range, and said in its comment that
+this was the memory the window existed for - but every suite boots 512 MB,
+which on q35 is one range. The test was right and had never met the case.
+`x86-kernel` now boots 5 GB (2 below the hole, 3 above it); QEMU backs only
+what the guest touches.
+
+**Control**: the old window, the same 5 GB boot: the suite panics writing
+`0xffff8001bffff000`, the top page of RAM, in that test. Restored, 208/208.

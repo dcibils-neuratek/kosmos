@@ -289,7 +289,16 @@ static uint32_t load_begin(const char *name)
     e = diskask(&disk, DISK_OP_GETATTR, path, 0, 0, 0, -1, NULL, 0);
 
     if (e != DISK_OK || diskask_said(&disk)->node.kind != DISK_KIND_FILE) {
-        snprintf(model.why, sizeof model.why, "no %s in %s", name, MODELS_ROOT);
+        const struct disk_reply *rp = diskask_said(&disk);
+
+        /* The disk's own words when it has some - a door shut, say - and
+         * otherwise the file is simply not there. */
+        if (e == DISK_ERR_NO_DISK && rp->length > 0 && rp->length < DISK_DATA_MAX) {
+            put(model.why, sizeof model.why, rp->u.data, rp->length);
+        } else {
+            snprintf(model.why, sizeof model.why, "no %s in %s", name, MODELS_ROOT);
+        }
+
         return LLM_ERR_NO_FILE;
     }
 

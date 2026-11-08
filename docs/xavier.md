@@ -13,8 +13,9 @@ available GPU". And on the engine: "we can use other llm engine if needed",
 **A plan, written before anything is built, for Diego to decide.** Its
 feature set and architecture are here. The mockup is `xavier.html`, drawn
 on 8 November when Diego asked to see it ("I need to see the mockup of
-the Xavier app"); the diagram (`xavier-architecture.png`) follows the
-decisions still open at the end.
+the Xavier app"), and approved ("mockup is great"); the diagram is
+`xavier-architecture.png`, drawn from `xavier-architecture.html` after X3,
+with the steps still to come dashed.
 
 ## What a person can do
 
@@ -84,6 +85,10 @@ also key that we can do some light coding with Xavier like Claude code":
   Pro, and is trained to call tools. It is a second architecture (Qwen2:
   RMSNorm, SwiGLU, grouped-query attention), so the LLM Kit grows a
   second forward pass beside phi-2's, held to llama.cpp the same way.
+
+`xavier.html`, *Light coding*, draws it: the conversation beside the
+change, each file's diff with Accept and Refuse, and the run asked for on
+its own.
 
 **Xavier uses the computer** - Diego, 8 November 2026: "It's key that
 Xavier can use the computer to do tasks so kosmos needs to expose all
@@ -481,10 +486,24 @@ not cut short, and every answer's region given back over thirty answers.
 The control - the prompt's first token skipped and no region given back -
 fails fourteen checks.
 
-**What it does not show yet.** The tiny model's random weights never
-write a blank line, so the stop at one is seen only in what phi-2 answers;
-and phi-2 itself has not been asked under QEMU, where a token of it is
-about a minute.
+**phi-2 itself, asked in Kosmos** (8 November 2026, a 6 GB QEMU guest
+on four emulated cores): `xavier --tokens 10 What is the capital of
+France?` answered **"The capital of France is Paris."** - the same words
+llama.cpp gives - and ended at eight tokens of the ten it was allowed, at
+the end of its line. Whether that end was the blank line or phi-2's own
+end-of-text is not something the run says, so the stop at a blank line is
+still not proved by a model that writes one; the tiny model's random
+weights never do.
+
+| under QEMU (TCG), phi-2 Q4_0 | |
+|---|---|
+| a load, 1496 MB | 1.8 s |
+| the prompt, 12 tokens | 109 s |
+| answering | 0.11 tokens a second |
+
+The first try panicked the kernel: the model's region was the first thing
+to ask for pages above four gigabytes, which the kernel's window into
+physical memory did not reach (`testing.md` 18.714, fixed).
 
 | under QEMU (TCG), the tiny phi-2 Q4_0 | |
 |---|---|
@@ -497,7 +516,7 @@ Those are QEMU's numbers and say nothing of a real core (`CLAUDE.md`).
 **Found on the way.** A diskfs door shut for want of entropy - QEMU with
 no `virtio-rng` - is an endpoint nobody receives on, and a caller waits on
 it for good; the LLM server did, at start, until it was made to ask the
-disk nothing until a model is wanted; the door is in `roadmap.md`. And
+disk nothing until a model is wanted, and a shut door now answers, refusing (`roadmap.md`). And
 on one core the shell's prompt comes before the servers init starts after
 it have run at all, so a program typed at once finds no `/Running/llm`;
 the suite waits for the server's line.

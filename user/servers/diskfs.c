@@ -1882,6 +1882,30 @@ static void door_main(unsigned long which)
         }
 
         cap = in[which].cap_plus_one ? (long)in[which].cap_plus_one - 1 : -1;
+
+        /*
+         * **A shut door still answers** (`roadmap.md`, *A disk door shut*):
+         * with no word of its own it may not forward, and a door nobody
+         * received on held its caller for good - the LLM server, at its
+         * first request, on a QEMU with no entropy. So it says no, and why.
+         */
+        if (!d->open) {
+            static const char why[] = "this door to the disk is shut: there was no entropy for its word";
+            struct disk_reply *rp = (struct disk_reply *)(void *)back[which].data;
+
+            memset(&back[which], 0, sizeof back[which]);
+            back[which].length = sizeof *rp;
+            rp->error = DISK_ERR_NO_DISK;
+            rp->length = sizeof why - 1;
+            memcpy(rp->u.data, why, sizeof why - 1);
+
+            if (cap >= 0) {
+                kosmos_cap_drop(cap);
+            }
+
+            (void)kosmos_reply(caller, &back[which]);
+            continue;
+        }
         in[which].tag = d->token;
 
         /* Who is really asking: the main thread will see this thread. */
@@ -1973,12 +1997,17 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
                   == (long)sizeof doors[d].token) {
         }
 
-        if (doors[d].token == 0) {
-            say(console, "diskfs: no entropy for a door; it is shut\n");
-        } else if (kosmos_thread_start(door_main, (unsigned long)d) < 0) {
-            say(console, "diskfs: a door's thread would not start; it is shut\n");
-        } else {
-            doors[d].open = true;
+        /* Open with its word, or shut and saying so: either way a thread
+         * receives on it, so nobody who asks through it waits for good. */
+        doors[d].open = doors[d].token != 0;
+
+        if (!doors[d].open) {
+            say(console, "diskfs: no entropy for a door; it is shut, and refuses what is asked of it\n");
+        }
+
+        if (kosmos_thread_start(door_main, (unsigned long)d) < 0) {
+            doors[d].open = false;
+            say(console, "diskfs: a door's thread would not start; whoever asks through it will wait\n");
         }
     }
 

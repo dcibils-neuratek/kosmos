@@ -103,7 +103,16 @@ X86_ARGS = [
     # the kernel is unbothered by a machine with processors it cannot see.
     #
     "-smp", "4",
-    "-m", "512M",
+    #
+    # Five gigabytes, so memory comes in two ranges. q35 puts 2 GB below
+    # the PCI hole once a guest has more than 2.75, and the rest above four
+    # - which is what a real PC looks like, and what 512 MB never did. The
+    # window into physical memory stopped at the first range for weeks,
+    # because every test machine had only one: phi-2's 1.6 GB load in a
+    # 6 GB guest was the first thing to touch a page above four gigabytes,
+    # and panicked (`testing.md`). QEMU backs only what the guest touches.
+    #
+    "-m", "5G",
     "-nographic",
     # The display, so the framebuffer tests work rather than being skipped.
     "-vga", "none",

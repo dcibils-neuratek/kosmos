@@ -706,9 +706,30 @@ void mmu_init(void)
      * memory the identity map already reaches, which is what makes it
      * checkable before anything depends on it: `tests/tests.c` writes
      * through one name and reads through the other.
+     *
+     * **To the end of the highest range, not of the kernel's.** `pmm`
+     * manages every range `hal_ram_ranges` reports, so the window has to
+     * reach every one of them. It stopped at `ram_end`, the range the
+     * kernel was loaded into; on a PC with more than the piece below the
+     * PCI hole, the allocator's first page above four gigabytes was a page
+     * nothing mapped, and the first write to it was a panic. phi-2, loading
+     * 1.6 GB into a 6 GB QEMU guest, was the first thing to ask for one
+     * (8 November 2026; `testing.md`).
      */
     {
-        uintptr_t blocks = (ram_end + BLOCK_2M - 1) / BLOCK_2M;
+        struct memrange every[PMM_RANGES_MAX];
+        unsigned count = hal_ram_ranges(every, PMM_RANGES_MAX);
+        uintptr_t window_end = ram_end;
+        uintptr_t blocks;
+        unsigned r;
+
+        for (r = 0; r < count; r++) {
+            if (every[r].base + every[r].size > window_end) {
+                window_end = every[r].base + every[r].size;
+            }
+        }
+
+        blocks = (window_end + BLOCK_2M - 1) / BLOCK_2M;
 
         map_blocks_2m(kernel_pml4, PHYS_WINDOW_BASE, 0, blocks,
                       MAP_RW | PTE_NX);
