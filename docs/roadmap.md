@@ -426,6 +426,19 @@ chooser stays over the screen and lists the desktop's pieces and the
 Startup page's applications as each starts, with its state and time; one
 that fails or is slow does not hold the desktop. Part of P1.
 
+**A third desktop in the Solaris desktop's manner - an idea, being felt
+out** - Diego, 7 November 2026: "a desktop that i always loved is the old
+solaris desktop from SUN", "can we do a mockup of a 3rd desktop that
+replicates the solaris experience?". Drawn the same day as
+`docs/corona.html`, playable, after CDE as Solaris shipped it: the Front
+Panel with its subpanels, four workspaces with a backdrop each and names
+that can be changed, Motif windows with the window menu, minimised windows
+as icons, the Workspace Menu, the Style Manager's palettes, and Kosmos
+showing through - a Performance Meter with every processor, a Terminal
+whose `ps` says each program has its own address space. "Corona" is a
+working name. It is the third desktop file `docs/pewter.md` plans for;
+nothing of it is agreed or coded.
+
 **Maps, finished, and dragging made smooth** - Diego, 10 October 2026:
 "the maps app needs to be finished, also its slow to drag the map around, it
 might need some optimizations on drawing and else"; its log says what each

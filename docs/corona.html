@@ -1,0 +1,981 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  A third desktop, in the manner of the Solaris desktop of 1997-2004 (CDE):
+  the Front Panel, four workspaces, Motif windows with their window menu,
+  subpanels, the Style Manager. Diego, 7 November 2026: "a desktop that i
+  always loved is the old solaris desktop from SUN", "can we do a mockup of
+  a 3rd desktop that replicates the solaris experience?". Playable, drawn
+  before anything is agreed; "Corona" is a working name. Every picture here
+  is drawn fresh, in CSS and SVG.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kosmos in Corona</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #aeb2c3; --top: #e1e3ec; --bot: #5f6478; --field: #c9ccd8; --ink: #000;
+    --act: #a65d82; --act-top: #d39cb8; --act-bot: #63304b; --act-ink: #fff;
+    --inact: #aeb2c3; --sel: #6c7fa8; --sel-ink: #fff;
+    --panel: #aeb2c3; --sys: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", Menlo, monospace;
+    --ws: #3f7d86;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { font: 12px/1.35 var(--sys); color: var(--ink); background: var(--ws); user-select: none; cursor: default; }
+  body.busy, body.busy * { cursor: wait !important; }
+  #desk { position: fixed; inset: 0; }
+  /* Motif bevels: two pixels, light above and left, dark below and right */
+  .rz { box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); background: var(--bg); }
+  .sk { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); background: var(--field); }
+  .rz1 { box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  .sk1 { box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); }
+  button { font: inherit; color: inherit; }
+
+  /* ---------- windows ---------- */
+  .win { position: absolute; padding: 5px; background: var(--inact); box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot), 0 0 0 1px #000; display: flex; flex-direction: column; min-width: 180px; min-height: 90px; }
+  .win.act { background: var(--act); box-shadow: inset 2px 2px 0 var(--act-top), inset -2px -2px 0 var(--act-bot), 0 0 0 1px #000; }
+  .tb { display: flex; height: 24px; gap: 0; flex: none; }
+  .tb .b { width: 24px; height: 24px; border: 0; padding: 0; background: inherit; box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); display: flex; align-items: center; justify-content: center; }
+  .win.act .tb .b, .win.act .tb .t { box-shadow: inset 2px 2px 0 var(--act-top), inset -2px -2px 0 var(--act-bot); }
+  .tb .b:active { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top) !important; }
+  .tb .t { flex: 1; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12.5px; box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; }
+  .win.act .tb .t { color: var(--act-ink); }
+  .ic-menu { width: 13px; height: 4px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  .ic-min { width: 5px; height: 5px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  .ic-max { width: 13px; height: 13px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  .win.act .ic-menu, .win.act .ic-min, .win.act .ic-max { box-shadow: inset 1px 1px 0 var(--act-top), inset -1px -1px 0 var(--act-bot); }
+  .client { flex: 1; display: flex; flex-direction: column; margin-top: 3px; background: var(--bg); box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); padding: 1px; min-height: 0; }
+  .mbar { display: flex; gap: 2px; padding: 3px 4px; flex: none; box-shadow: inset 0 -1px 0 var(--bot), inset 0 1px 0 var(--top); }
+  .mbar .m { padding: 2px 8px; }
+  .mbar .m.open { box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); }
+  .mbar .help { margin-left: auto; }
+  u { text-decoration: underline; text-underline-offset: 1px; }
+  .body { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+  .grip { position: absolute; }
+  .g-n, .g-s { left: 18px; right: 18px; height: 6px; cursor: ns-resize; }
+  .g-n { top: 0; } .g-s { bottom: 0; }
+  .g-e, .g-w { top: 18px; bottom: 18px; width: 6px; cursor: ew-resize; }
+  .g-e { right: 0; } .g-w { left: 0; }
+  .g-ne, .g-nw, .g-se, .g-sw { width: 18px; height: 18px; }
+  .g-nw { left: 0; top: 0; cursor: nwse-resize; } .g-se { right: 0; bottom: 0; cursor: nwse-resize; }
+  .g-ne { right: 0; top: 0; cursor: nesw-resize; } .g-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+  .outline { position: absolute; border: 2px solid #fff; mix-blend-mode: difference; pointer-events: none; z-index: 900000; }
+
+  /* ---------- menus ---------- */
+  .menu { position: fixed; z-index: 1000000; background: var(--bg); box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot), 1px 1px 0 #000; padding: 3px; min-width: 150px; }
+  .menu .mt { text-align: center; font-weight: 600; padding: 3px 8px 4px; }
+  .menu .tear { height: 7px; margin: 1px 3px 3px; background: repeating-linear-gradient(90deg, var(--bot) 0 4px, transparent 4px 7px); background-size: 100% 1px; background-repeat: repeat-x; background-position: 0 3px; }
+  .menu .it { display: flex; gap: 16px; padding: 3px 10px 3px 18px; position: relative; white-space: nowrap; }
+  .menu .it .k { margin-left: auto; color: #222; }
+  .menu .it.hot { box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); }
+  .menu .it.dis { color: #6d7185; }
+  .menu .it.sub::after { content: "▸"; margin-left: auto; padding-left: 14px; }
+  .menu .it.chk::before { content: ""; position: absolute; left: 5px; top: 7px; width: 7px; height: 7px; box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); }
+  .menu .it.chk.on::before { background: var(--act); }
+  .menu .sep { height: 2px; margin: 3px 2px; box-shadow: inset 0 1px 0 var(--bot), inset 0 -1px 0 var(--top); }
+
+  /* ---------- the Front Panel ---------- */
+  #panel { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; align-items: stretch; z-index: 500000; padding: 4px; box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot), 0 0 0 1px #000; background: var(--panel); max-width: calc(100vw - 8px); }
+  #panel .hdl { width: 16px; display: flex; flex-direction: column; gap: 3px; }
+  #panel .hdl .hb { height: 16px; display: flex; align-items: center; justify-content: center; }
+  #panel .hdl .bar { flex: 1; background: repeating-linear-gradient(90deg, var(--top) 0 2px, var(--bot) 2px 4px); margin: 0 4px; opacity: .7; }
+  .fp { display: flex; flex-direction: column; width: 66px; margin: 0 1px; }
+  .fp .arr { height: 13px; display: flex; align-items: center; justify-content: center; }
+  .fp .arr svg { width: 11px; height: 8px; }
+  .fp .arr.none { visibility: hidden; }
+  .fp .cv { height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  .fp .cv:active, .fp .arr:active { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .fp .cv svg { width: 40px; height: 40px; }
+  .fp .cv small { font-size: 9.5px; line-height: 1; }
+  .sw { display: grid; grid-template-columns: 40px 1fr 40px; gap: 4px; padding: 4px; margin: 0 4px; width: 250px; }
+  .sw .side { display: flex; flex-direction: column; gap: 4px; }
+  .sw .side .cv { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .sw .side .cv:active, .wsb:active { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .busy-l { height: 10px; margin: 0 6px; box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); background: #4a3b2a; }
+  .busy-l.on { background: #ffcf4a; }
+  .wsg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .wsb { display: flex; align-items: center; justify-content: center; font-weight: 600; height: 30px; padding: 0 4px; overflow: hidden; white-space: nowrap; }
+  .wsb.cur { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); background: var(--field); }
+  .wsb input { width: 100%; font: inherit; border: 0; background: #fff; text-align: center; }
+  .sub { position: fixed; z-index: 600000; background: var(--bg); box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot), 0 0 0 1px #000; padding: 4px; width: 200px; }
+  .sub .stb { display: flex; height: 20px; margin-bottom: 3px; }
+  .sub .stb .t { flex: 1; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .sub .stb .b { width: 20px; display: flex; align-items: center; justify-content: center; }
+  .sub .inst { margin: 2px 2px 4px; padding: 6px; text-align: center; color: #333; font-size: 11px; }
+  .sub .row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; }
+  .sub .row:hover { box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); }
+  .sub .row svg { width: 26px; height: 26px; flex: none; }
+
+  /* ---------- minimised windows: icons on the workspace ---------- */
+  .dicon { position: absolute; width: 76px; display: flex; flex-direction: column; align-items: center; z-index: 2; }
+  .dicon .p { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; }
+  .dicon .p svg { width: 40px; height: 40px; }
+  .dicon .l { margin-top: 1px; padding: 1px 4px; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .dicon.sel .l { background: var(--act); color: #fff; }
+
+  /* ---------- the applications ---------- */
+  .term { position: absolute; inset: 2px; background: #fff; color: #000; font: 12.5px/1.35 var(--mono); padding: 4px 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; user-select: text; cursor: text; }
+  .term .cur { background: #000; color: #fff; }
+  .fm-path { display: flex; gap: 6px; align-items: center; padding: 4px 6px; flex: none; }
+  .fm-path .f { flex: 1; padding: 3px 6px; font-family: var(--mono); font-size: 11.5px; }
+  .fm-grid { position: absolute; inset: 0; margin: 2px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px 4px; padding: 8px; overflow: auto; background: var(--field); box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .fi { width: 84px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px; }
+  .fi svg { width: 34px; height: 34px; }
+  .fi span { text-align: center; font-size: 11px; padding: 0 3px; word-break: break-word; }
+  .fi.sel span { background: var(--sel); color: var(--sel-ink); }
+  .fm-st { padding: 3px 8px; flex: none; font-size: 11px; }
+  .pad { position: absolute; inset: 2px; border: 0; resize: none; outline: none; padding: 6px 8px; font: 12.5px/1.4 var(--mono); background: #fff; color: #000; box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); user-select: text; }
+  .cal { position: absolute; inset: 0; display: grid; grid-template-columns: 1.3fr 1fr; gap: 6px; padding: 6px; }
+  .cal .mo { display: flex; flex-direction: column; }
+  .cal .hd { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px; font-weight: 700; font-size: 13px; }
+  .cal .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cal .dn { text-align: center; font-weight: 600; font-size: 11px; padding: 2px; }
+  .cal .d { padding: 3px 4px; font-size: 11.5px; min-height: 26px; position: relative; }
+  .cal .d.out { color: #6d7185; }
+  .cal .d.today { background: var(--act); color: #fff; }
+  .cal .d.pick { outline: 2px solid #000; outline-offset: -2px; }
+  .cal .d i { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; background: #000; }
+  .cal .d.today i { background: #fff; }
+  .cal .ap { padding: 8px; overflow: auto; }
+  .cal .ap h4 { margin: 0 0 6px; font-size: 13px; }
+  .cal .ap .e { display: flex; gap: 8px; padding: 3px 0; }
+  .cal .ap .e b { font-family: var(--mono); font-weight: 600; width: 46px; }
+  .sm { position: absolute; inset: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; align-content: flex-start; }
+  .sm .tool { width: 74px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; }
+  .sm .tool:active { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .sm .tool svg { width: 34px; height: 34px; }
+  .pal { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; }
+  .pal .pi { display: flex; align-items: center; gap: 8px; padding: 5px 8px; }
+  .pal .pi.on { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); background: var(--field); }
+  .pal .sw4 { display: grid; grid-template-columns: repeat(4, 12px); gap: 2px; }
+  .pal .sw4 i { width: 12px; height: 12px; box-shadow: inset 1px 1px 0 rgba(255,255,255,.6), inset -1px -1px 0 rgba(0,0,0,.5); }
+  .dlg-b { display: flex; justify-content: space-around; gap: 8px; padding: 8px; flex: none; box-shadow: inset 0 1px 0 var(--top), inset 0 2px 0 transparent; border-top: 1px solid var(--bot); }
+  .btn { min-width: 76px; padding: 4px 12px; border: 0; background: var(--bg); box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot); }
+  .btn:active { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .btn.def { outline: 2px solid #000; outline-offset: 1px; }
+  .pm { position: absolute; inset: 0; padding: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pm .g { display: flex; flex-direction: column; padding: 4px; }
+  .pm .g b { font-size: 11px; display: flex; justify-content: space-between; }
+  .pm canvas { flex: 1; width: 100%; min-height: 0; background: #0f1d22; margin-top: 3px; }
+  .mail { position: absolute; inset: 0; display: grid; grid-template-rows: 40% 1fr; gap: 4px; padding: 4px; }
+  .mail .list { overflow: auto; background: var(--field); }
+  .mail .mr { display: grid; grid-template-columns: 14px 130px 1fr 90px; gap: 8px; padding: 2px 6px; white-space: nowrap; }
+  .mail .mr span { overflow: hidden; text-overflow: ellipsis; }
+  .mail .mr.sel { background: var(--sel); color: #fff; }
+  .mail .mr.new { font-weight: 700; }
+  .mail .read { background: #fff; padding: 8px 10px; overflow: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; user-select: text; box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .helpv { position: absolute; inset: 2px; background: #fff; padding: 14px 18px; overflow: auto; font-size: 12.5px; line-height: 1.5; user-select: text; box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .helpv h2 { margin: 0 0 4px; font-size: 17px; }
+  .helpv h3 { margin: 14px 0 4px; font-size: 13px; color: var(--act-bot); text-transform: uppercase; letter-spacing: .04em; }
+  .helpv ul { margin: 4px 0; padding-left: 18px; }
+  .helpv li { margin: 2px 0; }
+  .helpv code, .helpv kbd { font-family: var(--mono); font-size: 11.5px; }
+  .am { position: absolute; inset: 0; margin: 2px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px 4px; padding: 8px; overflow: auto; background: var(--field); box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); }
+  .dlg { display: flex; gap: 14px; padding: 16px; align-items: flex-start; flex: 1; }
+  .dlg svg { width: 38px; height: 38px; flex: none; }
+  #lock { position: fixed; inset: 0; background: #000; z-index: 2000000; display: none; color: #9ab; font: 13px var(--sys); }
+  #lock.on { display: block; }
+  #lock .msg { position: absolute; padding: 10px 16px; border: 1px solid #345; background: #050a10; text-align: center; transition: left 2s linear, top 2s linear; }
+  #ended { position: fixed; inset: 0; background: #000; z-index: 2000001; display: none; color: #ccd; align-items: center; justify-content: center; flex-direction: column; gap: 14px; font: 13px var(--sys); }
+  #ended.on { display: flex; }
+  #ended button { background: #222; color: #dde; border: 1px solid #555; padding: 6px 14px; font: inherit; cursor: pointer; }
+  #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 700000; padding: 6px 14px; display: none; }
+  #toast.on { display: block; }
+  @media (prefers-reduced-motion: reduce) { #lock .msg { transition: none; } }
+</style>
+</head>
+<body>
+<div id="desk"></div>
+<div id="panel"></div>
+<div id="toast" class="rz"></div>
+<div id="lock"><div class="msg">Kosmos - this display is locked<br><small>Click to unlock (in the mockup, nothing is asked)</small></div></div>
+<div id="ended"><div>The session has ended.</div><div style="color:#889">In Kosmos, the desktop chooser would come back now.</div><button id="again">Start Corona again</button></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ============================================================ pictures, drawn fresh */
+const ICO = {
+  term: `<svg viewBox="0 0 40 40"><rect x="4" y="6" width="32" height="24" fill="#c9ccd8" stroke="#000"/><rect x="7" y="9" width="26" height="18" fill="#122"/><path d="M10 14l4 3-4 3" stroke="#7fe0a0" stroke-width="1.6" fill="none"/><rect x="16" y="19" width="7" height="1.6" fill="#7fe0a0"/><path d="M12 30h16l3 5H9z" fill="#aeb2c3" stroke="#000"/></svg>`,
+  files: `<svg viewBox="0 0 40 40"><path d="M5 12h11l3 3h16v18H5z" fill="#e6c36a" stroke="#000"/><path d="M5 17h30v16H5z" fill="#f4d98a" stroke="#000"/><rect x="14" y="5" width="12" height="9" fill="#fff" stroke="#000"/><path d="M16 8h8M16 10h6" stroke="#666"/></svg>`,
+  folder: `<svg viewBox="0 0 40 40"><path d="M4 11h12l3 3h17v20H4z" fill="#d9b55a" stroke="#000"/><path d="M4 16h32v18H4z" fill="#ecd080" stroke="#000"/></svg>`,
+  doc: `<svg viewBox="0 0 40 40"><path d="M9 4h16l7 7v25H9z" fill="#fff" stroke="#000"/><path d="M25 4v7h7" fill="#ddd" stroke="#000"/><path d="M13 16h15M13 20h15M13 24h12M13 28h14" stroke="#777"/></svg>`,
+  editor: `<svg viewBox="0 0 40 40"><path d="M8 4h17l7 7v25H8z" fill="#fff" stroke="#000"/><path d="M12 15h14M12 19h14M12 23h9" stroke="#777"/><path d="M19 31l13-13 3 3-13 13-4 1z" fill="#d6a14a" stroke="#000"/></svg>`,
+  mail: `<svg viewBox="0 0 40 40"><rect x="4" y="10" width="32" height="22" fill="#fff" stroke="#000"/><path d="M4 10l16 12 16-12" fill="none" stroke="#000"/><rect x="26" y="5" width="9" height="11" fill="#a65d82" stroke="#000"/></svg>`,
+  cal: `<svg viewBox="0 0 40 40"><rect x="5" y="6" width="30" height="29" fill="#fff" stroke="#000"/><rect x="5" y="6" width="30" height="7" fill="#a65d82" stroke="#000"/><g fill="#555">${[0,1,2,3,4].map(c=>[0,1,2].map(r=>`<rect x="${8+c*5.4}" y="${16+r*6}" width="3.4" height="3.4"/>`).join("")).join("")}</g></svg>`,
+  clock: `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#fff" stroke="#000"/><path d="M20 9v11l7 4" stroke="#000" stroke-width="2" fill="none"/></svg>`,
+  style: `<svg viewBox="0 0 40 40"><path d="M6 30c0-14 10-24 22-24 6 0 8 4 5 8-2 3-6 2-6 6s5 4 5 8c0 4-6 8-14 8-8 0-12-2-12-6z" fill="#e8dcc4" stroke="#000"/><circle cx="14" cy="16" r="3" fill="#a65d82"/><circle cx="22" cy="12" r="3" fill="#3f7d86"/><circle cx="12" cy="25" r="3" fill="#e6c36a"/></svg>`,
+  apps: `<svg viewBox="0 0 40 40"><rect x="5" y="6" width="13" height="13" fill="#3f7d86" stroke="#000"/><rect x="22" y="6" width="13" height="13" fill="#a65d82" stroke="#000"/><rect x="5" y="22" width="13" height="13" fill="#e6c36a" stroke="#000"/><rect x="22" y="22" width="13" height="13" fill="#6c7fa8" stroke="#000"/></svg>`,
+  help: `<svg viewBox="0 0 40 40"><path d="M8 6h22a3 3 0 013 3v26H11a3 3 0 01-3-3z" fill="#6c7fa8" stroke="#000"/><path d="M11 32h22" stroke="#fff"/><text x="20" y="25" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="17" fill="#fff">?</text></svg>`,
+  trash: `<svg viewBox="0 0 40 40"><path d="M10 12h20l-2 24H12z" fill="#c9ccd8" stroke="#000"/><rect x="8" y="8" width="24" height="4" fill="#aeb2c3" stroke="#000"/><path d="M16 16v16M20 16v16M24 16v16" stroke="#555"/></svg>`,
+  trashfull: `<svg viewBox="0 0 40 40"><path d="M10 12h20l-2 24H12z" fill="#c9ccd8" stroke="#000"/><path d="M11 12c2-5 6-3 8-6 3 3 6 1 10 6z" fill="#fff" stroke="#000"/><rect x="8" y="10" width="24" height="4" fill="#aeb2c3" stroke="#000" transform="rotate(-8 20 12)"/><path d="M16 17v15M20 17v15M24 17v15" stroke="#555"/></svg>`,
+  perf: `<svg viewBox="0 0 40 40"><rect x="4" y="7" width="32" height="24" fill="#0f1d22" stroke="#000"/><path d="M6 26l5-6 4 3 5-10 4 7 5-4 5 2" stroke="#7fe0a0" stroke-width="1.6" fill="none"/><path d="M12 31h16v4H12z" fill="#aeb2c3" stroke="#000"/></svg>`,
+  printer: `<svg viewBox="0 0 40 40"><rect x="11" y="5" width="18" height="10" fill="#fff" stroke="#000"/><rect x="5" y="14" width="30" height="14" fill="#aeb2c3" stroke="#000"/><rect x="11" y="24" width="18" height="11" fill="#fff" stroke="#000"/><circle cx="30" cy="18" r="1.6" fill="#3c3"/></svg>`,
+  lock: `<svg viewBox="0 0 40 40"><rect x="9" y="17" width="22" height="17" fill="#e6c36a" stroke="#000"/><path d="M13 17v-5a7 7 0 0114 0v5" stroke="#000" stroke-width="3" fill="none"/></svg>`,
+  exit: `<svg viewBox="0 0 40 40"><rect x="10" y="5" width="20" height="30" fill="#7a5a3a" stroke="#000"/><path d="M10 5l9 3v30l-9-3z" fill="#a07a50" stroke="#000"/><circle cx="16" cy="21" r="1.2" fill="#000"/></svg>`,
+  globe: `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#6c9fd8" stroke="#000"/><path d="M9 15c5 2 7-3 12-1s3 6 8 5M8 25c6-2 9 4 14 1s6-3 10-1" stroke="#2f7a3a" stroke-width="3" fill="none"/></svg>`,
+  q: `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#6c7fa8" stroke="#000"/><text x="20" y="27" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="20" fill="#fff">?</text></svg>`,
+  warn: `<svg viewBox="0 0 40 40"><path d="M20 4l17 31H3z" fill="#e6c36a" stroke="#000"/><path d="M20 14v11" stroke="#000" stroke-width="3"/><circle cx="20" cy="30" r="1.8"/></svg>`,
+  panel: `<svg viewBox="0 0 40 40"><rect x="3" y="14" width="34" height="14" fill="#aeb2c3" stroke="#000"/><rect x="6" y="17" width="6" height="8" fill="#e6c36a" stroke="#000"/><rect x="14" y="17" width="12" height="8" fill="#c9ccd8" stroke="#000"/><rect x="28" y="17" width="6" height="8" fill="#a65d82" stroke="#000"/></svg>`,
+};
+const picOf = k => ICO[k] || ICO.doc;
+
+/* ============================================================ files */
+// One small tree, shared by the File Manager and the Terminal.
+const FS = { name: "/", kids: {
+  Home: { kids: {
+    Documents: { kids: {
+      "readme.txt": { text: "Corona is a third desktop for Kosmos, drawn before it is built.\n\nIt keeps the Solaris desktop's manner: the Front Panel, four\nworkspaces, windows you take hold of by their frame, and a\nwindow menu on every one of them.\n\nUnderneath it is still Kosmos: a microkernel, every program\nin its own address space, every processor in use.\n" },
+      "letter-to-ana.txt": { text: "Ana,\n\nThe machine in the corner boots in four seconds now, and the\nfour little buttons in the middle of the panel are back.\nYou remember them: One, Two, Three, Four.\n\nD.\n" },
+      "todo.txt": { text: "- rename workspace Three\n- try the Style Manager's palettes\n- watch the Performance Meter while Orbits runs\n" },
+    } },
+    Projects: { kids: { kosmos: { kids: { "notes.txt": { text: "Nebula: threads, address spaces, IPC, capabilities.\nNothing else.\n" }, "VERSION": { text: "0.11.316\n" } } } } },
+    Pictures: { kids: { "workspace-one.png": { bin: true, size: 812345 } } },
+    Music: { kids: { "night-shift.mp3": { bin: true, size: 6400000 } } },
+  } },
+  Kosmos: { kids: { Apps: { kids: {} }, Kits: { kids: {} }, Desktops: { kids: { "Astra.desktop": { text: "name = astra\nshell = notifications, desktop, deskbar\nchrome = astra\nmenus = window\n" }, "Pewter.desktop": { text: "name = pewter\nshell = notifications, pewterdesk, menubar, controlstrip\nchrome = platinum\nmenus = screen\n" }, "Corona.desktop": { text: "name = corona\nshell = notifications, frontpanel, workspaces\nchrome = motif\nmenus = window\n" } } } } },
+} };
+function nodeAt(path) {
+  let n = FS;
+  for (const p of path.split("/").filter(Boolean)) { if (!n.kids || !n.kids[p]) return null; n = n.kids[p]; }
+  return n;
+}
+const isDir = n => !!(n && n.kids);
+const join = (a, b) => (a === "/" ? "" : a) + "/" + b;
+const parent = p => p.replace(/\/[^/]+$/, "") || "/";
+const fsize = n => isDir(n) ? Object.keys(n.kids).length + " items" : (n.bin ? n.size : n.text.length) + " bytes";
+
+/* ============================================================ state */
+const S = { ws: 0, wsNames: ["One", "Two", "Three", "Four"], wins: new Map(), z: 10, focus: null, seq: 0,
+  backs: ["teal", "slate", "sand", "moss"], palette: "kosmos", pointerFocus: false, panelMin: false, trash: [] };
+
+function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("on"), 2200); }
+let AC = null;
+function beep(f = 880, d = .08) {
+  try { AC = AC || new AudioContext(); const o = AC.createOscillator(), g = AC.createGain(); o.type = "square"; o.frequency.value = f; g.gain.value = .03; o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+}
+
+/* ============================================================ windows */
+function makeWin(o) {
+  if (o.key && [...S.wins.values()].some(w => w.key === o.key)) {
+    const w = [...S.wins.values()].find(w => w.key === o.key);
+    if (w.ws !== -1 && w.ws !== S.ws) w.ws = S.ws;
+    if (w.min) restore(w); show(); focusWin(w); return w;
+  }
+  const id = "w" + (++S.seq);
+  const el = document.createElement("div");
+  el.className = "win"; el.dataset.id = id;
+  const W = Math.max(innerWidth, 640), H = Math.max(innerHeight, 480) - 110;
+  const w0 = Math.max(200, Math.min(o.w || 520, W - 20)), h0 = Math.max(120, Math.min(o.h || 340, H - 20));
+  const n = S.wins.size;
+  const x = o.x != null ? o.x : clamp(110 + (n % 6) * 32, 4, W - w0 - 4), y = o.y != null ? o.y : clamp(24 + (n % 6) * 28, 4, H - h0);
+  Object.assign(el.style, { left: x + "px", top: y + "px", width: w0 + "px", height: h0 + "px" });
+  el.innerHTML = `<div class="tb"><button class="b wm" title="Window menu"><i class="ic-menu"></i></button><div class="t">${esc(o.title)}</div><button class="b mn" title="Minimize"><i class="ic-min"></i></button><button class="b mx" title="Maximize"><i class="ic-max"></i></button></div>
+    <div class="client">${o.menus ? `<div class="mbar"></div>` : ""}<div class="body"></div></div>
+    ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map(g => `<div class="grip g-${g}" data-g="${g}"></div>`).join("")}`;
+  $("#desk").appendChild(el);
+  const w = { id, el, key: o.key, app: o.app, title: o.title, icon: o.icon || o.app, ws: S.ws, body: $(".body", el), menus: o.menus, onClose: o.onClose, onResize: o.onResize, min: false, dialog: o.dialog };
+  S.wins.set(id, w);
+  if (o.menus) buildMbar(w);
+  wireWin(w);
+  if (o.init) o.init(w);
+  focusWin(w);
+  return w;
+}
+function setTitle(w, t) { w.title = t; $(".tb .t", w.el).textContent = t; }
+function buildMbar(w) {
+  const mb = $(".mbar", w.el); mb.innerHTML = "";
+  const ms = typeof w.menus === "function" ? w.menus(w) : w.menus;
+  ms.forEach((m, i) => {
+    const d = document.createElement("div");
+    d.className = "m" + (m.help ? " help" : "");
+    d.innerHTML = mnem(m.t);
+    d.onmousedown = e => { e.stopPropagation(); focusWin(w); openMenu(m.items, d.getBoundingClientRect().left, d.getBoundingClientRect().bottom, { owner: d }); };
+    mb.appendChild(d);
+  });
+}
+const mnem = t => esc(t).replace(/^(.)/, "<u>$1</u>");
+function focusWin(w) {
+  if (!w) { S.focus = null; $$(".win").forEach(e => e.classList.remove("act")); return; }
+  S.focus = w; w.el.style.zIndex = ++S.z;
+  $$(".win").forEach(e => e.classList.toggle("act", e === w.el));
+}
+function closeWin(w) {
+  if (w.onClose && w.onClose(w) === false) return;
+  w.el.remove(); S.wins.delete(w.id);
+  const ic = $(`.dicon[data-id="${w.id}"]`); if (ic) ic.remove();
+  if (S.focus === w) focusWin(topWin());
+}
+function topWin() { return [...S.wins.values()].filter(visible).sort((a, b) => +b.el.style.zIndex - +a.el.style.zIndex)[0] || null; }
+const visible = w => !w.min && (w.ws === -1 || w.ws === S.ws);
+function minimize(w) {
+  w.min = true; w.el.style.display = "none";
+  const ic = document.createElement("div");
+  ic.className = "dicon"; ic.dataset.id = w.id;
+  ic.innerHTML = `<div class="p rz">${picOf(w.icon)}</div><div class="l">${esc(w.title)}</div>`;
+  $("#desk").appendChild(ic);
+  placeIcons();
+  ic.onmousedown = e => { e.stopPropagation(); $$(".dicon").forEach(x => x.classList.toggle("sel", x === ic)); };
+  ic.ondblclick = () => restore(w);
+  ic.oncontextmenu = e => { e.preventDefault(); openMenu(winMenu(w), e.clientX, e.clientY, { title: "Window Menu" }); };
+  if (S.focus === w) focusWin(topWin());
+}
+function restore(w) {
+  w.min = false; w.el.style.display = "";
+  const ic = $(`.dicon[data-id="${w.id}"]`); if (ic) ic.remove();
+  placeIcons(); focusWin(w);
+}
+function placeIcons() {
+  // Down the left edge, as the workspace manager places them.
+  const ics = $$(".dicon").filter(ic => { const w = S.wins.get(ic.dataset.id); return w && (w.ws === -1 || w.ws === S.ws); });
+  $$(".dicon").forEach(ic => ic.style.display = "none");
+  ics.forEach((ic, i) => { ic.style.display = ""; ic.style.left = "8px"; ic.style.top = (10 + i * 82) + "px"; });
+}
+function maximize(w) {
+  const el = w.el;
+  if (w.saved) { Object.assign(el.style, w.saved); w.saved = null; }
+  else { w.saved = { left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height }; Object.assign(el.style, { left: "0px", top: "0px", width: innerWidth + "px", height: (innerHeight - (S.panelMin ? 0 : 0)) + "px" }); }
+  if (w.onResize) w.onResize(w);
+}
+function lower(w) { w.el.style.zIndex = 1; $$(".win").forEach(e => { if (e !== w.el) e.style.zIndex = +e.style.zIndex + 1; }); focusWin(topWin()); }
+function winMenu(w) {
+  return [
+    { t: "Restore", k: "Alt+F5", a: () => w.min ? restore(w) : w.saved && maximize(w), d: !w.min && !w.saved },
+    { t: "Move", k: "Alt+F7", a: () => keyMove(w), d: w.min },
+    { t: "Size", k: "Alt+F8", a: () => keySize(w), d: w.min },
+    { t: "Minimize", k: "Alt+F9", a: () => minimize(w), d: w.min },
+    { t: "Maximize", k: "Alt+F10", a: () => { if (w.min) restore(w); maximize(w); }, d: !!w.saved },
+    { t: "Lower", k: "Alt+F3", a: () => lower(w) },
+    { sep: true },
+    { t: "Occupy Workspace…", a: () => occupyDialog(w) },
+    { t: "Occupy All Workspaces", a: () => { w.ws = -1; show(); toast(`“${w.title}” is in every workspace now`); }, d: w.ws === -1 },
+    { t: "Unoccupy Workspace", a: () => { w.ws = S.ws; show(); }, d: w.ws !== -1 },
+    { sep: true },
+    { t: "Close", k: "Alt+F4", a: () => closeWin(w) },
+  ];
+}
+function keyMove(w) { toast("Move the pointer, then click to put the window down"); drag(w, null, "move", true); }
+function keySize(w) { toast("Move the pointer, then click to set the size"); drag(w, null, "se", true); }
+function wireWin(w) {
+  const el = w.el;
+  el.addEventListener("mousedown", e => { if (!e.target.closest(".wm")) focusWin(w); }, true);
+  el.addEventListener("mouseenter", () => { if (S.pointerFocus) focusWin(w); });
+  $(".wm", el).onmousedown = e => {
+    e.stopPropagation(); focusWin(w);
+    const r = e.currentTarget.getBoundingClientRect();
+    openMenu(winMenu(w), r.left, r.bottom, { title: "", owner: e.currentTarget });
+  };
+  $(".wm", el).ondblclick = () => { closeMenus(); closeWin(w); };
+  $(".mn", el).onclick = () => minimize(w);
+  $(".mx", el).onclick = () => maximize(w);
+  const t = $(".tb .t", el);
+  t.onmousedown = e => { if (e.button === 0) drag(w, e, "move"); };
+  t.ondblclick = () => maximize(w);
+  t.oncontextmenu = e => { e.preventDefault(); openMenu(winMenu(w), e.clientX, e.clientY, {}); };
+  $$(".grip", el).forEach(g => g.onmousedown = e => { e.stopPropagation(); drag(w, e, g.dataset.g); });
+}
+// The workspace manager moves and sizes an outline, and the window follows when the button comes up.
+function drag(w, e, how, sticky) {
+  const el = w.el, r0 = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+  const sx = e ? e.clientX : r0.x + r0.w / 2, sy = e ? e.clientY : r0.y + 12;
+  const o = document.createElement("div"); o.className = "outline"; document.body.appendChild(o);
+  let r = { ...r0 };
+  const put = () => Object.assign(o.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  put();
+  const mv = ev => {
+    const dx = ev.clientX - sx, dy = ev.clientY - sy; r = { ...r0 };
+    if (how === "move") { r.x = r0.x + dx; r.y = clamp(r0.y + dy, 0, innerHeight - 30); }
+    else {
+      if (how.includes("e")) r.w = Math.max(180, r0.w + dx);
+      if (how.includes("s")) r.h = Math.max(90, r0.h + dy);
+      if (how.includes("w")) { r.w = Math.max(180, r0.w - dx); r.x = r0.x + r0.w - r.w; }
+      if (how.includes("n")) { r.h = Math.max(90, r0.h - dy); r.y = r0.y + r0.h - r.h; }
+    }
+    put();
+  };
+  const up = () => {
+    removeEventListener("mousemove", mv); removeEventListener(sticky ? "mousedown" : "mouseup", up, true); o.remove();
+    Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+    w.saved = null;
+    if (w.onResize) w.onResize(w);
+  };
+  addEventListener("mousemove", mv);
+  setTimeout(() => addEventListener(sticky ? "mousedown" : "mouseup", up, true), sticky ? 50 : 0);
+}
+
+/* ============================================================ menus */
+const MS = { stack: [] };
+function openMenu(items, x, y, opt = {}, level = 0) {
+  closeMenus(level);
+  const m = document.createElement("div"); m.className = "menu";
+  if (opt.title != null && opt.title !== "") m.innerHTML = `<div class="mt">${esc(opt.title)}</div><div class="sep"></div>`;
+  if (level === 0 && !opt.noTear) m.insertAdjacentHTML("beforeend", `<div class="tear" title="Tear off (not in this mockup)"></div>`);
+  items.forEach(it => {
+    if (it.sep) { m.insertAdjacentHTML("beforeend", `<div class="sep"></div>`); return; }
+    const d = document.createElement("div");
+    d.className = "it" + (it.d ? " dis" : "") + (it.sub ? " sub" : "") + (it.chk != null ? " chk" + (it.chk ? " on" : "") : "");
+    d.innerHTML = `<span>${mnem(it.t)}</span>${it.k ? `<span class="k">${esc(it.k)}</span>` : ""}`;
+    d.onmouseenter = () => {
+      $$(".it", m).forEach(x => x.classList.remove("hot"));
+      if (!it.d) d.classList.add("hot");
+      closeMenus(level + 1);
+      if (it.sub && !it.d) { const r = d.getBoundingClientRect(); openMenu(it.sub, r.right - 3, r.top - 3, { noTear: true }, level + 1); }
+    };
+    d.onmouseup = d.onclick = e => {
+      e.stopPropagation();
+      if (it.d || it.sub) return;
+      closeMenus(); if (it.a) setTimeout(it.a, 0);
+    };
+    m.appendChild(d);
+  });
+  document.body.appendChild(m);
+  m.style.left = clamp(x, 0, innerWidth - m.offsetWidth) + "px";
+  m.style.top = clamp(y, 0, innerHeight - m.offsetHeight) + "px";
+  if (opt.owner) { opt.owner.classList.add("open"); m.owner = opt.owner; }
+  MS.stack[level] = m;
+  return m;
+}
+function closeMenus(from = 0) {
+  for (let i = MS.stack.length - 1; i >= from; i--) { const m = MS.stack[i]; if (m) { if (m.owner) m.owner.classList.remove("open"); m.remove(); } }
+  MS.stack.length = from;
+}
+document.addEventListener("mousedown", e => { if (!e.target.closest(".menu")) closeMenus(); if (!e.target.closest(".sub") && !e.target.closest(".fp .arr")) closeSub(); }, true);
+addEventListener("keydown", e => { if (e.key === "Escape") { closeMenus(); closeSub(); } });
+
+/* ============================================================ workspaces */
+const BACKS = {
+  teal: ["#3f7d86", "radial-gradient(rgba(255,255,255,.07) 1px, transparent 1.3px) 0 0/7px 7px"],
+  slate: ["#56668a", "repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 9px)"],
+  sand: ["#8a7a5c", "repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 1px, transparent 1px 4px), repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 5px)"],
+  moss: ["#4f6e52", "radial-gradient(circle at 3px 3px, rgba(0,0,0,.12) 1.4px, transparent 1.6px) 0 0/8px 8px"],
+  wine: ["#6b3d55", "repeating-linear-gradient(-45deg, rgba(255,255,255,.05) 0 1px, transparent 1px 6px)"],
+  night: ["#1c2436", "radial-gradient(rgba(255,255,255,.18) 1px, transparent 1.4px) 0 0/23px 19px, radial-gradient(rgba(255,255,255,.08) 1px, transparent 1.4px) 11px 9px/17px 13px"],
+};
+function show() {
+  const b = BACKS[S.backs[S.ws]];
+  document.body.style.background = b[1] + ", " + b[0];
+  document.body.style.backgroundColor = b[0];
+  S.wins.forEach(w => { w.el.style.display = visible(w) ? "" : "none"; });
+  placeIcons();
+  $$(".wsb").forEach((x, i) => x.classList.toggle("cur", i === S.ws));
+  if (S.focus && !visible(S.focus)) focusWin(topWin());
+}
+function goWs(i) { if (i === S.ws) return; S.ws = (i + 4) % 4; closeSub(); show(); }
+function occupyDialog(w) {
+  dialog({ title: "Occupy Workspace", icon: "q", msg: `Which workspaces should “${esc(w.title)}” be in?`,
+    extra: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:10px">${S.wsNames.map((n, i) => `<label><input type="radio" name="ows" value="${i}" ${i === (w.ws === -1 ? S.ws : w.ws) ? "checked" : ""}> ${esc(n)}</label>`).join("")}<label style="grid-column:span 2"><input type="radio" name="ows" value="-1" ${w.ws === -1 ? "checked" : ""}> All workspaces</label></div>`,
+    buttons: [{ t: "OK", def: true, a: d => { w.ws = +$("input[name=ows]:checked", d.el).value; show(); } }, { t: "Cancel" }] });
+}
+
+/* ============================================================ dialogs */
+function dialog({ title, icon = "q", msg, extra = "", buttons = [{ t: "OK", def: true }] }) {
+  const w = makeWin({ title, app: "dialog", w: 400, h: 190 + (extra ? 60 : 0), x: innerWidth / 2 - 200, y: innerHeight / 2 - 160, init: w => {
+    w.body.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column"><div class="dlg">${picOf(icon)}<div><div>${msg}</div>${extra}</div></div><div class="dlg-b"></div></div>`;
+    const bb = $(".dlg-b", w.body);
+    buttons.forEach(b => { const x = document.createElement("button"); x.className = "btn" + (b.def ? " def" : ""); x.textContent = b.t; x.onclick = () => { closeWin(w); if (b.a) b.a(w); }; bb.appendChild(x); });
+  } });
+  $(".mn", w.el).style.visibility = "hidden"; $(".mx", w.el).style.visibility = "hidden";
+  w.ws = -1;
+  return w;
+}
+
+/* ============================================================ the applications */
+function busy(f) {
+  document.body.classList.add("busy"); $(".busy-l") && $(".busy-l").classList.add("on");
+  setTimeout(() => { document.body.classList.remove("busy"); const b = $(".busy-l"); if (b) b.classList.remove("on"); f(); }, 420);
+}
+const APPS = {
+  term: { name: "Terminal", icon: "term", open: openTerm },
+  files: { name: "File Manager", icon: "files", open: () => openFiles("/Home") },
+  editor: { name: "Text Editor", icon: "editor", open: () => openEditor() },
+  mail: { name: "Mailer", icon: "mail", open: openMail },
+  cal: { name: "Calendar", icon: "cal", open: openCal },
+  style: { name: "Style Manager", icon: "style", open: openStyle },
+  apps: { name: "Application Manager", icon: "apps", open: openAppMgr },
+  help: { name: "Help Viewer", icon: "help", open: openHelp },
+  perf: { name: "Performance Meter", icon: "perf", open: openPerf },
+  trash: { name: "Trash Can", icon: "trash", open: openTrash },
+  printer: { name: "Print Manager", icon: "printer", open: () => dialog({ title: "Print Manager", icon: "printer", msg: "No printers are set up.<br><small>Kosmos has no printing yet. A document is a PDF, and Write makes one.</small>" }) },
+  web: { name: "Web Browser", icon: "globe", open: () => dialog({ title: "Web Browser", icon: "globe", msg: "Kosmos's browser would open here, in Motif's frame.<br><small>It is not in this mockup.</small>" }) },
+  clockapp: { name: "Clock", icon: "clock", open: openClock },
+};
+function launch(k) { busy(() => APPS[k].open()); }
+
+// ---------- Terminal
+function openTerm() {
+  const st = { cwd: "/Home", hist: [], hi: 0, line: "" };
+  makeWin({ app: "term", icon: "term", title: "Terminal", w: 600, h: 360, menus: [
+    { t: "Window", items: [{ t: "New", a: () => launch("term") }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Edit", items: [{ t: "Copy", d: true }, { t: "Paste", d: true }] },
+    { t: "Options", items: [{ t: "Menu Bar", chk: true, d: true }, { t: "Scroll Bar", chk: true, d: true }, { t: "Global…", d: true }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }, { t: "About Terminal", a: () => dialog({ title: "About Terminal", icon: "term", msg: "Terminal, in Corona's frame.<br><small>Kosmos's own Terminal would be here, and its shell is Kosmos's, not a Unix one.</small>" }) }] },
+  ], init: w => {
+    const t = document.createElement("div"); t.className = "term"; t.tabIndex = 0; w.body.appendChild(t);
+    let out = `Kosmos 0.11.316 (Nebula) - Corona, workspace ${S.wsNames[S.ws]}\nType help for what this mockup answers.\n\n`;
+    const prompt = () => `kosmos:${st.cwd}% `;
+    const draw = () => { t.innerHTML = esc(out + prompt() + st.line) + `<span class="cur"> </span>`; t.scrollTop = t.scrollHeight; };
+    const run = cmd => {
+      const [c, ...a] = cmd.trim().split(/\s+/); const arg = a.join(" ");
+      const res = p => p ? (p.startsWith("/") ? p : join(st.cwd, p)).replace(/\/\.$/, "") : st.cwd;
+      switch (c) {
+        case undefined: case "": return "";
+        case "help": return "ls  cd  pwd  cat  uname  date  ps  who  prstat  echo  clear  open  exit\n";
+        case "pwd": return st.cwd + "\n";
+        case "ls": { const n = nodeAt(res(arg)); if (!n) return `ls: ${arg}: no such file\n`; if (!isDir(n)) return arg + "\n"; return Object.keys(n.kids).map(k => isDir(n.kids[k]) ? k + "/" : k).join("   ") + "\n"; }
+        case "cd": { if (arg === "..") { st.cwd = parent(st.cwd); return ""; } const p = arg ? res(arg) : "/Home"; const n = nodeAt(p); if (!isDir(n)) return `cd: ${arg}: not a folder\n`; st.cwd = p; return ""; }
+        case "cat": { const n = nodeAt(res(arg)); if (!n || isDir(n)) return `cat: ${arg}: no such file\n`; return n.bin ? `cat: ${arg}: not text\n` : n.text; }
+        case "uname": return a[0] === "-a" ? "Kosmos kosmos 0.11.316 Nebula x86_64 4 processors\n" : "Kosmos\n";
+        case "date": return new Date().toString() + "\n";
+        case "who": return "diego    workspace " + S.wsNames[S.ws] + "\n";
+        case "echo": return arg + "\n";
+        case "clear": out = ""; return "";
+        case "exit": closeWin(w); return "";
+        case "open": { const n = nodeAt(res(arg)); if (!n) return `open: ${arg}: no such file\n`; isDir(n) ? openFiles(res(arg)) : openEditor(res(arg)); return ""; }
+        case "ps": case "prstat": {
+          const rows = [["1", "init", "0", "0.1"], ["2", "binfs", "0", "0.0"], ["3", "diskfs", "1", "0.4"], ["4", "net", "2", "0.2"], ["5", "audio", "3", "0.3"], ["6", "notify", "0", "0.0"], ["7", "wm", "1", "2.8"], ["8", "frontpanel", "2", "0.3"]];
+          [...S.wins.values()].forEach((x, i) => rows.push([String(20 + i), x.app, String(i % 4), (Math.random() * 2).toFixed(1)]));
+          return "  PID  PROGRAM          CPU   %\n" + rows.map(r => `${r[0].padStart(5)}  ${r[1].padEnd(16)} ${r[2].padStart(3)} ${r[3].padStart(4)}`).join("\n") + "\n\nEach in its own address space. A crash takes only itself.\n";
+        }
+        default: return `${c}: not found. Kosmos is not Unix; try help\n`;
+      }
+    };
+    t.onkeydown = e => {
+      if (e.metaKey || e.ctrlKey) return;
+      e.preventDefault();
+      if (e.key === "Enter") { const c = st.line; out += prompt() + c + "\n"; if (c.trim()) st.hist.push(c); st.hi = st.hist.length; st.line = ""; out += run(c); if (S.wins.has(w.id)) draw(); }
+      else if (e.key === "Backspace") { st.line = st.line.slice(0, -1); draw(); }
+      else if (e.key === "ArrowUp") { if (st.hi > 0) st.line = st.hist[--st.hi]; draw(); }
+      else if (e.key === "ArrowDown") { st.hi = Math.min(st.hist.length, st.hi + 1); st.line = st.hist[st.hi] || ""; draw(); }
+      else if (e.key.length === 1) { st.line += e.key; draw(); }
+    };
+    w.body.onmousedown = () => setTimeout(() => t.focus());
+    draw(); setTimeout(() => t.focus(), 30);
+  } });
+}
+
+// ---------- File Manager
+function openFiles(path) {
+  const st = { path, sel: null };
+  makeWin({ app: "files", icon: "files", title: "File Manager - " + path.split("/").pop(), w: 520, h: 360, menus: w => [
+    { t: "File", items: [{ t: "New Folder…", a: () => newFolder(w, st) }, { t: "New File…", a: () => newFile(w, st) }, { sep: true }, { t: "Go Home", a: () => go(w, st, "/Home") }, { t: "Go Up", a: () => go(w, st, parent(st.path)), d: st.path === "/" }, { sep: true }, { t: "Close", a: () => closeWin(w) }] },
+    { t: "Selected", items: [{ t: "Open", a: () => openSel(w, st), d: !st.sel }, { t: "Put in Trash", a: () => trashSel(w, st), d: !st.sel }, { t: "Properties…", a: () => props(st), d: !st.sel }] },
+    { t: "View", items: [{ t: "Open New View", a: () => openFiles(st.path) }, { t: "Clean Up", a: () => render(w, st) }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.body.style.display = "flex"; w.body.style.flexDirection = "column";
+    w.body.innerHTML = `<div class="fm-path"><span>Folder:</span><div class="f sk"></div></div><div style="flex:1;position:relative"><div class="fm-grid"></div></div><div class="fm-st"></div>`;
+    w.st = st; render(w, st);
+  } });
+}
+function go(w, st, p) { st.path = p; st.sel = null; setTitle(w, "File Manager - " + (p.split("/").pop() || "/")); render(w, st); }
+function render(w, st) {
+  const n = nodeAt(st.path); const g = $(".fm-grid", w.body);
+  $(".fm-path .f", w.body).textContent = st.path;
+  g.innerHTML = "";
+  if (st.path !== "/") g.appendChild(fileIcon("..", { kids: {} }, w, st, true));
+  Object.keys(n.kids).sort().forEach(k => g.appendChild(fileIcon(k, n.kids[k], w, st)));
+  $(".fm-st", w.body).textContent = `${Object.keys(n.kids).length} items`;
+  buildMbar(w);
+  g.onmousedown = e => { if (e.target === g) { st.sel = null; $$(".fi", g).forEach(x => x.classList.remove("sel")); buildMbar(w); } };
+}
+function fileIcon(k, n, w, st, up) {
+  const d = document.createElement("div"); d.className = "fi";
+  const kind = isDir(n) ? "folder" : /\.(txt|desktop)$|VERSION/.test(k) ? "doc" : /\.mp3$/.test(k) ? "perf" : "doc";
+  d.innerHTML = `${picOf(up ? "folder" : kind)}<span>${esc(up ? "(go up)" : k)}</span>`;
+  d.onmousedown = e => { e.stopPropagation(); if (up) return; st.sel = k; $$(".fi", d.parentNode).forEach(x => x.classList.toggle("sel", x === d)); buildMbar(w); };
+  d.ondblclick = () => up ? go(w, st, parent(st.path)) : openSel(w, st);
+  d.oncontextmenu = e => { e.preventDefault(); if (up) return; d.onmousedown(e); openMenu([{ t: "Open", a: () => openSel(w, st) }, { t: "Put in Trash", a: () => trashSel(w, st) }, { t: "Properties…", a: () => props(st) }], e.clientX, e.clientY, { title: k, noTear: true }); };
+  return d;
+}
+function openSel(w, st) {
+  const p = join(st.path, st.sel), n = nodeAt(p); if (!n) return;
+  if (isDir(n)) go(w, st, p); else if (n.bin) dialog({ title: "File Manager", icon: "warn", msg: `“${esc(st.sel)}” is not text.<br><small>Kosmos would open it in Photo or Music.</small>` }); else openEditor(p);
+}
+function trashSel(w, st) {
+  const n = nodeAt(st.path); S.trash.push({ name: st.sel, from: st.path, node: n.kids[st.sel] }); delete n.kids[st.sel]; st.sel = null; render(w, st); refreshTrash(); beep(300, .05);
+}
+function props(st) { const p = join(st.path, st.sel), n = nodeAt(p); dialog({ title: "Properties", icon: isDir(n) ? "folder" : "doc", msg: `<b>${esc(st.sel)}</b><br>${esc(p)}<br>${fsize(n)}<br><small>Owner: diego. Every program that opens it was handed it; none can reach it otherwise.</small>` }); }
+function newFolder(w, st) { const n = nodeAt(st.path); let i = 1, k = "New_Folder"; while (n.kids[k]) k = "New_Folder" + (++i); n.kids[k] = { kids: {} }; render(w, st); }
+function newFile(w, st) { const n = nodeAt(st.path); let i = 1, k = "new.txt"; while (n.kids[k]) k = `new${++i}.txt`; n.kids[k] = { text: "" }; render(w, st); }
+function refreshFiles() { S.wins.forEach(w => { if (w.app === "files" && w.st) render(w, w.st); }); }
+
+// ---------- Text Editor
+function openEditor(path) {
+  const n = path ? nodeAt(path) : null;
+  makeWin({ app: "editor", icon: "editor", title: "Text Editor - " + (path ? path.split("/").pop() : "(UNTITLED)"), w: 520, h: 360, menus: w => [
+    { t: "File", items: [{ t: "New", a: () => openEditor() }, { t: "Save", a: () => save(w), d: !w.path }, { t: "Save As…", a: () => saveAs(w) }, { sep: true }, { t: "Close", a: () => closeWin(w) }] },
+    { t: "Edit", items: [{ t: "Undo", d: true }, { sep: true }, { t: "Select All", a: () => $(".pad", w.body).select() }] },
+    { t: "Format", items: [{ t: "Settings…", d: true }, { t: "Paragraph", d: true }] },
+    { t: "Options", items: [{ t: "Overstrike", chk: false, d: true }, { t: "Wrap To Fit", chk: true, d: true }, { t: "Status Line", chk: false, d: true }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.path = path;
+    const ta = document.createElement("textarea"); ta.className = "pad"; ta.spellcheck = false; ta.value = n && !n.bin ? n.text : "";
+    w.body.appendChild(ta); setTimeout(() => ta.focus(), 30);
+    ta.oninput = () => { w.dirty = true; };
+  }, onClose: w => {
+    if (!w.dirty) return true;
+    dialog({ title: "Text Editor - Close", icon: "warn", msg: "This file has changes that are not saved.", buttons: [{ t: "Save", def: true, a: () => { w.path ? save(w) : saveAs(w); } }, { t: "Discard", a: () => { w.dirty = false; closeWin(w); } }, { t: "Cancel" }] });
+    return false;
+  } });
+}
+function save(w) { const n = nodeAt(w.path); if (n) { n.text = $(".pad", w.body).value; w.dirty = false; toast("Saved " + w.path); refreshFiles(); } }
+function saveAs(w) {
+  dialog({ title: "Text Editor - Save As", icon: "doc", msg: "Save in /Home/Documents as:", extra: `<input class="sk" id="sa" value="untitled.txt" style="margin-top:8px;width:220px;border:0;padding:4px 6px;font:12px var(--mono)">`,
+    buttons: [{ t: "OK", def: true, a: d => { const k = ($("#sa", d.el).value || "untitled.txt").trim(); nodeAt("/Home/Documents").kids[k] = { text: $(".pad", w.body).value }; w.path = "/Home/Documents/" + k; w.dirty = false; setTitle(w, "Text Editor - " + k); buildMbar(w); refreshFiles(); toast("Saved " + w.path); } }, { t: "Cancel" }] });
+}
+
+// ---------- Mailer
+const MAIL = [
+  { f: "Nebula", s: "Four processors in use", d: "Today", n: true, b: "Every processor that arrived is in use, and new threads go to the least\nbusy one.\n\nThe Performance Meter in the Front Panel's subpanel shows each one.\n" },
+  { f: "Packages", s: "Three updates are ready", d: "Today", n: true, b: "Tracker 0.11.316, Terminal 0.11.316 and the Crypto Kit have updates.\n\nThey go in at the next restart. Nothing has to quit for it now.\n" },
+  { f: "Ana", s: "Re: the four buttons", d: "Yesterday", b: "I remember them! I used to put the mail in Two and everything\nelse in One, and never used Three or Four.\n\n- A\n" },
+  { f: "Corona", s: "Welcome", d: "Yesterday", b: "This is a mockup of a third desktop for Kosmos, in the manner of the\nSolaris desktop. Open the Help Viewer from the Front Panel for what to try.\n" },
+];
+function openMail() {
+  makeWin({ app: "mail", icon: "mail", title: "Mailer - Inbox", w: 600, h: 400, menus: [
+    { t: "Mailbox", items: [{ t: "Check for New Mail", a: () => toast("No new mail") }, { sep: true }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Message", items: [{ t: "Reply", d: true }, { t: "Forward", d: true }, { t: "Delete", d: true }] },
+    { t: "Compose", items: [{ t: "New Message", d: true }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.body.innerHTML = `<div class="mail"><div class="list sk"></div><div class="read"></div></div>`;
+    const l = $(".list", w.body), rd = $(".read", w.body);
+    const pick = i => { MAIL[i].n = false; draw(i); rd.textContent = `From: ${MAIL[i].f}\nSubject: ${MAIL[i].s}\nDate: ${MAIL[i].d}\n\n${MAIL[i].b}`; };
+    const draw = s => { l.innerHTML = MAIL.map((m, i) => `<div class="mr${i === s ? " sel" : ""}${m.n ? " new" : ""}" data-i="${i}"><span>${m.n ? "N" : ""}</span><span>${esc(m.f)}</span><span>${esc(m.s)}</span><span>${esc(m.d)}</span></div>`).join(""); $$(".mr", l).forEach(r => r.onmousedown = () => pick(+r.dataset.i)); };
+    draw(-1); pick(0);
+  } });
+}
+
+// ---------- Calendar
+const APPTS = { 3: [["09:00", "Nebula review"]], 7: [["10:30", "Try Corona"], ["15:00", "Write to Ana"]], 12: [["11:00", "Pi 5 cable arrives?"]], 19: [["18:00", "Groove session"]], 26: [["09:00", "0.12 review"]] };
+function openCal() {
+  const now = new Date(); const st = { y: now.getFullYear(), m: now.getMonth(), pick: now.getDate() };
+  makeWin({ app: "cal", icon: "cal", title: "Calendar - diego", w: 560, h: 340, menus: [
+    { t: "File", items: [{ t: "Print", d: true }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Edit", items: [{ t: "Appointment…", d: true }] },
+    { t: "View", items: [{ t: "Day", d: true }, { t: "Week", d: true }, { t: "Month", chk: true, d: true }, { t: "Year", d: true }] },
+    { t: "Browse", items: [{ t: "Today", a: () => { st.y = now.getFullYear(); st.m = now.getMonth(); st.pick = now.getDate(); draw(); } }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.body.innerHTML = `<div class="cal"><div class="mo"><div class="hd"><button class="btn" style="min-width:0;padding:2px 8px">◀</button><span></span><button class="btn" style="min-width:0;padding:2px 8px">▶</button></div><div class="grid sk" style="padding:3px"></div></div><div class="ap sk"></div></div>`;
+    const [pv, nx] = $$(".hd .btn", w.body);
+    pv.onclick = () => { st.m--; if (st.m < 0) { st.m = 11; st.y--; } draw(); };
+    nx.onclick = () => { st.m++; if (st.m > 11) { st.m = 0; st.y++; } draw(); };
+    draw();
+    function draw() {
+      $(".hd span", w.body).textContent = new Date(st.y, st.m, 1).toLocaleDateString("en", { month: "long", year: "numeric" });
+      const first = new Date(st.y, st.m, 1).getDay(), days = new Date(st.y, st.m + 1, 0).getDate();
+      let h = ["S", "M", "T", "W", "T", "F", "S"].map(d => `<div class="dn">${d}</div>`).join("");
+      for (let i = 0; i < first; i++) h += `<div class="d out"></div>`;
+      for (let d = 1; d <= days; d++) {
+        const today = st.y === now.getFullYear() && st.m === now.getMonth() && d === now.getDate();
+        h += `<div class="d${today ? " today" : ""}${d === st.pick ? " pick" : ""}" data-d="${d}">${d}${APPTS[d] ? "<i></i>" : ""}</div>`;
+      }
+      $(".grid", w.body).innerHTML = h;
+      $$(".d[data-d]", w.body).forEach(x => x.onmousedown = () => { st.pick = +x.dataset.d; draw(); });
+      const ap = APPTS[st.pick] || [];
+      $(".ap", w.body).innerHTML = `<h4>${new Date(st.y, st.m, st.pick).toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" })}</h4>` + (ap.length ? ap.map(a => `<div class="e"><b>${a[0]}</b><span>${esc(a[1])}</span></div>`).join("") : `<div style="color:#555">No appointments.</div>`);
+    }
+  } });
+}
+
+// ---------- Clock (a window of its own, as well as the panel's)
+function openClock() {
+  makeWin({ key: "clock", app: "clockapp", icon: "clock", title: "Clock", w: 200, h: 220, init: w => { w.body.innerHTML = `<div style="position:absolute;inset:4px" class="sk"><svg viewBox="0 0 100 100" style="width:100%;height:100%" class="bigclock"></svg></div>`; } });
+}
+function clockSvg(big) {
+  const d = new Date(), h = d.getHours() % 12 + d.getMinutes() / 60, m = d.getMinutes() + d.getSeconds() / 60, s = d.getSeconds();
+  const hand = (a, l, wd, c) => { const r = (a - 90) * Math.PI / 180; return `<line x1="50" y1="50" x2="${50 + l * Math.cos(r)}" y2="${50 + l * Math.sin(r)}" stroke="${c}" stroke-width="${wd}" stroke-linecap="round"/>`; };
+  let ticks = ""; for (let i = 0; i < 12; i++) { const r = i * 30 * Math.PI / 180; ticks += `<line x1="${50 + 38 * Math.sin(r)}" y1="${50 - 38 * Math.cos(r)}" x2="${50 + 43 * Math.sin(r)}" y2="${50 - 43 * Math.cos(r)}" stroke="#000" stroke-width="${i % 3 ? 1.5 : 3}"/>`; }
+  return `<circle cx="50" cy="50" r="46" fill="#fff" stroke="#000" stroke-width="2"/>${ticks}${hand(h * 30, 24, 5, "#000")}${hand(m * 6, 36, 3.4, "#000")}${big ? hand(s * 6, 40, 1.2, "#a65d82") : ""}<circle cx="50" cy="50" r="3"/>`;
+}
+
+// ---------- Style Manager
+const PALETTES = {
+  kosmos: { n: "Kosmos", bg: "#aeb2c3", top: "#e1e3ec", bot: "#5f6478", field: "#c9ccd8", act: "#a65d82", acttop: "#d39cb8", actbot: "#63304b", sel: "#6c7fa8" },
+  sand: { n: "Sand", bg: "#c7bba3", top: "#ece5d6", bot: "#776c56", field: "#ddd3bf", act: "#8a6a3e", acttop: "#c2a072", actbot: "#4a3820", sel: "#8a6a3e" },
+  ocean: { n: "Ocean", bg: "#9fb5bd", top: "#dbe7eb", bot: "#4f6870", field: "#bfd0d6", act: "#2f6f8a", acttop: "#6fa8c0", actbot: "#173d4e", sel: "#2f6f8a" },
+  orchid: { n: "Orchid", bg: "#b9aec4", top: "#e8e2ee", bot: "#635873", field: "#d0c7d9", act: "#7a4f9a", acttop: "#b08bcc", actbot: "#3f2556", sel: "#7a4f9a" },
+  lichen: { n: "Lichen", bg: "#a9b59e", top: "#e0e7d8", bot: "#5a6650", field: "#c6cfbc", act: "#5c7a3a", acttop: "#93b06e", actbot: "#2f421c", sel: "#5c7a3a" },
+  charcoal: { n: "Charcoal", bg: "#7d808a", top: "#b5b8c2", bot: "#3c3e45", field: "#959aa5", act: "#b4573c", acttop: "#e08f75", actbot: "#6b2a18", sel: "#b4573c" },
+};
+function applyPalette(k) {
+  const p = PALETTES[k]; S.palette = k; const r = document.documentElement.style;
+  r.setProperty("--bg", p.bg); r.setProperty("--panel", p.bg); r.setProperty("--inact", p.bg); r.setProperty("--top", p.top); r.setProperty("--bot", p.bot);
+  r.setProperty("--field", p.field); r.setProperty("--act", p.act); r.setProperty("--act-top", p.acttop); r.setProperty("--act-bot", p.actbot); r.setProperty("--sel", p.sel);
+}
+function openStyle() {
+  makeWin({ key: "style", app: "style", icon: "style", title: "Style Manager", w: 420, h: 250, menus: [
+    { t: "File", items: [{ t: "Exit", a: () => closeWin(S.focus) }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    const tools = [["Color", "style", styleColor], ["Font", "doc", () => dialog({ title: "Style Manager - Font", icon: "doc", msg: "Kosmos's faces are IBM Plex, at the sizes the layout holds.<br><small>A size would be chosen here. Not in this mockup.</small>" })], ["Backdrop", "panel", styleBackdrop], ["Keyboard", "term", () => dialog({ title: "Keyboard", icon: "term", msg: "Key repeat and its delay. Kosmos's Preferences holds these." })], ["Mouse", "apps", () => dialog({ title: "Mouse", icon: "apps", msg: "Speed and the double-click time, shared with every desktop." })], ["Beep", "perf", () => { beep(); dialog({ title: "Beep", icon: "perf", msg: "That was it." }); }], ["Screen", "lock", () => dialog({ title: "Screen", icon: "lock", msg: "Lock the screen after a while. Click the padlock in the Front Panel to try it now." })], ["Window", "files", styleWindow], ["Startup", "exit", () => dialog({ title: "Startup", icon: "exit", msg: "Return to the windows you left at the next login: yes.<br><small>Kosmos's Startup page decides what opens with the desktop.</small>" })]];
+    w.body.innerHTML = `<div class="sm"></div>`;
+    tools.forEach(([n, ic, f]) => { const d = document.createElement("div"); d.className = "tool rz"; d.innerHTML = `${picOf(ic)}<span>${n}</span>`; d.onclick = f; $(".sm", w.body).appendChild(d); });
+  } });
+}
+function styleColor() {
+  makeWin({ key: "color", app: "style", icon: "style", title: "Style Manager - Color", w: 440, h: 280, init: w => {
+    w.body.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column"><div class="pal"></div><div style="padding:0 10px;color:#333;font-size:11px">A palette is chosen whole: the frames, the panel and the fields together.</div><div style="flex:1"></div><div class="dlg-b"><button class="btn def">OK</button></div></div>`;
+    const draw = () => { $(".pal", w.body).innerHTML = Object.entries(PALETTES).map(([k, p]) => `<div class="pi${k === S.palette ? " on" : ""}" data-k="${k}"><div class="sw4"><i style="background:${p.bg}"></i><i style="background:${p.act}"></i><i style="background:${p.field}"></i><i style="background:${p.bot}"></i></div><span>${p.n}</span></div>`).join(""); $$(".pi", w.body).forEach(x => x.onclick = () => { applyPalette(x.dataset.k); draw(); }); };
+    draw(); $(".btn", w.body).onclick = () => closeWin(w);
+  } });
+}
+function styleBackdrop() {
+  makeWin({ key: "backdrop", app: "style", icon: "style", title: "Style Manager - Backdrop", w: 360, h: 300, init: w => {
+    w.body.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column"><div style="padding:8px 10px">For workspace <b class="wn"></b>:</div><div class="sk" style="margin:0 10px;flex:1;overflow:auto;padding:4px"></div><div class="dlg-b"><button class="btn def">OK</button></div></div>`;
+    const list = $(".sk", w.body);
+    const draw = () => { $(".wn", w.body).textContent = S.wsNames[S.ws]; list.innerHTML = Object.keys(BACKS).map(k => `<div data-k="${k}" style="display:flex;gap:10px;align-items:center;padding:4px 6px;${S.backs[S.ws] === k ? "background:var(--sel);color:#fff" : ""}"><i style="width:44px;height:22px;border:1px solid #000;background:${BACKS[k][1]}, ${BACKS[k][0]}"></i>${k[0].toUpperCase() + k.slice(1)}</div>`).join(""); $$("[data-k]", list).forEach(x => x.onclick = () => { S.backs[S.ws] = x.dataset.k; show(); draw(); }); };
+    draw(); $(".btn", w.body).onclick = () => closeWin(w);
+  } });
+}
+function styleWindow() {
+  dialog({ title: "Style Manager - Window", icon: "files", msg: "Window behaviour:", extra: `<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px"><label><input type="radio" name="fp" value="click" ${S.pointerFocus ? "" : "checked"}> Click in window to make it active</label><label><input type="radio" name="fp" value="point" ${S.pointerFocus ? "checked" : ""}> Point in window to make it active</label></div>`,
+    buttons: [{ t: "OK", def: true, a: d => { S.pointerFocus = $("input[name=fp]:checked", d.el).value === "point"; toast(S.pointerFocus ? "The window under the pointer is the active one" : "Click a window to make it active"); } }, { t: "Cancel" }] });
+}
+
+// ---------- Application Manager
+const GROUPS = { Desktop_Apps: ["term", "files", "editor", "mail", "cal", "clockapp", "web"], Desktop_Tools: ["perf", "style", "printer"], Information: ["help"] };
+function openAppMgr() {
+  const st = { g: null };
+  makeWin({ key: "appmgr", app: "apps", icon: "apps", title: "Application Manager", w: 480, h: 320, menus: [
+    { t: "File", items: [{ t: "Go Up", a: () => { st.g = null; draw(); } }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => { w.body.innerHTML = `<div class="am"></div>`; w.draw = draw; draw(); } });
+  function draw() {
+    const w = [...S.wins.values()].find(x => x.key === "appmgr"); if (!w) return;
+    const am = $(".am", w.body); am.innerHTML = "";
+    setTitle(w, "Application Manager" + (st.g ? " - " + st.g : ""));
+    const items = st.g ? [["..", "folder", () => { st.g = null; draw(); }], ...GROUPS[st.g].map(k => [APPS[k].name, APPS[k].icon, () => launch(k)])] : Object.keys(GROUPS).map(g => [g, "folder", () => { st.g = g; draw(); }]);
+    items.forEach(([n, ic, f]) => { const d = document.createElement("div"); d.className = "fi"; d.innerHTML = `${picOf(ic)}<span>${esc(n === ".." ? "(go up)" : n)}</span>`; d.ondblclick = f; d.onmousedown = () => { $$(".fi", am).forEach(x => x.classList.toggle("sel", x === d)); }; am.appendChild(d); });
+  }
+}
+
+// ---------- Performance Meter: every processor, as Kosmos has them
+function openPerf() {
+  makeWin({ key: "perf", app: "perf", icon: "perf", title: "Performance Meter", w: 440, h: 400, init: w => {
+    const names = ["Processor 0", "Processor 1", "Processor 2", "Processor 3", "Memory", "Disk"];
+    w.body.innerHTML = `<div class="pm">${names.map(n => `<div class="g rz"><b><span>${n}</span><span class="v"></span></b><canvas></canvas></div>`).join("")}</div>`;
+    const hist = names.map(() => []); let base = [22, 14, 9, 30, 41, 5];
+    const tick = () => {
+      if (!S.wins.has(w.id)) return;
+      const load = Math.min(40, S.wins.size * 4);
+      $$(".g", w.body).forEach((g, i) => {
+        const c = $("canvas", g), W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
+        if (c.width !== W) { c.width = W; c.height = H; }
+        base[i] = clamp(base[i] + (Math.random() - .5) * 18, 2, 95);
+        const v = i === 4 ? clamp(30 + S.wins.size * 3, 0, 95) : clamp(base[i] * .7 + load * .5 + (Math.random() * 6), 0, 100);
+        hist[i].push(v); if (hist[i].length > W / 3) hist[i].shift();
+        $(".v", g).textContent = Math.round(v) + "%";
+        const x = c.getContext("2d"); x.clearRect(0, 0, W, H);
+        x.strokeStyle = "rgba(127,224,160,.18)"; for (let y = H / 4; y < H; y += H / 4) { x.beginPath(); x.moveTo(0, y); x.lineTo(W, y); x.stroke(); }
+        x.beginPath(); hist[i].forEach((h, j) => { const px = W - (hist[i].length - j) * 3, py = H - h / 100 * H; j ? x.lineTo(px, py) : x.moveTo(px, py); });
+        x.strokeStyle = i === 4 ? "#ffcf4a" : "#7fe0a0"; x.lineWidth = 1.5; x.stroke();
+      });
+      setTimeout(tick, 500);
+    };
+    tick();
+  } });
+}
+
+// ---------- Trash Can
+function openTrash() {
+  makeWin({ key: "trash", app: "trash", icon: "trash", title: "Trash Can", w: 420, h: 260, menus: [
+    { t: "File", items: [{ t: "Shred", a: () => emptyTrash(), d: !S.trash.length }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Selected", items: [{ t: "Put Back", a: () => putBack() , d: !S.trash.length }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => { w.body.innerHTML = `<div class="am"></div>`; refreshTrash(); } });
+}
+function refreshTrash() {
+  const w = [...S.wins.values()].find(x => x.key === "trash");
+  const ic = $("#fp-trash svg"); if (ic) ic.outerHTML = S.trash.length ? ICO.trashfull : ICO.trash;
+  if (!w) return;
+  const am = $(".am", w.body);
+  am.innerHTML = S.trash.length ? S.trash.map(t => `<div class="fi">${picOf(isDir(t.node) ? "folder" : "doc")}<span>${esc(t.name)}</span></div>`).join("") : `<div style="padding:10px;color:#333">The Trash Can is empty.</div>`;
+  buildMbar(w);
+}
+function putBack() { const t = S.trash.pop(); if (!t) return; nodeAt(t.from).kids[t.name] = t.node; refreshTrash(); refreshFiles(); }
+function emptyTrash() {
+  dialog({ title: "Trash Can - Shred", icon: "warn", msg: `Shred ${S.trash.length} item${S.trash.length === 1 ? "" : "s"}?<br><small>Shredded files cannot be put back.</small>`, buttons: [{ t: "OK", def: true, a: () => { S.trash = []; refreshTrash(); } }, { t: "Cancel" }] });
+}
+
+// ---------- Help Viewer: the Read Me
+function openHelp() {
+  makeWin({ key: "help", app: "help", icon: "help", title: "Help Viewer - Corona", w: 560, h: Math.max(300, Math.min(520, innerHeight - 130)), menus: [
+    { t: "File", items: [{ t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Navigate", items: [{ t: "Home Topic", d: true }, { t: "Backtrack", d: true }] },
+    { t: "Help", help: true, items: [{ t: "About Help Viewer", d: true }] },
+  ], init: w => {
+    w.body.innerHTML = `<div class="helpv">
+      <h2>Corona: Kosmos in the Solaris desktop's manner</h2>
+      <div style="color:#555">A mockup of a third desktop, to get the feel before any of it is built. "Corona" is a working name.</div>
+      <h3>From the Solaris desktop</h3>
+      <ul>
+        <li><b>The Front Panel</b> at the bottom: the clock, the calendar, your home folder, the text editor and mail at the left; the padlock, the busy light, four workspaces and Exit in the middle; the printer, the Style Manager, applications, help and the Trash Can at the right.</li>
+        <li><b>Subpanels</b>: the small arrow above a control opens its list. Personal Applications holds the Terminal and the Performance Meter.</li>
+        <li><b>Four workspaces</b>, each with its own windows and backdrop. Double-click a workspace's button to rename it.</li>
+        <li><b>Motif windows</b>: take hold of the frame to resize, the title bar to move (an outline moves, then the window). The button at the left of the title bar is the <b>window menu</b>: Move, Size, Minimize, Maximize, Lower, Occupy Workspace, Close. Double-click it to close.</li>
+        <li><b>Minimized windows</b> become icons down the left of the workspace. Double-click one to restore it.</li>
+        <li><b>The Workspace Menu</b>: press the right button on the backdrop.</li>
+        <li><b>The Style Manager</b>: palettes chosen whole, a backdrop for each workspace, and whether the active window is the one you click or the one you point at.</li>
+      </ul>
+      <h3>From Kosmos</h3>
+      <ul>
+        <li>The applications are Kosmos's, in Motif's frame: in the real desktop, Kosmos's Terminal, Tracker and Write, not these stand-ins.</li>
+        <li>The <b>Performance Meter</b> shows each of the four processors, because every one of them is in use.</li>
+        <li>Every program in its own address space: <code>ps</code> in the Terminal says so.</li>
+        <li>Exit ends the session; in Kosmos the desktop chooser would come back.</li>
+      </ul>
+      <h3>Try</h3>
+      <ul>
+        <li>Open the Terminal from the subpanel above the editor, and type <code>ls</code>, <code>cat Documents/readme.txt</code>, <code>ps</code>.</li>
+        <li>Put a window in every workspace: window menu, Occupy All Workspaces, then click Two.</li>
+        <li>Style Manager, Color, and try Charcoal or Ocean.</li>
+        <li>Click the padlock.</li>
+      </ul>
+    </div>`;
+  } });
+}
+
+/* ============================================================ the Front Panel */
+const ARROW_UP = `<svg viewBox="0 0 11 8"><path d="M1 7L5.5 1 10 7z" fill="var(--top)" stroke="var(--bot)"/></svg>`;
+const ARROW_DN = `<svg viewBox="0 0 11 8"><path d="M1 1L5.5 7 10 1z" fill="var(--bot)" stroke="var(--top)"/></svg>`;
+const FPL = [
+  { id: "clock", label: "", art: () => `<svg viewBox="0 0 100 100" class="fpclock">${clockSvg()}</svg>`, a: () => launch("clockapp"), sub: null },
+  { id: "cal", label: "", art: () => calArt(), a: () => launch("cal"), sub: null },
+  { id: "files", label: "Home", art: () => ICO.files, a: () => launch("files"), sub: { t: "Files", items: [["files", "Home Folder"], ["trash", "Trash Can"]] } },
+  { id: "editor", label: "Text Editor", art: () => ICO.editor, a: () => launch("editor"), sub: { t: "Personal Applications", items: [["term", "Terminal"], ["editor", "Text Editor"], ["perf", "Performance Meter"], ["web", "Web Browser"]] } },
+  { id: "mail", label: "Mail", art: () => ICO.mail, a: () => launch("mail"), sub: { t: "Mail", items: [["mail", "Mailer"]] } },
+  { id: "SWITCH" },
+  { id: "printer", label: "Printer", art: () => ICO.printer, a: () => launch("printer"), sub: { t: "Personal Printers", items: [["printer", "Print Manager"]] } },
+  { id: "style", label: "Style", art: () => ICO.style, a: () => launch("style"), sub: { t: "Tools", items: [["style", "Style Manager"], ["perf", "Performance Meter"]] } },
+  { id: "apps", label: "Applications", art: () => ICO.apps, a: () => launch("apps"), sub: { t: "Applications", items: [["apps", "Application Manager"], ["term", "Terminal"], ["files", "File Manager"]] } },
+  { id: "help", label: "Help", art: () => ICO.help, a: () => launch("help"), sub: { t: "Help", items: [["help", "Help Viewer"]] } },
+  { id: "trash", label: "Trash", art: () => ICO.trash, a: () => launch("trash"), sub: null },
+];
+function calArt() {
+  const d = new Date();
+  return `<svg viewBox="0 0 40 40"><rect x="5" y="4" width="30" height="32" fill="#fff" stroke="#000"/><rect x="5" y="4" width="30" height="9" fill="var(--act)" stroke="#000"/><text x="20" y="11.4" text-anchor="middle" font-family="IBM Plex Sans,Arial" font-size="7" font-weight="700" fill="#fff">${d.toLocaleDateString("en", { month: "short" }).toUpperCase()}</text><text x="20" y="31" text-anchor="middle" font-family="IBM Plex Sans,Arial" font-size="17" font-weight="700">${d.getDate()}</text></svg>`;
+}
+function buildPanel() {
+  const p = $("#panel"); p.innerHTML = "";
+  const hdl = side => { const h = document.createElement("div"); h.className = "hdl"; h.innerHTML = `<div class="hb rz1">${side === "l" ? '<i class="ic-menu" style="width:9px"></i>' : '<i class="ic-min"></i>'}</div><div class="bar"></div>`; return h; };
+  const L = hdl("l"); p.appendChild(L);
+  $(".hb", L).onmousedown = e => { e.stopPropagation(); openMenu([{ t: "Minimize", a: minPanel }, { t: "Move", d: true }, { t: "Lower", d: true }, { sep: true }, { t: "Restart Workspace Manager…", a: restartWm }], e.clientX, e.clientY - 120, { title: "Front Panel", noTear: true }); };
+  FPL.forEach(c => {
+    if (c.id === "SWITCH") { p.appendChild(buildSwitch()); return; }
+    const d = document.createElement("div"); d.className = "fp"; d.id = "fp-" + c.id;
+    d.innerHTML = `<div class="arr rz1${c.sub ? "" : " none"}">${ARROW_UP}</div><div class="cv rz" data-tip="${esc(c.label)}">${c.art()}${c.label ? `<small>${esc(c.label)}</small>` : ""}</div>`;
+    $(".cv", d).onclick = c.a;
+    if (c.sub) $(".arr", d).onclick = e => { e.stopPropagation(); toggleSub(c, d); };
+    p.appendChild(d);
+  });
+  const R = hdl("r"); p.appendChild(R);
+  $(".hb", R).onclick = minPanel;
+}
+function buildSwitch() {
+  const s = document.createElement("div"); s.className = "sw sk";
+  s.innerHTML = `<div class="side"><div class="cv rz" id="lockb" title="Lock the display">${ICO.lock.replace('viewBox', 'width="26" height="26" viewBox')}</div><div class="busy-l"></div></div><div class="wsg">${S.wsNames.map((n, i) => `<div class="wsb rz" data-i="${i}">${esc(n)}</div>`).join("")}</div><div class="side"><div class="cv rz" id="exitb" title="Exit">${ICO.exit.replace('viewBox', 'width="26" height="26" viewBox')}</div><small style="text-align:center;font-size:9.5px">Exit</small></div>`;
+  $$(".wsb", s).forEach(b => {
+    b.onclick = () => goWs(+b.dataset.i);
+    b.ondblclick = () => {
+      const i = +b.dataset.i; b.innerHTML = `<input value="${esc(S.wsNames[i])}" maxlength="12">`; const inp = $("input", b); inp.focus(); inp.select();
+      const done = () => { S.wsNames[i] = inp.value.trim() || S.wsNames[i]; b.textContent = S.wsNames[i]; };
+      inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { inp.value = S.wsNames[i]; inp.blur(); } };
+      inp.onblur = done; inp.onmousedown = e => e.stopPropagation();
+    };
+  });
+  $("#lockb", s).onclick = lockScreen;
+  $("#exitb", s).onclick = logout;
+  return s;
+}
+let SUB = null;
+function toggleSub(c, d) {
+  if (SUB && SUB.c === c) return closeSub();
+  closeSub();
+  const m = document.createElement("div"); m.className = "sub";
+  m.innerHTML = `<div class="stb"><div class="b rz1"><i class="ic-menu" style="width:9px"></i></div><div class="t rz1">${esc(c.sub.t)}</div></div><div class="inst sk">Install Icon</div>` +
+    c.sub.items.map(([k, n]) => `<div class="row" data-k="${k}">${picOf(APPS[k].icon)}<span>${esc(n)}</span></div>`).join("");
+  document.body.appendChild(m);
+  const r = d.getBoundingClientRect();
+  m.style.left = clamp(r.left + r.width / 2 - 100, 4, innerWidth - 204) + "px";
+  m.style.top = (r.top - m.offsetHeight + 2) + "px";
+  $$(".row", m).forEach(x => x.onclick = () => { closeSub(); launch(x.dataset.k); });
+  $(".inst", m).onclick = () => toast("Drop an application here to put it in this subpanel");
+  $(".arr", d).innerHTML = ARROW_DN;
+  SUB = { c, m, d };
+}
+function closeSub() { if (!SUB) return; SUB.m.remove(); $(".arr", SUB.d).innerHTML = ARROW_UP; SUB = null; }
+function minPanel() {
+  closeSub(); $("#panel").style.display = "none"; S.panelMin = true;
+  const ic = document.createElement("div"); ic.className = "dicon"; ic.id = "panelicon";
+  ic.innerHTML = `<div class="p rz">${ICO.panel}</div><div class="l">Front Panel</div>`;
+  Object.assign(ic.style, { left: "8px", bottom: "8px", top: "auto" });
+  ic.ondblclick = restorePanel; document.body.appendChild(ic);
+}
+function restorePanel() { const ic = $("#panelicon"); if (ic) ic.remove(); $("#panel").style.display = ""; S.panelMin = false; }
+function restartWm() {
+  dialog({ title: "Workspace Manager", icon: "q", msg: "Restart the Workspace Manager?<br><small>In Kosmos the window manager is one process for every desktop; the panel and workspaces would start again, and every application would keep running.</small>", buttons: [{ t: "OK", def: true, a: () => { document.body.style.opacity = .2; setTimeout(() => { document.body.style.opacity = ""; buildPanel(); show(); toast("The Workspace Manager started again"); }, 500); } }, { t: "Cancel" }] });
+}
+
+/* ============================================================ the workspace menu, the lock, the end */
+function workspaceMenu(x, y) {
+  openMenu([
+    { t: "Programs", sub: [["term", "Terminal"], ["files", "File Manager"], ["editor", "Text Editor"], ["mail", "Mailer"], ["cal", "Calendar"], ["perf", "Performance Meter"], ["style", "Style Manager"], ["help", "Help Viewer"]].map(([k, t]) => ({ t, a: () => launch(k) })) },
+    { sep: true },
+    { t: "Shuffle Up", a: () => shuffle(1) },
+    { t: "Shuffle Down", a: () => shuffle(-1) },
+    { t: "Refresh", a: () => { document.body.style.visibility = "hidden"; setTimeout(() => document.body.style.visibility = "", 80); } },
+    { t: S.panelMin ? "Restore Front Panel" : "Minimize Front Panel", a: () => S.panelMin ? restorePanel() : minPanel() },
+    { sep: true },
+    { t: "Restart Workspace Manager…", a: restartWm },
+    { sep: true },
+    { t: "Log out…", a: logout },
+  ], x, y, { title: "Workspace Menu" });
+}
+function shuffle(dir) {
+  const ws = [...S.wins.values()].filter(visible).sort((a, b) => +a.el.style.zIndex - +b.el.style.zIndex);
+  if (ws.length < 2) return;
+  if (dir > 0) focusWin(ws[0]); else lower(ws[ws.length - 1]);
+}
+function lockScreen() {
+  const L = $("#lock"); L.classList.add("on");
+  const m = $(".msg", L);
+  const mv = () => { if (!L.classList.contains("on")) return; m.style.left = (Math.random() * (innerWidth - 300)) + "px"; m.style.top = (Math.random() * (innerHeight - 80)) + "px"; setTimeout(mv, 2200); };
+  m.style.left = (innerWidth / 2 - 150) + "px"; m.style.top = (innerHeight / 2 - 30) + "px"; setTimeout(mv, 1500);
+  L.onclick = () => L.classList.remove("on");
+}
+function logout() {
+  dialog({ title: "Logout Confirmation", icon: "exit", msg: "Continue logout?<br><small>Every application is asked to quit. One with a document unsaved asks its own question.</small>", buttons: [{ t: "OK", def: true, a: () => { [...S.wins.values()].forEach(w => { w.el.remove(); }); S.wins.clear(); $$(".dicon").forEach(x => x.remove()); $("#ended").classList.add("on"); } }, { t: "Cancel" }] });
+}
+$("#again").onclick = () => { $("#ended").classList.remove("on"); startSession(); };
+
+$("#desk").addEventListener("mousedown", e => { if (e.target.id === "desk") { $$(".dicon").forEach(x => x.classList.remove("sel")); if (!S.pointerFocus) focusWin(null); } });
+document.addEventListener("contextmenu", e => { if (e.target.id === "desk" || e.target === document.body) { e.preventDefault(); workspaceMenu(e.clientX, e.clientY); } });
+
+/* ============================================================ the clock ticks */
+setInterval(() => {
+  const c = $(".fpclock"); if (c) c.innerHTML = clockSvg();
+  $$(".bigclock").forEach(b => b.innerHTML = clockSvg(true));
+}, 1000);
+
+function startSession() {
+  S.ws = 0; buildPanel(); show();
+  // What a session comes back to: the File Manager in One, the Help Viewer over it.
+  const go = () => { openFiles("/Home"); setTimeout(() => openHelp(), 60); };
+  // A page opened in a hidden tab has no size yet; wait until it has one.
+  if (innerWidth > 0) go(); else addEventListener("resize", function once() { if (innerWidth > 0) { removeEventListener("resize", once); go(); } });
+}
+startSession();
+</script>
+</body>
+</html>
