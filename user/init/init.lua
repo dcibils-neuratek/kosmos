@@ -46,6 +46,7 @@ local ROLE_E1000      = 22 -- an Intel Ethernet controller, where there is one
 local ROLE_AHCI       = 31 -- a SATA controller, where there is one
 local ROLE_VMTEST     = 32 -- a guest entered and left, said (`vmtest.c`)
 local ROLE_SANDBOXFS  = 33 -- serves /Sandboxes: guests' disks (`docs/linux.md` L1)
+local ROLE_MODELSFS    = 37 -- serves /Models: language models (`docs/xavier.md`)
 local ROLE_NOTIFY     = 23 -- serves /Notifications: what applications have said
 local ROLE_SMBFS      = 24 -- shares over the network: SMB 2 and 3 (`sharing.md`)
 local ROLE_KEYRING    = 25 -- the passwords Kosmos keeps, sealed (`keyring.md`)
@@ -2936,6 +2937,28 @@ local function new_namespace()
     -- WRITE_AT with nothing written and DISK_CUT. How a sandbox's disk of
     -- gigabytes is made, a piece at a time.
     --
+    --
+    -- **A range of a file written from a region** (`docs/diskfs.md`,
+    -- *Writing at an offset*): the region's first `bytes` at `offset`, the
+    -- file grown when they end past it, and made first when `create` says
+    -- so - each piece one transaction. What lets a copy of any size go a
+    -- piece at a time (`files.copy`), where `write` replaces a file whole.
+    --
+    if op == "write_at" then
+      local at = math.tointeger(tonumber(extra.offset))
+      local bytes = math.tointeger(tonumber(extra.bytes))
+
+      if not at or at < 0 then return nil, "an offset is a whole number of bytes" end
+      if not bytes or bytes < 0 then return nil, "a length is a whole number of bytes" end
+
+      local r, e = disk_call(capability, 16, rest, at, bytes,
+                             DISK_REGION | (extra.create and 2 or 0), nil, pass)
+
+      if not r then return nil, e end
+
+      return { ok = true, bytes = r.bytes }
+    end
+
     if op == "size" then
       local size = math.tointeger(tonumber(extra.size))
 
@@ -3511,6 +3534,23 @@ local function new_namespace()
 
     -- An answer with no count is not a write this can vouch for: said, not
     -- passed on as a `nil` with no reason beside it.
+    if r.bytes == nil then
+      return nil, "the server answered without saying what it wrote"
+    end
+
+    return r.bytes
+  end
+
+  --
+  -- **A region into a file at an offset**: `write_from`'s mirror of
+  -- `read_into`'s offset. A disk's files only; anything else says it cannot.
+  --
+  function ns.write_from_at(path, region, offset, bytes, create)
+    local r, e = request("write_at", path, { offset = offset, bytes = bytes,
+                                             create = create and true or nil }, region)
+
+    if not r then return nil, e end
+
     if r.bytes == nil then
       return nil, "the server answered without saying what it wrote"
     end
@@ -4339,7 +4379,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
-                          usb_cap, gpu_cap, bluetooth_cap, sandboxes_cap)
+                          usb_cap, gpu_cap, bluetooth_cap, models_cap, sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4435,6 +4475,14 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
     ns.mount("/Sandboxes", sandboxes_cap, "/Sandboxes", "disk")
   else
     sandboxes_cap = nil
+  end
+  -- `/Models` the same way, on its own word (`docs/xavier.md`, *Where the
+  -- models live*): its endpoint is always handed, its server started and
+  -- its drive mounted only on a machine started with one.
+  if sys.boot and sys.boot("opt/kosmos/models") then
+    ns.mount("/Models", models_cap, "/Models", "disk")
+  else
+    models_cap = nil
   end
   -- smbd's door (`docs/sharing.md` N12c): the shell holds it to pass on,
   -- and to send what is to be shared when it starts with the machine.
@@ -5217,6 +5265,8 @@ query. `find` and `watch` are built on exactly these two calls.
     -- And `/Sandboxes` (`docs/linux.md` L1), where the machine has one, as
     -- `/Home` is: a drive, to every program.
     local sandboxes = sandboxes_cap
+    -- And `/Models`, the same way.
+    local models = models_cap
     -- And the GPU's driver, as the backlight's is: a device of the machine.
     local gpu = gpu_cap
     local usb = usb_cap
@@ -5274,6 +5324,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if sharing then caps[#caps + 1] = sharing; sharing_at = #caps - 1 end
     local sandboxes_at = nil
     if sandboxes then caps[#caps + 1] = sandboxes; sandboxes_at = #caps - 1 end
+    local models_at = nil
+    if models then caps[#caps + 1] = models; models_at = #caps - 1 end
     local gpu_at = nil
     if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
     local usb_at = nil
@@ -5297,7 +5349,8 @@ query. `find` and `watch` are built on exactly these two calls.
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
-      sharing = sharing_at, sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
+      sharing = sharing_at, sandboxes = sandboxes_at, models = models_at,
+      gpu = gpu_at, usb = usb_at,
       bluetooth = bluetooth_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
@@ -6043,6 +6096,13 @@ if role == ROLE_INIT then
   -- `opt/kosmos/sandboxes` names, and only on a machine started with one.
   local SANDBOXES_EP = sys.boot and sys.boot("opt/kosmos/sandboxes")
                        and sys.endpoint() or nil
+  -- `/Models` (`docs/xavier.md`, *Where the models live*): the same, on the
+  -- partition `opt/kosmos/models` names. Its endpoint is made on every
+  -- machine, since the shell's list is positional and only its last may be
+  -- missing; nothing receives on it, and nothing is handed it, without the
+  -- word.
+  local MODELS_WORD = sys.boot and sys.boot("opt/kosmos/models")
+  local MODELS_EP = sys.endpoint()
   local KEYRING_SMB_EP = sys.endpoint()
   local KEYRING_MANAGE_EP = sys.endpoint()
   local KEYRING_MAIL_EP = sys.endpoint()     -- the keyring's `mail` door (`mail.md` M0)
@@ -6205,6 +6265,17 @@ if role == ROLE_INIT then
   if SANDBOXES_EP then
     start("the sandboxes drive", ROLE_SANDBOXFS,
           { SANDBOXES_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP, CONSOLE_EP }, 0)
+  end
+
+  --
+  -- **`/Models`, language models on a drive of their own** (`docs/xavier.md`,
+  -- *Where the models live*; Diego, 8 November 2026, after `/Home`'s 2 GB
+  -- met phi-2's 1.5): the same server a third time, so a model of gigabytes
+  -- fills its own partition and never `/Home`.
+  --
+  if MODELS_WORD then
+    start("the models drive", ROLE_MODELSFS,
+          { MODELS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP, CONSOLE_EP }, 0)
   end
 
   --
@@ -6403,7 +6474,10 @@ if role == ROLE_INIT then
   -- `/Home/Models` through the disk server's fourth door and nothing else.
   -- Idle, and holding nothing, until something asks it to load a model.
   --
-  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP })
+  -- And `/Models` fourth, where the machine has the drive: then the models
+  -- are read from there, and from `/Home/Models` where it has not.
+  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP,
+                                      MODELS_WORD and MODELS_EP or nil })
 
   --
   -- **The window server** (`docs/astra-display.md` D3b-2; Diego, 10 October:
@@ -6632,7 +6706,7 @@ if role == ROLE_INIT then
                         KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
                         -- Before `/Sandboxes`, which a machine may not have:
                         -- a list with a gap in it ends at the gap.
-                        USB_EP, GPU_EP, BLUETOOTH_EP, SANDBOXES_EP },
+                        USB_EP, GPU_EP, BLUETOOTH_EP, MODELS_EP, SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6706,7 +6780,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22, 23, 24, 25)
+             22, 23, 24, 25, 26)
   return
 end
 
@@ -6875,6 +6949,7 @@ if role == ROLE_RUNNER then
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
   if req.disk    then ns.mount("/Home", req.disk, "/Home", "disk") end
   if req.sandboxes then ns.mount("/Sandboxes", req.sandboxes, "/Sandboxes", "disk") end
+  if req.models then ns.mount("/Models", req.models, "/Models", "disk") end
 
   -- After the disk, because this replaces what that mounted. The shell
   -- decided once, at boot, whether there is a filesystem to put `/Home` on;
@@ -7103,6 +7178,14 @@ if role == ROLE_RUNNER then
       sandboxes_at = #caps - 1
     end
 
+    -- And `/Models`, as `/Sandboxes` is.
+    local models_at = nil
+
+    if req.models then
+      caps[#caps + 1] = req.models
+      models_at = #caps - 1
+    end
+
     -- And the GPU's driver (`docs/m700-2d.md`).
     local gpu_at, usb_at = nil, nil
 
@@ -7195,7 +7278,7 @@ if role == ROLE_RUNNER then
       backlight = 12, notify = 13, share = req.share and 14 or nil,
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
-      sandboxes = sandboxes_at, gpu = gpu_at, usb = usb_at,
+      sandboxes = sandboxes_at, models = models_at, gpu = gpu_at, usb = usb_at,
       bluetooth = bluetooth_at,
       mounts = (#mounts > 0) and mounts or nil,
 

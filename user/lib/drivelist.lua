@@ -101,33 +101,46 @@ end
 --
 -- **And `/Sandboxes`, guests' disks on a drive of their own**
 -- (`docs/linux.md` L1): the partition `opt/kosmos/sandboxes` names, served
--- by a disk server of its own, the same way.
+-- by a disk server of its own, the same way - and `/Models`, language
+-- models (`docs/xavier.md`, *Where the models live*), a third. One row a
+-- drive a disk server holds: its word, what it is called, where it opens.
 --
+local HELD = {
+  { word = "opt/kosmos/home", name = "Home", path = "/Home" },
+  { word = "opt/kosmos/sandboxes", name = "Sandboxes", path = "/Sandboxes" },
+  { word = "opt/kosmos/models", name = "Models", path = "/Models" },
+}
+
+local function held(volume)
+  for _, h in ipairs(HELD) do
+    if named_by(h.word, volume) then return h end
+  end
+
+  return nil
+end
+
 function drivelist.is_sandboxes(volume)
   return named_by("opt/kosmos/sandboxes", volume)
 end
 
--- What a volume is called: its label, or Home or Sandboxes for the two the
--- disk servers hold.
+-- What a volume is called: its label, or the name of the drive a disk
+-- server holds it as.
 function drivelist.label(volume)
-  if drivelist.is_home(volume) then return "Home" end
-  if drivelist.is_sandboxes(volume) then return "Sandboxes" end
+  local h = held(volume)
 
-  return volume.name
+  return h and h.name or volume.name
 end
 
 -- Whether it opens: one the drive server reads, or one a disk server holds.
 function drivelist.opens(volume)
-  return volume.readable or drivelist.is_home(volume)
-         or drivelist.is_sandboxes(volume)
+  return volume.readable or held(volume) ~= nil
 end
 
 -- Where a volume opens in Tracker.
 function drivelist.path(volume)
-  if drivelist.is_home(volume) then return "/Home" end
-  if drivelist.is_sandboxes(volume) then return "/Sandboxes" end
+  local h = held(volume)
 
-  return "/Drives/" .. volume.name
+  return h and h.path or ("/Drives/" .. volume.name)
 end
 
 return drivelist

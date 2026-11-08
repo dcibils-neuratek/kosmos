@@ -56,7 +56,12 @@ local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 -- command line or the screen, a page is what this is for.
 --------------------------------------------------------------------------
 
-local net = use("/Kosmos/Libraries/netprogram.lua").open{ name = "httpd", port = port }
+-- **`wait`**: started with the machine (every server is, by default, since
+-- 8 November 2026), it can begin before DHCP has answered, and the stack
+-- refuses to listen with no address - "could not listen on port 80: 3" on
+-- the M700, as `telnetd` said before it waited (`testing.md` 18.352).
+local net = use("/Kosmos/Libraries/netprogram.lua").open{ name = "httpd", port = port,
+                                                         wait = true }
 
 if not net then return end
 

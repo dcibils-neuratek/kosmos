@@ -1879,7 +1879,7 @@ def usb_sandboxes(image, check):
     Diego, 14 October 2026: "what if instead /home we crate a new /Sandboxes
     drive with virtual machibes disks?", "that pollutes the home?". A stick
     with `/Home` on it, made larger than its image as a 128 GB stick is, and
-    given `/Sandboxes` by `tools/sandboxes_drive.py` - the tool a stick in
+    given `/Sandboxes` by `tools/stick_drive.py` - the tool a stick in
     use is given it with - each partition named by its own GUID as the
     loader names them. Three boots:
 
@@ -1906,14 +1906,14 @@ def usb_sandboxes(image, check):
 
     made = subprocess.run([sys.executable, os.path.join(
                                os.path.dirname(os.path.abspath(__file__)),
-                               "sandboxes_drive.py"),
-                           stick, "--mb", "20", "--no-cmdline"],
+                               "stick_drive.py"),
+                           "--drive", "sandboxes", stick, "--mb", "20", "--no-cmdline"],
                           capture_output=True, text=True)
     at = re.search(r"at sectors (\d+) to (\d+)", made.stdout)
     named = re.search(r"its GUID: (\S+)", made.stdout)
 
     if made.returncode != 0 or not at or not named:
-        check(False, "sandboxes_drive.py did not give the stick /Sandboxes: %s"
+        check(False, "stick_drive.py did not give the stick /Sandboxes: %s"
               % (made.stdout + made.stderr))
         return
 
@@ -2022,6 +2022,165 @@ def usb_sandboxes(image, check):
           and three.count("it was blank, so it has been formatted") == 0,
           "named a partition no stick has, /Sandboxes did not say it is not "
           "there, or /Home was not read as before:\n    %s" % shown(three))
+
+
+def usb_models(image, check):
+    """**`/Models`, language models on a drive of their own** (`docs/xavier.md`,
+    *Where the models live*).
+
+    Diego, 8 November 2026, after `/Home`'s 2 GB met phi-2's 1.5: "Let's do
+    option 2" - a partition of its own, as `/Sandboxes` is. A stick whose
+    `/Home` holds the tiny phi-2 in `/Home/Models`, made larger than its
+    image and given `/Models` by `tools/stick_drive.py`. Two boots:
+
+      1. `/Models` formatted by its own server; the model copied into it with
+         `cp` - 3.7 MB, past the 1 MB copy window, so a piece at a time
+         through `write_at` - and `/Home`'s copy removed, so a model the LLM
+         server then loads can only have come from `/Models`; and a
+         program's read of a block of `/Models` refused, as `/Home`'s is;
+      2. **the control**: the same stick without the word - no `/Models`.
+
+    And off the stick on the Mac, the copy in `/Models`' partition is the
+    model byte for byte.
+    """
+    import uuid
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mkusb_image
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)
+    model = os.path.join(root, "build", "models", "tiny-phi2.Q4_0.gguf")
+
+    if not os.path.exists(model):
+        check(False, "no tiny phi-2 in build/models - `make llm-tiny`")
+        return
+
+    work = scratch.directory("x86-usb-models")
+    folder = os.path.join(work, "home")
+    home = os.path.join(work, "home.img")
+    esp = os.path.join(work, "esp.img")
+    stick = os.path.join(work, "stick.img")
+    home_id = str(uuid.uuid4()).upper()
+    lua = os.path.join(root, "build", "host", "lua")
+    name = "tiny-phi2.Q4_0.gguf"
+    want = open(model, "rb").read()
+
+    os.makedirs(os.path.join(folder, "Models"), exist_ok=True)
+
+    with open(os.path.join(folder, "Models", name), "wb") as out:
+        out.write(want)
+
+    made = subprocess.run([sys.executable, os.path.join(here, "homeimage.py"),
+                           folder, home, "16"], capture_output=True, text=True)
+
+    if made.returncode != 0:
+        check(False, "homeimage.py would not make /Home: " + made.stdout + made.stderr)
+        return
+
+    with open(esp, "wb") as handle:
+        handle.truncate(1024 * 1024)
+
+    if os.path.exists(stick):
+        os.remove(stick)
+
+    mkusb_image.write_gpt(stick, esp, os.path.getsize(esp), home=home, home_guid=home_id)
+
+    with open(stick, "r+b") as f:
+        f.truncate(os.path.getsize(stick) + 40 * 1024 * 1024)
+
+    given = subprocess.run([sys.executable, os.path.join(here, "stick_drive.py"),
+                            "--drive", "models", stick, "--mb", "32", "--no-cmdline"],
+                           capture_output=True, text=True)
+    at = re.search(r"at sectors (\d+) to (\d+)", given.stdout)
+    named = re.search(r"its GUID: (\S+)", given.stdout)
+
+    if given.returncode != 0 or not at or not named:
+        check(False, "stick_drive.py did not give the stick /Models: %s"
+              % (given.stdout + given.stderr))
+        return
+
+    m_first, m_last = int(at.group(1)), int(at.group(2))
+    models_id = named.group(1)
+
+    def extra(models):
+        words = ("-device", "qemu-xhci,id=usb0",
+                 "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+                 "-device", "usb-storage,bus=usb0.0,drive=stick",
+                 "-fw_cfg", "name=opt/kosmos/home,string=%s" % home_id)
+
+        return words + (("-fw_cfg", "name=opt/kosmos/models,string=%s" % models)
+                        if models else ())
+
+    guard = ('fs.write("/Temporary/guard.lua", [[local r = '
+             'use("/Kosmos/Libraries/blocks.lua").open() '
+             'local b, why = r:read(0, %d, 1) print("inside:", b and #b, why) '
+             'r:close()]])' % (m_first + 64))
+
+    # A program, since the prompt has no `use`: where `llm.lua` looks.
+    where = ('fs.write("/Temporary/where.lua", [[print("where:", '
+             'use("/Kosmos/Libraries/llm.lua").MODELS)]])')
+
+    one = boot(image, None, 180.0,
+               typed=("cp /Home/Models/%s /Models/%s" % (name, name),
+                      "ls /Models",
+                      "rm /Home/Models/%s" % name,
+                      where, "/Temporary/where.lua",
+                      "xavier --model %s --tokens 4 hello" % name,
+                      guard, "/Temporary/guard.lua"),
+               extra=extra(models_id), after="its backup")
+
+    two = boot(image, None, 150.0,
+               typed=("ls /Models", where, "/Temporary/where.lua"),
+               extra=extra(None), after="its backup")
+
+    if one is None or two is None:
+        check(False, "the machine would not boot with a stick for /Home and /Models")
+        return
+
+    def shown(out):
+        return "\n    ".join(l.strip() for l in out.splitlines()
+                              if "models:" in l or "llm:" in l or "inside:" in l
+                              or "where:" in l or "cp:" in l or name in l
+                              or "xavier" in l)
+
+    check("models: it was blank, so it has been formatted" in one,
+          "/Models was not formatted by a server of its own:\n    %s" % shown(one))
+
+    check(re.search(r"%s\s+%d" % (re.escape(name), len(want)), one) is not None,
+          "the model was not copied into /Models at its size, %d bytes:\n    %s"
+          % (len(want), shown(one)))
+
+    check("where:\t/Models" in one and "llm: %s is loaded" % name in one,
+          "the LLM server did not load the model from /Models, with /Home's "
+          "copy gone:\n    %s" % shown(one))
+
+    check(re.search(r"inside:\tnil\tthat block is a drive's a disk server "
+                    r"holds", one) is not None,
+          "a program's read of block %d, inside /Models' partition, was not "
+          "refused:\n    %s" % (m_first + 64, shown(one)))
+
+    check("where:\t/Home/Models" in two and "models:" not in two,
+          "without the word, there was a /Models, or programs were not told "
+          "/Home/Models:\n    %s" % shown(two))
+
+    part, got = stick + ".models", stick + ".models.got"
+
+    with open(stick, "rb") as f, open(part, "wb") as out:
+        f.seek(m_first * 512)
+        out.write(f.read((m_last - m_first + 1) * 512))
+
+    if os.path.exists(got):
+        os.remove(got)
+
+    subprocess.run([lua, os.path.join(here, "kfs.lua"), "get", part,
+                    "/Models/" + name, got], capture_output=True)
+    back = open(got, "rb").read() if os.path.exists(got) else None
+
+    check(back == want,
+          "read off /Models' partition on the Mac, the copy was not the model "
+          "byte for byte: %s bytes of %d" % (len(back) if back is not None else None,
+                                            len(want)))
 
 
 def usb_home_large(image, check):
@@ -5553,7 +5712,7 @@ def memory(image, check):
           "range is being counted and not adopted: %r" % said)
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_sandboxes', 'usb_models', 'usb_home_large', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'usb_mouse_recovers', 'usb_keyboard', 'usb_list', 'usb_list_none', 'usb_ethernet', 'usb_stack', 'ethernet', 'ethernet_unsent', 'ethernet_pch',
     'memory', 'memory_home', 'restart', 'notifications', 'settings_text', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button', 'battery']
 
 
@@ -5634,6 +5793,8 @@ def main():
         usb_home_named(image, check)
     if 'usb_sandboxes' in wanted:
         usb_sandboxes(image, check)
+    if 'usb_models' in wanted:
+        usb_models(image, check)
     if 'usb_home_large' in wanted:
         usb_home_large(image, check)
     if 'usb_drives' in wanted:

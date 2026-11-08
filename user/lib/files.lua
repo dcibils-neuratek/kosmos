@@ -327,13 +327,15 @@ end
 -- this process owns and `write_from` sends the same pages out; the content
 -- never enters the interpreter at all.
 --
--- **One region, one read, one write, and a limit that is honest about
--- why.** `write_from` writes a whole file and takes no offset, so a copy
--- larger than the region cannot be assembled - it would need either an
--- append or a second region, and both are a change to the filesystem
--- protocol rather than to this function. Until then a file bigger than the
--- window is refused with its size, which is a copy that did not happen
--- rather than one that half did.
+-- **One region, one read, one write** for a file that fits the window,
+-- and **a piece at a time** for one that does not (8 November 2026): read
+-- at an offset into the region, written at that offset with `write_at`,
+-- each piece one transaction on the disk. It refused a file past the
+-- window until then, since `write_from` takes no offset - a 1.5 GB model
+-- could not go from `/Home/Models` to `/Models`. Pieces need both ends to
+-- be disks; anything else is refused as before, with its size. A copy in
+-- pieces that fails part way says so, and what it made is removed rather
+-- than left looking whole.
 --------------------------------------------------------------------------
 
 -- Asked for at the first copy rather than when this is loaded, so the
@@ -356,11 +358,6 @@ function files.copy(from, to)
 
   local size = attrs.size or 0
 
-  if size > COPY_MAX then
-    return nil, ("%s is %d KB and the copy window is %d KB")
-                :format(from, size // 1024, COPY_MAX // 1024)
-  end
-
   -- Allocated once and kept: a file manager copies more than one thing, and
   -- one region serves every copy. Not mapped, since no byte of it is
   -- touched here - only the servers' and `regions.lua`'s.
@@ -370,6 +367,40 @@ function files.copy(from, to)
     buffer = regions.unmapped(COPY_MAX)
 
     if not buffer then return nil, "no memory for a copy buffer" end
+  end
+
+  if size > COPY_MAX then
+    -- Made empty first - or cut, when it is there - and then filled.
+    local made, cannot = fs.size(to, 0, true)
+
+    if not made then
+      return nil, ("%s is %d KB, past the copy window of %d KB, and %s cannot be "
+                   .. "written in pieces: %s"):format(from, size // 1024, COPY_MAX // 1024,
+                                                      to, tostring(cannot))
+    end
+
+    local at = 0
+
+    while at < size do
+      local want = math.min(COPY_MAX, size - at)
+      local got, why = fs.read_into(from, buffer.cap, at, want)
+
+      if got ~= want then
+        fs.send(to, { type = "delete" })
+        return nil, ("%s: could not be read at %d: %s"):format(from, at, tostring(why))
+      end
+
+      local put, oops = fs.write_from_at(to, buffer.cap, at, want)
+
+      if put ~= want then
+        fs.send(to, { type = "delete" })
+        return nil, ("%s: could not be written at %d: %s"):format(to, at, tostring(oops))
+      end
+
+      at = at + want
+    end
+
+    return size
   end
 
   --
@@ -496,6 +527,29 @@ function files.free_name(dir, name)
   end
 
   return nil, "no free name for " .. name .. " in " .. dir
+end
+
+--
+-- **Into the Trash**, under a name free there: the one door to it. The
+-- Trash is made if it is not there yet - it is Tracker's to make, and a
+-- home Tracker has not yet opened has none. Returns the new path, or nil
+-- and why.
+--
+function files.to_trash(path)
+  local ok, why = files.make_folder(files.TRASH)
+
+  if not ok then return nil, why end
+
+  local name, said = files.free_name(files.TRASH, path:match("([^/]+)$"))
+
+  if not name then return nil, said end
+
+  local to = files.join(files.TRASH, name)
+  local moved, failed = files.move(path, to)
+
+  if not moved then return nil, failed end
+
+  return to
 end
 
 --

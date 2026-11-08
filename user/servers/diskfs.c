@@ -70,6 +70,8 @@ void diskfs_server(long endpoint, long blocks_read, long blocks_write,
                    long models);
 void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
                       long devices, long console);
+void modelsfs_server(long endpoint, long blocks_read, long blocks_write,
+                     long devices, long console);
 
 /* The names a Kosmos disk keeps for itself (the Lua server's `RESERVED`). */
 static const char *const RESERVED[] = { ".super", ".format", ".device" };
@@ -159,17 +161,25 @@ static const char HOME_ROOT[] = "Home";
  * log calls it. `/Sandboxes` is a stick's partition named by its GUID and
  * nothing else - never the kernel's disk, which is `/Home`'s, and never
  * `usb`, which is the first Kosmos partition and so `/Home`'s too.
+ *
+ * **And `/Models`** (8 November 2026, `docs/xavier.md`, *Where the models
+ * live*): the language models on a drive of their own in the same way, so
+ * a model of gigabytes fills its own partition and never `/Home`. A drive
+ * like these two is `named`: by its GUID or not there at all, and `tag` is
+ * what its lines in the log begin with.
  */
 static const char *const HOME_LAYOUT[] = { "/Home", NULL };
 static const char *const SANDBOXES_LAYOUT[] = { "/Sandboxes", NULL };
+static const char *const MODELS_LAYOUT[] = { "/Models", NULL };
 
 static struct {
     const char *option;
     const char *root;
     const char *const *layout;
     const char *called;
-    bool sandboxes;
-} drive = { "opt/kosmos/home", HOME_ROOT, HOME_LAYOUT, "/Home", false };
+    const char *tag;
+    bool named;
+} drive = { "opt/kosmos/home", HOME_ROOT, HOME_LAYOUT, "/Home", "disk: ", false };
 
 struct door {
     const char *root;
@@ -212,7 +222,7 @@ static void tell(const char *a, unsigned long n, bool with_n, const char *b)
     }
 
     say_begin(&line);
-    say_text(&line, drive.sandboxes ? "sandboxes: " : "disk: ");
+    say_text(&line, drive.tag);
     say_text(&line, a);
 
     if (with_n) {
@@ -350,8 +360,9 @@ static bool look(void)
         return true;
     }
 
-    /* `/Sandboxes` is named or is not there: never the first one found. */
-    if (drive.sandboxes && !stick.have_wanted) {
+    /* `/Sandboxes` and `/Models` are named or are not there: never the
+     * first one found. */
+    if (drive.named && !stick.have_wanted) {
         return false;
     }
 
@@ -520,7 +531,7 @@ static bool stick_found(void)
         return true;
     }
 
-    if (stick.waited || (drive.sandboxes && !stick.have_wanted)) {
+    if (stick.waited || (drive.named && !stick.have_wanted)) {
         return false;
     }
 
@@ -546,8 +557,8 @@ static bool device(uint64_t *sectors, uint32_t *most, const char **why)
 {
     if (stick.use) {
         if (!stick_found()) {
-            *why = drive.sandboxes && !stick.have_wanted
-                   ? "this machine was not started with a drive for sandboxes"
+            *why = drive.named && !stick.have_wanted
+                   ? "this machine was not started with this drive"
                    : "the USB stick's Kosmos partition is not there yet";
             return false;
         }
@@ -1957,14 +1968,14 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
      */
     n = kosmos_boot_option(drive.option, home, sizeof home - 1);
 
-    if (drive.sandboxes) {
+    if (drive.named) {
         stick.use = true;
     }
 
     if (n > 0) {
         home[n < (long)sizeof home ? n : (long)sizeof home - 1] = '\0';
 
-        if (strcmp(home, "usb") == 0 && !drive.sandboxes) {
+        if (strcmp(home, "usb") == 0 && !drive.named) {
             stick.use = true;
         } else if (strlen(home) == 36) {
             stick.use = true;
@@ -2045,6 +2056,21 @@ void sandboxfs_server(long endpoint, long read_ep, long write_ep, long devices_e
     drive.root = "Sandboxes";
     drive.layout = SANDBOXES_LAYOUT;
     drive.called = "/Sandboxes";
-    drive.sandboxes = true;
+    drive.tag = "sandboxes: ";
+    drive.named = true;
+    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1, -1);
+}
+
+/* `/Models`: the same again on the partition `opt/kosmos/models` names -
+ * the language models, which the LLM server alone is handed. */
+void modelsfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
+                     long console_ep)
+{
+    drive.option = "opt/kosmos/models";
+    drive.root = "Models";
+    drive.layout = MODELS_LAYOUT;
+    drive.called = "/Models";
+    drive.tag = "models: ";
+    drive.named = true;
     serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1, -1);
 }

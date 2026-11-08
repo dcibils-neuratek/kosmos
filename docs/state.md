@@ -2,7 +2,44 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.320, not pushed; phi-2 answers in Kosmos; memory above 4 GB reached)
+Last updated: 2026-11-08 (0.11.322, not pushed; Xavier's window, `/Models`, SMB writable from a Mac)
+
+---
+
+## 8 November, later: Xavier's window, phi-2 on the M700, `/Models`
+
+**X4, built** (0.11.322, not pushed): `user/bin/apps/assistant.lua`, the
+window `xavier.html` draws, with conversations kept as files in
+`/Home/Xavier` by `user/lib/conversations.lua`. `x86-xavier`
+(`tools/run_assistant.py`) drives it as a person would and passes 24
+checks. Three answers are the kit's own byte for byte across a
+conversation. A follow-up reads only its own words, and a question too
+long forgets the oldest turn. Stop works. A conversation is kept and opened
+again, and Delete sends one to the Trash (`files.to_trash`, made for it).
+
+**phi-2 is on the M700**, in `/Home/Models`, copied over SMB in 301 s,
+its SHA-256 the Mac's, and still there after a reboot. The copy found
+`smbd` telling a Mac that every share was read only (`testing.md` 18.715).
+**Every server starts with the machine by default** now (Diego: "lets turn
+start with the machine on by default"). On the M700, Diego has all four on.
+
+**`/Models`, built and tested under QEMU, not yet on the stick** (Diego:
+"Let's do option 2"; `testing.md` 18.716). `/Home` on the M700's stick is
+2 GB with 295 MB free, and 88 GB of the 128 GB stick are in no partition.
+**Next, on the M700**:
+
+1. Diego takes the stick out and runs
+   `sudo python3 tools/stick_drive.py --drive models /dev/rdiskN`.
+2. The netboot is rebuilt with `opt/kosmos/models=<GUID>` added to its
+   `--words`. `make netboot` alone names a stale stick's GUID, so the words
+   are written in full.
+3. phi-2 is moved from `/Home/Models` to `/Models`.
+4. X3's first real tok/s is measured.
+
+`httpd` failed at boot on the M700 with "could not listen on port 80: 3":
+it started before DHCP had answered. It and `vncd` now wait for an address
+(`testing.md` 18.717). Still open: the M700 has no `/Home/www`, so the web
+server has nothing to serve.
 
 ---
 

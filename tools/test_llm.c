@@ -105,6 +105,115 @@ static int numbers(const char *s, int *out, int room)
   return n;
 }
 
+/*
+ * **A follow-up reads only what is new, and answers as a fresh read would**
+ * (`docs/xavier.md` X4; `llm_core.h`, `struct llm_held`). The logits after
+ * each way of keeping the cache are compared to the same tokens read from
+ * nothing, to the bit: the same code in the same order, so anything but
+ * equal is a cache entry kept that should not have been.
+ */
+static float fresh[60000];
+
+static int fresh_logits(struct llm_model *m, const int32_t *t, int n)
+{
+  llm_reset(m);
+  for (int i = 0; i < n; i++) if (llm_step(m, t[i]) != 0) return -1;
+  memcpy(fresh, m->logits, m->n_vocab * sizeof *fresh);
+  return 0;
+}
+
+static int same_logits(const struct llm_model *m)
+{
+  return memcmp(fresh, m->logits, m->n_vocab * sizeof *fresh) == 0;
+}
+
+static void check_held(struct llm_model *m)
+{
+  static int32_t room[2048], held_tokens[2048], seq[2048];
+  static char held_text[16384];
+  struct llm_held h = { held_tokens, 0, held_text, sizeof held_text, 0 };
+  const char *a = "Instruct: What is the capital of France?\nOutput:";
+  const char *b = "Instruct: What is the capital of France?\nOutput: The capital of France is "
+                  "Paris.\nInstruct: And of Spain?\nOutput:";
+  const char *c = "Instruct: What is the capital of France?\nOutput: Something else entirely";
+  uint32_t kept;
+  int n, na, nseq, whole;
+  char what[160];
+
+  if (m->n_vocab > sizeof fresh / sizeof *fresh) {
+    check(0, "the held context's check: more logits than its room");
+    return;
+  }
+
+  /* The first question: nothing held, so all of it read. */
+  llm_held_reset(m, &h);
+  na = llm_prompt(m, &h, a, strlen(a), room, 2048, &kept);
+  snprintf(what, sizeof what, "held: the first question read whole, %d tokens, %u kept", na, kept);
+  check(na > 0 && kept == 0, what);
+  for (int i = 0; i < na; i++) { llm_feed(m, &h, room[i]); seq[i] = room[i]; }
+  check(h.n == (uint32_t)na && h.text_bytes == strlen(a), "held: its tokens and its text held");
+
+  /* The follow-up: the held text is where it begins, so only the rest. */
+  n = llm_prompt(m, &h, b, strlen(b), room, 2048, &kept);
+  snprintf(what, sizeof what, "held: the follow-up reads only its own %d tokens, %u kept", n, kept);
+  check(n > 0 && kept == (uint32_t)na, what);
+  for (int i = 0; i < n; i++) { llm_feed(m, &h, room[i]); seq[na + i] = room[i]; }
+  nseq = na + n;
+  {
+    static float after[60000];
+    memcpy(after, m->logits, m->n_vocab * sizeof *after);
+    fresh_logits(m, seq, nseq);
+    check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
+          "held: the follow-up's logits are those of the same tokens read from nothing");
+  }
+
+  /* `fresh_logits` read the very tokens held, so the cache still agrees
+   * with them. A different answer after the question: rewound to where the
+   * tokens part, and the logits a fresh read's. */
+  n = llm_prompt(m, &h, c, strlen(c), room, 2048, &kept);
+  whole = llm_tokenize(m, c, strlen(c), 1, seq, 2048);
+  snprintf(what, sizeof what, "held: another answer rewinds - %u of %d kept, %d read", kept,
+           whole, n);
+  check(n > 0 && kept >= (uint32_t)na - 1 && kept + (uint32_t)n == (uint32_t)whole, what);
+  for (int i = 0; i < n; i++) llm_feed(m, &h, room[i]);
+  {
+    static float after[60000];
+    memcpy(after, m->logits, m->n_vocab * sizeof *after);
+    fresh_logits(m, seq, whole);
+    check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
+          "held: after a rewind, the logits are a fresh read's to the bit");
+  }
+
+  /* Now a turn taken back: the text differs after the question, so the
+   * cache is rewound to where the tokens part. */
+  n = llm_prompt(m, &h, b, strlen(b), room, 2048, &kept);
+  whole = llm_tokenize(m, b, strlen(b), 1, seq, 2048);
+  snprintf(what, sizeof what, "held: back to the first answer rewinds - %u of %d kept, %d read", kept,
+           whole, n);
+  check(n > 0 && kept > 0 && kept + (uint32_t)n == (uint32_t)whole, what);
+  for (int i = 0; i < n; i++) llm_feed(m, &h, room[i]);
+  {
+    static float after[60000];
+    memcpy(after, m->logits, m->n_vocab * sizeof *after);
+    fresh_logits(m, seq, whole);
+    check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
+          "held: rewound again, the logits are a fresh read's to the bit");
+  }
+
+  /* And the same text twice: everything kept but the last token, read
+   * again for the logits an answer begins from. */
+  llm_held_reset(m, &h);
+  n = llm_prompt(m, &h, b, strlen(b), room, 2048, &kept);
+  for (int i = 0; i < n; i++) llm_feed(m, &h, room[i]);
+  n = llm_prompt(m, &h, b, strlen(b), room, 2048, &kept);
+  snprintf(what, sizeof what, "held: the same text again reads one token, %d, %u kept", n, kept);
+  check(n == 1 && kept + 1 == (uint32_t)whole, what);
+  llm_feed(m, &h, room[0]);
+  check(same_logits(m), "held: and its logits are the fresh read's");
+
+  printf("\nheld: a follow-up read %d tokens of %d; a rewind kept %u\n", whole - na, whole, kept);
+}
+
 int main(int argc, char **argv)
 {
   if (argc < 3) {
@@ -264,6 +373,8 @@ int main(int argc, char **argv)
       answer++;
     }
   }
+
+  check_held(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);
   printf("%d steps in %.1f s: %.2f tokens a second, scalar, one thread, on the Mac\n", steps,

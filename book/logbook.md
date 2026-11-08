@@ -1569,3 +1569,40 @@ Then it works rather than stopping the computer.
 12-token question read in 109 s, the answer written at 0.11 tokens a
 second. Those are an emulator's numbers; a real core is the next question
 (`docs/xavier.md`).
+
+## 8 November - Xavier's window, phi-2 on the M700, and a drive for models
+
+**In short.** Xavier has a window now: questions in, answers written as
+they come, conversations kept as files and opened again. phi-2 was copied
+to the M700 so it can answer there, and the copy found the file server
+telling a Mac that a writable folder was read only. And because a model is
+too large for the stick's `/Home`, models get a drive of their own,
+`/Models`.
+
+**What happened.** The window was built to the drawing Diego agreed. Each
+conversation is a plain file in `/Home/Xavier`. When a question would not
+fit in what the model holds, the oldest turn is forgotten rather than the
+question refused. The test asks four questions through the window, as a
+person would, and holds every answer to the engine's own on the Mac, byte
+for byte.
+
+Copying 1.5 GB to the M700 over the network found two faults. The file
+server marked every shared folder read only. That was true once and stayed
+written after it stopped being true. A Mac believes the mark and refused to
+copy, while the tool our tests use never reads it. Then the servers did not
+come back after a reboot, because each one started only when told to.
+Diego chose to have them all start with the machine.
+
+**Why a drive for models.** `/Home` on the stick is a 2 GB partition, and
+with phi-2 in it 295 MB were left - on a 128 GB stick whose other 88 GB
+nobody uses. Making `/Home` larger means rewriting it, files and all.
+A partition of its own, as virtual machines' disks already have in
+`/Sandboxes`, leaves `/Home` alone. It also gives the next model room.
+
+**What a person notices.** Xavier is an application rather than a command.
+A Mac mounts Kosmos's writable folders as writable. Sharing comes back on
+its own after a reboot. Once the stick has the new partition, models
+live in `/Models`, and `/Home` has its space back.
+
+**Measured.** The copy: 1,568,676,736 bytes in 301 s, about 5.2 MB a
+second over the M700's wired network, and the Mac's SHA-256 at the end.

@@ -1540,11 +1540,23 @@ static int query_info(struct smb2_server *server, struct smb2_context *smb2,
             length = sizeof info.device;
             break;
         case SMB2_FILE_FS_ATTRIBUTE_INFORMATION:
+            /*
+             * Read only only where the share is: macOS's smbfs mounts a
+             * volume that says so read only, whatever TREE_CONNECT granted
+             * - and it said so of every share from N12, when every share
+             * was, until Diego's copy into a writable one was refused.
+             */
             info.attribute.filesystem_attributes = FS_CASE_PRESERVED | FS_UNICODE_ON_DISK
-                                                   | FS_READ_ONLY;
+                                                   | (s != NULL && s->writable
+                                                      ? 0 : FS_READ_ONLY);
             info.attribute.maximum_component_name_length = 255;
-            info.attribute.filesystem_name = (const uint8_t *)"kfs";
-            info.attribute.filesystem_name_length = 6;
+            /*
+             * Four characters at least: libsmb2's decoder - Kosmos's own
+             * smbfs among its users - refuses this answer under 20 bytes,
+             * and "kfs" made 18 (testing.md 18.715).
+             */
+            info.attribute.filesystem_name = (const uint8_t *)"KosmosFS";
+            info.attribute.filesystem_name_length = 16;
             length = sizeof info.attribute;
             break;
         case SMB2_FILE_FS_SECTOR_SIZE_INFORMATION:
@@ -2144,7 +2156,7 @@ static uint32_t add_share(const struct smbd_share *sh)
         s->path[n - 1] = '\0';
     }
 
-    said("sharing ", s->name, " - read only");
+    said("sharing ", s->name, s->writable ? " - read and write" : " - read only");
     return 0;
 }
 

@@ -16,6 +16,16 @@
  * to stop at a blank line has to end:
  *
  *   answer HEX : TOKEN-HEX.TOKEN-HEX...
+ *
+ * **With `--chain`, a conversation** (X4): the prompts are the texts a
+ * window asked one after another, each the whole conversation so far, and
+ * the cache is held across them through the kit's own `llm_prompt` and
+ * `llm_feed`, as the server holds it - so a follow-up keeps what the
+ * server would keep. `--stops HEX,HEX` are the texts an answer ends at,
+ * cut as the server cuts them. Each answer is then its bytes, whole:
+ *
+ *   llm_answer --chain [--stops HEX,HEX] MODEL TOKENS HEX...
+ *   answer HEX : ANSWER-HEX kept K read R held H
  */
 
 #include "llm_core.h"
@@ -47,12 +57,103 @@ static int unhex(const char *h, char *out, int room)
   return n;
 }
 
+/* The prompts as a conversation: one held context across all of them. */
+static int chain(struct llm_model *m, int tokens, char stops[2][64], int stop_n[2], int count,
+                 char **prompts)
+{
+  static int32_t held_tokens[65536], room[65536];
+  static char held_text[262144], text[262144], made[65536];
+  struct llm_held h = { held_tokens, 0, held_text, sizeof held_text, 0 };
+
+  llm_held_reset(m, &h);
+
+  for (int a = 0; a < count; a++) {
+    int n = unhex(prompts[a], text, (int)sizeof text);
+    uint32_t kept = 0;
+    int k = n > 0 ? llm_prompt(m, &h, text, (size_t)n, room, (int)m->n_ctx + 1, &kept) : -1;
+    int bytes = 0;
+
+    printf("answer %s :", prompts[a]);
+
+    if (k <= 0) {
+      printf(" refused\n");
+      continue;
+    }
+
+    for (int i = 0; i < k; i++) llm_feed(m, &h, room[i]);
+
+    int32_t next = llm_greedy(m);
+
+    /* As the server's `ask_step`: a token written, then the stops looked
+     * for, then - unless it was the last - fed. */
+    for (int done = 0, count_made = 0; !done;) {
+      char piece[256];
+
+      if (next == m->eos || m->n_past >= m->n_ctx) break;
+
+      int b = llm_token_text(m, next, piece, (int)sizeof piece);
+
+      if (b < 0 || bytes + b > (int)sizeof made) break;
+
+      memcpy(made + bytes, piece, (size_t)b);
+      bytes += b;
+      count_made++;
+
+      for (int s = 0; s < 2 && !done; s++) {
+        if (stop_n[s] == 0) continue;
+
+        for (int i = 0; i + stop_n[s] <= bytes; i++) {
+          if (memcmp(made + i, stops[s], (size_t)stop_n[s]) == 0) {
+            bytes = i;
+            done = 1;
+            break;
+          }
+        }
+      }
+
+      if (done || count_made >= tokens || llm_feed(m, &h, next) != 0) break;
+
+      next = llm_greedy(m);
+    }
+
+    printf(" ");
+    for (int i = 0; i < bytes; i++) printf("%02x", (unsigned char)made[i]);
+    printf(" kept %u read %d held %u\n", kept, k, m->n_past);
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   struct llm_model m;
   struct stat st;
   char why[128];
   int fd;
+  int chained = 0;
+  static char stops[2][64];
+  int stop_n[2] = { 0, 0 };
+
+  while (argc > 1 && argv[1][0] == '-' && argv[1][1] == '-') {
+    if (strcmp(argv[1], "--chain") == 0) {
+      chained = 1;
+      argv++, argc--;
+    } else if (strcmp(argv[1], "--stops") == 0 && argc > 2) {
+      char *at = argv[2];
+
+      for (int s = 0; s < 2 && at && *at; s++) {
+        char *comma = strchr(at, ',');
+
+        if (comma) *comma = '\0';
+        stop_n[s] = unhex(at, stops[s], (int)sizeof stops[s]);
+        at = comma ? comma + 1 : NULL;
+      }
+
+      argv += 2, argc -= 2;
+    } else {
+      break;
+    }
+  }
 
   if (argc < 4) {
     fprintf(stderr, "usage: llm_answer MODEL TOKENS HEX...\n");
@@ -75,6 +176,8 @@ int main(int argc, char **argv)
   }
 
   int tokens = atoi(argv[2]);
+
+  if (chained) return chain(&m, tokens, stops, stop_n, argc - 3, argv + 3);
 
   for (int a = 3; a < argc; a++) {
     static char text[4096];

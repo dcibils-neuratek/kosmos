@@ -1120,6 +1120,103 @@ static void rope(float *head, uint32_t n_rot, uint32_t pos, float base)
 
 void llm_reset(struct llm_model *m) { m->n_past = 0; }
 
+/* ------------------------------------------------------------------------
+ * What the cache holds (`llm_core.h`, `struct llm_held`).
+ * --------------------------------------------------------------------- */
+
+void llm_held_reset(struct llm_model *m, struct llm_held *h)
+{
+  m->n_past = 0;
+  h->n = 0;
+  h->text_bytes = 0;
+}
+
+/* The held text from the held tokens, as far as it fits. */
+static void held_text_again(const struct llm_model *m, struct llm_held *h)
+{
+  uint32_t at = 0;
+
+  for (uint32_t i = 0; i < h->n; i++) {
+    char piece[256];
+    int b = llm_token_text(m, h->tokens[i], piece, (int)sizeof piece);
+
+    if (b < 0 || (uint32_t)b > h->text_room - at) {
+      h->text_bytes = LLM_TEXT_UNKNOWN;
+      return;
+    }
+
+    memcpy(h->text + at, piece, (size_t)b);
+    at += (uint32_t)b;
+  }
+
+  h->text_bytes = at;
+}
+
+int llm_prompt(struct llm_model *m, struct llm_held *h, const char *text, size_t n,
+               int32_t *out, int room, uint32_t *kept)
+{
+  int k;
+  uint32_t same = 0;
+
+  *kept = 0;
+
+  if (h->n != m->n_past || h->n > m->n_ctx) llm_held_reset(m, h);
+
+  /* The follow-up: what is held is where `text` begins, and more follows. */
+  if (h->n > 0 && h->text_bytes != LLM_TEXT_UNKNOWN && n > h->text_bytes
+      && memcmp(text, h->text, h->text_bytes) == 0) {
+    k = llm_tokenize(m, text + h->text_bytes, n - h->text_bytes, 1, out, room);
+
+    if (k > 0) {
+      if ((uint32_t)k + h->n >= m->n_ctx) return -1;
+
+      *kept = h->n;
+      return k;
+    }
+  }
+
+  /* Otherwise the whole of it, and as much of the cache as agrees. */
+  k = llm_tokenize(m, text, n, 1, out, room);
+
+  if (k <= 0 || (uint32_t)k >= m->n_ctx) return -1;
+
+  while (same < h->n && same < (uint32_t)k && out[same] == h->tokens[same]) same++;
+
+  if (same == (uint32_t)k) same--;      /* the last one read again, for its logits */
+
+  m->n_past = h->n = same;
+  held_text_again(m, h);
+  memmove(out, out + same, ((size_t)k - same) * sizeof *out);
+
+  *kept = same;
+  return k - (int)same;
+}
+
+int llm_feed(struct llm_model *m, struct llm_held *h, int32_t token)
+{
+  char piece[256];
+  int b;
+
+  if (h->n != m->n_past) llm_held_reset(m, h);
+
+  if (llm_step(m, token) != 0) return -1;
+
+  h->tokens[h->n++] = token;
+
+  if (h->text_bytes != LLM_TEXT_UNKNOWN) {
+    b = llm_token_text(m, token, piece, (int)sizeof piece);
+
+    if (b < 0 || (uint32_t)b > h->text_room - h->text_bytes) {
+      h->text_bytes = LLM_TEXT_UNKNOWN;
+    } else {
+      memcpy(h->text + h->text_bytes, piece, (size_t)b);
+      h->text_bytes += (uint32_t)b;
+    }
+  }
+
+  return 0;
+}
+
 int llm_step(struct llm_model *m, int32_t token)
 {
   if (token < 0 || (uint32_t)token >= m->n_vocab || m->n_past >= m->n_ctx) return -1;

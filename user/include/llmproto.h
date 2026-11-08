@@ -8,7 +8,8 @@
  * A declared shape, as every system server speaks, so a caller can say only
  * what there are fields for.
  *
- *   LOAD   a model, by its file's name in `/Home/Models` - the only folder
+ *   LOAD   a model, by its file's name in `/Models` (`/Home/Models` without
+ *          that drive) - the only folder
  *          the server can read. The reply is held until the model is in
  *          memory, or refused; the server answers everyone else meanwhile.
  *   ASK    a prompt, as text, and the most tokens to answer with. The reply
@@ -19,6 +20,13 @@
  *   STOP   ends the answer being made, where it is.
  *   STATS  what is loaded and how fast it ran: the engine's numbers, which
  *          `llm` at the prompt and the monitor window read (X8b).
+ *
+ * **A conversation is asked whole, and only its new words are read**
+ * (X4). An application sends everything said so far with each turn - in a
+ * region handed with the request when it is more than a message holds
+ * (`LLM_TEXT_IN_REGION`) - and the server keeps what its cache already
+ * holds of it (`llm_core.h`, `struct llm_held`): a follow-up reads its own
+ * words, and the reply says how many were kept.
  *
  * **One answer at a time**: there is one model and one cache. A second ASK
  * while one is being answered is refused as BUSY, and says so; a queue is
@@ -39,7 +47,7 @@
 
 #define LLM_OK            0u
 #define LLM_ERR_BAD_OP    1u    /* not a request this protocol has */
-#define LLM_ERR_NO_FILE   2u    /* no such model in /Home/Models */
+#define LLM_ERR_NO_FILE   2u    /* no such model in the models folder */
 #define LLM_ERR_BAD_MODEL 3u    /* the file is not a model this kit runs */
 #define LLM_ERR_NO_MEMORY 4u
 #define LLM_ERR_NO_MODEL  5u    /* ASK with nothing loaded */
@@ -48,21 +56,36 @@
 #define LLM_ERR_NO_ANSWER 8u    /* WAIT or STOP with no answer to wait on */
 
 #define LLM_NAME_MAX  64u
-#define LLM_TEXT_MAX  1536u     /* a prompt, for now: one message of text */
+#define LLM_TEXT_MAX  1536u     /* a prompt in the message itself */
 #define LLM_WHY_MAX   96u
+#define LLM_STOP_MAX  24u       /* a stop text, unterminated when it fills */
+#define LLM_STOPS     2u
+
+/* A conversation in a region: at most this many bytes, from its start. */
+#define LLM_CONVERSATION_MAX (256u * 1024u)
 
 /* What a request may ask for besides its tokens. */
-#define LLM_STOP_AT_BLANK_LINE 1u   /* end the answer at its first "\n\n" */
+#define LLM_STOP_AT_BLANK_LINE 1u   /* ASK: end the answer at its first "\n\n"  */
+#define LLM_TEXT_IN_REGION     2u   /* ASK: `length` bytes are in the region
+                                       handed with the request, not `text` */
+#define LLM_LOAD_NOWAIT        4u   /* LOAD: answer at once; STATS says when
+                                       the model is in, so a window need not
+                                       wait on it */
 
 struct llm_request {
     uint32_t op;
     uint32_t max_tokens;            /* ASK: at most this many; 0 is 128   */
     uint32_t flags;                 /* ASK: LLM_STOP_*                     */
     uint32_t since;                 /* WAIT: the bytes already seen        */
-    uint32_t length;                /* ASK: bytes of `text`                */
+    uint32_t length;                /* ASK: bytes of `text`, or the region's */
     uint32_t reserved;
-    char     name[LLM_NAME_MAX];    /* LOAD: a file in /Home/Models        */
+    char     name[LLM_NAME_MAX];    /* LOAD: a file in the models folder   */
     char     text[LLM_TEXT_MAX];    /* ASK: the prompt, not terminated     */
+
+    /* ASK: up to two texts that end the answer where they begin, and are
+     * not written into it - phi-2's next "\nInstruct:", say. Unused ones
+     * are empty; a text of exactly LLM_STOP_MAX bytes has no terminator. */
+    char     stop[LLM_STOPS][LLM_STOP_MAX];
 };
 
 /* The server's state, in every reply. */
@@ -94,6 +117,11 @@ struct llm_reply {
     uint64_t first_us;              /* the ask to the first answer token   */
     uint64_t load_us;               /* the last LOAD, the file to ready    */
     uint64_t answers;               /* since the server started            */
+
+    /* The cache, after the last ASK: how many of its prompt's tokens were
+     * already held and not read again, and how many it holds now. */
+    uint32_t kept_tokens;
+    uint32_t held_tokens;
 };
 
 _Static_assert(sizeof(struct llm_request) <= 2048, "an LLM request must fit in one message");

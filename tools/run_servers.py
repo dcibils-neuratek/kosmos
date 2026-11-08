@@ -867,7 +867,41 @@ def main():
         fails.append("a window past the screen's left edge, watched by a viewer, made the screen "
                      "be watched again %d times: %r" % (edge[1], edge[0][:80]))
 
-    checks = 35
+    # ---- 3: the same disk on a network that gives no address ----
+    #
+    # **Every server starts with the machine by default** (8 November 2026),
+    # and on the M700 the web server began before DHCP had answered: the
+    # stack refuses to listen with no address, and it said "could not listen
+    # on port 80: 3" and left. `telnetd` learned to wait in 18.352; the web
+    # server and the screen's had never started that early. A card on a hub
+    # with nothing else on it is a network whose DHCP never answers: both
+    # must say they are waiting, and still be running seconds later.
+    import run_network
+    import run_screenshot as R
+    waiting = ("httpd: waiting for an address to listen on port 8080",
+               "vncd: waiting for an address to listen on port 5900")
+
+    try:
+        # The desktop holds the prompt, so the log is the witness: both
+        # say they wait, and in the seconds after neither has ended.
+        lonely = run_network.boot(image, [
+            "-netdev", "hubport,id=net0,hubid=0",
+            "-device", R.device(image, "net") + ",netdev=net0",
+            # The screen's server shares a desktop, and starts with one.
+            "-fw_cfg", "name=opt/kosmos/boot,string=wm Astra.desktop",
+        ], [], seconds=120, after=waiting[0], then=lambda: time.sleep(8))
+        lonely = waiting[0] + "\n" + lonely
+    except Exception as e:              # noqa: BLE001 - said below
+        lonely = "%s: %s" % (type(e).__name__, e)
+
+    left = re.search(r"\((httpd|vncd)\) ended", lonely)
+
+    if any(w not in lonely for w in waiting) or "could not listen" in lonely or left:
+        fails.append("on a network that gives no address, the web server and the screen's "
+                     "did not both wait for one, or one of them left:\n    " + "\n    ".join(
+                         l for l in lonely.splitlines() if "httpd" in l or "vncd" in l))
+
+    checks = 36
 
     if fails:
         print("FAIL: %d of %d checks on the Servers window:" % (len(fails), checks))

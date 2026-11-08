@@ -176,6 +176,9 @@ SUITES = [
     # forms, every answer from /Running/llm the kit's own byte for byte, the
     # refusals, a stop, and every answer's region given back.
     Suite("x86-llm", ["python3", "tools/run_llm.py", X86], x86=True),
+    # Xavier's window (`docs/xavier.md` X4): a conversation asked as a person
+    # would, its answers the kit's own across it, a follow-up kept.
+    Suite("x86-xavier", ["python3", "tools/run_assistant.py", X86], x86=True),
 
     # Passwords (K6): a keyring made on the Mac, the window used as a person
     # would - sorted, a row, Show, a note, search, Delete asked and done.
@@ -538,7 +541,7 @@ SUITES = [
                         "usb_stack"],
           x86=True),
     Suite("x86-usb-2", ["python3", "tools/run_x86.py", X86, "--parts",
-                        "usb_home_named,usb_sandboxes,usb_home_large,usb_drives,"
+                        "usb_home_named,usb_sandboxes,usb_models,usb_home_large,usb_drives,"
                         "usb_flush_refused,"
                         "cmdline_long,usb_hotplug,usb_mouse,usb_mouse_recovers,"
                         "usb_keyboard,usb_list,usb_list_none,"

@@ -8,13 +8,13 @@
 --   xavier --tokens 32 Say something short
 --   xavier --stats
 --
--- With nothing loaded it loads a model from /Home/Models first: the one
+-- With nothing loaded it loads a model from /Models (or /Home/Models on a
+-- machine without that drive) first: the one
 -- named, or phi-2's when it is there, or the first model in the folder.
 
 local llm = use("/Kosmos/Libraries/llm.lua")
 
-local MODELS = "/Home/Models"
-local PREFERRED = { "phi-2.Q4_0.gguf", "phi-2.Q8_0.gguf" }
+local MODELS = llm.MODELS
 
 local function usage()
   print("usage: xavier [--model <file>] [--tokens <n>] [--raw] <question>")
@@ -71,19 +71,8 @@ if question == "" then usage() return end
 local s, why = llm.stats()
 if not s then print("xavier: " .. why) return end
 
-local function pick()
-  if model then return model end
-  local names = fs.list(MODELS) or {}
-  local have = {}
-  for _, n in ipairs(names) do have[n] = true end
-  for _, n in ipairs(PREFERRED) do if have[n] then return n end end
-  table.sort(names)
-  for _, n in ipairs(names) do if n:lower():match("%.gguf$") then return n end end
-  return nil
-end
-
 if s.state == "empty" or (model and model ~= s.model) then
-  local name = pick()
+  local name = llm.choose(model)
   if not name then
     print("xavier: there is no model in " .. MODELS .. " - see docs/xavier.md X1")
     return
@@ -95,8 +84,9 @@ if s.state == "empty" or (model and model ~= s.model) then
                       ms(got.load_us)), "dim")
 end
 
--- phi-2's own way of being asked, unless the question is given as it is.
-local prompt = raw and question or ("Instruct: " .. question .. "\nOutput:")
+-- The model's own way of being asked, unless the question is given as it is.
+local held = llm.stats()
+local prompt = raw and question or llm.form(held and held.arch).question(question)
 
 local a, said = llm.ask(prompt, { tokens = tokens or 128, paragraph = not raw })
 if not a then print("xavier: " .. said) return end

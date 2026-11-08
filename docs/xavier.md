@@ -521,6 +521,49 @@ on one core the shell's prompt comes before the servers init starts after
 it have run at all, so a program typed at once finds no `/Running/llm`;
 the suite waits for the server's line.
 
+## Where the models live (8 November 2026)
+
+**Why**: `/Home` on a stick is 2 GB, the size `STICK_HOME_MB` gives it when
+a stick is written (8 October, `docs/diskfs.md`, *No limit*), and phi-2 at
+Q4_0 is 1.5 GB of it - copied to the M700 over SMB that day, with 295 MB
+left. A 7B model at Q8_0 is 7.7 GB. The M700's stick is a 128 GB Kingston
+with 88 GB in no partition at all. Three ways were put to Diego: write the
+stick again with a larger `/Home`; a drive of the models' own; or `/Home`
+grown in place (G2 and G3, dropped on 8 October). Diego: "Let's do option 2".
+
+**What**: `/Models`, a partition of its own, exactly as `/Sandboxes` is for
+guests' disks (`docs/linux.md` L1) - so a model of gigabytes fills its own
+drive and never `/Home`:
+
+- **its server**: `diskfs.c` a third time, as the role `modelsfs`, on the
+  partition `opt/kosmos/models` names by its GUID and nothing else; blank,
+  it is formatted with `/Models` at its root. A drive named only by GUID
+  is `named` in `diskfs.c` now, which `/Sandboxes` was by a flag of its own;
+- **its mount**: the shell mounts `/Models` on the same word, and every
+  program is handed it as `/Sandboxes` is - a person puts a model there;
+- **the LLM server** is handed that drive where the machine has it, and the
+  `/Home/Models` door where it does not - every machine with one disk, which
+  is every QEMU suite. init decides by which it hands over, `llm.lua` by the
+  same word (`llm.MODELS`), so the two cannot disagree;
+- **its blocks** guarded by the USB driver with the other two drives';
+- **the Drives list** names it Models, opening at `/Models` - one table of
+  the drives a disk server holds now, in `drivelist.lua`, for all three;
+- **on a stick in use**: `tools/stick_drive.py --drive models`, which was
+  `sandboxes_drive.py` - one tool for either drive, the GPT moved to the
+  stick's end, the partition added after the last, `/Home` untouched. 48 GB
+  unless `--mb` says.
+
+**And a copy of any size**: a model goes from `/Home/Models` to `/Models`
+with `cp`, and `files.copy` refused a file over its 1 MB window, since
+`write_from` replaces a file whole. A file past the window is copied a piece
+at a time now - read at an offset into the region, written at that offset
+through the disk protocol's `DISK_OP_WRITE_AT`, which the namespace had no
+door to (`fs.write_from_at`). So `mv` between drives, and Tracker's copy,
+work at any size too.
+
+**Tests**: `usb_models` in `x86-usb-2`; `test_stick_drive.py` in `host`
+(`testing.md` 18.716).
+
 ## All the acceleration there is
 
 Diego's 4, as steps. Each is chosen at run time from what the machine
@@ -590,7 +633,8 @@ express.
    own converter from the Hugging Face weights, at Q4_0 (1.6 GB) and Q8_0
    (2.9 GB). Where it lives on the M700 is a question too: the stick's
    `/Home` is 512 MB, so it needs a larger `/Home` or a partition of its
-   own.
+   own. *Taken: a partition of its own, `/Models` (8 November; *Where the
+   models live*).*
 4. **AVX2 through `xsave`** in the kernel (X6), and when. *Taken: yes,
    and every other acceleration too, chosen at run time.*
 5. **The voice**: eSpeak NG first, clear and robotic. A neural voice

@@ -40,16 +40,22 @@
 #include "../init/say.h"
 #include "kits/llm/llm_core.h"
 
-void llm_server(long running_cap, long models_disk_ep, long console_ep);
+void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep);
 
-#define MODELS_ROOT   "/Home/Models"
+/*
+ * **Where the models are** (`docs/xavier.md`, *Where the models live*):
+ * `/Models`, a drive of their own, on a machine started with one - and
+ * `/Home/Models`, through the disk server's door, on a machine without, as
+ * every machine with one disk is. init decides, by which it hands over.
+ */
+static const char *models_root = "/Home/Models";
 #define PIECE_BYTES   (4u * 1024u * 1024u)  /* a model read this much at a time */
 #define DEFAULT_TOKENS 128u
 #define WAITERS       16u                   /* WAITs held at once; more answered now */
 #define ALLOCS        64u                   /* the kit's tables, a region each */
 
-_Static_assert(sizeof(struct llm_request) == 1624, "llm_request is 1624 bytes");
-_Static_assert(sizeof(struct llm_reply) == 336, "llm_reply is 336 bytes");
+_Static_assert(sizeof(struct llm_request) == 1672, "llm_request is 1672 bytes");
+_Static_assert(sizeof(struct llm_reply) == 344, "llm_reply is 344 bytes");
 
 static long console = -1;
 static unsigned long counter_hz = 62500000ul;
@@ -138,16 +144,34 @@ static struct {
     struct block region;
     struct llm_answer *head;
     char    *data;
-    int32_t *prompt;
+    int32_t *prompt;                    /* the model's n_ctx, from the kit's room */
     uint32_t prompt_n, prompt_at;       /* tokens, and how many are read */
+    uint32_t kept;                      /* of the conversation, already held */
     uint32_t max_tokens, flags, made;
+
+    /*
+     * The answer's bytes as made, and as shown. They part only while the
+     * end of what is made could be the start of a stop text: that much is
+     * held back, so text a stop would take away was never in `written`,
+     * which only grows (`llmring.h`).
+     */
+    uint32_t made_bytes, searched;
+    char     stop[LLM_STOPS][LLM_STOP_MAX];
+    uint32_t stop_n[LLM_STOPS];
     int32_t  next;                      /* the token to feed next, or -1 */
     unsigned long asked, began_answer, first_at;
     uint64_t prompt_us, answer_us, first_us;
     uint64_t answers;
 } ans = { .region = { .cap = -1 } };
 
-static struct block prompt_room = { .cap = -1 };
+/*
+ * What the cache holds (`llm_core.h`, `struct llm_held`), from the kit's
+ * own allocator, so it goes with the model; and a conversation handed in a
+ * region, copied here before it is read, so the asker cannot change it
+ * under the tokenizer.
+ */
+static struct llm_held held;
+static struct block conversation = { .cap = -1 };
 
 static uint64_t waiters[WAITERS];
 static uint32_t waiting_since[WAITERS];
@@ -177,6 +201,11 @@ static void describe(struct llm_reply *rp)
         rp->n_ctx = model.m.n_ctx;
     }
 
+    if (model.state == LLM_STATE_READY || model.state == LLM_STATE_ANSWERING) {
+        rp->held_tokens = model.m.n_past;
+    }
+
+    rp->kept_tokens = ans.kept;
     rp->prompt_tokens = ans.prompt_n;
     rp->answer_tokens = ans.made;
     rp->prompt_us = ans.prompt_us;
@@ -227,6 +256,8 @@ static void unload(void)
     n_blocks = 0;
     region_drop(&model.file);
     memset(&model.m, 0, sizeof model.m);
+    memset(&held, 0, sizeof held);
+    ans.prompt = NULL;
     model.state = LLM_STATE_EMPTY;
     model.size = model.loaded = 0;
 }
@@ -271,7 +302,7 @@ static uint32_t load_begin(const char *name)
 
     if (!good_name(name)) {
         snprintf(model.why, sizeof model.why, "a model is a file's name in %s, not a path",
-                 MODELS_ROOT);
+                 models_root);
         return LLM_ERR_NO_FILE;
     }
 
@@ -280,9 +311,11 @@ static uint32_t load_begin(const char *name)
      * - here rather than at start: the disk is asked only when somebody
      * wants a model, so a server that asks for nothing never waits on it.
      */
-    (void)diskask(&disk, DISK_OP_MKDIR, "/Home", 0, 0, 0, -1, NULL, 0);
-    (void)diskask(&disk, DISK_OP_MKDIR, MODELS_ROOT, 0, 0, 0, -1, NULL, 0);
-    snprintf(path, sizeof path, "%s/%s", MODELS_ROOT, name);
+    if (strcmp(models_root, "/Home/Models") == 0) {
+        (void)diskask(&disk, DISK_OP_MKDIR, "/Home", 0, 0, 0, -1, NULL, 0);
+    }
+    (void)diskask(&disk, DISK_OP_MKDIR, models_root, 0, 0, 0, -1, NULL, 0);
+    snprintf(path, sizeof path, "%s/%s", models_root, name);
 
     /* The file is looked for before the model held is let go: a name
      * mistyped costs a refusal, not the model already loaded. */
@@ -296,7 +329,7 @@ static uint32_t load_begin(const char *name)
         if (e == DISK_ERR_NO_DISK && rp->length > 0 && rp->length < DISK_DATA_MAX) {
             put(model.why, sizeof model.why, rp->u.data, rp->length);
         } else {
-            snprintf(model.why, sizeof model.why, "no %s in %s", name, MODELS_ROOT);
+            snprintf(model.why, sizeof model.why, "no %s in %s", name, models_root);
         }
 
         return LLM_ERR_NO_FILE;
@@ -332,7 +365,7 @@ static void load_step(void)
     if (want > PIECE_BYTES) want = PIECE_BYTES;
 
     if (want > 0) {
-        snprintf(path, sizeof path, "%s/%s", MODELS_ROOT, model.name);
+        snprintf(path, sizeof path, "%s/%s", models_root, model.name);
         e = diskask(&disk, DISK_OP_READ, path, DISK_REGION, model.loaded, want, piece.cap,
                     NULL, 0);
 
@@ -355,6 +388,21 @@ static void load_step(void)
         return;
     }
 
+    /* The room a conversation needs, beside the model and gone with it: a
+     * prompt of the whole cache, and the cache's tokens and text held. */
+    ans.prompt = kit_alloc(NULL, ((size_t)model.m.n_ctx + 1) * sizeof(int32_t));
+    held.tokens = kit_alloc(NULL, (size_t)model.m.n_ctx * sizeof(int32_t));
+    held.text = kit_alloc(NULL, LLM_CONVERSATION_MAX);
+    held.text_room = LLM_CONVERSATION_MAX;
+
+    if (ans.prompt == NULL || held.tokens == NULL || held.text == NULL) {
+        snprintf(model.why, sizeof model.why, "no room for a conversation beside the model");
+        load_done(LLM_ERR_NO_MEMORY);
+        return;
+    }
+
+    llm_held_reset(&model.m, &held);
+
     load_done(LLM_OK);
 }
 
@@ -370,29 +418,64 @@ static void answer_end(void)
 
     if (ans.began_answer != 0) ans.answer_us = micros(kosmos_ticks() - ans.began_answer);
 
+    /* Whatever was held back for a stop that did not come is shown now. */
+    if (ans.made_bytes > ans.head->written) llm_answer_publish(&ans.head->written, ans.made_bytes);
+
     llm_answer_publish(&ans.head->ended, 1);
     model.state = LLM_STATE_READY;
     ans.answers++;
     wake_waiters(true);
 }
 
-static uint32_t ask_begin(const struct llm_request *rq, long *cap)
+/*
+ * The conversation an ASK hands over in a region: `length` bytes from its
+ * start, copied out and the mapping let go at once.
+ */
+static uint32_t take_conversation(long given, uint32_t length, const char **text)
 {
+    long pages, at;
+
+    if (given < 0) return LLM_ERR_BAD_OP;
+
+    if (length == 0 || length > LLM_CONVERSATION_MAX) return LLM_ERR_TOO_LONG;
+
+    if ((pages = kosmos_mem_size(given)) <= 0 || (uint64_t)length > (uint64_t)pages * 4096u) {
+        return LLM_ERR_TOO_LONG;
+    }
+
+    if (conversation.cap < 0 && !region(&conversation, LLM_CONVERSATION_MAX)) {
+        return LLM_ERR_NO_MEMORY;
+    }
+
+    if ((at = kosmos_mem_map(given)) < 0) return LLM_ERR_BAD_OP;
+
+    memcpy((void *)(uintptr_t)conversation.at, (const void *)(uintptr_t)at, length);
+    kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+    *text = (const char *)(uintptr_t)conversation.at;
+    return LLM_OK;
+}
+
+static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
+{
+    const char *text = rq->text;
     uint32_t length = rq->length < LLM_TEXT_MAX ? rq->length : LLM_TEXT_MAX;
+    uint32_t e, kept;
     int n;
 
     if (model.state == LLM_STATE_EMPTY) return LLM_ERR_NO_MODEL;
 
     if (model.state != LLM_STATE_READY) return LLM_ERR_BUSY;
 
-    if (prompt_room.cap < 0 && !region(&prompt_room, (LLM_TEXT_MAX + 1u) * sizeof(int32_t))) {
-        return LLM_ERR_NO_MEMORY;
+    if (rq->flags & LLM_TEXT_IN_REGION) {
+        if ((e = take_conversation(given, rq->length, &text)) != LLM_OK) return e;
+
+        length = rq->length;
     }
 
-    ans.prompt = (int32_t *)(uintptr_t)prompt_room.at;
-    n = llm_tokenize(&model.m, rq->text, length, 1, ans.prompt, (int)LLM_TEXT_MAX + 1);
+    /* What the cache holds of it is kept; only the rest is to be read. */
+    n = llm_prompt(&model.m, &held, text, length, ans.prompt, (int)model.m.n_ctx + 1, &kept);
 
-    if (n <= 0 || (uint32_t)n >= model.m.n_ctx) return LLM_ERR_TOO_LONG;
+    if (n <= 0) return LLM_ERR_TOO_LONG;
 
     /* A new region each time: the last asker may still be reading its own. */
     region_drop(&ans.region);
@@ -404,29 +487,71 @@ static uint32_t ask_begin(const struct llm_request *rq, long *cap)
     ans.head->magic = LLM_ANSWER_MAGIC;
     ans.head->bytes = LLM_ANSWER_BYTES;
 
+    for (unsigned i = 0; i < LLM_STOPS; i++) {
+        memcpy(ans.stop[i], rq->stop[i], LLM_STOP_MAX);
+        ans.stop_n[i] = 0;
+
+        while (ans.stop_n[i] < LLM_STOP_MAX && ans.stop[i][ans.stop_n[i]] != '\0') ans.stop_n[i]++;
+    }
+
     ans.on = true;
     ans.prompt_n = (uint32_t)n;
     ans.prompt_at = 0;
+    ans.kept = kept;
     ans.max_tokens = rq->max_tokens == 0 ? DEFAULT_TOKENS
                      : rq->max_tokens > LLM_ANSWER_TOKENS_MAX ? LLM_ANSWER_TOKENS_MAX
                      : rq->max_tokens;
     ans.flags = rq->flags;
     ans.made = 0;
+    ans.made_bytes = ans.searched = 0;
     ans.next = -1;
     ans.asked = kosmos_ticks();
     ans.began_answer = 0;
     ans.prompt_us = ans.answer_us = ans.first_us = 0;
-    llm_reset(&model.m);
     model.state = LLM_STATE_ANSWERING;
     *cap = ans.region.cap;
     return LLM_OK;
+}
+
+/*
+ * After the answer has grown: whether a stop text has appeared in it, and
+ * how far it may be shown - to where the stop begins, or short of whatever
+ * at its end could still become one.
+ */
+static bool stopped(uint32_t *show)
+{
+    uint32_t made = ans.made_bytes, hold = 0;
+
+    for (unsigned s = 0; s < LLM_STOPS; s++) {
+        uint32_t L = ans.stop_n[s];
+
+        if (L == 0) continue;
+
+        for (uint32_t i = ans.searched >= L - 1 ? ans.searched - (L - 1) : 0; i + L <= made; i++) {
+            if (memcmp(ans.data + i, ans.stop[s], L) == 0) {
+                *show = i;
+                return true;
+            }
+        }
+
+        for (uint32_t k = L - 1 < made ? L - 1 : made; k > hold; k--) {
+            if (memcmp(ans.data + made - k, ans.stop[s], k) == 0) {
+                hold = k;
+                break;
+            }
+        }
+    }
+
+    ans.searched = made;
+    *show = made - hold;
+    return false;
 }
 
 /* Whether the bytes from `from` on hold a blank line, counting the byte
  * before them: a token may end one line and the next begin the blank. */
 static bool blank_line(uint32_t from)
 {
-    uint32_t w = ans.head->written;
+    uint32_t w = ans.made_bytes;
 
     for (uint32_t i = from > 0 ? from - 1 : 0; i + 1 < w; i++) {
         if (ans.data[i] == '\n' && ans.data[i + 1] == '\n') return true;
@@ -442,7 +567,7 @@ static void ask_step(void)
     uint32_t last = 0;
 
     if (ans.prompt_at < ans.prompt_n) {
-        if (llm_step(&model.m, ans.prompt[ans.prompt_at++]) != 0) {
+        if (llm_feed(&model.m, &held, ans.prompt[ans.prompt_at++]) != 0) {
             answer_end();
             return;
         }
@@ -468,8 +593,9 @@ static void ask_step(void)
         char text[256];
         int n = llm_token_text(&model.m, token, text, (int)sizeof text);
 
+        uint32_t w = ans.made_bytes, show;
+
         last = n > 0 ? (uint32_t)n : 0;
-        uint32_t w = ans.head->written;
 
         if (n < 0 || (uint32_t)n > LLM_ANSWER_BYTES - w) {
             answer_end();
@@ -478,8 +604,16 @@ static void ask_step(void)
 
         memcpy(ans.data + w, text, (size_t)n);
         ans.made++;
+        ans.made_bytes = w + (uint32_t)n;
         ans.head->tokens = ans.made;
-        llm_answer_publish(&ans.head->written, w + (uint32_t)n);
+
+        if (stopped(&show)) {
+            ans.made_bytes = show;      /* the stop and after it, never shown */
+            answer_end();
+            return;
+        }
+
+        if (show > ans.head->written) llm_answer_publish(&ans.head->written, show);
     }
 
     if (ans.made == 1) ans.first_us = micros(kosmos_ticks() - ans.asked);
@@ -487,12 +621,12 @@ static void ask_step(void)
     ans.answer_us = micros(kosmos_ticks() - ans.began_answer);
     wake_waiters(false);
 
-    if ((ans.flags & LLM_STOP_AT_BLANK_LINE) && blank_line(ans.head->written - last)) {
+    if ((ans.flags & LLM_STOP_AT_BLANK_LINE) && blank_line(ans.made_bytes - last)) {
         answer_end();
         return;
     }
 
-    if (ans.made >= ans.max_tokens || llm_step(&model.m, token) != 0) {
+    if (ans.made >= ans.max_tokens || llm_feed(&model.m, &held, token) != 0) {
         answer_end();
         return;
     }
@@ -527,20 +661,12 @@ static void hold_wait(uint64_t sender, uint32_t since)
     send(sender, LLM_OK, -1);           /* full: asked again, which is a poll */
 }
 
-static void answer(const struct message *in, uint64_t sender)
+static void handle(const struct llm_request *in, long given, uint64_t sender)
 {
-    struct llm_request rq;
+    struct llm_request rq = *in;
     long cap = -1;
     uint32_t e;
 
-    memset(&rq, 0, sizeof rq);
-
-    if (in->length != sizeof rq) {
-        send(sender, LLM_ERR_BAD_OP, -1);
-        return;
-    }
-
-    memcpy(&rq, in->data, sizeof rq);
     rq.name[LLM_NAME_MAX - 1] = '\0';
 
     switch (rq.op) {
@@ -555,11 +681,18 @@ static void answer(const struct message *in, uint64_t sender)
             return;
         }
 
-        model.loader = sender;           /* answered when it is in */
+        /* Answered when it is in - or now, for a window that watches
+         * STATS on its own clock rather than wait. */
+        if (rq.flags & LLM_LOAD_NOWAIT) {
+            send(sender, LLM_OK, -1);
+        } else {
+            model.loader = sender;
+        }
+
         return;
 
     case LLM_OP_ASK:
-        e = ask_begin(&rq, &cap);
+        e = ask_begin(&rq, given, &cap);
         send(sender, e, e == LLM_OK ? cap : -1);
         return;
 
@@ -587,6 +720,26 @@ static void answer(const struct message *in, uint64_t sender)
     }
 }
 
+/*
+ * A request, whole or refused, and whatever capability came with it let
+ * go after: only an ASK with its conversation in a region has a use for
+ * one, and it copies the text out before it returns.
+ */
+static void answer(const struct message *in, uint64_t sender)
+{
+    struct llm_request rq;
+    long given = in->cap_plus_one != 0 ? (long)in->cap_plus_one - 1 : -1;
+
+    if (in->length != sizeof rq) {
+        send(sender, LLM_ERR_BAD_OP, -1);
+    } else {
+        memcpy(&rq, in->data, sizeof rq);
+        handle(&rq, given, sender);
+    }
+
+    if (given >= 0) kosmos_cap_drop(given);
+}
+
 static long register_name(long running)
 {
     struct message msg, rep;
@@ -610,13 +763,18 @@ static long register_name(long running)
     return endpoint;
 }
 
-void llm_server(long running_cap, long models_disk_ep, long console_ep)
+void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep)
 {
     static struct message in;
     long endpoint;
 
     console = console_ep;
     disk.ep = models_disk_ep;
+
+    if (models_drive_ep >= 0) {
+        disk.ep = models_drive_ep;
+        models_root = "/Models";
+    }
 
     {
         struct sysinfo info;

@@ -491,6 +491,19 @@ def main():
         put = ask(port, "Projects", "kosmos", PASSWORD, "put hello.txt written.txt", cwd=got)
         check("NT_STATUS_ACCESS_DENIED" in put, "a file was not refused: %r" % put[-300:])
 
+        # 7a. What each share says its volume is, which macOS's smbfs mounts
+        # by: read only for Projects, and not for Notes - every share said
+        # read only until 8 November, and Diego's Mac could not write.
+        fsattr = os.path.join(ROOT, "build", "host", "smb_fsattr")
+        vols = {}
+        for share in ("Projects", "Notes"):
+            got_v = subprocess.run([fsattr, "smb://kosmos@127.0.0.1:%d/%s" % (port, share),
+                                    PASSWORD], capture_output=True, text=True, timeout=60)
+            m = re.search(r"read-only (yes|no)", got_v.stdout)
+            vols[share] = m.group(1) if m else (got_v.stdout + got_v.stderr).strip()[-200:]
+        check(vols.get("Projects") == "yes" and vols.get("Notes") == "no",
+              "the volumes did not say what the shares are: %r" % vols)
+
         # 7b. Read and write (N14): Notes.
         payload = os.urandom(5 * 1024 * 1024 + 4321)
         with open(os.path.join(got, "five.bin"), "wb") as f:
@@ -588,7 +601,10 @@ def main():
         seen = guest.seen
         guest.close()
 
-    # 13. Not asked to share: nothing on the port.
+    # 13. Not asked to share: nothing on the port. A disk made again, since
+    # the first one's preferences now say what the window set - and every
+    # server starts with the machine unless told not to.
+    make_disk(work)
     port = random.randint(40001, 60000)
     guest = boot(R, image, port)
     try:

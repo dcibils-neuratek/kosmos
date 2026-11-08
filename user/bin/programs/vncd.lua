@@ -79,6 +79,9 @@ local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 --
 local net = use("/Kosmos/Libraries/netprogram.lua").open{
   name = "vncd", port = port, named = true, neighbours = true,
+  -- Waiting for an address, as `httpd` and `telnetd` do: it starts with
+  -- the machine, perhaps before DHCP has answered.
+  wait = true,
 }
 
 if not net then return end

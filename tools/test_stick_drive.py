@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""`tools/sandboxes_drive.py` on a stick's image, held to what a stick needs
-(`docs/linux.md` L1).
+"""`tools/stick_drive.py` on a stick's image, held to what a stick needs
+(`docs/linux.md` L1; `/Models`, `docs/xavier.md`).
 
 A stick made as `mkusb_image.write_gpt` makes one - an EFI partition with a
 command line in it, `/Home` after it full of a pattern - in a file then made
@@ -17,12 +17,15 @@ where the image did. The tool has to:
   - put `opt/kosmos/sandboxes=<its GUID>` on the command line, the words
     already there kept;
   - change nothing on a second run, and say the same GUID;
+  - and given `/Models` after that, add `KOSMOS MODELS` after
+    `/Sandboxes` the same way, `/Sandboxes`'s entry and every byte of it
+    left as they were, and both words on the command line;
 
 and **refuse, writing nothing**, a drive larger than the room there is and
 a table whose header does not hold to its CRC - the controls, which show
 this test sees a stick left alone.
 
-Usage: test_sandboxes_drive.py
+Usage: test_stick_drive.py
 """
 
 import os
@@ -38,7 +41,7 @@ sys.path.insert(0, HERE)
 import mkusb_image                                          # noqa: E402
 import scratch                                              # noqa: E402
 
-TOOL = os.path.join(HERE, "sandboxes_drive.py")
+TOOL = os.path.join(HERE, "stick_drive.py")
 SECTOR = 512
 passed, failed = 0, 0
 
@@ -53,8 +56,8 @@ def check(ok, what):
         print("FAIL: " + what)
 
 
-def run(*args):
-    return subprocess.run([sys.executable, TOOL] + list(args),
+def run(*args, drive="sandboxes"):
+    return subprocess.run([sys.executable, TOOL, "--drive", drive] + list(args),
                           capture_output=True, text=True)
 
 
@@ -129,7 +132,7 @@ def parts(entries):
 
 
 def main():
-    path = scratch.path("sandboxes-drive.img")
+    path = scratch.path("stick-drive.img")
     stick(path, 128)
     before, total, primary, _ = table(path)
     old = parts(primary["entries"])
@@ -209,10 +212,38 @@ def main():
           "a second run was not a stick left as it was, the same GUID said: %r"
           % (two.stdout + two.stderr))
 
+    # **And `/Models` after it** (8 November 2026): the second drive the
+    # same way, the first left whole and both words on the line.
+    sandboxes = new[0] if new else None
+    models_run = run(path, "--mb", "32", drive="models")
+    third, total, primary, backup = table(path)
+    later = parts(primary["entries"])
+    models = [p for p in later if p["name"] == "KOSMOS MODELS"]
+    mguid = models[0]["own"] if models else None
+
+    check(models_run.returncode == 0 and len(models) == 1 and sandboxes is not None
+          and len(later) == len(now) + 1 and primary["ok"] and backup["ok"]
+          and primary["entries"] == backup["entries"]
+          and models[0]["first"] > sandboxes["last"] and models[0]["first"] % 2048 == 0
+          and models[0]["last"] - models[0]["first"] + 1 == 32 * 2048
+          and sandboxes["raw"] in [q["raw"] for q in later]
+          and third[sandboxes["first"] * SECTOR:(sandboxes["last"] + 1) * SECTOR]
+          == after[sandboxes["first"] * SECTOR:(sandboxes["last"] + 1) * SECTOR],
+          "KOSMOS MODELS was not one 32 MB partition after /Sandboxes, with "
+          "/Sandboxes whole: %r" % (models_run.stdout + models_run.stderr))
+
+    line = subprocess.run(["mtype", "-i", "%s@@%d" % (path, esp["first"] * SECTOR),
+                           "::/boot/kosmos.cmdline"], capture_output=True, text=True).stdout
+    check(mguid and line.split() == ["opt/kosmos/boot=wm", "opt/kosmos/home=X",
+                                     "opt/kosmos/sandboxes=" + guid,
+                                     "opt/kosmos/models=" + mguid]
+          and "has /Models" in models_run.stdout,
+          "the command line did not gain opt/kosmos/models with the others kept: %r" % line)
+
     # **A line it cannot read is not written** (14 October 2026): a stick
     # whose EFI partition has no command line - read as empty, the tool
     # would have written the new word alone, the others lost.
-    bare = scratch.path("sandboxes-drive-bare.img")
+    bare = scratch.path("stick-drive-bare.img")
     stick(bare, 128)
     _, _, p0, _ = table(bare)
     esp0 = next(p for p in parts(p0["entries"])
@@ -227,8 +258,8 @@ def main():
           "a stick whose command line could not be read was written one: %r"
           % (refused.stdout + refused.stderr))
 
-    print("%s: %d checks on sandboxes_drive.py" % ("PASS" if not failed else "FAIL",
-                                                   passed + failed))
+    print("%s: %d checks on stick_drive.py" % ("PASS" if not failed else "FAIL",
+                                               passed + failed))
     return 1 if failed else 0
 
 

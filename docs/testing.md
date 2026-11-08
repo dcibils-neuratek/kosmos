@@ -29261,3 +29261,112 @@ what the guest touches.
 
 **Control**: the old window, the same 5 GB boot: the suite panics writing
 `0xffff8001bffff000`, the top page of RAM, in that test. Restored, 208/208.
+
+## 18.715 A writable share that said it was read only
+
+**Found copying phi-2 to the M700 over SMB** (8 November 2026). Diego
+mounted `Apps`, which is read and write, from the Mac's Finder. The mount
+came up read only, and every copy was refused before it reached the
+machine. `smbclient`, the thing `x86-smbd` drives, wrote to the same share
+without complaint.
+
+The two clients disagreed because only one of them asks.
+`FileFsAttributeInformation` carries `FILE_READ_ONLY_VOLUME`, and `smbd` set
+it on every share. That was true at N12, when every share was read only. It
+stayed when N14 made some writable. macOS's smbfs reads the flag and mounts
+the volume read only. `smbclient` never reads it, so the suite was blind.
+
+**Fixed**: the flag follows the share (`user/servers/smbd.c`), and the log
+line says "read and write" or "read only". **And a second fault behind it**:
+libsmb2 refuses a reply to that query shorter than 20 bytes. The
+filesystem's name was four characters, which made the reply 18 bytes. It is
+"KosmosFS" now.
+
+**The test**: `tools/smb_fsattr.c` is a host tool built on libsmb2. It asks
+the question macOS asks (CREATE on the share's root, QUERY_INFO for the
+attributes, CLOSE) and prints whether the volume says read only. Step 7a
+of `run_smbd.py` holds `Projects` to "yes" and `Notes` to "no". The suite
+passes 38 checks.
+
+**Control**: with the old line, which set the flag on every share, step 7a
+fails on `Notes`. Restored, it passes.
+
+**And step 13, which the defaults broke.** "A machine not told to share"
+booted the disk the window section had just used. Every server now starts
+with the machine by default (`README.md`), and that disk's preferences said
+so, so the machine shared after all. Step 13 now makes the disk again.
+
+## 18.716 `/Models`, a drive of its own for language models
+
+**Why** (8 November 2026, `docs/xavier.md`, *Where the models live*). phi-2
+is 1.5 GB. The M700's `/Home` is a 2 GB partition, and with phi-2 in it
+295 MB were left. The stick is 128 GB, and about 88 GB of it are in no
+partition. Diego chose a partition of its own, as `/Sandboxes` has.
+
+**What**: `diskfs` serves one more named drive, `opt/kosmos/models`, as
+`/Models`. init starts it only when the machine was started with that word.
+The LLM server is handed its endpoint and reads models there, and from
+`/Home/Models` when there is no such drive. `llm.lua` decides the same way.
+`tools/stick_drive.py --drive models` makes the partition on a stick (it
+was `sandboxes_drive.py`, and does both now). And `files.copy` copies in
+pieces past a megabyte, through a new `fs.write_from_at`, because
+`cp` refused anything larger and a model is a gigabyte and a half.
+
+**The test**: `usb_models`, in `x86-usb-2`, boots twice with a stick
+carrying a blank `/Models` partition and the tiny phi-2 in `/Home/Models`.
+
+- The first boot, with the word, formats the drive and copies the model
+  across, all 3,854,688 bytes of it.
+- `/Home`'s copy is removed, `llm.lua` says it looks in `/Models`, and the
+  LLM server loads the model from there.
+- A program's raw read of a block inside the partition is refused, since a
+  disk server holds it.
+- The second boot, without the word, has no `/Models`, and programs are
+  told `/Home/Models`.
+- On the Mac, the partition is read with `kfs.lua`, and the file in it is
+  the model, byte for byte.
+
+`test_stick_drive.py` holds the stick tool to both drives, in 12 checks.
+
+**Controls**: init not handing the LLM server the drive: the suite fails on
+"the LLM server did not load the model from /Models", while `llm.lua` still
+says `/Models`. The stick tool given the wrong label for `/Models` fails
+its test. Both restored, 6 of 6 and 12 of 12.
+
+**And what the gate found: `/Sandboxes` gone, with nothing said.** The
+full gate failed `usb_sandboxes`. Its server ran (process 9, `sandboxfs`),
+and its word arrived, but the namespace had no `/Sandboxes` at all. init
+starts the shell with a list of endpoints, the kernel hands them over as
+indices 0 and up, and the shell's chunk calls `shell_main(0, 1, ... 25)`.
+`/Models` added a parameter and an endpoint, but not an index to the call.
+So `/Models` took 25, `sandboxes_cap` was nil, and nil reads as "this
+machine has none". `usb_models` passed, because without the sandboxes word
+nothing came after 25.
+
+**Fixed**, and the class with it: `tools/test_init_caps.py`, in
+`host-check`, reads `init.lua` and holds the three counts equal: the list
+the shell is started with, the indices its call passes, and its
+parameters. **Control**: the call cut back to 25 fails it, "shell_main has
+27 parameters and its call passes 26 (the last: sandboxes_cap)".
+
+## 18.717 The web server and the screen's, started before an address
+
+**Found on the M700** (8 November 2026), the first boot after every server
+was made to start with the machine: "httpd: could not listen on port 80:
+3", and it was gone. A network boot starts the servers before DHCP has
+answered, and the stack refuses to listen with no address. `telnetd`
+learned to wait for one in 18.352. `httpd` and `vncd` had always been
+started by a person, after the address, so neither had ever needed to.
+
+**Fixed**: both open their port with `wait = true` (`netprogram.lua`),
+saying once that they wait and listening when the address comes.
+
+**The test**: `x86-servers` gains a third boot. It uses the same disk,
+whose preferences start every server, on a card on a hub with nothing else
+on it: a network whose DHCP never answers. Both servers must say they are
+waiting, neither may say it could not listen, and neither may end in the
+eight seconds after. The desktop is booted too, since the screen's server
+starts with one. 36 checks.
+
+**Control**: `httpd` without `wait` fails it with the M700's own line,
+"httpd: could not listen on port 8080: 3". Restored, 36 of 36.

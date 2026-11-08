@@ -437,6 +437,19 @@ each piece starts and arrives; **Switch Desktop...** in the Deskbar's menu
 closes every window and shows the chooser again; the choice is kept in
 the `desktop` setting. Held by `x86-desktops` (`tools/run_desktops.py`).
 
+**The chooser at boot taken away; the desktop chosen in Preferences -
+agreed 8 November 2026, to build.** Diego, the same evening: "from now on
+lets default to astra desktop always and have a switched on the
+preferences panel to switch to another desktop", "so we remove the
+selector upon boot, just a preferences option now to change desktops". So
+a bare `wm` starts the desktop the `desktop` setting names - Astra when it
+names none - with no chooser over the screen; Preferences gets a Desktop
+choice listing `/Kosmos/Desktops`, and choosing one switches to it as
+**Switch Desktop...** does now, and keeps it for the next boot. The loader's
+rows - what starts, and how long it took - stay, shown while the chosen
+desktop comes up. `x86-desktops` changes with it: no chooser at boot, and
+the switch made from Preferences.
+
 **P2 built, 8 November 2026.** A desktop file says its `chrome`, and
 Pewter's is `platinum`: every window's header draws Platinum's bar, close
 alone at its left and zoom and collapse at its right, still drawn and
@@ -559,6 +572,42 @@ Vulkan or OpenCL. It needs threads (`threads.md` 4-8), AVX2 through
 `xsave`, and a microphone, none of which exist yet. Five decisions are
 Diego's, at the end of the document. The mockup and the diagram follow
 them.
+
+**`/Models`, a drive for language models - AGREED 8 November 2026.**
+`/Home` on the M700's stick is 2 GB (`STICK_HOME_MB`, 8 October), phi-2
+alone is 1.5 GB of it, and 88 GB of the 128 GB Kingston are in no
+partition. Diego chose a partition of its own (option 2 of three: a larger
+`/Home` written anew, `/Models`, or `/Home` grown in place): models leave
+`/Home` as guests' disks did for `/Sandboxes`, by the same path - a third
+disk server on the partition `opt/kosmos/models` names by its GUID,
+formatted with `/Models` at its root and mounted there, its blocks guarded
+by the USB driver with the others; the LLM server handed that drive where
+the machine has it and `/Home/Models` where it does not (a machine with one
+disk, every QEMU suite); and `tools/sandboxes_drive.py` made the one tool
+that adds a drive to a stick in use, for either. On the M700: the stick on
+the Mac once, with `sudo` (Diego's), then phi-2 moved over.
+
+**Every server starts with the machine by default - AGREED and built 8
+November 2026.** Diego: "why wont the servers restart after reboot?", then
+"lets turn start with the machine on by default", for all four - Web,
+Command line, Screen and File sharing (`servers.lua`'s defaults; README's
+decision log). Settings already written keep what they say.
+
+**The Servers window hides why a switch did nothing - found 8 November
+2026.** Every page writes its refusals into one `said`, shown under the
+title, so File sharing's switch turned itself back off under "/Home/www is
+not a folder here", left there by the Web page; Diego, on the M700: "smb
+cant be activated on kosmos for some reason" - it wanted an account name.
+A refusal belongs to the page and the switch it came from, said beside
+that switch, and cleared when the page changes.
+
+**One door to the Trash - found 8 November 2026, half done.** Xavier's
+Delete failed on a home Tracker had never opened, because putting a file
+in the Trash was written four times - Info, the Deskbar, the launcher
+editor and Tracker, each `files.free_name` then `files.move` - and only
+the Deskbar's made the folder first. `files.to_trash(path)` is that door
+now, and conversations use it; the four copies are to move onto it, each
+proved by its own suite.
 
 **A disk door shut is an endpoint nobody answers - found 8 November 2026,
 fixed the same day.** `diskfs` opens a further door (`/Keyring`, `/Home/Cache/Maps`,

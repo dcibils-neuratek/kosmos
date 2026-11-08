@@ -155,6 +155,53 @@ void llm_reset(struct llm_model *m);
 /* The most likely next token, from `m->logits`. */
 int32_t llm_greedy(const struct llm_model *m);
 
+/*
+ * **What the cache holds, as tokens and as the text they stand for**
+ * (`docs/xavier.md` X4). A conversation is asked again with every turn,
+ * and reading it all again would be the whole cost of a follow-up: phi-2
+ * reads a token about as slowly as it writes one. So whoever holds the
+ * model keeps this beside it, and `llm_prompt` keeps what is already in the
+ * cache and reads only what is new.
+ *
+ * The caller gives the room: `tokens` for `n_ctx` of them and `text` for
+ * `text_room` bytes. `n` is how many are held and must equal the model's
+ * `n_past`; a model stepped other than through `llm_feed` no longer agrees,
+ * and is then taken as holding nothing. `text_bytes` is `LLM_TEXT_UNKNOWN`
+ * when the text outgrew its room, and then only the tokens are compared.
+ */
+#define LLM_TEXT_UNKNOWN 0xffffffffu
+
+struct llm_held {
+  int32_t *tokens;
+  uint32_t n;
+  char    *text;
+  uint32_t text_room;
+  uint32_t text_bytes;
+};
+
+/* Nothing held: the next prompt is read from its first token. */
+void llm_held_reset(struct llm_model *m, struct llm_held *h);
+
+/*
+ * Ready the cache for `text` of `n` bytes, the whole conversation so far:
+ * the tokens still to be read into `out` of `room`, and how many there are
+ * - at least one, since an answer begins from the last token read - or -1
+ * when `text` is more than the cache holds. `*kept` is how many of the
+ * held tokens were kept.
+ *
+ * Two ways to keep, and the first is tried first. When the held text is
+ * where `text` begins, only the rest is tokenized, after what is held - a
+ * follow-up reads its own words and nothing else. Otherwise `text` is
+ * tokenized whole and the cache rewound to where its tokens and the held
+ * ones first differ; a token at the same position gives the same cache
+ * entry, so the answer is the one a fresh read would give.
+ */
+int llm_prompt(struct llm_model *m, struct llm_held *h, const char *text, size_t n,
+               int32_t *out, int room, uint32_t *kept);
+
+/* One token through the model, as `llm_step`, and held. */
+int llm_feed(struct llm_model *m, struct llm_held *h, int32_t token);
+
 /* IEEE half precision, as ggml converts it: to nearest, ties to even. */
 uint16_t llm_f32_to_f16(float f);
 

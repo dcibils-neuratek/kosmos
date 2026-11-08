@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""**`/Sandboxes` added to a stick, with `/Home` left as it is**
-(`docs/linux.md` L1).
+"""**A drive added to a stick, with `/Home` left as it is**: `/Sandboxes`
+(`docs/linux.md` L1) or `/Models` (`docs/xavier.md`, *Where the models
+live*) - a partition of its own, served by a disk server of its own.
+
+It was `sandboxes_drive.py`, for the first of them; the second is the same
+table moved and the same partition added under another name and word
+(Diego, 8 November 2026: "Let's do option 2", a drive for models), so it
+is one tool for both rather than a copy.
 
 Diego, 14 October 2026: "what if instead /home we crate a new /Sandboxes
 drive with virtual machibes disks?", "that pollutes the home?". Guests'
@@ -16,10 +22,12 @@ partitioning tools want for a file and with nothing above the table touched:
 
   1. the table moved to the stick's real end - the backup entries and
      header at its last sectors, and the last usable sector with them;
-  2. a Kosmos partition, `KOSMOS SANDBOXES`, after the last one there, its
+  2. a Kosmos partition, `KOSMOS SANDBOXES` or `KOSMOS MODELS`, after the
+     last one there, its
      first megabyte zeroed - a blank partition, which the disk server
      formats the first time it is asked;
-  3. the word `opt/kosmos/sandboxes=<its GUID>` added to the stick's
+  3. the word `opt/kosmos/sandboxes=<its GUID>` (or `models`) added to the
+     stick's
      `\\boot\\kosmos.cmdline`, which the loader hands the kernel, so a
      machine started from the stick has the drive.
 
@@ -27,11 +35,12 @@ partitioning tools want for a file and with nothing above the table touched:
 a stick that has the partition already is answered, not given a second.
 
 Usage:
-  sandboxes_drive.py <stick or image> [--mb N] [--no-cmdline]
+  stick_drive.py --drive sandboxes|models <stick or image> [--mb N] [--no-cmdline]
 
 On a Mac the stick is `/dev/rdiskN`, unmounted, and needs `sudo`; `diskutil
-list` says which N. `--mb` is the drive's size, 32768 by default (Diego, 14
-October: 32 GB).
+list` says which N. `--mb` is the drive's size: 32768 for sandboxes by
+default (Diego, 14 October: 32 GB), and 49152 for models (48 GB: a 7B model
+at Q8_0 is 7.7 GB, so room for several, and the stick has 88 GB unused).
 """
 
 import fcntl
@@ -50,8 +59,17 @@ import mkusb_image                                          # noqa: E402
 
 SECTOR = 512
 ALIGN = 2048                    # a megabyte, as every partition tool aligns
-LABEL = "KOSMOS SANDBOXES"
-WORD = "opt/kosmos/sandboxes="
+
+# Each drive a stick may be given: its partition's label, its boot word, its
+# size unless `--mb` says, and where Kosmos mounts it.
+DRIVES = {
+    "sandboxes": {"label": "KOSMOS SANDBOXES", "word": "opt/kosmos/sandboxes=",
+                  "mb": 32768, "at": "/Sandboxes"},
+    "models": {"label": "KOSMOS MODELS", "word": "opt/kosmos/models=",
+               "mb": 49152, "at": "/Models"},
+}
+
+LABEL, WORD, AT = None, None, None              # the drive chosen, in main
 
 # macOS's <sys/disk.h>: a raw disk's block count and size.
 DKIOCGETBLOCKSIZE = 0x40046418
@@ -171,8 +189,8 @@ def plan(fd, path, megabytes):
         used.append((first, last, name, e))
 
         if e[0:16] == kosmos and name == LABEL:
-            return guid_text(e[16:32]), [], ("%s has a /Sandboxes partition already, "
-                                             "sectors %d to %d" % (path, first, last))
+            return guid_text(e[16:32]), [], ("%s has a %s partition already, "
+                                             "sectors %d to %d" % (path, AT, first, last))
 
     if free_slot is None:
         raise Refused("every entry of the GPT is used")
@@ -220,10 +238,10 @@ def plan(fd, path, megabytes):
         (0, bytes(mbr)),
     ]
 
-    return str(own).upper(), writes, ("a /Sandboxes partition of %d MB at sectors "
+    return str(own).upper(), writes, ("a %s partition of %d MB at sectors "
                                       "%d to %d of %s, the table moved to its "
                                       "end at sector %d"
-                                      % (megabytes, first, last, path, total - 1))
+                                      % (AT, megabytes, first, last, path, total - 1))
 
 
 def esp_offset(fd):
@@ -295,7 +313,8 @@ def put_word_mounted(path, guid):
 
 
 def put_word(path, offset, guid):
-    """`opt/kosmos/sandboxes=<guid>` on the stick's command line, once.
+    """`opt/kosmos/sandboxes=<guid>`, or `models`, on the stick's command
+    line, once.
 
     **The line is read before it is written, and a line that cannot be read
     is not written**: a failed read taken for an empty line would have put
@@ -336,8 +355,20 @@ def put_word(path, offset, guid):
 
 
 def main(argv):
+    global LABEL, WORD, AT
+
     args = argv[1:]
-    megabytes, cmdline = 32768, True
+    megabytes, cmdline = None, True
+
+    if "--drive" not in args or args.index("--drive") + 1 >= len(args) \
+            or args[args.index("--drive") + 1] not in DRIVES:
+        sys.exit(__doc__)
+
+    at = args.index("--drive")
+    chosen = DRIVES[args[at + 1]]
+    del args[at:at + 2]
+    LABEL, WORD, AT = chosen["label"], chosen["word"], chosen["at"]
+    megabytes = chosen["mb"]
 
     if "--no-cmdline" in args:
         args.remove("--no-cmdline")
@@ -356,7 +387,7 @@ def main(argv):
     try:
         fd = os.open(path, os.O_RDWR)
     except OSError as e:
-        sys.exit("sandboxes_drive: cannot open %s: %s%s"
+        sys.exit("stick_drive: cannot open %s: %s%s"
                  % (path, e.strerror, " (sudo, and the stick unmounted)"
                     if path.startswith("/dev/") else ""))
 
@@ -372,7 +403,7 @@ def main(argv):
         offset = esp_offset(fd) if cmdline else None
     except Refused as why:
         os.close(fd)
-        sys.exit("sandboxes_drive: %s" % why)
+        sys.exit("stick_drive: %s" % why)
 
     os.close(fd)
     print(said)
@@ -382,9 +413,9 @@ def main(argv):
         try:
             print("the stick's command line: %s" % put_word(path, offset, guid))
         except Refused as why:
-            sys.exit("sandboxes_drive: %s" % why)
+            sys.exit("stick_drive: %s" % why)
 
-    print("a machine started with %s%s has /Sandboxes" % (WORD, guid))
+    print("a machine started with %s%s has %s" % (WORD, guid, AT))
     return 0
 
 
