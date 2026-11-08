@@ -643,6 +643,43 @@ acceleration there is; this one says which come first, and why.
    two FirePro cards, at 160-264 GB/s, about ten times the M700's
    ceiling, in a document of their own first.
 
+### The question in batches, as built (0.11.323)
+
+`llm_step_batch` puts up to `LLM_BATCH` (32) tokens through the model
+together, and `llm_step` is that with one. The server reads a question a
+batch per turn, so STOP is still looked for between batches.
+
+**Batching alone bought nothing on this Mac: 1.0x.** It read phi-2 Q4_0 at
+about four tokens a second, about 6.5 GB/s of weights, well under what
+the Mac's memory delivers. So the scalar loops were bound by arithmetic,
+and reading a weight once a batch saved traffic nobody was waiting on.
+Q8_0 was also twice as fast as Q4_0, twice its bytes: Q4_0's time was
+unpacking its nibbles.
+
+**What paid is a row against four inputs** (`llm_dot4_q8_0`,
+`llm_dot4_q4_0` in `llm_dot.c`): a block's weights unpacked and its scale
+converted once, then met by four inputs. A question of 52 tokens on the
+Mac, scalar and on one core:
+
+| | a token at a time | in batches | |
+|---|---|---|---|
+| Q4_0 | 12.9 s | 2.56 s | 5.0x |
+| Q8_0 | 5.7 s | 2.56 s | 2.2x |
+
+**The answer is the same to the bit.** Each (row, token) dot is the same
+integer work and the same float sum in block order. Token *t* attends to
+the positions up to its own, and every position's K and V are written
+before any token of the batch reads them. `test_llm` holds a 52-token
+question, split as 32 + 20 and as 5 + 32 + 15, to the token-at-a-time
+read: the logits and every position of the cache, byte for byte.
+`test_llmdot` holds the four-input loops to the scalar ones on every row,
+natively and through Rosetta. **Control**: the four-input loop given input
+0's scales for all four fails 3510 of `test_llmdot`'s rows, and all four
+of `test_llm`'s batch checks.
+
+Writing an answer is unchanged, one token at a time. Its turn comes with
+threads, where the memory's ceiling is what bounds it.
+
 **What costs almost nothing, and is felt:** the answer is already written
 word by word, and the cache already held across a conversation. The model
 can also stay loaded between questions, and the LLM server's band keep the

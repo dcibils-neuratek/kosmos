@@ -31,4 +31,20 @@ typedef float llm_dot_fn(const uint8_t *w, const uint8_t *xq, const float *xs, u
 llm_dot_fn llm_dot_q8_0, llm_dot_q4_0;
 llm_dot_fn llm_dot_q8_0_scalar, llm_dot_q4_0_scalar;
 
+/*
+ * **One row against four inputs at once** (`docs/xavier.md`, *Making it
+ * fast*): a block of weights is unpacked once - Q4_0's nibbles made bytes,
+ * the scale converted - and met by four inputs, where four calls of the
+ * one-input loop did that four times. Input `t` is at `xq + t * xq_room`
+ * and its scales at `xs + t * xs_room`; its answer in `out[t]`. Each
+ * answer is the one-input loop's to the bit: the integer work in a block is
+ * exact in any order, and each input's float sum still runs in block order.
+ */
+#define LLM_DOT4 4
+
+typedef void llm_dot4_fn(const uint8_t *w, const uint8_t *xq, uint64_t xq_room, const float *xs,
+                         uint64_t xs_room, uint64_t blocks, float out[LLM_DOT4]);
+
+llm_dot4_fn llm_dot4_q8_0, llm_dot4_q4_0;
+
 #endif

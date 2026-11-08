@@ -110,12 +110,16 @@ struct llm_model {
   float *x, *xn, *qkv, *att, *attn_out, *ff, *ff_out, *logits;
   uint8_t *xq;                 /* the input, as Q8_0 blocks */
   float *xs;                   /* and each block's scale, as a float */
+  /* Each working vector but `att` and `logits` is `LLM_BATCH` of them, one
+   * a token of a batch, the next `*_room` along (`llm_step_batch`). */
+  uint32_t xq_room, xs_room;   /* bytes, and floats, a token's */
 
   /* The loops a row of each kind is multiplied by, chosen at `llm_open`
    * for the machine it runs on (`docs/xavier.md` X2): today the plain
    * loops, the fastest wherever they have been measured, until the M700
    * says whether the explicit lanes beat them there. */
   llm_dot_fn *dot_q8_0, *dot_q4_0;
+  llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs */
 };
 
 /*
@@ -148,6 +152,21 @@ int llm_token_text(const struct llm_model *m, int32_t token, char *out, int room
  * cache is full or the token is not one.
  */
 int llm_step(struct llm_model *m, int32_t token);
+
+/*
+ * **`n` tokens through the model together**, at the next `n` positions -
+ * up to `LLM_BATCH` of them; the logits are the last one's (`docs/xavier.md`,
+ * *Making it fast*). The answer is the one `n` calls of `llm_step` give, to
+ * the bit: every token meets the same arithmetic in the same order. What
+ * changes is how often a weight is read. Writing an answer is bound by
+ * memory, since every token reads every weight; a question's tokens are all
+ * known at once, so a row of a weight is read once and met by every token
+ * of the batch while it is in the cache. -1 as `llm_step`, and then nothing
+ * of the batch is read.
+ */
+#define LLM_BATCH 32
+
+int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n);
 
 /* Forget the conversation: the next step is position 0. */
 void llm_reset(struct llm_model *m);
@@ -201,6 +220,9 @@ int llm_prompt(struct llm_model *m, struct llm_held *h, const char *text, size_t
 
 /* One token through the model, as `llm_step`, and held. */
 int llm_feed(struct llm_model *m, struct llm_held *h, int32_t token);
+
+/* `n` tokens through the model, as `llm_step_batch`, and held. */
+int llm_feed_batch(struct llm_model *m, struct llm_held *h, const int32_t *tokens, uint32_t n);
 
 /* IEEE half precision, as ggml converts it: to nearest, ties to even. */
 uint16_t llm_f32_to_f16(float f);

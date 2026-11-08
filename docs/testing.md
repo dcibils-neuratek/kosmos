@@ -29370,3 +29370,26 @@ starts with one. 36 checks.
 
 **Control**: `httpd` without `wait` fails it with the M700's own line,
 "httpd: could not listen on port 8080: 3". Restored, 36 of 36.
+
+## 18.718 The question read in batches, the same to the bit
+
+**What** (8 November 2026, `docs/xavier.md`, *The question in batches, as
+built*): `llm_step_batch` puts up to 32 tokens through the model together,
+with rows multiplied against four inputs at once (`llm_dot4_*`), and the
+LLM server reads a question a batch per turn. A 52-token question on this
+Mac, scalar and on one core: Q4_0 from 12.9 s to 2.56 s (5.0x), Q8_0 from
+5.7 s to 2.56 s (2.2x). Batching with the one-input loops was 1.0x: the
+loops were bound by arithmetic, not memory.
+
+**The tests**: `test_llm` reads the 52 tokens a token at a time, then as
+32 + 20 and as 5 + 32 + 15, and holds the logits and every position of the
+attention cache to the bit. It also checks that a batch of more than 32,
+or one past the cache's end, is refused with nothing read. `test_llmdot`
+holds the four-input loops to the scalar ones on every row, natively and
+through Rosetta. `x86-llm` and `x86-xavier` hold the server's answers to
+the kit's token-at-a-time answers on the Mac, byte for byte: 47 and 24
+checks.
+
+**Control**: the four-input Q4_0 loop given input 0's scales for all four:
+3510 of `test_llmdot`'s rows fail, and all four batch checks in `test_llm`.
+Restored, all pass.

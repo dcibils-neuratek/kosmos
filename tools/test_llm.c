@@ -214,6 +214,101 @@ static void check_held(struct llm_model *m)
   printf("\nheld: a follow-up read %d tokens of %d; a rewind kept %u\n", whole - na, whole, kept);
 }
 
+/*
+ * **A question read in batches is read as one token at a time would read
+ * it** (`docs/xavier.md`, *Making it fast*). The same tokens fed one at a
+ * time, then in batches: the logits must be the same to the bit, and so
+ * must every position of the attention cache, since the answer that follows
+ * reads it. The question is longer than one batch, so a batch boundary
+ * falls inside it, and the second batch's tokens attend across it.
+ */
+static void check_batch(struct llm_model *m)
+{
+  static int32_t t[2048];
+  static char text[4096];
+  size_t at = 0;
+  int n;
+  char what[160];
+
+  if (m->n_vocab > sizeof fresh / sizeof *fresh) {
+    check(0, "the batch's check: more logits than its room");
+    return;
+  }
+
+  at += (size_t)snprintf(text + at, sizeof text - at, "Instruct: Count with me:");
+  for (int i = 1; i <= 20; i++) at += (size_t)snprintf(text + at, sizeof text - at, " %d,", i);
+  snprintf(text + at, sizeof text - at, " and then?\nOutput:");
+
+  n = llm_tokenize(m, text, strlen(text), 1, t, 2048);
+
+  snprintf(what, sizeof what, "batch: the question is more than one batch, %d tokens", n);
+  check(n > LLM_BATCH && n < 2 * LLM_BATCH, what);
+  if (n <= LLM_BATCH || (uint32_t)n > m->n_ctx) return;
+
+  double t0 = now();
+
+  if (fresh_logits(m, t, n) != 0) {
+    check(0, "batch: a token at a time would not read the question");
+    return;
+  }
+
+  double one_at_a_time = now() - t0;
+
+  size_t cache = (size_t)m->n_layer * m->n_ctx * m->n_embd;
+  size_t used = (size_t)n * m->n_embd;
+  uint16_t *k1 = malloc(cache * 2), *v1 = malloc(cache * 2);
+
+  if (!k1 || !v1) { check(0, "batch: no memory to compare the cache"); free(k1); free(v1); return; }
+  memcpy(k1, m->k_cache, cache * 2);
+  memcpy(v1, m->v_cache, cache * 2);
+
+  /* A whole batch, then the rest; then three uneven ones. */
+  uint32_t splits[2][3] = { { LLM_BATCH, (uint32_t)n - LLM_BATCH, 0 },
+                            { 5, LLM_BATCH, (uint32_t)n - 5 - LLM_BATCH } };
+
+  for (int s = 0; s < 2; s++) {
+    uint32_t done = 0;
+    int ok = 1;
+
+    llm_reset(m);
+    t0 = now();
+    for (int i = 0; i < 3 && splits[s][i] > 0; i++) {
+      ok = ok && llm_step_batch(m, t + done, splits[s][i]) == 0;
+      done += splits[s][i];
+    }
+
+    if (s == 0)
+      printf("batch: %d tokens read in %.2f s a token at a time, %.2f s in batches of %d: "
+             "%.1fx\n", n, one_at_a_time, now() - t0, LLM_BATCH, one_at_a_time / (now() - t0));
+
+    int cached = 1;
+    for (uint32_t l = 0; l < m->n_layer; l++) {
+      size_t o = (size_t)l * m->n_ctx * m->n_embd;
+      cached = cached && memcmp(k1 + o, m->k_cache + o, used * 2) == 0
+               && memcmp(v1 + o, m->v_cache + o, used * 2) == 0;
+    }
+
+    snprintf(what, sizeof what, "batch: read in batches of %u, %u and %u, the logits are "
+             "the token-at-a-time ones to the bit", splits[s][0], splits[s][1], splits[s][2]);
+    check(ok && m->n_past == (uint32_t)n && same_logits(m), what);
+    snprintf(what, sizeof what, "batch: and so is every position of the cache (%u, %u, %u)",
+             splits[s][0], splits[s][1], splits[s][2]);
+    check(ok && cached, what);
+  }
+
+  /* Refused whole, with nothing read: more than a batch, and past the cache. */
+  llm_reset(m);
+  check(llm_step_batch(m, t, LLM_BATCH + 1) != 0 && m->n_past == 0,
+        "batch: more than LLM_BATCH tokens refused, and nothing read");
+  m->n_past = m->n_ctx - 1;
+  check(llm_step_batch(m, t, 2) != 0 && m->n_past == m->n_ctx - 1,
+        "batch: a batch past the cache's end refused, and nothing read");
+  llm_reset(m);
+
+  free(k1);
+  free(v1);
+}
+
 int main(int argc, char **argv)
 {
   if (argc < 3) {
@@ -375,6 +470,7 @@ int main(int argc, char **argv)
   }
 
   check_held(&m);
+  check_batch(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);
   printf("%d steps in %.1f s: %.2f tokens a second, scalar, one thread, on the Mac\n", steps,

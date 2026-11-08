@@ -608,16 +608,21 @@ bad_tensor:
 
   m->k_cache = alloc(ctx, cache * 2);
   m->v_cache = alloc(ctx, cache * 2);
-  m->x = alloc(ctx, E * 4);
-  m->xn = alloc(ctx, E * 4);
-  m->qkv = alloc(ctx, 3 * E * 4);
+  /* A batch's worth of each working vector (`llm_step_batch`). */
+  const size_t B = LLM_BATCH;
+
+  m->xq_room = widest / LLM_QK * 34 + 34;
+  m->xs_room = widest / LLM_QK + 1;
+  m->x = alloc(ctx, B * E * 4);
+  m->xn = alloc(ctx, B * E * 4);
+  m->qkv = alloc(ctx, B * 3 * E * 4);
   m->att = alloc(ctx, (size_t)m->n_ctx * 4);
-  m->attn_out = alloc(ctx, E * 4);
-  m->ff = alloc(ctx, (size_t)m->n_ff * 4);
-  m->ff_out = alloc(ctx, E * 4);
+  m->attn_out = alloc(ctx, B * E * 4);
+  m->ff = alloc(ctx, B * m->n_ff * 4);
+  m->ff_out = alloc(ctx, B * E * 4);
   m->logits = alloc(ctx, (size_t)m->n_vocab * 4);
-  m->xq = alloc(ctx, (size_t)widest / LLM_QK * 34 + 34);
-  m->xs = alloc(ctx, ((size_t)widest / LLM_QK + 1) * 4);
+  m->xq = alloc(ctx, B * m->xq_room);
+  m->xs = alloc(ctx, B * m->xs_room * 4);
 
   if (!m->k_cache || !m->v_cache || !m->x || !m->xn || !m->qkv || !m->att || !m->attn_out
       || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs) {
@@ -627,6 +632,8 @@ bad_tensor:
 
   m->dot_q8_0 = llm_dot_q8_0_scalar;
   m->dot_q4_0 = llm_dot_q4_0_scalar;
+  m->dot4_q8_0 = llm_dot4_q8_0;
+  m->dot4_q4_0 = llm_dot4_q4_0;
 
   return 0;
 }
@@ -997,17 +1004,18 @@ static void quantize_q8_0(const float *x, uint8_t *out, float *xs, uint32_t n)
 
 static float block_scale(const uint8_t *b) { return llm_f16_to_f32((uint16_t)(b[0] | b[1] << 8)); }
 
-/* One row of a weight times the input, as ggml multiplies it. */
+/* One row of a weight times the input, as ggml multiplies it: `x` the
+ * input as floats, `xq` and `xs` as Q8_0 blocks and their scales. */
 static float row_dot(const struct llm_model *m, const struct llm_tensor *w, uint64_t row,
-                     const float *x, const uint8_t *xq)
+                     const float *x, const uint8_t *xq, const float *xs)
 {
   uint64_t cols = w->ne[0];
 
   switch (w->type) {
     case LLM_Q8_0:
-      return m->dot_q8_0(w->data + row * (cols / LLM_QK) * 34, xq, m->xs, cols / LLM_QK);
+      return m->dot_q8_0(w->data + row * (cols / LLM_QK) * 34, xq, xs, cols / LLM_QK);
     case LLM_Q4_0:
-      return m->dot_q4_0(w->data + row * (cols / LLM_QK) * 18, xq, m->xs, cols / LLM_QK);
+      return m->dot_q4_0(w->data + row * (cols / LLM_QK) * 18, xq, xs, cols / LLM_QK);
     case LLM_F16: {
       const uint8_t *r = w->data + row * cols * 2;
       double sum = 0;
@@ -1025,18 +1033,46 @@ static float row_dot(const struct llm_model *m, const struct llm_tensor *w, uint
   }
 }
 
-/* out = W x + b, the rows from `first`, `rows` of them. */
-static void matvec(struct llm_model *m, const struct llm_tensor *w, const struct llm_tensor *bias,
-                   const float *x, uint8_t *xq, float *out, uint64_t first, uint64_t rows,
+/*
+ * out = W x + b for each of `n` inputs: input `t` at `x + t * x_room`, its
+ * answer at `out + t * out_room`. With `quantised`, `m->xq` already holds
+ * these inputs as Q8_0, from the product before over the same ones.
+ *
+ * **The row outside, the inputs inside** - that is the whole of batching.
+ * A row is read from memory once and met by every input while it is in the
+ * cache, where one input at a time read every row again for each. Each
+ * (row, input) is the same `row_dot` on the same bytes either way, so the
+ * order the loops run in changes no answer.
+ */
+static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct llm_tensor *bias,
+                   const float *x, size_t x_room, float *out, size_t out_room, uint32_t n,
                    int quantised)
 {
   if (!quantised && (w->type == LLM_Q8_0 || w->type == LLM_Q4_0))
-    quantize_q8_0(x, xq, m->xs, (uint32_t)w->ne[0]);
+    for (uint32_t t = 0; t < n; t++)
+      quantize_q8_0(x + t * x_room, m->xq + t * m->xq_room, m->xs + t * m->xs_room,
+                    (uint32_t)w->ne[0]);
 
   const float *b = bias ? (const float *)(const void *)bias->data : NULL;
-  for (uint64_t r = 0; r < rows; r++) {
-    float v = row_dot(m, w, first + r, x, xq);
-    out[r] = b ? v + b[first + r] : v;
+  llm_dot4_fn *four = w->type == LLM_Q8_0 ? m->dot4_q8_0 : w->type == LLM_Q4_0 ? m->dot4_q4_0 : NULL;
+  const uint64_t row_bytes = w->type == LLM_Q8_0 ? w->ne[0] / LLM_QK * 34 : w->ne[0] / LLM_QK * 18;
+
+  for (uint64_t r = 0; r < w->ne[1]; r++) {
+    uint32_t t = 0;
+
+    /* Four inputs at a time where the row's kind has the loop for it. */
+    for (; four && t + LLM_DOT4 <= n; t += LLM_DOT4) {
+      float v[LLM_DOT4];
+
+      four(w->data + r * row_bytes, m->xq + t * m->xq_room, m->xq_room, m->xs + t * m->xs_room,
+           m->xs_room, w->ne[0] / LLM_QK, v);
+      for (int i = 0; i < LLM_DOT4; i++) out[(t + i) * out_room + r] = b ? v[i] + b[r] : v[i];
+    }
+
+    for (; t < n; t++) {
+      float v = row_dot(m, w, r, x + t * x_room, m->xq + t * m->xq_room, m->xs + t * m->xs_room);
+      out[t * out_room + r] = b ? v + b[r] : v;
+    }
   }
 }
 
@@ -1194,17 +1230,24 @@ int llm_prompt(struct llm_model *m, struct llm_held *h, const char *text, size_t
 
 int llm_feed(struct llm_model *m, struct llm_held *h, int32_t token)
 {
+  return llm_feed_batch(m, h, &token, 1);
+}
+
+int llm_feed_batch(struct llm_model *m, struct llm_held *h, const int32_t *tokens, uint32_t n)
+{
   char piece[256];
   int b;
 
   if (h->n != m->n_past) llm_held_reset(m, h);
 
-  if (llm_step(m, token) != 0) return -1;
+  if (llm_step_batch(m, tokens, n) != 0) return -1;
 
-  h->tokens[h->n++] = token;
+  for (uint32_t t = 0; t < n; t++) {
+    h->tokens[h->n++] = tokens[t];
 
-  if (h->text_bytes != LLM_TEXT_UNKNOWN) {
-    b = llm_token_text(m, token, piece, (int)sizeof piece);
+    if (h->text_bytes == LLM_TEXT_UNKNOWN) continue;
+
+    b = llm_token_text(m, tokens[t], piece, (int)sizeof piece);
 
     if (b < 0 || (uint32_t)b > h->text_room - h->text_bytes) {
       h->text_bytes = LLM_TEXT_UNKNOWN;
@@ -1219,106 +1262,151 @@ int llm_feed(struct llm_model *m, struct llm_held *h, int32_t token)
 
 int llm_step(struct llm_model *m, int32_t token)
 {
-  if (token < 0 || (uint32_t)token >= m->n_vocab || m->n_past >= m->n_ctx) return -1;
+  return llm_step_batch(m, &token, 1);
+}
 
-  const uint32_t E = m->n_embd, D = m->head_dim, pos = m->n_past;
-  float *x = m->x, *xn = m->xn, *q = m->qkv, *k = m->qkv + E, *v = m->qkv + 2 * E;
+int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
+{
+  if (n == 0 || n > LLM_BATCH || m->n_past + n > m->n_ctx) return -1;
+  for (uint32_t t = 0; t < n; t++)
+    if (tokens[t] < 0 || (uint32_t)tokens[t] >= m->n_vocab) return -1;
 
-  embedding_row(m->tok_embd, (uint32_t)token, x);
+  const uint32_t E = m->n_embd, D = m->head_dim, F = m->n_ff;
+
+  /* Token `t`'s working vectors. */
+#define X(t)    (m->x + (size_t)(t) * E)
+#define XN(t)   (m->xn + (size_t)(t) * E)
+#define QKV(t)  (m->qkv + (size_t)(t) * 3 * E)
+#define AOUT(t) (m->attn_out + (size_t)(t) * E)
+#define FF(t)   (m->ff + (size_t)(t) * F)
+#define ATTN(t) (m->ff_out + (size_t)(t) * E)
+
+  for (uint32_t t = 0; t < n; t++) embedding_row(m->tok_embd, (uint32_t)tokens[t], X(t));
 
   for (uint32_t l = 0; l < m->n_layer; l++) {
     const struct llm_layer *L = &m->layers[l];
 
-    layer_norm(x, xn, E, L->norm_w, L->norm_b, m->norm_eps);
-    TRACE("attn_norm", l, xn, E);
+    for (uint32_t t = 0; t < n; t++) {
+      layer_norm(X(t), XN(t), E, L->norm_w, L->norm_b, m->norm_eps);
+      TRACE("attn_norm", l, XN(t), E);
+    }
 
     /* Q, K and V: one product, or three over the same quantised input. */
     if (L->qkv_w) {
-      matvec(m, L->qkv_w, L->qkv_b, xn, m->xq, m->qkv, 0, 3 * E, 0);
+      matmul(m, L->qkv_w, L->qkv_b, m->xn, E, m->qkv, 3 * E, n, 0);
     } else {
-      matvec(m, L->q_w, L->q_b, xn, m->xq, q, 0, E, 0);
-      matvec(m, L->k_w, L->k_b, xn, m->xq, k, 0, E, L->k_w->type == L->q_w->type);
-      matvec(m, L->v_w, L->v_b, xn, m->xq, v, 0, E, L->v_w->type == L->q_w->type);
-    }
-
-    TRACE("Qcur", l, q, E);
-    TRACE("Kcur", l, k, E);
-    TRACE("Vcur", l, v, E);
-
-    float qscale = 1.0f / sqrtf((float)D);
-
-    for (uint32_t h = 0; h < m->n_head; h++) {
-      rope(q + h * D, m->n_rot, pos, m->rope_base);
-      rope(k + h * D, m->n_rot, pos, m->rope_base);
-      for (uint32_t i = 0; i < D; i++) q[h * D + i] *= qscale;
+      matmul(m, L->q_w, L->q_b, m->xn, E, m->qkv, 3 * E, n, 0);
+      matmul(m, L->k_w, L->k_b, m->xn, E, m->qkv + E, 3 * E, n, L->k_w->type == L->q_w->type);
+      matmul(m, L->v_w, L->v_b, m->xn, E, m->qkv + 2 * E, 3 * E, n, L->v_w->type == L->q_w->type);
     }
 
     uint16_t *kc = m->k_cache + ((size_t)l * m->n_ctx) * E;
     uint16_t *vc = m->v_cache + ((size_t)l * m->n_ctx) * E;
+    float qscale = 1.0f / sqrtf((float)D);
 
-    for (uint32_t i = 0; i < E; i++) {
-      kc[(size_t)pos * E + i] = llm_f32_to_f16(k[i]);
-      vc[(size_t)pos * E + i] = llm_f32_to_f16(v[i]);
+    /* Every token's K and V into the cache first: token `t` attends to the
+     * positions up to its own, and those are all written before any token
+     * reads. A later one's are written too, and never read by it. */
+    for (uint32_t t = 0; t < n; t++) {
+      const uint32_t pos = m->n_past + t;
+      float *q = QKV(t), *k = q + E, *v = q + 2 * E;
+
+      TRACE("Qcur", l, q, E);
+      TRACE("Kcur", l, k, E);
+      TRACE("Vcur", l, v, E);
+
+      for (uint32_t h = 0; h < m->n_head; h++) {
+        rope(q + h * D, m->n_rot, pos, m->rope_base);
+        rope(k + h * D, m->n_rot, pos, m->rope_base);
+        for (uint32_t i = 0; i < D; i++) q[h * D + i] *= qscale;
+      }
+
+      for (uint32_t i = 0; i < E; i++) {
+        kc[(size_t)pos * E + i] = llm_f32_to_f16(k[i]);
+        vc[(size_t)pos * E + i] = llm_f32_to_f16(v[i]);
+      }
     }
 
-    /* Attention, a head at a time, over every position so far. The query
-     * meets the F16 cache as F16, and so do the probabilities. */
-    for (uint32_t h = 0; h < m->n_head; h++) {
-      float *qh = q + h * D, *att = m->att;
-      float max = -INFINITY;
+    /* Attention, a token and a head at a time, over every position up to
+     * the token's own. The query meets the F16 cache as F16, and so do the
+     * probabilities. */
+    for (uint32_t t = 0; t < n; t++) {
+      const uint32_t pos = m->n_past + t;
+      float *q = QKV(t);
 
-      for (uint32_t t = 0; t <= pos; t++) {
-        const uint16_t *kt = kc + (size_t)t * E + h * D;
-        double s = 0;
-        for (uint32_t i = 0; i < D; i++)
-          s += (double)(llm_f16_to_f32(llm_f32_to_f16(qh[i])) * llm_f16_to_f32(kt[i]));
-        att[t] = (float)s;
-        if (att[t] > max) max = att[t];
+      for (uint32_t h = 0; h < m->n_head; h++) {
+        float *qh = q + h * D, *att = m->att;
+        float max = -INFINITY;
+
+        for (uint32_t p = 0; p <= pos; p++) {
+          const uint16_t *kt = kc + (size_t)p * E + h * D;
+          double sum = 0;
+          for (uint32_t i = 0; i < D; i++)
+            sum += (double)(llm_f16_to_f32(llm_f32_to_f16(qh[i])) * llm_f16_to_f32(kt[i]));
+          att[p] = (float)sum;
+          if (att[p] > max) max = att[p];
+        }
+
+        double sum = 0;
+        for (uint32_t p = 0; p <= pos; p++) {
+          att[p] = (float)exp((double)(att[p] - max));
+          sum += (double)att[p];
+        }
+        float inv = (float)(1.0 / sum);
+
+        for (uint32_t p = 0; p <= pos; p++) att[p] = llm_f16_to_f32(llm_f32_to_f16(att[p] * inv));
+
+        float *o = AOUT(t) + h * D;
+        for (uint32_t i = 0; i < D; i++) {
+          double s = 0;
+          for (uint32_t p = 0; p <= pos; p++)
+            s += (double)(att[p] * llm_f16_to_f32(vc[(size_t)p * E + h * D + i]));
+          o[i] = (float)s;
+        }
       }
 
-      double sum = 0;
-      for (uint32_t t = 0; t <= pos; t++) {
-        att[t] = (float)exp((double)(att[t] - max));
-        sum += (double)att[t];
-      }
-      float inv = (float)(1.0 / sum);
-
-      for (uint32_t t = 0; t <= pos; t++) att[t] = llm_f16_to_f32(llm_f32_to_f16(att[t] * inv));
-
-      float *o = m->attn_out + h * D;
-      for (uint32_t i = 0; i < D; i++) {
-        double s = 0;
-        for (uint32_t t = 0; t <= pos; t++) s += (double)(att[t] * llm_f16_to_f32(vc[(size_t)t * E + h * D + i]));
-        o[i] = (float)s;
-      }
+      TRACE("kqv_out", l, AOUT(t), E);
     }
 
     /* The attention's output, and the MLP beside it off the same norm,
      * which `xn` still holds: phi-2's layer is the two in parallel. Q, K
      * and V are done with, so the MLP's output borrows their room. */
-    float *attn = m->ff_out, *mlp = m->qkv;
+    matmul(m, L->o_w, L->o_b, m->attn_out, E, m->ff_out, E, n, 0);
+    matmul(m, L->up_w, L->up_b, m->xn, E, m->ff, F, n, 0);
 
-    TRACE("kqv_out", l, m->attn_out, E);
-    matvec(m, L->o_w, L->o_b, m->attn_out, m->xq, attn, 0, E, 0);
-    TRACE("attn_out", l, attn, E);
-    matvec(m, L->up_w, L->up_b, xn, m->xq, m->ff, 0, m->n_ff, 0);
-    TRACE("ffn_up_b", l, m->ff, m->n_ff);
-    for (uint32_t i = 0; i < m->n_ff; i++) m->ff[i] = gelu(m->ff[i]);
-    TRACE("ffn_gelu", l, m->ff, m->n_ff);
-    matvec(m, L->down_w, L->down_b, m->ff, m->xq, mlp, 0, E, 0);
-    TRACE("ffn_out", l, mlp, E);
+    for (uint32_t t = 0; t < n; t++) {
+      TRACE("attn_out", l, ATTN(t), E);
+      TRACE("ffn_up_b", l, FF(t), F);
+      for (uint32_t i = 0; i < F; i++) FF(t)[i] = gelu(FF(t)[i]);
+      TRACE("ffn_gelu", l, FF(t), F);
+    }
+
+    matmul(m, L->down_w, L->down_b, m->ff, F, m->qkv, 3 * E, n, 0);
 
     /* ggml's order: the two added, then the residual. */
-    for (uint32_t i = 0; i < E; i++) x[i] = (attn[i] + mlp[i]) + x[i];
-    TRACE("l_out", l, x, E);
+    for (uint32_t t = 0; t < n; t++) {
+      float *attn = ATTN(t), *mlp = QKV(t), *x = X(t);
+
+      TRACE("ffn_out", l, mlp, E);
+      for (uint32_t i = 0; i < E; i++) x[i] = (attn[i] + mlp[i]) + x[i];
+      TRACE("l_out", l, x, E);
+    }
   }
 
-  layer_norm(x, xn, E, m->out_norm_w, m->out_norm_b, m->norm_eps);
-  TRACE("result_norm", 0, xn, E);
-  matvec(m, m->out_w, m->out_b, xn, m->xq, m->logits, 0, m->n_vocab, 0);
+  /* Only the last token's logits: what follows the batch. */
+  layer_norm(X(n - 1), XN(n - 1), E, m->out_norm_w, m->out_norm_b, m->norm_eps);
+  TRACE("result_norm", 0, XN(n - 1), E);
+  matmul(m, m->out_w, m->out_b, XN(n - 1), E, m->logits, 0, 1, 0);
   TRACE("result_output", 0, m->logits, m->n_vocab);
 
-  m->n_past++;
+#undef X
+#undef XN
+#undef QKV
+#undef AOUT
+#undef FF
+#undef ATTN
+
+  m->n_past += n;
   return 0;
 }
 

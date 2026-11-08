@@ -95,6 +95,35 @@ int main(void)
         float v8 = llm_dot_q8_0(w8, xq, xs, blocks), s8 = llm_dot_q8_0_scalar(w8, xq, xs, blocks);
         float v4 = llm_dot_q4_0(w4, xq, xs, blocks), s4 = llm_dot_q4_0_scalar(w4, xq, xs, blocks);
         checks += 2;
+
+        /* Four inputs against the row at once: each the scalar's bits
+         * for its own input. Four different inputs, so one answer put
+         * in another's place cannot pass. */
+        {
+          static uint8_t x4[LLM_DOT4][320 * 34];
+          static float s4x[LLM_DOT4][320];
+          float o8[LLM_DOT4], o4[LLM_DOT4];
+
+          for (int t = 0; t < LLM_DOT4; t++) {
+            fill(x4[t], blocks, 34, (how + again + t + 1) % 5);
+            for (uint64_t b = 0; b < blocks; b++)
+              s4x[t][b] = llm_f16_to_f32((uint16_t)(x4[t][b * 34] | x4[t][b * 34 + 1] << 8));
+          }
+
+          llm_dot4_q8_0(w8, x4[0], sizeof x4[0], s4x[0], 320, blocks, o8);
+          llm_dot4_q4_0(w4, x4[0], sizeof x4[0], s4x[0], 320, blocks, o4);
+
+          for (int t = 0; t < LLM_DOT4; t++) {
+            checks += 2;
+            if (!same(o8[t], llm_dot_q8_0_scalar(w8, x4[t], s4x[t], blocks))
+                || !same(o4[t], llm_dot_q4_0_scalar(w4, x4[t], s4x[t], blocks))) {
+              if (failed < 5) printf("  FAIL: four inputs at once, %llu blocks, kind %d, input %d: "
+                                     "not the scalar's bits\n", (unsigned long long)blocks, how, t);
+              failed++;
+            }
+          }
+        }
+
         if (!same(v8, s8)) {
           if (mism8++ < 5) printf("  FAIL: Q8_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
                                   (unsigned long long)blocks, how, v8, s8);
@@ -139,7 +168,8 @@ int main(void)
            checks);
     return 1;
   }
-  printf("PASS: %d rows, Q8_0 and Q4_0, the vector dot product the scalar one's bits every time "
-         "(1 to 96 blocks, phi-2's 80 and 320, random and the corners)\n", checks);
+  printf("PASS: %d rows, Q8_0 and Q4_0, the vector dot product and four inputs at once the scalar "
+         "one's bits every time (1 to 96 blocks, phi-2's 80 and 320, random and the corners)\n",
+         checks);
   return 0;
 }

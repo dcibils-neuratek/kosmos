@@ -560,17 +560,27 @@ static bool blank_line(uint32_t from)
     return false;
 }
 
-/* One token: of the prompt, or of the answer. */
+/* A batch of the prompt, or one token of the answer. **The prompt a batch
+ * at a time** (`docs/xavier.md`, *Making it fast*): its tokens are all
+ * known, so up to `LLM_BATCH` of them go through the model together, each
+ * weight read once for the batch. Between batches the loop looks for STOP
+ * as it does between tokens of the answer. */
 static void ask_step(void)
 {
     int32_t token;
     uint32_t last = 0;
 
     if (ans.prompt_at < ans.prompt_n) {
-        if (llm_feed(&model.m, &held, ans.prompt[ans.prompt_at++]) != 0) {
+        uint32_t n = ans.prompt_n - ans.prompt_at;
+
+        if (n > LLM_BATCH) n = LLM_BATCH;
+
+        if (llm_feed_batch(&model.m, &held, ans.prompt + ans.prompt_at, n) != 0) {
             answer_end();
             return;
         }
+
+        ans.prompt_at += n;
 
         if (ans.prompt_at == ans.prompt_n) {
             ans.prompt_us = micros(kosmos_ticks() - ans.asked);

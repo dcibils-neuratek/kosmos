@@ -91,6 +91,55 @@ float llm_dot_q4_0(const uint8_t *w, const uint8_t *xq, const float *xs, uint64_
   return sum;
 }
 
+/* Four inputs to a row (`llm_dot.h`). Written plainly: the compiler makes
+ * the inner loops vectors, as it does the one-input ones. */
+
+void llm_dot4_q8_0(const uint8_t *w, const uint8_t *xq, uint64_t xq_room, const float *xs,
+                   uint64_t xs_room, uint64_t blocks, float out[LLM_DOT4])
+{
+  float sum[LLM_DOT4] = { 0 };
+
+  for (uint64_t b = 0; b < blocks; b++, w += 34) {
+    const int8_t *qa = (const int8_t *)(w + 2);
+    const float sw = scale(w);
+
+    for (int t = 0; t < LLM_DOT4; t++) {
+      const int8_t *qb = (const int8_t *)(xq + t * xq_room + b * 34 + 2);
+      int32_t s = 0;
+      for (int i = 0; i < LLM_QK; i++) s += qa[i] * qb[i];
+      sum[t] += (float)s * (sw * xs[t * xs_room + b]);
+    }
+  }
+
+  for (int t = 0; t < LLM_DOT4; t++) out[t] = sum[t];
+}
+
+void llm_dot4_q4_0(const uint8_t *w, const uint8_t *xq, uint64_t xq_room, const float *xs,
+                   uint64_t xs_room, uint64_t blocks, float out[LLM_DOT4])
+{
+  float sum[LLM_DOT4] = { 0 };
+
+  for (uint64_t b = 0; b < blocks; b++, w += 18) {
+    int8_t v[LLM_QK];
+    const float sw = scale(w);
+
+    /* The nibbles once, as values: low ones 0-15, high ones 16-31. */
+    for (int i = 0; i < LLM_QK / 2; i++) {
+      v[i] = (int8_t)((w[2 + i] & 0x0f) - 8);
+      v[i + LLM_QK / 2] = (int8_t)((w[2 + i] >> 4) - 8);
+    }
+
+    for (int t = 0; t < LLM_DOT4; t++) {
+      const int8_t *qb = (const int8_t *)(xq + t * xq_room + b * 34 + 2);
+      int32_t s = 0;
+      for (int i = 0; i < LLM_QK; i++) s += v[i] * qb[i];
+      sum[t] += (float)s * (sw * xs[t * xs_room + b]);
+    }
+  }
+
+  for (int t = 0; t < LLM_DOT4; t++) out[t] = sum[t];
+}
+
 /* The references, as X1 wrote them. */
 
 float llm_dot_q8_0_scalar(const uint8_t *w, const uint8_t *xq, const float *xs, uint64_t blocks)
