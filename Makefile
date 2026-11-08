@@ -2500,6 +2500,16 @@ llm-reference:
 	    $(HOSTDIR)/llm_reference build/models/phi-2.$$q.gguf 2>/dev/null \
 	        | sed 's#build/models/##' > tools/llm_reference_phi-2.$$q.txt || exit 1; \
 	done
+	for q in Q8_0 Q4_0 F16; do \
+	    $(HOSTDIR)/llm_reference build/models/tiny-phi2.$$q.gguf 2>/dev/null \
+	        | sed 's#build/models/##' > tools/llm_reference_tiny-phi2.$$q.txt || exit 1; \
+	done
+
+# The tiny phi-2 the guest suite and the host check use (`tools/llm_tiny.py`):
+# its tokenizer is copied from the real phi-2, so that is needed to make it.
+.PHONY: llm-tiny
+llm-tiny:
+	build/venv-gguf/bin/python -I tools/llm_tiny.py build/models/phi-2.Q4_0.gguf build/models
 
 $(HOSTDIR)/test_yuv: tools/test_yuv.c user/kits/gfx/yuv.c user/kits/gfx/yuv.h
 	@mkdir -p $(dir $@)
@@ -4679,6 +4689,10 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# X1): a skip that says so where `build/models/` has no model.
 	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
+	@# And the tiny phi-2, in all three of the kit's row types, in a second.
+	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q8_0.gguf tools/llm_reference_tiny-phi2.Q8_0.txt
+	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
+	$(HOSTDIR)/test_llm build/models/tiny-phi2.F16.gguf tools/llm_reference_tiny-phi2.F16.txt
 	@# And its vector rows held to its scalar ones, to the bit (X2).
 	$(HOSTDIR)/test_llmdot
 	$(HOSTDIR)/test_llmdot_x86

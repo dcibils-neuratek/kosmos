@@ -65,6 +65,32 @@ second, etc":
 - **`llm` at the prompt** prints it, and a window shows it live, as GPU
   Monitor shows the GPU - drawn first, as every window is.
 
+**Light coding, as Claude Code does it** - Diego, 8 November 2026: "It's
+also key that we can do some light coding with Xavier like Claude code":
+
+- **Ask about code.** "What does this function do", "why does this fail",
+  with the file or the selection in the IDE handed over as the context.
+- **Have it write or change code.** Xavier reads the files it is pointed
+  at, proposes an edit, and **shows it as a diff to accept or refuse**,
+  file by file - nothing is written that a person has not seen.
+- **Have it run what it wrote.** A Lua program or a test, run as the IDE
+  runs one, its output read back so Xavier can fix what failed - each run
+  shown and confirmed first, as every action is.
+- **Only what it is handed.** Xavier reaches the project folder it was
+  opened on and nothing else: a capability, not a convention.
+- **A model for code.** phi-2 writes a little code but holds 2048 tokens,
+  too few to read a file and change it. Qwen2.5-Coder at 1.5B or 3B
+  (Apache 2.0, published as GGUF, 32K tokens) fits the M700 and the Mac
+  Pro, and is trained to call tools. It is a second architecture (Qwen2:
+  RMSNorm, SwiGLU, grouped-query attention), so the LLM Kit grows a
+  second forward pass beside phi-2's, held to llama.cpp the same way.
+
+**Xavier uses the computer** - Diego, 8 November 2026: "It's key that
+Xavier can use the computer to do tasks so kosmos needs to expose all
+available methods to use the computer to Xavier". So **every way a person
+can use Kosmos is a way Xavier can**, through one door, and the door is the
+system's rather than Xavier's (*Using the computer*, below).
+
 **Later versions, Xavier does things:** writes a mail in Mail, opens a
 page of Preferences, finds and opens a file, starts an application.
 **Every action is shown and confirmed before it happens**, and is said as
@@ -219,9 +245,63 @@ first two without booting anything.
    with X3, because the speed of X3 is its first number.
 10. **X9 - speech.** Whisper (tiny or base, English) on the LLM Kit's tensor
    code, and eSpeak NG out. Hold a key, speak, hear the answer.
-11. **X10 - doing things.** Xavier proposes an Automations step, shows it,
-    and runs it when confirmed. After Automations is built, and with a
+11. **X10 - using the computer.** Every method Kosmos has, in one catalogue
+    (*Using the computer*): the system's own, applications' controls by
+    name, the screen last. Xavier proposes a step, shows it, and runs it
+    when confirmed. After Automations is built, and with a
     model that is good at it, which phi-2 is not.
+12. **X11 - light coding.** Qwen2.5-Coder in the LLM Kit (a second
+   forward pass, held to llama.cpp by the tiny-model test's way), the tool
+   calls - read a file, propose an edit, run a program - each shown and
+   confirmed, and Xavier in the IDE on the project it was opened on. Drawn
+   in `xavier.html` before it is built.
+
+## Using the computer
+
+**One door, which Kosmos supplies and Xavier is a user of.** Automations
+already designs it: the UI kit publishes **every control by name** - "the
+New mail button", "the To field", "the selected row" - so that every
+application is scriptable the day it is written, and `automations.md`
+names "an AI agent driving Kosmos" as one of the door's users. Xavier is
+that user. Nothing in Kosmos is written for Xavier alone; an application
+that adds a button has given Xavier the button.
+
+**Three levels, and Xavier takes the highest that does the task:**
+
+1. **What the system supplies, as itself.** Files through the namespace
+   (read, write, find, the Trash), programs at the prompt with their
+   output, servers through their declared protocols, settings as the
+   files Preferences writes. Exact, fast, and the same for a script.
+2. **Applications by their controls' names.** Automations' steps: open
+   Mail, press "New mail", type into "To", choose View > Zoom. Exact too,
+   because a name does not move when a window does.
+3. **The screen, when nothing above reaches.** The screen as a picture
+   (the same frame `screenshot` and `vncd` borrow), and a pointer and keys
+   driven as a process drives them (`hal_pointer_move`, the input that
+   VNC already injects). Needs a model that can see, which phi-2 cannot;
+   a vision model is a third architecture for the kit, later.
+
+**One catalogue the model reads.** Every method above is described in one
+declared shape - its name, what it does, its arguments, and whether it
+changes anything - generated from what exists: the programs in
+`/Kosmos/Programs`, each running application's published controls, the
+protocols' operations. The model is told the catalogue and asks for a
+step by name; the server never parses free text into an action.
+
+**Only what it is handed, and nothing without a yes.** Xavier is a
+process with a namespace like any other: what it was not handed, it
+cannot reach. Within that, a step that only reads (a file, a window's
+title, the screen) runs and is shown; a step that changes anything is
+shown as the Automations step it is and waits for yes; sending, deleting
+and paying ask twice. Every step taken is written to the conversation's
+file, so what Xavier did is always on the record.
+
+**What it waits on**: Automations' first step, the UI kit publishing every
+control - which is the larger piece, and Automations' own (`automations.md`,
+*Publishing every control*); a model good at calling tools, which phi-2 is
+not (Qwen2.5 Instruct at 3B fits the M700, and the Mac Pro's 32 GB and two
+cards could hold 7B or more); and X10, which this widens from "Xavier
+proposes an Automations step" to every method there is.
 
 ## X1, as built
 

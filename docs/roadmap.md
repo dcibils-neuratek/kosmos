@@ -523,7 +523,18 @@ Diego boots Kosmos on next, with two AMD FirePro cards** ("we have amd
 gpus", "dual"): a GCN 1.0 driver and Compute Kit backend of our own, the
 model's layers split across both cards or one card the model and one the
 desktop, designed in a document of its own first (`xavier.md`, *All the
-acceleration there is*). Then, the same day: **models from Hugging Face
+acceleration there is*). And **light coding, as Claude Code does it** ("It's also key that we can
+do some light coding with Xavier like Claude code"): code read, edits
+shown as diffs and accepted file by file, programs run and their output
+read back, only in the project it is handed, on Qwen2.5-Coder - a second
+architecture in the kit (`xavier.md`, X11). And **Xavier uses the computer** ("kosmos needs to expose all available
+methods to use the computer to Xavier"): every way a person uses Kosmos,
+through one door the system supplies - the system's own files, programs
+and protocols, applications' controls by name (Automations' *Publishing
+every control*, which this makes the more urgent), and the screen with a
+pointer and keys last - described in one catalogue the model reads, inside
+Xavier's namespace, every change shown and confirmed (`xavier.md`,
+*Using the computer*, X10). Then, the same day: **models from Hugging Face
 with a tool** ("we need a way to load models from huggingface easily",
 "with a tool") - `models search/get/load/rm` on Kosmos, held to Hugging
 Face's SHA-256, and `tools/hfmodel.py` converting a safetensors model on
