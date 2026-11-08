@@ -514,7 +514,16 @@ with a `ui.menubar` view keeps it in the window - no application has one.
 **Xavier, an assistant on this machine - AGREED on 8 November 2026: E1,
 our own LLM Kit, a server, phi-2 converted ("E1, server yes, convert
 phi-2, go ahead"); X1 built - the LLM Kit's core in C, held to llama.cpp
-on the Mac (`xavier.md`, *X1, as built*); X2, vectors, next.** Then, the same day: **models from Hugging Face
+on the Mac (`xavier.md`, *X1, as built*); X2, vectors, under way.** And
+the same day **every acceleration there is, chosen when it runs** (Diego:
+"Make sure we make the most performant llm inference using all available
+acceleration", "for the hardware you are running on every time"): AVX2
+with `xsave` (X2b), every core, the M700's EUs - and **the Mac Pro 2013
+Diego boots Kosmos on next, with two AMD FirePro cards** ("we have amd
+gpus", "dual"): a GCN 1.0 driver and Compute Kit backend of our own, the
+model's layers split across both cards or one card the model and one the
+desktop, designed in a document of its own first (`xavier.md`, *All the
+acceleration there is*). Then, the same day: **models from Hugging Face
 with a tool** ("we need a way to load models from huggingface easily",
 "with a tool") - `models search/get/load/rm` on Kosmos, held to Hugging
 Face's SHA-256, and `tools/hfmodel.py` converting a safetensors model on

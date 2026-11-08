@@ -2469,10 +2469,24 @@ $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits
 # The LLM Kit's core against llama.cpp's own answers (`docs/xavier.md`
 # X1). The answers are in the tree; llama.cpp is needed only to write them
 # again, by `make llm-reference`, from a llama.cpp built in build/downloads.
-$(HOSTDIR)/test_llm: tools/test_llm.c user/kits/llm/llm_core.c user/kits/llm/llm_core.h
+LLM_KIT_SRCS := user/kits/llm/llm_core.c user/kits/llm/llm_dot.c
+
+$(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
-	        tools/test_llm.c user/kits/llm/llm_core.c -lm
+	        tools/test_llm.c $(LLM_KIT_SRCS) -lm
+
+# The kit's vector dot products against its scalar ones, to the bit:
+# natively (NEON) and as x86-64 under Rosetta (SSE2), as `test_yuv` is.
+$(HOSTDIR)/test_llmdot: tools/test_llmdot.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
+	        tools/test_llmdot.c $(LLM_KIT_SRCS) -lm
+
+$(HOSTDIR)/test_llmdot_x86: tools/test_llmdot.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -arch x86_64 -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
+	        tools/test_llmdot.c $(LLM_KIT_SRCS) -lm
 
 LLAMA_CPP := build/downloads/llama.cpp-b12205
 
@@ -4552,7 +4566,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm
+host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -4665,6 +4679,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# X1): a skip that says so where `build/models/` has no model.
 	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
+	@# And its vector rows held to its scalar ones, to the bit (X2).
+	$(HOSTDIR)/test_llmdot
+	$(HOSTDIR)/test_llmdot_x86
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	$(HOSTDIR)/lua tools/test_clex.lua
 	$(HOSTDIR)/lua tools/test_cdoc.lua

@@ -25,8 +25,16 @@ twice llama.cpp's spread against itself - its plain and NEON builds
 differ by 0.62 - and four controls fail it; RoPE's is the thinnest. 9.0
 tok/s Q8_0, 4.1 Q4_0, scalar on the Mac.
 
-**Next: X2**, Q4_0 and Q8_0 dots in vector types with the scalar loop as
-reference; then X3, the server and `xavier "question"` on Kosmos, which
+**X2, under way** (`xavier.md`, *X2, as it stands*): `llm_dot.c`'s 16-byte
+lanes, held to the scalar loops to the bit by `tools/test_llmdot.c`
+(native and Rosetta, in host-check); the kit chooses its loops at
+`llm_open` and takes the plain ones for now. The time was the F16 scales,
+not the multiply - now three operations a normal scale, and the input's
+converted once a product. On the Mac the plain loop wins (clang makes it
+`sdot`), which says nothing about GCC on the M700: **measure there next**,
+then X2b (AVX2 with `xsave`). Diego, same day: every acceleration, chosen
+at run time, and the **Mac Pro 2013 with two AMD FirePro cards** he boots
+next (`xavier.md`, *All the acceleration there is*). Then then X3, the server and `xavier "question"` on Kosmos, which
 needs the model on `/Home` (512 MB on the stick: Q4_0 does not fit, so
 `/Home/Models` on the QEMU disk first).
 

@@ -27,6 +27,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "llm_dot.h"
+
 /* ggml's tensor types, the four this reads. */
 enum {
   LLM_F32  = 0,
@@ -107,6 +109,13 @@ struct llm_model {
   uint16_t *k_cache, *v_cache; /* [layer][pos][n_embd]      */
   float *x, *xn, *qkv, *att, *attn_out, *ff, *ff_out, *logits;
   uint8_t *xq;                 /* the input, as Q8_0 blocks */
+  float *xs;                   /* and each block's scale, as a float */
+
+  /* The loops a row of each kind is multiplied by, chosen at `llm_open`
+   * for the machine it runs on (`docs/xavier.md` X2): today the plain
+   * loops, the fastest wherever they have been measured, until the M700
+   * says whether the explicit lanes beat them there. */
+  llm_dot_fn *dot_q8_0, *dot_q4_0;
 };
 
 /*
@@ -148,6 +157,35 @@ int32_t llm_greedy(const struct llm_model *m);
 
 /* IEEE half precision, as ggml converts it: to nearest, ties to even. */
 uint16_t llm_f32_to_f16(float f);
-float llm_f16_to_f32(uint16_t h);
+
+/* And back, exactly. Here rather than in `llm_core.c` because it is in the
+ * innermost loops - two a block of every row - where a call, or a branch-
+ * free conversion of every case, cost more than the block's arithmetic
+ * (`docs/xavier.md` X2). A normal number, which every real scale is, is
+ * three operations; zero, a subnormal, infinity and NaN take the branch. */
+static inline float llm_f16_to_f32(uint16_t h)
+{
+  uint32_t sign = (uint32_t)(h & 0x8000) << 16;
+  uint32_t exp = (h >> 10) & 0x1f;
+  uint32_t mant = h & 0x3ff;
+  uint32_t bits;
+
+  if (__builtin_expect(exp != 0 && exp != 0x1f, 1)) {
+    bits = sign | (((uint32_t)(h & 0x7fff) << 13) + ((127 - 15) << 23));
+  } else if (exp == 0x1f) {
+    bits = sign | 0x7f800000 | (mant << 13);
+  } else if (mant == 0) {
+    bits = sign;
+  } else {
+    while (!(mant & 0x400)) { mant <<= 1; exp--; }  /* normalise a subnormal */
+    exp++;
+    mant &= 0x3ff;
+    bits = sign | ((exp + 127 - 15) << 23) | (mant << 13);
+  }
+
+  float f;
+  __builtin_memcpy(&f, &bits, sizeof f);
+  return f;
+}
 
 #endif

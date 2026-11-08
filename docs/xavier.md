@@ -198,7 +198,8 @@ first two without booting anything.
    not the same answer token for token.
 2. **X2 - vectors.** Q4_0 and Q8_0 matrix-vector products in vector types,
    SSE2, with the scalar loop kept as the reference the host test holds
-   them to.
+   them to. *Under way* (*X2, as it stands*): the lanes and their test are
+   written; which form wins is measured on the M700.
 3. **X3 - an answer on Kosmos.** The LLM server, the model from
    `/Home/Models`, and `xavier "question"` at the prompt printing the
    answer. Then its speed on the M700, measured.
@@ -301,13 +302,101 @@ Q8_0.** Q4_0 is slower here, against the bandwidth argument above, because
 its nibbles cost scalar shifts and masks that Q8_0's bytes do not; that is
 exactly the loop X2 puts in vectors.
 
+## X2, as it stands
+
+`user/kits/llm/llm_dot.c`: Q8_0 and Q4_0 rows in GCC's vector types, 16
+bytes wide in `pmaddwd`'s shape, beside the scalar loops they are held to,
+**to the bit**, by `tools/test_llmdot.c` - natively and under Rosetta, 2352
+rows each, every length to 96 blocks and phi-2's 80 and 320, random and the
+corners. Bit for bit because only the integer work inside a block is in
+lanes; the float sum across blocks stays in order.
+
+**What the Mac showed, and what it cannot.** Measured on phi-2 itself
+(`test_llm`), one thread:
+
+| | Q8_0 | Q4_0 |
+|---|---|---|
+| X1, scalar | 9.1 tok/s | 4.1 |
+| explicit vectors, as first written (32 bytes) | 5.8 | 5.8 |
+| the scalar loop, moved to `llm_dot.c` | 5.3 | - |
+| explicit vectors, 16 bytes, scales from a 64K table | 2.2 | 2.6 |
+| the scalar loop, F16 converted the fast way | **9.2** | 4.1 |
+
+- **The time was in the scales, not the multiplying.** A block is two
+  `sdot`s; moved out of the file, clang compiled the F16 conversion of its
+  two scales branch-free, about fifty instructions. A normal number is now
+  three operations with a branch for the rest (`llm_core.h`), and the
+  input's scales are converted once a product (`xs`) rather than once a
+  row. A 256 KB table was worse: read at random, it fights the weights for
+  the cache.
+- **On this Mac the plain loop wins**, because clang targets an M1, which
+  has `dotprod`, and makes the plain loop `sdot`; it does not see `sdot` in
+  the explicit lanes. **That says nothing about Kosmos**: GCC builds
+  Kosmos, for an i5-6500T and for ARMv8.0, neither of which has `sdot` -
+  and GCC's x86 output for the plain loop is already `pmaddwd`, four of
+  them a block. Which form is faster there is measured on the M700, and
+  the kit chooses it - which is the run-time choice X2b needs anyway.
+
+## All the acceleration there is
+
+Diego's 4, as steps. Each is chosen at run time from what the machine
+reports - CPUID's leaves and ARM's ID registers already reach every
+process through `sysinfo`, which `/Devices/cpu` reads - and each is held
+to the scalar reference by a host test, so the fastest path and the
+plainest one give the same answer.
+
+| | M700 (i5-6500T) | Mac Pro 2013 (Xeon E5 v2) | QEMU, ARM |
+|---|---|---|---|
+| Vector lanes | SSE2, **AVX2** | SSE2, AVX (floats only: no AVX2, no FMA) | NEON; `dotprod` if the core has it |
+| F16 scales | F16C | F16C | NEON's `fcvtl` |
+| Cores | 4 | 4 to 12 | 4 |
+| GPU | Intel HD 530, Gen9, 24 EUs, shares RAM | **two AMD FirePro**, GCN 1.0, 2-6 GB each, 160-264 GB/s | none |
+
+- **X2, the baseline**: SSE2 and NEON, which every x86-64 and ARMv8 core
+  has. **Measured first on a real Kosmos core**, not on this Mac: the
+  Mac's clang targets an M1 with `dotprod` and turns the plain scalar loop
+  into `sdot`, which no Kosmos target compiler does, so the Mac says which
+  form clang likes and nothing about the M700 (*X2, as it stands*, below).
+- **X2b, AVX2**: Nebula saves the wider registers (`xsave`, `XCR0`), the
+  kit compiles its loops a second time with `target("avx2,f16c")` and
+  chooses them where CPUID says so. The M700 has it; the Mac Pro does not.
+- **Every core**: a product's rows split across the cores. Needs threads
+  in a process (`threads.md` 4-8). Decoding is bound by memory, so this
+  buys what the memory can feed - on the M700 about two cores' worth, on
+  the Mac Pro's four memory channels more.
+- **X9, the M700's GPU**: the Compute Kit's EU kernels, reading the
+  question's tokens a batch at a time, where the GPU pays most.
+- **The Mac Pro's AMD cards** - new, and the largest: GCN 1.0 is
+  documented to the instruction (AMD's *Southern Islands* ISA), and
+  Linux's `radeon` and `amdgpu` drivers are the rest of the description. A
+  driver of our own and a GCN backend for the Compute Kit. phi-2 at Q4_0
+  fits in one card's memory, and a token is bound by that memory, so on a
+  D700 about ten times the M700's ceiling. **Two cards**: the layers split
+  between them, half each, or one card the model and the other the
+  desktop. Its own design document before any of it.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go
 ahead". So: the engine is our own LLM Kit in C (1), one server holds the
 model for every application (2), and phi-2 is converted on the Mac with
-llama.cpp's converter, at Q8_0 and Q4_0 (3). The kernel's AVX2 (4) and
-the voice (5) are still open, and neither is needed before X6 and X9.
+llama.cpp's converter, at Q8_0 and Q4_0 (3). The voice (5) is still
+open.
+
+**And 4, the same day, wider than it was asked** - Diego, during X2: "Make
+sure we make the most performant llm inference using all available
+acceleration", "for the hardware you are running on every time", and,
+about the Mac Pro he boots Kosmos on next, "we have amd gpus", "dual". So
+the kit uses **every acceleration the machine it is running on has,
+chosen when it runs** - SSE2 and NEON always, AVX2 where the processor has
+it (with `xsave` in Nebula to keep its registers), ARM's `dotprod` where
+that has it, every core once threads exist, and the GPUs: Intel's EUs on
+the M700, and **both** of the Mac Pro's AMD cards (*All the acceleration
+there is*, below). Asked whether it should be assembly: not by default -
+one C source compiled once a target (`__attribute__((target))`) and
+chosen at run time, with assembly only for the GPU kernels, which have no
+compiler here, and for a CPU loop a measurement shows the compiler cannot
+express.
 
 1. **The engine**: E1, our own LLM Kit in C *(recommended)*, or E2,
    llama.cpp with a C++ runtime ported.
@@ -318,7 +407,8 @@ the voice (5) are still open, and neither is needed before X6 and X9.
    (2.9 GB). Where it lives on the M700 is a question too: the stick's
    `/Home` is 512 MB, so it needs a larger `/Home` or a partition of its
    own.
-4. **AVX2 through `xsave`** in the kernel (X6), and when.
+4. **AVX2 through `xsave`** in the kernel (X6), and when. *Taken: yes,
+   and every other acceleration too, chosen at run time.*
 5. **The voice**: eSpeak NG first, clear and robotic. A neural voice
    (Piper) runs on ONNX, which would be a second engine to bring, so it
    is later if at all.
