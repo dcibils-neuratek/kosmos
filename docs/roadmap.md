@@ -534,7 +534,9 @@ and protocols, applications' controls by name (Automations' *Publishing
 every control*, which this makes the more urgent), and the screen with a
 pointer and keys last - described in one catalogue the model reads, inside
 Xavier's namespace, every change shown and confirmed (`xavier.md`,
-*Using the computer*, X10). Then, the same day: **models from Hugging Face
+*Using the computer*, X10). Seeing the screen is **Qwen's vision models** ("Go with qwen
+vision"): Qwen2.5-VL-3B or a Qwen2-VL model tuned for interfaces, on the
+Qwen2 forward pass X11 brings, with an image encoder in front. Then, the same day: **models from Hugging Face
 with a tool** ("we need a way to load models from huggingface easily",
 "with a tool") - `models search/get/load/rm` on Kosmos, held to Hugging
 Face's SHA-256, and `tools/hfmodel.py` converting a safetensors model on

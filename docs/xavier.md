@@ -288,7 +288,16 @@ that adds a button has given Xavier the button.
    banner `vncd` shows for a viewer allowed the keys and the pointer.
    Last, because a click at a place lands on something else once a window
    moves - and because seeing the picture needs a model that can see,
-   which phi-2 cannot: a vision model, a third architecture for the kit.
+   which phi-2 cannot. **That model is Qwen's** - Diego, 8 November 2026:
+   "Go with qwen vision". Qwen2.5-VL-3B, or one of the 2B models tuned on
+   Qwen2-VL to operate interfaces (ShowUI, UI-TARS), chosen from Hugging
+   Face when X10 starts: they read the text on a screen and answer with
+   the place of what was asked for. Their language half is Qwen2, the
+   architecture X11 brings for Qwen2.5-Coder, so vision adds the image
+   encoder (a ViT) in front of a forward pass the kit already has, not a
+   third one. A whole 1920x1080 screen is two to three thousand image
+   tokens, so a window is cropped to before it is read, and this is where
+   the GPUs pay most.
 
 **One catalogue the model reads.** Every method above is described in one
 declared shape - its name, what it does, its arguments, and whether it
