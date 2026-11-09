@@ -799,7 +799,7 @@ function inside_view:draw(g)
   token_strip(g, x + 12, IN.strip, W - 2 * x - 24, r, back > 0 and look_pos or nil)
 
   grid(g, x, IN.grid, r, tl, th)
-  side(g, x + IN.net_w + 24, IN.grid_label, r)
+  side(g, x + IN.net_w + 56 + 24, IN.grid_label, r)
 
   -- In words.
   if look then

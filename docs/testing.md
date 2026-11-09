@@ -29922,3 +29922,19 @@ six each for phi-2's 32), so a small model is not left in a corner.
 the roadmap, 18.726), and `x86-pdfview` and `x86-network` lost QEMU
 before the guest's first line, with nothing in either log to say why.
 All three passed alone, 211/211, 38 and 36, in 51 s.
+
+**On the M700, phi-2** (0.11.338, netbooted): `llm inside --tokens 24
+What is a microkernel?` recorded 32 tokens, 9 read and 23 written, about
+190 ms each with the page open, the GPU 52% of the rows. The record
+agrees with the answer: after " such", " as" at 100%; after " memory",
+" management" at 98%. The stream grows through the layers, 19 to 142,
+and about a tenth of the 10240 neurons fire in each layer, 18% in the
+first. **Almost every head's strongest look is the newline 25 back** (at
+position 8, the end of the prompt's first line), at 60 to 100% - an
+attention sink, where a head with nothing to look at puts its attention
+- so the grid of heads is bright nearly everywhere. Only a few heads look
+anywhere else: layer 1's head 29 and layer 30's head 7, one token back.
+
+**0.11.339**: the side panel had been placed as if the grid's 56 pixels of
+labels were not there, and "stream" ran into "position"; it now starts
+past them. Layout only; `x86-llmmon` 15.
