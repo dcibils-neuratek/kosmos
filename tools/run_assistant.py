@@ -20,8 +20,16 @@ with answers of 40 tokens, so the tiny model's 256 hold a follow-up, and:
 - **Stop**, pressed while a question is being read, ends the answer short;
 - **the conversation kept**: after each answer it is a file in
   `/Home/Xavier`, and opened again from the list it has its four turns;
+- **Settings**: Compare and Use the fastest (`xavier.md`, *Settings*);
+- **a model for each conversation** (`xavier.html`, *A model for each
+  conversation*): the header's chip lists both models on the disk; Q8_0
+  chosen there is loaded, and a new conversation begins with it, its answer
+  the kit's own in Q8_0, byte for byte;
 - **the one from the Mac opened** from the list, its tricky answer read
-  as one turn, and **Delete** sends it to the Trash.
+  as one turn, its model - Q4_0 - loaded again, and **Delete** sends it to
+  the Trash;
+- **the first conversation opened again** with its four turns, now Q8_0's,
+  and its answers still Q4_0's.
 
 Usage: run_assistant.py IMAGE
 """
@@ -42,6 +50,7 @@ LUA = os.path.join(ROOT, "build", "host", "lua")
 KFS = os.path.join(HERE, "kfs.lua")
 ANSWER = os.path.join(ROOT, "build", "host", "llm_answer")
 MODEL = "tiny-phi2.Q4_0.gguf"
+OTHER = "tiny-phi2.Q8_0.gguf"
 TOKENS = 40
 STOPS = ["\nInstruct:", "\nOutput:"]
 
@@ -60,10 +69,10 @@ def seeded(epoch):
             % (epoch, epoch, MODEL, len(q.encode()), len(a.encode()), q, a))
 
 
-def chain(texts):
+def chain(texts, name=MODEL):
     """The kit's answers on the Mac to the texts the window asked, in order."""
     out = subprocess.run([ANSWER, "--chain", "--stops", ",".join(s.encode().hex() for s in STOPS),
-                          os.path.join(ROOT, "build", "models", MODEL), str(TOKENS),
+                          os.path.join(ROOT, "build", "models", name), str(TOKENS),
                           *texts], check=True, capture_output=True, text=True).stdout
     got = []
 
@@ -94,8 +103,10 @@ def main():
     with open(old, "w") as f:
         f.write(seeded(int(time.time()) - 3 * 86400))
 
+    other = os.path.join(ROOT, "build", "models", OTHER)
+
     subprocess.run([LUA, KFS, "create", disk, "32", model + ":/Home/Models/" + MODEL,
-                    old + ":/Home/Xavier/" + seed_name],
+                    other + ":/Home/Models/" + OTHER, old + ":/Home/Xavier/" + seed_name],
                    check=True, capture_output=True, cwd=ROOT)
 
     import run_screenshot as R                              # noqa: E402
@@ -235,30 +246,61 @@ def main():
             click(sp[2], sp[3])
             closed_settings = said("xavier: settings closed", mark, 10)
 
-        # The one from the Mac, opened from the list - Today's group, this
-        # conversation, This week's group, then it - and sent to the Trash.
+        # **A model for each conversation**: the chip's menu, Q8_0 chosen
+        # for this conversation and loaded, then a new conversation that
+        # begins with it and is answered by it.
+        models_menu = chose = loaded_other = new_with = None
         mark = len(guest.seen)
-        click(list_x + 60, list_y + 30 + rowh + 30 + rowh // 2)
+        click(p[11], p[12])
+        models_menu = said("xavier: models menu at ", mark, 10)
+        mm = models_menu and re.match(r"(-?\d+),(-?\d+), rows of (\d+): (.*)$", models_menu)
+
+        if mm:
+            mx, my, rh = int(mm.group(1)), int(mm.group(2)), int(mm.group(3))
+            names = mm.group(4).split(", ")
+
+            if OTHER in names:
+                click(mx + 30, my + 2 + names.index(OTHER) * rh + rh // 2)
+                chose = said("xavier: " + OTHER + " chosen for this conversation", mark, 10)
+                loaded_other = said("xavier: ready, " + OTHER, mark, 60)
+
+        mark = len(guest.seen)
+        click(*new_at)
+        new_with = said("xavier: opened a new conversation, 0 turns, ", mark, 10)
+        other_asked = len(asked)
+        ask(Q1)
+
+        # The one from the Mac, opened from the list - Today's group, the new
+        # conversation, the first one, This week's group, then it - its model
+        # loaded again, and sent to the Trash.
+        mark = len(guest.seen)
+        click(list_x + 60, list_y + 30 + 2 * rowh + 30 + rowh // 2)
         opened_old = said("xavier: opened /Home/Xavier/" + seed_name, mark, 10)
+        back_to_q4 = said("xavier: ready, " + MODEL, mark, 60)
         guest.sendkey("delete")
         trashed = said("xavier: to the Trash, /Home/Xavier/" + seed_name, mark, 10)
         said("turns", len(guest.seen), 5)
         time.sleep(0.5)
         guest._read_available()
+
+        # The first conversation, opened again: Today's group, the new one,
+        # then it.
+        mark = len(guest.seen)
+        click(list_x + 60, list_y + 30 + rowh + rowh // 2)
+        first_again = said("xavier: opened /Home/Xavier/", mark, 10)
     finally:
         guest.close()
 
     seen = guest.seen
     first_kept = re.search(r"xavier: kept /Home/Xavier/\S+, 1 turns", seen)
-    after = re.search(r"xavier: to the Trash, [^\n]*\n(?:[^\n]*\n)*?xavier: opened "
-                      r"/Home/Xavier/\S+, (\d+) turns", seen)
-    reopened = after.group(1) if after else None
 
-    # The kit's answers to what was asked, in the same order, on the Mac.
-    texts = [h for h in asked if h]
-    expect = chain(texts) if len(texts) == len(asked) else []
+    # The kit's answers to what was asked, in the same order, on the Mac:
+    # the first four in Q4_0 across one conversation, the fifth alone in Q8_0.
+    texts = [h for h in asked[:4] if h]
+    expect = chain(texts) if len(texts) == 4 else []
+    other_expect = chain([asked[4]], OTHER) if len(asked) == 5 and asked[4] else []
 
-    check(len(asked) == 4 and all(asked), "not every question was asked: %r" % asked)
+    check(len(asked) == 5 and all(asked), "not every question was asked: %r" % asked)
     check(all(answered), "not every question was answered")
 
     if len(expect) == 4 and all(answered) and all(expect):
@@ -302,13 +344,27 @@ def main():
               % (best, kept_seen, reopened_settings))
         check(closed_settings is not None, "Done did not close Settings")
 
+    check(models_menu is not None and models_menu.endswith(": %s, %s" % (MODEL, OTHER)),
+          "the chip's menu did not list both models: %r" % models_menu)
+    check(chose is not None and loaded_other is not None,
+          "%s chosen from the chip was not loaded: %r %r" % (OTHER, chose, loaded_other))
+    check(new_with is not None and new_with.startswith(OTHER),
+          "a new conversation did not begin with the model chosen last: %r" % new_with)
+    check(len(other_expect) == 1 and other_expect[0] and len(answered) == 5 and answered[4]
+          and answered[4]["hex"] == other_expect[0]["hex"] and answered[4]["kept"] == 0,
+          "the new conversation's answer is not the kit's in %s: %r against %r"
+          % (OTHER, answered[4:], other_expect))
+    check(back_to_q4 is not None,
+          "opening the conversation from the Mac did not load its model, %s, again" % MODEL)
+    check(first_again is not None and re.match(r"\S+, 4 turns, %s; answers by %s$"
+                                               % (re.escape(OTHER), re.escape(MODEL)), first_again),
+          "the first conversation did not open with four turns, now %s's, its answers %s's: %r"
+          % (OTHER, MODEL, first_again))
     check(first_kept is not None, "the conversation was not kept after its first answer")
     check(opened_old is not None, "the conversation from the Mac did not open from the list")
     check(re.search(r"opened /Home/Xavier/%s, 1 turns" % re.escape(seed_name), seen),
           "the conversation from the Mac was not one turn")
     check(trashed is not None, "Delete did not send it to the Trash")
-    check(reopened == "4",
-          "the conversation kept did not open again with its four turns: %r" % reopened)
 
     if fails:
         for f in fails:
@@ -319,7 +375,8 @@ def main():
 
     print("PASS: %d checks on Xavier's window - three answers the kit's own byte for byte "
           "across a conversation, a follow-up reading %d tokens with %d kept, the oldest turn "
-          "forgotten, Stop, the conversation kept and opened again, and one sent to the Trash"
+          "forgotten, Stop, Settings, a model for each conversation - Q8_0's answer the kit's "
+          "too - the conversation kept and opened again, and one sent to the Trash"
           % (checks, answered[1]["read"], answered[1]["kept"]))
     return 0
 

@@ -2,11 +2,11 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.327, not pushed; Xavier's Settings, measured on the M700)
+Last updated: 2026-11-08 (0.11.328, not pushed; Xavier's Settings, and a model for each conversation)
 
 ---
 
-## 8 November, night: Settings (0.11.326-0.11.327, not pushed)
+## 8 November, night: Settings (0.11.326-0.11.328, not pushed)
 
 The agreed order for the rest of Xavier is: Settings, then a model for
 each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
@@ -22,7 +22,12 @@ each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
 - **0.11.327**: the sheet is 760 by 600. The M700's picture showed the
   machine's line cut off and the seventh row under the buttons.
 
-**Next**: a model for each conversation (`xavier.html#model-each`).
+- **0.11.328, a model for each conversation**: the chip is a menu of the
+  models, a conversation keeps its model and each answer its own, opening
+  one loads it, a new one begins with the one chosen last (18.722).
+
+**Next**: asking from anywhere, then the LLM Monitor, Models, the GPU
+(X7) and voice.
 
 ## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
 

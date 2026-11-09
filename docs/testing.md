@@ -29520,3 +29520,29 @@ sheet's edge, and the seventh row under the buttons. Under QEMU the line
 is shorter (no AVX2), and the gate's machine has four processors, so five
 rows rather than seven. 0.11.327 made the sheet 760 by 600; `x86-xavier`
 28 of 28.
+
+## 18.722 A model for each conversation
+
+`x86-xavier` (`tools/run_assistant.py`) has both tiny models on its disk
+now, Q4_0 and Q8_0, and after Settings: the header's chip opens a menu
+listing both; Q8_0 chosen there is loaded; New conversation begins with
+it; its answer is the kit's own in Q8_0 on the Mac, byte for byte, with
+nothing kept (a model just loaded holds nothing); the conversation from
+the Mac, opened, loads its Q4_0 again; and the first conversation, opened
+again after the Trash, has its four turns, says Q8_0 is its model, and
+says Q4_0 wrote its answers - each turn's model kept in the file. 33
+checks, 28 before.
+
+**Controls**, both at once, each failing its own check, 2 of 33:
+
+- **A new conversation begun with `llm.choose()`** rather than the model
+  chosen last: "a new conversation did not begin with the model chosen
+  last: 'tiny-phi2.Q4_0.gguf; answers by none'".
+- **Opening a conversation without asking for its model**: "opening the
+  conversation from the Mac did not load its model, tiny-phi2.Q4_0.gguf,
+  again".
+
+The Q8_0 answer's check still passed under the two together, which is
+right rather than lucky: with the second, nothing reloads Q4_0, so the new
+conversation was still answered by the Q8_0 in.
+

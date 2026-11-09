@@ -247,10 +247,11 @@ first two without booting anything.
    question read in batches (0.11.323).
 6. **X6 - AVX2. Built, 0.11.325** (*AVX2, as built*): XSAVE in Nebula's
    switch, then the kit's loops widened.
-6b. **Settings. Under way, agreed 8 November** (*Settings*, below; drawn in
+6b. **Settings. Built, 0.11.326** (*Settings*, below; drawn in
    `xavier.html`): cores, vector loops and the GPU, the LLM server's for
    every application, and Compare. And **a model chosen for each
-   conversation**, asked the same day, to be drawn first.
+   conversation. Built, 0.11.328** (*A model for each conversation*,
+   below), drawn first the same day.
 7. **X7 - the GPU.** Compute Kit kernels for the prompt, then for the
    answer, each measured against the processor on the M700. Brought
    forward on 8 November, after Settings.
@@ -811,6 +812,37 @@ finds it on theirs, and Use the fastest keeps it.
 word by word, and the cache already held across a conversation. The model
 can also stay loaded between questions, and the LLM server's band keep the
 desktop first while it works.
+
+## A model for each conversation
+
+**Asked on 8 November 2026** - Diego: "xavier needs a way for me to select
+the llm model to use in every conversation" - and drawn in `xavier.html`
+(*A model for each conversation*). **Built in 0.11.328.**
+
+**What a person can do**: press the model chip in the header and choose
+from every model in the models folder, each with its size, the one in
+force marked and the one loaded saying so. The choice becomes this
+conversation's and the one a new conversation begins with. Opening a
+conversation loads its model when it is not the one in, and the box and
+the foot say so while it comes - its size, and how long is left from how
+fast it has come so far. The list down the side says each conversation's
+model, and every answer's note says which model wrote it, so a
+conversation that changed model partway shows where.
+
+**What it is made of**: nothing new below Xavier. The LLM server already
+let go of one model for another on a `LOAD` (`load_begin` looks for the
+file before it lets the old one go, so a name not there costs a refusal
+and not the model in). `conversations.lua` keeps the conversation's model,
+as it did, and now each turn's: the model's file name at the end of the
+`turn` line, read as the conversation's when a file kept before has none.
+The model chosen last is `/Home/Xavier/chosen-model`, one name in a file.
+
+**Left out of the drawing, on purpose**: the word on what each model is
+like ("smaller and quicker") - nothing here knows it yet, and an invented
+one would be read as a fact; and "Get more in Models...", which waits for
+Models. A model the server cannot find is not asked for again until it is
+chosen, and the conversation is answered by the model in, whose name its
+answer then carries.
 
 ## Decisions that are Diego's
 

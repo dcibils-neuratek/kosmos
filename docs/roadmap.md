@@ -565,7 +565,8 @@ conversation was begun with is in its file already (`conversations.lua`'s
 `model`); Xavier lets it be chosen for a new one and changed in one that
 exists, and loads it when the conversation is opened, since the server holds
 one model at a time. Drawn in `xavier.html` (*A model for each
-conversation*). **And the order to finish Xavier's window, AGREED on 8
+conversation*). **Built in 0.11.328** (`xavier.md`, *A model for each
+conversation*; `testing.md` 18.722). **And the order to finish Xavier's window, AGREED on 8
 November 2026** (Diego asked "how far are we to complete xavier UI in all
 its forms", then "Agreed, go ahead with your suggested order"): Settings;
 a model for each conversation; asking from anywhere; the LLM Monitor;

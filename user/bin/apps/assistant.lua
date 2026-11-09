@@ -30,6 +30,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local llm = use("/Kosmos/Libraries/llm.lua")
 local conversations = use("/Kosmos/Libraries/conversations.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local theme = ui.theme
 local L = ui.layout
 
@@ -55,9 +56,37 @@ end
 -- What there is: the conversations, the one open, and the model.
 --------------------------------------------------------------------------
 
+-- **A model for each conversation** (`xavier.html`, *A model for each
+-- conversation*): a conversation is asked of its own model, kept in its
+-- file, and loaded when it is opened - the server holds one at a time. A
+-- new one begins with the model chosen last.
+local chosen = conversations.chosen()   -- the model chosen last
+local refused = {}                      -- models the server could not find, not asked for again
+local load_began = nil                  -- { name, ticks, bytes } as a load was first seen
+
+local function fresh()
+  local c = conversations.new()
+  c.model = chosen or llm.choose() or ""
+  return c
+end
+
 local all = conversations.list()
-local open = conversations.new()        -- not on the disk until its first answer
+local open = fresh()                    -- not on the disk until its first answer
 local model = { state = "looking", name = "", arch = "", n_ctx = 0, loaded = 0, size = 0 }
+
+-- The model this conversation is asked of: its own, else the one chosen
+-- last, else the one `llm.choose` prefers.
+local function wanted()
+  if (open.model or "") ~= "" then return open.model end
+  return chosen or llm.choose()
+end
+
+-- A model's file name as a person reads it: "phi-2.Q4_0.gguf" is "phi-2 Q4_0".
+local function short(name)
+  local n = (name or ""):gsub("%.gguf$", "")
+  n = n:gsub("%.([^.]*)$", " %1")
+  return n
+end
 local live = nil                        -- { turn, answer, began } while one is written
 local said = ""                         -- the foot's word when there is one
 local last = nil                        -- the last answer's numbers, for the foot
@@ -185,7 +214,8 @@ local function note(t)
 
   if (t.tokens or 0) == 0 then return t.stopped and "stopped before a word" or "" end
 
-  return ("%d tokens \u{00b7} read in %s \u{00b7} %.1f tokens a second%s"):format(t.tokens,
+  return ("%s%d tokens \u{00b7} read in %s \u{00b7} %.1f tokens a second%s"):format(
+    (t.model or "") ~= "" and (short(t.model) .. " \u{00b7} ") or "", t.tokens,
     seconds(t.read_us), rate(t.tokens, t.write_us), t.stopped and " \u{00b7} stopped" or "")
 end
 
@@ -324,9 +354,16 @@ local function regroup()
   end
 end
 
-local function describe(c)
+-- How a conversation is described: in the list down the side, its turns
+-- and its model; in the header, its turns and the memory it holds.
+local function describe(c, side)
   local n = #c.turns
   local words = ("%d %s"):format(n, n == 1 and "turn" or "turns")
+
+  if side then
+    if (c.model or "") ~= "" then words = words .. " \u{00b7} " .. short(c.model) end
+    return words
+  end
 
   if (c.room or 0) > 0 and (c.held or 0) > 0 then
     words = words .. (" \u{00b7} %d of %d tokens"):format(c.held, c.room)
@@ -365,7 +402,8 @@ function list:draw(g)
 
       g:text(18, y + 7, ui.fitted(conversations.title_of(r.c), self.w - 36, "text"), ink, nil,
              "text")
-      g:text(18, y + 7 + TEXT_LH, ui.fitted(describe(r.c), self.w - 36, "ui"), dim, nil, "ui")
+      g:text(18, y + 7 + TEXT_LH, ui.fitted(describe(r.c, true), self.w - 36, "ui"), dim, nil,
+             "ui")
       y = y + ROWH
     end
   end
@@ -404,15 +442,55 @@ local function ran_words(ran)
                                      LOOP_WORDS[ran.loops] or ran.loops)
 end
 
+local function loaded_pct()
+  return model.size > 0 and math.floor(model.loaded * 100 / model.size) or 0
+end
+
 local function model_words()
   if model.state == "ready" then
-    return model.name:gsub("%.gguf$", "") .. " \u{00b7} processor"
-  elseif model.state == "loading" then
-    local pct = model.size > 0 and math.floor(model.loaded * 100 / model.size) or 0
-    return ("loading %s \u{00b7} %d%%"):format(model.name:gsub("%.gguf$", ""), pct)
+    return short(model.name) .. " \u{00b7} processor"
+  elseif model.state == "loading" or model.state == "looking" then
+    local name = model.state == "loading" and model.name or wanted()
+    if not name then return "no model" end
+    return ("loading %s \u{00b7} %d%%"):format(short(name), model.state == "loading" and loaded_pct() or 0)
   end
 
   return "no model"
+end
+
+-- The foot's words while a model comes in: why there is a wait, how big,
+-- and how long is left - from how fast it has come so far, once there has
+-- been a second of it to say.
+local function loading_words()
+  local words = "This conversation's model is being loaded: the server holds one at a time"
+
+  if model.state ~= "loading" or model.size == 0 then return words end
+
+  words = words .. " \u{00b7} " .. files.size(model.size)
+
+  local b = load_began
+
+  if b and b.name == model.name and model.loaded > b.bytes then
+    local spent = (sys.ticks() - b.ticks) / hz
+
+    if spent >= 1 then
+      local left = (model.size - model.loaded) * spent / (model.loaded - b.bytes)
+      words = words .. (" \u{00b7} about %d s from %s"):format(math.ceil(left), llm.MODELS)
+    end
+  end
+
+  return words
+end
+
+-- The box says what it waits for while it cannot be asked.
+local function field_hint()
+  if model.state == "ready" or model.state == "none" then return "Ask Xavier\u{2026}" end
+
+  local name = model.state == "loading" and model.name or wanted()
+  if not name then return "Ask Xavier\u{2026}" end
+
+  return ("Loading %s for this conversation \u{00b7} %d%%\u{2026}"):format(short(name),
+         model.state == "loading" and loaded_pct() or 0)
 end
 
 function chip:draw(g)
@@ -432,6 +510,8 @@ function foot:draw(g)
 
   if said ~= "" then
     words = said
+  elseif model.state == "loading" or model.state == "looking" then
+    words = loading_words()
   elseif last then
     words = ("Last answer %.1f tokens a second \u{00b7} question read in %s \u{00b7} first word "
              .. "after %s \u{00b7} %s"):format(rate(last.tokens, last.write_us),
@@ -539,7 +619,7 @@ local function finished()
     t.tokens, t.read_us, t.write_us, t.first_us = s.answer_tokens, s.prompt_us, s.answer_us,
                                                   s.first_us
     open.held, open.room, open.model = s.held_tokens, s.n_ctx, s.model
-    t.ran = s.ran
+    t.ran, t.model = s.ran, s.model
     last = t
     print(("xavier: answered %d tokens, %d of the conversation kept and %d read, %d held: %s")
           :format(s.answer_tokens, s.kept_tokens, s.prompt_tokens, s.held_tokens, hex(t.xavier)))
@@ -563,7 +643,22 @@ local function open_conversation(c)
   open = c
   scroll, follow_end = 0, true
   last = nil
-  print(("xavier: opened %s, %d turns"):format(c.path or "a new conversation", #c.turns))
+  -- And which models wrote its answers, in the order they first did.
+  local by, seen_by = {}, {}
+  for _, t in ipairs(c.turns) do
+    if (t.model or "") ~= "" and not seen_by[t.model] then
+      seen_by[t.model] = true
+      by[#by + 1] = t.model
+    end
+  end
+
+  print(("xavier: opened %s, %d turns, %s; answers by %s"):format(c.path or "a new conversation",
+        #c.turns, wanted() or "no model", #by > 0 and table.concat(by, ", ") or "none"))
+
+  -- Its model, when it is not the one in: looked at on the next pass.
+  if model.state ~= "none" and wanted() ~= model.name then
+    model.state, looked = "looking", 0
+  end
   refresh()
   win:focus_on(field)
 end
@@ -586,7 +681,7 @@ stop.on_click = function()
 end
 
 new_button.on_click = function()
-  open_conversation(conversations.new())
+  open_conversation(fresh())
 end
 
 function list:mouse(action, _, y)
@@ -618,7 +713,7 @@ function list:key(c)
     if ok then
       print("xavier: to the Trash, " .. path)
       all = conversations.list()
-      open_conversation(all[1] or conversations.new())
+      open_conversation(all[1] or fresh())
     else
       said = "could not move it to the Trash: " .. tostring(why)
       win.dirty = true
@@ -882,6 +977,73 @@ local function open_settings()
          cx, cy, dx, dy, fx, fy))
 end
 
+--------------------------------------------------------------------------
+-- **The model chip is a menu**: every model in the models folder, its size,
+-- and a mark on this conversation's. Choosing one makes it this
+-- conversation's and the one a new conversation begins with, and loads it.
+--------------------------------------------------------------------------
+
+local function chip_width()
+  return math.min(chip.w, gfx.measure(model_words(), "ui") + 20)
+end
+
+local function choose_model(name)
+  if live or compare then return end
+
+  open.model, chosen, refused[name] = name, name, nil
+
+  local ok, why = conversations.choose(name)
+  if not ok then said = "could not keep the model chosen: " .. tostring(why) end
+
+  if open.path then save(open) end
+  print(("xavier: %s chosen for this conversation"):format(name))
+
+  if model.name ~= name or model.state ~= "ready" then
+    model.state, looked = "looking", 0
+  end
+
+  refresh()
+end
+
+local function open_models()
+  if live or compare then return end
+
+  local this, items, names = wanted(), {}, {}
+
+  for _, n in ipairs(llm.models()) do
+    local a = fs.getattr(llm.MODELS .. "/" .. n)
+    local hint = files.size(a and a.size or 0)
+
+    if n == model.name and model.state == "ready" then hint = hint .. " \u{00b7} loaded now" end
+
+    items[#items + 1] = { text = short(n), hint = hint, mark = n == this,
+                          on_choose = function() choose_model(n) end }
+    names[#names + 1] = n
+  end
+
+  if #items == 0 then
+    items[1] = { text = "No model in " .. llm.MODELS, disabled = true }
+  else
+    items[#items + 1] = { separator = true }
+    items[#items + 1] = { text = "Every model in " .. llm.MODELS, disabled = true }
+  end
+
+  local m = win:open_menu(win.origin_x + header.x + chip.x + chip.w - chip_width(),
+                          win.origin_y + L.head, items)
+
+  if m then
+    print(("xavier: models menu at %d,%d, rows of %d: %s"):format(m.x - win.origin_x,
+          m.y - win.origin_y, m.row, table.concat(names, ", ")))
+  end
+end
+
+function chip:mouse(action, x)
+  if action ~= "press" or x < self.w - chip_width() then return false end
+
+  open_models()
+  return true
+end
+
 more.on_click = function()
   local m = win:open_menu(win.origin_x + header.x + more.x, win.origin_y + L.head,
                           { { text = "Settings\u{2026}", on_choose = open_settings } })
@@ -895,6 +1057,24 @@ end
 -- The clock: the model watched until it is in, the answer read as it grows.
 --------------------------------------------------------------------------
 
+-- A load begun, without waiting; a model not there is not asked for again
+-- until somebody chooses it.
+local function begin_load(name)
+  local got, why, r = llm.load(name, { wait = false })
+
+  if not got then
+    if not (r and r.error == 6) then refused[name] = true end
+    said = ("Xavier could not load %s: %s"):format(short(name), tostring(why))
+    print(("xavier: could not load %s: %s"):format(name, tostring(why)))
+    return false
+  end
+
+  print("xavier: loading " .. name)
+  model.state, model.name, model.loaded, model.size = "loading", name, 0, 0
+  load_began = nil
+  return true
+end
+
 local function watch_model()
   local s, why = llm.stats()
 
@@ -903,30 +1083,36 @@ local function watch_model()
     return
   end
 
+  local want = wanted()
+  local can = want ~= nil and not refused[want]
+
   if s.state == "empty" then
-    local name = llm.choose()
-
-    if not name then
+    if not want then
       model.state, said = "none", "There is no model in " .. llm.MODELS .. "."
-      return
+    elseif not can or not begin_load(want) then
+      model.state = "none"
     end
-
-    local got, refused = llm.load(name, { wait = false })
-
-    if not got then
-      model.state, said = "none", "Xavier could not load " .. name .. ": " .. tostring(refused)
-      return
-    end
-
-    print("xavier: loading " .. name)
-    model.state, model.name = "loading", name
     return
   end
 
   if s.state == "loading" then
     model.state, model.name, model.loaded, model.size = "loading", s.model, s.loaded_bytes,
                                                          s.model_bytes
+    if not load_began or load_began.name ~= s.model then
+      load_began = { name = s.model, ticks = sys.ticks(), bytes = s.loaded_bytes }
+    end
     return
+  end
+
+  -- In: this conversation's, or this conversation's is asked for - unless
+  -- another application is being answered, which is waited out.
+  if can and s.model ~= want then
+    if s.state == "answering" then
+      model.state = "looking"
+      return
+    end
+
+    if begin_load(want) then return end
   end
 
   if model.state ~= "ready" then print("xavier: ready, " .. s.model) end
@@ -940,10 +1126,11 @@ local placed = false
 function win:on_frame()
   if not placed then
     placed = true
-    print(("xavier: places field %d,%d stop %d,%d new %d,%d list %d,%d rows %d more %d,%d"):format(
+    print(("xavier: places field %d,%d stop %d,%d new %d,%d list %d,%d rows %d more %d,%d chip %d,%d"):format(
       field.x + 20, field.y + field.h // 2, stop.x + stop.w // 2, stop.y + stop.h // 2,
       new_button.x + new_button.w // 2, new_button.y + new_button.h // 2, list.x, list.y, ROWH,
-      header.x + more.x + more.w // 2, header.y + more.y + more.h // 2))
+      header.x + more.x + more.w // 2, header.y + more.y + more.h // 2,
+      header.x + chip.x + chip.w - 40, header.y + chip.y + chip.h // 2))
   end
 
   if compare then
@@ -982,14 +1169,20 @@ function win:on_frame()
 
   if model.state ~= "ready" and model.state ~= "none" then
     self.poll_wait_ticks = 50
-    local before = model_words()
+    local before = model_words() .. loading_words()
 
     if sys.ticks() - looked > hz // 2 then
       looked = sys.ticks()
       watch_model()
     end
 
-    return model_words() ~= before
+    field.hint = field_hint()
+    return model_words() .. loading_words() ~= before
+  end
+
+  if field.hint ~= field_hint() then
+    field.hint = field_hint()
+    return true
   end
 
   self.poll_wait_ticks = nil

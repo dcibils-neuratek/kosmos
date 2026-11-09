@@ -12,14 +12,21 @@
 --   model phi-2.Q4_0.gguf
 --   held 412 2048
 --   forgotten 0
---   turn 31 32 7 400000 700000 500000
+--   turn 31 32 7 400000 700000 500000 phi-2.Q4_0.gguf
 --   <31 bytes: the question>
 --   <32 bytes: the answer>
 --
 -- A turn says its question's and answer's lengths in bytes before them -
 -- then the answer's tokens and its three times in microseconds: reading the
--- question, writing the answer, and the wait for its first token - so an
--- answer with a line in it that looks like a header is still the answer.
+-- question, writing the answer, and the wait for its first token - and the
+-- model that wrote it, since a conversation may change model partway
+-- (`xavier.html`, *A model for each conversation*). The lengths come first
+-- so an answer with a line in it that looks like a header is still the
+-- answer. A turn kept before 0.11.328 has no model of its own and is the
+-- conversation's, which was the only one it could have had.
+--
+-- `model` is the conversation's: the one it is asked of, loaded when it is
+-- opened.
 -- `held` is the model's memory the conversation filled, of how much there
 -- was; `forgotten` is how many of the first turns no longer fit and are no
 -- longer shown to the model, though they are still in the file.
@@ -32,6 +39,10 @@ conversations.DIR = "/Home/Xavier"
 conversations.SUFFIX = ".conversation"
 
 local MAGIC = "kosmos conversation 1"
+
+-- The model chosen last, for a conversation begun next: a file of its own
+-- beside the conversations, holding a model's file name and nothing else.
+conversations.CHOSEN = conversations.DIR .. "/chosen-model"
 
 -- A new conversation, not yet on the disk: `save` gives it a file.
 function conversations.new(now)
@@ -89,8 +100,8 @@ function conversations.parse(bytes)
       c.held, c.room = number(h), number(r)
     elseif key == "forgotten" then c.forgotten = number(rest)
     elseif key == "turn" then
-      local qn, an, tokens, read_us, write_us, first_us =
-        rest:match("^(%d+) (%d+) (%d+) (%d+) (%d+) (%d+)$")
+      local qn, an, tokens, read_us, write_us, first_us, by =
+        rest:match("^(%d+) (%d+) (%d+) (%d+) (%d+) (%d+) ?(%S*)$")
 
       qn, an = tonumber(qn), tonumber(an)
 
@@ -98,7 +109,7 @@ function conversations.parse(bytes)
 
       local t = { you = bytes:sub(at, at + qn - 1), tokens = number(tokens),
                   read_us = number(read_us), write_us = number(write_us),
-                  first_us = number(first_us) }
+                  first_us = number(first_us), model = by ~= "" and by or c.model }
 
       at = at + qn + 1                -- and the newline after it
       t.xavier = bytes:sub(at, at + an - 1)
@@ -120,8 +131,8 @@ function conversations.format(c)
                 "forgotten " .. (c.forgotten or 0) }
 
   for _, t in ipairs(c.turns) do
-    out[#out + 1] = ("turn %d %d %d %d %d %d"):format(#t.you, #t.xavier, t.tokens or 0,
-      t.read_us or 0, t.write_us or 0, t.first_us or 0)
+    out[#out + 1] = ("turn %d %d %d %d %d %d %s"):format(#t.you, #t.xavier, t.tokens or 0,
+      t.read_us or 0, t.write_us or 0, t.first_us or 0, (t.model or ""):gsub("%s", ""))
     out[#out + 1] = t.you
     out[#out + 1] = t.xavier
   end
@@ -177,6 +188,25 @@ function conversations.list()
   end)
 
   return out
+end
+
+-- The model chosen last, or nil when none has been.
+function conversations.chosen()
+  local name = fs.read(conversations.CHOSEN)
+
+  if type(name) ~= "string" then return nil end
+
+  name = name:match("^%s*(%S+)%s*$")
+  return name
+end
+
+-- Kept, for the next conversation begun - here and after a restart.
+function conversations.choose(name)
+  local ok, why = files.make_folder(conversations.DIR)
+
+  if not ok then return nil, why end
+
+  return fs.write(conversations.CHOSEN, name .. "\n")
 end
 
 -- Into the Trash, where it can be taken back from (`files.to_trash`).
