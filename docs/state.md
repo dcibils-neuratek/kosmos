@@ -62,9 +62,19 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   and a question of 88 tokens is 12.3 s, against 14.2 (18.731); writing is
   unchanged at 5.51, the memory's.
 
-**Next**: the LLM Monitor's visualizer waits for Diego's word on
-`docs/llmviz.html`. Meanwhile, a question's processor part (attention,
-norms, GELU - 7 of its 12 s) is where the time is.
+- **0.11.338, the LLM Monitor's Inside page**: as drawn in
+  `docs/llmviz.html` and agreed. The LLM Kit records a token's passage -
+  each layer's stream, its neurons fired, where each head looked and how
+  hard, and ten candidates - only while a window watches; the server
+  keeps the last 256 in a region (`llminside.h`, `LLM_OP_INSIDE`, a lease
+  of five seconds). The page draws the tokens with an arc to where the
+  chosen head looks, a layer a column, the candidates and where the
+  products ran; `llm inside <question>` says the same at the prompt.
+  `test_llm` 90, `x86-llmmon` 15, every check with a control (18.732).
+
+**Next**: the page on the M700 with phi-2, for a picture of 32 layers.
+Then a question's processor part (attention, norms, GELU - 7 of its 12 s)
+is where the time is.
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 

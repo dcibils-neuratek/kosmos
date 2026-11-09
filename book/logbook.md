@@ -1606,3 +1606,47 @@ live in `/Models`, and `/Home` has its space back.
 
 **Measured.** The copy: 1,568,676,736 bytes in 301 s, about 5.2 MB a
 second over the M700's wired network, and the Mac's SHA-256 at the end.
+
+## 9 November - watching the model think
+
+**In short.** The LLM Monitor has a second page, Inside, that shows the
+model at work on each token: which earlier word each attention head looks
+at and how hard, how many of each layer's neurons fired, how the token's
+meaning gathers through the layers, and what it might say next with the
+odds of each. Nothing is recorded unless the page is open, and with it
+open every answer is the same, to the bit.
+
+**What happened.** Diego asked to see the network at work, so he could
+understand how a language model reads a question and writes an answer.
+The page was drawn first and agreed. Then the engine learned to keep a
+short record of each token's passage: per layer, the length of the
+token's running vector, the count of neurons whose input was above
+nought, and for each head the token it looked at hardest and the share of
+its attention that look took. At the end come the ten likeliest next
+tokens.
+
+The engine writes those records into a ring of 256 in memory the window
+can read. The window asks for them every two seconds, and when it stops
+asking, the engine stops recording. At the prompt, `llm inside` asks a
+question and prints the same record a line per token.
+
+**Why it is built like that.** A token goes by many times a second, so
+its record is data in shared memory, never a message (*control by
+message, data by shared memory*). And watching must not change what is
+watched, so the tests hold every answer given with the page open to the
+answer given with it shut.
+
+**How it is proved.** The test works out every head's strongest look
+again on its own, from the head's queries and the stored keys, and holds
+the record to it. Each check was then broken on purpose, once per check:
+a look recorded one token too far back, the wrong share, neurons counted
+below nought, the stream squared, odds not divided by their sum, a batch
+given one position. Every one of those breakages failed (`testing.md`
+18.732).
+
+**What a person notices.** Open the LLM Monitor and choose Inside while
+Xavier answers. The question's words light up as they are read, then
+each new word arrives with an arc back to the word its chosen head
+looked at. Each layer is a column that brightens where its heads look
+hard. Click a head to follow it; Left and Right step back through the
+last 256 tokens.

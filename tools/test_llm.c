@@ -495,6 +495,241 @@ static void check_batch(struct llm_model *m)
 }
 
 /*
+ * **A token's passage, recorded** (`llm_watch`; `docs/xavier.md`, *The LLM
+ * Monitor: Inside*). A question longer than a batch read three ways: plain,
+ * watched a token at a time, and watched in batches. Watching changes no
+ * logit; the two watched readings record the same passage to the bit for
+ * every token, since a batch is read as a token at a time is; at position
+ * 0 every head looks at the token itself, wholly; and the last token's
+ * last layer is held to what is left in the model's working vectors - its
+ * residual stream's length summed here, and its neurons that fired
+ * between the counts of its outputs above nought and at or above it. The
+ * candidates: the greedy choice first, falling, the odds a softmax worked
+ * out here.
+ */
+static struct llm_passage watched_one[2048], watched_batch[LLM_BATCH];
+
+/* **The kit's trace** (`-DLLM_TRACE`), which the heads' check reads: each
+ * layer's queries for the token being stepped, before RoPE - the rest of
+ * the attention is worked out here from them and the cache. */
+#define TRACE_LAYERS 64
+static float *queries[TRACE_LAYERS];
+static int capturing;
+
+void llm_trace(const char *name, uint32_t layer, const float *x, uint32_t n)
+{
+  if (!capturing || layer >= TRACE_LAYERS || strcmp(name, "Qcur") != 0) return;
+
+  if (!queries[layer]) queries[layer] = malloc(n * sizeof *x);
+  if (queries[layer]) memcpy(queries[layer], x, n * sizeof *x);
+}
+
+/* RoPE as llama.cpp's NeoX pairing has it: element i with i + n_rot / 2,
+ * at angles pos * base^(-2i / n_rot) - written here, not called, so that
+ * the kit's own is not what it is held to. */
+static void rope_here(float *v, uint32_t n_rot, uint32_t pos, float base)
+{
+  for (uint32_t i = 0; i < n_rot / 2; i++) {
+    float theta = (float)pos;
+
+    for (uint32_t k = 0; k < i; k++) theta *= (float)pow((double)base, -2.0 / (double)n_rot);
+
+    float c = (float)cos((double)theta), s = (float)sin((double)theta);
+    float a = v[i], b = v[i + n_rot / 2];
+
+    v[i] = a * c - b * s;
+    v[i + n_rot / 2] = a * s + b * c;
+  }
+}
+
+/* Every head of every layer for the token at `pos`, from the queries
+ * captured and the cache: how many of its looks agree with the record -
+ * the same position, or one whose weight is within a rounding of the
+ * strongest - and the share within a half-precision step. */
+static int heads_agree(const struct llm_model *m, const struct llm_passage *p, uint32_t pos, int *looked)
+{
+  const uint32_t E = m->n_embd, D = m->head_dim;
+  static double w[2048];
+  float q[1024];
+  int wrong = 0;
+
+  *looked = 0;
+
+  for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS && l < TRACE_LAYERS; l++) {
+    const uint16_t *kc = m->k_cache + (size_t)l * m->n_ctx * E;
+
+    if (!queries[l]) return -1;
+
+    for (uint32_t h = 0; h < m->n_head && h < LLM_PASSAGE_HEADS; h++) {
+      double max = -1e300, sum = 0;
+      uint32_t best = 0;
+
+      memcpy(q, queries[l] + h * D, D * sizeof *q);
+      rope_here(q, m->n_rot, pos, m->rope_base);
+
+      for (uint32_t p0 = 0; p0 <= pos; p0++) {
+        double d = 0;
+
+        for (uint32_t i = 0; i < D; i++)
+          d += (double)llm_f16_to_f32(llm_f32_to_f16(q[i] * (1.0f / sqrtf((float)D))))
+               * llm_f16_to_f32(kc[(size_t)p0 * E + h * D + i]);
+        w[p0] = d;
+        if (d > max) max = d;
+      }
+
+      for (uint32_t p0 = 0; p0 <= pos; p0++) sum += (w[p0] = exp(w[p0] - max));
+      for (uint32_t p0 = 0; p0 <= pos; p0++) if (w[p0] > w[best]) best = p0;
+
+      uint32_t theirs = pos - p->layer[l].back[h];
+      double share = w[best] / sum, said = p->layer[l].share[h] / 65535.0;
+
+      (*looked)++;
+      if (p->layer[l].back[h] > pos || w[theirs] / sum < share - 2e-3 || fabs(said - share) > 2e-3) wrong++;
+    }
+  }
+
+  return wrong;
+}
+
+static void check_passage(struct llm_model *m)
+{
+  static int32_t t[2048];
+  static struct llm_passage last;
+  static char text[4096];
+  size_t at = 0;
+  int n, same_records = 1, own = 1, bounds = 1;
+  char what[200];
+
+  at += (size_t)snprintf(text + at, sizeof text - at, "Instruct: Name the planets:");
+  for (int i = 1; i <= 16; i++) at += (size_t)snprintf(text + at, sizeof text - at, " %d and", i);
+  snprintf(text + at, sizeof text - at, " so on?\nOutput:");
+
+  n = llm_tokenize(m, text, strlen(text), 1, t, 2048);
+  if (n <= LLM_BATCH || (uint32_t)n > m->n_ctx || n > 2048) {
+    check(0, "passage: the question is not more than one batch");
+    return;
+  }
+
+  if (fresh_logits(m, t, n) != 0) {
+    check(0, "passage: the question would not read");
+    return;
+  }
+
+  /* Watched, a token at a time, the last one's queries captured. */
+  llm_reset(m);
+  for (int i = 0; i < n; i++) {
+    llm_watch(m, &watched_one[i]);
+    capturing = i == n - 1;
+    if (llm_step(m, t[i]) != 0) { llm_watch(m, NULL); capturing = 0; check(0, "passage: a step refused"); return; }
+  }
+  llm_watch(m, NULL);
+  capturing = 0;
+  check(same_logits(m), "passage: watched a token at a time, the logits are the unwatched ones");
+
+  {
+    int looked, wrong = heads_agree(m, &watched_one[n - 1], (uint32_t)n - 1, &looked);
+
+    snprintf(what, sizeof what, "passage: the last token's %d heads' strongest looks worked out here from its "
+             "queries and the cache, %d not the record's", looked, wrong);
+    check(wrong == 0 && looked > 0, what);
+  }
+
+  /* Watched, in batches: each batch's records against the single steps'. */
+  llm_reset(m);
+  for (int done = 0; done < n; ) {
+    int k = n - done > (int)LLM_BATCH ? (int)LLM_BATCH : n - done;
+
+    llm_watch(m, watched_batch);
+    if (llm_step_batch(m, t + done, (uint32_t)k) != 0) {
+      llm_watch(m, NULL);
+      check(0, "passage: a batch refused");
+      return;
+    }
+    llm_watch(m, NULL);
+
+    for (int i = 0; i < k; i++) {
+      if (memcmp(&watched_batch[i], &watched_one[done + i], sizeof watched_batch[i]) != 0) same_records = 0;
+    }
+
+    if (done + k == n) last = watched_batch[k - 1];
+    done += k;
+  }
+
+  check(same_logits(m), "passage: watched in batches, the logits are the unwatched ones");
+  snprintf(what, sizeof what, "passage: %d tokens read in batches recorded as a token at a time records them, "
+           "to the bit", n);
+  check(same_records, what);
+
+  /* Position 0: one position to look at, wholly. */
+  for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS; l++)
+    for (uint32_t h = 0; h < m->n_head && h < LLM_PASSAGE_HEADS; h++)
+      if (watched_one[0].layer[l].back[h] != 0 || watched_one[0].layer[l].share[h] != 65535) own = 0;
+  check(own && watched_one[0].pos == 0 && watched_one[0].token == t[0] && watched_one[n - 1].pos == (uint32_t)n - 1
+        && watched_one[0].n_layer == m->n_layer && watched_one[0].n_head == m->n_head,
+        "passage: at position 0 every head looks at the token itself, wholly; positions and tokens as read");
+
+  /* Every look within the text read, and every share a share. */
+  for (int i = 0; i < n; i++)
+    for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS; l++) {
+      const struct llm_passage_layer *L = &watched_one[i].layer[l];
+
+      if (L->fired > m->n_ff || !(L->stream > 0)) bounds = 0;
+      for (uint32_t h = 0; h < m->n_head && h < LLM_PASSAGE_HEADS; h++)
+        if (L->back[h] > (uint32_t)i || L->share[h] == 0) bounds = 0;
+    }
+  check(bounds, "passage: every head's look is to a token already read, with a share above nought; "
+        "every layer's stream above nought and its neurons at most the layer's");
+
+  /* The last token's last layer, against the working vectors it leaves. */
+  {
+    uint32_t L = m->n_layer - 1;
+    const float *x = m->x + (size_t)(LLM_BATCH > 0 ? (uint32_t)((n - 1) % LLM_BATCH) : 0) * m->n_embd;
+    const float *ff = m->ff + (size_t)((n - 1) % LLM_BATCH) * m->n_ff;
+    double sq = 0;
+    uint32_t above = 0, at_or_above = 0;
+
+    for (uint32_t i = 0; i < m->n_embd; i++) sq += (double)x[i] * x[i];
+    for (uint32_t i = 0; i < m->n_ff; i++) { above += ff[i] > 0.0f; at_or_above += ff[i] >= 0.0f; }
+
+    snprintf(what, sizeof what, "passage: the last layer's stream %.6g, its length worked out here %.6g; "
+             "%u fired, between %u and %u", (double)last.layer[L].stream, sqrt(sq), last.layer[L].fired,
+             above, at_or_above);
+    check(L < LLM_PASSAGE_LAYERS && last.layer[L].stream == (float)sqrt(sq) && last.layer[L].fired >= above
+          && last.layer[L].fired <= at_or_above, what);
+  }
+
+  /* The candidates. */
+  {
+    double max = m->logits[0], sum = 0;
+    int ok;
+
+    llm_candidates(m, &last);
+    for (uint32_t i = 1; i < m->n_vocab; i++) if (m->logits[i] > max) max = m->logits[i];
+    for (uint32_t i = 0; i < m->n_vocab; i++) sum += exp((double)m->logits[i] - max);
+
+    ok = last.n_cand == LLM_PASSAGE_CANDIDATES && last.cand[0] == llm_greedy(m);
+    for (uint32_t k = 0; ok && k < last.n_cand; k++) {
+      double want = exp((double)m->logits[last.cand[k]] - max) / sum;
+
+      if (fabs((double)last.odds[k] - want) > 1e-6 * (want > 1e-3 ? want * 1e3 : 1.0)) ok = 0;
+      if (k > 0 && (m->logits[last.cand[k]] > m->logits[last.cand[k - 1]] || last.cand[k] == last.cand[k - 1])) ok = 0;
+    }
+
+    /* And none left out larger than the last one kept. */
+    for (uint32_t i = 0; ok && i < m->n_vocab; i++) {
+      int kept = 0;
+
+      for (uint32_t k = 0; k < last.n_cand; k++) kept |= last.cand[k] == (int32_t)i;
+      if (!kept && m->logits[i] > m->logits[last.cand[last.n_cand - 1]]) ok = 0;
+    }
+
+    snprintf(what, sizeof what, "passage: ten candidates, the greedy choice first at %.3f, falling, the odds a "
+             "softmax over all %u", (double)last.odds[0], m->n_vocab);
+    check(ok, what);
+  }
+}
+
+/*
  * **A pool of threads, as the server will have one a core** - here the
  * Mac's, through pthreads: `pool_run` hands each part to a worker and
  * waits for all of them.
@@ -818,6 +1053,7 @@ int main(int argc, char **argv)
   check_held(&m);
   check_batch(&m);
   check_parallel(&m);
+  check_passage(&m);
   if (with_gpu) check_gpu(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);

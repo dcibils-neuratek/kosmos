@@ -20,6 +20,10 @@
  *   STOP   ends the answer being made, where it is.
  *   STATS  what is loaded and how fast it ran: the engine's numbers, which
  *          `llm` at the prompt and the monitor window read (X8b).
+ *   INSIDE the ring of the last tokens' passages through the model
+ *          (`llminside.h`), as the reply's capability: the LLM Monitor's
+ *          Inside page. A lease - the ring is filled for a while after each
+ *          INSIDE, and not at all when nobody has asked.
  *   SETTINGS  where the model runs - how many cores, which of the kit's
  *          loops, the GPU - and what this machine has to choose from; with
  *          LLM_SETTINGS_CHANGE, changed first. **The server's, for every
@@ -53,6 +57,7 @@
 #define LLM_OP_STOP   4u
 #define LLM_OP_STATS  5u
 #define LLM_OP_SETTINGS 6u
+#define LLM_OP_INSIDE 7u
 
 #define LLM_OK            0u
 #define LLM_ERR_BAD_OP    1u    /* not a request this protocol has */

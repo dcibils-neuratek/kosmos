@@ -74,6 +74,20 @@ function paint.new(picture_named, sized, always)
                  o.x3 or 0, o.y3 or 0, o.color or 0xffffffff)
     end,
 
+    -- A line through points (`ui.lua`, `gc:polyline`), checked here as
+    -- the commands' other shapes are: numbers, and pairs of them.
+    polyline = function(s, o)
+      local xy = type(o.xy) == "table" and o.xy or {}
+
+      for i = 1, #xy do
+        if type(xy[i]) ~= "number" then return end
+      end
+
+      if #xy >= 4 and #xy % 2 == 0 then
+        s:polyline(xy, tonumber(o.width) or 1, o.color or 0xffffffff)
+      end
+    end,
+
     text = function(s, o)
       -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
       -- is what every application that does not care wants. `o.px` asks for
@@ -249,6 +263,13 @@ function paint.scale(o, pct, picture_named)
     for _, k in ipairs({ "x1", "y1", "x2", "y2", "x3", "y3" }) do
       o[k] = (tonumber(o[k]) or 0) * pct / 100
     end
+  elseif kind == "polyline" then
+    local xy = {}
+
+    for i, v in ipairs(type(o.xy) == "table" and o.xy or {}) do xy[i] = (tonumber(v) or 0) * pct / 100 end
+
+    o.xy = xy
+    o.width = (tonumber(o.width) or 1) * pct / 100
   elseif kind == "tint" then
     --
     -- **A line icon at another size is another picture**, not this one

@@ -917,7 +917,7 @@ what the server can say without a clock of its own.
 says "processor" or "GPU" when the GPU can answer.
 
 
-## The LLM Monitor: Inside (drawn, to be agreed)
+## The LLM Monitor: Inside (agreed 9 November, built)
 
 Diego, 9 November 2026: "I want to add a llm visualizer to the llm
 monitor", "I want to see the llm at work, like the layers of the neural
@@ -952,6 +952,35 @@ passage at the prompt with `llm inside`.
   is written over and says it skipped.
 - **The page** is `llmmon.lua`'s second, Lua, drawn with the UI kit;
   the pixel loops are `gfx`'s, in C.
+
+**Agreed by Diego on 9 November** ("Yes go ahead"), and built as drawn:
+
+- **The record** is `struct llm_passage` (`llm_core.h`): per layer, up to
+  64, the stream's length, the neurons whose input was above nought, and
+  for each of up to 32 heads how many tokens back its strongest look was
+  and that position's share of its attention, of 65535; and ten
+  candidates with their odds, a softmax over the whole vocabulary
+  (`llm_candidates`). `llm_watch(m, into)` hands the kit `LLM_BATCH` of
+  them; NULL, and the forward pass does nothing more.
+- **The ring** is `llminside.h`: a region of 256 records of 9016 bytes -
+  the passage, its token's text and its candidates' - made at the first
+  INSIDE and handed to every window that asks. An INSIDE is a lease of
+  five seconds; the page renews it every two.
+- **The page**: tabs, Overview and Inside; the window is 1140 wide. The
+  tokens as chips with an arc to where the chosen head looks; a layer a
+  column, a head a cell, bright as its share; the feed-forward's share
+  that fired as a bar; the stream's length as a band; the candidates,
+  where the products ran, and the token's numbers beside. A click
+  chooses a head, Left and Right step through the last 256 tokens, End
+  follows again. `wm llmmon:--inside` opens on it.
+- **At the prompt**: `llm inside <question>` asks it and says every
+  token's passage on a line and the last one's layers; `llm inside`, the
+  last token the ring holds.
+- **The proof** (`testing.md` 18.732): `test_llm`, a watched model's
+  logits the unwatched ones' to the bit, a batch's records a token at a
+  time's, and every head's strongest look worked out again in the test
+  from its queries and the cache; `x86-llmmon`, the ring through the
+  server to `llm inside` and to the page.
 
 ## Models
 

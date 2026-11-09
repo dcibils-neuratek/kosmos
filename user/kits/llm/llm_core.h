@@ -163,7 +163,60 @@ struct llm_model {
   llm_product_fn *product;
   llm_product_done_fn *product_done;
   void *product_ctx;
+
+  /* Where each token's passage is recorded, `LLM_BATCH` of them, or NULL
+   * (`llm_watch`). */
+  struct llm_passage *passage;
 };
+
+/*
+ * **A token's passage through the model** (`docs/xavier.md`, *The LLM
+ * Monitor: Inside*): what the LLM Monitor's Inside page shows, recorded by
+ * the forward pass from values it computes anyway, and only when it has
+ * been handed somewhere to put them (`llm_watch`). Nothing here changes
+ * the arithmetic: a model watched gives the answer it gives unwatched, to
+ * the bit.
+ *
+ * For each layer: the residual stream's length after it - the token's
+ * running meaning, which every layer adds to; how many of the
+ * feed-forward's neurons fired, their input above nought; and for each
+ * head, where its attention was strongest - how many tokens back from this
+ * one (0, itself) - and what share of its attention that one position
+ * had, of 65535. A model of more layers or heads than there is room for is
+ * recorded up to the room, and says how many it has.
+ */
+#define LLM_PASSAGE_LAYERS     64u
+#define LLM_PASSAGE_HEADS      32u
+#define LLM_PASSAGE_CANDIDATES 10u
+
+struct llm_passage_layer {
+  float    stream;
+  uint32_t fired;
+  uint16_t back[LLM_PASSAGE_HEADS];
+  uint16_t share[LLM_PASSAGE_HEADS];
+};
+
+struct llm_passage {
+  uint32_t pos;                 /* the token's position in the cache      */
+  int32_t  token;
+  uint32_t n_layer, n_head, n_ff;   /* the model's, however many are here */
+  uint32_t n_cand;              /* candidates below, by `llm_candidates`  */
+  int32_t  cand[LLM_PASSAGE_CANDIDATES];  /* the likeliest next, likeliest first */
+  float    odds[LLM_PASSAGE_CANDIDATES];  /* each one's probability       */
+  struct llm_passage_layer layer[LLM_PASSAGE_LAYERS];
+};
+
+_Static_assert(sizeof(struct llm_passage_layer) == 136, "a layer's record is 136 bytes");
+_Static_assert(sizeof(struct llm_passage) == 104 + 136 * LLM_PASSAGE_LAYERS, "a passage is as llmring.h says");
+
+/* From the next step on, token `t` of a batch recorded into `into[t]` -
+ * `LLM_BATCH` of them - or, with NULL, nothing recorded. */
+void llm_watch(struct llm_model *m, struct llm_passage *into);
+
+/* The likeliest tokens to follow, from `m->logits`, into `p`: their
+ * probabilities a softmax over the whole vocabulary, as the choice of the
+ * next token sees them. */
+void llm_candidates(const struct llm_model *m, struct llm_passage *p);
 
 /* Products in `parts` pieces through `run` from now on; NULL, or 1 part,
  * for the calling thread alone. */

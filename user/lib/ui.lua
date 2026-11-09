@@ -552,6 +552,34 @@ function gc:triangle(x1, y1, x2, y2, x3, y3, color)
 end
 
 --
+-- **A line through points**, `width` wide and round at its joints: `gfx`'s
+-- `polyline`, which a window drawing through commands could not reach -
+-- the LLM Monitor's arc from a token to where a head looks
+-- (`docs/llmviz.html`). `xy` is flat, x then y. Not clipped to the view, as
+-- `triangle` is not; a line wholly outside the clip is not sent.
+--
+function gc:polyline(xy, width, color)
+  local ax, ay = self.ox, self.oy
+  local pts = {}
+  local left, right, top, bottom = math.huge, -math.huge, math.huge, -math.huge
+
+  for i = 1, #xy - 1, 2 do
+    local x, y = xy[i] + ax, xy[i + 1] + ay
+
+    pts[i], pts[i + 1] = x, y
+    left, right = math.min(left, x), math.max(right, x)
+    top, bottom = math.min(top, y), math.max(bottom, y)
+  end
+
+  if #pts < 4 or (self.cw and (right <= self.cx or left >= self.cx + self.cw
+                               or bottom <= self.cy or top >= self.cy + self.ch)) then
+    return
+  end
+
+  self.ops[#self.ops + 1] = { op = "polyline", xy = pts, width = width or 1, color = shade(color) }
+end
+
+--
 -- **A named picture, drawn at a size.**
 --
 -- `ui.image` is a widget: it holds a picture, pans it, and says so when there

@@ -14,7 +14,16 @@ A disk carries the tiny phi-2 (`tools/llm_tiny.py`) in `/Home/Models`, and:
   answers' - every token read and written counted once, and the server's
   totals the asker's;
 - **the window**: LLM Monitor opens, and its first sample says what `llm`
-  said, since both read the same reply.
+  said, since both read the same reply;
+- **inside, at the prompt** (`llm inside`, `docs/xavier.md`, *The LLM
+  Monitor: Inside*): a question's every token recorded, read then written,
+  at positions one after another; each written token the one its
+  predecessor's likeliest candidate named - the record says what the
+  choice saw - and the last one's layers, one a line, as many as the model
+  has;
+- **inside, in the window** (`wm llmmon:--inside`): the page reads the
+  ring `llm inside` filled, its last token the one written last. (The
+  window takes the keys once open, so nothing is asked after it.)
 
 Usage: run_llmmon.py IMAGE
 """
@@ -37,6 +46,12 @@ MODEL = "tiny-phi2.Q4_0.gguf"
 
 SINCE = re.compile(r"up (\d+) s; (\d+) answers, (\d+) tokens read, (\d+) written, (\d+) refused busy")
 LAST = re.compile(r"(\d+) tokens in [\d.]+ s, question (\d+) tokens in")
+TOKEN = re.compile(r'^(read|written)\s+(\d+) ("(?:[^"\\]|\\.)*")\s+(alone|\d+ together), [\d.]+ ms, GPU (\d+)%; '
+                   r'stream ([\d.]+) to ([\d.]+)(?:; next ("(?:[^"\\]|\\.)*") (\d+)%)?', re.M)
+RECORDED = re.compile(r"^(\d+) tokens recorded, (\d+) read and (\d+) written", re.M)
+LAYER = re.compile(r"^  +\d+  stream +[\d.]+  fired +\d+ \( *\d+%\)  head +\d+ looks ", re.M)
+SHAPE = re.compile(r"^shape: +(\d+) layers", re.M)
+INSIDE = re.compile(r"llmmon: inside (\d+) tokens, last at (\d+) (\".*\") (read|written), (\d+) layers")
 ASKER = re.compile(r"^  (\S+)\s+(?:writing; |loading; )?(\d+) answers, (\d+) read, (\d+) written, "
                    r"(\d+) refused", re.M)
 
@@ -118,11 +133,29 @@ def main():
         at_prompt("xavier --tokens 16 and a process", 180)
         out2, since2, last2, askers2 = llm()
 
+        # Inside, at the prompt - before the window, which takes the keys.
+        shape = SHAPE.search(at_prompt("xavier --stats", 30))
+        inside1 = at_prompt("llm inside --tokens 5 what is a thread", 180)
+        inside0 = at_prompt("llm inside", 60)
+        _, since3, _, askers3 = llm()
+
+        # The window, on Inside: its sample says what `llm` said, and its
+        # page reads the ring `llm inside` filled.
         mark = len(guest.seen)
-        guest.type("wm llmmon:--tell")
+        guest.type("wm llmmon:--tell --inside")
         window = said("wm: window LLM Monitor at ", mark, 120)
         opened = said("llmmon: the LLM server, up ", mark, 60)
         told = said("llmmon: up ", mark, 30)
+        deadline = time.monotonic() + 30
+        inside_window = []
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+            inside_window = INSIDE.findall(guest.seen[mark:])
+            if inside_window:
+                break
+            time.sleep(0.2)
+
 
         # `KEEP_SHOT=file.png` keeps the screen, to be looked at by a person.
         if os.environ.get("KEEP_SHOT"):
@@ -156,23 +189,54 @@ def main():
     check(window is not None, "LLM Monitor did not open")
     check(opened is not None, "LLM Monitor did not reach the server")
 
-    if since2:
-        check(told is not None and re.search(
-                  r"model %s, read %d, written %d, answers 2, refused 0; xavier 2/0/%d/%d$"
-                  % (re.escape(MODEL), since2[2], since2[3], since2[2], since2[3]), told),
-              "LLM Monitor's sample is not what llm said: %r" % told)
+    if since2 and since3:
+        # `llm inside` asked a third, as `llm`.
+        lm = askers3.get("llm")
+        check(told is not None and lm is not None and re.search(
+                  r"model %s, read %d, written %d, answers 3, refused 0; xavier 2/0/%d/%d, llm 1/0/%d/%d$"
+                  % (re.escape(MODEL), since3[2], since3[3], since2[2], since2[3], lm[1], lm[2]), told),
+              "LLM Monitor's sample is not what llm said: %r against %r %r" % (told, since3, askers3))
+
+    tokens = TOKEN.findall(inside1)
+    recorded = RECORDED.search(inside1)
+    n_layer = int(shape.group(1)) if shape else None
+    kinds = [t[0] for t in tokens]
+    written = [t for t in tokens if t[0] == "written"]
+
+    check(recorded and int(recorded.group(1)) == len(tokens) > 0
+          and int(recorded.group(3)) == len(written) and 1 <= len(written) <= 5,
+          "llm inside did not say each token it recorded: %r" % inside1[-1500:])
+    check(kinds == sorted(kinds, key=lambda k: k == "written") and "read" in kinds,
+          "llm inside: not the question's tokens read and then the answer's written: %r" % kinds)
+    check(all(int(b[1]) == int(a[1]) + 1 for a, b in zip(tokens, tokens[1:])),
+          "llm inside: positions are not one after another: %r" % [t[1] for t in tokens])
+    check(all(a[7] == b[2] for a, b in zip(tokens, tokens[1:]) if a[7] and b[0] == "written"),
+          "llm inside: a written token is not what its predecessor's likeliest candidate named: %r"
+          % [(t[2], t[7]) for t in tokens])
+    check(n_layer is not None and len(LAYER.findall(inside1)) == n_layer
+          and len(LAYER.findall(inside0)) == n_layer,
+          "llm inside: not the last token's %r layers a line each: %r" % (n_layer, inside0[-1200:]))
+    check(bool(inside_window) and inside_window[-1][3] == "written" and int(inside_window[-1][4]) == n_layer
+          and written and inside_window[-1][1] == written[-1][1] and inside_window[-1][2] == written[-1][2],
+          "the Inside page did not read the ring's last written token, %r: %r"
+          % (written[-1][1:3] if written else None, inside_window[-4:]))
 
     if fails:
+        whole = os.environ.get("KEEP_GUEST") or os.path.join(work, "guest.txt")
+        with open(whole, "w") as f:
+            f.write(guest.seen)
         for f in fails:
             print("FAIL: " + f)
+        print("the whole of what the guest said: " + whole)
         print("the guest said:\n" + "\n".join(
             l for l in guest.seen.splitlines()
             if l.startswith(("llm", "  ", "since", "last", "xavier", "wm:", "lua")))[-3000:])
         return 1
 
     print("PASS: %d checks on the LLM Monitor - nothing asked, then xavier named by the kernel "
-          "with each answer's %d and %d tokens written counted once, and the window saying "
-          "what llm says" % (checks, last1[0], last2[0]))
+          "with each answer's %d and %d tokens written counted once, the window saying "
+          "what llm says, and inside: %d tokens' passages at the prompt, each written token its "
+          "predecessor's likeliest, and the Inside page given them" % (checks, last1[0], last2[0], len(tokens)))
     return 0
 
 

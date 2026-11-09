@@ -37,6 +37,7 @@
 #include "diskask.h"
 #include "llmproto.h"
 #include "llmring.h"
+#include "llminside.h"
 #include "../init/say.h"
 #include "kits/llm/llm_core.h"
 #include "kits/llm/llm_gpu.h"
@@ -895,6 +896,93 @@ static void pool_stop(void)
 }
 
 /* ------------------------------------------------------------------------
+ * Inside: each token's passage, for whoever watches (`llminside.h`).
+ * --------------------------------------------------------------------- */
+
+static struct block inside_region = { .cap = -1 };
+static struct llm_inside *inside;
+static unsigned long inside_until;          /* the lease's end, in counts */
+
+/* What the kit records a batch into, before it goes into the ring: a
+ * region beside it rather than 282 KB in the image, made with it. */
+static struct block passage_region = { .cap = -1 };
+static struct llm_passage *passages;
+
+static bool watched(void)
+{
+    return inside != NULL && (long)(inside_until - kosmos_ticks()) > 0;
+}
+
+/* INSIDE: the ring, made the first time, and the lease renewed. */
+static uint32_t inside_begin(long *cap)
+{
+    if (inside == NULL) {
+        if (passages == NULL) {
+            if (!region(&passage_region, sizeof(struct llm_passage) * LLM_BATCH)) return LLM_ERR_NO_MEMORY;
+
+            passages = (struct llm_passage *)(uintptr_t)passage_region.at;
+        }
+
+        if (!region(&inside_region, LLM_INSIDE_REGION)) return LLM_ERR_NO_MEMORY;
+
+        inside = (struct llm_inside *)(uintptr_t)inside_region.at;
+        inside->magic = LLM_INSIDE_MAGIC;
+        inside->record_bytes = LLM_INSIDE_RECORD_BYTES;
+        inside->records = LLM_INSIDE_RECORDS;
+    }
+
+    inside_until = kosmos_ticks() + (unsigned long)(counter_hz * (LLM_INSIDE_LEASE_US / 1000u) / 1000u);
+    *cap = inside_region.cap;
+    return LLM_OK;
+}
+
+static void token_text(int32_t token, char out[LLM_INSIDE_TEXT])
+{
+    char text[64];
+    int n = token >= 0 ? llm_token_text(&model.m, token, text, (int)sizeof text) : 0;
+
+    if (n < 0) n = 0;
+    memset(out, 0, LLM_INSIDE_TEXT);
+    memcpy(out, text, (size_t)n < LLM_INSIDE_TEXT ? (size_t)n : LLM_INSIDE_TEXT);
+}
+
+/* Before a step: the kit handed somewhere to record, or nothing. */
+static void inside_ready(void)
+{
+    llm_watch(&model.m, watched() ? passages : NULL);
+}
+
+/* After a step of `n` tokens that took `us`: each one's record into the
+ * ring, the last one's with what may follow it. */
+static void inside_written(uint32_t n, bool reading, uint64_t us, uint64_t rows_gpu, uint64_t rows_all)
+{
+    if (model.m.passage == NULL) return;
+
+    llm_watch(&model.m, NULL);
+    llm_candidates(&model.m, &passages[n - 1]);
+
+    for (uint32_t t = 0; t < n; t++) {
+        uint32_t seq = inside->written;
+        struct llm_inside_record *r = (struct llm_inside_record *)(uintptr_t)
+            (inside_region.at + LLM_INSIDE_DATA + (seq % LLM_INSIDE_RECORDS) * LLM_INSIDE_RECORD_BYTES);
+
+        memset(r, 0, sizeof *r);
+        r->seq = seq;
+        r->reading = reading ? 1u : 0u;
+        r->batch = n;
+        r->us = us > 0xffffffffu ? 0xffffffffu : (uint32_t)us;
+        r->rows_gpu = (uint32_t)rows_gpu;
+        r->rows_all = (uint32_t)rows_all;
+        r->p = passages[t];
+        token_text(r->p.token, r->text);
+
+        for (uint32_t k = 0; k < r->p.n_cand; k++) token_text(r->p.cand[k], r->cand_text[k]);
+
+        llm_answer_publish(&inside->written, seq + 1);
+    }
+}
+
+/* ------------------------------------------------------------------------
  * Answering: the prompt read a batch at a time, then the answer made a
  * token at a time.
  * --------------------------------------------------------------------- */
@@ -1089,10 +1177,19 @@ static void ask_step(void)
 
         if (n > LLM_BATCH) n = LLM_BATCH;
 
+        unsigned long began = kosmos_ticks();
+        uint64_t gpu_rows = gpu.rows_gpu, all_rows = gpu.rows_all;
+
+        inside_ready();
+
         if (llm_feed_batch(&model.m, &held, ans.prompt + ans.prompt_at, n) != 0) {
+            llm_watch(&model.m, NULL);
             answer_end();
             return;
         }
+
+        inside_written(n, true, micros(kosmos_ticks() - began), gpu.rows_gpu - gpu_rows,
+                       gpu.rows_all - all_rows);
 
         ans.prompt_at += n;
         read_total += n;
@@ -1161,13 +1258,21 @@ static void ask_step(void)
 
     {
         unsigned long began = kosmos_ticks();
-        int no = llm_feed(&model.m, &held, token);
+        uint64_t gpu_rows = gpu.rows_gpu, all_rows = gpu.rows_all;
+        int no;
+
+        inside_ready();
+        no = llm_feed(&model.m, &held, token);
 
         gpu_time.feed_us += micros(kosmos_ticks() - began);
         if (no != 0) {
+            llm_watch(&model.m, NULL);
             answer_end();
             return;
         }
+
+        inside_written(1, false, micros(kosmos_ticks() - began), gpu.rows_gpu - gpu_rows,
+                       gpu.rows_all - all_rows);
     }
 
     ans.next = llm_greedy(&model.m);
@@ -1354,6 +1459,11 @@ static void handle(const struct llm_request *in, long given, uint64_t sender)
 
     case LLM_OP_SETTINGS:
         settings_request(&rq, sender);
+        return;
+
+    case LLM_OP_INSIDE:
+        e = inside_begin(&cap);
+        send(sender, e, e == LLM_OK ? cap : -1);
         return;
 
     default:

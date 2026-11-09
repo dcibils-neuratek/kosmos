@@ -21,7 +21,7 @@ local llm = {}
 
 local PATH = "/Running/llm"
 
-local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS, OP_SETTINGS = 1, 2, 3, 4, 5, 6
+local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS, OP_SETTINGS, OP_INSIDE = 1, 2, 3, 4, 5, 6, 7
 
 local STOP_AT_BLANK_LINE, TEXT_IN_REGION, LOAD_NOWAIT, SETTINGS_CHANGE = 1, 2, 4, 8
 
@@ -403,6 +403,150 @@ function answer:close()
   if not self.done then
     self.done = true
     sys.release(self.cap)
+  end
+end
+
+--------------------------------------------------------------------------
+-- **Inside the model** (`llminside.h`; `docs/xavier.md`, *The LLM Monitor:
+-- Inside*): the ring of the last tokens' passages, which the server fills
+-- while somebody watches.
+--
+--   local ring = llm.inside()
+--   for _, r in ipairs(ring:read()) do      -- what came since the last read
+--     print(r.text, r.cands[1].text, r.cands[1].odds)
+--     local layer = llm.inside_layer(r, 1)  -- { stream, fired, back = {}, share = {} }
+--   end
+--   ring:renew()                            -- on the window's clock: the lease
+--
+-- A record is kept as the one string it was read as, and its layers are
+-- read out of it only when asked: 256 tokens of 32 layers of 64 numbers
+-- each would be half a million values for the collector to walk.
+--------------------------------------------------------------------------
+
+local INSIDE_DATA, INSIDE_WRITTEN = 4096, 16
+local RECORD_HEAD = "<I4I4I4I4I4I4I4I4c16"           -- seq .. rows_all, two spare, the text
+local PASSAGE = "<I4i4I4I4I4I4"                       -- pos, token, n_layer, n_head, n_ff, n_cand
+local AT_CAND_TEXT, AT_PASSAGE = 49, 209              -- 1-based, as string.unpack counts
+local PASSAGE_LAYERS, PASSAGE_HEADS, CANDIDATES = 64, 32, 10
+local LAYER = "<fI4" .. ("I2"):rep(2 * PASSAGE_HEADS)
+local LAYER_BYTES = 136
+local AT_LAYERS = AT_PASSAGE + 104
+local RECORD_BYTES = AT_LAYERS - 1 + LAYER_BYTES * PASSAGE_LAYERS   -- 9016, as llminside.h has it
+
+llm.INSIDE_RECORDS = 256
+
+local ring = {}
+ring.__index = ring
+
+local function record(raw)
+  local seq, reading, batch, us, rows_gpu, rows_all, _, _, text = string.unpack(RECORD_HEAD, raw)
+  local pos, token, n_layer, n_head, n_ff, n_cand = string.unpack(PASSAGE, raw, AT_PASSAGE)
+  local r = {
+    seq = seq, reading = reading ~= 0, batch = batch, us = us, rows_gpu = rows_gpu,
+    rows_all = rows_all, text = cstring(text), pos = pos, token = token, n_layer = n_layer,
+    n_head = n_head, n_ff = n_ff, cands = {}, raw = raw,
+  }
+
+  for k = 1, math.min(n_cand, CANDIDATES) do
+    local id = string.unpack("<i4", raw, AT_PASSAGE + 24 + (k - 1) * 4)
+    local odds = string.unpack("<f", raw, AT_PASSAGE + 64 + (k - 1) * 4)
+    local said = string.unpack("c16", raw, AT_CAND_TEXT + (k - 1) * 16)
+
+    r.cands[k] = { token = id, odds = odds, text = cstring(said) }
+  end
+
+  return r
+end
+
+-- The ring, and the server asked to fill it for a while.
+function llm.inside()
+  local r, cap = call(OP_INSIDE)
+
+  if not r then return nil, cap end
+  if not cap then return nil, "the LLM server sent no ring" end
+
+  local bytes = sys.region_load32(cap, 4)
+  local records = sys.region_load32(cap, 8)
+
+  if sys.region_load32(cap, 0) ~= 0x49534e49 or bytes ~= RECORD_BYTES or records == 0 then
+    sys.release(cap)
+    return nil, "the LLM server's ring is not one this library reads"
+  end
+
+  local written = sys.region_load32(cap, INSIDE_WRITTEN)
+
+  return setmetatable({ cap = cap, bytes = bytes, records = records,
+                        seen = math.max(0, written - records), skipped = 0 }, ring)
+end
+
+-- What the ring holds now let go of: the next `read` gives only what
+-- comes after this.
+function ring:from_now()
+  self.seen = sys.region_load32(self.cap, INSIDE_WRITTEN)
+end
+
+-- The lease renewed: the server goes on filling the ring for a while.
+function ring:renew()
+  local r, cap = call(OP_INSIDE)
+
+  if cap then sys.release(cap) end
+  return r ~= nil
+end
+
+-- The records written since the last read, oldest first; `self.skipped`
+-- counts the ones written over before they were read.
+function ring:read()
+  local written = sys.region_load32(self.cap, INSIDE_WRITTEN)
+  local out = {}
+
+  if written - self.seen > self.records then
+    self.skipped = self.skipped + (written - self.seen - self.records)
+    self.seen = written - self.records
+  end
+
+  for seq = self.seen, written - 1 do
+    local raw = sys.region_read(self.cap, INSIDE_DATA + (seq % self.records) * self.bytes, self.bytes)
+
+    out[#out + 1] = record(raw)
+  end
+
+  -- Written over while it was read: the oldest ones read are not theirs.
+  local after = sys.region_load32(self.cap, INSIDE_WRITTEN)
+  local first = 1
+
+  while first <= #out and after - out[first].seq > self.records do first = first + 1 end
+
+  if first > 1 then
+    self.skipped = self.skipped + first - 1
+    out = table.move(out, first, #out, 1, {})
+  end
+
+  self.seen = written
+  return out
+end
+
+-- Layer `l` (1-based) of a record: the residual stream's length after it,
+-- the feed-forward neurons that fired, and each head's strongest look -
+-- how many tokens back, and its share of the head's attention, 0 to 1.
+function llm.inside_layer(r, l)
+  if l < 1 or l > math.min(r.n_layer, PASSAGE_LAYERS) then return nil end
+
+  local v = table.pack(string.unpack(LAYER, r.raw, AT_LAYERS + (l - 1) * LAYER_BYTES))
+  local heads = math.min(r.n_head, PASSAGE_HEADS)
+  local layer = { stream = v[1], fired = v[2], back = {}, share = {} }
+
+  for h = 1, heads do
+    layer.back[h] = v[2 + h]
+    layer.share[h] = v[2 + PASSAGE_HEADS + h] / 65535
+  end
+
+  return layer
+end
+
+function ring:close()
+  if self.cap then
+    sys.release(self.cap)
+    self.cap = nil
   end
 end
 

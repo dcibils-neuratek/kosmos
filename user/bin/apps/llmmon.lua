@@ -11,6 +11,14 @@
 --
 --   wm llmmon
 --
+-- **And Inside** (`xavier.md`, *The LLM Monitor: Inside*; drawn in
+-- `docs/llmviz.html`): the model at work, a token at a time - each layer's
+-- heads and where they look, its feed-forward neurons that fired, the
+-- residual stream gathering, and the candidates for what comes next -
+-- from the ring of passages the server fills while this page is open.
+--
+--   wm llmmon:--inside        opened on Inside
+--
 -- **It measures nothing itself**, as the other monitors do not: the server
 -- counts (`llm.stats`, `struct llm_reply`), and this asks every two seconds
 -- and takes the difference between two readings. A name is the kernel's for
@@ -26,8 +34,12 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
 -- `--tell`: a line a sample, for a suite to read.
 local TELL = (tostring(args or "")):find("%-%-tell") ~= nil
+local OPEN_INSIDE = (tostring(args or "")):find("%-%-inside") ~= nil
+local keys = use("/Kosmos/Libraries/keys.lua")
 
-local W        = 900
+local W        = 1140
+local TABS_H   = 32
+local FAST_HZ  = 10                     -- Inside reads the ring ten times a second
 local TILE_H   = 92
 local GRAPH_H  = 130
 local ROW_H    = 26
@@ -196,7 +208,7 @@ end
 
 local M = measure()
 
-local win, err = ui.window{ title = "LLM Monitor", w = W, h = L.head + M.h,
+local win, err = ui.window{ title = "LLM Monitor", w = W, h = L.head + TABS_H + M.h,
                             x = 150, y = 100, header = true }
 
 if not win then
@@ -391,7 +403,7 @@ local function askers(g, x, y)
   end
 end
 
-local body = ui.view{ x = 0, y = L.head, w = W, h = M.h }
+local body = ui.view{ x = 0, y = L.head + TABS_H, w = W, h = M.h }
 
 function body:draw(g)
   local x = L.page_side
@@ -423,14 +435,471 @@ end
 win:add(body)
 
 --------------------------------------------------------------------------
--- The sampling, on the window kit's clock.
+-- **Inside** (`docs/llmviz.html`): the ring of passages, read on this
+-- window's clock - ten times a second while the page is shown - and drawn
+-- from what has been read. The lease is renewed every two seconds, so the
+-- server records only while somebody is looking.
+--------------------------------------------------------------------------
+
+local VIOLET, READ, FFN = 0xff8b7cf6, 0xff4fb6c9, 0xfff0b429
+local GPU_C, CPU_C = 0xff3fb950, 0xff3b82f6
+local CELL_OFF = 0xff23262e
+local KEEP = 256                        -- tokens held to step back through
+
+local ring, ring_why = nil, nil
+local recs = {}                         -- the last KEEP records, oldest first
+local shown = nil                       -- index into recs, or nil: the latest
+local chosen = nil                      -- { layer, head }, 1-based, or nil: the strongest
+local layers = {}                       -- the shown record's layers, read once
+
+local function current() return recs[shown or #recs] end
+
+local function inside_read()
+  if not ring then
+    ring, ring_why = llm.inside()
+    if not ring then return false end
+  end
+
+  local got = ring:read()
+
+  for _, r in ipairs(got) do
+    recs[#recs + 1] = r
+    if #recs > KEEP then
+      table.remove(recs, 1)
+      if shown then shown = math.max(1, shown - 1) end
+    end
+  end
+
+  if #got > 0 then
+    if not shown then layers = {} end
+
+    if TELL then
+      local r = recs[#recs]
+      print(("llmmon: inside %d tokens, last at %d %q %s, %d layers, next %q at %.0f%%")
+            :format(#recs, r.pos, r.text, r.reading and "read" or "written", r.n_layer,
+                    r.cands[1] and r.cands[1].text or "", (r.cands[1] and r.cands[1].odds or 0) * 100))
+    end
+  end
+
+  return #got > 0
+end
+
+local function layer_of(r, l)
+  if not layers[l] then layers[l] = llm.inside_layer(r, l) end
+  return layers[l]
+end
+
+-- The text of the token at a position: the latest record of it, at or
+-- before record `before`, in the same conversation - a position that goes
+-- back is a new one begun.
+local function text_at(pos, before)
+  for i = before, 1, -1 do
+    if recs[i].pos == pos then return recs[i].text end
+    if i < before and recs[i].pos >= recs[i + 1].pos then break end
+  end
+
+  return nil
+end
+
+-- The head to tell of: the one chosen, else the one that looked hardest
+-- at a token other than itself.
+local function telling(r)
+  if chosen then return chosen[1], chosen[2] end
+
+  local bl, bh, bs = 1, 1, -1
+
+  for l = 1, math.min(r.n_layer, 64) do
+    local L = layer_of(r, l)
+
+    for h = 1, #L.share do
+      if L.back[h] > 0 and L.share[h] > bs then bl, bh, bs = l, h, L.share[h] end
+    end
+  end
+
+  return bl, bh
+end
+
+local function mix(a, b, t)
+  local out = 0xff000000
+
+  for _, k in ipairs({ 16, 8, 0 }) do
+    local ca, cb = (a >> k) & 255, (b >> k) & 255
+    out = out | (math.floor(ca + (cb - ca) * t + 0.5) << k)
+  end
+
+  return out
+end
+
+local function shown_text(text) return (text:gsub("\n", "\u{21b5}")) end
+local function quoted(text) return '"' .. shown_text(text) .. '"' end
+
+-- Where everything on the page goes.
+local IN = {}
+do
+  local inner = W - 2 * L.page_side
+  IN.side_w = 280
+  IN.net_w = inner - IN.side_w - 24 - 56      -- the grid's own labels to its right
+  IN.phase = L.page_top - 8
+  IN.strip = IN.phase + 32
+  IN.strip_h = 108
+  IN.grid_label = IN.strip + IN.strip_h + 14
+  IN.grid = IN.grid_label + 36
+  IN.cell_h = 6
+  IN.ffn = IN.grid + 32 * IN.cell_h + 10
+  IN.ffn_h = 34
+  IN.stream = IN.ffn + IN.ffn_h + 8
+  IN.note = IN.stream + 24
+end
+
+local inside_view = ui.view{ x = 0, y = L.head + TABS_H, w = W, h = M.h, hidden = true }
+
+local function token_strip(g, x, y, w, r, look_pos)
+  local chip_h, gap, row_h = 20, 3, 24
+  local top, bottom = y + 40, y + IN.strip_h - 30
+  local placed = {}
+  local last = shown or #recs
+
+  -- From the shown token back, as many as fit; then laid out from the
+  -- first of them, so the text reads left to right.
+  local rows = (bottom - top + 4) // row_h
+  local first, width, row = last, 0, 1
+
+  while first >= 1 do
+    local cw = gfx.measure(shown_text(recs[first].text), "mono") + 8 + gap
+
+    if width + cw > w then
+      row, width = row + 1, 0
+      if row > rows then break end
+    end
+
+    width = width + cw
+    first = first - 1
+  end
+  first = first + 1
+
+  local cx, cy = x, top
+
+  for i = first, #recs do
+    local t = recs[i]
+    local label = shown_text(t.text)
+    local cw = gfx.measure(label, "mono") + 8
+
+    if cx + cw > x + w then
+      cx, cy = x, cy + row_h
+      if cy + chip_h > bottom then break end
+    end
+
+    local ground = t.reading and 0xff1d2733 or 0xff241f40
+    local ink = t.reading and 0xffb8dfe6 or 0xffcfc8fb
+
+    if i > last then ink = mix(ink, GRAPH_GROUND, 0.7) end
+
+    g:fill_round(cx, cy, cw, chip_h, ground, 4)
+    if i == last then g:frame_round(cx, cy, cw, chip_h, VIOLET, 4) end
+    g:text(cx + 4, cy + (chip_h - gfx.height("mono")) // 2, label, ink, ground, "mono")
+    placed[i] = { x = cx + cw // 2, y = cy, w = cw, left = cx }
+    cx = cx + cw + gap
+  end
+
+  -- The arc from the token being made to where the chosen head looks.
+  if look_pos and placed[last] then
+    local to
+
+    for i = last - 1, first, -1 do
+      if recs[i].pos == look_pos then to = placed[i] break end
+      if recs[i].pos > recs[i + 1].pos then break end
+    end
+
+    if to then
+      local a, b = placed[last], to
+      local lift = math.min(30, 10 + math.abs(a.x - b.x) // 10)
+      local pts = {}
+
+      for k = 0, 20 do
+        local t = k / 20
+        pts[#pts + 1] = a.x + (b.x - a.x) * t
+        pts[#pts + 1] = a.y + (b.y - a.y) * t - lift * 4 * t * (1 - t)
+      end
+
+      g:polyline(pts, 2, READ)
+      g:frame_round(b.left, b.y, b.w, chip_h, READ, 4)
+    end
+  end
+end
+
+-- A head's row, as tall as the heads' room allows: phi-2's 32 heads take
+-- six pixels each, and a small model's few are not left in a corner of it.
+local function head_h(r)
+  return (32 * IN.cell_h) // math.max(1, math.min(r.n_head, 32))
+end
+
+local function grid(g, x, y, r, tl, th)
+  local n_l = math.min(r.n_layer, 64)
+  local n_h = math.min(r.n_head, 32)
+  local ch = head_h(r)
+  local col = math.min(28, IN.net_w // math.max(1, n_l))
+  local cw = math.max(2, col - 3)
+  local most = 0
+
+  for l = 1, n_l do
+    local L = layer_of(r, l)
+    if L.stream > most then most = L.stream end
+  end
+
+  g:text(x, IN.grid_label, ("THE %d LAYERS, THE TOKEN PASSING THROUGH THEM LEFT TO RIGHT"):format(n_l),
+         FAINT, theme.window, "label")
+
+  for l = 1, n_l do
+    local L = layer_of(r, l)
+    local lx = x + (l - 1) * col
+
+    -- Each head: bright when it looked hard at one token, dim when its
+    -- attention was spread out.
+    for h = 1, n_h do
+      g:fill(lx, y + (h - 1) * ch, cw, ch - 1, mix(CELL_OFF, VIOLET, math.min(1, L.share[h] or 0)))
+    end
+
+    if l == tl then
+      g:frame_round(lx - 2, y + (th - 1) * ch - 2, cw + 4, ch + 3, theme.text, 0)
+    end
+
+    -- The share of its feed-forward neurons that fired.
+    local f = r.n_ff > 0 and L.fired / r.n_ff or 0
+    local fh = math.max(1, math.floor(IN.ffn_h * f + 0.5))
+
+    g:fill(lx, IN.ffn, cw, IN.ffn_h, CELL_OFF)
+    g:fill(lx, IN.ffn + IN.ffn_h - fh, cw, fh, FFN)
+
+    -- The residual stream, thicker as it gathers.
+    local sh = most > 0 and math.max(1, math.floor(12 * L.stream / most + 0.5)) or 1
+
+    g:fill(lx, IN.stream + (12 - sh) // 2, col, sh, VIOLET)
+
+    if l == 1 or l % 4 == 0 then
+      g:text(lx, y - 16, tostring(l), l == tl and theme.text or FAINT, theme.window, "label")
+    end
+  end
+
+  g:text(x + n_l * col + 4, y, "heads", FAINT, theme.window, "label")
+  g:text(x + n_l * col + 4, IN.ffn + IN.ffn_h - gfx.height("label"), "fired", FFN, theme.window, "label")
+  g:text(x + n_l * col + 4, IN.stream, "stream", VIOLET, theme.window, "label")
+end
+
+local function side(g, x, y, r)
+  local w = IN.side_w
+
+  g:text(x, y, "WHAT IT MIGHT SAY NEXT", FAINT, theme.window, "label")
+  y = y + 22
+
+  if #r.cands == 0 then
+    g:text(x, y, "a batch's last token says", theme.text_dim, theme.window, "ui")
+    y = y + 18
+  end
+
+  for k, c in ipairs(r.cands) do
+    local ink = k == 1 and VIOLET or theme.text_dim
+    local bar = w - 104 - 52
+
+    g:text(x, y, ui.fitted(quoted(c.text), 98, "mono"), ink, theme.window, "mono")
+    g:fill_round(x + 104, y + 4, bar, 8, theme.sunken, 4)
+    g:fill_round(x + 104, y + 4, math.max(2, math.floor(bar * c.odds + 0.5)), 8, k == 1 and VIOLET or FAINT, 4)
+
+    local pct = c.odds >= 0.1 and ("%.0f%%"):format(c.odds * 100) or ("%.1f%%"):format(c.odds * 100)
+
+    g:text(x + w - gfx.measure(pct, "mono"), y, pct, theme.text_dim, theme.window, "mono")
+    y = y + 16
+  end
+
+  y = y + 10
+  g:text(x, y, "WHERE ITS PRODUCTS RAN", FAINT, theme.window, "label")
+  y = y + 20
+
+  local gpu = r.rows_all > 0 and r.rows_gpu / r.rows_all or 0
+  local pct = math.floor(gpu * 100 + 0.5)
+
+  g:fill_round(x, y, w, 10, CPU_C, 5)
+  if gpu > 0 then g:fill_round(x, y, math.max(6, math.floor(w * gpu + 0.5)), 10, GPU_C, 5) end
+  y = y + 16
+  g:text(x, y, ("GPU %d%%, processor %d%%"):format(pct, 100 - pct), theme.text_dim, theme.window, "ui")
+  y = y + 24
+
+  g:text(x, y, "THIS TOKEN", FAINT, theme.window, "label")
+  y = y + 20
+
+  for _, kv in ipairs({
+    { "position", tostring(r.pos) },
+    { r.reading and "read with" or "written", r.reading and (r.batch .. " tokens") or "alone" },
+    { "its step through the model", time_words(r.us / 1e6) },
+    { "layers, heads, neurons", ("%d, %d, %d"):format(r.n_layer, r.n_head, r.n_ff) },
+  }) do
+    g:text(x, y, kv[1], theme.text_dim, theme.window, "ui")
+    g:text(x + w - gfx.measure(kv[2], "ui"), y, kv[2], theme.text, theme.window, "ui")
+    y = y + 18
+  end
+end
+
+function inside_view:draw(g)
+  local x = L.page_side
+
+  g:fill(0, 0, self.w, self.h, theme.window)
+
+  local r = current()
+
+  if not r then
+    local why = ring and ("Nothing recorded yet: ask Xavier something, and each token appears here as "
+                          .. "it passes through the model.")
+                or ("The LLM server does not hand over its ring: " .. tostring(ring_why))
+
+    g:text(x + 3, IN.phase + 8, ui.fitted(why, W - 2 * x, "ui"), theme.text_dim, theme.window, "ui")
+    return
+  end
+
+  local tl, th = telling(r)
+  local look = layer_of(r, tl)
+  local back = look and look.back[th] or 0
+  local look_pos = r.pos - back
+
+  -- What the model is doing now.
+  local pill = r.reading and "reading" or "writing"
+  local pw = gfx.measure(pill, "mono") + 18
+
+  g:fill_round(x, IN.phase, pw, 20, r.reading and 0xff193a42 or 0xff2c2850, 10)
+  g:text(x + 9, IN.phase + (20 - gfx.height("mono")) // 2, pill, r.reading and READ or VIOLET, nil, "mono")
+  g:text(x + pw + 12, IN.phase + (20 - gfx.height("ui")) // 2,
+         r.reading and ("the question: token %d, read with %d at once"):format(r.pos, r.batch)
+                   or ("the answer: token %d, made from all before it"):format(r.pos),
+         theme.text_dim, theme.window, "ui")
+
+  local state = shown and ("held on %d of the last %d \u{b7} End follows"):format(shown, #recs)
+                or ("following \u{b7} %d tokens held"):format(#recs)
+  if ring and ring.skipped > 0 then state = state .. (" \u{b7} %d skipped"):format(ring.skipped) end
+  g:text(W - x - gfx.measure(state, "ui"), IN.phase + (20 - gfx.height("ui")) // 2, state, FAINT,
+         theme.window, "ui")
+
+  -- The text as the model sees it, and where the chosen head looks.
+  g:fill_round(x, IN.strip, W - 2 * x, IN.strip_h, GRAPH_GROUND, L.card_r)
+  -- The key, along the strip's foot, so the arcs have the room above.
+  do
+    local ky = IN.strip + IN.strip_h - 8 - gfx.height("label")
+    local kx = x + 12
+
+    for _, k in ipairs({ { 0xff1d2733, 0xffb8dfe6, "the question, read in batches" },
+                         { 0xff241f40, 0xffcfc8fb, "the answer, a token at a time" },
+                         { nil, READ, "the arc: where the chosen head looks from the token being made" } }) do
+      if k[1] then
+        g:fill_round(kx, ky + 3, 12, 12, k[1], 3)
+        g:frame_round(kx, ky + 3, 12, 12, k[2], 3)
+        kx = kx + 18
+      end
+
+      g:text(kx, ky, k[3], k[2], GRAPH_GROUND, "label")
+      kx = kx + gfx.measure(k[3], "label") + 28
+    end
+  end
+  token_strip(g, x + 12, IN.strip, W - 2 * x - 24, r, back > 0 and look_pos or nil)
+
+  grid(g, x, IN.grid, r, tl, th)
+  side(g, x + IN.net_w + 24, IN.grid_label, r)
+
+  -- In words.
+  if look then
+    local said = text_at(look_pos, shown or #recs)
+    local note = ("Layer %d, head %d looks mostly at %s, %d back, with %.0f%% of its attention. "
+                  .. "Layer %d's feed-forward fired %d of its %d neurons.")
+                 :format(tl, th, back == 0 and "the token itself" or (said and quoted(said) or "an earlier token"),
+                         back, look.share[th] * 100, tl, look.fired, r.n_ff)
+
+    g:text(x, IN.note, ui.fitted(note, IN.net_w, "ui"), theme.text, theme.window, "ui")
+  end
+
+  g:text(x + 3, M.foot, ui.fitted("Recorded only while this page is open; the server's answers are the same "
+         .. "with it shut. Click a head; Left and Right step through the last " .. KEEP
+         .. " tokens, End follows. llm inside at the prompt says the same.", W - 2 * x - 6, "ui"),
+         theme.text_dim, theme.window, "ui")
+end
+
+-- A click on a head chooses it.
+function inside_view:mouse(action, x, y)
+  return ui.click(self, action, x, y, function(px, py)
+    local r = current()
+    if not r then return nil end
+
+    local n_l = math.min(r.n_layer, 64)
+    local col = math.min(28, IN.net_w // math.max(1, n_l))
+    local gx, gy = px - L.page_side, py - IN.grid
+
+    if gx >= 0 and gx < col * n_l and gy >= 0 and gy < 32 * IN.cell_h then
+      local l, h = gx // col + 1, gy // head_h(r) + 1
+
+      if h <= math.min(r.n_head, 32) then
+        return "head " .. l .. " " .. h, function()
+          chosen = { l, h }
+          win.dirty = true
+        end
+      end
+    end
+
+    return nil
+  end)
+end
+
+win:add(inside_view)
+
+local tabs = ui.tabs{ x = 0, y = L.head, w = W, items = { { text = "Overview" }, { text = "Inside" } } }
+
+local function show_page(i)
+  tabs.on = i
+  body.hidden = i ~= 1
+  inside_view.hidden = i ~= 2
+
+  if i == 2 then inside_read() end
+  win.dirty = true
+end
+
+tabs.on_choose = function(_, i) show_page(i) end
+
+win:add(tabs)
+
+-- Left and Right step back and forward through what is held; End follows
+-- the model again, and forgets a head chosen.
+win.on_key = function(_, c)
+  if inside_view.hidden or #recs == 0 then return false end
+
+  if c == keys.LEFT then
+    shown = math.max(1, (shown or #recs) - 1)
+  elseif c == keys.RIGHT then
+    shown = shown and shown + 1 or nil
+    if shown and shown >= #recs then shown = nil end
+  elseif c == keys.END then
+    shown, chosen = nil, nil
+  else
+    return false
+  end
+
+  layers = {}
+  win.dirty = true
+  return true
+end
+
+--------------------------------------------------------------------------
+-- The sampling, on the window kit's clock: Overview's every two seconds,
+-- Inside's ring ten times a second while it is shown, and its lease
+-- renewed every two.
 --------------------------------------------------------------------------
 
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+local ticks = 0
 
 function sampler:tick()
-  sample()
-  win.dirty = true
+  ticks = ticks + 1
+
+  if not inside_view.hidden and inside_read() and not shown then win.dirty = true end
+
+  if ticks % (FAST_HZ * PACE_S) == 0 then
+    sample()
+    if not inside_view.hidden and ring then ring:renew() end
+    win.dirty = true
+  end
 end
 
 win:add(sampler)
@@ -438,5 +907,6 @@ win:add(sampler)
 sample()
 print(now and ("llmmon: the LLM server, up " .. up_words(now.up_us))
           or ("llmmon: the LLM server does not answer: " .. tostring(why_not)))
-win.tick_every = counter_hz * PACE_S
+if OPEN_INSIDE then show_page(2) end
+win.tick_every = counter_hz // FAST_HZ
 win:run()

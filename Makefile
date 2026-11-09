@@ -2500,7 +2500,7 @@ $(LLMGPU_HEADER): tools/llmgpu_header.lua user/lib/llmgpu.lua user/lib/kc.lua us
 $(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h \
                      user/kits/llm/llm_gpu.c user/kits/llm/llm_gpu.h $(LLMGPU_HEADER) tools/eu_emu.c tools/eu_emu.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -I$(dir $(LLMGPU_HEADER)) -Itools -o $@ \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -DLLM_TRACE -Iuser/kits/llm -I$(dir $(LLMGPU_HEADER)) -Itools -o $@ \
 	        tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_gpu.c tools/eu_emu.c -lm
 
 # The kit's own answer to a prompt, which `tools/run_llm.py` holds the LLM

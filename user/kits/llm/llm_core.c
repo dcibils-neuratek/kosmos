@@ -1430,6 +1430,19 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 
   for (uint32_t t = 0; t < n; t++) embedding_row(m->tok_embd, (uint32_t)tokens[t], X(t));
 
+  if (m->passage) {
+    for (uint32_t t = 0; t < n; t++) {
+      struct llm_passage *p = &m->passage[t];
+
+      memset(p, 0, sizeof *p);
+      p->pos = m->n_past + t;
+      p->token = tokens[t];
+      p->n_layer = m->n_layer;
+      p->n_head = m->n_head;
+      p->n_ff = F;
+    }
+  }
+
   for (uint32_t l = 0; l < m->n_layer; l++) {
     const struct llm_layer *L = &m->layers[l];
 
@@ -1503,6 +1516,16 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 
         for (uint32_t p = 0; p <= pos; p++) att[p] = llm_f16_to_f32(llm_f32_to_f16(att[p] * inv));
 
+        if (m->passage && l < LLM_PASSAGE_LAYERS && h < LLM_PASSAGE_HEADS) {
+          uint32_t best = 0;
+
+          for (uint32_t p = 1; p <= pos; p++)
+            if (att[p] > att[best]) best = p;
+
+          m->passage[t].layer[l].back[h] = (uint16_t)(pos - best > 65535u ? 65535u : pos - best);
+          m->passage[t].layer[l].share[h] = (uint16_t)(att[best] * 65535.0f + 0.5f);
+        }
+
         float *o = AOUT(t) + h * D;
         for (uint32_t i = 0; i < D; i++) {
           double s = 0;
@@ -1524,6 +1547,13 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
     for (uint32_t t = 0; t < n; t++) {
       TRACE("attn_out", l, ATTN(t), E);
       TRACE("ffn_up_b", l, FF(t), F);
+      if (m->passage && l < LLM_PASSAGE_LAYERS) {
+        uint32_t fired = 0;
+
+        for (uint32_t i = 0; i < F; i++) fired += FF(t)[i] > 0.0f;
+        m->passage[t].layer[l].fired = fired;
+      }
+
       for (uint32_t i = 0; i < F; i++) FF(t)[i] = gelu(FF(t)[i]);
       TRACE("ffn_gelu", l, FF(t), F);
     }
@@ -1537,6 +1567,13 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       TRACE("ffn_out", l, mlp, E);
       for (uint32_t i = 0; i < E; i++) x[i] = (attn[i] + mlp[i]) + x[i];
       TRACE("l_out", l, x, E);
+
+      if (m->passage && l < LLM_PASSAGE_LAYERS) {
+        double sq = 0;
+
+        for (uint32_t i = 0; i < E; i++) sq += (double)x[i] * x[i];
+        m->passage[t].layer[l].stream = (float)sqrt(sq);
+      }
     }
   }
 
@@ -1555,6 +1592,40 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 
   m->n_past += n;
   return 0;
+}
+
+void llm_watch(struct llm_model *m, struct llm_passage *into)
+{
+  m->passage = into;
+}
+
+void llm_candidates(const struct llm_model *m, struct llm_passage *p)
+{
+  const float *z = m->logits;
+  float max = z[0];
+  double sum = 0;
+  uint32_t n = 0;
+
+  for (uint32_t i = 1; i < m->n_vocab; i++)
+    if (z[i] > max) max = z[i];
+
+  for (uint32_t i = 0; i < m->n_vocab; i++) sum += exp((double)(z[i] - max));
+
+  /* The ten largest, kept in order as they are met: a tie keeps the
+   * lower id first, as `llm_greedy` chooses it. */
+  for (uint32_t i = 0; i < m->n_vocab; i++) {
+    uint32_t at = n;
+
+    while (at > 0 && z[i] > z[p->cand[at - 1]]) at--;
+    if (at >= LLM_PASSAGE_CANDIDATES) continue;
+
+    if (n < LLM_PASSAGE_CANDIDATES) n++;
+    for (uint32_t k = n - 1; k > at; k--) p->cand[k] = p->cand[k - 1];
+    p->cand[at] = (int32_t)i;
+  }
+
+  for (uint32_t k = 0; k < n; k++) p->odds[k] = (float)(exp((double)(z[p->cand[k]] - max)) / sum);
+  p->n_cand = n;
 }
 
 int32_t llm_greedy(const struct llm_model *m)

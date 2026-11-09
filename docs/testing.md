@@ -29858,3 +29858,67 @@ of the 12.3: **the rest is the processor's** - attention, the norms, GELU
 - and is what a question waits for next. Writing is unchanged, as it
 should be: it waits for the memory (18.730).
 
+
+## 18.732 The LLM Monitor's Inside page: a token's passage through the model, recorded and drawn
+
+**What is recorded** (`llm_core.h`, `struct llm_passage`; `xavier.md`,
+*The LLM Monitor: Inside*): for each token through the model, for each
+layer, the residual stream's length after it, how many feed-forward
+neurons fired (their input above nought, before GELU), and for each head
+how many tokens back its strongest look was and that position's share of
+its attention; and for the token being made, ten candidates with their
+odds. The kit records only when handed somewhere to record into
+(`llm_watch`); the server hands it a region only while a window holds a
+lease (`llminside.h`), and writes the ring of 256 records a window reads.
+
+**`test_llm`**, 90 (91 with `--gpu`), six of them new:
+
+- watched a token at a time, and watched in batches, the logits are the
+  unwatched ones, to the bit;
+- a question read in batches records what it records read a token at a
+  time, to the bit;
+- at position 0 every head looks at the token itself, wholly; positions
+  and tokens as read;
+- every look is to a token already read, with a share above nought, and
+  every layer's stream and neurons within bounds;
+- the last layer's stream is the length of the vector the model leaves,
+  worked out in the test, and its neurons fired lie between those above
+  nought and those at or above it;
+- the ten candidates are the largest ten logits, falling, the greedy
+  choice first, the odds a softmax over the whole vocabulary;
+- and **every head's strongest look worked out again in the test** from
+  the last token's queries (through the kit's `LLM_TRACE` hook) and the K
+  cache, rotated as the model rotates them - an independent account of
+  attention rather than the kit's own arithmetic read back.
+
+**Controls**, each an edit to the kit's recording, built and run on tiny
+phi-2:
+
+| control | fails |
+|---|---|
+| a look one further back than it was | 2 of 90: the heads worked out again, the bounds |
+| the share of position 0, not of the strongest | 1: the heads worked out again (8 of 8) |
+| neurons counted below nought, not above | 1: the last layer's neurons |
+| the stream's square, not its length | 1: the last layer's stream |
+| the odds not divided by the sum | 1: the candidates |
+| every token of a batch given the batch's first position | 1: batches against a token at a time |
+
+**`x86-llmmon`**, 15 (9 before): at the prompt `llm inside --tokens 5
+what is a thread` records 11 tokens, the question's read before the
+answer's written, at consecutive positions, and each written token is its
+predecessor's top candidate - the record and the answer agree; `llm
+inside` prints one line a layer; and `wm llmmon:--tell --inside` opens the
+page and says the last record it drew, which is the last token written.
+The commands run before the window opens, since a window takes the
+keyboard. **Control**: the server writing a batch's records in reverse
+fails the positions check. On a failure the guest's whole log is kept.
+
+**The page under QEMU**, with tiny phi-2's 2 layers and 4 heads: a head's
+row is as tall as the heads' room allows (192 pixels shared among them,
+six each for phi-2's 32), so a small model is not left in a corner.
+
+**The gate, 0.11.338**: 103 of 106 suites in 640 s. `arm-sandbox`'s
+"a receive with a deadline gives up" was late again (the flaky one in
+the roadmap, 18.726), and `x86-pdfview` and `x86-network` lost QEMU
+before the guest's first line, with nothing in either log to say why.
+All three passed alone, 211/211, 38 and 36, in 51 s.
