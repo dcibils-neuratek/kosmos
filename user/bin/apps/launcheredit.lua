@@ -326,9 +326,7 @@ function revert()
   -- The caret with the text, or it is left pointing past the end of a
   -- shorter string and the next key typed lands nowhere.
   local function put(field, text)
-    field.text = text
-    field.caret = #text + 1
-    field.all = false
+    field:set_text(text)
   end
 
   put(program, tostring(attrs.program or ""))

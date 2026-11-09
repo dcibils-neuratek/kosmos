@@ -1727,3 +1727,34 @@ reading past the end of a buffer and getting away with it.
 **Measured.** On the Mac, on one plain core, Qwen writes 26 tokens a
 second, and 37 on four. On the M700 it is still to be measured - Diego is
 using Xavier there, and it needs a restart first.
+
+## 9 November - selecting a field's text with the mouse
+
+**In short.** Diego asked why he could not select text with the mouse in
+a text field. The answer was a decision written down months ago: a field
+was one line, and the one selection anybody makes in one line is all of
+it. It was the wrong decision - a hand expects what every other system
+does - and now a field selects the way the editor does.
+
+**What.** Dragging across a field selects what it passes over. A double
+click takes a word. Shift with the arrow keys, Home and End stretches the
+selection, and Control with the arrows goes a word at a time. Typing,
+Backspace, Delete, cut and paste act on what is selected. The editor got
+the double click too.
+
+**Why it was small.** The editor already knew all of this, in `textbuf`,
+the piece that holds its lines, caret and selection. The field now lends
+its one line to `textbuf` for every move and takes the caret back, so the
+rules for what a word is, and for a letter that takes several bytes, are
+written once - exactly the premise about not keeping a second copy of
+anything.
+
+**Visible impact.** Every field in every application: the browser's
+address bar, Tracker's search, Xavier's question, the Settings fields.
+
+**How we know.** A new test opens a window with one field and drives it
+with QEMU's own mouse and keyboard - a double click, a drag, the keys -
+reading back after each what the field says is selected: seven of seven.
+Run against the field as it was this morning, all six selection checks
+fail.
+

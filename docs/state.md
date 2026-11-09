@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
+Last updated: 2026-11-09 (0.11.345, not pushed; a field's selection)
 
 ---
 
@@ -94,10 +94,16 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   Held to llama.cpp, 105 of 105, four controls biting; a cache read past
   in `test_llm.c` fixed. Not yet measured on the M700.
 
-**Next**: Qwen2.5 0.5B measured on the M700 (it needs a restart Diego
-agrees to); then whether fields get a dragged selection (Diego asked why
-text cannot be selected with the mouse: `ui.field` has select-all only, by
-a decision in `ui.lua` - his to reverse); then the weight products, then attention - on the M700 a long
+- **0.11.344**: a signed CDN address as long as Hugging Face gives - the
+  HTTP request holds 8 KB (18.737); the M700's download then found TCP's
+  16 KB receive window holds a far server to about 160 KB/s (roadmap).
+- **0.11.345**: a field's text selected as the editor's is - drag, double
+  click, Shift and Control with the arrows, typing over it - by lending
+  the line to `textbuf`; `x86-fieldselect`, 7 of 7, control biting
+  (18.738). Diego: "Yes".
+
+**Next**: Qwen2.5 0.5B measured on the M700 (restarted; its download
+stopped at 103 MB once and was resumed); then the TCP window; then the weight products, then attention - on the M700 a long
 question's reading is products 22.0 s and attention 10.0 of 34.9, and its
 answer's writing products 14.1 and attention 4.6.
 

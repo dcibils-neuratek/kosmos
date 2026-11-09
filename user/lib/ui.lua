@@ -2425,6 +2425,10 @@ end
 --
 local MASK = "\u{2022}"
 
+-- The text's lines, caret and selection - `ui.editor`'s, and a field's too:
+-- a field lends its one line to a buffer for each move (`field_buf`).
+local textbuf = use("/Kosmos/Libraries/textbuf.lua")
+
 local function field_view(self, text)
   if self.secret then
     return MASK:rep(utf8.len(text) or #text)
@@ -2469,19 +2473,80 @@ function ui.field(spec)
   v.caret = #v.text + 1
 
   --
-  -- All of it, or none of it.
+  -- **A selection is a range** (Diego, 9 November 2026: "why i cant select
+  -- text with the mouse in text areas and text fields in kosmos?", and yes
+  -- to building it). `anchor` is where it began and `caret` where it is,
+  -- both byte places in `text`; nil, or equal to the caret, is none.
   --
-  -- **A field gets select-all and not a dragged selection**, and that is a
-  -- decision rather than an unfinished one. A single line of text has one
-  -- selection anybody actually makes - the whole thing, to replace it -
-  -- and the machinery `ui.editor` needs for a range is an anchor, a
-  -- normaliser, a three-piece draw and five keys that have to agree about
-  -- it. Here that would be spent to let somebody drag over half a URL.
+  -- This said a field gets select-all and not a dragged selection, "a
+  -- decision rather than an unfinished one": a line has one selection
+  -- anybody makes, the whole of it, and the machinery for a range would be
+  -- spent "to let somebody drag over half a URL". That is exactly what
+  -- people do - a word of a path, the host of an address, half a question
+  -- - and the machinery already existed, in `textbuf`, which a field now
+  -- borrows rather than copying (18.738). Dragging, a double click for a
+  -- word, Shift with the arrows, Home and End, and Ctrl for a word at a
+  -- time. Shift and a click is not here: a press does not carry the keys
+  -- held, which is the window manager's to add.
   --
-  -- So the state is a boolean, and every one of the four edit commands has
-  -- an honest answer for it.
-  --
-  v.all = false
+  v.anchor = nil
+  v.buf = textbuf.new("")
+
+  -- The selection, in order, as byte places [a, b), or nil: clamped, since
+  -- a window may set `text` under a selection it does not know about.
+  function v:selection()
+    local n = #self.text + 1
+    local c = math.max(1, math.min(self.caret, n))
+    local a = self.anchor and math.max(1, math.min(self.anchor, n))
+
+    if not a or a == c then return nil end
+    if a > c then a, c = c, a end
+    return a, c
+  end
+
+  -- **The text put in by a program, all of it chosen** when `all`, so what
+  -- is typed next replaces it - the browser's address on Control-L, the
+  -- IDE's find bar - or with the caret at its end and nothing chosen.
+  -- The one way in from outside, so no application keeps a field's
+  -- selection by hand (a flag of the old select-all, `all`, was set by
+  -- four of them and quietly meant nothing once the field kept a range).
+  function v:set_text(text, all)
+    self.text = text or self.text
+    self.caret = #self.text + 1
+    self.anchor = (all and self.text ~= "") and 1 or nil
+  end
+
+  -- The selected words, or nil.
+  function v:selected()
+    local a, b = self:selection()
+    return a and self.text:sub(a, b - 1) or nil
+  end
+
+  -- **A move, made by the buffer** (`textbuf`): the line lent to it with
+  -- the caret and the anchor, `fn` run, and the two taken back.
+  local function field_buf(self, fn)
+    local buf = self.buf
+
+    buf.lines[1], buf.lines[2] = self.text, nil
+    buf.cy, buf.want = 1, nil
+    buf.cx = math.max(1, math.min(self.caret, #self.text + 1))
+    buf.anchor = self.anchor and { 1, math.max(1, math.min(self.anchor, #self.text + 1)) } or nil
+    fn(buf)
+    self.caret = buf.cx
+    self.anchor = buf.anchor and buf.anchor[2] or nil
+  end
+
+  -- The selection taken out, the caret where it was; true when there was one.
+  local function cut_selection(self)
+    local a, b = self:selection()
+
+    self.anchor = nil
+    if not a then return false end
+
+    self.text = self.text:sub(1, a - 1) .. self.text:sub(b)
+    self.caret = a
+    return true
+  end
 
   function v:draw(g)
     -- A well: content lives in here, and the bevel says so. The focus
@@ -2552,16 +2617,26 @@ function ui.field(spec)
 
     local ty = centred(self.h)
 
-    if self.all and self.text ~= "" then
-      -- The caret's own colours, for the reason `ui.editor` uses them: a
-      -- selection is a widened cursor, and every palette has already had
-      -- to make those two readable against each other.
-      g:fill(inset, ty, math.min(room, gfx.measure(shown)), gfx.height(), theme.ring)
-      g:text(inset, ty, shown, theme.sunken, theme.ring)
-      return
-    end
-
     g:text(inset, ty, shown, theme.text, theme.sunken)
+
+    -- The selection over it, in the caret's own colours, for the reason
+    -- `ui.editor` uses them: a selection is a widened cursor, and every
+    -- palette has already had to make those two readable against each
+    -- other. Measured from the first character shown, and clipped to the
+    -- room, as the words are.
+    local a, b = self:selection()
+
+    if a and b > from then
+      a = math.max(a, from)
+
+      local x0 = inset + field_width(self, self.text:sub(from, a - 1))
+      local x1 = math.min(inset + room, inset + field_width(self, self.text:sub(from, b - 1)))
+
+      if x1 > x0 then
+        g:fill(x0, ty, x1 - x0, gfx.height(), theme.ring)
+        g:text(x0, ty, field_view(self, self.text:sub(a, b - 1)), theme.sunken, theme.ring)
+      end
+    end
 
     if self.focused then
       local cx = inset + field_width(self, self.text:sub(from, self.caret - 1))
@@ -2603,17 +2678,55 @@ function ui.field(spec)
     -- twice for one keystroke. And Enter is not in the list at all,
     -- because submitting a field is not editing it.
     --
-    if self.all then
-      self.all = false
+    local k, mods = keys.parts(c)
+    local shift = (mods & keys.SHIFT) ~= 0
+    local ctrl = (mods & keys.CTRL) ~= 0
 
-      if c == 8 or c == 127 or (c >= 32 and c < 127) then
-        self.text, self.caret = "", 1
-
-        if c == 8 or c == 127 then
-          changed(self)
-          return true
+    -- Moving: the buffer's own moves, a character or (Ctrl) a word, to
+    -- either end, and Shift selecting as it goes.
+    if (mods & ~(keys.SHIFT | keys.CTRL)) == 0
+       and (k == keys.LEFT or k == keys.RIGHT or k == keys.HOME or k == keys.END) then
+      field_buf(self, function(buf)
+        if k == keys.LEFT then
+          if ctrl then buf:word_left(shift) else buf:left(shift) end
+        elseif k == keys.RIGHT then
+          if ctrl then buf:word_right(shift) else buf:right(shift) end
+        elseif k == keys.HOME then
+          buf:home(shift)
+        else
+          buf:line_end(shift)
         end
+      end)
+      return true
+    end
+
+    if k == keys.DELETE and mods == 0 then
+      if not cut_selection(self) then
+        if self.caret > #self.text then return true end
+        self.text = self.text:sub(1, self.caret - 1) .. self.text:sub(char_after(self.text, self.caret))
       end
+      changed(self)
+      return true
+    end
+
+    --
+    -- A key that puts a character in replaces what was selected first, and
+    -- Backspace is finished once the selection is gone - taking a further
+    -- character would eat one nobody selected. A printable falls through
+    -- into the insert below, which fires `on_change` itself, so clearing
+    -- here must not fire it as well: a search box would run its filter
+    -- twice for one keystroke. And Enter keeps the selection, because
+    -- submitting a field is not editing it.
+    --
+    if c == 8 or c == 127 then
+      if cut_selection(self) then
+        changed(self)
+        return true
+      end
+    elseif c >= 32 and c < 127 then
+      cut_selection(self)
+    elseif c ~= 10 and c ~= 13 then
+      self.anchor = nil
     end
 
     -- A character, not a byte: a paste can put UTF-8 in a field, and
@@ -2667,16 +2780,18 @@ function ui.field(spec)
   function v:edit(kind)
     if kind == "selectall" then
       if self.text == "" then return false end
-      self.all = true
+      self.anchor, self.caret = 1, #self.text + 1
       return true
     end
 
+    -- What is selected, or with nothing selected the whole of it, as a
+    -- field's copy always was.
     if kind == "copy" or kind == "cut" then
       if self.text == "" or self.secret then return false end
-      if not wmproto.copy(self.text) then return false end
+      if not wmproto.copy(self:selected() or self.text) then return false end
 
       if kind == "cut" then
-        self.text, self.caret, self.all = "", 1, false
+        if not cut_selection(self) then self.text, self.caret = "", 1 end
         changed(self)
       end
 
@@ -2688,9 +2803,7 @@ function ui.field(spec)
 
       if not text or text == "" then return false end
 
-      if self.all then
-        self.text, self.caret, self.all = "", 1, false
-      end
+      cut_selection(self)
 
       text = text:match("^[^\n]*") or ""
       self.text = self.text:sub(1, self.caret - 1) .. text
@@ -2716,24 +2829,49 @@ function ui.field(spec)
   -- The boundary nearest the press, measured from the first character
   -- shown - the field may be scrolled - and never inside a character.
   --
+  --
+  -- **The press is the anchor, the drag is the caret**, as in `ui.editor`:
+  -- the window holds the grab from press to release, so a `move` reaching
+  -- the field means the button is down. A drag past either end walks the
+  -- caret to the text's end there, and the drawing scrolls to keep the
+  -- caret in view, which scrolls the selection with it. A second press
+  -- soon after the first selects the word under it.
+  --
+  local function place_at(self, x)
+    local want = x - self:text_inset()
+    local from = self.from or 1
+    local at = from
+
+    if want < 0 and from > 1 then return char_before(self.text, from) end
+
+    while at <= #self.text do
+      local after = char_after(self.text, at)
+      local left = field_width(self, self.text:sub(from, at - 1))
+      local right = field_width(self, self.text:sub(from, after - 1))
+
+      if want < (left + right) / 2 then break end
+
+      at = after
+    end
+
+    return at
+  end
+
   function v:mouse(action, x, y)
     if action == "press" then
-      local want = x - self:text_inset()
-      local from = self.from or 1
-      local at = from
+      local now, at = sys.ticks(), place_at(self, x)
 
-      while at <= #self.text do
-        local after = char_after(self.text, at)
-        local left = field_width(self, self.text:sub(from, at - 1))
-        local right = field_width(self, self.text:sub(from, after - 1))
-
-        if want < (left + right) / 2 then break end
-
-        at = after
+      if self.pressed_at and now - self.pressed_at < ui_again() and at == self.pressed_place then
+        self.pressed_at = nil
+        field_buf(self, function(buf) buf:word_at(1, at) end)
+        self.words = true
+        return true
       end
 
-      self.caret = at
-      self.all = false
+      self.pressed_at, self.pressed_place, self.words = now, at, false
+      self.caret, self.anchor = at, at
+    elseif action == "move" and not self.words then
+      self.caret = place_at(self, x)
     end
 
     return true
@@ -5851,7 +5989,6 @@ end
 -- an editor that hangs is a window you can still move.
 --
 
-local textbuf = use("/Kosmos/Libraries/textbuf.lua")
 local lualex = use("/Kosmos/Libraries/lualex.lua")
 -- And C's, for a project's `.c` and `.h` (`code = "c"`), in the same kinds.
 local clex = use("/Kosmos/Libraries/clex.lua")
@@ -6637,10 +6774,21 @@ function ui.editor(spec)
       -- goes nowhere leaves anchor and cursor equal, which `selection`
       -- reports as no selection, so a plain click deselects for free.
       --
+      -- And a second press soon after, on the same place, selects the
+      -- word there (`textbuf:word_at`, a field's double click too); the
+      -- drag after it leaves the word as it is.
       if action == "press" then
-        buf:place(self.top + row, col + 1, false)
-        buf.anchor = { buf.cy, buf.cx }
-      else
+        local now, place = sys.ticks(), (self.top + row) * 65536 + col
+
+        if self.pressed_at and now - self.pressed_at < ui_again() and place == self.pressed_place then
+          self.pressed_at, self.words = nil, true
+          buf:word_at(self.top + row, col + 1)
+        else
+          self.pressed_at, self.pressed_place, self.words = now, place, false
+          buf:place(self.top + row, col + 1, false)
+          buf.anchor = { buf.cy, buf.cx }
+        end
+      elseif not self.words then
         buf.cy, buf.cx = buf:clamp(self.top + row, col + 1)
         buf.want = nil
       end
@@ -8463,7 +8611,7 @@ CONTROLS.field = function(v)
              read = function() return tostring(v.text or "") end,
              write = function(text)
                v.text = tostring(text or "")
-               v.caret = #v.text + 1
+               v.caret, v.anchor = #v.text + 1, nil
                if v.on_change then v.on_change(v, v.text) end
              end,
              press = v.on_submit and function() v.on_submit(v, v.text) end } }

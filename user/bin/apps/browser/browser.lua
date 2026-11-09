@@ -670,9 +670,7 @@ end
 -- **Taken to be typed in**: the page's address, all of it chosen, so what
 -- is typed replaces it.
 function field:take_address()
-  self.text = current.address.text
-  self.caret = #self.text + 1
-  self.all = true
+  self:set_text(current.address.text, true)
 end
 
 --

@@ -436,6 +436,7 @@ SUITES = [
     # line by line to the PDF it exports, as macOS draws it.
     Suite("arm-writeapp", ["python3", "tools/run_writeapp.py", ARM]),
     Suite("x86-editor", ["python3", "tools/run_editor.py", X86], x86=True),
+    Suite("x86-fieldselect", ["python3", "tools/run_fieldselect.py", X86], x86=True),
 
     # **Kosmos IDE's window** (`roadmap.md` 6n, step 2): a file opened in
     # the code look, Tab kept to indent, saved, the project remembered and a

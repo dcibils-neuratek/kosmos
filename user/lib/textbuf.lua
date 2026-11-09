@@ -415,13 +415,25 @@ local function collapse(self, to_start)
   return true
 end
 
+-- **A character at a time, not a byte** (18.738): `é` is two bytes, and a
+-- caret between them splits it - the next character typed lands inside
+-- it, and a field drew what was left as rubbish. A byte from 0x80 to 0xBF
+-- continues a character, so a step goes over those as well.
+local function continues(line, x)
+  local b = line:byte(x)
+  return b ~= nil and b >= 0x80 and b <= 0xbf
+end
+
 function textbuf:left(extend)
   if not extend and collapse(self, true) then self.want = nil return end
 
   moving(self, extend)
 
   if self.cx > 1 then
+    local line = self.lines[self.cy]
+
     self.cx = self.cx - 1
+    while self.cx > 1 and continues(line, self.cx) do self.cx = self.cx - 1 end
   elseif self.cy > 1 then
     self.cy = self.cy - 1
     self.cx = #self.lines[self.cy] + 1
@@ -436,7 +448,10 @@ function textbuf:right(extend)
   moving(self, extend)
 
   if self.cx <= #self.lines[self.cy] then
+    local line = self.lines[self.cy]
+
     self.cx = self.cx + 1
+    while self.cx <= #line and continues(line, self.cx) do self.cx = self.cx + 1 end
   elseif self.cy < #self.lines then
     self.cy, self.cx = self.cy + 1, 1
   end
@@ -488,10 +503,11 @@ function textbuf:text_end(extend)
 end
 
 -- A word is letters, digits and `_`; a run of anything else that is not
--- space counts as a word too, so a jump stops at `..` and at `(`.
+-- space counts as a word too, so a jump stops at `..` and at `(`. A byte of
+-- a character past ASCII is a letter's: `café` is one word, not three.
 local function class(ch)
   if ch == "" then return nil end
-  if ch:match("[%w_]") then return "w" end
+  if ch:match("[%w_\128-\255]") then return "w" end
   if ch:match("%s") then return "s" end
   return "p"
 end
@@ -544,6 +560,29 @@ function textbuf:word_right(extend)
   while x <= #line and class(line:sub(x, x)) == kind do x = x + 1 end
 
   self.cx, self.want = x, nil
+end
+
+-- **The word at a place, selected** - a double click, in the editor and in
+-- a field: the run of one class the place is in, or the one it ends, the
+-- anchor at its start and the caret at its end. A place in a run of spaces
+-- selects the spaces, as every editor does.
+function textbuf:word_at(y, x)
+  y, x = self:clamp(y, x)
+
+  local line = self.lines[y]
+
+  if x > #line and x > 1 then x = x - 1 end
+
+  local kind = class(line:sub(x, x))
+  local a, b = x, x
+
+  if kind then
+    while a > 1 and class(line:sub(a - 1, a - 1)) == kind do a = a - 1 end
+    while b <= #line and class(line:sub(b, b)) == kind do b = b + 1 end
+  end
+
+  self.cy, self.cx, self.want = y, b, nil
+  self.anchor = { y, a }
 end
 
 -- A place, from a click; `extend` keeps the anchor, as a Shift-click does.

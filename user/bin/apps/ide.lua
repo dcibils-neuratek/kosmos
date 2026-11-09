@@ -2108,7 +2108,7 @@ function found:draw(g)
 end
 
 local function close_finder()
-  find.text, find.caret, find.all = "", 1, false
+  find:set_text("")
   findable = nil
   found.items = {}
   found.hidden = true
@@ -2190,7 +2190,7 @@ function find:draw(g)
   local kw = gfx.measure(keys, "ui")
   local shown = (self.text == "" and not self.focused) and self.hint or self.text
 
-  if not self.all and self:text_inset() + gfx.measure(shown) + 16 < self.w - kw - 10 then
+  if not self:selection() and self:text_inset() + gfx.measure(shown) + 16 < self.w - kw - 10 then
     g:text(self.w - kw - 10, (self.h - gfx.height("ui")) // 2, keys, theme.text_dim, nil, "ui")
   end
 end
@@ -2639,7 +2639,7 @@ function open_bar(mode, replacing)
   scope.on = (mode == "project") and 2 or 1
   place_body()
   win:focus_on(replacing and swap or seek)
-  seek.all = (mode ~= "line") and seek.text ~= ""
+  seek:set_text(nil, mode ~= "line")
   mark_found()
   print(("ide: find bar, %s"):format(mode))
 end
@@ -2758,7 +2758,7 @@ function win:on_key(c)
   -- letter typed starts again.
   if c == 16 then
     win:focus_on(find)
-    find.all = find.text ~= ""
+    find:set_text(nil, true)
     return true
   end
 

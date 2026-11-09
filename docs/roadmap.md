@@ -5972,6 +5972,16 @@ processors, and still what follows USB:
       8-pixel cell while drawing in the look's proportional face; fixed with
       d5, measured in the face it draws in.
 
+      **A field's text selected as the editor's is - AGREED on 9 November**
+      (Diego: "why i cant select text with the mouse in text areas and text
+      fields in kosmos?", then "Yes"): `ui.field` had select-all only, by a
+      decision written in `ui.lua`. Now dragging selects a range, a double
+      click a word, Shift with the arrows, Home and End extends, Control
+      with them a word at a time; typing, Backspace, Delete, cut and paste
+      act on the range. The field lends its line to `textbuf`, the editor's
+      own, rather than keeping a second copy of the caret's rules - and the
+      editor gains the double click too.
+
       **Zoom, meta refresh and the user agent BUILT 1 October**
       (`testing.md` 18.325). Zoom is how many of the screen's pixels a CSS
       pixel is (`device_dpi`), so every length a page gives grows with it,

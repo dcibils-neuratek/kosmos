@@ -372,6 +372,40 @@ do
         "and one undo takes all of them back")
 end
 
+--
+-- **A character at a time, and a word past ASCII** (18.738): `é` is two
+-- bytes, and a caret never lands between them; `café` is one word; and a
+-- double click's word, in letters, in punctuation, in spaces and at the end.
+--
+do
+  local b = textbuf.new("caf\u{e9} na\u{ef}ve\n")
+
+  b.cy, b.cx = 1, 1
+  for _ = 1, 4 do b:right(false) end
+  at(b, 1, 6, "four steps right go over the two bytes of the e with its accent")
+  b:left(false)
+  at(b, 1, 4, "and one back lands before it, not inside it")
+  b:left(true)
+  check(b:selected() == "f", "Shift and Left selects one character: " .. tostring(b:selected()))
+
+  b.cy, b.cx, b.anchor = 1, 1, nil
+  b:word_right(false)
+  at(b, 1, 6, "a word to the right is the whole of the word with its accent")
+
+  b:word_at(1, 9)
+  check(b:selected() == "na\u{ef}ve", "a double click in a word past ASCII selects it: " .. tostring(b:selected()))
+
+  b:set("open(/Home/x.txt)  now\n")
+  b:word_at(1, 6)
+  check(b:selected() == "(/", "a double click on punctuation selects its run: " .. tostring(b:selected()))
+  b:word_at(1, 7)
+  check(b:selected() == "Home", "and on a word, the word: " .. tostring(b:selected()))
+  b:word_at(1, 19)
+  check(b:selected() == "  ", "and in spaces, the spaces: " .. tostring(b:selected()))
+  b:word_at(1, 23)
+  check(b:selected() == "now", "and past the end, the last word: " .. tostring(b:selected()))
+end
+
 if failed > 0 then
   print(("FAIL: %d of %d checks on the text an editor edits"):format(failed,
         passed + failed))

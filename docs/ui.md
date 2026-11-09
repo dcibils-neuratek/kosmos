@@ -935,10 +935,22 @@ chosen by how light the editor's ground is; a look may name its own with
 `code_keyword` and the rest, and none does yet. A code editor keeps Tab
 (`takes_tab`) to indent, with Shift+Tab to outdent and Ctrl+/ to comment.
 
-`ui.field` gets select-all and not a dragged range, and that is a decision
-rather than an unfinished job. A single line of text has one selection
-anybody actually makes - all of it, to replace it - and the machinery a
-range needs would be spent to let somebody drag over half a URL.
+**`ui.field` selects a range, as the editor does** (9 November 2026).
+Dragging selects, a double click takes a word, Shift with the arrows,
+Home and End extends, and Control with them goes a word at a time; typing,
+Backspace, Delete, cut and paste act on what is selected, and Control-A is
+all of it. The field keeps `anchor` beside `caret`, both byte places in
+its one line, and lends that line to `textbuf` - the editor's own - for
+every move, so the rules for a word and for a character of several bytes
+are written once and held by `tools/test_textbuf.lua`. The editor gained
+the double click from the same `textbuf:word_at`.
+
+This said for months that a field got select-all and not a dragged range,
+"a decision rather than an unfinished job", since a single line has one
+selection anybody makes. Diego asked why he could not select text with
+the mouse in a field, and that was the answer to the question: what every
+other system does is what a hand expects, and the machinery was already
+there in `textbuf`, so a field had only to borrow it.
 
 ### What crosses, and what does not
 

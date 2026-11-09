@@ -30198,3 +30198,43 @@ window lost whole runs of segments under load. 16 KB a round trip is
 plenty on the LAN, at a millisecond, and about 160 KB/s to a server 100
 ms away. The way out is the one that note names: keep out-of-order
 segments, then offer the ring, then window scaling past 64 KB (roadmap).
+
+## 18.738 A field's text selected by the pointer and the keys
+
+**Asked** (Diego, 9 November: "why i cant select text with the mouse in
+text areas and text fields in kosmos?"). The editor dragged already; a
+field had select-all and nothing else, by a decision `ui.md` recorded.
+
+**Built**: `ui.field` keeps an anchor beside its caret and lends its line
+to `textbuf` for each move - drag, a double click for a word, Shift with
+the arrows, Home and End, Control for a word at a time; typing, Backspace,
+Delete, cut and paste over the selection. `textbuf` learnt to step over
+UTF-8's continuation bytes and to count them as a word's, and `word_at`,
+which the editor's double click uses too.
+
+**Tested**: `tools/test_textbuf.lua` gained the UTF-8 and word checks, 105
+pass; against the old `textbuf` they fail. And a new suite,
+`x86-fieldselect` (`tools/run_fieldselect.py`): a window with one field
+holding twenty a's, forty b's and " cc", which says its selection after
+every key, press and release - a double click in the b's selecting them
+alone, a drag from the start past the end all of it, End and Shift-Left
+three times " cc", Control-Shift-Left back a word, x typed over it, Home,
+Shift-End and Delete emptying it. 7 of 7. **Control**: the committed
+`ui.lua` and `textbuf.lua` - all six fail, each on the selection it says
+(no selection at all), and x typed at the caret rather than over a range.
+
+A first run of the suite clicked the title bar and maximised the window:
+the place `wm` reports for a window is its frame's, the header included.
+
+
+**The gate found what the suite could not**: `x86-browser-1` and `-2` failed
+with the address typed after the old one - "/second.htmlabout:start".
+Four applications chose a field's text for it by setting its select-all
+flag, `all`, by hand - the browser's address on Control-L, the IDE's find
+bar twice, the launcher editor clearing it - and with the flag gone the
+assignment quietly meant nothing. **Fixed** with the one way in the field
+now offers, `field:set_text(text, all)`, and the four moved onto it; the
+IDE's find field asks `selection()` where it read the flag. The lesson is
+the premise's: a widget's state written from outside it is a second copy
+of its rules, and the first change to them breaks it silently.
+**The gate**: 108 of 108 in 634 s (10:33 - over the ten minutes by 33 s).
