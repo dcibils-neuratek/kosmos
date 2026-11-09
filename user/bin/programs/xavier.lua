@@ -6,7 +6,11 @@
 --   xavier What is a microkernel?
 --   xavier --model tiny-phi2.Q4_0.gguf Hello
 --   xavier --tokens 32 Say something short
+--   xavier --file /Home/question.txt
 --   xavier --stats
+--
+-- `--file` is for a question longer than a command line can carry: a
+-- line is handed to a program in one message (`testing.md` 18.734).
 --
 -- With nothing loaded it loads a model from /Models (or /Home/Models on a
 -- machine without that drive) first: the one
@@ -18,6 +22,7 @@ local MODELS = llm.MODELS
 
 local function usage()
   print("usage: xavier [--model <file>] [--tokens <n>] [--raw] <question>")
+  print("       xavier [--model <file>] [--tokens <n>] [--raw] --file <path>")
   print("       xavier --stats")
   print("  a model is a .gguf file in " .. MODELS)
 end
@@ -26,7 +31,7 @@ end
 local words = {}
 for w in tostring(args or ""):gmatch("%S+") do words[#words + 1] = w end
 
-local model, tokens, raw, stats = nil, nil, false, false
+local model, tokens, raw, stats, from = nil, nil, false, false, nil
 local rest = {}
 local i = 1
 while i <= #words do
@@ -35,9 +40,19 @@ while i <= #words do
   elseif w == "--tokens" then tokens = tonumber(words[i + 1]); i = i + 2
   elseif w == "--raw" then raw = true; i = i + 1
   elseif w == "--stats" then stats = true; i = i + 1
+  elseif w == "--file" then from = words[i + 1] or ""; i = i + 2
   else rest[#rest + 1] = w; i = i + 1 end
 end
 local question = table.concat(rest, " ")
+
+if from then
+  if question ~= "" then usage() return end
+
+  local text, why = fs.read(from)
+
+  if not text then print("xavier: " .. from .. ": " .. tostring(why)) return end
+  question = text:gsub("%s+$", "")
+end
 
 local function ms(us) return string.format("%.1f ms", (us or 0) / 1000) end
 

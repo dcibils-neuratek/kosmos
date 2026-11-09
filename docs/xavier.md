@@ -1042,9 +1042,33 @@ all C, one Lua call each. A quantisation the kit does not read (Q4_K_M,
 the commonest on Hugging Face) is listed with why, and not refused by the
 listing, so a person can still see it is there.
 
-**Built in 0.11.332** (`testing.md` 18.726). Left: the Models page in
-Xavier's window, as drawn; `tools/hfmodel.py`, for a model that is not
-published as GGUF; and the quantisations the kit does not yet read.
+**Built in 0.11.332** (`testing.md` 18.726). Left: `tools/hfmodel.py`,
+for a model that is not published as GGUF; and the quantisations the kit
+does not yet read.
+
+**The Models page in Xavier's window** (Diego, 9 November: "build the
+Models page in Xavier's window"; as drawn in `xavier.html`, *Models*).
+Opened from the model chip's menu, "Get more in Models...". What is in
+`/Models` first - each model's name, size and quantisation, the loaded one
+marked, a download cut short with how far it got - with **Load** (the
+conversation's model, as the chip's menu chooses it) and **Remove**, asked
+once in a sheet; then a search of Hugging Face, each repository with the
+file the kit would take from it - Q4_0 first, then Q8_0, F16, F32 - its
+size, and **Get**, or the reason there is nothing it can read.
+
+**Nothing on it waits** (*Nothing waits on hardware*): a search and a
+repository's file list are `http.get`s stepped by the window's clock in a
+coroutine, as Packages fetches its index; a download is `models get` in a
+process of its own, `--report <file>`, which the page reads four times a
+second - its lines `got total`, then `done ok`, `done paused` or `done
+failed <why>`. **Pause** writes `<report>.stop`; the program looks for it
+between pieces of 4 MB and stops, the `.part` kept, so **Get** again goes
+on from there. The bytes never pass through the window.
+
+**Not as drawn**: no **Unload**. The LLM server has no operation that
+drops its model, and one model is always held once loaded; choosing
+another is how one goes. That is a server change of its own, in the
+roadmap if it is wanted.
 
 ## X7, the GPU: the design (9 November 2026)
 

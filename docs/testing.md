@@ -29978,3 +29978,39 @@ a lap that does not move its start on - 190 against 19.
 
 `x86-llm` 57, `x86-xavier` 37, `x86-llmmon` 15: the answers through the
 server the kit's own, byte for byte.
+
+## 18.734 A command line too long for a message, refused rather than raised
+
+**What happened** (9 November, on the M700, 0.11.340): to measure the
+attention of 18.733 on a long question, `xavier` was asked one of 1593
+bytes over Telnet. The question never reached the LLM server - the
+machine held 223 MB, phi-2 unloaded - and Telnet stopped answering. The
+desktop's notification said why: **"Telnetd stopped: init:7287: value
+does not fit in a message"**. A program's command line is handed to it
+inside the one message that starts it (`init.lua`, `launch`, and the
+shell's own copy of the same call), and a line that made that message
+larger than 2048 bytes raised in the caller - telnetd, which ended.
+
+**The fix** (`init.lua`): both calls are made under `pcall`; a line too
+long is refused with "its command line, N bytes, is too long to hand to
+it", the channel destroyed, and the child - never sent its job - ends.
+The shell or the session goes on.
+
+**And a question that long has a way in**: `xavier --file <path>` reads
+it from a file.
+
+**Tests**:
+
+- `x86-servers`, 37: over Telnet, `hello` with 1800 bytes of argument is
+  refused with that sentence, and the same session answers `help` after.
+  **Control**: HEAD's `init.lua` - "a command line of 1806 bytes was not
+  refused with the session answering after: '', then ''", and the rest of
+  the suite with it, telnetd gone.
+- `x86-llmmon`, 16: the second question is the first again from a file
+  written at the prompt, and its answer must be the first's word for
+  word. **Control**: the file holding "what is a thread" - "the question
+  from a file was not answered as on the line".
+
+**The gate, 0.11.341**: 105 of 106 suites in 653 s; `x86-llmmon`'s new
+check had kept the server's and the kernel's own lines among the answer's
+words, and passed alone once it left them out.

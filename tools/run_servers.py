@@ -636,6 +636,13 @@ def main():
         # M700 it drew under the Deskbar and stayed there.
         said["monitor"] = session.run("monitor 1").decode(errors="replace")
 
+        # **A command line longer than a message is refused, and the
+        # session lives** (`testing.md` 18.734): a question of 1593 bytes
+        # to `xavier` raised "value does not fit in a message" inside
+        # telnetd on the M700, and telnetd ended.
+        said["long"] = session.run("hello " + "x" * 1800).decode(errors="replace")
+        said["after_long"] = session.run("help").decode(errors="replace")
+
         # An application written here, pushed and opened on this desktop -
         # `open` asking the window manager, as the Deskbar does. Moved here
         # from `run_telnetd.py`'s boot of its own, which was this boot.
@@ -745,6 +752,12 @@ def main():
 
     if "this session's own:" not in said.get("help", ""):
         fails.append("help did not list the session's own words: %r" % said.get("help"))
+
+    if "is too long to hand to it" not in said.get("long", "") \
+            or "this session's own:" not in said.get("after_long", ""):
+        fails.append("a command line of 1806 bytes was not refused with the session "
+                     "answering after: %r, then %r" % (said.get("long", "")[-200:],
+                                                      said.get("after_long", "")[-120:]))
 
     if "monitor: the desktop has the screen" not in said.get("monitor", ""):
         fails.append("a program at a prompt was handed the screen while the desktop "

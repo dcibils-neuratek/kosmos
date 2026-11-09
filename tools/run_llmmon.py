@@ -127,10 +127,14 @@ def main():
 
         out0, since0, _, askers0 = llm()
 
-        at_prompt("xavier --tokens 24 what is a kernel", 180)
+        said1 = at_prompt("xavier --tokens 24 what is a kernel", 180)
         out1, since1, last1, askers1 = llm()
 
-        at_prompt("xavier --tokens 16 and a process", 180)
+        # **The same question from a file** (`xavier --file`, 18.734): a
+        # question longer than a command line carries goes this way, and
+        # it must be the same question - the same answer, word for word.
+        at_prompt('fs.write("/Temporary/q.txt", "what is a kernel\\n")', 30)
+        said2 = at_prompt("xavier --tokens 24 --file /Temporary/q.txt", 180)
         out2, since2, last2, askers2 = llm()
 
         # Inside, at the prompt - before the window, which takes the keys.
@@ -185,6 +189,20 @@ def main():
         check(since2[0] >= since1[0], "the server's time went back: %r %r" % (since1, since2))
     else:
         check(False, "the second question was not counted: %r %r" % (since2, last2))
+
+    def answer_of(said):
+        """The answer's words: what xavier printed, less its command, the
+        model's loading, the closing count, and the system's own lines -
+        the server's and the kernel's - that land among them."""
+        kept = [l for l in said.replace("\r", "").split("\n")[1:]
+                if l.strip() and not l.startswith(("loading ", "llm: ", "process "))
+                and not re.match(r"^\d+ tokens in ", l)
+                and not re.search(r" is in, [\d.]+ [KMG]?B in ", l)]
+        return "\n".join(kept).strip()
+
+    a1, a2 = answer_of(said1), answer_of(said2)
+    check(a1 != "" and a1 == a2,
+          "the question from a file was not answered as on the line: %r against %r" % (a2, a1))
 
     check(window is not None, "LLM Monitor did not open")
     check(opened is not None, "LLM Monitor did not reach the server")

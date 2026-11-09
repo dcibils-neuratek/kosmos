@@ -5352,7 +5352,9 @@ query. `find` and `watch` are built on exactly these two calls.
       return false, why or "could not start a process for it"
     end
 
-    local reply = sys.call(ep, {
+    -- A command line too long for a message is refused, as `launch`
+    -- refuses it (18.734): raised, it ended the shell that typed it.
+    local sent, reply = pcall(sys.call, ep, {
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
@@ -5370,6 +5372,11 @@ query. `find` and `watch` are built on exactly these two calls.
     -- A private channel for one message. There are ninety-six of them, and
     -- leaving them behind is how a pool runs out for reasons nobody sees.
     sys.destroy(ep)
+
+    if not sent then
+      sys.wait()
+      return false, ("its command line, %d bytes, is too long to hand to it"):format(#(argument or ""))
+    end
 
     -- A detached program is still running; waiting for it would be exactly
     -- what detaching was for. The next command's reap collects it.
@@ -7284,7 +7291,12 @@ if role == ROLE_RUNNER then
       return false, why or "no process"
     end
 
-    local reply = sys.call(ep, {
+    -- **A command line too long for a message is refused, not raised**
+    -- (`testing.md` 18.734): it went into this one call whole, and a
+    -- question of 1593 bytes to `xavier` over Telnet raised "value does
+    -- not fit in a message" here - inside telnetd, which ended. The
+    -- child, never sent its job, ends when `ep` goes.
+    local sent, reply = pcall(sys.call, ep, {
       path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
@@ -7313,6 +7325,9 @@ if role == ROLE_RUNNER then
     -- out for reasons nobody can see.
     sys.destroy(ep)
 
+    if not sent then
+      return false, ("its command line, %d bytes, is too long to hand to it"):format(#(argument or ""))
+    end
     if not reply then return false, "no answer" end
 
     -- The child's id as well as whether it started. Whoever launched
