@@ -86,12 +86,19 @@ typedef void llm_run_fn(void *ctx, llm_part_fn *fn, void *job, uint32_t parts);
  * inputs, the inputs already in Q8_0 - input `t`'s blocks at `xq + t *
  * xq_room` bytes and their scales at `xs + t * xs_room` floats - and the
  * answer for input `t`'s row `r` into `out[t * out_room + r]`, `bias` added
- * where there is one. Nought when it was done, and less when it was not.
+ * where there is one.
+ *
+ * **Shared** (X7 G5): it answers how many of the first rows it has begun -
+ * every one, some, or, less than nought, none - and the processor's rows
+ * do the rest meanwhile. Then `llm_product_done_fn` finishes the rows it
+ * began: nought, or less when it could not, and the processor does those
+ * as well. Every row's sum is the same whoever makes it.
  */
 struct llm_tensor;
-typedef int llm_product_fn(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
-                           const float *xs, size_t xs_room, uint32_t n, const float *bias,
-                           float *out, size_t out_room);
+typedef int64_t llm_product_fn(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
+                               const float *xs, size_t xs_room, uint32_t n, const float *bias,
+                               float *out, size_t out_room);
+typedef int llm_product_done_fn(void *ctx);
 
 struct llm_model {
   /* The file. */
@@ -154,6 +161,7 @@ struct llm_model {
 
   /* A product taken somewhere else - the GPU (`llm_gpu.h`) - or NULL. */
   llm_product_fn *product;
+  llm_product_done_fn *product_done;
   void *product_ctx;
 };
 
@@ -162,9 +170,9 @@ struct llm_model {
 void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts);
 
 /* Products offered to `product` first from now on (`docs/xavier.md` X7):
- * it takes one and answers nought, or answers less than nought and the
- * processor's rows do it. NULL for the processor alone. */
-void llm_offload(struct llm_model *m, llm_product_fn *product, void *ctx);
+ * it begins some of a product's rows, the processor's do the rest, and
+ * `done` finishes the ones it began. NULL for the processor alone. */
+void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx);
 
 /*
  * **Which loops multiply the weights** (`docs/xavier.md`, *Settings*). Every

@@ -1052,8 +1052,13 @@ processor.
    the memory; Q8_0's kernel. **Begun in 0.11.335**: the weight laid out
    for the GPU in tiles of 16 rows, a pair's inputs read once for every
    lane (`lanev` in `kc`), the sums in cached memory, GELU from a table.
-   **Next**: each product's rows split between the GPU and the processor,
-   both reading at once; the pool's workers waiting without spinning.
+   **And in 0.11.336** (`testing.md` 18.730): each product's rows shared
+   between the GPU and the processor at once, the share learned as it
+   runs - 5.46 tokens a second on four cores, the M700's memory the limit
+   for writing whoever multiplies - and four of a question's inputs met by
+   each read of the weight: a question 19% sooner. **Left**: the GPU is
+   held by its arithmetic in a question - byte operands in `kc` would
+   halve it - and the pool's workers spin while they wait.
 
 ## Decisions that are Diego's
 

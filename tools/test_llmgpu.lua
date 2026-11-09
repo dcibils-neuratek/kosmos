@@ -165,10 +165,10 @@ local function case(name, rows, blocks, inputs, w_at)
       return text:sub(1, a - 1) .. to .. text:sub(b + 1)
     end
 
-    src = swap(src, "sum += float(s) * (half(d0 & 65535) * asfloat(lanev(m, 0)));",
-                    "sum += (float(s) * half(d0 & 65535)) * asfloat(lanev(m, 0));")
-    src = swap(src, "sum += float(s) * (half((d4 >> 16) & 65535) * asfloat(lanev(m, 1)));",
-                    "sum += (float(s) * half((d4 >> 16) & 65535)) * asfloat(lanev(m, 1));")
+    src = swap(src, "float s = sum + float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * (h0 * asfloat(lanev(m, 0)));",
+                    "float s = sum + (float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * h0) * asfloat(lanev(m, 0));")
+    src = swap(src, "return s + float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * (h1 * asfloat(lanev(m, 1)));",
+                    "return s + (float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * h1) * asfloat(lanev(m, 1));")
   end
 
   for _, simd in ipairs { 8, 16 } do
@@ -219,6 +219,7 @@ end
 case("one input, rows a whole thread", 16, 2, 1, 0)
 case("three inputs, a part-full last thread, the weight 36 bytes in", 21, 6, 3, 36)
 case("phi-2's narrowest, 80 blocks", 9, 80, 2, 0)
+case("six inputs, a second pass of four part full", 32, 4, 6, 0)
 
 if #fails > 0 then
   for _, f in ipairs(fails) do print("FAIL: " .. f) end

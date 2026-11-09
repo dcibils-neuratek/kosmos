@@ -87,7 +87,9 @@ static uint32_t ran_gpu;                    /* LLM_GPU_* bits the last answer us
 /* Where an answer's GPU time went, said in the log when it ends: the runs,
  * the time from asking to the fence reached, the part of it spent asking,
  * and the polls. */
-static struct { uint64_t runs, run_us, ask_us, polls, product_us, feed_us; } gpu_time;
+static struct { uint64_t runs, run_us, ask_us, polls, product_us, feed_us, already; } gpu_time;
+static uint32_t run_fence;                   /* the run begun, and when */
+static unsigned long run_began;
 static uint32_t gpu_have;                   /* LLM_GPU_* bits there is a GPU for */
 
 static long console = -1;
@@ -613,7 +615,7 @@ static const char *dev_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t g
     struct compute_binding bind[GPU_RUN_BUFFERS];
     struct gpu_reply rp;
     const char *no;
-    uint32_t e, fence;
+    uint32_t e;
     unsigned long began = kosmos_ticks();
 
     (void)ctx;
@@ -628,42 +630,63 @@ static const char *dev_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t g
 
     if ((e = gpu_ask(&q, sizeof q, -1, &rp)) != GPU_OK) return gpu_said(e);
 
-    fence = rp.engine.value;
+    run_fence = rp.engine.value;
+    run_began = began;
     gpu_time.ask_us += micros(kosmos_ticks() - began);
+    return NULL;
+}
+
+/* The run begun waited for: whether it had finished when this was asked,
+ * and the time from asking to done - as near as a poll can tell. */
+static const char *dev_wait(void *ctx, int *already)
+{
+    struct gpu_reply rp;
+
+    (void)ctx;
+    *already = 1;
 
     for (;;) {
         gpu_time.polls++;
         if (gpu_simple(GPU_OP_FENCE, 1, &rp) != GPU_OK) return "the GPU's driver did not answer";
-        if ((int32_t)(rp.engine.value - fence) >= 0) {
-            gpu_time.run_us += micros(kosmos_ticks() - began);
+        if ((int32_t)(rp.engine.value - run_fence) >= 0) {
+            gpu_time.run_us += micros(kosmos_ticks() - run_began);
+            if (*already) gpu_time.already++;
             return NULL;
         }
-        if (micros(kosmos_ticks() - began) > 2000000u) return "the GPU did not finish in two seconds";
+        *already = 0;
+        if (micros(kosmos_ticks() - run_began) > 2000000u) return "the GPU did not finish in two seconds";
         kosmos_yield();
     }
 }
 
-static const struct llm_gpu_device gpu_device = { NULL, dev_kernel, dev_buffer, dev_forget, dev_run };
+static const struct llm_gpu_device gpu_device = { NULL, dev_kernel, dev_buffer, dev_forget, dev_run,
+                                                  dev_wait };
 
 /* What the kit offers: a question's products or an answer's, as Settings
  * says, and the kernel's say on the rest. */
-static int gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
-                       const float *xs, size_t xs_room, uint32_t n, const float *bias, float *out,
-                       size_t out_room)
+static int64_t gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
+                           const float *xs, size_t xs_room, uint32_t n, const float *bias, float *out,
+                           size_t out_room)
 {
     uint32_t want = n > 1 ? LLM_GPU_READ : LLM_GPU_WRITE;
-
     unsigned long began = kosmos_ticks();
-    int no;
+    int64_t begun;
 
     if ((settings.gpu & want) == 0) return -1;
 
-    no = llm_gpu_product(ctx, w, xq, xq_room, xs, xs_room, n, bias, out, out_room);
+    begun = llm_gpu_product(ctx, w, xq, xq_room, xs, xs_room, n, bias, out, out_room);
     gpu_time.product_us += micros(kosmos_ticks() - began);
-    if (no != 0) return -1;
+    if (begun > 0) ran_gpu |= want;
+    return begun;
+}
 
-    ran_gpu |= want;
-    return 0;
+static int gpu_done(void *ctx)
+{
+    unsigned long began = kosmos_ticks();
+    int no = llm_gpu_done(ctx);
+
+    gpu_time.product_us += micros(kosmos_ticks() - began);
+    return no;
 }
 
 /* Whether there is a GPU, asked once at start: the driver always answers,
@@ -694,7 +717,7 @@ static void gpu_offer(void)
         gpu_began = true;
     }
 
-    llm_offload(&model.m, gpu_product, &gpu);
+    llm_offload(&model.m, gpu_product, gpu_done, &gpu);
 }
 
 /* A model let go: the GPU's buffers of its weights first. */
@@ -889,14 +912,17 @@ static void answer_end(void)
         char line[320];
 
         snprintf(line, sizeof line, "llm: the GPU ran %llu products, %llu ms from asking to done "
-                 "(%llu ms asking), %llu polls, %llu ms in the products with their inputs and sums, %llu ms feeding the answer's tokens; the answer %llu ms; %llu MB laid out for it; %llu left (%s)\n",
+                 "(%llu ms asking), %llu polls, %llu ms in the products with their inputs and sums and waiting, %llu ms feeding the answer's tokens; the GPU had %llu%% of the rows, and was done first %llu times; the answer %llu ms; %llu MB laid out for it; %llu left (%s)\n",
                  (unsigned long long)gpu_time.runs, (unsigned long long)(gpu_time.run_us / 1000),
                  (unsigned long long)(gpu_time.ask_us / 1000), (unsigned long long)gpu_time.polls, (unsigned long long)(gpu_time.product_us / 1000), (unsigned long long)(gpu_time.feed_us / 1000),
+                 (unsigned long long)(gpu.rows_all ? gpu.rows_gpu * 100 / gpu.rows_all : 0),
+                 (unsigned long long)gpu_time.already,
                  (unsigned long long)((ans.prompt_us + ans.answer_us) / 1000),
                  (unsigned long long)(gpu.tiled_bytes >> 20), (unsigned long long)gpu.declined,
                  gpu.declined ? gpu.why : "none");
         say(console, line);
         memset(&gpu_time, 0, sizeof gpu_time);
+        gpu.rows_gpu = gpu.rows_all = 0;
     }
 
     /* Whatever was held back for a stop that did not come is shown now. */

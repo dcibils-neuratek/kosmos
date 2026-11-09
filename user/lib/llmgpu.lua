@@ -108,11 +108,36 @@ int block(int q0, int q1, int q2, int q3, int xv, int xsum) {
   return s - 8 * xsum;
 }
 
+// Input u's sum, a pair of blocks further on: the pair's two blocks of
+// nibbles, q and e, their scales h0 and h1, against input u's blocks b and
+// b + 1 - the first block's term added, then the second's, as the
+// processor adds them.
+float pair(float sum, int q0, int q1, int q2, int q3, int e0, int e1, int e2, int e3,
+           float h0, float h1, int u, int b) {
+  int x = (u * blocks + b) * 32;
+  int xa = loadi(xq, x + (lane & 7) * 4);
+  int xb = loadi(xq, x + 32 + (lane & 7) * 4);
+  int m = loadi(xm, (u * blocks + b) * 8 + (lane & 3) * 4);
+  float s = sum + float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * (h0 * asfloat(lanev(m, 0)));
+  return s + float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * (h1 * asfloat(lanev(m, 1)));
+}
+
+// **Four inputs a pass** (18.729): a pair of blocks read once and met by
+// four inputs, where one at a time read the weight again for each. A
+// pass's inputs past the last are the last again, worked out and not
+// stored. Each input's sum is its own, in its own order, so the answers
+// are the same.
 void main() {
   int r = group_x * simd + lane;
   int row = w_at + (r >> 4) * (blocks >> 1) * 576 + (r & 15) * 4;
-  for (int t = 0; t < inputs; t += 1) {
-    float sum = 0.0;
+  for (int t = 0; t < inputs; t += 4) {
+    int t1 = min(t + 1, inputs - 1);
+    int t2 = min(t + 2, inputs - 1);
+    int t3 = min(t + 3, inputs - 1);
+    float s0 = 0.0;
+    float s1 = 0.0;
+    float s2 = 0.0;
+    float s3 = 0.0;
     for (int b = 0; b < blocks; b += 2) {
       int at = row + (b >> 1) * 576;
       int d0 = loadi(w, at);
@@ -121,28 +146,32 @@ void main() {
       int d3 = loadi(w, at + 192);
       int d4 = loadi(w, at + 256);
 
-      // The pair's inputs, read once for every lane: a lane each of the
-      // 64 bytes of values, and of the record of two scales and two sums.
-      int x = (t * blocks + b) * 32;
-      int xa = loadi(xq, x + (lane & 7) * 4);
-      int xb = loadi(xq, x + 32 + (lane & 7) * 4);
-      int m = loadi(xm, (t * blocks + b) * 8 + (lane & 3) * 4);
-
       // The first block: its scale the low half of d0, its nibble bytes
-      // the high half of d0, d1 to d3, and the low half of d4.
+      // the high half of d0, d1 to d3, and the low half of d4. The
+      // second: its scale the high half of d4, its bytes the next four.
       int q0 = ((d0 >> 16) & 65535) | (d1 << 16);
       int q1 = ((d1 >> 16) & 65535) | (d2 << 16);
       int q2 = ((d2 >> 16) & 65535) | (d3 << 16);
       int q3 = ((d3 >> 16) & 65535) | (d4 << 16);
-      int s = block(q0, q1, q2, q3, xa, lanev(m, 2));
-      sum += float(s) * (half(d0 & 65535) * asfloat(lanev(m, 0)));
+      int e0 = loadi(w, at + 320);
+      int e1 = loadi(w, at + 384);
+      int e2 = loadi(w, at + 448);
+      int e3 = loadi(w, at + 512);
+      float h0 = half(d0 & 65535);
+      float h1 = half((d4 >> 16) & 65535);
 
-      // The second: its scale the high half of d4, its bytes d5 to d8.
-      s = block(loadi(w, at + 320), loadi(w, at + 384), loadi(w, at + 448), loadi(w, at + 512), xb, lanev(m, 3));
-      sum += float(s) * (half((d4 >> 16) & 65535) * asfloat(lanev(m, 1)));
+      s0 = pair(s0, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t, b);
+      if (inputs > 1) {
+        s1 = pair(s1, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t1, b);
+        s2 = pair(s2, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t2, b);
+        s3 = pair(s3, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t3, b);
+      }
     }
     if (r < rows) {
-      store(out, (t * rows + r) * 4, sum);
+      store(out, (t * rows + r) * 4, s0);
+      if (t + 1 < inputs) { store(out, (t1 * rows + r) * 4, s1); }
+      if (t + 2 < inputs) { store(out, (t2 * rows + r) * 4, s2); }
+      if (t + 3 < inputs) { store(out, (t3 * rows + r) * 4, s3); }
     }
   }
 }

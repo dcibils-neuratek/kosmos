@@ -16,7 +16,7 @@
  *
  *   static struct llm_gpu g;
  *   if (llm_gpu_begin(&g, &device, why, sizeof why) == 0)
- *     llm_offload(&model, llm_gpu_product, &g);
+ *     llm_offload(&model, llm_gpu_product, llm_gpu_done, &g);
  */
 
 #ifndef KOSMOS_LLM_GPU_H
@@ -44,14 +44,19 @@ struct llm_gpu_device {
    * model is unloaded. */
   void (*forget)(void *ctx, uint32_t id);
 
-  /* A run, done before it answers: `groups` thread groups of `simd`
+  /* A run begun, and not waited for: `groups` thread groups of `simd`
    * lanes, the buffers by id in the kernel's order, and its constants. */
   const char *(*run)(void *ctx, uint32_t kernel, uint32_t simd, uint32_t groups,
                      const uint32_t *buffers, uint32_t nbuffers, const void *constants,
                      size_t nconstants);
+
+  /* The run begun waited for; `*already` whether it had finished before
+   * this was asked - which is how the rows are shared out (G5). */
+  const char *(*wait)(void *ctx, int *already);
 };
 
 #define LLM_GPU_TENSORS 512u     /* weights laid out for it, one buffer each */
+#define LLM_GPU_SHARE_STEP 8u    /* of 1024, a product's change of share */
 
 struct llm_gpu {
   struct llm_gpu_device dev;
@@ -70,7 +75,18 @@ struct llm_gpu {
   void *xq, *xm, *out;
   size_t xq_bytes, xm_bytes, out_bytes;
 
-  uint64_t products;             /* taken here */
+  /* The product begun and not yet finished (`llm_gpu_done`). */
+  struct { int on; float *out; size_t out_room; const float *bias; uint32_t n, rows; } pending;
+
+  /* **How much of a product the GPU begins** (G5), out of 1024: a
+   * question's and an answer's apart, since the GPU and the processor
+   * differ in each. A step up when the GPU was done before the processor's
+   * rows were, a step down when it was still running - so the two finish
+   * together, and nothing here needs a clock. */
+  uint32_t share[2];
+
+  uint64_t products;             /* taken here, whole or in part */
+  uint64_t rows_gpu, rows_all;   /* the rows begun here, of every product's offered */
   uint64_t declined;             /* offered and left to the processor */
   char why[160];                 /* why the last one was left, if it was */
 };
@@ -82,9 +98,11 @@ int llm_gpu_begin(struct llm_gpu *g, const struct llm_gpu_device *dev, char *why
  * sums' kept. The kernel stays: it is the same for the next model. */
 void llm_gpu_forget(struct llm_gpu *g);
 
-/* `llm_product_fn`, for `llm_offload` with a `struct llm_gpu`. Declines,
- * and says why in `g->why`, what the kernel does not take: a weight not in
- * Q4_0, an odd number of blocks to a row, or a device that refused. */
+/* `llm_product_fn` and `llm_product_done_fn`, for `llm_offload` with a
+ * `struct llm_gpu`. Declines, and says why in `g->why`, what the kernel
+ * does not take: a weight not in Q4_0, an odd number of blocks to a row, or
+ * a device that refused. */
 llm_product_fn llm_gpu_product;
+llm_product_done_fn llm_gpu_done;
 
 #endif

@@ -49,8 +49,15 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   GELU from a table. The processor alone: 4.65 on four cores, 5.44 on
   eight (18.729). The M700 is left on the GPU, one core.
 
-**Next**: G5 - each product's rows split between the GPU and the
-processor at once; the pool's workers waiting without spinning.
+- **0.11.336, G5**: a product shared between the GPU and the processor
+  at once, the share learned per product: 5.46 tokens a second writing on
+  four cores, against 4.65 alone - and the two together read at the rate
+  each reads alone, so the M700's memory is what writing waits for. Four
+  inputs a pass on the GPU: a question of 88 tokens in 14.2 s, against
+  17.5 s on the processor (18.730).
+
+**Next**: Diego's call - more of G5 (byte operands in `kc`, for a
+question about twice as fast on the GPU) or voice (X8).
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 

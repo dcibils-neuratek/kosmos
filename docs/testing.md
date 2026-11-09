@@ -29784,3 +29784,39 @@ is the next step; the pool's workers spin while they wait, which costs the
 one core doing the work about 10% (4 cores 4.25, 1 core 4.51).
 
 **The gate**: 105 of 106 in 10:43. `x86-share-2`'s Samba peer on the Mac was not answering when it was asked; alone it passed, 33 of 33.
+
+## 18.730 X7 G5: a product shared between the GPU and the processor, and four inputs a pass
+
+**Shared**: the kit's hook (`llm_product_fn`) answers how many of a
+product's first rows it has begun on the GPU, the processor's pool makes
+the rest at the same time, and `llm_gpu_done` collects the GPU's. The
+GPU's share moves by 8 of 1024 a product - up when it had finished before
+the processor's rows, down when not - a question's and an answer's apart;
+no clock. `test_llm --gpu`, 83, its GPU check now also that some rows were
+on each side (14080 of 28160 on the GPU): **control**, the processor's
+rows begun at nought rather than where the GPU's end - 34 of 83 fail.
+
+On the M700, phi-2, "What is a microkernel?", 40 tokens, the processor's
+answer every time:
+
+| | tokens a second |
+|---|---|
+| shared, 4 cores (the GPU 38% of the rows) | **5.46** |
+| shared, 8 cores (74%) | 4.58 |
+| shared, 1 core (66%) | 5.06 |
+| the processor alone, 4 cores / 8 cores | 4.65 / 5.44 |
+
+**The two do not add up**, and that is the finding: shared, they read
+1.42 GB a token at 7.8 GB/s, the rate each reached alone. The M700's
+memory is what writing waits for, whoever multiplies; the GPU's use in an
+answer is that it leaves the processor's cores free (one core, 5.06).
+
+**Four inputs a pass** (`llmgpu.lua`, `pair`): a pair of blocks read once
+and met by four of a question's inputs, each input's sum its own and in
+its own order. `test_llmgpu`, 16 checks with a case of six inputs - a
+second pass part full (**control**: the product's order swapped, 8 of
+16). 68997 instructions a thread for four inputs against 19662 for one:
+the dots are most of it. A question of 88 tokens, in one boot: **14.2 s
+shared** (the GPU 35% of the rows), **17.5 s on the processor alone** -
+19% sooner to the first word. In a batch the GPU is held by its
+arithmetic, at about half the processor's rate.

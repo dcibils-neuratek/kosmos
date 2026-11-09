@@ -26,6 +26,7 @@ int llm_gpu_begin(struct llm_gpu *g, const struct llm_gpu_device *dev, char *why
   memset(g, 0, sizeof *g);
   g->dev = *dev;
   g->simd = LLMGPU_Q4_0_SIMD;
+  g->share[0] = g->share[1] = 512;
 
   if ((no = dev->kernel(dev->ctx, llmgpu_q4_0, sizeof llmgpu_q4_0, &g->kernel)) != NULL) {
     size_t n = strlen(no);
@@ -121,18 +122,23 @@ static const char *weight(struct llm_gpu *g, const struct llm_tensor *w, uint32_
   return NULL;
 }
 
-int llm_gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
-                    const float *xs, size_t xs_room, uint32_t n, const float *bias,
-                    float *out, size_t out_room)
+int64_t llm_gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
+                        const float *xs, size_t xs_room, uint32_t n, const float *bias,
+                        float *out, size_t out_room)
 {
   struct llm_gpu *g = ctx;
-  uint64_t cols = w->ne[0], rows = w->ne[1], blocks = cols / LLM_QK;
+  uint64_t cols = w->ne[0], all = w->ne[1], blocks = cols / LLM_QK, rows;
   uint32_t wid, ids[4];
   const char *no;
 
   if (w->type != LLM_Q4_0) return declined(g, "not a Q4_0 weight");
   if (blocks == 0 || blocks % 2 != 0) return declined(g, "an odd number of blocks to a row");
-  if (rows == 0 || rows > 0x7fffffffu / 4u || n == 0) return declined(g, "no rows");
+  if (all == 0 || all > 0x7fffffffu / 4u || n == 0) return declined(g, "no rows");
+
+  /* The GPU's rows: its share, in whole tiles, the first of them. */
+  rows = all * g->share[n > 1] / 1024u / LLMGPU_TILE * LLMGPU_TILE;
+  if (rows == 0) rows = LLMGPU_TILE;
+  if (rows > all) rows = all;
 
   if ((no = weight(g, w, &wid)) != NULL
       || (no = room_for(g, (size_t)n * blocks * 32u, 0, &g->xq_id, &g->xq, &g->xq_bytes)) != NULL
@@ -177,15 +183,49 @@ int llm_gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, si
                        constants, sizeof constants)) != NULL)
     return declined(g, no);
 
+  g->pending.on = 1;
+  g->pending.out = out;
+  g->pending.out_room = out_room;
+  g->pending.bias = bias;
+  g->pending.n = n;
+  g->pending.rows = (uint32_t)rows;
+  g->products++;
+  g->rows_gpu += rows * n;
+  g->rows_all += all * n;
+  return (int64_t)rows;
+}
+
+int llm_gpu_done(void *ctx)
+{
+  struct llm_gpu *g = ctx;
+  uint32_t n = g->pending.n, rows = g->pending.rows, *share = &g->share[n > 1];
+  int already = 0;
+  const char *no;
+
+  if (!g->pending.on) return -1;
+
+  g->pending.on = 0;
+
+  if ((no = g->dev.wait(g->dev.ctx, &already)) != NULL) {
+    (void)declined(g, no);
+    return -1;
+  }
+
+  /* The share moved for the next one: more when the GPU had finished
+   * first, less when the processor had. */
+  if (already) *share = *share + LLM_GPU_SHARE_STEP > 1024u ? 1024u : *share + LLM_GPU_SHARE_STEP;
+  else *share = *share > 2u * LLM_GPU_SHARE_STEP ? *share - LLM_GPU_SHARE_STEP : LLM_GPU_SHARE_STEP;
+
   /* The sums, and the bias added as the processor adds it. */
   const float *sums = g->out;
+  float *out = g->pending.out;
+  const float *bias = g->pending.bias;
 
   for (uint32_t t = 0; t < n; t++)
-    for (uint64_t r = 0; r < rows; r++) {
+    for (uint32_t r = 0; r < rows; r++) {
       float v = sums[(size_t)t * rows + r];
-      out[t * out_room + r] = bias ? v + bias[r] : v;
+      out[t * g->pending.out_room + r] = bias ? v + bias[r] : v;
     }
 
-  g->products++;
   return 0;
 }

@@ -199,6 +199,17 @@ static const char *emu_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t g
   return NULL;
 }
 
+/* The emulator has finished by the time it answers; it says so every
+ * other time, so the share is moved both ways. */
+static const char *emu_wait(void *ctx, int *already)
+{
+  static unsigned calls;
+
+  (void)ctx;
+  *already = calls++ & 1;
+  return NULL;
+}
+
 static struct llm_gpu gpu;
 static int with_gpu;
 
@@ -227,16 +238,20 @@ static void check_gpu(struct llm_model *m)
   uint64_t taken = gpu.products - before;
 
   /* And on the processor alone. */
-  llm_offload(m, NULL, NULL);
+  llm_offload(m, NULL, NULL, NULL);
   llm_reset(m);
   ok = ok && llm_step_batch(m, t, (uint32_t)n) == 0;
   ok = ok && llm_step(m, 13) == 0 && llm_step(m, 464) == 0;
-  llm_offload(m, llm_gpu_product, &gpu);
+  llm_offload(m, llm_gpu_product, llm_gpu_done, &gpu);
 
   int same = ok && memcmp(theirs, m->logits, m->n_vocab * sizeof *theirs) == 0;
+  /* And shared: some rows on the GPU and the rest on the processor. */
+  int shared = gpu.rows_gpu > 0 && gpu.rows_gpu < gpu.rows_all;
+
   snprintf(what, sizeof what, "gpu: %d tokens as a batch and two after, the GPU's logits the "
-           "processor's to the bit (%llu products on the GPU)", n, (unsigned long long)taken);
-  check(same && taken > 0, what);
+           "processor's to the bit (%llu products begun on the GPU, %llu of %llu rows there)", n,
+           (unsigned long long)taken, (unsigned long long)gpu.rows_gpu, (unsigned long long)gpu.rows_all);
+  check(same && taken > 0 && shared, what);
   printf("gpu: %llu products on the GPU, %llu left to the processor (%s), %llu instructions emulated\n",
          (unsigned long long)gpu.products, (unsigned long long)gpu.declined,
          gpu.declined ? gpu.why : "none", (unsigned long long)emu_instructions);
@@ -665,14 +680,14 @@ int main(int argc, char **argv)
   check_gelu();
 
   if (with_gpu) {
-    static const struct llm_gpu_device dev = { NULL, emu_kernel_given, emu_buffer, emu_forget, emu_run };
+    static const struct llm_gpu_device dev = { NULL, emu_kernel_given, emu_buffer, emu_forget, emu_run, emu_wait };
 
     if (llm_gpu_begin(&gpu, &dev, why, sizeof why) != 0) {
       printf("FAIL: the GPU path would not begin: %s\n", why);
       return 1;
     }
 
-    llm_offload(&m, llm_gpu_product, &gpu);
+    llm_offload(&m, llm_gpu_product, llm_gpu_done, &gpu);
   }
 
   static char line[1 << 16];

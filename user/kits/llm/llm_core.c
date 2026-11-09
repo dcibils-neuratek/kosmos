@@ -1041,6 +1041,7 @@ struct product {
   size_t x_room, out_room;
   float *out;
   uint32_t n;
+  uint64_t first;                /* the rows before it are another's (X7 G5) */
 };
 
 /* Rows `r0` up to `r1` of a product, for every input. */
@@ -1076,9 +1077,9 @@ static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
 static void product_part(void *job, uint32_t part, uint32_t parts)
 {
   const struct product *p = job;
-  uint64_t rows = p->w->ne[1];
+  uint64_t rows = p->w->ne[1] - p->first;
 
-  product_rows(p, rows * part / parts, rows * (part + 1) / parts);
+  product_rows(p, p->first + rows * part / parts, p->first + rows * (part + 1) / parts);
 }
 
 /*
@@ -1107,22 +1108,30 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
                     (uint32_t)w->ne[0]);
 
   struct product p = { m, w, bias ? (const float *)(const void *)bias->data : NULL, x, x_room,
-                       out_room, out, n };
+                       out_room, out, n, 0 };
+  int64_t begun = -1;
 
-  /* Offered to the GPU first (X7): the same sums, to the bit, or no. */
-  if (m->product && w->type == LLM_Q4_0
-      && m->product(m->product_ctx, w, m->xq, m->xq_room, m->xs, m->xs_room, n, p.b, out, out_room) == 0)
-    return;
+  /* Offered to the GPU first (X7): the first rows begun there, the same
+   * sums to the bit, and the rest here at the same time (G5). */
+  if (m->product && w->type == LLM_Q4_0)
+    begun = m->product(m->product_ctx, w, m->xq, m->xq_room, m->xs, m->xs_room, n, p.b, out, out_room);
 
-  if (m->run && m->parts > 1 && w->ne[1] >= 256u * m->parts)
-    m->run(m->run_ctx, product_part, &p, m->parts);
-  else
-    product_rows(&p, 0, w->ne[1]);
+  if (begun > 0) p.first = (uint64_t)begun < w->ne[1] ? (uint64_t)begun : w->ne[1];
+
+  if (p.first < w->ne[1]) {
+    if (m->run && m->parts > 1 && w->ne[1] - p.first >= 256u * m->parts)
+      m->run(m->run_ctx, product_part, &p, m->parts);
+    else
+      product_rows(&p, p.first, w->ne[1]);
+  }
+
+  if (begun > 0 && m->product_done(m->product_ctx) != 0) product_rows(&p, 0, p.first);
 }
 
-void llm_offload(struct llm_model *m, llm_product_fn *product, void *ctx)
+void llm_offload(struct llm_model *m, llm_product_fn *product, llm_product_done_fn *done, void *ctx)
 {
   m->product = product;
+  m->product_done = done;
   m->product_ctx = ctx;
 }
 
