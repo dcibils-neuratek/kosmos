@@ -29,12 +29,17 @@ local TEXT_MAX = 1536
 local STOP_MAX = 24
 local CONVERSATION_MAX = 256 * 1024
 
--- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 912: 424 of
+-- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 1040: 424 of
 -- the model and the last answer, then since the server started and who
--- has asked (`ASKER`, eight of them).
+-- has asked (`ASKER`, eight of them), then where the last answer's time
+-- went (`STAGES`, at 913).
 local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24I4I4I4I4"
 local REPLY = "<I4I4I4I4c64c64c16c96I8I8I4I4I4I4I4I4I8I8I8I8I8I4I4I4I4I4I4I4I4I4I4c32I4I4I4I4"
-local REPLY_SIZE = 912
+local REPLY_SIZE = 1040
+local STAGES, AT_STAGES = "<I8I8I8I8I8I8I8I8", 913
+
+-- The forward pass's stages, as `llm_core.h` numbers them (LLM_STAGE_*).
+llm.STAGES = { "embedding", "norms", "products", "rope", "attention", "gelu", "sums" }
 local SINCE = "<I8I8I8I4I4I4I4"
 local ASKER = "<c16I4I4I4I4I8I8I8"
 local ASKERS, ASKER_SIZE = 8, 56
@@ -138,6 +143,15 @@ local function call(op, fields, pass)
                                   read_tokens = read, written_tokens = written, last_us = last_us,
                                   answering = r.answering == i, loading = r.loading_for == i }
     end
+  end
+
+  -- Where the last answer's time went, reading and writing apart.
+  local read = table.pack(string.unpack(STAGES, reply, AT_STAGES))
+  local wrote = table.pack(string.unpack(STAGES, reply, AT_STAGES + 64))
+  r.read_stages, r.write_stages = {}, {}
+
+  for i, name in ipairs(llm.STAGES) do
+    r.read_stages[name], r.write_stages[name] = read[i], wrote[i]
   end
 
   -- A reply with no capability says -1.

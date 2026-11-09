@@ -548,6 +548,7 @@ bad_tensor:
   m->head_dim = m->n_embd / m->n_head;
   m->n_rot = (uint32_t)arch_number(m, "rope.dimension_count", m->head_dim);
   if (m->n_rot > m->head_dim || (m->n_rot & 1)) { say(why, room, "a bad rotary size"); return -1; }
+  if (m->head_dim > LLM_HEAD_DIM_MAX) { say(why, room, "a head wider than the kit's attention takes"); return -1; }
 
   uint32_t E = m->n_embd;
 
@@ -619,7 +620,7 @@ bad_tensor:
   m->x = alloc(ctx, B * E * 4);
   m->xn = alloc(ctx, B * E * 4);
   m->qkv = alloc(ctx, B * 3 * E * 4);
-  m->att = alloc(ctx, (size_t)m->n_ctx * 4);
+  m->att = alloc(ctx, (size_t)m->n_ctx * 4 * LLM_ATTENTION_PARTS);
   m->attn_out = alloc(ctx, B * E * 4);
   m->ff = alloc(ctx, B * m->n_ff * 4);
   m->ff_out = alloc(ctx, B * E * 4);
@@ -1188,6 +1189,23 @@ int llm_use_loops(struct llm_model *m, unsigned which)
   return (int)which;
 }
 
+void llm_clock(struct llm_model *m, llm_clock_fn *clock)
+{
+  m->clock = clock;
+}
+
+/* The time since `*since` to `stage`, and the clock read again: called as
+ * each stage ends, so the stages tile the pass with nothing between. */
+static inline void lap(struct llm_model *m, uint64_t *since, uint32_t stage)
+{
+  if (m->clock) {
+    uint64_t now = m->clock();
+
+    m->stage_counts[stage] += now - *since;
+    *since = now;
+  }
+}
+
 void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts)
 {
   m->run = parts > 1 ? run : NULL;
@@ -1412,6 +1430,91 @@ int llm_step(struct llm_model *m, int32_t token)
   return llm_step_batch(m, &token, 1);
 }
 
+/*
+ * **Attention for one token and one head**, over every position up to the
+ * token's own: the query meets the F16 cache as F16, and so do the
+ * probabilities, as ggml's `flash_attn`-less path has it.
+ *
+ * Each sum is taken in the same order it always was - over the head's
+ * values for a score, over the positions for an output - so cutting the
+ * jobs across cores, rounding the query once rather than once a position,
+ * and walking the value cache a row at a time change no bit of it. Only
+ * where the work happens moved (testing.md 18.733).
+ */
+static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, float *att,
+                   const uint16_t *kc, const uint16_t *vc)
+{
+  const uint32_t E = m->n_embd, D = m->head_dim;
+  const uint32_t pos = m->n_past + t;
+  const float *qh = m->qkv + (size_t)t * 3 * E + h * D;
+  float qr[LLM_HEAD_DIM_MAX];
+  double acc[LLM_HEAD_DIM_MAX];
+  float max = -INFINITY;
+
+  for (uint32_t i = 0; i < D; i++) qr[i] = llm_f16_to_f32(llm_f32_to_f16(qh[i]));
+
+  for (uint32_t p = 0; p <= pos; p++) {
+    const uint16_t *kt = kc + (size_t)p * E + h * D;
+    double sum = 0;
+
+    for (uint32_t i = 0; i < D; i++) sum += (double)(qr[i] * llm_f16_to_f32(kt[i]));
+    att[p] = (float)sum;
+    if (att[p] > max) max = att[p];
+  }
+
+  double sum = 0;
+  for (uint32_t p = 0; p <= pos; p++) {
+    att[p] = (float)exp((double)(att[p] - max));
+    sum += (double)att[p];
+  }
+  float inv = (float)(1.0 / sum);
+
+  for (uint32_t p = 0; p <= pos; p++) att[p] = llm_f16_to_f32(llm_f32_to_f16(att[p] * inv));
+
+  if (m->passage && l < LLM_PASSAGE_LAYERS && h < LLM_PASSAGE_HEADS) {
+    uint32_t best = 0;
+
+    for (uint32_t p = 1; p <= pos; p++)
+      if (att[p] > att[best]) best = p;
+
+    m->passage[t].layer[l].back[h] = (uint16_t)(pos - best > 65535u ? 65535u : pos - best);
+    m->passage[t].layer[l].share[h] = (uint16_t)(att[best] * 65535.0f + 0.5f);
+  }
+
+  /* Each output the sum over the positions in order, as before; the cache
+   * read a row at a time rather than a row apart at every step. */
+  for (uint32_t i = 0; i < D; i++) acc[i] = 0;
+  for (uint32_t p = 0; p <= pos; p++) {
+    const uint16_t *vt = vc + (size_t)p * E + h * D;
+    const float a = att[p];
+
+    for (uint32_t i = 0; i < D; i++) acc[i] += (double)(a * llm_f16_to_f32(vt[i]));
+  }
+
+  float *o = m->attn_out + (size_t)t * E + h * D;
+  for (uint32_t i = 0; i < D; i++) o[i] = (float)acc[i];
+}
+
+struct attention {
+  struct llm_model *m;
+  uint32_t l, n;
+  const uint16_t *kc, *vc;
+};
+
+/* Part `part` of a layer's attention: every `parts`-th (token, head), so
+ * the late tokens, which have the most positions to look over, are shared
+ * out rather than left to the last part. Each part has a row of `att` of
+ * its own, and each job writes only its own head's output. */
+static void attention_part(void *job, uint32_t part, uint32_t parts)
+{
+  const struct attention *a = job;
+  struct llm_model *m = a->m;
+  float *att = m->att + (size_t)part * m->n_ctx;
+
+  for (uint32_t j = part; j < a->n * m->n_head; j += parts)
+    attend(m, a->l, j / m->n_head, j % m->n_head, att, a->kc, a->vc);
+}
+
 int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 {
   if (n == 0 || n > LLM_BATCH || m->n_past + n > m->n_ctx) return -1;
@@ -1428,6 +1531,8 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 #define FF(t)   (m->ff + (size_t)(t) * F)
 #define ATTN(t) (m->ff_out + (size_t)(t) * E)
 
+  uint64_t since = m->clock ? m->clock() : 0;
+
   for (uint32_t t = 0; t < n; t++) embedding_row(m->tok_embd, (uint32_t)tokens[t], X(t));
 
   if (m->passage) {
@@ -1442,6 +1547,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       p->n_ff = F;
     }
   }
+  lap(m, &since, LLM_STAGE_EMBED);
 
   for (uint32_t l = 0; l < m->n_layer; l++) {
     const struct llm_layer *L = &m->layers[l];
@@ -1450,6 +1556,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       layer_norm(X(t), XN(t), E, L->norm_w, L->norm_b, m->norm_eps);
       TRACE("attn_norm", l, XN(t), E);
     }
+    lap(m, &since, LLM_STAGE_NORM);
 
     /* Q, K and V: one product, or three over the same quantised input. */
     if (L->qkv_w) {
@@ -1459,6 +1566,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       matmul(m, L->k_w, L->k_b, m->xn, E, m->qkv + E, 3 * E, n, L->k_w->type == L->q_w->type);
       matmul(m, L->v_w, L->v_b, m->xn, E, m->qkv + 2 * E, 3 * E, n, L->v_w->type == L->q_w->type);
     }
+    lap(m, &since, LLM_STAGE_PRODUCTS);
 
     uint16_t *kc = m->k_cache + ((size_t)l * m->n_ctx) * E;
     uint16_t *vc = m->v_cache + ((size_t)l * m->n_ctx) * E;
@@ -1486,63 +1594,28 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
         vc[(size_t)pos * E + i] = llm_f32_to_f16(v[i]);
       }
     }
+    lap(m, &since, LLM_STAGE_ROPE);
 
-    /* Attention, a token and a head at a time, over every position up to
-     * the token's own. The query meets the F16 cache as F16, and so do the
-     * probabilities. */
-    for (uint32_t t = 0; t < n; t++) {
-      const uint32_t pos = m->n_past + t;
-      float *q = QKV(t);
+    /* Attention: a (token, head) a job, the jobs dealt across the cores
+     * where the caller gave a way to (`attend`). */
+    {
+      struct attention job = { m, l, n, kc, vc };
+      uint32_t parts = m->run && m->parts > 1 && m->parts <= LLM_ATTENTION_PARTS ? m->parts : 1;
 
-      for (uint32_t h = 0; h < m->n_head; h++) {
-        float *qh = q + h * D, *att = m->att;
-        float max = -INFINITY;
-
-        for (uint32_t p = 0; p <= pos; p++) {
-          const uint16_t *kt = kc + (size_t)p * E + h * D;
-          double sum = 0;
-          for (uint32_t i = 0; i < D; i++)
-            sum += (double)(llm_f16_to_f32(llm_f32_to_f16(qh[i])) * llm_f16_to_f32(kt[i]));
-          att[p] = (float)sum;
-          if (att[p] > max) max = att[p];
-        }
-
-        double sum = 0;
-        for (uint32_t p = 0; p <= pos; p++) {
-          att[p] = (float)exp((double)(att[p] - max));
-          sum += (double)att[p];
-        }
-        float inv = (float)(1.0 / sum);
-
-        for (uint32_t p = 0; p <= pos; p++) att[p] = llm_f16_to_f32(llm_f32_to_f16(att[p] * inv));
-
-        if (m->passage && l < LLM_PASSAGE_LAYERS && h < LLM_PASSAGE_HEADS) {
-          uint32_t best = 0;
-
-          for (uint32_t p = 1; p <= pos; p++)
-            if (att[p] > att[best]) best = p;
-
-          m->passage[t].layer[l].back[h] = (uint16_t)(pos - best > 65535u ? 65535u : pos - best);
-          m->passage[t].layer[l].share[h] = (uint16_t)(att[best] * 65535.0f + 0.5f);
-        }
-
-        float *o = AOUT(t) + h * D;
-        for (uint32_t i = 0; i < D; i++) {
-          double s = 0;
-          for (uint32_t p = 0; p <= pos; p++)
-            s += (double)(att[p] * llm_f16_to_f32(vc[(size_t)p * E + h * D + i]));
-          o[i] = (float)s;
-        }
-      }
-
-      TRACE("kqv_out", l, AOUT(t), E);
+      if (parts > 1) m->run(m->run_ctx, attention_part, &job, parts);
+      else attention_part(&job, 0, 1);
     }
+#ifdef LLM_TRACE
+    for (uint32_t t = 0; t < n; t++) TRACE("kqv_out", l, AOUT(t), E);
+#endif
+    lap(m, &since, LLM_STAGE_ATTENTION);
 
     /* The attention's output, and the MLP beside it off the same norm,
      * which `xn` still holds: phi-2's layer is the two in parallel. Q, K
      * and V are done with, so the MLP's output borrows their room. */
     matmul(m, L->o_w, L->o_b, m->attn_out, E, m->ff_out, E, n, 0);
     matmul(m, L->up_w, L->up_b, m->xn, E, m->ff, F, n, 0);
+    lap(m, &since, LLM_STAGE_PRODUCTS);
 
     for (uint32_t t = 0; t < n; t++) {
       TRACE("attn_out", l, ATTN(t), E);
@@ -1557,8 +1630,10 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       for (uint32_t i = 0; i < F; i++) FF(t)[i] = gelu(FF(t)[i]);
       TRACE("ffn_gelu", l, FF(t), F);
     }
+    lap(m, &since, LLM_STAGE_GELU);
 
     matmul(m, L->down_w, L->down_b, m->ff, F, m->qkv, 3 * E, n, 0);
+    lap(m, &since, LLM_STAGE_PRODUCTS);
 
     /* ggml's order: the two added, then the residual. */
     for (uint32_t t = 0; t < n; t++) {
@@ -1575,12 +1650,15 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
         m->passage[t].layer[l].stream = (float)sqrt(sq);
       }
     }
+    lap(m, &since, LLM_STAGE_ADD);
   }
 
   /* Only the last token's logits: what follows the batch. */
   layer_norm(X(n - 1), XN(n - 1), E, m->out_norm_w, m->out_norm_b, m->norm_eps);
   TRACE("result_norm", 0, XN(n - 1), E);
+  lap(m, &since, LLM_STAGE_NORM);
   matmul(m, m->out_w, m->out_b, XN(n - 1), E, m->logits, 0, 1, 0);
+  lap(m, &since, LLM_STAGE_PRODUCTS);
   TRACE("result_output", 0, m->logits, m->n_vocab);
 
 #undef X

@@ -976,6 +976,12 @@ passage at the prompt with `llm inside`.
 - **At the prompt**: `llm inside <question>` asks it and says every
   token's passage on a line and the last one's layers; `llm inside`, the
   last token the ring holds.
+- **The attention sink stays in the grid** (Diego, 9 November, "2"). On
+  the M700 almost every one of phi-2's heads looks hardest at the
+  prompt's newline, at 60 to 100% - a token a head parks its attention on
+  when it has nothing to read - so the grid is bright nearly everywhere.
+  Leaving the sink out, so the heads that read words stand out, was
+  offered and declined: the page shows what the model does, as it does it.
 - **The proof** (`testing.md` 18.732): `test_llm`, a watched model's
   logits the unwatched ones' to the bit, a batch's records a token at a
   time's, and every head's strongest look worked out again in the test

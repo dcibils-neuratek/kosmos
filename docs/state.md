@@ -72,8 +72,12 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   products ran; `llm inside <question>` says the same at the prompt.
   `test_llm` 90, `x86-llmmon` 15, every check with a control (18.732).
 
-**Next**: the page on the M700 with phi-2, for a picture of 32 layers.
-Then a question's processor part (attention, norms, GELU - 7 of its 12 s)
+- **0.11.339**: the page on the M700 with phi-2, 32 layers of 32 heads;
+  the side panel moved past the grid's labels. Almost every head looks at
+  the prompt's newline, an attention sink; Diego chose to keep it shown
+  (18.732).
+
+**Next**: a question's processor part (attention, norms, GELU - 7 of its 12 s)
 is where the time is.
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)

@@ -52,6 +52,23 @@ local function show(r)
     print(("last answer:   %d cores, loops %s, GPU %s; %d tokens in %.2f s, question %d tokens in %.2f s")
           :format(r.ran.cores, NAMES[r.ran.loops] or r.ran.loops, GPU_WORDS[r.ran.gpu or 0] or "?",
                   r.answer_tokens, r.answer_us / 1e6, r.prompt_tokens, r.prompt_us / 1e6))
+
+    -- Where that time went, a stage at a time: the products are the
+    -- GPU's and the processor's together, waiting included.
+    for _, way in ipairs({ { "question:", r.read_stages, r.prompt_us },
+                           { "answer:", r.write_stages, r.answer_us } }) do
+      local parts = {}
+
+      for _, name in ipairs(llm.STAGES) do
+        local us = way[2][name] or 0
+
+        if us >= 500 then
+          parts[#parts + 1] = ("%s %.2f s"):format(name, us / 1e6)
+        end
+      end
+
+      if #parts > 0 then print(("  %-12s %s"):format(way[1], table.concat(parts, ", "))) end
+    end
   end
 
   -- What the LLM Monitor shows, as lines (`xavier.md`, *The LLM Monitor*).

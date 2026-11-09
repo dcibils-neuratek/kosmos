@@ -79,6 +79,30 @@ typedef void *(*llm_alloc_fn)(void *ctx, size_t bytes);
  * kit runs on the thread that calls it.
  */
 typedef void llm_part_fn(void *job, uint32_t part, uint32_t parts);
+
+/* A counter that only goes up, in whatever units its owner keeps
+ * (`llm_clock`); the kit only ever subtracts two of its readings. */
+typedef uint64_t llm_clock_fn(void);
+
+/* The forward pass's stages, as `stage_counts` keeps them: the embedding
+ * row; the layer norms; the products (the GPU's and the processor's,
+ * waiting included); RoPE and the cache's writes; attention; GELU; and
+ * the residual sums. */
+#define LLM_STAGE_EMBED     0u
+#define LLM_STAGE_NORM      1u
+#define LLM_STAGE_PRODUCTS  2u
+#define LLM_STAGE_ROPE      3u
+#define LLM_STAGE_ATTENTION 4u
+#define LLM_STAGE_GELU      5u
+#define LLM_STAGE_ADD       6u
+#define LLM_STAGES          7u
+#define LLM_STAGES_MAX      8u
+
+/* Attention's limits: a head no wider than this, and the parts it is cut
+ * into no more than this, each with a row of `att` of its own. More parts
+ * than that, and attention stays on the calling thread. */
+#define LLM_HEAD_DIM_MAX    256u
+#define LLM_ATTENTION_PARTS 64u
 typedef void llm_run_fn(void *ctx, llm_part_fn *fn, void *job, uint32_t parts);
 
 /*
@@ -167,6 +191,12 @@ struct llm_model {
   /* Where each token's passage is recorded, `LLM_BATCH` of them, or NULL
    * (`llm_watch`). */
   struct llm_passage *passage;
+
+  /* **Where the time goes** (`llm_clock`): the forward pass's stages, in
+   * the clock's own counts, added up from the moment a clock was given.
+   * No clock, and nothing is counted. */
+  llm_clock_fn *clock;
+  uint64_t stage_counts[LLM_STAGES_MAX];
 };
 
 /*
@@ -217,6 +247,10 @@ void llm_watch(struct llm_model *m, struct llm_passage *into);
  * probabilities a softmax over the whole vocabulary, as the choice of the
  * next token sees them. */
 void llm_candidates(const struct llm_model *m, struct llm_passage *p);
+
+/* The forward pass's stages timed with `clock` from now on, into
+ * `m->stage_counts`; NULL for none. */
+void llm_clock(struct llm_model *m, llm_clock_fn *clock);
 
 /* Products in `parts` pieces through `run` from now on; NULL, or 1 part,
  * for the calling thread alone. */

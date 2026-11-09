@@ -29938,3 +29938,43 @@ anywhere else: layer 1's head 29 and layer 30's head 7, one token back.
 **0.11.339**: the side panel had been placed as if the grid's 56 pixels of
 labels were not there, and "stream" ran into "position"; it now starts
 past them. Layout only; `x86-llmmon` 15.
+
+## 18.733 Attention across the cores, and where a question's time goes
+
+**Why** (Diego, 9 November: "why is the llm os slow now? i am getting 1
+token per second"): Xavier's window sends the whole conversation, and on
+the M700 one had grown to a question of 463 tokens read in 165 s and an
+answer written at 1.2 tokens a second - against 5.5 at 33 tokens held.
+The difference grew with what was held, about 1.3 ms a token held for
+every token written, which is what attention cost as it was: one core, a
+token and a head at a time, the query rounded to F16 again for every
+position, and the value cache read a row apart at every step.
+
+**What changed** (`llm_core.c`, `attend`, `attention_part`): attention is
+a job per (token, head), dealt across the cores the products already use
+(`llm_parallel`), every `parts`-th job to a part so the late tokens of a
+question are shared out; each part has its own row of scores. The query
+is rounded once a head, and the value cache is read a row at a time with
+a double sum per output. **Every sum is taken in the order it was**, so
+nothing changes to the bit:
+
+- a program built against HEAD's kit and against the new one, phi-2
+  Q4_0, a question of 51 tokens and 40 answer steps: all 41 sets of
+  logits, 8,396,800 bytes, identical. **Control**: the outputs summed in
+  float - different from the first byte;
+- `test_llm`'s parallel check, four parts against one thread to the bit,
+  now covers attention as well as the products.
+
+**Where the time goes** (`llm_clock`, `stage_counts`): the forward pass's
+stages - embedding, norms, products, RoPE and the cache, attention,
+GELU, sums - timed with the caller's clock. The server gives the kit the
+counter and the reply carries the last answer's stages in microseconds,
+the question's and the answer's apart (`read_stage_us`,
+`write_stage_us`; the reply 912 -> 1040 bytes); `llm` prints them.
+`test_llm`, 91: with a clock that counts its own readings, a batch's
+stages add up to the readings after its first, attention, products and
+norms each took some, and with no clock nothing is counted. **Control**:
+a lap that does not move its start on - 190 against 19.
+
+`x86-llm` 57, `x86-xavier` 37, `x86-llmmon` 15: the answers through the
+server the kit's own, byte for byte.

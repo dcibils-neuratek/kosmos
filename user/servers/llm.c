@@ -60,7 +60,8 @@ static const char *models_root = "/Home/Models";
 #define ALLOCS        64u                   /* the kit's tables, a region each */
 
 _Static_assert(sizeof(struct llm_request) == 1688, "llm_request is 1688 bytes");
-_Static_assert(sizeof(struct llm_reply) == 912, "llm_reply is 912 bytes");
+_Static_assert(sizeof(struct llm_reply) == 1040, "llm_reply is 1040 bytes, as llm.lua reads it");
+_Static_assert(__builtin_offsetof(struct llm_reply, read_stage_us) == 912, "the stages at 912");
 _Static_assert(sizeof(struct llm_asker) == 56, "an asker is 56 bytes");
 _Static_assert(LLM_LOOPS_AUTO == LLM_KIT_LOOPS_AUTO && LLM_LOOPS_PLAIN == LLM_KIT_LOOPS_PLAIN
                && LLM_LOOPS_BASE == LLM_KIT_LOOPS_BASE && LLM_LOOPS_AVX2 == LLM_KIT_LOOPS_AVX2,
@@ -101,6 +102,13 @@ static uint64_t micros(unsigned long counts)
 {
     return (uint64_t)(counts / counter_hz) * 1000000ull
            + (uint64_t)(counts % counter_hz) * 1000000ull / counter_hz;
+}
+
+/* The kit's clock for its stages (`llm_clock`): the counter, in counts,
+ * which `micros` turns into time when a reply carries them. */
+static uint64_t stage_clock(void)
+{
+    return kosmos_ticks();
 }
 
 /* ------------------------------------------------------------------------
@@ -197,6 +205,8 @@ static struct {
     int32_t  next;                      /* the token to feed next, or -1 */
     unsigned long asked, began_answer, first_at;
     uint64_t prompt_us, answer_us, first_us;
+    uint64_t stage_at_ask[LLM_STAGES_MAX];      /* the kit's stage counts as it was asked */
+    uint64_t stage_at_answer[LLM_STAGES_MAX];   /* ... and as its question was read      */
     uint64_t answers;
 } ans = { .region = { .cap = -1 } };
 
@@ -315,6 +325,16 @@ static void describe(struct llm_reply *rp)
     rp->answer_us = ans.answer_us;
     rp->first_us = ans.first_us;
     rp->answers = ans.answers;
+
+    /* The stages: the question's from the ask to its last batch, and the
+     * answer's from there - or to now, while it is still being read. */
+    for (uint32_t s = 0; s < LLM_STAGES_MAX; s++) {
+        uint64_t now = model.m.stage_counts[s];
+        uint64_t answer_at = ans.began_answer != 0 ? ans.stage_at_answer[s] : now;
+
+        rp->read_stage_us[s] = micros((unsigned long)(answer_at - ans.stage_at_ask[s]));
+        rp->write_stage_us[s] = micros((unsigned long)(now - answer_at));
+    }
 
     if (ans.head != NULL) {
         rp->written = ans.head->written;
@@ -760,6 +780,8 @@ static void load_step(void)
         return;
     }
 
+    llm_clock(&model.m, stage_clock);
+
     /* The room a conversation needs, beside the model and gone with it: a
      * prompt of the whole cache, and the cache's tokens and text held. */
     ans.prompt = kit_alloc(NULL, ((size_t)model.m.n_ctx + 1) * sizeof(int32_t));
@@ -1103,6 +1125,8 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
     ans.asked = kosmos_ticks();
     ans.began_answer = 0;
     ans.prompt_us = ans.answer_us = ans.first_us = 0;
+    memcpy(ans.stage_at_ask, model.m.stage_counts, sizeof ans.stage_at_ask);
+    memcpy(ans.stage_at_answer, model.m.stage_counts, sizeof ans.stage_at_answer);
     model.state = LLM_STATE_ANSWERING;
 
     /* The settings as they stand now, for this whole answer. */
@@ -1198,6 +1222,7 @@ static void ask_step(void)
         if (ans.prompt_at == ans.prompt_n) {
             ans.prompt_us = micros(kosmos_ticks() - ans.asked);
             ans.began_answer = kosmos_ticks();
+            memcpy(ans.stage_at_answer, model.m.stage_counts, sizeof ans.stage_at_answer);
             ans.next = llm_greedy(&model.m);
         }
 

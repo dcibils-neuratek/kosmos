@@ -785,6 +785,54 @@ static void pool_run(void *ctx, llm_part_fn *fn, void *job, uint32_t parts)
  * and an answer written a token at a time, each with one thread and with
  * four parts. The logits and every position of the cache must be equal.
  */
+/*
+ * **The stages tile the pass** (`llm_clock`): a clock that is only a count
+ * of its own readings, so a batch's stages must add up to the readings
+ * after its first - nothing counted twice, nothing between two stages lost
+ * - and attention, the products and the norms each took some.
+ */
+static uint64_t readings;
+
+static uint64_t count_readings(void)
+{
+  return readings++;
+}
+
+static void check_clock(struct llm_model *m)
+{
+  static int32_t t[2048];
+  const char *q = "Instruct: What is a thread?\nOutput:";
+  int n = llm_tokenize(m, q, strlen(q), 1, t, 2048);
+  uint64_t before = 0, after = 0, r0;
+  char what[200];
+
+  if (n <= 0 || n > (int)LLM_BATCH) { check(0, "clock: the question would not read"); return; }
+
+  llm_reset(m);
+  memset(m->stage_counts, 0, sizeof m->stage_counts);
+  llm_clock(m, count_readings);
+  r0 = readings;
+  if (llm_step_batch(m, t, (uint32_t)n) != 0) { llm_clock(m, NULL); check(0, "clock: a batch refused"); return; }
+  for (uint32_t s = 0; s < LLM_STAGES_MAX; s++) after += m->stage_counts[s];
+  llm_clock(m, NULL);
+
+  /* And with no clock, nothing is counted. */
+  for (uint32_t s = 0; s < LLM_STAGES_MAX; s++) before += m->stage_counts[s];
+  llm_reset(m);
+  if (llm_step_batch(m, t, (uint32_t)n) != 0) { check(0, "clock: a batch refused"); return; }
+  for (uint32_t s = 0; s < LLM_STAGES_MAX; s++) before -= m->stage_counts[s];
+
+  snprintf(what, sizeof what, "clock: %d tokens, the stages %llu of %llu readings after the first; "
+           "attention %llu, products %llu, norms %llu; none without a clock", n,
+           (unsigned long long)after, (unsigned long long)(readings - r0 - 1),
+           (unsigned long long)m->stage_counts[LLM_STAGE_ATTENTION],
+           (unsigned long long)m->stage_counts[LLM_STAGE_PRODUCTS],
+           (unsigned long long)m->stage_counts[LLM_STAGE_NORM]);
+  check(after == readings - r0 - 1 && m->stage_counts[LLM_STAGE_ATTENTION] > 0
+        && m->stage_counts[LLM_STAGE_PRODUCTS] > 0 && m->stage_counts[LLM_STAGE_NORM] > 0
+        && before == 0, what);
+}
+
 static void check_parallel(struct llm_model *m)
 {
   static int32_t t[2048];
@@ -1054,6 +1102,7 @@ int main(int argc, char **argv)
   check_batch(&m);
   check_parallel(&m);
   check_passage(&m);
+  check_clock(&m);
   if (with_gpu) check_gpu(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);

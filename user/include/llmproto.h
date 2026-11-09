@@ -208,6 +208,13 @@ struct llm_reply {
     uint32_t refused;               /* ASKs refused BUSY                    */
     uint32_t reserved2;
     struct llm_asker askers[LLM_ASKERS];
+
+    /* **Where the last answer's time went** (`llm_core.h`, LLM_STAGE_*):
+     * the forward pass's stages, in microseconds, reading the question
+     * and writing the answer apart. The rest of the time is the server's
+     * own: choosing the token, its text, and the stop. */
+    uint64_t read_stage_us[8];
+    uint64_t write_stage_us[8];
 };
 
 _Static_assert(sizeof(struct llm_request) <= 2048, "an LLM request must fit in one message");
