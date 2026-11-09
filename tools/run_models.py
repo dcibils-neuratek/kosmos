@@ -39,6 +39,14 @@ import sys
 import threading
 import time
 
+# **A signed address as long as Hugging Face's CDN gives** (18.737): the
+# store answers only to it whole. A real one is about 1.3 KB of X-Amz
+# parameters and a policy; this is 2 KB, and it was `sig=abc123` while the
+# HTTP client's request had room for 1024 bytes and nobody knew.
+SIGNED = ("X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=" + "A" * 40
+          + "&X-Amz-Date=20261109T120000Z&X-Amz-Expires=3600&Policy=" + "p" * 1800
+          + "&X-Amz-Signature=" + "0123456789abcdef" * 4)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -125,7 +133,7 @@ def stand_in(work, repos, found, cut=None, slow=False):
     def store(conn, head):
         first = head.split("\r\n", 1)[0]
         seen["store"].append(head)
-        m = re.match(r"GET /cas/([^? ]+)\?sig=\w+ HTTP/1\.1", first)
+        m = re.match(r"GET /cas/([^? ]+)\?%s HTTP/1\.1" % re.escape(SIGNED), first)
 
         if not m or m.group(1) not in by_name:
             return reply(conn, "404 Not Found", b"no such object", "text/plain")
@@ -181,8 +189,8 @@ def stand_in(work, repos, found, cut=None, slow=False):
 
             if m:
                 return reply(conn, "302 Found", b"", "text/plain",
-                             "Location: https://10.0.2.2:%d/cas/%s?sig=abc123\r\n"
-                             % (store_port, m.group(1)))
+                             "Location: https://10.0.2.2:%d/cas/%s?%s\r\n"
+                             % (store_port, m.group(1), SIGNED))
 
         return reply(conn, "404 Not Found", b"{}")
 

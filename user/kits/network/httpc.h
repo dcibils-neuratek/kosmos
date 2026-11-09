@@ -41,6 +41,12 @@ enum { HTTPC_IDLE, HTTPC_SENDING, HTTPC_HEAD, HTTPC_BODY, HTTPC_DONE, HTTPC_FAIL
 
 #define HTTPC_HEAD_MAX 16384
 
+/* A request: an address of up to 8 KB, what servers commonly take, and its
+ * headers. It was 1024 bytes, and Hugging Face's CDN, which a model's file
+ * is redirected to, signs its addresses in about 1.3 KB of them
+ * (`testing.md` 18.737). */
+#define HTTPC_REQUEST_MAX (8192 + 1024)
+
 struct httpc {
     struct httpc_io io;
     char     host[256];
@@ -48,7 +54,7 @@ struct httpc {
     const char *why;                /* what went wrong, for HTTPC_FAILED */
 
     /* The request under way. */
-    char     request[1024];
+    char     request[HTTPC_REQUEST_MAX];
     size_t   request_len, request_sent;
 
     /* The reply: its status, how its body ends, and the body. */

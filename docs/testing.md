@@ -30171,3 +30171,30 @@ score unscaled - 22 of 105. phi-2 as Q8_0 and Q4_0, the tiny phi-2 in all
 three, and the GPU path in the emulator all pass as before, 91 and 92
 checks; `make llm-reference` writes phi-2's references byte for byte as
 they were.
+
+## 18.737 A model's file from Hugging Face on the M700: a signed address too long, and a window too small for a far server
+
+**Seen** (0.11.343, the M700, `models get Qwen/Qwen2.5-0.5B-Instruct-GGUF
+qwen2.5-0.5b-instruct-q4_0.gguf` against the real Hugging Face): "models:
+us.aws.cdn.hf.co: the address is too long". Hugging Face answers a file's
+address with a 302 to its CDN, signed in about 1.3 KB of X-Amz parameters
+and a policy, and the HTTP client's request (`httpc.h`) had room for 1024
+bytes. The stand-in Hugging Face of `run_models.py` redirected to
+`?sig=abc123`, so no test could have seen it.
+
+**Fixed**: a request holds an address of up to 8 KB, what servers commonly
+take, and its headers (`HTTPC_REQUEST_MAX`). The stand-in now redirects to
+a 2 KB signed address and its store answers only to that address whole.
+**Control**: the request back at 1024 bytes - `x86-models` fails with the
+M700's own words, "the address is too long". **The gate**: 107 of 107
+suites in 647 s (10:47 - over the ten minutes by 47 s; the slowest named
+as ever at its end).
+
+**And then slow**: the file came at about 160 KB/s, where this Mac takes
+the same bytes from the same CDN at 4.9 MB/s. Not the line and not the
+TLS Kit: `net.c` offers a receive window of 16 KB at most (10 October,
+18.523), because it keeps nothing that arrives out of order and a larger
+window lost whole runs of segments under load. 16 KB a round trip is
+plenty on the LAN, at a millisecond, and about 160 KB/s to a server 100
+ms away. The way out is the one that note names: keep out-of-order
+segments, then offer the ring, then window scaling past 64 KB (roadmap).
