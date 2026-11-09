@@ -30238,3 +30238,85 @@ IDE's find field asks `selection()` where it read the flag. The lesson is
 the premise's: a widget's state written from outside it is a second copy
 of its rules, and the first change to them breaks it silently.
 **The gate**: 108 of 108 in 634 s (10:33 - over the ten minutes by 33 s).
+
+## 18.739 TCP receiving: what arrives out of order kept, and the window the ring
+
+**Why** (Diego, 9 November: "why is the download so slow?", and then "All
+that is capped for speed we need to fix and improve"): the M700 brought a
+file from Hugging Face's CDN at about 160 KB/s (18.737), because `net.c`
+offered 16 KB a round trip. The window was held there on 10 October
+(18.523) since nothing that arrived out of order was kept: one segment lost
+in a 64 KB window meant some forty-five dropped and sent again.
+
+**Built** (`user/servers/net.c`, `user/servers/tcp_reasm.h`): a segment's
+bytes go into the receive ring at the place they will have when all before
+them have come - past `in_write`, in free space only the stack writes - so
+the ring is the reassembly buffer; `tcp_reasm.h` remembers up to eight
+stretches of it, offsets from `rcv_nxt`, merged as they touch. A piece in
+order publishes everything it now runs into; every piece is acknowledged
+at once, so a gap brings three duplicate acknowledgements and the far end
+sends the missing one at once (RFC 5681 4.2); a piece partly old is
+trimmed; a FIN that came ahead of a gap is remembered and taken when the
+bytes reach it. The window is the ring, 65535 at most until window
+scaling. `opt/kosmos/net_drop_in=N` lets one arriving data segment in N go
+unread, for a suite; `net: 4 MB from ...` says how many pieces were kept.
+
+**Tested**:
+
+- `tools/test_tcpreasm.c` (host): twenty streams of 200 KB sent shuffled,
+  doubled, overlapped and lost into a 64 KB ring as `net.c` writes one, the
+  ranges held to a bitmap of the bytes received after every piece and the
+  stream read back whole; touching, bridging and a full list by hand. 88
+  of 88. **Controls**: `advance` not recounting the ranges from the new
+  `rcv_nxt` - 42 fail; touching ranges not merged - 6 fail.
+- `x86-tcpin` (`tools/run_tcpin.py`): 8 MB from a server on the Mac with
+  one arriving segment in 53 lost - whole by its SHA-256 (`netspeed get`
+  now says one, from the Crypto Kit), 529 pieces kept that came ahead of a
+  gap, 5.5 MB/s. **Control**, the committed `net.c` given only the drop:
+  the 8 MB did not arrive within three minutes.
+- `x86-tcpfar` (`--far`): the same 8 MB through QEMU's `filter-buffer`,
+  every frame held and let go each 50 ms - a far server's round trip - at
+  0.9 MB/s, where a 16 KB window can bring at most 0.31. **Control**: the
+  committed `net.c`, 0.3 MB/s.
+
+Not both at once in one suite: with a loss in every window a far sender's
+speed is its congestion control's, about MSS / RTT x 1.22 / sqrt(p) - 130
+KB/s at one in 53 and 100 ms - whatever this end offers; the first run of
+the suite did both and measured 0.2 MB/s, which was Reno and not the
+window.
+
+## 18.740 Qwen2.5 0.5B on the M700: 18 tokens a second
+
+**Brought** as Diego suggested ("why dont you download the model here and
+copy over smb to the m700"): the Mac's copy, already held to Hugging Face's
+SHA-256 (7671c0c3...daf6ed, 428,730,208 bytes), written into the M700's
+Apps share from Finder's mount in 74 s - 5.8 MB/s into Kosmos's `smbd`
+over the LAN, still on the 16 KB window - and `cp` to `/Models`, the
+models' own partition, in 73 s. Not `/Home/Models`: with
+`opt/kosmos/models` on the command line `llm.MODELS` is `/Models`, and the
+first copy went where `models` does not look.
+
+**Measured** (`models load`, then `xavier --tokens N`, 8 processors, AVX2,
+the GPU sharing the products):
+
+| question                                   | tokens | a second |
+|--------------------------------------------|-------:|---------:|
+| "What is the capital of France?"           |      7 |    17.52 |
+| "Explain in a few paragraphs how a microkernel operating system works." | 200 | 18.27 |
+
+phi-2 on the same machine writes 4.65 a second (18.733): Qwen is 3.9
+times as fast, as its 0.43 GB a token against phi-2's 1.6 said it would
+be. The answer's 10.95 s are products 9.77, attention 0.68, the rest under
+0.3 - 0.43 GB read 18.3 times a second is 7.8 GB/s, which is the memory's
+pace rather than the arithmetic's. The first answer is llama.cpp's word
+for word: "The capital of France is Paris."
+
+**Seen**: the long answer repeats its second sentence over and over. The
+kit chooses the likeliest token every time, and a model this small falls
+into a loop that way; llama.cpp's defaults sample with a temperature and
+penalise repeats. To the roadmap.
+
+**The gate** for 18.739: 110 of 110 in 668 s (11:08) - `x86-share-2`, the
+64 MB read that stalled at a 64 KB window on 10 October, among them. Over
+the ten minutes by 68 s; the two new suites are about 70 s of a core
+between them, and the three gates of the day went 10:33, 10:47, 11:08.

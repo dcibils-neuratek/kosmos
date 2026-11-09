@@ -1758,3 +1758,32 @@ reading back after each what the field says is selected: seven of seven.
 Run against the field as it was this morning, all six selection checks
 fail.
 
+
+## 9 November - downloads from far away, and Qwen on the M700
+
+**In short.** Kosmos downloaded from Hugging Face at about 160 KB/s
+while the Mac beside it took the same file at 4.9 MB/s. The cause was a
+deliberate limit in Kosmos's network stack; the limit is gone, and what
+it was protecting against is now handled properly.
+
+**What.** When one computer sends to another, the receiver says how much
+it is ready to take before the sender must stop and wait for a reply.
+Kosmos said 16 KB. Across the room a reply takes a thousandth of a
+second, so that was plenty; to a server across an ocean it takes a tenth,
+and 16 KB a tenth of a second is 160 KB a second. It was 16 KB because
+Kosmos threw away anything that arrived out of order - after one lost
+piece, everything behind it had to be sent again, and with a bigger
+allowance that became a flood of resending that once stalled a large copy
+from the Mac. Now a piece that arrives early is kept, in the place it
+will have once the gap fills, and the allowance is four times larger.
+
+**Measured.** Losing one piece in 53 on the way in, 8 MB used to not
+arrive at all within three minutes; now it arrives at 5.5 MB/s, every
+byte checked. With a delay like a far server's, 0.9 MB/s where 16 KB
+could never give more than 0.31. The next step, which lets the allowance
+grow past 64 KB, is what reaches the Mac's speed.
+
+**And Qwen.** Diego suggested copying the model from the Mac over the
+network share instead of waiting for the download - 74 seconds. On the
+M700 it writes 18.3 words-pieces a second, four times phi-2, because it
+is a quarter the size and the machine's memory is what sets the pace.

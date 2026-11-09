@@ -317,6 +317,8 @@ SUITES = [
     Suite("arm-servers", ["python3", "tools/run_servers.py", ARM]),
     Suite("x86-servers", ["python3", "tools/run_servers.py", X86], x86=True),
     Suite("x86-tcploss", ["python3", "tools/run_tcploss.py", X86], x86=True),
+    Suite("x86-tcpin", ["python3", "tools/run_tcpin.py", X86], x86=True),
+    Suite("x86-tcpfar", ["python3", "tools/run_tcpin.py", X86, "--far"], x86=True),
     Suite("x86-tcpmtu", ["python3", "tools/run_tcploss.py", X86, "--mtu"], x86=True),
     Suite("x86-udp", ["python3", "tools/run_udp.py", X86], x86=True),
     Suite("x86-mdns", ["python3", "tools/run_mdns.py", X86], x86=True),

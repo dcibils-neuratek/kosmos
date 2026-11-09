@@ -58,6 +58,7 @@
 #include "netproto.h"
 #include "tcpring.h"
 #include "dnsmsg.h"
+#include "tcp_reasm.h"
 #include "../init/say.h"
 
 /*------------------------------------------------------------------------
@@ -152,7 +153,7 @@ static void dhcp_receive(const uint8_t *m, unsigned length);
  * before the last.
  */
 #define TCP_MSS              1460u
-#define TCP_RECEIVE_WINDOW   16384u     /* offered, at most: see `window_of` */
+#define TCP_RECEIVE_WINDOW   65535u     /* offered, at most: see `window_of` */
 #define TCP_INITIAL_WINDOW   (10u * TCP_MSS)
 #define TCP_MAX_WINDOW       (1024u * 1024u)
 
@@ -354,6 +355,14 @@ struct conn {
     bool     held;                  /* the SYN waits for an address */
     uint16_t advertised;            /* the window the far end was last told */
 
+    /* What arrived ahead of `rcv_nxt`, already in the ring past `in_write`
+     * (`tcp_reasm.h`), and how often a piece was kept that way. */
+    struct tcp_reasm ahead;
+    uint32_t kept_ahead;
+    bool     said_in;               /* its first four megabytes in said */
+    bool     fin_ahead;             /* their FIN has come, at `fin_at` */
+    uint32_t fin_at;
+
     /* The region, and where it is mapped in this process. */
     long     region;
     struct tcp_ring *ring;
@@ -376,6 +385,12 @@ static struct {
     uint32_t drop_every;
     uint32_t drop_count;
     uint32_t dropped;
+
+    /* `opt/kosmos/net_drop_in=N`: every Nth data segment that arrives let
+     * go unread, as if the wire had lost it on the way here - for a suite
+     * to see what comes after it kept and the gap filled (9 November). */
+    uint32_t drop_in_every;
+    uint32_t drop_in_count;
 
     /* `opt/kosmos/net_mtu=N`: a router on the path that passes no packet
      * over N bytes and says so, as a PPPoE line's does - for a suite to see
@@ -2058,14 +2073,15 @@ static uint16_t window_of(const struct conn *c)
                            tcp_ring_acquire(&c->ring->in_read));
 
     /*
-     * **But never more than 16 KB** (10 October 2026), whatever the ring:
-     * this stack keeps nothing that arrives out of order, so one segment
-     * lost in a window means everything after it is dropped and sent again.
-     * At 64 KB a far end sends some forty-five at once, and under load a
-     * 64 MB read from a share stalled on the losses until smbfs gave up
-     * (`testing.md` 18.523); at 16 KB it never had. Sending keeps the
-     * whole ring - that is what made the M700 4.3 times as fast - and
-     * receiving more waits for out-of-order segments to be kept.
+     * **The whole ring, since what arrives out of order is kept**
+     * (9 November 2026). From 10 October to then it was never more than
+     * 16 KB: nothing out of order was kept, so one segment lost in a window
+     * meant everything after it was dropped and sent again, and under load
+     * a 64 MB read from a share stalled on the losses at 64 KB (`testing.md`
+     * 18.523). 16 KB a round trip is about 160 KB/s from a server 100 ms
+     * away, which is what Hugging Face's CDN gave the M700 (18.737). Now
+     * what follows a loss waits in the ring (`tcp_reasm.h`), and the window
+     * is the most sixteen bits can say until window scaling.
      */
     if (space > TCP_RECEIVE_WINDOW) {
         space = TCP_RECEIVE_WINDOW;
@@ -2724,6 +2740,12 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
     ack     = get_be32(tcp + TCP_ACK);
     payload = tcp_len - header;
 
+    /* Lost on the way here, on purpose (`net_drop_in`). */
+    if (payload > 0 && net.drop_in_every != 0
+        && ++net.drop_in_count % net.drop_in_every == 0) {
+        return;
+    }
+
     /*
      * Four fields identify a connection - both addresses and both ports -
      * and a listener matches on the local port alone. So the exact match is
@@ -3007,35 +3029,103 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
     c->peer_window = get_be16(tcp + TCP_WINDOW);
 
     /*
-     * Data, but only if it is the next byte expected.
+     * **Data, wherever it falls in the window** (9 November 2026).
      *
-     * Anything else is dropped without acknowledging it, so the far end
-     * sends it again. That is correct and slow; queuing it would be correct
-     * and fast, and would be a reassembly buffer with a policy about
-     * overlapping pieces - which is the well-known way to get a stack wrong.
+     * Each byte goes into the ring at the place it will have when all
+     * before it have come: `in_write` plus how far past `rcv_nxt` it is.
+     * That is the ring's free space, which only this stack writes and the
+     * program does not read until `in_write` passes it - so the ring is the
+     * reassembly buffer, and `ahead` only remembers which stretches of it
+     * hold bytes. A piece that arrives twice writes the same bytes twice:
+     * TCP's byte at a number is that byte, so overlap needs no policy, and
+     * a piece before `rcv_nxt` is trimmed to what is new.
+     *
+     * Every piece is acknowledged at once. In order, that says how far the
+     * bytes now run, which may be well past it; out of order, it is the
+     * same acknowledgement again, and three of those make the far end send
+     * the missing one now rather than at its timer (RFC 5681 4.2).
+     *
+     * Until 9 November anything but the next byte expected was dropped
+     * unacknowledged, which is correct and slow, and is why the window was
+     * held to 16 KB (`window_of`).
      */
-    if (payload > 0 && seq == c->rcv_nxt && c->ring != NULL) {
+    if (payload > 0 && c->ring != NULL) {
         uint32_t write = c->ring->in_write;
         uint32_t space = tcp_ring_space(c->ring->bytes, write,
                                         tcp_ring_acquire(&c->ring->in_read));
-        unsigned take = (payload > space) ? space : payload;
+        uint32_t past = seq - c->rcv_nxt;           /* modulo 2^32 */
+        const uint8_t *data = tcp + header;
+        uint32_t len = payload;
 
-        for (i = 0; i < take; i++) {
-            tcp_ring_in(c->ring)[(write + i) % c->ring->bytes]
-                = tcp[header + i];
+        if ((int32_t)past < 0) {
+            uint32_t old = c->rcv_nxt - seq;
+
+            if (old >= len) {
+                len = 0;                            /* all of it had come */
+            } else {
+                data += old;
+                len -= old;
+            }
+            past = 0;
         }
 
-        tcp_ring_publish(&c->ring->in_write, write + take);
-        c->rcv_nxt += take;
-        c->bytes_in += take;
+        if (past >= space) {
+            len = 0;                                /* past the window */
+        } else if (past + len > space) {
+            len = space - past;
+        }
+
+        if (len > 0) {
+            for (i = 0; i < len; i++) {
+                tcp_ring_in(c->ring)[(write + past + i) % c->ring->bytes] = data[i];
+            }
+
+            if (past == 0) {
+                uint32_t run = tcp_reasm_advance(&c->ahead, len);
+
+                tcp_ring_publish(&c->ring->in_write, write + run);
+                c->rcv_nxt += run;
+                c->bytes_in += run;
+                wake_waiter(c);
+
+                /* Four megabytes in, said once: how many pieces came ahead
+                 * of a gap and were kept rather than sent again. */
+                if (!c->said_in && c->bytes_in >= 4u * 1024u * 1024u) {
+                    struct say_line line;
+
+                    c->said_in = true;
+                    say_begin(&line);
+                    say_text(&line, "net: 4 MB from ");
+                    say_addr(&line, &c->remote);
+                    say_text(&line, ", ");
+                    say_dec(&line, c->kept_ahead);
+                    say_text(&line, " pieces kept that came ahead of a gap");
+                    say_send(net.console, &line);
+                }
+            } else if (tcp_reasm_add(&c->ahead, past, past + len)) {
+                c->kept_ahead++;
+            }
+        }
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
-        wake_waiter(c);
     }
 
-    if ((flags & TCP_FIN) != 0 && seq_ge(c->rcv_nxt, seq)) {
-        /* Their FIN takes one sequence number too. */
-        c->rcv_nxt = seq + payload + 1;
+    /*
+     * Their FIN, taken once every byte before it is here - it takes one
+     * sequence number too - or that FIN again, its acknowledgement lost,
+     * and said again. A FIN that came ahead of a gap is remembered rather
+     * than dropped: a download's last segment carries it, so the segment
+     * before it lost would otherwise hold the close until the far end's
+     * timer sent it all again.
+     */
+    if ((flags & TCP_FIN) != 0) {
+        c->fin_ahead = true;
+        c->fin_at = seq + payload;
+    }
+
+    if (c->fin_ahead && (c->rcv_nxt == c->fin_at || c->rcv_nxt == c->fin_at + 1)) {
+        c->rcv_nxt = c->fin_at + 1;
+        c->fin_ahead = false;           /* until it comes again */
 
         if (c->ring != NULL) {
             tcp_ring_publish(&c->ring->closed, 1);
@@ -4334,6 +4424,28 @@ void net_server(long endpoint, long console, long frames, long frames2)
             say_text(&line, "net: one data segment in ");
             say_dec(&line, every);
             say_text(&line, " lost on purpose (opt/kosmos/net_drop)");
+            say_send(net.console, &line);
+        }
+    }
+
+    {
+        char drop[12];
+        long n = kosmos_boot_option("opt/kosmos/net_drop_in", drop, sizeof drop - 1);
+        uint32_t every = 0;
+        long k;
+
+        for (k = 0; k < n && drop[k] >= '0' && drop[k] <= '9'; k++) {
+            every = every * 10u + (uint32_t)(drop[k] - '0');
+        }
+
+        if (n > 0 && every > 1 && every < 1000000u) {
+            struct say_line line;
+
+            net.drop_in_every = every;
+            say_begin(&line);
+            say_text(&line, "net: one data segment in ");
+            say_dec(&line, every);
+            say_text(&line, " lost on its way in on purpose (opt/kosmos/net_drop_in)");
             say_send(net.console, &line);
         }
     }

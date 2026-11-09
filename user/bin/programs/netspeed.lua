@@ -15,8 +15,13 @@
 --
 -- Through the namespace's `fs.connect`, as `fetch` connects.
 --
+-- `get` also says the SHA-256 of what it read, taken in the Crypto Kit, so
+-- a suite can hold the bytes to what was sent when the network loses some
+-- on the way (`tools/run_tcploss.py --in`, 9 November 2026).
+--
 
 local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
+local crypto = use("/Kosmos/Kits/crypto")
 
 local words = {}
 
@@ -40,6 +45,7 @@ end
 
 local started = sys.ticks()
 local bytes = 0
+local hash = verb == "get" and crypto.sha256_begin()
 
 if verb == "get" then
   while true do
@@ -47,6 +53,7 @@ if verb == "get" then
 
     if piece and #piece > 0 then
       bytes = bytes + #piece
+      hash:update(piece)
     elseif conn:closed() then
       break
     else
@@ -77,3 +84,5 @@ conn:close()
 print(("netspeed: %s %.1f MB in %.2f s, %.1f MB/s"):format(
       verb == "get" and "received" or "sent", bytes / 1048576, took,
       took > 0 and bytes / 1048576 / took or 0))
+
+if hash then print("netspeed: SHA-256 " .. hash:hex()) end

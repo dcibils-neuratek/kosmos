@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.345, not pushed; a field's selection)
+Last updated: 2026-11-09 (0.11.346, not pushed; TCP's receive window)
 
 ---
 
@@ -102,8 +102,18 @@ Last updated: 2026-11-09 (0.11.345, not pushed; a field's selection)
   the line to `textbuf`; `x86-fieldselect`, 7 of 7, control biting
   (18.738). Diego: "Yes".
 
-**Next**: Qwen2.5 0.5B measured on the M700 (restarted; its download
-stopped at 103 MB once and was resumed); then the TCP window; then the weight products, then attention - on the M700 a long
+- **0.11.346**: TCP receiving - what arrives out of order kept in the ring
+  itself (`tcp_reasm.h`), every piece acknowledged at once, the window the
+  whole 64 KB ring (18.739): 8 MB through losses at 5.5 MB/s where the old
+  stack did not finish in three minutes; 0.9 MB/s 50 ms away against 0.31.
+  Diego: "All that is capped for speed we need to fix and improve" - the
+  caps found are in the roadmap.
+- **Qwen2.5 0.5B on the M700: 18.3 tokens a second**, phi-2 4.65 (18.740),
+  copied over SMB from the Mac; its long answers loop - sampling is to do.
+
+**Next**: TCP step B, window scaling (Diego: "do step B too"); the gate's
+time, 11:08; then `/drives` and `/Temporary` reading through a region;
+then sampling; then the weight products, then attention - on the M700 a long
 question's reading is products 22.0 s and attention 10.0 of 34.9, and its
 answer's writing products 14.1 and attention 4.6.
 
