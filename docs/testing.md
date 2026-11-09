@@ -29979,6 +29979,27 @@ a lap that does not move its start on - 190 against 19.
 `x86-llm` 57, `x86-xavier` 37, `x86-llmmon` 15: the answers through the
 server the kit's own, byte for byte.
 
+**On the M700, phi-2 Q4_0, four cores and the GPU** (0.11.341, a
+question of 2199 bytes by `xavier --file`, 18.734): 458 tokens read and 90
+written -
+
+| | 0.11.339, attention on one core | **0.11.341** |
+|---|---|---|
+| the question, 458 tokens (463 before) | 165 s | **34.9 s** |
+| writing, 90 tokens after it | 1.2 a second | **4.65 a second** |
+
+and where it went, by `llm`'s new lines:
+
+| | products | attention | GELU | RoPE and the cache | norms |
+|---|---|---|---|---|---|
+| the question | 22.0 s | 10.0 s | 1.7 s | 1.0 s | 0.1 s |
+| the answer | 14.1 s | 4.6 s | 0.4 s | 0.2 s | 0.0 s |
+
+**The products are most of it again**, and attention, at 29% of a long
+question and 24% of the writing after it, the next. The answer is phi-2's
+own words; it began "The strongest part of this design is its
+simplicity."
+
 ## 18.734 A command line too long for a message, refused rather than raised
 
 **What happened** (9 November, on the M700, 0.11.340): to measure the

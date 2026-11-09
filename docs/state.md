@@ -77,6 +77,13 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   the prompt's newline, an attention sink; Diego chose to keep it shown
   (18.732).
 
+- **0.11.340-341**: attention across the cores - on the M700 a question
+  of 458 tokens in 34.9 s against 165, and writing after it at 4.65 a
+  second against 1.2 (18.733); the stages timed, `llm` prints them; a
+  command line too long for a message refused rather than ending telnetd,
+  and `xavier --file` (18.734).
+- **Building**: the Models page in Xavier's window (Diego, 9 November).
+
 **Next**: a question's processor part (attention, norms, GELU - 7 of its 12 s)
 is where the time is.
 
