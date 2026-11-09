@@ -2,9 +2,27 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.325, not pushed; the LLM made fast: batches, every core, AVX2)
+Last updated: 2026-11-08 (0.11.327, not pushed; Xavier's Settings, measured on the M700)
 
 ---
+
+## 8 November, night: Settings (0.11.326-0.11.327, not pushed)
+
+The agreed order for the rest of Xavier is: Settings, then a model for
+each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
+(X7), and voice (X8, X9).
+
+- **0.11.326, Settings**: the LLM server's, for every application. Cores,
+  the vector loops and the GPU's switches (drawn, and off for now).
+  `llm` at the prompt, and Xavier's sheet with Compare (18.721). The full
+  gate passed, 104 suites in 10:51.
+- **On the M700**, netbooted: 8 cores with AVX2 wrote 5.3 tokens a second
+  against Auto's (4 cores) 4.1 (`xavier.md`, *Settings*). Auto stays until
+  a second machine agrees.
+- **0.11.327**: the sheet is 760 by 600. The M700's picture showed the
+  machine's line cut off and the seventh row under the buttons.
+
+**Next**: a model for each conversation (`xavier.html#model-each`).
 
 ## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
 

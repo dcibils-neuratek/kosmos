@@ -29511,3 +29511,12 @@ sheet in its header's menu, with Compare and Use the fastest.
   118 tokens a second and base vectors fewer, and base was kept. That run
   is no measure of either - TCG's vectors are emulated - but it shows the
   check reads the numbers rather than the order.
+
+**On the M700**, the same evening, netbooted: the sheet opened from the
+menu and Compare asked seven settings (`xavier.md`, *Settings*). 8 cores
+with AVX2 wrote fastest, 5.3 tokens a second against Auto's 4.1. The
+picture showed two faults no suite saw: the machine's line cut at the
+sheet's edge, and the seventh row under the buttons. Under QEMU the line
+is shorter (no AVX2), and the gate's machine has four processors, so five
+rows rather than seven. 0.11.327 made the sheet 760 by 600; `x86-xavier`
+28 of 28.

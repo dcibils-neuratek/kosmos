@@ -783,6 +783,30 @@ fastest**. `llm` at the prompt shows and changes the same settings.
 No diagram of its own: it is a part of Xavier and of the LLM server, both
 already drawn in `xavier-architecture.png`, and adds no kit or server.
 
+**Compare on the M700** (0.11.326, phi-2 at Q4_0, a Core i7-6700: eight
+processors on four cores), tokens a second:
+
+```
+setting              question   answer
+8 cores, AVX2           5.8       5.3    the fastest at writing
+4 cores, AVX2           6.2       4.1    Auto
+8 cores, base           4.9       4.3
+2 cores, AVX2           4.2       3.8
+4 cores, base           3.5       3.2
+2 cores, base           3.0       2.8
+1 core,  plain          1.6       1.6
+```
+
+**Auto is not the fastest there, and the guess it was built on was
+wrong.** It is one worker a core, on the reasoning that two spinning
+workers on one core's two processors fight for it. Writing says otherwise:
+an answer is a product per token, a row at a time, and waits on memory
+more than on arithmetic - which is what a second processor on a core is
+for. Reading a question, which is batched and arithmetic-bound, is the
+other way round (6.2 against 5.8). One machine is one measurement, so Auto
+stays as it is until a second one says the same; Compare is how a person
+finds it on theirs, and Use the fastest keeps it.
+
 **What costs almost nothing, and is felt:** the answer is already written
 word by word, and the cache already held across a conversation. The model
 can also stay loaded between questions, and the LLM server's band keep the

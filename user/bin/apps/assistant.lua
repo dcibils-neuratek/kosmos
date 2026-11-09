@@ -729,7 +729,10 @@ local function open_settings()
     return
   end
 
-  local SW, SH = 700, 560
+  -- Wide enough for the machine's line on a PC with AVX2 and no GPU, and
+  -- tall enough for seven Compare rows above the buttons (the M700's sheet
+  -- at 700 by 560 cut the first and covered the last, 0.11.326).
+  local SW, SH = 760, 600
   local s = ui.sheet{ title = "Settings \u{00b7} the LLM server's, for every application that asks",
                       w = SW, h = SH }
   local X, CX = 18, 190
