@@ -54,8 +54,29 @@ static const char *models_root = "/Home/Models";
 #define WAITERS       16u                   /* WAITs held at once; more answered now */
 #define ALLOCS        64u                   /* the kit's tables, a region each */
 
-_Static_assert(sizeof(struct llm_request) == 1672, "llm_request is 1672 bytes");
-_Static_assert(sizeof(struct llm_reply) == 344, "llm_reply is 344 bytes");
+_Static_assert(sizeof(struct llm_request) == 1688, "llm_request is 1688 bytes");
+_Static_assert(sizeof(struct llm_reply) == 424, "llm_reply is 424 bytes");
+_Static_assert(LLM_LOOPS_AUTO == LLM_KIT_LOOPS_AUTO && LLM_LOOPS_PLAIN == LLM_KIT_LOOPS_PLAIN
+               && LLM_LOOPS_BASE == LLM_KIT_LOOPS_BASE && LLM_LOOPS_AVX2 == LLM_KIT_LOOPS_AVX2,
+               "the protocol's loops are the kit's");
+
+/* ------------------------------------------------------------------------
+ * **Where the model runs** (`docs/xavier.md`, *Settings*): the server's, for
+ * every application that asks, kept in a file beside the models - the one
+ * folder this server can reach - and in force from the next question.
+ * --------------------------------------------------------------------- */
+
+#define SETTINGS_FILE  "llm.settings"
+#define SETTINGS_MAGIC 0x534d4c4cu          /* "LLMS", then the struct */
+
+struct settings_file {
+    uint32_t magic, size;
+    struct llm_settings s;
+};
+
+static struct llm_settings settings;        /* zero: Auto everywhere */
+static uint32_t processors = 1, cores = 1;  /* this machine */
+static uint32_t ran_cores = 1, ran_loops;   /* the last answer */
 
 static long console = -1;
 static unsigned long counter_hz = 62500000ul;
@@ -205,6 +226,15 @@ static void describe(struct llm_reply *rp)
         rp->held_tokens = model.m.n_past;
     }
 
+    rp->settings = settings;
+    rp->processors = processors;
+    rp->cores = cores;
+    rp->loops_have = llm_loops_have();
+    rp->gpu_have = 0;                   /* the GPU's steps are next (X9) */
+    rp->ran_cores = ran_cores;
+    rp->ran_loops = ran_loops;
+    rp->ran_gpu = 0;
+
     rp->kept_tokens = ans.kept;
     rp->prompt_tokens = ans.prompt_n;
     rp->answer_tokens = ans.made;
@@ -271,7 +301,8 @@ static void load_done(uint32_t error)
         model.load_us = micros(kosmos_ticks() - model.load_began);
         say(console, "llm: ");
         say(console, model.name);
-        say(console, model.m.avx2 ? " is loaded, its loops in AVX2\n" : " is loaded\n");
+        say(console, model.m.loops == LLM_KIT_LOOPS_AVX2 ? " is loaded, its loops in AVX2\n"
+                                                          : " is loaded\n");
     }
 
     if (model.loader != 0) {
@@ -430,7 +461,7 @@ static struct {
     uint32_t base;                      /* `gen` when this answer's workers began */
     uint32_t n;
     long thread[WORKERS_MAX];
-    bool said;
+    uint32_t said_n;                    /* how many the log was last told */
 } pool;
 
 static void pool_worker(unsigned long part)
@@ -469,20 +500,20 @@ static void pool_run(void *ctx, llm_part_fn *fn, void *job, uint32_t parts)
     while (__atomic_load_n(&pool.finished, __ATOMIC_ACQUIRE) < pool.n) kosmos_yield();
 }
 
-/* A worker on each core, where there is more than one. */
+/* A worker on each core the settings ask for, where that is more than one. */
 static void pool_start(void)
 {
-    struct sysinfo info;
-    uint32_t cores = kosmos_sysinfo(&info) == 0 && info.cpus > 0 ? info.cpus : 1;
+    uint32_t want = settings.cores ? settings.cores : cores;
 
-    if (cores < 2) return;
-    if (cores > WORKERS_MAX) cores = WORKERS_MAX;
+    if (want > processors) want = processors;
+    if (want < 2) return;
+    if (want > WORKERS_MAX) want = WORKERS_MAX;
 
     __atomic_store_n(&pool.quit, 0, __ATOMIC_RELEASE);
     pool.base = __atomic_load_n(&pool.gen, __ATOMIC_ACQUIRE);
     pool.n = 0;
 
-    for (uint32_t i = 0; i < cores; i++) {
+    for (uint32_t i = 0; i < want; i++) {
         long t = kosmos_thread_start_on(pool_worker, i, i);
 
         if (t < 0) t = kosmos_thread_start(pool_worker, i);
@@ -500,12 +531,13 @@ static void pool_start(void)
 
     llm_parallel(&model.m, pool_run, NULL, pool.n);
 
-    if (!pool.said) {
+    /* Said once, and again whenever the settings change how many. */
+    if (pool.said_n != pool.n) {
         char line[96];
 
         snprintf(line, sizeof line, "llm: each product cut across %u cores\n", pool.n);
         say(console, line);
-        pool.said = true;
+        pool.said_n = pool.n;
     }
 }
 
@@ -626,7 +658,12 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
     ans.began_answer = 0;
     ans.prompt_us = ans.answer_us = ans.first_us = 0;
     model.state = LLM_STATE_ANSWERING;
+
+    /* The settings as they stand now, for this whole answer. */
+    if (llm_use_loops(&model.m, settings.loops) < 0) (void)llm_use_loops(&model.m, LLM_LOOPS_AUTO);
+    ran_loops = model.m.loops;
     pool_start();
+    ran_cores = pool.n ? pool.n : 1;
     *cap = ans.region.cap;
     return LLM_OK;
 }
@@ -789,6 +826,91 @@ static void hold_wait(uint64_t sender, uint32_t since)
     send(sender, LLM_OK, -1);           /* full: asked again, which is a poll */
 }
 
+/*
+ * **How many cores the processors are on.** A core's second processor
+ * shares its arithmetic and its way to memory, so Auto is one worker a
+ * core: on x86 CPUID leaf 0xB's first level, when it is the SMT level, says
+ * how many processors a core has; every ARM core here has one.
+ */
+static uint32_t processors_a_core(void)
+{
+#if defined(__x86_64__)
+    uint32_t a, b, c, d;
+
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0u), "c"(0u));
+    if (a < 0xbu) return 1;
+
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0xbu), "c"(0u));
+    if (((c >> 8) & 0xffu) == 1u && (b & 0xffffu) > 1u) return b & 0xffffu;
+#endif
+    return 1;
+}
+
+/* Whether this machine can run `s`. */
+static bool settings_possible(const struct llm_settings *s)
+{
+    return s->cores <= processors
+        && s->loops <= LLM_LOOPS_AVX2
+        && (s->loops == LLM_LOOPS_AUTO || (llm_loops_have() & 1u << s->loops))
+        && s->gpu == 0;                 /* no GPU yet: the switches are drawn off */
+}
+
+static void settings_path(char *path, size_t room)
+{
+    snprintf(path, room, "%s/%s", models_root, SETTINGS_FILE);
+}
+
+/* The file beside the models, when there is one this machine can run; Auto
+ * otherwise, and a file from another machine is left as it is. */
+static void settings_read(void)
+{
+    char path[96];
+    struct settings_file f;
+
+    settings_path(path, sizeof path);
+
+    if (diskask(&disk, DISK_OP_READ, path, 0, 0, sizeof f, -1, NULL, 0) != 0
+        || diskask_said(&disk)->length != sizeof f) {
+        return;
+    }
+
+    memcpy(&f, diskask_said(&disk)->u.data, sizeof f);
+    f.s.reserved = 0;
+
+    if (f.magic == SETTINGS_MAGIC && f.size == sizeof f && settings_possible(&f.s)) settings = f.s;
+}
+
+static bool settings_write(void)
+{
+    char path[96];
+    struct settings_file f = { .magic = SETTINGS_MAGIC, .size = sizeof f, .s = settings };
+
+    settings_path(path, sizeof path);
+    (void)diskask(&disk, DISK_OP_MKDIR, models_root, 0, 0, 0, -1, NULL, 0);
+    return diskask(&disk, DISK_OP_WRITE, path, 0, 0, 0, -1, &f, sizeof f) == 0;
+}
+
+/* SETTINGS: changed when asked and possible, kept, and said back. */
+static void settings_request(const struct llm_request *rq, uint64_t sender)
+{
+    struct llm_settings want = rq->settings;
+
+    if (!(rq->flags & LLM_SETTINGS_CHANGE)) {
+        send(sender, LLM_OK, -1);
+        return;
+    }
+
+    want.reserved = 0;
+
+    if (!settings_possible(&want)) {
+        send(sender, LLM_ERR_CANNOT, -1);
+        return;
+    }
+
+    settings = want;
+    send(sender, settings_write() ? LLM_OK : LLM_ERR_NOT_KEPT, -1);
+}
+
 static void handle(const struct llm_request *in, long given, uint64_t sender)
 {
     struct llm_request rq = *in;
@@ -840,6 +962,10 @@ static void handle(const struct llm_request *in, long given, uint64_t sender)
 
     case LLM_OP_STATS:
         send(sender, LLM_OK, -1);
+        return;
+
+    case LLM_OP_SETTINGS:
+        settings_request(&rq, sender);
         return;
 
     default:
@@ -910,7 +1036,12 @@ void llm_server(long running_cap, long models_disk_ep, long console_ep, long mod
         memset(&info, 0, sizeof info);
 
         if (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0) counter_hz = info.counter_hz;
+        if (info.cpus > 0) processors = info.cpus;
     }
+
+    cores = processors / processors_a_core();
+    if (cores == 0) cores = 1;
+    settings_read();
 
     if ((endpoint = register_name(running_cap)) < 0) {
         say(console, "llm: /Running would not take the name; not serving\n");

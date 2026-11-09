@@ -241,14 +241,19 @@ first two without booting anything.
    as built*, below). The LLM server, the model from `/Home/Models`, and
    `xavier "question"` at the prompt printing the answer. Its speed on the
    M700 is still to be measured.
-4. **X4 - the window.** Chat, streaming, stop, conversations kept, drawn
-   first in `xavier.html` and agreed.
-5. **X5 - four cores.** After `threads.md` steps 4 to 8: the products split
-   by rows across threads.
-6. **X6 - AVX2.** `xsave` in Nebula's lazy FP save, then the kernels
-   widened. A change to `arch/`, and Diego's to agree.
+4. **X4 - the window. Built, 0.11.322.** Chat, streaming, stop,
+   conversations kept, drawn first in `xavier.html` and agreed.
+5. **X5 - every core. Built, 0.11.324** (*Every core, as built*), with the
+   question read in batches (0.11.323).
+6. **X6 - AVX2. Built, 0.11.325** (*AVX2, as built*): XSAVE in Nebula's
+   switch, then the kit's loops widened.
+6b. **Settings. Under way, agreed 8 November** (*Settings*, below; drawn in
+   `xavier.html`): cores, vector loops and the GPU, the LLM server's for
+   every application, and Compare. And **a model chosen for each
+   conversation**, asked the same day, to be drawn first.
 7. **X7 - the GPU.** Compute Kit kernels for the prompt, then for the
-   answer, each measured against the processor on the M700.
+   answer, each measured against the processor on the M700. Brought
+   forward on 8 November, after Settings.
 8. **X8 - the microphone.** HDA capture in the audio server, the ring, and
    the Realtek ALC on the M700 and the T14.
 9. **X8b - models and metrics.** The download into a file in C,
@@ -736,6 +741,47 @@ way.
 **Not measured yet where it counts.** Rosetta has no AVX and QEMU's AVX2 is
 emulated, so this Mac cannot say what it buys. The M700 can, and it is the
 first thing to measure when it is back on the network.
+
+## Settings
+
+**Agreed on 8 November 2026** - Diego: "Can we use gpu for the llm
+inference if available? We can have configuration in Xavier app to enable
+gpu and cpu features and else", then, after the drawing, "Agreed, server
+settings for everyone, go ahead".
+
+**What a person can do**: see what the machine has; choose how many cores
+a question is cut across (Auto, one a core, or a number); choose the
+vector loops (Auto, AVX2, base vectors, plain) - the same answer to the bit
+in each; read questions and write answers on the GPU, when there is one the
+server can use; and **Compare**, which asks the loaded model one question in
+each setting and shows how fast each read and wrote, then **Use the
+fastest**. `llm` at the prompt shows and changes the same settings.
+
+**What it is made of**:
+
+- **The LLM server holds them**, for every application that asks: one
+  model, so one place it runs. `LLM_OP_SETTINGS` in `llmproto.h`, a
+  declared `struct llm_settings` both ways, and every reply carries the
+  settings, what the machine has (processors, cores, the loops, a GPU) and
+  what the last answer ran on. A setting the machine cannot run is refused
+  as `LLM_ERR_CANNOT` and changes nothing.
+- **Kept beside the models**, in `llm.settings` in `/Models` or
+  `/Home/Models` - the one folder the server's door reaches - and read when
+  the server starts.
+- **The kit chooses its loops** (`llm_use_loops`, `llm_loops_have`): one
+  place that knows which loops exist and which this processor runs. The
+  server applies the settings as each question begins, so a change is in
+  force from the next one and never in the middle of an answer.
+- **Cores**: the server's workers, as many as asked. Auto is one a core:
+  CPUID leaf 0xB says how many processors a core has.
+- **Compare is Xavier's**, in Lua: it sets, asks and reads the server's
+  numbers between frames, as an answer is read, and puts the settings back
+  when it is done. Nothing new in the server for it.
+- **The GPU's switches are drawn and off** until the Compute Kit runs the
+  model (X7).
+
+No diagram of its own: it is a part of Xavier and of the LLM server, both
+already drawn in `xavier-architecture.png`, and adds no kit or server.
 
 **What costs almost nothing, and is felt:** the answer is already written
 word by word, and the cache already held across a conversation. The model

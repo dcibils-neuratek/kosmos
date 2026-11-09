@@ -29475,3 +29475,39 @@ preserves AVX's upper halves` fails, 1 of 209. Restored, 209 of 209.
 **Control** for the kit: the AVX2 Q4_0 four-input loop given a block's
 high nibbles where its low ones go. `x86-llm` fails 4 of 49, every Q4_0
 answer, and Q8_0's and F16's stay the reference's. Restored, 49 of 49.
+
+## 18.721 Settings: where the model runs, the LLM server's for everyone
+
+**What** (8 November 2026, `docs/xavier.md`, *Settings*; drawn in
+`xavier.html`). `LLM_OP_SETTINGS` in `llmproto.h`: cores (Auto, or a
+number), vector loops (Auto, plain, base vectors, AVX2) and the GPU's two
+switches. They are the LLM server's, for every application that asks. They
+are kept in `llm.settings` beside the models, and every reply carries what
+the machine has and what the last answer ran on. The kit has one place that
+chooses its loops (`llm_use_loops`). Auto cores is one a core, from CPUID
+leaf 0xB. `llm` at the prompt shows and sets them. Xavier has a Settings
+sheet in its header's menu, with Compare and Use the fastest.
+
+**The tests**:
+
+- **`x86-llm`**, 57 checks:
+  - four processors on four cores, Auto, and the loops this processor has;
+  - more cores than there are refused, with the settings unchanged;
+  - loops that do not exist refused;
+  - four settings asked in turn, each running on the cores and loops it
+    named, and each answer the kit's own, byte for byte;
+  - the settings kept in a 24-byte file.
+- **`x86-xavier`**, 28 checks: Settings opened from the header's menu;
+  Compare asking in base vectors and plain, each with a speed; Use the
+  fastest keeping the fastest writer, which the sheet then shows; Done
+  closing it.
+
+**Controls**:
+
+- **The server ignoring the loops setting.** The plain and base runs
+  report AVX2's loops and fail, 2 of 57.
+- **Use the fastest keeping the slowest.**
+  `x86-xavier` fails the fastest-writer check, 1 of 28: under TCG, plain wrote
+  118 tokens a second and base vectors fewer, and base was kept. That run
+  is no measure of either - TCG's vectors are emulated - but it shows the
+  check reads the numbers rather than the order.

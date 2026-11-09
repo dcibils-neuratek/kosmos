@@ -116,6 +116,29 @@ local after = sys.info().regions_used
 s = llm.stats()
 print("LLM-REGIONS", before, after, s.answers)
 print("LLM-STATS", s.prompt_us, s.answer_us, s.first_us, s.load_us)
+
+-- Where the model runs (`xavier.md`, *Settings*): what the machine has,
+-- a setting it cannot run refused, and the same answer in every setting.
+llm.load("tiny-phi2.Q4_0.gguf")
+local st = llm.settings()
+print("LLM-SETTINGS", st.processors, st.cores, st.settings.cores, st.settings.loops,
+      st.loops_have.plain and 1 or 0, st.loops_have.base and 1 or 0, st.loops_have.avx2 and 1 or 0)
+local no, why = llm.set({ cores = st.processors + 1 })
+print("LLM-SET-TOOMANY", no == nil, why, llm.settings().settings.cores)
+no, why = llm.set({ loops = "fast" })
+print("LLM-SET-NOLOOPS", no == nil, why)
+for _, c in ipairs({ { 1, "plain" }, { 2, "base" }, { 0, "avx2" }, { 0, "auto" } }) do
+  local ok, why = llm.set({ cores = c[1], loops = c[2] })
+  local text = ""
+  if ok then
+    local a = llm.ask(unhex(SETPROMPT), { tokens = TOKENS })
+    text = a and a:all() or ""
+  end
+  local s = llm.stats()
+  print("LLM-RAN", c[1], c[2], ok and "ok" or why, s.ran.cores, s.ran.loops, hex(text))
+end
+local kept = fs.read(llm.MODELS .. "/llm.settings")
+print("LLM-SETFILE", kept and #kept or 0)
 print("LLM-DONE")
 '''
 
@@ -164,7 +187,8 @@ def main():
         f.write(PROGRAM.replace("{ MODELS }", "{ " + lua_list(MODELS) + " }")
                 .replace("{ PROMPTS }", "{ " + lua_list(hexes) + " }")
                 .replace("TOKENS", str(TOKENS))
-                .replace('"PARAGRAPH"', '"%s"' % PARAGRAPH.encode().hex()))
+                .replace('"PARAGRAPH"', '"%s"' % PARAGRAPH.encode().hex())
+                .replace("SETPROMPT", '"%s"' % hexes[1]))
 
     shut_script = os.path.join(work, "llmshut.lua")
 
@@ -319,6 +343,35 @@ def main():
     check(r and r[0] == r[1], "thirty answers did not give their regions back: %s" % r)
     st = line("LLM-STATS")
     check(st and all(int(x) > 0 for x in st), "STATS gave a time of nothing: %s" % st)
+
+    # **Settings** (`xavier.md`, *Settings*). The guest has four processors,
+    # one a core; on x86 its `-cpu max` has AVX2, on ARM there is none.
+    x86 = R.machine(image) == "x86_64"
+    se = line("LLM-SETTINGS")
+    check(se == ["4", "4", "0", "auto", "1", "1", "1" if x86 else "0"],
+          "the settings did not say four processors on four cores, Auto, and the loops "
+          "this processor has: %s" % se)
+    se = line("LLM-SET-TOOMANY")
+    check(se and se[0] == "true" and "cannot run those settings" in se[1] and se[2] == "0",
+          "more cores than there are was not refused, or changed the settings: %s" % se)
+    se = line("LLM-SET-NOLOOPS")
+    check(se and se[0] == "true" and "no such loops" in se[1], "loops that do not exist were "
+          "not refused: %s" % se)
+    want = expected("tiny-phi2.Q4_0.gguf", [hexes[1]]).get(hexes[1])
+    ran = {(l[0], l[1]): l[2:] for l in lines("LLM-RAN")}
+    for (c, loops, cores, kind) in [("1", "plain", "1", "plain"), ("2", "base", "2", "base"),
+                                    ("0", "avx2", "4", "avx2"), ("0", "auto", "4",
+                                                                 "avx2" if x86 else "base")]:
+        got = ran.get((c, loops))
+        if loops == "avx2" and not x86:
+            check(got and "cannot run those settings" in got[0],
+                  "AVX2's loops were not refused on a processor without them: %s" % got)
+            continue
+        check(got and got[0:3] == ["ok", cores, kind] and got[3] == want,
+              "cores %s, loops %s did not run on %s cores in %s's loops with the kit's answer: "
+              "%s, the kit's %s" % (c, loops, cores, kind, got, want))
+    se = line("LLM-SETFILE")
+    check(se == ["24"], "the settings were not kept beside the models: %s" % se)
 
     m = re.search(r"^LLM-SHUT\t(.*?)\r?$", said_shut, re.M)
     sh = m.group(1).split("\t") if m else None

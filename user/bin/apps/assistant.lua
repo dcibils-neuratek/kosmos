@@ -64,6 +64,9 @@ local last = nil                        -- the last answer's numbers, for the fo
 local looked = 0                        -- when STATS was last asked
 local scroll, follow_end = 0, true      -- the conversation's place
 local top = 1                           -- the first row of the list drawn
+local sheet = nil                       -- Settings, while it is open
+local compare = nil                     -- { runs, at, answer, rows, before } while it runs
+local compared = {}                     -- the rows Compare last filled
 
 local function now_epoch()
   return (clock.now() or {}).epoch or 0
@@ -87,8 +90,9 @@ local list = ui.view{ x = 0, y = L.head + 56, w = SIDE - 1, h = H - L.head - 56,
 list.focusable = true
 
 local chip = ui.view{ w = 220, h = 24 }
+local more = ui.iconbutton{ icon = "more" }
 local header = ui.header{ x = SIDE, y = 0, w = W - SIDE, title = "New conversation",
-                          title_bar = true, right = { chip } }
+                          title_bar = true, right = { chip, more } }
 
 local chat = ui.view{ x = SIDE, y = L.head, w = W - SIDE, h = H - L.head - BOX - FOOT,
                       follow = { "left", "right", "top", "bottom" } }
@@ -390,6 +394,16 @@ end
 -- The header's chip and the foot.
 --------------------------------------------------------------------------
 
+-- What an answer ran on, as the foot says it: "ran on 4 cores, AVX2".
+local LOOP_WORDS = { auto = "Auto", plain = "Plain", base = "Base vectors", avx2 = "AVX2" }
+
+local function ran_words(ran)
+  if not ran then return "ran on the processor" end
+
+  return ("ran on %d %s, %s"):format(ran.cores, ran.cores == 1 and "core" or "cores",
+                                     LOOP_WORDS[ran.loops] or ran.loops)
+end
+
 local function model_words()
   if model.state == "ready" then
     return model.name:gsub("%.gguf$", "") .. " \u{00b7} processor"
@@ -420,8 +434,8 @@ function foot:draw(g)
     words = said
   elseif last then
     words = ("Last answer %.1f tokens a second \u{00b7} question read in %s \u{00b7} first word "
-             .. "after %s \u{00b7} ran on the processor"):format(rate(last.tokens, last.write_us),
-             seconds(last.read_us), seconds(last.first_us))
+             .. "after %s \u{00b7} %s"):format(rate(last.tokens, last.write_us),
+             seconds(last.read_us), seconds(last.first_us), ran_words(last.ran))
   else
     words = model.state == "ready" and "Ready" or model_words()
   end
@@ -469,7 +483,7 @@ end
 -- Ask: the whole conversation, the oldest turns left out while it does not
 -- fit, and the answer then read as it comes.
 local function ask(question)
-  if live then return end
+  if live or compare then return end
 
   if model.state ~= "ready" then
     said = model.state == "loading" and ("The model is still loading: " .. model_words())
@@ -525,6 +539,7 @@ local function finished()
     t.tokens, t.read_us, t.write_us, t.first_us = s.answer_tokens, s.prompt_us, s.answer_us,
                                                   s.first_us
     open.held, open.room, open.model = s.held_tokens, s.n_ctx, s.model
+    t.ran = s.ran
     last = t
     print(("xavier: answered %d tokens, %d of the conversation kept and %d read, %d held: %s")
           :format(s.answer_tokens, s.kept_tokens, s.prompt_tokens, s.held_tokens, hex(t.xavier)))
@@ -616,6 +631,264 @@ function list:key(c)
 end
 
 --------------------------------------------------------------------------
+-- **Settings** (`docs/xavier.html`, *Settings*): where the model runs, the
+-- LLM server's and so for every application that asks. Each control sets
+-- the server at once and is in force from the next question; the server
+-- keeps them beside the models across restarts.
+--
+-- **Compare** asks the loaded model one question in each setting and shows
+-- how fast each read it and wrote; **Use the fastest** keeps the winner. It
+-- is asked between frames, as an answer is read, so the window keeps
+-- drawing while it runs.
+--------------------------------------------------------------------------
+
+local COMPARE_QUESTION = "Explain in a few sentences what an operating system does."
+local COMPARE_TOKENS = 48
+
+-- The settings it tries: every loop this machine has at Auto's cores, then
+-- the cores one way and the other, and one core plain as the reference.
+local function compare_runs(st)
+  local runs, seen = {}, {}
+  local function add(cores, loops)
+    local key = cores .. loops
+    if not seen[key] and (loops == "auto" or st.loops_have[loops]) and cores <= st.processors then
+      seen[key] = true
+      runs[#runs + 1] = { cores = cores, loops = loops }
+    end
+  end
+
+  add(st.cores, "avx2")
+  add(st.cores, "base")
+  if st.processors ~= st.cores then add(st.processors, "avx2") add(st.processors, "base") end
+  if st.cores > 1 then add(st.cores // 2, "avx2") add(st.cores // 2, "base") end
+  add(1, "plain")
+  return runs
+end
+
+local function compare_next()
+  local c = compare
+  local run = c.runs[c.at]
+
+  if not run then
+    llm.set(c.before)
+    print(("xavier: compared %d settings"):format(#c.rows))
+    compare = nil
+    if sheet then sheet.show() end
+    return
+  end
+
+  local ok, why = llm.set{ cores = run.cores, loops = run.loops }
+  local a = ok and llm.ask(COMPARE_QUESTION, { tokens = COMPARE_TOKENS })
+
+  if not a then
+    c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops, why = tostring(why or "refused") }
+    c.at = c.at + 1
+    return compare_next()
+  end
+
+  c.answer = a
+end
+
+-- A pass of Compare: the answer read, and the next setting asked when it ends.
+local function compare_step()
+  local c = compare
+
+  while true do
+    local text = c.answer:poll()
+
+    if text == nil then
+      local s = llm.stats() or {}
+      local run = c.runs[c.at]
+
+      c.rows[#c.rows + 1] = { cores = run.cores, loops = run.loops,
+                              read = (s.prompt_tokens or 0) * 1e6 / math.max(1, s.prompt_us or 1),
+                              write = (s.answer_tokens or 0) * 1e6 / math.max(1, s.answer_us or 1),
+                              ran = s.ran }
+      print(("xavier: compare %d cores %s: read %.1f, wrote %.1f tokens a second"):format(
+        run.cores, run.loops, c.rows[#c.rows].read, c.rows[#c.rows].write))
+      c.at = c.at + 1
+      c.answer = nil
+      compared = c.rows
+      if sheet then sheet.show() end
+      compare_next()
+      return
+    end
+
+    if text == "" then return end
+  end
+end
+
+local function open_settings()
+  if sheet or live then return end
+
+  local st, why = llm.settings()
+
+  if not st then
+    said = "Xavier could not ask for the settings: " .. tostring(why)
+    win.dirty = true
+    return
+  end
+
+  local SW, SH = 700, 560
+  local s = ui.sheet{ title = "Settings \u{00b7} the LLM server's, for every application that asks",
+                      w = SW, h = SH }
+  local X, CX = 18, 190
+
+  local function label(y, text, dim)
+    local l = ui.label{ x = X, y = y, text = text, color = dim and "text_dim" or nil }
+    s:put(l)
+    return l
+  end
+
+  local function note(y, text)
+    local l = ui.label{ x = CX, y = y, w = SW - CX - 18, text = text, color = "text_dim", role = "ui" }
+    s:put(l)
+    return l
+  end
+
+  -- This machine.
+  local have = {}
+  for _, n in ipairs({ "plain", "base", "avx2" }) do
+    if st.loops_have[n] then have[#have + 1] = LOOP_WORDS[n] end
+  end
+  label(50, "This machine")
+  note(52, ("%d processors on %d cores \u{00b7} %s \u{00b7} %s"):format(st.processors, st.cores,
+       table.concat(have, ", "), st.gpu ~= "" and st.gpu or "no GPU the server can use yet"))
+
+  -- Cores: Auto, then the counts there are room for.
+  local counts = {}
+  for _, n in ipairs({ 1, 2, 4, 8, 16, 32, 64 }) do
+    if n <= st.processors then counts[#counts + 1] = n end
+  end
+  if counts[#counts] ~= st.processors then counts[#counts + 1] = st.processors end
+
+  local core_items, core_on = { "Auto \u{00b7} " .. st.cores }, 1
+  for i, n in ipairs(counts) do
+    core_items[#core_items + 1] = tostring(n)
+    if st.settings.cores == n then core_on = i + 1 end
+  end
+
+  label(92, "Cores")
+  s:put(ui.segments{ x = CX, y = 88, items = core_items, on = core_on, name = "Cores",
+    on_change = function(_, i)
+      local ok, why = llm.set{ cores = i == 1 and 0 or counts[i - 1] }
+      print("xavier: cores " .. (i == 1 and "auto" or counts[i - 1]) .. (ok and "" or (": " .. tostring(why))))
+    end })
+  note(124, "How many processors a question is cut across. Auto is one a core.")
+
+  -- Loops: Auto, then each this processor has.
+  local loop_names, loop_items, loop_on = { "auto" }, { "Auto" }, 1
+  for _, n in ipairs({ "avx2", "base", "plain" }) do
+    if st.loops_have[n] then
+      loop_names[#loop_names + 1] = n
+      loop_items[#loop_items + 1] = LOOP_WORDS[n]
+      if st.settings.loops == n then loop_on = #loop_items end
+    end
+  end
+
+  label(160, "Vector loops")
+  s:put(ui.segments{ x = CX, y = 156, items = loop_items, on = loop_on, name = "Vector loops",
+    on_change = function(_, i)
+      local ok, why = llm.set{ loops = loop_names[i] }
+      print("xavier: loops " .. loop_names[i] .. (ok and "" or (": " .. tostring(why))))
+    end })
+  note(192, "The same answer to the bit in each; only the speed differs.")
+  note(210, "Base vectors are SSE2 on a PC and NEON on ARM.")
+
+  -- The GPU: drawn where it will be, off, until the Compute Kit runs the model.
+  label(232, "Read questions")
+  s:put(ui.switch{ x = CX, y = 228, on = false, disabled = st.gpu_have & 1 == 0, name = "Read questions" })
+  label(268, "Write answers")
+  s:put(ui.switch{ x = CX, y = 264, on = false, disabled = st.gpu_have & 2 == 0, name = "Write answers" })
+  note(300, st.gpu_have == 0 and "On the GPU: not yet - the server runs the model on the processor."
+                              or "On the GPU, where Compare says it pays.")
+
+  -- Compare.
+  label(340, "Compare")
+  local status = note(372, "")
+  local rows = {}
+  for i = 1, 7 do rows[i] = note(394 + (i - 1) * 18, "") end
+
+  local fastest = ui.button{ x = SW - 18 - 140, y = SH - 50, w = 140, text = "Use the fastest",
+                             disabled = true, name = "Use the fastest" }
+
+  local function best()
+    local b = nil
+    for _, r in ipairs(compared) do
+      if r.write and (not b or r.write > b.write) then b = r end
+    end
+    return b
+  end
+
+  function s.show()
+    status.text = compare and ("asking in setting %d of %d\u{2026}"):format(compare.at, #compare.runs)
+                  or (#compared > 0 and "Writing is what a person waits for; the fastest at it is marked."
+                      or ("Asks the loaded model one question in each setting, %d tokens each."):format(COMPARE_TOKENS))
+    local b = best()
+    for i, l in ipairs(rows) do
+      local r = compared[i]
+      l.text = r and (r.why and ("%d cores, %s: %s"):format(r.cores, LOOP_WORDS[r.loops], r.why)
+               or ("%s%d %s, %s: question %.1f tokens a second, answer %.1f"):format(
+                 r == b and "\u{2713} " or "", r.cores, r.cores == 1 and "core" or "cores",
+                 LOOP_WORDS[r.loops], r.read, r.write)) or ""
+    end
+    fastest.disabled = compare ~= nil or b == nil
+    win.dirty = true
+  end
+
+  local compare_button
+  compare_button = ui.button{ x = CX, y = 336, w = 110, text = "Compare", go = true, name = "Compare",
+    on_click = function()
+      if compare or model.state ~= "ready" then return end
+      local now = llm.settings()
+      if not now then return end
+      compare = { runs = compare_runs(now), at = 1, rows = {},
+                  before = { cores = now.settings.cores, loops = now.settings.loops } }
+      compared = compare.rows
+      print(("xavier: comparing %d settings"):format(#compare.runs))
+      compare_next()
+      s.show()
+    end }
+  s:put(compare_button)
+
+  fastest.on_click = function()
+    local b = best()
+    if not b or compare then return end
+    llm.set{ cores = b.cores, loops = b.loops }
+    print(("xavier: the fastest kept, %d cores %s"):format(b.cores, b.loops))
+    s:close()
+    sheet = nil
+    open_settings()
+  end
+  s:put(fastest)
+
+  local done = ui.button{ x = SW - 18 - 140 - 10 - 80, y = SH - 50, w = 80, text = "Done", name = "Done",
+    on_click = function() if not compare then s:close() sheet = nil print("xavier: settings closed") end end }
+  s:put(done)
+
+  s.show()
+  sheet = s
+  win:add(s)
+
+  local function at(b) return s.panel.x + b.x + b.w // 2, s.panel.y + b.y + b.h // 2 end
+  local cx, cy = at(compare_button)
+  local dx, dy = at(done)
+  local fx, fy = at(fastest)
+  print(("xavier: settings, %d processors on %d cores, cores %d, loops %s; compare %d,%d done %d,%d "
+         .. "fastest %d,%d"):format(st.processors, st.cores, st.settings.cores, st.settings.loops,
+         cx, cy, dx, dy, fx, fy))
+end
+
+more.on_click = function()
+  local m = win:open_menu(win.origin_x + header.x + more.x, win.origin_y + L.head,
+                          { { text = "Settings\u{2026}", on_choose = open_settings } })
+
+  if m then
+    print(("xavier: menu at %d,%d, rows of %d"):format(m.x - win.origin_x, m.y - win.origin_y, m.row))
+  end
+end
+
+--------------------------------------------------------------------------
 -- The clock: the model watched until it is in, the answer read as it grows.
 --------------------------------------------------------------------------
 
@@ -664,9 +937,16 @@ local placed = false
 function win:on_frame()
   if not placed then
     placed = true
-    print(("xavier: places field %d,%d stop %d,%d new %d,%d list %d,%d rows %d"):format(
+    print(("xavier: places field %d,%d stop %d,%d new %d,%d list %d,%d rows %d more %d,%d"):format(
       field.x + 20, field.y + field.h // 2, stop.x + stop.w // 2, stop.y + stop.h // 2,
-      new_button.x + new_button.w // 2, new_button.y + new_button.h // 2, list.x, list.y, ROWH))
+      new_button.x + new_button.w // 2, new_button.y + new_button.h // 2, list.x, list.y, ROWH,
+      header.x + more.x + more.w // 2, header.y + more.y + more.h // 2))
+  end
+
+  if compare then
+    self.poll_wait_ticks = 8
+    if compare.answer then compare_step() end
+    return false
   end
 
   if live then

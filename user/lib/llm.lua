@@ -21,18 +21,23 @@ local llm = {}
 
 local PATH = "/Running/llm"
 
-local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS = 1, 2, 3, 4, 5
+local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS, OP_SETTINGS = 1, 2, 3, 4, 5, 6
 
-local STOP_AT_BLANK_LINE, TEXT_IN_REGION, LOAD_NOWAIT = 1, 2, 4
+local STOP_AT_BLANK_LINE, TEXT_IN_REGION, LOAD_NOWAIT, SETTINGS_CHANGE = 1, 2, 4, 8
 
 local TEXT_MAX = 1536
 local STOP_MAX = 24
 local CONVERSATION_MAX = 256 * 1024
 
--- `struct llm_request`, 1672 bytes, and `struct llm_reply`, 344.
-local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24"
-local REPLY = "<I4I4I4I4c64c64c16c96I8I8I4I4I4I4I4I4I8I8I8I8I8I4I4"
-local REPLY_SIZE = 344
+-- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 424.
+local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24I4I4I4I4"
+local REPLY = "<I4I4I4I4c64c64c16c96I8I8I4I4I4I4I4I4I8I8I8I8I8I4I4I4I4I4I4I4I4I4I4c32I4I4I4I4"
+local REPLY_SIZE = 424
+
+-- Which loops, by the protocol's numbers (`llmproto.h`, LLM_LOOPS_*).
+llm.LOOPS = { [0] = "auto", "plain", "base", "avx2" }
+local LOOP_NUMBER = { auto = 0, plain = 1, base = 2, avx2 = 3 }
+llm.GPU_READ, llm.GPU_WRITE = 1, 2
 
 -- `struct llm_answer`'s fields, where they are in the region.
 local ANSWER_DATA = 4096
@@ -47,6 +52,8 @@ local ERRORS = {
   [6] = "the LLM server is busy with another answer",
   [7] = "the question is longer than the model can hold",
   [8] = "there is no answer to wait on",
+  [9] = "this machine cannot run those settings",
+  [10] = "the settings are in force, but could not be kept beside the models",
 }
 
 llm.STATES = { [0] = "empty", "loading", "ready", "answering" }
@@ -68,9 +75,11 @@ local function call(op, fields, pass)
   fields = fields or {}
   local text = fields.text or ""
   local stops = fields.stops or {}
+  local set = fields.settings or {}
   local bytes = string.pack(REQUEST, op, fields.tokens or 0, fields.flags or 0,
                             fields.since or 0, fields.length or #text, 0, pad(fields.name, 64),
-                            pad(text, TEXT_MAX), pad(stops[1], STOP_MAX), pad(stops[2], STOP_MAX))
+                            pad(text, TEXT_MAX), pad(stops[1], STOP_MAX), pad(stops[2], STOP_MAX),
+                            set.cores or 0, set.loops or 0, set.gpu or 0, 0)
   local reply, cap = fs.raw(PATH, bytes, pass)
 
   if not reply then
@@ -83,8 +92,9 @@ local function call(op, fields, pass)
 
   local err, state, written, ended, model, title, arch, why, model_bytes, loaded_bytes,
         n_layer, n_embd, n_vocab, n_ctx, prompt_tokens, answer_tokens,
-        prompt_us, answer_us, first_us, load_us, answers, kept_tokens, held_tokens =
-        string.unpack(REPLY, reply)
+        prompt_us, answer_us, first_us, load_us, answers, kept_tokens, held_tokens,
+        s_cores, s_loops, s_gpu, _, processors, cores, loops_have, gpu_have, gpu,
+        ran_cores, ran_loops, ran_gpu = string.unpack(REPLY, reply)
 
   local r = {
     error = err, state = llm.STATES[state] or tostring(state), written = written,
@@ -95,7 +105,16 @@ local function call(op, fields, pass)
     answer_tokens = answer_tokens, prompt_us = prompt_us, answer_us = answer_us,
     first_us = first_us, load_us = load_us, answers = answers,
     kept_tokens = kept_tokens, held_tokens = held_tokens,
+    -- Where the model runs (`xavier.md`, *Settings*): the server's settings,
+    -- what this machine has, and what the last answer ran on.
+    settings = { cores = s_cores, loops = llm.LOOPS[s_loops] or "auto", gpu = s_gpu },
+    processors = processors, cores = cores, gpu = cstring(gpu), gpu_have = gpu_have,
+    loops_have = {}, ran = { cores = ran_cores, loops = llm.LOOPS[ran_loops] or "?", gpu = ran_gpu },
   }
+
+  for n, name in pairs(llm.LOOPS) do
+    if n > 0 and loops_have & (1 << n) ~= 0 then r.loops_have[name] = true end
+  end
 
   -- A reply with no capability says -1.
   if type(cap) ~= "number" or cap < 0 then cap = nil end
@@ -185,6 +204,31 @@ end
 -- What is loaded and how the last answer went.
 function llm.stats()
   return call(OP_STATS)
+end
+
+-- **Where the model runs**: the server's settings, for every application
+-- that asks, and what this machine has to choose from - the same reply as
+-- `llm.stats`, whose `settings`, `processors`, `cores`, `loops_have` and
+-- `ran` say it.
+function llm.settings()
+  return call(OP_SETTINGS)
+end
+
+-- Changed: `{ cores = 0 (Auto) or a number, loops = "auto" | "plain" |
+-- "base" | "avx2", gpu = bits }`, any of them; the rest as they stand. In
+-- force from the next question, and kept by the server across restarts.
+function llm.set(change)
+  local now, why = call(OP_SETTINGS)
+
+  if not now then return nil, why end
+
+  local s = now.settings
+  local loops = change.loops or s.loops
+
+  if LOOP_NUMBER[loops] == nil then return nil, "no such loops: " .. tostring(loops) end
+
+  return call(OP_SETTINGS, { flags = SETTINGS_CHANGE, settings = {
+    cores = change.cores or s.cores, loops = LOOP_NUMBER[loops], gpu = change.gpu or s.gpu } })
 end
 
 -- A model, by its file's name in /Home/Models. Returns when it is in - or,

@@ -154,6 +154,38 @@ pre.diff .hunk { color: #82aaff; }
 .runbox .cmd { font: 12.5px var(--mono); color: #d7dde8; margin: 4px 0 8px; }
 .runbox .bt { display: flex; gap: 8px; justify-content: flex-end; }
 .tool { font: 11.5px var(--mono); color: var(--a-faint); border-left: 2px solid var(--a-line); padding-left: 8px; margin-top: 6px; }
+.pick { position: absolute; right: 64px; top: 40px; width: 330px; background: var(--a-raised); border: 1px solid var(--a-line); border-radius: 9px; box-shadow: 0 12px 30px rgba(0,0,0,.4); padding: 6px 0; z-index: 2; }
+.pick .r { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; padding: 6px 12px; align-items: baseline; }
+.pick .r.on { background: var(--a-sel); }
+.pick .r .d { color: var(--a-faint); font-size: 11.5px; grid-column: 2 / 4; margin-top: -3px; }
+.pick .r .n { color: var(--a-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pick .sep { height: 1px; background: var(--a-line); margin: 6px 0; }
+.pick .foot2 { padding: 4px 12px 2px; color: var(--a-faint); font-size: 11.5px; }
+.set { width: 760px; }
+.set .body { padding: 6px 0 4px; }
+.set .grp { color: var(--a-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 14px 20px 4px; }
+.set .line { display: grid; grid-template-columns: 170px 1fr; gap: 16px; padding: 10px 20px; border-bottom: 1px solid #2a303d; align-items: start; }
+.set .line:last-child { border-bottom: 0; }
+.set .lbl { font-weight: 500; padding-top: 4px; }
+.set .why { color: var(--a-dim); font-size: 12px; margin-top: 6px; max-width: 60ch; }
+.seg { display: inline-flex; border: 1px solid var(--a-line); border-radius: 7px; overflow: hidden; }
+.seg span { padding: 4px 11px; font-size: 12.5px; border-right: 1px solid var(--a-line); background: var(--a-raised); white-space: nowrap; }
+.seg span:last-child { border-right: 0; }
+.seg span.on { background: var(--a-accent); color: #fff; }
+.seg span.off { color: var(--a-faint); background: var(--a-sunk); }
+.sw { display: inline-flex; align-items: center; gap: 9px; }
+.sw i { width: 30px; height: 17px; border-radius: 9px; background: var(--a-line); position: relative; display: inline-block; }
+.sw i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #c9d1dd; }
+.sw.on i { background: var(--good); }
+.sw.on i::after { left: 15px; background: #fff; }
+.hw { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.chip { font-size: 11.5px; border: 1px solid var(--a-line); border-radius: 999px; padding: 1px 9px; color: var(--a-dim); }
+.chip.yes { border-color: #2f5f3a; color: #9be3a8; }
+table.cmp { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+table.cmp td, table.cmp th { text-align: left; padding: 5px 8px; border-bottom: 1px solid #2a303d; }
+table.cmp th { color: var(--a-faint); font-weight: 500; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+table.cmp tr.best td { color: #fff; background: rgba(59,130,246,.12); }
+table.cmp td.real { color: #9be3a8; }
 .tag { display: inline-block; font-size: 11px; border: 1px solid var(--rule); color: var(--muted); border-radius: 999px; padding: 0 8px; margin-left: 6px; vertical-align: 3px; font-family: var(--body); font-weight: 500; }
 </style>
 </head>
@@ -284,6 +316,94 @@ pre.diff .hunk { color: #82aaff; }
   </div>
   </div>
   <p class="cap">Across the top: which model is loaded, how much memory it holds and where it runs, then the three speeds that matter. <b>Writing</b> is tokens a second for the answer, bound by how fast memory can be read. <b>Reading</b> is tokens a second through the question, which is where the GPU earns its place. <b>First word</b> is how long a person waits. The graph is the last five minutes, gaps between answers included. Below, every application asking, by name, with what its conversation holds. A server answers one request at a time, so a second asker waits and is shown waiting. All of it is the server's <code>stats</code>: a declared struct, read by this window on its own clock, as GPU Monitor reads the GPU.</p>
+
+  <h2 id="settings">Settings: where the model runs <span class="tag">agreed 8 November</span></h2>
+  <div class="q"><b>Diego, 8 November 2026:</b> "Can we use gpu for the llm inference if available? We can have configuration in Xavier app to enable gpu and cpu features and else" - and "Yes, draw the settings first".</div>
+  <div class="scroller">
+  <div class="win set">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; Settings &middot; the LLM server's, for every application that asks</span><span class="btn">Done</span></div>
+    <div class="body">
+      <div class="grp">This machine</div>
+      <div class="line"><span class="lbl">What it has</span><div>
+        <div class="hw"><span class="chip yes">Core i7-6700 &middot; 4 cores, 8 processors</span><span class="chip yes">SSE2</span><span class="chip yes">AVX2</span><span class="chip">FMA &middot; not used</span><span class="chip yes">Intel HD 530 &middot; 24 EUs</span></div>
+        <div class="why">Read from the processor and the Compute Kit when the window opens, so a setting the machine cannot use is drawn off and cannot be chosen.</div></div></div>
+
+      <div class="grp">The processor</div>
+      <div class="line"><span class="lbl">Cores</span><div>
+        <span class="seg"><span class="on">Auto &middot; 4</span><span>1</span><span>2</span><span>4</span><span>8</span></span>
+        <div class="why">How many processors a question and an answer are cut across. <b>Auto</b> is one a core: the second processor on a core waits for the same memory, and with eight the M700 wrote 3.5 tokens a second where it wrote 5.7 with fewer to share. The number is checked with <b>Compare</b> below rather than taken on trust.</div></div></div>
+      <div class="line"><span class="lbl">Vector loops</span><div>
+        <span class="seg"><span class="on">Auto &middot; AVX2</span><span>AVX2</span><span>SSE2</span><span>Plain</span></span>
+        <div class="why">Which of the kit's loops multiply the weights. Every choice gives <b>the same answer, to the bit</b>; only the speed differs. <b>Plain</b> is the reference the others are held to.</div></div></div>
+
+      <div class="grp">The GPU</div>
+      <div class="line"><span class="lbl">Read questions</span><div>
+        <span class="sw on"><i></i>On the GPU &middot; Intel HD 530</span>
+        <div class="why">A question is read many tokens at a time, which is arithmetic, and that is what the GPU's 24 EUs are for. The processor is left free for the desktop while it works.</div></div></div>
+      <div class="line"><span class="lbl">Write answers</span><div>
+        <span class="sw"><i></i>On the processor</span>
+        <div class="why">Writing is one token at a time and bound by memory. The HD 530 reads the same memory as the processor, so it may not be faster; <b>Compare</b> says which is. A GPU with memory of its own, like the Mac Pro's AMD cards, is where this pays.</div></div></div>
+
+      <div class="grp">Which is fastest here</div>
+      <div class="line"><span class="lbl">Compare</span><div>
+        <span class="btn primary">Compare</span> <span style="color:var(--a-dim);font-size:12px;margin-left:8px">asks the loaded model the same question in each setting &middot; about a minute</span>
+        <table class="cmp" style="margin-top:10px">
+          <tr><th>Cores</th><th>Loops</th><th>Question on</th><th>Question read in</th><th>Writing</th></tr>
+          <tr><td>8</td><td>AVX2</td><td>processor</td><td class="real">2.7 s</td><td class="real">3.5 tokens/s</td></tr>
+          <tr><td>4</td><td>AVX2</td><td>processor</td><td>&mdash;</td><td>&mdash;</td></tr>
+          <tr><td>4</td><td>SSE2</td><td>processor</td><td>&mdash;</td><td>&mdash;</td></tr>
+          <tr><td>1</td><td>Plain</td><td>processor</td><td>&mdash;</td><td>&mdash;</td></tr>
+          <tr><td>4</td><td>AVX2</td><td>GPU</td><td>&mdash;</td><td>&mdash;</td></tr>
+        </table>
+        <div class="why">The green row is the M700's, measured on 8 November with phi-2 Q4_0, a follow-up question and an answer of 93 tokens. The rest are filled in by pressing <b>Compare</b>. <b>Use the fastest</b> sets Auto to whichever row won.</div>
+        <div style="margin-top:8px"><span class="btn">Use the fastest</span></div></div></div>
+    </div>
+    <div class="foot"><span>In force from the next question &middot; kept by the server across restarts</span><span class="sp"></span><span><code>llm set cores 4</code> at the prompt does the same</span></div>
+  </div>
+  </div>
+  <p class="cap">Opened from the <b>&middot;&middot;&middot;</b> menu in Xavier's header. The settings belong to the LLM server, which holds one model for every application, so changing them here changes them for Mail and the prompt too, and the header says so. They cross to the server as fields in its protocol header, never as a table. A setting the machine has no hardware for is drawn off. The window's foot then says what the last answer actually ran on: "ran on the GPU and 4 cores, AVX2".</p>
+
+  <h2 id="model-each">A model for each conversation <span class="tag">asked 8 November</span></h2>
+  <div class="q"><b>Diego, 8 November 2026:</b> "xavier needs a way for me to select the llm model to use in every conversation".</div>
+  <div class="scroller">
+  <div class="win" style="width:1080px;position:relative">
+    <div class="head"><span class="t">Xavier</span><span class="crumb">&middot; A Fibonacci in Lua</span>
+      <span class="model">phi-2 &middot; Q8_0 &#9662;</span><span class="dots">&middot;&middot;&middot;</span>
+      <span class="lights"><i style="background:#3fb950"></i><i style="background:#f0b429"></i><i style="background:#e5484d"></i></span></div>
+    <div class="pick">
+      <div class="r"><span></span><b>phi-2 &middot; Q4_0</b><span class="n">1.57 GB</span><span class="d">smaller and quicker; loaded now</span></div>
+      <div class="r on"><span>&#10003;</span><b>phi-2 &middot; Q8_0</b><span class="n">2.96 GB</span><span class="d">this conversation's &middot; a little closer to the original</span></div>
+      <div class="r"><span></span><b>TinyLlama 1.1B Chat &middot; Q4_0</b><span class="n">638 MB</span><span class="d">fastest; plainer answers</span></div>
+      <div class="sep"></div>
+      <div class="foot2">Every model in /Models &middot; Get more in Models&hellip;</div>
+    </div>
+    <div class="main" style="height:430px">
+      <div class="side">
+        <span class="btn new">New conversation</span>
+        <div class="group">Today</div>
+        <div class="it">Questions, 8 November<div class="w">4 turns &middot; phi-2 Q4_0</div></div>
+        <div class="it on">A Fibonacci in Lua<div class="w">2 turns &middot; phi-2 Q8_0</div></div>
+        <div class="group">This week</div>
+        <div class="it">What a microkernel is<div class="w">6 turns &middot; TinyLlama</div></div>
+      </div>
+      <div class="chat">
+        <div class="talk">
+          <div class="you">Write me a Fibonacci function in Lua.</div>
+          <div class="xa"><span class="av">X</span><div class="say">Here is one, counting up from the first two:
+<pre class="code">local function fibonacci(n)
+  local a, b = 0, 1
+  for _ = 1, n do a, b = b, a + b end
+  return a
+end</pre>
+            <div class="note">phi-2 Q8_0 &middot; 38 tokens &middot; 3.9 a second</div></div></div>
+        </div>
+        <div class="box"><span class="ph">Loading phi-2 Q8_0 for this conversation &middot; 41%&hellip;</span></div>
+        <div class="foot"><span>This conversation's model is being loaded: the server holds one at a time</span><span class="sp"></span><span>2.96 GB &middot; about 50 s from /Models</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <p class="cap">The model chip in the header is a menu: every model in <code>/Models</code>, its size, a word on what it is like, and a tick on this conversation's. The model belongs to the conversation and is kept in its file (<code>conversations.lua</code> has the field already). A new conversation starts with the model chosen last. Opening a conversation whose model is not the one loaded loads it, and the box says so until it is in. The server holds one model at a time, so that wait is real: about 25 seconds a gigabyte and a half on the M700. The sidebar says each conversation's model under its title. Every answer's note says which model wrote it, so a conversation that changed model partway shows where.</p>
 
   <h2>Later: Xavier does something, after you say yes <span class="tag">a later version</span></h2>
   <div class="row2">

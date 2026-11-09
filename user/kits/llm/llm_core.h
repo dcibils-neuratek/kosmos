@@ -132,8 +132,8 @@ struct llm_model {
    * loops, the fastest wherever they have been measured, until the M700
    * says whether the explicit lanes beat them there. */
   llm_dot_fn *dot_q8_0, *dot_q4_0;
-  llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs */
-  bool avx2;                            /* the loops above are AVX2's */
+  llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs, or NULL */
+  unsigned loops;                       /* which they are: LLM_KIT_LOOPS_*  */
 
   /* How a product is run in parts, or NULL for this thread alone. */
   llm_run_fn *run;
@@ -144,6 +144,25 @@ struct llm_model {
 /* Products in `parts` pieces through `run` from now on; NULL, or 1 part,
  * for the calling thread alone. */
 void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts);
+
+/*
+ * **Which loops multiply the weights** (`docs/xavier.md`, *Settings*). Every
+ * set gives the same answer to the bit; only the speed differs. PLAIN is the
+ * scalar reference, one input at a time; BASE the vectors every core of the
+ * kind has, SSE2 or NEON, and the four-input loops; AVX2 the same, 32 bytes
+ * wide. AUTO is the fastest this processor has.
+ */
+#define LLM_KIT_LOOPS_AUTO   0u
+#define LLM_KIT_LOOPS_PLAIN  1u
+#define LLM_KIT_LOOPS_BASE   2u
+#define LLM_KIT_LOOPS_AVX2   3u
+
+/* Bit 1 << LLM_KIT_LOOPS_x for each set this processor can run. */
+unsigned llm_loops_have(void);
+
+/* `which` from now on, AUTO resolved: the set chosen, or -1 when this
+ * processor cannot run it, and the loops are left as they were. */
+int llm_use_loops(struct llm_model *m, unsigned which);
 
 /*
  * The model in `file`, of `size` bytes, for a cache of `n_ctx` positions

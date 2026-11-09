@@ -546,7 +546,30 @@ threads, AVX2 and the question read in batches as one push, to bring phi-2
 near the memory's ceiling, about 15 tokens a second there; weights laid out
 for the vector unit when a model is loaded; then a smaller Qwen and a draft
 model checked in batches; the GPUs last, the Mac Pro's cards the largest
-(`xavier.md`, *Making it fast*). And **light coding, as Claude Code does it** ("It's also key that we can
+(`xavier.md`, *Making it fast*). **And settings for where the model
+runs, with the GPU brought forward, AGREED on 8 November 2026** (Diego:
+"Can we use gpu for the llm inference if available? We can have
+configuration in Xavier app to enable gpu and cpu features and else", then
+"Yes, draw the settings first"): a Settings window in Xavier, the LLM
+server's and so for every asker - cores (Auto or a number), vector loops
+(Auto, AVX2, SSE2, plain; the same answer to the bit), the GPU for reading
+questions and for writing answers, and Compare, which asks the loaded model
+one question in each setting and shows which is fastest. Drawn first in
+`xavier.html` (*Settings*); then built, with the cores setting checking
+what the M700 showed - eight workers on four cores wrote 3.5 tokens a
+second; then the HD 530 reading questions through the Compute Kit, then
+writing answers there if Compare says it pays. **And a model chosen for
+each conversation, ASKED on 8 November 2026** (Diego: "xavier needs a way
+for me to select the llm model to use in every conversation"): the model a
+conversation was begun with is in its file already (`conversations.lua`'s
+`model`); Xavier lets it be chosen for a new one and changed in one that
+exists, and loads it when the conversation is opened, since the server holds
+one model at a time. Drawn in `xavier.html` (*A model for each
+conversation*). **And the order to finish Xavier's window, AGREED on 8
+November 2026** (Diego asked "how far are we to complete xavier UI in all
+its forms", then "Agreed, go ahead with your suggested order"): Settings;
+a model for each conversation; asking from anywhere; the LLM Monitor;
+Models; the GPU (X7); then voice (X8, X9), a project of its own. And **light coding, as Claude Code does it** ("It's also key that we can
 do some light coding with Xavier like Claude code"): code read, edits
 shown as diffs and accepted file by file, programs run and their output
 read back, only in the project it is handed, on Qwen2.5-Coder - a second

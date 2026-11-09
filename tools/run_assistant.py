@@ -202,6 +202,39 @@ def main():
         fourth = ask(LONG + " go", stop_it=True)
         check("xavier: stopped" in fourth, "Stop was not pressed")
 
+        # **Settings** (`xavier.html`, *Settings*): opened from the header's
+        # menu, Compare asking in each setting this machine has, and Use the
+        # fastest keeping the winner, which the sheet then shows.
+        settings_seen = compare_seen = kept_seen = reopened_settings = closed_settings = None
+        compare_lines = []
+        mark = len(guest.seen)
+        click(p[9], p[10])
+        menu = said("xavier: menu at ", mark, 10)
+        mm = menu and re.match(r"(-?\d+),(-?\d+), rows of (\d+)", menu)
+
+        if mm:
+            mx, my, rh = (int(v) for v in mm.groups())
+            click(mx + 30, my + 2 + rh // 2)
+            settings_seen = said("xavier: settings, ", mark, 10)
+
+        sp = settings_seen and [int(v) for v in re.findall(r"(\d+),(\d+)", settings_seen)[0] +
+                                re.findall(r"(\d+),(\d+)", settings_seen)[1] +
+                                re.findall(r"(\d+),(\d+)", settings_seen)[2]]
+
+        if sp:
+            mark = len(guest.seen)
+            click(sp[0], sp[1])
+            compare_seen = said("xavier: compared ", mark, 240)
+            compare_lines = re.findall(r"xavier: compare (\d+) cores (\w+): read ([\d.]+), "
+                                       r"wrote ([\d.]+) tokens a second", guest.seen[mark:])
+            mark = len(guest.seen)
+            click(sp[4], sp[5])
+            kept_seen = said("xavier: the fastest kept, ", mark, 10)
+            reopened_settings = said("xavier: settings, ", mark, 10)
+            mark = len(guest.seen)
+            click(sp[2], sp[3])
+            closed_settings = said("xavier: settings closed", mark, 10)
+
         # The one from the Mac, opened from the list - Today's group, this
         # conversation, This week's group, then it - and sent to the Trash.
         mark = len(guest.seen)
@@ -249,6 +282,25 @@ def main():
         check(answered[3]["tokens"] < TOKENS
               and expect[3]["hex"].startswith(answered[3]["hex"]),
               "the stopped answer was not cut short of the kit's: %r" % answered[3])
+
+    check(settings_seen is not None and settings_seen.startswith(
+              "1 processors on 1 cores, cores 0, loops auto"),
+          "Settings did not open from the menu saying the machine's one processor, Auto: %r"
+          % settings_seen)
+
+    if settings_seen:
+        check(compare_seen == "2 settings" and [c[:2] for c in compare_lines] ==
+              [("1", "base"), ("1", "plain")]
+              and all(float(c[2]) > 0 and float(c[3]) > 0 for c in compare_lines),
+              "Compare did not ask in base vectors and plain, each with a speed: %r %r"
+              % (compare_seen, compare_lines))
+        best = max(compare_lines, key=lambda c: float(c[3])) if compare_lines else None
+        check(best and kept_seen == "1 cores %s" % best[1]
+              and reopened_settings and reopened_settings.startswith(
+                  "1 processors on 1 cores, cores 1, loops %s" % best[1]),
+              "Use the fastest did not keep the fastest writer, %r: %r, then %r"
+              % (best, kept_seen, reopened_settings))
+        check(closed_settings is not None, "Done did not close Settings")
 
     check(first_kept is not None, "the conversation was not kept after its first answer")
     check(opened_old is not None, "the conversation from the Mac did not open from the list")

@@ -630,22 +630,7 @@ bad_tensor:
     return -1;
   }
 
-  m->dot_q8_0 = llm_dot_q8_0_scalar;
-  m->dot_q4_0 = llm_dot_q4_0_scalar;
-  m->dot4_q8_0 = llm_dot4_q8_0;
-  m->dot4_q4_0 = llm_dot4_q4_0;
-
-#if defined(__x86_64__)
-  /* AVX2 where the processor has it and the system keeps it: the same
-   * answers to the bit (`llm_dot_avx2.c`), a block in one register. */
-  if (llm_avx2_present()) {
-    m->dot_q8_0 = llm_dot_q8_0_avx2;
-    m->dot_q4_0 = llm_dot_q4_0_avx2;
-    m->dot4_q8_0 = llm_dot4_q8_0_avx2;
-    m->dot4_q4_0 = llm_dot4_q4_0_avx2;
-    m->avx2 = true;
-  }
-#endif
+  (void)llm_use_loops(m, LLM_KIT_LOOPS_AUTO);
 
   return 0;
 }
@@ -1125,6 +1110,59 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
     m->run(m->run_ctx, product_part, &p, m->parts);
   else
     product_rows(&p, 0, w->ne[1]);
+}
+
+unsigned llm_loops_have(void)
+{
+  unsigned have = 1u << LLM_KIT_LOOPS_PLAIN | 1u << LLM_KIT_LOOPS_BASE;
+
+#if defined(__x86_64__)
+  /* AVX2 where the processor has it and the system keeps it: the same
+   * answers to the bit (`llm_dot_avx2.c`), a block in one register. */
+  if (llm_avx2_present()) have |= 1u << LLM_KIT_LOOPS_AVX2;
+#endif
+
+  return have;
+}
+
+int llm_use_loops(struct llm_model *m, unsigned which)
+{
+  const unsigned have = llm_loops_have();
+
+  if (which == LLM_KIT_LOOPS_AUTO) {
+    which = have & 1u << LLM_KIT_LOOPS_AVX2 ? LLM_KIT_LOOPS_AVX2 : LLM_KIT_LOOPS_BASE;
+  }
+
+  if (which > LLM_KIT_LOOPS_AVX2 || !(have & 1u << which)) return -1;
+
+  switch (which) {
+  case LLM_KIT_LOOPS_PLAIN:
+    /* The reference: one input at a time, scalar, every row. */
+    m->dot_q8_0 = llm_dot_q8_0_scalar;
+    m->dot_q4_0 = llm_dot_q4_0_scalar;
+    m->dot4_q8_0 = m->dot4_q4_0 = NULL;
+    break;
+#if defined(__x86_64__)
+  case LLM_KIT_LOOPS_AVX2:
+    m->dot_q8_0 = llm_dot_q8_0_avx2;
+    m->dot_q4_0 = llm_dot_q4_0_avx2;
+    m->dot4_q8_0 = llm_dot4_q8_0_avx2;
+    m->dot4_q4_0 = llm_dot4_q4_0_avx2;
+    break;
+#endif
+  default:
+    /* What the kit chose before there was a choice: the plain loop for one
+     * input, the fastest wherever it has been measured, and the four-input
+     * loops, which the compiler makes the core's vectors. */
+    m->dot_q8_0 = llm_dot_q8_0_scalar;
+    m->dot_q4_0 = llm_dot_q4_0_scalar;
+    m->dot4_q8_0 = llm_dot4_q8_0;
+    m->dot4_q4_0 = llm_dot4_q4_0;
+    break;
+  }
+
+  m->loops = which;
+  return (int)which;
 }
 
 void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts)
