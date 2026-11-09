@@ -35,7 +35,7 @@
 -- `break`, `continue`, `return`. Functions are inlined - the GPU has no
 -- stack to call on - and may return early. Built in: `lane`, `group_x`,
 -- `group_y`, `simd`; `sqrt`, `rsqrt`, `sin`, `cos`, `pow`, `exp2`, `log2`,
--- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`,
+-- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`, `asfloat`,
 -- `vec3`, `dot`, `cross`, `length`, `normalize`; and the buffers' doors,
 -- `load`, `loadi`, `load3`, `store` and `store3`, each by a byte offset.
 --
@@ -1167,6 +1167,25 @@ local function gen(prog, simd)
     end
 
     if n == "float" then want(1) return as(eval(args[1]), "f") end
+
+    -- The float whose bits an int is: no conversion, a move of the bits
+    -- (`docs/xavier.md`, X7) - so a half-precision scale is made single
+    -- exactly, as the processor makes it, and not by `exp2`, which is the
+    -- GPU's own and close.
+    if n == "asfloat" then
+      want(1)
+      local v = as(eval(args[1]), "d")
+
+      if v.k == "imm" then
+        return { k = "imm", t = "f", v = (string.unpack("<f", string.pack("<i4", v.v))) }
+      end
+
+      local r = temp("f")
+      local bits = { k = v.k, t = "f", r = v.r, s = v.s }
+      emit(("mov %s %s %s"):format(EX, dst(r), src(bits)))
+      consume(v)
+      return r
+    end
     if n == "int" then want(1) return as(eval(args[1]), "d") end
 
     if n == "vec3" then

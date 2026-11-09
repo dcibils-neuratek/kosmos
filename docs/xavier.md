@@ -996,7 +996,7 @@ against the processor's, word for word.
 
 | Piece | Supplied by | New or as it is |
 |---|---|---|
-| The kernel: rows of Q4_0 (and Q8_0) times inputs in Q8_0 | `llmgpu.kc`, in Kosmos's kernel language; compiled to the GPU's bytes on the Mac when the server is built, since the server is C and `kc.lua` is Lua | **new** |
+| The kernel: rows of Q4_0 (and Q8_0) times inputs in Q8_0 | `llmgpu.lua`, in Kosmos's kernel language; compiled to the GPU's bytes on the Mac when the server is built, since the server is C and `kc.lua` is Lua | **new** |
 | `asfloat`, a float from its bits | `kc.lua` | **new**, one built-in |
 | The model in the GPU's table | the driver's `GPU_OP_BUFFER_IMPORT`, given **a run of a region's pages** rather than all of them, so the model is imported a layer a buffer without mapping 1.6 GB once per buffer; and **its GTT slots given back** when a buffer is forgotten - today they are emptied and never handed out again, so a second model would run the 4 GB table out | **changed** |
 | A product sent, waited for, read | the Compute Kit's C core, `compute_pack_run`, from the LLM server - a server asking the GPU's driver as the window server does | as it is |
@@ -1029,9 +1029,9 @@ processor.
 
 **Steps:**
 
-1. **G1 - the kernel**: `asfloat` in `kc`; `llmgpu.kc` for Q4_0; held in
+1. **G1 - the kernel**: `asfloat` in `kc`; `llmgpu.lua`'s `q4_0` for Q4_0; held in
    the emulator to `llm_dot_q4_0` bit for bit on random rows, odd scales
-   and subnormal ones included, with a control.
+   and subnormal ones included, with a control. **Built in 0.11.333** (`user/lib/llmgpu.lua`; `testing.md` 18.727).
 2. **G2 - the driver**: an import of a run of pages, and GTT slots given
    back and used again; `test_intelgpu_*` on the Mac.
 3. **G3 - the kit and the server**: the hook, the layers imported at load,

@@ -29657,3 +29657,27 @@ removing.
 Whole gate: 105 of 106. `arm-sandbox`'s "ipc: a receive with a deadline
 gives up" was late under load for the second time since 18.593, and passed
 211 of 211 alone. It is in the roadmap: make it say which condition failed.
+
+## 18.727 X7 G1: the Q4_0 product on the GPU, the processor's to the bit
+
+`tools/test_llmgpu.lua`, in `host`, new, with `user/lib/llmgpu.lua` and
+`kc.lua`'s `asfloat` (`xavier.md`, *X7, the GPU: the design*). The kernel -
+a lane a row, two blocks of 18 bytes as nine dwords - is compiled by `kc`,
+run in `eu_run` in SIMD8 and SIMD16, and every sum held to
+`llm_dot_q4_0`'s worked out in single precision, rounded at each step:
+16 rows of 2 blocks; 21 rows of 6 blocks, three inputs, the weight 36 bytes
+into its buffer and the last thread part full; 9 rows of 80 blocks, phi-2's
+narrowest. Scales ordinary, the smallest normal ones, subnormal, nought
+and negative. 12 checks: the sums to the bit, and no lane past the last
+row writing. And `eu_kernels.lua` gives both widths to the driver's check,
+which takes them.
+
+**Control**: the product taken in another order, `(s * sw) * xs` - 6 of 12,
+each case's sums a bit or two off ("5.92683506, the processor's
+5.92683315"). The first control, a scale made with `exp2`, did not bite: the
+emulator's `exp2` is exact for a whole power. The M700's need not be, which
+is why the kernel makes it from its bits.
+
+Not yet: the Lua reference is the processor's formula written again, not
+`llm_dot_q4_0` itself. G3's test runs the tiny phi-2 through the emulator
+against the C, which ties the two.

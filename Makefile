@@ -4940,6 +4940,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# And Kosmos's kernel language, its programs run in the emulator
 	@# (cafesa3d-gpu.md R3).
 	$(HOSTDIR)/lua tools/test_kc.lua $(HOSTDIR)/eu_run
+	@# And the LLM Kit's products on the GPU, the processor's sums to the bit
+	@# (xavier.md X7 G1).
+	$(HOSTDIR)/lua tools/test_llmgpu.lua $(HOSTDIR)/eu_run
 	$(HOSTDIR)/test_compute
 	@# And every method an application calls on its window: Lua resolves one
 	@# at the call, so a name the kit does not have is a control that ends

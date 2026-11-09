@@ -225,6 +225,17 @@ do
   case("tracer-paint", OK, 0, assert(pcode, pinfo))
 end
 
+-- The LLM Kit's Q4_0 product (xavier.md X7 G1), in both widths: the
+-- driver must take what the LLM server will hand it.
+do
+  local kc, llmgpu = dofile("user/lib/kc.lua"), dofile("user/lib/llmgpu.lua")
+
+  for _, simd in ipairs { 8, 16 } do
+    local code, info = kc.assemble(llmgpu.q4_0, { simd = simd })
+    case("llm-q4_0-simd" .. simd, OK, 0, assert(code, info))
+  end
+end
+
 -- The bits eu.lua does not write, put in by hand.
 local plain = kernel("plain", OK, 0, "add (16|M0) r10.0<1>:d r11.0<8;8,1>:d 1:d\n" .. END_THREAD)
 
