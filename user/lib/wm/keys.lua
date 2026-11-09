@@ -360,6 +360,15 @@ return function(ctx)
       what = "Start something by typing part of its name",
       run = function() open_launchpad() end },
 
+    --
+    -- **Xavier from anywhere** (`docs/xavier.html`, *Asking from anywhere*):
+    -- a box over whatever is in front, Xavier's own and started fresh each
+    -- time, as the launcher pad is.
+    --
+    { key = 120, shown = "Super+X", action = "xavier", group = "desktop",
+      what = "Ask Xavier, over whatever is in front",
+      run = function() handlers.launch{ program = "assistant", args = "--ask" } end },
+
     { key = 47, shown = "Super+/", action = "shortcuts", group = "desktop",
       what = "Shortcuts, this window",
       run = function() handlers.launch{ program = "shortcuts" } end },

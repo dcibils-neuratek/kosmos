@@ -448,7 +448,12 @@ choice listing `/Kosmos/Desktops`, and choosing one switches to it as
 **Switch Desktop...** does now, and keeps it for the next boot. The loader's
 rows - what starts, and how long it took - stay, shown while the chosen
 desktop comes up. `x86-desktops` changes with it: no chooser at boot, and
-the switch made from Preferences.
+the switch made from Preferences. Asked again the same night, while Xavier
+was being built: "make sure we remove the desktop selector upon booting, i
+want it to be a setting in preferences from now on so it always boots the
+selected desktop until changed". **Switch Desktop...** stays in the menus
+and still shows the cards; what is chosen there is kept the same way, so
+it is the desktop the next boot starts.
 
 **P2 built, 8 November 2026.** A desktop file says its `chrome`, and
 Pewter's is `platinum`: every window's header draws Platinum's bar, close
@@ -566,7 +571,8 @@ conversation was begun with is in its file already (`conversations.lua`'s
 exists, and loads it when the conversation is opened, since the server holds
 one model at a time. Drawn in `xavier.html` (*A model for each
 conversation*). **Built in 0.11.328** (`xavier.md`, *A model for each
-conversation*; `testing.md` 18.722). **And the order to finish Xavier's window, AGREED on 8
+conversation*; `testing.md` 18.722). **Asking from anywhere built in
+0.11.329** (Super+X; `xavier.md`, *Asking from anywhere*; 18.723). **And the order to finish Xavier's window, AGREED on 8
 November 2026** (Diego asked "how far are we to complete xavier UI in all
 its forms", then "Agreed, go ahead with your suggested order"): Settings;
 a model for each conversation; asking from anywhere; the LLM Monitor;

@@ -844,6 +844,25 @@ Models. A model the server cannot find is not asked for again until it is
 chosen, and the conversation is answered by the model in, whose name its
 answer then carries.
 
+## Asking from anywhere
+
+**Built in 0.11.329**, as drawn in `xavier.html` (*Asking from anywhere*).
+**Super+X** opens a box over whatever is in front: ask with Return, read
+the answer as it is written, Escape to go back, Tab to carry the
+conversation into Xavier's window. It is Xavier's own - `assistant --ask`,
+`user/lib/xavierbox.lua` - so one entry in the launcher, as Shortcuts over
+everything is `shortcuts --modal`, and its conversations are the window's:
+a new one, on the model chosen last, kept after each answer.
+
+**Every conversation now begins with the day and the machine**
+(`conversations.preamble`), which the model cannot know: the day only, so
+the start is the same text all day and the server's cache keeps it. The
+person's name, which the drawing has, is left out: Kosmos keeps no user's
+name anywhere yet. `xavier` at the prompt does not say it.
+
+Left for later: a Xavier window already open is not raised by Tab - a
+second one opens on the conversation.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go

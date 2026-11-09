@@ -187,11 +187,12 @@ function llm.form(arch)
   return FORMS[arch] or FORMS.phi2
 end
 
--- The text of a conversation - `turns`, each `{ you = , xavier = }`, then
--- `question` - and the stops its answer ends at.
-function llm.chat(arch, turns, question)
+-- The text of a conversation - `before`, what the model is told first,
+-- then `turns`, each `{ you = , xavier = }`, then `question` - and the
+-- stops its answer ends at.
+function llm.chat(arch, turns, question, before)
   local form = llm.form(arch)
-  local parts = {}
+  local parts = { before or "" }
 
   for _, t in ipairs(turns) do
     parts[#parts + 1] = form.question(t.you) .. t.xavier .. form.between

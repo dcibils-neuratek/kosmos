@@ -29,7 +29,11 @@ with answers of 40 tokens, so the tiny model's 256 hold a follow-up, and:
   as one turn, its model - Q4_0 - loaded again, and **Delete** sends it to
   the Trash;
 - **the first conversation opened again** with its four turns, now Q8_0's,
-  and its answers still Q4_0's.
+  and its answers still Q4_0's;
+- **asked from anywhere** (`xavier.html`, *Asking from anywhere*): Super+X
+  opens the box over the window, a question typed there is answered - the
+  kit's own, byte for byte, told the day and the machine first, as every
+  conversation is - and kept, and Tab opens it in Xavier's window.
 
 Usage: run_assistant.py IMAGE
 """
@@ -56,7 +60,7 @@ STOPS = ["\nInstruct:", "\nOutput:"]
 
 Q1 = "what is a kernel"
 Q2 = "and a process"
-LONG = " ".join(["go"] * 175)            # with two turns held, more than 256 tokens
+LONG = " ".join(["go"] * 150)            # with two turns and the preamble held, more than 256 tokens
 
 SEEDED_ANSWER = "Hello.\nturn 1 2 3 4 5 6\nThat line is part of the answer."
 
@@ -69,10 +73,10 @@ def seeded(epoch):
             % (epoch, epoch, MODEL, len(q.encode()), len(a.encode()), q, a))
 
 
-def chain(texts, name=MODEL):
+def chain(texts, name=MODEL, tokens=TOKENS):
     """The kit's answers on the Mac to the texts the window asked, in order."""
     out = subprocess.run([ANSWER, "--chain", "--stops", ",".join(s.encode().hex() for s in STOPS),
-                          os.path.join(ROOT, "build", "models", name), str(TOKENS),
+                          os.path.join(ROOT, "build", "models", name), str(tokens),
                           *texts], check=True, capture_output=True, text=True).stdout
     got = []
 
@@ -288,6 +292,28 @@ def main():
         mark = len(guest.seen)
         click(list_x + 60, list_y + 30 + rowh + rowh // 2)
         first_again = said("xavier: opened /Home/Xavier/", mark, 10)
+
+        # **From anywhere**: Super+X, a question, Return, then Tab.
+        def chord(*names):
+            for down, order in ((True, names), (False, tuple(reversed(names)))):
+                guest._qmp("input-send-event", {"events": [
+                    {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": n}}}
+                    for n in order]})
+                time.sleep(0.25)
+
+        mark = len(guest.seen)
+        chord("meta_l", "x")
+        box_open = said("xavier box: open at ", mark, 30)
+        box_ready = said("xavier box: ready, ", mark, 30)
+        typed(Q1)
+        guest.sendkey("ret")
+        box_asked = said("xavier box: asked ", mark, 30)
+        box_answered = said("xavier box: answered ", mark, 120)
+        box_kept = said("xavier box: kept ", mark, 10)
+        guest.sendkey("tab")
+        box_carried = said("xavier box: to the window, ", mark, 10)
+        carried_open = said("xavier: carried in ", len(guest.seen) if box_carried is None else
+                            guest.seen.find("xavier box: to the window, ", mark), 60)
     finally:
         guest.close()
 
@@ -360,6 +386,25 @@ def main():
                                                % (re.escape(OTHER), re.escape(MODEL)), first_again),
           "the first conversation did not open with four turns, now %s's, its answers %s's: %r"
           % (OTHER, MODEL, first_again))
+    check(box_open is not None and box_ready == OTHER,
+          "Super+X did not open the box on the model chosen last: %r %r" % (box_open, box_ready))
+    bq = box_asked and re.match(r"\d+ bytes: ([0-9a-f]+)$", box_asked)
+    ba = box_answered and re.match(r"\d+ tokens, \d+ held: ([0-9a-f]*)$", box_answered)
+    # The box is opened by a key, so with Xavier's own 512 tokens, not the
+    # 40 the window was given: the tiny model's 256 end the answer first,
+    # in the server as in the kit.
+    box_expect = chain([bq.group(1)], OTHER, 512) if bq else []
+    check(bq and bytes.fromhex(bq.group(1)).startswith(b"Today is ")
+          and b"You are Xavier, the assistant in Kosmos" in bytes.fromhex(bq.group(1)),
+          "the box did not tell the model the day and the machine first: %r" % box_asked)
+    check(ba and len(box_expect) == 1 and box_expect[0]
+          and ba.group(1) == box_expect[0]["hex"],
+          "the box's answer is not the kit's: %r against %r" % (box_answered, box_expect))
+    check(box_kept is not None and box_carried is not None
+          and box_kept.split(",")[0] == box_carried
+          and carried_open == box_carried,
+          "Tab did not open the box's conversation, kept, in the window: %r %r %r"
+          % (box_kept, box_carried, carried_open))
     check(first_kept is not None, "the conversation was not kept after its first answer")
     check(opened_old is not None, "the conversation from the Mac did not open from the list")
     check(re.search(r"opened /Home/Xavier/%s, 1 turns" % re.escape(seed_name), seen),

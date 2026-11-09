@@ -25,10 +25,20 @@ nothing else.
 
 ### At every boot
 
-- **Choose a desktop.** A chooser fills the screen once the machine is up
-  and before any desktop starts: one card for each desktop, with a small
-  picture of it, its name and a line saying what it is. The one used last
-  is already chosen. A click, or the arrow keys and Return, starts it.
+- **The chosen desktop starts**, with no question asked. Changed on 8
+  November 2026 - Diego: "from now on lets default to astra desktop always
+  and have a switched on the preferences panel to switch to another
+  desktop", "so we remove the selector upon boot", and again the same
+  night, "i want it to be a setting in preferences from now on so it
+  always boots the selected desktop until changed". The `desktop` setting
+  names it - Astra on a machine that never chose - and **Preferences'
+  Desktop row** changes it: chosen there, the machine switches to it at
+  once, as Switch Desktop does, and boots it from then on.
+- **Choose a desktop**, from **Switch Desktop...**: the chooser fills the
+  screen, one card for each desktop, with a small picture of it, its name
+  and a line saying what it is. The one in the setting is already chosen.
+  A click, or the arrow keys and Return, starts it - and keeps it, so it
+  is the one the next boot starts. It is no longer shown at boot.
 - **See every desktop the system has**, the ones that ship and any added
   later, without the chooser being changed to know about them.
 - **Watch it start.** Once a desktop is chosen, the chooser becomes a

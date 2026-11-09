@@ -29546,3 +29546,30 @@ The Q8_0 answer's check still passed under the two together, which is
 right rather than lucky: with the second, nothing reloads Q4_0, so the new
 conversation was still answered by the Q8_0 in.
 
+## 18.723 Xavier from anywhere: Super+X, the box, and Tab into the window
+
+`x86-xavier` goes on after the model phase: Super+X opens the box over
+Xavier's window, on the model chosen last; a question typed there and
+Return is asked with the day and the machine first ("Today is ..., You
+are Xavier, the assistant in Kosmos, on a ...") - which every conversation
+is asked with now - and its answer is the kit's own on the Mac, byte for
+byte, at Xavier's own 512 tokens, since a key cannot say `--tokens`: the
+tiny model's 256 end it, in the server as in the kit. It is kept, and Tab
+opens the window carrying that conversation in. 37 checks.
+
+The preamble's 45 or so tokens in a 256-token model moved the window's
+long question from 175 words to 150: at 175 the fourth question's answer
+had no room, finished before Stop was pressed, and "Stop was not pressed"
+failed - the check doing its work.
+
+**Controls**:
+
+- **The box begun on `llm.choose()`** rather than the model chosen last:
+  "Super+X did not open the box on the model chosen last", and its answer
+  then not Q8_0's - 2 of 37.
+- **Tab without `--open`**: it bit only once the window said it was
+  carried in. The first version checked which conversation the new window
+  opened, and a window opened with nothing opens the newest - the box's,
+  just kept - so it passed with the conversation not carried at all. With
+  `xavier: carried in` checked, 1 of 37.
+

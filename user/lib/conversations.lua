@@ -32,6 +32,8 @@
 -- longer shown to the model, though they are still in the file.
 
 local files = use("/Kosmos/Libraries/files.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
+local hardware = use("/Kosmos/Libraries/hardware.lua")
 
 local conversations = {}
 
@@ -207,6 +209,30 @@ function conversations.choose(name)
   if not ok then return nil, why end
 
   return fs.write(conversations.CHOSEN, name .. "\n")
+end
+
+-- **What the model is told before a conversation** (`xavier.html`, *Asking
+-- from anywhere*): the day and the machine, which it cannot know - a few
+-- words at the start of the text, not a tool. The day only, not the time,
+-- so the start of a conversation is the same text all day and the server's
+-- cache keeps it from one question to the next. The person's name is left
+-- out until the system has one to give: Kosmos keeps no user's name.
+local DAY_NAMES = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" }
+
+function conversations.preamble()
+  local now = clock.now()
+  local machine = hardware.name(sys.info() or {})
+  local words = {}
+
+  if now then
+    words[#words + 1] = ("Today is %s, %d %s %d."):format(DAY_NAMES[now.weekday + 1], now.day,
+                                                          clock.FULL_MONTHS[now.month], now.year)
+  end
+
+  words[#words + 1] = "You are Xavier, the assistant in Kosmos" ..
+                      (machine and (", on a " .. machine) or "") .. "."
+
+  return table.concat(words, " ") .. "\n"
 end
 
 -- Into the Trash, where it can be taken back from (`files.to_trash`).

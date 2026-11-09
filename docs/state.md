@@ -2,11 +2,11 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.328, not pushed; Xavier's Settings, and a model for each conversation)
+Last updated: 2026-11-08 (0.11.329, not pushed; Xavier's Settings, a model for each conversation, and Super+X)
 
 ---
 
-## 8 November, night: Settings (0.11.326-0.11.328, not pushed)
+## 8 November, night: Settings (0.11.326-0.11.329, not pushed)
 
 The agreed order for the rest of Xavier is: Settings, then a model for
 each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
@@ -26,8 +26,12 @@ each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
   models, a conversation keeps its model and each answer its own, opening
   one loads it, a new one begins with the one chosen last (18.722).
 
-**Next**: asking from anywhere, then the LLM Monitor, Models, the GPU
-(X7) and voice.
+- **0.11.329, from anywhere**: Super+X opens Xavier's box over whatever is
+  in front; every conversation begins with the day and the machine (18.723).
+
+**Next**: the desktop chosen in Preferences, with no chooser at boot
+(Diego asked twice on 8 November; roadmap, under Pewter), then the LLM
+Monitor, Models, the GPU (X7) and voice.
 
 ## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
 

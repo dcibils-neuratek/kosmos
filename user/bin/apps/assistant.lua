@@ -45,6 +45,16 @@ local ANSWER_TOKENS = tonumber(tostring(args or ""):match("%-%-tokens%s+(%d+)"))
 
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 
+-- **Asked from anywhere** (Super+X, `xavier.html`): the box over whatever
+-- is in front, rather than this window.
+if tostring(args or ""):match("%-%-ask") then
+  use("/Kosmos/Libraries/xavierbox.lua").run(ANSWER_TOKENS)
+  return
+end
+
+-- **A conversation carried in** from the box by Tab: opened, not the newest.
+local OPENING = tostring(args or ""):match("%-%-open%s+(%S+)")
+
 local win, err = ui.window{ title = "Xavier", w = W, h = H, x = 90, y = 60, header = true }
 
 if not win then
@@ -580,7 +590,7 @@ local function ask(question)
 
   while true do
     local stops
-    text, stops = llm.chat(model.arch, turns, question)
+    text, stops = llm.chat(model.arch, turns, question, conversations.preamble())
     a, why = llm.ask(text, { tokens = ANSWER_TOKENS, stops = stops })
 
     if a or not llm.too_long(why) or #turns == 0 then break end
@@ -637,14 +647,11 @@ local function finished()
   refresh()
 end
 
-local function open_conversation(c)
-  if live then return end
-
-  open = c
-  scroll, follow_end = 0, true
-  last = nil
-  -- And which models wrote its answers, in the order they first did.
+-- What was opened: its turns, its model, and which models wrote its
+-- answers, in the order they first did.
+local function say_opened(c)
   local by, seen_by = {}, {}
+
   for _, t in ipairs(c.turns) do
     if (t.model or "") ~= "" and not seen_by[t.model] then
       seen_by[t.model] = true
@@ -654,6 +661,15 @@ local function open_conversation(c)
 
   print(("xavier: opened %s, %d turns, %s; answers by %s"):format(c.path or "a new conversation",
         #c.turns, wanted() or "no model", #by > 0 and table.concat(by, ", ") or "none"))
+end
+
+local function open_conversation(c)
+  if live then return end
+
+  open = c
+  scroll, follow_end = 0, true
+  last = nil
+  say_opened(c)
 
   -- Its model, when it is not the one in: looked at on the next pass.
   if model.state ~= "none" and wanted() ~= model.name then
@@ -1197,12 +1213,21 @@ for _, v in ipairs({ side_ground, new_button, list, header, chat, field, stop, f
   win:add(v)
 end
 
--- The newest conversation is opened as it was left; a first one is new.
+-- The conversation carried in from the box; else the newest, as it was
+-- left; else a new one.
 if all[1] then open = all[1] end
+
+for _, c in ipairs(all) do
+  if OPENING and c.path == OPENING then
+    open = c
+    print("xavier: carried in " .. c.path)
+  end
+end
 
 watch_model()
 refresh()
 win:focus_on(field)
 print(("xavier: %d conversations in %s"):format(#all, conversations.DIR))
+say_opened(open)
 
 win:run()
