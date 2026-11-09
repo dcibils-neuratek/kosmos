@@ -573,7 +573,11 @@ exists, and loads it when the conversation is opened, since the server holds
 one model at a time. Drawn in `xavier.html` (*A model for each
 conversation*). **Built in 0.11.328** (`xavier.md`, *A model for each
 conversation*; `testing.md` 18.722). **Asking from anywhere built in
-0.11.329** (Super+X; `xavier.md`, *Asking from anywhere*; 18.723). **And the order to finish Xavier's window, AGREED on 8
+0.11.329** (Super+X; `xavier.md`, *Asking from anywhere*; 18.723). **The LLM Monitor built in 0.11.331** (`wm llmmon`; `xavier.md`, *The LLM
+Monitor*; 18.725): the server counts tokens and who asked, by the kernel's
+name for the process. **Still to do from it: a queue** - an ASK that answers
+at once with "queued" and begins when its turn comes, so a second asker is
+not refused as busy and the Monitor shows it waiting, as drawn. **And the order to finish Xavier's window, AGREED on 8
 November 2026** (Diego asked "how far are we to complete xavier UI in all
 its forms", then "Agreed, go ahead with your suggested order"): Settings;
 a model for each conversation; asking from anywhere; the LLM Monitor;

@@ -2,9 +2,25 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.330, not pushed; Xavier's Settings, a model for each conversation, Super+X, the desktop in Preferences)
+Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
 
 ---
+
+## 9 November: the LLM Monitor (0.11.331, not pushed)
+
+- **0.11.331**: `wm llmmon`, as drawn in `xavier.html`. The LLM server
+  counts how long it has been up, every token read and written, the
+  refusals, and who asked, by the kernel's name for the process
+  (`SYS_SENDER`); the reply is 912 bytes. The window samples every two
+  seconds: four tiles, five minutes of writing, and who is asking. `llm`
+  at the prompt prints the same. `x86-llmmon`, 9 checks (18.725).
+- **Not as drawn**: no queue - a second asker is still refused as busy,
+  and counted. The queue is in the roadmap.
+- Diego asked where the GPU stands: X7 is not started. The Settings
+  switches are drawn and off; the Compute Kit already runs kernels on the
+  HD 530. Expected: a gain reading the question, likely none writing.
+
+**Next**: Models, then the GPU (X7), then voice.
 
 ## 8 November, night: Settings (0.11.326-0.11.330, not pushed)
 
@@ -39,8 +55,8 @@ view of the system, the dock's icons magnified under the pointer with a
 slider in Preferences, and Xavier as a drawer in the middle of the top
 bar. Found: Preferences' wheel stops partway down a long page.
 
-**Next**: the LLM Monitor, Models, the GPU (X7) and voice - and the three
-drawings above when Diego wants them.
+**Next** was the LLM Monitor (built 9 November, above); the three drawings
+wait for Diego.
 
 ## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
 

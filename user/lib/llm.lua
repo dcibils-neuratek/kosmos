@@ -29,10 +29,15 @@ local TEXT_MAX = 1536
 local STOP_MAX = 24
 local CONVERSATION_MAX = 256 * 1024
 
--- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 424.
+-- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 912: 424 of
+-- the model and the last answer, then since the server started and who
+-- has asked (`ASKER`, eight of them).
 local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24I4I4I4I4"
 local REPLY = "<I4I4I4I4c64c64c16c96I8I8I4I4I4I4I4I4I8I8I8I8I8I4I4I4I4I4I4I4I4I4I4c32I4I4I4I4"
-local REPLY_SIZE = 424
+local REPLY_SIZE = 912
+local SINCE = "<I8I8I8I4I4I4I4"
+local ASKER = "<c16I4I4I4I4I8I8I8"
+local ASKERS, ASKER_SIZE = 8, 56
 
 -- Which loops, by the protocol's numbers (`llmproto.h`, LLM_LOOPS_*).
 llm.LOOPS = { [0] = "auto", "plain", "base", "avx2" }
@@ -114,6 +119,25 @@ local function call(op, fields, pass)
 
   for n, name in pairs(llm.LOOPS) do
     if n > 0 and loops_have & (1 << n) ~= 0 then r.loops_have[name] = true end
+  end
+
+  -- Since the server started, and who has asked (the LLM Monitor): names
+  -- are the kernel's for the process that sent, never the message's own.
+  local at
+  r.up_us, r.read_tokens, r.written_tokens, r.answering, r.loading_for, r.refused, _, at =
+    string.unpack(SINCE, reply, 425)
+  r.askers = {}
+
+  for i = 1, ASKERS do
+    local name, id, answers, refused, _, read, written, last_us =
+      string.unpack(ASKER, reply, at + (i - 1) * ASKER_SIZE)
+    name = cstring(name)
+
+    if name ~= "" then
+      r.askers[#r.askers + 1] = { name = name, id = id, answers = answers, refused = refused,
+                                  read_tokens = read, written_tokens = written, last_us = last_us,
+                                  answering = r.answering == i, loading = r.loading_for == i }
+    end
   end
 
   -- A reply with no capability says -1.

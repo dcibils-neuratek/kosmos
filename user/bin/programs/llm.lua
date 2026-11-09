@@ -3,7 +3,8 @@
 -- where the model runs - how many cores, which of the kit's loops, the GPU -
 -- for every application that asks, as Xavier's Settings window shows them.
 --
---   llm                      the settings, what this machine has, the last answer
+--   llm                      the settings, what this machine has, the last answer,
+--                            and since the server started: who asked, and how much
 --   llm set cores 4          a number, or auto
 --   llm set loops avx2       auto, plain, base or avx2
 --
@@ -39,6 +40,16 @@ local function show(r)
     print(("last answer:   %d cores, loops %s; %d tokens in %.2f s, question %d tokens in %.2f s")
           :format(r.ran.cores, NAMES[r.ran.loops] or r.ran.loops, r.answer_tokens,
                   r.answer_us / 1e6, r.prompt_tokens, r.prompt_us / 1e6))
+  end
+
+  -- What the LLM Monitor shows, as lines (`xavier.md`, *The LLM Monitor*).
+  print(("since start:   up %d s; %d answers, %d tokens read, %d written, %d refused busy")
+        :format(r.up_us // 1000000, r.answers, r.read_tokens, r.written_tokens, r.refused))
+
+  for _, a in ipairs(r.askers) do
+    print(("  %-16s %s%d answers, %d read, %d written, %d refused, last asked at %d s")
+          :format(a.name, a.answering and "writing; " or a.loading and "loading; " or "",
+                  a.answers, a.read_tokens, a.written_tokens, a.refused, a.last_us // 1000000))
   end
 end
 

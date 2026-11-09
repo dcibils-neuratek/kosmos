@@ -55,7 +55,8 @@ static const char *models_root = "/Home/Models";
 #define ALLOCS        64u                   /* the kit's tables, a region each */
 
 _Static_assert(sizeof(struct llm_request) == 1688, "llm_request is 1688 bytes");
-_Static_assert(sizeof(struct llm_reply) == 424, "llm_reply is 424 bytes");
+_Static_assert(sizeof(struct llm_reply) == 912, "llm_reply is 912 bytes");
+_Static_assert(sizeof(struct llm_asker) == 56, "an asker is 56 bytes");
 _Static_assert(LLM_LOOPS_AUTO == LLM_KIT_LOOPS_AUTO && LLM_LOOPS_PLAIN == LLM_KIT_LOOPS_PLAIN
                && LLM_LOOPS_BASE == LLM_KIT_LOOPS_BASE && LLM_LOOPS_AVX2 == LLM_KIT_LOOPS_AVX2,
                "the protocol's loops are the kit's");
@@ -197,6 +198,63 @@ static struct block conversation = { .cap = -1 };
 static uint64_t waiters[WAITERS];
 static uint32_t waiting_since[WAITERS];
 
+/* ------------------------------------------------------------------------
+ * **Who has asked, and how much** (the LLM Monitor): by the kernel's name
+ * for the process each message came from, never the message's own word.
+ * --------------------------------------------------------------------- */
+
+static unsigned long started;               /* the counter, at the start  */
+static uint64_t read_total, written_total, refused_total;
+static struct llm_asker askers[LLM_ASKERS];
+static int answering = -1, loading_for = -1; /* `askers` index, or -1 */
+static struct sender_info last_sender;      /* of the message being answered */
+static bool last_sender_known;
+
+static uint64_t up_us(void);
+
+/* The row for the process that sent the message being answered: found by
+ * name, or made, in place of the one asked longest ago. */
+static int asker(void)
+{
+    int slot = -1, oldest = 0;
+
+    if (!last_sender_known) return -1;
+
+    for (unsigned i = 0; i < LLM_ASKERS; i++) {
+        if (askers[i].name[0] == '\0') {
+            if (slot < 0) slot = (int)i;
+            continue;
+        }
+
+        if (strncmp(askers[i].name, last_sender.name, LLM_ASKER_NAME) == 0) {
+            askers[i].id = last_sender.id;
+            askers[i].last_us = up_us();
+            return (int)i;
+        }
+
+        if (askers[i].last_us < askers[oldest].last_us) oldest = (int)i;
+    }
+
+    if (slot < 0) {
+        slot = oldest;
+        if (slot == answering) answering = -1;
+        if (slot == loading_for) loading_for = -1;
+    }
+
+    memset(&askers[slot], 0, sizeof askers[slot]);
+    memcpy(askers[slot].name, last_sender.name,
+           sizeof last_sender.name < LLM_ASKER_NAME ? sizeof last_sender.name : LLM_ASKER_NAME);
+    askers[slot].name[LLM_ASKER_NAME - 1] = '\0';
+    askers[slot].id = last_sender.id;
+    askers[slot].last_us = up_us();
+    return slot;
+}
+
+static uint64_t up_us(void)
+{
+    return micros(kosmos_ticks() - started);
+}
+
 static void put(char *to, size_t room, const char *from, size_t n)
 {
     memset(to, 0, room);
@@ -247,6 +305,15 @@ static void describe(struct llm_reply *rp)
         rp->written = ans.head->written;
         rp->ended = ans.head->ended;
     }
+
+    rp->up_us = up_us();
+    rp->read_tokens = read_total;
+    rp->written_tokens = written_total;
+    rp->answering = ans.on && answering >= 0 ? (uint32_t)answering + 1u : 0u;
+    rp->loading_for = model.state == LLM_STATE_LOADING && loading_for >= 0
+                      ? (uint32_t)loading_for + 1u : 0u;
+    rp->refused = (uint32_t)refused_total;
+    memcpy(rp->askers, askers, sizeof askers);
 }
 
 static void send(uint64_t to, uint32_t error, long cap)
@@ -736,6 +803,8 @@ static void ask_step(void)
         }
 
         ans.prompt_at += n;
+        read_total += n;
+        if (answering >= 0) askers[answering].read_tokens += n;
 
         if (ans.prompt_at == ans.prompt_n) {
             ans.prompt_us = micros(kosmos_ticks() - ans.asked);
@@ -769,6 +838,8 @@ static void ask_step(void)
 
         memcpy(ans.data + w, text, (size_t)n);
         ans.made++;
+        written_total++;
+        if (answering >= 0) askers[answering].written_tokens++;
         ans.made_bytes = w + (uint32_t)n;
         ans.head->tokens = ans.made;
 
@@ -931,6 +1002,8 @@ static void handle(const struct llm_request *in, long given, uint64_t sender)
             return;
         }
 
+        loading_for = asker();
+
         /* Answered when it is in - or now, for a window that watches
          * STATS on its own clock rather than wait. */
         if (rq.flags & LLM_LOAD_NOWAIT) {
@@ -941,10 +1014,22 @@ static void handle(const struct llm_request *in, long given, uint64_t sender)
 
         return;
 
-    case LLM_OP_ASK:
+    case LLM_OP_ASK: {
+        int who = asker();
+
         e = ask_begin(&rq, given, &cap);
+
+        if (e == LLM_OK) {
+            answering = who;
+            if (who >= 0) askers[who].answers++;
+        } else if (e == LLM_ERR_BUSY) {
+            refused_total++;
+            if (who >= 0) askers[who].refused++;
+        }
+
         send(sender, e, e == LLM_OK ? cap : -1);
         return;
+    }
 
     case LLM_OP_WAIT:
         hold_wait(sender, rq.since);
@@ -983,6 +1068,9 @@ static void answer(const struct message *in, uint64_t sender)
 {
     struct llm_request rq;
     long given = in->cap_plus_one != 0 ? (long)in->cap_plus_one - 1 : -1;
+
+    last_sender_known = kosmos_sender(&last_sender) == 0;
+    if (last_sender_known) last_sender.name[sizeof last_sender.name - 1] = '\0';
 
     if (in->length != sizeof rq) {
         send(sender, LLM_ERR_BAD_OP, -1);
@@ -1024,6 +1112,7 @@ void llm_server(long running_cap, long models_disk_ep, long console_ep, long mod
 
     console = console_ep;
     disk.ep = models_disk_ep;
+    started = kosmos_ticks();
 
     if (models_drive_ep >= 0) {
         disk.ep = models_drive_ep;

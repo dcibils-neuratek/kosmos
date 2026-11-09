@@ -35,8 +35,10 @@
  * words, and the reply says how many were kept.
  *
  * **One answer at a time**: there is one model and one cache. A second ASK
- * while one is being answered is refused as BUSY, and says so; a queue is
- * X8b's, with the monitor that would show it.
+ * while one is being answered is refused as BUSY, and says so, and the
+ * LLM Monitor counts the refusals by who was refused. A queue would hold an
+ * asker's reply, and every window asks from its own loop, which must not
+ * stop - so it waits for an ASK that answers at once and says "queued".
  *
  * **Times are microseconds**, converted once, here, from the counter: a
  * number that crosses a boundary says its unit in its name (`CLAUDE.md`,
@@ -123,6 +125,25 @@ struct llm_request {
     struct llm_settings settings;   /* SETTINGS with LLM_SETTINGS_CHANGE   */
 };
 
+/*
+ * **Who has asked**, by the name the kernel gives the process a message came
+ * from (SYS_SENDER) - never by what the message says of itself. Processes
+ * of one name are one row: Xavier's window and its Super+X box are both
+ * `assistant`. When the table is full, the row asked longest ago goes.
+ */
+#define LLM_ASKERS     8u
+#define LLM_ASKER_NAME 16u
+
+struct llm_asker {
+    char     name[LLM_ASKER_NAME];  /* empty: an unused row              */
+    uint32_t id;                    /* the process that asked last       */
+    uint32_t answers;               /* answers begun for it              */
+    uint32_t refused;               /* its ASKs refused BUSY             */
+    uint32_t reserved;
+    uint64_t read_tokens, written_tokens;
+    uint64_t last_us;               /* `up_us` when it last asked        */
+};
+
 /* The server's state, in every reply. */
 #define LLM_STATE_EMPTY     0u      /* nothing loaded */
 #define LLM_STATE_LOADING   1u
@@ -170,6 +191,18 @@ struct llm_reply {
     /* What the last answer ran on: the cores it was cut across, its
      * loops, and the LLM_GPU_* bits it used. */
     uint32_t ran_cores, ran_loops, ran_gpu, ran_reserved;
+
+    /* **Since the server started** (the LLM Monitor, `xavier.md`): how
+     * long it has been up, every token it has read and written, and who
+     * has asked. A monitor samples these on its own clock and takes the
+     * difference, as the other monitors do; the server keeps no history. */
+    uint64_t up_us;
+    uint64_t read_tokens, written_tokens;
+    uint32_t answering;             /* `askers` index + 1 the answer is for */
+    uint32_t loading_for;           /* `askers` index + 1 that asked a LOAD */
+    uint32_t refused;               /* ASKs refused BUSY                    */
+    uint32_t reserved2;
+    struct llm_asker askers[LLM_ASKERS];
 };
 
 _Static_assert(sizeof(struct llm_request) <= 2048, "an LLM request must fit in one message");

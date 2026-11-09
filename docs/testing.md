@@ -29597,3 +29597,28 @@ seven notches down Appearance, where a control under the pointer takes it
   in Preferences did not switch to it with no cards: switch True, started
   False", and Switch Desktop after it, which never came.
 
+
+## 18.725 The LLM Monitor, and the server counting who asked
+
+`x86-llmmon` (`tools/run_llmmon.py`), new, with the window (`xavier.md`,
+*The LLM Monitor*). A disk with the tiny phi-2; `llm` before anything is
+asked says no answers, no tokens and nobody; `xavier` at the prompt asks
+twice, and after each `llm` names the asker `xavier` - the kernel's name for
+the process, by `SYS_SENDER` - with the answers, and the tokens read and
+written equal to the last answers' own and then to their sum, the server's
+totals the same; then `wm llmmon:--tell` opens and its first sample says
+what `llm` said. 9 checks, about 30 s with the image built. `KEEP_SHOT`
+keeps the screen.
+
+The first picture showed two tile lines cut, the first word as "0.0 s"
+and an empty graph saying nothing; all three fixed before the gate (times
+under a second in milliseconds now).
+
+**Control**: the asker's written count skipping each answer's first token
+- 3 of 9: "after one question the asker is not xavier, with the answer's
+tokens: {'xavier': (1, 9, 23, 0)}", the sum after two (38 for 40), and the
+window's sample, which read the same reply.
+
+Not tested: a refusal counted against who was refused. Nothing at the
+prompt can ask while another answer is being written; Xavier's suite could,
+and that is where it goes when the queue is built.

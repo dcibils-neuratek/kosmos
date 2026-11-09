@@ -863,6 +863,59 @@ name anywhere yet. `xavier` at the prompt does not say it.
 Left for later: a Xavier window already open is not raised by Tab - a
 second one opens on the conversation.
 
+## The LLM Monitor
+
+**What a person can do with it**, as drawn in `xavier.html` (*What the
+engine is doing*):
+
+- see which model is in, how large, how much it can hold, and where the
+  last answer ran - cores and loops - or how far a load has come;
+- see the three speeds that matter: **writing**, tokens a second for an
+  answer, with the last minute's average and the best; **reading**, tokens
+  a second through a question, and how many were already held; and the
+  **first word**, how long a person waited, with the last minute's range;
+- watch five minutes of writing as a graph, a column every two seconds,
+  gaps between answers included;
+- see **who is asking**: every application by name, what it is doing -
+  writing, with what its conversation holds, loading the model, or idle
+  since when - and the answers, tokens read and tokens written it has had,
+  and how often it was refused because another was being answered;
+- read the same at the prompt with `llm`.
+
+**What it is made of.** Nothing new but the window: `llmmon.lua`, Lua,
+drawn with what GPU Monitor, Network Monitor and Disk Monitor draw with
+(`ui.history`, the header, the monitors' dark graph ground), and the LLM
+server's `STATS` reply, which `llm` at the prompt and Xavier read too.
+**The server counts and the window samples**, as every monitor here does:
+it asks every two seconds and takes the difference between two readings,
+so the server keeps no history and a window opened late starts its graph
+from when it opened. The reply grew from 424 bytes to 912 (`llmproto.h`):
+how long the server has been up, every token read and written since it
+started, the refusals, and a table of eight askers. All of it is a few
+counters bumped where the tokens are already counted; the busiest path is
+unchanged, one add a token.
+
+**Who asked is the kernel's word, not the message's.** The server reads
+`SYS_SENDER` for each message - the name of the process it came from, as
+the notification server does - so an application cannot appear as
+another, or as nobody. Processes of one name are one row: Xavier's window
+and its Super+X box are both `assistant`, and the window shows the name the
+application declares (`kosmos: name Xavier`); `xavier` at the prompt is
+"xavier, at the prompt". Past eight names, the one asked longest ago gives
+up its row.
+
+**One difference from the drawing, and why.** The drawing has a second
+asker *waiting, 1st*: a queue. The server answers one question at a time
+and refuses a second as busy, and a queue would mean holding the second
+asker's reply until its turn - which stops whatever asked, and every window
+asks from its own loop. So refusals are counted by who was refused, and a
+queue waits for an ASK that answers at once with "queued", which is its
+own piece of work. "Tokens today" is "since the server started", which is
+what the server can say without a clock of its own.
+
+**Built in 0.11.331** (`testing.md` 18.725). Left for X7: the Loaded tile
+says "processor" or "GPU" when the GPU can answer.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go
