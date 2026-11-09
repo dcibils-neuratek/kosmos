@@ -63,6 +63,9 @@
 #define TOLERANCE 2.0f
 #define NEAR 0.5f
 
+/* The largest vocabulary the logit copies below hold: Qwen2's is 151936. */
+#define VOCAB_MAX 262144
+
 static int checks, failed;
 
 static void check(int ok, const char *what)
@@ -219,7 +222,7 @@ static int with_gpu;
 static void check_gpu(struct llm_model *m)
 {
   static int32_t t[512];
-  static float theirs[60000];
+  static float theirs[VOCAB_MAX];
   const char *q = "Instruct: Name three colours of the rainbow, and say why the sky is blue.\nOutput:";
   int n = llm_tokenize(m, q, strlen(q), 1, t, 512);
   uint64_t before = gpu.products;
@@ -297,7 +300,7 @@ static int numbers(const char *s, int *out, int room)
  * nothing, to the bit: the same code in the same order, so anything but
  * equal is a cache entry kept that should not have been.
  */
-static float fresh[60000];
+static float fresh[VOCAB_MAX];
 
 static int fresh_logits(struct llm_model *m, const int32_t *t, int n)
 {
@@ -345,7 +348,7 @@ static void check_held(struct llm_model *m)
   for (int i = 0; i < n; i++) { llm_feed(m, &h, room[i]); seq[na + i] = room[i]; }
   nseq = na + n;
   {
-    static float after[60000];
+    static float after[VOCAB_MAX];
     memcpy(after, m->logits, m->n_vocab * sizeof *after);
     fresh_logits(m, seq, nseq);
     check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
@@ -362,7 +365,7 @@ static void check_held(struct llm_model *m)
   check(n > 0 && kept >= (uint32_t)na - 1 && kept + (uint32_t)n == (uint32_t)whole, what);
   for (int i = 0; i < n; i++) llm_feed(m, &h, room[i]);
   {
-    static float after[60000];
+    static float after[VOCAB_MAX];
     memcpy(after, m->logits, m->n_vocab * sizeof *after);
     fresh_logits(m, seq, whole);
     check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
@@ -378,7 +381,7 @@ static void check_held(struct llm_model *m)
   check(n > 0 && kept > 0 && kept + (uint32_t)n == (uint32_t)whole, what);
   for (int i = 0; i < n; i++) llm_feed(m, &h, room[i]);
   {
-    static float after[60000];
+    static float after[VOCAB_MAX];
     memcpy(after, m->logits, m->n_vocab * sizeof *after);
     fresh_logits(m, seq, whole);
     check(memcmp(after, fresh, m->n_vocab * sizeof *after) == 0,
@@ -420,11 +423,15 @@ static void check_batch(struct llm_model *m)
     return;
   }
 
+  /* Counted on until it is more than a batch: a tokenizer that takes
+   * digits one at a time - Qwen2's - gets there sooner than phi-2's. */
   at += (size_t)snprintf(text + at, sizeof text - at, "Instruct: Count with me:");
-  for (int i = 1; i <= 20; i++) at += (size_t)snprintf(text + at, sizeof text - at, " %d,", i);
-  snprintf(text + at, sizeof text - at, " and then?\nOutput:");
-
-  n = llm_tokenize(m, text, strlen(text), 1, t, 2048);
+  n = 0;
+  for (int i = 1; i <= 40 && n <= LLM_BATCH + 8; i++) {
+    at += (size_t)snprintf(text + at, sizeof text - at, " %d,", i);
+    snprintf(text + at, sizeof text - at, " and then?\nOutput:");
+    n = llm_tokenize(m, text, strlen(text), 1, t, 2048);
+  }
 
   snprintf(what, sizeof what, "batch: the question is more than one batch, %d tokens", n);
   check(n > LLM_BATCH && n < 2 * LLM_BATCH, what);
@@ -439,8 +446,8 @@ static void check_batch(struct llm_model *m)
 
   double one_at_a_time = now() - t0;
 
-  size_t cache = (size_t)m->n_layer * m->n_ctx * m->n_embd;
-  size_t used = (size_t)n * m->n_embd;
+  size_t cache = (size_t)m->n_layer * m->n_ctx * m->kv_dim;
+  size_t used = (size_t)n * m->kv_dim;
   uint16_t *k1 = malloc(cache * 2), *v1 = malloc(cache * 2);
 
   if (!k1 || !v1) { check(0, "batch: no memory to compare the cache"); free(k1); free(v1); return; }
@@ -468,7 +475,7 @@ static void check_batch(struct llm_model *m)
 
     int cached = 1;
     for (uint32_t l = 0; l < m->n_layer; l++) {
-      size_t o = (size_t)l * m->n_ctx * m->n_embd;
+      size_t o = (size_t)l * m->n_ctx * m->kv_dim;
       cached = cached && memcmp(k1 + o, m->k_cache + o, used * 2) == 0
                && memcmp(v1 + o, m->v_cache + o, used * 2) == 0;
     }
@@ -515,9 +522,20 @@ static struct llm_passage watched_one[2048], watched_batch[LLM_BATCH];
 #define TRACE_LAYERS 64
 static float *queries[TRACE_LAYERS];
 static int capturing;
+static float *gate_last;              /* the latest layer's gate, while capturing */
+static uint32_t gate_room, gate_n;
 
 void llm_trace(const char *name, uint32_t layer, const float *x, uint32_t n)
 {
+  /* And the last layer's gate, before SwiGLU: what Qwen2's neurons
+   * firing is counted from. */
+  if (capturing && !strcmp(name, "ffn_gate")) {
+    if (!gate_last || n > gate_room) { free(gate_last); gate_last = malloc(n * sizeof *x); gate_room = n; }
+    if (gate_last) memcpy(gate_last, x, n * sizeof *x);
+    gate_n = n;
+    return;
+  }
+
   if (!capturing || layer >= TRACE_LAYERS || strcmp(name, "Qcur") != 0) return;
 
   if (!queries[layer]) queries[layer] = malloc(n * sizeof *x);
@@ -548,7 +566,7 @@ static void rope_here(float *v, uint32_t n_rot, uint32_t pos, float base)
  * strongest - and the share within a half-precision step. */
 static int heads_agree(const struct llm_model *m, const struct llm_passage *p, uint32_t pos, int *looked)
 {
-  const uint32_t E = m->n_embd, D = m->head_dim;
+  const uint32_t KV = m->kv_dim, D = m->head_dim;
   static double w[2048];
   float q[1024];
   int wrong = 0;
@@ -556,13 +574,16 @@ static int heads_agree(const struct llm_model *m, const struct llm_passage *p, u
   *looked = 0;
 
   for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS && l < TRACE_LAYERS; l++) {
-    const uint16_t *kc = m->k_cache + (size_t)l * m->n_ctx * E;
+    const uint16_t *kc = m->k_cache + (size_t)l * m->n_ctx * KV;
 
     if (!queries[l]) return -1;
 
     for (uint32_t h = 0; h < m->n_head && h < LLM_PASSAGE_HEADS; h++) {
       double max = -1e300, sum = 0;
       uint32_t best = 0;
+      /* The key head it reads: its own, or its group's (grouped-query
+       * attention, as llama.cpp broadcasts K over the query heads). */
+      const uint32_t kvh = h / (m->n_head / m->n_head_kv);
 
       memcpy(q, queries[l] + h * D, D * sizeof *q);
       rope_here(q, m->n_rot, pos, m->rope_base);
@@ -572,7 +593,7 @@ static int heads_agree(const struct llm_model *m, const struct llm_passage *p, u
 
         for (uint32_t i = 0; i < D; i++)
           d += (double)llm_f16_to_f32(llm_f32_to_f16(q[i] * (1.0f / sqrtf((float)D))))
-               * llm_f16_to_f32(kc[(size_t)p0 * E + h * D + i]);
+               * llm_f16_to_f32(kc[(size_t)p0 * KV + kvh * D + i]);
         w[p0] = d;
         if (d > max) max = d;
       }
@@ -684,17 +705,23 @@ static void check_passage(struct llm_model *m)
   {
     uint32_t L = m->n_layer - 1;
     const float *x = m->x + (size_t)(LLM_BATCH > 0 ? (uint32_t)((n - 1) % LLM_BATCH) : 0) * m->n_embd;
-    const float *ff = m->ff + (size_t)((n - 1) % LLM_BATCH) * m->n_ff;
+    /* What a neuron's firing is counted from: the MLP's input to GELU,
+     * which phi-2 leaves in `ff`; Qwen2's gate, before SwiGLU made it
+     * something else, as the trace caught it on the last token's last
+     * layer. */
+    const float *ff = m->kind == LLM_ARCH_QWEN2 ? gate_last
+                      : m->ff + (size_t)((n - 1) % LLM_BATCH) * m->n_ff;
     double sq = 0;
     uint32_t above = 0, at_or_above = 0;
 
     for (uint32_t i = 0; i < m->n_embd; i++) sq += (double)x[i] * x[i];
-    for (uint32_t i = 0; i < m->n_ff; i++) { above += ff[i] > 0.0f; at_or_above += ff[i] >= 0.0f; }
+    if (!ff || (m->kind == LLM_ARCH_QWEN2 && gate_n != m->n_ff)) ff = NULL;
+    for (uint32_t i = 0; ff && i < m->n_ff; i++) { above += ff[i] > 0.0f; at_or_above += ff[i] >= 0.0f; }
 
     snprintf(what, sizeof what, "passage: the last layer's stream %.6g, its length worked out here %.6g; "
              "%u fired, between %u and %u", (double)last.layer[L].stream, sqrt(sq), last.layer[L].fired,
              above, at_or_above);
-    check(L < LLM_PASSAGE_LAYERS && last.layer[L].stream == (float)sqrt(sq) && last.layer[L].fired >= above
+    check(ff && L < LLM_PASSAGE_LAYERS && last.layer[L].stream == (float)sqrt(sq) && last.layer[L].fired >= above
           && last.layer[L].fired <= at_or_above, what);
   }
 
@@ -836,7 +863,7 @@ static void check_clock(struct llm_model *m)
 static void check_parallel(struct llm_model *m)
 {
   static int32_t t[2048];
-  static float one_logits[60000];
+  static float one_logits[VOCAB_MAX];
   const char *q = "Instruct: Name three planets and say one thing about each.\nOutput:";
   int n = llm_tokenize(m, q, strlen(q), 1, t, 2048);
   const int steps = 12;
@@ -853,7 +880,7 @@ static void check_parallel(struct llm_model *m)
   for (uint32_t p = 0; p < POOL; p++)
     if (!pool.thread[p]) pthread_create(&pool.thread[p], NULL, pool_worker, (void *)(uintptr_t)p);
 
-  size_t used = (size_t)(n + steps) * m->n_embd, cache = (size_t)m->n_layer * m->n_ctx * m->n_embd;
+  size_t used = (size_t)(n + steps) * m->kv_dim, cache = (size_t)m->n_layer * m->n_ctx * m->kv_dim;
   uint16_t *k1 = malloc(cache * 2), *v1 = malloc(cache * 2);
 
   if (!k1 || !v1) { check(0, "parallel: no memory to compare the cache"); free(k1); free(v1); return; }
@@ -888,7 +915,7 @@ static void check_parallel(struct llm_model *m)
 
   int cached = 1;
   for (uint32_t l = 0; l < m->n_layer; l++) {
-    size_t o = (size_t)l * m->n_ctx * m->n_embd;
+    size_t o = (size_t)l * m->n_ctx * m->kv_dim;
     cached = cached && memcmp(k1 + o, m->k_cache + o, used * 2) == 0
              && memcmp(v1 + o, m->v_cache + o, used * 2) == 0;
   }

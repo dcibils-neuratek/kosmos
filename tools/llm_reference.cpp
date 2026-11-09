@@ -51,6 +51,11 @@ static const char *PROMPTS[] = {
     "def fibonacci(n):",
 };
 
+// And for a model that is spoken to in ChatML - Qwen2's - a question as
+// Xavier asks it, its special tokens parsed.
+static const char *CHATML =
+    "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n";
+
 static const int STEPS = 12;
 
 static std::vector<llama_token> tokenize(const llama_vocab *vocab, const std::string &text,
@@ -96,7 +101,14 @@ int main(int argc, char **argv)
         }
     }
 
-    for (const char *prompt : PROMPTS) {
+    char arch[64] = "";
+    llama_model_meta_val_str(model, "general.architecture", arch, sizeof arch);
+
+    std::vector<std::pair<const char *, bool>> prompts;
+    for (const char *p : PROMPTS) prompts.push_back({p, false});
+    if (!strcmp(arch, "qwen2")) prompts.push_back({CHATML, true});
+
+    for (auto [prompt, special] : prompts) {
         llama_context_params cp = llama_context_default_params();
         cp.n_ctx = 256;
         cp.n_batch = 1;
@@ -107,7 +119,7 @@ int main(int argc, char **argv)
         llama_context *ctx = llama_init_from_model(model, cp);
         if (!ctx) return 1;
 
-        std::vector<llama_token> toks = tokenize(vocab, prompt, false);
+        std::vector<llama_token> toks = tokenize(vocab, prompt, special);
         printf("prompt ");
         hex(prompt);
         printf(" :");

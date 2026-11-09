@@ -7,8 +7,10 @@
  *
  * What it reads is what llama.cpp writes: GGUF version 2 and 3, tensors in
  * F32, F16, Q8_0 and Q4_0, ggml's block layouts. What it runs is phi-2
- * (`general.architecture = phi2`); a second architecture is a second
- * forward pass beside it.
+ * (`general.architecture = phi2`) and Qwen2 (`qwen2`, Qwen2.5's): one
+ * forward pass, with the few places the two differ said where they are -
+ * LayerNorm or RMSNorm, attention and the MLP side by side or one after
+ * the other, GELU or SwiGLU, as many key heads as query heads or fewer.
  *
  * **It takes no memory of its own.** The file is a buffer the caller
  * holds - a region on Kosmos, a malloc on the Mac - and is read in place,
@@ -56,12 +58,22 @@ struct llm_tensor {
   uint64_t bytes;
 };
 
-/* One layer of phi-2. */
+/* The architectures it runs (`llm_model.kind`). */
+enum {
+  LLM_ARCH_PHI2  = 0,
+  LLM_ARCH_QWEN2 = 1,
+};
+
+/* One layer. A bias the architecture does not have is NULL; so is
+ * `ffn_norm_w` and `gate_w` in phi-2, whose MLP reads the attention's own
+ * norm and has no gate. */
 struct llm_layer {
   const struct llm_tensor *norm_w, *norm_b;
   const struct llm_tensor *qkv_w, *qkv_b;          /* fused, or ...   */
   const struct llm_tensor *q_w, *q_b, *k_w, *k_b, *v_w, *v_b;
   const struct llm_tensor *o_w, *o_b;
+  const struct llm_tensor *ffn_norm_w;
+  const struct llm_tensor *gate_w;
   const struct llm_tensor *up_w, *up_b, *down_w, *down_b;
 };
 
@@ -85,9 +97,9 @@ typedef void llm_part_fn(void *job, uint32_t part, uint32_t parts);
 typedef uint64_t llm_clock_fn(void);
 
 /* The forward pass's stages, as `stage_counts` keeps them: the embedding
- * row; the layer norms; the products (the GPU's and the processor's,
- * waiting included); RoPE and the cache's writes; attention; GELU; and
- * the residual sums. */
+ * row; the norms; the products (the GPU's and the processor's, waiting
+ * included); RoPE and the cache's writes; attention; the MLP's
+ * activation, GELU or SwiGLU; and the residual sums. */
 #define LLM_STAGE_EMBED     0u
 #define LLM_STAGE_NORM      1u
 #define LLM_STAGE_PRODUCTS  2u
@@ -135,10 +147,13 @@ struct llm_model {
   uint32_t n_meta;
   struct llm_str arch;
   struct llm_str name;
+  uint32_t kind;               /* LLM_ARCH_*                           */
+  uint32_t qwen2_split;        /* the tokenizer splits as Qwen2's does */
 
   /* The shape. */
   uint32_t n_vocab, n_embd, n_head, n_head_kv, n_layer, n_ff, n_rot, n_ctx_train;
   uint32_t head_dim;
+  uint32_t kv_dim;             /* n_head_kv * head_dim: a position's K, or V */
   float norm_eps, rope_base;
 
   /* The weights. */
@@ -162,8 +177,9 @@ struct llm_model {
    * vectors - all from `alloc`, at `llm_open`. */
   uint32_t n_ctx;              /* positions the cache holds */
   uint32_t n_past;             /* positions it holds now    */
-  uint16_t *k_cache, *v_cache; /* [layer][pos][n_embd]      */
+  uint16_t *k_cache, *v_cache; /* [layer][pos][kv_dim]      */
   float *x, *xn, *qkv, *att, *attn_out, *ff, *ff_out, *logits;
+  float *up;                   /* SwiGLU's other half; NULL in phi-2 */
   uint8_t *xq;                 /* the input, as Q8_0 blocks */
   float *xs;                   /* and each block's scale, as a float */
   /* Each working vector but `att` and `logits` is `LLM_BATCH` of them, one
@@ -282,9 +298,11 @@ int llm_use_loops(struct llm_model *m, unsigned which);
 
 /*
  * The model in `file`, of `size` bytes, for a cache of `n_ctx` positions
- * (0: the model's own, up to 2048). 0 on success; otherwise -1, with why
- * in `why`.
+ * (0: the model's own, up to LLM_CTX_DEFAULT). 0 on success; otherwise -1,
+ * with why in `why`.
  */
+#define LLM_CTX_DEFAULT 4096u
+
 int llm_open(struct llm_model *m, const void *file, size_t size, uint32_t n_ctx,
              llm_alloc_fn alloc, void *alloc_ctx, char *why, size_t why_room);
 

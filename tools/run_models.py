@@ -295,7 +295,7 @@ def main():
     check("no models in /Home/Models" in g("empty"), "an empty folder was not said: %r" % g("empty"))
     check(re.search(r"%s\s+42 downloads\s+phi2" % re.escape(REPO), g("search"))
           and re.search(r"kosmos-test/other-GGUF\s+7 downloads\s+llama\s+a llama model: the LLM Kit "
-                        r"has a forward pass for phi2 only", g("search"))
+                        r"has a forward pass for phi2, qwen2 only", g("search"))
           and "expand%5B%5D=gguf" in seen["api"][0],
           "the search did not list the repositories: %r" % g("search"))
     check(re.search(r"%s\s+8\.2 MB\s+F16" % re.escape(GOOD), g("files"))

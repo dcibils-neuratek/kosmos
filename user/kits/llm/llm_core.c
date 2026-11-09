@@ -417,6 +417,10 @@ static int open_tokenizer(struct llm_model *m, llm_alloc_fn alloc, void *ctx, ch
     m->specials[j] = v;
   }
 
+  /* How the text is cut into words before BPE: Qwen2's own rule where the
+   * file names it, GPT-2's otherwise (`llama-vocab.cpp`'s `pre`). */
+  m->qwen2_split = str_is(meta_str(m, "tokenizer.ggml.pre"), "qwen2");
+
   m->bos = (int32_t)llm_meta_number(m, "tokenizer.ggml.bos_token_id", -1);
   m->eos = (int32_t)llm_meta_number(m, "tokenizer.ggml.eos_token_id", -1);
   return 0;
@@ -521,10 +525,14 @@ bad_tensor:
   m->arch = meta_str(m, "general.architecture");
   m->name = meta_str(m, "general.name");
 
-  if (!str_is(m->arch, "phi2")) {
-    say(why, room, "an architecture this does not run yet (phi2 is the one)");
+  if (str_is(m->arch, "phi2")) m->kind = LLM_ARCH_PHI2;
+  else if (str_is(m->arch, "qwen2")) m->kind = LLM_ARCH_QWEN2;
+  else {
+    say(why, room, "an architecture this does not run yet (phi2 and qwen2 are)");
     return -1;
   }
+
+  const int qwen = m->kind == LLM_ARCH_QWEN2;
 
   m->n_embd = (uint32_t)arch_number(m, "embedding_length", 0);
   m->n_head = (uint32_t)arch_number(m, "attention.head_count", 0);
@@ -532,34 +540,45 @@ bad_tensor:
   m->n_layer = (uint32_t)arch_number(m, "block_count", 0);
   m->n_ff = (uint32_t)arch_number(m, "feed_forward_length", 0);
   m->n_ctx_train = (uint32_t)arch_number(m, "context_length", 2048);
-  m->norm_eps = (float)arch_number(m, "attention.layer_norm_epsilon", 1e-5);
+  m->norm_eps = qwen ? (float)arch_number(m, "attention.layer_norm_rms_epsilon", 1e-6)
+                     : (float)arch_number(m, "attention.layer_norm_epsilon", 1e-5);
   m->rope_base = (float)arch_number(m, "rope.freq_base", 10000.0);
 
   m->tok_embd = tensor(m, "token_embd.weight");
   m->n_vocab = m->tok_embd && m->tok_embd->n_dims == 2 ? (uint32_t)m->tok_embd->ne[1] : 0;
 
-  if (!m->n_embd || !m->n_head || m->n_embd % m->n_head || m->n_head_kv != m->n_head
+  /* Fewer key heads than query heads is grouped-query attention: each
+   * key head serves `n_head / n_head_kv` query heads, side by side. */
+  if (!m->n_embd || !m->n_head || m->n_embd % m->n_head || !m->n_head_kv
+      || m->n_head_kv > m->n_head || m->n_head % m->n_head_kv
       || !m->n_layer || m->n_layer > 1024 || !m->n_ff || m->n_ff > (1u << 20)
       || m->n_embd > (1u << 16) || !m->n_vocab || m->n_vocab > (1u << 20)) {
-    say(why, room, "its shape is missing, or not one phi2 has");
+    say(why, room, "its shape is missing, or not one this runs");
     return -1;
   }
 
   m->head_dim = m->n_embd / m->n_head;
+  m->kv_dim = m->n_head_kv * m->head_dim;
   m->n_rot = (uint32_t)arch_number(m, "rope.dimension_count", m->head_dim);
   if (m->n_rot > m->head_dim || (m->n_rot & 1)) { say(why, room, "a bad rotary size"); return -1; }
   if (m->head_dim > LLM_HEAD_DIM_MAX) { say(why, room, "a head wider than the kit's attention takes"); return -1; }
 
-  uint32_t E = m->n_embd;
+  uint32_t E = m->n_embd, KV = m->kv_dim;
 
   m->out_norm_w = tensor(m, "output_norm.weight");
-  m->out_norm_b = tensor(m, "output_norm.bias");
+  m->out_norm_b = qwen ? NULL : tensor(m, "output_norm.bias");
   m->out_w = tensor(m, "output.weight");
   m->out_b = tensor(m, "output.bias");
 
+  /* Qwen2's output may be the embedding itself, read the other way
+   * (`TENSOR_DUPLICATED`): the 0.5B's is a matrix of its own, larger
+   * models' are not. */
+  if (qwen && !m->out_w) m->out_w = m->tok_embd;
+
   if (!is_matrix(m->tok_embd, E, m->n_vocab) || m->tok_embd->type == LLM_F32
-      || !is_vector(m->out_norm_w, E) || !is_vector(m->out_norm_b, E)
-      || !is_matrix(m->out_w, E, m->n_vocab) || !is_vector(m->out_b, m->n_vocab)) {
+      || !is_vector(m->out_norm_w, E) || !(qwen || is_vector(m->out_norm_b, E))
+      || !is_matrix(m->out_w, E, m->n_vocab)
+      || !(qwen ? !m->out_b || is_vector(m->out_b, m->n_vocab) : is_vector(m->out_b, m->n_vocab))) {
     say(why, room, "its embedding or output tensors are missing or the wrong shape");
     return -1;
   }
@@ -587,12 +606,33 @@ bad_tensor:
     L->down_w = layer_tensor(m, l, "ffn_down.weight");
     L->down_b = layer_tensor(m, l, "ffn_down.bias");
 
+    if (qwen) {
+      /* RMSNorm, so no norm bias; Q, K and V apart, each with a bias or
+       * none; a second norm before the MLP, and its gate. */
+      L->norm_b = L->qkv_w = L->qkv_b = NULL;
+      L->ffn_norm_w = layer_tensor(m, l, "ffn_norm.weight");
+      L->gate_w = layer_tensor(m, l, "ffn_gate.weight");
+
+      if (!is_vector(L->norm_w, E)
+          || !is_matrix(L->q_w, E, E) || (L->q_b && !is_vector(L->q_b, E))
+          || !is_matrix(L->k_w, E, KV) || (L->k_b && !is_vector(L->k_b, KV))
+          || !is_matrix(L->v_w, E, KV) || (L->v_b && !is_vector(L->v_b, KV))
+          || !is_matrix(L->o_w, E, E) || (L->o_b && !is_vector(L->o_b, E))
+          || !is_vector(L->ffn_norm_w, E)
+          || !is_matrix(L->gate_w, E, m->n_ff) || !is_matrix(L->up_w, E, m->n_ff)
+          || !is_matrix(L->down_w, m->n_ff, E) || L->up_b || L->down_b) {
+        say(why, room, "a layer's tensors are missing or the wrong shape");
+        return -1;
+      }
+      continue;
+    }
+
     int fused = is_matrix(L->qkv_w, E, 3 * E) && is_vector(L->qkv_b, 3 * E);
     int apart = is_matrix(L->q_w, E, E) && is_vector(L->q_b, E)
                 && is_matrix(L->k_w, E, E) && is_vector(L->k_b, E)
                 && is_matrix(L->v_w, E, E) && is_vector(L->v_b, E);
 
-    if (!is_vector(L->norm_w, E) || !is_vector(L->norm_b, E) || !(fused || apart)
+    if (KV != E || !is_vector(L->norm_w, E) || !is_vector(L->norm_b, E) || !(fused || apart)
         || !is_matrix(L->o_w, E, E) || !is_vector(L->o_b, E)
         || !is_matrix(L->up_w, E, m->n_ff) || !is_vector(L->up_b, m->n_ff)
         || !is_matrix(L->down_w, m->n_ff, E) || !is_vector(L->down_b, E)) {
@@ -604,10 +644,13 @@ bad_tensor:
 
   if (open_tokenizer(m, alloc, ctx, why, room) < 0) return -1;
 
-  m->n_ctx = n_ctx ? n_ctx : m->n_ctx_train;
+  /* The cache a model is given unasked is its own context, up to
+   * `LLM_CTX_DEFAULT`: phi-2's 2048 whole, and Qwen2.5's 32768 - a 400 MB
+   * cache - cut to what a conversation here reaches. */
+  m->n_ctx = n_ctx ? n_ctx : m->n_ctx_train < LLM_CTX_DEFAULT ? m->n_ctx_train : LLM_CTX_DEFAULT;
   if (m->n_ctx > m->n_ctx_train) m->n_ctx = m->n_ctx_train;
 
-  size_t cache = (size_t)m->n_layer * m->n_ctx * E;
+  size_t cache = (size_t)m->n_layer * m->n_ctx * KV;
   uint32_t widest = m->n_ff > 3 * E ? m->n_ff : 3 * E;
 
   m->k_cache = alloc(ctx, cache * 2);
@@ -625,11 +668,12 @@ bad_tensor:
   m->ff = alloc(ctx, B * m->n_ff * 4);
   m->ff_out = alloc(ctx, B * E * 4);
   m->logits = alloc(ctx, (size_t)m->n_vocab * 4);
+  m->up = qwen ? alloc(ctx, B * m->n_ff * 4) : NULL;
   m->xq = alloc(ctx, B * m->xq_room);
   m->xs = alloc(ctx, B * m->xs_room * 4);
 
   if (!m->k_cache || !m->v_cache || !m->x || !m->xn || !m->qkv || !m->att || !m->attn_out
-      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs) {
+      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs || (qwen && !m->up)) {
     say(why, room, "no memory for its attention cache and working vectors");
     return -1;
   }
@@ -798,10 +842,135 @@ static void bpe_word(const struct llm_model *m, const char *w, uint32_t n, struc
   }
 }
 
-/* A run of text with no special token in it: GPT-2's split, then BPE. */
+/* The bytes from `i` to `end` as one word: GPT-2's characters, each byte
+ * of its UTF-8 mapped, and then BPE. */
+static void bpe_span(const struct llm_model *m, const char *s, size_t i, size_t end, struct out *o)
+{
+  char w[WORD_MAX * 2];
+  uint32_t wn = 0;
+  size_t at = i;
+
+  while (at < end) {
+    size_t l;
+    char u[4];
+    uint32_t c = get_utf8(s + at, end - at, &l);
+    int ul = put_utf8(c, u);
+    for (int b = 0; b < ul; b++) {
+      if (wn + 2 > sizeof w) {               /* a very long word: in pieces */
+        bpe_word(m, w, wn, o);
+        wn = 0;
+      }
+      wn += (uint32_t)put_utf8(byte_char((uint8_t)u[b]), w + wn);
+    }
+    at += l;
+  }
+  if (wn) bpe_word(m, w, wn, o);
+}
+
+/* The character at `at`, or none past `n`. */
+static uint32_t char_at(const char *s, size_t n, size_t at, size_t *len)
+{
+  *len = 0;
+  return at < n ? get_utf8(s + at, n - at, len) : 0xffffffffu;
+}
+
+static uint32_t ascii_lower(uint32_t c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+
+/*
+ * **Qwen2's split** - `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+
+ * |\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+` - read as
+ * llama.cpp's `unicode_regex_split_custom_qwen2` reads it, a rule at a
+ * time from each position. Where GPT-2's differs: a contraction in any
+ * case; a letter run takes one character before it that is not a letter,
+ * a digit or a line's end - punctuation as well as a space; digits one at
+ * a time; and a run of whitespace that holds a line's end ends after the
+ * last of them.
+ */
+static void tokenize_qwen2(const struct llm_model *m, const char *s, size_t n, struct out *o)
+{
+  size_t pos = 0;
+
+  while (pos < n) {
+    size_t l0, l1, l2, at;
+    uint32_t c0 = char_at(s, n, pos, &l0);
+    uint32_t c1 = char_at(s, n, pos + l0, &l1);
+    int f0 = char_class(c0);
+    size_t end;
+
+    if (c0 == '\'' && c1 != 0xffffffffu) {
+      uint32_t n1 = ascii_lower(c1);
+      if (n1 == 's' || n1 == 't' || n1 == 'm' || n1 == 'd') { end = pos + l0 + l1; goto word; }
+      uint32_t n2 = ascii_lower(char_at(s, n, pos + l0 + l1, &l2));
+      if ((n1 == 'r' && n2 == 'e') || (n1 == 'v' && n2 == 'e') || (n1 == 'l' && n2 == 'l')) {
+        end = pos + l0 + l1 + l2;
+        goto word;
+      }
+    }
+
+    /* [^\r\n\p{L}\p{N}]?\p{L}+ */
+    if (!(c0 == '\r' || c0 == '\n' || f0 == C_NUMBER)
+        && (f0 == C_LETTER || char_class(c1) == C_LETTER)) {
+      at = pos + l0;
+      for (;;) {
+        size_t l;
+        uint32_t c = char_at(s, n, at, &l);
+        if (char_class(c) != C_LETTER) break;
+        at += l;
+      }
+      end = at;
+      goto word;
+    }
+
+    /* \p{N} */
+    if (f0 == C_NUMBER) { end = pos + l0; goto word; }
+
+    /* ' ?[^\s\p{L}\p{N}]+[\r\n]*' */
+    {
+      int f2 = c0 == ' ' ? char_class(c1) : f0;
+
+      if (f2 == C_OTHER) {
+        size_t l;
+        at = pos + (c0 == ' ' ? l0 : 0);
+        while (char_class(char_at(s, n, at, &l)) == C_OTHER) at += l;
+        for (uint32_t c = char_at(s, n, at, &l); c == '\r' || c == '\n'; c = char_at(s, n, at, &l)) at += l;
+        end = at;
+        goto word;
+      }
+    }
+
+    /* Whitespace: \s*[\r\n]+, then \s+(?!\S), then \s+. */
+    {
+      size_t count = 0, last = pos, after_line = 0, l;
+      uint32_t c;
+
+      at = pos;
+      while (char_class(c = char_at(s, n, at, &l)) == C_SPACE) {
+        last = at;
+        at += l;
+        if (c == '\r' || c == '\n') after_line = at;
+        count++;
+      }
+
+      if (after_line) end = after_line;
+      else if (count > 1 && at < n) end = last;
+      else if (count > 0) end = at;
+      else end = pos + l0;                  /* no match: one character */
+    }
+
+word:
+    bpe_span(m, s, pos, end, o);
+    pos = end;
+  }
+}
+
+/* A run of text with no special token in it: the model's split, then BPE. */
 static void tokenize_plain(const struct llm_model *m, const char *s, size_t n, struct out *o)
 {
-  /* The text as characters, with each one's place in the bytes. */
+  if (m->qwen2_split) {
+    tokenize_qwen2(m, s, n, o);
+    return;
+  }
+
   size_t i = 0;
 
   while (i < n) {
@@ -855,29 +1024,7 @@ static void tokenize_plain(const struct llm_model *m, const char *s, size_t n, s
     }
 
 word:
-    {
-      /* The word as GPT-2's characters: each byte of its UTF-8 mapped. */
-      char w[WORD_MAX * 2];
-      uint32_t wn = 0;
-      size_t at = i;
-
-      while (at < end) {
-        size_t l;
-        char u[4];
-        uint32_t c = get_utf8(s + at, end - at, &l);
-        int ul = put_utf8(c, u);
-        for (int b = 0; b < ul; b++) {
-          if (wn + 2 > sizeof w) {               /* a very long word: in pieces */
-            bpe_word(m, w, wn, o);
-            wn = 0;
-          }
-          wn += (uint32_t)put_utf8(byte_char((uint8_t)u[b]), w + wn);
-        }
-        at += l;
-      }
-      if (wn) bpe_word(m, w, wn, o);
-    }
-
+    bpe_span(m, s, i, end, o);
     i = end;
   }
 }
@@ -1257,6 +1404,38 @@ static void layer_norm(const float *x, float *out, uint32_t n, const struct llm_
   for (uint32_t i = 0; i < n; i++) out[i] = out[i] * scale * wv[i] + bv[i];
 }
 
+/* RMSNorm, then the weight (`ggml_compute_forward_rms_norm_f32`, then
+ * `ggml_mul`): Qwen2's norm, with no mean taken away and no bias. */
+static void rms_norm(const float *x, float *out, uint32_t n, const struct llm_tensor *w, float eps)
+{
+  double sum = 0;
+  for (uint32_t i = 0; i < n; i++) sum += (double)(x[i] * x[i]);
+
+  float mean = (float)(sum / n);
+  float scale = 1.0f / sqrtf(mean + eps);
+  const float *wv = (const float *)(const void *)w->data;
+
+  for (uint32_t i = 0; i < n; i++) out[i] = (x[i] * scale) * wv[i];
+}
+
+/* The norm a model takes: its own kind, with a bias where it has one. */
+static void norm(const struct llm_model *m, const float *x, float *out, const struct llm_tensor *w,
+                 const struct llm_tensor *b)
+{
+  if (m->kind == LLM_ARCH_QWEN2) rms_norm(x, out, m->n_embd, w, m->norm_eps);
+  else layer_norm(x, out, m->n_embd, w, b, m->norm_eps);
+}
+
+/* SiLU: SwiGLU's gate is silu(gate) * up. ggml's `ggml_silu_f32` takes
+ * it in float with `expf`, which Kosmos's libc has not got; in double and
+ * rounded once it is the nearer answer, a float's last bit from ggml's at
+ * most, and the same on the Mac and on Kosmos - as the softmax's
+ * exponent is taken here. */
+static float silu(float x)
+{
+  return (float)((double)x / (1.0 + exp(-(double)x)));
+}
+
 /* GELU through half precision, as ggml's table: the input to F16, GELU of
  * that, the answer to F16. */
 static float gelu_of_half(float h)
@@ -1444,9 +1623,15 @@ int llm_step(struct llm_model *m, int32_t token)
 static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, float *att,
                    const uint16_t *kc, const uint16_t *vc)
 {
-  const uint32_t E = m->n_embd, D = m->head_dim;
+  const uint32_t E = m->n_embd, D = m->head_dim, KV = m->kv_dim;
   const uint32_t pos = m->n_past + t;
   const float *qh = m->qkv + (size_t)t * 3 * E + h * D;
+  /* The key and value head this query head reads: its own, or in
+   * grouped-query attention the one its group shares. */
+  const uint32_t kvh = h / (m->n_head / m->n_head_kv);
+  /* phi-2 scales the query before (`ggml_scale`); Qwen2 scales the score
+   * in the softmax (`kq_scale`), and 1 times anything is itself. */
+  const float score_scale = m->kind == LLM_ARCH_QWEN2 ? 1.0f / sqrtf((float)D) : 1.0f;
   float qr[LLM_HEAD_DIM_MAX];
   double acc[LLM_HEAD_DIM_MAX];
   float max = -INFINITY;
@@ -1454,11 +1639,11 @@ static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, floa
   for (uint32_t i = 0; i < D; i++) qr[i] = llm_f16_to_f32(llm_f32_to_f16(qh[i]));
 
   for (uint32_t p = 0; p <= pos; p++) {
-    const uint16_t *kt = kc + (size_t)p * E + h * D;
+    const uint16_t *kt = kc + (size_t)p * KV + kvh * D;
     double sum = 0;
 
     for (uint32_t i = 0; i < D; i++) sum += (double)(qr[i] * llm_f16_to_f32(kt[i]));
-    att[p] = (float)sum;
+    att[p] = (float)sum * score_scale;
     if (att[p] > max) max = att[p];
   }
 
@@ -1485,7 +1670,7 @@ static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, floa
    * read a row at a time rather than a row apart at every step. */
   for (uint32_t i = 0; i < D; i++) acc[i] = 0;
   for (uint32_t p = 0; p <= pos; p++) {
-    const uint16_t *vt = vc + (size_t)p * E + h * D;
+    const uint16_t *vt = vc + (size_t)p * KV + kvh * D;
     const float a = att[p];
 
     for (uint32_t i = 0; i < D; i++) acc[i] += (double)(a * llm_f16_to_f32(vt[i]));
@@ -1521,7 +1706,8 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
   for (uint32_t t = 0; t < n; t++)
     if (tokens[t] < 0 || (uint32_t)tokens[t] >= m->n_vocab) return -1;
 
-  const uint32_t E = m->n_embd, D = m->head_dim, F = m->n_ff;
+  const uint32_t E = m->n_embd, D = m->head_dim, F = m->n_ff, KV = m->kv_dim;
+  const int qwen = m->kind == LLM_ARCH_QWEN2;
 
   /* Token `t`'s working vectors. */
 #define X(t)    (m->x + (size_t)(t) * E)
@@ -1530,6 +1716,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 #define AOUT(t) (m->attn_out + (size_t)(t) * E)
 #define FF(t)   (m->ff + (size_t)(t) * F)
 #define ATTN(t) (m->ff_out + (size_t)(t) * E)
+#define UP(t)   (m->up + (size_t)(t) * F)
 
   uint64_t since = m->clock ? m->clock() : 0;
 
@@ -1553,7 +1740,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
     const struct llm_layer *L = &m->layers[l];
 
     for (uint32_t t = 0; t < n; t++) {
-      layer_norm(X(t), XN(t), E, L->norm_w, L->norm_b, m->norm_eps);
+      norm(m, X(t), XN(t), L->norm_w, L->norm_b);
       TRACE("attn_norm", l, XN(t), E);
     }
     lap(m, &since, LLM_STAGE_NORM);
@@ -1568,9 +1755,9 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
     }
     lap(m, &since, LLM_STAGE_PRODUCTS);
 
-    uint16_t *kc = m->k_cache + ((size_t)l * m->n_ctx) * E;
-    uint16_t *vc = m->v_cache + ((size_t)l * m->n_ctx) * E;
-    float qscale = 1.0f / sqrtf((float)D);
+    uint16_t *kc = m->k_cache + ((size_t)l * m->n_ctx) * KV;
+    uint16_t *vc = m->v_cache + ((size_t)l * m->n_ctx) * KV;
+    float qscale = qwen ? 1.0f : 1.0f / sqrtf((float)D);
 
     /* Every token's K and V into the cache first: token `t` attends to the
      * positions up to its own, and those are all written before any token
@@ -1580,18 +1767,19 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
       float *q = QKV(t), *k = q + E, *v = q + 2 * E;
 
       TRACE("Qcur", l, q, E);
-      TRACE("Kcur", l, k, E);
-      TRACE("Vcur", l, v, E);
+      TRACE("Kcur", l, k, KV);
+      TRACE("Vcur", l, v, KV);
 
       for (uint32_t h = 0; h < m->n_head; h++) {
         rope(q + h * D, m->n_rot, pos, m->rope_base);
-        rope(k + h * D, m->n_rot, pos, m->rope_base);
-        for (uint32_t i = 0; i < D; i++) q[h * D + i] *= qscale;
+        if (qscale != 1.0f)
+          for (uint32_t i = 0; i < D; i++) q[h * D + i] *= qscale;
       }
+      for (uint32_t h = 0; h < m->n_head_kv; h++) rope(k + h * D, m->n_rot, pos, m->rope_base);
 
-      for (uint32_t i = 0; i < E; i++) {
-        kc[(size_t)pos * E + i] = llm_f32_to_f16(k[i]);
-        vc[(size_t)pos * E + i] = llm_f32_to_f16(v[i]);
+      for (uint32_t i = 0; i < KV; i++) {
+        kc[(size_t)pos * KV + i] = llm_f32_to_f16(k[i]);
+        vc[(size_t)pos * KV + i] = llm_f32_to_f16(v[i]);
       }
     }
     lap(m, &since, LLM_STAGE_ROPE);
@@ -1610,40 +1798,97 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 #endif
     lap(m, &since, LLM_STAGE_ATTENTION);
 
-    /* The attention's output, and the MLP beside it off the same norm,
-     * which `xn` still holds: phi-2's layer is the two in parallel. Q, K
-     * and V are done with, so the MLP's output borrows their room. */
-    matmul(m, L->o_w, L->o_b, m->attn_out, E, m->ff_out, E, n, 0);
-    matmul(m, L->up_w, L->up_b, m->xn, E, m->ff, F, n, 0);
-    lap(m, &since, LLM_STAGE_PRODUCTS);
+    if (qwen) {
+      /* **Qwen2's layer is the two one after the other**: the attention's
+       * output added to the stream, and the MLP reads a norm of that -
+       * SwiGLU, silu(gate) * up, then down - and is added in its turn. */
+      matmul(m, L->o_w, L->o_b, m->attn_out, E, m->ff_out, E, n, 0);
+      lap(m, &since, LLM_STAGE_PRODUCTS);
 
-    for (uint32_t t = 0; t < n; t++) {
-      TRACE("attn_out", l, ATTN(t), E);
-      TRACE("ffn_up_b", l, FF(t), F);
-      if (m->passage && l < LLM_PASSAGE_LAYERS) {
-        uint32_t fired = 0;
+      for (uint32_t t = 0; t < n; t++) {
+        float *attn = ATTN(t), *x = X(t);
 
-        for (uint32_t i = 0; i < F; i++) fired += FF(t)[i] > 0.0f;
-        m->passage[t].layer[l].fired = fired;
+        TRACE("attn_out", l, attn, E);
+        for (uint32_t i = 0; i < E; i++) x[i] = attn[i] + x[i];
+        TRACE("ffn_inp", l, x, E);
       }
+      lap(m, &since, LLM_STAGE_ADD);
 
-      for (uint32_t i = 0; i < F; i++) FF(t)[i] = gelu(FF(t)[i]);
-      TRACE("ffn_gelu", l, FF(t), F);
+      for (uint32_t t = 0; t < n; t++) {
+        norm(m, X(t), XN(t), L->ffn_norm_w, NULL);
+        TRACE("ffn_norm", l, XN(t), E);
+      }
+      lap(m, &since, LLM_STAGE_NORM);
+
+      matmul(m, L->gate_w, NULL, m->xn, E, m->ff, F, n, 0);
+      matmul(m, L->up_w, NULL, m->xn, E, m->up, F, n, L->up_w->type == L->gate_w->type);
+      lap(m, &since, LLM_STAGE_PRODUCTS);
+
+      for (uint32_t t = 0; t < n; t++) {
+        float *g = FF(t), *u = UP(t);
+
+        TRACE("ffn_gate", l, g, F);
+        if (m->passage && l < LLM_PASSAGE_LAYERS) {
+          uint32_t fired = 0;
+
+          for (uint32_t i = 0; i < F; i++) fired += g[i] > 0.0f;
+          m->passage[t].layer[l].fired = fired;
+        }
+
+        for (uint32_t i = 0; i < F; i++) g[i] = silu(g[i]) * u[i];
+        TRACE("ffn_swiglu", l, g, F);
+      }
+      lap(m, &since, LLM_STAGE_GELU);
+
+      matmul(m, L->down_w, NULL, m->ff, F, m->qkv, 3 * E, n, 0);
+      lap(m, &since, LLM_STAGE_PRODUCTS);
+
+      for (uint32_t t = 0; t < n; t++) {
+        float *mlp = QKV(t), *x = X(t);
+
+        TRACE("ffn_out", l, mlp, E);
+        for (uint32_t i = 0; i < E; i++) x[i] = mlp[i] + x[i];
+        TRACE("l_out", l, x, E);
+      }
+    } else {
+      /* The attention's output, and the MLP beside it off the same norm,
+       * which `xn` still holds: phi-2's layer is the two in parallel. Q,
+       * K and V are done with, so the MLP's output borrows their room. */
+      matmul(m, L->o_w, L->o_b, m->attn_out, E, m->ff_out, E, n, 0);
+      matmul(m, L->up_w, L->up_b, m->xn, E, m->ff, F, n, 0);
+      lap(m, &since, LLM_STAGE_PRODUCTS);
+
+      for (uint32_t t = 0; t < n; t++) {
+        TRACE("attn_out", l, ATTN(t), E);
+        TRACE("ffn_up_b", l, FF(t), F);
+        if (m->passage && l < LLM_PASSAGE_LAYERS) {
+          uint32_t fired = 0;
+
+          for (uint32_t i = 0; i < F; i++) fired += FF(t)[i] > 0.0f;
+          m->passage[t].layer[l].fired = fired;
+        }
+
+        for (uint32_t i = 0; i < F; i++) FF(t)[i] = gelu(FF(t)[i]);
+        TRACE("ffn_gelu", l, FF(t), F);
+      }
+      lap(m, &since, LLM_STAGE_GELU);
+
+      matmul(m, L->down_w, L->down_b, m->ff, F, m->qkv, 3 * E, n, 0);
+      lap(m, &since, LLM_STAGE_PRODUCTS);
+
+      /* ggml's order: the two added, then the residual. */
+      for (uint32_t t = 0; t < n; t++) {
+        float *attn = ATTN(t), *mlp = QKV(t), *x = X(t);
+
+        TRACE("ffn_out", l, mlp, E);
+        for (uint32_t i = 0; i < E; i++) x[i] = (attn[i] + mlp[i]) + x[i];
+        TRACE("l_out", l, x, E);
+      }
     }
-    lap(m, &since, LLM_STAGE_GELU);
 
-    matmul(m, L->down_w, L->down_b, m->ff, F, m->qkv, 3 * E, n, 0);
-    lap(m, &since, LLM_STAGE_PRODUCTS);
-
-    /* ggml's order: the two added, then the residual. */
-    for (uint32_t t = 0; t < n; t++) {
-      float *attn = ATTN(t), *mlp = QKV(t), *x = X(t);
-
-      TRACE("ffn_out", l, mlp, E);
-      for (uint32_t i = 0; i < E; i++) x[i] = (attn[i] + mlp[i]) + x[i];
-      TRACE("l_out", l, x, E);
-
-      if (m->passage && l < LLM_PASSAGE_LAYERS) {
+    if (m->passage && l < LLM_PASSAGE_LAYERS) {
+      for (uint32_t t = 0; t < n; t++) {
+        const float *x = X(t);
         double sq = 0;
 
         for (uint32_t i = 0; i < E; i++) sq += (double)x[i] * x[i];
@@ -1654,7 +1899,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
   }
 
   /* Only the last token's logits: what follows the batch. */
-  layer_norm(X(n - 1), XN(n - 1), E, m->out_norm_w, m->out_norm_b, m->norm_eps);
+  norm(m, X(n - 1), XN(n - 1), m->out_norm_w, m->out_norm_b);
   TRACE("result_norm", 0, XN(n - 1), E);
   lap(m, &since, LLM_STAGE_NORM);
   matmul(m, m->out_w, m->out_b, XN(n - 1), E, m->logits, 0, 1, 0);
@@ -1667,6 +1912,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 #undef AOUT
 #undef FF
 #undef ATTN
+#undef UP
 
   m->n_past += n;
   return 0;

@@ -2538,6 +2538,8 @@ llm-reference:
 	    $(HOSTDIR)/llm_reference build/models/tiny-phi2.$$q.gguf 2>/dev/null \
 	        | sed 's#build/models/##' > tools/llm_reference_tiny-phi2.$$q.txt || exit 1; \
 	done
+	$(HOSTDIR)/llm_reference build/models/qwen2.5-0.5b-instruct-q4_0.gguf 2>/dev/null \
+	    | sed 's#build/models/##' > tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
 
 # The tiny phi-2 the guest suite and the host check use (`tools/llm_tiny.py`):
 # its tokenizer is copied from the real phi-2, so that is needed to make it.
@@ -4737,6 +4739,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q8_0.gguf tools/llm_reference_tiny-phi2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.F16.gguf tools/llm_reference_tiny-phi2.F16.txt
+	@# And Qwen2.5 0.5B, the second architecture: RMSNorm, grouped-query
+	@# attention, SwiGLU, Qwen2's split and ChatML (testing.md 18.736).
+	$(HOSTDIR)/test_llm build/models/qwen2.5-0.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
 	@# And the Q4_0 one again with its products on the GPU, in the emulator:
 	@# the same checks, and its logits the processor's to the bit (X7 G3).
 	$(HOSTDIR)/test_llm --gpu build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt

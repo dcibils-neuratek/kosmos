@@ -1689,3 +1689,41 @@ search` at the prompt now says each repository's architecture.
 window drawing all the while. In the test, a download cut off a third of
 the way in, resumed, paused at five and a half megabytes of eight and a
 half, and finished whole and checked.
+
+## 9 November - a second model: Qwen2.5 0.5B
+
+**In short.** The LLM engine now runs a second kind of model, Qwen2.5
+0.5B, as well as phi-2. It is about a quarter of phi-2's size, and it
+answers the same questions llama.cpp's answers, word for word.
+
+**Why.** Diego asked whether Xavier could ever write 20 or 30 words a
+second on the M700. Not with phi-2: writing one token means reading every
+one of the model's numbers from memory once, and phi-2's are 1.6 GB. The
+memory can only go so fast, which puts phi-2 at about 12 to 15 tokens a
+second however good the arithmetic gets. Qwen2.5 0.5B is 0.43 GB, so the
+same memory reads it three or four times as often.
+
+**What.** A new model is not just a new file. Each family does its
+arithmetic in its own order, and Qwen's differs from phi-2's in seven
+places. It normalises its numbers a simpler way. Several of its question
+heads share one memory head, so it remembers a conversation in a seventh
+of the room. It thinks about what it has read and then what to say, one
+after the other, where phi-2 does both at once. It squashes its numbers
+with a gate rather than a curve. And it cuts words up a little
+differently: "2026" is four pieces, and "(x" is one. The engine has each
+of those now, said where it differs, so phi-2's path is untouched. Xavier
+asks Qwen in the format it was trained on, ChatML, where each turn says
+whose it is.
+
+**How we know it is right.** The same way phi-2 was checked: llama.cpp,
+the reference engine, ran the model on the Mac and wrote down every
+answer, and ours is held to it - 105 checks, every one passing. Asked
+"What is the capital of France?", both say "The capital of France is
+Paris." And four deliberately broken copies of the engine, each with one
+of the new pieces wrong, all fail: the check is not passing by accident.
+Writing that check turned up a bug in the test itself, which had been
+reading past the end of a buffer and getting away with it.
+
+**Measured.** On the Mac, on one plain core, Qwen writes 26 tokens a
+second, and 37 on four. On the M700 it is still to be measured - Diego is
+using Xavier there, and it needs a restart first.

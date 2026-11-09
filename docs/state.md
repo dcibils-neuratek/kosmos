@@ -88,8 +88,16 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   network; Pause, Go on, Load, Remove; a repository of an architecture the
   kit cannot run is listed with the reason. Seen on the M700 against the
   real Hugging Face; the M700 runs 0.11.342 by netboot.
+- **0.11.343**: Qwen2.5 0.5B in the LLM Kit, a second architecture
+  (18.736) - RMSNorm, grouped-query attention, SwiGLU, the halves one after
+  the other, Qwen2's split; ChatML in `llm.lua` and `qwen2` in `llm.RUNS`.
+  Held to llama.cpp, 105 of 105, four controls biting; a cache read past
+  in `test_llm.c` fixed. Not yet measured on the M700.
 
-**Next**: the weight products, then attention - on the M700 a long
+**Next**: Qwen2.5 0.5B measured on the M700 (it needs a restart Diego
+agrees to); then whether fields get a dragged selection (Diego asked why
+text cannot be selected with the mouse: `ui.field` has select-all only, by
+a decision in `ui.lua` - his to reverse); then the weight products, then attention - on the M700 a long
 question's reading is products 22.0 s and attention 10.0 of 34.9, and its
 answer's writing products 14.1 and attention 4.6.
 

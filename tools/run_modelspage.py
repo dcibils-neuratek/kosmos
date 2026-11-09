@@ -261,7 +261,7 @@ def main():
           "the loaded model was not listed with Remove and without Load: %r" % g("first"))
     check(("3 on Hugging Face for tiny: %s=%s, %s=none: its files are Q4_K_M, Q5_K_S; the LLM Kit "
            "reads Q4_0, Q8_0, F16 and F32, %s=none: a phi3 model: the LLM Kit has a forward pass "
-           "for phi2 only" % (REPO, GOOD, KQUANTS, PHI3)) == g("found"),
+           "for phi2, qwen2 only" % (REPO, GOOD, KQUANTS, PHI3)) == g("found"),
           "the search did not list the file the kit would take, and why not the others: %r" % g("found"))
     check(not any(PHI3 + "/tree" in a for a in seen["api"]) and (PHI3, "Get") not in found_buttons,
           "a model of an architecture the kit does not run was looked into or offered: %r %r"

@@ -30089,3 +30089,85 @@ and `x86-models` 9 s. `arm-sandboxwin` failed - "Kosmos would not answer on
 port 8082, for the guest's 80" - and passed 18 of 18 alone in 33 s: a port
 forward late under the gate's load, a third flaky suite beside
 `arm-sandbox` and `x86-bluetooth` (roadmap).
+
+## 18.736 Qwen2.5 0.5B in the LLM Kit: a second architecture, held to llama.cpp
+
+**Why** (Diego, 9 November 2026: "is any possibility that xavier runs at 20
+or 30 tokens per second in m700?", then "can you download qwen2.5 0.5b and
+test it?"). Writing a token is bound by memory: every weight is read once a
+token. phi-2 as Q4_0 is 1.6 GB of them, which puts its ceiling on the M700
+around 12-15 tokens a second; Qwen2.5 0.5B Instruct as Q4_0 is 0.43 GB a
+token, so 20-30 is within reach of the same loops.
+
+**The model**: `qwen2.5-0.5b-instruct-q4_0.gguf` from
+`Qwen/Qwen2.5-0.5B-Instruct-GGUF`, 428,730,208 bytes, SHA-256
+`7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed`, in
+`build/models/` with its line in `SHA256SUMS`. 24 layers, 896 wide, 14
+query heads and 2 key heads of 64, a 4864-wide MLP, RoPE at a base of a
+million, a vocabulary of 151,936; Q4_0 throughout but its output, Q8_0 and
+a matrix of its own.
+
+**What the kit learned** (`llm_core.c`; one forward pass, the differences
+said where they are, `llm_model.kind`):
+
+- **RMSNorm** rather than LayerNorm - no mean taken away, no bias - before
+  attention, before the MLP, and at the end.
+- **Grouped-query attention**: the cache holds 2 heads a position, not 14
+  (`kv_dim`, 128 rather than 896), and query head h reads key head h / 7.
+  The cache is a seventh of the size phi-2's shape would make it.
+- **The score scaled in the softmax**, as llama.cpp's Qwen2 graph does,
+  rather than the query before (phi-2's `ggml_scale`).
+- **The two halves one after the other**: the attention added to the
+  stream, a second norm, and the MLP added in turn - where phi-2 runs both
+  off the same norm and adds them together.
+- **SwiGLU**: silu(gate) times up, then down, none with a bias.
+- **Biases where they are**: Q, K and V have them; the output and the MLP
+  do not, and a missing one is no longer a refusal.
+- **Qwen2's split** before BPE (`tokenize_qwen2`), read from llama.cpp's
+  `unicode_regex_split_custom_qwen2`: contractions in any case, a letter
+  run taking one character before it that is not a letter, digit or line
+  end, digits one at a time, and a run of whitespace holding a line's end
+  ending after the last of them. Chosen by `tokenizer.ggml.pre`.
+- **The cache unasked is the model's own context, up to 4096**
+  (`LLM_CTX_DEFAULT`). The header had said "up to 2048" and the code had
+  no such cap: phi-2's context is 2048, so it never showed. Qwen's is
+  32,768, which would have been a 400 MB cache.
+- **SiLU in double**, rounded once: Kosmos's libc has `exp` and not `expf`,
+  and the softmax's exponent is taken the same way.
+
+**ChatML** (`llm.lua`): a form for qwen2 - each turn between `<|im_start|>`
+and `<|im_end|>`, what Xavier is told first a `system` turn - and `qwen2`
+in `llm.RUNS`, so the Models page offers Get on a Qwen2 repository. The
+answer ends at `<|im_end|>`, the model's end-of-text token, where the
+server already stops.
+
+**The check** (`make host-check`, `tools/test_llm.c` against
+`tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt`, which
+`tools/llm_reference.cpp` writes from llama.cpp b12205, now with a ChatML
+question for a qwen2 model): **105 of 105**. Every text's tokens, plain
+and with special tokens; one token's ten largest logits within 0.076 of
+llama.cpp's (the bound is 0.10); the longer prompts within 0.35; every
+answer step llama.cpp's choice or a near-tie, one of them. Asked "What is
+the capital of France?" in ChatML, it answers "The capital of France is
+Paris." as llama.cpp does. Held, batched, in four parts and watched, to
+the bit, as phi-2 is. On the Mac, scalar and one thread, 26 tokens a
+second; in four parts, 37 - a reference, not a measure of the M700.
+
+**Three of the checks assumed phi-2, and were fixed rather than the kit**:
+the counting question is counted on until it is more than one batch,
+since Qwen cuts "20" into two tokens and the old one came to 83 tokens,
+more than two batches; the heads' check reads the shared key head at
+`kv_dim`; and neurons that fired are counted from the gate, which the
+kit's trace now gives (`ffn_gate`), since after SwiGLU `ff` holds the
+product. **And one was reading past the cache**: `check_parallel` copied
+`n_layer * n_ctx * n_embd` of a cache that is `kv_dim` wide - seven times
+its size for Qwen. The passing build read memory that happened to be
+mapped; a control did not, and died of SIGBUS before its first line.
+
+**Controls**, each a copy of the kit with one mistake, each biting: GPT-2's
+split for Qwen - four token checks; key head h mod 2 rather than h / 7 - a
+logit 13.9 out on the first token; silu(up) times gate - 56 of 105; the
+score unscaled - 22 of 105. phi-2 as Q8_0 and Q4_0, the tiny phi-2 in all
+three, and the GPU path in the emulator all pass as before, 91 and 92
+checks; `make llm-reference` writes phi-2's references byte for byte as
+they were.

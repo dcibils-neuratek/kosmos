@@ -213,11 +213,24 @@ end
 -- each answer as the model wrote it - which is what lets the server find
 -- what its cache already holds at the start of the next.
 --
+-- **Qwen2 speaks ChatML**: each turn between `<|im_start|>` and
+-- `<|im_end|>`, the two its tokenizer has as tokens of their own, and what
+-- it is told first a `system` turn. Its answer ends with `<|im_end|>`,
+-- which is its end-of-text token, so the server stops there by itself;
+-- the stops are for the same words written as letters.
+--
 local FORMS = {
   phi2 = {
+    before = function(b) return b end,
     question = function(q) return "Instruct: " .. q .. "\nOutput:" end,
     between = "\n",
     stops = { "\nInstruct:", "\nOutput:" },
+  },
+  qwen2 = {
+    before = function(b) return "<|im_start|>system\n" .. b:gsub("\n$", "") .. "<|im_end|>\n" end,
+    question = function(q) return "<|im_start|>user\n" .. q .. "<|im_end|>\n<|im_start|>assistant\n" end,
+    between = "<|im_end|>\n",
+    stops = { "<|im_end|>", "<|im_start|>" },
   },
 }
 
@@ -225,18 +238,18 @@ function llm.form(arch)
   return FORMS[arch] or FORMS.phi2
 end
 
--- **The architectures the LLM Kit has a forward pass for** - phi2, and
--- only phi2 (`llm_core.c`, `llm_open`, which refuses any other). One list,
--- so that what a window offers to get is what the server can load: a
--- second architecture is a line here and a forward pass there.
-llm.RUNS = { phi2 = true }
+-- **The architectures the LLM Kit has a forward pass for** - phi2 and
+-- qwen2 (`llm_core.c`, `llm_open`, which refuses any other). One list, so
+-- that what a window offers to get is what the server can load: another
+-- architecture is a line here, a form above and a forward pass there.
+llm.RUNS = { phi2 = true, qwen2 = true }
 
 -- The text of a conversation - `before`, what the model is told first,
 -- then `turns`, each `{ you = , xavier = }`, then `question` - and the
 -- stops its answer ends at.
 function llm.chat(arch, turns, question, before)
   local form = llm.form(arch)
-  local parts = { before or "" }
+  local parts = { before and before ~= "" and form.before(before) or "" }
 
   for _, t in ipairs(turns) do
     parts[#parts + 1] = form.question(t.you) .. t.xavier .. form.between

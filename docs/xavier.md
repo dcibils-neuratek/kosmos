@@ -268,8 +268,9 @@ first two without booting anything.
     name, the screen last. Xavier proposes a step, shows it, and runs it
     when confirmed. After Automations is built, and with a
     model that is good at it, which phi-2 is not.
-12. **X11 - light coding.** Qwen2.5-Coder in the LLM Kit (a second
-   forward pass, held to llama.cpp by the tiny-model test's way), the tool
+12. **X11 - light coding.** Qwen2.5-Coder in the LLM Kit (its forward
+   pass is `qwen2`, built in 0.11.343 for Qwen2.5 0.5B - *Qwen2, as built*
+   below), the tool
    calls - read a file, propose an edit, run a program - each shown and
    confirmed, and Xavier in the IDE on the project it was opened on. Drawn
    in `xavier.html` before it is built.
@@ -987,6 +988,38 @@ passage at the prompt with `llm inside`.
   time's, and every head's strongest look worked out again in the test
   from its queries and the cache; `x86-llmmon`, the ring through the
   server to `llm inside` and to the page.
+
+## Qwen2, as built (0.11.343)
+
+**Why a second architecture** (Diego, 9 November 2026, asking whether
+Xavier could write 20 or 30 tokens a second on the M700). Writing is bound
+by memory: every weight is read once a token, and phi-2 at Q4_0 is 1.6 GB
+of them - about 12-15 tokens a second on the M700 at best, whatever the
+loops do. Qwen2.5 0.5B Instruct at Q4_0 is 0.43 GB a token.
+
+**One forward pass, not two.** `llm_core.c` has a `kind` for each model
+and the differences are said where they fall: RMSNorm or LayerNorm; Q, K
+and V fused or apart, biases where the file has them; grouped-query
+attention, the cache `kv_dim` wide (2 key heads of 64 for Qwen's 14 query
+heads, a seventh of phi-2's shape); the score scaled in the softmax or the
+query before; the MLP beside attention off one norm (phi-2) or after it
+off a second (Qwen2); GELU or SwiGLU. The products, the cores, the GPU's
+share, batching, the held cache and the Inside page's record are the
+same code for both.
+
+**The tokenizer** is GPT-2's byte-level BPE either way; what differs is
+the split before it, chosen by `tokenizer.ggml.pre`: Qwen2's takes digits
+one at a time and lets a letter run take one character of punctuation
+before it.
+
+**Asked in ChatML** (`llm.lua`, `FORMS.qwen2`): `<|im_start|>system` with
+what Xavier is told first, then each turn as `user` and `assistant`,
+ended by `<|im_end|>` - the model's end-of-text token, so the server stops
+there as it does at phi-2's.
+
+**Held to llama.cpp** as phi-2 is (`testing.md` 18.736): 105 checks, one
+token's logits within 0.076. A cache unasked is the model's own context up
+to 4096 positions (`LLM_CTX_DEFAULT`): Qwen's own is 32,768.
 
 ## Models
 
