@@ -53,6 +53,37 @@
 
 local llmgpu = {}
 
+-- A block's integer dot, written out: nibble byte j (0-15) is byte `k` of
+-- the weight's dword `d`, its low nibble against the input's value j and
+-- its high against value j + 16 - lane j // 4's byte j % 4 of the input's
+-- dwords, and lane 4 + j // 4's. Every position a constant, so every byte
+-- is a region the instruction reads (`ubyte`, `lanebyte`), widened by the
+-- hardware for nothing: as shifts and masks it was twice the instructions,
+-- and a multiply of two dwords where Gen9 has one of a dword by a byte
+-- (18.731). The nibbles are 0-15; the "less eight" is the caller's.
+local function dot(name, params, at)
+  local terms = {}
+
+  for j = 0, 15 do
+    local d, k = at(j)
+    terms[#terms + 1] = ("(ubyte(%s, %d) & 15) * lanebyte(xv, %d, %d) + (ubyte(%s, %d) >> 4) * lanebyte(xv, %d, %d)")
+                        :format(d, k, j // 4, j % 4, d, k, 4 + j // 4, j % 4)
+  end
+
+  return ("int %s(%s, int xv) {\n  return %s;\n}\n"):format(name, params, table.concat(terms, "\n       + "))
+end
+
+local BLOCKS = table.concat({
+  "// The first block of a pair: its nibble bytes are d0's bytes 2 and 3,",
+  "// d1's to d3's, and d4's bytes 0 and 1.",
+  dot("first", "int d0, int d1, int d2, int d3, int d4", function(j)
+    local at = j + 2
+    return "d" .. at // 4, at % 4
+  end),
+  "// The second: e0's bytes to e3's.",
+  dot("second", "int e0, int e1, int e2, int e3", function(j) return "e" .. j // 4, j % 4 end),
+}, "\n")
+
 llmgpu.q4_0 = [[
 const int rows, blocks, w_at, inputs;
 buffer w;
@@ -81,45 +112,19 @@ float half(int h) {
   return v;
 }
 
-// Four bytes of nibbles against the input's values, the nibbles as they
-// are (0-15): q's bytes are the block's nibble bytes j to j + 3, lo the
-// input's dword of values j to j + 3 and hi of values j + 16 to j + 19.
-// Written out, every shift a constant: as a loop, with the shifts worked
-// out at run time, it was twice the instructions (18.729).
-int four(int q, int lo, int hi) {
-  return (q & 15) * ((lo << 24) >> 24)
-       + ((q >> 4) & 15) * ((hi << 24) >> 24)
-       + ((q >> 8) & 15) * ((lo << 16) >> 24)
-       + ((q >> 12) & 15) * ((hi << 16) >> 24)
-       + ((q >> 16) & 15) * ((lo << 8) >> 24)
-       + ((q >> 20) & 15) * ((hi << 8) >> 24)
-       + ((q >> 24) & 15) * (lo >> 24)
-       + ((q >> 28) & 15) * (hi >> 24);
-}
-
-// One block's integer dot: its 16 nibble bytes as four dwords, against
-// the input's block, whose eight dwords are lanes 0 to 7 of `xv`, less
-// eight times the block's values' sum.
-int block(int q0, int q1, int q2, int q3, int xv, int xsum) {
-  int s = four(q0, lanev(xv, 0), lanev(xv, 4));
-  s += four(q1, lanev(xv, 1), lanev(xv, 5));
-  s += four(q2, lanev(xv, 2), lanev(xv, 6));
-  s += four(q3, lanev(xv, 3), lanev(xv, 7));
-  return s - 8 * xsum;
-}
-
+$BLOCKS
 // Input u's sum, a pair of blocks further on: the pair's two blocks of
 // nibbles, q and e, their scales h0 and h1, against input u's blocks b and
 // b + 1 - the first block's term added, then the second's, as the
 // processor adds them.
-float pair(float sum, int q0, int q1, int q2, int q3, int e0, int e1, int e2, int e3,
+float pair(float sum, int d0, int d1, int d2, int d3, int d4, int e0, int e1, int e2, int e3,
            float h0, float h1, int u, int b) {
   int x = (u * blocks + b) * 32;
   int xa = loadi(xq, x + (lane & 7) * 4);
   int xb = loadi(xq, x + 32 + (lane & 7) * 4);
   int m = loadi(xm, (u * blocks + b) * 8 + (lane & 3) * 4);
-  float s = sum + float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * (h0 * asfloat(lanev(m, 0)));
-  return s + float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * (h1 * asfloat(lanev(m, 1)));
+  float s = sum + float(first(d0, d1, d2, d3, d4, xa) - 8 * lanev(m, 2)) * (h0 * asfloat(lanev(m, 0)));
+  return s + float(second(e0, e1, e2, e3, xb) - 8 * lanev(m, 3)) * (h1 * asfloat(lanev(m, 1)));
 }
 
 // **Four inputs a pass** (18.729): a pair of blocks read once and met by
@@ -149,10 +154,6 @@ void main() {
       // The first block: its scale the low half of d0, its nibble bytes
       // the high half of d0, d1 to d3, and the low half of d4. The
       // second: its scale the high half of d4, its bytes the next four.
-      int q0 = ((d0 >> 16) & 65535) | (d1 << 16);
-      int q1 = ((d1 >> 16) & 65535) | (d2 << 16);
-      int q2 = ((d2 >> 16) & 65535) | (d3 << 16);
-      int q3 = ((d3 >> 16) & 65535) | (d4 << 16);
       int e0 = loadi(w, at + 320);
       int e1 = loadi(w, at + 384);
       int e2 = loadi(w, at + 448);
@@ -160,11 +161,11 @@ void main() {
       float h0 = half(d0 & 65535);
       float h1 = half((d4 >> 16) & 65535);
 
-      s0 = pair(s0, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t, b);
+      s0 = pair(s0, d0, d1, d2, d3, d4, e0, e1, e2, e3, h0, h1, t, b);
       if (inputs > 1) {
-        s1 = pair(s1, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t1, b);
-        s2 = pair(s2, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t2, b);
-        s3 = pair(s3, q0, q1, q2, q3, e0, e1, e2, e3, h0, h1, t3, b);
+        s1 = pair(s1, d0, d1, d2, d3, d4, e0, e1, e2, e3, h0, h1, t1, b);
+        s2 = pair(s2, d0, d1, d2, d3, d4, e0, e1, e2, e3, h0, h1, t2, b);
+        s3 = pair(s3, d0, d1, d2, d3, d4, e0, e1, e2, e3, h0, h1, t3, b);
       }
     }
     if (r < rows) {
@@ -176,6 +177,7 @@ void main() {
   }
 }
 ]]
+llmgpu.q4_0 = llmgpu.q4_0:gsub("%$BLOCKS\n", function() return BLOCKS end)
 
 -- Where the tiled weight keeps dword `j` (0-8) of row `r`'s pair of
 -- blocks `p`, in bytes, for a weight of `blocks` blocks a row - the one

@@ -1,0 +1,379 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inside the LLM</title>
+<!--
+  The LLM Monitor's Inside page, drawn before it is built (roadmap, agreed
+  9 November 2026; docs/xavier.md, "The LLM Monitor: Inside"). Playable:
+  the model reads a question and writes an answer, a token at a time, and
+  every layer, head and candidate shown is what the LLM Kit would record.
+  The values are examples; the shapes are phi-2's.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff; --accent: #2f6bdc;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunk: #171a22; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-accent: #3b82f6;
+  --x: #8b7cf6; --x-soft: #2c2850; --read: #4fb6c9; --read-soft: #193a42;
+  --ffn: #f0b429; --gpu: #3fb950; --cpu: #3b82f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+h2 { font-family: var(--display); font-size: 20px; margin: 40px 0 10px; padding-top: 20px; border-top: 1px solid var(--rule); text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 78ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0 22px; max-width: 900px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 90ch; }
+code { font-family: var(--mono); font-size: 13px; }
+ul { max-width: 86ch; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 980px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+.scroller { overflow-x: auto; padding-bottom: 6px; }
+
+/* The window, in Astra's dark look. */
+.win { width: 1140px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: var(--a-raised); border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; }
+.head .crumb { color: var(--a-dim); }
+.tabs { display: flex; gap: 2px; margin-left: 18px; }
+.tab { padding: 3px 12px; border-radius: 6px; color: var(--a-dim); }
+.tab.on { background: var(--a-sunk); color: var(--a-ink); }
+.sp { flex: 1; }
+.btn { font: inherit; color: var(--a-ink); background: var(--a-sunk); border: 1px solid var(--a-line); border-radius: 6px; padding: 3px 11px; cursor: pointer; }
+.btn:hover { border-color: var(--a-accent); }
+.btn:focus-visible, .tok:focus-visible, .head-cell:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 1px; }
+.btn.on { background: var(--a-accent); border-color: var(--a-accent); }
+
+.phase { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--a-line); }
+.pill { font-family: var(--mono); font-size: 12px; padding: 2px 9px; border-radius: 99px; }
+.pill.read { background: var(--read-soft); color: var(--read); }
+.pill.write { background: var(--x-soft); color: var(--x); }
+.phase .what { color: var(--a-dim); }
+.phase .n { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--a-ink); }
+
+/* The text, as the model sees it: tokens. */
+.strip { position: relative; padding: 70px 16px 12px; border-bottom: 1px solid var(--a-line); }
+.strip svg.arcs { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.toks { display: flex; flex-wrap: wrap; gap: 3px; position: relative; }
+.tok { font-family: var(--mono); font-size: 12px; padding: 1px 4px; border-radius: 4px; background: var(--a-sunk);
+       border: 1px solid transparent; white-space: pre; color: var(--a-dim); cursor: default; }
+.tok.q { color: #b8dfe6; }
+.tok.a { color: #cfc8fb; background: #241f40; }
+.tok.now { border-color: var(--x); color: #fff; }
+.tok.readnow { border-color: var(--read); color: #fff; }
+.tok.todo { opacity: .28; }
+.strip .legend { position: absolute; top: 10px; left: 16px; right: 16px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--a-faint); font-size: 12px; }
+
+.body { display: grid; grid-template-columns: 1fr 280px; }
+.net { padding: 12px 16px 14px; border-right: 1px solid var(--a-line); }
+.side { padding: 12px 16px; display: flex; flex-direction: column; gap: 16px; }
+.lbl { color: var(--a-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+svg.layers { display: block; width: 100%; height: auto; }
+.head-cell { cursor: pointer; }
+.note { color: var(--a-dim); font-size: 12px; min-height: 36px; margin-top: 6px; }
+.note b { color: var(--a-ink); font-weight: 500; }
+
+.cand { display: grid; grid-template-columns: 96px 1fr 44px; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; margin: 3px 0; }
+.cand .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.cand .bar { height: 8px; background: var(--a-sunk); border-radius: 4px; overflow: hidden; }
+.cand .bar i { display: block; height: 100%; background: var(--a-dim); border-radius: 4px; }
+.cand.pick .w { color: var(--x); }
+.cand.pick .bar i { background: var(--x); }
+.cand .p { text-align: right; color: var(--a-dim); font-variant-numeric: tabular-nums; }
+.where { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--a-sunk); }
+.where i { display: block; height: 100%; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 12px; color: var(--a-dim); }
+.kv b { color: var(--a-ink); font-weight: 500; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.foot { display: flex; gap: 10px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--a-line); color: var(--a-faint); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Inside the LLM</h1>
+  <p class="sub">The LLM Monitor's second page, drawn before it is built: phi-2 reading a question and writing its answer, one token at a time, with every layer, attention head and candidate on show. Press <b>Play</b>, or step a token at a time; click any head to see where it looks. The shapes are phi-2's; the values are examples.</p>
+  <div class="q"><b>Diego, 9 November 2026:</b> "I want to add a llm visualizer to the llm monitor", "I want to see the llm at work, like the layers of the neural network and its activated layers and some other visual cues", "This is so I can understand how llm operate when taking questions and answering".</div>
+
+  <div class="scroller">
+  <div class="win" id="win">
+    <div class="head">
+      <span class="t">LLM Monitor</span><span class="crumb">&middot; phi-2 Q4_0 &middot; 32 layers, 2560 wide</span>
+      <div class="tabs"><span class="tab">Overview</span><span class="tab on">Inside</span></div>
+      <span class="sp"></span>
+      <button class="btn" id="step" type="button">Step</button>
+      <button class="btn on" id="play" type="button">Pause</button>
+      <button class="btn" id="again" type="button">Again</button>
+    </div>
+    <div class="phase">
+      <span class="pill read" id="pill">reading the question</span>
+      <span class="what" id="what"></span>
+      <span class="sp"></span>
+      <span class="what">asked by <b style="color:var(--a-ink);font-weight:500">Xavier</b></span>
+    </div>
+    <div class="strip" id="strip">
+      <div class="legend"><span><span style="color:var(--read)">&#9632;</span> the question, read in batches of 8</span><span><span style="color:var(--x)">&#9632;</span> the answer, written one token at a time</span><span>arcs: where the chosen head looks from the token being made</span></div>
+      <svg class="arcs" id="arcs"></svg>
+      <div class="toks" id="toks"></div>
+    </div>
+    <div class="body">
+      <div class="net">
+        <div class="lbl">The 32 layers, the token passing through them left to right</div>
+        <svg class="layers" id="layers" viewBox="0 0 820 330" role="img" aria-label="Each layer's 32 attention heads, its feed-forward neurons firing, and the residual stream"></svg>
+        <div class="note" id="note"></div>
+      </div>
+      <div class="side">
+        <div>
+          <div class="lbl">What it might say next</div>
+          <div id="cands"></div>
+          <div class="note" id="candnote" style="min-height:0"></div>
+        </div>
+        <div>
+          <div class="lbl">Where this token's products ran</div>
+          <div class="where"><i id="wg" style="background:var(--gpu)"></i><i id="wc" style="background:var(--cpu)"></i></div>
+          <div class="kv" style="margin-top:6px"><span><span style="color:var(--gpu)">&#9632;</span> GPU, the HD 530</span><b id="kg"></b><span><span style="color:var(--cpu)">&#9632;</span> processor, 4 cores</span><b id="kc"></b></div>
+        </div>
+        <div>
+          <div class="lbl">This token</div>
+          <div class="kv">
+            <span>position</span><b id="kpos"></b>
+            <span>time through 32 layers</span><b id="ktime"></b>
+            <span>weights read</span><b>1.42 GB</b>
+            <span>memory held for the conversation</span><b id="kcache"></b>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="foot"><span>recorded only while this page is open; the server's answers are the same with it shut</span><span class="sp"></span><span><code>llm inside</code> at the prompt prints a token's passage as text</span></div>
+  </div>
+  </div>
+  <p class="cap"><b>What you are seeing.</b> The text is cut into <b>tokens</b>, pieces of words from a vocabulary of 51,200, which is all the model ever sees. Each token passes through 32 <b>layers</b>. In each layer, 32 <b>attention heads</b> look back at earlier tokens and pull in what they need, and then 10,240 <b>feed-forward neurons</b> transform the result. A head's cell is bright when it looks hard at one token and dim when its attention is spread out. The yellow bar under each layer is the share of its neurons that fired. The violet line along the bottom is the <b>residual stream</b>, the token's running meaning, which every layer adds to; it grows thicker as it gathers. At the end, the stream is compared with every token in the vocabulary, and the odds of each come out on the right. Xavier takes the most likely one, writes it, and the next token starts again from the left. Reading the question is the same passage for eight tokens at once.</p>
+
+  <h2>What a person can do with it</h2>
+  <ul>
+    <li>watch a question become tokens, and see how many it cost;</li>
+    <li>watch each token of an answer pass through the 32 layers, and see which heads looked hard at something and how much of each layer's feed-forward fired;</li>
+    <li>click a head to see which earlier tokens it attended to, with how much of its attention, as arcs over the text, and read it in words ("layer 14, head 7 looks mostly at <code>kernel</code>");</li>
+    <li>see the candidates for the next token and their odds, which one was chosen, and how sure the model was;</li>
+    <li>see how much of each token's work went to the GPU and how much to the processor, and how long the token took;</li>
+    <li>pause on a token and step through the answer one at a time, back through the last 256 tokens recorded;</li>
+    <li>read a token's passage as text at the prompt, with <code>llm inside</code>.</li>
+  </ul>
+
+  <h2>What it is made of</h2>
+  <table class="plain">
+    <tr><th>Piece</th><th>Supplied by</th><th></th></tr>
+    <tr><td>Each token's passage: per layer the residual's size, each head's strongest look and how strong, the neurons that fired; the top candidates and their odds</td><td>the <b>LLM Kit</b>, <code>llm_core.c</code>: a record it fills for each token only when given somewhere to put one, from values it computes anyway. One door, so the IDE or a teaching application could show the same.</td><td><b>new</b>, in an existing kit</td></tr>
+    <tr><td>The record carried to the window</td><td>the <b>LLM server</b>: a ring in a shared region, one record a token (about 5 KB), written by the server and read by the window on its own clock. Tokens recur, so they are data in a region, never message payloads. A new request hands the window the region.</td><td><b>new</b> request, <code>llmproto.h</code></td></tr>
+    <tr><td>Where the products ran</td><td>the LLM Kit's GPU path, its rows on each side (<code>llm_gpu.h</code>), already counted</td><td>exists</td></tr>
+    <tr><td>The page</td><td><code>llmmon.lua</code>, Lua, drawn with the UI kit's surfaces; every pixel loop is C in <code>gfx</code></td><td>a page of an existing window</td></tr>
+  </table>
+  <p class="cap"><b>Its busiest path, and its cost.</b> Off by default: with no window open the kit is handed no record and does nothing more. Open, it costs one pass over values already in the cache per layer: a sum of 2,560 squares for the residual, a count over 10,240 neurons, and a maximum over each head's attention weights, which are computed anyway. That is a few hundred thousand additions against the 1.4 billion multiplications of a token, under a tenth of a percent. The odds are a softmax over the top ten logits, which are already sorted for the choice. The window reads the ring ten times a second and draws only the tokens that arrived. Nothing waits on it: if the window falls behind, the oldest records are written over, and the window says it skipped some.</p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var L = 32, H = 32;
+  // The question and the answer, cut as phi-2's tokenizer cuts them.
+  var Q = ["What", " is", " a", " micro", "kernel", "?"];
+  var A = [" A", " micro", "kernel", " is", " a", " type", " of", " operating", " system", " architecture", " that",
+           " consists", " of", " a", " small", " core", " that", " provides", " basic", " services"];
+  // Candidates for each answer token: the chosen one first.
+  var CANDS = [
+    [[" A", .62], ["\n", .14], [" The", .09], [" Micro", .05], [" In", .03]],
+    [[" micro", .91], [" kernel", .03], [" small", .02], [" type", .01], [" Micro", .01]],
+    [["kernel", .97], ["-", .01], ["k", .006], ["service", .004], ["controller", .003]],
+    [[" is", .88], [" (", .06], [",", .03], [" refers", .015], [" operating", .01]],
+    [[" a", .93], [" an", .04], [" the", .01], [" type", .008], [" one", .004]],
+    [[" type", .41], [" minimal", .17], [" small", .12], [" kernel", .1], [" software", .06]],
+    [[" of", .99], [" in", .003], [",", .002], [" and", .001], [" that", .001]],
+    [[" operating", .66], [" kernel", .18], [" computer", .06], [" software", .04], [" system", .02]],
+    [[" system", .98], [" systems", .01], ["-", .003], [" kernel", .002], [" environment", .001]],
+    [[" architecture", .29], [" kernel", .27], [" design", .18], [" that", .11], [" where", .06]],
+    [[" that", .44], [" in", .22], [" where", .19], [" which", .08], [",", .04]],
+    [[" consists", .21], [" separates", .17], [" uses", .14], [" minim", .12], [" has", .09]],
+    [[" of", .97], [" only", .01], [" primarily", .006], [" mainly", .005], [" solely", .003]],
+    [[" a", .71], [" only", .11], [" the", .06], [" minimal", .05], [" small", .03]],
+    [[" small", .58], [" minimal", .23], [" core", .07], [" single", .03], [" kernel", .03]],
+    [[" core", .52], [",", .14], [" kernel", .13], [" set", .1], [" number", .05]],
+    [[" that", .38], [" of", .21], [",", .17], [" which", .12], [" and", .06]],
+    [[" provides", .47], [" handles", .2], [" manages", .14], [" performs", .07], [" is", .04]],
+    [[" basic", .33], [" only", .21], [" essential", .18], [" the", .12], [" a", .06]],
+    [[" services", .62], [" functions", .21], [" functionality", .07], [" operating", .03], [" system", .02]]
+  ];
+  var toks = Q.concat(A), nq = Q.length;
+
+  // Deterministic numbers, so the page reads the same each time.
+  var seed = 7;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function hash(a, b, c) { var x = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); x = (x ^ (x >>> 13)) * 1274126177; return ((x ^ (x >>> 16)) >>> 0) / 4294967296; }
+
+  // A head's look from token `pos`: its strongest earlier token and how strong.
+  function look(layer, head, pos) {
+    var r = hash(layer, head, 1), target, focus;
+    if (r < .22) target = Math.max(0, pos - 1);                   // the token before
+    else if (r < .38) target = 0;                                 // the first token, a resting place
+    else if (r < .5) target = pos;                                // itself
+    else {                                                        // a token that means something
+      var best = 0, bv = -1;
+      for (var p = 0; p <= pos; p++) { var v = hash(layer * 7 + head, p, 3) + (toks[p].indexOf("kernel") >= 0 ? .5 : 0) + (toks[p].indexOf("system") >= 0 ? .3 : 0); if (v > bv) { bv = v; best = p; } }
+      target = best;
+    }
+    focus = .25 + .7 * hash(layer, head, pos + 11) * (layer > 3 ? 1 : .6);
+    return { target: target, focus: Math.min(.97, focus) };
+  }
+  function ffn(layer, pos) { return .04 + .12 * hash(layer, pos, 5) + (layer > 20 ? .05 : 0); }
+  function norm(layer, pos) { return 1 + layer * .9 + 3 * hash(layer, pos, 9); }
+
+  var state = { at: nq - 1, sweep: L, playing: true, sel: { l: 14, h: 7 } };
+  // Reading the question: batches of 8, here one batch of six tokens.
+
+  var $ = function (id) { return document.getElementById(id); };
+  var NS = "http://www.w3.org/2000/svg";
+  function el(name, attrs, parent) { var e = document.createElementNS(NS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+  function drawToks() {
+    var box = $("toks"); box.innerHTML = "";
+    toks.forEach(function (t, i) {
+      var s = document.createElement("span");
+      s.className = "tok " + (i < nq ? "q" : "a") + (i > state.at ? " todo" : "") + (i === state.at ? (i < nq ? " readnow" : " now") : "");
+      s.textContent = t.replace(/^ /, "␣").replace("\n", "↵");
+      s.title = i < nq ? "question token " + (i + 1) : "answer token " + (i - nq + 1);
+      box.appendChild(s);
+    });
+  }
+
+  function drawArcs() {
+    var svg = $("arcs"); svg.innerHTML = "";
+    var strip = $("strip").getBoundingClientRect(), spans = $("toks").children;
+    if (!spans[state.at]) return;
+    var from = spans[state.at].getBoundingClientRect();
+    var fx = from.left - strip.left + from.width / 2, fy = from.top - strip.top;
+    // The chosen head's look, and the next-strongest heads' in the same layer, fainter.
+    for (var h = 0; h < H; h++) {
+      var lk = look(state.sel.l, h, state.at);
+      if (h !== state.sel.h && hash(state.sel.l, h, 99) > .2) continue;
+      var t = spans[lk.target].getBoundingClientRect();
+      var tx = t.left - strip.left + t.width / 2, ty = t.top - strip.top;
+      var lift = Math.min(56, 14 + Math.abs(fx - tx) * .18);
+      var main = h === state.sel.h;
+      el("path", { d: "M" + fx + " " + fy + " C" + fx + " " + (fy - lift) + " " + tx + " " + (ty - lift) + " " + tx + " " + ty,
+                   fill: "none", stroke: main ? "#8b7cf6" : "#6b7486", "stroke-width": main ? 1 + 3 * lk.focus : 1,
+                   "stroke-opacity": main ? .95 : .35 }, svg);
+      if (main) el("circle", { cx: tx, cy: ty, r: 3, fill: "#8b7cf6" }, svg);
+    }
+  }
+
+  function drawLayers() {
+    var svg = $("layers"); svg.innerHTML = "";
+    var x0 = 34, w = 24.4, cell = 5.6, top = 18;
+    el("text", { x: 0, y: top + 6, fill: "#6b7486", "font-size": 10, "font-family": "IBM Plex Mono, monospace" }, svg).textContent = "head 0";
+    el("text", { x: 0, y: top + H * cell, fill: "#6b7486", "font-size": 10, "font-family": "IBM Plex Mono, monospace" }, svg).textContent = "31";
+    el("text", { x: 0, y: 238, fill: "#6b7486", "font-size": 10, "font-family": "IBM Plex Mono, monospace" }, svg).textContent = "ffn";
+    for (var l = 0; l < L; l++) {
+      var x = x0 + l * w, done = l < state.sweep, live = l === state.sweep - 1;
+      if (l % 4 === 0 || l === L - 1) el("text", { x: x + 2, y: 11, fill: "#6b7486", "font-size": 10, "font-family": "IBM Plex Mono, monospace" }, svg).textContent = l;
+      for (var h = 0; h < H; h++) {
+        var lk = look(l, h, state.at), on = done ? lk.focus : 0;
+        var sel = l === state.sel.l && h === state.sel.h;
+        var r = el("rect", { x: x, y: top + h * cell, width: w - 4, height: cell - 1.2, rx: 1,
+                     fill: done ? "rgb(" + Math.round(40 + 99 * on) + "," + Math.round(36 + 88 * on) + "," + Math.round(70 + 176 * on) + ")" : "#22272f",
+                     stroke: sel ? "#fff" : "none", "stroke-width": sel ? 1.2 : 0, "class": "head-cell", tabindex: 0 }, svg);
+        (function (l, h) {
+          r.addEventListener("click", function () { state.sel = { l: l, h: h }; render(); });
+          r.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); state.sel = { l: l, h: h }; render(); } });
+        })(l, h);
+      }
+      // The feed-forward: the share of its 10,240 neurons that fired.
+      var f = done ? ffn(l, state.at) : 0, fh = 60;
+      el("rect", { x: x, y: 214, width: w - 4, height: fh, rx: 2, fill: "#22272f" }, svg);
+      el("rect", { x: x, y: 214 + fh - fh * f / .25, width: w - 4, height: fh * f / .25, rx: 2, fill: "#f0b429", "fill-opacity": live ? 1 : .8 }, svg);
+      if (live) el("rect", { x: x - 2, y: top - 3, width: w, height: 262, rx: 3, fill: "none", stroke: "#8b7cf6", "stroke-width": 1.5 }, svg);
+    }
+    // The residual stream: a line through the layers, thicker as it gathers.
+    for (var k = 0; k < Math.min(state.sweep, L); k++) {
+      var nx = x0 + k * w, n = norm(k, state.at);
+      var th = 2 + n * .42;
+      el("rect", { x: nx - 1, y: 306 - th / 2, width: w + 1, height: th, rx: th / 2, fill: "#8b7cf6", "fill-opacity": .45 + .5 * k / L }, svg);
+    }
+    el("text", { x: 0, y: 310, fill: "#6b7486", "font-size": 10, "font-family": "IBM Plex Mono, monospace" }, svg).textContent = "stream";
+    var lk = look(state.sel.l, state.sel.h, state.at);
+    $("note").innerHTML = "<b>Layer " + state.sel.l + ", head " + state.sel.h + "</b> looks mostly at <b>" + JSON.stringify(toks[lk.target]).replace(/"/g, "") +
+      "</b>, " + (lk.target === state.at ? "the token itself" : (state.at - lk.target) + " back") + ", with " + Math.round(lk.focus * 100) +
+      "% of its attention. Layer " + state.sel.l + "'s feed-forward fired " + Math.round(ffn(state.sel.l, state.at) * 10240) + " of its 10,240 neurons.";
+  }
+
+  function drawSide() {
+    var writing = state.at >= nq - 1 && state.at < toks.length - 1 || state.at === toks.length - 1;
+    var ci = state.at - nq + 1;          // the candidates for the token after `at`
+    var box = $("cands"); box.innerHTML = "";
+    if (state.sweep < L) { box.innerHTML = '<div class="note">the token is still in layer ' + (state.sweep) + '</div>'; $("candnote").textContent = ""; }
+    else if (ci >= 0 && ci < CANDS.length) {
+      CANDS[ci].forEach(function (c, i) {
+        var row = document.createElement("div"); row.className = "cand" + (i === 0 ? " pick" : "");
+        var w = document.createElement("span"); w.className = "w"; w.textContent = c[0].replace(/^ /, "␣").replace("\n", "↵");
+        var bar = document.createElement("span"); bar.className = "bar"; var fill = document.createElement("i"); fill.style.width = (c[1] * 100) + "%"; bar.appendChild(fill);
+        var p = document.createElement("span"); p.className = "p"; p.textContent = (c[1] * 100).toFixed(c[1] < .1 ? 1 : 0) + "%";
+        row.appendChild(w); row.appendChild(bar); row.appendChild(p); box.appendChild(row);
+      });
+      var top = CANDS[ci][0][1];
+      $("candnote").textContent = top > .8 ? "sure of it: the most likely is chosen" : top > .4 ? "fairly sure: the most likely is chosen" : "undecided: several were close, and the most likely is chosen";
+    } else { box.innerHTML = '<div class="note">the answer has ended</div>'; $("candnote").textContent = ""; }
+    var reading = state.at < nq;
+    var g = reading ? 35 : 38;
+    $("wg").style.width = g + "%"; $("wc").style.width = (100 - g) + "%";
+    $("kg").textContent = g + "% of the rows"; $("kc").textContent = (100 - g) + "%";
+    $("kpos").textContent = (state.at + 1) + " of 2048";
+    $("ktime").textContent = reading ? "1.29 s for the batch" : Math.round(176 + 20 * hash(state.at, 1, 1)) + " ms";
+    $("kcache").textContent = ((state.at + 1) * 0.64).toFixed(1) + " MB";
+    var pill = $("pill");
+    if (state.at < nq) { pill.className = "pill read"; pill.textContent = "reading the question"; $("what").innerHTML = 'the question\'s <span class="n">' + nq + '</span> tokens together, one batch'; }
+    else { pill.className = "pill write"; pill.textContent = "writing"; $("what").innerHTML = 'answer token <span class="n">' + (state.at - nq + 1) + '</span>, each made from all before it'; }
+  }
+
+  function render() { drawToks(); drawLayers(); drawSide(); drawArcs(); }
+
+  // A token's passage: the sweep moves through the layers, then the next token.
+  function tick() {
+    if (!state.playing) return;
+    if (state.sweep < L) state.sweep += 2;
+    else if (state.at < toks.length - 1) { state.at++; state.sweep = 0; }
+    else state.playing = false, $("play").textContent = "Play", $("play").classList.remove("on");
+    render();
+  }
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setInterval(tick, reduced ? 600 : 90);
+  $("play").addEventListener("click", function () {
+    state.playing = !state.playing;
+    if (state.playing && state.at >= toks.length - 1 && state.sweep >= L) { state.at = nq - 1; }
+    this.textContent = state.playing ? "Pause" : "Play"; this.classList.toggle("on", state.playing);
+  });
+  $("step").addEventListener("click", function () {
+    state.playing = false; $("play").textContent = "Play"; $("play").classList.remove("on");
+    if (state.at < toks.length - 1) { state.at++; } state.sweep = L; render();
+  });
+  $("again").addEventListener("click", function () { state.at = nq - 1; state.sweep = 0; state.playing = true; $("play").textContent = "Pause"; $("play").classList.add("on"); render(); });
+  window.addEventListener("resize", drawArcs);
+  render();
+})();
+</script>
+</body>
+</html>

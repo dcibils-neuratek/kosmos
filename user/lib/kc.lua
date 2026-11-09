@@ -35,7 +35,7 @@
 -- `break`, `continue`, `return`. Functions are inlined - the GPU has no
 -- stack to call on - and may return early. Built in: `lane`, `group_x`,
 -- `group_y`, `simd`; `sqrt`, `rsqrt`, `sin`, `cos`, `pow`, `exp2`, `log2`,
--- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`, `asfloat`, `lanev`,
+-- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`, `asfloat`, `lanev`, `ubyte`, `lanebyte`,
 -- `vec3`, `dot`, `cross`, `length`, `normalize`; and the buffers' doors,
 -- `load`, `loadi`, `load3`, `store` and `store3`, each by a byte offset.
 --
@@ -540,6 +540,12 @@ local function gen(prog, simd)
   -- Operands as eu.lua reads them.
   local function src(v, neg)
     local m = neg and "-" or ""
+
+    -- A byte of an int, read where it lies (`ubyte`, `lanebyte`): typed
+    -- an int for everything here, and its own type to the hardware, which
+    -- widens it for nothing.
+    if v.et and v.k == "reg" then return ("%sr%d.%d<32;8,4>:%s"):format(m, v.r, v.s, v.et) end
+    if v.et and v.k == "uni" then return ("%sr%d.%d<0;1,0>:%s"):format(m, v.r, v.s, v.et) end
 
     if v.k == "reg" then return ("%sr%d.0<8;8,1>:%s"):format(m, v.r, v.t == "b" and "d" or v.t) end
     if v.k == "uni" then return ("%sr%d.%d<0;1,0>:%s"):format(m, v.r, v.s, v.t) end
@@ -1208,6 +1214,38 @@ local function gen(prog, simd)
       emit(("mov %s %s %s"):format(EX, dst(r), src(at)))
       consume(v)
       return r
+    end
+
+    -- **A byte of an int, where it lies** (X7 G5): `ubyte(v, k)` is byte k
+    -- of each lane's v, unsigned; `lanebyte(v, i, k)` is lane i's byte k,
+    -- signed, for every lane. Neither is computed: each is a region of the
+    -- register v is in, read by the instruction that uses it, the byte
+    -- widened by the hardware - where `(v >> 8k) & 255` and `(v << 24 - 8k)
+    -- >> 24` are two instructions each. v is a variable, so the register
+    -- stays v's while the byte is read; k and i are constants.
+    if n == "ubyte" or n == "lanebyte" then
+      local lanes = n == "lanebyte"
+      want(lanes and 3 or 2)
+      local v = eval(args[1])
+      local i = lanes and eval(args[2]) or nil
+      local k = eval(args[lanes and 3 or 2])
+
+      local function constant(c, top, what)
+        if c.k ~= "imm" or math.tointeger(c.v) == nil or c.v < 0 or c.v > top then
+          fail(line, ("%s's %s is a constant from 0 to %d"):format(n, what, top))
+        end
+        return math.tointeger(c.v)
+      end
+
+      local kb = constant(k, 3, "byte")
+
+      if v.k ~= "reg" or v.t ~= "d" or v.et then fail(line, n .. " takes an int variable") end
+      if v.tmp and not v.pinned then fail(line, n .. " takes a variable, not a value worked out in place") end
+
+      if not lanes then return { k = "reg", t = "d", et = "ub", r = v.r, s = kb } end
+
+      local li = constant(i, W - 1, "lane")
+      return { k = "uni", t = "d", et = "b", r = v.r + li // 8, s = (li % 8) * 4 + kb }
     end
 
     if n == "vec3" then

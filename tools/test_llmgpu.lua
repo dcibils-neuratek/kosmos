@@ -165,10 +165,10 @@ local function case(name, rows, blocks, inputs, w_at)
       return text:sub(1, a - 1) .. to .. text:sub(b + 1)
     end
 
-    src = swap(src, "float s = sum + float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * (h0 * asfloat(lanev(m, 0)));",
-                    "float s = sum + (float(block(q0, q1, q2, q3, xa, lanev(m, 2))) * h0) * asfloat(lanev(m, 0));")
-    src = swap(src, "return s + float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * (h1 * asfloat(lanev(m, 1)));",
-                    "return s + (float(block(e0, e1, e2, e3, xb, lanev(m, 3))) * h1) * asfloat(lanev(m, 1));")
+    src = swap(src, "float s = sum + float(first(d0, d1, d2, d3, d4, xa) - 8 * lanev(m, 2)) * (h0 * asfloat(lanev(m, 0)));",
+                    "float s = sum + (float(first(d0, d1, d2, d3, d4, xa) - 8 * lanev(m, 2)) * h0) * asfloat(lanev(m, 0));")
+    src = swap(src, "return s + float(second(e0, e1, e2, e3, xb) - 8 * lanev(m, 3)) * (h1 * asfloat(lanev(m, 1)));",
+                    "return s + (float(second(e0, e1, e2, e3, xb) - 8 * lanev(m, 3)) * h1) * asfloat(lanev(m, 1));")
   end
 
   for _, simd in ipairs { 8, 16 } do

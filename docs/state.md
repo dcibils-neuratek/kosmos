@@ -56,8 +56,15 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   inputs a pass on the GPU: a question of 88 tokens in 14.2 s, against
   17.5 s on the processor (18.730).
 
-**Next**: Diego's call - more of G5 (byte operands in `kc`, for a
-question about twice as fast on the GPU) or voice (X8).
+- **0.11.337, byte operands**: `ubyte` and `lanebyte` in `kc`, a byte of
+  an int read where it lies; the Q4_0 kernel's dots written with them, 44%
+  fewer instructions. On the M700 the GPU takes 85% of a question's rows
+  and a question of 88 tokens is 12.3 s, against 14.2 (18.731); writing is
+  unchanged at 5.51, the memory's.
+
+**Next**: the LLM Monitor's visualizer waits for Diego's word on
+`docs/llmviz.html`. Meanwhile, a question's processor part (attention,
+norms, GELU - 7 of its 12 s) is where the time is.
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 

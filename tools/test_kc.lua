@@ -84,6 +84,7 @@ local function lanes(name, src, want, opts)
 
       for i = 0, n - 1 do
         local w = want(i)
+        if opts.by_simd then w = w(simd) end
         local ok = opts.float and (w ~= w and vals[i + 1] ~= vals[i + 1]
                                    or math.abs(vals[i + 1] - w) <= (opts.within or 0) * math.max(1, math.abs(w)))
                    or vals[i + 1] == w
@@ -258,6 +259,31 @@ void main() {
   return math.sqrt(v) + 1 / math.sqrt(v) + math.sin(v) * math.cos(v) + v ^ 1.5 + v / l + 1
 end, { float = true, within = 1e-5 })
 
+-- A byte of an int where it lies: `ubyte` each lane's own, unsigned, and
+-- `lanebyte` lane 3's of the thread, signed - so a high byte reads as
+-- negative - widened by the instruction that reads it.
+lanes("ubyte and lanebyte", [[
+buffer out;
+void main() {
+  int x = group_x * simd + lane;
+  int v = x * 50331653 + 1234567 * (x & 7) - 1985229329;
+  int w = ubyte(v, 0) + ubyte(v, 3) * 1000 + lanebyte(v, 3, 1) * 1000000 + lanebyte(v, 5, 3) * (ubyte(v, 2) & 15);
+  store(out, x * 4, w);
+}
+]], function(x)
+  local function v_of(y)
+    return (y * 50331653 + 1234567 * (y & 7) - 1985229329) & 0xffffffff
+  end
+  local function byte(v, k) return (v >> (8 * k)) & 255 end
+  local function sbyte(v, k) local b = byte(v, k); return b >= 128 and b - 256 or b end
+  return function(sim)
+    local base = x - x % sim
+    local v = v_of(x)
+    local w = byte(v, 0) + byte(v, 3) * 1000 + sbyte(v_of(base + 3), 1) * 1000000 + sbyte(v_of(base + 5), 3) * (byte(v, 2) & 15)
+    return (w + 0x80000000) % 0x100000000 - 0x80000000
+  end
+end, { by_simd = true })
+
 -- Buffers in and out: a load3, a sum, a store3, by byte offsets.
 do
   local input = {}
@@ -312,6 +338,8 @@ refused("void f(inout int v) { v = 1; }\nvoid main() {\n  float a = 0.0;\n  f(a)
 refused("void main() {\n  int x = 1\n}\n", 3, "; expected")
 refused("const float a;\nvoid main() {\n  a = 2.0;\n}\n", 3, "cannot be assigned")
 refused("int f(int v) { return f(v); }\nvoid main() { int a = f(1); }\n", 1, "calls itself")
+refused("void main() {\n  int v = lane;\n  int a = ubyte(v, 4);\n}\n", 3, "constant from 0 to 3")
+refused("void main() {\n  int a = ubyte(lane + 1, 0);\n}\n", 2, "not a value worked out in place")
 check(select(2, kc.compile("buffer out;\n", { simd = 8 })) == "line 1: no main", "a program with no main was not refused")
 
 -- The constants, packed as the layout says.

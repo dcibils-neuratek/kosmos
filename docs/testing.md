@@ -29820,3 +29820,41 @@ the dots are most of it. A question of 88 tokens, in one boot: **14.2 s
 shared** (the GPU 35% of the rows), **17.5 s on the processor alone** -
 19% sooner to the first word. In a batch the GPU is held by its
 arithmetic, at about half the processor's rate.
+
+## 18.731 X7: byte operands in `kc`, and a question on the GPU in 12.3 s
+
+**`ubyte(v, k)` and `lanebyte(v, i, k)`** (`kc.lua`): byte k of each
+lane's int, unsigned, and lane i's byte k for every lane, signed - neither
+computed, each a region of v's register (`r.k<32;8,4>:ub`,
+`r.(4i+k)<0;1,0>:b`) that the instruction reading it widens for nothing.
+A multiply of a dword by a byte is also the one Gen9 does at full rate,
+where one of two dwords is not. `test_kc`, 40, with a check of both in
+SIMD8 and SIMD16 and two refusals (a byte past 3, a value worked out in
+place); **control**: `lanebyte` unsigned - 2 of 40 fail.
+
+**The Q4_0 kernel's dots written out with them** (`llmgpu.lua`, `dot`):
+each of a block's 16 nibble bytes read where it lies in the weight's
+dwords, its low and high nibbles against the input's two values, every
+position a constant - no dwords of nibbles put together from halves.
+Instructions a thread of 16 rows by 80 blocks, in the emulator:
+
+| inputs a pass | before | bytes |
+|---|---|---|
+| one | 19662 | **11662** (-41%) |
+| four | 68997 | **38917** (-44%) |
+
+`test_llmgpu`, 16, the processor's sums to the bit (**control**, the
+product's order swapped: 8 of 16); `test_llm --gpu`, 83.
+
+On the M700, phi-2, the same answer word for word:
+
+| | before | now |
+|---|---|---|
+| a question of 88 tokens, warm (the GPU's share) | 14.2 s (35%) | **12.3 s (85%)** |
+| writing, "What is a microkernel?", 40 tokens | 5.46 | 5.51 |
+
+The GPU now takes most of a question's rows, and its products are 5.4 s
+of the 12.3: **the rest is the processor's** - attention, the norms, GELU
+- and is what a question waits for next. Writing is unchanged, as it
+should be: it waits for the memory (18.730).
+

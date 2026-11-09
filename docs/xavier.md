@@ -916,6 +916,43 @@ what the server can say without a clock of its own.
 **Built in 0.11.331** (`testing.md` 18.725). Left for X7: the Loaded tile
 says "processor" or "GPU" when the GPU can answer.
 
+
+## The LLM Monitor: Inside (drawn, to be agreed)
+
+Diego, 9 November 2026: "I want to add a llm visualizer to the llm
+monitor", "I want to see the llm at work, like the layers of the neural
+network and its activated layers and some other visual cues", "This is so
+I can understand how llm operate when taking questions and answering".
+Drawn in `docs/llmviz.html`, playable, before any code.
+
+**What a person can do with it**: watch a question become tokens; watch
+each token of an answer pass through the 32 layers - which of each layer's
+32 heads looked hard at something, how much of its 10,240 feed-forward
+neurons fired, and the residual stream gathering; click a head to see the
+earlier tokens it attended to, as arcs over the text and in words; see the
+candidates for the next token and their odds, the one chosen and how sure
+the model was; see each token's share of GPU and processor and its time;
+pause and step back through the last 256 tokens; and read a token's
+passage at the prompt with `llm inside`.
+
+**What it is made of**:
+
+- **The LLM Kit records a token's passage** (`llm_core.c`), only when
+  handed a record to fill: per layer the residual's size, each head's
+  strongest look (which position, how much of its attention), the count of
+  neurons that fired; and the top ten candidates with their odds. All of
+  it from values the forward pass computes anyway - a few hundred thousand
+  additions against a token's 1.4 billion multiplications. One door, so an
+  IDE lesson or a teaching application could show the same.
+- **The LLM server carries it in a region**: a ring of records, about
+  5 KB a token, written by the server and read by the window on its own
+  clock - tokens recur, so they are data in a region and never message
+  payloads. A new request in `llmproto.h` hands a window the region; the
+  ring is filled only while one holds it, and a window that falls behind
+  is written over and says it skipped.
+- **The page** is `llmmon.lua`'s second, Lua, drawn with the UI kit;
+  the pixel loops are `gfx`'s, in C.
+
 ## Models
 
 **What a person can do with it**, at the prompt for now (*What a person
@@ -1056,9 +1093,12 @@ processor.
    between the GPU and the processor at once, the share learned as it
    runs - 5.46 tokens a second on four cores, the M700's memory the limit
    for writing whoever multiplies - and four of a question's inputs met by
-   each read of the weight: a question 19% sooner. **Left**: the GPU is
-   held by its arithmetic in a question - byte operands in `kc` would
-   halve it - and the pool's workers spin while they wait.
+   each read of the weight: a question 19% sooner. **And in 0.11.337**
+   (18.731): byte operands in `kc` (`ubyte`, `lanebyte`), the kernel's
+   instructions 44% fewer, the GPU 85% of a question's rows and a
+   question of 88 tokens in 12.3 s. **Left**: the processor's part of a
+   question (attention, norms, GELU: 7 of its 12 s), and the pool's
+   workers spin while they wait.
 
 ## Decisions that are Diego's
 
