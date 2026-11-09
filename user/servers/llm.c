@@ -39,8 +39,12 @@
 #include "llmring.h"
 #include "../init/say.h"
 #include "kits/llm/llm_core.h"
+#include "kits/llm/llm_gpu.h"
+#include "kits/compute/compute_core.h"
+#include "gpuproto.h"
 
-void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep);
+void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep,
+                long gpu_ep);
 
 /*
  * **Where the models are** (`docs/xavier.md`, *Where the models live*):
@@ -78,6 +82,8 @@ struct settings_file {
 static struct llm_settings settings;        /* zero: Auto everywhere */
 static uint32_t processors = 1, cores = 1;  /* this machine */
 static uint32_t ran_cores = 1, ran_loops;   /* the last answer */
+static uint32_t ran_gpu;                    /* LLM_GPU_* bits the last answer used */
+static uint32_t gpu_have;                   /* LLM_GPU_* bits there is a GPU for */
 
 static long console = -1;
 static unsigned long counter_hz = 62500000ul;
@@ -288,10 +294,11 @@ static void describe(struct llm_reply *rp)
     rp->processors = processors;
     rp->cores = cores;
     rp->loops_have = llm_loops_have();
-    rp->gpu_have = 0;                   /* the GPU's steps are next (X9) */
+    rp->gpu_have = gpu_have;
+    if (gpu_have) put(rp->gpu, sizeof rp->gpu, "Intel HD Graphics", 17);
     rp->ran_cores = ran_cores;
     rp->ran_loops = ran_loops;
-    rp->ran_gpu = 0;
+    rp->ran_gpu = ran_gpu;
 
     rp->kept_tokens = ans.kept;
     rp->prompt_tokens = ans.prompt_n;
@@ -346,8 +353,11 @@ static void wake_waiters(bool all)
  * Loading: the file into one region, a piece at a time, then the kit.
  * --------------------------------------------------------------------- */
 
+static void gpu_unload(void);
+
 static void unload(void)
 {
+    gpu_unload();                       /* the GPU let go of the weights first */
     for (unsigned i = 0; i < n_blocks; i++) region_drop(&blocks[i]);
 
     n_blocks = 0;
@@ -453,6 +463,265 @@ static uint32_t load_begin(const char *name)
     return LLM_OK;
 }
 
+/* ------------------------------------------------------------------------
+ * **The GPU** (`docs/xavier.md`, *X7, the GPU: the design*, G3): the kit's
+ * GPU path (`llm_gpu.c`) given a device that is the GPU's driver, behind
+ * `/Devices/gpu`. The weights stay in the model's region and the GPU reads
+ * them there, each one imported the first time a product needs it - a run
+ * of the region's pages, not all of them (G2); the inputs and the sums are
+ * small buffers of this server's own. A product is one message and a fence.
+ *
+ * **Which products go**: a question's (more than one input) when Settings
+ * says to read questions there, an answer's (one) when it says to write
+ * them - and whatever the kernel cannot take stays on the processor. The
+ * sums are the processor's to the bit, so the answer is the same either
+ * way; only where the time goes differs.
+ * --------------------------------------------------------------------- */
+
+static long gpu_ep = -1;
+static struct llm_gpu gpu;
+static bool gpu_began;
+
+static uint32_t gpu_ask(const void *req, size_t len, long pass, struct gpu_reply *out)
+{
+    static struct message msg, rep;
+
+    memset(&msg, 0, sizeof msg);
+    memset(out, 0, sizeof *out);
+    msg.length = (uint32_t)len;
+    msg.cap_plus_one = pass >= 0 ? (uint32_t)pass + 1u : 0u;
+    memcpy(msg.data, req, len);
+
+    if (gpu_ep < 0 || kosmos_call(gpu_ep, &msg, &rep) != 0 || rep.length < sizeof *out) {
+        out->error = ~0u;
+        return ~0u;
+    }
+
+    memcpy(out, rep.data, sizeof *out);
+    return out->error;
+}
+
+static uint32_t gpu_simple(uint32_t op, int32_t x, struct gpu_reply *out)
+{
+    struct gpu_request rq;
+
+    memset(&rq, 0, sizeof rq);
+    rq.op = op;
+    rq.x = x;
+    return gpu_ask(&rq, sizeof rq, -1, out);
+}
+
+static const char *gpu_said(uint32_t e)
+{
+    return e == ~0u ? "the GPU's driver did not answer" : e == GPU_ERR_NO_DEVICE ? "no GPU"
+         : e == GPU_ERR_GTT_BUSY ? "the GPU's table is full" : e == GPU_ERR_NO_MEMORY ? "no memory for it"
+         : e == GPU_ERR_KERNEL ? "the driver refused the kernel" : "the GPU's driver refused";
+}
+
+static const char *dev_kernel(void *ctx, const uint8_t *code, size_t bytes, uint32_t *id)
+{
+    struct gpu_request rq;
+    struct gpu_reply rp;
+    unsigned long pages = (bytes + 4095u) / 4096u;
+    long region = kosmos_mem_create(pages), at;
+    uint32_t e;
+
+    (void)ctx;
+    if (region < 0) return "no memory for the kernel";
+
+    if ((at = kosmos_mem_map(region)) < 0) {
+        (void)kosmos_cap_drop(region);
+        return "no memory for the kernel";
+    }
+
+    memcpy((void *)at, code, bytes);
+    memset(&rq, 0, sizeof rq);
+    rq.op = GPU_OP_KERNEL;
+    rq.x = (int32_t)bytes;
+    e = gpu_ask(&rq, sizeof rq, region, &rp);
+    (void)kosmos_share_unmap((unsigned long)at, pages);
+    (void)kosmos_cap_drop(region);
+
+    if (e != GPU_OK) return gpu_said(e);
+
+    *id = rp.buffer.id;
+    return NULL;
+}
+
+/* A run of the model's region's pages, shaped as the driver takes a
+ * buffer: rows of up to seven pages, no more than 16384 of them. */
+static const char *dev_import(void *ctx, const void *at, size_t bytes, uint32_t *id, uint32_t *offset)
+{
+    struct gpu_request rq;
+    struct gpu_reply rp;
+    uintptr_t base = (uintptr_t)model.file.at, p = (uintptr_t)at;
+    unsigned long first, need, per_row, rows;
+    uint32_t e;
+
+    (void)ctx;
+    if (model.file.cap < 0 || p < base || p + bytes > base + model.file.pages * 4096ul)
+        return "a weight outside the model's region";
+
+    first = (unsigned long)((p - base) / 4096u);
+    need = (unsigned long)(((p - base) % 4096u + bytes + 4095u) / 4096u);
+    per_row = (need + 16383u) / 16384u;
+
+    if (per_row > 7) return "a weight larger than a GPU buffer";
+
+    rows = (need + per_row - 1) / per_row;
+
+    if (first + rows * per_row > model.file.pages) rows = (model.file.pages - first) / per_row;
+    if (rows * per_row < need) return "a weight at the end of the region the buffer's shape cannot reach";
+
+    memset(&rq, 0, sizeof rq);
+    rq.op = GPU_OP_BUFFER_IMPORT;
+    rq.x = (int32_t)(per_row * 1024u);
+    rq.y = (int32_t)rows;
+    rq.pitch = (uint32_t)(per_row * 4096u);
+    rq.first_page = (uint32_t)first;
+    rq.pages = (uint32_t)(rows * per_row);
+
+    /* A capability travels as a copy: the driver keeps its own while the
+     * GPU can reach the pages, and this server keeps the model's. */
+    if ((e = gpu_ask(&rq, sizeof rq, model.file.cap, &rp)) != GPU_OK) return gpu_said(e);
+
+    *id = rp.buffer.id;
+    *offset = (uint32_t)((p - base) % 4096u);
+    return NULL;
+}
+
+static const char *dev_buffer(void *ctx, size_t bytes, uint32_t *id, void **cpu)
+{
+    struct compute_shape shape;
+    struct gpu_request rq;
+    struct gpu_reply rp;
+    const char *no;
+    long region, at;
+    uint32_t e;
+
+    (void)ctx;
+    if ((no = compute_bytes_shape(bytes, &shape)) != NULL) return no;
+    if ((region = kosmos_mem_create_flags(shape.pages, MEM_WRITE_COMBINE)) < 0) return "no memory";
+
+    if ((at = kosmos_mem_map(region)) < 0) {
+        (void)kosmos_cap_drop(region);
+        return "no memory";
+    }
+
+    memset(&rq, 0, sizeof rq);
+    rq.op = GPU_OP_BUFFER_IMPORT;
+    rq.x = (int32_t)shape.width;
+    rq.y = (int32_t)shape.height;
+    rq.pitch = shape.pitch;
+
+    if ((e = gpu_ask(&rq, sizeof rq, region, &rp)) != GPU_OK) {
+        (void)kosmos_share_unmap((unsigned long)at, shape.pages);
+        (void)kosmos_cap_drop(region);
+        return gpu_said(e);
+    }
+
+    *id = rp.buffer.id;
+    *cpu = (void *)at;
+    return NULL;
+}
+
+static void dev_forget(void *ctx, uint32_t id)
+{
+    struct gpu_reply rp;
+
+    (void)ctx;
+    (void)gpu_simple(GPU_OP_BUFFER_FORGET, (int32_t)id, &rp);
+}
+
+/* A run, and its fence waited for - asked again, the core given up
+ * between, since the driver says when the GPU is done only when asked. */
+static const char *dev_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t groups,
+                           const uint32_t *buffers, uint32_t nbuffers, const void *constants,
+                           size_t nconstants)
+{
+    static struct gpu_run q;
+    struct compute_binding bind[GPU_RUN_BUFFERS];
+    struct gpu_reply rp;
+    const char *no;
+    uint32_t e, fence;
+    unsigned long began = kosmos_ticks();
+
+    (void)ctx;
+    for (uint32_t i = 0; i < nbuffers; i++) {
+        bind[i].id = buffers[i];
+        bind[i].view = GPU_VIEW_BYTES;
+    }
+
+    if ((no = compute_pack_run(&q, kernel, simd, groups, 1, bind, nbuffers, constants, nconstants)) != NULL)
+        return no;
+
+    if ((e = gpu_ask(&q, sizeof q, -1, &rp)) != GPU_OK) return gpu_said(e);
+
+    fence = rp.engine.value;
+
+    for (;;) {
+        if (gpu_simple(GPU_OP_FENCE, 1, &rp) != GPU_OK) return "the GPU's driver did not answer";
+        if ((int32_t)(rp.engine.value - fence) >= 0) return NULL;
+        if (micros(kosmos_ticks() - began) > 2000000u) return "the GPU did not finish in two seconds";
+        kosmos_yield();
+    }
+}
+
+static const struct llm_gpu_device gpu_device = { NULL, dev_kernel, dev_import, dev_buffer,
+                                                  dev_forget, dev_run };
+
+/* What the kit offers: a question's products or an answer's, as Settings
+ * says, and the kernel's say on the rest. */
+static int gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
+                       const float *xs, size_t xs_room, uint32_t n, const float *bias, float *out,
+                       size_t out_room)
+{
+    uint32_t want = n > 1 ? LLM_GPU_READ : LLM_GPU_WRITE;
+
+    if ((settings.gpu & want) == 0) return -1;
+    if (llm_gpu_product(ctx, w, xq, xq_room, xs, xs_room, n, bias, out, out_room) != 0) return -1;
+
+    ran_gpu |= want;
+    return 0;
+}
+
+/* Whether there is a GPU, asked once at start: the driver always answers,
+ * and says when there is no device. */
+static void gpu_look(void)
+{
+    struct gpu_reply rp;
+
+    if (gpu_ep >= 0 && gpu_simple(GPU_OP_STATS, 0, &rp) == GPU_OK) gpu_have = LLM_GPU_READ | LLM_GPU_WRITE;
+}
+
+/* A model loaded: offered to the GPU, its kernel handed over the first time. */
+static void gpu_offer(void)
+{
+    char why[160];
+
+    if (!gpu_have) return;
+
+    if (!gpu_began) {
+        if (llm_gpu_begin(&gpu, &gpu_device, why, sizeof why) != 0) {
+            say(console, "llm: the GPU would not take the kernel: ");
+            say(console, why);
+            say(console, "\n");
+            gpu_have = 0;
+            return;
+        }
+
+        gpu_began = true;
+    }
+
+    llm_offload(&model.m, gpu_product, &gpu);
+}
+
+/* A model let go: the GPU's buffers of its weights first. */
+static void gpu_unload(void)
+{
+    if (gpu_began) llm_gpu_forget(&gpu);
+}
+
 /* One piece of the file; then, when it is all in, the kit's turn. */
 static void load_step(void)
 {
@@ -500,6 +769,7 @@ static void load_step(void)
     }
 
     llm_held_reset(&model.m, &held);
+    gpu_offer();
 
     load_done(LLM_OK);
 }
@@ -731,6 +1001,7 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
     ran_loops = model.m.loops;
     pool_start();
     ran_cores = pool.n ? pool.n : 1;
+    ran_gpu = 0;
     *cap = ans.region.cap;
     return LLM_OK;
 }
@@ -923,7 +1194,7 @@ static bool settings_possible(const struct llm_settings *s)
     return s->cores <= processors
         && s->loops <= LLM_LOOPS_AVX2
         && (s->loops == LLM_LOOPS_AUTO || (llm_loops_have() & 1u << s->loops))
-        && s->gpu == 0;                 /* no GPU yet: the switches are drawn off */
+        && (s->gpu & ~gpu_have) == 0;   /* only where there is a GPU for it (X7) */
 }
 
 static void settings_path(char *path, size_t room)
@@ -1105,7 +1376,8 @@ static long register_name(long running)
     return endpoint;
 }
 
-void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep)
+void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep,
+                long gpu_endpoint)
 {
     static struct message in;
     long endpoint;
@@ -1130,6 +1402,8 @@ void llm_server(long running_cap, long models_disk_ep, long console_ep, long mod
 
     cores = processors / processors_a_core();
     if (cores == 0) cores = 1;
+    gpu_ep = gpu_endpoint;
+    gpu_look();
     settings_read();
 
     if ((endpoint = register_name(running_cap)) < 0) {

@@ -867,7 +867,7 @@ local function open_settings()
   end
   label(50, "This machine")
   note(52, ("%d processors on %d cores \u{00b7} %s \u{00b7} %s"):format(st.processors, st.cores,
-       table.concat(have, ", "), st.gpu ~= "" and st.gpu or "no GPU the server can use yet"))
+       table.concat(have, ", "), st.gpu ~= "" and st.gpu or "no GPU the server can use"))
 
   -- Cores: Auto, then the counts there are room for.
   local counts = {}
@@ -909,13 +909,25 @@ local function open_settings()
   note(192, "The same answer to the bit in each; only the speed differs.")
   note(210, "Base vectors are SSE2 on a PC and NEON on ARM.")
 
-  -- The GPU: drawn where it will be, off, until the Compute Kit runs the model.
-  label(232, "Read questions")
-  s:put(ui.switch{ x = CX, y = 228, on = false, disabled = st.gpu_have & 1 == 0, name = "Read questions" })
-  label(268, "Write answers")
-  s:put(ui.switch{ x = CX, y = 264, on = false, disabled = st.gpu_have & 2 == 0, name = "Write answers" })
-  note(300, st.gpu_have == 0 and "On the GPU: not yet - the server runs the model on the processor."
-                              or "On the GPU, where Compare says it pays.")
+  -- The GPU (X7): a question's products, an answer's, or both, where the
+  -- server has a GPU to give them to. The answer is the same either way.
+  local function gpu_switch(y, bit, name)
+    label(y + 4, name)
+    s:put(ui.switch{ x = CX, y = y, on = (st.settings.gpu or 0) & bit ~= 0, disabled = st.gpu_have & bit == 0,
+      name = name,
+      on_change = function(_, on)
+        local now = llm.settings()
+        local bits = now and now.settings.gpu or 0
+        bits = on and (bits | bit) or (bits & ~bit)
+        local ok, why = llm.set{ gpu = bits }
+        print(("xavier: gpu %d"):format(bits) .. (ok and "" or (": " .. tostring(why))))
+      end })
+  end
+
+  gpu_switch(228, 1, "Read questions")
+  gpu_switch(264, 2, "Write answers")
+  note(300, st.gpu_have == 0 and "No GPU here the server can use: the model runs on the processor."
+                              or ("On %s, the same answer to the bit; Compare says where it pays."):format(st.gpu))
 
   -- Compare.
   label(340, "Compare")

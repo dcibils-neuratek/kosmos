@@ -81,6 +81,18 @@ typedef void *(*llm_alloc_fn)(void *ctx, size_t bytes);
 typedef void llm_part_fn(void *job, uint32_t part, uint32_t parts);
 typedef void llm_run_fn(void *ctx, llm_part_fn *fn, void *job, uint32_t parts);
 
+/*
+ * **A product, offered** (`docs/xavier.md` X7): `out = W x + b` for `n`
+ * inputs, the inputs already in Q8_0 - input `t`'s blocks at `xq + t *
+ * xq_room` bytes and their scales at `xs + t * xs_room` floats - and the
+ * answer for input `t`'s row `r` into `out[t * out_room + r]`, `bias` added
+ * where there is one. Nought when it was done, and less when it was not.
+ */
+struct llm_tensor;
+typedef int llm_product_fn(void *ctx, const struct llm_tensor *w, const uint8_t *xq, size_t xq_room,
+                           const float *xs, size_t xs_room, uint32_t n, const float *bias,
+                           float *out, size_t out_room);
+
 struct llm_model {
   /* The file. */
   const uint8_t *file;
@@ -139,11 +151,20 @@ struct llm_model {
   llm_run_fn *run;
   void *run_ctx;
   uint32_t parts;
+
+  /* A product taken somewhere else - the GPU (`llm_gpu.h`) - or NULL. */
+  llm_product_fn *product;
+  void *product_ctx;
 };
 
 /* Products in `parts` pieces through `run` from now on; NULL, or 1 part,
  * for the calling thread alone. */
 void llm_parallel(struct llm_model *m, llm_run_fn *run, void *ctx, uint32_t parts);
+
+/* Products offered to `product` first from now on (`docs/xavier.md` X7):
+ * it takes one and answers nought, or answers less than nought and the
+ * processor's rows do it. NULL for the processor alone. */
+void llm_offload(struct llm_model *m, llm_product_fn *product, void *ctx);
 
 /*
  * **Which loops multiply the weights** (`docs/xavier.md`, *Settings*). Every

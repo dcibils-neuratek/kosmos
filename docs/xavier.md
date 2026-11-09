@@ -1033,10 +1033,14 @@ processor.
    the emulator to `llm_dot_q4_0` bit for bit on random rows, odd scales
    and subnormal ones included, with a control. **Built in 0.11.333** (`user/lib/llmgpu.lua`; `testing.md` 18.727).
 2. **G2 - the driver**: an import of a run of pages, and GTT slots given
-   back and used again; `test_intelgpu_*` on the Mac.
+   back and used again; `test_intelgpu_*` on the Mac. **Built in 0.11.334**
+   (`igpu_slots` in `intelgpu_decode.c`; `testing.md` 18.728).
 3. **G3 - the kit and the server**: the hook, the layers imported at load,
    the switch on; the tiny model's answers through the emulator on the Mac
    word for word with the processor's; under QEMU, no GPU, said so.
+   **Built in 0.11.334** (`llm_offload` in `llm_core.c`, `llm_gpu.c`, the
+   server's device; `test_llm --gpu`; the switches in Xavier's Settings and
+   `llm set gpu` at the prompt; `testing.md` 18.728).
 4. **G4 - the M700**: the same answers on the HD 530, then the speeds -
    writing and reading - beside four cores with AVX2, in Compare and the
    Monitor. Needs a netboot.

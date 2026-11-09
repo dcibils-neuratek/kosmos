@@ -634,7 +634,7 @@ static struct buffer {
     unsigned      width, height, pitch;
 } B[BUFFERS_MAX];
 
-static unsigned long next_slot;         /* the next free GTT slot past the cursor's */
+static struct igpu_slots slots;         /* the GTT's slots past the cursor's (`intelgpu_decode.h`) */
 
 /* Buffer 0: the firmware's framebuffer, as `look` found it. */
 static void buffers_init(void)
@@ -654,8 +654,11 @@ static void buffers_init(void)
     /* Past the framebuffer, then past the cursor's slots, a megabyte
      * aligned: linear surfaces want 256 KB on Gen9 (i915's
      * `intel_linear_alignment`), and a megabyte is a whole number of them. */
-    next_slot = (((unsigned long)(G.surface >> 12) + G.fb_pages + 255u) & ~255ul);
-    next_slot = (next_slot + CURSOR_PAGES + 255u) & ~255ul;
+    {
+        unsigned long next = (((unsigned long)(G.surface >> 12) + G.fb_pages + 255u) & ~255ul);
+
+        igpu_slots_init(&slots, (next + CURSOR_PAGES + 255u) & ~255ul, GTT_ENTRIES);
+    }
 }
 
 /*--------------------------------------------------------------------------
@@ -674,17 +677,17 @@ static bool gtt_pages(unsigned long pages, volatile uint32_t **cpu, uint32_t *gt
 {
     long region = kosmos_mem_create_flags(pages, MEM_CONTIGUOUS | MEM_WRITE_COMBINE);
     long at, phys;
-    unsigned long i;
+    unsigned long i, first;
 
     buffers_init();
 
     if (region < 0 || (at = kosmos_mem_map(region)) < 0 || (phys = kosmos_mem_phys(region)) < 0
-        || next_slot + pages > GTT_ENTRIES) {
+        || !igpu_slots_take(&slots, pages, &first)) {
         return false;
     }
 
     for (i = 0; i < pages; i++) {
-        if (!gtt_write(next_slot + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
+        if (!gtt_write(first + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
             return false;
         }
     }
@@ -693,8 +696,7 @@ static bool gtt_pages(unsigned long pages, volatile uint32_t **cpu, uint32_t *gt
     (void)reg(G.regs, GFX_FLSH_CNTL);
 
     *cpu = (volatile uint32_t *)at;
-    *gtt = (uint32_t)(next_slot << 12);
-    next_slot = (next_slot + pages + 255u) & ~255ul;
+    *gtt = (uint32_t)(first << 12);
     return true;
 }
 
@@ -2855,7 +2857,7 @@ static uint32_t buffer_import(long console, long cap, const struct gpu_request *
     struct say_line line;
     unsigned width = (unsigned)rq->x, height = (unsigned)rq->y, id;
     long pages;
-    unsigned long i, first;
+    unsigned long i, first, from = rq->first_page, count;
 
     if (!G.found) {
         return GPU_ERR_NO_DEVICE;
@@ -2863,9 +2865,19 @@ static uint32_t buffer_import(long console, long cap, const struct gpu_request *
 
     buffers_init();
 
+    /* The region's pages from `first_page`, `pages` of them or the rest
+     * (X7 G2): a model is imported a layer a buffer, each its own run of
+     * the one region, rather than all of it once for every buffer. */
     if (cap < 0 || rq->x <= 0 || rq->y <= 0 || width > 16384u || height > 16384u
         || rq->pitch < width * 4u || rq->pitch >= 32768u || (pages = kosmos_mem_size(cap)) <= 0
-        || (unsigned long)rq->offset + (unsigned long)rq->pitch * height > (unsigned long)pages * 4096ul) {
+        || from >= (unsigned long)pages) {
+        return GPU_ERR_BAD_OP;
+    }
+
+    count = rq->pages != 0 ? rq->pages : (unsigned long)pages - from;
+
+    if (count > (unsigned long)pages - from
+        || (unsigned long)rq->offset + (unsigned long)rq->pitch * height > count * 4096ul) {
         return GPU_ERR_BAD_OP;
     }
 
@@ -2876,16 +2888,19 @@ static uint32_t buffer_import(long console, long cap, const struct gpu_request *
         return GPU_ERR_NO_MEMORY;
     }
 
-    if (next_slot + (unsigned long)pages > GTT_ENTRIES) {
+    if (!igpu_slots_take(&slots, count, &first)) {
         return GPU_ERR_GTT_BUSY;
     }
 
-    first = next_slot;
-
-    for (i = 0; i < (unsigned long)pages; i++) {
-        long phys = kosmos_mem_page_phys(cap, i);
+    for (i = 0; i < count; i++) {
+        long phys = kosmos_mem_page_phys(cap, from + i);
 
         if (phys < 0 || !gtt_write(first + i, (uint64_t)phys | 1u, NULL)) {
+            while (i-- > 0) {
+                (void)gtt_write(first + i, 0, NULL);
+            }
+
+            igpu_slots_give(&slots, first, count);
             return GPU_ERR_NO_MEMORY;
         }
     }
@@ -2899,16 +2914,15 @@ static uint32_t buffer_import(long console, long cap, const struct gpu_request *
     B[id].cap = cap;                    /* kept: the pages stay while the GPU can reach them */
     B[id].slot = first;
     B[id].gtt = (uint32_t)(first << 12) + rq->offset;
-    B[id].pages = (unsigned long)pages;
+    B[id].pages = count;
     B[id].width = width;
     B[id].height = height;
     B[id].pitch = rq->pitch;
-    next_slot = (first + (unsigned long)pages + 255u) & ~255ul;
 
     rep->buffer.id = id;
     rep->buffer.gtt = B[id].gtt;
     rep->buffer.pitch = rq->pitch;
-    rep->buffer.pages = (uint32_t)pages;
+    rep->buffer.pages = (uint32_t)count;
 
     say_begin(&line);
     say_text(&line, "intelgpu: buffer ");
@@ -2950,6 +2964,7 @@ static uint32_t buffer_forget(const struct gpu_request *rq)
 
     wreg(GFX_FLSH_CNTL, 1u);
     (void)reg(G.regs, GFX_FLSH_CNTL);
+    igpu_slots_give(&slots, B[id].slot, B[id].pages);   /* and used again (X7 G2) */
     (void)kosmos_cap_drop(B[id].cap);
     memset(&B[id], 0, sizeof B[id]);
     return GPU_OK;
@@ -3060,7 +3075,7 @@ static uint32_t buffer_new(long console, const struct gpu_request *rq,
 {
     struct say_line line;
     unsigned width = (unsigned)rq->x, height = (unsigned)rq->y, pitch, id;
-    unsigned long pages, i;
+    unsigned long pages, i, slot;
     long region, phys;
 
     if (!G.found) {
@@ -3087,7 +3102,7 @@ static uint32_t buffer_new(long console, const struct gpu_request *rq,
     pitch = (width * 4u + 63u) & ~63u;  /* PLANE_STRIDE counts 64 bytes, linear */
     pages = ((unsigned long)pitch * height + 4095u) / 4096u;
 
-    if (next_slot + pages > GTT_ENTRIES) {
+    if (!igpu_slots_take(&slots, pages, &slot)) {
         return GPU_ERR_GTT_BUSY;
     }
 
@@ -3100,12 +3115,14 @@ static uint32_t buffer_new(long console, const struct gpu_request *rq,
             (void)kosmos_cap_drop(region);
         }
 
+        igpu_slots_give(&slots, slot, pages);
         return GPU_ERR_NO_MEMORY;
     }
 
     for (i = 0; i < pages; i++) {
-        if (!gtt_write(next_slot + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
+        if (!gtt_write(slot + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL)) {
             (void)kosmos_cap_drop(region);
+            igpu_slots_give(&slots, slot, pages);
             return GPU_ERR_GTT_BUSY;
         }
     }
@@ -3115,16 +3132,15 @@ static uint32_t buffer_new(long console, const struct gpu_request *rq,
 
     B[id].used = true;
     B[id].kind = GPU_BUFFER_SCANOUT;
-    B[id].slot = next_slot;
+    B[id].slot = slot;
     flips_seen = true;
     B[id].holder = holder_of_request();
     B[id].cap = region;
-    B[id].gtt = (uint32_t)(next_slot << 12);
+    B[id].gtt = (uint32_t)(slot << 12);
     B[id].pages = pages;
     B[id].width = width;
     B[id].height = height;
     B[id].pitch = pitch;
-    next_slot = (next_slot + pages + 255u) & ~255ul;
 
     rep->buffer.id = id;
     rep->buffer.gtt = B[id].gtt;

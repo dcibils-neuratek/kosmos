@@ -922,6 +922,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/llm/llm_core.c \
              user/kits/llm/llm_dot.c \
              user/kits/llm/llm_dot_avx2.c \
+             user/kits/llm/llm_gpu.c \
              user/servers/windowserver.c \
              user/servers/mdnsd.c \
              user/servers/vmm.c \
@@ -1514,6 +1515,15 @@ $(UBUILD)/user/kits/tls/tls_kosmos.c.o: user/kits/tls/tls_kosmos.c $(UFLAGS_FILE
 $(UBUILD)/user/kits/network/download.c.o: user/kits/network/download.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+# The LLM Kit's GPU path carries the kernel's bytes, compiled from
+# user/lib/llmgpu.lua by the host's Lua (`docs/xavier.md` X7). Named here,
+# above both rules that need it: a prerequisite is read when its rule is.
+LLMGPU_HEADER := build/llmgpu/llmgpu_kernels.h
+
+$(UBUILD)/user/kits/llm/llm_gpu.c.o: user/kits/llm/llm_gpu.c $(LLMGPU_HEADER) $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) -I$(dir $(LLMGPU_HEADER)) $(UCFLAGS) -MMD -MP -c $< -o $@
 
 # The map's tiles server speaks HTTPS through the TLS core (`docs/maps.md`).
 $(UBUILD)/user/servers/tiles.c.o: user/servers/tiles.c $(UFLAGS_FILE)
@@ -2481,10 +2491,17 @@ $(HOSTDIR)/test_raster_x86: tools/test_raster.c user/kits/gfx/raster.c user/kits
 # again, by `make llm-reference`, from a llama.cpp built in build/downloads.
 LLM_KIT_SRCS := user/kits/llm/llm_core.c user/kits/llm/llm_dot.c user/kits/llm/llm_dot_avx2.c
 
-$(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h
+# The LLM Kit's GPU kernels as C (`docs/xavier.md` X7): `user/lib/llmgpu.lua`
+# compiled by `kc.lua` with the host's Lua, for the server, which runs none.
+$(LLMGPU_HEADER): tools/llmgpu_header.lua user/lib/llmgpu.lua user/lib/kc.lua user/lib/eu.lua $(HOSTDIR)/lua
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -o $@ \
-	        tools/test_llm.c $(LLM_KIT_SRCS) -lm
+	$(HOSTDIR)/lua tools/llmgpu_header.lua $@
+
+$(HOSTDIR)/test_llm: tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_core.h user/kits/llm/llm_dot.h \
+                     user/kits/llm/llm_gpu.c user/kits/llm/llm_gpu.h $(LLMGPU_HEADER) tools/eu_emu.c tools/eu_emu.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/llm -I$(dir $(LLMGPU_HEADER)) -Itools -o $@ \
+	        tools/test_llm.c $(LLM_KIT_SRCS) user/kits/llm/llm_gpu.c tools/eu_emu.c -lm
 
 # The kit's own answer to a prompt, which `tools/run_llm.py` holds the LLM
 # server inside Kosmos to, byte for byte (`docs/xavier.md` X3).
@@ -4720,6 +4737,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q8_0.gguf tools/llm_reference_tiny-phi2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.F16.gguf tools/llm_reference_tiny-phi2.F16.txt
+	@# And the Q4_0 one again with its products on the GPU, in the emulator:
+	@# the same checks, and its logits the processor's to the bit (X7 G3).
+	$(HOSTDIR)/test_llm --gpu build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
 	@# And its vector rows held to its scalar ones, to the bit (X2).
 	$(HOSTDIR)/test_llmdot
 	$(HOSTDIR)/test_llmdot_x86

@@ -103,7 +103,8 @@ void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
 void modelsfs_server(long endpoint, long blocks_read, long blocks_write,
                      long devices, long console);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
-void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep);
+void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep,
+                long gpu_ep);
 
 /* The window server (`docs/astra-display.md` D3b-2): its endpoint, the
  * manager door, and the console's. Given the screen when it is spawned. */
@@ -936,7 +937,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_LLM) {
         named("llm");
-        llm_server(0, 1, 2, kosmos_cap_check(3) == 0 ? 3 : -1);
+        llm_server(0, 1, 2, kosmos_cap_check(4) == 0 ? 4 : -1, kosmos_cap_check(3) == 0 ? 3 : -1);
         kosmos_exit(0);
     }
 

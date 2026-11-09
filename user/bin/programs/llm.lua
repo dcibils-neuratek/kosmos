@@ -7,6 +7,8 @@
 --                            and since the server started: who asked, and how much
 --   llm set cores 4          a number, or auto
 --   llm set loops avx2       auto, plain, base or avx2
+--   llm set gpu read+write   where the GPU takes the products: off, read
+--                            (a question's), write (an answer's), or both
 --
 -- In force from the next question, and kept by the server across restarts.
 -- Every choice of loops gives the same answer to the bit; only the speed
@@ -20,7 +22,11 @@ local function usage()
   print("usage: llm")
   print("       llm set cores <n|auto>")
   print("       llm set loops <auto|plain|base|avx2>")
+  print("       llm set gpu <off|read|write|read+write>")
 end
+
+local GPU_WORDS = { [0] = "off", [1] = "read questions", [2] = "write answers", [3] = "read and write" }
+local GPU_BITS = { off = 0, read = 1, write = 2, ["read+write"] = 3 }
 
 local function show(r)
   local s = r.settings
@@ -32,14 +38,14 @@ local function show(r)
 
   print(("this machine:  %d processors on %d cores; loops %s; %s"):format(r.processors, r.cores,
         table.concat(have, ", "), r.gpu ~= "" and ("GPU " .. r.gpu) or "no GPU the server uses"))
-  print(("settings:      cores %s, loops %s"):format(
+  print(("settings:      cores %s, loops %s, GPU %s"):format(
         s.cores == 0 and ("auto (" .. r.cores .. ")") or tostring(s.cores),
-        s.loops == "auto" and "auto" or (NAMES[s.loops] or s.loops)))
+        s.loops == "auto" and "auto" or (NAMES[s.loops] or s.loops), GPU_WORDS[s.gpu or 0] or "?"))
 
   if r.answers > 0 then
-    print(("last answer:   %d cores, loops %s; %d tokens in %.2f s, question %d tokens in %.2f s")
-          :format(r.ran.cores, NAMES[r.ran.loops] or r.ran.loops, r.answer_tokens,
-                  r.answer_us / 1e6, r.prompt_tokens, r.prompt_us / 1e6))
+    print(("last answer:   %d cores, loops %s, GPU %s; %d tokens in %.2f s, question %d tokens in %.2f s")
+          :format(r.ran.cores, NAMES[r.ran.loops] or r.ran.loops, GPU_WORDS[r.ran.gpu or 0] or "?",
+                  r.answer_tokens, r.answer_us / 1e6, r.prompt_tokens, r.prompt_us / 1e6))
   end
 
   -- What the LLM Monitor shows, as lines (`xavier.md`, *The LLM Monitor*).
@@ -75,6 +81,9 @@ if words[2] == "cores" then
   if not change.cores or change.cores < 0 or change.cores % 1 ~= 0 then usage() return end
 elseif words[2] == "loops" then
   change.loops = words[3]
+elseif words[2] == "gpu" then
+  change.gpu = GPU_BITS[words[3]]
+  if not change.gpu then usage() return end
 else
   usage()
   return

@@ -137,3 +137,108 @@ void igpu_decode_wm(uint32_t v, bool *enabled, unsigned *lines, unsigned *blocks
     *lines = (v >> 14) & 0x1FFFu;
     *blocks = v & 0x1FFFu;
 }
+
+/* The GTT's slots (`intelgpu_decode.h`). */
+
+static unsigned long slots_rounded(unsigned long count)
+{
+    return (count + 255ul) & ~255ul;
+}
+
+void igpu_slots_init(struct igpu_slots *s, unsigned long next, unsigned long end)
+{
+    s->next = slots_rounded(next);
+    s->end = end;
+    s->nfree = 0;
+}
+
+bool igpu_slots_take(struct igpu_slots *s, unsigned long count, unsigned long *first)
+{
+    unsigned i;
+
+    if (count == 0) {
+        return false;
+    }
+
+    count = slots_rounded(count);
+
+    /* The first run given back that holds it, its front taken. */
+    for (i = 0; i < s->nfree; i++) {
+        if (s->free[i].count >= count) {
+            *first = s->free[i].first;
+            s->free[i].first += count;
+            s->free[i].count -= count;
+
+            if (s->free[i].count == 0) {
+                s->free[i] = s->free[--s->nfree];
+            }
+
+            return true;
+        }
+    }
+
+    if (s->next > s->end || count > s->end - s->next) {
+        return false;
+    }
+
+    *first = s->next;
+    s->next += count;
+    return true;
+}
+
+void igpu_slots_give(struct igpu_slots *s, unsigned long first, unsigned long count)
+{
+    unsigned i;
+    bool joined = true;
+
+    count = slots_rounded(count);
+
+    if (count == 0) {
+        return;
+    }
+
+    /* Joined to any run it touches, again until it touches none. */
+    while (joined) {
+        joined = false;
+
+        for (i = 0; i < s->nfree; i++) {
+            if (s->free[i].first + s->free[i].count == first
+                || first + count == s->free[i].first) {
+                if (s->free[i].first < first) {
+                    first = s->free[i].first;
+                }
+
+                count += s->free[i].count;
+                s->free[i] = s->free[--s->nfree];
+                joined = true;
+                break;
+            }
+        }
+    }
+
+    /* Touching the mark, it is the mark's again. */
+    if (first + count == s->next) {
+        s->next = first;
+        return;
+    }
+
+    if (s->nfree == IGPU_SLOTS_FREE) {
+        unsigned smallest = 0;
+
+        for (i = 1; i < s->nfree; i++) {
+            if (s->free[i].count < s->free[smallest].count) {
+                smallest = i;
+            }
+        }
+
+        if (s->free[smallest].count >= count) {
+            return;                     /* the run given back is the smallest */
+        }
+
+        s->free[smallest] = s->free[--s->nfree];
+    }
+
+    s->free[s->nfree].first = first;
+    s->free[s->nfree].count = count;
+    s->nfree++;
+}

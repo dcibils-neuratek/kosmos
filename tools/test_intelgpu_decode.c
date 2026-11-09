@@ -151,6 +151,58 @@ int main(void)
           && IGPU_L3_UC == 0x10u && IGPU_L3_WB == 0x30u,
           "Skylake's MOCS entries as i915 programs them: uncached, page table, cached; L3 UC and WB");
 
+    /* The GTT's slots given back and used again (xavier.md X7 G2). */
+    {
+        static struct igpu_slots s;
+        unsigned long a = 0, b = 0, c = 0, d = 0, e = 0, i, firsts[80];
+        bool all = true;
+
+        igpu_slots_init(&s, 1000, 1u << 20);
+        check(s.next == 1024, "the mark starts at a whole megabyte: 1000 slots -> 1024");
+        check(igpu_slots_take(&s, 10, &a) && a == 1024 && s.next == 1280,
+              "ten slots take a megabyte's 256, from the mark");
+        check(igpu_slots_take(&s, 300, &b) && b == 1280 && igpu_slots_take(&s, 256, &c) && c == 1792
+              && igpu_slots_take(&s, 1, &d) && d == 2048, "three more, one after another");
+
+        igpu_slots_give(&s, b, 300);
+        check(s.nfree == 1 && igpu_slots_take(&s, 256, &e) && e == b && s.nfree == 1
+              && s.free[0].first == b + 256 && s.free[0].count == 256,
+              "a run given back is used before the mark rises, its front taken");
+        igpu_slots_give(&s, e, 256);
+        check(s.nfree == 1 && s.free[0].first == b && s.free[0].count == 512,
+              "and given back again, joined to what was left of it");
+        igpu_slots_give(&s, c, 256);
+        check(s.nfree == 1 && s.free[0].first == b && s.free[0].count == 768,
+              "a neighbour given back joins it");
+        igpu_slots_give(&s, d, 1);
+        check(s.nfree == 0 && s.next == b,
+              "the last run given back reaches the mark, and everything past the first is the mark's");
+        igpu_slots_give(&s, a, 10);
+        check(s.nfree == 0 && s.next == 1024, "and the first too: the table as it began");
+
+        /* A model loaded and let go a hundred times takes the same slots. */
+        for (i = 0; i < 100 && all; i++) {
+            all = igpu_slots_take(&s, 400000, &a) && a == 1024;
+            igpu_slots_give(&s, a, 400000);
+        }
+
+        check(all && s.next == 1024, "1.6 GB taken and given back a hundred times, from the same slot");
+        check(!igpu_slots_take(&s, (1u << 20), &a), "more than the table holds is refused");
+        check(!igpu_slots_take(&s, 0, &a), "and nothing is not a run");
+
+        /* Eighty runs apart: the table keeps 64, losing the smallest. */
+        for (i = 0; i < 80; i++) {
+            (void)igpu_slots_take(&s, 256, &firsts[i]);
+            (void)igpu_slots_take(&s, 256, &a);             /* a neighbour kept, so none join */
+        }
+
+        for (i = 0; i < 80; i++) {
+            igpu_slots_give(&s, firsts[i], 256);
+        }
+
+        check(s.nfree == IGPU_SLOTS_FREE, "runs apart are kept up to the table's 64");
+    }
+
     printf("%s: %d checks on intelgpu_decode\n", failed ? "FAIL" : "PASS", checks);
     return failed != 0;
 }

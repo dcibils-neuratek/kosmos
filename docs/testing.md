@@ -29681,3 +29681,38 @@ is why the kernel makes it from its bits.
 Not yet: the Lua reference is the processor's formula written again, not
 `llm_dot_q4_0` itself. G3's test runs the tiny phi-2 through the emulator
 against the C, which ties the two.
+
+## 18.728 X7 G2 and G3: the GTT's slots used again, and the products offered to the GPU
+
+**G2**, `test_intelgpu_decode` in `host`, 44 -> 56: the GTT's slots
+(`igpu_slots_*` in `intelgpu_decode.c`) - a request rounded to a megabyte's
+256 slots; a run given back used before the mark rises, its front taken;
+given back again, joined to what was left; a neighbour joined; the last run
+reaching the mark handing everything past it back; 1.6 GB taken and given
+back a hundred times from the same slot; more than the table refused; runs
+apart kept up to 64. **Control**: a run given back kept nowhere - 7 of 12.
+The driver takes its slots from these now, and `GPU_OP_BUFFER_IMPORT` takes
+`first_page` and `pages`, a run of a region's pages, nought for all as
+before - so every importer that was is unchanged.
+
+**G3**, `test_llm --gpu` in `host`, new: the tiny phi-2 in Q4_0 with every
+product offered to the kit's GPU path (`llm_gpu.c`), the device behind it
+the emulator, and the kernel the bytes the server is built with
+(`build/llmgpu/llmgpu_kernels.h`, from `llmgpu.lua` by
+`tools/llmgpu_header.lua`). All 82 of llama.cpp's checks pass so, and the
+new one: a question of more than one batch and two tokens after, the
+logits the processor's alone to the bit, with products taken by the GPU
+(6 there; the tiny model's other weights have an odd number of blocks to a
+row, and stay on the processor, as designed).
+
+**Control**: every sum scaled by 1.001 in the kernel - the new check
+fails, and only it: llama.cpp's tolerances do not see it. Two gentler
+controls did not bite, and why is worth keeping: a sum taken in another
+order is a bit or two off, and the next layer reads its input as Q8_0,
+whose rounding to eight bits swallows that nearly always; and one added to
+every sum is taken away whole by the next layer norm, which subtracts the
+mean. So the kernel's exactness is held by 18.727's test, row by row, and
+this one holds that the products are taken there and the answer is the
+same.
+
+**The gate**: 105 of 106 in 10:44. `x86-bluetooth` listed two of its three simulated devices under load, and passed 24 of 24 alone; it is in the roadmap.

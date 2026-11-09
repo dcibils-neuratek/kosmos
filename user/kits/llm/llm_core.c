@@ -1106,10 +1106,21 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
   struct product p = { m, w, bias ? (const float *)(const void *)bias->data : NULL, x, x_room,
                        out_room, out, n };
 
+  /* Offered to the GPU first (X7): the same sums, to the bit, or no. */
+  if (m->product && w->type == LLM_Q4_0
+      && m->product(m->product_ctx, w, m->xq, m->xq_room, m->xs, m->xs_room, n, p.b, out, out_room) == 0)
+    return;
+
   if (m->run && m->parts > 1 && w->ne[1] >= 256u * m->parts)
     m->run(m->run_ctx, product_part, &p, m->parts);
   else
     product_rows(&p, 0, w->ne[1]);
+}
+
+void llm_offload(struct llm_model *m, llm_product_fn *product, void *ctx)
+{
+  m->product = product;
+  m->product_ctx = ctx;
 }
 
 unsigned llm_loops_have(void)

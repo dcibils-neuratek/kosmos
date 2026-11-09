@@ -6487,7 +6487,10 @@ if role == ROLE_INIT then
   --
   -- And `/Models` fourth, where the machine has the drive: then the models
   -- are read from there, and from `/Home/Models` where it has not.
-  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP,
+  --
+  -- And the GPU's driver third (`xavier.md` X7), which answers that there
+  -- is no GPU on a machine without one - so it is always there to ask.
+  start("the LLM server", ROLE_LLM, { APPFS_EP, MODELS_DISK_EP, CONSOLE_EP, GPU_EP,
                                       MODELS_WORD and MODELS_EP or nil })
 
   --

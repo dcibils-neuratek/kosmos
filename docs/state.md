@@ -27,6 +27,22 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
 
 **Next**: G1, the kernel in the emulator.
 
+## 9 November, evening: X7 G1-G3, the products offered to the GPU (0.11.333-0.11.334, not pushed)
+
+- **0.11.333, G1**: `llmgpu.lua`'s `q4_0` kernel in `kc` (with `asfloat`),
+  held in the emulator to `llm_dot_q4_0` to the bit, SIMD8 and SIMD16,
+  with a control (18.727).
+- **0.11.334, G2 and G3**: the intelgpu driver imports a run of a region's
+  pages and gives GTT slots back (`igpu_slots`); the LLM Kit has a hook,
+  `llm_offload`, and `llm_gpu.c` hands every Q4_0 product with an even
+  number of blocks to a device - the GPU's driver in the LLM server, the
+  emulator in `test_llm --gpu`, whose logits are the processor's
+  byte for byte. Xavier's two GPU switches and `llm set gpu` turn it on.
+  Under QEMU there is no GPU and the switches are disabled (18.728).
+
+**Next**: G4 - netboot the M700, `llm set gpu read+write`, phi-2's answer
+the same as the processor's, and the speeds beside four cores with AVX2.
+
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 
 - **0.11.331**: `wm llmmon`, as drawn in `xavier.html`. The LLM server

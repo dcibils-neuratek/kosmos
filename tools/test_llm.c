@@ -44,6 +44,9 @@
  */
 
 #include "llm_core.h"
+#include "llm_gpu.h"
+#include "eu_emu.h"
+#include "../user/include/gpuproto.h"
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -71,6 +74,146 @@ static void *alloc(void *ctx, size_t bytes)
 {
   (void)ctx;
   return calloc(1, bytes ? bytes : 1);
+}
+
+/*
+ * **The GPU, emulated** (`docs/xavier.md` X7 G3): `--gpu` offers every
+ * product to the kit's GPU path, and the device behind it is the emulator
+ * of the execution units (`eu_emu.c`) - the same kernel bytes the LLM
+ * server hands the M700's driver. Then every check below is the GPU's, and
+ * `check_gpu` holds its logits to the processor's to the bit.
+ */
+#define EMU_BUFFERS 600
+
+static struct eu_buffer emu[EMU_BUFFERS];
+static uint32_t emu_n = 1;                  /* nought is no buffer, as the driver's */
+static const uint32_t *emu_kernel;
+static uint32_t emu_kernel_bytes;
+static uint64_t emu_instructions;
+
+static const char *emu_take(uint8_t *bytes, size_t size, uint32_t *id)
+{
+  if (emu_n == EMU_BUFFERS) return "the emulator's buffers are full";
+
+  emu[emu_n].bytes = bytes;
+  emu[emu_n].width = 1024;
+  emu[emu_n].pitch = 4096;
+  emu[emu_n].height = (uint32_t)((size + 4095) / 4096);
+  emu[emu_n].view = GPU_VIEW_BYTES;
+  *id = emu_n++;
+  return NULL;
+}
+
+static const char *emu_kernel_given(void *ctx, const uint8_t *code, size_t bytes, uint32_t *id)
+{
+  (void)ctx;
+  emu_kernel = (const uint32_t *)(const void *)code;
+  emu_kernel_bytes = (uint32_t)bytes;
+  *id = 1;
+  return NULL;
+}
+
+static const char *emu_import(void *ctx, const void *at, size_t bytes, uint32_t *id, uint32_t *offset)
+{
+  (void)ctx;
+  *offset = 0;
+  return emu_take((uint8_t *)(uintptr_t)at, bytes, id);
+}
+
+static const char *emu_buffer(void *ctx, size_t bytes, uint32_t *id, void **cpu)
+{
+  uint8_t *b = calloc(1, (bytes + 4095) / 4096 * 4096);
+
+  (void)ctx;
+  if (!b) return "no memory";
+  *cpu = b;
+  return emu_take(b, bytes, id);
+}
+
+static void emu_forget(void *ctx, uint32_t id)
+{
+  (void)ctx;
+  free(emu[id].bytes);
+  emu[id].bytes = NULL;
+}
+
+static const char *emu_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t groups,
+                           const uint32_t *buffers, uint32_t nbuffers, const void *constants,
+                           size_t nconstants)
+{
+  static uint8_t padded[GPU_RUN_CONSTANTS];
+  struct eu_buffer bound[GPU_RUN_BUFFERS];
+  struct eu_run r;
+  struct eu_stats st;
+  uint32_t at = 0;
+  const char *why;
+
+  (void)ctx;
+  (void)kernel;
+  memset(&r, 0, sizeof r);
+  memset(padded, 0, sizeof padded);
+  memcpy(padded, constants, nconstants);
+
+  for (uint32_t i = 0; i < nbuffers; i++) bound[i] = emu[buffers[i]];
+
+  r.kernel = emu_kernel;
+  r.bytes = emu_kernel_bytes;
+  r.simd = simd;
+  r.groups_x = groups;
+  r.groups_y = 1;
+  r.buffers = bound;
+  r.nbuffers = nbuffers;
+  r.constants = padded;
+  r.nconstants = (uint32_t)((nconstants + 31) & ~(size_t)31);
+  r.most_steps = 2000000000u;
+
+  if ((why = eu_emulate(&r, &st, &at)) != NULL) return why;
+
+  emu_instructions += st.instructions;
+  return NULL;
+}
+
+static struct llm_gpu gpu;
+static int with_gpu;
+
+/* The GPU's logits held to the processor's, to the bit, over a question of
+ * more than one batch: fed a batch at a time, so the product takes many
+ * inputs at once, and a token at a time after it. */
+static void check_gpu(struct llm_model *m)
+{
+  static int32_t t[512];
+  static float theirs[60000];
+  const char *q = "Instruct: Name three colours of the rainbow, and say why the sky is blue.\nOutput:";
+  int n = llm_tokenize(m, q, strlen(q), 1, t, 512);
+  uint64_t before = gpu.products;
+  char what[200];
+
+  if (n <= 0 || m->n_vocab > sizeof theirs / sizeof *theirs) {
+    check(0, "gpu: the question would not tokenize");
+    return;
+  }
+
+  /* On the GPU: the question as a batch, then two tokens after. */
+  llm_reset(m);
+  int ok = llm_step_batch(m, t, (uint32_t)n) == 0;
+  ok = ok && llm_step(m, 13) == 0 && llm_step(m, 464) == 0;
+  memcpy(theirs, m->logits, m->n_vocab * sizeof *theirs);
+  uint64_t taken = gpu.products - before;
+
+  /* And on the processor alone. */
+  llm_offload(m, NULL, NULL);
+  llm_reset(m);
+  ok = ok && llm_step_batch(m, t, (uint32_t)n) == 0;
+  ok = ok && llm_step(m, 13) == 0 && llm_step(m, 464) == 0;
+  llm_offload(m, llm_gpu_product, &gpu);
+
+  int same = ok && memcmp(theirs, m->logits, m->n_vocab * sizeof *theirs) == 0;
+  snprintf(what, sizeof what, "gpu: %d tokens as a batch and two after, the GPU's logits the "
+           "processor's to the bit (%llu products on the GPU)", n, (unsigned long long)taken);
+  check(same && taken > 0, what);
+  printf("gpu: %llu products on the GPU, %llu left to the processor (%s), %llu instructions emulated\n",
+         (unsigned long long)gpu.products, (unsigned long long)gpu.declined,
+         gpu.declined ? gpu.why : "none", (unsigned long long)emu_instructions);
 }
 
 static double now(void)
@@ -454,8 +597,14 @@ out:
 
 int main(int argc, char **argv)
 {
+  if (argc > 1 && !strcmp(argv[1], "--gpu")) {
+    with_gpu = 1;
+    argv++;
+    argc--;
+  }
+
   if (argc < 3) {
-    fprintf(stderr, "usage: test_llm MODEL.gguf REFERENCE.txt\n");
+    fprintf(stderr, "usage: test_llm [--gpu] MODEL.gguf REFERENCE.txt\n");
     return 2;
   }
 
@@ -486,6 +635,18 @@ int main(int argc, char **argv)
 
   printf("opened %.*s: %u layers, %u wide, %u heads, %u tokens, %.2f s\n", (int)m.name.n,
          m.name.s, m.n_layer, m.n_embd, m.n_head, m.n_vocab, now() - t0);
+
+  if (with_gpu) {
+    static const struct llm_gpu_device dev = { NULL, emu_kernel_given, emu_import, emu_buffer,
+                                               emu_forget, emu_run };
+
+    if (llm_gpu_begin(&gpu, &dev, why, sizeof why) != 0) {
+      printf("FAIL: the GPU path would not begin: %s\n", why);
+      return 1;
+    }
+
+    llm_offload(&m, llm_gpu_product, &gpu);
+  }
 
   static char line[1 << 16];
   static int32_t got[4096];
@@ -615,6 +776,7 @@ int main(int argc, char **argv)
   check_held(&m);
   check_batch(&m);
   check_parallel(&m);
+  if (with_gpu) check_gpu(&m);
 
   printf("\n%d steps a near-tie chosen the other way\n", ties);
   printf("%d steps in %.1f s: %.2f tokens a second, scalar, one thread, on the Mac\n", steps,
@@ -625,9 +787,10 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  printf("PASS: %d checks on the LLM Kit against llama.cpp (%.*s: every text's tokens, plain and "
+  printf("PASS: %d checks on the LLM Kit against llama.cpp%s (%.*s: every text's tokens, plain and "
          "special; one token's logits within %.2f; each prompt's top token and ten largest logits "
          "within %.2f; every answer step llama.cpp's choice or a near-tie within %.2f, %d of "
-         "them)\n", checks, (int)m.name.n, m.name.s, EXACT, TOLERANCE, NEAR, ties);
+         "them)\n", checks, with_gpu ? ", its products on the GPU in the emulator" : "",
+         (int)m.name.n, m.name.s, EXACT, TOLERANCE, NEAR, ties);
   return 0;
 }

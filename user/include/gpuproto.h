@@ -220,7 +220,15 @@ struct gpu_request {
     uint32_t op;
     uint32_t seconds;               /* cursor test: how long it shows, 1 to 30 */
     int32_t  x, y;                  /* the pointer, in the screen's pixels */
-    uint32_t hot_x, hot_y;          /* the point of the picture that is there */
+    union {
+        struct {
+            uint32_t hot_x, hot_y;  /* the cursor: the point of the picture that is there */
+        };
+        struct {                    /* BUFFER_IMPORT (X7 G2): the region's pages from */
+            uint32_t first_page;    /* `first_page`, `pages` of them - nought, the rest */
+            uint32_t pages;
+        };
+    };
     uint32_t offset, pitch;         /* the picture, in the region that came */
 };
 

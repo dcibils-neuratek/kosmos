@@ -216,4 +216,35 @@ void igpu_decode_wm(uint32_t v, bool *enabled, unsigned *lines, unsigned *blocks
 /* One global GTT entry: whether present, and the physical page it maps. */
 bool igpu_decode_gtt(uint64_t entry, uint64_t *physical);
 
+/*
+ * **The global GTT's slots, handed out and given back** (`docs/xavier.md`
+ * X7 G2). They were handed out from a mark that only rose, so a buffer
+ * forgotten left its slots empty and never used again: a 1.6 GB model
+ * loaded twice would have run the 4 GB table out. Now each run of slots
+ * given back is kept, joined to its neighbours, and the first one large
+ * enough is used before the mark rises.
+ *
+ * Every run begins a megabyte from the last - 256 slots, which linear
+ * surfaces on Gen9 want at least a quarter of - so a request is rounded up
+ * to 256 slots, and `next` is a multiple of 256 from the start.
+ */
+#define IGPU_SLOTS_FREE 64u              /* runs given back and kept apart */
+
+struct igpu_slots {
+    unsigned long next;                  /* the mark: every slot past it is free */
+    unsigned long end;                   /* past the last slot there is */
+    unsigned      nfree;
+    struct { unsigned long first, count; } free[IGPU_SLOTS_FREE];
+};
+
+void igpu_slots_init(struct igpu_slots *s, unsigned long next, unsigned long end);
+
+/* A run of at least `count` slots: its first, or false when there is none. */
+bool igpu_slots_take(struct igpu_slots *s, unsigned long count, unsigned long *first);
+
+/* A run given back. With every one of the kept runs apart from each other
+ * and the table full of them, the smallest is dropped - its slots lost,
+ * as all of them were before - rather than the one given back. */
+void igpu_slots_give(struct igpu_slots *s, unsigned long first, unsigned long count);
+
 #endif
