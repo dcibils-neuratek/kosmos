@@ -29573,3 +29573,27 @@ failed - the check doing its work.
   just kept - so it passed with the conversation not carried at all. With
   `xavier: carried in` checked, 1 of 37.
 
+## 18.724 The desktop chosen in Preferences, and no chooser at boot
+
+`x86-desktops` (`tools/run_desktops.py`) rewritten with the change: a bare
+`wm` starts Astra with the loader and no cards ("chooser: starting Astra,
+as the setting says"), the loader hearing each piece and a program that
+does not exist told as failed; Preferences opened as a person opens it -
+Super+Space, its name, Return - its scrollbar dragged to the Desktop row,
+the row's choice opened and Pewter chosen: every window closed and Pewter
+started with the loader, no cards; then Switch Desktop in Pewter's menu
+bar shows the cards with Pewter chosen last. 15 checks.
+
+Two things the suite found on the way: typing `wm preferences` at the
+prompt does nothing once a bare `wm` has the keyboard - the keys went to
+Tracker, whose space bar opened Quick Look - and Preferences' wheel stops
+seven notches down Appearance, where a control under the pointer takes it
+(roadmap). Hence the launcher and the scrollbar.
+
+**Controls**:
+
+- **A bare `wm` showing the cards again**: 12 of 15, Astra never started.
+- **Preferences' switch ending on the cards**: 2 of 15, "choosing Pewter
+  in Preferences did not switch to it with no cards: switch True, started
+  False", and Switch Desktop after it, which never came.
+

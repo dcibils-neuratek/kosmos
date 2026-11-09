@@ -391,6 +391,16 @@ local APPLY = {
     return fs.send("/Running/wm", { type = "wallpaper_fit", fit = fit })
   end,
 
+  -- The desktop: kept, and switched to now, by the window manager, which
+  -- closes every window - this one too - and starts it with its loader.
+  desktop = function(name)
+    local r, why = fs.send("/Running/wm", { type = "desktop", switch = name })
+
+    if r and r.ok then return true end
+
+    return false, tostring(r and r.error or why)
+  end,
+
   -- Every Magnet row (`live = "magnet"`): its own key and the value.
   magnet = function(value, it)
     return fs.send("/Running/wm", { type = "magnet", set = { [it.key] = value } })
@@ -1654,6 +1664,9 @@ rebuild = function()
                 it.key, SIDE + c.x, c.y + 10, 200))
         elseif it.kind == "try_double_click" then
           print(("preferences folder at %d,%d"):format(SIDE + c.x + 19, c.y + 17))
+        elseif it.live == "desktop" then
+          print(("preferences desktop: %s at %d,%d"):format(tostring(settings.get(it)),
+                SIDE + c.x + c.w // 2, c.y + c.h // 2))
         end
       elseif taken > 0 then
         local shown = ui.label{ x = right - taken, y = y + (h - ch) // 2,

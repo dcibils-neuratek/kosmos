@@ -453,7 +453,8 @@ was being built: "make sure we remove the desktop selector upon booting, i
 want it to be a setting in preferences from now on so it always boots the
 selected desktop until changed". **Switch Desktop...** stays in the menus
 and still shows the cards; what is chosen there is kept the same way, so
-it is the desktop the next boot starts.
+it is the desktop the next boot starts. **Built in 0.11.330** (`testing.md`
+18.724).
 
 **P2 built, 8 November 2026.** A desktop file says its `chrome`, and
 Pewter's is `platinum`: every window's header draws Platinum's bar, close
@@ -11141,3 +11142,60 @@ The order that works:
 And if something stretches past what is tolerable, **the way out is to cut
 scope, not to abandon**. A desktop without SMP is still a desktop, and it
 was one for a year.
+
+**A 3D view of the system, as it is built and as it runs - ASKED on 8
+November 2026, to be designed.** Diego: "i want to create a 3d operating
+system visualizer that shows the microkernel, services, drivers and else
+in a way that can be seen, rotated, expanded, zoomed into, zoome out",
+"Perhaps like a planetary thing where the microkernel is at the center
+and drivers, apps, services, etc are shown outside the core and then apps
+are shown on the outer side of the system", and "i like to see how the os
+is built and running in a graphical way". So: Nebula at the centre;
+drivers, servers and kits in the rings around it; applications on the
+outermost; each a body that can be turned, zoomed and opened to show what
+is inside it, and drawn from the running system rather than a fixed
+picture - the processes, their threads and what each holds a capability
+to. An application, so it is designed first: its feature set, an HTML
+mockup, an architecture document and diagram (CLAUDE.md, *How to work
+here*), before any code. Its likely parts are what exists: the 3D Kit and
+Cafesa3D's scene, Solar's orbits, and `sysinfo`, `/Running` and the LLM
+Monitor's numbers for what is alive.
+
+**The dock's icons magnified under the pointer - ASKED on 8 November
+2026, to be drawn.** Diego: "IS ANYWAY. we can o the magnification
+animation of icons on the bottom bar when moving the mouse over the
+icons?", and "a setting in preferences that allow to magnify between off
+and large (a slider) icons upon hoverig them". So: when the bar is the
+dock at the foot of the screen, the icon under the pointer grows and its
+neighbours less with distance, following the pointer as it moves along,
+and settles back when it leaves; Preferences' Appearance page gets a
+Magnification slider from Off to Large beside the dock's other rows. Kept
+to what the dock already draws - the Deskbar's own icons, at the sizes
+the icon exports have, so a large icon is drawn at its size rather than
+stretched - and held to the frame: the growth is a few icons redrawn per
+pass, not the whole bar. Drawn in `docs/dock.html` before it is built.
+
+**Xavier in the middle of the top bar, as a drawer - ASKED on 8 November
+2026, to be drawn.** Diego: "can we draw a simple icon in the middle of
+the top bar that acts like a drawer where xavier anywhere lives?", "i like
+the idea of having like that area of the screen to be a launcher of
+xavier", and "xavier can open as a drawer and dosplay its xavier anywhere
+UI for the user to type in a question and get a response right away". So:
+a small mark at the centre of the bar across the top - Astra's Deskbar
+when it is at the top, Pewter's menu bar - and a press on it slides
+Xavier's box (Super+X's, 0.11.329) down from under it, the field already
+focused; the answer is written in it as it comes, and a second press, a
+press elsewhere or Escape folds it back up. The same box and conversations
+as Super+X - one door to Xavier from anywhere, two ways in. What is open
+for the drawing: where it sits when the bar is the dock at the foot (the
+dock has no middle to spare), and whether the mark says when an answer
+is being written. Drawn in `docs/xavier.html` before it is built.
+
+**Preferences' wheel stops partway down a long page** - found 8 November
+2026, by the desktops suite: on Appearance the wheel scrolled seven
+notches and no further, while the scrollbar's thumb dragged went to the
+end; the page's last row, Desktop, could not be reached with the wheel.
+Most likely a control that takes the wheel for itself - the wallpapers'
+gallery - coming under the pointer as the page moves. To fix: a control
+that cannot scroll gives the wheel back to the page.
+

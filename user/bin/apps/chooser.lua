@@ -4,11 +4,13 @@
 -- kosmos: name Desktops
 -- kosmos: section none
 --
--- chooser: which desktop to start, at every boot (`docs/pewter.md` P1,
--- drawn in `docs/desktops.html`, agreed 7 November 2026).
+-- chooser: which desktop to start (`docs/pewter.md` P1, drawn in
+-- `docs/desktops.html`, agreed 7 November 2026), and the loader over it.
 --
---   wm                 the window manager starts this when it is named
---                      nothing - which is how the machine boots
+--   chooser            the cards: Switch Desktop starts this
+--   chooser --start    no cards: the desktop the `desktop` setting names,
+--                      started at once with the loader - how the machine
+--                      boots since 8 November, and Preferences' Desktop row
 --
 -- The whole screen, one card for each file in `/Kosmos/Desktops`, the one
 -- used last chosen already. Left and right, Return; or a click on a card,
@@ -83,6 +85,15 @@ for i, d in ipairs(list) do
 end
 
 print(("chooser: %d desktop%s, %s chosen last"):format(#list, #list == 1 and "" or "s", last))
+
+-- **No question asked** when started to start: the one chosen, if it is
+-- still there - a desktop file taken away leaves the cards to choose from.
+local START = tostring(args or ""):match("%-%-start") ~= nil
+
+if START and not (list[sel] and list[sel].name == last) then
+  print(("chooser: %s is not here to start, so the cards"):format(last))
+  START = false
+end
 
 --------------------------------------------------------------------------
 -- The loader's state: nil until a desktop is chosen.
@@ -393,6 +404,11 @@ win.on_event = function(_, ev)
   end
 
   return true
+end
+
+if START then
+  print(("chooser: starting %s, as the setting says"):format(last))
+  start()
 end
 
 function win:on_frame()

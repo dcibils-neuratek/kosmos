@@ -2,11 +2,11 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-08 (0.11.329, not pushed; Xavier's Settings, a model for each conversation, and Super+X)
+Last updated: 2026-11-08 (0.11.330, not pushed; Xavier's Settings, a model for each conversation, Super+X, the desktop in Preferences)
 
 ---
 
-## 8 November, night: Settings (0.11.326-0.11.329, not pushed)
+## 8 November, night: Settings (0.11.326-0.11.330, not pushed)
 
 The agreed order for the rest of Xavier is: Settings, then a model for
 each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
@@ -29,9 +29,18 @@ each conversation, asking from anywhere, the LLM Monitor, Models, the GPU
 - **0.11.329, from anywhere**: Super+X opens Xavier's box over whatever is
   in front; every conversation begins with the day and the machine (18.723).
 
-**Next**: the desktop chosen in Preferences, with no chooser at boot
-(Diego asked twice on 8 November; roadmap, under Pewter), then the LLM
-Monitor, Models, the GPU (X7) and voice.
+- **0.11.330, the desktop chosen in Preferences**: no chooser at boot - the
+  `desktop` setting's desktop starts with the loader; Preferences' Desktop
+  row switches at once and keeps it; Switch Desktop still shows the cards
+  (18.724).
+
+Asked the same night and put in the roadmap, each to be drawn first: a 3D
+view of the system, the dock's icons magnified under the pointer with a
+slider in Preferences, and Xavier as a drawer in the middle of the top
+bar. Found: Preferences' wheel stops partway down a long page.
+
+**Next**: the LLM Monitor, Models, the GPU (X7) and voice - and the three
+drawings above when Diego wants them.
 
 ## 8 November, evening: making the LLM fast (0.11.323-0.11.325, not pushed)
 

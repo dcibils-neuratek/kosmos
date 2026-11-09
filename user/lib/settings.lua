@@ -304,6 +304,34 @@ settings.ITEMS = {
         choices = { { 16, "Small" }, { 32, "Normal" }, { 64, "Large" } } },
 
   ----------------------------------------------------------------- displays
+  --
+  -- **The desktop** (`docs/pewter.md`, *At every boot*; Diego, 8 November:
+  -- "i want it to be a setting in preferences from now on so it always
+  -- boots the selected desktop until changed"). The `desktop` file the
+  -- window manager and the chooser read (`desktops.lua`); chosen here, the
+  -- machine switches to it at once (`preferences.lua`, `APPLY.desktop`).
+  --
+  item{ category = "appearance", group = "Desktop",
+        label = "Desktop", note = "Started at every boot. Chosen here, it starts now",
+        kind = "choice", file = "desktop", key = "name", live = "desktop",
+        default = "Astra", keep_default = true,
+        choices = (function()
+          -- Every file in `/Kosmos/Desktops`, Astra first; Astra alone
+          -- where they cannot be read, as on the Mac, since it is always one.
+          local ok, names = pcall(function()
+            return use("/Kosmos/Libraries/desktops.lua").list()
+          end)
+          local out = {}
+
+          for _, name in ipairs(ok and type(names) == "table" and names or {}) do
+            out[#out + 1] = { name, name }
+          end
+
+          if #out == 0 then out[1] = { "Astra", "Astra" } end
+
+          return out
+        end)() },
+
   item{ category = "displays", group = "Screen",
         label = "Resolution",
         note = "The largest the firmware offers, or video=WxH at boot",

@@ -4370,6 +4370,10 @@ end
 -- it has not; what the desktop started that has no window is ended; and
 -- when the screen is empty the chooser is started again.
 --
+-- `{ type = "desktop", switch = "Pewter" }` is Preferences' Desktop row:
+-- the choice kept, the screen emptied the same way, and then that desktop
+-- started with the loader over it, as a boot starts it - no chooser.
+--
 -- What this lets a caller do is what `launch` already does - start a
 -- program by name - and close windows, which `power` does to every one.
 --
@@ -4521,11 +4525,23 @@ function D.start(name, watcher)
 end
 
 handlers.desktop = function(req)
-  if req.name == false then
+  if req.switch ~= nil then
+    local d, why = D.desktops.read(req.switch)
+
+    if not d then return { ok = false, error = tostring(why) } end
+
+    local kept, cannot = D.desktops.remember(d.name)
+
+    if not kept then return { ok = false, error = "not kept: " .. tostring(cannot) } end
+
+    D.switch_to = d.name
+  end
+
+  if req.name == false or req.switch ~= nil then
     if D.switching then return { ok = true } end
 
     D.switching = true
-    print("wm: switching desktop")
+    print("wm: switching desktop" .. (D.switch_to and (" to " .. D.switch_to) or ""))
 
     local now = sys.ticks()
 
@@ -4586,8 +4602,15 @@ function D.step()
 
   if D.switching and #windows == 0 then
     D.switching = false
-    print("wm: the screen is empty, choosing again")
-    D.launch_entry("chooser")
+
+    if D.switch_to then
+      print("wm: the screen is empty, starting " .. D.switch_to)
+      D.switch_to = nil
+      D.launch_entry("chooser:--start")
+    else
+      print("wm: the screen is empty, choosing again")
+      D.launch_entry("chooser")
+    end
   end
 end
 
@@ -7427,13 +7450,17 @@ do
   wanted = table.concat(rest, ",")
 
   --
-  -- **Nothing named: the chooser** (`docs/pewter.md` P1, agreed 7
-  -- November 2026: "every boot"), which offers the desktops in
-  -- `/Kosmos/Desktops` and asks for one - `wm Astra.desktop` starts one
-  -- without it, and a list of programs starts those and nothing else, as
-  -- it always has.
+  -- **Nothing named: the desktop chosen**, the one the `desktop` setting
+  -- names, with the chooser's loader over it while it starts and no
+  -- question asked (`docs/pewter.md`, *At every boot*). It asked at every
+  -- boot until 8 November 2026 - Diego: "make sure we remove the desktop
+  -- selector upon booting, i want it to be a setting in preferences from
+  -- now on so it always boots the selected desktop until changed".
+  -- Preferences' Desktop row changes it, and so does Switch Desktop.
+  -- `wm Astra.desktop` starts one without the loader, and a list of
+  -- programs starts those and nothing else, as it always has.
   --
-  if wanted == "" then wanted = "chooser" end
+  if wanted == "" then wanted = "chooser:--start" end
 
   if TRACE then
     print(("wm: tracing, screen %dx%d"):format(W, H))
