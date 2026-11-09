@@ -1650,3 +1650,42 @@ each new word arrives with an arc back to the word its chosen head
 looked at. Each layer is a column that brightens where its heads look
 hard. Click a head to follow it; Left and Right step back through the
 last 256 tokens.
+
+## 9 November - models from Hugging Face, from Xavier's window
+
+**In short.** Xavier's window has a Models page now: the models on this
+machine, a search of Hugging Face, and a model brought here, paused,
+picked up again and loaded - all from the window, without it ever waiting
+on the network.
+
+**What.** The model menu in Xavier's header ends with "Get more in
+Models...". The page lists what is in `/Models`, with Load and Remove, and
+underneath, what Hugging Face has that matches the words searched for: for
+each repository, the one file the LLM Kit would take from it - the smallest
+it can read - its size, and Get. A download shows its bar and a Pause
+button; Go on picks it up from where it stopped, and the file is checked
+against the fingerprint Hugging Face publishes before it can be loaded.
+
+**Why it is built the way it is.** The rule here is that a window never
+waits on the network, because a window that waits stops drawing. The
+first plan was to fetch the search a little at a time between the
+window's frames. But Hugging Face is a secure site, and setting up a
+secure connection is a conversation the connection has to wait through.
+So the search and each download run as `models` - the same program as at
+the prompt - in a process of their own, writing how far they have got to a
+small file the window reads four times a second.
+
+**And which models it offers.** Tried on the M700 against the real Hugging
+Face, the search for "phi" offered Phi-4, Phi-3.5 and a Qwen - and the
+engine can run none of them: it has phi-2's arithmetic and no other. Hugging
+Face says which architecture each repository holds, so the page now asks,
+and a model the engine cannot run is listed with that reason instead of a
+Get button.
+
+**Visible.** In Xavier's window, the model menu's last line; and `models
+search` at the prompt now says each repository's architecture.
+
+**Measured.** On the M700 the search came back in 1.7 seconds, with the
+window drawing all the while. In the test, a download cut off a third of
+the way in, resumed, paused at five and a half megabytes of eight and a
+half, and finished whole and checked.

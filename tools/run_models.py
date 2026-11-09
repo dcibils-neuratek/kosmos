@@ -37,6 +37,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -46,7 +47,7 @@ import scratch                                              # noqa: E402
 import run_tls                                              # noqa: E402
 
 REPO = "kosmos-test/tiny-phi2-GGUF"
-GOOD = "tiny-phi2.F16.gguf"                 # 8.6 MB: more than two of the 4 MB pieces
+GOOD = "tiny-phi2.F16.gguf"                 # 8.2 MB: more than two of the 4 MB pieces
 WRONG = "tiny-phi2.Q8_0.gguf"               # listed with a sum that is not its own
 NAME = "kosmos-test.local"
 
@@ -103,6 +104,103 @@ def reply(conn, status, body, kind="application/json", extra=""):
     return True
 
 
+def stand_in(work, repos, found, cut=None, slow=False):
+    """**Hugging Face, stood in for** by two HTTPS servers on this Mac.
+
+    `repos` is `{repo: {listed name: (bytes, sha256)}}` - a sum that is not
+    the bytes' own is a file listed wrong; `found` is what a search for
+    anything answers. The API sends a file's address to the store with a
+    302; the store serves it with Ranges, and cuts the first download of
+    `cut` off a third of the way in. `slow` sends at about a megabyte a
+    second, so a window has time to press Pause.
+
+    Returns the API's port and what each was asked."""
+    seen = {"store": [], "api": [], "cut": False}
+    by_name = {}
+
+    for repo, listing in repos.items():
+        for name, (body, _) in listing.items():
+            by_name[name] = body
+
+    def store(conn, head):
+        first = head.split("\r\n", 1)[0]
+        seen["store"].append(head)
+        m = re.match(r"GET /cas/([^? ]+)\?sig=\w+ HTTP/1\.1", first)
+
+        if not m or m.group(1) not in by_name:
+            return reply(conn, "404 Not Found", b"no such object", "text/plain")
+
+        body = by_name[m.group(1)]
+        r = re.search(r"\r\nRange: bytes=(\d+)-\r\n", head)
+        start = int(r.group(1)) if r else 0
+        part = body[start:]
+
+        if r:
+            conn.sendall(("HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\n"
+                          "Content-Length: %d\r\nContent-Range: bytes %d-%d/%d\r\n\r\n"
+                          % (len(part), start, len(body) - 1, len(body))).encode())
+        else:
+            conn.sendall(("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                          "Content-Length: %d\r\n\r\n" % len(body)).encode())
+
+        if m.group(1) == cut and not seen["cut"]:
+            # A third, then gone: the connection drops as a network does.
+            seen["cut"] = True
+            conn.sendall(body[:len(body) // 3])
+            return False
+
+        step = 128 * 1024 if slow else len(part)
+
+        for at in range(0, len(part), max(1, step)):
+            conn.sendall(part[at:at + step])
+            if slow:
+                time.sleep(0.12)
+
+        return True
+
+    store_port = server(work, store)
+
+    def api(conn, head):
+        first = head.split("\r\n", 1)[0]
+        seen["api"].append(first)
+
+        if first.startswith("GET /api/models?search="):
+            return reply(conn, "200 OK", json.dumps(found).encode())
+
+        for repo, listing in repos.items():
+            if first.startswith("GET /api/models/%s/tree/main " % repo):
+                tree = [{"type": "file", "path": "README.md", "size": 20}]
+
+                for name, (body, sha) in sorted(listing.items()):
+                    tree.append({"type": "file", "path": name, "size": len(body),
+                                 "lfs": {"oid": sha, "size": len(body)}})
+
+                return reply(conn, "200 OK", json.dumps(tree).encode())
+
+            m = re.match(r"GET /%s/resolve/main/([^ ]+) HTTP" % re.escape(repo), first)
+
+            if m:
+                return reply(conn, "302 Found", b"", "text/plain",
+                             "Location: https://10.0.2.2:%d/cas/%s?sig=abc123\r\n"
+                             % (store_port, m.group(1)))
+
+        return reply(conn, "404 Not Found", b"{}")
+
+    return server(work, api), seen
+
+
+def authority(work):
+    """The test's authority in DER, for the guest's `/Home/Preferences/Authorities`."""
+    der = os.path.join(work, "test.der")
+    subprocess.run(["openssl", "x509", "-in", os.path.join(work, "ca.pem"), "-outform", "DER",
+                    "-out", der], check=True, capture_output=True)
+    return der
+
+
+def sha(body):
+    return hashlib.sha256(body).hexdigest()
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     models_dir = os.path.join(ROOT, "build", "models")
@@ -120,72 +218,16 @@ def main():
         with open(os.path.join(models_dir, f), "rb") as fh:
             files[f] = fh.read()
 
-    # The Q4_0 is listed as Q4_K_M, a quantisation the kit does not read.
-    listed = {GOOD: GOOD, WRONG: WRONG, "tiny-phi2.Q4_K_M.gguf": "tiny-phi2.Q4_0.gguf"}
-    sums = {GOOD: hashlib.sha256(files[GOOD]).hexdigest(),
-            WRONG: "0" * 64,
-            "tiny-phi2.Q4_K_M.gguf": hashlib.sha256(files["tiny-phi2.Q4_0.gguf"]).hexdigest()}
-    seen = {"store": [], "api": [], "cut": False}
-
-    def store(conn, head):
-        first = head.split("\r\n", 1)[0]
-        seen["store"].append(head)
-        m = re.match(r"GET /cas/([^? ]+)\?sig=\w+ HTTP/1\.1", first)
-
-        if not m or m.group(1) not in listed:
-            return reply(conn, "404 Not Found", b"no such object", "text/plain")
-
-        body = files[listed[m.group(1)]]
-        r = re.search(r"\r\nRange: bytes=(\d+)-\r\n", head)
-
-        if r:
-            start = int(r.group(1))
-            part = body[start:]
-            return reply(conn, "206 Partial Content", part, "application/octet-stream",
-                         "Content-Range: bytes %d-%d/%d\r\n" % (start, len(body) - 1, len(body)))
-
-        if m.group(1) == GOOD and not seen["cut"]:
-            # A third, then gone: the connection drops as a network does.
-            seen["cut"] = True
-            conn.sendall(("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
-                          "Content-Length: %d\r\n\r\n" % len(body)).encode())
-            conn.sendall(body[:len(body) // 3])
-            return False
-
-        return reply(conn, "200 OK", body, "application/octet-stream")
-
-    store_port = server(work, store)
-
-    def api(conn, head):
-        first = head.split("\r\n", 1)[0]
-        seen["api"].append(first)
-
-        if first.startswith("GET /api/models?search=tiny"):
-            return reply(conn, "200 OK", json.dumps([
-                {"id": REPO, "downloads": 42, "likes": 1, "tags": ["gguf"]},
-                {"id": "kosmos-test/other-GGUF", "downloads": 7, "likes": 0}]).encode())
-
-        if first.startswith("GET /api/models/%s/tree/main " % REPO):
-            tree = [{"type": "file", "path": "README.md", "size": 20}]
-
-            for f, real in sorted(listed.items()):
-                tree.append({"type": "file", "path": f, "size": len(files[real]),
-                             "lfs": {"oid": sums[f], "size": len(files[real])}})
-
-            return reply(conn, "200 OK", json.dumps(tree).encode())
-
-        m = re.match(r"GET /%s/resolve/main/([^ ]+) HTTP" % re.escape(REPO), first)
-
-        if m:
-            return reply(conn, "302 Found", b"", "text/plain",
-                         "Location: https://10.0.2.2:%d/cas/%s?sig=abc123\r\n" % (store_port, m.group(1)))
-
-        return reply(conn, "404 Not Found", b"{}")
-
-    api_port = server(work, api)
-
-    subprocess.run(["openssl", "x509", "-in", os.path.join(work, "ca.pem"), "-outform", "DER",
-                    "-out", os.path.join(work, "test.der")], check=True, capture_output=True)
+    # The Q4_0 is listed as Q4_K_M, a quantisation the kit does not read;
+    # the Q8_0 with a sum that is not its own.
+    sums = {GOOD: sha(files[GOOD]), WRONG: "0" * 64}
+    api_port, seen = stand_in(work, {REPO: {
+        GOOD: (files[GOOD], sums[GOOD]),
+        WRONG: (files[WRONG], sums[WRONG]),
+        "tiny-phi2.Q4_K_M.gguf": (files["tiny-phi2.Q4_0.gguf"], sha(files["tiny-phi2.Q4_0.gguf"])),
+    }}, [{"id": REPO, "downloads": 42, "likes": 1, "gguf": {"architecture": "phi2"}},
+         {"id": "kosmos-test/other-GGUF", "downloads": 7, "likes": 0,
+          "gguf": {"architecture": "llama"}}], cut=GOOD)
 
     with open(os.path.join(work, "README"), "w") as f:
         f.write("models are put here\n")
@@ -193,7 +235,7 @@ def main():
     disk = os.path.join(work, "disk.img")
     subprocess.run([os.path.join(ROOT, "build", "host", "lua"), os.path.join(HERE, "kfs.lua"),
                     "create", disk, "64",
-                    os.path.join(work, "test.der") + ":/Home/Preferences/Authorities/test.der",
+                    authority(work) + ":/Home/Preferences/Authorities/test.der",
                     os.path.join(work, "README") + ":/Home/Models/README"],
                    check=True, capture_output=True, cwd=ROOT)
 
@@ -251,10 +293,12 @@ def main():
     g = lambda k: said.get(k, "")                           # noqa: E731
 
     check("no models in /Home/Models" in g("empty"), "an empty folder was not said: %r" % g("empty"))
-    check(re.search(r"%s\s+42 downloads" % re.escape(REPO), g("search"))
-          and "kosmos-test/other-GGUF" in g("search"),
+    check(re.search(r"%s\s+42 downloads\s+phi2" % re.escape(REPO), g("search"))
+          and re.search(r"kosmos-test/other-GGUF\s+7 downloads\s+llama\s+a llama model: the LLM Kit "
+                        r"has a forward pass for phi2 only", g("search"))
+          and "expand%5B%5D=gguf" in seen["api"][0],
           "the search did not list the repositories: %r" % g("search"))
-    check(re.search(r"%s\s+8\.6 MB\s+F16" % re.escape(GOOD), g("files"))
+    check(re.search(r"%s\s+8\.2 MB\s+F16" % re.escape(GOOD), g("files"))
           and re.search(r"tiny-phi2\.Q4_K_M\.gguf\s+\S+ MB\s+Q4_K_M\s+the LLM Kit reads Q4_0, Q8_0, "
                         r"F16 and F32, not Q4_K_M", g("files"))
           and "README" not in g("files"),
@@ -268,13 +312,13 @@ def main():
     asked_from = [int(r.group(1)) for r in ranges if r]
     check(asked_from and 0 < asked_from[0] <= len(files[GOOD]) // 3,
           "the second get did not ask for the rest with a Range: %r" % asked_from)
-    check(("models: /Home/Models/%s, 8.6 MB, SHA-256 %s checked" % (GOOD, sums[GOOD])) in g("resumed"),
+    check(("models: /Home/Models/%s, 8.2 MB, SHA-256 %s checked" % (GOOD, sums[GOOD])) in g("resumed"),
           "the resumed download was not whole and checked: %r" % g("resumed"))
     check(re.search(r"models: %s is loaded" % re.escape(GOOD), g("load")),
           "the downloaded model would not load: %r" % g("load"))
     check(re.search(r"SHA-256 is [0-9a-f]{64}, not the 0{64} it should be - removed", g("wrong")),
           "a file with the wrong sum was not refused for it: %r" % g("wrong"))
-    check(re.search(r"%s\s+8\.6 MB\s+F16\s+loaded" % re.escape(GOOD), g("after"))
+    check(re.search(r"%s\s+8\.2 MB\s+F16\s+loaded" % re.escape(GOOD), g("after"))
           and WRONG not in g("after"),
           "after it all, the folder is not the loaded model and no wrong one: %r" % g("after"))
     check("is loaded; load another first" in g("rm"), "removing the loaded model was not refused: %r" % g("rm"))

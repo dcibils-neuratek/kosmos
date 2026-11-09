@@ -1057,13 +1057,20 @@ file the kit would take from it - Q4_0 first, then Q8_0, F16, F32 - its
 size, and **Get**, or the reason there is nothing it can read.
 
 **Nothing on it waits** (*Nothing waits on hardware*): a search and a
-repository's file list are `http.get`s stepped by the window's clock in a
-coroutine, as Packages fetches its index; a download is `models get` in a
-process of its own, `--report <file>`, which the page reads four times a
-second - its lines `got total`, then `done ok`, `done paused` or `done
-failed <why>`. **Pause** writes `<report>.stop`; the program looks for it
-between pieces of 4 MB and stops, the `.part` kept, so **Get** again goes
-on from there. The bytes never pass through the window.
+download are each `models` in a process of its own with `--report <file>`,
+which the page reads four times a second. A search's report is a line
+`repo <owner/name> <downloads>` for each of six, then `best <repo> <file>
+<bytes> <kind>` or `none <repo> <why>` for each as its files are looked
+at, then `done ok`; a download's is `got total`, then `done ok`, `done
+paused` or `done failed <why>`. **Pause** writes `<report>.stop`, which
+the program looks for as the bytes come, and stops, the `.part` kept, so
+**Go on** resumes from there. The bytes never pass through the window.
+
+*Drawn as a coroutine for the search, built as a process.* The search was
+to be `http.get` stepped by the window's clock, as Packages fetches its
+index - but Hugging Face is HTTPS, and the TLS Kit's handshake waits on
+its connection, as does the name lookup before it. Stepped in the window,
+those would be the window's waits. In a process they are nobody's.
 
 **Not as drawn**: no **Unload**. The LLM server has no operation that
 drops its model, and one model is always held once loaded; choosing

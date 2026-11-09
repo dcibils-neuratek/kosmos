@@ -181,6 +181,7 @@ SUITES = [
     Suite("x86-xavier", ["python3", "tools/run_assistant.py", X86], x86=True),
     Suite("x86-llmmon", ["python3", "tools/run_llmmon.py", X86], x86=True),
     Suite("x86-models", ["python3", "tools/run_models.py", X86], x86=True),
+    Suite("x86-modelspage", ["python3", "tools/run_modelspage.py", X86], x86=True),
 
     # Passwords (K6): a keyring made on the Mac, the window used as a person
     # would - sorted, a row, Show, a note, search, Delete asked and done.

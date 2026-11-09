@@ -88,9 +88,14 @@ local function escaped(text)
   return (tostring(text):gsub("[^%w%-%._~]", function(c) return ("%%%02X"):format(c:byte()) end))
 end
 
--- Repositories matching `term` that publish GGUF, the most downloaded first.
+-- Repositories matching `term` that publish GGUF, the most downloaded first,
+-- each with its architecture as Hugging Face read it from the files
+-- (`expand[]=gguf`, which brings the rest of what is listed only when it
+-- is asked for too) - and so whether the kit can run it, without a second
+-- request a repository.
 function models.search(term, limit)
-  local v, why = ask(("/api/models?search=%s&filter=gguf&sort=downloads&limit=%d")
+  local v, why = ask(("/api/models?search=%s&filter=gguf&sort=downloads&limit=%d"
+                      .. "&expand%%5B%%5D=gguf&expand%%5B%%5D=downloads&expand%%5B%%5D=likes")
                      :format(escaped(term or ""), limit or 20))
 
   if not v then return nil, why end
@@ -99,8 +104,14 @@ function models.search(term, limit)
 
   for _, m in ipairs(v) do
     if type(m) == "table" and type(m.id) == "string" then
+      local arch = type(m.gguf) == "table" and type(m.gguf.architecture) == "string"
+                   and m.gguf.architecture or nil
+
       out[#out + 1] = { repo = m.id, downloads = tonumber(m.downloads) or 0,
-                        likes = tonumber(m.likes) or 0 }
+                        likes = tonumber(m.likes) or 0, arch = arch,
+                        runs = arch == nil or llm.RUNS[arch] == true,
+                        why_not = arch and not llm.RUNS[arch]
+                                  and models.why_arch(arch) or nil }
     end
   end
 
@@ -136,6 +147,62 @@ function models.files(repo)
 
   table.sort(out, function(a, b) return a.file < b.file end)
   return out
+end
+
+-- The file the kit would take from a repository's list: Q4_0 first - the
+-- smallest it reads and the fastest - then Q8_0, F16, F32; nil when it
+-- reads none of them.
+local PREFERRED = { "Q4_0", "Q8_0", "F16", "F32" }
+
+function models.best(list)
+  for _, quant in ipairs(PREFERRED) do
+    for _, f in ipairs(list or {}) do
+      if f.quant == quant and f.reads and not f.file:find("/") then return f end
+    end
+  end
+
+  return nil
+end
+
+-- Why a model of another architecture is not offered.
+function models.why_arch(arch)
+  local runs = {}
+
+  for a in pairs(llm.RUNS) do runs[#runs + 1] = a end
+  table.sort(runs)
+
+  return ("a %s model: the LLM Kit has a forward pass for %s only"):format(arch, table.concat(runs, ", "))
+end
+
+-- Why a repository's list has nothing for the kit: its kinds, said.
+function models.why_none(list)
+  if #(list or {}) == 0 then return "no GGUF file at the top of the repository" end
+
+  local kinds, seen = {}, {}
+
+  for _, f in ipairs(list) do
+    if f.reads then return "what the kit reads is in a folder of the repository, not taken yet" end
+  end
+
+  for _, f in ipairs(list) do
+    local k = f.quant ~= "" and f.quant or "unnamed"
+
+    if not seen[k] then seen[k] = true kinds[#kinds + 1] = k end
+  end
+
+  return ("its files are %s; the LLM Kit reads Q4_0, Q8_0, F16 and F32"):format(table.concat(kinds, ", "))
+end
+
+-- How much room the models folder's disk has, in bytes, or nil when the
+-- mount does not say (a folder in memory, or a disk that could not count).
+function models.free()
+  local sb = fs.read(llm.MODELS .. "/.super")
+
+  if type(sb) == "table" and sb.formatted and sb.free_blocks and sb.block_size then
+    return sb.free_blocks * sb.block_size
+  end
+
+  return nil
 end
 
 -- A file into the models folder. `progress(got, total)` is told as it

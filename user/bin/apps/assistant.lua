@@ -3,6 +3,7 @@
 -- kosmos: icon App_Generic
 -- kosmos: name Xavier
 -- kosmos: section applications
+-- kosmos: needs network
 --
 -- **Xavier, in a window** (`docs/xavier.md` X4; drawn in `docs/xavier.html`,
 -- *As it opens*). Ask a question and the answer is written as the model
@@ -1011,6 +1012,8 @@ end
 -- conversation's and the one a new conversation begins with, and loads it.
 --------------------------------------------------------------------------
 
+local show_page                         -- the Models page, shown or not (below)
+
 local function chip_width()
   return math.min(chip.w, gfx.measure(model_words(), "ui") + 20)
 end
@@ -1056,6 +1059,9 @@ local function open_models()
     items[#items + 1] = { text = "Every model in " .. llm.MODELS, disabled = true }
   end
 
+  -- The page, where more come from.
+  items[#items + 1] = { text = "Get more in Models\u{2026}", on_choose = function() show_page(true) end }
+
   local m = win:open_menu(win.origin_x + header.x + chip.x + chip.w - chip_width(),
                           win.origin_y + L.head, items)
 
@@ -1079,6 +1085,567 @@ more.on_click = function()
   if m then
     print(("xavier: menu at %d,%d, rows of %d"):format(m.x - win.origin_x, m.y - win.origin_y, m.row))
   end
+end
+
+--------------------------------------------------------------------------
+-- **The Models page** (`docs/xavier.md`, *Models*; drawn in `xavier.html`,
+-- *Models*): what is in the models folder, with Load and Remove; then a
+-- search of Hugging Face, each repository with the file the kit would take
+-- from it and Get, or why there is none.
+--
+-- **Nothing on it waits on the network.** A search and a download are each
+-- `models` in a process of its own with `--report`, a file this reads four
+-- times a second (`models.lua`, the program); Pause leaves a file beside
+-- the report that the program looks for. The bytes never pass through the
+-- window, and a TLS handshake - which the TLS Kit does waiting - is never
+-- this window's to wait for.
+--------------------------------------------------------------------------
+
+local models = use("/Kosmos/Libraries/models.lua")
+
+-- `--source URL [--name NAME]`: another place that answers as Hugging Face
+-- does - a mirror, or a test's server - handed on to `models`.
+local SOURCE = tostring(args or ""):match("%-%-source%s+(%S+)")
+local SOURCE_NAME = tostring(args or ""):match("%-%-name%s+(%S+)")
+
+local PAGE_ROW = 58
+local here = {}                         -- models.list(), as last looked at
+local found = nil                       -- the search's rows, nil before one
+local found_term = ""
+local searching = nil                   -- { report } while a search runs
+local getting = {}                      -- file -> { repo, report, got, total, state, why }
+local page_said = ""
+local page_scroll = 0
+local page_targets = {}                 -- what the page drew to be pressed
+
+local back = ui.button{ text = "Conversations", name = "Conversations" }
+local term = ui.field{ w = 220, text = "", hint = "phi, tinyllama\u{2026}", name = "Search words" }
+local look = ui.button{ text = "Search Hugging Face", name = "Search Hugging Face" }
+local page_head = ui.header{ x = 0, y = 0, w = W, title = "Models", title_bar = true,
+                             left = { back }, right = { term, look }, hidden = true }
+local page = ui.view{ x = 0, y = L.head, w = W, h = H - L.head - FOOT, hidden = true,
+                      follow = { "left", "right", "top", "bottom" } }
+local page_foot = ui.view{ x = 0, y = H - FOOT, w = W, h = FOOT, hidden = true,
+                           follow = { "left", "right", "bottom" } }
+local PAGE_VIEWS = { page_head, page, page_foot }
+local CHAT_VIEWS = { side_ground, new_button, list, header, chat, field, stop, foot }
+
+local function report_name(what)
+  return ("/Temporary/xavier-%s-%d.txt"):format(what, sys.ticks() % 1000000007)
+end
+
+-- `models` with these words, in a process of its own; true, or nil and why.
+local function run_models(words)
+  if SOURCE then words = words .. " --source " .. SOURCE end
+  if SOURCE_NAME then words = words .. " --name " .. SOURCE_NAME end
+
+  local reply, why = fs.send("/Running/wm", { type = "launch", program = "models", args = words,
+                                              wait = false })
+
+  if not reply or not reply.ok then
+    return nil, tostring(why or (reply and reply.error) or "refused")
+  end
+
+  return true
+end
+
+local function crumb()
+  local free = models.free()
+
+  return llm.MODELS .. (free and (", " .. files.size(free) .. " free") or "")
+end
+
+local function look_here()
+  here = models.list()
+  page_head.sub = crumb()
+  win.dirty = true
+end
+
+-- Every line of a report, or nil while it is empty.
+local function report_lines(path)
+  local text = fs.read(path)
+
+  if type(text) ~= "string" or text == "" then return nil end
+
+  local lines = {}
+
+  for l in text:gmatch("[^\n]+") do lines[#lines + 1] = l end
+
+  return lines
+end
+
+local function forget_report(path)
+  files.remove(path)
+  if fs.getattr(path .. ".stop") then files.remove(path .. ".stop") end
+end
+
+local function search(words)
+  words = words:gsub("^%s+", ""):gsub("%s+$", "")
+
+  if searching or words == "" or words:find("[^%w%-%._ ]") then
+    if words:find("[^%w%-%._ ]") then page_said = "A search is letters, digits and - . _" end
+    win.dirty = true
+    return
+  end
+
+  local report = report_name("search")
+
+  fs.write(report, "")
+
+  local ok, why = run_models("search " .. words .. " --report " .. report)
+
+  if not ok then
+    page_said = "models would not start: " .. why
+  else
+    searching, found, found_term, page_said = { report = report }, {}, words, ""
+    print(("xavier: searching Hugging Face for %s"):format(words))
+  end
+
+  win.dirty = true
+end
+
+local function follow_search()
+  local lines = searching and report_lines(searching.report)
+
+  if not lines then return false end
+
+  local rows, by = {}, {}
+
+  for _, l in ipairs(lines) do
+    local repo, downloads = l:match("^repo (%S+) (%d+)$")
+
+    if repo then
+      rows[#rows + 1] = { repo = repo, downloads = tonumber(downloads) }
+      by[repo] = rows[#rows]
+    end
+
+    local brepo, file, size, quant = l:match("^best (%S+) (%S+) (%d+) (%S+)$")
+
+    if brepo and by[brepo] then
+      by[brepo].best = { file = file, size = tonumber(size), quant = quant }
+    end
+
+    local nrepo, why = l:match("^none (%S+) (.*)$")
+
+    if nrepo and by[nrepo] then by[nrepo].why = why end
+  end
+
+  found = rows
+
+  local final = lines[#lines]
+
+  if final:match("^done") then
+    if final ~= "done ok" then page_said = "Hugging Face did not answer: " .. final:sub(13) end
+
+    local said_rows = {}
+
+    for _, r in ipairs(rows) do
+      said_rows[#said_rows + 1] = r.repo .. "=" .. (r.best and r.best.file or ("none: " .. tostring(r.why)))
+    end
+
+    print(("xavier: found %d on Hugging Face for %s: %s"):format(#rows, found_term,
+          final == "done ok" and table.concat(said_rows, ", ") or final))
+    forget_report(searching.report)
+    searching = nil
+  end
+
+  return true
+end
+
+local function get(repo, file, size)
+  if getting[file] and getting[file].state == "going" then return end
+
+  local report = report_name("get")
+
+  fs.write(report, "")
+
+  local ok, why = run_models(("get %s %s --report %s"):format(repo, file, report))
+
+  if not ok then
+    page_said = "models would not start: " .. why
+  else
+    getting[file] = { repo = repo, report = report, got = 0, total = size or 0, state = "going" }
+    page_said = ""
+    print(("xavier: getting %s from %s"):format(file, repo))
+  end
+
+  win.dirty = true
+end
+
+local function pause(file)
+  local d = getting[file]
+
+  if d and d.state == "going" then
+    fs.write(d.report .. ".stop", "stop\n")
+    print("xavier: pausing " .. file)
+  end
+end
+
+local function follow_gets()
+  local changed = false
+
+  for file, d in pairs(getting) do
+    local lines = d.state == "going" and report_lines(d.report)
+    local final = lines and lines[#lines]
+
+    if final then
+      local got, total = final:match("^(%d+) (%d+)$")
+
+      if got then
+        changed = changed or tonumber(got) ~= d.got
+        d.got, d.total = tonumber(got), math.max(d.total, tonumber(total))
+      elseif final:match("^done") then
+        changed = true
+        forget_report(d.report)
+
+        if final == "done ok" then
+          getting[file] = nil
+          print(("xavier: got %s, %d bytes, checked"):format(file, d.total))
+        else
+          d.state = final == "done paused" and "paused" or "failed"
+          d.why = final:match("^done failed (.*)$")
+          print(("xavier: %s %s%s"):format(file, d.state, d.why and (": " .. d.why) or ""))
+        end
+      end
+    end
+  end
+
+  if changed then look_here() end
+
+  return changed
+end
+
+function show_page(on)
+  for _, v in ipairs(PAGE_VIEWS) do v.hidden = not on end
+  for _, v in ipairs(CHAT_VIEWS) do v.hidden = on end
+
+  -- Stop is shown with the conversation only while an answer is written.
+  if not on then stop.hidden = live == nil end
+
+  if on then
+    look_here()
+    win:focus_on(term)
+    print(("xavier: models page, %d in %s"):format(#here, llm.MODELS))
+  else
+    win:focus_on(field)
+    print("xavier: conversations again")
+  end
+
+  win.dirty = true
+end
+
+local function remove(name)
+  local m
+
+  for _, one in ipairs(here) do
+    if one.name == name then m = one end
+  end
+
+  if not m or sheet then return end
+
+  local SW, SH = 520, 180
+  local s = ui.sheet{ title = "Remove " .. short(m.name) .. "?", w = SW, h = SH }
+
+  local words = ("%s, %s, is deleted from %s, not put in the Trash. Hugging Face still has it, "
+                 .. "and Get brings it back."):format(m.name, files.size(m.size), llm.MODELS)
+
+  for i, l in ipairs(ui.wrapped(words, SW - 36, "ui")) do
+    s:put(ui.label{ x = 18, y = 50 + (i - 1) * UI_LH, role = "ui", color = "text_dim", text = l })
+  end
+
+  local function close()
+    s:close()
+    sheet = nil
+  end
+
+  local yes = ui.button{ x = SW - 18 - 100, y = SH - 50, w = 100, text = "Remove", go = true,
+                         name = "Remove",
+    on_click = function()
+      local ok, why = models.remove(m.name)
+
+      page_said = ok and ("Removed " .. m.name) or ("Could not remove it: " .. tostring(why))
+      print("xavier: " .. (ok and ("removed " .. m.name) or ("not removed, " .. tostring(why))))
+      getting[m.name:gsub("%.part$", "")] = nil
+      close()
+      look_here()
+    end }
+  local no = ui.button{ x = SW - 18 - 100 - 10 - 90, y = SH - 50, w = 90, text = "Cancel",
+                        name = "Cancel", on_click = function() close() win.dirty = true end }
+
+  s:put(no)
+  s:put(yes)
+  sheet = s
+  win:add(s)
+  print(("xavier: remove %s? remove %d,%d cancel %d,%d"):format(m.name,
+        s.panel.x + yes.x + yes.w // 2, s.panel.y + yes.y + yes.h // 2,
+        s.panel.x + no.x + no.w // 2, s.panel.y + no.y + no.h // 2))
+end
+
+back.on_click = function() show_page(false) end
+look.on_click = function() search(term.text) end
+term.on_enter = function(_, text) search(text) end
+
+-- What a row of the page is: its words, and the buttons at its end.
+local function page_rows()
+  local rows = {}
+  local this = wanted()
+
+  for _, m in ipairs(here) do
+    local file = m.name:gsub("%.part$", "")
+    local d = getting[file]
+
+    if not (d and d.state == "going") then
+      local mark, about, buttons = nil, llm.MODELS .. "/" .. m.name, {}
+
+      if m.part then
+        local want = d and d.total or 0
+
+        mark = "cut short"
+        about = ("%s of %s here"):format(files.size(m.size), want > 0 and files.size(want) or "the file")
+                .. (d and d.state == "failed" and d.why and (" \u{00b7} " .. d.why) or "")
+                .. (d and "" or " \u{00b7} Get it from its repository again to go on")
+
+        if d then buttons[#buttons + 1] = { text = "Go on", key = "get:" .. file,
+                                            act = function() get(d.repo, file, d.total) end } end
+        buttons[#buttons + 1] = { text = "Remove", key = "rm:" .. m.name, act = function() remove(m.name) end }
+      else
+        if m.name == model.name and model.state == "ready" then
+          mark = "loaded"
+        elseif m.name == model.name and model.state == "loading" then
+          mark = ("loading \u{00b7} %d%%"):format(loaded_pct())
+        end
+
+        if m.name == this then about = about .. " \u{00b7} this conversation's" end
+
+        if not (m.name == this and (model.state == "ready" or model.state == "loading") and m.name == model.name) then
+          buttons[#buttons + 1] = { text = "Load", go = true, key = "load:" .. m.name,
+                                    act = function() choose_model(m.name) win.dirty = true end }
+        end
+
+        buttons[#buttons + 1] = { text = "Remove", key = "rm:" .. m.name, act = function() remove(m.name) end }
+      end
+
+      rows[#rows + 1] = { title = short(m.name:gsub("%.part$", "")), mark = mark, about = about,
+                          size = m.size, kind = m.quant, buttons = buttons }
+    end
+  end
+
+  -- What is coming in, from this window's Gets.
+  for file, d in pairs(getting) do
+    if d.state == "going" then
+      rows[#rows + 1] = { title = short(file), file = file,
+                          about = ("%s \u{00b7} coming in \u{00b7} %s of %s"):format(d.repo,
+                                  files.size(d.got), d.total > 0 and files.size(d.total) or "?"),
+                          bar = d.total > 0 and d.got / d.total or 0, size = d.total,
+                          kind = select(2, models.kind(file)),
+                          buttons = { { text = "Pause", key = "pause:" .. file,
+                                        act = function() pause(file) end } } }
+    end
+  end
+
+  if #rows == 0 then rows[1] = { empty = ("No models in %s yet: search Hugging Face above."):format(llm.MODELS) } end
+
+  if found then
+    rows[#rows + 1] = { section = ("On Hugging Face, as GGUF, matching \u{201c}%s\u{201d}"):format(found_term)
+                                  .. (searching and " \u{00b7} looking\u{2026}" or "") }
+
+    for _, r in ipairs(found) do
+      local about, buttons, b = nil, {}, r.best
+
+      if b then
+        local there = fs.getattr(llm.MODELS .. "/" .. b.file)
+
+        about = ("%s \u{00b7} %d downloads"):format(b.file, r.downloads)
+
+        if there then
+          about = about .. " \u{00b7} here already"
+        elseif not (getting[b.file] and getting[b.file].state == "going") then
+          buttons[1] = { text = "Get", key = "get:" .. r.repo,
+                         act = function() get(r.repo, b.file, b.size) end }
+        end
+      else
+        about = r.why or "looking at its files\u{2026}"
+      end
+
+      rows[#rows + 1] = { title = r.repo, about = about, size = b and b.size, kind = b and b.quant,
+                          buttons = buttons, dim = r.why ~= nil }
+    end
+
+    if #found == 0 and not searching then
+      rows[#rows + 1] = { empty = "Nothing with GGUF files matches." }
+    end
+  end
+
+  return rows
+end
+
+local function row_height(r)
+  return (r.section and 40) or (r.empty and 36) or PAGE_ROW
+end
+
+function page:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+
+  local BH = new_button.h
+  local size_r, kind_x = self.w - 300, self.w - 270
+  local y = 8 - page_scroll
+
+  page_targets = {}
+
+  g:text(24, y + 4, "Model", theme.text_dim, nil, "ui")
+  g:text(size_r - gfx.measure("Size", "ui"), y + 4, "Size", theme.text_dim, nil, "ui")
+  g:text(kind_x, y + 4, "Kind", theme.text_dim, nil, "ui")
+  y = y + 28
+  g:fill(16, y - 1, self.w - 32, 1, theme.line_soft)
+
+  for _, r in ipairs(page_rows()) do
+    local h = row_height(r)
+
+    if r.section then
+      g:text(24, y + 16, r.section, theme.text, nil, "ui")
+    elseif r.empty then
+      g:text(24, y + 10, r.empty, theme.text_dim, nil, "ui")
+    elseif y + h >= 0 and y <= self.h then
+      local tw = gfx.measure(r.title, "text")
+
+      g:text(24, y + 9, ui.fitted(r.title, size_r - 120 - 24, "text"), r.dim and theme.text_dim or theme.text,
+             nil, "text")
+
+      -- The mark: a dot and its word, in the accent - "loaded" as the
+      -- drawing has it; a dot drawn, since the face has no glyph for one.
+      if r.mark then
+        local mx = 24 + math.min(tw, size_r - 144) + 12
+        local my = y + 9 + (TEXT_LH - UI_LH) // 2
+
+        g:fill_round(mx, my + (UI_LH - 7) // 2, 7, 7, theme.accent, 3)
+        g:text(mx + 12, my, r.mark, theme.accent, nil, "ui")
+      end
+
+      g:text(24, y + 11 + TEXT_LH, ui.fitted(r.about or "", size_r - 120 - 24, "ui"), theme.text_dim,
+             nil, "ui")
+
+      if r.bar then
+        local bw = math.min(360, size_r - 160)
+
+        g:fill_round(24, y + h - 10, bw, 4, theme.mix(theme.window, theme.text, 80), 2)
+        g:fill_round(24, y + h - 10, math.max(4, math.floor(bw * r.bar)), 4, theme.accent, 2)
+      end
+
+      if r.size and r.size > 0 then
+        local s = files.size(r.size)
+        g:text(size_r - gfx.measure(s, "ui"), y + 9 + (TEXT_LH - UI_LH) // 2, s, theme.text, nil, "ui")
+      end
+
+      if r.kind and r.kind ~= "" then
+        g:text(kind_x, y + 9 + (TEXT_LH - UI_LH) // 2, r.kind, theme.text, nil, "ui")
+      end
+
+      local bx = self.w - 24
+
+      for i = #r.buttons, 1, -1 do
+        local b = r.buttons[i]
+        local bw = gfx.measure(b.text) + 28
+        local by = y + (h - BH) // 2
+        local held = self.click_key == b.key
+
+        bx = bx - bw
+
+        if b.go then
+          g:fill_round(bx, by, bw, BH, held and theme.lift(theme.accent, -24) or theme.accent, 7)
+          g:text(bx + 14, by + (BH - gfx.height()) // 2, b.text, theme.text_on, nil)
+        else
+          if held then g:sunken(bx, by, bw, BH, theme.raised) else g:raised(bx, by, bw, BH, theme.raised) end
+          g:text(bx + 14 + (held and 1 or 0), by + (BH - gfx.height()) // 2 + (held and 1 or 0), b.text,
+                 theme.text, theme.raised)
+        end
+
+        page_targets[#page_targets + 1] = { x = bx, y = by, w = bw, h = BH, key = b.key, act = b.act,
+                                            text = b.text, row = r.title }
+        bx = bx - 8
+      end
+
+      g:fill(16, y + h - 1, self.w - 32, 1, theme.line_soft)
+    end
+
+    y = y + h
+  end
+
+  self.content_h = y + page_scroll
+
+  -- Where the buttons are, said when they change - for the display suite.
+  local said_now = { ("Conversations back %d,%d"):format(page_head.x + back.x + back.w // 2,
+                                                         page_head.y + back.y + back.h // 2) }
+
+  for _, t in ipairs(page_targets) do
+    said_now[#said_now + 1] = ("%s %s %d,%d"):format(t.row, t.text, self.x + t.x + t.w // 2,
+                                                    self.y + t.y + t.h // 2)
+  end
+
+  said_now = table.concat(said_now, "; ")
+
+  if said_now ~= self.said_buttons then
+    self.said_buttons = said_now
+    print("xavier: page buttons " .. said_now)
+  end
+
+  if page_said ~= "" then
+    local w = gfx.measure(page_said, "ui") + 24
+
+    g:fill_round((self.w - w) // 2, self.h - 40, w, 28, theme.mix(theme.window, theme.accent, 160), 14)
+    g:text((self.w - w) // 2 + 12, self.h - 40 + (28 - UI_LH) // 2, page_said, theme.text, nil, "ui")
+  end
+end
+
+function page:mouse(action, x, y)
+  return ui.click(self, action, x, y, function(px, py)
+    for _, t in ipairs(page_targets) do
+      if px >= t.x and px < t.x + t.w and py >= t.y and py < t.y + t.h then return t.key, t.act end
+    end
+
+    return nil
+  end)
+end
+
+function page:wheel(n)
+  local most = math.max(0, (self.content_h or 0) - self.h + 40)
+
+  page_scroll = math.max(0, math.min(most, page_scroll - n * ui.WHEEL_ROWS * TEXT_LH))
+  win.dirty = true
+  return true
+end
+
+function page_foot:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, 1, theme.line_soft)
+
+  local n, bytes, loaded = 0, 0, nil
+
+  for _, m in ipairs(here) do
+    if not m.part then n, bytes = n + 1, bytes + m.size end
+    if m.loaded then loaded = m end
+  end
+
+  local words = ("%d %s in %s \u{00b7} %s"):format(n, n == 1 and "model" or "models", llm.MODELS,
+                loaded and ("one loaded, " .. files.size(loaded.size)) or "none loaded")
+  local right = "models at the prompt does all of this too"
+  local ty = (self.h - UI_LH) // 2
+
+  g:text(16, ty, words, theme.text_dim, nil, "ui")
+  g:text(self.w - 16 - gfx.measure(right, "ui"), ty, right, theme.text_dim, nil, "ui")
+end
+
+-- Four times a second while something is in flight: the reports read.
+local followed = 0
+
+local function page_step()
+  if not (searching or next(getting)) or sys.ticks() - followed < hz // 4 then return false end
+
+  followed = sys.ticks()
+
+  local a = follow_search()
+  local b = follow_gets()
+
+  return a or b
 end
 
 --------------------------------------------------------------------------
@@ -1151,7 +1718,7 @@ end
 
 local placed = false
 
-function win:on_frame()
+local function frame(self)
   if not placed then
     placed = true
     print(("xavier: places field %d,%d stop %d,%d new %d,%d list %d,%d rows %d more %d,%d chip %d,%d"):format(
@@ -1217,11 +1784,25 @@ function win:on_frame()
   return false
 end
 
+-- A pass: the Models page's reports followed, and then the conversation's
+-- own - each says whether it changed what is drawn.
+function win:on_frame()
+  local paged = page_step()
+  local drawn = frame(self)
+
+  if searching or next(getting) then
+    self.poll_wait_ticks = math.min(self.poll_wait_ticks or 50, 50)
+  end
+
+  return drawn or paged
+end
+
 function win:on_resize(w, h)
   W, H = w, h
 end
 
-for _, v in ipairs({ side_ground, new_button, list, header, chat, field, stop, foot }) do
+for _, v in ipairs({ side_ground, new_button, list, header, chat, field, stop, foot,
+                     page_head, page, page_foot }) do
   win:add(v)
 end
 

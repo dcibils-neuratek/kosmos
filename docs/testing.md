@@ -30035,3 +30035,57 @@ it from a file.
 **The gate, 0.11.341**: 105 of 106 suites in 653 s; `x86-llmmon`'s new
 check had kept the server's and the kernel's own lines among the answer's
 words, and passed alone once it left them out.
+
+## 18.735 Xavier's Models page: Hugging Face searched, a model brought, paused and loaded, without the window waiting
+
+**What was built** (0.11.342; `xavier.md`, *Models*; drawn in `xavier.html`).
+The page in Xavier's window that the model chip's menu opens with "Get more
+in Models...": what is in the models folder, each with **Load** and
+**Remove** (asked in a sheet first), a download coming in with its bar and
+**Pause**, one cut short with **Go on**; then a search of Hugging Face, each
+repository with the file the kit would take from it - Q4_0, then Q8_0, F16,
+F32 - and **Get**, or why there is none.
+
+**Nothing on it waits on the network.** A search and a download are each
+`models` in a process of its own with `--report <file>`, which the page
+reads four times a second; Pause leaves `<report>.stop`, which the program
+looks for as the bytes come. The search was drawn as `http.get` stepped by
+the window's clock, as Packages fetches its index; it is a process because
+Hugging Face is HTTPS and the TLS Kit's handshake, like the name lookup
+before it, waits on its connection.
+
+**Which models it offers.** Seen on the M700 against the real Hugging Face,
+a search for "phi" offered Get on Phi-3.5, Phi-4 and a Qwen - none of which
+the kit has a forward pass for. Hugging Face says each GGUF repository's
+architecture in the search reply when asked (`expand[]=gguf`), so the search
+asks, and a repository whose architecture is not in `llm.RUNS` (`llm.lua`:
+phi2, the one `llm_core.c` opens) is listed with the reason and its files
+are not asked for.
+
+**One size wording.** The page said 8.2 MB and `models` said 8.6 MB of the
+same file: the program had a size formatter of its own, in powers of ten.
+It uses `files.size` now, as everything else does.
+
+**The test, `x86-modelspage`** (`tools/run_modelspage.py`): the stand-in
+Hugging Face of `run_models.py`, now a function both suites call
+(`stand_in`), its store sending slowly enough to press Pause. Opened from
+the chip's menu, the page lists the model on the disk loaded, with Remove
+and no Load; a search for "tiny" finds three repositories - one with the
+F16 the kit would take, one of Q4_K_M and Q5_K_S only, said so, and one of
+phi3, said so, its files never asked for; Get is cut off a third of the way
+in and said; Go on resumes from the cut with a Range, and Pause stops it
+further on and short of the whole; Go on again finishes it, held to its
+SHA-256, listed with Load; Load makes it the conversation's and the server
+loads it; Remove on the Q4_0 asks and removes it; Conversations goes back.
+
+**Controls**, each run and each biting: the program ignoring the stop file -
+the suite stops at Pause, "Go on" never offered; the page reading a failed
+download as done - "Get, cut off, was not said"; the search taking every
+architecture as one the kit runs - phi3's files asked for and Get offered,
+two checks failing.
+
+**The gate**, 0.11.342: 106 of 107 suites in 666 s, `x86-modelspage` 21 s
+and `x86-models` 9 s. `arm-sandboxwin` failed - "Kosmos would not answer on
+port 8082, for the guest's 80" - and passed 18 of 18 alone in 33 s: a port
+forward late under the gate's load, a third flaky suite beside
+`arm-sandbox` and `x86-bluetooth` (roadmap).

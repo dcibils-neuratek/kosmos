@@ -225,6 +225,12 @@ function llm.form(arch)
   return FORMS[arch] or FORMS.phi2
 end
 
+-- **The architectures the LLM Kit has a forward pass for** - phi2, and
+-- only phi2 (`llm_core.c`, `llm_open`, which refuses any other). One list,
+-- so that what a window offers to get is what the server can load: a
+-- second architecture is a line here and a forward pass there.
+llm.RUNS = { phi2 = true }
+
 -- The text of a conversation - `before`, what the model is told first,
 -- then `turns`, each `{ you = , xavier = }`, then `question` - and the
 -- stops its answer ends at.

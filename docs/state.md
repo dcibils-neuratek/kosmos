@@ -82,10 +82,16 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   second against 1.2 (18.733); the stages timed, `llm` prints them; a
   command line too long for a message refused rather than ending telnetd,
   and `xavier --file` (18.734).
-- **Building**: the Models page in Xavier's window (Diego, 9 November).
+- **0.11.342**: the Models page in Xavier's window (18.735) - opened from
+  the chip's menu; a search of Hugging Face and each download are `models
+  --report` in a process of their own, so the window never waits on the
+  network; Pause, Go on, Load, Remove; a repository of an architecture the
+  kit cannot run is listed with the reason. Seen on the M700 against the
+  real Hugging Face; the M700 runs 0.11.342 by netboot.
 
-**Next**: a question's processor part (attention, norms, GELU - 7 of its 12 s)
-is where the time is.
+**Next**: the weight products, then attention - on the M700 a long
+question's reading is products 22.0 s and attention 10.0 of 34.9, and its
+answer's writing products 14.1 and attention 4.6.
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 
