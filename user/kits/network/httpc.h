@@ -22,6 +22,21 @@ struct httpc_io {
     long (*read)(void *user, void *buf, size_t max);
 };
 
+/*
+ * **A body streamed rather than held** (`docs/xavier.md`, *Models*): a
+ * model is 1.6 GB, and nothing should hold that in memory. With a sink, a
+ * 200's or a 206's body goes to `put` as it comes, never more at once than
+ * `room` says there is space for - so a sink that is full stops the reading
+ * until it has been emptied, and nothing is lost. Any other status - a
+ * redirect, a refusal - is held as before, since it is short and its words
+ * are wanted. A streamed body is never gzipped: the request says so.
+ */
+struct httpc_sink {
+    void   *user;
+    size_t (*room)(void *user);
+    int    (*put)(void *user, const uint8_t *p, size_t n);   /* 0: refused */
+};
+
 enum { HTTPC_IDLE, HTTPC_SENDING, HTTPC_HEAD, HTTPC_BODY, HTTPC_DONE, HTTPC_FAILED };
 
 #define HTTPC_HEAD_MAX 16384
@@ -45,6 +60,8 @@ struct httpc {
 
     uint8_t *body;
     size_t   body_len, body_cap, body_most;
+    long long got;                  /* the body's bytes so far, held or streamed */
+    struct httpc_sink sink;         /* `put` NULL: held */
 
     /* Chunks: bytes left in this one, or -1 when a size line is next. */
     long long chunk_left;
@@ -59,6 +76,14 @@ void httpc_init(struct httpc *h, struct httpc_io io, const char *host, size_t mo
 
 /* GET `path` begun on the connection. 0, or -1 when one is under way. */
 int  httpc_get(struct httpc *h, const char *path);
+
+/* The same, streamed into `sink`, from byte `from` of the file (a Range,
+ * when it is not the first): the reply's 206 says the server took it. */
+int  httpc_get_into(struct httpc *h, const char *path, long long from, struct httpc_sink sink);
+
+/* A header of the reply's head, its name's case not minded: its value and
+ * `*len`, or NULL. A redirect's Location, a 206's Content-Range. */
+const char *httpc_header(const struct httpc *h, const char *name, size_t *len);
 
 /* What can move, moved: HTTPC_SENDING, HEAD or BODY while under way;
  * HTTPC_DONE with `status` and the body (inflated, if it came gzipped);

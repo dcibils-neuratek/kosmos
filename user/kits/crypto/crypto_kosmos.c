@@ -9,7 +9,7 @@
  * `crypto.c`, each held to its specification's vectors by `test_crypto`,
  * and a program in Lua is handed the operation and never the arithmetic.
  *
- * Three functions so far, each because a program asks for it: `des` for
+ * Four functions so far, each because a program asks for it: `des` for
  * `vncd`'s password check, `random` for whatever needs randomness - VNC's
  * challenge first, TLS next - and `sha256`, for a file checked whole
  * without its bytes becoming a Lua string (sharing's step N3 checks a 64 MB
@@ -157,14 +157,94 @@ static int l_sha256(lua_State *L)
     return 1;
 }
 
+/*
+ * **A SHA-256 over many pieces** (`docs/xavier.md`, *Models*): a model is
+ * 1.6 GB, checked against the sum Hugging Face lists as it arrives, a region
+ * at a time - and, when a download is resumed, over what is already on the
+ * disk first. `crypto.sha256_begin()` makes one; `h:update(at, bytes)` adds
+ * bytes where they lie in a mapped region, or `h:update(text)`; `h:hex()`
+ * says the sum of everything added, and may be asked more than once.
+ */
+#define SHA_MT "kosmos.sha256"
+
+static void hex_of(const uint8_t digest[32], char out[64])
+{
+    static const char hex[] = "0123456789abcdef";
+
+    for (unsigned i = 0; i < 32; i++) {
+        out[2 * i]     = hex[digest[i] >> 4];
+        out[2 * i + 1] = hex[digest[i] & 15];
+    }
+}
+
+static int l_sha256_begin(lua_State *L)
+{
+    struct sha256 *s = lua_newuserdatauv(L, sizeof(*s), 0);
+
+    sha256_init(s);
+    luaL_setmetatable(L, SHA_MT);
+    return 1;
+}
+
+static int l_sha_update(lua_State *L)
+{
+    struct sha256 *s = luaL_checkudata(L, 1, SHA_MT);
+
+    if (lua_type(L, 2) == LUA_TSTRING) {
+        size_t bytes;
+        const char *data = lua_tolstring(L, 2, &bytes);
+
+        sha256_update(s, data, bytes);
+    } else {
+        uintptr_t at = (uintptr_t)luaL_checkinteger(L, 2);
+        lua_Integer bytes = luaL_checkinteger(L, 3);
+
+        if (bytes < 0 || (at == 0 && bytes > 0)) {
+            return luaL_error(L, "sha256:update: a string, or a mapped region and how many of "
+                              "its bytes");
+        }
+
+        sha256_update(s, (const void *)at, (size_t)bytes);
+    }
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+/* The sum so far, from a copy: the running one goes on. */
+static int l_sha_hex(lua_State *L)
+{
+    struct sha256 *s = luaL_checkudata(L, 1, SHA_MT);
+    struct sha256 copy = *s;
+    uint8_t digest[32];
+    char out[64];
+
+    sha256_final(&copy, digest);
+    hex_of(digest, out);
+    lua_pushlstring(L, out, sizeof(out));
+    return 1;
+}
+
 void kosmos_crypto_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
         { "des",    l_des },
         { "random", l_random },
         { "sha256", l_sha256 },
+        { "sha256_begin", l_sha256_begin },
         { NULL, NULL }
     };
+    static const luaL_Reg methods[] = {
+        { "update", l_sha_update },
+        { "hex",    l_sha_hex },
+        { NULL, NULL }
+    };
+
+    luaL_newmetatable(L, SHA_MT);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+    luaL_setfuncs(L, methods, 0);
+    lua_pop(L, 1);
 
     luaL_newlib(L, api);
 }

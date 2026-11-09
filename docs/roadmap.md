@@ -577,7 +577,7 @@ conversation*; `testing.md` 18.722). **Asking from anywhere built in
 Monitor*; 18.725): the server counts tokens and who asked, by the kernel's
 name for the process. **Still to do from it: a queue** - an ASK that answers
 at once with "queued" and begins when its turn comes, so a second asker is
-not refused as busy and the Monitor shows it waiting, as drawn. **And the order to finish Xavier's window, AGREED on 8
+not refused as busy and the Monitor shows it waiting, as drawn. **Models built in 0.11.332** (`models` at the prompt; `xavier.md`, *Models*; 18.726): a search and a repository's files from Hugging Face's API, a file of any size downloaded in C through a region - resumed with a Range, held to its SHA-256 - by a new `download` in the Network Kit that Packages and the browser can use. **Still to do from it: the Models page in Xavier's window, and `tools/hfmodel.py`.** **X7 designed on 9 November** (`xavier.md`, *X7, the GPU: the design*; G1-G5). And **a flaky test to make say why**: `arm-sandbox`'s "ipc: a receive with a deadline gives up" was late under the gate's load a second time (18.593, 18.726); it passes alone, and it does not say which of its three conditions failed. **And the order to finish Xavier's window, AGREED on 8
 November 2026** (Diego asked "how far are we to complete xavier UI in all
 its forms", then "Agreed, go ahead with your suggested order"): Settings;
 a model for each conversation; asking from anywhere; the LLM Monitor;

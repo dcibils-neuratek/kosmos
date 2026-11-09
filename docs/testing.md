@@ -29622,3 +29622,38 @@ window's sample, which read the same reply.
 Not tested: a refusal counted against who was refused. Nothing at the
 prompt can ask while another answer is being written; Xavier's suite could,
 and that is where it goes when the queue is built.
+
+## 18.726 Models: Hugging Face searched, a model downloaded, resumed and checked
+
+`x86-models` (`tools/run_models.py`), new, with `models` at the prompt
+(`xavier.md`, *Models*). Hugging Face is two HTTPS servers on the Mac, at
+10.0.2.2 with a certificate for `kosmos-test.local` from an authority the
+guest's disk trusts: the API answers a search and a repository's files with
+their sizes and SHA-256s, and sends each file to the second, the store, with
+a 302 to another port; the store honours a Range and cuts the first download
+of the 8.6 MB F16 a third of the way in. `models` with nothing there; the
+search; the files - the one listed as Q4_K_M said to be unreadable, the
+README not listed; the cut `get`, failing without "checked", and `models`
+listing the `.part` as cut short; the second `get`, which asked the store
+from 2,866,805 with a Range and ends with the file's own SHA-256, checked;
+`models load` of it; a file listed with a wrong sum refused and removed;
+`models` after, the loaded F16 and no Q8_0 at all; `models rm` of the
+loaded one refused. 12 checks, about 5 s with the image built.
+
+`tools/test_httpc.c`, in `host`: cases 8-11 - a streamed 206 with its
+Range, a chunked body streamed, a redirect held whole with its Location, a
+gzipped body refused for streaming - into a sink with 7 bytes of room. 204
+checks; **control**: ignoring the sink's room, 25 fail.
+
+The first version of the suite read a wrong sum left as `.part`, which
+`models` then listed as cut short - true of nothing; the file is removed
+now, said so, since another `get` would resume nothing and fail the same way.
+
+**Control**: a resumed download not summing the bytes already on the disk -
+4 of 12: the resumed `get` not checked (its sum is not the file's), so
+nothing named, nothing to load, `models` after empty, and nothing to refuse
+removing.
+
+Whole gate: 105 of 106. `arm-sandbox`'s "ipc: a receive with a deadline
+gives up" was late under load for the second time since 18.593, and passed
+211 of 211 alone. It is in the roadmap: make it say which condition failed.

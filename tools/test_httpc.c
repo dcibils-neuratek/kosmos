@@ -79,6 +79,54 @@ static int run(struct httpc *h)
     return r;
 }
 
+/* A sink of a few bytes' room, emptied between steps into `all`: a
+ * download's region, written out and taken, in small. */
+struct pail {
+    char   room_for[7];
+    size_t in, cap;
+    char   all[512];
+    size_t all_len;
+    int    full_seen;
+};
+
+static size_t pail_room(void *user)
+{
+    struct pail *p = user;
+    size_t room = p->cap - p->in;
+
+    if (room == 0) p->full_seen = 1;
+    return room;
+}
+
+static int pail_put(void *user, const uint8_t *b, size_t n)
+{
+    struct pail *p = user;
+
+    if (p->in + n > p->cap) return 0;
+
+    memcpy(p->room_for + p->in, b, n);
+    p->in += n;
+    return 1;
+}
+
+/* Steps, the pail emptied after each, until done or failed. */
+static int run_into(struct httpc *h, struct pail *p)
+{
+    int r = HTTPC_SENDING;
+
+    for (int i = 0; i < 100000; i++) {
+        r = httpc_step(h);
+
+        memcpy(p->all + p->all_len, p->room_for, p->in);
+        p->all_len += p->in;
+        p->in = 0;
+
+        if (r == HTTPC_DONE || r == HTTPC_FAILED) return r;
+    }
+
+    return r;
+}
+
 static const char GZ[] = "\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff\x4b\x54\x28\x4b\x4d"
                          "\x2e\xc9\x2f\x52\x28\xc9\xcc\x49\xd5\x51\xc8\xcc\x4b\xcb\x49"
                          "\x2c\x49\x4d\x01\x00\x92\x83\xf8\x66\x17\x00\x00\x00";
@@ -189,12 +237,98 @@ int main(void)
         httpc_get(&h, "/g");
         check(run(&h) == HTTPC_FAILED, "a body cut short was taken as whole");
         httpc_free(&h);
+
+        /* 8. Streamed: a 206 from byte 6, into a sink of seven bytes' room
+         * that fills, the Range asked for and gzip not. */
+        {
+            struct pail pl;
+            struct httpc_sink sink = { &pl, pail_room, pail_put };
+            const char *body = "a model's bytes, a few at a time, into a region that fills";
+            size_t blen = strlen(body);
+
+            memset(&pl, 0, sizeof pl);
+            pl.cap = sizeof pl.room_for;
+            memset(&f, 0, sizeof(f));
+            f.piece = piece;
+            snprintf(reply, sizeof reply, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes "
+                     "6-%zu/%zu\r\nContent-Length: %zu\r\n\r\n%s", blen + 5, blen + 6, blen, body);
+            f.reply = reply;
+            f.reply_len = strlen(reply);
+            httpc_init(&h, io, "models.example", 16);
+            check(httpc_get_into(&h, "/m.gguf", 6, sink) == 0, "a streamed GET was refused");
+            r = run_into(&h, &pl);
+
+            size_t vlen = 0;
+            const char *v = httpc_header(&h, "content-range", &vlen);
+
+            snprintf(said, sizeof said, "in pieces of %zu, a streamed 206: %d %d %zu %.*s", piece, r,
+                     h.status, pl.all_len, (int)pl.all_len, pl.all);
+            check(r == HTTPC_DONE && h.status == 206 && pl.all_len == blen
+                  && memcmp(pl.all, body, blen) == 0 && h.body_len == 0 && h.got == (long long)blen,
+                  said);
+            check(pl.full_seen || piece < 7, "a full sink was never asked about");
+            check(v != NULL && vlen > 6 && memcmp(v, "bytes 6-", 8) == 0,
+                  "the 206's Content-Range could not be read");
+            check(strstr(f.wrote, "Range: bytes=6-\r\n") != NULL
+                  && strstr(f.wrote, "Accept-Encoding: identity\r\n") != NULL,
+                  "a streamed GET did not ask for its Range, or asked for gzip");
+            httpc_free(&h);
+
+            /* 9. Streamed in chunks, from the start: no Range. */
+            memset(&pl, 0, sizeof pl);
+            pl.cap = sizeof pl.room_for;
+            memset(&f, 0, sizeof(f));
+            f.piece = piece;
+            f.reply = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                      "B\r\nchunked and\r\n9\r\n streamed\r\n0\r\n\r\n";
+            f.reply_len = strlen(f.reply);
+            httpc_init(&h, io, "x", 16);
+            httpc_get_into(&h, "/c.gguf", 0, sink);
+            r = run_into(&h, &pl);
+            check(r == HTTPC_DONE && pl.all_len == 20 && memcmp(pl.all, "chunked and streamed", 20) == 0
+                  && strstr(f.wrote, "Range:") == NULL,
+                  "a chunked body was not streamed whole, or a first byte asked for a Range");
+            httpc_free(&h);
+
+            /* 10. A redirect while streaming: held, not streamed, and its
+             * Location read. */
+            memset(&pl, 0, sizeof pl);
+            pl.cap = sizeof pl.room_for;
+            memset(&f, 0, sizeof(f));
+            f.piece = piece;
+            f.reply = "HTTP/1.1 302 Found\r\nLocation: https://cdn.example/x/m.gguf?sig=1\r\n"
+                      "Content-Length: 5\r\n\r\nmoved";
+            f.reply_len = strlen(f.reply);
+            httpc_init(&h, io, "x", 64);
+            httpc_get_into(&h, "/r.gguf", 0, sink);
+            r = run_into(&h, &pl);
+            v = httpc_header(&h, "location", &vlen);
+            check(r == HTTPC_DONE && h.status == 302 && pl.all_len == 0 && h.body_len == 5
+                  && v != NULL && vlen == 34 && memcmp(v, "https://cdn.example/x/m.gguf?sig=1", 34) == 0,
+                  "a redirect was streamed, or its Location not read");
+            httpc_free(&h);
+
+            /* 11. Gzipped though asked not to be: refused, not saved. */
+            memset(&pl, 0, sizeof pl);
+            pl.cap = sizeof pl.room_for;
+            memset(&f, 0, sizeof(f));
+            f.piece = piece;
+            f.reply = "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 3\r\n\r\nabc";
+            f.reply_len = strlen(f.reply);
+            httpc_init(&h, io, "x", 64);
+            httpc_get_into(&h, "/g.gguf", 0, sink);
+            check(run_into(&h, &pl) == HTTPC_FAILED && pl.all_len == 0,
+                  "a gzipped download was streamed");
+            httpc_free(&h);
+        }
     }
 
     if (fails == 0) {
         printf("PASS: %d checks on HTTP from C (in pieces of 1 to 4096 bytes: a body by its "
                "length and the request, a second request on the kept connection in chunks, "
-               "gzip inflated, a body ended by its connection, a 404, too large, cut short)\n",
+               "gzip inflated, a body ended by its connection, a 404, too large, cut short; "
+               "streamed into a sink that fills - a 206 from a Range, chunks, a redirect held "
+               "and its Location read, gzip refused)\n",
                checks);
         return 0;
     }

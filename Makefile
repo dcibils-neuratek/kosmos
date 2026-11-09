@@ -844,6 +844,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/init/say.c \
              user/init/vmtest.c \
              user/kits/network/net_kosmos.c \
+             user/kits/network/download.c \
              user/kits/crypto/crypto.c \
              user/kits/crypto/crypto_kosmos.c \
              user/kits/crypto/md4.c \
@@ -1506,6 +1507,11 @@ $(UBUILD)/user/kits/tls/tls_core.c.o: user/kits/tls/tls_core.c $(HOSTDIR)/tls_an
 	$(CC) $(BEARSSL_IFLAGS) -I$(HOSTDIR) $(UCFLAGS) -MMD -MP -c $< -o $@
 
 $(UBUILD)/user/kits/tls/tls_kosmos.c.o: user/kits/tls/tls_kosmos.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+# A download into a region, over the TLS core (`docs/xavier.md`, *Models*).
+$(UBUILD)/user/kits/network/download.c.o: user/kits/network/download.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(BEARSSL_IFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 

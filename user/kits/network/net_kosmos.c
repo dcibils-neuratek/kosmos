@@ -1267,9 +1267,14 @@ static int l_stats(lua_State *L)
     return 1;
 }
 
+/* A download into a region, in C (`download.c`). */
+int  kosmos_net_download(lua_State *L);
+void kosmos_net_download_methods(lua_State *L);
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
+        { "download",  kosmos_net_download },
         { "info",      l_info },
         { "configure", l_configure },
         { "dhcp",      l_dhcp },
@@ -1306,5 +1311,6 @@ void kosmos_net_kit(lua_State *L)
     luaL_setfuncs(L, conn, 0);
     lua_pop(L, 1);
 
+    kosmos_net_download_methods(L);
     luaL_newlib(L, api);
 }

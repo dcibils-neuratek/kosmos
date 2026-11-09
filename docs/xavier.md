@@ -916,6 +916,134 @@ what the server can say without a clock of its own.
 **Built in 0.11.331** (`testing.md` 18.725). Left for X7: the Loaded tile
 says "processor" or "GPU" when the GPU can answer.
 
+## Models
+
+**What a person can do with it**, at the prompt for now (*What a person
+can do*, above): see what is in the models folder, how large, in which
+quantisation, which one is loaded and which download was cut short; search
+Hugging Face for repositories that publish GGUF; list a repository's files,
+each with its size and quantisation and, when the LLM Kit cannot read one,
+why; bring a file here, picked up where it stopped if the network dropped,
+and held to the SHA-256 Hugging Face publishes before it is given its
+name; load it; remove one that is not loaded.
+
+**What it is made of**, and what is new:
+
+- **`models.lua`**, a library - the one door to the models folder and to
+  Hugging Face, so `models` at the prompt and the Models page to come
+  cannot disagree. It asks Hugging Face's public API, with no account:
+  `/api/models?search=...&filter=gguf` for a search,
+  `/api/models/<repo>/tree/main` for a repository's files - which carries
+  each large file's SHA-256 as its LFS object id - and
+  `/<repo>/resolve/main/<file>` for the bytes, which answers with a 302 to
+  Hugging Face's store and an address signed for a while. `models.source`
+  and `models.name` put a mirror, or a test's server, in its place.
+- **`download.lua` and the Network Kit's `download`** - new, and a kit
+  rather than part of Models, because Packages and the browser's downloads
+  want the same: **a file of any size from HTTP or HTTPS onto a disk, with
+  no byte of it through Lua.** The TLS Kit's Lua door hands ciphertext to
+  Lua as strings and `http.lua` holds a reply in one, which is right for a
+  page and wrong for 1.6 GB. So the download is C, built from what the
+  map tiles are built from - `netclient`, `tls_core`, `httpc` - and
+  `httpc` learnt to stream a 200's or a 206's body into a sink that says
+  how much room it has, with `Range: bytes=N-` and `Accept-Encoding:
+  identity`; a redirect or a refusal is still held whole, it being small.
+- **The bytes go through a region**, 4 MB, made once: the connection fills
+  it, `fs.write_from_at` writes it at its offset, and the Crypto Kit's new
+  `sha256_begin()` sums it in place - `update(at, n)` takes the region's
+  address, not a string. Lua sees how many bytes, never which.
+- **The capability is the namespace's**, as for `ns.connect`:
+  `fs.download("/Network", spec)` - the program asks the namespace, which
+  holds the network, and the kit gets the capability from there.
+
+**Cut, resumed, checked.** A download goes into `<file>.part`. Run again,
+the bytes already there are summed first, then the rest asked for with a
+Range; a server that answers 200 instead is taken from the start. Only
+when the whole file is the size and the sum the repository lists is it
+renamed, so a file in the folder without `.part` is one that checked out.
+A whole file whose sum is wrong is removed and said so - going on would
+resume nothing and fail the same way.
+
+**The busiest path** is a model coming in: per 4 MB, the network's reads
+into the region, one write of it at its offset, and a SHA-256 over it -
+all C, one Lua call each. A quantisation the kit does not read (Q4_K_M,
+the commonest on Hugging Face) is listed with why, and not refused by the
+listing, so a person can still see it is there.
+
+**Built in 0.11.332** (`testing.md` 18.726). Left: the Models page in
+Xavier's window, as drawn; `tools/hfmodel.py`, for a model that is not
+published as GGUF; and the quantisations the kit does not yet read.
+
+## X7, the GPU: the design (9 November 2026)
+
+**What a person sees**: Settings' GPU switch, drawn off since 0.11.326,
+turns on where the machine has the HD 530; the LLM Monitor's Loaded tile
+says "GPU" when it answered there; and Compare runs a question on both and
+shows the two speeds. The answer is the same word for word, on either.
+
+**The same answer, by construction.** The processor's Q4_0 product is, for
+a row, `sum += (float)s * (sw * xs[b])` block after block - `s` the
+integer dot of 32 nibbles less eight with 32 bytes of the input, exact;
+`sw` the block's scale, a half-precision float made single. The kernel does
+exactly that, in that order, one lane a row: `kc` rounds as C rounds and
+fuses nothing, and a half-precision float made single is exact (made from
+its bits, not by `exp2`, which is the GPU's own and close). So every
+product is the processor's to the bit, and so is every token. The host
+test holds it there: the tiny phi-2's answers through `tools/eu_emu.c`
+against the processor's, word for word.
+
+**What it is made of:**
+
+| Piece | Supplied by | New or as it is |
+|---|---|---|
+| The kernel: rows of Q4_0 (and Q8_0) times inputs in Q8_0 | `llmgpu.kc`, in Kosmos's kernel language; compiled to the GPU's bytes on the Mac when the server is built, since the server is C and `kc.lua` is Lua | **new** |
+| `asfloat`, a float from its bits | `kc.lua` | **new**, one built-in |
+| The model in the GPU's table | the driver's `GPU_OP_BUFFER_IMPORT`, given **a run of a region's pages** rather than all of them, so the model is imported a layer a buffer without mapping 1.6 GB once per buffer; and **its GTT slots given back** when a buffer is forgotten - today they are emptied and never handed out again, so a second model would run the 4 GB table out | **changed** |
+| A product sent, waited for, read | the Compute Kit's C core, `compute_pack_run`, from the LLM server - a server asking the GPU's driver as the window server does | as it is |
+| Where the kit chooses | `llm_core.c`: a product hook, `m->gpu`, tried before the processor's rows, which says no for anything it cannot do (an odd number of blocks, a type it has no kernel for, no GPU) | **new**, small |
+| The switch, the tile, Compare | Settings, the Monitor, `llmproto.h`'s `gpu_have` and `ran_gpu`, there since 0.11.326 | as it is |
+
+**Data, regions and messages.** The weights stay where they are - in the
+LLM server's region, read from the file - and the GPU reads them there:
+each layer's pages imported once, at load. The input, quantised by the
+processor as now, goes into a small buffer of the server's (Q8_0's 34-byte
+blocks become 32 bytes of values and a float of scale, so every read is a
+whole dword); the output is a buffer of floats. A product is one
+`GPU_OP_RUN` message and a fence; no number travels in it.
+
+**The layout the kernel reads.** A Q4_0 block is 18 bytes, so only every
+other one starts on a dword, and the data port reads dwords. Two blocks
+are 36 bytes - nine dwords - so the kernel takes them in pairs, which needs
+an even number of blocks to a row: phi-2's 2560 and 10240 columns are 80
+and 320 blocks, and the tiny model's are even too. A row that is not goes
+to the processor.
+
+**The busiest path**, writing an answer: per token, about 200 products -
+each one message and one wait - and 1.6 GB read by the EUs. Memory bounds
+it as it bounds the processor (*The busiest path, and what the GPU can
+buy*, above), so the first kernel - a lane a row, sixteen rows a thread -
+is measured against four cores with AVX2 rather than assumed faster. Where
+the GPU should pay is reading the question: the same kernel over a batch
+of inputs reads each row once for all of them, as `dot4` does on the
+processor.
+
+**Steps:**
+
+1. **G1 - the kernel**: `asfloat` in `kc`; `llmgpu.kc` for Q4_0; held in
+   the emulator to `llm_dot_q4_0` bit for bit on random rows, odd scales
+   and subnormal ones included, with a control.
+2. **G2 - the driver**: an import of a run of pages, and GTT slots given
+   back and used again; `test_intelgpu_*` on the Mac.
+3. **G3 - the kit and the server**: the hook, the layers imported at load,
+   the switch on; the tiny model's answers through the emulator on the Mac
+   word for word with the processor's; under QEMU, no GPU, said so.
+4. **G4 - the M700**: the same answers on the HD 530, then the speeds -
+   writing and reading - beside four cores with AVX2, in Compare and the
+   Monitor. Needs a netboot.
+5. **G5 - faster**: a batch of inputs a run for the question; rows split
+   across a thread's lanes with a sum at the end if a lane a row starves
+   the memory; Q8_0's kernel.
+
 ## Decisions that are Diego's
 
 **Taken on 8 November 2026** - Diego: "E1, server yes, convert phi-2, go

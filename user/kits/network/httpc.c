@@ -48,27 +48,32 @@ void httpc_reset(struct httpc *h)
     h->chunked = h->gzip = 0;
     h->head_len = 0;
     h->body_len = 0;
+    h->got = 0;
     h->chunk_left = -1;
     h->line_len = 0;
     h->after_chunk = 0;
 }
 
-int httpc_get(struct httpc *h, const char *path)
+static int request(struct httpc *h, const char *path, long long from, int streamed)
 {
     int n;
+    char range[64] = "";
 
     if (h->state != HTTPC_IDLE && h->state != HTTPC_DONE) {
         return -1;
     }
 
     httpc_reset(h);
+
+    if (from > 0) snprintf(range, sizeof(range), "Range: bytes=%lld-\r\n", from);
+
     n = snprintf(h->request, sizeof(h->request),
                  /* Who is asking, as Nominatim's policy and OpenFreeMap's
                   * ask an application to say (`docs/maps.md` M6e). */
                  "GET %s HTTP/1.1\r\nHost: %s\r\n"
                  "User-Agent: Kosmos/1 (+https://github.com/dcibils-neuratek/kosmos)\r\n"
-                 "Accept-Encoding: gzip\r\nConnection: keep-alive\r\n\r\n",
-                 path, h->host);
+                 "%sAccept-Encoding: %s\r\nConnection: keep-alive\r\n\r\n",
+                 path, h->host, range, streamed ? "identity" : "gzip");
 
     if (n < 0 || (size_t)n >= sizeof(h->request)) {
         h->state = HTTPC_FAILED;
@@ -80,6 +85,20 @@ int httpc_get(struct httpc *h, const char *path)
     h->request_sent = 0;
     h->state = HTTPC_SENDING;
     return 0;
+}
+
+int httpc_get(struct httpc *h, const char *path)
+{
+    memset(&h->sink, 0, sizeof(h->sink));
+    return request(h, path, 0, 0);
+}
+
+int httpc_get_into(struct httpc *h, const char *path, long long from, struct httpc_sink sink)
+{
+    if (sink.put == NULL || sink.room == NULL) return -1;
+
+    h->sink = sink;
+    return request(h, path, from, 1);
 }
 
 int httpc_reusable(const struct httpc *h)
@@ -94,9 +113,19 @@ static int fail(struct httpc *h, const char *why)
     return HTTPC_FAILED;
 }
 
-/* Bytes of body kept, to `body_most`. */
+/* Whether this reply's body goes to the sink: a 200's or a 206's. */
+static int streaming(const struct httpc *h)
+{
+    return h->sink.put != NULL && (h->status == 200 || h->status == 206);
+}
+
+/* Bytes of body kept, to `body_most` - or handed to the sink. */
 static int keep(struct httpc *h, const uint8_t *p, size_t n)
 {
+    h->got += (long long)n;
+
+    if (streaming(h)) return h->sink.put(h->sink.user, p, n);
+
     if (h->body_len + n > h->body_most) {
         return 0;
     }
@@ -124,7 +153,7 @@ static int keep(struct httpc *h, const uint8_t *p, size_t n)
 
 /* A header's value in the head, case not minded in its name; NULL if not
  * there. `len` its length. */
-static const char *header(const struct httpc *h, const char *name, size_t *len)
+const char *httpc_header(const struct httpc *h, const char *name, size_t *len)
 {
     size_t n = strlen(name);
     const char *p = h->head, *end = h->head + h->head_len;
@@ -194,26 +223,28 @@ static int parse_head(struct httpc *h)
 
     h->status = atoi(h->head + 9);
 
-    if ((v = header(h, "content-length", &len)) != NULL) {
+    if ((v = httpc_header(h, "content-length", &len)) != NULL) {
         h->length = strtoll(v, NULL, 10);
     }
 
-    if ((v = header(h, "transfer-encoding", &len)) != NULL && has_word(v, len, "chunked")) {
+    if ((v = httpc_header(h, "transfer-encoding", &len)) != NULL && has_word(v, len, "chunked")) {
         h->chunked = 1;
         h->chunk_left = -1;
     }
 
-    if ((v = header(h, "content-encoding", &len)) != NULL && has_word(v, len, "gzip")) {
+    if ((v = httpc_header(h, "content-encoding", &len)) != NULL && has_word(v, len, "gzip")) {
         h->gzip = 1;
     }
 
-    h->closes = (v = header(h, "connection", &len)) != NULL && has_word(v, len, "close");
+    h->closes = (v = httpc_header(h, "connection", &len)) != NULL && has_word(v, len, "close");
 
     /* HTTP/1.0 closes unless it says otherwise. */
-    if (h->head[7] == '0' && !((v = header(h, "connection", &len)) != NULL
+    if (h->head[7] == '0' && !((v = httpc_header(h, "connection", &len)) != NULL
                                && has_word(v, len, "keep-alive"))) {
         h->closes = 1;
     }
+
+    if (h->gzip && streaming(h)) return fail(h, "the download came gzipped, which it was asked not to be");
 
     h->state = HTTPC_BODY;
     return HTTPC_BODY;
@@ -371,10 +402,19 @@ int httpc_step(struct httpc *h)
             size_t want = sizeof(buf);
 
             if (!h->chunked && h->length >= 0) {
-                long long left = h->length - (long long)h->body_len;
+                long long left = h->length - h->got;
 
                 if (left <= 0) return finish(h);
                 if ((long long)want > left) want = (size_t)left;
+            }
+
+            /* A sink takes no more than it has room for: a full one stops
+             * the reading, and the bytes wait in the connection. */
+            if (streaming(h)) {
+                size_t room = h->sink.room(h->sink.user);
+
+                if (room == 0) return HTTPC_BODY;
+                if (want > room) want = room;
             }
 
             n = h->io.read(h->io.user, buf, want);
@@ -399,7 +439,7 @@ int httpc_step(struct httpc *h)
         } else {
             if (!keep(h, buf, (size_t)n)) return fail(h, "the reply is larger than allowed");
 
-            if (h->length >= 0 && (long long)h->body_len >= h->length) return finish(h);
+            if (h->length >= 0 && h->got >= h->length) return finish(h);
         }
     }
 

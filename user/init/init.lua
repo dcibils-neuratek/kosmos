@@ -1560,6 +1560,17 @@ local function new_namespace()
     return net.connect(capability, to, port, at_once)
   end
 
+  -- **A download into a region** (`download.c`, `docs/xavier.md`,
+  -- *Models*): one GET whose body goes from the connection to the caller's
+  -- region in C, never through Lua. `spec` is `net.download`'s.
+  function ns.download(path, spec)
+    local net, capability, why = net_at(path or "/Network")
+
+    if not net then return nil, why end
+
+    return net.download(capability, spec)
+  end
+
   -- A port for datagrams, and a multicast group joined if one is named
   -- (`docs/sharing.md` N11a): the handle a connection is, with `send` and
   -- `receive` for whole datagrams.

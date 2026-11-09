@@ -6,6 +6,27 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
 
 ---
 
+## 9 November, later: Models (0.11.332, not pushed)
+
+- **0.11.332**: `models` at the prompt. It lists the models folder, searches
+  Hugging Face's API for repositories that publish GGUF, and lists a
+  repository's files with what the kit can read. `get` downloads a file
+  into `.part`, resumes it with a Range, checks it against the published
+  SHA-256 and only then names it; `load` and `rm` are there too. The
+  download is all C: a new `download` in the Network Kit (httpc streaming
+  into a sink, through a 4 MB region, `fs.write_from_at`, and
+  `crypto.sha256_begin`). Packages and the browser can use it.
+  `x86-models`, 12 checks against a stand-in Hugging Face (18.726).
+- The gate: 105 of 106. `arm-sandbox`'s deadline test was late under load,
+  and passed 211 of 211 alone. That is its second recorded failure; it is
+  in the roadmap.
+- **X7 designed** (`xavier.md`, *X7, the GPU: the design*): a Q4_0 kernel
+  in `kc`, the same answers as the processor to the bit, the model
+  imported a layer a buffer, and the driver given ranged imports and
+  reusable GTT slots. Steps G1-G5; G4 needs the M700.
+
+**Next**: G1, the kernel in the emulator.
+
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 
 - **0.11.331**: `wm llmmon`, as drawn in `xavier.html`. The LLM server
