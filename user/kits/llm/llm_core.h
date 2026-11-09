@@ -290,6 +290,10 @@ int llm_feed_batch(struct llm_model *m, struct llm_held *h, const int32_t *token
 /* IEEE half precision, as ggml converts it: to nearest, ties to even. */
 uint16_t llm_f32_to_f16(float f);
 
+/* GELU as the kit takes it in a layer, through half precision as ggml's
+ * table: for the tests, which hold the table to the formula. */
+float llm_gelu(float x);
+
 /* And back, exactly. Here rather than in `llm_core.c` because it is in the
  * innermost loops - two a block of every row - where a call, or a branch-
  * free conversion of every case, cost more than the block's arithmetic

@@ -105,5 +105,9 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
+    /* What it cost, after the buffers, so a test reading them by line
+     * finds them where they were. */
+    printf("eu_run: %llu threads, %llu instructions\n", (unsigned long long)st.threads,
+            (unsigned long long)st.instructions);
     return 0;
 }

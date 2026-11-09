@@ -1,9 +1,9 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * **The LLM Kit's products on the GPU** (`docs/xavier.md`, *X7, the GPU:
- * the design*). What a product needs from a GPU is four things - a kernel
- * handed over, a stretch of the model's memory the GPU may read, a buffer
- * both sides see, and a run waited for - and those are a device's, given
+ * the design*). What a product needs from a GPU is three things - a kernel
+ * handed over, buffers both sides see, and a run waited for - and those are
+ * a device's, given
  * here as functions: on Kosmos the GPU's driver behind `/Devices/gpu`
  * (the LLM server's), and on the Mac the emulator of the execution units
  * (`tools/test_llm.c --gpu`). Everything else - which products go, the
@@ -34,15 +34,14 @@ struct llm_gpu_device {
   /* The kernel's bytes handed over: its id. */
   const char *(*kernel)(void *ctx, const uint8_t *code, size_t bytes, uint32_t *id);
 
-  /* `bytes` of the model's memory from `at`, for the GPU to read where
-   * they are: a buffer's id, and where in it `at` is. */
-  const char *(*import)(void *ctx, const void *at, size_t bytes, uint32_t *id, uint32_t *offset);
-
   /* A buffer of at least `bytes` both sides see: its id and the
-   * processor's address of it. */
-  const char *(*buffer)(void *ctx, size_t bytes, uint32_t *id, void **cpu);
+   * processor's address of it. `read_back` when the processor reads what
+   * the GPU wrote - the sums - and so wants it in its caches rather than
+   * write-combining, which it reads a word at a time (18.729). */
+  const char *(*buffer)(void *ctx, size_t bytes, int read_back, uint32_t *id, void **cpu);
 
-  /* A buffer from `buffer` let go, when a larger one replaces it. */
+  /* A buffer from `buffer` let go: a larger one replaces it, or the
+   * model is unloaded. */
   void (*forget)(void *ctx, uint32_t id);
 
   /* A run, done before it answers: `groups` thread groups of `simd`
@@ -52,19 +51,24 @@ struct llm_gpu_device {
                      size_t nconstants);
 };
 
-#define LLM_GPU_TENSORS 512u     /* weights imported, one buffer each */
+#define LLM_GPU_TENSORS 512u     /* weights laid out for it, one buffer each */
 
 struct llm_gpu {
   struct llm_gpu_device dev;
   uint32_t kernel, simd;
 
-  struct { const void *at; uint32_t id, offset; } tensor[LLM_GPU_TENSORS];
+  /* Each weight it has taken, copied once into a buffer of its own in the
+   * GPU's layout (`llm_gpu.c`, `weight`): the copy is the price of reading
+   * at a line a read, and it is made only for what the GPU is given. */
+  struct { const void *at; uint32_t id; size_t bytes; } tensor[LLM_GPU_TENSORS];
   uint32_t ntensors;
+  uint64_t tiled_bytes;
 
-  /* The inputs' values, their scales and the sums, grown as needed. */
-  uint32_t xq_id, xs_id, out_id;
-  void *xq, *xs, *out;
-  size_t xq_bytes, xs_bytes, out_bytes;
+  /* The inputs' values, a record a pair of blocks of their scales and
+   * sums, and the products' sums, grown as needed. */
+  uint32_t xq_id, xm_id, out_id;
+  void *xq, *xm, *out;
+  size_t xq_bytes, xm_bytes, out_bytes;
 
   uint64_t products;             /* taken here */
   uint64_t declined;             /* offered and left to the processor */

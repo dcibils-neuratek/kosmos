@@ -11,22 +11,31 @@
 #define MAX_SIDE       16384u   /* what GPU_OP_BUFFER_IMPORT takes */
 #define MAX_PITCH      32768u
 
+/*
+ * Bytes as the driver takes a buffer: rows of a page, up to 16384 of them -
+ * 64 MB - and past that rows of as many pages as it takes, up to seven, so
+ * the pitch stays under the driver's 32768: 448 MB (`docs/xavier.md`, X7
+ * G5 - phi-2's output weight, laid out for the GPU, is 74 MB). The last
+ * row is whole, so `pages` can be a few more than the bytes need.
+ */
 const char *compute_bytes_shape(size_t bytes, struct compute_shape *out)
 {
-    size_t rows = (bytes + PAGE - 1u) / PAGE;
+    size_t pages = (bytes + PAGE - 1u) / PAGE, per_row;
 
     if (bytes == 0) {
         return "a buffer of no bytes";
     }
 
-    if (rows > MAX_SIDE) {
-        return "a buffer of more than 64 MB";
+    per_row = (pages + MAX_SIDE - 1u) / MAX_SIDE;
+
+    if (per_row * PAGE >= MAX_PITCH) {
+        return "a buffer of more than 448 MB";
     }
 
-    out->width = PAGE / 4u;
-    out->pitch = PAGE;
-    out->height = (uint32_t)rows;
-    out->pages = (uint32_t)rows;
+    out->width = (uint32_t)(per_row * PAGE / 4u);
+    out->pitch = (uint32_t)(per_row * PAGE);
+    out->height = (uint32_t)((pages + per_row - 1u) / per_row);
+    out->pages = out->height * (uint32_t)per_row;
     return NULL;
 }
 

@@ -47,7 +47,13 @@ int main(void)
           "4097 bytes are not two rows");
     check(compute_bytes_shape(64u << 20, &s) == NULL && s.height == 16384,
           "64 MB is not 16384 rows");
-    check(compute_bytes_shape((64u << 20) + 1, &s) != NULL, "past 64 MB was not refused");
+    check(compute_bytes_shape((64u << 20) + 1, &s) == NULL && s.pitch == 8192 && s.height == 8193
+          && s.pages == 16386, "64 MB and a byte is not 8193 rows of two pages");
+    check(compute_bytes_shape(74u << 20, &s) == NULL && s.pitch == 8192 && s.height * 8192u >= (74u << 20),
+          "74 MB does not fit its rows");
+    check(compute_bytes_shape(448u << 20, &s) == NULL && s.pitch == 28672 && s.height == 16384,
+          "448 MB is not 16384 rows of seven pages");
+    check(compute_bytes_shape((448u << 20) + 1, &s) != NULL, "past 448 MB was not refused");
     check(compute_bytes_shape(0, &s) != NULL, "no bytes was not refused");
 
     /* Pictures: whole 64-byte lines; what the import takes. */

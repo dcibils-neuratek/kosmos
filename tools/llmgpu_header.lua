@@ -16,7 +16,8 @@ assert(code, info and info.why or tostring(info))
 
 local out = { "/* Made by tools/llmgpu_header.lua from user/lib/llmgpu.lua; not to be edited. */",
               "#ifndef KOSMOS_LLMGPU_KERNELS_H", "#define KOSMOS_LLMGPU_KERNELS_H", "",
-              "#include <stdint.h>", "", ("#define LLMGPU_Q4_0_SIMD %du"):format(SIMD) }
+              "#include <stdint.h>", "", ("#define LLMGPU_Q4_0_SIMD %du"):format(SIMD),
+              ("#define LLMGPU_TILE %du             /* rows side by side, llmgpu.tile */"):format(llmgpu.TILE) }
 
 for i, c in ipairs(info.constants) do
   -- The C fills an array of ints, so each must be one, in its place.

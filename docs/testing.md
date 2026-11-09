@@ -29716,3 +29716,71 @@ this one holds that the products are taken there and the answer is the
 same.
 
 **The gate**: 105 of 106 in 10:44. `x86-bluetooth` listed two of its three simulated devices under load, and passed 24 of 24 alone; it is in the roadmap.
+
+## 18.729 X7 G4 and G5: phi-2 on the M700's GPU, the processor's answer, and from 0.65 to 4.51 tokens a second
+
+**G4, the M700** (HD 530 at 1100 MHz of 1150, `gpustat`): phi-2 in Q4_0
+with `llm set gpu read+write`, asked "What is a microkernel?" for 40
+tokens, wrote **the processor's answer word for word**, every time below,
+and with every product of the model on the GPU (193 a token, the output
+layer's included once it fitted).
+
+It was eight times slower than the processor, and the LLM server now says
+why at the end of every answer that used the GPU (`llm: the GPU ran ...`
+in `log llm`): the runs, the time from asking to the fence, the asking, the
+polls, the processor's time in the products, and what was left to it. Each
+step found by that line, in order, as `xavier --tokens 40` wrote them:
+
+| step | tokens a second |
+|---|---|
+| the design as built (0.11.334): the weight read where the file has it | 0.65 |
+| the weight laid out for the GPU, sixteen rows side by side (`llmgpu.tile`) | 1.39 |
+| the inner loop written out, the "less eight" taken once a block | 1.48 |
+| a pair's inputs read once for every lane, `lanev` | 3.29 |
+| the sums read back from cached memory, and the output weight fitted onto the GPU | 3.85 |
+| GELU from its table | 4.25 (4 cores), 4.51 (1 core) |
+| the processor alone, AVX2, 4 cores / 8 cores | 4.65 / 5.44 |
+
+- **The layout**: with the rows as the file has them, the sixteen lanes of
+  a read are sixteen rows - sixteen lines for sixteen dwords; 9.4 ms a
+  product, about 1.5 GB/s. Laid out in tiles, a read is one line. It costs
+  a copy of each weight the GPU is given - 1420 MB for phi-2, on a machine
+  of 8 GB - made the first time it is used and let go with the model.
+- **Half the instructions bought 8%** (39358 a thread of 16 rows by 80
+  blocks to 19798, `eu_run`'s new last line), so the arithmetic was not
+  what held it.
+- **The inputs were**: the GPU's buffers are in the LLC and not its L3, and
+  every lane asked for the same input values one message at a time -
+  twenty messages a pair of blocks beside the weight's nine, about 4.3 GB
+  of the LLC's a token. `lanev(v, i)` in `kc` (lane i's value, for every
+  lane, through a `<0;1,0>` region): three messages for the twenty, and
+  2.85 ms a product became 0.9.
+- **The sums**: read from write-combining memory by the processor a word
+  at a time, 1.95 s of an answer's 8.86 in the products. A buffer the
+  processor reads back is ordinary memory now (`read_back`), which the
+  HD 530's LLC keeps coherent as i915 has it: 0.05 s. And the output weight,
+  74 MB laid out, was refused as "a buffer of more than 64 MB" - the
+  Compute Kit's shape, rows of a page - and left to the processor every
+  token; `compute_bytes_shape` makes rows of up to seven pages now, 448 MB
+  (`test_compute`, 39 checks, the new edges among them).
+- **GELU**: the step outside the products took 77 ms a token on the M700
+  against 5.5 on the Mac, and phi-2's GELU was a `tanh` in double, musl's,
+  for 327680 values a token. Its input is made half precision first, so it
+  is a table of 65536 (ggml's way), the same answers: `test_llm` holds
+  every half-precision input and 4000 floats either side to the formula
+  to the bit (**control**: the table read one entry off - 34419 wrong), and
+  phi-2's logits after six tokens hash the same before and after.
+
+**Held on the Mac**: `test_llmgpu`, 12 checks, now on tiled weights, the
+pair's record and `lanev` (**control**: the product's order swapped, 6 of
+12); `test_llm --gpu`, 83 with GELU's (**control**: the tile's dwords in the
+wrong order - the logits and llama.cpp's checks fail). Under QEMU there is
+no GPU and nothing changes.
+
+**What is left** (G5): the GPU and the processor read at about the same
+8 GB/s, far under the memory's 34, and they take turns - while a product
+runs on the GPU the cores wait. Splitting each product's rows between them
+is the next step; the pool's workers spin while they wait, which costs the
+one core doing the work about 10% (4 cores 4.25, 1 core 4.51).
+
+**The gate**: 105 of 106 in 10:43. `x86-share-2`'s Samba peer on the Mac was not answering when it was asked; alone it passed, 33 of 33.

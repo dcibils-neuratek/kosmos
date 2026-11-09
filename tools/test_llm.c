@@ -49,6 +49,7 @@
 #include "../user/include/gpuproto.h"
 
 #include <fcntl.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +69,37 @@ static void check(int ok, const char *what)
 {
   checks++;
   if (!ok) { failed++; printf("  FAIL: %s\n", what); }
+}
+
+/* The kit's GELU, a table of every half-precision input (18.729), held to
+ * the formula it was before: every one of the 65536 inputs, and a spread of
+ * floats either side of them, the same answer to the bit. */
+static void check_gelu(void)
+{
+  uint32_t wrong = 0, first = 0;
+
+  for (uint32_t i = 0; i < 65536u + 4000u; i++) {
+    float x = i < 65536u ? llm_f16_to_f32((uint16_t)i) : -12.0f + (float)(i - 65536u) * 0.006f;
+    float h, g, want, got = llm_gelu(x);
+
+    if (x <= -10.0f) want = 0.0f;
+    else if (x >= 10.0f) want = x;
+    else {
+      h = llm_f16_to_f32(llm_f32_to_f16(x));
+      g = 0.5f * h * (1.0f + (float)tanh((double)(0.79788456080286535587989211986876f * h
+                                                  * (1.0f + 0.044715f * h * h))));
+      want = llm_f16_to_f32(llm_f32_to_f16(g));
+    }
+
+    if (memcmp(&got, &want, sizeof got) != 0) {
+      if (wrong++ == 0) first = i;
+    }
+  }
+
+  char what[120];
+  snprintf(what, sizeof what, "GELU's table: %u of %u inputs not the formula's to the bit, the first %u",
+           wrong, 65536u + 4000u, first);
+  check(wrong == 0, what);
 }
 
 static void *alloc(void *ctx, size_t bytes)
@@ -113,18 +145,12 @@ static const char *emu_kernel_given(void *ctx, const uint8_t *code, size_t bytes
   return NULL;
 }
 
-static const char *emu_import(void *ctx, const void *at, size_t bytes, uint32_t *id, uint32_t *offset)
-{
-  (void)ctx;
-  *offset = 0;
-  return emu_take((uint8_t *)(uintptr_t)at, bytes, id);
-}
-
-static const char *emu_buffer(void *ctx, size_t bytes, uint32_t *id, void **cpu)
+static const char *emu_buffer(void *ctx, size_t bytes, int read_back, uint32_t *id, void **cpu)
 {
   uint8_t *b = calloc(1, (bytes + 4095) / 4096 * 4096);
 
   (void)ctx;
+  (void)read_back;
   if (!b) return "no memory";
   *cpu = b;
   return emu_take(b, bytes, id);
@@ -636,9 +662,10 @@ int main(int argc, char **argv)
   printf("opened %.*s: %u layers, %u wide, %u heads, %u tokens, %.2f s\n", (int)m.name.n,
          m.name.s, m.n_layer, m.n_embd, m.n_head, m.n_vocab, now() - t0);
 
+  check_gelu();
+
   if (with_gpu) {
-    static const struct llm_gpu_device dev = { NULL, emu_kernel_given, emu_import, emu_buffer,
-                                               emu_forget, emu_run };
+    static const struct llm_gpu_device dev = { NULL, emu_kernel_given, emu_buffer, emu_forget, emu_run };
 
     if (llm_gpu_begin(&gpu, &dev, why, sizeof why) != 0) {
       printf("FAIL: the GPU path would not begin: %s\n", why);

@@ -83,6 +83,11 @@ static struct llm_settings settings;        /* zero: Auto everywhere */
 static uint32_t processors = 1, cores = 1;  /* this machine */
 static uint32_t ran_cores = 1, ran_loops;   /* the last answer */
 static uint32_t ran_gpu;                    /* LLM_GPU_* bits the last answer used */
+
+/* Where an answer's GPU time went, said in the log when it ends: the runs,
+ * the time from asking to the fence reached, the part of it spent asking,
+ * and the polls. */
+static struct { uint64_t runs, run_us, ask_us, polls, product_us, feed_us; } gpu_time;
 static uint32_t gpu_have;                   /* LLM_GPU_* bits there is a GPU for */
 
 static long console = -1;
@@ -548,49 +553,8 @@ static const char *dev_kernel(void *ctx, const uint8_t *code, size_t bytes, uint
     return NULL;
 }
 
-/* A run of the model's region's pages, shaped as the driver takes a
- * buffer: rows of up to seven pages, no more than 16384 of them. */
-static const char *dev_import(void *ctx, const void *at, size_t bytes, uint32_t *id, uint32_t *offset)
-{
-    struct gpu_request rq;
-    struct gpu_reply rp;
-    uintptr_t base = (uintptr_t)model.file.at, p = (uintptr_t)at;
-    unsigned long first, need, per_row, rows;
-    uint32_t e;
 
-    (void)ctx;
-    if (model.file.cap < 0 || p < base || p + bytes > base + model.file.pages * 4096ul)
-        return "a weight outside the model's region";
-
-    first = (unsigned long)((p - base) / 4096u);
-    need = (unsigned long)(((p - base) % 4096u + bytes + 4095u) / 4096u);
-    per_row = (need + 16383u) / 16384u;
-
-    if (per_row > 7) return "a weight larger than a GPU buffer";
-
-    rows = (need + per_row - 1) / per_row;
-
-    if (first + rows * per_row > model.file.pages) rows = (model.file.pages - first) / per_row;
-    if (rows * per_row < need) return "a weight at the end of the region the buffer's shape cannot reach";
-
-    memset(&rq, 0, sizeof rq);
-    rq.op = GPU_OP_BUFFER_IMPORT;
-    rq.x = (int32_t)(per_row * 1024u);
-    rq.y = (int32_t)rows;
-    rq.pitch = (uint32_t)(per_row * 4096u);
-    rq.first_page = (uint32_t)first;
-    rq.pages = (uint32_t)(rows * per_row);
-
-    /* A capability travels as a copy: the driver keeps its own while the
-     * GPU can reach the pages, and this server keeps the model's. */
-    if ((e = gpu_ask(&rq, sizeof rq, model.file.cap, &rp)) != GPU_OK) return gpu_said(e);
-
-    *id = rp.buffer.id;
-    *offset = (uint32_t)((p - base) % 4096u);
-    return NULL;
-}
-
-static const char *dev_buffer(void *ctx, size_t bytes, uint32_t *id, void **cpu)
+static const char *dev_buffer(void *ctx, size_t bytes, int read_back, uint32_t *id, void **cpu)
 {
     struct compute_shape shape;
     struct gpu_request rq;
@@ -601,7 +565,13 @@ static const char *dev_buffer(void *ctx, size_t bytes, uint32_t *id, void **cpu)
 
     (void)ctx;
     if ((no = compute_bytes_shape(bytes, &shape)) != NULL) return no;
-    if ((region = kosmos_mem_create_flags(shape.pages, MEM_WRITE_COMBINE)) < 0) return "no memory";
+    /* Write-combining for what the processor writes and the GPU reads;
+     * ordinary memory for what it reads back, which on a GPU sharing the
+     * processor's LLC is coherent, as i915 has it on such machines - and
+     * read from write-combining a word at a time, the sums cost more than
+     * a third of the products' time on the processor (18.729). */
+    region = kosmos_mem_create_flags(shape.pages, read_back ? 0 : MEM_WRITE_COMBINE);
+    if (region < 0) return "no memory";
 
     if ((at = kosmos_mem_map(region)) < 0) {
         (void)kosmos_cap_drop(region);
@@ -647,6 +617,7 @@ static const char *dev_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t g
     unsigned long began = kosmos_ticks();
 
     (void)ctx;
+    gpu_time.runs++;
     for (uint32_t i = 0; i < nbuffers; i++) {
         bind[i].id = buffers[i];
         bind[i].view = GPU_VIEW_BYTES;
@@ -658,17 +629,21 @@ static const char *dev_run(void *ctx, uint32_t kernel, uint32_t simd, uint32_t g
     if ((e = gpu_ask(&q, sizeof q, -1, &rp)) != GPU_OK) return gpu_said(e);
 
     fence = rp.engine.value;
+    gpu_time.ask_us += micros(kosmos_ticks() - began);
 
     for (;;) {
+        gpu_time.polls++;
         if (gpu_simple(GPU_OP_FENCE, 1, &rp) != GPU_OK) return "the GPU's driver did not answer";
-        if ((int32_t)(rp.engine.value - fence) >= 0) return NULL;
+        if ((int32_t)(rp.engine.value - fence) >= 0) {
+            gpu_time.run_us += micros(kosmos_ticks() - began);
+            return NULL;
+        }
         if (micros(kosmos_ticks() - began) > 2000000u) return "the GPU did not finish in two seconds";
         kosmos_yield();
     }
 }
 
-static const struct llm_gpu_device gpu_device = { NULL, dev_kernel, dev_import, dev_buffer,
-                                                  dev_forget, dev_run };
+static const struct llm_gpu_device gpu_device = { NULL, dev_kernel, dev_buffer, dev_forget, dev_run };
 
 /* What the kit offers: a question's products or an answer's, as Settings
  * says, and the kernel's say on the rest. */
@@ -678,8 +653,14 @@ static int gpu_product(void *ctx, const struct llm_tensor *w, const uint8_t *xq,
 {
     uint32_t want = n > 1 ? LLM_GPU_READ : LLM_GPU_WRITE;
 
+    unsigned long began = kosmos_ticks();
+    int no;
+
     if ((settings.gpu & want) == 0) return -1;
-    if (llm_gpu_product(ctx, w, xq, xq_room, xs, xs_room, n, bias, out, out_room) != 0) return -1;
+
+    no = llm_gpu_product(ctx, w, xq, xq_room, xs, xs_room, n, bias, out, out_room);
+    gpu_time.product_us += micros(kosmos_ticks() - began);
+    if (no != 0) return -1;
 
     ran_gpu |= want;
     return 0;
@@ -903,6 +884,20 @@ static void answer_end(void)
     pool_stop();
 
     if (ans.began_answer != 0) ans.answer_us = micros(kosmos_ticks() - ans.began_answer);
+
+    if (gpu_time.runs != 0) {
+        char line[320];
+
+        snprintf(line, sizeof line, "llm: the GPU ran %llu products, %llu ms from asking to done "
+                 "(%llu ms asking), %llu polls, %llu ms in the products with their inputs and sums, %llu ms feeding the answer's tokens; the answer %llu ms; %llu MB laid out for it; %llu left (%s)\n",
+                 (unsigned long long)gpu_time.runs, (unsigned long long)(gpu_time.run_us / 1000),
+                 (unsigned long long)(gpu_time.ask_us / 1000), (unsigned long long)gpu_time.polls, (unsigned long long)(gpu_time.product_us / 1000), (unsigned long long)(gpu_time.feed_us / 1000),
+                 (unsigned long long)((ans.prompt_us + ans.answer_us) / 1000),
+                 (unsigned long long)(gpu.tiled_bytes >> 20), (unsigned long long)gpu.declined,
+                 gpu.declined ? gpu.why : "none");
+        say(console, line);
+        memset(&gpu_time, 0, sizeof gpu_time);
+    }
 
     /* Whatever was held back for a stop that did not come is shown now. */
     if (ans.made_bytes > ans.head->written) llm_answer_publish(&ans.head->written, ans.made_bytes);
@@ -1133,9 +1128,20 @@ static void ask_step(void)
         return;
     }
 
-    if (ans.made >= ans.max_tokens || llm_feed(&model.m, &held, token) != 0) {
+    if (ans.made >= ans.max_tokens) {
         answer_end();
         return;
+    }
+
+    {
+        unsigned long began = kosmos_ticks();
+        int no = llm_feed(&model.m, &held, token);
+
+        gpu_time.feed_us += micros(kosmos_ticks() - began);
+        if (no != 0) {
+            answer_end();
+            return;
+        }
     }
 
     ans.next = llm_greedy(&model.m);

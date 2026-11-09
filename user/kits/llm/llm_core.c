@@ -426,12 +426,15 @@ no_memory:
   return -1;
 }
 
+static void gelu_table(void);
+
 int llm_open(struct llm_model *m, const void *file, size_t size, uint32_t n_ctx,
              llm_alloc_fn alloc, void *ctx, char *why, size_t room)
 {
   memset(m, 0, sizeof *m);
   m->file = file;
   m->size = size;
+  gelu_table();
 
   struct rd r = { m->file, m->file + size, 0 };
   const uint8_t *magic = take(&r, 4);
@@ -1229,15 +1232,43 @@ static void layer_norm(const float *x, float *out, uint32_t n, const struct llm_
 
 /* GELU through half precision, as ggml's table: the input to F16, GELU of
  * that, the answer to F16. */
+static float gelu_of_half(float h)
+{
+  float g = 0.5f * h * (1.0f + (float)tanh((double)(0.79788456080286535587989211986876f * h
+                                                      * (1.0f + 0.044715f * h * h))));
+  return llm_f16_to_f32(llm_f32_to_f16(g));
+}
+
+/* **And as ggml's table it is kept**: an input is made F16 before anything
+ * else, so there are 65536 inputs and as many answers, worked out once
+ * (`gelu_table`, at `llm_open`). It had been a `tanh` in double for every
+ * value - 327680 a token of phi-2's - and on the M700, with musl's `tanh`,
+ * that was most of what the processor did while the GPU took the products
+ * (`testing.md` 18.729). The answers are the same ones. */
+static uint16_t gelu_f16[65536];
+static int gelu_ready;
+
+static void gelu_table(void)
+{
+  if (gelu_ready) return;
+
+  for (uint32_t i = 0; i < 65536u; i++) gelu_f16[i] = llm_f32_to_f16(gelu_of_half(llm_f16_to_f32((uint16_t)i)));
+
+  gelu_ready = 1;
+}
+
 static float gelu(float x)
 {
   if (x <= -10.0f) return 0.0f;
   if (x >= 10.0f) return x;
 
-  float h = llm_f16_to_f32(llm_f32_to_f16(x));
-  float g = 0.5f * h * (1.0f + (float)tanh((double)(0.79788456080286535587989211986876f * h
-                                                      * (1.0f + 0.044715f * h * h))));
-  return llm_f16_to_f32(llm_f32_to_f16(g));
+  return llm_f16_to_f32(gelu_f16[llm_f32_to_f16(x)]);
+}
+
+float llm_gelu(float x)
+{
+  gelu_table();
+  return gelu(x);
 }
 
 /* RoPE, NeoX's pairing - element i with i + n_rot/2 - on the first n_rot

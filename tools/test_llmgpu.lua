@@ -68,11 +68,14 @@ local function a_scale()
 end
 
 local function case(name, rows, blocks, inputs, w_at)
-  -- The weight: w_at bytes before it, then rows of blocks of 18.
-  local w, wv = { string.rep("\0", w_at) }, {}
+  -- The weight: w_at bytes before it, then the rows' blocks of 18, laid
+  -- out in tiles as `llmgpu.tile` says - the last tile's missing rows
+  -- nought.
+  local wv, row_bytes = {}, {}
 
   for r = 1, rows do
     wv[r] = {}
+    local bytes = {}
 
     for b = 1, blocks do
       local h = a_scale()
@@ -81,12 +84,29 @@ local function case(name, rows, blocks, inputs, w_at)
       for j = 1, 16 do q[j] = rnd(256) end
 
       wv[r][b] = { scale = half(h), q = q }
-      w[#w + 1] = string.pack("<I2", h) .. string.char(table.unpack(q))
+      bytes[#bytes + 1] = string.pack("<I2", h) .. string.char(table.unpack(q))
+    end
+
+    row_bytes[r] = table.concat(bytes)
+  end
+
+  local tiles = (rows + llmgpu.TILE - 1) // llmgpu.TILE
+  local cells = {}
+
+  for i = 1, tiles * (blocks // 2) * 144 do cells[i] = "\0\0\0\0" end
+
+  for r = 1, rows do
+    for p = 0, blocks // 2 - 1 do
+      for j = 0, 8 do
+        cells[llmgpu.tile(r - 1, p, j, blocks) // 4 + 1] = row_bytes[r]:sub(p * 36 + j * 4 + 1, p * 36 + j * 4 + 4)
+      end
     end
   end
 
+  local w = { string.rep("\0", w_at), table.concat(cells) }
+
   -- The inputs: 32 signed values a block, and a float scale a block.
-  local xq, xs, xv = {}, {}, {}
+  local xq, xm, xv = {}, {}, {}
 
   for t = 1, inputs do
     xv[t] = {}
@@ -99,7 +119,17 @@ local function case(name, rows, blocks, inputs, w_at)
       local s = f32((rnd(2000) + 1) / 2000 * 0.05)
       xv[t][b] = { scale = s, v = vals }
       xq[#xq + 1] = string.pack(("<" .. ("b"):rep(32)), table.unpack(vals))
-      xs[#xs + 1] = string.pack("<f", s)
+      local total = 0
+      for i = 1, 32 do total = total + vals[i] end
+      xv[t][b].sum = total
+    end
+  end
+
+  -- Each pair's record: the two scales, then the two sums.
+  for t = 1, inputs do
+    for b = 1, blocks, 2 do
+      local p, q = xv[t][b], xv[t][b + 1]
+      xm[#xm + 1] = string.pack("<ffi4i4", p.scale, q.scale, p.sum, q.sum)
     end
   end
 
@@ -135,10 +165,10 @@ local function case(name, rows, blocks, inputs, w_at)
       return text:sub(1, a - 1) .. to .. text:sub(b + 1)
     end
 
-    src = swap(src, "sum += float(s) * (half(d0 & 65535) * load(xs, xsat));",
-                    "sum += (float(s) * half(d0 & 65535)) * load(xs, xsat);")
-    src = swap(src, "sum += float(s) * (half((d4 >> 16) & 65535) * load(xs, xsat + 4));",
-                    "sum += (float(s) * half((d4 >> 16) & 65535)) * load(xs, xsat + 4);")
+    src = swap(src, "sum += float(s) * (half(d0 & 65535) * asfloat(lanev(m, 0)));",
+                    "sum += (float(s) * half(d0 & 65535)) * asfloat(lanev(m, 0));")
+    src = swap(src, "sum += float(s) * (half((d4 >> 16) & 65535) * asfloat(lanev(m, 1)));",
+                    "sum += (float(s) * half((d4 >> 16) & 65535)) * asfloat(lanev(m, 1));")
   end
 
   for _, simd in ipairs { 8, 16 } do
@@ -149,12 +179,12 @@ local function case(name, rows, blocks, inputs, w_at)
     else
       local constants = kc.pack(info, { rows = rows, blocks = blocks, w_at = w_at, inputs = inputs })
       local groups = (rows + simd - 1) // simd
-      local wb, xqb, xsb = table.concat(w), table.concat(xq), table.concat(xs)
+      local wb, xqb, xmb = table.concat(w), table.concat(xq), table.concat(xm)
       -- `out` a little larger than the sums, so a lane past the last row
       -- that wrote would be seen.
       local out_bytes = (inputs * rows + simd) * 4
       local cmd = ("%s %d %d 1 %s %s %d:%s %d:%s %d:%s %d"):format(RUN, simd, groups, hex(constants),
-                    hex(code), #wb, hex(wb), #xqb, hex(xqb), #xsb, hex(xsb), out_bytes)
+                    hex(code), #wb, hex(wb), #xqb, hex(xqb), #xmb, hex(xmb), out_bytes)
       os.execute(cmd .. " > " .. OUT .. " 2>&1")
       local f = io.open(OUT)
       local said = f and f:read("a") or "error: the runner said nothing"

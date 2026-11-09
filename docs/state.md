@@ -40,8 +40,17 @@ Last updated: 2026-11-09 (0.11.331, not pushed; the LLM Monitor)
   byte for byte. Xavier's two GPU switches and `llm set gpu` turn it on.
   Under QEMU there is no GPU and the switches are disabled (18.728).
 
-**Next**: G4 - netboot the M700, `llm set gpu read+write`, phi-2's answer
-the same as the processor's, and the speeds beside four cores with AVX2.
+- **0.11.335, G4 and the start of G5**: phi-2 on the M700's HD 530 writes
+  the processor's answer word for word. From 0.65 tokens a second as built
+  to 4.51, step by step with the server's new account of where the GPU's
+  time goes (`log llm`): the weight laid out in tiles for the GPU (a copy,
+  1420 MB), the inputs read once a pair for every lane (`lanev` in `kc`),
+  the sums in cached memory, the Compute Kit's buffers up to 448 MB, and
+  GELU from a table. The processor alone: 4.65 on four cores, 5.44 on
+  eight (18.729). The M700 is left on the GPU, one core.
+
+**Next**: G5 - each product's rows split between the GPU and the
+processor at once; the pool's workers waiting without spinning.
 
 ## 9 November: the LLM Monitor (0.11.331, not pushed)
 

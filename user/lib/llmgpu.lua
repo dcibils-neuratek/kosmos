@@ -17,18 +17,39 @@
 --
 -- What it reads:
 --
---   w     the weight, as the file has it: a row is `blocks` blocks of 18
---         bytes - a scale, then 16 bytes of nibbles, the low ones values
---         0-15 and the high ones 16-31 - from byte `w_at`;
+--   w     the weight, **laid out for the GPU** from byte `w_at`: the rows in
+--         tiles of 16, and a tile's rows side by side - for each pair of
+--         blocks, its nine dwords, and each dword the sixteen rows' in turn
+--         (`llmgpu.tile` says where). A block is as the file has it: 18
+--         bytes, a scale, then 16 bytes of nibbles, the low ones values 0-15
+--         and the high ones 16-31;
 --   xq    the inputs' values, 32 signed bytes a block, `blocks * 32` bytes
 --         an input - Q8_0 without its scales, so every read is a dword;
---   xs    the inputs' scales as floats, `blocks` an input;
+--   xm    for each pair of an input's blocks, 16 bytes: the two scales as
+--         floats, then each block's 32 values summed, as ints - so the
+--         nibbles' "less eight" is taken once a block, as `8 * sum`, rather
+--         than once a value: the integer dot is the same integer;
 --   out   the sums, as floats: input `t`'s row `r` at `(t * rows + r) * 4`.
 --
 -- **Two blocks at a time**: a block is 18 bytes, so only every other one
 -- begins on a dword, and the data port reads dwords; two are 36 bytes,
 -- nine dwords. So `blocks` is even, which every product of phi-2's is; one
 -- that is not stays on the processor.
+--
+-- **Why the tiles** (`testing.md` 18.729): with the rows as the file has
+-- them, the sixteen lanes of a read are sixteen rows apart - sixteen
+-- cache lines for sixteen dwords - and on the M700 a product ran at about
+-- 1.5 GB/s. Side by side, a read is one line of 64 bytes. The arithmetic
+-- is untouched, so the sums are still the processor's to the bit.
+--
+-- **And the inputs read once a pair** (18.729): every lane wants the same
+-- input values, and read lane by lane they were sixteen messages a pair
+-- of blocks, and two each for the scales and the sums - two thirds of
+-- what the kernel asked the memory for, since the GPU's buffers are not
+-- in its L3. Now a lane reads one dword of the pair's 64 bytes, and
+-- `lanev` gives each to every lane: three messages for the twenty. So
+-- every lane runs the loop - a tile's missing rows are nought and there
+-- to be read - and only the store asks whether the row is one.
 
 local llmgpu = {}
 
@@ -36,7 +57,7 @@ llmgpu.q4_0 = [[
 const int rows, blocks, w_at, inputs;
 buffer w;
 buffer xq;
-buffer xs;
+buffer xm;
 buffer out;
 
 // A half-precision float, made single from its bits as llm_f16_to_f32
@@ -60,66 +81,80 @@ float half(int h) {
   return v;
 }
 
-// Byte k of a dword, signed.
-int sbyte(int d, int k) {
-  return (d << (24 - 8 * k)) >> 24;
-}
-
-// Four bytes of nibbles against the input's values: q's bytes are the
-// block's nibble bytes j to j + 3, lo the input's dword of values j to
-// j + 3 and hi of values j + 16 to j + 19.
+// Four bytes of nibbles against the input's values, the nibbles as they
+// are (0-15): q's bytes are the block's nibble bytes j to j + 3, lo the
+// input's dword of values j to j + 3 and hi of values j + 16 to j + 19.
+// Written out, every shift a constant: as a loop, with the shifts worked
+// out at run time, it was twice the instructions (18.729).
 int four(int q, int lo, int hi) {
-  int s = 0;
-  for (int k = 0; k < 4; k += 1) {
-    int b = (q >> (8 * k)) & 255;
-    s += ((b & 15) - 8) * sbyte(lo, k) + ((b >> 4) - 8) * sbyte(hi, k);
-  }
-  return s;
+  return (q & 15) * ((lo << 24) >> 24)
+       + ((q >> 4) & 15) * ((hi << 24) >> 24)
+       + ((q >> 8) & 15) * ((lo << 16) >> 24)
+       + ((q >> 12) & 15) * ((hi << 16) >> 24)
+       + ((q >> 16) & 15) * ((lo << 8) >> 24)
+       + ((q >> 20) & 15) * ((hi << 8) >> 24)
+       + ((q >> 24) & 15) * (lo >> 24)
+       + ((q >> 28) & 15) * (hi >> 24);
 }
 
 // One block's integer dot: its 16 nibble bytes as four dwords, against
-// the input's block at byte `x`.
-int block(int q0, int q1, int q2, int q3, int x) {
-  int s = four(q0, loadi(xq, x), loadi(xq, x + 16));
-  s += four(q1, loadi(xq, x + 4), loadi(xq, x + 20));
-  s += four(q2, loadi(xq, x + 8), loadi(xq, x + 24));
-  s += four(q3, loadi(xq, x + 12), loadi(xq, x + 28));
-  return s;
+// the input's block, whose eight dwords are lanes 0 to 7 of `xv`, less
+// eight times the block's values' sum.
+int block(int q0, int q1, int q2, int q3, int xv, int xsum) {
+  int s = four(q0, lanev(xv, 0), lanev(xv, 4));
+  s += four(q1, lanev(xv, 1), lanev(xv, 5));
+  s += four(q2, lanev(xv, 2), lanev(xv, 6));
+  s += four(q3, lanev(xv, 3), lanev(xv, 7));
+  return s - 8 * xsum;
 }
 
 void main() {
   int r = group_x * simd + lane;
-  if (r < rows) {
-    int row = w_at + r * blocks * 18;
-    for (int t = 0; t < inputs; t += 1) {
-      float sum = 0.0;
-      for (int b = 0; b < blocks; b += 2) {
-        int at = row + b * 18;
-        int d0 = loadi(w, at);
-        int d1 = loadi(w, at + 4);
-        int d2 = loadi(w, at + 8);
-        int d3 = loadi(w, at + 12);
-        int d4 = loadi(w, at + 16);
-        int x = (t * blocks + b) * 32;
-        int xsat = (t * blocks + b) * 4;
+  int row = w_at + (r >> 4) * (blocks >> 1) * 576 + (r & 15) * 4;
+  for (int t = 0; t < inputs; t += 1) {
+    float sum = 0.0;
+    for (int b = 0; b < blocks; b += 2) {
+      int at = row + (b >> 1) * 576;
+      int d0 = loadi(w, at);
+      int d1 = loadi(w, at + 64);
+      int d2 = loadi(w, at + 128);
+      int d3 = loadi(w, at + 192);
+      int d4 = loadi(w, at + 256);
 
-        // The first block: its scale the low half of d0, its nibble bytes
-        // the high half of d0, d1 to d3, and the low half of d4.
-        int q0 = ((d0 >> 16) & 65535) | (d1 << 16);
-        int q1 = ((d1 >> 16) & 65535) | (d2 << 16);
-        int q2 = ((d2 >> 16) & 65535) | (d3 << 16);
-        int q3 = ((d3 >> 16) & 65535) | (d4 << 16);
-        int s = block(q0, q1, q2, q3, x);
-        sum += float(s) * (half(d0 & 65535) * load(xs, xsat));
+      // The pair's inputs, read once for every lane: a lane each of the
+      // 64 bytes of values, and of the record of two scales and two sums.
+      int x = (t * blocks + b) * 32;
+      int xa = loadi(xq, x + (lane & 7) * 4);
+      int xb = loadi(xq, x + 32 + (lane & 7) * 4);
+      int m = loadi(xm, (t * blocks + b) * 8 + (lane & 3) * 4);
 
-        // The second: its scale the high half of d4, its bytes d5 to d8.
-        s = block(loadi(w, at + 20), loadi(w, at + 24), loadi(w, at + 28), loadi(w, at + 32), x + 32);
-        sum += float(s) * (half((d4 >> 16) & 65535) * load(xs, xsat + 4));
-      }
+      // The first block: its scale the low half of d0, its nibble bytes
+      // the high half of d0, d1 to d3, and the low half of d4.
+      int q0 = ((d0 >> 16) & 65535) | (d1 << 16);
+      int q1 = ((d1 >> 16) & 65535) | (d2 << 16);
+      int q2 = ((d2 >> 16) & 65535) | (d3 << 16);
+      int q3 = ((d3 >> 16) & 65535) | (d4 << 16);
+      int s = block(q0, q1, q2, q3, xa, lanev(m, 2));
+      sum += float(s) * (half(d0 & 65535) * asfloat(lanev(m, 0)));
+
+      // The second: its scale the high half of d4, its bytes d5 to d8.
+      s = block(loadi(w, at + 320), loadi(w, at + 384), loadi(w, at + 448), loadi(w, at + 512), xb, lanev(m, 3));
+      sum += float(s) * (half((d4 >> 16) & 65535) * asfloat(lanev(m, 1)));
+    }
+    if (r < rows) {
       store(out, (t * rows + r) * 4, sum);
     }
   }
 }
 ]]
+
+-- Where the tiled weight keeps dword `j` (0-8) of row `r`'s pair of
+-- blocks `p`, in bytes, for a weight of `blocks` blocks a row - the one
+-- statement of the layout, which `llm_gpu.c` and the tests follow.
+llmgpu.TILE = 16
+
+function llmgpu.tile(r, p, j, blocks)
+  return ((r // 16) * (blocks // 2) + p) * 576 + j * 64 + (r % 16) * 4
+end
 
 return llmgpu

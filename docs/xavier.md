@@ -1043,10 +1043,17 @@ processor.
    `llm set gpu` at the prompt; `testing.md` 18.728).
 4. **G4 - the M700**: the same answers on the HD 530, then the speeds -
    writing and reading - beside four cores with AVX2, in Compare and the
-   Monitor. Needs a netboot.
+   Monitor. Needs a netboot. **Done on 9 November (0.11.335)**: phi-2's
+   answer word for word on the HD 530, and 4.51 tokens a second against
+   the processor's 4.65 on four cores and 5.44 on eight, on one core
+   (`testing.md` 18.729, every step from 0.65 measured).
 5. **G5 - faster**: a batch of inputs a run for the question; rows split
    across a thread's lanes with a sum at the end if a lane a row starves
-   the memory; Q8_0's kernel.
+   the memory; Q8_0's kernel. **Begun in 0.11.335**: the weight laid out
+   for the GPU in tiles of 16 rows, a pair's inputs read once for every
+   lane (`lanev` in `kc`), the sums in cached memory, GELU from a table.
+   **Next**: each product's rows split between the GPU and the processor,
+   both reading at once; the pool's workers waiting without spinning.
 
 ## Decisions that are Diego's
 

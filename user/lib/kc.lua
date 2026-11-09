@@ -35,7 +35,7 @@
 -- `break`, `continue`, `return`. Functions are inlined - the GPU has no
 -- stack to call on - and may return early. Built in: `lane`, `group_x`,
 -- `group_y`, `simd`; `sqrt`, `rsqrt`, `sin`, `cos`, `pow`, `exp2`, `log2`,
--- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`, `asfloat`,
+-- `floor`, `ceil`, `fract`, `abs`, `min`, `max`, `clamp`, `float`, `int`, `asfloat`, `lanev`,
 -- `vec3`, `dot`, `cross`, `length`, `normalize`; and the buffers' doors,
 -- `load`, `loadi`, `load3`, `store` and `store3`, each by a byte offset.
 --
@@ -1187,6 +1187,28 @@ local function gen(prog, simd)
       return r
     end
     if n == "int" then want(1) return as(eval(args[1]), "d") end
+
+    -- Lane i's value, for every lane, i a constant (`docs/xavier.md`, X7
+    -- G5): read from the register where that lane keeps it, through a
+    -- region that repeats it - so sixteen dwords read in one message by
+    -- sixteen lanes are each every lane's, at the cost of a move.
+    if n == "lanev" then
+      want(2)
+      local v, i = eval(args[1]), eval(args[2])
+
+      if i.k ~= "imm" or math.tointeger(i.v) == nil or i.v < 0 or i.v >= W then
+        fail(line, ("lanev's lane is a constant from 0 to %d"):format(W - 1))
+      end
+
+      if v.k == "imm" or v.k == "uni" then return v end
+      if v.k ~= "reg" then fail(line, "lanev takes an int or a float") end
+
+      local r = temp(v.t == "b" and "d" or v.t)
+      local at = { k = "uni", t = r.t, r = v.r + i.v // 8, s = i.v % 8 }
+      emit(("mov %s %s %s"):format(EX, dst(r), src(at)))
+      consume(v)
+      return r
+    end
 
     if n == "vec3" then
       want(3)
