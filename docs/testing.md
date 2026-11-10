@@ -30755,3 +30755,29 @@ now reads to the prompt; the `nobt` check, which waited for `nobt: ` and
 then looked for `nobt: nil `, the same. **Control**: `bt` paused 100 ticks
 before each row - the new wait passes 24 of 24, the old fails both boots
 with `[]`.
+
+## 18.754 The resampler, one copy
+
+`docs/playback.md`, step 1: `sys.pcm`'s conversion - 8 or 16 bits, mono or
+stereo, any rate, to the device's 16-bit stereo at 44.1 kHz, by linear
+interpolation with the caller's phase - moved out of `sys_user.c` into
+`user/include/pcmconvert.h`, so the Playback Kit's thread calls the same
+code `sys.pcm` does rather than a second copy. `sys.pcm` is now its checks
+and a call.
+
+`tools/test_pcmconvert.c`, in `host`, new: 12 checks. **Held to what it
+was** - the loop as it stood in `sys_user.c`, its Lua replaced by arguments,
+kept in the test as the reference: 2,464 cases (seven rates, both channel
+counts, both widths, eleven lengths, `last` both ways, three rooms), the
+same frames, bytes consumed and phase, bit for bit. **And on its own
+terms**: 44.1 kHz stereo out as in; 22.05 kHz mono doubled with midpoints
+(six frames from three with `last`, the half step past the end being the
+last frame); 8-bit centred on 128; the last frame only with `last`; and a
+stream in ragged 333-byte pieces, the phase carried, the stream whole - to
+the sample at 11.025, 22.05 and 44.1 kHz, within one step at 8, 32, 48 and
+96, where the phase reduced each call rounds differently from the phase run
+on, as it always did. **Controls**: the right channel scaled by 0.999 - the
+reference check and four of the pieces checks fail; `consumed` allowed to
+take the frame a piece still needs - 36 of 2,464 cases differ.
+
+`x86-film` 13 of 13 and `x86-sound` on it; `host` 39 s.

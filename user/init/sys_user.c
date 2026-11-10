@@ -26,6 +26,7 @@
 #include "kosmos.h"
 #include "elfimage.h"
 #include "audioring.h"
+#include "pcmconvert.h"
 #include "serialize.h"
 
 /* The two definitions of struct message are one contract written twice, so
@@ -437,7 +438,7 @@ static int l_ring_put(lua_State *L)
  */
 static int l_pcm(lua_State *L)
 {
-    size_t len;
+    size_t len, consumed;
     const unsigned char *in = (const unsigned char *)
                               luaL_checklstring(L, 1, &len);
     long rate = (long)luaL_checkinteger(L, 2);
@@ -446,15 +447,11 @@ static int l_pcm(lua_State *L)
     double phase = (double)luaL_optnumber(L, 5, 0.0);
     long max_out = (long)luaL_optinteger(L, 6, HAL_SND_PERIOD_BYTES_MAX);
     int last = lua_toboolean(L, 7);
+    long frames;
 
     static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
 
-    long in_frame_bytes = channels * (bits / 8);
-    long in_frames, out_frames = 0;
-    double step;
-
-    if (rate <= 0 || (channels != 1 && channels != 2)
-        || (bits != 8 && bits != 16)) {
+    if (!pcm_format_ok(rate, channels, bits)) {
         return luaL_error(L, "pcm: %d Hz, %d channels, %d bits is not a "
                              "format this understands", (int)rate,
                           (int)channels, (int)bits);
@@ -464,89 +461,13 @@ static int l_pcm(lua_State *L)
         max_out = (long)sizeof(out);
     }
 
-    in_frames = (long)(len / (size_t)in_frame_bytes);
+    /* The one copy, which the Playback Kit's thread calls too. */
+    frames = pcm_convert(in, len, rate, channels, bits, last, &phase, out,
+                         max_out, &consumed);
 
-    if (in_frames < (last ? 1 : 2)) {
-        lua_pushlstring(L, "", 0);
-        lua_pushinteger(L, 0);
-        lua_pushnumber(L, (lua_Number)phase);
-
-        return 3;
-    }
-
-    step = (double)rate / (double)HAL_SND_RATE;
-
-    while (out_frames * 4 + 4 <= max_out) {
-        long at = (long)phase;
-        double frac = phase - (double)at;
-        int32_t l0, r0, l1, r1;
-
-        /* The last frame has no neighbour to interpolate towards, so it is
-         * where this piece stops - and the caller sends the rest next time
-         * with the phase that got us here. Unless there is no next time:
-         * then the final frame is its own neighbour (`last`, above). */
-        if (at + 1 >= in_frames && !(last && at + 1 == in_frames)) {
-            break;
-        }
-
-        if (bits == 8) {
-            /* Unsigned, centred on 128, which is what an 8-bit WAV is. */
-            const unsigned char *a = in + at * in_frame_bytes;
-            const unsigned char *b = (at + 1 < in_frames)
-                                     ? a + in_frame_bytes : a;
-
-            l0 = ((int32_t)a[0] - 128) << 8;
-            r0 = (channels == 2) ? (((int32_t)a[1] - 128) << 8) : l0;
-            l1 = ((int32_t)b[0] - 128) << 8;
-            r1 = (channels == 2) ? (((int32_t)b[1] - 128) << 8) : l1;
-        } else {
-            const unsigned char *a = in + at * in_frame_bytes;
-            const unsigned char *b = (at + 1 < in_frames)
-                                     ? a + in_frame_bytes : a;
-
-            /* Little endian, read a byte at a time: the input is a Lua
-             * string and nothing promises it is two-byte aligned. */
-            l0 = (int16_t)(a[0] | (a[1] << 8));
-            r0 = (channels == 2) ? (int16_t)(a[2] | (a[3] << 8)) : l0;
-            l1 = (int16_t)(b[0] | (b[1] << 8));
-            r1 = (channels == 2) ? (int16_t)(b[2] | (b[3] << 8)) : l1;
-        }
-
-        out[out_frames * 2]     = (int16_t)(l0 + (l1 - l0) * frac);
-        out[out_frames * 2 + 1] = (int16_t)(r0 + (r1 - r0) * frac);
-
-        out_frames++;
-        phase += step;
-    }
-
-    /*
-     * How much of the input is finished with.
-     *
-     * Everything up to the frame the phase now sits in - not including it,
-     * because the next piece has to interpolate from it. The caller drops
-     * that many bytes and keeps the rest, and the phase comes back reduced
-     * by the same amount so the two agree.
-     */
-    {
-        long consumed = (long)phase;
-
-        /* All of it at the end; otherwise the frame the phase sits in stays
-         * for the next piece to interpolate from. */
-        if (consumed > in_frames - (last ? 0 : 1)) {
-            consumed = in_frames - (last ? 0 : 1);
-        }
-
-        if (consumed < 0) {
-            consumed = 0;
-        }
-
-        phase -= (double)consumed;
-
-        lua_pushlstring(L, (const char *)out, (size_t)out_frames * 4);
-        lua_pushinteger(L, (lua_Integer)(consumed * in_frame_bytes));
-        lua_pushnumber(L, (lua_Number)phase);
-    }
-
+    lua_pushlstring(L, (const char *)out, (size_t)frames * 4);
+    lua_pushinteger(L, (lua_Integer)consumed);
+    lua_pushnumber(L, (lua_Number)phase);
     return 3;
 }
 
