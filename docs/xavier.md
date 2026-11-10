@@ -963,7 +963,7 @@ passage at the prompt with `llm inside`.
   candidates with their odds, a softmax over the whole vocabulary
   (`llm_candidates`). `llm_watch(m, into)` hands the kit `LLM_BATCH` of
   them; NULL, and the forward pass does nothing more.
-- **The ring** is `llminside.h`: a region of 256 records of 9016 bytes -
+- **The ring** is `llminside.h`: a region of 256 records of 10040 bytes -
   the passage, its token's text and its candidates' - made at the first
   INSIDE and handed to every window that asks. An INSIDE is a lease of
   five seconds; the page renews it every two.

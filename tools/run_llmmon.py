@@ -50,6 +50,9 @@ TOKEN = re.compile(r'^(read|written)\s+(\d+) ("(?:[^"\\]|\\.)*")\s+(alone|\d+ to
                    r'stream ([\d.]+) to ([\d.]+)(?:; next ("(?:[^"\\]|\\.)*") (\d+)%)?', re.M)
 RECORDED = re.compile(r"^(\d+) tokens recorded, (\d+) read and (\d+) written", re.M)
 LAYER = re.compile(r"^  +\d+  stream +[\d.]+  fired +\d+ \( *\d+%\)  head +\d+ looks ", re.M)
+# And what each layer weighed past the first token (`xavier.md`, *The Story
+# page*, S1): up to three, each a word and a share, then the first token's.
+WEIGHED = re.compile(r"^  +\d+  stream .*; weighed ((?:(?:itself|\"(?:[^\"\\]|\\.)*\") \d+%(?:, )?){1,3}); first (\d+)%\r?$", re.M)
 SHAPE = re.compile(r"^shape: +(\d+) layers", re.M)
 INSIDE = re.compile(r"llmmon: inside (\d+) tokens, last at (\d+) (\".*\") (read|written), (\d+) layers")
 ASKER = re.compile(r"^  (\S+)\s+(?:writing; |loading; )?(\d+) answers, (\d+) read, (\d+) written, "
@@ -234,6 +237,11 @@ def main():
     check(n_layer is not None and len(LAYER.findall(inside1)) == n_layer
           and len(LAYER.findall(inside0)) == n_layer,
           "llm inside: not the last token's %r layers a line each: %r" % (n_layer, inside0[-1200:]))
+    weighed = WEIGHED.findall(inside0)
+    check(len(weighed) == n_layer and all(
+              sum(int(x) for x in re.findall(r"(\d+)%", w)) + int(f) <= 100 + 4 for w, f in weighed),
+          "llm inside: not every layer's three weighed most past the first token, their shares and "
+          "the first token's at most the whole: %r" % (inside0[-1200:]))
     check(bool(inside_window) and inside_window[-1][3] == "written" and int(inside_window[-1][4]) == n_layer
           and written and inside_window[-1][1] == written[-1][1] and inside_window[-1][2] == written[-1][2],
           "the Inside page did not read the ring's last written token, %r: %r"

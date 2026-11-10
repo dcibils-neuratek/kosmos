@@ -111,8 +111,10 @@ local function token_line(r)
                 #next_words > 0 and ("; next " .. table.concat(next_words, ", ")) or ""))
 end
 
--- A token's layers, one a line: its stream, the neurons that fired, and
--- the head that looked hardest at one token - which, and how far back.
+-- A token's layers, one a line: its stream, the neurons that fired, the
+-- head that looked hardest at one token - which, and how far back - and
+-- what the layer weighed most past the first token, with the first
+-- token's share apart (`llm.inside_layer`'s looks and sink).
 local function layer_lines(r, text_at)
   print(("%s at %d, %d layers of %d heads and %d neurons:"):format(quoted(r.text), r.pos, r.n_layer,
                                                                    r.n_head, r.n_ff))
@@ -131,10 +133,19 @@ local function layer_lines(r, text_at)
 
     local at = r.pos - L.back[best]
 
-    print(("  %2d  stream %7.2f  fired %5d (%2d%%)  head %2d looks %s, %d back, %.0f%%")
+    local weighed = {}
+
+    for _, look in ipairs(L.looks) do
+      weighed[#weighed + 1] = ("%s %.0f%%"):format(look.back == 0 and "itself"
+                                                   or quoted(text_at[r.pos - look.back] or "?"),
+                                                   look.share * 100)
+    end
+
+    print(("  %2d  stream %7.2f  fired %5d (%2d%%)  head %2d looks %s, %d back, %.0f%%; weighed %s; first %.0f%%")
           :format(l, L.stream, L.fired, r.n_ff > 0 and L.fired * 100 // r.n_ff or 0, best,
                   L.back[best] == 0 and "at itself" or ("at " .. quoted(text_at[at] or "?")),
-                  L.back[best], L.share[best] * 100))
+                  L.back[best], L.share[best] * 100,
+                  #weighed > 0 and table.concat(weighed, ", ") or "nothing", L.sink * 100))
   end
 end
 

@@ -58,7 +58,7 @@ struct llm_inside_record {
 };
 
 #define LLM_INSIDE_RECORD_BYTES (32u + LLM_INSIDE_TEXT * (1u + LLM_PASSAGE_CANDIDATES) \
-                                 + 104u + 136u * LLM_PASSAGE_LAYERS)
+                                 + 104u + 152u * LLM_PASSAGE_LAYERS)
 #define LLM_INSIDE_REGION (LLM_INSIDE_DATA + LLM_INSIDE_RECORDS * LLM_INSIDE_RECORD_BYTES)
 
 _Static_assert(sizeof(struct llm_inside) == 32, "llm_inside is 32 bytes");

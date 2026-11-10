@@ -221,6 +221,10 @@ struct llm_model {
   /* Where each token's passage is recorded, `LLM_BATCH` of them, or NULL
    * (`llm_watch`). */
   struct llm_passage *passage;
+  /* Each head's three strongest looks past the first token, while
+   * watched: `LLM_BATCH` x `LLM_PASSAGE_HEADS`, combined into the layer's
+   * three at its end (`struct llm_passage_layer`'s `look_back`). */
+  struct llm_look *look;
 
   /* **Where the time goes** (`llm_clock`): the forward pass's stages, in
    * the clock's own counts, added up from the moment a clock was given.
@@ -244,6 +248,16 @@ struct llm_model {
  * one (0, itself) - and what share of its attention that one position
  * had, of 65535. A model of more layers or heads than there is room for is
  * recorded up to the room, and says how many it has.
+ *
+ * **And what the layer looked back at, in words** (`docs/xavier.md`, *The
+ * Story page*): the three positions weighed most by the layer's heads, the
+ * first token left out - each head's three strongest looks past it, added
+ * by position over the heads and divided by how many - and the first
+ * token's share apart, the same way. Most heads rest on the first token
+ * when nothing else matters, which carries no meaning and would otherwise
+ * be every layer's first look. A head's three are summed rather than every
+ * position, so the record is the same however the heads were cut across
+ * the cores. Fewer than three earlier tokens leave the rest 0, 0.
  */
 #define LLM_PASSAGE_LAYERS     64u
 #define LLM_PASSAGE_HEADS      32u
@@ -254,6 +268,18 @@ struct llm_passage_layer {
   uint32_t fired;
   uint16_t back[LLM_PASSAGE_HEADS];
   uint16_t share[LLM_PASSAGE_HEADS];
+  uint16_t look_back[3];        /* how many tokens back, the most weighed first */
+  uint16_t look_share[3];       /* of 65535, averaged over the heads            */
+  uint16_t sink_share;          /* the first token's, the same way              */
+  uint16_t reserved;
+};
+
+/* A head's three strongest looks past the first token, as `attend` found
+ * them; position UINT32_MAX for none. */
+struct llm_look {
+  uint32_t pos[3];
+  float    share[3];
+  float    sink;
 };
 
 struct llm_passage {
@@ -266,8 +292,8 @@ struct llm_passage {
   struct llm_passage_layer layer[LLM_PASSAGE_LAYERS];
 };
 
-_Static_assert(sizeof(struct llm_passage_layer) == 136, "a layer's record is 136 bytes");
-_Static_assert(sizeof(struct llm_passage) == 104 + 136 * LLM_PASSAGE_LAYERS, "a passage is as llmring.h says");
+_Static_assert(sizeof(struct llm_passage_layer) == 152, "a layer's record is 152 bytes");
+_Static_assert(sizeof(struct llm_passage) == 104 + 152 * LLM_PASSAGE_LAYERS, "a passage is as llminside.h says");
 
 /* From the next step on, token `t` of a batch recorded into `into[t]` -
  * `LLM_BATCH` of them - or, with NULL, nothing recorded. */

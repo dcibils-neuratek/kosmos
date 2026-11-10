@@ -638,6 +638,92 @@ static void rope_here(float *v, uint32_t n_rot, uint32_t pos, float base)
   }
 }
 
+/* A head's attention weights for the token at `pos`, from the query
+ * captured and the cache, into `w`, summing to one. */
+static void head_weights(const struct llm_model *m, uint32_t l, uint32_t h, uint32_t pos, double *w)
+{
+  const uint32_t KV = m->kv_dim, D = m->head_dim;
+  const uint16_t *kc = m->k_cache + (size_t)l * m->n_ctx * KV;
+  const uint32_t kvh = h / (m->n_head / m->n_head_kv);
+  float q[1024];
+  double max = -1e300, sum = 0;
+
+  memcpy(q, queries[l] + h * D, D * sizeof *q);
+  rope_here(q, m->n_rot, pos, m->rope_base);
+
+  for (uint32_t p0 = 0; p0 <= pos; p0++) {
+    double d = 0;
+
+    for (uint32_t i = 0; i < D; i++)
+      d += (double)llm_f16_to_f32(llm_f32_to_f16(q[i] * (1.0f / sqrtf((float)D))))
+           * llm_f16_to_f32(kc[(size_t)p0 * KV + kvh * D + i]);
+    w[p0] = d;
+    if (d > max) max = d;
+  }
+  for (uint32_t p0 = 0; p0 <= pos; p0++) sum += (w[p0] = exp(w[p0] - max));
+  for (uint32_t p0 = 0; p0 <= pos; p0++) w[p0] /= sum;
+}
+
+/*
+ * **What each layer looked back at** (`struct llm_passage_layer`'s
+ * looks): worked out here from the weights, and the record's held to it.
+ * A head's third look can tie its fourth within a rounding, so a
+ * position's sum is bounded - below by the heads where it is surely among
+ * the three, above by those where it may be - and the record's share must
+ * lie between, its three in falling order, the first token's share the
+ * heads' average, and looks plus first token at most the whole.
+ */
+static int looks_agree(const struct llm_model *m, const struct llm_passage *p, uint32_t pos, int *looked)
+{
+  static double w[2048], lo[2048], hi[2048];
+  const double tol = 3e-3;
+  int wrong = 0;
+
+  *looked = 0;
+  for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS && l < TRACE_LAYERS; l++) {
+    const struct llm_passage_layer *L = &p->layer[l];
+    const uint32_t H = m->n_head < LLM_PASSAGE_HEADS ? m->n_head : LLM_PASSAGE_HEADS;
+    double sink = 0;
+
+    if (!queries[l]) return -1;
+    for (uint32_t p0 = 0; p0 <= pos; p0++) lo[p0] = hi[p0] = 0;
+
+    for (uint32_t h = 0; h < H; h++) {
+      double top[3] = { -1, -1, -1 };
+
+      head_weights(m, l, h, pos, w);
+      sink += w[0];
+      for (uint32_t p0 = 1; p0 <= pos; p0++) {
+        int k = 3;
+        while (k > 0 && w[p0] > top[k - 1]) k--;
+        if (k == 3) continue;
+        for (int j = 2; j > k; j--) top[j] = top[j - 1];
+        top[k] = w[p0];
+      }
+      for (uint32_t p0 = 1; p0 <= pos; p0++) {
+        if (top[2] < 0 || w[p0] > top[2] + tol) lo[p0] += w[p0];
+        if (top[2] < 0 || w[p0] >= top[2] - tol) hi[p0] += w[p0];
+      }
+    }
+
+    double whole = L->sink_share / 65535.0;
+    (*looked)++;
+    if (fabs(whole - sink / H) > tol) wrong++;
+    for (int k = 0; k < 3; k++) {
+      double s = L->look_share[k] / 65535.0;
+
+      if (L->look_share[k] == 0) continue;
+      whole += s;
+      if (L->look_back[k] > pos) { wrong++; continue; }
+      uint32_t at = pos - L->look_back[k];
+      if (s < lo[at] / H - tol || s > hi[at] / H + tol) wrong++;
+      if (k > 0 && L->look_share[k] > L->look_share[k - 1]) wrong++;
+    }
+    if (whole > 1 + tol) wrong++;
+  }
+  return wrong;
+}
+
 /* Every head of every layer for the token at `pos`, from the queries
  * captured and the cache: how many of its looks agree with the record -
  * the same position, or one whose weight is within a rounding of the
@@ -731,6 +817,11 @@ static void check_passage(struct llm_model *m)
     snprintf(what, sizeof what, "passage: the last token's %d heads' strongest looks worked out here from its "
              "queries and the cache, %d not the record's", looked, wrong);
     check(wrong == 0 && looked > 0, what);
+
+    wrong = looks_agree(m, &watched_one[n - 1], (uint32_t)n - 1, &looked);
+    snprintf(what, sizeof what, "passage: the last token's %d layers' three looks past the first token, and its "
+             "share, worked out here; %d not the record's", looked, wrong);
+    check(wrong == 0 && looked > 0, what);
   }
 
   /* Watched, in batches: each batch's records against the single steps'. */
@@ -762,7 +853,8 @@ static void check_passage(struct llm_model *m)
   /* Position 0: one position to look at, wholly. */
   for (uint32_t l = 0; l < m->n_layer && l < LLM_PASSAGE_LAYERS; l++)
     for (uint32_t h = 0; h < m->n_head && h < LLM_PASSAGE_HEADS; h++)
-      if (watched_one[0].layer[l].back[h] != 0 || watched_one[0].layer[l].share[h] != 65535) own = 0;
+      if (watched_one[0].layer[l].back[h] != 0 || watched_one[0].layer[l].share[h] != 65535
+          || watched_one[0].layer[l].look_share[0] != 0 || watched_one[0].layer[l].sink_share != 65535) own = 0;
   check(own && watched_one[0].pos == 0 && watched_one[0].token == t[0] && watched_one[n - 1].pos == (uint32_t)n - 1
         && watched_one[0].n_layer == m->n_layer && watched_one[0].n_head == m->n_head,
         "passage: at position 0 every head looks at the token itself, wholly; positions and tokens as read");

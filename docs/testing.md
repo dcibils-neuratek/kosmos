@@ -30511,3 +30511,32 @@ the GPU's share, measured for phi-2's Q4_0 products when the processor's
 were slower, now holds the answer back, and eight processors on four
 cores share each core's vector unit. Diego's settings left as they were;
 which to keep is his.
+
+## 18.744 The Story page, S1: what each layer looked back at, the first token apart
+
+**What** (`xavier.md`, *The Story page: the design*): the passage's layer
+record grows from 136 bytes to 152 - `look_back[3]`, `look_share[3]`,
+`sink_share`. While watched, `attend` keeps each head's three strongest
+looks past the first token (`struct llm_look`, `m->look`, a batch's
+heads), and at the layer's end, where its stream's length is taken on one
+thread, `combine_looks` adds them by position in head order and keeps the
+three largest, each averaged over the heads; the first token's share the
+same way. A head's three rather than every position, so the record is the
+same however the heads were cut across the cores - `test_llm`'s check that
+a batch records what single steps record, `memcmp`, still holds it. The
+Inside ring's record is 10,040 bytes (`llminside.h`, `llm.lua`), and `llm
+inside` says each layer's "weighed" words and "first" share.
+
+**Checks**: `test_llm`'s `looks_agree`, every model - from the captured
+queries and the cache, each head's weights worked out here; a position's
+sum bounded below by the heads where it is surely among the three and
+above by those where a rounding could put it there, since the kit's
+weights are rounded to F16 and a head's third look often ties its fourth;
+the record's shares between, falling, the first token's share the heads'
+average, and the whole at most one. At position 0 no look and the first
+token's share whole. `x86-llmmon`: `llm inside`'s every layer line says
+up to three words weighed and the first token's share, together at most
+the whole. **The first try counted a look at the token itself as wrong** -
+it is a real look, back 0, and only a share of 0 is no look. **Control**:
+the first token let in among the looks - 35 checks over its 24 layers fail on
+Qwen2.5 0.5B, and position 0's.

@@ -674,9 +674,10 @@ bad_tensor:
   m->xq = alloc(ctx, B * m->xq_room);
   m->xs = alloc(ctx, B * m->xs_room * 4);
   m->xk = alloc(ctx, B * m->xk_room);
+  m->look = alloc(ctx, B * LLM_PASSAGE_HEADS * sizeof *m->look);
 
   if (!m->k_cache || !m->v_cache || !m->x || !m->xn || !m->qkv || !m->att || !m->attn_out
-      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs || !m->xk || (qwen && !m->up)) {
+      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs || !m->xk || !m->look || (qwen && !m->up)) {
     say(why, room, "no memory for its attention cache and working vectors");
     return -1;
   }
@@ -1694,6 +1695,8 @@ int llm_step(struct llm_model *m, int32_t token)
  * and walking the value cache a row at a time change no bit of it. Only
  * where the work happens moved (testing.md 18.733).
  */
+static void combine_looks(struct llm_model *m, uint32_t l, uint32_t t);
+
 static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, float *att,
                    const uint16_t *kc, const uint16_t *vc)
 {
@@ -1738,6 +1741,22 @@ static void attend(struct llm_model *m, uint32_t l, uint32_t t, uint32_t h, floa
 
     m->passage[t].layer[l].back[h] = (uint16_t)(pos - best > 65535u ? 65535u : pos - best);
     m->passage[t].layer[l].share[h] = (uint16_t)(att[best] * 65535.0f + 0.5f);
+
+    /* The three strongest past the first token, a tie the earlier first. */
+    struct llm_look *lk = &m->look[t * LLM_PASSAGE_HEADS + h];
+
+    lk->sink = att[0];
+    for (int k = 0; k < 3; k++) { lk->pos[k] = UINT32_MAX; lk->share[k] = -1.0f; }
+    for (uint32_t p = 1; p <= pos; p++) {
+      float v = att[p];
+      int k = 3;
+
+      while (k > 0 && v > lk->share[k - 1]) k--;
+      if (k == 3) continue;
+      for (int j = 2; j > k; j--) { lk->pos[j] = lk->pos[j - 1]; lk->share[j] = lk->share[j - 1]; }
+      lk->pos[k] = p;
+      lk->share[k] = v;
+    }
   }
 
   /* Each output the sum over the positions in order, as before; the cache
@@ -1967,6 +1986,7 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 
         for (uint32_t i = 0; i < E; i++) sq += (double)x[i] * x[i];
         m->passage[t].layer[l].stream = (float)sqrt(sq);
+        combine_looks(m, l, t);
       }
     }
     lap(m, &since, LLM_STAGE_ADD);
@@ -1990,6 +2010,51 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
 
   m->n_past += n;
   return 0;
+}
+
+/* The layer's three looks from its heads' (`struct llm_passage_layer`):
+ * added by position, in head order, and the three largest kept. */
+static void combine_looks(struct llm_model *m, uint32_t l, uint32_t t)
+{
+  struct llm_passage_layer *L = &m->passage[t].layer[l];
+  const uint32_t H = m->n_head < LLM_PASSAGE_HEADS ? m->n_head : LLM_PASSAGE_HEADS;
+  const uint32_t pos = m->n_past + t;
+  uint32_t where[LLM_PASSAGE_HEADS * 3], n = 0;
+  float sum[LLM_PASSAGE_HEADS * 3];
+  double sink = 0;
+
+  for (uint32_t h = 0; h < H; h++) {
+    const struct llm_look *lk = &m->look[t * LLM_PASSAGE_HEADS + h];
+
+    sink += lk->sink;
+    for (int k = 0; k < 3 && lk->pos[k] != UINT32_MAX; k++) {
+      uint32_t i = 0;
+
+      while (i < n && where[i] != lk->pos[k]) i++;
+      if (i == n) { where[n] = lk->pos[k]; sum[n++] = 0; }
+      sum[i] += lk->share[k];
+    }
+  }
+
+  for (int k = 0; k < 3; k++) {
+    uint32_t best = n;
+
+    for (uint32_t i = 0; i < n; i++)
+      if (sum[i] >= 0 && (best == n || sum[i] > sum[best] || (sum[i] == sum[best] && where[i] < where[best])))
+        best = i;
+
+    if (best == n) {
+      L->look_back[k] = 0;
+      L->look_share[k] = 0;
+      continue;
+    }
+    L->look_back[k] = (uint16_t)(pos - where[best] > 65535u ? 65535u : pos - where[best]);
+    L->look_share[k] = (uint16_t)(sum[best] / (float)H * 65535.0f + 0.5f);
+    sum[best] = -1.0f;
+  }
+
+  L->sink_share = (uint16_t)(sink / H * 65535.0 + 0.5);
+  L->reserved = 0;
 }
 
 void llm_watch(struct llm_model *m, struct llm_passage *into)

@@ -459,7 +459,8 @@ end
 --   local ring = llm.inside()
 --   for _, r in ipairs(ring:read()) do      -- what came since the last read
 --     print(r.text, r.cands[1].text, r.cands[1].odds)
---     local layer = llm.inside_layer(r, 1)  -- { stream, fired, back = {}, share = {} }
+--     local layer = llm.inside_layer(r, 1)  -- { stream, fired, back = {}, share = {},
+--                                           --   looks = { { back, share } ... }, sink }
 --   end
 --   ring:renew()                            -- on the window's clock: the lease
 --
@@ -473,10 +474,10 @@ local RECORD_HEAD = "<I4I4I4I4I4I4I4I4c16"           -- seq .. rows_all, two spa
 local PASSAGE = "<I4i4I4I4I4I4"                       -- pos, token, n_layer, n_head, n_ff, n_cand
 local AT_CAND_TEXT, AT_PASSAGE = 49, 209              -- 1-based, as string.unpack counts
 local PASSAGE_LAYERS, PASSAGE_HEADS, CANDIDATES = 64, 32, 10
-local LAYER = "<fI4" .. ("I2"):rep(2 * PASSAGE_HEADS)
-local LAYER_BYTES = 136
+local LAYER = "<fI4" .. ("I2"):rep(2 * PASSAGE_HEADS + 7)
+local LAYER_BYTES = 152
 local AT_LAYERS = AT_PASSAGE + 104
-local RECORD_BYTES = AT_LAYERS - 1 + LAYER_BYTES * PASSAGE_LAYERS   -- 9016, as llminside.h has it
+local RECORD_BYTES = AT_LAYERS - 1 + LAYER_BYTES * PASSAGE_LAYERS   -- 10040, as llminside.h has it
 
 llm.INSIDE_RECORDS = 256
 
@@ -573,6 +574,10 @@ end
 -- Layer `l` (1-based) of a record: the residual stream's length after it,
 -- the feed-forward neurons that fired, and each head's strongest look -
 -- how many tokens back, and its share of the head's attention, 0 to 1.
+-- And `looks`, what the layer weighed most past the first token - up to
+-- three, the most weighed first, each how many back and its share
+-- averaged over the heads - with `sink`, the first token's share
+-- (`llm_core.h`, `struct llm_passage_layer`).
 function llm.inside_layer(r, l)
   if l < 1 or l > math.min(r.n_layer, PASSAGE_LAYERS) then return nil end
 
@@ -584,6 +589,14 @@ function llm.inside_layer(r, l)
     layer.back[h] = v[2 + h]
     layer.share[h] = v[2 + PASSAGE_HEADS + h] / 65535
   end
+
+  local at = 2 + 2 * PASSAGE_HEADS
+  layer.looks = {}
+  for k = 1, 3 do
+    local share = v[at + 3 + k]
+    if share > 0 then layer.looks[#layer.looks + 1] = { back = v[at + k], share = share / 65535 } end
+  end
+  layer.sink = v[at + 7] / 65535
 
   return layer
 end
