@@ -6561,7 +6561,10 @@ not static**, since a static one is in every process.
    `x86-film` and `x86-sound` held under the gate's load. **Step 1 built
    in 0.11.359** (18.754), **step 2 in 0.11.360** (18.755), **step 3 in
    0.11.361** (18.756): a film's sound on the kit's thread, held under four
-   spinners by `x86-film-load`. Next, Music (step 4).
+   spinners by `x86-film-load`; **steps 4 and 5 in 0.11.362** (18.757): a
+   song on it, Music in the audio band, `media.feed` gone. **Done**, the
+   whole gate run on it. Left from it: the M700, to measure a frame's
+   decode and a period's conversion on the thread there.
    **And found on the way, not of sound** (18.755): `arm-media` fails 3 of
    46, all a cover picture inside an MP3 not reaching the screen ("the
    cover's first quarter covers 0 of the 1024 pixels") - the same three on

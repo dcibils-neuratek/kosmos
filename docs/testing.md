@@ -30882,3 +30882,33 @@ that bites, not the WAV, and a film with a shallower ring - or a song, at
 eight periods, 46 ms - would have been heard to skip.
 
 `host`'s `test_playback`: 22 of 22. The x86-64 and AArch64 images build.
+
+## 18.757 A song on the Playback Kit, and `media.feed` gone
+
+`docs/playback.md`, steps 4 and 5. `media.lua`'s player keeps its face -
+`open`, `play`, `pause`, `tick`, `seek`, `position`, `volume`, `peak`,
+`finished`, `close` - and is the kit's underneath: `open` probes the file
+as before (`mp3.probe`, `wav.scan`), opens a player of kind `mp3` or `wav`
+and a stream, and fills the kit's input; `tick` keeps it full, reading the
+file 64 KB at a time and handing it over in pieces of 16 KB; a seek is a
+new stream, the kit told first. Music declares `kosmos: needs audio`, so a
+song's thread is in the audio band. `media.feed`, its `decoded` and
+`pending` strings and `sys.pcm` on the period path are gone: nothing hands
+a song's or a film's sound over a string at a time any more, only tones
+and beeps made in Lua through `stream:play`.
+
+**A piece of 16 KB at most, refused loudly past it.** An MP3's or a WAV's
+bytes wait in the core's 32 KB carry until they make a frame, and an MP3 is
+decoded only with 16 KB waiting (`PB_MP3_AHEAD`): a piece larger than what
+is left beside that would neither fit nor be decoded to make room, and the
+core would wait on it for ever without a word. A film's sound never met it
+- a record is one frame - and a song, read in pieces of the file, would
+have. The kit refuses one (`PB_PIECE`), saying why.
+
+`make test ONLY=host,arm-media,x86-quicklook,x86-film,x86-film-load,x86-sound`:
+all pass but `arm-media`, which fails the same three cover checks as on
+0.11.359 (18.755) and passes its other 43 - the tone played, sought and
+finished, the VBR MP3's length, the master muted and back, the clock
+against the device's, Music's window. **Control**: the end never said to
+the kit - 4 of 46 fail, the fourth "the tone did not finish, at about six
+seconds: 'media: finished false 5.997'".

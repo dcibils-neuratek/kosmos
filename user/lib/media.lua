@@ -19,14 +19,22 @@
 -- where the last seek landed - not what was handed over, which runs ahead by
 -- the ring and the device together. A picture timed to anything else drifts.
 --
--- **It never blocks.** `tick` hands over what the server will take and
--- returns at "full", because whoever calls it is a window with a pointer to
--- answer. WAV and MP3.
+-- **The sound is played on a thread of its own** (`docs/playback.md`): the
+-- Playback Kit's, in the audio band when the program declared `kosmos:
+-- needs audio`, decoding, converting and writing into the stream's ring.
+-- This file's part is the file: `tick` reads it a piece at a time and hands
+-- the pieces to the kit while it has room - a megabyte, a minute of a song
+-- - so a window held away for seconds is not heard. It was `media.feed`,
+-- in Lua, a period at a time from the window's own loop (`roadmap.md` 6zw).
+--
+-- **It never blocks.** `tick` hands over what the kit will take and returns,
+-- because whoever calls it is a window with a pointer to answer. WAV and MP3.
 
 local audio = use("/Kosmos/Libraries/audio.lua")
 local wav   = use("/Kosmos/Libraries/wav.lua")
 local mp3   = use("/Kosmos/Kits/mp3")
 local tags  = use("/Kosmos/Libraries/tags.lua")
+local regions = use("/Kosmos/Libraries/regions.lua")
 
 local media = {}
 
@@ -42,141 +50,65 @@ local media = {}
 -- 120 a second against the 172 the device drains, and the music played at two
 -- thirds speed. Bigger and rarer wins: most ticks touch no disk at all.
 --
-local READ = 32768
+local READ = 65536
 
 --
--- How many periods one tick may hand over: sixteen, against the 172 a second
--- the device drains and the seventeen ticks a second a window actually gets -
--- 272 of headroom over 172 needed, which is margin rather than a fit.
+-- How much of it goes to the kit as one piece: 16 KB, the most an MP3's or
+-- a WAV's piece may be (`playback_kosmos.c` says why).
 --
--- A ceiling rather than "until full", so that a server which wrongly always
--- answered "taken" would make the audio run ahead - visible and recoverable -
--- instead of reading the whole file inside one tick and taking the window
--- still with it.
---
-local FEED_MAX = 16
-
---
--- **Sound to its stream, wherever it came from** (`roadmap.md`, *One kit,
--- one door*): what a song and a film both do once there are samples -
--- convert them to what the device takes (`sys.pcm`) a few periods at a
--- time, and hand over as many periods as the server will take and never
--- more than `most`. It was the same loop twice, here and in `video.lua`,
--- around two sources; the sources are what differ, so they are what each
--- side keeps.
---
--- `f` is the player: its `stream` and the device's `fmt`; `decoded`, the
--- source's samples not yet converted, at its `rate`, in `channels` of
--- `bits`; `pending`, converted and not yet taken; `phase`, the resampler's;
--- and `frames_out`, how many frames have been converted for the device,
--- which `run_film.py` reads. `fill(f)` is the source: it tops `decoded` up
--- and says whether the input has ended - true once all of it is in
--- `decoded` - or nil when nothing more can go this time.
---
--- Returns how many periods went; then the server's word when it refused
--- one - "full" is it being ahead, anything else is an error - and true when
--- what was left would not convert to anything.
---
-function media.feed(f, most, fill)
-  local period = f.fmt.period
-  local fed = 0
-
-  for _ = 1, most do
-    if #f.pending == 0 then
-      local last = fill(f)
-
-      if last == nil then return fed end
-
-      --
-      -- The end of the input is the end, said to `sys.pcm` so the final
-      -- frame comes out rather than waiting for a neighbour that never
-      -- comes - and one frame is then enough to convert, where two are
-      -- needed while there is more to come. The last sample of every song
-      -- and every film went unplayed until both halves were here
-      -- (`testing.md` 18.185).
-      --
-      if f.rate == 0
-         or #f.decoded < f.channels * (f.bits // 8) * (last and 1 or 2) then
-        return fed
-      end
-
-      local pcm, used
-      pcm, used, f.phase = sys.pcm(f.decoded, f.rate, f.channels, f.bits,
-                                   f.phase, period * 4, last)
-
-      if used == 0 or #pcm == 0 then return fed, nil, true end
-
-      f.decoded = f.decoded:sub(used + 1)
-      f.pending = pcm
-      f.frames_out = (f.frames_out or 0) + #pcm // 4
-    end
-
-    local took, why = f.stream:play(f.pending:sub(1, period))
-
-    if not took then return fed, tostring(why) end
-
-    f.pending = f.pending:sub(period + 1)
-    fed = fed + 1
-  end
-
-  return fed
-end
+local PIECE = 16384
 
 local player = {}
 player.__index = player
 
+local function format_is_mp3(info)
+  return info.format == "MP3"
+end
+
 --
--- Everything between the file and the stream emptied, and reading picked up
--- again at byte `at` - for a start, and for a seek.
+-- Reading picked up again at byte `at` - for a start, and for a seek. What
+-- the kit held of the old place it forgets at its `seek`.
 --
 local function restart(p, at)
   p.at = at
   p.last = p.info.offset + p.info.bytes
-  p.carry, p.decoded, p.pending, p.phase = "", "", "", 0.0
-
-  if p.decoder then p.decoder:reset() end
+  p.held, p.held_n, p.ended = 0, 0, false
 end
 
 --
--- **A song's source** for `media.feed`: the file a window at a time, into
--- the decoder when it has one - an MP3's - and straight into `decoded` when
--- its bytes are samples already, a WAV's. `carry` is what the decoder has
--- not taken yet.
+-- **The kit's input kept full**: the file a window at a time into the read
+-- buffer, and from there to the kit in pieces of `PIECE`, while it has room.
+-- An MP3's and a WAV's bytes are a stream, so a piece is any length; the kit
+-- takes no larger one (`playback_kosmos.c`). Returns how many pieces went.
 --
-local function from_file(p)
-  local waiting = p.decoder and p.carry or p.decoded
+local function fill(p)
+  local put = 0
 
-  if p.at < p.last and #waiting < READ then
-    local n = fs.read_into(p.path, p.page, p.at, math.min(READ, p.last - p.at))
+  while true do
+    if p.held_n == 0 then
+      if p.at >= p.last then break end
 
-    if not n or n == 0 then
-      p.at = p.last
-      return nil
+      local n = fs.read_into(p.path, p.page.cap, p.at, math.min(READ, p.last - p.at))
+
+      if not n or n == 0 then
+        p.at = p.last
+        break
+      end
+
+      p.at, p.held, p.held_n = p.at + n, 0, n
     end
 
-    local got = sys.region_read(p.page, 0, n)
+    local n = math.min(PIECE, p.held_n)
 
-    if p.decoder then p.carry = p.carry .. got else p.decoded = p.decoded .. got end
+    if not p.player:frame(p.page.at + p.held, n) then return put end
 
-    p.at = p.at + n
+    p.held, p.held_n = p.held + n, p.held_n - n
+    put = put + 1
   end
 
-  if p.decoder and #p.decoded < p.fmt.period * 4 and #p.carry > 0 then
-    local pcm, used = p.decoder:decode(p.carry, p.fmt.period * 8)
+  if not p.ended then p.ended = p.player:ended() end
 
-    if used == 0 then
-      -- Not a whole frame yet. If the file is finished there will never
-      -- be one, so stop rather than spin on the same bytes.
-      if p.at >= p.last then p.carry = "" end
-      return nil
-    end
-
-    p.decoded = p.decoded .. pcm
-    p.carry = p.carry:sub(used + 1)
-  end
-
-  -- Everything read, and nothing the decoder could still make a frame of.
-  return p.at >= p.last and (not p.decoder or #p.carry < p.info.frame * 2)
+  return put
 end
 
 --
@@ -214,36 +146,35 @@ function media.open(path, options)
   if fmt.period == 0 then return nil, "this machine has no sound device" end
 
   -- Sized to the read, which is not a detail: `fs.read_into` writes what it
-  -- is asked for, and asking for 32 KB into one page is a buffer overrun with
+  -- is asked for, and asking for 64 KB into one page is a buffer overrun with
   -- the length written three lines away from the allocation.
-  local page = sys.memory(READ // 4096)
+  local page = regions.make(READ)
 
   if not page then return nil, "no memory for a read buffer" end
 
   local function read_at(off, n)
-    local got = fs.read_into(path, page, off, n)
+    local got = fs.read_into(path, page.cap, off, n)
 
     if not got or got == 0 then return nil end
 
-    return sys.region_read(page, 0, got)
+    return sys.region_read(page.cap, 0, got)
   end
 
   local format = path:lower():match("%.mp3$") and "MP3" or "WAV"
-  local info, why, decoder
+  local info, why
 
   if format == "MP3" then
     --
     -- An MP3 has no header, only a run of frames, so the first frame *is* the
     -- header - and finding it means decoding one. `mp3.probe` does that with
-    -- a decoder of its own, so the real one does not start life holding half
-    -- a frame of somebody else's overlap. 32 KB is plenty to find it in: a
-    -- frame is at most 1728 bytes, and an ID3v2 tag ahead of it is usually a
-    -- few kilobytes of cover.
+    -- a decoder of its own. 64 KB is plenty to find it in: a frame is at most
+    -- 1728 bytes, and an ID3v2 tag ahead of it is usually a few kilobytes of
+    -- cover.
     --
     local head = read_at(0, READ)
 
     if not head then
-      sys.release(page)
+      regions.free(page)
       return nil, "cannot read " .. path
     end
 
@@ -265,69 +196,97 @@ function media.open(path, options)
         info.seconds = (info.bitrate > 0)
                        and (info.bytes * 8 / (info.bitrate * 1000)) or 0
       end
-      decoder = mp3.decoder()
     end
   else
     info, why = wav.scan(read_at)
   end
 
   if not info then
-    sys.release(page)
+    regions.free(page)
     return nil, tostring(why)
   end
 
   info.format = format
 
+  --
+  -- The kit that plays it: told an MP3 is one, which finds its own rate in
+  -- its frames, and told a WAV's format, since its bytes are samples.
+  --
+  local playback = use("/Kosmos/Kits/playback")
+  local kit, kwhy
+
+  if format == "MP3" then
+    kit, kwhy = playback.open{ kind = "mp3" }
+  else
+    kit, kwhy = playback.open{ kind = "wav", rate = info.rate,
+                               channels = info.channels, bits = info.bits }
+  end
+
+  if not kit then
+    regions.free(page)
+    return nil, tostring(kwhy)
+  end
+
   local name = path:match("([^/]+)$") or path
   local stream, serr = audio.open(name)
 
   if not stream then
-    sys.release(page)
+    kit:close()
+    regions.free(page)
     return nil, tostring(serr)
+  end
+
+  local ok, swhy = pcall(kit.seek, kit, stream.ring)
+
+  if not ok then
+    kit:close()
+    stream:close()
+    regions.free(page)
+    return nil, tostring(swhy)
   end
 
   local p = setmetatable({
     path = path, name = name, info = info, fmt = fmt, page = page,
-    stream = stream, decoder = decoder, playing = false, base = 0,
+    stream = stream, player = kit, heard = {}, playing = false, base = 0,
     rate = info.rate, channels = info.channels, bits = info.bits,
   }, player)
 
   restart(p, info.offset)
+  fill(p)
   return p
 end
 
 function player:play()
   self.playing = true
+  self.player:play()
 end
 
--- Nothing more is handed over; what the ring and the device hold, about
--- 70 ms, plays out, and the position stops where the sound did.
+-- Nothing more is written; what the ring and the device hold, about 70 ms,
+-- plays out, and the position stops where the sound did.
 function player:pause()
   self.playing = false
+  self.player:pause()
 end
 
 --
--- Hand over as much as the server will take, and not one period more. Call
--- it on every tick; it returns how many periods went.
+-- The kit's input kept full. Call it on every tick; it returns how many
+-- pieces of the file went. A frame the kit would not decode is said in
+-- `error`, and the song goes on past it.
 --
 function player:tick()
-  if not self.stream or not self.playing then return 0 end
+  if not self.stream then return 0 end
 
-  local fed, why = media.feed(self, FEED_MAX, from_file)
+  local put = fill(self)
+  local h = self.player:state(self.heard)
 
-  -- "full" is the server ahead, to come back to next tick; anything else
-  -- stops the song where it is, and says why.
-  if why and why ~= "full" then
-    self.error = why
-    self.playing = false
-  end
+  if h.refused > 0 and h.why ~= "" then self.error = h.why end
 
-  return fed
+  return put
 end
 
 --
 -- Seconds heard: where the last seek landed, and the frames out of the
--- speaker since - at the device's rate, since `sys.pcm` has converted to it.
+-- speaker since - at the device's rate, which the kit converts to.
 --
 function player:position()
   if not self.stream then return self.base end
@@ -340,13 +299,13 @@ end
 --
 -- A WAV's place is exact. An MP3's comes from the bitrate, as its length
 -- does - exact for a constant bitrate, an estimate for a variable one - and
--- the decoder is reset there and finds the next frame by itself, since
--- `decode` consumes bytes that are not a frame and gives no samples for them.
+-- the kit's decoder starts again there and finds the next frame by itself.
 --
 -- **The stream is closed and opened again**, because nothing can drop what a
 -- stream has queued: there is no flush in `audioproto.h`. The ring and the
 -- device hold about 70 ms of the old place, which a new stream discards and
--- carrying on would play.
+-- carrying on would play. The kit is told first, and has let go of the old
+-- ring before it is closed.
 --
 function player:seek(seconds)
   local info = self.info
@@ -355,7 +314,7 @@ function player:seek(seconds)
 
   local at
 
-  if self.decoder then
+  if format_is_mp3(info) then
     at = info.offset + math.floor(seconds * (info.bitrate or 0) * 1000 / 8)
   else
     at = info.offset + math.floor(seconds * info.rate) * info.frame
@@ -363,22 +322,31 @@ function player:seek(seconds)
 
   at = math.min(at, info.offset + info.bytes)
 
-  if self.stream then self.stream:close() end
-
   local fresh, why = audio.open(self.name)
-
-  self.stream = fresh
 
   if not fresh then
     self.error = tostring(why)
     self.playing = false
+    self.player:pause()
     return false, self.error
   end
 
   if self.gain then audio.set{ stream = fresh.id, gain = self.gain } end
 
+  local ok, swhy = pcall(self.player.seek, self.player, fresh.ring)
+
+  if not ok then
+    fresh:close()
+    self.error = tostring(swhy)
+    return false, self.error
+  end
+
+  if self.stream then self.stream:close() end
+
+  self.stream = fresh
   self.base = seconds
   restart(self, at)
+  fill(self)
   return true
 end
 
@@ -411,19 +379,14 @@ function player:peak()
 end
 
 --
--- All of it handed over, and all of it played. Not the same thing: the
--- server still holds up to four periods after the last one is handed over,
--- and letting go at the first would cut the last twenty milliseconds off
--- every file.
+-- All of it handed over, written and played. Not the same thing: the ring
+-- and the server still hold periods after the last one is written, and
+-- letting go at the first would cut the last of every file.
 --
 function player:finished()
   if not self.stream then return false end
 
-  -- What is still to convert: the decoder's bytes, or a WAV's samples.
-  local waiting = self.decoder and self.carry or self.decoded
-
-  return self.at >= self.last and #self.pending == 0
-         and #waiting < self.info.frame * 2
+  return self.ended and self.player:state(self.heard).finished
          and self.stream:queued() == 0
 end
 
@@ -530,11 +493,14 @@ function media.cover(path)
 end
 
 -- The stream, and the pages it read through, given back.
+-- The kit's thread stopped first, so nothing writes into the ring as the
+-- stream goes.
 function player:close()
+  if self.player then self.player:close() end
   if self.stream then self.stream:close() end
-  if self.page then sys.release(self.page) end
+  if self.page then regions.free(self.page) end
 
-  self.stream, self.page, self.playing = nil, nil, false
+  self.player, self.stream, self.page, self.playing = nil, nil, nil, false
 end
 
 return media

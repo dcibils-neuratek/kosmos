@@ -14,7 +14,9 @@
  *                         old ring, so the caller may close its stream.
  *   p:room()              bytes one frame may be and still go now
  *   p:frame(at, bytes)    a frame from an address in this process: true,
- *                         or false when the input ring is full
+ *                         or false when the input ring is full - an AAC
+ *                         frame whole, an MP3's or a WAV's bytes in pieces
+ *                         of 16 KB at most
  *   p:frame_string(s)     the same from a string
  *   p:ended()             no frame will come after these
  *   p:play()  p:pause()
@@ -408,12 +410,27 @@ static int l_room(lua_State *L)
     return 1;
 }
 
+/*
+ * **An MP3's or a WAV's piece is 16 KB at most.** Their bytes are a stream,
+ * held in the core's carry (32 KB) until they make a frame, and an MP3 is
+ * decoded only with 16 KB of it waiting (`PB_MP3_AHEAD`). A piece larger
+ * than what is left beside that would never fit and never be decoded to
+ * make room - the core would wait on it for ever, silently - so it is
+ * refused here, loudly. An AAC frame is one record and goes whole.
+ */
+#define PB_PIECE (PB_CARRY - PB_MP3_AHEAD)
+
 static int put(lua_State *L, struct player *pl, const void *bytes, size_t n,
                uint32_t flags)
 {
     if (n > pl->in->size / 2) {
         return luaL_error(L, "a frame of %d bytes is larger than the player takes",
                           (int)n);
+    }
+
+    if (pl->core.kind != PB_AAC && n > PB_PIECE) {
+        return luaL_error(L, "a piece of %d bytes; an MP3's or a WAV's is %d at most",
+                          (int)n, (int)PB_PIECE);
     }
 
     lua_pushboolean(L, pb_input_put(pl->in, bytes, (uint32_t)n,

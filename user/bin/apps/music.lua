@@ -5,6 +5,7 @@
 -- kosmos: name Music
 -- kosmos: section applications
 -- kosmos: opens mp3 wav
+-- kosmos: needs audio
 --
 --   wm music                      everything in /Home
 --   wm music:/Home/Music          everything in there
