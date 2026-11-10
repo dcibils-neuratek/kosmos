@@ -205,6 +205,7 @@ struct llm_model {
    * says whether the explicit lanes beat them there. */
   llm_dot_fn *dot_q8_0, *dot_q4_0;
   llm_dot4_fn *dot4_q8_0, *dot4_q4_0;   /* a row against four inputs, or NULL */
+  llm_dot_k_fn *dot_q6_k;
   unsigned loops;                       /* which they are: LLM_KIT_LOOPS_*  */
 
   /* How a product is run in parts, or NULL for this thread alone. */

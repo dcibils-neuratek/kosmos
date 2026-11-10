@@ -1243,7 +1243,7 @@ static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
 
     for (uint64_t r = r0; r < r1; r++)
       for (uint32_t t = 0; t < p->n; t++) {
-        float v = llm_dot_q6_k(w->data + r * blocks * LLM_Q6K_BYTES, m->xk + t * m->xk_room, blocks);
+        float v = m->dot_q6_k(w->data + r * blocks * LLM_Q6K_BYTES, m->xk + t * m->xk_room, blocks);
         p->out[t * p->out_room + r] = b ? v + b[r] : v;
       }
     return;
@@ -1366,6 +1366,7 @@ int llm_use_loops(struct llm_model *m, unsigned which)
     m->dot_q8_0 = llm_dot_q8_0_scalar;
     m->dot_q4_0 = llm_dot_q4_0_scalar;
     m->dot4_q8_0 = m->dot4_q4_0 = NULL;
+    m->dot_q6_k = llm_dot_q6_k;
     break;
 #if defined(__x86_64__)
   case LLM_KIT_LOOPS_AVX2:
@@ -1373,6 +1374,7 @@ int llm_use_loops(struct llm_model *m, unsigned which)
     m->dot_q4_0 = llm_dot_q4_0_avx2;
     m->dot4_q8_0 = llm_dot4_q8_0_avx2;
     m->dot4_q4_0 = llm_dot4_q4_0_avx2;
+    m->dot_q6_k = llm_dot_q6_k_avx2;
     break;
 #endif
   default:
@@ -1383,6 +1385,7 @@ int llm_use_loops(struct llm_model *m, unsigned which)
     m->dot_q4_0 = llm_dot_q4_0_scalar;
     m->dot4_q8_0 = llm_dot4_q8_0;
     m->dot4_q4_0 = llm_dot4_q4_0;
+    m->dot_q6_k = llm_dot_q6_k;
     break;
   }
 

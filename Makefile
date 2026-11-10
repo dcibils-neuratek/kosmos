@@ -4765,7 +4765,10 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	$(HOSTDIR)/test_llm --gpu build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
 	@# And its vector rows held to its scalar ones, to the bit (X2).
 	$(HOSTDIR)/test_llmdot
+	@# Under Rosetta twice: as CPUID has it, which hides AVX, and with AVX
+	@# advertised - Rosetta runs AVX2, and its loops are the M700's.
 	$(HOSTDIR)/test_llmdot_x86
+	ROSETTA_ADVERTISE_AVX=1 $(HOSTDIR)/test_llmdot_x86
 	$(HOSTDIR)/lua tools/test_lualex.lua
 	$(HOSTDIR)/lua tools/test_clex.lua
 	$(HOSTDIR)/lua tools/test_cdoc.lua

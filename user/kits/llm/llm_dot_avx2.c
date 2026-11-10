@@ -135,6 +135,65 @@ AVX2 void llm_dot4_q4_0_avx2(const uint8_t *w, const uint8_t *xq, uint64_t xq_ro
   for (int t = 0; t < LLM_DOT4; t++) out[t] = sum[t];
 }
 
+/*
+ * **A Q6_K row times a Q8_K input**, `llm_dot_q6_k`'s loop 32 bytes wide.
+ * A block's 256 values are put back together 32 at a time - four low bits
+ * and two high, less 32 - and then sixteen at a time widened and met by the
+ * input's: each product at most 128 x 32, exact as a short. The two halves
+ * of each sixteen are added into eight ints and scaled by their group's
+ * scale, which is the reference's eight lanes exactly; the float work per
+ * lane - a multiply, then an add, two roundings with no FMA in the target -
+ * and the lanes summed last are the reference's too, so the answer is its
+ * bits (`tools/test_llmdot.c`). The plain loop compiled for SSE2 took 3.2
+ * times what AVX2's Q4_0 takes a value, and the 1.5B's output matrix is
+ * 233 million of them a word.
+ */
+typedef uint8_t  u8x32  __attribute__((vector_size(32)));
+typedef int16_t  i16x8  __attribute__((vector_size(16)));
+typedef float    f32x8  __attribute__((vector_size(32)));
+
+AVX2 float llm_dot_q6_k_avx2(const uint8_t *w, const uint8_t *xk, uint64_t blocks)
+{
+  const u8x32 four = (u8x32){0} + 0x0f, two = (u8x32){0} + 3, k32 = (u8x32){0} + 32;
+  f32x8 sums = { 0 };
+
+  for (uint64_t b = 0; b < blocks; b++) {
+    const uint8_t *ql = w + b * 210, *qh = ql + 128;
+    const int8_t *sc = (const int8_t *)(qh + 64);
+    const uint8_t *dh = qh + 64 + 16, *y = xk + b * 260;
+    uint8_t a[256] __attribute__((aligned(32)));
+
+    for (int j = 0; j < 256; j += 128) {
+      u8x32 l0, l1, h, v;
+      __builtin_memcpy(&l0, ql + j / 2, 32);
+      __builtin_memcpy(&l1, ql + j / 2 + 32, 32);
+      __builtin_memcpy(&h, qh + j / 4, 32);
+      v = ((l0 & four) | ((h & two) << 4)) - k32;        __builtin_memcpy(a + j + 0, &v, 32);
+      v = ((l1 & four) | (((h >> 2) & two) << 4)) - k32; __builtin_memcpy(a + j + 32, &v, 32);
+      v = ((l0 >> 4) | (((h >> 4) & two) << 4)) - k32;   __builtin_memcpy(a + j + 64, &v, 32);
+      v = ((l1 >> 4) | (((h >> 6) & two) << 4)) - k32;   __builtin_memcpy(a + j + 96, &v, 32);
+    }
+
+    i32x8 acc = { 0 };
+    for (int g = 0; g < 16; g++) {
+      i16x16 p = widen(a + g * 16) * widen(y + 4 + g * 16);
+      i16x8 lo = __builtin_shufflevector(p, p, 0, 1, 2, 3, 4, 5, 6, 7);
+      i16x8 hi = __builtin_shufflevector(p, p, 8, 9, 10, 11, 12, 13, 14, 15);
+      acc += (__builtin_convertvector(lo, i32x8) + __builtin_convertvector(hi, i32x8)) * (int32_t)sc[g];
+    }
+
+    union { uint32_t u; float f; } yd;
+    yd.u = (uint32_t)y[0] | (uint32_t)y[1] << 8 | (uint32_t)y[2] << 16 | (uint32_t)y[3] << 24;
+    const float d = llm_f16_to_f32((uint16_t)(dh[0] | dh[1] << 8)) * yd.f;
+    const f32x8 prod = __builtin_convertvector(acc, f32x8) * d;
+    sums += prod;
+  }
+
+  float s = 0;
+  for (int l = 0; l < 8; l++) s += sums[l];
+  return s;
+}
+
 static void cpuid(uint32_t leaf, uint32_t sub, uint32_t r[4])
 {
   __asm__ volatile("cpuid" : "=a"(r[0]), "=b"(r[1]), "=c"(r[2]), "=d"(r[3]) : "a"(leaf), "c"(sub));

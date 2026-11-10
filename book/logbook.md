@@ -1829,3 +1829,29 @@ the language it is asked. And each word is now drawn by its odds rather
 than always the likeliest, with a seed: the same seed draws the same
 answer, which is what lets the tests still check Xavier's answers word
 for word against the kit run on the Mac.
+
+## 9 November, late - the 1.5B on the M700, and its last table in AVX2
+
+**In short.** The bigger model now answers properly on the M700, and with
+one loop rewritten it writes 13 words a second there - more than twice
+the 5.6 it managed when it first arrived.
+
+**What.** A model's last step turns its numbers into a score for each of
+the 151,936 words it knows. That table is stored in its own format, Q6_K,
+and it is 233 million numbers to multiply for every word written - a
+sixth of the model's work. It was the one multiplication the kit had no
+AVX2 version of, so on the M700 it ran 16 bytes at a time while the rest
+ran 32, at about three times the cost per number. It now has one, written
+as the others are, and it gives exactly the same answer to the last bit:
+a test compares the two on twenty-four thousand rows.
+
+**A thing found on the way.** The Mac runs x86 programs through Rosetta,
+which can run AVX2 but tells programs it cannot, so the test had never
+checked any of the AVX2 loops on the Mac. With one setting it now does,
+on every gate.
+
+**Measured on the M700**, the same question and answer: 4.57 s with
+Diego's settings (8 processors, the GPU helping), from 5.89; and **2.44 s
+on four processors with the GPU off** - 13 words a second. The GPU's help
+and the second processor on each core now cost the 1.5B more than they
+give; which settings to keep is Diego's choice.

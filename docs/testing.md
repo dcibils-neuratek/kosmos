@@ -30460,4 +30460,54 @@ s of a helper's sleeps - came after it had ended; the long question is 120
 words rather than 150, and Stop is under the pointer before the question
 goes and pressed when it has. Twice in two.
 
-**4. On the M700**: to measure, after a netboot.
+**4. On the M700** (0.11.348, netbooted, the file brought to `/Models`
+over SMB): "explicame la teoria del big bang", fresh, answered properly in
+Spanish - "La teoria del Big Bang es una explicación científica sobre cómo
+y dónde se originó el universo..." - 33 tokens in 5.89 s with Diego's
+settings (8 processors, the GPU reading and writing): **5.6 a second**,
+near the estimate of 7. The GPU off, 6.99 s on 8 and 5.69 on Auto's 4.
+Products were 5.46 of the 5.69 s, and the scalar Q6_K output product was
+the suspect: 18.743.
+
+## 18.743 Qwen2.5 1.5B's output matrix in AVX2: 13 tokens a second on the M700
+
+**Why**: the 1.5B's output matrix is 151,936 rows of 1536, Q6_K - 233
+million values a token, against 1.31 billion in its 28 layers - and only
+its loop had no AVX2 form, so on the M700 it ran `llm_dot_q6_k` as the
+compiler makes it for SSE2. Timed through Rosetta, that was **3.2 times**
+what AVX2's Q4_0 takes a value; at that rate the output matrix was a
+third of every product's time.
+
+**What**: `llm_dot_q6_k_avx2` (`llm_dot_avx2.c`), chosen with the other
+AVX2 loops through a new `m->dot_q6_k`. A block's 256 values put back
+together 32 at a time from four low bits and two high, then sixteen at a
+time widened and met by the input's - each product at most 128 x 32,
+exact as a short - the two halves of each sixteen added into eight ints
+and scaled by the group's scale: the reference's eight lanes exactly, and
+its float work per lane (a multiply, an add, no FMA in the target) and its
+order. **To the bit**: `test_llmdot` holds it to the plain loop, Q6_K rows
+of 1 to 24 blocks, random and the corners - 24,096 rows with Q8_0's and
+Q4_0's. **Rosetta runs AVX2 and hides it** - CPUID says no AVX, and
+`llm_avx2_present` rightly answers no - so `host-check` runs
+`test_llmdot_x86` a second time with `ROSETTA_ADVERTISE_AVX=1`, and the
+AVX2 loops, Q8_0's and Q4_0's included, are now held on the Mac every gate
+rather than only by `x86-llm`'s answers (whose tiny-phi2 has no Q6_K).
+**Control**: the third quarter's high bits taken from `h >> 2` rather than
+`>> 4` - 190 of 24,096 rows fail. Through Rosetta, 0.587 ns a value plain
+against 0.312 in AVX2.
+
+**On the M700** (0.11.349, netbooted; the same question, 33 tokens):
+
+```
+                                        0.11.348      0.11.349
+  GPU read and write, 8 processors      5.89 s 5.6/s  4.57 s  7.2/s
+  GPU off, 8 processors                 6.99 s        5.48 s
+  GPU off, Auto (4 cores)               5.69 s 5.8/s  2.44 s 13.1/s   (32 tokens)
+```
+
+Products on Auto's 4 cores went from 5.46 s to 2.29. **The fastest
+setting for the 1.5B is now the processor alone on one thread a core** -
+the GPU's share, measured for phi-2's Q4_0 products when the processor's
+were slower, now holds the answer back, and eight processors on four
+cores share each core's vector unit. Diego's settings left as they were;
+which to keep is his.

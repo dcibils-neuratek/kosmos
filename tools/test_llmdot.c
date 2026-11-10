@@ -75,17 +75,38 @@ struct loops {
   const char *name;
   llm_dot_fn *q8, *q4;
   llm_dot4_fn *four8, *four4;
+  llm_dot_k_fn *q6k;
 };
+
+/* A Q6_K row (210 bytes a block: 208 of values and scales, an F16 scale
+ * last) and a Q8_K input (a float scale, 256 bytes). */
+static void fill_q6k(uint8_t *row, uint64_t blocks, int how)
+{
+  for (uint64_t b = 0; b < blocks; b++) {
+    for (int i = 0; i < 208; i++) row[b * 210 + i] = value(how, i);
+    put_scale(row + b * 210 + 208);
+  }
+}
+
+static void fill_q8k(uint8_t *x, uint64_t blocks, int how)
+{
+  for (uint64_t b = 0; b < blocks; b++) {
+    float d = llm_f16_to_f32((uint16_t)(rnd() & 0x7bff)) * (rnd() & 1 ? -1 : 1);
+    memcpy(x + b * 260, &d, 4);
+    for (int i = 0; i < 256; i++) x[b * 260 + 4 + i] = value(how, i);
+  }
+}
 
 int main(void)
 {
-  struct loops sets[2] = { { "SSE2/NEON", llm_dot_q8_0, llm_dot_q4_0, llm_dot4_q8_0, llm_dot4_q4_0 } };
+  struct loops sets[2] = { { "SSE2/NEON", llm_dot_q8_0, llm_dot_q4_0, llm_dot4_q8_0, llm_dot4_q4_0, llm_dot_q6_k } };
   int nsets = 1;
 
 #if defined(__x86_64__)
   if (llm_avx2_present()) {
     sets[nsets++] = (struct loops){ "AVX2", llm_dot_q8_0_avx2, llm_dot_q4_0_avx2,
-                                    llm_dot4_q8_0_avx2, llm_dot4_q4_0_avx2 };
+                                    llm_dot4_q8_0_avx2, llm_dot4_q4_0_avx2,
+                                    llm_dot_q6_k_avx2 };
   } else {
     printf("  (no AVX2 here: its loops are not asked - the x86 guest suites are)\n");
   }
@@ -145,6 +166,20 @@ int main(void)
           }
         }
 
+        /* Q6_K, its blocks of 256 for each length of 32-value ones. */
+        if (blocks <= 24) {
+          static uint8_t w6[24 * 210], xk[24 * 260];
+          fill_q6k(w6, blocks, how);
+          fill_q8k(xk, blocks, (how + again) % 5);
+          float v6 = L->q6k(w6, xk, blocks), s6 = llm_dot_q6_k(w6, xk, blocks);
+          checks++;
+          if (!same(v6, s6)) {
+            if (failed < 5) printf("  FAIL: %s Q6_K, %llu blocks, kind %d: %.9g against the plain loop %.9g\n",
+                                   L->name, (unsigned long long)blocks, how, v6, s6);
+            failed++;
+          }
+        }
+
         if (!same(v8, s8)) {
           if (mism8++ < 5) printf("  FAIL: %s Q8_0, %llu blocks, kind %d: %.9g against the scalar %.9g\n",
                                   L->name, (unsigned long long)blocks, how, v8, s8);
@@ -196,6 +231,19 @@ int main(void)
     }
     printf("a value in AVX2: Q8_0 %.3f ns (%.1fx the scalar), Q4_0 %.3f (%.1fx)\n",
            ta[0], t[0] / ta[0], ta[1], t[2] / ta[1]);
+
+    /* Q6_K on Qwen2.5 1.5B's output row, 1536 wide. */
+    static uint8_t w6[6 * 210], xk[6 * 260];
+    double tk[2];
+    llm_dot_k_fn *const fk[2] = { llm_dot_q6_k, sets[1].q6k };
+    fill_q6k(w6, 6, 0);
+    fill_q8k(xk, 6, 0);
+    for (int f = 0; f < 2; f++) {
+      double t0 = now();
+      for (int r = 0; r < reps * 20; r++) sink += fk[f](w6, xk, 6);
+      tk[f] = (now() - t0) / (reps * 20) * 1e9 / 1536;
+    }
+    printf("a value of Q6_K: %.3f ns plain, %.3f in AVX2 (%.1fx)\n", tk[0], tk[1], tk[0] / tk[1]);
   }
 
   if (failed) {
@@ -203,7 +251,7 @@ int main(void)
            checks);
     return 1;
   }
-  printf("PASS: %d rows, Q8_0 and Q4_0, the vector dot product and four inputs at once the scalar "
+  printf("PASS: %d rows, Q8_0, Q4_0 and Q6_K, the vector dot product and four inputs at once the scalar "
          "one's bits every time (1 to 96 blocks, phi-2's 80 and 320, random and the corners; %s)\n",
          checks, nsets > 1 ? "SSE2 and AVX2" : sets[0].name);
   return 0;

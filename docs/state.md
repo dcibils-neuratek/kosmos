@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.346, not pushed; TCP's receive window)
+Last updated: 2026-11-09 (0.11.349, not pushed; Qwen2.5 1.5B at 13 tokens a second on the M700)
 
 ---
 
@@ -16,7 +16,9 @@ Face on the M700 (was 0.16). A SYN now waits for its neighbour's ARP
 answer. `x86-maps` made to wait for zoom 10; phi-2's `test_llm` reference
 read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
 
-**Then 0.11.348** (18.742): (1)-(3) built - Q6_K, the preamble, sampling by seed. (4), the 1.5B on the M700, needs a netboot.
+**Then 0.11.348** (18.742): (1)-(3) built - Q6_K, the preamble, sampling by seed. **(4) measured**: 5.6 tokens a second on the M700, answers proper.
+
+**Then 0.11.349** (18.743): the Q6_K output product in AVX2, to the bit - **13.1 tokens a second on Auto's 4 cores with the GPU off**, 7.2 with Diego's settings (8, GPU read+write; left as they are - his choice). `test_llmdot_x86` now runs a second time with `ROSETTA_ADVERTISE_AVX=1`, so the AVX2 loops are held on the Mac. **Next**: the Story page (option b), then the gate's last 38 s, the speed caps (`/drives`, `ramfs`, `ETH_RING_SLOTS`, the download stall).
 
 **Agreed by Diego** (`xavier.md`, *Answers that make sense*):
 (1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad

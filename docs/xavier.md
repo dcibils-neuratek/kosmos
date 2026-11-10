@@ -1271,9 +1271,80 @@ Instruct answers it properly, in llama.cpp, once told what it is for.
    switch, for the checks, which hold answers to the bit.
 4. **The 1.5B measured on the M700**: about 1.07 GB read a token, so near
    seven tokens a second against the 0.5B's 18, for answers that hold.
+   **Measured** (`testing.md` 18.742-18.743): 5.6 a second in 0.11.348,
+   the Big Bang explained properly in Spanish; the output product was then
+   the one loop without an AVX2 form, and with it (0.11.349) **7.2 a
+   second with the GPU sharing the products, 13.1 on four cores with the
+   GPU off** - the fastest setting for this model now the processor alone.
 
 **And the LLM Monitor's Story page** (`docs/llmstory.html`, agreed the
 same evening, Diego: "go with b for the mockup"): a third tab; each
 layer's guess (the logit lens) computed for a word that is clicked, from
 each layer's stream kept for the last 64 words, so watching never slows an
 answer.
+
+### The Story page: the design
+
+What the page shows for a word, layer by layer, and who supplies it:
+
+| On the page | Supplied by | New |
+|---|---|---|
+| The words, question and answer | the Inside ring's records (`llminside.h`), which carry each token's text | nothing |
+| **looked back at**: the earlier words a layer weighed most | the kit's passage: per layer, **the three positions with the most attention summed over its heads, the first token left out**, and the first token's share apart (the "resting place", shown only when asked) | three positions, three shares and the rest's share a layer |
+| **recalled**: how much of the feed-forward fired | the passage's `fired`, of `n_ff` | nothing |
+| **its guess so far**: what the model would say if it stopped there | the kit's **logit lens**: a layer's stream through the final norm and the output matrix, the likeliest token and its odds | `llm_lens` |
+| which layer the final word arrives at | the window, comparing each guess with the word written | the page |
+
+**The streams, kept while watched.** The kit is handed, beside the
+passage, room for `LLM_STREAM_SLOTS` (64) tokens' streams - every layer's
+output, `n_layer x n_embd` floats a token - and copies each layer's
+residual into the token's slot as it passes. A copy, so the answer is
+unchanged to the bit and its cost is the copy's (172 KB a token for the
+1.5B, against 1 GB read). The slot is the token's Inside record's `seq %
+64`, and holds that `seq`, so a lens asked for a token that has been
+written over is refused rather than computed from another's numbers.
+Kept, as the passage is, **only while an INSIDE lease runs** - words
+written with the Monitor closed have no stream, and the page says so. The
+room is the server's, sized at LOAD from the model: 11 MB for the 1.5B,
+5.5 for the 0.5B, 21 for phi-2, all F32 so the lens is exact.
+
+**The lens** (`llm_lens(m, streams, out_token, out_odds)`): every layer's
+stream normed with the model's final norm and multiplied by the output
+matrix **as one product of `n_layer` inputs**, through `matmul`, so the
+233 MB matrix is read once and not 28 times, cut across the cores and in
+AVX2 as any product. The likeliest token of each, and its probability by
+a softmax over the whole vocabulary, as `llm_candidates` gives them. The
+last layer's guess is, by construction, the model's own choice when the
+answer was greedy - **that is its test**: `test_llm` holds the top layer's
+lens to the logits' likeliest token, every model, and a control that
+skips the final norm fails it.
+
+**At the server**: `LLM_OP_LENS { seq }`. Refused while an answer runs
+(BUSY - the window asks again when it has ended), and when the slot holds
+another `seq` (GONE). Otherwise the lens, and its results written into
+the Inside region at `LLM_INSIDE_LENS`, after the ring: the `seq`, the
+layer count, and a layer's guess each - token, odds, text - then the reply.
+A click is a one-off rather than a clock's, but the answer is 64 layers'
+worth and the region is already the window's, so it goes there. About
+`n_layer / 28` of a token's output product on the M700: some tens of ms.
+
+**The window** (`llmmon.lua`): Story beside Overview and Inside. The
+words along the top, the one chosen lit; below, the tower as drawn - a
+row a layer: its number, the words it looked back at, a bar for what it
+recalled, its guess with its odds, and the row where the guess first
+becomes the word written marked. Step and Play walk the five steps of
+`docs/llmstory.html`. Clicking a word asks LENS once; nothing runs on a
+repaint.
+
+**In steps**, each with its test:
+
+- **S1** the passage's three looks a layer, the first token apart
+  (`llm_passage_layer` grows; `llminside.h` and `llm.lua` follow) -
+  `test_llm` checks that the looks are in order and that the shares, the
+  first token's and the rest's sum to one;
+- **S2** the streams and `llm_lens` in the kit - the top layer's guess the
+  logits' likeliest, every model;
+- **S3** `LLM_OP_LENS` at the server - `x86-llm`: a word's lens through
+  `/Running/llm` the kit's own on the Mac, a word written over refused;
+- **S4** the Story page - `x86-llmmon`: a word clicked and its tower drawn,
+  its top guess the word.
