@@ -1123,6 +1123,29 @@ def usb_drives(image, check):
         '.. " read " .. (t1.read_bytes - t0.read_bytes) .. " of " .. #back)'
     )
 
+    # **A film from a stick, at speed** (`roadmap.md`, *every cap that costs
+    # speed*): 4 MB read whole with `fs.read`, and again into a region with
+    # `fs.read_into`, each timed on the counter and summed with SHA-256 for
+    # the host to hold to the bytes `fatstick.py` wrote. It was a round trip
+    # a kilobyte, each one reading again from the file's start everything
+    # before it - at 256 KB that was seconds; at 4 MB it would not finish.
+    film = (
+        'local crypto = use("/Kosmos/Kits/crypto") '
+        'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000 '
+        'local t0 = sys.ticks() '
+        'local whole = fs.read("/Drives/PHOTOS/film.bin") '
+        'local t1 = sys.ticks() '
+        'local region = sys.memory(1024) '
+        'local t2 = sys.ticks() '
+        'local n = fs.read_into("/Drives/PHOTOS/film.bin", region, 0, 4194304) '
+        'local t3 = sys.ticks() '
+        'local back = n and sys.region_read(region, 0, n) '
+        'print("drives" .. ": film " .. tostring(whole and #whole) .. " " '
+        '.. (whole and crypto.sha256(whole) or "none") .. " in " .. (t1 - t0) * 1000 // hz .. " ms, into " '
+        '.. tostring(n) .. " " .. (back and crypto.sha256(back) or "none") .. " in " '
+        '.. (t3 - t2) * 1000 // hz .. " ms")'
+    )
+
     # **And which programs** (`.programs`, D2): this program, named, found
     # in each drive's rows by its own process id - the stick's bytes exactly
     # the file it read, /Temporary's exactly what it wrote and read back,
@@ -1158,6 +1181,8 @@ def usb_drives(image, check):
                       "/Temporary/v.lua",
                       "fs.write('/Temporary/p.lua', %r)" % programs,
                       "/Temporary/p.lua",
+                      "fs.write('/Temporary/f.lua', %r)" % film,
+                      "/Temporary/f.lua",
                       "diskstat"),
                extra=extra, after="watching for devices")
 
@@ -1180,10 +1205,12 @@ def usb_drives(image, check):
 
     dev = re.search(r"drives: device (\d+) in (\d+) timed (\w+) temporary wrote (\d+) read (\d+) of (\d+)",
                     out)
-    check(dev is not None and dev.group(1) == "3000" and int(dev.group(2)) >= 3
+    # Two requests: the first kilobyte in the reply, the rest in a region.
+    check(dev is not None and dev.group(1) == "3000" and int(dev.group(2)) == 2
           and dev.group(3) == "true",
-          "the stick's .device did not count the 3000-byte file - its bytes, at "
-          "least three requests of 1024, and time spent: %r"
+          "the stick's .device did not count the 3000-byte file - its bytes, in "
+          "two requests (a kilobyte, then the rest through a region), and time "
+          "spent: %r"
           % (dev.group(0) if dev else [l for l in lines if "device" in l]))
     check(dev is not None and dev.group(4) == "5000" and dev.group(5) == dev.group(6) == "5000",
           "/Temporary's .device did not count 5000 bytes written and read back: %r"
@@ -1204,6 +1231,17 @@ def usb_drives(image, check):
           % (len(programs), progs.group(0) if progs else None))
     check(re.search(r"diskstat: /Drives/PHOTOS read \d+ bytes in \d+", out) is not None,
           "diskstat did not print the stick's totals")
+
+    # The film, both ways, its every byte: the sum `fatstick.py` wrote.
+    import hashlib
+    film_sum = hashlib.sha256(fatstick.FILM).hexdigest()
+    film = re.search(r"drives: film (\S+) (\S+) in (\d+) ms, into (\S+) (\S+) in (\d+) ms", out)
+    print("  /Drives film: %s" % (film.group(0) if film else "not read"))
+    check(film is not None and film.group(1) == film.group(4) == str(fatstick.FILM_BYTES)
+          and film.group(2) == film.group(5) == film_sum,
+          "the 4 MB film on the stick did not read back whole, with fs.read and "
+          "into a region, its SHA-256 %s: %r"
+          % (film_sum, film.group(0) if film else [l for l in lines if "film" in l]))
 
     top = said("top")
 

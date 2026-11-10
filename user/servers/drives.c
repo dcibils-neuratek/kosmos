@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <strings.h>
 
 #include "kosmos.h"
@@ -1107,73 +1108,283 @@ static void answer_list(uint64_t sender, const struct volume *v,
     reply_with(sender, &rep);
 }
 
-/* Bytes of a file, from `at`. */
+/*
+ * **A file's chain, followed by the FAT alone.**
+ *
+ * A read used to walk to `at` through `walk_next`, which reads every sector
+ * it passes - so the kilobyte at byte N cost N bytes read from the stick
+ * again, one transfer a sector, and reading a file through cost the square
+ * of its size. Reaching a cluster needs only the table: one FAT sector holds
+ * 128 links on FAT32 and 256 on FAT16, and the one last read is kept here,
+ * copied out of the region because the next data read writes over it.
+ *
+ * Kept across requests, keyed by the unit and the sector: a volume here is
+ * only read, and a stick plugged in again is a new unit (`blockproto.h`).
+ */
+static uint8_t  fat_held[SECTOR];
+static uint64_t fat_held_lba = ~(uint64_t)0;
+static uint32_t fat_held_unit;
+
+enum chain_step { CHAIN_NEXT, CHAIN_END, CHAIN_DAMAGED, CHAIN_UNREAD };
+
+static enum chain_step chain_next(const struct volume *v, uint32_t cluster,
+                                  uint32_t *next)
+{
+    uint32_t sector, offset;
+    uint64_t lba;
+    enum fat_link link;
+
+    if (!fat_entry_place(&v->fat, cluster, &sector, &offset)) {
+        return CHAIN_DAMAGED;
+    }
+
+    lba = v->first + sector;
+
+    if (lba != fat_held_lba || v->unit != fat_held_unit) {
+        if (!read_sectors(v->unit, lba, 1u)) {
+            fat_held_lba = ~(uint64_t)0;
+            return CHAIN_UNREAD;
+        }
+
+        memcpy(fat_held, region, SECTOR);
+        fat_held_lba = lba;
+        fat_held_unit = v->unit;
+    }
+
+    link = fat_link_at(&v->fat, fat_held + offset, next);
+
+    if (link == FAT_LINK_NEXT) {
+        return CHAIN_NEXT;
+    }
+
+    return (link == FAT_LINK_END) ? CHAIN_END : CHAIN_DAMAGED;
+}
+
+/*
+ * **Where the last read stopped**: a file's chain, the index of a cluster
+ * in it and that cluster. A file read through asks for the bytes after the
+ * last ones, and this lets the next request start there rather than at the
+ * file's first cluster. Same key and same reason as `fat_held`.
+ */
+static struct {
+    uint32_t unit;
+    uint64_t volume_first;
+    uint32_t first_cluster;
+    uint64_t index;
+    uint32_t cluster;
+    bool     held;
+} last_read;
+
+/* Bytes of a file, from `at`, into `to` - the reply's data or the caller's
+ * region - as many as `want`. DRIVES_OK and `*took`, or why not. */
+static uint32_t read_file(const struct volume *v, const struct fat_dirent *e,
+                          uint64_t at, uint64_t want, uint8_t *to,
+                          uint64_t *took_out)
+{
+    const uint64_t spc = v->fat.sectors_per_cluster;
+    const uint64_t cluster_bytes = spc * SECTOR;
+    const unsigned long bound = (unsigned long)v->fat.clusters + 2ul;
+    unsigned long steps = 0;
+    uint64_t index, i, off, took = 0;
+    uint32_t cluster;
+
+    *took_out = 0;
+
+    if (spc == 0u || e->first_cluster < 2u) {
+        return DRIVES_ERR_DAMAGED;      /* a file with bytes and no chain */
+    }
+
+    index = at / cluster_bytes;
+    off = at % cluster_bytes;
+
+    if (last_read.held && last_read.unit == v->unit
+        && last_read.volume_first == v->first
+        && last_read.first_cluster == e->first_cluster
+        && last_read.index <= index) {
+        i = last_read.index;
+        cluster = last_read.cluster;
+    } else {
+        i = 0;
+        cluster = e->first_cluster;
+    }
+
+    /* To the cluster `at` is in, by the table alone. */
+    while (i < index) {
+        uint32_t next = 0;
+        enum chain_step step;
+
+        if (++steps > bound) {
+            return DRIVES_ERR_DAMAGED;
+        }
+
+        step = chain_next(v, cluster, &next);
+
+        if (step != CHAIN_NEXT) {
+            /* An end before the size says is a chain that leads nowhere. */
+            return (step == CHAIN_UNREAD) ? DRIVES_ERR_DEVICE : DRIVES_ERR_DAMAGED;
+        }
+
+        cluster = next;
+        i++;
+    }
+
+    /*
+     * Then a run at a time: the clusters that follow each other on the
+     * stick, read in one transfer of up to `REGION_SECTORS`, which is what
+     * a file a filesystem wrote in one go mostly is.
+     */
+    while (took < want) {
+        const uint64_t skip = off / SECTOR;     /* sectors into `cluster` */
+        const uint64_t need = (off % SECTOR + (want - took) + SECTOR - 1u) / SECTOR;
+        uint64_t run = 1, sectors, n, avail, done;
+        uint32_t last = cluster, next = 0;
+        enum chain_step step = CHAIN_END;
+
+        /* As many clusters as the bytes wanted cover and one transfer holds. */
+        while (run * spc - skip < need && (run + 1u) * spc - skip <= REGION_SECTORS) {
+            if (++steps > bound) {
+                return DRIVES_ERR_DAMAGED;
+            }
+
+            step = chain_next(v, last, &next);
+
+            if (step == CHAIN_UNREAD) {
+                return DRIVES_ERR_DEVICE;
+            }
+
+            if (step != CHAIN_NEXT || next != last + 1u) {
+                break;
+            }
+
+            last = next;
+            run++;
+        }
+
+        sectors = run * spc - skip;
+
+        if (sectors > need) {
+            sectors = need;
+        }
+
+        if (sectors > REGION_SECTORS) {
+            sectors = REGION_SECTORS;
+        }
+
+        if (!read_sectors(v->unit,
+                          v->first + fat_cluster_sector(&v->fat, cluster) + skip,
+                          (uint32_t)sectors)) {
+            return DRIVES_ERR_DEVICE;
+        }
+
+        avail = sectors * SECTOR - off % SECTOR;
+        n = want - took;
+
+        if (n > avail) {
+            n = avail;
+        }
+
+        memcpy(to + took, region + off % SECTOR, (size_t)n);
+        took += n;
+
+        last_read.unit = v->unit;
+        last_read.volume_first = v->first;
+        last_read.first_cluster = e->first_cluster;
+        last_read.index = i + (off + n - 1u) / cluster_bytes;
+        last_read.cluster = cluster + (uint32_t)((off + n - 1u) / cluster_bytes);
+        last_read.held = true;
+
+        if (took >= want) {
+            break;
+        }
+
+        /* Every cluster of the run used: on along the chain from its last. */
+        done = (off + n) / cluster_bytes;
+        off = (off + n) % cluster_bytes;
+
+        if (done < run) {
+            cluster += (uint32_t)done;          /* adjacent, so arithmetic */
+            i += done;
+            continue;
+        }
+
+        if (++steps > bound) {
+            return DRIVES_ERR_DAMAGED;
+        }
+
+        step = chain_next(v, last, &next);
+
+        if (step != CHAIN_NEXT) {
+            return (step == CHAIN_UNREAD) ? DRIVES_ERR_DEVICE : DRIVES_ERR_DAMAGED;
+        }
+
+        cluster = next;
+        i += run;
+    }
+
+    *took_out = took;
+    return DRIVES_OK;
+}
+
+/* Bytes of a file, from `at`: in the reply, or into the region that came
+ * with the request (`DRIVES_REGION`). */
 static void answer_read(uint64_t sender, const struct volume *v,
                         const struct fat_dirent *e, uint64_t at,
-                        uint32_t want)
+                        uint64_t want, long cap, bool into)
 {
     struct drives_reply rep;
-    struct dirwalk w;
-    unsigned long steps = 0;
-    uint64_t skip_sectors, seen = 0, started;
-    uint32_t took = 0;
+    uint64_t started, took = 0, room = 0;
+    uint8_t *to;
+    long pages = 0, mapped = -1;
+    uint32_t err;
     struct disk_device *d;
 
     zero(&rep, sizeof(rep));
     rep.size = e->size;
 
-    if (at >= e->size || want == 0u) {
-        reply_with(sender, &rep);       /* past the end is no bytes, not an error */
-        return;
+    if (into) {
+        if (cap < 0 || (pages = kosmos_mem_size(cap)) <= 0
+            || (mapped = kosmos_mem_map(cap)) < 0) {
+            fail(sender, DRIVES_ERR_REGION);
+            return;
+        }
+
+        to = (uint8_t *)(uintptr_t)mapped;
+        room = (uint64_t)pages * 4096u;
+    } else {
+        to = (uint8_t *)rep.u.data;
+        room = DRIVES_DATA_MAX;
     }
 
-    if (want > DRIVES_DATA_MAX) {
-        want = DRIVES_DATA_MAX;
+    if (want > room) {
+        want = room;
     }
 
-    if ((uint64_t)want > e->size - at) {
-        want = (uint32_t)(e->size - at);
+    if (at >= e->size) {
+        want = 0;                       /* past the end is no bytes, not an error */
+    } else if (want > e->size - at) {
+        want = e->size - at;
     }
 
-    skip_sectors = at / SECTOR;
     started = kosmos_ticks();
+    err = (want > 0u) ? read_file(v, e, at, want, to, &took) : DRIVES_OK;
 
-    walk_start(&w, v, e->first_cluster, false);
-
-    while (took < want && walk_next(&w, &steps)) {
-        uint64_t from;
-        unsigned n;
-
-        if (seen++ < skip_sectors) {
-            continue;
-        }
-
-        /* Where in this sector the wanted bytes start: only the first one
-         * begins part way in. */
-        from = (took == 0u) ? (at % SECTOR) : 0u;
-        n = SECTOR - (unsigned)from;
-
-        if (n > want - took) {
-            n = want - took;
-        }
-
-        copy(rep.u.data + took, region + from, n);
-        took += n;
+    if (into) {
+        kosmos_share_unmap((unsigned long)mapped, (unsigned long)pages);
     }
 
-    if (walk_error(&w) != DRIVES_OK) {
-        fail(sender, walk_error(&w));
+    if (err != DRIVES_OK) {
+        fail(sender, err);
         return;
     }
 
-    rep.length = took;
+    rep.length = (uint32_t)took;
     rep.more = (at + took < e->size) ? 1u : 0u;
 
     /* Counted as it is answered: one request, its bytes, and how long the
      * walk and the drive took (the counter's ticks). */
     d = counts_for(v);
 
-    if (d != NULL) {
+    if (d != NULL && took > 0u) {
         d->reads++;
         d->read_bytes += took;
         d->read_counter_ticks += kosmos_ticks() - started;
@@ -1182,7 +1393,7 @@ static void answer_read(uint64_t sender, const struct volume *v,
     reply_with(sender, &rep);
 }
 
-static void answer(const struct message *msg, uint64_t sender)
+static void answer(const struct message *msg, uint64_t sender, long cap)
 {
     struct drives_request req;
     struct drives_reply rep;
@@ -1201,7 +1412,10 @@ static void answer(const struct message *msg, uint64_t sender)
      * nothing promises there is a zero in them. */
     req.path[DRIVES_PATH_MAX - 1u] = '\0';
 
-    if (req.length > DRIVES_DATA_MAX) {
+    /* A read into a region is bounded by the region; any other answer by
+     * the reply it travels in. */
+    if (!(req.op == DRIVES_OP_READ && (req.flags & DRIVES_REGION))
+        && req.length > DRIVES_DATA_MAX) {
         req.length = DRIVES_DATA_MAX;
     }
 
@@ -1334,7 +1548,8 @@ static void answer(const struct message *msg, uint64_t sender)
             uint64_t before = d ? d->read_bytes : 0;
             struct sender_info who;
 
-            answer_read(sender, v, &e, req.at, req.length);
+            answer_read(sender, v, &e, req.at, req.length, cap,
+                        (req.flags & DRIVES_REGION) != 0u);
 
             if (d != NULL && p != NULL && kosmos_sender(&who) == 0) {
                 progcount_note(p, who.id, false, d->read_bytes - before, req.path);
@@ -1407,10 +1622,20 @@ void drives_server(long endpoint, long blocks_cap, long console_cap)
         struct message msg;
         uint64_t sender = 0;
 
+        long cap;
+
         if (kosmos_receive(endpoint, &msg, &sender, 0, 0) != 0) {
             return;
         }
 
-        answer(&msg, sender);
+        /* A capability that came with a message is this server's until it
+         * lets it go - a region with a read, or anything a caller sent with
+         * anything else - so every one is dropped once answered. */
+        cap = msg.cap_plus_one ? (long)msg.cap_plus_one - 1 : -1;
+        answer(&msg, sender, cap);
+
+        if (cap >= 0) {
+            (void)kosmos_cap_drop(cap);
+        }
     }
 }

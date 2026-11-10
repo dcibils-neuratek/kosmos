@@ -1881,3 +1881,26 @@ Story page says it in words.
 **Visible impact.** Overview, Inside, Story. Left and Right step through
 the words, a click on a layer tells of it. Watching costs the answer
 nothing; asking costs about one word's last step.
+
+## 9 November, night - a film from a USB stick, at speed
+
+**In short.** Reading a file from a USB stick went from about 22 KB a
+second to well over 100 MB a second under QEMU: 4 MB now takes 38 ms,
+where a quarter of a megabyte took twelve seconds.
+
+**What.** Asked for a piece of a file, the stick's server walked from the
+file's very first cluster to the piece every time, and *read* every sector
+it walked past, one USB transfer each - so the further into a file, the
+more it read again, and a whole file cost the square of its size. Now it
+finds its place from the table of clusters alone, remembers where the last
+read stopped, reads clusters that sit side by side in one transfer of up
+to a megabyte, and writes into memory the program shares with it rather
+than a kilobyte a message.
+
+**Why.** Diego asked for everything capped for speed to be fixed; this
+was the second on the list, and reading it found it far worse than the
+cap.
+
+**Visible impact.** A film or a photo library on a stick opens as quickly
+as one on the disk. On the way the system's image grew one page past the
+room it has below the heap, and the heap was moved two megabytes up.

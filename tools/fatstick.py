@@ -61,12 +61,21 @@ IDS = {
 
 SECTORS = 131072                # 64 MB: both partitions and room to spare
 
+# **A film's worth of bytes**, for the read's speed (`roadmap.md`, *every
+# cap that costs speed*): 4 MB on PHOTOS, whose clusters are one sector, so
+# it is a chain of 8192 - the case where a read that walks from the file's
+# start, or reads a sector a transfer, is slowest. Each 4 KB page differs
+# from its neighbours, so a piece put in the wrong place changes the sum.
+FILM_BYTES = 4 * 1024 * 1024
+FILM = bytes(((i * 7) + (i >> 12)) % 251 for i in range(FILM_BYTES))
+
 # (path on the volume, bytes) - read back from here, never from the volume.
 FILES = {
     "PHOTOS": [
         ("hello.txt", b"Kosmos reads a drive.\n"),
         ("A Long File Name.txt", b"x" * 3000),
         ("Italy/roma.txt", b"roma\n"),
+        ("film.bin", FILM),
     ],
     "BACKUP": [
         ("notes.txt", b"the second volume\n"),

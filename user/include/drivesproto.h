@@ -61,6 +61,18 @@
                                     * `/Home` */
 #define DRIVES_ERR_DAMAGED     6u  /* a chain that leads nowhere, or a
                                     * directory that does not end */
+#define DRIVES_ERR_REGION      7u  /* a read into a region with no region
+                                    * with it, or one that would not map */
+
+/*
+ * **A read into the caller's region** (`flags`), as `/Home`'s
+ * `DISK_REGION`: the request carries a region's capability, the file's bytes
+ * from `at` are written at its start, as many as `length` asks and the
+ * region holds, and `length` in the reply says how many arrived. A film on a
+ * stick was a round trip a kilobyte (`roadmap.md`, *every cap that costs
+ * speed*); this is a round trip a region.
+ */
+#define DRIVES_REGION          1u
 
 /*
  * A path is 256 bytes and a name 64, which are `ramproto.h`'s numbers and
@@ -159,8 +171,9 @@ struct drives_request {
     uint32_t op;
     uint32_t offset;            /* which page of a listing */
     uint64_t at;                /* which byte of a read */
-    uint32_t length;            /* bytes wanted, up to DRIVES_DATA_MAX */
-    uint32_t reserved;
+    uint32_t length;            /* bytes wanted: up to DRIVES_DATA_MAX in
+                                 * the reply, or the region's size */
+    uint32_t flags;             /* DRIVES_REGION */
 
     /* The path under `/Drives`, as the namespace hands it over: the volume's
      * name first, then whatever is inside it. Empty, or `/`, is the list of
@@ -172,7 +185,7 @@ struct drives_reply {
     uint32_t error;             /* DRIVES_OK, or why not */
     uint32_t more;              /* another page follows this one */
     uint32_t count;             /* entries or volumes in `u` */
-    uint32_t length;            /* bytes of `u.data` */
+    uint32_t length;            /* bytes of `u.data`, or of the region */
 
     /* For getattr, and for a read: what the whole thing is. */
     uint64_t size;

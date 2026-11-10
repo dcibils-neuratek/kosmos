@@ -98,7 +98,7 @@ struct thread;
  */
 #define USER_TEXT_VA     USER_VA_BASE                       /* base         */
 /*
- * **The image may be 40 MB, and was 32, and 16 before that.** A `FULL=1`
+ * **The image may be 42 MB, and was 40, 32, and 16 before that.** A `FULL=1`
  * image carries the desktop's wallpapers - nine megabytes of photographs,
  * 18 September 2026 - and with them it ran past the heap's first start at
  * the link. On 26 September a `MEGA=1` image for x86-64, with Quake, Lite
@@ -106,8 +106,14 @@ struct thread;
  * is only where the heap begins: the stack, the screen and the mappings
  * are where they were, at 46, 48 and 64 MB. The image's read-only half is
  * shared by every process, so the room costs address space and not memory.
+ * On 9 November a `MEGA=1` x86-64 image ended one page past 40 - 32 MB of
+ * read-only data, 5.5 of code and 4 of `.bss` spread over many objects,
+ * none of it one thing to take out - and two more were taken from the
+ * guard above the heap, which keeps 1.75 MB. The lasting answer is a heap
+ * placed after wherever the image ends, so there is no line to run into
+ * (`roadmap.md`).
  */
-#define USER_HEAP_VA     (USER_VA_BASE + 0x02800000UL)      /* base + 40 MB */
+#define USER_HEAP_VA     (USER_VA_BASE + 0x02A00000UL)      /* base + 42 MB */
 /*
  * Two megabytes, and overridable at build time.
  *
@@ -119,8 +125,8 @@ struct thread;
  *
  * It does not grow in place: `runtime/libc/malloc.c` asks the kernel for
  * another arena, somewhere else, when it runs out. So the space above it
- * is a guard rather than room - nearly four megabytes of nothing between
- * its top at 42 MB and the stack's bottom, unmapped, so a write that ran
+ * is a guard rather than room - 1.75 MB of nothing between its top at
+ * 44 MB and the stack's bottom, unmapped, so a write that ran
  * off the end faults instead of landing in the stack. It was sixteen when
  * the heap started at 32 MB, from when it was the only heap there was.
  */

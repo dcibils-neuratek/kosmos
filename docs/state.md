@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.353, not pushed; the LLM Monitor's Story page built)
+Last updated: 2026-11-09 (0.11.354, not pushed; a file on a stick at speed)
 
 ---
 
@@ -21,6 +21,8 @@ read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
 **Then 0.11.349** (18.743): the Q6_K output product in AVX2, to the bit - **13.1 tokens a second on Auto's 4 cores with the GPU off**, 7.2 with Diego's settings (8, GPU read+write; left as they are - his choice). `test_llmdot_x86` now runs a second time with `ROSETTA_ADVERTISE_AVX=1`, so the AVX2 loops are held on the Mac. **Next**: the Story page (option b), then the gate's last 38 s, the speed caps (`/drives`, `ramfs`, `ETH_RING_SLOTS`, the download stall).
 
 **Then 0.11.350-0.11.353** (18.744-18.747): **the Story page, S1-S4** - each layer's three looks with the first token apart, the streams kept while watched and `llm_lens` in the kit, `LLM_OP_LENS` at the server, and the Story tab in the LLM Monitor (`wm llmmon:--story`). On the 1.5B the lens shows " located" in layers 10-16 and " Paris" from 24 of 28. **Next**: the gate's last 38 s, then the speed caps (`/drives`, `ramfs`, `ETH_RING_SLOTS`, the download stall); the Story page on the M700 when Diego looks.
+
+**Then 0.11.354** (18.748, 18.749): **a file on a USB stick at speed** - 256 KB took 11.8 s, 4 MB now 38 ms (11 ms into a region); `DRIVES_REGION`, the walk by the FAT alone, runs of clusters in one transfer. The image ran into its heap a third time; the heap is at 42 MB now, and placing it after the image is on the roadmap. `x86-smbd` timed out under the 0.11.353 gate's load and passed 38/38 alone - a fifth flaky suite. **Next**: `ramfs`'s 1 KB reads, `ETH_RING_SLOTS`, the download stall, then the gate's time (671 s on 0.11.353).
 
 **Agreed by Diego** (`xavier.md`, *Answers that make sense*):
 (1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad

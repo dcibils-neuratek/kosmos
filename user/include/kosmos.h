@@ -930,7 +930,7 @@ static inline long kosmos_pulse(long cap, uint32_t code, uint64_t value)
 #endif
 
 #define USER_TEXT       ((unsigned long)KOSMOS_USER_BASE)
-#define USER_HEAP       (USER_TEXT + 0x02800000UL)   /* kernel/process.h */
+#define USER_HEAP       (USER_TEXT + 0x02A00000UL)   /* kernel/process.h */
 /*
  * The heap's size, and it must be the same number the *kernel* used.
  *

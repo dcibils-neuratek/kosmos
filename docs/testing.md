@@ -30616,3 +30616,45 @@ model given a guess, the top layer's guess the Inside page's likeliest next
 word, and the answer's arrival a layer within the model. **Control**: the
 page tells of layer 1's guess as the top's ("ition" against
 " recollection"), and it fails on that check.
+
+## 18.748 The image past 40 MB, a third time
+
+**What**: a `MEGA=1` x86-64 userland, with the `/Drives` read below in it,
+would not link - "the userland image runs into its heap". Measured with
+the check relaxed for one link: `__image_end` at 40 MB and one page, from
+32 MB of read-only data, 5.5 MB of code and 4 MB of `.bss` over many
+objects, none of it one thing to remove. The heap moved from 40 MB to 42
+(`USER_HEAP` in `kosmos.h`, `USER_HEAP_VA` in `kernel/process.h`, the
+assert in `user/user.ld`), leaving 1.75 MB of guard below the stack. The
+lasting answer - a heap placed after wherever the image ends - is in
+`roadmap.md`.
+
+**Checks**: the whole gate, whose kernel suite holds the heap's pages, the
+guard above it and the stack's.
+
+## 18.749 A file on a stick at speed
+
+**What** (`roadmap.md`, *every cap that costs speed*, (2)): a `/Drives`
+read was 1 KB a message, and worse - `answer_read` walked from the file's
+first cluster on every request and read each sector it skipped, one USB
+transfer each, so reading a file through cost the square of its size. Now
+the walk to `at` is by the FAT alone, one FAT sector held between steps
+and the place the last read stopped kept, so a file read through never
+walks back; adjacent clusters are read in one transfer of up to 1 MB; and
+`DRIVES_REGION` takes the caller's region with the request, as `/Home`'s
+`DISK_REGION` does - `fs.read_into` on `/Drives` works, where it said nil.
+`fs.read` brings the first kilobyte in the reply and the rest of each
+megabyte through a region of its own. Every capability that arrives with a
+message is dropped once answered.
+
+**Measured** (`usb_drives`, a 4 MB file on a FAT32 volume with one-sector
+clusters - a chain of 8192, the slowest case): **before, 256 KB took
+11.8 s with `fs.read`** (4 MB would take most of an hour); **after, 4 MB in
+38 ms with `fs.read` and 11 ms into a region**, under TCG.
+
+**Checks** (`x86-usb-2`, `usb_drives`, 19): the 4 MB file read both ways,
+each held to the SHA-256 of the bytes `fatstick.py` wrote; the 3000-byte
+file now counted as two requests, a kilobyte and then the rest through a
+region. **Control**: each transfer after a read's first moved one sector
+on, and the region's sum differs - it fails.
+

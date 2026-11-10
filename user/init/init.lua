@@ -1017,7 +1017,18 @@ local function new_namespace()
     [4] = "the drive would not read",
     [5] = "a filesystem this cannot read",
     [6] = "the volume is damaged",
+    [7] = "a read into a region came without one that could be used",
   }
+
+  --
+  -- **The most a plain read of `/Drives` brings in one go**: the first
+  -- kilobyte in the reply, as before, and the rest of a megabyte into a
+  -- region made for it and let go again - so `fs.read` of a file on a stick
+  -- is a round trip a megabyte rather than a kilobyte, and `fs.chunks`
+  -- still never holds more than this at once.
+  --
+  local DRIVES_PIECE_MOST = 1024 * 1024
+  local DRIVES_REGION = 1
 
 
   --
@@ -1058,7 +1069,7 @@ local function new_namespace()
   -- operation for one and this process was never given the endpoint that
   -- would carry it.
   --
-  local function drives_request(capability, op, rest, extra)
+  local function drives_request(capability, op, rest, extra, pass)
     -- `<volume>/.device`: what that volume has been read so far, asked as
     -- the drive server's own operation on the volume's path.
     if op == "read" and (rest or ""):lower():match("/%.device$") then
@@ -1096,8 +1107,10 @@ local function new_namespace()
       return nil, DRIVES_ERRORS[1]
     end
 
-    local want = math.min(tonumber(extra.length) or DRIVES_DATA_MAX,
-                          DRIVES_DATA_MAX)
+    local into = (op == "read" and extra.into) and true or false
+    local want = into and math.min(tonumber(extra.bytes) or 0xffffffff, 0xffffffff)
+                      or math.min(tonumber(extra.length) or DRIVES_DATA_MAX,
+                                  DRIVES_DATA_MAX)
 
     local reply, why = sys.call_raw(capability,
                                     string.pack(DRIVES_REQUEST, code,
@@ -1118,9 +1131,10 @@ local function new_namespace()
                                                   and (tonumber(extra.offset)
                                                        or tonumber(extra.at) or 0)
                                                   or 0,
-                                                want, 0,
+                                                want, into and DRIVES_REGION or 0,
                                                 drives_fixed(rest or "",
-                                                     DRIVES_PATH_MAX)))
+                                                     DRIVES_PATH_MAX)),
+                                    into and pass or nil)
 
     if not reply then return nil, tostring(why) end
 
@@ -1143,8 +1157,38 @@ local function new_namespace()
                                     kind = (directory ~= 0) and "directory" or "file" } }
     end
 
+    -- Into the caller's region (`fs.read_into`): how many, and of what.
+    if into then
+      return { ok = true, bytes = length, size = size }
+    end
+
     if op == "read" then
-      return { ok = true, value = blob:sub(1, length), more = more ~= 0 }
+      local value = blob:sub(1, length)
+      local from = (tonumber(extra.offset) or tonumber(extra.at) or 0) + length
+
+      -- More than a reply holds: the rest of a piece through a region.
+      if more ~= 0 and length > 0 and size > from then
+        local left = math.min(size - from, DRIVES_PIECE_MOST - length)
+        local region = sys.memory((left + 4095) // 4096)
+
+        if region then
+          local r, why = drives_request(capability, "read", rest,
+                                        { into = true, offset = from, bytes = left },
+                                        region)
+          local got = r and sys.region_read(region, 0, r.bytes)
+
+          sys.release(region)
+
+          if not r then return nil, why end
+
+          value = value .. (got or "")
+          from = from + r.bytes
+        end
+
+        return { ok = true, value = value, more = from < size }
+      end
+
+      return { ok = true, value = value, more = more ~= 0 }
     end
 
     if op == "device" then
@@ -3300,7 +3344,7 @@ local function new_namespace()
     end
 
     if proto == "drives" then
-      return drives_request(capability, op, rest, extra)
+      return drives_request(capability, op, rest, extra, pass)
     end
 
     if proto == "bin" then
