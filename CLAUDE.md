@@ -144,6 +144,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Virtual machines and sandboxes - small operating systems for a task - explored for Diego to decide: `docs/virtualization.md`, drawn in `docs/sandboxes.html`; the Sandboxes application's feature set and architecture: `docs/sandboxes.md`, `docs/sandboxes-architecture.png`
 - The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
 - Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 to X3 built: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
+- The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed, to be built: `docs/playback.md`, `docs/playback-architecture.png`
 - Glossary: `docs/glossary.md`
 
 ---

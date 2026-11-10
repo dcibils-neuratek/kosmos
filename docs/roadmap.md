@@ -6555,6 +6555,10 @@ not static**, since a static one is in every process.
    decoding with the AAC and MP3 Kits and writing straight into the ring -
    one door that Music and Video both use, the window only asking where it
    is; and the `.decoded ..` strings gone from the period path.
+   **AGREED on 10 November** (Diego: "yes, build the C playback thread
+   for music and video"). Designed first, in `docs/playback.md` with its
+   diagram, then built: the thread and its ring, Music on it, Video on it,
+   `x86-film` and `x86-sound` held under the gate's load.
 
    **And one not of sound**, in the gate for SVG (6zz j5): `x86-cafesa3d`
    scrubbing Rotation Z turned it 16 degrees where 20 were asked - four of
