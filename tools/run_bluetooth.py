@@ -111,7 +111,11 @@ def boot(with_controller, failed):
         check("bt: done, 3 devices heard" in said,
               "bt scan did not end with three devices:\n" + said[-600:])
 
-        said = run("bt", "devices heard")
+        # **Until the prompt, not the count.** `bt` says "3 devices heard"
+        # before it lists them, so waiting for that read the listing while it
+        # was still arriving: under the 0.11.334 gate's load the third row had
+        # not, and the order looked wrong (`testing.md` 18.753).
+        said = run("bt", "kosmos> ")
         rows = re.findall(r"bt:   (\S.*?)\s{2,}", said)
         check(rows[:3] == [n for n, *_ in SCANNED],
               "bt did not list them nearest first: %r" % rows)
@@ -122,7 +126,7 @@ def boot(with_controller, failed):
         run('fs.write("/Temporary/nobt.lua", [[local b = use("/Kosmos/Libraries/bluetooth.lua") '
             'local s, why = b.state() print("nobt: " .. tostring(s) .. " " .. tostring(why))]]) '
             'print("no" .. "bt-written")', "nobt-written")
-        said = run("run /Temporary/nobt.lua", "nobt: ")
+        said = run("run /Temporary/nobt.lua", "kosmos> ")   # its whole line, not its start
         check("nobt: nil " in said,
               "a program that did not ask for Bluetooth reached it:\n" + said[-400:])
 

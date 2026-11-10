@@ -30719,3 +30719,39 @@ cores, so there is no eleventh slot. The longest suites - `x86-cafesa3d-2`
 after another), `x86-dock` 217, `x86-servers` 206, `x86-usb-2` 201 - are
 where the next minute comes from.
 
+
+## 18.753 A flake that says why, and is kept
+
+`roadmap.md` lists six suites that fail under the gate's load and pass
+alone. Making them say why began with the gate, not the suites.
+
+**The reasons were being thrown away.** `arm-sandbox`'s "ipc: a receive
+with a deadline gives up" has printed what its receive answered and after
+how many ticks since 18.342 - beside its `not ok`, with a hundred and twenty
+of the kernel suite's lines after it. The gate printed a failed suite's last
+thirty, and the next gate overwrote `build/gate/<suite>.log`: it failed
+twice (18.593, 18.726) with its explanation printed and read by nobody.
+
+So `tools/gate.py` now:
+
+- copies a failed suite's log, and its guests' serial lines
+  (`build/gate/serial/<suite>-N.log`), to
+  `build/gate/failed/<version>-<when>-<suite>.log`, which no run overwrites;
+- prints, above the tail, every `not ok` and `FAIL:` line from anywhere in
+  the log with the four lines after it, and names the kept copy.
+
+`tools/test_gatelogs.py`, in `host`, new: 8 checks - a kernel log of that
+shape gives the `not ok`, its reason and the closing `FAIL:` and not the
+log; a passing log gives nothing; the copy is whole, named by the version
+and the suite, with the suite's two serial logs and not `x86-thingy`'s.
+**Controls**: picking only `FAIL:` lines, keeping no serial lines, and
+matching serial logs by the bare prefix each fail it.
+
+**`x86-bluetooth`'s was the check's.** "bt did not list them nearest first:
+['Keyboard K380', 'MX Anywhere 3']" (0.11.334's gate) after the scan had
+heard all three: `bt` prints "3 devices heard" *before* its rows, and the
+check stopped reading at that line - under load, before the third row. It
+now reads to the prompt; the `nobt` check, which waited for `nobt: ` and
+then looked for `nobt: nil `, the same. **Control**: `bt` paused 100 ticks
+before each row - the new wait passes 24 of 24, the old fails both boots
+with `[]`.

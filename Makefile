@@ -5004,6 +5004,9 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	@# And the tools' temporary files: made only through scratch.py, and gone
 	@# when the tool is (19 GB were left behind before, and filled the disk).
 	python3 tools/test_scratch.py
+	@# And a failed suite's log kept where the next gate cannot overwrite it,
+	@# with why it failed printed from wherever in the log that is.
+	python3 tools/test_gatelogs.py
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

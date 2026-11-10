@@ -69,6 +69,7 @@ class Suite:
         self.x86 = x86              # needs the x86-64 cross compiler
         self.took = None
         self.code = None
+        self.kept = None                # a failed log, where no run overwrites it
         self.log = os.path.join(LOGS, name + ".log")
 
 
@@ -782,11 +783,69 @@ def run(suite, lock, started):
 
     suite.took = time.monotonic() - begin
 
+    if suite.code != 0:
+        suite.kept = keep_failed(suite)
+
     with lock:
         at = time.monotonic() - started
         print("%6.0fs  %s  %-16s %5.0fs" % (at, "PASS" if suite.code == 0
                                              else "FAIL", suite.name,
                                              suite.took), flush=True)
+
+
+FAILED = os.path.join(LOGS, "failed")
+
+
+def keep_failed(suite):
+    """A failed suite's log, and its guests' serial lines, where no run
+    overwrites them: `build/gate/failed/<version>-<when>-<suite>`.
+
+    **A flake not kept is a flake not read.** `build/gate/<suite>.log` is the
+    next gate's, so a suite that failed once under load and passed alone left
+    only the summary's last thirty lines - and `arm-sandbox`'s deadline test
+    printed what its receive answered and how long it took a hundred and
+    twenty lines above them, twice, with nobody to read it (`testing.md`
+    18.753)."""
+    try:
+        with open(os.path.join(ROOT, "VERSION")) as f:
+            version = f.read().strip()
+    except OSError:
+        version = "unknown"
+
+    stem = "%s-%s-%s" % (version, time.strftime("%m%d-%H%M%S"), suite.name)
+    os.makedirs(FAILED, exist_ok=True)
+    kept = os.path.join(FAILED, stem + ".log")
+
+    try:
+        shutil.copyfile(suite.log, kept)
+    except OSError:
+        return None
+
+    serial = os.path.join(LOGS, "serial")
+
+    for name in sorted(os.listdir(serial)) if os.path.isdir(serial) else []:
+        if name == suite.name + ".log" or name.startswith(suite.name + "-"):
+            try:
+                shutil.copyfile(os.path.join(serial, name),
+                                os.path.join(FAILED, stem + "-serial-" + name))
+            except OSError:
+                pass
+
+    return kept
+
+
+def what_failed(lines, after=4):
+    """Each line that says a check failed, with the few after it that say
+    why - wherever in the log it is, not only in its last lines."""
+    picked = []
+
+    for i, line in enumerate(lines):
+        if line.startswith("not ok") or "FAIL:" in line:
+            for j in range(i, min(len(lines), i + 1 + after)):
+                if not picked or picked[-1] < j:
+                    picked.append(j)
+
+    return picked
 
 
 def summary_of(suite):
@@ -1016,7 +1075,27 @@ def main():
         print("--- %s, the end of %s" % (s.name, s.log))
 
         with open(s.log, errors="replace") as f:
-            print("".join(f.readlines()[-30:]).rstrip())
+            lines = f.read().splitlines()
+
+        tail = max(0, len(lines) - 30)
+        early = [i for i in what_failed(lines) if i < tail]
+
+        # What failed and why, from above the tail, then the tail.
+        if early:
+            last = None
+
+            for i in early:
+                if last is not None and i != last + 1:
+                    print("  ...")
+                print(lines[i])
+                last = i
+
+            print("  ... the last lines:")
+
+        print("\n".join(lines[tail:]).rstrip())
+
+        if getattr(s, "kept", None):
+            print("(kept as %s)" % os.path.relpath(s.kept, ROOT))
 
     print()
 
