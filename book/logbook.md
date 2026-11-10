@@ -1855,3 +1855,29 @@ Diego's settings (8 processors, the GPU helping), from 5.89; and **2.44 s
 on four processors with the GPU off** - 13 words a second. The GPU's help
 and the second processor on each core now cost the 1.5B more than they
 give; which settings to keep is Diego's choice.
+
+## 9 November, late - the Story page: watching an answer arrive
+
+**In short.** The LLM Monitor has a third page, Story, which takes one
+word the model wrote and shows, layer by layer, what the model would have
+said had it stopped there - so a person can see the answer form. On
+Qwen2.5 1.5B asked for France's capital, the middle layers say
+" located" and from layer 24 of 28 every layer says " Paris".
+
+**What.** A model is a stack of layers, each adding to a list of numbers
+it hands up - the word's "stream". Normally only the last layer's stream
+is turned into words. The Story page turns *every* layer's into words, the
+same way (a trick known as the logit lens). To do that without slowing
+the answer, the server keeps the last 64 words' streams while the Monitor
+watches, and works out the guesses only when the page asks, for one word,
+in one pass. Each row also says which earlier words that layer looked
+back at, leaving out the first token, which almost every head stares at
+and which says nothing.
+
+**Why.** Diego asked where the neural network was in the Inside page and
+how to see the words being made; a grid of numbers did not say. The
+Story page says it in words.
+
+**Visible impact.** Overview, Inside, Story. Left and Right step through
+the words, a click on a layer tells of it. Watching costs the answer
+nothing; asking costs about one word's last step.

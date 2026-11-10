@@ -1348,3 +1348,8 @@ repaint.
   `/Running/llm` the kit's own on the Mac, a word written over refused;
 - **S4** the Story page - `x86-llmmon`: a word clicked and its tower drawn,
   its top guess the word.
+
+**All four built in 0.11.350 to 0.11.353** (`testing.md` 18.744-18.747).
+Not yet built from the mockup: the arcs from a layer to the words it
+looked at, and Step and Play through `llmstory.html`'s five steps - the
+tower says the same in rows, and they wait for Diego to see it.

@@ -30594,3 +30594,25 @@ odds to the last printed digit (0.000930095906 on tiny-phi2); after 120
 more tokens, the same record refused. **Control**: the lens read from the
 slot before - its top guess another token (46992 against 43417), and it
 fails.
+
+## 18.747 The Story page, S4: the LLM Monitor's third tab
+
+**What** (`xavier.md`, *The Story page: the design*): Story beside
+Overview and Inside in `llmmon.lua`. The words of the last 256 tokens
+along the top, the chosen one lit; below, the tower, a row a layer from
+the top down - its number, the words it looked back at past the first
+token (S1's three looks), a bar for what it recalled, and what it would
+have said stopping there with its odds. The row from which every guess is
+the top layer's is marked as where the answer arrived; a click on a layer
+tells of it in the foot. A word's lens is asked once, on the window's
+clock and never in a repaint - BUSY means ask again on the next tick - and
+the last 32 are kept, so stepping back is free. Left and Right step
+through the words, End follows. `wm llmmon:--inside --story` opens on
+Inside and switches to Story, which is how the suite sees both.
+
+**Checks** (`x86-llmmon`, 18 now): the Story page tells of the last token
+written - its position and word the Inside page's last, every layer of the
+model given a guess, the top layer's guess the Inside page's likeliest next
+word, and the answer's arrival a layer within the model. **Control**: the
+page tells of layer 1's guess as the top's ("ition" against
+" recollection"), and it fails on that check.

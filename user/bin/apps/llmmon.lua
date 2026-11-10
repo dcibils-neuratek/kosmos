@@ -19,6 +19,18 @@
 --
 --   wm llmmon:--inside        opened on Inside
 --
+-- **And Story** (`xavier.md`, *The Story page*; drawn in
+-- `docs/llmstory.html`): one token's passage told as a tower, a row a
+-- layer - the words it looked back at, how much of it fired, and what the
+-- model would have said had it stopped there (the logit lens), with the
+-- layer the answer arrives at marked. The guesses are asked for once a
+-- token is chosen, after the fact, so watching never slows an answer.
+--
+--   wm llmmon:--story         opened on Story
+--   wm llmmon:--inside --story
+--                             on Inside, then Story a sample later: both
+--                             drawn, for a suite that cannot click
+--
 -- **It measures nothing itself**, as the other monitors do not: the server
 -- counts (`llm.stats`, `struct llm_reply`), and this asks every two seconds
 -- and takes the difference between two readings. A name is the kernel's for
@@ -35,6 +47,7 @@ local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 -- `--tell`: a line a sample, for a suite to read.
 local TELL = (tostring(args or "")):find("%-%-tell") ~= nil
 local OPEN_INSIDE = (tostring(args or "")):find("%-%-inside") ~= nil
+local OPEN_STORY = (tostring(args or "")):find("%-%-story") ~= nil
 local keys = use("/Kosmos/Libraries/keys.lua")
 
 local W        = 1140
@@ -845,16 +858,221 @@ end
 
 win:add(inside_view)
 
-local tabs = ui.tabs{ x = 0, y = L.head, w = W, items = { { text = "Overview" }, { text = "Inside" } } }
+--------------------------------------------------------------------------
+-- **Story** (`docs/llmstory.html`): the shown token's passage as a tower,
+-- its last layer at the top. Each layer's guess comes from the server's
+-- lens (`ring:lens`), asked on the window's clock for the token shown and
+-- kept; while an answer runs the server is busy, and it is asked again.
+--------------------------------------------------------------------------
+
+local story_view = ui.view{ x = 0, y = L.head + TABS_H, w = W, h = M.h, hidden = true }
+local lenses, lens_order = {}, {}       -- by record seq: { layers } or { why }
+local story_layer = nil                 -- a row chosen, 1-based, or nil: where it arrives
+
+local ST = {}
+do
+  ST.tower_label = IN.strip + IN.strip_h + 12
+  ST.tower = ST.tower_label + 22
+  ST.bottom = M.foot - 30
+  ST.num_w, ST.look_w, ST.fire_w = 56, 330, 130
+end
+
+local function lens_kept(seq, got)
+  lenses[seq] = got
+  lens_order[#lens_order + 1] = seq
+  if #lens_order > 32 then lenses[table.remove(lens_order, 1)] = nil end
+end
+
+-- The first layer from which every guess is the top layer's.
+local function arrival(got)
+  local n = #got.layers
+  local a = n
+
+  while a > 1 and got.layers[a - 1].token == got.layers[n].token do a = a - 1 end
+  return a
+end
+
+-- On the clock: the shown token's guesses, if not yet had. True when
+-- something came to draw.
+local function story_fetch()
+  local r = current()
+  if not r or not ring or lenses[r.seq] then return false end
+
+  local got, why = ring:lens(r.seq)
+
+  if not got and why and why:find("busy") then return false end
+  lens_kept(r.seq, got or { why = why })
+
+  if TELL then
+    if got and #got.layers > 0 then
+      local top = got.layers[#got.layers]
+      print(("llmmon: story at %d %q, %d layers, the top layer's guess %q at %.0f%%, arriving at layer %d")
+            :format(r.pos, r.text, #got.layers, top.text, top.odds * 100, arrival(got)))
+    else
+      print(("llmmon: story at %d %q, no guesses: %s"):format(r.pos, r.text, tostring(why)))
+    end
+  end
+  return true
+end
+
+local function looked_words(r, Ly, at)
+  local words = {}
+
+  for _, look in ipairs(Ly.looks or {}) do
+    local said = look.back == 0 and "itself" or text_at(r.pos - look.back, at)
+    said = look.back == 0 and said or (said and quoted(said) or "an earlier word")
+    words[#words + 1] = ("%s %.0f%%"):format(said, look.share * 100)
+  end
+  return #words > 0 and table.concat(words, ", ") or "nothing before it"
+end
+
+local function story_row_h(r)
+  local n_l = math.min(r.n_layer, 64)
+  return n_l, math.max(6, math.min(20, (ST.bottom - ST.tower) // math.max(1, n_l)))
+end
+
+function story_view:draw(g)
+  local x = L.page_side
+  local r = current()
+
+  g:fill(0, 0, self.w, self.h, theme.window)
+
+  if not r then
+    local why = ring and ("Nothing recorded yet: ask Xavier something, and choose a word here to see how "
+                          .. "the model came to it.")
+                or ("The LLM server does not hand over its ring: " .. tostring(ring_why))
+
+    g:text(x + 3, IN.phase + 8, ui.fitted(why, W - 2 * x, "ui"), theme.text_dim, theme.window, "ui")
+    return
+  end
+
+  local got = lenses[r.seq]
+  local made = r.cands[1] and r.cands[1].text or nil
+  local headline = made and ("How %s led to %s: up its %d layers, and what each would have said"):format(
+                     quoted(r.text), quoted(made), r.n_layer)
+                   or ("%s, read with the question: up its %d layers"):format(quoted(r.text), r.n_layer)
+
+  g:text(x, IN.phase + 2, ui.fitted(headline, W - 2 * x - 240, "ui"), theme.text, theme.window, "ui")
+
+  local state = shown and ("held on %d of the last %d \u{b7} End follows"):format(shown, #recs)
+                or ("following \u{b7} %d tokens held"):format(#recs)
+  g:text(W - x - gfx.measure(state, "ui"), IN.phase + 2, state, FAINT, theme.window, "ui")
+
+  g:fill_round(x, IN.strip, W - 2 * x, IN.strip_h, GRAPH_GROUND, L.card_r)
+  token_strip(g, x + 12, IN.strip, W - 2 * x - 24, r, nil)
+
+  local n_l, row_h = story_row_h(r)
+  local face = row_h >= gfx.height("mono") + 2 and "mono" or (row_h >= gfx.height("label") and "label" or nil)
+  local layers_got = got and got.layers and #got.layers > 0 and got.layers or nil
+  local arrive = layers_got and arrival(got) or nil
+  local final = layers_got and layers_got[#layers_got].token
+  local guess_x = x + ST.num_w + ST.look_w + ST.fire_w + 24
+  local odds_x = W - x - 110
+
+  g:text(x, ST.tower_label, "LAYER", FAINT, theme.window, "label")
+  g:text(x + ST.num_w, ST.tower_label, "LOOKED BACK AT, PAST THE FIRST WORD", FAINT, theme.window, "label")
+  g:text(x + ST.num_w + ST.look_w, ST.tower_label, "RECALLED", FAINT, theme.window, "label")
+  g:text(guess_x, ST.tower_label, "WOULD HAVE SAID, STOPPING HERE", FAINT, theme.window, "label")
+
+  -- The tower, the last layer on top: the word climbs from the bottom.
+  for l = 1, n_l do
+    local Ly = layer_of(r, l)
+    local ry = ST.tower + (n_l - l) * row_h
+    local guess = layers_got and layers_got[l]
+    local lit = l == (story_layer or arrive)
+    local ground = lit and mix(theme.window, VIOLET, 0.16) or theme.window
+
+    if lit then g:fill(x - 4, ry, W - 2 * x + 8, row_h - 1, ground) end
+    if arrive and l >= arrive then g:fill(x - 4, ry, 3, row_h - 1, VIOLET) end
+
+    local f = r.n_ff > 0 and Ly.fired / r.n_ff or 0
+    local bar_h = math.max(2, math.min(8, row_h - 3))
+    local bar_y = ry + (row_h - bar_h) // 2
+    local fx = x + ST.num_w + ST.look_w
+
+    g:fill_round(fx, bar_y, ST.fire_w - 16, bar_h, CELL_OFF, 3)
+    g:fill_round(fx, bar_y, math.max(2, math.floor((ST.fire_w - 16) * f + 0.5)), bar_h, FFN, 3)
+
+    if guess then
+      g:fill_round(odds_x, bar_y, 100, bar_h, CELL_OFF, 3)
+      g:fill_round(odds_x, bar_y, math.max(2, math.floor(100 * guess.odds + 0.5)), bar_h,
+                   guess.token == final and VIOLET or FAINT, 3)
+    end
+
+    if face then
+      local ty = ry + (row_h - gfx.height(face)) // 2
+
+      g:text(x, ty, tostring(l), lit and theme.text or FAINT, ground, face)
+      g:text(x + ST.num_w, ty, ui.fitted(looked_words(r, Ly, shown or #recs), ST.look_w - 12, face),
+             READ, ground, face)
+      if guess then
+        g:text(guess_x, ty, ui.fitted(("%s %.0f%%"):format(quoted(guess.text), guess.odds * 100),
+                                      odds_x - guess_x - 12, face),
+               guess.token == final and VIOLET or theme.text_dim, ground, face)
+      end
+    end
+  end
+
+  -- In words: the row chosen, or where the answer arrives.
+  local note
+
+  if got and got.why then
+    note = "The layers' guesses are not kept for this word: " .. got.why .. "."
+  elseif not layers_got then
+    note = "The layers' guesses come when the answer has ended: the model is busy writing."
+  else
+    local l = story_layer or arrive
+    local Ly, gl = layer_of(r, l), layers_got[l]
+
+    note = ("Layer %d looked back at %s; %d%% of its neurons fired; had it been the last, it would "
+            .. "have said %s at %.0f%%. "):format(l, looked_words(r, Ly, shown or #recs),
+                                                   r.n_ff > 0 and Ly.fired * 100 // r.n_ff or 0,
+                                                   quoted(gl.text), gl.odds * 100)
+           .. ("The answer arrives at layer %d of %d and stays."):format(arrive, n_l)
+  end
+  g:text(x, ST.bottom + 6, ui.fitted(note, W - 2 * x, "ui"), theme.text, theme.window, "ui")
+
+  g:text(x + 3, M.foot, ui.fitted("Click a layer to tell of it; Left and Right step through the last "
+         .. KEEP .. " tokens, End follows. The guesses are worked out after the word, for the last 64 "
+         .. "words written while this page or Inside was open.", W - 2 * x - 6, "ui"),
+         theme.text_dim, theme.window, "ui")
+end
+
+-- A click on a row chooses its layer.
+function story_view:mouse(action, x, y)
+  return ui.click(self, action, x, y, function(_, py)
+    local r = current()
+    if not r then return nil end
+
+    local n_l, row_h = story_row_h(r)
+    local k = (py - ST.tower) // row_h
+
+    if py >= ST.tower and k < n_l then
+      return "layer " .. (n_l - k), function()
+        story_layer = n_l - k
+        win.dirty = true
+      end
+    end
+    return nil
+  end)
+end
+
+win:add(story_view)
+
+local tabs = ui.tabs{ x = 0, y = L.head, w = W,
+                      items = { { text = "Overview" }, { text = "Inside" }, { text = "Story" } } }
 
 local function show_page(i)
   tabs.on = i
   body.hidden = i ~= 1
   inside_view.hidden = i ~= 2
+  story_view.hidden = i ~= 3
 
-  if i == 2 then inside_read() end
+  if i >= 2 then inside_read() end
+  if i == 3 then story_fetch() end
   win.dirty = true
 end
+
 
 tabs.on_choose = function(_, i) show_page(i) end
 
@@ -863,7 +1081,7 @@ win:add(tabs)
 -- Left and Right step back and forward through what is held; End follows
 -- the model again, and forgets a head chosen.
 win.on_key = function(_, c)
-  if inside_view.hidden or #recs == 0 then return false end
+  if (inside_view.hidden and story_view.hidden) or #recs == 0 then return false end
 
   if c == keys.LEFT then
     shown = math.max(1, (shown or #recs) - 1)
@@ -871,7 +1089,7 @@ win.on_key = function(_, c)
     shown = shown and shown + 1 or nil
     if shown and shown >= #recs then shown = nil end
   elseif c == keys.END then
-    shown, chosen = nil, nil
+    shown, chosen, story_layer = nil, nil, nil
   else
     return false
   end
@@ -893,11 +1111,15 @@ local ticks = 0
 function sampler:tick()
   ticks = ticks + 1
 
-  if not inside_view.hidden and inside_read() and not shown then win.dirty = true end
+  local watching = not inside_view.hidden or not story_view.hidden
+
+  if watching and inside_read() and not shown then win.dirty = true end
+  if not story_view.hidden and ticks % (FAST_HZ // 2) == 0 and story_fetch() then win.dirty = true end
 
   if ticks % (FAST_HZ * PACE_S) == 0 then
+    if OPEN_INSIDE and OPEN_STORY and ticks == FAST_HZ * PACE_S then show_page(3) end
     sample()
-    if not inside_view.hidden and ring then ring:renew() end
+    if watching and ring then ring:renew() end
     win.dirty = true
   end
 end
@@ -907,6 +1129,6 @@ win:add(sampler)
 sample()
 print(now and ("llmmon: the LLM server, up " .. up_words(now.up_us))
           or ("llmmon: the LLM server does not answer: " .. tostring(why_not)))
-if OPEN_INSIDE then show_page(2) end
+if OPEN_INSIDE then show_page(2) elseif OPEN_STORY then show_page(3) end
 win.tick_every = counter_hz // FAST_HZ
 win:run()

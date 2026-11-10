@@ -55,6 +55,11 @@ LAYER = re.compile(r"^  +\d+  stream +[\d.]+  fired +\d+ \( *\d+%\)  head +\d+ l
 WEIGHED = re.compile(r"^  +\d+  stream .*; weighed ((?:(?:itself|\"(?:[^\"\\]|\\.)*\") \d+%(?:, )?){1,3}); first (\d+)%\r?$", re.M)
 SHAPE = re.compile(r"^shape: +(\d+) layers", re.M)
 INSIDE = re.compile(r"llmmon: inside (\d+) tokens, last at (\d+) (\".*\") (read|written), (\d+) layers")
+# And the Story page (`xavier.md`, *The Story page*, S4): the last token's
+# guesses, layer by layer, from the server's lens.
+STORY = re.compile(r"llmmon: story at (\d+) (\".*\"), (\d+) layers, the top layer's guess (\".*\") at (\d+)%, "
+                   r"arriving at layer (\d+)")
+NEXTWORD = re.compile(r"llmmon: inside \d+ tokens, .* layers, next (\".*\") at \d+%")
 ASKER = re.compile(r"^  (\S+)\s+(?:writing; |loading; )?(\d+) answers, (\d+) read, (\d+) written, "
                    r"(\d+) refused", re.M)
 
@@ -149,7 +154,7 @@ def main():
         # The window, on Inside: its sample says what `llm` said, and its
         # page reads the ring `llm inside` filled.
         mark = len(guest.seen)
-        guest.type("wm llmmon:--tell --inside")
+        guest.type("wm llmmon:--tell --inside --story")
         window = said("wm: window LLM Monitor at ", mark, 120)
         opened = said("llmmon: the LLM server, up ", mark, 60)
         told = said("llmmon: up ", mark, 30)
@@ -160,6 +165,16 @@ def main():
             guest._read_available()
             inside_window = INSIDE.findall(guest.seen[mark:])
             if inside_window:
+                break
+            time.sleep(0.2)
+
+        # Then Story, a sample later: the guesses for the token shown.
+        deadline = time.monotonic() + 40
+        story = []
+        while time.monotonic() < deadline:
+            guest._read_available()
+            story = STORY.findall(guest.seen[mark:])
+            if story or "no guesses:" in guest.seen[mark:]:
                 break
             time.sleep(0.2)
 
@@ -246,6 +261,14 @@ def main():
           and written and inside_window[-1][1] == written[-1][1] and inside_window[-1][2] == written[-1][2],
           "the Inside page did not read the ring's last written token, %r: %r"
           % (written[-1][1:3] if written else None, inside_window[-4:]))
+    # The Story page: the last token's guesses, every layer, its top one the
+    # likeliest next word the ring recorded for it, arriving at a layer.
+    nexts = NEXTWORD.findall(guest.seen[mark:])
+    check(bool(story) and bool(inside_window) and story[-1][0] == inside_window[-1][1]
+          and int(story[-1][2]) == n_layer and nexts and story[-1][3] == nexts[-1]
+          and 1 <= int(story[-1][5]) <= n_layer,
+          "the Story page did not give the last token's guesses, every layer, its top one the "
+          "likeliest next word: %r, %r" % (story[-2:], guest.seen[mark:][-800:]))
 
     if fails:
         whole = os.environ.get("KEEP_GUEST") or os.path.join(work, "guest.txt")
