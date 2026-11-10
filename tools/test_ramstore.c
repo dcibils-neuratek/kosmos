@@ -19,6 +19,9 @@
  *   - forty watches parked at once, all answered by one write;
  *   - a directory renamed with what is in it;
  *   - an offset near the top of 32 bits refused rather than wrapped;
+ *   - 3 MB written from a region in one request and read back into one,
+ *     a read without a region still a kilobyte with the file's size beside
+ *     it, and a region asked for and not handed refused;
  *   - and after everything is deleted, nothing is held.
  */
 
@@ -462,6 +465,61 @@ static void hostile_offset(void)
           "and leaves nothing behind");
 }
 
+/* `RAM_REGION`: the bytes in a region the server mapped, not the message. */
+static uint32_t ask_region(uint32_t op, const char *path, uint32_t offset,
+                           uint32_t length, uint8_t *region, uint64_t room)
+{
+    static struct ram_request req;
+
+    memset(&req, 0, sizeof(req));
+    req.op = op;
+    req.offset = offset;
+    req.length = length;
+    req.flags = RAM_REGION;
+    snprintf(req.path, sizeof(req.path), "%s", path);
+
+    memset(&said, 0, sizeof(said));
+    ram_answer_region(&req, sizeof(req), 1, region, room);
+    return said.error;
+}
+
+static void by_region(void)
+{
+    static uint8_t data[3u * 1024u * 1024u], back[3u * 1024u * 1024u];
+    size_t i;
+
+    ram_store_init(64u * 1024u * 1024u);
+
+    for (i = 0; i < sizeof(data); i++) {
+        data[i] = (uint8_t)((i * 7u + (i >> 12)) % 251u);
+    }
+
+    check(ask_region(RAM_OP_WRITE, "/film", 0, sizeof(data), data, sizeof(data)) == RAM_OK,
+          "3 MB written from a region in one request");
+
+    check(ask_region(RAM_OP_READ, "/film", 0, 0, back, sizeof(back)) == RAM_OK
+          && said.length == sizeof(data) && !said.more && said.size == sizeof(data)
+          && memcmp(back, data, sizeof(data)) == 0,
+          "3 MB read back into a region in one request, byte for byte");
+
+    memset(back, 0, sizeof(back));
+    check(ask_region(RAM_OP_READ, "/film", 1000000, 4096, back, sizeof(back)) == RAM_OK
+          && said.length == 4096 && said.more
+          && memcmp(back, data + 1000000, 4096) == 0,
+          "a read by region from an offset gives what was asked and says more follows");
+
+    check(ask(RAM_OP_READ, "/film", 0, NULL, 0, 1) == RAM_OK
+          && said.length == RAM_DATA_MAX && said.more && said.size == sizeof(data)
+          && memcmp(said.u.data, data, RAM_DATA_MAX) == 0,
+          "a read without a region is still a kilobyte, with the file's size beside it");
+
+    check(ask_region(RAM_OP_READ, "/film", 0, 0, NULL, 0) == RAM_ERR_REGION,
+          "a read by region with no region is refused");
+
+    check(ask_region(RAM_OP_WRITE, "/film", 0, 8192, data, 4096) == RAM_ERR_REGION,
+          "a write of more than the region holds is refused");
+}
+
 int main(void)
 {
     many_files();
@@ -473,6 +531,7 @@ int main(void)
     rename_folder();
     spaced_names();
     hostile_offset();
+    by_region();
 
     ram_store_init(0);
 

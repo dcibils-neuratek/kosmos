@@ -154,7 +154,34 @@ void ramfs_server(long endpoint)
                 continue;
             }
 
-            ram_answer(msg.data, msg.length, sender);
+            /*
+             * A read or a write through the caller's region (`RAM_REGION`):
+             * mapped for the answer and let go after. Any other capability
+             * that came with a message is dropped once answered - a folder
+             * watch's, above, is the one that is kept.
+             */
+            {
+                long cap = msg.cap_plus_one ? (long)msg.cap_plus_one - 1 : -1;
+                long pages = 0, at = -1;
+
+                if (cap >= 0 && whole && (req.flags & RAM_REGION)
+                    && (req.op == RAM_OP_READ || req.op == RAM_OP_WRITE)
+                    && (pages = kosmos_mem_size(cap)) > 0) {
+                    at = kosmos_mem_map(cap);
+                }
+
+                ram_answer_region(msg.data, msg.length, sender,
+                                  at >= 0 ? (uint8_t *)(uintptr_t)at : NULL,
+                                  at >= 0 ? (uint64_t)pages * 4096u : 0u);
+
+                if (at >= 0) {
+                    kosmos_share_unmap((unsigned long)at, (unsigned long)pages);
+                }
+
+                if (cap >= 0) {
+                    (void)kosmos_cap_drop(cap);
+                }
+            }
 
             /* A change that happened, told to the folder's watchers. */
             if (whole && ram_answered_ok()

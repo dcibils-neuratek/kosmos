@@ -30658,3 +30658,30 @@ file now counted as two requests, a kilobyte and then the rest through a
 region. **Control**: each transfer after a read's first moved one sector
 on, and the region's sum differs - it fails.
 
+## 18.750 /Temporary by region
+
+**What** (`roadmap.md`, *every cap that costs speed*, (3)): `/Temporary`
+read and wrote a kilobyte a message (`RAM_DATA_MAX`), so 4 MB written was
+4096 round trips and read back the same - and a USB stick, after 18.749,
+was fifteen times quicker than memory. Now `RAM_REGION` (`ramproto.h`,
+`flags` at the request's end): a write longer than a message goes from a
+region in one request, a read's rest after its first kilobyte comes
+through a region made to fit - the reply now carries the file's `size` -
+and `fs.read_into` is one request into the caller's region, where it was
+a loop writing each kilobyte in from Lua. `ram_answer_region` takes the
+region as bytes, so the store is still held on the host; `ramfs.c` maps
+and lets go of it, and drops every capability that came with a message
+other than a folder watch's, which it keeps.
+
+**Measured** (`usb_drives`, the 4 MB film through `/Temporary`, under
+TCG): **written in 335 ms, now 7; `fs.read` 609 ms, now 17;
+`fs.read_into` 362 ms, now 3.**
+
+**Checks**: `test_ramstore` (46): 3 MB written from a region and read back
+into one, byte for byte; a read by region from an offset gives what was
+asked and says more follows; a read without a region still a kilobyte with
+the size beside it; a region asked for and not handed refused, and a write
+longer than its region refused. `usb_drives` (20): the film through
+`/Temporary` both ways, held to its SHA-256. **Control**: a region read
+starting a byte late - two host checks fail, and both guest sums differ.
+

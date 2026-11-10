@@ -1146,6 +1146,28 @@ def usb_drives(image, check):
         '.. (t3 - t2) * 1000 // hz .. " ms")'
     )
 
+    # **And the same 4 MB through /Temporary** (`ramproto.h`), written,
+    # read whole and read into a region, each timed and summed. A program
+    # of its own: a line typed at the prompt is cut at about a kilobyte.
+    temporary = (
+        'local crypto = use("/Kosmos/Kits/crypto") '
+        'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000 '
+        'local whole = fs.read("/Drives/PHOTOS/film.bin") '
+        'local region = sys.memory(1024) '
+        'local t4 = sys.ticks() '
+        'local wrote = fs.write("/Temporary/film.bin", whole) '
+        'local t5 = sys.ticks() '
+        'local again = fs.read("/Temporary/film.bin") '
+        'local t6 = sys.ticks() '
+        'local m = fs.read_into("/Temporary/film.bin", region, 0, 4194304) '
+        'local t7 = sys.ticks() '
+        'local back = m and sys.region_read(region, 0, m) '
+        'print("temporary" .. ": film wrote " .. tostring(wrote) .. " in " .. (t5 - t4) * 1000 // hz '
+        '.. " ms, read " .. tostring(again and #again) .. " " .. (again and crypto.sha256(again) or "none") '
+        '.. " in " .. (t6 - t5) * 1000 // hz .. " ms, into " .. tostring(m) .. " " '
+        '.. (back and crypto.sha256(back) or "none") .. " in " .. (t7 - t6) * 1000 // hz .. " ms")'
+    )
+
     # **And which programs** (`.programs`, D2): this program, named, found
     # in each drive's rows by its own process id - the stick's bytes exactly
     # the file it read, /Temporary's exactly what it wrote and read back,
@@ -1183,6 +1205,8 @@ def usb_drives(image, check):
                       "/Temporary/p.lua",
                       "fs.write('/Temporary/f.lua', %r)" % film,
                       "/Temporary/f.lua",
+                      "fs.write('/Temporary/t.lua', %r)" % temporary,
+                      "/Temporary/t.lua",
                       "diskstat"),
                extra=extra, after="watching for devices")
 
@@ -1237,6 +1261,15 @@ def usb_drives(image, check):
     film_sum = hashlib.sha256(fatstick.FILM).hexdigest()
     film = re.search(r"drives: film (\S+) (\S+) in (\d+) ms, into (\S+) (\S+) in (\d+) ms", out)
     print("  /Drives film: %s" % (film.group(0) if film else "not read"))
+    temp = re.search(r"temporary: film wrote (\S+) in (\d+) ms, read (\S+) (\S+) in (\d+) ms, "
+                     r"into (\S+) (\S+) in (\d+) ms", out)
+    print("  /Temporary film: %s" % (temp.group(0) if temp else "not written"))
+    check(temp is not None and temp.group(1) == "true"
+          and temp.group(3) == temp.group(6) == str(fatstick.FILM_BYTES)
+          and temp.group(4) == temp.group(7) == film_sum,
+          "the 4 MB film did not go through /Temporary whole - written, read "
+          "with fs.read and into a region, its SHA-256 %s: %r"
+          % (film_sum, temp.group(0) if temp else [l for l in out.splitlines() if "temporary:" in l]))
     check(film is not None and film.group(1) == film.group(4) == str(fatstick.FILM_BYTES)
           and film.group(2) == film.group(5) == film_sum,
           "the 4 MB film on the stick did not read back whole, with fs.read and "

@@ -1784,13 +1784,22 @@ local function new_namespace()
   --------------------------------------------------------------------------
 
   local RAM_ATTR    = "I4c32c48"                     -- kind, name, value
-  local RAM_REQUEST = "<I4I4I4I4I4c256" .. string.rep(RAM_ATTR, 8) .. "c1024"
-  local RAM_REPLY   = "<I4I4I4I4I4c1024"
+  local RAM_REQUEST = "<I4I4I4I4I4c256" .. string.rep(RAM_ATTR, 8) .. "c1024I4I4"
+  local RAM_REPLY   = "<I4I4I4I4I4I4I8c1024"
+  local RAM_REGION  = 1
+
+  --
+  -- **What goes through a region rather than a kilobyte a message**: a
+  -- write longer than a message, and a read of what is left past the first
+  -- kilobyte - up to this much a round trip, so `fs.chunks` never holds
+  -- more than it at once.
+  --
+  local RAM_PIECE_MOST = 1024 * 1024
 
   local RAM_PATH_MAX, RAM_ATTRS_MAX = 256, 8
   local RAM_ENTRIES_MAX, RAM_DATA_MAX = 4, 1024
 
-  assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, "") == 1044,
+  assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, 0, 0, "") == 1056,
          "namespace: the /Temporary reply layout does not match ramproto.h")
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
@@ -1807,6 +1816,7 @@ local function new_namespace()
     [6] = "too many attributes on one node",
     [7] = "the directory is not empty",
     [8] = "it is already there",
+    [9] = "a read or write by region came without one that could hold it",
   }
 
   -- A string cut to exactly what a fixed field holds. `c256` pads a short
@@ -1844,14 +1854,16 @@ local function new_namespace()
     return out, count
   end
 
-  local function ram_pack(op, path, offset, length, count, attrs, blob, packed)
+  local function ram_pack(op, path, offset, length, count, attrs, blob, packed, flags)
     local a = pack_attrs(attrs)
 
     a[#a + 1] = fixed(blob, RAM_DATA_MAX)   -- the union, zero-padded by `c`
+    a[#a + 1] = flags or 0
+    a[#a + 1] = 0
 
     return string.pack(RAM_REQUEST, op, offset or 0, length or 0, count or 0,
                        packed or 0, fixed(path, RAM_PATH_MAX),
-                       table.unpack(a, 1, RAM_ATTRS_MAX * 3 + 1))
+                       table.unpack(a, 1, RAM_ATTRS_MAX * 3 + 3))
   end
 
   -- The payload of a reply, read as whichever of the three things it is.
@@ -1894,9 +1906,9 @@ local function new_namespace()
     local raw, why = sys.call_raw(capability, bytes, pass)
 
     if not raw then return nil, tostring(why) end
-    if #raw < 1044 then return nil, "a /Temporary reply of the wrong size" end
+    if #raw < 1056 then return nil, "a /Temporary reply of the wrong size" end
 
-    local err, more, count, length, packed, blob = string.unpack(RAM_REPLY, raw)
+    local err, more, count, length, packed, _, size, blob = string.unpack(RAM_REPLY, raw)
 
     if err == 5 then
       return nil, ("no room for %s in memory"):format(tostring(shown))
@@ -1907,7 +1919,54 @@ local function new_namespace()
     end
 
     return { more = more ~= 0, count = count, length = length,
-             packed = packed ~= 0, blob = blob }
+             packed = packed ~= 0, size = size, blob = blob }
+  end
+
+  --
+  -- A file's bytes from `at`, up to `most`, through a region made to fit
+  -- and let go of: what is left of a read after its first kilobyte.
+  --
+  local function ram_read_region(capability, shown, rest, at, most)
+    local region, why = sys.memory((most + 4095) // 4096)
+
+    if not region then return nil, why end
+
+    local r, err = ram_call(capability, shown,
+                            ram_pack(RAM_OPS.read, rest, at, most, 0, nil, nil, 0, RAM_REGION),
+                            region)
+    local got = r and r.length > 0 and sys.region_read(region, 0, r.length) or ""
+
+    sys.release(region)
+
+    if not r then return nil, err end
+
+    return got, r.more
+  end
+
+  -- The rest of a read whose first kilobyte is `r`, at `at`: every byte
+  -- to the end when `whole`, or the rest of one piece.
+  local function ram_rest(capability, shown, rest, r, at, whole)
+    local parts, more = { r.blob:sub(1, r.length) }, r.more
+
+    at = at + r.length
+
+    while more and r.size > at do
+      local most = r.size - at
+
+      if not whole then most = math.min(most, RAM_PIECE_MOST - r.length) end
+
+      local got, again = ram_read_region(capability, shown, rest, at, math.min(most, 0xffffffff))
+
+      if not got then return nil, again end
+
+      parts[#parts + 1] = got
+      at = at + #got
+      more = again
+
+      if not whole or #got == 0 then break end
+    end
+
+    return table.concat(parts), more
   end
 
   local function ram_request(capability, op, rest, extra, pass, shown)
@@ -2029,18 +2088,33 @@ local function new_namespace()
         packed = 1
       end
 
-      local at = 0
-
-      repeat
-        local piece = text:sub(at + 1, at + RAM_DATA_MAX)
+      -- A kilobyte or less in the message; more through a region, whole.
+      if #text <= RAM_DATA_MAX then
         local _, err = ram_call(capability, shown,
-                                ram_pack(code, rest, at, #piece, 0, nil,
-                                         piece, packed))
+                                ram_pack(code, rest, 0, #text, 0, nil, text, packed))
 
         if err then return nil, err end
 
-        at = at + #piece
-      until at >= #text
+        return { ok = true, bytes = #text }
+      end
+
+      local region, why = sys.memory((#text + 4095) // 4096)
+
+      if not region then return nil, why end
+
+      local put, cannot = sys.region_write(region, 0, text)
+      local _, err
+
+      if put then
+        _, err = ram_call(capability, shown,
+                          ram_pack(code, rest, 0, #text, 0, nil, nil, packed, RAM_REGION),
+                          region)
+      end
+
+      sys.release(region)
+
+      if not put then return nil, cannot end
+      if err then return nil, err end
 
       return { ok = true, bytes = #text }
     end
@@ -2096,33 +2170,16 @@ local function new_namespace()
     -- read from memory did not already cost.
     --
     if op == "read" and extra.into then
-      local from = tonumber(extra.offset) or 0
-      local want = tonumber(extra.bytes) or math.maxinteger
-      local done = 0
+      local want = math.min(tonumber(extra.bytes) or 0xffffffff, 0xffffffff)
+      local r, err = ram_call(capability, shown,
+                              ram_pack(code, rest, tonumber(extra.offset) or 0,
+                                       want, 0, nil, nil, 0, RAM_REGION),
+                              pass)
 
-      while done < want do
-        local r, err = ram_call(capability, shown,
-                                ram_pack(code, rest, from + done, 0, 0, nil, nil, 0))
+      if not r then return nil, err end
+      if r.packed then return nil, shown .. " holds a value, not bytes" end
 
-        if not r then return nil, err end
-        if r.packed then return nil, shown .. " holds a value, not bytes" end
-
-        local piece = r.blob:sub(1, math.min(r.length, want - done))
-
-        if #piece > 0 then
-          local put, why = sys.region_write(pass, done, piece)
-
-          if not put then return nil, why end
-        end
-
-        done = done + #piece
-
-        if not r.more or #piece == 0 then break end
-      end
-
-      local a = ram_request(capability, "getattr", rest, nil, nil, shown)
-
-      return { ok = true, bytes = done, size = a and a.attrs and a.attrs.size }
+      return { ok = true, bytes = r.length, size = r.size }
     end
 
     local offset = tonumber(extra.offset) or 0
@@ -2152,20 +2209,12 @@ local function new_namespace()
       -- one is, below.
       --
       if not r.packed and offset == 0 and tabletext and tabletext.is(bytes) then
-        local parts, more, at = { bytes }, r.more, #bytes
+        local all, why = ram_rest(capability, shown, rest, r, offset, true)
 
-        while more do
-          local nxt, err = ram_call(capability, shown,
-                                    ram_pack(code, rest, at, 0, 0, nil, nil, 0))
+        if not all then return nil, why end
 
-          if not nxt then return nil, err end
-
-          parts[#parts + 1] = nxt.blob:sub(1, nxt.length)
-          at = at + nxt.length
-          more = nxt.more
-        end
-
-        local value, why = tabletext.decode(table.concat(parts))
+        local value
+        value, why = tabletext.decode(all)
 
         if value == nil then return nil, rest .. " is not a table Kosmos can read: " .. why end
 
@@ -2174,8 +2223,13 @@ local function new_namespace()
 
       if not r.packed then
         -- Text pages the way every other server's does, and `ns.read` above
-        -- is what puts the pieces together.
-        return { ok = true, value = bytes, more = r.more }
+        -- is what puts the pieces together - a megabyte at a time, the rest
+        -- of each through a region.
+        local piece, more = ram_rest(capability, shown, rest, r, offset, false)
+
+        if not piece then return nil, more end
+
+        return { ok = true, value = piece, more = more }
       end
 
       --
@@ -2190,20 +2244,11 @@ local function new_namespace()
       -- The replicant is what needs it: a clock publishes a table holding
       -- its own source, which is well over one message.
       --
-      local parts, more, at = { bytes }, r.more, #bytes
+      local all, why = ram_rest(capability, shown, rest, r, offset, true)
 
-      while more do
-        local nxt, err = ram_call(capability, shown,
-                                  ram_pack(code, rest, at, 0, 0, nil, nil, 0))
+      if not all then return nil, why end
 
-        if not nxt then return nil, err end
-
-        parts[#parts + 1] = nxt.blob:sub(1, nxt.length)
-        at = at + nxt.length
-        more = nxt.more
-      end
-
-      return { ok = true, value = sys.unpack(table.concat(parts)) }
+      return { ok = true, value = sys.unpack(all) }
     end
 
     if op == "getattr" then

@@ -26,6 +26,14 @@ void ram_store_init(size_t ceiling);
  */
 void ram_answer(const void *data, size_t length, uint64_t sender);
 
+/*
+ * The same, with the region that came with it mapped at `region`, `room`
+ * bytes of it (`RAM_REGION`) - NULL and 0 when none came. The server maps and
+ * lets go of it; the store only sees bytes, so the host holds this too.
+ */
+void ram_answer_region(const void *data, size_t length, uint64_t sender,
+                       uint8_t *region, uint64_t room);
+
 /* Whether the last request `ram_answer` took was answered as asked. */
 bool ram_answered_ok(void);
 

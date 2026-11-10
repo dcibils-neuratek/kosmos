@@ -695,6 +695,12 @@ bool ram_answered_ok(void)
 
 void ram_answer(const void *data, size_t length, uint64_t sender)
 {
+    ram_answer_region(data, length, sender, NULL, 0);
+}
+
+void ram_answer_region(const void *data, size_t length, uint64_t sender,
+                       uint8_t *region, uint64_t room)
+{
     struct ram_request req;
     struct ram_reply rep;
     char path[RAM_PATH_MAX];
@@ -723,6 +729,19 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
     for (i = 0; i < RAM_ATTRS_MAX; i++) {
         req.attrs[i].name[RAM_NAME_MAX - 1] = '\0';
         req.attrs[i].value[RAM_VALUE_MAX - 1] = '\0';
+    }
+
+    /* A read or a write by region with none to use is refused, as asked;
+     * a region is only ever looked at for those two. */
+    if ((req.flags & RAM_REGION) && (req.op == RAM_OP_READ || req.op == RAM_OP_WRITE)
+        && (region == NULL || room == 0u)) {
+        fail(sender, RAM_ERR_REGION);
+        return;
+    }
+
+    if (!(req.flags & RAM_REGION)) {
+        region = NULL;
+        room = 0;
     }
 
     switch (req.op) {
@@ -812,14 +831,26 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
 
         take = n->length - at;
 
-        if (take > RAM_DATA_MAX) {
-            take = RAM_DATA_MAX;
-            rep.more = 1u;
+        /* Into the region, as much as it holds and was asked for; or the
+         * reply's kilobyte. */
+        {
+            uint64_t most = (region != NULL) ? room : RAM_DATA_MAX;
+
+            if (region != NULL && req.length != 0u && req.length < most) {
+                most = req.length;
+            }
+
+            if (take > most) {
+                take = (uint32_t)most;
+                rep.more = 1u;
+            }
         }
 
         if (take > 0) {
-            memcpy(rep.u.data, n->value + at, take);
+            memcpy(region != NULL ? region : (uint8_t *)rep.u.data, n->value + at, take);
         }
+
+        rep.size = n->length;
 
         rep.length = take;
         rep.packed = n->packed;
@@ -838,7 +869,12 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
             return;
         }
 
-        if (req.length > RAM_DATA_MAX) {
+        if (region != NULL) {
+            if (req.length > room) {
+                fail(sender, RAM_ERR_REGION);   /* more than it was handed */
+                return;
+            }
+        } else if (req.length > RAM_DATA_MAX) {
             req.length = RAM_DATA_MAX;
         }
 
@@ -890,7 +926,9 @@ void ram_answer(const void *data, size_t length, uint64_t sender)
         }
 
         if (req.length > 0) {
-            memcpy(n->value + req.offset, req.u.data, req.length);
+            memcpy(n->value + req.offset,
+                   region != NULL ? (const void *)region : (const void *)req.u.data,
+                   req.length);
         }
 
         if (end > n->length) {

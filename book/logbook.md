@@ -1904,3 +1904,19 @@ cap.
 **Visible impact.** A film or a photo library on a stick opens as quickly
 as one on the disk. On the way the system's image grew one page past the
 room it has below the heap, and the heap was moved two megabytes up.
+
+## 9 November, night - memory as fast as it should be
+
+**In short.** Saving a 4 MB file to `/Temporary`, the part of the system
+kept in memory, took a third of a second and reading it back over half a
+second; now they take 7 and 17 thousandths. After the USB fix above,
+memory had become fifteen times slower than a stick.
+
+**What.** `/Temporary` passed files a kilobyte per message, both ways -
+four thousand round trips for 4 MB. Now a large write hands the server a
+region of memory holding the bytes, in one request, and a read gets the
+rest of the file through a region the same way.
+
+**Visible impact.** Programs that hand each other data through
+`/Temporary` - a replicant's state, a picture between two applications -
+no longer pay a round trip per kilobyte.

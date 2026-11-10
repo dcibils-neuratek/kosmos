@@ -80,6 +80,19 @@
 #define RAM_ERR_TOO_MANY     6u   /* more attributes than a node may hold */
 #define RAM_ERR_NOT_EMPTY    7u   /* a directory with something still in it */
 #define RAM_ERR_EXISTS       8u   /* the destination is already taken */
+#define RAM_ERR_REGION       9u   /* a read or write by region with no
+                                   * region, or one too small for it */
+
+/*
+ * **A read or a write through the caller's region** (`flags`), as `/Home`'s
+ * `DISK_REGION` and `/Drives`' `DRIVES_REGION`: the request carries a
+ * region's capability. A read puts the bytes from `offset` at the region's
+ * start - as many as `length` asks, or as the region holds when it is 0 -
+ * and says how many in the reply's `length`; a write takes `length` bytes
+ * from the region's start. It was a kilobyte a message both ways, and 4 MB
+ * took 335 ms to write and 609 to read back (`testing.md` 18.750).
+ */
+#define RAM_REGION           1u
 
 /*
  * **A path is 256 bytes, so a name in one can be sixty-four characters.**
@@ -137,7 +150,8 @@ struct ram_attr {
 struct ram_request {
     uint32_t op;
     uint32_t offset;          /* which page of a listing, or byte of a read */
-    uint32_t length;          /* bytes of `u.data`, for write */
+    uint32_t length;          /* bytes of `u.data`, for write; with
+                               * RAM_REGION, of the region either way */
     uint32_t count;           /* terms in `attrs`, or paths in `u.known` */
     uint32_t packed;          /* RAM_RAW or RAM_PACKED */
 
@@ -150,6 +164,9 @@ struct ram_request {
         char data[RAM_DATA_MAX];
         char known[RAM_ENTRIES_MAX][RAM_PATH_MAX];
     } u;
+
+    uint32_t flags;           /* RAM_REGION, for read and write */
+    uint32_t reserved;
 };
 
 struct ram_reply {
@@ -158,6 +175,9 @@ struct ram_reply {
     uint32_t count;           /* entries or attributes in `u` */
     uint32_t length;          /* bytes of `u.data` */
     uint32_t packed;          /* what those bytes are; see RAM_RAW */
+    uint32_t reserved;
+    uint64_t size;            /* a read's: the whole file's bytes, so a
+                               * reader can make a region to fit the rest */
 
     union {
         char data[RAM_DATA_MAX];
