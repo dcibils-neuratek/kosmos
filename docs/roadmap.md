@@ -6540,6 +6540,21 @@ not static**, since a static one is in every process.
    30 busy loops, `x86-film` passed twice each), so host CPU alone is not
    it; the next idea is `-icount`, which ties QEMU's audio timer to the
    guest's instructions.
+   **Found on 10 November, reading it** (with the flaky suites, 18.753):
+   there is no sound thread to put in the band. A film's sound and a
+   song's are fed by `media.feed` from the program's own loop -
+   `voice:fill` in `video.lua`, `from_file` in `media.lua` - in Lua, each
+   period decoded into a string appended to the last, and handed over on
+   the loop's next pass. The film's ring is 32 periods, 186 ms; a loop kept
+   away longer than that by the gate's load leaves the device nothing, and
+   the zeros are what 6zw has seen six times. The same happens to a film on
+   a busy desktop. Only Groove plays from a C thread in the audio band (the
+   Synth Kit's). **Proposed, Diego's to decide**: a playback thread of the
+   Synth Kit's kind, in C and in the band, given the file's compressed
+   frames (where and how long, from the demuxer the Lua already has),
+   decoding with the AAC and MP3 Kits and writing straight into the ring -
+   one door that Music and Video both use, the window only asking where it
+   is; and the `.decoded ..` strings gone from the period path.
 
    **And one not of sound**, in the gate for SVG (6zz j5): `x86-cafesa3d`
    scrubbing Rotation Z turned it 16 degrees where 20 were asked - four of
