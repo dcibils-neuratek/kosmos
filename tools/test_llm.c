@@ -776,6 +776,75 @@ static int heads_agree(const struct llm_model *m, const struct llm_passage *p, u
   return wrong;
 }
 
+/*
+ * **The answer forming, layer by layer** (`llm_lens`): a question read in
+ * one batch with its streams kept - the logits the unwatched ones - and its
+ * last token's streams read through the lens. The top layer's guess is the
+ * model's own choice and its odds the softmax of the logits to the bit;
+ * every layer's a token there is, with odds in (0, 1]; and the first
+ * layer at which the guess becomes the model's choice said, for reading.
+ */
+static void check_lens(struct llm_model *m)
+{
+  const char *q = "The capital of France is";
+  int32_t t[LLM_BATCH], token[256];
+  float odds[256];
+  char what[300], said[64];
+  int n = llm_tokenize(m, q, strlen(q), 1, t, LLM_BATCH);
+  const uint64_t S = llm_stream_floats(m);
+
+  if (n <= 0 || m->n_layer > 256) { check(0, "lens: the question would not read"); return; }
+
+  float *streams = malloc((size_t)LLM_BATCH * S * sizeof(float));
+  float *scores = malloc((size_t)LLM_BATCH * m->n_vocab * sizeof(float));
+  if (!streams || !scores) { free(streams); free(scores); check(0, "lens: no memory"); return; }
+
+  if (fresh_logits(m, t, n) != 0) { check(0, "lens: the question would not read"); goto out; }
+
+  llm_reset(m);
+  llm_watch_streams(m, streams);
+  if (llm_step_batch(m, t, (uint32_t)n) != 0) { llm_watch_streams(m, NULL); check(0, "lens: a batch refused"); goto out; }
+  llm_watch_streams(m, NULL);
+  check(same_logits(m), "lens: with the streams kept, the logits are the unwatched ones");
+
+  const int32_t choice = llm_greedy(m);
+  double sum = 0;
+  for (uint32_t i = 0; i < m->n_vocab; i++) sum += exp((double)(m->logits[i] - m->logits[choice]));
+  const float want = (float)(1.0 / sum);
+
+  if (llm_lens(m, streams + (size_t)(n - 1) * S, scores, token, odds) != 0) {
+    check(0, "lens: refused");
+    goto out;
+  }
+
+  const uint32_t L = m->n_layer;
+  int bounds = 1, arrives = -1;
+  for (uint32_t l = 0; l < L; l++) {
+    if (token[l] < 0 || (uint32_t)token[l] >= m->n_vocab || !(odds[l] > 0) || odds[l] > 1) bounds = 0;
+    if (token[l] != choice) arrives = -1;
+    else if (arrives < 0) arrives = (int)l;
+  }
+
+  { int k = llm_token_text(m, choice, said, sizeof said - 1); said[k < 0 ? 0 : k] = 0; }
+  snprintf(what, sizeof what, "lens: the top layer's guess the model's choice %d (\"%s\") at %.4f, the "
+           "logits' %.4f to the bit; it arrives at layer %d of %u and stays", (int)token[L - 1], said,
+           (double)odds[L - 1], (double)want, arrives + 1, L);
+  check(token[L - 1] == choice && memcmp(&odds[L - 1], &want, sizeof want) == 0, what);
+  check(bounds, "lens: every layer's guess a token there is, its odds above nought and at most one");
+
+  /* Said, for reading: what each layer would have answered. */
+  printf("  lens, \"%s\":", q);
+  for (uint32_t l = 0; l < L; l++) {
+    { int k = llm_token_text(m, token[l], said, sizeof said - 1); said[k < 0 ? 0 : k] = 0; }
+    for (char *c = said; *c; c++) if (*c == '\n') *c = ' ';
+    printf(" %u \"%s\" %.0f%%%s", l + 1, said, odds[l] * 100.0, l + 1 < L ? "," : "\n");
+  }
+
+out:
+  free(streams);
+  free(scores);
+}
+
 static void check_passage(struct llm_model *m)
 {
   static int32_t t[2048];
@@ -1300,6 +1369,7 @@ int main(int argc, char **argv)
   check_batch(&m);
   check_parallel(&m);
   check_passage(&m);
+  check_lens(&m);
   check_clock(&m);
   if (with_gpu) check_gpu(&m);
 

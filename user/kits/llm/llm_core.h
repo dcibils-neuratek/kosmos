@@ -225,6 +225,9 @@ struct llm_model {
    * watched: `LLM_BATCH` x `LLM_PASSAGE_HEADS`, combined into the layer's
    * three at its end (`struct llm_passage_layer`'s `look_back`). */
   struct llm_look *look;
+  /* Each token's stream after every layer, `LLM_BATCH` x `n_layer` x
+   * `n_embd` floats, or NULL (`llm_watch_streams`). */
+  float *streams;
 
   /* **Where the time goes** (`llm_clock`): the forward pass's stages, in
    * the clock's own counts, added up from the moment a clock was given.
@@ -298,6 +301,28 @@ _Static_assert(sizeof(struct llm_passage) == 104 + 152 * LLM_PASSAGE_LAYERS, "a 
 /* From the next step on, token `t` of a batch recorded into `into[t]` -
  * `LLM_BATCH` of them - or, with NULL, nothing recorded. */
 void llm_watch(struct llm_model *m, struct llm_passage *into);
+
+/*
+ * **The answer forming, layer by layer** (`docs/xavier.md`, *The Story
+ * page*): a token's stream after each layer - the numbers every layer adds
+ * to - kept while watched, and read as though that layer were the last.
+ *
+ * `llm_watch_streams`: from the next step on, token `t` of a batch keeps
+ * its streams at `into + t * llm_stream_floats(m)`, layer after layer; NULL
+ * for none. A copy, so the answer is the unwatched one to the bit.
+ *
+ * `llm_lens`: each of the `n_layer` streams at `stream` through the
+ * model's final norm and its output matrix - as one product of up to
+ * `LLM_BATCH` inputs, so the matrix is read once for them - into
+ * `scores`, room for `LLM_BATCH * n_vocab` floats; and each layer's
+ * likeliest token into `token[l]`, with its probability, a softmax over
+ * every score, into `odds[l]`. The last layer's is the model's own: the
+ * logits the step after it gave. Uses the batch's working vectors, so not
+ * during a step; -1 for a model with no layers.
+ */
+void llm_watch_streams(struct llm_model *m, float *into);
+uint64_t llm_stream_floats(const struct llm_model *m);
+int llm_lens(struct llm_model *m, const float *stream, float *scores, int32_t *token, float *odds);
 
 /* The likeliest tokens to follow, from `m->logits`, into `p`: their
  * probabilities a softmax over the whole vocabulary, as the choice of the

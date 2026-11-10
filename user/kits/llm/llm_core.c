@@ -1989,6 +1989,10 @@ int llm_step_batch(struct llm_model *m, const int32_t *tokens, uint32_t n)
         combine_looks(m, l, t);
       }
     }
+
+    if (m->streams)
+      for (uint32_t t = 0; t < n; t++)
+        memcpy(m->streams + ((size_t)t * m->n_layer + l) * E, X(t), (size_t)E * sizeof(float));
     lap(m, &since, LLM_STAGE_ADD);
   }
 
@@ -2055,6 +2059,45 @@ static void combine_looks(struct llm_model *m, uint32_t l, uint32_t t)
 
   L->sink_share = (uint16_t)(sink / H * 65535.0 + 0.5);
   L->reserved = 0;
+}
+
+void llm_watch_streams(struct llm_model *m, float *into)
+{
+  m->streams = into;
+}
+
+uint64_t llm_stream_floats(const struct llm_model *m)
+{
+  return (uint64_t)m->n_layer * m->n_embd;
+}
+
+int llm_lens(struct llm_model *m, const float *stream, float *scores, int32_t *token, float *odds)
+{
+  const uint32_t E = m->n_embd, V = m->n_vocab;
+
+  if (m->n_layer == 0) return -1;
+
+  for (uint32_t l0 = 0; l0 < m->n_layer; l0 += LLM_BATCH) {
+    const uint32_t n = m->n_layer - l0 < LLM_BATCH ? m->n_layer - l0 : LLM_BATCH;
+
+    for (uint32_t t = 0; t < n; t++)
+      norm(m, stream + (size_t)(l0 + t) * E, m->xn + (size_t)t * E, m->out_norm_w, m->out_norm_b);
+    matmul(m, m->out_w, m->out_b, m->xn, E, scores, V, n, 0);
+
+    /* As `llm_greedy` and `llm_candidates` read the logits. */
+    for (uint32_t t = 0; t < n; t++) {
+      const float *z = scores + (size_t)t * V;
+      int32_t best = 0;
+      double sum = 0;
+
+      for (uint32_t i = 1; i < V; i++)
+        if (z[i] > z[best]) best = (int32_t)i;
+      for (uint32_t i = 0; i < V; i++) sum += exp((double)(z[i] - z[best]));
+      token[l0 + t] = best;
+      odds[l0 + t] = (float)(1.0 / sum);
+    }
+  }
+  return 0;
 }
 
 void llm_watch(struct llm_model *m, struct llm_passage *into)

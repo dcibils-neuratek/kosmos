@@ -30540,3 +30540,35 @@ the whole. **The first try counted a look at the token itself as wrong** -
 it is a real look, back 0, and only a share of 0 is no look. **Control**:
 the first token let in among the looks - 35 checks over its 24 layers fail on
 Qwen2.5 0.5B, and position 0's.
+
+## 18.745 The Story page, S2: the streams kept, and the answer forming layer by layer
+
+**What** (`xavier.md`, *The Story page: the design*): `llm_watch_streams`
+- from the next step, each token of a batch keeps its stream after every
+layer, a copy, so nothing in the answer moves - and `llm_lens`: a token's
+streams through the final norm and the output matrix, every layer as one
+product of up to `LLM_BATCH` inputs through `matmul`, so the matrix is
+read once for them and in AVX2 as any product; each layer's likeliest
+token and its odds, as `llm_greedy` and `llm_candidates` read logits.
+
+**Checks** (`test_llm`'s `check_lens`, every model): with the streams
+kept the logits are the unwatched ones to the bit; the top layer's guess
+is the model's choice and its odds the logits' softmax to the bit; every
+layer's guess a token there is with odds in (0, 1]. **Control**: the
+streams taken through the matrix without the final norm - the top guess is
+still " Paris", but at 0.0005 against the logits' 0.518, and it fails.
+
+**What it shows**, said by the test for reading - Qwen2.5 1.5B, "The
+capital of France is":
+
+```
+ 1-7   "nt", "/is", ",", " Ex", " R"      fragments
+ 8-9   "欢迎您" ("welcome")
+10-16  " located" (6% to 36%)
+17-23  "____", " __"                      blanks, up to 77%
+24     " Paris" 82%
+25-28  " Paris" 96%, 96%, 53%, 27%
+```
+
+The answer arrives at layer 24 of 28 and stays - and the last layers
+grow less sure of it, as they spread the odds over what else might follow.
