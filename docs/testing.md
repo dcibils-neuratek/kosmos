@@ -30703,3 +30703,19 @@ unchanged. **Control**: the limit never tripping - the get waits until
 the store hangs up after 30 s, says the connection closed instead, and
 fails.
 
+## 18.752 Ten suites at once
+
+**What**: the gate stood at 671 s twice and 655 s once on 9 November -
+111 suites, 5,536 seconds of their own over nine slots, which is 615 s
+before the images' 29. The scheduler already starts the longest first, so
+the order was not the waste. Ten at once ran it in **597 s (9:56)**, every
+suite passing, with the suites' own seconds 5,610 - 1.3% more, so the
+tenth slot was capacity and not contention, as the seventh, eighth and
+ninth were (18.292, 18.396, 18.419). `--at-once` defaults to 10.
+
+**What it leaves**: three seconds under the budget, and this Mac has ten
+cores, so there is no eleventh slot. The longest suites - `x86-cafesa3d-2`
+288 s, `arm-sandbox-linuxsetup` 249, `host-llm` 234 (four models, one
+after another), `x86-dock` 217, `x86-servers` 206, `x86-usb-2` 201 - are
+where the next minute comes from.
+

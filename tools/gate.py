@@ -871,7 +871,13 @@ def main():
     # gate stood at 10:07 twice at eight, the share suites having joined it,
     # and ran in 9:13 at nine with the suites' own seconds within one per
     # cent - 4,471 and 4,518. Capacity again, not contention.
-    parser.add_argument("--at-once", type=int, default=9,
+    #
+    # **Ten, measured a fourth time** (`testing.md` 18.752): on 9 November
+    # the gate stood at 10:55 and 11:11 at nine, 111 suites, and ran in
+    # 9:56 at ten with the suites' own seconds 1.3 per cent apart - 5,536
+    # and 5,610. This Mac has ten cores, so this is the last slot there is:
+    # the next minute has to come out of the suites themselves.
+    parser.add_argument("--at-once", type=int, default=10,
                         help="suites at once, before the quiet ones")
     parser.add_argument("--arm", action="store_true",
                         help="run the AArch64 suites too (held back for now)")

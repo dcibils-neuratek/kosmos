@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.356, not pushed; /Drives and /Temporary by region, a download that gives up)
+Last updated: 2026-11-10 (0.11.357, not pushed; the gate in 9:56)
 
 ---
 
@@ -27,6 +27,8 @@ read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
 **Then 0.11.355** (18.750): **`/Temporary` by region** - 4 MB written in 7 ms (was 335), read in 17 (was 609). **Next**: `ETH_RING_SLOTS` measured at a gigabit on the M700, the download stall, the gate's time.
 
 **Then 0.11.356** (18.751): a download that hears nothing for 30 s gives up and says so, keeping its `.part`.
+
+**Then 0.11.357** (18.752): the gate ten suites at once - 597 s, every suite passing; three seconds of margin, and no eleventh core. **Next**: `ETH_RING_SLOTS` at a gigabit on the M700 (needs a netboot - Diego's), the flaky suites made to say why, the question re-read after a model switch.
 
 **Agreed by Diego** (`xavier.md`, *Answers that make sense*):
 (1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad
