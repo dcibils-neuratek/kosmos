@@ -24,7 +24,7 @@
  * server would keep. `--stops HEX,HEX` are the texts an answer ends at,
  * cut as the server cuts them. Each answer is then its bytes, whole:
  *
- *   llm_answer --chain [--stops HEX,HEX] MODEL TOKENS HEX...
+ *   llm_answer --chain [--stops HEX,HEX] MODEL TOKENS [SEED/]HEX...
  *   answer HEX : ANSWER-HEX kept K read R held H
  */
 
@@ -57,6 +57,14 @@ static int unhex(const char *h, char *out, int room)
   return n;
 }
 
+/* The server's `choose`. */
+static int32_t pick(struct llm_model *m, const struct llm_held *h, uint32_t seed, uint64_t *rng)
+{
+  if (seed == 0) return llm_greedy(m);
+
+  return llm_sample(m, h->tokens, h->n, &llm_sampling_default, rng);
+}
+
 /* The prompts as a conversation: one held context across all of them. */
 static int chain(struct llm_model *m, int tokens, char stops[2][64], int stop_n[2], int count,
                  char **prompts)
@@ -68,7 +76,12 @@ static int chain(struct llm_model *m, int tokens, char stops[2][64], int stop_n[
   llm_held_reset(m, &h);
 
   for (int a = 0; a < count; a++) {
-    int n = unhex(prompts[a], text, (int)sizeof text);
+    /* `SEED/HEX`: drawn from that seed, as the server draws an answer asked
+     * with it; plain `HEX`, the likeliest each time. */
+    const char *slash = strchr(prompts[a], '/');
+    uint32_t seed = slash ? (uint32_t)strtoul(prompts[a], NULL, 10) : 0;
+    uint64_t rng = llm_seed(seed);
+    int n = unhex(slash ? slash + 1 : prompts[a], text, (int)sizeof text);
     uint32_t kept = 0;
     int k = n > 0 ? llm_prompt(m, &h, text, (size_t)n, room, (int)m->n_ctx + 1, &kept) : -1;
     int bytes = 0;
@@ -82,7 +95,7 @@ static int chain(struct llm_model *m, int tokens, char stops[2][64], int stop_n[
 
     for (int i = 0; i < k; i++) llm_feed(m, &h, room[i]);
 
-    int32_t next = llm_greedy(m);
+    int32_t next = pick(m, &h, seed, &rng);
 
     /* As the server's `ask_step`: a token written, then the stops looked
      * for, then - unless it was the last - fed. */
@@ -113,7 +126,7 @@ static int chain(struct llm_model *m, int tokens, char stops[2][64], int stop_n[
 
       if (done || count_made >= tokens || llm_feed(m, &h, next) != 0) break;
 
-      next = llm_greedy(m);
+      next = pick(m, &h, seed, &rng);
     }
 
     printf(" ");

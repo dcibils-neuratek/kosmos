@@ -1820,3 +1820,12 @@ computers. Agreed next: the kit reads the 1.5B (its output matrix is in a
 format the kit did not read, Q6_K), the preamble says Xavier answers
 anything, and words are drawn rather than always the likeliest, so an
 answer does not go round in circles.
+
+**Built the same night.** The kit now reads the 1.5B model - its last
+table of numbers is packed in a format called Q6_K, six bits a number,
+which the kit learned to read and is checked against llama.cpp on 105
+points. Xavier is told it is a helpful assistant that answers anything in
+the language it is asked. And each word is now drawn by its odds rather
+than always the likeliest, with a seed: the same seed draws the same
+answer, which is what lets the tests still check Xavier's answers word
+for word against the kit run on the Mac.

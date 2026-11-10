@@ -29,6 +29,11 @@
 typedef float llm_dot_fn(const uint8_t *w, const uint8_t *xq, const float *xs, uint64_t blocks);
 
 llm_dot_fn llm_dot_q8_0, llm_dot_q4_0;
+
+/* A Q6_K row times an input as Q8_K (`LLM_Q8K_BYTES` a block: a float
+ * scale, then 256 bytes), `blocks` of 256 - ggml's
+ * `ggml_vec_dot_q6_K_q8_K` in its order. */
+float llm_dot_q6_k(const uint8_t *w, const uint8_t *xk, uint64_t blocks);
 llm_dot_fn llm_dot_q8_0_scalar, llm_dot_q4_0_scalar;
 
 /*

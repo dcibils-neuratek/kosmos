@@ -173,3 +173,53 @@ float llm_dot_q4_0_scalar(const uint8_t *w, const uint8_t *xq, const float *xs, 
   }
   return sum;
 }
+
+/*
+ * **A Q6_K row times a Q8_K input** (`ggml_vec_dot_q6_K_q8_K_generic`, in
+ * its order): each value put back together from its four low bits and two
+ * high ones, less 32; the products of each sixteen summed as integers and
+ * scaled by their scale; eight lanes of those, each block's scaled by the
+ * two blocks' scales, and the lanes summed last.
+ */
+float llm_dot_q6_k(const uint8_t *w, const uint8_t *xk, uint64_t blocks)
+{
+  float sums[8] = { 0 };
+
+  for (uint64_t b = 0; b < blocks; b++) {
+    const uint8_t *ql = w + b * 210, *qh = ql + 128;
+    const int8_t *sc = (const int8_t *)(qh + 64);
+    const uint8_t *dh = qh + 64 + 16;
+    const int8_t *q8 = (const int8_t *)(xk + b * 260 + 4);
+    int8_t a[256];
+    int32_t acc[8] = { 0 };
+    union { uint32_t u; float f; } yd;
+
+    for (int j = 0; j < 256; j += 128) {
+      const uint8_t *l4 = ql + j / 2, *h2 = qh + j / 4;
+
+      for (int l = 0; l < 32; l++) {
+        a[j + l + 0]  = (int8_t)(((l4[l + 0] & 0xF) | (((h2[l] >> 0) & 3) << 4)) - 32);
+        a[j + l + 32] = (int8_t)(((l4[l + 32] & 0xF) | (((h2[l] >> 2) & 3) << 4)) - 32);
+        a[j + l + 64] = (int8_t)(((l4[l + 0] >> 4) | (((h2[l] >> 4) & 3) << 4)) - 32);
+        a[j + l + 96] = (int8_t)(((l4[l + 32] >> 4) | (((h2[l] >> 6) & 3) << 4)) - 32);
+      }
+    }
+
+    for (int g = 0; g < 16; g++) {
+      int scale = sc[g];
+
+      for (int l = 0; l < 8; l++) acc[l] += scale * (int16_t)(q8[g * 16 + l] * a[g * 16 + l]);
+      for (int l = 0; l < 8; l++) acc[l] += scale * (int16_t)(q8[g * 16 + 8 + l] * a[g * 16 + 8 + l]);
+    }
+
+    yd.u = (uint32_t)xk[b * 260] | (uint32_t)xk[b * 260 + 1] << 8
+           | (uint32_t)xk[b * 260 + 2] << 16 | (uint32_t)xk[b * 260 + 3] << 24;
+    float d = llm_f16_to_f32((uint16_t)(dh[0] | dh[1] << 8)) * yd.f;
+
+    for (int l = 0; l < 8; l++) sums[l] += d * (float)acc[l];
+  }
+
+  float s = 0;
+  for (int l = 0; l < 8; l++) s += sums[l];
+  return s;
+}

@@ -179,11 +179,12 @@ function box.run(tokens)
     for i = (conv.forgotten or 0) + 1, #conv.turns do turns[#turns + 1] = conv.turns[i] end
 
     local a, why, text
+    local seed = llm.seed()
 
     while true do
       local stops
       text, stops = llm.chat(model.arch, turns, question, conversations.preamble())
-      a, why = llm.ask(text, { tokens = tokens, stops = stops })
+      a, why = llm.ask(text, { tokens = tokens, stops = stops, seed = seed })
 
       if a or not llm.too_long(why) or #turns == 0 then break end
 
@@ -203,7 +204,7 @@ function box.run(tokens)
     conv.turns[#conv.turns + 1] = t
     live = { turn = t, answer = a }
     said = ""
-    print(("xavier box: asked %d bytes: %s"):format(#text, hex(text)))
+    print(("xavier box: asked %d bytes, drawn from %d: %s"):format(#text, seed, hex(text)))
   end
 
   local function finished()

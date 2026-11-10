@@ -2533,7 +2533,8 @@ $(HOSTDIR)/test_llmdot_x86: tools/test_llmdot.c $(LLM_KIT_SRCS) user/kits/llm/ll
 LLAMA_CPP := build/downloads/llama.cpp-b12205
 
 # **The LLM Kit held to llama.cpp on the real models** (Xavier X1, 18.736):
-# phi-2 as Q8_0 and Q4_0, and Qwen2.5 0.5B, the second architecture -
+# phi-2 as Q8_0 and Q4_0, Qwen2.5 0.5B, the second architecture, and 1.5B,
+# whose output matrix is Q6_K -
 # RMSNorm, grouped-query attention, SwiGLU, Qwen2's split and ChatML. A
 # skip that says so where `build/models/` has no model. Two minutes of the
 # host suite's four, so a suite of its own, run beside it (9 November 2026).
@@ -2542,6 +2543,7 @@ host-llm-check: $(HOSTDIR)/test_llm
 	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
 	$(HOSTDIR)/test_llm build/models/qwen2.5-0.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
+	$(HOSTDIR)/test_llm build/models/qwen2.5-1.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-1.5b-instruct-q4_0.txt
 
 .PHONY: llm-reference
 llm-reference:
@@ -2559,6 +2561,8 @@ llm-reference:
 	done
 	$(HOSTDIR)/llm_reference build/models/qwen2.5-0.5b-instruct-q4_0.gguf 2>/dev/null \
 	    | sed 's#build/models/##' > tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
+	$(HOSTDIR)/llm_reference build/models/qwen2.5-1.5b-instruct-q4_0.gguf 2>/dev/null \
+	    | sed 's#build/models/##' > tools/llm_reference_qwen2.5-1.5b-instruct-q4_0.txt
 
 # The tiny phi-2 the guest suite and the host check use (`tools/llm_tiny.py`):
 # its tokenizer is copied from the real phi-2, so that is needed to make it.

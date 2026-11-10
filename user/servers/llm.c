@@ -192,6 +192,8 @@ static struct {
     uint32_t prompt_n, prompt_at;       /* tokens, and how many are read */
     uint32_t kept;                      /* of the conversation, already held */
     uint32_t max_tokens, flags, made;
+    uint32_t seed;                      /* 0: the likeliest each time */
+    uint64_t rng;                       /* `llm_sample`'s state, from it */
 
     /*
      * The answer's bytes as made, and as shown. They part only while the
@@ -1119,6 +1121,8 @@ static uint32_t ask_begin(const struct llm_request *rq, long given, long *cap)
                      : rq->max_tokens > LLM_ANSWER_TOKENS_MAX ? LLM_ANSWER_TOKENS_MAX
                      : rq->max_tokens;
     ans.flags = rq->flags;
+    ans.seed = rq->seed;
+    ans.rng = llm_seed(rq->seed);
     ans.made = 0;
     ans.made_bytes = ans.searched = 0;
     ans.next = -1;
@@ -1191,6 +1195,16 @@ static bool blank_line(uint32_t from)
  * known, so up to `LLM_BATCH` of them go through the model together, each
  * weight read once for the batch. Between batches the loop looks for STOP
  * as it does between tokens of the answer. */
+/* The next word: the likeliest, or drawn from the answer's seed with what
+ * the cache holds as what was said lately (`docs/xavier.md`, *Answers that
+ * make sense*). `tools/llm_answer.c --chain` draws it the same way. */
+static int32_t choose(void)
+{
+    if (ans.seed == 0) return llm_greedy(&model.m);
+
+    return llm_sample(&model.m, held.tokens, held.n, &llm_sampling_default, &ans.rng);
+}
+
 static void ask_step(void)
 {
     int32_t token;
@@ -1223,7 +1237,7 @@ static void ask_step(void)
             ans.prompt_us = micros(kosmos_ticks() - ans.asked);
             ans.began_answer = kosmos_ticks();
             memcpy(ans.stage_at_answer, model.m.stage_counts, sizeof ans.stage_at_answer);
-            ans.next = llm_greedy(&model.m);
+            ans.next = choose();
         }
 
         return;
@@ -1300,7 +1314,7 @@ static void ask_step(void)
                        gpu.rows_all - all_rows);
     }
 
-    ans.next = llm_greedy(&model.m);
+    ans.next = choose();
 }
 
 /* ------------------------------------------------------------------------

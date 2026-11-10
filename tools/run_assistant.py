@@ -60,7 +60,8 @@ STOPS = ["\nInstruct:", "\nOutput:"]
 
 Q1 = "what is a kernel"
 Q2 = "and a process"
-LONG = " ".join(["go"] * 150)            # with two turns and the preamble held, more than 256 tokens
+LONG = " ".join(["go"] * 120)            # with two turns and the preamble held, more than 256 tokens;
+                                         # 150 until the preamble grew by 30 (9 November)
 
 SEEDED_ANSWER = "Hello.\nturn 1 2 3 4 5 6\nThat line is part of the answer."
 
@@ -140,7 +141,7 @@ def main():
 
         return None
 
-    asked, answered = [], []
+    asked, answered, seeds = [], [], []
 
     try:
         guest.wait_for("kosmos> ", "a prompt")
@@ -187,17 +188,28 @@ def main():
             mark = len(guest.seen)
             click(*field_at)
             typed(question)
+
+            # For Stop, the pointer is on it before the question goes, and
+            # pressed the moment it has gone: the tiny model reads and writes
+            # its 40 tokens in under a second, less than `click` takes.
+            if stop_it:
+                guest.mouse_to(*R._to_tablet(wx + stop_at[0], wy + stop_at[1], sw, sh))
+                time.sleep(0.3)
+
             guest.sendkey("ret")
             got = said("xavier: asked ", mark, 30)
 
             if stop_it:
-                click(*stop_at)
+                guest.mouse_button(True)
+                time.sleep(0.05)
+                guest.mouse_button(False)
 
             done = said("xavier: answered ", mark, 120)
-            m = got and re.match(r"(\d+) bytes: ([0-9a-f]+)$", got)
+            m = got and re.match(r"(\d+) bytes, drawn from (\d+): ([0-9a-f]+)$", got)
             d = done and re.match(r"(\d+) tokens, (\d+) of the conversation kept and (\d+) read, "
                                   r"(\d+) held: ([0-9a-f]*)$", done)
-            asked.append(m.group(2) if m else None)
+            asked.append(m.group(3) if m else None)
+            seeds.append(int(m.group(2)) if m else 0)
             answered.append({"tokens": int(d.group(1)), "kept": int(d.group(2)),
                              "read": int(d.group(3)), "held": int(d.group(4)),
                              "hex": d.group(5)} if d else None)
@@ -215,7 +227,8 @@ def main():
         check("the conversation did not fit; 1 turns forgotten" in third,
               "the long question did not forget the oldest turn")
         fourth = ask(LONG + " go", stop_it=True)
-        check("xavier: stopped" in fourth, "Stop was not pressed")
+        check("xavier: stopped" in fourth, "Stop was not pressed: %r"
+              % " | ".join(l for l in fourth.splitlines() if l.startswith("xavier:"))[-700:])
 
         # **Settings** (`xavier.html`, *Settings*): opened from the header's
         # menu, Compare asking in each setting this machine has, and Use the
@@ -322,9 +335,11 @@ def main():
 
     # The kit's answers to what was asked, in the same order, on the Mac:
     # the first four in Q4_0 across one conversation, the fifth alone in Q8_0.
-    texts = [h for h in asked[:4] if h]
+    # Each drawn from the seed the window said, as the server drew it.
+    texts = ["%d/%s" % (seeds[i], h) for i, h in enumerate(asked[:4]) if h]
     expect = chain(texts) if len(texts) == 4 else []
-    other_expect = chain([asked[4]], OTHER) if len(asked) == 5 and asked[4] else []
+    other_expect = (chain(["%d/%s" % (seeds[4], asked[4])], OTHER)
+                    if len(asked) == 5 and asked[4] else [])
 
     check(len(asked) == 5 and all(asked), "not every question was asked: %r" % asked)
     check(all(answered), "not every question was answered")
@@ -388,15 +403,19 @@ def main():
           % (OTHER, MODEL, first_again))
     check(box_open is not None and box_ready == OTHER,
           "Super+X did not open the box on the model chosen last: %r %r" % (box_open, box_ready))
-    bq = box_asked and re.match(r"\d+ bytes: ([0-9a-f]+)$", box_asked)
+    bq = box_asked and re.match(r"\d+ bytes, drawn from (\d+): ([0-9a-f]+)$", box_asked)
     ba = box_answered and re.match(r"\d+ tokens, \d+ held: ([0-9a-f]*)$", box_answered)
     # The box is opened by a key, so with Xavier's own 512 tokens, not the
     # 40 the window was given: the tiny model's 256 end the answer first,
     # in the server as in the kit.
-    box_expect = chain([bq.group(1)], OTHER, 512) if bq else []
-    check(bq and bytes.fromhex(bq.group(1)).startswith(b"Today is ")
-          and b"You are Xavier, the assistant in Kosmos" in bytes.fromhex(bq.group(1)),
-          "the box did not tell the model the day and the machine first: %r" % box_asked)
+    box_expect = chain(["%s/%s" % (bq.group(1), bq.group(2))], OTHER, 512) if bq else []
+    check(bq and bytes.fromhex(bq.group(2)).startswith(b"You are Xavier, a helpful assistant. "
+                                                        b"You run on Kosmos")
+          and b"Today is " in bytes.fromhex(bq.group(2))
+          and b"in the language it was asked in." in bytes.fromhex(bq.group(2))
+          and int(bq.group(1)) != 0,
+          "the box did not tell the model what it is for, the machine and the day first, "
+          "and draw its words: %r" % box_asked)
     check(ba and len(box_expect) == 1 and box_expect[0]
           and ba.group(1) == box_expect[0]["hex"],
           "the box's answer is not the kit's: %r against %r" % (box_answered, box_expect))

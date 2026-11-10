@@ -118,7 +118,9 @@ struct llm_request {
     uint32_t flags;                 /* ASK: LLM_STOP_*                     */
     uint32_t since;                 /* WAIT: the bytes already seen        */
     uint32_t length;                /* ASK: bytes of `text`, or the region's */
-    uint32_t reserved;
+    uint32_t seed;                  /* ASK: 0, the likeliest word every time;
+                                     * any other, words drawn from this seed
+                                     * (`llm_sample`, Qwen2.5's settings)     */
     char     name[LLM_NAME_MAX];    /* LOAD: a file in the models folder   */
     char     text[LLM_TEXT_MAX];    /* ASK: the prompt, not terminated     */
 

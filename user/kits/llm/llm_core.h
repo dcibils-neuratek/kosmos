@@ -32,15 +32,26 @@
 
 #include "llm_dot.h"
 
-/* ggml's tensor types, the four this reads. */
+/* ggml's tensor types, the five this reads. */
 enum {
   LLM_F32  = 0,
   LLM_F16  = 1,
   LLM_Q4_0 = 2,
   LLM_Q8_0 = 8,
+  LLM_Q6_K = 14,
 };
 
 #define LLM_QK 32              /* values in a Q4_0 or Q8_0 block */
+
+/* **Q6_K**, a block of 256 in 210 bytes: the low four bits of each value
+ * in `ql` (128), the high two in `qh` (64), sixteen signed 8-bit scales,
+ * one for each sixteen values, and an F16 scale over them all - Qwen2.5
+ * 1.5B's output matrix. Its input is **Q8_K**: a float scale and 256
+ * bytes, `LLM_Q8K_BYTES` a block here (ggml's `block_q8_K` also keeps
+ * sixteen sums, which only other K kinds read). */
+#define LLM_QK_K      256
+#define LLM_Q6K_BYTES 210
+#define LLM_Q8K_BYTES 260
 #define LLM_MAX_DIMS 4
 
 /* A byte string inside the file: not terminated. */
@@ -185,6 +196,8 @@ struct llm_model {
   /* Each working vector but `att` and `logits` is `LLM_BATCH` of them, one
    * a token of a batch, the next `*_room` along (`llm_step_batch`). */
   uint32_t xq_room, xs_room;   /* bytes, and floats, a token's */
+  uint8_t *xk;                 /* the input as Q8_K blocks, for a Q6_K row */
+  uint32_t xk_room;            /* bytes, a token's */
 
   /* The loops a row of each kind is multiplied by, chosen at `llm_open`
    * for the machine it runs on (`docs/xavier.md` X2): today the plain
@@ -349,6 +362,36 @@ void llm_reset(struct llm_model *m);
 
 /* The most likely next token, from `m->logits`. */
 int32_t llm_greedy(const struct llm_model *m);
+
+/*
+ * **The next token drawn rather than taken** (`docs/xavier.md`, *Answers
+ * that make sense*): what was said lately made less likely by `penalty` -
+ * a logit above nought divided by it, one below multiplied, as llama.cpp's
+ * repeat penalty does - over the last `n_recent` of `recent`; then the
+ * `top_k` likeliest kept, the fewest of those whose odds come to `top_p`,
+ * their logits over `temperature`, and one drawn by its odds. Qwen2.5's own
+ * settings are 1.05, 20, 0.8 and 0.7. `rng` is the caller's state, seeded
+ * once from the machine's entropy; the same state and logits draw the same.
+ */
+struct llm_sampling {
+  float    temperature;
+  float    top_p;
+  uint32_t top_k;              /* at most LLM_TOP_K_MAX                       */
+  float    penalty;            /* 1 is none                                    */
+  uint32_t penalty_last;       /* the tokens it looks back over                */
+};
+
+#define LLM_TOP_K_MAX 64u
+
+/* A seed made a state for `llm_sample` (splitmix64), the same on every
+ * machine: what lets an answer drawn here be drawn again on the Mac. */
+uint64_t llm_seed(uint32_t seed);
+
+/* Qwen2.5's own settings (its `generation_config.json`). */
+extern const struct llm_sampling llm_sampling_default;
+
+int32_t llm_sample(const struct llm_model *m, const int32_t *recent, uint32_t n_recent,
+                   const struct llm_sampling *s, uint64_t *rng);
 
 /*
  * **What the cache holds, as tokens and as the text they stand for**

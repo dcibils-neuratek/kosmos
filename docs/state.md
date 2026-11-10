@@ -16,7 +16,9 @@ Face on the M700 (was 0.16). A SYN now waits for its neighbour's ARP
 answer. `x86-maps` made to wait for zoom 10; phi-2's `test_llm` reference
 read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
 
-**Next, agreed by Diego** (`xavier.md`, *Answers that make sense*):
+**Then 0.11.348** (18.742): (1)-(3) built - Q6_K, the preamble, sampling by seed. (4), the 1.5B on the M700, needs a netboot.
+
+**Agreed by Diego** (`xavier.md`, *Answers that make sense*):
 (1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad
 (`q6k_patch.py`), to apply and hold to llama.cpp; (2) the preamble;
 (3) sampling with a seed in the request (0 = greedy), the window logging

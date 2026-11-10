@@ -30403,3 +30403,61 @@ shifts of 1 here and 6 there.
   passage check that compares to it. And the real models' checks are a
   suite of their own, `host-llm`, beside `host`: **111 suites in 10:38**,
   all passing - 38 seconds still over, and the next thing on the gate.
+
+## 18.742 Qwen2.5 1.5B in the LLM Kit (Q6_K), a preamble that says what Xavier is for, and words drawn by a seed
+
+**Asked** (Diego, 9 November 2026, on the M700: "esta respondiendo
+cualquier cosa", "its very weird the responses i am getting on xavier";
+then "yes do 1-4"). Asked "explicame la teoria del big bang" fresh, Qwen2.5
+0.5B answers nonsense in llama.cpp b12205 exactly as in the kit ("una
+teoría de la nacimiento de la Tierra"): the kit was right and the model
+too small. In a conversation each nonsense answer is in the context and
+copied on - a typo's "buig" became "bui" in every answer after.
+
+**1. Q6_K** (`llm_dot.c`'s `llm_dot_q6_k`, `quantize_q8_k`, Q6_K rows in
+`embedding_row`): Qwen2.5 1.5B Instruct's weights are Q4_0 and its output
+matrix Q6_K, which the kit refused - "its embedding or output tensors are
+missing or the wrong shape". Multiplied as ggml does: the input as Q8_K -
+the value of largest size, sign kept, makes the scale, `nearest_int`'s
+float trick rounds - and each block's sixteen groups summed as integers,
+scaled, eight lanes, summed last. Scalar for now, cut across the cores as
+any product. **Held to llama.cpp**: `tools/llm_reference_qwen2.5-1.5b-
+instruct-q4_0.txt` from `make llm-reference`, **105 of 105** - "The
+capital of France is Paris." - in `host-llm`. **Control**: the second
+group of 32 taking its high bits from `qh >> 4` rather than `>> 2` - 32 of
+105 fail. The file: 1,066,227,232 bytes, SHA-256 `dcd819ff094852c38faba68
+73d8ff0c9d51eadb2844539e52042ae5d647bbfdb`, in `build/models/`.
+
+**2. The preamble** (`conversations.preamble`): "You are Xavier, a helpful
+assistant. You run on Kosmos, on a ... Today is ... Answer any question as
+well as you can, in the language it was asked in." Told only "You are
+Xavier, the assistant in Kosmos", the 1.5B declined - "no tengo la
+capacidad de explicar teorías científicas" - and with this, in llama.cpp,
+it explains the Big Bang from a singularity through expansion and cooling.
+
+**3. Sampling** (`llm_sample`, `llm_seed`, `llm_sampling_default`):
+Qwen2.5's own settings - a penalty of 1.05 over the last 64 tokens, the 20
+likeliest, those whose odds come to 0.8, a temperature of 0.7. A penalty
+only lowers a logit, so the 20 after it are among the 84 before it: one
+pass over the vocabulary, the rest never looked at. `llm_request`'s spare
+field is the **seed**: 0 the likeliest every time, as before; any other,
+words drawn from it (`llm.seed()`, four bytes of `sys.entropy`). Xavier's
+window and the box draw one a question and say it - "xavier: asked N
+bytes, drawn from S: ..." - and `llm_answer --chain` takes `SEED/HEX`, so
+**`x86-xavier` holds the drawn answers to the kit's on the Mac byte for
+byte**, as it held the likeliest. The prompt's `xavier` and the speed
+comparison stay greedy. **Checks** (`check_sample`, every model): no
+temperature is the likeliest; a seed draws the same word twice; 400 seeds
+draw words other than the likeliest, every one among the 20 likeliest; a
+penalty a million strong on the likeliest, said lately, keeps another.
+**Controls**: the penalty never applied - "the likeliest, said lately and
+penalised, is not the one kept" fails; the suite expecting the likeliest
+words - five of its checks fail, so the window really draws.
+
+**Two things in `x86-xavier` the preamble moved**: thirty more tokens
+left the fourth answer 29 of the tiny model's 256, and Stop's click - 0.85
+s of a helper's sleeps - came after it had ended; the long question is 120
+words rather than 150, and Stop is under the pointer before the question
+goes and pressed when it has. Twice in two.
+
+**4. On the M700**: to measure, after a netboot.

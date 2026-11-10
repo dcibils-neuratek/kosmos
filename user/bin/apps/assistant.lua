@@ -588,11 +588,12 @@ local function ask(question)
   for i = (open.forgotten or 0) + 1, #open.turns do turns[#turns + 1] = open.turns[i] end
 
   local a, why, text
+  local seed = llm.seed()
 
   while true do
     local stops
     text, stops = llm.chat(model.arch, turns, question, conversations.preamble())
-    a, why = llm.ask(text, { tokens = ANSWER_TOKENS, stops = stops })
+    a, why = llm.ask(text, { tokens = ANSWER_TOKENS, stops = stops, seed = seed })
 
     if a or not llm.too_long(why) or #turns == 0 then break end
 
@@ -615,7 +616,7 @@ local function ask(question)
   live = { turn = t, answer = a, began = sys.ticks() }
   said = ""
   follow_end = true
-  print(("xavier: asked %d bytes: %s"):format(#text, hex(text)))
+  print(("xavier: asked %d bytes, drawn from %d: %s"):format(#text, seed, hex(text)))
   refresh()
 end
 

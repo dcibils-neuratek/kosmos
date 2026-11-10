@@ -224,13 +224,17 @@ function conversations.preamble()
   local machine = hardware.name(sys.info() or {})
   local words = {}
 
+  -- What Xavier is for, first: told only "the assistant in Kosmos",
+  -- Qwen2.5 1.5B declined anything not about computers (9 November).
+  words[#words + 1] = "You are Xavier, a helpful assistant. You run on Kosmos" ..
+                      (machine and (", on a " .. machine) or "") .. "."
+
   if now then
     words[#words + 1] = ("Today is %s, %d %s %d."):format(DAY_NAMES[now.weekday + 1], now.day,
                                                           clock.FULL_MONTHS[now.month], now.year)
   end
 
-  words[#words + 1] = "You are Xavier, the assistant in Kosmos" ..
-                      (machine and (", on a " .. machine) or "") .. "."
+  words[#words + 1] = "Answer any question as well as you can, in the language it was asked in."
 
   return table.concat(words, " ") .. "\n"
 end

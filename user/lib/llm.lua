@@ -87,7 +87,7 @@ local function call(op, fields, pass)
   local stops = fields.stops or {}
   local set = fields.settings or {}
   local bytes = string.pack(REQUEST, op, fields.tokens or 0, fields.flags or 0,
-                            fields.since or 0, fields.length or #text, 0, pad(fields.name, 64),
+                            fields.since or 0, fields.length or #text, fields.seed or 0, pad(fields.name, 64),
                             pad(text, TEXT_MAX), pad(stops[1], STOP_MAX), pad(stops[2], STOP_MAX),
                             set.cores or 0, set.loops or 0, set.gpu or 0, 0)
   local reply, cap = fs.raw(PATH, bytes, pass)
@@ -297,6 +297,17 @@ function llm.load(name, options)
   return call(OP_LOAD, { name = name, flags = nowait and LOAD_NOWAIT or 0 })
 end
 
+-- **A seed for an answer drawn rather than taken** (`xavier.md`, *Answers
+-- that make sense*): four bytes of the machine's entropy, never 0 - which
+-- asks for the likeliest word every time. Given to `llm.ask` as `seed`,
+-- and said by whoever asks, so the same answer can be drawn again.
+function llm.seed()
+  local bytes = sys.entropy(4)
+  local seed = bytes and string.unpack("<I4", bytes) or 0
+
+  return seed ~= 0 and seed or 1
+end
+
 local answer = {}
 answer.__index = answer
 
@@ -306,11 +317,12 @@ answer.__index = answer
 -- answer with (128 when not said); `options.paragraph` ends the answer at
 -- its first blank line; `options.stops`, up to two texts, end it where
 -- they begin, and are not in it. Text longer than one message goes in a
--- region handed with the request.
+-- region handed with the request. `options.seed`, from `llm.seed`, draws
+-- the answer's words rather than taking the likeliest each time.
 function llm.ask(text, options)
   options = options or {}
   local flags = options.paragraph and STOP_AT_BLANK_LINE or 0
-  local fields = { tokens = options.tokens, stops = options.stops }
+  local fields = { tokens = options.tokens, stops = options.stops, seed = options.seed }
   local pass
 
   if #text > CONVERSATION_MAX then

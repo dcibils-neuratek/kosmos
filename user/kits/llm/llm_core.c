@@ -254,6 +254,7 @@ static uint64_t tensor_bytes(uint32_t type, uint64_t elements, int *ok)
     case LLM_F16: return elements * 2;
     case LLM_Q8_0: if (elements % LLM_QK) break; return elements / LLM_QK * 34;
     case LLM_Q4_0: if (elements % LLM_QK) break; return elements / LLM_QK * 18;
+    case LLM_Q6_K: if (elements % LLM_QK_K) break; return elements / LLM_QK_K * LLM_Q6K_BYTES;
   }
   *ok = 0;
   return 0;
@@ -289,7 +290,7 @@ static int is_matrix(const struct llm_tensor *t, uint64_t cols, uint64_t rows)
 {
   return t && t->n_dims == 2 && t->ne[0] == cols && t->ne[1] == rows
          && (t->type == LLM_F32 || t->type == LLM_F16 || t->type == LLM_Q8_0
-             || t->type == LLM_Q4_0);
+             || t->type == LLM_Q4_0 || (t->type == LLM_Q6_K && cols % LLM_QK_K == 0));
 }
 
 static int is_vector(const struct llm_tensor *t, uint64_t n)
@@ -660,6 +661,7 @@ bad_tensor:
 
   m->xq_room = widest / LLM_QK * 34 + 34;
   m->xs_room = widest / LLM_QK + 1;
+  m->xk_room = (widest / LLM_QK_K + 1) * LLM_Q8K_BYTES;
   m->x = alloc(ctx, B * E * 4);
   m->xn = alloc(ctx, B * E * 4);
   m->qkv = alloc(ctx, B * 3 * E * 4);
@@ -671,9 +673,10 @@ bad_tensor:
   m->up = qwen ? alloc(ctx, B * m->n_ff * 4) : NULL;
   m->xq = alloc(ctx, B * m->xq_room);
   m->xs = alloc(ctx, B * m->xs_room * 4);
+  m->xk = alloc(ctx, B * m->xk_room);
 
   if (!m->k_cache || !m->v_cache || !m->x || !m->xn || !m->qkv || !m->att || !m->attn_out
-      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs || (qwen && !m->up)) {
+      || !m->ff || !m->ff_out || !m->logits || !m->xq || !m->xs || !m->xk || (qwen && !m->up)) {
     say(why, room, "no memory for its attention cache and working vectors");
     return -1;
   }
@@ -1150,6 +1153,39 @@ static void quantize_q8_0(const float *x, uint8_t *out, float *xs, uint32_t n)
   }
 }
 
+/* An input as Q8_K (`quantize_row_q8_K_ref`): each 256 scaled by the value
+ * of largest size - its sign kept, so the scale is -127 over it - rounded
+ * as `nearest_int` rounds, a float added to 1.5 * 2^23. */
+static void quantize_q8_k(const float *x, uint8_t *out, uint32_t n)
+{
+  for (uint32_t b = 0; b < n / LLM_QK_K; b++) {
+    const float *v = x + b * LLM_QK_K;
+    uint8_t *o = out + b * LLM_Q8K_BYTES;
+    float max = 0, amax = 0;
+    union { float f; uint32_t u; } d, r;
+
+    for (int i = 0; i < LLM_QK_K; i++) {
+      float a = fabsf(v[i]);
+      if (a > amax) { amax = a; max = v[i]; }
+    }
+
+    if (amax == 0) {
+      for (int i = 0; i < LLM_Q8K_BYTES; i++) o[i] = 0;
+      continue;
+    }
+
+    float iscale = -127.0f / max;
+    for (int i = 0; i < LLM_QK_K; i++) {
+      r.f = iscale * v[i] + 12582912.0f;
+      int q = (int)(r.u & 0x007fffff) - 0x00400000;
+      o[4 + i] = (uint8_t)(int8_t)(q > 127 ? 127 : q);
+    }
+
+    d.f = 1.0f / iscale;
+    o[0] = (uint8_t)d.u; o[1] = (uint8_t)(d.u >> 8); o[2] = (uint8_t)(d.u >> 16); o[3] = (uint8_t)(d.u >> 24);
+  }
+}
+
 static float block_scale(const uint8_t *b) { return llm_f16_to_f32((uint16_t)(b[0] | b[1] << 8)); }
 
 /* One row of a weight times the input, as ggml multiplies it: `x` the
@@ -1200,6 +1236,18 @@ static void product_rows(const struct product *p, uint64_t r0, uint64_t r1)
   const float *b = p->b;
   llm_dot4_fn *four = w->type == LLM_Q8_0 ? m->dot4_q8_0 : w->type == LLM_Q4_0 ? m->dot4_q4_0 : NULL;
   const uint64_t row_bytes = w->type == LLM_Q8_0 ? w->ne[0] / LLM_QK * 34 : w->ne[0] / LLM_QK * 18;
+
+  /* Q6_K: each input's Q8_K, made by `matmul`. */
+  if (w->type == LLM_Q6_K) {
+    const uint64_t blocks = w->ne[0] / LLM_QK_K;
+
+    for (uint64_t r = r0; r < r1; r++)
+      for (uint32_t t = 0; t < p->n; t++) {
+        float v = llm_dot_q6_k(w->data + r * blocks * LLM_Q6K_BYTES, m->xk + t * m->xk_room, blocks);
+        p->out[t * p->out_room + r] = b ? v + b[r] : v;
+      }
+    return;
+  }
 
   for (uint64_t r = r0; r < r1; r++) {
     uint32_t t = 0;
@@ -1254,6 +1302,12 @@ static void matmul(struct llm_model *m, const struct llm_tensor *w, const struct
     for (uint32_t t = 0; t < n; t++)
       quantize_q8_0(x + t * x_room, m->xq + t * m->xq_room, m->xs + t * m->xs_room,
                     (uint32_t)w->ne[0]);
+
+  /* A Q6_K product's input is Q8_K, made every time: `quantised` speaks
+   * of Q8_0's. */
+  if (w->type == LLM_Q6_K)
+    for (uint32_t t = 0; t < n; t++)
+      quantize_q8_k(x + t * x_room, m->xk + t * m->xk_room, (uint32_t)w->ne[0]);
 
   struct product p = { m, w, bias ? (const float *)(const void *)bias->data : NULL, x, x_room,
                        out_room, out, n, 0 };
@@ -1379,6 +1433,23 @@ static void embedding_row(const struct llm_tensor *t, uint32_t row, float *out)
         out[b * LLM_QK + i] = (float)((r[b * 18 + 2 + i] & 0x0f) - 8) * d;
         out[b * LLM_QK + i + LLM_QK / 2] = (float)((r[b * 18 + 2 + i] >> 4) - 8) * d;
       }
+    }
+  } else if (t->type == LLM_Q6_K) {
+    const uint8_t *r = t->data + (uint64_t)row * (cols / LLM_QK_K) * LLM_Q6K_BYTES;
+    for (uint64_t b = 0; b < cols / LLM_QK_K; b++) {
+      const uint8_t *ql = r + b * LLM_Q6K_BYTES, *qh = ql + 128;
+      const int8_t *sc = (const int8_t *)(qh + 64);
+      float d = block_scale(qh + 64 + 16);
+      float *y = out + b * LLM_QK_K;
+
+      for (int n = 0; n < LLM_QK_K; n += 128, ql += 64, qh += 32, sc += 8, y += 128)
+        for (int l = 0; l < 32; l++) {
+          int is = l / 16;
+          y[l + 0]  = d * sc[is + 0] * (float)(((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32);
+          y[l + 32] = d * sc[is + 2] * (float)(((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32);
+          y[l + 64] = d * sc[is + 4] * (float)(((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32);
+          y[l + 96] = d * sc[is + 6] * (float)(((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32);
+        }
     }
   } else {
     const uint8_t *r = t->data + (uint64_t)row * cols * 2;
@@ -1958,4 +2029,90 @@ int32_t llm_greedy(const struct llm_model *m)
   for (uint32_t i = 1; i < m->n_vocab; i++)
     if (m->logits[i] > m->logits[best]) best = (int32_t)i;
   return best;
+}
+
+const struct llm_sampling llm_sampling_default = { 0.7f, 0.8f, 20, 1.05f, 64 };
+
+uint64_t llm_seed(uint32_t seed)
+{
+  uint64_t z = (uint64_t)seed + 0x9e3779b97f4a7c15ull;
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+  return z ^ (z >> 31);
+}
+
+/* xorshift64*: a draw in [0, 1). */
+static double draw(uint64_t *s)
+{
+  uint64_t x = *s ? *s : 0x9e3779b97f4a7c15ull;
+  x ^= x >> 12; x ^= x << 25; x ^= x >> 27;
+  *s = x;
+  return (double)((x * 0x2545f4914f6cdd1dull) >> 11) / 9007199254740992.0;
+}
+
+/*
+ * A penalty only ever lowers a logit, so the `top_k` after it are among
+ * the `top_k + penalty_last` before it: those are found in one pass over
+ * the vocabulary, the penalty applied to them alone, and the rest never
+ * looked at again.
+ */
+int32_t llm_sample(const struct llm_model *m, const int32_t *recent, uint32_t n_recent,
+                   const struct llm_sampling *s, uint64_t *rng)
+{
+  enum { ROOM = LLM_TOP_K_MAX * 3 };
+  int32_t id[ROOM];
+  float z[ROOM];
+  double p[ROOM];
+  uint32_t k = s->top_k ? s->top_k : 1, back = s->penalty != 1.0f ? s->penalty_last : 0, want, n = 0;
+
+  if (k > LLM_TOP_K_MAX) k = LLM_TOP_K_MAX;
+  if (back > n_recent) back = n_recent;
+  if (back > ROOM - k) back = ROOM - k;
+  want = k + back;
+  if (want > m->n_vocab) want = m->n_vocab;
+  if (s->temperature <= 0.0f) return llm_greedy(m);
+
+  /* The `want` largest, in order, a tie the lower id first. */
+  for (uint32_t i = 0; i < m->n_vocab; i++) {
+    float v = m->logits[i];
+    uint32_t at = n;
+
+    while (at > 0 && v > z[at - 1]) at--;
+    if (at >= want) continue;
+    if (n < want) n++;
+    for (uint32_t j = n - 1; j > at; j--) { z[j] = z[j - 1]; id[j] = id[j - 1]; }
+    z[at] = v;
+    id[at] = (int32_t)i;
+  }
+
+  /* The penalty, then the order again. */
+  for (uint32_t j = 0; j < n; j++)
+    for (uint32_t r = n_recent - back; r < n_recent; r++)
+      if (recent[r] == id[j]) { z[j] = z[j] > 0 ? z[j] / s->penalty : z[j] * s->penalty; break; }
+
+  for (uint32_t j = 1; j < n; j++)
+    for (uint32_t i = j; i > 0 && (z[i] > z[i - 1] || (z[i] == z[i - 1] && id[i] < id[i - 1])); i--) {
+      float tz = z[i]; z[i] = z[i - 1]; z[i - 1] = tz;
+      int32_t ti = id[i]; id[i] = id[i - 1]; id[i - 1] = ti;
+    }
+  if (n > k) n = k;
+
+  /* Top p over their odds, then the temperature, then a draw. */
+  double sum = 0, kept = 0;
+  for (uint32_t j = 0; j < n; j++) { p[j] = exp((double)(z[j] - z[0])); sum += p[j]; }
+  uint32_t last = n;
+  for (uint32_t j = 0; j < n; j++) {
+    kept += p[j] / sum;
+    if (kept >= (double)s->top_p) { last = j + 1; break; }
+  }
+
+  sum = 0;
+  for (uint32_t j = 0; j < last; j++) { p[j] = exp((double)(z[j] - z[0]) / (double)s->temperature); sum += p[j]; }
+
+  double at = draw(rng) * sum;
+  for (uint32_t j = 0; j < last; j++) {
+    at -= p[j];
+    if (at < 0) return id[j];
+  }
+  return id[last - 1];
 }

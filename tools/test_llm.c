@@ -333,6 +333,66 @@ static int same_logits(const struct llm_model *m)
   return memcmp(fresh, m->logits, m->n_vocab * sizeof *fresh) == 0;
 }
 
+/*
+ * **A word drawn rather than taken** (`llm_sample`): at no temperature the
+ * likeliest; one seed the same words every time, and other seeds other
+ * words, every one among the `top_k` likeliest; and what was said lately
+ * made less likely - with a penalty a million strong on the likeliest,
+ * the one kept by a `top_k` of one is another.
+ */
+static void check_sample(struct llm_model *m)
+{
+  const char *q = "Instruct: Name a colour.\nOutput:";
+  static int32_t t[256];
+  int n = llm_tokenize(m, q, strlen(q), 1, t, 256);
+  struct llm_sampling s = llm_sampling_default;
+  int32_t greedy, top[LLM_TOP_K_MAX];
+  int same = 1, differ = 0, inside = 1;
+  char what[200];
+
+  if (fresh_logits(m, t, n) != 0) { check(0, "sample: the question would not read"); return; }
+  greedy = llm_greedy(m);
+
+  /* The top 20, by the logits, to hold every draw to. */
+  for (uint32_t k = 0; k < s.top_k; k++) {
+    int32_t best = -1;
+    for (uint32_t i = 0; i < m->n_vocab; i++) {
+      int taken = 0;
+      for (uint32_t j = 0; j < k; j++) if (top[j] == (int32_t)i) taken = 1;
+      if (!taken && (best < 0 || m->logits[i] > m->logits[best])) best = (int32_t)i;
+    }
+    top[k] = best;
+  }
+
+  struct llm_sampling cold = s;
+  uint64_t r = llm_seed(1);
+  cold.temperature = 0;
+  check(llm_sample(m, t, (uint32_t)n, &cold, &r) == greedy, "sample: at no temperature, the likeliest");
+
+  for (uint32_t seed = 1; seed <= 400; seed++) {
+    uint64_t a = llm_seed(seed), b = llm_seed(seed);
+    int32_t x = llm_sample(m, t, (uint32_t)n, &s, &a), y = llm_sample(m, t, (uint32_t)n, &s, &b);
+    int in = 0;
+
+    if (x != y) same = 0;
+    if (x != greedy) differ++;
+    for (uint32_t k = 0; k < s.top_k; k++) if (top[k] == x) in = 1;
+    if (!in) inside = 0;
+  }
+
+  snprintf(what, sizeof what, "sample: one seed draws one word, 400 seeds %d other than the likeliest, "
+           "every one among the 20 likeliest", differ);
+  check(same && differ > 0 && inside, what);
+
+  struct llm_sampling hard = s;
+  int32_t said[1] = { greedy };
+  uint64_t c = llm_seed(3);
+  hard.top_k = 1;
+  hard.penalty = 1e6f;
+  check(llm_sample(m, said, 1, &hard, &c) != greedy,
+        "sample: the likeliest, said lately and penalised, is not the one kept");
+}
+
 static void check_held(struct llm_model *m)
 {
   static int32_t room[2048], held_tokens[2048], seq[2048];
@@ -1144,6 +1204,7 @@ int main(int argc, char **argv)
   }
 
   check_held(&m);
+  check_sample(&m);
   check_batch(&m);
   check_parallel(&m);
   check_passage(&m);
