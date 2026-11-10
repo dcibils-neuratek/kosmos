@@ -23,6 +23,8 @@
 --
 -- `--source URL` asks another place that answers as Hugging Face does, and
 -- `--name NAME` holds its certificate to that name - a mirror, or a test.
+-- `--quiet SECONDS` gives a get up after that long with nothing heard
+-- (30 when not given), keeping what came, so `get` again goes on.
 
 local models = use("/Kosmos/Libraries/models.lua")
 local llm = use("/Kosmos/Libraries/llm.lua")
@@ -54,6 +56,9 @@ while i <= #list do
     i = i + 2
   elseif list[i] == "--name" then
     models.name = list[i + 1]
+    i = i + 2
+  elseif list[i] == "--quiet" then
+    models.quiet = tonumber(list[i + 1])
     i = i + 2
   elseif list[i] == "--report" then
     report = list[i + 1]

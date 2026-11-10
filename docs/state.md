@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-09 (0.11.355, not pushed; /Drives and /Temporary by region)
+Last updated: 2026-11-09 (0.11.356, not pushed; /Drives and /Temporary by region, a download that gives up)
 
 ---
 
@@ -25,6 +25,8 @@ read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
 **Then 0.11.354** (18.748, 18.749): **a file on a USB stick at speed** - 256 KB took 11.8 s, 4 MB now 38 ms (11 ms into a region); `DRIVES_REGION`, the walk by the FAT alone, runs of clusters in one transfer. The image ran into its heap a third time; the heap is at 42 MB now, and placing it after the image is on the roadmap. `x86-smbd` timed out under the 0.11.353 gate's load and passed 38/38 alone - a fifth flaky suite. **Next**: `ramfs`'s 1 KB reads, `ETH_RING_SLOTS`, the download stall, then the gate's time (671 s on 0.11.353).
 
 **Then 0.11.355** (18.750): **`/Temporary` by region** - 4 MB written in 7 ms (was 335), read in 17 (was 609). **Next**: `ETH_RING_SLOTS` measured at a gigabit on the M700, the download stall, the gate's time.
+
+**Then 0.11.356** (18.751): a download that hears nothing for 30 s gives up and says so, keeping its `.part`.
 
 **Agreed by Diego** (`xavier.md`, *Answers that make sense*):
 (1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad

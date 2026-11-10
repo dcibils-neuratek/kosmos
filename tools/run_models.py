@@ -17,6 +17,9 @@ download of one of them off a third of the way in.
   and the README not at all;
 - **`models get`**, cut off: it says why, and `models` lists what it left
   as cut short;
+- **`models get --quiet 3`** is heard to two thirds and then not at all,
+  the connection held open and silent as the CDN's were on the M700: it
+  gives up after three seconds and says so, keeping what came;
 - **`models get` again** asks the store for the rest with a Range, follows
   the redirect to the other port, and is whole: its SHA-256 the file's own,
   printed and checked, the file named without `.part` - and **`models
@@ -112,7 +115,7 @@ def reply(conn, status, body, kind="application/json", extra=""):
     return True
 
 
-def stand_in(work, repos, found, cut=None, slow=False):
+def stand_in(work, repos, found, cut=None, slow=False, stall=None):
     """**Hugging Face, stood in for** by two HTTPS servers on this Mac.
 
     `repos` is `{repo: {listed name: (bytes, sha256)}}` - a sum that is not
@@ -120,10 +123,11 @@ def stand_in(work, repos, found, cut=None, slow=False):
     anything answers. The API sends a file's address to the store with a
     302; the store serves it with Ranges, and cuts the first download of
     `cut` off a third of the way in. `slow` sends at about a megabyte a
-    second, so a window has time to press Pause.
+    second, so a window has time to press Pause. `stall` is a file whose
+    first resumed download is sent to two thirds and then not at all.
 
     Returns the API's port and what each was asked."""
-    seen = {"store": [], "api": [], "cut": False}
+    seen = {"store": [], "api": [], "cut": False, "stalled": False}
     by_name = {}
 
     for repo, listing in repos.items():
@@ -155,6 +159,21 @@ def stand_in(work, repos, found, cut=None, slow=False):
             # A third, then gone: the connection drops as a network does.
             seen["cut"] = True
             conn.sendall(body[:len(body) // 3])
+            return False
+
+        if m.group(1) == stall and r and not seen["stalled"]:
+            # To two thirds, then silent with the connection held open -
+            # until the guest gives up and closes it, or half a minute.
+            seen["stalled"] = True
+            conn.sendall(part[:max(0, 2 * len(body) // 3 - start)])
+            conn.settimeout(30)
+
+            try:
+                while conn.recv(4096):
+                    pass
+            except OSError:
+                pass
+
             return False
 
         step = 128 * 1024 if slow else len(part)
@@ -235,7 +254,7 @@ def main():
         "tiny-phi2.Q4_K_M.gguf": (files["tiny-phi2.Q4_0.gguf"], sha(files["tiny-phi2.Q4_0.gguf"])),
     }}, [{"id": REPO, "downloads": 42, "likes": 1, "gguf": {"architecture": "phi2"}},
          {"id": "kosmos-test/other-GGUF", "downloads": 7, "likes": 0,
-          "gguf": {"architecture": "llama"}}], cut=GOOD)
+          "gguf": {"architecture": "llama"}}], cut=GOOD, stall=GOOD)
 
     with open(os.path.join(work, "README"), "w") as f:
         f.write("models are put here\n")
@@ -279,6 +298,7 @@ def main():
         run("files", "models files " + REPO + src)
         run("cut", "models get %s %s%s" % (REPO, GOOD, src))
         run("left", "models")
+        run("stalled", "models get %s %s%s --quiet 3" % (REPO, GOOD, src))
         run("resumed", "models get %s %s%s" % (REPO, GOOD, src))
         run("load", "models load " + GOOD)
         run("wrong", "models get %s %s%s" % (REPO, WRONG, src))
@@ -320,6 +340,13 @@ def main():
     asked_from = [int(r.group(1)) for r in ranges if r]
     check(asked_from and 0 < asked_from[0] <= len(files[GOOD]) // 3,
           "the second get did not ask for the rest with a Range: %r" % asked_from)
+    # Given up on, said so, and what came kept: the third asks from there.
+    check(seen["stalled"]
+          and re.search(r"nothing heard from 10\.0\.2\.2:\d+ for 3 s", g("stalled"))
+          and "checked" not in g("stalled"),
+          "the get that stopped hearing did not give up and say so: %r" % g("stalled"))
+    check(len(asked_from) >= 2 and asked_from[1] > asked_from[0],
+          "the get after the silence did not go on from what came: %r" % asked_from)
     check(("models: /Home/Models/%s, 8.2 MB, SHA-256 %s checked" % (GOOD, sums[GOOD])) in g("resumed"),
           "the resumed download was not whole and checked: %r" % g("resumed"))
     check(re.search(r"models: %s is loaded" % re.escape(GOOD), g("load")),

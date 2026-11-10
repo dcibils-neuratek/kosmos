@@ -30685,3 +30685,21 @@ longer than its region refused. `usb_drives` (20): the film through
 `/Temporary` both ways, held to its SHA-256. **Control**: a region read
 starting a byte late - two host checks fail, and both guest sums differ.
 
+## 18.751 A download that stops hearing gives up
+
+**What** (`roadmap.md`, *every cap that costs speed*): three `models get`
+on the M700 each held a connection to the CDN open with nothing arriving -
+108, 137 and 5 MB in - and never ended. `download.lua` now notes when
+something last moved, a byte arrived or the step changed, on the counter,
+and after `QUIET_S` (30 s) of nothing - or `opts.quiet` - closes the
+connection and says "nothing heard from HOST for N s", keeping the bytes
+written so `get` again goes on from them. `models get --quiet SECONDS`.
+
+**Checks** (`x86-models`, 14): a store that sends a resumed download to
+two thirds and then holds the connection open in silence; `--quiet 3`
+gives up and says so, and the get after it asks with a Range from further
+on than the one before. `x86-modelspage` (13), which shares the stand-in,
+unchanged. **Control**: the limit never tripping - the get waits until
+the store hangs up after 30 s, says the connection closed instead, and
+fails.
+

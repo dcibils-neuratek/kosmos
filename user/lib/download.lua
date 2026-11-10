@@ -20,7 +20,14 @@
 -- - **Held to its SHA-256** when one is given, before it is called done: a
 --   file whose sum is wrong is left where it is, said so, and not used.
 --
+-- - **Given up on when it stops hearing**: nothing for `QUIET_S` seconds -
+--   no byte, no step - and the connection is closed and said so, the bytes
+--   so far kept, so asking again goes on from them. Three downloads on the
+--   M700 each held a connection to the CDN open with nothing arriving and
+--   never ended (9 November).
+--
 -- `opts`: `sha256` the sum to hold it to; `size` the size it should be;
+-- `quiet` the seconds of nothing to give up after, `QUIET_S` when not given;
 -- `progress(got, total)` told as pieces land; `name` the name to hold a
 -- certificate to, for an address given by number (`fetch --name`);
 -- `anchors` more authorities in DER, besides the person's own.
@@ -38,6 +45,10 @@ local download = {}
 
 download.PIECE = 4 * 1024 * 1024          -- a region's worth, written as one transaction
 download.REDIRECTS = 5
+download.QUIET_S = 30                      -- seconds of nothing before giving up
+
+-- The counter's rate, for measuring how long nothing was heard: read once.
+local counter_hz
 
 local piece                                -- the region, made once and kept
 
@@ -99,6 +110,11 @@ local function one(address, path, from, hash, opts, state)
   if not d then return nil, ("%s: %s"):format(parts.hostport, tostring(refused)) end
 
   local at, began = from, false
+
+  -- When something last moved: a byte arrived, or the step changed.
+  counter_hz = counter_hz or (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local quiet = (tonumber(opts.quiet) or download.QUIET_S) * counter_hz
+  local heard, last_got, last_step = sys.ticks(), -1, nil
 
   local function write_out()
     local n = d:ready()
@@ -185,6 +201,16 @@ local function one(address, path, from, hash, opts, state)
       d:close()
       state.size = at
       return "done"
+    end
+
+    local now = sys.ticks()
+
+    if d:got() ~= last_got or step ~= last_step then
+      heard, last_got, last_step = now, d:got(), step
+    elseif now - heard > quiet then
+      d:close()
+      return nil, ("nothing heard from %s for %d s"):format(parts.hostport,
+                                                            (now - heard) // counter_hz), at
     end
 
     -- Nothing moved: wait on the connection rather than spin. A full

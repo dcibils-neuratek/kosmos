@@ -32,6 +32,7 @@ local models = {}
 models.source = "https://huggingface.co"
 models.name = nil                           -- the certificate's name, for a source by number
 models.anchors = nil                        -- more authorities, in DER
+models.quiet = nil                          -- seconds of nothing before a get gives up
 
 -- The kit's quantisations, which a file must be in to be loaded.
 models.READS = { Q4_0 = true, Q8_0 = true, F16 = true, F32 = true }
@@ -229,7 +230,8 @@ function models.get(repo, file, progress)
 
   local size, sum, wrong = download.file(("%s/%s/resolve/main/%s"):format(models.source, repo, escaped(file)),
                                   part, { sha256 = f.sha256, size = f.size, progress = progress,
-                                          name = models.name, anchors = models.anchors })
+                                          name = models.name, anchors = models.anchors,
+                                          quiet = models.quiet })
 
   -- Whole and wrong: another try would resume nothing and fail the same
   -- way, and a `.part` left would read as cut short. So it goes.
