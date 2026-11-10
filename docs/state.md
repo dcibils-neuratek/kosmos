@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-10 (0.11.362, not pushed; the gate in 10:14)
+Last updated: 2026-11-10 (0.11.363: `malloc` under a lock; pushed with 0.11.358-0.11.362 on Diego's word)
 
 ---
 
@@ -33,10 +33,25 @@ hands compressed frames to a 1 MB input ring; a C thread in the audio band
 **Found and not this work's**: `arm-media` fails 3 cover checks, the same
 on 0.11.359 (18.755) - ARM out of the gate since 8 October; in 6zw.
 
-**Next**: Diego's word on pushing 0.11.358-0.11.362; the M700 when he is
-back (the kit's decode and conversion timed on the thread there,
-`ETH_RING_SLOTS`, the Story page); the gate's last 14 s; the heap placed
-after the image; a question re-read after a model switch.
+**0.11.363** (18.758): **`malloc` under a lock, found by the M700.** On
+the M700 (Diego: "m700 can be rebooted now. then push") the Video Player
+died four seconds into a film, 3 of 3, in `bin_remove`: the kit's thread
+allocates through FFmpeg while the window's Lua does, and `malloc` had no
+lock (`threads.md` step 7). With one, three clean runs there - the kit's
+worst pass 8.0 ms against 23.2, never dry. Held by the kernel suite's *one
+heap under two threads at once*, whose control bites on both boards once
+placement is widened for it. `x86-sound` failed once beside it (403 Hz for
+440) and passed 4 of 4 alone.
+
+**The Mac Pro 2013** (Diego, the same evening: "i also want to build a
+stick so i can boot into the mac pro 2013"): roadmap, *Being built now*. A
+development stick of 0.11.363, never booted there; first boot is the
+experiment, photograph `log loader`.
+
+**Next**: the Mac Pro's first boot; the audio server's worst turn with one
+film on the M700 (32.9 ms read with three playing); `ETH_RING_SLOTS` and
+the Story page there; the gate's last 14 s; the heap placed after the
+image; a question re-read after a model switch.
 
 
 ## 9 November, night: TCP step B, and Xavier's answers (0.11.347, not pushed)

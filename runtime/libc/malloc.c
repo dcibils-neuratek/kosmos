@@ -318,7 +318,7 @@ static void *take(struct block *b, size_t want)
     return PAYLOAD(b);
 }
 
-void *malloc(size_t n)
+static void *heap_alloc(size_t n)
 {
     size_t want;
     unsigned k;
@@ -405,7 +405,7 @@ static void absorb(struct block *b)
     }
 }
 
-void free(void *p)
+static void heap_free(void *p)
 {
     struct block *b;
 
@@ -467,18 +467,18 @@ void free(void *p)
     bin_insert(b);
 }
 
-void *realloc(void *p, size_t n)
+static void *heap_realloc(void *p, size_t n)
 {
     struct block *b;
     void *fresh;
     size_t copy;
 
     if (p == NULL) {
-        return malloc(n);
+        return heap_alloc(n);
     }
 
     if (n == 0) {
-        free(p);
+        heap_free(p);
         return NULL;
     }
 
@@ -503,15 +503,84 @@ void *realloc(void *p, size_t n)
         return p;
     }
 
-    fresh = malloc(n);
+    fresh = heap_alloc(n);
     if (fresh == NULL) {
         return NULL;    /* the original is untouched, as the standard requires */
     }
 
     copy = (b->size < n) ? b->size : n;
     memcpy(fresh, p, copy);
-    free(p);
+    heap_free(p);
     return fresh;
+}
+
+/*
+ * **One lock over the heap, because a process has more than one thread.**
+ * The Playback Kit's thread decodes a film's AAC through FFmpeg, which
+ * allocates a packet for every frame, while the window's Lua allocates on
+ * its own thread at the same moment. Without this the two tore the bins
+ * apart: the Video Player died in `bin_remove` four seconds into a film on
+ * the M700 (10 November 2026, `testing.md` 18.758), and QEMU had never
+ * shown it. `threads.md` step 7 had listed it as still to do.
+ *
+ * A word taken by exchange, held for the length of one allocation. Spun
+ * on briefly, since a holder on another core is out within a microsecond;
+ * after that the waiter *sleeps* a tick rather than yields. The waiter may
+ * be in the audio band and the holder in a lower one on the same core, and
+ * strict priority means yielding would hand the core straight back to the
+ * waiter - the holder would never run to let go.
+ */
+#ifdef KOSMOS_USER
+static int heap_word;
+
+static void heap_lock(void)
+{
+    unsigned spins = 0;
+
+    while (__atomic_exchange_n(&heap_word, 1, __ATOMIC_ACQUIRE) != 0) {
+        while (__atomic_load_n(&heap_word, __ATOMIC_RELAXED) != 0) {
+            if (++spins >= 1000) {
+                kosmos_sleep(1);
+                spins = 0;
+            }
+        }
+    }
+}
+
+static void heap_unlock(void)
+{
+    __atomic_store_n(&heap_word, 0, __ATOMIC_RELEASE);
+}
+#else
+static void heap_lock(void) {}
+static void heap_unlock(void) {}
+#endif
+
+void *malloc(size_t n)
+{
+    void *p;
+
+    heap_lock();
+    p = heap_alloc(n);
+    heap_unlock();
+    return p;
+}
+
+void free(void *p)
+{
+    heap_lock();
+    heap_free(p);
+    heap_unlock();
+}
+
+void *realloc(void *p, size_t n)
+{
+    void *q;
+
+    heap_lock();
+    q = heap_realloc(p, n);
+    heap_unlock();
+    return q;
 }
 
 void abort(void)

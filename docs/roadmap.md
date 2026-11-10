@@ -112,6 +112,22 @@ unblocks.
 
 ### Being built now
 
+**The Mac Pro 2013, a third machine** - Diego, 10 November 2026: "i also
+want to build a stick so i can boot into the mac pro 2013 which i have here
+with me". A development stick from `main`, the layout both the T14 and the
+M700 boot (`make MEGA=1 x86-usb-image`, `/Home` in a partition of its own),
+booted under OVMF first and started on the Mac with Option held at the
+chime. Nothing has run on it yet, so the first boot is the experiment
+`docs/boot.md`'s table records, photograph first (`log loader`). What
+differs from the two PCs, read before it boots: a Xeon E5 v2 (Ivy Bridge)
+with AVX and no AVX2 - nothing is built for AVX2 except the LLM's loops,
+chosen by CPUID; USB 3 from a Fresco Logic FL1100 rather than Intel's
+controller, which the stick's `/Home` and the keyboard both go through;
+two AMD FirePro cards, so the screen is the firmware's GOP and nothing
+more; Broadcom BCM57762 Ethernet, which has no driver, so no netboot and
+no Telnet there yet; no serial port at all (`hal.md`'s old reason for
+ruling it out, which the loader's log and the screen console now answer).
+
 **About this machine, again** - Diego, 10 October 2026: the "About this
 machine" app "is very raw", "we need a way to show all devices connected to
 this machine, with as much info as possible for every device in a visual and

@@ -30918,3 +30918,55 @@ the ten minutes by 14 s: the shared suites ended at 596 s, and the two run
 alone after them took 19 - `x86-film-load` 9, `x86-sound` 10. The gate
 before it (18.753) was 10:47. The slowest: `x86-cafesa3d-2` 279 s,
 `arm-sandbox-linuxsetup` 247, `host-llm` 238, `x86-dock` 217.
+
+## 18.758 `malloc` under a lock, found by the M700
+
+**In short**: the Video Player died on the M700 four seconds into a film,
+every time (3 of 3), with a page fault inside `malloc`. The Playback Kit's
+thread decodes a film's AAC through FFmpeg, which allocates a packet for
+every frame, while the window's Lua allocates on its own thread - and
+`malloc` had no lock at all (`threads.md` step 7, listed and never built).
+QEMU had never shown it. With a lock the same film played three times
+through on the M700 without a fault.
+
+**What the M700 said**, on 0.11.362 netbooted, `open video
+/Home/Movies/sound.mp4 --report 12`: `process died: page fault`, `cr2
+0x28`, `rip` in `bin_remove` (`runtime/libc/malloc.c` 147) called from
+`take` from `malloc` - a free block's bin links read through a pointer
+another thread had just changed.
+
+**The lock**: `malloc`, `free` and `realloc` each take one word by atomic
+exchange around the old code, renamed `heap_alloc`, `heap_free` and
+`heap_realloc` so `realloc` calls them inside the lock. A waiter spins a
+thousand reads and then sleeps a tick. Not yields: the waiter may be in the
+audio band and the holder below it on the same core, and under strict
+priority a yield hands the core straight back to the waiter. The host
+build, with one thread, has no lock.
+
+**On the M700 with it**, three runs of twelve seconds: no fault; the kit's
+worst pass 8.0 ms against the 23.2 ms the device holds, its input dry 0
+times, 2080 periods written, the machine held off 0.0 ms. The audio
+server's worst turn read 6.2 ms in the first run and 32.9 ms in the other
+two - those had two and then three films playing at once, since `--report`
+does not close the window; worth reading again with one film.
+
+**The test**, in the kernel suite on both boards: *thread: one heap under
+two threads at once* - a role (`CTEST_HEAP`, `user/init/main.c`) with a
+worker on core one and its first thread each allocating, marking the ends,
+checking and freeing 200,000 blocks of 16 to 415 bytes, eight live at a
+time. **It did not bite at first, and why is worth keeping**: the suite
+gives processes' threads one core, so the worker only took turns with the
+first thread (the role read `cpus=1`, and the two ran one after the
+other). Placement is widened across every core for the test's length, as
+*on the core its process asked for* does. **Control**, the lock taken out:
+x86 "the role said 1, a fault", ARM "the role said 70" (a panic) - both
+fail; with it both pass.
+
+The 3D Kit's comment that its workers never allocate "because `malloc` is
+not under a lock yet" now says why they still do not: a worker waiting on
+the lock is a worker not tracing.
+
+**Whole gate** with the lock: 111 of 112 in 600 s. `x86-smbd` waited its
+120 s for the visitor on the page, as it did under load in 18.680; alone it passed, 38 checks, in 1:44.
+`x86-sound` failed once in a smaller run beside it (the tone at 403 Hz for
+440, 371 ms for 333) and passed 4 of 4 alone, and in the whole gate.

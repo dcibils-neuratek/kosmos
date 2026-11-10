@@ -30,9 +30,10 @@
  * entry point, so the kit does. The workers step down to the LOW band as
  * they start, below every window: the machine is the render's only when
  * nothing else wants it, and a window stays as quick to answer as it was.
- * They never allocate, because `malloc` is not under a lock yet
- * (`threads.md` step 7); the render gives them everything before they
- * start, and nothing touches it until they have been waited for.
+ * They never allocate - `malloc` is under a lock since 10 November 2026
+ * (`threads.md` step 7), but a worker that waited on it would be a worker
+ * not tracing; the render gives them everything before they start, and
+ * nothing touches it until they have been waited for.
  *
  * **An object is its id.** Lua keeps ids, never anything that points into
  * the scene: removing an object moves the ones after it, and a pointer kept

@@ -335,6 +335,12 @@ it, and the steps that cannot fail loudly come before the one that can.
    stress` asking afterwards.
 7. **The libc**: `malloc` under a lock, `errno` per thread; the C thread
    kit.
+   **`malloc` is under a lock since 10 November 2026** (`testing.md`
+   18.758), after the Playback Kit's thread - FFmpeg allocating a packet a
+   frame - and a window's Lua tore the bins on the M700. One word taken by
+   exchange; a waiter spins briefly and then sleeps a tick rather than
+   yields, since it may outrank the holder on the same core. Held by the
+   kernel suite's *one heap under two threads at once*.
 8. **Lua threads**: `use("/Kosmos/Kits/thread")`, a state each, channels, and a
    worker's answers as events in a window's loop.
 9. **The first users**: the video player's decoder, Music decoding ahead,

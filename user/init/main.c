@@ -357,6 +357,98 @@ static int thread_on_role(void)
 }
 
 /*
+ * **One heap, two threads at once** (`threads.md` step 7). The Playback
+ * Kit's thread decodes through FFmpeg, which allocates a packet a frame,
+ * while the window's Lua allocates on the first thread - and `malloc` had
+ * no lock, so the bins tore and the Video Player died in `bin_remove` on
+ * the M700 (`testing.md` 18.758). Here a worker on another core and the
+ * first thread each allocate, fill, check and free blocks of every size,
+ * at the same moment, eight live at a time; a block whose bytes another
+ * thread changed, or a heap that faults, is the bug. Its code names it.
+ */
+#define CTEST_HEAP              910UL
+#define HEAP_ROUNDS             200000UL
+#define HEAP_LIVE               8
+
+static unsigned heap_round_trip(unsigned char seed)
+{
+    unsigned char *live[HEAP_LIVE] = { 0 };
+    size_t size[HEAP_LIVE] = { 0 };
+    unsigned long i;
+    unsigned k, wrong = 0;
+
+    for (i = 0; i < HEAP_ROUNDS; i++) {
+        unsigned slot = (unsigned)(i % HEAP_LIVE);
+        unsigned char *b = live[slot];
+
+        if (b != NULL) {
+            /* Its two ends, where a neighbour handed the same bytes would
+             * write first: most of the time goes into `malloc` and `free`
+             * rather than into filling, so the two threads are inside the
+             * heap together as often as can be. */
+            for (k = 0; k < 8; k++) {
+                if (b[k] != (unsigned char)(seed ^ k)
+                    || b[size[slot] - 1 - k] != (unsigned char)(seed ^ k)) {
+                    wrong++;
+                    break;
+                }
+            }
+
+            free(b);
+        }
+
+        size[slot] = 16 + (size_t)((i * 2654435761UL) >> 7) % 400;
+        b = malloc(size[slot]);
+
+        if (b == NULL) {
+            return wrong + 1000;
+        }
+
+        for (k = 0; k < 8; k++) {
+            b[k] = (unsigned char)(seed ^ k);
+            b[size[slot] - 1 - k] = (unsigned char)(seed ^ k);
+        }
+
+        live[slot] = b;
+    }
+
+    for (k = 0; k < HEAP_LIVE; k++) {
+        free(live[k]);
+    }
+
+    return wrong;
+}
+
+static void allocates(unsigned long seed)
+{
+    kosmos_thread_exit(heap_round_trip((unsigned char)seed) == 0 ? 0 : 3);
+}
+
+static int heap_role(void)
+{
+    struct sysinfo info;
+    long worker;
+
+    if (kosmos_sysinfo(&info) != 0 || info.cpus == 0) {
+        return 1;
+    }
+
+    /* On another core, or the two would only take turns. */
+    worker = info.cpus > 1 ? kosmos_thread_start_on(allocates, 0xa5, 1)
+                           : kosmos_thread_start(allocates, 0xa5);
+
+    if (worker < 0) {
+        return 2;
+    }
+
+    if (heap_round_trip(0x3c) != 0) {
+        return 4;
+    }
+
+    return kosmos_thread_wait((unsigned long)worker) == 0 ? 0 : 3;
+}
+
+/*
  * **What the process table says about a process with a file and a worker**
  * (`roadmap.md` 6m). Processes shows each one's threads and the file it
  * runs, and both come from `struct proc_info`: this names itself with a
@@ -755,6 +847,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_TABLE) {
         return table_role();
+    }
+
+    if (arg == CTEST_HEAP) {
+        return heap_role();
     }
 
     if (arg == CTEST_THREAD_ON) {

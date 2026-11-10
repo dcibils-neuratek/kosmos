@@ -5059,6 +5059,64 @@ static bool test_a_process_with_two_threads(void)
 }
 
 /*
+ * **One heap under two threads at once** (`threads.md` step 7). Has to
+ * match `user/init/main.c`: the role allocates and frees on a worker on
+ * core one and on its first thread together, each checking its blocks kept
+ * their bytes. Without `malloc`'s lock the bins tear - the Video Player
+ * died in `bin_remove` on the M700 (`testing.md` 18.758) - and the role
+ * faults or says a block changed.
+ */
+#define CTEST_HEAP 910UL
+
+static bool test_one_heap_under_two_threads(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p;
+    unsigned long start;
+    int code;
+
+    if (smp_online() < 2) {
+        return true;              /* one core: the two would only take turns */
+    }
+
+    /* The suite gives threads one core otherwise, and the role's worker
+     * would then only take turns with its first thread. */
+    thread_place_across(smp_online());
+    p = process_create("t-heap", init_image, (size_t)init_image_len,
+                       CTEST_HEAP);
+
+    if (p == NULL) {
+        thread_place_across(1);
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (start = hal_ticks(); !p->exited && hal_ticks() - start < 60UL * TICK_HZ; ) {
+        thread_yield();
+    }
+
+    thread_place_across(1);
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code != 0) {
+        kputs("\n   (the role said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs(code < 0 ? ", a fault)" : ")");
+    }
+
+    return code == 0;
+}
+
+/*
  * **A thread on the core its process asked for** (`THREAD_START_ON`).
  *
  * Has to match `user/init/main.c`. The role asks for a thread on the last
@@ -11145,6 +11203,7 @@ static const struct test tests[] = {
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "thread: a process with two threads", test_a_process_with_two_threads },
     { "thread: on the core its process asked for", test_a_thread_on_the_core_asked_for },
+    { "thread: one heap under two threads at once", test_one_heap_under_two_threads },
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },
 #endif
