@@ -30912,3 +30912,9 @@ finished, the VBR MP3's length, the master muted and back, the clock
 against the device's, Music's window. **Control**: the end never said to
 the kit - 4 of 46 fail, the fourth "the tone did not finish, at about six
 seconds: 'media: finished false 5.997'".
+
+**Whole gate** on 0.11.362: 112 suites in 615 s (10:14), all passing. Over
+the ten minutes by 14 s: the shared suites ended at 596 s, and the two run
+alone after them took 19 - `x86-film-load` 9, `x86-sound` 10. The gate
+before it (18.753) was 10:47. The slowest: `x86-cafesa3d-2` 279 s,
+`arm-sandbox-linuxsetup` 247, `host-llm` 238, `x86-dock` 217.

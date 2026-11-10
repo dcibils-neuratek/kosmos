@@ -2,9 +2,41 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-10 (0.11.357, not pushed; the gate in 9:56)
+Last updated: 2026-11-10 (0.11.362, not pushed; the gate in 10:14)
 
 ---
+
+## 10 November: the flaky suites, and the Playback Kit (0.11.358-0.11.362, not pushed)
+
+**0.11.358** (18.753): a failed suite's log kept under `build/gate/failed/`
+with its `not ok` lines printed; `x86-bluetooth` reads `bt` to the prompt.
+
+**The Playback Kit, agreed and built** (Diego: "yes, build the C playback
+thread for music and video"; `docs/playback.md`, its diagram
+`playback-architecture.png`). `x86-film`'s gaps under load were the sound
+fed from the window's loop in Lua (roadmap 6zw). Now a song and a film's
+sound are played by `/Kosmos/Kits/playback`: the window reads the file and
+hands compressed frames to a 1 MB input ring; a C thread in the audio band
+(`kosmos: needs audio`, NORMAL otherwise) decodes - minimp3, AAC - converts
+(`pcmconvert.h`) and writes into the stream's ring.
+
+- 0.11.359 (18.754): the resampler in one place, `pcmconvert.h`.
+- 0.11.360 (18.755): the core, held on the Mac (`test_playback.c`, 22).
+- 0.11.361 (18.756): the thread; `video.lua`'s voice on it; the Video app
+  `needs audio` and `--report`; **`x86-film-load`**, new and alone: four
+  display-band spinners, the thread back within 8.9 ms against the
+  device's 23.2, the recording within 1 step of FFmpeg's; control outside
+  the band 44 ms, failing.
+- 0.11.362 (18.757): `media.lua`'s songs on it, Music `needs audio`,
+  `media.feed` gone. Whole gate: 112 suites in 10:14, all passing.
+
+**Found and not this work's**: `arm-media` fails 3 cover checks, the same
+on 0.11.359 (18.755) - ARM out of the gate since 8 October; in 6zw.
+
+**Next**: Diego's word on pushing 0.11.358-0.11.362; the M700 when he is
+back (the kit's decode and conversion timed on the thread there,
+`ETH_RING_SLOTS`, the Story page); the gate's last 14 s; the heap placed
+after the image; a question re-read after a model switch.
 
 
 ## 9 November, night: TCP step B, and Xavier's answers (0.11.347, not pushed)
