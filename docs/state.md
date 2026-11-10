@@ -6,6 +6,24 @@ Last updated: 2026-11-09 (0.11.346, not pushed; TCP's receive window)
 
 ---
 
+
+## 9 November, night: TCP step B, and Xavier's answers (0.11.347, not pushed)
+
+**Done**: TCP window scaling and per-connection rings (`testing.md` 18.741):
+9.2 MB/s from 50 ms in `x86-tcpfar` (now against `tools/farpeer.py` over
+`-netdev dgram`, because slirp does not scale), 1.83 MB/s from Hugging
+Face on the M700 (was 0.16). A SYN now waits for its neighbour's ARP
+answer. `x86-maps` made to wait for zoom 10; phi-2's `test_llm` reference
+read in batches; `host-llm` a suite of its own: 111 suites in 10:38.
+
+**Next, agreed by Diego** (`xavier.md`, *Answers that make sense*):
+(1) Q6_K in the kit for Qwen2.5 1.5B - written in the scratchpad
+(`q6k_patch.py`), to apply and hold to llama.cpp; (2) the preamble;
+(3) sampling with a seed in the request (0 = greedy), the window logging
+it and `llm_answer` drawing the same, so `x86-xavier` stays byte for byte;
+(4) the 1.5B on the M700. Then the Story page (`docs/llmstory.html`,
+option b). **And the gate's last 38 seconds.**
+
 ## 9 November, later: Models (0.11.332, not pushed)
 
 - **0.11.332**: `models` at the prompt. It lists the models folder, searches

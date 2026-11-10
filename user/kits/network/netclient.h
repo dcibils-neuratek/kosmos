@@ -45,6 +45,12 @@ uint32_t net_client_last(void);
  */
 uint32_t net_client_connect(struct net_conn *c, const uint8_t address[4], uint16_t port);
 
+/* The same, with a ring of at least `ring_bytes` each way - 0 for the
+ * default - for a connection that brings much from far away, since the
+ * window a round trip is the ring (`netproto.h`, `ring_bytes`). */
+uint32_t net_client_connect_ring(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                                 uint32_t ring_bytes);
+
 /* Bytes to send: how many the ring took (0 when it is full), -1 when the
  * connection is over. The stack is told there is something to send. */
 long     net_client_write(struct net_conn *c, const void *p, size_t n);

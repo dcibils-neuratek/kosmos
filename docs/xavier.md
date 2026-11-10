@@ -1237,3 +1237,43 @@ express.
 5. **The voice**: eSpeak NG first, clear and robotic. A neural voice
    (Piper) runs on ONNX, which would be a second engine to bring, so it
    is later if at all.
+
+## Answers that make sense: Qwen2.5 1.5B, the preamble, and sampling (agreed 9 November)
+
+**Why** (Diego, on the M700, 9 November 2026: "esta respondiendo cualquier
+cosa", "its very weird the responses i am getting on xavier"). Asked
+"explicame la teoria del big bang" fresh, Qwen2.5 0.5B answers nonsense -
+"una teoría de la nacimiento de la Tierra" - in llama.cpp b12205 exactly as
+in the kit, so the kit is right and the model is too small for it. And in a
+conversation every earlier nonsense answer is in the context and copied
+on: his typo "buig" became "bui" in every answer after. Qwen2.5 1.5B
+Instruct answers it properly, in llama.cpp, once told what it is for.
+
+**Agreed** (Diego: "yes do 1-4"):
+
+1. **The kit reads Qwen2.5 1.5B.** Its weights are Q4_0 but its output
+   matrix is **Q6_K** - 210 bytes a block of 256: four low bits in `ql`, two
+   high bits in `qh`, sixteen signed 8-bit scales, one F16 scale - which
+   the kit refused. Multiplied as ggml does (`ggml_vec_dot_q6_K_q8_K`): the
+   input quantised to **Q8_K** (a float scale, 256 bytes, sixteen sums of
+   sixteen) once a product, each block's integer sums by sixteen scaled by
+   its scales, the eight lanes summed last. Its embedding row read as
+   `dequantize_row_q6_K` reads it, for a model whose embedding is Q6_K too.
+   Held to llama.cpp's logits by `test_llm` as the 0.5B is, the 1.5B's
+   reference written by `make llm-reference`. The GPU path is Q4_0 only and
+   the output product stays on the processor.
+2. **The preamble says what Xavier is for**: a helpful assistant that
+   answers any question as well as it can, in the language it was asked
+   in, and then where it runs and the date - told only "the assistant in
+   Kosmos", the 1.5B declined anything not about computers.
+3. **Sampling** - a temperature and a penalty on repeats, llama.cpp's
+   defaults - so an answer does not go round a loop; greedy kept as a
+   switch, for the checks, which hold answers to the bit.
+4. **The 1.5B measured on the M700**: about 1.07 GB read a token, so near
+   seven tokens a second against the 0.5B's 18, for answers that hold.
+
+**And the LLM Monitor's Story page** (`docs/llmstory.html`, agreed the
+same evening, Diego: "go with b for the mockup"): a third tab; each
+layer's guess (the logit lens) computed for a word that is clicked, from
+each layer's stream kept for the last 64 words, so watching never slows an
+answer.

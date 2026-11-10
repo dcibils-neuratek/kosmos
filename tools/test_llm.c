@@ -302,7 +302,25 @@ static int numbers(const char *s, int *out, int room)
  */
 static float fresh[VOCAB_MAX];
 
+/* Read in batches, which `check_batch` holds to a token at a time to the
+ * bit: a reference read four or five times as fast, so phi-2's checks fit
+ * the gate (9 November 2026). What is checked against it still reads as
+ * the server does, a token at a time where the server does. */
 static int fresh_logits(struct llm_model *m, const int32_t *t, int n)
+{
+  llm_reset(m);
+  for (int done = 0; done < n; ) {
+    int k = n - done > (int)LLM_BATCH ? (int)LLM_BATCH : n - done;
+
+    if (llm_step_batch(m, t + done, (uint32_t)k) != 0) return -1;
+    done += k;
+  }
+  memcpy(fresh, m->logits, m->n_vocab * sizeof *fresh);
+  return 0;
+}
+
+/* A token at a time: what `check_batch` holds the batches to. */
+static int fresh_logits_one(struct llm_model *m, const int32_t *t, int n)
 {
   llm_reset(m);
   for (int i = 0; i < n; i++) if (llm_step(m, t[i]) != 0) return -1;
@@ -439,7 +457,7 @@ static void check_batch(struct llm_model *m)
 
   double t0 = now();
 
-  if (fresh_logits(m, t, n) != 0) {
+  if (fresh_logits_one(m, t, n) != 0) {
     check(0, "batch: a token at a time would not read the question");
     return;
   }

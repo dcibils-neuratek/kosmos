@@ -244,7 +244,11 @@ int kosmos_net_download(lua_State *L)
 
     net_client_start(cap);
 
-    if (net_client_connect(&d->p->conn, (const uint8_t *)address, (uint16_t)port) != NET_OK) {
+    /* A ring of 4 MB: a download may be from across the world, and the
+     * window a round trip - the ring - is the most it can bring; 4 MB is
+     * 40 MB/s from 100 ms away (`netproto.h`, `ring_bytes`). */
+    if (net_client_connect_ring(&d->p->conn, (const uint8_t *)address, (uint16_t)port,
+                                4u << 20) != NET_OK) {
         d->tls = false;
         dl_end(d);
         lua_pushnil(L);

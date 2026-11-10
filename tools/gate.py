@@ -76,6 +76,7 @@ SUITES = [
     # Everything that boots nothing: the filesystem's format, the decoders,
     # the licences and every syscall's arguments, in seconds.
     Suite("host", ["make", "--no-print-directory", "host-check"]),
+    Suite("host-llm", ["make", "--no-print-directory", "host-llm-check"]),
 
     # The kernel from inside: the largest test asset here, and the only thing
     # that exercises the kernel from inside it.

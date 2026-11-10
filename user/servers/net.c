@@ -153,7 +153,6 @@ static void dhcp_receive(const uint8_t *m, unsigned length);
  * before the last.
  */
 #define TCP_MSS              1460u
-#define TCP_RECEIVE_WINDOW   65535u     /* offered, at most: see `window_of` */
 #define TCP_INITIAL_WINDOW   (10u * TCP_MSS)
 #define TCP_MAX_WINDOW       (1024u * 1024u)
 
@@ -352,13 +351,37 @@ struct conn {
     uint64_t first_sent;
     bool     fin_sent;
     bool     want_close;            /* asked to close; waiting for the ring */
-    bool     held;                  /* the SYN waits for an address */
-    uint16_t advertised;            /* the window the far end was last told */
+    bool     held;                  /* the SYN waits for an address, or a neighbour's */
+    uint64_t tried_at;              /* when a held SYN was last tried */
+    uint32_t advertised;            /* the window the far end was last told, in bytes */
 
     /* What arrived ahead of `rcv_nxt`, already in the ring past `in_write`
      * (`tcp_reasm.h`), and how often a piece was kept that way. */
     struct tcp_reasm ahead;
     uint32_t kept_ahead;
+
+    /*
+     * **Window scaling** (RFC 7323 2): `rcv_scale` is how far the windows
+     * this end says are shifted, `snd_scale` how far theirs are - both 0
+     * unless both SYNs carried the option. `offer_scale` is whether this
+     * end's SYN carries it: always when this end connects, and on a
+     * SYN-ACK only when their SYN did.
+     */
+    uint8_t  rcv_scale, snd_scale;
+    bool     offer_scale;
+
+    /* For a listener: the ring each connection it makes is given. */
+    uint32_t ring_ask;
+
+    /*
+     * **The ring's size, this end's own copy.** The ring's `bytes` is in
+     * memory the program can write, and every index here is taken modulo
+     * the size and the receive half found past it - so a program that
+     * wrote a larger number there would have this server write outside
+     * the region. The shared field is written once, for the program to
+     * read, and never read here.
+     */
+    uint32_t ring_bytes;
     bool     said_in;               /* its first four megabytes in said */
     bool     fin_ahead;             /* their FIN has come, at `fin_at` */
     uint32_t fin_at;
@@ -2033,11 +2056,46 @@ static struct conn *conn_at(uint64_t handle)
  * when the mapping could not be let go of: a leak is safe, and the other
  * is not.
  */
+/*
+ * **A ring of the size a connection asked for** (9 November 2026): a
+ * power of two - the indices are taken modulo the size as they wrap past
+ * 2^32, which only a power of two survives - from `TCP_RING_BYTES` up to
+ * what was asked, and no further than a 256th of this machine's memory or
+ * 2^30, the most a scaled window can say. Nothing asked is 64 KB, which is
+ * plenty for a server across the room; a download from across the world
+ * asks for more (`download.c`), since a window a round trip is the most a
+ * connection can bring in one.
+ */
+static uint32_t ring_bytes_for(uint32_t ask)
+{
+    struct sysinfo info;
+    uint64_t most;
+    uint32_t bytes = TCP_RING_BYTES;
+
+    if (ask <= TCP_RING_BYTES) {
+        return TCP_RING_BYTES;
+    }
+
+    memset(&info, 0, sizeof(info));
+    (void)kosmos_sysinfo(&info);
+    most = (uint64_t)info.pages_total * 4096u / 256u;
+
+    if (most > (1u << 30)) {
+        most = 1u << 30;
+    }
+
+    while (bytes < ask && (uint64_t)bytes * 2u <= most) {
+        bytes *= 2u;
+    }
+
+    return bytes;
+}
+
 static void conn_free(struct conn *c)
 {
     if (c->ring != NULL) {
         if (kosmos_share_unmap((unsigned long)(uintptr_t)c->ring,
-                               (TCP_RING_REGION + 4095u) / 4096u) == 0) {
+                               tcp_ring_pages(c->ring_bytes)) == 0) {
             (void)kosmos_cap_drop(c->region);
         } else {
             struct say_line line;
@@ -2061,7 +2119,7 @@ static void conn_free(struct conn *c)
  * client that stops reading really does slow the sender down. That is flow
  * control, and it is free when the window is the ring.
  */
-static uint16_t window_of(const struct conn *c)
+static uint32_t window_of(const struct conn *c)
 {
     uint32_t space;
 
@@ -2069,7 +2127,7 @@ static uint16_t window_of(const struct conn *c)
         return 0;
     }
 
-    space = tcp_ring_space(c->ring->bytes, c->ring->in_write,
+    space = tcp_ring_space(c->ring_bytes, c->ring->in_write,
                            tcp_ring_acquire(&c->ring->in_read));
 
     /*
@@ -2081,13 +2139,29 @@ static uint16_t window_of(const struct conn *c)
      * 18.523). 16 KB a round trip is about 160 KB/s from a server 100 ms
      * away, which is what Hugging Face's CDN gave the M700 (18.737). Now
      * what follows a loss waits in the ring (`tcp_reasm.h`), and the window
-     * is the most sixteen bits can say until window scaling.
+     * is the ring - in sixteen bits shifted by `rcv_scale` (`window_field`).
      */
-    if (space > TCP_RECEIVE_WINDOW) {
-        space = TCP_RECEIVE_WINDOW;
+    return space;
+}
+
+/*
+ * The window as the header's sixteen bits say it: shifted by this end's
+ * scale, except on a SYN, whose window RFC 7323 2.2 says is never scaled;
+ * and never more than sixteen bits hold. What it promises, in bytes, is
+ * kept in `advertised`, rounded down to what the field can say.
+ */
+static uint16_t window_field(struct conn *c, bool syn)
+{
+    uint32_t bytes = window_of(c);
+    unsigned shift = syn ? 0u : c->rcv_scale;
+    uint32_t field = bytes >> shift;
+
+    if (field > 0xffffu) {
+        field = 0xffffu;
     }
 
-    return (uint16_t)space;
+    c->advertised = field << shift;
+    return (uint16_t)field;
 }
 
 /*
@@ -2138,25 +2212,73 @@ static uint32_t mss_of(const uint8_t *tcp, unsigned header)
     return 536;
 }
 
+/*
+ * **Their window scale** (RFC 7323 2.3, option kind 3): the shift their
+ * SYN or SYN-ACK said, never past 14, which is the RFC's own limit and what
+ * keeps a window under 2^30; -1 when it said nothing, which is "no scaling,
+ * either way".
+ */
+static int wscale_of(const uint8_t *tcp, unsigned header)
+{
+    unsigned at = TCP_HEADER;
+
+    while (at < header) {
+        uint8_t kind = tcp[at];
+
+        if (kind == 0) {
+            break;
+        }
+
+        if (kind == 1) {
+            at++;
+            continue;
+        }
+
+        if (at + 1 >= header || tcp[at + 1] < 2 || at + tcp[at + 1] > header) {
+            break;
+        }
+
+        if (kind == 3 && tcp[at + 1] == 3) {
+            return tcp[at + 2] > 14 ? 14 : tcp[at + 2];
+        }
+
+        at += tcp[at + 1];
+    }
+
+    return -1;
+}
+
+/* The shift this end asks for: the least that lets the whole ring be said
+ * in sixteen bits. */
+static uint8_t scale_for(uint32_t ring_bytes)
+{
+    uint8_t shift = 0;
+
+    while (shift < 14 && (ring_bytes >> shift) > 0xffffu) {
+        shift++;
+    }
+
+    return shift;
+}
+
 static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
                      const uint8_t *data, unsigned length)
 {
-    uint8_t segment[TCP_HEADER + 4 + 1460];
+    uint8_t segment[TCP_HEADER + 8 + 1460];
     unsigned header = TCP_HEADER;
 
-    if (length > sizeof(segment) - TCP_HEADER - 4) {
+    if (length > sizeof(segment) - TCP_HEADER - 8) {
         return false;
     }
 
-    memset(segment, 0, TCP_HEADER + 4);
+    memset(segment, 0, TCP_HEADER + 8);
 
     put_be16(segment + TCP_SPORT, c->local_port);
     put_be16(segment + TCP_DPORT, c->remote_port);
     put_be32(segment + TCP_SEQ, seq);
     put_be32(segment + TCP_ACK, c->rcv_nxt);
     segment[TCP_FLAGS] = (uint8_t)flags;
-    c->advertised = window_of(c);
-    put_be16(segment + TCP_WINDOW, c->advertised);
+    put_be16(segment + TCP_WINDOW, window_field(c, (flags & TCP_SYN) != 0));
 
     if ((flags & TCP_SYN) != 0) {
         /* Kind 2, length 4, then the value: 1460, which is the MTU less an
@@ -2165,6 +2287,16 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
         segment[TCP_HEADER + 1] = 4;
         put_be16(segment + TCP_HEADER + 2, 1460);
         header = TCP_HEADER + 4;
+
+        /* A no-op to keep the header in whole words, then kind 3, length
+         * 3, and the shift this end's windows will have. */
+        if (c->offer_scale) {
+            segment[TCP_HEADER + 4] = 1;
+            segment[TCP_HEADER + 5] = 3;
+            segment[TCP_HEADER + 6] = 3;
+            segment[TCP_HEADER + 7] = c->ring != NULL ? scale_for(c->ring_bytes) : 0;
+            header = TCP_HEADER + 8;
+        }
     }
 
     /* The data offset is in 32-bit words, in the high nibble. A stack that
@@ -2254,7 +2386,7 @@ static void tcp_pump(struct conn *c)
         }
 
         for (i = 0; i < send; i++) {
-            piece[i] = tcp_ring_out(c->ring)[(read + flight + i) % c->ring->bytes];
+            piece[i] = tcp_ring_out(c->ring)[(read + flight + i) % c->ring_bytes];
         }
 
         if (net.path_mtu != 0 && IP_HEADER + TCP_HEADER + send > net.path_mtu) {
@@ -2424,25 +2556,31 @@ static void wake_waiter(struct conn *c)
  * `struct net_datagram` and its bytes, published once it is all there.
  *----------------------------------------------------------------------*/
 
-static void ring_put(struct tcp_ring *r, uint8_t *base, uint32_t at,
+/* The receive half, found past the send half by this end's own size. */
+static uint8_t *ring_in(const struct conn *c)
+{
+    return (uint8_t *)c->ring + TCP_RING_DATA + c->ring_bytes;
+}
+
+static void ring_put(uint32_t bytes, uint8_t *base, uint32_t at,
                      const void *from, uint32_t n)
 {
     const uint8_t *p = from;
     uint32_t i;
 
     for (i = 0; i < n; i++) {
-        base[(at + i) % r->bytes] = p[i];
+        base[(at + i) % bytes] = p[i];
     }
 }
 
-static void ring_get(const struct tcp_ring *r, const uint8_t *base,
+static void ring_get(uint32_t bytes, const uint8_t *base,
                      uint32_t at, void *to, uint32_t n)
 {
     uint8_t *p = to;
     uint32_t i;
 
     for (i = 0; i < n; i++) {
-        p[i] = base[(at + i) % r->bytes];
+        p[i] = base[(at + i) % bytes];
     }
 }
 
@@ -2518,7 +2656,7 @@ static bool udp_deliver(const uint8_t *packet, unsigned total)
     }
 
     write = c->ring->in_write;
-    space = tcp_ring_space(c->ring->bytes, write, tcp_ring_acquire(&c->ring->in_read));
+    space = tcp_ring_space(c->ring_bytes, write, tcp_ring_acquire(&c->ring->in_read));
 
     if (space < sizeof(d) + n) {
         counted.dropped_in++;
@@ -2532,8 +2670,8 @@ static bool udp_deliver(const uint8_t *packet, unsigned total)
     d.port = get_be16(udp + UDP_SRC);
     d.length = (uint16_t)n;
 
-    ring_put(c->ring, tcp_ring_in(c->ring), write, &d, sizeof(d));
-    ring_put(c->ring, tcp_ring_in(c->ring), write + sizeof(d), udp + UDP_HEADER, n);
+    ring_put(c->ring_bytes, ring_in(c), write, &d, sizeof(d));
+    ring_put(c->ring_bytes, ring_in(c), write + sizeof(d), udp + UDP_HEADER, n);
     tcp_ring_publish(&c->ring->in_write, write + (uint32_t)sizeof(d) + n);
     wake_waiter(c);
     return true;
@@ -2559,7 +2697,7 @@ static void udp_drain(struct conn *c)
             return;
         }
 
-        ring_get(c->ring, tcp_ring_out(c->ring), read, &d, sizeof(d));
+        ring_get(c->ring_bytes, tcp_ring_out(c->ring), read, &d, sizeof(d));
 
         /* A program that wrote something that is not a datagram has its
          * ring emptied rather than read as one. */
@@ -2568,7 +2706,7 @@ static void udp_drain(struct conn *c)
             return;
         }
 
-        ring_get(c->ring, tcp_ring_out(c->ring), read + sizeof(d), body, d.length);
+        ring_get(c->ring_bytes, tcp_ring_out(c->ring), read + sizeof(d), body, d.length);
 
         bool sent = udp_send(&d.addr, c->local_port, d.port, body, d.length);
 
@@ -2685,7 +2823,7 @@ static void window_update(struct conn *c)
         return;
     }
 
-    step = c->ring->bytes / 2u < 2u * 1460u ? c->ring->bytes / 2u : 2u * 1460u;
+    step = c->ring_bytes / 2u < 2u * 1460u ? c->ring_bytes / 2u : 2u * 1460u;
 
     if ((uint32_t)window_of(c) >= (uint32_t)c->advertised + step) {
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
@@ -2812,9 +2950,11 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
          * bounded by that rather than by cleverness, and it is written down
          * rather than defended against.
          */
-        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+        made->ring_bytes = ring_bytes_for(listener->ring_ask);
+        region = kosmos_mem_create(tcp_ring_pages(made->ring_bytes));
 
         if (region < 0) {
+            conn_clear(made);
             return;
         }
 
@@ -2830,7 +2970,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         memset(made->ring, 0, TCP_RING_DATA);
         made->ring->magic = TCP_RING_MAGIC;
-        made->ring->bytes = TCP_RING_BYTES;
+        made->ring->bytes = made->ring_bytes;
 
         made->local_port    = listener->local_port;
         made->remote_port   = get_be16(tcp + TCP_SPORT);
@@ -2838,9 +2978,19 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         made->rcv_nxt       = seq + 1;      /* their SYN takes one */
         made->snd_una       = net.next_seq;
         made->snd_nxt       = net.next_seq;
-        made->peer_window   = get_be16(tcp + TCP_WINDOW);
+        made->peer_window   = get_be16(tcp + TCP_WINDOW);   /* a SYN's: never scaled */
         made->cwnd          = TCP_INITIAL_WINDOW;
         made->mss           = mss_of(tcp, header);
+
+        /* Their SYN offered a scale: this SYN-ACK offers one back, and
+         * both are in force from the next segment. Otherwise neither. */
+        {
+            int theirs = wscale_of(tcp, header);
+
+            made->offer_scale = theirs >= 0;
+            made->snd_scale   = theirs >= 0 ? (uint8_t)theirs : 0;
+            made->rcv_scale   = theirs >= 0 ? scale_for(made->ring_bytes) : 0;
+        }
         made->ssthresh      = 0xffffffffu;
         made->dupacks       = 0;
         made->state         = ST_SYN_RCVD;
@@ -2903,8 +3053,17 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
          * acknowledges everything one short for ever. */
         c->rcv_nxt = seq + 1;
         c->snd_una = ack;
-        c->peer_window = get_be16(tcp + TCP_WINDOW);
+        c->peer_window = get_be16(tcp + TCP_WINDOW);   /* a SYN's: never scaled */
         c->mss = mss_of(tcp, header);
+
+        /* Scaling both ways if their SYN-ACK answered ours with a scale;
+         * neither way if it did not. */
+        {
+            int theirs = wscale_of(tcp, header);
+
+            c->snd_scale = theirs >= 0 ? (uint8_t)theirs : 0;
+            c->rcv_scale = theirs >= 0 ? scale_for(c->ring_bytes) : 0;
+        }
         c->state = ST_OPEN;
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
@@ -3026,7 +3185,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         }
     }
 
-    c->peer_window = get_be16(tcp + TCP_WINDOW);
+    c->peer_window = (uint32_t)get_be16(tcp + TCP_WINDOW) << c->snd_scale;
 
     /*
      * **Data, wherever it falls in the window** (9 November 2026).
@@ -3051,7 +3210,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
      */
     if (payload > 0 && c->ring != NULL) {
         uint32_t write = c->ring->in_write;
-        uint32_t space = tcp_ring_space(c->ring->bytes, write,
+        uint32_t space = tcp_ring_space(c->ring_bytes, write,
                                         tcp_ring_acquire(&c->ring->in_read));
         uint32_t past = seq - c->rcv_nxt;           /* modulo 2^32 */
         const uint8_t *data = tcp + header;
@@ -3077,7 +3236,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
         if (len > 0) {
             for (i = 0; i < len; i++) {
-                tcp_ring_in(c->ring)[(write + past + i) % c->ring->bytes] = data[i];
+                ring_in(c)[(write + past + i) % c->ring_bytes] = data[i];
             }
 
             if (past == 0) {
@@ -3099,7 +3258,15 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
                     say_addr(&line, &c->remote);
                     say_text(&line, ", ");
                     say_dec(&line, c->kept_ahead);
-                    say_text(&line, " pieces kept that came ahead of a gap");
+                    say_text(&line, " pieces kept that came ahead of a gap; a ring of ");
+                    say_dec(&line, c->ring_bytes / 1024u);
+                    say_text(&line, " KB, windows shifted ");
+                    say_dec(&line, c->rcv_scale);
+                    say_text(&line, " here and ");
+                    say_dec(&line, c->snd_scale);
+                    say_text(&line, " there, ");
+                    say_dec(&line, c->advertised / 1024u);
+                    say_text(&line, " KB offered last");
                     say_send(net.console, &line);
                 }
             } else if (tcp_reasm_add(&c->ahead, past, past + len)) {
@@ -3219,7 +3386,7 @@ static uint32_t poll_ready(struct net_poll_entry *set, uint32_t count)
             }
 
             if ((want & NET_WANT_WRITE) != 0
-                && tcp_ring_space(c->ring->bytes,
+                && tcp_ring_space(c->ring_bytes,
                                   tcp_ring_acquire(&c->ring->out_write),
                                   c->ring->out_read) > 0) {
                 got |= NET_WANT_WRITE;
@@ -3394,8 +3561,11 @@ static void release_held(void)
     for (i = 0; i < conn_count(); i++) {
         struct conn *c = conn_slot(i);
 
+        /* Twenty times a second at most: each try that cannot go asks
+         * ARP again, and a pass follows every frame. */
         if (c->held && c->state == ST_SYN_SENT
-            && tcp_send(c, TCP_SYN, c->snd_una, NULL, 0)) {
+            && kosmos_ticks() - c->tried_at >= net.hz / 20u
+            && (c->tried_at = kosmos_ticks(), tcp_send(c, TCP_SYN, c->snd_una, NULL, 0))) {
             c->held    = false;
             c->tries   = 0;             /* its whole budget, from now */
             c->sent_at = kosmos_ticks();
@@ -3654,9 +3824,11 @@ static void serve(const struct message *msg, uint64_t sender)
          * is a connection that would have to be torn down after the far end
          * had already answered.
          */
-        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+        c->ring_bytes = ring_bytes_for(req.ring_bytes);
+        region = kosmos_mem_create(tcp_ring_pages(c->ring_bytes));
 
         if (region < 0) {
+            conn_clear(c);
             fail(sender, NET_ERR_FULL);
             return;
         }
@@ -3674,7 +3846,7 @@ static void serve(const struct message *msg, uint64_t sender)
 
         memset(c->ring, 0, TCP_RING_DATA);
         c->ring->magic = TCP_RING_MAGIC;
-        c->ring->bytes = TCP_RING_BYTES;
+        c->ring->bytes = c->ring_bytes;
 
         /*
          * A port nobody else is using, from the range IANA leaves to
@@ -3701,6 +3873,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->state         = ST_SYN_SENT;
         c->from_listener = -1;
         c->process       = asker();
+        c->offer_scale   = true;        /* RFC 7323: the one who connects offers */
         c->opened_by     = sender;
         c->sent_at     = kosmos_ticks();
 
@@ -3709,13 +3882,22 @@ static void serve(const struct message *msg, uint64_t sender)
         /* Asked for before this machine has an address: the connection is
          * made and the SYN waits for one (`release_held`), with the caller
          * parked exactly as it would be for an answer. */
-        if (!net.configured) {
+        /*
+         * **Or before its neighbour is known** (9 November 2026): the SYN
+         * cannot go until an ARP answer says where, and the question has
+         * gone out in `send_ip`. It is held as for an address, and sent
+         * from the loop when the answer lands. It used to be refused
+         * there and then - "nobody answered for that address" before
+         * anybody could have - so the first connection to a machine on
+         * the same network failed, and the second, a moment later,
+         * worked. Behind QEMU's network the router is known from the
+         * lease, which is why no suite met it until one spoke to a
+         * machine of its own (`tools/farpeer.py`).
+         */
+        if (!net.configured || !tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
             c->held = true;
+            c->tried_at = kosmos_ticks();
             c->snd_nxt++;
-        } else if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
-            conn_free(c);
-            fail(sender, NET_ERR_UNREACHABLE);
-            return;
         } else {
             c->snd_nxt++;           /* our SYN takes one sequence number */
         }
@@ -3925,7 +4107,8 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
-        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+        c->ring_bytes = TCP_RING_BYTES;
+        region = kosmos_mem_create(tcp_ring_pages(c->ring_bytes));
         at = region >= 0 ? kosmos_mem_map(region) : -1;
 
         if (at < 0) {
@@ -3942,7 +4125,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->ring   = (struct tcp_ring *)(uintptr_t)at;
         memset(c->ring, 0, TCP_RING_DATA);
         c->ring->magic = TCP_RING_MAGIC;
-        c->ring->bytes = TCP_RING_BYTES;
+        c->ring->bytes = c->ring_bytes;
 
         c->state         = ST_UDP;
         c->local_port    = (uint16_t)port;
@@ -4026,6 +4209,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->local_port    = (uint16_t)req.port;
         c->from_listener = -1;
         c->process       = asker();
+        c->ring_ask      = req.ring_bytes;
 
         reply.status = NET_OK;
         reply.handle = c->handle;
@@ -4318,7 +4502,7 @@ static void expire(uint64_t hz)
 
                 if (++c->tries > 5) {
                     c->held = false;
-                    conn_die(c, NET_ERR_NO_ROUTE);
+                    conn_die(c, net.configured ? NET_ERR_UNREACHABLE : NET_ERR_NO_ROUTE);
                 }
             }
 

@@ -2532,6 +2532,17 @@ $(HOSTDIR)/test_llmdot_x86: tools/test_llmdot.c $(LLM_KIT_SRCS) user/kits/llm/ll
 
 LLAMA_CPP := build/downloads/llama.cpp-b12205
 
+# **The LLM Kit held to llama.cpp on the real models** (Xavier X1, 18.736):
+# phi-2 as Q8_0 and Q4_0, and Qwen2.5 0.5B, the second architecture -
+# RMSNorm, grouped-query attention, SwiGLU, Qwen2's split and ChatML. A
+# skip that says so where `build/models/` has no model. Two minutes of the
+# host suite's four, so a suite of its own, run beside it (9 November 2026).
+.PHONY: host-llm-check
+host-llm-check: $(HOSTDIR)/test_llm
+	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
+	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
+	$(HOSTDIR)/test_llm build/models/qwen2.5-0.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
+
 .PHONY: llm-reference
 llm-reference:
 	@mkdir -p $(HOSTDIR)
@@ -4739,17 +4750,12 @@ host-check: $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_nt
 	$(HOSTDIR)/test_synth tools/test_synth.lua
 	@# And Groove's Lua held to it: the sound bank, the demos, projects.
 	$(HOSTDIR)/test_synth tools/test_groove.lua
-	@# The LLM Kit held to llama.cpp, on phi-2 as Q8_0 and Q4_0 (Xavier
-	@# X1): a skip that says so where `build/models/` has no model.
-	$(HOSTDIR)/test_llm build/models/phi-2.Q8_0.gguf tools/llm_reference_phi-2.Q8_0.txt
-	$(HOSTDIR)/test_llm build/models/phi-2.Q4_0.gguf tools/llm_reference_phi-2.Q4_0.txt
-	@# And the tiny phi-2, in all three of the kit's row types, in a second.
+	@# The LLM Kit held to llama.cpp on the real models is `host-llm-check`,
+	@# a suite of its own beside this one; here, the tiny phi-2, in all
+	@# three of the kit's row types, in a second.
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q8_0.gguf tools/llm_reference_tiny-phi2.Q8_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt
 	$(HOSTDIR)/test_llm build/models/tiny-phi2.F16.gguf tools/llm_reference_tiny-phi2.F16.txt
-	@# And Qwen2.5 0.5B, the second architecture: RMSNorm, grouped-query
-	@# attention, SwiGLU, Qwen2's split and ChatML (testing.md 18.736).
-	$(HOSTDIR)/test_llm build/models/qwen2.5-0.5b-instruct-q4_0.gguf tools/llm_reference_qwen2.5-0.5b-instruct-q4_0.txt
 	@# And the Q4_0 one again with its products on the GPU, in the emulator:
 	@# the same checks, and its logits the processor's to the bit (X7 G3).
 	$(HOSTDIR)/test_llm --gpu build/models/tiny-phi2.Q4_0.gguf tools/llm_reference_tiny-phi2.Q4_0.txt

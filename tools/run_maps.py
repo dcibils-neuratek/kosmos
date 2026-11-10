@@ -381,9 +381,24 @@ def main():
         guest.sendkey("esc")
         time.sleep(0.5)
         mark = len(guest.seen)
-        for _ in range(8):
+        # Out a step at a time until the map says 10, each step waited for:
+        # eight presses counted from where the card left it overshot to 8
+        # under a loaded gate, and 10's tiles were never waited for there.
+        for _ in range(12):
+            guest._read_available()
+            zooms = re.findall(r"maps: at \S+ \S+, zoom ([\d.]+)", guest.seen[mark:])
+            if zooms and float(zooms[-1]) <= 10.0:
+                break
+            was = zooms[-1] if zooms else None
+            seen = len(guest.seen)
             guest.sendkey("minus")
-            time.sleep(0.3)
+            step_by = time.time() + 15
+            while time.time() < step_by:            # a frame drawn at another zoom
+                guest._read_available()
+                now = re.findall(r"maps: at \S+ \S+, zoom ([\d.]+)", guest.seen[seen:])
+                if any(z != was for z in now):
+                    break
+                time.sleep(0.1)
         out_at = mark
         deadline = time.time() + 60
         said["ten"] = ""

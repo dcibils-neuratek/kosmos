@@ -379,8 +379,10 @@ static struct ring_handle *checkring(lua_State *L, int at)
 }
 
 /*
- * `net.connect(cap, address, port [, at_once])` - open one, and get a handle;
- * with `at_once`, while it is still opening (`NET_CONNECT_AT_ONCE`).
+ * `net.connect(cap, address, port [, at_once [, ring_bytes]])` - open one,
+ * and get a handle; with `at_once`, while it is still opening
+ * (`NET_CONNECT_AT_ONCE`); with `ring_bytes`, a ring each way of at least
+ * that (`netproto.h`).
  *
  * **This blocks until the far end answers or the stack gives up.** The stack
  * does not: it parks this caller in `call` and goes on serving, the same
@@ -404,6 +406,12 @@ static int l_connect(lua_State *L)
     /* `at_once`: the connection back while it is still opening. */
     if (lua_toboolean(L, 4)) {
         req.flags = NET_CONNECT_AT_ONCE;
+    }
+
+    {
+        lua_Integer ask = luaL_optinteger(L, 5, 0);
+
+        req.ring_bytes = ask > 0 && ask < 0x40000000 ? (uint32_t)ask : 0u;
     }
 
     take_addr(L, 2, &req.to);
@@ -640,7 +648,7 @@ static int l_gc(lua_State *L)
      * and dropping the capability of a region still mapped is how its pages
      * come to be freed under a mapping (`net.c`, `conn_free`). */
     if (kosmos_share_unmap((unsigned long)(uintptr_t)h->ring,
-                           (TCP_RING_REGION + 4095u) / 4096u) == 0) {
+                           tcp_ring_pages(h->ring->bytes)) == 0) {
         (void)kosmos_cap_drop(h->cap);
     }
 

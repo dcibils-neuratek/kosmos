@@ -36,7 +36,9 @@ if not (verb == "get" or (verb == "send" and mb)) or not to or not port then
 end
 
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
-local conn, why, said = fs.connect("/Network", to, port)
+-- A ring of 4 MB, as a download asks (`download.c`): the window a round
+-- trip is the ring, and this is for measuring what the network can do.
+local conn, why, said = fs.connect("/Network", to, port, nil, 4 * 1024 * 1024)
 
 if not conn then
   print("netspeed: " .. tostring(said or why))

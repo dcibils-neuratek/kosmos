@@ -358,6 +358,17 @@ struct net_request {
 
     /* For NET_OP_CONNECT: `NET_CONNECT_AT_ONCE` below, or nothing. */
     uint32_t flags;
+
+    /*
+     * For NET_OP_CONNECT and NET_OP_LISTEN: **the ring each way, at
+     * least** - 0 for 64 KB, which is plenty across a room. The window
+     * this end offers is the ring, and a window a round trip is the most a
+     * connection can bring, so a download from far away asks for more:
+     * `download.c` asks for 4 MB, which is 40 MB/s from 100 ms away. The
+     * stack makes it a power of two and holds it to what the machine
+     * affords (`net.c`, `ring_bytes_for`); the ring says what it got.
+     */
+    uint32_t ring_bytes;
     struct net_addr to;
 
     /* For NET_OP_CONFIG: this machine's address, its mask, the router to

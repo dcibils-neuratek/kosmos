@@ -1785,5 +1785,38 @@ grow past 64 KB, is what reaches the Mac's speed.
 
 **And Qwen.** Diego suggested copying the model from the Mac over the
 network share instead of waiting for the download - 74 seconds. On the
-M700 it writes 18.3 words-pieces a second, four times phi-2, because it
+M700 it writes 18.3 word pieces a second, four times phi-2, because it
 is a quarter the size and the machine's memory is what sets the pace.
+
+## 9 November, evening - the allowance past 64 KB, and why Xavier talked nonsense
+
+**In short.** Downloads from far away are now eleven times faster on the
+M700. And Xavier's strange answers were not a bug: the model was too
+small for them, and the next size up answers properly once Xavier tells
+it what it is for.
+
+**What.** The allowance a receiver offers is written in sixteen bits, so
+it cannot say more than 64 KB - unless both ends agree, when they first
+connect, to multiply it (RFC 7323's window scale). Kosmos now offers that,
+and gives a connection that asks for it a larger buffer; the Network Kit's
+downloads ask for 4 MB. Testing it needed a server of our own, because
+QEMU's built-in network answers with a TCP that never multiplies - so
+`tools/farpeer.py` is a small TCP sender on the far side of QEMU, that
+holds every frame 50 ms like a distant server. It found a real bug: the
+first connection to a machine on the same network was refused, because
+the stack failed when it did not yet know that machine's hardware address
+instead of waiting for it.
+
+**Measured.** 9.2 MB/s from 50 ms away, where 64 KB allows 1.25. On the
+M700 from Hugging Face's CDN, 1.83 MB/s against 160 KB/s before; the Mac
+gets 4.9, so something else still holds the M700.
+
+**And Xavier.** Diego asked about the Big Bang in Spanish and got
+nonsense. The same question asked of llama.cpp, the program the kit is
+tested against, gives the same nonsense: a model of half a billion
+numbers does not know enough. Qwen2.5 1.5B answers it properly - but told
+only "you are the assistant in Kosmos" it refused anything not about
+computers. Agreed next: the kit reads the 1.5B (its output matrix is in a
+format the kit did not read, Q6_K), the preamble says Xavier answers
+anything, and words are drawn rather than always the likeliest, so an
+answer does not go round in circles.

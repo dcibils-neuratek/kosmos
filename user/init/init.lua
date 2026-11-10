@@ -1551,13 +1551,15 @@ local function new_namespace()
   -- number to guess and no table to index.
   --
   -- `at_once`: back while it is still opening, for a program opening
-  -- several (`netproto.h`, `NET_CONNECT_AT_ONCE`).
-  function ns.connect(path, to, port, at_once)
+  -- several (`netproto.h`, `NET_CONNECT_AT_ONCE`). `ring_bytes`: a ring
+  -- each way of at least that, for bringing much from far away - the
+  -- window a round trip is the ring (`netproto.h`, `ring_bytes`).
+  function ns.connect(path, to, port, at_once, ring_bytes)
     local net, capability, why = net_at(path or "/Network")
 
     if not net then return nil, why end
 
-    return net.connect(capability, to, port, at_once)
+    return net.connect(capability, to, port, at_once, ring_bytes)
   end
 
   -- **A download into a region** (`download.c`, `docs/xavier.md`,

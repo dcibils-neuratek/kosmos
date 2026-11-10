@@ -30320,3 +30320,86 @@ penalise repeats. To the roadmap.
 64 MB read that stalled at a 64 KB window on 10 October, among them. Over
 the ten minutes by 68 s; the two new suites are about 70 s of a core
 between them, and the three gates of the day went 10:33, 10:47, 11:08.
+
+## 18.741 TCP step B: window scaling, a ring as large as a connection asks, and a SYN that waits for its neighbour
+
+**Asked** (Diego, 9 November: "do step B too, window scaling").
+
+**Built** (`user/servers/net.c`, `netproto.h`, `tcpring.h`):
+
+- **RFC 7323's window scale.** A SYN this end sends offers one - the
+  least shift that says the whole ring in sixteen bits - and a SYN-ACK
+  offers one only to a SYN that did; in force when both did, from the
+  segment after the SYNs, whose own windows are never scaled. Their
+  windows are read shifted by theirs (`peer_window`), ours written shifted
+  by ours (`window_field`), `advertised` kept in bytes.
+- **A ring each way of at least what the connection asks** (`ring_bytes`
+  in `NET_OP_CONNECT` and `NET_OP_LISTEN`; `net_client_connect_ring`;
+  `fs.connect`'s fifth argument): a power of two, 64 KB when nothing is
+  asked, at most a 256th of the machine's memory or 2^30. The Network
+  Kit's `download` asks for 4 MB, and `netspeed`.
+- **The ring's size is the stack's own copy.** Its `bytes` lives in
+  memory the program writes, and every index was taken modulo it and the
+  receive half found past it: a program writing a larger number there
+  would have had the stack write outside the region. Latent while every
+  ring was 64 KB; read nowhere in `net.c` now. A program lets its ring go
+  by the size it holds (`tcp_ring_pages`), not the default.
+- **A SYN that waits for its neighbour's ARP answer**: the first
+  connection to a machine on the same network was refused at once,
+  "nobody answered for that address", because `send_ip` asks ARP and
+  fails rather than queueing. Now it is held as a SYN made before the
+  machine has an address is, tried from the loop twenty times a second
+  until the answer lands, and ended as unreachable after the same backoff.
+  Behind QEMU's network the router is known from the lease, so nothing
+  had met it.
+
+**Why a peer of our own** (`tools/farpeer.py`): slirp, QEMU's user
+network, answers the guest's TCP with its own, which does not scale -
+its SYN-ACK carried no scale, and `x86-tcpfar` through it stayed at 0.9
+MB/s with shifts of 0 both ways. So `x86-tcpfar` is now a server on the
+far side of `-netdev dgram`, one Ethernet frame a datagram: it answers
+ARP, offers a scale of 7, sends 8 MB as the guest's window allows with
+no congestion window of its own, holds every frame it sends 50 ms, and
+sends again on three repeated acknowledgements or its timer.
+
+**Measured**: 8 MB from 50 ms away at **9.2 MB/s**, where a 64 KB window
+can bring 1.25; the guest offered a shift of 5 and said windows of up to
+1024 KB, its ring 1 MB (a 256th of the test machine). **Controls**: the
+same build offering no scale - fails, "offered None, the most it said
+65535 bytes", and slower than the bar; and before the SYN waited for its
+neighbour, the suite failed every time with "nobody answered for that
+address", the peer having received one ARP question and no SYN.
+
+**On the M700, against Hugging Face's CDN**: Qwen2.5 0.5B's Q8_0, 644 MB,
+held to its SHA-256 - the windows shifted 7 here and 13 there, a ring of
+4 MB, 4035 KB offered; 579 MB of it in 317 s, **1.83 MB/s, eleven times
+the 160 KB/s of 18.737**. The first try ended at 65 MB with "the
+connection closed in the middle of the reply" and did not again; the Mac
+takes the same file at 4.9 MB/s, so what holds the M700 now is still to
+be found. And the Mac's own connections to it, SMB and telnet, scaled:
+shifts of 1 here and 6 there.
+
+**And three things the gate found, none of them step B's** (9 November):
+
+- **`x86-maps` failed under load, before step B as after it**: with ten
+  busy loops on the Mac, the last commit's network code failed "out at
+  10, below the region's zooms, nothing was drawn from the network" twice
+  in two, as the new code did. The test pressed minus eight times from
+  wherever the card left the map and took the result as zoom 10; under
+  load the presses landed on 9 and 8, so zoom 10's tiles were never
+  waited for, and the tile the source has none of was never asked. It
+  now presses once at a time, waits for a frame at another zoom after
+  each, and stops at 10: twice in two under the same load, and idle.
+- **`x86-desktops` once**, "the loader's window was never drawn", under
+  the gate's load; 15 of 15 alone. To be made to wait for the thing, with
+  the others in the roadmap.
+- **The gate was 11:14 against its ten minutes**, and had been 11:08
+  before step B. Two of the host suite's four minutes were `test_llm` on
+  phi-2, and most of those were its reference - the same tokens read from
+  nothing - read a token at a time. That reference now reads in batches,
+  which `check_batch` holds to a token at a time to the bit (and still
+  reads that way itself); phi-2 Q4_0's test 97 s to 74. **Control**: the
+  reference with its last token dropped - 8 of 91 fail, every held and
+  passage check that compares to it. And the real models' checks are a
+  suite of their own, `host-llm`, beside `host`: **111 suites in 10:38**,
+  all passing - 38 seconds still over, and the next thing on the gate.

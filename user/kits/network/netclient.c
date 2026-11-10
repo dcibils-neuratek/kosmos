@@ -56,6 +56,12 @@ static int ask(const struct net_request *req, struct net_reply *rep, struct mess
 
 uint32_t net_client_connect(struct net_conn *c, const uint8_t address[4], uint16_t port)
 {
+    return net_client_connect_ring(c, address, port, 0);
+}
+
+uint32_t net_client_connect_ring(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                                 uint32_t ring_bytes)
+{
     struct net_request req;
     struct net_reply rep;
     struct message out;
@@ -68,6 +74,7 @@ uint32_t net_client_connect(struct net_conn *c, const uint8_t address[4], uint16
     req.op    = NET_OP_CONNECT;
     req.flags = NET_CONNECT_AT_ONCE;
     req.port  = port;
+    req.ring_bytes = ring_bytes;
     memcpy(req.to.byte, address, 4);
 
     if (!ask(&req, &rep, &out)) {
@@ -207,7 +214,7 @@ void net_client_close(struct net_conn *c)
         /* Unmapped first and the capability after, as the Lua door lets a
          * ring go (`net_kosmos.c`, `l_gc`). */
         if (kosmos_share_unmap((unsigned long)(uintptr_t)c->ring,
-                               (TCP_RING_REGION + 4095u) / 4096u) == 0) {
+                               tcp_ring_pages(c->ring->bytes)) == 0) {
             (void)kosmos_cap_drop(c->region);
         }
     }

@@ -156,4 +156,16 @@ static inline uint32_t tcp_ring_acquire(const volatile uint32_t *index)
 /* How big a region one connection needs. */
 #define TCP_RING_REGION  (TCP_RING_DATA + 2u * TCP_RING_BYTES)
 
+/*
+ * **The pages a ring takes, by its size** (9 November 2026): a connection
+ * may ask for a ring larger than `TCP_RING_BYTES` (`netproto.h`,
+ * `ring_bytes`), so it is let go of by what it is rather than by the
+ * default. A program reads the size from the ring, which the stack wrote;
+ * the stack keeps its own.
+ */
+static inline unsigned long tcp_ring_pages(uint32_t bytes)
+{
+    return ((unsigned long)TCP_RING_DATA + 2ul * bytes + 4095u) / 4096u;
+}
+
 #endif /* KOSMOS_TCPRING_H */

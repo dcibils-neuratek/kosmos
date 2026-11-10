@@ -1,0 +1,404 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How the Answer Forms</title>
+<!--
+  The LLM Monitor's Story page, drawn before it is built (Diego, 9 November
+  2026: "while the llm monitor is nice with the grid animation, i dont
+  really understand whats happening from a user standpoint", "where are the
+  neural networks and how can i see whats going on inside the llm to output
+  the words?"). Playable: one token followed from the text, up the tower of
+  layers, to the word chosen - what each layer looked back at, in words, and
+  what the model would say if it had to answer at that layer (the logit
+  lens). The shapes are Qwen2.5 0.5B's; the values are examples.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6; --card: #ffffff; --accent: #2f6bdc;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --a-win: #1f2430; --a-raised: #262c39; --a-sunk: #171a22; --a-line: #333b4a; --a-ink: #e9ecf1;
+  --a-dim: #9aa3b2; --a-faint: #6b7486; --a-accent: #3b82f6;
+  --x: #8b7cf6; --x-soft: #2c2850; --look: #4fb6c9; --look-soft: #193a42;
+  --recall: #f0b429; --recall-soft: #3a2f12; --sure: #3fb950;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+h2 { font-family: var(--display); font-size: 20px; margin: 40px 0 10px; padding-top: 20px; border-top: 1px solid var(--rule); text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 78ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0 22px; max-width: 900px; }
+p, ul, ol { max-width: 86ch; }
+code { font-family: var(--mono); font-size: 13px; }
+table.plain { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 980px; font-size: 14px; }
+table.plain td, table.plain th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.plain th { font-family: var(--display); font-weight: 600; }
+.scroller { overflow-x: auto; padding-bottom: 6px; }
+
+/* The window, in Astra's dark look, as the Inside page has it. */
+.win { width: 1140px; background: var(--a-win); color: var(--a-ink); border: 1px solid var(--a-line); border-radius: 12px;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: var(--a-raised); border-bottom: 1px solid var(--a-line); }
+.head .t { font-weight: 600; }
+.head .crumb { color: var(--a-dim); }
+.tabs { display: flex; gap: 2px; margin-left: 18px; }
+.tab { padding: 3px 12px; border-radius: 6px; color: var(--a-dim); }
+.tab.on { background: var(--a-sunk); color: var(--a-ink); }
+.sp { flex: 1; }
+.btn { font: inherit; color: var(--a-ink); background: var(--a-sunk); border: 1px solid var(--a-line); border-radius: 6px; padding: 3px 11px; cursor: pointer; }
+.btn:hover { border-color: var(--a-accent); }
+.btn:focus-visible, .row:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 1px; }
+.btn.on { background: var(--a-accent); border-color: var(--a-accent); }
+label.chk { color: var(--a-dim); display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+/* The five steps of making one word, the one under way lit. */
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--a-line); }
+.stp { padding: 9px 14px; color: var(--a-faint); border-right: 1px solid var(--a-line); }
+.stp:last-child { border-right: 0; }
+.stp b { display: block; font-family: var(--display); font-weight: 600; font-size: 14px; color: var(--a-dim); }
+.stp.on { background: var(--a-sunk); color: var(--a-dim); box-shadow: inset 0 -2px 0 var(--x); }
+.stp.on b { color: var(--a-ink); }
+
+.body { display: grid; grid-template-columns: 1fr 340px; }
+.tower { padding: 12px 16px 10px; border-right: 1px solid var(--a-line); }
+.side { padding: 12px 16px; display: flex; flex-direction: column; gap: 16px; }
+.lbl { color: var(--a-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+
+/* A layer: its number, where it looked, what it recalled, and its guess. */
+.cols, .row { display: grid; grid-template-columns: 40px 210px 120px 1fr; gap: 10px; align-items: center; }
+.cols { color: var(--a-faint); font-size: 11px; padding: 0 6px 4px; }
+.row { padding: 1px 6px; border-radius: 5px; cursor: pointer; height: 21px; border: 1px solid transparent; }
+.row:hover { background: #232937; }
+.row.sel { border-color: var(--a-line); background: #232937; }
+.row.now { border-color: var(--x); background: var(--x-soft); }
+.row.todo { opacity: .25; }
+.row .n { font-family: var(--mono); color: var(--a-faint); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.row .look { font-family: var(--mono); font-size: 11px; color: var(--look); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.row .look i { font-style: normal; color: var(--a-faint); }
+.row .rec { height: 7px; background: var(--a-sunk); border-radius: 4px; overflow: hidden; }
+.row .rec i { display: block; height: 100%; background: var(--recall); border-radius: 4px; }
+.row .guess { display: grid; grid-template-columns: 96px 1fr 40px; gap: 8px; align-items: center; font-family: var(--mono); font-size: 11px; }
+.row .guess .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--a-dim); }
+.row .guess .w.hit { color: var(--sure); }
+.row .guess .bar { height: 7px; background: var(--a-sunk); border-radius: 4px; overflow: hidden; }
+.row .guess .bar i { display: block; height: 100%; background: var(--a-dim); border-radius: 4px; }
+.row .guess .bar i.hit { background: var(--sure); }
+.row .guess .p { text-align: right; color: var(--a-faint); font-variant-numeric: tabular-nums; }
+.base { margin-top: 8px; padding: 6px 6px 0; border-top: 1px dashed var(--a-line); color: var(--a-faint); font-size: 12px; }
+
+/* The text along the bottom, with the arcs of the chosen layer. */
+.strip { position: relative; padding: 0 16px 14px; border-top: 1px solid var(--a-line); }
+.strip svg { display: block; width: 100%; height: 150px; }
+
+.say { background: var(--a-sunk); border: 1px solid var(--a-line); border-radius: 8px; padding: 10px 12px; color: var(--a-dim); min-height: 150px; }
+.say b { color: var(--a-ink); font-weight: 500; }
+.say .w { font-family: var(--mono); color: var(--a-ink); background: #2a3040; padding: 0 3px; border-radius: 3px; white-space: pre; }
+.cand { display: grid; grid-template-columns: 110px 1fr 46px; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; margin: 3px 0; }
+.cand .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.cand .bar { height: 8px; background: var(--a-sunk); border-radius: 4px; overflow: hidden; }
+.cand .bar i { display: block; height: 100%; background: var(--a-dim); border-radius: 4px; }
+.cand.pick .w { color: var(--x); }
+.cand.pick .bar i { background: var(--x); }
+.cand .p { text-align: right; color: var(--a-dim); font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 12px; color: var(--a-dim); }
+.kv b { color: var(--a-ink); font-weight: 500; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.foot { display: flex; gap: 14px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--a-line); color: var(--a-faint); font-size: 12px; }
+.foot .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>How the answer forms</h1>
+  <p class="sub">A third page for the LLM Monitor, drawn before any of it is built. It follows <b>one word</b> of Xavier's answer from the text, up Qwen2.5's 24 layers, to the word chosen. Each layer shows which earlier words it looked back at, how much it recalled, and what the model would answer if it had to stop there. Press <b>Play</b>, or click any layer to see where it looked. The shapes are Qwen2.5 0.5B's; the values are examples.</p>
+  <div class="q"><b>Diego, 9 November 2026:</b> "while the llm monitor is nice with the grid animation, i dont really understand whats happening from a user standpoint", "where are the neural networks and how can i see whats going on inside the llm to output the words?"</div>
+
+  <div class="scroller">
+  <div class="win">
+    <div class="head">
+      <span class="t">LLM Monitor</span><span class="crumb">&middot; Qwen2.5 0.5B Q4_0 &middot; 24 layers, 896 numbers a word</span>
+      <div class="tabs"><span class="tab">Overview</span><span class="tab">Inside</span><span class="tab on">Story</span></div>
+      <span class="sp"></span>
+      <label class="chk"><input type="checkbox" id="sink"> show the resting place</label>
+      <button class="btn" id="step" type="button">Step</button>
+      <button class="btn on" id="play" type="button">Pause</button>
+      <button class="btn" id="next" type="button">Next word</button>
+    </div>
+    <div class="steps" id="steps">
+      <div class="stp"><b>1 &middot; Words to tokens</b>the text cut into pieces it knows</div>
+      <div class="stp"><b>2 &middot; Tokens to numbers</b>each piece, 896 numbers: its meaning</div>
+      <div class="stp"><b>3 &middot; Up the tower</b>24 layers: look back, recall</div>
+      <div class="stp"><b>4 &middot; Score every word</b>151,936 words, each a score</div>
+      <div class="stp"><b>5 &middot; Pick one</b>the likeliest, written, and again</div>
+    </div>
+    <div class="body">
+      <div class="tower">
+        <div class="lbl">The tower, the word climbing from the bottom</div>
+        <div class="cols"><span style="text-align:right">layer</span><span>looked back at</span><span>recalled</span><span>its guess so far</span></div>
+        <div id="rows"></div>
+        <div class="base" id="base"></div>
+      </div>
+      <div class="side">
+        <div>
+          <div class="lbl">What is happening</div>
+          <div class="say" id="say"></div>
+        </div>
+        <div>
+          <div class="lbl">The words it could write next</div>
+          <div id="cands"></div>
+        </div>
+        <div>
+          <div class="lbl">This word</div>
+          <div class="kv" id="kv"></div>
+        </div>
+      </div>
+    </div>
+    <div class="strip">
+      <div class="lbl" style="padding-top:10px">The text, and where the selected layer looked back from the word being made</div>
+      <svg id="text" role="img" aria-label="The tokens of the conversation, with arcs from the word being made to the words a layer looked at"></svg>
+    </div>
+    <div class="foot">
+      <span><span class="sw" style="background:var(--look)"></span>looked back at: the earlier word this layer's heads weighed most</span>
+      <span><span class="sw" style="background:var(--recall)"></span>recalled: how much of its 4,864 neurons fired</span>
+      <span><span class="sw" style="background:var(--sure)"></span>the guess, once it is the word finally chosen</span>
+    </div>
+  </div>
+  </div>
+
+  <h2>What a person reads off it</h2>
+  <ul>
+    <li><b>The network is the tower.</b> Every word of an answer is made by sending one list of 896 numbers up 24 layers, the same 24 every time. Nothing else happens. What the model knows is in those layers' weights, the 428 MB file.</li>
+    <li><b>Looking back is where the context comes in.</b> A layer's 14 heads weigh the earlier words. The column says which one each layer weighed most, in words, and the arcs show all of them for the layer selected. "France" and "capital" lighting up in the middle layers is the model working out what the question is about.</li>
+    <li><b>Recalling is where the facts come in.</b> The neurons of a layer turn what attention gathered into what follows from it. Research on models like this finds facts such as "France → Paris" mostly in the middle layers' neurons, and the page marks where the guess changes.</li>
+    <li><b>The guess column is the answer forming.</b> Read as if each layer were the last, the bottom layers say nothing useful (" the", " a"), the middle ones a kind of answer (" a city", " located"), and " Paris" arrives around two thirds of the way up and firms. This is the part that answers "how does it output the words".</li>
+    <li><b>The resting place is hidden.</b> Most heads put most of their attention on the first token of the text when there is nothing better to look at. It is a habit of the model, it carries no meaning, and it is why the Inside page's grid is bright everywhere. Here it is left out unless asked for.</li>
+  </ul>
+
+  <h2>What it is made of</h2>
+  <table class="plain">
+    <tr><th>Piece</th><th>Supplied by</th><th>New</th></tr>
+    <tr><td>Where each layer looked, in words</td><td>The LLM Kit's passage record (<code>struct llm_passage</code>) already keeps each head's strongest look. Adds: per layer, the three positions weighed most across its heads, the first token left out and its share kept apart</td><td>a few fields</td></tr>
+    <tr><td>How much each layer recalled</td><td>Already recorded: the neurons whose input was above nought</td><td>nothing</td></tr>
+    <tr><td>Each layer's guess (the logit lens)</td><td>The LLM Kit (<code>llm_core.c</code>): each layer's output taken through the final normalisation and the output matrix, which in Qwen is the input one shared. The top one and its odds, per layer</td><td>the one cost, below</td></tr>
+    <tr><td>The words' text</td><td>The tokenizer the kit already has</td><td>nothing</td></tr>
+    <tr><td>Carried to the window</td><td>The passage ring the Inside page reads, in a region, read on the window's own clock</td><td>a larger record</td></tr>
+    <tr><td>The page</td><td><code>llmmon.lua</code>'s third page, drawn with the UI kit; the arcs with <code>gfx</code></td><td>Lua, a page</td></tr>
+  </table>
+
+  <h2>For Diego to decide</h2>
+  <ol>
+    <li><b>The guess at every layer costs as much as a word.</b> It means scoring all 151,936 words 24 times, once per layer, which takes about as many multiplications as making the word itself. Done as one pass over the output matrix for all 24 layers, it reads the matrix once rather than 24 times. Even so, while this page is open Xavier would write at somewhere near half speed, about 9 words a second on the M700 instead of 18. That is to be measured. The choices:
+      <ul>
+        <li><b>a.</b> Compute it only while the Story page is open, and say so on the page ("the answer is slower while you watch").</li>
+        <li><b>b.</b> Compute it for a word you click, after the fact. The answer runs at full speed, and the kit keeps each layer's 896 numbers for the last 64 words, 5.5 MB, to compute from.</li>
+        <li><b>Chosen: b</b> (Diego, 9 November: "go with b for the mockup").</li>
+      </ul>
+    </li>
+    <li><b>Where it sits.</b> A third tab, Story, beside Overview and Inside (as drawn), or in place of the Inside grid. The grid shows what the heads do; this shows what they do it to. Chosen: a third tab, as drawn.</li>
+  </ol>
+</main>
+
+<script>
+"use strict";
+// The conversation, as Qwen2.5 cuts it. The first token is the resting place.
+const PROMPT = ["What", " is", " the", " capital", " of", " France", "?", "\n", "The", " capital", " of", " France", " is"];
+
+// Two words of the answer, each with what every layer did. look: [position, share] of
+// the earlier words a layer weighed most (the resting place kept apart as sink).
+// rec: the share of its neurons that fired. guess: [word, odds] if it stopped there.
+const WORDS = [
+  {
+    word: " Paris", sure: 0.91,
+    cands: [[" Paris", 0.91], [" located", 0.031], [" the", 0.018], [" Lyon", 0.006], [" a", 0.005]],
+    layers: [
+      { look: [[12, .62]], sink: .30, rec: .18, guess: [" the", .04] },
+      { look: [[12, .48], [11, .20]], sink: .28, rec: .16, guess: [" the", .05] },
+      { look: [[11, .35], [12, .30]], sink: .40, rec: .14, guess: [" a", .04] },
+      { look: [[10, .30], [11, .28]], sink: .38, rec: .13, guess: [" a", .05] },
+      { look: [[9, .33], [8, .22]], sink: .41, rec: .12, guess: [" not", .03] },
+      { look: [[11, .41], [5, .19]], sink: .36, rec: .11, guess: [" also", .04] },
+      { look: [[11, .46], [9, .21]], sink: .30, rec: .12, guess: [" located", .06] },
+      { look: [[9, .44], [3, .20]], sink: .33, rec: .13, guess: [" located", .09] },
+      { look: [[11, .51], [9, .23]], sink: .22, rec: .15, guess: [" called", .08] },
+      { look: [[5, .38], [11, .36]], sink: .24, rec: .16, guess: [" known", .10] },
+      { look: [[11, .58], [3, .14]], sink: .25, rec: .19, guess: [" a", .12] },
+      { look: [[11, .55], [5, .20]], sink: .21, rec: .22, guess: [" the", .11] },
+      { look: [[11, .61], [9, .18]], sink: .19, rec: .26, guess: [" city", .14], note: "the guess becomes a kind of answer: a city" },
+      { look: [[11, .66], [5, .16]], sink: .16, rec: .29, guess: [" city", .17] },
+      { look: [[11, .70], [9, .12]], sink: .15, rec: .31, guess: [" French", .16] },
+      { look: [[11, .64], [5, .22]], sink: .12, rec: .34, guess: [" Paris", .21], note: " Paris arrives: the neurons here recall what France's capital is" },
+      { look: [[11, .58], [9, .25]], sink: .13, rec: .33, guess: [" Paris", .38] },
+      { look: [[9, .44], [11, .40]], sink: .14, rec: .30, guess: [" Paris", .55] },
+      { look: [[11, .52], [12, .20]], sink: .18, rec: .27, guess: [" Paris", .66] },
+      { look: [[12, .46], [11, .30]], sink: .20, rec: .24, guess: [" Paris", .74] },
+      { look: [[11, .41], [12, .33]], sink: .22, rec: .21, guess: [" Paris", .80] },
+      { look: [[12, .52], [11, .21]], sink: .24, rec: .20, guess: [" Paris", .85] },
+      { look: [[12, .58], [8, .14]], sink: .25, rec: .24, guess: [" Paris", .89] },
+      { look: [[12, .61], [11, .16]], sink: .21, rec: .28, guess: [" Paris", .91], note: "the last layer: what it guesses is what is written" },
+    ],
+  },
+  {
+    word: ".", sure: 0.83,
+    cands: [[".", 0.83], [",", 0.09], [" and", 0.03], [" is", 0.012], ["!", 0.008]],
+    layers: [],
+  },
+];
+
+// The second word's tower, by a rule: punctuation is decided early and simply.
+(function () {
+  const g = [[" ,", .05], [" and", .05], [",", .08], [",", .10], [".", .12], [".", .18], [",", .20], [".", .26],
+             [".", .31], [".", .38], [".", .42], [".", .47], [".", .52], [".", .58], [".", .61], [".", .64],
+             [".", .68], [".", .71], [".", .74], [".", .77], [".", .79], [".", .81], [".", .82], [".", .83]];
+  for (let i = 0; i < 24; i++) {
+    const near = 13, back = i < 8 ? 12 : i < 16 ? 11 : 13;
+    WORDS[1].layers.push({ look: [[i % 3 ? back : near, .45 + (i % 5) * .04], [5, .12 + (i % 4) * .03]],
+                           sink: .25 + (i % 3) * .05, rec: .10 + (i % 7) * .015, guess: g[i] });
+  }
+  WORDS[1].layers[4].note = "the model knows early that the sentence is complete";
+})();
+
+const STAGES = 5;         // 0 tokens, 1 numbers, 2 the tower, 3 scores, 4 pick
+let wordAt = 0, stage = 0, layer = -1, sel = null, playing = true, timer = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "↵");
+const pct = p => p >= 0.1 ? Math.round(p * 100) + "%" : (p * 100).toFixed(1) + "%";
+const tokens = () => PROMPT.concat(WORDS.slice(0, wordAt).map(w => w.word));
+const W = () => WORDS[wordAt];
+
+function rows() {
+  const w = W(), out = [];
+  for (let i = 23; i >= 0; i--) {
+    const L = w.layers[i], toks = tokens();
+    const climbed = stage > 2 || (stage === 2 && i <= layer);
+    const look = L.look.map(([p, s]) => esc(toks[p]) + " <i>" + Math.round(s * 100) + "%</i>").join("  ");
+    const hit = L.guess[0] === w.word;
+    const cls = ["row"];
+    if (!climbed) cls.push("todo");
+    if (stage === 2 && i === layer) cls.push("now");
+    if (sel === i) cls.push("sel");
+    out.push(`<div class="${cls.join(" ")}" data-l="${i}" tabindex="0" role="button" aria-label="Layer ${i + 1}">
+      <span class="n">${i + 1}</span>
+      <span class="look">${look}</span>
+      <span class="rec"><i style="width:${Math.round(L.rec / .4 * 100)}%"></i></span>
+      <span class="guess"><span class="w${hit ? " hit" : ""}">${esc(L.guess[0])}</span>
+        <span class="bar"><i class="${hit ? "hit" : ""}" style="width:${Math.round(L.guess[1] * 100)}%"></i></span>
+        <span class="p">${pct(L.guess[1])}</span></span></div>`);
+  }
+  $("rows").innerHTML = out.join("");
+  $("base").textContent = stage >= 1
+    ? "In at the bottom: the last token, “" + tokens()[tokens().length - 1].trim() + "”, as 896 numbers, which every layer adds to as it passes up."
+    : "In at the bottom: nothing yet.";
+  for (const r of document.querySelectorAll(".row")) {
+    const pick = () => { sel = +r.dataset.l; pause(); draw(); };
+    r.onclick = pick;
+    r.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+  }
+}
+
+function say() {
+  const w = W(), toks = tokens(), last = toks[toks.length - 1];
+  const show = sel !== null ? sel : layer;
+  let s;
+  if (stage === 0) s = `<b>Words to tokens.</b> The text so far is cut into ${toks.length} pieces the model has a number for. The last one, <span class="w">${esc(last)}</span>, is where the next word is made.`;
+  else if (stage === 1) s = `<b>Tokens to numbers.</b> <span class="w">${esc(last)}</span> becomes a list of 896 numbers, looked up in the model's table of 151,936. Its meaning, as a point in 896 directions. This list is what climbs the tower.`;
+  else if (stage === 2 || sel !== null) {
+    const L = w.layers[show];
+    const [p, sh] = L.look[0];
+    s = `<b>Layer ${show + 1} of 24.</b> Its 14 heads looked back mostly at <span class="w">${esc(toks[p])}</span> (${Math.round(sh * 100)}%)`
+      + (document.getElementById("sink").checked ? `, and ${Math.round(L.sink * 100)}% rested on the first token` : "")
+      + `. Then ${Math.round(L.rec * 4864)} of its 4,864 neurons fired, recalling what follows from it. If it had to answer here, it would say <span class="w">${esc(L.guess[0])}</span>, ${pct(L.guess[1])} sure.`
+      + (L.note ? `<br><br><b>${esc(L.note.trim())}.</b>` : "");
+  } else if (stage === 3) s = `<b>Score every word.</b> At the top, the 896 numbers are compared with every word the model knows: 151,936 scores, turned into odds. Most are near nothing.`;
+  else s = `<b>Pick one.</b> <span class="w">${esc(w.word)}</span> had ${pct(w.sure)} of the odds and is written. It joins the text and the whole climb starts again for the word after it.`;
+  $("say").innerHTML = s;
+}
+
+function cands() {
+  const w = W();
+  if (stage < 3) { $("cands").innerHTML = `<div style="color:var(--a-faint);font-size:12px">Known when the word reaches the top.</div>`; return; }
+  $("cands").innerHTML = w.cands.map(([t, p], i) =>
+    `<div class="cand${i === 0 && stage === 4 ? " pick" : ""}"><span class="w">${esc(t)}</span><span class="bar"><i style="width:${Math.round(p * 100)}%"></i></span><span class="p">${pct(p)}</span></div>`).join("");
+}
+
+function kv() {
+  const first = W().layers.findIndex((L, i) => W().layers.slice(i).every(M => M.guess[0] === W().word));
+  $("kv").innerHTML = `<span>word of the answer</span><b>${wordAt + 1}</b>
+    <span>its guess settled at layer</span><b>${first + 1} of 24</b>
+    <span>multiplications</span><b>494 million</b>
+    <span>time, on the M700</span><b>55 ms</b>`;
+}
+
+// The text in one line, the arcs from the word being made to where a layer looked.
+function text() {
+  const svg = $("text"), toks = tokens().concat(stage === 4 ? [W().word] : []);
+  const cw = 7.4, gap = 6, base = 128, shown = sel !== null ? sel : (stage === 2 ? layer : -1);
+  const sink = $("sink").checked;
+  let x = 16, xs = [];
+  for (const t of toks) { const w = Math.max(14, esc(t).length * cw + 10); xs.push([x, w]); x += w + gap; }
+  const nx = x, nw = 30;
+  let s = "";
+  if (shown >= 0) {
+    const L = W().layers[shown], from = nx + nw / 2;
+    const marks = L.look.concat(sink ? [[0, L.sink]] : []);
+    for (const [p, share] of marks) {
+      const to = xs[p][0] + xs[p][1] / 2, h = Math.min(100, 24 + Math.abs(from - to) * 0.12);
+      const colour = p === 0 ? "var(--a-faint)" : "var(--look)";
+      s += `<path d="M${from} ${base - 18} C ${from} ${base - 18 - h}, ${to} ${base - 18 - h}, ${to} ${base - 18}" fill="none" stroke="${colour}" stroke-width="${1 + share * 6}" stroke-opacity="${p === 0 ? .5 : .85}" ${p === 0 ? 'stroke-dasharray="3 3"' : ""}/>`;
+      s += `<text x="${(from + to) / 2}" y="${base - 22 - h * .75}" fill="${colour}" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="middle">${Math.round(share * 100)}%</text>`;
+    }
+  }
+  toks.forEach((t, i) => {
+    const [x0, w] = xs[i], ans = i >= PROMPT.length;
+    s += `<rect x="${x0}" y="${base - 16}" width="${w}" height="22" rx="4" fill="${ans ? "#241f40" : "var(--a-sunk)"}" stroke="${i === toks.length - 1 && stage < 4 ? "var(--look)" : "none"}"/>`;
+    s += `<text x="${x0 + w / 2}" y="${base}" fill="${ans ? "#cfc8fb" : (i === 0 ? "var(--a-faint)" : "var(--a-dim)")}" font-family="IBM Plex Mono, monospace" font-size="12" text-anchor="middle" xml:space="preserve">${esc(t)}</text>`;
+  });
+  if (stage < 4) {
+    s += `<rect x="${nx}" y="${base - 16}" width="${nw}" height="22" rx="4" fill="var(--x-soft)" stroke="var(--x)"/>`;
+    s += `<text x="${nx + nw / 2}" y="${base}" fill="var(--x)" font-family="IBM Plex Mono, monospace" font-size="12" text-anchor="middle">?</text>`;
+  }
+  s += `<text x="16" y="${base + 20}" fill="var(--a-faint)" font-size="11" font-family="IBM Plex Sans, sans-serif">${sink ? "dashed: the first token, where heads rest when nothing else matters" : "the first token, where most heads rest, is left out; tick “show the resting place” to see it"}</text>`;
+  svg.setAttribute("viewBox", `0 0 1106 150`);
+  svg.innerHTML = s;
+}
+
+function draw() {
+  document.querySelectorAll(".stp").forEach((e, i) => e.classList.toggle("on", i === stage));
+  rows(); say(); cands(); kv(); text();
+}
+
+function step() {
+  sel = null;
+  if (stage === 2 && layer < 23) layer++;
+  else if (stage === 4) { wordAt = (wordAt + 1) % WORDS.length; stage = 0; layer = -1; }
+  else { stage++; if (stage === 2) layer = 0; }
+  draw();
+}
+function tick() { step(); timer = setTimeout(tick, stage === 2 ? 420 : 1700); }
+function pause() { playing = false; clearTimeout(timer); $("play").textContent = "Play"; $("play").classList.remove("on"); }
+function play() { playing = true; sel = null; $("play").textContent = "Pause"; $("play").classList.add("on"); clearTimeout(timer); timer = setTimeout(tick, 900); }
+
+$("play").onclick = () => playing ? pause() : play();
+$("step").onclick = () => { pause(); step(); };
+$("next").onclick = () => { pause(); sel = null; wordAt = (wordAt + 1) % WORDS.length; stage = 0; layer = -1; draw(); };
+$("sink").onchange = draw;
+
+if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { stage = 2; layer = 15; sel = 15; draw(); pause(); }
+else { stage = 2; layer = 15; draw(); play(); }
+</script>
+</body>
+</html>
