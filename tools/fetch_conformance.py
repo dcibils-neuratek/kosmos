@@ -4,6 +4,7 @@
 
     fetch_conformance.py h264      tools/h264_conformance.txt
     fetch_conformance.py aac       tools/aac_conformance.txt
+    fetch_conformance.py mp3       tools/mp3_conformance.txt
     fetch_conformance.py fbx       tools/fbx_conformance.txt
 
 Each manifest lists files and their sums. A file already in
@@ -33,6 +34,7 @@ UFBX = ("https://raw.githubusercontent.com/ufbx/ufbx/"
 KINDS = {
     "h264": ("tools/h264_conformance.txt", SERVER + "h264-conformance/"),
     "aac": ("tools/aac_conformance.txt", SERVER + "aac/"),
+    "mp3": ("tools/mp3_conformance.txt", SERVER + "mp3-conformance/"),
     "fbx": ("tools/fbx_conformance.txt", UFBX),
 }
 DIGEST = re.compile(r"^[0-9a-f]{64}$")

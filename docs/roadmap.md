@@ -6558,7 +6558,14 @@ not static**, since a static one is in every process.
    **AGREED on 10 November** (Diego: "yes, build the C playback thread
    for music and video"). Designed first, in `docs/playback.md` with its
    diagram, then built: the thread and its ring, Music on it, Video on it,
-   `x86-film` and `x86-sound` held under the gate's load.
+   `x86-film` and `x86-sound` held under the gate's load. **Step 1 built
+   in 0.11.359** (18.754), **step 2 in 0.11.360** (18.755).
+   **And found on the way, not of sound** (18.755): `arm-media` fails 3 of
+   46, all a cover picture inside an MP3 not reaching the screen ("the
+   cover's first quarter covers 0 of the 1024 pixels") - the same three on
+   0.11.359 with step 2 set aside, so older than it; ARM's suites have been
+   out of the gate since 8 October. To find when it began and why, when
+   ARM is tested again.
 
    **And one not of sound**, in the gate for SVG (6zz j5): `x86-cafesa3d`
    scrubbing Rotation Z turned it 16 degrees where 20 were asked - four of

@@ -30781,3 +30781,48 @@ reference check and four of the pieces checks fail; `consumed` allowed to
 take the frame a piece still needs - 36 of 2,464 cases differ.
 
 `x86-film` 13 of 13 and `x86-sound` on it; `host` 39 s.
+
+## 18.755 The Playback Kit's core, on the Mac
+
+`docs/playback.md`, step 2. `user/kits/playback/playback_core.c`: the input
+ring - records of compressed frames, one writer and one reader, never split
+by the ring's end (a skip record there, the record at the front), each
+stamped with a generation so a seek leaves the old place's records to be
+passed over - and the pass: a record into the core (an AAC frame decoded at
+once; an MP3's or a WAV's piece of the file into a carry until it makes
+frames), what is decoded converted by `pcmconvert.h`, and each whole period
+copied into the stream's `audio_ring` slot and published; the last padded
+with silence. Nothing allocated after `pb_open`. minimp3's implementation is
+now compiled once, in `user/kits/mp3/minimp3.c`, which the MP3 Kit and this
+both link.
+
+**An MP3 needs its window.** Fed 4 KB at a time, minimp3 lost everything
+from its third frame: until it has found a first frame it checks the
+headers of the frames after it, and given part of the stream it skips what
+it cannot check yet as junk. The MP3 Kit always handed it a 32 KB window. The
+core decodes an MP3 only with 16 KB waiting (`PB_MP3_AHEAD`), or at the end.
+
+`tools/test_playback.c`, in `host`, new: 22 checks, each kind held to the
+plain way - the whole file decoded at once and converted at once - to the
+sample: a 16-bit stereo WAV at 44.1 kHz in ragged records through an 8 KB
+input ring (what went in, out); an 8-bit mono WAV at 11.025 kHz; ISO's
+1 kHz MP3 sine (`sin1k0db.bit`, FFmpeg's FATE suite, `tools/mp3_conformance.txt`,
+fetched and summed by `fetch_conformance.py mp3`) in 4 KB pieces; `al05_44`
+a frame a record; a seek to frame 60 with the old place's records left in the
+ring, held to frame 60 onwards from a fresh decoder; nothing to play
+(nothing written, a dry pass, not finished); a full ring (four into four,
+then one when the server takes two); and a guard after the input ring
+intact. **Controls**: the generation filter off - the seek's check fails
+(575,488 samples where 532,480 were wanted, wrong from the first);
+`PB_MP3_AHEAD` off - the MP3 fails at sample 4,608; no skip at the ring's
+end - only the guard sees it, the sound reading back right because the
+reader follows the writer into the same bytes. The x86-64 and AArch64
+images build with it.
+
+`make test ONLY=host,x86-film,x86-sound,arm-media`: `host`, `x86-film`
+and `x86-sound` pass. `arm-media` fails 3 of 46, all on a cover picture
+inside an MP3 reaching the screen ("the cover's first quarter covers 0 of
+the 1024 pixels"). **Not this change**: the same suite on 0.11.359 with
+these files set aside fails the same three checks, word for word. ARM's
+suites have been out of the gate since 8 October, so when it began is not
+known; it is noted in `roadmap.md` 6zw.

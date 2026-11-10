@@ -33,10 +33,10 @@
 /*
  * Sixteen-bit output, which is the default and is what the device takes.
  * Saying so out loud because `MINIMP3_FLOAT_OUTPUT` is one define away and
- * would silently double every buffer below.
+ * would silently double every buffer below. The implementation is compiled
+ * once, in `minimp3.c`, which the Playback Kit links too.
  */
 #undef MINIMP3_FLOAT_OUTPUT
-#define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
 #define MP3_MT  "kosmos.mp3"

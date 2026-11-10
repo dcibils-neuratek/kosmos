@@ -1,0 +1,14 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+#
+# The MP3 streams `tools/test_playback.c` plays through the Playback Kit, one
+# a line: a name, the file under https://fate-suite.ffmpeg.org/mp3-conformance/,
+# its sha256, and what it is. ISO/IEC 11172-4's conformance bitstreams, which
+# FFmpeg serves for its FATE suite; `tools/fetch_conformance.py mp3` puts them
+# in `build/downloads/mp3-conformance/` and holds each to its sum.
+#
+# The test holds the kit's periods to minimp3 decoding the whole file at once
+# and `pcmconvert.h` converting it whole - the kit's job is to play what the
+# decoder makes, piece by piece, without changing it; minimp3 itself is held
+# to its own vectors upstream.
+
+sin1k0db  sin1k0db.bit  64775e23c29aa84e27f68777460f88e0717af2ed64e732d287a20c5a92c9fa3e  1 kHz at 0 dB, MPEG-1 layer III, 44.1 kHz stereo, 128 kb/s, 8.31 s
