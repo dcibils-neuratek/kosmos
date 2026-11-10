@@ -2791,6 +2791,7 @@ void kosmos_record_kit(lua_State *L);
 void kosmos_game_kit(lua_State *L);
 void kosmos_3d_kit(lua_State *L);
 void kosmos_synth_kit(lua_State *L);
+void kosmos_playback_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
 void kosmos_crypto_kit(lua_State *L);
 void kosmos_compute_kit(lua_State *L);
@@ -2851,6 +2852,9 @@ static const struct {
     { "3d",       kosmos_3d_kit, 0 },
     /* Groove's sound: PulseMusic's engine in C, on a thread (6zh). */
     { "synth",    kosmos_synth_kit, 0 },
+    /* A song's or a film's sound, on a thread in the audio band
+     * (`docs/playback.md`). */
+    { "playback", kosmos_playback_kit, 0 },
     { "network",  kosmos_net_kit, 0 },
     /* Encryption, in C and nowhere else: VNC's DES first (`crypto.c`). */
     { "crypto",   kosmos_crypto_kit, 0 },

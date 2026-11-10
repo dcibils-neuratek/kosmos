@@ -486,6 +486,12 @@ SUITES = [
     # decoder's floats on each.
     Suite("arm-film", ["python3", "tools/run_film.py", ARM]),
     Suite("x86-film", ["python3", "tools/run_film.py", X86], x86=True),
+    # **And with every core busy** (`docs/playback.md`, step 3): the Video
+    # app's sound on the Playback Kit's thread in the audio band, under four
+    # display-band spinners - on a quiet machine, as `arm-synth-load` is,
+    # because the Mac holding the emulator off is not the scheduler's.
+    Suite("x86-film-load", ["python3", "tools/run_film.py", X86, "--load"],
+          alone=True, x86=True),
 
     # Cafesa3D, used as a person uses it (`roadmap.md` 4l): the still life,
     # a click in the view and in the Outliner, an eye, a drag, the wheel,

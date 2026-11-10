@@ -22,7 +22,19 @@ Then it is paused and sought: the clock stands still while paused and at
 2.0 after the seek, and about two seconds of sound come out rather than
 three. Then the Video app opens it and says it can be heard.
 
-Usage: run_film.py IMAGE
+**And under heavy load**, with `--load` (`docs/playback.md`, step 3): a
+boot of its own in which the Video app plays the film while four `spin
+display` hold every core in the band every program runs in. Its sound is
+the Playback Kit's thread's, in the audio band, and the app says how it
+held (`--report`), in Groove's words (`run_synth.py --load`): **each party
+has to have come back within what the device holds** - the kit's thread
+between two of its passes, and the audio server between two turns - past
+what the machine itself was held off by its own ticks. And what was
+recorded is the reference again, every sample within two steps: a gap is a
+shift, which the comparison sees. **Control**: the thread started outside
+the band, where the spinners outrank it.
+
+Usage: run_film.py IMAGE [--load]
 """
 
 import os
@@ -376,5 +388,127 @@ def main():
     return 0
 
 
+SPINNERS = 4
+REPORT_S = 4
+
+
+def main_loaded():
+    """The Video app playing the film with every core spun in the display band."""
+    image = sys.argv[1]
+    work = scratch.directory("film-load")
+    wav = os.path.join(work, "loaded.wav")
+    disk = os.path.join(work, "disk.img")
+    path = os.path.join(work, "sound.mp4")
+    checks, fails = 0, []
+
+    def check(ok, complaint):
+        nonlocal checks
+        if ok:
+            checks += 1
+        else:
+            fails.append(complaint)
+
+    config, sound, ref = aac_frames()
+    film(path, config, sound)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
+                    path + ":/Home/sound.mp4"], check=True,
+                   capture_output=True, cwd=ROOT)
+
+    os.environ["KOSMOS_DISK"] = disk
+    os.environ["KOSMOS_AUDIO_WAV"] = wav
+    import run_screenshot as R                                  # noqa: E402
+
+    if R.machine(image) == "x86_64":
+        R.extra_args(image, ["-audiodev", "wav,id=snd0,path=%s" % wav,
+                             "-device", "ich9-intel-hda",
+                             "-device", "hda-output,audiodev=snd0"])
+
+    guest = R.Guest(image, 180)
+    said = ""
+
+    try:
+        guest.wait_for("kosmos>", "a shell prompt")
+        mark = len(guest.seen)
+        guest.type("wm video:/Home/sound.mp4 --report %d" % REPORT_S
+                   + ",spin:60 display" * SPINNERS)
+        deadline = time.monotonic() + 150
+
+        while (time.monotonic() < deadline
+               and "video: the machine was held off" not in guest.seen[mark:]):
+            time.sleep(0.3)
+            guest._read_available()
+
+        time.sleep(2.0)
+        guest._read_available()
+        said = guest.seen[mark:]
+    except R.Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
+    started = said.count("started /Kosmos/Programs/spin.lua")
+    check(started == SPINNERS,
+          "%d spinners started, not %d:\n%s" % (started, SPINNERS, said[-900:]))
+    report = re.search(r"video: after \d+ s: the device holds ([\d.]+) ms, "
+                       r"the film's ring \d+ periods; the kit's worst pass ([\d.]+) ms, "
+                       r"the audio server's worst turn ([\d.]+) ms; the kit "
+                       r"((?:not )?in the audio band), (\d+) periods written, "
+                       r"its input ran dry (\d+) times", said)
+    check(report, "the Video app did not report how its sound held:\n"
+          + said[-900:])
+    held = re.search(r"video: the machine was held off ([\d.]+) ms", said)
+    check(held, "the Video app did not say how long the machine was held "
+          "off:\n" + said[-900:])
+
+    if report and held:
+        holds, kit, server = (float(report.group(i)) for i in (1, 2, 3))
+        off = float(held.group(1))
+
+        check(report.group(4) == "in the audio band",
+              "the film's sound thread is not in the audio band: %s"
+              % report.group(0))
+        check(holds > 0 and kit - off < holds,
+              "the kit's thread was away %.1f ms under load, and the machine "
+              "held off %.1f of it - longer than the device's %.1f: the sound "
+              "skipped" % (kit, off, holds))
+        check(holds > 0 and server - off < holds,
+              "the audio server was away %.1f ms under load, and the machine "
+              "held off %.1f of it - longer than the device's %.1f: the sound "
+              "skipped" % (server, off, holds))
+        # The window handed over the whole film before it played, so the
+        # thread never found its input empty.
+        check(int(report.group(6)) == 0,
+              "the kit's input ran dry under load: %s" % report.group(0))
+
+    fit = lay_against(heard_since(wav, WAV_HEADER), ref) \
+        if os.path.exists(wav) else None
+    check(fit is not None,
+          "the reference's sound was not found in what the machine played "
+          "under load")
+
+    if fit:
+        offset, shared, far, worst, first = fit
+        check(shared >= int(RATE * 2.9),
+              "only %.2f s of the film's sound came out under load, of %.2f"
+              % (shared / RATE, len(ref) / 2 / RATE))
+        check(far == 0,
+              "under load, %d samples of %d more than two steps from FFmpeg's "
+              "reference (the worst %d; the first at %.4f s): a gap"
+              % (far, shared * 2, worst, first[0] / RATE if first else 0))
+
+    if fails:
+        print("FAIL: %d of %d checks on a film's sound under load:"
+              % (len(fails), len(fails) + checks))
+        for complaint in fails:
+            print("  " + complaint)
+        return 1
+
+    print("PASS: %d checks on a film's sound under %d display-band spinners "
+          "(%s; %s; %.2f s heard within %d of FFmpeg's reference)"
+          % (checks, SPINNERS, report.group(0)[len("video: "):],
+             held.group(0)[len("video: "):], fit[1] / RATE, fit[3]))
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main_loaded() if "--load" in sys.argv[2:] else main())

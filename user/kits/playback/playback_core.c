@@ -215,6 +215,7 @@ void pb_restart(struct pb *p, uint32_t generation)
     p->src_bytes = 0;
     p->phase = 0.0;
     p->ended = 0;
+    p->fed = 0;
     p->period_fill = 0;
     p->heard.finished = 0;
 
@@ -455,8 +456,15 @@ uint32_t pb_pass(struct pb *p, struct pb_input *in, struct audio_ring *ring)
         if (!p->ended) {
             struct pb_record *r = input_next(p, in);
 
+            /*
+             * Dry only once this start has had a frame: before the first,
+             * the window has not begun - a seek's first pass comes before
+             * its first frame - and nothing playing has been starved.
+             */
             if (r == NULL) {
-                p->heard.dry++;
+                if (p->fed) {
+                    p->heard.dry++;
+                }
                 break;
             }
 
@@ -465,6 +473,7 @@ uint32_t pb_pass(struct pb *p, struct pb_input *in, struct audio_ring *ring)
             }
 
             input_done(in, r);
+            p->fed = 1;
             continue;
         }
 

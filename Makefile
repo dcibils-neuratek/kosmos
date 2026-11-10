@@ -909,6 +909,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/mp3/mp3_kosmos.c \
              user/kits/mp3/minimp3.c \
              user/kits/playback/playback_core.c \
+             user/kits/playback/playback_kosmos.c \
              user/kits/record/record_kosmos.c \
              user/kits/record/record_core.c \
              user/kits/record/record_h264.c \

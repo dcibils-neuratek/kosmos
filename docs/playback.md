@@ -136,12 +136,21 @@ p:room()                -- bytes the input ring can take now
 p:frame(at, bytes)      -- a frame from a region's address: true, or false when full
 p:frame_string(s)       -- the same from a string (WAV's samples, tests)
 p:ended()               -- no more frames will come
-p:play()  p:pause()  p:volume(level)
+p:play()  p:pause()
 p:seek(stream.ring)     -- a new stream's ring, and everything before forgotten
-p:state(t)              -- what is heard, into t: written, dry, away_max_us,
-                        -- audio_band, finished, frames_out
+p:state(t)              -- what is heard, into t: periods, frames_in,
+                        -- frames_out, dry, refused, finished, playing,
+                        -- worst_pass (counter ticks), audio_band, why
 p:close()
 ```
+
+**As built in step 3, two things differ from the drawing.** Volume is not
+the kit's: it is the stream's gain at the audio server (`audio.set`), as it
+always was, and the kit has no reason to hold a second copy of it. And
+`seek` *waits* - a tick or two, for the thread to take the new ring -
+because the caller closes the old stream next, and the thread must not be
+writing into a ring that has been unmapped. It is the one wait in the door,
+on this process's own thread, bounded at a second.
 
 `media.lua` keeps its player's face - `open`, `play`, `tick`, `seek`,
 `position`, `volume`, `peak`, `finished`, `close` - and `tick` changes from

@@ -6559,7 +6559,9 @@ not static**, since a static one is in every process.
    for music and video"). Designed first, in `docs/playback.md` with its
    diagram, then built: the thread and its ring, Music on it, Video on it,
    `x86-film` and `x86-sound` held under the gate's load. **Step 1 built
-   in 0.11.359** (18.754), **step 2 in 0.11.360** (18.755).
+   in 0.11.359** (18.754), **step 2 in 0.11.360** (18.755), **step 3 in
+   0.11.361** (18.756): a film's sound on the kit's thread, held under four
+   spinners by `x86-film-load`. Next, Music (step 4).
    **And found on the way, not of sound** (18.755): `arm-media` fails 3 of
    46, all a cover picture inside an MP3 not reaching the screen ("the
    cover's first quarter covers 0 of the 1024 pixels") - the same three on

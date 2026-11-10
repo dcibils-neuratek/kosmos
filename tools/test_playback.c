@@ -19,7 +19,8 @@
  *     the AAC Kit decodes it frame by frame;
  *   - a seek: records of the old place left in the ring, the core restarted
  *     at another, and what comes out is that place decoded afresh;
- *   - nothing to play: nothing written, a dry pass counted, not finished;
+ *   - nothing to play yet: nothing written, not finished, and not dry -
+ *     the input runs dry only once a frame has come;
  *   - a full ring: the pass stops, and goes on when the server has taken.
  *
  * Usage: test_playback
@@ -463,8 +464,8 @@ int main(void)
         pb_input_init(in, sizeof(input_area.ring));
         pb_open(&core, PB_WAV, 44100, 2, 16, NULL, 0);
         w = pb_pass(&core, in, ring);
-        CHECK(w == 0 && core.heard.dry > 0 && !core.heard.finished,
-              "nothing to play: %u written, %u dry, finished %d", w, core.heard.dry,
+        CHECK(w == 0 && core.heard.dry == 0 && !core.heard.finished,
+              "nothing to play yet: %u written, %u dry, finished %d", w, core.heard.dry,
               core.heard.finished);
 
         pb_input_put(in, tone, sizeof(tone), 0);
@@ -474,7 +475,8 @@ int main(void)
         ring->read += 2;
         w = pb_pass(&core, in, ring);
         /* 476 frames were left: one whole period, and the rest waits. */
-        CHECK(w == 1 && core.heard.dry > 1, "after the server took two: %u written", w);
+        CHECK(w == 1 && core.heard.dry == 1,
+              "after the server took two: %u written, %u dry", w, core.heard.dry);
         free(ring);
     }
 

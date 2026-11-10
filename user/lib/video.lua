@@ -38,10 +38,6 @@
 local mp4 = use("/Kosmos/Libraries/mp4.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
--- The feeding of a stream (`media.feed`), which a film's sound shares with
--- a song's. `media.lua` loads this file only once a film is opened, so it
--- is loaded by then and this is the same one - `use` keeps one a process.
-local media = use("/Kosmos/Libraries/media.lua")
 
 local video = {}
 
@@ -194,9 +190,17 @@ local function no_decoder(codec, named)
 end
 
 --------------------------------------------------------------------------
--- **The sound**: a film's audio track, decoded and fed to the audio
--- server - AAC through `/Kosmos/Kits/aac`, MP3 through `/Kosmos/Kits/mp3` - and the
--- clock the picture follows.
+-- **The sound**: a film's audio track, played by the Playback Kit on a
+-- thread of its own in the audio band (`docs/playback.md`), and the clock
+-- the picture follows.
+--
+-- This window's part is the file: it finds the track's frames - where each
+-- is and how long, from the MP4's tables - reads them a run at a time, and
+-- hands them to the kit, seconds ahead. Decoding them, converting them to
+-- what the device takes and writing them into the stream's ring is the
+-- kit's thread's, so a picture's decode, a collection or a busy desktop
+-- holding this loop away is no longer a gap in the sound (`roadmap.md`
+-- 6zw). It was `media.feed`, in Lua, from this loop, a period at a time.
 --------------------------------------------------------------------------
 
 --
@@ -213,61 +217,30 @@ local SOUND_READ = 256 * 1024
 -- default 8. `audio.lua` says why a video player is the other end of that
 -- choice: a film would far rather be 200 ms behind than skip, because a gap
 -- desynchronises everything after it, and the picture follows what is
--- heard whatever the delay. And a film's window goes away for as long as a
--- picture takes to decode - up to 40 ms of H.264 - which a 46 ms ring does
--- not survive with the device's own queue on top.
+-- heard whatever the delay.
 --
 local SOUND_PERIODS = 32
-
---
--- How many periods one tick may hand over: the whole ring, so that a pass
--- after a long decode fills it again at once; and a ceiling, so that a
--- server that wrongly always took would make the sound run ahead rather
--- than taking the window with it (`media.lua`'s reasoning).
---
-local FEED_MAX = SOUND_PERIODS
 
 local voice = {}
 voice.__index = voice
 
 --
--- The kit for a track, and a decoder from it: `decode` is AAC's from an
--- address, and MP3's from a string, and this is the one place that knows.
+-- What the kit is to play a track as: AAC, with its configuration, or MP3.
+-- The one place that knows which object types mean which.
 --
-local function sound_decoder(track)
+local function sound_kind(track)
   local object = track.object or 0
 
   if track.codec == "mp4a" and object == 0x40 then
-    local ok, kit = pcall(use, "/Kosmos/Kits/aac")
-
-    if not ok or type(kit) ~= "table" then
-      return nil, "this film's sound is AAC, and this system was built "
-                  .. "without its AAC decoder (FULL=0)"
-    end
-
     if not track.config then
       return nil, "this film's sound does not describe itself (no config)"
     end
 
-    local d, why = kit.decoder(track.config, track.rate or 0,
-                               track.channels or 0)
-
-    if not d then return nil, tostring(why) end
-
-    return function(at, n)
-      return d:decode(at, n)
-    end, function() d:reset() end, function() d:close() end
+    return "aac"
   end
 
   if track.codec == "mp4a" and (object == 0x6b or object == 0x69) then
-    local mp3 = use("/Kosmos/Kits/mp3")
-    local d = mp3.decoder()
-
-    return function(_, n, bytes)
-      local pcm, _, rate, channels = d:decode(bytes, 1 << 20)
-
-      return pcm, rate, channels
-    end, function() d:reset() end, function() end
+    return "mp3"
   end
 
   return nil, "this film's sound is " .. tostring(track.codec)
@@ -276,8 +249,9 @@ local function sound_decoder(track)
 end
 
 --
--- A film's sound, ready to start: its decoder, a read buffer of its own,
--- and nothing playing yet. Nil and why when it cannot be heard.
+-- A film's sound, ready to start: a player, a read buffer of its own, and
+-- nothing playing yet. Nil and why when it cannot be heard - a machine
+-- built `FULL=0` has no AAC, and the kit says so.
 --
 local function open_voice(path, track, name)
   local fmt = audio.format()
@@ -286,25 +260,31 @@ local function open_voice(path, track, name)
     return nil, "this machine has no sound device"
   end
 
-  local decode, reset, close = sound_decoder(track)
+  local kind, why = sound_kind(track)
 
-  if not decode then return nil, reset end
+  if not kind then return nil, why end
+
+  local playback = use("/Kosmos/Kits/playback")
+  local player, perr = playback.open{ kind = kind, config = track.config,
+                                      rate = track.rate or 0,
+                                      channels = track.channels or 0 }
+
+  if not player then return nil, tostring(perr) end
 
   local page = regions.make(SOUND_READ)
 
   if not page then
-    close()
+    player:close()
     return nil, "no memory for the sound's read buffer"
   end
 
   return setmetatable({
     path = path, track = track, name = name, fmt = fmt, page = page,
-    mapped = page.at,
-    decode = decode, reset_decoder = reset, close_decoder = close,
+    mapped = page.at, player = player, heard = {},
     samples = track.samples or {}, scale = track.timescale or 1,
     next = 1, run_first = 0, run_last = -1, run_at = 0,
-    decoded = "", pending = "", phase = 0.0, rate = 0, channels = 0, bits = 16,
     base = 0, gain = nil, frames_out = 0, frames_in = 0,
+    out0 = 0, in0 = 0, ended = false,
   }, voice)
 end
 
@@ -312,7 +292,10 @@ end
 -- Start hearing it at `at` seconds: a stream of its own, and the sample
 -- that holds that moment. **A new stream for every start**, as Music
 -- seeks: nothing can drop what a stream has queued - `audioproto.h` has no
--- flush - and the ring and the device hold about 70 ms of the old place.
+-- flush - and the ring and the device hold about 200 ms of the old place.
+-- The kit is told first and has let go of the old ring before it is
+-- closed; then the input ring is filled, so the thread has the new place
+-- before it is asked to play it.
 --
 function voice:start(at)
   local samples, ticks = self.samples, at * self.scale
@@ -326,27 +309,37 @@ function voice:start(at)
     if (samples[mid].pts or 0) <= ticks then lo = mid else hi = mid - 1 end
   end
 
-  if self.stream then self.stream:close() end
-
   local stream, why = audio.open(self.name, SOUND_PERIODS)
-
-  self.stream = stream
 
   if not stream then return false, tostring(why) end
 
   if self.gain then audio.set{ stream = stream.id, gain = self.gain } end
 
-  self.reset_decoder()
+  local ok, serr = pcall(self.player.seek, self.player, stream.ring)
+
+  if not ok then
+    stream:close()
+    return false, tostring(serr)
+  end
+
+  if self.stream then self.stream:close() end
+
+  self.stream = stream
   self.next = (#samples > 0) and lo or 1
   self.base = (#samples > 0) and ((samples[lo].pts or 0) / self.scale) or 0
   self.run_first, self.run_last = 0, -1
-  self.decoded, self.pending, self.phase = "", "", 0.0
-  self.fed_all, self.frames_out, self.frames_in = false, 0, 0
+  self.ended = false
+
+  local h = self.player:state(self.heard)
+
+  self.out0, self.in0 = h.frames_out, h.frames_in
+  self.frames_out, self.frames_in = 0, 0
+  self:feed()
   return true
 end
 
 --
--- Sample `i` of the track, where the decoder can reach it: the address
+-- Sample `i` of the track, where the kit can take it from: the address
 -- inside the read buffer and its length, reading the run of samples that
 -- sit next to it in the file when it is not there already.
 --
@@ -375,18 +368,23 @@ function voice:sample_at(i)
 
   local s = samples[i]
 
-  return self.mapped + (s.at - self.run_at), s.size, s.at - self.run_at
+  return self.mapped + (s.at - self.run_at), s.size
 end
 
 --
--- **A film's source** for `media.feed`: its sound's frames, decoded one at a
--- time out of the read buffer until there are a few periods of them. True
--- once the track's last frame is in `decoded`; nil when the track is over
--- and nothing of it is left to convert.
+-- **The input ring kept full**, on every pass of the caller's loop: the
+-- track's next frames handed to the kit while it has room, and the end said
+-- once the last has gone. A frame that will not go waits for the next pass;
+-- the kit holds seconds, so a pass that comes late costs nothing heard.
+-- Returns how many frames went.
 --
-function voice:fill()
-  while #self.decoded < self.fmt.period * 4 and self.next <= #self.samples do
-    local at, n, offset = self:sample_at(self.next)
+function voice:feed()
+  if not self.stream then return 0 end
+
+  local p, put = self.player, 0
+
+  while self.next <= #self.samples do
+    local at, n = self:sample_at(self.next)
 
     if not at then
       self.error = tostring(n)
@@ -394,71 +392,49 @@ function voice:fill()
       break
     end
 
-    local bytes = nil
-
-    if self.track.object ~= 0x40 then
-      bytes = sys.region_read(self.page.cap, offset, n)
-    end
-
-    local pcm, rate, channels = self.decode(at, n, bytes)
+    if not p:frame(at, n) then break end
 
     self.next = self.next + 1
-
-    --
-    -- A frame that will not decode is passed over, as a damaged picture
-    -- is: a click in the sound, not the end of it.
-    --
-    if pcm and #pcm > 0 then
-      self.decoded = self.decoded .. pcm
-      self.rate, self.channels = rate, channels
-      self.frames_in = self.frames_in + #pcm // (2 * channels)
-    elseif not pcm then
-      self.error = tostring(rate)
-    end
+    put = put + 1
   end
 
-  if self.next > #self.samples and #self.decoded < 4 then
-    self.fed_all = true
-    return nil
+  if self.next > #self.samples and not self.ended then
+    self.ended = p:ended()
   end
 
-  return self.next > #self.samples
+  self:hear()
+  return put
 end
 
---
--- Hand over what the server will take, and not a period more - the same
--- `media.feed` a song is played by, over a film's frames instead of a
--- file's bytes.
---
-function voice:feed()
-  if not self.stream then return 0 end
+-- What the kit has heard, since this start: frames decoded and converted,
+-- which `run_film.py` reads, and why a frame would not decode.
+function voice:hear()
+  local h = self.player:state(self.heard)
 
-  local fed, why, dry = media.feed(self, FEED_MAX, voice.fill)
+  self.frames_out = h.frames_out - self.out0
+  self.frames_in = h.frames_in - self.in0
 
-  if why and why ~= "full" then self.error = why end
+  if h.refused > 0 and h.why ~= "" then self.error = h.why end
 
-  -- Nothing left would convert, at the end of the track: it is all out.
-  if dry and self.next > #self.samples then
-    self.fed_all = true
-    self.decoded = ""
-  end
-
-  return fed
+  return h
 end
 
 -- Seconds heard: where this start began, and the frames out of the speaker
--- since, at the device's rate - which `sys.pcm` has converted to.
+-- since, at the device's rate - which the kit has converted to.
 function voice:position()
   if not self.stream then return self.base end
 
   return self.base + self.stream:position() / self.fmt.rate
 end
 
--- All of it handed over, and all of it played.
+-- All of it handed over, written and played.
 function voice:done()
-  return self.fed_all and #self.pending == 0
+  return self.ended and self:hear().finished
          and (not self.stream or self.stream:queued() == 0)
 end
+
+function voice:play() self.player:play() end
+function voice:pause() self.player:pause() end
 
 function voice:volume(level)
   self.gain = math.floor(math.max(0, math.min(1, level)) * 256 + 0.5)
@@ -470,11 +446,12 @@ function voice:volume(level)
   return true
 end
 
+-- The thread stopped first, so nothing is writing into the ring when the
+-- stream goes.
 function voice:close()
+  if self.player then self.player:close() self.player = nil end
   if self.stream then self.stream:close() self.stream = nil end
   if self.page then regions.free(self.page) self.page = nil end
-
-  self.close_decoder()
 end
 
 --
@@ -1219,15 +1196,21 @@ function film:play(at)
 
   c.since = sys.ticks()
   c.playing = true
+
+  if self.voice_state then self.voice_state:play() end
+
   return true
 end
 
--- Stopped where it is. What the device holds, about 70 ms, plays out.
+-- Stopped where it is. What the ring and the device hold, about 200 ms,
+-- plays out.
 function film:pause()
   local c = self.clock
 
   c.at = self:position()
   c.playing = false
+
+  if self.voice_state then self.voice_state:pause() end
 end
 
 --
@@ -1258,8 +1241,8 @@ function film:seek(at)
 end
 
 --
--- The sound fed, on every pass of the caller's loop. A film that is not
--- playing, or has no sound, costs nothing here.
+-- The kit's input ring kept full, on every pass of the caller's loop. A
+-- film that is not playing, or has no sound, costs nothing here.
 --
 function film:tick()
   local v = self.voice_state
@@ -1278,6 +1261,21 @@ function film:volume(level)
   if v then return v:volume(self.gain_level) end
 
   return true
+end
+
+--
+-- **What the sound's thread has heard** (`docs/playback.md`), for a caller
+-- that wants to say how the sound held: periods written, how often the
+-- input ran dry, the longest the thread was away between two passes (in
+-- counter ticks), whether it is in the audio band and whether all of it
+-- has been written. Nil while the film has no sound playing.
+--
+function film:heard()
+  local v = self.voice_state
+
+  if not v or not v.player then return nil end
+
+  return v:hear()
 end
 
 -- Whether it can be heard, and why not when it cannot.

@@ -108,7 +108,8 @@ struct pb_heard {
     uint64_t periods;                       /* written into the stream's ring */
     uint64_t frames_in;                     /* decoded, at the source's rate */
     uint64_t frames_out;                    /* converted, at the device's */
-    uint32_t dry;                           /* passes that wanted a frame and had none */
+    uint32_t dry;                           /* passes that wanted a frame and had none,
+                                             * once this start's first had come */
     uint32_t refused;                       /* frames that would not decode */
     int      finished;                      /* PB_END reached and all of it written */
 };
@@ -128,6 +129,7 @@ struct pb {
     size_t   src_bytes;                     /* of src: a WAV's 8-bit samples are bytes */
     double   phase;                         /* the resampler's */
     int      ended;                         /* PB_END taken: the source is all in src */
+    int      fed;                           /* a record of this start taken */
 
     int16_t  period[8192 / 2];              /* converted, not yet a whole period */
     uint32_t period_fill;                   /* bytes of it */

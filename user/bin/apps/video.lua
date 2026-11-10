@@ -4,6 +4,7 @@
 -- kosmos: name Video Player
 -- kosmos: section applications
 -- kosmos: opens mp4
+-- kosmos: needs audio
 --
 -- Video: a window that plays a film.
 --
@@ -46,6 +47,7 @@ local theme = ui.theme
 --------------------------------------------------------------------------
 
 local path, want_size, start_at, debugging = nil, "1", 0, false
+local report = nil                      -- `--report N`: say how the sound held
 local words = files.words(args)
 
 local i = 1
@@ -61,6 +63,9 @@ while i <= #words do
     start_at = tonumber(words[i]) or 0
   elseif word == "--debug" or word == "-d" then
     debugging = true
+  elseif word == "--report" then
+    i = i + 1
+    report = tonumber(words[i])
   elseif not path then
     path = word
   end
@@ -508,7 +513,57 @@ end
 
 local held = nil                        -- what the press landed on
 
+--
+-- **`--report N`**: after N seconds, how the film's sound held, said on the
+-- console - what `x86-film`'s loaded run reads (`docs/playback.md`, step
+-- 3), in Groove's words (`groove.lua`). What decides a skip is whether each
+-- party came back in time: the Playback Kit's thread between two passes,
+-- against the film's ring and the device together, and the audio server
+-- between two turns, against the device. The machine's own part - an
+-- emulator's host stopping it - is said beside them, by its own ticks.
+--
+local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+local report_at = report and (sys.ticks() + report * hz)
+local held_off_from = {}
+
+if report then
+  for _, c in ipairs(sys.cpuload() or {}) do
+    held_off_from[c.index] = c.held_off_counter or 0
+  end
+end
+
+local function report_sound()
+  local h = film:heard() or {}
+  local stats = use("/Kosmos/Libraries/audio.lua").stats() or {}
+  local info = sys.info() or {}
+  local period = (info.audio_period or 0)
+                 // (2 * math.max(1, info.audio_channels or 2))
+  local kept = stats.kept or info.audio_periods or 0
+  local holds = kept * period / math.max(1, info.audio_rate or 44100) * 1000
+  local held_off = 0
+
+  for _, c in ipairs(sys.cpuload() or {}) do
+    held_off = math.max(held_off, (c.held_off_counter or 0)
+                                  - (held_off_from[c.index] or 0))
+  end
+
+  print(("video: after %d s: the device holds %.1f ms, the film's ring %d periods; "
+         .. "the kit's worst pass %.1f ms, the audio server's worst turn %.1f ms; "
+         .. "the kit %s, %d periods written, its input ran dry %d times")
+        :format(report, holds, 32, (h.worst_pass or 0) / hz * 1000,
+                (stats.late or 0) / 1000,
+                h.audio_band and "in the audio band" or "not in the audio band",
+                h.periods or 0, h.dry or 0))
+  print(("video: the machine was held off %.1f ms in the %d s, by its own ticks")
+        :format(held_off / hz * 1000, report))
+end
+
 while win.running do
+  if report_at and sys.ticks() >= report_at then
+    report_at = nil
+    report_sound()
+  end
+
   -- The sound first: it has a ring to keep full, and the picture waits
   -- for it rather than the other way round.
   film:tick()

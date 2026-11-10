@@ -30826,3 +30826,59 @@ the 1024 pixels"). **Not this change**: the same suite on 0.11.359 with
 these files set aside fails the same three checks, word for word. ARM's
 suites have been out of the gate since 8 October, so when it began is not
 known; it is noted in `roadmap.md` 6zw.
+
+## 18.756 A film's sound on a thread of its own, held under load
+
+`docs/playback.md`, step 3. The Playback Kit's Lua door,
+`user/kits/playback/playback_kosmos.c` (`/Kosmos/Kits/playback`): a player
+a call to `open`, its thread started in the audio band when the program
+declared `kosmos: needs audio` and at NORMAL otherwise, as the Synth Kit
+falls back; a megabyte of input ring; commands - play, pause, a seek with
+its ring - in a ring of 64; and what is heard published under a sequence
+number. `video.lua`'s voice is on it: the window reads the MP4's sound
+samples a run at a time and hands them over as frames - the whole of a
+short film at once - and decodes, converts and feeds nothing. `media.feed`
+is no longer on a film's path. The Video app declares `kosmos: needs audio`
+and takes `--report N`, Groove's report in its own words.
+
+**Two faults the first run found.** The thread returned from its entry when
+the player closed, and a Kosmos thread that returns returns to address 0:
+`x86-film`'s guest faulted with `rip 0` and the stack pointer at the very
+top of a fresh stack, which is what that looks like. It ends with
+`kosmos_thread_exit`, as the Synth Kit's does. And the loaded run counted
+the input dry once: the Video app goes round again at the end, and the
+thread's first pass after the seek to 0 came before the window's first
+frame. A start that has not had a frame has starved nothing, so a dry pass
+now counts only after one (`pb.fed`); `test_playback.c`'s case for it says
+so - nothing yet is not dry, and a ring found empty after frames is.
+
+**Two ways the door differs from the drawing**, written into
+`playback.md`: volume stays the stream's at the audio server, and `seek`
+waits, bounded at a second, for the thread to take the new ring, because
+the old stream is closed next.
+
+`x86-film`: 13 checks, as before - 3.02 s heard within 1 step of FFmpeg's
+reference, a 3.00 s film in 3.0 s by its clock, paused and sought - its
+program in `/Temporary` and so its thread at NORMAL: a file outside the
+image is granted no needs.
+
+`x86-film-load`, new, alone in the gate as `arm-synth-load` is: the Video
+app plays the film while four `spin display` hold every core, 10 checks -
+the four started, the thread in the audio band, the thread and the audio
+server each back within what the device holds past what the machine was
+held off, the input never dry, and the recording laid against the
+reference again:
+
+    after 4 s: the device holds 23.2 ms, the film's ring 32 periods; the
+    kit's worst pass 8.9 ms, the audio server's worst turn 15.0 ms; the kit
+    in the audio band, 774 periods written, its input ran dry 0 times; the
+    machine was held off 0.0 ms; 3.02 s heard within 1 of FFmpeg's reference
+
+**Control**: the thread started outside the band - 2 of 10 fail, "the
+kit's thread was away 44.0 ms under load ... longer than the device's
+23.2". The recording still matched: the film's ring is 186 ms, which a
+44 ms absence fits inside. So it is the thread's absence against the device
+that bites, not the WAV, and a film with a shallower ring - or a song, at
+eight periods, 46 ms - would have been heard to skip.
+
+`host`'s `test_playback`: 22 of 22. The x86-64 and AArch64 images build.
