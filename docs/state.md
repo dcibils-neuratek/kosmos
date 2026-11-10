@@ -414,6 +414,35 @@ and waits for its code.
 
 **Next**: P5, the Control Strip, and notifications in Pewter's chrome.
 
+## 1 November: the Graph Kit, designed
+
+**Pushed: 0.11.311-0.11.313** from another checkout, and merged into `main` on 10 November - those three numbers are also Bluetooth B1-B4's here, so a 0.11.311-313 is named by its subject, documents only, no code and no suite touched.
+
+Diego, after an afternoon on what an operating system that lived on a
+GPU would be: keep Kosmos as it is, and add a GPU backend for the programs
+that fit the shape - a graph of tasks with continuations, the processor
+as the plane of input and output, the GPU as the plane of computation -
+and plan its first stage on the processor alone before any code.
+
+- **`docs/graph.md`**: the Graph Kit - `/Kosmos/Kits/graph`, one worker a
+  core, a ring of 64-byte task records a worker and a futex each; tasks of
+  three kinds, scalar (Lua, a state a worker), work (C from a kit's table)
+  and parallel (a kernel, or its fallback over ranges in stage 1); fan-out
+  and join as counters the kit keeps; data in Compute Kit buffers; results
+  as events on the window's tick. It is `threads.md` step 8 in a shape
+  stage 2 moves to the GPU without the program changing. The ABI, the
+  pseudocode, the busiest path, steps S1-S7, and the first program,
+  Contact Sheet.
+- **`docs/graph-architecture.png`**, from its `.html`.
+- **`docs/sheet-flow.html`** (0.11.312): the program animated - records through
+  the window, the kit, four workers, the sheet buffer and the GPU; play,
+  step, stage 1 or 2.
+
+**Next, Diego's to decide: G1-G5** in `graph.md` (the name, a state a
+worker, Contact Sheet first, the scheduler on the processor with the GPU
+taking runs, events on the tick). When he decides: the entry in
+`roadmap.md` the same day, then `sheet.html` drawn, then S1.
+
 ---
 
 ## 19 October, the day: the GPU at ray tracing, to the end

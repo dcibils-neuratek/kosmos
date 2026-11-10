@@ -1,0 +1,402 @@
+<title>Contact Sheet on the Graph Kit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one portrait scene drawn on a canvas, controls above, a log below. Kosmos's own
+     document palette (docs/*-architecture.html): paper, ink, and a tint per layer. */
+  :root {
+    --paper: #fbfaf7; --ink: #1b2330; --dim: #5b6677; --line: #e2ded3; --card: #ffffff;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --buf: #fdf6dc; --buf-line: #e2cf7f; --buf-ink: #6b5410;
+    --gpu: #f3ecfd; --gpu-line: #c4a8ef; --gpu-ink: #4b2a8a;
+    --kit: #efedfb; --kit-line: #b9b2ee; --kit-ink: #3c3489;
+    --path: #d81b60; --accent: #2a55c9;
+    --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #14171c; --ink: #e8e6df; --dim: #9aa3b2; --line: #2b313b; --card: #1c2128;
+    --app: #1b2a45; --app-line: #3d5a8f; --app-ink: #bcd0f5;
+    --lua: #15302a; --lua-line: #2f7a62; --lua-ink: #a9e3cd;
+    --c: #3a2619; --c-line: #9a5a2e; --c-ink: #f3c6a2;
+    --buf: #3a3218; --buf-line: #8c7a2e; --buf-ink: #f0dc8f;
+    --gpu: #2d2242; --gpu-line: #6f4fb0; --gpu-ink: #d9c6f7;
+    --kit: #26253d; --kit-line: #5f58b0; --kit-ink: #cfc9f5;
+    --path: #ff5c93; --accent: #7fa3ff; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --paper: #14171c; --ink: #e8e6df; --dim: #9aa3b2; --line: #2b313b; --card: #1c2128;
+    --app: #1b2a45; --app-line: #3d5a8f; --app-ink: #bcd0f5;
+    --lua: #15302a; --lua-line: #2f7a62; --lua-ink: #a9e3cd;
+    --c: #3a2619; --c-line: #9a5a2e; --c-ink: #f3c6a2;
+    --buf: #3a3218; --buf-line: #8c7a2e; --buf-ink: #f0dc8f;
+    --gpu: #2d2242; --gpu-line: #6f4fb0; --gpu-ink: #d9c6f7;
+    --kit: #26253d; --kit-line: #5f58b0; --kit-ink: #cfc9f5;
+    --path: #ff5c93; --accent: #7fa3ff; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.5 var(--sans);
+         padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px));
+         padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 620px; margin: 0 auto; display: grid; gap: 14px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; text-wrap: balance; }
+  p.lead { margin: 0; color: var(--dim); max-width: 60ch; font-size: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select { font: 500 13px var(--sans); color: var(--ink); background: var(--card);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button[aria-pressed="true"] { background: var(--kit); color: var(--kit-ink); }
+  .scene { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
+  canvas { display: block; width: 100%; height: auto; }
+  .status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+  .tile b { display: block; font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 12px; color: var(--dim); letter-spacing: .02em; }
+  .log { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+         font: 12.5px/1.6 var(--mono); min-height: 150px; overflow-x: auto; }
+  .log div { white-space: nowrap; }
+  .log .t { color: var(--dim); display: inline-block; width: 6.5ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12.5px; color: var(--dim); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid; vertical-align: -2px; margin-right: 5px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <h1>Contact Sheet on the Graph Kit</h1>
+  <p class="lead">Eighteen pictures in a folder, decoded on four cores at once. Each record is 64 bytes; the pixels never move. Press play, or step through one event at a time.</p>
+
+  <div class="controls">
+    <button id="play" class="primary">Play</button>
+    <button id="step">Step</button>
+    <button id="reset">Restart</button>
+    <label>Speed
+      <select id="speed">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+      </select>
+    </label>
+    <div class="seg" role="group" aria-label="Stage">
+      <button id="st1" aria-pressed="true">Stage 1 · processor</button>
+      <button id="st2" aria-pressed="false">Stage 2 · GPU</button>
+    </div>
+  </div>
+
+  <div class="scene"><canvas id="cv" width="800" height="1500" aria-label="Animated flow of the Contact Sheet program through the window, the Graph Kit, four workers, the sheet buffer and the GPU"></canvas></div>
+
+  <div class="status">
+    <div class="tile"><b id="sDone">0 / 18</b><span>placed</span></div>
+    <div class="tile"><b id="sBusy">0 / 4</b><span>workers busy</span></div>
+    <div class="tile"><b id="sTime">0 ms</b><span>elapsed, simulated</span></div>
+  </div>
+
+  <div class="legend">
+    <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>scalar · Lua, a worker's own state</span>
+    <span><i style="border-color:var(--c-line);background:var(--c)"></i>work · C, from gfx</span>
+    <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>parallel · kernel, or its fallback</span>
+    <span><i style="border-color:var(--path);background:transparent"></i>a task record, 64 bytes</span>
+  </div>
+
+  <div class="log" id="log" aria-live="polite"></div>
+</main>
+
+<script>
+(function () {
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const W = 400, H = 750;                      // virtual scene; the canvas scales it
+  const DPR = 2;
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let C = {};
+  function readColors() {
+    C = {};
+    for (const k of ['paper','ink','dim','line','card','app','app-line','app-ink','lua','lua-line','lua-ink',
+      'c','c-line','c-ink','buf','buf-line','buf-ink','gpu','gpu-line','gpu-ink','kit','kit-line','kit-ink','path','accent'])
+      C[k] = css('--' + k);
+  }
+  readColors();
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  mq.addEventListener && mq.addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---- geometry -------------------------------------------------------------
+  const WIN = { x: 12, y: 10, w: 376, h: 78 };
+  const KIT = { x: 12, y: 104, w: 376, h: 86 };
+  const WRK = { x: 12, y: 206, w: 376, h: 190 };
+  const BUF = { x: 12, y: 412, w: 376, h: 190 };
+  const GPU = { x: 12, y: 618, w: 376, h: 110 };
+  const NW = 4;
+  const workerBox = (i) => ({ x: WRK.x + 10 + i * 90, y: WRK.y + 32, w: 82, h: 148 });
+  const COLS = 6, ROWS = 3, N = COLS * ROWS, CELL = 48, GAPC = 8;
+  const gridX = BUF.x + (BUF.w - (COLS * CELL + (COLS - 1) * GAPC)) / 2, gridY = BUF.y + 36;
+  const cellRect = (slot) => { const i = slot - 1; return { x: gridX + (i % COLS) * (CELL + GAPC), y: gridY + Math.floor(i / COLS) * (CELL + GAPC), w: CELL, h: CELL }; };
+
+  // ---- the simulation -------------------------------------------------------
+  // Simulated clock in ms. Durations are the ones graph.md's busiest path estimates.
+  const DEC_MS = () => 18 + Math.random() * 30;   // a JPEG decode in C, tens of ms
+  const PLACE_MS = 2.5;                             // a scale into one cell
+  const SHADE_CPU_MS = 9, SHADE_GPU_MS = 1.4, GPU_SUBMIT_MS = 0.3;
+  const GPU_SHOW = 40;                              // the run is 1.4 ms; drawn long enough to see
+  const TRAVEL = 20;                                // a record's hop, drawn (not a cost)
+  const TICK = 16.7;                                // the window's tick
+  const hues = [];
+  for (let i = 0; i < N; i++) hues.push((i * 47 + 20) % 360);
+
+  let S;                                            // state
+  let stage = 1, speed = 1, playing = false, lastReal = 0;
+  const stTime = document.getElementById('sTime'), stDone = document.getElementById('sDone'), stBusy = document.getElementById('sBusy');
+  const logEl = document.getElementById('log');
+
+  function reset() {
+    S = { t: 0, chips: [], events: [], log: [], done: 0, count: 0, join: 0,
+      workers: Array.from({ length: NW }, () => ({ ring: [], task: null, until: 0, lua: false })),
+      cells: Array(N).fill(null), damage: Array(N).fill(0), shaded: 0, shadeMode: null,
+      gpu: null, tickAt: TICK, started: false, finished: false, winFlash: 0, pending: [] };
+    logEl.innerHTML = '';
+    emitRecord({ task: 'list', from: pt(WIN.x + 60, WIN.y + 58), to: 0 });
+    say('window', 'g:emit("list", { folder = "/Home/Pictures" })');
+  }
+  const pt = (x, y) => ({ x, y });
+  function wpt(i) { const b = workerBox(i); return pt(b.x + b.w / 2, b.y + 60); }
+  function leastLoaded() { let best = 0; for (let i = 1; i < NW; i++) if (S.workers[i].ring.length < S.workers[best].ring.length) best = i; return best; }
+  function emitRecord(r) {
+    // a 64-byte record: drawn as a chip travelling from `from` to worker `to`'s ring
+    S.chips.push({ task: r.task, slot: r.slot, from: r.from, to: wpt(r.to), at: S.t, dur: TRAVEL, w: r.to, land: 'ring', range: r.range });
+  }
+  function say(who, text) {
+    S.log.push({ t: S.t, who, text });
+    const d = document.createElement('div');
+    d.innerHTML = '<span class="t">' + S.t.toFixed(1) + '</span>' + esc(who) + ' · ' + esc(text);
+    logEl.appendChild(d);
+    while (logEl.children.length > 60) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function advance(dt) {
+    if (S.finished) return;
+    const t1 = S.t + dt;
+    // chips that land
+    for (const ch of S.chips) {
+      if (ch.landed) continue;
+      if (t1 >= ch.at + ch.dur) {
+        ch.landed = true;
+        if (ch.land === 'ring') S.workers[ch.w].ring.push(ch);
+        else if (ch.land === 'window') S.events.push(ch);
+        else if (ch.land === 'gpu') S.gpu = { at: S.t, dur: SHADE_GPU_MS, show: GPU_SHOW, done: false };
+      }
+    }
+    S.chips = S.chips.filter((c) => !c.landed || c.keep);
+    // workers: finish the running task, start the next
+    S.workers.forEach((w, i) => {
+      if (w.task && t1 >= w.until) finish(w, i);
+      if (!w.task && w.ring.length) start(w, i, w.ring.shift());
+    });
+    // the GPU run
+    if (S.gpu && !S.gpu.done && t1 >= S.gpu.at + S.gpu.show) {
+      S.gpu.done = true; S.shaded = 1;
+      S.chips.push({ task: 'shade', from: pt(GPU.x + GPU.w / 2, GPU.y + 60), to: pt(WIN.x + 300, WIN.y + 56), at: S.t, dur: TRAVEL, land: 'window' });
+      say('gpu', 'shade: ticket done, ' + SHADE_GPU_MS + ' ms by the GPU\'s own clock');
+    }
+    // the window's tick
+    if (t1 >= S.tickAt) {
+      S.tickAt += TICK;
+      if (S.events.length) {
+        let placed = 0, shaded = false;
+        for (const ev of S.events) { if (ev.task === 'event') { S.damage[ev.slot - 1] = S.t; placed++; } else shaded = true; }
+        S.events = []; S.winFlash = S.t;
+        say('window', 'tick: g:events() → ' + (placed ? placed + ' thumbnail' + (placed > 1 ? 's' : '') + ' damaged' : '') + (shaded ? (placed ? ', ' : '') + 'the whole sheet damaged' : ''));
+        if (shaded) { S.finished = true; say('window', 'done: ' + N + ' pictures, ' + S.t.toFixed(1) + ' ms simulated'); }
+      }
+    }
+    S.t = t1;
+  }
+  function start(w, i, rec) {
+    w.task = rec; w.lua = rec.task === 'list';
+    const ms = rec.task === 'list' ? 1.2 : rec.task === 'decode' ? DEC_MS() : rec.task === 'place' ? PLACE_MS
+             : rec.task === 'shade' ? SHADE_CPU_MS : rec.task === 'submit' ? GPU_SUBMIT_MS : 1;
+    w.until = S.t + ms; w.began = S.t;
+    const where = rec.task === 'list' ? 'Lua state' : rec.task === 'submit' ? 'compute.run' : 'C';
+    say('worker ' + i, rec.task + (rec.slot ? ' #' + rec.slot : rec.range ? ' rows ' + rec.range : '') + ' · ' + where + ' · ' + ms.toFixed(1) + ' ms');
+  }
+  function finish(w, i) {
+    const rec = w.task; w.task = null;
+    const here = wpt(i);
+    if (rec.task === 'list') {
+      S.count = N; say('worker ' + i, 'list → state.count = ' + N + '; emits ' + N + ' decode');
+      for (let s = 1; s <= N; s++) emitRecord({ task: 'decode', slot: s, from: here, to: (s - 1) % NW });
+    } else if (rec.task === 'decode') {
+      // the pixels become a buffer; place goes to the least loaded worker
+      S.chips.push({ task: 'place', slot: rec.slot, from: here, to: wpt(leastLoaded()), at: S.t, dur: TRAVEL, w: leastLoaded(), land: 'ring' });
+    } else if (rec.task === 'place') {
+      S.cells[rec.slot - 1] = hues[rec.slot - 1]; S.done++; S.join++;
+      S.chips.push({ task: 'event', slot: rec.slot, from: here, to: pt(WIN.x + 300, WIN.y + 56), at: S.t, dur: TRAVEL, land: 'window', thin: true });
+      if (S.join === N) {
+        say('kit', 'join decode = ' + N + '/' + N + ' → emits shade');
+        if (stage === 1) {
+          S.shadeMode = 'cpu';
+          for (let r = 0; r < NW; r++) emitRecord({ task: 'shade', from: pt(KIT.x + 300, KIT.y + 60), to: r, range: (r * ROWS * 56 / NW | 0) + '-' + (((r + 1) * ROWS * 56 / NW) | 0) });
+        } else {
+          S.shadeMode = 'gpu';
+          emitRecord({ task: 'submit', from: pt(KIT.x + 300, KIT.y + 60), to: 0 });
+        }
+      }
+    } else if (rec.task === 'shade') {
+      S.shaded += 1 / NW;
+      if (Math.abs(S.shaded - 1) < 1e-6) {
+        S.chips.push({ task: 'shade', from: here, to: pt(WIN.x + 300, WIN.y + 56), at: S.t, dur: TRAVEL, land: 'window' });
+        say('kit', 'join shade = ' + NW + '/' + NW + ' → event to the window');
+      }
+    } else if (rec.task === 'submit') {
+      say('worker ' + i, 'compute.run{ kernel = shade.kc, buffers = { sheet }, grid = 25 × 150 } → a ticket, at once');
+      S.chips.push({ task: 'run', from: here, to: pt(GPU.x + GPU.w / 2, GPU.y + 60), at: S.t, dur: TRAVEL, land: 'gpu' });
+    }
+  }
+
+  // ---- drawing --------------------------------------------------------------
+  function band(b, fill, line, ink, title, sub) {
+    ctx.fillStyle = fill; ctx.strokeStyle = line; ctx.lineWidth = 1.2;
+    rr(b.x, b.y, b.w, b.h, 12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = ink; ctx.font = '600 10.5px ' + css('--sans'); ctx.textBaseline = 'top';
+    ctx.fillText(title.toUpperCase(), b.x + 12, b.y + 9);
+    if (sub) { ctx.fillStyle = C.dim; ctx.font = '400 10.5px ' + css('--sans'); ctx.fillText(sub, b.x + 12, b.y + 22); }
+  }
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function kindColors(task) {
+    if (task === 'list') return [C['lua'], C['lua-line'], C['lua-ink']];
+    if (task === 'shade' || task === 'submit' || task === 'run') return [C['gpu'], C['gpu-line'], C['gpu-ink']];
+    if (task === 'event') return [C['app'], C['app-line'], C['app-ink']];
+    return [C['c'], C['c-line'], C['c-ink']];
+  }
+  let scale = 1;
+  function draw() {
+    ctx.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.textBaseline = 'top';
+    // Window
+    band(WIN, C.app, C['app-line'], C['app-ink'], 'Contact Sheet window · main Lua state', 'win:tick() every 16.7 ms reads g:events(); the sheet is shown without a copy');
+    const flash = Math.max(0, 1 - (S.t - S.winFlash) / 60);
+    ctx.fillStyle = C.card; ctx.strokeStyle = C['app-line']; rr(WIN.x + 236, WIN.y + 40, 128, 28, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C['app-ink']; ctx.font = '500 10.5px ' + css('--mono');
+    ctx.fillText('events: ' + S.events.length + '  tick ' + (S.finished ? '·' : (S.tickAt - S.t).toFixed(0) + 'ms'), WIN.x + 244, WIN.y + 48);
+    if (flash > 0) { ctx.strokeStyle = C.path; ctx.lineWidth = 2 * flash; rr(WIN.x + 236, WIN.y + 40, 128, 28, 7); ctx.stroke(); }
+    ctx.fillStyle = C['app-ink']; ctx.font = '500 11px ' + css('--sans');
+    ctx.fillText(S.done + ' of ' + (S.count || '?') + ' placed', WIN.x + 12, WIN.y + 50);
+    // Kit
+    band(KIT, C.kit, C['kit-line'], C['kit-ink'], 'Graph Kit · C, in the program', 'graph_emit: one record, one wake · joins counted atomically');
+    ctx.fillStyle = C['kit-ink']; ctx.font = '500 10.5px ' + css('--mono');
+    ctx.fillText('join decode ' + S.join + '/' + N, KIT.x + 12, KIT.y + 44);
+    ctx.fillText('arena: ' + (S.count ? S.count * 60 : 60) + ' B', KIT.x + 12, KIT.y + 60);
+    const jx = KIT.x + 150, jy = KIT.y + 48, jw = 210;
+    ctx.fillStyle = C.card; rr(jx, jy, jw, 10, 5); ctx.fill();
+    ctx.fillStyle = C['kit-line']; rr(jx, jy, jw * (S.join / N), 10, 5); ctx.fill();
+    ctx.fillStyle = C.dim; ctx.font = '400 10px ' + css('--sans');
+    ctx.fillText(stage === 1 ? 'shade → 4 ranges on the fallback (stage 1)' : 'shade → one run on the GPU (stage 2)', jx, jy + 16);
+    // Workers
+    band(WRK, C.lua, C['lua-line'], C['lua-ink'], 'Workers · one thread a core', '');
+    S.workers.forEach((w, i) => {
+      const b = workerBox(i);
+      ctx.fillStyle = C.card; ctx.strokeStyle = w.task ? C['lua-line'] : C.line; ctx.lineWidth = 1.2;
+      rr(b.x, b.y, b.w, b.h, 9); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = C['lua-ink']; ctx.font = '600 10.5px ' + css('--sans'); ctx.fillText('worker ' + i, b.x + 8, b.y + 7);
+      ctx.fillStyle = C.dim; ctx.font = '400 9.5px ' + css('--sans'); ctx.fillText('core ' + i + ' · Lua + C', b.x + 8, b.y + 20);
+      // ring: slots
+      ctx.fillStyle = C.dim; ctx.font = '400 9.5px ' + css('--sans'); ctx.fillText('ring ' + w.ring.length, b.x + 8, b.y + 36);
+      for (let s = 0; s < Math.min(w.ring.length, 8); s++) {
+        const [f, l] = kindColors(w.ring[s].task);
+        ctx.fillStyle = f; ctx.strokeStyle = l; rr(b.x + 8 + s * 8, b.y + 49, 6, 8, 2); ctx.fill(); ctx.stroke();
+      }
+      // the running task
+      if (w.task) {
+        const [f, l, k] = kindColors(w.task.task);
+        ctx.fillStyle = f; ctx.strokeStyle = l; rr(b.x + 6, b.y + 66, b.w - 12, 44, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = k; ctx.font = '500 10.5px ' + css('--mono');
+        ctx.fillText(w.task.task + (w.task.slot ? ' #' + w.task.slot : ''), b.x + 11, b.y + 71);
+        ctx.fillStyle = C.dim; ctx.font = '400 9.5px ' + css('--sans');
+        ctx.fillText(w.task.task === 'list' ? 'Lua · list.lua' : w.task.task === 'submit' ? 'compute.run' : w.task.task === 'shade' ? 'C · fallback' : 'C · gfx', b.x + 11, b.y + 84);
+        const p = Math.min(1, (S.t - w.began) / (w.until - w.began));
+        ctx.fillStyle = C.card; rr(b.x + 11, b.y + 99, b.w - 22, 5, 2.5); ctx.fill();
+        ctx.fillStyle = l; rr(b.x + 11, b.y + 99, (b.w - 22) * p, 5, 2.5); ctx.fill();
+      } else {
+        ctx.fillStyle = C.dim; ctx.font = '400 10px ' + css('--sans'); ctx.fillText(S.started && !S.finished ? 'asleep on its futex' : 'idle', b.x + 8, b.y + 80);
+      }
+      ctx.fillStyle = C.dim; ctx.font = '400 9.5px ' + css('--sans'); ctx.fillText('futex · no lock', b.x + 8, b.y + 128);
+    });
+    // Buffers
+    band(BUF, C.buf, C['buf-line'], C['buf-ink'], 'Compute Kit buffer · sheet, 1 region', 'every place writes its own cell; the window shows this same memory');
+    for (let s = 1; s <= N; s++) {
+      const r = cellRect(s); const h = S.cells[s - 1];
+      ctx.fillStyle = h == null ? C.card : 'hsl(' + h + ' 55% ' + (S.shaded ? 52 : 60) + '%)';
+      ctx.strokeStyle = C['buf-line']; ctx.lineWidth = 1; rr(r.x, r.y, r.w, r.h, 5); ctx.fill(); ctx.stroke();
+      if (h != null) { ctx.fillStyle = 'hsl(' + h + ' 45% 35% / 0.55)'; rr(r.x + 10, r.y + 24, r.w - 20, r.h - 30, 3); ctx.fill(); }
+      else { ctx.fillStyle = C.dim; ctx.font = '400 9.5px ' + css('--mono'); ctx.fillText('#' + s, r.x + 5, r.y + 4); }
+      const d = S.damage[s - 1]; const f = d ? Math.max(0, 1 - (S.t - d) / 120) : 0;
+      if (f > 0) { ctx.strokeStyle = C.path; ctx.lineWidth = 2.5 * f; rr(r.x, r.y, r.w, r.h, 5); ctx.stroke(); }
+    }
+    if (S.shaded > 0) {
+      // the vignette: a soft dark frame over the grid, grown by how much is shaded
+      const g = ctx.createRadialGradient(gridX + 164, gridY + 80, 60, gridX + 164, gridY + 80, 220);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,' + (0.35 * S.shaded).toFixed(2) + ')');
+      ctx.fillStyle = g; rr(gridX - 4, gridY - 4, COLS * CELL + (COLS - 1) * GAPC + 8, ROWS * CELL + (ROWS - 1) * GAPC + 8, 8); ctx.fill();
+    }
+    // GPU
+    const gActive = stage === 2;
+    band(GPU, gActive ? C.gpu : C.card, gActive ? C['gpu-line'] : C.line, gActive ? C['gpu-ink'] : C.dim, 'The GPU · stage 2', gActive ? 'shade.kc over 25 × 150 groups; the sheet is already in its table' : 'idle in stage 1, where shade runs as four ranges on the workers; choose Stage 2 above to see the run');
+    if (gActive) {
+      ctx.fillStyle = C.card; ctx.strokeStyle = C['gpu-line']; rr(GPU.x + 12, GPU.y + 44, GPU.w - 24, 50, 8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = C['gpu-ink']; ctx.font = '500 10.5px ' + css('--mono');
+      const gp = S.gpu ? Math.min(1, (S.t - S.gpu.at) / S.gpu.show) : 0;
+      ctx.fillText(S.gpu ? (S.gpu.done ? 'run done · ticket answered · 1.4 ms' : 'execution units · 25 × 150 groups · ' + (gp * 100 | 0) + '%') : 'waiting for a run: after the join', GPU.x + 22, GPU.y + 52);
+      ctx.fillStyle = C.paper; rr(GPU.x + 22, GPU.y + 72, GPU.w - 44, 8, 4); ctx.fill();
+      ctx.fillStyle = C['gpu-line']; rr(GPU.x + 22, GPU.y + 72, (GPU.w - 44) * gp, 8, 4); ctx.fill();
+    }
+    // chips in flight
+    for (const ch of S.chips) {
+      if (ch.landed) continue;
+      const p = Math.min(1, (S.t - ch.at) / ch.dur), e = p * p * (3 - 2 * p);
+      const x = ch.from.x + (ch.to.x - ch.from.x) * e, y = ch.from.y + (ch.to.y - ch.from.y) * e;
+      const [f, l, k] = kindColors(ch.task);
+      const w = ch.thin ? 14 : 44, h = 16;
+      ctx.fillStyle = f; ctx.strokeStyle = C.path; ctx.lineWidth = 1.2; rr(x - w / 2, y - h / 2, w, h, 5); ctx.fill(); ctx.stroke();
+      if (!ch.thin) { ctx.fillStyle = k; ctx.font = '500 9px ' + css('--mono'); ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText(ch.task + (ch.slot ? '#' + ch.slot : ''), x, y + 0.5); ctx.textAlign = 'left'; ctx.textBaseline = 'top'; }
+    }
+    // status tiles
+    stDone.textContent = S.done + ' / ' + N;
+    stBusy.textContent = S.workers.filter((w) => w.task).length + ' / ' + NW;
+    stTime.textContent = S.t.toFixed(1) + ' ms';
+  }
+
+  // ---- the loop and the controls -------------------------------------------
+  function frame(now) {
+    if (playing) {
+      const dtReal = Math.min(50, now - (lastReal || now)); lastReal = now;
+      S.started = true;
+      // 1× means the simulation's 100 ms take about a second on screen
+      advance(dtReal * 0.1 * speed);
+      if (S.finished) { playing = false; playBtn.textContent = 'Play'; }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+  function resize() { const w = cv.clientWidth || 400; scale = w / W; cv.width = Math.round(w * DPR); cv.height = Math.round(w * H / W * DPR); cv.style.height = Math.round(w * H / W) + 'px'; }
+
+  const playBtn = document.getElementById('play');
+  playBtn.addEventListener('click', () => { if (S.finished) reset(); playing = !playing; lastReal = 0; playBtn.textContent = playing ? 'Pause' : 'Play'; });
+  document.getElementById('step').addEventListener('click', () => {
+    // advance until the next thing lands, a task ends, or a tick fires
+    if (S.finished) reset();
+    S.started = true; playing = false; playBtn.textContent = 'Play';
+    const n0 = logEl.children.length; let guard = 0;
+    while (logEl.children.length === n0 && !S.finished && guard++ < 4000) advance(0.25);
+  });
+  document.getElementById('reset').addEventListener('click', () => { playing = false; playBtn.textContent = 'Play'; reset(); });
+  document.getElementById('speed').addEventListener('change', (e) => { speed = +e.target.value; });
+  const st1 = document.getElementById('st1'), st2 = document.getElementById('st2');
+  function setStage(n) { stage = n; st1.setAttribute('aria-pressed', n === 1); st2.setAttribute('aria-pressed', n === 2); playing = false; playBtn.textContent = 'Play'; reset(); }
+  st1.addEventListener('click', () => setStage(1)); st2.addEventListener('click', () => setStage(2));
+
+  addEventListener('resize', resize);
+  resize(); reset(); requestAnimationFrame(frame);
+  window.__sheet = { advance, setStage, state: () => S };    // for a test harness; the page never uses it
+})();
+</script>

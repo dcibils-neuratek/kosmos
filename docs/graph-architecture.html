@@ -1,0 +1,151 @@
+<!doctype html>
+<!--
+  The Graph Kit and Contact Sheet, and what they stand on: the program as
+  a graph of tasks on top; graph.lua and a Lua state a worker in its
+  process; the kit in C with its workers, rings and joins; the kits whose
+  functions are work tasks; the Compute Kit, the driver and the GPU, which
+  stage 2 reaches and stage 1 does not; and Nebula's threads and futex.
+  A contact sheet's path drawn through it (T). Drawn on 1 November 2026,
+  before any of it is built; docs/graph.md is the argument. Rendered to
+  docs/graph-architecture.png by headless Chrome at twice its size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Graph Kit architecture</title>
+<head>
+<meta charset="utf-8">
+<title>Kosmos Compute Kit architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --gpu: #f3ecfd; --gpu-line: #c4a8ef; --gpu-ink: #4b2a8a;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 390px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .88; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 42%; }
+</style>
+</head>
+<body>
+<body>
+<h1>The Graph Kit - what it stands on</h1>
+<p class="sub">A program declares its work as tasks - scalar (Lua, in a worker's own state), work (C, from a kit) and parallel (a kernel, or its fallback on the processor) - and the edges between them. The kit runs the graph on one worker a core: a task runs, emits what follows it, and ends; nothing waits, nothing locks. Data lives in Compute Kit buffers every task and the GPU see; what travels with a task is 64 bytes. Stage 1 is the processor alone; stage 2 runs the parallel tasks on the GPU with the program unchanged.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new, stage 1</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>stage 2 and after</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits (C, in the program)</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>drivers</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>the GPU</span>
+  <span class="f">T</span><span>a contact sheet, 48 photos</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>Contact Sheet - <code>sheet.lua</code></b><p>every picture in a folder decoded on the cores at once, each thumbnail placed as it is ready, a parallel shade at the end, the times shown. Declares the graph <span class="f">T1</span>, emits <code>list</code> <span class="f">T2</span>, reads events on its tick <span class="f">T7</span>.</p></div>
+        <div class="box later-box"><span class="tag later">S7</span><b>Gallery</b><p>its thumbnails through the kit, measured before and after</p></div>
+        <div class="box later-box"><span class="tag later">STAGE 2</span><b>any program whose work is GPU-shaped</b><p>video filters, a sound effect, a simulation - the same declaration, the parallel tasks on the GPU</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries (in its process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b><code>graph.lua</code> - the declaration</b><p>tasks, edges, buffers, state read from the program's table and <em>checked</em> - a <code>to</code> that names nothing, a fan-out with no join, a write to an undeclared field - with the line said; the flat description handed to the kit; <code>g:events()</code>, <code>g:time()</code>, <code>g:busy()</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>a Lua state a worker</b><p>made as a program's is, every scalar task's file loaded once; <code>emit</code>, <code>state</code>, the buffers bound; <code>sleep</code>, <code>receive</code> and the namespace refuse. <code>list.lua</code> runs here <span class="f">T3</span></p></div>
+        <div class="box"><b><code>kc.lua</code>, the UI kit</b><p>a parallel task's kernel checked by kc (stage 1), compiled and run (stage 2); the window, as it is</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>Kits (C, in its process)</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>the Graph Kit - <code>/Kosmos/Kits/graph</code></b><p>one worker thread a core; a single-producer single-consumer ring of 64-byte task records a worker, a futex a worker sleeps on; <code>graph_emit</code> the only door in <span class="f">T4</span>; fan-out and join counters, atomic; the arguments' arena; the clock, a time a task</p></div>
+        <div class="box new"><span class="tag">+ 1 TABLE</span><b><code>graph_work.h</code> - work tasks</b><p>a kit registers a C function by name: <code>gfx.decode_picture</code>, <code>gfx.scale_into</code> first <span class="f">T5</span>; a parallel task's fallback over an item range <span class="f">T6</span></p></div>
+        <div class="box"><b>the Compute Kit</b><p>buffers - regions every task sees, in the GPU's table when there is one - as they are. <span style="color:var(--later)">Stage 2: <code>compute.run</code> and <code>GPU_OP_RUNS</code> for a parallel task, submitted and polled by worker 0</span></p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Drivers</h2>
+      <div class="row" style="grid-template-columns:1fr">
+        <div class="box later-box"><span class="tag later">STAGE 2</span><b>intelgpu - <code>/Devices/gpu</code></b><p><code>GPU_OP_KERNEL</code>, <code>GPU_OP_RUN</code>, <code>GPU_OP_RUNS</code> - as the Compute Kit uses them today; nothing new in the driver for the graph</p></div>
+      </div>
+    </div>
+    <div class="layer gpu"><h2>The GPU</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box later-box"><span class="tag later">STAGE 2</span><b>the execution units</b><p>a parallel task's kernel over its grid, the items in buffers it was handed; the scheduler stays on the processor (G4 A)</p></div>
+        <div class="box later-box"><span class="tag later">STAGE 3</span><b>a resident kernel</b><p>the scheduler on the GPU - only on a GPU with compute preemption, measured against stage 2 first (G4 B)</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="box"><b>threads in a process</b><p><code>SYS_THREAD_CREATE</code>, a home core each, capabilities the process's - <code>threads.md</code> steps 1-3, as they are</p></div>
+        <div class="box"><b>the futex, regions</b><p>a worker sleeps on a word and is woken by one; a buffer is a region - as they are</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>T - a contact sheet, 48 photos, 4 workers</h3><ol>
+      <li><span class="f">T1</span> <code>graph.app{...}</code>: the declaration checked once, every rule with its line; four workers made, a state each.</li>
+      <li><span class="f">T2</span> <code>g:emit("list", {folder})</code>: one 64-byte record, one wake.</li>
+      <li><span class="f">T3</span> <code>list.lua</code> on worker 0 reads the folder and emits 48 <code>decode</code> records, 12 a ring.</li>
+      <li><span class="f">T4</span> each worker pops a record; its arguments - a path, a slot - come out of the arena.</li>
+      <li><span class="f">T5</span> <code>gfx.decode_picture</code> in C: the time of the whole program, on four cores; the pixels adopted as a buffer; <code>place</code> emitted, which scales into the sheet and adds one to <code>done</code>.</li>
+      <li><span class="f">T6</span> the 48th <code>place</code> brings the join to 48 and emits <code>shade</code>: four ranges over the fallback (stage 1), one run on the GPU (stage 2).</li>
+      <li><span class="f">T7</span> the window's tick reads <code>g:events()</code> and damages one thumbnail's rectangle; the pixels are already in the sheet it shows.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>A task</td><td>64 bytes, <code>graphproto.h</code>'s shape, through a worker's ring</td></tr>
+      <tr><td>Its arguments</td><td>serialised once into the arena; a table copied, never shared</td></tr>
+      <tr><td>Pixels, numbers</td><td>Compute Kit buffers - regions every task and the GPU see</td></tr>
+      <tr><td>State</td><td>a region; one writer a field, counters atomic</td></tr>
+      <tr><td>A result for the window</td><td>a one-way queue read on the tick; a pulse when <code>pulses.md</code> is built</td></tr>
+      <tr><td>The time</td><td>the kit's clock, a task; the GPU's, a run (stage 2)</td></tr></table></div>
+    <div class="card"><h3>What a task may not do</h3><table>
+      <tr><td>Wait</td><td>no sleep, receive or call; it ends and emits</td></tr>
+      <tr><td>Share</td><td>no table crosses a worker; no field has two writers</td></tr>
+      <tr><td>Reach</td><td>no buffer it was not handed; the namespace only through the main state</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>The Graph Kit</td><td>Gallery's thumbnails; the video player's decode ahead; Music; the Game Kit's rasteriser - <code>threads.md</code> step 9's users</td></tr>
+      <tr><td>A Lua state a worker</td><td><code>threads.md</code> step 8, built here</td></tr>
+      <tr><td><code>graph_work.h</code></td><td>every kit with a loop over bytes: compress, pdf, ffmpeg, 3d</td></tr></table></div>
+  </div>
+</div>
+</body>
+</html>
