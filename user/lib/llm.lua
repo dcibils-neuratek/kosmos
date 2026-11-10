@@ -21,7 +21,7 @@ local llm = {}
 
 local PATH = "/Running/llm"
 
-local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS, OP_SETTINGS, OP_INSIDE = 1, 2, 3, 4, 5, 6, 7
+local OP_LOAD, OP_ASK, OP_WAIT, OP_STOP, OP_STATS, OP_SETTINGS, OP_INSIDE, OP_LENS = 1, 2, 3, 4, 5, 6, 7, 8
 
 local STOP_AT_BLANK_LINE, TEXT_IN_REGION, LOAD_NOWAIT, SETTINGS_CHANGE = 1, 2, 4, 8
 
@@ -29,11 +29,11 @@ local TEXT_MAX = 1536
 local STOP_MAX = 24
 local CONVERSATION_MAX = 256 * 1024
 
--- `struct llm_request`, 1688 bytes, and `struct llm_reply`, 1040: 424 of
+-- `struct llm_request`, 1696 bytes, and `struct llm_reply`, 1040: 424 of
 -- the model and the last answer, then since the server started and who
 -- has asked (`ASKER`, eight of them), then where the last answer's time
 -- went (`STAGES`, at 913).
-local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24I4I4I4I4"
+local REQUEST = "<I4I4I4I4I4I4c64c1536c24c24I4I4I4I4I4I4"
 local REPLY = "<I4I4I4I4c64c64c16c96I8I8I4I4I4I4I4I4I8I8I8I8I8I4I4I4I4I4I4I4I4I4I4c32I4I4I4I4"
 local REPLY_SIZE = 1040
 local STAGES, AT_STAGES = "<I8I8I8I8I8I8I8I8", 913
@@ -64,6 +64,7 @@ local ERRORS = {
   [8] = "there is no answer to wait on",
   [9] = "this machine cannot run those settings",
   [10] = "the settings are in force, but could not be kept beside the models",
+  [11] = "that word's layers are not kept - written while nobody watched, or written over since",
 }
 
 llm.STATES = { [0] = "empty", "loading", "ready", "answering" }
@@ -89,7 +90,7 @@ local function call(op, fields, pass)
   local bytes = string.pack(REQUEST, op, fields.tokens or 0, fields.flags or 0,
                             fields.since or 0, fields.length or #text, fields.seed or 0, pad(fields.name, 64),
                             pad(text, TEXT_MAX), pad(stops[1], STOP_MAX), pad(stops[2], STOP_MAX),
-                            set.cores or 0, set.loops or 0, set.gpu or 0, 0)
+                            set.cores or 0, set.loops or 0, set.gpu or 0, 0, fields.record or 0, 0)
   local reply, cap = fs.raw(PATH, bytes, pass)
 
   if not reply then
@@ -599,6 +600,32 @@ function llm.inside_layer(r, l)
   layer.sink = v[at + 7] / 65535
 
   return layer
+end
+
+-- **The answer forming, layer by layer** (`llminside.h`, LENS; `docs/
+-- xavier.md`, *The Story page*): what each layer would have answered after
+-- record `seq`'s token - the word the record after it holds, when the
+-- answer wrote it - as { seq, layers = { { token, odds, text } ... } },
+-- the first layer first. Refused while an answer runs ("busy"), and for a
+-- record whose layers are not kept: the server keeps the last 64 tokens'
+-- while the ring is filled.
+local LENS_AT = INSIDE_DATA + llm.INSIDE_RECORDS * RECORD_BYTES
+
+function ring:lens(seq)
+  local r, why = call(OP_LENS, { record = seq })
+
+  if not r then return nil, why end
+
+  local raw = sys.region_read(self.cap, LENS_AT, 16 + 24 * PASSAGE_LAYERS)
+  local got, n = string.unpack("<I4I4", raw)
+  if got ~= seq then return nil, "the LLM server wrote another word's layers" end
+
+  local out = { seq = seq, layers = {} }
+  for l = 1, math.min(n, PASSAGE_LAYERS) do
+    local token, odds, text = string.unpack("<i4fc16", raw, 17 + (l - 1) * 24)
+    out.layers[l] = { token = token, odds = odds, text = cstring(text) }
+  end
+  return out
 end
 
 function ring:close()

@@ -58,6 +58,8 @@
 #define LLM_OP_STATS  5u
 #define LLM_OP_SETTINGS 6u
 #define LLM_OP_INSIDE 7u
+#define LLM_OP_LENS   8u        /* `record`'s streams through the lens, into
+                                   the Inside region (`llminside.h`)    */
 
 #define LLM_OK            0u
 #define LLM_ERR_BAD_OP    1u    /* not a request this protocol has */
@@ -72,6 +74,8 @@
                                    loops or a GPU this machine has not got */
 #define LLM_ERR_NOT_KEPT 10u    /* SETTINGS: in force, but the file beside
                                    the models could not be written */
+#define LLM_ERR_NO_STREAM 11u   /* LENS: that token's streams are not kept -
+                                   written unwatched, or written over since */
 
 #define LLM_NAME_MAX  64u
 #define LLM_TEXT_MAX  1536u     /* a prompt in the message itself */
@@ -130,6 +134,9 @@ struct llm_request {
     char     stop[LLM_STOPS][LLM_STOP_MAX];
 
     struct llm_settings settings;   /* SETTINGS with LLM_SETTINGS_CHANGE   */
+
+    uint32_t record;                /* LENS: an Inside record's `seq`      */
+    uint32_t reserved;
 };
 
 /*

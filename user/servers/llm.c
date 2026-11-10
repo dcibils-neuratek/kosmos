@@ -59,7 +59,7 @@ static const char *models_root = "/Home/Models";
 #define WAITERS       16u                   /* WAITs held at once; more answered now */
 #define ALLOCS        64u                   /* the kit's tables, a region each */
 
-_Static_assert(sizeof(struct llm_request) == 1688, "llm_request is 1688 bytes");
+_Static_assert(sizeof(struct llm_request) == 1696, "llm_request is 1696 bytes");
 _Static_assert(sizeof(struct llm_reply) == 1040, "llm_reply is 1040 bytes, as llm.lua reads it");
 _Static_assert(__builtin_offsetof(struct llm_reply, read_stage_us) == 912, "the stages at 912");
 _Static_assert(sizeof(struct llm_asker) == 56, "an asker is 56 bytes");
@@ -384,6 +384,7 @@ static void wake_waiters(bool all)
  * --------------------------------------------------------------------- */
 
 static void gpu_unload(void);
+static void streams_forget(void);
 
 static void unload(void)
 {
@@ -394,6 +395,7 @@ static void unload(void)
     region_drop(&model.file);
     memset(&model.m, 0, sizeof model.m);
     memset(&held, 0, sizeof held);
+    streams_forget();
     ans.prompt = NULL;
     model.state = LLM_STATE_EMPTY;
     model.size = model.loaded = 0;
@@ -937,6 +939,45 @@ static bool watched(void)
     return inside != NULL && (long)(inside_until - kosmos_ticks()) > 0;
 }
 
+/*
+ * **The streams** (`llminside.h`, LLM_STREAM_SLOTS; `docs/xavier.md`, *The
+ * Story page*): a batch's, as the kit writes them, then each token's copied
+ * into the slot of its record, `seq % LLM_STREAM_SLOTS`, which says whose it
+ * holds; and room for a lens's scores. Made the first time the ring is
+ * filled with this model, as the kit's own tables are, and let go with it.
+ */
+static float *stream_batch, *stream_slots, *lens_scores;
+static uint32_t stream_seq[LLM_STREAM_SLOTS];
+static bool stream_kept[LLM_STREAM_SLOTS];
+static bool streams_refused;                 /* no room for them, this model */
+
+static void streams_forget(void)
+{
+    stream_batch = stream_slots = lens_scores = NULL;
+    streams_refused = false;
+    memset(stream_kept, 0, sizeof stream_kept);
+}
+
+static bool streams_ready(void)
+{
+    if (stream_batch != NULL) return true;
+    if (streams_refused) return false;
+
+    const uint64_t S = llm_stream_floats(&model.m);
+
+    stream_batch = kit_alloc(NULL, (size_t)(LLM_BATCH * S * sizeof(float)));
+    stream_slots = stream_batch ? kit_alloc(NULL, (size_t)(LLM_STREAM_SLOTS * S * sizeof(float))) : NULL;
+    lens_scores = stream_slots ? kit_alloc(NULL, (size_t)LLM_BATCH * model.m.n_vocab * sizeof(float)) : NULL;
+
+    if (lens_scores == NULL) {
+        /* What was made goes with the model's other tables. */
+        stream_batch = stream_slots = NULL;
+        streams_refused = true;
+        return false;
+    }
+    return true;
+}
+
 /* INSIDE: the ring, made the first time, and the lease renewed. */
 static uint32_t inside_begin(long *cap)
 {
@@ -973,17 +1014,32 @@ static void token_text(int32_t token, char out[LLM_INSIDE_TEXT])
 /* Before a step: the kit handed somewhere to record, or nothing. */
 static void inside_ready(void)
 {
-    llm_watch(&model.m, watched() ? passages : NULL);
+    const bool w = watched();
+
+    llm_watch(&model.m, w ? passages : NULL);
+    llm_watch_streams(&model.m, w && streams_ready() ? stream_batch : NULL);
+}
+
+/* A step that failed: nothing more recorded. */
+static void inside_off(void)
+{
+    llm_watch(&model.m, NULL);
+    llm_watch_streams(&model.m, NULL);
 }
 
 /* After a step of `n` tokens that took `us`: each one's record into the
  * ring, the last one's with what may follow it. */
 static void inside_written(uint32_t n, bool reading, uint64_t us, uint64_t rows_gpu, uint64_t rows_all)
 {
+    const float *streams = model.m.streams;
+
+    llm_watch_streams(&model.m, NULL);
     if (model.m.passage == NULL) return;
 
     llm_watch(&model.m, NULL);
     llm_candidates(&model.m, &passages[n - 1]);
+
+    const uint64_t S = llm_stream_floats(&model.m);
 
     for (uint32_t t = 0; t < n; t++) {
         uint32_t seq = inside->written;
@@ -1001,6 +1057,14 @@ static void inside_written(uint32_t n, bool reading, uint64_t us, uint64_t rows_
         token_text(r->p.token, r->text);
 
         for (uint32_t k = 0; k < r->p.n_cand; k++) token_text(r->p.cand[k], r->cand_text[k]);
+
+        if (streams != NULL) {
+            const uint32_t slot = seq % LLM_STREAM_SLOTS;
+
+            memcpy(stream_slots + slot * S, streams + t * S, (size_t)(S * sizeof(float)));
+            stream_seq[slot] = seq;
+            stream_kept[slot] = true;
+        }
 
         llm_answer_publish(&inside->written, seq + 1);
     }
@@ -1221,7 +1285,7 @@ static void ask_step(void)
         inside_ready();
 
         if (llm_feed_batch(&model.m, &held, ans.prompt + ans.prompt_at, n) != 0) {
-            llm_watch(&model.m, NULL);
+            inside_off();
             answer_end();
             return;
         }
@@ -1305,7 +1369,7 @@ static void ask_step(void)
 
         gpu_time.feed_us += micros(kosmos_ticks() - began);
         if (no != 0) {
-            llm_watch(&model.m, NULL);
+            inside_off();
             answer_end();
             return;
         }
@@ -1429,6 +1493,38 @@ static void settings_request(const struct llm_request *rq, uint64_t sender)
     send(sender, settings_write() ? LLM_OK : LLM_ERR_NOT_KEPT, -1);
 }
 
+/*
+ * LENS: record `seq`'s streams read as though each layer were the last
+ * (`llm_lens`), and what each would have answered written after the ring
+ * before the reply. Between answers only - it uses the kit's working
+ * vectors - so while one runs it is BUSY, and the window asks again.
+ */
+static uint32_t lens(uint32_t seq)
+{
+    static int32_t token[512];
+    static float odds[512];
+    const uint32_t slot = seq % LLM_STREAM_SLOTS;
+
+    if (inside == NULL || stream_slots == NULL || !stream_kept[slot] || stream_seq[slot] != seq
+        || model.m.n_layer > 512)
+        return LLM_ERR_NO_STREAM;
+
+    if (llm_lens(&model.m, stream_slots + slot * llm_stream_floats(&model.m), lens_scores, token, odds) != 0)
+        return LLM_ERR_NO_STREAM;
+
+    struct llm_inside_lens *out = (struct llm_inside_lens *)(uintptr_t)(inside_region.at + LLM_INSIDE_LENS);
+    const uint32_t n = model.m.n_layer < LLM_PASSAGE_LAYERS ? model.m.n_layer : LLM_PASSAGE_LAYERS;
+
+    out->seq = seq;
+    out->n_layer = n;
+    for (uint32_t l = 0; l < n; l++) {
+        out->layer[l].token = token[l];
+        out->layer[l].odds = odds[l];
+        token_text(token[l], out->layer[l].text);
+    }
+    return LLM_OK;
+}
+
 static void handle(const struct llm_request *in, long given, uint64_t sender)
 {
     struct llm_request rq = *in;
@@ -1503,6 +1599,14 @@ static void handle(const struct llm_request *in, long given, uint64_t sender)
     case LLM_OP_INSIDE:
         e = inside_begin(&cap);
         send(sender, e, e == LLM_OK ? cap : -1);
+        return;
+
+    case LLM_OP_LENS:
+        if (model.state == LLM_STATE_LOADING || model.state == LLM_STATE_ANSWERING) {
+            send(sender, LLM_ERR_BUSY, -1);
+            return;
+        }
+        send(sender, model.state == LLM_STATE_READY ? lens(rq.record) : LLM_ERR_NO_MODEL, -1);
         return;
 
     default:

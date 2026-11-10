@@ -59,7 +59,35 @@ struct llm_inside_record {
 
 #define LLM_INSIDE_RECORD_BYTES (32u + LLM_INSIDE_TEXT * (1u + LLM_PASSAGE_CANDIDATES) \
                                  + 104u + 152u * LLM_PASSAGE_LAYERS)
-#define LLM_INSIDE_REGION (LLM_INSIDE_DATA + LLM_INSIDE_RECORDS * LLM_INSIDE_RECORD_BYTES)
+/*
+ * **The answer forming, layer by layer** (`docs/xavier.md`, *The Story
+ * page*): while the ring is filled the server keeps the last
+ * `LLM_STREAM_SLOTS` tokens' streams too, and a LENS request reads one of
+ * them through the lens (`llm_lens`) and writes what each layer would have
+ * answered here, after the ring, before it replies - so the window reads
+ * it once the reply has come, and nothing else writes it meanwhile. A
+ * record's lens is what follows that record's token: the word the record
+ * after it holds, when the answer wrote it.
+ */
+#define LLM_STREAM_SLOTS 64u
+
+struct llm_inside_guess {
+    int32_t  token;
+    float    odds;
+    char     text[LLM_INSIDE_TEXT];
+};
+
+struct llm_inside_lens {
+    uint32_t seq;                         /* the record whose streams these were */
+    uint32_t n_layer;                     /* layers below, at most the room       */
+    uint32_t reserved[2];
+    struct llm_inside_guess layer[LLM_PASSAGE_LAYERS];
+};
+
+#define LLM_INSIDE_LENS   (LLM_INSIDE_DATA + LLM_INSIDE_RECORDS * LLM_INSIDE_RECORD_BYTES)
+#define LLM_INSIDE_REGION (LLM_INSIDE_LENS + 16u + 24u * LLM_PASSAGE_LAYERS)
+
+_Static_assert(sizeof(struct llm_inside_lens) == 16u + 24u * LLM_PASSAGE_LAYERS, "a lens is as llm.lua reads it");
 
 _Static_assert(sizeof(struct llm_inside) == 32, "llm_inside is 32 bytes");
 _Static_assert(__builtin_offsetof(struct llm_inside, written) == 16, "written at 16");

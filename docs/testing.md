@@ -30572,3 +30572,25 @@ capital of France is":
 
 The answer arrives at layer 24 of 28 and stays - and the last layers
 grow less sure of it, as they spread the odds over what else might follow.
+
+## 18.746 The Story page, S3: LENS at the LLM server
+
+**What** (`xavier.md`, *The Story page: the design*): while the Inside
+ring is filled the server keeps the last 64 tokens' streams too - a
+batch's as the kit writes them, then each copied into its record's slot,
+`seq % 64`, which says whose it holds - in regions made the first time the
+ring fills with a model and let go with it (11 MB for Qwen2.5 1.5B, and
+19 MB of room for a lens's scores). `LLM_OP_LENS { record }` reads that
+record's streams through `llm_lens` and writes each layer's guess - token,
+odds, text - after the ring (`LLM_INSIDE_LENS`, `struct llm_inside_lens`)
+before it replies; BUSY while an answer runs, and `LLM_ERR_NO_STREAM` for
+a record never kept or written over since. `struct llm_request` gains
+`record` (1696 bytes); `ring:lens(seq)` in `llm.lua`.
+
+**Checks** (`x86-llm`): a record never kept refused as not kept; after a
+question watched, its last record's lens through `/Running/llm` is every
+layer, its top guess the record's own likeliest candidate at the same
+odds to the last printed digit (0.000930095906 on tiny-phi2); after 120
+more tokens, the same record refused. **Control**: the lens read from the
+slot before - its top guess another token (46992 against 43417), and it
+fails.

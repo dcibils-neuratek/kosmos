@@ -139,6 +139,27 @@ for _, c in ipairs({ { 1, "plain" }, { 2, "base" }, { 0, "avx2" }, { 0, "auto" }
 end
 local kept = fs.read(llm.MODELS .. "/llm.settings")
 print("LLM-SETFILE", kept and #kept or 0)
+
+-- The Story page's lens (`xavier.md`, *The Story page*, S3): a word's
+-- layers read as though each were the last, its top layer the model's own
+-- next word; a record never kept refused, and one written over since.
+llm.set({ cores = 0, loops = "auto" })
+local ring = llm.inside()
+ring:from_now()
+local nolens, why = ring:lens(999999)
+print("LLM-LENS-NONE", nolens == nil, why)
+a = llm.ask(unhex(SETPROMPT), { tokens = 4 })
+a:all()
+local recs = ring:read()
+local last = recs[#recs]
+local L, why = ring:lens(last.seq)
+local top = L and L.layers[#L.layers]
+print("LLM-LENS", #recs, L and #L.layers, top and top.token, last.cands[1].token,
+      top and string.format("%.9g", top.odds), string.format("%.9g", last.cands[1].odds), why or "")
+for _, w in ipairs({ "cat ", "dog ", "fish " }) do llm.ask(string.rep(w, 30), { tokens = 2 }):all() end
+local old, why = ring:lens(last.seq)
+print("LLM-LENS-GONE", old == nil, why)
+ring:close()
 print("LLM-DONE")
 '''
 
@@ -372,6 +393,20 @@ def main():
               "%s, the kit's %s" % (c, loops, cores, kind, got, want))
     se = line("LLM-SETFILE")
     check(se == ["24"], "the settings were not kept beside the models: %s" % se)
+
+    # **The lens** (`xavier.md`, *The Story page*, S3).
+    ln = line("LLM-LENS-NONE")
+    check(ln and ln[0] == "true" and "not kept" in ln[1], "a lens of a record never kept was not "
+          "refused as not kept: %s" % ln)
+    ln = line("LLM-LENS")
+    layers = {l[0]: l[5] for l in lines("LLM-LOAD") if len(l) > 5}
+    check(ln and int(ln[0]) > 0 and ln[1] == layers.get("tiny-phi2.Q4_0.gguf")
+          and ln[2] == ln[3] and ln[4] == ln[5],
+          "the last word's lens through /Running/llm was not every layer, its top layer the model's "
+          "likeliest next word at its odds: %s (layers %s)" % (ln, layers))
+    ln = line("LLM-LENS-GONE")
+    check(ln and ln[0] == "true" and "written over" in ln[1],
+          "a word written over since was not refused: %s" % ln)
 
     m = re.search(r"^LLM-SHUT\t(.*?)\r?$", said_shut, re.M)
     sh = m.group(1).split("\t") if m else None
