@@ -10066,7 +10066,11 @@ the applications make the system useful, and is not pulled forward.
   onto it after), W3e sockets and `poll` on `netclient.c`; tested by
   `posixtest.elf` in the gate. **W3a, pthreads, built** (18.768): threads,
   mutexes, conditions, rwlocks, once, keys and `getattr_np` in
-  `runtime/posix/`, ten checks on both boards; W3b, `mmap`, next.
+  `runtime/posix/`, ten checks on both boards; **W3b, memory, built**
+  (18.769): `mmap`, `munmap`, `mprotect`, `madvise` on W2, and
+  `RESERVE_DISCARD` for `MADV_DONTNEED`; a W3a race found and fixed
+  there (a detached thread's record written after it was freed). W3c,
+  time and the environment, next.
   Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that

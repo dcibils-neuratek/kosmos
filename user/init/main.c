@@ -765,6 +765,22 @@ static int reserve_role(void)
         return 8;
     }
 
+    /* 19: discarded, each page's access kept (`docs/w3.md` W3b) - the
+     * written page reads zero and takes a write again; the read-only one
+     * reads zero. */
+    one[4096] = 0x77;
+
+    if (kosmos_protect((void *)one, 2, RESERVE_DISCARD) != 0
+        || one[4096] != 0 || one[0] != 0) {
+        return 19;
+    }
+
+    one[4096] = 0x78;
+
+    if (one[4096] != 0x78) {
+        return 19;
+    }
+
     /* 9 */
     {
         volatile unsigned char *code = one + 2 * 4096;

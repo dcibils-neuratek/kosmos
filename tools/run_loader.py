@@ -366,7 +366,8 @@ def main():
         check(not CXX or said is not None and said.startswith(
                   "posixtest: posix: counted 160000, ring 1000, timed out, once 1, keys 4, "
                   "recursive, stacks, reaped, rwlock ")
-              and said.endswith(", joined 42"),
+              and said.endswith(", joined 42; memory: 4 GB reserved, protected, "
+                                "discarded, unmapped in the middle, fixed, refused"),
               "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
 
         said, _ = run("plain", "apptest", 60)

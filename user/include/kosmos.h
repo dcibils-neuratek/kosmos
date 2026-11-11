@@ -496,7 +496,9 @@ static inline long kosmos_futex_wake(const volatile uint32_t *word,
  * 2): `kosmos_reserve` gives `pages` of addresses with nothing behind them
  * and no access, `kosmos_protect` gives a run of them RESERVE_NONE,
  * RESERVE_READ, RESERVE_RW or RESERVE_RX - never writable and executable
- * at once - and `kosmos_release` gives them back. A page made RW is a
+ * at once - or RESERVE_DISCARD, which gives their pages back and keeps
+ * their access (`madvise(MADV_DONTNEED)`, `docs/w3.md` W3b); and
+ * `kosmos_release` gives them back. A page made RW is a
  * zeroed page on its first touch; code written into one and made RX runs
  * after `__builtin___clear_cache` over it.
  */

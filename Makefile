@@ -3434,7 +3434,7 @@ $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)
 # accident (`design.md` §17.3). `posixtest.elf` holds it, as `cxxtest.elf`
 # holds C++, and the system's image must not have it.
 #
-POSIX_SRCS := runtime/posix/pthread.c
+POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 POSIXTEST_OBJS := $(UBUILD)/user/kits/posixtest/posixtest.c.o \
@@ -3449,7 +3449,7 @@ $(UBUILD)/apps/posixtest.elf: $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) $(UBU
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_posixtest_kit$$' \
 	    || { echo "apps: posixtest.elf does not have its kit"; rm -f $@; exit 1; }
-	@! $(NM) $(UBUILD)/init.elf | grep -q ' T pthread_create$$' \
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (pthread_create|mmap)$$' \
 	    || { echo "apps: the system's image has the POSIX layer in it"; rm -f $@; exit 1; }
 
 #

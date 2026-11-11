@@ -387,7 +387,20 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
         return EAGAIN;
     }
 
-    t->index_given = (unsigned long)index;
+    /*
+     * **A detached thread's record is not touched again from here.** It
+     * may have ended and been collected already, its record freed: the
+     * first version wrote `index_given` here for every thread, and one of
+     * the 200 detached threads that end at once was sometimes gone before
+     * the write - into a free chunk, and malloc's next `bin_remove` wrote
+     * through what it had overwritten (`testing.md` 18.769). Only a
+     * joinable thread is joined by its index, and its record lives until
+     * it is.
+     */
+    if (attr == NULL || !attr->detached) {
+        t->index_given = (unsigned long)index;
+    }
+
     *out = t;
     return 0;
 }

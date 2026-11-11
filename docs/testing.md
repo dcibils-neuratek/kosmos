@@ -31474,3 +31474,75 @@ need `_Thread_local`, and are skipped there as C++'s are. `x86-profile`
 and `x86-film` were load: alone, both passed, `x86-film` twice (its
 failure was "a 3.00 s film took 2.75 s by its own clock", a timing check
 with six suites beside it). The six again: all pass.
+
+## 18.769 Memory inside the process, and a record written after its thread was gone (JetSki W3b)
+
+`docs/w3.md` W3b: `mmap`, `munmap`, `mprotect` and `madvise` on W2's
+reservations, in `runtime/posix/mman.c`, with `sys/mman.h`, and the
+layer's own `unistd.h` (`sysconf(_SC_PAGESIZE)`, `getpagesize`) and
+`sys/types.h` (`off_t`, `ssize_t`, `pid_t` and the rest), which shadow the
+runtime's deliberately small ones for ported code only.
+
+`mmap` of anonymous memory is a reservation and a protect; `munmap` is
+`SYS_RELEASE`, which takes a piece from the middle as readily as the
+whole; `MAP_FIXED` works over the process's own reservations and is
+`ENOMEM` anywhere else. Refused: writable and executable at once
+(`EACCES`), a file (`ENODEV` - W3 maps none).
+
+**One thing W2 did not have: `RESERVE_DISCARD`** (`SYS_PROTECT`'s access
+5). `madvise(MADV_DONTNEED)` gives the pages back and keeps their access,
+and from user level the access cannot be known - protecting to none and
+back would have had to guess it, and made a read-only page writable. In
+`reserve_protect` a discard frees every present page of the run and
+leaves each span's access as it was, so the next touch is a zeroed page
+under it, as a first touch is. `w3.md` had written it as "released and
+committed again", which was the guess.
+
+**Test**: in `posixtest.elf`, after the thread checks: the page size; 4 GB
+with no access; three pages in its middle made writable, reading zero and
+written; one made read only and still holding what it held; one given
+back with `MADV_DONTNEED`, reading zero, writable again, its neighbours
+untouched; the middle page unmapped and the two beside it still there;
+the refusals - writable and executable, a file, `mprotect` across the
+unmapped page, `munmap` of an address never mapped; `MAP_FIXED` over a
+page of its own, zeroed; and 64 KB mapped zeroed throughout. Both boards:
+"...joined 42; memory: 4 GB reserved, protected, discarded, unmapped in
+the middle, fixed, refused". And in the kernel's own reservation test
+(role 913, check 19): a written page and a read-only one discarded, both
+reading zero, and the writable one taking a write again. `arm-kernel` 219
+of 219, `x86-kernel` 217 of 217.
+
+**Control**: the discard accepted and nothing given back - posixtest "a
+page given back with MADV_DONTNEED did not read zero" on both boards, and
+role 913 "said 19", `not ok 71 - reserve: addresses reserved, protected
+and released`, on both.
+
+**And W3a's bug, which these suites found.** The first run with four
+suites side by side killed posixtest on ARM: "data abort from a lower
+EL", a write to `0x22` at an instruction that, in the image I first
+disassembled, was a branch. That image was the wrong one - the suite
+runs `build/user-test/apps/`, not `build/user/apps/` - and in the right
+one the instruction was `bin_remove` in `malloc.c`, writing through a
+free chunk's link that held 2. **`pthread_create` wrote `index_given`
+into the new thread's record after `kosmos_thread_start` returned**, and
+a detached thread that ends at once can be collected by the reaper and
+its record freed before that write: the write went into a free chunk.
+Fixed: a detached thread's record is not written from the creator once
+the thread exists; nobody joins it by index. It showed once in about
+five runs, under load and on ARM only, whose guest runs its processors
+in parallel.
+
+Check 8 now makes a thousand detached threads rather than 200, and then
+churns the heap, so a corrupted link is met inside the check. **The
+control is honest rather than biting**: with the write put back, two runs
+under the same load did not crash - the window is the few instructions
+between the call's return and the store. What the thousand did find is
+that on x86, whose guest runs its processors in turn, ended threads
+outran the reaper and the kernel refused thread 917 (`EAGAIN`): a
+legitimate refusal, and the check now waits for collection and tries
+again, as a port must.
+
+**Whole gate**: 110 of 112 in 619 s, and both were load: `x86-xavier`'s
+follow-up diverging (the follow-up already on the roadmap) and `x86-smbd`
+waiting 120 s for a page that came later. Alone, both passed (154 s and
+91 s).

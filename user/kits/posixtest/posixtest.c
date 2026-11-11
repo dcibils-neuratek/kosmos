@@ -14,14 +14,18 @@
 #include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
+#include <unistd.h>
 
 /* The one Kosmos call here: how many threads the kernel has handed out,
  * to see that detached threads are collected. */
 long kosmos_posixtest_fresh_index(void);
 
 #define WORKERS     8
+#define DETACHED    1000
 #define COUNT_EACH  20000
 
 static pthread_mutex_t counted_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -214,6 +218,129 @@ static void pause_ms(int ms)
 
 #define SAY(...) do { snprintf(out, size, __VA_ARGS__); return 1; } while (0)
 
+/*
+ * **Memory** (`docs/w3.md` W3b): what bmalloc and JavaScriptCore do with
+ * it - a large range reserved with no access, pages in it given access as
+ * they are used, given back with their access kept, and pieces unmapped.
+ */
+#define GB4 (4UL * 1024 * 1024 * 1024)
+
+static int memory_checks(char *out, unsigned long size)
+{
+    unsigned char *big, *page, *small, *f;
+    long ps = sysconf(_SC_PAGESIZE);
+    unsigned long i;
+
+    /* 11: the page size, and 4 GB with no access - addresses, not pages */
+    if (ps != 4096 || getpagesize() != 4096) {
+        SAY("posix: the page size is %ld", ps);
+    }
+
+    big = mmap(NULL, GB4, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+
+    if (big == MAP_FAILED) {
+        SAY("posix: 4 GB with no access was refused (%d)", errno);
+    }
+
+    /* 12: three pages in the middle made writable, and used */
+    page = big + GB4 / 2;
+
+    if (mprotect(page, 3 * 4096, PROT_READ | PROT_WRITE) != 0) {
+        SAY("posix: mprotect to read and write failed (%d)", errno);
+    }
+
+    for (i = 0; i < 3 * 4096; i++) {
+        if (page[i] != 0) {
+            SAY("posix: a page made writable did not read zero");
+        }
+
+        page[i] = (unsigned char)(i * 7);
+    }
+
+    /* 13: read only, and still what was written */
+    if (mprotect(page, 4096, PROT_READ) != 0 || page[1] != 7 || page[4095] != (unsigned char)(4095 * 7)) {
+        SAY("posix: mprotect to read only lost what the page held (%d)", errno);
+    }
+
+    /* 14: MADV_DONTNEED - the second page reads zero, and is writable still */
+    if (madvise(page + 4096, 4096, MADV_DONTNEED) != 0) {
+        SAY("posix: madvise(MADV_DONTNEED) failed (%d)", errno);
+    }
+
+    if (page[4096] != 0 || page[8191] != 0) {
+        SAY("posix: a page given back with MADV_DONTNEED did not read zero");
+    }
+
+    page[4096] = 0x42;
+
+    if (page[4096] != 0x42 || page[2 * 4096 + 1] != (unsigned char)((2 * 4096 + 1) * 7)) {
+        SAY("posix: after MADV_DONTNEED the pages beside it were not as they were");
+    }
+
+    /* 15: the middle page unmapped, and the two around it still there */
+    if (munmap(page + 4096, 4096) != 0) {
+        SAY("posix: munmap of a middle page failed (%d)", errno);
+    }
+
+    if (page[1] != 7 || page[2 * 4096 + 1] != (unsigned char)((2 * 4096 + 1) * 7)) {
+        SAY("posix: the pages around an unmapped one lost what they held");
+    }
+
+    page[2 * 4096] = 9;
+
+    /* 16: the refusals - writable and executable, a file, the unmapped
+     * middle protected, an address that was never this process's */
+    if (mmap(NULL, 4096, PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0) != MAP_FAILED
+        || errno != EACCES) {
+        SAY("posix: writable and executable at once was not refused with EACCES");
+    }
+
+    if (mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, 3, 0) != MAP_FAILED || errno != ENODEV) {
+        SAY("posix: a file's mapping was not refused with ENODEV");
+    }
+
+    if (mprotect(page, 3 * 4096, PROT_READ) == 0 || errno != ENOMEM) {
+        SAY("posix: mprotect across an unmapped page was not refused with ENOMEM");
+    }
+
+    if (munmap((void *)(uintptr_t)0x1000, 4096) == 0 || errno != EINVAL) {
+        SAY("posix: munmap of an address never mapped was not refused with EINVAL");
+    }
+
+    /* 17: MAP_FIXED over what the process has - zeroed, and the new access */
+    f = mmap(page + 2 * 4096, 4096, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+
+    if (f != page + 2 * 4096 || f[0] != 0) {
+        SAY("posix: MAP_FIXED over a page of its own did not give it new and zeroed");
+    }
+
+    f[0] = 1;
+
+    /* 18: an ordinary mapping, zeroed and writable throughout */
+    small = mmap(NULL, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    if (small == MAP_FAILED) {
+        SAY("posix: 64 KB read and write was refused (%d)", errno);
+    }
+
+    for (i = 0; i < 65536; i += 512) {
+        if (small[i] != 0) {
+            SAY("posix: a new mapping did not read zero");
+        }
+
+        small[i] = 1;
+    }
+
+    if (munmap(small, 65536) != 0 || munmap(big, GB4) != 0) {
+        SAY("posix: munmap of a whole mapping failed (%d)", errno);
+    }
+
+    snprintf(out, size, "memory: 4 GB reserved, protected, discarded, unmapped "
+             "in the middle, fixed, refused");
+    return 0;
+}
+
 int kosmos_posixtest_run(char *out, unsigned long size)
 {
     pthread_t t[WORKERS];
@@ -367,16 +494,32 @@ int kosmos_posixtest_run(char *out, unsigned long size)
             my_stack_holds_me(), got != NULL);
     }
 
-    /* 8: detached threads collected - their indices come back */
-    for (i = 0; i < 200; i++) {
+    /* 8: detached threads collected - their indices come back. A
+     * thousand, each ending at once, and then the heap used: a record
+     * written after its thread was collected corrupts malloc's links, and
+     * the churn is where that shows (`testing.md` 18.769). */
+    for (i = 0; i < DETACHED; i++) {
         pthread_attr_t a;
         pthread_t d;
 
         pthread_attr_init(&a);
         pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
 
-        if (pthread_create(&d, &a, ends_at_once, NULL) != 0) {
-            SAY("posix: detached thread %d not made", i);
+        /* EAGAIN while ended threads wait for the reaper is the kernel's
+         * ceiling, and a refusal a port must expect; it has to pass once
+         * they are collected. On x86 under QEMU, whose processors take
+         * turns, nine hundred were ahead of it. */
+        {
+            int r, tries = 0;
+
+            while ((r = pthread_create(&d, &a, ends_at_once, NULL)) == EAGAIN && tries < 200) {
+                tries++;
+                pause_ms(10);
+            }
+
+            if (r != 0) {
+                SAY("posix: detached thread %d not made (%d, after %d waits)", i, r, tries);
+            }
         }
     }
 
@@ -395,6 +538,27 @@ int kosmos_posixtest_run(char *out, unsigned long size)
 
         if (fresh < 0 || fresh >= 16) {
             SAY("posix: detached threads not collected (a new thread is %ld)", fresh);
+        }
+    }
+
+    {
+        void *held[64];
+        int j;
+
+        for (i = 0; i < 64; i++) {
+            for (j = 0; j < 64; j++) {
+                held[j] = malloc(32 + (size_t)((i * 64 + j) % 7) * 48);
+
+                if (held[j] == NULL) {
+                    SAY("posix: the heap refused after the detached threads");
+                }
+
+                memset(held[j], j, 32);
+            }
+
+            for (j = 63; j >= 0; j--) {
+                free(held[j]);
+            }
         }
     }
 
@@ -431,9 +595,20 @@ int kosmos_posixtest_run(char *out, unsigned long size)
         SAY("posix: joined %ld", (long)(intptr_t)got);
     }
 
-    snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-             "recursive, stacks, reaped, rwlock %s, joined %ld",
-             counted, ring_passes, once_ran, destroyed,
-             most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got);
+    {
+        char memory[160];
+
+        if (memory_checks(memory, sizeof memory) != 0) {
+            snprintf(out, size, "%s", memory);
+            return 1;
+        }
+
+        snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
+                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s",
+                 counted, ring_passes, once_ran, destroyed,
+                 most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
+                 memory);
+    }
+
     return 0;
 }

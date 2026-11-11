@@ -673,7 +673,11 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * RESERVE_RW or RESERVE_RX keep what a page holds and a page made RW is
  * filled with zeroes on its first touch; RESERVE_NONE gives its page back,
  * so it reads as zero if it is ever touched again. RESERVE_RWX is refused,
- * SYS_ERR_FLAGS: never writable and executable at once. RELEASE gives the
+ * SYS_ERR_FLAGS: never writable and executable at once. RESERVE_DISCARD
+ * gives the run's pages back and keeps each page's access, so the next
+ * touch of a page that allowed it is a zeroed page again - `madvise
+ * (MADV_DONTNEED)`, which has to keep what it does not know (`docs/w3.md`
+ * W3b). RELEASE gives the
  * addresses back with every page behind them; they are never handed out
  * again. Touching a page with no access ends the process, and its report
  * says the page was reserved and what it allowed.
@@ -706,6 +710,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define RESERVE_RW      2
 #define RESERVE_RX      3
 #define RESERVE_RWX     4   /* named so that it can be refused by name */
+#define RESERVE_DISCARD 5   /* the pages given back, each one's access kept */
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */

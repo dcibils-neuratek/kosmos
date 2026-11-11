@@ -14,7 +14,9 @@
  * each page's access with `SYS_PROTECT`: a page made read and write is
  * *committed*, and its first touch maps a zeroed page (`reserve_fill`, from
  * `process_fill` as the heap's first touches are); a page made no access
- * gives its page back. `SYS_RELEASE` gives the addresses back, never to be
+ * gives its page back, and `RESERVE_DISCARD` gives a run's pages back with
+ * its access kept (`madvise(MADV_DONTNEED)`, W3b). `SYS_RELEASE` gives the
+ * addresses back, never to be
  * handed out again - a bump pointer, as `SYS_MAP`'s is, with 192 GB of it
  * on the smaller board.
  *
@@ -296,7 +298,7 @@ long reserve_protect(struct process *p, uintptr_t va, size_t pages,
     uintptr_t end, at;
     unsigned long flags;
 
-    if (access == RESERVE_RWX || access > RESERVE_RX) {
+    if (access == RESERVE_RWX || (access > RESERVE_RX && access != RESERVE_DISCARD)) {
         return SYS_ERR_FLAGS;           /* never writable and executable */
     }
 
@@ -342,7 +344,11 @@ long reserve_protect(struct process *p, uintptr_t va, size_t pages,
     }
 
     for (s = span_at(p, va); s != NULL && s->va < end; s = s->next) {
-        if (s->access != access) {
+        if (access == RESERVE_DISCARD) {
+            /* Given back, the span's access as it was: its next touch is a
+             * zeroed page under that access, as a first one is. */
+            change_pages(p, s->va, s->pages, RESERVE_NONE);
+        } else if (s->access != access) {
             change_pages(p, s->va, s->pages, (unsigned)access);
             s->access = (unsigned)access;
         }
