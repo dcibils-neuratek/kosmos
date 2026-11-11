@@ -31251,3 +31251,56 @@ runs, and the second also counted 65 pages not given back. ARM passed the
 control both times: the race is real there too, and x86 is what shows it.
 
 **Whole gate** on W2a: 112 of 112 in 593 s.
+
+## 18.765 Addresses reserved, then protected and released (JetSki W2b)
+
+`docs/w2.md` part 2: `SYS_RESERVE` (75), `SYS_PROTECT` (76) and
+`SYS_RELEASE` (77), in `kernel/reserve.c`. A process's reservations are
+*spans* - a run of pages and its access, in address order, adjacent ones
+merged - from a pool that grows by slabs; which pages are committed is in
+the page tables alone, so a 32 GB reservation is one forty-byte record. A
+region given on touch was the other shape and keeps an index the size of
+the region, 64 MB of it for 32 GB. A first touch of a page made read and
+write maps a zeroed page (`reserve_fill`, asked by `process_fill` as the
+heap's first touches are); made no access, a page is given back. Access
+READ is a new `MAP_USER_RO` on both boards; **writable and executable at
+once is refused** (`RESERVE_RWX`, `SYS_ERR_FLAGS`). A fault on a reserved
+page says so in its report - "a reserved page, read only", "reserved, no
+access". AArch64 sets `SCTLR_EL1.UCT` and `.UCI`, so code a process wrote
+can be made to agree with the instruction cache from EL0
+(`__builtin___clear_cache`, libgcc's `__aarch64_sync_cache_range`).
+
+**The stacks' window ends at 64 GB**, and reservations have the rest - 192
+GB on AArch64, 447 GB on x86-64. **And a thread's index is given back once
+it has been collected**, the lowest free one first, so the window bounds
+threads at once (57,344) rather than threads ever made. That reverses a
+stated choice - indices were never reused, so a stale name could not find
+a stranger - and `process.h` records why. The index is now taken and the
+thread recorded on a list of its own (`starting`) under one hold of the
+lock, so two threads starting threads at once cannot both be handed the
+same one.
+
+**Test**: `reserve: addresses reserved, protected and released` (roles
+913, 914, 915) - 16 GB reserved and made read and write, one page in a
+thousand touched and only those 4,195 charged, all of it released; a page
+written and made read only still holding its byte; a page made no access
+reading zero when committed again; `mov 42; ret` written into a page,
+made read and execute, cache-cleaned and called, answering 42 on both
+boards; RWX, an access of 9, an address not reserved and a range with a
+released hole each refused; a thousand reservations made, touched and
+released with nothing left charged; three threads made one after another,
+each given index 1. Then a write to a read-only page and a touch of a
+guard, each of which must end its process; and after all of it, every
+page given back. x86 216 of 216, ARM 218 of 218, first run.
+
+**Controls**, three in one build and each its own trace: READ mapped as
+read and write - "a write to a read-only page did not end the process: 3"
+on both; pages made no access unmapped but not freed - 6,201 pages not
+given back on x86, 4,201 on ARM; and AArch64 without UCI - the role died
+on "trapped MSR, MRS or system instruction", which is `dc cvau` at EL0.
+
+**Not yet**: `SYS_MEM_MAP`'s RX flag, for a JIT that keeps two mappings of
+one region (W2b's second half), and a reservation's addresses are never
+reused once released.
+
+**Whole gate** on W2b: 112 of 112 in 601 s.

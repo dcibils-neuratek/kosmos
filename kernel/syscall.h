@@ -652,7 +652,31 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_FUTEX_WAIT  73  /* (address, expected, wait_ticks) -> 0 or a code */
 #define SYS_FUTEX_WAKE  74  /* (address, count)       -> how many woken     */
-#define SYS_MAX         75
+
+/*
+ * **Addresses reserved, then protected and released** (`docs/w2.md` part
+ * 2, `kernel/reserve.c`). RESERVE gives `pages` of addresses in the
+ * process's reservation window with nothing behind them, every page no
+ * access; it costs no page and counts against nothing. PROTECT gives every
+ * page of a run inside one reservation an access - RESERVE_READ,
+ * RESERVE_RW or RESERVE_RX keep what a page holds and a page made RW is
+ * filled with zeroes on its first touch; RESERVE_NONE gives its page back,
+ * so it reads as zero if it is ever touched again. RESERVE_RWX is refused,
+ * SYS_ERR_FLAGS: never writable and executable at once. RELEASE gives the
+ * addresses back with every page behind them; they are never handed out
+ * again. Touching a page with no access ends the process, and its report
+ * says the page was reserved and what it allowed.
+ */
+#define SYS_RESERVE     75  /* (pages)                -> address or error   */
+#define SYS_PROTECT     76  /* (address, pages, access) -> 0 or error       */
+#define SYS_RELEASE     77  /* (address, pages)       -> 0 or error         */
+#define SYS_MAX         78
+
+#define RESERVE_NONE    0
+#define RESERVE_READ    1
+#define RESERVE_RW      2
+#define RESERVE_RX      3
+#define RESERVE_RWX     4   /* named so that it can be refused by name */
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */

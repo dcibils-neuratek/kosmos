@@ -5375,6 +5375,96 @@ static bool test_workers_leave_as_their_process_ends(void)
 }
 
 /*
+ * **Addresses reserved, then protected and released** (`docs/w2.md` part
+ * 2). Has to match `user/init/main.c`: role 913 does everything that a
+ * process survives and names the first check that failed; 914 writes to a
+ * page it made read only and 915 touches a guard, and each must be ended
+ * by a fault. After all three nothing may be left: every committed page
+ * and every page table given back.
+ */
+#define CTEST_RESERVE          913UL
+#define CTEST_RESERVE_READONLY 914UL
+#define CTEST_RESERVE_NONE     915UL
+
+static int run_reserve_role(unsigned long role, const char *name)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p;
+    unsigned long start;
+    int code;
+
+    p = process_create(name, init_image, (size_t)init_image_len, role);
+
+    if (p == NULL) {
+        return 1000;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (start = hal_ticks(); !p->exited && hal_ticks() - start < 120UL * TICK_HZ; ) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return 1001;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+    return code;
+}
+
+static bool test_addresses_reserved_and_protected(void)
+{
+    size_t pages_before;
+    int code, readonly, none;
+    bool ok = true;
+
+    /* Once to warm the pools - slabs are never given back - and then
+     * counted. */
+    (void)run_reserve_role(CTEST_RESERVE, "t-reserve");
+    pages_before = pmm_free_pages();
+
+    code = run_reserve_role(CTEST_RESERVE, "t-reserve");
+    readonly = run_reserve_role(CTEST_RESERVE_READONLY, "t-readonly");
+    none = run_reserve_role(CTEST_RESERVE_NONE, "t-guard");
+
+    if (code != 0) {
+        kputs("\n   (the role said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs(code < 0 ? ", a fault)" : ")");
+        ok = false;
+    }
+
+    if (readonly >= 0) {
+        kputs("\n   (a write to a read-only page did not end the process: ");
+        kputu((unsigned long)readonly);
+        kputs(")");
+        ok = false;
+    }
+
+    if (none >= 0) {
+        kputs("\n   (a touch of a guard page did not end the process: ");
+        kputu((unsigned long)none);
+        kputs(")");
+        ok = false;
+    }
+
+    if (pmm_free_pages() != pages_before) {
+        kputs("\n   (pages not given back: ");
+        kputu((unsigned long)(pages_before > pmm_free_pages()
+                              ? pages_before - pmm_free_pages()
+                              : pmm_free_pages() - pages_before));
+        kputs(")");
+        ok = false;
+    }
+
+    return ok;
+}
+
+/*
  * **A thread on the core its process asked for** (`THREAD_START_ON`).
  *
  * Has to match `user/init/main.c`. The role asks for a thread on the last
@@ -11474,6 +11564,7 @@ static const struct test tests[] = {
     { "thread: one heap under two threads at once", test_one_heap_under_two_threads },
     { "futex: a thread sleeps on a word and is woken", test_a_futex_sleeps_and_wakes },
     { "process: workers leave as their process ends, on every core", test_workers_leave_as_their_process_ends },
+    { "reserve: addresses reserved, protected and released", test_addresses_reserved_and_protected },
     { "process: an image has its gigabyte, and no more", test_an_image_has_its_gigabyte },
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },

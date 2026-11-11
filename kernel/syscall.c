@@ -25,6 +25,7 @@
 
 #include "syscall.h"
 #include "futex.h"
+#include "reserve.h"
 #include "entropy.h"
 #include "irq.h"
 #include "process.h"
@@ -1595,6 +1596,19 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_FUTEX_WAKE:
         result = futex_wake(p, (uintptr_t)sc->arg[0], (unsigned long)sc->arg[1]);
+        break;
+
+    case SYS_RESERVE:
+        result = reserve_create(p, (size_t)sc->arg[0]);
+        break;
+
+    case SYS_PROTECT:
+        result = reserve_protect(p, (uintptr_t)sc->arg[0], (size_t)sc->arg[1],
+                                 (unsigned long)sc->arg[2]);
+        break;
+
+    case SYS_RELEASE:
+        result = reserve_release(p, (uintptr_t)sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_KEY_PUSH:

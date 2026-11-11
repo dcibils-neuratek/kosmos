@@ -14,6 +14,7 @@
 #include "thread.h"
 #include "ipc.h"
 #include "futex.h"
+#include "reserve.h"
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
@@ -185,7 +186,8 @@ unsigned process_table(struct proc_info *out, unsigned max)
          * what the machine actually holds and is where the two reconcile.
          */
         out[n].pages     = (uint32_t)p->mapped_pages;
-        out[n].held      = (uint32_t)(p->mapped_pages + p->touched_pages);
+        out[n].held      = (uint32_t)(p->mapped_pages + p->touched_pages
+                                      + p->committed_pages);
         out[n].caps      = captable_count(&p->caps);
         out[n].priority  = (p->thread != NULL)
                            ? thread_effective_priority(p->thread)
@@ -487,6 +489,31 @@ static void user_thread_main(void *arg)
                self->user_arg);
 }
 
+/* `t` off `p->starting`; `processes_lock` is held. */
+static void unlink_starting(struct process *p, struct thread *t)
+{
+    struct thread **link = &p->starting;
+
+    while (*link != NULL && *link != t) {
+        link = &(*link)->sibling;
+    }
+
+    if (*link == t) {
+        *link = t->sibling;
+    }
+
+    t->sibling = NULL;
+}
+
+/* A thread that will not be made after all gives its index back. */
+static void not_starting(struct process *p, struct thread *t)
+{
+    unsigned long flags = spin_lock(&processes_lock);
+
+    unlink_starting(p, t);
+    spin_unlock(&processes_lock, flags);
+}
+
 /*
  * One more thread for `p`, entering at `entry` with `arg`, and its stack.
  * Returns its index, or a negative error. The caller is one of `p`'s own
@@ -517,40 +544,82 @@ int process_thread_create(struct process *p, unsigned long entry,
 
     memset(pages, 0, USER_STACK_PAGES * PAGE_SIZE);
 
+    t = thread_create_suspended(p->name, user_thread_main, NULL);
+
+    if (t == NULL) {
+        free_pages(pages, USER_STACK_PAGES);
+        return -3;
+    }
+
+    /*
+     * **The lowest index no thread of it holds**, taken and recorded under
+     * one hold of the lock. A thread holds its index until it has been
+     * collected, ended or not (`process_thread_wait`), and one being made
+     * holds it from here, on `starting` - which nothing else walks, so it
+     * cannot be nudged or waited for before it exists.
+     *
+     * It was `next_index++` and never given back, so the stack window
+     * bounded the threads a process could *ever* make; with the window
+     * capped at 64 GB for reservations (`process.h`) that would have been
+     * 57,344 over a lifetime, and a browser makes and ends threads all
+     * day. Now it is 57,344 at once.
+     */
     flags = spin_lock(&processes_lock);
-    index = p->next_index++;
+
+    for (index = 1; index < USER_TSTACK_MAX; index++) {
+        const struct thread *q;
+
+        for (q = p->threads; q != NULL && q->index != index; q = q->sibling) {
+        }
+
+        if (q == NULL) {
+            for (q = p->starting; q != NULL && q->index != index; q = q->sibling) {
+            }
+        }
+
+        if (q == NULL) {
+            break;
+        }
+    }
+
+    if (index < USER_TSTACK_MAX) {
+        t->index = index;
+        t->sibling = p->starting;
+        p->starting = t;
+    }
+
     spin_unlock(&processes_lock, flags);
 
+    if (index >= USER_TSTACK_MAX) {
+        thread_abandon(t);
+        free_pages(pages, USER_STACK_PAGES);
+        return -2;
+    }
+
     top = (uintptr_t)USER_TSTACK_TOP(index);
+
+    t->process = p;
+    t->sched.game = p->game;            /* a game's new threads are the game's */
+    t->space = p->space;
+    t->caps = &p->caps;
+    t->user_entry = entry;
+    t->user_arg = arg;
 
     /* The stack at the top of its slot, and the rest of the slot left
      * unmapped: an overflow faults rather than reaching a neighbour. */
     if (as_map(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
                virt_to_phys(pages), USER_STACK_PAGES,
                MAP_USER_RW) != AS_OK) {
+        not_starting(p, t);
+        thread_abandon(t);
         free_pages(pages, USER_STACK_PAGES);
         return -2;
     }
 
-    t = thread_create_suspended(p->name, user_thread_main, NULL);
-
-    if (t == NULL) {
-        (void)as_unmap(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
-                       USER_STACK_PAGES);
-        free_pages(pages, USER_STACK_PAGES);
-        return -3;
-    }
-
-    t->process = p;
-    t->sched.game = p->game;            /* a game's new threads are the game's */
-    t->space = p->space;
-    t->caps = &p->caps;
-    t->index = index;
-    t->user_entry = entry;
-    t->user_arg = arg;
     t->user_stack_pages = pages;
 
     if (!give_thread_a_block(p, t, index)) {
+        not_starting(p, t);
         thread_abandon(t);
         (void)as_unmap(p->space, top - USER_STACK_PAGES * PAGE_SIZE,
                        USER_STACK_PAGES);
@@ -559,6 +628,7 @@ int process_thread_create(struct process *p, unsigned long entry,
     }
 
     flags = spin_lock(&processes_lock);
+    unlink_starting(p, t);
     t->sibling = p->threads;
     p->threads = t;
     p->live_threads++;
@@ -1051,6 +1121,9 @@ static struct process *create(const char *name, const void *image,
     }
 
     p->next_map     = USER_MAP_VA;
+    p->spans        = NULL;
+    p->next_reserve = USER_RESERVE_VA;
+    p->committed_pages = 0;
     p->shares       = NULL;
     p->mapped_pages = 0;
 
@@ -1101,7 +1174,7 @@ static struct process *create(const char *name, const void *image,
     /* Its capabilities are the process's, from before it first runs. */
     p->thread->caps = &p->caps;
     p->thread->index = 0;
-    p->next_index = 1;
+    p->starting = NULL;
 
     /* And its own block, as every thread has: slot zero's, the first
      * thread's stack being where it always was. */
@@ -2006,6 +2079,10 @@ static void release_memory(struct process *p)
     p->next_map     = USER_MAP_VA;
     p->mapped_pages = 0;
 
+    /* And its reservations: every committed page, found from its spans
+     * rather than by walking 192 GB of addresses (`reserve.c`). */
+    reserve_teardown(p);
+
     as_destroy(p->space);
 
     /*
@@ -2315,6 +2392,11 @@ bool process_fill(struct process *p, uintptr_t va)
     }
 
     image = page >= p->rw_va && page < p->rw_va + p->image_page_count * PAGE_SIZE;
+
+    /* A page it reserved and gave an access (`reserve.c`). */
+    if (page >= USER_RESERVE_VA && page < USER_RESERVE_END) {
+        return reserve_fill(p, page);
+    }
 
     /* Anywhere else, a region it mapped that is given on touch - a
      * sandbox's memory, in its monitor (`sharemap_fill`) - or nothing. */

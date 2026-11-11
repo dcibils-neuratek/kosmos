@@ -471,6 +471,30 @@ static inline long kosmos_futex_wake(const volatile uint32_t *word,
 }
 
 /*
+ * **Addresses reserved, then protected and released** (`docs/w2.md` part
+ * 2): `kosmos_reserve` gives `pages` of addresses with nothing behind them
+ * and no access, `kosmos_protect` gives a run of them RESERVE_NONE,
+ * RESERVE_READ, RESERVE_RW or RESERVE_RX - never writable and executable
+ * at once - and `kosmos_release` gives them back. A page made RW is a
+ * zeroed page on its first touch; code written into one and made RX runs
+ * after `__builtin___clear_cache` over it.
+ */
+static inline long kosmos_reserve(unsigned long pages)
+{
+    return sys1(SYS_RESERVE, (long)pages);
+}
+
+static inline long kosmos_protect(void *at, unsigned long pages, unsigned access)
+{
+    return sys3(SYS_PROTECT, (long)(uintptr_t)at, (long)pages, (long)access);
+}
+
+static inline long kosmos_release(void *at, unsigned long pages)
+{
+    return sys2(SYS_RELEASE, (long)(uintptr_t)at, (long)pages);
+}
+
+/*
  * **A lock over a word, which sleeps only when it must** - the one every
  * lock in a process is: malloc's, and W3's `pthread_mutex_t`. Three states,
  * as Drepper's "Futexes are tricky" has them: 0 free, 1 held, 2 held with

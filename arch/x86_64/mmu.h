@@ -156,6 +156,7 @@
  */
 #define MAP_USER_RW (PTE_P | PTE_RW | PTE_US | PTE_NX)
 #define MAP_USER_RX (PTE_P | PTE_US)
+#define MAP_USER_RO (PTE_P | PTE_US | PTE_NX)  /* a page SYS_PROTECT made READ */
 
 /*
  * A device's registers, in a driver's own address space.

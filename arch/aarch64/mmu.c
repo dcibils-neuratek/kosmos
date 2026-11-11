@@ -313,7 +313,21 @@ static void enable(void)
     __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     sctlr |= (1UL << 0)     /* M: translation on                           */
           |  (1UL << 2)     /* C: the data cache, useless until M is set   */
-          |  (1UL << 12);   /* I: the instruction cache                    */
+          |  (1UL << 12)    /* I: the instruction cache                    */
+          |  (1UL << 15)    /* UCT: EL0 may read CTR_EL0, the line sizes   */
+          |  (1UL << 26);   /* UCI: EL0 may clean and invalidate by VA     */
+
+    /*
+     * **UCT and UCI are for code a process writes and then runs**
+     * (`docs/w2.md` part 2). A JIT writes instructions through the data
+     * side, and before they run the instruction cache must agree: `dc cvau`
+     * then `ic ivau` over the range, with the line sizes from CTR_EL0 -
+     * which is what libgcc's `__aarch64_sync_cache_range` does for
+     * `__builtin___clear_cache`. With either bit clear each of those traps
+     * at EL0. They clean and invalidate only what the process can already
+     * read, so they open nothing the process did not already have; Linux
+     * sets both for the same reason.
+     */
 
     /*
      * The instruction after this one is fetched through the new translation

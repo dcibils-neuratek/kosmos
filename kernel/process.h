@@ -338,6 +338,24 @@ _Static_assert(USER_SCREEN_MAX >= 7680UL * 4320UL * 4UL,
     (USER_TSTACK_VA + (unsigned long)(index) * USER_TSTACK_SLOT)
 
 /*
+ * **The stacks' window ends at 64 GB, and reservations have the rest**
+ * (`docs/w2.md` part 2, agreed by Diego on 11 November 2026). Until then
+ * the stacks ran to the end of the address space, half a million slots;
+ * now 57,344 - threads *at once*, since an index is given back when its
+ * thread is collected (`process_thread_start`). Above them, to the end of
+ * what a process may address, is `SYS_RESERVE`'s: 192 GB on AArch64, whose
+ * user half is 256 GB through three levels of tables, and 447 GB on x86-64.
+ */
+#define USER_TSTACK_END  (USER_VA_BASE + 0x1000000000UL)    /* base + 64 GB */
+#define USER_TSTACK_MAX  ((USER_TSTACK_END - USER_TSTACK_VA) / USER_TSTACK_SLOT)
+
+#define USER_RESERVE_VA  USER_TSTACK_END
+#define USER_RESERVE_END USER_VA_END
+
+_Static_assert(USER_RESERVE_VA < USER_RESERVE_END,
+               "a reservation window above the stacks");
+
+/*
  * The image header. Sixteen bytes at the front: a magic number, then how
  * many bytes are read-only and executable. Without the second field the
  * kernel could only map an image one way, and one way that works for both
@@ -384,13 +402,22 @@ struct process {
      * **Its threads** (`threads.md` step 3): `thread` above is the first,
      * which is the one that entered `main` and the one the process ends
      * with; the rest hang off `threads`, linked through `sibling`, in no
-     * particular order. `next_index` is the number the next one gets, and
-     * numbers are not reused - a thread is named by its index and a stale
-     * name must not find a stranger, which is the generation argument again
-     * in the smallest possible form.
+     * particular order. `starting` holds the ones being made, which have
+     * an index and are not yet anybody's to nudge or wait for.
+     *
+     * **An index is given back once its thread is collected**, the lowest
+     * free one first (11 November 2026, `docs/w2.md` part 2). This said
+     * numbers were never reused - a thread is named by its index, and a
+     * stale name must not find a stranger. That held while the stacks'
+     * window was half a million slots; capped at 57,344 for reservations,
+     * never reusing would bound the threads a process makes in its whole
+     * life, and a browser makes and ends them all day. What is given up is
+     * narrow: an index is reused only after `SYS_THREAD_WAIT` collected it,
+     * so a stale name is one the program already waited on - as a
+     * `pthread_t` may be reused once joined.
      */
     struct thread    *threads;
-    unsigned          next_index;
+    struct thread    *starting;
     unsigned          live_threads;
 
     /*
@@ -540,6 +567,16 @@ struct process {
      */
     uintptr_t         next_map;
     size_t            mapped_pages;
+
+    /*
+     * **Its reservations** (`reserve.c`, `docs/w2.md` part 2): the spans
+     * of addresses it reserved with their access, in address order; where
+     * the next reservation goes, never reused; and how many pages are
+     * committed behind them, which is what it is charged with.
+     */
+    struct reserve_span *spans;
+    uintptr_t         next_reserve;
+    size_t            committed_pages;
 
 
     /*

@@ -24,6 +24,7 @@
 #include "memobj.h"
 #include "vm.h"
 #include "sharemap.h"
+#include "reserve.h"
 #include "irq.h"
 #include "process.h"
 #include "screen.h"
@@ -1120,6 +1121,7 @@ void kmain(void)
     memobj_init();
     vm_init();
     sharemap_init();
+    reserve_init();
     irq_init();
     boot_stage("IPC and capabilities");
     boot_why("How processes talk, and the only way they can. Nothing is buffered.");

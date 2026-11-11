@@ -648,6 +648,233 @@ static int leave_together_role(void)
 }
 
 /*
+ * **Addresses reserved, then protected and released** (`docs/w2.md` part
+ * 2). Each failure its own code: 16 GB reserved and made read and write,
+ * one page in a thousand touched, and only those charged (1-4); a page
+ * written, made read only, still holding what was written (5-6); a page
+ * given back with no access reading as zero when committed again (7-8);
+ * an instruction sequence written and made read and execute, run (9);
+ * writable and executable refused, an access that is no access refused,
+ * a range not reserved refused, and one with a released hole in it (10-
+ * 13); a thousand reservations made, touched and released, and nothing
+ * left charged (14); and three threads made one after another, each given
+ * index 1 back (15). The writes that must end a process are 914 and 915.
+ */
+#define CTEST_RESERVE           913UL
+#define CTEST_RESERVE_READONLY  914UL
+#define CTEST_RESERVE_NONE      915UL
+#define RESERVE_BIG_PAGES       (16UL * 1024 * 1024 * 1024 / 4096)
+#define RESERVE_STRIDE          1000UL
+
+static const struct proc_info *own_row(const char *name);
+
+static unsigned long held_now(const char *name)
+{
+    const struct proc_info *row = own_row(name);
+
+    return row == NULL ? ~0UL : row->held;
+}
+
+static void returns_at_once(unsigned long arg)
+{
+    kosmos_thread_exit((int)arg);
+}
+
+#if defined(__x86_64__)
+static const unsigned char forty_two[] = { 0xb8, 0x2a, 0x00, 0x00, 0x00, 0xc3 };
+#else
+static const unsigned char forty_two[] = { 0x40, 0x05, 0x80, 0x52,   /* mov w0, #42 */
+                                           0xc0, 0x03, 0x5f, 0xd6 }; /* ret */
+#endif
+
+static int reserve_role(void)
+{
+    volatile unsigned char *big, *one;
+    unsigned long before, after, touched = 0, i;
+    long at;
+
+    if (kosmos_setname("t-reserve", 9) != 0) {
+        return 20;
+    }
+
+    before = held_now("t-reserve");
+
+    /* 1-4 */
+    at = kosmos_reserve(RESERVE_BIG_PAGES);
+
+    if (at < 0) {
+        return 1;
+    }
+
+    big = (volatile unsigned char *)(uintptr_t)at;
+
+    if (kosmos_protect((void *)big, RESERVE_BIG_PAGES, RESERVE_RW) != 0) {
+        return 2;
+    }
+
+    for (i = 0; i < RESERVE_BIG_PAGES; i += RESERVE_STRIDE) {
+        big[i * 4096] = (unsigned char)(i | 1);
+        touched++;
+    }
+
+    after = held_now("t-reserve");
+
+    if (after < before + touched || after > before + touched + 8) {
+        return 3;
+    }
+
+    if (kosmos_release((void *)big, RESERVE_BIG_PAGES) != 0
+        || held_now("t-reserve") > before + 8) {
+        return 4;
+    }
+
+    /* 5-6 */
+    at = kosmos_reserve(4);
+
+    if (at < 0) {
+        return 5;
+    }
+
+    one = (volatile unsigned char *)(uintptr_t)at;
+
+    if (kosmos_protect((void *)one, 4, RESERVE_RW) != 0) {
+        return 5;
+    }
+
+    one[0] = 0x5a;
+    one[4096] = 0x5b;
+
+    if (kosmos_protect((void *)one, 1, RESERVE_READ) != 0
+        || one[0] != 0x5a || one[4096] != 0x5b) {
+        return 6;
+    }
+
+    /* 7-8 */
+    if (kosmos_protect((void *)(one + 4096), 1, RESERVE_NONE) != 0) {
+        return 7;
+    }
+
+    if (kosmos_protect((void *)(one + 4096), 1, RESERVE_RW) != 0
+        || one[4096] != 0) {
+        return 8;
+    }
+
+    /* 9 */
+    {
+        volatile unsigned char *code = one + 2 * 4096;
+        int (*fn)(void);
+
+        for (i = 0; i < sizeof forty_two; i++) {
+            code[i] = forty_two[i];
+        }
+
+        if (kosmos_protect((void *)code, 1, RESERVE_RX) != 0) {
+            return 9;
+        }
+
+        __builtin___clear_cache((char *)code, (char *)code + sizeof forty_two);
+        fn = (int (*)(void))(uintptr_t)code;
+
+        if (fn() != 42) {
+            return 9;
+        }
+    }
+
+    /* 10-13 */
+    if (kosmos_protect((void *)one, 1, RESERVE_RWX) != SYS_ERR_FLAGS) {
+        return 10;
+    }
+
+    if (kosmos_protect((void *)one, 1, 9) != SYS_ERR_FLAGS) {
+        return 11;
+    }
+
+    if (kosmos_protect((void *)(uintptr_t)0x1000, 1, RESERVE_RW) != SYS_ERR_FAULT) {
+        return 12;
+    }
+
+    if (kosmos_release((void *)(one + 4096), 1) != 0
+        || kosmos_protect((void *)one, 4, RESERVE_READ) != SYS_ERR_FAULT) {
+        return 13;
+    }
+
+    if (kosmos_release((void *)one, 4) != 0) {
+        return 13;
+    }
+
+    /* 14 */
+    before = held_now("t-reserve");
+
+    for (i = 0; i < 1000; i++) {
+        volatile unsigned char *m;
+
+        at = kosmos_reserve(256);
+
+        if (at < 0 || kosmos_protect((void *)(uintptr_t)at, 256, RESERVE_RW) != 0) {
+            return 14;
+        }
+
+        m = (volatile unsigned char *)(uintptr_t)at;
+        m[0] = 1;
+        m[255 * 4096] = 2;
+
+        if (kosmos_release((void *)(uintptr_t)at, 256) != 0) {
+            return 14;
+        }
+    }
+
+    if (held_now("t-reserve") > before + 8) {
+        return 14;
+    }
+
+    /* 15 */
+    for (i = 0; i < 3; i++) {
+        long t = kosmos_thread_start(returns_at_once, 0);
+
+        if (t != 1 || kosmos_thread_wait((unsigned long)t) != 0) {
+            return 15;
+        }
+    }
+
+    return 0;
+}
+
+/* A write to a page made read only ends the process. */
+static int reserve_readonly_role(void)
+{
+    long at = kosmos_reserve(1);
+    volatile unsigned char *p = (volatile unsigned char *)(uintptr_t)at;
+
+    if (at < 0 || kosmos_protect((void *)p, 1, RESERVE_RW) != 0) {
+        return 1;
+    }
+
+    p[0] = 7;
+
+    if (kosmos_protect((void *)p, 1, RESERVE_READ) != 0 || p[0] != 7) {
+        return 2;
+    }
+
+    p[0] = 8;                               /* the fault ends it here */
+    return 3;
+}
+
+/* A touch of a page with no access - a guard - ends the process. */
+static int reserve_none_role(void)
+{
+    long at = kosmos_reserve(2);
+    volatile unsigned char *p = (volatile unsigned char *)(uintptr_t)at;
+
+    if (at < 0 || kosmos_protect((void *)p, 1, RESERVE_RW) != 0) {
+        return 1;
+    }
+
+    p[0] = 1;
+    (void)p[4096];                          /* the guard after it */
+    return 3;
+}
+
+/*
  * **What the process table says about a process with a file and a worker**
  * (`roadmap.md` 6m). Processes shows each one's threads and the file it
  * runs, and both come from `struct proc_info`: this names itself with a
@@ -1058,6 +1285,18 @@ int main(unsigned long arg)
 
     if (arg == CTEST_LEAVE_TOGETHER) {
         return leave_together_role();
+    }
+
+    if (arg == CTEST_RESERVE) {
+        return reserve_role();
+    }
+
+    if (arg == CTEST_RESERVE_READONLY) {
+        return reserve_readonly_role();
+    }
+
+    if (arg == CTEST_RESERVE_NONE) {
+        return reserve_none_role();
     }
 
     if (arg == CTEST_THREAD_ON) {

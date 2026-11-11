@@ -22,6 +22,7 @@
 #include "console.h"
 #include "cpu.h"
 #include "process.h"
+#include "reserve.h"
 #include "sched.h"
 #include "profile.h"
 #include "thread.h"
@@ -530,6 +531,19 @@ void trap_handle(struct trapframe *f)
 
             for (i = 0; i < n; i++) {
                 line(names[i], entries[i]);
+            }
+
+            /* A reserved page says so, and what it allowed: a guard is the
+             * likeliest reason a process touched one (`reserve.c`). */
+            {
+                const char *access = reserve_describe(process_current(),
+                                                      (uintptr_t)cr2);
+
+                if (access != NULL) {
+                    say("  a reserved page, ");
+                    say(access);
+                    say("\n");
+                }
             }
         }
     }

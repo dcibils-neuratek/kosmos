@@ -118,6 +118,10 @@ static inline uintptr_t virt_to_phys(const void *va)
 #define MAP_USER_RX (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
                      ATTR_AP_RO_EL0 | ATTR_PXN)   /* UXN clear: EL0 executes */
 
+/* Read only and run by nobody: a page `SYS_PROTECT` made READ. */
+#define MAP_USER_RO (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
+                     ATTR_AP_RO_EL0 | ATTR_PXN | ATTR_UXN)
+
 /*
  * A device's registers, in a driver's own address space.
  *

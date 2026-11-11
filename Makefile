@@ -290,6 +290,7 @@ SRCS := boot/start.S \
         kernel/vm.c \
         kernel/sharemap.c \
         kernel/futex.c \
+        kernel/reserve.c \
         kernel/irq.c \
         kernel/process.c \
         kernel/smp.c \
@@ -4209,6 +4210,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/vm.c \
              kernel/sharemap.c \
              kernel/futex.c \
+             kernel/reserve.c \
              kernel/irq.c \
              kernel/process.c \
              kernel/smp.c \

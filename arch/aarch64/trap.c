@@ -20,6 +20,7 @@
 #include "profile.h"
 #include "thread.h"
 #include "process.h"
+#include "reserve.h"
 #include "syscall.h"
 
 /* The table in vectors.S. */
@@ -163,6 +164,17 @@ static void dump_body(unsigned index, const struct trapframe *tf)
     kputs("\n  far     0x");
     kputx(tf->far, 16);
     kputs("   <- the address it touched");
+
+    /* A reserved page says so, and what it allowed: a guard is the likeliest
+     * reason a process touched one (`reserve.c`). */
+    if (is_abort(ec) && (ec == EC_DABT_LOWER || ec == EC_IABT_LOWER)) {
+        const char *access = reserve_describe(process_current(), tf->far);
+
+        if (access != NULL) {
+            kputs("\n  reserved, ");
+            kputs(access);
+        }
+    }
 
     kputs("\n  spsr    0x");
     kputx(tf->spsr, 16);
