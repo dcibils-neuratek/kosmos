@@ -2,7 +2,43 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-10 (0.11.363: `malloc` under a lock; pushed with 0.11.358-0.11.362 on Diego's word)
+Last updated: 2026-11-11 (0.11.372: W2 built - JetSki's three things from Nebula; nothing since 0.11.363 pushed)
+
+---
+
+## 11 November: JetSki W1d to W2c (0.11.364-0.11.372, not pushed)
+
+JetSki is WebKit on Kosmos (`docs/webkit.md`). W1 runs C++ (0.11.367,
+`cxxtest.elf` in the gate). **W2, Nebula's three, agreed by Diego ("yes to
+all", `docs/w2.md`) and built:**
+
+- 0.11.368 (18.763): AArch64 on Homebrew's GCC 16.2, whose `_Thread_local`
+  is real (Arm's 14.2 emulated it).
+- 0.11.369 (18.764): a futex (`SYS_FUTEX_WAIT` / `WAKE`); `kosmos_lock` and
+  malloc's lock on it (5.3x on x86, 2.0x on ARM under TCG). Found on the
+  way: a process's first thread freed the page tables under a worker still
+  unmapping its stack - `process_thread_ended` reordered, role 912.
+- 0.11.370 (18.765): `SYS_RESERVE` / `PROTECT` / `RELEASE`, spans in
+  `kernel/reserve.c`, never RWX; stacks' window capped at 64 GB; thread
+  indices reused once collected.
+- 0.11.371 (18.766): `MEM_MAP_RX` on `SYS_MEM_MAP` - one region writable at
+  one address, executable at another. Gate 110/112, `x86-profile` and
+  `x86-film-load` failing on load and passing alone (first time for the
+  second - watch for it).
+- 0.11.372 (18.767): `SYS_THREAD_SUSPEND` / `REGS` / `RESUME`, parked at
+  the return to user level; x86's `syscall_entry` saves the callee-saved
+  six.
+
+**Next: W3, the POSIX layer inside the process - waiting on Diego.** As
+`webkit.md` plans it (BSD sockets for curl, `open`/`read`/`write` with
+descriptors, `unistd.h`), it crosses `CLAUDE.md`'s and `design.md` §17.3's
+"never" list; the JetSki decision row says it is compatibility inside a
+process, but the principle text was never changed. Asked 11 November
+whether to amend the principle or patch the ports.
+
+**Follow-ups**: a released reservation's addresses reused; `x86-xavier`
+diverging under load (18.761); a dying program's last words (its `panic:`
+and `stderr` reach nothing); disk at about 8.6 GB free before W5.
 
 ---
 
