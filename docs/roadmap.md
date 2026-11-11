@@ -10028,6 +10028,15 @@ the applications make the system useful, and is not pulled forward.
   on endpoints and regions - and **the window**; **W8 the sites**: Gmail,
   Docs, Claude, Gemini, YouTube by MSE on the FFmpeg kit. The image ceiling
   goes with W1 (the browser is an installed `webkit.elf`, as Doom is).
+  **The design agreed on 11 November** (Diego: "yes go ahead, tabs in the
+  band, openssl", and "make sure is blazing fast, optimized and renders on the
+  gpu when needed for extra speed"): tabs in the window's band; **OpenSSL as
+  the system's one TLS**, the TLS Kit moved onto it after W5; and speed by
+  design - LTO, the libraries' own SIMD chosen by CPUID, tiles painted on
+  every core, nothing copied that can be shared, and **the GPU where it
+  pays**: layers composed and pictures scaled by Compute Kit kernels, video
+  in hardware when the M700's video engine is driven, Skia's GPU backend
+  once a Vulkan or GL driver exists (`docs/webkit.md`, *Fast*). **W1 next.**
 - **The web, decided: apps for real work, a light browser, and Linux for
   the rest** (Diego, 14 October 2026, after reading `docs/browser-engine.md`:
   "i think that browsers have become larg OSes themselves", "apps for real

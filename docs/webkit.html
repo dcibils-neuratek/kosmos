@@ -57,7 +57,8 @@ code { font-family: var(--mono); font-size: 13px; }
 
 
 /* The browser's own top: tabs in the band's row below, then the toolbar. */
-.tabs { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #eef0f4; border-bottom: 1px solid var(--w-line); }
+.menu-btn { align-self: center; padding: 0 10px 6px 4px; color: #4a5262; font-size: 15px; }
+.tabs { display: flex; align-items: flex-end; gap: 2px; padding: 10px 14px 0; background: #eef0f4; border-bottom: 1px solid var(--w-line); }
 .tab { display: flex; align-items: center; gap: 8px; background: transparent; border-radius: 9px 9px 0 0; padding: 7px 12px; font-size: 12.5px; color: #4a5262; width: 210px; white-space: nowrap; overflow: hidden; }
 .tab.on { background: #fff; color: #111; box-shadow: 0 -1px 0 var(--w-line) inset; }
 .tab .ic { width: 14px; height: 14px; border-radius: 3px; flex: none; }
@@ -120,13 +121,11 @@ code { font-family: var(--mono); font-size: 13px; }
 
 <h2>A page, with tabs</h2>
 <div class="scroller"><div class="win">
-  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
-    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
-  <div class="tabs">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
     <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
     <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
     <div class="tab"><span class="ic" style="background:#e4602e"></span>Video - a lecture<span class="x">&times;</span></div>
-    <div class="tab plus">+</div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
   </div>
   <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
     <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
@@ -146,13 +145,11 @@ code { font-family: var(--mono); font-size: 13px; }
     <div class="status">en.encyclopedia.example/wiki/Rings_of_Saturn</div>
   </div>
 </div></div>
-<p class="cap">The band is Kosmos's, with the browser's menus; tabs below it, then back, forward and reload, the address field, a star for bookmarks, downloads (a thin bar while one runs) and the rest. Super with a number goes to a tab, Control+T opens one, Control+L is the address field. A link under the pointer shows its address at the bottom left. The page is drawn by WebKit's web process into a region and shown as it is - fonts, layout and colours are the site's.</p>
+<p class="cap">The tabs are the band, as Safari and Chrome have them: the menu button at the left holds File, Edit, View, History and Bookmarks (and under a desktop with a menu bar, Pewter, they are the screen's), the window's three lights at the right, and the band still drags the window. Below, back, forward and reload, the address field, a star for bookmarks, downloads (a thin bar while one runs) and the rest. Super with a number goes to a tab, Control+T opens one, Control+L is the address field. A link under the pointer shows its address at the bottom left. The page is drawn by WebKit's web process into a region and shown as it is - fonts, layout and colours are the site's.</p>
 
 <h2>Typing in the address field</h2>
 <div class="scroller"><div class="win">
-  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
-    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
-  <div class="tabs"><div class="tab on"><span class="ic" style="background:#cfd5dd"></span>New tab<span class="x">&times;</span></div><div class="tab plus">+</div></div>
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#cfd5dd"></span>New tab<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
   <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
     <div class="url focus"><span class="host">sat</span><span class="path" style="background:#dbe6fb">urn rings</span></div>
     <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span>
@@ -171,9 +168,7 @@ code { font-family: var(--mono); font-size: 13px; }
 
 <h2>A tab whose page stopped</h2>
 <div class="scroller"><div class="win">
-  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
-    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
-  <div class="tabs"><div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div><div class="tab on"><span class="ic" style="background:#9aa2b0"></span>A heavy page<span class="x">&times;</span></div><div class="tab plus">+</div></div>
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div><div class="tab on"><span class="ic" style="background:#9aa2b0"></span>A heavy page<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
   <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
     <div class="url"><span class="lock">&#9679;</span><span class="host">heavy.example</span><span class="path">/app</span></div>
     <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
@@ -196,9 +191,8 @@ code { font-family: var(--mono); font-size: 13px; }
 </div></div>
 <p class="cap">From the downloads button. What arrives goes to <code>/Home/Downloads</code>; a notification says when one finishes, and Open hands it to the application its file type names - a PDF to the PDF reader, a picture to Photos. A download that stops hearing gives up after a time and goes on from where it was when asked again, as Models' do.</p>
 
-<h2>For Diego</h2>
-<div class="q"><b>Look.</b> Tabs under Kosmos's band, as drawn, or tabs in the band itself as Safari and Chrome put them - one row less, at the cost of the band's menus.</div>
-<div class="q"><b>TLS.</b> OpenSSL (or BoringSSL) as the system's one TLS, the TLS Kit moving onto it - or curl and WebCrypto on our TLS and Crypto Kits. <code>docs/webkit.md</code>, <i>Open questions</i>.</div>
+<h2>Decided by Diego, 11 November</h2>
+<div class="q"><b>Tabs in the band</b>, as drawn here; <b>OpenSSL</b> as the system's one TLS; and <b>fast</b>, with the GPU where it pays - <code>docs/webkit.md</code>, <i>Fast</i>.</div>
 </div>
 </body>
 </html>

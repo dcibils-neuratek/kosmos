@@ -92,7 +92,7 @@ every piece: **does another application want this?**
 | Fonts: faces and shaping | **new: the Text Kit** - FreeType and HarfBuzz behind one door | C | **Write, Mail, Present** - every application drawing text in a script other than Latin |
 | Unicode: breaking, bidi, collation | ICU, vendored as shipped | C++ | the Text Kit |
 | Pictures: PNG, JPEG, WebP, GIF, AVIF | **new**: libpng, libjpeg-turbo and libwebp, vendored. Kosmos decodes pictures with `stb_image` today (`gfx`); WebKit's decoders want these, so **the image kits move onto them** rather than keep a second decoder of each format | C | Photos, Write, Tracker's previews |
-| TLS | **a question for Diego** (*Open questions*) | C | the TLS Kit |
+| TLS | **OpenSSL, the system's one TLS** (decided; the TLS Kit moves onto it) | C | every program that speaks TLS |
 | Video and sound | **the FFmpeg kit and the Playback Kit**, behind a `MediaPlayerPrivate` of Kosmos's own; VP9, AV1 (dav1d) and Opus added to the kit's decoders | C | Video, Music |
 | Storage: cookies, site data | SQLite, vendored, in `/Home` through the namespace | C | any application that wants a database |
 | Passwords | the keyring server | C | Mail, Servers |
@@ -209,18 +209,68 @@ the engine at 1-2 years after it, for one person. Every step above is
 usable on its own - W1 and W3 help every later port - and none waits on
 the next to be worth having.
 
-## Open questions, for Diego
+## Fast: what makes it so, and where the GPU comes in
 
-1. **TLS.** WebKit's Windows and PlayStation ports require OpenSSL, for
-   WebCrypto and for curl. Kosmos has the Crypto Kit and the TLS Kit (on
-   BearSSL). A second TLS library inside the browser is a second copy,
-   which the premise calls a defect; the alternatives are curl on the TLS
-   Kit and WebCrypto on the Crypto Kit (more of our own code to write and
-   keep), or **BoringSSL or OpenSSL as the system's one TLS**, the TLS Kit
-   moving onto it. Recommended: the second - one door, and the one the web
-   is tested against. Decided before W5.
-2. **Disk.** WebKit's build wants tens of GB and this Mac has under 10
+Diego, agreeing the design on 11 November: "make sure is blazing fast,
+optimized and renders on the gpu when needed for extra speed". So speed is
+part of the design, not a later pass, and every item here is measured on
+the M700 before and after (`CLAUDE.md`: QEMU numbers are not performance
+numbers):
+
+- **Built for speed.** WebKit and its libraries at `-O2` with link-time
+  optimisation over the one static image; no debug assertions in the build
+  a person uses. Skia, libjpeg-turbo, libwebp, dav1d and FFmpeg keep their
+  hand-written SIMD, chosen at run time by CPUID - AVX2 on the M700, AVX on
+  the Mac Pro 2013, NEON on ARM - so one image runs on both machines at
+  each one's best.
+- **Every core paints.** A page's tiles are painted by several threads at
+  once, one tile each, as WebKit's Linux ports do with Skia on the
+  processor - four cores on the M700 rather than one. Scrolling never waits
+  for painting (the busiest path, above): the UI process moves tiles it
+  already has.
+- **Nothing copied that can be shared.** Tiles are painted straight into
+  the region the window's surface is composed from; a video frame is
+  decoded into a region and drawn from there; a response body is written
+  once, into the region the web process reads.
+- **JavaScript.** The LLInt with no JIT, as agreed. If the measurements
+  say JavaScript is where a site's time goes, a JIT is the next
+  conversation, with what it would ask of Nebula: memory written and then
+  made executable, never both at once.
+- **The GPU, where it pays.** Kosmos drives the M700's GPU through its own
+  kernels (the Compute Kit, `kc`), and has no OpenGL or Vulkan driver yet.
+  So, in order:
+  1. **compositing on the GPU**: WebKit's layers - a scrolled frame, a
+     transformed or translucent element, a video - blended and scaled into
+     the window's surface by Compute Kit kernels rather than the processor,
+     whenever a frame has more than one layer moving;
+  2. **pictures scaled and decoded** there - large images drawn smaller,
+     JPEG's colour conversion - where measuring shows the processor busy
+     with them;
+  3. **video decoded in hardware**, when the M700's video engine is driven
+     (`m700-gpu.md`), through the FFmpeg kit's door, so the browser gains it
+     without changing;
+  4. **Skia's own GPU backend**, and WebGL, once Kosmos has a Vulkan or
+     OpenGL driver (`roadmap.md` 4h) - at that point painting itself moves
+     to the GPU.
+  Each falls back to the processor where there is no GPU - QEMU, the Mac
+  Pro's FirePros - and is chosen by measuring, not assumed.
+
+## Decided by Diego, 11 November 2026
+
+1. **The design agreed**: "yes go ahead".
+2. **Tabs in the band**, as Safari and Chrome put them: the band holds the
+   tabs, the lights and a menu button; the menus are that button's, and the
+   screen's menu bar under a desktop that has one (Pewter).
+3. **OpenSSL as the system's one TLS.** WebKit and curl use it; the TLS
+   Kit moves onto it, so Kosmos keeps one TLS library rather than two.
+   Its own step, after W5: the TLS Kit's callers held to the same tests
+   before and after.
+4. **Fast, and on the GPU when it pays** (*Fast*, above).
+
+## Still open
+
+1. **Disk.** WebKit's build wants tens of GB and this Mac has under 10
    free; W1-W4 fit, W5 onward does not. Space made here, or the build on
    an external drive - before W5.
-3. **The ARM build.** Tests are x86-64 only for now; WebKit builds for both
+2. **The ARM build.** Tests are x86-64 only for now; WebKit builds for both
    from the first step, and is tested on ARM when ARM's tests resume.
