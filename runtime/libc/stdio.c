@@ -172,6 +172,27 @@ int fclose(FILE *f)
     return 0;
 }
 
+/*
+ * **A stream's number, which it does not have.** POSIX numbers a process's
+ * open files and C++'s library asks `fileno` for one, to ask `isatty` of
+ * it. Kosmos has no descriptors - global or otherwise - and will not grow
+ * them to answer a question, so every stream says it has none, and
+ * `isatty` says no (`unistd.h`).
+ */
+int fileno(FILE *f)
+{
+    (void)f;
+    errno = EBADF;
+    return -1;
+}
+
+int isatty(int fd)
+{
+    (void)fd;
+    errno = EBADF;
+    return 0;
+}
+
 size_t fread(void *b, size_t size, size_t count, FILE *f)
 {
     size_t want, left;

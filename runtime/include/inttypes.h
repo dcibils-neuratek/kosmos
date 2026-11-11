@@ -2,6 +2,9 @@
 #ifndef INTTYPES_H
 #define INTTYPES_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * The format macros, and why this file exists at all.
  *
@@ -86,5 +89,7 @@
 #define SCNi64      "li"
 #define SCNu64      "lu"
 #define SCNx64      "lx"
+
+__END_DECLS
 
 #endif /* INTTYPES_H */

@@ -566,6 +566,83 @@ void *malloc(size_t n)
     return p;
 }
 
+/*
+ * **Memory on a boundary wider than sixteen** - C11's `aligned_alloc`, which
+ * C++'s `new` of an over-aligned type comes to (`docs/webkit.md` W1c).
+ *
+ * Sixteen is what every block already has, so anything up to it is plain
+ * `malloc`. Wider, a block is taken large enough to hold a boundary with a
+ * whole block's room in front of it - a header and the smallest payload -
+ * and cut there: the front goes back to the heap as a free block of its
+ * own, and the block from the boundary on is the one handed out, its tail
+ * cut off as `take` would. So `free` and `realloc` see an ordinary block
+ * and need to know nothing about how it was made.
+ */
+static void *heap_aligned(size_t align, size_t n)
+{
+    char *payload, *at;
+    struct block *b, *nb;
+
+    if (n == 0) {
+        n = 1;
+    }
+
+    if (n > (size_t)-1 / 2 - align - HEADER - ALIGNMENT) {
+        return NULL;
+    }
+
+    payload = heap_alloc(n + align + HEADER + ALIGNMENT);
+    if (payload == NULL) {
+        return NULL;
+    }
+
+    if (((uintptr_t)payload & (align - 1)) == 0) {
+        return payload;     /* already on it; the slack stays in the block */
+    }
+
+    b = BLOCK(payload);
+    at = (char *)(((uintptr_t)payload + HEADER + ALIGNMENT + align - 1) & ~(uintptr_t)(align - 1));
+    nb = BLOCK(at);
+
+    nb->size = b->size - (size_t)(at - payload);
+    nb->free = 0;
+    nb->prev = b;
+    nb->next = b->next;
+    if (b->next != NULL) {
+        b->next->prev = nb;
+    }
+    b->next = nb;
+    b->size = (size_t)((char *)nb - payload);
+
+    /* The front is freed as any block is, and merges with a free block
+     * before it. `used` falls by the front's size there, which leaves
+     * `nb`'s and its header - a header that was payload when the block was
+     * taken - so the header comes off here, with `nb` while it is cut. */
+    heap_free(payload);
+
+    used -= nb->size + HEADER;
+    split(nb, ALIGN_UP(n));
+    used += nb->size;
+
+    return at;
+}
+
+void *aligned_alloc(size_t align, size_t n)
+{
+    void *p;
+
+    /* A power of two, as C requires; anything else is refused rather
+     * than rounded to something the caller did not ask for. */
+    if (align == 0 || (align & (align - 1)) != 0) {
+        return NULL;
+    }
+
+    heap_lock();
+    p = align <= ALIGNMENT ? heap_alloc(n) : heap_aligned(align, n);
+    heap_unlock();
+    return p;
+}
+
 void free(void *p)
 {
     heap_lock();

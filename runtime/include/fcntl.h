@@ -2,6 +2,9 @@
 #ifndef FCNTL_H
 #define FCNTL_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Deliberately empty, and that is the whole content of the decision.
  *
@@ -30,5 +33,7 @@
  * point: **a build that compiles is not evidence that a dependency was
  * decided on.**
  */
+
+__END_DECLS
 
 #endif /* FCNTL_H */

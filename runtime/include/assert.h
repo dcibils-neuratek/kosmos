@@ -2,7 +2,12 @@
 #ifndef ASSERT_H
 #define ASSERT_H
 
-#include <panic.h>
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
+/* `panic`'s own declaration rather than `kernel/panic.h`, which a C++
+ * library compiled against this libc has no path to. */
+void panic(const char *msg) __attribute__((noreturn));
 
 /*
  * An assert that fails is a panic: there is nobody to report to and nothing
@@ -22,5 +27,7 @@
 #ifndef __cplusplus
 #define static_assert _Static_assert
 #endif
+
+__END_DECLS
 
 #endif /* ASSERT_H */

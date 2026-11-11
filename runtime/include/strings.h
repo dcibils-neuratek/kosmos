@@ -2,6 +2,9 @@
 #ifndef STRINGS_H
 #define STRINGS_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 #include <stddef.h>
 
 /*
@@ -32,5 +35,7 @@ int strncasecmp(const char *a, const char *b, size_t n);
  * (`user/init/misc_user.c`). */
 void bzero(void *p, size_t n);
 
+
+__END_DECLS
 
 #endif /* STRINGS_H */

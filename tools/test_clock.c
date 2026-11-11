@@ -18,6 +18,7 @@ uint64_t stub_ticks, stub_epoch, stub_hz;
 unsigned stub_sysinfo_calls;
 
 time_t kosmos_time_now(void);
+int kosmos_clock_read(int monotonic, struct timespec *out);
 
 static int failures;
 
@@ -54,6 +55,34 @@ int main(void)
     check(kosmos_time_now() == (time_t)(stub_epoch + stub_ticks / stub_hz),
           "and the clock it gives is the new one");
 
+    {
+        struct timespec ts, mono;
+        uint64_t at;
+
+        /* A quarter of a second past a whole one, on both clocks. */
+        stub_ticks = (stub_ticks / stub_hz + 1) * stub_hz + stub_hz / 4u;
+        at = stub_ticks;
+        check(kosmos_clock_read(0, &ts) == 0 && kosmos_clock_read(1, &mono) == 0,
+              "both clocks read");
+        /* The board says the date in whole seconds, so the date is good to
+         * the second it came with, and no closer. */
+        check(ts.tv_nsec >= 0 && ts.tv_nsec < 1000000000
+              && ts.tv_sec >= (time_t)(stub_epoch + at / stub_hz) - 1
+              && ts.tv_sec <= (time_t)(stub_epoch + at / stub_hz),
+              "the date is the board's, to its second");
+        check(mono.tv_sec == (time_t)(at / stub_hz) && mono.tv_nsec == 250000000,
+              "the monotonic clock is the counter, from the start");
+
+        /* Ten days of a 4 GHz counter: the nanoseconds must not overflow. */
+        stub_hz = 4000000000u;
+        stub_ticks = stub_hz * 864000u + stub_hz / 2u + 4u;
+        check(kosmos_clock_read(1, &mono) == 0 && mono.tv_sec == 864000
+              && mono.tv_nsec == 500000001, "a fast counter's fraction stays exact");
+        stub_hz = 62500000u;
+        stub_ticks = at + stub_hz * 61u;
+        (void)kosmos_time_now();
+    }
+
     stub_epoch = 0;                         /* a machine with no clock */
     stub_ticks += stub_hz * 61u;
     check(kosmos_time_now() == 0, "no clock is zero, not a count from boot");
@@ -62,6 +91,6 @@ int main(void)
         return 1;
     }
 
-    printf("PASS: 6 checks on time(): sysinfo once a minute, the counter between\n");
+    printf("PASS: 10 checks on time() and clock_gettime: sysinfo once a minute, the counter between\n");
     return 0;
 }

@@ -3343,6 +3343,32 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 	$(OBJCOPY) -O binary $< $@
 
 #
+# **The C++ runtimes** (`docs/webkit.md` W1c): libc++, libc++abi and
+# libunwind from `runtime/upstream/llvm/`, built by clang for this
+# architecture with Kosmos's toolchain file, into `build/cxx/<arch>/`. CMake
+# configures once; ninja after that rebuilds what changed, a libc header
+# included, so make hands every run to it rather than deciding itself.
+# `make cxx-runtimes`, and `ARCH=x86_64` for the other.
+#
+CXXRT      := build/cxx/$(ARCH)
+CXXRT_LIBS := $(CXXRT)/lib/libc++.a $(CXXRT)/lib/libc++abi.a $(CXXRT)/lib/libunwind.a
+
+.PHONY: cxx-runtimes cxx-runtimes-ninja
+cxx-runtimes: cxx-runtimes-ninja
+
+$(CXXRT_LIBS): cxx-runtimes-ninja
+
+cxx-runtimes-ninja:
+	@mkdir -p $(CXXRT)
+	@if [ ! -f $(CXXRT)/build.ninja ]; then \
+	    cmake -G Ninja -S runtime/upstream/llvm/runtimes -B $(CXXRT) -Wno-author \
+	        -C runtime/cxx/runtimes.cmake \
+	        -DCMAKE_TOOLCHAIN_FILE=$(CURDIR)/runtime/cxx/kosmos.cmake \
+	        -DKOSMOS_ARCH=$(ARCH) -DKOSMOS_ROOT=$(CURDIR) > $(CXXRT)/cmake.log \
+	    || { cat $(CXXRT)/cmake.log; exit 1; }; fi
+	ninja -C $(CXXRT) --quiet
+
+#
 # **A program's own image** (`docs/elf.md` step 3): the system's objects and
 # the kit it brings, linked as `init.elf` is. Nothing is compiled twice - a
 # kit it brings is declared weak in `sys_user.c`, so that file is the same

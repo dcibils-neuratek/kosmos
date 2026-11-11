@@ -2,6 +2,9 @@
 #ifndef STRING_H
 #define STRING_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 #include <stddef.h>
 
 /*
@@ -51,5 +54,7 @@ char *strerror(int errnum);
  * and it is C. Lua compares strings through this, so returning anything
  * other than byte order would change what `<` means on strings. */
 static inline int strcoll(const char *a, const char *b) { return strcmp(a, b); }
+
+__END_DECLS
 
 #endif /* STRING_H */

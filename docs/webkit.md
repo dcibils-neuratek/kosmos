@@ -216,6 +216,13 @@ W1, in the order it is built:
   built for Kosmos by clang with a CMake toolchain file of Kosmos's own.
   Threads, locales and wide characters off at first - they arrive with the
   POSIX layer (W3) and the runtimes are built again with them on.
+  *Built, 0.11.366* (`testing.md` 18.761): `tools/llvm_vendor.py` takes
+  the three, the CMake they are configured with and the 120 files of
+  LLVM's libc libc++ includes, and proves the copy builds on its own;
+  `make cxx-runtimes` builds them into `build/cxx/<arch>/` in about ten
+  seconds. The libc grew what they asked: `extern "C"` on every header,
+  `aligned_alloc`, `clock_gettime`, `strtold`, and the types of `wchar.h`
+  and `fenv.h`.
 - **W1d, the test.** `cxxtest.elf`, a kit in an image of its own as
   `apptest.elf` is, written in C++: an exception thrown three frames down
   and caught with its message; a static constructor that ran before the kit

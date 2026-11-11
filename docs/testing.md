@@ -31055,3 +31055,61 @@ than two steps from FFmpeg's, the first at 2.5426 s with channel 0 right
 and channels 1-3 zero - a period written with one channel, not a period
 missing. The log is kept as
 `build/gate/failed/0.11.364-1111-132846-x86-film.log`.
+
+## 18.761 The C++ runtimes, built for Kosmos (JetSki W1c)
+
+`docs/webkit.md` W1c - libc++, libc++abi and libunwind from LLVM 23.1.2,
+vendored in `runtime/upstream/llvm/` by `tools/llvm_vendor.py` (27 MB:
+the three less their tests, the CMake that configures them, and the 120
+files of LLVM's libc libc++ includes, read from ninja's log for both
+architectures). Built by clang with `runtime/cxx/kosmos.cmake` and
+`runtimes.cmake`: `make cxx-runtimes`, about ten seconds an architecture,
+into `build/cxx/<arch>/`. The script builds them a second time from the
+copy, so a file it left out fails there rather than in a later build.
+
+**What the libc had to grow**, found by building against it - libc++
+compiles against `runtime/include/` and nothing else:
+
+- **`extern "C"`** on every header, through `sys/cdefs.h`'s
+  `__BEGIN_DECLS`; there was none, so every call from C++ would have been
+  to a mangled name nobody defines;
+- **`aligned_alloc`** (`malloc.c`): a block large enough to hold the
+  boundary with a block's room in front, cut there, the front freed - so
+  `free` and `realloc` see an ordinary block;
+- **`clock_gettime`** with `CLOCK_REALTIME` and `CLOCK_MONOTONIC`, and C11's
+  `timespec_get` (`clock_user.c`). The date is the board's to its second:
+  it says whole seconds, so the fraction is the counter's since it was
+  last asked;
+- `wchar.h` and `fenv.h` - the types and names only, no functions;
+  `div_t` and `ldiv`; `strtold` at a double's precision; `fileno` and
+  `isatty`, which say there are no descriptors; `ELAST`; and an
+  `assert.h` that declares `panic` rather than reaching into `kernel/`.
+
+What the three ask of the libc once built: nothing it does not have, and on
+AArch64 libgcc's quad-float helpers, which the userland links.
+
+**Tests**: `heap: aligned_alloc on wide boundaries` in the kernel suite -
+every width from 32 to 4096 between two of `malloc`'s blocks, on its
+boundary, neighbours untouched, grown by `realloc`, freed by `free`, and
+the heap back where it began; a width not a power of two refused.
+`test_clock` 10 of 10, four new: both clocks read, the date to the board's
+second, the monotonic clock the counter's, and ten days of a 4 GHz counter
+exact to the nanosecond. **Control**: the nanoseconds computed as
+`t * 10^9 / hz` - "a fast counter's fraction stays exact" fails. The
+licence check holds `LICENSE`'s new entry, 59 of 59.
+
+**What the test found, the first time it ran**: `heap_used()` 256 bytes
+above where it began - 32, a header, for each of the eight widths. The
+block handed out is made inside the one taken, and its header was payload
+the heap had counted as used; freeing the front took off only the front's
+own size. The header now comes off with it. The test failing on the code
+before that line is its control.
+
+**Whole gate** on W1c: 109 of 112 in 771 s - `x86-kernel` and
+`arm-sandbox` (which runs the same kernel suite) on that test, both 212 of
+212 and 214 of 214 with the fix; and **`x86-xavier`**, whose drawn answer
+left the kit's at the 77th token of 180 and passed alone, 37 of 37, in
+168 s. Nothing in W1c is on its path - no C in the system's image calls
+`aligned_alloc`, and the clock is not in the model - so this is a
+difference under load in an answer that is meant to be the same byte for
+byte, and is on the roadmap to be explained rather than retried.

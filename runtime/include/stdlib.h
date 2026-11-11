@@ -2,6 +2,9 @@
 #ifndef STDLIB_H
 #define STDLIB_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 #include <stddef.h>
 
 /*
@@ -99,6 +102,8 @@ void  *malloc(size_t n);
 void  *calloc(size_t count, size_t size);
 void  *realloc(void *p, size_t n);
 void   free(void *p);
+/* C11: `n` bytes on an `align` boundary, a power of two (`malloc.c`). */
+void  *aligned_alloc(size_t align, size_t n);
 
 /* Integer absolute value. Lua uses abs on line deltas in its debug info.
  * abs(INT_MIN) is undefined in C and stays undefined here rather than being
@@ -107,14 +112,31 @@ static inline int       abs(int n)            { return n < 0 ? -n : n; }
 static inline long      labs(long n)          { return n < 0 ? -n : n; }
 static inline long long llabs(long long n)    { return n < 0 ? -n : n; }
 
+/* Quotient and remainder together, as C has them; C's `/` and `%` already
+ * truncate toward zero, which is what these are defined to do. */
+typedef struct { int quot, rem; } div_t;
+typedef struct { long quot, rem; } ldiv_t;
+typedef struct { long long quot, rem; } lldiv_t;
+
+static inline div_t   div(int n, int d)    { div_t r = { n / d, n % d }; return r; }
+static inline ldiv_t  ldiv(long n, long d) { ldiv_t r = { n / d, n % d }; return r; }
+static inline lldiv_t lldiv(long long n, long long d)
+{
+    lldiv_t r = { n / d, n % d };
+    return r;
+}
+
 void   abort(void) __attribute__((noreturn));
 void   exit(int status) __attribute__((noreturn));
 
 /* Lua parses its own integers; strtod is what it uses for float literals. */
 double strtod(const char *s, char **end);
 float  strtof(const char *s, char **end);
+long double strtold(const char *s, char **end);   /* a double's precision */
 
 #define EXIT_SUCCESS    0
 #define EXIT_FAILURE    1
+
+__END_DECLS
 
 #endif /* STDLIB_H */

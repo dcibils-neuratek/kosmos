@@ -2,6 +2,9 @@
 #ifndef ENDIAN_H
 #define ENDIAN_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Which end the bytes start at, which for this system is a settled
  * question and not a portable one.
@@ -35,5 +38,7 @@
 #define BIG_ENDIAN      __BIG_ENDIAN
 #define PDP_ENDIAN      __PDP_ENDIAN
 #define BYTE_ORDER      __BYTE_ORDER
+
+__END_DECLS
 
 #endif /* ENDIAN_H */

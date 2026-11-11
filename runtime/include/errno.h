@@ -2,6 +2,9 @@
 #ifndef ERRNO_H
 #define ERRNO_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * errno is a function, not a variable, and that is deliberate.
  *
@@ -95,5 +98,12 @@ int *__errno(void);
 #define ENOSYS       38
 #define ENOTEMPTY    39
 #define EILSEQ       84
+
+/* The largest number above, under BSD's name: C++'s library asks it, to
+ * know which numbers `strerror` has a sentence for. A new code above it
+ * moves it. */
+#define ELAST        EILSEQ
+
+__END_DECLS
 
 #endif /* ERRNO_H */

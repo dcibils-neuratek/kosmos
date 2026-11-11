@@ -2,6 +2,9 @@
 #ifndef STDIO_H
 #define STDIO_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 #include <stdarg.h>
 #include <stddef.h>
 
@@ -44,6 +47,9 @@ extern FILE *stderr;
 FILE  *fopen(const char *path, const char *mode);
 FILE  *freopen(const char *path, const char *mode, FILE *f);
 int    fclose(FILE *f);
+/* Always -1, with `EBADF`: there are no file descriptors here, and a
+ * stream is not a number (`stdio.c`). */
+int    fileno(FILE *f);
 size_t fread(void *buf, size_t size, size_t count, FILE *f);
 size_t fwrite(const void *buf, size_t size, size_t count, FILE *f);
 int    feof(FILE *f);
@@ -120,5 +126,7 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
 
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
     __attribute__((format(printf, 3, 0)));
+
+__END_DECLS
 
 #endif /* STDIO_H */

@@ -2,6 +2,9 @@
 #ifndef UNISTD_H
 #define UNISTD_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Empty, and empty on purpose.
  *
@@ -16,7 +19,7 @@
  * would find something with a matching name. `-Iruntime/include` comes
  * first, so a vendored port that includes it gets this instead.
  *
- * Nothing is declared here deliberately. A port that includes the header
+ * Nothing else is declared here, deliberately. A port that includes the header
  * out of habit compiles; one that actually calls `unlink` or `fork` fails
  * at the *link*, with the name of the thing it wanted. That is the boundary
  * enforced by the linker rather than by hope, which is where this project
@@ -29,5 +32,14 @@
  */
 
 #include <stddef.h>
+
+/*
+ * The one exception, and it says no. C++'s library asks whether a stream
+ * is a terminal, through `fileno`, and nothing in Kosmos is reached by a
+ * number, so `isatty` answers 0 for every one (`stdio.c`).
+ */
+int isatty(int fd);
+
+__END_DECLS
 
 #endif /* UNISTD_H */

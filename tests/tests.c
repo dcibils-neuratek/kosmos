@@ -4790,6 +4790,75 @@ static bool test_heap_many_sizes_in_no_order(void)
     return ok && heap_used() == before;
 }
 
+/*
+ * **`aligned_alloc` on boundaries wider than sixteen** (`docs/webkit.md`
+ * W1c; C++'s `new` of an over-aligned type comes here). Every width from 32
+ * to 4096, each block between two of `malloc`'s, filled and checked: on its
+ * boundary, nothing written over its neighbours, freed by plain `free`, and
+ * the heap back where it began - the free front each one leaves has to be
+ * an ordinary block the heap can merge. A width that is not a power of two
+ * is refused.
+ */
+static bool test_heap_aligned_alloc(void)
+{
+    size_t before = heap_used();
+    bool ok = true;
+    size_t align;
+
+    if (aligned_alloc(48, 64) != NULL || aligned_alloc(0, 64) != NULL) {
+        return false;
+    }
+
+    for (align = 32; align <= 4096 && ok; align *= 2) {
+        unsigned char *a = malloc(40), *c, *b;
+        size_t n = align + 24, i;
+
+        b = aligned_alloc(align, n);
+        c = malloc(40);
+
+        if (a == NULL || b == NULL || c == NULL || ((uintptr_t)b & (align - 1)) != 0) {
+            ok = false;
+        } else {
+            memset(a, 0xA1, 40);
+            memset(c, 0xC3, 40);
+            memset(b, 0xB2, n);
+
+            for (i = 0; i < 40; i++) {
+                ok = ok && a[i] == 0xA1 && c[i] == 0xC3;
+            }
+            for (i = 0; i < n; i++) {
+                ok = ok && b[i] == 0xB2;
+            }
+
+            b = realloc(b, n * 2);
+            for (i = 0; b != NULL && i < n; i++) {
+                ok = ok && b[i] == 0xB2;
+            }
+            ok = ok && b != NULL;
+        }
+
+        if (!ok) {
+            kputs("\n   (aligned_alloc: wrong at ");
+            kputu(align);
+            kputs(")\n");
+        }
+
+        free(a);
+        free(b);
+        free(c);
+    }
+
+    if (heap_used() != before) {
+        kputs("\n   (aligned_alloc: ");
+        kputu(before);
+        kputs(" used before, ");
+        kputu(heap_used());
+        kputs(" after)\n");
+    }
+
+    return ok && heap_used() == before;
+}
+
 static bool str_is(const char *a, const char *b)
 {
     return strcmp(a, b) == 0;
@@ -11317,6 +11386,7 @@ static const struct test tests[] = {
     { "heap: free coalesces both ways",        test_heap_coalesces_in_both_directions },
     { "heap: realloc preserves contents",      test_heap_realloc_preserves_contents },
     { "heap: exhaustion returns NULL",         test_heap_exhaustion_returns_null },
+    { "heap: aligned_alloc on wide boundaries", test_heap_aligned_alloc },
     { "heap: many sizes, in no order",         test_heap_many_sizes_in_no_order },
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
     { "snprintf: a width and a precision of *", test_snprintf_star },

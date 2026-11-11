@@ -10037,7 +10037,16 @@ the applications make the system useful, and is not pulled forward.
   every core, nothing copied that can be shared, and **the GPU where it
   pays**: layers composed and pictures scaled by Compute Kit kernels, video
   in hardware when the M700's video engine is driven, Skia's GPU backend
-  once a Vulkan or GL driver exists (`docs/webkit.md`, *Fast*). **W1 next.**
+  once a Vulkan or GL driver exists (`docs/webkit.md`, *Fast*). **Built so
+  far**: W1a, an image's gigabyte (0.11.364); W1b, constructors, unwinding
+  tables and thread variables (0.11.365); W1c, libc++, libc++abi and
+  libunwind vendored and built for Kosmos, `make cxx-runtimes` (0.11.366).
+  **W1d next**: `cxxtest.elf`, C++ run in the gate.
+  **Follow-up found on the way** (`testing.md` 18.761): `x86-xavier`'s
+  drawn answer left the kit's at the 77th token in a loaded gate and held
+  alone - find what in the model's path depends on load (the processor
+  count Auto picks, and so the order a product is summed in, is the first
+  suspect) rather than retry it.
   **JavaScript from the first page** (Diego: "we need to have javascript as
   well because websites wont work withour" - JavaScriptCore, W4; no JIT
   means interpreted, not absent) and **tested on complex real sites**

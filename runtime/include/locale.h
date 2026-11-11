@@ -2,6 +2,9 @@
 #ifndef LOCALE_H
 #define LOCALE_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * There is one locale and it is C. Kosmos has no locale machinery and will
  * not grow one: the whole repository is English and the only thing Lua ever
@@ -20,5 +23,7 @@ struct lconv {
 
 struct lconv *localeconv(void);
 char *setlocale(int category, const char *locale);
+
+__END_DECLS
 
 #endif /* LOCALE_H */

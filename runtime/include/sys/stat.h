@@ -2,6 +2,9 @@
 #ifndef SYS_STAT_H
 #define SYS_STAT_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Enough of `<sys/stat.h>` for a port that wants to make a directory.
  *
@@ -20,5 +23,7 @@
 #include <sys/types.h>
 
 int mkdir(const char *path, mode_t mode);
+
+__END_DECLS
 
 #endif /* SYS_STAT_H */

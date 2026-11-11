@@ -248,3 +248,18 @@ float strtof(const char *s, char **end)
 {
     return (float)strtod(s, end);
 }
+
+#ifdef KOSMOS_USER
+/*
+ * **And to a `long double`, from the double** (`docs/webkit.md` W1c): C++'s
+ * `std::stold` is written over it. Kosmos does its arithmetic in `double`
+ * and has no `long double` reader of its own, so this is exactly as precise
+ * as `strtod` - the wider type holds the same value, and nothing is lost
+ * that was ever there. In a process only: on AArch64 the widening is
+ * libgcc's, which only the userland links.
+ */
+long double strtold(const char *s, char **end)
+{
+    return (long double)strtod(s, end);
+}
+#endif

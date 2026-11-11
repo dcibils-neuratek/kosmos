@@ -26,6 +26,7 @@
  * `kosmos_lua_time` and collide with the real one in `lua_glue.c`.
  */
 
+#include <errno.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -66,5 +67,68 @@ time_t time(time_t *t)
     }
 
     return now;
+}
+#endif
+
+/* A count of the counter's ticks as seconds and nanoseconds, without the
+ * product overflowing: whole seconds first, then the remainder's share. */
+static void ticks_to_timespec(uint64_t t, uint64_t hz, struct timespec *out)
+{
+    out->tv_sec = (time_t)(t / hz);
+    out->tv_nsec = (long)((t % hz) * 1000000000u / hz);
+}
+
+/*
+ * Both clocks to the nanosecond (`time.h` says which is which): the
+ * counter from the machine's start when `monotonic`, the date otherwise.
+ * -1 only before the counter's frequency is known; a machine with no date
+ * reads zero, as `time()` does.
+ */
+int kosmos_clock_read(int monotonic, struct timespec *out)
+{
+    uint64_t now_ticks;
+
+    (void)kosmos_time_now();    /* reads the frequency and the date if it must */
+    now_ticks = kosmos_ticks();
+
+    if (clock_hz == 0) {
+        return -1;
+    }
+
+    if (monotonic) {
+        ticks_to_timespec(now_ticks, clock_hz, out);
+        return 0;
+    }
+
+    if (clock_epoch == 0) {
+        out->tv_sec = 0;
+        out->tv_nsec = 0;
+        return 0;
+    }
+
+    ticks_to_timespec(now_ticks - clock_at, clock_hz, out);
+    out->tv_sec += (time_t)clock_epoch;
+    return 0;
+}
+
+#ifndef KOSMOS_CLOCK_TEST
+int clock_gettime(clockid_t which, struct timespec *out)
+{
+    if (out == NULL || (which != CLOCK_REALTIME && which != CLOCK_MONOTONIC)
+        || kosmos_clock_read(which == CLOCK_MONOTONIC, out) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return 0;
+}
+
+int timespec_get(struct timespec *out, int base)
+{
+    if (base != TIME_UTC || out == NULL || kosmos_clock_read(0, out) != 0) {
+        return 0;
+    }
+
+    return base;
 }
 #endif

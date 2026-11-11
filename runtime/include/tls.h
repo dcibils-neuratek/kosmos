@@ -2,6 +2,9 @@
 #ifndef KOSMOS_TLS_H
 #define KOSMOS_TLS_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * A thread's own block: what the thread pointer points at (`threads.md`
  * step 2).
@@ -43,5 +46,7 @@ size_t kosmos_tls_bytes(void);
 void  *kosmos_tls_begin(void);
 void   kosmos_tls_end(void *made);
 void   kosmos_run_constructors(void);
+
+__END_DECLS
 
 #endif /* KOSMOS_TLS_H */

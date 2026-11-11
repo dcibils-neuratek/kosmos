@@ -148,6 +148,12 @@ Vendored third-party code keeps its own licence, which travels beside it:
       and each file's hash in the README there. Not in the system's
       image: the Crypto Kit's test is held to them on the Mac
 
+  libc++, libc++abi and libunwind, by the LLVM project, Apache 2.0 + LLVM Exceptions
+      runtime/upstream/llvm/, in LICENSE.TXT, with the vendoring recorded
+      in README.kosmos.md beside it: LLVM 23.1.2, less its tests, and the
+      120 files of LLVM's libc libc++ includes. The C++ an image carries
+      stands on them; the system's image carries none yet
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

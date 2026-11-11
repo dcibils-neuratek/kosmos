@@ -2,6 +2,9 @@
 #ifndef MATH_H
 #define MATH_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Where the arithmetic comes from, and the line between the two halves.
  *
@@ -183,5 +186,7 @@ double cbrt(double x);
 double hypot(double x, double y);
 double fmin(double x, double y);
 double fmax(double x, double y);
+
+__END_DECLS
 
 #endif /* MATH_H */

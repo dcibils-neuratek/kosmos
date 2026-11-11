@@ -2,6 +2,9 @@
 #ifndef CTYPE_H
 #define CTYPE_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * ASCII only, and no locale. Lua has its own lctype.c for the core; these
  * are for the library code that includes <ctype.h> directly.
@@ -28,5 +31,7 @@ static inline int toupper(int c)  { return islower(c) ? c - 32 : c; }
 /* Not C's but POSIX's and every libc's: NetSurf's URL escaping asks it
  * (`roadmap.md` 6zz j6). */
 static inline int isascii(int c)  { return c >= 0 && c < 128; }
+
+__END_DECLS
 
 #endif /* CTYPE_H */

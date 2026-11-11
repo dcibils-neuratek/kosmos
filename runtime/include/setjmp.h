@@ -2,6 +2,9 @@
 #ifndef SETJMP_H
 #define SETJMP_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * The one piece of the libc that has to be exactly right the first time.
  *
@@ -39,5 +42,7 @@ int setjmp(jmp_buf env);
 /* Never returns. A val of 0 is turned into 1, as the standard requires:
  * setjmp has to be able to tell a direct call from a jump. */
 void longjmp(jmp_buf env, int val) __attribute__((noreturn));
+
+__END_DECLS
 
 #endif /* SETJMP_H */

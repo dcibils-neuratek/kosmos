@@ -2,6 +2,9 @@
 #ifndef SYS_TYPES_H
 #define SYS_TYPES_H
 
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+
 /*
  * Ours, so that the toolchain's is never reached.
  *
@@ -20,5 +23,7 @@
 #include <stddef.h>
 
 typedef unsigned int mode_t;
+
+__END_DECLS
 
 #endif /* SYS_TYPES_H */
