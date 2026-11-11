@@ -870,6 +870,17 @@ bool process_image_ok(const void *header, size_t len)
         return false;
     }
 
+    /*
+     * **And it fits the gigabyte it has** (`USER_IMAGE_MAX`). The heap sits
+     * right above, so a longer image would map its pages over the heap's
+     * addresses. Only the Lua that plans an ELF checked this, and an image
+     * reaches `SYS_SPAWN_IMAGE` from a region its caller filled - so the
+     * kernel says no itself, rather than trusting the caller to have asked.
+     */
+    if (len > USER_IMAGE_MAX) {
+        return false;
+    }
+
     rx_bytes = (size_t)h[1];
 
     return (rx_bytes & PAGE_MASK) == 0 && rx_bytes != 0 && rx_bytes <= len;

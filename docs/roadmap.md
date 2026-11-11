@@ -10038,6 +10038,21 @@ the applications make the system useful, and is not pulled forward.
   pays**: layers composed and pictures scaled by Compute Kit kernels, video
   in hardware when the M700's video engine is driven, Skia's GPU backend
   once a Vulkan or GL driver exists (`docs/webkit.md`, *Fast*). **W1 next.**
+  **JavaScript from the first page** (Diego: "we need to have javascript as
+  well because websites wont work withour" - JavaScriptCore, W4; no JIT
+  means interpreted, not absent) and **tested on complex real sites**
+  ("make sure you use complex sites like news siutes, youtube, google,
+  etc"): recorded copies of a news site, Google, YouTube, Wikipedia in the
+  gate, the live sites on the M700 outside it (`docs/webkit.md`).
+  **Dependable, with ads blocked** (Diego: "we need to have a dependable
+  browser experience", "it should be able to have adblock capabilities or
+  plugins"): WebKit's content blockers fed EasyList-form lists, on by
+  default, in W8; tabs isolated, the session restored after any stop; and
+  **extensions** (WebExtensions) a step after W8, WebKit's implementation
+  read first since it is written for Apple's platforms - **and Safari's own
+  reused** (Diego: "perhaps we can reuse the safari plugins"): its
+  content-blocker lists load as they are, and a Safari Web Extension's
+  scripts and pages run on WebKit's `WebExtension` code once it is ported.
 - **The web, decided: apps for real work, a light browser, and Linux for
   the rest** (Diego, 14 October 2026, after reading `docs/browser-engine.md`:
   "i think that browsers have become larg OSes themselves", "apps for real

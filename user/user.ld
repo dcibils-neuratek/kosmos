@@ -118,17 +118,14 @@ SECTIONS
     /*
      * And the image has to end before the heap begins.
      *
-     * `USER_HEAP` in `user/include/kosmos.h` is forty-two megabytes above
-     * `USER_BASE`, fixed. An image that grew past it would overlap the heap,
-     * and the link is the place to find that out rather than whatever the
-     * first allocation lands on. It was sixteen until the desktop's
-     * wallpapers ran a `FULL=1` image into it, here, on 18 September 2026,
-     * and thirty-two until an x86-64 `MEGA=1` image with ufbx in it did on
-     * the 26th, and forty until it did again on 9 November; `MEGA=1`,
-     * which carries everything, is the one that gets closest.
+     * The heap is a gigabyte above `USER_BASE` (`USER_IMAGE_MAX`,
+     * `kernel/process.h`): an image has that gigabyte to itself, the most
+     * x86-64's small code model allows when images start at 1 GB. It was
+     * 16, 32, 40 and 42 MB, moved each time an image ran into it, until
+     * JetSki's WebKit made a fixed line no answer (`docs/webkit.md` W1).
      */
-    ASSERT(__image_end <= USER_BASE + 0x02A00000,
-           "the userland image runs into its heap, which starts at USER_BASE + 42 MB (USER_HEAP, user/include/kosmos.h)")
+    ASSERT(__image_end <= USER_BASE + 0x40000000,
+           "the userland image is larger than the gigabyte it has (USER_IMAGE_MAX, kernel/process.h)")
 
     /DISCARD/ : {
         *(.comment)

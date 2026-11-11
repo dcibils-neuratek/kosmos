@@ -1337,6 +1337,54 @@ static int run_user(const char *name, const char *start, const char *end)
 }
 
 /*
+ * **An image has a gigabyte, and not a byte more** (`docs/webkit.md` W1a).
+ * The heap starts where the window ends; an image the full gigabyte long is
+ * an image, one a page longer is refused by the kernel itself - only the
+ * Lua that plans an ELF used to check, and a region reaches
+ * `SYS_SPAWN_IMAGE` filled by whoever holds it. And the rest of the window
+ * is nothing: the page after the system's image and the page under the
+ * heap are given no memory when touched.
+ */
+static bool test_an_image_has_its_gigabyte(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    size_t len = (size_t)init_image_len;
+    uintptr_t after = USER_TEXT_VA + ((len + PAGE_SIZE - 1) & ~(uintptr_t)PAGE_MASK);
+    struct process *p;
+    bool ok;
+
+    ok = USER_HEAP_VA == USER_VA_BASE + USER_IMAGE_MAX
+      && USER_STACK_TOP > USER_HEAP_VA && USER_SCREEN_VA >= USER_STACK_TOP
+      && process_image_ok(init_image, len)
+      && process_image_ok(init_image, USER_IMAGE_MAX)
+      && !process_image_ok(init_image, USER_IMAGE_MAX + PAGE_SIZE);
+
+    if (!ok) {
+        kputs("\n   (the window's size was not the line)\n");
+        return false;
+    }
+
+    p = process_create("t-window", init_image, len, 0);
+
+    if (p == NULL) {
+        return false;
+    }
+
+    ok = !process_fill(p, after + PAGE_SIZE)
+      && !process_fill(p, USER_HEAP_VA - PAGE_SIZE)
+      && process_fill(p, USER_HEAP_VA);
+
+    process_abandon(p);
+
+    if (!ok) {
+        kputs("\n   (the window past the image was not empty)\n");
+    }
+
+    return ok;
+}
+
+/*
  * **A process's own memory is given on first touch** (`process_fill`), and
  * given right: the system's image, made into a process that never runs,
  * holds nothing of its writable half, heap or stack until each page is
@@ -11204,6 +11252,7 @@ static const struct test tests[] = {
     { "thread: a process with two threads", test_a_process_with_two_threads },
     { "thread: on the core its process asked for", test_a_thread_on_the_core_asked_for },
     { "thread: one heap under two threads at once", test_one_heap_under_two_threads },
+    { "process: an image has its gigabyte, and no more", test_an_image_has_its_gigabyte },
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },
 #endif

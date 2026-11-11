@@ -98,22 +98,28 @@ struct thread;
  */
 #define USER_TEXT_VA     USER_VA_BASE                       /* base         */
 /*
- * **The image may be 42 MB, and was 40, 32, and 16 before that.** A `FULL=1`
- * image carries the desktop's wallpapers - nine megabytes of photographs,
- * 18 September 2026 - and with them it ran past the heap's first start at
- * the link. On 26 September a `MEGA=1` image for x86-64, with Quake, Lite
- * XL, FFmpeg and then ufbx in it, ran past 32. What moved the second time
- * is only where the heap begins: the stack, the screen and the mappings
- * are where they were, at 46, 48 and 64 MB. The image's read-only half is
- * shared by every process, so the room costs address space and not memory.
- * On 9 November a `MEGA=1` x86-64 image ended one page past 40 - 32 MB of
- * read-only data, 5.5 of code and 4 of `.bss` spread over many objects,
- * none of it one thing to take out - and two more were taken from the
- * guard above the heap, which keeps 1.75 MB. The lasting answer is a heap
- * placed after wherever the image ends, so there is no line to run into
- * (`roadmap.md`).
+ * **The image has a gigabyte of its own, and everything else lives above
+ * it** (`docs/webkit.md` W1, 11 November 2026). The heap started at 16 MB,
+ * then 32, 40 and 42, each move made the day an image ran into it - the
+ * wallpapers, Quake and ufbx, a `MEGA=1` image a page too long. JetSki's
+ * image, WebKit linked whole, is several times all of them, and a line
+ * moved for each image that crosses it is a line that will be crossed
+ * again.
+ *
+ * So the line is drawn by something that does not grow: **x86-64's small
+ * code model**, which needs every symbol below 2 GB, with images starting
+ * at 1 GB - so no image can be larger than a gigabyte on that machine
+ * whatever is placed above it. AArch64 has no such limit and is given the
+ * same layout, because one layout is one thing to reason about. The space
+ * an image does not use is unmapped: a guard as large as the image is
+ * small. It costs addresses, not memory - the read-only half is shared and
+ * the rest is copied a page at a time as it is touched.
+ *
+ * Above it, the regions keep the distances they always had: the heap, four
+ * megabytes to the top of the stack, two more to the screen.
  */
-#define USER_HEAP_VA     (USER_VA_BASE + 0x02A00000UL)      /* base + 42 MB */
+#define USER_IMAGE_MAX   0x40000000UL                       /* 1 GB       */
+#define USER_HEAP_VA     (USER_VA_BASE + USER_IMAGE_MAX)    /* base + 1 GB */
 /*
  * Two megabytes, and overridable at build time.
  *
@@ -125,22 +131,21 @@ struct thread;
  *
  * It does not grow in place: `runtime/libc/malloc.c` asks the kernel for
  * another arena, somewhere else, when it runs out. So the space above it
- * is a guard rather than room - 1.75 MB of nothing between its top at
- * 44 MB and the stack's bottom, unmapped, so a write that ran
- * off the end faults instead of landing in the stack. It was sixteen when
- * the heap started at 32 MB, from when it was the only heap there was.
+ * is a guard rather than room - 1.75 MB of nothing between its top and
+ * the stack's bottom, unmapped, so a write that ran
+ * off the end faults instead of landing in the stack.
  */
 #ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
 #endif
 /*
- * Forty-six megabytes, and not forty-eight: the screen lands at 48
- * (`USER_SCREEN_VA`, below), and a stack whose top touched it would have
+ * Four megabytes above the heap's start, and not six: the screen lands at
+ * six (`USER_SCREEN_VA`, below), and a stack whose top touched it would have
  * the framebuffer as its guard page. The first move of this layout put it
  * exactly there, and the kernel suite's "the page above the stack has no
  * translation" failed on x86 - which is the check doing its job.
  */
-#define USER_STACK_TOP   (USER_VA_BASE + 0x02E00000UL)      /* base + 46 MB */
+#define USER_STACK_TOP   (USER_HEAP_VA + 0x00400000UL)      /* heap + 4 MB */
 /*
  * A process's stack. **Sixty-four pages, and it was sixteen.**
  *
@@ -180,7 +185,7 @@ struct thread;
  * screen: the desktop drew the top three quarters and the kernel console
  * showed through the rest, which is what it looked like.
  *
- * 208 megabytes now, which holds 7680x4320 with room over. It is address
+ * 250 megabytes now, which holds 7680x4320 with room over. It is address
  * space rather than memory - nothing is mapped that the screen does not
  * need - and there are four gigabytes between here and `USER_MAP_END`, so
  * the map window loses a twentieth of its addresses and nothing else.
@@ -189,8 +194,8 @@ struct thread;
  * because the alternative is what happened: a mapping that runs into the
  * next window and a desktop that is wrong in a way nothing reports.
  */
-#define USER_SCREEN_VA   (USER_VA_BASE + 0x03000000UL)      /* base + 48 MB */
-#define USER_SCREEN_MAX  (USER_MAP_VA - USER_SCREEN_VA)     /* 208 MB */
+#define USER_SCREEN_VA   (USER_HEAP_VA + 0x00600000UL)      /* heap + 6 MB */
+#define USER_SCREEN_MAX  (USER_MAP_VA - USER_SCREEN_VA)     /* 250 MB */
 
 /*
  * Where SYS_MAP puts pages a process asks for, growing upward.
@@ -209,7 +214,7 @@ struct thread;
  * normally. Tracking freed ranges to reuse addresses would need an
  * allocator, which is the thing this kernel does not have.
  */
-#define USER_MAP_VA      (USER_VA_BASE + 0x10000000UL)      /* base + 256 MB */
+#define USER_MAP_VA      (USER_HEAP_VA + 0x10000000UL)      /* heap + 256 MB */
 
 /*
  * **The screen's window holds any screen this system means to drive**, and

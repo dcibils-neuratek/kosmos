@@ -45,7 +45,36 @@ Google Docs and Sheets, Gemini, Claude, YouTube, and a lot of browsing.**
   a process of its own, and a crashed one shows a page saying so with
   Reload.
 
-Not in the first version: extensions, a developer console beyond a log,
+- **Ads and trackers blocked**, on by default and per site: lists in
+  EasyList's form (EasyList, EasyPrivacy, or a list a person adds),
+  turned into WebKit's *content blocker* rules - Safari's own mechanism
+  (`ENABLE_CONTENT_EXTENSIONS`, `ContentRuleList`): compiled once into a
+  matcher, and a request it matches is never made, an element it matches
+  never shown. It is in WebKit already and runs in the web and network
+  processes without a JIT, so blocking costs a lookup rather than a script
+  on every page. The lists update from their address on their own.
+- **Dependable** (Diego, 11 November: "we need to have a dependable
+  browser experience"): a page that faults or hangs takes only its tab
+  (below); the browser reopens every window and tab after it, or the
+  machine, stopped; a download or a page that stops hearing gives up after
+  a time and says so; nothing in the window waits on a page, the network or
+  a server (*Nothing waits on hardware*); and the real sites are tested on
+  every change that touches the engine (*Testing*).
+
+Not in the first version: **extensions** - Diego asked for "adblock
+capabilities or plugins" (11 November); blocking is above, and
+**extensions in the WebExtensions form** (Chrome's, Firefox's and Safari's
+shared API) are a step of their own after W8: WebKit's implementation
+(`WebExtension`, `WK_WEB_EXTENSIONS`) is written for Apple's platforms, and
+what a Kosmos port of it takes is to be read before it is designed; **Safari's extensions reused** (Diego, 11 November: "perhaps we can
+reuse the safari plugins"): Safari's content-blocker lists are the very
+format WebKit's content blockers read, so they load as they are; and a
+Safari Web Extension is a WebExtension - a manifest, scripts and pages -
+which WebKit's own `WebExtension` code runs, so a port of that code runs
+their extension half. What does not come across is the native Mac
+application each one is shipped inside through the App Store; the same
+extension published for Chrome or Firefox is the usual source of its
+files; a developer console beyond a log,
 WebGL and WebGPU (no GPU driven yet), syncing with another browser.
 
 ## The shape: WebKit's own ports, and which one to follow
@@ -161,6 +190,40 @@ heap placed after the image** (already on the roadmap): it sits at a fixed
 program in the gate that throws across frames, runs a static constructor,
 and counts a `thread_local` on two threads.
 
+W1, in the order it is built:
+
+- **W1a, the image's gigabyte.** `USER_IMAGE_MAX` in `kernel/process.h`:
+  an image has the first gigabyte above `USER_BASE` to itself, and the
+  heap, the stack, the screen and the map window sit above it at the
+  distances they always kept. The line is x86-64's small code model, which
+  wants every symbol below 2 GB with images starting at 1 GB - a fact that
+  does not grow, where 16, 32, 40 and 42 MB each did. `process_image_ok`
+  refuses a longer image itself; only the Lua that plans an ELF had.
+- **W1b, what C++ asks of the image.** `user.ld` keeps `.eh_frame` and
+  `.eh_frame_hdr` for an image that carries C++ and names them
+  (`__eh_frame_start`, `__eh_frame_hdr_start`), as libunwind's bare-metal
+  build reads them; `.init_array` and `.fini_array` are collected and run
+  before `main` - in every image, so a C constructor works too; and
+  `.tdata`/`.tbss` get a segment, each thread's copy made by the runtime
+  beside its `struct tls_block`. That block's first word is its own
+  address, which is what x86-64's ABI wants at `%fs:0` (variant II, the
+  thread's data below it), and on AArch64 it fits the sixteen bytes the ABI
+  keeps at `TPIDR_EL0` (variant I, the data above) - so the layout holds
+  and only grows.
+- **W1c, the runtimes.** libc++, libc++abi and libunwind from LLVM 23.1.2,
+  the release this Mac's clang is (SHA-256 held to GitHub's digest),
+  vendored under `runtime/upstream/llvm/` as shipped, less their tests, and
+  built for Kosmos by clang with a CMake toolchain file of Kosmos's own.
+  Threads, locales and wide characters off at first - they arrive with the
+  POSIX layer (W3) and the runtimes are built again with them on.
+- **W1d, the test.** `cxxtest.elf`, a kit in an image of its own as
+  `apptest.elf` is, written in C++: an exception thrown three frames down
+  and caught with its message; a static constructor that ran before the kit
+  was asked; `std::vector`, `std::string`, `std::map` and `std::unique_ptr`
+  doing their work; a `thread_local` counted on two threads that each see
+  their own. Run by the loader's harness, with a control: the same image
+  linked with `.eh_frame` discarded must fail the throw.
+
 **W2 - three things from Nebula**, each a kernel change and therefore
 Diego's to agree in detail when it is designed:
 - **a futex** - wait on a word in a process's own memory until it changes,
@@ -194,7 +257,9 @@ one. Skia from WebKit's own copy.
 
 **W6 - WebCore draws a page**, headless: a page from a file laid out and
 painted into a region, the picture compared with one Safari's engine draws
-on this Mac. WebKit's MiniBrowser is the reference.
+on this Mac. WebKit's MiniBrowser is the reference. **Then the recorded
+sites** (*Testing*, above) - a news front page, Google's results, YouTube's
+watch page - drawn the same way.
 
 **W7 - WebKit2 and the window.** `IPC::Connection` on endpoints and
 regions, the process launcher on `SYS_SPAWN` with a role, the three
@@ -203,13 +268,44 @@ pointer, the wheel, the clipboard and text input.
 
 **W8 - the sites.** Networking through curl and TLS; cookies and storage;
 then the five: Gmail, Docs and Sheets, Claude and Gemini, YouTube through
-Media Source Extensions on the FFmpeg kit - each a check run against the
+Media Source Extensions on the FFmpeg kit; content blockers on, with
+EasyList - each a check run against the
 real site on the M700, outside the gate, and a page of our own inside it.
 
 How long, honestly: `browser-engine.md` put the layer at 6-12 months and
 the engine at 1-2 years after it, for one person. Every step above is
 usable on its own - W1 and W3 help every later port - and none waits on
 the next to be worth having.
+
+## JavaScript, and testing on the sites people use
+
+**JavaScript runs from the first page.** Diego, 11 November: "we need to
+have javascript as well because websites wont work withour". It is
+JavaScriptCore, WebKit's own engine, complete - the language, the DOM,
+`fetch`, workers, WebAssembly - step W4. *No JIT* means the scripts are
+interpreted by the LLInt rather than compiled to machine code while they
+run: every script runs, more slowly, and nothing on a page is turned off.
+
+**Tested on the sites people use, not on pages made for a test.** Diego,
+the same day: "for testing make sure you use complex sites like news
+siutes, youtube, google, etc". So from W6 on, two sets:
+
+- **Recorded sites, in the gate.** Real heavy pages - a news site's front
+  page and an article, Google's search and its results, YouTube's watch
+  page, Wikipedia, a page from a web application - recorded once from the
+  live site with every script, style sheet, font and picture they load,
+  and served to the guest by a small server on this Mac, so the gate sees
+  the same bytes every run and does not depend on the internet. Each is
+  held to: it loads to the end with no script error the engine caused,
+  the picture compared with the one WebKit draws on this Mac from the same
+  recording, and its load, layout and paint times kept as a regression.
+  Recordings are taken again from time to time, because the sites change.
+- **The live sites, on the M700.** The same list and more - several news
+  sites, Google, YouTube with a video played through, Gmail, Docs, Claude,
+  Gemini - opened over the real network by a script, outside the gate:
+  whether each works, how long each took, frames a second while scrolling
+  and while a video plays, and where the M700's cores spent the time. That
+  is the number the design's *Fast* is held to.
 
 ## Fast: what makes it so, and where the GPU comes in
 
