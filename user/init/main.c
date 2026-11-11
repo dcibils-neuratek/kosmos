@@ -658,11 +658,17 @@ static int leave_together_role(void)
  * a range not reserved refused, and one with a released hole in it (10-
  * 13); a thousand reservations made, touched and released, and nothing
  * left charged (14); and three threads made one after another, each given
- * index 1 back (15). The writes that must end a process are 914 and 915.
+ * index 1 back (15); one region mapped twice, read and write at one address
+ * and read and execute at the other, with code written through the first
+ * and run from the second (16); a flag SYS_MEM_MAP has no meaning for
+ * refused (17); and a write-combining region refused execute (18). The
+ * writes that must end a process are 914, 915 and 916, the last through
+ * the executable alias of a region.
  */
 #define CTEST_RESERVE           913UL
 #define CTEST_RESERVE_READONLY  914UL
 #define CTEST_RESERVE_NONE      915UL
+#define CTEST_RESERVE_ALIAS     916UL
 #define RESERVE_BIG_PAGES       (16UL * 1024 * 1024 * 1024 / 4096)
 #define RESERVE_STRIDE          1000UL
 
@@ -836,6 +842,56 @@ static int reserve_role(void)
         }
     }
 
+    /* 16 */
+    {
+        long cap = kosmos_mem_create(1);
+        long rw, rx;
+        volatile unsigned char *w;
+        int (*fn)(void);
+
+        if (cap < 0) {
+            return 16;
+        }
+
+        rw = kosmos_mem_map(cap);
+        rx = kosmos_mem_map_rx(cap);
+
+        if (rw < 0 || rx < 0 || rw == rx) {
+            return 16;
+        }
+
+        w = (volatile unsigned char *)(uintptr_t)rw;
+
+        for (i = 0; i < sizeof forty_two; i++) {
+            w[i] = forty_two[i];
+        }
+
+        /* Cleaned and invalidated by the address that runs it: the data
+         * cache is physically indexed, so the line the write left is the
+         * same line whichever alias names it. */
+        __builtin___clear_cache((char *)(uintptr_t)rx,
+                                (char *)(uintptr_t)rx + sizeof forty_two);
+        fn = (int (*)(void))(uintptr_t)rx;
+
+        if (fn() != 42 || ((volatile unsigned char *)(uintptr_t)rx)[0] != forty_two[0]) {
+            return 16;
+        }
+
+        /* 17 */
+        if (sys2(SYS_MEM_MAP, cap, 2) != SYS_ERR_FLAGS) {
+            return 17;
+        }
+    }
+
+    /* 18 */
+    {
+        long cap = kosmos_mem_create_flags(1, MEM_WRITE_COMBINE);
+
+        if (cap < 0 || kosmos_mem_map_rx(cap) != SYS_ERR_FLAGS) {
+            return 18;
+        }
+    }
+
     return 0;
 }
 
@@ -856,6 +912,22 @@ static int reserve_readonly_role(void)
     }
 
     p[0] = 8;                               /* the fault ends it here */
+    return 3;
+}
+
+/* A write through a region's executable alias ends the process. */
+static int reserve_alias_role(void)
+{
+    long cap = kosmos_mem_create(1);
+    long rx = cap < 0 ? cap : kosmos_mem_map_rx(cap);
+    volatile unsigned char *x = (volatile unsigned char *)(uintptr_t)rx;
+
+    if (rx < 0) {
+        return 1;
+    }
+
+    (void)x[0];                             /* readable */
+    x[0] = 1;                               /* the fault ends it here */
     return 3;
 }
 
@@ -1297,6 +1369,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_RESERVE_NONE) {
         return reserve_none_role();
+    }
+
+    if (arg == CTEST_RESERVE_ALIAS) {
+        return reserve_alias_role();
     }
 
     if (arg == CTEST_THREAD_ON) {

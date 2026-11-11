@@ -10052,8 +10052,9 @@ the applications make the system useful, and is not pulled forward.
   built** (0.11.369, `testing.md` 18.764), malloc's lock on it - and an
   older race in a process's end found and fixed on the way. **W2b, reserve,
   protect and release, built** (0.11.370, 18.765), thread indices given
-  back as they are collected; `SYS_MEM_MAP`'s RX flag next, then W2c, a
-  thread suspended. Later: a released reservation's addresses reused.
+  back as they are collected; `SYS_MEM_MAP`'s RX flag built (0.11.371,
+  18.766), one region writable at one address and executable at another;
+  W2c, a thread suspended, next. Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

@@ -31304,3 +31304,44 @@ one region (W2b's second half), and a reservation's addresses are never
 reused once released.
 
 **Whole gate** on W2b: 112 of 112 in 601 s.
+
+## 18.766 One region at two addresses, writable and executable (JetSki W2b)
+
+`docs/w2.md` part 2's second half: `SYS_MEM_MAP` takes a second argument,
+flags, and **`MEM_MAP_RX` maps the region read and execute** instead of
+read and write. A JIT maps one region twice - writable at an address only
+it knows, executable at the one it calls - and each mapping is one or the
+other, so no address is ever writable and executable. JavaScriptCore
+calls this the separated W^X heap. A region given on touch keeps the
+mapping's access as its pages arrive (`struct sharemap`'s `exec`, read by
+`sharemap_fill`). Refused: any other bit (`SYS_ERR_FLAGS`), and a
+write-combining region, which is a display's memory and not code.
+`kosmos_mem_map` now passes its zero rather than leaving the register to
+chance, the reason `kosmos_mem_create` gave; `kosmos_mem_map_rx` is the
+new form.
+
+**On AArch64 the cache is cleaned by the address that runs the code**: the
+data cache is physically indexed, so the line the write through the other
+alias left is the same line, and `ic ivau` needs the executable address.
+
+**Test**: `reserve: addresses reserved, protected and released` grows -
+role 913's checks 16 to 18: a region mapped read and write and then read
+and execute at a different address, `mov 42; ret` written through the
+first and called through the second, 42 on both boards, and the byte read
+back through the executable alias; a flag of 2 refused; a write-combining
+region refused execute. And role 916, a write through an executable alias,
+must end its process. x86 216 of 216, ARM 218 of 218.
+
+**Control**: the alias mapped read and write, as though the flag were
+ignored - the call through it ended the role ("instruction abort from a
+lower EL" on ARM, a fault on x86, code -1 both), and "a write through an
+executable alias did not end the process: 3" on both.
+
+**Whole gate**: 110 of 112 in 605 s. The two were load, and each passed
+alone straight after (43 s): `x86-profile` took 744 samples where about
+1,006 were due - the shape it has failed in a loaded gate before (`x86-profile`,
+788 of 1,060, above) - and `x86-film-load` heard a gap, 150,039 samples
+of 266,240 off FFmpeg's reference from 1.293 s. Alone: 1,025 samples with
+none lost, and the film's sound inside two steps throughout. Neither
+touches a mapping; the second is the first time that suite has failed in
+a gate, and is written here so a second time is recognised as a pattern.

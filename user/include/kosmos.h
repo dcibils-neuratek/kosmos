@@ -737,9 +737,18 @@ static inline long kosmos_mem_create(unsigned long pages)
     return sys2(SYS_MEM_CREATE, (long)pages, 0);
 }
 
+/* The zero is passed, not left out, for the reason `kosmos_mem_create`
+ * gives: the kernel reads a second argument as flags. */
 static inline long kosmos_mem_map(long cap)
 {
-    return sys1(SYS_MEM_MAP, cap);
+    return sys2(SYS_MEM_MAP, cap, 0);
+}
+
+/* The same region, read and execute (MEM_MAP_RX): a JIT's second mapping
+ * of what it writes through the first. */
+static inline long kosmos_mem_map_rx(long cap)
+{
+    return sys2(SYS_MEM_MAP, cap, (long)MEM_MAP_RX);
 }
 
 static inline long kosmos_mem_size(long cap)

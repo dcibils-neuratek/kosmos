@@ -62,7 +62,7 @@
 #define SYS_WAIT_INPUT 21   /* (timer ticks)          -> 0                 */
 #define SYS_LOG        22   /* (buffer, max)          -> bytes or error    */
 #define SYS_MEM_CREATE 23   /* (pages, flags)         -> cap or error       */
-#define SYS_MEM_MAP    24   /* (cap)                  -> address or error   */
+#define SYS_MEM_MAP    24   /* (cap, flags)           -> address or error   */
 #define SYS_MEM_SIZE   25   /* (cap)                  -> pages or error     */
 
 #define SYS_DISK_INFO  26   /* (out struct)           -> 0 or error         */
@@ -205,6 +205,17 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * than write-back: a buffer a display engine scans out, which does not see
  * the processor's caches (`m700-2d.md` step 4b). Not with MEM_ON_TOUCH. */
 #define MEM_WRITE_COMBINE 4u
+
+/*
+ * Flags for SYS_MEM_MAP's second argument. Zero maps a region read and
+ * write, as it always has. **MEM_MAP_RX maps it read and execute instead**
+ * (`docs/w2.md` part 2): with the same region also mapped writable at
+ * another address, a JIT writes code through one and runs it from the
+ * other - each mapping one or the other, never both, so no page is ever
+ * writable and executable at one address. A region mapped write-combining
+ * is a device's and is refused it.
+ */
+#define MEM_MAP_RX      1u
 #define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
 /*

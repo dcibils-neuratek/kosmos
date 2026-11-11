@@ -2013,15 +2013,34 @@ void syscall_dispatch(struct syscall_frame *sc)
          * capability to a region no longer frees pages a page table still
          * points at.
          */
-        struct memobj *m = ipc_hold_memory(thread_current(), (cap_t)sc->arg[0]);
+        struct memobj *m;
         struct sharemap *s;
         uintptr_t base;
         size_t i;
+        unsigned long map_flags = (unsigned long)sc->arg[1];
+        bool rx = (map_flags & MEM_MAP_RX) != 0;
+        uint64_t attrs;
+
+        if ((map_flags & ~(unsigned long)MEM_MAP_RX) != 0) {
+            result = SYS_ERR_FLAGS;
+            break;
+        }
+
+        m = ipc_hold_memory(thread_current(), (cap_t)sc->arg[0]);
 
         if (m == NULL) {
             result = SYS_ERR_DENIED;
             break;
         }
+
+        /* A device's window is registers, not instructions. */
+        if (rx && m->write_combining) {
+            memobj_unref(m);
+            result = SYS_ERR_FLAGS;
+            break;
+        }
+
+        attrs = rx ? MAP_USER_RX : m->write_combining ? MAP_USER_FB : MAP_USER_RW;
 
         /*
          * Bounded by address, not by the SYS_MAP budget. Those pages are
@@ -2040,6 +2059,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
 
         base = s->va;
+        s->exec = rx;
 
         /* Only the pages it has: a region given on touch is mapped a page
          * at a time as this process touches it (`sharemap_fill`). */
@@ -2047,7 +2067,7 @@ void syscall_dispatch(struct syscall_frame *sc)
             if (memobj_page(m, i) != NULL
                 && as_map(p->space, base + i * PAGE_SIZE,
                           virt_to_phys(memobj_page(m, i)),
-                          1, m->write_combining ? MAP_USER_FB : MAP_USER_RW) != AS_OK) {
+                          1, attrs) != AS_OK) {
                 break;
             }
         }
