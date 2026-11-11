@@ -10041,7 +10041,16 @@ the applications make the system useful, and is not pulled forward.
   far**: W1a, an image's gigabyte (0.11.364); W1b, constructors, unwinding
   tables and thread variables (0.11.365); W1c, libc++, libc++abi and
   libunwind vendored and built for Kosmos, `make cxx-runtimes` (0.11.366).
-  **W1d next**: `cxxtest.elf`, C++ run in the gate.
+  W1d, C++ run in the gate, `cxxtest.elf` (0.11.367) - and with it a hang
+  in Nebula fixed: a caller whose call was taken by a process that ended
+  waited for ever (`testing.md` 18.762). **W2 next**, Nebula's three, each
+  Diego's to agree in detail.
+  **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
+  reach nothing (only the console's owner may write), so a program that
+  dies says only its code - give a dying program's last words a way out;
+  and **ARM's GCC emulates C's `_Thread_local`** (`--disable-tls`), so
+  `arm-loader` fails W1b's check - Diego's choice, Homebrew's GCC 16.2 for
+  AArch64 or `__emutls` per thread.
   **Follow-up found on the way** (`testing.md` 18.761): `x86-xavier`'s
   drawn answer left the kit's at the 77th token in a loaded gate and held
   alone - find what in the model's path depends on load (the processor

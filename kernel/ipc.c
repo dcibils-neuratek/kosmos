@@ -1306,13 +1306,47 @@ int ipc_endpoint_destroy(cap_t index)
 }
 
 /*
- * Every endpoint a process made, destroyed as it ends. See `owner`.
+ * **The calls a process took and never answered**, on an endpoint it does
+ * not own: each caller woken with IPC_ERR_GONE. The caller holds the lock.
+ *
+ * An endpoint ending wakes everything on it (`teardown`), and that was the
+ * whole of it: a call whose message a process had *received* waited for that
+ * process's reply, and if the process ended first, for ever. The shell is
+ * the one that found it (`testing.md` 18.762): `run` calls the new process
+ * on an endpoint the shell made, the process takes the call - and a program
+ * that panicked before answering left the prompt waiting with nothing left
+ * to answer it. `replier` is the process that took each call, set when it
+ * did, so the queue says whose they are.
+ */
+static void abandon_calls_taken_by(struct endpoint *ep, const struct process *p)
+{
+    struct thread **at = &ep->awaiting_reply;
+
+    while (*at != NULL) {
+        struct thread *t = *at;
+
+        if (t->ipc.replier != p) {
+            at = &t->ipc.next;
+            continue;
+        }
+
+        *at = t->ipc.next;
+        t->ipc.next = NULL;
+        deliver(t, IPC_ERR_GONE);
+    }
+}
+
+/*
+ * Every endpoint a process made, destroyed as it ends, and every call it
+ * took on anybody's, given up (`abandon_calls_taken_by`). See `owner`.
  *
  * Read without the lock first, and that is safe for one reason: an
  * endpoint's owner only becomes `p` when `p` creates it, and `p` is the
  * process ending, on this thread, so it is creating nothing. Whatever else
  * the unlocked read sees is not `p` and stays that way, so the lock is taken
- * only for the endpoints that are.
+ * only for the endpoints that are. The same holds for a call it took: it
+ * takes no more, so an endpoint whose reply queue reads empty has none of
+ * its calls on it, and only one that does not is locked to look.
  */
 void ipc_endpoints_release(struct process *p)
 {
@@ -1326,7 +1360,7 @@ void ipc_endpoints_release(struct process *p)
         struct endpoint *ep = endpoint_at(i);
         unsigned long epflags;
 
-        if (ep->owner != p) {
+        if (ep->owner != p && ep->awaiting_reply == NULL) {
             continue;
         }
 
@@ -1334,6 +1368,8 @@ void ipc_endpoints_release(struct process *p)
 
         if (ep->in_use && ep->owner == p) {
             teardown(ep);
+        } else if (ep->in_use) {
+            abandon_calls_taken_by(ep, p);
         }
 
         spin_unlock(&ep->lock, epflags);

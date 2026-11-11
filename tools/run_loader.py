@@ -110,6 +110,72 @@ for name, line in (("apptest", "-- kosmos: image apptest.elf"), ("plain", ""),
         f.write(PROGRAM.format(line=line))
 
 #
+# **C++** (`docs/webkit.md` W1d): `cxxtest.elf`, the first C++ in the tree,
+# and `cxxtest.lua` beside it - what the C++ says, and its `thread_local`
+# counted on two threads. GCC's images only: TinyCC's (`apps-tcc/`) have no
+# C++. **The control is an image**: the same one with its unwinding tables
+# zeroed, `.eh_frame` and its index, so the throw has nothing to walk and
+# must not arrive at its `catch`.
+#
+CXX = not (APPS or "").rstrip("/").endswith("apps-tcc")
+CXX_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- C++'s test program (`tools/run_loader.py`).
+-- kosmos: image {image}
+local kit = use("{image}")
+print("cxxtest: " .. kit.run())
+print("cxxtest-threads: " .. kit.threads())
+"""
+
+cxx_files = []
+cxx_elsewhere = []
+
+if CXX:
+    built = this_boards_image("cxxtest.elf")
+
+    if built is None:
+        print("FAIL: no cxxtest.elf for this board - `make apps` (and ARCH=x86_64) builds it")
+        sys.exit(1)
+
+    cxx_image = os.path.join(WORK, "cxxtest.elf")
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+                    "--strip-debug", built, cxx_image], check=True)
+
+    sections = subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "readelf",
+                               "-S", "-W", cxx_image],
+                              check=True, capture_output=True, text=True).stdout
+    unwound = bytearray(open(cxx_image, "rb").read())
+    zeroed = 0
+
+    for line in sections.splitlines():
+        fields = line.replace("[ ", "[").split()
+        if len(fields) > 5 and fields[1] in (".eh_frame", ".eh_frame_hdr"):
+            offset, size = int(fields[4], 16), int(fields[5], 16)
+            unwound[offset:offset + size] = bytes(size)
+            zeroed += 1
+
+    if zeroed != 2:
+        print("FAIL: cxxtest.elf has not got both of .eh_frame and .eh_frame_hdr")
+        sys.exit(1)
+
+    # Named `cxxtest.elf` as well, in a folder of its own: a program reaches
+    # an image's kit by the image's name, so under any other name it would
+    # be refused before anything was thrown.
+    os.makedirs(os.path.join(WORK, "unwound"), exist_ok=True)
+
+    with open(os.path.join(WORK, "unwound", "cxxtest.elf"), "wb") as f:
+        f.write(bytes(unwound))
+
+    with open(os.path.join(WORK, "cxxtest.lua"), "w") as f:
+        f.write(CXX_PROGRAM.format(image="cxxtest.elf"))
+
+    with open(os.path.join(WORK, "unwound", "unwound.lua"), "w") as f:
+        f.write(CXX_PROGRAM.format(image="cxxtest.elf"))
+
+    cxx_files = ["cxxtest.lua", "cxxtest.elf"]
+    cxx_elsewhere = ["%s:/Home/apps/unwound/%s" % (os.path.join(WORK, "unwound", n), n)
+                     for n in ("unwound.lua", "cxxtest.elf")]
+
+#
 # **Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image in one
 # folder, `/Home/Apps/Doom`, as a stick carries them - and no WAD, which is
 # not the repository's to have. Typed at the prompt, `doom` has to be found
@@ -142,10 +208,10 @@ for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "sn
             installed.append("%s:/Home/Apps/%s/%s" % (os.path.join(source, name), folder, name))
 
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "stale.lua",
-         "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"]
+         "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"] + cxx_files
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "224"]
                + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
-               + installed,
+               + installed + cxx_elsewhere,
                check=True, capture_output=True, cwd=ROOT)
 os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -240,6 +306,25 @@ def main():
               or ("apptest-tls: " + tls_line) in guest.seen[first:],
               "the image's constructor or its thread variables were wrong: %r"
               % [l for l in guest.seen[first:].split("\n") if "apptest-tls" in l][:1])
+
+        if CXX:
+            said, _ = run("cxxtest", "cxxtest:", 180)
+            check(said == "cxxtest: constructed 7, caught 'three frames down', unique 55",
+                  "C++ in cxxtest.elf: its constructor, its throw or its containers "
+                  "were wrong: %r" % said)
+            line = [l.strip() for l in guest.seen.split("\n") if "cxxtest-threads:" in l
+                    and "print(" not in l]
+            check(line[-1:] == ["cxxtest-threads: main 8, thread 105, main again 8"],
+                  "C++'s thread_local was not each thread's own: %r" % line[-1:])
+
+            unwound_at = len(guest.seen)
+            said, _ = typed("run /Home/apps/unwound/unwound.lua", "unwound", 180)
+            heard = guest.seen[unwound_at:]
+            check("image: made /Home/apps/unwound/cxxtest.elf, " in heard
+                  and "caught 'three frames down'" not in heard,
+                  "cxxtest.elf with its unwinding tables zeroed did not run, or "
+                  "still caught its exception - the throw is not walking them: %r"
+                  % heard[:400])
 
         said, _ = run("plain", "apptest", 60)
         check(said is not None and "not running in apptest.elf" in said,

@@ -3346,19 +3346,21 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 # **The C++ runtimes** (`docs/webkit.md` W1c): libc++, libc++abi and
 # libunwind from `runtime/upstream/llvm/`, built by clang for this
 # architecture with Kosmos's toolchain file, into `build/cxx/<arch>/`. CMake
-# configures once; ninja after that rebuilds what changed, a libc header
-# included, so make hands every run to it rather than deciding itself.
-# `make cxx-runtimes`, and `ARCH=x86_64` for the other.
+# configures once and ninja rebuilds what changed after that. Make asks
+# ninja again when a libc header or the toolchain changed, and an image
+# that links the runtimes is linked again only when the stamp moves -
+# `make cxx-runtimes` builds them on their own, and `ARCH=x86_64` the other.
 #
 CXXRT      := build/cxx/$(ARCH)
 CXXRT_LIBS := $(CXXRT)/lib/libc++.a $(CXXRT)/lib/libc++abi.a $(CXXRT)/lib/libunwind.a
 
-.PHONY: cxx-runtimes cxx-runtimes-ninja
-cxx-runtimes: cxx-runtimes-ninja
+.PHONY: cxx-runtimes
+cxx-runtimes: $(CXXRT)/.built
 
-$(CXXRT_LIBS): cxx-runtimes-ninja
+$(CXXRT_LIBS): $(CXXRT)/.built
 
-cxx-runtimes-ninja:
+$(CXXRT)/.built: runtime/cxx/kosmos.cmake runtime/cxx/runtimes.cmake \
+                 $(wildcard runtime/include/*.h runtime/include/sys/*.h)
 	@mkdir -p $(CXXRT)
 	@if [ ! -f $(CXXRT)/build.ninja ]; then \
 	    cmake -G Ninja -S runtime/upstream/llvm/runtimes -B $(CXXRT) -Wno-author \
@@ -3367,6 +3369,7 @@ cxx-runtimes-ninja:
 	        -DKOSMOS_ARCH=$(ARCH) -DKOSMOS_ROOT=$(CURDIR) > $(CXXRT)/cmake.log \
 	    || { cat $(CXXRT)/cmake.log; exit 1; }; fi
 	ninja -C $(CXXRT) --quiet
+	@touch $@
 
 #
 # **A program's own image** (`docs/elf.md` step 3): the system's objects and
@@ -3386,6 +3389,41 @@ $(UBUILD)/apps/apptest.elf: $(USER_OBJS) $(APPTEST_OBJS) $(UBUILD)/init.elf user
 	    || { echo "apps: apptest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_apptest_kit$$' \
 	    || { echo "apps: the system's image has the loader's test kit in it"; rm -f $@; exit 1; }
+
+#
+# **C++'s image** (`docs/webkit.md` W1d): the system's objects, the test kit
+# in C++ and its door in C, and the runtimes `cxx-runtimes` builds - linked
+# by GCC as every image is, since clang's objects and GCC's meet at the ELF
+# ABI. The C++ is compiled by clang against libc++'s headers first and then
+# Kosmos's libc, the order libc++ needs: its `<cstdlib>` includes the C
+# library's `<stdlib.h>` after itself. The runtimes as a group, since each
+# of the three calls into the others. `-z noexecstack`: clang's objects say their stack
+# is not executable and GCC's bare-metal ones say nothing, and GNU ld warns
+# at the difference; Kosmos's loader reads no such flag either way.
+#
+CXXRT_TRIPLE := $(if $(filter x86_64,$(ARCH)),x86_64,aarch64)-unknown-none-elf
+CXXFLAGS_KOSMOS := --target=$(CXXRT_TRIPLE) -std=c++20 -O2 -g \
+                   -Wall -Wextra -Werror -fno-stack-protector \
+                   -ffunction-sections -fdata-sections \
+                   -nostdinc -nostdinc++ -isystem $(CXXRT)/include/c++/v1 \
+                   -isystem $(shell /opt/homebrew/opt/llvm/bin/clang -print-resource-dir)/include \
+                   -isystem runtime/include -isystem user/include \
+                   -DKOSMOS_USER -DKOSMOS_USER_BASE=$(USER_BASE)
+
+$(UBUILD)/%.cpp.o: %.cpp $(CXXRT)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -c $< -o $@
+
+CXXTEST_OBJS := $(UBUILD)/user/kits/cxxtest/cxxtest.cpp.o $(UBUILD)/user/kits/cxxtest/cxxtest_kit.c.o
+
+$(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(CXXTEST_OBJS) \
+	    -Wl,--start-group $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_cxxtest_kit$$' \
+	    || { echo "apps: cxxtest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_cxxtest_kit$$' \
+	    || { echo "apps: the system's image has C++'s test kit in it"; rm -f $@; exit 1; }
 
 #
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
@@ -3560,7 +3598,7 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
-app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/doom.elf \
+app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
 

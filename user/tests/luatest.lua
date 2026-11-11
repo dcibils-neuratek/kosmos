@@ -74,6 +74,9 @@ local R_PNG_PALETTE  = 49
 local R_FACES_BACK   = 50
 local R_ARC          = 51
 local R_MAIL         = 52
+local R_TAKEN_MAIN   = 53
+local R_TAKEN_TAKER  = 54
+local R_TAKEN_CLIENT = 55
 
 -- The /Running registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1748,6 +1751,55 @@ end
 
 if role == R_OWNED_CLIENT then
   -- 0 is the server's endpoint and 1 the parent's.
+  local answer, why = sys.call(0, { ask = true })
+  sys.call(1, { error = (answer == nil) and why or "it was answered" })
+  sys.exit(0)
+end
+
+if role == R_TAKEN_MAIN then
+  -- **A call taken by a process that ends, on an endpoint it does not own**
+  -- (`testing.md` 18.762). The endpoint is this role's, so it lives on;
+  -- the taker receives the client's call and ends without answering. The
+  -- client has to be woken with an error, not left waiting for an answer
+  -- that nothing is left to give - which is what the shell did after every
+  -- program that died before replying to `run`.
+  local door = sys.endpoint()
+  local report = sys.endpoint()
+
+  local taker = spawn(R_TAKEN_TAKER, { door, report })
+  local client = spawn(R_TAKEN_CLIENT, { door, report })
+
+  -- The taker says when it holds the call; then it ends.
+  local holding, who = sys.receive(report, false, 2000)
+  check(holding and holding.holding, "the taker never took the client's call")
+  if who then sys.reply(who, {}) end
+
+  local ended, code = sys.wait()
+  check(ended == taker and code == 1,
+        ("the taker was collected as %s, code %s"):format(tostring(ended), tostring(code)))
+
+  -- With a deadline, so a client left waiting is a failure that says so
+  -- rather than a role that never comes back.
+  local said, from = sys.receive(report, false, 2000)
+  check(said ~= nil, "the client was left waiting for a call its taker took and never answered")
+  if from then sys.reply(from, {}) end
+  check(said == nil or said.error == "the endpoint was destroyed",
+        "the abandoned client was woken with: " .. tostring(said and said.error))
+
+  local id, ccode = sys.wait()
+  check(id == client and ccode == 0, "the client did not finish cleanly")
+
+  sys.exit(0)
+end
+
+if role == R_TAKEN_TAKER then
+  -- 0 is the door, 1 the parent's report.
+  local asked = sys.receive(0)
+  sys.call(1, { holding = asked ~= nil })
+  sys.exit(1)
+end
+
+if role == R_TAKEN_CLIENT then
   local answer, why = sys.call(0, { ask = true })
   sys.call(1, { error = (answer == nil) and why or "it was answered" })
   sys.exit(0)

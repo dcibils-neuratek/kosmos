@@ -230,6 +230,11 @@ W1, in the order it is built:
   doing their work; a `thread_local` counted on two threads that each see
   their own. Run by the loader's harness, with a control: the same image
   linked with `.eh_frame` discarded must fail the throw.
+  *Built, 0.11.367* (`testing.md` 18.762), the control as an image with
+  its tables zeroed; it found a caller left waiting for ever when the
+  process that took its call ended, fixed in `ipc.c`. On AArch64, C's
+  `_Thread_local` is emulated by Arm's GCC (`--disable-tls`) - C++ is
+  clang's and uses `TPIDR_EL0` - which is Diego's to choose about.
 
 **W2 - three things from Nebula**, each a kernel change and therefore
 Diego's to agree in detail when it is designed:

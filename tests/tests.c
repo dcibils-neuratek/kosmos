@@ -5967,6 +5967,16 @@ static bool test_mail_kit_reads(void)                  { return luatest_role(52)
 static bool test_endpoint_ends_with_its_process(void)  { return luatest_role(41); }
 
 /*
+ * **A call outlives the process that took it, not the caller.** The
+ * endpoint is the role's own, so nothing about it ends: a second process
+ * receives a client's call on it and ends without answering, and the client
+ * has to be woken with an error (`ipc.c`, `abandon_calls_taken_by`). The
+ * shell waited for ever after a program that panicked before answering
+ * `run` (`testing.md` 18.762).
+ */
+static bool test_a_call_outlives_its_taker(void)       { return luatest_role(53); }
+
+/*
  * The /Running registry takes a name back once nothing can answer to it - from a
  * holder that destroyed its endpoint without unregistering, which is how the
  * window manager stops, and from one that was killed - and a lookup reaches
@@ -11430,6 +11440,7 @@ static const struct test tests[] = {
     { "gfx: faces by size are given back",     test_sized_faces_given_back },
     { "gfx: a knob's arc and a thick line",    test_gfx_arc_and_line },
     { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
+    { "ipc: a call taken and never answered ends with its taker", test_a_call_outlives_its_taker },
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },

@@ -143,7 +143,7 @@ def objects(label, directory, *words):
 
 def main():
     counted = 0
-    apps = ("apptest.elf", "doom.elf", "quake.elf", "snes.elf")
+    apps = ("apptest.elf", "cxxtest.elf", "doom.elf", "quake.elf", "snes.elf")
 
     # The ARM kernel and its test userland, and each application against it.
     counted += objects("the ARM kernel", "build/test", "TEST=1", "build/test/kosmos.elf")

@@ -78,7 +78,9 @@ string(APPEND flags " -ffunction-sections -fdata-sections -fno-stack-protector")
 # says so once a file; it is upstream's flag, and harmless.
 set(CMAKE_C_FLAGS_INIT   "${flags} -Wno-unused-command-line-argument")
 set(CMAKE_CXX_FLAGS_INIT "${flags}")
-set(CMAKE_ASM_FLAGS_INIT "${flags} -Wno-unused-command-line-argument")
+# And the assembly says its stack is not executable, which a target with no
+# operating system does not say by default and GNU ld warns about.
+set(CMAKE_ASM_FLAGS_INIT "${flags} -Wno-unused-command-line-argument -Wa,--noexecstack")
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)

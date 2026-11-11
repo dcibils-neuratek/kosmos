@@ -31113,3 +31113,60 @@ left the kit's at the 77th token of 180 and passed alone, 37 of 37, in
 `aligned_alloc`, and the clock is not in the model - so this is a
 difference under load in an answer that is meant to be the same byte for
 byte, and is on the roadmap to be explained rather than retried.
+
+## 18.762 C++ runs on Kosmos (JetSki W1d)
+
+`docs/webkit.md` W1d. `cxxtest.elf`, an image of its own beside
+`apptest.elf`: the system's objects, `user/kits/cxxtest/cxxtest.cpp` -
+the first C++ in the tree, compiled by clang against libc++'s headers and
+then Kosmos's libc - its door `cxxtest_kit.c` in C, and the three runtimes,
+linked by GCC as a group. Run by the loader's harness:
+
+    cxxtest: constructed 7, caught 'three frames down', unique 55
+    cxxtest-threads: main 8, thread 105, main again 8
+
+A global's constructor ran before the kit was asked; an exception thrown
+three frames down arrived at its `catch` with its message - libc++abi's
+throw, libunwind walking `.eh_frame` by `user.ld`'s names; a vector, a map,
+a string and a `unique_ptr` on Kosmos's heap; and a `thread_local` each
+thread counted on its own. `x86-loader` 18 of 18, `arm-loader`'s C++ the
+same. **Control**: the image with `.eh_frame` and its index zeroed - its
+process ends with code 70, `abort()` from `std::terminate`, and never says
+"caught". Both `.eh_frame` sections are found by `readelf`, so a link that
+loses them fails before anything runs.
+
+**The control found a hang in Nebula.** The first run of it stopped the
+suite for 720 s: the program died before answering `run`, and the shell
+never came back. An endpoint that ends wakes everything on it, but `run`
+calls the new process on an endpoint *the shell* made - and a caller whose
+message a process had received waited for that process's reply, which
+nothing would ever send. Every program that panicked before answering did
+this. `ipc_endpoints_release` now also gives up every call the ending
+process took on anybody's endpoint, its callers woken with IPC_ERR_GONE:
+`ipc.replier` already said whose each call was. The shell says "run: the
+program did not answer" and gives the prompt back. **Test**: `ipc: a call
+taken and never answered ends with its taker` (role 53) - the endpoint is
+the role's own, a second process takes a client's call on it and exits,
+and the client must report an error within 2000 ticks; 213 of 213 and 215
+of 215. **Control**: the new line taken out - the role fails, in 38 s.
+
+**What it also showed, for later** (`roadmap.md`): a program's own
+`panic:` line is refused, since only the console's owner may write, and
+libc++abi's "terminating" sentence goes the same way - so a program that
+dies says only "ended, code 70".
+
+**And ARM's C thread variables are not ARM's.** `arm-loader` fails W1b's
+check, 17 of 18: "thread -1". Arm's GCC 14.2 was configured
+`--disable-tls`, so a `_Thread_local` in C is emulated through libgcc's
+`__emutls` - no template in the image, one copy for every thread - where
+x86-64's GCC and clang on both use the thread pointer. It passed only on
+x86-64 in 18.760, which is the only one the gate runs. C++ is clang's on
+both and unaffected. Left failing, not hidden, for Diego to choose:
+Homebrew's GCC 16.2 for AArch64 (`aarch64-elf-gcc`, x86-64's release),
+which uses `tpidr_el0`, or `__emutls` implemented per thread here.
+
+**Whole gate** on W1d: 110 of 112 in 593 s. `rebuilds` named
+`cxxtest_kit.c.o` as an object that reads `kernel/syscall.h` and that its
+list of application images did not reach - the list is written out in
+`tools/test_rebuilds.py`, and `cxxtest.elf` is on it now, 8 of 8.
+`x86-network`'s second lookup is 18.680's shape, 36 of 36 alone.
