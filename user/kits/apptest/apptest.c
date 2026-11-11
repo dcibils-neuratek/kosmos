@@ -20,9 +20,21 @@ static int l_answer(lua_State *L)
     return 1;
 }
 
+/*
+ * **Constructors and thread variables** (`docs/webkit.md` W1b), in
+ * `apptest_tls.c`: linked into the image GCC builds and not into the one
+ * the C Kit builds (`apps-tcc/`), since TinyCC has no `_Thread_local` - so
+ * the kit offers `tls` only where it is.
+ */
+extern int kosmos_apptest_tls(lua_State *L) __attribute__((weak));
+
 void kosmos_apptest_kit(lua_State *L)
 {
     lua_newtable(L);
     lua_pushcfunction(L, l_answer);
     lua_setfield(L, -2, "answer");
+    if (kosmos_apptest_tls != NULL) {
+        lua_pushcfunction(L, kosmos_apptest_tls);
+        lua_setfield(L, -2, "tls");
+    }
 }

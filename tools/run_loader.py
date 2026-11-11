@@ -63,6 +63,7 @@ PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 {line}
 local kit = use("apptest.elf")
 print("apptest: " .. tostring(kit.answer()))
+if kit.tls then print("apptest-tls: " .. kit.tls()) end
 """
 
 app = this_boards_image()
@@ -228,6 +229,17 @@ def main():
               "apptest.lua, in its own image, did not say 42: %r" % said)
         check("image: made /Home/apps/apptest/apptest.elf, " in guest.seen[first:],
               "the first start did not make the image from the file")
+        # **Constructors and thread variables** (`docs/webkit.md` W1b): the
+        # image's constructor ran before the kit was asked, and a second
+        # thread's copy of a `_Thread_local` began as the template and stayed
+        # its own.
+        # GCC's image only: TinyCC's (`apps-tcc/`, `x86-tcc`) has no
+        # `_Thread_local`, and its kit offers no `tls`.
+        tls_line = "constructed 7, main 6, thread 500099, main again 6"
+        check((APPS or "").rstrip("/").endswith("apps-tcc")
+              or ("apptest-tls: " + tls_line) in guest.seen[first:],
+              "the image's constructor or its thread variables were wrong: %r"
+              % [l for l in guest.seen[first:].split("\n") if "apptest-tls" in l][:1])
 
         said, _ = run("plain", "apptest", 60)
         check(said is not None and "not running in apptest.elf" in said,

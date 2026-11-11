@@ -33,6 +33,7 @@ PHDRS
 {
     code PT_LOAD FLAGS(5);              /* read and execute */
     data PT_LOAD FLAGS(6);              /* read and write */
+    tls  PT_TLS  FLAGS(4);              /* the template a thread's copy is made from */
 }
 
 SECTIONS
@@ -62,12 +63,75 @@ SECTIONS
         *(.text .text.*)
     } :code
 
-    .rodata : { *(.rodata .rodata.*) } :code
+    .rodata : {
+        *(.rodata .rodata.*)
+        /* The template's alignment as a word to read, not a symbol's value:
+         * AArch64 reaches a symbol by its distance from the code, and a
+         * small absolute number is four gigabytes and more away from an
+         * image at 256 GB. */
+        . = ALIGN(8);
+        __tls_align = .;
+        QUAD(ALIGNOF(.tdata) > ALIGNOF(.tbss) ? ALIGNOF(.tdata) : ALIGNOF(.tbss))
+    } :code
+
+    /*
+     * **The unwinding tables, kept** (`docs/webkit.md` W1b). They were
+     * discarded, because nothing here unwound a stack; C++ does, every time
+     * it throws, and libunwind's bare-metal build finds them by these four
+     * names rather than by asking a dynamic linker. Kept in every image,
+     * not only C++'s: it is half a megabyte of read-only pages, shared by
+     * every process, against a second linker script to keep in step.
+     */
+    .eh_frame_hdr : {
+        __eh_frame_hdr_start = .;
+        *(.eh_frame_hdr)
+        __eh_frame_hdr_end = .;
+    } :code
+    .eh_frame : {
+        __eh_frame_start = .;
+        KEEP(*(.eh_frame))
+        __eh_frame_end = .;
+    } :code
 
     /* Everything above this is mapped read-only and executable, everything
      * below it writable and never executable. */
     . = ALIGN(4096);
     __rx_end = .;
+
+    /*
+     * **A thread's own variables' template** (`thread_local`, `_Thread_local`):
+     * `.tdata` is what each copy starts as and `.tbss` how much more is
+     * zeroes. The runtime makes a thread's copy beside its `struct
+     * tls_block` (`runtime/libc/tls.c`); nothing reads these addresses but
+     * that, and a thread's variables never live here.
+     */
+    .tdata : {
+        __tdata_start = .;
+        *(.tdata .tdata.*)
+        __tdata_end = .;
+    } :data :tls
+    .tbss : {
+        *(.tbss .tbss.*)
+        *(.tcommon)
+        __tbss_end = .;
+    } :data :tls
+
+    /*
+     * **Constructors, run before `main` asks anything of the image**
+     * (`user/init/main.c`, after the heap is ready). C++ needs them for
+     * every global with a constructor; C has them too, as
+     * `__attribute__((constructor))`.
+     */
+    .init_array : {
+        __init_array_start = .;
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+        KEEP(*(.init_array .ctors))
+        __init_array_end = .;
+    } :data
+    .fini_array : {
+        KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+        KEEP(*(.fini_array .dtors))
+    } :data
 
     .data   : { *(.data .data.*) } :data
 
@@ -130,6 +194,5 @@ SECTIONS
     /DISCARD/ : {
         *(.comment)
         *(.note .note.*)
-        *(.eh_frame .eh_frame_hdr)
     }
 }

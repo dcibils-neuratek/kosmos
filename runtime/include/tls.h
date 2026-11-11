@@ -28,4 +28,20 @@ struct tls_block {
  * larger one of its own points the register at it with `kosmos_set_tls`.
  */
 
+/*
+ * **A thread's own variables** (`runtime/libc/tls.c`): `kosmos_tls_begin`
+ * makes this thread's copy of the image's `thread_local` template and points
+ * the thread pointer at it - NULL, and nothing changed, when the image has
+ * none - and `kosmos_tls_end` gives it back. `main` begins one for the first
+ * thread; a thread started with `kosmos_thread_start` that uses such
+ * variables begins its own as its first act, **in a function that uses none
+ * of them itself**: the compiler reads the thread pointer once a function,
+ * so the variables are used from a function called after the begin.
+ */
+#include <stddef.h>
+size_t kosmos_tls_bytes(void);
+void  *kosmos_tls_begin(void);
+void   kosmos_tls_end(void *made);
+void   kosmos_run_constructors(void);
+
 #endif /* KOSMOS_TLS_H */

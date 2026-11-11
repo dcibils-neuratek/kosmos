@@ -21,7 +21,9 @@
 /* Where an AArch64 process is linked: 256 GB since 14 October 2026
  * (`arch/aarch64/mmu.h`), the same number as the Makefile's `USER_BASE`. */
 #define BASE   0x4000000000ull
-#define MOST   (40ull * 1024 * 1024)
+/* What an image may be: its window, `USER_IMAGE_MAX` in `kernel/process.h`
+ * (`docs/webkit.md` W1a), which the kernel and `sys_user.c` both use. */
+#define MOST   (1024ull * 1024 * 1024)
 #define PAGE   4096u
 
 static int checks, failed;
@@ -137,6 +139,21 @@ static void rx_short(unsigned char *f)         { put(f + 64 + 40, 2 * PAGE, 8);
 static void data_in_code(unsigned char *f)     { put(f + PAGE + 8, 2 * PAGE, 8); }
 static void elsewhere(unsigned char *f)        { put(f + 24, BASE + 64, 8); }
 
+/* A third program header: a thread template where `at` says, `file` and
+ * `mem` long. */
+static void tls_at(unsigned char *f, uint64_t at, uint64_t file, uint64_t mem)
+{
+    unsigned char *ph = f + 64 + 2 * 56;
+
+    put(f + 56, 3, 2);
+    put(ph, 7, 4);                              /* PT_TLS */
+    put(ph + 4, 4, 4);
+    put(ph + 16, at, 8);
+    put(ph + 32, file, 8);
+    put(ph + 40, mem, 8);
+}
+static void tls_outside(unsigned char *f)      { tls_at(f, BASE - PAGE, 16, 32); }
+
 static unsigned char *slurp(const char *path, size_t *len)
 {
     FILE *fp = fopen(path, "rb");
@@ -191,7 +208,7 @@ int main(int argc, char **argv)
     refused(segment_past_end, "past the end of the file", "a segment past the end, sized to wrap");
     refused(file_over_memory, "more bytes in the file",   "a segment larger in the file than in memory");
     refused(below_base,       "below where",              "a segment below the base");
-    refused(too_long,         "longer than an image",     "an image longer than 40 MB");
+    refused(too_long,         "longer than an image",     "an image longer than its window");
     refused(wx,               "writable and executable",  "a segment both writable and executable");
     refused(unreadable,       "cannot be read",           "a segment that cannot be read");
     refused(overlapping,      "overlapping",              "overlapping segments");
@@ -202,6 +219,24 @@ int main(int argc, char **argv)
     refused(rx_short,         "runs past where",          "code longer than the header says");
     refused(data_in_code,     "inside what its header",   "data inside the code the header describes");
     refused(elsewhere,        "starts somewhere other",   "an entry other than the base plus sixteen");
+    refused(tls_outside,      "template is outside",      "a thread template below the image");
+
+    /* A thread template inside the data, and an empty one at nought, are
+     * read - and change nothing about what is written (W1b). */
+    {
+        size_t len2 = 0;
+
+        build(f);
+        tls_at(f, BASE + PAGE, 16, 48);
+        check(elfimage_write(f, FILE_LEN, &want, out, sizeof out, &len2) == NULL
+              && len2 == 2 * PAGE && memcmp(out, f + PAGE, 2 * PAGE) == 0,
+              "a thread template inside the data is read, and the image is the same");
+        build(f);
+        tls_at(f, 0, 0, 0);
+        check(elfimage_write(f, FILE_LEN, &want, out, sizeof out, &len2) == NULL
+              && len2 == 2 * PAGE,
+              "an empty thread template is read");
+    }
 
     /* A plan from too little of the file to hold the program headers. */
     {
@@ -228,8 +263,8 @@ int main(int argc, char **argv)
             sys.machine = (unsigned)(elf[18] | (elf[19] << 8));
             sys.base = sys.machine == ELFIMAGE_X86_64 ? 0x40000000ull : BASE;
             sys.most = MOST;
-            img = malloc(MOST);
-            why = elfimage_write(elf, elf_len, &sys, img, MOST, &got);
+            img = malloc(bin_len + PAGE);   /* the image's size, not the window's */
+            why = elfimage_write(elf, elf_len, &sys, img, bin_len + PAGE, &got);
 
             if (why != NULL) {
                 printf("  the system's image refused: %s\n", why);

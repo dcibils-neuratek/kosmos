@@ -156,9 +156,28 @@ const char *elfimage_plan(const unsigned char *f, size_t n, uint64_t file_len,
                    "program carries what it uses";
         }
 
+        /*
+         * **A thread's variables' template** (`docs/webkit.md` W1b). It is
+         * bytes inside the data the image loads anyway, which the runtime
+         * copies for each thread that wants them (`runtime/libc/tls.c`) -
+         * so nothing more is loaded for it, and what is checked is that it
+         * is inside the image: an empty one, which every image without
+         * such variables carries at nought, or one between the base and
+         * the image's end. This was a refusal while Kosmos set nothing up.
+         */
         if (type == PT_TLS) {
-            return "it has thread-local storage in its file, which Kosmos "
-                   "does not set up from one";
+            uint64_t tv = le(ph + 16, 8), tf = le(ph + 32, 8), tm = le(ph + 40, 8);
+
+            if (tf == 0 && tm == 0) {
+                continue;
+            }
+
+            if (tf > tm || tv < want->base || tm > want->most
+                || tv - want->base > want->most - tm) {
+                return "its thread variables' template is outside the image";
+            }
+
+            continue;
         }
 
         if (type != PT_LOAD) {

@@ -30970,3 +30970,88 @@ the lock is a worker not tracing.
 120 s for the visitor on the page, as it did under load in 18.680; alone it passed, 38 checks, in 1:44.
 `x86-sound` failed once in a smaller run beside it (the tone at 403 Hz for
 440, 371 ms for 333) and passed 4 of 4 alone, and in the whole gate.
+
+## 18.759 An image has a gigabyte of its own (JetSki W1a)
+
+`docs/webkit.md` W1a, 0.11.364. The heap, the stack, the screen and the
+map window moved from fixed places in the first 64 MB to above a gigabyte
+kept for the image (`USER_IMAGE_MAX`, `kernel/process.h`), at the
+distances they always had. The heap had started at 16, 32, 40 and 42 MB,
+each move the day an image ran into it; WebKit's image is several times
+all of them. The line now is x86-64's small code model - every symbol
+below 2 GB, with images starting at 1 GB - which does not grow.
+
+**Found on the way: the kernel never checked an image's length.** Only
+the Lua that plans an ELF did (`sys_user.c`, `this_machine`), and an image
+reaches `SYS_SPAWN_IMAGE` from a region its caller filled. A longer one
+would have mapped its pages over the heap's addresses. `process_image_ok`
+refuses it now.
+
+**Test**: the kernel suite's "process: an image has its gigabyte, and no
+more" - the layout's constants; an image the whole window long accepted
+and one a page longer refused; the page after the system's image and the
+page under the heap given nothing when touched, the heap's first page
+given. 211/211 on x86-64, 213/213 on AArch64. **Control**: the kernel's
+check taken out - `not ok 69`. Its first run said "the run was cut short"
+instead: the message ended without a newline, so the harness never saw
+the line `not ok` began. Also run: x86-core, headless, tcc, fbsize, game,
+film, install.
+
+## 18.760 Constructors, unwinding tables and thread variables (JetSki W1b)
+
+`docs/webkit.md` W1b - what C++ will ask of an image, built and proved in
+C first:
+
+- **`.eh_frame` and `.eh_frame_hdr` kept** in every image (`user.ld`, with
+  `--eh-frame-hdr`), under the four names libunwind's bare-metal build
+  reads. 0.47 and 0.09 MB, read only and shared by every process - cheaper
+  than a second linker script to keep in step.
+- **`.init_array` run** by `main` once the heap is ready
+  (`kosmos_run_constructors`).
+- **`.tdata`/`.tbss` as a PT_TLS segment**, and each thread's copy made by
+  `runtime/libc/tls.c` beside its `struct tls_block`: below the pointer on
+  x86-64 (variant II), after the block on AArch64 (variant I). The block's
+  first word was already its own address, which is what `%fs:0` must hold.
+  The kernel's block is not used: it sits a page above the previous
+  thread's stack, which is where variant II's variables would land.
+- **Kosmos's ELF reader takes a PT_TLS segment** inside the image, and an
+  empty one at nought, which every image now carries; it refused any
+  before, which would have refused every installed application.
+- **TinyCC's images**: `head.c` gives the template's names, empty;
+  TinyCC's own linker gives `.init_array`'s bounds.
+
+Two things the first version got wrong, both found by the test:
+
+1. **The copy's variables at the wrong offsets.** The linker places them by
+   the segment's own alignment, four here; the copy was laid out on
+   sixteen, and read 0. Offsets now use the segment's alignment and only
+   the pointer is put on sixteen.
+2. **A function that changes the thread pointer goes on reading the old
+   one**: the compiler reads it once a function. So a thread begins its
+   copy in a function that uses none of its variables, and calls one that
+   does (`tls.h`) - as pthreads will (W3).
+
+On the way, AArch64 refused to link the alignment as an absolute symbol:
+it reaches symbols by their distance from the code, and a small number is
+256 GB from an image at 256 GB. It is a word in `.rodata` now.
+
+**Test**: the loader's test image (`apptest_tls.c`, in no other image) says
+"constructed 7, main 6, thread 500099, main again 6" - the constructor
+ran, a second thread's copy began as the template and stayed its own -
+and `x86-loader` holds it, 15 of 15; `x86-tcc` 15 of 15; `test_elfimage`
+33 of 33, with a template inside the data, an empty one, and one outside
+the image refused, and its limit now the window rather than 40 MB.
+**Controls**: constructors not run - "constructed 0"; the thread pointer
+never moved to the copy - the run hangs and the gate stops it at 720 s.
+
+**Whole gate** on W1b: 109 of 112 in 610 s; all three passed alone, in
+51 s. W1b changes nothing that runs in the system's image - it has no
+constructors (`.init_array` is empty) and no thread template, so
+`kosmos_tls_begin` returns at its first line - so the three are the
+gate's load. `x86-network`'s second lookup is 18.680's shape.
+`x86-pdfview`'s Shift-Return landed on match 9 rather than 7. **`x86-film`
+is new and worth reading the next time**: 41,894 of 266,240 samples more
+than two steps from FFmpeg's, the first at 2.5426 s with channel 0 right
+and channels 1-3 zero - a period written with one channel, not a period
+missing. The log is kept as
+`build/gate/failed/0.11.364-1111-132846-x86-film.log`.

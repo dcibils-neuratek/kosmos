@@ -17,6 +17,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "kosmos.h"
+#include "tls.h"
 #include <tls.h>
 #include <errno.h>
 #include "kosmos_lua.h"
@@ -881,6 +882,15 @@ int main(unsigned long arg)
      * long after one could, and was found saying so on 30 September.
      */
     heap_init((void *)USER_HEAP, USER_HEAP_SIZE);
+
+    /*
+     * **The image's own thread variables and constructors**, before
+     * anything asks the image for anything (`docs/webkit.md` W1b): C++'s
+     * globals are constructed here, and may allocate, so the heap is first.
+     * An image with neither - every one today but C++'s - does nothing.
+     */
+    (void)kosmos_tls_begin();
+    kosmos_run_constructors();
 
     /*
      * Before Lua, and it never comes back.

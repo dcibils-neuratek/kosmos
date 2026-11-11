@@ -570,6 +570,7 @@ TCC_KIT_TARGET := $(if $(filter x86_64,$(ARCH)),TCC_TARGET_X86_64,TCC_TARGET_ARM
 
 USER_LIBC := runtime/libc/string.c \
              runtime/libc/malloc.c \
+             runtime/libc/tls.c \
              runtime/libc/math.c \
              runtime/libc/snprintf.c \
              runtime/libc/strtod.c \
@@ -1331,7 +1332,7 @@ UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(WE
 
 
 ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
-            -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
+            -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,--eh-frame-hdr \
             -Wl,-Map,$(UBUILD)/init.map
 
 # ------------------------------------------------------------------
@@ -3350,7 +3351,7 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 # because a kit that leaked into the system's image would make the loader's
 # test pass without the loader.
 #
-APPTEST_OBJS := $(UBUILD)/user/kits/apptest/apptest.c.o
+APPTEST_OBJS := $(UBUILD)/user/kits/apptest/apptest.c.o $(UBUILD)/user/kits/apptest/apptest_tls.c.o
 
 $(UBUILD)/apps/apptest.elf: $(USER_OBJS) $(APPTEST_OBJS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
