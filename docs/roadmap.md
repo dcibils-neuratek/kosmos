@@ -10083,6 +10083,11 @@ the applications make the system useful, and is not pulled forward.
   namespace's copies of the disk's and memory store's wire layouts gone,
   `sys.disk_call` and `sys.ram_call` asking through `diskask` and a new
   `ramask`. W3e, sockets and `poll` on `netclient.c`, next.
+  **A follow-up from W3d4**: *a suite the gate stops leaves its folder*.
+  On 11 November twelve `kosmos-*` folders under the Mac's temporary
+  directory held 3 GB - each the disk of a run the gate stopped for
+  hanging, or a control that hung. The gate should remove a stopped
+  suite's folder, as a suite that ends removes its own.
   **Two follow-ups from W3c**: *the x86 test guest has one processor*
   (`X86_ARGS` has no `-smp`, ARM's has four), so no x86 suite runs two
   at once - for Diego, since four costs time in every x86 suite; and
