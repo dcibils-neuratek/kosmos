@@ -57,7 +57,7 @@ def pairs(arch, home, apps=None):
     apps = apps or os.path.join(ROOT, "build", "user-x86_64" if arch == "x86_64" else "user",
                                 "apps")
     staged = os.path.join(ROOT, "build", "installed", arch)
-    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-none-elf-") + "objcopy"
+    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
     out = []
 
     for name in sorted(os.listdir(INSTALLED)):

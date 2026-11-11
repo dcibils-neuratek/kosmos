@@ -77,7 +77,7 @@ def installed(arch, work, game):
     if not os.path.exists(built):
         sys.exit("FAIL: no %s to install - `make apps` builds it" % game["image"])
 
-    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-none-elf-") + "objcopy"
+    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
     elf = os.path.join(work, game["image"])
     subprocess.run([objcopy, "--strip-debug", built, elf], check=True)
 

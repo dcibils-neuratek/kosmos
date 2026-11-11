@@ -31170,3 +31170,24 @@ which uses `tpidr_el0`, or `__emutls` implemented per thread here.
 list of application images did not reach - the list is written out in
 `tools/test_rebuilds.py`, and `cxxtest.elf` is on it now, 8 of 8.
 `x86-network`'s second lookup is 18.680's shape, 36 of 36 alone.
+
+## 18.763 AArch64 built by GCC 16.2, and its thread variables its threads'
+
+Diego chose on 11 November ("yes to all", 18.762's question): the AArch64
+userland and kernel are built by Homebrew's `aarch64-elf-gcc` 16.2, the
+release x86-64 has always had, instead of Arm's 14.2. `CROSS` in the
+Makefile and the nine tools that named `aarch64-none-elf-` say
+`aarch64-elf-` now; `docs/setup.md` says why Arm's was kept for so long
+(newlib's `libm`, which `musl-math` replaced) and why it no longer is.
+
+**The whole AArch64 tree compiles under `-Werror` with no new warning** -
+the kernel, upstream Lua, FFmpeg's closure, every kit. The objects 14.2
+made were deleted first: make compares sources' times, not the
+compiler's, so nothing would have been rebuilt.
+
+**Test**: W1b's check, which failed on ARM in 18.762 ("thread -1"), now
+passes - `arm-loader` 18 of 18, a `_Thread_local` counted on two threads
+that each see their own. **Control**: 18.762 itself, the same check on
+the same source with 14.2's `__emutls`, 17 of 18. `arm-kernel` 215 of
+215, `arm-sandbox` 215 of 215 (EL2, the one ARM suite every gate runs),
+`arm-headless` 7 of 7; 192 s.

@@ -43,7 +43,7 @@ KINDS = [("locks taken", r"^stxr|^stlxr|^cas|^swp"),
 
 def symbols(elf):
     out = []
-    for line in subprocess.run(["aarch64-none-elf-nm", "-n", elf], capture_output=True,
+    for line in subprocess.run(["aarch64-elf-nm", "-n", elf], capture_output=True,
                                text=True, check=True).stdout.splitlines():
         parts = line.split()
         if len(parts) == 3 and parts[1] in "tTwW":
@@ -53,7 +53,7 @@ def symbols(elf):
 
 def disassembly(elf):
     dis = {}
-    for line in subprocess.run(["aarch64-none-elf-objdump", "-d", "--no-show-raw-insn", elf],
+    for line in subprocess.run(["aarch64-elf-objdump", "-d", "--no-show-raw-insn", elf],
                                capture_output=True, text=True, check=True).stdout.splitlines():
         m = re.match(r"\s*([0-9a-f]+):\s+(.*)", line)
         if m:

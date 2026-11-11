@@ -73,7 +73,7 @@ if app is None:
     sys.exit(1)
 
 stripped = os.path.join(WORK, "apptest.elf")
-subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
                 "--strip-debug", app, stripped], check=True)
 
 with open(stripped, "rb") as f:
@@ -137,10 +137,10 @@ if CXX:
         sys.exit(1)
 
     cxx_image = os.path.join(WORK, "cxxtest.elf")
-    subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, cxx_image], check=True)
 
-    sections = subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "readelf",
+    sections = subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "readelf",
                                "-S", "-W", cxx_image],
                               check=True, capture_output=True, text=True).stdout
     unwound = bytearray(open(cxx_image, "rb").read())
@@ -197,7 +197,7 @@ for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "sn
         sys.exit(1)
 
     stripped_image = os.path.join(WORK, image)
-    subprocess.run([("x86_64-elf-" if X86 else "aarch64-none-elf-") + "objcopy",
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, stripped_image], check=True)
     installed.append("%s:/Home/Apps/%s/%s" % (stripped_image, folder, image))
 

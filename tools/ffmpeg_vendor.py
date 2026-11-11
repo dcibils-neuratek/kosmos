@@ -66,7 +66,7 @@ KIT = os.path.join(ROOT, "user", "kits", "ffmpeg")
 CONFIG_OUT = os.path.join(KIT, "config")
 MK_OUT = os.path.join(KIT, "ffmpeg.mk")
 
-CROSS = "aarch64-none-elf-"
+CROSS = "aarch64-elf-"
 
 # The decoders, and nothing else - H.264 for a film's picture and AAC for
 # its sound: no demuxers (`mp4.lua` is the demuxer),

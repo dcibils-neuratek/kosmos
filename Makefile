@@ -28,7 +28,7 @@
 #
 ARCH    ?= aarch64
 
-CROSS   := $(if $(filter x86_64,$(ARCH)),x86_64-elf-,aarch64-none-elf-)
+CROSS   := $(if $(filter x86_64,$(ARCH)),x86_64-elf-,aarch64-elf-)
 CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
 OBJCOPY := $(CROSS)objcopy
@@ -5446,7 +5446,7 @@ doom-check: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory apps
 	python3 tools/run_doom.py build/kosmos.elf "$(WAD)"
 
-# In another terminal: aarch64-none-elf-gdb build/kosmos.elf
+# In another terminal: aarch64-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234
 debug: $(TARGET)
 	$(QEMU) $(QEMUFLAGS) -S -gdb tcp::1234

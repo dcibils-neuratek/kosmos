@@ -237,7 +237,7 @@ linked dynamically, so `doom.elf` and `quake.elf` are the GPL works, and
 what the system's image carries is in `LICENSE`, which the About window
 shows.
 
-Toolchain: `aarch64-none-elf-gcc`, `qemu-system-aarch64`.
+Toolchain: `aarch64-elf-gcc` and `x86_64-elf-gcc` (Homebrew, GCC 16.2), clang for C++, `qemu-system-aarch64`.
 
 Mandatory flags, not to be changed without discussion:
 

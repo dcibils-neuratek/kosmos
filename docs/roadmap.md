@@ -10050,10 +10050,10 @@ the applications make the system useful, and is not pulled forward.
   670 lines, awaiting his agreement.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
-  dies says only its code - give a dying program's last words a way out;
-  and **ARM's GCC emulates C's `_Thread_local`** (`--disable-tls`), so
-  `arm-loader` fails W1b's check - Diego's choice, Homebrew's GCC 16.2 for
-  AArch64 or `__emutls` per thread.
+  dies says only its code - give a dying program's last words a way out.
+  and ARM's GCC emulated C's `_Thread_local` (`--disable-tls`) - *done,
+  11 November*: Diego chose Homebrew's GCC 16.2 for AArch64, `arm-loader`
+  18 of 18 (`testing.md` 18.763).
   **Follow-up found on the way** (`testing.md` 18.761): `x86-xavier`'s
   drawn answer left the kit's at the 77th token in a loaded gate and held
   alone - find what in the model's path depends on load (the processor

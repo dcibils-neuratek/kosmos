@@ -6,62 +6,47 @@
 
 Two pieces: the cross-compiler and QEMU. They come from different places.
 
-### The cross-compiler
+### The cross-compilers
 
-**The official ARM toolchain, downloaded from ARM's site.** It is the one that is genuinely bare metal, with no Linux assumptions, and it ships `gcc`, `binutils` and `gdb` in one tarball with nothing to build.
-
-**On Apple Silicon**, which is what this is built on:
-
-```
-mkdir -p ~/toolchains && cd ~/toolchains
-curl -fLO https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf.tar.xz
-tar xf arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf.tar.xz
-xattr -dr com.apple.quarantine arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf
-```
-
-Then put it on the `PATH`, in `~/.zprofile`:
+**Homebrew's bare-metal GCC, for both architectures** - GCC 16.2, which
+ships `gcc` and `binutils` and nothing else:
 
 ```
-export PATH="$HOME/toolchains/arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf/bin:$PATH"
+brew install aarch64-elf-gcc x86_64-elf-gcc
+brew install aarch64-elf-gdb      # for make debug
 ```
 
-On an Intel Mac, `darwin-arm64` becomes `darwin-x86_64` in all four lines.
-
-**The architecture used to be the other way round here**, with `darwin-x86_64`
-in the commands and a line at the end saying to swap it. That is the wrong
-way round for a document written on an Apple Silicon machine: what it gave
-you if you followed it exactly was a tarball that does not run, and what it
-gave you if you followed it *nearly* exactly - downloading the right one and
-copying the `PATH` line - was
+**And clang, for C++** (`docs/webkit.md` W1c): Homebrew's `llvm`, which
+builds libc++, libc++abi and libunwind and every C++ file. GCC links.
 
 ```
-make: aarch64-none-elf-gcc: No such file or directory
+brew install llvm
 ```
 
-which says the compiler is missing rather than that the path has the wrong
-architecture in it. An hour of a session went into that, and the lesson is
-smaller than the hour: the default in an instruction should be the machine
-the instruction was written on.
+**Until 11 November 2026 AArch64 was built by Arm's own toolchain, 14.2**
+(`aarch64-none-elf-gcc`, a tarball from developer.arm.com). Two things kept
+it, and neither holds any more:
 
-The `xattr` line is not optional. macOS quarantines anything downloaded
-through a browser or `curl`, and without clearing it Gatekeeper kills the
-binaries with a message that does not say why.
+- **It brought newlib's `libm`**, which the userland linked for thirteen
+  functions - `pow`, `exp`, `sin` and the rest - and Homebrew's GCC ships
+  no C library at all. The userland now carries its own,
+  `runtime/upstream/musl-math/`, so neither compiler's library is linked.
+- **It was what there was.** But Arm's GCC is configured `--disable-tls`,
+  so C's `_Thread_local` became `__emutls` calls - one copy for the whole
+  process rather than one a thread - while clang's C++ used `TPIDR_EL0`
+  directly. Two answers in one image; W1b's check caught it. Diego chose
+  Homebrew's 16.2 that day ("yes to all"), which is also what x86-64 had
+  been built with all along: one compiler, two targets.
 
-**If `make` cannot find `aarch64-none-elf-gcc`**, the toolchain is not on
-this shell's `PATH` - which is a different thing from not being installed,
-and is what happens in a terminal opened before the `~/.zprofile` line was
-added. Check with `which aarch64-none-elf-gcc`, and `source ~/.zprofile` in
-the shell you are in.
+**Do not use `aarch64-unknown-linux-gnu` from Homebrew.** It targets Linux:
+it brings glibc, Linux start files and a dynamic loader, which is exactly
+what `-ffreestanding -nostdlib -nostartfiles` exists to avoid.
 
-**Do not use `aarch64-unknown-linux-gnu` from Homebrew.** It targets Linux: it brings glibc, Linux start files and a dynamic loader, which is exactly what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces binaries named `aarch64-unknown-linux-gnu-gcc`, not the `aarch64-none-elf-gcc` this project calls for.
-
-**And `aarch64-elf-gcc` from Homebrew does not work either, for a different and more interesting reason.** It is a genuine bare-metal ELF target, so the objection above does not apply to it, and it compiles this tree cleanly - the kernel and all of upstream Lua, GCC 16.2 against `-Werror`, no warnings. It cannot *link* the user image, because it ships no C library at all.
-
-That matters because the userland - not the kernel - depends on the toolchain's `libm` for thirteen functions: `pow`, `exp`, `log`, `log2`, `log10`, `sqrt`, `fmod`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan2`. Lua's `math` library wants most of them and `stb_truetype` wants `sqrt` and `fmod`. `runtime/libc/math.c` supplies only the six that are exact bit-manipulation - `fabs`, `trunc`, `floor`, `ceil`, `frexp`, `ldexp` - and the rest come from newlib, which ARM's tarball bundles and Homebrew's does not.
-
-So `-lm` on the user link is real and load-bearing, and the split is worth stating plainly: **the kernel needs a compiler, the userland needs a compiler and a libm.** Writing the missing thirteen by hand is not a tidy-up - `pow` and `exp` and the trigonometric functions are numerically delicate, and a plausible wrong answer in a font rasteriser looks like a rendering bug rather than an arithmetic one.
-
-This is also the shape of the question the Pi will ask, and it is not a HAL question. Whatever toolchain builds for a second target has to bring a `libm` or the userland has to grow its own.
+**A change of compiler does not rebuild anything by itself**: make compares
+the sources' times, not the compiler's. After switching, remove the
+objects - `make clean`, or the `.o`, `.a` and `.elf` files under the
+`build/` directories of that architecture - or old and new objects are
+linked together.
 
 ### QEMU
 
@@ -101,8 +86,9 @@ brew install acpica          # Homebrew; the binary is `iasl`
 ### Verify
 
 ```
-aarch64-none-elf-gcc --version
-aarch64-none-elf-gdb --version
+aarch64-elf-gcc --version
+x86_64-elf-gcc --version
+aarch64-elf-gdb --version
 qemu-system-aarch64 --version
 ```
 
@@ -154,7 +140,7 @@ For the first few milestones the UART is the only tool. Worth taking seriously r
 
 ```
 make debug          # in one terminal
-aarch64-none-elf-gdb build/kosmos.elf
+aarch64-elf-gdb build/kosmos.elf
 (gdb) target remote :1234
 ```
 

@@ -50,7 +50,7 @@ def main():
 
     built = os.path.join(ROOT, "build", "user-x86_64" if arch == "x86_64" else "user",
                          "apps", "doom.elf")
-    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-none-elf-") + "objcopy"
+    objcopy = ("x86_64-elf-" if arch == "x86_64" else "aarch64-elf-") + "objcopy"
     elf = os.path.join(work, "doom.elf")
     subprocess.run([objcopy, "--strip-debug", built, elf], check=True)
 

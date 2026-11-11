@@ -50,8 +50,8 @@ SAMPLE = struct.Struct("<QIHBB")        # pc, pid, thread, cpu, where
 USER, KERNEL, IDLE = 1, 2, 3
 
 EM_X86_64, EM_AARCH64 = 62, 183
-ADDR2LINE = {EM_X86_64: "x86_64-elf-addr2line", EM_AARCH64: "aarch64-none-elf-addr2line"}
-NM = {EM_X86_64: "x86_64-elf-nm", EM_AARCH64: "aarch64-none-elf-nm"}
+ADDR2LINE = {EM_X86_64: "x86_64-elf-addr2line", EM_AARCH64: "aarch64-elf-addr2line"}
+NM = {EM_X86_64: "x86_64-elf-nm", EM_AARCH64: "aarch64-elf-nm"}
 
 # Lua's own files, by what they are. `lmem.c` is the interpreter asking for
 # memory; the asking is Lua's, what answers it is the allocator's.
