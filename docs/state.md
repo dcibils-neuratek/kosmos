@@ -2,11 +2,11 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-11 (0.11.372: W2 built - JetSki's three things from Nebula; nothing since 0.11.363 pushed)
+Last updated: 2026-11-11 (0.11.375: W3a-W3c built - pthreads, memory, time and the process's facts; nothing since 0.11.363 pushed)
 
 ---
 
-## 11 November: JetSki W1d to W2c (0.11.364-0.11.372, not pushed)
+## 11 November: JetSki W1d to W3c (0.11.364-0.11.375, not pushed)
 
 JetSki is WebKit on Kosmos (`docs/webkit.md`). W1 runs C++ (0.11.367,
 `cxxtest.elf` in the gate). **W2, Nebula's three, agreed by Diego ("yes to
@@ -29,16 +29,32 @@ all", `docs/w2.md`) and built:**
   the return to user level; x86's `syscall_entry` saves the callee-saved
   six.
 
-**Next: W3, the POSIX layer inside the process - waiting on Diego.** As
-`webkit.md` plans it (BSD sockets for curl, `open`/`read`/`write` with
-descriptors, `unistd.h`), it crosses `CLAUDE.md`'s and `design.md` §17.3's
-"never" list; the JetSki decision row says it is compatibility inside a
-process, but the principle text was never changed. Asked 11 November
-whether to amend the principle or patch the ports.
+**W3, the POSIX layer inside the process** - its line agreed by Diego
+("Amend the principle": the POSIX names inside a process for ported
+code, in `runtime/posix/`, `design.md` §17.3) and its file door (a
+Storage Kit in C); designed in `docs/w3.md`. Built, each held by
+`posixtest.elf` in `x86-loader` and `arm-loader`:
+
+- 0.11.373 (18.768): W3a, pthreads - threads, mutexes, conditions,
+  rwlocks, once, keys, `getattr_np`.
+- 0.11.374 (18.769): W3b, `mmap`, `munmap`, `mprotect`, `madvise`, and
+  `RESERVE_DISCARD` in the kernel for `MADV_DONTNEED`. And a W3a race
+  found by it on ARM: a detached thread's record written by its creator
+  after the reaper had freed it.
+- 0.11.375 (18.770): W3c, `nanosleep`, `getpid` on a new `SYS_SELF`,
+  `sysconf`, `uname`, `getrandom`; `getenv` stays NULL.
+
+**Next: W3d, the Storage Kit in C** (`user/kits/storage/`) and the
+descriptors over it, then W3e sockets on `netclient.c`.
+
+**Asked of Diego on the board, not blocking**: the x86 test guest has
+one processor (`X86_ARGS` has no `-smp`, ARM's four), so no x86 suite
+runs two at once - four for x86 too?
 
 **Follow-ups**: a released reservation's addresses reused; `x86-xavier`
 diverging under load (18.761); a dying program's last words (its `panic:`
-and `stderr` reach nothing); disk at about 8.6 GB free before W5.
+and `stderr` reach nothing); two doors to randomness (`arc4random_buf`
+and `crypto.random`'s own generator); disk at about 7 GB free before W5.
 
 ---
 
