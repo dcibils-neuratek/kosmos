@@ -14,9 +14,16 @@
 #include <errno.h>
 #include <string.h>
 
+__attribute__((weak)) /*
+ * **Weak, every stream function here, and the three streams** (`docs/w3.md`
+ * W3d3): ported code that links `runtime/posix/` gets a `stdio` over
+ * descriptors from `runtime/posix/stdio.c`, which replaces all of them
+ * together - a `FILE` is this file's own type, so it is all or none. Every
+ * image without the layer keeps what is here.
+ */
 FILE *stdin  = NULL;
-FILE *stdout = NULL;
-FILE *stderr = NULL;
+__attribute__((weak)) FILE *stdout = NULL;
+__attribute__((weak)) FILE *stderr = NULL;
 
 /*
  *--------------------------------------------------------------------------
@@ -114,7 +121,26 @@ int kosmos_provide(const char *name, const void *bytes, size_t len)
     return 0;
 }
 
-FILE *fopen(const char *path, const char *mode)
+/* What `kosmos_provide` named `path`'s last part - for the layer's `fopen`,
+ * which reads a provided file the way this one does when no file of that
+ * name is in the namespace. 0, or -1 for none. */
+int kosmos_provided(const char *path, const void **bytes, size_t *len)
+{
+    const char *want = basename_of(path);
+    int i;
+
+    for (i = 0; i < PROVIDED_MAX; i++) {
+        if (provided[i].name != NULL && strcmp(provided[i].name, want) == 0) {
+            *bytes = provided[i].bytes;
+            *len = provided[i].len;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+__attribute__((weak)) FILE *fopen(const char *path, const char *mode)
 {
     const char *want = basename_of(path);
     int i, j;
@@ -152,7 +178,7 @@ FILE *fopen(const char *path, const char *mode)
     return NULL;
 }
 
-FILE *freopen(const char *path, const char *mode, FILE *f)
+__attribute__((weak)) FILE *freopen(const char *path, const char *mode, FILE *f)
 {
     (void)path;
     (void)mode;
@@ -161,7 +187,7 @@ FILE *freopen(const char *path, const char *mode, FILE *f)
     return NULL;
 }
 
-int fclose(FILE *f)
+__attribute__((weak)) int fclose(FILE *f)
 {
     if (f == NULL) {
         return EOF;
@@ -179,7 +205,7 @@ int fclose(FILE *f)
  * them to answer a question, so every stream says it has none, and
  * `isatty` says no (`unistd.h`).
  */
-int fileno(FILE *f)
+__attribute__((weak)) int fileno(FILE *f)
 {
     (void)f;
     errno = EBADF;
@@ -193,7 +219,7 @@ int isatty(int fd)
     return 0;
 }
 
-size_t fread(void *b, size_t size, size_t count, FILE *f)
+__attribute__((weak)) size_t fread(void *b, size_t size, size_t count, FILE *f)
 {
     size_t want, left;
 
@@ -216,16 +242,16 @@ size_t fread(void *b, size_t size, size_t count, FILE *f)
      * every caller assumes. */
     return want / size;
 }
-size_t fwrite(const void *b, size_t s, size_t c, FILE *f)
+__attribute__((weak)) size_t fwrite(const void *b, size_t s, size_t c, FILE *f)
 {
     (void)b; (void)s; (void)c; (void)f;
     return 0;
 }
-int  feof(FILE *f)         { return f == NULL || f->at >= f->len; }
-int  ferror(FILE *f)       { (void)f; return 0; }
-void clearerr(FILE *f)     { (void)f; }
-int  fflush(FILE *f)       { (void)f; return 0; }
-int  getc(FILE *f)
+__attribute__((weak)) int  feof(FILE *f)         { return f == NULL || f->at >= f->len; }
+__attribute__((weak)) int  ferror(FILE *f)       { (void)f; return 0; }
+__attribute__((weak)) void clearerr(FILE *f)     { (void)f; }
+__attribute__((weak)) int  fflush(FILE *f)       { (void)f; return 0; }
+__attribute__((weak)) int  getc(FILE *f)
 {
     if (f == NULL || f->bytes == NULL || f->at >= f->len) {
         return EOF;
@@ -235,14 +261,14 @@ int  getc(FILE *f)
 }
 /* The same function as `getc`, which the standard allows to be a macro and
  * this is not; Quake's savegame loader spells it this way. */
-int  fgetc(FILE *f)          { return getc(f); }
+__attribute__((weak)) int  fgetc(FILE *f)          { return getc(f); }
 
 /*
  * A line of a provided file, its newline kept, as the standard has it:
  * at most `size - 1` bytes and a NUL, and NULL at the end of the file with
  * nothing read. NetSurf's option table reads its file this way.
  */
-char *fgets(char *s, int size, FILE *f)
+__attribute__((weak)) char *fgets(char *s, int size, FILE *f)
 {
     int n = 0, c;
 
@@ -265,7 +291,7 @@ char *fgets(char *s, int size, FILE *f)
     s[n] = '\0';
     return s;
 }
-int  ungetc(int c, FILE *f) { (void)c; (void)f; return EOF; }
+__attribute__((weak)) int  ungetc(int c, FILE *f) { (void)c; (void)f; return EOF; }
 
 char *strerror(int errnum)
 {
@@ -406,7 +432,7 @@ int printf(const char *fmt, ...)
     return n;
 }
 
-int fprintf(FILE *f, const char *fmt, ...)
+__attribute__((weak)) int fprintf(FILE *f, const char *fmt, ...)
 {
     va_list ap;
     int n;
@@ -470,7 +496,7 @@ int putchar(int c)
     return c;
 }
 
-int fputs(const char *s, FILE *f)
+__attribute__((weak)) int fputs(const char *s, FILE *f)
 {
     (void)f;
 
@@ -479,7 +505,7 @@ int fputs(const char *s, FILE *f)
     return 0;
 }
 
-int fputc(int c, FILE *f)
+__attribute__((weak)) int fputc(int c, FILE *f)
 {
     (void)f;
 
@@ -507,7 +533,7 @@ int fputc(int c, FILE *f)
  *--------------------------------------------------------------------------
  */
 
-int fseek(FILE *f, long offset, int whence)
+__attribute__((weak)) int fseek(FILE *f, long offset, int whence)
 {
     long at;
 
@@ -529,7 +555,7 @@ int fseek(FILE *f, long offset, int whence)
     return 0;
 }
 
-long ftell(FILE *f)
+__attribute__((weak)) long ftell(FILE *f)
 {
     if (f == NULL || f->bytes == NULL) {
         return -1L;
@@ -538,7 +564,7 @@ long ftell(FILE *f)
     return (long)f->at;
 }
 
-void rewind(FILE *f)
+__attribute__((weak)) void rewind(FILE *f)
 {
     if (f != NULL) {
         f->at = 0;
@@ -557,7 +583,7 @@ void rewind(FILE *f)
  * stopping at a NUL: inside a pak, what follows a file is the next file.
  *--------------------------------------------------------------------------
  */
-int vfscanf(FILE *f, const char *fmt, va_list ap)
+__attribute__((weak)) int vfscanf(FILE *f, const char *fmt, va_list ap)
 {
     size_t used = 0;
     int n;
@@ -573,7 +599,7 @@ int vfscanf(FILE *f, const char *fmt, va_list ap)
     return n;
 }
 
-int fscanf(FILE *f, const char *fmt, ...)
+__attribute__((weak)) int fscanf(FILE *f, const char *fmt, ...)
 {
     va_list ap;
     int n;
@@ -601,7 +627,7 @@ __attribute__((weak)) int rename(const char *from, const char *to)
     return -1;
 }
 
-int vfprintf(FILE *f, const char *fmt, va_list ap)
+__attribute__((weak)) int vfprintf(FILE *f, const char *fmt, va_list ap)
 {
     (void)f;
 

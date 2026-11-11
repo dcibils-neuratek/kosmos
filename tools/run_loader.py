@@ -383,10 +383,13 @@ def main():
                   "in the middle, fixed, refused; process: slept, timed, pid in the table, " in said
               and (" processors, Kosmos %s, random, no environment; "
                    % ("x86_64" if X86 else "aarch64")) in said
-              and said.endswith("; files: made, excl, read and written, positioned, "
-                                "appended, cut, dup shared, flags, closed, folders listed "
-                                "and removed, read only, cwd, realpath, console, 200 open, "
-                                "4 threads"),
+              and "; files: made, excl, read and written, positioned, appended, cut, dup "
+                  "shared, flags, closed, folders listed and removed, read only, cwd, "
+                  "realpath, console, 200 open, 4 threads; " in said
+              and said.endswith("; stdio: written and read by line, a thousand of them, "
+                                "positioned, scanned, given back, getline, r+, appended, wx "
+                                "refused, ten thousand bytes, fdopen, tmpfile gone, a "
+                                "provided file, the console"),
               "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
 
         said = None

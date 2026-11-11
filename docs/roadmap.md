@@ -10077,7 +10077,10 @@ the applications make the system useful, and is not pulled forward.
   table handed over once by the runner; `ramproto`'s `RAM_KEEP` and
   `RAM_CUT`. **W3d2, descriptors, built** (18.772): `open`, `read`,
   `write`, `lseek`, `stat`, `dup`, `fcntl`, `opendir` and the rest in
-  `runtime/posix/fd.c`. W3d3, `stdio` for ported code, next.
+  `runtime/posix/fd.c`. **W3d3, `stdio`, built** (18.773): streams over
+  descriptors, 4 KB buffered, replacing the runtime's all together where
+  the layer is linked. W3d4, the Lua namespace's disk and ram encoding
+  onto the Storage Kit, next.
   **Two follow-ups from W3c**: *the x86 test guest has one processor*
   (`X86_ARGS` has no `-smp`, ARM's has four), so no x86 suite runs two
   at once - for Diego, since four costs time in every x86 suite; and

@@ -103,6 +103,7 @@ int kosmos_vscan(const char *in, size_t len, const char *fmt, va_list ap,
  * tree, it is one process saying what a name means to it.
  */
 int kosmos_provide(const char *name, const void *bytes, size_t len);
+int kosmos_provided(const char *path, const void **bytes, size_t *len);
 
 int puts(const char *s);
 

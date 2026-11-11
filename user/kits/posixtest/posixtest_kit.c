@@ -60,7 +60,7 @@ int kosmos_posixtest_named(long id, const char *name)
 
 static int l_run(lua_State *L)
 {
-    char said[768];
+    char said[1024];
 
     (void)kosmos_posixtest_run(said, sizeof(said));
     lua_pushstring(L, said);

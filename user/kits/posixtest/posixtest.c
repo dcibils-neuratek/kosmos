@@ -750,6 +750,195 @@ static int file_checks(char *out, unsigned long size)
     return 0;
 }
 
+
+/*
+ * **Streams** (`docs/w3.md` W3d3): `stdio` over descriptors.
+ */
+static int stdio_checks(char *out, unsigned long size)
+{
+    const char *path = "/Temporary/ps-file";
+    char line[128], *got = NULL;
+    size_t room = 0;
+    unsigned char *big, *back;
+    struct stat st;
+    FILE *f;
+    int i, a = 0, b = 0, lines = 0;
+
+    unlink(path);
+
+    if (fopen("/Temporary/ps-none", "r") != NULL || errno != ENOENT) {
+        FSAY("stdio: a file not there opened (%d)", errno);
+    }
+
+    /* A thousand lines, several buffers' worth, and back by line. */
+    if ((f = fopen(path, "w")) == NULL) {
+        FSAY("stdio: fopen for writing (%d)", errno);
+    }
+
+    for (i = 0; i < 1000; i++) {
+        if (fprintf(f, "line %d of %s\n", i, "a thousand") <= 0) {
+            FSAY("stdio: fprintf of line %d", i);
+        }
+    }
+
+    if (fclose(f) != 0) {
+        FSAY("stdio: fclose after writing");
+    }
+
+    if ((f = fopen(path, "r")) == NULL) {
+        FSAY("stdio: fopen for reading (%d)", errno);
+    }
+
+    while (fgets(line, sizeof line, f) != NULL) {
+        char want[64];
+
+        snprintf(want, sizeof want, "line %d of a thousand\n", lines);
+
+        if (strcmp(line, want) != 0) {
+            FSAY("stdio: line %d read as \"%s\"", lines, line);
+        }
+
+        lines++;
+    }
+
+    if (lines != 1000 || !feof(f) || ferror(f)) {
+        FSAY("stdio: %d lines read back", lines);
+    }
+
+    /* Positioned, scanned, given back. */
+    if (fseek(f, 5, SEEK_SET) != 0 || ftell(f) != 5 || fscanf(f, "%d of", &a) != 1 || a != 0) {
+        FSAY("stdio: fscanf at 5 said %d", a);
+    }
+
+    if (fseek(f, -9, SEEK_END) != 0 || fgets(line, sizeof line, f) == NULL
+        || strcmp(line, "thousand\n") != 0) {
+        FSAY("stdio: fseek from the end read \"%s\"", line);
+    }
+
+    rewind(f);
+
+    if (getc(f) != 'l' || ungetc('L', f) != 'L' || getc(f) != 'L' || getc(f) != 'i'
+        || ftell(f) != 2) {
+        FSAY("stdio: ungetc");
+    }
+
+    rewind(f);
+
+    for (i = 0; getline(&got, &room, f) > 0; i++) {
+        if (i == 999 && strcmp(got, "line 999 of a thousand\n") != 0) {
+            FSAY("stdio: getline's last line \"%s\"", got);
+        }
+    }
+
+    free(got);
+    fclose(f);
+
+    if (i != 1000) {
+        FSAY("stdio: getline gave %d lines", i);
+    }
+
+    /* Changed in place, and added to. */
+    if ((f = fopen(path, "r+")) == NULL || fseek(f, 5, SEEK_SET) != 0
+        || fwrite("X", 1, 1, f) != 1 || ftell(f) != 6 || fseek(f, 0, SEEK_SET) != 0
+        || fgets(line, sizeof line, f) == NULL || strcmp(line, "line X of a thousand\n") != 0
+        || fclose(f) != 0) {
+        FSAY("stdio: r+ changed line 0 to \"%s\"", line);
+    }
+
+    if ((f = fopen(path, "a")) == NULL || fputs("the end\n", f) != 0 || fclose(f) != 0
+        || stat(path, &st) != 0) {
+        FSAY("stdio: appending");
+    }
+
+    if ((f = fopen(path, "r")) == NULL || fseek(f, -8, SEEK_END) != 0
+        || fgets(line, sizeof line, f) == NULL || strcmp(line, "the end\n") != 0) {
+        FSAY("stdio: the appended line read \"%s\"", line);
+    }
+
+    fclose(f);
+
+    if (fopen(path, "wx") != NULL || errno != EEXIST) {
+        FSAY("stdio: \"wx\" over a file (%d)", errno);
+    }
+
+    /* Ten thousand bytes in one call each way. */
+    big = malloc(10000);
+    back = malloc(10000);
+
+    for (i = 0; i < 10000; i++) {
+        big[i] = (unsigned char)(i * 13 + 1);
+    }
+
+    if ((f = fopen(path, "w+")) == NULL || fwrite(big, 1, 10000, f) != 10000
+        || fseek(f, 0, SEEK_SET) != 0 || fread(back, 1, 10000, f) != 10000
+        || memcmp(big, back, 10000) != 0 || fread(back, 1, 1, f) != 0 || !feof(f)) {
+        FSAY("stdio: ten thousand bytes in one call");
+    }
+
+    fclose(f);
+    free(big);
+    free(back);
+
+    /* A descriptor's own stream. */
+    {
+        int fd = open(path, O_RDONLY);
+
+        if (fd < 0 || (f = fdopen(fd, "r")) == NULL || fileno(f) != fd
+            || fscanf(f, "%d%d", &a, &b) == EOF) {
+            FSAY("stdio: fdopen");
+        }
+
+        fclose(f);
+
+        if (close(fd) == 0) {
+            FSAY("stdio: fclose left fdopen's descriptor open");
+        }
+    }
+
+    /* A temporary file, gone when closed. */
+    {
+        DIR *d;
+        struct dirent *e;
+        int left = 0;
+
+        if ((f = tmpfile()) == NULL || fputs("scratch", f) != 0 || fseek(f, 0, SEEK_SET) != 0
+            || fgets(line, sizeof line, f) == NULL || strcmp(line, "scratch") != 0
+            || fclose(f) != 0) {
+            FSAY("stdio: tmpfile");
+        }
+
+        if ((d = opendir("/Temporary")) != NULL) {
+            while ((e = readdir(d)) != NULL) {
+                left += strncmp(e->d_name, "tmp-", 4) == 0;
+            }
+
+            closedir(d);
+        }
+
+        if (left != 0) {
+            FSAY("stdio: %d temporary files left", left);
+        }
+    }
+
+    /* What a kit provided by name, still opened where no file is. */
+    if (kosmos_provide("ps-given.txt", "given\n", 6) != 0
+        || (f = fopen("/Temporary/ps-given.txt", "r")) == NULL
+        || fgets(line, sizeof line, f) == NULL || strcmp(line, "given\n") != 0
+        || fileno(f) != -1 || fclose(f) != 0) {
+        FSAY("stdio: a provided file");
+    }
+
+    if (fileno(stdout) != 1 || fileno(stderr) != 2 || fprintf(stdout, "%s", "") != 0) {
+        FSAY("stdio: the console's streams");
+    }
+
+    unlink(path);
+    snprintf(out, size, "stdio: written and read by line, a thousand of them, positioned, "
+             "scanned, given back, getline, r+, appended, wx refused, ten thousand bytes, "
+             "fdopen, tmpfile gone, a provided file, the console");
+    return 0;
+}
+
 int kosmos_posixtest_run(char *out, unsigned long size)
 {
     pthread_t t[WORKERS];
@@ -1005,7 +1194,7 @@ int kosmos_posixtest_run(char *out, unsigned long size)
     }
 
     {
-        char memory[160], process[160], files[240];
+        char memory[160], process[160], files[240], streams[240];
 
         if (memory_checks(memory, sizeof memory) != 0) {
             snprintf(out, size, "%s", memory);
@@ -1022,11 +1211,16 @@ int kosmos_posixtest_run(char *out, unsigned long size)
             return 1;
         }
 
+        if (stdio_checks(streams, sizeof streams) != 0) {
+            snprintf(out, size, "%s", streams);
+            return 1;
+        }
+
         snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s",
+                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s; %s",
                  counted, ring_passes, once_ran, destroyed,
                  most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
-                 memory, process, files);
+                 memory, process, files, streams);
     }
 
     return 0;

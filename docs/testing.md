@@ -31724,3 +31724,46 @@ held off is counted" (18.272's history: QEMU stopped by the Mac *is* a
 processor held off), and `x86-profile`'s sample count, 612 of about 1018
 due. Neither touches userland. Alone, both passed: 217 of 217, and 1021
 samples, none lost.
+
+## 18.773 Streams for ported code (JetSki W3d3)
+
+`docs/w3.md` W3d3, in `runtime/posix/stdio.c`: `fopen` (`r`, `w`, `a`,
+`+`, `x`, `e`), `fdopen`, `freopen`, `tmpfile`, `fclose`, `fileno`,
+`fread`, `fwrite`, `getc`, `fgetc`, `getchar`, `ungetc`, `fgets`,
+`getline`, `getdelim`, `fputc`, `putc`, `fputs`, `fprintf`, `vfprintf`,
+`perror`, `fflush`, `fseek`, `fseeko`, `ftell`, `ftello`, `rewind`,
+`feof`, `ferror`, `clearerr`, `fscanf`, `vfscanf`, `setvbuf` and
+`setbuf` (accepted). A stream is a descriptor and a 4 KB buffer holding
+either what was read ahead or what waits to be written, never both; the
+console's three are unbuffered. **It replaces the runtime's stream
+functions all together** - a `FILE` is each file's own type - so those
+and the three streams are weak in `runtime/libc/stdio.c` now, and the
+runtime gained `kosmos_provided`, the lookup the layer's `fopen` falls
+back to so a file a kit provided by name still opens, read only, where
+the namespace has none.
+
+**Test**: `posixtest.elf`'s fifth part: a file not there `ENOENT`; a
+thousand lines printed with `fprintf` and read back with `fgets`, each
+as written, and `feof` after; `fseek` to 5 and `fscanf` "%d of"; `fseek`
+9 from the end; `getc`, `ungetc` of another character, `getc` giving it
+back and `ftell` 2; `getline` over the thousand; `r+` changing a byte and
+read back; `a` appending a line, read from the end; `wx` over a file
+`EEXIST`; ten thousand bytes in one `fwrite` and one `fread`, and `feof`
+after; `fdopen` of a descriptor, its `fileno`, and `fclose` closing it;
+`tmpfile` written, rewound, read and gone from `/Temporary` once closed;
+a file provided by `kosmos_provide` opened where no file of its name is;
+and `stdout` and `stderr` 1 and 2. Both boards: "...; stdio: written and
+read by line, a thousand of them, positioned, scanned, given back,
+getline, r+, appended, wx refused, ten thousand bytes, fdopen, tmpfile
+gone, a provided file, the console".
+
+**Controls**, both biting on x86: `ftell` blind to what was read ahead -
+"stdio: ungetc"; and `fclose` that does not write what waits - "stdio:
+line 895 read as "line "", the last buffer lost.
+
+**Whole gate**: 110 of 112 in 608 s. `x86-film-load` heard a gap under
+the whole gate's load, 1513 samples past two steps of FFmpeg's from 2.6 s
+- the shape 18.7xx's gate saw before - and `arm-sandboxwin`'s line typed
+into the Console tab was not answered in its time, the Alpine prompt
+there and the command not yet echoed. Neither runs anything the layer
+links. Alone, both passed: 18 of 18, and 10 of 10.
