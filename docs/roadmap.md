@@ -10056,7 +10056,10 @@ the applications make the system useful, and is not pulled forward.
   18.766), one region writable at one address and executable at another;
   **W2c, a thread suspended, its registers read and resumed, built**
   (0.11.372, 18.767) - **W2 is done**; W3, the POSIX layer inside the
-  process, next. Later: a released reservation's addresses reused.
+  process, next - **its line agreed 11 November** (Diego: "Amend the
+  principle"): the POSIX names inside a process for ported code, in
+  `runtime/posix/`, and `fork`, `exec`, signals, a global tree and
+  descriptors crossing processes still never (`design.md` §17.3). Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

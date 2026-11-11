@@ -1526,7 +1526,11 @@ The line was crossed the moment `fork`, signals, a global `/`, or a server handi
 
 **The rule that holds the line:** every libc I/O function is a call into the process's namespace and nothing else. `fopen("/Kosmos/Libraries/config")` resolves against what was mounted for it. If it does not have it, it fails. No fallback to a global tree, no special case.
 
-**Never:** `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, and all of `unistd.h`. If a port asks for one, patch the port.
+**Never:** `fork`, `exec`, signals, `ioctl`, a path reachable without the process's namespace, and a descriptor that crosses from one process to another. If a port asks for one, patch the port.
+
+**This line moved on 11 November 2026, and why is worth keeping.** It read "`fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, and all of `unistd.h`", which forbade the *names* along with the four assumptions of §17.1. JetSki (`docs/webkit.md`, W3) is WebKit, curl, ICU, FreeType and SQLite, every one of them written against POSIX, and the choice was a patch per library carried through every upgrade or the names inside the process. Diego chose the second: "Amend the principle". None of the four comes with them. A `socket()` that is a connection through the Network Kit the process was granted, a descriptor that is an index into a table private to the process, an `open` that resolves against its own namespace and fails where nothing is mounted, `poll` over those, pthreads on the futex, `mmap` on W2's reservations: no global tree, no ambient authority, no `fork`, no signals. **`pipe` inside a process** is two descriptors over a ring, and a pipe between processes stays forbidden, because a descriptor never crosses.
+
+**The cost is §17.1's second argument, gravity, and it is answered by where the layer lives, not by forbidding its names.** It is `runtime/posix/`, linked by ported code. Kosmos's own kits, servers and applications never include it and speak the Kosmos protocol; a Kosmos component reaching for `open` is a defect to remove, the way a second copy of a kit is (`CLAUDE.md`, *Kits supply*).
 
 **Patching a vendored port is a build step, not an edit.** Quake's
 `console.c` calls `unlink`, and its `-condebug` log calls `open`, `write` and
@@ -1573,4 +1577,4 @@ brings no C library with it, and the kernel's link does not have it.
 
 Computational libraries with little system surface: SQLite, `stb_*`, zlib, monocypher, interpreters for other languages, old game engines.
 
-What does not get ported: anything assuming processes, signals, BSD sockets or a global filesystem. Meaning, almost everything that is a Unix program rather than a library.
+What does not get ported: anything assuming other processes it can make, signals, or a global filesystem - meaning, still, most Unix *programs*. BSD sockets and descriptors inside a process are no longer on this list (§17.3, 11 November 2026), so a library that only opens its files and its connections - curl, WebKit - is.
