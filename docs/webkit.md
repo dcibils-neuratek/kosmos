@@ -1,12 +1,14 @@
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
-# WebKit on Kosmos - a browser as current as Safari
+# JetSki - WebKit on Kosmos, a browser as current as Safari
 
 Diego, 11 November 2026: "I need a new web browser that is current and
 usable like safari or chrome", "We need to port either one to kosmos and
 have a proper browser". Asked which, Chromium or WebKit: **WebKit**, and
 **design then build**. `docs/browser-engine.md` is the research it was
 chosen from; this is the design, written before any of it is built
-(`CLAUDE.md`, *How to work here*). Its window is `docs/webkit.html`, its
+(`CLAUDE.md`, *How to work here*). **Its name is JetSki** - Diego, 11
+November: "the browser should be called \"JetSki\" because us super fast!".
+Its window is `docs/webkit.html`, its
 diagram `docs/webkit-architecture.png`, drawn from
 `docs/webkit-architecture.html`.
 
@@ -26,7 +28,7 @@ Google Docs and Sheets, Gemini, Claude, YouTube, and a lot of browsing.**
   Super with a number goes to one, as the old browser's did.
 - **Back, forward, reload, stop**; a page's title and icon in its tab.
 - **Sign in and stay signed in**: cookies and site storage kept in
-  `/Home/Settings/Browser/`, per site, between runs; passwords offered from
+  `/Home/Settings/JetSki/`, per site, between runs; passwords offered from
   the keyring server, never stored by the browser itself.
 - **Watch video**: YouTube and any `<video>`, sound through the Playback
   Kit's audio path, full screen.
@@ -37,7 +39,7 @@ Google Docs and Sheets, Gemini, Claude, YouTube, and a lot of browsing.**
 - **Bookmarks and history**, searched from the address field.
 - **Open a link from anywhere**: Mail, Write, the cheat sheet. Each asks
   the window manager to launch `/Kosmos/Apps/browser.lua` with the address
-  (`mail.lua` 2367); that one door is kept, and opens this browser instead.
+  (`mail.lua` 2367); that one door is kept, and opens JetSki instead.
 - **Copy and paste**, text and pictures, with the rest of Kosmos.
 - **A page that hangs does not hang the browser**: each tab's page runs in
   a process of its own, and a crashed one shows a page saying so with
@@ -82,8 +84,8 @@ every piece: **does another application want this?**
 
 | Piece | Who supplies it | Language | Shared with |
 |---|---|---|---|
-| The window, tabs, address field, menus | **the Browser application**, Lua on the kit (`ui.lua`) | Lua | - |
-| WebKit's UI process: pages, history, sessions | `webkit.elf`, installed in `/Home/Apps/Browser` as Doom is | C++ | - |
+| The window, tabs, address field, menus | **JetSki, the application**, Lua on the kit (`ui.lua`) | Lua | - |
+| WebKit's UI process: pages, history, sessions | `jetski.elf`, installed in `/Home/Apps/JetSki` as Doom is | C++ | - |
 | Each page's web process | the same image, spawned with a role word (`SYS_SPAWN` hands a child its parent's image) | C++ | - |
 | The network process | the same image, another role | C++ | - |
 | **C++ itself** - libc++, libc++abi, unwinding, static constructors, `thread_local` | **new: the C++ runtime**, in `runtime/` beside the libc | C, C++ | every C++ port after it (llama.cpp, a game) |
@@ -119,7 +121,7 @@ data by shared memory*):
 of another process and Lua what runs for a person. WebKit is a third case,
 and is written down as one rather than drifted into: **C++ in one image
 only, the browser's**, because the engine is C++ and rewriting it is not an
-option. Nothing outside `webkit.elf` is C++, and no server becomes C++.
+option. Nothing outside `jetski.elf` is C++, and no server becomes C++.
 The window around it is Lua, as every application's is. The runtime and the
 POSIX layer are C (libc++ excepted), so other ports can use them.
 
@@ -127,7 +129,7 @@ POSIX layer are C (libc++ excepted), so other ports can use them.
 
 A wheel turn on a long page with pictures (W - the diagram's path):
 
-1. **W1** The window manager hands the Browser window the wheel; the Lua
+1. **W1** The window manager hands JetSki's window the wheel; the Lua
    window passes it to the UI process as a message - no Lua on the frame
    after this.
 2. **W2** The UI process scrolls what it already has (WebKit's scrolling
@@ -196,7 +198,7 @@ on this Mac. WebKit's MiniBrowser is the reference.
 
 **W7 - WebKit2 and the window.** `IPC::Connection` on endpoints and
 regions, the process launcher on `SYS_SPAWN` with a role, the three
-processes; then the Browser window of `docs/webkit.html`, with keys, the
+processes; then JetSki's window, `docs/webkit.html`, with keys, the
 pointer, the wheel, the clipboard and text input.
 
 **W8 - the sites.** Networking through curl and TLS; cookies and storage;
@@ -266,6 +268,7 @@ numbers):
    Its own step, after W5: the TLS Kit's callers held to the same tests
    before and after.
 4. **Fast, and on the GPU when it pays** (*Fast*, above).
+5. **Its name is JetSki**, "because [it] is super fast".
 
 ## Still open
 

@@ -10006,7 +10006,8 @@ the applications make the system useful, and is not pulled forward.
   wanted is by where the page came from - a page from the network may not
   open one from this machine - and it is checked where the link is
   followed, for both engines at once.
-- **WebKit, ported natively - AGREED on 11 November 2026.** Diego: "I need a
+- **JetSki - WebKit, ported natively - AGREED on 11 November 2026.** Named
+  JetSki by Diego the same day: "because us super fast!". Diego: "I need a
   new web browser that is current and usable like safari or chrome", "We need
   to port either one to kosmos and have a proper browser"; asked Chromium or
   WebKit, **WebKit** after its PlayStation port (curl, Skia on the processor,
@@ -10027,7 +10028,7 @@ the applications make the system useful, and is not pulled forward.
   headless into a region; **W7 WebKit2** - its UI, web and network processes
   on endpoints and regions - and **the window**; **W8 the sites**: Gmail,
   Docs, Claude, Gemini, YouTube by MSE on the FFmpeg kit. The image ceiling
-  goes with W1 (the browser is an installed `webkit.elf`, as Doom is).
+  goes with W1 (JetSki is an installed `jetski.elf`, as Doom is).
   **The design agreed on 11 November** (Diego: "yes go ahead, tabs in the
   band, openssl", and "make sure is blazing fast, optimized and renders on the
   gpu when needed for extra speed"): tabs in the window's band; **OpenSSL as

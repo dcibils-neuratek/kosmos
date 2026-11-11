@@ -14,7 +14,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kosmos WebKit architecture</title>
+<title>JetSki architecture</title>
 <style>
   @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
   @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
@@ -64,7 +64,7 @@
 </style>
 </head>
 <body>
-<h1>WebKit on Kosmos - what it stands on</h1>
+<h1>JetSki - WebKit on Kosmos, what it stands on</h1>
 <p class="sub">WebKit, after its PlayStation and Windows ports: Skia on the processor, curl, JavaScriptCore with no JIT, no GLib and no GPU process. Its three processes are one C++ image that Kosmos spawns with a role each; they talk over endpoints, and pixels, network bodies and video frames cross in regions. POSIX lives inside those processes and nowhere else.</p>
 <div class="legend">
   <span><i style="border-color:var(--new);background:#fff"></i>new</span>
@@ -79,15 +79,15 @@
   <div>
     <div class="layer app"><h2>The application</h2>
       <div class="row" style="grid-template-columns:2fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>Browser - the window, in Lua</b><p>tabs, the address field, menus, downloads, find, zoom; on the kit (<code>ui.lua</code>). Passes keys, the pointer and the wheel to the UI process <span class="f">W1</span>, and shows the surface it is handed</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>JetSki - the window, in Lua</b><p>tabs, the address field, menus, downloads, find, zoom; on the kit (<code>ui.lua</code>). Passes keys, the pointer and the wheel to the UI process <span class="f">W1</span>, and shows the surface it is handed</p></div>
         <div class="box"><b>Mail, Write, the cheat sheet</b><p>open a link through the window manager's launch, as today</p></div>
       </div>
     </div>
-    <div class="layer c"><h2>WebKit - one image, <code>webkit.elf</code>, three roles (C++)</h2>
+    <div class="layer c"><h2>WebKit - one image, <code>jetski.elf</code>, three roles (C++)</h2>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr">
         <div class="box new"><span class="tag">NEW</span><b>UI process</b><p>pages, sessions, history; the scrolling tree on its own thread <span class="f">W2</span>; asks for tiles <span class="f">W3</span></p></div>
         <div class="box new"><span class="tag">NEW</span><b>web process, one a tab</b><p>WebCore - layout, style, DOM - and JavaScriptCore's LLInt, no JIT; paints tiles with Skia <span class="f">W4</span></p></div>
-        <div class="box new"><span class="tag">NEW</span><b>network process</b><p>curl; cookies and site data in SQLite under <code>/Home/Settings/Browser</code></p></div>
+        <div class="box new"><span class="tag">NEW</span><b>network process</b><p>curl; cookies and site data in SQLite under <code>/Home/Settings/JetSki</code></p></div>
       </div>
       <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
         <div class="box new"><span class="tag">NEW</span><b><code>IPC::Connection</code> for Kosmos</b><p>messages on endpoints; WebKit's shared memory as regions</p></div>
@@ -126,7 +126,7 @@
   </div>
   <div class="side">
     <div class="card"><h3>W - a scroll on a heavy page</h3>
-      <ol><li><b>W1</b> The wheel reaches the Browser window; it becomes a message to the UI process.</li>
+      <ol><li><b>W1</b> The wheel reaches JetSki's window; it becomes a message to the UI process.</li>
           <li><b>W2</b> The UI process scrolls the tiles it already has - the screen moves at once.</li>
           <li><b>W3</b> It asks the tab's web process for the tiles newly in view.</li>
           <li><b>W4</b> Layout if needed, then Skia paints them into the shared region.</li>
