@@ -22,17 +22,19 @@
 #include "kosmos.h"
 #include "netproto.h"
 
+/*
+ * Set once, before any thread asks: the runner hands it over as it hands
+ * the Storage Kit its mounts. Everything else this kit keeps is either the
+ * caller's (a `struct net_conn`, one thread's at a time) or behind
+ * `polls_lock` below, so any thread of a process may use it (`w3.md` W3e).
+ * There was a `net_client_last`, the last answer as a global; nothing
+ * called it, and two threads would have read each other's.
+ */
 static long net = -1;
-static uint32_t last = NET_OK;
 
 void net_client_start(long net_cap)
 {
     net = net_cap;
-}
-
-uint32_t net_client_last(void)
-{
-    return last;
 }
 
 /* One exchange with the stack. */
@@ -45,12 +47,10 @@ static int ask(const struct net_request *req, struct net_reply *rep, struct mess
     memcpy(msg.data, req, sizeof(*req));
 
     if (net < 0 || kosmos_call(net, &msg, out) != 0 || out->length < sizeof(*rep)) {
-        last = ~0u;
         return 0;
     }
 
     memcpy(rep, out->data, sizeof(*rep));
-    last = rep->status;
     return 1;
 }
 
@@ -59,8 +59,23 @@ uint32_t net_client_connect(struct net_conn *c, const uint8_t address[4], uint16
     return net_client_connect_ring(c, address, port, 0);
 }
 
+static uint32_t connect_with(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                             uint32_t ring_bytes, uint32_t flags);
+
 uint32_t net_client_connect_ring(struct net_conn *c, const uint8_t address[4], uint16_t port,
                                  uint32_t ring_bytes)
+{
+    return connect_with(c, address, port, ring_bytes, NET_CONNECT_AT_ONCE);
+}
+
+uint32_t net_client_connect_wait(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                                 uint32_t ring_bytes)
+{
+    return connect_with(c, address, port, ring_bytes, 0);
+}
+
+static uint32_t connect_with(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                             uint32_t ring_bytes, uint32_t flags)
 {
     struct net_request req;
     struct net_reply rep;
@@ -72,13 +87,13 @@ uint32_t net_client_connect_ring(struct net_conn *c, const uint8_t address[4], u
 
     memset(&req, 0, sizeof(req));
     req.op    = NET_OP_CONNECT;
-    req.flags = NET_CONNECT_AT_ONCE;
+    req.flags = flags;
     req.port  = port;
     req.ring_bytes = ring_bytes;
     memcpy(req.to.byte, address, 4);
 
     if (!ask(&req, &rep, &out)) {
-        return last;
+        return ~0u;
     }
 
     if (rep.status != NET_OK || out.cap_plus_one == 0) {
@@ -199,6 +214,20 @@ int net_client_over(const struct net_conn *c)
     return !c->open || tcp_ring_acquire(&c->ring->closed) != 0;
 }
 
+void net_client_shutdown(struct net_conn *c)
+{
+    if (c->open) {
+        struct net_request req;
+        struct net_reply rep;
+        struct message out;
+
+        memset(&req, 0, sizeof(req));
+        req.op     = NET_OP_CLOSE;
+        req.handle = c->handle;
+        (void)ask(&req, &rep, &out);
+    }
+}
+
 void net_client_close(struct net_conn *c)
 {
     if (c->open) {
@@ -265,7 +294,7 @@ uint32_t net_client_resolve(const char *name, uint8_t address[4], uint32_t wait_
     memcpy(req.payload, name, n);
 
     if (!ask(&req, &rep, &out)) {
-        return last;
+        return ~0u;
     }
 
     if (rep.status == NET_OK) {
@@ -286,7 +315,7 @@ uint32_t net_client_listen(uint16_t port, uint64_t *listener)
     req.port = port;
 
     if (!ask(&req, &rep, &out)) {
-        return last;
+        return ~0u;
     }
 
     if (rep.status == NET_OK) {
@@ -312,7 +341,7 @@ uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_co
     req.wait_ticks = wait_ticks;
 
     if (!ask(&req, &rep, &out)) {
-        return last;
+        return ~0u;
     }
 
     if (rep.status != NET_OK || out.cap_plus_one == 0) {
@@ -347,7 +376,7 @@ uint32_t net_client_address(uint8_t address[4], uint8_t netmask[4])
     req.op = NET_OP_INFO;
 
     if (!ask(&req, &rep, &out)) {
-        return last;
+        return ~0u;
     }
 
     if (rep.status == NET_OK) {
@@ -359,54 +388,122 @@ uint32_t net_client_address(uint8_t address[4], uint8_t netmask[4])
 }
 
 /*
- * The poll set's region: made the first time, made again twice as big when
- * a wait asks for more entries than it holds, never given back - one per
- * process, the size of the most it ever waited on.
+ * The poll sets' regions. A wait parks in the stack for as long as it is
+ * allowed, so one region behind a lock would make every other thread's
+ * poll wait behind it; instead each wait borrows a region of its own for
+ * the length of the call. Up to POLL_KEPT are kept and lent again - one
+ * thread polling in a loop makes one, once, as it always did - and a wait
+ * that finds them all lent makes one for itself and gives it back after.
+ * The lock is held only to lend and to return, never across the call.
  */
-static struct net_poll_entry *poll_at;
-static long poll_region = -1;
-static uint32_t poll_room;
+#define POLL_KEPT 8
+
+struct poll_region {
+    struct net_poll_entry *at;
+    long     region;               /* -1: not made yet */
+    uint32_t room;                 /* entries it holds */
+    uint32_t pages;
+    int      lent;
+};
+
+static kosmos_lock_t polls_lock;
+static struct poll_region polls[POLL_KEPT] = {
+    [0 ... POLL_KEPT - 1] = { .region = -1 },
+};
+
+static void poll_drop(struct poll_region *p)
+{
+    if (p->region >= 0 &&
+        kosmos_share_unmap((unsigned long)(uintptr_t)p->at, p->pages) == 0) {
+        (void)kosmos_cap_drop(p->region);
+    }
+
+    p->region = -1;
+    p->at = 0;
+    p->room = 0;
+}
+
+static int poll_make(struct poll_region *p, uint32_t n)
+{
+    unsigned long pages = ((unsigned long)n * sizeof(struct net_poll_entry) + 4095u) / 4096u;
+    long region, at;
+
+    if (pages < 1) {
+        pages = 1;
+    }
+
+    region = kosmos_mem_create(pages);
+
+    if (region < 0) {
+        return 0;
+    }
+
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        return 0;
+    }
+
+    p->region = region;
+    p->at = (struct net_poll_entry *)(uintptr_t)at;
+    p->pages = (uint32_t)pages;
+    p->room = (uint32_t)(pages * 4096u / sizeof(struct net_poll_entry));
+    return 1;
+}
+
+/* A kept region for this wait, or 0 when every one is lent. */
+static struct poll_region *poll_borrow(void)
+{
+    struct poll_region *p = 0;
+    unsigned i;
+
+    kosmos_lock(&polls_lock);
+
+    for (i = 0; i < POLL_KEPT && p == 0; i++) {
+        if (!polls[i].lent) {
+            polls[i].lent = 1;
+            p = &polls[i];
+        }
+    }
+
+    kosmos_unlock(&polls_lock);
+    return p;
+}
+
+static void poll_return(struct poll_region *p)
+{
+    kosmos_lock(&polls_lock);
+    p->lent = 0;
+    kosmos_unlock(&polls_lock);
+}
 
 uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks)
 {
     struct net_request req;
     struct net_reply rep;
     struct message msg, out;
-    uint32_t i;
+    struct poll_region own = { .region = -1 };
+    struct poll_region *p = poll_borrow();
+    uint32_t i, status;
 
-    if (n > poll_room) {
-        unsigned long pages = ((unsigned long)n * sizeof(*set) + 4095u) / 4096u;
-        long region, at;
+    if (p == 0) {
+        p = &own;
+    }
 
-        if (pages < 1) {
-            pages = 1;
+    /* Too small: made again, big enough - a kept one keeps the bigger. */
+    if (n > p->room) {
+        poll_drop(p);
+
+        if (!poll_make(p, n)) {
+            status = NET_ERR_FULL;
+            goto done;
         }
-
-        region = kosmos_mem_create(pages);
-
-        if (region < 0) {
-            return last = NET_ERR_FULL;
-        }
-
-        at = kosmos_mem_map(region);
-
-        if (at < 0) {
-            (void)kosmos_cap_drop(region);
-            return last = NET_ERR_FULL;
-        }
-
-        if (poll_region >= 0) {
-            (void)kosmos_cap_drop(poll_region);
-        }
-
-        poll_region = region;
-        poll_at = (struct net_poll_entry *)(uintptr_t)at;
-        poll_room = (uint32_t)(pages * 4096u / sizeof(*set));
     }
 
     for (i = 0; i < n; i++) {
-        poll_at[i] = set[i];
-        poll_at[i].got = 0;
+        p->at[i] = set[i];
+        p->at[i].got = 0;
     }
 
     memset(&req, 0, sizeof(req));
@@ -416,22 +513,29 @@ uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_t
 
     memset(&msg, 0, sizeof(msg));
     msg.length = sizeof(req);
-    msg.cap_plus_one = (uint32_t)(poll_region + 1);
+    msg.cap_plus_one = (uint32_t)(p->region + 1);
     memcpy(msg.data, &req, sizeof(req));
 
     if (net < 0 || kosmos_call(net, &msg, &out) != 0 || out.length < sizeof(rep)) {
-        return last = ~0u;
+        status = ~0u;
+        goto done;
     }
 
     memcpy(&rep, out.data, sizeof(rep));
-    last = rep.status;
+    status = rep.status;
 
     if (rep.status == NET_OK) {
         for (i = 0; i < n; i++) {
-            set[i].got = poll_at[i].got;
+            set[i].got = p->at[i].got;
         }
     }
 
-    return rep.status;
-}
+done:
+    if (p == &own) {
+        poll_drop(&own);
+    } else {
+        poll_return(p);
+    }
 
+    return status;
+}

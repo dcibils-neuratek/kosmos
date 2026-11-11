@@ -10082,7 +10082,10 @@ the applications make the system useful, and is not pulled forward.
   the layer is linked. **W3d4, one door, built** (18.774): the
   namespace's copies of the disk's and memory store's wire layouts gone,
   `sys.disk_call` and `sys.ram_call` asking through `diskask` and a new
-  `ramask`. W3e, sockets and `poll` on `netclient.c`, next.
+  `ramask`. **W3e, sockets and `poll`, built** (18.775): sockets as
+  descriptors on `netclient.c`, now safe for threads, `poll` over sockets
+  and files, `getaddrinfo` on the stack's resolver; `SOCK_DGRAM`, IPv6
+  and `select` wait for a port that asks. W3f next.
   **A follow-up from W3d4**: *a suite the gate stops leaves its folder*.
   On 11 November twelve `kosmos-*` folders under the Mac's temporary
   directory held 3 GB - each the disk of a run the gate stopped for

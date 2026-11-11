@@ -31,6 +31,7 @@
 #include "storage.h"
 #include "diskask.h"
 #include "ramask.h"
+#include "kits/network/netclient.h"
 
 /* The two definitions of struct message are one contract written twice, so
  * the agreement is checked rather than assumed. A silent disagreement would
@@ -3133,7 +3134,13 @@ static int l_ram_call(lua_State *L)
  * "disk", "ram" or "bin", and everything else left out. True, or nil and
  * the kit's error: a second call is refused, so what a program hands it
  * later reaches nothing.
+ *
+ * `/Network`, proto "net", travels in the same table and goes to the
+ * network kit instead (`net_client_start`): it is what a ported library's
+ * `socket` reaches (W3e), and only the first call hands it over.
  */
+static int storage_started;
+
 static int l_storage_start(lua_State *L)
 {
     struct storage_mount m[STORAGE_MOUNTS_MAX];
@@ -3168,7 +3175,18 @@ static int l_storage_start(lua_State *L)
 
         if (prefix != NULL && plen > 0 && plen < STORAGE_PREFIX_MAX
             && rlen < STORAGE_ROOT_MAX && proto != NULL && cap >= 0) {
-            uint32_t kind = strcmp(proto, "disk") == 0 ? STORAGE_DISK
+            uint32_t kind;
+
+            if (strcmp(proto, "net") == 0) {
+                if (!storage_started && strcmp(prefix, "/Network") == 0) {
+                    net_client_start((long)cap);
+                }
+
+                lua_pop(L, 5);
+                continue;
+            }
+
+            kind = strcmp(proto, "disk") == 0 ? STORAGE_DISK
                           : strcmp(proto, "ram") == 0 ? STORAGE_RAM
                           : strcmp(proto, "bin") == 0 ? STORAGE_BIN : 0;
 
@@ -3185,6 +3203,7 @@ static int l_storage_start(lua_State *L)
     }
 
     r = storage_start(m, count, luaL_optstring(L, 2, "/"));
+    storage_started = 1;
 
     if (r != STORAGE_OK) {
         lua_pushnil(L);

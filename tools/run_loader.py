@@ -195,6 +195,103 @@ local kit = use("posixtest.elf")
 print("storagetest: " .. kit.storage())
 """
 
+# **Sockets** (`docs/w3.md` W3e), from the same image: a web server here on
+# the host, reached as 10.0.2.2 through QEMU's network, a port nobody
+# answers, and a listener in the guest that the host calls through QEMU's
+# port forward. `needs network` is what gives the program `/Network`.
+SOCKET_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The sockets' test program (`tools/run_loader.py`).
+-- kosmos: image posixtest.elf
+-- kosmos: needs network
+local kit = use("posixtest.elf")
+print("sockettest: " .. kit.sockets("10.0.2.2", %d, %d, %d))
+"""
+
+GUEST_LISTENS = 7070                # and 7071, which nobody calls
+
+
+def free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+WEB_PORT, REFUSED_PORT, CALLER_PORT = free_port(), free_port(), free_port()
+caller_heard = [None]
+
+
+def serve_web():
+    """The guest's /big and /small/N, HTTP/1.0, one thread a connection."""
+    import socket
+    import threading
+
+    big = bytes(i % 251 for i in range(200000))
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", WEB_PORT))
+    server.listen(16)
+
+    def one(c):
+        try:
+            c.settimeout(60)
+            request = b""
+            while b"\r\n\r\n" not in request:
+                part = c.recv(4096)
+                if not part:
+                    return
+                request += part
+            path = request.split(b" ")[1].decode()
+            if path == "/big":
+                body = big
+            elif path.startswith("/small/"):
+                body = bytes([65 + int(path[7:])]) * 30000
+            else:
+                body = b""
+            c.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: %d\r\n\r\n" % len(body) + body)
+        except (OSError, ValueError, IndexError):
+            pass
+        finally:
+            c.close()
+
+    def accept():
+        while True:
+            c, _ = server.accept()
+            threading.Thread(target=one, args=(c,), daemon=True).start()
+
+    threading.Thread(target=accept, daemon=True).start()
+
+
+def call_guest():
+    """Calls the guest's listener until it answers: QEMU takes the call at
+    once and hangs it up while nobody listens there yet. A call that is
+    not hung up waits as long as the guest may take to reach its `accept`,
+    which is after everything else it checks - a caller that gave up sooner
+    left the guest answering a call nobody was on any more."""
+    import socket
+
+    until = time.time() + 600
+    while time.time() < until and caller_heard[0] is None:
+        try:
+            c = socket.create_connection(("127.0.0.1", CALLER_PORT), timeout=300)
+            c.sendall(b"ping\n")
+            heard = b""
+            while len(heard) < 5:
+                part = c.recv(16)
+                if not part:
+                    break
+                heard += part
+            c.close()
+            if heard == b"pong\n":
+                caller_heard[0] = heard
+                return
+        except OSError:
+            pass
+        time.sleep(1)
+
+
 # GCC's images only, as C++'s: TinyCC's have no `_Thread_local`, which
 # `pthread.c` is built on.
 posix_files = []
@@ -215,7 +312,10 @@ if CXX:
     with open(os.path.join(WORK, "storagetest.lua"), "w") as f:
         f.write(STORAGE_PROGRAM)
 
-    posix_files = ["posixtest.lua", "storagetest.lua", "posixtest.elf"]
+    with open(os.path.join(WORK, "sockettest.lua"), "w") as f:
+        f.write(SOCKET_PROGRAM % (WEB_PORT, REFUSED_PORT, GUEST_LISTENS))
+
+    posix_files = ["posixtest.lua", "storagetest.lua", "sockettest.lua", "posixtest.elf"]
 
 #
 # **Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image in one
@@ -259,14 +359,30 @@ os.environ["KOSMOS_DISK"] = HOME_DISK
 
 import run_screenshot as R                                   # noqa: E402
 
+# A network card, for the sockets: QEMU's own, with its router - the host -
+# at 10.0.2.2, and the guest's listener forwarded to a port here.
+if CXX:
+    NIC = ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:%d-:%d" % (CALLER_PORT, GUEST_LISTENS),
+           "-device", R.device(IMAGE, "net") + ",netdev=net0"]
+    if X86:
+        R.X86_ARGS = R.X86_ARGS + NIC
+    else:
+        R.QEMU_ARGS = R.QEMU_ARGS + NIC
+
 
 def main():
+    if CXX:
+        import threading
+        serve_web()
+        threading.Thread(target=call_guest, daemon=True).start()
+
     guest = R.Guest(IMAGE, 120)
     failed = []
     checks = 0
     times = []
     posix_said = [None]
     storage_said = [None]
+    socket_said = [None]
 
     def check(ok, complaint):
         nonlocal checks
@@ -405,6 +521,23 @@ def main():
               and said.endswith(" programs, read only; crosses refused; 4 threads"),
               "the Storage Kit's checks in posixtest.elf did not all hold: %r" % said)
 
+        said = None
+
+        if CXX:
+            said, _ = run("sockettest", "sockettest:", 180)
+
+        socket_said[0] = said if CXX else "not in TinyCC's images"
+        check(not CXX or said == "sockettest: sockets: names, fetched 200000, two under "
+                                 "poll, four threads, refused, timed out, accepted, descriptors",
+              "the sockets' checks in posixtest.elf did not all hold: %r" % said)
+        # The guest has answered by now, and the caller's thread may not
+        # have read the answer yet: a few seconds for it to.
+        heard_by = time.monotonic() + 10
+        while CXX and caller_heard[0] is None and time.monotonic() < heard_by:
+            time.sleep(0.2)
+        check(not CXX or caller_heard[0] == b"pong\n",
+              "the harness's call to the guest's listener was never answered")
+
         said, _ = run("plain", "apptest", 60)
         check(said is not None and "not running in apptest.elf" in said,
               "plain.lua, in the system's image, found the apptest kit: %r" % said)
@@ -502,6 +635,11 @@ def main():
     finally:
         guest.close()
 
+    # What the guest said, kept when somebody asks for it.
+    if os.environ.get("KOSMOS_LOADER_SERIAL"):
+        with open(os.environ["KOSMOS_LOADER_SERIAL"], "w") as f:
+            f.write(guest.seen)
+
     if failed:
         print("FAIL: %d of %d checks on programs from a file:" % (len(failed), checks))
         for f in failed:
@@ -515,10 +653,11 @@ def main():
           "Quake, installed in /Home/Apps, each found by its name and run in its "
           "own image, %.1f s and %.1f s; and the Super Nintendo's --scale, from "
           "its image, through the window manager; the POSIX layer's checks: %s; "
-          "and the Storage Kit's: %s)"
+          "the Storage Kit's: %s; and the sockets': %s)"
           % (checks, len(whole) / 1e6, times[0], times[1], times[2], times[3],
              (posix_said[0] or "").replace("posixtest: posix: ", ""),
-             (storage_said[0] or "").replace("storagetest: storage: ", "")))
+             (storage_said[0] or "").replace("storagetest: storage: ", ""),
+             (socket_said[0] or "").replace("sockettest: sockets: ", "")))
     return 0
 
 

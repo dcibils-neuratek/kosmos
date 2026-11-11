@@ -31794,3 +31794,50 @@ bit as a hang, not a sentence: `x86-loader` gave no answer in 720 s and
 the gate stopped waiting, because the system that reads `/Home` through
 regions cannot read its own images without them. Caught, and caught late:
 a broken `/Home` stops a guest before it can say what broke.
+
+## 18.775 Sockets and `poll` for ported code (JetSki W3e)
+
+`docs/w3.md` W3e. Ported code gets `socket`, `connect`, `bind`, `listen`,
+`accept`, `send`, `recv`, `shutdown`, the options curl sets, `getaddrinfo`
+on the stack's resolver, and `poll` over sockets, files and the console
+together - in `runtime/posix/socket.c`, with a socket a descriptor in
+`fd.c`'s table, on the network kit and the `/Network` the program was
+given. Beneath it, `netclient.c` made safe for several threads: the
+shared last answer gone (nothing read it), and the poll set's region lent
+to one wait at a time from eight kept, so no thread's `poll` waits behind
+another's. `/Network` reaches C in the runner's one handover, beside the
+mounts. Two additions to the kit: `net_client_connect_wait`, the stack's
+parked connect, so a blocking `connect` can say it was refused, and
+`net_client_shutdown`, the FIN with the ring kept.
+
+**Test**: `x86-loader` gained a network card - QEMU's, the host at
+10.0.2.2 - and the harness a web server and a caller. `sockettest.lua`
+(`needs network`) in `posixtest.elf` says, when everything held: *names,
+fetched 200000, two under poll, four threads, refused, timed out,
+accepted, descriptors* - a numeric `getaddrinfo` and a name refused with
+`AI_NUMERICHOST`; 200000 bytes read to the end with `read(2)`, each the
+server's pattern; two non-blocking connections, `EINPROGRESS` and
+`EAGAIN`, driven by `poll` to their ends with each body its own; four
+threads fetching at once; `ECONNREFUSED` from a port nobody answers and
+`ENOTCONN` after; `poll` on a listener nobody calls answering 0 after 200
+ms; `fstat` a socket, `lseek` `ESPIPE`, `send` on a file `ENOTSOCK`; and a
+listener the host calls through QEMU's port forward, `ping` in and `pong`
+out, which the harness checks it heard. 22 checks, 11 s.
+
+**Found on the way, by the suite's first run**: `open` made its file
+with `malloc`, so `sock`, a field added for this, started as whatever the
+memory held - `posixtest` panicked on its first files and said nothing,
+its console refused. `calloc` now, with a comment saying why; and `take`
+read the file after letting go of the lock, which it no longer does. And
+the harness's caller gave up on a call after 5 s while the guest reaches
+`accept` only after everything else, so the guest answered a call nobody
+was on any more; it waits 300 s now.
+
+**Controls**: a blocking `connect` that does not wait for the handshake
+bit - *a port nobody answers was errno 11, not ECONNREFUSED*; and the
+runner not handing `/Network` to C bit - *connect to 10.0.2.2: errno 13*,
+EACCES, what a program not given the network gets.
+
+**Gate**: 111 of 112 in 611 s. `x86-pdfview` read Shift-Return as two
+steps back under the gate's load (*match 9 of 12* for the 7th) - a key
+path this does not touch - and alone passed its 38 in 37 s.

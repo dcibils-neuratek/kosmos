@@ -3469,12 +3469,15 @@ local function new_namespace()
   -- What the Storage Kit may reach (`docs/w3.md` W3d): the mounts whose
   -- servers speak a file protocol the kit knows, with what `resolve` would
   -- send them. Handed over once, by the runner, with `sys.storage_start`.
+  -- `/Network` goes with them when this program was given one: what a
+  -- ported library's `socket` reaches (W3e), and nothing else.
   --
   function ns.storage_mounts()
     local out = {}
     for _, m in ipairs(mounts) do
       if math.type(m.cap) == "integer"
-         and (m.proto == "disk" or m.proto == "ram" or m.proto == "bin") then
+         and (m.proto == "disk" or m.proto == "ram" or m.proto == "bin"
+              or (m.proto == "net" and m.prefix == "/Network")) then
         out[#out + 1] = { prefix = m.prefix, cap = m.cap, root = m.root, proto = m.proto }
       end
     end

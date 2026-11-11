@@ -15,6 +15,8 @@
 
 int kosmos_posixtest_run(char *out, unsigned long size);
 int kosmos_storagetest_run(char *out, unsigned long size);
+int kosmos_sockettest_run(char *out, unsigned long size, const char *host, int port,
+                          int refused_port, int listen_port);
 
 static void ends(unsigned long arg)
 {
@@ -76,6 +78,19 @@ static int l_storage(lua_State *L)
     return 1;
 }
 
+/* `kit.sockets(host, port, refused_port, listen_port)`: the sockets'
+ * checks against the harness's server (`sockettest.c`). */
+static int l_sockets(lua_State *L)
+{
+    char said[512];
+
+    (void)kosmos_sockettest_run(said, sizeof(said), luaL_checkstring(L, 1),
+                                (int)luaL_checkinteger(L, 2), (int)luaL_checkinteger(L, 3),
+                                (int)luaL_checkinteger(L, 4));
+    lua_pushstring(L, said);
+    return 1;
+}
+
 void kosmos_posixtest_kit(lua_State *L)
 {
     lua_newtable(L);
@@ -83,4 +98,6 @@ void kosmos_posixtest_kit(lua_State *L)
     lua_setfield(L, -2, "run");
     lua_pushcfunction(L, l_storage);
     lua_setfield(L, -2, "storage");
+    lua_pushcfunction(L, l_sockets);
+    lua_setfield(L, -2, "sockets");
 }

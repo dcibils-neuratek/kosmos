@@ -35,8 +35,6 @@ void     net_client_start(long net_cap);
  * why not. All zeroes while it has none. */
 uint32_t net_client_address(uint8_t address[4], uint8_t netmask[4]);
 
-/* The last answer the network server gave, `NET_OK` or a `NET_ERR_*`. */
-uint32_t net_client_last(void);
 
 /*
  * A connection to `address` (four bytes, in order) at `port`, begun and
@@ -51,6 +49,15 @@ uint32_t net_client_connect(struct net_conn *c, const uint8_t address[4], uint16
 uint32_t net_client_connect_ring(struct net_conn *c, const uint8_t address[4], uint16_t port,
                                  uint32_t ring_bytes);
 
+/* The same, answered only when the connection is open - `NET_OK` - or has
+ * failed: `NET_ERR_REFUSED`, `NET_ERR_TIMEOUT`, `NET_ERR_UNREACHABLE`. The
+ * two above answer at once with the connection still opening, and a
+ * refusal shows as a ring closed before anything arrived; this is the
+ * blocking `connect` of the POSIX layer's sockets (W3e), which has to say
+ * which it was. */
+uint32_t net_client_connect_wait(struct net_conn *c, const uint8_t address[4], uint16_t port,
+                                 uint32_t ring_bytes);
+
 /* Bytes to send: how many the ring took (0 when it is full), -1 when the
  * connection is over. The stack is told there is something to send. */
 long     net_client_write(struct net_conn *c, const void *p, size_t n);
@@ -61,6 +68,10 @@ long     net_client_read(struct net_conn *c, void *buf, size_t max);
 
 /* Whether the far end has finished (bytes may still be left to read). */
 int      net_client_over(const struct net_conn *c);
+
+/* This end done sending - a FIN, once the ring has gone out - with the
+ * ring kept, so what the far end still says can be read: `shutdown`. */
+void     net_client_shutdown(struct net_conn *c);
 
 /* This end done, and the ring given back. */
 void     net_client_close(struct net_conn *c);

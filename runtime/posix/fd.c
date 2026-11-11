@@ -20,6 +20,11 @@
  * it, asks with neither held, and moves the offset after. Two threads
  * reading one descriptor at once may therefore both read from the same
  * place, which POSIX leaves to the caller.
+ *
+ * **A socket is a descriptor too** (W3e): an open file whose `sock` is set
+ * and whose path is empty. `read`, `write`, `close`, `dup` and `fcntl` work
+ * on it as on a file, `socket.c` does the rest, and the calls that need a
+ * position - `pread`, `lseek` - say `ESPIPE`, as they do on Linux.
  */
 
 #include <dirent.h>
@@ -36,6 +41,7 @@
 #include <unistd.h>
 
 #include "kosmos.h"
+#include "posix.h"
 #include "storage.h"
 
 #define CONSOLE 3                       /* 0, 1 and 2 */
@@ -44,6 +50,7 @@ struct open_file {
     int      refs;
     int      flags;                     /* O_ACCMODE, O_APPEND, O_NONBLOCK */
     int      dir;
+    struct posix_socket *sock;          /* a socket's, NULL for a file */
     uint64_t offset;
     char     path[STORAGE_PATH_MAX];
 };
@@ -151,11 +158,14 @@ struct taken {
 static int take(int fd, struct taken *t)
 {
     struct open_file *f;
+    int is_socket = 0;
 
     pthread_mutex_lock(&lock);
     f = file_of(fd);
 
-    if (f != NULL) {
+    if (f != NULL && f->sock != NULL) {
+        is_socket = 1;
+    } else if (f != NULL) {
         t->flags = f->flags;
         t->dir = f->dir;
         t->offset = f->offset;
@@ -163,7 +173,82 @@ static int take(int fd, struct taken *t)
     }
 
     pthread_mutex_unlock(&lock);
-    return f != NULL ? 0 : fails(EBADF);
+
+    if (f == NULL) {
+        return fails(EBADF);
+    }
+
+    return is_socket ? fails(ESPIPE) : 0;
+}
+
+/*
+ *--------------------------------------------------------------------------
+ * Sockets' doors into the table (`posix.h`).
+ */
+
+int posix_fd_socket_new(struct posix_socket *s, int flags)
+{
+    struct open_file *f = calloc(1, sizeof(*f));
+    int fd;
+
+    if (f == NULL) {
+        return fails(ENOMEM);
+    }
+
+    f->refs = 1;
+    f->flags = O_RDWR | (flags & O_NONBLOCK);
+    f->sock = s;
+
+    pthread_mutex_lock(&lock);
+    fd = free_slot(CONSOLE);
+
+    if (fd >= 0) {
+        slots[fd].file = f;
+        slots[fd].cloexec = (flags & O_CLOEXEC) != 0;
+    }
+
+    pthread_mutex_unlock(&lock);
+
+    if (fd < 0) {
+        free(f);
+        return fails(EMFILE);
+    }
+
+    return fd;
+}
+
+struct posix_socket *posix_fd_socket(int fd, int *flags)
+{
+    struct open_file *f;
+    struct posix_socket *s = NULL;
+
+    pthread_mutex_lock(&lock);
+    f = file_of(fd);
+
+    if (f != NULL && f->sock != NULL) {
+        s = f->sock;
+
+        if (flags != NULL) {
+            *flags = f->flags;
+        }
+    }
+
+    pthread_mutex_unlock(&lock);
+    return s;
+}
+
+int posix_fd_open(int fd)
+{
+    int open_now;
+
+    if (fd >= 0 && fd < CONSOLE) {
+        return 1;
+    }
+
+    pthread_mutex_lock(&lock);
+    open_now = file_of(fd) != NULL;
+    pthread_mutex_unlock(&lock);
+    return open_now;
 }
 
 /* `fd`'s offset set to `to`, if it is still the file it was. */
@@ -253,7 +338,8 @@ int open(const char *path, int flags, ...)
         }
     }
 
-    if ((f = malloc(sizeof(*f))) == NULL) {
+    /* Zeroed, so a field added later - `sock` was - starts as nothing. */
+    if ((f = calloc(1, sizeof(*f))) == NULL) {
         return fails(ENOMEM);
     }
 
@@ -314,6 +400,10 @@ int close(int fd)
 
     if (fd < 0) {
         return fails(EBADF);
+    }
+
+    if (f != NULL && f->sock != NULL) {
+        posix_socket_close(f->sock);
     }
 
     free(f);
@@ -462,8 +552,10 @@ ssize_t pread(int fd, void *buf, size_t bytes, off_t offset)
 
 ssize_t read(int fd, void *buf, size_t bytes)
 {
+    struct posix_socket *s;
     struct taken t;
     ssize_t n;
+    int flags;
 
     if (fd == 0) {
         return 0;
@@ -471,6 +563,10 @@ ssize_t read(int fd, void *buf, size_t bytes)
 
     if (fd > 0 && fd < CONSOLE) {
         return fails(EBADF);
+    }
+
+    if ((s = posix_fd_socket(fd, &flags)) != NULL) {
+        return posix_socket_recv(s, buf, bytes, (flags & O_NONBLOCK) != 0);
     }
 
     if (take(fd, &t) != 0) {
@@ -525,9 +621,11 @@ ssize_t pwrite(int fd, const void *buf, size_t bytes, off_t offset)
 
 ssize_t write(int fd, const void *buf, size_t bytes)
 {
+    struct posix_socket *s;
     struct taken t;
     uint64_t at;
     ssize_t n;
+    int flags;
 
     if (fd == 1 || fd == 2) {
         return console_write(buf, bytes);
@@ -535,6 +633,10 @@ ssize_t write(int fd, const void *buf, size_t bytes)
 
     if (fd == 0) {
         return fails(EBADF);
+    }
+
+    if ((s = posix_fd_socket(fd, &flags)) != NULL) {
+        return posix_socket_send(s, buf, bytes, (flags & O_NONBLOCK) != 0);
     }
 
     if (take(fd, &t) != 0) {
@@ -732,6 +834,14 @@ int fstat(int fd, struct stat *out)
         out->st_mode = S_IFCHR | 0620;
         out->st_nlink = 1;
         out->st_blksize = 1024;
+        return 0;
+    }
+
+    if (posix_fd_socket(fd, NULL) != NULL) {
+        memset(out, 0, sizeof(*out));
+        out->st_mode = S_IFSOCK | 0777;
+        out->st_nlink = 1;
+        out->st_blksize = 4096;
         return 0;
     }
 
