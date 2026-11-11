@@ -10075,7 +10075,9 @@ the applications make the system useful, and is not pulled forward.
   **W3d1, the Storage Kit, built** (18.771): files by path from C and
   from any thread, over `/Home`, `/Temporary` and `/Kosmos`, the mount
   table handed over once by the runner; `ramproto`'s `RAM_KEEP` and
-  `RAM_CUT`. W3d2, descriptors on it, next.
+  `RAM_CUT`. **W3d2, descriptors, built** (18.772): `open`, `read`,
+  `write`, `lseek`, `stat`, `dup`, `fcntl`, `opendir` and the rest in
+  `runtime/posix/fd.c`. W3d3, `stdio` for ported code, next.
   **Two follow-ups from W3c**: *the x86 test guest has one processor*
   (`X86_ARGS` has no `-smp`, ARM's has four), so no x86 suite runs two
   at once - for Diego, since four costs time in every x86 suite; and

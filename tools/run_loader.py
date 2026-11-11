@@ -381,8 +381,12 @@ def main():
                   "recursive, stacks, reaped, rwlock ")
               and ", joined 42; memory: 4 GB reserved, protected, discarded, unmapped "
                   "in the middle, fixed, refused; process: slept, timed, pid in the table, " in said
-              and said.endswith(" processors, Kosmos %s, random, no environment"
-                                % ("x86_64" if X86 else "aarch64")),
+              and (" processors, Kosmos %s, random, no environment; "
+                   % ("x86_64" if X86 else "aarch64")) in said
+              and said.endswith("; files: made, excl, read and written, positioned, "
+                                "appended, cut, dup shared, flags, closed, folders listed "
+                                "and removed, read only, cwd, realpath, console, 200 open, "
+                                "4 threads"),
               "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
 
         said = None

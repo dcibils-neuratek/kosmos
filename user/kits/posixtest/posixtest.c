@@ -9,7 +9,10 @@
  * order when all of them held, or the first that did not and why.
  */
 
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdint.h>
@@ -18,6 +21,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/random.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
 #include <time.h>
@@ -455,6 +459,297 @@ static int process_checks(char *out, unsigned long size)
     return 0;
 }
 
+
+/*
+ * **Files** (`docs/w3.md` W3d2): descriptors on the Storage Kit, in one
+ * folder of the disk and one of memory, as a port uses them.
+ */
+#define FSAY(...) do { snprintf(out, size, __VA_ARGS__); return 1; } while (0)
+
+static int files_in(const char *dir, char *out, unsigned long size)
+{
+    char path[PATH_MAX], sub[PATH_MAX], moved[PATH_MAX], got[64];
+    struct stat st;
+    int fd, fd2, d;
+    ssize_t n = 0;
+
+    snprintf(path, sizeof path, "%s/px-file", dir);
+    snprintf(sub, sizeof sub, "%s/px-dir", dir);
+    snprintf(moved, sizeof moved, "%s/px-dir/px-file", dir);
+    unlink(moved);
+    rmdir(sub);
+    unlink(path);
+
+    if (open(path, O_RDONLY) >= 0 || errno != ENOENT) {
+        FSAY("files: %s: a file not there opened, or not ENOENT (%d)", dir, errno);
+    }
+
+    if ((fd = open(path, O_RDWR | O_CREAT | O_EXCL, 0644)) < 3) {
+        FSAY("files: %s: O_CREAT | O_EXCL gave %d (%d)", dir, fd, errno);
+    }
+
+    if (open(path, O_RDWR | O_CREAT | O_EXCL, 0644) >= 0 || errno != EEXIST) {
+        FSAY("files: %s: a second O_EXCL was not EEXIST (%d)", dir, errno);
+    }
+
+    /* Written in two pieces, the offset following. */
+    if (write(fd, "hello", 5) != 5 || write(fd, " world", 6) != 6
+        || lseek(fd, 0, SEEK_CUR) != 11) {
+        FSAY("files: %s: two writes left the offset at %ld", dir, (long)lseek(fd, 0, SEEK_CUR));
+    }
+
+    if (lseek(fd, 0, SEEK_SET) != 0 || (n = read(fd, got, sizeof got)) != 11
+        || memcmp(got, "hello world", 11) != 0 || read(fd, got, sizeof got) != 0) {
+        FSAY("files: %s: read back %ld bytes", dir, (long)n);
+    }
+
+    /* At a place, the offset untouched. */
+    if (pwrite(fd, "J", 1, 6) != 1 || pread(fd, got, 1, 6) != 1 || got[0] != 'J'
+        || lseek(fd, 0, SEEK_CUR) != 11) {
+        FSAY("files: %s: pwrite and pread at 6", dir);
+    }
+
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size != 11) {
+        FSAY("files: %s: fstat said mode %o, %ld bytes", dir, st.st_mode, (long)st.st_size);
+    }
+
+    {
+        struct stat by_name;
+
+        if (stat(path, &by_name) != 0 || by_name.st_ino != st.st_ino || by_name.st_size != 11) {
+            FSAY("files: %s: stat and fstat disagree", dir);
+        }
+    }
+
+    if (ftruncate(fd, 5) != 0 || fstat(fd, &st) != 0 || st.st_size != 5) {
+        FSAY("files: %s: ftruncate to 5 left %ld bytes", dir, (long)st.st_size);
+    }
+
+    /* Appending through a second descriptor, at the end as it is. */
+    if ((fd2 = open(path, O_WRONLY | O_APPEND)) < 0 || write(fd2, "!", 1) != 1
+        || pread(fd, got, sizeof got, 0) != 6 || memcmp(got, "hello!", 6) != 0) {
+        FSAY("files: %s: O_APPEND did not write at the end", dir);
+    }
+
+    if (lseek(fd, 0, SEEK_END) != 6) {
+        FSAY("files: %s: SEEK_END was not 6", dir);
+    }
+
+    if (read(fd2, got, 1) >= 0 || errno != EBADF) {
+        FSAY("files: %s: a read of a write-only descriptor was not EBADF", dir);
+    }
+
+    close(fd2);
+
+    /* dup shares the offset; dup2 puts it where it is asked. */
+    if ((d = dup(fd)) < 3 || lseek(d, 2, SEEK_SET) != 2 || lseek(fd, 0, SEEK_CUR) != 2) {
+        FSAY("files: %s: dup did not share the offset", dir);
+    }
+
+    close(d);
+
+    if (dup2(fd, 77) != 77 || pread(77, got, 2, 0) != 2 || memcmp(got, "he", 2) != 0
+        || close(77) != 0) {
+        FSAY("files: %s: dup2 to 77", dir);
+    }
+
+    if ((fcntl(fd, F_GETFL) & O_ACCMODE) != O_RDWR || fcntl(fd, F_SETFD, FD_CLOEXEC) != 0
+        || fcntl(fd, F_GETFD) != FD_CLOEXEC) {
+        FSAY("files: %s: fcntl's flags", dir);
+    }
+
+    if (close(fd) != 0 || read(fd, got, 1) >= 0 || errno != EBADF || close(fd) == 0) {
+        FSAY("files: %s: a closed descriptor still answered", dir);
+    }
+
+    if ((fd = open(path, O_WRONLY | O_TRUNC)) < 0 || fstat(fd, &st) != 0 || st.st_size != 0
+        || write(fd, "x", 1) != 1 || close(fd) != 0) {
+        FSAY("files: %s: O_TRUNC left %ld bytes", dir, (long)st.st_size);
+    }
+
+    if ((fd = open(path, O_RDONLY)) < 0 || write(fd, "y", 1) >= 0 || errno != EBADF) {
+        FSAY("files: %s: a write to a read-only descriptor was not EBADF", dir);
+    }
+
+    close(fd);
+
+    /* Folders. */
+    if (mkdir(sub, 0755) != 0 || mkdir(sub, 0755) == 0 || errno != EEXIST) {
+        FSAY("files: %s: mkdir twice (%d)", dir, errno);
+    }
+
+    if (open(sub, O_WRONLY) >= 0 || errno != EISDIR) {
+        FSAY("files: %s: a folder opened for writing", dir);
+    }
+
+    if (open(path, O_RDONLY | O_DIRECTORY) >= 0 || errno != ENOTDIR) {
+        FSAY("files: %s: a file opened as a folder", dir);
+    }
+
+    if (rename(path, moved) != 0 || access(path, F_OK) == 0 || access(moved, R_OK | W_OK) != 0) {
+        FSAY("files: %s: rename into the folder (%d)", dir, errno);
+    }
+
+    {
+        DIR *folder = opendir(sub);
+        struct dirent *e;
+        int names = 0, mine = 0;
+
+        if (folder == NULL) {
+            FSAY("files: %s: opendir (%d)", dir, errno);
+        }
+
+        while ((e = readdir(folder)) != NULL) {
+            names++;
+            mine += strcmp(e->d_name, "px-file") == 0;
+        }
+
+        closedir(folder);
+
+        if (names != 1 || mine != 1) {
+            FSAY("files: %s: readdir gave %d names", dir, names);
+        }
+    }
+
+    if (rmdir(sub) == 0 || errno != ENOTEMPTY) {
+        FSAY("files: %s: rmdir of a folder with a file in it (%d)", dir, errno);
+    }
+
+    if (unlink(sub) == 0 || errno != EISDIR || rmdir(moved) == 0 || errno != ENOTDIR) {
+        FSAY("files: %s: unlink of a folder, or rmdir of a file", dir);
+    }
+
+    if (unlink(moved) != 0 || rmdir(sub) != 0 || stat(sub, &st) == 0 || errno != ENOENT) {
+        FSAY("files: %s: the file and the folder were not removed", dir);
+    }
+
+    if (fsync(1) != 0) {
+        FSAY("files: fsync of the console");
+    }
+
+    return 0;
+}
+
+#define FILE_THREADS 4
+
+static void *uses_files(void *arg)
+{
+    intptr_t me = (intptr_t)arg;
+    char path[64], mine[300], back[300];
+    int round, fd;
+
+    snprintf(path, sizeof path, "/Temporary/px-thread-%d", (int)me);
+
+    for (round = 0; round < 20; round++) {
+        memset(mine, (int)('a' + me + round), sizeof mine);
+
+        if ((fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644)) < 0
+            || write(fd, mine, sizeof mine) != (ssize_t)sizeof mine
+            || lseek(fd, 0, SEEK_SET) != 0
+            || read(fd, back, sizeof back) != (ssize_t)sizeof back
+            || memcmp(mine, back, sizeof mine) != 0 || close(fd) != 0) {
+            return (void *)(intptr_t)(round + 1);
+        }
+    }
+
+    unlink(path);
+    return NULL;
+}
+
+static int file_checks(char *out, unsigned long size)
+{
+    char where[PATH_MAX], *made;
+    int fds[200], i;
+    struct stat st;
+
+    if (files_in("/Temporary", out, size) != 0 || files_in("/Home/apps/apptest", out, size) != 0) {
+        return 1;
+    }
+
+    /* Read only where it is. */
+    if (access("/Kosmos/Programs", R_OK) != 0 || access("/Kosmos/Programs", W_OK) == 0
+        || errno != EROFS) {
+        FSAY("files: /Kosmos was not read only (%d)", errno);
+    }
+
+    /* Where this process is, and paths made whole. */
+    if (getcwd(where, sizeof where) == NULL || where[0] != '/'
+        || getcwd(where, 1) != NULL || errno != ERANGE) {
+        FSAY("files: getcwd");
+    }
+
+    if ((made = realpath("/Temporary/../Temporary/./", NULL)) == NULL
+        || strcmp(made, "/Temporary") != 0) {
+        FSAY("files: realpath made \"%s\"", made != NULL ? made : "(nothing)");
+    }
+
+    free(made);
+
+    if (realpath("/Temporary/px-none", where) != NULL || errno != ENOENT) {
+        FSAY("files: realpath of nothing");
+    }
+
+    if (open("/Nowhere/x", O_RDONLY) >= 0 || errno != ENOENT) {
+        FSAY("files: a path under no mount opened");
+    }
+
+    /* The console. */
+    if (write(1, "", 0) != 0 || read(0, where, 1) != 0 || fstat(2, &st) != 0
+        || lseek(1, 0, SEEK_SET) >= 0 || errno != ESPIPE) {
+        FSAY("files: the console's descriptors");
+    }
+
+    /* Two hundred open at once, the table grown, each its own. */
+    {
+        int fd = open("/Temporary/px-many", O_RDWR | O_CREAT, 0644);
+
+        if (fd < 0) {
+            FSAY("files: px-many (%d)", errno);
+        }
+
+        close(fd);
+    }
+
+    for (i = 0; i < 200; i++) {
+        if ((fds[i] = open("/Temporary/px-many", O_RDONLY)) < 3
+            || (i > 0 && fds[i] == fds[i - 1])) {
+            FSAY("files: the %dth descriptor was %d (%d)", i + 1, fds[i], errno);
+        }
+    }
+
+    for (i = 0; i < 200; i++) {
+        if (close(fds[i]) != 0) {
+            FSAY("files: closing descriptor %d", fds[i]);
+        }
+    }
+
+    unlink("/Temporary/px-many");
+
+    {
+        pthread_t t[FILE_THREADS];
+        void *got;
+        intptr_t k;
+
+        for (k = 0; k < FILE_THREADS; k++) {
+            pthread_create(&t[k], NULL, uses_files, (void *)k);
+        }
+
+        for (k = 0; k < FILE_THREADS; k++) {
+            pthread_join(t[k], &got);
+
+            if (got != NULL) {
+                FSAY("files: thread %ld's file was not as written, round %ld", (long)k,
+                     (long)(intptr_t)got);
+            }
+        }
+    }
+
+    snprintf(out, size, "files: made, excl, read and written, positioned, appended, cut, "
+             "dup shared, flags, closed, folders listed and removed, read only, cwd, "
+             "realpath, console, 200 open, %d threads", FILE_THREADS);
+    return 0;
+}
+
 int kosmos_posixtest_run(char *out, unsigned long size)
 {
     pthread_t t[WORKERS];
@@ -710,7 +1005,7 @@ int kosmos_posixtest_run(char *out, unsigned long size)
     }
 
     {
-        char memory[160], process[160];
+        char memory[160], process[160], files[240];
 
         if (memory_checks(memory, sizeof memory) != 0) {
             snprintf(out, size, "%s", memory);
@@ -722,11 +1017,16 @@ int kosmos_posixtest_run(char *out, unsigned long size)
             return 1;
         }
 
+        if (file_checks(files, sizeof files) != 0) {
+            snprintf(out, size, "%s", files);
+            return 1;
+        }
+
         snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s",
+                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s",
                  counted, ring_passes, once_ran, destroyed,
                  most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
-                 memory, process);
+                 memory, process, files);
     }
 
     return 0;

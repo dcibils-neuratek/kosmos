@@ -585,14 +585,16 @@ int fscanf(FILE *f, const char *fmt, ...)
     return n;
 }
 
-int remove(const char *path)
+/* Weak: `runtime/posix/fd.c`'s, where ported code links it, does it
+ * (`docs/w3.md` W3d2); everything else keeps the refusal. */
+__attribute__((weak)) int remove(const char *path)
 {
     (void)path;
 
     return -1;
 }
 
-int rename(const char *from, const char *to)
+__attribute__((weak)) int rename(const char *from, const char *to)
 {
     (void)from; (void)to;
 

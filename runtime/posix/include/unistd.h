@@ -40,6 +40,39 @@ uid_t geteuid(void);
 gid_t getgid(void);
 gid_t getegid(void);
 
+/* Files (W3d2), on descriptors private to this process. 0, 1 and 2 are the
+ * console: a write to 1 or 2 is printed, a read of 0 is the end. */
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+#define F_OK 0
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
+
+ssize_t read(int fd, void *buf, size_t bytes);
+ssize_t write(int fd, const void *buf, size_t bytes);
+ssize_t pread(int fd, void *buf, size_t bytes, off_t offset);
+ssize_t pwrite(int fd, const void *buf, size_t bytes, off_t offset);
+int     close(int fd);
+off_t   lseek(int fd, off_t offset, int whence);
+int     ftruncate(int fd, off_t size);
+int     truncate(const char *path, off_t size);
+int     fsync(int fd);
+int     fdatasync(int fd);
+int     dup(int fd);
+int     dup2(int fd, int to);
+int     unlink(const char *path);
+int     rmdir(const char *path);
+int     rename(const char *from, const char *to);
+int     access(const char *path, int mode);
+char   *getcwd(char *buf, size_t size);
+
 unsigned int sleep(unsigned int seconds);
 int          usleep(useconds_t microseconds);
 

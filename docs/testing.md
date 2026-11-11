@@ -31667,3 +31667,60 @@ promised 219 test(s) and 218 arrived", yet its log holds `ok 219` as
 its last line: a line that reached the log but not the count, at minute
 nine under the whole gate's load, and not the guest stopping short. Alone
 it passed, 219 of 219 in 10 s.
+
+## 18.772 Descriptors (JetSki W3d2)
+
+`docs/w3.md` W3d2, in `runtime/posix/fd.c`, on the Storage Kit: `open`
+(`O_CREAT`, `O_EXCL`, `O_TRUNC`, `O_APPEND`, `O_DIRECTORY`; the rest
+accepted), `creat`, `close`, `read`, `write`, `pread`, `pwrite`, `lseek`,
+`ftruncate`, `truncate`, `fsync`, `dup`, `dup2`, `fcntl` (`F_DUPFD`,
+`F_GETFD`/`SETFD`, `F_GETFL`/`SETFL`), `stat`, `lstat`, `fstat`,
+`access`, `mkdir`, `unlink`, `rmdir`, `remove`, `rename`, `getcwd`,
+`realpath`, `opendir`, `readdir`, `rewinddir`, `closedir`. Headers in the
+layer: `fcntl.h`, `sys/stat.h`, `dirent.h`, `limits.h` (`PATH_MAX` 512)
+and `stdlib.h` for `realpath`, each over the runtime's or the compiler's,
+and more of `unistd.h`.
+
+**A descriptor is a path and a position**, in a table private to the
+process under one mutex that is never held across a request; `dup`
+shares the entry and its offset. 0, 1 and 2 are the console. `O_EXCL`
+and `rename` over a file are two requests each, as `w3.md` records. The
+runtime's failing `mkdir`, `remove` and `rename` are weak now, so the
+layer's win where ported code links it; and `fcntl.h` and `sys/stat.h`
+in `runtime/include/`, which said there would never be an `open` or a
+`stat`, say where they are.
+
+**Test**: `posixtest.elf`'s fourth part, written as a port writes it, on
+`/Temporary` and on `/Home` both: a file not there is `ENOENT`; made with
+`O_CREAT | O_EXCL`, and a second `EEXIST`; written in two pieces with the
+offset following, read back and then 0 at the end; `pwrite` and `pread`
+at 6 leaving the offset; `fstat` a regular file of 11 bytes, and `stat`
+of its name the same inode; `ftruncate` to 5; a second descriptor with
+`O_APPEND` writing at the end; `SEEK_END`; a read of a write-only
+descriptor `EBADF`; `dup` sharing the offset, `dup2` to 77; `fcntl`'s
+access mode and `FD_CLOEXEC`; a closed descriptor `EBADF`, and closed
+twice refused; `O_TRUNC` to nothing; a write to a read-only descriptor
+`EBADF`. Folders: `mkdir` twice `EEXIST`, a folder opened for writing
+`EISDIR`, a file with `O_DIRECTORY` `ENOTDIR`, `rename` into the folder,
+`readdir` giving its one name, `rmdir` of it `ENOTEMPTY`, `unlink` of it
+`EISDIR`, `rmdir` of a file `ENOTDIR`, both removed. Then `/Kosmos`
+readable and `W_OK` `EROFS`; `getcwd`, and `ERANGE` for a buffer of one;
+`realpath` of `/Temporary/../Temporary/./`, and of nothing `ENOENT`; a
+path under no mount `ENOENT`; the console's descriptors (an empty write,
+0 read from 0, `fstat` of 2, `lseek` of 1 `ESPIPE`); 200 descriptors
+open at once, each its own, all closed; and four threads opening,
+writing, reading and closing files of their own, 20 rounds each. Both
+boards: "...; files: made, excl, read and written, positioned, appended,
+cut, dup shared, flags, closed, folders listed and removed, read only,
+cwd, realpath, console, 200 open, 4 threads".
+
+**Controls**, both biting on x86: `O_APPEND` ignored - "/Temporary:
+O_APPEND did not write at the end"; and `close` that leaves its slot -
+"/Temporary: a closed descriptor still answered".
+
+**Whole gate**: 110 of 112 in 616 s. Two timing checks failed under the
+whole gate's load, as each has before: `x86-kernel`'s "sched: a processor
+held off is counted" (18.272's history: QEMU stopped by the Mac *is* a
+processor held off), and `x86-profile`'s sample count, 612 of about 1018
+due. Neither touches userland. Alone, both passed: 217 of 217, and 1021
+samples, none lost.

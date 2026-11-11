@@ -24,6 +24,11 @@ typedef unsigned int uid_t;
 typedef unsigned int gid_t;
 typedef unsigned int useconds_t;
 typedef long         suseconds_t;
+typedef uint64_t     ino_t;
+typedef uint64_t     dev_t;
+typedef uint32_t     nlink_t;
+typedef long         blksize_t;
+typedef int64_t      blkcnt_t;
 
 __END_DECLS
 

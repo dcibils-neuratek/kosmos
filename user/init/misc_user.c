@@ -478,8 +478,11 @@ int system(const char *command)
  * -1 with errno untouched: the caller checks, says so, and goes on without
  * whatever it wanted the directory for - which for Doom is a place to put
  * savegames it also cannot write. See `<sys/stat.h>`.
+ *
+ * Weak: ported code that links `runtime/posix/` gets a `mkdir` that makes
+ * one, in its own namespace (`docs/w3.md` W3d2).
  */
-int mkdir(const char *path, unsigned int mode)
+__attribute__((weak)) int mkdir(const char *path, unsigned int mode)
 {
     (void)path; (void)mode;
 
