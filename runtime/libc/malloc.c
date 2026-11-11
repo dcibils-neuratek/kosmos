@@ -523,33 +523,24 @@ static void *heap_realloc(void *p, size_t n)
  * the M700 (10 November 2026, `testing.md` 18.758), and QEMU had never
  * shown it. `threads.md` step 7 had listed it as still to do.
  *
- * A word taken by exchange, held for the length of one allocation. Spun
- * on briefly, since a holder on another core is out within a microsecond;
- * after that the waiter *sleeps* a tick rather than yields. The waiter may
- * be in the audio band and the holder in a lower one on the same core, and
- * strict priority means yielding would hand the core straight back to the
- * waiter - the holder would never run to let go.
+ * **`kosmos_lock`, on a futex** (`docs/w2.md` part 1): an allocation
+ * nobody else wants never enters the kernel, and a thread that finds the
+ * heap held sleeps until it is let go. Until 0.11.369 a waiter spun and
+ * then slept a whole tick - a waiter in the audio band could not yield,
+ * since strict priority would hand the core straight back to it, so it
+ * slept a tick instead, and every contended allocation cost one.
  */
 #ifdef KOSMOS_USER
-static int heap_word;
+static kosmos_lock_t heap_word = KOSMOS_LOCK_INIT;
 
 static void heap_lock(void)
 {
-    unsigned spins = 0;
-
-    while (__atomic_exchange_n(&heap_word, 1, __ATOMIC_ACQUIRE) != 0) {
-        while (__atomic_load_n(&heap_word, __ATOMIC_RELAXED) != 0) {
-            if (++spins >= 1000) {
-                kosmos_sleep(1);
-                spins = 0;
-            }
-        }
-    }
+    kosmos_lock(&heap_word);
 }
 
 static void heap_unlock(void)
 {
-    __atomic_store_n(&heap_word, 0, __ATOMIC_RELEASE);
+    kosmos_unlock(&heap_word);
 }
 #else
 static void heap_lock(void) {}

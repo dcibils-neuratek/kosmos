@@ -2,6 +2,7 @@
 #ifndef KOSMOS_H
 #define KOSMOS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -447,6 +448,66 @@ static inline void kosmos_thread_exit(int code)
 static inline long kosmos_thread_wait(unsigned long index)
 {
     return sys1(SYS_THREAD_WAIT, (long)index);
+}
+
+/*
+ * **A futex** (`docs/w2.md` part 1). `kosmos_futex_wait` sleeps while the
+ * word at `word` still holds `expected` - 0 when woken, SYS_NO_CHANGE at
+ * once if it already differs, SYS_TIMED_OUT after `wait_ticks` (0: never).
+ * `kosmos_futex_wake` wakes up to `count` threads waiting on it and says
+ * how many. Both are rarely called directly: `kosmos_lock` is the door.
+ */
+static inline long kosmos_futex_wait(const volatile uint32_t *word,
+                                     uint32_t expected, unsigned long wait_ticks)
+{
+    return sys3(SYS_FUTEX_WAIT, (long)(uintptr_t)word, (long)expected,
+                (long)wait_ticks);
+}
+
+static inline long kosmos_futex_wake(const volatile uint32_t *word,
+                                     unsigned long count)
+{
+    return sys2(SYS_FUTEX_WAKE, (long)(uintptr_t)word, (long)count);
+}
+
+/*
+ * **A lock over a word, which sleeps only when it must** - the one every
+ * lock in a process is: malloc's, and W3's `pthread_mutex_t`. Three states,
+ * as Drepper's "Futexes are tricky" has them: 0 free, 1 held, 2 held with
+ * somebody waiting. Taking a free lock and letting go of an uncontended
+ * one never enter the kernel; a thread that finds it held marks it 2 and
+ * sleeps on the futex, and the holder wakes one waiter only when it lets go
+ * of a 2. A waiter in the audio band sleeps rather than spins, so a holder
+ * in a lower band on the same core gets to run and let go.
+ */
+typedef struct { volatile uint32_t word; } kosmos_lock_t;
+
+#define KOSMOS_LOCK_INIT { 0 }
+
+static inline void kosmos_lock(kosmos_lock_t *l)
+{
+    uint32_t c = 0;
+
+    if (__atomic_compare_exchange_n(&l->word, &c, 1, false,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        return;
+    }
+
+    if (c != 2) {
+        c = __atomic_exchange_n(&l->word, 2, __ATOMIC_ACQUIRE);
+    }
+
+    while (c != 0) {
+        (void)kosmos_futex_wait(&l->word, 2, 0);
+        c = __atomic_exchange_n(&l->word, 2, __ATOMIC_ACQUIRE);
+    }
+}
+
+static inline void kosmos_unlock(kosmos_lock_t *l)
+{
+    if (__atomic_exchange_n(&l->word, 0, __ATOMIC_RELEASE) != 1) {
+        (void)kosmos_futex_wake(&l->word, 1);
+    }
 }
 
 /* Every process, into `out`. Returns how many were written. */

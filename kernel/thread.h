@@ -346,6 +346,20 @@ struct thread {
     } ipc;
 
     /*
+     * **A futex wait** (`futex.c`). A link of its own, for the reason the
+     * IPC one above has: a thread waiting on a futex is in a bucket's list
+     * and in no other. `bucket` is non-NULL exactly while it is listed,
+     * which is how a timer or a kill tells a futex waiter from any other.
+     */
+    struct {
+        struct thread          *next;
+        struct futex_bucket    *bucket;
+        const struct addrspace *as;
+        uintptr_t               va;
+        long                    result;
+    } futex;
+
+    /*
      * Capabilities, by index. A thread cannot name what it was not handed:
      * there is no global table and no identifier to guess.
      *

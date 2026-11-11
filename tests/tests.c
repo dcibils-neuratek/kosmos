@@ -28,6 +28,7 @@
 #include "irq.h"
 #include "keys.h"
 #include "vm.h"
+#include "futex.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -5231,6 +5232,146 @@ static bool test_one_heap_under_two_threads(void)
     }
 
     return code == 0;
+}
+
+/*
+ * **A futex** (`docs/w2.md` part 1). Has to match `user/init/main.c`: the
+ * role counts under `kosmos_lock` on three threads across the cores,
+ * waits on a word that differs, times a deadline against a sleep, wakes
+ * one of three waiters and then the rest, and ends with a thread still
+ * waiting. Its code names the first check that failed; here, after it has
+ * gone, no thread may be left on any bucket - a waiter whose process ended
+ * would be a wake that finds a dead thread.
+ */
+#define CTEST_FUTEX 911UL
+
+static bool test_a_futex_sleeps_and_wakes(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p;
+    unsigned long start;
+    unsigned listed;
+    int code;
+
+    thread_place_across(smp_online());
+    p = process_create("t-futex", init_image, (size_t)init_image_len,
+                       CTEST_FUTEX);
+
+    if (p == NULL) {
+        thread_place_across(1);
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
+    for (start = hal_ticks(); !p->exited && hal_ticks() - start < 60UL * TICK_HZ; ) {
+        thread_yield();
+    }
+
+    thread_place_across(1);
+
+    if (!p->exited) {
+        kputs("\n   (the role never ended)");
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+    listed = futex_listed();
+
+    if (code != 0) {
+        kputs("\n   (the role said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs(code < 0 ? ", a fault)" : ")");
+    }
+
+    if (listed != 0) {
+        kputs("\n   (threads left on a futex: ");
+        kputu(listed);
+        kputs(")");
+    }
+
+    return code == 0 && listed == 0;
+}
+
+/*
+ * **Workers that leave as their process ends** (`testing.md` 18.764). Has
+ * to match `user/init/main.c`. Twenty processes, each with six workers on
+ * the other cores woken by its end; every one must end with its code, the
+ * kernel must not fault, and no page may be left behind.
+ */
+#define CTEST_LEAVE_TOGETHER 912UL
+#define ENDING_ROUNDS 20
+
+static bool test_workers_leave_as_their_process_ends(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    size_t pages_before;
+    unsigned round;
+    bool ok = true;
+
+    if (smp_online() < 2) {
+        return true;              /* one core: nobody leaves on another */
+    }
+
+    thread_place_across(smp_online());
+    pages_before = 0;
+
+    for (round = 0; round < ENDING_ROUNDS && ok; round++) {
+        struct process *p = process_create("t-leave", init_image,
+                                           (size_t)init_image_len,
+                                           CTEST_LEAVE_TOGETHER);
+        unsigned long start;
+
+        if (p == NULL) {
+            ok = false;
+            break;
+        }
+
+        process_start(p);
+
+        for (start = hal_ticks(); !p->exited && hal_ticks() - start < 20UL * TICK_HZ; ) {
+            thread_yield();
+        }
+
+        if (!p->exited || p->exit_code != 0) {
+            kputs("\n   (round ");
+            kputu(round);
+            kputs(p->exited ? ": the role said " : ": the process never ended");
+            if (p->exited) {
+                kputu((unsigned long)(p->exit_code < 0 ? -p->exit_code : p->exit_code));
+            }
+            kputs(")");
+            ok = false;
+        }
+
+        if (p->exited) {
+            process_reap(p);
+        }
+
+        /* Counted from the end of the first round: the pools of threads
+         * and processes grow by slabs and never give one back, so the
+         * first round may keep pages that no later one does. */
+        if (round == 0) {
+            pages_before = pmm_free_pages();
+        }
+    }
+
+    thread_place_across(1);
+
+    if (ok && pmm_free_pages() != pages_before) {
+        kputs("\n   (pages not given back: ");
+        kputu((unsigned long)(pages_before > pmm_free_pages()
+                              ? pages_before - pmm_free_pages()
+                              : pmm_free_pages() - pages_before));
+        kputs(")");
+        ok = false;
+    }
+
+    return ok;
 }
 
 /*
@@ -11331,6 +11472,8 @@ static const struct test tests[] = {
     { "thread: a process with two threads", test_a_process_with_two_threads },
     { "thread: on the core its process asked for", test_a_thread_on_the_core_asked_for },
     { "thread: one heap under two threads at once", test_one_heap_under_two_threads },
+    { "futex: a thread sleeps on a word and is woken", test_a_futex_sleeps_and_wakes },
+    { "process: workers leave as their process ends, on every core", test_workers_leave_as_their_process_ends },
     { "process: an image has its gigabyte, and no more", test_an_image_has_its_gigabyte },
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },

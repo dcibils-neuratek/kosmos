@@ -10047,7 +10047,11 @@ the applications make the system useful, and is not pulled forward.
   Diego's to agree in detail: *designed 11 November in `docs/w2.md`* - a
   futex, memory reserved / protected / released (never W and X at once),
   and a thread suspended and its registers read; eight syscalls, about
-  670 lines, awaiting his agreement.
+  670 lines. **Agreed 11 November** ("yes to all"), with the stack window
+  capped at 64 GB and the JIT's W^X by two mappings. **W2a, the futex,
+  built** (0.11.369, `testing.md` 18.764), malloc's lock on it - and an
+  older race in a process's end found and fixed on the way. W2b, reserve
+  and protect, next; then W2c, a thread suspended.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

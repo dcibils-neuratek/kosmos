@@ -639,7 +639,20 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * MSG_TAG_PULSE, whose data is a `struct pulse` and whose sender is 0.
  */
 #define SYS_PULSE       72  /* (cap, code, value)     -> 0 or error         */
-#define SYS_MAX         73
+/*
+ * **A futex** (`docs/w2.md` part 1, `kernel/futex.c`). WAIT sleeps while
+ * the 32-bit word at `address` - four-byte aligned, writable, in the
+ * caller's own process - still holds `expected`, until a WAKE on it or
+ * `wait_ticks` scheduler ticks (0: no deadline). It answers 0 when woken,
+ * SYS_NO_CHANGE at once when the word already differs, SYS_TIMED_OUT when
+ * the deadline came. WAKE wakes up to `count` threads waiting on that
+ * address, oldest first, and answers how many. Every lock in a process
+ * stands on the two: the lock itself is an atomic word in user code, and
+ * only a thread that finds it held comes here.
+ */
+#define SYS_FUTEX_WAIT  73  /* (address, expected, wait_ticks) -> 0 or a code */
+#define SYS_FUTEX_WAKE  74  /* (address, count)       -> how many woken     */
+#define SYS_MAX         75
 
 #define PROFILE_START   1u
 #define PROFILE_READ    2u  /* up to `max` samples into `buf`: how many */
@@ -1650,6 +1663,8 @@ struct diskinfo {
 #define SYS_ERR_BUSY      (-112)    /* one at a time, and another has it */
 #define SYS_ERR_GONE      (-113)    /* the process asked about has ended */
 #define SYS_ERR_FLAGS     (-114)    /* flags that cannot be had together */
+#define SYS_NO_CHANGE     (-115)    /* a futex's word was not what was expected; not an error */
+#define SYS_TIMED_OUT     (-116)    /* a futex wait's deadline came; not an error */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -1694,6 +1709,8 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_ERR_BUSY:
     case SYS_ERR_GONE:
     case SYS_ERR_FLAGS:
+    case SYS_NO_CHANGE:
+    case SYS_TIMED_OUT:
     default:
         break;
     }

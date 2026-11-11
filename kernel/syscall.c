@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "syscall.h"
+#include "futex.h"
 #include "entropy.h"
 #include "irq.h"
 #include "process.h"
@@ -1585,6 +1586,15 @@ void syscall_dispatch(struct syscall_frame *sc)
 
     case SYS_THREAD_WAIT:
         result = process_thread_wait(p, (unsigned)sc->arg[0]);
+        break;
+
+    case SYS_FUTEX_WAIT:
+        result = futex_wait(p, (uintptr_t)sc->arg[0], (uint32_t)sc->arg[1],
+                            (unsigned long)sc->arg[2]);
+        break;
+
+    case SYS_FUTEX_WAKE:
+        result = futex_wake(p, (uintptr_t)sc->arg[0], (unsigned long)sc->arg[1]);
         break;
 
     case SYS_KEY_PUSH:

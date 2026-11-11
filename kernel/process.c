@@ -13,6 +13,7 @@
 #include "sched.h"
 #include "thread.h"
 #include "ipc.h"
+#include "futex.h"
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
@@ -587,26 +588,19 @@ int process_thread_create(struct process *p, unsigned long entry,
 void process_thread_ended(struct process *p, struct thread *t, int code)
 {
     unsigned long flags;
-    struct thread **link;
     struct thread *joiner;
 
-    flags = spin_lock(&processes_lock);
-    link = &p->threads;
-
-    while (*link != NULL && *link != t) {
-        link = &(*link)->sibling;
-    }
-
-    /* Left on the list, marked ended: its code is kept until a sibling waits
-     * for it, and `alloc_thread` steps over the slot until then. */
-    (void)link;
-    t->exit_code = code;
-    t->ended = true;
-    p->live_threads--;
-    joiner = t->joiner;
-    t->joiner = NULL;
-    spin_unlock(&processes_lock, flags);
-
+    /*
+     * **Everything this thread had in the address space first, and the
+     * count last** (11 November 2026, `testing.md` 18.764). The count is
+     * what `wait_for_siblings` waits on, and the first thread frees the
+     * page tables the moment it reads zero. It used to be counted out
+     * here before its stack and block were unmapped - so a worker woken by
+     * the end of its process could still be walking the tables in
+     * `as_unmap`, on its own core, while the first thread freed them on
+     * another: a page fault in `reach_pd`. The futex's test is what woke a
+     * worker at exactly that moment.
+     */
     if (t->tls_page != NULL) {
         (void)as_unmap(p->space, (uintptr_t)USER_TBLOCK(t->index), 1);
         pmm_free_page(t->tls_page);
@@ -621,6 +615,30 @@ void process_thread_ended(struct process *p, struct thread *t, int code)
         free_pages(t->user_stack_pages, USER_STACK_PAGES);
         t->user_stack_pages = NULL;
     }
+
+    /*
+     * **And off the process's tables before it is counted out**, as the
+     * first thread goes before it takes them apart (`process_exit`): this
+     * core keeps running this thread, in kernel code mapped in both, until
+     * it switches away - and between the count and the switch the first
+     * thread may already have freed the tables this core's translation
+     * would still be describing.
+     */
+    if (t == thread_current()) {
+        as_switch(NULL);
+        t->space = NULL;
+    }
+
+    flags = spin_lock(&processes_lock);
+
+    /* Left on the list, marked ended: its code is kept until a sibling waits
+     * for it, and `alloc_thread` steps over the slot until then. */
+    t->exit_code = code;
+    t->ended = true;
+    p->live_threads--;
+    joiner = t->joiner;
+    t->joiner = NULL;
+    spin_unlock(&processes_lock, flags);
 
     if (joiner != NULL) {
         thread_wake(joiner);
@@ -742,6 +760,12 @@ static void nudge(struct process *p, struct thread *t)
 
     /* An endpoint's queue: taken off it and told the endpoint is gone. */
     ipc_abort(t);
+
+    /* A futex's bucket: taken off it, so no wake can find a thread that is
+     * ending. W1d's hang was this case on an endpoint. */
+    if (futex_timed_out(t)) {
+        thread_wake(t);
+    }
 
     /* A sleep, ended the way the timer ends one - early, which every wait
      * with a deadline already has to allow for. */
@@ -1519,6 +1543,7 @@ void process_wake_audio(void)
              */
             p->thread->wake_at = 0;
             ipc_timed_out(p->thread);
+            futex_timed_out(p->thread);
             thread_wake(p->thread);
 
             /*
@@ -1655,6 +1680,7 @@ unsigned process_wake_net(void)
             && p->thread->wake_at != 0) {
             p->thread->wake_at = 0;
             ipc_timed_out(p->thread);
+            futex_timed_out(p->thread);
             thread_wake(p->thread);
             woke++;
         }

@@ -31191,3 +31191,63 @@ that each see their own. **Control**: 18.762 itself, the same check on
 the same source with 14.2's `__emutls`, 17 of 18. `arm-kernel` 215 of
 215, `arm-sandbox` 215 of 215 (EL2, the one ARM suite every gate runs),
 `arm-headless` 7 of 7; 192 s.
+
+## 18.764 A futex, and workers that left their process's tables too early (JetSki W2a)
+
+**The futex** (`docs/w2.md` part 1, agreed by Diego on 11 November):
+`SYS_FUTEX_WAIT` (73) and `SYS_FUTEX_WAKE` (74), in `kernel/futex.c` - 256
+buckets of a lock and a list, the waiter the thread itself (`struct
+thread`'s `futex`), the word read through the process's page tables
+rather than its mapping, so an unmap by another thread cannot make the
+kernel fault. Two new answers, `SYS_NO_CHANGE` (-115) and `SYS_TIMED_OUT`
+(-116), in the distinctness switch. A waiter is taken off its bucket by
+the tick when its deadline comes (beside `ipc_timed_out`), and by the kill
+path, which wakes it. In `kosmos.h`, `kosmos_lock`: Drepper's three-state
+lock, which enters the kernel only when it is contended, and malloc's
+heap lock is it now - until today a waiter spun and then slept a tick.
+
+**Test**: `futex: a thread sleeps on a word and is woken` (role 911) - a
+counter three threads add 20,000 to each under `kosmos_lock`, across the
+cores, exact; a word that differs answered at once; a 5-tick deadline
+timed against a 5-tick sleep; one wake of three waiters wakes one, a wake
+of all the other two; and a waiter left as the process ends, after which
+no thread may be listed on any bucket. x86 214 of 214, ARM 216 of 216.
+
+**Controls, each a fail**: the wait built to skip its look at the word -
+the suite hangs, and the first test stuck is *malloc's* (`thread: one heap
+under two threads at once`), which is the futex's first user; the kill
+path built not to take a waiter off - "a thread has not left after five
+seconds", and the test fails.
+
+**Measured**, the counter phase timed in the role against the old lock
+(spin 1000, then sleep a tick) in the same run, then the timing taken out:
+x86-64 1,601,000 counter ticks against 8,517,000, **5.3 times faster**;
+AArch64 330,813 against 663,625, **2.0 times**. Under TCG - a ratio, not a
+speed - and it is the shape that matters: the old lock's cost was a whole
+scheduler tick for any waiter that lost, and the futex's is a wake.
+
+**And the run that measured it found a kernel bug that had nothing to do
+with the futex.** With both suites side by side, x86's kernel panicked -
+a page fault in `reach_pd`, under `as_unmap` - on another core, the moment
+the futex role's process ended. `process_thread_ended` counted a worker
+out (`live_threads--`) *before* it unmapped its stack and its block, and
+`wait_for_siblings` lets the first thread free the page tables the moment
+the count is zero: a worker woken by its process's end could still be
+walking the tables on its own core while they were freed on another. And
+after its unmaps it ran on with the process's tables loaded until it
+switched away. It needed exactly what the futex role does last - a worker
+in a wait, woken by the kill, leaving on another core - and nothing had
+done that under load before. Three runs alone did not repeat it.
+
+**Fixed**: the unmaps first, then `as_switch(NULL)` as the first thread
+already does before it takes a process apart, and the count last. **Test**:
+`process: workers leave as their process ends, on every core` (role 912) -
+twenty processes, each with six workers waiting on the other cores, woken
+by the end; each must end with code 0, the kernel must not fault, and the
+pages must come back (counted after the first round, since the pools'
+slabs are never given back). x86 215 of 215 and ARM 217 of 217, three
+runs. **Control**: the old order put back - x86 panicked in both of two
+runs, and the second also counted 65 pages not given back. ARM passed the
+control both times: the race is real there too, and x86 is what shows it.
+
+**Whole gate** on W2a: 112 of 112 in 593 s.

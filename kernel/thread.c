@@ -16,6 +16,7 @@
 #include "hal.h"
 #include "console.h"
 #include "ipc.h"
+#include "futex.h"
 #include "mmu.h"
 #include "sched.h"
 #include "syscall.h"
@@ -2453,6 +2454,7 @@ void thread_wake_sleepers(void)
              * take it off that queue *before* it becomes runnable - see
              * `ipc_timed_out`. Harmless for a plain sleeper. */
             ipc_timed_out(t);
+            futex_timed_out(t);
             thread_wake(t);
         }
     }

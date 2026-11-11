@@ -450,6 +450,204 @@ static int heap_role(void)
 }
 
 /*
+ * **A futex** (`docs/w2.md` part 1). In order, each failure its own code:
+ * a counter three threads add to under `kosmos_lock`, on more than one
+ * core, which must come out exact (1-3); a wait on a word that already
+ * differs, which must answer at once (4); a wait with a deadline, which
+ * must time out after about as long as a sleep of the same ticks (5-6);
+ * one wake against three waiters, which must wake one and only one, and a
+ * wake of all that wakes the other two (7-10); and last, a thread left
+ * waiting for ever as the process ends - the kernel suite then asks that
+ * no thread is still listed on any bucket.
+ */
+#define CTEST_FUTEX             911UL
+#define FUTEX_ADDS              20000UL
+#define FUTEX_TICKS             5UL
+
+static kosmos_lock_t futex_lock = KOSMOS_LOCK_INIT;
+static volatile unsigned long futex_total;
+static volatile uint32_t futex_gate;
+static volatile uint32_t futex_started, futex_woken;
+
+static void futex_adds(unsigned long n)
+{
+    unsigned long i;
+
+    for (i = 0; i < n; i++) {
+        kosmos_lock(&futex_lock);
+        futex_total = futex_total + 1;      /* a read and a write: torn if unlocked */
+        kosmos_unlock(&futex_lock);
+    }
+
+    kosmos_thread_exit(0);
+}
+
+static void futex_waits_at_gate(unsigned long arg)
+{
+    (void)arg;
+    __atomic_add_fetch(&futex_started, 1, __ATOMIC_SEQ_CST);
+
+    /* One wait, and counted when it ends: the role opens the gate itself
+     * between its two wakes, so each waiter is woken exactly once. */
+    if (kosmos_futex_wait(&futex_gate, 0, 0) == 0) {
+        __atomic_add_fetch(&futex_woken, 1, __ATOMIC_SEQ_CST);
+    }
+
+    kosmos_thread_exit(0);
+}
+
+static void futex_waits_for_ever(unsigned long arg)
+{
+    static volatile uint32_t never;
+
+    (void)arg;
+    (void)kosmos_futex_wait(&never, 0, 0);
+    kosmos_thread_exit(9);                  /* not reached: woken by no one */
+}
+
+static int futex_role(void)
+{
+    struct sysinfo info;
+    long a, b, w[3];
+    unsigned long t0, slept, waited;
+    unsigned i;
+
+    if (kosmos_sysinfo(&info) != 0 || info.cpus == 0) {
+        return 1;
+    }
+
+    /* 1-3: the counter, two workers and this thread, on other cores where
+     * there are some, so the lock is really contended. */
+    a = info.cpus > 1 ? kosmos_thread_start_on(futex_adds, FUTEX_ADDS, 1)
+                      : kosmos_thread_start(futex_adds, FUTEX_ADDS);
+    b = info.cpus > 2 ? kosmos_thread_start_on(futex_adds, FUTEX_ADDS, 2)
+                      : kosmos_thread_start(futex_adds, FUTEX_ADDS);
+
+    if (a < 0 || b < 0) {
+        return 2;
+    }
+
+    for (i = 0; i < FUTEX_ADDS; i++) {
+        kosmos_lock(&futex_lock);
+        futex_total = futex_total + 1;
+        kosmos_unlock(&futex_lock);
+    }
+
+    if (kosmos_thread_wait((unsigned long)a) != 0
+        || kosmos_thread_wait((unsigned long)b) != 0
+        || futex_total != 3 * FUTEX_ADDS) {
+        return 3;
+    }
+
+    /* 4: a word that is not what is expected. */
+    futex_gate = 7;
+
+    if (kosmos_futex_wait(&futex_gate, 0, 0) != SYS_NO_CHANGE) {
+        return 4;
+    }
+
+    futex_gate = 0;
+
+    /* 5-6: a deadline, held to a sleep of the same length, since the
+     * counter's rate is not something a role can read. */
+    t0 = kosmos_ticks();
+    kosmos_sleep(FUTEX_TICKS);
+    slept = kosmos_ticks() - t0;
+
+    t0 = kosmos_ticks();
+
+    if (kosmos_futex_wait(&futex_gate, 0, FUTEX_TICKS) != SYS_TIMED_OUT) {
+        return 5;
+    }
+
+    waited = kosmos_ticks() - t0;
+
+    if (waited * 5 < slept * 4 || waited > slept * 3) {
+        return 6;
+    }
+
+    /* 7-10: one wake, three waiters. */
+    for (i = 0; i < 3; i++) {
+        w[i] = kosmos_thread_start(futex_waits_at_gate, 0);
+
+        if (w[i] < 0) {
+            return 7;
+        }
+    }
+
+    while (__atomic_load_n(&futex_started, __ATOMIC_SEQ_CST) < 3) {
+        kosmos_sleep(1);
+    }
+
+    kosmos_sleep(4);                        /* each is in its wait by now */
+
+    if (kosmos_futex_wake(&futex_gate, 1) != 1) {
+        return 8;
+    }
+
+    kosmos_sleep(4);
+
+    if (__atomic_load_n(&futex_woken, __ATOMIC_SEQ_CST) != 1) {
+        return 9;
+    }
+
+    __atomic_store_n(&futex_gate, 1, __ATOMIC_RELEASE);
+
+    if (kosmos_futex_wake(&futex_gate, ~0UL) != 2) {
+        return 10;
+    }
+
+    for (i = 0; i < 3; i++) {
+        if (kosmos_thread_wait((unsigned long)w[i]) != 0) {
+            return 11;
+        }
+    }
+
+    /* Last: a thread waiting for ever, as the process ends. */
+    if (kosmos_thread_start(futex_waits_for_ever, 0) < 0) {
+        return 12;
+    }
+
+    kosmos_sleep(2);
+    return 0;
+}
+
+/*
+ * **Workers that leave as their process ends, all at once, on every core**
+ * (`testing.md` 18.764). Six threads wait on a futex nobody will wake, on
+ * the cores in turn, and the first thread returns: each is woken by the
+ * end and leaves on its own core while the first takes the process apart.
+ * A worker counted out before it had finished with the page tables walked
+ * them after they were freed - a kernel page fault. Run many times by the
+ * kernel suite, since one run is a race won or lost.
+ */
+#define CTEST_LEAVE_TOGETHER    912UL
+#define LEAVERS                 6
+
+static int leave_together_role(void)
+{
+    struct sysinfo info;
+    unsigned i;
+
+    if (kosmos_sysinfo(&info) != 0 || info.cpus == 0) {
+        return 1;
+    }
+
+    for (i = 0; i < LEAVERS; i++) {
+        long t = info.cpus > 1
+               ? kosmos_thread_start_on(futex_waits_for_ever, 0, 1 + i % (info.cpus - 1))
+               : kosmos_thread_start(futex_waits_for_ever, 0);
+
+        if (t < 0) {
+            return 2;
+        }
+    }
+
+    kosmos_sleep(1);
+    return 0;
+}
+
+/*
  * **What the process table says about a process with a file and a worker**
  * (`roadmap.md` 6m). Processes shows each one's threads and the file it
  * runs, and both come from `struct proc_info`: this names itself with a
@@ -852,6 +1050,14 @@ int main(unsigned long arg)
 
     if (arg == CTEST_HEAP) {
         return heap_role();
+    }
+
+    if (arg == CTEST_FUTEX) {
+        return futex_role();
+    }
+
+    if (arg == CTEST_LEAVE_TOGETHER) {
+        return leave_together_role();
     }
 
     if (arg == CTEST_THREAD_ON) {
