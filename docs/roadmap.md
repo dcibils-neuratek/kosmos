@@ -10054,7 +10054,9 @@ the applications make the system useful, and is not pulled forward.
   protect and release, built** (0.11.370, 18.765), thread indices given
   back as they are collected; `SYS_MEM_MAP`'s RX flag built (0.11.371,
   18.766), one region writable at one address and executable at another;
-  W2c, a thread suspended, next. Later: a released reservation's addresses reused.
+  **W2c, a thread suspended, its registers read and resumed, built**
+  (0.11.372, 18.767) - **W2 is done**; W3, the POSIX layer inside the
+  process, next. Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

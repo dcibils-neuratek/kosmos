@@ -174,6 +174,22 @@ syscall_entry:
     pushq   %rdi
 
     /*
+     * **And the six the C below would only preserve** (`docs/w2.md` part
+     * 3). They come back to ring 3 unchanged without this, because every C
+     * function saves what it uses - but saved wherever each function
+     * spilled them, so a thread blocked in a call had its rbx and r12 at no
+     * place `SYS_THREAD_REGS` could read. Six stores here, and the way out
+     * steps over them rather than loading what is already in the
+     * registers. Forty-eight bytes, so the alignment below is unchanged.
+     */
+    pushq   %rbx
+    pushq   %rbp
+    pushq   %r12
+    pushq   %r13
+    pushq   %r14
+    pushq   %r15
+
+    /*
      * `struct syscall_frame`, built on the stack in the layout
      * `kernel/syscall.h` declares: number, five arguments, then the result.
      * Fifty-six bytes rounded to seventy-two, because the `call` below
@@ -200,7 +216,8 @@ syscall_entry:
 
     /* Out of ring 3: the process's time ends here. The frame above holds
      * everything this may clobber. */
-    call    thread_time_enter
+    movq    %rsp, %rdi
+    call    trap_syscall_enter
 
     movq    %rsp, %rdi
     call    syscall_dispatch
@@ -215,7 +232,7 @@ syscall_entry:
     call    trap_syscall_leave
 
     movq    48(%rsp), %rax
-    addq    $72, %rsp
+    addq    $72 + 48, %rsp              /* the frame, and the six above */
 
     popq    %rdi
     popq    %rsi

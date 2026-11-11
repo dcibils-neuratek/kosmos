@@ -29,8 +29,34 @@ struct trapframe {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
+/*
+ * What `syscall_entry` leaves on a thread's kernel stack, from the bottom:
+ * `struct syscall_frame`'s nine words, then the registers it pushed, the
+ * process's stack pointer last. `user.S` and this are read together.
+ */
+struct syscall_saved {
+    uint64_t number, arg[5], result, pad[2];
+    uint64_t r15, r14, r13, r12, rbp, rbx;
+    uint64_t rdi, rsi, rdx, r10, r8, r9;
+    uint64_t r11;       /* the flags, which `syscall` put there */
+    uint64_t rcx;       /* where it returns to */
+    uint64_t rsp;
+};
+
+/* `thread.user_frame_kind`: which of the two a frame is. */
+#define USER_FRAME_TRAP     0
+#define USER_FRAME_SYSCALL  1
+
+struct kosmos_regs;
+
 void trap_init(void);
 void trap_handle(struct trapframe *f);
+
+/* The registers a user-level frame holds, in `SYS_THREAD_REGS`'s shape. */
+void arch_user_regs(const void *frame, unsigned kind, struct kosmos_regs *out);
+
+/* Called by `syscall_entry` on the way in, with its frame. */
+void trap_syscall_enter(struct syscall_saved *s);
 
 /* Called by `syscall_entry` after every syscall, so a process killed while
  * it was in one ends there rather than going back to ring 3. */

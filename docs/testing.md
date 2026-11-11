@@ -31345,3 +31345,64 @@ of 266,240 off FFmpeg's reference from 1.293 s. Alone: 1,025 samples with
 none lost, and the film's sound inside two steps throughout. Neither
 touches a mapping; the second is the first time that suite has failed in
 a gate, and is written here so a second time is recognised as a pattern.
+
+## 18.767 A thread suspended, its registers read, and resumed (JetSki W2c)
+
+`docs/w2.md` part 3: `SYS_THREAD_SUSPEND` (78), `SYS_THREAD_REGS` (79)
+and `SYS_THREAD_RESUME` (80), for JavaScriptCore's collector, which stops
+every thread running JavaScript and scans its registers and stack for
+pointers. A process names its own threads by index (0 is the first), so
+it cannot reach another's.
+
+**Where a suspended thread is held: one place, the way back to user
+level** - the same `die_if_killed` every syscall's end, every interrupt
+from user level and every first touch passes through, and a new thread's
+first entry (`user_thread_main`). `process_park_if_suspended` blocks it
+there under `suspend_lock` while its count is above nought. So a thread
+blocked in a call stays blocked, and when woken finishes the call and
+parks before the answer reaches it. `SUSPEND` returns once the thread is
+parked, or blocked and off its processor; one running on another core is
+sent an interrupt (`hal_cpu_wake`) whose way out parks it, and one on the
+caller's core is reached at its next tick - the wait spins briefly and
+then sleeps a tick at a time, so a thread of a lower band can run to where
+it parks. A kill lets a parked thread go (`nudge`), so a process ends with
+suspended threads in it. No scheduler change: nothing in `thread.c` knows
+a thread can be suspended.
+
+**Where the registers are.** Each entry from user level records its frame
+on the thread (`user_frame`, and on x86 which of two shapes:
+`USER_FRAME_TRAP` or `USER_FRAME_SYSCALL`); `REGS` copies it into `struct
+kosmos_regs` (in `kernel/syscall.h`, beside `struct proc_info`, which both
+sides already compile against - not a `threadproto.h` of its own). Not a
+page fault's or a double fault's frame on x86, which is on the core's IST
+stack. **And x86's `syscall_entry` now pushes `rbx`, `rbp` and
+`r12`-`r15`** (`w2.md` part 3): `syscall` saves nothing, and those six
+were live in whichever kernel C frame had spilled them. The way out steps
+over the six rather than loading them; the C below preserved them anyway.
+
+**Test**: `thread: suspended, its registers read, and resumed` (role
+917), run twice - on core zero alone, where the suite places threads and
+the spinner is reached at its tick (the role answers 100), and across
+every core, where it is reached by an interrupt (0). A spinner in a loop
+of assembly with a mark in `rbx` / `x19`: suspended, its counter still
+across four ticks; its registers hold the mark and a pc inside the loop;
+two suspends want two resumes; resumed, it moves. A thread blocked in a
+futex wait, made with its own mark in `rbx` / `x19` across the `syscall`
+/ `svc`: suspended, its registers hold that mark and the call's number;
+woken while suspended, it does not come back from the wait until resumed.
+Suspending itself, index 999, and a resume with none outstanding are
+refused. The role ends with the spinner still suspended, and the process
+must end, with every page given back. x86 217 of 217, ARM 219 of 219.
+
+**Controls**, both biting: `SUSPEND` returning at once rather than
+waiting - the counter moved ("the role said 1 on one core and 1 across",
+both boards); and x86's `syscall_entry` pushing a zero where `rbx` goes,
+keeping the layout and losing the value - "the role said 9", the blocked
+thread's mark missing.
+
+**Whole gate**: 111 of 112 in 602 s, and the one was the test's own
+expectation: `arm-sandbox` boots one processor, so "across every core" is
+one core there too and the role rightly answered 100 both times. The test
+now asks for 0 across only where `smp_online()` is above one;
+`arm-sandbox`, `arm-kernel` and `x86-kernel` then 219, 219 and 217 of
+theirs.

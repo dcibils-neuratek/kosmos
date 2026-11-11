@@ -853,6 +853,17 @@ void process_thread_ended(struct process *p, struct thread *t, int code);
 int  process_thread_wait(struct process *p, unsigned index);
 
 /*
+ * **A thread of `p` suspended, read and resumed** (`w2.md` part 3). And
+ * `process_park_if_suspended`, which every return to user level passes
+ * through: the calling thread blocks there while it is suspended, and the
+ * answer is whether it did, so the caller can look again at a kill.
+ */
+long process_thread_suspend(struct process *p, unsigned index);
+long process_thread_regs(struct process *p, unsigned index, uintptr_t out);
+long process_thread_resume(struct process *p, unsigned index);
+bool process_park_if_suspended(void);
+
+/*
  * Discards a process that was created and never started.
  *
  * The counterpart to process_exit, for the caller cleaning up after

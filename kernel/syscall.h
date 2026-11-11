@@ -681,7 +681,25 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_RESERVE     75  /* (pages)                -> address or error   */
 #define SYS_PROTECT     76  /* (address, pages, access) -> 0 or error       */
 #define SYS_RELEASE     77  /* (address, pages)       -> 0 or error         */
-#define SYS_MAX         78
+
+/*
+ * **A thread of one's own process stopped, its registers read, and let go**
+ * (`docs/w2.md` part 3): JavaScriptCore's collector stops every thread that
+ * runs JavaScript and scans its registers and stack for pointers.
+ *
+ * `SUSPEND` names a thread by the index `SYS_THREAD_CREATE` gave - the
+ * first thread is 0 - and returns once that thread runs no code of the
+ * process's: parked on its way back to user level, or blocked in the
+ * kernel, where it stays parked when it is woken. Suspends count, two
+ * wanting two `RESUME`s. A thread may not suspend itself (`DENIED`), and a
+ * resume with none outstanding is `DENIED` too. `REGS` copies the
+ * registers its last entry into the kernel left, `struct kosmos_regs`; a
+ * thread that has never entered the kernel answers zeros.
+ */
+#define SYS_THREAD_SUSPEND 78 /* (index)              -> 0 or error         */
+#define SYS_THREAD_REGS    79 /* (index, out)         -> 0 or error         */
+#define SYS_THREAD_RESUME  80 /* (index)              -> 0 or error         */
+#define SYS_MAX         81
 
 #define RESERVE_NONE    0
 #define RESERVE_READ    1
@@ -979,6 +997,22 @@ struct spawn_image {
 struct wait_result {
     uint64_t id;
     int64_t  code;
+};
+
+/*
+ * A suspended thread's registers (`SYS_THREAD_REGS`), in each machine's own
+ * names: the general registers, the stack pointer, where it was, and the
+ * flags. No vector registers - JavaScriptCore keeps no pointers there.
+ */
+struct kosmos_regs {
+#if defined(__x86_64__)
+    uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp;
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
+    uint64_t rip, rflags;
+#else
+    uint64_t x[31];
+    uint64_t sp, pc, pstate;
+#endif
 };
 
 struct proc_info {

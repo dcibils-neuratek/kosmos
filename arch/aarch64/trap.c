@@ -211,8 +211,30 @@ static void dump(unsigned index, const struct trapframe *tf)
  *
  * `process_exit` does not return.
  */
+void arch_user_regs(const void *frame, unsigned kind, struct kosmos_regs *out)
+{
+    const struct trapframe *tf = frame;
+    unsigned i;
+
+    (void)kind;
+
+    for (i = 0; i < 31; i++) {
+        out->x[i] = tf->x[i];
+    }
+
+    out->sp = tf->sp;
+    out->pc = tf->elr;
+    out->pstate = tf->spsr;
+}
+
 static void die_if_killed(void)
 {
+    /* Suspended by its own process (`w2.md` part 3): parked here, on the
+     * way back to user level, and a kill looked for again once let go. */
+    if (!process_should_die()) {
+        (void)process_park_if_suspended();
+    }
+
     if (process_should_die()) {
         process_exit(thread_current()->process, -1);
     }
@@ -223,6 +245,12 @@ void trap_handler(unsigned index, struct trapframe *tf)
     /* Vectors 8 to 11 are from EL0: the process's time ends here. */
     if (index >= 8) {
         thread_time_enter();
+
+        /* Where the process's registers are, for `SYS_THREAD_REGS`. */
+        if (thread_current() != NULL) {
+            thread_current()->user_frame = tf;
+            thread_current()->user_frame_kind = USER_FRAME_TRAP;
+        }
     }
 
     /*

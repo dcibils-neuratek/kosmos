@@ -360,6 +360,28 @@ struct thread {
     } futex;
 
     /*
+     * **Suspended by its own process** (`SYS_THREAD_SUSPEND`, `w2.md`
+     * part 3). `count` is the suspends not yet resumed; a thread with one
+     * outstanding parks on its way back to user level and is `parked` while
+     * it waits there. Both under `process.c`'s `suspend_lock`; `count` is
+     * also read without it, once per return to user level, which a stale
+     * zero costs only one more tick.
+     */
+    struct {
+        unsigned count;
+        bool     parked;
+    } suspend;
+
+    /*
+     * Where its last entry from user level left the process's registers,
+     * and in which of the architecture's shapes (`USER_FRAME_*`, `trap.h`):
+     * NULL until it first enters the kernel. Read by `SYS_THREAD_REGS`
+     * only while the thread is suspended, when nothing writes it.
+     */
+    void          *user_frame;
+    unsigned char  user_frame_kind;
+
+    /*
      * Capabilities, by index. A thread cannot name what it was not handed:
      * there is no global table and no identifier to guess.
      *

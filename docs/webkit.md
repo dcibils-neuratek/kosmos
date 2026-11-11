@@ -240,7 +240,7 @@ W1, in the order it is built:
 Diego's to agree in detail. *Designed 11 November, in `docs/w2.md`, and
 agreed the same day*; the futex built (0.11.369), reserve and protect
 (0.11.370), a region mapped writable and executable at two addresses
-(0.11.371):
+(0.11.371), a thread suspended and read (0.11.372) - W2 is built:
 - **a futex** - wait on a word in a process's own memory until it changes,
   wake *n*. Every lock and condition variable stands on it, and today a
   waiter sleeps for a tick (the malloc lock, 0.11.363).

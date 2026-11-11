@@ -5475,6 +5475,55 @@ static bool test_addresses_reserved_and_protected(void)
 }
 
 /*
+ * **A thread suspended, its registers read, and resumed** (`docs/w2.md`
+ * part 3), run on one core and across all of them. Role 917 in
+ * `user/init/main.c` says which check failed; it
+ * returns with a thread of its own still suspended, so it also says that a
+ * process ends with a parked thread in it - within the role's two minutes -
+ * and gives back every page.
+ */
+#define CTEST_SUSPEND 917UL
+
+static bool test_a_thread_suspended_and_read(void)
+{
+    size_t pages_before;
+    int code;
+
+    int across;
+
+    (void)run_reserve_role(CTEST_SUSPEND, "t-suspend");
+    pages_before = pmm_free_pages();
+
+    /* Once on core zero alone, as the suite places threads - the spinner
+     * shares the suspender's core and is reached at its next tick - and
+     * once across every core, as a plain boot has it, where it is reached
+     * on its own by an interrupt. */
+    code = run_reserve_role(CTEST_SUSPEND, "t-suspend");
+    thread_place_across(smp_online());
+    across = run_reserve_role(CTEST_SUSPEND, "t-suspend");
+    thread_place_across(1);
+
+    /* A machine of one processor has no other core to cross to, and the
+     * role says so (`arm-sandbox` boots one). */
+    if (code != 100 || across != (smp_online() > 1 ? 0 : 100)) {
+        kputs("\n   (the role said ");
+        kputu((unsigned long)(code < 0 ? -code : code));
+        kputs(code < 0 ? ", a fault" : "");
+        kputs(" on one core and ");
+        kputu((unsigned long)(across < 0 ? -across : across));
+        kputs(across < 0 ? ", a fault, across)" : " across)");
+        return false;
+    }
+
+    if (pmm_free_pages() != pages_before) {
+        kputs("\n   (pages not given back)");
+        return false;
+    }
+
+    return true;
+}
+
+/*
  * **A thread on the core its process asked for** (`THREAD_START_ON`).
  *
  * Has to match `user/init/main.c`. The role asks for a thread on the last
@@ -11575,6 +11624,7 @@ static const struct test tests[] = {
     { "futex: a thread sleeps on a word and is woken", test_a_futex_sleeps_and_wakes },
     { "process: workers leave as their process ends, on every core", test_workers_leave_as_their_process_ends },
     { "reserve: addresses reserved, protected and released", test_addresses_reserved_and_protected },
+    { "thread: suspended, its registers read, and resumed", test_a_thread_suspended_and_read },
     { "process: an image has its gigabyte, and no more", test_an_image_has_its_gigabyte },
 #if defined(__aarch64__)
     { "vcpu: a guest runs ten instructions and stops", test_a_guest_runs_and_stops },

@@ -451,6 +451,27 @@ static inline long kosmos_thread_wait(unsigned long index)
 }
 
 /*
+ * **One of this process's threads stopped, read and let go**
+ * (`docs/w2.md` part 3), for a collector that scans every thread's
+ * registers and stack. `kosmos_thread_suspend` returns once the thread
+ * runs none of this process's code; suspends count.
+ */
+static inline long kosmos_thread_suspend(unsigned long index)
+{
+    return sys1(SYS_THREAD_SUSPEND, (long)index);
+}
+
+static inline long kosmos_thread_regs(unsigned long index, struct kosmos_regs *out)
+{
+    return sys2(SYS_THREAD_REGS, (long)index, (long)(uintptr_t)out);
+}
+
+static inline long kosmos_thread_resume(unsigned long index)
+{
+    return sys1(SYS_THREAD_RESUME, (long)index);
+}
+
+/*
  * **A futex** (`docs/w2.md` part 1). `kosmos_futex_wait` sleeps while the
  * word at `word` still holds `expected` - 0 when woken, SYS_NO_CHANGE at
  * once if it already differs, SYS_TIMED_OUT after `wait_ticks` (0: never).

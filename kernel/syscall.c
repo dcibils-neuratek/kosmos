@@ -1611,6 +1611,21 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = reserve_release(p, (uintptr_t)sc->arg[0], (size_t)sc->arg[1]);
         break;
 
+    case SYS_THREAD_SUSPEND:
+        result = sc->arg[0] > UINT_MAX ? SYS_ERR_NO_CHILD
+                 : process_thread_suspend(p, (unsigned)sc->arg[0]);
+        break;
+
+    case SYS_THREAD_REGS:
+        result = sc->arg[0] > UINT_MAX ? SYS_ERR_NO_CHILD
+                 : process_thread_regs(p, (unsigned)sc->arg[0], (uintptr_t)sc->arg[1]);
+        break;
+
+    case SYS_THREAD_RESUME:
+        result = sc->arg[0] > UINT_MAX ? SYS_ERR_NO_CHILD
+                 : process_thread_resume(p, (unsigned)sc->arg[0]);
+        break;
+
     case SYS_KEY_PUSH:
         /*
          * A driver's key - `syscall.h` has why. Device authority, as the

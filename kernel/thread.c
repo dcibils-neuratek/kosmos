@@ -1139,6 +1139,9 @@ struct thread *thread_create_suspended(const char *name,
     t->switches = 0;
     t->woken_at = 0;
     t->on_cpu = false;
+    t->suspend.count = 0;
+    t->suspend.parked = false;
+    t->user_frame = NULL;
     t->sched.move_to = 0;
     t->sched.pinned = false;
     t->sched.game = false;

@@ -24,6 +24,9 @@
 #include "pool.h"
 #include "memobj.h"
 #include "sharemap.h"
+#include "cpu.h"
+#include "percpu.h"
+#include "trap.h"
 
 
 /*
@@ -484,6 +487,10 @@ static void user_thread_main(void *arg)
 
     (void)arg;
     as_switch(self->space);
+
+    /* Suspended before it ever ran: parked before its first instruction,
+     * as it would be on any other way into user level. */
+    (void)process_park_if_suspended();
     thread_time_return(1);
     enter_user(self->user_entry, user_function_sp(USER_TSTACK_TOP(self->index)),
                self->user_arg);
@@ -723,6 +730,195 @@ void process_thread_ended(struct process *p, struct thread *t, int code)
  * made it gets round to asking. Its slot is handed back here, which is what
  * `ended` was keeping.
  */
+/*
+ * **A thread of the caller's own process suspended, read and resumed**
+ * (`docs/w2.md` part 3).
+ *
+ * A suspended thread runs none of its process's code. It is held in one
+ * place, `process_park_if_suspended`, which every way back to user level
+ * passes through - the end of a syscall, an interrupt or a first touch
+ * taken from user level, and a new thread's first entry - so a thread
+ * blocked in the kernel when it is suspended keeps blocking, and when it is
+ * woken it finishes its call and parks before the answer reaches it.
+ *
+ * So `SUSPEND` waits for one of two things: the thread parked, or blocked
+ * and off its processor. A thread running user code on another core is
+ * made to take an interrupt there (`hal_cpu_wake`), whose way out parks it;
+ * one on this core, or ready and waiting for its turn, gets there at its
+ * next interrupt, the timer's at the latest - so the wait spins briefly for
+ * the first case and then sleeps a tick at a time, letting a thread of a
+ * lower band than the caller's run to where it parks.
+ */
+
+/* `thread.suspend`, for every thread. One lock for the system: a suspend
+ * is a collector's, a few a second, and never on a hot path. Taken inside
+ * `processes_lock` where both are held. */
+static struct spinlock suspend_lock = SPINLOCK("suspend");
+
+/* `p`'s thread `index`, or NULL; `processes_lock` is held. Not one that
+ * has ended: it has no registers left to read and nothing to stop. */
+static struct thread *thread_of(struct process *p, unsigned index)
+{
+    struct thread *t;
+
+    if (index == 0) {
+        t = p->thread;
+    } else {
+        for (t = p->threads; t != NULL && t->index != index; t = t->sibling) {
+        }
+    }
+
+    return t != NULL && !t->ended ? t : NULL;
+}
+
+long process_thread_suspend(struct process *p, unsigned index)
+{
+    struct thread *me = thread_current();
+    struct thread *t;
+    unsigned long flags, held;
+    unsigned spins;
+
+    flags = spin_lock(&processes_lock);
+    t = thread_of(p, index);
+
+    if (t == NULL || p->killed) {
+        spin_unlock(&processes_lock, flags);
+        return t == NULL ? SYS_ERR_NO_CHILD : SYS_ERR_DENIED;
+    }
+
+    if (t == me) {
+        spin_unlock(&processes_lock, flags);
+        return SYS_ERR_DENIED;          /* nobody would be left to resume it */
+    }
+
+    held = spin_lock(&suspend_lock);
+    t->suspend.count++;
+    spin_unlock(&suspend_lock, held);
+    spin_unlock(&processes_lock, flags);
+
+    for (spins = 0;; spins++) {
+        bool off, gone;
+
+        flags = spin_lock(&processes_lock);
+        gone = thread_of(p, index) != t || p->killed;
+        off = __atomic_load_n(&t->suspend.parked, __ATOMIC_ACQUIRE)
+              || (t->state == THREAD_BLOCKED
+                  && !__atomic_load_n(&t->on_cpu, __ATOMIC_ACQUIRE));
+        spin_unlock(&processes_lock, flags);
+
+        if (gone || off) {
+            return 0;               /* an ended thread runs nothing either */
+        }
+
+        if (spins == 0 && t->sched.cpu != this_cpu()->index) {
+            hal_cpu_wake(t->sched.cpu);
+        }
+
+        if (spins < 4096) {
+            cpu_relax();
+        } else {
+            thread_sleep_until(thread_deadline_in(1));
+        }
+    }
+}
+
+long process_thread_regs(struct process *p, unsigned index, uintptr_t out)
+{
+    struct kosmos_regs regs;
+    struct thread *t;
+    unsigned long flags;
+    bool suspended;
+
+    if (!process_may_write(p, out, sizeof(regs))) {
+        return SYS_ERR_FAULT;
+    }
+
+    memset(&regs, 0, sizeof(regs));
+    flags = spin_lock(&processes_lock);
+    t = thread_of(p, index);
+    suspended = t != NULL && __atomic_load_n(&t->suspend.count, __ATOMIC_ACQUIRE) > 0;
+
+    if (suspended && t->user_frame != NULL) {
+        arch_user_regs(t->user_frame, t->user_frame_kind, &regs);
+    }
+
+    spin_unlock(&processes_lock, flags);
+
+    if (t == NULL) {
+        return SYS_ERR_NO_CHILD;
+    }
+
+    if (!suspended) {
+        return SYS_ERR_DENIED;          /* registers that are still moving */
+    }
+
+    memcpy((void *)out, &regs, sizeof(regs));
+    return 0;
+}
+
+long process_thread_resume(struct process *p, unsigned index)
+{
+    struct thread *t;
+    unsigned long flags, held;
+    bool wake = false;
+    long result = 0;
+
+    flags = spin_lock(&processes_lock);
+    t = thread_of(p, index);
+
+    if (t == NULL) {
+        spin_unlock(&processes_lock, flags);
+        return SYS_ERR_NO_CHILD;
+    }
+
+    held = spin_lock(&suspend_lock);
+
+    if (t->suspend.count == 0) {
+        result = SYS_ERR_DENIED;
+    } else if (--t->suspend.count == 0 && t->suspend.parked) {
+        t->suspend.parked = false;
+        wake = true;
+    }
+
+    spin_unlock(&suspend_lock, held);
+    spin_unlock(&processes_lock, flags);
+
+    /* Woken outside both, as every wake here is: it takes the thread's
+     * runqueue lock. */
+    if (wake) {
+        thread_wake(t);
+    }
+
+    return result;
+}
+
+bool process_park_if_suspended(void)
+{
+    struct thread *me = thread_current();
+    unsigned long flags;
+
+    if (me == NULL || __atomic_load_n(&me->suspend.count, __ATOMIC_ACQUIRE) == 0) {
+        return false;
+    }
+
+    flags = spin_lock(&suspend_lock);
+
+    /*
+     * Parked and blocked under the lock a resume takes, so a resume either
+     * comes first - the count is nought and this does not block - or finds
+     * it parked and wakes it. A kill lets it go the same way (`nudge`).
+     */
+    while (me->suspend.count > 0 && !process_should_die()) {
+        me->suspend.parked = true;
+        thread_block_and_release(&suspend_lock, flags);
+        flags = spin_lock(&suspend_lock);
+    }
+
+    me->suspend.parked = false;
+    spin_unlock(&suspend_lock, flags);
+    return true;
+}
+
 int process_thread_wait(struct process *p, unsigned index)
 {
     for (;;) {
@@ -835,6 +1031,20 @@ static void nudge(struct process *p, struct thread *t)
      * ending. W1d's hang was this case on an endpoint. */
     if (futex_timed_out(t)) {
         thread_wake(t);
+    }
+
+    /* Parked by a suspend: let go, so it can see the kill and end. A
+     * suspended thread is never resumed by an ending process. */
+    {
+        unsigned long held = spin_lock(&suspend_lock);
+        bool parked = t->suspend.parked;
+
+        t->suspend.parked = false;
+        spin_unlock(&suspend_lock, held);
+
+        if (parked) {
+            thread_wake(t);
+        }
     }
 
     /* A sleep, ended the way the timer ends one - early, which every wait

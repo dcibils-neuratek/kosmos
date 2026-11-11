@@ -30,6 +30,7 @@
 #include "mmu.h"
 #include "percpu.h"
 #include "trap.h"
+#include "syscall.h"
 
 /*
  * Thirty-two exceptions and sixteen hardware interrupts.
@@ -232,8 +233,59 @@ void trap_init(void)
  * anywhere at all. It is recorded, and every return to user level passes
  * through this. `process_exit` does not return.
  */
+_Static_assert(sizeof(struct syscall_saved) == 72 + 15 * 8, "syscall_saved");
+
+void trap_syscall_enter(struct syscall_saved *s)
+{
+    thread_time_enter();
+
+    if (thread_current() != NULL) {
+        thread_current()->user_frame = s;
+        thread_current()->user_frame_kind = USER_FRAME_SYSCALL;
+    }
+}
+
+void arch_user_regs(const void *frame, unsigned kind, struct kosmos_regs *out)
+{
+    if (kind == USER_FRAME_SYSCALL) {
+        const struct syscall_saved *s = frame;
+
+        /* rax is the call's number, as `syscall` was given it - its answer
+         * is not in rax until it returns; rcx and r11 are what `syscall`
+         * itself put there. */
+        out->rax = s->number;
+        out->rbx = s->rbx;  out->rcx = s->rcx;  out->rdx = s->rdx;
+        out->rsi = s->rsi;  out->rdi = s->rdi;  out->rbp = s->rbp;
+        out->rsp = s->rsp;
+        out->r8  = s->r8;   out->r9  = s->r9;   out->r10 = s->r10;
+        out->r11 = s->r11;  out->r12 = s->r12;  out->r13 = s->r13;
+        out->r14 = s->r14;  out->r15 = s->r15;
+        out->rip = s->rcx;
+        out->rflags = s->r11;
+    } else {
+        const struct trapframe *f = frame;
+
+        out->rax = f->rax;  out->rbx = f->rbx;  out->rcx = f->rcx;
+        out->rdx = f->rdx;  out->rsi = f->rsi;  out->rdi = f->rdi;
+        out->rbp = f->rbp;  out->rsp = f->rsp;
+        out->r8  = f->r8;   out->r9  = f->r9;   out->r10 = f->r10;
+        out->r11 = f->r11;  out->r12 = f->r12;  out->r13 = f->r13;
+        out->r14 = f->r14;  out->r15 = f->r15;
+        out->rip = f->rip;
+        out->rflags = f->rflags;
+    }
+}
+
 static void die_if_killed(void)
 {
+    /* Suspended by its own process (`w2.md` part 3): parked here, on the
+     * way back to user level, and a kill looked for again once let go.
+     * Every caller is on the thread's own kernel stack - never #PF's or
+     * #DF's, which do not come here - so blocking is safe. */
+    if (!process_should_die()) {
+        (void)process_park_if_suspended();
+    }
+
     if (process_should_die()) {
         process_exit(thread_current()->process, -1);
     }
@@ -302,6 +354,18 @@ void trap_handle(struct trapframe *f)
     /* From ring 3: the process's time ends here (`thread_time_enter`). */
     if (f->cs & 3) {
         thread_time_enter();
+
+        /*
+         * Where the process's registers are, for `SYS_THREAD_REGS` - not
+         * from a page fault or a double fault, whose frame is on the
+         * core's own IST stack and gone at the next one. A thread is never
+         * parked or blocked inside either, so its last other entry is the
+         * one that counts.
+         */
+        if (thread_current() != NULL && f->vector != 14 && f->vector != 8) {
+            thread_current()->user_frame = f;
+            thread_current()->user_frame_kind = USER_FRAME_TRAP;
+        }
     }
 
     /*

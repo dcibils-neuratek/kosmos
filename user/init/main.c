@@ -915,6 +915,256 @@ static int reserve_readonly_role(void)
     return 3;
 }
 
+/*
+ * **A thread suspended, read and resumed** (`docs/w2.md` part 3), role 917.
+ * Exits with the first check that failed: a spinner on another core,
+ * suspended, does not move across four ticks and moves again once resumed
+ * (1-2); two suspends want two resumes (3); its registers hold the mark it
+ * keeps in a callee-saved register, and its pc is inside its loop (4); a
+ * thread blocked in a futex wait, suspended and then woken, does not come
+ * back from the wait until resumed (5), and its registers, read while it
+ * is blocked in the call, hold the mark it kept across it (9); suspending
+ * itself, an index that is not a thread, and a resume with none
+ * outstanding are refused (6-8).
+ * Then it returns with the spinner still suspended, so the process ends
+ * with a parked thread in it - which the suite waits for - with 0 when the
+ * spinner ran on another core and 100 when there was only one to run on.
+ */
+#define CTEST_SUSPEND 917UL
+
+static volatile unsigned long spun;
+static volatile uint32_t suspend_gate;
+static volatile unsigned long came_back;
+
+extern const char suspend_loop_start[], suspend_loop_end[];
+
+#define SUSPEND_MARK 0x5eed5eed5eed5eedUL
+
+__attribute__((noinline, noreturn)) static void spins_with_a_mark(unsigned long arg)
+{
+    (void)arg;
+#if defined(__x86_64__)
+    __asm__ volatile(
+        "movabsq $0x5eed5eed5eed5eed, %%rbx\n"
+        ".global suspend_loop_start\n"
+        "suspend_loop_start:\n"
+        "lock incq (%0)\n"
+        "jmp suspend_loop_start\n"
+        ".global suspend_loop_end\n"
+        "suspend_loop_end:\n"
+        : : "r"(&spun) : "rbx", "memory");
+#else
+    __asm__ volatile(
+        "movz x19, #0x5eed\n"
+        "movk x19, #0x5eed, lsl #16\n"
+        "movk x19, #0x5eed, lsl #32\n"
+        "movk x19, #0x5eed, lsl #48\n"
+        ".global suspend_loop_start\n"
+        "suspend_loop_start:\n"
+        "ldr x9, [%0]\n"
+        "add x9, x9, #1\n"
+        "str x9, [%0]\n"
+        "b suspend_loop_start\n"
+        ".global suspend_loop_end\n"
+        "suspend_loop_end:\n"
+        : : "r"(&spun) : "x19", "x9", "memory");
+#endif
+    __builtin_unreachable();
+}
+
+#define WAIT_MARK 0x0a7e0a7e0a7e0a7eUL
+
+/*
+ * A futex wait with a mark in a callee-saved register across the call: on
+ * x86-64 one of the six `syscall_entry` saves for `SYS_THREAD_REGS`, which
+ * a thread blocked in a call had nowhere else.
+ */
+static long waits_with_a_mark(void)
+{
+#if defined(__x86_64__)
+    long r;
+
+    __asm__ volatile(
+        "movabsq $0x0a7e0a7e0a7e0a7e, %%rbx\n"
+        "syscall\n"
+        : "=a"(r)
+        : "a"((long)SYS_FUTEX_WAIT), "D"(&suspend_gate), "S"(0L), "d"(0L)
+        : "rbx", "rcx", "r11", "memory");
+    return r;
+#else
+    register long x0 __asm__("x0") = (long)(uintptr_t)&suspend_gate;
+    register long x1 __asm__("x1") = 0;
+    register long x2 __asm__("x2") = 0;
+    register long x8 __asm__("x8") = SYS_FUTEX_WAIT;
+
+    __asm__ volatile(
+        "movz x19, #0x0a7e\n"
+        "movk x19, #0x0a7e, lsl #16\n"
+        "movk x19, #0x0a7e, lsl #32\n"
+        "movk x19, #0x0a7e, lsl #48\n"
+        "svc #0\n"
+        : "+r"(x0)
+        : "r"(x1), "r"(x2), "r"(x8)
+        : "x19", "memory");
+    return x0;
+#endif
+}
+
+static void waits_at_the_gate(unsigned long arg)
+{
+    (void)arg;
+
+    while (__atomic_load_n(&suspend_gate, __ATOMIC_ACQUIRE) == 0) {
+        (void)waits_with_a_mark();
+    }
+
+    came_back = 1;
+    kosmos_thread_exit(0);
+}
+
+static int suspend_role(void)
+{
+    struct kosmos_regs regs;
+    unsigned long a, b;
+    long spinner, waiter;
+
+    /* On another core where there is one, so the suspend has to reach
+     * across; placed as any thread is where there is not. */
+    bool across;
+
+    spinner = kosmos_thread_start_on(spins_with_a_mark, 0, 1);
+    across = spinner >= 0;
+
+    if (spinner < 0) {
+        spinner = kosmos_thread_start(spins_with_a_mark, 0);
+    }
+
+    if (spinner < 0) {
+        return 20;
+    }
+
+    while (spun < 1000) {
+        kosmos_sleep(1);
+    }
+
+    /* 1 */
+    if (kosmos_thread_suspend((unsigned long)spinner) != 0) {
+        return 1;
+    }
+
+    a = spun;
+    kosmos_sleep(4);
+    b = spun;
+
+    if (a != b) {
+        return 1;
+    }
+
+    /* 4 */
+    if (kosmos_thread_regs((unsigned long)spinner, &regs) != 0) {
+        return 4;
+    }
+
+#if defined(__x86_64__)
+    if (regs.rbx != SUSPEND_MARK
+        || regs.rip < (uintptr_t)suspend_loop_start || regs.rip > (uintptr_t)suspend_loop_end) {
+        return 4;
+    }
+#else
+    if (regs.x[19] != SUSPEND_MARK
+        || regs.pc < (uintptr_t)suspend_loop_start || regs.pc > (uintptr_t)suspend_loop_end) {
+        return 4;
+    }
+#endif
+
+    /* 3 */
+    if (kosmos_thread_suspend((unsigned long)spinner) != 0
+        || kosmos_thread_resume((unsigned long)spinner) != 0) {
+        return 3;
+    }
+
+    a = spun;
+    kosmos_sleep(4);
+
+    if (spun != a) {
+        return 3;
+    }
+
+    /* 2 */
+    if (kosmos_thread_resume((unsigned long)spinner) != 0) {
+        return 2;
+    }
+
+    kosmos_sleep(4);
+
+    if (spun == a) {
+        return 2;
+    }
+
+    /* 5 */
+    waiter = kosmos_thread_start(waits_at_the_gate, 0);
+
+    if (waiter < 0) {
+        return 21;
+    }
+
+    kosmos_sleep(4);
+
+    if (kosmos_thread_suspend((unsigned long)waiter) != 0) {
+        return 5;
+    }
+
+    /* 9: the registers of a thread blocked in a call */
+    if (kosmos_thread_regs((unsigned long)waiter, &regs) != 0) {
+        return 9;
+    }
+
+#if defined(__x86_64__)
+    if (regs.rbx != WAIT_MARK || regs.rax != SYS_FUTEX_WAIT) {
+        return 9;
+    }
+#else
+    if (regs.x[19] != WAIT_MARK || regs.x[8] != SYS_FUTEX_WAIT) {
+        return 9;
+    }
+#endif
+
+    __atomic_store_n(&suspend_gate, 1, __ATOMIC_RELEASE);
+    (void)kosmos_futex_wake(&suspend_gate, 1);
+    kosmos_sleep(4);
+
+    if (came_back != 0 || kosmos_thread_resume((unsigned long)waiter) != 0) {
+        return 5;
+    }
+
+    if (kosmos_thread_wait((unsigned long)waiter) != 0 || came_back != 1) {
+        return 5;
+    }
+
+    /* 6-8 */
+    if (kosmos_thread_suspend(0) != SYS_ERR_DENIED) {
+        return 6;
+    }
+
+    if (kosmos_thread_suspend(999) != SYS_ERR_NO_CHILD) {
+        return 7;
+    }
+
+    if (kosmos_thread_resume((unsigned long)spinner) != SYS_ERR_DENIED) {
+        return 8;
+    }
+
+    /* And leave with the spinner parked: the process must still end. */
+    if (kosmos_thread_suspend((unsigned long)spinner) != 0) {
+        return 1;
+    }
+
+    /* Which way it went: 0 with the spinner on another core, reached by an
+     * interrupt; 100 with every thread on one core, reached at the
+     * spinner's next tick. The suite asks for both. */
+    return across ? 0 : 100;
+}
+
 /* A write through a region's executable alias ends the process. */
 static int reserve_alias_role(void)
 {
@@ -1373,6 +1623,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_RESERVE_ALIAS) {
         return reserve_alias_role();
+    }
+
+    if (arg == CTEST_SUSPEND) {
+        return suspend_role();
     }
 
     if (arg == CTEST_THREAD_ON) {

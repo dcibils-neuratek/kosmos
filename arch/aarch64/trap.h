@@ -28,6 +28,12 @@
 #include <stdint.h>
 #include <setjmp.h>
 
+struct kosmos_regs;
+
+/* `thread.user_frame_kind`: AArch64 has one shape, the trapframe, whatever
+ * took the process into the kernel. */
+#define USER_FRAME_TRAP     0
+
 struct trapframe {
     uint64_t x[31];     /* x0 through x30 */
     uint64_t sp;
@@ -36,6 +42,9 @@ struct trapframe {
     uint64_t esr;       /* what kind of exception */
     uint64_t far;       /* the address it touched, for aborts */
 };
+
+/* The registers a user-level frame holds, in `SYS_THREAD_REGS`'s shape. */
+void arch_user_regs(const void *frame, unsigned kind, struct kosmos_regs *out);
 
 _Static_assert(sizeof(struct trapframe) == TF_SIZE,
                "trapframe size disagrees with vectors.S");
