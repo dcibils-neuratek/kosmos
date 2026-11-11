@@ -31406,3 +31406,71 @@ one core there too and the role rightly answered 100 both times. The test
 now asks for 0 across only where `smp_online()` is above one;
 `arm-sandbox`, `arm-kernel` and `x86-kernel` then 219, 219 and 217 of
 theirs.
+
+## 18.768 pthreads, inside the process (JetSki W3a)
+
+`docs/w3.md` W3a: the first of the POSIX layer, `runtime/posix/`, linked
+by ported code only. `pthread.h` and `sched.h` are in
+`runtime/posix/include/`, which is on the include path of
+`runtime/posix/` and `posixtest.elf` and of nothing else (an explicit rule
+in the `Makefile`, since a target-specific flag would reach every
+prerequisite); `posixtest.elf`'s link checks that `init.elf` has no
+`pthread_create` in it, so the system's own image cannot have taken it
+in.
+
+What is there: `pthread_create`, `join`, `detach`, `self`, `equal`,
+`exit`, on Kosmos threads, with a reaper thread collecting detached ones
+so their indices come back; mutexes on `kosmos_lock`'s word and three
+states, normal, recursive and error-checking, with `trylock` and
+`timedlock`; condition variables as a sequence word and a futex wait,
+`timedwait` on `CLOCK_MONOTONIC` or `CLOCK_REALTIME`; rwlocks on a mutex
+and a condition, writers preferred; `once` in three states; keys with
+destructors, a key's sequence odd while in use so a deleted key's values
+are stale at once; `pthread_getattr_np` and `pthread_attr_getstack`,
+which JavaScriptCore asks for the stack it scans; `sched_yield`.
+`ETIMEDOUT` (85) joins `errno.h`. No signals: `pthread_kill` and
+`pthread_sigmask` are not declared.
+
+**Test**: `posixtest.elf`, in `x86-loader` and `arm-loader` as
+`cxxtest.elf` is - ten checks written as a port writes them, against
+`<pthread.h>` and nothing of Kosmos's: eight threads counting 20000 each
+under one mutex; a token round a ring of four under a mutex and a
+condition, a thousand passes; a 30 ms monotonic `timedwait` nobody
+signals, which must time out and not early; `once` under eight at once;
+four threads' key destructors; a recursive mutex held twice, refused to
+another (`EBUSY`) and refusing an unlock too many (`EPERM`); every
+thread's stack where `getattr_np` says; 200 detached threads, collected
+(a new thread's index under 16); readers together and a writer alone;
+`join` handed 42. Both boards: "counted 160000, ring 1000, timed out,
+once 1, keys 4, recursive, stacks, reaped, rwlock shared, joined 42",
+which the suite's summary now repeats.
+
+**The ring and the rwlock are watched, not joined at once.** A lost wake
+leaves threads asleep for good, and the first run of the second control
+below hung the whole suite for 720 s with nothing said; the test now
+waits for each with a deadline - the ring five seconds without a pass,
+the rwlock twenty - and says which stopped.
+
+**Controls**:
+
+- **The mutex taken with a plain load and store** in place of
+  `kosmos_lock`'s atomic exchange: ARM "counted 154206 of 160000".
+  **x86 did not bite, and cannot here**: QEMU runs an x86 guest's
+  processors one at a time on one host thread on this Mac (an x86 guest's
+  memory order is stronger than the host's, so it is not given MTTCG), and
+  a load and a store are only separated between two translated blocks,
+  which 160000 tries did not hit. ARM's guest runs its processors in
+  parallel. On real x86 cores the same mistake loses counts.
+- **The condition variable without its sequence word** - a signal that
+  wakes but does not move it, so one between a waiter's letting go and
+  its sleep is lost: ARM "the rwlock's threads stopped, 0 of 4 done - a
+  wake was lost", in 32 s (before the watch: a hang).
+
+**Whole gate**: 108 of 112 in 592 s. Two were this change's: `rebuilds`,
+whose list of applications did not name `posixtest.elf`, so its two
+objects were never asked about (named now); and `x86-tcc`, the loader
+suite over TinyCC's images, which have no `posixtest.elf` - its checks
+need `_Thread_local`, and are skipped there as C++'s are. `x86-profile`
+and `x86-film` were load: alone, both passed, `x86-film` twice (its
+failure was "a 3.00 s film took 2.75 s by its own clock", a timing check
+with six suites beside it). The six again: all pass.

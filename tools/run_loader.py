@@ -176,6 +176,36 @@ if CXX:
                      for n in ("unwound.lua", "cxxtest.elf")]
 
 #
+# **The POSIX layer** (`docs/w3.md` W3a): `posixtest.elf`, its checks written
+# as a port writes them, against `<pthread.h>` and nothing of Kosmos's.
+#
+POSIX_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The POSIX layer's test program (`tools/run_loader.py`).
+-- kosmos: image posixtest.elf
+local kit = use("posixtest.elf")
+print("posixtest: " .. kit.run())
+"""
+
+# GCC's images only, as C++'s: TinyCC's have no `_Thread_local`, which
+# `pthread.c` is built on.
+posix_files = []
+
+if CXX:
+    built = this_boards_image("posixtest.elf")
+
+    if built is None:
+        print("FAIL: no posixtest.elf for this board - `make apps` (and ARCH=x86_64) builds it")
+        sys.exit(1)
+
+    subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
+                    "--strip-debug", built, os.path.join(WORK, "posixtest.elf")], check=True)
+
+    with open(os.path.join(WORK, "posixtest.lua"), "w") as f:
+        f.write(POSIX_PROGRAM)
+
+    posix_files = ["posixtest.lua", "posixtest.elf"]
+
+#
 # **Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image in one
 # folder, `/Home/Apps/Doom`, as a stick carries them - and no WAD, which is
 # not the repository's to have. Typed at the prompt, `doom` has to be found
@@ -208,7 +238,7 @@ for folder, image in (("Doom", "doom.elf"), ("Quake", "quake.elf"), ("SNES", "sn
             installed.append("%s:/Home/Apps/%s/%s" % (os.path.join(source, name), folder, name))
 
 files = ["apptest.lua", "plain.lua", "broken.lua", "stranger.lua", "stale.lua",
-         "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"] + cxx_files
+         "apptest.elf", "broken.elf", "stranger.elf", "stale.elf"] + cxx_files + posix_files
 subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, "224"]
                + ["%s:/Home/apps/apptest/%s" % (os.path.join(WORK, n), n) for n in files]
                + installed + cxx_elsewhere,
@@ -223,6 +253,7 @@ def main():
     failed = []
     checks = 0
     times = []
+    posix_said = [None]
 
     def check(ok, complaint):
         nonlocal checks
@@ -325,6 +356,18 @@ def main():
                   "cxxtest.elf with its unwinding tables zeroed did not run, or "
                   "still caught its exception - the throw is not walking them: %r"
                   % heard[:400])
+
+        said = None
+
+        if CXX:
+            said, _ = run("posixtest", "posixtest:", 180)
+
+        posix_said[0] = said if CXX else "not in TinyCC's images"
+        check(not CXX or said is not None and said.startswith(
+                  "posixtest: posix: counted 160000, ring 1000, timed out, once 1, keys 4, "
+                  "recursive, stacks, reaped, rwlock ")
+              and said.endswith(", joined 42"),
+              "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
 
         said, _ = run("plain", "apptest", 60)
         check(said is not None and "not running in apptest.elf" in said,
@@ -435,8 +478,9 @@ def main():
           "from the image made the first time - %.1f s, then %.1f s; Doom and "
           "Quake, installed in /Home/Apps, each found by its name and run in its "
           "own image, %.1f s and %.1f s; and the Super Nintendo's --scale, from "
-          "its image, through the window manager)"
-          % (checks, len(whole) / 1e6, times[0], times[1], times[2], times[3]))
+          "its image, through the window manager; and the POSIX layer's checks: %s)"
+          % (checks, len(whole) / 1e6, times[0], times[1], times[2], times[3],
+             (posix_said[0] or "").replace("posixtest: posix: ", "")))
     return 0
 
 

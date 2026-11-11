@@ -1077,4 +1077,24 @@ static inline long kosmos_pulse(long cap, uint32_t code, uint64_t value)
 
 #define USER_HEAP_SIZE  ((unsigned long)USER_HEAP_PAGES * 4096UL)
 
+/*
+ * **Where threads' stacks are**, for a thread that has to say where its own
+ * is - `pthread_getattr_np`, which JavaScriptCore asks before it scans a
+ * stack (`docs/w3.md` W3a). The same numbers as `kernel/process.h`'s
+ * `USER_STACK_TOP`, `USER_STACK_PAGES`, `USER_TSTACK_VA` and
+ * `USER_TSTACK_SLOT`, shared one number at a time as the heap's are;
+ * `posixtest.elf`'s stack check (`x86-loader`, `arm-loader`) holds them to
+ * the kernel's by asking whether a thread's own locals are inside the
+ * range these give.
+ *
+ * The first thread's stack ends four megabytes above the heap and is
+ * sixty-four pages; thread `index`'s slot is a megabyte from eight
+ * gigabytes above the image, its first page the thread's own block
+ * (`USER_TBLOCK`) and the rest its stack.
+ */
+#define USER_MAIN_STACK_TOP   (USER_HEAP + 0x00400000UL)
+#define USER_MAIN_STACK_PAGES 64UL
+#define USER_THREAD_SLOTS     (USER_TEXT + 0x200000000UL)
+#define USER_THREAD_SLOT      (1024UL * 1024UL)
+
 #endif /* KOSMOS_H */

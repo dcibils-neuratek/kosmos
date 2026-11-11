@@ -3428,6 +3428,31 @@ $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)
 	    || { echo "apps: the system's image has C++'s test kit in it"; rm -f $@; exit 1; }
 
 #
+# **The POSIX layer** (`docs/w3.md`): `runtime/posix/`, for ported code only.
+# Its headers are on the include path of what links it and of nothing else,
+# so no Kosmos kit, server or application can include `<pthread.h>` by
+# accident (`design.md` §17.3). `posixtest.elf` holds it, as `cxxtest.elf`
+# holds C++, and the system's image must not have it.
+#
+POSIX_SRCS := runtime/posix/pthread.c
+POSIX_CFLAGS := -I runtime/posix/include
+POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
+POSIXTEST_OBJS := $(UBUILD)/user/kits/posixtest/posixtest.c.o \
+                  $(UBUILD)/user/kits/posixtest/posixtest_kit.c.o
+
+$(POSIX_OBJS) $(UBUILD)/user/kits/posixtest/posixtest.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/posixtest.elf: $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_posixtest_kit$$' \
+	    || { echo "apps: posixtest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T pthread_create$$' \
+	    || { echo "apps: the system's image has the POSIX layer in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -3600,7 +3625,7 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
-app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/doom.elf \
+app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
 

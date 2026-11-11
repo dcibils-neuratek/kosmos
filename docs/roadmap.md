@@ -10064,7 +10064,10 @@ the applications make the system useful, and is not pulled forward.
   and the environment, W3d descriptors and files on **a Storage Kit in C**
   (agreed 11 November; the Lua namespace's disk and ram encoding to move
   onto it after), W3e sockets and `poll` on `netclient.c`; tested by
-  `posixtest.elf` in the gate. Later: a released reservation's addresses reused.
+  `posixtest.elf` in the gate. **W3a, pthreads, built** (18.768): threads,
+  mutexes, conditions, rwlocks, once, keys and `getattr_np` in
+  `runtime/posix/`, ten checks on both boards; W3b, `mmap`, next.
+  Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

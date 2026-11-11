@@ -98,11 +98,12 @@ int *__errno(void);
 #define ENOSYS       38
 #define ENOTEMPTY    39
 #define EILSEQ       84
+#define ETIMEDOUT    85     /* a wait with a deadline that came (W3a) */
 
 /* The largest number above, under BSD's name: C++'s library asks it, to
  * know which numbers `strerror` has a sentence for. A new code above it
  * moves it. */
-#define ELAST        EILSEQ
+#define ELAST        ETIMEDOUT
 
 __END_DECLS
 
