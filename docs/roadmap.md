@@ -10059,7 +10059,12 @@ the applications make the system useful, and is not pulled forward.
   process, next - **its line agreed 11 November** (Diego: "Amend the
   principle"): the POSIX names inside a process for ported code, in
   `runtime/posix/`, and `fork`, `exec`, signals, a global tree and
-  descriptors crossing processes still never (`design.md` §17.3). Later: a released reservation's addresses reused.
+  descriptors crossing processes still never (`design.md` §17.3).
+  **Designed in `docs/w3.md`**: W3a pthreads, W3b `mmap` on W2, W3c time
+  and the environment, W3d descriptors and files on **a Storage Kit in C**
+  (agreed 11 November; the Lua namespace's disk and ram encoding to move
+  onto it after), W3e sockets and `poll` on `netclient.c`; tested by
+  `posixtest.elf` in the gate. Later: a released reservation's addresses reused.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out.

@@ -145,6 +145,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
 - Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 to X3 built: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
 - The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed, to be built: `docs/playback.md`, `docs/playback-architecture.png`
+- JetSki's POSIX layer inside the process, and the Storage Kit its files go through - agreed, to be built: `docs/w3.md`
 - Glossary: `docs/glossary.md`
 
 ---

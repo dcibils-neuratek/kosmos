@@ -251,7 +251,8 @@ agreed the same day*; the futex built (0.11.369), reserve and protect
 - **a thread suspended and its registers read** - JavaScriptCore's
   collector scans every thread's stack and registers for pointers.
 
-**W3 - the POSIX layer, inside the process.** pthreads (threads, mutexes,
+**W3 - the POSIX layer, inside the process** (designed in `docs/w3.md`,
+the line agreed 11 November, and its file door a Storage Kit in C). pthreads (threads, mutexes,
 condition variables, keys) on Kosmos threads and the futex; `mmap`,
 `munmap`, `mprotect` on W2; `open`, `read`, `write`, `stat`, directories
 through the process's namespace - `/Home` and `/Temporary` paths, nothing
