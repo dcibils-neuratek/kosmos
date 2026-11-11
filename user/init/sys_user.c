@@ -29,6 +29,8 @@
 #include "pcmconvert.h"
 #include "serialize.h"
 #include "storage.h"
+#include "diskask.h"
+#include "ramask.h"
 
 /* The two definitions of struct message are one contract written twice, so
  * the agreement is checked rather than assumed. A silent disagreement would
@@ -2952,6 +2954,179 @@ static int l_kit_names(lua_State *L)
 }
 
 /*
+ * **The file servers' wire, from Lua, in one place** (`docs/w3.md` W3d4).
+ * The namespace packed `diskproto.h`'s and `ramproto.h`'s requests itself
+ * with `string.pack`, a second copy of each layout; these ask through
+ * `diskask` and `ramask`, the one C client of each, and hand back the
+ * reply's fields.
+ *
+ * `sys.disk_call(cap, op, path, offset, bytes, flags, data, pass)`: nil and
+ * why when the call itself failed, or the reply's fields in `disk_reply`'s
+ * order - error, more, count, length, offset, bytes, size, the node's kind,
+ * extents, size, mtime, modified, dated and created, the 1024 bytes of `u`,
+ * heard, and heard_ms.
+ */
+static int l_disk_call(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    uint32_t op = (uint32_t)luaL_checkinteger(L, 2);
+    const char *path = luaL_optstring(L, 3, "/");
+    uint64_t offset = (uint64_t)luaL_optinteger(L, 4, 0);
+    uint64_t bytes = (uint64_t)luaL_optinteger(L, 5, 0);
+    uint32_t flags = (uint32_t)luaL_optinteger(L, 6, 0);
+    size_t length = 0;
+    const char *data = luaL_optlstring(L, 7, "", &length);
+    long pass = (long)luaL_optinteger(L, 8, -1);
+    struct diskask *d = malloc(sizeof(*d));
+    const struct disk_reply *rp;
+    uint32_t e;
+
+    if (d == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "out of memory");
+        return 2;
+    }
+
+    d->ep = cap;
+    e = diskask(d, op, path, flags, offset, bytes, pass, length > 0 ? data : NULL,
+                (uint32_t)length);
+
+    if (e == DISK_ERR_NO_DISK && d->status != 0) {
+        long status = d->status;
+
+        free(d);
+        return fail(L, status);
+    }
+
+    if (e == DISK_ERR_BAD_OP && length > DISK_DATA_MAX) {
+        free(d);
+        lua_pushnil(L);
+        lua_pushstring(L, "more than one request to the disk carries");
+        return 2;
+    }
+
+    rp = diskask_said(d);
+    lua_pushinteger(L, e);
+    lua_pushinteger(L, rp->more);
+    lua_pushinteger(L, rp->count);
+    lua_pushinteger(L, rp->length);
+    lua_pushinteger(L, (lua_Integer)rp->offset);
+    lua_pushinteger(L, (lua_Integer)rp->bytes);
+    lua_pushinteger(L, (lua_Integer)rp->size);
+    lua_pushinteger(L, rp->node.kind);
+    lua_pushinteger(L, rp->node.extents);
+    lua_pushinteger(L, (lua_Integer)rp->node.size);
+    lua_pushinteger(L, (lua_Integer)rp->node.mtime);
+    lua_pushinteger(L, (lua_Integer)rp->node.modified);
+    lua_pushinteger(L, rp->node.dated);
+    lua_pushinteger(L, rp->node.created);
+    lua_pushlstring(L, rp->u.data, sizeof(rp->u.data));
+    lua_pushinteger(L, rp->heard);
+    lua_pushinteger(L, (lua_Integer)rp->heard_ms);
+    free(d);
+    return 17;
+}
+
+/*
+ * `sys.ram_call(cap, pass, op, path, offset, length, count, attrs, data,
+ * packed, flags)`: nil and why when the call failed, or error, more, count,
+ * length, packed, size and the 1024 bytes of the reply's union. `attrs` is
+ * a table of name to value, at most eight, a number travelling as its text
+ * with the kind that says so (`ramproto.h`); `data` fills the union.
+ */
+static int l_ram_call(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    long pass = (long)luaL_optinteger(L, 2, -1);
+    uint32_t op = (uint32_t)luaL_checkinteger(L, 3);
+    const char *path = luaL_optstring(L, 4, "/");
+    uint32_t offset = (uint32_t)luaL_optinteger(L, 5, 0);
+    uint32_t length = (uint32_t)luaL_optinteger(L, 6, 0);
+    uint32_t count = (uint32_t)luaL_optinteger(L, 7, 0);
+    size_t data_length = 0;
+    const char *data = luaL_optlstring(L, 9, "", &data_length);
+    uint32_t packed = (uint32_t)luaL_optinteger(L, 10, 0);
+    uint32_t flags = (uint32_t)luaL_optinteger(L, 11, 0);
+    struct ram_attr attrs[RAM_ATTRS_MAX];
+    uint32_t nattrs = 0;
+    struct ramask *r;
+    const struct ram_reply *rp;
+    uint32_t e;
+
+    memset(attrs, 0, sizeof(attrs));
+
+    if (lua_istable(L, 8)) {
+        lua_pushnil(L);
+
+        while (lua_next(L, 8) != 0) {
+            if (nattrs < RAM_ATTRS_MAX && lua_type(L, -2) == LUA_TSTRING) {
+                size_t nl = 0, vl = 0;
+                const char *name = lua_tolstring(L, -2, &nl);
+                const char *value;
+
+                attrs[nattrs].kind = lua_type(L, -1) == LUA_TNUMBER ? RAM_ATTR_NUMBER
+                                                                   : RAM_ATTR_TEXT;
+                lua_pushvalue(L, -1);           /* tolstring changes a number */
+                value = luaL_tolstring(L, -1, &vl);
+                memcpy(attrs[nattrs].name, name, nl < RAM_NAME_MAX ? nl : RAM_NAME_MAX);
+                memcpy(attrs[nattrs].value, value, vl < RAM_VALUE_MAX ? vl : RAM_VALUE_MAX);
+                lua_pop(L, 2);
+                nattrs++;
+            }
+
+            lua_pop(L, 1);
+        }
+    }
+
+    if (data_length > RAM_DATA_MAX) {
+        data_length = RAM_DATA_MAX;     /* the union's size, as `c1024` cut it */
+    }
+
+    if ((r = malloc(sizeof(*r))) == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "out of memory");
+        return 2;
+    }
+
+    r->ep = cap;
+
+    /* The path cut to the field, as the Lua packing did. */
+    {
+        char cut[RAM_PATH_MAX];
+
+        snprintf(cut, sizeof(cut), "%s", path);
+        e = ramask(r, op, cut, offset, length, count, packed, flags, attrs,
+                   data_length > 0 ? data : NULL,
+                   (uint32_t)data_length, pass);
+    }
+
+    if (e == RAMASK_NO_ANSWER) {
+        long status = r->status;
+
+        free(r);
+
+        if (status != 0) {
+            return fail(L, status);
+        }
+
+        lua_pushnil(L);
+        lua_pushstring(L, "a /Temporary reply of the wrong size");
+        return 2;
+    }
+
+    rp = ramask_said(r);
+    lua_pushinteger(L, e);
+    lua_pushinteger(L, rp->more);
+    lua_pushinteger(L, rp->count);
+    lua_pushinteger(L, rp->length);
+    lua_pushinteger(L, rp->packed);
+    lua_pushinteger(L, (lua_Integer)rp->size);
+    lua_pushlstring(L, rp->u.data, sizeof(rp->u.data));
+    free(r);
+    return 7;
+}
+
+/*
  * `sys.storage_start(mounts, cwd)`: the Storage Kit's mount table
  * (`storage.h`, `docs/w3.md` W3d), handed over once by the runner before the
  * program runs - `{ {prefix, cap, root, proto}, ... }` with `proto` one of
@@ -3086,6 +3261,8 @@ static const luaL_Reg sys_functions[] = {
     { "call",     l_call },
     { "call_raw", l_call_raw },
     { "storage_start", l_storage_start },
+    { "disk_call", l_disk_call },
+    { "ram_call", l_ram_call },
     { "receive",  l_receive },
     { "receive_raw", l_receive_raw },
     { "pulse",    l_pulse },

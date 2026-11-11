@@ -942,6 +942,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/vmmgpu.c \
              user/servers/vmminput.c \
              user/servers/diskask.c \
+             user/servers/ramask.c \
              user/servers/vmmnet.c \
              user/servers/fdt.c \
              user/kits/tls/tls_kosmos.c \

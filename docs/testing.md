@@ -31763,7 +31763,34 @@ line 895 read as "line "", the last buffer lost.
 
 **Whole gate**: 110 of 112 in 608 s. `x86-film-load` heard a gap under
 the whole gate's load, 1513 samples past two steps of FFmpeg's from 2.6 s
-- the shape 18.7xx's gate saw before - and `arm-sandboxwin`'s line typed
+- the shape it has had under the gate before - and `arm-sandboxwin`'s line typed
 into the Console tab was not answered in its time, the Alpine prompt
 there and the command not yet echoed. Neither runs anything the layer
 links. Alone, both passed: 18 of 18, and 10 of 10.
+
+## 18.774 One door for the file servers' wire (JetSki W3d4)
+
+`docs/w3.md` W3d4. The Lua namespace kept a second copy of `diskproto.h`'s
+and `ramproto.h`'s request and reply layouts as `string.pack` formats
+(`DISK_REQUEST`, `DISK_REPLY`, `RAM_REQUEST`, `RAM_REPLY`, and the asserts
+that held them to the headers' sizes). They are gone: `sys.disk_call` asks
+through `diskask`, and `sys.ram_call` through a new `ramask`
+(`user/servers/ramask.c`, `user/include/ramask.h`), the one C client of
+each protocol. The Storage Kit asks `/Temporary` through `ramask` too, in
+place of its own exchange. smbfs's share calls ride `sys.disk_call` as
+well, since theirs is the disk's frame. `diskask` keeps the last call's
+IPC status, so a server that does not answer is still said in IPC's
+words. What stays in Lua is the request logic - which operation, regions,
+paging, `.programs` - and the reading of payloads (a superblock, an
+attribute, a page of names), each in one place. And a second string a
+call no longer made: the request and the reply were a Lua string each.
+
+**Test**: the whole gate, since every file a process opens goes through
+it - 111 of 112 in 622 s; `x86-profile` read 779 samples of about 1040
+due under the gate's load, and alone 1016, none lost.
+
+**Control**: `sys.disk_call` dropping the region it is handed - and it
+bit as a hang, not a sentence: `x86-loader` gave no answer in 720 s and
+the gate stopped waiting, because the system that reads `/Home` through
+regions cannot read its own images without them. Caught, and caught late:
+a broken `/Home` stops a guest before it can say what broke.

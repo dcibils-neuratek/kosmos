@@ -1783,9 +1783,11 @@ local function new_namespace()
   -- two, and a terminal is not a place to keep a copy of a struct.
   --------------------------------------------------------------------------
 
+  -- The request and the reply are `ramproto.h`'s, packed and read in C by
+  -- `sys.ram_call` (`docs/w3.md` W3d4) - one layout, in the header, where
+  -- this file used to keep a second. What is read here is the payload:
+  -- attributes, a page of names.
   local RAM_ATTR    = "I4c32c48"                     -- kind, name, value
-  local RAM_REQUEST = "<I4I4I4I4I4c256" .. string.rep(RAM_ATTR, 8) .. "c1024I4I4"
-  local RAM_REPLY   = "<I4I4I4I4I4I4I8c1024"
   local RAM_REGION  = 1
 
   --
@@ -1799,8 +1801,6 @@ local function new_namespace()
   local RAM_PATH_MAX, RAM_ATTRS_MAX = 256, 8
   local RAM_ENTRIES_MAX, RAM_DATA_MAX = 4, 1024
 
-  assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, 0, 0, "") == 1056,
-         "namespace: the /Temporary reply layout does not match ramproto.h")
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
                     setattr = 5, query = 6, watch = 7,
@@ -1827,43 +1827,23 @@ local function new_namespace()
   end
 
   --
-  -- A table of attributes, as the eight slots the struct has.
+  -- A request's fields, for `ram_call` to hand to `sys.ram_call`, which
+  -- packs them as `ramproto.h` lays them out: the attributes a table of
+  -- name to value, at most eight, a number travelling as its text with the
+  -- kind that says so - what `/Devices` settled.
   --
-  -- Numbers travel as text with `kind` saying they were numbers, which is
-  -- what `/Devices` settled: the wire carries characters either way, and the far
-  -- side hands back the type that went in.
-  --
-  local function pack_attrs(attrs)
-    local out, count = {}, 0
+  -- How many of a table's attributes a request carries: at most eight.
+  local function attr_count(attrs)
+    local n = 0
 
-    for name, value in pairs(attrs or {}) do
-      if count < RAM_ATTRS_MAX then
-        count = count + 1
-        out[#out + 1] = (type(value) == "number") and 1 or 0
-        out[#out + 1] = fixed(name, 32)
-        out[#out + 1] = fixed(tostring(value), 48)
-      end
-    end
+    for _ in pairs(attrs or {}) do n = n + 1 end
 
-    for _ = count + 1, RAM_ATTRS_MAX do
-      out[#out + 1] = 0
-      out[#out + 1] = ""
-      out[#out + 1] = ""
-    end
-
-    return out, count
+    return math.min(n, RAM_ATTRS_MAX)
   end
 
   local function ram_pack(op, path, offset, length, count, attrs, blob, packed, flags)
-    local a = pack_attrs(attrs)
-
-    a[#a + 1] = fixed(blob, RAM_DATA_MAX)   -- the union, zero-padded by `c`
-    a[#a + 1] = flags or 0
-    a[#a + 1] = 0
-
-    return string.pack(RAM_REQUEST, op, offset or 0, length or 0, count or 0,
-                       packed or 0, fixed(path, RAM_PATH_MAX),
-                       table.unpack(a, 1, RAM_ATTRS_MAX * 3 + 3))
+    return { op, tostring(path or ""), offset or 0, length or 0, count or 0, attrs,
+             blob and tostring(blob) or "", packed or 0, flags or 0 }
   end
 
   -- The payload of a reply, read as whichever of the three things it is.
@@ -1902,13 +1882,11 @@ local function new_namespace()
   -- for a file in `/Home`, which on a machine with no disk is this store
   -- too - true of the server and wrong for the person reading it.
   --
-  local function ram_call(capability, shown, bytes, pass)
-    local raw, why = sys.call_raw(capability, bytes, pass)
+  local function ram_call(capability, shown, request, pass)
+    local err, more, count, length, packed, size, blob =
+      sys.ram_call(capability, pass, table.unpack(request, 1, 9))
 
-    if not raw then return nil, tostring(why) end
-    if #raw < 1056 then return nil, "a /Temporary reply of the wrong size" end
-
-    local err, more, count, length, packed, _, size, blob = string.unpack(RAM_REPLY, raw)
+    if not err then return nil, tostring(more) end
 
     if err == 5 then
       return nil, ("no room for %s in memory"):format(tostring(shown))
@@ -2120,7 +2098,7 @@ local function new_namespace()
     end
 
     if op == "setattr" then
-      local _, n = pack_attrs(extra.attrs)
+      local n = attr_count(extra.attrs)
       local _, err = ram_call(capability, shown,
                               ram_pack(code, rest, 0, 0, n, extra.attrs))
 
@@ -2145,7 +2123,7 @@ local function new_namespace()
         known[i] = p .. string.rep("\0", RAM_PATH_MAX - #p)
       end
 
-      local _, nwhere = pack_attrs(extra.where)
+      local nwhere = attr_count(extra.where)
       local r, err = ram_call(capability, shown,
                               ram_pack(code, rest, nwhere, 0,
                                        math.min(#(extra.known or {}),
@@ -2186,7 +2164,7 @@ local function new_namespace()
     local nterms = 0
 
     if op == "query" then
-      nterms = select(2, pack_attrs(extra.where))
+      nterms = attr_count(extra.where)
     end
 
     local r, err = ram_call(capability, shown,
@@ -2279,17 +2257,14 @@ local function new_namespace()
   --     query's answer is sorted.
   --------------------------------------------------------------------------
 
-  local DISK_REQUEST = "<I4I4I8I8I4I4c512c1024"
-  local DISK_REPLY   = "<I4I4I4I4I8I8I8I4I4I8I8I8I4I4c1024I4I4I8"
+  -- The request and the reply are `diskproto.h`'s, packed and read in C
+  -- by `sys.disk_call` through `diskask` (`docs/w3.md` W3d4); this file
+  -- reads only payloads, such as the superblock.
   local DISK_SUPER   = "<I8I8I4I4I4I4I8" .. string.rep("I4", 10) .. "I8I4I4"
                        .. string.rep("I4", 11) .. "I4I8I8c128c128c96c96"
 
   local DISK_DATA_MAX, DISK_PATH_MAX, DISK_REGION = 1024, 512, 1
 
-  assert(string.packsize(DISK_REQUEST) == 1568,
-         "namespace: the /Home request layout does not match diskproto.h")
-  assert(string.packsize(DISK_REPLY) == 1120,
-         "namespace: the /Home reply layout does not match diskproto.h")
   assert(string.packsize(DISK_SUPER) == 608,
          "namespace: the /Home superblock layout does not match diskproto.h")
 
@@ -2386,17 +2361,11 @@ local function new_namespace()
       return nil, "more than one request to the disk carries"
     end
 
-    local raw, why = sys.call_raw(capability,
-                                  string.pack(DISK_REQUEST, op, flags or 0,
-                                              offset or 0, bytes or 0, #data, 0,
-                                              path, data), pass)
-
-    if not raw then return nil, tostring(why) end
-    if #raw < 1120 then return nil, "a disk server's reply of the wrong size" end
-
     local err, more, count, length, next_at, moved, size, kind, extents, nsize,
-          mtime, modified, dated, created, blob, heard, _, heard_ms =
-      string.unpack(DISK_REPLY, raw)
+          mtime, modified, dated, created, blob, heard, heard_ms =
+      sys.disk_call(capability, op, path, offset or 0, bytes or 0, flags or 0, data, pass)
+
+    if not err then return nil, tostring(more) end
 
     if err ~= 0 then return nil, disk_error(err, blob, length) end
 
@@ -2785,16 +2754,11 @@ local function new_namespace()
                          share_field(ask.password, 256))
     end
 
-    local raw, err = sys.call_raw(capability,
-                                  string.pack(DISK_REQUEST, SHARE_OP[op], flags or 0,
-                                              offset or 0, 0, #data, 0, "", data))
+    local e, more, count, length, next_at, moved, size, _, _, _, _, _, _, _, blob =
+      sys.disk_call(capability, SHARE_OP[op], "", offset or 0, 0, flags or 0, data)
     data = nil
 
-    if not raw then return nil, tostring(err) end
-    if #raw < 1120 then return nil, "a reply from smbfs of the wrong size" end
-
-    local e, more, count, length, next_at, moved, size, _, _, _, _, _, _, _, blob =
-      string.unpack(DISK_REPLY, raw)
+    if not e then return nil, tostring(more) end
 
     if e ~= 0 then
       if e >= 64 then return nil, blob:sub(1, length) end

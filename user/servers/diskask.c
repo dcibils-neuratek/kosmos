@@ -15,6 +15,8 @@ uint32_t diskask(struct diskask *d, uint32_t op, const char *path, uint32_t flag
     const struct disk_reply *rp = (const struct disk_reply *)(const void *)d->rep.data;
     size_t n = path != NULL ? strlen(path) : 0;
 
+    d->status = 0;
+
     if (d->ep < 0) {
         return DISK_ERR_NO_DISK;
     }
@@ -39,7 +41,9 @@ uint32_t diskask(struct diskask *d, uint32_t op, const char *path, uint32_t flag
     }
 
     /* What was sent is not kept: the keyring's sealed bytes travel here. */
-    if (kosmos_call(d->ep, &d->msg, &d->rep) != 0 || d->rep.length < sizeof *rp) {
+    d->status = kosmos_call(d->ep, &d->msg, &d->rep);
+
+    if (d->status != 0 || d->rep.length < sizeof *rp) {
         memset(&d->msg, 0, sizeof d->msg);
         return DISK_ERR_NO_DISK;
     }

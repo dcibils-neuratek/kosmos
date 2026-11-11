@@ -33,6 +33,7 @@
 #include "diskask.h"
 #include "diskproto.h"
 #include "kosmos.h"
+#include "ramask.h"
 #include "ramproto.h"
 #include "storage.h"
 
@@ -440,41 +441,24 @@ static int ram_error(uint32_t e)
     }
 }
 
-/* One request and its reply, on the heap: each is a message. */
-struct ram_exchange {
-    struct message msg, rep;
-};
-
-static struct ram_request *ram_begin(struct ram_exchange *x, uint32_t op, const char *path)
+/* A door to the store, on the heap: a request and a reply are a message
+ * each, and the asking is `ramask`'s, the one C client of `ramproto`. */
+static struct ramask *ram_door(const struct where *w)
 {
-    struct ram_request *rq = (struct ram_request *)(void *)x->msg.data;
+    struct ramask *x = malloc(sizeof(*x));
 
-    memset(&x->msg, 0, sizeof(x->msg));
-    rq->op = op;
-    snprintf(rq->path, sizeof(rq->path), "%s", path);
-    x->msg.length = sizeof(*rq);
-    return rq;
-}
-
-static uint32_t ram_ask(const struct where *w, struct ram_exchange *x)
-{
-    const struct ram_reply *rp = (const struct ram_reply *)(const void *)x->rep.data;
-
-    if (kosmos_call(w->m->cap, &x->msg, &x->rep) != 0 || x->rep.length < sizeof(*rp)) {
-        return 0xffffffffu;
+    if (x != NULL) {
+        x->ep = w->m->cap;
     }
 
-    return rp->error;
+    return x;
 }
 
-static const struct ram_reply *ram_said(const struct ram_exchange *x)
-{
-    return (const struct ram_reply *)(const void *)x->rep.data;
-}
+#define ram_said ramask_said
 
 static int ram_stat(const struct where *w, struct storage_stat *out)
 {
-    struct ram_exchange *x = malloc(sizeof(*x));
+    struct ramask *x = ram_door(w);
     uint32_t e, i;
 
     /* The root has no node of its own to ask about. */
@@ -489,8 +473,7 @@ static int ram_stat(const struct where *w, struct storage_stat *out)
         return STORAGE_ERR_FULL;
     }
 
-    (void)ram_begin(x, RAM_OP_GETATTR, w->path);
-    e = ram_ask(w, x);
+    e = ramask(x, RAM_OP_GETATTR, w->path, 0, 0, 0, 0, 0, NULL, NULL, 0, -1);
 
     if (e == RAM_OK) {
         const struct ram_reply *rp = ram_said(x);
@@ -515,12 +498,12 @@ static int ram_stat(const struct where *w, struct storage_stat *out)
     }
 
     free(x);
-    return e == 0xffffffffu ? STORAGE_ERR_IO : ram_error(e);
+    return e == RAMASK_NO_ANSWER ? STORAGE_ERR_IO : ram_error(e);
 }
 
 static long ram_read(const struct where *w, uint64_t offset, uint8_t *buf, size_t bytes)
 {
-    struct ram_exchange *x = malloc(sizeof(*x));
+    struct ramask *x = ram_door(w);
     size_t got = 0;
     long r = 0;
 
@@ -530,7 +513,6 @@ static long ram_read(const struct where *w, uint64_t offset, uint8_t *buf, size_
 
     while (got < bytes) {
         size_t want = bytes - got > RAM_DATA_MAX ? RAM_DATA_MAX : bytes - got;
-        struct ram_request *rq;
         uint32_t e;
         size_t n;
 
@@ -538,13 +520,11 @@ static long ram_read(const struct where *w, uint64_t offset, uint8_t *buf, size_
             break;                      /* the ram server's offsets are 32 bits */
         }
 
-        rq = ram_begin(x, RAM_OP_READ, w->path);
-        rq->offset = (uint32_t)(offset + got);
-        rq->length = (uint32_t)want;
-        e = ram_ask(w, x);
+        e = ramask(x, RAM_OP_READ, w->path, (uint32_t)(offset + got), (uint32_t)want, 0, 0, 0,
+                   NULL, NULL, 0, -1);
 
         if (e != RAM_OK) {
-            r = e == 0xffffffffu ? STORAGE_ERR_IO : ram_error(e);
+            r = e == RAMASK_NO_ANSWER ? STORAGE_ERR_IO : ram_error(e);
             break;
         }
 
@@ -564,7 +544,7 @@ static long ram_read(const struct where *w, uint64_t offset, uint8_t *buf, size_
 static long ram_write(const struct where *w, uint64_t offset, const uint8_t *buf,
                       size_t bytes, unsigned flags)
 {
-    struct ram_exchange *x;
+    struct ramask *x;
     size_t done = 0;
     long r = 0;
 
@@ -603,7 +583,7 @@ static long ram_write(const struct where *w, uint64_t offset, const uint8_t *buf
         return STORAGE_ERR_FULL;
     }
 
-    x = malloc(sizeof(*x));
+    x = ram_door(w);
 
     if (x == NULL) {
         return STORAGE_ERR_FULL;
@@ -611,22 +591,13 @@ static long ram_write(const struct where *w, uint64_t offset, const uint8_t *buf
 
     do {
         size_t n = bytes - done > RAM_DATA_MAX ? RAM_DATA_MAX : bytes - done;
-        struct ram_request *rq = ram_begin(x, RAM_OP_WRITE, w->path);
-        uint32_t e;
-
-        rq->offset = (uint32_t)(offset + done);
-        rq->length = (uint32_t)n;
-        rq->packed = RAM_RAW;
-        rq->flags = RAM_KEEP | (((flags & STORAGE_CUT) && done + n == bytes) ? RAM_CUT : 0);
-
-        if (n > 0) {
-            memcpy(rq->u.data, buf + done, n);
-        }
-
-        e = ram_ask(w, x);
+        uint32_t e = ramask(x, RAM_OP_WRITE, w->path, (uint32_t)(offset + done), (uint32_t)n, 0,
+                            RAM_RAW,
+                            RAM_KEEP | (((flags & STORAGE_CUT) && done + n == bytes) ? RAM_CUT : 0),
+                            NULL, n > 0 ? buf + done : NULL, (uint32_t)n, -1);
 
         if (e != RAM_OK) {
-            r = e == 0xffffffffu ? STORAGE_ERR_IO : ram_error(e);
+            r = e == RAMASK_NO_ANSWER ? STORAGE_ERR_IO : ram_error(e);
             break;
         }
 
@@ -639,8 +610,7 @@ static long ram_write(const struct where *w, uint64_t offset, const uint8_t *buf
 
 static long ram_list(const struct where *w, uint64_t *cursor, char *names, size_t room)
 {
-    struct ram_exchange *x = malloc(sizeof(*x));
-    struct ram_request *rq;
+    struct ramask *x = ram_door(w);
     uint32_t e, i;
     long count = 0;
     size_t at = 0;
@@ -649,13 +619,11 @@ static long ram_list(const struct where *w, uint64_t *cursor, char *names, size_
         return STORAGE_ERR_FULL;
     }
 
-    rq = ram_begin(x, RAM_OP_LIST, w->path);
-    rq->offset = (uint32_t)*cursor;
-    e = ram_ask(w, x);
+    e = ramask(x, RAM_OP_LIST, w->path, (uint32_t)*cursor, 0, 0, 0, 0, NULL, NULL, 0, -1);
 
     if (e != RAM_OK) {
         free(x);
-        return e == 0xffffffffu ? STORAGE_ERR_IO : ram_error(e);
+        return e == RAMASK_NO_ANSWER ? STORAGE_ERR_IO : ram_error(e);
     }
 
     for (i = 0; i < ram_said(x)->count && i < RAM_ENTRIES_MAX; i++) {
@@ -679,24 +647,17 @@ static long ram_list(const struct where *w, uint64_t *cursor, char *names, size_
 
 static int ram_simple(const struct where *w, uint32_t op, const char *to)
 {
-    struct ram_exchange *x = malloc(sizeof(*x));
-    struct ram_request *rq;
+    struct ramask *x = ram_door(w);
     uint32_t e;
 
     if (x == NULL) {
         return STORAGE_ERR_FULL;
     }
 
-    rq = ram_begin(x, op, w->path);
-
-    if (to != NULL) {
-        rq->length = (uint32_t)strlen(to);
-        memcpy(rq->u.data, to, rq->length + 1);
-    }
-
-    e = ram_ask(w, x);
+    e = ramask(x, op, w->path, 0, to != NULL ? (uint32_t)strlen(to) : 0, 0, 0, 0, NULL, to,
+               to != NULL ? (uint32_t)strlen(to) + 1 : 0, -1);
     free(x);
-    return e == 0xffffffffu ? STORAGE_ERR_IO : ram_error(e);
+    return e == RAMASK_NO_ANSWER ? STORAGE_ERR_IO : ram_error(e);
 }
 
 /*

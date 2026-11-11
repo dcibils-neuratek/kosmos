@@ -10079,8 +10079,10 @@ the applications make the system useful, and is not pulled forward.
   `write`, `lseek`, `stat`, `dup`, `fcntl`, `opendir` and the rest in
   `runtime/posix/fd.c`. **W3d3, `stdio`, built** (18.773): streams over
   descriptors, 4 KB buffered, replacing the runtime's all together where
-  the layer is linked. W3d4, the Lua namespace's disk and ram encoding
-  onto the Storage Kit, next.
+  the layer is linked. **W3d4, one door, built** (18.774): the
+  namespace's copies of the disk's and memory store's wire layouts gone,
+  `sys.disk_call` and `sys.ram_call` asking through `diskask` and a new
+  `ramask`. W3e, sockets and `poll` on `netclient.c`, next.
   **Two follow-ups from W3c**: *the x86 test guest has one processor*
   (`X86_ARGS` has no `-smp`, ARM's has four), so no x86 suite runs two
   at once - for Diego, since four costs time in every x86 suite; and

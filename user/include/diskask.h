@@ -22,6 +22,7 @@
 
 struct diskask {
     long           ep;                  /* -1: no disk */
+    long           status;              /* the last call's: 0, or IPC's refusal */
     struct message msg, rep;
 };
 
