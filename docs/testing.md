@@ -31608,3 +31608,62 @@ as one sleep of its ticks rounded down, trusted - "a 20 ms nanosleep took
 
 **Whole gate**: 111 of 112 in 605 s; `x86-desktops`' loader window was not
 drawn in time under load, and alone it passed in 22 s.
+
+## 18.771 The Storage Kit (JetSki W3d1)
+
+`docs/w3.md` W3d1, in `user/kits/storage/storage.c` and `storage.h`:
+files by path from C, from any thread, across the three servers that
+hold files - `/Home` through `diskask` (diskproto), `/Temporary` in
+`ramproto`, `/Kosmos` in `binproto`, read only. `stat`, read and write
+at an offset, truncate, a directory a page at a time, make a directory,
+delete, rename within a mount, flush. Errors are the kit's own
+(`STORAGE_ERR_*`); `runtime/posix/` will turn them into `errno` (d2).
+
+**What a process may reach is its namespace's, and nothing more.** The
+runner hands the kit its file mounts once, before the program runs:
+`sys.storage_start(ns.storage_mounts(), cwd)`, each mount's prefix,
+capability, root and protocol. A second call is refused, so a program
+cannot hand itself another table. Prefixes match whatever the case, as
+the Lua namespace's do, and a path past a mount joins its root the way
+`resolve` does.
+
+**`ramproto` gained two flags**, `RAM_KEEP` (a write at offset 0 that
+does not truncate) and `RAM_CUT` (the file ends where the bytes do),
+held by four new checks in `tools/test_ramstore.c`. And two facts of the
+servers the kit answers for itself: `/Temporary`'s root has no node to
+ask about, and neither has a view's root in `/Kosmos` (`/apps`).
+`diskask.h` moved to `user/include/`, since a kit includes it now.
+
+**Test**: `storagetest.lua` in the loader suite, beside `posixtest.lua`,
+calling `posixtest.elf`'s `storage`: the second table refused; paths
+made whole (`/a//b/./c/../d/`, `/../..`, a name relative to the working
+directory); a path under no mount refused; the program's own source read
+by its name in another case (`/HOME/...`). Then on `/Home` and on
+`/Temporary` both: a write without `CREATE` to a file that is not there
+refused; 11 bytes written and read back; a byte laid at 6 and at 0 with
+the rest kept; 3000 bytes over several messages each way, the end where
+they end; cut to 5, grown to 10 with zeros; a folder made, a second
+`mkdir` refused, a file in a folder that does not exist refused, a rename
+into the folder, its listing, a folder with a file in it not deleted,
+both deleted. `/Kosmos/Programs` a folder, listed in pages of 48 bytes
+(102 programs), its first program read whole, and writes and `mkdir`
+refused; a rename from `/Temporary` to `/Home` refused as crossing; and
+four threads writing and reading files of their own, on both mounts, 25
+rounds each, at once. Both boards: "storage: refused a second table,
+paths, no mount, own source 225 bytes, /Home and /Temporary written, cut,
+grown, folders, renamed, deleted; /Kosmos 102 programs, read only;
+crosses refused; 4 threads".
+
+**Controls**: the kit's ram writes without `RAM_KEEP` - **which did not
+bite at first**, because no check wrote at offset 0 without cutting, the
+one case the flag exists for; the byte at 0 was added and then it bit on
+`/Temporary`. Its sentence quoted the buffer, which still held an earlier
+read, so it now says how many bytes the read returned. And
+`storage_start` accepting a second table - "a second table was not
+refused (0)".
+
+**Whole gate**: 111 of 112 in 606 s. `arm-sandbox` said "the plan
+promised 219 test(s) and 218 arrived", yet its log holds `ok 219` as
+its last line: a line that reached the log but not the count, at minute
+nine under the whole gate's load, and not the guest stopping short. Alone
+it passed, 219 of 219 in 10 s.

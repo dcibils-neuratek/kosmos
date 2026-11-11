@@ -10072,7 +10072,10 @@ the applications make the system useful, and is not pulled forward.
   there (a detached thread's record written after it was freed). **W3c,
   time and the process's facts, built** (18.770): `nanosleep`, `getpid` on
   a new `SYS_SELF`, `sysconf`, `uname`, `getrandom`; `getenv` stays NULL.
-  W3d, descriptors and files on the Storage Kit, next.
+  **W3d1, the Storage Kit, built** (18.771): files by path from C and
+  from any thread, over `/Home`, `/Temporary` and `/Kosmos`, the mount
+  table handed over once by the runner; `ramproto`'s `RAM_KEEP` and
+  `RAM_CUT`. W3d2, descriptors on it, next.
   **Two follow-ups from W3c**: *the x86 test guest has one processor*
   (`X86_ARGS` has no `-smp`, ARM's has four), so no x86 suite runs two
   at once - for Diego, since four costs time in every x86 suite; and

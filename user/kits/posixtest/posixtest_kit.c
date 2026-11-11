@@ -14,6 +14,7 @@
 #include "kosmos.h"
 
 int kosmos_posixtest_run(char *out, unsigned long size);
+int kosmos_storagetest_run(char *out, unsigned long size);
 
 static void ends(unsigned long arg)
 {
@@ -66,9 +67,20 @@ static int l_run(lua_State *L)
     return 1;
 }
 
+static int l_storage(lua_State *L)
+{
+    char said[512];
+
+    (void)kosmos_storagetest_run(said, sizeof(said));
+    lua_pushstring(L, said);
+    return 1;
+}
+
 void kosmos_posixtest_kit(lua_State *L)
 {
     lua_newtable(L);
     lua_pushcfunction(L, l_run);
     lua_setfield(L, -2, "run");
+    lua_pushcfunction(L, l_storage);
+    lua_setfield(L, -2, "storage");
 }

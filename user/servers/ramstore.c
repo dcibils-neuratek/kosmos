@@ -895,7 +895,7 @@ void ram_answer_region(const void *data, size_t length, uint64_t sender,
          * split long writes without anything on this side putting them back
          * together. Writing at 0 truncates, which is what `fs.write` means.
          */
-        if (req.offset == 0) {
+        if (req.offset == 0 && (req.flags & RAM_KEEP) == 0) {
             n->length = 0;
             n->packed = req.packed;
 
@@ -931,8 +931,8 @@ void ram_answer_region(const void *data, size_t length, uint64_t sender,
                    req.length);
         }
 
-        if (end > n->length) {
-            n->length = (uint32_t)end;
+        if (end > n->length || (req.flags & RAM_CUT) != 0) {
+            n->length = (uint32_t)end;  /* CUT: ends here, shorter or longer */
         }
 
         n->directory = false;

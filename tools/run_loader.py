@@ -186,6 +186,15 @@ local kit = use("posixtest.elf")
 print("posixtest: " .. kit.run())
 """
 
+# **The Storage Kit** (`docs/w3.md` W3d1), from the same image: `/Home`,
+# `/Temporary` and `/Kosmos` by path, from C, and from four threads at once.
+STORAGE_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The Storage Kit's test program (`tools/run_loader.py`).
+-- kosmos: image posixtest.elf
+local kit = use("posixtest.elf")
+print("storagetest: " .. kit.storage())
+"""
+
 # GCC's images only, as C++'s: TinyCC's have no `_Thread_local`, which
 # `pthread.c` is built on.
 posix_files = []
@@ -203,7 +212,10 @@ if CXX:
     with open(os.path.join(WORK, "posixtest.lua"), "w") as f:
         f.write(POSIX_PROGRAM)
 
-    posix_files = ["posixtest.lua", "posixtest.elf"]
+    with open(os.path.join(WORK, "storagetest.lua"), "w") as f:
+        f.write(STORAGE_PROGRAM)
+
+    posix_files = ["posixtest.lua", "storagetest.lua", "posixtest.elf"]
 
 #
 # **Doom, installed** (`docs/elf.md` step 5): `doom.lua` and its image in one
@@ -254,6 +266,7 @@ def main():
     checks = 0
     times = []
     posix_said = [None]
+    storage_said = [None]
 
     def check(ok, complaint):
         nonlocal checks
@@ -372,6 +385,19 @@ def main():
                                 % ("x86_64" if X86 else "aarch64")),
               "the POSIX layer's checks in posixtest.elf did not all hold: %r" % said)
 
+        said = None
+
+        if CXX:
+            said, _ = run("storagetest", "storagetest:", 120)
+
+        storage_said[0] = said if CXX else "not in TinyCC's images"
+        check(not CXX or said is not None and said.startswith(
+                  "storagetest: storage: refused a second table, paths, no mount, own source ")
+              and "/Home and /Temporary written, cut, grown, folders, renamed, deleted; "
+                  "/Kosmos " in said
+              and said.endswith(" programs, read only; crosses refused; 4 threads"),
+              "the Storage Kit's checks in posixtest.elf did not all hold: %r" % said)
+
         said, _ = run("plain", "apptest", 60)
         check(said is not None and "not running in apptest.elf" in said,
               "plain.lua, in the system's image, found the apptest kit: %r" % said)
@@ -481,9 +507,11 @@ def main():
           "from the image made the first time - %.1f s, then %.1f s; Doom and "
           "Quake, installed in /Home/Apps, each found by its name and run in its "
           "own image, %.1f s and %.1f s; and the Super Nintendo's --scale, from "
-          "its image, through the window manager; and the POSIX layer's checks: %s)"
+          "its image, through the window manager; the POSIX layer's checks: %s; "
+          "and the Storage Kit's: %s)"
           % (checks, len(whole) / 1e6, times[0], times[1], times[2], times[3],
-             (posix_said[0] or "").replace("posixtest: posix: ", "")))
+             (posix_said[0] or "").replace("posixtest: posix: ", ""),
+             (storage_said[0] or "").replace("storagetest: storage: ", "")))
     return 0
 
 

@@ -28,6 +28,7 @@
 #include "audioring.h"
 #include "pcmconvert.h"
 #include "serialize.h"
+#include "storage.h"
 
 /* The two definitions of struct message are one contract written twice, so
  * the agreement is checked rather than assumed. A silent disagreement would
@@ -2950,6 +2951,76 @@ static int l_kit_names(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.storage_start(mounts, cwd)`: the Storage Kit's mount table
+ * (`storage.h`, `docs/w3.md` W3d), handed over once by the runner before the
+ * program runs - `{ {prefix, cap, root, proto}, ... }` with `proto` one of
+ * "disk", "ram" or "bin", and everything else left out. True, or nil and
+ * the kit's error: a second call is refused, so what a program hands it
+ * later reaches nothing.
+ */
+static int l_storage_start(lua_State *L)
+{
+    struct storage_mount m[STORAGE_MOUNTS_MAX];
+    unsigned count = 0;
+    lua_Integer i, n;
+    int r;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, 1);
+    memset(m, 0, sizeof(m));
+
+    for (i = 1; i <= n && count < STORAGE_MOUNTS_MAX; i++) {
+        const char *prefix, *root, *proto;
+        size_t plen, rlen;
+        lua_Integer cap;
+
+        lua_rawgeti(L, 1, i);
+
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            continue;
+        }
+
+        lua_getfield(L, -1, "prefix");
+        lua_getfield(L, -2, "root");
+        lua_getfield(L, -3, "proto");
+        lua_getfield(L, -4, "cap");
+        prefix = lua_tolstring(L, -4, &plen);
+        root = lua_isstring(L, -3) ? lua_tolstring(L, -3, &rlen) : (rlen = 0, "");
+        proto = lua_tostring(L, -2);
+        cap = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : -1;
+
+        if (prefix != NULL && plen > 0 && plen < STORAGE_PREFIX_MAX
+            && rlen < STORAGE_ROOT_MAX && proto != NULL && cap >= 0) {
+            uint32_t kind = strcmp(proto, "disk") == 0 ? STORAGE_DISK
+                          : strcmp(proto, "ram") == 0 ? STORAGE_RAM
+                          : strcmp(proto, "bin") == 0 ? STORAGE_BIN : 0;
+
+            if (kind != 0) {
+                memcpy(m[count].prefix, prefix, plen);
+                memcpy(m[count].root, root, rlen);
+                m[count].cap = (long)cap;
+                m[count].proto = kind;
+                count++;
+            }
+        }
+
+        lua_pop(L, 5);
+    }
+
+    r = storage_start(m, count, luaL_optstring(L, 2, "/"));
+
+    if (r != STORAGE_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, r);
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "power",       l_power },
@@ -3014,6 +3085,7 @@ static const luaL_Reg sys_functions[] = {
     { "kit_names", l_kit_names },
     { "call",     l_call },
     { "call_raw", l_call_raw },
+    { "storage_start", l_storage_start },
     { "receive",  l_receive },
     { "receive_raw", l_receive_raw },
     { "pulse",    l_pulse },

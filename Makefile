@@ -922,6 +922,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(BEARSSL_SRCS) \
              user/kits/tls/tls_core.c \
              user/kits/network/netclient.c \
+             user/kits/storage/storage.c \
              user/kits/network/httpc.c \
              user/servers/tiles.c \
              user/servers/llm.c \
@@ -3439,9 +3440,10 @@ POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c 
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 POSIXTEST_OBJS := $(UBUILD)/user/kits/posixtest/posixtest.c.o \
+                  $(UBUILD)/user/kits/posixtest/storagetest.c.o \
                   $(UBUILD)/user/kits/posixtest/posixtest_kit.c.o
 
-$(POSIX_OBJS) $(UBUILD)/user/kits/posixtest/posixtest.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
+$(POSIX_OBJS) $(UBUILD)/user/kits/posixtest/posixtest.c.o $(UBUILD)/user/kits/posixtest/storagetest.c.o: $(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
 

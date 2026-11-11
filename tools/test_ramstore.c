@@ -237,6 +237,50 @@ static void gap_is_zeros(void)
           "the gap reads as zeros, not as the bytes written before it");
 }
 
+/* `RAM_KEEP` and `RAM_CUT` (`docs/w3.md` W3d): POSIX's write at 0 that
+ * keeps the rest, and a truncate, shorter and longer. */
+static uint32_t ask_flags(const char *path, uint32_t offset, const char *data,
+                          uint32_t length, uint32_t flags)
+{
+    static struct ram_request req;
+
+    memset(&req, 0, sizeof(req));
+    req.op = RAM_OP_WRITE;
+    req.offset = offset;
+    req.length = length;
+    req.flags = flags;
+    snprintf(req.path, sizeof(req.path), "%s", path);
+    memcpy(req.u.data, data, length);
+    memset(&said, 0, sizeof(said));
+    ram_answer(&req, sizeof(req), 1);
+    return said.error;
+}
+
+static void keep_and_cut(void)
+{
+    char back[32];
+    size_t n;
+
+    ram_store_init(64u * 1024u * 1024u);
+
+    (void)put("/keep", "abcdefghij");
+    check(ask_flags("/keep", 0, "XY", 2, RAM_KEEP) == RAM_OK
+          && (n = get("/keep", back, sizeof(back))) == 10
+          && memcmp(back, "XYcdefghij", 10) == 0,
+          "RAM_KEEP at 0 writes over the start and keeps the rest");
+
+    check(ask_flags("/keep", 4, "", 0, RAM_CUT) == RAM_OK
+          && get("/keep", back, sizeof(back)) == 4 && memcmp(back, "XYcd", 4) == 0,
+          "RAM_CUT with no bytes ends the value at its offset");
+
+    check(ask_flags("/keep", 8, "", 0, RAM_CUT) == RAM_OK
+          && get("/keep", back, sizeof(back)) == 8 && memcmp(back, "XYcd\0\0\0\0", 8) == 0,
+          "RAM_CUT past the end makes it longer, the rest zeros");
+
+    check(ask_flags("/keep", 0, "z", 1, 0) == RAM_OK && get("/keep", back, sizeof(back)) == 1,
+          "a write at 0 without RAM_KEEP still replaces the value");
+}
+
 static void ceiling(void)
 {
     char chunk[RAM_DATA_MAX], path[64], back[64];
@@ -525,6 +569,7 @@ int main(void)
     many_files();
     big_value();
     gap_is_zeros();
+    keep_and_cut();
     ceiling();
     room_given_back();
     many_watches();

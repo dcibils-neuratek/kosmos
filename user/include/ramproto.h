@@ -95,6 +95,19 @@
 #define RAM_REGION           1u
 
 /*
+ * **A write that keeps what is there, and one that ends the value**
+ * (`docs/w3.md` W3d), as `/Home`'s `WRITE_AT` and
+ * `DISK_CUT` do: POSIX's `write` at offset 0 into a file must not empty
+ * it, and `ftruncate` has to exist. `RAM_KEEP` writes at the offset - 0
+ * included - without truncating first; `RAM_CUT` makes the value end where
+ * these bytes end, shorter or longer, and with no bytes it is a truncate.
+ * Without either, a write at 0 replaces the value, which is what
+ * `fs.write` means.
+ */
+#define RAM_KEEP             2u
+#define RAM_CUT              4u
+
+/*
  * **A path is 256 bytes, so a name in one can be sixty-four characters.**
  *
  * It was 128, which is a whole path rather than a name: two directories

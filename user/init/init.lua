@@ -3501,6 +3501,22 @@ local function new_namespace()
     return r.volumes or {}
   end
 
+  --
+  -- What the Storage Kit may reach (`docs/w3.md` W3d): the mounts whose
+  -- servers speak a file protocol the kit knows, with what `resolve` would
+  -- send them. Handed over once, by the runner, with `sys.storage_start`.
+  --
+  function ns.storage_mounts()
+    local out = {}
+    for _, m in ipairs(mounts) do
+      if math.type(m.cap) == "integer"
+         and (m.proto == "disk" or m.proto == "ram" or m.proto == "bin") then
+        out[#out + 1] = { prefix = m.prefix, cap = m.cap, root = m.root, proto = m.proto }
+      end
+    end
+    return out
+  end
+
   function ns.mounts()
     local out = {}
     for _, m in ipairs(mounts) do out[#out + 1] = m.prefix end
@@ -7425,6 +7441,10 @@ if role == ROLE_RUNNER then
     -- something is the only one who may end it, and cannot without this.
     return reply.ok, reply.error, id
   end
+
+  -- The same names, from C: what a ported library reaches with `open` is
+  -- what this program's `fs` does, and nothing more (`docs/w3.md` W3d).
+  sys.storage_start(ns.storage_mounts(), req.cwd or "/")
 
   local env = {
     fs = ns,
