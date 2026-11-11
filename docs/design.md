@@ -1442,10 +1442,11 @@ The targets and the trap in each piece of hardware are in [hal.md](hal.md).
 
 The reason is not features. A daily driver needs a browser, and a modern browser is 30 million lines that assume POSIX, threads, a JIT, a GPU and a full network stack. Porting Chromium is more work than the whole system, and at that point you stop building your OS to maintain somebody else's port. That was the wall Haiku hit, with 20 years and dozens of contributors.
 
+**This section was written before the system it describes, and most of its list has since been built**: WiFi and Bluetooth, audio with low latency, GPU work. **The browser is the latest to leave it**: on 11 November 2026 Diego decided to port WebKit natively (`docs/webkit.md`; README's decision log), after its PlayStation port - curl, Skia on the processor, JavaScriptCore without a JIT. The warning above stays true and is why the choice is WebKit rather than Chromium, a tenth of the size and with a slower upstream: the port is to be a layer of its own that rebases, not a fork that is maintained. What it needs from POSIX lives inside the browser's processes and nowhere else.
+
 Out of scope, no discussion:
 
-- POSIX compatibility in any form
-- A browser
+- POSIX compatibility at the system level (inside a process it is allowed, §17)
 - WiFi and Bluetooth (firmware blobs, an 802.11 stack)
 - Audio with decent latency
 - Multiuser and Unix-style permissions (capabilities solve it better)

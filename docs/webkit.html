@@ -1,0 +1,204 @@
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+  The Browser on WebKit: its window, the address field's suggestions, a tab
+  whose page stopped, and downloads. Drawn on 11 November 2026, before it is
+  built, from Diego's "I need a new web browser that is current and usable
+  like safari or chrome". Its feature set and architecture are
+  docs/webkit.md, its diagram docs/webkit-architecture.png. The pages drawn
+  in it are made up.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser on WebKit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --w-bg: #ffffff; --w-side: #f4f5f7; --w-line: #e3e6eb; --w-ink: #1b2330; --w-dim: #6b7484;
+  --w-accent: #2f6bdc; --w-good: #2e9b5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 840px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The Kosmos window: its band - title, menus, the three - as a direct
+   window with a menu bar has it. */
+.win { width: 980px; background: var(--w-bg); color: var(--w-ink); border-radius: 12px; overflow: hidden;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; }
+.band { display: flex; align-items: center; gap: 18px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--w-line); background: #f7f8fa; }
+.band .t { font-weight: 600; font-size: 14px; }
+.band .m { color: var(--w-dim); }
+.band .m.on { color: #fff; background: var(--w-accent); border-radius: 6px; padding: 2px 9px; margin: 0 -9px; }
+.grow { flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+
+/* The browser's own top: tabs in the band's row below, then the toolbar. */
+.tabs { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; background: #eef0f4; border-bottom: 1px solid var(--w-line); }
+.tab { display: flex; align-items: center; gap: 8px; background: transparent; border-radius: 9px 9px 0 0; padding: 7px 12px; font-size: 12.5px; color: #4a5262; width: 210px; white-space: nowrap; overflow: hidden; }
+.tab.on { background: #fff; color: #111; box-shadow: 0 -1px 0 var(--w-line) inset; }
+.tab .ic { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.tab .x { margin-left: auto; color: #9aa2b0; }
+.tab.plus { width: auto; color: #6b7484; font-size: 16px; padding: 4px 10px; }
+.tool { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--w-line); background: #fff; position: relative; }
+.tool .nav { color: #6b7484; letter-spacing: 8px; font-size: 15px; }
+.url { flex: 1; display: flex; align-items: center; gap: 8px; background: #f1f3f6; border: 1px solid transparent; border-radius: 9px; padding: 6px 12px; color: #2a3240; font-size: 13px; }
+.url.focus { gap: 0; background: #fff; border-color: var(--w-accent); box-shadow: 0 0 0 3px rgba(47,107,220,.18); }
+.url .lock { color: var(--w-good); font-size: 12px; }
+.url .host { color: #111; font-weight: 500; }
+.url .path { color: #6b7484; }
+.tool .act { color: #6b7484; font-size: 13px; display: flex; gap: 14px; }
+.tool .dl { position: relative; }
+.tool .dl i { position: absolute; left: -2px; right: -2px; bottom: -6px; height: 3px; border-radius: 2px; background: #e3e6eb; }
+.tool .dl i b { display: block; width: 62%; height: 3px; border-radius: 2px; background: var(--w-accent); }
+.view { height: 470px; background: #fff; overflow: hidden; }
+/* A made-up page: a wiki article. */
+.art { display: grid; grid-template-columns: 190px 1fr 230px; gap: 26px; padding: 22px 28px; }
+.art .toc { font-size: 12.5px; color: #3c4a60; }
+.art .toc div { padding: 4px 0; }
+.art .toc .on { color: #1d3f7a; font-weight: 600; }
+.art h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 28px; margin: 0 0 4px; border-bottom: 1px solid #e3e6eb; padding-bottom: 6px; }
+.art .lede { font-size: 13.5px; line-height: 1.65; color: #202122; margin: 10px 0; }
+.art .box { border: 1px solid #e3e6eb; background: #f8f9fa; padding: 10px; font-size: 12px; }
+.art .pic { height: 120px; border-radius: 4px; background: linear-gradient(160deg,#0e1a33,#2a4f8f 55%,#d8a35a); margin-bottom: 8px; }
+.art table { width: 100%; border-collapse: collapse; }
+.art td { padding: 3px 0; border-top: 1px solid #eceef1; }
+.art td:first-child { color: #54595d; width: 44%; }
+.status { position: absolute; left: 0; bottom: 0; background: #f7f8fa; border: 1px solid var(--w-line); border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; padding: 3px 10px; font-size: 11.5px; color: #5a6474; }
+/* The address field's suggestions. */
+.sugg { position: absolute; left: 112px; right: 128px; top: 44px; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.18); padding: 6px; font-size: 13px; z-index: 2; }
+.sugg .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px 4px; }
+.sugg .r { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 10px; border-radius: 6px; align-items: center; }
+.sugg .r.on { background: var(--w-accent); color: #fff; }
+.sugg .r.on span { color: #dfe8fb; }
+.sugg .r span { color: #8a92a0; font-size: 12px; }
+/* A page that stopped. */
+.gone { height: 430px; display: grid; place-items: center; background: #fbfbfc; }
+.gone .c { text-align: center; max-width: 440px; }
+.gone h3 { margin: 10px 0 6px; font-size: 18px; }
+.gone p { color: var(--w-dim); margin: 0 auto 16px; font-size: 13px; }
+.btn { display: inline-block; background: var(--w-accent); color: #fff; border-radius: 7px; padding: 6px 16px; font-weight: 500; }
+.btn.q2 { background: #eef0f3; color: var(--w-ink); margin-left: 8px; }
+/* Downloads. */
+.dls { padding: 8px 0; }
+.dlr { display: grid; grid-template-columns: 34px 1fr 140px 90px; gap: 12px; align-items: center; padding: 10px 20px; border-bottom: 1px solid #f0f1f4; font-size: 13px; }
+.dlr .ico { width: 30px; height: 36px; border-radius: 4px; background: #e8f0fd; border: 1px solid #c9d8f3; }
+.dlr .s { color: var(--w-dim); font-size: 12px; }
+.dlr .pb { height: 5px; background: #eef0f3; border-radius: 3px; }
+.dlr .pb i { display: block; height: 5px; border-radius: 3px; background: var(--w-accent); }
+.dlr .a { color: var(--w-accent); text-align: right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Browser, on WebKit</h1>
+<p class="sub">Kosmos's own browser, as current as Safari: WebKit underneath, drawn with Skia, each tab's page in a process of its own. The window is Kosmos's - its band, its menus, its keys - and the page is the web as Safari shows it. Drawn before it is built, 11 November 2026.</p>
+<p class="sub">Diego: "I need a new web browser that is current and usable like safari or chrome", "We need to port either one to kosmos and have a proper browser".</p>
+
+<h2>A page, with tabs</h2>
+<div class="scroller"><div class="win">
+  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tabs">
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#e4602e"></span>Video - a lecture<span class="x">&times;</span></div>
+    <div class="tab plus">+</div>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span class="dl">&#8595;<i><b></b></i></span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative">
+    <div class="art">
+      <div class="toc"><div class="on">Saturn</div><div>Name</div><div>Physical characteristics</div><div>Atmosphere</div><div>Rings</div><div>Moons</div><div>Exploration</div><div>Observation</div></div>
+      <div>
+        <h3>Saturn</h3>
+        <p class="lede"><b>Saturn</b> is the sixth planet from the Sun and the second largest in the Solar System, after Jupiter. It is a gas giant with an average radius of about nine and a half times that of Earth, and only one eighth of its average density.</p>
+        <p class="lede">Its interior is most likely made of a core of iron, nickel and rock, surrounded by a deep layer of metallic hydrogen, an intermediate layer of liquid hydrogen and helium, and a gaseous outer layer. Its pale yellow hue comes from ammonia crystals in its upper atmosphere.</p>
+        <p class="lede">Its ring system is made mostly of ice particles, with a smaller amount of rocky debris and dust.</p>
+      </div>
+      <div class="box"><div class="pic"></div>
+        <table><tr><td>Mean radius</td><td>58,232 km</td></tr><tr><td>Orbital period</td><td>29.45 years</td></tr><tr><td>Moons</td><td>274</td></tr><tr><td>Surface gravity</td><td>10.44 m/s&sup2;</td></tr></table></div>
+    </div>
+    <div class="status">en.encyclopedia.example/wiki/Rings_of_Saturn</div>
+  </div>
+</div></div>
+<p class="cap">The band is Kosmos's, with the browser's menus; tabs below it, then back, forward and reload, the address field, a star for bookmarks, downloads (a thin bar while one runs) and the rest. Super with a number goes to a tab, Control+T opens one, Control+L is the address field. A link under the pointer shows its address at the bottom left. The page is drawn by WebKit's web process into a region and shown as it is - fonts, layout and colours are the site's.</p>
+
+<h2>Typing in the address field</h2>
+<div class="scroller"><div class="win">
+  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tabs"><div class="tab on"><span class="ic" style="background:#cfd5dd"></span>New tab<span class="x">&times;</span></div><div class="tab plus">+</div></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url focus"><span class="host">sat</span><span class="path" style="background:#dbe6fb">urn rings</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span>
+    <div class="sugg">
+      <div class="r on"><span style="color:#fff">&#9906;</span><div>saturn rings <span>- search</span></div><span>Return</span></div>
+      <div class="h">History</div>
+      <div class="r"><span>&#9719;</span><div>Saturn - Encyclopedia <span>en.encyclopedia.example/wiki/Saturn</span></div><span>today</span></div>
+      <div class="r"><span>&#9719;</span><div>Rings of Saturn <span>en.encyclopedia.example/wiki/Rings_of_Saturn</span></div><span>today</span></div>
+      <div class="h">Bookmarks</div>
+      <div class="r"><span>&#9734;</span><div>Saturn's moons, a table <span>planets.example/saturn/moons</span></div><span></span></div>
+    </div>
+  </div>
+  <div class="view" style="height:300px"></div>
+</div></div>
+<p class="cap">One field for addresses and searches. As letters are typed, it offers a search first, then pages from history and bookmarks that match; the arrows choose and Return goes. Which search engine answers is a setting.</p>
+
+<h2>A tab whose page stopped</h2>
+<div class="scroller"><div class="win">
+  <div class="band"><span class="t">Browser</span><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">History</span><span class="m">Bookmarks</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tabs"><div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div><div class="tab on"><span class="ic" style="background:#9aa2b0"></span>A heavy page<span class="x">&times;</span></div><div class="tab plus">+</div></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">heavy.example</span><span class="path">/app</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="gone"><div class="c"><div style="font-size:34px;color:#b6bdc8">&#9711;</div>
+    <h3>This page stopped</h3>
+    <p>The page at heavy.example ended unexpectedly. Your other tabs are fine. What the page had not saved is lost.</p>
+    <span class="btn">Reload</span><span class="btn q2">Close tab</span></div></div>
+</div></div>
+<p class="cap">Each tab's page runs in a process of its own. When one ends - a fault, or the page itself - only its tab says so; the browser and the other tabs go on. A page that stops answering for several seconds offers Wait or Stop the page in the same place.</p>
+
+<h2>Downloads</h2>
+<div class="scroller"><div class="win" style="width:760px">
+  <div class="band"><span class="t">Downloads</span><span class="grow"></span><span class="m" style="font-size:12px">into /Home/Downloads</span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="dls">
+    <div class="dlr"><span class="ico"></span><div><b>alpine-standard-3.22.iso</b><div class="s">mirror.example - 1.1 MB/s</div></div><div class="pb"><i style="width:62%"></i></div><span class="a">Pause</span></div>
+    <div class="dlr"><span class="ico"></span><div><b>saturn-cassini.jpg</b><div class="s">en.encyclopedia.example - 2.4 MB</div></div><div class="s">today, 12:31</div><span class="a">Show</span></div>
+    <div class="dlr"><span class="ico"></span><div><b>lecture-notes.pdf</b><div class="s">university.example - 880 KB</div></div><div class="s">yesterday</div><span class="a">Open</span></div>
+  </div>
+</div></div>
+<p class="cap">From the downloads button. What arrives goes to <code>/Home/Downloads</code>; a notification says when one finishes, and Open hands it to the application its file type names - a PDF to the PDF reader, a picture to Photos. A download that stops hearing gives up after a time and goes on from where it was when asked again, as Models' do.</p>
+
+<h2>For Diego</h2>
+<div class="q"><b>Look.</b> Tabs under Kosmos's band, as drawn, or tabs in the band itself as Safari and Chrome put them - one row less, at the cost of the band's menus.</div>
+<div class="q"><b>TLS.</b> OpenSSL (or BoringSSL) as the system's one TLS, the TLS Kit moving onto it - or curl and WebCrypto on our TLS and Crypto Kits. <code>docs/webkit.md</code>, <i>Open questions</i>.</div>
+</div>
+</body>
+</html>

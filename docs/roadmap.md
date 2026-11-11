@@ -10006,6 +10006,28 @@ the applications make the system useful, and is not pulled forward.
   wanted is by where the page came from - a page from the network may not
   open one from this machine - and it is checked where the link is
   followed, for both engines at once.
+- **WebKit, ported natively - AGREED on 11 November 2026.** Diego: "I need a
+  new web browser that is current and usable like safari or chrome", "We need
+  to port either one to kosmos and have a proper browser"; asked Chromium or
+  WebKit, **WebKit** after its PlayStation port (curl, Skia on the processor,
+  JavaScriptCore with no JIT, WebKit2's processes on endpoints and regions),
+  and **design then build**. This replaces item 2 below (a light browser of
+  our own); Epiphany in Linux on Kosmos is the browser until it lands.
+  Designed first, as every app is: `docs/webkit.md` (feature set,
+  architecture, steps), `docs/webkit.html`, `docs/webkit-architecture.png`.
+  The steps, each with its tests: **W1 the C++ runtime** (libc++ and
+  libc++abi, exceptions with `.eh_frame` kept, static constructors,
+  `thread_local`); **W2 the kernel's three** (a futex, memory reserved then
+  committed and protected, a thread suspended to read its registers);
+  **W3 the POSIX layer in the process** (pthreads, `mmap`, files and
+  directories through the namespace, BSD sockets over the Network Kit,
+  time, `getenv`); **W4 JavaScriptCore**'s `jsc` with no JIT, then
+  test262's share; **W5 the libraries** (ICU, HarfBuzz, FreeType,
+  libpng/jpeg/webp, curl on the TLS Kit, Skia); **W6 WebCore draws a page**
+  headless into a region; **W7 WebKit2** - its UI, web and network processes
+  on endpoints and regions - and **the window**; **W8 the sites**: Gmail,
+  Docs, Claude, Gemini, YouTube by MSE on the FFmpeg kit. The image ceiling
+  goes with W1 (the browser is an installed `webkit.elf`, as Doom is).
 - **The web, decided: apps for real work, a light browser, and Linux for
   the rest** (Diego, 14 October 2026, after reading `docs/browser-engine.md`:
   "i think that browsers have become larg OSes themselves", "apps for real
@@ -10018,7 +10040,7 @@ the applications make the system useful, and is not pulled forward.
   kosmos. Linux-on-Kosmos feature"). So:
   1. **Native applications for the work** - Write, Mail, Present, Music,
      Paint - built from kits, as the premise says; not web apps.
-  2. **A light browser of Kosmos's own**, able to read the modern web -
+  2. **Replaced on 11 November by WebKit, above.** *Was:* a light browser of Kosmos's own, able to read the modern web -
      JavaScript, modern CSS layout, current TLS - but not built to host
      Gmail- or Docs-sized applications. Which engine that is (NetSurf grown
      with QuickJS and layout, or Ladybird, or WebKit's smaller paths) is a

@@ -5,7 +5,9 @@ native applications for the work, a light browser of Kosmos's own for
 reading the modern web but not for Gmail- or Docs-sized applications, and
 Linux-on-Kosmos - Chromium and native Linux applications in an Alpine guest
 shown in a Kosmos window - for the rest (`roadmap.md`, "The web, decided").
-What follows is the research that decision was made from.* Diego, that day: "I want to start using
+What follows is the research that decision was made from.*
+
+***Reversed on 11 November 2026**: Diego, "I need a new web browser that is current and usable like safari or chrome", "We need to port either one to kosmos and have a proper browser" - and, from the two, **WebKit (option C), after its PlayStation port**, designed before it is built. `docs/webkit.md` is that design; this file stays as the research it was chosen from.* Diego, that day: "I want to start using
 kosmos as a daily os", "The major problem now ia the browser", "I do Gmail,
 Google Docs, Gemini, Claude, YouTube, and a lot of browsing", and "I need
 to think about it with real Data pros and cons so do the research but I
