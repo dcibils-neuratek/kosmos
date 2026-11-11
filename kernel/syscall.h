@@ -703,7 +703,15 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 #define SYS_THREAD_SUSPEND 78 /* (index)              -> 0 or error         */
 #define SYS_THREAD_REGS    79 /* (index, out)         -> 0 or error         */
 #define SYS_THREAD_RESUME  80 /* (index)              -> 0 or error         */
-#define SYS_MAX         81
+
+/*
+ * **The caller's own process id** (`docs/w3.md` W3c, for `getpid`): the
+ * number `SYS_PROCTABLE` and `SYS_WAIT` already report for it. A number to
+ * print and to name a file by, never a name for anything - nothing takes a
+ * process id and reaches the process, so it carries no authority.
+ */
+#define SYS_SELF        81  /* ()                     -> this process's id  */
+#define SYS_MAX         82
 
 #define RESERVE_NONE    0
 #define RESERVE_READ    1

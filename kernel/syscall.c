@@ -1654,6 +1654,10 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = sys_entropy(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
+    case SYS_SELF:
+        result = (long)p->id;
+        break;
+
     case SYS_SCREEN_FLUSH:
         /*
          * The holder of the screen, and nobody else: a process that cannot

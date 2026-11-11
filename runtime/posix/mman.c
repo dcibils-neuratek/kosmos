@@ -1,8 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * **Memory, inside the process** (`docs/w3.md` W3b): `mmap`, `munmap`,
- * `mprotect` and `madvise` on W2's reservations (`kernel/reserve.c`), and
- * `sysconf(_SC_PAGESIZE)`.
+ * `mprotect` and `madvise` on W2's reservations (`kernel/reserve.c`).
  *
  * Each is one or two calls and a translation. `mmap` of anonymous memory
  * reserves the pages - addresses only, no page behind them - and gives them
@@ -204,19 +203,4 @@ int madvise(void *addr, size_t length, int advice)
         errno = EINVAL;
         return -1;
     }
-}
-
-long sysconf(int name)
-{
-    if (name == _SC_PAGESIZE) {
-        return (long)PAGE;
-    }
-
-    errno = EINVAL;
-    return -1;
-}
-
-int getpagesize(void)
-{
-    return (int)PAGE;
 }

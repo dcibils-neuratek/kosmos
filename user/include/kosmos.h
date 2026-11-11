@@ -578,6 +578,12 @@ static inline long kosmos_profile(unsigned long op, void *out, unsigned long max
     return sys3(SYS_PROFILE, (long)op, (long)(uintptr_t)out, (long)max);
 }
 
+/* This process's id, as the process table shows it (`SYS_SELF`). */
+static inline long kosmos_self(void)
+{
+    return sys0(SYS_SELF);
+}
+
 /* The hardware's randomness, `len` bytes of it up to `ENTROPY_MAX` (256),
  * held to the kernel's health test first (`kernel/entropy.c`). Returns `len`
  * or an error. A program wants `crypto.random`, seeded from this. */

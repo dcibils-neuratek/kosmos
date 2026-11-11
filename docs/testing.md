@@ -31455,12 +31455,14 @@ the rwlock twenty - and says which stopped.
 
 - **The mutex taken with a plain load and store** in place of
   `kosmos_lock`'s atomic exchange: ARM "counted 154206 of 160000".
-  **x86 did not bite, and cannot here**: QEMU runs an x86 guest's
-  processors one at a time on one host thread on this Mac (an x86 guest's
-  memory order is stronger than the host's, so it is not given MTTCG), and
-  a load and a store are only separated between two translated blocks,
-  which 160000 tries did not hit. ARM's guest runs its processors in
-  parallel. On real x86 cores the same mistake loses counts.
+  **x86 did not bite, and cannot here**: the harness's x86 guest has one
+  processor (`X86_ARGS` in `tools/run_screenshot.py` has no `-smp`; ARM's
+  has four), so a load and a store are separated only by a tick's
+  preemption between them, which 160000 tries did not hit. *Corrected 11
+  November, at W3c, whose `sysconf` counted one*: this said first that
+  QEMU ran an x86 guest's four processors one at a time, which was a
+  plausible explanation and not the true one. On real x86 cores the same
+  mistake loses counts.
 - **The condition variable without its sequence word** - a signal that
   wakes but does not move it, so one between a waiter's letting go and
   its sleep is lost: ARM "the rwlock's threads stopped, 0 of 4 done - a
@@ -31537,7 +31539,7 @@ churns the heap, so a corrupted link is met inside the check. **The
 control is honest rather than biting**: with the write put back, two runs
 under the same load did not crash - the window is the few instructions
 between the call's return and the store. What the thousand did find is
-that on x86, whose guest runs its processors in turn, ended threads
+that on x86, whose guest has one processor, ended threads
 outran the reaper and the kernel refused thread 917 (`EAGAIN`): a
 legitimate refusal, and the check now waits for collection and tries
 again, as a port must.
@@ -31546,3 +31548,63 @@ again, as a port must.
 follow-up diverging (the follow-up already on the roadmap) and `x86-smbd`
 waiting 120 s for a page that came later. Alone, both passed (154 s and
 91 s).
+
+## 18.770 Time and the process's own facts (JetSki W3c)
+
+`docs/w3.md` W3c, in `runtime/posix/time.c` and `process.c`: `nanosleep`,
+`sleep`, `usleep`, `gettimeofday`; `getpid`, the user and group ids (0 -
+there are no users); `sysconf` of the processors, beside the page size;
+`uname`; `getrandom` and `getentropy`. Headers: the layer's `time.h`,
+which takes the runtime's with `#include_next` and adds `nanosleep`, so
+the clocks stay one copy; `sys/time.h`, `sys/utsname.h`, `sys/random.h`,
+and more of `unistd.h`. The tick conversion every wait uses moved out of
+`pthread.c` into `time.c` (`posix_ticks_for_ns`, `runtime/posix/posix.h`),
+so there is one.
+
+**A sleep is held to the clock**, not trusted to its ticks: a sleep of
+one tick can end at the next tick's edge, so `nanosleep` sleeps again
+until the monotonic clock says the time has gone.
+
+**`SYS_SELF` (81)**: the caller's process id, the number `SYS_PROCTABLE`
+and `SYS_WAIT` already report. Nothing gave a process its own; the table
+lists everyone and marks nobody. A random number per process was the
+alternative with no kernel change, and would not match the Processes
+window, or JavaScriptCore's perf map named by pid. The id reaches
+nothing - no call takes a process id and touches the process - so it
+carries none of what *capabilities by index, never global IDs* protects.
+
+**Two things `w3.md` had wrong, and what was done instead.** `getenv`
+"over the environment the process was started with": there is no
+environment, and that is a recorded position (`user/init/misc_user.c`) -
+names a child inherits without being handed them. It stays NULL; what
+WebKit and curl read from one is unset here, which each handles. And
+`getrandom` "on the Crypto Kit's generator": the libc's `arc4random_buf`
+is already the door to the kernel's entropy, and `getrandom` uses it. That
+the Crypto Kit's `crypto.random` keeps a generator of its own beside it is
+two doors to randomness, older than this, and on the roadmap.
+
+**Test**: `posixtest.elf`'s third part: a 20 ms `nanosleep` at least 20
+ms and under two seconds, and one of a billion nanoseconds refused
+(`EINVAL`); `usleep` of 5 ms; `gettimeofday` within the realtime clock's
+second; `getpid` the id the process table names `posixtest` - read from
+the table, not from `SYS_SELF` again; nobody but 0; processors online at
+least one and no more than configured; `uname` Kosmos, a version with a
+dot, and this processor; 32 random bytes from `getrandom` and from
+`getentropy` differing, and 257 refused (`EIO`); and no `HOME` and no
+`PATH`. ARM "...; process: slept, timed, pid in the table, 4 processors,
+Kosmos aarch64, random, no environment", x86 the same with 1 processor.
+
+**That 1 is true, and it is a finding.** The harness's x86 guest has one
+processor - `X86_ARGS` has no `-smp`, `QEMU_ARGS` has four - so since the
+gate became x86-only on 8 October no x86 suite has run two processors at
+once, and a race like 18.769's could only have shown on ARM. On the
+roadmap, for Diego: four processors for x86 too costs time in every x86
+suite.
+
+**Controls**, both biting on both boards: `getpid` answering 1 - "getpid
+said 1, which the process table does not call posixtest"; and `nanosleep`
+as one sleep of its ticks rounded down, trusted - "a 20 ms nanosleep took
+17 ms".
+
+**Whole gate**: 111 of 112 in 605 s; `x86-desktops`' loader window was not
+drawn in time under load, and alone it passed in 22 s.

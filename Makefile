@@ -3434,7 +3434,8 @@ $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)
 # accident (`design.md` §17.3). `posixtest.elf` holds it, as `cxxtest.elf`
 # holds C++, and the system's image must not have it.
 #
-POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c
+POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
+              runtime/posix/process.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 POSIXTEST_OBJS := $(UBUILD)/user/kits/posixtest/posixtest.c.o \

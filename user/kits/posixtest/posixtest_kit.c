@@ -5,6 +5,9 @@
  * `run()` is the checks' own sentence.
  */
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "lua.h"
 #include "lauxlib.h"
 
@@ -30,9 +33,33 @@ long kosmos_posixtest_fresh_index(void)
     return t;
 }
 
+/* Whether the process table's entry for `id` is named `name` - so
+ * `getpid` is held to what the table says, not to `SYS_SELF` again. */
+int kosmos_posixtest_named(long id, const char *name)
+{
+    struct proc_info *all = calloc(512, sizeof(*all));
+    long n, i;
+    int found = 0;
+
+    if (all == NULL) {
+        return 0;
+    }
+
+    n = kosmos_proctable(all, 512);
+
+    for (i = 0; i < n; i++) {
+        if ((long)all[i].id == id && strncmp(all[i].name, name, sizeof(all[i].name)) == 0) {
+            found = 1;
+        }
+    }
+
+    free(all);
+    return found;
+}
+
 static int l_run(lua_State *L)
 {
-    char said[256];
+    char said[512];
 
     (void)kosmos_posixtest_run(said, sizeof(said));
     lua_pushstring(L, said);

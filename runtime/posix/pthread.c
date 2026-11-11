@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "kosmos.h"
+#include "posix.h"
 #include "tls.h"
 
 #define JOINABLE 0u
@@ -79,19 +80,6 @@ __attribute__((constructor)) static void adopt_first_thread(void)
  * Time: a deadline on a clock, as scheduler ticks from now.
  */
 
-static unsigned long tick_hz(void)
-{
-    static unsigned long hz;
-
-    if (hz == 0) {
-        struct sysinfo info;
-
-        hz = (kosmos_sysinfo(&info) == 0 && info.tick_hz != 0) ? info.tick_hz : 250;
-    }
-
-    return hz;
-}
-
 /*
  * Ticks until `until` on `clock`, rounded up and never nought - nought is
  * "for ever" to the futex. Nought back means the deadline has passed.
@@ -112,7 +100,7 @@ static unsigned long ticks_until(clockid_t clock, const struct timespec *until)
         return 0;
     }
 
-    return (unsigned long)((ns * (long long)tick_hz() + 999999999LL) / 1000000000LL);
+    return posix_ticks_for_ns(ns);
 }
 
 static bool bad_deadline(const struct timespec *until)

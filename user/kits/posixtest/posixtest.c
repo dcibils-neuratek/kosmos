@@ -17,12 +17,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/random.h>
+#include <sys/time.h>
+#include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
 
 /* The one Kosmos call here: how many threads the kernel has handed out,
  * to see that detached threads are collected. */
 long kosmos_posixtest_fresh_index(void);
+
+/* And whether the process table names process `id` `name`. */
+int kosmos_posixtest_named(long id, const char *name);
 
 #define WORKERS     8
 #define DETACHED    1000
@@ -341,6 +347,114 @@ static int memory_checks(char *out, unsigned long size)
     return 0;
 }
 
+/*
+ * **Time and the process's own facts** (`docs/w3.md` W3c).
+ */
+static long long ms_between(const struct timespec *a, const struct timespec *b)
+{
+    return ((long long)(b->tv_sec - a->tv_sec) * 1000000000LL + (b->tv_nsec - a->tv_nsec))
+           / 1000000LL;
+}
+
+static int process_checks(char *out, unsigned long size)
+{
+    struct timespec start, end, bad = { 0, 1000000000L };
+    struct timeval tv;
+    struct utsname u;
+    unsigned char a[32], b[32];
+    long long took;
+    long online, conf;
+
+    /* 19: a 20 ms sleep is at least that, and not ten times it */
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    {
+        struct timespec t = { 0, 20000000L };
+
+        if (nanosleep(&t, NULL) != 0) {
+            SAY("posix: nanosleep of 20 ms failed (%d)", errno);
+        }
+    }
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    took = ms_between(&start, &end);
+
+    if (took < 20 || took > 2000) {
+        SAY("posix: a 20 ms nanosleep took %lld ms", took);
+    }
+
+    if (nanosleep(&bad, NULL) == 0 || errno != EINVAL) {
+        SAY("posix: nanosleep of a billion nanoseconds was not refused with EINVAL");
+    }
+
+    /* 20: usleep, 5 ms */
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    usleep(5000);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    if (ms_between(&start, &end) < 5) {
+        SAY("posix: a 5 ms usleep took %lld ms", ms_between(&start, &end));
+    }
+
+    /* 21: gettimeofday is the realtime clock */
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    if (gettimeofday(&tv, NULL) != 0 || tv.tv_usec < 0 || tv.tv_usec >= 1000000
+        || tv.tv_sec < start.tv_sec || tv.tv_sec > start.tv_sec + 2) {
+        SAY("posix: gettimeofday said %ld s against the clock's %ld s",
+            (long)tv.tv_sec, (long)start.tv_sec);
+    }
+
+    /* 22: getpid is the id the process table shows for this process */
+    if (getpid() <= 0 || !kosmos_posixtest_named(getpid(), "posixtest")) {
+        SAY("posix: getpid said %d, which the process table does not call posixtest",
+            (int)getpid());
+    }
+
+    if (getuid() != 0 || geteuid() != 0 || getgid() != 0 || getegid() != 0) {
+        SAY("posix: somebody other than 0");
+    }
+
+    /* 23: the processors */
+    online = sysconf(_SC_NPROCESSORS_ONLN);
+    conf = sysconf(_SC_NPROCESSORS_CONF);
+
+    if (online < 1 || conf < online) {
+        SAY("posix: sysconf counted %ld processors online of %ld", online, conf);
+    }
+
+    /* 24: uname */
+    if (uname(&u) != 0 || strcmp(u.sysname, "Kosmos") != 0 || strchr(u.release, '.') == NULL
+#if defined(__x86_64__)
+        || strcmp(u.machine, "x86_64") != 0
+#else
+        || strcmp(u.machine, "aarch64") != 0
+#endif
+        ) {
+        SAY("posix: uname said %s %s on %s", u.sysname, u.release, u.machine);
+    }
+
+    /* 25: random bytes, twice different, and getentropy's limit */
+    memset(a, 0, sizeof a);
+    memset(b, 0, sizeof b);
+
+    if (getrandom(a, sizeof a, 0) != (ssize_t)sizeof a || getentropy(b, sizeof b) != 0
+        || memcmp(a, b, sizeof a) == 0) {
+        SAY("posix: getrandom and getentropy gave the same 32 bytes");
+    }
+
+    if (getentropy(b, 257) == 0 || errno != EIO) {
+        SAY("posix: getentropy of 257 bytes was not refused with EIO");
+    }
+
+    /* 26: there is no environment */
+    if (getenv("HOME") != NULL || getenv("PATH") != NULL) {
+        SAY("posix: an environment, where there is none");
+    }
+
+    snprintf(out, size, "process: slept, timed, pid in the table, %ld processors, %s %s, "
+             "random, no environment", online, u.sysname, u.machine);
+    return 0;
+}
+
 int kosmos_posixtest_run(char *out, unsigned long size)
 {
     pthread_t t[WORKERS];
@@ -596,18 +710,23 @@ int kosmos_posixtest_run(char *out, unsigned long size)
     }
 
     {
-        char memory[160];
+        char memory[160], process[160];
 
         if (memory_checks(memory, sizeof memory) != 0) {
             snprintf(out, size, "%s", memory);
             return 1;
         }
 
+        if (process_checks(process, sizeof process) != 0) {
+            snprintf(out, size, "%s", process);
+            return 1;
+        }
+
         snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s",
+                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s",
                  counted, ring_passes, once_ran, destroyed,
                  most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
-                 memory);
+                 memory, process);
     }
 
     return 0;
