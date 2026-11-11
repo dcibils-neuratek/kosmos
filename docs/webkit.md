@@ -237,7 +237,8 @@ W1, in the order it is built:
   clang's and uses `TPIDR_EL0` - which is Diego's to choose about.
 
 **W2 - three things from Nebula**, each a kernel change and therefore
-Diego's to agree in detail when it is designed:
+Diego's to agree in detail. *Designed 11 November, in `docs/w2.md`*,
+awaiting his agreement:
 - **a futex** - wait on a word in a process's own memory until it changes,
   wake *n*. Every lock and condition variable stands on it, and today a
   waiter sleeps for a tick (the malloc lock, 0.11.363).

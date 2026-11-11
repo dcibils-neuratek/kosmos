@@ -10044,7 +10044,10 @@ the applications make the system useful, and is not pulled forward.
   W1d, C++ run in the gate, `cxxtest.elf` (0.11.367) - and with it a hang
   in Nebula fixed: a caller whose call was taken by a process that ended
   waited for ever (`testing.md` 18.762). **W2 next**, Nebula's three, each
-  Diego's to agree in detail.
+  Diego's to agree in detail: *designed 11 November in `docs/w2.md`* - a
+  futex, memory reserved / protected / released (never W and X at once),
+  and a thread suspended and its registers read; eight syscalls, about
+  670 lines, awaiting his agreement.
   **Two follow-ups from W1d**: a program's own `panic:` and `stderr`
   reach nothing (only the console's owner may write), so a program that
   dies says only its code - give a dying program's last words a way out;
