@@ -32,6 +32,9 @@ typedef struct {
 #define WCHAR_MAX   __WCHAR_MAX__
 #define WEOF        ((wint_t)-1)
 
+/* The one the compiler calls of its own accord (`runtime/libc/string.c`). */
+size_t wcslen(const wchar_t *s);
+
 __END_DECLS
 
 #endif /* WCHAR_H */

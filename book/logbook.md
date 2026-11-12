@@ -1920,3 +1920,26 @@ rest of the file through a region the same way.
 **Visible impact.** Programs that hand each other data through
 `/Temporary` - a replicant's state, a picture between two applications -
 no longer pay a round trip per kilobyte.
+
+## 11 November, night - ICU: the first of WebKit's foundations
+
+**In short.** ICU, the library every browser uses to understand text in
+the world's languages, runs on Kosmos, and gives exactly the answers it
+gives on a Mac.
+
+**What.** ICU 79.1 - about 450 C++ files and 33 MB of data describing
+hundreds of languages - is downloaded, checked against its published
+fingerprint, and compiled for Kosmos without changing a line of it. A
+test program sorts words the German way and the Swedish way (Swedish puts
+"ä" after "z"), splits Thai, which is written without spaces, into words
+with a dictionary, and writes a number as Americans, Germans and the
+French do; the same program built on the Mac must say the same sentence
+character for character.
+
+**Why.** JavaScriptCore and WTF, the next pieces of the browser, use ICU
+from their very first file. Nothing of WebKit could be compiled before it.
+
+**Visible impact.** None yet on the screen; it is a foundation. The test
+image carries all of ICU's languages and is 64 MB, and reads and runs in
+under half a second. Making it smaller - keeping only the languages
+wanted - is a later step, once there is a browser to measure it against.

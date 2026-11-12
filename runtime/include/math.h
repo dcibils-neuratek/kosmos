@@ -186,6 +186,20 @@ double cbrt(double x);
 double hypot(double x, double y);
 double fmin(double x, double y);
 double fmax(double x, double y);
+float  expf(float x);
+float  expm1f(float x);
+float  tanhf(float x);
+double modf(double x, double *whole);
+
+/*
+ * Declared and not defined: libc++'s `<complex>` names them in inline
+ * overloads (`std::arg` of a float and of a long double), so a C++ file
+ * that includes it does not compile without them - ICU's does - and a call
+ * that reaches one fails at the link with its name, which is where the
+ * file will come from.
+ */
+float       atan2f(float y, float x);
+long double atan2l(long double y, long double x);
 
 __END_DECLS
 

@@ -10092,7 +10092,17 @@ the applications make the system useful, and is not pulled forward.
   script in an image of its own, and test262 counted. **Their source
   fetched, not committed** (Diego, 11 November): release tarballs in
   `build/downloads/` held to their published SHA-256, WebKitGTK 2.54.2's
-  for the JSC-only port.
+  for the JSC-only port. **W4a, C++'s threads, built** (18.776).
+  **W4b, ICU, built** (18.777): ICU 79.1's `common` and `i18n` compiled
+  by `tools/icu_build.py`, its data carried in the image, and answering
+  on Kosmos exactly as on this Mac - Swedish's `ä` after `z`, Thai broken
+  by its dictionary, French's narrow space. Next, W4c, WTF and bmalloc.
+  **A follow-up from W4b**: *`arm-sandbox` miscounted once*. In the gate
+  for 0.11.382 every one of its 219 lines is in the log, the console
+  test's coloured block among them, and the harness counted 218; alone it
+  passed 219 of 219. A line the guest's own drawing broke on the serial,
+  most likely - worth finding which, as a count that can be wrong cannot
+  be trusted to be right.
   **A follow-up from W3d4**: *a suite the gate stops leaves its folder*.
   On 11 November twelve `kosmos-*` folders under the Mac's temporary
   directory held 3 GB - each the disk of a run the gate stopped for

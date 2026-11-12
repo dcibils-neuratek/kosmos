@@ -94,6 +94,25 @@ Forty-five sources in `src/math/` now.
     8f174565b041802c3ee1b141caf2c7240b4ed5f45e920caec11c1585682199a4  src/math/fmin.c
     70d8ee2a5c78bf10a45a5e39ab346a9527867cfc16246d162e07c39d29e77c1f  src/math/fmax.c
 
+## And eight more, and a header, for ICU (11 November 2026)
+
+ICU's LSTM word breaker (`lstmbe.cpp`, for Thai, Burmese and the like)
+calls `expf` and `tanhf`, and its platform layer `modf`. `expf.c`, the
+table it reads and the three it calls when a result overflows or
+underflows; `tanhf.c` and the `expm1f.c` it calls; and `modf.c` - from the
+same tarball, checked against the same sum, and calling nothing else.
+Fifty-three sources now.
+
+    225123b9b3a47a083c06f2580c6b73d5cadae5cec545f9e928f7041ff837b4b4  src/math/expf.c
+    3da38c471cc5eb8dc1c2e283c6c00a36b1d353ba5c8ca1e82d95180948e26bd5  src/math/exp2f_data.c
+    fb52b690bef63df2e8996f2d2b3fd77f9ea08795863e73afdc882df04460e850  src/math/exp2f_data.h
+    69414934bb798f5261e2d80f4b878e2bbe4dfa6025adbd06586195ba5554b04a  src/math/__math_oflowf.c
+    2371ed08fc95e48833a67122b5ef538ce7fc87f40fc7a4df451d71e1787d1d42  src/math/__math_uflowf.c
+    38da031cfed0ba90e68a14dfbc57404ebcb827c9ac34648161c7d11cb212c9ba  src/math/__math_xflowf.c
+    4787b2f6be28bb2ae9721d510b12d2b9aebf96a594f26f25a3dc267f029800df  src/math/tanhf.c
+    a7d4e8f8b41f04d4b977deb59e6bf96067371387062a5987fcc3b4464f54f5e9  src/math/expm1f.c
+    9681ec8b49299a6fc2b2592241232535a1bc8e785f149efadfbb7637d006ca00  src/math/modf.c
+
 `math.h` still declares a few functions no file defines - `floorf`,
 `scalbnf`, `copysignf`, `log1p` - and a call to one fails at the link with
 its name, which is where the next of these will come from.

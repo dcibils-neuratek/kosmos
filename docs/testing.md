@@ -31864,3 +31864,36 @@ with `sleep_for`, and each `std::thread`'s own `thread_local`. 23 checks,
 
 **Control**: the C++ compiled with `-fno-threadsafe-statics`, so the
 static has no guard - it bit, *made more than once*.
+
+## 18.777 ICU, on Kosmos (JetSki W4b)
+
+`docs/w4.md` W4b. ICU 79.1's `common` and `i18n` - 456 files, unedited,
+fetched and held to their sum (`tools/upstream.py`) - compiled by
+`tools/icu_build.py` for each processor, and its 33.5 MB of data carried in
+the image as an object defining the symbol ICU looks for. ICU asked the
+system for `atol`, two locale categories, three of musl's float maths, two
+declarations for libc++'s `<complex>`, an empty `<signal.h>` of its own and
+a `wcslen` - the last because clang writes a call to it in place of a
+counting loop, with nothing in the source naming it.
+
+**Test** (`x86-icu`, `tools/run_icu.py`): `icutest.elf` run from a /Home
+of its own, and its sentence held to the one the same file prints on this
+Mac, compiled against the same ICU built natively. It normalises (NFC,
+NFD, NFKC), sorts six words in German and in Swedish - which puts `ä` and
+`ö` after `z` - breaks an English sentence and a Thai one, which has no
+spaces and is broken by ICU's dictionary, into words, and formats
+1234567.891 in en_US, de_DE and fr_FR:
+
+    ICU 79.1; NFC <U+00E9>cole, NFD A<U+030A>, NFKC fi1; de able apple
+    <U+00E4>pple <U+00F6>l zebra Zoo; sv able apple zebra Zoo <U+00E4>pple
+    <U+00F6>l; en It's|3.5|km|isn't|it; th <U+0E20><U+0E32><U+0E29><U+0E32>|
+    <U+0E44><U+0E17><U+0E22>|<U+0E07><U+0E48><U+0E32><U+0E22>; en_US
+    1,234,567.891; de_DE 1.234.567,891; fr_FR 1<U+202F>234<U+202F>567,891
+
+The 64.5 MB image is read and run in 0.4 s under TCG. `arm-icu` is the
+same on AArch64, which builds and links; it runs when ARM's tests resume.
+
+**Control**: the image linked with 64 zero bytes in place of the data. It
+bit - every piece named an error instead of an answer,
+*U_INVALID_FORMAT_ERROR* for the normalisers and collators and
+*U_MISSING_RESOURCE_ERROR* for the rest - and with the data back it passed.

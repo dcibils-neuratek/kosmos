@@ -489,7 +489,7 @@ LDFLAGS := -T boot/kosmos.ld \
 # anything this system decided. `runtime/upstream/musl-math/README.kosmos.md`
 # has the whole of it.
 #
-# Forty-five files, compiled here rather than linked from an archive,
+# Fifty-three files, compiled here rather than linked from an archive,
 # because the closure was taken over undefined symbols and every one of
 # them is reached.
 # ------------------------------------------------------------------
@@ -3448,6 +3448,50 @@ $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(POSIX_OBJS) $(CXXRT_L
 	    || { echo "apps: the system's image has C++'s test kit in it"; rm -f $@; exit 1; }
 
 #
+# **ICU** (`docs/w4.md` W4b): its `common` and `i18n` as `tools/icu_build.py`
+# compiles them - from source fetched and held to its sum
+# (`tools/upstream.py`), never committed - and its data as an object the
+# image carries. Run again when the script, the runtimes or a header ICU
+# compiles against changed; the script itself compiles everything again
+# when a define or a header did, and only what moved otherwise.
+#
+ICU_SRC  := build/upstream/icu/icu/source
+ICU_DIR  := build/icu/$(ARCH)
+ICU_LIBS := $(ICU_DIR)/libicui18n.a $(ICU_DIR)/libicuuc.a $(ICU_DIR)/icudata.o
+ICU_DEFS := -DU_STATIC_IMPLEMENTATION -DU_DISABLE_RENAMING=1 -DU_USING_ICU_NAMESPACE=0
+
+$(ICU_DIR)/.built: tools/icu_build.py tools/upstream.py $(CXXRT)/.built \
+                   $(wildcard runtime/include/*.h runtime/posix/include/*.h runtime/ports/icu/include/*.h)
+	@mkdir -p $(ICU_DIR)
+	@python3 tools/icu_build.py $(ARCH) > $(ICU_DIR)/build.log 2>&1 \
+	    || { cat $(ICU_DIR)/build.log; exit 1; }
+	@touch $@
+
+$(ICU_LIBS): $(ICU_DIR)/.built
+
+#
+# **ICU's test image**: the system's objects, `icutest.cpp` and its door, the
+# POSIX layer, ICU and the C++ runtimes - one group, since ICU calls libc++
+# and libc++ the layer. ICU's headers as system headers, so its warnings
+# are not ours.
+#
+ICUTEST_OBJS := $(UBUILD)/user/kits/icutest/icutest.cpp.o $(UBUILD)/user/kits/icutest/icutest_kit.c.o
+
+$(UBUILD)/user/kits/icutest/icutest.cpp.o: user/kits/icutest/icutest.cpp $(CXXRT)/.built $(ICU_DIR)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) $(ICU_DEFS) \
+	    -isystem $(ICU_SRC)/common -isystem $(ICU_SRC)/i18n -c $< -o $@
+
+$(UBUILD)/apps/icutest.elf: $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_icutest_kit$$' \
+	    || { echo "apps: icutest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_icutest_kit$$' \
+	    || { echo "apps: the system's image has ICU's test kit in it"; rm -f $@; exit 1; }
+
+#
 # **The POSIX layer** (`docs/w3.md`): `runtime/posix/`, for ported code only.
 # Its headers are on the include path of what links it and of nothing else,
 # so no Kosmos kit, server or application can include `<pthread.h>` by
@@ -3646,7 +3690,8 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
-app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf $(UBUILD)/apps/doom.elf \
+app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
+            $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
 

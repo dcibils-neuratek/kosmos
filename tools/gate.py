@@ -460,6 +460,14 @@ SUITES = [
     Suite("x86-loader", ["python3", "tools/run_loader.py", X86,
                          "build/user-x86_64-test/apps"], x86=True),
 
+    # **ICU** (`docs/w4.md` W4b): `icutest.elf`, ICU and its data in one
+    # image, normalising, collating, breaking words and formatting numbers
+    # in several locales - held to what the same file says on this Mac
+    # against the same ICU built natively.
+    Suite("arm-icu", ["python3", "tools/run_icu.py", ARM, "build/user-test/apps"]),
+    Suite("x86-icu", ["python3", "tools/run_icu.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

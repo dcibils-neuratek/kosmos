@@ -263,6 +263,17 @@ int atoi(const char *s)
     return (int)strtol(s, NULL, 10);
 }
 
+/* Its two wider siblings, for ICU's converter names (`ucnv.cpp`). */
+long atol(const char *s)
+{
+    return strtol(s, NULL, 10);
+}
+
+long long atoll(const char *s)
+{
+    return strtoll(s, NULL, 10);
+}
+
 /*
  * There is no environment, so there is nothing in it.
  *

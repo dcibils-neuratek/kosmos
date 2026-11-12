@@ -388,6 +388,27 @@ size_t strlen(const char *s)
     return (size_t)(p - s);
 }
 
+/*
+ * **The one wide-character function, because the compiler writes calls to
+ * it.** No source in the tree calls `wcslen`: clang recognises a loop
+ * counting `wchar_t`s up to a zero and replaces it with a call, as it does
+ * a copying loop with `memcpy` - ICU's `ustrtrns.cpp` is where it found
+ * one (`docs/w4.md` W4b). So it is defined, and declared in `wchar.h`, and
+ * the rest of the family still is not. The compiler's own name for the
+ * type, since `wchar.h` and the compiler's `stdint.h` both define its
+ * limits and cannot be included together.
+ */
+size_t wcslen(const __WCHAR_TYPE__ *s)
+{
+    const __WCHAR_TYPE__ *p = s;
+
+    while (*p != 0) {
+        p++;
+    }
+
+    return (size_t)(p - s);
+}
+
 int strcmp(const char *a, const char *b)
 {
     /* Compared as unsigned char, which is what the standard says and what
