@@ -10124,8 +10124,10 @@ the applications make the system useful, and is not pulled forward.
 
   Next, **W5**: the libraries, planned in `docs/w5.md` (W5a pictures,
   W5b the Text Kit's engines, W5c SQLite, libxml2 and libpsl, W5d OpenSSL
-  and curl, W5e Skia), with two choices of Diego's first: fetched or
-  vendored, and zlib or `miniz`'s names.
+  and curl, W5e Skia), fetched as W4 is, with zlib 1.4 under them (Diego, 12 November).
+  After W5, as their own steps: the Compress Kit from `miniz` onto zlib,
+  and `gfx`'s pictures from `stb_image` onto libpng, libjpeg-turbo and
+  libwebp.
 
   **Follow-ups from W4e**:
   - *A module loader in the driver*: 287 failures and the 817 module tests

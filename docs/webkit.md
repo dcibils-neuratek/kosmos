@@ -268,8 +268,7 @@ it from their first file (`docs/w4.md`).
 
 **W5 - the libraries.** ICU, FreeType, HarfBuzz (as the Text Kit), libpng,
 libjpeg-turbo, libwebp, SQLite, libxml2 (or expat, already here, where
-WebKit allows), zlib (or `miniz`, already here), libpsl, curl - each vendored as shipped under
-`runtime/upstream/` with its licence, each with a host test where it has
+WebKit allows), zlib, libpsl, curl - each fetched and held to its sum (*Decided*, 7), each with a host test where it has
 one. Skia from WebKit's own copy.
 
 **W6 - WebCore draws a page**, headless: a page from a file laid out and
@@ -388,6 +387,11 @@ numbers):
    WebKitGTK 2.54.2's tarball - which carries the JSC-only port - and ICU
    79.1, which JavaScriptCore cannot build without, so ICU is W4's first
    part rather than W5's (`docs/w4.md`).
+
+7. **W5's libraries fetched, and zlib as the one deflate** (12 November;
+   `docs/w5.md`): fetched and held to their sums as WebKit is, rather than
+   vendored as *W5* above first said, and zlib 1.4 under them, with the
+   Compress Kit moving from `miniz` onto it.
 
 ## Still open
 
