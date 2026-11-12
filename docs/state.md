@@ -2,9 +2,37 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.385: W4e built - test262 counted; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.386: W5a built - the picture libraries; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, afternoon: JetSki W5a (0.11.386, not pushed)
+
+**The picture libraries run on Kosmos** (`docs/w5.md` W5a, `testing.md`
+18.781):
+
+- zlib 1.4, libpng 1.6.59, libjpeg-turbo 3.2.1 and libwebp 1.6.0 come from
+  `tools/upstream.py`.
+  - Tarballs are held to GitHub's digests.
+  - libpng and libwebp are tags, held to their commits through the new
+    `GIT` table and `checkout()`, which test262 now shares.
+- `tools/w5_build.py x86_64|aarch64|host` builds them with their own CMake
+  into `build/w5/<arch>/install`, with SIMD on.
+  - `nasm` is from Homebrew.
+  - TurboJPEG is off, because it compiles in a libspng and a zlib of its
+    own.
+  - `NO_PUTENV`, because Kosmos has no environment.
+- `picturetest.elf` (`user/kits/picturetest/`) is `x86-pictures`, run by
+  `tools/run_pictures.py`.
+  - 216 files give 439 lines, every one equal to the Mac's, in 3.7 s.
+  - Three controls (`KOSMOS_PICTURES_BREAK`) bite.
+- The gate: 115 of 116 in 11:45. `arm-sandbox` test 72, the futex
+  deadline, failed under load and passes 219 of 219 alone (roadmap).
+
+**Next: the gate back under ten minutes**, before W5b (roadmap, *The gate
+is at 10:53*). Then W5b: FreeType 2.15.0 (tag commit 37515cf) and HarfBuzz
+15.1.0, whose digest 0fc7c565 was checked by a fetch. HarfBuzz's 312
+shaping test files are what W5b is held to.
 
 ## 12 November, morning: JetSki W4e (0.11.385, not pushed)
 

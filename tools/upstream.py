@@ -51,6 +51,38 @@ RELEASES = {
         "sha256": "a76345b391bef6211fb5ab6cfab2e86b285d18cda17cbb9ade595f1252b86065",
         "top": "webkitgtk-2.54.2",
     },
+    # **W5a's pictures** (`docs/w5.md`). zlib 1.4, 5 November 2026, and
+    # libjpeg-turbo 3.2.1, 27 October 2026: GitHub's digests for the
+    # release assets, as ICU's are.
+    "zlib": {
+        "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+        "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+        "top": "zlib-1.4",
+    },
+    "libjpeg-turbo": {
+        "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/"
+               "libjpeg-turbo-3.2.1.tar.gz",
+        "sha256": "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f",
+        "top": "libjpeg-turbo-3.2.1",
+    },
+}
+
+# **Releases that are tags**, with no asset GitHub keeps a digest for:
+# libpng's and libwebp's are published as tags in their own repositories
+# (and as tarballs on hosts that give a signature and no sum). A tag's
+# commit is a sum the publisher gives, so each is fetched as test262 is,
+# at that commit, and refused unless git says that is what it holds.
+GIT = {
+    # libpng 1.6.59, the newest of the stable 1.6 line.
+    "libpng": {
+        "url": "https://github.com/pnggroup/libpng.git",
+        "commit": "cd952f49f95bb27154ae77dbb103032d95f6e580",
+    },
+    # libwebp 1.6.0, its newest release.
+    "libwebp": {
+        "url": "https://github.com/webmproject/libwebp.git",
+        "commit": "4fa21912338357f89e4fd51cf2368325b59e9bd9",
+    },
 }
 
 
@@ -66,35 +98,40 @@ TEST262 = {
 }
 
 
-def test262():
-    """Where test262 is, fetched at its commit if it is not there yet."""
-    into = os.path.join(UNPACKED, "test262")
+def checkout(name, url, commit):
+    """Where `name` is, fetched by git at `commit` if it is not there yet."""
+    into = os.path.join(UNPACKED, name)
 
     def head():
         r = subprocess.run(["git", "-C", into, "rev-parse", "HEAD"],
                            capture_output=True, text=True)
         return r.stdout.strip() if r.returncode == 0 else None
 
-    if head() != TEST262["commit"]:
+    if head() != commit:
         shutil.rmtree(into, ignore_errors=True)
         os.makedirs(into)
-        print("upstream: fetching test262 at %s" % TEST262["commit"])
-        for args in (["init", "-q"], ["remote", "add", "origin", TEST262["url"]],
-                     ["fetch", "-q", "--depth", "1", "origin", TEST262["commit"]],
+        print("upstream: fetching %s at %s" % (name, commit))
+        for args in (["init", "-q"], ["remote", "add", "origin", url],
+                     ["fetch", "-q", "--depth", "1", "origin", commit],
                      ["checkout", "-q", "FETCH_HEAD"]):
             subprocess.run(["git", "-C", into] + args, check=True)
 
-    if head() != TEST262["commit"]:
+    if head() != commit:
         shutil.rmtree(into, ignore_errors=True)
-        sys.exit("upstream: test262 is not at %s - removed" % TEST262["commit"])
+        sys.exit("upstream: %s is not at %s - removed" % (name, commit))
 
     # And nothing in the checkout changed since: a modified file would be
-    # counted as though it were test262's.
+    # taken as though it were the publisher's.
     if subprocess.run(["git", "-C", into, "status", "--porcelain"],
                       capture_output=True, text=True).stdout.strip():
-        sys.exit("upstream: test262's checkout in %s has been changed" % into)
+        sys.exit("upstream: %s's checkout in %s has been changed" % (name, into))
 
     return into
+
+
+def test262():
+    """Where test262 is, fetched at its commit if it is not there yet."""
+    return checkout("test262", TEST262["url"], TEST262["commit"])
 
 
 def sha256(path):
@@ -157,13 +194,16 @@ def where(name):
 
 
 def main():
+    names = list(RELEASES) + list(GIT)
     if len(sys.argv) != 3 or sys.argv[1] not in ("fetch", "unpack", "path") \
-            or sys.argv[2] not in RELEASES:
-        sys.exit("usage: upstream.py fetch|unpack|path %s" % "|".join(RELEASES))
+            or sys.argv[2] not in names:
+        sys.exit("usage: upstream.py fetch|unpack|path %s" % "|".join(names))
 
     action, name = sys.argv[1], sys.argv[2]
 
-    if action == "fetch":
+    if name in GIT:
+        print(checkout(name, GIT[name]["url"], GIT[name]["commit"]))
+    elif action == "fetch":
         print(fetch(name))
     elif action == "unpack":
         unpack(name)

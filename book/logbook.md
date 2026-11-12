@@ -2070,3 +2070,40 @@ console may write to it. Finding out took a throwaway kernel that let
 everyone write, and a throwaway `abort` that printed the stack it was
 called from. That pointed at the random device in one go, and fixing how
 a dying program is heard is now near the top of the follow-ups.
+
+## 12 November, afternoon - the libraries pictures are made of
+
+**In short.** The four libraries every browser uses for pictures now run on
+Kosmos: zlib for compression, libpng, libjpeg-turbo and libwebp. Given the
+test pictures their authors ship, they answer on Kosmos exactly what they
+answer on a Mac.
+
+**What.** This is the first of the five steps before WebKit can draw a
+page (W5a in `docs/w5.md`). Each library is the original release,
+downloaded and checked against what its publisher says it is, and built
+with its own build files for Kosmos. Each keeps the fast code written for
+the processor's vector unit: NEON on ARM, SSE2 and AVX2 on Intel.
+
+**Why.** WebKit does not decode pictures itself; it asks these libraries.
+If one of them is wrong on Kosmos, every page is wrong in a way that would
+be very hard to trace back from a page. So each is proved on its own
+first.
+
+**How it is proved.** A small test program reads 216 pictures from the four
+libraries' own test sets, including files that are broken on purpose. It
+decodes each one two or three ways, encodes some back, and writes a line
+of fingerprints for each. The same program built on the Mac writes the same
+439 lines. That includes the lossy encoders, where the Mac's vector code
+and the guest's are different instruction sets and still give the same
+bytes. Broken files fail with the same message in both.
+
+**Found on the way.** libjpeg-turbo can bring along a second PNG reader
+and a second zlib of its own. Kosmos is meant to have one of each, so that
+part is switched off; WebKit doesn't use it. libwebp's own reference
+picture is from 2010 and is now off by one in places from its own decoder,
+the same on every machine, so it is held to "within one".
+
+**Visible impact.** Nothing on the screen yet. It is the ground WebCore
+stands on. It also clears the way to replace Kosmos's own picture decoder
+and deflate with these libraries later, which the roadmap has as steps of
+their own. `testing.md` 18.781 has the measurements.

@@ -10122,9 +10122,35 @@ the applications make the system useful, and is not pulled forward.
   `jsc_kosmos.cpp`. On the way, `mprotect` of no bytes succeeds as on
   Linux.
 
-  Next, **W5**: the libraries, planned in `docs/w5.md` (W5a pictures,
+  **W5**: the libraries, planned in `docs/w5.md` (W5a pictures,
   W5b the Text Kit's engines, W5c SQLite, libxml2 and libpsl, W5d OpenSSL
   and curl, W5e Skia), fetched as W4 is, with zlib 1.4 under them (Diego, 12 November).
+
+  **W5a, the pictures, built** (18.781): zlib 1.4, libpng 1.6.59,
+  libjpeg-turbo 3.2.1 and libwebp 1.6.0, each with its vector code, built
+  by `tools/w5_build.py`. 216 test pictures from the four releases say 439
+  lines in the guest, every one what they say on this Mac (`x86-pictures`).
+  TurboJPEG is left out, so there is no second PNG reader or deflate inside
+  libjpeg-turbo.
+
+  Next, **W5b**: FreeType and HarfBuzz, the Text Kit's engines. HarfBuzz
+  15.1.0's tarball carries 312 of its own shaping test files, with their
+  fonts and the glyphs expected (AOTS, in-house, Text Rendering Tests), so
+  W5b is held to HarfBuzz's own answers as well as to this Mac.
+
+  **Follow-ups from W5a's gate** (18.781):
+  - *The futex test's deadline under load*: `arm-sandbox`'s test 72 holds
+    a futex wait's timeout to between 0.8 and 3 times a sleep of the same
+    ticks (`futex_role`, code 6). With 116 suites sharing this Mac it fell
+    outside once, and alone it passes 219 of 219. The bound is about the
+    clock, and load is not the clock's fault: measure the two back to back
+    several times and compare the closest, or widen it with the reason.
+  - *A failure's reason glued to its line*: the test printed "(the role
+    said 6)" with no newline before its `not ok 72`, so the runner did not
+    count that line and said "218 arrived" instead of naming the test.
+    `kputs("\n   (...)")` is followed by the result on the same line in
+    every such message in `tests/tests.c`; one newline after them, or a
+    runner that finds `not ok` anywhere in a line.
   After W5, as their own steps: the Compress Kit from `miniz` onto zlib,
   and `gfx`'s pictures from `stb_image` onto libpng, libjpeg-turbo and
   libwebp.
@@ -10142,7 +10168,10 @@ the applications make the system useful, and is not pulled forward.
   - *The gate is at 10:53* on 0.11.385, past its ten minutes: the slowest
     is `x86-cafesa3d-2` at 277 s, then `x86-dock` and `x86-servers`.
     Splitting the slowest or waiting for the thing in it, before the next
-    suite lands.
+    suite lands. **W5a landed one anyway** (`x86-pictures`, 11 s), and the
+    gate on 0.11.386 was 11:45 with `x86-cafesa3d-2` at 279 s,
+    `arm-sandbox-linuxsetup` 249 s and `host-llm` 229 s. This is the next
+    thing done, before W5b.
 
   **Follow-ups from W4d**:
   - *A dying program's last words*, again: finding W4d's abort took a

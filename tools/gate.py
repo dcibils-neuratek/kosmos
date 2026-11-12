@@ -484,6 +484,15 @@ SUITES = [
     Suite("x86-jsc", ["python3", "tools/run_jsc.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5a's pictures** (`docs/w5.md`): `picturetest.elf`, zlib, libpng,
+    # libjpeg-turbo and libwebp given every test picture their releases
+    # ship - decoded, encoded, broken files refused - held line for line to
+    # the same file on this Mac against the same releases built natively.
+    Suite("arm-pictures", ["python3", "tools/run_pictures.py", ARM,
+                           "build/user-test/apps"]),
+    Suite("x86-pictures", ["python3", "tools/run_pictures.py", X86,
+                           "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

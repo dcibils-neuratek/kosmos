@@ -32130,3 +32130,59 @@ proves nothing.
 The gate, with the change to `mman.c` in it: 115 of 115 x86-64 suites in
 10:53, the slowest `x86-cafesa3d-2` at 277 s. That is past the ten
 minutes; the roadmap has it.
+
+## 18.781 W5a's pictures, on Kosmos (JetSki W5a)
+
+**zlib 1.4, libpng 1.6.59, libjpeg-turbo 3.2.1 and libwebp 1.6.0** for
+both processors (`docs/w5.md` W5a), fetched and held to their publishers'
+digests or tag commits, built by their own CMake (`tools/w5_build.py`) with
+their vector code: libpng's NEON and SSE2 filters, libjpeg-turbo's NEON and
+its SSE2 and AVX2 through `nasm`, libwebp's NEON, SSE2 and SSE4.1. They
+link into `picturetest.elf` without a symbol missing.
+
+**`x86-pictures`** (`tools/run_pictures.py`): 216 files from the four
+releases, 439 lines said about them, held line for line to the same
+`picturetest.c` compiled on this Mac against the same releases built
+natively.
+
+| library | files | what is asked |
+|---|---|---|
+| zlib | all 216 | levels 1, 6 and 9 and gzip; inflated back; CRC-32 and Adler-32 |
+| libpng | 207 | the simplified API to RGBA; the progressive reader, 512 bytes at a time; one encode |
+| libjpeg-turbo | 4 JPEGs and a PPM | islow, ifast and half size, 8 and 12 bits; three encodes |
+| libwebp | 3 WebPs and a PPM | decode; `test.webp` against `test_ref.ppm`; lossless and q75 encodes |
+
+**Every line agrees, in 3.7 s.** The lossy encoders agree too, though
+their vector code is NEON on the Mac and SSE2 and AVX2 in the guest. The
+crashers in libpng's tree fail with the same sentences in both places.
+
+**Found on the way:**
+
+- **A kit cannot call `print`.** The first run printed nothing and ended
+  with code 0. A program's `print` is in its environment, not in the
+  globals a kit's `lua_getglobal` reads. The kit returns its lines and the
+  program prints them, as `icutest` does.
+- **libwebp's `test_ref.ppm` is from 2010**, and 13,265 of its values are
+  one away from what today's decoder gives, none further, on the Mac as in
+  the guest. `test.webp` is held to within one of it.
+- **TurboJPEG would have brought a second PNG reader and a second
+  deflate**, libspng and its own zlib, compiled into it, so it is off.
+
+**The controls.** One byte in the middle of each of a library's pictures is
+turned over, for the reference only:
+
+| broken | lines that differ, of 439 |
+|---|---|
+| libpng's pictures | 360 |
+| libjpeg-turbo's | 21 |
+| libwebp's | 8 |
+
+And restored, 439 of 439 again.
+
+**The gate**: 115 of 116 suites in 11:45 (705 s), `x86-pictures` 11 s.
+`arm-sandbox` failed once, at test 72: the futex check's deadline, held to
+a sleep of the same length, fell outside its bound with every suite
+sharing the Mac. Alone, it passes 219 of 219. Nothing in this change
+reaches the kernel or the futex; the roadmap has the bound, and the line
+the runner could not count because the reason was printed before it on the
+same line.

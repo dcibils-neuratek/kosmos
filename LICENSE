@@ -161,6 +161,25 @@ Vendored third-party code keeps its own licence, which travels beside it:
       carry. Not in the system's image: `make apps` links it into the
       images that need it, jsc.elf among them, installed in /Home/Apps/JSC
 
+  zlib 1.4, by Jean-loup Gailly and Mark Adler, the zlib License
+      Not in the tree: tools/upstream.py fetches the release, held to
+      GitHub's digest (docs/w5.md W5a); the terms are at the top of zlib.h.
+      Not in the system's image: only picturetest.elf, W5a's test, links it
+
+  libpng 1.6.59, by the PNG Reference Library Authors, PNG Reference
+      Library License version 2
+      Not in the tree: fetched by git at the release tag's commit (W5a);
+      the terms are the LICENSE in the release. Only picturetest.elf
+
+  libjpeg-turbo 3.2.1, by the libjpeg-turbo Project and the Independent
+      JPEG Group, the IJG License and a BSD-style licence
+      Not in the tree: fetched and held to GitHub's digest (W5a); the terms
+      are LICENSE.md and README.ijg in the release. Only picturetest.elf
+
+  libwebp 1.6.0, by Google LLC, a BSD-style licence
+      Not in the tree: fetched by git at the release tag's commit (W5a);
+      the terms are COPYING and PATENTS in the release. Only picturetest.elf
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

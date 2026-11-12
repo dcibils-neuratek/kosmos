@@ -3602,6 +3602,49 @@ $(UBUILD)/apps/posixtest.elf: $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) $(UBU
 	    || { echo "apps: the system's image has the POSIX layer in it"; rm -f $@; exit 1; }
 
 #
+# **W5's libraries** (`docs/w5.md`): zlib, libpng, libjpeg-turbo and
+# libwebp from their releases, fetched and held to their sums
+# (`tools/upstream.py`), each built by its own CMake into a static library
+# (`tools/w5_build.py`), which runs whenever anything it reads is newer and
+# leaves the rest to ninja.
+#
+W5_DIR  := build/w5/$(ARCH)/install
+W5_LIBS := $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/libpng.a \
+           $(W5_DIR)/lib/libjpeg.a $(W5_DIR)/lib/libz.a
+
+build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.cmake \
+                         $(wildcard runtime/include/*.h runtime/include/sys/*.h \
+                                    runtime/posix/include/*.h runtime/posix/include/*/*.h)
+	@mkdir -p build/w5/$(ARCH)
+	@python3 tools/w5_build.py $(ARCH) > build/w5/$(ARCH)/build.log 2>&1 \
+	    || { tail -60 build/w5/$(ARCH)/build.log; exit 1; }
+	@touch $@
+
+$(W5_LIBS): build/w5/$(ARCH)/.built
+
+#
+# **W5a's picture test** (`tools/run_pictures.py`): `picturetest.c` and its
+# door, the POSIX layer it reads its pictures through, and the four
+# libraries - in no image but its own.
+#
+PICTURETEST_OBJS := $(UBUILD)/user/kits/picturetest/picturetest.c.o \
+                    $(UBUILD)/user/kits/picturetest/picturetest_kit.c.o
+
+$(UBUILD)/user/kits/picturetest/picturetest.c.o: user/kits/picturetest/picturetest.c \
+        user/kits/picturetest/picturetest.h build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem $(W5_DIR)/include -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/picturetest.elf: $(USER_OBJS) $(PICTURETEST_OBJS) $(POSIX_OBJS) $(W5_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(PICTURETEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(W5_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_picturetest_kit$$' \
+	    || { echo "apps: picturetest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_picturetest_kit|png_create_read_struct|inflate)$$' \
+	    || { echo "apps: the system's image has W5's libraries in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -3776,6 +3819,7 @@ apps:
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
+            $(UBUILD)/apps/picturetest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
