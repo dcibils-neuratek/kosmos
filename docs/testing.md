@@ -32382,8 +32382,8 @@ Three failed:
   `kernel/syscall.h`, and the check asked `make` about six images named by
   hand, `sqltest.elf` not among them. It asks about `app-images` now, every
   image that target makes: 173 objects, all rebuilt.
-- **`x86-desktops`**, "the loader's window was never drawn", as in 18.7xx
-  twice before under the gate's load; 15 of 15 alone.
+- **`x86-desktops`**, "the loader's window was never drawn", as twice
+  before under the gate's load (18.741, 18.770); 15 of 15 alone.
 - **`x86-llmmon`**: the network driver's first-five-seconds line was
   printed into the middle of a line of the model's answer, with no newline
   before it, so the answer from a file was not the answer on the line.
