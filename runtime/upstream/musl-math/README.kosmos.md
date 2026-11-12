@@ -137,3 +137,24 @@ with what they call, found by the same closure over undefined symbols:
 zeros, and that includes the architecture's `atomic_arch.h`. So those
 three come too, unmodified, and the Makefile's include order already puts
 `arch/$(ARCH)` before `arch/generic`.
+
+## And one more, for HarfBuzz (12 November 2026)
+
+HarfBuzz 15.1.0's outlines (`hb-outline.hh`) call `hypotf`, which
+`math.h` did not declare. `hypotf.c`, from the same tarball and checked
+against the same sum; it calls `sqrtf`, which is here.
+
+    aea5ebf39a0dd8ad3d905d54fb59847381f79823f5f1e8ff52b16292fcc47f7d  src/math/hypotf.c
+
+## And two more, for HarfBuzz's fonts (12 November 2026)
+
+HarfBuzz rounds a glyph's extents with `roundf` (`hb-font.cc`), which
+`math.h` did not declare, and `hb-shape`'s way of scaling a font, which
+W5b's test follows, calls `scalbnf`, which `math.h` declared and nothing
+defined - a declaration with no definition behind it, found by the first
+caller. Both from the same tarball, checked against the same sum; neither
+calls anything else. FFmpeg's config (`user/kits/ffmpeg/config/config.h`)
+says `HAVE_ROUNDF 1` with them, or `libavutil/libm.h` defines its own.
+
+    3f8cc14771a866a06184a3d9d654f63de9a077316a4905aae19884cc9b292d2e  src/math/roundf.c
+    3fb36f1cf8d9c118bfe85b462e6e0c034543835e5ffee4661f5ab8de997813e5  src/math/scalbnf.c

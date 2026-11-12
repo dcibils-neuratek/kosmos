@@ -2,9 +2,30 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.387: the gate at 9:27; W5a built; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.388: W5b built; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, evening: JetSki W5b (0.11.388, not pushed)
+
+**The text libraries run on Kosmos** (`docs/w5.md` W5b, `testing.md`
+18.783):
+
+- FreeType 2.15.0 (git, tag commit 37515cf, freedesktop's GitLab) and
+  HarfBuzz 15.1.0 (tarball, GitHub's digest) in `tools/upstream.py`,
+  built by `w5_build.py`: FreeType on W5a's libpng and zlib, HarfBuzz on
+  FreeType, its tools, subsetter and rasterisers off.
+- libm: `hypotf`, `roundf` and `scalbnf` from musl 1.2.5 (`scalbnf` had
+  been declared with no definition).
+- `texttest.elf` (`user/kits/texttest/`) is `x86-text`, run by
+  `tools/run_text.py`: HarfBuzz's own shaping suite flattened from its
+  Meson lists as `run-tests.py` reads them, shaped by a C driver doing what
+  `hb-shape` does. 7,761 cases, all as HarfBuzz expects; 545 fonts through
+  FreeType; 835 lines equal to the Mac's, in 5.3 s. Two controls bite
+  (`KOSMOS_TEXT_BREAK=fonts|expected`).
+
+**Next: W5c**: SQLite, libxml2 and libpsl. Before W6, the disk question
+for Diego (`w5.md` *Disk*).
 
 ## 12 November, afternoon: JetSki W5a (0.11.386, not pushed)
 

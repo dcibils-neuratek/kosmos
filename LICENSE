@@ -180,6 +180,17 @@ Vendored third-party code keeps its own licence, which travels beside it:
       Not in the tree: fetched by git at the release tag's commit (W5a);
       the terms are COPYING and PATENTS in the release. Only picturetest.elf
 
+  FreeType 2.15.0, by David Turner, Robert Wilhelm, Werner Lemberg and
+      the FreeType Project, the FreeType License (FTL), chosen of its two
+      Not in the tree: fetched by git at the release tag's commit (W5b);
+      the terms are LICENSE.TXT and docs/FTL.TXT in the release. Only
+      texttest.elf, W5b's test, links it
+
+  HarfBuzz 15.1.0, by Behdad Esfahbod and the HarfBuzz authors, the
+      Old MIT licence
+      Not in the tree: fetched and held to GitHub's digest (W5b); the terms
+      are COPYING in the release. Only texttest.elf
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

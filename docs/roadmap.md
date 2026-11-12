@@ -10133,10 +10133,14 @@ the applications make the system useful, and is not pulled forward.
   TurboJPEG is left out, so there is no second PNG reader or deflate inside
   libjpeg-turbo.
 
-  Next, **W5b**: FreeType and HarfBuzz, the Text Kit's engines. HarfBuzz
-  15.1.0's tarball carries 312 of its own shaping test files, with their
-  fonts and the glyphs expected (AOTS, in-house, Text Rendering Tests), so
-  W5b is held to HarfBuzz's own answers as well as to this Mac.
+  **W5b, the text, built** (18.783): FreeType 2.15.0 on W5a's libpng and
+  zlib, and HarfBuzz 15.1.0 on FreeType. HarfBuzz's own shaping suite,
+  7,761 cases, every one the glyphs it expects, in the guest as on this
+  Mac, through a C driver doing what `hb-shape` does (`texttest.c`), and
+  FreeType rendering all 545 of the suite's fonts (`x86-text`). libm gained
+  `hypotf`, `roundf` and `scalbnf` from musl.
+
+  Next, **W5c**: SQLite, libxml2 and libpsl.
 
   **Follow-ups from W5a's gate** (18.781):
   - *The futex test's deadline under load*: `arm-sandbox`'s test 72 holds
@@ -10153,7 +10157,10 @@ the applications make the system useful, and is not pulled forward.
     runner that finds `not ok` anywhere in a line.
   After W5, as their own steps: the Compress Kit from `miniz` onto zlib,
   and `gfx`'s pictures from `stb_image` onto libpng, libjpeg-turbo and
-  libwebp.
+  libwebp. And the Text Kit, decided on 11 November (`webkit.md`): FreeType
+  and HarfBuzz behind one door for every application that draws text, with
+  `gfx`'s own text moved onto it and its callers held to the same tests
+  before and after - W5b has the engines built and proved.
 
   **Follow-ups from W4e**:
   - *A module loader in the driver*: 287 failures and the 817 module tests

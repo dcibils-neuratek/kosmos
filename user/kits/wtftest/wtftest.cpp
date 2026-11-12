@@ -100,6 +100,22 @@ static String threads()
     return makeString(" threads="_s, count.load());
 }
 
+/* Whether `count` moves from where it is, within two seconds: waiting
+ * for the thing rather than for a number of milliseconds. 30 ms was the
+ * number, and in a gate of 117 suites sharing the Mac the spinner was not
+ * given its processor inside them once (`testing.md` 18.783). */
+static bool moves(std::atomic<unsigned long>& count)
+{
+    unsigned long from = count.load();
+
+    for (int ms = 0; ms < 2000; ms++) {
+        wait_ms(1);
+        if (count.load() != from)
+            return true;
+    }
+    return false;
+}
+
 static String suspended()
 {
     std::atomic<unsigned long> count { 0 };
@@ -116,9 +132,7 @@ static String suspended()
         wait_ms(1);
     }
 
-    unsigned long a = count.load();
-    wait_ms(30);
-    moved_before = count.load() != a;
+    moved_before = moves(count);
 
     {
         ThreadSuspendLocker locker;
@@ -146,9 +160,7 @@ static String suspended()
         spinner->resume(locker);
     }
 
-    unsigned long c = count.load();
-    wait_ms(30);
-    moved_after = count.load() != c;
+    moved_after = moves(count);
 
     done = true;
     spinner->waitForCompletion();

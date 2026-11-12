@@ -79,6 +79,32 @@ LIBRARIES = {
         # Threads for its encoder's passes; pthreads are the POSIX layer's.
         "-DWEBP_USE_THREAD=ON",
     ],
+    # **W5b, the Text Kit's engines** (`docs/w5.md`).
+    "freetype": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        # zlib for compressed fonts and libpng for colour glyphs in PNG
+        # (`sbix`, `CBDT`), both W5a's - required, so neither is quietly
+        # left out because it was not found.
+        "-DFT_REQUIRE_ZLIB=ON", "-DFT_REQUIRE_PNG=ON",
+        # bzip2 for `.pcf.bz2` X11 fonts, which nothing here has; Brotli
+        # for WOFF2, which WebKit decodes with its own copy of Google's;
+        # HarfBuzz, built after FreeType and on it, so not under it; HVF,
+        # a library this system does not have.
+        "-DFT_DISABLE_BZIP2=ON", "-DFT_DISABLE_BROTLI=ON",
+        "-DFT_DISABLE_HARFBUZZ=ON", "-DFT_DISABLE_HVF=ON",
+    ],
+    "harfbuzz": [
+        "-DBUILD_SHARED_LIBS=OFF", "-DHB_HAVE_FREETYPE=ON",
+        "-DHB_BUILD_UTILS=OFF", "-DHB_BUILD_TESTS=OFF",
+        # Its subsetter, and the rasteriser, vector and GPU libraries it has
+        # grown: FreeType rasterises here, and a second rasteriser is the
+        # Text Kit's question to decide, not a side effect of a build.
+        "-DHB_BUILD_SUBSET=OFF", "-DHB_BUILD_RASTER=OFF",
+        "-DHB_BUILD_VECTOR=OFF", "-DHB_BUILD_GPU=OFF",
+        # On this Mac too, so the reference shapes with HarfBuzz's own code
+        # rather than asking CoreText.
+        "-DHB_HAVE_CORETEXT=OFF",
+    ],
 }
 
 
@@ -88,6 +114,8 @@ TARGETS = {
     "libpng": ["png_static"],
     "libjpeg-turbo": ["jpeg-static"],
     "libwebp": ["webp", "webpdecoder", "webpdemux", "libwebpmux", "sharpyuv"],
+    "freetype": ["freetype"],
+    "harfbuzz": ["harfbuzz"],
 }
 
 
@@ -128,8 +156,11 @@ def configure(arch, name, src, out, prefix):
         command += ["-DCMAKE_C_COMPILER=/usr/bin/clang",
                     "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"]
     else:
+        # HarfBuzz is C++, compiled against the runtimes as WebKit is.
         command += ["-DCMAKE_TOOLCHAIN_FILE=" + TOOLCHAIN,
                     "-DKOSMOS_ARCH=" + arch, "-DKOSMOS_ROOT=" + ROOT,
+                    "-DKOSMOS_LIBCXX_INCLUDE=" + os.path.join(
+                        ROOT, "build", "cxx", arch, "include", "c++", "v1"),
                     "-DCMAKE_ASM_NASM_COMPILER=/opt/homebrew/bin/nasm"]
 
     log = os.path.join(out, "cmake.log")

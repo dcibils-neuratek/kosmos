@@ -2107,3 +2107,42 @@ the same on every machine, so it is held to "within one".
 stands on. It also clears the way to replace Kosmos's own picture decoder
 and deflate with these libraries later, which the roadmap has as steps of
 their own. `testing.md` 18.781 has the measurements.
+
+## 12 November, evening - the libraries text is made of
+
+**In short.** The two libraries every browser uses for text now run on
+Kosmos: HarfBuzz, which decides which glyphs a line of text becomes and
+where each one goes, and FreeType, which reads a font and draws its
+glyphs. HarfBuzz passes its own shaping suite on Kosmos, all 7,761 cases.
+
+**What.** This is the second of W5's five steps (W5b in `docs/w5.md`).
+Both libraries are the original releases, downloaded and checked, and
+built with their own build files. FreeType uses the libpng and zlib that
+arrived in W5a for colour glyphs and compressed fonts, so the system still
+has one of each.
+
+**Why.** Shaping is where text goes wrong quietly. Arabic letters join
+differently at the start, middle and end of a word; Devanagari reorders
+vowels; a font can swap two letters for one. A shaper that is slightly
+wrong draws text that looks plausible and is wrong. So it is held to the
+answers HarfBuzz's authors wrote down.
+
+**How it is proved.** HarfBuzz's tests are files of cases: a font, some
+characters, and the glyphs and positions expected. Its own runner needs a
+tool, `hb-shape`, that is built on GLib, which Kosmos does not have. So a
+small C program does what `hb-shape` does for those tests, written from
+its sources. On Kosmos and on the Mac it shapes every case, checks it
+against the expected glyphs, and fingerprints each test file. It also has
+FreeType render the first glyphs of all 545 fonts in the suite. The two
+machines agree on all 835 lines, and on Kosmos it takes 5.3 seconds.
+
+**Found on the way.** Kosmos's maths library lacked three small functions
+HarfBuzz uses (`hypotf`, `roundf`, `scalbnf`); they come from the same musl
+release the rest of it does. One of them had been declared for months
+with nothing behind it, which nobody noticed until something called it.
+And HarfBuzz's own list of test files has a second list of disabled ones
+next to it, which the first runner read by mistake.
+
+**Visible impact.** Nothing on the screen yet. This is what will lay out
+every line of text in the browser, and later what Astra's own text could
+stand on. `testing.md` 18.783 has the numbers.

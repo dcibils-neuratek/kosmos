@@ -65,6 +65,13 @@ RELEASES = {
         "sha256": "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f",
         "top": "libjpeg-turbo-3.2.1",
     },
+    # **W5b's text**: HarfBuzz 15.1.0, 4 November 2026, GitHub's digest.
+    "harfbuzz": {
+        "url": "https://github.com/harfbuzz/harfbuzz/releases/download/15.1.0/"
+               "harfbuzz-15.1.0.tar.xz",
+        "sha256": "0fc7c565443a5f4be7da65ac5ee5bd737d9b158dc908708b7689a0a5796b0c8d",
+        "top": "harfbuzz-15.1.0",
+    },
 }
 
 # **Releases that are tags**, with no asset GitHub keeps a digest for:
@@ -82,6 +89,12 @@ GIT = {
     "libwebp": {
         "url": "https://github.com/webmproject/libwebp.git",
         "commit": "4fa21912338357f89e4fd51cf2368325b59e9bd9",
+    },
+    # FreeType 2.15.0, from its own repository at freedesktop.org: its
+    # tarballs on Savannah carry a signature and no sum.
+    "freetype": {
+        "url": "https://gitlab.freedesktop.org/freetype/freetype.git",
+        "commit": "37515cf56ba3349656049edbed89ffc6f6466f2d",
     },
 }
 

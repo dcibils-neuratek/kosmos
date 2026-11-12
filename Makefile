@@ -3611,8 +3611,9 @@ $(UBUILD)/apps/posixtest.elf: $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) $(UBU
 W5_DIR  := build/w5/$(ARCH)/install
 W5_LIBS := $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/libpng.a \
            $(W5_DIR)/lib/libjpeg.a $(W5_DIR)/lib/libz.a
+W5_TEXT_LIBS := $(W5_DIR)/lib/libharfbuzz.a $(W5_DIR)/lib/libfreetype.a
 
-build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.cmake \
+build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.cmake $(CXXRT)/.built \
                          $(wildcard runtime/include/*.h runtime/include/sys/*.h \
                                     runtime/posix/include/*.h runtime/posix/include/*/*.h)
 	@mkdir -p build/w5/$(ARCH)
@@ -3620,7 +3621,7 @@ build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.
 	    || { tail -60 build/w5/$(ARCH)/build.log; exit 1; }
 	@touch $@
 
-$(W5_LIBS): build/w5/$(ARCH)/.built
+$(W5_LIBS) $(W5_TEXT_LIBS): build/w5/$(ARCH)/.built
 
 #
 # **W5a's picture test** (`tools/run_pictures.py`): `picturetest.c` and its
@@ -3643,6 +3644,31 @@ $(UBUILD)/apps/picturetest.elf: $(USER_OBJS) $(PICTURETEST_OBJS) $(POSIX_OBJS) $
 	    || { echo "apps: picturetest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_picturetest_kit|png_create_read_struct|inflate)$$' \
 	    || { echo "apps: the system's image has W5's libraries in it"; rm -f $@; exit 1; }
+
+#
+# **W5b's text test** (`tools/run_text.py`): `texttest.c` and its door, the
+# POSIX layer it reads its fonts through, HarfBuzz and FreeType - FreeType
+# reading PNG glyphs through libpng and compressed fonts through zlib - and
+# the C++ runtimes HarfBuzz is compiled against; in no image but its own.
+#
+TEXTTEST_OBJS := $(UBUILD)/user/kits/texttest/texttest.c.o \
+                 $(UBUILD)/user/kits/texttest/texttest_kit.c.o
+
+$(UBUILD)/user/kits/texttest/texttest.c.o: user/kits/texttest/texttest.c \
+        user/kits/texttest/texttest.h build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem $(W5_DIR)/include/harfbuzz \
+	    -isystem $(W5_DIR)/include/freetype2 -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_texttest_kit$$' \
+	    || { echo "apps: texttest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_texttest_kit|hb_shape|FT_Init_FreeType)$$' \
+	    || { echo "apps: the system's image has HarfBuzz or FreeType in it"; rm -f $@; exit 1; }
 
 #
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
@@ -3819,7 +3845,7 @@ apps:
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
-            $(UBUILD)/apps/picturetest.elf \
+            $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

@@ -32245,3 +32245,63 @@ now: `x86-cafesa3d-2` 278 s, `arm-sandbox-linuxsetup` 242 s, `host-llm`
 227 s. The next minutes are in clicks, at 0.3 + 0.2 + 0.6 s each in
 Mail, and in `host-llm`, where phi-2 at Q4_0 takes 81 s and at Q8_0 46 s,
 though Q4_0 reads half the bytes.
+
+## 18.783 W5b's text, on Kosmos (JetSki W5b)
+
+**FreeType 2.15.0 and HarfBuzz 15.1.0** for both processors (`docs/w5.md`
+W5b), FreeType held to its tag's commit and HarfBuzz to GitHub's digest,
+built by their own CMake (`tools/w5_build.py`): FreeType on W5a's libpng
+and zlib, HarfBuzz on FreeType. They link into `texttest.elf` with the C++
+runtimes, without a symbol missing once libm had three more functions.
+
+**`x86-text`** (`tools/run_text.py`): HarfBuzz's own shaping suite, as
+`test/shape/run-tests.py` runs it, through `texttest.c` - the part of
+`hb-shape` the suite uses, since `hb-shape` needs GLib.
+
+| | |
+|---|---|
+| test files | 288, the three sets' Meson lists; the `disabled_` lists left out as Meson leaves them |
+| cases | 7,761, once for each font-functions a case asks for (`ot` and `ft`) |
+| skipped | 148, which name macOS's own fonts by path and SHA-1 |
+| as HarfBuzz expects | **7,761**, with `--verify --unsafe-to-concat --safe-to-insert-tatweel` |
+| fonts through FreeType | 545: 48 glyphs each, hinted at 24 px and unhinted at 13; 6 not faces, the suite's broken fonts |
+| lines held to this Mac | 835 of 835 |
+| time in the guest | 5.3 s |
+
+**Found on the way:**
+
+- **libm**: HarfBuzz calls `hypotf` and `roundf`, and `hb-shape`'s font
+  set-up calls `scalbnf`. The first two were missing from `math.h`. The
+  third was declared there with no definition behind it; nothing had called
+  it. All three come from musl 1.2.5, held to its sum
+  (`runtime/upstream/musl-math/README.kosmos.md`). **FFmpeg noticed**: its
+  config said `HAVE_ROUNDF 0`, so `libavutil/libm.h` defines a `roundf` of
+  its own, which collides with the declaration. The config is held to
+  `math.h`, so it says 1 now and FFmpeg calls musl's. The first gate
+  stopped on it while building the images.
+- **Kosmos's libc has no `strtok`**; `texttest.c` splits its own fields.
+- **The Meson file has two lists.** The first flattening read every
+  `'*.tests'` in `text-rendering-tests/meson.build` and got 8,393 cases,
+  334 failing on the Mac too: the ones listed under
+  `disabled_text_rendering_tests_tests`, which HarfBuzz does not run either.
+
+**The controls:**
+
+| broken | result |
+|---|---|
+| one byte in each font, for the reference only (`KOSMOS_TEXT_BREAK=fonts`) | 832 of 835 lines differ |
+| one case expects a glyph it will not get (`=expected`) | 7,760 of 7,761, naming the case |
+
+And restored, 835 of 835 again.
+
+**The gate**: 116 of 117 suites in 13:54 (834 s), `x86-text` 15 s. The
+time is the images: `math.h` changed, so every image's objects were built
+again, 256 s before the first suite started; the suites themselves took
+578 s, as on 0.11.387. **`x86-wtf` failed once**: its suspend check read
+`suspend=still`. It gave the spinner thread 30 ms to move before the
+suspend and 30 ms after, and with the whole gate on the Mac the spinner
+was not run inside the first 30. Alone it passed three times of three.
+`wtftest.cpp` now waits up to two seconds for the count to move, which is
+waiting for the thing (`moves`); "held", the window during the suspend,
+keeps its fixed 30 ms, since there a pause is the point. `x86-wtf` and
+`x86-text` again, through the gate: both pass, in 29 s.

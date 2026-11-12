@@ -308,7 +308,7 @@
 #define HAVE_POWF 1
 #define HAVE_RINT 1
 #define HAVE_ROUND 1
-#define HAVE_ROUNDF 0
+#define HAVE_ROUNDF 1
 #define HAVE_SINF 1
 #define HAVE_TRUNC 1
 #define HAVE_TRUNCF 1

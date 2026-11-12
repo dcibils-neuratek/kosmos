@@ -493,6 +493,14 @@ SUITES = [
     Suite("x86-pictures", ["python3", "tools/run_pictures.py", X86,
                            "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5b's text** (`docs/w5.md`): `texttest.elf`, HarfBuzz given its own
+    # shaping suite - 7,761 cases, each held to the glyphs it expects, as
+    # `run-tests.py` holds them - and FreeType every font that suite ships,
+    # every line held to the same file on this Mac.
+    Suite("arm-text", ["python3", "tools/run_text.py", ARM, "build/user-test/apps"]),
+    Suite("x86-text", ["python3", "tools/run_text.py", X86,
+                       "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.
