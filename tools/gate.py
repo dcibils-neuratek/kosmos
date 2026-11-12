@@ -476,6 +476,14 @@ SUITES = [
     Suite("x86-wtf", ["python3", "tools/run_wtf.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
+    # its interpreter, driven through its C API - a script using closures,
+    # classes, generators, a Proxy, a regular expression, Intl, a BigInt,
+    # the maths library, the collector and `async`, and a script that throws.
+    Suite("arm-jsc", ["python3", "tools/run_jsc.py", ARM, "build/user-test/apps"]),
+    Suite("x86-jsc", ["python3", "tools/run_jsc.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

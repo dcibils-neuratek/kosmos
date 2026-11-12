@@ -2833,6 +2833,7 @@ void kosmos_cxxtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_posixtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_icutest_kit(lua_State *L) __attribute__((weak));
 void kosmos_wtftest_kit(lua_State *L) __attribute__((weak));
+void kosmos_jsc_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
 void kosmos_aac_kit(lua_State *L);
@@ -2899,6 +2900,8 @@ static const struct {
     { "icutest",  kosmos_icutest_kit, 1 },
     /* WTF, WebKit's foundation, in no image but its own (`docs/w4.md` W4c). */
     { "wtftest",  kosmos_wtftest_kit, 1 },
+    /* JavaScriptCore, installed in /Home/Apps/JSC (`docs/w4.md` W4d). */
+    { "jsc",      kosmos_jsc_kit, 1 },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit, 0 },

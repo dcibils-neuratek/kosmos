@@ -116,3 +116,24 @@ Fifty-three sources now.
 `math.h` still declares a few functions no file defines - `floorf`,
 `scalbnf`, `copysignf`, `log1p` - and a call to one fails at the link with
 its name, which is where the next of these will come from.
+
+## And twenty-five more, for JavaScriptCore (12 November 2026)
+
+JavaScriptCore's `Math` and libc++'s `float` overloads, which WebKit
+calls, asked for `exp2`, `fma`, `acosh`, `asinh`, `atanh`, `log1p`,
+`lrint` and `nextafter`. They also asked for the `float` halves: `sinf`,
+`cosf`, `tanf`, `asinf`, `acosf`, `atanf`, `sinhf`, `coshf`, `asinhf`,
+`acoshf`, `atanhf`, `powf`, `cbrtf`, `log2f`, `log10f` and `log1pf`.
+FFmpeg's config, which is held to `math.h`, adds `atan2f`.
+
+They come from the same tarball, checked against the same sum, together
+with what they call, found by the same closure over undefined symbols:
+
+- `__sindf`, `__cosdf`, `__tandf`, `__rem_pio2f`, `__expo2f` and
+  `__math_divzerof`;
+- `powf_data` and `log2f_data`, with their headers.
+
+`fma.c` includes musl's `src/internal/atomic.h`, for its count of leading
+zeros, and that includes the architecture's `atomic_arch.h`. So those
+three come too, unmodified, and the Makefile's include order already puts
+`arch/$(ARCH)` before `arch/generic`.

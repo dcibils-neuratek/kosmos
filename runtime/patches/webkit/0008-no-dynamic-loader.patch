@@ -1,0 +1,29 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No dynamic loader (docs/w4.md W4d). JavaScriptCore names the version of
+its bytecode cache after the build ID of the library it is in, which it
+finds by asking the dynamic loader where that library was loaded
+(dladdr, dl_iterate_phdr). A Kosmos image is static and nothing loads
+it but Nebula, so there is no dlfcn.h, and the version is the build's
+timestamp, as it already is on Haiku and QNX.
+
+--- a/Source/JavaScriptCore/runtime/JSCBytecodeCacheVersion.cpp	2026-11-11 23:56:29.053420876 -0300
++++ b/Source/JavaScriptCore/runtime/JSCBytecodeCacheVersion.cpp	2026-11-11 23:56:29.070775627 -0300
+@@ -31,7 +31,7 @@
+ #include <wtf/NeverDestroyed.h>
+ #include <wtf/text/SuperFastHash.h>
+ 
+-#if OS(UNIX)
++#if OS(UNIX) && !OS(KOSMOS)
+ #include <dlfcn.h>
+ #if OS(DARWIN)
+ #include <mach-o/dyld.h>
+@@ -68,7 +68,7 @@
+         }
+         cacheVersion.construct(0);
+         dataLogLnIf(JSCBytecodeCacheVersionInternal::verbose, "Failed to get UUID for JavaScriptCore framework");
+-#elif OS(UNIX) && !PLATFORM(PLAYSTATION) && !OS(HAIKU) && !OS(QNX)
++#elif OS(UNIX) && !PLATFORM(PLAYSTATION) && !OS(HAIKU) && !OS(QNX) && !OS(KOSMOS)
+         auto result = ([&] -> std::optional<uint32_t> {
+             Dl_info info { };
+             if (!dladdr(jsFunctionAddr, &info))

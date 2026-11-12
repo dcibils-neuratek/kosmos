@@ -1,0 +1,38 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+JavaScriptCore's collector on Nebula (docs/w4.md W4d). Two places:
+
+- A stopped thread's stack pointer. WTF's PlatformRegisters on Kosmos is
+  pthread_regs_np (patch 0002), the registers as the thread last entered
+  Nebula, so the stack pointer is rsp or sp by its own name.
+- How much of a block is paged out. Nebula has no paging out: a mapped
+  page stays resident, so there is no mincore to ask, as QNX's comment
+  there already says of QNX.
+
+--- a/Source/JavaScriptCore/heap/BlockDirectory.cpp	2026-11-11 23:54:59.247534837 -0300
++++ b/Source/JavaScriptCore/heap/BlockDirectory.cpp	2026-11-11 23:54:59.269546556 -0300
+@@ -69,7 +69,7 @@
+     // FIXME: We should figure out a solution for Windows and PlayStation.
+     // QNX doesn't have mincore(), though the information can be had. But since all mapped
+     // pages are resident, does it matter?
+-#if OS(UNIX) && !PLATFORM(PLAYSTATION) && !OS(QNX) && !OS(HAIKU)
++#if OS(UNIX) && !PLATFORM(PLAYSTATION) && !OS(QNX) && !OS(HAIKU) && !OS(KOSMOS)
+     size_t pageSize = WTF::pageSize();
+     ASSERT(!(MarkedBlock::blockSize % pageSize));
+     auto numberOfPagesInMarkedBlock = MarkedBlock::blockSize / pageSize;
+--- a/Source/JavaScriptCore/runtime/MachineContext.h	2026-11-11 23:54:59.246006751 -0300
++++ b/Source/JavaScriptCore/runtime/MachineContext.h	2026-11-11 23:54:59.268128057 -0300
+@@ -138,7 +138,13 @@
+ template<typename T>
+ inline T stackPointer(const PlatformRegisters& regs)
+ {
++#if OS(KOSMOS) && CPU(X86_64)
++    return std::bit_cast<T>(regs.rsp);
++#elif OS(KOSMOS)
++    return std::bit_cast<T>(regs.sp);
++#else
+     return std::bit_cast<T>(regs.stackPointer);
++#endif
+ }
+ #endif // OS(WINDOWS) || HAVE(MACHINE_CONTEXT)
+ 

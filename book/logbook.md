@@ -1983,3 +1983,48 @@ suspension, the rounding, and the removing of files. The rounding test
 itself was wrong twice before it was right. Dividing 1 by 3, or 2 by 3,
 gives the same answer whether you round down or to the nearest number,
 so neither could tell whether the mode had changed; 1 divided by 10 can.
+
+## 12 November, small hours - JavaScript runs on Kosmos
+
+**In short.** JavaScriptCore, the JavaScript engine in Safari and in the
+WebKit that JetSki is being built from, runs on Kosmos. A script with the
+modern language in it prints, on Kosmos, exactly what the same script
+prints in Node on this Mac.
+
+**What.** JavaScriptCore is the largest piece of WebKit after the browser
+engine itself: about two and a half thousand C++ files. It is compiled
+from the same release as WTF, with six more small, explained changes,
+for both processors, without the JIT (the part that turns JavaScript
+into machine code while it runs). What runs is its interpreter, which
+reads JavaScript's bytecode one instruction at a time.
+
+It becomes `jsc.elf`, an application installed in `/Home/Apps/JSC`, as
+Doom is. Beside it is `jsc.lua`, so `jsc script.js` at the prompt runs a
+file. WebKit's own test shell was not used: it is mostly WebKit's test
+harness. Instead about two hundred lines of Kosmos's drive the engine the way any
+program embedding it would, and give the script one function, `print`.
+
+**Why.** This is the step where the browser stops being a plan. Every web
+page that does anything runs JavaScript, and this is the engine that will
+run it in JetSki. It is also the largest program yet run on Kosmos's
+POSIX layer, and it found what that layer still lacked. Two dozen maths
+functions came from the same musl release as the others. Randomness now
+comes from Nebula instead of a `/dev/urandom` that Kosmos does not have.
+And a C++ hook for static objects is now accepted, because a process here
+never needs to tidy up on its way out.
+
+**Visible impact.** At the prompt, `jsc` runs JavaScript. The test runs a
+script with closures, classes, generators, a Proxy, a regular expression,
+numbers formatted for Germany and in dollars by ICU, a 2-to-the-64 BigInt,
+a hundred thousand objects through the garbage collector, and an `async`
+function. Both scripts take 0.8 seconds in QEMU's emulator. Three parts
+were broken on purpose to show the test notices: the randomness, a maths
+function, and how deep a thread's stack is said to be. It noticed all
+three.
+
+The first run died silently, with only an exit code. A Kosmos program
+cannot print its own last words yet: only the process that owns the
+console may write to it. Finding out took a throwaway kernel that let
+everyone write, and a throwaway `abort` that printed the stack it was
+called from. That pointed at the random device in one go, and fixing how
+a dying program is heard is now near the top of the follow-ups.

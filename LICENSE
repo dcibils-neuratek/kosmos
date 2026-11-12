@@ -154,11 +154,18 @@ Vendored third-party code keeps its own licence, which travels beside it:
       120 files of LLVM's libc libc++ includes. The C++ an image carries
       stands on them; the system's image carries none yet
 
+  ICU 79.1, by Unicode, Inc. and others, Unicode License v3
+      Not in the tree: tools/icu_build.py fetches icu4c-79.1 and its data,
+      held to their sums (docs/w4.md), and the terms are the LICENSE in
+      that tarball, which also lists the third-party notices parts of ICU
+      carry. Not in the system's image: `make apps` links it into the
+      images that need it, jsc.elf among them, installed in /Home/Apps/JSC
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 
-Six more are copyleft: three under the GPL, and FFmpeg's decoder,
-libsmb2 and TinyCC under the LGPL. Nothing here is linked dynamically - whatever is compiled into an
+Seven more are copyleft: three under the GPL, and FFmpeg's decoder,
+libsmb2, TinyCC and WebKit's JavaScriptCore under the LGPL. Nothing here is linked dynamically - whatever is compiled into an
 image is linked into it - so an image carrying any GPL one is a combined
 work under the GPL as a whole. Kosmos's own sources stay MIT either way.
 
@@ -191,6 +198,17 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       in README.kosmos.md beside it; Kosmos's layout is a patch applied at
       the build. Not in the system's image yet: built on the Mac, where it
       links the test kit `make apps` makes
+
+  WebKit's JavaScriptCore, WTF and bmalloc, by Apple Inc. and the WebKit
+      contributors, LGPL 2 or later, and BSD for much of it
+      Not in the tree: tools/webkit_build.py fetches WebKitGTK 2.54.2, held
+      to its sum (docs/w4.md), and applies runtime/patches/webkit/ as it
+      builds, so what is changed is a file anybody can read; the terms are
+      each source file's own notice and Source/JavaScriptCore/COPYING.LIB.
+      Not in the system's image: `make apps` links it into jsc.elf,
+      installed in /Home/Apps/JSC beside jsc.lua. The release is public and
+      so are the patches, so the image can be relinked against a changed
+      JavaScriptCore, which is what the LGPL asks of a static link.
 
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
       runtime/upstream/doom/, in LICENSE.doomgeneric. Not in the system's

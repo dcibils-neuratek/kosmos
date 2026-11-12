@@ -1,0 +1,21 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Code written, then run, on ARM (docs/w4.md W4d). JavaScriptCore's ARM64
+assembler names, for each system, how the instruction cache is made to see
+code just written. On Kosmos a process does it itself: Nebula sets
+SCTLR_EL1.UCT and .UCI (arch/aarch64/mmu.c), so EL0 may read the line
+sizes and clean and invalidate by address, which is what the compiler's
+__builtin___clear_cache does. The JIT is off for now, so nothing calls it
+yet; the header is compiled either way.
+
+--- a/Source/JavaScriptCore/assembler/ARM64Assembler.h	2026-11-12 00:34:01.174473040 -0300
++++ b/Source/JavaScriptCore/assembler/ARM64Assembler.h	2026-11-12 00:34:01.192164672 -0300
+@@ -4043,6 +4043,8 @@
+         linuxPageFlush(current, end);
+ #elif OS(WINDOWS)
+         FlushInstructionCache(GetCurrentProcess(), code, size);
++#elif OS(KOSMOS)
++        __builtin___clear_cache(static_cast<char*>(code), static_cast<char*>(code) + size);
+ #else
+ #error "The cacheFlush support is missing on this platform."
+ #endif

@@ -10107,7 +10107,40 @@ the applications make the system useful, and is not pulled forward.
   - `wtftest.elf`'s sentence passes on x86-64 and AArch64, and each of
     its three controls bites.
 
-  Next, **W4d**: JavaScriptCore with the LLInt and `jsc.elf`.
+  **W4d, JavaScriptCore, built** (18.779):
+  - JavaScriptCore with its interpreter for both processors, from six
+    more patches.
+  - `jsc.elf` is installed in `/Home/Apps/JSC` beside `jsc.lua` and
+    drives the engine through its public C API.
+  - A script with closures, classes, generators, a Proxy, a regular
+    expression, Intl, a BigInt, the collector and `async` prints on Kosmos
+    what Node prints on this Mac, and each of its three controls bites.
+
+  Next, **W4e**: test262's language tests, counted.
+
+  **Follow-ups from W4d**:
+  - *`$262` for test262*: the host functions test262's harness calls
+    (`createRealm`, `evalScript`, `detachArrayBuffer`, `agent`), in
+    `jsc_kosmos.cpp`, since there is no `jsc.cpp` here.
+  - *A dying program's last words*, again: finding W4d's abort took a
+    temporary kernel and a temporary stack walk (18.779). Worth doing
+    before the next port needs it a third time.
+  - *FFmpeg's config has drifted from `runtime/include/`*:
+    `tools/ffmpeg_vendor.py`'s rule would also turn on `HAVE_CLOCK_GETTIME`,
+    `HAVE_ISATTY`, `HAVE_GMTIME_R`, `HAVE_LOCALTIME_R` and
+    `HAVE_ARC4RANDOM_BUF`, which W3 declared. Only the maths was applied
+    in W4d, and the rest wants a check that each is defined in the system's
+    image before it is turned on. The configure output the script corrects
+    is gone from `build/ffmpeg/cfg/`, so the correction was run over the
+    committed `config.h`.
+  - *`x86-storage` reads a listing a driver can interrupt*: in the gate
+    for 0.11.384, e1000's five-second report split a PCI line in two.
+    The suite should read the listing from somewhere a driver's line
+    cannot land.
+  - *An abort that says where*: libunwind is in every C++ image, so
+    `abort` could print the stack it was called from. It needs the
+    unwinder linked strongly, because a weak reference does not pull it
+    out of a static archive.
 
   **Follow-ups from W4c**, each a refusal that is honest today and a
   feature later:

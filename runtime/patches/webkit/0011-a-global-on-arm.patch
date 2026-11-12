@@ -1,0 +1,24 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A global's address on ARM (docs/w4.md W4d). JavaScriptCore's offline
+assembler writes the interpreter for ARM64 in one asm statement, and names
+for each system how it reaches a global such as g_config: through Mach-O's
+GOT on Darwin, ELF's GOT on Linux, and directly on Windows. A Kosmos image
+is linked static at a fixed address and never relocated, so there is
+nothing for a GOT to do: adrp and add, as on Windows.
+
+--- a/Source/JavaScriptCore/offlineasm/arm64.rb	2026-11-12 00:35:20.823378721 -0300
++++ b/Source/JavaScriptCore/offlineasm/arm64.rb	2026-11-12 00:35:20.840308222 -0300
+@@ -1468,8 +1468,10 @@
+             $asm.puts "ldr #{operands[1].arm64Operand(:quad)}, [#{operands[1].arm64Operand(:quad)}, :got_lo12:#{operands[0].asmLabel}]"
+             $asm.putStr("#endif")
+ 
+-            # On Windows, use COFF-style addressing.
+-            $asm.putStr("#elif OS(WINDOWS)")
++            # On Windows, use COFF-style addressing. On Kosmos too: an
++            # image is static and never relocated, so the address is
++            # reached directly, with no GOT.
++            $asm.putStr("#elif OS(WINDOWS) || OS(KOSMOS)")
+ 
+             $asm.puts "adrp #{operands[1].arm64Operand(:quad)}, #{operands[0].asmLabel}"
+             $asm.puts "add #{operands[1].arm64Operand(:quad)}, #{operands[1].arm64Operand(:quad)}, :lo12:#{operands[0].asmLabel}"

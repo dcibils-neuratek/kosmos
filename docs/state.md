@@ -2,9 +2,34 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-11 (0.11.383: W4c built - WTF and bmalloc on Kosmos; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.384: W4d built - JavaScriptCore on Kosmos; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, small hours: JetSki W4d (0.11.384, not pushed)
+
+**JavaScriptCore runs on Kosmos** (`docs/w4.md` W4d, `testing.md` 18.779):
+
+- WebKitGTK 2.54.2's engine is built with the LLInt and no JIT, for both
+  processors, with patches 0006 to 0010.
+- `jsc.elf` is installed in `/Home/Apps/JSC` beside `jsc.lua` (`jsc
+  script.js`, `jsc -e "..."`). It drives the engine through its public C
+  API, in `user/installed/JSC/jsc_kosmos.cpp`, rather than through WebKit's
+  `jsc.cpp` test shell.
+- `x86-jsc` and `arm-jsc` print what Node prints for the same script, and
+  three controls bite.
+- On the way:
+  - twenty-four more of musl's maths functions;
+  - `__cxa_atexit` in the POSIX layer;
+  - `libJavaScriptCoreJIT.a`, the object library CMake leaves out of the
+    archive;
+  - `LICENSE` lists ICU and WebKit.
+
+**Next: W4e**, test262's language tests, counted, which first needs
+`$262` in `jsc_kosmos.cpp`. W4d's follow-ups are in `roadmap.md`. Near the
+top of them is a dying program's last words, which cost a detour again.
+`user/servers/vmm.c` still has a change that is not this work: commit with
+`':!user/servers/vmm.c'`.
 
 ## 11 November, late: JetSki W3d to W4c (0.11.376-0.11.383, not pushed)
 

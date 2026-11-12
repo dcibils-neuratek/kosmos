@@ -6,7 +6,7 @@ architecture into `build/webkit/<arch>/`.
 
     python3 tools/webkit_build.py x86_64|aarch64 [target ...]
 
-Targets are ninja's - `WTF` and `bmalloc` by default.
+Targets are ninja's - `WTF`, `bmalloc` and `JavaScriptCore` by default.
 
 **The source** is fetched and held to its sum (`tools/upstream.py`), never
 committed and never edited. What is built is a copy of it under
@@ -153,7 +153,7 @@ def main():
         sys.exit("usage: webkit_build.py x86_64|aarch64 [target ...]")
 
     arch = sys.argv[1]
-    targets = sys.argv[2:] or ["WTF", "bmalloc"]
+    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore"]
 
     for needed, how in ((os.path.join(ROOT, "build", "cxx", arch, ".built"),
                          "make ARCH=%s cxx-runtimes" % arch),
@@ -166,8 +166,40 @@ def main():
     out = os.path.join(ROOT, "build", "webkit", arch)
     configure(arch, out)
 
+    # JavaScriptCore's bytecode, its compiler and the interpreter's glue
+    # are an object library of their own, JavaScriptCoreJIT - so named
+    # even with the JIT off - which CMake hands to whatever links the
+    # engine rather than putting it in libJavaScriptCore.a.
+    if "JavaScriptCore" in targets and "JavaScriptCoreJIT" not in targets:
+        targets = targets + ["JavaScriptCoreJIT"]
+
     r = subprocess.run(["ninja", "-C", out] + targets)
+
+    if r.returncode == 0 and "JavaScriptCoreJIT" in targets:
+        r = archive_jit(out)
+
     sys.exit(r.returncode)
+
+
+def archive_jit(out):
+    """`lib/libJavaScriptCoreJIT.a`: the object library's objects, as one
+    thin archive like CMake's own, so the Makefile links one more library
+    rather than fifty objects it would have to be told the names of."""
+    with open(os.path.join(out, "build.ninja"), encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("build Source/JavaScriptCore/JavaScriptCoreJIT: phony "):
+                objects = line.split()[3:]
+                break
+        else:
+            sys.exit("webkit_build: no JavaScriptCoreJIT in build.ninja")
+
+    library = os.path.join(out, "lib", "libJavaScriptCoreJIT.a")
+
+    if os.path.exists(library):
+        os.remove(library)
+
+    return subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-ar", "rcsT", library]
+                          + [os.path.join(out, o) for o in objects])
 
 
 if __name__ == "__main__":

@@ -50,3 +50,18 @@ set(USE_SYSTEM_MALLOC ON CACHE BOOL "")
 # built without localisation (`runtimes.cmake`), so nothing brings it, and
 # it is included first rather than added to each header that leans on it.
 set(KOSMOS_CXX_FLAGS "-include cstdlib" CACHE STRING "")
+
+# **The programs WebKit's build links, and never runs.** JavaScriptCore's
+# offline assembler compiles `LLIntSettingsExtractor` and
+# `LLIntOffsetsExtractor` for the target and then *reads* them, Ruby
+# finding the constants the compiler laid out in their data; nothing runs
+# them, here or anywhere. So they are linked by lld - clang's own linker
+# for an ELF target, where it would otherwise hand them to this Mac's - as
+# a static ELF with no start files and nothing left to resolve, entered at
+# `main` - WebKit links with --gc-sections, which keeps only what the entry
+# reaches, and without one it kept nothing and Ruby found no constants.
+# What runs
+# on Kosmos is linked by the Makefile against `user/user.ld`, never here.
+set(CMAKE_EXE_LINKER_FLAGS
+    "-fuse-ld=/opt/homebrew/opt/lld@22/bin/ld.lld -nostdlib -static -Wl,--unresolved-symbols=ignore-all -Wl,-e,main"
+    CACHE STRING "")

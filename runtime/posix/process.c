@@ -197,3 +197,23 @@ void _exit(int status)
 {
     kosmos_exit(status);
 }
+
+/*
+ * **A static object's destructor, registered and never run** (`docs/w4.md`
+ * W4d). C++ registers the destructor of every static with a non-trivial
+ * one through `__cxa_atexit`, naming the image it is in by `__dso_handle` -
+ * which a toolchain's `crtbegin.o` would define, and a Kosmos image has no
+ * such file. A process here ends by asking Nebula, which takes back every
+ * page and every thread at once, so there is nothing a destructor at exit
+ * could give back that is not already being taken: the registration is
+ * accepted and kept nowhere, as a static object's memory is never freed.
+ */
+void *__dso_handle = &__dso_handle;
+
+int __cxa_atexit(void (*destructor)(void *), void *object, void *image)
+{
+    (void)destructor;
+    (void)object;
+    (void)image;
+    return 0;
+}

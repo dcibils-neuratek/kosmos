@@ -1,0 +1,26 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Kosmos is ELF (docs/w4.md W4d). WTF's inline-assembly helpers name the
+systems whose objects are ELF and whose assembler speaks GNU syntax, and
+JavaScriptCore's interpreter, written as one large asm statement, uses
+them for its labels: a local label is .Lname, a hidden symbol .hidden.
+Kosmos's images are ELF, assembled by clang's integrated assembler.
+
+--- a/Source/WTF/wtf/InlineASM.h
++++ b/Source/WTF/wtf/InlineASM.h
+@@ -68,6 +68,7 @@
+     || OS(FUCHSIA)             \
+     || OS(HAIKU)               \
+     || OS(HPUX)                \
++    || OS(KOSMOS)              \
+     || OS(NETBSD)              \
+     || OS(OPENBSD)             \
+     || OS(QNX)
+@@ -88,6 +89,7 @@
+     || OS(OPENBSD)             \
+     || OS(HAIKU)               \
+     || OS(HURD)                \
++    || OS(KOSMOS)              \
+     || OS(NETBSD)              \
+     || OS(QNX)                 \
+     || OS(WINDOWS)

@@ -3502,6 +3502,7 @@ $(UBUILD)/apps/icutest.elf: $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) $(ICU_LIB
 #
 WEBKIT_DIR  := build/webkit/$(ARCH)
 WEBKIT_LIBS := $(WEBKIT_DIR)/lib/libWTF.a $(WEBKIT_DIR)/lib/libbmalloc.a
+JSC_LIBS    := $(WEBKIT_DIR)/lib/libJavaScriptCore.a $(WEBKIT_DIR)/lib/libJavaScriptCoreJIT.a
 
 $(WEBKIT_DIR)/.built: tools/webkit_build.py tools/upstream.py runtime/cxx/jsc.cmake \
                       runtime/cxx/kosmos.cmake $(CXXRT)/.built $(ICU_DIR)/.built \
@@ -3514,7 +3515,7 @@ $(WEBKIT_DIR)/.built: tools/webkit_build.py tools/upstream.py runtime/cxx/jsc.cm
 	    || { tail -60 build/webkit-$(ARCH).log; exit 1; }
 	@touch $@
 
-$(WEBKIT_LIBS): $(WEBKIT_DIR)/.built
+$(WEBKIT_LIBS) $(JSC_LIBS): $(WEBKIT_DIR)/.built
 
 #
 # **WTF's test image**: `wtftest.cpp` and its door, the POSIX layer, WTF,
@@ -3544,6 +3545,35 @@ $(UBUILD)/apps/wtftest.elf: $(USER_OBJS) $(WTFTEST_OBJS) $(POSIX_OBJS) $(WEBKIT_
 	    || { echo "apps: wtftest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_wtftest_kit$$' \
 	    || { echo "apps: the system's image has WTF's test kit in it"; rm -f $@; exit 1; }
+
+#
+# **JavaScriptCore's image** (`docs/w4.md` W4d): `jsc.elf`, installed in
+# `/Home/Apps/JSC` beside `jsc.lua` - the engine, driven through its public
+# C API by `jsc_kosmos.cpp`, with WTF, bmalloc, ICU and its data, the POSIX
+# layer and the C++ runtimes, one group. Compiled as `wtftest.cpp` is, with
+# the engine's API headers beside WTF's.
+#
+JSC_OBJS := $(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o $(UBUILD)/user/installed/JSC/jsc_kit.c.o
+
+$(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o: user/installed/JSC/jsc_kosmos.cpp $(WEBKIT_DIR)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
+	    -include cstdlib -include $(WEBKIT_DIR)/cmakeconfig.h -DBUILDING_WITH_CMAKE=1 \
+	    -DSTATICALLY_LINKED_WITH_WTF -DSTATICALLY_LINKED_WITH_bmalloc \
+	    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -DNDEBUG \
+	    -isystem build/webkit/src/Source/WTF -isystem $(WEBKIT_DIR)/bmalloc/Headers \
+	    -isystem $(WEBKIT_DIR)/JavaScriptCore/Headers \
+	    -isystem $(ICU_DIR)/include -c $< -o $@
+
+$(UBUILD)/apps/jsc.elf: $(USER_OBJS) $(JSC_OBJS) $(POSIX_OBJS) $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(JSC_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_jsc_kit$$' \
+	    || { echo "apps: jsc.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_jsc_kit$$' \
+	    || { echo "apps: the system's image has JavaScriptCore in it"; rm -f $@; exit 1; }
 
 #
 # **The POSIX layer** (`docs/w3.md`): `runtime/posix/`, for ported code only.
@@ -3745,7 +3775,8 @@ apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
-            $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/doom.elf \
+            $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
+            $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
 

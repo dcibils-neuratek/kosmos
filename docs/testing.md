@@ -31964,3 +31964,107 @@ by 3, and both passed through a working `fesetround` as `same`. Both of
 those quotients have their nearest double *below* them, so rounding down
 gives the same number. Python's exact fractions say so in one line. 1/10's
 nearest lies above it, and that one tells the two modes apart.
+
+## 18.779 JavaScriptCore, on Kosmos (JetSki W4d)
+
+`docs/w4.md` W4d. WebKitGTK 2.54.2's JavaScriptCore, with the LLInt and
+no JIT, built by `tools/webkit_build.py` for each processor and linked into
+`jsc.elf`. The image is installed in `/Home/Apps/JSC` beside `jsc.lua`, and
+the engine is driven through its public C API by
+`user/installed/JSC/jsc_kosmos.cpp`. That makes the first time a program
+written for the web runs on Kosmos.
+
+What it asked of the rest:
+
+- **Six patches** (0006 to 0011):
+  - Kosmos is ELF, for the interpreter's labels.
+  - The collector on Nebula: a stopped thread's stack pointer by its
+    `pthread_regs_np` name, and no `mincore`, since nothing is paged out.
+  - No dynamic loader, so the bytecode cache is versioned by the build's
+    timestamp.
+  - Randomness from Nebula, through `arc4random_buf` rather than
+    `/dev/urandom`.
+  - On ARM, the cache flush the assembler names, and a global reached
+    without a GOT.
+- **Twenty-five more of musl's maths functions**, by the same closure over
+  undefined symbols, and `truncf`. FFmpeg's `config.h` follows `math.h`,
+  so its twelve maths `HAVE_`s that `math.h` now declares are on.
+- **`__cxa_atexit` and `__dso_handle`**, which register a static's
+  destructor that a process ending never needs to run.
+- **The engine's object library packed into an archive.** The bytecode,
+  its compiler and the interpreter's glue are an object library CMake
+  calls `JavaScriptCoreJIT`, even with the JIT off. CMake hands it to
+  whatever links the engine rather than putting it in
+  `libJavaScriptCore.a`, so `jsc.elf` was missing everything in it.
+
+**Test** (`x86-jsc`, `tools/run_jsc.py`): `jsc.elf` run from a /Home of
+its own, given a script, and what it printed held to what it must:
+
+    closure=3 class=square:16 generator=0,1,1,2,3,5,8,13,21,34 proxy=6
+    regex=2026/11/12 intl=1.234.567,891/$1,234.50
+    bigint=18446744073709551616 math=5/3/0.500000
+    objects=100000/5000538890 script=done async=42 finished
+    | exception: TypeError: null is not an object (evaluating
+    'null.property') (line 2) threw
+
+Piece by piece:
+
+- **closure:** a counter kept alive by a closure.
+- **class:** a class that extends another, its method and its
+  `toString`.
+- **generator:** Fibonacci through `yield`.
+- **proxy:** a `get` trap.
+- **regex:** a named group under the `u` flag.
+- **intl:** numbers formatted for Germany and as US dollars, by ICU and
+  its data.
+- **bigint:** 2 to the 64.
+- **math:** `hypot`, `cbrt` and `sin`, from musl.
+- **objects:** a hundred thousand objects and their strings, through the
+  collector.
+- **async:** the reaction of an `async` function's promise. It is printed
+  after `script=done`, because promise reactions run when the outermost
+  call into the engine returns.
+- **the throw:** a second script throws. Its exception comes back as a
+  sentence with its line, and the call says it threw.
+- **the program:** `jsc.lua -e "print(6 * 7, typeof Intl)"`, typed at
+  the prompt, prints `42 object`.
+
+Node on this Mac prints the same lines for the same script. The 85.4 MB
+stripped image runs both scripts in 0.8 s under TCG. `arm-jsc` passes on
+AArch64 too (1.2 s); it runs in the gate when ARM's tests resume.
+
+**Controls**, each a build of its own:
+
+- WTF's random device on `/dev/urandom`, as it was before patch 0009: the
+  process aborts at the first `JSGlobalContextCreate`, and nothing is
+  printed.
+- musl's `cbrt` returning its argument: `math=5/27/...`.
+- Every thread's stack reported to be 16 KB deep, as `pthread_getattr_np`
+  would if it were wrong: both scripts come back as empty exceptions,
+  because the engine cannot even start in so little stack.
+
+All three failed the suite; with the code back it passed.
+
+**Finding the abort cost a kernel that does not exist.** The process ended
+with code 70, `panic`'s, and said nothing. Nebula refuses `SYS_WRITE` to
+any process that does not own the console, so a program's last words go
+nowhere. A temporary kernel that let every process write, with a temporary
+`abort` that walked the stack through libunwind, named
+`WTF::RandomDevice::RandomDevice` in two runs. Neither was committed.
+*A dying program's last words* is on the roadmap, and this is the second
+time it has cost a detour.
+
+**Gate for 0.11.384**: 113 of 115 suites in 868 s, x86-64 only. Two
+failed and both passed alone in 51 s:
+
+- `x86-storage`: e1000's five-second report landed in the middle of the
+  PCI listing the suite parses, so one device was split across two lines.
+- `x86-pdfview`: a page was not seen rendered again at its new zoom in
+  time, under load.
+
+The first run of the gate stopped at the images instead. FFmpeg's
+`libm.h` defines a static fallback for every maths function its config
+says is missing, and `math.h` now declared `cbrtf`, `lrint` and `truncf`.
+Its config follows `math.h` by `tools/ffmpeg_vendor.py`'s rule, so twelve
+switches are on now, and `atan2f` came from musl to make its declaration
+true.

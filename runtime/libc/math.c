@@ -76,6 +76,14 @@ double trunc(double x)
     return b.d;
 }
 
+/* Through `trunc`, exactly: every float is a double, and a float with its
+ * fraction dropped is a float again - so the conversion back loses
+ * nothing, and -0, the infinities and NaN come through as they went in. */
+float truncf(float x)
+{
+    return (float)trunc((double)x);
+}
+
 double floor(double x)
 {
     double t = trunc(x);

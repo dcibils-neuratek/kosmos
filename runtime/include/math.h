@@ -137,6 +137,7 @@ typedef double double_t;
 /* Ours. runtime/libc/math.c. */
 double fabs(double x);
 double trunc(double x);
+float  truncf(float x);
 double floor(double x);
 double ceil(double x);
 float  ceilf(float x);
@@ -192,11 +193,45 @@ float  tanhf(float x);
 double modf(double x, double *whole);
 
 /*
- * Declared and not defined: libc++'s `<complex>` names them in inline
- * overloads (`std::arg` of a float and of a long double), so a C++ file
- * that includes it does not compile without them - ICU's does - and a call
- * that reaches one fails at the link with its name, which is where the
- * file will come from.
+ * **JavaScriptCore's** (`docs/w4.md` W4d): `Math`'s inverse hyperbolics,
+ * `fround`'s and `clz32`'s neighbours, and the float halves libc++'s
+ * `<cmath>` calls from the `float` overloads WebKit picks - from the same
+ * tarball, by the same closure over undefined symbols.
+ */
+double exp2(double x);
+double acosh(double x);
+double asinh(double x);
+double atanh(double x);
+double fma(double x, double y, double z);
+double nextafter(double x, double y);
+long   lrint(double x);
+float  sinf(float x);
+float  cosf(float x);
+float  tanf(float x);
+float  asinf(float x);
+float  acosf(float x);
+float  atanf(float x);
+float  sinhf(float x);
+float  coshf(float x);
+float  asinhf(float x);
+float  acoshf(float x);
+float  atanhf(float x);
+float  powf(float x, float y);
+float  cbrtf(float x);
+float  log2f(float x);
+float  log10f(float x);
+float  log1pf(float x);
+
+/*
+ * `atan2f` is musl's, since W4d: FFmpeg's `libm.h` defines a fallback of
+ * its own for every maths function `math.h` does not declare, and its
+ * config is held to that header (`tools/ffmpeg_vendor.py`), so what is
+ * declared here has to exist.
+ *
+ * `atan2l` is declared and not defined: libc++'s `<complex>` names it in
+ * an inline overload (`std::arg` of a long double), so a C++ file that
+ * includes it does not compile without it - ICU's does - and a call that
+ * reaches it fails at the link with its name.
  */
 float       atan2f(float y, float x);
 long double atan2l(long double y, long double x);
