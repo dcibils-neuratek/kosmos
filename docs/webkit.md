@@ -263,7 +263,8 @@ small C programs, each a POSIX call against its expected answer.
 
 **W4 - JavaScriptCore.** `jsc`, the shell, built for Kosmos with the LLInt
 and no JIT, running a script; then test262's language tests, counted, and
-the count kept as a regression. The first time anything of WebKit runs.
+the count kept as a regression. The first time anything of WebKit runs. ICU comes first, inside W4: WTF and JavaScriptCore include
+it from their first file (`docs/w4.md`).
 
 **W5 - the libraries.** ICU, FreeType, HarfBuzz (as the Text Kit), libpng,
 libjpeg-turbo, libwebp, SQLite, libxml2 (or expat, already here, where
@@ -381,6 +382,12 @@ numbers):
    before and after.
 4. **Fast, and on the GPU when it pays** (*Fast*, above).
 5. **Its name is JetSki**, "because [it] is super fast".
+6. **WebKit's and ICU's source fetched, not committed** (W4 onward): a
+   script fetches each release into `build/downloads/` and holds it to its
+   published SHA-256; the tree keeps Kosmos's glue and patches only. W4 is
+   WebKitGTK 2.54.2's tarball - which carries the JSC-only port - and ICU
+   79.1, which JavaScriptCore cannot build without, so ICU is W4's first
+   part rather than W5's (`docs/w4.md`).
 
 ## Still open
 

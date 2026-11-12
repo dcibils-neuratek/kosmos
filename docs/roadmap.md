@@ -10085,7 +10085,14 @@ the applications make the system useful, and is not pulled forward.
   `ramask`. **W3e, sockets and `poll`, built** (18.775): sockets as
   descriptors on `netclient.c`, now safe for threads, `poll` over sockets
   and files, `getaddrinfo` on the stack's resolver; `SOCK_DGRAM`, IPv6
-  and `select` wait for a port that asks. W3f next.
+  and `select` wait for a port that asks. **W3 is built.**
+  **W4, JavaScriptCore, next** (`docs/w4.md`): ICU 79.1 first, which WTF
+  and JavaScriptCore include from their first file; then WTF and
+  bmalloc, JavaScriptCore with the LLInt and no JIT, `jsc` running a
+  script in an image of its own, and test262 counted. **Their source
+  fetched, not committed** (Diego, 11 November): release tarballs in
+  `build/downloads/` held to their published SHA-256, WebKitGTK 2.54.2's
+  for the JSC-only port.
   **A follow-up from W3d4**: *a suite the gate stops leaves its folder*.
   On 11 November twelve `kosmos-*` folders under the Mac's temporary
   directory held 3 GB - each the disk of a run the gate stopped for
