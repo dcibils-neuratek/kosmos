@@ -2253,3 +2253,52 @@ in place. Next is the secure connection, OpenSSL and curl.
 
 **Measurements.** `runtest`'s 3,886 tests take 23 seconds in the emulator;
 on the Mac they take 1.6. The whole suite takes 32 seconds.
+
+## 12 November, late - the Mac Pro's first boot
+
+**In short.** Kosmos booted on a third machine, a 2013 Mac Pro, and got
+most of the way up. It stopped because Apple's firmware had left a hardware
+breakpoint set, and Kosmos never cleared it. It clears them now.
+
+**What happened.** Diego wrote 0.11.363 to a stick and started the Mac Pro
+from it. Kosmos's own loader ran, then the kernel came up:
+- the screen at 1720 by 1440;
+- ACPI, the power button and the timers;
+- the sound chip;
+- the processor's random-number instruction.
+
+Then, while starting the processes that make up the system, it stopped with
+two panics on the screen: "debug", then "divide error".
+
+**Why.** An x86 processor has debug registers. A debugger uses them to ask
+the processor to stop the moment a program touches a given address or
+device port. The Mac's firmware had left one of these set on port 0x80,
+the port it uses to show its own progress codes. Kosmos touches that same
+port for a microsecond's pause while setting up the old interrupt
+controller. So the processor stopped there and raised a debug exception.
+Kosmos does not expect one, so it panicked.
+
+The "divide error" was not a division at all. The panic happened halfway
+through moving that old interrupt controller's signals out of the slots the
+processor reserves for its own exceptions. So when the timer ticked, it
+arrived in slot 0, the one that means "divide error".
+
+The ThinkPad's and the M700's firmware leave the debug registers clear,
+which is why this waited for a third machine.
+
+**How it was found.** There was only a photograph: no serial port, no log
+to copy. The kernel on the stick has no symbols. Its bytes at the address
+on the screen were matched against today's kernel, which has them. That
+landed on `pic_init`, eleven bytes in, just after its first write to port
+0x80. A debug exception at that instruction can only be an I/O breakpoint.
+
+**The fix.** Every processor core now sets its debug registers back to
+how the processor resets them, as it installs its exception table. That is
+two instructions, in 0.11.391.
+
+**Visible impact.** The Mac Pro should now get past step 10. What comes
+after is the next experiment. The firmware also said that VT-x is locked
+on, and that the machine's Broadcom network card has no driver here.
+
+**Measurements.** None. QEMU cannot show this, because its firmware never
+leaves a breakpoint set, so the Mac Pro is the test.

@@ -222,6 +222,22 @@ void trap_init(void)
     pointer.base  = (uint64_t)idt;
 
     __asm__ volatile("lidt %0" :: "m"(pointer));
+
+    /*
+     * **The debug registers as the processor resets them**, on every core:
+     * DR7 0x400 (no breakpoint enabled; bit 10 reads as one) and DR6
+     * 0xFFFF0FF0 (no condition recorded). Nothing here sets a breakpoint,
+     * and nothing said the firmware had not. The Mac Pro 2013's had: its
+     * first boot stopped with `#DB` straight after `pic_init`'s first
+     * `out` to port 0x80 - an I/O breakpoint on its own POST-code port,
+     * armed and handed over with CR4.DE on - and then took the timer at
+     * vector 0, as a "divide error", because the 8259 had not been moved
+     * off the exceptions yet (`docs/boot.md`, 12 November 2026). The T14's
+     * and the M700's leave them clear, which is why it waited for a third
+     * machine.
+     */
+    __asm__ volatile("movq %0, %%dr7" :: "r"(0x400ul));
+    __asm__ volatile("movq %0, %%dr6" :: "r"(0xFFFF0FF0ul));
 }
 
 /*

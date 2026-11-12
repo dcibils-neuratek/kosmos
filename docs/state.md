@@ -270,8 +270,10 @@ placement is widened for it. `x86-sound` failed once beside it (403 Hz for
 
 **The Mac Pro 2013** (Diego, the same evening: "i also want to build a
 stick so i can boot into the mac pro 2013"): roadmap, *Being built now*. A
-development stick of 0.11.363, never booted there; first boot is the
-experiment, photograph `log loader`.
+development stick of 0.11.363 booted there on 12 November and stopped at
+step 10 of 12: the firmware's I/O breakpoint on port 0x80, left armed, fired
+in `pic_init` (`boot.md`'s table). Fixed in 0.11.391 - `trap_init` resets
+DR7 and DR6 on every core - and its stick is the next boot there.
 
 **Next**: the Mac Pro's first boot; the audio server's worst turn with one
 film on the M700 (32.9 ms read with three playing); `ETH_RING_SLOTS` and
