@@ -214,9 +214,16 @@ def main():
         check(zoomed is not None and zoomed.group(3).endswith("%")
               and int(zoomed.group(4)) > fit_pct,
               "Control-plus did not zoom a step in from %d%%: %r" % (fit_pct, zoomed and zoomed.group(0)))
-        again = line(r"pdfview: page 1 of %d, .* at (\d+)%%" % PAGES, mark, 30)
-        check(again is not None and zoomed is not None and again.group(1) == zoomed.group(4),
-              "page 1 was not rendered again at the new zoom: %r" % (again and again.group(0)))
+        # Page 1 *at the new zoom*, not the first page 1 after the mark:
+        # Home's own drawing of page 1 at the old zoom can land after it,
+        # and under the gate's load it did, four times between 0.11.364 and
+        # 0.11.386 (`testing.md` 18.782).
+        new_pct = zoomed.group(4) if zoomed else "?"
+        again = line(r"pdfview: page 1 of %d, .* at (%s)%%" % (PAGES, re.escape(new_pct)),
+                     mark, 30)
+        check(again is not None and zoomed is not None,
+              "page 1 was not rendered again at the new zoom, %s%%: %r"
+              % (new_pct, again and again.group(0)))
 
         mark = len(guest.seen)
         guest.sendkey("ctrl-0")

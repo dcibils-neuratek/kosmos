@@ -124,6 +124,14 @@ import zlib
 
 QEMU = "qemu-system-aarch64"
 
+# **How long QEMU holds a key down** for `Guest.sendkey`, in milliseconds.
+# QEMU's own default is 100. A press and a release are each one event to
+# the guest whatever the hold, and Kosmos repeats a key only after far
+# longer, so the hold is time spent waiting for nothing; 30 is three
+# times a 100 Hz tick, so the press and the release land in different
+# ticks of the reader on either board (`testing.md` 18.782).
+KEY_HOLD_MS = 30
+
 # Has to agree with kernel/console.c: RESERVED_ROWS rows of GLYPH_H,
 # at the bottom, which the kernel keeps out of the scroll region and
 # `monitor` draws its one line of text into.
@@ -716,18 +724,21 @@ class Guest:
         """
         self._connect_monitor()
         self._drain_monitor()
-        self.monitor.sendall(f"sendkey {key}\n".encode())
+        self.monitor.sendall(f"sendkey {key} {KEY_HOLD_MS}\n".encode())
         #
         # **As long as QEMU holds the key, and a little more.** `sendkey`
-        # holds a key down 100 ms and plays the next one after it, so keys
-        # arrive in order at that pace whatever this does; the wait is for
-        # this side to stay in step, so a click sent next is not played
-        # before the last key's release. It was 0.35 s - fifty-five of the
-        # Script suite's 114 seconds were this line (`testing.md` 18.219).
-        # Not less: a window keeps 64 events, a key is up to three of them,
-        # and a busy application has to read them before they are dropped.
+        # holds a key down for its hold time and plays the next one after
+        # it, so keys arrive in order at that pace whatever this does; the
+        # wait is for this side to stay in step, so a click sent next is not
+        # played before the last key's release. It was 0.35 s - fifty-five
+        # of the Script suite's 114 seconds were this line (`testing.md`
+        # 18.219) - then 0.12 s behind QEMU's own 100 ms hold, which was
+        # 63 of Mail's sixth part's 180 s (18.782). Now the hold is said
+        # (`KEY_HOLD_MS`, below) and the wait follows it. Not much less: a
+        # window keeps 64 events, a key is up to three of them, and a busy
+        # application has to read them before they are dropped.
         #
-        time.sleep(0.12)
+        time.sleep(KEY_HOLD_MS / 1000 + 0.02)
         self._drain_monitor()
 
     def _drain_monitor(self):
@@ -1217,10 +1228,15 @@ def check_keyboard(guest):
     for key in ("shift-h", "shift-i", "ret"):
         guest.sendkey(key)
 
+    # Until the Enter has been taken too - a prompt after the `HI` - not only
+    # the letters: the next thing typed comes down the serial line, a
+    # different source, and arrived ahead of the Enter once the keys were
+    # quicker (`testing.md` 18.782), as `HIlocal n = 0 ...`.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         guest._read_available()
-        if "HI" in guest.seen[mark:]:
+        at = guest.seen.find("HI", mark)
+        if at >= 0 and "kosmos> " in guest.seen[at:]:
             break
         time.sleep(0.2)
     else:

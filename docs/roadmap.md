@@ -10170,8 +10170,13 @@ the applications make the system useful, and is not pulled forward.
     Splitting the slowest or waiting for the thing in it, before the next
     suite lands. **W5a landed one anyway** (`x86-pictures`, 11 s), and the
     gate on 0.11.386 was 11:45 with `x86-cafesa3d-2` at 279 s,
-    `arm-sandbox-linuxsetup` 249 s and `host-llm` 229 s. This is the next
-    thing done, before W5b.
+    `arm-sandbox-linuxsetup` 249 s and `host-llm` 229 s. **Back to 9:27
+    on 0.11.387** (18.782): keys held 30 ms instead of QEMU's 100, and the
+    second wait after each key in four runners gone; four races the slower
+    keys had hidden, fixed. Left for the next minutes: clicks' fixed
+    waits (1.1 s each in Mail), and `host-llm`'s phi-2 Q4_0 at 81 s
+    against Q8_0's 46 - the kit's Q4_0 dot product on NEON, worth a look
+    for Xavier's own sake too.
 
   **Follow-ups from W4d**:
   - *A dying program's last words*, again: finding W4d's abort took a

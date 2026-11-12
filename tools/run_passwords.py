@@ -132,7 +132,6 @@ def main():
         def typed(text):
             for k in [{" ": "spc", "(": "shift-9", ")": "shift-0"}.get(c, c) for c in text]:
                 guest.sendkey(k)
-                time.sleep(0.05)
 
         # Sort: the menu opens under the dropdown; Title is its second row.
         mark = len(guest.seen)

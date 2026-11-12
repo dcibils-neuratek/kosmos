@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.386: W5a built - the picture libraries; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.387: the gate at 9:27; W5a built; nothing since 0.11.363 pushed)
 
 ---
 
@@ -29,8 +29,12 @@ Last updated: 2026-11-12 (0.11.386: W5a built - the picture libraries; nothing s
 - The gate: 115 of 116 in 11:45. `arm-sandbox` test 72, the futex
   deadline, failed under load and passes 219 of 219 alone (roadmap).
 
-**Next: the gate back under ten minutes**, before W5b (roadmap, *The gate
-is at 10:53*). Then W5b: FreeType 2.15.0 (tag commit 37515cf) and HarfBuzz
+**Then the gate, 0.11.387** (`testing.md` 18.782): 11:45 to 9:27. Keys
+are held 30 ms (`KEY_HOLD_MS` in `run_screenshot.py`), the second waits in
+four typing loops are gone, and four races are fixed (the keyboard
+phase's Return, llmmon's echo, pdfview's zoom).
+
+**Next: W5b**: FreeType 2.15.0 (tag commit 37515cf) and HarfBuzz
 15.1.0, whose digest 0fc7c565 was checked by a fetch. HarfBuzz's 312
 shaping test files are what W5b is held to.
 

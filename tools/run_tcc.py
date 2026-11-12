@@ -238,7 +238,6 @@ def main():
 
             for key in ("ctrl-end", "ret", "k", "w", "shift-minus", "o"):
                 guest.sendkey(key)
-                time.sleep(0.15)
 
             deadline = time.monotonic() + 30
 
@@ -251,7 +250,6 @@ def main():
 
             for key in ("ret", "s", "dot", "p", "i", "x"):
                 guest.sendkey(key)
-                time.sleep(0.15)
 
             time.sleep(1)
             guest.sendkey("tab")

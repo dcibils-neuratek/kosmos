@@ -208,17 +208,24 @@ def main():
     else:
         check(False, "the second question was not counted: %r %r" % (since2, last2))
 
-    def answer_of(said):
+    def answer_of(said, command):
         """The answer's words: what xavier printed, less its command, the
         model's loading, the closing count, and the system's own lines -
-        the server's and the kernel's - that land among them."""
-        kept = [l for l in said.replace("\r", "").split("\n")[1:]
+        the server's and the kernel's - that land among them.
+
+        The command's echo is found by what it says, not taken to be the
+        first line: a system line can arrive between the mark and the echo,
+        and once did (`testing.md` 18.782), leaving the echo in the answer."""
+        lines = said.replace("\r", "").split("\n")
+        echo = next((i for i, l in enumerate(lines) if l.rstrip().endswith(command)), 0)
+        kept = [l for l in lines[echo + 1:]
                 if l.strip() and not l.startswith(("loading ", "llm: ", "process "))
                 and not re.match(r"^\d+ tokens in ", l)
                 and not re.search(r" is in, [\d.]+ [KMG]?B in ", l)]
         return "\n".join(kept).strip()
 
-    a1, a2 = answer_of(said1), answer_of(said2)
+    a1 = answer_of(said1, "xavier --tokens 24 what is a kernel")
+    a2 = answer_of(said2, "xavier --tokens 24 --file /Temporary/q.txt")
     check(a1 != "" and a1 == a2,
           "the question from a file was not answered as on the line: %r against %r" % (a2, a1))
 

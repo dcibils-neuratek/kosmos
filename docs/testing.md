@@ -32186,3 +32186,62 @@ sharing the Mac. Alone, it passes 219 of 219. Nothing in this change
 reaches the kernel or the futex; the roadmap has the bound, and the line
 the runner could not count because the reason was printed before it on the
 same line.
+
+## 18.782 The gate under ten minutes again: keys at QEMU's pace, not twice it
+
+**The gate was 11:45 on 0.11.386** with W5a's suite in it, and 10:53 the
+day before. The gate's own comment says why it could not be helped from
+outside: 116 suites' own seconds were 5,742, and over ten slots, which is
+every core this Mac has, that is 574 s before the images. The time had to
+come out of the suites.
+
+**Where it went, measured.** `x86-mail-6` was run with `time.sleep`
+counted (a wrapper around the runner, kept out of the tree): **153 of its
+180 s were sleeps.** Two of them were the same wait twice:
+
+- `Guest.sendkey` waits 0.12 s, behind QEMU's own 100 ms hold of each key,
+  so a key costs 0.12 s whatever follows it. It was 63 s of the 180.
+- Mail's `typed()` waited another 0.12 s after each `sendkey`: 34 s more,
+  for nothing. Cafesa3D, Passwords and TinyCC had the same second wait in
+  their typing loops.
+
+**The change.** QEMU's `sendkey` takes a hold time: `KEY_HOLD_MS` in
+`run_screenshot.py`, 30 ms, and the wait is the hold plus 20 ms. The
+second waits in the four typing loops are gone. The single-key waits after
+Enter, Escape and the like are kept, since some of them wait for an
+application to react, and so are Maps' 0.4 s a key, since its search runs
+on every key.
+
+`x86-mail-6` went from 180 s to 110 s, its 16 checks passing.
+
+**What the quicker keys found**: three races, each in a test rather than in
+Kosmos, which the slower keys had hidden.
+
+- **`x86-display-1` and `x86-virtio-gpu`**: the keyboard phase sent Shift-H,
+  Shift-I and Return, and returned when `HI` echoed, before the Return was
+  taken. The next command came down the serial line, a different source,
+  and arrived first: `HIlocal n = 0 ...`, a syntax error. The phase now
+  waits for the prompt after `HI`.
+- **`x86-llmmon`**: `answer_of` dropped the first line as the command's
+  echo, and a system line had arrived ahead of the echo. The echo is now
+  found by what it says.
+- **`x86-pdfview`**, failing under load since 0.11.364 (four times, each
+  passing alone): after Control-plus the check took the first page 1 drawn
+  after its mark, and Home's own drawing of page 1 at the old zoom could
+  land after the mark. It now waits for page 1 at the new zoom. Its
+  control, the same check waiting for a zoom of 999%, fails, and restored
+  it passes 38 of 38.
+
+**Gates:**
+
+| | gate | suites' own seconds | failed |
+|---|---|---|---|
+| 0.11.386, before | 11:45 (705 s, 124 s of images) | 5,742 | `arm-sandbox` (futex deadline, under load) |
+| keys at 30 ms | 9:40 (580 s) | 5,306 | `x86-display-1`, `x86-virtio-gpu`, `x86-llmmon` (the races) |
+| the races fixed | 9:27 (567 s, 13 s of images) | 5,374 | `x86-pdfview` (the fourth race), fixed and passing alone |
+
+Mail's six parts came down by 161 s and `x86-xavier` by 55 s. The slowest
+now: `x86-cafesa3d-2` 278 s, `arm-sandbox-linuxsetup` 242 s, `host-llm`
+227 s. The next minutes are in clicks, at 0.3 + 0.2 + 0.6 s each in
+Mail, and in `host-llm`, where phi-2 at Q4_0 takes 81 s and at Q8_0 46 s,
+though Q4_0 reads half the bytes.

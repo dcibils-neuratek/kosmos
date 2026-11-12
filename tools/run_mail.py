@@ -722,7 +722,6 @@ def part3(image):
         def typed(text):
             for k in keys_for(text):
                 guest.sendkey(k)
-                time.sleep(0.12)
 
         def tab():
             guest.sendkey("tab")
@@ -1080,7 +1079,6 @@ def mail_window(image, deliver, kept, said):
         def typed(text):
             for k in keys_for(text):
                 guest.sendkey(k)
-                time.sleep(0.12)
 
         def key(name):
             guest.sendkey(name)

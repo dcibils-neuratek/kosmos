@@ -437,7 +437,6 @@ def main():
                     click(*fields_now["base"])
                     for k in ("1", "c", "1", "c", "1", "e", "ret"):
                         guest.sendkey(k)
-                        time.sleep(0.15)
                     got = said("cafesa3d: set Base colour of ", mark) or ""
                     check(got.endswith(" to #1c1c1e"), "a colour typed as hex was not taken: %r" % got)
 
