@@ -3347,6 +3347,15 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 	$(OBJCOPY) -O binary $< $@
 
 #
+# **The POSIX layer's parts** (`docs/w3.md`), named here because the C++
+# runtimes stand on them since W4a; its rules and its test image are below.
+#
+POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
+              runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
+              runtime/posix/socket.c
+POSIX_CFLAGS := -I runtime/posix/include
+POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
+#
 # **The C++ runtimes** (`docs/webkit.md` W1c): libc++, libc++abi and
 # libunwind from `runtime/upstream/llvm/`, built by clang for this
 # architecture with Kosmos's toolchain file, into `build/cxx/<arch>/`. CMake
@@ -3364,14 +3373,22 @@ cxx-runtimes: $(CXXRT)/.built
 $(CXXRT_LIBS): $(CXXRT)/.built
 
 $(CXXRT)/.built: runtime/cxx/kosmos.cmake runtime/cxx/runtimes.cmake \
-                 $(wildcard runtime/include/*.h runtime/include/sys/*.h)
+                 $(wildcard runtime/include/*.h runtime/include/sys/*.h) \
+                 $(wildcard runtime/posix/include/*.h runtime/posix/include/sys/*.h)
+	@# The options and the toolchain are an initial cache, read only when
+	@# CMake configures: a change to either starts this build again, or an
+	@# old one keeps what it was configured with (threads off, W4a).
+	@# `.configured` is written only by a fresh configure - CMake rewrites
+	@# its own files when it regenerates, so their dates say nothing.
+	@if [ ! -f $(CXXRT)/.configured ] || [ runtime/cxx/runtimes.cmake -nt $(CXXRT)/.configured ] \
+	        || [ runtime/cxx/kosmos.cmake -nt $(CXXRT)/.configured ]; then rm -rf $(CXXRT); fi
 	@mkdir -p $(CXXRT)
 	@if [ ! -f $(CXXRT)/build.ninja ]; then \
 	    cmake -G Ninja -S runtime/upstream/llvm/runtimes -B $(CXXRT) -Wno-author \
 	        -C runtime/cxx/runtimes.cmake \
 	        -DCMAKE_TOOLCHAIN_FILE=$(CURDIR)/runtime/cxx/kosmos.cmake \
 	        -DKOSMOS_ARCH=$(ARCH) -DKOSMOS_ROOT=$(CURDIR) > $(CXXRT)/cmake.log \
-	    || { cat $(CXXRT)/cmake.log; exit 1; }; fi
+	    || { cat $(CXXRT)/cmake.log; exit 1; }; touch $(CXXRT)/.configured; fi
 	ninja -C $(CXXRT) --quiet
 	@touch $@
 
@@ -3410,6 +3427,7 @@ CXXFLAGS_KOSMOS := --target=$(CXXRT_TRIPLE) -std=c++20 -O2 -g \
                    -Wall -Wextra -Werror -fno-stack-protector \
                    -ffunction-sections -fdata-sections \
                    -nostdinc -nostdinc++ -isystem $(CXXRT)/include/c++/v1 \
+                   -isystem runtime/posix/include \
                    -isystem $(shell /opt/homebrew/opt/llvm/bin/clang -print-resource-dir)/include \
                    -isystem runtime/include -isystem user/include \
                    -DKOSMOS_USER -DKOSMOS_USER_BASE=$(USER_BASE)
@@ -3420,9 +3438,9 @@ $(UBUILD)/%.cpp.o: %.cpp $(CXXRT)/.built
 
 CXXTEST_OBJS := $(UBUILD)/user/kits/cxxtest/cxxtest.cpp.o $(UBUILD)/user/kits/cxxtest/cxxtest_kit.c.o
 
-$(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+$(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(POSIX_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(CXXTEST_OBJS) \
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(CXXTEST_OBJS) $(POSIX_OBJS) \
 	    -Wl,--start-group $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_cxxtest_kit$$' \
 	    || { echo "apps: cxxtest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -3436,11 +3454,7 @@ $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(CXXRT_LIBS) $(UBUILD)
 # accident (`design.md` §17.3). `posixtest.elf` holds it, as `cxxtest.elf`
 # holds C++, and the system's image must not have it.
 #
-POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
-              runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
-              runtime/posix/socket.c
-POSIX_CFLAGS := -I runtime/posix/include
-POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
+# (`POSIX_SRCS` and the rest are above, with the C++ runtimes, which need them.)
 POSIXTEST_OBJS := $(UBUILD)/user/kits/posixtest/posixtest.c.o \
                   $(UBUILD)/user/kits/posixtest/storagetest.c.o \
                   $(UBUILD)/user/kits/posixtest/sockettest.c.o \

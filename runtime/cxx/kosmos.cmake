@@ -67,7 +67,11 @@ set(CMAKE_ASM_COMPILER_TARGET ${triple})
 execute_process(COMMAND ${CMAKE_C_COMPILER} -print-resource-dir
                 OUTPUT_VARIABLE resource OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(flags "-nostdinc -isystem ${resource}/include")
+# The POSIX layer's headers first of all, as ported code compiles
+# (`docs/w4.md` W4a): each of them reaches the compiler's or the runtime's
+# own with `include_next`, which finds only what comes after it.
+set(flags "-nostdinc -isystem ${KOSMOS_ROOT}/runtime/posix/include")
+string(APPEND flags " -isystem ${resource}/include")
 string(APPEND flags " -isystem ${KOSMOS_ROOT}/runtime/include")
 string(APPEND flags " -isystem ${KOSMOS_ROOT}/user/include")
 string(APPEND flags " -DKOSMOS_USER -DKOSMOS_USER_BASE=${base}")

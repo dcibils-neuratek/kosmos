@@ -726,6 +726,25 @@ int fprintf(FILE *f, const char *fmt, ...)
     return n;
 }
 
+int strerror_r(int errnum, char *buf, size_t room)
+{
+    const char *said = strerror(errnum);
+    size_t n = strlen(said);
+
+    if (room == 0) {
+        return ERANGE;
+    }
+
+    if (n >= room) {
+        memcpy(buf, said, room - 1);
+        buf[room - 1] = '\0';
+        return ERANGE;
+    }
+
+    memcpy(buf, said, n + 1);
+    return 0;
+}
+
 void perror(const char *s)
 {
     if (s != NULL && s[0] != '\0') {

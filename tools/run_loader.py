@@ -124,6 +124,7 @@ CXX_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 local kit = use("{image}")
 print("cxxtest: " .. kit.run())
 print("cxxtest-threads: " .. kit.threads())
+print("cxxtest-std: " .. kit.std())
 """
 
 cxx_files = []
@@ -476,6 +477,12 @@ def main():
                     and "print(" not in l]
             check(line[-1:] == ["cxxtest-threads: main 8, thread 105, main again 8"],
                   "C++'s thread_local was not each thread's own: %r" % line[-1:])
+            line = [l.strip() for l in guest.seen.split("\n") if "cxxtest-std:" in l
+                    and "print(" not in l]
+            check(line[-1:] == ["cxxtest-std: 40000 under a mutex, 100 handed over, made once, "
+                                "slept 20 ms, own 4"],
+                  "C++'s standard threads on the POSIX layer (W4a) did not all hold: %r"
+                  % line[-1:])
 
             unwound_at = len(guest.seen)
             said, _ = typed("run /Home/apps/unwound/unwound.lua", "unwound", 180)

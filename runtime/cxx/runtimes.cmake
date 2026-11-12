@@ -8,17 +8,19 @@
 # the image's unwinding tables by the names `user/user.ld` gives them
 # (`__eh_frame_hdr_start`) rather than by asking a dynamic loader.
 #
+# **Threads on** (`docs/w4.md` W4a), on the POSIX layer's pthreads, which
+# stand on W2's futex: `std::mutex`, `std::thread`, `std::condition_variable`,
+# a function's static initialised once by many threads, and the monotonic
+# clock `steady_clock` reads. So an image that links these links
+# `runtime/posix/` too, as only ported code may - and C++ here is ported
+# code, ICU and WebKit's.
+#
 # **Off, for now, and each for a reason:**
-# - threads: Kosmos has them, but a C++ `std::mutex` stands on a futex,
-#   which is W2; the runtimes are built again with them when it lands;
 # - localization and wide characters: text is UTF-8 bytes here, and
 #   WebKit keeps its own UTF-16;
 # - the filesystem, the random device and the time zone database: each is
 #   a thing a process asks the namespace for, not a path or a device file,
 #   and arrives with the POSIX layer (W3) if WebKit wants it;
-# - the monotonic clock as libc++ means it: `steady_clock` wants threads'
-#   headers in this release. `clock_gettime(CLOCK_MONOTONIC)` is there for
-#   whatever reads it directly.
 
 set(LLVM_ENABLE_RUNTIMES "libcxx;libcxxabi;libunwind" CACHE STRING "")
 set(CMAKE_BUILD_TYPE Release CACHE STRING "")
@@ -28,8 +30,9 @@ set(LIBCXX_ENABLE_STATIC ON CACHE BOOL "")
 set(LIBCXX_CXX_ABI libcxxabi CACHE STRING "")
 set(LIBCXX_ENABLE_STATIC_ABI_LIBRARY ON CACHE BOOL "")
 set(LIBCXX_ENABLE_NEW_DELETE_DEFINITIONS OFF CACHE BOOL "")
-set(LIBCXX_ENABLE_THREADS OFF CACHE BOOL "")
-set(LIBCXX_ENABLE_MONOTONIC_CLOCK OFF CACHE BOOL "")
+set(LIBCXX_ENABLE_THREADS ON CACHE BOOL "")
+set(LIBCXX_HAS_PTHREAD_API ON CACHE BOOL "")
+set(LIBCXX_ENABLE_MONOTONIC_CLOCK ON CACHE BOOL "")
 set(LIBCXX_ENABLE_LOCALIZATION OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_WIDE_CHARACTERS OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_FILESYSTEM OFF CACHE BOOL "")
@@ -43,7 +46,8 @@ set(LIBCXX_USE_COMPILER_RT OFF CACHE BOOL "")
 
 set(LIBCXXABI_ENABLE_SHARED OFF CACHE BOOL "")
 set(LIBCXXABI_ENABLE_STATIC ON CACHE BOOL "")
-set(LIBCXXABI_ENABLE_THREADS OFF CACHE BOOL "")
+set(LIBCXXABI_ENABLE_THREADS ON CACHE BOOL "")
+set(LIBCXXABI_HAS_PTHREAD_API ON CACHE BOOL "")
 set(LIBCXXABI_BAREMETAL ON CACHE BOOL "")
 set(LIBCXXABI_USE_LLVM_UNWINDER ON CACHE BOOL "")
 set(LIBCXXABI_ENABLE_STATIC_UNWINDER ON CACHE BOOL "")
@@ -52,7 +56,7 @@ set(LIBCXXABI_INCLUDE_TESTS OFF CACHE BOOL "")
 
 set(LIBUNWIND_ENABLE_SHARED OFF CACHE BOOL "")
 set(LIBUNWIND_ENABLE_STATIC ON CACHE BOOL "")
-set(LIBUNWIND_ENABLE_THREADS OFF CACHE BOOL "")
+set(LIBUNWIND_ENABLE_THREADS ON CACHE BOOL "")
 set(LIBUNWIND_IS_BAREMETAL ON CACHE BOOL "")
 set(LIBUNWIND_USE_COMPILER_RT OFF CACHE BOOL "")
 set(LIBUNWIND_INCLUDE_TESTS OFF CACHE BOOL "")

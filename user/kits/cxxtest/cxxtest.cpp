@@ -11,7 +11,12 @@
  *   `user/user.ld` gives it;
  * - `std::vector`, `std::map`, `std::string` and `std::unique_ptr`, which
  *   are `operator new` on Kosmos's heap;
- * - a `thread_local`, counted by two threads that each see their own.
+ * - a `thread_local`, counted by two threads that each see their own;
+ * - and since W4a (`docs/w4.md`), the standard library's threads on the
+ *   POSIX layer: `std::thread`, a `std::mutex` four of them share, a
+ *   `std::condition_variable` handing values over, a function's static
+ *   that four threads race to make and only one makes, and
+ *   `steady_clock` across a `sleep_for`.
  *
  * No Lua here, and no Kosmos header: C++ sees only the C library and
  * libc++, and `cxxtest_kit.c` is the door - it is C, as every kit's is,
@@ -19,8 +24,14 @@
  * function that uses them begins (`tls.h`).
  */
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
+#include <deque>
 #include <map>
+#include <mutex>
+#include <thread>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -88,4 +99,116 @@ extern "C" int kosmos_cxxtest_run(char *out, unsigned long size)
 
     return std::snprintf(out, size, "constructed %d, caught '%s', %s",
                          constructed_value, caught.c_str(), said.c_str());
+}
+
+namespace {
+
+std::atomic<int> made_count{0};
+
+struct MadeOnce {
+    MadeOnce() { made_count++; std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+};
+
+const MadeOnce &made_once()
+{
+    static MadeOnce one;        /* libc++abi's guard, on the layer's futex */
+    return one;
+}
+
+}
+
+/*
+ * "40000 under a mutex, 100 handed over, made once, slept 20 ms, own 4":
+ * four threads each adding 10000 under one mutex, a producer and a
+ * consumer through a condition variable, one static made by four racing
+ * threads, steady_clock agreeing with sleep_for, and each std::thread's
+ * own thread_local.
+ */
+extern "C" int kosmos_cxxtest_std(char *out, unsigned long size)
+{
+    std::mutex lock;
+    long total = 0;
+    std::vector<std::thread> four;
+
+    for (int t = 0; t < 4; t++) {
+        four.emplace_back([&] {
+            for (int i = 0; i < 10000; i++) {
+                std::lock_guard<std::mutex> held(lock);
+                total++;
+            }
+        });
+    }
+
+    for (auto &t : four) {
+        t.join();
+    }
+
+    std::condition_variable ready;
+    std::deque<int> queue;
+    long handed = 0, sum = 0;
+    bool done = false;
+
+    std::thread consumer([&] {
+        std::unique_lock<std::mutex> held(lock);
+
+        for (;;) {
+            ready.wait(held, [&] { return !queue.empty() || done; });
+
+            while (!queue.empty()) {
+                sum += queue.front();
+                queue.pop_front();
+                handed++;
+            }
+
+            if (done) {
+                return;
+            }
+        }
+    });
+
+    for (int i = 1; i <= 100; i++) {
+        {
+            std::lock_guard<std::mutex> held(lock);
+            queue.push_back(i);
+        }
+        ready.notify_one();
+    }
+
+    {
+        std::lock_guard<std::mutex> held(lock);
+        done = true;
+    }
+    ready.notify_one();
+    consumer.join();
+
+    std::vector<std::thread> racers;
+    for (int t = 0; t < 4; t++) {
+        racers.emplace_back([] { (void)made_once(); });
+    }
+    for (auto &t : racers) {
+        t.join();
+    }
+
+    auto began = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    long slept = (long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - began).count();
+
+    std::atomic<int> own{0};
+    std::vector<std::thread> counters;
+    for (int t = 0; t < 4; t++) {
+        counters.emplace_back([&, t] {
+            if (kosmos_cxxtest_count(t) == 5 + t) {
+                own++;
+            }
+        });
+    }
+    for (auto &t : counters) {
+        t.join();
+    }
+
+    return std::snprintf(out, size, "%ld under a mutex, %ld handed over%s, made %s, "
+                         "slept %s, own %d", total, handed, sum == 5050 ? "" : " (wrong sum)",
+                         made_count.load() == 1 ? "once" : "more than once",
+                         slept >= 20 ? "20 ms" : "less than 20 ms", own.load());
 }

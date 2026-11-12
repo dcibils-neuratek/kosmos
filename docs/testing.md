@@ -31841,3 +31841,26 @@ EACCES, what a program not given the network gets.
 **Gate**: 111 of 112 in 611 s. `x86-pdfview` read Shift-Return as two
 steps back under the gate's load (*match 9 of 12* for the 7th) - a key
 path this does not touch - and alone passed its 38 in 37 s.
+
+## 18.776 C++'s threads, on the POSIX layer (JetSki W4a)
+
+`docs/w4.md` W4a. libc++, libc++abi and libunwind built again with
+threads, the pthread API and the monotonic clock on, against the POSIX
+layer, which every image linking them now links too. The layer's headers
+come first on the include path, ahead of the compiler's - each reaches the
+next with `include_next` - and the layer gained `strerror_r`, which
+libc++'s `std::system_error` asks for. The runtimes' rule now configures
+again when its options or toolchain file change: it configured once, so
+ARM's build kept threads off after the file said on, and the first run
+failed to compile there for exactly that.
+
+**Test**: `cxxtest.elf` says, beside what it said: *40000 under a mutex,
+100 handed over, made once, slept 20 ms, own 4* - four `std::thread`s
+adding 10000 each under one `std::mutex`, a producer and a consumer
+through a `std::condition_variable` (the sum held to 5050), a function's
+static made by four racing threads exactly once, `steady_clock` agreeing
+with `sleep_for`, and each `std::thread`'s own `thread_local`. 23 checks,
+`x86-loader` in 11 s and `arm-loader` in 12 s.
+
+**Control**: the C++ compiled with `-fno-threadsafe-statics`, so the
+static has no guard - it bit, *made more than once*.
