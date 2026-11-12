@@ -1943,3 +1943,43 @@ from their very first file. Nothing of WebKit could be compiled before it.
 image carries all of ICU's languages and is 64 MB, and reads and runs in
 under half a second. Making it smaller - keeping only the languages
 wanted - is a later step, once there is a browser to measure it against.
+
+## 11 November, late night - WTF: WebKit's own foundation runs
+
+**In short.** WTF and bmalloc run on Kosmos. WTF is the library that
+WebKit, and so the browser, is written on, and bmalloc is its memory
+allocator. A test program uses its threads, its text, its timers and its
+files, and has Nebula stop one of its threads mid-run and look inside it.
+
+**What.** WTF and bmalloc are about 750 files of C++ from the same
+WebKitGTK release the browser will come from. A script downloads the
+release, checks it against its published fingerprint, and applies five
+small, explained changes to a copy of it, never to the original. Then it
+compiles the copy for both processors.
+
+Most of the work was the rest of the system learning what a large ported
+program asks of it:
+
+- the C++ library learned to work with folders and files;
+- the POSIX layer learned about a dozen new calls: removing a whole tree,
+  copying a file, making temporary names;
+- the C library learned to change a thread's rounding mode.
+
+Several things are refused on purpose, and each says why. Kosmos has no
+file links. A file's times belong to the server that keeps it. A thread's
+stack is the slot it was born in.
+
+**Why.** JavaScriptCore, the JavaScript engine that comes next, is written
+on WTF from its first line. Two things it needs most are here now. First,
+the ability to stop a thread and read its registers, which is how its
+garbage collector finds what is still in use. Linux does this with
+signals, and Kosmos has none, so Nebula's own suspend call does it
+instead. Second, a run loop that can be woken from another thread.
+
+**Visible impact.** None on the screen yet. The test's one sentence is
+checked word for word. Each important part was also deliberately broken
+in a separate build, to show the test notices, and it did: the
+suspension, the rounding, and the removing of files. The rounding test
+itself was wrong twice before it was right. Dividing 1 by 3, or 2 by 3,
+gives the same answer whether you round down or to the nearest number,
+so neither could tell whether the mode had changed; 1 divided by 10 can.

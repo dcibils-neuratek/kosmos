@@ -15,6 +15,12 @@ __BEGIN_DECLS
  * not fit (what fits is still written). */
 int strerror_r(int errnum, char *buf, size_t room);
 
+/* The first place `needle` appears in `haystack`, or NULL - the BSDs' and
+ * glibc's, which WTF's `memmemSpan` calls. An empty needle is found at the
+ * start. */
+void *memmem(const void *haystack, size_t haystack_len,
+             const void *needle, size_t needle_len);
+
 __END_DECLS
 
 #endif /* POSIX_STRING_H */

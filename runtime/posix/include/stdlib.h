@@ -2,7 +2,7 @@
 #ifndef POSIX_STDLIB_H
 #define POSIX_STDLIB_H
 
-/* The runtime's, and the one POSIX call that lives in `<stdlib.h>`. */
+/* The runtime's, and the POSIX calls that live in `<stdlib.h>`. */
 #include_next <stdlib.h>
 
 #include <sys/cdefs.h>
@@ -12,6 +12,12 @@ __BEGIN_DECLS
 /* `path` made whole and found: into `resolved` (PATH_MAX bytes), or a new
  * allocation when it is NULL. */
 char *realpath(const char *path, char *resolved);
+
+/* A new file or folder named from `pattern`, whose last six `X`s are
+ * replaced (`stdio.c`): a descriptor, or `pattern` itself. */
+int   mkstemp(char *pattern);
+int   mkostemp(char *pattern, int flags);   /* O_CLOEXEC, O_APPEND */
+char *mkdtemp(char *pattern);
 
 __END_DECLS
 

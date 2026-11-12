@@ -2,9 +2,30 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-11 (0.11.375: W3a-W3c built - pthreads, memory, time and the process's facts; nothing since 0.11.363 pushed)
+Last updated: 2026-11-11 (0.11.383: W4c built - WTF and bmalloc on Kosmos; nothing since 0.11.363 pushed)
 
 ---
+
+## 11 November, late: JetSki W3d to W4c (0.11.376-0.11.383, not pushed)
+
+W3 is built: files and stdio on the Storage Kit, sockets and `poll`
+(`docs/w3.md`). **W4, JavaScriptCore** (`docs/w4.md`), source fetched
+and never committed (Diego: "Fetched, not committed"):
+
+- 0.11.381 (18.776): W4a, C++'s threads on the POSIX layer.
+- 0.11.382 (18.777): W4b, ICU 79.1, answering as on this Mac.
+- 0.11.383 (18.778): W4c, WTF and bmalloc, by `tools/webkit_build.py` with
+  five patches in `runtime/patches/webkit/` and Kosmos's own files in
+  `runtime/ports/webkit/`. libc++ gained `std::filesystem`, and the POSIX
+  layer gained the `at` calls, `sendfile`, temporary names and more, with
+  refusals that say why. `wtftest.elf` (`x86-wtf`, `arm-wtf`) passes on
+  both processors, and its three controls bite.
+
+**Next: W4d**, JavaScriptCore with the LLInt and `jsc.elf`, installed in
+`/Home/Apps/JSC`, with `LICENSE` listing ICU's and WebKit's terms. The
+offline assembler is Ruby, run on the host. W4c's follow-ups are in
+`roadmap.md`. `user/servers/vmm.c` has a change in the tree that is not
+this work: always commit with `':!user/servers/vmm.c'`.
 
 ## 11 November: JetSki W1d to W3c (0.11.364-0.11.375, not pushed)
 

@@ -77,6 +77,9 @@ struct tm {
 
 struct tm *gmtime(const time_t *t);
 struct tm *localtime(const time_t *t);
+struct tm *gmtime_r(const time_t *t, struct tm *out);
+struct tm *localtime_r(const time_t *t, struct tm *out);
+time_t     timegm(struct tm *tm);
 time_t     mktime(struct tm *tm);
 size_t     strftime(char *out, size_t size, const char *format,
                     const struct tm *tm);

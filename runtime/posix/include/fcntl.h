@@ -43,10 +43,16 @@ __BEGIN_DECLS
 #define FD_CLOEXEC 1
 
 #define AT_FDCWD   -100
+#define AT_SYMLINK_NOFOLLOW 0x100   /* accepted; there are no links */
+#define AT_REMOVEDIR        0x200
 
 int open(const char *path, int flags, ...);
 int creat(const char *path, mode_t mode);
 int fcntl(int fd, int command, ...);
+
+/* `path` relative to the folder `dirfd` opened, or to the working
+ * directory for AT_FDCWD (`fd.c`). */
+int openat(int dirfd, const char *path, int flags, ...);
 
 __END_DECLS
 

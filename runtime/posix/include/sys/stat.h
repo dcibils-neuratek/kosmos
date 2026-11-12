@@ -74,6 +74,14 @@ int fstat(int fd, struct stat *out);
 int mkdir(const char *path, mode_t mode);
 int chmod(const char *path, mode_t mode);         /* 0, and nothing changes */
 int fchmod(int fd, mode_t mode);
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags);
+
+/* A file's times are the server's: these find the file and say ENOTSUP
+ * (`fd.c`). */
+#define UTIME_NOW  ((1l << 30) - 1l)
+#define UTIME_OMIT ((1l << 30) - 2l)
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags);
+int futimens(int fd, const struct timespec times[2]);
 mode_t umask(mode_t mask);
 
 __END_DECLS

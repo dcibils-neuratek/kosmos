@@ -470,6 +470,20 @@ int pthread_attr_setstacksize(pthread_attr_t *a, size_t bytes)
     return 0;
 }
 
+/*
+ * **A thread's stack is its slot.** Each thread is born at the bottom of
+ * a slot of its own, and the slot's place is how the thread finds itself
+ * (`pthread_self`); a stack the caller allocated somewhere else would be
+ * a thread that could not. So a creator may say how much, never where.
+ */
+int pthread_attr_setstack(pthread_attr_t *a, void *lowest, size_t bytes)
+{
+    (void)a;
+    (void)lowest;
+    (void)bytes;
+    return ENOTSUP;
+}
+
 int pthread_attr_getstacksize(const pthread_attr_t *a, size_t *bytes)
 {
     *bytes = a->stacksize != 0 ? a->stacksize : USER_THREAD_SLOT - 4096UL;
@@ -503,6 +517,59 @@ int pthread_getattr_np(pthread_t t, pthread_attr_t *out)
     out->stacksize = t->stack_bytes;
     out->stackaddr = (void *)t->stack_low;
     out->detached = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == DETACHED;
+    return 0;
+}
+
+/*
+ * **Stopped, read and let go, by Nebula** (`pthread.h` has why). By the
+ * index the thread wrote into its own record before running anything of
+ * its caller's (`trampoline`): a collector stops only threads that have
+ * registered themselves with it, and so have run. Nebula's refusals - the
+ * thread is the caller, or a resume has no suspend to undo - are EDEADLK
+ * and EINVAL; a thread that is not there is ESRCH.
+ */
+_Static_assert(sizeof(pthread_regs_np) == sizeof(struct kosmos_regs),
+               "pthread_regs_np is struct kosmos_regs under another name");
+#if defined(__x86_64__)
+_Static_assert(__builtin_offsetof(pthread_regs_np, rsp) == __builtin_offsetof(struct kosmos_regs, rsp)
+               && __builtin_offsetof(pthread_regs_np, rip) == __builtin_offsetof(struct kosmos_regs, rip),
+               "pthread_regs_np's fields where the kernel's are");
+#else
+_Static_assert(__builtin_offsetof(pthread_regs_np, sp) == __builtin_offsetof(struct kosmos_regs, sp)
+               && __builtin_offsetof(pthread_regs_np, pc) == __builtin_offsetof(struct kosmos_regs, pc),
+               "pthread_regs_np's fields where the kernel's are");
+#endif
+
+int pthread_suspend_np(pthread_t t)
+{
+    if (t == NULL) {
+        return ESRCH;
+    }
+    if (t == pthread_self()) {
+        return EDEADLK;
+    }
+    return kosmos_thread_suspend(t->index) == 0 ? 0 : ESRCH;
+}
+
+int pthread_resume_np(pthread_t t)
+{
+    if (t == NULL || t == pthread_self()) {
+        return t == NULL ? ESRCH : EINVAL;
+    }
+    return kosmos_thread_resume(t->index) == 0 ? 0 : EINVAL;
+}
+
+int pthread_getregs_np(pthread_t t, pthread_regs_np *out)
+{
+    struct kosmos_regs regs;
+
+    if (t == NULL || out == NULL) {
+        return t == NULL ? ESRCH : EINVAL;
+    }
+    if (kosmos_thread_regs(t->index, &regs) != 0) {
+        return ESRCH;
+    }
+    memcpy(out, &regs, sizeof(regs));
     return 0;
 }
 
@@ -922,4 +989,43 @@ int pthread_once(pthread_once_t *once, void (*init)(void))
     }
 
     return 0;
+}
+
+/*
+ * **Priorities are Kosmos's bands**, granted by what a program declares
+ * (`kosmos: needs audio`) and never asked for through here. So a thread's
+ * policy reads as SCHED_OTHER at 0, setting that is accepted since it
+ * changes nothing, and anything else is EPERM - POSIX's word for a
+ * priority the caller may not have. WebKit's `Thread::changePriority`
+ * then leaves the thread where it is.
+ */
+int pthread_getschedparam(pthread_t t, int *policy, struct sched_param *param)
+{
+    if (t == NULL || policy == NULL || param == NULL) {
+        return EINVAL;
+    }
+
+    *policy = SCHED_OTHER;
+    param->sched_priority = 0;
+    return 0;
+}
+
+int pthread_setschedparam(pthread_t t, int policy, const struct sched_param *param)
+{
+    if (t == NULL || param == NULL) {
+        return EINVAL;
+    }
+
+    return policy == SCHED_OTHER && param->sched_priority == 0 ? 0 : EPERM;
+}
+
+int sched_get_priority_min(int policy)
+{
+    return policy == SCHED_OTHER || policy == SCHED_FIFO || policy == SCHED_RR
+         ? 0 : (errno = EINVAL, -1);
+}
+
+int sched_get_priority_max(int policy)
+{
+    return sched_get_priority_min(policy);
 }

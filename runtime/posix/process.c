@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/random.h>
+#include <sys/resource.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 
@@ -54,9 +55,74 @@ long sysconf(int name)
 
         return name == _SC_NPROCESSORS_ONLN ? (long)info.cpus_online : (long)info.cpus;
 
+    /* What the machine has, for an allocator or a cache sizing itself -
+     * WTF's `ramSize` (`docs/w4.md` W4c). In pages, as POSIX has them. */
+    case _SC_PHYS_PAGES:
+    case _SC_AVPHYS_PAGES:
+        if (kosmos_sysinfo(&info) != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        return name == _SC_PHYS_PAGES ? (long)info.pages_total : (long)info.pages_free;
+
     default:
         errno = EINVAL;
         return -1;
+    }
+}
+
+/* Nothing measured yet, said as nought (`sys/resource.h` has why). */
+int getrusage(int who, struct rusage *out)
+{
+    if (who != RUSAGE_SELF || out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    return 0;
+}
+
+/*
+ * **How much memory this process holds, in bytes** - a Kosmos extension,
+ * as the `_np` calls are: WebKit's `memoryFootprint`, which on Linux reads
+ * /proc. Nebula's process table says it of every process (`struct
+ * proc_info`: the pages it mapped and everything else it holds), so this
+ * reads the table and finds its own row. 0 when the table does not have
+ * it, which only a process that is ending could see.
+ */
+size_t posix_footprint_np(void)
+{
+    unsigned long room = 64;
+    long self = kosmos_self();
+
+    for (;;) {
+        struct proc_info *rows = malloc(room * sizeof(*rows));
+        long n, i;
+        size_t bytes = 0;
+
+        if (rows == NULL) {
+            return 0;
+        }
+
+        n = kosmos_proctable(rows, room);
+
+        if (n >= (long)room) {          /* perhaps more than fitted */
+            free(rows);
+            room *= 2;
+            continue;
+        }
+
+        for (i = 0; i < n; i++) {
+            if ((long)rows[i].id == self && !rows[i].exited) {
+                bytes = ((size_t)rows[i].pages + rows[i].held) * 4096u;
+                break;
+            }
+        }
+
+        free(rows);
+        return bytes;
     }
 }
 
@@ -118,4 +184,16 @@ int getentropy(void *out, size_t bytes)
 
     arc4random_buf(out, bytes);
     return 0;
+}
+
+/*
+ * **`_exit`: the process ends now.** Nothing is run on the way - no
+ * `atexit`, no stream flushed - which is what POSIX means by it and what
+ * WebKit's `terminateProcess` wants on the way out of a fatal error;
+ * Nebula takes every thread and everything the process held
+ * (`SYS_EXIT`).
+ */
+void _exit(int status)
+{
+    kosmos_exit(status);
 }

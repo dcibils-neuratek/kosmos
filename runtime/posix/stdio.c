@@ -31,6 +31,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define BUFFER 4096
@@ -319,6 +321,90 @@ FILE *tmpfile(void)
 
         f->temporary = strdup(path);
         return f;
+    }
+
+    errno = EEXIST;
+    return NULL;
+}
+
+/*
+ * **`mkstemp` and `mkdtemp`**: the template's last six `X`s replaced by
+ * letters from the machine's entropy (`getentropy`), and the file or
+ * folder made only if nothing has the name - O_EXCL for a file, and
+ * `mkdir` refusing one that exists for a folder. A hundred tries, as
+ * `tmpfile` gives itself, before EEXIST.
+ */
+static int fill_template(char *pattern)
+{
+    static const char letters[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    unsigned char noise[6];
+    size_t n = pattern != NULL ? strlen(pattern) : 0;
+    int i;
+
+    if (n < 6 || strcmp(pattern + n - 6, "XXXXXX") != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (getentropy(noise, sizeof noise) != 0) {
+        return -1;
+    }
+
+    for (i = 0; i < 6; i++) {
+        pattern[n - 6 + i] = letters[noise[i] % (sizeof letters - 1)];
+    }
+
+    return 0;
+}
+
+int mkstemp(char *pattern)
+{
+    return mkostemp(pattern, 0);
+}
+
+/* And with `flags` beside O_RDWR: O_CLOEXEC and O_APPEND, as Linux's. */
+int mkostemp(char *pattern, int flags)
+{
+    int tries;
+
+    if (flags & ~(O_CLOEXEC | O_APPEND)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (tries = 0; tries < 100; tries++) {
+        int fd;
+
+        if (fill_template(pattern) != 0) {
+            return -1;
+        }
+
+        if ((fd = open(pattern, O_RDWR | O_CREAT | O_EXCL | flags, 0600)) >= 0 || errno != EEXIST) {
+            return fd;
+        }
+    }
+
+    errno = EEXIST;
+    return -1;
+}
+
+char *mkdtemp(char *pattern)
+{
+    int tries;
+
+    for (tries = 0; tries < 100; tries++) {
+        if (fill_template(pattern) != 0) {
+            return NULL;
+        }
+
+        if (mkdir(pattern, 0700) == 0) {
+            return pattern;
+        }
+
+        if (errno != EEXIST) {
+            return NULL;
+        }
     }
 
     errno = EEXIST;
@@ -957,4 +1043,31 @@ int fscanf(FILE *f, const char *fmt, ...)
     n = vfscanf(f, fmt, ap);
     va_end(ap);
     return n;
+}
+
+void *memmem(const void *haystack, size_t haystack_len,
+             const void *needle, size_t needle_len)
+{
+    const unsigned char *h = haystack;
+    const unsigned char *n = needle;
+
+    if (needle_len == 0) {
+        return (void *)haystack;
+    }
+
+    while (haystack_len >= needle_len) {
+        const unsigned char *at = memchr(h, n[0], haystack_len - needle_len + 1);
+
+        if (at == NULL) {
+            return NULL;
+        }
+        if (memcmp(at, n, needle_len) == 0) {
+            return (void *)at;
+        }
+
+        haystack_len -= (size_t)(at - h) + 1;
+        h = at + 1;
+    }
+
+    return NULL;
 }

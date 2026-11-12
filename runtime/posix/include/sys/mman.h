@@ -32,6 +32,7 @@ __BEGIN_DECLS
 #define MAP_FIXED     0x10
 #define MAP_ANONYMOUS 0x20
 #define MAP_ANON      MAP_ANONYMOUS
+#define MAP_FILE      0         /* BSD's word for "not anonymous"; mmap of a file is ENODEV */
 #define MAP_NORESERVE 0x4000    /* every reservation is that already */
 
 #define MAP_FAILED ((void *)-1)
@@ -46,6 +47,12 @@ __BEGIN_DECLS
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
 int   munmap(void *addr, size_t length);
 int   mprotect(void *addr, size_t length, int prot);
+
+/* Nothing to write back: no file is mapped (`mman.c`). */
+#define MS_ASYNC      1
+#define MS_INVALIDATE 2
+#define MS_SYNC       4
+int   msync(void *addr, size_t length, int flags);
 int   madvise(void *addr, size_t length, int advice);
 
 __END_DECLS

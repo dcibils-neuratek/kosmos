@@ -468,6 +468,14 @@ SUITES = [
     Suite("x86-icu", ["python3", "tools/run_icu.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **WTF** (`docs/w4.md` W4c): `wtftest.elf`, WebKit's foundation with
+    # bmalloc, ICU and the C++ runtimes - its strings, a hash map, threads,
+    # a thread stopped by Nebula and its registers read, the run loop with
+    # a timer, a thread's own rounding and files through std::filesystem.
+    Suite("arm-wtf", ["python3", "tools/run_wtf.py", ARM, "build/user-test/apps"]),
+    Suite("x86-wtf", ["python3", "tools/run_wtf.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

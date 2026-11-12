@@ -1,0 +1,45 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Kosmos is an operating system WebKit can name (docs/w4.md W4c). WTF's
+platform headers know an OS by the compiler's macros, and the Kosmos
+target's clang defines none, so the build defines __kosmos__ and this
+makes it OS(KOSMOS) - and OS(UNIX), since the POSIX layer supplies the
+interfaces WTF's posix/ files call. WebKit's CMake stops at an OS it does
+not know; CMake's Generic system under the Kosmos toolchain is Kosmos.
+
+diff -ruN a/Source/WTF/wtf/PlatformOS.h b/Source/WTF/wtf/PlatformOS.h
+--- a/Source/WTF/wtf/PlatformOS.h
++++ b/Source/WTF/wtf/PlatformOS.h
+@@ -126,6 +126,11 @@
+ #define WTF_OS_QNX 1
+ #endif
+ 
++/* OS(KOSMOS) - Kosmos, through its POSIX layer for ported code */
++#if defined(__kosmos__)
++#define WTF_OS_KOSMOS 1
++#endif
++
+ /* OS(WINDOWS) - Any version of Windows */
+ #if defined(WIN32) || defined(_WIN32)
+ #define WTF_OS_WINDOWS 1
+@@ -139,6 +144,7 @@
+     || OS(FUCHSIA)          \
+     || OS(HAIKU)            \
+     || OS(HURD)             \
++    || OS(KOSMOS)           \
+     || OS(LINUX)            \
+     || OS(NETBSD)           \
+     || OS(OPENBSD)          \
+diff -ruN a/Source/cmake/WebKitCommon.cmake b/Source/cmake/WebKitCommon.cmake
+--- a/Source/cmake/WebKitCommon.cmake
++++ b/Source/cmake/WebKitCommon.cmake
+@@ -209,6 +209,9 @@
+         set(WTF_OS_WINDOWS 1)
+     elseif (CMAKE_SYSTEM_NAME MATCHES "Fuchsia")
+         set(WTF_OS_FUCHSIA 1)
++    elseif (CMAKE_SYSTEM_NAME STREQUAL "Generic" AND KOSMOS_ROOT)
++        set(WTF_OS_UNIX 1)
++        set(WTF_OS_KOSMOS 1)
+     else ()
+         message(FATAL_ERROR "Unknown OS '${CMAKE_SYSTEM_NAME}'")
+     endif ()

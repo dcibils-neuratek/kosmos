@@ -15,12 +15,19 @@
 # `runtime/posix/` too, as only ported code may - and C++ here is ported
 # code, ICU and WebKit's.
 #
+# **The filesystem on** (`docs/w4.md` W4c): `std::filesystem`, on the
+# POSIX layer's descriptors and the `at` calls, which reach the Storage
+# Kit - WTF's FileSystem is written on it. Without iostreams it copies a
+# file with `sendfile`, which the layer has for that reason.
+#
 # **Off, for now, and each for a reason:**
 # - localization and wide characters: text is UTF-8 bytes here, and
-#   WebKit keeps its own UTF-16;
-# - the filesystem, the random device and the time zone database: each is
-#   a thing a process asks the namespace for, not a path or a device file,
-#   and arrives with the POSIX layer (W3) if WebKit wants it;
+#   WebKit keeps its own UTF-16 - so no iostreams, and no conversion of a
+#   `char8_t` path, which WTF is patched not to ask for (patches 0003,
+#   0004);
+# - the random device and the time zone database: each is a thing a
+#   process asks the namespace for, not a device file, and arrives when a
+#   port wants it;
 
 set(LLVM_ENABLE_RUNTIMES "libcxx;libcxxabi;libunwind" CACHE STRING "")
 set(CMAKE_BUILD_TYPE Release CACHE STRING "")
@@ -35,7 +42,7 @@ set(LIBCXX_HAS_PTHREAD_API ON CACHE BOOL "")
 set(LIBCXX_ENABLE_MONOTONIC_CLOCK ON CACHE BOOL "")
 set(LIBCXX_ENABLE_LOCALIZATION OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_WIDE_CHARACTERS OFF CACHE BOOL "")
-set(LIBCXX_ENABLE_FILESYSTEM OFF CACHE BOOL "")
+set(LIBCXX_ENABLE_FILESYSTEM ON CACHE BOOL "")
 set(LIBCXX_ENABLE_RANDOM_DEVICE OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_TIME_ZONE_DATABASE OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_VENDOR_AVAILABILITY_ANNOTATIONS OFF CACHE BOOL "")

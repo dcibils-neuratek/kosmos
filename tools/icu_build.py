@@ -24,6 +24,7 @@ shipped: nothing under `build/upstream/icu/` is edited.
 
 import concurrent.futures
 import os
+import shutil
 import subprocess
 import sys
 
@@ -193,6 +194,41 @@ def main():
     subprocess.run(["/usr/bin/clang" if arch == "host" else LLVM + "/clang"]
                    + ([] if arch == "host" else [base[0]])
                    + ["-c", asm, "-o", os.path.join(out, "icudata.o")], check=True)
+
+    #
+    # And as ICU is when installed, which is how a port's build looks for
+    # it (CMake's `FindICU`, WebKit's): one `include/unicode/` with both
+    # parts' public headers, and the data as a library of its own,
+    # `libicudata.a`.
+    #
+    unicode = os.path.join(out, "include", "unicode")
+    if os.path.isdir(unicode):
+        shutil.rmtree(unicode)
+    os.makedirs(unicode)
+    for part in ("common", "i18n"):
+        here = os.path.join(source, part, "unicode")
+        for name in os.listdir(here):
+            shutil.copy2(os.path.join(here, name), unicode)
+    # **And the defines it was built with, written at the top of
+    # `uconfig.h`**, as ICU's own `configure` asks of an install whose
+    # options a caller must share (its `uconfig.h.prepend`): without them a
+    # port compiled against these headers calls `u_strToUpper_79` into a
+    # library that has `u_strToUpper`.
+    config = os.path.join(unicode, "uconfig.h")
+    with open(config) as f:
+        body = f.read()
+    with open(config, "w") as f:
+        f.write("/* ICU customizations (tools/icu_build.py): the defines this ICU was\n"
+                " * built with, as ICU's install prepends them. */\n")
+        for flag in DEFINES:
+            name, _, value = flag[2:].partition("=")
+            f.write("#ifndef %s\n#define %s %s\n#endif\n" % (name, name, value or "1"))
+        f.write("\n" + body)
+    data_lib = os.path.join(out, "libicudata.a")
+    if os.path.exists(data_lib):
+        os.remove(data_lib)
+    subprocess.run([LLVM + "/llvm-ar", "rcs", data_lib, os.path.join(out, "icudata.o")],
+                   check=True)
 
     with open(stamp, "w") as f:
         f.write(said)

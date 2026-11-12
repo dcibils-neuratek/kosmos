@@ -113,6 +113,21 @@ struct tm *localtime(const time_t *t)
 }
 
 /*
+ * C23's own-buffer versions, for a caller with threads (WTF's dates,
+ * `docs/w4.md` W4c), and `timegm`, the inverse in UTC - which here is
+ * `mktime`, local time being UTC.
+ */
+struct tm *gmtime_r(const time_t *t, struct tm *out)
+{
+    return broken_down(*t, out);
+}
+
+struct tm *localtime_r(const time_t *t, struct tm *out)
+{
+    return broken_down(*t, out);
+}
+
+/*
  * The inverse, and it normalises: 32 January is 1 February, minute 61 is
  * the next hour, and the fields are written back that way with the day of
  * the week filled in - which is how a caller asks "what day was that".
@@ -131,6 +146,11 @@ time_t mktime(struct tm *tm)
         return (time_t)-1;
     }
     return t;
+}
+
+time_t timegm(struct tm *tm)
+{
+    return mktime(tm);
 }
 
 static const char *const day_names[7] = {

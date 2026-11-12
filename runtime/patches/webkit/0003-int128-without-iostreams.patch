@@ -1,0 +1,92 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Int128 without iostreams (docs/w4.md W4c). WTF's 128-bit integers can be
+printed to a std::ostream, and that needs iostreams, which a libc++ built
+without localisation does not have - Kosmos's (runtime/cxx/runtimes.cmake).
+WebKit prints them through its own PrintStream, which is untouched; only
+the std::ostream operators and their formatter are left out, and only
+where the library says it has no localisation.
+
+--- a/Source/WTF/wtf/Int128.h
++++ b/Source/WTF/wtf/Int128.h
+@@ -41,6 +41,14 @@
+ #include <wtf/ExportMacros.h>
+ #include <wtf/Platform.h>
+ 
++// Printing to a std::ostream needs iostreams, which a libc++ built
++// without localisation does not have (Kosmos's: runtime/cxx/runtimes.cmake).
++#if !defined(_LIBCPP_VERSION) || _LIBCPP_HAS_LOCALIZATION
++#define WTF_INT128_HAS_STREAMS 1
++#else
++#define WTF_INT128_HAS_STREAMS 0
++#endif
++
+ #if COMPILER(MSVC)
+ // In very old versions of MSVC and when the /Zc:wchar_t flag is off, wchar_t is
+ // a typedef for unsigned short.  Otherwise wchar_t is mapped to the __wchar_t
+@@ -207,7 +215,9 @@
+ };
+ 
+ // allow UInt128Impl to be logged
++#if WTF_INT128_HAS_STREAMS
+ WTF_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os, UInt128Impl v);
++#endif
+ 
+ // TODO(strel) add operator>>(std::istream&, UInt128Impl)
+ 
+@@ -406,7 +416,9 @@
+ #endif  // byte order
+ };
+ 
++#if WTF_INT128_HAS_STREAMS
+ WTF_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os, Int128Impl v);
++#endif
+ 
+ // TODO(absl-team) add operator>>(std::istream&, Int128Impl)
+ 
+--- a/Source/WTF/wtf/Int128.cpp
++++ b/Source/WTF/wtf/Int128.cpp
+@@ -17,9 +17,11 @@
+ 
+ #include <stddef.h>
+ #include <cassert>
++#if WTF_INT128_HAS_STREAMS
+ #include <iomanip>
+ #include <ostream>  // NOLINT(readability/streams)
+ #include <sstream>
++#endif // WTF_INT128_HAS_STREAMS
+ #include <string>
+ #include <type_traits>
+ #include <wtf/MathExtras.h>
+@@ -127,6 +129,7 @@
+   return remainder;
+ }
+ 
++#if WTF_INT128_HAS_STREAMS
+ namespace {
+ 
+ static std::string UInt128ToFormattedString(UInt128Impl v, std::ios_base::fmtflags flags) {
+@@ -196,6 +199,7 @@
+ 
+   return os << rep;
+ }
++#endif // WTF_INT128_HAS_STREAMS
+ 
+ namespace {
+ 
+@@ -255,6 +259,7 @@
+                     UInt128Low64(remainder));
+ }
+ 
++#if WTF_INT128_HAS_STREAMS
+ std::ostream& operator<<(std::ostream& os, Int128Impl v) {
+   std::ios_base::fmtflags flags = os.flags();
+   std::string rep;
+@@ -299,6 +304,7 @@
+ 
+   return os << rep;
+ }
++#endif // WTF_INT128_HAS_STREAMS
+ 
+ void printInternal(PrintStream& out, UInt128 value)
+ {

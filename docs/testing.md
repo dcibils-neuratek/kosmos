@@ -31897,3 +31897,70 @@ same on AArch64, which builds and links; it runs when ARM's tests resume.
 bit - every piece named an error instead of an answer,
 *U_INVALID_FORMAT_ERROR* for the normalisers and collators and
 *U_MISSING_RESOURCE_ERROR* for the rest - and with the data back it passed.
+
+## 18.778 WTF and bmalloc, on Kosmos (JetSki W4c)
+
+`docs/w4.md` W4c. WebKitGTK 2.54.2's WTF and bmalloc, compiled for each
+processor by `tools/webkit_build.py`. The script applies five patches to a
+copy of the release, which is never edited itself, and CMake configures
+that copy with `runtime/cxx/jsc.cmake`. On the way, libc++ gained
+`std::filesystem`. The POSIX layer gained:
+
+- the `at` calls: `openat`, `unlinkat`, `fdopendir`, `fchmodat`;
+- `sendfile`;
+- the temporary-name calls: `mkstemp`, `mkostemp`, `mkdtemp`;
+- `msync` and `_exit`;
+- `sched_param`;
+- a memory footprint read from Nebula's process table;
+- a set of calls named and refused with their reasons: file times, links,
+  `statvfs`, `flock`, and a stack the caller placed.
+
+The libc gained `strnlen` and the rounding mode.
+
+**Test** (`x86-wtf`, `tools/run_wtf.py`): `wtftest.elf` run from a /Home
+of its own, and its sentence held to the one it must say:
+
+    wtf text=25/26 KOSMOS RUNS WEBKIT 382 map=1000/1000/332833500
+    threads=400000 suspend=moved/held/sp-in-stack/moved
+    runloop=abcxt/waited rounding=down/nearest-here
+    files=made/30/copied/30/same/a,two.txt/dir/temporary/removed
+
+Piece by piece:
+
+- **text:** a UTF-8 string is 25 UTF-16 units and 26 bytes, upper-cased
+  and joined with a number.
+- **map:** a thousand keys, all found, their squares summed.
+- **threads:** four WTF threads counting into one atomic.
+- **suspend:** a spinning WTF thread is seen moving, suspended by Nebula
+  (its counter stands still for 30 ms), its stack pointer read inside its
+  own stack, then let go and seen moving again.
+- **runloop:** three functions queued, a fourth sent from another thread,
+  which sets a 30 ms timer. The order says first come first served and
+  that a wake crosses threads.
+- **rounding:** a thread rounds 1/10 down, and the thread that started it
+  still rounds to nearest.
+- **files:** WTF's FileSystem, and so std::filesystem on the POSIX layer.
+  A tree is made, a file written and copied, the folder listed, a
+  temporary file made, and the whole tree removed through `openat`,
+  `fdopendir` and `unlinkat`.
+
+The 65.6 MB image runs it in 0.4 s under TCG. `arm-wtf` passes on AArch64
+too (0.6 s); it runs in the gate when ARM's tests resume.
+
+**Controls**, each a build of its own:
+
+- Suspension and register read as no-ops, so the thread never stops:
+  `suspend=moved/ran/sp-elsewhere/moved`.
+- `fesetround` changing nothing: `rounding=same`.
+- `unlinkat` refusing: `files=.../left`.
+
+All three failed the suite; with the code back it passed. A first control
+that broke all three at once ended the process instead (code 70), WTF
+refusing a register read of a thread that was never stopped. So that
+control was split, and each piece was seen to fail on its own.
+
+**A test that was wrong first**: the rounding piece divided 1 by 3, then 2
+by 3, and both passed through a working `fesetround` as `same`. Both of
+those quotients have their nearest double *below* them, so rounding down
+gives the same number. Python's exact fractions say so in one line. 1/10's
+nearest lies above it, and that one tells the two modes apart.

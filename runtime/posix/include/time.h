@@ -19,6 +19,15 @@ __BEGIN_DECLS
  * nought, since nothing interrupts a sleep here (there are no signals). */
 int nanosleep(const struct timespec *wanted, struct timespec *left);
 
+/*
+ * The time a process, or a thread, has spent running - named so ported
+ * code compiles, and refused by `clock_gettime` with EINVAL: Nebula counts
+ * each thread's ticks and does not yet hand a thread its own (`roadmap.md`,
+ * W4c's follow-ups). JavaScriptCore's watchdog is what asks.
+ */
+#define CLOCK_PROCESS_CPUTIME_ID 2
+#define CLOCK_THREAD_CPUTIME_ID  3
+
 __END_DECLS
 
 #endif /* POSIX_TIME_H */

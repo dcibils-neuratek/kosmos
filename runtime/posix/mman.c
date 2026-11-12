@@ -204,3 +204,22 @@ int madvise(void *addr, size_t length, int advice)
         return -1;
     }
 }
+
+/*
+ * **`msync` has nothing to write.** No file is ever mapped here (`mmap`
+ * of one is ENODEV), so every page a process has is its own memory, and
+ * that is what Linux does with `msync` on anonymous memory too: nothing,
+ * successfully. The address is still held to a page, as POSIX asks.
+ */
+int msync(void *addr, size_t length, int flags)
+{
+    (void)length;
+
+    if (!aligned(addr) || (flags & ~(MS_ASYNC | MS_SYNC | MS_INVALIDATE)) != 0
+        || ((flags & MS_ASYNC) && (flags & MS_SYNC))) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return 0;
+}

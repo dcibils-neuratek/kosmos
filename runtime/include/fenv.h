@@ -11,10 +11,15 @@ __BEGIN_DECLS
  * LLVM's shared number parsing - C++'s `from_chars` - reads to know how a
  * result is rounded.
  *
- * The functions that would change the environment are not declared: the
- * mode is the one every process is born with, round to nearest, and
- * nothing here changes it. A port that calls `fesetround` fails at the
- * link and says so.
+ * And the rounding mode, read and set (`fenv.c`) - since W4c, when
+ * WebKit's SIMD library asked: every thread is born rounding to nearest,
+ * and the mode is the thread's own, because Nebula saves FPCR and FPSR
+ * (`arch/aarch64/fp.S`) and MXCSR and the x87 control word (`fxsave`,
+ * `arch/x86_64/fp.c`) with its registers. This said the functions were
+ * not declared, so that a port calling one failed at the link; they were
+ * left out because nothing had asked, not because one thread's mode could
+ * reach another, which it cannot. The exception flags are named and not
+ * yet read or cleared.
  */
 #if defined(__x86_64__)
 /* MXCSR's and the x87 status word's bits (Intel SDM vol. 1, 8.1.3, 10.2.3). */
@@ -55,6 +60,11 @@ typedef struct {
 #endif
 
 #define FE_ALL_EXCEPT   (FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INEXACT)
+
+/* This thread's rounding mode: one of the four FE_ names. `fesetround`
+ * is 0, or nonzero for anything else, which changes nothing. */
+int fegetround(void);
+int fesetround(int mode);
 
 __END_DECLS
 

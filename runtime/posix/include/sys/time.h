@@ -18,6 +18,9 @@ struct timeval {
 
 int gettimeofday(struct timeval *out, void *zone);
 
+/* A file's times are the server's: ENOTSUP (`fd.c`). */
+int utimes(const char *path, const struct timeval times[2]);
+
 __END_DECLS
 
 #endif /* SYS_TIME_H */

@@ -1,0 +1,251 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Threads stopped by Nebula, not by a signal (docs/w4.md W4c). On a POSIX
+system WTF suspends a thread for the collector by sending it SIGUSR1 and
+copying its registers in the handler; Kosmos has no signals, and Nebula
+suspends a thread of one's own process, reads its registers and lets it
+go (SYS_THREAD_SUSPEND, docs/w2.md part 3), which the POSIX layer offers
+as pthread_suspend_np, pthread_getregs_np and pthread_resume_np. So
+OS(KOSMOS) takes Darwin's shape - the kernel stops the thread - with
+those calls, installs no handler, has no Thread::signal, and keeps
+WTF's signal-handler table in kosmos/SignalsKosmos.cpp, where nothing
+is ever delivered to it.
+
+diff -ruN a/Source/WTF/wtf/PlatformJSCOnly.cmake b/Source/WTF/wtf/PlatformJSCOnly.cmake
+--- a/Source/WTF/wtf/PlatformJSCOnly.cmake
++++ b/Source/WTF/wtf/PlatformJSCOnly.cmake
+@@ -43,6 +43,11 @@
+         unix/LanguageUnix.cpp
+         unix/LoggingUnix.cpp
+     )
++    if (WTF_OS_KOSMOS)
++        list(APPEND WTF_SOURCES
++            kosmos/SignalsKosmos.cpp
++        )
++    endif ()
+     if (WTF_OS_FUCHSIA)
+         list(APPEND WTF_SOURCES
+             fuchsia/CPUTimeFuchsia.cpp
+diff -ruN a/Source/WTF/wtf/PlatformRegisters.h b/Source/WTF/wtf/PlatformRegisters.h
+--- a/Source/WTF/wtf/PlatformRegisters.h
++++ b/Source/WTF/wtf/PlatformRegisters.h
+@@ -39,6 +39,8 @@
+ typedef ucontext_t mcontext_t;
+ #elif OS(QNX)
+ #include <ucontext.h>
++#elif OS(KOSMOS)
++#include <pthread.h>
+ #else
+ #include <sys/ucontext.h>
+ #endif
+@@ -72,6 +74,11 @@
+ 
+ using PlatformRegisters = CONTEXT;
+ 
++#elif OS(KOSMOS)
++
++// As the thread last entered Nebula, read by pthread_getregs_np.
++using PlatformRegisters = pthread_regs_np;
++
+ #elif HAVE(MACHINE_CONTEXT)
+ 
+ struct PlatformRegisters {
+diff -ruN a/Source/WTF/wtf/Threading.h b/Source/WTF/wtf/Threading.h
+--- a/Source/WTF/wtf/Threading.h
++++ b/Source/WTF/wtf/Threading.h
+@@ -57,7 +57,7 @@
+ #include <wtf/WordLock.h>
+ #include <wtf/text/AtomStringTable.h>
+ 
+-#if USE(PTHREADS) && !OS(DARWIN)
++#if USE(PTHREADS) && !OS(DARWIN) && !OS(KOSMOS)
+ #include <signal.h>
+ #endif
+ 
+@@ -190,7 +190,7 @@
+     WTF_EXPORT_PRIVATE void resume(const ThreadSuspendLocker&);
+     WTF_EXPORT_PRIVATE size_t getRegisters(const ThreadSuspendLocker&, PlatformRegisters&);
+ 
+-#if USE(PTHREADS)
++#if USE(PTHREADS) && !OS(KOSMOS)
+ #if OS(LINUX)
+     WTF_EXPORT_PRIVATE static ThreadIdentifier currentID();
+     ThreadIdentifier id() const { return m_id; }
+@@ -326,7 +326,7 @@
+     void establishPlatformSpecificHandle(PlatformThreadHandle, ThreadIdentifier);
+ #endif
+ 
+-#if USE(PTHREADS) && !OS(DARWIN)
++#if USE(PTHREADS) && !OS(DARWIN) && !OS(KOSMOS)
+     static void signalHandlerSuspendResume(int, siginfo_t*, void* ucontext);
+ #endif
+ 
+diff -ruN a/Source/WTF/wtf/posix/ThreadingPOSIX.cpp b/Source/WTF/wtf/posix/ThreadingPOSIX.cpp
+--- a/Source/WTF/wtf/posix/ThreadingPOSIX.cpp
++++ b/Source/WTF/wtf/posix/ThreadingPOSIX.cpp
+@@ -75,7 +75,9 @@
+ 
+ #if !OS(DARWIN) && OS(UNIX)
+ 
++#if !OS(KOSMOS)
+ #include <semaphore.h>
++#endif
+ #include <sys/mman.h>
+ #include <unistd.h>
+ #include <pthread.h>
+@@ -99,7 +101,7 @@
+ 
+ Thread::~Thread() = default;
+ 
+-#if !OS(DARWIN)
++#if !OS(DARWIN) && !OS(KOSMOS)
+ class Semaphore final {
+     WTF_MAKE_NONCOPYABLE(Semaphore);
+     WTF_DEPRECATED_MAKE_FAST_ALLOCATED(Semaphore);
+@@ -190,10 +192,14 @@
+     globalSemaphoreForSuspendResume->post();
+ }
+ 
+-#endif // !OS(DARWIN)
++#endif // !OS(DARWIN) && !OS(KOSMOS)
+ 
+ void Thread::initializePlatformThreading()
+ {
++#if OS(KOSMOS)
++    // Threads are stopped by Nebula, not by a signal: nothing to install.
++    g_wtfConfig.isThreadSuspendResumeSignalConfigured = true;
++#else
+     if (!g_wtfConfig.isUserSpecifiedThreadSuspendResumeSignalConfigured) {
+         g_wtfConfig.sigThreadSuspendResume = SIGUSR1;
+         if (const char* string = getenv("JSC_SIGNAL_FOR_GC")) {
+@@ -236,6 +242,7 @@
+     bool signalIsInstalled = attemptToSetSignal(g_wtfConfig.sigThreadSuspendResume);
+     RELEASE_ASSERT(signalIsInstalled);
+ #endif
++#endif // OS(KOSMOS)
+ }
+ 
+ #if OS(LINUX)
+@@ -247,7 +254,7 @@
+ 
+ void Thread::initializeCurrentThreadEvenIfNonWTFCreated()
+ {
+-#if !OS(DARWIN)
++#if !OS(DARWIN) && !OS(KOSMOS)
+     RELEASE_ASSERT(g_wtfConfig.isThreadSuspendResumeSignalConfigured);
+     sigset_t mask;
+     sigemptyset(&mask);
+@@ -563,6 +570,7 @@
+     return initializeTLS(WTF::move(thread));
+ }
+ 
++#if !OS(KOSMOS)
+ bool Thread::signal(int signalNumber)
+ {
+     Locker locker { m_mutex };
+@@ -571,6 +579,7 @@
+     int errNo = pthread_kill(m_handle, signalNumber);
+     return !errNo; // A 0 errNo means success.
+ }
++#endif // !OS(KOSMOS)
+ 
+ auto Thread::suspend(const ThreadSuspendLocker&) -> Expected<void, PlatformSuspendError>
+ {
+@@ -580,6 +589,11 @@
+     if (result != KERN_SUCCESS)
+         return makeUnexpected(result);
+     return { };
++#elif OS(KOSMOS)
++    if (int result = pthread_suspend_np(m_handle))
++        return makeUnexpected(result);
++    ++m_suspendCount;
++    return { };
+ #else
+     if (!m_suspendCount) {
+         targetThread.store(this);
+@@ -606,6 +620,9 @@
+ {
+ #if OS(DARWIN)
+     thread_resume(m_platformThread);
++#elif OS(KOSMOS)
++    pthread_resume_np(m_handle);
++    --m_suspendCount;
+ #else
+     if (m_suspendCount == 1) {
+         // When allowing sigThreadSuspendResume interrupt in the signal handler by sigsuspend and SigThreadSuspendResume is actually issued,
+@@ -669,6 +686,11 @@
+         CRASH_WITH_INFO(result, KERN_SUCCESS);
+     }
+     return metadata.userCount * sizeof(uintptr_t);
++#elif OS(KOSMOS)
++    ASSERT_WITH_MESSAGE(m_suspendCount, "We can get registers only if the thread is suspended.");
++    int result = pthread_getregs_np(m_handle, &registers);
++    RELEASE_ASSERT(!result);
++    return sizeof(PlatformRegisters);
+ #else
+     ASSERT_WITH_MESSAGE(m_suspendCount, "We can get registers only if the thread is suspended.");
+     ASSERT(m_platformRegisters);
+diff -ruN a/Source/WTF/wtf/threads/Signals.cpp b/Source/WTF/wtf/threads/Signals.cpp
+--- a/Source/WTF/wtf/threads/Signals.cpp
++++ b/Source/WTF/wtf/threads/Signals.cpp
+@@ -26,7 +26,7 @@
+ #include "config.h"
+ #include <wtf/threads/Signals.h>
+ 
+-#if OS(UNIX)
++#if OS(UNIX) && !OS(KOSMOS)
+ 
+ #if HAVE(MACH_EXCEPTIONS)
+ extern "C" {
+@@ -594,4 +594,4 @@
+ 
+ } // namespace WTF
+ 
+-#endif // OS(UNIX)
++#endif // OS(UNIX) && !OS(KOSMOS)
+diff -ruN a/Source/WTF/wtf/threads/Signals.h b/Source/WTF/wtf/threads/Signals.h
+--- a/Source/WTF/wtf/threads/Signals.h
++++ b/Source/WTF/wtf/threads/Signals.h
+@@ -31,7 +31,7 @@
+ #include <wtf/Lock.h>
+ #include <wtf/PlatformRegisters.h>
+ 
+-#if OS(UNIX)
++#if OS(UNIX) && !OS(KOSMOS)
+ 
+ #include <signal.h>
+ #include <tuple>
+@@ -39,13 +39,13 @@
+ #if HAVE(MACH_EXCEPTIONS)
+ #include <mach/exception_types.h>
+ #endif
+-#endif // OS(UNIX)
++#endif // OS(UNIX) && !OS(KOSMOS)
+ 
+ namespace WTF {
+ 
+ // Note that SIGUSR1 is used in Pthread-based ports except for Darwin to suspend and resume threads.
+ enum class Signal {
+-#if OS(UNIX)
++#if OS(UNIX) && !OS(KOSMOS)
+     // Usr will always chain to any non-default handler install before us. Since there is no way to know
+     // if a signal was intended exclusively for us.
+     Usr,
+@@ -61,7 +61,7 @@
+     AccessFault, // For posix this is both SIGSEGV and SIGBUS
+     NumberOfSignals = AccessFault + 2, // AccessFault is really two signals.
+     Unknown = NumberOfSignals
+-#else // not OS(UNIX)
++#else // not OS(UNIX), or OS(KOSMOS)
+     FloatingPoint,
+     IllegalInstruction,
+     AccessFault,
+@@ -123,7 +123,7 @@
+     std::array<uint8_t, numberOfSignals> numberOfHandlers;
+     std::array<std::array<SignalHandlerMemory, maxNumberOfHandlers>, numberOfSignals> handlers;
+ 
+-#if OS(UNIX)
++#if OS(UNIX) && !OS(KOSMOS)
+     std::array<struct sigaction, numberOfSignals> oldActions;
+ #endif
+ };

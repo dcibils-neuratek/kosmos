@@ -10096,7 +10096,40 @@ the applications make the system useful, and is not pulled forward.
   **W4b, ICU, built** (18.777): ICU 79.1's `common` and `i18n` compiled
   by `tools/icu_build.py`, its data carried in the image, and answering
   on Kosmos exactly as on this Mac - Swedish's `ä` after `z`, Thai broken
-  by its dictionary, French's narrow space. Next, W4c, WTF and bmalloc.
+  by its dictionary, French's narrow space.
+  **W4c, WTF and bmalloc, built** (18.778):
+  - WebKitGTK 2.54.2's WTF and bmalloc for both processors, by
+    `tools/webkit_build.py`, from five patches applied to a copy of the
+    release.
+  - A thread is suspended by Nebula and its registers read, with no
+    signal anywhere.
+  - libc++ has `std::filesystem`, on POSIX `at` calls and `sendfile`.
+  - `wtftest.elf`'s sentence passes on x86-64 and AArch64, and each of
+    its three controls bites.
+
+  Next, **W4d**: JavaScriptCore with the LLInt and `jsc.elf`.
+
+  **Follow-ups from W4c**, each a refusal that is honest today and a
+  feature later:
+  - *A thread's own CPU time*: Nebula counts every thread's ticks and hands
+    none to the thread, so `CLOCK_THREAD_CPUTIME_ID`,
+    `CLOCK_PROCESS_CPUTIME_ID` and `getrusage` say nothing yet. That is
+    what JavaScriptCore's watchdog will want.
+  - *How much room a file system has*: a Storage Kit request, behind
+    `statvfs`.
+  - *Setting a file's times*: `utimensat`.
+  - *`chdir`*: it needs the Storage Kit's working directory to be
+    changeable under threads.
+  - *An environment for ported code*: TMPDIR, HOME. Patch 0004 names
+    `/Temporary` because there is none, and libc++'s
+    `temp_directory_path` still looks for `/tmp`.
+  - *libpas on W2's reservations* in place of the system's malloc under
+    bmalloc, when a measurement says the allocator is where the time
+    goes.
+  - *A process's own row without the whole table*:
+    `posix_footprint_np` reads every process's row to find its own. And
+    `SYS_PROCTABLE` answers any process at all, which wants looking at
+    against *what you were not handed, you cannot reach*.
   **A follow-up from W4b**: *`arm-sandbox` miscounted once*. In the gate
   for 0.11.382 every one of its 219 lines is in the log, the console
   test's coloured block among them, and the harness counted 218; alone it

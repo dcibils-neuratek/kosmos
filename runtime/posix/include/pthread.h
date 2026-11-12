@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
+#include <sched.h>
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
@@ -103,10 +104,42 @@ int pthread_attr_getstacksize(const pthread_attr_t *a, size_t *bytes);
 int pthread_attr_setdetachstate(pthread_attr_t *a, int state);
 int pthread_attr_getdetachstate(const pthread_attr_t *a, int *state);
 int pthread_attr_getstack(const pthread_attr_t *a, void **lowest, size_t *bytes);
+int pthread_attr_setstack(pthread_attr_t *a, void *lowest, size_t bytes);   /* ENOTSUP */
 
 /* Where a thread's stack is, which JavaScriptCore's collector asks
  * before it scans one. */
 int pthread_getattr_np(pthread_t t, pthread_attr_t *out);
+
+/* SCHED_OTHER at 0, and nothing else may be set (`pthread.c`). */
+int pthread_getschedparam(pthread_t t, int *policy, struct sched_param *param);
+int pthread_setschedparam(pthread_t t, int policy, const struct sched_param *param);
+
+/*
+ * **A thread of this process stopped, its registers read, and let go**,
+ * for the same collector (`docs/w4.md` W4c). Where a POSIX system sends
+ * the thread a signal and reads its registers in the handler, Kosmos has no
+ * signals and asks Nebula (`SYS_THREAD_SUSPEND`, `docs/w2.md` part 3).
+ * FreeBSD's names for the first two; suspends count, and a thread cannot
+ * suspend itself. Each returns 0 or an error number.
+ *
+ * The registers are the kernel's `struct kosmos_regs`, as the thread last
+ * entered the kernel, under a name a port can include - `pthread.c` holds
+ * the two to one layout.
+ */
+typedef struct {
+#if defined(__x86_64__)
+    uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp;
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
+    uint64_t rip, rflags;
+#else
+    uint64_t x[31];
+    uint64_t sp, pc, pstate;
+#endif
+} pthread_regs_np;
+
+int pthread_suspend_np(pthread_t t);
+int pthread_resume_np(pthread_t t);
+int pthread_getregs_np(pthread_t t, pthread_regs_np *out);
 
 int pthread_mutex_init(pthread_mutex_t *m, const pthread_mutexattr_t *a);
 int pthread_mutex_destroy(pthread_mutex_t *m);

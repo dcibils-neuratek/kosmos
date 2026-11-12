@@ -1,0 +1,39 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Paths and the temporary folder (docs/w4.md W4c). WTF makes a
+std::filesystem::path from a std::u8string, which libc++ converts through
+its codecvt - absent from a libc++ built without localisation, Kosmos's.
+A path here is UTF-8 as the native string already is, so it is made from
+the bytes as they stand. And WTF's temporary files go where TMPDIR says,
+or /tmp; a Kosmos process has no environment, and its namespace keeps
+temporary files in /Temporary.
+
+--- a/Source/WTF/wtf/FileSystem.cpp
++++ b/Source/WTF/wtf/FileSystem.cpp
+@@ -58,7 +58,12 @@
+ 
+ static std::filesystem::path toStdFileSystemPath(StringView path)
+ {
+-#if HAVE(MISSING_U8STRING)
++#if OS(KOSMOS)
++    // A path is UTF-8 bytes on Kosmos, so it is the native string as it
++    // stands - and libc++ built without localisation has no conversion
++    // from char8_t to offer.
++    return std::filesystem::path(path.utf8().data());
++#elif HAVE(MISSING_U8STRING)
+ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
+     return std::filesystem::u8path(path.utf8().data());
+ ALLOW_DEPRECATED_DECLARATIONS_END
+--- a/Source/WTF/wtf/posix/FileSystemPOSIX.cpp
++++ b/Source/WTF/wtf/posix/FileSystemPOSIX.cpp
+@@ -154,6 +154,10 @@
+ {
+ #if USE(GLIB)
+     return g_get_tmp_dir();
++#elif OS(KOSMOS)
++    // Every Kosmos namespace has its temporary files in /Temporary, and a
++    // process has no environment to say TMPDIR.
++    return "/Temporary";
+ #elif OS(HAIKU)
+     static char buffer[B_PATH_NAME_LENGTH];
+     static std::once_flag once;

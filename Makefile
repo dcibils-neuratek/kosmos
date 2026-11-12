@@ -574,6 +574,7 @@ USER_LIBC := runtime/libc/string.c \
              runtime/libc/malloc.c \
              runtime/libc/tls.c \
              runtime/libc/math.c \
+             runtime/libc/fenv.c \
              runtime/libc/snprintf.c \
              runtime/libc/strtod.c \
              runtime/libc/stdio.c \
@@ -3430,7 +3431,7 @@ CXXFLAGS_KOSMOS := --target=$(CXXRT_TRIPLE) -std=c++20 -O2 -g \
                    -isystem runtime/posix/include \
                    -isystem $(shell /opt/homebrew/opt/llvm/bin/clang -print-resource-dir)/include \
                    -isystem runtime/include -isystem user/include \
-                   -DKOSMOS_USER -DKOSMOS_USER_BASE=$(USER_BASE)
+                   -DKOSMOS_USER -DKOSMOS_USER_BASE=$(USER_BASE) -D__kosmos__
 
 $(UBUILD)/%.cpp.o: %.cpp $(CXXRT)/.built
 	@mkdir -p $(dir $@)
@@ -3490,6 +3491,59 @@ $(UBUILD)/apps/icutest.elf: $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) $(ICU_LIB
 	    || { echo "apps: icutest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_icutest_kit$$' \
 	    || { echo "apps: the system's image has ICU's test kit in it"; rm -f $@; exit 1; }
+
+#
+# **WTF and bmalloc** (`docs/w4.md` W4c): WebKit's foundation, from the
+# release fetched and held to its sum, with `runtime/patches/webkit/`
+# applied - `tools/webkit_build.py` cuts the copy, configures it with CMake
+# and has ninja build it, each step only when what it stands on moved, so
+# this rule runs the script whenever anything it reads is newer and the
+# script decides how little to do.
+#
+WEBKIT_DIR  := build/webkit/$(ARCH)
+WEBKIT_LIBS := $(WEBKIT_DIR)/lib/libWTF.a $(WEBKIT_DIR)/lib/libbmalloc.a
+
+$(WEBKIT_DIR)/.built: tools/webkit_build.py tools/upstream.py runtime/cxx/jsc.cmake \
+                      runtime/cxx/kosmos.cmake $(CXXRT)/.built $(ICU_DIR)/.built \
+                      $(wildcard runtime/patches/webkit/*.patch) \
+                      $(shell find runtime/ports/webkit -type f 2>/dev/null) \
+                      $(wildcard runtime/include/*.h runtime/include/sys/*.h \
+                                 runtime/posix/include/*.h runtime/posix/include/*/*.h)
+	@mkdir -p $(WEBKIT_DIR)
+	@python3 tools/webkit_build.py $(ARCH) > build/webkit-$(ARCH).log 2>&1 \
+	    || { tail -60 build/webkit-$(ARCH).log; exit 1; }
+	@touch $@
+
+$(WEBKIT_LIBS): $(WEBKIT_DIR)/.built
+
+#
+# **WTF's test image**: `wtftest.cpp` and its door, the POSIX layer, WTF,
+# bmalloc, ICU - which WTF's text calls - and the C++ runtimes, one group.
+# Compiled as WTF was: C++23, no exceptions, no RTTI, libc++'s hardening,
+# and the build's own `cmakeconfig.h` first, so the headers and the
+# library agree on every ENABLE_. WTF's headers are system headers, so
+# their warnings are WebKit's.
+#
+WTFTEST_OBJS := $(UBUILD)/user/kits/wtftest/wtftest.cpp.o $(UBUILD)/user/kits/wtftest/wtftest_kit.c.o
+
+$(UBUILD)/user/kits/wtftest/wtftest.cpp.o: user/kits/wtftest/wtftest.cpp $(WEBKIT_DIR)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
+	    -include cstdlib -include $(WEBKIT_DIR)/cmakeconfig.h -DBUILDING_WITH_CMAKE=1 \
+	    -DSTATICALLY_LINKED_WITH_WTF -DSTATICALLY_LINKED_WITH_bmalloc \
+	    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -DNDEBUG \
+	    -isystem build/webkit/src/Source/WTF -isystem $(WEBKIT_DIR)/bmalloc/Headers \
+	    -isystem $(ICU_DIR)/include -c $< -o $@
+
+$(UBUILD)/apps/wtftest.elf: $(USER_OBJS) $(WTFTEST_OBJS) $(POSIX_OBJS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WTFTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_wtftest_kit$$' \
+	    || { echo "apps: wtftest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_wtftest_kit$$' \
+	    || { echo "apps: the system's image has WTF's test kit in it"; rm -f $@; exit 1; }
 
 #
 # **The POSIX layer** (`docs/w3.md`): `runtime/posix/`, for ported code only.
@@ -3691,7 +3745,7 @@ apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
-            $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/doom.elf \
+            $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
 

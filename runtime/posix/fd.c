@@ -38,6 +38,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <sys/sendfile.h>
+#include <sys/statvfs.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "kosmos.h"
@@ -980,6 +984,255 @@ int rename(const char *from, const char *to)
 
 /*
  *--------------------------------------------------------------------------
+ * Relative to a folder: the `at` calls. A descriptor here remembers the
+ * path it opened, so a name relative to one is that path and the name -
+ * resolved once, as the call is made, which is what POSIX asks of the
+ * descriptor's folder and all a port leans on (libc++'s `remove_all`).
+ */
+
+static int at(int dirfd, const char *path, char whole[STORAGE_PATH_MAX])
+{
+    struct taken t;
+    char joined[STORAGE_PATH_MAX];
+    int r;
+
+    if (path == NULL) {
+        return fails(EFAULT);
+    }
+
+    if (path[0] == '/' || dirfd == AT_FDCWD) {
+        r = storage_absolute(path, whole);
+        return r == STORAGE_OK ? 0 : kit_fails(r);
+    }
+
+    if (take(dirfd, &t) != 0) {
+        return -1;
+    }
+
+    if (!t.dir) {
+        return fails(ENOTDIR);
+    }
+
+    if (snprintf(joined, sizeof(joined), "%s/%s", t.path, path) >= (int)sizeof(joined)) {
+        return fails(ENAMETOOLONG);
+    }
+
+    r = storage_absolute(joined, whole);
+    return r == STORAGE_OK ? 0 : kit_fails(r);
+}
+
+int openat(int dirfd, const char *path, int flags, ...)
+{
+    char whole[STORAGE_PATH_MAX];
+    mode_t mode = 0;
+
+    if (flags & O_CREAT) {
+        va_list ap;
+
+        va_start(ap, flags);
+        mode = (mode_t)va_arg(ap, int);
+        va_end(ap);
+    }
+
+    return at(dirfd, path, whole) != 0 ? -1 : open(whole, flags, mode);
+}
+
+int unlinkat(int dirfd, const char *path, int flags)
+{
+    char whole[STORAGE_PATH_MAX];
+
+    if (flags & ~AT_REMOVEDIR) {
+        return fails(EINVAL);
+    }
+
+    if (at(dirfd, path, whole) != 0) {
+        return -1;
+    }
+
+    return flags & AT_REMOVEDIR ? rmdir(whole) : unlink(whole);
+}
+
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+{
+    char whole[STORAGE_PATH_MAX];
+
+    (void)flags;                        /* no links, so nothing to follow */
+    return at(dirfd, path, whole) != 0 ? -1 : chmod(whole, mode);
+}
+
+/*
+ * **`sendfile`, Linux's: up to `count` bytes from `in` to `out`**, from
+ * `*offset` when given - which is moved on and `in`'s own offset is not -
+ * or else from `in`'s offset, which is. Through this process's memory a
+ * piece at a time, since both ends are the Storage Kit's here; libc++'s
+ * `copy_file` is what asks, as its way to copy without iostreams. The
+ * count written, 0 at the end of `in`, or -1.
+ */
+ssize_t sendfile(int out, int in, off_t *offset, size_t count)
+{
+    enum { PIECE = 64 * 1024 };
+    char *buf;
+    size_t done = 0;
+
+    if ((buf = malloc(count < PIECE ? (count ? count : 1) : PIECE)) == NULL) {
+        return fails(ENOMEM);
+    }
+
+    while (done < count) {
+        size_t want = count - done < PIECE ? count - done : PIECE;
+        ssize_t got = offset != NULL ? pread(in, buf, want, *offset + (off_t)done)
+                                     : read(in, buf, want);
+        ssize_t put = 0;
+
+        if (got <= 0) {
+            if (got < 0 && done == 0) {
+                free(buf);
+                return -1;
+            }
+            break;
+        }
+
+        while (put < got) {
+            ssize_t w = write(out, buf + put, (size_t)(got - put));
+
+            if (w < 0) {
+                free(buf);
+                if (offset != NULL) {
+                    *offset += (off_t)(done + (size_t)put);
+                }
+                return done + (size_t)put > 0 ? (ssize_t)(done + (size_t)put) : -1;
+            }
+            put += w;
+        }
+
+        done += (size_t)got;
+    }
+
+    free(buf);
+
+    if (offset != NULL) {
+        *offset += (off_t)done;
+    }
+
+    return (ssize_t)done;
+}
+
+/* No locks: a file is its server's, and they keep none (`sys/file.h`). */
+int flock(int fd, int operation)
+{
+    struct taken t;
+
+    (void)operation;
+    return take(fd, &t) != 0 ? -1 : fails(ENOTSUP);
+}
+
+/*
+ * **A file's times are the server's to keep.** `storage_stat` reports
+ * when a file was last written, and nothing in the Storage Kit sets it:
+ * the server stamps a write as it lands. So these say ENOTSUP rather
+ * than pretend - a port that asked to backdate a file learns that it was
+ * not done.
+ */
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags)
+{
+    struct stat st;
+    char whole[STORAGE_PATH_MAX];
+
+    (void)times;
+    (void)flags;
+
+    if (at(dirfd, path, whole) != 0 || stat(whole, &st) != 0) {
+        return -1;
+    }
+
+    return fails(ENOTSUP);
+}
+
+int futimens(int fd, const struct timespec times[2])
+{
+    struct taken t;
+
+    (void)times;
+    return take(fd, &t) != 0 ? -1 : fails(ENOTSUP);
+}
+
+int utimes(const char *path, const struct timeval times[2])
+{
+    struct stat st;
+
+    (void)times;
+    return stat(path, &st) != 0 ? -1 : fails(ENOTSUP);
+}
+
+/*
+ * **There are no links.** No server here keeps one (`lstat` is `stat`,
+ * and `O_NOFOLLOW` has nothing to refuse), so a path is never a link to
+ * read - EINVAL, which is what POSIX says of a path that is not one - and
+ * no link can be made: EPERM for a hard one, as POSIX says of a file
+ * system that does not support them, and ENOTSUP for a symbolic one.
+ */
+ssize_t readlink(const char *path, char *buf, size_t room)
+{
+    struct stat st;
+
+    (void)buf;
+    (void)room;
+    return stat(path, &st) != 0 ? -1 : fails(EINVAL);
+}
+
+int symlink(const char *target, const char *path)
+{
+    (void)target;
+    (void)path;
+    return fails(ENOTSUP);
+}
+
+int link(const char *from, const char *to)
+{
+    (void)from;
+    (void)to;
+    return fails(EPERM);
+}
+
+/*
+ * **How much room a file system has is not yet asked.** The Storage Kit
+ * has no request for it, so `statvfs` finds the path and says ENOTSUP;
+ * a port's free-space figure is then "not known", which WebKit's and
+ * libc++'s both allow for (`roadmap.md`, W4c's follow-ups).
+ */
+int statvfs(const char *path, struct statvfs *out)
+{
+    struct stat st;
+
+    (void)out;
+    return stat(path, &st) != 0 ? -1 : fails(ENOTSUP);
+}
+
+int fstatvfs(int fd, struct statvfs *out)
+{
+    struct taken t;
+
+    (void)out;
+    return take(fd, &t) != 0 ? -1 : fails(ENOTSUP);
+}
+
+long pathconf(const char *path, int name)
+{
+    struct stat st;
+
+    if (stat(path, &st) != 0) {
+        return -1;
+    }
+
+    switch (name) {
+    case _PC_NAME_MAX: return 255;
+    case _PC_PATH_MAX: return STORAGE_PATH_MAX;
+    default:           return fails(EINVAL);
+    }
+}
+
+/*
+ *--------------------------------------------------------------------------
  * Where.
  */
 
@@ -1009,6 +1262,36 @@ char *getcwd(char *buf, size_t size)
 
     memcpy(buf, here, n);
     return buf;
+}
+
+/*
+ * **The working directory is the one the process was started in.** The
+ * Storage Kit keeps it, read by every call that resolves a name and set
+ * once (`storage_start`); changing it under threads that are resolving
+ * would want a lock on every path, for a call ported code makes almost
+ * never. So `chdir` to where the process already is succeeds, and
+ * anywhere else is ENOTSUP (`roadmap.md`, W4c's follow-ups).
+ */
+int chdir(const char *path)
+{
+    struct storage_stat st;
+    char whole[STORAGE_PATH_MAX];
+    int r;
+
+    if (path == NULL) {
+        return fails(EFAULT);
+    }
+
+    if ((r = storage_absolute(path, whole)) != STORAGE_OK
+        || (r = storage_stat(whole, &st)) != STORAGE_OK) {
+        return kit_fails(r);
+    }
+
+    if (st.kind != STORAGE_KIND_DIR) {
+        return fails(ENOTDIR);
+    }
+
+    return strcmp(whole, storage_cwd()) == 0 ? 0 : fails(ENOTSUP);
 }
 
 char *realpath(const char *path, char *resolved)
@@ -1048,6 +1331,7 @@ struct posix_dir {
     long          left;                 /* names in `names` not yet given */
     const char   *next;
     int           done;
+    int           fd;                   /* fdopendir's, closed with it; -1 */
     struct dirent entry;
     char          names[2048];
 };
@@ -1074,6 +1358,30 @@ DIR *opendir(const char *path)
         free(d);
         errno = ENOTDIR;
         return NULL;
+    }
+
+    d->fd = -1;
+    return d;
+}
+
+/* The folder a descriptor opened, as a stream; the descriptor is the
+ * stream's from now on, and `closedir` closes it. */
+DIR *fdopendir(int fd)
+{
+    struct taken t;
+    DIR *d;
+
+    if (take(fd, &t) != 0) {
+        return NULL;
+    }
+
+    if (!t.dir) {
+        errno = ENOTDIR;
+        return NULL;
+    }
+
+    if ((d = opendir(t.path)) != NULL) {
+        d->fd = fd;
     }
 
     return d;
@@ -1143,6 +1451,10 @@ int closedir(DIR *d)
 {
     if (d == NULL) {
         return fails(EBADF);
+    }
+
+    if (d->fd >= 0) {
+        close(d->fd);
     }
 
     free(d);

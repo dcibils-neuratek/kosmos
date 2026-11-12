@@ -26,8 +26,13 @@ int isatty(int fd);             /* 0 for every one (`stdio.c`) */
 #define _SC_PAGE_SIZE         _SC_PAGESIZE
 #define _SC_NPROCESSORS_CONF  83
 #define _SC_NPROCESSORS_ONLN  84
+#define _SC_PHYS_PAGES        85     /* the machine's pages, all of them */
+#define _SC_AVPHYS_PAGES      86     /* and those free now */
 
 long sysconf(int name);
+
+/* The process ends at once, nothing run on the way (`process.c`). */
+__attribute__((noreturn)) void _exit(int status);
 int  getpagesize(void);
 
 /* The process table's id for this process (`SYS_SELF`): a number to print
@@ -72,6 +77,18 @@ int     rmdir(const char *path);
 int     rename(const char *from, const char *to);
 int     access(const char *path, int mode);
 char   *getcwd(char *buf, size_t size);
+int     chdir(const char *path);     /* only to where it is: ENOTSUP (`fd.c`) */
+int     unlinkat(int dirfd, const char *path, int flags);
+
+/* There are no links (`fd.c`): readlink EINVAL, link EPERM, symlink
+ * ENOTSUP. */
+ssize_t readlink(const char *path, char *buf, size_t room);
+int     link(const char *from, const char *to);
+int     symlink(const char *target, const char *path);
+
+#define _PC_NAME_MAX 3
+#define _PC_PATH_MAX 4
+long    pathconf(const char *path, int name);
 
 unsigned int sleep(unsigned int seconds);
 int          usleep(useconds_t microseconds);

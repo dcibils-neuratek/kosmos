@@ -30,6 +30,7 @@ struct dirent {
 typedef struct posix_dir DIR;
 
 DIR           *opendir(const char *path);
+DIR           *fdopendir(int fd);    /* the descriptor is the stream's now */
 struct dirent *readdir(DIR *d);
 void           rewinddir(DIR *d);
 int            closedir(DIR *d);

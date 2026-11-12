@@ -388,6 +388,19 @@ size_t strlen(const char *s)
     return (size_t)(p - s);
 }
 
+/* At most `room` bytes looked at: POSIX's, which WTF's text uses to
+ * measure a string that may not end inside what it was handed. */
+size_t strnlen(const char *s, size_t room)
+{
+    size_t n = 0;
+
+    while (n < room && s[n] != '\0') {
+        n++;
+    }
+
+    return n;
+}
+
 /*
  * **The one wide-character function, because the compiler writes calls to
  * it.** No source in the tree calls `wcslen`: clang recognises a loop
