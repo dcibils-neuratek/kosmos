@@ -501,6 +501,14 @@ SUITES = [
     Suite("x86-text", ["python3", "tools/run_text.py", X86,
                        "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5c's SQLite** (`docs/w5.md`): `sqltest.elf`, SQLite's own
+    # `fuzzcheck` over its eight fuzz databases, `speedtest1 --verify` in
+    # /Home with its hash held to this Mac's, the dotfile lock between two
+    # connections, and rows written in one boot read in the next.
+    Suite("arm-sql", ["python3", "tools/run_sql.py", ARM, "build/user-test/apps"]),
+    Suite("x86-sql", ["python3", "tools/run_sql.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

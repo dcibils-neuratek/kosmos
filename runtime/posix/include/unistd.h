@@ -45,8 +45,14 @@ uid_t geteuid(void);
 gid_t getgid(void);
 gid_t getegid(void);
 
+/* Nor owners of files: `fchown` changes nothing and succeeds, as `fchmod`
+ * does (W5c: SQLite gives a journal its database's owner). */
+int fchown(int fd, uid_t owner, gid_t group);
+
 /* Files (W3d2), on descriptors private to this process. 0, 1 and 2 are the
- * console: a write to 1 or 2 is printed, a read of 0 is the end. */
+ * console: a write to 1 or 2 is printed - or spilled, for the Lua side to
+ * print, when this process does not own the console - and a read of 0 is
+ * the end. */
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2

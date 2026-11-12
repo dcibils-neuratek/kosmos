@@ -207,12 +207,17 @@ struct thread;
  * definition. Putting them on the Lua heap would mean either a heap too
  * large to collect quickly or a compositor that cannot exist.
  *
- * The address is bumped and never reused, up to `USER_MAP_END`. There is
- * 512 GB of address space below the 39-bit limit and a surface is a few
- * megabytes, so a process would have to allocate tens of thousands of them
- * to run out of *space* while the pages themselves are returned and reused
- * normally. Tracking freed ranges to reuse addresses would need an
- * allocator, which is the thing this kernel does not have.
+ * The address is bumped and never reused, up to `USER_MAP_END`: four
+ * gigabytes, not the 512 GB this said - that is the whole 39-bit space, of
+ * which this window is one slice. A surface is a few megabytes, so a
+ * process allocates thousands of them before it runs out of *space*, while
+ * the pages themselves are returned and reused normally; and a process that
+ * maps and unmaps steadily does run out. `malloc` grew a block past a
+ * megabyte a page at a time, a new arena each time, and SQLite's
+ * `fuzzcheck` met the end of the window in one database (`testing.md`
+ * 18.784); it grows with room now. Tracking freed ranges to reuse
+ * addresses would need an allocator, which is the thing this kernel does
+ * not have - `roadmap.md` has the question.
  */
 #define USER_MAP_VA      (USER_HEAP_VA + 0x10000000UL)      /* heap + 256 MB */
 

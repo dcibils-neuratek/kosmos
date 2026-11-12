@@ -3671,6 +3671,87 @@ $(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TE
 	    || { echo "apps: the system's image has HarfBuzz or FreeType in it"; rm -f $@; exit 1; }
 
 #
+# **W5c's SQLite** (`docs/w5.md`): 3.54.1's amalgamation and, for its test,
+# `fuzzcheck`, `speedtest1` and the extensions `fuzzcheck` links, from the
+# source tree - both fetched and held to sqlite.org's SHA3-256
+# (`tools/upstream.py`), compiled here unmodified, since SQLite has no
+# CMake: one file is its build. Its options are `fuzzcheck`'s own, from
+# `main.mk`, and Kosmos's three: the dotfile lock as the default, since
+# the servers keep no locks (`fcntl.h`); threads; and `usleep` to wait
+# with. The two programs' `main`s are renamed as they are compiled, and
+# `exit` in everything beside the library is `sqltest_exit`, which
+# returns to the kit: Kosmos's `exit` ends the process, and with it
+# what the program printed before it gave up.
+# `main.mk`'s `SQLITE_PRINTF_PRECISION_LIMIT=1000` is left out: it cuts
+# `speedtest1`'s longest `CREATE TABLE` short, on this Mac as here.
+#
+SQLITE_AMAL := build/upstream/sqlite/sqlite-amalgamation-3540100
+SQLITE_SRC  := build/upstream/sqlite-src/sqlite-src-3540100
+
+build/upstream/sqlite/.unpacked: tools/upstream.py
+	@python3 tools/upstream.py unpack sqlite > /dev/null
+	@python3 tools/upstream.py unpack sqlite-src > /dev/null
+	@touch $@
+
+SQLITE_OPTS := -DSQLITE_OSS_FUZZ -DSQLITE_DECIMAL_MAX_DIGIT=1000 \
+    -DSQLITE_ENABLE_BYTECODE_VTAB -DSQLITE_ENABLE_CARRAY -DSQLITE_ENABLE_DBPAGE_VTAB \
+    -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_ENABLE_DESERIALIZE -DSQLITE_ENABLE_EXPLAIN_COMMENTS \
+    -DSQLITE_ENABLE_FTS3_PARENTHESIS -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_FTS5 \
+    -DSQLITE_ENABLE_GEOPOLY -DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_MEMSYS5 \
+    -DSQLITE_ENABLE_NORMALIZE -DSQLITE_ENABLE_OFFSET_SQL_FUNC -DSQLITE_ENABLE_PERCENTILE \
+    -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_SESSION \
+    -DSQLITE_ENABLE_STMTVTAB -DSQLITE_ENABLE_UNKNOWN_SQL_FUNCTION -DSQLITE_ENABLE_STAT4 \
+    -DSQLITE_ENABLE_STMT_SCANSTATUS -DSQLITE_JSON_MAX_DEPTH=500 -DSQLITE_MAX_MEMORY=50000000 \
+    -DSQLITE_MAX_MMAP_SIZE=0 -DSQLITE_OMIT_LOAD_EXTENSION \
+    -DSQLITE_PRIVATE= -DSQLITE_STRICT_SUBTYPE=1 -DSQLITE_STATIC_RANDOMJSON \
+    '-DSQLITE_DEFAULT_UNIX_VFS="unix-dotfile"' -DSQLITE_THREADSAFE=1 -DHAVE_USLEEP=1
+
+# The options are a file, rewritten when they change, which every object
+# depends on - as `$(UFLAGS_FILE)` is for the rest - so changing one
+# compiles SQLite again rather than linking the old objects.
+SQLITE_OPTS_FILE := $(UBUILD)/w5c/options
+SQLITE_OPTS_NOW := $(subst ',,$(SQLITE_OPTS)) -Dexit=sqltest_exit -Dmain=sqltest_*_main
+$(shell mkdir -p $(UBUILD)/w5c; [ "$$(cat $(SQLITE_OPTS_FILE) 2>/dev/null)" = '$(SQLITE_OPTS_NOW)' ] \
+        || printf '%s' '$(SQLITE_OPTS_NOW)' > $(SQLITE_OPTS_FILE))
+
+SQLTEST_UPSTREAM := $(SQLITE_AMAL)/sqlite3.c \
+    $(addprefix $(SQLITE_SRC)/test/,fuzzcheck.c ossfuzz.c fuzzinvariants.c vt02.c speedtest1.c) \
+    $(addprefix $(SQLITE_SRC)/ext/recover/,dbdata.c sqlite3recover.c) \
+    $(addprefix $(SQLITE_SRC)/ext/misc/,base64.c base85.c completion.c decimal.c diskused.c \
+        ieee754.c randomjson.c regexp.c series.c shathree.c sha1.c stmtrand.c strdup.c)
+
+SQLTEST_OBJS := $(patsubst %,$(UBUILD)/w5c/%.o,$(notdir $(SQLTEST_UPSTREAM))) \
+                $(UBUILD)/user/kits/sqltest/sqltest.c.o $(UBUILD)/user/kits/sqltest/sqltest_kit.c.o
+
+sqltest_main_fuzzcheck.c  := -Dmain=sqltest_fuzzcheck_main
+sqltest_main_speedtest1.c := -Dmain=sqltest_speedtest1_main
+
+define SQLTEST_RULE
+$(UBUILD)/w5c/$(notdir $(1)).o: build/upstream/sqlite/.unpacked $(UFLAGS_FILE) \
+        $(SQLITE_OPTS_FILE)
+	@mkdir -p $$(dir $$@)
+	$$(CC) $$(POSIX_CFLAGS) -I user/kits/sqltest/include $$(UCFLAGS) -w -I$(SQLITE_AMAL) -I$(SQLITE_SRC)/test \
+	    -I$(SQLITE_SRC)/ext/recover $$(SQLITE_OPTS) $$(sqltest_main_$(notdir $(1))) \
+    $(if $(filter sqlite3.c,$(notdir $(1))),,-Dexit=sqltest_exit) \
+	    -c $(1) -o $$@
+endef
+$(foreach f,$(SQLTEST_UPSTREAM),$(eval $(call SQLTEST_RULE,$(f))))
+
+$(UBUILD)/user/kits/sqltest/sqltest.c.o: user/kits/sqltest/sqltest.c user/kits/sqltest/sqltest.h \
+        build/upstream/sqlite/.unpacked $(UFLAGS_FILE) $(SQLITE_OPTS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem $(SQLITE_AMAL) -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/sqltest.elf: $(USER_OBJS) $(SQLTEST_OBJS) $(POSIX_OBJS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SQLTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_sqltest_kit$$' \
+	    || { echo "apps: sqltest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_sqltest_kit|sqlite3_open)$$' \
+	    || { echo "apps: the system's image has SQLite in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -3845,7 +3926,7 @@ apps:
 
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
-            $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf \
+            $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

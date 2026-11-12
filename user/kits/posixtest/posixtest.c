@@ -629,6 +629,49 @@ static int files_in(const char *dir, char *out, unsigned long size)
         FSAY("files: %s: the file and the folder were not removed", dir);
     }
 
+    /* Unlinked while open, as SQLite's temporary files are (`docs/w5.md`
+     * W5c): still read, written, measured and cut through the descriptor,
+     * and gone once it is closed. */
+    {
+        static char block[65536];
+        int fdu;
+
+        for (unsigned i = 0; i < sizeof block; i++) {
+            block[i] = (char)(i * 7);
+        }
+        if ((fdu = open(path, O_RDWR | O_CREAT | O_EXCL, 0600)) < 3 || unlink(path) != 0) {
+            FSAY("files: %s: open then unlink (%d)", dir, errno);
+        }
+        if (write(fdu, block, sizeof block) != (ssize_t)sizeof block
+            || pwrite(fdu, "Z", 1, 70000) != 1) {
+            FSAY("files: %s: a write after unlink (%d)", dir, errno);
+        }
+        if (fstat(fdu, &st) != 0 || st.st_size != 70001) {
+            FSAY("files: %s: fstat after unlink: %ld bytes (%d)", dir, (long)st.st_size, errno);
+        }
+        if (pread(fdu, got, 8, 65528) != 8 || memcmp(got, block + 65528, 8) != 0
+            || ftruncate(fdu, 4096) != 0 || fstat(fdu, &st) != 0 || st.st_size != 4096
+            || fsync(fdu) != 0) {
+            FSAY("files: %s: read, cut or flushed after unlink (%d)", dir, errno);
+        }
+        /* Record locks are refused, as `flock` is - nothing keeps one
+         * between processes (`fcntl.h`) - and `fchown`, like `fchmod`,
+         * changes nothing and says yes. */
+        {
+            struct flock fl = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
+
+            if (fcntl(fdu, F_SETLK, &fl) != -1 || errno != ENOTSUP
+                || fcntl(fdu, F_GETLK, &fl) != -1 || errno != ENOTSUP
+                || fcntl(-1, F_SETLK, &fl) != -1 || errno != EBADF
+                || fchown(fdu, 0, 0) != 0) {
+                FSAY("files: %s: record locks or fchown (%d)", dir, errno);
+            }
+        }
+        if (close(fdu) != 0 || stat(path, &st) == 0 || errno != ENOENT) {
+            FSAY("files: %s: an unlinked file outlived its last close", dir);
+        }
+    }
+
     if (fsync(1) != 0) {
         FSAY("files: fsync of the console");
     }

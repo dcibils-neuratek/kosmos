@@ -2,9 +2,37 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.388: W5b built; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.389: W5c's SQLite built; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, night: JetSki W5c's SQLite (0.11.389, not pushed)
+
+**SQLite runs on Kosmos** (`docs/w5.md` W5c, `testing.md` 18.784):
+
+- SQLite 3.54.1's amalgamation and source tree in `tools/upstream.py`,
+  held to sqlite.org's SHA3-256 (`digest()`, `sum_of()`), compiled by the
+  Makefile with `fuzzcheck`'s options (less the printf limit), `unix-dotfile`
+  as the default VFS and threads on; the options in a file the objects
+  depend on.
+- `sqltest.elf` (`user/kits/sqltest/`) is `x86-sql`, run by
+  `tools/run_sql.py`: `fuzzcheck` (46,391 tests, 0 errors), `speedtest1
+  --verify` (the Mac's hash), the dotfile lock, and 5,000 rows across a
+  reboot. 2:27. Two controls bite (`KOSMOS_SQL_BREAK=fuzz|keep`). The kit
+  runs the programs on an 8 MB stack, returns from their `exit`, restores
+  SQLite's defaults between them, and points temporary files at
+  `/Temporary`; `exec(path, sql)` reports SQLite's extended code and log.
+- Shared pieces changed: the POSIX layer's `stdout` and libc's `puts` and
+  `putchar` spill when the console refuses them (`kosmos_spill`,
+  `kosmos.h`); an unlinked open file lasts until its last close; `struct
+  flock` and `F_SETLK` refused with ENOTSUP, `fchown`, `sys/uio.h`,
+  `memory.h`; `realloc` moves a large block with half again; two kernel
+  comments corrected (the map window is 4 GB). `posixtest` checks the new
+  POSIX behaviour, with a control.
+
+**Next: the rest of W5c**, libxml2 and libpsl. For Diego before W6: the
+disk (`w5.md` *Disk*) and the map window's addresses (`roadmap.md`,
+W5c's follow-ups).
 
 ## 12 November, evening: JetSki W5b (0.11.388, not pushed)
 

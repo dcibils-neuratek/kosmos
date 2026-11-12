@@ -364,7 +364,7 @@ char *strerror(int errnum)
 static char   spill[SPILL_MAX];
 static size_t spill_head, spill_tail;
 
-static void spill_put(const char *s, size_t n)
+void kosmos_spill(const char *s, size_t n)
 {
     size_t i;
 
@@ -414,7 +414,7 @@ static int emit(const char *fmt, va_list ap)
     }
 
     if (kosmos_write(line, (size_t)n) < 0) {
-        spill_put(line, (size_t)n);
+        kosmos_spill(line, (size_t)n);
     }
 
     return n;
@@ -479,10 +479,18 @@ int sprintf(char *buf, const char *fmt, ...)
     return n;
 }
 
+/* Written, or spilled when the console will not take it - as `emit`. */
+static void say(const char *s, size_t n)
+{
+    if (kosmos_write(s, n) < 0) {
+        kosmos_spill(s, n);
+    }
+}
+
 int puts(const char *s)
 {
-    kosmos_write(s, strlen(s));
-    kosmos_write("\n", 1);
+    say(s, strlen(s));
+    say("\n", 1);
 
     return 0;
 }
@@ -491,7 +499,7 @@ int putchar(int c)
 {
     char ch = (char)c;
 
-    kosmos_write(&ch, 1);
+    say(&ch, 1);
 
     return c;
 }

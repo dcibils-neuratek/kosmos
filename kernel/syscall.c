@@ -1131,7 +1131,7 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
     p->mapped_pages -= (freed < p->mapped_pages) ? freed : p->mapped_pages;
 
     /* The address is not reused. See USER_MAP_VA: reclaiming it would need
-     * an allocator, and there is 512 GB of it. */
+     * an allocator, and the window is four gigabytes. */
     return 0;
 }
 

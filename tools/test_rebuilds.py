@@ -143,12 +143,14 @@ def objects(label, directory, *words):
 
 def main():
     counted = 0
-    apps = ("apptest.elf", "cxxtest.elf", "posixtest.elf", "doom.elf", "quake.elf", "snes.elf")
+    # Every image `app-images` makes, by asking for that target rather than
+    # naming them: a list here was six names long when W5c's `sqltest.elf`
+    # became the first test image to read `syscall.h`, and it was not on it.
 
     # The ARM kernel and its test userland, and each application against it.
     counted += objects("the ARM kernel", "build/test", "TEST=1", "build/test/kosmos.elf")
     counted += objects("ARM's applications", "build/user-test", "TEST=1", "FULL=0",
-                       "MEGA=", *["build/user-test/apps/" + a for a in apps])
+                       "MEGA=", "app-images")
 
     have_x86 = subprocess.run(["which", "x86_64-elf-gcc"],
                               capture_output=True).returncode == 0
@@ -156,7 +158,7 @@ def main():
     if have_x86:
         counted += objects("x86-64's applications", "build/user-x86_64-test",
                            "ARCH=x86_64", "TEST=1", "FULL=0", "MEGA=",
-                           *["build/user-x86_64-test/apps/" + a for a in apps])
+                           "app-images")
 
         # One compile, and one `.d` for it: the link line is the rebuild.
         #

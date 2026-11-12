@@ -32305,3 +32305,88 @@ was not run inside the first 30. Alone it passed three times of three.
 waiting for the thing (`moves`); "held", the window during the suspend,
 keeps its fixed 30 ms, since there a pause is the point. `x86-wtf` and
 `x86-text` again, through the gate: both pass, in 29 s.
+
+## 18.784 W5c's SQLite, on Kosmos (JetSki W5c)
+
+**SQLite 3.54.1** for both processors (`docs/w5.md` W5c): the amalgamation
+and the source tree, held to sqlite.org's SHA3-256, compiled by the
+Makefile with `fuzzcheck`'s options and the dotfile lock as the default VFS
+into `sqltest.elf`, with SQLite's own `fuzzcheck` and `speedtest1`.
+
+**`x86-sql`** (`tools/run_sql.py`): two boots on one `/Home`, each line
+held to the same programs built on this Mac from the same sources with the
+same options.
+
+| | |
+|---|---|
+| `fuzzcheck` | 8 databases, **46,391 tests, 0 errors**, 9,839 query invariants; each database's count as on this Mac; 80 s, 4 s natively |
+| `speedtest1 --verify --size 10` | every test set, on a database in `/Home`; hash `2617257 6218819e…c28a`, this Mac's |
+| the lock (`unix-dotfile`) | held, the lock directory made, a second writer busy, then let in, 3 rows - this Mac's line |
+| a reboot | 5,000 rows, `61a5e57a9a4c1ebf`, integrity ok, written in one boot and read in the next |
+| the suite | 2:27, with this Mac's programs built |
+
+**Found on the way** - each a failure in the guest before it was a fix:
+
+- **`fuzzcheck` said nothing and ended with code 70.** Two things at once.
+  A program at the prompt does not own the console, so `SYS_WRITE` refuses
+  it: the C library's `printf` spills what is refused into the ring the
+  Lua side drains, but the POSIX layer's `write(1, ...)` returned EIO and
+  `puts` and `putchar` dropped it. All three spill now, through
+  `kosmos_spill` in `kosmos.h`. And `exit` - which `fuzzcheck` calls after
+  saying why it gave up - is a panic here, code 70, taking the spilled
+  words with it. Compiled with `-Dexit=sqltest_exit`, the programs' `exit`
+  returns to the kit.
+- **"unable to realloc for 1269760 bytes"**, 60% into the first database:
+  a file in memory grown a page at a time, each page a new arena by
+  `sys_map` and the old one unmapped, and `sys_map` never reuses an
+  address, so the four gigabytes of the window ran out. `realloc` moves a
+  block of half a megabyte or more with half as much again. Two kernel
+  comments said the window was 512 GB; it is four.
+- **A page fault at the stack's guard** in `whereScanNext`, on the second
+  database. This Mac's `fuzzcheck` fails at `ulimit -s 512` and passes at
+  1024; the programs run on 8 MB of their own (`kosmos_call_on_stack`).
+- **`speedtest1` faulted in `memsys5Unlink`**: `fuzzcheck` had given
+  SQLite a heap and freed it, and the setting outlived its `main`.
+  `sqltest_fresh` shuts SQLite down and restores its defaults before each.
+- **`speedtest1`'s `VACUUM`: "disk I/O error"**, extended code 10, errno 2.
+  `SQLITE_IOERR_GETTEMPPATH`: none of SQLite's temporary directories
+  exists here and there is no environment to name one. `sqlite3_temp_directory`
+  is `/Temporary` now - for everything but `fuzzcheck`, which will not
+  start while SQLite holds a byte.
+- **On this Mac too, `speedtest1` failed** under `fuzzcheck`'s options:
+  `SQLITE_PRINTF_PRECISION_LIMIT=1000` cuts its longest `CREATE TABLE`.
+  Every option was tried alone and in turn; that one is left out.
+- **The objects did not depend on their options**, so changing one linked
+  the old objects. They depend on a file holding the options now, as every
+  other object depends on `$(UFLAGS_FILE)`.
+
+**The POSIX layer**, in `posixtest` (`x86-loader`): a file unlinked while
+open is still written, read, measured, cut and flushed through its
+descriptor, and gone at its last close; record locks are refused with
+ENOTSUP, a bad descriptor with EBADF; `fchown` says yes. Control: with the
+deferral off, `files: /Temporary: a write after unlink (2)`.
+
+**The controls:**
+
+| broken | result |
+|---|---|
+| half of fuzzdata1's tests taken out of the reference (`KOSMOS_SQL_BREAK=fuzz`) | the counts differ: 4,959 on this Mac, 9,917 in the guest |
+| a byte of the database turned over between the boots (`=keep`) | the second boot reads `f3887bc1b94bbf04`, not `61a5e57a9a4c1ebf` |
+
+**The gate**: 115 of 118 suites in 858 s (14:18), `x86-sql` 233 s, the
+fourth slowest. The time is the images again: `kosmos.h`, `malloc.c` and
+`stdio.c` changed, so every image was built again before the first suite.
+Three failed:
+
+- **`rebuilds`**, mine: `sqltest_kit.c` reads `kosmos.h`, and so
+  `kernel/syscall.h`, and the check asked `make` about six images named by
+  hand, `sqltest.elf` not among them. It asks about `app-images` now, every
+  image that target makes: 173 objects, all rebuilt.
+- **`x86-desktops`**, "the loader's window was never drawn", as in 18.7xx
+  twice before under the gate's load; 15 of 15 alone.
+- **`x86-llmmon`**: the network driver's first-five-seconds line was
+  printed into the middle of a line of the model's answer, with no newline
+  before it, so the answer from a file was not the answer on the line.
+  18 of 18 alone. Its waiting is the roadmap's.
+
+The three through the gate (`ONLY=`): all pass.

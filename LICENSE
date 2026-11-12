@@ -191,6 +191,13 @@ Vendored third-party code keeps its own licence, which travels beside it:
       Not in the tree: fetched and held to GitHub's digest (W5b); the terms
       are COPYING in the release. Only texttest.elf
 
+  SQLite 3.54.1, by D. Richard Hipp and the SQLite developers, in the
+      public domain
+      Not in the tree: tools/upstream.py fetches the amalgamation and the
+      source tree, held to sqlite.org's SHA3-256 (docs/w5.md W5c); the
+      dedication is at the top of sqlite3.c. Only sqltest.elf, W5c's
+      test, links it
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

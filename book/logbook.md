@@ -2146,3 +2146,61 @@ next to it, which the first runner read by mistake.
 **Visible impact.** Nothing on the screen yet. This is what will lay out
 every line of text in the browser, and later what Astra's own text could
 stand on. `testing.md` 18.783 has the numbers.
+
+## 12 November, night - the database a browser keeps
+
+**In short.** SQLite now runs on Kosmos. It is the small database inside
+nearly every browser, holding history, cookies, bookmarks and what web
+pages store. It passes its own heavy test program on Kosmos: 46,391 tests,
+with no errors.
+
+**What.** This is the first half of W5's third step (W5c in `docs/w5.md`).
+SQLite is downloaded as its authors ship it, checked against their
+published checksum, and compiled unchanged. Two of its own test programs
+run inside Kosmos. One is `fuzzcheck`, which throws tens of thousands of
+odd and hostile queries and damaged database files at it. The other is
+`speedtest1`, which does ordinary work and reduces every answer to one
+fingerprint. Two further tests are ours. In one, two connections compete
+for the same database, and the second must wait its turn. In the other,
+rows are written, the machine is turned off, and the same rows are read
+back.
+
+**Why.** A browser trusts its database with things a person cares about
+and never sees. That database has to survive bad input, two parts of
+the program writing at once, and the power going off.
+
+**How it is proved.** The same programs are built on the Mac from the
+same files with the same settings, and every number is compared: how many
+tests each fuzz file holds, and the fingerprint of `speedtest1`'s answers.
+Then two deliberate breakages, which must make the test fail. One removes
+half of a fuzz file's tests from the Mac's side. The other flips one
+byte of the database on the disk between the two boots. Both fail.
+
+**Found on the way.** SQLite itself was never the problem; everything it
+found was in Kosmos.
+
+- **Its messages vanished.** A program started from the command line may
+  not write to the screen directly. The C library's `printf` already had a
+  fallback, but the layer ported code uses did not.
+- **It ended the whole program when it gave up**, taking its last words
+  with it. And it needed more stack than a Kosmos program starts with -
+  eight megabytes, where a program here has a quarter of one.
+- **It ran out of address space.** Growing a large block a little at a
+  time used up a new piece of the program's 4 GB of addresses on every
+  step, and Kosmos never reuses an address. Large blocks now grow with
+  room to spare.
+- **Two of SQLite's programs, run one after the other, shared settings**
+  that on the Mac each would have had to itself.
+- **It had nowhere to put temporary files.** Kosmos has no `/tmp`; its
+  temporary place is `/Temporary`.
+- **Deleting a file while it is still open lost the file.** On Unix the
+  file lives on until it is closed. It does here now too.
+
+**Measurements.** `fuzzcheck` takes 80 seconds in the emulator against 4
+on the Mac; the whole test, including building the Mac's copies, takes
+2 minutes 27. `testing.md` 18.784 has the rest.
+
+**Visible impact.** Nothing on the screen. This is where the browser's
+history, cookies and site storage will live. One question goes to Diego
+before WebCore arrives: whether Nebula should start reusing addresses a
+program has given back, because a browser runs for days.

@@ -503,7 +503,25 @@ static void *heap_realloc(void *p, size_t n)
         return p;
     }
 
-    fresh = heap_alloc(n);
+    /*
+     * **A large block that has to move moves with room to grow** - half as
+     * much again. A megabyte or more is an arena of its own, given back
+     * when freed, and `sys_map` never reuses an address: SQLite's
+     * `fuzzcheck` grows a file in memory a page at a time, and a page at
+     * a time meant a new arena and the old one returned for every page -
+     * the four gigabytes of a process's window gone in one database, and
+     * every byte copied again each time (12 November 2026, `docs/w5.md`
+     * W5c). With half again, a block growing steadily moves a logarithmic
+     * number of times. Asked once more without it when the room is not
+     * there.
+     */
+    fresh = NULL;
+    if (n >= RETURN_BYTES / 2 && n + n / 2 > n) {
+        fresh = heap_alloc(n + n / 2);
+    }
+    if (fresh == NULL) {
+        fresh = heap_alloc(n);
+    }
     if (fresh == NULL) {
         return NULL;    /* the original is untouched, as the standard requires */
     }

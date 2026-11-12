@@ -10140,7 +10140,40 @@ the applications make the system useful, and is not pulled forward.
   FreeType rendering all 545 of the suite's fonts (`x86-text`). libm gained
   `hypotf`, `roundf` and `scalbnf` from musl.
 
-  Next, **W5c**: SQLite, libxml2 and libpsl.
+  **W5c, SQLite built** (18.784): SQLite 3.54.1 with the dotfile lock as
+  its default, since the servers keep no locks, and its temporary files in
+  `/Temporary`. Its own `fuzzcheck` - 46,391 tests over eight databases,
+  none failing - and `speedtest1 --verify`, its hash this Mac's, in the
+  guest; two connections' lock; rows read back after a reboot (`x86-sql`).
+  On the way the POSIX layer's `stdout` spills when the console refuses it,
+  an unlinked open file lasts until its last close, and `realloc` moves a
+  large block with room to grow.
+
+  Next, the rest of **W5c**: libxml2 and libpsl.
+
+  **Follow-ups from W5c's SQLite** (18.784):
+  - *The map window is four gigabytes, and its addresses are never
+    reused.* `realloc` no longer walks through it a page at a time, but a
+    process that maps and unmaps for long enough still reaches the end -
+    and a browser maps and unmaps surfaces, pictures and caches for days.
+    Reusing an address needs a record of free ranges in Nebula, which is
+    what "no allocator" has been read as forbidding; a fixed pool of
+    ranges, or a window as large as the 39-bit space allows, are the two
+    shapes. **For Diego**, before W6.
+  - *Ported code's `stdout`, live.* What a program at the prompt prints
+    from C waits in the spill ring until its call returns, and a ring of
+    64 KB drops the oldest. The console reached from C, as Lua's `print`
+    reaches it, would make it live.
+  - *The dotfile lock left by a dead writer*: a process that ends while
+    it writes leaves `<database>.lock`, and the next writer is busy until
+    it is removed. Locks kept by `diskfs` would end with their process.
+  - *`kosmos_spill_drain` declared three times*, in Doom's, Quake's and
+    the Super Nintendo's C, from before `kosmos.h` declared it.
+  - *`x86-llmmon`'s answer and a system line*: under the gate's load the
+    network driver's boot line landed inside a line of the answer, with
+    no newline before it (18.784). The check could compare the answer once
+    the boot's own lines have stopped, or the console could keep a line
+    from one writer whole.
 
   **Follow-ups from W5a's gate** (18.781):
   - *The futex test's deadline under load*: `arm-sandbox`'s test 72 holds

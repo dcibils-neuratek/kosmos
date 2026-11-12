@@ -1105,4 +1105,16 @@ static inline long kosmos_pulse(long cap, uint32_t code, uint64_t value)
 #define USER_THREAD_SLOTS     (USER_TEXT + 0x200000000UL)
 #define USER_THREAD_SLOT      (1024UL * 1024UL)
 
+/*
+ * **The spill ring** (`runtime/libc/stdio.c`): where C output goes when
+ * `SYS_WRITE` refuses it, as it does every process that does not own the
+ * console, and where something that can reach a console - the Lua side,
+ * which has the namespace - collects it. `kosmos_spill` adds to it - the
+ * C library's `printf` and `puts` do, and the POSIX layer's `stdout`
+ * (`write(1, ...)`) - and `kosmos_spill_drain` takes up to `max` bytes of
+ * it out, oldest first.
+ */
+void   kosmos_spill(const char *s, size_t n);
+size_t kosmos_spill_drain(char *out, size_t max);
+
 #endif /* KOSMOS_H */

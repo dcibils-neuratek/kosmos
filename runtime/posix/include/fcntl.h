@@ -40,6 +40,30 @@ __BEGIN_DECLS
 #define F_SETFL          4
 #define F_DUPFD_CLOEXEC  1030
 
+/*
+ * **Record locks, named and refused** (`docs/w5.md` W5c), as `flock` is
+ * (`sys/file.h`): the servers keep no locks, and one this layer kept would
+ * bind only this process. SQLite compiles its POSIX locking against these
+ * names whichever way it locks, and on Kosmos it locks with a directory
+ * made beside the database instead (`unix-dotfile`), which the server
+ * makes or refuses atomically. F_GETLK, F_SETLK and F_SETLKW say ENOTSUP.
+ */
+#define F_GETLK          5
+#define F_SETLK          6
+#define F_SETLKW         7
+
+#define F_RDLCK          0
+#define F_WRLCK          1
+#define F_UNLCK          2
+
+struct flock {
+    short l_type;
+    short l_whence;
+    off_t l_start;
+    off_t l_len;
+    pid_t l_pid;
+};
+
 #define FD_CLOEXEC 1
 
 #define AT_FDCWD   -100

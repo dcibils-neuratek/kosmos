@@ -56,6 +56,7 @@ struct open_file {
     int      dir;
     struct posix_socket *sock;          /* a socket's, NULL for a file */
     uint64_t offset;
+    int      unlinked;                  /* removed at the last close (`unlink`) */
     char     path[STORAGE_PATH_MAX];
 };
 
@@ -377,6 +378,54 @@ int creat(const char *path, mode_t mode)
     return open(path, O_WRONLY | O_CREAT | O_TRUNC);
 }
 
+/*
+ * **Unlinked while open** (`docs/w5.md` W5c). POSIX keeps a file whose
+ * name was removed for as long as a descriptor holds it, and ported code
+ * counts on that: SQLite opens each temporary file and unlinks it at once,
+ * and went on writing to a name the server had deleted - `VACUUM`'s
+ * "disk I/O error". A descriptor here is a path, not an inode, so an
+ * `unlink` of a path this process has open marks it instead, and the last
+ * close removes it. What differs from POSIX, and is said so: until then
+ * the name is still there for anyone else to see, and a process that
+ * ends without closing leaves it.
+ */
+
+/* Whether another open file in this process has `f`'s path. With the lock
+ * held; `f` itself already taken out of the table. */
+static int open_elsewhere(const struct open_file *f)
+{
+    for (int fd = CONSOLE; fd < room; fd++) {
+        struct open_file *g = slots[fd].file;
+
+        if (g != NULL && g != f && g->sock == NULL && strcmp(g->path, f->path) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+/* Every open file with path `whole` marked to go at its last close;
+ * whether there was one. */
+static int unlink_when_closed(const char *whole)
+{
+    int marked = 0;
+
+    pthread_mutex_lock(&lock);
+
+    for (int fd = CONSOLE; fd < room; fd++) {
+        struct open_file *g = slots[fd].file;
+
+        if (g != NULL && g->sock == NULL && !g->dir && strcmp(g->path, whole) == 0) {
+            g->unlinked = 1;
+            marked = 1;
+        }
+    }
+
+    pthread_mutex_unlock(&lock);
+    return marked;
+}
+
 int close(int fd)
 {
     struct open_file *f;
@@ -388,6 +437,8 @@ int close(int fd)
     pthread_mutex_lock(&lock);
     f = file_of(fd);
 
+    int remove_now = 0;
+
     if (f != NULL) {
         slots[fd].file = NULL;
 
@@ -395,6 +446,7 @@ int close(int fd)
             f = NULL;                   /* another descriptor still has it */
         } else {
             f->refs = -1;
+            remove_now = f->unlinked && !open_elsewhere(f);
         }
     } else {
         fd = -1;
@@ -408,6 +460,10 @@ int close(int fd)
 
     if (f != NULL && f->sock != NULL) {
         posix_socket_close(f->sock);
+    }
+
+    if (remove_now) {
+        (void)storage_delete(f->path);
     }
 
     free(f);
@@ -477,6 +533,14 @@ int fcntl(int fd, int command, ...)
     va_list ap;
     int arg, r = 0;
 
+    /* Record locks: the third argument is a `struct flock *`, and there
+     * are none to take (`fcntl.h`). */
+    if (command == F_GETLK || command == F_SETLK || command == F_SETLKW) {
+        struct taken t;
+
+        return take(fd, &t) != 0 ? -1 : fails(ENOTSUP);
+    }
+
     va_start(ap, command);
     arg = va_arg(ap, int);
     va_end(ap);
@@ -516,10 +580,17 @@ int fcntl(int fd, int command, ...)
  * Bytes.
  */
 
+/*
+ * The console, or the spill ring when the console will not take it - as
+ * the C library's `printf` does. `SYS_WRITE` is the console's owner's
+ * alone, so for every other process this used to be EIO: SQLite's
+ * `fuzzcheck`, run from the prompt, said nothing at all (`docs/w5.md`
+ * W5c). Spilled, it is collected by whoever can reach a console.
+ */
 static ssize_t console_write(const void *buf, size_t bytes)
 {
     if (bytes > 0 && kosmos_write(buf, bytes) < 0) {
-        return fails(EIO);
+        kosmos_spill(buf, bytes);
     }
 
     return (ssize_t)bytes;
@@ -898,6 +969,16 @@ int fchmod(int fd, mode_t mode)
     return take(fd, &t);
 }
 
+/* A file has no owner here, as it has no mode: what `fchmod` does. */
+int fchown(int fd, uid_t owner, gid_t group)
+{
+    struct taken t;
+
+    (void)owner;
+    (void)group;
+    return take(fd, &t);
+}
+
 mode_t umask(mode_t mask)
 {
     (void)mask;
@@ -920,9 +1001,11 @@ int mkdir(const char *path, mode_t mode)
 int unlink(const char *path)
 {
     struct storage_stat st;
+    char whole[STORAGE_PATH_MAX];
     int r;
 
-    if ((r = storage_stat(path, &st)) != STORAGE_OK) {
+    if ((r = storage_absolute(path, whole)) != STORAGE_OK
+        || (r = storage_stat(whole, &st)) != STORAGE_OK) {
         return kit_fails(r);
     }
 
@@ -930,7 +1013,11 @@ int unlink(const char *path)
         return fails(EISDIR);
     }
 
-    return (r = storage_delete(path)) == STORAGE_OK ? 0 : kit_fails(r);
+    if (unlink_when_closed(whole)) {
+        return 0;                       /* at the last close (above) */
+    }
+
+    return (r = storage_delete(whole)) == STORAGE_OK ? 0 : kit_fails(r);
 }
 
 int rmdir(const char *path)
@@ -951,8 +1038,15 @@ int rmdir(const char *path)
 
 int remove(const char *path)
 {
-    int r = storage_delete(path);
+    struct storage_stat st;
+    int r;
 
+    /* A file as `unlink` takes it, so an open one stays until closed. */
+    if (storage_stat(path, &st) == STORAGE_OK && st.kind == STORAGE_KIND_FILE) {
+        return unlink(path);
+    }
+
+    r = storage_delete(path);
     return r == STORAGE_OK ? 0 : kit_fails(r);
 }
 

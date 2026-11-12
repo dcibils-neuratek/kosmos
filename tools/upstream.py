@@ -72,6 +72,19 @@ RELEASES = {
         "sha256": "0fc7c565443a5f4be7da65ac5ee5bd737d9b158dc908708b7689a0a5796b0c8d",
         "top": "harfbuzz-15.1.0",
     },
+    # **W5c**: SQLite 3.54.1, the amalgamation that is built and the
+    # source tree whose test databases and `fuzzcheck.c` hold it. sqlite.org
+    # gives SHA3-256 only, in the product data on its download page.
+    "sqlite": {
+        "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+        "sha3_256": "92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30",
+        "top": "sqlite-amalgamation-3540100",
+    },
+    "sqlite-src": {
+        "url": "https://www.sqlite.org/2026/sqlite-src-3540100.zip",
+        "sha3_256": "877c6f4996ce7adb368686bce21638de9e3d91534832ad3d9d119037d1bc22ad",
+        "top": "sqlite-src-3540100",
+    },
 }
 
 # **Releases that are tags**, with no asset GitHub keeps a digest for:
@@ -147,8 +160,17 @@ def test262():
     return checkout("test262", TEST262["url"], TEST262["commit"])
 
 
-def sha256(path):
-    h = hashlib.sha256()
+def digest(release):
+    """The algorithm and the sum a publisher gives: SHA-256 for most, and
+    SHA3-256 where that is all the publisher gives, as sqlite.org does."""
+    for algorithm in ("sha256", "sha3_256"):
+        if algorithm in release:
+            return algorithm, release[algorithm]
+    raise KeyError("a release names its sum")
+
+
+def sum_of(path, algorithm):
+    h = hashlib.new(algorithm)
     with open(path, "rb") as f:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
@@ -167,12 +189,13 @@ def fetch(name):
             shutil.copyfileobj(r, f)
         os.rename(part, path)
 
-    got = sha256(path)
+    algorithm, want = digest(release)
+    got = sum_of(path, algorithm)
 
-    if got != release["sha256"]:
+    if got != want:
         os.remove(path)
-        sys.exit("upstream: %s has SHA-256 %s, not %s - removed"
-                 % (os.path.basename(path), got, release["sha256"]))
+        sys.exit("upstream: %s has %s %s, not %s - removed"
+                 % (os.path.basename(path), algorithm.upper().replace("_", "-"), got, want))
 
     return path
 
@@ -182,7 +205,7 @@ def unpack(name):
     into = os.path.join(UNPACKED, name)
     stamp = os.path.join(into, ".unpacked")
 
-    if os.path.exists(stamp) and open(stamp).read() == RELEASES[name]["sha256"]:
+    if os.path.exists(stamp) and open(stamp).read() == digest(RELEASES[name])[1]:
         return into
 
     shutil.rmtree(into, ignore_errors=True)
@@ -195,7 +218,7 @@ def unpack(name):
         subprocess.run(["tar", "-xf", path, "-C", into], check=True)
 
     with open(stamp, "w") as f:
-        f.write(RELEASES[name]["sha256"])
+        f.write(digest(RELEASES[name])[1])
 
     return into
 
