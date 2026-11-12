@@ -146,7 +146,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 to X3 built: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
 - The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed, to be built: `docs/playback.md`, `docs/playback-architecture.png`
 - JetSki's POSIX layer inside the process, and the Storage Kit its files go through - agreed and built: `docs/w3.md`
-- JavaScriptCore on Kosmos, JetSki's W4 - its source fetched, not committed - planned: `docs/w4.md`
+- JavaScriptCore on Kosmos, JetSki's W4 - its source fetched, not committed - built, test262 counted (`make test262`): `docs/w4.md`
 - Glossary: `docs/glossary.md`
 
 ---

@@ -313,6 +313,12 @@ static int memory_checks(char *out, unsigned long size)
         SAY("posix: mprotect across an unmapped page was not refused with ENOMEM");
     }
 
+    /* ...and what is not one: no bytes protected or advised, as on Linux,
+     * which JavaScriptCore's resizable buffers ask for (`testing.md` 18.780) */
+    if (mprotect(page, 0, PROT_NONE) != 0 || madvise(page, 0, MADV_DONTNEED) != 0) {
+        SAY("posix: mprotect or madvise of no bytes was refused (%d)", errno);
+    }
+
     if (munmap((void *)(uintptr_t)0x1000, 4096) == 0 || errno != EINVAL) {
         SAY("posix: munmap of an address never mapped was not refused with EINVAL");
     }

@@ -13,6 +13,12 @@
  * next touch reads zero as Linux's does. `MAP_FIXED` is a discard and a
  * protect over addresses the process already has.
  *
+ * **No bytes is no work, and succeeds**, for `mprotect` and `madvise` as
+ * on Linux: JavaScriptCore protects what a resizable buffer may grow
+ * into, and when its most rounds to the pages it has, that is nothing
+ * - and it ends the program on a refusal (`testing.md` 18.780). `munmap`
+ * of nothing is still EINVAL, as it is there.
+ *
  * What it refuses, and how: writable and executable at once is `EACCES`; a
  * file is `ENODEV`, since W3 maps none; `MAP_FIXED` over addresses that
  * are not this process's reservations is `ENOMEM`, since there is nothing
@@ -164,6 +170,10 @@ int mprotect(void *addr, size_t length, int prot)
     unsigned long pages = pages_in(length);
     long access, r;
 
+    if (length == 0 && aligned(addr)) {
+        return 0;                       /* none of the pages, as Linux has it */
+    }
+
     if (pages == 0 || !aligned(addr)) {
         errno = EINVAL;
         return -1;
@@ -181,6 +191,10 @@ int madvise(void *addr, size_t length, int advice)
 {
     unsigned long pages = pages_in(length);
     long r;
+
+    if (length == 0 && aligned(addr)) {
+        return 0;                       /* none of the pages, as Linux has it */
+    }
 
     if (pages == 0 || !aligned(addr)) {
         errno = EINVAL;

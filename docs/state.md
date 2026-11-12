@@ -2,9 +2,32 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.384: W4d built - JavaScriptCore on Kosmos; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.385: W4e built - test262 counted; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, morning: JetSki W4e (0.11.385, not pushed)
+
+**test262 is counted** (`docs/w4.md` W4e, `testing.md` 18.780). It runs
+outside the gate (Diego: option 1):
+
+- `make test262` runs it in eight x86-64 guests of 1 GB each and holds it
+  to `bench/test262.json`.
+  - Result: 22,408 of 23,015 language tests pass, in 2.0 minutes. The 817
+    module tests are not run.
+  - `UPDATE=1` keeps a run as the baseline; `ONLY=` holds one directory.
+- test262 is fetched by git at 2e58f87, in `tools/upstream.py`.
+- `$262` and the case runner are in `jsc_kosmos.cpp`.
+- Kosmos fixes on the way:
+  - `mprotect` and `madvise` of no bytes succeed, as on Linux;
+  - the VM is collected every 20 cases.
+- Three controls bite.
+
+**Next: W5**, the libraries (`docs/webkit.md`), with its document first.
+`webkit.md`'s *Still open* says disk before W5: 13 GB are free. Follow-ups
+are in `roadmap.md`. A dying program's last words cost a detour for the
+third time. `user/servers/vmm.c` still has a change that is not this work:
+commit with `':!user/servers/vmm.c'`.
 
 ## 12 November, small hours: JetSki W4d (0.11.384, not pushed)
 

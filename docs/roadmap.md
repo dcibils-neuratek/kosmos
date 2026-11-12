@@ -10116,14 +10116,34 @@ the applications make the system useful, and is not pulled forward.
     expression, Intl, a BigInt, the collector and `async` prints on Kosmos
     what Node prints on this Mac, and each of its three controls bites.
 
-  Next, **W4e**: test262's language tests, counted.
+  **W4e, test262, built** (18.780; outside the gate, Diego's choice on 12
+  November): `make test262`, 22,408 of 23,015 language tests passing in
+  two minutes in eight guests, held to `bench/test262.json`. `$262` is in
+  `jsc_kosmos.cpp`. On the way, `mprotect` of no bytes succeeds as on
+  Linux.
+
+  Next, **W5**: the libraries (`docs/webkit.md`), with its own document
+  first.
+
+  **Follow-ups from W4e**:
+  - *A module loader in the driver*: 287 failures and the 817 module tests
+    not run wait on one. JavaScriptCore's loader is reached through its
+    private API, or WebCore brings its own at W6; either way, the count
+    moves then.
+  - *`$262.agent`*: threads with VMs of their own, for the one language
+    test and for `built-ins/Atomics` when the built-ins are counted.
+  - *test262's built-ins*: `test/built-ins` and `test/intl402` are not
+    counted yet, and are larger than the language tests.
+
+  - *The gate is at 10:53* on 0.11.385, past its ten minutes: the slowest
+    is `x86-cafesa3d-2` at 277 s, then `x86-dock` and `x86-servers`.
+    Splitting the slowest or waiting for the thing in it, before the next
+    suite lands.
 
   **Follow-ups from W4d**:
-  - *`$262` for test262*: the host functions test262's harness calls
-    (`createRealm`, `evalScript`, `detachArrayBuffer`, `agent`), in
-    `jsc_kosmos.cpp`, since there is no `jsc.cpp` here.
   - *A dying program's last words*, again: finding W4d's abort took a
-    temporary kernel and a temporary stack walk (18.779). Worth doing
+    temporary kernel and a temporary stack walk (18.779), and W4e's three
+    causes were each found only by what the tests around them did (18.780). Worth doing
     before the next port needs it a third time.
   - *FFmpeg's config has drifted from `runtime/include/`*:
     `tools/ffmpeg_vendor.py`'s rule would also turn on `HAVE_CLOCK_GETTIME`,

@@ -54,6 +54,49 @@ RELEASES = {
 }
 
 
+# **test262** (`docs/w4.md` W4e) publishes no releases and no sums: what it
+# has is commits, and a commit's name is the hash of everything in it, which
+# is a sum the publisher gives. So it is fetched by git at that commit, only
+# as deep as that one, and refused unless git says that is what it holds.
+TEST262 = {
+    "url": "https://github.com/tc39/test262.git",
+    # 11 November 2026, "Test exotic DateTimeFormat options with Temporal
+    # objects": main the day W4e was started.
+    "commit": "2e58f87d8350ad51224617a041c6e041d52f8444",
+}
+
+
+def test262():
+    """Where test262 is, fetched at its commit if it is not there yet."""
+    into = os.path.join(UNPACKED, "test262")
+
+    def head():
+        r = subprocess.run(["git", "-C", into, "rev-parse", "HEAD"],
+                           capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else None
+
+    if head() != TEST262["commit"]:
+        shutil.rmtree(into, ignore_errors=True)
+        os.makedirs(into)
+        print("upstream: fetching test262 at %s" % TEST262["commit"])
+        for args in (["init", "-q"], ["remote", "add", "origin", TEST262["url"]],
+                     ["fetch", "-q", "--depth", "1", "origin", TEST262["commit"]],
+                     ["checkout", "-q", "FETCH_HEAD"]):
+            subprocess.run(["git", "-C", into] + args, check=True)
+
+    if head() != TEST262["commit"]:
+        shutil.rmtree(into, ignore_errors=True)
+        sys.exit("upstream: test262 is not at %s - removed" % TEST262["commit"])
+
+    # And nothing in the checkout changed since: a modified file would be
+    # counted as though it were test262's.
+    if subprocess.run(["git", "-C", into, "status", "--porcelain"],
+                      capture_output=True, text=True).stdout.strip():
+        sys.exit("upstream: test262's checkout in %s has been changed" % into)
+
+    return into
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:

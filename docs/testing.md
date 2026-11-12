@@ -32068,3 +32068,65 @@ says is missing, and `math.h` now declared `cbrtf`, `lrint` and `truncf`.
 Its config follows `math.h` by `tools/ffmpeg_vendor.py`'s rule, so twelve
 switches are on now, and `atan2f` came from musl to make its declaration
 true.
+
+## 18.780 test262's language tests, on Kosmos (JetSki W4e)
+
+`docs/w4.md` W4e. test262 at 2e58f87 (11 November 2026), fetched by git at
+that commit, run by JavaScriptCore in eight x86-64 guests of a gigabyte
+each by `tools/run_test262.py` (`make test262`), and held to
+`bench/test262.json`. Not in `make test`: Diego, 12 November, the
+recommendation.
+
+**22,408 of 23,015 pass (97.4%), in 2.0 minutes**, and 817 module tests
+are not run. The 607 failures, each with its reason in
+`build/test262/failures.txt`, are 287 that want a module loader, 148
+`import defer` and `import source`, 108 `using` and `await using`, and 64
+where JavaScriptCore 2.54 and the specification disagree. None is a
+crash and none a hang.
+
+It took three runs, and the first two found three things on Kosmos:
+
+| run | passed | failed | ended the program | hung | minutes |
+|---|---|---|---|---|---|
+| 1, as written | 22,374 | 641 | 28 | 6 | 11.1 |
+| 2, the VM collected every 20 cases | 22,399 | 616 | 8 | 1 | 3.6 |
+| 3, `mprotect` of nothing, and 1 GB | 22,408 | 607 | 0 | 0 | 2.0 |
+
+- **Run 1's crashes passed alone.** Each was code 70 about 800 cases into a
+  guest, and every one of those tests passed by itself. A global object per
+  case and the heap told only that there was garbage
+  (`JSGarbageCollect`) grew past the guest's memory. The driver now
+  collects the VM every 20 cases, synchronously.
+- **Run 2's crashes did not.** Six were resizable ArrayBuffers.
+  JavaScriptCore protects what such a buffer may grow into, and when its
+  most rounds to the 64 KB it has, that is no bytes. Kosmos's `mprotect`
+  returned EINVAL for no bytes and Linux returns success, and JavaScriptCore
+  ends the program when a protection fails. `mprotect` and `madvise` of no
+  bytes succeed now (`runtime/posix/mman.c`), and `posixtest.elf` holds
+  them to it; with the old `mman.c`, `x86-loader` fails, naming the check
+  and errno 22.
+- **The other two, and run 1's last hang**, compile 65,536 regular
+  expressions through `eval` in one script. In 512 MB the engine ran out
+  or crawled; in 1 GB and in 3 GB all three pass in seconds. The guests
+  have a gigabyte, set by `KOSMOS_T262_MEMORY`.
+
+Every one of them ended with no sentence, which is the roadmap's *last
+words* again.
+
+**The controls**, each on the directories it should break, with `ONLY=`,
+each failing the run against the baseline:
+
+| broken | directories | failed |
+|---|---|---|
+| an `async` test's completion never seen | `statements/async-function` | 42 of 74 |
+| no `"use strict";` in strict mode | `arguments-object`, `function-code` | 40 of 480 |
+| `$262.evalScript` runs nothing | `global-code` | 13 of 42 |
+
+And restored, the same four directories pass 596 of 596, as the baseline
+has them. A first try at the second control did not compile, and its run
+used the previous control's image: when a control's build fails, its run
+proves nothing.
+
+The gate, with the change to `mman.c` in it: 115 of 115 x86-64 suites in
+10:53, the slowest `x86-cafesa3d-2` at 277 s. That is past the ten
+minutes; the roadmap has it.

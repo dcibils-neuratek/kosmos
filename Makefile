@@ -5361,6 +5361,20 @@ test:
 stress: $(TARGET)
 	python3 tools/run_stress.py $(TARGET) $(if $(ROUNDS),$(ROUNDS),60)
 
+# **test262's language tests** (`docs/w4.md` W4e), run by JavaScriptCore in
+# eight x86-64 guests side by side and held to `bench/test262.json`: a test
+# that passed there and fails now is a failure. Not part of `make test`
+# (Diego, 12 November 2026): 23,000 tests, most twice, is past its ten
+# minutes. `UPDATE=1` keeps this run's count as the baseline; `ONLY=` a
+# pattern of the tests' paths, for one directory.
+.PHONY: test262
+test262:
+	@$(MAKE) --no-print-directory x86-build FULL=0
+	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=0 MEGA= build/user-x86_64/apps/jsc.elf
+	python3 tools/run_test262.py build/x86_64/kosmos.elf build/user-x86_64/apps \
+	    $(if $(SHARDS),--shards $(SHARDS),) $(if $(ONLY),--only '$(ONLY)',) \
+	    $(if $(filter 1,$(UPDATE)),--update,)
+
 # Power loss, which cannot be asked inside one boot. Not part of `make test`
 # because it boots eleven times and kills five of them.
 .PHONY: powertest

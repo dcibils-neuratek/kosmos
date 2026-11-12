@@ -1984,6 +1984,48 @@ itself was wrong twice before it was right. Dividing 1 by 3, or 2 by 3,
 gives the same answer whether you round down or to the nearest number,
 so neither could tell whether the mode had changed; 1 divided by 10 can.
 
+## 12 November, morning - JavaScript held to its standard
+
+**In short.** test262, the official test suite of the JavaScript language,
+now runs on Kosmos. 22,408 of its 23,015 language tests pass, and
+`make test262` checks that it stays that way, in two minutes.
+
+**What.** test262 is the suite the language's own committee keeps: one
+small file for every rule of the specification, more than twenty
+thousand of them for the language alone. Every engine (V8, SpiderMonkey,
+JavaScriptCore) is measured against it. It is fetched at one exact commit,
+and runs in eight Kosmos machines side by side. Each test runs in a fresh
+JavaScript world, usually twice: once in strict mode and once without.
+test262 asks the engine for a few helpers of its own, such as a second
+global world or a way to detach an array buffer, and the driver now
+provides them.
+
+**Why.** W4d showed one script working. This shows the engine working
+across the whole language, on Kosmos, and that matters because Kosmos is
+underneath every one of those tests: its memory, its threads, its files.
+And it found three things wrong with Kosmos rather than with JavaScript:
+
+- **Asking to protect zero bytes was refused.** Linux says yes and Kosmos
+  said "invalid argument", and JavaScriptCore stops the program when it
+  hears no. Resizable buffers, which WebAssembly is built on, hit it
+  every time. Fixed, and now tested.
+- **Garbage piled up between tests.** The engine was told there was
+  garbage, not to collect it, and about one test in 800 ran the machine
+  out of memory. It is now collected every 20 tests.
+- **Three tests need more than 512 MB.** Each compiles 65,536 regular
+  expressions. The test machines now have a gigabyte. Real machines have
+  sixteen.
+
+**Visible impact.** `make test262` answers in two minutes with a count, the
+tests that newly pass and the tests that newly fail. The first run took
+eleven minutes, most of it waiting on machines stuck in the problems
+above. Of the 607 failures, 543 are features this JavaScriptCore release
+does not have (`using`, two `import` proposals) or that need a module
+loader the driver does not have yet, which WebCore brings later. The
+other 64 are where JavaScriptCore itself disagrees with the
+specification. None crashes and none hangs. And again every crash died
+without a word, which is still the follow-up most worth doing.
+
 ## 12 November, small hours - JavaScript runs on Kosmos
 
 **In short.** JavaScriptCore, the JavaScript engine in Safari and in the
