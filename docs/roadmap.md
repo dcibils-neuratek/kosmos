@@ -10122,8 +10122,10 @@ the applications make the system useful, and is not pulled forward.
   `jsc_kosmos.cpp`. On the way, `mprotect` of no bytes succeeds as on
   Linux.
 
-  Next, **W5**: the libraries (`docs/webkit.md`), with its own document
-  first.
+  Next, **W5**: the libraries, planned in `docs/w5.md` (W5a pictures,
+  W5b the Text Kit's engines, W5c SQLite, libxml2 and libpsl, W5d OpenSSL
+  and curl, W5e Skia), with two choices of Diego's first: fetched or
+  vendored, and zlib or `miniz`'s names.
 
   **Follow-ups from W4e**:
   - *A module loader in the driver*: 287 failures and the 817 module tests
