@@ -10149,7 +10149,30 @@ the applications make the system useful, and is not pulled forward.
   an unlinked open file lasts until its last close, and `realloc` moves a
   large block with room to grow.
 
-  Next, the rest of **W5c**: libxml2 and libpsl.
+  **W5c, libxml2 and libpsl built** (18.785): libxml2 2.15.4 by its own
+  CMake and libpsl 0.23.3 with its list built in. libxml2's own `runtest`
+  - 60 sections, 3,886 tests, no errors or leaks - and libpsl's five tests,
+  324,516, every count this Mac's, in the guest (`x86-xml`). The POSIX
+  layer gained `glob` and `fnmatch` (held to this Mac's, `test_glob`), a
+  `setenv` that refuses, and an `fscanf` that says when the file ended; a
+  ported program's `main` is run one way for every kit
+  (`posix_program.h`).
+
+  Next, **W5d**: OpenSSL and curl.
+
+  **Follow-ups from W5c's libxml2 and libpsl** (18.785):
+  - *The gate at 10:41* (18.785), over its ten minutes: `x86-sql` takes
+    129 s alone and 235 s under the gate's load, behind `x86-cafesa3d-2`
+    and `host-llm`. Splitting `x86-sql` in two - `fuzzcheck` in one boot,
+    the rest in the other - would take it under the others.
+  - *The scanner's 4 KB*: a descriptor's `fscanf` sees what the buffer
+    holds, and a conversion that would cross past it is cut there
+    (`runtime/posix/stdio.c`). Nothing has met it; a port that scans long
+    fields would.
+  - *kfs's inodes are one per 64 KB*, fixed when the disk is made. A
+    `/Home` of many small files - a source tree, a mail folder - runs out
+    of inodes with most of its space free. A count that grows, or one
+    chosen when the disk is made, is the question.
 
   **Follow-ups from W5c's SQLite** (18.784):
   - *The map window is four gigabytes, and its addresses are never

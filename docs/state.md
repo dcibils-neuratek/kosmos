@@ -2,9 +2,32 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.389: W5c's SQLite built; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.390: W5c finished - libxml2 and libpsl built; nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, late: JetSki W5c's libxml2 and libpsl (0.11.390, not pushed)
+
+**W5c is finished** (`docs/w5.md` W5c, `testing.md` 18.785):
+
+- libxml2 2.15.4 and libpsl 0.23.3 in `tools/upstream.py`, held to their
+  SHA-256s. libxml2 by its own CMake in `tools/w5_build.py` (no iconv, ICU
+  or modules); libpsl compiled by the Makefile (`LIBPSL_OBJS`, list built
+  in, no IDN). Every W5 library for Kosmos gets
+  `CMAKE_INSTALL_SYSCONFDIR=/Kosmos/Settings`.
+- `xmltest.elf` (`user/kits/xmltest/`) is `x86-xml`, run by
+  `tools/run_xml.py`: libxml2's `runtest -v` from `/Home/apps/xml` (60
+  sections, 3,886 tests, no errors) and libpsl's five tests (324,516),
+  each count the Mac's. 32 s. Controls `KOSMOS_XML_BREAK=result|psl` bite.
+- Shared pieces: `glob` and `fnmatch` (`runtime/posix/glob.c`, held to the
+  Mac's by `tools/test_glob.c` in `host`); `setenv`/`unsetenv` refuse
+  (README row); `fscanf` raises end-of-file when it reaches it
+  (`posixtest`, control bites); `posix_program_run`/`posix_program_exit`
+  (`posix_program.h`) and `kit_push_spill` (`kitenv`), which `sqltest` now
+  uses too (`-Dexit=posix_program_exit`).
+
+**Next: W5d**, OpenSSL and curl. curl will link `LIBPSL_OBJS` and zlib.
+For Diego before W6: the disk and the map window's addresses (`roadmap.md`).
 
 ## 12 November, night: JetSki W5c's SQLite (0.11.389, not pushed)
 

@@ -944,6 +944,41 @@ static int stdio_checks(char *out, unsigned long size)
         }
     }
 
+    /* **A scan that reaches the end says so** (`docs/w5.md` W5c): records
+     * read with `fscanf` until it stops, and then `feof` tells a file that
+     * ended from one that did not parse - libxml2's `runtest` asks exactly
+     * that, and was told "invalid format" at the end of every file. */
+    {
+        static const char *const files[] = { "1 a\n2 b\n\n", "1 a\n2 b\n2" };
+        char word[8];
+
+        for (int i = 0; i < 2; i++) {
+            int fd = open("/Temporary/posixtest-scan", O_RDWR | O_CREAT | O_TRUNC, 0644);
+            int records = 0;
+
+            if (fd < 0 || write(fd, files[i], strlen(files[i])) != (ssize_t)strlen(files[i])
+                || lseek(fd, 0, SEEK_SET) != 0 || (f = fdopen(fd, "r")) == NULL) {
+                FSAY("stdio: the scanned file");
+                break;
+            }
+
+            while (fscanf(f, "%d %7s", &a, word) == 2) {
+                records++;
+            }
+
+            /* The first ends cleanly after two records; the second has a
+             * number with no word after it, and also reaches the end. */
+            if (records != 2 || !feof(f)) {
+                FSAY("stdio: fscanf to the end of file %d: %d records, feof %d",
+                     i, records, feof(f));
+            }
+
+            fclose(f);
+        }
+
+        unlink("/Temporary/posixtest-scan");
+    }
+
     /* A temporary file, gone when closed. */
     {
         DIR *d;

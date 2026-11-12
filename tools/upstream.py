@@ -85,6 +85,21 @@ RELEASES = {
         "sha3_256": "877c6f4996ce7adb368686bce21638de9e3d91534832ad3d9d119037d1bc22ad",
         "top": "sqlite-src-3540100",
     },
+    # **W5c**: libxml2 2.15.4, WebCore's XML and XSLT's parser, with the
+    # test trees `runtest.c` holds it to. GNOME publishes a SHA-256 beside
+    # each tarball.
+    "libxml2": {
+        "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz",
+        "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821",
+        "top": "libxml2-2.15.4",
+    },
+    # **W5c**: libpsl 0.23.3, the public suffix list a cookie is held to.
+    "libpsl": {
+        "url": "https://github.com/rockdaboot/libpsl/releases/download/0.23.3/"
+               "libpsl-0.23.3.tar.gz",
+        "sha256": "93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be",
+        "top": "libpsl-0.23.3",
+    },
 }
 
 # **Releases that are tags**, with no asset GitHub keeps a digest for:

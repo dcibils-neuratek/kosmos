@@ -9,6 +9,7 @@
 #include "lauxlib.h"
 
 #include "kits/kitenv.h"
+#include "kosmos.h"
 
 int kit_program_has(lua_State *L, const char *want)
 {
@@ -87,4 +88,19 @@ long kit_capability(lua_State *L, const char *path)
 
     lua_settop(L, top);
     return cap;
+}
+
+void kit_push_spill(lua_State *L)
+{
+    luaL_Buffer said;
+    char chunk[4096];
+    size_t n;
+
+    luaL_buffinit(L, &said);
+
+    while ((n = kosmos_spill_drain(chunk, sizeof(chunk))) > 0) {
+        luaL_addlstring(&said, chunk, n);
+    }
+
+    luaL_pushresult(&said);
 }

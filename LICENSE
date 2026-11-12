@@ -198,6 +198,18 @@ Vendored third-party code keeps its own licence, which travels beside it:
       dedication is at the top of sqlite3.c. Only sqltest.elf, W5c's
       test, links it
 
+  libxml2 2.15.4, by Daniel Veillard and the libxml2 contributors, under
+      the MIT licence
+      Not in the tree: tools/upstream.py fetches GNOME's release, held to
+      its SHA-256 (docs/w5.md W5c); the notice is its Copyright file. Only
+      xmltest.elf, W5c's test, links it
+
+  libpsl 0.23.3, by Tim Rühsen and the libpsl contributors, under the MIT
+      licence, with Chromium's DAFSA lookup under a BSD licence
+      Not in the tree: tools/upstream.py fetches its release, held to
+      GitHub's SHA-256 (docs/w5.md W5c); the notices are its COPYING and
+      src/LICENSE.chromium. Only xmltest.elf links it
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

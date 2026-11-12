@@ -30,4 +30,12 @@ int kit_library(lua_State *L, int *ref, const char *path, char *why, size_t why_
 /* `fs.capability(path)`: the index this process holds for `path`, or -1. */
 long kit_capability(lua_State *L, const char *path);
 
+/*
+ * What C in this process printed while it did not own the console - the
+ * spill ring (`kosmos.h`) drained - as one string on the stack, for the
+ * program to print. A ported program run by `posix_program_run` says
+ * everything it says this way.
+ */
+void kit_push_spill(lua_State *L);
+
 #endif

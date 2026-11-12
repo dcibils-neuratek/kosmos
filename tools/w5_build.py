@@ -105,6 +105,24 @@ LIBRARIES = {
         # rather than asking CoreText.
         "-DHB_HAVE_CORETEXT=OFF",
     ],
+    # **W5c**: WebCore's XML parser, and XSLT's when that comes.
+    "libxml2": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        # Its programs are for a shell, and its tests are `runtest.c`,
+        # which `tools/run_xml.py` links itself, here and in the guest.
+        "-DLIBXML2_WITH_PROGRAMS=OFF", "-DLIBXML2_WITH_TESTS=OFF",
+        "-DLIBXML2_WITH_PYTHON=OFF",
+        # Kosmos's libc has no iconv, and WebKit hands the parser text it
+        # decoded itself; ICU's converters are not linked into it either.
+        # Off on this Mac too, so the reference converts with the same
+        # tables: libxml2's own, UTF-8, UTF-16, Latin-1 and ISO 8859-x.
+        "-DLIBXML2_WITH_ICONV=OFF", "-DLIBXML2_WITH_ICU=OFF",
+        "-DLIBXML2_WITH_ISO8859X=ON",
+        # Modules are `dlopen`, which a system with no shared libraries does
+        # not have.
+        "-DLIBXML2_WITH_MODULES=OFF",
+        "-DLIBXML2_WITH_THREADS=ON",
+    ],
 }
 
 
@@ -116,6 +134,7 @@ TARGETS = {
     "libwebp": ["webp", "webpdecoder", "webpdemux", "libwebpmux", "sharpyuv"],
     "freetype": ["freetype"],
     "harfbuzz": ["harfbuzz"],
+    "libxml2": ["LibXml2"],
 }
 
 
@@ -157,6 +176,10 @@ def configure(arch, name, src, out, prefix):
                     "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"]
     else:
         # HarfBuzz is C++, compiled against the runtimes as WebKit is.
+        # A library's own settings (libxml2's default catalog) in the
+        # system's place for them (`layout.md`), not in the install folder
+        # on this Mac, which would put a path here into the image.
+        command += ["-DCMAKE_INSTALL_SYSCONFDIR=/Kosmos/Settings"]
         command += ["-DCMAKE_TOOLCHAIN_FILE=" + TOOLCHAIN,
                     "-DKOSMOS_ARCH=" + arch, "-DKOSMOS_ROOT=" + ROOT,
                     "-DKOSMOS_LIBCXX_INCLUDE=" + os.path.join(

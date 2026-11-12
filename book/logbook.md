@@ -2204,3 +2204,52 @@ on the Mac; the whole test, including building the Mac's copies, takes
 history, cookies and site storage will live. One question goes to Diego
 before WebCore arrives: whether Nebula should start reusing addresses a
 program has given back, because a browser runs for days.
+
+## 12 November, late - the XML a browser reads, and the cookies it may keep
+
+**In short.** Two more of the browser's libraries now run on Kosmos.
+libxml2 reads XML, which the web uses for feeds, SVG pictures and XSLT.
+libpsl knows the public suffix list, the list of web addresses like
+`co.uk` that belong to nobody, so a site cannot set a cookie for all of
+them. Both pass their own test programs on Kosmos with exactly the Mac's
+results: 3,886 tests for libxml2 and 324,516 for libpsl.
+
+**What.** This finishes W5's third step (W5c in `docs/w5.md`). Both
+libraries are downloaded as their authors ship them, checked against
+published checksums, and compiled unchanged. libxml2's own test program,
+`runtest`, reads about 3,500 test documents and compares what it makes of
+each with the answer kept beside it. libpsl's five tests ask its list about
+hundreds of thousands of addresses.
+
+**Why.** WebKit hands every XML document to libxml2, and checks every
+cookie's domain against libpsl, and so will curl in the next step. A
+mistake in either is invisible until a page breaks or a cookie leaks.
+
+**How it is proved.** The same programs are built on the Mac and every
+count is compared, section by section. Then the tests are broken on
+purpose, once each way, and must fail: one expected answer changed by one
+byte, and half of libpsl's test list taken away.
+
+**What it found.** Not in the libraries. Four things in Kosmos:
+
+- Kosmos had no `glob`, the function that lists the files matching a
+  pattern like `test/*.xml`. Without it, `runtest` found no test files
+  and reported success, having tested nothing. It is written now, and is
+  checked against the Mac's own on 7,497 questions. That check caught a
+  bug in it on the first run.
+- `fscanf`, which reads numbers and words from a file, never said when the
+  file had ended. A program that reads records until there are no more,
+  and then asks "did the file end, or was it garbled?", was always told
+  garbled. That made 13 of libxml2's tests fail. It is fixed, and has a
+  test of its own.
+- `setenv` did not exist. Kosmos has no environment variables at all, on
+  purpose, so `setenv` now exists and says no.
+- The machinery for running another program's `main` inside a kit had been
+  written for SQLite last night. It was needed again, so it became one
+  shared piece instead of a copy.
+
+**Visible impact.** None yet on screen. Two more pieces of the browser are
+in place. Next is the secure connection, OpenSSL and curl.
+
+**Measurements.** `runtest`'s 3,886 tests take 23 seconds in the emulator;
+on the Mac they take 1.6. The whole suite takes 32 seconds.

@@ -509,6 +509,13 @@ SUITES = [
     Suite("x86-sql", ["python3", "tools/run_sql.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5c's libxml2 and libpsl** (`docs/w5.md`): libxml2's `runtest`
+    # over its own test and result trees, every section's count held to
+    # this Mac's; libpsl's five tests, every count held to this Mac's.
+    Suite("arm-xml", ["python3", "tools/run_xml.py", ARM, "build/user-test/apps"]),
+    Suite("x86-xml", ["python3", "tools/run_xml.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

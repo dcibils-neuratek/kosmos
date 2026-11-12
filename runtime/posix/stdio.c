@@ -992,6 +992,14 @@ int vfscanf(FILE *f, const char *fmt, va_list ap)
 
         n = kosmos_vscan((const char *)f->bytes + f->at, f->length - f->at, fmt, ap, &used);
         f->at += used;
+
+        /* A scan that read to the end found the end, as `getc` would have:
+         * `runtest` loops on `fscanf` and then asks `feof` whether the file
+         * ended or did not parse (`docs/w5.md` W5c). */
+        if (f->at >= f->length) {
+            f->eof = 1;
+        }
+
         return n;
     }
 
@@ -1006,10 +1014,13 @@ int vfscanf(FILE *f, const char *fmt, va_list ap)
         f->start = 0;
     }
 
+    int ended = 0;
+
     while (f->end < BUFFER) {
         ssize_t r = read(f->fd, f->buffer + f->end, BUFFER - f->end);
 
         if (r <= 0) {
+            ended = r == 0;
             break;
         }
 
@@ -1031,6 +1042,13 @@ int vfscanf(FILE *f, const char *fmt, va_list ap)
 
     n = kosmos_vscan((const char *)f->buffer, f->end, fmt, ap, &used);
     f->start = used;
+
+    /* The end of the buffer is the end of the file only when `read` said
+     * so; otherwise more is there for the next call. */
+    if (ended && used >= f->end) {
+        f->eof = 1;
+    }
+
     return n;
 }
 

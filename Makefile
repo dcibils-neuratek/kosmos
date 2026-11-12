@@ -2350,6 +2350,14 @@ $(HOSTDIR)/test_pack: tools/test_pack.c user/kits/gfx/pack.c user/kits/gfx/pack.
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/gfx -o $@ \
 	        tools/test_pack.c user/kits/gfx/pack.c
 
+# **`glob` and `fnmatch`** (`runtime/posix/glob.c`), held to this Mac's
+# own, answer by answer, with a folder tree made for it.
+#
+$(HOSTDIR)/test_glob: tools/test_glob.c runtime/posix/glob.c runtime/posix/include/glob.h \
+        runtime/posix/include/fnmatch.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -D_DARWIN_C_SOURCE -Wall -Wextra -Werror -O2 -o $@ tools/test_glob.c
+
 # **gzip, read** (`user/kits/compress/gzip.c`): a stream Python wrote, every
 # header flag, two members, a megabyte, every way of being cut short, checks
 # that lie and a caller that says stop (`roadmap.md` 6zz g).
@@ -3353,7 +3361,7 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 #
 POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
               runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
-              runtime/posix/socket.c
+              runtime/posix/socket.c runtime/posix/glob.c runtime/posix/program.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 #
@@ -3621,7 +3629,9 @@ build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.
 	    || { tail -60 build/w5/$(ARCH)/build.log; exit 1; }
 	@touch $@
 
-$(W5_LIBS) $(W5_TEXT_LIBS): build/w5/$(ARCH)/.built
+W5_XML_LIBS := $(W5_DIR)/lib/libxml2.a
+
+$(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS): build/w5/$(ARCH)/.built
 
 #
 # **W5a's picture test** (`tools/run_pictures.py`): `picturetest.c` and its
@@ -3679,7 +3689,7 @@ $(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TE
 # `main.mk`, and Kosmos's three: the dotfile lock as the default, since
 # the servers keep no locks (`fcntl.h`); threads; and `usleep` to wait
 # with. The two programs' `main`s are renamed as they are compiled, and
-# `exit` in everything beside the library is `sqltest_exit`, which
+# `exit` in everything beside the library is `posix_program_exit`, which
 # returns to the kit: Kosmos's `exit` ends the process, and with it
 # what the program printed before it gave up.
 # `main.mk`'s `SQLITE_PRINTF_PRECISION_LIMIT=1000` is left out: it cuts
@@ -3710,7 +3720,7 @@ SQLITE_OPTS := -DSQLITE_OSS_FUZZ -DSQLITE_DECIMAL_MAX_DIGIT=1000 \
 # depends on - as `$(UFLAGS_FILE)` is for the rest - so changing one
 # compiles SQLite again rather than linking the old objects.
 SQLITE_OPTS_FILE := $(UBUILD)/w5c/options
-SQLITE_OPTS_NOW := $(subst ',,$(SQLITE_OPTS)) -Dexit=sqltest_exit -Dmain=sqltest_*_main
+SQLITE_OPTS_NOW := $(subst ',,$(SQLITE_OPTS)) -Dexit=posix_program_exit -Dmain=sqltest_*_main
 $(shell mkdir -p $(UBUILD)/w5c; [ "$$(cat $(SQLITE_OPTS_FILE) 2>/dev/null)" = '$(SQLITE_OPTS_NOW)' ] \
         || printf '%s' '$(SQLITE_OPTS_NOW)' > $(SQLITE_OPTS_FILE))
 
@@ -3732,7 +3742,7 @@ $(UBUILD)/w5c/$(notdir $(1)).o: build/upstream/sqlite/.unpacked $(UFLAGS_FILE) \
 	@mkdir -p $$(dir $$@)
 	$$(CC) $$(POSIX_CFLAGS) -I user/kits/sqltest/include $$(UCFLAGS) -w -I$(SQLITE_AMAL) -I$(SQLITE_SRC)/test \
 	    -I$(SQLITE_SRC)/ext/recover $$(SQLITE_OPTS) $$(sqltest_main_$(notdir $(1))) \
-    $(if $(filter sqlite3.c,$(notdir $(1))),,-Dexit=sqltest_exit) \
+    $(if $(filter sqlite3.c,$(notdir $(1))),,-Dexit=posix_program_exit) \
 	    -c $(1) -o $$@
 endef
 $(foreach f,$(SQLTEST_UPSTREAM),$(eval $(call SQLTEST_RULE,$(f))))
@@ -3742,6 +3752,12 @@ $(UBUILD)/user/kits/sqltest/sqltest.c.o: user/kits/sqltest/sqltest.c user/kits/s
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem $(SQLITE_AMAL) -MMD -MP -c $< -o $@
 
+# Its door runs the programs through the POSIX layer (`posix_program.h`).
+$(UBUILD)/user/kits/sqltest/sqltest_kit.c.o: user/kits/sqltest/sqltest_kit.c \
+        user/kits/sqltest/sqltest.h runtime/posix/include/posix_program.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
+
 $(UBUILD)/apps/sqltest.elf: $(USER_OBJS) $(SQLTEST_OBJS) $(POSIX_OBJS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SQLTEST_OBJS) $(POSIX_OBJS) \
@@ -3750,6 +3766,79 @@ $(UBUILD)/apps/sqltest.elf: $(USER_OBJS) $(SQLTEST_OBJS) $(POSIX_OBJS) $(UBUILD)
 	    || { echo "apps: sqltest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_sqltest_kit|sqlite3_open)$$' \
 	    || { echo "apps: the system's image has SQLite in it"; rm -f $@; exit 1; }
+
+#
+# **W5c's libxml2 and libpsl** (`docs/w5.md`), and their test.
+#
+# libxml2 is built by its own CMake with the rest (`tools/w5_build.py`).
+# libpsl has no CMake, and two files are its build, as SQLite's one is:
+# `psl.c` with the list compiled in (`ENABLE_BUILTIN`, the table its
+# tarball ships), and no IDN library - WebKit and curl hand it hosts
+# already in ASCII, and it carries its own punycode for the list's.
+#
+LIBXML2_SRC := build/upstream/libxml2/libxml2-2.15.4
+LIBPSL_SRC  := build/upstream/libpsl/libpsl-0.23.3
+
+build/upstream/libpsl/.unpacked: tools/upstream.py
+	@python3 tools/upstream.py unpack libpsl > /dev/null
+	@touch $@
+
+LIBPSL_FLAGS := -DENABLE_BUILTIN -DPACKAGE_VERSION='"0.23.3"' -I$(LIBPSL_SRC)/include -I$(LIBPSL_SRC)/src
+LIBPSL_OBJS  := $(UBUILD)/w5c/psl/psl.c.o $(UBUILD)/w5c/psl/lookup_string_in_fixed_set.c.o
+
+$(UBUILD)/w5c/psl/%.c.o: build/upstream/libpsl/.unpacked $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -w $(LIBPSL_FLAGS) -c $(LIBPSL_SRC)/src/$*.c -o $@
+
+#
+# **The test** (`tools/run_xml.py`): libxml2's `runtest.c` and libpsl's
+# five tests, unmodified, their `main`s renamed and their `exit` brought
+# back to the kit (`posix_program.h`), in no image but `xmltest.elf`.
+# libpsl's are told where the guest keeps the list and its tests.
+#
+XMLTEST_PSL := /Home/apps/xml/psl
+XMLTEST_PSL_FLAGS := -DPSL_FILE='"$(XMLTEST_PSL)/public_suffix_list.dat"' \
+    -DPSL_TESTFILE='"$(XMLTEST_PSL)/tests.txt"' -DPSL_DAFSA='"$(XMLTEST_PSL)/psl.dafsa"' \
+    -DPSL_ASCII_DAFSA='"$(XMLTEST_PSL)/psl_ascii.dafsa"' -DSRCDIR='"$(XMLTEST_PSL)"'
+
+xmltest_main_test-is-public.c                   := xmltest_psl_is_public_main
+xmltest_main_test-is-public-all.c               := xmltest_psl_is_public_all_main
+xmltest_main_test-is-cookie-domain-acceptable.c := xmltest_psl_cookie_main
+xmltest_main_test-is-public-builtin.c           := xmltest_psl_builtin_main
+xmltest_main_test-registrable-domain.c          := xmltest_psl_registrable_main
+
+XMLTEST_PSL_TESTS := test-is-public test-is-public-all test-is-cookie-domain-acceptable \
+                     test-is-public-builtin test-registrable-domain
+
+XMLTEST_OBJS := $(UBUILD)/w5c/xml/runtest.c.o \
+                $(patsubst %,$(UBUILD)/w5c/xml/%.c.o,$(XMLTEST_PSL_TESTS)) \
+                $(UBUILD)/user/kits/xmltest/xmltest_kit.c.o
+
+$(UBUILD)/w5c/xml/runtest.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -w -Ibuild/w5/$(ARCH)/libxml2 -I$(LIBXML2_SRC)/include \
+	    -I$(LIBXML2_SRC) -Dmain=xmltest_runtest_main -Dexit=posix_program_exit \
+	    -c $(LIBXML2_SRC)/runtest.c -o $@
+
+$(UBUILD)/w5c/xml/test-%.c.o: build/upstream/libpsl/.unpacked $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -w $(LIBPSL_FLAGS) $(XMLTEST_PSL_FLAGS) \
+	    -Dmain=$(xmltest_main_test-$*.c) -Dexit=posix_program_exit \
+	    -c $(LIBPSL_SRC)/tests/test-$*.c -o $@
+
+$(UBUILD)/user/kits/xmltest/xmltest_kit.c.o: user/kits/xmltest/xmltest_kit.c \
+        runtime/posix/include/posix_program.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/xmltest.elf: $(USER_OBJS) $(XMLTEST_OBJS) $(LIBPSL_OBJS) $(POSIX_OBJS) $(W5_XML_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(XMLTEST_OBJS) $(LIBPSL_OBJS) $(POSIX_OBJS) \
+	    $(W5_XML_LIBS) -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_xmltest_kit$$' \
+	    || { echo "apps: xmltest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_xmltest_kit|xmlReadMemory|psl_builtin)$$' \
+	    || { echo "apps: the system's image has libxml2 or libpsl in it"; rm -f $@; exit 1; }
 
 #
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
@@ -3927,6 +4016,7 @@ apps:
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
+            $(UBUILD)/apps/xmltest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
@@ -5065,7 +5155,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
+host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -5303,6 +5393,7 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	$(HOSTDIR)/test_yuv_x86
 	$(HOSTDIR)/test_pack
 	$(HOSTDIR)/test_pack_x86
+	$(HOSTDIR)/test_glob
 	$(HOSTDIR)/test_zrle
 	$(HOSTDIR)/test_zsync
 	$(HOSTDIR)/test_raster

@@ -32390,3 +32390,69 @@ Three failed:
   18 of 18 alone. Its waiting is the roadmap's.
 
 The three through the gate (`ONLY=`): all pass.
+
+## 18.785 W5c's libxml2 and libpsl, on Kosmos (JetSki W5c)
+
+**libxml2 2.15.4** built by its own CMake (`tools/w5_build.py`; no iconv,
+ICU or modules, threads on) and **libpsl 0.23.3** compiled by the Makefile
+with its list built in and no IDN library (`docs/w5.md` W5c), into
+`xmltest.elf` with libxml2's `runtest.c` and libpsl's five tests,
+unmodified, their `main`s renamed.
+
+**`x86-xml`** (`tools/run_xml.py`): one boot, the program started in the
+folder holding libxml2's `test/` and `result/`, every count held to the same
+programs built on this Mac from the same releases.
+
+| | |
+|---|---|
+| libxml2's `runtest -v` | **60 sections, 3,886 tests, no errors, no leaks**, every section's line this Mac's; 23 s under TCG |
+| libpsl | `is-public` 62, `is-public-all` 324,270, `cookie-domain` 23, `is-public-builtin` 68, `registrable-domain` 93 - **324,516**, all passed, each this Mac's |
+| the suite | 32 s, with this Mac's programs built |
+
+**`test_glob`** in `host`: the POSIX layer's `fnmatch` and `glob` against
+this Mac's libc, 7,497 answers. Control `KOSMOS_GLOB_BREAK=1` (`fnmatch`
+without `FNM_PERIOD`): 69 differ.
+
+**Controls**: `KOSMOS_XML_BREAK=result` (a byte of `result/att1` on the
+guest's disk) - 4 errors; `=psl` (half of `tests.txt`) - `registrable-domain`
+54 against 93. The `fscanf` fix below taken out: `posixtest` says "fscanf
+to the end of file 0: 2 records, feof 0" and `runtest` has 13 errors.
+
+**Found on the way:**
+
+- **No `glob`**: libxml2's configure looks for it, and without it every
+  one of `runtest`'s lists is empty and it passes having tested nothing.
+  Written for the POSIX layer whole, held to this Mac's. One bug found by
+  the comparison before it shipped: `*` dropped `FNM_PERIOD` past a slash,
+  so `*/*` matched `a/.b`.
+- **`setenv`** did not exist, and `runtest` calls it. It refuses now, with
+  ENOTSUP: there is no environment.
+- **`kfs` ran out of inodes** making the guest's disk - 3,500 small files
+  on 144 MB, which has 2,304 (one per 64 KB). The runner sizes the disk by
+  its files' number too.
+- **1,436 errors, mine**: `runtest` joins `--out` and a name with no
+  slash, so `/Temporary` wrote `/Temporaryatt1.res` into `/`. The Mac's
+  reference had the same mistake and got away with it, the folder above
+  its `out` being writable. Both have the slash now.
+- **13 errors, Kosmos's**: every HTML tokenizer file ended in "invalid
+  format". `fscanf` reached the end and never raised the stream's
+  end-of-file flag, so `feof` said the file had not ended. A scan that
+  reaches the true end raises it now; `posixtest` holds it.
+- **The spill ring keeps 64 KB**: with 1,436 errors the first half of
+  `runtest`'s report was gone before the kit collected it, and the suite
+  counted 31 sections against 60. The roadmap's "ported code's stdout,
+  live" is the answer; a passing run says about 120 lines.
+
+**Shared on the way**: SQLite's kit ran its programs with its own stack,
+`exit` trap and spill collection, which libxml2's and libpsl's tests needed
+as well. They are `posix_program_run` and `posix_program_exit` in the POSIX
+layer and `kit_push_spill` in `kitenv` now, and `sqltest` stands on them:
+`x86-sql` passes on them (129 s). Every library built for Kosmos is told
+`/Kosmos/Settings` for its settings, where libxml2 had this Mac's install
+folder, with a user's name in it, as its catalog's home.
+
+**The gate**:
+**119 of 119 suites pass in 642 s (10:41)**, `x86-xml` among them. That is
+41 s over the ten-minute budget; the slowest were `x86-cafesa3d-2` (290 s),
+`host-llm` (249 s), `arm-sandbox-linuxsetup` (239 s) and `x86-sql`
+(235 s), which take 129 s alone and doubled under the gate's load.

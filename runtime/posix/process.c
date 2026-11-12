@@ -29,6 +29,26 @@ extern const char kosmos_build[];
 
 #define PAGE 4096L
 
+/* Refused: there is no environment to put a name in (`stdlib.h`). libxml2's
+ * `runtest` sets `XML_CATALOG_FILES` empty to have no catalogs, and has
+ * none here either way - nothing is set, and the default catalog's place
+ * (`/Kosmos/Settings/xml/catalog`) has nothing in it. */
+int setenv(const char *name, const char *value, int overwrite)
+{
+    (void)name;
+    (void)value;
+    (void)overwrite;
+    errno = ENOTSUP;
+    return -1;
+}
+
+int unsetenv(const char *name)
+{
+    (void)name;
+    errno = ENOTSUP;
+    return -1;
+}
+
 pid_t getpid(void)
 {
     return (pid_t)kosmos_self();

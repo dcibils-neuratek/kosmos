@@ -19,6 +19,13 @@ int   mkstemp(char *pattern);
 int   mkostemp(char *pattern, int flags);   /* O_CLOEXEC, O_APPEND */
 char *mkdtemp(char *pattern);
 
+/* **There is no environment** (`getenv`, `user/init/misc_user.c`), so
+ * nothing can be put into one: both refuse with ENOTSUP, as `flock` does,
+ * and a port finds out rather than believing a later `getenv` will answer
+ * (`process.c`). */
+int   setenv(const char *name, const char *value, int overwrite);
+int   unsetenv(const char *name);
+
 __END_DECLS
 
 #endif /* POSIX_STDLIB_H */
