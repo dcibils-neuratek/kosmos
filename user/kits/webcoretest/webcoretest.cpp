@@ -28,10 +28,12 @@
 /* After a header that defines WEBCORE_EXPORT, which it uses and does not. */
 #include <WebCore/BlobRegistry.h>
 #include <WebCore/DocumentLoader.h>
+#include <WebCore/DocumentView.h>
 #include <WebCore/DocumentWriter.h>
 #include <WebCore/EmptyClients.h>
 #include <WebCore/FontFolderKosmos.h>
 #include <WebCore/FrameLoader.h>
+#include <WebCore/GraphicsContextSkia.h>
 #include <WebCore/LocalFrame.h>
 #include <WebCore/LocalFrameInlines.h>
 #include <WebCore/LocalFrameView.h>
@@ -54,6 +56,8 @@
 
 #include <stdio.h>
 
+#include "include/core/SkSurface.h"
+
 using namespace WebCore;
 
 static webcoretest_say_fn g_say;
@@ -64,13 +68,14 @@ static void say(const String& line)
     g_say(line.utf8().data(), g_ctx);
 }
 
-// One page, from its file, laid out; its render tree said a line at a time.
-static bool treeOf(const String& folder, const String& name)
+// One page, from its file, laid out at `size`: the Page, or null with the
+// reason said. Its main frame holds the document and the view.
+static RefPtr<Page> pageFrom(const String& folder, const String& name, IntSize size)
 {
     auto bytes = FileSystem::readEntireFile(makeString(folder, "/pages/"_s, name));
     if (!bytes) {
         say(makeString("webcoretest: no page "_s, name));
-        return false;
+        return nullptr;
     }
 
     Ref page = Page::create(pageConfigurationWithEmptyClients(std::nullopt, PAL::SessionID::defaultSessionID()));
@@ -80,9 +85,9 @@ static bool treeOf(const String& folder, const String& name)
     RefPtr frame = page->localMainFrame();
     if (!frame) {
         say("webcoretest: a page with no frame"_s);
-        return false;
+        return nullptr;
     }
-    frame->setView(LocalFrameView::create(*frame, IntSize { 800, 600 }));
+    frame->setView(LocalFrameView::create(*frame, size));
     frame->init();
 
     RefPtr loader = frame->loader().activeDocumentLoader();
@@ -95,11 +100,21 @@ static bool treeOf(const String& folder, const String& name)
     RefPtr document = frame->document();
     if (!document) {
         say(makeString("webcoretest: no document for "_s, name));
-        return false;
+        return nullptr;
     }
     document->updateLayoutIgnorePendingStylesheets();
+    return page;
+}
+
+// One page laid out at 800 by 600; its render tree said a line at a time.
+static bool treeOf(const String& folder, const String& name)
+{
+    RefPtr page = pageFrom(folder, name, IntSize { 800, 600 });
+    if (!page)
+        return false;
 
     say(makeString("page "_s, name));
+    RefPtr frame = page->localMainFrame();
     auto tree = externalRepresentation(frame.get());
     for (auto line : StringView(tree).split('\n'))
         say(makeString("tree "_s, line));
@@ -195,8 +210,9 @@ class Strategies final : public PlatformStrategies {
 
 } // namespace
 
-extern "C" int webcoretest_run(const char* folder, const char* const* pages, int count,
-                               webcoretest_say_fn fn, void* ctx)
+// What every call does first: WebKit's threads and JavaScriptCore once,
+// and the fonts from this folder.
+static void start(const char* folder, webcoretest_say_fn fn, void* ctx)
 {
     g_say = fn;
     g_ctx = ctx;
@@ -213,6 +229,12 @@ extern "C" int webcoretest_run(const char* folder, const char* const* pages, int
 
     auto fonts = makeString(String::fromUTF8(folder), "/fonts/"_s);
     setKosmosFontFolder(fonts.utf8().data());
+}
+
+extern "C" int webcoretest_run(const char* folder, const char* const* pages, int count,
+                               webcoretest_say_fn fn, void* ctx)
+{
+    start(folder, fn, ctx);
 
     int made = 0;
     for (int i = 0; i < count; i++) {
@@ -221,4 +243,41 @@ extern "C" int webcoretest_run(const char* folder, const char* const* pages, int
     }
     say(makeString("webcoretest: "_s, made, " of "_s, count, " pages"_s));
     return made == count ? made : -1;
+}
+
+/*
+ * **The page painted** (`docs/w6.md` W6c): laid out at the picture's size
+ * and painted by WebCore, through Skia, into the pixels it is given - a
+ * Kosmos surface's, 0xAARRGGBB in a little-endian word, which is Skia's
+ * BGRA. WebCore draws as it does for a window with no GPU: every layer on
+ * the processor, into one canvas.
+ */
+extern "C" int webcoretest_paint(const char* folder, const char* name, uint32_t* pixels,
+                                 unsigned width, unsigned height, unsigned pitch,
+                                 webcoretest_say_fn fn, void* ctx)
+{
+    start(folder, fn, ctx);
+
+    IntSize size { static_cast<int>(width), static_cast<int>(height) };
+    RefPtr page = pageFrom(String::fromUTF8(folder), String::fromUTF8(name), size);
+    if (!page)
+        return -1;
+
+    auto info = SkImageInfo::Make(static_cast<int>(width), static_cast<int>(height),
+        kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+    auto surface = SkSurfaces::WrapPixels(info, pixels, pitch);
+    if (!surface) {
+        say("webcoretest: Skia would not draw into the surface"_s);
+        return -1;
+    }
+
+    RefPtr frame = page->localMainFrame();
+    RefPtr view = frame->view();
+    view->updateLayoutAndStyleIfNeededRecursive();
+    {
+        GraphicsContextSkia context(*surface->getCanvas(), RenderingMode::Unaccelerated, RenderingPurpose::DOM);
+        view->paint(context, IntRect { { }, size });
+    }
+    say(makeString("painted "_s, String::fromUTF8(name)));
+    return 0;
 }

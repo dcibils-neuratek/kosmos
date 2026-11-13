@@ -2572,3 +2572,35 @@ that page.
 
 **Measurements.** The full WebKit build is 7,827 steps. The test image
 is 145 MB. The fourteen pages are laid out in 1.4 seconds in the guest.
+
+## 13 November 2026 - WebCore paints a page on Kosmos
+
+**In short.** The browser engine now draws pages as well as laying them
+out. Each of the fourteen test pages is painted into a picture on
+Kosmos, and every picture is identical to the one WebKit's Linux port
+expects, down to the last pixel.
+
+**What.** Painting is the step after layout: the boxes, borders and
+colours turned into pixels. WebCore paints through Skia, the drawing
+library that already runs on Kosmos, straight into a Kosmos graphics
+surface, the same kind of surface an application's window is made of.
+The picture is then saved with the PNG writer Kosmos's screenshots use.
+
+**How it is checked.** WebKit's tests come with pictures of how each
+page should look on GTK, its Linux port. The test now compares Kosmos's
+picture with GTK's, pixel by pixel. All fourteen match exactly, 480,000
+pixels each. A control changes a single pixel of an expected picture,
+and the test catches it.
+
+**Why only these pages.** These tests have no text. Text is drawn by
+each system's own font machinery, so a page with words would differ
+from GTK's picture by a shade here and there even when it is right.
+Pages with text are held to WebKit's layout text, as Diego decided.
+
+**Visible impact.** Still none on the desktop. What it means is that
+WebCore can now turn a page into pixels on Kosmos. Running scripts and
+fetching pages over the network come next (W6d), then the browser's
+window (W7).
+
+**Measurements.** The suite takes about 9 seconds; 14 of 14 trees and
+14 of 14 pictures match.

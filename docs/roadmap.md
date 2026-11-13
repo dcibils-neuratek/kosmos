@@ -10218,6 +10218,10 @@ the applications make the system useful, and is not pulled forward.
     no display, so WebKit paints on the processor; a GPU API later gives
     the same door a real implementation.
   - *W6c*: painting into a region through Skia; the LayoutTests subset.
+    *Painting done, 0.11.399* (`testing.md` 18.794): each page painted
+    into a Kosmos surface and held pixel for pixel to GTK's expected
+    picture, all fourteen identical. Left: the subset widened to pages
+    with text, in Ahem.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
     sites; their render trees and times kept.
 
@@ -10237,6 +10241,9 @@ the applications make the system useful, and is not pulled forward.
     resumes, WebKit's AArch64 build takes WebCore and the image returns.
   - *The clipboard*: the pasteboard as the window manager's clipboard,
     copy and paste in a page (W7).
+  - *One PNG reader for the tools*: `tools/pngread.py` (W6c) reads a PNG's
+    pixels; `tools/lineicons.py` and `tools/run_cafesa3d.py` decode their
+    own and should use it.
   - *`tools/ffmpeg_vendor.py` does not run again cleanly*: run on 13
     November it set `isatty`, `clock_gettime`, `gmtime_r`,
     `localtime_r` and `arc4random_buf` on, which `runtime/include/`

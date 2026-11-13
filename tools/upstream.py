@@ -245,6 +245,14 @@ WEBKIT_TESTS = {
         for name in ("004a", "004b", "004c", "004d", "004e", "004f",
                      "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")
         for ext in (".htm", "-expected.txt")
+    ] + [
+        # W6c's: the same fourteen as GTK's port paints them - its
+        # expected pictures, which Kosmos's are held to pixel for pixel,
+        # since both draw with the same Skia and these hold no text.
+        "/LayoutTests/platform/gtk/css2.1/20110323/abspos-containing-block-initial-%s-expected.png"
+        % name
+        for name in ("004a", "004b", "004c", "004d", "004e", "004f",
+                     "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")
     ],
 }
 

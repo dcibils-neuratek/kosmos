@@ -2,9 +2,22 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W6c, WebCore paints a page (0.11.399, not pushed)
+
+**WebCore paints** (`docs/w6.md` W6c, `testing.md` 18.794):
+`webcoretest_paint` paints the frame view through Skia into a `gfx`
+surface; `x86-webcore` saves each picture (`build/webcore/pictures/`)
+and holds it pixel for pixel to GTK's `-expected.png` with
+`tools/pngread.py` - all fourteen identical. Controls `=page` and
+`=picture`.
+
+**Next**: widen the subset to pages with text, in Ahem, held as text;
+then W6d (scripts and timers, the loader). Roadmap follow-up: one PNG
+reader for the tools.
 
 ## 13 November: JetSki W6b, WebCore lays out a page (0.11.398, not pushed)
 

@@ -32780,3 +32780,31 @@ minutes too.
 their summaries. All four pass alone. Like `x86-xavier` (18.791), what
 fails under a full gate and not alone is a thing `make stress`'s premise
 says must still be true; it goes with that roadmap item.
+
+## 18.794 WebCore paints CSS 2.1's tests as GTK does
+
+**W6c** (`docs/w6.md`). `webcoretest_paint` wraps a `gfx` surface's
+pixels in an `SkSurface` and paints the frame view into it through
+`GraphicsContextSkia`, on the processor. `x86-webcore` now paints each
+of its fourteen pages at 800 by 600, saves it with `gfx.encode_png`,
+fetches it off the disk to `build/webcore/pictures/`, and compares it
+pixel for pixel with GTK's `LayoutTests/platform/gtk/.../-expected.png`
+(fetched with the tests, read by the new `tools/pngread.py`). The
+trees are still held line for line as in 18.793.
+
+**All fourteen pictures are identical to GTK's**: 0 of 480,000 pixels
+differ in each. That is possible because the same Skia draws both and
+these pages hold no text; a page with text is held as text only.
+
+**Controls**: `KOSMOS_WEBCORE_BREAK=page` still fails on the tree's
+lines 3 and 4; `KOSMOS_WEBCORE_BREAK=picture` changes one pixel of the
+first expected picture and the suite fails on it -
+`(400,300): GTK 00ff00, Kosmos ffff00`, `13 of 14`.
+
+| 0.11.399 | |
+|---|---|
+| `x86-webcore` | pass, about 9 s for the suite; trees and pictures, 14 of 14 |
+
+Only the harness and its suite changed (`webcoretest`, `run_webcore.py`,
+`pngread.py`, `upstream.py`'s list of fetched tests), so the suite ran
+alone, as *Test what changed* asks.
