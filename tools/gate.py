@@ -516,6 +516,24 @@ SUITES = [
     Suite("x86-xml", ["python3", "tools/run_xml.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
+    # vector file, `bntest` and `sslapitest` over its test certificates,
+    # each run's results held line for line to this Mac's. In three parts
+    # that run side by side - the vectors, the two SLH-DSA files that are
+    # most of the time, and the big numbers with TLS.
+    Suite("arm-ssl-evp", ["env", "KOSMOS_SSL_PART=evp", "python3", "tools/run_ssl.py", ARM,
+                      "build/user-test/apps"]),
+    Suite("x86-ssl-evp", ["env", "KOSMOS_SSL_PART=evp", "python3", "tools/run_ssl.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+    Suite("arm-ssl-slow", ["env", "KOSMOS_SSL_PART=slow", "python3", "tools/run_ssl.py", ARM,
+                      "build/user-test/apps"]),
+    Suite("x86-ssl-slow", ["env", "KOSMOS_SSL_PART=slow", "python3", "tools/run_ssl.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+    Suite("arm-ssl", ["env", "KOSMOS_SSL_PART=ssl", "python3", "tools/run_ssl.py", ARM,
+                      "build/user-test/apps"]),
+    Suite("x86-ssl", ["env", "KOSMOS_SSL_PART=ssl", "python3", "tools/run_ssl.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True),
+
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
     # `apps-tcc/` beside GCC's - a program run in it, its kit answering 42.

@@ -43,8 +43,11 @@ struct msghdr {
     int           msg_flags;
 };
 
+/* No `AF_UNIX`: two processes here talk over endpoints and regions, and
+ * `socket` takes TCP over IPv4 only. It was declared and refused, and a
+ * port that sees it declared believes in `sys/un.h` - OpenSSL did
+ * (`docs/w5.md` W5d) - so it is not declared. */
 #define AF_UNSPEC     0
-#define AF_UNIX       1
 #define AF_INET       2
 #define AF_INET6     10
 #define PF_UNSPEC    AF_UNSPEC

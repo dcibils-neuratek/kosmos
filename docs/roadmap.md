@@ -10158,7 +10158,24 @@ the applications make the system useful, and is not pulled forward.
   ported program's `main` is run one way for every kit
   (`posix_program.h`).
 
-  Next, **W5d**: OpenSSL and curl.
+  **W5d, OpenSSL built** (18.786): OpenSSL 4.1.0 by its own `Configure`
+  with Kosmos's targets, its assembly kept. Its own `evp_test` over every
+  vector file (13,399 vectors), `bntest` and `sslapitest` (6,875
+  results), every line this Mac's, in the guest under `-cpu max`
+  (`x86-ssl-evp`, `x86-ssl-slow`, `x86-ssl`). The POSIX layer gained
+  `select`, `gethostbyname`, `getservbyname` and, on ARM, `getauxval`;
+  `signal.h` joins `sys/ioctl.h` as a header that refuses.
+
+  Next, **curl**: 8.23.0 by its CMake on OpenSSL, zlib and libpsl, fetching
+  a page over HTTPS in the guest from a test server on this Mac.
+
+  **Follow-ups from W5d's OpenSSL** (18.786):
+  - *The ARM suites* (`arm-ssl-*`) are written and not yet run: ARM is out
+    of the gate until Diego resumes it. Their first run is what holds
+    `getauxval` and the crypto extensions' assembly.
+  - *The gate at 16:46 on 0.11.391*, well over its ten minutes; three more
+    suites now. What took the time is to be read from the next gate's
+    list before anything else lands.
 
   **Follow-ups from W5c's libxml2 and libpsl** (18.785):
   - *The gate at 10:41* (18.785), over its ten minutes: `x86-sql` takes

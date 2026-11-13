@@ -100,6 +100,20 @@ RELEASES = {
         "sha256": "93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be",
         "top": "libpsl-0.23.3",
     },
+    # **W5d**: OpenSSL 4.1.0, the system's one TLS (`docs/w5.md`), and
+    # curl 8.23.0 on it; both GitHub releases with their digests.
+    "openssl": {
+        "url": "https://github.com/openssl/openssl/releases/download/openssl-4.1.0/"
+               "openssl-4.1.0.tar.gz",
+        "sha256": "50c17baf54cb008f6ce42d50deb4b28050a1aad711636cabd4b241c7e90cc2fd",
+        "top": "openssl-4.1.0",
+    },
+    "curl": {
+        "url": "https://github.com/curl/curl/releases/download/curl-8_23_0/"
+               "curl-8.23.0.tar.xz",
+        "sha256": "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5",
+        "top": "curl-8.23.0",
+    },
 }
 
 # **Releases that are tags**, with no asset GitHub keeps a digest for:

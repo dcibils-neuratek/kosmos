@@ -539,6 +539,38 @@ size_t strcspn(const char *s, const char *reject)
     return (size_t)(p - s);
 }
 
+/*
+ * `strtok`: the next token of `s`, or of the string the last call was
+ * cutting when `s` is NULL, its end overwritten with a nought. The place it
+ * stopped is the process's one copy, as ISO C has it - OpenSSL's
+ * `sslapitest` reads its arguments with it (`docs/w5.md` W5d).
+ */
+char *strtok(char *s, const char *separators)
+{
+    static char *next;
+    char *token;
+
+    if (s == NULL && (s = next) == NULL) {
+        return NULL;
+    }
+
+    s += strspn(s, separators);
+    if (*s == '\0') {
+        next = NULL;
+        return NULL;
+    }
+
+    token = s;
+    s += strcspn(s, separators);
+    if (*s == '\0') {
+        next = NULL;
+    } else {
+        *s = '\0';
+        next = s + 1;
+    }
+    return token;
+}
+
 char *strstr(const char *haystack, const char *needle)
 {
     size_t n = strlen(needle);

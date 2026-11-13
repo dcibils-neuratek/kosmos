@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -1187,6 +1188,148 @@ const char *gai_strerror(int code)
     case EAI_BADFLAGS: return "bad flags";
     default:           return "unknown error";
     }
+}
+
+/*
+ * `select` is `poll` (`sys/select.h`): each descriptor named in any set is
+ * one `pollfd`, and what `poll` says comes back as the sets. A descriptor
+ * that is not open is EBADF, as POSIX has it, rather than a quiet "ready".
+ */
+int select(int count, fd_set *readable, fd_set *writable, fd_set *failed,
+           struct timeval *timeout)
+{
+    struct pollfd *set;
+    nfds_t used = 0;
+    int timeout_ms = -1;
+    int ready;
+    int r;
+
+    if (count < 0 || count > FD_SETSIZE
+        || (timeout != NULL && (timeout->tv_sec < 0 || timeout->tv_usec < 0))) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (timeout != NULL) {
+        long long ms = (long long)timeout->tv_sec * 1000 + (timeout->tv_usec + 999) / 1000;
+
+        timeout_ms = ms > 0x7fffffff ? 0x7fffffff : (int)ms;
+    }
+    if ((set = calloc(count > 0 ? (size_t)count : 1, sizeof(*set))) == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    for (int fd = 0; fd < count; fd++) {
+        short events = 0;
+
+        if (readable != NULL && FD_ISSET(fd, readable)) events |= POLLIN;
+        if (writable != NULL && FD_ISSET(fd, writable)) events |= POLLOUT;
+        if (failed != NULL && FD_ISSET(fd, failed))     events |= POLLPRI;
+        if (events != 0) {
+            set[used].fd = fd;
+            set[used].events = events;
+            used++;
+        }
+    }
+
+    if ((r = poll(set, used, timeout_ms)) < 0) {
+        free(set);
+        return -1;
+    }
+    for (nfds_t i = 0; i < used; i++) {
+        if (set[i].revents & POLLNVAL) {
+            free(set);
+            errno = EBADF;
+            return -1;
+        }
+    }
+
+    if (readable != NULL) FD_ZERO(readable);
+    if (writable != NULL) FD_ZERO(writable);
+    if (failed != NULL)   FD_ZERO(failed);
+    ready = 0;
+    for (nfds_t i = 0; i < used; i++) {
+        short said = set[i].revents;
+        int fd = set[i].fd;
+
+        /* An error or a hang-up wakes a reader and a writer both: the
+         * call they make next is what reports it, as on Linux. */
+        if ((set[i].events & POLLIN) && (said & (POLLIN | POLLHUP | POLLERR))) {
+            FD_SET(fd, readable);
+            ready++;
+        }
+        if ((set[i].events & POLLOUT) && (said & (POLLOUT | POLLHUP | POLLERR))) {
+            FD_SET(fd, writable);
+            ready++;
+        }
+        if ((set[i].events & POLLPRI) && (said & POLLPRI)) {
+            FD_SET(fd, failed);
+            ready++;
+        }
+    }
+    free(set);
+    return ready;
+}
+
+int h_errno;
+
+struct hostent *gethostbyname(const char *name)
+{
+    static char named[256];
+    static struct in_addr address;
+    static char *addresses[2];
+    static char *no_aliases[1];
+    static struct hostent host;
+    struct addrinfo hints, *found;
+    int r;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    if (name == NULL || strlen(name) >= sizeof(named)) {
+        h_errno = HOST_NOT_FOUND;
+        return NULL;
+    }
+    if ((r = getaddrinfo(name, NULL, &hints, &found)) != 0) {
+        h_errno = r == EAI_NONAME ? HOST_NOT_FOUND : r == EAI_AGAIN ? TRY_AGAIN : NO_RECOVERY;
+        return NULL;
+    }
+
+    address = ((struct sockaddr_in *)found->ai_addr)->sin_addr;
+    freeaddrinfo(found);
+    strcpy(named, name);
+    addresses[0] = (char *)&address;
+    addresses[1] = NULL;
+    no_aliases[0] = NULL;
+    host.h_name = named;
+    host.h_aliases = no_aliases;
+    host.h_addrtype = AF_INET;
+    host.h_length = 4;
+    host.h_addr_list = addresses;
+    return &host;
+}
+
+struct servent *getservbyname(const char *name, const char *protocol)
+{
+    static char named[32];
+    static char tcp[] = "tcp";
+    static char *no_aliases[1];
+    static struct servent service;
+    uint16_t port;
+
+    /* Streams only, and names only - a number is not a service's name. */
+    if (name == NULL || strlen(name) >= sizeof(named)
+        || (protocol != NULL && strcmp(protocol, "tcp") != 0)
+        || (*name >= '0' && *name <= '9') || !service_port(name, 0, &port)) {
+        return NULL;
+    }
+
+    strcpy(named, name);
+    no_aliases[0] = NULL;
+    service.s_name = named;
+    service.s_aliases = no_aliases;
+    service.s_port = htons(port);
+    service.s_proto = tcp;
+    return &service;
 }
 
 int getnameinfo(const struct sockaddr *address, socklen_t length,

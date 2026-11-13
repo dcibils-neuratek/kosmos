@@ -32456,3 +32456,56 @@ folder, with a user's name in it, as its catalog's home.
 41 s over the ten-minute budget; the slowest were `x86-cafesa3d-2` (290 s),
 `host-llm` (249 s), `arm-sandbox-linuxsetup` (239 s) and `x86-sql`
 (235 s), which take 129 s alone and doubled under the gate's load.
+
+## 18.786 W5d's OpenSSL, on Kosmos (JetSki W5d)
+
+**OpenSSL 4.1.0** built by its own `Configure` with Kosmos's targets
+(`runtime/cxx/openssl-kosmos.conf`, `tools/w5_build.py`; `no-quic no-dtls`,
+its assembly kept) into `ssltest.elf` with three of its own test programs,
+`evp_test`, `bntest` and `sslapitest`, unmodified, their `main`s and test
+hooks renamed, each run in a process of its own.
+
+**`x86-ssl-evp`, `x86-ssl-slow`, `x86-ssl`** (`tools/run_ssl.py`,
+`KOSMOS_SSL_PART`): three boots, side by side, under `-cpu max`; every
+run's result lines held, in order, to the same programs built on this Mac
+from the same release.
+
+| | |
+|---|---|
+| `evp_test`, 114 vector files in two runs | **13,238 vectors**, every line this Mac's; 17 s and 12 s |
+| `evp_test`, the two SLH-DSA files | 161 vectors; 98 s |
+| `bntest`, its files, then its own cases | 5 s and 6 s |
+| `sslapitest` over the test certificates | 25 s; with `bntest`, **6,875 results** |
+
+**Controls**: `KOSMOS_SSL_BREAK=vector` (an expected digest in
+`evpmd_sha.txt`) - `evp1` fails at `run_file_tests`; `=cert` (a byte of
+`servercert.pem`) - 691 of `sslapitest`'s results fail. Two first aims
+did not bite and are worth keeping: `rootcert.pem`, which `sslapitest`
+never opens, and `serverkey.pem`, whose byte halfway down signing never
+reads - this Mac's own run passed with it too.
+
+**Found on the way:**
+
+- **`qemu64` has no AES-NI.** OpenSSL chose its C for every cipher, so
+  the assembly real machines run was held to nothing, and
+  `evpciph_aes_stitched.txt` ran 0 of its tests in the guest. Under
+  `-cpu max` it runs 12 and skips 21, where this Mac runs 21 and skips 12:
+  x86's stitched ciphers and ARM's `-ETM` ones are different sets. That
+  file is held to the sum and to no failures.
+- **`evp_test` asserts at 100 arguments** (`test/testutil/options.c`), so
+  the files go in runs of 90.
+- **The test library's counters are never reset**, so each program is a
+  process of its own rather than three in one.
+- **Three runners building this Mac's OpenSSL at once** in one folder left
+  none of them a library: `w5_build.py` takes a lock on the folder now.
+- **What OpenSSL asked of Kosmos**: `select`, `gethostbyname`,
+  `getservbyname`, `strtok`, `strtoimax`, `EPROTO`, `getauxval` on ARM,
+  and `signal.h` and `sys/ioctl.h` as headers that refuse
+  (`runtime/posix/refused/`) - `docs/w5.md` W5d.
+
+**The gate** on 0.11.392: **122 of 122 suites pass in 1065 s (17:45)**,
+the three `x86-ssl` suites among them (64 s, 70 s and 150 s under the
+gate's load; all three done by 570 s). Over the ten-minute budget, as
+0.11.391's 16:46 was; the slowest were `x86-cafesa3d-2` (306 s), `x86-sql`
+(268 s), `host-llm` (260 s) and `arm-sandbox-linuxsetup` (233 s).
+

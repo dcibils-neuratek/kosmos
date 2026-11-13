@@ -2302,3 +2302,75 @@ on, and that the machine's Broadcom network card has no driver here.
 
 **Measurements.** None. QEMU cannot show this, because its firmware never
 leaves a breakpoint set, so the Mac Pro is the test.
+
+## 12 November, night - the lock on a browser's connections
+
+**In short.** OpenSSL, the library that makes a connection secure - the
+padlock in a browser's address bar - now runs on Kosmos. Its own test
+programs pass in Kosmos with exactly the Mac's results: 13,399 checks of
+its ciphers and signatures, and 6,875 of its big-number arithmetic and its
+TLS handshakes.
+
+**What.** The first half of W5's fourth step (W5d in `docs/w5.md`).
+OpenSSL is downloaded as released, checked against its published checksum
+and compiled unchanged, with its hand-written assembly kept - the fast
+paths that use the processor's own encryption instructions. Three of its
+test programs run in Kosmos: one that feeds every cipher, digest and
+signature known answers, one for the big numbers keys are made of, and
+one that makes two ends of a TLS connection talk to each other in memory,
+every way the protocol allows.
+
+**Why.** Every page a browser fetches over `https://` goes through this
+library, and so will curl, next. A mistake in it is silent: a wrong
+answer looks just like a right one until somebody else reads your
+traffic.
+
+**How it is proved.** The same programs are built on the Mac, and every
+result line from Kosmos is compared with the Mac's, in order. Then it is
+broken on purpose: one expected answer changed, and the test must fail;
+one byte of the test server's certificate changed, and 691 handshake
+tests fail.
+
+**What it found.**
+
+- The emulator's default processor has no AES instructions, so OpenSSL
+  had quietly used its slow, plain-C path, and the fast assembly every
+  real machine runs was never tested. The suites now run QEMU's fullest
+  processor.
+- The control had to be aimed twice. The first broke a certificate the
+  tests never open. The second broke a byte of the server's key that
+  signing never reads, and even the Mac passed with it. A control that
+  passes is a question, not a result.
+- OpenSSL asked Kosmos for a handful of ordinary functions: waiting on
+  several connections at once (`select`), two old ways of looking up names,
+  and on ARM a way of asking which instructions the processor has, which
+  Kosmos answers from what it already knows rather than by trying each one.
+
+**Visible impact.** None on screen yet. The browser's secure connections
+have their engine.
+
+**Measurements.** The cipher checks take 29 seconds in the emulator; two
+post-quantum signature files take 98 seconds by themselves; the TLS tests
+36. The three run side by side.
+
+## 12 November, night - the Mac Pro's desktop
+
+**In short.** Kosmos runs on the Mac Pro now, to the desktop. The fix for
+the firmware's leftover breakpoint was all it needed: the same image that
+stopped at step 10 of 12 now gets to the windows, the Deskbar and the
+pointer.
+
+**What.** A 2013 Mac Pro, Kosmos's third real machine after the ThinkPad
+and the M700. The first write of the new stick had not landed - the Mac
+could not read its boot partition, so the firmware went straight to macOS
+- and the second did. This Machine names it a MacPro6,1, finds its Xeon's
+eight processors and 32 GB, and lists 68 devices, eight of them driven,
+its sound among them.
+
+**What it does not have yet.** A network: its Broadcom card has no driver,
+so it cannot be worked on over the network as the M700 is. And its two
+FirePro cards are shown the firmware's framebuffer, not driven.
+
+**Visible impact.** A photograph of the desktop on a Mac, with Log,
+Monitor and This Machine open on it.
+

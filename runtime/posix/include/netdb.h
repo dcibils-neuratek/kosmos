@@ -48,6 +48,39 @@ struct addrinfo {
 #define EAI_MEMORY     (-10)
 #define EAI_SYSTEM     (-11)
 
+/*
+ * **The older names**, which ported code still compiles a branch for when
+ * it is not sure `getaddrinfo` exists - OpenSSL's `bio_addr.c` among them.
+ * They answer from the same resolver: one IPv4 address a name, kept in
+ * storage of the process's own that the next call overwrites, as POSIX
+ * says; `h_errno` is the process's, like `errno` (`design.md` §17).
+ */
+struct hostent {
+    char  *h_name;
+    char **h_aliases;
+    int    h_addrtype;
+    int    h_length;
+    char **h_addr_list;
+};
+#define h_addr h_addr_list[0]
+
+struct servent {
+    char  *s_name;
+    char **s_aliases;
+    int    s_port;          /* in network order */
+    char  *s_proto;
+};
+
+#define HOST_NOT_FOUND 1
+#define TRY_AGAIN      2
+#define NO_RECOVERY    3
+#define NO_DATA        4
+
+extern int h_errno;
+
+struct hostent *gethostbyname(const char *name);
+struct servent *getservbyname(const char *name, const char *protocol);
+
 int         getaddrinfo(const char *node, const char *service,
                         const struct addrinfo *hints, struct addrinfo **out);
 void        freeaddrinfo(struct addrinfo *list);

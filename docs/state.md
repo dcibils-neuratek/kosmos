@@ -2,9 +2,34 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.390: W5c finished - libxml2 and libpsl built; nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.392: W5d's OpenSSL built; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 12 November, night: JetSki W5d's OpenSSL (0.11.392, not pushed)
+
+**OpenSSL 4.1.0 runs on Kosmos** (`docs/w5.md` W5d, `testing.md` 18.786):
+
+- Built by its own `Configure` with `runtime/cxx/openssl-kosmos.conf`'s
+  targets (`tools/w5_build.py`, which now locks each build folder);
+  `no-quic no-dtls`, assembly kept, `/Kosmos/Settings/ssl`.
+- `ssltest.elf` (`user/kits/ssltest/`): `evp_test`, `bntest`, `sslapitest`,
+  run by `tools/run_ssl.py` in three parts (`KOSMOS_SSL_PART`), the gate's
+  `x86-ssl-evp`, `x86-ssl-slow`, `x86-ssl` (and `arm-ssl-*`, not yet run),
+  under `-cpu max`. Controls `KOSMOS_SSL_BREAK=vector|cert` bite.
+- POSIX layer: `select`, `gethostbyname`, `getservbyname`, `h_errno`,
+  `EPROTO`, `strtok`, `strtoimax`; `getauxval` (ARM HWCAPs from the ID
+  registers); `runtime/posix/refused/` holds `sys/ioctl.h` and `signal.h`.
+
+**Next: curl** 8.23.0 (already in `tools/upstream.py`) by CMake on OpenSSL,
+zlib and libpsl, fetching a page over HTTPS in the guest.
+
+**The Mac Pro boots 0.11.391 to the desktop** (`boot.md`'s row): the first
+write of the stick had not landed (this Mac could not mount its boot
+partition, and the firmware went to macOS); the second did. Pointer works;
+keyboard not yet reported. Not called stable. No Ethernet driver there
+(BCM57762, Linux's `tg3`), so no netboot loop; Apple's NetBoot is BSDP,
+not PXE - a driver plus BSDP would give it the M700's loop (Diego's call).
 
 ## 12 November, late: JetSki W5c's libxml2 and libpsl (0.11.390, not pushed)
 

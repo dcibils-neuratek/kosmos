@@ -3622,16 +3622,19 @@ W5_LIBS := $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/lib
 W5_TEXT_LIBS := $(W5_DIR)/lib/libharfbuzz.a $(W5_DIR)/lib/libfreetype.a
 
 build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.cmake $(CXXRT)/.built \
+                         runtime/cxx/openssl-kosmos.conf \
                          $(wildcard runtime/include/*.h runtime/include/sys/*.h \
-                                    runtime/posix/include/*.h runtime/posix/include/*/*.h)
+                                    runtime/posix/include/*.h runtime/posix/include/*/*.h \
+                                    runtime/posix/refused/*.h runtime/posix/refused/*/*.h)
 	@mkdir -p build/w5/$(ARCH)
 	@python3 tools/w5_build.py $(ARCH) > build/w5/$(ARCH)/build.log 2>&1 \
 	    || { tail -60 build/w5/$(ARCH)/build.log; exit 1; }
 	@touch $@
 
 W5_XML_LIBS := $(W5_DIR)/lib/libxml2.a
+W5_SSL_LIBS := $(W5_DIR)/lib/libssl.a $(W5_DIR)/lib/libcrypto.a
 
-$(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS): build/w5/$(ARCH)/.built
+$(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS) $(W5_SSL_LIBS): build/w5/$(ARCH)/.built
 
 #
 # **W5a's picture test** (`tools/run_pictures.py`): `picturetest.c` and its
@@ -3740,7 +3743,7 @@ define SQLTEST_RULE
 $(UBUILD)/w5c/$(notdir $(1)).o: build/upstream/sqlite/.unpacked $(UFLAGS_FILE) \
         $(SQLITE_OPTS_FILE)
 	@mkdir -p $$(dir $$@)
-	$$(CC) $$(POSIX_CFLAGS) -I user/kits/sqltest/include $$(UCFLAGS) -w -I$(SQLITE_AMAL) -I$(SQLITE_SRC)/test \
+	$$(CC) $$(POSIX_CFLAGS) -I runtime/posix/refused $$(UCFLAGS) -w -I$(SQLITE_AMAL) -I$(SQLITE_SRC)/test \
 	    -I$(SQLITE_SRC)/ext/recover $$(SQLITE_OPTS) $$(sqltest_main_$(notdir $(1))) \
     $(if $(filter sqlite3.c,$(notdir $(1))),,-Dexit=posix_program_exit) \
 	    -c $(1) -o $$@
@@ -3839,6 +3842,82 @@ $(UBUILD)/apps/xmltest.elf: $(USER_OBJS) $(XMLTEST_OBJS) $(LIBPSL_OBJS) $(POSIX_
 	    || { echo "apps: xmltest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_xmltest_kit|xmlReadMemory|psl_builtin)$$' \
 	    || { echo "apps: the system's image has libxml2 or libpsl in it"; rm -f $@; exit 1; }
+
+#
+# **W5d's OpenSSL test** (`docs/w5.md`, `tools/run_ssl.py`): three of
+# OpenSSL's own test programs - `evp_test`, `bntest` and `sslapitest` -
+# and the test library they share, unmodified, in no image but
+# `ssltest.elf`. Each program's `setup_tests`, `cleanup_tests` and
+# `test_get_options` are renamed as it is compiled, and the kit holds the
+# names the library calls and passes each call to the program running; the
+# library's own defaults for two of them, which an archive would let a
+# program override, are left out. `exit` comes back to the kit
+# (`posix_program.h`), and `main` is the library's, renamed.
+#
+OPENSSL_SRC   := build/upstream/openssl/openssl-4.1.0
+OPENSSL_BUILD := build/w5/$(ARCH)/openssl
+SSLTEST_FLAGS := -w -I$(OPENSSL_BUILD)/include -I$(OPENSSL_BUILD)/apps/include \
+    -I$(OPENSSL_SRC)/include -I$(OPENSSL_SRC)/apps/include \
+    -I$(OPENSSL_SRC)/providers/common/include -I$(OPENSSL_SRC) -I$(OPENSSL_SRC)/test \
+    -I$(OPENSSL_SRC)/test/mfail -isystem runtime/posix/refused -Dexit=posix_program_exit
+
+SSLTEST_TESTUTIL := basic_output output driver tests cb stanza format_output load fake_random \
+                    main testutil_init options provider apps_shims random helper compare
+
+ssltest_rename_evp_test   := ssltest_evp
+ssltest_rename_bntest     := ssltest_bn
+ssltest_rename_sslapitest := ssltest_ssl
+
+SSLTEST_OBJS := $(patsubst %,$(UBUILD)/w5d/testutil/%.c.o,$(SSLTEST_TESTUTIL)) \
+                $(UBUILD)/w5d/mfail.c.o $(UBUILD)/w5d/opt.c.o \
+                $(UBUILD)/w5d/evp_test.c.o $(UBUILD)/w5d/bntest.c.o $(UBUILD)/w5d/sslapitest.c.o \
+                $(UBUILD)/w5d/helpers/ssltestlib.c.o $(UBUILD)/w5d/filterprov.c.o \
+                $(UBUILD)/w5d/tls-provider.c.o \
+                $(UBUILD)/user/kits/ssltest/ssltest_kit.c.o
+
+$(UBUILD)/w5d/testutil/main.c.o: SSLTEST_MAIN := -Dmain=ssltest_testutil_main
+
+$(UBUILD)/w5d/testutil/%.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) $(SSLTEST_MAIN) \
+	    -c $(OPENSSL_SRC)/test/testutil/$*.c -o $@
+
+$(UBUILD)/w5d/mfail.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) -c $(OPENSSL_SRC)/test/mfail/mfail.c -o $@
+
+$(UBUILD)/w5d/opt.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) -c $(OPENSSL_SRC)/apps/lib/opt.c -o $@
+
+$(UBUILD)/w5d/evp_test.c.o $(UBUILD)/w5d/bntest.c.o $(UBUILD)/w5d/sslapitest.c.o: \
+        $(UBUILD)/w5d/%.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) \
+	    -Dsetup_tests=$(ssltest_rename_$*)_setup_tests \
+	    -Dcleanup_tests=$(ssltest_rename_$*)_cleanup_tests \
+	    -Dtest_get_options=$(ssltest_rename_$*)_test_get_options \
+	    -c $(OPENSSL_SRC)/test/$*.c -o $@
+
+$(UBUILD)/w5d/helpers/ssltestlib.c.o $(UBUILD)/w5d/filterprov.c.o $(UBUILD)/w5d/tls-provider.c.o: \
+        $(UBUILD)/w5d/%.c.o: build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) -c $(OPENSSL_SRC)/test/$*.c -o $@
+
+$(UBUILD)/user/kits/ssltest/ssltest_kit.c.o: user/kits/ssltest/ssltest_kit.c \
+        runtime/posix/include/posix_program.h build/w5/$(ARCH)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) $(SSLTEST_FLAGS) -Wall -Werror -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/ssltest.elf: $(USER_OBJS) $(SSLTEST_OBJS) $(POSIX_OBJS) $(W5_SSL_LIBS) $(W5_LIBS) \
+                            $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SSLTEST_OBJS) $(POSIX_OBJS) \
+	    $(W5_SSL_LIBS) $(W5_DIR)/lib/libz.a -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_ssltest_kit$$' \
+	    || { echo "apps: ssltest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_ssltest_kit|SSL_new|EVP_DigestInit)$$' \
+	    || { echo "apps: the system's image has OpenSSL in it"; rm -f $@; exit 1; }
 
 #
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
@@ -4016,7 +4095,7 @@ apps:
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
-            $(UBUILD)/apps/xmltest.elf \
+            $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

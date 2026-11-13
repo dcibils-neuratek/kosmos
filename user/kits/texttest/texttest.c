@@ -191,7 +191,8 @@ static int encode_unicodes(const char *s, struct text *t)
 }
 
 /* The next piece of `*at` up to `delim`, empty pieces skipped, as
- * `strtok` gives them - which Kosmos's libc does not have. */
+ * `strtok` gives them - with the place kept by the caller, where `strtok`
+ * keeps the process's one copy. */
 static char *piece(char **at, char delim)
 {
     char *p = *at, *end;

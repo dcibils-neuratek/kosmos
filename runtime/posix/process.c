@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/random.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
@@ -90,6 +91,65 @@ long sysconf(int name)
         errno = EINVAL;
         return -1;
     }
+}
+
+/*
+ * `getauxval` (`sys/auxv.h`): Linux's `AT_HWCAP` bits on ARM, from
+ * ID_AA64ISAR0_EL1 and ID_AA64PFR0_EL1 as `sysinfo` gives them (the indices
+ * are `arch/aarch64/cpu.h`'s, 4 and 3). Arm ARM D19.2: a field of four
+ * bits, 0 absent; PFR0's FP and AdvSIMD are 0xf when absent instead. SVE is
+ * left out whatever the processor says - Nebula does not enable it - and so
+ * is CPUID, which would invite a read of MIDR_EL1 at EL0.
+ */
+#define HWCAP_FP      (1ul << 0)
+#define HWCAP_ASIMD   (1ul << 1)
+#define HWCAP_AES     (1ul << 3)
+#define HWCAP_PMULL   (1ul << 4)
+#define HWCAP_SHA1    (1ul << 5)
+#define HWCAP_SHA2    (1ul << 6)
+#define HWCAP_CRC32   (1ul << 7)
+#define HWCAP_ATOMICS (1ul << 8)
+#define HWCAP_SHA3    (1ul << 17)
+#define HWCAP_SM3     (1ul << 18)
+#define HWCAP_SM4     (1ul << 19)
+#define HWCAP_SHA512  (1ul << 21)
+#define HWCAP2_RNG    (1ul << 16)
+
+unsigned long getauxval(unsigned long type)
+{
+    struct sysinfo info;
+    uint64_t isar0, pfr0;
+    unsigned long hwcap = 0, hwcap2 = 0;
+
+    if (type == AT_SECURE) {
+        return 0;
+    }
+
+#define FIELD(word, at) ((unsigned)(((word) >> (at)) & 0xf))
+    if ((type != AT_HWCAP && type != AT_HWCAP2) || kosmos_sysinfo(&info) != 0
+        || info.cpu_arch != CPU_ARCH_AARCH64 || info.cpu_words < 5) {
+        errno = ENOENT;
+        return 0;
+    }
+    pfr0 = info.cpu_raw[3];
+    isar0 = info.cpu_raw[4];
+
+    if (FIELD(pfr0, 16) != 0xf)  hwcap |= HWCAP_FP;
+    if (FIELD(pfr0, 20) != 0xf)  hwcap |= HWCAP_ASIMD;
+    if (FIELD(isar0, 4) >= 1)    hwcap |= HWCAP_AES;
+    if (FIELD(isar0, 4) >= 2)    hwcap |= HWCAP_PMULL;
+    if (FIELD(isar0, 8) >= 1)    hwcap |= HWCAP_SHA1;
+    if (FIELD(isar0, 12) >= 1)   hwcap |= HWCAP_SHA2;
+    if (FIELD(isar0, 12) >= 2)   hwcap |= HWCAP_SHA512;
+    if (FIELD(isar0, 16) >= 1)   hwcap |= HWCAP_CRC32;
+    if (FIELD(isar0, 20) >= 2)   hwcap |= HWCAP_ATOMICS;
+    if (FIELD(isar0, 32) >= 1)   hwcap |= HWCAP_SHA3;
+    if (FIELD(isar0, 36) >= 1)   hwcap |= HWCAP_SM3;
+    if (FIELD(isar0, 40) >= 1)   hwcap |= HWCAP_SM4;
+    if (FIELD(isar0, 60) >= 1)   hwcap2 |= HWCAP2_RNG;
+#undef FIELD
+
+    return type == AT_HWCAP ? hwcap : hwcap2;
 }
 
 /* Nothing measured yet, said as nought (`sys/resource.h` has why). */

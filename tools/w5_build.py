@@ -18,6 +18,7 @@ A library is configured again when this script, the toolchain or a header
 of Kosmos's libc or POSIX layer changed, and ninja decides the rest.
 """
 
+import fcntl
 import os
 import shutil
 import subprocess
@@ -126,6 +127,86 @@ LIBRARIES = {
 }
 
 
+# **W5d's OpenSSL**, the system's one TLS (`docs/w5.md`), built by its own
+# `Configure` rather than CMake, which it does not have - for Kosmos from
+# `runtime/cxx/openssl-kosmos.conf`, the targets that file declares. Each
+# option, and why:
+OPENSSL = [
+    # A static library, no modules loaded from files and no `dlopen`:
+    # there are no shared libraries here. Providers are compiled in.
+    "no-shared", "no-module", "no-dso",
+    # `async` is `makecontext` and friends, which the POSIX layer does not
+    # have; AF_ALG is a Linux kernel interface; the console's prompt for a
+    # password is a terminal's, and memory locked from swap is `mlock`.
+    "no-async", "no-ui-console", "no-secure-memory",
+    # QUIC and DTLS are datagrams, and the POSIX layer's `socket()` is TCP
+    # only (`runtime/posix/socket.c`). HTTP/3 comes with UDP, not before.
+    "no-quic", "no-dtls",
+    # Its `openssl` program is a shell's, its manuals are files nobody here
+    # reads, and its tests are held by `tools/run_ssl.py` - in the guest
+    # and on this Mac - which links the ones it runs itself.
+    "no-apps", "no-docs", "no-tests",
+    # Compressed certificates (RFC 8879) with W5a's zlib, the one deflate.
+    "zlib",
+]
+OPENSSL_TARGET = {
+    "x86_64": "kosmos-x86_64",
+    "aarch64": "kosmos-aarch64",
+    "host": "darwin64-arm64-cc",
+}
+OPENSSL_CONF = os.path.join(ROOT, "runtime", "cxx", "openssl-kosmos.conf")
+
+
+def build_openssl(arch, src, out, prefix):
+    """OpenSSL's `Configure`, then its libraries and headers installed."""
+    stamp = os.path.join(out, ".configured")
+    headers = [os.path.join(folder, n)
+               for top in (os.path.join(ROOT, "runtime", "include"),
+                           os.path.join(ROOT, "runtime", "posix", "include"),
+                           os.path.join(ROOT, "runtime", "posix", "refused"))
+               for folder, _, names in os.walk(top) for n in names]
+    newest = max(os.path.getmtime(p) for p in [OPENSSL_CONF, __file__] + headers)
+
+    if not (os.path.exists(stamp) and os.path.getmtime(stamp) >= newest
+            and os.path.exists(os.path.join(out, "Makefile"))):
+        shutil.rmtree(out, ignore_errors=True)
+        # With `no-apps` it still writes `apps/include/configuration.h`
+        # in the build folder, without making the folder first.
+        os.makedirs(os.path.join(out, "apps", "include"))
+        command = ["perl", os.path.join(src, "Configure"), OPENSSL_TARGET[arch],
+                   "--prefix=" + prefix, "--libdir=lib",
+                   # Its settings, `openssl.cnf`, in the system's place for
+                   # them (`layout.md`), as libxml2's catalog is.
+                   "--openssldir=" + ("/Kosmos/Settings/ssl" if arch != "host"
+                                      else os.path.join(prefix, "ssl")),
+                   "--with-zlib-include=" + os.path.join(prefix, "include"),
+                   "--with-zlib-lib=" + os.path.join(prefix, "lib")] + OPENSSL
+        if arch != "host":
+            command.insert(3, "--config=" + OPENSSL_CONF)
+        log = os.path.join(out, "configure.log")
+        with open(log, "w") as f:
+            r = subprocess.run(command, cwd=out, stdout=f, stderr=subprocess.STDOUT,
+                               env=dict(os.environ, KOSMOS_ROOT=ROOT))
+        if r.returncode != 0:
+            print(open(log).read()[-6000:])
+            sys.exit("w5_build: openssl did not configure for %s (%s)" % (arch, log))
+        with open(stamp, "w") as f:
+            f.write("configured\n")
+
+    r = subprocess.run(["make", "-j%d" % (os.cpu_count() or 4), "build_libs"], cwd=out,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if r.returncode == 0:
+        r2 = subprocess.run(["make", "install_dev"], cwd=out,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        r.stdout += r2.stdout
+        r.returncode = r2.returncode
+    with open(os.path.join(out, "make.log"), "w") as f:
+        f.write(r.stdout)
+    if r.returncode != 0:
+        print(r.stdout[-8000:])
+        sys.exit("w5_build: openssl did not build for %s" % arch)
+
+
 # What each library is, as ninja names it.
 TARGETS = {
     "zlib": ["zlibstatic"],
@@ -199,19 +280,32 @@ def configure(arch, name, src, out, prefix):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ("x86_64", "aarch64", "host"):
-        sys.exit("usage: w5_build.py x86_64|aarch64|host [%s]" % " ".join(LIBRARIES))
+        sys.exit("usage: w5_build.py x86_64|aarch64|host [%s openssl]" % " ".join(LIBRARIES))
 
     arch = sys.argv[1]
-    names = sys.argv[2:] or list(LIBRARIES)
+    names = sys.argv[2:] or list(LIBRARIES) + ["openssl"]
     for name in names:
-        if name not in LIBRARIES:
+        if name not in LIBRARIES and name != "openssl":
             sys.exit("w5_build: no library %s" % name)
 
     top = os.path.join(ROOT, "build", "w5", arch)
     prefix = os.path.join(top, "install")
 
+    # **One build of a folder at a time.** The gate runs suites side by
+    # side, and each that holds a guest to this Mac builds the Mac's
+    # libraries first (`run_xml.py`, `run_ssl.py`'s parts): two configures in
+    # one folder at once leave neither. The second waits for the first, and
+    # then finds nothing to do.
+    os.makedirs(top, exist_ok=True)
+    lock = open(os.path.join(top, ".lock"), "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
     for name in names:
         out = os.path.join(top, name)
+        if name == "openssl":
+            build_openssl(arch, source(name), out, prefix)
+            print("w5_build: openssl for %s, in %s" % (arch, prefix))
+            continue
         configure(arch, name, source(name), out, prefix)
         # The libraries only, then CMake's install of what was built: a
         # library's `all` links programs too - libjpeg-turbo's

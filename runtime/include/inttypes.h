@@ -90,6 +90,24 @@ __BEGIN_DECLS
 #define SCNu64      "lu"
 #define SCNx64      "lx"
 
+/*
+ * The widest integer from text: `long` is the widest here (LP64, above), so
+ * these are `strtoll` and `strtoull` under C99's names for them. OpenSSL's
+ * option parser reads its numbers with them (`docs/w5.md` W5d).
+ */
+long long          strtoll(const char *s, char **end, int base);
+unsigned long long strtoull(const char *s, char **end, int base);
+
+static inline intmax_t strtoimax(const char *s, char **end, int base)
+{
+    return (intmax_t)strtoll(s, end, base);
+}
+
+static inline uintmax_t strtoumax(const char *s, char **end, int base)
+{
+    return (uintmax_t)strtoull(s, end, base);
+}
+
 __END_DECLS
 
 #endif /* INTTYPES_H */

@@ -103,6 +103,7 @@ int *__errno(void);
 /* The network's, for the POSIX layer's sockets (`docs/w3.md` W3e), with
  * Linux's numbers like the rest. */
 #define EWOULDBLOCK      EAGAIN
+#define EPROTO           71     /* a peer broke the protocol (OpenSSL, W5d) */
 #define ENOTSOCK         88
 #define EDESTADDRREQ     89
 #define EMSGSIZE         90
