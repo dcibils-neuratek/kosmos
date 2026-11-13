@@ -381,6 +381,10 @@ extern "C" int webcoretest_paint(const char* folder, const char* name, uint32_t*
     RefPtr frame = page->localMainFrame();
     RefPtr view = frame->view();
     view->updateLayoutAndStyleIfNeededRecursive();
+    // A picture of the page is a snapshot: every image in it decoded
+    // before it is drawn, as WebKit's own snapshots do, rather than left
+    // for a decoding thread a later frame would pick up.
+    view->setPaintBehavior(view->paintBehavior() | PaintBehavior::ForceSynchronousImageDecode);
     {
         GraphicsContextSkia context(*surface->getCanvas(), RenderingMode::Unaccelerated, RenderingPurpose::DOM);
         view->paint(context, IntRect { { }, size });

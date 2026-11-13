@@ -2698,3 +2698,24 @@ next steps are real sites and then a window.
 **Measurements.** 76 of 76 layouts, 14 of 14 pictures pixel for pixel,
 4 of 4 default fonts; 35 seconds in the guest. The address functions
 agree with the Mac on 67 texts and 788 written addresses.
+
+## 13 November 2026 - Wikipedia, drawn by WebKit on Kosmos
+
+**In short.** The first real web page drawn on Kosmos: Wikipedia's
+article on BeOS, laid out and painted by WebKit inside Kosmos.
+
+**What.** Kosmos has no browser window yet and cannot fetch pages from
+the internet in WebKit yet, which is the next big step. So the page was
+saved on the Mac first, with its style sheets and its 129 pictures, and
+handed to WebKit on Kosmos as files. Everything on it - the layout, the
+fonts, the links, the table at the side, the BeOS logo and screenshot -
+was worked out and drawn by WebKit running on Kosmos.
+
+**What it found.** The two pictures in the side table came out empty at
+first. Wikipedia asks for them to be decoded "in the background", which a
+browser picks up on its next frame; the test draws one frame only. Now,
+as WebKit does when it takes a snapshot, it finishes decoding before it
+draws.
+
+**Visible impact.** A picture of a real web page, made on Kosmos. Not yet
+something you can click: that is the window, W7.

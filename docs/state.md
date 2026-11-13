@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
 
@@ -23,10 +23,14 @@ Debugging notes worth keeping: a process's `panic` message is refused by
 `__libcpp_verbose_abort` of the harness's own and symbolized with
 `llvm-symbolizer`; QEMU's hardware breakpoint on `abort` did not fire.
 
-**Next**: Diego asked for a screenshot of a real site - a page saved
-from Wikipedia with its style sheets and pictures, painted by
-`webcoretest` (roadmap). Then the recorded sites (W6d's second half,
-Diego's decisions), then W7.
+**0.11.403**: `tools/run_site.py SITE_FOLDER OUT.png` paints a saved
+page (`page.html` and `files/`) in the guest; Wikipedia's BeOS article,
+saved by a scratch script, came out whole once the harness decoded
+pictures synchronously when painting. The picture is
+`build/sites/wikipedia-beos.png` (not in git).
+
+**Next**: the recorded sites (W6d's second half) wait for Diego's three
+decisions; then W7, the window.
 
 ## 13 November: JetSki W6c, text in Ahem (0.11.400, not pushed)
 

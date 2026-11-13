@@ -10240,7 +10240,8 @@ the applications make the system useful, and is not pulled forward.
     Mac's by `test_inet`. *The recorded sites* wait for Diego: which
     sites, how they are recorded, and where a recording lives - not in
     the public repository.
-  - *A real site's page, painted*: Diego asked on 13 November for a
+  - *A real site's page, painted*: *Done, 0.11.403* (18.798), Wikipedia's
+    BeOS article, saved with its files. Diego asked on 13 November for a
     screenshot of the browser rendering a real site (Wikipedia, or
     youtube.com). Before W7 the nearest true thing is a site's page saved
     on the Mac with its style sheets and pictures, laid out and painted by

@@ -32929,3 +32929,26 @@ disk) fails `contentDiv`, `contentDivWithChildren` and `contentImage`,
 | `test_inet` | pass, 67 strings and 788 addresses as the Mac's |
 | `x86-webcore` | pass: 76 trees, 14 pictures, 4 generic families, 35.1 s in the guest |
 | `make test` | 123 of 125 at first, 707 s: `rebuilds` (x86-64 objects in ARM's `build/test/`, removed - roadmap) and `x86-display-1` ("Preferences opened no window", under load); both pass alone |
+
+## 18.798 A real site's page, painted
+
+Not a test: `tools/run_site.py` puts a saved page (`page.html`, `files/`)
+and IBM Plex's three faces on the guest's disk, has `webcoretest.elf`
+paint it into a surface of the size asked for, and brings the PNG back.
+Wikipedia's BeOS article, saved on 13 November with every style sheet and
+picture made a local file (344 KB of HTML, 2 sheets, 129 pictures - 10
+PNG, 119 SVG; nothing missed), painted at 1280 by 1600.
+
+First picture: everything but the infobox's two pictures. Taking
+`loading="lazy"` out changed nothing; taking `decoding="async"` out drew
+them. An asynchronous decode is started by a paint and picked up by a
+later one, and the harness paints once. It now paints with
+`PaintBehavior::ForceSynchronousImageDecode`, as WebKit's snapshots do,
+and the page came out whole. (Ten rendering updates before painting, tried
+first for the lazy pictures, did nothing for this page and doubled the
+suite's time, and were taken out.)
+
+| 0.11.403 | |
+|---|---|
+| Wikipedia's BeOS page | painted whole, about 4 s in the guest under TCG |
+| `x86-webcore` | pass, 76 trees and 14 pictures as before, 35.7 s |
