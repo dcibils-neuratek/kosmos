@@ -13,7 +13,6 @@
 #include "kits/gfx/gfx_draw.h"      /* kosmos_surface_pixels */
 
 /* Enough for the suite's pages; more is refused, not truncated. */
-#define MOST_PAGES 64
 
 static void add_line(const char *line, void *ctx)
 {
@@ -26,12 +25,13 @@ static void add_line(const char *line, void *ctx)
 static int l_run(lua_State *L)
 {
     const char *folder = luaL_checkstring(L, 1);
-    const char *pages[MOST_PAGES];
+    const char **pages;
     lua_Integer count, i;
 
     luaL_checktype(L, 2, LUA_TTABLE);
     count = (lua_Integer)lua_rawlen(L, 2);
-    luaL_argcheck(L, count <= MOST_PAGES, 2, "too many pages");
+    /* As many names as were given, in a userdata the collector frees. */
+    pages = lua_newuserdatauv(L, (size_t)(count > 0 ? count : 1) * sizeof(*pages), 0);
     for (i = 1; i <= count; i++) {
         lua_rawgeti(L, 2, i);
         pages[i - 1] = luaL_checkstring(L, -1);

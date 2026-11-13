@@ -2660,3 +2660,41 @@ wrong face beside "serif" and the test catches it.
 **Visible impact.** Still not on the desktop, but the picture the test
 saves is real text, drawn by WebKit on Kosmos for the first time.
 
+
+## 13 November 2026 - JavaScript runs in WebKit on Kosmos
+
+**In short.** Pages now run their scripts and load the pictures beside
+them, and are laid out once they have finished loading, as a browser
+shows them. Thirty-seven more of WebKit's own tests pass, 76 of 76 in
+all. On the way, the tests found a bug in Kosmos's networking text
+functions that crashed any page with a picture.
+
+**What.** Until now WebKit was handed a page's text and laid it out.
+Real pages are more than that: a script moves things, a picture arrives a
+moment later, and what you see is the page after all of that. The test
+harness now does what a browser tab does on a small scale: it feeds the
+page in as if it had been downloaded, lets its scripts run, answers its
+requests for files from the disk, and waits for the page to say it has
+finished loading.
+
+**The bug.** Every page that loaded a picture made the program stop dead
+with no message. Two things made that slow to find. First, a program
+that stops itself on Kosmos has its last message thrown away, because
+only one process is allowed to write to the console; that is now on the
+roadmap. Second, adding diagnostic lines made the crash disappear. The
+cause, once found: before fetching anything, WebKit asks "is this host
+name actually an IPv6 address?", and Kosmos's answer was "I don't know
+what IPv6 is", which WebKit understands as "yes". So every address was
+taken as an IPv6 address made of whatever bytes happened to be lying in
+memory, and when those were all zeros WebKit refused the request in a way
+that crashed. Adding diagnostics changed those bytes, which is why the
+crash hid. Kosmos now reads and writes IPv6 addresses properly, checked
+against the Mac's own functions on 855 cases.
+
+**Visible impact.** Still not on the desktop: this is the engine, tested
+without a window. But it is now an engine that runs JavaScript, and the
+next steps are real sites and then a window.
+
+**Measurements.** 76 of 76 layouts, 14 of 14 pictures pixel for pixel,
+4 of 4 default fonts; 35 seconds in the guest. The address functions
+agree with the Mac on 67 texts and 788 written addresses.

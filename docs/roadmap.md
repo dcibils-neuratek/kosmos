@@ -10231,7 +10231,21 @@ the applications make the system useful, and is not pulled forward.
   - *Fonts as files for the browser*: `/Kosmos/Fonts/`, WebCore's folder,
     does not exist - the desktop's fonts are in its image. At W7.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
-    sites; their render trees and times kept.
+    sites; their render trees and times kept. *Scripts and a page's files
+    done, 0.11.402* (`testing.md` 18.797): scripts run, files come from
+    `/Home` through the harness's `FileLoader`, a page is laid out after
+    its load event; 37 more LayoutTests, 76 of 76 trees. It found
+    `inet_pton` answering -1 for IPv6, which WebCore read as yes:
+    `runtime/posix/inet.c` now reads and writes IPv6's text, held to the
+    Mac's by `test_inet`. *The recorded sites* wait for Diego: which
+    sites, how they are recorded, and where a recording lives - not in
+    the public repository.
+  - *A real site's page, painted*: Diego asked on 13 November for a
+    screenshot of the browser rendering a real site (Wikipedia, or
+    youtube.com). Before W7 the nearest true thing is a site's page saved
+    on the Mac with its style sheets and pictures, laid out and painted by
+    `webcoretest` on Kosmos. YouTube's page is built by its scripts from
+    the network, so it waits for W7's loader.
 
   **Follow-ups from W6b** (`docs/w6.md` W6b):
   - *A read-only region in Nebula*: WebKit's shared memory asks for one
@@ -10252,6 +10266,13 @@ the applications make the system useful, and is not pulled forward.
   - *x86-64 objects in ARM's `build/test/`*: the gate's images failed on
     an x86-64 `hal/fwcfg/fbpixels.c.o` there (13 November, 18.795), with
     other x86-64 objects beside it. Find which target writes them.
+    Again at 0.11.402's gate (18.797): `user/hello-x86_64.S.o`,
+    `faulty-` and `pointer-` and `runtime/libc/setjmp-x86_64.S.o`, dated
+    17:42 that day, failing `rebuilds`. They are `SRCS`'s test blobs for
+    `ARCH=x86_64`: with `TEST=1`, `BUILD` is `build/test` whatever the
+    architecture. Dry runs of the gate's own x86 builds and of
+    `webcoretest.elf` write nothing there, so it is a command run by hand;
+    `BUILD` per architecture would make it impossible.
   - *One PNG reader for the tools*: `tools/pngread.py` (W6c) reads a PNG's
     pixels; `tools/lineicons.py` and `tools/run_cafesa3d.py` decode their
     own and should use it.
@@ -10263,6 +10284,16 @@ the applications make the system useful, and is not pulled forward.
     system function wants deciding again - FFmpeg is not built against
     the POSIX layer - and `config.h` was left as it was, but for
     `HAVE_LDEXPF`.
+
+  **A process's last words are lost** (18.797): `panic` writes with
+  `kosmos_write`, which `sys_write` refuses to anything but the console's
+  owner, so a process that ends in `abort` - a ported library's failed
+  assertion, libc++'s `bad_optional_access` - ends with code 70 and
+  nothing said. The message should reach the log: the reason given to
+  `SYS_EXIT` and printed with the kernel's own `process N ended` line, or
+  written through the console server before the end. And libunwind found
+  no frames in `webcoretest.elf` (its `__eh_frame_hdr_start` is there);
+  with it working, a panic could say where it came from.
 
   **A gate with every library suite in it runs over ten minutes**
   (18.793): 11:09 at 0.11.396 and 12:26 at 0.11.398, both runs where the

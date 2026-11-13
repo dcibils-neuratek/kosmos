@@ -2,9 +2,31 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W6d, scripts and a page's files (0.11.402, not pushed)
+
+`x86-webcore` runs pages as loaded pages (`docs/w6.md` W6d, `testing.md`
+18.797): sandbox cleared and scripts on, bytes through `addData`, files
+from `/Home` through the harness's `FileLoader`, pictures loaded as met,
+the run loop until the load event, `scrolled to` after the tree. 76 of 76
+LayoutTests (37 new, `upstream.WEBKIT_SCRIPT_TESTS`). Controls `=script`,
+`=image` beside the others. It found `inet_pton` answering -1 for IPv6,
+which WebCore read as yes and crashed on: `runtime/posix/inet.c` (moved
+out of `socket.c`) reads and writes IPv6, held to the Mac's by host
+`test_inet` (control `KOSMOS_INET_BREAK=1`, run by `host-check`).
+
+Debugging notes worth keeping: a process's `panic` message is refused by
+`sys_write` (roadmap); the image's stack can be read in a
+`__libcpp_verbose_abort` of the harness's own and symbolized with
+`llvm-symbolizer`; QEMU's hardware breakpoint on `abort` did not fire.
+
+**Next**: Diego asked for a screenshot of a real site - a page saved
+from Wikipedia with its style sheets and pictures, painted by
+`webcoretest` (roadmap). Then the recorded sites (W6d's second half,
+Diego's decisions), then W7.
 
 ## 13 November: JetSki W6c, text in Ahem (0.11.400, not pushed)
 

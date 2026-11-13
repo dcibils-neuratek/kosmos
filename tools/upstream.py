@@ -269,6 +269,51 @@ WEBKIT_TEXT_TESTS = [
     "fast/text/whitespace/017.html",
 ]
 
+# W6d's: the same kind of test, whose page runs a script or loads a file
+# beside it - a picture - and whose tree has no text but Ahem's. Their
+# scripts change the page as it loads; the pictures come through the
+# harness's loader.
+WEBKIT_SCRIPT_TESTS = [
+    "fast/block/basic/quirk-percent-height-grandchild.html",
+    "fast/block/float/float-not-removed-from-next-sibling.html",
+    "fast/block/float/float-not-removed-from-next-sibling2.html",
+    "fast/block/float/float-on-zero-height-line.html",
+    "fast/block/float/float-overflow-hidden-containing-block-width.html",
+    "fast/block/positioning/complex-positioned-movement.html",
+    "fast/block/positioning/move-with-auto-width.html",
+    "fast/block/positioning/rtl-fixed-positioning.html",
+    "fast/block/positioning/static-inline-position-dynamic.html",
+    "fast/borders/borderRadiusDashed05.html",
+    "fast/css/contentDiv.html",
+    "fast/css/contentDivWithChildren.html",
+    "fast/css/contentImage.html",
+    "fast/css/first-letter-set-text.html",
+    "fast/css/style-tag-display-none.html",
+    "fast/multicol/span/before-child-anonymous-column-block.html",
+    "fast/ruby/float-overhang-from-ruby-text.html",
+    "fast/ruby/ruby-block-style-not-updated.html",
+    "fast/ruby/ruby-inline-style-not-updated.html",
+    "fast/ruby/ruby-text-before-child-split.html",
+    "fast/table/table-anonymous-cell-bug.html",
+    "fast/table/table-anonymous-row-bug.html",
+    "fast/table/table-anonymous-section-bug.html",
+    "fast/table/table-cell-split.html",
+    "fast/table/table-insert-before-non-anonymous-block.html",
+    "fast/table/table-row-before-after-content-around-table-cell.html",
+    "fast/table/table-row-split.html",
+    "fast/table/table-row-split2.html",
+    "fast/table/table-section-split.html",
+    "fast/table/table-section-split-with-after-content.html",
+    "fast/table/table-section-split2.html",
+    "fast/table/table-split.html",
+    "fast/table/table-split2.html",
+    "fast/text/decorations-transformed.html",
+    "fast/text/selection-painted-separately.html",
+    "fast/text/setData-dirty-lines.html",
+    "fast/text/splitText-dirty-lines.html",
+]
+WEBKIT_TEST_FILES = ["fast/css/resources/show-shoes-vs-pie.png"]
+
 WEBKIT_TESTS = {
     "url": WEBKIT_OVERLAY["url"],
     "commit": WEBKIT_OVERLAY["commit"],
@@ -292,8 +337,9 @@ WEBKIT_TESTS = {
                      "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")
     ] + [
         "/LayoutTests/" + t.rsplit(".", 1)[0] + ext
-        for t in WEBKIT_TEXT_TESTS for ext in ("." + t.rsplit(".", 1)[1], "-expected.txt")
-    ],
+        for t in WEBKIT_TEXT_TESTS + WEBKIT_SCRIPT_TESTS
+        for ext in ("." + t.rsplit(".", 1)[1], "-expected.txt")
+    ] + ["/LayoutTests/" + f for f in WEBKIT_TEST_FILES],
 }
 
 

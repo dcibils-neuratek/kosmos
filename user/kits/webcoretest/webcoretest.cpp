@@ -38,8 +38,13 @@
 #include <WebCore/GraphicsContextSkia.h>
 #include <WebCore/LocalFrame.h>
 #include <WebCore/LocalFrameInlines.h>
+#include <WebCore/LocalDOMWindow.h>
 #include <WebCore/LocalFrameView.h>
 #include <WebCore/LoaderStrategy.h>
+#include <WebCore/MIMETypeRegistry.h>
+#include <WebCore/NetworkLoadMetrics.h>
+#include <WebCore/ResourceResponse.h>
+#include <WebCore/SharedBuffer.h>
 #include <WebCore/SubresourceLoader.h>
 #include <WebCore/MediaStrategy.h>
 #include <WebCore/Page.h>
@@ -49,11 +54,11 @@
 #include <WebCore/RenderTreeAsText.h>
 #include <WebCore/ResourceError.h>
 #include <WebCore/Settings.h>
-#include <WebCore/TextResourceDecoder.h>
 #include <pal/SessionID.h>
 #include <wtf/FileSystem.h>
 #include <wtf/MainThread.h>
 #include <wtf/NeverDestroyed.h>
+#include <wtf/RunLoop.h>
 #include <wtf/text/MakeString.h>
 #include <wtf/text/StringView.h>
 
@@ -81,9 +86,16 @@ static RefPtr<Page> pageFrom(const String& folder, const String& name, IntSize s
         return nullptr;
     }
 
-    Ref page = Page::create(pageConfigurationWithEmptyClients(std::nullopt, PAL::SessionID::defaultSessionID()));
+    // Empty clients make the frame an SVG picture's: sandboxed in every way,
+    // scripts included. A page's frame is sandboxed in none.
+    auto configuration = pageConfigurationWithEmptyClients(std::nullopt, PAL::SessionID::defaultSessionID());
+    if (auto* local = std::get_if<PageConfiguration::LocalMainFrameCreationParameters>(&configuration.mainFrameCreationParameters))
+        local->effectiveSandboxFlags = { };
+    Ref page = Page::create(WTF::move(configuration));
     page->settings().setAcceleratedCompositingEnabled(false);
     page->settings().setScriptEnabled(true);
+    // And its pictures fetched as they are met, as WebKitTestRunner's are.
+    page->settings().setLoadsImagesAutomatically(true);
 
     RefPtr frame = page->localMainFrame();
     if (!frame) {
@@ -93,14 +105,15 @@ static RefPtr<Page> pageFrom(const String& folder, const String& name, IntSize s
     frame->setView(LocalFrameView::create(*frame, size));
     frame->init();
 
+    // The page's bytes as a loaded page's go in: the parser decodes them
+    // (a byte-order mark is not text, a page may name its encoding), runs
+    // its scripts as it reaches them, and may yield to the run loop.
+    auto url = URL::fileURLWithFileSystemPath(makeString(folder, "/pages/"_s, name));
     RefPtr loader = frame->loader().activeDocumentLoader();
     auto& writer = loader->writer();
     writer.setMIMEType("text/html"_s);
-    writer.begin();
-    // The bytes through WebCore's own decoder, as a loaded page's go: a
-    // byte-order mark is not text, and a page may name its encoding.
-    Ref decoder = TextResourceDecoder::create("text/html"_s, PAL::UTF8Encoding());
-    writer.insertDataSynchronously(decoder->decodeAndFlush(bytes->span()));
+    writer.begin(url);
+    writer.addData(SharedBuffer::create(WTF::move(*bytes)));
     writer.end();
 
     RefPtr document = frame->document();
@@ -108,6 +121,16 @@ static RefPtr<Page> pageFrom(const String& folder, const String& name, IntSize s
         say(makeString("webcoretest: no document for "_s, name));
         return nullptr;
     }
+
+    // Then the run loop, until the load event has been and gone - what
+    // the page's files, scripts and timers did by then is the page, as
+    // WebKitTestRunner dumps it then.
+    auto deadline = MonotonicTime::now() + 20_s;
+    while (!document->loadEventFinished() && MonotonicTime::now() < deadline)
+        RunLoop::cycle();
+    if (!document->loadEventFinished())
+        say(makeString("webcoretest: "_s, name, " did not finish loading"_s));
+
     document->updateLayoutIgnorePendingStylesheets();
     return page;
 }
@@ -124,27 +147,58 @@ static bool treeOf(const String& folder, const String& name)
     auto tree = externalRepresentation(frame.get());
     for (auto line : StringView(tree).split('\n'))
         say(makeString("tree "_s, line));
+    // And where the page was scrolled to, as WebKitTestRunner adds after
+    // the tree (`dumpFrameScrollPosition`): its window's offsets, when
+    // either is not nought.
+    if (RefPtr window = frame->document()->window()) {
+        double x = window->scrollX(), y = window->scrollY();
+        if (std::abs(x) > 0.00000001 || std::abs(y) > 0.00000001)
+            say(makeString("tree scrolled to "_s, x, ',', y));
+    }
     return true;
 }
 
 /*
  * **The strategies a page asks the program that made it for** - how to
  * load, play media and hold blobs. WebKit's web process and WebKitLegacy
- * each bring theirs, and neither is in this source; a page here arrives
- * through its document's writer and fetches nothing, so the loader loads
- * nothing and says each refusal is a cancellation. The real loader, curl
- * through WebCore's ResourceHandle as WebKitLegacy's does it, is W6d's
- * (`docs/w6.md`).
+ * each bring theirs, and neither is in this source. Here a page's bytes
+ * are written into its document, and its files - the pictures, style
+ * sheets and scripts beside it - come from `/Home` through `FileLoader`
+ * (W6d, `docs/w6.md`), answered on the main run loop as a network
+ * process's answers arrive in WebKit's web process; anything but a file is
+ * refused. A browser's loader is the network process's, at W7. Media plays
+ * nothing and blobs are not kept.
  */
 namespace {
 
-class NoLoader final : public LoaderStrategy {
+class FileLoader final : public LoaderStrategy {
 public:
-    void loadResource(LocalFrame&, CachedResource&, ResourceRequest&&, const ResourceLoaderOptions&,
-        CompletionHandler<void(RefPtr<SubresourceLoader>&&)>&& done) final { done(nullptr); }
+    void loadResource(LocalFrame& frame, CachedResource& resource, ResourceRequest&& request,
+        const ResourceLoaderOptions& options, CompletionHandler<void(RefPtr<SubresourceLoader>&&)>&& done) final
+    {
+        SubresourceLoader::create(frame, resource, WTF::move(request), options,
+            [this, done = WTF::move(done)](RefPtr<SubresourceLoader>&& loader) mutable {
+                if (loader) {
+                    RunLoop::mainSingleton().dispatch([this, loader = Ref { *loader }] {
+                        serve(loader);
+                    });
+                }
+                done(WTF::move(loader));
+            });
+    }
+
     void loadResourceSynchronously(FrameLoader&, ResourceLoaderIdentifier, const ResourceRequest& request,
         ClientCredentialPolicy, const FetchOptions&, const HTTPHeaderMap&, ResourceError& error,
-        ResourceResponse&, Vector<uint8_t>&) final { error = cancelledError(request); }
+        ResourceResponse& response, Vector<uint8_t>& data) final
+    {
+        auto bytes = read(request.url());
+        if (!bytes) {
+            error = fileDoesNotExistError(ResourceResponse(URL { request.url() }, { }, 0, { }));
+            return;
+        }
+        response = responseFor(request.url(), bytes->size());
+        data = WTF::move(*bytes);
+    }
     void pageLoadCompleted(Page&) final { }
     void browsingContextRemoved(LocalFrame&) final { }
     void remove(ResourceLoader*) final { }
@@ -184,6 +238,45 @@ public:
     ResourceError pluginWillHandleLoadError(const ResourceResponse& response) const final { return refused(response.url(), "plug-in"_s); }
 
 private:
+    // A file URL's bytes, or nothing for one that is not a file or not there.
+    static std::optional<Vector<uint8_t>> read(const URL& url)
+    {
+        if (!url.protocolIsFile())
+            return std::nullopt;
+        return FileSystem::readEntireFile(url.fileSystemPath());
+    }
+
+    static ResourceResponse responseFor(const URL& url, size_t length)
+    {
+        return ResourceResponse(URL { url }, MIMETypeRegistry::mimeTypeForPath(url.path()),
+            static_cast<long long>(length), { });
+    }
+
+    // The answer, all of it at once: the response, the bytes, the end.
+    void serve(SubresourceLoader& loader)
+    {
+        if (loader.reachedTerminalState())
+            return;
+        URL url = loader.url();
+        auto bytes = read(url);
+        if (!bytes) {
+            loader.didFail(url.protocolIsFile()
+                ? fileDoesNotExistError(ResourceResponse(URL { url }, { }, 0, { }))
+                : blockedError(loader.request()));
+            return;
+        }
+        size_t length = bytes->size();
+        Ref buffer = SharedBuffer::create(WTF::move(*bytes));
+        loader.didReceiveResponse(responseFor(url, length),
+            [loader = Ref { loader }, buffer = WTF::move(buffer), length] {
+                if (loader->reachedTerminalState())
+                    return;
+                loader->didReceiveBuffer(buffer, static_cast<long long>(length), DataPayloadWholeResource);
+                if (!loader->reachedTerminalState())
+                    loader->didFinishLoading(NetworkLoadMetrics { });
+            });
+    }
+
     static ResourceError refused(const URL& url, ASCIILiteral why)
     {
         return ResourceError(errorDomainWebKitInternal, 0, url, String(why), ResourceError::Type::Cancellation);
@@ -208,7 +301,7 @@ class NoBlobs final : public BlobRegistry {
 };
 
 class Strategies final : public PlatformStrategies {
-    LoaderStrategy* createLoaderStrategy() final { return new NoLoader; }
+    LoaderStrategy* createLoaderStrategy() final { return new FileLoader; }
     PasteboardStrategy* createPasteboardStrategy() final { return nullptr; }
     MediaStrategy* createMediaStrategy() final { return new NoMedia; }
     BlobRegistry* createBlobRegistry() final { return new NoBlobs; }

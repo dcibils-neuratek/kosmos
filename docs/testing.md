@@ -32871,3 +32871,61 @@ these eight included.
 | WebKit x86-64 | 7,827 steps again (a port file changed) |
 | `x86-webcore` | pass: 39 trees, 14 pictures, 4 generic families, about 23 s in the guest |
 
+
+## 18.797 Scripts, a page's files, and IPv6 as text
+
+**W6d** (`docs/w6.md`). The harness runs a page as a loaded page: the
+main frame's sandbox cleared and scripting on, the bytes through
+`DocumentWriter::addData`, its files from `/Home` through `FileLoader`
+(a `LoaderStrategy` answering on the main run loop), pictures fetched as
+met, the run loop turned until the load event, and `scrolled to x,y`
+after the tree as WebKitTestRunner writes it. Thirty-seven more
+LayoutTests, whose pages run a script or load a picture
+(`upstream.WEBKIT_SCRIPT_TESTS`). **76 of 76 trees match**; the fourteen
+pictures and the four generic families still hold.
+
+Found, in order:
+
+| found | why | now |
+|---|---|---|
+| no script ran | `insertDataSynchronously` is `document.write`'s path; and an empty-client page's frame is sandboxed as an SVG picture's | `begin` and `addData`; the sandbox flags cleared |
+| `too many pages` past 64 | a cap in the kit's Lua door | the list is as long as it is given |
+| `rtl-fixed-positioning` short its last line | `scrolled to -100,100` is WebKitTestRunner's, written after the tree | the harness writes it |
+| three pages with a picture ended the process, code 70, silently | below | `runtime/posix/inet.c` |
+| the pictures never loaded | empty clients' pages do not load pictures automatically | `setLoadsImagesAutomatically(true)` |
+
+**The crash.** The message was refused: `panic` writes with
+`kosmos_write`, and the kernel lets only the console's owner write
+(`sys_write`). With that check lifted for one run it read
+`bad_optional_access was thrown in -fno-exceptions mode`. Traces in the
+build tree's `CachedResourceLoader.cpp` stopped at `requestResource`'s
+start - and with more of them the crash went away. No frame pointers, and
+libunwind found no frames, so the stack's words that point into the image
+were collected in a `__libcpp_verbose_abort` of the harness's own and
+symbolized here: `isIPAddressDisallowed`, under `requestResource`, under
+`CSSImageValue::loadImage`. It asks `inet_pton(AF_INET6, url.host())` and
+takes anything but nought for yes; Kosmos's answered -1 for a family it
+did not read, so the host became sixteen bytes of stack, and when they
+were zeros the request was refused and the refusal's path read an empty
+`optional`. The traces moved the stack, which is why they hid it.
+
+`inet_pton` and `inet_ntop` moved to `runtime/posix/inet.c`, with IPv6's
+forms. **`test_inet`** (host) holds them to this Mac's: 67 strings, IPv4
+and IPv6 and malformed, in AF_INET, AF_INET6 and AF_UNIX, answer and
+bytes; then 788 IPv6 addresses - zero groups in all 256 patterns, three
+values each, and IPv4 in IPv6's clothes and near misses - written by both
+and compared, and each read back. One difference, chosen: the Mac reads a
+zone after `%`, glibc and Kosmos do not. Control
+`KOSMOS_INET_BREAK=1` answers -1 for IPv6 again: `67 answers differ`;
+`host-check` runs it and fails if it passes.
+
+**Controls** for the suite: `=script` (`rtl-fixed-positioning`'s script
+taken out) fails that tree, `3 of 4`; `=image` (the picture left off the
+disk) fails `contentDiv`, `contentDivWithChildren` and `contentImage`,
+`1 of 4`, and the process lives.
+
+| 0.11.402 | |
+|---|---|
+| `test_inet` | pass, 67 strings and 788 addresses as the Mac's |
+| `x86-webcore` | pass: 76 trees, 14 pictures, 4 generic families, 35.1 s in the guest |
+| `make test` | 123 of 125 at first, 707 s: `rebuilds` (x86-64 objects in ARM's `build/test/`, removed - roadmap) and `x86-display-1` ("Preferences opened no window", under load); both pass alone |

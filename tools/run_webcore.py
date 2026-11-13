@@ -30,7 +30,10 @@ The controls: `KOSMOS_WEBCORE_BREAK=page` moves one box of one page by a
 pixel before the guest is given it, and that page's tree must disagree;
 `=picture` changes one pixel of the first expected picture, and that
 picture must; `=text` sets one text test's Ahem a pixel larger, and its
-tree must; `=generic` names IBM Plex Sans beside `serif`, and serif must.
+tree must; `=generic` names IBM Plex Sans beside `serif`, and serif must;
+`=script` takes the one script out of a page that scrolls itself, and its
+tree must; `=image` leaves the picture three pages load off the disk, and
+their trees must - without the process dying.
 """
 
 import os
@@ -62,10 +65,17 @@ SUITE = "css2.1/20110323"
 PICTURED = [SUITE + "/abspos-containing-block-initial-%s.htm" % n
             for n in ("004a", "004b", "004c", "004d", "004e", "004f",
                       "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")]
-TESTS = PICTURED + upstream.WEBKIT_TEXT_TESTS
+TESTS = PICTURED + upstream.WEBKIT_TEXT_TESTS + upstream.WEBKIT_SCRIPT_TESTS
+# `KOSMOS_WEBCORE_ONLY=a,b` runs only the tests whose path holds one of
+# those, for finding which page did something; the gate sets nothing.
+if os.environ.get("KOSMOS_WEBCORE_ONLY"):
+    _only = os.environ["KOSMOS_WEBCORE_ONLY"].split(",")
+    TESTS = [t for t in TESTS if any(o in t for o in _only)]
+    PICTURED = [t for t in PICTURED if t in TESTS]
 FONTS = ["IBMPlexSans-Regular.ttf", "IBMPlexSerif-Regular.ttf", "IBMPlexMono-Regular.ttf"]
 BROKEN = TESTS[0]
 BROKEN_TEXT = "fast/text/soft-hyphen-3.html"
+BROKEN_SCRIPT = "fast/block/positioning/rtl-fixed-positioning.html"
 
 # The generic families, Kosmos's own check: a page in each, and in none,
 # laid out exactly as the same page naming the font Kosmos gives that
@@ -131,6 +141,13 @@ def gather(broken):
                         os.path.join(FOLDER, "fonts", f))
     shutil.copyfile(os.path.join(tests, "LayoutTests", "resources", "Ahem.ttf"),
                     os.path.join(FOLDER, "fonts", "Ahem.ttf"))
+    # What the pages load beside them - an image, a sheet - at the path
+    # they name it by, since every page sits in the one folder.
+    for f in upstream.WEBKIT_TEST_FILES:
+        to = os.path.join(FOLDER, "pages", "resources", f.split("resources/", 1)[1])
+        os.makedirs(os.path.dirname(to), exist_ok=True)
+        if broken != "image":
+            shutil.copyfile(os.path.join(tests, "LayoutTests", f), to)
     expected = {}
     assert len({page_of(t) for t in TESTS}) == len(TESTS), "two tests share a file name"
     for t in TESTS:
@@ -143,6 +160,10 @@ def gather(broken):
             # The control for text: Ahem a pixel larger, every glyph wider.
             assert "font-size: 25px" in page
             page = page.replace("font-size: 25px", "font-size: 26px", 1)
+        if broken == "script" and t == BROKEN_SCRIPT:
+            # The control for scripts: the page's one script taken out.
+            assert "window.scrollBy(-100, 100);" in page
+            page = page.replace("window.scrollBy(-100, 100);", "", 1)
         with open(os.path.join(FOLDER, "pages", page_of(t)), "w") as f:
             f.write(page)
         lines = open(os.path.join(tests, "LayoutTests", stem(t) + "-expected.txt")).read().rstrip("\n")
@@ -245,9 +266,10 @@ def main():
     os.makedirs(os.path.join(FOLDER, "pictures"), exist_ok=True)
     with open(os.path.join(FOLDER, "pictures", "README"), "w") as f:
         f.write("W6c: each page as WebCore painted it.\n")
-    for sub in ("pages", "fonts", "pictures"):
-        for n in sorted(os.listdir(os.path.join(FOLDER, sub))):
-            files.append((os.path.join(FOLDER, sub, n), "/Home/apps/webcore/webcore/%s/%s" % (sub, n)))
+    for here, _, names in sorted(os.walk(FOLDER)):
+        for n in sorted(names):
+            src = os.path.join(here, n)
+            files.append((src, "/Home/apps/webcore/webcore/" + os.path.relpath(src, FOLDER)))
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],

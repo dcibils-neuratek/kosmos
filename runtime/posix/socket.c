@@ -955,90 +955,8 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
  * Addresses as text, and names.
  */
 
-/* Four numbers and three dots, each under 256. */
-static int four_numbers(const char *text, uint8_t out[4])
-{
-    unsigned part = 0, value = 0, digits = 0;
-
-    for (;; text++) {
-        if (*text >= '0' && *text <= '9') {
-            value = value * 10u + (unsigned)(*text - '0');
-
-            if (++digits > 3 || value > 255u) {
-                return 0;
-            }
-        } else if ((*text == '.' || *text == '\0') && digits > 0 && part < 4) {
-            out[part++] = (uint8_t)value;
-            value = digits = 0;
-
-            if (*text == '\0') {
-                return part == 4;
-            }
-        } else {
-            return 0;
-        }
-    }
-}
-
-int inet_pton(int family, const char *text, void *out)
-{
-    if (family != AF_INET) {
-        return fails(EAFNOSUPPORT);
-    }
-
-    return text != NULL && four_numbers(text, out) ? 1 : 0;
-}
-
-const char *inet_ntop(int family, const void *address, char *out, socklen_t room)
-{
-    const uint8_t *b = address;
-    char text[INET_ADDRSTRLEN];
-    int n;
-
-    if (family != AF_INET) {
-        errno = EAFNOSUPPORT;
-        return NULL;
-    }
-
-    n = snprintf(text, sizeof(text), "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
-
-    if (out == NULL || n < 0 || (socklen_t)n >= room) {
-        errno = ENOSPC;
-        return NULL;
-    }
-
-    memcpy(out, text, (size_t)n + 1);
-    return out;
-}
-
-int inet_aton(const char *text, struct in_addr *out)
-{
-    uint8_t b[4];
-
-    if (text == NULL || !four_numbers(text, b)) {
-        return 0;
-    }
-
-    if (out != NULL) {
-        memcpy(&out->s_addr, b, 4);
-    }
-
-    return 1;
-}
-
-in_addr_t inet_addr(const char *text)
-{
-    struct in_addr a;
-
-    return inet_aton(text, &a) ? a.s_addr : INADDR_NONE;
-}
-
-char *inet_ntoa(struct in_addr address)
-{
-    static char text[INET_ADDRSTRLEN];      /* POSIX's: one, and not a thread's */
-
-    return (char *)inet_ntop(AF_INET, &address.s_addr, text, sizeof(text));
-}
+/* The address forms as text - `inet_pton` and the rest - are in `inet.c`,
+ * apart from the sockets because they touch nothing. */
 
 static int service_port(const char *service, int numeric_only, uint16_t *port)
 {
@@ -1119,7 +1037,7 @@ int getaddrinfo(const char *node, const char *service,
         if (!(flags & AI_PASSIVE)) {
             at[0] = 127; at[3] = 1;
         }
-    } else if (!four_numbers(node, at)) {
+    } else if (inet_pton(AF_INET, node, at) != 1) {
         uint32_t r;
 
         if (flags & AI_NUMERICHOST) {
