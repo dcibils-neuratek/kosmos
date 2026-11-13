@@ -2639,3 +2639,24 @@ on the web, has no font on Kosmos yet. That is the next step.
 **Measurements.** 39 of 39 layouts and 14 of 14 pictures match; the
 suite runs in about 22 seconds in the guest.
 
+## 13 November 2026 - The first words WebKit drew on Kosmos
+
+**In short.** A web page that does not choose a font, which is most of
+the web, now gets one on Kosmos, and WebKit has drawn its first sentence
+here: "Kosmos lays out a page in its own fonts."
+
+**What.** Pages ask for fonts by kind as often as by name: "serif",
+"sans-serif", "monospace", or nothing, which means the browser's default.
+On Linux a font system answers which font each kind is. Kosmos had no
+answer, so such text had no font and took no space. Now serif is IBM
+Plex Serif, sans-serif is IBM Plex Sans and monospace is IBM Plex Mono,
+the faces Kosmos already uses.
+
+**How it is checked.** For each kind, the test lays out a page asking
+for it beside a page asking for the IBM Plex face by name, and the two
+must come out the same, with the text taking space. A control puts the
+wrong face beside "serif" and the test catches it.
+
+**Visible impact.** Still not on the desktop, but the picture the test
+saves is real text, drawn by WebKit on Kosmos for the first time.
+

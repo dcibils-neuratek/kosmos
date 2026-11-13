@@ -30,7 +30,7 @@ The controls: `KOSMOS_WEBCORE_BREAK=page` moves one box of one page by a
 pixel before the guest is given it, and that page's tree must disagree;
 `=picture` changes one pixel of the first expected picture, and that
 picture must; `=text` sets one text test's Ahem a pixel larger, and its
-tree must.
+tree must; `=generic` names IBM Plex Sans beside `serif`, and serif must.
 """
 
 import os
@@ -67,6 +67,27 @@ FONTS = ["IBMPlexSans-Regular.ttf", "IBMPlexSerif-Regular.ttf", "IBMPlexMono-Reg
 BROKEN = TESTS[0]
 BROKEN_TEXT = "fast/text/soft-hyphen-3.html"
 
+# The generic families, Kosmos's own check: a page in each, and in none,
+# laid out exactly as the same page naming the font Kosmos gives that
+# family - with its text measured, not empty.
+SENTENCE = "Kosmos lays out a page in its own fonts."
+GENERIC = [("serif", "IBM Plex Serif"), ("sans-serif", "IBM Plex Sans"),
+           ("monospace", "IBM Plex Mono"), (None, "IBM Plex Serif")]
+
+
+def generic_pages(broken):
+    """Each pair as (generic page, named page, its html, the other's)."""
+    pages = []
+    for i, (generic, named) in enumerate(GENERIC):
+        if broken == "generic" and i == 0:
+            named = "IBM Plex Sans"             # the control: the wrong face
+        style = lambda family: (' style="font-family: %s; font-size: 20px"' % family
+                                if family else ' style="font-size: 20px"')
+        pages.append(("generic-%d.html" % i, "named-%d.html" % i,
+                      "<div%s>%s</div>" % (style(generic), SENTENCE),
+                      "<div%s>%s</div>" % (style("'%s'" % named), SENTENCE)))
+    return pages
+
 
 def page_of(t):
     """The name a test's page has in the guest's folder: its file's."""
@@ -95,7 +116,8 @@ for _, page in ipairs(pages) do
   print(ok and ("saved " .. page) or ("unsaved " .. page .. ": " .. tostring(why)))
 end
 print("webcoretest: done")
-""" % ", ".join('"%s"' % page_of(t) for t in TESTS)
+""" % ", ".join('"%s"' % n for n in [page_of(t) for t in TESTS]
+               + [n for g in generic_pages(None) for n in g[:2]])
 
 
 def gather(broken):
@@ -125,7 +147,34 @@ def gather(broken):
             f.write(page)
         lines = open(os.path.join(tests, "LayoutTests", stem(t) + "-expected.txt")).read().rstrip("\n")
         expected[page_of(t)] = [ln.rstrip() for ln in lines.split("\n")]
+    for generic, named, a, b in generic_pages(broken):
+        for name, html in ((generic, a), (named, b)):
+            with open(os.path.join(FOLDER, "pages", name), "w") as f:
+                f.write(html)
     return expected
+
+
+def generics_disagree(got):
+    """The generic families' pages against the named ones: the names that
+    differ, or whose text measured nothing."""
+    failed = []
+    for (generic, named), (gpage, npage, _, _) in zip(GENERIC, generic_pages(None)):
+        a, b = got.get(gpage), got.get(npage)
+        widths = [ln for ln in (a or []) if "text run" in ln and SENTENCE in ln]
+        if a is None or b is None:
+            print("FAIL %s: no tree" % (generic or "the default font"))
+        elif a != b:
+            print("FAIL %s: not laid out as '%s'" % (generic or "the default font", named))
+            for x, y in zip(a, b):
+                if x != y:
+                    print("  %s\n  %s" % (x, y))
+                    break
+        elif not widths or " width 0:" in widths[0]:
+            print("FAIL %s: its text has no width" % (generic or "the default font"))
+        else:
+            continue
+        failed.append(generic or "default")
+    return failed
 
 
 def trees(said):
@@ -240,14 +289,13 @@ def main():
     pictures = os.path.join(ROOT, "build", "webcore", "pictures")
     shutil.rmtree(pictures, ignore_errors=True)
     os.makedirs(pictures)
-    for name in expected:
-        if ("saved " + name) in said:
-            subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
-                            "/Home/apps/webcore/webcore/pictures/%s.png" % name,
-                            os.path.join(pictures, name + ".png")],
-                           check=True, capture_output=True, cwd=ROOT)
+    for name in [ln[len("saved "):] for ln in said if ln.startswith("saved ")]:
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
+                        "/Home/apps/webcore/webcore/pictures/%s.png" % name,
+                        os.path.join(pictures, name + ".png")],
+                       check=True, capture_output=True, cwd=ROOT)
     print("pictures: %d of %d painted, in %s%s" % (
-        len(os.listdir(pictures)), len(expected), pictures,
+        len(os.listdir(pictures)), len(expected) + 2 * len(GENERIC), pictures,
         "" if not unsaved else " - " + "; ".join(unsaved)))
 
     picture_failed = pictures_disagree(pictures, broken)
@@ -271,6 +319,11 @@ def main():
         print("FAIL: %d of %d LayoutTests laid out as WebKit expects: %s"
               % (len(expected) - len(failed), len(expected), ", ".join(failed)))
         return 1
+    generic_failed = generics_disagree(got)
+    if generic_failed:
+        print("FAIL: %d of %d generic families as Kosmos's fonts: %s"
+              % (len(GENERIC) - len(generic_failed), len(GENERIC), ", ".join(generic_failed)))
+        return 1
     if picture_failed:
         print("FAIL: %d of %d LayoutTests painted as GTK's port paints them: %s"
               % (len(PICTURED) - len(picture_failed), len(PICTURED), ", ".join(picture_failed)))
@@ -278,7 +331,8 @@ def main():
 
     print("PASS: WebCore laid out %d of WebKit's LayoutTests on Kosmos, %d of them with text "
           "in Ahem, every render tree as WebKit expects on every port, and painted the %d "
-          "without text through Skia pixel for pixel as GTK's port does, in %.1f s"
+          "without text through Skia pixel for pixel as GTK's port does; serif, sans-serif, "
+          "monospace and the default font as IBM Plex's three; in %.1f s"
           % (len(expected), len(expected) - len(PICTURED), len(PICTURED), took))
     return 0
 

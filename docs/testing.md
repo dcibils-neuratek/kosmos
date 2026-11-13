@@ -32849,3 +32849,25 @@ picture (13 of 14), and the new `=text` - `soft-hyphen-3`'s Ahem at
 on an x86-64 `fbpixels.c.o` in ARM's `build/test/`, beside other x86-64
 objects there from earlier days. Removed; on the roadmap.
 
+## 18.796 Generic font families as IBM Plex
+
+**W6c** (`docs/w6.md`). `kosmosFontFamily` (`FontFolderKosmos`, the port
+file patch 0020 calls) gives the generic families Kosmos's fonts: serif
+IBM Plex Serif, sans-serif IBM Plex Sans, monospace IBM Plex Mono, and
+their CSS 4 and fallback relatives. Before, `serif` named nothing in the
+folder and a page with no font measured its text as nothing (18.795's
+probe: `sans-serif` gave `width 0`).
+
+`x86-webcore` now writes a page in each of serif, sans-serif, monospace
+and no family, and beside each the same page naming the face, and holds
+the pairs' trees identical with the sentence's run of nonzero width.
+**All four hold.** Control `=generic` names IBM Plex Sans beside `serif`:
+`FAIL serif: not laid out as 'IBM Plex Serif'`, widths 373 and 357,
+`3 of 4`. The suite also brings back every picture the guest saved,
+these eight included.
+
+| 0.11.401 | |
+|---|---|
+| WebKit x86-64 | 7,827 steps again (a port file changed) |
+| `x86-webcore` | pass: 39 trees, 14 pictures, 4 generic families, about 23 s in the guest |
+

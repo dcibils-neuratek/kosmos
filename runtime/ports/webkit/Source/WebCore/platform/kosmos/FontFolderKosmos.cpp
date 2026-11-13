@@ -35,8 +35,35 @@ static bool sameIgnoringASCIICase(const char* a, const char* b)
     return *a == *b;
 }
 
-SkString kosmosFontFamily(SkFontMgr& manager, const char* name)
+// The generic families CSS names, as Kosmos's fonts: what Fontconfig
+// decides for the other ports. A page that names no font is in `serif`
+// (WebKit's standard family), and so is the last resort.
+static const char* kosmosGenericFamily(const char* name)
 {
+    static const struct {
+        const char* generic;
+        const char* family;
+    } generics[] = {
+        { "serif", "IBM Plex Serif" },
+        { "ui-serif", "IBM Plex Serif" },
+        { "sans-serif", "IBM Plex Sans" },
+        { "ui-sans-serif", "IBM Plex Sans" },
+        { "system-ui", "IBM Plex Sans" },
+        { "cursive", "IBM Plex Serif" },
+        { "fantasy", "IBM Plex Sans" },
+        { "monospace", "IBM Plex Mono" },
+        { "ui-monospace", "IBM Plex Mono" },
+    };
+    for (const auto& generic : generics) {
+        if (sameIgnoringASCIICase(name, generic.generic))
+            return generic.family;
+    }
+    return name;
+}
+
+SkString kosmosFontFamily(SkFontMgr& manager, const char* asked)
+{
+    const char* name = kosmosGenericFamily(asked);
     int count = manager.countFamilies();
     for (int i = 0; i < count; i++) {
         SkString family;

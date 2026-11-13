@@ -10225,11 +10225,11 @@ the applications make the system useful, and is not pulled forward.
     families matched without case (patch 0020), and the harness runs
     tests as WebKitTestRunner does (no hinting, mock scroll bars,
     WebCore's decoder).
-  - *Generic font families on Kosmos*: `serif`, `sans-serif`,
-    `monospace` (and the default font) name nothing in a folder of
-    fonts, so such text has no font and measures nothing - every page
-    that does not name a font. They are to name Kosmos's own fonts;
-    next, before W6d.
+  - *Generic font families on Kosmos*: *Done, 0.11.401* (18.796):
+    serif, sans-serif and monospace (and the default font) are IBM
+    Plex's three.
+  - *Fonts as files for the browser*: `/Kosmos/Fonts/`, WebCore's folder,
+    does not exist - the desktop's fonts are in its image. At W7.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
     sites; their render trees and times kept.
 
