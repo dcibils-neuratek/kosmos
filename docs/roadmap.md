@@ -10200,8 +10200,18 @@ the applications make the system useful, and is not pulled forward.
   - *A file shared* (`MAP_SHARED`): the servers handing out a file's
     pages. Nothing has asked for it yet.
 
-  Next, **W6**: WebCore drawing a page headless - with the disk question
-  first (`docs/w5.md`, *Disk*).
+  **W6 - WebCore draws a page**, planned in `docs/w6.md` and decided by
+  Diego, 13 November: the tarball plus what it lacks (curl, PlayStation's
+  options, LayoutTests) from WebKit's git at the tag's commit; held to
+  WebKit's own LayoutTests as text, the recorded sites' pictures beside
+  Safari's as a report. Disk measured: it fits. Steps:
+  - *W6a*: the overlay fetched and held to its commit; `PORT=Kosmos`;
+    WTF, JavaScriptCore and Skia built by it, their suites unchanged.
+  - *W6b*: WebCore compiled and linked into a harness making a page with
+    empty clients; a plain page's render tree printed.
+  - *W6c*: painting into a region through Skia; the LayoutTests subset.
+  - *W6d*: scripts and timers to quiescence, a loader for the recorded
+    sites; their render trees and times kept.
 
   **Follow-ups from W5d's curl** (18.787):
   - *HTTP/2*: nghttp2, built and held to its own tests, and curl on it.
