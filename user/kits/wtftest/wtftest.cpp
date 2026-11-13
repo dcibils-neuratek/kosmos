@@ -272,11 +272,27 @@ static String files()
                       removed ? "removed"_s : "left"_s);
 }
 
+/*
+ * **Which port built this**: `PLATFORM(KOSMOS)` comes from
+ * `BUILDING_KOSMOS__`, which WebKit's build is given by `OptionsKosmos.cmake`
+ * and this file by the Makefile's `WEBKIT_USER_FLAGS` (`docs/w6.md` W6a).
+ * A caller compiled without it would see a different WTF from the one it
+ * links, and says `port=none`.
+ */
+static String port()
+{
+#if PLATFORM(KOSMOS)
+    return " port=kosmos"_s;
+#else
+    return " port=none"_s;
+#endif
+}
+
 extern "C" int kosmos_wtftest_run(char *out, unsigned long size)
 {
     WTF::initializeMainThread();
 
-    String said = makeString("wtf "_s, text(), hashmap(), threads(), suspended(), runloop(),
+    String said = makeString("wtf"_s, port(), " "_s, text(), hashmap(), threads(), suspended(), runloop(),
                              rounding(), files());
     CString utf8 = said.utf8();
 

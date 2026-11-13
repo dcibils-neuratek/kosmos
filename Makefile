@@ -3537,14 +3537,24 @@ $(WEBKIT_LIBS) $(JSC_LIBS): $(WEBKIT_DIR)/.built
 # library agree on every ENABLE_. WTF's headers are system headers, so
 # their warnings are WebKit's.
 #
+# **What code using WebKit's headers is compiled with**, the same as WebKit
+# was: its `cmakeconfig.h` for every ENABLE_ and USE_, and the port's own
+# define, which `OptionsKosmos.cmake` gives WebKit's and nothing gives
+# ours - without it, `PLATFORM(KOSMOS)` would be true in the library and
+# false in its callers (`docs/w6.md` W6a). `WEBKIT_PORT_DEFINE=` on the
+# command line is the control: `x86-wtf` then reads `port=none`.
+WEBKIT_PORT_DEFINE ?= -DBUILDING_KOSMOS__=1
+WEBKIT_USER_FLAGS := -include cstdlib -include $(WEBKIT_DIR)/cmakeconfig.h -DBUILDING_WITH_CMAKE=1 \
+    $(WEBKIT_PORT_DEFINE) \
+    -DSTATICALLY_LINKED_WITH_WTF -DSTATICALLY_LINKED_WITH_bmalloc \
+    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -DNDEBUG
+
 WTFTEST_OBJS := $(UBUILD)/user/kits/wtftest/wtftest.cpp.o $(UBUILD)/user/kits/wtftest/wtftest_kit.c.o
 
 $(UBUILD)/user/kits/wtftest/wtftest.cpp.o: user/kits/wtftest/wtftest.cpp $(WEBKIT_DIR)/.built
 	@mkdir -p $(dir $@)
 	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
-	    -include cstdlib -include $(WEBKIT_DIR)/cmakeconfig.h -DBUILDING_WITH_CMAKE=1 \
-	    -DSTATICALLY_LINKED_WITH_WTF -DSTATICALLY_LINKED_WITH_bmalloc \
-	    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -DNDEBUG \
+	    $(WEBKIT_USER_FLAGS) \
 	    -isystem build/webkit/src/Source/WTF -isystem $(WEBKIT_DIR)/bmalloc/Headers \
 	    -isystem $(ICU_DIR)/include -c $< -o $@
 
@@ -3570,9 +3580,7 @@ JSC_OBJS := $(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o $(UBUILD)/user/install
 $(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o: user/installed/JSC/jsc_kosmos.cpp $(WEBKIT_DIR)/.built
 	@mkdir -p $(dir $@)
 	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
-	    -include cstdlib -include $(WEBKIT_DIR)/cmakeconfig.h -DBUILDING_WITH_CMAKE=1 \
-	    -DSTATICALLY_LINKED_WITH_WTF -DSTATICALLY_LINKED_WITH_bmalloc \
-	    -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -DNDEBUG \
+	    $(WEBKIT_USER_FLAGS) \
 	    -isystem build/webkit/src/Source/WTF -isystem $(WEBKIT_DIR)/bmalloc/Headers \
 	    -isystem $(WEBKIT_DIR)/JavaScriptCore/Headers \
 	    -isystem $(ICU_DIR)/include -c $< -o $@

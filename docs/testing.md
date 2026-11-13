@@ -32671,3 +32671,47 @@ the same shape with one suite fewer and WebKit already built. So a commit
 that touches the runtime costs a gate past ten minutes as things stand;
 the slowest are `x86-cafesa3d-2` 311 s, `host-llm` 275 s and `x86-sql`
 272 s.
+
+## 18.791 WebKit built as its own port, Kosmos
+
+**W6a** (`docs/w6.md`). WebKit's source is now the WebKitGTK 2.54.2
+release with 89 files laid over it from WebKit's git at the tag's commit -
+curl's backend, PlayStation's and WPE's port files - and it is built as
+`PORT=Kosmos` (`OptionsKosmos.cmake`, `PlatformKosmos.cmake`,
+`0013-a-port-named-kosmos.patch`) instead of JSCOnly. The step changes the
+port and not the engine, so it is held to the suites answering as before.
+
+**Held to the same engine, before any suite ran**: JSCOnly configured
+beside it. `cmakeconfig.h` differs in three options only JSCOnly declares
+(off either way) and `ENABLE_API_TESTS`, which builds nothing; one WTF
+file's flags differ only in `-DBUILDING_KOSMOS__=1`. A first draft that
+also took PlayStation's `USE_ISO_MALLOC OFF` was caught by that diff and
+corrected.
+
+**What it found**: on this Mac WebKit resolves an Apple SDK before
+`project()`, whatever it builds for. JSCOnly was let through to the macOS
+SDK; any other port stops (`Building for an Apple platform without an SDK
+directory`). 0013 skips it for Kosmos.
+
+**A new check**, `port=kosmos` at the head of `x86-wtf`'s line:
+`PLATFORM(KOSMOS)` as seen by code the Makefile compiles against WebKit's
+headers (`WEBKIT_USER_FLAGS`). **Control**: `WEBKIT_PORT_DEFINE=` -
+`port=none`, `FAIL: 1 of 1 suites`.
+
+**And the gate's library fingerprint now includes `tools/upstream.py`**,
+where the overlay's commit and paths are named: a change there changes
+the source every WebKit and W5 suite stands on.
+
+| 0.11.396 | |
+|---|---|
+| WebKit x86-64, recut and built from nothing | 3,447 steps |
+| `x86-wtf`, `x86-jsc`, `x86-skia` | pass; 0.4 s, 0.8 s and 0.6 s in the guest |
+| the whole gate, every library suite run (the runtime changed) | 123 of 124 in 669 s (11:09); `x86-xavier` failed, and passed alone in 105 s |
+
+**`x86-xavier` under load, twice now.** The follow-up's answer left the
+kit's own partway through (`the follow-up did not keep the conversation`),
+as at 0.11.383 (`the box's answer is not the kit's`); alone it passes. Nothing in
+W6a reaches the LLM engine. Two divergences, both under a full gate, say
+something in the engine or the test is not deterministic when the
+machine is busy - which `make stress`'s premise says must still be true.
+On the roadmap as its own item.

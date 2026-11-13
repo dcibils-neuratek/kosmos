@@ -153,8 +153,35 @@ TEST262 = {
 }
 
 
-def checkout(name, url, commit):
-    """Where `name` is, fetched by git at `commit` if it is not there yet."""
+# **What WebKitGTK's release does not carry** (`docs/w6.md`, decided by
+# Diego 13 November 2026): its tarball is cut for GTK, and WebKit on curl -
+# the PlayStation port's shape, which JetSki's follows - needs files it
+# leaves out. They come from WebKit's own repository at the commit the
+# release's tag names, `webkitgtk-2.54.2`, so they are the same source the
+# tarball was cut from; fetched sparse, only these paths, and the commit is
+# the sum. `tools/webkit_build.py` lays them over the tarball's copy, and
+# refuses one that is already there.
+WEBKIT_OVERLAY = {
+    "url": "https://github.com/WebKit/WebKit.git",
+    "commit": "b95c91b1c0ee43cc86d25ff7af73038f67a88e04",
+    # gitignore's patterns, as a sparse checkout reads them.
+    "paths": [
+        # curl's network code, in WebCore and in WebKit2's processes.
+        "/Source/**/curl/",
+        # The ports Kosmos's is modelled on: PlayStation's (curl, no GLib)
+        # and WPE's (Skia, no toolkit).
+        "/Source/cmake/OptionsPlayStation.cmake",
+        "/Source/cmake/OptionsWPE.cmake",
+        "/Source/**/PlatformPlayStation.cmake",
+        "/Source/**/PlatformWPE.cmake",
+    ],
+}
+
+
+def checkout(name, url, commit, sparse=None):
+    """Where `name` is, fetched by git at `commit` if it is not there yet;
+    only the paths `sparse` names, when it names any, and then no file's
+    contents but those."""
     into = os.path.join(UNPACKED, name)
 
     def head():
@@ -166,9 +193,14 @@ def checkout(name, url, commit):
         shutil.rmtree(into, ignore_errors=True)
         os.makedirs(into)
         print("upstream: fetching %s at %s" % (name, commit))
-        for args in (["init", "-q"], ["remote", "add", "origin", url],
-                     ["fetch", "-q", "--depth", "1", "origin", commit],
-                     ["checkout", "-q", "FETCH_HEAD"]):
+        steps = [["init", "-q"], ["remote", "add", "origin", url]]
+        if sparse:
+            steps += [["config", "core.sparseCheckout", "true"],
+                      ["sparse-checkout", "set", "--no-cone"] + sparse,
+                      ["fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit]]
+        else:
+            steps += [["fetch", "-q", "--depth", "1", "origin", commit]]
+        for args in steps + [["checkout", "-q", "FETCH_HEAD"]]:
             subprocess.run(["git", "-C", into] + args, check=True)
 
     if head() != commit:
@@ -182,6 +214,13 @@ def checkout(name, url, commit):
         sys.exit("upstream: %s's checkout in %s has been changed" % (name, into))
 
     return into
+
+
+def webkit_overlay():
+    """Where the files WebKitGTK's release lacks are, fetched at the
+    release tag's commit if they are not there yet."""
+    o = WEBKIT_OVERLAY
+    return checkout("webkit-overlay", o["url"], o["commit"], o["paths"])
 
 
 def test262():

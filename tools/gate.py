@@ -97,8 +97,11 @@ RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",
            "user/kits/kitenv.c", "user/kits/kitenv.h", "user/kits/storage",
            "user/kits/network", "tools/run_screenshot.py", "tools/scratch.py",
            "tools/llvm_vendor.py"]
-WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py"]
-W5 = ["tools/w5_build.py"]
+# `tools/upstream.py` names every source these are built from - the
+# release, its sum, and since W6a the overlay from WebKit's git - so a
+# change there is a change to the library.
+WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py", "tools/upstream.py"]
+W5 = ["tools/w5_build.py", "tools/upstream.py"]
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"]]
 

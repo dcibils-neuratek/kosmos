@@ -2,9 +2,37 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W6a, the source and the port (0.11.396, not pushed)
+
+**W6 is decided** (`docs/w6.md`, *Decided by Diego*): the tarball plus a
+sparse overlay from WebKit's git at `b95c91b1c0ee` (1A); held to
+LayoutTests as text, the recorded sites' pictures a report (2A).
+
+- **The overlay**: `upstream.WEBKIT_OVERLAY` and `upstream.webkit_overlay()`
+  (sparse, blob-filtered, commit-checked, `build/upstream/webkit-overlay`);
+  `webkit_build.py`'s `patched_source()` lays its 89 files over the release
+  before the patches and refuses a file both carry that differs. The
+  LayoutTests' paths are added at W6c.
+- **The port**: `PORT=Kosmos` in `runtime/cxx/jsc.cmake`;
+  `runtime/ports/webkit/Source/cmake/OptionsKosmos.cmake` (JSCOnly's
+  choices, WebCore off until W6b), `.../WTF/wtf/PlatformKosmos.cmake`
+  (WTF's sources), `0013-a-port-named-kosmos.patch` (the list of ports,
+  `PLATFORM(KOSMOS)`, no Apple SDK on this Mac). 0005 deleted and 0002's
+  CMake hunk gone - both moved into `PlatformKosmos.cmake`.
+- `WEBKIT_USER_FLAGS` in the Makefile: what `wtftest.cpp` and
+  `jsc_kosmos.cpp` compile with, now carrying `-DBUILDING_KOSMOS__=1`;
+  `x86-wtf` says `port=kosmos` (control `WEBKIT_PORT_DEFINE=`).
+- The gate's WebKit and W5 fingerprints include `tools/upstream.py`.
+- `testing.md` 18.791.
+
+**Next: W6b** - WebCore on in `OptionsKosmos.cmake` (curl, Skia,
+HarfBuzz, the W5 libraries found as Skia's are), WebCore's and PAL's
+`PlatformKosmos.cmake`, and a harness making a page with empty clients
+that prints a plain page's render tree.
 
 ## 13 November: JetSki W5e, Skia (0.11.395, not pushed) - W5 is done
 

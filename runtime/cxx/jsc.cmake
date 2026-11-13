@@ -4,15 +4,15 @@
 # `tools/webkit_build.py` configures WebKit with, beside the toolchain file
 # `kosmos.cmake` - as `runtimes.cmake` is for the C++ runtimes.
 #
-# The JSC-only port (`OptionsJSCOnly.cmake`), with its Generic event loop
-# and no GLib, built static so it links into an image as every kit here
-# does. No JIT of any tier, and no WebAssembly, whose tiers are JITs: the
+# The Kosmos port (`runtime/ports/webkit/Source/cmake/OptionsKosmos.cmake`,
+# `docs/w6.md` W6a) - JSCOnly's until W6 - with the Generic event loop and
+# no GLib, built static so it links into an image as every kit here does. No JIT of any tier, and no WebAssembly, whose tiers are JITs: the
 # LLInt interprets, and nothing a process writes is ever run (`docs/w4.md`,
 # *Not yet decided*). No remote inspector, which is a socket server, and
 # no tests of WebKit's own, which are programs CMake would link for a
 # system it cannot run.
 
-set(PORT "JSCOnly" CACHE STRING "")
+set(PORT "Kosmos" CACHE STRING "")
 set(CMAKE_BUILD_TYPE "Release" CACHE STRING "")
 set(ENABLE_STATIC_JSC ON CACHE BOOL "")
 set(EVENT_LOOP_TYPE "Generic" CACHE STRING "")

@@ -10205,13 +10205,20 @@ the applications make the system useful, and is not pulled forward.
   options, LayoutTests) from WebKit's git at the tag's commit; held to
   WebKit's own LayoutTests as text, the recorded sites' pictures beside
   Safari's as a report. Disk measured: it fits. Steps:
-  - *W6a*: the overlay fetched and held to its commit; `PORT=Kosmos`;
-    WTF, JavaScriptCore and Skia built by it, their suites unchanged.
+  - *W6a*: *Done, 0.11.396* (`testing.md` 18.791): the overlay fetched
+    and held to its commit (89 files); `PORT=Kosmos`; WTF,
+    JavaScriptCore and Skia built by it, their suites unchanged, and
+    `x86-wtf` saying `port=kosmos`.
   - *W6b*: WebCore compiled and linked into a harness making a page with
     empty clients; a plain page's render tree printed.
   - *W6c*: painting into a region through Skia; the LayoutTests subset.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
     sites; their render trees and times kept.
+
+  **`x86-xavier` diverges under a full gate** (18.791): twice, 0.11.383
+  and 0.11.396, the guest's answer leaving the kit's own partway through
+  while every suite ran; alone it passes. Find what is not deterministic
+  under load - the engine's threads, or the test's timing - and fix it.
 
   **Follow-ups from W5d's curl** (18.787):
   - *HTTP/2*: nghttp2, built and held to its own tests, and curl on it.

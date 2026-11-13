@@ -2477,3 +2477,45 @@ browser will paint with.
 **Measurements.** Eight scenes, five photographs, three font families,
 23 lines of output in all, every one identical to the Mac's. It takes 0.6
 seconds inside the emulator.
+
+## 13 November 2026 - WebKit becomes a Kosmos port
+
+**In short.** WebKit is now built as a port of its own, named Kosmos,
+rather than borrowing the port meant for building JavaScript alone. The
+browser's next step, drawing a web page, needs parts of WebKit that the
+borrowed port turns off. The missing source files now come from WebKit's
+own history, at exactly the version Kosmos already uses.
+
+**What.** WebKit is built in "ports", one for each system it runs on:
+Linux desktops (GTK), embedded devices (WPE), PlayStation, the Mac, and
+JSCOnly, which builds only the JavaScript engine. Until now Kosmos used
+JSCOnly. Kosmos now has a port of its own: a file of options, a list of
+the operating-system files WebKit's foundation uses here, and a three-line
+patch that adds Kosmos to the list of ports WebKit accepts. The released
+source Kosmos builds from leaves out the code for the network library
+Kosmos uses (curl) and the PlayStation port Kosmos follows, because it was
+packaged for Linux desktops. So those 89 files are fetched from WebKit's
+own repository, at the exact commit the release was cut from, and laid
+over the release. A file that exists in both must match byte for byte, or
+the build stops.
+
+**Why.** For now the port builds exactly what JSCOnly did, and that is
+deliberate. Changing how WebKit is built and changing what it does are two
+different risks, so they are taken one at a time. This step was checked by
+comparing the two configurations. They differ only in the port's own
+name, and every test still gives the same answers.
+
+**What it found.** On a Mac, WebKit's build looks for Apple's developer
+kit before it does anything else, whatever it is building for. JSCOnly
+was let through. Any other port is stopped, so the Kosmos port skips that
+check. The comparison also caught one option that had been copied from
+PlayStation's port and would have changed the memory allocator, so it was
+taken out. And the programs built against WebKit's headers are now told
+which port they belong to. Without that, WebKit and the programs that use
+it would have disagreed about which system they were on. The WTF test now
+reports the port, and fails when that information is missing.
+
+**Visible impact.** None. This is groundwork for drawing a page.
+
+**Measurements.** 89 files fetched; 3,447 build steps from scratch; the
+WTF, JavaScriptCore and Skia tests pass with every line as before.

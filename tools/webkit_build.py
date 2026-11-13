@@ -43,6 +43,10 @@ SRC = os.path.join(ROOT, "build", "webkit", "src")
 def fingerprint():
     """What the copy is made from: the release and every patch, in order."""
     h = hashlib.sha256(upstream.RELEASES["webkit"]["sha256"].encode())
+    o = upstream.WEBKIT_OVERLAY
+    h.update(o["commit"].encode())
+    for pattern in o["paths"]:
+        h.update(pattern.encode())
     for name in sorted(os.listdir(PATCHES)):
         if name.endswith(".patch"):
             h.update(name.encode())
@@ -80,6 +84,29 @@ def patched_source():
     shutil.rmtree(SRC, ignore_errors=True)
     os.makedirs(os.path.dirname(SRC), exist_ok=True)
     subprocess.run(["cp", "-Rc", release, SRC], check=True)
+
+    # What the release does not carry, from WebKit's git at its tag's
+    # commit (`docs/w6.md`): laid over the copy before the patches, so a
+    # patch may change those too. A file the release already has is the
+    # release's - the overlay only adds - and one that differed would mean
+    # the two were not cut from the same source, which is refused.
+    overlay = upstream.webkit_overlay()
+    added = 0
+    for folder, dirs, names in os.walk(overlay):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            path = os.path.relpath(os.path.join(folder, name), overlay)
+            into = os.path.join(SRC, path)
+            if os.path.exists(into):
+                with open(into, "rb") as a, open(os.path.join(folder, name), "rb") as b:
+                    if a.read() != b.read():
+                        sys.exit("webkit_build: %s differs between the release and its tag" % path)
+                continue
+            os.makedirs(os.path.dirname(into), exist_ok=True)
+            shutil.copy2(os.path.join(folder, name), into)
+            added += 1
+    print("webkit_build: %d files from WebKit's git at %s"
+          % (added, upstream.WEBKIT_OVERLAY["commit"][:12]))
 
     for name in sorted(os.listdir(PATCHES)):
         if name.endswith(".patch"):

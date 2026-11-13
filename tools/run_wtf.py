@@ -47,6 +47,7 @@ print("wtftest: " .. kit.run())
 # what each piece asks).
 WANT = " ".join([
     "wtf",
+    "port=kosmos",                              # PLATFORM(KOSMOS), as WTF was built
     "text=25/26 KOSMOS RUNS WEBKIT 382",        # 25 UTF-16 units, 26 UTF-8 bytes
     "map=1000/1000/332833500",                  # the squares of 0..999, summed
     "threads=400000",

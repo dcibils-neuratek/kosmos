@@ -10,22 +10,8 @@ OS(KOSMOS) takes Darwin's shape - the kernel stops the thread - with
 those calls, installs no handler, has no Thread::signal, and keeps
 WTF's signal-handler table in kosmos/SignalsKosmos.cpp, where nothing
 is ever delivered to it.
+(The Kosmos port's WTF sources name it: PlatformKosmos.cmake.)
 
-diff -ruN a/Source/WTF/wtf/PlatformJSCOnly.cmake b/Source/WTF/wtf/PlatformJSCOnly.cmake
---- a/Source/WTF/wtf/PlatformJSCOnly.cmake
-+++ b/Source/WTF/wtf/PlatformJSCOnly.cmake
-@@ -43,6 +43,11 @@
-         unix/LanguageUnix.cpp
-         unix/LoggingUnix.cpp
-     )
-+    if (WTF_OS_KOSMOS)
-+        list(APPEND WTF_SOURCES
-+            kosmos/SignalsKosmos.cpp
-+        )
-+    endif ()
-     if (WTF_OS_FUCHSIA)
-         list(APPEND WTF_SOURCES
-             fuchsia/CPUTimeFuchsia.cpp
 diff -ruN a/Source/WTF/wtf/PlatformRegisters.h b/Source/WTF/wtf/PlatformRegisters.h
 --- a/Source/WTF/wtf/PlatformRegisters.h
 +++ b/Source/WTF/wtf/PlatformRegisters.h

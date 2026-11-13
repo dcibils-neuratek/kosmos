@@ -1,0 +1,58 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A port named Kosmos (docs/w6.md W6a). WebKit's CMake refuses a PORT it
+does not list, so Kosmos joins the list; and BUILDING_KOSMOS__, which
+OptionsKosmos.cmake defines, gives PLATFORM(KOSMOS) and BPLATFORM(KOSMOS)
+as GTK's and WPE's do. On a Mac, WebKit looks for an Apple SDK before
+anything else, whatever it builds for - JSCOnly's build found the macOS
+one and never used it - and a Kosmos build is never for an Apple
+platform, so it does not look. The port's own files - its options, WTF's
+sources - are Kosmos's, in runtime/ports/webkit/Source.
+
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-11-13 09:06:54.349144506 -0300
++++ b/CMakeLists.txt	2026-11-13 09:06:54.365849185 -0300
+@@ -9,7 +9,7 @@
+ cmake_minimum_required(VERSION 3.20)
+ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Source/cmake")
+ 
+-if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
++if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT PORT STREQUAL "Kosmos")
+     # Resolve the SDK and pin tools before the call to project().
+     include(WebKitXcodeSDK)
+ endif ()
+diff -ruN a/Source/WTF/wtf/PlatformLegacy.h b/Source/WTF/wtf/PlatformLegacy.h
+--- a/Source/WTF/wtf/PlatformLegacy.h	2026-11-13 09:05:51.792839601 -0300
++++ b/Source/WTF/wtf/PlatformLegacy.h	2026-11-13 09:05:51.810052499 -0300
+@@ -52,6 +52,8 @@
+ #define WTF_PLATFORM_HAIKU 1
+ #elif defined(BUILDING_WPE__)
+ #define WTF_PLATFORM_WPE 1
++#elif defined(BUILDING_KOSMOS__)
++#define WTF_PLATFORM_KOSMOS 1
+ #elif defined(BUILDING_JSCONLY__)
+ /* JSCOnly does not provide PLATFORM() macro */
+ #elif OS(MACOS)
+diff -ruN a/Source/bmalloc/bmalloc/BPlatform.h b/Source/bmalloc/bmalloc/BPlatform.h
+--- a/Source/bmalloc/bmalloc/BPlatform.h	2026-11-13 09:05:51.794257894 -0300
++++ b/Source/bmalloc/bmalloc/BPlatform.h	2026-11-13 09:05:51.810155957 -0300
+@@ -122,6 +122,8 @@
+ #define BPLATFORM_GTK 1
+ #elif defined(BUILDING_WPE__)
+ #define BPLATFORM_WPE 1
++#elif defined(BUILDING_KOSMOS__)
++#define BPLATFORM_KOSMOS 1
+ #elif defined(BUILDING_JSCONLY__)
+ /* JSCOnly does not provide BPLATFORM() macro */
+ #elif BOS(WINDOWS)
+diff -ruN a/Source/cmake/WebKitCommon.cmake b/Source/cmake/WebKitCommon.cmake
+--- a/Source/cmake/WebKitCommon.cmake	2026-11-13 09:05:51.791376265 -0300
++++ b/Source/cmake/WebKitCommon.cmake	2026-11-13 09:05:51.809955082 -0300
+@@ -76,6 +76,7 @@
+         GTK
+         IOS
+         JSCOnly
++        Kosmos
+         Mac
+         PlayStation
+         WPE
