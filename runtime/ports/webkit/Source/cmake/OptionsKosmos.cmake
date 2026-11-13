@@ -8,12 +8,12 @@
 # own, whose choices are written here rather than patched into another's.
 #
 # It follows PlayStation's for the shape of a system without GLib - curl for
-# the network, the generic run loop - and WPE's for Skia. For now it builds
-# what JSCOnly built, WTF, bmalloc, JavaScriptCore and Skia, so that W6a is
-# held to `x86-wtf`, `x86-jsc` and `x86-skia` answering as they did; WebCore
-# is turned on by W6b. The choices Kosmos makes as a cache rather than as a
-# port - no JIT, the system's malloc, Skia without encoders - stay in
-# `runtime/cxx/jsc.cmake`, read before this.
+# the network, the generic run loop - and WPE's for Skia. It builds what
+# JSCOnly built - WTF, bmalloc, JavaScriptCore and Skia, held at W6a to
+# `x86-wtf`, `x86-jsc` and `x86-skia` answering as they did - and since W6b
+# PAL and WebCore with the platform below. The choices Kosmos makes as a
+# cache rather than as a port - no JIT, the system's malloc, Skia without
+# encoders - stay in `runtime/cxx/jsc.cmake`, read before this.
 
 set(PORT Kosmos)
 
@@ -38,6 +38,30 @@ WEBKIT_OPTION_BEGIN()
 WEBKIT_OPTION_DEFINE(ENABLE_STATIC_JSC "Whether to build JavaScriptCore as a static library." PUBLIC ON)
 WEBKIT_OPTION_DEFINE(USE_LIBBACKTRACE "Whether to enable usage of libbacktrace." PUBLIC OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
+
+# **What a headless page on Kosmos has not got, yet** (`docs/w6.md` W6b).
+# Each is a piece of the platform a later step brings, not a refusal:
+# video and audio wait for the Playback Kit (`docs/playback.md`), WebGL
+# for a GPU, XSLT for libxslt, WOFF2 for its decoder, AVIF, JPEG XL and
+# colour management for their libraries.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEB_AUDIO PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBGL PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_XSLT PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_WOFF2 PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_AVIF PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_JPEGXL PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_LCMS PRIVATE OFF)
+# And what a window brings, at W7: the system's notifications, a
+# position, context menus, full screen, and messages to the application.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_CONTEXT_MENUS PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_FULLSCREEN_API PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_GEOLOCATION PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_NOTIFICATIONS PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_USER_MESSAGE_HANDLERS PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_SMOOTH_SCROLLING PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_IMAGE_DIFF PRIVATE OFF)
 WEBKIT_OPTION_END()
 
 # WebKit's generic run loop, as PlayStation's: no GLib anywhere in the process.
@@ -46,16 +70,70 @@ set(LOWERCASE_EVENT_LOOP_TYPE "generic")
 SET_AND_EXPOSE_TO_BUILD(USE_GENERIC_EVENT_LOOP 1)
 SET_AND_EXPOSE_TO_BUILD(WTF_DEFAULT_EVENT_LOOP 0)
 
-# W6b turns WebCore on; W7 brings WebKit2's processes.
-set(ENABLE_WEBCORE OFF)
+# **WebCore, since W6b**, headless: a page laid out and painted with no
+# window and no WebKit2, whose three processes are W7's. Legacy WebKit is
+# the Mac's own and is never built here.
+set(ENABLE_WEBCORE ON)
 set(ENABLE_WEBKIT_LEGACY OFF)
 set(ENABLE_WEBKIT OFF)
 set(ENABLE_WEBINSPECTORUI OFF)
-set(ENABLE_WEBGL OFF)
 set(ENABLE_WEBGPU OFF)
+
+# **No pkg-config.** WebKit's Find modules ask it first, and on this Mac it
+# answers with Homebrew's libraries, built for macOS. Every library WebCore
+# links is W5's (`tools/w5_build.py`), found only where `tools/webkit_build.py`
+# points CMake - as PlayStation's port, which has the same problem, does.
+set(CMAKE_DISABLE_FIND_PACKAGE_PkgConfig ON)
+macro(pkg_check_modules _prefix _module0)
+endmacro()
+
+find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
+
+if (ENABLE_WEBCORE)
+    find_package(CURL 7.85.0 REQUIRED)
+    find_package(Freetype REQUIRED)
+    find_package(HarfBuzz REQUIRED COMPONENTS ICU)
+    find_package(JPEG REQUIRED)
+    find_package(LibPSL 0.20.2 REQUIRED)
+    find_package(LibXml2 2.9.7 REQUIRED)
+    find_package(OpenSSL REQUIRED)
+    find_package(PNG REQUIRED)
+    find_package(SQLite3 REQUIRED)
+    find_package(WebP REQUIRED COMPONENTS demux)
+    find_package(ZLIB REQUIRED)
+
+    # **GL ES from an EGL with no display** (Diego, 13 November, `docs/w6.md`
+    # W6b): WebCore links GL ES on every port, and with no display WebKit's
+    # Skia paints on the processor. The headers are the Khronos ones WebKit
+    # carries (`Source/ThirdParty/ANGLE/include`), in their platform-neutral
+    # form, since Kosmos is no platform they list; the library is Kosmos's
+    # (`user/kits/egl/`), linked by the Makefile.
+    find_package(EGL REQUIRED)
+    find_package(OpenGLES2 REQUIRED)
+    add_definitions(-DEGL_NO_PLATFORM_SPECIFIC_TYPES=1)
+endif ()
 
 if (NOT ENABLE_STATIC_JSC)
     message(FATAL_ERROR "Kosmos links nothing dynamically: ENABLE_STATIC_JSC must be ON")
 endif ()
 
-find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
+# **WebCore's platform**, as SET_AND_EXPOSE_TO_BUILD makes each a `USE()`:
+# curl for the network and OpenSSL under it (W5d), HarfBuzz for shaping and
+# Skia for every pixel (W5b, W5e). And TextureMapper, WebKit's compositor
+# on GL, which every Skia port builds and whose texture pool WebCore's GL
+# display reaches for: built, as PlayStation's port builds it, and never
+# run while there is no display - the page is painted on the processor
+# and nothing composites. Coordinated graphics, the compositor's thread,
+# is a window's, at W7. And Adwaita's theme, which `PlatformKosmos.cmake`
+# builds: its files answer for RenderTheme, Theme and the scroll bars only
+# under `USE(THEME_ADWAITA)`, as GTK and WPE set it.
+if (ENABLE_WEBCORE)
+    SET_AND_EXPOSE_TO_BUILD(USE_CURL ON)
+    SET_AND_EXPOSE_TO_BUILD(USE_HARFBUZZ ON)
+    SET_AND_EXPOSE_TO_BUILD(USE_OPENSSL ON)
+    SET_AND_EXPOSE_TO_BUILD(USE_TEXTURE_MAPPER ON)
+    SET_AND_EXPOSE_TO_BUILD(USE_THEME_ADWAITA ON)
+endif ()
+
+set(PAL_LIBRARY_TYPE STATIC)
+set(WebCore_LIBRARY_TYPE STATIC)

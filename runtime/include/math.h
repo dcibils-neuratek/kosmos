@@ -257,6 +257,18 @@ float  log1pf(float x);
 float       atan2f(float y, float x);
 long double atan2l(long double y, long double x);
 
+/*
+ * **WebCore's** (`docs/w6.md` W6b): the `float` halves of functions
+ * already here, `remquof` because `remainderf` calls it, and `lround` -
+ * from the same tarball, by the same closure over undefined symbols.
+ */
+float  erff(float x);
+float  frexpf(float x, int *exponent);
+float  ldexpf(float x, int exponent);
+long   lround(double x);
+float  remainderf(float x, float y);
+float  remquof(float x, float y, int *quo);
+
 __END_DECLS
 
 #endif /* MATH_H */

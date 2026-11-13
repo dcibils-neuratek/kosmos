@@ -1200,7 +1200,8 @@ struct pointer_info {
  */
 struct bus_device {
     uint32_t id;        /* vendor << 16 | device */
-    uint32_t class;     /* PCI class/subclass/prog-if, or 0 */
+    uint32_t class_code; /* PCI class/subclass/prog-if, or 0; not `class`,
+                          * which C++ - WebCore, through kosmos.h - cannot read */
     uint16_t where;     /* bus << 8 | slot << 3 | function, or the window */
     uint8_t  claimed;   /* a driver in this system took it */
     uint8_t  reserved;

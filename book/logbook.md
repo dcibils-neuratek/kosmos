@@ -2519,3 +2519,56 @@ reports the port, and fails when that information is missing.
 
 **Measurements.** 89 files fetched; 3,447 build steps from scratch; the
 WTF, JavaScriptCore and Skia tests pass with every line as before.
+
+## 13 November 2026 - WebCore lays out a page on Kosmos
+
+**In short.** WebCore is the part of WebKit that reads a web page and
+works out where everything on it goes. It now runs on Kosmos. Given
+fourteen of WebKit's own CSS tests, it places every box exactly where
+WebKit expects, on every system WebKit runs on. Nothing is drawn yet:
+this step is the layout, and painting comes next.
+
+**What.** A browser engine does four jobs: it reads a page, works out
+its layout, paints it and runs its scripts. WebKit's own tests check the
+layout by printing it as text. Each test comes with the text it should
+produce, a tree of boxes with their positions and sizes. A small Kosmos
+program, the harness, now makes a WebCore page with nothing around it:
+no window, no network, no GPU. It hands that page a test and prints the
+tree. The new test gives it fourteen of CSS 2.1's tests, about how a box
+placed at an absolute position finds what it is positioned against. The
+fourteen trees are compared with WebKit's expected text line by line,
+and every line matches.
+
+**Why.** Text is what WebKit's own builders check every port with, so
+it is the fairest test there is. A picture of a page depends on the
+fonts and on how they are drawn. A tree of boxes depends only on whether
+the engine did its job.
+
+**How it was built.** Most of the Kosmos port is borrowed rather than
+written. Each other port handles the same needs, and their files were
+used as they are: network and encryption as PlayStation's port does
+them, drawing and text as WPE's, form controls from GTK's own theme, and
+the screen, fonts and file types from PlayStation's port. What Kosmos
+needed of its own fits in eight small files: shared memory as Nebula
+regions, the folder fonts are read from, an empty clipboard,
+accessibility with no screen reader behind it, keyboard handling and
+network security settings. It also took six patches, most of them one
+line that adds Kosmos to a list of systems already named there.
+
+**What it found.** Kosmos's GL for 3D, TinyGL, uses some of the same
+function names as the GL that WebKit links to. The two had to agree
+whose each name is: TinyGL keeps the twenty names it already defines,
+and neither is ever called, because there is no GPU. A page also asks
+the program that made it how to load files, and the harness's answer is
+"you don't", since the test's page is handed over whole. A real loader,
+one that fetches over the network, is a later step. And the system
+gained a few small things along the way: maths functions, the clean-up
+of a thread's private variables when it ends, and a field in the kernel
+renamed because C++ cannot use the word `class` as a name.
+
+**Visible impact.** None on the desktop yet. Kosmos now has a browser
+engine that understands a page's layout, and the next step is to paint
+that page.
+
+**Measurements.** The full WebKit build is 7,827 steps. The test image
+is 145 MB. The fourteen pages are laid out in 1.4 seconds in the guest.

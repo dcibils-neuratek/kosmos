@@ -868,7 +868,7 @@ unsigned hal_bus_scan(struct bus_device *out, unsigned max)
                 if (n < max) {
                     out[n].id       = ((id & 0xFFFF) << 16)
                                     | ((id >> 16) & 0xFFFF);
-                    out[n].class    = pci_config_read((uint8_t)bus, slot, fn,
+                    out[n].class_code = pci_config_read((uint8_t)bus, slot, fn,
                                                       0x08) >> 8;
                     out[n].where    = where;
                     out[n].claimed  = was_taken(where) ? 1u : 0u;

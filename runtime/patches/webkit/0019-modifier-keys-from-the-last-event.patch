@@ -1,0 +1,20 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The modifier keys as the last key event left them (docs/w6.md W6b).
+GTK's and WPE's ports answer "which modifiers are held now" from the state
+the platform last set with setCurrentModifierState, and so does Kosmos,
+whose keys arrive as the window manager's events and never by asking the
+keyboard. Until JetSki has a window (W7) nothing has set it, and no
+modifier is held.
+
+--- a/Source/WebCore/platform/PlatformKeyboardEvent.cpp
++++ b/Source/WebCore/platform/PlatformKeyboardEvent.cpp
+@@ -60,7 +60,7 @@
+     s_currentModifiers = modifiers;
+ }
+ 
+-#if PLATFORM(GTK) || USE(LIBWPE) || ENABLE(WPE_PLATFORM)
++#if PLATFORM(GTK) || USE(LIBWPE) || ENABLE(WPE_PLATFORM) || PLATFORM(KOSMOS)
+ OptionSet<PlatformEvent::Modifier> PlatformKeyboardEvent::currentStateOfModifierKeys()
+ {
+     if (s_currentModifiers)

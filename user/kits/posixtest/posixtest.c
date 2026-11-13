@@ -108,18 +108,51 @@ static void *calls_once(void *arg)
 static pthread_key_t key;
 static volatile int destroyed;
 
+static int ends_order[4][3];
+static volatile int ends_turn[4];
+
+/* A key's value is its thread's row's third place, where its turn goes. */
 static void destroy(void *value)
 {
-    if (value == (void *)&destroyed) {
+    int *place = value;
+
+    if (place >= &ends_order[0][0] && place <= &ends_order[3][2]) {
+        int which = (int)((place - &ends_order[0][0]) / 3);
+
+        *place = ++ends_turn[which];
         __atomic_add_fetch(&destroyed, 1, __ATOMIC_RELAXED);
     }
 }
 
+/*
+ * And a `thread_local` object's destructors, as C++ registers them
+ * (`__cxa_thread_atexit`): each thread registers two, and the end of the
+ * thread must run the second, then the first, then the key's - newest
+ * first, and before the keys, as glibc orders them. Each records its turn
+ * in the thread's own row.
+ */
+int __cxa_thread_atexit(void (*destructor)(void *), void *object, void *image);
+
+static void ends_first(void *row)
+{
+    int *r = row;
+    r[0] = ++ends_turn[(r - ends_order[0]) / 3];
+}
+
+static void ends_second(void *row)
+{
+    int *r = row;
+    r[1] = ++ends_turn[(r - ends_order[0]) / 3];
+}
+
 static void *sets_a_key(void *arg)
 {
-    (void)arg;
-    pthread_setspecific(key, (void *)&destroyed);
-    return pthread_getspecific(key) == &destroyed ? (void *)1 : NULL;
+    int which = (int)(intptr_t)arg;
+
+    __cxa_thread_atexit(ends_first, ends_order[which], NULL);
+    __cxa_thread_atexit(ends_second, ends_order[which], NULL);
+    pthread_setspecific(key, (void *)&ends_order[which][2]);
+    return pthread_getspecific(key) == &ends_order[which][2] ? (void *)1 : NULL;
 }
 
 static pthread_mutex_t recursive;
@@ -1166,7 +1199,7 @@ int kosmos_posixtest_run(char *out, unsigned long size)
     pthread_key_create(&key, destroy);
 
     for (i = 0, ok = 0; i < 4; i++) {
-        pthread_create(&t[i], NULL, sets_a_key, NULL);
+        pthread_create(&t[i], NULL, sets_a_key, (void *)(intptr_t)i);
     }
 
     for (i = 0; i < 4; i++) {
@@ -1176,6 +1209,13 @@ int kosmos_posixtest_run(char *out, unsigned long size)
 
     if (ok != 4 || destroyed != 4 || pthread_getspecific(key) != NULL) {
         SAY("posix: keys held %d, destroyed %d", ok, destroyed);
+    }
+
+    for (i = 0; i < 4; i++) {
+        if (ends_order[i][1] != 1 || ends_order[i][0] != 2 || ends_order[i][2] != 3) {
+            SAY("posix: thread %d ended its thread-locals and key in turns %d, %d, %d "
+                "(want 2, 1, 3)", i, ends_order[i][0], ends_order[i][1], ends_order[i][2]);
+        }
     }
 
     /* 6: a recursive mutex, held twice and refused to another */
@@ -1333,7 +1373,7 @@ int kosmos_posixtest_run(char *out, unsigned long size)
         }
 
         snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-                 "recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s; %s",
+                 "thread-locals in turn, recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s; %s",
                  counted, ring_passes, once_ran, destroyed,
                  most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
                  memory, process, files, streams);

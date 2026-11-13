@@ -207,6 +207,16 @@ def checkout(name, url, commit, sparse=None):
         shutil.rmtree(into, ignore_errors=True)
         sys.exit("upstream: %s is not at %s - removed" % (name, commit))
 
+    # A list that grew at the same commit - W6c's LayoutTests one folder at
+    # a time - is set again, and git fetches what it now names.
+    if sparse:
+        have = subprocess.run(["git", "-C", into, "sparse-checkout", "list"],
+                              capture_output=True, text=True).stdout.split()
+        if have != list(sparse):
+            print("upstream: %s's paths changed - checking them out" % name)
+            subprocess.run(["git", "-C", into, "sparse-checkout", "set", "--no-cone"] + sparse,
+                           check=True)
+
     # And nothing in the checkout changed since: a modified file would be
     # taken as though it were the publisher's.
     if subprocess.run(["git", "-C", into, "status", "--porcelain"],
@@ -214,6 +224,36 @@ def checkout(name, url, commit, sparse=None):
         sys.exit("upstream: %s's checkout in %s has been changed" % (name, into))
 
     return into
+
+
+# **WebKit's own tests** (`docs/w6.md`, Diego's decision 2A): what a
+# page laid out on Kosmos is held to, from WebKit's git at the release's
+# commit - apart from the overlay, since they are not WebKit's source and
+# a test added here should not build WebKit again. W6b's is the Ahem font
+# LayoutTests are written in, whose every glyph is a square of one em;
+# W6c's LayoutTests join it.
+WEBKIT_TESTS = {
+    "url": WEBKIT_OVERLAY["url"],
+    "commit": WEBKIT_OVERLAY["commit"],
+    "paths": [
+        "/LayoutTests/resources/Ahem.ttf",
+    ] + [
+        # W6b's: CSS 2.1's tests of the initial containing block, the
+        # fourteen of that suite whose expected render tree is one file
+        # for every port - boxes placed with no text in them.
+        "/LayoutTests/css2.1/20110323/abspos-containing-block-initial-%s%s" % (name, ext)
+        for name in ("004a", "004b", "004c", "004d", "004e", "004f",
+                     "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")
+        for ext in (".htm", "-expected.txt")
+    ],
+}
+
+
+def webkit_tests():
+    """Where WebKit's tests are, fetched at the release tag's commit if
+    they are not there yet."""
+    o = WEBKIT_TESTS
+    return checkout("webkit-tests", o["url"], o["commit"], o["paths"])
 
 
 def webkit_overlay():

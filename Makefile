@@ -3996,6 +3996,117 @@ $(UBUILD)/apps/curltest.elf: $(USER_OBJS) $(CURLTEST_OBJS) $(LIBPSL_OBJS) $(POSI
 	    || { echo "apps: the system's image has curl in it"; rm -f $@; exit 1; }
 
 #
+# **W6b's EGL Kit** (`docs/w6.md`, Diego's decision of 13 November): EGL
+# with no display, for WebCore, which links GL ES on every port. Its EGL
+# is `egl_kosmos.c`; its GL ES is generated from the Khronos header WebKit
+# carries (`tools/gles_unreached.py`), one function each that stops the
+# process with its name - a caller that did not ask EGL for a display
+# first. The headers are those in WebKit's ANGLE folder, in their form for
+# no particular platform.
+#
+# **Twenty of those names are TinyGL's already** - `glEnable`, `glViewport`
+# and the rest GL 1.1 and GL ES share - and TinyGL, the GL Kit, is in every
+# image. Those are left to it, by what `nm` says its objects define rather
+# than by reading C: in an image with no TinyGL context they reach a null
+# one and fault, which stops the process as loudly, with an address
+# instead of a name.
+#
+KHRONOS_INCLUDE := build/webkit/src/Source/ThirdParty/ANGLE/include
+EGL_KIT_FLAGS := -isystem $(KHRONOS_INCLUDE) -DEGL_NO_PLATFORM_SPECIFIC_TYPES=1
+EGL_KIT_OBJS := $(UBUILD)/user/kits/egl/egl_kosmos.c.o $(UBUILD)/user/kits/egl/gles_unreached.c.o
+
+$(UBUILD)/user/kits/egl/egl_kosmos.c.o: user/kits/egl/egl_kosmos.c $(WEBKIT_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(EGL_KIT_FLAGS) -MMD -MP -c $< -o $@
+
+TINYGL_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(TINYGL_SRCS)))
+
+$(UBUILD)/user/kits/egl/tinygl_defines.txt: $(TINYGL_OBJS)
+	@mkdir -p $(dir $@)
+	$(NM) --defined-only $(TINYGL_OBJS) | awk '$$2 == "T" { print $$3 }' | sort -u > $@
+
+$(UBUILD)/user/kits/egl/gles_unreached.c: tools/gles_unreached.py $(WEBKIT_DIR)/.built \
+        $(UBUILD)/user/kits/egl/tinygl_defines.txt
+	@mkdir -p $(dir $@)
+	python3 tools/gles_unreached.py $(KHRONOS_INCLUDE)/GLES3/gl32.h $@ \
+	    $(UBUILD)/user/kits/egl/tinygl_defines.txt
+
+$(UBUILD)/user/kits/egl/gles_unreached.c.o: $(UBUILD)/user/kits/egl/gles_unreached.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(EGL_KIT_FLAGS) -c $< -o $@
+
+#
+# **SQLite as WebKit uses it** (W6b): the same amalgamation as W5c's test,
+# compiled as an application's library rather than as its fuzzer's - no
+# memory ceiling, no fuzzing hooks, no test-only virtual tables - with
+# Kosmos's three, which the test's build has too: the dotfile lock, threads,
+# and `usleep`. Memory-mapped I/O is left out, as the test leaves it: the
+# POSIX layer's `mmap` is private (`docs/w3.md`).
+#
+WEBKIT_SQLITE_OPTS := -DSQLITE_THREADSAFE=1 -DHAVE_USLEEP=1 \
+    '-DSQLITE_DEFAULT_UNIX_VFS="unix-dotfile"' -DSQLITE_MAX_MMAP_SIZE=0 \
+    -DSQLITE_OMIT_LOAD_EXTENSION
+WEBKIT_SQLITE_OBJ := $(UBUILD)/w6/sqlite3.c.o
+
+$(WEBKIT_SQLITE_OBJ): build/upstream/sqlite/.unpacked $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) -I runtime/posix/refused $(UCFLAGS) -w $(WEBKIT_SQLITE_OPTS) \
+	    -c $(SQLITE_AMAL)/sqlite3.c -o $@
+
+#
+# **W6b's WebCore test** (`tools/run_webcore.py`): `webcoretest.cpp` and
+# its door - pages laid out by WebCore with no window and their render
+# trees said - with everything WebCore stands on, one group: PAL,
+# JavaScriptCore, Skia, WTF and bmalloc; curl, OpenSSL, libxml2, libpsl,
+# SQLite, HarfBuzz with its ICU, FreeType and the picture libraries (W5);
+# ICU; the EGL Kit; the C++ runtimes. In no image but its own. Compiled
+# as WebCore was: its `cmakeconfig.h`, the libraries it is linked with
+# named static, Skia's public defines (`skia_defines.h`, held to Skia's
+# CMake by `x86-skia`) and EGL's for no particular platform.
+#
+# WebCore is five libraries: its own, and the four object libraries
+# `webkit_build.py` archives - style, DOM and rendering, bindings, inspector.
+WEBCORE_LIBS := $(WEBKIT_DIR)/lib/libWebCore.a $(WEBKIT_DIR)/lib/libWebCoreStyle.a \
+    $(WEBKIT_DIR)/lib/libWebCoreDOMAndRendering.a $(WEBKIT_DIR)/lib/libWebCoreJSBindings.a \
+    $(WEBKIT_DIR)/lib/libWebCoreInspector.a $(WEBKIT_DIR)/lib/libPAL.a
+WEBCORETEST_OBJS := $(UBUILD)/user/kits/webcoretest/webcoretest.cpp.o \
+                    $(UBUILD)/user/kits/webcoretest/webcoretest_kit.c.o
+WEBCORE_W5_LIBS := $(W5_DIR)/lib/libcurl.a $(W5_SSL_LIBS) $(W5_XML_LIBS) \
+    $(W5_DIR)/lib/libharfbuzz-icu.a $(W5_TEXT_LIBS) $(W5_DIR)/lib/libwebpdemux.a $(W5_LIBS)
+
+$(WEBCORE_LIBS): $(WEBKIT_DIR)/.built
+
+$(UBUILD)/user/kits/webcoretest/webcoretest.cpp.o: user/kits/webcoretest/webcoretest.cpp \
+        user/kits/webcoretest/webcoretest.h user/kits/skiatest/skia_defines.h \
+        $(WEBKIT_DIR)/.built build/w5/$(ARCH)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
+	    $(WEBKIT_USER_FLAGS) -include user/kits/skiatest/skia_defines.h \
+	    -DSTATICALLY_LINKED_WITH_JavaScriptCore -DSTATICALLY_LINKED_WITH_PAL \
+	    -DSTATICALLY_LINKED_WITH_WebCore $(EGL_KIT_FLAGS) \
+	    -isystem $(WEBKIT_DIR)/WTF/Headers -isystem $(WEBKIT_DIR)/bmalloc/Headers \
+	    -isystem $(WEBKIT_DIR)/JavaScriptCore/Headers -isystem $(WEBKIT_DIR)/JavaScriptCore/PrivateHeaders \
+	    -isystem $(WEBKIT_DIR)/PAL/Headers -isystem $(WEBKIT_DIR)/WebCore/PrivateHeaders \
+	    -isystem $(WEBKIT_DIR)/WebCore/PrivateHeaders/WebCore \
+	    -isystem $(WEBKIT_DIR)/Skia/Headers/top -isystem $(WEBKIT_DIR)/Skia/Headers/mod \
+	    -isystem build/webkit/src/Source/ThirdParty/skia \
+	    -isystem $(ICU_DIR)/include -isystem $(W5_DIR)/include/harfbuzz \
+	    -isystem $(W5_DIR)/include/freetype2 -c $< -o $@
+
+$(UBUILD)/apps/webcoretest.elf: $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) $(WEBCORE_LIBS) $(JSC_LIBS) \
+        $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) \
+        $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) \
+	    $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_webcoretest_kit$$' \
+	    || { echo "apps: webcoretest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_webcoretest_kit|eglGetDisplay)$$' \
+	    || { echo "apps: the system's image has WebCore or the EGL Kit in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -4164,6 +4275,11 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 	$(HOSTDIR)/tcc_stamp $@ $(USER_BASE)
 	@for a in doom quake snes; do ln -sf ../apps/$$a.elf $(dir $@)$$a.elf; done
 
+# WebCore's image on x86-64 only: AArch64's WebKit is built without
+# WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
+# an image with nothing to link from would stop every other one here.
+WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf)
+
 .PHONY: apps app-images
 apps:
 	@$(MAKE) --no-print-directory FULL=0 MEGA= app-images
@@ -4172,7 +4288,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
-            $(UBUILD)/apps/skiatest.elf \
+            $(UBUILD)/apps/skiatest.elf $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

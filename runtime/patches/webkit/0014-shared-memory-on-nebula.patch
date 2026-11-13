@@ -1,0 +1,41 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Shared memory on Nebula (docs/w6.md W6b). WebCore's SharedMemory names
+its handle once per system - a file descriptor on Unix, a send right on a
+Mac, a HANDLE on Windows - and on Kosmos it is a region's capability,
+held by KosmosRegion (runtime/ports/webkit/Source/WebCore/platform/kosmos/,
+with SharedMemoryKosmos.cpp beside it). A capability that travels with a
+message is copied by Nebula, the sender keeping its own, so a handle can
+be copied as a reference to one capability, which is dropped with the last.
+
+--- a/Source/WebCore/platform/SharedMemory.h	2026-11-13 13:13:40.373137082 -0300
++++ b/Source/WebCore/platform/SharedMemory.h	2026-11-13 13:14:01.215474453 -0300
+@@ -44,6 +44,10 @@
+ #include <wtf/MachSendRight.h>
+ #endif
+ 
++#if OS(KOSMOS)
++#include "KosmosRegion.h"
++#endif
++
+ #if PLATFORM(COCOA)
+ OBJC_CLASS NSData;
+ #endif
+@@ -68,6 +72,8 @@
+         MachSendRight;
+ #elif OS(WINDOWS)
+         Win32Handle;
++#elif OS(KOSMOS)
++        KosmosRegion;
+ #endif
+ 
+     // Note: this function should not be used to share writable arbitrary malloc memory to
+@@ -165,6 +171,8 @@
+     MachSendRight m_sendRight;
+ #elif OS(WINDOWS)
+     Win32Handle m_handle;
++#elif OS(KOSMOS)
++    KosmosRegion m_region;
+ #endif
+ };
+ 

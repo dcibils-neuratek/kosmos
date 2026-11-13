@@ -633,6 +633,17 @@ SUITES = [
                        "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_skia.py", "user/kits/skiatest", *WEBKIT, *W5)),
 
+    # **W6b's WebCore** (`docs/w6.md`): `webcoretest.elf`, WebCore as
+    # WebKit's Kosmos port with no window and no GPU, laying out WebKit's
+    # own LayoutTests - CSS 2.1's of the initial containing block - every
+    # render tree held line for line to the test's `-expected.txt`, the one
+    # file every port is held to (Diego's decision 2A).
+    Suite("x86-webcore", ["python3", "tools/run_webcore.py", X86,
+                          "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_webcore.py", "user/kits/webcoretest", "user/kits/egl",
+                        "user/kits/skiatest/skia_defines.h", "tools/gles_unreached.py",
+                        *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

@@ -35,9 +35,11 @@ sys.path.insert(0, HERE)
 
 import upstream                                              # noqa: E402
 
+LLVM = os.environ.get("KOSMOS_LLVM", "/opt/homebrew/opt/llvm")
 PATCHES = os.path.join(ROOT, "runtime", "patches", "webkit")
 PORT = os.path.join(ROOT, "runtime", "ports", "webkit")
 SRC = os.path.join(ROOT, "build", "webkit", "src")
+KHRONOS = os.path.join(SRC, "Source", "ThirdParty", "ANGLE", "include")
 
 
 def fingerprint():
@@ -174,7 +176,7 @@ def configure(arch, out):
         "-DZLIB_LIBRARY=" + os.path.join(w5, "lib", "libz.a"),
         "-DJPEG_INCLUDE_DIR=" + os.path.join(w5, "include"),
         "-DJPEG_LIBRARY=" + os.path.join(w5, "lib", "libjpeg.a"),
-    ]
+    ] + webcore_libraries(arch, w5)
     log = os.path.join(out, "cmake.log")
 
     with open(log, "w") as f:
@@ -185,6 +187,49 @@ def configure(arch, out):
 
     with open(stamp, "w") as f:
         f.write("configured\n")
+
+
+def webcore_libraries(arch, w5):
+    """**What WebCore links, as W5 built it** (`docs/w6.md` W6b): each named
+    to CMake by its file, as Skia's are, so nothing on this Mac can answer
+    instead. SQLite and libpsl have no install - the Makefile compiles them,
+    one file and two, into what links them - so CMake is shown their
+    headers and an empty archive to name: WebKit's CMake links nothing that
+    runs on Kosmos, and the image that does is the Makefile's."""
+    lib = lambda name: os.path.join(w5, "lib", name)
+    upstream.unpack("sqlite")
+    upstream.unpack("libpsl")
+    empty = os.path.join(ROOT, "build", "webkit", arch + "-empty.a")
+    if not os.path.exists(empty):
+        subprocess.run([os.path.join(LLVM, "bin", "llvm-ar"), "rcs", empty], check=True)
+    return [
+        "-DCURL_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DCURL_LIBRARY_RELEASE=" + lib("libcurl.a"),
+        "-DCURL_NO_CURL_CMAKE=ON",
+        "-DOPENSSL_ROOT_DIR=" + w5, "-DOPENSSL_USE_STATIC_LIBS=ON",
+        "-DOPENSSL_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DOPENSSL_CRYPTO_LIBRARY=" + lib("libcrypto.a"),
+        "-DOPENSSL_SSL_LIBRARY=" + lib("libssl.a"),
+        "-DHarfBuzz_INCLUDE_DIR=" + os.path.join(w5, "include", "harfbuzz"),
+        "-DHarfBuzz_LIBRARY=" + lib("libharfbuzz.a"),
+        "-DHarfBuzz_ICU_INCLUDE_DIR=" + os.path.join(w5, "include", "harfbuzz"),
+        "-DHarfBuzz_ICU_LIBRARY=" + lib("libharfbuzz-icu.a"),
+        "-DLIBXML2_INCLUDE_DIR=" + os.path.join(w5, "include", "libxml2"),
+        "-DLIBXML2_LIBRARY=" + lib("libxml2.a"),
+        "-DWebP_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DWebP_LIBRARY=" + lib("libwebp.a"),
+        "-DWebP_DEMUX_LIBRARY=" + lib("libwebpdemux.a"),
+        "-DSQLite3_INCLUDE_DIR=" + upstream.where("sqlite"),
+        "-DSQLite3_LIBRARY=" + empty,
+        "-DLibPSL_INCLUDE_DIR=" + os.path.join(upstream.where("libpsl"), "include"),
+        "-DLibPSL_LIBRARY=" + empty,
+        # The Khronos headers WebKit carries, and the EGL Kit, which the
+        # Makefile links (`user/kits/egl/`, `docs/w6.md` W6b).
+        "-DEGL_INCLUDE_DIRS=" + KHRONOS,
+        "-DEGL_LIBRARIES=" + empty,
+        "-DOpenGLES2_INCLUDE_DIR=" + KHRONOS,
+        "-DOpenGLES2_LIBRARY=" + empty,
+    ]
 
 
 def configure_reference(arch, out):
@@ -256,7 +301,7 @@ def main():
         configure_reference(arch, out)
         sys.exit(subprocess.run(["ninja", "-C", out] + (sys.argv[2:] or ["Skia"])).returncode)
 
-    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore", "Skia"]
+    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore", "Skia", "PAL", "WebCore"]
 
     for needed, how in ((os.path.join(ROOT, "build", "cxx", arch, ".built"),
                          "make ARCH=%s cxx-runtimes" % arch),
@@ -275,28 +320,41 @@ def main():
     # engine rather than putting it in libJavaScriptCore.a.
     if "JavaScriptCore" in targets and "JavaScriptCoreJIT" not in targets:
         targets = targets + ["JavaScriptCoreJIT"]
+    # WebCore is the same, four times over (`docs/w6.md` W6b): its style,
+    # its DOM and rendering, its JavaScript bindings and its inspector are
+    # object libraries of their own, which CMake hands to WebKit2 - which
+    # Kosmos does not build yet - and `WebCore` does not depend on.
+    if "WebCore" in targets:
+        targets = targets + [t for t in WEBCORE_PARTS if t not in targets]
 
     r = subprocess.run(["ninja", "-C", out] + targets)
 
-    if r.returncode == 0 and "JavaScriptCoreJIT" in targets:
-        r = archive_jit(out)
+    for part in ["JavaScriptCoreJIT"] + WEBCORE_PARTS:
+        if r.returncode == 0 and part in targets:
+            r = archive_objects(out, part)
 
     sys.exit(r.returncode)
 
 
-def archive_jit(out):
-    """`lib/libJavaScriptCoreJIT.a`: the object library's objects, as one
-    thin archive like CMake's own, so the Makefile links one more library
-    rather than fifty objects it would have to be told the names of."""
+WEBCORE_PARTS = ["WebCoreStyle", "WebCoreDOMAndRendering", "WebCoreJSBindings",
+                 "WebCoreInspector"]
+
+
+def archive_objects(out, part):
+    """`lib/libPART.a`: an object library's objects, as one thin archive
+    like CMake's own, so the Makefile links one more library rather than
+    hundreds of objects it would have to be told the names of."""
+    project = "JavaScriptCore" if part == "JavaScriptCoreJIT" else "WebCore"
+    head = "build Source/%s/%s: phony " % (project, part)
     with open(os.path.join(out, "build.ninja"), encoding="utf-8") as f:
         for line in f:
-            if line.startswith("build Source/JavaScriptCore/JavaScriptCoreJIT: phony "):
-                objects = line.split()[3:]
+            if line.startswith(head):
+                objects = [o for o in line.split()[3:] if o.endswith(".obj")]
                 break
         else:
-            sys.exit("webkit_build: no JavaScriptCoreJIT in build.ninja")
+            sys.exit("webkit_build: no %s in build.ninja" % part)
 
-    library = os.path.join(out, "lib", "libJavaScriptCoreJIT.a")
+    library = os.path.join(out, "lib", "lib%s.a" % part)
 
     if os.path.exists(library):
         os.remove(library)

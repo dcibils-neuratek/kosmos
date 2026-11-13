@@ -257,7 +257,7 @@ unsigned hal_bus_scan(struct bus_device *out, unsigned max)
         }
 
         out[n].id       = type;
-        out[n].class    = 0;
+        out[n].class_code = 0;
         out[n].where    = (uint16_t)i;
         out[n].reserved = 0;
 

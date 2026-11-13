@@ -195,3 +195,19 @@ from outside the tree, as it does `hidden` and `weak`.
 FFmpeg's config (`user/kits/ffmpeg/config/config.h`) says `HAVE_EXP2F 1`
 and `HAVE_LRINTF 1` with them, or `libavutil/libm.h` defines static ones
 that collide with these declarations.
+
+## And six more, for WebCore (13 November 2026)
+
+The first image to link WebCore named five functions nothing had defined:
+`erff`, `frexpf`, `ldexpf`, `lround` and `remainderf`, and `remquof`, which
+`remainderf` calls. From the same tarball, checked against the same sum,
+the closure by undefined symbols again; `ldexpf` calls `scalbnf` and
+`lround` calls `round`, both already here. `remainderf.c` names `dremf` with
+`weak_alias`, which the Makefile already defines to nothing.
+
+    876ad823d25e58330628ccdc5d24a3f10cc255135046a4e2903daf33cb75c18f  src/math/erff.c
+    508dff44e12172d6f43002c8cddedcbaa0e327a9dcf16bfcaebdfda76a4696bc  src/math/frexpf.c
+    4edbe502fab04f8dc618550f4418a636606842deefdbb997103e3d8a39d03094  src/math/ldexpf.c
+    72b8f2b833b8d4bc5ba24c7321b18b4307c0d333555646c8d6af637631efb2e8  src/math/lround.c
+    c9706aa3f83efbf2fe4f00c688ec1cadbedcfb99ad538b97cddf4e74c8249756  src/math/remainderf.c
+    f40401d2bc1732932375a64590a6844229d566c1a6907a6aa6480a455284fcf9  src/math/remquof.c

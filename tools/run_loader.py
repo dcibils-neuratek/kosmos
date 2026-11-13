@@ -501,7 +501,7 @@ def main():
         posix_said[0] = said if CXX else "not in TinyCC's images"
         check(not CXX or said is not None and said.startswith(
                   "posixtest: posix: counted 160000, ring 1000, timed out, once 1, keys 4, "
-                  "recursive, stacks, reaped, rwlock ")
+                  "thread-locals in turn, recursive, stacks, reaped, rwlock ")
               and ", joined 42; memory: 4 GB reserved, protected, discarded, unmapped "
                   "in the middle, fixed, refused; process: slept, timed, pid in the table, " in said
               and (" processors, Kosmos %s, random, no environment; "

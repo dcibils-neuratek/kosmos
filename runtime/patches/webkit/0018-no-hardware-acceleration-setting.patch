@@ -1,0 +1,20 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No hardware acceleration setting (docs/w6.md W6b). Page.cpp asks whether
+hardware acceleration is on for every Skia port but Windows and WPE's
+legacy one; the setting exists only for GTK and WPE's new platform
+(UnifiedWebPreferences.yaml), so a third Skia port does not compile. On
+Kosmos there is no GPU to accelerate with, and the page's filters are
+drawn in software, as they are when the setting is off.
+
+--- a/Source/WebCore/page/Page.cpp	2026-11-13 13:38:00.008417060 -0300
++++ b/Source/WebCore/page/Page.cpp	2026-11-13 13:38:00.032881222 -0300
+@@ -4909,7 +4909,7 @@
+         modes.add(FilterRenderingMode::Accelerated);
+ #endif
+ 
+-#if USE(SKIA) && !PLATFORM(WIN) && (!PLATFORM(WPE) || ENABLE(WPE_PLATFORM))
++#if USE(SKIA) && !PLATFORM(WIN) && !PLATFORM(KOSMOS) && (!PLATFORM(WPE) || ENABLE(WPE_PLATFORM))
+     if (settings().hardwareAccelerationEnabled())
+         modes.add(FilterRenderingMode::Accelerated);
+ #endif

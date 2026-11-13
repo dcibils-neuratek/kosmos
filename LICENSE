@@ -279,6 +279,15 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       so are the patches, so the image can be relinked against a changed
       JavaScriptCore, which is what the LGPL asks of a static link.
 
+  WebKit's WebCore and PAL, by Apple Inc. and the WebKit contributors, LGPL
+      2 or later, and BSD for much of it
+      Not in the tree: the same release, with 89 files laid over it from
+      WebKit's git at the release's commit (tools/upstream.py, docs/w6.md),
+      and the port's own files from runtime/ports/webkit/. Not in the
+      system's image: `make apps` links it into webcoretest.elf, the test
+      of it (docs/w6.md W6b). The same terms as JavaScriptCore's above, and
+      the same answer to the LGPL's static link.
+
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
       runtime/upstream/doom/, in LICENSE.doomgeneric. Not in the system's
       image in any build: `make apps` links it into doom.elf, Doom's own

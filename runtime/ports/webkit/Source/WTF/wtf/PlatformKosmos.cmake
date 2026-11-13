@@ -36,3 +36,9 @@ list(APPEND WTF_SOURCES
 list(APPEND WTF_LIBRARIES
     Threads::Threads
 )
+
+# What a Unix port's headers give the rest of WebKit: WebCore's GL fences,
+# built on every Skia port, take a file descriptor by this class.
+list(APPEND WTF_PUBLIC_HEADERS
+    unix/UnixFileDescriptor.h
+)

@@ -32733,3 +32733,50 @@ made without ICU, and every case answers the same; `x86-skia` too.
 | 0.11.397 | |
 |---|---|
 | `x86-text`, `x86-skia` | pass, 2:41 for both |
+
+## 18.793 WebCore lays out CSS 2.1's tests on Kosmos
+
+**W6b** (`docs/w6.md`). WebCore, built as WebKit's Kosmos port, linked
+into `webcoretest.elf`: a page with empty clients, a frame view of 800 by
+600, each test written into its document, layout, and the render tree as
+text. `x86-webcore` (`tools/run_webcore.py`) gives it fourteen of CSS
+2.1's LayoutTests, `abspos-containing-block-initial-004a` to `-009f`,
+fetched from WebKit's git at the release's commit with Ahem, and holds
+every line of every tree to the test's `-expected.txt`. No port
+overrides these fourteen as text at that commit. **All fourteen match.**
+
+**Control**: `KOSMOS_WEBCORE_BREAK=page` changes the first test's
+`left:100px` to `101px` - `FAIL abspos-containing-block-initial-004a.htm`,
+lines 3 and 4 shown, expected `(100,100)` and Kosmos `(101,100)`, and
+`13 of 14`.
+
+**And the POSIX suite gained a check**: each of four threads registers
+two `thread_local` destructors (`__cxa_thread_atexit`) and a key's, and
+each thread's end runs them in turns 2, 1, 3 - newest first, before the
+key's. `x86-loader`'s line now says `thread-locals in turn`.
+
+**What the first full gate found.** `rebuilds` failed: ARM's WebKit has
+no WebCore, so a dry run of ARM's `app-images` stopped at
+`webcoretest.elf`, before Doom and Quake, and the check could not see
+them rebuilt. The image is x86-64's only now, and WebCore on AArch64 is on
+the roadmap. And the new POSIX check was first written with the address
+one past its table's last row, which GCC's `-Warray-bounds` refuses.
+
+| 0.11.398 | |
+|---|---|
+| WebKit x86-64, WebCore with it | 7,827 steps |
+| `webcoretest.elf` | 145 MB as written to `/Home` |
+| `x86-webcore` | pass; the fourteen in 1.4 s in the guest, 8 s for the suite |
+| the whole gate | 120 of 125 in 746 s (12:26); `rebuilds` fixed and passing alone; `x86-profile`, `x86-llmmon`, `x86-midi` and `arm-sandbox` failed and passed alone in 35 s |
+
+**Over the budget.** 12:26 is past the ten minutes, as W6a's 11:09 was:
+the runtime changed, so every library suite ran beside the rest (18.789);
+the slowest were `x86-cafesa3d-2` 325 s, `host-llm` 283 s, `x86-sql`
+279 s. On the roadmap: a gate where everything runs is to fit the ten
+minutes too.
+
+**Four suites under load, at once.** `x86-llmmon`'s answer had
+`e1000`'s boot line printed into it; the other three gave no reason in
+their summaries. All four pass alone. Like `x86-xavier` (18.791), what
+fails under a full gate and not alone is a thing `make stress`'s premise
+says must still be true; it goes with that roadmap item.

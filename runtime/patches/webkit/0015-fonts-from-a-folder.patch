@@ -1,0 +1,104 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Fonts from a folder (docs/w6.md W6b). WebCore's Skia ports find fonts
+with Fontconfig everywhere but Android and Windows; Kosmos's are files in
+a folder, read by Skia's own manager for one, as W5e decided for Skia
+(0012-skia-on-kosmos.patch). The folder is kosmosFontFolder()
+(platform/kosmos/FontFolderKosmos.h, a port file), and a character no font
+has falls back through the manager, as Android and Windows ask theirs -
+which for a folder is no font yet, so Fontconfig's cache of fallbacks is
+not built.
+
+--- a/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp	2026-11-13 13:13:40.380231764 -0300
++++ b/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp	2026-11-13 13:22:06.656354972 -0300
+@@ -47,6 +47,9 @@
+ #elif PLATFORM(WIN)
+ #include <dwrite.h>
+ #include <skia/ports/SkTypeface_win.h>
++#elif OS(KOSMOS)
++#include "FontFolderKosmos.h"
++#include <skia/ports/SkFontMgr_directory.h>
+ #else
+ #include <skia/ports/SkFontMgr_fontconfig.h>
+ #endif
+@@ -66,6 +69,8 @@
+ #elif OS(WINDOWS)
+         auto result = createDWriteFactory();
+         m_fontManager = SkFontMgr_New_DirectWrite(result.factory.get(), result.fontCollection.get());
++#elif OS(KOSMOS)
++        m_fontManager = SkFontMgr_New_Custom_Directory(kosmosFontFolder());
+ #else
+         m_fontManager = SkFontMgr_New_FontConfig(FcConfigReference(nullptr), SkFontScanner_Make_FreeType());
+ #endif
+@@ -134,7 +139,7 @@
+ 
+     bool isEmoji = (codePointsIterator != codePoints.end() && *codePointsIterator == emojiVariationSelector) || preferColoredFont == PreferColoredFont::Yes;
+ 
+-#if OS(ANDROID) || PLATFORM(WIN)
++#if OS(ANDROID) || PLATFORM(WIN) || OS(KOSMOS)
+     // FIXME: handle locale.
+     Vector<const char*, 1> bcp47;
+     if (isEmoji)
+@@ -451,7 +456,7 @@
+ void FontCache::platformPurgeInactiveFontData()
+ {
+     m_harfBuzzFontCache.clear();
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+     m_skiaSystemFallbackFontCache.clear();
+ #endif
+ }
+--- a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h	2026-11-13 13:13:40.386916743 -0300
++++ b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.h	2026-11-13 13:14:01.216052069 -0300
+@@ -25,7 +25,7 @@
+ 
+ #pragma once
+ 
+-#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
+ #include <skia/core/SkFontStyle.h>
+ #include <skia/core/SkTypeface.h>
+@@ -51,4 +51,4 @@
+ 
+ } // namespace WebCore
+ 
+-#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+--- a/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp	2026-11-13 13:13:40.393592306 -0300
++++ b/Source/WebCore/platform/graphics/skia/SkiaSystemFallbackFontCache.cpp	2026-11-13 13:14:01.216195442 -0300
+@@ -26,7 +26,7 @@
+ #include "config.h"
+ #include "SkiaSystemFallbackFontCache.h"
+ 
+-#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#if USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+ #include "FontCache.h"
+ #include <fontconfig/fontconfig.h>
+ #include <wtf/FileSystem.h>
+@@ -222,4 +222,4 @@
+ 
+ } // namepsace WebCore
+ 
+-#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN)
++#endif // USE(SKIA) && !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+--- a/Source/WebCore/platform/graphics/FontCache.h	2026-11-13 13:13:40.399725170 -0300
++++ b/Source/WebCore/platform/graphics/FontCache.h	2026-11-13 13:14:01.216363189 -0300
+@@ -83,7 +83,7 @@
+ #if USE(SKIA)
+ #include "SkiaHarfBuzzFontCache.h"
+ #include <skia/core/SkFontMgr.h>
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+ #include "SkiaSystemFallbackFontCache.h"
+ #endif
+ #endif
+@@ -286,7 +286,7 @@
+ #if USE(SKIA)
+     mutable sk_sp<SkFontMgr> m_fontManager;
+     SkiaHarfBuzzFontCache m_harfBuzzFontCache;
+-#if !OS(ANDROID) && !PLATFORM(WIN)
++#if !OS(ANDROID) && !PLATFORM(WIN) && !OS(KOSMOS)
+     SkiaSystemFallbackFontCache m_skiaSystemFallbackFontCache;
+ #endif
+ #endif

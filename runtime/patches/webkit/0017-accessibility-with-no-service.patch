@@ -1,0 +1,30 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Accessibility with no service yet (docs/w6.md W6b). WebCore keeps a
+wrapper beside every accessibility object for the system's accessibility
+service - an Objective-C object on a Mac, AT-SPI's on Linux, a COM object
+on Windows - and PlayStation and Haiku, which have none, an empty counted
+class. Kosmos is the last: the same empty wrapper, and its platform's
+notifications going nowhere (platform/kosmos/AXObjectCacheKosmos.cpp, a
+port file) until Astra has a service to send them to.
+
+--- a/Source/WebCore/accessibility/AXCoreObject.h	2026-11-13 13:33:05.570652960 -0300
++++ b/Source/WebCore/accessibility/AXCoreObject.h	2026-11-13 13:33:05.589544958 -0300
+@@ -81,7 +81,7 @@
+ 
+ typedef WebCore::AccessibilityObjectAtspi AccessibilityObjectWrapper;
+ 
+-#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU)
++#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || PLATFORM(KOSMOS)
+ class AccessibilityObjectWrapper : public RefCounted<AccessibilityObjectWrapper> { };
+ #else
+ class AccessibilityObjectWrapper;
+@@ -1505,7 +1505,7 @@
+     RetainPtr<WebAccessibilityObjectWrapper> m_wrapper;
+ #elif PLATFORM(WIN)
+     COMPtr<AccessibilityObjectWrapper> m_wrapper;
+-#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU)
++#elif PLATFORM(PLAYSTATION) || PLATFORM(HAIKU) || PLATFORM(KOSMOS)
+     RefPtr<AccessibilityObjectWrapper> m_wrapper;
+ #elif USE(ATSPI)
+     RefPtr<AccessibilityObjectAtspi> m_wrapper;

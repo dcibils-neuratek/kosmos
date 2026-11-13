@@ -59,6 +59,14 @@ struct kosmos_pthread {
         const void *value;
     } values[PTHREAD_KEYS_MAX];
     struct kosmos_pthread *next_reaped;
+    struct thread_destructor *thread_destructors;  /* newest first */
+};
+
+/* A `thread_local` object's destructor, as C++ registers it. */
+struct thread_destructor {
+    void (*destructor)(void *);
+    void *object;
+    struct thread_destructor *next;
 };
 
 static _Thread_local struct kosmos_pthread *self_;
@@ -212,6 +220,53 @@ static void run_destructors(struct kosmos_pthread *me)
 }
 
 /*
+ * **A `thread_local` object's destructor** (`docs/w6.md` W6b): C++
+ * registers one through `__cxa_thread_atexit` the first time a thread
+ * reaches an object with a non-trivial destructor, and it runs as that
+ * thread ends - newest first, the reverse of construction, and before the
+ * keys' destructors, as glibc orders them. A destructor that reaches a new
+ * `thread_local` registers it, and it runs in its turn.
+ *
+ * The first thread's are kept and never run, as `__cxa_atexit`'s are
+ * (`process.c`): it ends only when the process does, and Nebula takes
+ * back everything at once.
+ */
+int __cxa_thread_atexit(void (*destructor)(void *), void *object, void *image)
+{
+    struct kosmos_pthread *me = pthread_self();
+    struct thread_destructor *d;
+
+    (void)image;
+
+    if (me == &first_thread) {
+        return 0;
+    }
+
+    d = malloc(sizeof *d);
+
+    if (d == NULL) {
+        return -1;
+    }
+
+    d->destructor = destructor;
+    d->object = object;
+    d->next = me->thread_destructors;
+    me->thread_destructors = d;
+    return 0;
+}
+
+static void run_thread_destructors(struct kosmos_pthread *me)
+{
+    struct thread_destructor *d;
+
+    while ((d = me->thread_destructors) != NULL) {
+        me->thread_destructors = d->next;
+        d->destructor(d->object);
+        free(d);
+    }
+}
+
+/*
  *--------------------------------------------------------------------------
  * The reaper: collects detached threads as they end.
  */
@@ -299,6 +354,7 @@ static void __attribute__((noreturn)) finish(struct kosmos_pthread *me, void *re
     uint32_t was;
 
     me->result = result;
+    run_thread_destructors(me);
     run_destructors(me);
     kosmos_tls_end(me->tls_made);
 

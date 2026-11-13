@@ -2,9 +2,41 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W6b, WebCore lays out a page (0.11.398, not pushed)
+
+**WebCore runs on Kosmos** (`docs/w6.md` W6b, `testing.md` 18.793):
+the Kosmos port's WebCore - 7,827 build steps - linked into
+`webcoretest.elf` with empty clients, the harness's own strategies (a
+loader that loads nothing) and no GPU. `x86-webcore` lays out fourteen
+of CSS 2.1's LayoutTests and every render tree matches WebKit's
+`-expected.txt`; control `KOSMOS_WEBCORE_BREAK=page`.
+
+- The port: other ports' files where they say nothing about their port,
+  eight Kosmos files in `runtime/ports/webkit/Source/WebCore/platform/kosmos/`,
+  patches 0014-0019, and 0012 now giving Skia the EGL interface.
+- The EGL Kit's stubs leave TinyGL's twenty GL names to it (README
+  decision log).
+- Shared, so the full gate ran: `bus_device.class` -> `class_code`
+  (`kernel/syscall.h`, `hal/pc/pci.c`, `hal/qemu-virt/virtio.c`,
+  `sys_user.c`), six musl maths functions, `__cxa_thread_atexit` in
+  `runtime/posix/pthread.c` (checked in the POSIX suite), the kit in
+  `sys_user.c`'s table.
+- Running the harness by hand: `make x86-build`, `make TEST=1
+  x86-build`, `make ARCH=x86_64 TEST=1 build/user-x86_64-test/apps/webcoretest.elf`,
+  then `python3 tools/run_webcore.py build/x86_64/kosmos.elf
+  build/user-x86_64-test/apps` - the plain kernel, as the gate passes it,
+  built again whenever `syscall.h` changes or the image is refused as
+  built for another Kosmos.
+
+**Next: W6c** - the page painted through Skia into a region, its
+picture looked at, and the LayoutTests subset widened as text.
+Follow-ups from W6b are on the roadmap (read-only regions before W7,
+per-character font fallback, curl's roots, the screen's size, the
+clipboard, `ffmpeg_vendor.py`).
 
 ## 13 November: JetSki W6a, the source and the port (0.11.396, not pushed)
 

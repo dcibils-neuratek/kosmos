@@ -10209,15 +10209,55 @@ the applications make the system useful, and is not pulled forward.
     and held to its commit (89 files); `PORT=Kosmos`; WTF,
     JavaScriptCore and Skia built by it, their suites unchanged, and
     `x86-wtf` saying `port=kosmos`.
-  - *W6b*: WebCore compiled and linked into a harness making a page with
-    empty clients; a plain page's render tree printed.
+  - *W6b*: *Done, 0.11.398* (`testing.md` 18.793): WebCore as WebKit's
+    Kosmos port, linked into `webcoretest.elf`; fourteen of CSS 2.1's
+    LayoutTests laid out, every render tree as WebKit expects
+    (`x86-webcore`). HarfBuzz's ICU library first (0.11.397). **WebCore gets GL ES from an
+    EGL with no display** (Diego, 13 November, `w6.md`): the Khronos
+    headers WebKit carries and a small Kosmos library that says there is
+    no display, so WebKit paints on the processor; a GPU API later gives
+    the same door a real implementation.
   - *W6c*: painting into a region through Skia; the LayoutTests subset.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
     sites; their render trees and times kept.
 
+  **Follow-ups from W6b** (`docs/w6.md` W6b):
+  - *A read-only region in Nebula*: WebKit's shared memory asks for one
+    and Nebula maps every region writable. Needed before W7, when a
+    region crosses to another process.
+  - *A font for every character*: Skia's folder manager finds no font
+    for a character the chosen one lacks (`onMatchFamilyStyleCharacter`
+    answers nothing), so WebCore has no fallback per character.
+  - *Kosmos's trusted roots for curl* (`CurlSSLHandleKosmos.cpp`), with
+    curl's follow-up above.
+  - *The screen's real size*, from the window manager, instead of
+    PlayStation's 1920 by 1080 - at W7, when there is a window to ask.
+  - *WebCore on AArch64*: built for x86-64 only, and `webcoretest.elf`
+    is in x86-64's `app-images` only, while ARM's suites wait. When ARM
+    resumes, WebKit's AArch64 build takes WebCore and the image returns.
+  - *The clipboard*: the pasteboard as the window manager's clipboard,
+    copy and paste in a page (W7).
+  - *`tools/ffmpeg_vendor.py` does not run again cleanly*: run on 13
+    November it set `isatty`, `clock_gettime`, `gmtime_r`,
+    `localtime_r` and `arc4random_buf` on, which `runtime/include/`
+    has declared since JetSki's W1c and W3, and its own compile of
+    FFmpeg's closure then failed (`O_RDWR`, `fdopen`). Its rule for a
+    system function wants deciding again - FFmpeg is not built against
+    the POSIX layer - and `config.h` was left as it was, but for
+    `HAVE_LDEXPF`.
+
+  **A gate with every library suite in it runs over ten minutes**
+  (18.793): 11:09 at 0.11.396 and 12:26 at 0.11.398, both runs where the
+  runtime changed and nothing was skipped. The slowest -
+  `x86-cafesa3d-2` 325 s, `host-llm` 283 s, `x86-sql` 279 s - split or
+  shortened, so the whole fits the budget Diego set on 18 September.
+
   **`x86-xavier` diverges under a full gate** (18.791): twice, 0.11.383
   and 0.11.396, the guest's answer leaving the kit's own partway through
-  while every suite ran; alone it passes. Find what is not deterministic
+  while every suite ran; alone it passes. At 0.11.398 four more did the
+  same - `x86-profile`, `x86-llmmon` (a driver's boot line printed into
+  the answer it compares), `x86-midi` and `arm-sandbox` - and passed
+  alone (18.793). Find what is not deterministic
   under load - the engine's threads, or the test's timing - and fix it.
 
   **Follow-ups from W5d's curl** (18.787):

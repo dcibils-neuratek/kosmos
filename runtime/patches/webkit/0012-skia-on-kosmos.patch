@@ -4,8 +4,11 @@ Skia on Kosmos (docs/w5.md W5e). WebKit's copy of Skia asks for
 Fontconfig everywhere but Windows and the PlayStation, and opens GL through
 EGL or libepoxy. Kosmos has neither yet: its fonts are files in a folder,
 found by Skia's own manager for one (SkFontMgr_custom_directory) over the
-same FreeType everything else draws with, and Ganesh is compiled with the
-interface that finds no native GL - until a GL or Vulkan driver exists.
+same FreeType everything else draws with, and Ganesh finds GL through
+EGL - the EGL Kit's, which has no display (docs/w6.md W6b), so it is given
+no functions and WebKit paints on the processor - until a GL or Vulkan
+driver exists. The reference on this Mac takes the interface that finds
+no native GL.
 
 It is built as Unix (SK_BUILD_FOR_UNIX), which it otherwise takes for a
 Mac, with FreeType's version the one it was built as. And five of its
@@ -18,8 +21,8 @@ the folder's manager uses, and SkStrikeRef, which SkFont does.
 The same choices but Unix are made on this Mac with KOSMOS_SKIA_REFERENCE,
 for the reference Kosmos's Skia is held to.
 
---- a/Source/ThirdParty/skia/CMakeLists.txt	2026-11-13 08:01:54.466344822 -0300
-+++ b/Source/ThirdParty/skia/CMakeLists.txt	2026-11-13 08:21:08.507804350 -0300
+--- a/Source/ThirdParty/skia/CMakeLists.txt
++++ b/Source/ThirdParty/skia/CMakeLists.txt
 @@ -1,9 +1,24 @@
  set_property(DIRECTORY . PROPERTY FOLDER "skia")
  
@@ -67,19 +70,29 @@ for the reference Kosmos's Skia is held to.
      else ()
          target_sources(Skia PRIVATE
              src/ports/SkFontConfigInterface.cpp
-@@ -852,7 +881,10 @@
+@@ -852,7 +881,20 @@
      endif ()
  endif ()
  
 -if (USE_LIBEPOXY)
-+if (KOSMOS_SKIA)
-+    # No GL on Kosmos yet: Ganesh is built, and finds no native interface.
++if (WTF_OS_KOSMOS)
++    # GL through the EGL Kit, which has no display (docs/w6.md W6b): Ganesh
++    # asks eglGetProcAddress for GL's functions and is given none, so WebKit
++    # paints on the processor. The headers are the Khronos ones WebKit
++    # carries, as FindEGL found them; the library is linked by the image.
++    target_sources(Skia PRIVATE
++        src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp
++        src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp
++    )
++    target_include_directories(Skia PRIVATE ${EGL_INCLUDE_DIRS})
++elseif (KOSMOS_SKIA)
++    # The reference on this Mac has no GL: Ganesh finds no native interface.
 +    target_sources(Skia PRIVATE src/gpu/ganesh/gl/GrGLMakeNativeInterface_none.cpp)
 +elseif (USE_LIBEPOXY)
      target_sources(Skia PRIVATE src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp)
      target_link_libraries(Skia PRIVATE Epoxy::Epoxy)
  else ()
-@@ -1088,6 +1120,17 @@
+@@ -1088,6 +1130,17 @@
      target_compile_definitions(Skia PRIVATE SK_TYPEFACE_FACTORY_FREETYPE)
  endif ()
  
