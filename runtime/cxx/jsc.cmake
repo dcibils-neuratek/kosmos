@@ -65,3 +65,12 @@ set(KOSMOS_CXX_FLAGS "-include cstdlib" CACHE STRING "")
 set(CMAKE_EXE_LINKER_FLAGS
     "-fuse-ld=/opt/homebrew/opt/lld@22/bin/ld.lld -nostdlib -static -Wl,--unresolved-symbols=ignore-all -Wl,-e,main"
     CACHE STRING "")
+
+# **Skia** (`docs/w5.md` W5e), WebKit's own copy in `Source/ThirdParty/skia`:
+# on the processor, its fonts through the same FreeType as the Text Kit's,
+# and pictures through W5a's libpng and libjpeg-turbo - found where
+# `tools/w5_build.py` installed them, as `webkit_build.py` says. No encoders
+# yet: they need libwebp's mux, and nothing asks Skia to write a picture
+# before WebCore does (W6).
+set(USE_SKIA ON CACHE BOOL "")
+set(USE_SKIA_ENCODERS OFF CACHE BOOL "")

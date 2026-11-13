@@ -1,0 +1,286 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Skia on Kosmos (docs/w5.md W5e). WebKit's copy of Skia asks for
+Fontconfig everywhere but Windows and the PlayStation, and opens GL through
+EGL or libepoxy. Kosmos has neither yet: its fonts are files in a folder,
+found by Skia's own manager for one (SkFontMgr_custom_directory) over the
+same FreeType everything else draws with, and Ganesh is compiled with the
+interface that finds no native GL - until a GL or Vulkan driver exists.
+
+It is built as Unix (SK_BUILD_FOR_UNIX), which it otherwise takes for a
+Mac, with FreeType's version the one it was built as. And five of its
+files use streams, which Kosmos's libc++ is built without: where
+_LIBCPP_HAS_LOCALIZATION is 0 they print with snprintf's %g and read with
+strtod - what a stream in the C locale does - and are unchanged elsewhere.
+And two files the list of sources leaves out are added: SkOSPath, which
+the folder's manager uses, and SkStrikeRef, which SkFont does.
+
+The same choices but Unix are made on this Mac with KOSMOS_SKIA_REFERENCE,
+for the reference Kosmos's Skia is held to.
+
+--- a/Source/ThirdParty/skia/CMakeLists.txt	2026-11-13 08:01:54.466344822 -0300
++++ b/Source/ThirdParty/skia/CMakeLists.txt	2026-11-13 08:21:08.507804350 -0300
+@@ -1,9 +1,24 @@
+ set_property(DIRECTORY . PROPERTY FOLDER "skia")
+ 
++# Skia as Kosmos builds it: for Kosmos, and on this Mac for the reference
++# Kosmos's is held to (KOSMOS_SKIA_REFERENCE, tools/webkit_build.py).
++if (WTF_OS_KOSMOS OR KOSMOS_SKIA_REFERENCE)
++    set(KOSMOS_SKIA ON)
++endif ()
++
+ # Skia dependencies not used directly in WebKit.
+ if (NOT WIN32 AND NOT PLAYSTATION)
+     find_package(Freetype 2.9.0 REQUIRED)
+-    find_package(Fontconfig 2.13.0 REQUIRED)
++    # Kosmos has no Fontconfig: its fonts are files in a folder, found by
++    # Skia's own manager for one (below).
++    if (NOT KOSMOS_SKIA)
++        find_package(Fontconfig 2.13.0 REQUIRED)
++    else ()
++        # And its pictures, which the GTK and WPE ports find for WebCore
++        # and the JSC-only port Kosmos starts from does not.
++        find_package(JPEG REQUIRED)
++        find_package(PNG REQUIRED)
++    endif ()
+ endif ()
+ 
+ if (USE_SKIA_ENCODERS)
+@@ -840,6 +855,20 @@
+             src/ports/SkLog_android.cpp
+         )
+         target_link_libraries(Skia PRIVATE EXPAT::EXPAT android log)
++    elseif (KOSMOS_SKIA)
++        target_sources(Skia PRIVATE
++            src/ports/SkFontMgr_custom.cpp
++            src/ports/SkFontMgr_custom_directory.cpp
++            src/ports/SkLog_stdio.cpp
++
++            # The folder's manager joins its paths with SkOSPath, which
++            # is otherwise only built with the PDF and SVG backends; and
++            # SkFont's makeStrikeRef needs SkStrikeRef, which the list
++            # above leaves out - a linker that keeps only what is reached
++            # never sees either, and Kosmos's keeps everything.
++            src/utils/SkOSPath.cpp
++            src/core/SkStrikeRef.cpp
++        )
+     else ()
+         target_sources(Skia PRIVATE
+             src/ports/SkFontConfigInterface.cpp
+@@ -852,7 +881,10 @@
+     endif ()
+ endif ()
+ 
+-if (USE_LIBEPOXY)
++if (KOSMOS_SKIA)
++    # No GL on Kosmos yet: Ganesh is built, and finds no native interface.
++    target_sources(Skia PRIVATE src/gpu/ganesh/gl/GrGLMakeNativeInterface_none.cpp)
++elseif (USE_LIBEPOXY)
+     target_sources(Skia PRIVATE src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp)
+     target_link_libraries(Skia PRIVATE Epoxy::Epoxy)
+ else ()
+@@ -1088,6 +1120,17 @@
+     target_compile_definitions(Skia PRIVATE SK_TYPEFACE_FACTORY_FREETYPE)
+ endif ()
+ 
++# Kosmos speaks the POSIX names through its layer for ported code, and an
++# OS Skia does not recognise would be taken for a Mac. FreeType is linked
++# into the image, so its version is the one it was built as - there is no
++# dlopen to ask a newer one with.
++if (WTF_OS_KOSMOS)
++    target_compile_definitions(Skia PUBLIC SK_BUILD_FOR_UNIX)
++endif ()
++if (KOSMOS_SKIA)
++    target_compile_definitions(Skia PRIVATE SK_FREETYPE_MINIMUM_RUNTIME_VERSION_IS_BUILD_VERSION)
++endif ()
++
+ if (CMAKE_CXX_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+     target_compile_definitions(Skia PUBLIC
+         I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN
+--- a/Source/ThirdParty/skia/src/core/SkMesh.cpp	2026-11-13 08:08:37.512652448 -0300
++++ b/Source/ThirdParty/skia/src/core/SkMesh.cpp	2026-11-13 08:08:37.534310946 -0300
+@@ -165,7 +165,14 @@
+         return false;
+     }
+     for (size_t i = 0; i < name.size(); ++i) {
++#if (defined(_LIBCPP_HAS_LOCALIZATION) && !_LIBCPP_HAS_LOCALIZATION)
++        // The C locale's letters and digits, without <locale> (docs/w5.md W5e).
++        unsigned char c = (unsigned char)name[i];
++        bool alnum = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
++        if (name[i] != '_' && !alnum) {
++#else
+         if (name[i] != '_' && !std::isalnum(name[i], std::locale::classic())) {
++#endif
+             return false;
+         }
+     }
+--- a/Source/ThirdParty/skia/src/sksl/SkSLString.cpp	2026-11-13 08:08:37.505020333 -0300
++++ b/Source/ThirdParty/skia/src/sksl/SkSLString.cpp	2026-11-13 08:08:37.534158278 -0300
+@@ -13,12 +13,42 @@
+ #include <cmath>
+ #include <cstdio>
+ #include <cstdlib>
+-#include <locale>
+ #include <memory>
+-#include <sstream>
+ #include <string>
+ #include <string_view>
+ 
++// Kosmos's libc++ is built without localisation, and so without streams;
++// in the C locale they print what printf's %g prints and read what strtod
++// reads, which is what these are then written with (docs/w5.md W5e).
++#if (defined(_LIBCPP_HAS_LOCALIZATION) && !_LIBCPP_HAS_LOCALIZATION)
++#define SKSL_NO_STREAMS 1
++#else
++#define SKSL_NO_STREAMS 0
++#include <locale>
++#include <sstream>
++#endif
++
++#if SKSL_NO_STREAMS
++template <typename RoundtripType, int kFullPrecision>
++static std::string to_string_impl(RoundtripType value) {
++    char buffer[64];
++    snprintf(buffer, sizeof(buffer), "%.*g", 7, (double)value);
++    std::string text = buffer;
++
++    double roundtripped = strtod(buffer, nullptr);
++    if (value != (RoundtripType)roundtripped && std::isfinite(value)) {
++        snprintf(buffer, sizeof(buffer), "%.*g", kFullPrecision, (double)value);
++        text = buffer;
++    }
++
++    // We need to emit a decimal point to distinguish floats from ints.
++    if (!skstd::contains(text, '.') && !skstd::contains(text, 'e')) {
++        text += ".0";
++    }
++
++    return text;
++}
++#else
+ template <typename RoundtripType, int kFullPrecision>
+ static std::string to_string_impl(RoundtripType value) {
+     std::stringstream buffer;
+@@ -46,6 +76,7 @@
+ 
+     return text;
+ }
++#endif
+ 
+ std::string skstd::to_string(float value) {
+     return to_string_impl<float, 9>(value);
+@@ -57,10 +88,19 @@
+ 
+ bool SkSL::stod(std::string_view s, SKSL_FLOAT* value) {
+     std::string str(s.data(), s.size());
++#if SKSL_NO_STREAMS
++    // As a stream reads a double: leading space skipped, a number taken.
++    const char* start = str.c_str();
++    char* end = nullptr;
++    errno = 0;
++    *value = strtod(start, &end);
++    return end != start && errno != ERANGE && std::isfinite(*value);
++#else
+     std::stringstream buffer(str);
+     buffer.imbue(std::locale::classic());
+     buffer >> *value;
+     return !buffer.fail() && std::isfinite(*value);
++#endif
+ }
+ 
+ bool SkSL::stoi(std::string_view s, SKSL_INT* value) {
+--- a/Source/ThirdParty/skia/src/sksl/tracing/SkSLDebugTracePriv.cpp	2026-11-13 08:10:09.613746482 -0300
++++ b/Source/ThirdParty/skia/src/sksl/tracing/SkSLDebugTracePriv.cpp	2026-11-13 08:10:09.631631986 -0300
+@@ -12,8 +12,10 @@
+ 
+ #include <cstdio>
+ #include <cstring>
+-#include <sstream>
+ #include <string>
++#if !(defined(_LIBCPP_HAS_LOCALIZATION) && !_LIBCPP_HAS_LOCALIZATION)
++#include <sstream>
++#endif
+ 
+ namespace SkSL {
+ 
+@@ -84,11 +86,26 @@
+ 
+ void DebugTracePriv::setSource(const std::string& source) {
+     fSource.clear();
++#if (defined(_LIBCPP_HAS_LOCALIZATION) && !_LIBCPP_HAS_LOCALIZATION)
++    // The lines a stream's getline gives, without streams (docs/w5.md W5e):
++    // one more than there are newlines, the last empty after a final one.
++    size_t start = 0;
++    for (;;) {
++        size_t end = source.find('\n', start);
++        if (end == std::string::npos) {
++            fSource.push_back(source.substr(start));
++            break;
++        }
++        fSource.push_back(source.substr(start, end - start));
++        start = end + 1;
++    }
++#else
+     std::stringstream stream{source};
+     while (stream.good()) {
+         fSource.push_back({});
+         std::getline(stream, fSource.back(), '\n');
+     }
++#endif
+ }
+ 
+ void DebugTracePriv::dump(SkWStream* o) const {
+--- a/Source/ThirdParty/skia/src/utils/SkShaderUtils.cpp	2026-11-13 08:08:37.519614931 -0300
++++ b/Source/ThirdParty/skia/src/utils/SkShaderUtils.cpp	2026-11-13 08:08:37.534422197 -0300
+@@ -14,8 +14,14 @@
+ #include "src/sksl/SkSLString.h"
+ 
+ #include <cstddef>
++#if (defined(_LIBCPP_HAS_LOCALIZATION) && !_LIBCPP_HAS_LOCALIZATION)
++#include <cstdio>
++#define SK_SHADER_UTILS_NO_STREAMS 1
++#else
+ #include <iomanip>
+ #include <sstream>
++#define SK_SHADER_UTILS_NO_STREAMS 0
++#endif
+ 
+ using namespace skia_private;
+ 
+@@ -255,6 +261,28 @@
+     }
+ }
+ 
++#if SK_SHADER_UTILS_NO_STREAMS
++// The same text, without streams (docs/w5.md W5e).
++std::string SpirvAsHexStream(SkSpan<const uint32_t> spirv) {
++    std::string result;
++    result += "Paste the following SPIR-V binary in https://www.khronos.org/spir/visualizer/\n";
++    result += "      or pass to `spirv-dis` (optionally with `--comment --nested-indent`)\n";
++
++    constexpr size_t kIndicesPerRow = 10;
++    size_t rowOffset = 0;
++    for (size_t index = 0; index < spirv.size(); ++index, ++rowOffset) {
++        char word[16];
++        if (rowOffset == kIndicesPerRow) {
++            result += "\n";
++            rowOffset = 0;
++        }
++        snprintf(word, sizeof(word), "0x%08X,", (unsigned)spirv[index]);
++        result += word;
++    }
++
++    return result;
++}
++#else
+ std::string SpirvAsHexStream(SkSpan<const uint32_t> spirv) {
+     std::ostringstream result;
+     result << "Paste the following SPIR-V binary in https://www.khronos.org/spir/visualizer/\n";
+@@ -273,6 +301,7 @@
+ 
+     return result.str();
+ }
++#endif
+ 
+ std::string BuildShaderErrorMessage(const char* shader, const char* errors) {
+     std::string abortText{"Shader compilation error\n"

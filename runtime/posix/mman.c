@@ -19,10 +19,21 @@
  * - and it ends the program on a refusal (`testing.md` 18.780). `munmap`
  * of nothing is still EINVAL, as it is there.
  *
+ * **A file is mapped privately by reading it** (`docs/w5.md` W5e, for
+ * Skia's `SkData::MakeFromFileName`, which has no other way in): the
+ * pages are reserved writable, the file's bytes read into them from
+ * `offset` with `pread`, the rest of the last page left zero as Linux
+ * leaves it, and then given the access asked for. POSIX leaves it
+ * unspecified whether a `MAP_PRIVATE` mapping sees what is written to the
+ * file afterwards, so a copy taken at the call is one; and a write to the
+ * pages, where they are writable, changes only them, as it must. A file
+ * shared - `MAP_SHARED`, writes reaching the file - is still `ENODEV`:
+ * that needs the servers to hand out a file's pages, which they do not.
+ *
  * What it refuses, and how: writable and executable at once is `EACCES`; a
- * file is `ENODEV`, since W3 maps none; `MAP_FIXED` over addresses that
- * are not this process's reservations is `ENOMEM`, since there is nothing
- * there it may take.
+ * file shared is `ENODEV`; `MAP_FIXED` over addresses that are not this
+ * process's reservations is `ENOMEM`, since there is nothing there it may
+ * take.
  */
 
 #include <errno.h>
@@ -86,14 +97,37 @@ static int fail(long code, int fault)
     return -1;
 }
 
+/* A file's bytes from `offset` into `at`, `length` of them at most; what
+ * the file does not have is left as it is, zero. 0, or -1 with `errno`. */
+static int read_file(int fd, void *at, size_t length, off_t offset)
+{
+    size_t done = 0;
+
+    while (done < length) {
+        ssize_t n = pread(fd, (char *)at + done, length - done, offset + (off_t)done);
+
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            break;                      /* the end of the file */
+        }
+        done += (size_t)n;
+    }
+    return 0;
+}
+
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
     unsigned long pages = pages_in(length);
-    long access, at, r;
+    long access, first, at, r;
+    int file = (flags & MAP_ANONYMOUS) == 0;
 
-    (void)fd;
-
-    if (length == 0 || (flags & ~KNOWN_FLAGS) != 0 || (offset & (off_t)(PAGE - 1)) != 0) {
+    if (length == 0 || (flags & ~KNOWN_FLAGS) != 0 || (offset & (off_t)(PAGE - 1)) != 0
+        || offset < 0) {
         errno = EINVAL;
         return MAP_FAILED;
     }
@@ -103,14 +137,18 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
         return MAP_FAILED;
     }
 
-    if ((flags & MAP_ANONYMOUS) == 0) {
-        errno = ENODEV;                 /* a file: not in W3 */
+    if (file && (flags & MAP_SHARED)) {
+        errno = ENODEV;                 /* a file shared: not served */
         return MAP_FAILED;
     }
 
     if ((access = access_for(prot)) < 0) {
         return MAP_FAILED;
     }
+
+    /* A file's pages are written once, by this library, before they are
+     * given what was asked for. */
+    first = file ? RESERVE_RW : access;
 
     if (flags & MAP_FIXED) {
         if (!aligned(addr)) {
@@ -123,7 +161,7 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
         r = kosmos_protect(addr, pages, RESERVE_DISCARD);
 
         if (r == 0) {
-            r = kosmos_protect(addr, pages, (unsigned)access);
+            r = kosmos_protect(addr, pages, (unsigned)first);
         }
 
         if (r != 0) {
@@ -131,20 +169,46 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
             return MAP_FAILED;
         }
 
-        return addr;
+        at = (long)(uintptr_t)addr;
+    } else {
+        at = kosmos_reserve(pages);
+
+        if (at < 0) {
+            errno = ENOMEM;
+            return MAP_FAILED;
+        }
+
+        if (first != RESERVE_NONE
+            && (r = kosmos_protect((void *)(uintptr_t)at, pages, (unsigned)first)) != 0) {
+            (void)kosmos_release((void *)(uintptr_t)at, pages);
+            fail(r, ENOMEM);
+            return MAP_FAILED;
+        }
     }
 
-    at = kosmos_reserve(pages);
+    if (file) {
+        int saved;
 
-    if (at < 0) {
-        errno = ENOMEM;
-        return MAP_FAILED;
-    }
+        if (read_file(fd, (void *)(uintptr_t)at, length, offset) != 0) {
+            goto undo;
+        }
+        if (access != RESERVE_RW
+            && (r = kosmos_protect((void *)(uintptr_t)at, pages, (unsigned)access)) != 0) {
+            fail(r, ENOMEM);
+            goto undo;
+        }
+        return (void *)(uintptr_t)at;
 
-    if (access != RESERVE_NONE
-        && (r = kosmos_protect((void *)(uintptr_t)at, pages, (unsigned)access)) != 0) {
-        (void)kosmos_release((void *)(uintptr_t)at, pages);
-        fail(r, ENOMEM);
+        /* Not read, or not given its access: nothing is left mapped, and
+         * the reason is the one `pread` or the kernel gave. */
+undo:
+        saved = errno;
+        if (flags & MAP_FIXED) {
+            (void)kosmos_protect((void *)(uintptr_t)at, pages, RESERVE_DISCARD);
+        } else {
+            (void)kosmos_release((void *)(uintptr_t)at, pages);
+        }
+        errno = saved;
         return MAP_FAILED;
     }
 

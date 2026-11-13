@@ -2,9 +2,43 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W5e, Skia (0.11.395, not pushed) - W5 is done
+
+**Skia draws on Kosmos, every pixel as on this Mac** (`docs/w5.md` W5e,
+`testing.md` 18.790):
+
+- WebKit's own Skia (milestone 154), built by WebKit's CMake beside WTF
+  (`USE_SKIA` in `runtime/cxx/jsc.cmake`; `webkit_build.py`'s default
+  targets now include `Skia`; `libSkia.a`, a thin archive).
+  `0012-skia-on-kosmos.patch`: fonts from a folder over FreeType, no
+  Fontconfig, no native GL, `SK_BUILD_FOR_UNIX`, five stream users
+  patched, `SkOSPath` and `SkStrikeRef` added to the sources.
+- The reference: `webkit_build.py host-x86_64` builds Skia alone through
+  `runtime/cxx/skia-reference/` (x86-64, `-march=x86-64`, Rosetta), with
+  `w5_build.py host-x86_64 zlib libpng libjpeg-turbo freetype`. It writes
+  `skia-public-defines.txt`, which `user/kits/skiatest/skia_defines.h` is
+  held to.
+- `skiatest.elf` (`user/kits/skiatest/`), the gate's `x86-skia`
+  (`tools/run_skia.py`; controls `KOSMOS_SKIA_BREAK=picture|defines`).
+  Eight scenes, 23 lines, 0.6 s. Set `SKIATEST_PICTURES=<dir>` on the Mac
+  binary to get each scene as a PPM.
+- Runtime: musl's `fmaf fmaxf fminf ilogbf llroundf lrintf nextafterf
+  rintf fmodf exp2f llround remainder remquo` (`weak_alias` defined to
+  nothing in `MUSL_CFLAGS`; FFmpeg's config now `HAVE_EXP2F`/`HAVE_LRINTF`
+  1); `fenv.h` exception flags; `EOVERFLOW`; `malloc_usable_size`; POSIX
+  `semaphore.h`, `locale.h` (C only), `malloc.h`; **`mmap` of a file
+  with `MAP_PRIVATE`, by reading it** (`MAP_SHARED` still `ENODEV`),
+  held in `posixtest`.
+- Follow-ups in the roadmap: Skia's encoders (libwebp mux), libc++ with
+  localization, Skia on AArch64 (`arm-skia`), `MAP_SHARED` of a file.
+
+**Next: W6**, WebCore drawing a page headless. 9.9 GB free on this Mac;
+`w5.md` *Disk* has the measured sizes. The question for Diego is space
+before WebCore.
 
 ## 12 November, night: JetSki W5d's OpenSSL (0.11.392, not pushed)
 
@@ -34,8 +68,6 @@ the line went in while the guest still booted (`testing.md` 18.788).
 **The gate's budget, decided (0.11.394)**: a ported library's suite runs only
 when what it stands on changed (`tools/gate.py` `RUNTIME`, `libraries.json`;
 `LIBS=1` and `make prepush` run them all; `testing.md` 18.789).
-
-**Next: W5e**, Skia.
 
 **The Mac Pro boots 0.11.391 to the desktop** (`boot.md`'s row): the first
 write of the stick had not landed (this Mac could not mount its boot

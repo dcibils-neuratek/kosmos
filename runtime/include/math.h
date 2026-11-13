@@ -147,6 +147,9 @@ double ldexp(double x, int exponent);
 
 /* newlib's. */
 double fmod(double x, double y);
+float fmodf(float x, float y);
+double remainder(double x, double y);
+double remquo(double x, double y, int *quo);
 double pow(double x, double y);
 double sqrt(double x);
 double exp(double x);
@@ -201,12 +204,28 @@ double modf(double x, double *whole);
  * tarball, by the same closure over undefined symbols.
  */
 double exp2(double x);
+float exp2f(float x);
 double acosh(double x);
 double asinh(double x);
 double atanh(double x);
 double fma(double x, double y, double z);
 double nextafter(double x, double y);
 long   lrint(double x);
+
+/*
+ * **Skia's** (`docs/w5.md` W5e): the `float` halves its vector helpers and
+ * its rounding call, from the same tarball by the same closure - `rintf`
+ * because `lrintf` calls it.
+ */
+float  fmaf(float x, float y, float z);
+float  fmaxf(float x, float y);
+float  fminf(float x, float y);
+int    ilogbf(float x);
+long long llroundf(float x);
+long long llround(double x);
+long   lrintf(float x);
+float  nextafterf(float x, float y);
+float  rintf(float x);
 float  sinf(float x);
 float  cosf(float x);
 float  tanf(float x);

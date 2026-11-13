@@ -291,7 +291,7 @@
 #define HAVE_COSF 1
 #define HAVE_ERF 0
 #define HAVE_EXP2 1
-#define HAVE_EXP2F 0
+#define HAVE_EXP2F 1
 #define HAVE_EXPF 1
 #define HAVE_HYPOT 1
 #define HAVE_ISFINITE 1
@@ -304,7 +304,7 @@
 #define HAVE_LOG2F 1
 #define HAVE_LOG10F 1
 #define HAVE_LRINT 1
-#define HAVE_LRINTF 0
+#define HAVE_LRINTF 1
 #define HAVE_POWF 1
 #define HAVE_RINT 1
 #define HAVE_ROUND 1

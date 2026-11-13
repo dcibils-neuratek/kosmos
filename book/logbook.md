@@ -2435,3 +2435,45 @@ application no longer waits behind four minutes of SQLite.
 skipped. Those eleven are ten minutes of test time, but the run ends when
 its longest tests end, so the wall clock saved is 74 seconds.
 
+
+## 13 November 2026 - Skia draws on Kosmos
+
+**In short.** Skia, the graphics engine Chrome and Android draw with and
+the one WebKit uses for its pictures, now runs on Kosmos. It draws eight
+test pictures - shapes, colour gradients, text, photographs, blurs and
+shadows - and every pixel of every one matches what the same Skia draws on
+the Mac. With this, all of the libraries the browser needs are built.
+
+**What.** WebKit carries its own copy of Skia, and Kosmos now builds it
+with WebKit's own build files. Skia finds its fonts in a folder and draws
+their letters with FreeType, the font engine Kosmos already had. A test
+program draws eight scenes: stars and curves, lines with different
+corners and dashes, every kind of gradient, text in four sizes and three
+styles, PNG and JPEG photographs shrunk and stretched in four different
+ways, blend modes, see-through layers, blurs, a shadow, a recorded drawing
+played back, and colours converted into another colour space. Each scene
+is reduced to one fingerprint of its pixels. The same program, built for
+the same kind of processor, runs on the Mac, and the two lists of
+fingerprints must be identical.
+
+**Why.** WebKit draws everything through Skia: every page, every letter,
+every picture. Before WebKit is asked to draw a page (the next step, W6),
+Skia has to be shown drawing correctly on its own. That way, a wrong
+pixel in a page can be blamed on the right layer.
+
+**What it needed from Kosmos.** Skia mistook Kosmos for a Mac and had to
+be told it is a Unix-like system. Five of its files used C++ text streams,
+which Kosmos's C++ library leaves out; they now format numbers the
+ordinary C way. The C library gained thirteen more maths functions (all
+taken unchanged from musl, where the others came from), and the POSIX
+layer gained counting semaphores and the ability to read a file into
+memory by mapping it. That last one is why the photographs could not be
+loaded the first time: Skia opens image files that way and has no other
+route.
+
+**Visible impact.** None on screen yet. This is the drawing engine the
+browser will paint with.
+
+**Measurements.** Eight scenes, five photographs, three font families,
+23 lines of output in all, every one identical to the Mac's. It takes 0.6
+seconds inside the emulator.

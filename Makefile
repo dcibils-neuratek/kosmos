@@ -489,7 +489,7 @@ LDFLAGS := -T boot/kosmos.ld \
 # anything this system decided. `runtime/upstream/musl-math/README.kosmos.md`
 # has the whole of it.
 #
-# Fifty-three files, compiled here rather than linked from an archive,
+# Every file in it, compiled here rather than linked from an archive,
 # because the closure was taken over undefined symbols and every one of
 # them is reached.
 # ------------------------------------------------------------------
@@ -499,11 +499,13 @@ MUSL_SRCS := $(wildcard $(MUSL)/src/math/*.c)
 # `hidden` and `weak` are ELF visibility attributes musl's own build injects
 # through a generated vis.h. This system links one static binary and has no
 # use for either. Nothing in the vendored tree is modified; these come from
-# outside it, which is the same arrangement lua/upstream/ has.
+# outside it, which is the same arrangement lua/upstream/ has. `weak_alias`
+# is the third, from musl's `features.h`: `remainder.c` names `drem` with
+# it, an old name nothing here calls, so it names nothing.
 #
 # runtime/include first, so musl compiles against this system's headers.
 # See the README for why musl's own include/ is not on this list.
-MUSL_CFLAGS := -std=c99 -w -Dhidden= -Dweak= \
+MUSL_CFLAGS := -std=c99 -w -Dhidden= -Dweak= "-Dweak_alias(old,new)=" \
                -I$(MUSL)/src/internal -I$(MUSL)/arch/$(ARCH) \
                -I$(MUSL)/arch/generic -I$(MUSL)/include
 
@@ -3361,7 +3363,8 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 #
 POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
               runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
-              runtime/posix/socket.c runtime/posix/glob.c runtime/posix/program.c
+              runtime/posix/socket.c runtime/posix/glob.c runtime/posix/program.c \
+              runtime/posix/locale.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 #
@@ -3514,6 +3517,7 @@ JSC_LIBS    := $(WEBKIT_DIR)/lib/libJavaScriptCore.a $(WEBKIT_DIR)/lib/libJavaSc
 
 $(WEBKIT_DIR)/.built: tools/webkit_build.py tools/upstream.py runtime/cxx/jsc.cmake \
                       runtime/cxx/kosmos.cmake $(CXXRT)/.built $(ICU_DIR)/.built \
+                      build/w5/$(ARCH)/.built \
                       $(wildcard runtime/patches/webkit/*.patch) \
                       $(shell find runtime/ports/webkit -type f 2>/dev/null) \
                       $(wildcard runtime/include/*.h runtime/include/sys/*.h \
@@ -3688,6 +3692,38 @@ $(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TE
 	    || { echo "apps: texttest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_texttest_kit|hb_shape|FT_Init_FreeType)$$' \
 	    || { echo "apps: the system's image has HarfBuzz or FreeType in it"; rm -f $@; exit 1; }
+
+#
+# **W5e's Skia test** (`tools/run_skia.py`): `skiatest.cpp` and its door,
+# Skia as WebKit carries it (`libSkia.a`, built by WebKit's CMake beside
+# WTF), drawing text through FreeType and decoding pictures through
+# libpng and libjpeg-turbo, with the C++ runtimes; in no image but its
+# own. Skia's headers are system headers, so their warnings are Skia's,
+# and `skia_defines.h` is what its CMake declares PUBLIC.
+#
+SKIA_LIB := $(WEBKIT_DIR)/lib/libSkia.a
+SKIATEST_OBJS := $(UBUILD)/user/kits/skiatest/skiatest.cpp.o \
+                 $(UBUILD)/user/kits/skiatest/skiatest_kit.c.o
+
+$(SKIA_LIB): $(WEBKIT_DIR)/.built
+
+$(UBUILD)/user/kits/skiatest/skiatest.cpp.o: user/kits/skiatest/skiatest.cpp \
+        user/kits/skiatest/skiatest.h user/kits/skiatest/skia_defines.h \
+        $(WEBKIT_DIR)/.built build/w5/$(ARCH)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -fno-exceptions -fno-rtti \
+	    -isystem build/webkit/src/Source/ThirdParty/skia \
+	    -isystem $(W5_DIR)/include/freetype2 -c $< -o $@
+
+$(UBUILD)/apps/skiatest.elf: $(USER_OBJS) $(SKIATEST_OBJS) $(POSIX_OBJS) $(SKIA_LIB) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SKIATEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(SKIA_LIB) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_skiatest_kit$$' \
+	    || { echo "apps: skiatest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_skiatest_kit|_ZN8SkCanvasC1Ev)$$' \
+	    || { echo "apps: the system's image has Skia in it"; rm -f $@; exit 1; }
 
 #
 # **W5c's SQLite** (`docs/w5.md`): 3.54.1's amalgamation and, for its test,
@@ -4127,6 +4163,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
+            $(UBUILD)/apps/skiatest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

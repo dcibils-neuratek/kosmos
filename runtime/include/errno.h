@@ -104,6 +104,7 @@ int *__errno(void);
  * Linux's numbers like the rest. */
 #define EWOULDBLOCK      EAGAIN
 #define EPROTO           71     /* a peer broke the protocol (OpenSSL, W5d) */
+#define EOVERFLOW        75     /* a count past its largest (sem_post, W5e) */
 #define ENOTSOCK         88
 #define EDESTADDRREQ     89
 #define EMSGSIZE         90

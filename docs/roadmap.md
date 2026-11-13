@@ -10178,7 +10178,30 @@ the applications make the system useful, and is not pulled forward.
   the toolchain, its build script, kit and runner - fingerprinted from git
   against its last pass; `LIBS=1` and `make prepush` run them all. Done.
 
-  Next, **W5e**: Skia.
+  **W5e, Skia built** (18.790): Skia as WebKitGTK 2.54.2 carries it
+  (milestone 154), by WebKit's own CMake beside WTF, its fonts from a
+  folder through W5b's FreeType, built as Unix, its five stream users
+  patched for a libc++ without localization (`0012-skia-on-kosmos.patch`).
+  Eight scenes - paths, strokes and dashes, every gradient, text, libpng's
+  and libjpeg-turbo's pictures through Skia's codecs with each sampling,
+  blends, layers, clips, blurs, a recording, linear sRGB - every pixel as
+  the same file draws them on this Mac, built for x86-64 and run under
+  Rosetta (`x86-skia`). On the way: thirteen more of musl's maths,
+  `fenv.h`'s flags, counting semaphores, `malloc_usable_size`, the C
+  locale's `newlocale`, and a file mapped privately by reading it. **W5 is
+  done.**
+
+  **Follow-ups from W5e** (18.790):
+  - *Skia's encoders* (PNG, JPEG, WebP out), which want libwebp's `mux`
+    library built beside the rest of W5a.
+  - *libc++ with localization*, so `<sstream>` exists and Skia's five
+    patched files are as they ship - and whatever else a stream is in.
+  - *Skia for AArch64*, and `arm-skia`, when ARM's tests resume.
+  - *A file shared* (`MAP_SHARED`): the servers handing out a file's
+    pages. Nothing has asked for it yet.
+
+  Next, **W6**: WebCore drawing a page headless - with the disk question
+  first (`docs/w5.md`, *Disk*).
 
   **Follow-ups from W5d's curl** (18.787):
   - *HTTP/2*: nghttp2, built and held to its own tests, and curl on it.

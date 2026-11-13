@@ -305,8 +305,8 @@ static int memory_checks(char *out, unsigned long size)
         SAY("posix: writable and executable at once was not refused with EACCES");
     }
 
-    if (mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, 3, 0) != MAP_FAILED || errno != ENODEV) {
-        SAY("posix: a file's mapping was not refused with ENODEV");
+    if (mmap(NULL, 4096, PROT_READ, MAP_SHARED, 3, 0) != MAP_FAILED || errno != ENODEV) {
+        SAY("posix: a file shared was not refused with ENODEV");
     }
 
     if (mprotect(page, 3 * 4096, PROT_READ) == 0 || errno != ENOMEM) {
@@ -539,6 +539,38 @@ static int files_in(const char *dir, char *out, unsigned long size)
 
     if (lseek(fd, 0, SEEK_END) != 6) {
         FSAY("files: %s: SEEK_END was not 6", dir);
+    }
+
+    /* Mapped privately (`docs/w5.md` W5e): the file's six bytes, the rest
+     * of the page zero, and a write to the page reaching only the page. */
+    {
+        unsigned char *m = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+        unsigned char *r = mmap(NULL, 2 * 4096, PROT_READ, MAP_PRIVATE, fd, 0);
+        int zero = 1;
+
+        if (m == MAP_FAILED || memcmp(m, "hello!", 6) != 0) {
+            FSAY("files: %s: a file mapped privately did not hold its bytes (%d)", dir, errno);
+        } else {
+            for (unsigned i = 6; i < 4096; i++) {
+                zero &= m[i] == 0;
+            }
+            m[0] = 'J';
+            if (!zero || pread(fd, got, 6, 0) != 6 || memcmp(got, "hello!", 6) != 0) {
+                FSAY("files: %s: past a mapped file's end was not zero, or a write reached it", dir);
+            }
+            munmap(m, 4096);
+        }
+
+        if (r == MAP_FAILED || r[0] != 'h' || r[4096] != 0
+            || mprotect(r, 4096, PROT_READ) != 0) {
+            FSAY("files: %s: a file mapped read only, two pages (%d)", dir, errno);
+        } else {
+            munmap(r, 2 * 4096);
+        }
+
+        if (mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd2, 0) != MAP_FAILED || errno != EBADF) {
+            FSAY("files: %s: a write-only descriptor mapped, or not EBADF (%d)", dir, errno);
+        }
     }
 
     if (read(fd2, got, 1) >= 0 || errno != EBADF) {

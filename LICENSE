@@ -222,6 +222,14 @@ Vendored third-party code keeps its own licence, which travels beside it:
       GitHub's SHA-256 (docs/w5.md W5d); the terms are its COPYING. Only
       curltest.elf, W5d's test, links it
 
+  Skia, as WebKitGTK 2.54.2 carries it (milestone 154), by Google LLC and
+      the Skia authors, a BSD-style licence
+      Not in the tree: tools/webkit_build.py fetches WebKit's release
+      (docs/w4.md) and builds Source/ThirdParty/skia with
+      runtime/patches/webkit/0012-skia-on-kosmos.patch applied (docs/w5.md
+      W5e); the terms are Source/ThirdParty/skia/LICENSE. Only
+      skiatest.elf, W5e's test, links it
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

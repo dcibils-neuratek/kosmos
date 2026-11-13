@@ -158,3 +158,40 @@ says `HAVE_ROUNDF 1` with them, or `libavutil/libm.h` defines its own.
 
     3f8cc14771a866a06184a3d9d654f63de9a077316a4905aae19884cc9b292d2e  src/math/roundf.c
     3fb36f1cf8d9c118bfe85b462e6e0c034543835e5ffee4661f5ab8de997813e5  src/math/scalbnf.c
+
+## And eight more, for Skia (13 November 2026)
+
+Skia's vector helpers and its rounding call the `float` halves of
+functions already here: `fmaf`, `fmaxf`, `fminf`, `ilogbf`, `llroundf`,
+`lrintf` and `nextafterf`, and `rintf`, which `lrintf` calls - from the
+same tarball, checked against the same sum, the closure by undefined
+symbols again. `fmaf` tests and raises the floating-point exception flags,
+which is why `runtime/libc/fenv.c` gained `feclearexcept`, `fetestexcept`
+and `feraiseexcept` the same day.
+
+
+    e5baf54228b74b036da629902d811f9f57de26133a03ce290879b5ec6de04433  src/math/fmaf.c
+    7a65b1d245de6d52925a24d11dd09b47cc5ccfa4a4bcd7958f05a27ed91e04f1  src/math/fmaxf.c
+    3dbde7d5e5ebe1a91c9f45eebb2ff8dfebc3a381db2630fbab0f1f4b06369821  src/math/fminf.c
+    d872a912229d178401482fc6b7cc7c3397a838b43d30f61bfdad8f8d03f63f4d  src/math/ilogbf.c
+    1d15d1aab1706d818b026f5530769a123f725e71977ab827e8647b13613d2f10  src/math/llroundf.c
+    d6673476094b190bd80f92bf89d3c6254beaf1c33fc7f7245059bcdcd7f4c6c9  src/math/lrintf.c
+    d4ef2208316c8d18a2c076d899fa798376be2d7a159569c50222c99f5bca6fef  src/math/nextafterf.c
+    9adef215d38823468cd77d7d5a9b305041d7020196ce65caba35f05ba2dd6f34  src/math/rintf.c
+
+And five more when the first image linked Skia whole: `fmodf` (its dash
+and arc geometry), `exp2f` (HDR gain maps; its table, `exp2f_data.c`,
+was already here for `exp2`), `llround`, and `remainder` with `remquo`,
+which it calls. `remainder.c` ends with `weak_alias(remainder, drem)`,
+musl's macro for an old second name; the Makefile defines it to nothing,
+from outside the tree, as it does `hidden` and `weak`.
+
+    eecc1cf499f143181880a33a95f1614be323aca704815a7b57d4969a7cacc2d4  src/math/fmodf.c
+    1753e636d3b395160a03e9dd4a4ed4fba2abcd9ee12e4cf2d919f5a6bd7e2732  src/math/exp2f.c
+    5389849134e22dce7f210ba4c7508b48a651c6ed05a63bd9e38dacdb51712b3c  src/math/llround.c
+    1996546b761c35236155ef3c4740ce6c108e83e26c2e610f46e0b78e689a12cb  src/math/remainder.c
+    7ccf8f5c1376de85a8741dcbdcd9feb69fe8268ddd49aebc796036f80a9eaee9  src/math/remquo.c
+
+FFmpeg's config (`user/kits/ffmpeg/config/config.h`) says `HAVE_EXP2F 1`
+and `HAVE_LRINTF 1` with them, or `libavutil/libm.h` defines static ones
+that collide with these declarations.

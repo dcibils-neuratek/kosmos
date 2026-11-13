@@ -7,7 +7,7 @@ CMake and built by ninja into a static library - for Kosmos with
 `runtime/cxx/kosmos.cmake`, or for this Mac with its own compiler, as the
 reference a guest's answers are held to.
 
-    python3 tools/w5_build.py x86_64|aarch64|host [library ...]
+    python3 tools/w5_build.py x86_64|aarch64|host|host-x86_64 [library ...]
 
 What each library becomes is in `build/w5/<arch>/`: `include/` and `lib/`,
 CMake's own install, so a later library finds an earlier one the way it
@@ -181,8 +181,16 @@ OPENSSL_TARGET = {
     "x86_64": "kosmos-x86_64",
     "aarch64": "kosmos-aarch64",
     "host": "darwin64-arm64-cc",
+    "host-x86_64": "darwin64-x86_64-cc",
 }
 OPENSSL_CONF = os.path.join(ROOT, "runtime", "cxx", "openssl-kosmos.conf")
+
+
+def is_host(arch):
+    """This Mac: `host` as it is, `host-x86_64` as an Intel Mac, which
+    Rosetta runs - the reference for a library whose x86 vector code gives
+    other answers than its ARM code, as Skia's does (`docs/w5.md` W5e)."""
+    return arch in ("host", "host-x86_64")
 
 
 def build_openssl(arch, src, out, prefix):
@@ -205,11 +213,11 @@ def build_openssl(arch, src, out, prefix):
                    "--prefix=" + prefix, "--libdir=lib",
                    # Its settings, `openssl.cnf`, in the system's place for
                    # them (`layout.md`), as libxml2's catalog is.
-                   "--openssldir=" + ("/Kosmos/Settings/ssl" if arch != "host"
+                   "--openssldir=" + ("/Kosmos/Settings/ssl" if not is_host(arch)
                                       else os.path.join(prefix, "ssl")),
                    "--with-zlib-include=" + os.path.join(prefix, "include"),
                    "--with-zlib-lib=" + os.path.join(prefix, "lib")] + OPENSSL
-        if arch != "host":
+        if not is_host(arch):
             command.insert(3, "--config=" + OPENSSL_CONF)
         log = os.path.join(out, "configure.log")
         with open(log, "w") as f:
@@ -286,9 +294,11 @@ def configure(arch, name, src, out, prefix, extra=(), says=""):
                # is linked static, at its base.
                "-DCMAKE_POSITION_INDEPENDENT_CODE=OFF"] + LIBRARIES[name] + extra
 
-    if arch == "host":
+    if is_host(arch):
         command += ["-DCMAKE_C_COMPILER=/usr/bin/clang",
                     "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"]
+        if arch == "host-x86_64":
+            command += ["-DCMAKE_OSX_ARCHITECTURES=x86_64"]
     else:
         # HarfBuzz is C++, compiled against the runtimes as WebKit is.
         # A library's own settings (libxml2's default catalog) in the
@@ -378,7 +388,7 @@ def curl_extra(arch, src, top, prefix):
     psl = upstream.where("libpsl")
     library = os.path.join(top, "libpsl", "libpsl.a")
     os.makedirs(os.path.dirname(library), exist_ok=True)
-    if arch == "host":
+    if is_host(arch):
         # This Mac's curl links a real one: the same two files, as the
         # Makefile compiles them for Kosmos.
         objects = []
@@ -397,7 +407,7 @@ def curl_extra(arch, src, top, prefix):
         # the header is and given an empty archive to name, since it links
         # nothing here (`curltest.elf` is linked by the Makefile).
         subprocess.run([os.path.join(LLVM, "bin", "llvm-ar"), "rcs", library], check=True)
-    trial, says = trial_link(arch, top) if arch != "host" else ([], "")
+    trial, says = trial_link(arch, top) if not is_host(arch) else ([], "")
     return (["-DLIBPSL_INCLUDE_DIR=" + os.path.join(psl, "include"),
              "-DLIBPSL_LIBRARY=" + library,
              "-DOPENSSL_ROOT_DIR=" + prefix, "-DOPENSSL_USE_STATIC_LIBS=ON"] + trial,
@@ -409,7 +419,7 @@ def curl_program(arch, out, prefix):
     the objects CMake compiles for it - its flags, its `curl_config.h` -
     archived with its `main` renamed and `exit` brought back to the kit
     (`posix_program.h`), for the Makefile to link into `curltest.elf`."""
-    if arch == "host":
+    if is_host(arch):
         return ["curl"]
     listed = subprocess.run(["ninja", "-C", out, "-t", "targets", "all"],
                             capture_output=True, text=True, check=True).stdout
@@ -433,8 +443,8 @@ def archive_curl_program(objects, out, prefix):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("x86_64", "aarch64", "host"):
-        sys.exit("usage: w5_build.py x86_64|aarch64|host [%s openssl]" % " ".join(LIBRARIES))
+    if len(sys.argv) < 2 or sys.argv[1] not in ("x86_64", "aarch64", "host", "host-x86_64"):
+        sys.exit("usage: w5_build.py x86_64|aarch64|host|host-x86_64 [%s openssl]" % " ".join(LIBRARIES))
 
     arch = sys.argv[1]
     names = sys.argv[2:] or [n for n in LIBRARIES if n != "curl"] + ["openssl", "curl"]
@@ -470,9 +480,9 @@ def main():
         targets = TARGETS[name] + (curl_program(arch, out, prefix) if name == "curl" else [])
         r = subprocess.run(["ninja", "-C", out] + targets,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if r.returncode == 0 and name == "curl" and arch != "host":
+        if r.returncode == 0 and name == "curl" and not is_host(arch):
             archive_curl_program(targets[len(TARGETS[name]):], out, prefix)
-        if r.returncode == 0 and name == "curl" and arch != "host":
+        if r.returncode == 0 and name == "curl" and not is_host(arch):
             # CMake's install of curl wants its program, which is linked by
             # the Makefile here, not by CMake: the library and its headers.
             os.makedirs(os.path.join(prefix, "lib"), exist_ok=True)

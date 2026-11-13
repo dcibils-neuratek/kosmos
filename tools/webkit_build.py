@@ -6,7 +6,7 @@ architecture into `build/webkit/<arch>/`.
 
     python3 tools/webkit_build.py x86_64|aarch64 [target ...]
 
-Targets are ninja's - `WTF`, `bmalloc` and `JavaScriptCore` by default.
+Targets are ninja's - `WTF`, `bmalloc`, `JavaScriptCore` and `Skia` by default.
 
 **The source** is fetched and held to its sum (`tools/upstream.py`), never
 committed and never edited. What is built is a copy of it under
@@ -102,6 +102,7 @@ def patched_source():
 def configure(arch, out):
     cxxrt = os.path.join(ROOT, "build", "cxx", arch)
     icu = os.path.join(ROOT, "build", "icu", arch)
+    w5 = os.path.join(ROOT, "build", "w5", arch, "install")
     options = os.path.join(ROOT, "runtime", "cxx", "jsc.cmake")
     toolchain = os.path.join(ROOT, "runtime", "cxx", "kosmos.cmake")
     stamp = os.path.join(out, ".configured")
@@ -135,6 +136,74 @@ def configure(arch, out):
         "-DICU_UC_LIBRARY_RELEASE=" + os.path.join(icu, "libicuuc.a"),
         "-DICU_I18N_LIBRARY_RELEASE=" + os.path.join(icu, "libicui18n.a"),
         "-DICU_DATA_LIBRARY_RELEASE=" + os.path.join(icu, "libicudata.a"),
+        # Skia's (W5e): FreeType, libpng over zlib and libjpeg-turbo, as
+        # `tools/w5_build.py` installed them.
+        "-DFREETYPE_INCLUDE_DIR_ft2build=" + os.path.join(w5, "include", "freetype2"),
+        "-DFREETYPE_INCLUDE_DIR_freetype2=" + os.path.join(w5, "include", "freetype2"),
+        "-DFREETYPE_LIBRARY=" + os.path.join(w5, "lib", "libfreetype.a"),
+        "-DPNG_PNG_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DPNG_LIBRARY=" + os.path.join(w5, "lib", "libpng.a"),
+        "-DZLIB_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DZLIB_LIBRARY=" + os.path.join(w5, "lib", "libz.a"),
+        "-DJPEG_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DJPEG_LIBRARY=" + os.path.join(w5, "lib", "libjpeg.a"),
+    ]
+    log = os.path.join(out, "cmake.log")
+
+    with open(log, "w") as f:
+        r = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT)
+    if r.returncode != 0:
+        print(open(log).read()[-6000:])
+        sys.exit("webkit_build: CMake did not configure (%s)" % log)
+
+    with open(stamp, "w") as f:
+        f.write("configured\n")
+
+
+def configure_reference(arch, out):
+    """**Skia's reference, on this Mac** (`docs/w5.md` W5e): the same tree
+    and patches by WebKit's own CMake natively, with the Kosmos choices
+    taken (`runtime/cxx/skia-reference.cmake`). `host-x86_64` is an Intel
+    Mac's, which Rosetta runs: Skia's x86 vector code is what the x86 guest
+    runs, and it can round otherwise than its ARM code. Pinned to the
+    baseline `x86-64`, as the guest's compiler is - Apple's clang would
+    choose a newer processor, and Skia's vector level with it."""
+    options = os.path.join(ROOT, "runtime", "cxx", "skia-reference.cmake")
+    w5 = os.path.join(ROOT, "build", "w5", arch, "install")
+    stamp = os.path.join(out, ".configured")
+    newest = max(os.path.getmtime(p) for p in
+                 [options, os.path.join(SRC, ".patched"), __file__,
+                  os.path.join(ROOT, "runtime", "cxx", "skia-reference", "CMakeLists.txt")])
+
+    if os.path.exists(stamp) and os.path.getmtime(stamp) >= newest \
+            and os.path.exists(os.path.join(out, "build.ninja")):
+        return
+
+    shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out)
+    machine = "x86_64" if arch == "host-x86_64" else "arm64"
+    flags = "-march=x86-64" if arch == "host-x86_64" else ""
+
+    command = [
+        "cmake", "-G", "Ninja", "-S", os.path.join(ROOT, "runtime", "cxx", "skia-reference"),
+        "-B", out, "-Wno-dev", "-C", options, "-DWEBKIT_SOURCE=" + SRC,
+        "-DCMAKE_C_COMPILER=/usr/bin/clang", "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
+        "-DCMAKE_OSX_ARCHITECTURES=" + machine,
+        # WebKit's WTF_CPU comes from the processor CMake says it builds
+        # for, which on this Mac is its own unless told: x86's vector code
+        # (SK_ENABLE_AVX512_OPTS, skcms's Haswell paths) follows from it.
+        "-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=" + machine,
+        "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0",
+        "-DCMAKE_C_FLAGS=" + flags, "-DCMAKE_CXX_FLAGS=" + flags,
+        "-DFREETYPE_INCLUDE_DIR_ft2build=" + os.path.join(w5, "include", "freetype2"),
+        "-DFREETYPE_INCLUDE_DIR_freetype2=" + os.path.join(w5, "include", "freetype2"),
+        "-DFREETYPE_LIBRARY=" + os.path.join(w5, "lib", "libfreetype.a"),
+        "-DPNG_PNG_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DPNG_LIBRARY=" + os.path.join(w5, "lib", "libpng.a"),
+        "-DZLIB_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DZLIB_LIBRARY=" + os.path.join(w5, "lib", "libz.a"),
+        "-DJPEG_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DJPEG_LIBRARY=" + os.path.join(w5, "lib", "libjpeg.a"),
     ]
     log = os.path.join(out, "cmake.log")
 
@@ -149,11 +218,18 @@ def configure(arch, out):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("x86_64", "aarch64"):
-        sys.exit("usage: webkit_build.py x86_64|aarch64 [target ...]")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("x86_64", "aarch64", "host", "host-x86_64"):
+        sys.exit("usage: webkit_build.py x86_64|aarch64|host|host-x86_64 [target ...]")
 
     arch = sys.argv[1]
-    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore"]
+
+    if arch.startswith("host"):
+        patched_source()
+        out = os.path.join(ROOT, "build", "webkit", arch)
+        configure_reference(arch, out)
+        sys.exit(subprocess.run(["ninja", "-C", out] + (sys.argv[2:] or ["Skia"])).returncode)
+
+    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore", "Skia"]
 
     for needed, how in ((os.path.join(ROOT, "build", "cxx", arch, ".built"),
                          "make ARCH=%s cxx-runtimes" % arch),

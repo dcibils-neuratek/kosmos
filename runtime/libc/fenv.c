@@ -14,6 +14,15 @@
 
 #include <fenv.h>
 
+/*
+ * **And its exception flags** (`docs/w5.md` W5e, for musl's `fmaf`): the
+ * same registers' sticky bits, whose positions the FE_ names already are -
+ * MXCSR bits 0-5 and the x87 status word's bits 0-5 on x86-64 (Intel SDM
+ * vol. 1, 10.2.3.1 and 8.1.3), FPSR bits 0-4 on AArch64 (Arm ARM, C5.2.9).
+ * Raising one sets its bit; nothing traps, because every exception is
+ * masked, as a process starts.
+ */
+
 #define ROUNDING (FE_TONEAREST | FE_DOWNWARD | FE_UPWARD | FE_TOWARDZERO)
 
 static int known(int mode)
@@ -51,6 +60,48 @@ int fesetround(int mode)
     return 0;
 }
 
+/* The x87 environment's status word, at byte 4 of `fnstenv`'s image. */
+static void x87_flags(int clear)
+{
+    unsigned char env[28];
+
+    __asm__ volatile("fnstenv %0" : "=m"(env));
+    env[4] = (unsigned char)(env[4] & ~clear);
+    __asm__ volatile("fldenv %0" : : "m"(env));
+}
+
+int feclearexcept(int excepts)
+{
+    unsigned int mxcsr;
+
+    excepts &= FE_ALL_EXCEPT;
+    __asm__ volatile("stmxcsr %0" : "=m"(mxcsr));
+    mxcsr &= ~(unsigned int)excepts;
+    __asm__ volatile("ldmxcsr %0" : : "m"(mxcsr));
+    x87_flags(excepts);
+    return 0;
+}
+
+int fetestexcept(int excepts)
+{
+    unsigned int mxcsr;
+    unsigned short status;
+
+    __asm__ volatile("stmxcsr %0" : "=m"(mxcsr));
+    __asm__ volatile("fnstsw %0" : "=m"(status));
+    return (int)((mxcsr | status) & (unsigned int)excepts & FE_ALL_EXCEPT);
+}
+
+int feraiseexcept(int excepts)
+{
+    unsigned int mxcsr;
+
+    __asm__ volatile("stmxcsr %0" : "=m"(mxcsr));
+    mxcsr |= (unsigned int)(excepts & FE_ALL_EXCEPT);
+    __asm__ volatile("ldmxcsr %0" : : "m"(mxcsr));
+    return 0;
+}
+
 #elif defined(__aarch64__)
 
 int fegetround(void)
@@ -72,6 +123,34 @@ int fesetround(int mode)
     __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
     fpcr = (fpcr & ~(unsigned long)ROUNDING) | (unsigned long)mode;
     __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
+    return 0;
+}
+
+int feclearexcept(int excepts)
+{
+    unsigned long fpsr;
+
+    __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
+    fpsr &= ~(unsigned long)(excepts & FE_ALL_EXCEPT);
+    __asm__ volatile("msr fpsr, %0" : : "r"(fpsr));
+    return 0;
+}
+
+int fetestexcept(int excepts)
+{
+    unsigned long fpsr;
+
+    __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
+    return (int)(fpsr & (unsigned long)(excepts & FE_ALL_EXCEPT));
+}
+
+int feraiseexcept(int excepts)
+{
+    unsigned long fpsr;
+
+    __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
+    fpsr |= (unsigned long)(excepts & FE_ALL_EXCEPT);
+    __asm__ volatile("msr fpsr, %0" : : "r"(fpsr));
     return 0;
 }
 

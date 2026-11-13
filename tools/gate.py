@@ -620,6 +620,16 @@ SUITES = [
                        "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_curl.py", "tools/run_tls.py", "user/kits/curltest", *W5)),
 
+    # **W5e's Skia** (`docs/w5.md`): `skiatest.elf`, Skia as WebKit carries
+    # it drawing eight scenes - paths, gradients, text through FreeType,
+    # pictures through its codecs, effects, a recording, another colour
+    # space - every pixel held to the same file on this Mac, built for
+    # x86-64 and run under Rosetta. x86 only until Skia is built for ARM
+    # (`docs/roadmap.md`).
+    Suite("x86-skia", ["python3", "tools/run_skia.py", X86,
+                       "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_skia.py", "user/kits/skiatest", *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

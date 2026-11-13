@@ -2840,6 +2840,7 @@ void kosmos_sqltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_xmltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_ssltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_curltest_kit(lua_State *L) __attribute__((weak));
+void kosmos_skiatest_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
 void kosmos_aac_kit(lua_State *L);
@@ -2916,6 +2917,8 @@ static const struct {
     { "xmltest", kosmos_xmltest_kit, 1 },
     { "ssltest", kosmos_ssltest_kit, 1 },
     { "curltest", kosmos_curltest_kit, 1 },
+    /* Skia, in no image but its test's (`docs/w5.md` W5e). */
+    { "skiatest", kosmos_skiatest_kit, 1 },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit, 0 },

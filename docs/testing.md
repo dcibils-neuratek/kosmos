@@ -32613,3 +32613,61 @@ what decides the end is the longest suites left - `x86-cafesa3d-2` 277 s,
 `arm-sandbox-linuxsetup` 253 s, `host-llm` 230 s - and the rest packing
 round them. The gate is under ten minutes again, with Skia's suites still
 to come into the same rule.
+
+## 18.790 Skia, every pixel as on this Mac
+
+**W5e** (`docs/w5.md`). `skiatest.elf` - Skia as WebKitGTK 2.54.2 carries
+it, built by WebKit's CMake with `0012-skia-on-kosmos.patch` - draws eight
+scenes into RGBA surfaces of its own and says each as a line: an FNV-1a of
+its pixels and how many differ from the ground. With them, a line for each
+picture Skia's codecs decode, each family its folder font manager finds,
+and four strings measured. `tools/run_skia.py`, the gate's `x86-skia`,
+holds the 23 lines to the same file built for x86-64 on this Mac and run
+under Rosetta, against Skia and its libraries built the same way
+(`webkit_build.py host-x86_64`, `w5_build.py host-x86_64`), and
+`skia_defines.h` to what the Skia target declares PUBLIC.
+
+**Why x86-64 under Rosetta, and not the Mac's own cores.** Skia's raster
+pipeline picks its vector code at run time and its float arithmetic is
+only as deterministic as the instructions it lands on: NEON on this Mac's
+ARM cores would round differently from SSE2 and AVX2 in the guest. Built
+for x86-64 with `-march=x86-64`, the guest's baseline, and with
+`CMAKE_SYSTEM_PROCESSOR` set so WebKit's CMake enables the same AVX2 and
+AVX-512 paths, the two sides take the same branches, and a pixel either
+matches or is a bug.
+
+**What the first run found**, both in the test rather than in Skia:
+
+| line | Mac | Kosmos | cause |
+|---|---|---|---|
+| `family:` | Serif, Mono, Sans | Mono, Sans, Serif | the order a folder is listed in; now sorted |
+| `picture:` ×5 | decoded | cannot be read | `mmap` of a file refused; now mapped privately by reading it |
+
+The other six scenes - fills, strokes, gradients, text, effects, the
+recording - matched on the first run.
+
+**The mapping**, in `posixtest`: a file's six bytes mapped `PROT_READ |
+PROT_WRITE`, zero past them to the page's end, a write to the page not
+reaching the file; two pages of it read only; a write-only descriptor
+refused with `EBADF`; `MAP_SHARED` of a file still `ENODEV`. **Control**,
+`read_file` reading nothing: `posixtest: files: /Temporary: a file mapped
+privately did not hold its bytes`.
+
+**Controls of the suite**: `KOSMOS_SKIA_BREAK=picture`, a byte inside
+`testorig.jpg`'s scan turned over for the reference only - its `picture:`
+line and the `pictures` scene differ (2 lines); `=defines`, a define added
+to what the header is held to - `skia_defines.h is not what Skia declares
+PUBLIC`.
+
+| 0.11.395 | |
+|---|---|
+| `x86-skia`, in the guest | 0.6 s of drawing, 8 s the suite |
+| the whole gate, every library suite run (the runtime changed) | 124 of 124, 14:06 (847 s) |
+
+**Over the budget, and why.** The runtime changed, so 18.789's skip could
+skip nothing: every library suite ran, as it must, behind 170 s of images
+that included WebKit built again (its headers changed). 18.789's 10:47 was
+the same shape with one suite fewer and WebKit already built. So a commit
+that touches the runtime costs a gate past ten minutes as things stand;
+the slowest are `x86-cafesa3d-2` 311 s, `host-llm` 275 s and `x86-sql`
+272 s.

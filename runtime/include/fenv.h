@@ -66,6 +66,12 @@ typedef struct {
 int fegetround(void);
 int fesetround(int mode);
 
+/* Its exception flags, FE_ names or'd: cleared, tested (those of them set)
+ * and raised (set, without a trap - each is masked). 0 for done. */
+int feclearexcept(int excepts);
+int fetestexcept(int excepts);
+int feraiseexcept(int excepts);
+
 __END_DECLS
 
 #endif /* FENV_H */

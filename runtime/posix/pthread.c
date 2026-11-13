@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
+#include <semaphore.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1028,4 +1029,127 @@ int sched_get_priority_min(int policy)
 int sched_get_priority_max(int policy)
 {
     return sched_get_priority_min(policy);
+}
+
+/*
+ *--------------------------------------------------------------------------
+ * Semaphores (`semaphore.h`): a count, taken by compare-and-swap, and a
+ * futex wait on it while it is nought. `waiters` is raised before the wait
+ * reads the count again, so a post either sees a waiter and wakes it or
+ * lands first and the wait does not sleep.
+ */
+
+int sem_init(sem_t *s, int pshared, unsigned int value)
+{
+    if (pshared != 0) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    if (value > SEM_VALUE_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    s->count = value;
+    s->waiters = 0;
+    return 0;
+}
+
+int sem_destroy(sem_t *s)
+{
+    (void)s;
+    return 0;
+}
+
+int sem_post(sem_t *s)
+{
+    uint32_t c = __atomic_load_n(&s->count, __ATOMIC_RELAXED);
+
+    do {
+        if (c >= SEM_VALUE_MAX) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+    } while (!__atomic_compare_exchange_n(&s->count, &c, c + 1, true,
+                                          __ATOMIC_RELEASE, __ATOMIC_RELAXED));
+
+    if (__atomic_load_n(&s->waiters, __ATOMIC_ACQUIRE) != 0) {
+        (void)kosmos_futex_wake(&s->count, 1);
+    }
+
+    return 0;
+}
+
+/* One taken if there is one: true, or false with the count at nought. */
+static bool sem_take(sem_t *s)
+{
+    uint32_t c = __atomic_load_n(&s->count, __ATOMIC_RELAXED);
+
+    while (c != 0) {
+        if (__atomic_compare_exchange_n(&s->count, &c, c - 1, true,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* Until one is taken, or `until` on CLOCK_REALTIME passes (NULL: for
+ * ever) - the ticks counted again from the deadline after every wake, so
+ * an early one does not stretch it. */
+static int sem_wait_until(sem_t *s, const struct timespec *until)
+{
+    while (!sem_take(s)) {
+        unsigned long ticks = 0;
+        long r;
+
+        if (until != NULL && (ticks = ticks_until(CLOCK_REALTIME, until)) == 0) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+
+        __atomic_add_fetch(&s->waiters, 1, __ATOMIC_ACQ_REL);
+        r = kosmos_futex_wait(&s->count, 0, ticks);
+        __atomic_sub_fetch(&s->waiters, 1, __ATOMIC_ACQ_REL);
+        (void)r;
+    }
+
+    return 0;
+}
+
+int sem_wait(sem_t *s)
+{
+    return sem_wait_until(s, NULL);
+}
+
+int sem_trywait(sem_t *s)
+{
+    if (sem_take(s)) {
+        return 0;
+    }
+
+    errno = EAGAIN;
+    return -1;
+}
+
+int sem_timedwait(sem_t *s, const struct timespec *until)
+{
+    if (sem_take(s)) {
+        return 0;
+    }
+
+    if (bad_deadline(until)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return sem_wait_until(s, until);
+}
+
+int sem_getvalue(sem_t *s, int *value)
+{
+    *value = (int)__atomic_load_n(&s->count, __ATOMIC_RELAXED);
+    return 0;
 }

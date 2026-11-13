@@ -669,6 +669,16 @@ void *realloc(void *p, size_t n)
     return q;
 }
 
+/*
+ * How much of `p`'s block can be used: its payload, at least what was
+ * asked for (`<malloc.h>`, for ported code). The block's own size, which
+ * nothing but `realloc` of this same pointer changes.
+ */
+size_t malloc_usable_size(void *p)
+{
+    return p == NULL ? 0 : BLOCK(p)->size;
+}
+
 void abort(void)
 {
     panic("abort() was called");
