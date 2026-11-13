@@ -80,6 +80,11 @@ set(flags "-nostdinc -isystem ${KOSMOS_ROOT}/runtime/posix/include -D__kosmos__"
 string(APPEND flags " -isystem ${resource}/include")
 string(APPEND flags " -isystem ${KOSMOS_ROOT}/runtime/include")
 string(APPEND flags " -isystem ${KOSMOS_ROOT}/user/include")
+# The names Kosmos refuses, as headers that refuse them
+# (`runtime/posix/refused/`): an empty `signal.h` and `sys/ioctl.h`, so a
+# port that includes them compiles and one that calls `signal` or `ioctl`
+# does not. curl includes `signal.h` whatever it was told it has.
+string(APPEND flags " -isystem ${KOSMOS_ROOT}/runtime/posix/refused")
 string(APPEND flags " -DKOSMOS_USER -DKOSMOS_USER_BASE=${base}")
 string(APPEND flags " -D_LIBCPP_HAS_CLOCK_GETTIME=")
 string(APPEND flags " -ffunction-sections -fdata-sections -fno-stack-protector")

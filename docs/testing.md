@@ -32509,3 +32509,69 @@ gate's load; all three done by 570 s). Over the ten-minute budget, as
 0.11.391's 16:46 was; the slowest were `x86-cafesa3d-2` (306 s), `x86-sql`
 (268 s), `host-llm` (260 s) and `arm-sandbox-linuxsetup` (233 s).
 
+## 18.787 W5d's curl, on Kosmos (JetSki W5d)
+
+**curl 8.23.0** by its own CMake (`tools/w5_build.py`; on OpenSSL, zlib and
+libpsl; no HTTP/2, threaded resolver, IPv6 or default roots) into
+`curltest.elf`: curl's own program, its objects as curl's CMake compiled
+them, `main` renamed.
+
+**`x86-curl`** (`tools/run_curl.py`): one boot with a network, under
+`-cpu max`, each command a process of its own, every exit code,
+`--write-out` line and SHA-256 held to the same program built on this Mac,
+against servers that serve both the same bytes.
+
+| | |
+|---|---|
+| a page, 316,800 bytes over TLS | plain, gzip'd (179,217 on the wire), chunked, behind one redirect - each the page |
+| cookies | the host's kept and sent back; `co.uk`'s refused by libpsl |
+| refusals | another name, out of its dates, an authority not given: 60 each |
+| 8 MB | 1.3 s under TCG |
+
+**Controls**: `KOSMOS_CURL_BREAK=page` - page, gzip, chunked and redirect
+differ; `=cookie` - the echo is 23 bytes against this Mac's 15.
+
+**Found on the way:**
+
+- **Every trial failed, then every trial passed.** curl's CMake makes its
+  trials programs, which clang linked with this Mac's `ld`: no
+  `sys/types.h`, no `curl_off_t` size, nothing. Linked by the Kosmos
+  linker with nothing to link against, `check_function_exists` would say
+  yes to all 29 it asks and 18 do not exist. The answer is a weak symbol
+  for every name the image defines, read from its objects; a trial links
+  exactly when what it calls is there. The stand-in's first draft defined
+  `main` strongly - init has one - and failed every trial again.
+- **`fd_set` from `sys/time.h`**: curl's public header counts on it, as
+  glibc and macOS give it.
+- **`signal.h` included unconditionally** by `transfer.c`: the refused
+  headers are on every CMake port's path now, not only OpenSSL's.
+- **The gate's images step built ARM's apps for no suite** while ARM is
+  out: 420 s after a header change, 114 s without them (`GATE_ARM_APPS`).
+
+
+**The gate on 0.11.393**: 122 of 123 in 707 s (11:47), `x86-curl` 13 s,
+images 57 s. The one, `arm-sandboxwin`, is 18.788.
+
+## 18.788 `arm-sandboxwin`: typed before Alpine's shell was there
+
+**Failing under a gate's load on 0.11.391 and 0.11.393, passing alone.**
+The Console tab's check typed `echo $((6*7))` and waited 30 s for 42; the
+guest showed its prompt and nothing after it.
+
+**Not a key lost in Kosmos.** The monitor's ring is 256 bytes and the line
+is 14; the vCPU looks at it at least every 4 ms (`wait_for_guest`). The
+two serial logs put the events in order:
+
+| | passing | failing |
+|---|---|---|
+| detail opened | 154 | 155 |
+| Alpine's `shell1:~#` | 158, before the Console click | 166, after the click into the console |
+| the line | echoed, 42 | never echoed |
+
+"Running" is the monitor, not Alpine. Under load the boot was still going
+when the line went in, and a shell throws away what was typed before it
+opens its terminal, as on any serial line. A race in the test.
+
+**The fix**: wait for `shell1:~# ` in the Console tab before typing - 19
+checks, passing. **Control**, `KOSMOS_SBW_EARLY=1`: Restart, then type at
+once while Alpine boots again; the check for 42 fails, as it must.

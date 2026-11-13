@@ -2374,3 +2374,38 @@ FirePro cards are shown the firmware's framebuffer, not driven.
 **Visible impact.** A photograph of the desktop on a Mac, with Log,
 Monitor and This Machine open on it.
 
+## 12 November, night - a page fetched the way a browser fetches it
+
+**In short.** curl, the program and library that fetches things from the
+web - and what WebKit will fetch every page through - now runs on Kosmos.
+Inside Kosmos it fetched pages over HTTPS from a server on the Mac:
+compressed, in pieces, behind a redirect, with cookies, refusing the
+certificates it should refuse. Every answer matched the same curl on the
+Mac.
+
+**What.** The second half of W5's fourth step (W5d). curl is built as
+released, on OpenSSL from earlier tonight, the zlib compressor and the
+public suffix list from yesterday. Its own command-line program runs in
+Kosmos, ten commands, each compared with the Mac's.
+
+**Why.** A browser is mostly waiting for the network. Everything WebKit
+asks of the web - a page, a picture, a cookie - goes through curl.
+
+**What it found.** curl's build asks the system what it has, by trying to
+compile and link a small program for each thing. On Kosmos those trials
+were compiled and never linked, so every question got a yes: 18 of the
+functions curl asks about do not exist here, and it would have believed
+in all of them. Now each trial is linked against a list of everything
+Kosmos really defines, read from its own compiled code, so a yes means
+yes. Two smaller things: a header had to bring in another, as Linux's and
+the Mac's do; and the system's empty "you may not have this" headers went
+onto every ported library's path, not only OpenSSL's.
+
+**And the gate.** The test run had grown to 17 minutes. Seven of them were
+building ARM programs no test was reading, since ARM testing is paused;
+now they are built only when something reads them.
+
+**Visible impact.** None on screen. The browser can now fetch.
+
+**Measurements.** 8 MB over HTTPS in 1.3 seconds inside the emulator.
+

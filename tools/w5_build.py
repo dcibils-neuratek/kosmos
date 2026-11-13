@@ -30,6 +30,8 @@ sys.path.insert(0, HERE)
 
 import upstream                                              # noqa: E402
 
+LLVM = os.environ.get("KOSMOS_LLVM", "/opt/homebrew/opt/llvm")
+
 TOOLCHAIN = os.path.join(ROOT, "runtime", "cxx", "kosmos.cmake")
 
 # In the order they stand on each other. Each library's tools, tests and
@@ -124,6 +126,32 @@ LIBRARIES = {
         "-DLIBXML2_WITH_MODULES=OFF",
         "-DLIBXML2_WITH_THREADS=ON",
     ],
+    # **W5d's curl**, by its own CMake, on OpenSSL, zlib and libpsl.
+    "curl": [
+        "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_STATIC_LIBS=ON",
+        "-DBUILD_STATIC_CURL=ON", "-DBUILD_CURL_EXE=ON",
+        "-DBUILD_TESTING=OFF", "-DBUILD_LIBCURL_DOCS=OFF", "-DBUILD_MISC_DOCS=OFF",
+        "-DENABLE_CURL_MANUAL=OFF", "-DPICKY_COMPILER=OFF",
+        "-DCURL_USE_PKGCONFIG=OFF",
+        # TLS is OpenSSL, the system's one; deflate is zlib, the one deflate;
+        # a cookie's domain is held to libpsl's list.
+        "-DCURL_USE_OPENSSL=ON", "-DCURL_ZLIB=ON", "-DCURL_USE_LIBPSL=ON",
+        # What Kosmos does not have, or the browser does not ask curl for:
+        # SSH, LDAP, Kerberos, IDN (WebKit hands curl hosts in ASCII),
+        # brotli and zstd (not built), HTTP/2 (nghttp2, not yet - roadmap).
+        "-DCURL_USE_LIBSSH2=OFF", "-DCURL_USE_LIBSSH=OFF", "-DCURL_DISABLE_LDAP=ON",
+        "-DCURL_USE_GSSAPI=OFF", "-DUSE_LIBIDN2=OFF", "-DCURL_BROTLI=OFF",
+        "-DCURL_ZSTD=OFF", "-DUSE_NGHTTP2=OFF", "-DUSE_NGTCP2=OFF",
+        # The POSIX layer's sockets are IPv4 and TCP.
+        "-DENABLE_IPV6=OFF",
+        # The threaded resolver signals its answer down a socketpair or a
+        # pipe, and the POSIX layer has neither: names are looked up as the
+        # call is made (`getaddrinfo`, the stack's resolver). Roadmap.
+        "-DENABLE_THREADED_RESOLVER=OFF", "-DCURL_DISABLE_SOCKETPAIR=ON",
+        # No default bundle of roots yet: `/Kosmos/Settings` is not served
+        # (`layout.md`), and the TLS Kit's step onto OpenSSL brings them.
+        "-DCURL_CA_BUNDLE=none", "-DCURL_CA_PATH=none",
+    ],
 }
 
 
@@ -216,6 +244,7 @@ TARGETS = {
     "freetype": ["freetype"],
     "harfbuzz": ["harfbuzz"],
     "libxml2": ["LibXml2"],
+    "curl": ["libcurl_static"],
 }
 
 
@@ -227,7 +256,11 @@ def source(name):
     return upstream.where(name)
 
 
-def configure(arch, name, src, out, prefix):
+def configure(arch, name, src, out, prefix, extra=(), says=""):
+    """CMake, once, into `out` - again when the toolchain, this file or a
+    runtime header is newer, or when `says` (what the build was told it
+    has) is not what it was told last time."""
+    extra = list(extra)
     stamp = os.path.join(out, ".configured")
     headers = [os.path.join(folder, n)
                for top in (os.path.join(ROOT, "runtime", "include"),
@@ -236,7 +269,8 @@ def configure(arch, name, src, out, prefix):
     newest = max(os.path.getmtime(p) for p in [TOOLCHAIN, __file__] + headers)
 
     if os.path.exists(stamp) and os.path.getmtime(stamp) >= newest \
-            and os.path.exists(os.path.join(out, "build.ninja")):
+            and os.path.exists(os.path.join(out, "build.ninja")) \
+            and open(stamp).read() == "configured\n" + says:
         return
 
     shutil.rmtree(out, ignore_errors=True)
@@ -250,7 +284,7 @@ def configure(arch, name, src, out, prefix):
                "-DZLIB_ROOT=" + prefix,
                # Every library's position-independent code off: the image
                # is linked static, at its base.
-               "-DCMAKE_POSITION_INDEPENDENT_CODE=OFF"] + LIBRARIES[name]
+               "-DCMAKE_POSITION_INDEPENDENT_CODE=OFF"] + LIBRARIES[name] + extra
 
     if arch == "host":
         command += ["-DCMAKE_C_COMPILER=/usr/bin/clang",
@@ -275,7 +309,127 @@ def configure(arch, name, src, out, prefix):
         sys.exit("w5_build: %s did not configure for %s (%s)" % (name, arch, log))
 
     with open(stamp, "w") as f:
-        f.write("configured\n")
+        f.write("configured\n" + says)
+
+
+# **What the image has, as a trial can link against it.** `kosmos.cmake`
+# makes CMake's trials static libraries, since there is nothing here to
+# link a program against - so a trial is compiled and never linked, and
+# `check_function_exists`, which declares the function itself, says yes to
+# any name at all. curl will not have that (its CMakeLists.txt turns its
+# trials back into programs), and it is right: of the 29 functions it asks
+# about that way, 18 - `pipe`, `eventfd`, `sendmsg` - are not here.
+#
+# So curl's trials are linked, by the same GNU linker as the userland,
+# against a stand-in for the image: one object holding a symbol for every
+# name the libc, the POSIX layer and the system's calls define, read from
+# their objects (`KOSMOS_UBUILD`, the Makefile's). A trial links exactly
+# when what it calls exists. A function added to the POSIX layer changes
+# the list, and the library is configured again.
+def defined_symbols(arch):
+    ubuild = os.environ.get("KOSMOS_UBUILD")
+    if not ubuild:
+        sys.exit("w5_build: KOSMOS_UBUILD names the userland's build folder (the Makefile's)")
+    objects = [os.path.join(folder, n)
+               for top in ("runtime/libc", "runtime/posix", "user/init")
+               for folder, _, names in os.walk(os.path.join(ROOT, ubuild, top))
+               for n in names if n.endswith(".o")]
+    if not objects:
+        sys.exit("w5_build: no objects in %s - the runtime first" % ubuild)
+    listed = subprocess.run([os.path.join(LLVM, "bin", "llvm-nm"), "--defined-only"] + objects,
+                            capture_output=True, text=True, check=True).stdout
+    return sorted({parts[2] for parts in (line.split() for line in listed.splitlines())
+                   if len(parts) == 3 and parts[1] in "TWDBR"})
+
+
+def trial_link(arch, top):
+    """The options that make a trial a linked program: the linker, and the
+    stand-in object. And the list, for `configure` to compare."""
+    names = defined_symbols(arch)
+    folder = os.path.join(top, "trial")
+    os.makedirs(folder, exist_ok=True)
+    stub = os.path.join(folder, "image.S")
+    with open(stub, "w") as f:
+        f.write("/* Generated by tools/w5_build.py: what the image defines. */\n"
+                "\t.section .note.GNU-stack,\"\",%progbits\n\t.text\n")
+        for n in names:
+            # Weak, so a trial's own `main` - init has one too - wins.
+            f.write("\t.weak %s\n%s:\n" % (n, n))
+    triple = "%s-unknown-none-elf" % arch
+    obj = os.path.join(folder, "image.o")
+    subprocess.run([os.path.join(LLVM, "bin", "clang"), "--target=" + triple, "-c", stub,
+                    "-o", obj], check=True)
+    linker = shutil.which("%s-elf-ld" % arch)
+    if linker is None:
+        sys.exit("w5_build: no %s-elf-ld" % arch)
+    # The object itself, in the linker's flags: CMake carries those into
+    # every trial and not its standard libraries, and an object is linked
+    # whole wherever it stands on the line.
+    return (["-DCMAKE_EXE_LINKER_FLAGS=--ld-path=%s -nostdlib -static -Wl,-e,main %s"
+             % (linker, obj)],
+            "%d names\n" % len(names) + "\n".join(names))
+
+
+def curl_extra(arch, src, top, prefix):
+    """curl's options that depend on where things are: libpsl, which the
+    Makefile compiles rather than any CMake (`LIBPSL_OBJS`), and for Kosmos
+    the trials linked against the image's names (`trial_link`)."""
+    upstream.unpack("libpsl")
+    psl = upstream.where("libpsl")
+    library = os.path.join(top, "libpsl", "libpsl.a")
+    os.makedirs(os.path.dirname(library), exist_ok=True)
+    if arch == "host":
+        # This Mac's curl links a real one: the same two files, as the
+        # Makefile compiles them for Kosmos.
+        objects = []
+        for name in ("psl.c", "lookup_string_in_fixed_set.c"):
+            o = os.path.join(top, "libpsl", name + ".o")
+            subprocess.run(["/usr/bin/clang", "-O2", "-w", "-DENABLE_BUILTIN",
+                            '-DPACKAGE_VERSION="0.23.3"', "-I" + os.path.join(psl, "include"),
+                            "-I" + os.path.join(psl, "src"), "-c",
+                            os.path.join(psl, "src", name), "-o", o], check=True)
+            objects.append(o)
+        if os.path.exists(library):
+            os.remove(library)
+        subprocess.run(["ar", "rcs", library] + objects, check=True)
+    elif not os.path.exists(library):
+        # For Kosmos the Makefile links `LIBPSL_OBJS`; CMake is told where
+        # the header is and given an empty archive to name, since it links
+        # nothing here (`curltest.elf` is linked by the Makefile).
+        subprocess.run([os.path.join(LLVM, "bin", "llvm-ar"), "rcs", library], check=True)
+    trial, says = trial_link(arch, top) if arch != "host" else ([], "")
+    return (["-DLIBPSL_INCLUDE_DIR=" + os.path.join(psl, "include"),
+             "-DLIBPSL_LIBRARY=" + library,
+             "-DOPENSSL_ROOT_DIR=" + prefix, "-DOPENSSL_USE_STATIC_LIBS=ON"] + trial,
+            says)
+
+
+def curl_program(arch, out, prefix):
+    """curl's program: on this Mac, linked whole by its CMake; for Kosmos,
+    the objects CMake compiles for it - its flags, its `curl_config.h` -
+    archived with its `main` renamed and `exit` brought back to the kit
+    (`posix_program.h`), for the Makefile to link into `curltest.elf`."""
+    if arch == "host":
+        return ["curl"]
+    listed = subprocess.run(["ninja", "-C", out, "-t", "targets", "all"],
+                            capture_output=True, text=True, check=True).stdout
+    objects = sorted(line.split(":")[0] for line in listed.splitlines()
+                     if line.startswith("src/CMakeFiles/curl.dir/") and
+                     line.split(":")[0].endswith((".o", ".obj")))
+    if not objects:
+        sys.exit("w5_build: curl's program has no objects in %s" % out)
+    return objects
+
+
+def archive_curl_program(objects, out, prefix):
+    tool = os.path.join(prefix, "lib", "libcurltool.a")
+    if os.path.exists(tool):
+        os.remove(tool)
+    subprocess.run([os.path.join(LLVM, "bin", "llvm-ar"), "rcs", tool]
+                   + [os.path.join(out, o) for o in objects], check=True)
+    subprocess.run([os.path.join(LLVM, "bin", "llvm-objcopy"),
+                    "--redefine-sym", "main=curltest_curl_main",
+                    "--redefine-sym", "exit=posix_program_exit", tool], check=True)
 
 
 def main():
@@ -283,7 +437,7 @@ def main():
         sys.exit("usage: w5_build.py x86_64|aarch64|host [%s openssl]" % " ".join(LIBRARIES))
 
     arch = sys.argv[1]
-    names = sys.argv[2:] or list(LIBRARIES) + ["openssl"]
+    names = sys.argv[2:] or [n for n in LIBRARIES if n != "curl"] + ["openssl", "curl"]
     for name in names:
         if name not in LIBRARIES and name != "openssl":
             sys.exit("w5_build: no library %s" % name)
@@ -306,14 +460,27 @@ def main():
             build_openssl(arch, source(name), out, prefix)
             print("w5_build: openssl for %s, in %s" % (arch, prefix))
             continue
-        configure(arch, name, source(name), out, prefix)
+        src = source(name)
+        extra, says = curl_extra(arch, src, top, prefix) if name == "curl" else ([], "")
+        configure(arch, name, src, out, prefix, extra, says)
         # The libraries only, then CMake's install of what was built: a
         # library's `all` links programs too - libjpeg-turbo's
         # `simdcoverage` - and a program for Kosmos is linked by the
         # Makefile, against the image's own objects, never by CMake.
-        r = subprocess.run(["ninja", "-C", out] + TARGETS[name],
+        targets = TARGETS[name] + (curl_program(arch, out, prefix) if name == "curl" else [])
+        r = subprocess.run(["ninja", "-C", out] + targets,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if r.returncode == 0:
+        if r.returncode == 0 and name == "curl" and arch != "host":
+            archive_curl_program(targets[len(TARGETS[name]):], out, prefix)
+        if r.returncode == 0 and name == "curl" and arch != "host":
+            # CMake's install of curl wants its program, which is linked by
+            # the Makefile here, not by CMake: the library and its headers.
+            os.makedirs(os.path.join(prefix, "lib"), exist_ok=True)
+            shutil.copy2(os.path.join(out, "lib", "libcurl.a"), os.path.join(prefix, "lib"))
+            shutil.rmtree(os.path.join(prefix, "include", "curl"), ignore_errors=True)
+            shutil.copytree(os.path.join(src, "include", "curl"),
+                            os.path.join(prefix, "include", "curl"))
+        elif r.returncode == 0:
             r2 = subprocess.run(["cmake", "--install", out],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             r.stdout += r2.stdout

@@ -3625,16 +3625,22 @@ build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.
                          runtime/cxx/openssl-kosmos.conf \
                          $(wildcard runtime/include/*.h runtime/include/sys/*.h \
                                     runtime/posix/include/*.h runtime/posix/include/*/*.h \
-                                    runtime/posix/refused/*.h runtime/posix/refused/*/*.h)
+                                    runtime/posix/refused/*.h runtime/posix/refused/*/*.h) \
+                         $(filter $(UBUILD)/runtime/libc/% $(UBUILD)/user/init/%,$(USER_OBJS)) \
+                         $(POSIX_OBJS)
 	@mkdir -p build/w5/$(ARCH)
-	@python3 tools/w5_build.py $(ARCH) > build/w5/$(ARCH)/build.log 2>&1 \
+	@# The userland's objects are read for what the image defines: curl's
+	@# configure is told which of the functions it asks about are missing
+	@# (`w5_build.py`, `defined_symbols`).
+	@KOSMOS_UBUILD=$(UBUILD) python3 tools/w5_build.py $(ARCH) > build/w5/$(ARCH)/build.log 2>&1 \
 	    || { tail -60 build/w5/$(ARCH)/build.log; exit 1; }
 	@touch $@
 
 W5_XML_LIBS := $(W5_DIR)/lib/libxml2.a
 W5_SSL_LIBS := $(W5_DIR)/lib/libssl.a $(W5_DIR)/lib/libcrypto.a
+W5_CURL_LIBS := $(W5_DIR)/lib/libcurltool.a $(W5_DIR)/lib/libcurl.a
 
-$(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS) $(W5_SSL_LIBS): build/w5/$(ARCH)/.built
+$(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS) $(W5_SSL_LIBS) $(W5_CURL_LIBS): build/w5/$(ARCH)/.built
 
 #
 # **W5a's picture test** (`tools/run_pictures.py`): `picturetest.c` and its
@@ -3920,6 +3926,31 @@ $(UBUILD)/apps/ssltest.elf: $(USER_OBJS) $(SSLTEST_OBJS) $(POSIX_OBJS) $(W5_SSL_
 	    || { echo "apps: the system's image has OpenSSL in it"; rm -f $@; exit 1; }
 
 #
+# **W5d's curl test** (`docs/w5.md`, `tools/run_curl.py`): curl's own
+# program, compiled by curl's CMake and archived with its `main` renamed
+# (`tools/w5_build.py`), on libcurl, OpenSSL, zlib and libpsl - in no image
+# but `curltest.elf`.
+#
+CURLTEST_OBJS := $(UBUILD)/user/kits/curltest/curltest_kit.c.o
+
+$(UBUILD)/user/kits/curltest/curltest_kit.c.o: user/kits/curltest/curltest_kit.c \
+        runtime/posix/include/posix_program.h $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -Wall -Werror -MMD -MP -c $< -o $@
+
+$(UBUILD)/apps/curltest.elf: $(USER_OBJS) $(CURLTEST_OBJS) $(LIBPSL_OBJS) $(POSIX_OBJS) \
+                             $(W5_CURL_LIBS) $(W5_SSL_LIBS) $(W5_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(CURLTEST_OBJS) $(LIBPSL_OBJS) $(POSIX_OBJS) \
+	    $(W5_CURL_LIBS) $(W5_SSL_LIBS) $(W5_DIR)/lib/libz.a -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_curltest_kit$$' \
+	    || { echo "apps: curltest.elf does not have its kit"; rm -f $@; exit 1; }
+	@$(NM) $@ | grep -q ' T curltest_curl_main$$' \
+	    || { echo "apps: curltest.elf does not have curl's program"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_curltest_kit|curl_easy_init)$$' \
+	    || { echo "apps: the system's image has curl in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -4095,7 +4126,7 @@ apps:
 app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps/posixtest.elf \
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
-            $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf \
+            $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf
@@ -5645,9 +5676,17 @@ J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 # the suites' roles as well, which nothing asks it for. A stick and
 # `install-apps` still link against the lean one.
 #
+# **ARM's applications only when a suite reads them.** While ARM is out of
+# the gate (CLAUDE.md, "x86-64 only, for now") the suites left on it are the
+# sandboxes', which boot the two kernels and nothing in `apps/` - and the
+# apps were most of the step: every W5 library rebuilt for AArch64 whenever
+# a runtime header changed, minutes nobody read. `tools/gate.py` says 1 when
+# a chosen suite reads `build/user-test/apps`; by hand it is 1.
+GATE_ARM_APPS ?= 1
+
 gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
-	@$(MAKE) --no-print-directory -j$(J) TEST=1 apps
+	@$(if $(filter 1,$(GATE_ARM_APPS)),$(MAKE) --no-print-directory -j$(J) TEST=1 apps,echo "gate-images: ARM's applications left out - no suite chosen reads them")
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory -j$(J) x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \

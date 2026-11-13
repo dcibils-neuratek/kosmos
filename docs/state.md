@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.392: W5d's OpenSSL built; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-12 (0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
 
@@ -21,13 +21,23 @@ Last updated: 2026-11-12 (0.11.392: W5d's OpenSSL built; the Mac Pro on its desk
   `EPROTO`, `strtok`, `strtoimax`; `getauxval` (ARM HWCAPs from the ID
   registers); `runtime/posix/refused/` holds `sys/ioctl.h` and `signal.h`.
 
-**Next: curl** 8.23.0 (already in `tools/upstream.py`) by CMake on OpenSSL,
-zlib and libpsl, fetching a page over HTTPS in the guest.
+**curl 8.23.0 built (0.11.393)**: by its CMake, its trials linked against a
+stand-in for the image (`w5_build.py` `trial_link`), its program archived
+as `libcurltool.a`; `curltest.elf` and `tools/run_curl.py`, the gate's
+`x86-curl` (controls `KOSMOS_CURL_BREAK=page|cookie`). `sys/time.h` brings
+`sys/select.h`; the refused headers are in `kosmos.cmake`;
+`posix_program_run_to` is shared by both kits. The gate builds ARM's apps
+only for a suite that reads them (`GATE_ARM_APPS`).
+`arm-sandboxwin` now waits for Alpine's prompt before it types: under load
+the line went in while the guest still booted (`testing.md` 18.788).
+
+**Next: W5e**, Skia. Open for Diego: the gate's budget (the suites alone
+are about ten and a half minutes of ten cores).
 
 **The Mac Pro boots 0.11.391 to the desktop** (`boot.md`'s row): the first
 write of the stick had not landed (this Mac could not mount its boot
-partition, and the firmware went to macOS); the second did. Pointer works;
-keyboard not yet reported. Not called stable. No Ethernet driver there
+partition, and the firmware went to macOS); the second did. Pointer and
+keyboard work. Not called stable. No Ethernet driver there
 (BCM57762, Linux's `tg3`), so no netboot loop; Apple's NetBoot is BSDP,
 not PXE - a driver plus BSDP would give it the M700's loop (Diego's call).
 

@@ -23,4 +23,9 @@ int utimes(const char *path, const struct timeval times[2]);
 
 __END_DECLS
 
+/* And `select` with it, as glibc's and this Mac's `sys/time.h` give it and
+ * POSIX allows: curl's own header counts on it (`docs/w5.md` W5d). Last, so
+ * `struct timeval` is already here when `sys/select.h` asks for it. */
+#include <sys/select.h>
+
 #endif /* SYS_TIME_H */

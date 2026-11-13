@@ -37,6 +37,12 @@ __BEGIN_DECLS
 int posix_program_run(int (*entry)(int, char **), int argc, char **argv,
                       unsigned long stack_pages);
 
+/* The same, with the program's `stdout` and `stderr` a file made at
+ * `path` for the length of the run. -1 with `errno` when the file could
+ * not be made, as well. */
+int posix_program_run_to(int (*entry)(int, char **), int argc, char **argv,
+                         unsigned long stack_pages, const char *path);
+
 /* `exit`, as a program run here calls it. Outside a run, the process's. */
 _Noreturn void posix_program_exit(int code);
 

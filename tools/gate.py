@@ -516,6 +516,14 @@ SUITES = [
     Suite("x86-xml", ["python3", "tools/run_xml.py", X86,
                       "build/user-x86_64-test/apps"], x86=True),
 
+    # **W5d's curl** (`docs/w5.md`): its own program in the guest fetching
+    # from HTTPS servers on this Mac - plain, gzip'd, chunked, redirected,
+    # cookies held to the public suffix list, three certificates refused,
+    # 8 MB - every command held to the same program built for this Mac.
+    Suite("arm-curl", ["python3", "tools/run_curl.py", ARM, "build/user-test/apps"]),
+    Suite("x86-curl", ["python3", "tools/run_curl.py", X86,
+                       "build/user-x86_64-test/apps"], x86=True),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts
@@ -1084,8 +1092,12 @@ def main():
     images = os.path.join(LOGS, "images.log")
 
     with open(images, "wb") as out:
+        # ARM's applications, only if a suite chosen reads them (the
+        # Makefile's `GATE_ARM_APPS`).
+        arm_apps = any("build/user-test/apps" in " ".join(s.cmd) for s in chosen)
         built = subprocess.run(["make", "--no-print-directory",
-                                "J=%d" % args.jobs, "gate-images"],
+                                "J=%d" % args.jobs, "GATE_ARM_APPS=%d" % arm_apps,
+                                "gate-images"],
                                cwd=ROOT, stdout=out, stderr=subprocess.STDOUT)
 
     print("%6.0fs  %s  %-16s" % (time.monotonic() - started,

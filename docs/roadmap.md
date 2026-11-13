@@ -10166,8 +10166,27 @@ the applications make the system useful, and is not pulled forward.
   `select`, `gethostbyname`, `getservbyname` and, on ARM, `getauxval`;
   `signal.h` joins `sys/ioctl.h` as a header that refuses.
 
-  Next, **curl**: 8.23.0 by its CMake on OpenSSL, zlib and libpsl, fetching
-  a page over HTTPS in the guest from a test server on this Mac.
+  **W5d, curl built** (18.787): curl 8.23.0 by its own CMake on OpenSSL,
+  zlib and libpsl; its own program in the guest fetching over HTTPS from
+  this Mac - plain, gzip'd, chunked, redirected, cookies held to libpsl,
+  three certificates refused, 8 MB - every command this Mac's (`x86-curl`).
+  Its CMake trials are linked against a stand-in for the image, so what it
+  is told exists does.
+
+  Next, **W5e**: Skia.
+
+  **Follow-ups from W5d's curl** (18.787):
+  - *HTTP/2*: nghttp2, built and held to its own tests, and curl on it.
+    WebKit asks for it.
+  - *The threaded resolver*, which needs a socketpair or a pipe in the
+    POSIX layer: without it a name is looked up inside the call, a wait
+    the desktop must not have (*Nothing waits on hardware*).
+  - *Mozilla's roots as a file*, `/Kosmos/Settings/ssl/cert.pem`, with the
+    TLS Kit's move onto OpenSSL: curl and OpenSSL's default.
+  - *Every W5 library's trials linked as curl's are*: the others still
+    compile theirs as static libraries, where `check_function_exists`
+    answers yes to anything. Nothing has gone wrong from it yet that a
+    build did not catch; a port that believes it has `pipe` would.
 
   **Follow-ups from W5d's OpenSSL** (18.786):
   - *The ARM suites* (`arm-ssl-*`) are written and not yet run: ARM is out

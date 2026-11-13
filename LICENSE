@@ -216,6 +216,12 @@ Vendored third-party code keeps its own licence, which travels beside it:
       GitHub's SHA-256 (docs/w5.md W5d); the terms are its LICENSE.txt.
       Only ssltest.elf, W5d's test, links it
 
+  curl 8.23.0, by Daniel Stenberg and the curl contributors, under the curl
+      licence, MIT-style
+      Not in the tree: tools/upstream.py fetches its release, held to
+      GitHub's SHA-256 (docs/w5.md W5d); the terms are its COPYING. Only
+      curltest.elf, W5d's test, links it
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

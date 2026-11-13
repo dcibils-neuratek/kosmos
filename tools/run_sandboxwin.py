@@ -38,6 +38,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_screenshot as R                                   # noqa: E402
 import scratch                                               # noqa: E402
 
+EARLY = os.environ.get("KOSMOS_SBW_EARLY") == "1"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIDE, GAP, CARD_H, W = 220, 14, 196, 1180
 
@@ -145,10 +147,27 @@ def main():
             spots = {k.strip(): v for k, v in spots.items()}
 
             if "Console" in spots:
+                at = len(guest.seen)
                 click(ox + spots["Console"][0], oy + spots["Console"][1])
                 time.sleep(1)
                 click(ox + SIDE + 300, oy + 400)        # into the console, for the keys
+
+                # **The guest's shell first** (`testing.md` 18.788): "running"
+                # is the monitor, not Alpine, and a line typed before its
+                # shell opens the terminal is thrown away there, as on any
+                # serial line. Under a gate's load the boot came after it.
+                check(until(r"sandboxes: console shell1: shell1:~# ", at, 120) is not None,
+                      "shell1's shell never gave its prompt in the Console tab")
                 time.sleep(0.5)
+
+                # The control, `KOSMOS_SBW_EARLY=1`: Restart, and the line
+                # typed at once, while Alpine boots again - its shell throws
+                # it away, so the check for 42 below must fail.
+                if EARLY and "Restart" in spots:
+                    click(ox + spots["Restart"][0], oy + spots["Restart"][1])
+                    time.sleep(0.5)
+                    click(ox + SIDE + 300, oy + 400)
+
                 at = len(guest.seen)
                 guest.type("echo $((6*7))")
                 check(until(r"sandboxes: console shell1: 42\n", at, 30) is not None,

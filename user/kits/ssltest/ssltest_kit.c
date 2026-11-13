@@ -117,7 +117,7 @@ static int l_run(lua_State *L)
     char *argv[128];
     int argc = 0;
     int code;
-    FILE *out, *was_out = stdout, *was_err = stderr;
+    FILE *out;
     char line[1024];
     int errors = 0;
     luaL_Buffer said;
@@ -140,19 +140,12 @@ static int l_run(lua_State *L)
     lua_pop(L, 1);
     argv[argc] = NULL;
 
-    if ((out = fopen(log, "w")) == NULL) {
-        return luaL_error(L, "ssltest: %s: %s", log, strerror(errno));
-    }
-
-    stdout = out;
-    stderr = out;
-    code = posix_program_run(ssltest_testutil_main, argc, argv, PROGRAM_STACK_PAGES);
-    fflush(out);
-    stdout = was_out;
-    stderr = was_err;
-    fclose(out);
+    code = posix_program_run_to(ssltest_testutil_main, argc, argv, PROGRAM_STACK_PAGES, log);
     if (code < 0 && errno == ENOMEM) {
         return luaL_error(L, "ssltest: %s: no room for its stack", name);
+    }
+    if (code < 0) {
+        return luaL_error(L, "ssltest: %s: %s", log, strerror(errno));
     }
 
     lua_pushinteger(L, code);

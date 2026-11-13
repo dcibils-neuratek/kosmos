@@ -91,3 +91,28 @@ _Noreturn void posix_program_exit(int code)
     left_with = code;
     longjmp(leaving, 1);
 }
+
+/* What the program prints, into a file for the length of the run: a test
+ * program says more than the spill ring keeps (64 KB), and curl's says
+ * what it fetched on `stdout`. Both kits that run one ask for it here. */
+int posix_program_run_to(int (*entry)(int, char **), int argc, char **argv,
+                         unsigned long pages, const char *path)
+{
+    FILE *out, *was_out = stdout, *was_err = stderr;
+    int code, saved;
+
+    if ((out = fopen(path, "w")) == NULL) {
+        return -1;
+    }
+
+    stdout = out;
+    stderr = out;
+    code = posix_program_run(entry, argc, argv, pages);
+    saved = errno;
+    fflush(out);
+    stdout = was_out;
+    stderr = was_err;
+    fclose(out);
+    errno = saved;
+    return code;
+}
