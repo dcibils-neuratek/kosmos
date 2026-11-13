@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-12 (0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
 
@@ -31,8 +31,11 @@ only for a suite that reads them (`GATE_ARM_APPS`).
 `arm-sandboxwin` now waits for Alpine's prompt before it types: under load
 the line went in while the guest still booted (`testing.md` 18.788).
 
-**Next: W5e**, Skia. Open for Diego: the gate's budget (the suites alone
-are about ten and a half minutes of ten cores).
+**The gate's budget, decided (0.11.394)**: a ported library's suite runs only
+when what it stands on changed (`tools/gate.py` `RUNTIME`, `libraries.json`;
+`LIBS=1` and `make prepush` run them all; `testing.md` 18.789).
+
+**Next: W5e**, Skia.
 
 **The Mac Pro boots 0.11.391 to the desktop** (`boot.md`'s row): the first
 write of the stick had not landed (this Mac could not mount its boot

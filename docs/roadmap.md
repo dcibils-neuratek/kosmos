@@ -10173,6 +10173,11 @@ the applications make the system useful, and is not pulled forward.
   Its CMake trials are linked against a stand-in for the image, so what it
   is told exists does.
 
+  **The gate's budget** (18.789; Diego, 13 November, "1"): a ported
+  library's suite runs only when what it stands on changed - the runtime,
+  the toolchain, its build script, kit and runner - fingerprinted from git
+  against its last pass; `LIBS=1` and `make prepush` run them all. Done.
+
   Next, **W5e**: Skia.
 
   **Follow-ups from W5d's curl** (18.787):

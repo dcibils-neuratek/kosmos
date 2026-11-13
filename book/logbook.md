@@ -2409,3 +2409,29 @@ now they are built only when something reads them.
 
 **Measurements.** 8 MB over HTTPS in 1.3 seconds inside the emulator.
 
+## 13 November 2026 - The library tests run when the libraries change
+
+**In short.** The test run was past Diego's ten-minute limit, mostly because
+of the big libraries the browser needs - OpenSSL, SQLite, curl and the rest.
+Their tests now run only when something they depend on has changed. The
+run is back to 9:32.
+
+**What.** Each library's test names what it depends on: the layer that
+lets ported code run in Kosmos, the compilers, its own build script and
+its own test. Before running, the test run takes a fingerprint of those
+files. If it matches the fingerprint from the last time that test passed,
+the test is skipped and named as skipped. Before any push, every test runs
+regardless.
+
+**Why.** Diego chose this out of three options (the others were a longer
+limit, or splitting the slow tests further). A library's own tests give
+the same answer until the library or what it sits on changes, and work on
+a window or a driver touches neither.
+
+**Visible impact.** None on screen. Development is quicker: a change to an
+application no longer waits behind four minutes of SQLite.
+
+**Measurements.** 10:47 with every library test, 9:32 with the eleven
+skipped. Those eleven are ten minutes of test time, but the run ends when
+its longest tests end, so the wall clock saved is 74 seconds.
+

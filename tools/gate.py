@@ -37,7 +37,7 @@ happens; the end says which were slowest, so the next thing to make faster
 is a number rather than an opinion. A failed suite's log is kept whole, and
 its last lines are printed with the path to the rest.
 
-Usage: gate.py [--jobs N] [--at-once N] [--arm] [--only NAME,...]
+Usage: gate.py [--jobs N] [--at-once N] [--arm] [--libs] [--only NAME,...]
 """
 
 import argparse
@@ -62,15 +62,95 @@ X86_TEST = "build/x86_64-test/kosmos.elf"
 
 
 class Suite:
-    def __init__(self, name, cmd, alone=False, x86=False):
+    def __init__(self, name, cmd, alone=False, x86=False, watch=None):
         self.name = name
         self.cmd = cmd
         self.alone = alone          # measures time: run on a quiet machine
         self.x86 = x86              # needs the x86-64 cross compiler
+        self.watch = watch          # a library's: run when one of these changed
         self.took = None
         self.code = None
         self.kept = None                # a failed log, where no run overwrites it
         self.log = os.path.join(LOGS, name + ".log")
+
+
+#
+# **A ported library's suite runs when what it stands on changed** (Diego,
+# 13 November 2026, choosing it for the gate's budget: the suites alone had
+# reached ten and a half minutes of ten cores). ICU, WTF, JavaScriptCore and
+# W5's libraries are each held to their own tests, and those answer the same
+# until the runtime under them, the toolchain, the library or its test
+# changes - none of which the kernel, a server or an application touches.
+#
+# So each names what it stands on, `RUNTIME` and its own, and the gate keeps
+# a fingerprint of those from the suite's last pass (`libraries.json`): the
+# same fingerprint, and the suite is not run, and says so. What it stands on
+# is read from git - the hash of every tracked file under those paths, and
+# the bytes of any changed or untracked one - with the compilers' versions.
+#
+# **What it does not see, on purpose**: the Makefile, which changes with
+# almost every commit, and the kernel and servers the guest runs on, which
+# every other suite holds. `make test LIBS=1` runs them all, naming one in
+# `ONLY=` runs it, and `make prepush` runs them all before every push.
+#
+RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",
+           "user/kits/kitenv.c", "user/kits/kitenv.h", "user/kits/storage",
+           "user/kits/network", "tools/run_screenshot.py", "tools/scratch.py",
+           "tools/llvm_vendor.py"]
+WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py"]
+W5 = ["tools/w5_build.py"]
+TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
+             ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"]]
+
+
+def library(*own):
+    return RUNTIME + list(own)
+
+
+SSL = library("tools/run_ssl.py", "user/kits/ssltest", *W5)
+
+
+def fingerprint(paths, root=ROOT, toolchain=TOOLCHAIN):
+    """What `paths` hold, as one hash: git's for every tracked file, and the
+    bytes of every one that differs from it or is not tracked."""
+    import hashlib
+
+    h = hashlib.sha256()
+    git = ["git", "-C", root]
+    h.update(subprocess.run(git + ["ls-files", "-s", "--"] + paths,
+                            capture_output=True, check=True).stdout)
+    changed = subprocess.run(git + ["status", "--porcelain", "-z",
+                                    "--untracked-files=all", "--"] + paths,
+                             capture_output=True, check=True).stdout
+
+    for entry in sorted(e for e in changed.split(b"\0") if len(e) > 3):
+        name = entry[3:].decode()
+        h.update(entry)
+
+        try:
+            with open(os.path.join(root, name), "rb") as f:
+                h.update(hashlib.sha256(f.read()).digest())
+        except OSError:
+            h.update(b"gone")
+
+    for cmd in toolchain:
+        h.update(_version(tuple(cmd)))
+
+    return h.hexdigest()
+
+
+_versions = {}
+
+
+def _version(cmd):
+    """What a compiler says it is, asked once a run."""
+    if cmd not in _versions:
+        try:
+            _versions[cmd] = subprocess.run(list(cmd), capture_output=True).stdout
+        except OSError:
+            _versions[cmd] = b"none: " + cmd[0].encode()
+
+    return _versions[cmd]
 
 
 SUITES = [
@@ -464,65 +544,81 @@ SUITES = [
     # image, normalising, collating, breaking words and formatting numbers
     # in several locales - held to what the same file says on this Mac
     # against the same ICU built natively.
-    Suite("arm-icu", ["python3", "tools/run_icu.py", ARM, "build/user-test/apps"]),
+    Suite("arm-icu", ["python3", "tools/run_icu.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_icu.py", "tools/icu_build.py", "user/kits/icutest")),
     Suite("x86-icu", ["python3", "tools/run_icu.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_icu.py", "tools/icu_build.py", "user/kits/icutest")),
 
     # **WTF** (`docs/w4.md` W4c): `wtftest.elf`, WebKit's foundation with
     # bmalloc, ICU and the C++ runtimes - its strings, a hash map, threads,
     # a thread stopped by Nebula and its registers read, the run loop with
     # a timer, a thread's own rounding and files through std::filesystem.
-    Suite("arm-wtf", ["python3", "tools/run_wtf.py", ARM, "build/user-test/apps"]),
+    Suite("arm-wtf", ["python3", "tools/run_wtf.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_wtf.py", "user/kits/wtftest", *WEBKIT)),
     Suite("x86-wtf", ["python3", "tools/run_wtf.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_wtf.py", "user/kits/wtftest", *WEBKIT)),
 
     # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
     # its interpreter, driven through its C API - a script using closures,
     # classes, generators, a Proxy, a regular expression, Intl, a BigInt,
     # the maths library, the collector and `async`, and a script that throws.
-    Suite("arm-jsc", ["python3", "tools/run_jsc.py", ARM, "build/user-test/apps"]),
+    Suite("arm-jsc", ["python3", "tools/run_jsc.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_jsc.py", "user/installed/JSC", *WEBKIT)),
     Suite("x86-jsc", ["python3", "tools/run_jsc.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_jsc.py", "user/installed/JSC", *WEBKIT)),
 
     # **W5a's pictures** (`docs/w5.md`): `picturetest.elf`, zlib, libpng,
     # libjpeg-turbo and libwebp given every test picture their releases
     # ship - decoded, encoded, broken files refused - held line for line to
     # the same file on this Mac against the same releases built natively.
     Suite("arm-pictures", ["python3", "tools/run_pictures.py", ARM,
-                           "build/user-test/apps"]),
+                           "build/user-test/apps"],
+          watch=library("tools/run_pictures.py", "user/kits/picturetest", *W5)),
     Suite("x86-pictures", ["python3", "tools/run_pictures.py", X86,
-                           "build/user-x86_64-test/apps"], x86=True),
+                           "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_pictures.py", "user/kits/picturetest", *W5)),
 
     # **W5b's text** (`docs/w5.md`): `texttest.elf`, HarfBuzz given its own
     # shaping suite - 7,761 cases, each held to the glyphs it expects, as
     # `run-tests.py` holds them - and FreeType every font that suite ships,
     # every line held to the same file on this Mac.
-    Suite("arm-text", ["python3", "tools/run_text.py", ARM, "build/user-test/apps"]),
+    Suite("arm-text", ["python3", "tools/run_text.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_text.py", "user/kits/texttest", *W5)),
     Suite("x86-text", ["python3", "tools/run_text.py", X86,
-                       "build/user-x86_64-test/apps"], x86=True),
+                       "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_text.py", "user/kits/texttest", *W5)),
 
     # **W5c's SQLite** (`docs/w5.md`): `sqltest.elf`, SQLite's own
     # `fuzzcheck` over its eight fuzz databases, `speedtest1 --verify` in
     # /Home with its hash held to this Mac's, the dotfile lock between two
     # connections, and rows written in one boot read in the next.
-    Suite("arm-sql", ["python3", "tools/run_sql.py", ARM, "build/user-test/apps"]),
+    Suite("arm-sql", ["python3", "tools/run_sql.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_sql.py", "user/kits/sqltest", *W5)),
     Suite("x86-sql", ["python3", "tools/run_sql.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_sql.py", "user/kits/sqltest", *W5)),
 
     # **W5c's libxml2 and libpsl** (`docs/w5.md`): libxml2's `runtest`
     # over its own test and result trees, every section's count held to
     # this Mac's; libpsl's five tests, every count held to this Mac's.
-    Suite("arm-xml", ["python3", "tools/run_xml.py", ARM, "build/user-test/apps"]),
+    Suite("arm-xml", ["python3", "tools/run_xml.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_xml.py", "user/kits/xmltest", *W5)),
     Suite("x86-xml", ["python3", "tools/run_xml.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_xml.py", "user/kits/xmltest", *W5)),
 
     # **W5d's curl** (`docs/w5.md`): its own program in the guest fetching
     # from HTTPS servers on this Mac - plain, gzip'd, chunked, redirected,
     # cookies held to the public suffix list, three certificates refused,
     # 8 MB - every command held to the same program built for this Mac.
-    Suite("arm-curl", ["python3", "tools/run_curl.py", ARM, "build/user-test/apps"]),
+    Suite("arm-curl", ["python3", "tools/run_curl.py", ARM, "build/user-test/apps"],
+          watch=library("tools/run_curl.py", "tools/run_tls.py", "user/kits/curltest", *W5)),
     Suite("x86-curl", ["python3", "tools/run_curl.py", X86,
-                       "build/user-x86_64-test/apps"], x86=True),
+                       "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_curl.py", "tools/run_tls.py", "user/kits/curltest", *W5)),
 
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
@@ -530,17 +626,23 @@ SUITES = [
     # that run side by side - the vectors, the two SLH-DSA files that are
     # most of the time, and the big numbers with TLS.
     Suite("arm-ssl-evp", ["env", "KOSMOS_SSL_PART=evp", "python3", "tools/run_ssl.py", ARM,
-                      "build/user-test/apps"]),
+                      "build/user-test/apps"],
+          watch=SSL),
     Suite("x86-ssl-evp", ["env", "KOSMOS_SSL_PART=evp", "python3", "tools/run_ssl.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=SSL),
     Suite("arm-ssl-slow", ["env", "KOSMOS_SSL_PART=slow", "python3", "tools/run_ssl.py", ARM,
-                      "build/user-test/apps"]),
+                      "build/user-test/apps"],
+          watch=SSL),
     Suite("x86-ssl-slow", ["env", "KOSMOS_SSL_PART=slow", "python3", "tools/run_ssl.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=SSL),
     Suite("arm-ssl", ["env", "KOSMOS_SSL_PART=ssl", "python3", "tools/run_ssl.py", ARM,
-                      "build/user-test/apps"]),
+                      "build/user-test/apps"],
+          watch=SSL),
     Suite("x86-ssl", ["env", "KOSMOS_SSL_PART=ssl", "python3", "tools/run_ssl.py", X86,
-                      "build/user-x86_64-test/apps"], x86=True),
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=SSL),
 
     # **The same, with TinyCC's image** (`docs/tinycc.md`, C1): the loader's
     # test kit compiled and linked by TinyCC against the lean userland, in
@@ -1030,7 +1132,18 @@ def main():
                         help="run the AArch64 suites too (held back for now)")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
+    parser.add_argument("--libs", action="store_true",
+                        help="run the libraries' suites even if nothing they stand on changed")
     args = parser.parse_args()
+
+    # A path a library's suite watches that is not there watches nothing.
+    gone = sorted(set(p for s in SUITES for p in (s.watch or [])
+                      if not os.path.exists(os.path.join(ROOT, p))))
+
+    if gone:
+        print("FAIL: a library's suite watches what is not there: %s - "
+              "correct its watch in tools/gate.py" % ", ".join(gone), flush=True)
+        return 1
 
     unrun = uncovered_display_phases()
 
@@ -1087,6 +1200,27 @@ def main():
         print("SKIP: every x86-64 suite, because x86_64-elf-gcc is not "
               "installed.", flush=True)
         chosen = [s for s in chosen if not s.x86]
+
+    # **A library's suite, only when what it stands on changed** (`RUNTIME`
+    # above): the same fingerprint as at its last pass, and it is not run.
+    marks_file = os.path.join(LOGS, "libraries.json")
+
+    try:
+        with open(marks_file) as f:
+            marks = json.load(f)
+    except (OSError, ValueError):
+        marks = {}
+
+    prints = {s.name: fingerprint(s.watch) for s in chosen if s.watch}
+
+    if not args.libs and not args.only:
+        same = [s.name for s in chosen if s.watch and marks.get(s.name) == prints[s.name]]
+        chosen = [s for s in chosen if s.name not in same]
+
+        if same:
+            print("SKIP: %d library suites, nothing they stand on changed since "
+                  "each passed: %s; LIBS=1 runs them." % (len(same), ", ".join(same)),
+                  flush=True)
 
     # 1. The images, before any suite starts.
     images = os.path.join(LOGS, "images.log")
@@ -1157,6 +1291,13 @@ def main():
 
     with open(times_file, "w") as f:
         json.dump(last, f, indent=1, sort_keys=True)
+
+    # And each library's suite that passed, with what it stood on as it started.
+    marks.update({s.name: prints[s.name] for s in chosen
+                  if s.name in prints and s.code == 0})
+
+    with open(marks_file, "w") as f:
+        json.dump(marks, f, indent=1, sort_keys=True)
 
     print()
     print("slowest: " + ", ".join("%s %.0fs" % (s.name, s.took) for s in

@@ -5629,6 +5629,8 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# And a failed suite's log kept where the next gate cannot overwrite it,
 	@# with why it failed printed from wherever in the log that is.
 	python3 tools/test_gatelogs.py
+	@# And a library's suite skipped only while nothing it stands on changed.
+	python3 tools/test_gatelibs.py
 	@# And the resampler sys.pcm and the Playback Kit share.
 	$(HOSTDIR)/test_pcmconvert
 	@# And the Playback Kit's core: WAV, MP3 and AAC into a stream's ring.
@@ -5709,8 +5711,11 @@ gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 # suite is there and how long it took. `J=` sets how many at once.
 # `make test ONLY=arm-browser-1,x86-browser-1`: the suites for what changed,
 # by name (CLAUDE.md, "Test what changed"); with no ONLY, all of them.
+# A ported library's suite runs only when what it stands on changed since
+# it last passed (`tools/gate.py`, `RUNTIME`); `LIBS=1` runs every one, as
+# `make prepush` does.
 test:
-	@python3 tools/gate.py --jobs $(J) $(if $(filter 1,$(ARM)),--arm,) $(if $(ONLY),--only $(ONLY),)
+	@python3 tools/gate.py --jobs $(J) $(if $(filter 1,$(ARM)),--arm,) $(if $(filter 1,$(LIBS)),--libs,) $(if $(ONLY),--only $(ONLY),)
 
 # Used for a while, then asked whether it gave everything back.
 #
@@ -5874,7 +5879,7 @@ mega:
 # across `J` jobs. `make J=4 prepush` for a quieter machine.
 #
 prepush:
-	@$(MAKE) --no-print-directory -j$(J) test
+	@$(MAKE) --no-print-directory -j$(J) LIBS=1 test
 	@$(MAKE) --no-print-directory -j$(J) mega
 	@$(MAKE) --no-print-directory -j$(J) shot
 	@echo

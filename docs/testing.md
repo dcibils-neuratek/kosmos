@@ -32575,3 +32575,41 @@ opens its terminal, as on any serial line. A race in the test.
 **The fix**: wait for `shell1:~# ` in the Console tab before typing - 19
 checks, passing. **Control**, `KOSMOS_SBW_EARLY=1`: Restart, then type at
 once while Alpine boots again; the check for 42 fails, as it must.
+
+## 18.789 A ported library's suite, only when what it stands on changed
+
+**Diego, 13 November 2026**, of three answers to a gate whose suites alone
+had reached ten and a half minutes of ten cores: "1".
+
+**What a library's suite stands on**, named beside it in `tools/gate.py`:
+`RUNTIME` - `runtime/`, `user/include`, `user/init`, `user/user.ld`, the
+kit environment, the Storage and Network Kits, the harness, `scratch.py`,
+`llvm_vendor.py` - and its own build script, kit and runner. With the
+compilers' versions, that is fingerprinted from git: the index's hash of
+every tracked file, and the bytes of every changed or untracked one. A
+suite whose fingerprint is the one it last passed with
+(`build/gate/libraries.json`) is not run, and the gate names it. 1.3 s
+for all 22.
+
+Left out on purpose: the Makefile, which changes with nearly every commit,
+and the kernel and servers under the guest, which every other suite holds.
+So `make prepush` runs them all (`LIBS=1`), and `ONLY=` runs one named.
+
+**`tools/test_gatelibs.py`**, in `host`: in a repository of its own, the
+fingerprint must change for an edit, a stage, a commit, a file added and
+one removed under what is watched, not for a file outside it, and every
+library suite must watch the runtime. **Control**,
+`KOSMOS_GATELIBS_BREAK=1`, the index alone: three checks fail - the
+uncommitted edit, the added file, the removed one.
+
+| 0.11.394 | gate | suites |
+|---|---|---|
+| first, every library suite run, marks kept | 10:47 (647 s) | 123 |
+| again, 11 skipped (593 of their own seconds) | 9:32 (573 s) | 112 |
+
+**Why 593 seconds of suites bought 74 of the gate.** Ten slots, the
+longest first: once `x86-sql`'s 247 s and `x86-ssl-slow`'s 146 s are gone,
+what decides the end is the longest suites left - `x86-cafesa3d-2` 277 s,
+`arm-sandbox-linuxsetup` 253 s, `host-llm` 230 s - and the rest packing
+round them. The gate is under ten minutes again, with Skia's suites still
+to come into the same rule.

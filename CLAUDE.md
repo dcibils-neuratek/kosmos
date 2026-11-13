@@ -988,6 +988,16 @@ already does. And a suite is kept short: split in halves that run side by
 side (the browser's on 1 October, Cafesa3D's after), waiting for the thing
 rather than for a number of seconds.
 
+**A ported library's suite runs when what it stands on changed.** Diego,
+13 November 2026, choosing it when the suites alone had reached ten and a
+half minutes of ten cores. ICU, WTF, JavaScriptCore and every W5 library
+are held to their own tests, and those answer the same until the runtime,
+the toolchain, the library or its test changes. So each suite in
+`tools/gate.py` names what it stands on (`RUNTIME` and its own), the gate
+keeps a fingerprint of that from its last pass, and an unchanged one is
+skipped with its name printed. `make test LIBS=1` runs them all, naming one
+in `ONLY=` runs it, and `make prepush` runs them all before every push.
+
 **x86-64 only, for now.** Diego, 8 October 2026: "from now on lets do tests
 on x86 only and leave arm for a later period. i will tell you when to resume
 arm tests" - and "we need to be clever about what to test and the platforms
