@@ -414,6 +414,28 @@ def curl_extra(arch, src, top, prefix):
             says)
 
 
+def harfbuzz_icu(arch):
+    """**HarfBuzz's ICU library, `harfbuzz-icu`** (`docs/w6.md` W6b):
+    `hb-icu.cc`, which WebCore's text calls to turn ICU's script codes into
+    HarfBuzz's (`hb_icu_script_to_script`), against the ICU WebKit links
+    (`tools/icu_build.py`). It is a library of its own: HarfBuzz's core
+    takes ICU's Unicode functions only with `HAVE_ICU_BUILTIN`, which is
+    not set, so what `x86-text` holds is unchanged - and this Mac's
+    reference, which tests only the core, is built without it."""
+    icu = os.path.join(ROOT, "build", "icu", arch)
+    if not os.path.exists(os.path.join(icu, "libicuuc.a")):
+        sys.exit("w5_build: HarfBuzz's ICU library needs ICU for %s first "
+                 "(tools/icu_build.py %s)" % (arch, arch))
+    # HarfBuzz names ICU by its archive's path, not by CMake's target, so
+    # nothing gives `hb-icu.cc` ICU's headers: the toolchain's place for a
+    # port's own flags does (`runtime/cxx/kosmos.cmake`).
+    return ["-DHB_HAVE_ICU=ON", "-DICU_ROOT=" + icu,
+            "-DKOSMOS_CXX_FLAGS=-isystem " + os.path.join(icu, "include"),
+            "-DICU_INCLUDE_DIR=" + os.path.join(icu, "include"),
+            "-DICU_UC_LIBRARY_RELEASE=" + os.path.join(icu, "libicuuc.a"),
+            "-DICU_DATA_LIBRARY_RELEASE=" + os.path.join(icu, "libicudata.a")]
+
+
 def curl_program(arch, out, prefix):
     """curl's program: on this Mac, linked whole by its CMake; for Kosmos,
     the objects CMake compiles for it - its flags, its `curl_config.h` -
@@ -472,12 +494,16 @@ def main():
             continue
         src = source(name)
         extra, says = curl_extra(arch, src, top, prefix) if name == "curl" else ([], "")
+        if name == "harfbuzz" and not is_host(arch):
+            extra = harfbuzz_icu(arch)
         configure(arch, name, src, out, prefix, extra, says)
         # The libraries only, then CMake's install of what was built: a
         # library's `all` links programs too - libjpeg-turbo's
         # `simdcoverage` - and a program for Kosmos is linked by the
         # Makefile, against the image's own objects, never by CMake.
         targets = TARGETS[name] + (curl_program(arch, out, prefix) if name == "curl" else [])
+        if name == "harfbuzz" and not is_host(arch):
+            targets = targets + ["harfbuzz-icu"]
         r = subprocess.run(["ninja", "-C", out] + targets,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         if r.returncode == 0 and name == "curl" and not is_host(arch):

@@ -3634,6 +3634,7 @@ W5_LIBS := $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/lib
 W5_TEXT_LIBS := $(W5_DIR)/lib/libharfbuzz.a $(W5_DIR)/lib/libfreetype.a
 
 build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.cmake $(CXXRT)/.built \
+                         $(ICU_DIR)/.built \
                          runtime/cxx/openssl-kosmos.conf \
                          $(wildcard runtime/include/*.h runtime/include/sys/*.h \
                                     runtime/posix/include/*.h runtime/posix/include/*/*.h \

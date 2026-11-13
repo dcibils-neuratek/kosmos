@@ -32715,3 +32715,21 @@ W6a reaches the LLM engine. Two divergences, both under a full gate, say
 something in the engine or the test is not deterministic when the
 machine is busy - which `make stress`'s premise says must still be true.
 On the roadmap as its own item.
+
+## 18.792 HarfBuzz's ICU library
+
+**W6b's first piece** (`docs/w5.md` W5b, `docs/w6.md`). WebCore's Skia
+text path calls `hb_icu_script_to_script` (`hb-icu.h`), so HarfBuzz is
+built for Kosmos with `HB_HAVE_ICU` and installs `libharfbuzz-icu.a`
+beside `libharfbuzz.a`, against `build/icu/<arch>`. ICU's headers reach
+`hb-icu.cc` through the toolchain's `KOSMOS_CXX_FLAGS`: HarfBuzz names
+ICU's archive by its path, which carries no include directory.
+
+**The core changed by 40 bytes**: with ICU, HarfBuzz's CMake raises the
+whole library from C++11 to C++17. `x86-text` - 7,761 shaping cases from
+288 files, and 545 fonts - holds it to this Mac's C++11 build, which is
+made without ICU, and every case answers the same; `x86-skia` too.
+
+| 0.11.397 | |
+|---|---|
+| `x86-text`, `x86-skia` | pass, 2:41 for both |
