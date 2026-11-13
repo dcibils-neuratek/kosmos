@@ -232,6 +232,43 @@ def checkout(name, url, commit, sparse=None):
 # a test added here should not build WebKit again. W6b's is the Ahem font
 # LayoutTests are written in, whose every glyph is a square of one em;
 # W6c's LayoutTests join it.
+# W6c's: LayoutTests with text, set in Ahem - every test at the commit whose
+# render tree is one file for every port (no port overrides it), whose page
+# names Ahem by family, and which needs nothing a page would load or run:
+# no script, no picture, no style sheet or font from a file, no form
+# control. Ahem's glyphs are squares of the em, so these trees measure the
+# same on every port. Their pictures are not compared: a glyph's pixels are
+# the font engine's. Left out: `fast/text/emphasis-overlap.html`, which has
+# one space in the default font - a serif with Times's metrics on every
+# port's test fonts, which Kosmos's folder does not have.
+WEBKIT_TEXT_TESTS = [
+    "fast/ruby/floating-ruby-text.html",
+    "fast/ruby/overhang-horizontal.html",
+    "fast/ruby/overhang-horizontal-no-overlap1.html",
+    "fast/ruby/overhang-horizontal-no-overlap2.html",
+    "fast/ruby/overhang-vertical.html",
+    "fast/ruby/overhang-vertical-mixed.html",
+    "fast/ruby/overhang-vertical-no-overlap1.html",
+    "fast/ruby/overhang-vertical-no-overlap2.html",
+    "fast/ruby/overhang-vertical-no-overlap2-mixed.html",
+    "fast/ruby/position-after.html",
+    "fast/ruby/positioned-ruby-text.html",
+    "fast/table/overflow-table-collapsed-borders-cell-painting.html",
+    "fast/table/overflow-table-collapsed-borders-cell-painting-table-self-painting-layer.html",
+    "fast/table/overflow-table-collapsed-borders-section-layer-painting.html",
+    "fast/table/overflow-table-collapsed-borders-section-layer-table-self-painting-layer.html",
+    "fast/table/overflow-table-collapsed-borders-section-self-painting-layer-painting.html",
+    "fast/table/overflow-table-collapsed-borders-section-self-painting-layer-table-self-painting-layer.html",
+    "fast/text/apply-start-width-after-skipped-text.html",
+    "fast/text/bidi-embedding-pop-and-push-same-2.html",
+    "fast/text/bidi-explicit-embedding-past-end.html",
+    "fast/text/emphasis-avoid-ruby-001.html",
+    "fast/text/justify-padding-distribution.html",
+    "fast/text/soft-hyphen-2.html",
+    "fast/text/soft-hyphen-3.html",
+    "fast/text/whitespace/017.html",
+]
+
 WEBKIT_TESTS = {
     "url": WEBKIT_OVERLAY["url"],
     "commit": WEBKIT_OVERLAY["commit"],
@@ -253,6 +290,9 @@ WEBKIT_TESTS = {
         % name
         for name in ("004a", "004b", "004c", "004d", "004e", "004f",
                      "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")
+    ] + [
+        "/LayoutTests/" + t.rsplit(".", 1)[0] + ext
+        for t in WEBKIT_TEXT_TESTS for ext in ("." + t.rsplit(".", 1)[1], "-expected.txt")
     ],
 }
 

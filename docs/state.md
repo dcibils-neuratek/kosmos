@@ -2,9 +2,22 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-13 (0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 13 November: JetSki W6c, text in Ahem (0.11.400, not pushed)
+
+`x86-webcore` holds 39 LayoutTests' trees (25 with text in Ahem,
+`upstream.WEBKIT_TEXT_TESTS`) and 14 pictures (`testing.md` 18.795).
+Patch 0020 matches font families without case (`kosmosFontFamily` in
+`FontFolderKosmos`); the harness disables hinting, uses mock scroll bars
+and decodes pages with `TextResourceDecoder`, as WebKitTestRunner does.
+Controls `=page`, `=picture`, `=text`.
+
+**Next**: generic font families (`serif`, `sans-serif`, `monospace`, the
+default) to name Kosmos's fonts - today they name nothing, so unstyled
+text measures zero. Then W6d.
 
 ## 13 November: JetSki W6c, WebCore paints a page (0.11.399, not pushed)
 

@@ -20,12 +20,17 @@ of 800 by 600, saved by `gfx.encode_png`, brought back off the disk to
 GTK's expected picture of the same test - the same Skia draws both, and
 with no text in them nothing a font engine decides can differ.
 
+And W6c's text: the LayoutTests whose page is set in Ahem and needs nothing
+loaded (`upstream.WEBKIT_TEXT_TESTS`), held to their trees as text - their
+pictures are the font engine's, so only the fourteen above are compared.
+
 Usage: run_webcore.py IMAGE [APPS]
 
 The controls: `KOSMOS_WEBCORE_BREAK=page` moves one box of one page by a
 pixel before the guest is given it, and that page's tree must disagree;
 `=picture` changes one pixel of the first expected picture, and that
-picture must.
+picture must; `=text` sets one text test's Ahem a pixel larger, and its
+tree must.
 """
 
 import os
@@ -51,12 +56,25 @@ FOLDER = os.path.join(WORK, "webcore")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
-SUITE = "LayoutTests/css2.1/20110323"
-TESTS = ["abspos-containing-block-initial-" + n
-         for n in ("004a", "004b", "004c", "004d", "004e", "004f",
-                   "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")]
+SUITE = "css2.1/20110323"
+# Each test as its path under LayoutTests: the fourteen boxes held to trees
+# and pictures, and the tests with text in Ahem held to trees.
+PICTURED = [SUITE + "/abspos-containing-block-initial-%s.htm" % n
+            for n in ("004a", "004b", "004c", "004d", "004e", "004f",
+                      "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")]
+TESTS = PICTURED + upstream.WEBKIT_TEXT_TESTS
 FONTS = ["IBMPlexSans-Regular.ttf", "IBMPlexSerif-Regular.ttf", "IBMPlexMono-Regular.ttf"]
 BROKEN = TESTS[0]
+BROKEN_TEXT = "fast/text/soft-hyphen-3.html"
+
+
+def page_of(t):
+    """The name a test's page has in the guest's folder: its file's."""
+    return t.rsplit("/", 1)[1]
+
+
+def stem(t):
+    return t.rsplit(".", 1)[0]
 
 PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- W6b's WebCore test (`tools/run_webcore.py`).
@@ -77,7 +95,7 @@ for _, page in ipairs(pages) do
   print(ok and ("saved " .. page) or ("unsaved " .. page .. ": " .. tostring(why)))
 end
 print("webcoretest: done")
-""" % ", ".join('"%s.htm"' % t for t in TESTS)
+""" % ", ".join('"%s"' % page_of(t) for t in TESTS)
 
 
 def gather(broken):
@@ -92,16 +110,21 @@ def gather(broken):
     shutil.copyfile(os.path.join(tests, "LayoutTests", "resources", "Ahem.ttf"),
                     os.path.join(FOLDER, "fonts", "Ahem.ttf"))
     expected = {}
+    assert len({page_of(t) for t in TESTS}) == len(TESTS), "two tests share a file name"
     for t in TESTS:
-        page = open(os.path.join(tests, SUITE, t + ".htm")).read()
+        page = open(os.path.join(tests, "LayoutTests", t)).read()
         if broken == "page" and t == BROKEN:
             # The control: the root box a pixel to the right.
             assert "left:100px" in page
             page = page.replace("left:100px", "left:101px", 1)
-        with open(os.path.join(FOLDER, "pages", t + ".htm"), "w") as f:
+        if broken == "text" and t == BROKEN_TEXT:
+            # The control for text: Ahem a pixel larger, every glyph wider.
+            assert "font-size: 25px" in page
+            page = page.replace("font-size: 25px", "font-size: 26px", 1)
+        with open(os.path.join(FOLDER, "pages", page_of(t)), "w") as f:
             f.write(page)
-        lines = open(os.path.join(tests, SUITE, t + "-expected.txt")).read().rstrip("\n")
-        expected[t + ".htm"] = [ln.rstrip() for ln in lines.split("\n")]
+        lines = open(os.path.join(tests, "LayoutTests", stem(t) + "-expected.txt")).read().rstrip("\n")
+        expected[page_of(t)] = [ln.rstrip() for ln in lines.split("\n")]
     return expected
 
 
@@ -126,14 +149,13 @@ def pictures_disagree(pictures, broken):
     control `picture` changes one pixel of the first expected picture."""
     tests = upstream.webkit_tests()
     failed = []
-    for t in TESTS:
-        mine = os.path.join(pictures, t + ".htm.png")
+    for t in PICTURED:
+        mine = os.path.join(pictures, page_of(t) + ".png")
         if not os.path.exists(mine):
             print("FAIL %s: no picture" % t)
             failed.append(t)
             continue
-        theirs = os.path.join(tests, "LayoutTests", "platform", "gtk", SUITE[len("LayoutTests/"):],
-                              t + "-expected.png")
+        theirs = os.path.join(tests, "LayoutTests", "platform", "gtk", stem(t) + "-expected.png")
         w, h, have = pngread.pixels(mine)
         ew, eh, want = pngread.pixels(theirs)
         if broken == "picture" and t == BROKEN:
@@ -251,12 +273,13 @@ def main():
         return 1
     if picture_failed:
         print("FAIL: %d of %d LayoutTests painted as GTK's port paints them: %s"
-              % (len(expected) - len(picture_failed), len(expected), ", ".join(picture_failed)))
+              % (len(PICTURED) - len(picture_failed), len(PICTURED), ", ".join(picture_failed)))
         return 1
 
-    print("PASS: WebCore laid out %d of CSS 2.1's LayoutTests on Kosmos, every render tree "
-          "as WebKit expects on every port, and painted every one through Skia pixel for "
-          "pixel as GTK's port does, in %.1f s" % (len(expected), took))
+    print("PASS: WebCore laid out %d of WebKit's LayoutTests on Kosmos, %d of them with text "
+          "in Ahem, every render tree as WebKit expects on every port, and painted the %d "
+          "without text through Skia pixel for pixel as GTK's port does, in %.1f s"
+          % (len(expected), len(expected) - len(PICTURED), len(PICTURED), took))
     return 0
 
 

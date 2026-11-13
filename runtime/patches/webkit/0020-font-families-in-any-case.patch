@@ -1,0 +1,29 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Font families in any case (docs/w6.md W6c). CSS names a font family
+without regard to case, and WebKit's cache of the fonts a family found is
+keyed the same way: "ahem" and "Ahem" are one entry. Fontconfig matches
+without regard to case too, so the other ports never notice; Skia's
+manager for a folder compares the name as it is spelled. Asked first for
+"ahem", it found nothing, and the cache kept that nothing for "Ahem" at the
+same size and style for the rest of the process. So the name is first
+spelled as the folder spells it (kosmosFontFamily, FontFolderKosmos.h, a
+port file).
+
+--- a/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp	2026-11-13 17:50:01.587055086 -0300
++++ b/Source/WebCore/platform/graphics/skia/FontCacheSkia.cpp	2026-11-13 17:50:01.602249925 -0300
+@@ -419,7 +419,14 @@
+         return nullptr;
+     auto familyName = getFamilyNameStringFromFamily(family);
+     auto skFontStyle = skiaFontStyle(fontDescription);
++#if OS(KOSMOS)
++    // A folder's manager compares names as they are spelled, and CSS - and
++    // WebKit's cache of what a family found - ignores their case, as
++    // Fontconfig does for the other ports.
++    auto typeface = fontManager().matchFamilyStyle(kosmosFontFamily(fontManager(), familyName.utf8().data()).c_str(), skFontStyle);
++#else
+     auto typeface = fontManager().matchFamilyStyle(familyName.utf8().data(), skFontStyle);
++#endif
+     if (!typeface)
+         return nullptr;
+ 

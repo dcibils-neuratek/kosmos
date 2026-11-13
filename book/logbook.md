@@ -2604,3 +2604,38 @@ window (W7).
 
 **Measurements.** The suite takes about 9 seconds; 14 of 14 trees and
 14 of 14 pictures match.
+
+## 13 November 2026 - WebCore lays out text on Kosmos
+
+**In short.** The browser engine now lays out pages with words in them,
+not only boxes. Twenty-five more of WebKit's tests, with text, are laid
+out on Kosmos exactly as WebKit expects. Getting there found a bug that
+made some pages lose all their text depending on what was opened before
+them.
+
+**What.** These tests use Ahem, a font WebKit made for testing, whose
+every letter is a plain square. That makes text measure the same on
+every system, so the layout can be compared exactly. Kosmos now passes
+all 39 tests in the set: the fourteen from before and twenty-five with
+text, in ruby (the small annotations above Japanese text), tables,
+right-to-left text, soft hyphens and white space.
+
+**The bug.** Most of the new pages first came out with no text at all,
+and which ones changed with the order they ran in. The cause was a font
+name in lowercase. CSS treats "ahem" and "Ahem" as the same font, and so
+does WebKit's memory of which fonts it has looked up. Kosmos's font
+folder did not, so a page asking for "ahem" found nothing, and WebKit
+remembered that nothing for every later page asking for "Ahem". Font
+names are now matched regardless of case, as Linux's font system does.
+
+**Three smaller things** were about running tests the way WebKit's own
+test runner does: letters measured in whole pixels, scroll bars of a
+fixed size, and a page's bytes read the way a browser reads them.
+
+**Visible impact.** Still none on the desktop. One thing is now known to
+be missing for real pages: text that names no font, which is most text
+on the web, has no font on Kosmos yet. That is the next step.
+
+**Measurements.** 39 of 39 layouts and 14 of 14 pictures match; the
+suite runs in about 22 seconds in the guest.
+

@@ -10220,8 +10220,16 @@ the applications make the system useful, and is not pulled forward.
   - *W6c*: painting into a region through Skia; the LayoutTests subset.
     *Painting done, 0.11.399* (`testing.md` 18.794): each page painted
     into a Kosmos surface and held pixel for pixel to GTK's expected
-    picture, all fourteen identical. Left: the subset widened to pages
-    with text, in Ahem.
+    picture, all fourteen identical. *Text done, 0.11.400* (18.795):
+    25 more LayoutTests with text in Ahem, every tree as expected; font
+    families matched without case (patch 0020), and the harness runs
+    tests as WebKitTestRunner does (no hinting, mock scroll bars,
+    WebCore's decoder).
+  - *Generic font families on Kosmos*: `serif`, `sans-serif`,
+    `monospace` (and the default font) name nothing in a folder of
+    fonts, so such text has no font and measures nothing - every page
+    that does not name a font. They are to name Kosmos's own fonts;
+    next, before W6d.
   - *W6d*: scripts and timers to quiescence, a loader for the recorded
     sites; their render trees and times kept.
 
@@ -10241,6 +10249,9 @@ the applications make the system useful, and is not pulled forward.
     resumes, WebKit's AArch64 build takes WebCore and the image returns.
   - *The clipboard*: the pasteboard as the window manager's clipboard,
     copy and paste in a page (W7).
+  - *x86-64 objects in ARM's `build/test/`*: the gate's images failed on
+    an x86-64 `hal/fwcfg/fbpixels.c.o` there (13 November, 18.795), with
+    other x86-64 objects beside it. Find which target writes them.
   - *One PNG reader for the tools*: `tools/pngread.py` (W6c) reads a PNG's
     pixels; `tools/lineicons.py` and `tools/run_cafesa3d.py` decode their
     own and should use it.

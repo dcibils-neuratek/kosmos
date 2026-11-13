@@ -27,11 +27,13 @@
 #include <WebCore/Document.h>
 /* After a header that defines WEBCORE_EXPORT, which it uses and does not. */
 #include <WebCore/BlobRegistry.h>
+#include <WebCore/DeprecatedGlobalSettings.h>
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/DocumentView.h>
 #include <WebCore/DocumentWriter.h>
 #include <WebCore/EmptyClients.h>
 #include <WebCore/FontFolderKosmos.h>
+#include <WebCore/FontRenderOptions.h>
 #include <WebCore/FrameLoader.h>
 #include <WebCore/GraphicsContextSkia.h>
 #include <WebCore/LocalFrame.h>
@@ -47,6 +49,7 @@
 #include <WebCore/RenderTreeAsText.h>
 #include <WebCore/ResourceError.h>
 #include <WebCore/Settings.h>
+#include <WebCore/TextResourceDecoder.h>
 #include <pal/SessionID.h>
 #include <wtf/FileSystem.h>
 #include <wtf/MainThread.h>
@@ -94,7 +97,10 @@ static RefPtr<Page> pageFrom(const String& folder, const String& name, IntSize s
     auto& writer = loader->writer();
     writer.setMIMEType("text/html"_s);
     writer.begin();
-    writer.insertDataSynchronously(String::fromUTF8(bytes->span()));
+    // The bytes through WebCore's own decoder, as a loaded page's go: a
+    // byte-order mark is not text, and a page may name its encoding.
+    Ref decoder = TextResourceDecoder::create("text/html"_s, PAL::UTF8Encoding());
+    writer.insertDataSynchronously(decoder->decodeAndFlush(bytes->span()));
     writer.end();
 
     RefPtr document = frame->document();
@@ -223,6 +229,14 @@ static void start(const char* folder, webcoretest_say_fn fn, void* ctx)
         static NeverDestroyed<Strategies> strategies;
         setPlatformStrategies(&strategies.get());
         ProcessCapabilities::setCanUseAcceleratedBuffers(false);
+        // As WebKitTestRunner's web process does for GTK's and WPE's
+        // tests: no hinting and no subpixel positioning, so every advance
+        // is a whole pixel and a tree reads as their expected text.
+        FontRenderOptions::singleton().disableHintingForTesting();
+        // And scroll bars of a fixed fifteen pixels, the same on every
+        // port, as run-webkit-tests asks for: a page wider than the view
+        // keeps them out of its height.
+        DeprecatedGlobalSettings::setMockScrollbarsEnabled(true);
         return true;
     }();
     (void)started;

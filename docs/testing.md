@@ -32808,3 +32808,44 @@ first expected picture and the suite fails on it -
 Only the harness and its suite changed (`webcoretest`, `run_webcore.py`,
 `pngread.py`, `upstream.py`'s list of fetched tests), so the suite ran
 alone, as *Test what changed* asks.
+
+## 18.795 WebCore lays out text in Ahem
+
+**W6c** (`docs/w6.md`). `x86-webcore` gains 25 LayoutTests with text set
+in Ahem (`upstream.WEBKIT_TEXT_TESTS`): every test at the commit whose
+render tree is one generic file, whose page names Ahem, and which needs
+nothing loaded or run - ruby, tables with collapsed borders, bidi, soft
+hyphens, white space. 26 were found; `fast/text/emphasis-overlap.html`
+is left out for a space in the default font. **39 of 39 trees match**,
+and the fourteen pictures still match GTK's pixel for pixel.
+
+**What the first run found**: 14 of 40. Twenty-two pages measured their
+text as nothing, and which ones moved with the order of the pages. A
+probe in the harness found the page's font had no units per em and an
+empty family name - Skia's empty typeface - while Skia, asked directly,
+had Ahem; clearing WebCore's font caches made it findable again. A trace
+in `createFontPlatformData`, in the build tree only, said why:
+`'ahem' -> null`. The folder's manager compares family names as spelled,
+WebCore's cache of what a family found ignores case, and one page's
+`ahem` kept a miss for every later `Ahem` at its size. Patch 0020 spells
+the name as the folder does. The rest:
+
+| found | why | now |
+|---|---|---|
+| a run a pixel too wide at 16, 25 and 26 px, exact at 20, 24 and 50 | FreeType's 16.16 scale, 25.0001 at 25 px; the test runner rounds advances (`disableHintingForTesting`) and the harness did not | the harness does |
+| ruby pages 600 high, not 585 | overlay scroll bars take no room; `run-webkit-tests` uses mock ones of 15 px | `setMockScrollbarsEnabled(true)` |
+| a page beginning with U+FEFF as text | the harness decoded the file itself | `TextResourceDecoder` |
+
+**Controls**: `=page` fails `004a` (38 of 39), `=picture` fails `004a`'s
+picture (13 of 14), and the new `=text` - `soft-hyphen-3`'s Ahem at
+26 px - fails that tree (38 of 39).
+
+| 0.11.400 | |
+|---|---|
+| WebKit x86-64 with patch 0020 | 7,827 steps, all of them: a changed patch copies the source again |
+| `x86-webcore` | pass, 39 trees and 14 pictures, about 22 s in the guest |
+
+**Found on the way, not yet understood**: the gate's images failed once
+on an x86-64 `fbpixels.c.o` in ARM's `build/test/`, beside other x86-64
+objects there from earlier days. Removed; on the roadmap.
+
