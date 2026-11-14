@@ -40,6 +40,14 @@ encoded, to the server - each of which a site's robot check reads, and each
 of which was empty here until Google's search answered every query with
 one.
 
+**And it plays a film** (`docs/media.md` M2): the second page has a
+`<video>`, fixed where the wheel cannot move it, playing six seconds of
+one colour that this Mac's FFmpeg makes at the start as VP9 in WebM. The
+page reports to the server once it has played a second - its size, and
+whether VP9 in WebM is "probably" playable - and the colour must be in the
+window, near rather than exact after YUV. `KOSMOS_JETSKI_BREAK=no-film`
+serves the film as a 404.
+
 `KOSMOS_JETSKI_BREAK=foreign-cookie` has the server set its cookie for
 another site and the script set none, which a browser must refuse, so the
 second page arrives without them.
@@ -89,6 +97,13 @@ SERVER_COOKIE = "jetski=from-the-server"
 SCRIPT_COOKIE = "script=from-the-page"
 COOKIE_FILE = "/Home/Settings/JetSki/cookies.db"
 
+# The film the second page plays: a colour of its own, made at the start
+# by this Mac's FFmpeg as VP9 in WebM - YouTube's - so no site's bytes are
+# in the tree. Through YUV and back a colour comes back near, not exact.
+FILM_COLOUR = (0xc0, 0x30, 0x70)
+FILM_SIZE = (320, 180)
+FILM = None
+
 # What a page sees of the browser: the system it names, its window, and a
 # canvas it can read back - each of which a robot check asks.
 PLATFORM = "Kosmos x86_64" if "x86_64" in IMAGE else "Kosmos aarch64"
@@ -131,13 +146,27 @@ OTHER = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>%s</title>
 <style>
 body { margin: 0; height: 6000px; background: #fff; }
+#film { position: fixed; top: 200px; left: 40px; width: 320px; height: 180px; }
 #field { position: fixed; top: 120px; left: 40px; width: 320px; height: 44px;
          border: 0; padding: 0; outline: none; color: #fff;
          background: rgb(%d, %d, %d); font-size: 20px; }
 </style></head>
 <body>
 <input id="field">
+<video id="film" src="/film.webm" autoplay muted></video>
 <script>
+var film = document.getElementById("film"), told = false;
+function tell(what) {
+  if (told) return;
+  told = true;
+  new Image().src = "/film-report?" + new URLSearchParams(what);
+}
+film.addEventListener("timeupdate", function () {
+  if (film.currentTime >= 1)
+    tell({ time: film.currentTime, size: film.videoWidth + "x" + film.videoHeight,
+           webm: document.createElement("video").canPlayType('video/webm; codecs="vp9"') });
+});
+film.addEventListener("error", function () { tell({ error: film.error ? film.error.code : "?" }); });
 var field = document.getElementById("field");
 window.addEventListener("scroll", function () {
   if (window.scrollY > 0) document.title = "scrolled " + window.scrollY;
@@ -152,10 +181,25 @@ class Page(http.server.BaseHTTPRequestHandler):
     asked = []
     cookies = {}
     report = None
+    film = None
 
     def do_GET(self):
         Page.asked.append(self.path)
         Page.cookies[self.path] = self.headers.get("Cookie", "")
+        if self.path.startswith("/film-report?"):
+            Page.film = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
+            self.send_response(204)
+            self.end_headers()
+            return
+        if self.path == "/film.webm" and FILM and BROKEN != "no-film":
+            with open(FILM, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "video/webm")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/report?"):
             Page.report = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
             self.send_response(204)
@@ -265,6 +309,15 @@ def use(guest, R, dump, window, mark):
         time.sleep(0.1)
     if not said(guest, mark, "jetski: title scrolled ", 30):
         failed.append("the wheel was turned over the page and it did not scroll")
+
+    # The film, fixed on the page, once it has played a second.
+    end = time.monotonic() + 60
+    while Page.film is None and time.monotonic() < end:
+        time.sleep(0.5)
+    time.sleep(0.5)
+    shot = guest.screendump()
+    R.write_png(os.path.join(KEPT, "jetski-film.png"), shot)
+    failed.extend(film(R, shot, window))
     return failed
 
 
@@ -281,6 +334,53 @@ def itself():
     picture = said.get("canvas", "")
     if not picture.startswith("data:image/png;base64,") or len(picture) < 80:
         failed.append("a canvas drawn on encodes as \"%s\", not a PNG" % picture[:40])
+    return failed
+
+
+def make_film():
+    """Six seconds of FILM_COLOUR, VP9 in WebM, or None without FFmpeg."""
+    out = os.path.join(WORK, "film.webm")
+    made = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "color=c=0x%02x%02x%02x:size=%dx%d:rate=25:duration=6" % (FILM_COLOUR + FILM_SIZE),
+         "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-b:v", "200k", out],
+        capture_output=True)
+    return out if made.returncode == 0 and os.path.exists(out) else None
+
+
+def near(parse_ppm, data, x, y, w, h, colour, slack=12):
+    """How many pixels in the window are within `slack` of `colour`."""
+    sw, sh, rgb = parse_ppm(data)
+    count = 0
+    for row in range(max(0, y), min(y + h, sh)):
+        line = rgb[row * sw * 3:(row + 1) * sw * 3]
+        for col in range(max(0, x), min(x + w, sw)):
+            r, g, b = line[col * 3:col * 3 + 3]
+            if abs(r - colour[0]) <= slack and abs(g - colour[1]) <= slack \
+                    and abs(b - colour[2]) <= slack:
+                count += 1
+    return count
+
+
+def film(R, picture, window):
+    """The second page's film: playing, its size, and its colour on the screen."""
+    if FILM is None:
+        return ["this Mac's FFmpeg made no film (libvpx-vp9)"]
+    failed = []
+    said = {k: v[0] for k, v in (Page.film or {}).items()}
+    if not said:
+        failed.append("the film never played a second, nor said why")
+    elif "error" in said:
+        failed.append("the film did not play: MediaError %s" % said["error"])
+    else:
+        if said.get("size") != "%dx%d" % FILM_SIZE:
+            failed.append("the film is %s, not %dx%d" % ((said.get("size"),) + FILM_SIZE))
+        if said.get("webm") != "probably":
+            failed.append("canPlayType(VP9 in WebM) is \"%s\", not \"probably\"" % said.get("webm"))
+    count = near(R.parse_ppm, picture, *window, FILM_COLOUR)
+    if count < FILM_SIZE[0] * FILM_SIZE[1] * 8 // 10:
+        failed.append("the film's picture is not in the window: %d of its %d pixels"
+                      % (count, FILM_SIZE[0] * FILM_SIZE[1]))
     return failed
 
 
@@ -315,6 +415,8 @@ def main():
         print("FAIL: no %s - `make ARCH=x86_64 apps` builds it" % built)
         return 1
 
+    global FILM
+    FILM = None if LIVE else make_film()
     server = Server(("0.0.0.0", 0), Page)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     global PAGE
@@ -433,7 +535,7 @@ def main():
         failed.extend(cookies())
         failed.extend(itself())
 
-    checks = 14
+    checks = 17
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -445,7 +547,8 @@ def main():
           "the page scrolled, and its field clicked and \"%s\" typed into it; and the "
           "second page asked for with the server's cookie and the script's, the lasting "
           "one kept on /Home; and the page saw \"%s\" as the platform, its window "
-          "1200x800 and a canvas read back as a PNG"
+          "1200x800 and a canvas read back as a PNG; and a VP9 film in WebM played on "
+          "the second page by WebKit's Media Kit engine, its picture in the window"
           % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 

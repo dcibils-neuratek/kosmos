@@ -25,7 +25,6 @@ libc++'s headers, as the C++ runtimes installed them, and ICU, as
 
 import hashlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -145,24 +144,6 @@ def patched_source():
     return SRC
 
 
-def cache_settings(options):
-    """The options file's `set(NAME VALUE CACHE TYPE ...)`, as `-D`s.
-
-    `-C` reads them as an initial cache, and an initial cache never replaces
-    a value already in `CMakeCache.txt`: a build configured again in place
-    kept the old one, and changing it did nothing, silently -
-    `USE_SKIA_ENCODERS` stayed OFF after the file said ON (`docs/w7.md`).
-    Given again on the command line, each is the file's.
-    """
-    found = []
-    with open(options) as f:
-        for line in f:
-            m = re.match(r'\s*set\(\s*(\w+)\s+("[^"]*"|\S+)\s+CACHE\s+(\w+)\b', line)
-            if m:
-                found.append("-D%s:%s=%s" % (m.group(1), m.group(3), m.group(2).strip('"')))
-    return found
-
-
 def configure(arch, out):
     cxxrt = os.path.join(ROOT, "build", "cxx", arch)
     icu = os.path.join(ROOT, "build", "icu", arch)
@@ -191,10 +172,20 @@ def configure(arch, out):
     if not os.path.exists(os.path.join(out, "CMakeCache.txt")):
         shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out, exist_ok=True)
+    # **But never from the cache it left** (`docs/w7.md`, `testing.md`
+    # 18.813): a value in `CMakeCache.txt` outlives the file that set it -
+    # `-C`'s initial cache never replaces one, and neither does a port's new
+    # default for a WebKit `option()` - so `USE_SKIA_ENCODERS` stayed OFF
+    # after `jsc.cmake` said ON, and `ENABLE_VIDEO` after the port did.
+    # Every value is read from the files again; the build tree stays, and
+    # what configures the same builds nothing again.
+    for stale in ("CMakeCache.txt",):
+        if os.path.exists(os.path.join(out, stale)):
+            os.remove(os.path.join(out, stale))
 
     command = [
         "cmake", "-G", "Ninja", "-S", SRC, "-B", out, "-Wno-dev",
-        "-C", options] + cache_settings(options) + [
+        "-C", options,
         "-DCMAKE_TOOLCHAIN_FILE=" + toolchain,
         "-DKOSMOS_ARCH=" + arch, "-DKOSMOS_ROOT=" + ROOT,
         "-DKOSMOS_LIBCXX_INCLUDE=" + os.path.join(cxxrt, "include", "c++", "v1"),
@@ -305,8 +296,7 @@ def configure_reference(arch, out):
 
     command = [
         "cmake", "-G", "Ninja", "-S", os.path.join(ROOT, "runtime", "cxx", "skia-reference"),
-        "-B", out, "-Wno-dev", "-C", options] + cache_settings(options) + [
-        "-DWEBKIT_SOURCE=" + SRC,
+        "-B", out, "-Wno-dev", "-C", options, "-DWEBKIT_SOURCE=" + SRC,
         "-DCMAKE_C_COMPILER=/usr/bin/clang", "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
         "-DCMAKE_OSX_ARCHITECTURES=" + machine,
         # WebKit's WTF_CPU comes from the processor CMake says it builds

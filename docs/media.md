@@ -199,3 +199,11 @@ a `<video>` with a file's address plays its picture in a page.
   page; the page plays it, and the check is the pattern's colours in the
   window and `currentTime` moving, which the page reports to the server.
   The control is the film served as a 404.
+
+**M2 built, 14 November 2026** (0.11.419, `testing.md` 18.814): a
+`<video>` with a file's address plays its picture in JetSki, VP9 in WebM
+held by `x86-jetski`. What it does not do yet: sound (M4); 10-bit and NV12
+pictures, which it skips; a film's own colour matrix, which the Media Kit
+does not report yet (the height decides); and seeking waits for the
+decoder rather than answering when the picture at the new time is ready.
+Next, M3: Media Source Extensions, which is how YouTube plays.

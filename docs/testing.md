@@ -33505,8 +33505,42 @@ its results.
 with it still OFF in `CMakeCache.txt`. The options file is given to CMake
 as `-C`, an initial cache, which never replaces a value a cache already
 holds - so every option changed since the first configure had been
-ignored, with nothing said. `webkit_build.py` now gives every
-`set(... CACHE ...)` in the file again as `-D`, which does.
+ignored, with nothing said. 0.11.418 gave every `set(... CACHE ...)` in
+the file again as `-D`; the next change found the same trap one layer
+over - a port's new default for a WebKit `option()`, `ENABLE_VIDEO`, is
+not taken by a cache that holds the old one either - so since 0.11.419
+`webkit_build.py` configures from an empty cache whenever anything it
+configures from has changed, keeping the build tree: every value comes
+from the files, and what configures the same builds nothing again.
 
 Still different from a desktop browser, and each a mark a check may read:
 no WebAssembly (it waits for the JIT), no WebGL and no Web Audio.
+
+## 18.814 `<video>` plays: Kosmos's media engine on the Media Kit (M2)
+
+0.11.419, `docs/media.md` M2. `ENABLE_VIDEO` is on, and WebCore has an
+engine of Kosmos's own: `MediaPlayerPrivateKosmos`, registered by patch
+0027 beside GStreamer's and AVFoundation's. It fetches a film through the
+page's own loader (the network process, cookies and all), reads it with the
+Media Kit's demuxer from what has arrived - a read past the end waits on
+the decode thread - decodes the picture, turns each frame into the page's
+pixels with the gfx kit's `gfx_i420` (BT.709 from 720 lines, BT.601 below),
+and shows each when its time comes on the counter. Sound is M4's: a film
+says it has none.
+
+`x86-jetski`'s second page has a `<video autoplay muted>`, fixed, playing
+six seconds of one colour that this Mac's FFmpeg makes at the test's start
+as VP9 in WebM (YouTube's codec, and no site's bytes). Once it has played a
+second, the page reports its size - 320x180 - and
+`canPlayType('video/webm; codecs="vp9"')` - "probably" - and the colour
+must cover four fifths of the film's rectangle in the window, within 12 of
+each channel after YUV. 17 checks. Control: `KOSMOS_JETSKI_BREAK=no-film`,
+the film a 404 - "the film did not play: MediaError 4", "the film's picture
+is not in the window: 0 of its 57600 pixels", the other fifteen passing.
+`x86-webcore`, `x86-webkit2`, `x86-sites` and `x86-mediakit` pass with
+video on.
+
+Turning it on found the cache's trap a second time (18.813): the port's
+new default for `ENABLE_VIDEO` left it 0 in `cmakeconfig.h`, because a
+WebKit `option()` already in the cache keeps its value. `webkit_build.py`
+now configures from an empty cache whenever an input changed.

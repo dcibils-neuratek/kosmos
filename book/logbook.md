@@ -3085,3 +3085,27 @@ also reports the platform, the window size and a canvas picture. With the
 fixes taken out, exactly the new checks fail and nothing else. One fault in
 the build turned up along the way: changing WebKit's build options had
 silently done nothing to a build that already existed.
+
+## 14 November 2026 - Videos play in the browser
+
+**In short:** A web page's video now plays in JetSki. It's the first
+step towards YouTube, which is the next goal.
+
+**What changed.** WebKit handles a video's controls and timeline, and hands
+the actual playing to a "media engine" each system supplies. Apple's uses
+AVFoundation and Linux's uses GStreamer. Kosmos now has its own engine,
+built on the Media Kit, the same piece the Video app will use. The film is
+downloaded through the browser's normal network path, taken apart and
+decoded on a thread of its own, and each picture is converted to screen
+colours by the same fast routine as every film on Kosmos. It's then shown
+when its time comes.
+
+**What you can see.** A page with a video in WebM or MP4 (VP9, AV1 or
+H.264) plays its picture. There's no sound yet; that's a later step.
+YouTube doesn't use plain videos like this. Its player feeds the browser
+pieces of the film itself (Media Source Extensions), and that's next.
+
+**Measured.** The browser's test now plays a six-second VP9 film made on
+the spot, and checks that it ran for over a second, is the right size, and
+shows its colour in the window: 17 checks. With the film missing, exactly
+the two film checks fail.

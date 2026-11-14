@@ -19,6 +19,7 @@ include(platform/TextureMapper.cmake)
 list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     ${WEBCORE_DIR}/platform/generic
     ${WEBCORE_DIR}/platform/graphics/egl
+    ${WEBCORE_DIR}/platform/graphics/kosmos
     ${WEBCORE_DIR}/platform/kosmos
     ${WEBCORE_DIR}/platform/video-codecs
 )
@@ -67,6 +68,9 @@ list(APPEND WebCore_SOURCES
     platform/kosmos/SharedMemoryKosmos.cpp
     platform/kosmos/UserAgentKosmos.cpp
 
+    # The media engine on the Media Kit (`docs/media.md` M2).
+    platform/graphics/kosmos/MediaPlayerPrivateKosmos.cpp
+
     platform/text/Hyphenation.cpp
     platform/text/LocaleICU.cpp
 
@@ -87,3 +91,9 @@ list(APPEND WebCore_LIBRARIES
 # file system that ignores case.
 set_source_files_properties(platform/kosmos/SharedMemoryKosmos.cpp
     PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel")
+
+# The media engine reaches two kits' doors, the Media Kit's `media.h` and
+# the gfx kit's `yuv.h`, in this file alone and searched last, so no name
+# in either folder can answer for one of WebKit's.
+set_source_files_properties(platform/graphics/kosmos/MediaPlayerPrivateKosmos.cpp
+    PROPERTIES COMPILE_OPTIONS "-idirafter;${KOSMOS_ROOT}/user/kits/media;-idirafter;${KOSMOS_ROOT}/user/kits/gfx")

@@ -4148,6 +4148,9 @@ $(WEBKIT_SQLITE_OBJ): build/upstream/sqlite/.unpacked $(UFLAGS_FILE)
 # named static, Skia's public defines (`skia_defines.h`, held to Skia's
 # CMake by `x86-skia`) and EGL's for no particular platform.
 #
+# WebCore's media engine stands on the Media Kit and FFmpeg under it
+# (`docs/media.md` M2), so every image with WebCore in it links both.
+#
 # WebCore is five libraries: its own, and the four object libraries
 # `webkit_build.py` archives - style, DOM and rendering, bindings, inspector.
 WEBCORE_LIBS := $(WEBKIT_DIR)/lib/libWebCore.a $(WEBKIT_DIR)/lib/libWebCoreStyle.a \
@@ -4157,7 +4160,7 @@ WEBCORETEST_OBJS := $(UBUILD)/user/kits/webcoretest/webcoretest.cpp.o \
                     $(UBUILD)/user/kits/webcoretest/webcoretest_kit.c.o
 WEBCORE_W5_LIBS := $(W5_DIR)/lib/libcurl.a $(W5_SSL_LIBS) $(W5_XML_LIBS) \
     $(W5_DIR)/lib/libharfbuzz-icu.a $(W5_TEXT_LIBS) $(W5_DIR)/lib/libwebpdemux.a $(W5_LIBS) \
-    $(W5F_LIBS)
+    $(W5F_LIBS) $(MEDIA_OBJS) $(FFMPEG_W5_LIBS)
 
 $(WEBCORE_LIBS): $(WEBKIT_DIR)/.built
 

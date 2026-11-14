@@ -1,0 +1,69 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Kosmos's media engine (docs/media.md M2): MediaPlayerPrivateKosmos, on the
+Media Kit, named in WebCore's lists of engines and player types and in
+WebKit's serialisation of them, and registered in MediaPlayer.cpp as
+GStreamer's is for GTK.
+
+diff -ruN a/Source/WebCore/platform/graphics/MediaPlayer.cpp b/Source/WebCore/platform/graphics/MediaPlayer.cpp
+--- a/Source/WebCore/platform/graphics/MediaPlayer.cpp	2026-11-14 19:22:09.148784645 -0300
++++ b/Source/WebCore/platform/graphics/MediaPlayer.cpp	2026-11-14 19:22:09.181328719 -0300
+@@ -117,6 +117,10 @@
+ #include "MediaPlayerPrivateWirelessPlayback.h"
+ #endif
+ 
++#if PLATFORM(KOSMOS)
++#include "MediaPlayerPrivateKosmos.h"
++#endif
++
+ namespace WebCore {
+ 
+ WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaPlayer);
+@@ -360,6 +364,10 @@
+     MediaPlayerPrivateWirelessPlayback::registerMediaEngine(addMediaEngine);
+ #endif
+ 
++#if PLATFORM(KOSMOS)
++    MediaPlayerPrivateKosmos::registerMediaEngine(addMediaEngine);
++#endif
++
+     haveMediaEnginesVector() = true;
+ }
+ 
+diff -ruN a/Source/WebCore/platform/graphics/MediaPlayer.h b/Source/WebCore/platform/graphics/MediaPlayer.h
+--- a/Source/WebCore/platform/graphics/MediaPlayer.h	2026-11-14 19:22:09.155694809 -0300
++++ b/Source/WebCore/platform/graphics/MediaPlayer.h	2026-11-14 19:22:09.180770451 -0300
+@@ -178,7 +178,8 @@
+     GStreamerMSE,
+     HolePunch,
+     WirelessPlayback,
+-    Remote
++    Remote,
++    Kosmos
+ };
+ 
+ using TrackID = uint64_t;
+diff -ruN a/Source/WebCore/platform/graphics/MediaPlayerEnums.h b/Source/WebCore/platform/graphics/MediaPlayerEnums.h
+--- a/Source/WebCore/platform/graphics/MediaPlayerEnums.h	2026-11-14 19:22:09.162420565 -0300
++++ b/Source/WebCore/platform/graphics/MediaPlayerEnums.h	2026-11-14 19:22:09.180872238 -0300
+@@ -95,6 +95,7 @@
+     MockMSE,
+     CocoaWebM,
+     WirelessPlayback,
++    Kosmos,
+ };
+ 
+ enum class MediaPlayerWirelessPlaybackTargetType : uint8_t {
+diff -ruN a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
+--- a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in	2026-11-14 19:22:09.168734546 -0300
++++ b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in	2026-11-14 19:22:09.181066605 -0300
+@@ -3097,7 +3097,8 @@
+     MediaFoundation,
+     MockMSE,
+     CocoaWebM,
+-    WirelessPlayback
++    WirelessPlayback,
++    Kosmos
+ };
+ 
+ enum class WebCore::MediaPlayerWirelessPlaybackTargetType : uint8_t {

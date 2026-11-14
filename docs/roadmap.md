@@ -10438,6 +10438,10 @@ the applications make the system useful, and is not pulled forward.
       YouTube's Roboto and The Verge's faces paint as themselves.
       Brotli is also HTTP's `br`, which W7's loader needs: curl decodes
       it since 0.11.408 (18.803).
+    - *`<video src>`* (M2) - *done, 0.11.419* (`testing.md` 18.814):
+      `MediaPlayerPrivateKosmos` on the Media Kit and `gfx_i420`; picture
+      only until M4. **Next M3, MSE - Diego, 14 November: "I want youtube
+      working next".**
     - *The design for video*: `docs/media.md` - **AGREED 14 November
       2026**: a Kosmos player in WebCore on a new Media Kit (FFmpeg built
       whole with its assembly, dav1d), the Playback Kit for sound, AV1

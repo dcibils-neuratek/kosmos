@@ -41,11 +41,12 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
 
 # **What a headless page on Kosmos has not got, yet** (`docs/w6.md` W6b).
 # Each is a piece of the platform a later step brings, not a refusal:
-# video and audio wait for the Playback Kit (`docs/playback.md`), WebGL
-# for a GPU, XSLT for libxslt, JPEG XL and colour management for their
+# Web Audio waits for the Playback Kit (`docs/playback.md`), WebGL for a
+# GPU, XSLT for libxslt, JPEG XL and colour management for their
 # libraries. WOFF2 and AVIF are on since W5f (`docs/w5.md`): woff2 on
-# Brotli, and libavif on dav1d.
-WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE OFF)
+# Brotli, and libavif on dav1d. Video is on since M2 (`docs/media.md`):
+# `<video>` plays through the port's engine on the Media Kit.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEB_AUDIO PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBGL PRIVATE OFF)
