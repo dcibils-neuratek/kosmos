@@ -10088,6 +10088,15 @@ the applications make the system useful, and is not pulled forward.
   idle - one wait on both the window manager and WebKit's processes is the
   fix (*Nothing waits*); and the chrome is a second copy of the NetSurf
   Browser's header, to become one door when W7d's tabs arrive.
+  **W7c's input** (0.11.416): the pointer, the wheel and keys, into WebKit
+  through patch 0024 and `WKPageKosmos`, and a Kosmos `WebPage` whose keys
+  edit (PlayStation's typed nothing); `x86-jetski` clicks a link, turns
+  the wheel and types into a field. **Owed**: an element with `position:
+  fixed` is not painted at all (found by that suite: a fixed field was
+  blank, a static one was not) - the coordinated-graphics layer it gets is
+  one the paint never draws; the pointer's shape over a link; the right
+  button's menu; and the keys' up and down being one press - Kosmos's
+  keyboard says a key, not when it was let go.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s
   alone, and hung past 720 s in the 0.11.412 gate saying nothing - into
   halves that run side by side, each printing its steps as it passes, so

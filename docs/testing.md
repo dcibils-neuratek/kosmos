@@ -33396,3 +33396,37 @@ its own clock" in the gate's eleventh minute, with every core busy, and
 passed twice alone straight after (15 s each). Nothing here touches sound;
 a clock held to 4% under a full machine is the suite's to make robust, and
 it is on the roadmap with the cafesa3d-2 split.
+
+## 18.811 JetSki takes the pointer, the wheel and keys
+
+W7c's input (0.11.416). WebKit has no public call for a click, a wheel or a key:
+each port builds its `NativeWeb*Event` from its toolkit's. Patch 0024
+gives the three a Kosmos constructor taking WebKit's own event, and
+`WKPageKosmos` gains `WKPageMouseKosmos`, `WKPageWheelKosmos` and
+`WKPageKeyKosmos`; `jetski.cpp` counts double clicks and turns
+`keys.lua`'s numbers into the DOM's names and Windows's virtual keys;
+`jetski.lua` puts a view where the page is, so the kit routes to it as to
+any widget, and asks for hover.
+
+`x86-jetski` now uses the page through QEMU's tablet and keyboard: the
+link (a block of its own colour, found on the screen) clicked, and the
+second page must arrive; the wheel turned over it, and its script must
+title it "scrolled"; its field clicked and `kos` typed, and its script
+must title it "typed kos". 8 checks, PASS in 15 s.
+
+**The first run found two things.** A field with `position: fixed` was
+not painted at all - the page arrived blank; a static one paints, and the
+fixed case is on the roadmap. And keys reached the page - its script saw
+`keypress` for each - and typed nothing: Kosmos used PlayStation's
+`WebPage`, whose `handleEditingKeyboardEvent` was `notImplemented()`.
+`WebPageKosmos.cpp` is PlayStation's with it written, Windows's way: a
+key down looks up an editing command by virtual key and modifiers
+(Backspace, the arrows, Shift to select, Home, End, Control-A, -Z, -Y), and
+a keypress that is none of them inserts its text where the focus can be
+edited. That failing run is the natural control for it.
+
+Controls, each failing exactly its own check: `KOSMOS_JETSKI_BREAK=deaf`
+(the view hands WebKit nothing) - "the link was clicked and the second page
+did not arrive"; `deaf-wheel` - "the wheel was turned over the page and it
+did not scroll", the rest passing; `deaf-key` - "\"kos\" was typed into the
+page's field and it did not arrive", the rest passing.

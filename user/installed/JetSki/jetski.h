@@ -53,6 +53,25 @@ void jetski_pump(unsigned ms, struct jetski_state *out);
  * pixels at `pitch` bytes a row. */
 void jetski_paint(uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
 
+/* What a person does to the page, in the view's pixels (W7c). */
+enum jetski_mouse { JETSKI_PRESS, JETSKI_RELEASE, JETSKI_MOVE };
+enum jetski_button { JETSKI_LEFT, JETSKI_MIDDLE, JETSKI_RIGHT, JETSKI_NONE = -1 };
+
+/* `mods` are `keys.lua`'s bits: 1 Shift, 2 Alt, 4 Control, 8 Super. A press
+ * close to the last one in place and time is counted as its second. */
+void jetski_mouse(enum jetski_mouse action, enum jetski_button button, int x, int y, unsigned mods);
+
+/* `notches` away from the person, as the window manager counts them. */
+void jetski_wheel(int x, int y, int notches, unsigned mods);
+
+/* One key, as `keys.lua` numbers it: a character 0 to 255, or a key that is
+ * none - the arrows, Home, the function keys - as a negative number, with
+ * its modifiers inside. 0 when it was not one WebKit could be given. */
+int jetski_key(int code);
+
+/* Whether the page has the keyboard - not while the address is typed. */
+void jetski_focus(int focused);
+
 #ifdef __cplusplus
 }
 #endif

@@ -14,8 +14,21 @@ paragraph, and the block must be in the window, the size the page says, and
 below the window's top edge - where the header leaves room for it. The
 window's title must become the page's, which only WebKit could have told it.
 
-Control: `KOSMOS_JETSKI_BREAK=missing` serves the page as a 404 - the window
-opens and loads, and the block is nowhere, so the screen check fails.
+**Then a person uses it** (W7c's input), through QEMU's own tablet and
+keyboard: the link is clicked - a block of a colour of its own, found on
+the screen - and the second page must arrive; the wheel is turned over it,
+and its script must say it scrolled; its field is clicked and three keys
+typed, and its script must say what they typed. Each answer is the page's
+title, set by the page's own JavaScript, so only WebKit having been handed
+the event could have produced it.
+
+Controls: `KOSMOS_JETSKI_BREAK=missing` serves the page as a 404 - the
+window opens and loads, and the block is nowhere, so the screen check
+fails. `KOSMOS_JETSKI_BREAK=deaf` installs a `jetski.lua` whose page view
+hands WebKit nothing - the pointer, the wheel and keys reach the window
+and stop there - so the link is clicked and nothing comes of it; and
+`deaf-wheel` and `deaf-key` keep only the wheel or only the keys, so the
+link and the other still pass and that one fails.
 
 Outside the gate, `KOSMOS_JETSKI_LIVE=https://...` opens a real site
 instead, and the picture is kept in `build/jetski/` to be looked at.
@@ -62,9 +75,39 @@ body { margin: 24px; font-family: sans-serif; background: #fff; color: #222; }
 <h1>A page in a window</h1>
 <p>WebKit laid this out and painted it, and JetSki put it on the screen.</p>
 <div id="block"></div>
-<p><a href="/other.html">Another page</a></p>
+<p><a id="go" href="/other.html">Another page</a></p>
 </body></html>
 """ % ((TITLE.encode(), BLOCK_W, BLOCK_H) + BLOCK)
+
+# The link and the second page's field, each a colour of its own, so they
+# are found on the screen rather than assumed to be where a layout put them.
+LINK = (0x8a, 0x2b, 0x6e)
+FIELD = (0x2b, 0x4f, 0x8a)
+SECOND = "JetSki second page"
+TYPED = "kos"
+
+PAGE = PAGE.replace(b"#block {", b"#go { display: block; width: 240px; height: 48px; "
+                    b"background: rgb(%d, %d, %d); color: #fff; }\n#block {" % LINK)
+
+OTHER = b"""<!doctype html>
+<html><head><meta charset="utf-8"><title>%s</title>
+<style>
+body { margin: 0; height: 6000px; background: #fff; }
+#field { display: block; margin: 120px 0 0 40px; width: 320px; height: 44px;
+         border: 0; padding: 0; outline: none; color: #fff;
+         background: rgb(%d, %d, %d); font-size: 20px; }
+</style></head>
+<body>
+<input id="field">
+<script>
+var field = document.getElementById("field");
+window.addEventListener("scroll", function () {
+  if (window.scrollY > 0) document.title = "scrolled " + window.scrollY;
+});
+field.addEventListener("input", function () { document.title = "typed " + field.value; });
+</script>
+</body></html>
+""" % ((SECOND.encode(),) + FIELD)
 
 
 class Page(http.server.BaseHTTPRequestHandler):
@@ -72,14 +115,15 @@ class Page(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         Page.asked.append(self.path)
-        if BROKEN == "missing" or self.path != "/":
+        body = {"/": PAGE, "/other.html": OTHER}.get(self.path)
+        if BROKEN == "missing" or body is None:
             self.send_error(404)
             return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(PAGE)))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(PAGE)
+        self.wfile.write(body)
 
     def log_message(self, *args):
         pass
@@ -90,11 +134,11 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
-def block_at(parse_ppm, data, x, y, w, h):
-    """The bounding box of the block's colour inside the window, and how many
-    of its pixels there are."""
+def block_at(parse_ppm, data, x, y, w, h, colour=BLOCK):
+    """The bounding box of a colour inside the window, and how many of its
+    pixels there are."""
     sw, sh, rgb = parse_ppm(data)
-    want = bytes(BLOCK)
+    want = bytes(colour)
     left = top = 1 << 30
     right = bottom = -1
     count = 0
@@ -113,6 +157,68 @@ def block_at(parse_ppm, data, x, y, w, h):
     return count, (left, top, right - left + 1, bottom - top + 1)
 
 
+def said(guest, mark, text, seconds):
+    """Whether the guest says `text` within `seconds`."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        guest._read_available()
+        if text in guest.seen[mark:]:
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def use(guest, R, dump, window, mark):
+    """The link clicked, the wheel turned, the field typed into: what failed."""
+    failed = []
+    x, y, w, h = window
+    sw, sh, _ = R.parse_ppm(dump)
+
+    def click(box):
+        cx, cy = box[0] + box[2] // 2, box[1] + box[3] // 2
+        guest.mouse_to(*R._to_tablet(cx, cy, sw, sh))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.15)
+        guest.mouse_button(False)
+
+    count, link = block_at(R.parse_ppm, dump, x, y, w, h, LINK)
+    if count < 200:
+        return ["the link is not on the screen: %d of its pixels" % count]
+    click(link)
+    if not said(guest, mark, "jetski: title " + SECOND, 60):
+        return ["the link was clicked and the second page did not arrive: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[mark:])[-3:] or "nothing said")]
+
+    time.sleep(1.5)                     # its picture, painted and composed
+    second = guest.screendump()
+    os.makedirs(KEPT, exist_ok=True)
+    R.write_png(os.path.join(KEPT, "jetski-second.png"), second)
+    count, field = block_at(R.parse_ppm, second, x, y, w, h, FIELD)
+    if count < 2000:
+        return ["the second page's field is not on the screen: %d of its pixels" % count]
+
+    click(field)
+    time.sleep(0.5)
+    for key in TYPED:
+        guest.sendkey(key)
+    if not said(guest, mark, "jetski: title typed " + TYPED, 30):
+        failed.append("\"%s\" was typed into the page's field and it did not arrive: %s"
+                      % (TYPED, re.findall(r"jetski: title [^\r\n]*", guest.seen[mark:])[-2:]))
+
+    # The wheel, over the page and below the field.
+    guest.mouse_to(*R._to_tablet(field[0] + 40, field[1] + field[3] + 120, sw, sh))
+    time.sleep(0.3)
+    for _ in range(3):
+        guest.mouse_button(True, "wheel-down")
+        time.sleep(0.05)
+        guest.mouse_button(False, "wheel-down")
+        time.sleep(0.1)
+    if not said(guest, mark, "jetski: title scrolled ", 30):
+        failed.append("the wheel was turned over the page and it did not scroll")
+    return failed
+
+
 def main():
     built = os.path.join(APPS, "jetski.elf")
     if not os.path.exists(built):
@@ -126,8 +232,19 @@ def main():
     image = os.path.join(WORK, "jetski.elf")
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
-    files = [(os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua"),
-              "/Home/Apps/JetSki/jetski.lua"),
+    lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
+    if BROKEN in ("deaf", "deaf-wheel", "deaf-key"):
+        # The page's view keeps what it is handed: everything, or the one.
+        with open(lua) as f:
+            text = f.read()
+        calls = {"deaf": ("web.mouse(", "web.wheel(", "web.key("),
+                 "deaf-wheel": ("web.wheel(",), "deaf-key": ("web.key(",)}[BROKEN]
+        for call in calls:
+            text = text.replace(call, "(function() return false end)(")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
+    files = [(lua, "/Home/Apps/JetSki/jetski.lua"),
              (image, "/Home/Apps/JetSki/jetski.elf")]
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
@@ -147,7 +264,7 @@ def main():
         "-netdev", "user,id=net0", "-device", R.device(IMAGE, "net") + ",netdev=net0"])
 
     guest = R.Guest(IMAGE, 400)
-    failed, mark, dump, where = [], 0, None, None
+    failed, mark, dump, where, used = [], 0, None, None, None
     wait = 300 if LIVE else 120
     try:
         guest.wait_for(R.PROMPT, "the prompt")
@@ -166,6 +283,8 @@ def main():
         seen = guest.seen[mark:]
         where = re.search(r"wm: window JetSki at (\d+),(\d+) (\d+)x(\d+)", seen)
         dump = guest.screendump()
+        if where and not LIVE and "jetski: loaded" in seen:
+            used = use(guest, R, dump, [int(v) for v in where.groups()], mark)
     finally:
         guest.close()
         server.shutdown()
@@ -207,15 +326,22 @@ def main():
         failed.append("the block is %d pixels below the window's top - over the header"
                       % (box[1] - y))
 
-    checks = 5
+    if used is None:
+        failed.append("nothing was clicked: the page was not there to use")
+    else:
+        failed.extend(used)
+
+    checks = 8
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
         return 1
     print("PASS: JetSki's window - opened from the shell, installed in /Home/Apps/JetSki, "
           "a page fetched over HTTP by WebKit's network process and painted below the "
-          "address field, %dx%d at %d,%d in the window, and the title the page's"
-          % (box[2], box[3], box[0] - x, box[1] - y))
+          "address field, %dx%d at %d,%d in the window, and the title the page's; "
+          "then its link clicked to a second page, the wheel turned and its script told "
+          "the page scrolled, and its field clicked and \"%s\" typed into it"
+          % (box[2], box[3], box[0] - x, box[1] - y, TYPED))
     return 0
 
 

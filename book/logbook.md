@@ -3007,3 +3007,28 @@ only the memory behind it, keeping the addresses for the next one.
 1200 times - 4.8 GB in all - and gets the same address every time; the old
 allocator refused it on the 704th. The window's test: 5 of 5, and 2 of 5
 failing when the page is missing.
+
+## 14 November 2026 - Clicking, scrolling and typing in the browser
+
+**In short:** JetSki's page can now be used, not only looked at. A link
+can be clicked, the wheel scrolls the page, and text can be typed into a
+page's fields.
+
+**What changed.** WebKit has no ready-made way to be handed a click or a
+key. Every system it runs on builds those itself from its own events, so
+Kosmos now does too: when a click, the wheel or a key reaches JetSki's
+window over the page, it is turned into WebKit's own event and handed to
+the page. Keys needed one more piece. WebKit decides what Backspace, the
+arrows or a letter do in a text field through code each system supplies,
+and the code Kosmos had borrowed from the PlayStation port left that part
+empty. So the page saw every key and typed nothing. Kosmos now has its own
+version of that piece, which deletes, moves the cursor, selects and types.
+
+**What you can see.** In JetSki, links lead somewhere, pages scroll, and a
+search box can be typed into.
+
+**Measured.** The browser's test now clicks a link, turns the wheel and
+types three letters, and the page's own script confirms each one. When the
+page is handed none of these, or only no wheel, or only no keys, exactly
+that check fails. The test also found that elements fixed to the window
+(`position: fixed`) are not drawn yet, which is next.

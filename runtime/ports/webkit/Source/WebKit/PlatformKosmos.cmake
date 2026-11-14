@@ -61,6 +61,9 @@ list(APPEND WebKit_SOURCES
 
     WebProcess/InjectedBundle/kosmos/InjectedBundleKosmos.cpp
 
+    # PlayStation's, with keys that edit (`WebPageKosmos.cpp`).
+    WebProcess/WebPage/kosmos/WebPageKosmos.cpp
+
     # PlayStation's, and nothing in them is PlayStation's: no compositing,
     # no threaded scrolling, the standard user agent, a page's platform
     # hooks left as WebKit's defaults.
@@ -68,7 +71,6 @@ list(APPEND WebKit_SOURCES
     UIProcess/playstation/PageClientImpl.cpp
     UIProcess/playstation/PlayStationWebView.cpp
     UIProcess/playstation/WebPreferencesPlayStation.cpp
-    WebProcess/WebPage/playstation/WebPagePlayStation.cpp
     WebProcess/playstation/WebProcessMainPlayStation.cpp
     WebProcess/playstation/WebProcessPlayStation.cpp
 

@@ -124,12 +124,59 @@ static int l_paint(lua_State *L)
     return 0;
 }
 
+/*
+ * `mouse(action, button, x, y [, mods])`: "press", "release" or "move";
+ * "left", "middle", "right", or nil for a move with nothing held. In the
+ * page's pixels, from its top left.
+ */
+static int l_mouse(lua_State *L)
+{
+    static const char *const actions[] = { "press", "release", "move", NULL };
+    static const char *const buttons[] = { "left", "middle", "right", NULL };
+    int action = luaL_checkoption(L, 1, NULL, actions);
+    int button = lua_isnoneornil(L, 2) ? JETSKI_NONE : luaL_checkoption(L, 2, NULL, buttons);
+
+    jetski_mouse((enum jetski_mouse)action, (enum jetski_button)button,
+                 (int)luaL_checkinteger(L, 3), (int)luaL_checkinteger(L, 4),
+                 (unsigned)(luaL_optinteger(L, 5, 0) & 15));
+    return 0;
+}
+
+/* `wheel(x, y, notches [, mods])`: notches away from the person. */
+static int l_wheel(lua_State *L)
+{
+    lua_Integer n = luaL_checkinteger(L, 3);
+
+    if (n < -100) n = -100;
+    if (n > 100) n = 100;
+    jetski_wheel((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2), (int)n,
+                 (unsigned)(luaL_optinteger(L, 4, 0) & 15));
+    return 0;
+}
+
+/* `key(code)`, as `keys.lua` numbers a key; whether WebKit was given it. */
+static int l_key(lua_State *L)
+{
+    lua_Integer c = luaL_checkinteger(L, 1);
+
+    lua_pushboolean(L, c >= -1024 * 16 && c <= 255 && jetski_key((int)c));
+    return 1;
+}
+
+static int l_focus(lua_State *L)
+{
+    jetski_focus(lua_toboolean(L, 1));
+    return 0;
+}
+
 void kosmos_jetski_kit(lua_State *L)
 {
     static const luaL_Reg fns[] = {
         { "open", l_open },     { "resize", l_resize }, { "load", l_load },
         { "back", l_back },     { "forward", l_forward }, { "reload", l_reload },
         { "stop", l_stop },     { "pump", l_pump },     { "paint", l_paint },
+        { "mouse", l_mouse },   { "wheel", l_wheel },   { "key", l_key },
+        { "focus", l_focus },
         { NULL, NULL },
     };
 

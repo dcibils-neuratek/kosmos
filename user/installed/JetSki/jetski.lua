@@ -14,6 +14,9 @@
 --   Control-L    type an address
 --   Escape       the address as it was
 --
+-- The page takes the pointer, the wheel and keys once it is clicked, and
+-- after an address is typed.
+--
 -- **The browser, W7c's first slice** (`docs/w7.md`): WebKit's three
 -- processes - this image as the UI process, and again as each page's web
 -- process and as the network process - and this file, the window around
@@ -109,6 +112,55 @@ end
 win:add(header)
 
 --------------------------------------------------------------------------
+-- **The page's place**, a view the kit routes the pointer, the wheel and
+-- keys to like any other (W7c) - but drawn by WebKit, so it draws nothing
+-- itself. Positions are handed on in the page's own pixels.
+--
+
+local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
+
+view.focusable = true
+view.takes_tab = true                -- Tab is the page's, between its fields
+
+function view:draw() end
+
+function view:mouse(action, x, y)
+  if action == "press" then
+    web.focus(true)
+    web.mouse("press", "left", x, y)
+  elseif action == "release" then
+    web.mouse("release", "left", x, y)
+  else
+    web.mouse("move", nil, x, y)
+  end
+
+  return false                       -- WebKit says when there is a picture
+end
+
+function view:wheel(n, x, y)
+  web.wheel(x, y, n)
+  return true
+end
+
+function view:key(c)
+  if c == 12 then return false end   -- Control-L is the window's
+  return web.key(c)
+end
+
+win:add(view)
+
+-- The pointer passing over, nothing held: links light up, and say so.
+use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
+
+win.on_hover = function(_, x, y)
+  if y >= VIEW_Y and y < VIEW_Y + VIEW_H then
+    web.mouse("move", nil, x, y - VIEW_Y)
+  end
+
+  return false
+end
+
+--------------------------------------------------------------------------
 -- The page, as WebKit says it is.
 --
 
@@ -137,7 +189,8 @@ local function visit(text)
 end
 
 field.on_enter = function(_, text)
-  win:focus_on(header)
+  win:focus_on(view)
+  web.focus(true)
   visit(text)
 end
 
@@ -241,6 +294,7 @@ end
 -- Control-L: the address, to type over.
 win.on_key = function(_, c)
   if c == 12 then
+    web.focus(false)
     win:focus_on(field)
     return true
   end
@@ -248,5 +302,6 @@ win.on_key = function(_, c)
   return false
 end
 
+win:focus_on(view)
 visit(files.words(args)[1] or HOME)
 win:run()

@@ -1,0 +1,53 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Input on Kosmos: the pointer, the wheel and keys (docs/w7.md W7c).
+
+Each port makes its toolkit's event into WebKit's through a constructor
+of NativeWebMouseEvent, NativeWebWheelEvent and NativeWebKeyboardEvent.
+Kosmos has no toolkit event: the window manager's pointer and keys reach the
+UI process's C API (WKPageKosmos.cpp), which builds WebKit's own event
+and hands it over through these.
+
+diff -ruN a/Source/WebKit/Shared/NativeWebKeyboardEvent.h b/Source/WebKit/Shared/NativeWebKeyboardEvent.h
+--- a/Source/WebKit/Shared/NativeWebKeyboardEvent.h	2026-11-14 16:54:45.466631355 -0300
++++ b/Source/WebKit/Shared/NativeWebKeyboardEvent.h	2026-11-14 16:54:45.478925771 -0300
+@@ -90,6 +90,10 @@
+ #elif PLATFORM(PLAYSTATION)
+     enum class HandledByInputMethod : bool { No, Yes };
+     NativeWebKeyboardEvent(struct wpe_input_keyboard_event*, const String&, bool isAutoRepeat, HandledByInputMethod, std::optional<Vector<WebCore::CompositionUnderline>>&&, std::optional<EditingRange>&&);
++#elif PLATFORM(KOSMOS)
++    // A key from the window manager, as WebKit's event (`WKPageKosmos.cpp`).
++    explicit NativeWebKeyboardEvent(const WebKeyboardEvent& event)
++        : WebKeyboardEvent(event) { }
+ #elif PLATFORM(WIN)
+     NativeWebKeyboardEvent(HWND, UINT message, WPARAM, LPARAM, Vector<MSG>&& pendingCharEvents);
+ #endif
+diff -ruN a/Source/WebKit/Shared/NativeWebMouseEvent.h b/Source/WebKit/Shared/NativeWebMouseEvent.h
+--- a/Source/WebKit/Shared/NativeWebMouseEvent.h	2026-11-14 16:54:45.460425251 -0300
++++ b/Source/WebKit/Shared/NativeWebMouseEvent.h	2026-11-14 16:54:45.478759979 -0300
+@@ -87,6 +87,11 @@
+ #endif
+ #elif PLATFORM(PLAYSTATION)
+     NativeWebMouseEvent(struct wpe_input_pointer_event*, float deviceScaleFactor, WebMouseEventSyntheticClickType = WebMouseEventSyntheticClickType::NoTap);
++#elif PLATFORM(KOSMOS)
++    // Kosmos's pointer, made into WebKit's event by the UI process's C API
++    // (`WKPageKosmos.cpp`): there is no toolkit event behind it to keep.
++    explicit NativeWebMouseEvent(const WebMouseEvent& event)
++        : WebMouseEvent(event) { }
+ #elif PLATFORM(WIN)
+     NativeWebMouseEvent(HWND, UINT message, WPARAM, LPARAM, bool, float deviceScaleFactor);
+ #endif
+diff -ruN a/Source/WebKit/Shared/NativeWebWheelEvent.h b/Source/WebKit/Shared/NativeWebWheelEvent.h
+--- a/Source/WebKit/Shared/NativeWebWheelEvent.h	2026-11-14 16:54:45.463663429 -0300
++++ b/Source/WebKit/Shared/NativeWebWheelEvent.h	2026-11-14 16:54:45.478845229 -0300
+@@ -75,6 +75,10 @@
+ #endif
+ #elif PLATFORM(PLAYSTATION)
+     NativeWebWheelEvent(struct wpe_input_axis_event*, float deviceScaleFactor, WebWheelEvent::Phase, WebWheelEvent::Phase momentumPhase);
++#elif PLATFORM(KOSMOS)
++    // Kosmos's wheel, as WebKit's event (`WKPageKosmos.cpp`).
++    explicit NativeWebWheelEvent(const WebWheelEvent& event)
++        : WebWheelEvent(event) { }
+ #elif PLATFORM(WIN)
+     NativeWebWheelEvent(HWND, UINT message, WPARAM, LPARAM, float deviceScaleFactor);
+ #endif
