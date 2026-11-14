@@ -145,9 +145,10 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
 - Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 to X3 built: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
 - The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed, to be built: `docs/playback.md`, `docs/playback-architecture.png`
-- Video and sound in JetSki - YouTube's player, MSE, a Media Kit of demuxers and decoders - for Diego to decide: `docs/media.md`
+- Video and sound in JetSki - YouTube's player, MSE, a Media Kit of demuxers and decoders - agreed, M1 begun: `docs/media.md`
 - JetSki's POSIX layer inside the process, and the Storage Kit its files go through - agreed and built: `docs/w3.md`
 - JavaScriptCore on Kosmos, JetSki's W4 - its source fetched, not committed - built, test262 counted (`make test262`): `docs/w4.md`
+- JetSki W7 - a browser to use every day: WebKit2's processes, pages from the network, the window, then tabs and the rest - the order, being built: `docs/w7.md`
 - The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a (pictures), W5b (text) and W5c (SQLite, libxml2, libpsl) built: `docs/w5.md`
 - Glossary: `docs/glossary.md`
 

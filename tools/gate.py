@@ -647,6 +647,19 @@ SUITES = [
                           "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_formats.py", "user/kits/formattest", *W5)),
 
+    # **The Media Kit** (`docs/media.md` M1): `mediatest.elf`, films and
+    # songs in every container and codec the kit reads, made here by
+    # Homebrew's FFmpeg - every line held to this Mac's build of the same
+    # test, and every picture stream to `ffmpeg -f framemd5`.
+    Suite("arm-mediakit", ["python3", "tools/run_mediakit.py", ARM,
+                           "build/user-test/apps"],
+          watch=library("tools/run_mediakit.py", "user/kits/media", "user/kits/mediatest",
+                        *W5)),
+    Suite("x86-mediakit", ["python3", "tools/run_mediakit.py", X86,
+                           "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_mediakit.py", "user/kits/media", "user/kits/mediatest",
+                        *W5)),
+
     # **W5b's text** (`docs/w5.md`): `texttest.elf`, HarfBuzz given its own
     # shaping suite - 7,761 cases, each held to the glyphs it expects, as
     # `run-tests.py` holds them - and FreeType every font that suite ships,

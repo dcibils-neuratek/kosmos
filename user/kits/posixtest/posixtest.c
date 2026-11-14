@@ -385,8 +385,33 @@ static int memory_checks(char *out, unsigned long size)
         SAY("posix: munmap of a whole mapping failed (%d)", errno);
     }
 
+    /* 19: posix_memalign, which FFmpeg's assembly needs (`docs/media.md`
+     * M1): on each boundary, writable throughout, freed; a boundary that is
+     * not a power of two, or narrower than a pointer, refused with EINVAL
+     * and `*out` untouched */
+    for (i = 8; i <= 4096; i *= 2) {
+        void *m = NULL;
+        int got = posix_memalign(&m, i, 1000 + i);
+
+        if (got != 0 || m == NULL || ((uintptr_t)m & (i - 1)) != 0) {
+            SAY("posix: posix_memalign(%lu) gave %d and %p", i, got, m);
+        }
+
+        memset(m, 0x5a, 1000 + i);
+        free(m);
+    }
+
+    {
+        void *m = (void *)&size;
+
+        if (posix_memalign(&m, 48, 64) != EINVAL || posix_memalign(&m, 4, 64) != EINVAL
+            || m != (void *)&size) {
+            SAY("posix: posix_memalign took a boundary it should refuse");
+        }
+    }
+
     snprintf(out, size, "memory: 4 GB reserved, protected, discarded, unmapped "
-             "in the middle, fixed, refused");
+             "in the middle, fixed, refused, aligned");
     return 0;
 }
 

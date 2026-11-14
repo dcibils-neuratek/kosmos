@@ -6,6 +6,24 @@ Last updated: 2026-11-14 (0.11.404: the recorded sites - YouTube, The Verge, app
 
 ---
 
+## 14 November, evening: the Media Kit begins (M1, uncommitted when written)
+
+Diego agreed the video design (`docs/media.md`, *Decided*): Kosmos's own
+player on a new Media Kit, FFmpeg built whole with its assembly, AV1 first,
+M1 to M6. M1 is under way (`testing.md` 18.804):
+
+- `w5_build.py` builds FFmpeg 9.0.2 by its own `configure` for both
+  boards and both Mac references, with nasm's assembly, threads, and
+  `libdav1d` as its AV1 decoder; `posix_memalign` is new in the POSIX
+  layer, and the trial links see musl's maths.
+- `user/kits/media/` is the kit (`media.h` is the door). `x86-mediakit`
+  holds it to this Mac line for line and to `ffmpeg -f framemd5` picture
+  for picture, with two controls.
+- Left in M1 (`roadmap.md`): decoding speeds measured on real cores. The
+  vendored FFmpeg closure leaves with M6, when Video moves to the kit in
+  an image of its own. The whole FFmpeg needs the POSIX layer, which never
+  goes into the system's image, and no image holds both meanwhile.
+
 ## 14 November, later: W5f and a gate that runs what changed (0.11.406, not pushed)
 
 W5f (0.11.405): Brotli, woff2, dav1d and libavif built and held to this

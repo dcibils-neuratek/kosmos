@@ -3372,7 +3372,7 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
               runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
               runtime/posix/socket.c runtime/posix/inet.c runtime/posix/glob.c runtime/posix/program.c \
-              runtime/posix/locale.c
+              runtime/posix/locale.c runtime/posix/memalign.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 #
@@ -3741,6 +3741,38 @@ $(UBUILD)/apps/formattest.elf: $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) $(W
 	    || { echo "apps: formattest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_project_kit|dav1d_open|avifDecoderCreate)$$' \
 	    || { echo "apps: the system's image has W5f's libraries in it"; rm -f $@; exit 1; }
+
+#
+# **The Media Kit** (`docs/media.md` M1, `tools/run_mediakit.py`):
+# `user/kits/media/` on FFmpeg built whole, with its assembly, and dav1d -
+# `tools/w5_build.py`'s `ffmpeg` - and `mediatest.c`, which holds it to
+# this Mac, in no image but `mediatest.elf` yet. JetSki's image is the
+# kit's first user (M2). The vendored FFmpeg closure (`FFMPEG=1`, above)
+# stays in the system's image until Video moves to this kit (M6). No image
+# holds both: `apps` builds with `FULL=0`, which has no closure in it.
+#
+FFMPEG_W5_LIBS := $(W5_DIR)/lib/libavformat.a $(W5_DIR)/lib/libavcodec.a \
+                  $(W5_DIR)/lib/libswresample.a $(W5_DIR)/lib/libavutil.a \
+                  $(W5_DIR)/lib/libdav1d.a
+MEDIA_OBJS     := $(UBUILD)/user/kits/media/media.c.o
+MEDIATEST_OBJS := $(UBUILD)/user/kits/mediatest/mediatest.c.o \
+                  $(UBUILD)/user/kits/mediatest/mediatest_kit.c.o
+
+$(FFMPEG_W5_LIBS): build/w5/$(ARCH)/.built
+
+# FFmpeg's headers are its install's, and they are only these files'.
+$(MEDIA_OBJS) $(MEDIATEST_OBJS): UCFLAGS += -isystem $(W5_DIR)/include -Iuser/kits/media
+$(MEDIA_OBJS) $(MEDIATEST_OBJS): build/w5/$(ARCH)/.built
+
+$(UBUILD)/apps/mediatest.elf: $(USER_OBJS) $(MEDIA_OBJS) $(MEDIATEST_OBJS) $(POSIX_OBJS) $(FFMPEG_W5_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(MEDIA_OBJS) $(MEDIATEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(FFMPEG_W5_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_project_kit$$' \
+	    || { echo "apps: mediatest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (avformat_open_input|dav1d_open)$$' \
+	    || { echo "apps: the system's image has FFmpeg built whole in it"; rm -f $@; exit 1; }
 
 #
 # **W5e's Skia test** (`tools/run_skia.py`): `skiatest.cpp` and its door,
@@ -4329,7 +4361,8 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
-            $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(WEBCORE_IMAGE) \
+            $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
+            $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

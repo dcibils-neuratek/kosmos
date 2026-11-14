@@ -51,6 +51,15 @@ RELEASES = {
         "sha256": "a76345b391bef6211fb5ab6cfab2e86b285d18cda17cbb9ade595f1252b86065",
         "top": "webkitgtk-2.54.2",
     },
+    # **The Media Kit's FFmpeg** (`docs/media.md` M1): 9.0.2, the release
+    # `tools/ffmpeg_vendor.py` vendors H.264 and AAC from and with its sum,
+    # built whole here - its demuxers, decoders and assembly - to replace
+    # that closure (Diego, 14 November 2026).
+    "ffmpeg": {
+        "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+        "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+        "top": "ffmpeg-9.0.2",
+    },
     # **W5a's pictures** (`docs/w5.md`). zlib 1.4, 5 November 2026, and
     # libjpeg-turbo 3.2.1, 27 October 2026: GitHub's digests for the
     # release assets, as ICU's are.

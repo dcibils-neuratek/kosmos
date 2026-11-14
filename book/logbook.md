@@ -2802,3 +2802,36 @@ now has 2 GB, still less than any real computer Kosmos runs on.
 
 **Visible impact.** A YouTube search for BeOS, drawn on Kosmos, with every
 thumbnail. Video is next.
+
+## 14 November 2026 - Films taken apart and decoded, as FFmpeg would
+
+**In short.** Kosmos has a Media Kit: one piece of the system that opens
+a film or a song and turns it into pictures and sound. It is the whole of
+FFmpeg, the library nearly every video player uses, built for Kosmos with
+its hand-written fast code. On fourteen test files it gives exactly the
+pictures FFmpeg's own tool gives on this Mac.
+
+**What.** YouTube's videos are AV1 or VP9 pictures with Opus sound in
+WebM files, or H.264 with AAC in MP4. Until now Kosmos had a small piece of
+FFmpeg that only knew H.264 and AAC, without the fast code. The whole of
+FFmpeg is now built for Kosmos, with the processor-specific parts that
+make 1080p possible. The kit wraps it in a small door that every
+application uses the same way: give it bytes, and get back pictures and
+sound with times in microseconds.
+
+**Why.** Diego decided video comes first, and that every application
+which plays something stands on one kit: the browser, the Video app and
+Music.
+
+**How it is checked.** On this Mac, Homebrew's FFmpeg makes fourteen small
+films and songs from test patterns, in every format the kit reads. Kosmos
+decodes all of them in QEMU. Every frame and every sample must match the
+same test run on this Mac, and every picture must also match what
+FFmpeg's own `framemd5` tool says. That second reference is a program
+somebody else built. A truncated film and a file of noise must be refused.
+To show the check works, one byte is changed in a file: the check fails,
+as it should.
+
+**Measurements.** 336 pictures and 17 streams, all identical; 2.3 seconds
+in the test machine. Speed on a real processor is the next measurement.
+

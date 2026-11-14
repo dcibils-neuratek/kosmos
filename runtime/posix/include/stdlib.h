@@ -26,6 +26,10 @@ char *mkdtemp(char *pattern);
 int   setenv(const char *name, const char *value, int overwrite);
 int   unsetenv(const char *name);
 
+/* Memory on a boundary `align` wide, a power of two and a multiple of a
+ * pointer's size: 0 and `*out`, or EINVAL or ENOMEM (`memalign.c`). */
+int   posix_memalign(void **out, size_t align, size_t n);
+
 __END_DECLS
 
 #endif /* POSIX_STDLIB_H */

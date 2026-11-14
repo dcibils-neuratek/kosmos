@@ -1,9 +1,10 @@
 # Video and sound in JetSki: YouTube's player on Kosmos
 
-Written 14 November 2026, for Diego to decide, after: "YouTube is my most
+Written 14 November 2026 and **agreed the same day** - all four decisions
+below as recommended (*Decided*, at the end). Diego, before it: "YouTube is my most
 used website so it must work perfect", "Watching videos in youtube as is a
 top Priority", "So we need to have all decoders needed available"
-(`roadmap.md`, *YouTube first, and every decoder*). Nothing here is built.
+(`roadmap.md`, *YouTube first, and every decoder*).
 
 ## What a person can do with it (the feature set)
 
@@ -136,3 +137,28 @@ its AVX2 assembly - expected, not measured here: M1 measures it; FFmpeg's VP9 is
    which needs W7's network loader to run live; M6 Video on the Media Kit
    and `mp4.lua` gone. Until W7 YouTube can only be shown with a recorded
    film served from this Mac, which M3's tests already are in shape.
+
+## Decided
+
+Diego, 14 November 2026, each as recommended: **Kosmos's own player** on
+the Media Kit, not GStreamer; **FFmpeg built whole with its assembly**,
+one FFmpeg replacing the vendored closure; **AV1 first** to YouTube, then
+VP9, then H.264; and **the order M1 to M6** as written.
+
+## Built
+
+**M1 begun, 14 November 2026** (`testing.md` 18.804). FFmpeg 9.0.2 is
+built whole by `tools/w5_build.py` - its own `configure`, nasm's assembly
+on x86-64, NEON on AArch64, threads, the decoders and demuxers above with
+the PCM ones, and `libdav1d` as the AV1 decoder, so AV1 has one decoder
+here and it is AVIF's. The kit is `user/kits/media/`, with `media.h` as
+its door: a container read from the caller's `struct media_io`, packets
+and frames timed in microseconds, pictures as planes and sound as
+interleaved float. `x86-mediakit` holds it to this Mac line for line and
+to Homebrew's `ffmpeg -f framemd5` picture for picture.
+
+What M1 still owes is in `roadmap.md`: decoding speeds on real cores.
+The vendored closure leaves with M6, as Video's Lua door arrives.
+Video is the closure's one user, and the whole FFmpeg stands on the POSIX
+layer, which belongs in an image of its own rather than the system's.
+

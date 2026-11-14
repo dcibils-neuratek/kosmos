@@ -503,7 +503,7 @@ def main():
                   "posixtest: posix: counted 160000, ring 1000, timed out, once 1, keys 4, "
                   "thread-locals in turn, recursive, stacks, reaped, rwlock ")
               and ", joined 42; memory: 4 GB reserved, protected, discarded, unmapped "
-                  "in the middle, fixed, refused; process: slept, timed, pid in the table, " in said
+                  "in the middle, fixed, refused, aligned; process: slept, timed, pid in the table, " in said
               and (" processors, Kosmos %s, random, no environment; "
                    % ("x86_64" if X86 else "aarch64")) in said
               and "; files: made, excl, read and written, positioned, appended, cut, dup "

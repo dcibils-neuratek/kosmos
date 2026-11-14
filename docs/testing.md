@@ -33083,3 +33083,43 @@ own `alice29.txt.compressed` as `Content-Encoding: br`, held to this Mac's
 curl, whose bytes must be `alice29.txt`'s. PASS, 25 s. Control
 `KOSMOS_CURL_BREAK=brotli` (a byte of the guest's stream changed): the
 guest's curl exits 61, a bad content encoding, against the Mac's 0.
+
+## 18.804 The Media Kit, held to this Mac and to `framemd5` (M1)
+
+`docs/media.md` M1, first part. FFmpeg 9.0.2 built whole by its own
+`configure` (`w5_build.py`'s `ffmpeg`): x86-64 with nasm's assembly (AVX2
+and AVX-512 compiled in; Nebula's XCR0 turns on AVX and not AVX-512, and
+FFmpeg asks XCR0 before it uses either), AArch64 with NEON, threads, and
+`libdav1d` as the one AV1 decoder. Configure's trial links stand on the
+image's names, which now include musl's maths (`cbrt`, `round`: without
+them `libm.h` declares its own beside the real ones) and `posix_memalign`
+(new in the POSIX layer; FFmpeg refuses assembly without an aligned
+allocator). `posixtest` check 19 holds `posix_memalign` to every
+power-of-two boundary from 8 to 4096 and to refusing 48 and 4 with the
+pointer untouched; `x86-loader` PASS.
+
+The kit is `user/kits/media/` (`media.h`, `media.c`): a container read
+through the caller's `struct media_io`, packets with times in
+microseconds, decoders on threads, pictures handed back as planes and
+sound as interleaved float. `x86-mediakit` (`tools/run_mediakit.py`):
+`mediatest.elf` given 14 files that Homebrew's FFmpeg makes on this Mac from
+`testsrc2` and a sine wave - AV1 and VP9 with Opus in WebM, VP8 with Vorbis,
+H.264 with AAC in MP4 and in fragments, AV1 at 10 bits in fragments, VP9
+4:4:4, Ogg Opus, FLAC, MP3, ADTS AAC and WAV - plus a truncated MP4 and a
+file of noise. Each stream is decoded to its end on two threads, and the
+middle is sought. The two decoders' extensions are narrowed to what both
+machines have: `0x5b`, MMX to SSE3, since QEMU's `qemu64` has no AVX and
+Rosetta has AVX2.
+
+PASS, 2.3 s in the guest: 17 streams, every line as on this Mac (an Intel
+build under Rosetta), and 336 pictures in the 7 films as `ffmpeg -f
+framemd5` says them; the truncated film and the noise refused. Controls:
+`KOSMOS_MEDIA_BREAK=av1-opus.webm` - 38 lines differ, and `framemd5` gives
+28 frames where the guest has 48; `KOSMOS_MEDIA_BREAK=sine.flac` - the one
+FLAC line differs. The first run refused the WAV - no PCM decoder had been
+asked for - and the five PCM decoders are in the build now.
+
+The fragmented MP4s seek 83 ms later than the plain one and land on the
+same picture, and their AAC has 1,280 more samples. That is right, and the
+Mac says the same: a fragmented MP4 carries no edit list, which is what
+takes off two B-frames' delay and AAC's priming samples.

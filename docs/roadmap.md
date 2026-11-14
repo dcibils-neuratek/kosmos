@@ -10030,6 +10030,19 @@ the applications make the system useful, and is not pulled forward.
   wanted is by where the page came from - a page from the network may not
   open one from this machine - and it is checked where the link is
   followed, for both engines at once.
+- **The browser, end to end, is the work now** (Diego, 14 November 2026:
+  "Let's finish the browser now end to end which is the most importante
+  part of the os now for a daily driver usage"). `docs/w7.md` is the order,
+  as `webkit.md` had it and Diego confirmed the same day:
+  **W7a** WebKit2's three processes on endpoints and regions,
+  **W7b** pages from the network through WebKit's own `NetworkDataTaskCurl`
+  (cookies, HTTPS, the cache), **W7c** the window (`jetski.elf`, painting,
+  input, the address field), and **W7d** a day's browsing (tabs, history,
+  bookmarks, downloads, find, zoom, the session restored, HTTP/2). Then
+  W8's live sites with content blockers, and video M2-M5 as their
+  prerequisites land. A browser in one process was the alternative. It was
+  refused because WebKit's in-process curl loader has been removed
+  upstream, so it would have meant a second loader, thrown away later.
 - **JetSki - WebKit, ported natively - AGREED on 11 November 2026.** Named
   JetSki by Diego the same day: "because us super fast!". Diego: "I need a
   new web browser that is current and usable like safari or chrome", "We need
@@ -10299,9 +10312,33 @@ the applications make the system useful, and is not pulled forward.
       YouTube's Roboto and The Verge's faces paint as themselves.
       Brotli is also HTTP's `br`, which W7's loader needs: curl decodes
       it since 0.11.408 (18.803).
-    - *The design for video*: `docs/media.md`, for Diego to decide - a
-      Kosmos player in WebCore on a new Media Kit (FFmpeg's demuxers and
-      decoders, dav1d), the Playback Kit for sound.
+    - *The design for video*: `docs/media.md` - **AGREED 14 November
+      2026**: a Kosmos player in WebCore on a new Media Kit (FFmpeg built
+      whole with its assembly, dav1d), the Playback Kit for sound, AV1
+      first. Steps: M1 the Media Kit, M2 `<video src>`, M3 MSE, M4 Opus and
+      the clock, M5 YouTube live (after W7's loader), M6 Video on the Media
+      Kit and `mp4.lua` gone.
+      **M1 begun** (`testing.md` 18.804): FFmpeg 9.0.2 built whole with
+      its assembly by `w5_build.py`, and the kit (`user/kits/media/`) held
+      by `x86-mediakit` to this Mac and to `ffmpeg -f framemd5`. Left in
+      M1:
+      - *The vendored closure goes with M6, not before* (`tools/ffmpeg_vendor.py`,
+        `runtime/upstream/ffmpeg/`, `user/kits/ffmpeg/`). Its one user is
+        `user/lib/video.lua`, in the system's image. The whole FFmpeg is
+        built with threads, so it stands on the POSIX layer, which goes
+        into an image of its own and never into the system's
+        (`CLAUDE.md`, *Compatibility inside a process*). So the closure
+        leaves when Video moves to the Media Kit in an image of its own
+        (M6). No image holds both until then: application images are
+        built with `FULL=0`, which has no closure, and JetSki's is one.
+      - *Decoding speed measured* on real cores - 1080p AV1, VP9 and
+        H.264, one thread and four - on this Mac under Rosetta, then on
+        the M700; QEMU's numbers are not speeds.
+      - *The Lua door* (`/Kosmos/Kits/media`) arrives with its first Lua
+        user, Video (M6); JetSki's player is C++ and uses `media.h`.
+      - *A name to watch*: `/Kosmos/Libraries/media.lua` is Music's
+        engine, a different thing; when Video moves to the kit (M6), that
+        library is renamed after what it is.
     - *Video and sound*: **AV1** (dav1d - the same decoder as AVIF, one
       door), **VP9**, **H.264** (FFmpeg, there since 4e), **Opus** and
       **AAC**; played by **Media Source Extensions**, which is how YouTube
