@@ -18,6 +18,10 @@
 #include "netproto.h"
 #include "tcpring.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct net_conn {
     struct tcp_ring *ring;          /* shared with the stack */
     long             region;        /* its capability */
@@ -30,6 +34,9 @@ struct net_conn {
 /* The capability to the network server this process was given. Every
  * call below refuses until it has one. */
 void     net_client_start(long net_cap);
+/* The stack's capability the runner handed over, or -1: for a process
+ * handing it on to one it starts (`docs/w7.md` W7a's launcher). */
+long     net_client_cap(void);
 
 /* This machine's address and netmask, as NET_OP_INFO says them: NET_OK, or
  * why not. All zeroes while it has none. */
@@ -99,5 +106,9 @@ uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_co
  * (0 for ever): each entry's `got` written, and `NET_OK`; the entries are
  * the caller's, copied into a region kept here and grown as asked. */
 uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

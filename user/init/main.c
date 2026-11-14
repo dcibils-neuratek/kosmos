@@ -158,6 +158,20 @@ void vmm_server(long running, long ram, long setup, long more1, long more2, long
 #define ROLE_LLM      36UL    /* /Running/llm: a language model held (`xavier.md` X3) */
 #define ROLE_MODELSFS 37UL    /* serves /Models: language models (`xavier.md`) */
 
+/*
+ * **An image's own roles** (`docs/w7.md` W7a): 500 to 515 are the image's
+ * to give meaning to, and init hands any of them to `kosmos_project_role`
+ * when the image has one - JetSki's web and network processes, started from
+ * its own image by `SYS_SPAWN`. Weak, as `kosmos_project_kit` is: the
+ * system's image has none, and a role it is never given cannot arrive.
+ * Taken after the constructors, so the role's C++ is ready, and it never
+ * comes back into init.
+ */
+#define ROLE_PROJECT_FIRST 500UL
+#define ROLE_PROJECT_LAST  515UL
+
+extern int kosmos_project_role(unsigned long role) __attribute__((weak));
+
 /* `vmtest.c`: a guest made, run and stopped twice; 0, or the first check failed. */
 int vm_selftest(uint64_t detail[4]);
 void vmtest_role(long console);
@@ -1802,6 +1816,10 @@ int main(unsigned long arg)
      * from. It costs one syscall at startup and it is the only way anything
      * can tell these apart.
      */
+    if (arg >= ROLE_PROJECT_FIRST && arg <= ROLE_PROJECT_LAST) {
+        kosmos_exit(kosmos_project_role != NULL ? kosmos_project_role(arg) : 1);
+    }
+
     if (arg == ROLE_AUDIO) {
         named("audio");
         audio_server(0);

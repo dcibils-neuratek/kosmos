@@ -65,6 +65,7 @@ list(APPEND WebCore_SOURCES
     platform/kosmos/PasteboardKosmos.cpp
     platform/kosmos/PlatformKeyboardEventKosmos.cpp
     platform/kosmos/SharedMemoryKosmos.cpp
+    platform/kosmos/UserAgentKosmos.cpp
 
     platform/text/Hyphenation.cpp
     platform/text/LocaleICU.cpp

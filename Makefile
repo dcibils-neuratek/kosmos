@@ -4180,6 +4180,42 @@ $(UBUILD)/apps/webcoretest.elf: $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) $
 	    || { echo "apps: the system's image has WebCore or the EGL Kit in it"; rm -f $@; exit 1; }
 
 #
+# **W7a's WebKit2 test** (`tools/run_webkit2.py`, `docs/w7.md`): a UI
+# process with no window, and the web and network processes it starts,
+# which are this image again in their roles. WebCore's test's group, with
+# WebKit2's four parts before it: what is shared, and each process's own.
+#
+WEBKIT2_LIBS := $(WEBKIT_DIR)/lib/libWebKit.a $(WEBKIT_DIR)/lib/libWebKitUIProcess.a \
+    $(WEBKIT_DIR)/lib/libWebKitWebProcess.a $(WEBKIT_DIR)/lib/libWebKitNetworkProcess.a \
+    $(WEBKIT_DIR)/lib/libWebKitShared.a
+WEBKIT2TEST_OBJS := $(UBUILD)/user/kits/webkit2test/webkit2test.cpp.o \
+                    $(UBUILD)/user/kits/webkit2test/webkit2test_kit.c.o
+
+$(WEBKIT2_LIBS): $(WEBKIT_DIR)/.built
+
+$(UBUILD)/user/kits/webkit2test/webkit2test.cpp.o: user/kits/webkit2test/webkit2test.cpp \
+        user/kits/webkit2test/webkit2test.h $(WEBKIT_DIR)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
+	    $(WEBKIT_USER_FLAGS) \
+	    -isystem $(WEBKIT_DIR)/WTF/Headers -isystem $(WEBKIT_DIR)/bmalloc/Headers \
+	    -isystem $(WEBKIT_DIR)/WebKit/Headers -isystem $(ICU_DIR)/include \
+	    -isystem user/include -iquote kernel -c $< -o $@
+
+$(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
+        $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) $(ICU_LIBS) \
+        $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(WEBKIT2_LIBS) $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) \
+	    $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) \
+	    $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_webkit2test_kit$$' \
+	    || { echo "apps: webkit2test.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_webkit2test_kit|kosmos_webkit_role)$$' \
+	    || { echo "apps: the system's image has WebKit2 in it"; rm -f $@; exit 1; }
+
+#
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,
 # linked as `apptest.elf` is, and held to the same two promises - the image
 # has the kit, and the system's does not.
@@ -4348,10 +4384,10 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 	$(HOSTDIR)/tcc_stamp $@ $(USER_BASE)
 	@for a in doom quake snes; do ln -sf ../apps/$$a.elf $(dir $@)$$a.elf; done
 
-# WebCore's image on x86-64 only: AArch64's WebKit is built without
-# WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
+# WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
+# WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
-WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf)
+WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf $(UBUILD)/apps/webkit2test.elf)
 
 .PHONY: apps app-images
 apps:

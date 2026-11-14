@@ -10043,6 +10043,16 @@ the applications make the system useful, and is not pulled forward.
   prerequisites land. A browser in one process was the alternative. It was
   refused because WebKit's in-process curl loader has been removed
   upstream, so it would have meant a second loader, thrown away later.
+  **W7a built in 0.11.411** (`testing.md` 18.806): WebKit2's UI, web and
+  network processes on Nebula - the connection as two rings, pulses and
+  calls; the launcher on `SYS_SPAWN` handing each role only what it may
+  reach; a page painted in a web process and shown by the UI process pixel
+  for pixel as GTK's; a web process ended and the page loaded again in a
+  new one (`x86-webkit2`). **Left from W7a**: WebKit's own `ConnectionTests`,
+  `ArgumentCoderTests` and `EventTests` in the guest, with a ring advanced a
+  message early as their control (`w7.md`); nothing reaps an ended web or
+  network process yet; and WebKit's user agent quirks for the sites that
+  need them, with W7d. **Next, W7b.**
 - **JetSki - WebKit, ported natively - AGREED on 11 November 2026.** Named
   JetSki by Diego the same day: "because us super fast!". Diego: "I need a
   new web browser that is current and usable like safari or chrome", "We need

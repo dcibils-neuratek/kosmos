@@ -71,6 +71,21 @@ int storage_start(const struct storage_mount *mounts, unsigned count, const char
     return STORAGE_OK;
 }
 
+unsigned storage_mounts(struct storage_mount *out, unsigned max)
+{
+    unsigned i;
+
+    if (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) == 0) {
+        return 0;
+    }
+
+    for (i = 0; i < mounted && i < max; i++) {
+        out[i] = table[i];
+    }
+
+    return mounted;
+}
+
 const char *storage_cwd(void)
 {
     return cwd;

@@ -689,6 +689,16 @@ def main():
         sys.exit("usage: w5_build.py x86_64|aarch64|host|host-x86_64 [%s openssl]" % " ".join(LIBRARIES))
 
     arch = sys.argv[1]
+
+    # **Nothing of the make that ran this reaches a library's own make.**
+    # A variable on make's command line travels to every make below it in
+    # `MAKEFLAGS` and wins over that make's own: `make ARCH=x86_64 ...`
+    # set FFmpeg's `ARCH`, which is `x86`, so it looked for its assembly in
+    # `libavutil/x86_64/`, found no such folder, and built without it -
+    # quietly, until an image needed it (`testing.md` 18.806).
+    for flag in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "GNUMAKEFLAGS"):
+        os.environ.pop(flag, None)
+
     names = sys.argv[2:] or [n for n in LIBRARIES if n not in ("curl", "brotli", "woff2", "libavif")] \
         + ["openssl", "brotli", "curl", "woff2", "dav1d", "libavif", "ffmpeg"]
     for name in names:

@@ -25,6 +25,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define STORAGE_DISK 1u                 /* diskproto */
 #define STORAGE_RAM  2u                 /* ramproto */
 #define STORAGE_BIN  3u                 /* binproto, read only */
@@ -60,6 +64,12 @@ struct storage_mount {
 /* The mount table and the working directory, once; a second call is
  * STORAGE_ERR_DENIED, so a program cannot hand itself another. */
 int storage_start(const struct storage_mount *mounts, unsigned count, const char *cwd);
+
+/* The mount table that was handed over, up to `max` of it, and how many
+ * there are: for a process starting another to hand on what it may reach,
+ * or less (`docs/w7.md` W7a's launcher). Reading it changes nothing, and
+ * the table cannot be handed over again. */
+unsigned storage_mounts(struct storage_mount *out, unsigned max);
 
 /* The working directory the process was started in. */
 const char *storage_cwd(void);
@@ -105,5 +115,9 @@ int  storage_mkdir(const char *path);
 int  storage_delete(const char *path);              /* a file, or an empty directory */
 int  storage_rename(const char *from, const char *to);
 int  storage_flush(const char *path);               /* to the device, where there is one */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* KOSMOS_STORAGE_H */

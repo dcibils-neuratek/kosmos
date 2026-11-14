@@ -2835,3 +2835,45 @@ as it should.
 **Measurements.** 336 pictures and 17 streams, all identical; 2.3 seconds
 in the test machine. Speed on a real processor is the next measurement.
 
+
+## 14 November 2026 - The browser in three processes
+
+**In short.** JetSki, the browser, now runs the way Safari does: as three
+programs that talk to each other. One is the window, one draws each page,
+and one fetches from the network. A page drawn this way is identical, pixel
+for pixel, to the one GTK's WebKit draws. When the program drawing a page
+is killed, the window notices and draws the page again in a new one.
+
+**What.** WebKit, the engine under Safari, splits a browser into processes:
+the UI process (the window), a web process for each tab (it lays out the
+page and runs its scripts), and a network process that fetches everything.
+They talk constantly in both directions, and Kosmos's messages are built
+differently from Linux's or macOS's. So the connection between them was
+written for Kosmos. Each direction is a ring in shared memory. A short
+one-way signal (a pulse) says there is more to read. Anything handed over,
+such as a picture's memory, travels as a capability. Each program is
+started with only what it needs: a web process cannot see `/Home` or reach
+the network, so a hostile page has nothing there to take.
+
+**Why.** Diego made the browser the work now, for daily use. WebKit's
+loader for the network only exists in this three-process shape, so the
+processes had to come first.
+
+**Visible impact.** Nothing on screen yet: the window is the next step.
+What exists is the engine, running as a browser does, headless.
+
+**How it is checked.** `x86-webkit2` loads two test pages, waits for the
+picture, and compares it with GTK's expected picture pixel for pixel. Then
+it kills the drawing process halfway through a load, and the window must
+say so and finish the page in a new process. To show the comparison bites,
+one expected pixel is changed, and the test fails.
+
+**What it found.** Two bugs a design document could not show. First, a
+drawing process that crashed said nothing, because only programs written in
+Lua could print. Now a C program is handed a console, the way servers are.
+Second, the window ended its first channel before answering the call that
+replaced it. Ending a channel cancels every call waiting on it, so the
+other side's first call always failed. The answer now goes first.
+
+**Measurements.** 2.1 seconds in the test machine for the three loads, the
+killed one included. WebKit2's own code compiled to 205 objects.

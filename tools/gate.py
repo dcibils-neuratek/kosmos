@@ -723,6 +723,17 @@ SUITES = [
                         "tools/gles_unreached.py",
                         *WEBKIT, *W5)),
 
+    # **W7a's WebKit2** (`docs/w7.md`): `webkit2test.elf`, a UI process
+    # with no window that starts a web process and a network process - the
+    # same image in its roles - loads W6c's pages in them and paints the
+    # picture it is sent, pixel for pixel as GTK's port does; and a web
+    # process ended halfway, said, and the page loaded again in a new one.
+    Suite("x86-webkit2", ["python3", "tools/run_webkit2.py", X86,
+                          "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_webkit2.py", "tools/pngread.py", "user/kits/webkit2test",
+                        "user/kits/egl", "tools/gles_unreached.py",
+                        *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

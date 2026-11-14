@@ -83,9 +83,16 @@ def patched_source():
         upstream.unpack("webkit")
         release = upstream.where("webkit")
 
-    shutil.rmtree(SRC, ignore_errors=True)
+    # **Cut beside the copy, then only what differs is carried into it**
+    # (`docs/w7.md` W7a): a copy cut again from nothing gives every file a
+    # new time, and ninja then builds all of WebKit again - an hour and more
+    # - for one port file. So the new copy is cut at `src.next`, and rsync,
+    # comparing contents rather than times, writes into `src` only the
+    # files whose bytes changed, and removes what went.
+    cut = SRC + ".next"
+    shutil.rmtree(cut, ignore_errors=True)
     os.makedirs(os.path.dirname(SRC), exist_ok=True)
-    subprocess.run(["cp", "-Rc", release, SRC], check=True)
+    subprocess.run(["cp", "-Rc", release, cut], check=True)
 
     # What the release does not carry, from WebKit's git at its tag's
     # commit (`docs/w6.md`): laid over the copy before the patches, so a
@@ -98,7 +105,7 @@ def patched_source():
         dirs[:] = [d for d in dirs if d != ".git"]
         for name in names:
             path = os.path.relpath(os.path.join(folder, name), overlay)
-            into = os.path.join(SRC, path)
+            into = os.path.join(cut, path)
             if os.path.exists(into):
                 with open(into, "rb") as a, open(os.path.join(folder, name), "rb") as b:
                     if a.read() != b.read():
@@ -113,15 +120,24 @@ def patched_source():
     for name in sorted(os.listdir(PATCHES)):
         if name.endswith(".patch"):
             with open(os.path.join(PATCHES, name), "rb") as f:
-                r = subprocess.run(["patch", "-s", "-p1", "-d", SRC], stdin=f)
+                r = subprocess.run(["patch", "-s", "-p1", "-d", cut], stdin=f)
             if r.returncode != 0:
                 sys.exit("webkit_build: %s does not apply" % name)
 
     # Kosmos's own files - a platform's sources WebKit has none of - in the
     # places the patches' CMake lists name them.
     for path in port_files():
-        os.makedirs(os.path.dirname(os.path.join(SRC, path)), exist_ok=True)
-        shutil.copy2(os.path.join(PORT, path), os.path.join(SRC, path))
+        os.makedirs(os.path.dirname(os.path.join(cut, path)), exist_ok=True)
+        shutil.copy2(os.path.join(PORT, path), os.path.join(cut, path))
+
+    if os.path.isdir(SRC):
+        r = subprocess.run(["rsync", "-rl", "--checksum", "--delete",
+                            "--exclude", "/.patched", cut + "/", SRC + "/"])
+        if r.returncode != 0:
+            sys.exit("webkit_build: the new copy did not carry into %s" % SRC)
+        shutil.rmtree(cut)
+    else:
+        os.rename(cut, SRC)
 
     with open(stamp, "w") as f:
         f.write(want)
@@ -151,8 +167,11 @@ def configure(arch, out):
             and os.path.exists(os.path.join(out, "build.ninja")):
         return
 
-    shutil.rmtree(out, ignore_errors=True)
-    os.makedirs(out)
+    # Configured again where it stands, so what was built and has not
+    # changed is not built again; from nothing only the first time.
+    if not os.path.exists(os.path.join(out, "CMakeCache.txt")):
+        shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out, exist_ok=True)
 
     command = [
         "cmake", "-G", "Ninja", "-S", SRC, "-B", out, "-Wno-dev",
@@ -309,7 +328,7 @@ def main():
         configure_reference(arch, out)
         sys.exit(subprocess.run(["ninja", "-C", out] + (sys.argv[2:] or ["Skia"])).returncode)
 
-    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore", "Skia", "PAL", "WebCore"]
+    targets = sys.argv[2:] or ["WTF", "bmalloc", "JavaScriptCore", "Skia", "PAL", "WebCore", "WebKit"]
 
     for needed, how in ((os.path.join(ROOT, "build", "cxx", arch, ".built"),
                          "make ARCH=%s cxx-runtimes" % arch),
@@ -334,10 +353,18 @@ def main():
     # Kosmos does not build yet - and `WebCore` does not depend on.
     if "WebCore" in targets:
         targets = targets + [t for t in WEBCORE_PARTS if t not in targets]
+    # And WebKit2 (`docs/w7.md` W7a): what the UI, web and network
+    # processes each run, and what they share, are object libraries too.
+    if "WebKit" in targets:
+        targets = targets + [t for t in WEBKIT_PARTS if t not in targets]
 
-    r = subprocess.run(["ninja", "-C", out] + targets)
+    # `WEBKIT_KEEP_GOING=1` builds everything that compiles and lists every
+    # file that does not, rather than stopping at the first: what a port's
+    # first build of a library wants to know.
+    keep = ["-k", "0"] if os.environ.get("WEBKIT_KEEP_GOING") else []
+    r = subprocess.run(["ninja", "-C", out] + keep + targets)
 
-    for part in ["JavaScriptCoreJIT"] + WEBCORE_PARTS:
+    for part in ["JavaScriptCoreJIT"] + WEBCORE_PARTS + WEBKIT_PARTS:
         if r.returncode == 0 and part in targets:
             r = archive_objects(out, part)
 
@@ -346,13 +373,15 @@ def main():
 
 WEBCORE_PARTS = ["WebCoreStyle", "WebCoreDOMAndRendering", "WebCoreJSBindings",
                  "WebCoreInspector"]
+WEBKIT_PARTS = ["WebKitShared", "WebKitUIProcess", "WebKitWebProcess", "WebKitNetworkProcess"]
 
 
 def archive_objects(out, part):
     """`lib/libPART.a`: an object library's objects, as one thin archive
     like CMake's own, so the Makefile links one more library rather than
     hundreds of objects it would have to be told the names of."""
-    project = "JavaScriptCore" if part == "JavaScriptCoreJIT" else "WebCore"
+    project = ("JavaScriptCore" if part == "JavaScriptCoreJIT"
+               else "WebKit" if part.startswith("WebKit") else "WebCore")
     head = "build Source/%s/%s: phony " % (project, part)
     with open(os.path.join(out, "build.ninja"), encoding="utf-8") as f:
         for line in f:

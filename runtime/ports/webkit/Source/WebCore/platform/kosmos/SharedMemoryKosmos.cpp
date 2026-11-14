@@ -5,11 +5,12 @@
  * with `kosmos_mem_create`, mapped with `kosmos_mem_map`, let go of with
  * `kosmos_share_unmap`, and handed on by its capability (`KosmosRegion.h`).
  *
- * **Protection is not enforced yet.** Nebula maps a region read and write
- * or read and execute, and a read-only handle is mapped read and write,
- * as WebKit's Unix port does with a read-only file descriptor
- * (webkit.org/b/131542). It matters once a handle crosses to another
- * process, at W7, and Nebula's mapping read-only is on the roadmap for it.
+ * **A read-only handle is a read-only capability** (`docs/w7.md` W7a):
+ * `kosmos_mem_readonly` makes a second capability to the region that
+ * Nebula maps without write access wherever it goes, so a process handed
+ * one cannot write the pages however it maps them - which a file
+ * descriptor opened read-only does not promise WebKit's Unix port
+ * (webkit.org/b/131542).
  */
 
 #include "config.h"
@@ -23,19 +24,6 @@ namespace WebCore {
 static unsigned long pagesFor(size_t bytes)
 {
     return (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
-}
-
-KosmosRegion KosmosRegion::adopt(long capability)
-{
-    KosmosRegion region;
-    if (capability >= 0)
-        region.m_capability = adoptRef(*new Capability(capability));
-    return region;
-}
-
-KosmosRegion::Capability::~Capability()
-{
-    kosmos_cap_drop(index);
 }
 
 RefPtr<SharedMemory> SharedMemory::allocate(size_t size)
@@ -81,11 +69,16 @@ SharedMemory::~SharedMemory()
     kosmos_share_unmap(reinterpret_cast<unsigned long>(m_data), pagesFor(m_size));
 }
 
-auto SharedMemory::createHandle(Protection) -> std::optional<Handle>
+auto SharedMemory::createHandle(Protection protection) -> std::optional<Handle>
 {
     if (!m_region)
         return std::nullopt;
-    return { Handle(KosmosRegion { m_region }, m_size) };
+    if (protection == Protection::ReadWrite)
+        return { Handle(KosmosRegion { m_region }, m_size) };
+    auto readOnly = KosmosRegion::adopt(kosmos_mem_readonly(m_region.capability()));
+    if (!readOnly)
+        return std::nullopt;
+    return { Handle(WTF::move(readOnly), m_size) };
 }
 
 } // namespace WebCore

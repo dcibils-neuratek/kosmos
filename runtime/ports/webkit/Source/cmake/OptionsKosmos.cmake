@@ -54,6 +54,10 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_WOFF2 PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_AVIF PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_JPEGXL PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_LCMS PRIVATE OFF)
+# **No GPU process** (`docs/w7.md` W7a): a page is painted on the
+# processor in its web process, as PlayStation's port does without one,
+# until there is a GPU to give a process of its own.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_GPU_PROCESS PRIVATE OFF)
 # And what a window brings, at W7: the system's notifications, a
 # position, context menus, full screen, and messages to the application.
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_CONTEXT_MENUS PRIVATE OFF)
@@ -76,7 +80,7 @@ SET_AND_EXPOSE_TO_BUILD(WTF_DEFAULT_EVENT_LOOP 0)
 # the Mac's own and is never built here.
 set(ENABLE_WEBCORE ON)
 set(ENABLE_WEBKIT_LEGACY OFF)
-set(ENABLE_WEBKIT OFF)
+set(ENABLE_WEBKIT ON)
 set(ENABLE_WEBINSPECTORUI OFF)
 set(ENABLE_WEBGPU OFF)
 

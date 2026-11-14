@@ -44,6 +44,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "conproto.h"
 #include "kosmos.h"
 #include "posix.h"
 #include "storage.h"
@@ -581,15 +582,58 @@ int fcntl(int fd, int command, ...)
  */
 
 /*
+ * A console this process was handed (`posix_console`), or -1. A process
+ * with no Lua side has nobody to collect its spill ring: a web process
+ * WebKit started said nothing at all, its crash included (`docs/w7.md`
+ * W7a). Handed the console's endpoint, it is heard as a server is - a
+ * `CON_OP_WRITE` per piece, as `say` sends a line.
+ */
+static long handed_console = -1;
+
+void posix_console(long capability)
+{
+    handed_console = capability;
+}
+
+long posix_console_capability(void)
+{
+    return handed_console;
+}
+
+static bool console_say(const char *s, size_t bytes)
+{
+    while (bytes > 0) {
+        struct message msg, rep;
+        struct con_request *req = (struct con_request *)msg.data;
+        size_t n = bytes < CON_TEXT_MAX ? bytes : CON_TEXT_MAX;
+
+        memset(&msg, 0, sizeof(msg));
+        msg.length = sizeof(*req);
+        req->op = CON_OP_WRITE;
+        req->length = (uint32_t)n;
+        memcpy(req->text, s, n);
+        if (kosmos_call(handed_console, &msg, &rep) < 0) {
+            return false;
+        }
+        s += n;
+        bytes -= n;
+    }
+
+    return true;
+}
+
+/*
  * The console, or the spill ring when the console will not take it - as
  * the C library's `printf` does. `SYS_WRITE` is the console's owner's
  * alone, so for every other process this used to be EIO: SQLite's
  * `fuzzcheck`, run from the prompt, said nothing at all (`docs/w5.md`
- * W5c). Spilled, it is collected by whoever can reach a console.
+ * W5c). Spilled, it is collected by whoever can reach a console - or,
+ * where this process was handed one, it goes there.
  */
 static ssize_t console_write(const void *buf, size_t bytes)
 {
-    if (bytes > 0 && kosmos_write(buf, bytes) < 0) {
+    if (bytes > 0 && kosmos_write(buf, bytes) < 0
+        && !(handed_console >= 0 && console_say(buf, bytes))) {
         kosmos_spill(buf, bytes);
     }
 

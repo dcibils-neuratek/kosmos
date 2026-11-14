@@ -37,6 +37,11 @@ __BEGIN_DECLS
 int posix_program_run(int (*entry)(int, char **), int argc, char **argv,
                       unsigned long stack_pages);
 
+/* A console's endpoint (`conproto.h`) for this process's standard output
+ * and error, where `SYS_WRITE` refuses them; -1 for none. And which. */
+void posix_console(long capability);
+long posix_console_capability(void);
+
 /* The same, with the program's `stdout` and `stderr` a file made at
  * `path` for the length of the run. -1 with `errno` when the file could
  * not be made, as well. */

@@ -37,6 +37,11 @@ void net_client_start(long net_cap)
     net = net_cap;
 }
 
+long net_client_cap(void)
+{
+    return net;
+}
+
 /* One exchange with the stack. */
 static int ask(const struct net_request *req, struct net_reply *rep, struct message *out)
 {

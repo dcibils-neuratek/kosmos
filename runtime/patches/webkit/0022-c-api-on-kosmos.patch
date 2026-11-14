@@ -1,0 +1,33 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+WebKit2's C API on Kosmos (docs/w7.md W7a).
+
+A view is PlayStation's: with no WPE backend nothing in PlayStationWebView,
+its page client or WKView is PlayStation's own, so Kosmos uses them and
+their casts. WKBase.h names Kosmos's base header, which declares the view
+(runtime/ports/webkit/Source/WebKit/Shared/API/c/kosmos/).
+
+diff -ruN a/Source/WebKit/Shared/API/c/WKBase.h b/Source/WebKit/Shared/API/c/WKBase.h
+--- a/Source/WebKit/Shared/API/c/WKBase.h	2026-11-14 11:55:03.975237330 -0300
++++ b/Source/WebKit/Shared/API/c/WKBase.h	2026-11-14 11:55:03.997724625 -0300
+@@ -40,6 +40,8 @@
+ #include <WebKit/WKBaseWin.h>
+ #elif defined(__SCE__)
+ #include <WebKit/WKBasePlayStation.h>
++#elif defined(BUILDING_KOSMOS__)
++#include <WebKit/WKBaseKosmos.h>
+ #endif
+ 
+ /* WebKit2 shared types */
+diff -ruN a/Source/WebKit/UIProcess/API/C/WKAPICast.h b/Source/WebKit/UIProcess/API/C/WKAPICast.h
+--- a/Source/WebKit/UIProcess/API/C/WKAPICast.h	2026-11-14 11:55:03.983560279 -0300
++++ b/Source/WebKit/UIProcess/API/C/WKAPICast.h	2026-11-14 11:55:03.997858459 -0300
+@@ -444,7 +444,7 @@
+ #include "WKAPICastWin.h"
+ #endif
+ 
+-#if defined(__SCE__)
++#if defined(__SCE__) || defined(BUILDING_KOSMOS__)
+ #include "WKAPICastPlayStation.h"
+ #endif
+ 

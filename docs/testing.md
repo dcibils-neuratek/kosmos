@@ -33141,3 +33141,60 @@ read-only. 21: a write-combining region has no read-only capability. Role
 be ended by the fault. PASS. Control: a transfer that installs the
 capability writable - the role says 20, and the write does not end the
 process (it returns 3).
+
+## 18.806 WebKit2's three processes on Nebula (W7a)
+
+`docs/w7.md` W7a: WebKit2 built for Kosmos - its UI, web and network
+processes, the connection between them on endpoints, pulses and a region
+of two rings, the launcher on `SYS_SPAWN`, the drawing area painting on the
+processor - and `webkit2test.elf`, a UI process with no window.
+
+`x86-webkit2` (`tools/run_webkit2.py`): the UI process starts a web process
+and a network process - the same image in roles 500 and 501 - and loads two
+of W6c's pages from strings, `abspos-containing-block-initial-004a` and
+`-009f`, at 800 by 600. It waits for the navigation to finish and a picture
+after it, and paints that picture into a surface by `WKPagePaintKosmos`;
+each is held pixel for pixel to GTK's expected PNG, as `x86-webcore` holds
+the same pages painted in one process. Then the first page again, with its
+web process ended as soon as its navigation commits: the UI process must
+say so, load the page again in a new web process - a different process id
+- and paint the same picture.
+
+PASS, 2.1 s in the guest. Control: `KOSMOS_WEBKIT2_BREAK=picture` changes
+one pixel of the first expected picture - "1 of 480000 pixels differ from
+GTK's, the first (400,300)", FAIL.
+
+What the first runs found:
+
+- **Nothing a web process said was heard.** A process with no Lua side
+  spills its standard error into a ring nobody drains, so the first run's
+  web process ended with code 0 and no word. The POSIX layer now sends it
+  to a console it is handed (`posix_console`), and the launcher hands each
+  child the UI process's.
+- **The handshake abandoned its own call.** The UI process, as the maker,
+  ended the endpoint the web process's first call arrived on before
+  answering it. Ending an endpoint abandons every call waiting on it, so
+  the web process's call failed with `IPC_ERR_GONE`, it closed, and the UI
+  process saw its new inbox end: "the web process ended" before anything
+  loaded. The answer goes first now, and the endpoint after.
+- **A page loaded from a string is not reloaded in a new process.**
+  `WKPageReload` after the crash started a web process that loaded nothing,
+  since the string was never that process's. The control gives the string
+  again, as a browser loads the address again.
+
+And the gate found one more, outside WebKit. The POSIX layer's header
+changed, so the W5 libraries were built again - from inside make, for the
+first time, since FFmpeg came in by `w5_build.py` run by hand. The gate's
+`make ... ARCH=x86_64` reached FFmpeg's make in `MAKEFLAGS` and won over its
+own `ARCH=x86`, so FFmpeg looked for its assembly in `libavutil/x86_64/`,
+found nothing, and built without it: `mediatest.elf` would not link, short
+of `ff_get_cpu_flags_x86` and 40 more. `w5_build.py` now clears what the
+make above it passed down, for every library it builds.
+
+The gate after that fix failed three suites of 128 in 792 s - `arm-sandbox`
+(the plan cut short at 218 of 219), `x86-tcpfar` (1.8 MB/s against 1.25 MB/s
+from a 64 KB window) and `x86-midi` (three refusals printed after the next
+command, not before it). Run alone straight after, all three passed: 219 of
+219, 4 of 4 and 10 of 10, in 26 s. They are timing under a full machine, not
+this change, and each failed log is kept in `build/gate/failed/`.
+

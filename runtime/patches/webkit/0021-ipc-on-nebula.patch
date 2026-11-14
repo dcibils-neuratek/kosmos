@@ -1,0 +1,285 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+WebKit2's IPC on Nebula (docs/w7.md W7a).
+
+An attachment is a capability, counted (WTF's KosmosCapability); a
+connection's handle is its ring's region, the endpoint its side receives
+on, the one it sends to, and whether that side made them; a semaphore is
+an endpoint. Every branch is OS(KOSMOS), beside Unix's, Darwin's and
+Windows's - and the drawing area's layer tree host, which on Kosmos is
+never made (no compositing); the files they name are Kosmos's own
+(runtime/ports/webkit/Source/WebKit/Platform/IPC/kosmos/).
+
+diff -ruN a/Source/WebKit/Platform/IPC/ArgumentCoders.h b/Source/WebKit/Platform/IPC/ArgumentCoders.h
+--- a/Source/WebKit/Platform/IPC/ArgumentCoders.h	2026-11-14 11:37:14.132127984 -0300
++++ b/Source/WebKit/Platform/IPC/ArgumentCoders.h	2026-11-14 11:37:40.099996021 -0300
+@@ -52,6 +52,9 @@
+ #if USE(UNIX_DOMAIN_SOCKETS)
+ #include "ArgumentCodersUnix.h"
+ #endif
++#if OS(KOSMOS)
++#include "ArgumentCodersKosmos.h"
++#endif
+ 
+ namespace IPC {
+ 
+diff -ruN a/Source/WebKit/Platform/IPC/Attachment.h b/Source/WebKit/Platform/IPC/Attachment.h
+--- a/Source/WebKit/Platform/IPC/Attachment.h	2026-11-14 11:37:14.087966855 -0300
++++ b/Source/WebKit/Platform/IPC/Attachment.h	2026-11-14 11:37:40.098118139 -0300
+@@ -39,6 +39,10 @@
+ #include <wtf/unix/UnixFileDescriptor.h>
+ #endif
+ 
++#if OS(KOSMOS)
++#include <wtf/kosmos/KosmosCapability.h>
++#endif
++
+ namespace IPC {
+ 
+ // IPC::Attachment is a type representing objects that cannot be transferred as data,
+@@ -49,6 +53,8 @@
+ struct Attachment { }; // Windows does not need attachments at the moment.
+ #elif OS(ANDROID)
+ using Attachment = Variant<UnixFileDescriptor, RefPtr<AHardwareBuffer>>;
++#elif OS(KOSMOS)
++using Attachment = KosmosCapability; // a region's or an endpoint's (docs/w7.md)
+ #elif USE(UNIX_DOMAIN_SOCKETS)
+ using Attachment = UnixFileDescriptor;
+ #else
+diff -ruN a/Source/WebKit/Platform/IPC/Connection.cpp b/Source/WebKit/Platform/IPC/Connection.cpp
+--- a/Source/WebKit/Platform/IPC/Connection.cpp	2026-11-14 11:37:14.114069914 -0300
++++ b/Source/WebKit/Platform/IPC/Connection.cpp	2026-11-14 11:37:40.100825357 -0300
+@@ -1715,7 +1715,7 @@
+     dispatcher()->dispatch(WTF::move(clientRunLoopTask));
+ }
+ 
+-#if !USE(UNIX_DOMAIN_SOCKETS) && !OS(DARWIN) && !OS(WINDOWS)
++#if !USE(UNIX_DOMAIN_SOCKETS) && !OS(DARWIN) && !OS(WINDOWS) && !OS(KOSMOS)
+ std::optional<Connection::ConnectionIdentifierPair> Connection::createConnectionIdentifierPair()
+ {
+     notImplemented();
+diff -ruN a/Source/WebKit/Platform/IPC/Connection.h b/Source/WebKit/Platform/IPC/Connection.h
+--- a/Source/WebKit/Platform/IPC/Connection.h	2026-11-14 11:37:14.107756223 -0300
++++ b/Source/WebKit/Platform/IPC/Connection.h	2026-11-14 11:41:32.562600890 -0300
+@@ -301,7 +301,14 @@
+         Identifier(Identifier&&) = default;
+         Identifier& operator=(Identifier&&) = default;
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS)
++#if OS(KOSMOS)
++        explicit Identifier(Handle&& handle)
++            : handle(WTF::move(handle))
++        {
++        }
++        operator bool() const { return !!handle; }
++        Handle handle;
++#elif USE(UNIX_DOMAIN_SOCKETS)
+         explicit Identifier(Handle&& handle)
+             : Identifier({ handle.release(), UnixFileDescriptor::Adopt })
+         {
+@@ -764,7 +771,28 @@
+     bool m_ignoreInvalidMessageForTesting { false };
+ #endif
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS)
++#if OS(KOSMOS)
++    // **On Nebula** (ConnectionKosmos.cpp, docs/w7.md): two rings in a
++    // region, a pulse when one was empty, attachments by calls, and a
++    // thread of the connection's own that only receives.
++    void receiveOnNebula();
++    bool readRing();
++    bool sendRecord(long outbox, std::span<const uint8_t> body, Vector<Attachment>&&, bool outOfLine);
++    bool sendCapability(long outbox, uint64_t tag, long capability);
++
++    ConnectionHandle m_nebula;
++    RefPtr<WTF::Thread> m_receiver;
++    uint8_t* m_rings { nullptr };
++    Lock m_sendLock; // one record at a time, its attachments first
++    // Never held across a call, so the receiving thread can always take it.
++    Lock m_nebulaLock;
++    Condition m_handshakeCondition;
++    // The maker's inbox from the handshake on, made by the other side.
++    KosmosCapability m_madeInbox WTF_GUARDED_BY_LOCK(m_nebulaLock);
++    bool m_handshakeDone WTF_GUARDED_BY_LOCK(m_nebulaLock) { false };
++    std::atomic<bool> m_closing { false };
++    Deque<Attachment> m_arrivedAttachments; // the receiving thread's alone
++#elif USE(UNIX_DOMAIN_SOCKETS)
+     // Called on the connection queue.
+     void readyReadHandler();
+     bool sendOutputMessage(UnixMessage&&);
+diff -ruN a/Source/WebKit/Platform/IPC/ConnectionHandle.h b/Source/WebKit/Platform/IPC/ConnectionHandle.h
+--- a/Source/WebKit/Platform/IPC/ConnectionHandle.h	2026-11-14 11:37:14.094597589 -0300
++++ b/Source/WebKit/Platform/IPC/ConnectionHandle.h	2026-11-14 11:37:40.098482390 -0300
+@@ -29,7 +29,9 @@
+ #include <wtf/Compiler.h>
+ #include <wtf/Forward.h>
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS)
++#if OS(KOSMOS)
++#include <wtf/kosmos/KosmosCapability.h>
++#elif USE(UNIX_DOMAIN_SOCKETS)
+ #include <wtf/unix/UnixFileDescriptor.h>
+ #elif OS(DARWIN)
+ #include <mach/mach.h>
+@@ -50,7 +52,22 @@
+     ConnectionHandle(const ConnectionHandle&) = delete;
+     ConnectionHandle& operator=(const ConnectionHandle&) = delete;
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS)
++#if OS(KOSMOS)
++    // The side a connection's handle is: its ring's region, the endpoint
++    // this side receives on, the one it sends to, and whether this side
++    // made them (docs/w7.md, ConnectionKosmos.cpp).
++    ConnectionHandle(KosmosCapability&& region, KosmosCapability&& inbox, KosmosCapability&& outbox, bool maker)
++        : m_region(WTF::move(region))
++        , m_inbox(WTF::move(inbox))
++        , m_outbox(WTF::move(outbox))
++        , m_maker(maker)
++    { }
++    explicit operator bool() const { return !!m_region && !!m_inbox && !!m_outbox; }
++    const KosmosCapability& region() const { return m_region; }
++    const KosmosCapability& inbox() const { return m_inbox; }
++    const KosmosCapability& outbox() const { return m_outbox; }
++    bool maker() const { return m_maker; }
++#elif USE(UNIX_DOMAIN_SOCKETS)
+     ConnectionHandle(UnixFileDescriptor&& inHandle)
+         : m_handle(WTF::move(inHandle))
+     { }
+@@ -73,7 +90,12 @@
+ private:
+     friend struct IPC::ArgumentCoder<ConnectionHandle>;
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS)
++#if OS(KOSMOS)
++    KosmosCapability m_region;
++    KosmosCapability m_inbox;
++    KosmosCapability m_outbox;
++    bool m_maker { false };
++#elif USE(UNIX_DOMAIN_SOCKETS)
+     UnixFileDescriptor m_handle;
+ #elif OS(WINDOWS)
+     Win32Handle m_handle;
+diff -ruN a/Source/WebKit/Platform/IPC/ConnectionHandle.serialization.in b/Source/WebKit/Platform/IPC/ConnectionHandle.serialization.in
+--- a/Source/WebKit/Platform/IPC/ConnectionHandle.serialization.in	2026-11-14 11:37:14.101307948 -0300
++++ b/Source/WebKit/Platform/IPC/ConnectionHandle.serialization.in	2026-11-14 11:37:40.099427727 -0300
+@@ -21,7 +21,17 @@
+ # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ webkit_platform_header: "ConnectionHandle.h"
++#if OS(KOSMOS)
++headers: <wtf/kosmos/KosmosCapability.h> "ArgumentCodersKosmos.h"
++#endif
++
+ [CustomHeader, RValue, WebKitPlatform] class IPC::ConnectionHandle {
++#if OS(KOSMOS)
++    KosmosCapability m_region;
++    KosmosCapability m_inbox;
++    KosmosCapability m_outbox;
++    bool m_maker;
++#endif
+ #if USE(UNIX_DOMAIN_SOCKETS)
+     UnixFileDescriptor m_handle;
+ #endif
+diff -ruN a/Source/WebKit/Platform/IPC/IPCEvent.h b/Source/WebKit/Platform/IPC/IPCEvent.h
+--- a/Source/WebKit/Platform/IPC/IPCEvent.h	2026-11-14 11:48:02.806934816 -0300
++++ b/Source/WebKit/Platform/IPC/IPCEvent.h	2026-11-14 11:48:02.828265399 -0300
+@@ -150,6 +150,8 @@
+     Semaphore event;
+ #if PLATFORM(WIN)
+     Semaphore signal(Win32Handle { event.m_semaphoreHandle });
++#elif OS(KOSMOS)
++    Semaphore signal(KosmosCapability { event.m_endpoint });
+ #else
+     Semaphore signal(event.m_fd.duplicate());
+ #endif
+diff -ruN a/Source/WebKit/Platform/IPC/IPCSemaphore.h b/Source/WebKit/Platform/IPC/IPCSemaphore.h
+--- a/Source/WebKit/Platform/IPC/IPCSemaphore.h	2026-11-14 11:37:14.119839895 -0300
++++ b/Source/WebKit/Platform/IPC/IPCSemaphore.h	2026-11-14 11:41:11.587924275 -0300
+@@ -36,6 +36,8 @@
+ #include <wtf/MachSendRight.h>
+ #elif OS(WINDOWS)
+ #include <wtf/win/Win32Handle.h>
++#elif OS(KOSMOS)
++#include <wtf/kosmos/KosmosCapability.h>
+ #elif USE(UNIX_DOMAIN_SOCKETS)
+ #include <wtf/unix/UnixFileDescriptor.h>
+ #endif
+@@ -76,6 +78,11 @@
+     explicit Semaphore(Win32Handle&&);
+     Win32Handle win32Handle() const { return Win32Handle { m_semaphoreHandle }; }
+ 
++#elif OS(KOSMOS)
++    // An endpoint: a signal is a pulse, a wait a receive (IPCSemaphoreKosmos.cpp).
++    explicit Semaphore(KosmosCapability&&);
++    KosmosCapability endpoint() const { return m_endpoint; }
++    explicit operator bool() const { return !!m_endpoint; }
+ #elif USE(UNIX_DOMAIN_SOCKETS)
+     explicit Semaphore(UnixFileDescriptor&&);
+     UnixFileDescriptor duplicateDescriptor() const;
+@@ -92,6 +99,11 @@
+     semaphore_t m_semaphore { SEMAPHORE_NULL };
+ #elif OS(WINDOWS)
+     Win32Handle m_semaphoreHandle;
++#elif OS(KOSMOS)
++    KosmosCapability m_endpoint;
++    // Signals a coalesced pulse carried beyond the one a wait took; only
++    // the waiting side's to touch.
++    uint32_t m_surplus { 0 };
+ #elif USE(UNIX_DOMAIN_SOCKETS)
+     UnixFileDescriptor m_fd;
+ #endif
+diff -ruN a/Source/WebKit/Platform/IPC/IPCSemaphore.serialization.in b/Source/WebKit/Platform/IPC/IPCSemaphore.serialization.in
+--- a/Source/WebKit/Platform/IPC/IPCSemaphore.serialization.in	2026-11-14 11:37:14.125683834 -0300
++++ b/Source/WebKit/Platform/IPC/IPCSemaphore.serialization.in	2026-11-14 11:37:40.099775854 -0300
+@@ -32,4 +32,7 @@
+ #if USE(UNIX_DOMAIN_SOCKETS)
+     UnixFileDescriptor duplicateDescriptor();
+ #endif
++#if OS(KOSMOS)
++    KosmosCapability endpoint();
++#endif
+ };
+diff -ruN a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in
+--- a/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in	2026-11-14 11:37:14.139121928 -0300
++++ b/Source/WebKit/Shared/WebCoreArgumentCoders.serialization.in	2026-11-14 11:37:40.100354981 -0300
+@@ -1656,8 +1656,14 @@
+ #if OS(DARWIN)
+ header: <wtf/MachSendRight.h>
+ #endif
++#if OS(KOSMOS)
++headers: <wtf/kosmos/KosmosCapability.h> "ArgumentCodersKosmos.h"
++#endif
+ 
+ [CustomHeader, RValue, WebKitPlatform] class WebCore::SharedMemoryHandle {
++#if OS(KOSMOS)
++    [Validator='!!*m_handle'] KosmosCapability m_handle;
++#endif
+ #if USE(UNIX_DOMAIN_SOCKETS)
+     [Validator='!!m_handle && *m_handle'] UnixFileDescriptor m_handle;
+ #endif
+diff -ruN a/Source/WebKit/UIProcess/Network/NetworkProcessProxy.cpp b/Source/WebKit/UIProcess/Network/NetworkProcessProxy.cpp
+--- a/Source/WebKit/UIProcess/Network/NetworkProcessProxy.cpp	2026-11-14 11:37:14.146112496 -0300
++++ b/Source/WebKit/UIProcess/Network/NetworkProcessProxy.cpp	2026-11-14 11:37:40.100607732 -0300
+@@ -358,7 +358,7 @@
+             return reply({ });
+         }
+ 
+-#if USE(UNIX_DOMAIN_SOCKETS) || OS(WINDOWS)
++#if USE(UNIX_DOMAIN_SOCKETS) || OS(WINDOWS) || OS(KOSMOS)
+         reply(NetworkProcessConnectionInfo { WTF::move(*identifier), cookieAcceptPolicy });
+ #elif OS(DARWIN)
+         Ref connection = protectedThis->connection();
+diff -ruN a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-14 11:48:02.814049552 -0300
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-14 11:48:02.828382316 -0300
+@@ -47,6 +47,10 @@
+ #include <WebCore/ShareableBitmap.h>
+ #include <wtf/SetForScope.h>
+ 
++#if PLATFORM(KOSMOS)
++#include "LayerTreeHostKosmos.h"
++#endif
++
+ #if PLATFORM(PLAYSTATION)
+ #include "LayerTreeHostPlayStation.h"
+ #endif
