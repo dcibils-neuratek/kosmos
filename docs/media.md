@@ -266,3 +266,10 @@ takes the container `addSourceBuffer` declared and holds the first bytes
 to it, which the control found was needed: FFmpeg's matroska reader waits
 on garbage rather than refusing it. Next, YouTube itself (M5's first look,
 before M4's sound): what its player asks of the browser that is not here.
+
+**YouTube plays, 14 November 2026** (0.11.421, `testing.md` 18.816):
+"Me at the zoo" to its end in JetSki, AV1 and Opus through MSE, and the
+next video's ad after it - picture only. Its trace found the clock
+skipping film when a page's script held the thread past a stall; it now
+waits where the picture ran out, held by `x86-jetski`. What YouTube still
+lacks is M4's sound, and on real cores how fast AV1 decodes at 1080p.

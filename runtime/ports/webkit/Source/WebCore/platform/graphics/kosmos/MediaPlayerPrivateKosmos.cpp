@@ -730,7 +730,18 @@ void MediaPlayerPrivateKosmos::tick()
                 have = true;
         }
         if (!have && !m_stalled) {
-            m_startedAt = at;
+            // It waits where what it was playing through ended, not where
+            // the counter had got to: a page's script can keep this thread
+            // from ticking for seconds, and those are film not yet shown.
+            double stopAt = at, latest = -1;
+            for (unsigned i = 0; i < ranges.length(); i++) {
+                double start = ranges.start(i).toDouble(), end = ranges.end(i).toDouble();
+                if (start <= at && end <= at && start > latest) {
+                    latest = start;
+                    stopAt = end;
+                }
+            }
+            m_startedAt = stopAt;
             m_stalled = true;
         } else if (have && m_stalled) {
             m_stalled = false;

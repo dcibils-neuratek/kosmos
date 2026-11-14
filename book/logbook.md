@@ -3137,3 +3137,32 @@ and waited forever, because FFmpeg's WebM reader read the error page as
 the start of a very long piece and waited for the rest. A page declares
 what kind of film it's appending, so Kosmos now checks the first few bytes
 against that and refuses straight away, as other browsers do.
+
+## 14 November 2026 - YouTube plays
+
+**In short:** YouTube videos now play in JetSki, Kosmos's browser. The
+picture works and the sound doesn't yet.
+
+**What happened.** With the previous step in place (the page handing the
+browser a film in pieces), I pointed JetSki at YouTube. Its player asked
+the browser about forty questions on what it could play, chose AV1 for
+the picture and Opus for the sound, and fed the film in small chunks.
+"Me at the zoo" played to the end. Then YouTube's autoplay moved on to the
+next video, which started with an ad, and that played too, with the
+"Skip" button over it.
+
+**A bug it showed.** YouTube's own JavaScript is heavy, and on an emulated
+machine it kept the browser busy for seconds at a time. When the film ran
+out of downloaded picture during one of those moments, the player's clock
+had already run on, so when more film arrived it continued from where the
+clock had got to and skipped the seconds in between. The clock now stops
+where the picture ran out. The browser test does the same thing on
+purpose (its page keeps itself busy for four and a half seconds), and it
+fails if the old behaviour comes back.
+
+**Another one, not fixed yet.** The first version of that test kept the
+page busy while the test was typing, and the first letter typed never
+arrived. A key pressed while a page is busy should wait its turn, not
+disappear. It's on the list.
+
+**Next:** sound, through the Playback Kit.

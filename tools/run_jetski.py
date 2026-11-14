@@ -52,9 +52,12 @@ serves the film as a 404.
 `<video>` whose source is a `MediaSource`, with a picture SourceBuffer
 (VP9) and a sound one (Opus) as YouTube's player makes them, each fed its
 file fetched whole and appended in pieces cut at arbitrary bytes - so a
-WebM cluster arrives in two appends - then `endOfStream()`. It must play a
-second, be its size, have its six seconds buffered, and show its own
-colour; `MediaSource.isTypeSupported` must say yes to VP9 and no to 10-bit
+WebM cluster arrives in two appends - then `endOfStream()` - all but the picture's last piece, which waits until
+the page has kept its own thread busy for four and a half seconds, as a
+site's script does, while the clock ran past what was buffered. It must
+wait where its picture ran out (it waited where the counter had got to,
+and skipped the film between), play to its end, be its size, have its
+six seconds buffered, and show its own colour; `MediaSource.isTypeSupported` must say yes to VP9 and no to 10-bit
 VP9, which is decoded and not yet shown. `KOSMOS_JETSKI_BREAK=no-appended`
 serves its picture as a 404, which a SourceBuffer cannot parse.
 
@@ -66,7 +69,10 @@ Outside the gate, `KOSMOS_JETSKI_LIVE=https://...` opens a real site
 instead, and the picture is kept in `build/jetski/` to be looked at,
 with the cookie file the site left as `live-cookies.db`;
 `KOSMOS_JETSKI_LIVE=file:<path>` serves that file from this Mac as the
-page, for a case to look at by eye.
+page, for a case to look at by eye. `KOSMOS_JETSKI_LINGER=<seconds>` waits
+that long after a live page has loaded before the picture is taken - a
+film starts well after its page - and takes a second, `live-later.png`,
+three seconds on, so a film that plays is told from its poster.
 
 Usage: run_jetski.py [kernel image] [apps folder]
 """
@@ -95,6 +101,7 @@ LUA = os.path.join(ROOT, "build", "host", "lua")
 KEPT = os.path.join(ROOT, "build", "jetski")
 BROKEN = os.environ.get("KOSMOS_JETSKI_BREAK")
 LIVE = os.environ.get("KOSMOS_JETSKI_LIVE")
+LINGER = float(os.environ.get("KOSMOS_JETSKI_LINGER", "0")) if LIVE else 0
 
 # The block: a colour nothing on the desktop is drawn in, and its size.
 BLOCK = (0x13, 0x7a, 0x5c)
@@ -191,14 +198,26 @@ function tellAppended(what) {
   toldAppended = true;
   new Image().src = "/appended-report?" + new URLSearchParams(what);
 }
-function feed(buffer, address, pieces) {
+/* Appends all but `held` of the pieces; answers with a function that
+   appends the rest and answers when it is in. */
+function feed(buffer, address, pieces, held) {
   return fetch(address).then(function (r) { return r.arrayBuffer(); }).then(function (bytes) {
-    var size = Math.ceil(bytes.byteLength / pieces), at = 0;
+    var size = Math.ceil(bytes.byteLength / pieces), at = 0, count = 0;
+    function rest() {
+      return new Promise(function (done) {
+        if (at >= bytes.byteLength) { done(); return; }
+        buffer.addEventListener("updateend", function () { done(); }, { once: true });
+        var tail = bytes.slice(at);
+        at = bytes.byteLength;
+        buffer.appendBuffer(tail);
+      });
+    }
     return new Promise(function (done, fail) {
       function next() {
-        if (at >= bytes.byteLength) { done(); return; }
+        if (count >= pieces - held || at >= bytes.byteLength) { done(rest); return; }
         buffer.appendBuffer(bytes.slice(at, at + size));
         at += size;
+        count++;
       }
       buffer.addEventListener("updateend", next);
       buffer.addEventListener("error", function () { fail("an append failed"); });
@@ -206,17 +225,41 @@ function feed(buffer, address, pieces) {
     });
   });
 }
+/* Where the film waited when its picture ran out: the page's thread kept
+   busy, as a site's script keeps it, while the clock goes on. */
+var waited = null;
 source.addEventListener("sourceopen", function () {
   var picture = source.addSourceBuffer('video/webm; codecs="vp9"');
   var sound = source.addSourceBuffer('audio/webm; codecs="opus"');
-  Promise.all([feed(picture, "/appended-picture.webm", 3), feed(sound, "/appended-sound.webm", 2)])
+  Promise.all([feed(picture, "/appended-picture.webm", 3, 1), feed(sound, "/appended-sound.webm", 2, 0)])
+    .then(function (rests) {
+      return new Promise(function (done) {
+        function started() {
+          if (appended.currentTime < 0.5) return;
+          appended.removeEventListener("timeupdate", started);
+          var until = Date.now() + 4500;
+          while (Date.now() < until) { }
+          setTimeout(function () {
+            waited = { at: appended.currentTime,
+                       end: appended.buffered.length ? appended.buffered.end(0) : 0 };
+            done(rests);
+          }, 1500);
+        }
+        appended.addEventListener("timeupdate", started);
+      });
+    })
+    .then(function (rests) { return rests[0](); })
     .then(function () { source.endOfStream(); })
     .catch(function (why) { tellAppended({ error: why }); });
 });
-appended.src = URL.createObjectURL(source);
+/* Started once the page has been scrolled, the last thing done to it, so
+   the busy thread holds up no click or key the test sends. */
+window.addEventListener("scroll", function () {
+  if (!appended.src) appended.src = URL.createObjectURL(source);
+});
 appended.addEventListener("timeupdate", function () {
-  if (appended.currentTime >= 1)
-    tellAppended({ time: appended.currentTime,
+  if (waited && appended.currentTime >= 5.5)
+    tellAppended({ time: appended.currentTime, waitedAt: waited.at, waitedEnd: waited.end,
                    size: appended.videoWidth + "x" + appended.videoHeight,
                    buffered: appended.buffered.length ? appended.buffered.end(0) : 0,
                    vp9: MediaSource.isTypeSupported('video/webm; codecs="vp9"'),
@@ -490,6 +533,10 @@ def appended(R, picture, window):
     else:
         if said.get("size") != "%dx%d" % FILM_SIZE:
             failed.append("the appended film is %s, not %dx%d" % ((said.get("size"),) + FILM_SIZE))
+        at, end = float(said.get("waitedAt") or 0), float(said.get("waitedEnd") or 0)
+        if not end - 0.25 <= at <= end + 0.05:
+            failed.append("its picture ran out at %.3f s and the film waited at %.3f s, "
+                          "not there" % (end, at))
         if float(said.get("buffered") or 0) < 5.5:
             failed.append("the appended film's buffered range ends at %s s, not near 6"
                           % said.get("buffered"))
@@ -599,11 +646,16 @@ def main():
             seen = guest.seen[mark:]
             if re.search(r"jetski: (loaded|could not load|the page's process ended)", seen):
                 break
-        time.sleep(2)          # the last picture, painted and composed
+        time.sleep(2 + LINGER)  # the last picture, painted and composed
         guest._read_available()
         seen = guest.seen[mark:]
         where = re.search(r"wm: window JetSki at (\d+),(\d+) (\d+)x(\d+)", seen)
         dump = guest.screendump()
+        if LINGER:
+            # A second picture, three seconds on: a film that plays has
+            # moved between them, where a poster has not.
+            time.sleep(3)
+            R.write_png(os.path.join(KEPT, "live-later.png"), guest.screendump())
         if where and not LIVE and "jetski: loaded" in seen:
             used = use(guest, R, dump, [int(v) for v in where.groups()], mark)
     finally:
@@ -657,7 +709,7 @@ def main():
         failed.extend(cookies())
         failed.extend(itself())
 
-    checks = 23
+    checks = 24
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

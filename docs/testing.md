@@ -33577,3 +33577,45 @@ browser's does.
 
 `x86-mediakit`, `x86-webcore`, `x86-webkit2`, `x86-sites` and `host` pass
 beside it: 6 suites in 71 s.
+
+## 18.816 YouTube plays; a stalled film waits where its picture ran out
+
+0.11.421. **YouTube plays in JetSki**, picture only (M4 is the sound):
+`KOSMOS_JETSKI_LIVE=https://www.youtube.com/watch?v=jNQXAC9IVRw
+KOSMOS_JETSKI_LINGER=60` - "Me at the zoo", under QEMU's TCG on this Mac.
+A temporary trace in the engine, removed before this commit, showed the
+whole path: YouTube's player asked `isTypeSupported` about forty
+questions, chose AV1 in MP4 for the picture (320x240) and Opus in WebM
+for the sound, appended segments of 70 to 170 KB, and the film played to
+its end at 19.0 s; YouTube's autoplay went on to the next video and its
+ad, AV1 at 854x480. `run_jetski.py` now takes a second picture,
+`live-later.png`, three seconds after the first when
+`KOSMOS_JETSKI_LINGER` is given: 97% of the ad's picture had changed
+between them, which a poster does not.
+
+**The trace found a fault**: "stalled at 10.597, buffered [0.014,
+5.400)". YouTube's script kept the page's thread from ticking for
+seconds, and when the clock was found outside what was buffered it
+waited where the counter had got to - and five seconds of film were
+skipped when more arrived. It now waits at the end of the range it was
+playing through. Traced again: every stall at a range's end exactly
+(5.400, 11.200, 19.014), and going on from there.
+
+**Held by `x86-jetski`, 24 checks**: the appended film now holds back its
+picture's last piece; once it has played half a second the page's script
+spins for 4.5 s, as a site's does, and 1.5 s later records where the film
+waits and where its buffered range ends, then appends the rest. It must
+wait within a quarter second below and 50 ms above the end, then play to
+5.5 s. Control: the clamp taken out - "its picture ran out at 3.840 s and
+the film waited at 5.019 s, not there", the other 23 passing. The film
+starts only once the page has been scrolled, since a first version spun
+while the test was typing and **lost the first letter of "kos"**: a key
+typed while a page's script is busy does not arrive, which is W7c's to
+fix (`roadmap.md`).
+
+Also seen: YouTube asks `isTypeSupported` with parameters a TV's browser
+answers - `width=99999`, `eotf=catavision`, `channels=99` - and is told
+yes to every one; it chose a sensible stream anyway.
+
+`x86-mediakit`, `x86-webcore`, `x86-webkit2`, `x86-sites` and `host` pass
+beside it: 6 suites in 83 s.

@@ -10444,8 +10444,13 @@ the applications make the system useful, and is not pulled forward.
     - *Media Source Extensions* (M3) - *done, 0.11.420* (`testing.md`
       18.815): `MediaSourcePrivateKosmos` and `SourceBufferPrivateKosmos`
       on WebCore's base classes, appends demuxed by the Media Kit's
-      `media_open_appended`. **Next: YouTube itself - Diego, 14 November:
-      "I want youtube working next".** Owed: `abort()` mid-segment,
+      `media_open_appended`. *A key typed while the page's script keeps
+      its thread busy is lost* - the first letter of "kos" did not arrive
+      while a test page spun for 4.5 s (`testing.md` 18.816); W7c's.
+      **YouTube plays, picture only - 0.11.421** (`testing.md` 18.816;
+      Diego, 14 November: "I want youtube working next"). **Next: M4, its
+      sound.** Owed: `isTypeSupported` answers yes to a TV's parameters
+      (`width=99999`, `eotf=catavision`); `abort()` mid-segment,
       `changeType()`, a quality switch's new initialization segment.
     - *The design for video*: `docs/media.md` - **AGREED 14 November
       2026**: a Kosmos player in WebCore on a new Media Kit (FFmpeg built
