@@ -2,7 +2,31 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-14 (0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.415: JetSki's window - Wikipedia live in a Kosmos window; malloc's arenas reserved and discarded, never spending an address twice; 0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+
+---
+
+## 14 November, small hours: JetSki's window (0.11.415, not pushed)
+
+`testing.md` 18.810, `docs/w7.md` *The first slice*:
+
+- `user/installed/JetSki/`: `jetski.cpp` (WebKit2's UI process as a door),
+  `jetski_kit.c`, `jetski.lua` (a direct window, the kit's header widgets
+  painted into it, WebKit painting the page below). `x86-jetski` with its
+  404 control. `KOSMOS_JETSKI_LIVE=` loaded Wikipedia's BeOS article from
+  the internet - the picture sent to Diego (`build/jetski/live.png`).
+- `malloc` (every process): arenas from `kosmos_reserve`, emptied ones
+  discarded and kept, so no address is spent twice - the 4 GB `SYS_MAP`
+  window ran out under JetSki's paints. `posixtest` holds it, control
+  recorded.
+- A live site needs more than the suites' 512 MB; the live harness takes
+  2 GB. `make qemu` is still 512 MB - worth raising for the browser.
+- Roadmap: *Games: Genexia on Kosmos*, agreed by Diego, after the browser
+  works fast.
+
+Next: W7c step 4 - the pointer and the wheel into the page (links,
+scrolling), then keys; then one wait for the window manager and WebKit
+together; then the JIT.
 
 ---
 

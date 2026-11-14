@@ -254,6 +254,57 @@ static void split(struct block *b, size_t want)
  */
 #ifdef KOSMOS_USER
 
+/*
+ * **The heap's addresses are reserved, and never thrown away** (14 November
+ * 2026, `testing.md` 18.810). Arenas came from `kosmos_map`, whose addresses
+ * are a bump pointer through a 4 GB window and never handed out again, and
+ * an arena a megabyte or more left wholly free was unmapped - so every large
+ * allocation freed spent its size of that window for good. JetSki's UI
+ * process copies the page's picture on each paint, 3.7 MB, and on
+ * Wikipedia's repaints had spent the four gigabytes within a minute:
+ * `std::bad_alloc`, with almost nothing in use. SQLite had met it first
+ * (`heap_realloc`'s half again), and that was the instance.
+ *
+ * So arenas are carved from ranges reserved a gigabyte at a time
+ * (`kosmos_reserve`, a 192 GB window and more), committed as they are made
+ * (`RESERVE_RW`: a zeroed page on first touch, as `kosmos_map`'s were
+ * zeroed); and an arena that empties gives its pages back with
+ * `RESERVE_DISCARD` and *keeps its addresses* - it stays in its bin, and the
+ * next large allocation is made in the same place. Memory goes back to the
+ * machine as before, and no address is spent twice.
+ */
+#define RESERVE_CHUNK_PAGES (262144UL)          /* a gigabyte of addresses */
+
+static uintptr_t reserved_at, reserved_end;     /* the range being carved */
+
+static long heap_pages(size_t pages)
+{
+    long at;
+
+    if (reserved_at + pages * 4096u > reserved_end) {
+        /* A request too large for a chunk's tail has a range of its own;
+         * what is left of the chunk stays to be carved. */
+        unsigned long chunk = pages > RESERVE_CHUNK_PAGES / 4 ? pages : RESERVE_CHUNK_PAGES;
+
+        at = kosmos_reserve(chunk);
+        if (at < 0) {
+            return at;
+        }
+        if (chunk == pages) {
+            return kosmos_protect((void *)(uintptr_t)at, pages, RESERVE_RW) == 0 ? at : -1;
+        }
+        reserved_at = (uintptr_t)at;
+        reserved_end = reserved_at + chunk * 4096u;
+    }
+
+    if (kosmos_protect((void *)reserved_at, pages, RESERVE_RW) != 0) {
+        return -1;
+    }
+    at = (long)reserved_at;
+    reserved_at += pages * 4096u;
+    return at;
+}
+
 static bool grow(size_t want)
 {
     size_t need = want + HEADER + ALIGNMENT;
@@ -265,7 +316,7 @@ static bool grow(size_t want)
         pages = GROW_PAGES;
     }
 
-    at = kosmos_map(pages);
+    at = heap_pages(pages);
 
     if (at < 0) {
         return false;
@@ -446,8 +497,8 @@ static void heap_free(void *p)
 
 #ifdef KOSMOS_USER
     /*
-     * **An arena left wholly free, a megabyte or more, goes back to the
-     * kernel** rather than into a bin. A large allocation is an arena of
+     * **An arena left wholly free, a megabyte or more, gives its pages
+     * back to the kernel** and keeps its addresses (`grow`). A large allocation is an arena of
      * its own (`grow` sizes one to it), so a picture decoded and freed -
      * a JPEG is decoded into `malloc`'s memory before it becomes a surface
      * - used to leave its whole size in this process's heap for good:
@@ -459,9 +510,10 @@ static void heap_free(void *p)
      * would only ask for it again.
      */
     if (b != first && b->prev == NULL && b->next == NULL && b->size + HEADER >= RETURN_BYTES) {
-        total -= b->size;
-        (void)kosmos_unmap((unsigned long)(uintptr_t)b, (b->size + HEADER) / 4096u);
-        return;
+        /* Every page but the first, which holds the header and the bin
+         * links; the addresses are kept, and the arena goes into its bin
+         * to be made again where it is (`grow`). */
+        (void)kosmos_protect((char *)b + 4096, (b->size + HEADER) / 4096u - 1, RESERVE_DISCARD);
     }
 #endif
 

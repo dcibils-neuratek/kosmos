@@ -33348,3 +33348,51 @@ the answer's first. 18.782 met the echo's other shape. `answer_of` now drops
 a first line that is only the end of the command; held to the gate's own
 lines (the old reading gave `kernel\natar ...`, the new `atar ...`), and the
 suite passes alone, 18 checks.
+
+## 18.810 JetSki's window, and a heap that spends no address twice
+
+**W7c's first slice.** JetSki is an installed application,
+`/Home/Apps/JetSki`: `jetski.lua`, a window that draws its own pixels with
+the kit's back, forward and reload buttons and an address field painted
+into it, and `jetski.elf`, WebKit2's UI process as a kit (`jetski.cpp`) and
+again as each page's web process and as the network process. The window
+runs WebKit's loop a few milliseconds a pass (`pump`), ended early when the
+page has a picture, and WebKit paints the page straight into the window's
+surface (`paint`), so a page's pixels never pass through Lua.
+
+`x86-jetski` (`tools/run_jetski.py`): `wm jetski:<address>` at the shell,
+a page from a server on this Mac, and on the screendump a block of a colour
+nothing else is drawn in, 320x160 as the page says, below the header - and
+the window's title the page's, which only WebKit could have told it. PASS, 5
+checks. Control: `KOSMOS_JETSKI_BREAK=missing` serves the page as a 404 -
+FAIL 2 of 5, no title and none of the block's 51 200 pixels.
+
+`KOSMOS_JETSKI_LIVE=https://en.wikipedia.org/wiki/BeOS` loads the real
+article: its words, its pictures, its layout, in the window - sent to
+Diego. The live run gives the machine 2 GB: in the suites' 512 MB the
+article in three WebKit processes beside the desktop ran out of pages (a
+reserved page's first touch refused, `pmm_room_for_user`).
+
+**Before that it died of addresses, not memory.** The first live load
+ended in `std::bad_alloc`, from Skia's copy of the backing store in
+`BackingStore::paint` - 3.7 MB a paint. `malloc`'s arenas came from
+`kosmos_map`, whose addresses run through a 4 GB window and are never
+handed out again, and an arena a megabyte or more left wholly free was
+unmapped: so each large block freed spent its size of the window for good,
+and Wikipedia's repaints spent it in under a minute with little in use.
+SQLite had met the same wall (W5c), answered by `realloc` growing by half
+again - the instance. Now the class: arenas are carved from ranges
+reserved a gigabyte at a time (`kosmos_reserve`), committed `RESERVE_RW`,
+and an arena that empties gives its pages back with `RESERVE_DISCARD` and
+keeps its addresses, staying in its bin to be made again in place.
+
+`posixtest` (in `x86-loader`) holds it: a 4 MB block asked for, touched at
+both ends and freed 1200 times - 4.8 GB - never refused and always at one
+address. Control: the old `malloc` with the new check - "refused the 704th
+time", FAIL 1 of 23.
+
+The 0.11.415 gate: 129 of 130. `x86-film` read "a 3.00 s film took 2.87 s by
+its own clock" in the gate's eleventh minute, with every core busy, and
+passed twice alone straight after (15 s each). Nothing here touches sound;
+a clock held to 4% under a full machine is the suite's to make robust, and
+it is on the roadmap with the cafesa3d-2 split.

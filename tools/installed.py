@@ -30,6 +30,10 @@ INSTALLED = os.path.join(ROOT, "user", "installed")
 # and where it goes in the application's folder. Part of the game, as the
 # WAD is (Diego, 27 September); a ROM is a person's own and stays in
 # /Home/roms.
+# What only one architecture builds: JetSki stands on WebCore, which is
+# built for x86-64 alone while AArch64's suites wait (`CLAUDE.md`).
+ONLY = {"JetSki": "x86_64"}
+
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
     "Quake": [("id1/pak0.pak", "id1/pak0.pak")],
@@ -64,6 +68,9 @@ def pairs(arch, home, apps=None):
         folder = os.path.join(INSTALLED, name)
 
         if not os.path.isdir(folder):
+            continue
+
+        if ONLY.get(name, arch) != arch:
             continue
 
         guest = "/Home/Apps/" + name

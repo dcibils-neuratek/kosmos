@@ -1,0 +1,60 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * **JetSki's UI process, as a door** (`docs/w7.md` W7c): one page in a view
+ * of a size, loaded by address, WebKit's run loop run for a while at a time,
+ * and the page's picture painted into pixels the caller owns. The window
+ * around it is `jetski.lua`'s; this knows nothing of windows.
+ */
+
+#ifndef KOSMOS_JETSKI_H
+#define KOSMOS_JETSKI_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* What happened since the last `jetski_pump`, as flags. */
+enum jetski_happened {
+    JETSKI_STARTED   = 1 << 0,     /* a navigation began */
+    JETSKI_COMMITTED = 1 << 1,     /* its first bytes arrived: a new page */
+    JETSKI_FINISHED  = 1 << 2,     /* it finished loading */
+    JETSKI_FAILED    = 1 << 3,     /* it failed; `error` says how */
+    JETSKI_PICTURE   = 1 << 4,     /* the page has a new picture to paint */
+    JETSKI_CRASHED   = 1 << 5,     /* the web process ended */
+};
+
+struct jetski_state {
+    unsigned happened;             /* `jetski_happened`, since the last pump */
+    int error;                     /* curl's or WebKit's code, with FAILED */
+    double progress;               /* 0 to 1, WebKit's estimate */
+    int loading;                   /* a navigation is under way */
+    int can_back, can_forward;
+    char title[256];
+    char address[2048];
+};
+
+/* The view, `width` by `height`; 0 when it was made. Once a process. */
+int jetski_open(unsigned width, unsigned height);
+void jetski_resize(unsigned width, unsigned height);
+
+void jetski_load(const char *address);
+void jetski_back(void);
+void jetski_forward(void);
+void jetski_reload(void);
+void jetski_stop(void);
+
+/* WebKit's run loop for at most `ms` milliseconds, or until the page has a
+ * new picture; then what happened since the last call. */
+void jetski_pump(unsigned ms, struct jetski_state *out);
+
+/* The page's picture, `width` by `height` from its top left, into the
+ * pixels at `pitch` bytes a row. */
+void jetski_paint(uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

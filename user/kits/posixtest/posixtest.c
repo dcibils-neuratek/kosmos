@@ -410,8 +410,41 @@ static int memory_checks(char *out, unsigned long size)
         }
     }
 
+    /*
+     * **A large block, freed and asked for again, for longer than 4 GB**
+     * (`testing.md` 18.810): JetSki's paints, 3.7 MB each. The heap's
+     * arenas came from a 4 GB window whose addresses were never handed out
+     * again, so the 1025th 4 MB block was refused with almost nothing in
+     * use. It must be refused never, and come back at the same address.
+     */
+    {
+        void *first_big = NULL;
+        unsigned moved = 0;
+
+        for (i = 0; i < 1200; i++) {
+            unsigned char *b = malloc(4UL << 20);
+
+            if (b == NULL) {
+                SAY("posix: a 4 MB block freed and asked for again was refused the %lu%s time",
+                    i + 1, i == 0 ? "st" : "th");
+            }
+            b[0] = 1;
+            b[(4UL << 20) - 1] = 1;
+            if (first_big == NULL) {
+                first_big = b;
+            } else if (b != first_big) {
+                moved++;
+            }
+            free(b);
+        }
+        if (moved > 0) {
+            SAY("posix: a 4 MB block freed came back elsewhere %u times of 1199", moved);
+        }
+    }
+
     snprintf(out, size, "memory: 4 GB reserved, protected, discarded, unmapped "
-             "in the middle, fixed, refused, aligned");
+             "in the middle, fixed, refused, aligned, 4.8 GB of 4 MB blocks freed "
+             "and asked for again at one address");
     return 0;
 }
 

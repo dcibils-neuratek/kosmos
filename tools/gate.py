@@ -745,6 +745,14 @@ SUITES = [
                         "user/kits/egl", "user/kits/network", "user/servers/net.c",
                         *WEBKIT, *W5)),
 
+    # **W7c's window** (`docs/w7.md`): JetSki opened from the shell, a page
+    # from a server on this Mac painted below its address field.
+    Suite("x86-jetski", ["python3", "tools/run_jetski.py", X86,
+                         "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_jetski.py", "user/installed/JetSki", "user/lib",
+                        "user/bin/programs/wm.lua", "user/kits/gfx", "user/kits/egl",
+                        "user/servers/net.c", *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

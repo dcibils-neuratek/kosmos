@@ -2978,3 +2978,32 @@ WebKit on Kosmos, with its words in IBM Plex.
 **Measured.** The fonts check: 23 of 23 in `x86-loader`, and 1 of 23 failing
 before the second list was fixed. The Broadcom decode: 60 of 60, and 1 of
 60 failing when a receive's error bits are ignored.
+
+## 14 November 2026 - The browser in a window
+
+**In short:** JetSki now opens as a window on Kosmos, and Wikipedia's BeOS
+article loads into it from the internet, with its text, pictures and layout,
+under an address bar. Getting there found a flaw every long-running program
+had: memory that was freed still used up addresses, for good.
+
+**What changed.** JetSki is an application installed in `/Home/Apps/JetSki`.
+Its window is written in Lua like every Kosmos app; the page inside it is
+drawn by WebKit, in the browser's own image, straight into the window's
+pixels. Between the window's own events, the browser lets WebKit run for a
+few milliseconds, and paints as soon as WebKit has a new picture.
+
+The first real page crashed it. Each time WebKit paints, it copies the whole
+page's picture - about 3.7 MB - and frees the copy. Kosmos's memory
+allocator got large blocks from the kernel at fresh addresses and, once
+freed, gave them back along with their addresses, which are never handed out
+again. A process has four gigabytes of them, so a minute of Wikipedia's
+repainting used them all up while using almost no memory. Now the allocator
+reserves its addresses once and, when a large block is freed, gives back
+only the memory behind it, keeping the addresses for the next one.
+
+**What you can see.** Wikipedia's BeOS page in a JetSki window on Kosmos.
+
+**Measured.** The new memory check frees and asks again for a 4 MB block
+1200 times - 4.8 GB in all - and gets the same address every time; the old
+allocator refused it on the 704th. The window's test: 5 of 5, and 2 of 5
+failing when the page is missing.

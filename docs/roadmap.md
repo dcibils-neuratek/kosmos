@@ -10092,6 +10092,10 @@ the applications make the system useful, and is not pulled forward.
   alone, and hung past 720 s in the 0.11.412 gate saying nothing - into
   halves that run side by side, each printing its steps as it passes, so
   slow and hung can be told apart.
+  **And `x86-film`'s clock** (0.11.415, `testing.md` 18.810): "a 3.00 s
+  film took 2.87 s" under the full gate, passing alone - a tolerance that
+  holds on a loaded machine, or the film's own clock measured rather than
+  the wall's.
   **JetSki as optimised as it can be** (Diego, 14 November 2026: "make
   sure our jetski code is as optimized as possible"). Agreed as a part of
   the browser, not an afterthought: each item measured on the M700 and the
@@ -10798,6 +10802,42 @@ the applications make the system useful, and is not pulled forward.
   Mozilla's root certificates converted to C at build time, as the fonts
   are; and a `tls` kit in C that the browser, `fetch` and a Discord
   client (6ze) all go through.
+
+### Games: Genexia on Kosmos
+
+- **Genexia ported to Kosmos** (Diego, 14 November 2026: "we have the other
+  project we built called genexia which recompiles games to native code for
+  faster games instead of pure emulation, we can port genexia to kosmos in
+  the future", then "yes add genexia on kosmos to the roadmap", and "but first the browser
+  needs to work fast", "so i can use kosmos as a daily driver"). **After the browser works fast** - the JIT and
+  *JetSki as optimised as it can be*, measured on the M700. Genexia (`~/GenesisKosmos`, a project of Diego's)
+  translates a console game's machine code into C ahead of time and
+  compiles it, running it on the console's hardware reimplemented in C,
+  with an interpreter for games not yet recompiled. It has Genesis, SNES,
+  N64, PlayStation and PSP backends today, and Diego wants Saturn and
+  Dreamcast games on Kosmos as well.
+  - **Why it fits Nebula as it is**: a recompiled game is compiled before
+    it runs, so it is an ordinary image, and the rule that written memory
+    never becomes code holds - the dynamic recompilers of PPSSPP and Flycast
+    would want the JIT's two mappings instead.
+  - **The port is its front end**: everything SDL in Genexia is
+    `src/core/main.c` - the window, keys, controllers, timing, sound. It is
+    swapped for a window that draws its own pixels (or the window kit,
+    `kosmos_window.h`), the audio ring or the Playback Kit in the audio
+    band, the window manager's keys, and the counter. Game controllers over
+    USB are work of their own. The chips and backends are plain C.
+  - **Each recompiled game is an installed application**, its own image in
+    `/Home/Apps/<Game>`, as `doom.elf` is.
+  - **One SNES**: Genexia's SNES backend replaces LakeSnes rather than sit
+    beside it (*kits supply*, a second copy is a defect).
+  - **Order**: Genesis and SNES first, PlayStation next, then PSP and N64,
+    which draw through OpenGL and so wait for the GPU's 3D (4h) or a
+    software path. Saturn and Dreamcast are Genexia's to add first.
+  - As an application it gets its feature set, mockup, architecture and
+    diagram in `docs/` before any code.
+  - The machine for it: a second office mini PC of the M700's kind, newer -
+    a ThinkCentre M720q or M920q, or an OptiPlex 7060 Micro: an Intel I219
+    for the network and UHD 630 graphics, both families Kosmos drives.
 
 ### The system
 
