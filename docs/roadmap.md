@@ -10448,10 +10448,31 @@ the applications make the system useful, and is not pulled forward.
       its thread busy is lost* - the first letter of "kos" did not arrive
       while a test page spun for 4.5 s (`testing.md` 18.816); W7c's.
       **YouTube plays, picture only - 0.11.421** (`testing.md` 18.816;
-      Diego, 14 November: "I want youtube working next"). **Next: M4, its
-      sound.** Owed: `isTypeSupported` answers yes to a TV's parameters
+      Diego, 14 November: "I want youtube working next"). Owed: `isTypeSupported` answers yes to a TV's parameters
       (`width=99999`, `eotf=catavision`); `abort()` mid-segment,
       `changeType()`, a quality switch's new initialization segment.
+    - *A film's sound* (M4) - *done, 0.11.422* (`testing.md` 18.817):
+      decoded by the Media Kit on the sound buffer's decode thread,
+      played by the Playback Kit (its new C door, `playback.h`) into a
+      stream from `audioclient.h`; the clock is the sound's; mute and
+      volume at the stream's fader. Owed: picture and sound in one buffer
+      (one decoder a buffer, so not heard); `<video src>`'s sound; a
+      pause plays out the stream's ring, about a fifth of a second; a
+      rate or channel change part way; the web process's sound thread in
+      the audio band. **Next: M6.**
+    - *The order after M4, Diego, 14 November 2026*: "now that we have
+      all these decoders, can we do the video player with support for all
+      these new formats?" - so **M6 comes next after M4, before M5's
+      refinements**: Video on the Media Kit, every container and codec it
+      reads (WebM, MKV, MP4, MOV; AV1, VP9, VP8, H.264, HEVC; Opus,
+      Vorbis, AAC, FLAC, MP3), its sound through the Playback Kit's C door
+      (`playback.h`, M4's). **Its first real film is Diego's own**: "in
+      downloads/big_buck_bunny (1).mp4 there is this file which i want to
+      have played in kosmos after the browser is done" - H.264 Baseline
+      512x288 and AAC-LC stereo, 596 s, 85 MB, played from `/Home` (his
+      file, never in the repository). And **an M700 build of the browser
+      comes once YouTube has sound** (Diego, the same day: after sound
+      works, not before).
     - *The design for video*: `docs/media.md` - **AGREED 14 November
       2026**: a Kosmos player in WebCore on a new Media Kit (FFmpeg built
       whole with its assembly, dav1d), the Playback Kit for sound, AV1

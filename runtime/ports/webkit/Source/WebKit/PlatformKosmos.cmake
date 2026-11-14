@@ -118,9 +118,10 @@ set_source_files_properties(
     Platform/IPC/kosmos/IPCSemaphoreKosmos.cpp
     PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel")
 
-# The launcher and a role's entry hand a process the network, and the
-# Network Kit's header is in the kit's own folder.
+# The launcher and a role's entry hand a process the network and the
+# sound, and the Network Kit's and the audio client's headers are in their
+# kits' own folders.
 set_source_files_properties(
     Shared/kosmos/AuxiliaryProcessMainKosmos.cpp
     UIProcess/Launcher/kosmos/ProcessLauncherKosmos.cpp
-    PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel;-iquote;${KOSMOS_ROOT}/user/kits/network")
+    PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel;-iquote;${KOSMOS_ROOT}/user/kits/network;-iquote;${KOSMOS_ROOT}/user/kits/audio")

@@ -33619,3 +33619,42 @@ yes to every one; it chose a sensible stream anyway.
 
 `x86-mediakit`, `x86-webcore`, `x86-webkit2`, `x86-sites` and `host` pass
 beside it: 6 suites in 83 s.
+
+## 18.817 A film's sound is heard - the Media Kit decodes, the Playback Kit plays
+
+0.11.422 (`docs/media.md` M4). **The appended film's sound comes out of
+the machine's sound card.** `x86-jetski`'s machine now has an Intel HDA
+card whose output QEMU writes to a WAV, and the appended film's sound is a
+440 Hz Opus tone; the check, `sound()`, wants four seconds or more at
+440 Hz within 20, counted a tenth of a second at a time where the level is
+above 1000. The web process says what it opened: "media: sound, 48000 Hz
+in 1 channels, into the audio server's stream 1 at 44100 Hz" - the
+Playback Kit converting the film's rate to the device's.
+
+**The first run heard nothing, and that was mute working.** The test page
+had `muted` on both films, for autoplay, and the engine now hands a
+page's mute to the stream's fader at the audio server - so the silence
+was correct. The appended film is unmuted now, and muting it is one of
+the controls.
+
+**25 checks, and two controls, each failing only the new one**:
+`KOSMOS_JETSKI_BREAK=silent` appends a sound track of silence - "the
+appended film's tone was heard for 0.0 s of its 6", 24 passing; and
+`KOSMOS_JETSKI_BREAK=muted` mutes the film on the page - the same, 24
+passing. The appended film's other checks hold with the clock now the
+sound's: its picture waits where it ran out (the sound is paused for the
+stall and the clock holds), plays to its end, and shows its colour.
+
+**What moved, for whoever reads the code next**: the Playback Kit's
+player is `playback_player.c` behind `playback.h`, and `playback_kosmos.c`
+is only its Lua face, so Music and Video play through the code the
+browser does; `user/kits/audio/audioclient.c` opens a stream from C, and
+`sys.ring_create` is its `audio_ring_create`; the runner hands a C
+program `/Devices/audio` with the Storage Kit's mounts, and JetSki's
+launcher hands it to a web process.
+
+The full gate: 129 of 130 suites in 754 s. The one that failed was
+`x86-kernel`'s "sched: a processor held off is counted" - its history
+(18.272 and after) is QEMU being held off by the Mac under the gate's
+load, which the test counts too - and run again alone it passed, 217 of
+217 in 32 s. Nothing in this change is in the kernel.

@@ -16,9 +16,18 @@
  * `gfx_i420` - the one conversion every film here goes through - into a
  * short queue the page's thread shows from when each frame's time comes.
  *
- * **The clock** is the counter from `play()`, until the Playback Kit's
- * position is put under it with the sound (M4). Sound is not played yet:
- * a film says it has none, so a page's own controls show it muted.
+ * **The sound** (M4) is a MediaSource's: its source buffer's decode thread
+ * decodes the sound track with the Media Kit - the one Opus, Vorbis and
+ * AAC decoder there is - and hands the Playback Kit 16-bit PCM, whose
+ * thread converts it to the device's rate and writes it into a stream of
+ * the audio server's. A film from an address has no sound yet.
+ *
+ * **The clock is the sound's** while there is sound: where the film's
+ * time was when its first sound since the last seek was handed over, and
+ * the frames the device has played of the stream since - so a picture is
+ * shown when its sound is heard, and when the sound runs dry the clock
+ * waits with it. Without sound - no device, no sound track, a film from
+ * an address - it is the counter from `play()`.
  *
  * **A MediaSource** (M3) is the other way in, and YouTube's: the page
  * appends the film in pieces to source buffers (`SourceBufferPrivateKosmos`),
@@ -45,6 +54,8 @@
 #include <skia/core/SkImage.h>
 
 struct media_frame;
+struct playback;
+struct audio_stream;
 
 namespace WebCore {
 
@@ -84,7 +95,9 @@ public:
 
     FloatSize naturalSize() const final { return m_size; }
     bool hasVideo() const final { return m_hasVideo; }
-    bool hasAudio() const final { return false; }
+    bool hasAudio() const final { return m_hasAudio; }
+    void setVolume(float) final;
+    void setMuted(bool) final;
     bool timeIsProgressing() const final { return !m_paused && !m_stalled; }
     void setPageIsVisible(bool) final { }
 
@@ -128,8 +141,16 @@ public:
     unsigned frameGeneration();
     void flushFrames();
 
+    /* A source buffer's decode thread: decoded sound, for the Playback Kit,
+     * waiting for room; false when the player is stopping. Sound of an
+     * earlier generation - decoded before `flushSound` - is dropped. */
+    bool deliverSound(int64_t pts, const struct media_frame&, unsigned generation);
+    unsigned soundGeneration();
+    void flushSound();
+
     /* From the MediaSource and its source buffers, on the page's thread. */
     void videoTrackFound(FloatSize);
+    void audioTrackFound();
     void mediaSourceDurationChanged();
     void activeSourceBuffersChanged();
     void readyStateFromMediaSourceChanged() final;
@@ -149,6 +170,10 @@ private:
     void setNetworkState(MediaPlayer::NetworkState);
     void setReadyState(MediaPlayer::ReadyState);
     void stopThread();
+    std::optional<double> soundTime() const;
+    void setSoundRunning(bool);
+    void closeSound();
+    void applyVolume() WTF_REQUIRES_LOCK(m_soundLock);
     template<typename F> void onMain(F&&);
 
     ThreadSafeWeakPtr<MediaPlayer> m_player;
@@ -169,7 +194,26 @@ private:
     std::optional<int64_t> m_seekTo WTF_GUARDED_BY_LOCK(m_lock);
     unsigned m_generation WTF_GUARDED_BY_LOCK(m_lock) { 0 };
 
+    /* The sound, between the page's thread and a decode thread. Every call
+     * to the player is made under the lock, which makes its commands' one
+     * writer whichever thread holds it. */
+    mutable Lock m_soundLock;
+    Condition m_soundChanged;
+    struct playback* m_playback WTF_GUARDED_BY_LOCK(m_soundLock) { nullptr };
+    std::unique_ptr<struct audio_stream> m_stream WTF_GUARDED_BY_LOCK(m_soundLock);  /* null until the first sound */
+    unsigned m_soundGeneration WTF_GUARDED_BY_LOCK(m_soundLock) { 0 };
+    unsigned m_streamGeneration WTF_GUARDED_BY_LOCK(m_soundLock) { ~0u };
+    int64_t m_soundBase WTF_GUARDED_BY_LOCK(m_soundLock) { 0 };  /* the film's time, us, at frames_played 0 */
+    int m_soundRate WTF_GUARDED_BY_LOCK(m_soundLock) { 0 }, m_soundChannels WTF_GUARDED_BY_LOCK(m_soundLock) { 0 };
+    bool m_noSound WTF_GUARDED_BY_LOCK(m_soundLock) { false };      /* no device, or it would not open */
+    bool m_soundPlaying WTF_GUARDED_BY_LOCK(m_soundLock) { false };
+    bool m_soundStop WTF_GUARDED_BY_LOCK(m_soundLock) { false };
+    float m_volume WTF_GUARDED_BY_LOCK(m_soundLock) { 1 };
+    bool m_muted WTF_GUARDED_BY_LOCK(m_soundLock) { false };
+    Vector<int16_t> m_pcm;              /* the decode thread's: a frame as 16 bits */
+
     /* The page's thread only. */
+    bool m_hasAudio { false };
     MediaPlayer::NetworkState m_networkState { MediaPlayer::NetworkState::Empty };
     MediaPlayer::ReadyState m_readyState { MediaPlayer::ReadyState::HaveNothing };
     FloatSize m_size;
@@ -183,7 +227,9 @@ private:
 #endif
     double m_startedAt { 0 };           /* the film's time when play() came */
     MonotonicTime m_playedAt;
-    int64_t m_skipBefore { 0 };         /* after a seek: frames before it are not shown */
+    int64_t m_skipBefore { 0 };
+    int64_t m_lastClock { -1 };         /* what tick() last saw, and since when */
+    MonotonicTime m_clockStillSince;         /* after a seek: frames before it are not shown */
     Frame m_current;
     RefPtr<NativeImage> m_currentImage;
     mutable PlatformTimeRanges m_buffered;

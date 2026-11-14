@@ -188,3 +188,10 @@ seconds.
 
 Each step's suites pass before the next; the whole gate after step 4, since
 `media.lua` and `sys.pcm` are shared.
+
+**A door from C, 14 November 2026** (`docs/media.md` M4): the player -
+its thread, its input ring, its commands and what it publishes - moved
+from the Lua binding into `playback_player.c`, behind `playback.h`, and
+`playback_kosmos.c` became that door with Lua's arguments around it.
+JetSki's web process plays a film's sound through it, handing 16-bit PCM
+the Media Kit decoded as the WAV kind.

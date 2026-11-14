@@ -29,6 +29,8 @@
 
 extern "C" {
 #include <media.h>
+#include <audioclient.h>
+#include <playback.h>
 #include <yuv.h>
 }
 
@@ -213,6 +215,7 @@ MediaPlayerPrivateKosmos::MediaPlayerPrivateKosmos(MediaPlayer& player)
 MediaPlayerPrivateKosmos::~MediaPlayerPrivateKosmos()
 {
     cancelLoad();
+    closeSound();
 }
 
 template<typename F>
@@ -344,7 +347,181 @@ bool MediaPlayerPrivateKosmos::deliver(int64_t pts, sk_sp<SkImage>&& image, unsi
         onMain([](auto& self) { self.tick(); });
     return true;
 }
+
+void MediaPlayerPrivateKosmos::audioTrackFound()
+{
+    if (m_hasAudio)
+        return;
+    m_hasAudio = true;
+    if (RefPtr player = m_player.get())
+        player->characteristicChanged();
+}
+
+unsigned MediaPlayerPrivateKosmos::soundGeneration()
+{
+    Locker locker { m_soundLock };
+    return m_soundGeneration;
+}
+
+void MediaPlayerPrivateKosmos::flushSound()
+{
+    Locker locker { m_soundLock };
+    m_soundGeneration++;
+    m_soundChanged.notifyAll();
+}
+
+bool MediaPlayerPrivateKosmos::deliverSound(int64_t pts, const struct media_frame& frame, unsigned generation)
+{
+    if (frame.samples <= 0 || frame.channels <= 0 || frame.rate <= 0 || !frame.pcm)
+        return true;
+
+    // As 16 bits, and the first two channels of more: what the Playback
+    // Kit plays is a WAV's PCM, one channel or two.
+    int channels = std::min(frame.channels, 2);
+    m_pcm.resize(static_cast<size_t>(frame.samples) * channels);
+    int16_t* out = m_pcm.mutableSpan().data();
+    for (int i = 0; i < frame.samples; i++) {
+        const float* in = frame.pcm + static_cast<size_t>(i) * frame.channels;
+        for (int c = 0; c < channels; c++) {
+            float v = std::clamp(in[c], -1.0f, 1.0f);
+            out[i * channels + c] = static_cast<int16_t>(v * 32767.0f);
+        }
+    }
+
+    Locker locker { m_soundLock };
+    if (m_soundStop)
+        return false;
+    if (generation != m_soundGeneration || m_noSound)
+        return true;
+
+    if (!m_playback) {
+        const char* why = "";
+        m_playback = playback_open(PLAYBACK_WAV, frame.rate, channels, 16, nullptr, 0, &why);
+        if (!m_playback) {
+            WTFLogAlways("media: no sound - %s", why);
+            m_noSound = true;
+            return true;
+        }
+        m_soundRate = frame.rate;
+        m_soundChannels = channels;
+        if (m_soundPlaying)
+            playback_play(m_playback);
+    }
+    // A film whose sound changes its rate or channels part way is heard
+    // up to the change; owed.
+    if (frame.rate != m_soundRate || channels != m_soundChannels)
+        return true;
+
+    // **The first sound since a seek gets a stream of its own**: the old
+    // one's ring holds sound from before the seek, which closing it drops,
+    // and the new one's played frames count from nought at this time.
+    if (m_streamGeneration != m_soundGeneration) {
+        struct audio_stream fresh;
+        long opened = audio_stream_open(&fresh, "JetSki", 0);
+        if (opened) {
+            WTFLogAlways("media: no sound - the audio server said %ld", opened);
+            m_noSound = true;
+            return true;
+        }
+        if (!playback_seek(m_playback, fresh.ring)) {
+            WTFLogAlways("media: no sound - the Playback Kit did not take the stream");
+            audio_stream_close(&fresh);
+            m_noSound = true;
+            return true;
+        }
+        if (m_stream)
+            audio_stream_close(m_stream.get());
+        else
+            m_stream = std::make_unique<struct audio_stream>();
+        *m_stream = fresh;
+        m_streamGeneration = m_soundGeneration;
+        m_soundBase = pts;
+        applyVolume();
+        WTFLogAlways("media: sound, %d Hz in %d channels, into the audio server's stream %u at %u Hz",
+            m_soundRate, m_soundChannels, m_stream->id, m_stream->format.rate);
+    }
+
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(m_pcm.span().data());
+    size_t left = m_pcm.size() * sizeof(int16_t);
+    size_t frameBytes = channels * sizeof(int16_t);
+    size_t piece = playback_piece(m_playback) / frameBytes * frameBytes;
+    while (left) {
+        size_t n = std::min(left, piece);
+        const char* why = "";
+        int put = playback_frame(m_playback, bytes, n, &why);
+        if (put < 0) {
+            WTFLogAlways("media: a sound refused - %s", why);
+            return true;
+        }
+        if (!put) {
+            // The input ring is seconds deep: full means far ahead, and
+            // its thread empties it as the device plays.
+            m_soundChanged.waitFor(m_soundLock, 10_ms);
+            if (m_soundStop)
+                return false;
+            if (generation != m_soundGeneration)
+                return true;
+            continue;
+        }
+        bytes += n;
+        left -= n;
+    }
+    return true;
+}
 #endif
+
+void MediaPlayerPrivateKosmos::applyVolume()
+{
+    if (m_stream && m_stream->id)
+        audio_stream_set(m_stream.get(), m_muted ? -1 : static_cast<int>(std::lround(std::clamp(m_volume, 0.0f, 1.0f) * 256)), m_muted ? 1 : 0);
+}
+
+void MediaPlayerPrivateKosmos::setVolume(float volume)
+{
+    Locker locker { m_soundLock };
+    m_volume = volume;
+    applyVolume();
+}
+
+void MediaPlayerPrivateKosmos::setMuted(bool muted)
+{
+    Locker locker { m_soundLock };
+    m_muted = muted;
+    applyVolume();
+}
+
+// The sound stops with the clock when the picture has run out - a stall -
+// and goes on when it goes on: the clock is the sound's, so a sound that
+// played on would take the film past what can be shown.
+void MediaPlayerPrivateKosmos::setSoundRunning(bool running)
+{
+    Locker locker { m_soundLock };
+    m_soundPlaying = running;
+    if (m_playback)
+        running ? playback_play(m_playback) : playback_pause(m_playback);
+}
+
+std::optional<double> MediaPlayerPrivateKosmos::soundTime() const
+{
+    Locker locker { m_soundLock };
+    if (!m_playback || !m_stream || !m_stream->ring || m_streamGeneration != m_soundGeneration || !m_stream->format.rate)
+        return std::nullopt;
+    uint64_t played = m_stream->ring->frames_played;
+    return (m_soundBase + static_cast<double>(played) * 1e6 / m_stream->format.rate) / 1e6;
+}
+
+void MediaPlayerPrivateKosmos::closeSound()
+{
+    Locker locker { m_soundLock };
+    m_soundStop = true;
+    m_soundChanged.notifyAll();
+    if (m_playback) {
+        playback_close(m_playback);
+        m_playback = nullptr;
+    }
+    if (m_stream && m_stream->ring)
+        audio_stream_close(m_stream.get());
+}
 
 MediaPlayer::ReadyState MediaPlayerPrivateKosmos::readyState() const
 {
@@ -617,8 +794,13 @@ MediaTime MediaPlayerPrivateKosmos::duration() const
 MediaTime MediaPlayerPrivateKosmos::currentTime() const
 {
     double now = m_startedAt;
-    if (!m_paused && !m_stalled)
-        now += (MonotonicTime::now() - m_playedAt).seconds();
+    if (!m_paused && !m_stalled) {
+        // The sound's, while there is sound; when it runs dry, it waits.
+        if (auto heard = soundTime())
+            now = *heard;
+        else
+            now += (MonotonicTime::now() - m_playedAt).seconds();
+    }
     auto length = duration();
     if (length.isFinite())
         now = std::min(now, length.toDouble());
@@ -638,6 +820,8 @@ void MediaPlayerPrivateKosmos::play()
     }
     m_paused = false;
     m_playedAt = MonotonicTime::now();
+    if (!m_stalled)
+        setSoundRunning(true);
     m_ticker.startRepeating(tickEvery);
     onMain([](auto& self) {
         if (RefPtr player = self.m_player.get())
@@ -651,6 +835,7 @@ void MediaPlayerPrivateKosmos::pause()
         return;
     m_startedAt = currentTime().toDouble();
     m_paused = true;
+    setSoundRunning(false);
     m_ticker.stop();
     onMain([](auto& self) {
         if (RefPtr player = self.m_player.get())
@@ -669,6 +854,7 @@ Ref<MediaTimePromise> MediaPlayerPrivateKosmos::seekToTarget(const SeekTarget& t
         m_ended = false;
         m_stalled = false;
         flushFrames();
+        flushSound();
         MediaTimePromise::Producer producer;
         Ref promise = producer.promise();
         source->waitForTarget(target)->whenSettled(RunLoop::mainSingleton(), [weak = ThreadSafeWeakPtr { *this }, source, producer = WTF::move(producer)](auto&& result) mutable {
@@ -743,9 +929,11 @@ void MediaPlayerPrivateKosmos::tick()
             }
             m_startedAt = stopAt;
             m_stalled = true;
+            setSoundRunning(false);
         } else if (have && m_stalled) {
             m_stalled = false;
             m_playedAt = MonotonicTime::now();
+            setSoundRunning(true);
         }
     }
 #endif
@@ -790,13 +978,25 @@ void MediaPlayerPrivateKosmos::tick()
     auto length = duration();
     bool atEnd = endOfFilm && m_duration >= 0 && now >= m_duration;
 #if ENABLE(MEDIA_SOURCE)
-    if (m_mediaSource)
-        atEnd = m_mediaSource->isEnded() && length.isFinite() && now >= toMicroseconds(length);
+    if (m_mediaSource) {
+        // A clock that has stood still for a third of a second, near the
+        // end of a film that has all arrived, is at its end: the sound's
+        // last frame seldom reaches the duration to the microsecond.
+        auto moment = MonotonicTime::now();
+        if (now != m_lastClock || m_paused) {
+            m_lastClock = now;
+            m_clockStillSince = moment;
+        }
+        bool still = moment - m_clockStillSince > 330_ms;
+        atEnd = m_mediaSource->isEnded() && length.isFinite()
+            && now >= toMicroseconds(length) - (still ? 500000 : 0);
+    }
 #endif
     if (atEnd && !m_paused) {
         m_startedAt = length.toDouble();
         m_paused = true;
         m_ended = true;
+        setSoundRunning(false);
         m_ticker.stop();
         if (player)
             player->timeChanged();

@@ -273,3 +273,54 @@ next video's ad after it - picture only. Its trace found the clock
 skipping film when a page's script held the thread past a stall; it now
 waits where the picture ran out, held by `x86-jetski`. What YouTube still
 lacks is M4's sound, and on real cores how fast AV1 decodes at 1080p.
+
+
+## M4, as it is being built: the sound, and the clock
+
+- **One Opus decoder.** The architecture said "Playback Kit + Opus", and
+  the Playback Kit's core decodes WAV, MP3 and AAC itself. But the Media
+  Kit already decodes Opus, Vorbis, AAC and FLAC - FFmpeg's - and a second
+  Opus in the Playback Kit would be the second copy the premise forbids.
+  So **the sound source buffer's decode thread decodes with the Media
+  Kit**, as the picture's does, and hands the Playback Kit 16-bit PCM, the
+  kind it calls WAV: its thread in the audio band converts to the device's
+  rate and writes into a stream of the audio server's. The input ring is
+  a megabyte, five seconds of 48 kHz stereo, so the decode thread may be
+  away that long and nothing is heard missing. M6 finishes the thought:
+  Video decodes with the Media Kit too, and the Playback Kit's own AAC
+  goes with the vendored closure.
+- **The Playback Kit has a door from C** (`playback.h`): its player - the
+  thread, the input ring, the commands, what is heard - moved out of the
+  Lua binding into `playback_player.c`, and `playback_kosmos.c` is that
+  door with Lua's arguments around it.
+- **A stream from C** (`user/kits/audio/audioclient.h`): what `audio.lua`
+  does - the ring made here, its capability handed to the server with
+  `open` - for code with no `lua_State`. `sys.ring_create` is the same
+  function underneath, so a ring is made one way.
+- **The web process is handed `/Devices/audio`**: the runner gives a C
+  program its `/Devices/audio` with the Storage Kit's mounts
+  (`sys.storage_start`, proto "audio"), and JetSki's launcher gives it to
+  a web process - not to the network process, which plays nothing.
+- **The clock is the sound's**: the film's time when the first sound
+  since the last seek went in, plus the frames the device has played of
+  that stream (`frames_played` in its ring). Each seek opens a new stream,
+  which drops what the old one had queued. When the picture runs out - a
+  stall - the sound is paused and the clock holds where the picture ended.
+  Without sound it is the counter, as before.
+- **Volume and mute** are the stream's fader at the audio server.
+- **Test, in `x86-jetski`**: the suite's machine gets a sound card whose
+  output QEMU writes to a WAV; the appended film's sound is a 440 Hz tone,
+  and seconds of it at that pitch must come out. The control appends a
+  silent track instead.
+- **Owed**: a film with picture and sound in one source buffer is shown
+  and not heard (one decoder a buffer); `<video src>` has no sound; a
+  pause plays out what the stream's ring holds, about a fifth of a second;
+  a sound whose rate or channels change part way stops at the change; the
+  web process's sound thread is not granted the audio band yet
+  (`kosmos: needs audio`), so it runs at NORMAL with the input ring as its
+  margin.
+
+**M4 built, 14 November 2026** (0.11.422, `testing.md` 18.817): the
+appended film's tone heard from the sound card in `x86-jetski`, with a
+silent track and a muted film as its controls. Next, by Diego's order of
+the same day: M6, Video on the Media Kit, then M5.

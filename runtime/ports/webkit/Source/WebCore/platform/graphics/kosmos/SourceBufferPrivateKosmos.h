@@ -15,10 +15,12 @@
  * handed over, in order, on the page's thread, ahead of the answer.
  *
  * The *decode* thread decodes the samples WebCore enqueues - from the key
- * picture before the current time, again after a seek - and hands each
- * frame to the player's queue, which shows it when its time comes. A sound
- * track's samples are kept by WebCore and counted here, until the Playback
- * Kit plays them (M4).
+ * picture before the current time, again after a seek - of one track: the
+ * first picture's, which go to the player's queue to be shown when each
+ * one's time comes, or in a buffer without a picture the first sound's,
+ * which go to the player's Playback Kit (M4). YouTube appends picture and
+ * sound to two buffers, so each has its decoder; a film with both in one
+ * buffer is shown and not heard yet.
  */
 
 #pragma once
@@ -91,8 +93,9 @@ private:
     RefPtr<Thread> m_demuxer;
     std::optional<MediaPromise::Producer> m_appending;
     uint64_t m_appended { 0 };
-    TrackID m_videoTrack { 0 };
-    unsigned m_audioSamples { 0 };
+    TrackID m_decodedTrack { 0 };       /* the track the decode thread decodes */
+    bool m_decodesVideo { false };      /* a picture's, or else a sound's */
+    unsigned m_otherSamples { 0 };      /* of the tracks it does not, counted */
 
     /* The demux thread only. */
     struct Track {

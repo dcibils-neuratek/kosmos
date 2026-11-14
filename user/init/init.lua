@@ -3470,14 +3470,16 @@ local function new_namespace()
   -- servers speak a file protocol the kit knows, with what `resolve` would
   -- send them. Handed over once, by the runner, with `sys.storage_start`.
   -- `/Network` goes with them when this program was given one: what a
-  -- ported library's `socket` reaches (W3e), and nothing else.
+  -- ported library's `socket` reaches (W3e), and nothing else; and
+  -- `/Devices/audio`, which a film's sound plays through from C (M4).
   --
   function ns.storage_mounts()
     local out = {}
     for _, m in ipairs(mounts) do
       if math.type(m.cap) == "integer"
          and (m.proto == "disk" or m.proto == "ram" or m.proto == "bin"
-              or (m.proto == "net" and m.prefix == "/Network")) then
+              or (m.proto == "net" and m.prefix == "/Network")
+              or (m.proto == "audio" and m.prefix == "/Devices/audio")) then
         out[#out + 1] = { prefix = m.prefix, cap = m.cap, root = m.root, proto = m.proto }
       end
     end

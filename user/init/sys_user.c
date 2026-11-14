@@ -26,6 +26,7 @@
 #include "kosmos.h"
 #include "elfimage.h"
 #include "audioring.h"
+#include "kits/audio/audioclient.h"
 #include "pcmconvert.h"
 #include "serialize.h"
 #include "storage.h"
@@ -267,50 +268,21 @@ static int l_ring_create(lua_State *L)
 {
     unsigned period_bytes = (unsigned)luaL_checkinteger(L, 1);
     unsigned periods = (unsigned)luaL_optinteger(L, 2, AUDIO_RING_PERIODS);
-    unsigned bytes;
-    unsigned pages;
-    long cap, at;
-    struct audio_ring *r;
+    long cap;
+    struct audio_ring *r = audio_ring_create(period_bytes, periods, &cap);
 
-    if (period_bytes == 0 || period_bytes > HAL_SND_PERIOD_BYTES_MAX) {
+    if (r == NULL && cap == SYS_ERR_NO_DEVICE) {
         lua_pushnil(L);
         lua_pushstring(L, "a period that size is not one this machine has");
         return 2;
     }
 
-    if (periods == 0 || periods > 64) {
-        periods = AUDIO_RING_PERIODS;
-    }
-
-    bytes = AUDIO_RING_DATA + periods * period_bytes;
-    pages = (bytes + 4095u) / 4096u;
-
-    cap = kosmos_mem_create(pages);
-
-    if (cap < 0) {
+    if (r == NULL) {
         return fail(L, cap);
     }
 
-    at = kosmos_mem_map(cap);
-
-    if (at < 0) {
-        return fail(L, at);
-    }
-
-    r = (struct audio_ring *)(uintptr_t)at;
-    memset(r, 0, AUDIO_RING_DATA);
-    r->periods = periods;
-    r->period_bytes = period_bytes;
-    r->write = 0;
-    r->read = 0;
-
-    /* Last, so that a server which maps this while it is being built cannot
-     * see a half-initialised header and believe it. */
-    audio_ring_publish(r, 0);
-    r->magic = AUDIO_RING_MAGIC;
-
     lua_pushinteger(L, (lua_Integer)cap);
-    lua_pushinteger(L, (lua_Integer)at);
+    lua_pushinteger(L, (lua_Integer)(uintptr_t)r);
     return 2;
 }
 
@@ -3177,6 +3149,9 @@ static int l_ram_call(lua_State *L)
  * `/Network`, proto "net", travels in the same table and goes to the
  * network kit instead (`net_client_start`): it is what a ported library's
  * `socket` reaches (W3e), and only the first call hands it over.
+ * `/Devices/audio`, proto "audio", goes to the audio client
+ * (`audioclient.h`) the same way: what a film's sound plays through from C
+ * (`docs/media.md` M4).
  */
 static int storage_started;
 
@@ -3219,6 +3194,15 @@ static int l_storage_start(lua_State *L)
             if (strcmp(proto, "net") == 0) {
                 if (!storage_started && strcmp(prefix, "/Network") == 0) {
                     net_client_start((long)cap);
+                }
+
+                lua_pop(L, 5);
+                continue;
+            }
+
+            if (strcmp(proto, "audio") == 0) {
+                if (!storage_started && strcmp(prefix, "/Devices/audio") == 0) {
+                    audio_client_start((long)cap);
                 }
 
                 lua_pop(L, 5);

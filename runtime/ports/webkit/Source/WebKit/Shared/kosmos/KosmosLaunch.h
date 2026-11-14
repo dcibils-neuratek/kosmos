@@ -2,8 +2,8 @@
 /*
  * **What a web or network process is started with** (`docs/w7.md` W7a):
  * its role, and capabilities in a fixed order - its connection's three,
- * a page of these facts, then whatever it may reach, each mount's and the
- * network's. The page says how many of each and where they are; the
+ * a page of these facts, then whatever it may reach, each mount's, the
+ * network's and the sound's. The page says how many of each and where they are; the
  * capabilities themselves are the child's by index, as `SYS_SPAWN` lays
  * them out, from 0.
  */
@@ -32,6 +32,7 @@ struct KosmosLaunch {
     uint32_t mounts;    // storage_mount entries below, caps from kosmosLaunchFirstMount
     int32_t network;    // the network's capability, or -1
     int32_t console;    // the console's (`posix_console`), or -1
+    int32_t audio;      // `/Devices/audio`'s (`audioclient.h`), or -1
     char cwd[STORAGE_PATH_MAX];
     struct storage_mount mount[STORAGE_MOUNTS_MAX];
 };

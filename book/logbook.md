@@ -3166,3 +3166,37 @@ arrived. A key pressed while a page is busy should wait its turn, not
 disappear. It's on the list.
 
 **Next:** sound, through the Playback Kit.
+
+## 14 November 2026 - Films in the browser have sound
+
+**In short:** a film in JetSki is now heard as well as seen. Its sound is
+decoded by the same kit that decodes its picture, played by the kit that
+plays every song on Kosmos, and the film's clock now follows the sound.
+
+**What happened.** The browser already took the sound track apart and
+then threw it away. Now the same thread that decodes a film's picture
+decodes its sound with the Media Kit (the one Opus decoder on the
+system), and hands the result to the Playback Kit. That kit has a thread
+of its own at sound's priority and sends the sound to the audio server,
+like Music and Video do. To make that possible, the Playback Kit was split
+into a part any C program can use and a thin layer for Lua programs, and a
+small new kit opens a sound stream from C. The browser's web process is
+now given the system's audio device, while its network process isn't.
+
+**Why the clock moved.** Until now the film's time came from a stopwatch
+started on Play. Now it comes from how much sound the device has actually
+played, so a picture is shown when its sound is heard. When the picture
+runs out (still downloading), the sound pauses and the clock waits with
+it.
+
+**How it is tested.** The browser test's machine now has a sound card,
+and QEMU records what it plays to a file. The test film's sound is a
+440 Hz tone, and the test checks that over four seconds of a 440 Hz tone
+come out. The first try heard nothing, and that turned out to be a feature
+working: the test page had its films muted, and muting now really turns
+the stream's fader down. There are two controls: a silent sound track,
+and the film muted on purpose. Each fails exactly the sound check.
+
+**Next:** a build for the M700 to try the browser on real hardware, then
+the Video app moved onto the same Media Kit, so it plays every format the
+browser does, starting with Diego's Big Buck Bunny.

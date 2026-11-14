@@ -61,6 +61,14 @@ six seconds buffered, and show its own colour; `MediaSource.isTypeSupported` mus
 VP9, which is decoded and not yet shown. `KOSMOS_JETSKI_BREAK=no-appended`
 serves its picture as a 404, which a SourceBuffer cannot parse.
 
+Its sound must be heard (M4): the machine has a sound card whose output
+QEMU writes to a WAV, and the appended film's sound is a 440 Hz tone, so
+what comes out must hold seconds of it - decoded by the Media Kit, played
+by the Playback Kit into a stream of the audio server's. The control,
+`KOSMOS_JETSKI_BREAK=silent`, appends a sound track of silence instead,
+and nothing else changes; `KOSMOS_JETSKI_BREAK=muted` mutes the film on
+the page, which must silence it at the audio server's fader.
+
 `KOSMOS_JETSKI_BREAK=foreign-cookie` has the server set its cookie for
 another site and the script set none, which a browser must refuse, so the
 second page arrives without them.
@@ -78,9 +86,11 @@ Usage: run_jetski.py [kernel image] [apps folder]
 """
 
 import http.server
+import math
 import os
 import re
 import socketserver
+import struct
 import subprocess
 import sys
 import threading
@@ -177,7 +187,7 @@ body { margin: 0; height: 6000px; background: #fff; }
 <body>
 <input id="field">
 <video id="film" src="/film.webm" autoplay muted></video>
-<video id="appended" autoplay muted></video>
+<video id="appended" autoplay></video>
 <script>
 var film = document.getElementById("film"), told = false;
 function tell(what) {
@@ -274,6 +284,9 @@ field.addEventListener("input", function () { document.title = "typed " + field.
 </script>
 </body></html>
 """ % ((SECOND.encode(),) + FIELD)
+# The appended film is heard, and the page's mute must silence it.
+if BROKEN == "muted":
+    OTHER = OTHER.replace(b'<video id="appended" autoplay>', b'<video id="appended" autoplay muted>')
 
 
 class Page(http.server.BaseHTTPRequestHandler):
@@ -474,13 +487,51 @@ def make_appended():
          "color=c=0x%02x%02x%02x:size=%dx%d:rate=25:duration=6" % (APPENDED_COLOUR + FILM_SIZE),
          "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-b:v", "200k", "-g", "25", picture],
         capture_output=True)
+    tone = ("anullsrc=r=48000:cl=mono:d=6" if BROKEN == "silent"
+            else "sine=frequency=%d:sample_rate=48000:duration=6" % TONE)
     heard = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
-         "sine=frequency=440:sample_rate=48000:duration=6", "-c:a", "libopus", sound],
+         tone, "-c:a", "libopus", sound],
         capture_output=True)
     if made.returncode or heard.returncode or not os.path.exists(picture) or not os.path.exists(sound):
         return None
     return (picture, sound)
+
+
+TONE = 440
+HEARD = os.path.join(WORK, "heard.wav")
+
+
+def sound():
+    """The appended film's tone, in what the machine's sound card played."""
+    if not os.path.exists(HEARD):
+        return ["the machine's sound card wrote nothing"]
+    with open(HEARD, "rb") as f:
+        data = f.read()
+    at = data.find(b"fmt ")
+    if at < 0 or data.find(b"data") < 0:
+        return ["the sound card's WAV has no format or no data"]
+    channels, rate = struct.unpack("<HI", data[at + 10:at + 16])
+    pcm = data[data.find(b"data") + 8:]
+    n = len(pcm) // 2
+    left = struct.unpack("<%dh" % n, pcm[:n * 2])[::max(1, channels)]
+    # Loud stretches, a tenth of a second at a time, and the tone's pitch
+    # from the zero crossings in them.
+    step = rate // 10
+    loud, crossings = 0, 0
+    for start in range(0, len(left) - step, step):
+        block = left[start:start + step]
+        if math.sqrt(sum(v * v for v in block[::8]) / len(block[::8])) < 1000:
+            continue
+        loud += 1
+        crossings += sum(1 for a, b in zip(block, block[1:]) if (a < 0) != (b < 0))
+    seconds = loud / 10
+    if seconds < 4:
+        return ["the appended film's tone was heard for %.1f s of its 6" % seconds]
+    pitch = crossings / 2 / seconds
+    if abs(pitch - TONE) > 20:
+        return ["what was heard is %.0f Hz, not the film's %d" % (pitch, TONE)]
+    return []
 
 
 def near(parse_ppm, data, x, y, w, h, colour, slack=12):
@@ -630,6 +681,13 @@ def main():
         setattr(R, board, [("2G" if a == "512M" else a) for a in args])
     setattr(R, board, getattr(R, board) + [
         "-netdev", "user,id=net0", "-device", R.device(IMAGE, "net") + ",netdev=net0"])
+    # A sound card, whose output is kept: the film's sound must come out.
+    if R.machine(IMAGE) == "x86_64":
+        if os.path.exists(HEARD):
+            os.remove(HEARD)
+        setattr(R, board, getattr(R, board) + [
+            "-audiodev", "wav,id=snd0,path=%s" % HEARD,
+            "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"])
 
     guest = R.Guest(IMAGE, 400)
     failed, mark, dump, where, used = [], 0, None, None, None
@@ -708,8 +766,10 @@ def main():
         failed.extend(used)
         failed.extend(cookies())
         failed.extend(itself())
+        if not LIVE:
+            failed.extend(sound())
 
-    checks = 24
+    checks = 25
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -724,7 +784,8 @@ def main():
           "1200x800 and a canvas read back as a PNG; and a VP9 film in WebM played on "
           "the second page by WebKit's Media Kit engine, its picture in the window; and "
           "beside it a film appended in pieces to a MediaSource, VP9 and Opus in "
-          "SourceBuffers of their own, played, all of it buffered, and on the screen"
+          "SourceBuffers of their own, played, all of it buffered, on the screen, and "
+          "its tone heard from the sound card"
           % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 

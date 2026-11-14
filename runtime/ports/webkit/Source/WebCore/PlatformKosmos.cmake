@@ -94,11 +94,12 @@ list(APPEND WebCore_LIBRARIES
 set_source_files_properties(platform/kosmos/SharedMemoryKosmos.cpp
     PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel")
 
-# The media engine and its MediaSource reach two kits' doors, the Media
-# Kit's `media.h` and the gfx kit's `yuv.h`, in these files alone and
+# The media engine and its MediaSource reach four kits' doors, the Media
+# Kit's `media.h`, the gfx kit's `yuv.h`, the Playback Kit's `playback.h`
+# and the audio client's `audioclient.h`, in these files alone and
 # searched last, so no name
 # in either folder can answer for one of WebKit's.
 set_source_files_properties(platform/graphics/kosmos/MediaPlayerPrivateKosmos.cpp
     platform/graphics/kosmos/MediaSourcePrivateKosmos.cpp
     platform/graphics/kosmos/SourceBufferPrivateKosmos.cpp
-    PROPERTIES COMPILE_OPTIONS "-idirafter;${KOSMOS_ROOT}/user/kits/media;-idirafter;${KOSMOS_ROOT}/user/kits/gfx")
+    PROPERTIES COMPILE_OPTIONS "-idirafter;${KOSMOS_ROOT}/user/kits/media;-idirafter;${KOSMOS_ROOT}/user/kits/gfx;-idirafter;${KOSMOS_ROOT}/user/kits/playback;-idirafter;${KOSMOS_ROOT}/user/kits/audio")

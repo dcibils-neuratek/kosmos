@@ -20,6 +20,7 @@
 #include <kosmos.h>
 #include <stdio.h>
 #include "netclient.h"
+#include "audioclient.h"
 #include <posix_program.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringToIntegerConversion.h>
@@ -71,6 +72,8 @@ extern "C" int kosmos_webkit_role(unsigned long role)
     storage_start(launch.mount, launch.mounts, launch.cwd);
     if (launch.network >= 0)
         net_client_start(launch.network);
+    if (launch.audio >= 0)
+        audio_client_start(launch.audio);
 
     char identifier[24];
     snprintf(identifier, sizeof identifier, "%llu", static_cast<unsigned long long>(launch.processIdentifier));

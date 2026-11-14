@@ -224,8 +224,10 @@ void SourceBufferPrivateKosmos::stopThreads()
     }
     // A decode thread waiting for room in a paused player's queue is let
     // go: a new generation turns its wait into a drop.
-    if (RefPtr player = m_player.get())
+    if (RefPtr player = m_player.get()) {
         player->flushFrames();
+        player->flushSound();
+    }
     RefPtr<Thread> decoder;
     {
         Locker locker { m_decodeLock };
@@ -379,11 +381,14 @@ void SourceBufferPrivateKosmos::demux()
     }
 
     // The initialization segment: a track for each picture and sound
-    // stream, and a decoder for the first picture.
+    // stream, and a decoder for the first picture - or, in a buffer with
+    // none, the first sound, which is how YouTube appends them.
     SourceBufferPrivateClient::InitializationSegment segment;
     int64_t duration = MEDIA_NO_TIME;
     struct media_decoder* decoder = nullptr;
-    TrackID videoTrack = 0;
+    TrackID decodedTrack = 0;
+    bool decodesVideo = false;
+    int firstAudio = -1;
     m_tracks.clear();
     for (int i = 0; i < media_stream_count(source); i++) {
         struct media_stream stream;
@@ -402,13 +407,23 @@ void SourceBufferPrivateKosmos::demux()
             segment.videoTracks.append({ KosmosMediaDescription::create(fourCC(stream.codec), true), KosmosVideoTrack::create(track.id) });
             if (!decoder) {
                 decoder = media_decoder_open(source, i, 0, why, sizeof why);
-                videoTrack = track.id;
+                decodedTrack = track.id;
+                decodesVideo = true;
             }
-        } else
+        } else {
             segment.audioTracks.append({ KosmosMediaDescription::create(fourCC(stream.codec), false), KosmosAudioTrack::create(track.id) });
+            if (firstAudio < 0)
+                firstAudio = i;
+        }
         m_tracks.append(WTF::move(track));
     }
     segment.duration = duration != MEDIA_NO_TIME ? fromUs(duration) : MediaTime::invalidTime();
+    if (!decoder && firstAudio >= 0) {
+        decoder = media_decoder_open(source, firstAudio, 0, why, sizeof why);
+        decodedTrack = static_cast<TrackID>(firstAudio + 1);
+    }
+    if (!decoder && decodedTrack)
+        WTFLogAlways("media: no decoder for the %s - %s", decodesVideo ? "picture" : "sound", why);
 
     if (decoder) {
         Locker locker { m_decodeLock };
@@ -419,17 +434,20 @@ void SourceBufferPrivateKosmos::demux()
     }
     FloatSize size;
     for (auto& track : m_tracks) {
-        if (track.id == videoTrack)
+        if (decodesVideo && track.id == decodedTrack)
             size = FloatSize(track.width, track.height);
     }
-    callOnMainThread([weak = ThreadSafeWeakPtr { *this }, segment = WTF::move(segment), videoTrack, size]() mutable {
+    callOnMainThread([weak = ThreadSafeWeakPtr { *this }, segment = WTF::move(segment), decodedTrack, decodesVideo, size]() mutable {
         RefPtr self = weak.get();
         if (!self)
             return;
-        self->m_videoTrack = videoTrack;
-        if (videoTrack) {
-            if (RefPtr player = self->m_player.get())
+        self->m_decodedTrack = decodedTrack;
+        self->m_decodesVideo = decodesVideo;
+        if (RefPtr player = self->m_player.get(); player && decodedTrack) {
+            if (decodesVideo)
                 player->videoTrackFound(size);
+            else
+                player->audioTrackFound();
         }
         self->didReceiveInitializationSegment(WTF::move(segment));
     });
@@ -524,7 +542,7 @@ void SourceBufferPrivateKosmos::handOver()
 
 bool SourceBufferPrivateKosmos::isReadyForMoreSamples(TrackID track)
 {
-    if (track != m_videoTrack)
+    if (track != m_decodedTrack)
         return true;
     Locker locker { m_decodeLock };
     return m_samples.size() < samplesAhead;
@@ -532,7 +550,7 @@ bool SourceBufferPrivateKosmos::isReadyForMoreSamples(TrackID track)
 
 void SourceBufferPrivateKosmos::notifyClientWhenReadyForMoreSamples(TrackID track)
 {
-    if (track != m_videoTrack)
+    if (track != m_decodedTrack)
         return;
     Locker locker { m_decodeLock };
     m_wantsMore = true;
@@ -540,14 +558,14 @@ void SourceBufferPrivateKosmos::notifyClientWhenReadyForMoreSamples(TrackID trac
 
 void SourceBufferPrivateKosmos::enqueueSample(Ref<MediaSample>&& sample, TrackID track)
 {
-    if (track != m_videoTrack) {
-        m_audioSamples++;
+    if (track != m_decodedTrack) {
+        m_otherSamples++;
         return;
     }
     RefPtr player = m_player.get();
     if (!player)
         return;
-    unsigned generation = player->frameGeneration();
+    unsigned generation = m_decodesVideo ? player->frameGeneration() : player->soundGeneration();
     Locker locker { m_decodeLock };
     m_samples.append({ static_cast<MediaSampleKosmos*>(sample.ptr()), generation });
     m_decodeChanged.notifyAll();
@@ -555,12 +573,12 @@ void SourceBufferPrivateKosmos::enqueueSample(Ref<MediaSample>&& sample, TrackID
 
 void SourceBufferPrivateKosmos::allSamplesInTrackEnqueued(TrackID track)
 {
-    if (track != m_videoTrack)
+    if (track != m_decodedTrack)
         return;
     RefPtr player = m_player.get();
     if (!player)
         return;
-    unsigned generation = player->frameGeneration();
+    unsigned generation = m_decodesVideo ? player->frameGeneration() : player->soundGeneration();
     Locker locker { m_decodeLock };
     m_samples.append({ nullptr, generation });
     m_decodeChanged.notifyAll();
@@ -568,7 +586,7 @@ void SourceBufferPrivateKosmos::allSamplesInTrackEnqueued(TrackID track)
 
 void SourceBufferPrivateKosmos::flush(TrackID track)
 {
-    if (track != m_videoTrack)
+    if (track != m_decodedTrack)
         return;
     {
         Locker locker { m_decodeLock };
@@ -576,8 +594,12 @@ void SourceBufferPrivateKosmos::flush(TrackID track)
         m_flushDecoder = true;
         m_decodeChanged.notifyAll();
     }
-    if (RefPtr player = m_player.get())
-        player->flushFrames();
+    if (RefPtr player = m_player.get()) {
+        if (m_decodesVideo)
+            player->flushFrames();
+        else
+            player->flushSound();
+    }
 }
 
 void SourceBufferPrivateKosmos::decode()
@@ -608,8 +630,8 @@ void SourceBufferPrivateKosmos::decode()
         if (ask) {
             callOnMainThread([weak = ThreadSafeWeakPtr { *this }] {
                 RefPtr self = weak.get();
-                if (self && self->m_videoTrack)
-                    self->provideMediaData(self->m_videoTrack);
+                if (self && self->m_decodedTrack)
+                    self->provideMediaData(self->m_decodedTrack);
             });
         }
         if (flush)
@@ -627,8 +649,15 @@ void SourceBufferPrivateKosmos::decode()
         RefPtr player = m_player.get();
         struct media_frame frame;
         while (media_frame(decoder, &frame) == 1) {
+            if (!player)
+                continue;
+            if (frame.kind == MEDIA_AUDIO) {
+                if (!player->deliverSound(frame.pts_us, frame, next.generation))
+                    return;
+                continue;
+            }
             auto image = MediaPlayerPrivateKosmos::picture(frame);
-            if (image && player && !player->deliver(frame.pts_us, WTF::move(image), next.generation))
+            if (image && !player->deliver(frame.pts_us, WTF::move(image), next.generation))
                 return;
         }
         if (!next.sample)

@@ -6,7 +6,8 @@
  * every mount and the network, since cookies, the cache and certificates
  * are files and pages come over the network; a web process gets the mounts
  * but `/Home`, and no network - what it loads, it loads by asking the
- * network process.
+ * network process - and the sound, since a page's film plays in it
+ * (`docs/media.md` M4).
  *
  * Nebula has no paths to images and no command lines, so there is no
  * process path to choose and nothing to parse: the identifier WebKit gave
@@ -20,6 +21,7 @@
 #include "KosmosLaunch.h"
 #include <kosmos.h>
 #include "netclient.h"
+#include "audioclient.h"
 #include <posix_program.h>
 #include <wtf/RunLoop.h>
 #include <wtf/StdLibExtras.h>
@@ -76,6 +78,11 @@ void ProcessLauncher::launchProcess()
     if (long console = posix_console_capability(); console >= 0) {
         launch.console = static_cast<int32_t>(caps.size());
         caps.append(static_cast<int>(console));
+    }
+    launch.audio = -1;
+    if (long audio = network ? -1 : audio_client_cap(); audio >= 0) {
+        launch.audio = static_cast<int32_t>(caps.size());
+        caps.append(static_cast<int>(audio));
     }
     long net = network ? net_client_cap() : -1;
     if (net >= 0) {
