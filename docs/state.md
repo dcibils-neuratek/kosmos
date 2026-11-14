@@ -24,9 +24,11 @@ WebKit's own reference tests in `x86-webcore` (`testing.md` 18.802):
 YouTube's search paints its AVIF thumbnails and every site its WOFF2
 faces. `run_site.py` gives its guest 2 GB.
 
-**Next**: the media design for Diego (`docs/media.md`: WebKit's player on
-the FFmpeg and Playback kits, MSE, AV1 on dav1d, VP9, H.264, Opus, AAC);
-curl against Brotli for `br`; then W7's network loader.
+0.11.408: curl decodes `br` (18.803).
+
+**Waiting on Diego**: `docs/media.md`, the video design - four decisions
+(Kosmos's own player or GStreamer; FFmpeg built whole with assembly; AV1
+first; the order M1-M6). Meanwhile W7's network loader.
 
 ## 14 November: the recorded sites; YouTube first (0.11.404, not pushed)
 

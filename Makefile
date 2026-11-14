@@ -3659,7 +3659,9 @@ build/w5/$(ARCH)/.built: tools/w5_build.py tools/upstream.py runtime/cxx/kosmos.
 
 W5_XML_LIBS := $(W5_DIR)/lib/libxml2.a
 W5_SSL_LIBS := $(W5_DIR)/lib/libssl.a $(W5_DIR)/lib/libcrypto.a
-W5_CURL_LIBS := $(W5_DIR)/lib/libcurltool.a $(W5_DIR)/lib/libcurl.a
+# curl decodes HTTP's `br` with Brotli since W5f (`docs/w5.md`).
+W5_CURL_LIBS := $(W5_DIR)/lib/libcurltool.a $(W5_DIR)/lib/libcurl.a \
+                $(W5_DIR)/lib/libbrotlidec.a $(W5_DIR)/lib/libbrotlicommon.a
 
 $(W5_LIBS) $(W5_TEXT_LIBS) $(W5_XML_LIBS) $(W5_SSL_LIBS) $(W5_CURL_LIBS): build/w5/$(ARCH)/.built
 

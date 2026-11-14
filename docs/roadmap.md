@@ -10297,8 +10297,11 @@ the applications make the system useful, and is not pulled forward.
       YouTube's thumbnails paint. JPEG XL after.
     - *Fonts*: **WOFF2** (Google's woff2 on brotli) - *done, 0.11.407*:
       YouTube's Roboto and The Verge's faces paint as themselves.
-      Brotli is also HTTP's `br`, which W7's loader needs: curl to be
-      built against it.
+      Brotli is also HTTP's `br`, which W7's loader needs: curl decodes
+      it since 0.11.408 (18.803).
+    - *The design for video*: `docs/media.md`, for Diego to decide - a
+      Kosmos player in WebCore on a new Media Kit (FFmpeg's demuxers and
+      decoders, dav1d), the Playback Kit for sound.
     - *Video and sound*: **AV1** (dav1d - the same decoder as AVIF, one
       door), **VP9**, **H.264** (FFmpeg, there since 4e), **Opus** and
       **AAC**; played by **Media Source Extensions**, which is how YouTube

@@ -164,7 +164,7 @@ LIBRARIES = {
         # SSH, LDAP, Kerberos, IDN (WebKit hands curl hosts in ASCII),
         # brotli and zstd (not built), HTTP/2 (nghttp2, not yet - roadmap).
         "-DCURL_USE_LIBSSH2=OFF", "-DCURL_USE_LIBSSH=OFF", "-DCURL_DISABLE_LDAP=ON",
-        "-DCURL_USE_GSSAPI=OFF", "-DUSE_LIBIDN2=OFF", "-DCURL_BROTLI=OFF",
+        "-DCURL_USE_GSSAPI=OFF", "-DUSE_LIBIDN2=OFF", "-DCURL_BROTLI=ON",
         "-DCURL_ZSTD=OFF", "-DUSE_NGHTTP2=OFF", "-DUSE_NGTCP2=OFF",
         # The POSIX layer's sockets are IPv4 and TCP.
         "-DENABLE_IPV6=OFF",
@@ -444,8 +444,13 @@ def curl_extra(arch, src, top, prefix):
         # nothing here (`curltest.elf` is linked by the Makefile).
         subprocess.run([os.path.join(LLVM, "bin", "llvm-ar"), "rcs", library], check=True)
     trial, says = trial_link(arch, top) if not is_host(arch) else ([], "")
+    lib = lambda name: os.path.join(prefix, "lib", name)        # noqa: E731
     return (["-DLIBPSL_INCLUDE_DIR=" + os.path.join(psl, "include"),
              "-DLIBPSL_LIBRARY=" + library,
+             # HTTP's `br`, by W5f's Brotli, built before curl.
+             "-DBROTLI_INCLUDE_DIR=" + os.path.join(prefix, "include"),
+             "-DBROTLICOMMON_LIBRARY=" + lib("libbrotlicommon.a"),
+             "-DBROTLIDEC_LIBRARY=" + lib("libbrotlidec.a"),
              "-DOPENSSL_ROOT_DIR=" + prefix, "-DOPENSSL_USE_STATIC_LIBS=ON"] + trial,
             says)
 
@@ -598,7 +603,7 @@ def main():
 
     arch = sys.argv[1]
     names = sys.argv[2:] or [n for n in LIBRARIES if n not in ("curl", "brotli", "woff2", "libavif")] \
-        + ["openssl", "curl", "brotli", "woff2", "dav1d", "libavif"]
+        + ["openssl", "brotli", "curl", "woff2", "dav1d", "libavif"]
     for name in names:
         if name not in LIBRARIES and name not in ("openssl", "dav1d"):
             sys.exit("w5_build: no library %s" % name)

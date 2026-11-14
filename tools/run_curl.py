@@ -13,6 +13,8 @@ What is asked, and what each holds:
   - **a page**, 300 KB, over TLS 1.3 against the test authority: the bytes,
     the status, the size;
   - **the same, gzip'd** (`--compressed`): curl's zlib, W5a's;
+  - **Brotli's** (`--compressed`, `Content-Encoding: br`): one of Brotli's
+    own test files as its release compressed it, decoded by W5f's Brotli;
   - **chunked**, over HTTP/1.1, the page in pieces of every size;
   - **a redirect** (`-L`): one hop, then the page;
   - **cookies and the public suffix list**: a server at
@@ -33,6 +35,7 @@ served and not this Mac:
   KOSMOS_CURL_BREAK=page    one byte of the guest's page
   KOSMOS_CURL_BREAK=cookie  the guest's second cookie for the host's own
                             domain, so the jar keeps it
+  KOSMOS_CURL_BREAK=brotli  one byte of the guest's Brotli stream
 """
 
 import gzip
@@ -71,6 +74,15 @@ PAGE = b"".join(b"%06d %s\n" % (i, hashlib.sha256(b"%d" % i).hexdigest().encode(
                 for i in range(4400))
 BIG = hashlib.shake_256(b"kosmos").digest(8 << 20)
 
+
+def brotli_pair():
+    """One of Brotli's own test files and the release's compression of it,
+    so nothing on this Mac has to compress."""
+    data = os.path.join(upstream.checkout("brotli", upstream.GIT["brotli"]["url"],
+                                          upstream.GIT["brotli"]["commit"]), "tests", "testdata")
+    return (open(os.path.join(data, "alice29.txt"), "rb").read(),
+            open(os.path.join(data, "alice29.txt.compressed"), "rb").read())
+
 SCRIPT = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- One of W5d's curl commands (`tools/run_curl.py`).
 -- kosmos: image curltest.elf
@@ -108,6 +120,12 @@ def handler(broken):
             elif self.path == "/gzip":
                 self.send(gzip.compress(page, mtime=0),
                           [("Content-Type", "text/plain"), ("Content-Encoding", "gzip")])
+            elif self.path == "/brotli":
+                packed = brotli_pair()[1]
+                if broken == "brotli":
+                    packed = packed[:500] + bytes([packed[500] ^ 1]) + packed[501:]
+                self.send(packed,
+                          [("Content-Type", "text/plain"), ("Content-Encoding", "br")])
             elif self.path == "/chunked":
                 self.send_response(200)
                 self.send_header("Transfer-Encoding", "chunked")
@@ -175,6 +193,7 @@ def commands(ports, address, cacert, folder):
     return [
         ("page", said + out("page") + at(good, "/page")),
         ("gzip", said + out("gzip") + ["--compressed"] + at(good, "/gzip")),
+        ("brotli", said + out("brotli") + ["--compressed"] + at(good, "/brotli")),
         ("chunked", said + out("chunked") + at(good, "/chunked")),
         ("redirect", said + out("redirect") + ["-L"] + at(good, "/redirect")),
         ("cookie", said + ["-c", jar, "-o", "%s/cookie-set.txt" % folder]
@@ -190,7 +209,7 @@ def commands(ports, address, cacert, folder):
 def mac_curl():
     """curl's program, built for this Mac from the same release."""
     subprocess.run(["python3", os.path.join(HERE, "w5_build.py"), "host",
-                    "zlib", "openssl", "curl"], check=True, capture_output=True)
+                    "zlib", "openssl", "brotli", "curl"], check=True, capture_output=True)
     return os.path.join(ROOT, "build", "w5", "host", "curl", "src", "curl")
 
 
@@ -208,8 +227,8 @@ def outcome(text):
 
 
 def main():
-    if BROKEN not in (None, "page", "cookie"):
-        print("FAIL: KOSMOS_CURL_BREAK is page or cookie, not %s" % BROKEN)
+    if BROKEN not in (None, "page", "cookie", "brotli"):
+        print("FAIL: KOSMOS_CURL_BREAK is page, cookie or brotli, not %s" % BROKEN)
         return 1
     if not os.path.exists(BUILT):
         print("FAIL: no %s - make app-images" % BUILT)
@@ -238,6 +257,8 @@ def main():
     claims = [
         (expected["page"][2] == page_sha, "the page's bytes"),
         (expected["gzip"][2] == page_sha, "the page, gzip'd"),
+        (expected["brotli"][2] == hashlib.sha256(brotli_pair()[0]).hexdigest(),
+         "Brotli's file, decoded"),
         (expected["chunked"][2] == page_sha, "the page, chunked"),
         (expected["redirect"][2] == page_sha and expected["redirect"][1][:1] == ["200 %d 1 0"
                                                                               % len(PAGE)],
@@ -308,6 +329,7 @@ def main():
         return 1
 
     print("PASS: curl 8.23.0 on Kosmos, over HTTPS to this Mac - the page plain, gzip'd, "
+          "Brotli's file as br, "
           "chunked and redirected, cookies kept and refused by the public suffix list, "
           "three certificates refused (60), 8 MB in %.1f s; every command as on this Mac"
           % times["big"])

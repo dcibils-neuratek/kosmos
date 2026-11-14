@@ -33073,3 +33073,13 @@ typefaces. The Verge first died in `WTF::fastMalloc` (`CRASH()`, a write
 to `0xbbadbeef`): with its 19 fonts decoded beside 92 pictures, a 512 MB
 guest holding a 148 MB image ran out. `run_site.py` now gives its guest
 2 GB (`KOSMOS_SITE_MEMORY`), less than any machine Kosmos runs on.
+
+## 18.803 curl decodes `br`
+
+curl built against W5f's Brotli (`CURL_BROTLI=ON`, Brotli before curl in
+`w5_build.py`, `libbrotlidec` and `libbrotlicommon` in `W5_CURL_LIBS`).
+`x86-curl` gains a case: `--compressed` against a server sending Brotli's
+own `alice29.txt.compressed` as `Content-Encoding: br`, held to this Mac's
+curl, whose bytes must be `alice29.txt`'s. PASS, 25 s. Control
+`KOSMOS_CURL_BREAK=brotli` (a byte of the guest's stream changed): the
+guest's curl exits 61, a bad content encoding, against the Mac's 0.
