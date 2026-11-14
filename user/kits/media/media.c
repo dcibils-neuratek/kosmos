@@ -107,8 +107,31 @@ int media_cpu_flags(int mask)
     return av_get_cpu_flags();
 }
 
-struct media_source *media_open(const struct media_io *io, char *why, size_t room)
+/* Whether the first bytes are the container they were declared: WebM's
+ * EBML magic, or an MP4 box - a size and four printable letters. FFmpeg's
+ * reader takes garbage for an element of unknown length and waits to skip
+ * it, so a declared container is held to its first bytes here, and they
+ * are put back for the reader by seeking within the buffer. */
+static int declared(AVIOContext *pb, const char *container)
 {
+    uint8_t b[8];
+    int i;
+
+    if (avio_read(pb, b, sizeof b) != (int)sizeof b || avio_seek(pb, 0, SEEK_SET) != 0)
+        return 0;
+    if (!strcmp(container, "webm"))
+        return b[0] == 0x1a && b[1] == 0x45 && b[2] == 0xdf && b[3] == 0xa3;
+    for (i = 4; i < 8; i++) {
+        if (b[i] < 0x20 || b[i] > 0x7e)
+            return 0;
+    }
+    return 1;
+}
+
+static struct media_source *open_source(const struct media_io *io, int whole, const char *container,
+                                        char *why, size_t room)
+{
+    const AVInputFormat *format = NULL;
     struct media_source *s;
     uint8_t *buffer;
     int r;
@@ -140,7 +163,17 @@ struct media_source *media_open(const struct media_io *io, char *why, size_t roo
     s->avio->seekable = io->seek ? AVIO_SEEKABLE_NORMAL : 0;
     s->fmt->pb = s->avio;
     s->fmt->flags |= AVFMT_FLAG_CUSTOM_IO;
-    r = avformat_open_input(&s->fmt, NULL, NULL, NULL);
+    if (container && !(format = av_find_input_format(container))) {
+        media_close(s);
+        say(why, room, "media: not a container this kit reads", 0);
+        return NULL;
+    }
+    if (container && !declared(s->avio, container)) {
+        media_close(s);
+        say(why, room, "media: these bytes are not the container they were declared", 0);
+        return NULL;
+    }
+    r = avformat_open_input(&s->fmt, NULL, format, NULL);
     if (r < 0) {
         /* `avformat_open_input` freed the context on failure. */
         av_free(s->avio->buffer);
@@ -149,13 +182,24 @@ struct media_source *media_open(const struct media_io *io, char *why, size_t roo
         say(why, room, "media: not a container this kit reads", r);
         return NULL;
     }
-    r = avformat_find_stream_info(s->fmt, NULL);
+    r = whole ? avformat_find_stream_info(s->fmt, NULL) : 0;
     if (r < 0) {
         media_close(s);
         say(why, room, "media: its streams cannot be read", r);
         return NULL;
     }
     return s;
+}
+
+struct media_source *media_open(const struct media_io *io, char *why, size_t room)
+{
+    return open_source(io, 1, NULL, why, room);
+}
+
+struct media_source *media_open_appended(const struct media_io *io, const char *container,
+                                         char *why, size_t room)
+{
+    return open_source(io, 0, container, why, room);
 }
 
 int media_stream_count(const struct media_source *s)

@@ -48,6 +48,16 @@ whether VP9 in WebM is "probably" playable - and the colour must be in the
 window, near rather than exact after YUV. `KOSMOS_JETSKI_BREAK=no-film`
 serves the film as a 404.
 
+**And a film the way YouTube plays one** (M3): beside it, a second
+`<video>` whose source is a `MediaSource`, with a picture SourceBuffer
+(VP9) and a sound one (Opus) as YouTube's player makes them, each fed its
+file fetched whole and appended in pieces cut at arbitrary bytes - so a
+WebM cluster arrives in two appends - then `endOfStream()`. It must play a
+second, be its size, have its six seconds buffered, and show its own
+colour; `MediaSource.isTypeSupported` must say yes to VP9 and no to 10-bit
+VP9, which is decoded and not yet shown. `KOSMOS_JETSKI_BREAK=no-appended`
+serves its picture as a 404, which a SourceBuffer cannot parse.
+
 `KOSMOS_JETSKI_BREAK=foreign-cookie` has the server set its cookie for
 another site and the script set none, which a browser must refuse, so the
 second page arrives without them.
@@ -104,6 +114,11 @@ FILM_COLOUR = (0xc0, 0x30, 0x70)
 FILM_SIZE = (320, 180)
 FILM = None
 
+# The film appended through a MediaSource (M3): another colour, its picture
+# and its sound in files of their own, as YouTube's are.
+APPENDED_COLOUR = (0x40, 0xb0, 0x50)
+APPENDED = None
+
 # What a page sees of the browser: the system it names, its window, and a
 # canvas it can read back - each of which a robot check asks.
 PLATFORM = "Kosmos x86_64" if "x86_64" in IMAGE else "Kosmos aarch64"
@@ -147,6 +162,7 @@ OTHER = b"""<!doctype html>
 <style>
 body { margin: 0; height: 6000px; background: #fff; }
 #film { position: fixed; top: 200px; left: 40px; width: 320px; height: 180px; }
+#appended { position: fixed; top: 200px; left: 400px; width: 320px; height: 180px; }
 #field { position: fixed; top: 120px; left: 40px; width: 320px; height: 44px;
          border: 0; padding: 0; outline: none; color: #fff;
          background: rgb(%d, %d, %d); font-size: 20px; }
@@ -154,6 +170,7 @@ body { margin: 0; height: 6000px; background: #fff; }
 <body>
 <input id="field">
 <video id="film" src="/film.webm" autoplay muted></video>
+<video id="appended" autoplay muted></video>
 <script>
 var film = document.getElementById("film"), told = false;
 function tell(what) {
@@ -167,6 +184,45 @@ film.addEventListener("timeupdate", function () {
            webm: document.createElement("video").canPlayType('video/webm; codecs="vp9"') });
 });
 film.addEventListener("error", function () { tell({ error: film.error ? film.error.code : "?" }); });
+
+var appended = document.getElementById("appended"), source = new MediaSource(), toldAppended = false;
+function tellAppended(what) {
+  if (toldAppended) return;
+  toldAppended = true;
+  new Image().src = "/appended-report?" + new URLSearchParams(what);
+}
+function feed(buffer, address, pieces) {
+  return fetch(address).then(function (r) { return r.arrayBuffer(); }).then(function (bytes) {
+    var size = Math.ceil(bytes.byteLength / pieces), at = 0;
+    return new Promise(function (done, fail) {
+      function next() {
+        if (at >= bytes.byteLength) { done(); return; }
+        buffer.appendBuffer(bytes.slice(at, at + size));
+        at += size;
+      }
+      buffer.addEventListener("updateend", next);
+      buffer.addEventListener("error", function () { fail("an append failed"); });
+      next();
+    });
+  });
+}
+source.addEventListener("sourceopen", function () {
+  var picture = source.addSourceBuffer('video/webm; codecs="vp9"');
+  var sound = source.addSourceBuffer('audio/webm; codecs="opus"');
+  Promise.all([feed(picture, "/appended-picture.webm", 3), feed(sound, "/appended-sound.webm", 2)])
+    .then(function () { source.endOfStream(); })
+    .catch(function (why) { tellAppended({ error: why }); });
+});
+appended.src = URL.createObjectURL(source);
+appended.addEventListener("timeupdate", function () {
+  if (appended.currentTime >= 1)
+    tellAppended({ time: appended.currentTime,
+                   size: appended.videoWidth + "x" + appended.videoHeight,
+                   buffered: appended.buffered.length ? appended.buffered.end(0) : 0,
+                   vp9: MediaSource.isTypeSupported('video/webm; codecs="vp9"'),
+                   deep: MediaSource.isTypeSupported('video/webm; codecs="vp09.02.10.10"') });
+});
+appended.addEventListener("error", function () { tellAppended({ error: appended.error ? appended.error.code : "?" }); });
 var field = document.getElementById("field");
 window.addEventListener("scroll", function () {
   if (window.scrollY > 0) document.title = "scrolled " + window.scrollY;
@@ -182,6 +238,7 @@ class Page(http.server.BaseHTTPRequestHandler):
     cookies = {}
     report = None
     film = None
+    appended = None
 
     def do_GET(self):
         Page.asked.append(self.path)
@@ -190,6 +247,21 @@ class Page(http.server.BaseHTTPRequestHandler):
             Page.film = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
             self.send_response(204)
             self.end_headers()
+            return
+        if self.path.startswith("/appended-report?"):
+            Page.appended = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
+            self.send_response(204)
+            self.end_headers()
+            return
+        appended = {"/appended-picture.webm": 0, "/appended-sound.webm": 1}.get(self.path)
+        if appended is not None and APPENDED and not (appended == 0 and BROKEN == "no-appended"):
+            with open(APPENDED[appended], "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "video/webm")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if self.path == "/film.webm" and FILM and BROKEN != "no-film":
             with open(FILM, "rb") as f:
@@ -310,14 +382,15 @@ def use(guest, R, dump, window, mark):
     if not said(guest, mark, "jetski: title scrolled ", 30):
         failed.append("the wheel was turned over the page and it did not scroll")
 
-    # The film, fixed on the page, once it has played a second.
+    # The films, fixed on the page, once each has played a second.
     end = time.monotonic() + 60
-    while Page.film is None and time.monotonic() < end:
+    while (Page.film is None or Page.appended is None) and time.monotonic() < end:
         time.sleep(0.5)
     time.sleep(0.5)
     shot = guest.screendump()
     R.write_png(os.path.join(KEPT, "jetski-film.png"), shot)
     failed.extend(film(R, shot, window))
+    failed.extend(appended(R, shot, window))
     return failed
 
 
@@ -346,6 +419,25 @@ def make_film():
          "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-b:v", "200k", out],
         capture_output=True)
     return out if made.returncode == 0 and os.path.exists(out) else None
+
+
+def make_appended():
+    """The MediaSource's film: six seconds of APPENDED_COLOUR, its picture
+    VP9 and its sound Opus, each in a WebM of its own; or None."""
+    picture = os.path.join(WORK, "appended-picture.webm")
+    sound = os.path.join(WORK, "appended-sound.webm")
+    made = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "color=c=0x%02x%02x%02x:size=%dx%d:rate=25:duration=6" % (APPENDED_COLOUR + FILM_SIZE),
+         "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-b:v", "200k", "-g", "25", picture],
+        capture_output=True)
+    heard = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+         "sine=frequency=440:sample_rate=48000:duration=6", "-c:a", "libopus", sound],
+        capture_output=True)
+    if made.returncode or heard.returncode or not os.path.exists(picture) or not os.path.exists(sound):
+        return None
+    return (picture, sound)
 
 
 def near(parse_ppm, data, x, y, w, h, colour, slack=12):
@@ -384,6 +476,35 @@ def film(R, picture, window):
     return failed
 
 
+def appended(R, picture, window):
+    """The MediaSource's film: playing, its size, all of it buffered, what
+    isTypeSupported says, and its colour on the screen."""
+    if APPENDED is None:
+        return ["this Mac's FFmpeg made no film to append (libvpx-vp9, libopus)"]
+    failed = []
+    said = {k: v[0] for k, v in (Page.appended or {}).items()}
+    if not said:
+        failed.append("the appended film never played a second, nor said why")
+    elif "error" in said:
+        failed.append("the appended film did not play: %s" % said["error"])
+    else:
+        if said.get("size") != "%dx%d" % FILM_SIZE:
+            failed.append("the appended film is %s, not %dx%d" % ((said.get("size"),) + FILM_SIZE))
+        if float(said.get("buffered") or 0) < 5.5:
+            failed.append("the appended film's buffered range ends at %s s, not near 6"
+                          % said.get("buffered"))
+        if said.get("vp9") != "true":
+            failed.append("MediaSource.isTypeSupported(VP9 in WebM) is %s" % said.get("vp9"))
+        if said.get("deep") != "false":
+            failed.append("MediaSource.isTypeSupported(10-bit VP9) is %s, which is not shown yet"
+                          % said.get("deep"))
+    count = near(R.parse_ppm, picture, *window, APPENDED_COLOUR)
+    if count < FILM_SIZE[0] * FILM_SIZE[1] * 8 // 10:
+        failed.append("the appended film's picture is not in the window: %d of its %d pixels"
+                      % (count, FILM_SIZE[0] * FILM_SIZE[1]))
+    return failed
+
+
 def cookies():
     """The second page asked for with both cookies, the lasting one on the disk."""
     failed = []
@@ -415,8 +536,9 @@ def main():
         print("FAIL: no %s - `make ARCH=x86_64 apps` builds it" % built)
         return 1
 
-    global FILM
+    global FILM, APPENDED
     FILM = None if LIVE else make_film()
+    APPENDED = None if LIVE else make_appended()
     server = Server(("0.0.0.0", 0), Page)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     global PAGE
@@ -535,7 +657,7 @@ def main():
         failed.extend(cookies())
         failed.extend(itself())
 
-    checks = 17
+    checks = 23
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -548,7 +670,9 @@ def main():
           "second page asked for with the server's cookie and the script's, the lasting "
           "one kept on /Home; and the page saw \"%s\" as the platform, its window "
           "1200x800 and a canvas read back as a PNG; and a VP9 film in WebM played on "
-          "the second page by WebKit's Media Kit engine, its picture in the window"
+          "the second page by WebKit's Media Kit engine, its picture in the window; and "
+          "beside it a film appended in pieces to a MediaSource, VP9 and Opus in "
+          "SourceBuffers of their own, played, all of it buffered, and on the screen"
           % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 

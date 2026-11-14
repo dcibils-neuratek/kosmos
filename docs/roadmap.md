@@ -10440,8 +10440,13 @@ the applications make the system useful, and is not pulled forward.
       it since 0.11.408 (18.803).
     - *`<video src>`* (M2) - *done, 0.11.419* (`testing.md` 18.814):
       `MediaPlayerPrivateKosmos` on the Media Kit and `gfx_i420`; picture
-      only until M4. **Next M3, MSE - Diego, 14 November: "I want youtube
-      working next".**
+      only until M4.
+    - *Media Source Extensions* (M3) - *done, 0.11.420* (`testing.md`
+      18.815): `MediaSourcePrivateKosmos` and `SourceBufferPrivateKosmos`
+      on WebCore's base classes, appends demuxed by the Media Kit's
+      `media_open_appended`. **Next: YouTube itself - Diego, 14 November:
+      "I want youtube working next".** Owed: `abort()` mid-segment,
+      `changeType()`, a quality switch's new initialization segment.
     - *The design for video*: `docs/media.md` - **AGREED 14 November
       2026**: a Kosmos player in WebCore on a new Media Kit (FFmpeg built
       whole with its assembly, dav1d), the Playback Kit for sound, AV1

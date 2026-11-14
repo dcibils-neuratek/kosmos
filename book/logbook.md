@@ -3109,3 +3109,31 @@ pieces of the film itself (Media Source Extensions), and that's next.
 the spot, and checks that it ran for over a second, is the right size, and
 shows its colour in the window: 17 checks. With the film missing, exactly
 the two film checks fail.
+
+## 14 November 2026 - A film handed over in pieces
+
+**In short:** JetSki now plays video the way YouTube delivers it: the
+page fetches the film in chunks and gives them to the browser one at a
+time, instead of handing it an address.
+
+**What changed.** Browsers call this Media Source Extensions. The page
+creates a "media source", adds one buffer for the picture and another for
+the sound, and keeps appending pieces of film as it downloads them. WebKit
+already knows the rules (what is buffered, where to start after a seek,
+what to throw away when memory runs short), so Kosmos only supplies two
+things for each buffer: something that reads the pieces as they arrive
+and splits them into frames, and something that decodes the frames and
+passes the pictures on to be shown. Both are built on the Media Kit, the
+same part that plays the films.
+
+**What you can see.** The browser test now plays two films side by side.
+One plays from an address and the other is appended in pieces, cut
+deliberately in the middle of the film's own structure. Both show their
+colour in the window. There's still no sound. YouTube itself is next.
+
+**A bug the test found.** When the film was replaced by an error page,
+the browser should have said "this isn't a film". Instead it said nothing
+and waited forever, because FFmpeg's WebM reader read the error page as
+the start of a very long piece and waited for the rest. A page declares
+what kind of film it's appending, so Kosmos now checks the first few bytes
+against that and refuses straight away, as other browsers do.

@@ -45,8 +45,10 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
 # GPU, XSLT for libxslt, JPEG XL and colour management for their
 # libraries. WOFF2 and AVIF are on since W5f (`docs/w5.md`): woff2 on
 # Brotli, and libavif on dav1d. Video is on since M2 (`docs/media.md`):
-# `<video>` plays through the port's engine on the Media Kit.
+# `<video>` plays through the port's engine on the Media Kit, and since M3
+# a page's MediaSource does - which is how YouTube plays.
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE ON)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_MEDIA_SOURCE PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEB_AUDIO PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBGL PRIVATE OFF)

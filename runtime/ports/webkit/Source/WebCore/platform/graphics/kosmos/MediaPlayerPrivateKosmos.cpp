@@ -12,6 +12,8 @@
 #include "ContentType.h"
 #include "GraphicsContext.h"
 #include "MediaPlayer.h"
+#include "MediaSourcePrivateClient.h"
+#include "MediaSourcePrivateKosmos.h"
 #include "NativeImage.h"
 #include "PlatformMediaResourceLoader.h"
 #include "ResourceError.h"
@@ -23,6 +25,7 @@
 #include <wtf/MainThread.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/TZoneMallocInlines.h>
+#include <wtf/text/StringToIntegerConversion.h>
 
 extern "C" {
 #include <media.h>
@@ -33,6 +36,11 @@ namespace WebCore {
 
 WTF_MAKE_TZONE_ALLOCATED_IMPL(MediaPlayerPrivateKosmos);
 
+static int64_t toMicroseconds(const MediaTime& time)
+{
+    return time.toTimeScale(1000000).timeValue();
+}
+
 /* How many frames the decode thread keeps ready ahead of the clock. */
 static constexpr size_t framesAhead = 4;
 
@@ -41,7 +49,9 @@ static constexpr Seconds tickEvery = 1_s / 120.;
 
 // ---------------------------------------------------------------------------
 // What it plays: what the Media Kit decodes, of what a page can show. Sound
-// alone is M4's, when there is something to play it through.
+// alone is M4's, when there is something to play it through - except to a
+// MediaSource, where a film's sound is a source buffer of its own and
+// YouTube asks for one before it plays.
 
 static const HashSet<String>& containers()
 {
@@ -52,12 +62,37 @@ static const HashSet<String>& containers()
     return types;
 }
 
+static const HashSet<String>& appendedContainers()
+{
+    static NeverDestroyed<HashSet<String>> types = HashSet<String> {
+        "video/webm"_s, "video/mp4"_s, "audio/webm"_s, "audio/mp4"_s,
+    };
+    return types;
+}
+
+/* A codec string's bit depth, where it says one: `vp09.PP.LL.DD` and
+ * `av01.P.LLT.DD`. */
+static unsigned depthOf(const String& codec)
+{
+    auto fields = codec.split('.');
+    if (codec.startsWithIgnoringASCIICase("vp09"_s) && fields.size() >= 4)
+        return parseInteger<unsigned>(fields[3]).value_or(8);
+    if (codec.startsWithIgnoringASCIICase("av01"_s) && fields.size() >= 4)
+        return parseInteger<unsigned>(fields[3]).value_or(8);
+    return 8;
+}
+
 static bool decodes(const String& codec)
 {
     static constexpr ASCIILiteral prefixes[] = {
         "avc1"_s, "avc3"_s, "av01"_s, "vp8"_s, "vp9"_s, "vp09"_s, "vp08"_s,
         "opus"_s, "vorbis"_s, "mp4a"_s, "flac"_s, "mp3"_s, "theora"_s,
     };
+    // Ten bits and more are decoded and not yet shown: `picture` converts
+    // 8-bit 4:2:0, and a site that asks is better told so than handed a
+    // black window.
+    if (depthOf(codec) != 8)
+        return false;
     for (auto prefix : prefixes) {
         if (codec.startsWithIgnoringASCIICase(prefix))
             return true;
@@ -67,10 +102,13 @@ static bool decodes(const String& codec)
 
 MediaPlayer::SupportsType MediaPlayerPrivateKosmos::supportsType(const MediaEngineSupportParameters& parameters)
 {
-    if (parameters.platformType != PlatformMediaDecodingType::FileOrHLS)
-        return MediaPlayer::SupportsType::IsNotSupported;
     auto container = parameters.type.containerType().convertToASCIILowercase();
-    if (container.isEmpty() || !containers().contains(container))
+    if (parameters.platformType == PlatformMediaDecodingType::MediaSource) {
+        if (container.isEmpty() || !appendedContainers().contains(container))
+            return MediaPlayer::SupportsType::IsNotSupported;
+    } else if (parameters.platformType != PlatformMediaDecodingType::FileOrHLS)
+        return MediaPlayer::SupportsType::IsNotSupported;
+    else if (container.isEmpty() || !containers().contains(container))
         return MediaPlayer::SupportsType::IsNotSupported;
     auto codecs = parameters.type.codecs();
     if (codecs.isEmpty())
@@ -221,11 +259,101 @@ void MediaPlayerPrivateKosmos::load(const String& address)
 }
 
 #if ENABLE(MEDIA_SOURCE)
-void MediaPlayerPrivateKosmos::load(const URL&, const LoadOptions&, MediaSourcePrivateClient&)
+void MediaPlayerPrivateKosmos::load(const URL&, const LoadOptions&, MediaSourcePrivateClient& client)
 {
-    setNetworkState(MediaPlayer::NetworkState::FormatError);
+    if (RefPtr existing = dynamicDowncast<MediaSourcePrivateKosmos>(client.mediaSourcePrivate())) {
+        existing->setPlayer(this);
+        m_mediaSource = WTF::move(existing);
+        client.reOpen();
+    } else
+        m_mediaSource = MediaSourcePrivateKosmos::create(*this, client);
+    setNetworkState(MediaPlayer::NetworkState::Loading);
+}
+
+void MediaPlayerPrivateKosmos::videoTrackFound(FloatSize size)
+{
+    bool changed = !m_hasVideo || m_size != size;
+    m_hasVideo = true;
+    m_size = size;
+    if (!changed)
+        return;
+    if (RefPtr player = m_player.get()) {
+        player->characteristicChanged();
+        player->sizeChanged();
+    }
+}
+
+void MediaPlayerPrivateKosmos::mediaSourceDurationChanged()
+{
+    if (RefPtr player = m_player.get())
+        player->durationChanged();
+}
+
+void MediaPlayerPrivateKosmos::activeSourceBuffersChanged()
+{
+    if (RefPtr player = m_player.get())
+        player->activeSourceBuffersChanged();
+}
+
+void MediaPlayerPrivateKosmos::readyStateFromMediaSourceChanged()
+{
+    if (RefPtr player = m_player.get())
+        player->readyStateChanged();
+}
+
+void MediaPlayerPrivateKosmos::characteristicsFromMediaSourceChanged()
+{
+    if (RefPtr player = m_player.get())
+        player->characteristicChanged();
+}
+
+void MediaPlayerPrivateKosmos::mediaSourceHasRetrievedAllData()
+{
+    setNetworkState(MediaPlayer::NetworkState::Loaded);
+}
+
+unsigned MediaPlayerPrivateKosmos::frameGeneration()
+{
+    Locker locker { m_lock };
+    return m_generation;
+}
+
+void MediaPlayerPrivateKosmos::flushFrames()
+{
+    Locker locker { m_lock };
+    m_generation++;
+    m_queue.clear();
+    m_changed.notifyAll();
+}
+
+bool MediaPlayerPrivateKosmos::deliver(int64_t pts, sk_sp<SkImage>&& image, unsigned generation)
+{
+    bool first;
+    {
+        Locker locker { m_lock };
+        while (!m_stop && generation == m_generation && m_queue.size() >= framesAhead)
+            m_changed.wait(m_lock);
+        if (m_stop)
+            return false;
+        if (generation != m_generation)
+            return true;
+        first = m_queue.isEmpty();
+        m_queue.append({ pts, WTF::move(image) });
+    }
+    if (first)
+        onMain([](auto& self) { self.tick(); });
+    return true;
 }
 #endif
+
+MediaPlayer::ReadyState MediaPlayerPrivateKosmos::readyState() const
+{
+#if ENABLE(MEDIA_SOURCE)
+    if (m_mediaSource)
+        return m_mediaSource->mediaPlayerReadyState();
+#endif
+    return m_readyState;
+}
 
 #if ENABLE(MEDIA_STREAM)
 void MediaPlayerPrivateKosmos::load(MediaStreamPrivate&)
@@ -346,6 +474,25 @@ static int64_t ioSeek(void* context, int64_t offset, int whence)
 }
 
 // ---------------------------------------------------------------------------
+// A frame as pixels: BT.709 for a high-definition picture and BT.601 below
+// it, which is what a film that says nothing was made with.
+
+sk_sp<SkImage> MediaPlayerPrivateKosmos::picture(const struct media_frame& frame)
+{
+    if (frame.format != MEDIA_YUV420 || frame.bits != 8 || frame.planes < 3)
+        return nullptr;
+    const struct gfx_yuv_matrix* matrix = frame.height >= 720 ? &gfx_yuv_bt709 : &gfx_yuv_bt601;
+    auto info = SkImageInfo::Make(frame.width, frame.height, kBGRA_8888_SkColorType, kOpaque_SkAlphaType);
+    size_t pitch = info.minRowBytes();
+    auto pixels = SkData::MakeUninitialized(pitch * frame.height);
+    gfx_i420(static_cast<uint32_t*>(pixels->writable_data()), pitch,
+        frame.plane[0], frame.plane[1], frame.plane[2],
+        frame.stride[0], frame.stride[1], frame.stride[2],
+        frame.width, frame.height, matrix);
+    return SkImages::RasterFromData(info, std::move(pixels), pitch);
+}
+
+// ---------------------------------------------------------------------------
 // The decode thread: the container, the picture's decoder, and frames into
 // the queue as pixels.
 
@@ -367,17 +514,17 @@ void MediaPlayerPrivateKosmos::decode()
         return;
     }
 
-    int picture = -1;
+    int pictureStream = -1;
     struct media_stream stream { };
     for (int i = 0; i < media_stream_count(source); i++) {
         struct media_stream candidate;
         if (media_stream(source, i, &candidate) == 0 && candidate.kind == MEDIA_VIDEO) {
-            picture = i;
+            pictureStream = i;
             stream = candidate;
             break;
         }
     }
-    struct media_decoder* decoder = picture >= 0 ? media_decoder_open(source, picture, 0, why, sizeof why) : nullptr;
+    struct media_decoder* decoder = pictureStream >= 0 ? media_decoder_open(source, pictureStream, 0, why, sizeof why) : nullptr;
     if (!decoder) {
         media_close(source);
         onMain([](auto& self) { self.setNetworkState(MediaPlayer::NetworkState::FormatError); });
@@ -396,9 +543,6 @@ void MediaPlayerPrivateKosmos::decode()
         self.setReadyState(MediaPlayer::ReadyState::HaveMetadata);
     });
 
-    // BT.709 for a high-definition picture and BT.601 below it, which is what
-    // a film that says nothing was made with.
-    const struct gfx_yuv_matrix* matrix = stream.height >= 720 ? &gfx_yuv_bt709 : &gfx_yuv_bt601;
     bool ended = false;
 
     while (true) {
@@ -422,7 +566,7 @@ void MediaPlayerPrivateKosmos::decode()
         int got = media_read(source, &packet);
         if (got < 0)
             break;
-        if (got > 0 && packet.stream != picture) {
+        if (got > 0 && packet.stream != pictureStream) {
             media_packet_free(&packet);
             continue;
         }
@@ -433,16 +577,9 @@ void MediaPlayerPrivateKosmos::decode()
         struct media_frame frame;
         int out;
         while ((out = media_frame(decoder, &frame)) == 1) {
-            if (frame.format != MEDIA_YUV420 || frame.bits != 8 || frame.planes < 3)
+            auto image = picture(frame);
+            if (!image)
                 continue;
-            auto info = SkImageInfo::Make(frame.width, frame.height, kBGRA_8888_SkColorType, kOpaque_SkAlphaType);
-            size_t pitch = info.minRowBytes();
-            auto pixels = SkData::MakeUninitialized(pitch * frame.height);
-            gfx_i420(static_cast<uint32_t*>(pixels->writable_data()), pitch,
-                frame.plane[0], frame.plane[1], frame.plane[2],
-                frame.stride[0], frame.stride[1], frame.stride[2],
-                frame.width, frame.height, matrix);
-            auto image = SkImages::RasterFromData(info, std::move(pixels), pitch);
             bool first;
             {
                 Locker locker { m_lock };
@@ -468,6 +605,10 @@ void MediaPlayerPrivateKosmos::decode()
 
 MediaTime MediaPlayerPrivateKosmos::duration() const
 {
+#if ENABLE(MEDIA_SOURCE)
+    if (m_mediaSource)
+        return m_mediaSource->duration();
+#endif
     if (m_duration < 0)
         return m_readyState >= MediaPlayer::ReadyState::HaveMetadata ? MediaTime::positiveInfiniteTime() : MediaTime::zeroTime();
     return MediaTime(m_duration, 1000000);
@@ -476,10 +617,11 @@ MediaTime MediaPlayerPrivateKosmos::duration() const
 MediaTime MediaPlayerPrivateKosmos::currentTime() const
 {
     double now = m_startedAt;
-    if (!m_paused)
+    if (!m_paused && !m_stalled)
         now += (MonotonicTime::now() - m_playedAt).seconds();
-    if (m_duration >= 0)
-        now = std::min(now, m_duration / 1e6);
+    auto length = duration();
+    if (length.isFinite())
+        now = std::min(now, length.toDouble());
     return MediaTime::createWithDouble(now);
 }
 
@@ -518,6 +660,41 @@ void MediaPlayerPrivateKosmos::pause()
 
 Ref<MediaTimePromise> MediaPlayerPrivateKosmos::seekToTarget(const SeekTarget& target)
 {
+#if ENABLE(MEDIA_SOURCE)
+    // To a MediaSource the time is known once what is buffered there has
+    // been found and enqueued again from the key picture before it, as
+    // WebCore's own mock does it; the frames before it are not shown.
+    if (RefPtr source = m_mediaSource) {
+        m_skipBefore = toMicroseconds(target.time);
+        m_ended = false;
+        m_stalled = false;
+        flushFrames();
+        MediaTimePromise::Producer producer;
+        Ref promise = producer.promise();
+        source->waitForTarget(target)->whenSettled(RunLoop::mainSingleton(), [weak = ThreadSafeWeakPtr { *this }, source, producer = WTF::move(producer)](auto&& result) mutable {
+            RefPtr self = weak.get();
+            if (!self || !result) {
+                producer.reject(result ? PlatformMediaError::Cancelled : result.error());
+                return;
+            }
+            auto time = *result;
+            source->reenqueueMediaForTime(time)->whenSettled(RunLoop::mainSingleton(), [weak, time, producer = WTF::move(producer)](auto&&) mutable {
+                RefPtr self = weak.get();
+                if (!self) {
+                    producer.reject(PlatformMediaError::Cancelled);
+                    return;
+                }
+                self->m_startedAt = time.toDouble();
+                self->m_playedAt = MonotonicTime::now();
+                self->m_skipBefore = toMicroseconds(time);
+                producer.resolve(time);
+                if (RefPtr player = self->m_player.get())
+                    player->timeChanged();
+            });
+        });
+        return promise;
+    }
+#endif
     auto time = target.time;
     if (m_duration >= 0 && time.toDouble() > m_duration / 1e6)
         time = MediaTime(m_duration, 1000000);
@@ -539,6 +716,28 @@ Ref<MediaTimePromise> MediaPlayerPrivateKosmos::seekToTarget(const SeekTarget& t
 
 void MediaPlayerPrivateKosmos::tick()
 {
+#if ENABLE(MEDIA_SOURCE)
+    // To a MediaSource the clock goes no further than what is buffered,
+    // and goes on from where it waited when more arrives.
+    if (m_mediaSource && !m_paused) {
+        double at = currentTime().toDouble();
+        auto ranges = m_mediaSource->buffered();
+        bool have = false;
+        for (unsigned i = 0; i < ranges.length(); i++) {
+            // A tenth of a second before a range counts as in it: a film's
+            // first picture and its first sound seldom start at nought.
+            if (at >= ranges.start(i).toDouble() - 0.1 && at < ranges.end(i).toDouble())
+                have = true;
+        }
+        if (!have && !m_stalled) {
+            m_startedAt = at;
+            m_stalled = true;
+        } else if (have && m_stalled) {
+            m_stalled = false;
+            m_playedAt = MonotonicTime::now();
+        }
+    }
+#endif
     int64_t now = static_cast<int64_t>(currentTime().toDouble() * 1e6);
     std::optional<Frame> show;
     bool endOfFilm;
@@ -567,15 +766,24 @@ void MediaPlayerPrivateKosmos::tick()
         m_decoded++;
         if (player) {
             if (first) {
-                setReadyState(MediaPlayer::ReadyState::HaveEnoughData);
+#if ENABLE(MEDIA_SOURCE)
+                if (!m_mediaSource)
+#endif
+                    setReadyState(MediaPlayer::ReadyState::HaveEnoughData);
                 player->firstVideoFrameAvailable();
             }
             player->repaint();
         }
     }
 
-    if (endOfFilm && !m_paused && m_duration >= 0 && now >= m_duration) {
-        m_startedAt = m_duration / 1e6;
+    auto length = duration();
+    bool atEnd = endOfFilm && m_duration >= 0 && now >= m_duration;
+#if ENABLE(MEDIA_SOURCE)
+    if (m_mediaSource)
+        atEnd = m_mediaSource->isEnded() && length.isFinite() && now >= toMicroseconds(length);
+#endif
+    if (atEnd && !m_paused) {
+        m_startedAt = length.toDouble();
         m_paused = true;
         m_ended = true;
         m_ticker.stop();
@@ -625,6 +833,12 @@ bool MediaPlayerPrivateKosmos::didLoadingProgress() const
 
 const PlatformTimeRanges& MediaPlayerPrivateKosmos::buffered() const
 {
+#if ENABLE(MEDIA_SOURCE)
+    if (m_mediaSource) {
+        m_buffered = m_mediaSource->buffered();
+        return m_buffered;
+    }
+#endif
     m_buffered.clear();
     if (m_duration <= 0)
         return m_buffered;

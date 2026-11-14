@@ -19,6 +19,12 @@
  * **The clock** is the counter from `play()`, until the Playback Kit's
  * position is put under it with the sound (M4). Sound is not played yet:
  * a film says it has none, so a page's own controls show it muted.
+ *
+ * **A MediaSource** (M3) is the other way in, and YouTube's: the page
+ * appends the film in pieces to source buffers (`SourceBufferPrivateKosmos`),
+ * whose decode threads fill the same queue of frames this shows from. The
+ * ready state, the duration and what is buffered are then the
+ * MediaSource's, and the clock waits at the end of what is buffered.
  */
 
 #pragma once
@@ -38,8 +44,11 @@
 
 #include <skia/core/SkImage.h>
 
+struct media_frame;
+
 namespace WebCore {
 
+class MediaSourcePrivateKosmos;
 class NativeImage;
 class PlatformMediaResource;
 
@@ -76,6 +85,7 @@ public:
     FloatSize naturalSize() const final { return m_size; }
     bool hasVideo() const final { return m_hasVideo; }
     bool hasAudio() const final { return false; }
+    bool timeIsProgressing() const final { return !m_paused && !m_stalled; }
     void setPageIsVisible(bool) final { }
 
     MediaTime duration() const final;
@@ -84,7 +94,7 @@ public:
     bool ended() const final { return m_ended; }
 
     MediaPlayer::NetworkState networkState() const final { return m_networkState; }
-    MediaPlayer::ReadyState readyState() const final { return m_readyState; }
+    MediaPlayer::ReadyState readyState() const final;
     const PlatformTimeRanges& buffered() const final;
     bool didLoadingProgress() const final;
     unsigned long long totalBytes() const final;
@@ -105,6 +115,28 @@ public:
     /* The Media Kit's `struct media_io`, on the decode thread. */
     long readBytes(uint8_t*, size_t);
     int64_t seekBytes(int64_t offset, int whence);
+
+    /* A decoded picture as the page's pixels, through `gfx_i420`: null when
+     * it is not one this converts yet (8-bit 4:2:0 only). */
+    static sk_sp<SkImage> picture(const struct media_frame&);
+
+#if ENABLE(MEDIA_SOURCE)
+    /* A source buffer's decode thread: a frame into the queue, waiting for
+     * room; false when the player is stopping. A frame of an earlier
+     * generation - decoded before a flush - is dropped. */
+    bool deliver(int64_t pts, sk_sp<SkImage>&&, unsigned generation);
+    unsigned frameGeneration();
+    void flushFrames();
+
+    /* From the MediaSource and its source buffers, on the page's thread. */
+    void videoTrackFound(FloatSize);
+    void mediaSourceDurationChanged();
+    void activeSourceBuffersChanged();
+    void readyStateFromMediaSourceChanged() final;
+    void characteristicsFromMediaSourceChanged() final;
+    void mediaSourceHasRetrievedAllData() final;
+    MediaTime maxTimeSeekable() const final { return duration(); }
+#endif
 
 private:
     struct Frame {
@@ -135,6 +167,7 @@ private:
     Deque<Frame> m_queue WTF_GUARDED_BY_LOCK(m_lock);
     bool m_endOfFilm WTF_GUARDED_BY_LOCK(m_lock) { false };
     std::optional<int64_t> m_seekTo WTF_GUARDED_BY_LOCK(m_lock);
+    unsigned m_generation WTF_GUARDED_BY_LOCK(m_lock) { 0 };
 
     /* The page's thread only. */
     MediaPlayer::NetworkState m_networkState { MediaPlayer::NetworkState::Empty };
@@ -144,6 +177,10 @@ private:
     int64_t m_duration { -1 };
     bool m_paused { true };
     bool m_ended { false };
+    bool m_stalled { false };           /* the clock at the end of what is buffered */
+#if ENABLE(MEDIA_SOURCE)
+    RefPtr<MediaSourcePrivateKosmos> m_mediaSource;
+#endif
     double m_startedAt { 0 };           /* the film's time when play() came */
     MonotonicTime m_playedAt;
     int64_t m_skipBefore { 0 };         /* after a seek: frames before it are not shown */

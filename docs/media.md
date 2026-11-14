@@ -207,3 +207,62 @@ pictures, which it skips; a film's own colour matrix, which the Media Kit
 does not report yet (the height decides); and seeking waits for the
 decoder rather than answering when the picture at the new time is ready.
 Next, M3: Media Source Extensions, which is how YouTube plays.
+
+
+## M3, as it is being built: Media Source Extensions
+
+YouTube does not give a `<video>` an address. Its player fetches a film
+in pieces - picture and sound apart, each in short segments, at a quality
+it chooses from the connection - and hands each piece to the browser with
+`SourceBuffer.appendBuffer()`. That is MSE, and without it YouTube shows
+its page and no film.
+
+- **WebCore keeps the rules.** `SourceBufferPrivate` - the timestamp
+  offset, the append window, the buffered ranges, eviction, enqueuing from
+  the key picture before a seek - is two thousand lines in WebCore's base
+  class, and a port only parses appends into samples and decodes what is
+  enqueued. WebCore's own mock (`platform/mock/mediasource/`) is the
+  template, and the port's two classes are as thin: a second copy of MSE's
+  rules would be a defect.
+- **`MediaSourcePrivateKosmos`** makes source buffers and tells the player
+  of a new duration; **`SourceBufferPrivateKosmos`** does the work, with a
+  `MediaPlatformType::Kosmos` from patch 0028.
+- **A demux thread a source buffer** reads what has been appended through
+  `struct media_io` as one file arriving slowly, with a new door in the
+  Media Kit: **`media_open_appended`**, which reads the container's header
+  and nothing past it - `media_open` reads on until it knows every
+  parameter of every stream, which is seconds of film a MediaSource has not
+  been handed yet. **An append is finished when the demuxer asks for bytes
+  and there are none**: what it made has gone to the page's thread first,
+  in order. A WebM block seldom says how long it lasts, so a sample is held
+  until the next of its track measures it.
+- **A decode thread a source buffer** decodes what WebCore enqueues - the
+  Media Kit's `media_decode` takes a packet it did not make, at WebCore's
+  times, which the timestamp offset has moved - and hands each frame to the
+  player's queue of M2, which shows it when its time comes. A sound
+  SourceBuffer's samples are kept and counted until M4.
+- **The player in MSE** takes its ready state, duration and buffered ranges
+  from the MediaSource, seeks as WebCore's mock does (wait for the target
+  to be buffered, enqueue again from the key picture before it), and its
+  clock waits at the end of what is buffered.
+- **What it says it plays** to `MediaSource.isTypeSupported`: WebM and MP4,
+  video and audio, with the codecs of M2 - and not 10-bit VP9 or AV1, which
+  are decoded and not yet shown, so YouTube chooses an 8-bit stream rather
+  than a black window.
+- **Test, in `x86-jetski`**: beside M2's film, a second whose picture (VP9)
+  and sound (Opus) are separate WebM files made by FFmpeg at the start,
+  each fetched and appended in pieces cut at arbitrary bytes, then
+  `endOfStream()`; it must play, be its size, have its six seconds
+  buffered, and show its own colour. Control: its picture served as a 404.
+- **Not in M3**: `abort()` mid-segment drops the unread bytes but not what
+  FFmpeg holds of a box half read (YouTube appends whole segments);
+  `changeType()` to another codec; and a quality switch, which is a new
+  initialization segment in the same buffer.
+
+**M3 built, 14 November 2026** (0.11.420, `testing.md` 18.815): a film
+appended to a MediaSource in pieces plays in JetSki, picture and sound in
+SourceBuffers of their own, held by `x86-jetski`. `media_open_appended`
+takes the container `addSourceBuffer` declared and holds the first bytes
+to it, which the control found was needed: FFmpeg's matroska reader waits
+on garbage rather than refusing it. Next, YouTube itself (M5's first look,
+before M4's sound): what its player asks of the browser that is not here.

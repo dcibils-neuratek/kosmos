@@ -70,6 +70,8 @@ list(APPEND WebCore_SOURCES
 
     # The media engine on the Media Kit (`docs/media.md` M2).
     platform/graphics/kosmos/MediaPlayerPrivateKosmos.cpp
+    platform/graphics/kosmos/MediaSourcePrivateKosmos.cpp
+    platform/graphics/kosmos/SourceBufferPrivateKosmos.cpp
 
     platform/text/Hyphenation.cpp
     platform/text/LocaleICU.cpp
@@ -92,8 +94,11 @@ list(APPEND WebCore_LIBRARIES
 set_source_files_properties(platform/kosmos/SharedMemoryKosmos.cpp
     PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel")
 
-# The media engine reaches two kits' doors, the Media Kit's `media.h` and
-# the gfx kit's `yuv.h`, in this file alone and searched last, so no name
+# The media engine and its MediaSource reach two kits' doors, the Media
+# Kit's `media.h` and the gfx kit's `yuv.h`, in these files alone and
+# searched last, so no name
 # in either folder can answer for one of WebKit's.
 set_source_files_properties(platform/graphics/kosmos/MediaPlayerPrivateKosmos.cpp
+    platform/graphics/kosmos/MediaSourcePrivateKosmos.cpp
+    platform/graphics/kosmos/SourceBufferPrivateKosmos.cpp
     PROPERTIES COMPILE_OPTIONS "-idirafter;${KOSMOS_ROOT}/user/kits/media;-idirafter;${KOSMOS_ROOT}/user/kits/gfx")

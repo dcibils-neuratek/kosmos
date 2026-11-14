@@ -33544,3 +33544,36 @@ Turning it on found the cache's trap a second time (18.813): the port's
 new default for `ENABLE_VIDEO` left it 0 in `cmakeconfig.h`, because a
 WebKit `option()` already in the cache keeps its value. `webkit_build.py`
 now configures from an empty cache whenever an input changed.
+
+## 18.815 Media Source Extensions: a film appended in pieces (M3)
+
+0.11.420, `docs/media.md` M3. `ENABLE_MEDIA_SOURCE` is on, and the port
+has a `MediaSourcePrivateKosmos` and a `SourceBufferPrivateKosmos` as thin
+as WebCore's mock: WebCore's base class keeps MSE's rules, and the port
+parses appends into samples - a demux thread reading what was appended
+through the Media Kit's `media_open_appended` - and decodes what WebCore
+enqueues on a decode thread of its own, into M2's queue of frames.
+
+`x86-jetski`'s second page has a second film beside M2's: a `MediaSource`
+with a picture SourceBuffer (VP9) and a sound one (Opus), each fed a WebM
+made by this Mac's FFmpeg at the test's start, fetched whole and appended
+in pieces cut at arbitrary bytes - a cluster arrives in two appends - then
+`endOfStream()`. It must play a second, be 320x180, have its six seconds
+buffered, show its colour in four fifths of its rectangle, and
+`MediaSource.isTypeSupported` must say yes to VP9 and no to 10-bit VP9,
+which is decoded and not shown yet. 23 checks.
+
+Control: `KOSMOS_JETSKI_BREAK=no-appended` serves the picture as a 404 -
+"the appended film did not play: an append failed", "the appended film's
+picture is not in the window: 0 of its 57600 pixels", the other 21
+passing. **The control found a fault first**: it failed the same two
+checks but as "never played a second, nor said why". FFmpeg's matroska
+reader takes garbage for an element of unknown length and waits to skip
+it, so HTML appended as WebM was neither read nor refused. A SourceBuffer
+is declared a container by `addSourceBuffer`, so `media_open_appended`
+now takes it and holds the first bytes to it - WebM's EBML magic, an MP4
+box's four printable letters - and the append fails at once, as a
+browser's does.
+
+`x86-mediakit`, `x86-webcore`, `x86-webkit2`, `x86-sites` and `host` pass
+beside it: 6 suites in 71 s.

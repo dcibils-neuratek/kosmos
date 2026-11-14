@@ -102,6 +102,16 @@ const char *media_version(void);
 /* A container read from `io`, which must outlive it. NULL, and why in
  * `why`, when it is not one this kit reads. */
 struct media_source *media_open(const struct media_io *io, char *why, size_t room);
+/* The same, for bytes that arrive in pieces - MSE's appends: the header
+ * read and nothing past it, where `media_open` reads on until it knows
+ * every stream's every parameter, which is seconds of film. What the
+ * header leaves out a decoder learns from the first packets. `io` reads
+ * forward only, and waits rather than answering 0 while more may come.
+ * `container` is the one the bytes were declared to be - "webm", "mp4" -
+ * since guessing from bytes that have not arrived would wait for them:
+ * bytes that are not one fail at once. NULL guesses. */
+struct media_source *media_open_appended(const struct media_io *io, const char *container,
+                                         char *why, size_t room);
 int media_stream_count(const struct media_source *src);
 int media_stream(const struct media_source *src, int i, struct media_stream *out);
 /* The next packet of any stream: 1 a packet, 0 the end, negative a fault
