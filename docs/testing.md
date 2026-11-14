@@ -32952,3 +32952,40 @@ suite's time, and were taken out.)
 |---|---|
 | Wikipedia's BeOS page | painted whole, about 4 s in the guest under TCG |
 | `x86-webcore` | pass, 76 trees and 14 pictures as before, 35.7 s |
+
+## 18.799 The recorded sites
+
+Not a test, as 18.798: `tools/record_site.py NAME URL` records a site into
+`~/Kosmos/sites/NAME` and `tools/run_site.py` paints it at 1280 by 1600.
+Recorded on 14 November with Chrome 157 headless:
+
+| site | page | files | painted in the guest |
+|---|---|---|---|
+| YouTube | 240 KB | 133, 7.2 MB | 4 s |
+| YouTube, a search for "beos" | 984 KB | 150, 7.5 MB | 4 s |
+| The Verge | 577 KB | 190, 18.5 MB | 5 s |
+| apple.com | 266 KB | 231, 30.2 MB | 4 s |
+| cnn.com | 3.6 MB | 450, 30.9 MB | 7 s |
+
+CNN's timers keep Chrome's virtual time from ever ending; it is recorded
+with twenty seconds of real time instead, and `record.json` says which.
+
+First paintings: YouTube's characters such as "•" came out as "â€¢" -
+Chrome's document, its scripts gone, no longer says it is UTF-8; the
+recorder now writes the `meta`. CNN's and Apple's text was mostly
+missing: text in a web font still loading is drawn invisible, and the
+harness painted as soon as the load event had passed, before layout's own
+requests for fonts were answered. The harness now waits, before painting,
+until the document loader's request count has stayed at nought for 250 ms,
+at most ten seconds; every site's text came back.
+
+What is still missing is not the harness's: YouTube's thumbnails are AVIF
+(14 of the search's files) and the four sites' own faces are WOFF2
+(`USE_WOFF2` is off), both decoders this build lacks; Apple's four large
+tiles are `<video>`.
+
+| 0.11.404 | |
+|---|---|
+| the five recordings | all painted, 4 to 7 s each under TCG |
+| `x86-webcore` | 76 trees and 14 pictures as before |
+

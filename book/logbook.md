@@ -2719,3 +2719,35 @@ draws.
 
 **Visible impact.** A picture of a real web page, made on Kosmos. Not yet
 something you can click: that is the window, W7.
+
+## 14 November 2026 - YouTube, The Verge, Apple and CNN, drawn on Kosmos
+
+**In short.** WebKit on Kosmos now draws four of the sites Diego uses -
+YouTube, The Verge, apple.com and CNN - well enough to recognise each
+one at a glance. What is still missing is decoders, and YouTube, with its
+videos, is now the first priority.
+
+**What.** Each site was opened in Chrome on the Mac, its scripts allowed
+to build the page, and the result saved with every style sheet, font and
+picture. That copy is handed to WebKit on Kosmos, which lays it out and
+paints it in 4 to 7 seconds. Chrome's own picture of each page is kept
+beside it, so the two can be compared.
+
+**Why recorded and not live.** Kosmos's WebKit cannot fetch from the
+internet yet; that is the next step (W7). YouTube's page is built
+entirely by its JavaScript, which needs the network, so for now the page
+is saved as it looked after the scripts ran.
+
+**What it found.** Text in a site's own font came out invisible: a
+browser hides text for a moment while its font arrives, and the test drew
+in that moment. It now waits for the fonts. And the gaps are formats:
+YouTube's thumbnails are AVIF, the sites' own fonts are WOFF2, and
+Apple's big tiles are videos - none of which this build can decode yet.
+
+**Visible impact.** Pictures of four real sites made on Kosmos, close to
+Chrome's. Diego decided the same day that YouTube must work perfectly and
+that every decoder the web needs comes first: AVIF and WOFF2, then AV1,
+VP9, H.264, Opus and AAC for video.
+
+**Measurements.** Five recordings, 7 to 31 MB each; painted in 4 to 7 s
+each in the guest under emulation.

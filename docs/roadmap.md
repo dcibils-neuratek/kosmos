@@ -10247,6 +10247,35 @@ the applications make the system useful, and is not pulled forward.
     on the Mac with its style sheets and pictures, laid out and painted by
     `webcoretest` on Kosmos. YouTube's page is built by its scripts from
     the network, so it waits for W7's loader.
+  - *The recorded sites*: *Done, 0.11.404* (18.799). Diego, 14 November:
+    The Verge, YouTube, apple.com and cnn.com; recorded however I judged;
+    kept in `~/Kosmos/sites`. `tools/record_site.py` keeps the document a
+    desktop Chrome left after its scripts ran, every file local, Chrome's
+    own picture beside it and a `record.json` of every file's address and
+    SHA-256; `tools/run_site.py` paints it. All four, and a YouTube search,
+    lay out whole; what is missing is decoders.
+  - **YouTube first, and every decoder the web needs - AGREED on 14
+    November 2026.** Diego: "YouTube is my most used website so it must
+    work perfect", "Watching videos in youtube as is a top Priority", "So
+    we need to have all decoders needed available", and "JavaScript is key
+    for any modern browser" (JavaScriptCore runs a page's scripts since
+    0.11.402; a recorded page leaves them out only because there is no
+    network for them yet, and YouTube is nothing but scripts, so W7's
+    loader is where they run for real). So YouTube is the site W7 and W8
+    are measured against, and the decoders come before W7 is done:
+    - *Pictures*: **AVIF** (libavif on dav1d) - YouTube's thumbnails are
+      AVIF and are blank today. JPEG XL after.
+    - *Fonts*: **WOFF2** (Google's woff2 on brotli) - YouTube's Roboto,
+      The Verge's, CNN's and Apple's faces all are, and fall back to Plex.
+      Brotli is also HTTP's `br`, which W7's loader needs.
+    - *Video and sound*: **AV1** (dav1d - the same decoder as AVIF, one
+      door), **VP9**, **H.264** (FFmpeg, there since 4e), **Opus** and
+      **AAC**; played by **Media Source Extensions**, which is how YouTube
+      feeds a player. How WebKit's media player stands on the FFmpeg kit
+      and the Playback Kit is a design for Diego before it is built
+      (`docs/playback.md`).
+    Each decoder is a kit with one door: the desktop's pictures, Music and
+    the video player take the same ones.
 
   **Follow-ups from W6b** (`docs/w6.md` W6b):
   - *A read-only region in Nebula*: WebKit's shared memory asks for one

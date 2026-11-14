@@ -2,9 +2,30 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-13 (0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 14 November: the recorded sites; YouTube first (0.11.404, not pushed)
+
+Diego chose The Verge, YouTube, apple.com and cnn.com, kept in
+`~/Kosmos/sites`. `tools/record_site.py NAME URL` records the document
+headless Chrome left after the scripts ran (scripts out, every file local,
+`chrome.png` and `record.json` beside it); `tools/run_site.py` paints it.
+All five (a YouTube search too) paint in 4-7 s; pictures in
+`build/sites/*.png` (not in git). The harness now waits for layout's late
+requests (fonts) before painting (`testing.md` 18.799).
+
+**Diego, 14 November: YouTube must work perfectly, watching videos is the
+top priority, all decoders needed, JavaScript is key** (`roadmap.md`).
+Missing today: AVIF (YouTube's thumbnails), WOFF2 (every site's fonts,
+`USE_WOFF2=OFF`), and video (Apple's tiles, YouTube) - AV1, VP9, H.264,
+Opus, AAC by MSE.
+
+**Next**: AVIF (dav1d + libavif) and WOFF2 (brotli + woff2) as W5-style
+libraries, each held to its own tests, and switched on in WebCore; then
+the media design for Diego (WebKit's player on the FFmpeg and Playback
+kits, MSE), and W7's network loader so YouTube's scripts run live.
 
 ## 13 November: JetSki W6d, scripts and a page's files (0.11.402, not pushed)
 

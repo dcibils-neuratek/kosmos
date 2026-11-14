@@ -27,6 +27,7 @@
 #include <WebCore/Document.h>
 /* After a header that defines WEBCORE_EXPORT, which it uses and does not. */
 #include <WebCore/BlobRegistry.h>
+#include <WebCore/CachedResourceLoader.h>
 #include <WebCore/DeprecatedGlobalSettings.h>
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/DocumentView.h>
@@ -381,6 +382,35 @@ extern "C" int webcoretest_paint(const char* folder, const char* name, uint32_t*
     RefPtr frame = page->localMainFrame();
     RefPtr view = frame->view();
     view->updateLayoutAndStyleIfNeededRecursive();
+
+    // What layout asked for after the load event - a web font, a picture
+    // below the first screen - is let arrive before the snapshot, or text
+    // in a font still loading is painted invisible, as a browser draws it
+    // for its first moment and never after. Ten seconds at most.
+    RefPtr loader = frame->loader().activeDocumentLoader();
+    // A font file is a request like any other while it loads. A page that
+    // asked for nothing is painted at once; one that did is painted when
+    // the count is back at nought, after one more pass of the run loop for
+    // what an arrival set going - a face swapped in, a layout.
+    auto deadline = MonotonicTime::now() + 10_s;
+    bool waited = false;
+    for (;;) {
+        view->updateLayoutAndStyleIfNeededRecursive();
+        int pending = loader->cachedResourceLoader().requestCount();
+        if (!pending && waited) {
+            RunLoop::cycle();
+            view->updateLayoutAndStyleIfNeededRecursive();
+        }
+        if (!pending)
+            break;
+        if (MonotonicTime::now() >= deadline) {
+            say(makeString("webcoretest: "_s, String::fromUTF8(name), " still loading "_s,
+                pending, " files when painted"_s));
+            break;
+        }
+        waited = true;
+        RunLoop::cycle();
+    }
     // A picture of the page is a snapshot: every image in it decoded
     // before it is drawn, as WebKit's own snapshots do, rather than left
     // for a decoding thread a later frame would pick up.
