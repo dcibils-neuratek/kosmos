@@ -32989,3 +32989,28 @@ tiles are `<video>`.
 | the five recordings | all painted, 4 to 7 s each under TCG |
 | `x86-webcore` | 76 trees and 14 pictures as before |
 
+## 18.800 W5f, the web's other formats
+
+`x86-formats` (`tools/run_formats.py`, `user/kits/formattest/`):
+Brotli 1.2.1, woff2 1.0.2, libavif 1.4.2 and dav1d 1.5.4 in
+`formattest.elf`, given Brotli's 22 test files (streamed 512 bytes at a
+time, each compared with its original), the repository's 26 TrueType fonts
+as WOFF2, and libavif's 54 test pictures. Every line held to the same file
+on this Mac: 102 files in 3.1 s in the guest.
+
+First run: 20 lines differed, all AVIF pictures of 10 and 12 bits. The
+same test built as an Intel Mac and run under Rosetta gave exactly
+Kosmos's answers: libavif's floating-point YUV to RGB is fused into FMAs on
+ARM and not on x86-64. The x86 suite's reference is that build, as
+`x86-skia`'s is. Controls: `KOSMOS_FORMATS_BREAK=avif` 24 lines differ,
+`=brotli` 22, `=woff2` 26.
+
+dav1d is built by meson from a cross file (`w5_build.py`), its x86-64
+assembly by nasm (4,240 AVX2 routines in the library); a first attempt
+found meson dropping `-isystem` for the compiler's own folder and probing
+the linker without the target, and `host-x86_64` quietly building ARM.
+
+| 0.11.405 | |
+|---|---|
+| `x86-formats` | 102 files as the Mac's, 3.1 s |
+

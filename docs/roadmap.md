@@ -10263,6 +10263,12 @@ the applications make the system useful, and is not pulled forward.
     network for them yet, and YouTube is nothing but scripts, so W7's
     loader is where they run for real). So YouTube is the site W7 and W8
     are measured against, and the decoders come before W7 is done:
+    - *The libraries*: *Done, 0.11.405* (W5f, `docs/w5.md`, 18.800):
+      Brotli 1.2.1, woff2 1.0.2, dav1d 1.5.4 with its assembly, libavif
+      1.4.2 on it; `x86-formats` holds them to this Mac. Next: WebKit with
+      `USE_WOFF2` and `USE_AVIF` on them. Also wanted: libyuv for libavif's
+      colour conversion, and dav1d's own `checkasm` in the guest, which
+      holds every assembly routine to its C (with AV1 video).
     - *Pictures*: **AVIF** (libavif on dav1d) - YouTube's thumbnails are
       AVIF and are blank today. JPEG XL after.
     - *Fonts*: **WOFF2** (Google's woff2 on brotli) - YouTube's Roboto,

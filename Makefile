@@ -3711,6 +3711,36 @@ $(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TE
 	    || { echo "apps: the system's image has HarfBuzz or FreeType in it"; rm -f $@; exit 1; }
 
 #
+# **W5f's format test** (`tools/run_formats.py`): `formattest.cpp` and its
+# door, the POSIX layer it reads its files through, Brotli, woff2, and
+# libavif on dav1d - the web's other formats (`docs/w5.md`) - and the C++
+# runtimes woff2 is compiled against; in no image but its own.
+#
+W5F_LIBS := $(W5_DIR)/lib/libavif.a $(W5_DIR)/lib/libdav1d.a $(W5_DIR)/lib/libwoff2dec.a \
+            $(W5_DIR)/lib/libwoff2common.a $(W5_DIR)/lib/libbrotlidec.a \
+            $(W5_DIR)/lib/libbrotlienc.a $(W5_DIR)/lib/libbrotlicommon.a
+FORMATTEST_OBJS := $(UBUILD)/user/kits/formattest/formattest.cpp.o \
+                   $(UBUILD)/user/kits/formattest/formattest_kit.c.o
+
+$(W5F_LIBS): build/w5/$(ARCH)/.built
+
+$(UBUILD)/user/kits/formattest/formattest.cpp.o: user/kits/formattest/formattest.cpp \
+        user/kits/formattest/formattest.h build/w5/$(ARCH)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++17 -fno-exceptions -fno-rtti \
+	    -isystem $(W5_DIR)/include -c $< -o $@
+
+$(UBUILD)/apps/formattest.elf: $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) $(W5F_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(W5F_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_formattest_kit$$' \
+	    || { echo "apps: formattest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_formattest_kit|dav1d_open|avifDecoderCreate)$$' \
+	    || { echo "apps: the system's image has W5f's libraries in it"; rm -f $@; exit 1; }
+
+#
 # **W5e's Skia test** (`tools/run_skia.py`): `skiatest.cpp` and its door,
 # Skia as WebKit carries it (`libSkia.a`, built by WebKit's CMake beside
 # WTF), drawing text through FreeType and decoding pictures through
@@ -4296,7 +4326,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/icutest.elf $(UBUILD)/apps/wtftest.elf $(UBUILD)/apps/jsc.elf \
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
-            $(UBUILD)/apps/skiatest.elf $(WEBCORE_IMAGE) \
+            $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

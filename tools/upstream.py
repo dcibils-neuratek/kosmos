@@ -138,6 +138,27 @@ GIT = {
         "url": "https://gitlab.freedesktop.org/freetype/freetype.git",
         "commit": "37515cf56ba3349656049edbed89ffc6f6466f2d",
     },
+    # **W5f, the web's other formats** (`docs/w5.md`; Diego, 14 November
+    # 2026: "we need to have all decoders needed available"). Brotli 1.2.1,
+    # for WOFF2 and for HTTP's `br`; Google's woff2 1.0.2, its newest tag.
+    "brotli": {
+        "url": "https://github.com/google/brotli.git",
+        "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+    },
+    "woff2": {
+        "url": "https://github.com/google/woff2.git",
+        "commit": "1bccf208bca986e53a647dfe4811322adb06ecf8",
+    },
+    # dav1d 1.5.4, VideoLAN's AV1 decoder (GitHub's mirror of its tag), for
+    # AVIF's pictures and AV1's video alike; libavif 1.4.2 on it.
+    "dav1d": {
+        "url": "https://github.com/videolan/dav1d.git",
+        "commit": "54706fc6bc0cdecab7e9593974a4039cc038fca7",
+    },
+    "libavif": {
+        "url": "https://github.com/AOMediaCodec/libavif.git",
+        "commit": "c5240fc79fe5c2407e10afd35f5505ef6333ea49",
+    },
 }
 
 

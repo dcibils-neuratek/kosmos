@@ -2841,6 +2841,7 @@ void kosmos_xmltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_ssltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_curltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_skiatest_kit(lua_State *L) __attribute__((weak));
+void kosmos_formattest_kit(lua_State *L) __attribute__((weak));
 void kosmos_webcoretest_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
@@ -2920,6 +2921,9 @@ static const struct {
     { "curltest", kosmos_curltest_kit, 1 },
     /* Skia, in no image but its test's (`docs/w5.md` W5e). */
     { "skiatest", kosmos_skiatest_kit, 1 },
+    /* Brotli, woff2, libavif and dav1d, in no image but their test's
+     * (`docs/w5.md` W5f). */
+    { "formattest", kosmos_formattest_kit, 1 },
     /* WebCore, in no image but its test's (`docs/w6.md` W6b). */
     { "webcoretest", kosmos_webcoretest_kit, 1 },
 #ifdef KOSMOS_FFMPEG

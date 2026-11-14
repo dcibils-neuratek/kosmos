@@ -584,6 +584,17 @@ SUITES = [
                            "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_pictures.py", "user/kits/picturetest", *W5)),
 
+    # **W5f's formats** (`docs/w5.md`): `formattest.elf`, Brotli's own test
+    # files, the repository's fonts as WOFF2, and libavif's own pictures
+    # through dav1d - every line held to this Mac's, x86-64's to an Intel
+    # one under Rosetta, since libavif's deep colour is floating point.
+    Suite("arm-formats", ["python3", "tools/run_formats.py", ARM,
+                          "build/user-test/apps"],
+          watch=library("tools/run_formats.py", "user/kits/formattest", *W5)),
+    Suite("x86-formats", ["python3", "tools/run_formats.py", X86,
+                          "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_formats.py", "user/kits/formattest", *W5)),
+
     # **W5b's text** (`docs/w5.md`): `texttest.elf`, HarfBuzz given its own
     # shaping suite - 7,761 cases, each held to the glyphs it expects, as
     # `run-tests.py` holds them - and FreeType every font that suite ships,

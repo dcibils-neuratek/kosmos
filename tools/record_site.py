@@ -33,9 +33,12 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import scratch                                               # noqa: E402
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 WIDTH, HEIGHT = 1280, 1600
@@ -137,14 +140,13 @@ def record(name, url, sites):
     if os.path.exists(out):
         shutil.rmtree(out)
     os.makedirs(os.path.join(out, "files"))
-    profile = tempfile.mkdtemp(prefix="kosmos-record-")
-    try:
-        dumped, waited = chrome(profile, "--dump-dom", url)
-        if dumped.returncode != 0 or not dumped.stdout:
-            sys.exit("record: Chrome gave no document for %s\n%s" % (url, dumped.stderr.decode()[-800:]))
-        chrome(profile, "--screenshot=" + os.path.join(out, "chrome.png"), url)
-    finally:
-        shutil.rmtree(profile, ignore_errors=True)
+    # A fresh Chrome profile each time, so nothing a site stored before -
+    # a cookie, a consent - shapes the page; gone when the tool ends.
+    profile = scratch.directory("chrome")
+    dumped, waited = chrome(profile, "--dump-dom", url)
+    if dumped.returncode != 0 or not dumped.stdout:
+        sys.exit("record: Chrome gave no document for %s\n%s" % (url, dumped.stderr.decode()[-800:]))
+    chrome(profile, "--screenshot=" + os.path.join(out, "chrome.png"), url)
     page = dumped.stdout.decode("utf-8", "replace")
     rec = Recording(out, url)
 
