@@ -2808,7 +2808,8 @@ void kosmos_tcc_kit(lua_State *L) __attribute__((weak));
  * **A project's own C** (`docs/tinycc.md`, C6): what `KOSMOS_KIT(name)` in
  * `kosmos_kit.h` defines, in an image the C Kit built - its name and its
  * kit, reached as `use("name.elf")` as Doom's is. Weak, so every other
- * image is unchanged by it.
+ * image is unchanged by it. A test's image names its kit the same way
+ * (`user/kits/formattest/`), so a new one does not edit this file.
  */
 void kosmos_project_kit(lua_State *L) __attribute__((weak));
 extern const char kosmos_project_name[] __attribute__((weak));
@@ -2841,7 +2842,6 @@ void kosmos_xmltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_ssltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_curltest_kit(lua_State *L) __attribute__((weak));
 void kosmos_skiatest_kit(lua_State *L) __attribute__((weak));
-void kosmos_formattest_kit(lua_State *L) __attribute__((weak));
 void kosmos_webcoretest_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
@@ -2923,7 +2923,6 @@ static const struct {
     { "skiatest", kosmos_skiatest_kit, 1 },
     /* Brotli, woff2, libavif and dav1d, in no image but their test's
      * (`docs/w5.md` W5f). */
-    { "formattest", kosmos_formattest_kit, 1 },
     /* WebCore, in no image but its test's (`docs/w6.md` W6b). */
     { "webcoretest", kosmos_webcoretest_kit, 1 },
 #ifdef KOSMOS_FFMPEG

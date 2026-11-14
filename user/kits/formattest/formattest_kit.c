@@ -5,6 +5,12 @@
  * returns the lines `formattest.cpp` says, a table of strings, for the
  * program to print: a kit has no `print` of its own, since a program's is
  * in its environment rather than the globals.
+ *
+ * The image names its own kit, as a project the C Kit built does
+ * (`kosmos_project_name` and `kosmos_project_kit`, weak in
+ * `user/init/sys_user.c`), so adding a kit like this one touches no file
+ * every image is built from - and the gate, which runs everything when one
+ * of those changes, need not (`docs/testing.md`).
  */
 
 #include "lua.h"
@@ -29,7 +35,11 @@ static int l_run(lua_State *L)
     return 1;
 }
 
-void kosmos_formattest_kit(lua_State *L)
+const char kosmos_project_name[] = "formattest";
+
+void kosmos_project_kit(lua_State *L);
+
+void kosmos_project_kit(lua_State *L)
 {
     lua_newtable(L);
     lua_pushcfunction(L, l_run);

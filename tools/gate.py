@@ -103,11 +103,63 @@ RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",
 WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py", "tools/upstream.py"]
 W5 = ["tools/w5_build.py", "tools/upstream.py"]
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
-             ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"]]
+             ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],
+             ["qemu-system-x86_64", "--version"], ["qemu-system-aarch64", "--version"]]
 
 
 def library(*own):
     return RUNTIME + list(own)
+
+
+#
+# **Every suite runs when what it stands on changed, and only then** (Diego,
+# 14 November 2026: "why do we run the entire gate and rebuild all every
+# time? cant we just be smart on what needs to be rebuilt and just run the
+# gates that are specific?"). The libraries' suites above were the first
+# half; this is the rest.
+#
+# A suite that names no `watch` stands on **the whole tree**, less three
+# things: what is written about the system rather than the system - `docs/`,
+# `book/`, `README.md` and `CLAUDE.md`, but for the pages the image carries
+# (the Makefile's `IMAGE_DOCS`) - and the paths that only a library's suite stands on: its
+# test kit and its `run_*.py`, which no system image links or runs. So a
+# change nothing claims runs everything, which is the safe way round; a
+# change to the documents runs nothing; and a change to `formattest` runs
+# the two suites that use it. Its fingerprint is kept from its last pass
+# beside the libraries' (`passed.json`), with the compilers' and QEMU's
+# versions in it.
+#
+# `make test ALL=1` (or `LIBS=1`, its older name) runs every suite whatever
+# changed, naming one in `ONLY=` runs it, and `make prepush` runs them all.
+#
+WRITING = ["docs", "book", "README.md", "CLAUDE.md"]
+
+
+def image_docs():
+    """The pages under docs/ the image carries, as the Makefile names them."""
+    with open(os.path.join(ROOT, "Makefile")) as f:
+        for line in f:
+            if line.startswith("IMAGE_DOCS"):
+                return line.split("=", 1)[1].split()
+    raise SystemExit("FAIL: the Makefile names no IMAGE_DOCS - tools/gate.py reads it")
+
+
+def owned(suites):
+    """What only the libraries' suites stand on: each one's watch, less what
+    is shared, less any script a system suite runs itself."""
+    shared = set(RUNTIME + WEBKIT + W5)
+    run = {a for s in suites if not s.watch for a in s.cmd if a.startswith("tools/")}
+    return sorted({p for s in suites if s.watch for p in s.watch
+                   if p not in shared and p not in run})
+
+
+def system_print(suites):
+    """What a suite without a watch stands on, as one hash."""
+    import hashlib
+
+    tree = fingerprint(["."] + [":(exclude)" + p for p in WRITING + owned(suites)])
+    docs = fingerprint(image_docs(), toolchain=[])
+    return hashlib.sha256((tree + docs).encode()).hexdigest()
 
 
 SSL = library("tools/run_ssl.py", "user/kits/ssltest", *W5)
@@ -1170,8 +1222,8 @@ def main():
                         help="run the AArch64 suites too (held back for now)")
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
-    parser.add_argument("--libs", action="store_true",
-                        help="run the libraries' suites even if nothing they stand on changed")
+    parser.add_argument("--all", "--libs", dest="all", action="store_true",
+                        help="run every suite, even one nothing it stands on changed for")
     args = parser.parse_args()
 
     # A path a library's suite watches that is not there watches nothing.
@@ -1239,26 +1291,34 @@ def main():
               "installed.", flush=True)
         chosen = [s for s in chosen if not s.x86]
 
-    # **A library's suite, only when what it stands on changed** (`RUNTIME`
-    # above): the same fingerprint as at its last pass, and it is not run.
-    marks_file = os.path.join(LOGS, "libraries.json")
+    # **A suite, only when what it stands on changed** (`RUNTIME` and
+    # `WRITING` above): the same fingerprint as at its last pass, and it is
+    # not run. `libraries.json` was the libraries' alone, and is read once.
+    marks_file = os.path.join(LOGS, "passed.json")
+    marks = {}
 
-    try:
-        with open(marks_file) as f:
-            marks = json.load(f)
-    except (OSError, ValueError):
-        marks = {}
+    for name in ("libraries.json", "passed.json"):
+        try:
+            with open(os.path.join(LOGS, name)) as f:
+                marks.update(json.load(f))
+        except (OSError, ValueError):
+            pass
 
-    prints = {s.name: fingerprint(s.watch) for s in chosen if s.watch}
+    system = system_print(SUITES)
+    prints = {s.name: fingerprint(s.watch) if s.watch else system for s in chosen}
 
-    if not args.libs and not args.only:
-        same = [s.name for s in chosen if s.watch and marks.get(s.name) == prints[s.name]]
+    if not args.all and not args.only:
+        same = [s.name for s in chosen if marks.get(s.name) == prints[s.name]]
         chosen = [s for s in chosen if s.name not in same]
 
         if same:
-            print("SKIP: %d library suites, nothing they stand on changed since "
-                  "each passed: %s; LIBS=1 runs them." % (len(same), ", ".join(same)),
+            print("SKIP: %d suites, nothing they stand on changed since each passed%s; "
+                  "ALL=1 runs them." % (len(same), ": " + ", ".join(same) if len(same) < 20 else ""),
                   flush=True)
+
+        if not chosen:
+            print("PASS: nothing to run - no suite stands on what changed since it last passed")
+            return 0
 
     # 1. The images, before any suite starts.
     images = os.path.join(LOGS, "images.log")
@@ -1330,7 +1390,7 @@ def main():
     with open(times_file, "w") as f:
         json.dump(last, f, indent=1, sort_keys=True)
 
-    # And each library's suite that passed, with what it stood on as it started.
+    # And each suite that passed, with what it stood on as it started.
     marks.update({s.name: prints[s.name] for s in chosen
                   if s.name in prints and s.code == 0})
 

@@ -1578,3 +1578,17 @@ brings no C library with it, and the kernel's link does not have it.
 Computational libraries with little system surface: SQLite, `stb_*`, zlib, monocypher, interpreters for other languages, old game engines.
 
 What does not get ported: anything assuming other processes it can make, signals, or a global filesystem - meaning, still, most Unix *programs*. BSD sockets and descriptors inside a process are no longer on this list (§17.3, 11 November 2026), so a library that only opens its files and its connections - curl, WebKit - is.
+
+**Linux programs, then, run one of two ways, and no third** (Diego, 14
+November 2026: "sandboxes is the solution to run linux binaries",
+"recompiling linux programs in kosmos with the posix layer is available
+then"). A Linux *binary* runs in a sandbox - Alpine's kernel and userland
+in a virtual machine, its screen in a Kosmos window (`docs/linux.md`,
+`docs/virtualization.md`) - where `fork`, signals and a global tree are
+Linux's and touch nothing of Kosmos. A Linux *program's source* is
+recompiled against the POSIX layer (`runtime/posix/`, `docs/w3.md`) and
+runs as a Kosmos process, which works for what this section says can be
+ported. **There is no Linux-syscall personality**: an ELF made for Linux
+run directly on Nebula, its syscalls translated, would bring exactly the
+four assumptions §17.1 forbids, and the sandbox already runs such a binary
+without them.

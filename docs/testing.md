@@ -33014,3 +33014,37 @@ the linker without the target, and `host-x86_64` quietly building ARM.
 |---|---|
 | `x86-formats` | 102 files as the Mac's, 3.1 s |
 
+
+## 18.801 A gate that runs what a change reaches
+
+Diego, 14 November 2026, after a gate of 20 minutes for W5f: "why do we
+run the entire gate and rebuild all every time? cant we just be smart on
+what needs to be rebuilt and just run the gates that are specific?". Of
+those 1,227 seconds, 323 were the images, and most of that was every W5
+library configured again because `w5_build.py` had changed.
+
+Three changes:
+
+- **A W5 library's stamp is its own options and the function that builds
+  it**, not the whole script (`configure`, `build_openssl`, `build_dav1d`).
+  A pass after an edit to `w5_build.py` that touches no library: 2 s,
+  where it had been 74.
+- **A test kit is named by its image.** `formattest.elf` defines
+  `kosmos_project_name` and `kosmos_project_kit`, as a project the C Kit
+  builds does, rather than having a row in `sys_user.c`'s table - a file
+  every image is built from, so adding a row set off every suite.
+- **Every suite runs only when what it stands on changed since it last
+  passed** (`tools/gate.py`, `WRITING`). A library's suite stands on its
+  `watch`, as since 13 November; every other suite on the whole tree but
+  `docs/`, `book/`, `README.md` and `CLAUDE.md` (the pages the image carries excepted, read from
+  the Makefile's `IMAGE_DOCS`) and the paths only the libraries' suites
+  stand on - their test kits and `run_*.py`. The compilers' and QEMU's
+  versions are in every fingerprint. A change nothing claims therefore
+  runs everything; a document runs nothing; `formattest.cpp` runs
+  `x86-formats`. `passed.json` keeps each suite's fingerprint from its
+  last pass; `make test ALL=1` runs every suite, and `make prepush` does.
+
+Probed by appending a line and taking the fingerprint again (0.2 s each):
+`docs/w5.md`, `book/logbook.md`, `formattest.cpp` and `run_formats.py`
+leave the system's fingerprint as it was; `docs/cheatsheet.html`,
+`kernel/ipc.c` and the Makefile change it.

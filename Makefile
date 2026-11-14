@@ -3735,9 +3735,9 @@ $(UBUILD)/apps/formattest.elf: $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) $(W
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) \
 	    -Wl,--start-group $(W5F_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
-	@$(NM) $@ | grep -q ' T kosmos_formattest_kit$$' \
+	@$(NM) $@ | grep -q ' T kosmos_project_kit$$' \
 	    || { echo "apps: formattest.elf does not have its kit"; rm -f $@; exit 1; }
-	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_formattest_kit|dav1d_open|avifDecoderCreate)$$' \
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_project_kit|dav1d_open|avifDecoderCreate)$$' \
 	    || { echo "apps: the system's image has W5f's libraries in it"; rm -f $@; exit 1; }
 
 #
@@ -5913,11 +5913,12 @@ gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 # suite is there and how long it took. `J=` sets how many at once.
 # `make test ONLY=arm-browser-1,x86-browser-1`: the suites for what changed,
 # by name (CLAUDE.md, "Test what changed"); with no ONLY, all of them.
-# A ported library's suite runs only when what it stands on changed since
-# it last passed (`tools/gate.py`, `RUNTIME`); `LIBS=1` runs every one, as
-# `make prepush` does.
+# A suite runs only when what it stands on changed since it last passed -
+# a document changes nothing, a test kit runs its own suites, anything else
+# runs everything (`tools/gate.py`, `WRITING`); `ALL=1` (or `LIBS=1`) runs
+# every one, as `make prepush` does.
 test:
-	@python3 tools/gate.py --jobs $(J) $(if $(filter 1,$(ARM)),--arm,) $(if $(filter 1,$(LIBS)),--libs,) $(if $(ONLY),--only $(ONLY),)
+	@python3 tools/gate.py --jobs $(J) $(if $(filter 1,$(ARM)),--arm,) $(if $(filter 1,$(LIBS) $(ALL)),--all,) $(if $(ONLY),--only $(ONLY),)
 
 # Used for a while, then asked whether it gave everything back.
 #
@@ -6081,7 +6082,7 @@ mega:
 # across `J` jobs. `make J=4 prepush` for a quieter machine.
 #
 prepush:
-	@$(MAKE) --no-print-directory -j$(J) LIBS=1 test
+	@$(MAKE) --no-print-directory -j$(J) ALL=1 test
 	@$(MAKE) --no-print-directory -j$(J) mega
 	@$(MAKE) --no-print-directory -j$(J) shot
 	@echo

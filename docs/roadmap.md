@@ -112,6 +112,30 @@ unblocks.
 
 ### Being built now
 
+**A gate that runs what a change reaches - AGREED and BUILT on 14 November
+2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire
+gate and rebuild all every time? cant we just be smart on what needs to be
+rebuilt and just run the gates that are specific? we cant spend these
+hoours running tests all the time for every compile". Three parts, all
+built (`testing.md` 18.801):
+- *A kit named by its image*: `formattest.elf` names its kit
+  (`kosmos_project_name`, as a C Kit project does) rather than a row in
+  `sys_user.c`, a file every image is built from. The other test kits
+  (`sqltest`, `xmltest`, `ssltest`, `curltest`, `skiatest`,
+  `webcoretest` and the rest) still have rows, and move the next time
+  `sys_user.c` changes for another reason.
+- *A W5 library configured again only when its own options change*: the
+  stamp is the library's options and the function that builds it, not the
+  whole of `w5_build.py` (74 s to 2 s).
+- *Suites chosen by what changed*: every suite runs only when what it
+  stands on changed since its last pass - documents nothing, a test kit
+  its own suites, anything else everything. `make test ALL=1` and `make
+  prepush` run them all.
+- *Still to do*: applications claiming their own paths (a change to the
+  browser running the browser's suites and the display harness, not the
+  kernel's) - which needs each display phase to say which applications it
+  opens before it is safe.
+
 **The Mac Pro 2013, a third machine** - Diego, 10 November 2026: "i also
 want to build a stick so i can boot into the mac pro 2013 which i have here
 with me". A development stick from `main`, the layout both the T14 and the

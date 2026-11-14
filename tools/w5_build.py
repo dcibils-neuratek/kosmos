@@ -19,6 +19,7 @@ of Kosmos's libc or POSIX layer changed, and ninja decides the rest.
 """
 
 import fcntl
+import inspect
 import os
 import shutil
 import subprocess
@@ -224,9 +225,13 @@ def build_openssl(arch, src, out, prefix):
                            os.path.join(ROOT, "runtime", "posix", "include"),
                            os.path.join(ROOT, "runtime", "posix", "refused"))
                for folder, _, names in os.walk(top) for n in names]
-    newest = max(os.path.getmtime(p) for p in [OPENSSL_CONF, __file__] + headers)
+    newest = max(os.path.getmtime(p) for p in [OPENSSL_CONF] + headers)
+    # What it is told and the code that tells it, rather than this file's
+    # time (`configure`).
+    says = "configured\n%r\n%s" % (OPENSSL, inspect.getsource(build_openssl))
 
     if not (os.path.exists(stamp) and os.path.getmtime(stamp) >= newest
+            and open(stamp).read() == says
             and os.path.exists(os.path.join(out, "Makefile"))):
         shutil.rmtree(out, ignore_errors=True)
         # With `no-apps` it still writes `apps/include/configuration.h`
@@ -250,7 +255,7 @@ def build_openssl(arch, src, out, prefix):
             print(open(log).read()[-6000:])
             sys.exit("w5_build: openssl did not configure for %s (%s)" % (arch, log))
         with open(stamp, "w") as f:
-            f.write("configured\n")
+            f.write(says)
 
     r = subprocess.run(["make", "-j%d" % (os.cpu_count() or 4), "build_libs"], cwd=out,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -300,7 +305,12 @@ def configure(arch, name, src, out, prefix, extra=(), says=""):
                for top in (os.path.join(ROOT, "runtime", "include"),
                            os.path.join(ROOT, "runtime", "posix", "include"))
                for folder, _, names in os.walk(top) for n in names]
-    newest = max(os.path.getmtime(p) for p in [TOOLCHAIN, __file__] + headers)
+    # Not this file's time: adding a library to it is no reason to configure
+    # every other again (Diego, 14 November 2026, after brotli's addition
+    # reconfigured OpenSSL and curl). What this library is told, and the
+    # code that tells it, are in the stamp's text instead.
+    newest = max(os.path.getmtime(p) for p in [TOOLCHAIN] + headers)
+    says = "%r\n%r\n%s" % (LIBRARIES[name], extra, inspect.getsource(configure)) + says
 
     if os.path.exists(stamp) and os.path.getmtime(stamp) >= newest \
             and os.path.exists(os.path.join(out, "build.ninja")) \
@@ -501,7 +511,8 @@ def build_dav1d(arch, src, top, out, prefix):
                     "cpu = 'x86_64'\nendian = 'little'\n" % shutil.which("nasm"))
         command += ["--cross-file", cross]
         says = "intel\n"
-    newest = max(os.path.getmtime(p) for p in [TOOLCHAIN, __file__])
+    newest = os.path.getmtime(TOOLCHAIN)
+    says = "%r\n%s" % (DAV1D, inspect.getsource(build_dav1d)) + says
     if not (os.path.exists(stamp) and os.path.getmtime(stamp) >= newest
             and open(stamp).read() == "configured\n" + says):
         shutil.rmtree(out, ignore_errors=True)

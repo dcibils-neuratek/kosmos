@@ -2751,3 +2751,35 @@ VP9, H.264, Opus and AAC for video.
 
 **Measurements.** Five recordings, 7 to 31 MB each; painted in 4 to 7 s
 each in the guest under emulation.
+
+## 14 November 2026 - Tests that run only for what changed
+
+**In short.** `make test` no longer runs every suite on every change. Each
+suite remembers what it was standing on the last time it passed, and runs
+again only if some of that has changed. A change to a document runs
+nothing; a change to one library's test runs that test. A change to
+anything shared still runs everything, which is the safe way round.
+
+**What.** Three changes. First, each of the web's ported libraries is
+configured again only when its own build settings change. Before, any
+edit to the build script reconfigured all of them, which took over a
+minute. Second, a test program now says for itself which kit it carries.
+Before, each needed a line in a file that every program on the system is
+built from, so adding a test meant rebuilding and testing everything.
+Third, the gate keeps a fingerprint of what each suite depends on: for a
+system suite that is the whole tree, minus the documents and the files
+only one library's test uses. Before the gate starts a suite, it compares
+the fingerprint with the one recorded at that suite's last pass.
+
+**Why.** Diego, after a twenty-minute gate for one library: "we cant spend
+these hoours running tests all the time for every compile". The
+libraries' suites already worked this way (since 13 November). This
+extends the same idea to every suite.
+
+**Visible impact.** Committing a document or a test now takes seconds, not
+twenty minutes. `make test ALL=1` still runs everything, and so does
+`make prepush`, before every push.
+
+**Measurements.** Computing a fingerprint of the whole tree takes 0.2 s.
+A build-script edit that changes no library's settings: 2 s, where it had
+been 74 s.

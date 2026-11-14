@@ -6,6 +6,24 @@ Last updated: 2026-11-14 (0.11.404: the recorded sites - YouTube, The Verge, app
 
 ---
 
+## 14 November, later: W5f and a gate that runs what changed (0.11.406, not pushed)
+
+W5f (0.11.405): Brotli, woff2, dav1d and libavif built and held to this
+Mac by `x86-formats` (`testing.md` 18.800). Then Diego's gate request
+(`testing.md` 18.801): every suite runs only when what it stands on
+changed since its last pass (`tools/gate.py`, `WRITING`, `passed.json`);
+`make test ALL=1` and `make prepush` run everything. A W5 library is
+configured again only when its own options change; `formattest.elf`
+names its own kit (`kosmos_project_name`), so a test kit no longer edits
+`sys_user.c`. Diego decided Linux binaries run in Sandboxes and Linux
+sources are recompiled on the POSIX layer - no syscall personality
+(`design.md` 17.4).
+
+**Next**: `USE_WOFF2` and `USE_AVIF` on in WebCore
+(`OptionsKosmos.cmake`, `webkit_build.py`'s `webcore_libraries`, `W5F_LIBS`
+into `WEBCORE_W5_LIBS`), the recorded sites painted again; then the media
+design for Diego.
+
 ## 14 November: the recorded sites; YouTube first (0.11.404, not pushed)
 
 Diego chose The Verge, YouTube, apple.com and cnn.com, kept in
