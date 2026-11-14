@@ -2923,3 +2923,32 @@ that the reference's own requests were answered.
 
 **Measurements.** Eight pages and six fonts and pictures, each page in a
 web process of its own.
+
+## 14 November 2026 - HTTPS in the browser
+
+**In short.** The browser now loads pages over HTTPS, trusting the same
+list of certificate authorities as the rest of Kosmos, plus any a person
+adds. It loaded example.com from the internet.
+
+**What.** An HTTPS site proves who it is with a certificate, signed by an
+authority the browser must already trust. Kosmos has one list of those,
+Mozilla's, which its own TLS code already used. Now the browser's network
+process gets the same list, built into its program, and also trusts any
+certificate file put in `/Home/Settings/JetSki/Certificates/`. That folder
+is how you would trust a server of your own.
+
+**Why.** Almost every site is HTTPS, so without this the browser could
+only reach test servers.
+
+**Visible impact.** Still no window; that is next. In the test machine, a
+real site, example.com, loads over HTTPS from the internet.
+
+**How it is checked.** The test now serves some pages over HTTPS, signed
+by a test authority that is placed in the certificates folder, and they
+must paint as their references. A server whose certificate was signed by
+an authority nobody added must be refused. To show the check bites, the
+test authority is left out: every HTTPS page is then refused, and the test
+fails.
+
+**Measurements.** Mozilla's list is 225 KB inside a 160 MB program. One
+page in the run is refused, as it should be.

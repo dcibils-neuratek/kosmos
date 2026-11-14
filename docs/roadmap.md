@@ -10074,8 +10074,11 @@ the applications make the system useful, and is not pulled forward.
   curl's wake-up, the stack nudged for a poll on pipes and sockets, and
   WebKit's `RedBlackTree::remove` made to reset what it removes (patch
   0023); `x86-sites` holds WOFF2 and AVIF reference pages loaded by URL.
-  **Next in W7b: HTTPS**, then cookies, the disk cache, and the live sites
-  on the M700.
+  **HTTPS, 14 November** (0.11.413): Mozilla's roots built in and
+  authorities added in `/Home/Settings/JetSki/Certificates/`, `x86-sites`
+  over TLS with a refusal; `example.com` from the internet. **Next, in
+  Diego's order** ("window then jit", 14 November): W7c, the window; then
+  the JIT; cookies, the disk cache and the live sites on the M700 after.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s
   alone, and hung past 720 s in the 0.11.412 gate saying nothing - into
   halves that run side by side, each printing its steps as it passes, so
@@ -10096,9 +10099,9 @@ the applications make the system useful, and is not pulled forward.
     the interpreter, and to `x86-webkit2` and `x86-sites`; (2) DFG;
     (3) FTL; (4) WebAssembly, BBQ then OMG, with bounds checked in code
     since Kosmos has no signals; VM traps by polling for the same reason.
-    Each step measured on the M700 against the interpreter. **Right after
-    W7b's HTTPS**, before cookies - YouTube's player is script all the way
-    down. If the two mappings cannot work, one region writable and
+    Each step measured on the M700 against the interpreter. **After W7c's
+    window** - Diego, 14 November: "window then jit" - so the browser is in
+    use first and the JIT speeds up something already used. If the two mappings cannot work, one region writable and
     executable is the fallback, and that is Diego's decision then.
   - **WebKit's own allocator.** bmalloc/libpas is off and the libc's
     `malloc` stands under every allocation; libpas wants wide address

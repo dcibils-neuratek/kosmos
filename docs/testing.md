@@ -33274,3 +33274,33 @@ slower under a full machine. But four minutes alone is itself too long for
 a suite (*the tests take five to ten minutes*), and a suite that prints only
 at its end cannot tell slow from hung: splitting it, and having it say each
 step as it passes, is on the roadmap.
+
+## 18.808 HTTPS in JetSki (W7b)
+
+`docs/w7.md` W7b: WebKit's network process fetches over TLS, by curl on
+OpenSSL, trusting Mozilla's roots and the authorities a person adds.
+
+`CurlSSLHandleKosmos.cpp` hands curl one PEM list (`CURLOPT_CAINFO_BLOB`):
+`assets/ca/cacert.pem` built into the image (`tools/roots2c.py`, the file
+the TLS Kit's anchors are made from), then every `.pem` in
+`/Home/Settings/JetSki/Certificates/`. curl was built to look for no bundle
+of its own, so that list is all it trusts.
+
+`x86-sites` now serves the WOFF2 pages over HTTP and the AVIF pages over
+HTTPS, from a certificate for 10.0.2.2 signed by the test's own authority
+(`run_tls.pki`, which now names an address as an IP as well as a DNS name,
+since OpenSSL holds an address only to an IP entry), with that authority
+put in `/Home/Settings/JetSki/Certificates/`. And one more load, from a
+server whose certificate an authority nobody added signed: it must fail
+with curl's error 60 (a peer not verified) and never commit. A failed
+navigation now says its code (`webkit2test`).
+
+PASS: 8 pages, 6 fonts and pictures, the refusal, 19 checks. Controls:
+`KOSMOS_SITES_BREAK=untrusted` leaves the test's authority off the disk -
+the four HTTPS pages "failed, error 60", their pictures never asked for,
+FAIL 6 of 19; `KOSMOS_SITES_BREAK=missing` as before.
+
+Outside the gate, `KOSMOS_SITES_LIVE=https://example.com/` loaded the real
+site through QEMU's network by Mozilla's roots alone: committed, finished,
+painted - without its words, since this harness's web process has no
+system fonts (W7c's window gives it `/Kosmos`'s).

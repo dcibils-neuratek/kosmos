@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-14 (0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
 
@@ -26,9 +26,24 @@ Last updated: 2026-11-14 (0.11.412: W7b begun - pages over HTTP through the netw
 - Roadmap: *JetSki as optimised as it can be* (Diego): the JITs, libpas,
   `--gc-sections`/ThinLTO, x86-64-v3 and SIMD, shared text, a profile.
 
-Next: HTTPS (curl's roots in `CurlSSLHandleKosmos.cpp`, x86-sites over TLS
-by its own authority), cookies, the disk cache, live sites on the M700;
-then W7c, the window.
+Then **0.11.413, HTTPS** (`testing.md` 18.808): `CurlSSLHandleKosmos.cpp`
+hands curl Mozilla's roots (`tools/roots2c.py` from `assets/ca/cacert.pem`,
+linked into every WebCore image as `CA_ROOTS_OBJ`) and every `.pem` in
+`/Home/Settings/JetSki/Certificates/`. `x86-sites` serves its picture pages
+over TLS, refuses an unknown authority (curl 60), with an `untrusted`
+control; `KOSMOS_SITES_LIVE=` loads a real site (example.com did).
+Known: the webkit2test harness's web process has no system fonts, so pages
+paint without words - W7c gives it `/Kosmos`'s.
+
+**A lane runs beside this session** (CLAUDE.md, amended 14 November): a
+background agent writing the Broadcom Ethernet driver's decode and host
+test (`user/drivers/net/tg3*`, `tools/test_tg3decode.c`, `docs/drivers.md`'s
+section). It does not build, bump or commit; its files are folded in here,
+and `docs/drivers.md` was left out of 0.11.412 and 0.11.413 for that.
+
+Next: Diego chooses the order of the JIT and the window (asked: HTTPS,
+window, cookies, JIT recommended); then cookies, the disk cache, live
+sites on the M700.
 
 ## 14 November, night: W7a, WebKit2's three processes (0.11.411, not pushed)
 

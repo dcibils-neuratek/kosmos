@@ -63,7 +63,10 @@ def pki(work, name="kosmos-test.local"):
             "-keyout", "server.key", "-out", "server.csr", cwd=work)
 
     with open(os.path.join(work, "ext.cnf"), "w") as f:
-        f.write("subjectAltName=DNS:" + name + "\n"
+        # An address is named as one too: OpenSSL - curl, in JetSki - holds
+        # an address only to an IP entry, the TLS Kit to the name.
+        address = all(p.isdigit() for p in name.split(".")) and name.count(".") == 3
+        f.write("subjectAltName=DNS:" + name + (",IP:" + name if address else "") + "\n"
                 "basicConstraints=CA:FALSE\n"
                 "keyUsage=critical,digitalSignature,keyEncipherment\n"
                 "extendedKeyUsage=serverAuth\n")

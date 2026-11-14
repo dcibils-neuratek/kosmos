@@ -346,10 +346,11 @@ numbers):
   the region the window's surface is composed from; a video frame is
   decoded into a region and drawn from there; a response body is written
   once, into the region the web process reads.
-- **JavaScript.** The LLInt with no JIT, as agreed. If the measurements
-  say JavaScript is where a site's time goes, a JIT is the next
-  conversation, with what it would ask of Nebula: memory written and then
-  made executable, never both at once.
+- **JavaScript.** The LLInt first, and **the JITs are required** - Diego,
+  14 November 2026: "JavaScript need JIT for sure so adapt nebulas premises
+  to make JIT WORK", after the window ("window then jit"). On Nebula's W^X
+  as it stands: the code pool mapped twice, written through one mapping and
+  run from the other (`roadmap.md`, *JetSki as optimised as it can be*).
 - **The GPU, where it pays.** Kosmos drives the M700's GPU through its own
   kernels (the Compute Kit, `kc`), and has no OpenGL or Vulkan driver yet.
   So, in order:

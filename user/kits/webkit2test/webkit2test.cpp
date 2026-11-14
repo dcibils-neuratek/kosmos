@@ -23,6 +23,7 @@
 
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
+#include <WebKit/WKErrorRef.h>
 #include <WebKit/WKPage.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageKosmos.h>
@@ -105,11 +106,13 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     load.stopIfDone();
 }
 
-void didFail(WKPageRef, WKNavigationRef, WKErrorRef, WKTypeRef, const void* info)
+void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void* info)
 {
     auto& load = of(info);
     load.failed = true;
-    load.line("failed");
+    // The code is curl's for a failure of the network - 60 for a peer whose
+    // certificate was not trusted - so a refusal can be told from the rest.
+    load.line("failed, error %d", error ? WKErrorGetErrorCode(error) : 0);
     load.stopIfDone();
 }
 

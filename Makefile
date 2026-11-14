@@ -4170,11 +4170,24 @@ $(UBUILD)/user/kits/webcoretest/webcoretest.cpp.o: user/kits/webcoretest/webcore
 	    -isystem $(ICU_DIR)/include -isystem $(W5_DIR)/include/harfbuzz \
 	    -isystem $(W5_DIR)/include/freetype2 -c $< -o $@
 
-$(UBUILD)/apps/webcoretest.elf: $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) $(WEBCORE_LIBS) $(JSC_LIBS) \
+# **Whom WebKit's network trusts** (`docs/w7.md` W7b): Mozilla's roots, the
+# file the TLS Kit's anchors are made from, as the bytes curl is handed
+# (`CurlSSLHandleKosmos.cpp`). Every image with WebCore in it carries them.
+CA_ROOTS_OBJ := $(UBUILD)/ca_roots.c.o
+
+$(GEN)/ca/ca_roots.c: assets/ca/cacert.pem tools/roots2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/roots2c.py $< $@
+
+$(CA_ROOTS_OBJ): $(GEN)/ca/ca_roots.c
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -c $< -o $@
+
+$(UBUILD)/apps/webcoretest.elf: $(USER_OBJS) $(WEBCORETEST_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) $(WEBCORE_LIBS) $(JSC_LIBS) \
         $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) \
         $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) \
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBCORETEST_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) \
 	    -Wl,--start-group $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) \
 	    $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
@@ -4206,11 +4219,11 @@ $(UBUILD)/user/kits/webkit2test/webkit2test.cpp.o: user/kits/webkit2test/webkit2
 	    -isystem $(WEBKIT_DIR)/WebKit/Headers -isystem $(ICU_DIR)/include \
 	    -isystem user/include -iquote kernel -c $< -o $@
 
-$(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
+$(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
         $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) $(ICU_LIBS) \
         $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
-	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) \
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) \
 	    -Wl,--start-group $(WEBKIT2_LIBS) $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) \
 	    $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) \
 	    $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)

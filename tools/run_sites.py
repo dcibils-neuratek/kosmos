@@ -14,8 +14,21 @@ the two held pixel for pixel. A page here passes only if the font or the
 picture it names arrived over the network, was decoded, and painted as its
 reference says - since the reference draws the same thing without it.
 
-The control: `KOSMOS_SITES_BREAK=missing` has the server answer 404 for
+The font pages come over HTTP and the picture pages over HTTPS, from a
+server whose certificate an authority of the test's own signed - put where
+a person adds one, `/Home/Settings/JetSki/Certificates/`, beside Mozilla's
+roots built in. And one more address on a server whose certificate an
+authority nobody added signed: it must be refused, curl's error 60, and
+never commit.
+
+The controls: `KOSMOS_SITES_BREAK=missing` has the server answer 404 for
 the first page's font: that page then differs from its reference, FAIL.
+`KOSMOS_SITES_BREAK=untrusted` leaves the test's authority off the disk:
+every HTTPS page is refused, FAIL.
+
+Outside the gate, `KOSMOS_SITES_LIVE=https://...` loads one real site as
+well, through QEMU's network to the internet, by Mozilla's roots alone; it
+must be painted, and its picture is kept as `live.png`.
 
 Usage: run_sites.py IMAGE [APPS]
 """
@@ -25,6 +38,7 @@ import http.server
 import os
 import shutil
 import socketserver
+import ssl
 import subprocess
 import sys
 import threading
@@ -37,6 +51,7 @@ sys.path.insert(0, HERE)
 import scratch                                               # noqa: E402
 import pngread                                               # noqa: E402
 import upstream                                              # noqa: E402
+import run_tls                                               # noqa: E402
 
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
@@ -45,6 +60,7 @@ APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
 WORK = scratch.directory("sites")
 SERVED = os.path.join(WORK, "served")
 HOME_DISK = os.path.join(WORK, "home.img")
+PKI = os.path.join(WORK, "pki")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 BROKEN = os.environ.get("KOSMOS_SITES_BREAK")
 
@@ -89,23 +105,48 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def serve():
-    """A plain HTTP server on this Mac for the served folder; its port."""
+class Server(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, address):
+        pass                                # a refused handshake: the point
+
+
+def serve(cert=None):
+    """A server on this Mac for the served folder - HTTP, or HTTPS with
+    `cert` from `run_tls.pki` - and its port."""
     handler = functools.partial(Quiet, directory=SERVED)
-    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler)
-    server.daemon_threads = True
+    server = Server(("127.0.0.1", 0), handler)
+    if cert:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(os.path.join(PKI, cert + ".pem"),
+                                os.path.join(PKI, "server.key"))
+        # The handshake on the handler's thread, at its first read, so a
+        # refused one never holds up the next connection.
+        server.socket = context.wrap_socket(server.socket, server_side=True,
+                                            do_handshake_on_connect=False)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, server.server_address[1]
 
 
-def loads(port):
-    """Each load as (its picture's name, the address)."""
+REFUSED = "refused"
+
+
+def loads(plain, secure, untrusted):
+    """Each load as (its picture's name, the address): fonts over HTTP,
+    pictures over HTTPS, and the one that must be refused."""
     out = []
     for t in TESTS:
         stem = t.rsplit(".", 1)[0]
         name = stem.rsplit("/", 1)[1]
-        out.append((name, "http://10.0.2.2:%d/%s.html" % (port, stem)))
-        out.append((name + "-expected", "http://10.0.2.2:%d/%s-expected.html" % (port, stem)))
+        at = ("https://10.0.2.2:%d" % secure if t.startswith("fast/images/")
+              else "http://10.0.2.2:%d" % plain)
+        out.append((name, "%s/%s.html" % (at, stem)))
+        out.append((name + "-expected", "%s/%s-expected.html" % (at, stem)))
+    out.append((REFUSED, "https://10.0.2.2:%d/%s" % (untrusted, TESTS[-1])))
+    if os.environ.get("KOSMOS_SITES_LIVE"):
+        out.append(("live", os.environ["KOSMOS_SITES_LIVE"]))
     return out
 
 
@@ -141,8 +182,11 @@ def main():
         os.makedirs(os.path.join(SERVED, os.path.dirname(f)), exist_ok=True)
         shutil.copyfile(os.path.join(tests, f), os.path.join(SERVED, f))
 
-    server, port = serve()
-    planned = loads(port)
+    shutil.rmtree(PKI, ignore_errors=True)
+    os.makedirs(PKI)
+    run_tls.pki(PKI, "10.0.2.2")
+    servers = [serve(), serve("good"), serve("untrusted")]
+    planned = loads(*[port for _, port in servers])
     image = os.path.join(WORK, "webkit2test.elf")
     subprocess.run([("x86_64-elf-" if X86 else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
@@ -154,6 +198,9 @@ def main():
     files = [(os.path.join(WORK, "sites.lua"), "/Home/apps/sites/sites.lua"),
              (image, "/Home/apps/sites/webkit2test.elf"),
              (readme, "/Home/apps/sites/pictures/README")]
+    if BROKEN != "untrusted":
+        files.append((os.path.join(PKI, "ca.pem"),
+                      "/Home/Settings/JetSki/Certificates/test-authority.pem"))
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],
@@ -182,7 +229,8 @@ def main():
             done = "sites: done" in said
     finally:
         guest.close()
-        server.shutdown()
+        for server, _ in servers:
+            server.shutdown()
 
     if os.environ.get("KOSMOS_SITES_SERIAL"):
         with open(os.environ["KOSMOS_SITES_SERIAL"], "w") as f:
@@ -213,7 +261,10 @@ def main():
     for name, url in planned:
         lines = told.get(name, [])
         print("%s: %s" % (name, "; ".join(lines) or "nothing said"))
-        if "painted" not in lines:
+        if name == REFUSED:
+            if "failed, error 60" not in lines or any(ln.startswith("committed") for ln in lines):
+                failed.append("%s: an authority nobody added was not refused (curl's 60)" % name)
+        elif "painted" not in lines:
             failed.append("%s: not painted" % name)
     for f in FILES:
         if "/" + f not in Quiet.asked:
@@ -230,8 +281,12 @@ def main():
             len(failed), len(planned) + len(FILES) + len(TESTS)) + "\n  ".join(failed))
         return 1
     print("PASS: %d pages from the network, by WebKit's own loader in a network process - "
-          "%d fonts and pictures fetched, every page painted as its reference"
-          % (len(planned), len(FILES)))
+          "fonts over HTTP, pictures over HTTPS from an authority added in /Home, "
+          "%d fonts and pictures fetched, every page painted as its reference, "
+          "and a certificate from an authority nobody added refused"
+          % (len([p for p in planned if p[0] not in (REFUSED, "live")]), len(FILES))
+          + (", and %s painted from the internet" % os.environ["KOSMOS_SITES_LIVE"]
+             if os.environ.get("KOSMOS_SITES_LIVE") else ""))
     return 0
 
 
