@@ -107,6 +107,18 @@ uint32_t net_client_accept(uint64_t listener, uint32_t wait_ticks, struct net_co
  * the caller's, copied into a region kept here and grown as asked. */
 uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks);
 
+/* **Waking a poll from another thread** (W7b). `net_client_poll_woken` is
+ * `net_client_poll` whose set may hold one entry with `NET_WANT_WAKE`: that
+ * entry is ready once `net_client_wake` has been called since `wakes` -
+ * what `net_client_wakes` said before the caller looked at what it waits
+ * on - so a wake between the looking and the parking is not lost.
+ * `net_client_wake` marks every such poll this process has parked and asks
+ * the stack to look again; it is what a pipe's writer calls. */
+uint32_t net_client_wakes(void);
+void     net_client_wake(void);
+uint32_t net_client_poll_woken(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks,
+                               uint32_t wakes);
+
 #ifdef __cplusplus
 }
 #endif

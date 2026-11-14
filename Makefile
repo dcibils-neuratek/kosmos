@@ -3371,7 +3371,7 @@ $(UBUILD)/init.bin: $(UBUILD)/init.elf
 #
 POSIX_SRCS := runtime/posix/pthread.c runtime/posix/mman.c runtime/posix/time.c \
               runtime/posix/process.c runtime/posix/fd.c runtime/posix/stdio.c \
-              runtime/posix/socket.c runtime/posix/inet.c runtime/posix/glob.c runtime/posix/program.c \
+              runtime/posix/socket.c runtime/posix/pipe.c runtime/posix/inet.c runtime/posix/glob.c runtime/posix/program.c \
               runtime/posix/locale.c runtime/posix/memalign.c
 POSIX_CFLAGS := -I runtime/posix/include
 POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
@@ -3386,6 +3386,10 @@ POSIX_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(POSIX_SRCS)))
 #
 CXXRT      := build/cxx/$(ARCH)
 CXXRT_LIBS := $(CXXRT)/lib/libc++.a $(CXXRT)/lib/libc++abi.a $(CXXRT)/lib/libunwind.a
+# Asked for by name in every C++ image's link, so the unwinder's backtrace
+# is in it: `abort` reaches for it weakly (`runtime/libc/malloc.c`) to say
+# the whole chain, and a weak reference never pulls an archive's member.
+CXXRT_UNWIND := -Wl,--undefined=_Unwind_Backtrace -Wl,--undefined=_Unwind_GetIP
 
 .PHONY: cxx-runtimes
 cxx-runtimes: $(CXXRT)/.built
@@ -3461,7 +3465,7 @@ CXXTEST_OBJS := $(UBUILD)/user/kits/cxxtest/cxxtest.cpp.o $(UBUILD)/user/kits/cx
 $(UBUILD)/apps/cxxtest.elf: $(USER_OBJS) $(CXXTEST_OBJS) $(POSIX_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(CXXTEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	    -Wl,--start-group $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_cxxtest_kit$$' \
 	    || { echo "apps: cxxtest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_cxxtest_kit$$' \
@@ -3505,7 +3509,7 @@ $(UBUILD)/user/kits/icutest/icutest.cpp.o: user/kits/icutest/icutest.cpp $(CXXRT
 $(UBUILD)/apps/icutest.elf: $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(ICUTEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	    -Wl,--start-group $(ICU_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_icutest_kit$$' \
 	    || { echo "apps: icutest.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_icutest_kit$$' \
@@ -3569,7 +3573,7 @@ $(UBUILD)/user/kits/wtftest/wtftest.cpp.o: user/kits/wtftest/wtftest.cpp $(WEBKI
 $(UBUILD)/apps/wtftest.elf: $(USER_OBJS) $(WTFTEST_OBJS) $(POSIX_OBJS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WTFTEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,--start-group $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_wtftest_kit$$' \
 	    || { echo "apps: wtftest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -3596,7 +3600,7 @@ $(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o: user/installed/JSC/jsc_kosmos.cpp
 $(UBUILD)/apps/jsc.elf: $(USER_OBJS) $(JSC_OBJS) $(POSIX_OBJS) $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(JSC_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,--start-group $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_jsc_kit$$' \
 	    || { echo "apps: jsc.elf does not have its kit"; rm -f $@; exit 1; }
@@ -3705,7 +3709,7 @@ $(UBUILD)/user/kits/texttest/texttest.c.o: user/kits/texttest/texttest.c \
 $(UBUILD)/apps/texttest.elf: $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(TEXTTEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,--start-group $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_texttest_kit$$' \
 	    || { echo "apps: texttest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -3735,7 +3739,7 @@ $(UBUILD)/user/kits/formattest/formattest.cpp.o: user/kits/formattest/formattest
 $(UBUILD)/apps/formattest.elf: $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) $(W5F_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(FORMATTEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(W5F_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,--start-group $(W5F_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_project_kit$$' \
 	    || { echo "apps: formattest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -3799,7 +3803,7 @@ $(UBUILD)/user/kits/skiatest/skiatest.cpp.o: user/kits/skiatest/skiatest.cpp \
 $(UBUILD)/apps/skiatest.elf: $(USER_OBJS) $(SKIATEST_OBJS) $(POSIX_OBJS) $(SKIA_LIB) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(SKIATEST_OBJS) $(POSIX_OBJS) \
-	    -Wl,--start-group $(SKIA_LIB) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) -Wl,--end-group \
+	    -Wl,--start-group $(SKIA_LIB) $(W5_TEXT_LIBS) $(W5_LIBS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_skiatest_kit$$' \
 	    || { echo "apps: skiatest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -4172,7 +4176,7 @@ $(UBUILD)/apps/webcoretest.elf: $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) $
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBCORETEST_OBJS) $(POSIX_OBJS) \
 	    -Wl,--start-group $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) \
-	    $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) -Wl,--end-group \
+	    $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
 	    -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_webcoretest_kit$$' \
 	    || { echo "apps: webcoretest.elf does not have its kit"; rm -f $@; exit 1; }
@@ -4209,7 +4213,7 @@ $(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) $
 	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(POSIX_OBJS) \
 	    -Wl,--start-group $(WEBKIT2_LIBS) $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) \
 	    $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) \
-	    $(CXXRT_LIBS) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
+	    $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_webkit2test_kit$$' \
 	    || { echo "apps: webkit2test.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_webkit2test_kit|kosmos_webkit_role)$$' \

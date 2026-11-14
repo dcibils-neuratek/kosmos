@@ -122,15 +122,19 @@ static const luaL_Reg libs[] = {
 int luaopen_sys(lua_State *L);
 int luaopen_gfx(lua_State *L);
 
+/* `panic_user.c`: a panic's words, heard by a process that is not the
+ * console's owner. */
+void panic_say(const char *s, unsigned long bytes);
+
 static int at_panic(lua_State *L)
 {
     const char *msg = lua_tostring(L, -1);
 
-    kosmos_lua_write("lua panic: ", 11);
+    panic_say("lua panic: ", 11);
     if (msg != NULL) {
-        kosmos_lua_write(msg, strlen(msg));
+        panic_say(msg, strlen(msg));
     }
-    kosmos_lua_write("\n", 1);
+    panic_say("\n", 1);
 
     /*
      * The difference that matters. In the kernel this had to stop the

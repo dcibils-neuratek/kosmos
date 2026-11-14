@@ -19,9 +19,10 @@ typedef void (*webkit2test_say_fn)(const char *line, void *ctx);
 enum webkit2test_mode {
     WEBKIT2TEST_LOAD = 0,         /* load, wait for the picture, paint it */
     WEBKIT2TEST_KILL = 1,         /* the web process ended once it committed */
+    WEBKIT2TEST_URL = 2,          /* `html` is an address, loaded by the network process */
 };
 
-/* The page `html` loaded and its picture painted into the pixels, within
+/* The page `html` - or, in WEBKIT2TEST_URL, the page at that address - loaded and its picture painted into the pixels, within
  * `ms` milliseconds; what happened said a line at a time. 0 when it was
  * painted. */
 int webkit2test_load(const char *html, uint32_t *pixels, unsigned width, unsigned height,

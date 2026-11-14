@@ -33198,3 +33198,79 @@ command, not before it). Run alone straight after, all three passed: 219 of
 219, 4 of 4 and 10 of 10, in 26 s. They are timing under a full machine, not
 this change, and each failed log is kept in `build/gate/failed/`.
 
+
+## 18.807 Pages from the network (W7b)
+
+`docs/w7.md` W7b, its first half: WebKit2's network process fetching a page
+and everything it names over HTTP, by WebKit's own loader on curl, the
+POSIX layer's sockets and the Network Kit.
+
+`x86-sites` (`tools/run_sites.py`): a server on this Mac, on 127.0.0.1 and
+reached from the guest at 10.0.2.2, serves WebKit's own reference tests for
+WOFF2 and AVIF - `fast/text/woff2`, `woff2-totalsfntsize`,
+`fast/images/avif-as-image` and `avif-heif-container-as-image` - each with
+its `-expected.html`, the fonts and pictures they name, and Ahem as
+TrueType, which `woff2-expected.html` sets its box in. `webkit2test.elf`
+loads all eight by URL (`WKPageLoadURL`), each in a web process of its own,
+and paints each one. Every page must be said started, committed, finished,
+pictured and painted; every font and picture must have been asked of the
+server; and each test must paint pixel for pixel as its reference.
+
+PASS: 8 pages, 6 fonts and pictures fetched, 18 checks. Control:
+`KOSMOS_SITES_BREAK=missing` has the server answer 404 for
+`fast/text/resources/ahem.woff2` - "woff2: 3800 of 480000 pixels differ,
+the first (8,8)", FAIL.
+
+What it took, in the order it was found:
+
+- **curl's thread was never woken.** curl's scheduler sleeps in
+  `curl_multi_poll` with no deadline, and the thread that hands it a
+  transfer wakes it with `curl_multi_wakeup` - a byte down a pipe, or a
+  socket pair. The POSIX layer had neither, so curl was built with
+  `CURL_DISABLE_SOCKETPAIR`, the wake-up did nothing, and the network
+  process fetched the page and never the font it named. The POSIX layer
+  has a pipe now (`runtime/posix/pipe.c`), inside the process as every
+  descriptor is: 64 KB, two counts and a lock. Every change bumps one word
+  for the process and wakes its futex; a `poll` on pipes alone sleeps on
+  that word, and a `poll` on pipes *and* sockets - curl's - is parked in
+  the network stack, so the pipe also marks every such poll and nudges the
+  stack to look again (`NET_OP_NUDGE`, and a `NET_WANT_WAKE` entry in the
+  poll set whose word the client writes and the stack only reads).
+  `x86-loader`'s socket program now holds a pipe to all of it: polled
+  alone and beside a quiet listener, each woken by a write from another
+  thread 100 ms later, a blocking read, `EAGAIN`, `POLLHUP` and the end,
+  `EPIPE`, and `S_ISFIFO`. Control: `net_client_wake` returning at once -
+  "poll on a pipe beside a listener said 0 (0x0) after 3100 ms", FAIL.
+- **`dup2` over a socket's last descriptor freed it without closing it.**
+  Found while giving the table its third kind; closing is one function
+  now, for every kind, used by `close` and `dup2` alike.
+- **A process with a POSIX layer died without a word.** `panic` wrote with
+  `kosmos_write`, which only the console's owner may use, so a web or
+  network process that panicked said nothing. Its last words now go
+  through the POSIX layer's console when the process has one
+  (`posix_last_words`), and `abort` says where it was called from - up to
+  14 frames, by the unwinder a C++ image carries.
+- **The second page crashed the UI process, and the bug is WebKit's.** As
+  the first page's web process proxy went, its
+  `BackgroundProcessResponsivenessTimer` was destroyed, and WTF said a
+  `CheckedPtr` still pointed at the timer's task. `RedBlackTree::remove`
+  leaves the removed node's left and right links in place - only `insert`
+  clears them - and since those links became `CheckedPtr`s, a timer that
+  had fired and stayed stopped kept its old neighbours checked; freeing
+  one of them aborts. Generic run loops keep their timers in that tree,
+  which is why GTK's port, on GLib's, does not see it. Patch 0023 resets
+  a node as it is removed.
+- **A reference that was not served.** The first full run had `woff2`
+  3800 pixels from its reference - and the blank one was the reference:
+  `woff2-expected.html` names `../../resources/Ahem.ttf`, which the server
+  did not have, and nothing checked the reference's own requests. The
+  server serves it now and holds it to having been asked for.
+
+The gate for 0.11.412 failed one suite of 128 in 813 s: `x86-cafesa3d-2`,
+which said nothing in 720 s and was stopped. Run alone straight after, it
+passed its 62 checks in 232 s. Nothing in this change is on Cafesa3D's path,
+so this reads as a suite that takes four minutes alone running three times
+slower under a full machine. But four minutes alone is itself too long for
+a suite (*the tests take five to ten minutes*), and a suite that prints only
+at its end cannot tell slow from hung: splitting it, and having it say each
+step as it passes, is on the roadmap.

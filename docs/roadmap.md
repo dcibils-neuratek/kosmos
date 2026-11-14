@@ -152,6 +152,22 @@ more; Broadcom BCM57762 Ethernet, which has no driver, so no netboot and
 no Telnet there yet; no serial port at all (`hal.md`'s old reason for
 ruling it out, which the loader's log and the screen console now answer).
 
+**Broadcom Ethernet, for the Mac Pro and the iMac** - Diego, 14 November
+2026: "We should do the ethernet driver then for the Mac Pro and iMac",
+**after the browser**. The Mac Pro 2013's BCM57762 and the iMac 2019's
+Broadcom gigabit controller (believed a BCM57766, of the same 57765 family -
+read off the machine when it first boots) are both what Linux drives with
+`tg3`, so one driver serves both, as `e1000.c` serves the M700 and the
+ThinkPad. It gives both Macs the network: Telnet, the remote loop, the
+browser on the wire. `docs/drivers.md` *Broadcom Ethernet* has the plan:
+`user/drivers/net/tg3.c` at EL0 with its rings and registers held in a
+`tg3_decode.c` the host tests, as `e1000_decode.c` is, written from Linux's
+`tg3.c` and Broadcom's programmer's reference. QEMU has no model of the
+chip, so the decode is proved on the Mac and the driver on the Mac Pro, with
+a photograph of the screen as the log. Whether the 57766 needs the patch
+firmware Linux loads for it (`tigon/tg357766.bin`) is read before it is
+written.
+
 **About this machine, again** - Diego, 10 October 2026: the "About this
 machine" app "is very raw", "we need a way to show all devices connected to
 this machine, with as much info as possible for every device in a visual and
@@ -10052,7 +10068,62 @@ the applications make the system useful, and is not pulled forward.
   `ArgumentCoderTests` and `EventTests` in the guest, with a ring advanced a
   message early as their control (`w7.md`); nothing reaps an ended web or
   network process yet; and WebKit's user agent quirks for the sites that
-  need them, with W7d. **Next, W7b.**
+  need them, with W7d.
+  **W7b begun, 14 November** (0.11.412): pages and what they name over
+  HTTP, through the network process - a pipe in the POSIX layer for
+  curl's wake-up, the stack nudged for a poll on pipes and sockets, and
+  WebKit's `RedBlackTree::remove` made to reset what it removes (patch
+  0023); `x86-sites` holds WOFF2 and AVIF reference pages loaded by URL.
+  **Next in W7b: HTTPS**, then cookies, the disk cache, and the live sites
+  on the M700.
+  **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s
+  alone, and hung past 720 s in the 0.11.412 gate saying nothing - into
+  halves that run side by side, each printing its steps as it passes, so
+  slow and hung can be told apart.
+  **JetSki as optimised as it can be** (Diego, 14 November 2026: "make
+  sure our jetski code is as optimized as possible"). Agreed as a part of
+  the browser, not an afterthought: each item measured on the M700 and the
+  ThinkPad, never under TCG, before and after, and kept only if it pays.
+  Today's build leaves all of it on the table:
+  - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
+    need JIT for sure"). The build is the interpreter alone (`ENABLE_JIT`,
+    `DFG`, `FTL` and WebAssembly off in `runtime/cxx/jsc.cmake`). Built on
+    Nebula's W^X as it stands: the code pool mapped twice, written through
+    one mapping and run from the `MEM_MAP_RX` one - JavaScriptCore's
+    `ENABLE_SEPARATED_WX_HEAP`, iOS's shape, with its Mach remap ported to
+    `SYS_MEM_MAP`. Steps: (1) the separated heap on Kosmos, and the Baseline
+    JIT with LLInt in assembly, held to test262 as `make test262` holds
+    the interpreter, and to `x86-webkit2` and `x86-sites`; (2) DFG;
+    (3) FTL; (4) WebAssembly, BBQ then OMG, with bounds checked in code
+    since Kosmos has no signals; VM traps by polling for the same reason.
+    Each step measured on the M700 against the interpreter. **Right after
+    W7b's HTTPS**, before cookies - YouTube's player is script all the way
+    down. If the two mappings cannot work, one region writable and
+    executable is the fallback, and that is Diego's decision then.
+  - **WebKit's own allocator.** bmalloc/libpas is off and the libc's
+    `malloc` stands under every allocation; libpas wants wide address
+    reservations, which `vmm` can be taught to give.
+  - **The link**: `--gc-sections` (already noted above), then ThinLTO
+    across WebKit, Skia and the W5 libraries, and identical code folding -
+    smaller images, a quicker spawn of every web process.
+  - **The vector units**: WebKit and Skia built for the processors these
+    machines have (x86-64-v3 with AVX2 where present, with Skia's own
+    runtime choice kept), and the pixel paths checked for SIMD, as
+    `gfx.c` is.
+  - **One copy of the code in memory**: every web and network process maps
+    the same image; its text shared between them rather than loaded per
+    process, if it is not already.
+  - **A profile before guessing**: `make remote-profile` on the M700, pointed at a
+    web process loading a real site, so the next item is chosen by where
+    the time is.
+  **Found on the way, for W7c's *Fast* work** (14 November): the WebKit
+  images are large - `webkit2test.elf` maps 159.6 MB, 154.5 of it code and
+  read-only data, against 44 MB for the whole system's image - and WebKit
+  is compiled with `-ffunction-sections -fdata-sections` while the link
+  has no `--gc-sections`, so every function compiled is linked whether
+  anything calls it or not. Every web and network process maps that image
+  as it starts, which a page waits for. Measure the saving, then take it;
+  then whatever else the map says.
 - **JetSki - WebKit, ported natively - AGREED on 11 November 2026.** Named
   JetSki by Diego the same day: "because us super fast!". Diego: "I need a
   new web browser that is current and usable like safari or chrome", "We need

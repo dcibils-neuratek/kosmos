@@ -734,6 +734,17 @@ SUITES = [
                         "user/kits/egl", "tools/gles_unreached.py",
                         *WEBKIT, *W5)),
 
+    # **W7b's pages from the network** (`docs/w7.md`): the same UI process
+    # loads WebKit's WOFF2 and AVIF reference tests by URL from a server on
+    # this Mac, through the network process, curl and the Network Kit; each
+    # page must paint as its reference, and every font and picture must
+    # have been asked for.
+    Suite("x86-sites", ["python3", "tools/run_sites.py", X86,
+                        "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_sites.py", "tools/pngread.py", "user/kits/webkit2test",
+                        "user/kits/egl", "user/kits/network", "user/servers/net.c",
+                        *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

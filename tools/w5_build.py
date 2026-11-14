@@ -168,10 +168,13 @@ LIBRARIES = {
         "-DCURL_ZSTD=OFF", "-DUSE_NGHTTP2=OFF", "-DUSE_NGTCP2=OFF",
         # The POSIX layer's sockets are IPv4 and TCP.
         "-DENABLE_IPV6=OFF",
-        # The threaded resolver signals its answer down a socketpair or a
-        # pipe, and the POSIX layer has neither: names are looked up as the
-        # call is made (`getaddrinfo`, the stack's resolver). Roadmap.
-        "-DENABLE_THREADED_RESOLVER=OFF", "-DCURL_DISABLE_SOCKETPAIR=ON",
+        # A pipe is what `curl_multi_wakeup` writes to end a `poll` with no
+        # deadline, which WebKit's curl thread sleeps in (W7b): the POSIX
+        # layer has one since 0.11.412 (`pipe.c`). The threaded resolver
+        # signals down one too, but wants its own thread per name as well,
+        # and names are still looked up as the call is made (`getaddrinfo`,
+        # the stack's resolver). Roadmap.
+        "-DENABLE_THREADED_RESOLVER=OFF",
         # No default bundle of roots yet: `/Kosmos/Settings` is not served
         # (`layout.md`), and the TLS Kit's step onto OpenSSL brings them.
         "-DCURL_CA_BUNDLE=none", "-DCURL_CA_PATH=none",

@@ -13,11 +13,25 @@
 #include "panic.h"
 #include "kosmos.h"
 
+/* The POSIX layer's road to the console, in an image that links it
+ * (`runtime/posix/fd.c`): a process that is not the console's owner cannot
+ * `kosmos_write`, and its panic was silent. */
+void posix_last_words(const char *s, unsigned long bytes) __attribute__((weak));
+
+void panic_say(const char *s, unsigned long bytes)
+{
+    if (posix_last_words != 0) {
+        posix_last_words(s, bytes);
+    } else {
+        (void)kosmos_write(s, bytes);
+    }
+}
+
 void panic(const char *msg)
 {
-    (void)kosmos_write("panic: ", 7);
-    (void)kosmos_write(msg, strlen(msg));
-    (void)kosmos_write("\n", 1);
+    panic_say("panic: ", 7);
+    panic_say(msg, strlen(msg));
+    panic_say("\n", 1);
 
     kosmos_exit(70);
 }

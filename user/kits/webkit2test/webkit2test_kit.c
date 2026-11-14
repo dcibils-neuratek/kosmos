@@ -2,7 +2,7 @@
 /*
  * The door to `webkit2test.cpp` (`docs/w7.md` W7a): a kit in no image but
  * `webkit2test.elf`, reached as `use("webkit2test.elf")`.
- * `load(html, surface, ms, "kill"?)` returns what happened, a table of
+ * `load(html, surface, ms, "load"|"kill"|"url")` returns what happened, a table of
  * lines, the last `painted` when the page's picture is in the surface.
  */
 
@@ -37,13 +37,17 @@ static int l_load(lua_State *L)
     const char *mode = luaL_optstring(L, 4, "load");
 
     luaL_argcheck(L, ms > 0 && ms < 600000, 3, "milliseconds");
-    luaL_argcheck(L, !strcmp(mode, "load") || !strcmp(mode, "kill"), 4, "\"load\" or \"kill\"");
+    int which = !strcmp(mode, "load") ? WEBKIT2TEST_LOAD
+              : !strcmp(mode, "kill") ? WEBKIT2TEST_KILL
+              : !strcmp(mode, "url") ? WEBKIT2TEST_URL : -1;
+
+    luaL_argcheck(L, which >= 0, 4, "\"load\", \"kill\" or \"url\"");
     if (posix_console_capability() < 0) {
         posix_console(kit_capability(L, "/Devices/console"));
     }
     lua_newtable(L);
     (void)webkit2test_load(html, pixels, w, h, pitch, (unsigned)ms,
-                           strcmp(mode, "kill") ? WEBKIT2TEST_LOAD : WEBKIT2TEST_KILL, add_line, L);
+                           which, add_line, L);
     return 1;
 }
 

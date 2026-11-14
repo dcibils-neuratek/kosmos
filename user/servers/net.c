@@ -3359,6 +3359,15 @@ static uint32_t poll_ready(struct net_poll_entry *set, uint32_t count)
         uint32_t got = 0;
         struct conn *c;
 
+        /* A wake: the caller's own word, written by another of its
+         * threads (`NET_OP_NUDGE`). Read, never written, here. */
+        if ((want & NET_WANT_WAKE) != 0) {
+            set[i].got = __atomic_load_n(&set[i].handle, __ATOMIC_ACQUIRE) != 0
+                         ? NET_WANT_WAKE : 0;
+            ready += set[i].got != 0;
+            continue;
+        }
+
         /* An entry that wants nothing is a place held: a caller with
          * nothing to watch, waiting for its deadline and no more. */
         if ((want & (NET_WANT_READ | NET_WANT_WRITE | NET_WANT_ACCEPT)) == 0) {
@@ -3940,6 +3949,12 @@ static void serve(const struct message *msg, uint64_t sender)
          */
         return;
     }
+
+    case NET_OP_NUDGE:
+        poll_service();
+        reply.status = NET_OK;
+        answer(sender, &reply);
+        return;
 
     case NET_OP_PUSH: {
         struct conn *c = conn_at(req.handle);

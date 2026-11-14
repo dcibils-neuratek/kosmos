@@ -483,14 +483,72 @@ static void poll_return(struct poll_region *p)
     kosmos_unlock(&polls_lock);
 }
 
+/* The polls parked with a wake entry, each a node on its caller's stack,
+ * and how often `net_client_wake` has been called - both under
+ * `polls_lock`, the count read without it too. */
+struct parked {
+    volatile uint64_t *word;
+    struct parked *next;
+};
+static struct parked *parked;
+static uint32_t wakes;
+
+uint32_t net_client_wakes(void)
+{
+    return __atomic_load_n(&wakes, __ATOMIC_ACQUIRE);
+}
+
+void net_client_wake(void)
+{
+    struct parked *at;
+    int any;
+
+    __atomic_add_fetch(&wakes, 1, __ATOMIC_SEQ_CST);
+    kosmos_lock(&polls_lock);
+    for (at = parked; at != 0; at = at->next) {
+        __atomic_store_n(at->word, 1, __ATOMIC_RELEASE);
+    }
+    any = parked != 0;
+    kosmos_unlock(&polls_lock);
+
+    if (any && net >= 0) {
+        struct net_request req;
+        struct message msg, out;
+
+        memset(&req, 0, sizeof(req));
+        req.op = NET_OP_NUDGE;
+        memset(&msg, 0, sizeof(msg));
+        msg.length = sizeof(req);
+        memcpy(msg.data, &req, sizeof(req));
+        (void)kosmos_call(net, &msg, &out);
+    }
+}
+
+static uint32_t poll_in(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks,
+                        int woken, uint32_t seen);
+
 uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks)
+{
+    return poll_in(set, n, wait_ticks, 0, 0);
+}
+
+uint32_t net_client_poll_woken(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks,
+                               uint32_t seen)
+{
+    return poll_in(set, n, wait_ticks, 1, seen);
+}
+
+static uint32_t poll_in(struct net_poll_entry *set, uint32_t n, uint32_t wait_ticks,
+                        int woken, uint32_t seen)
 {
     struct net_request req;
     struct net_reply rep;
     struct message msg, out;
     struct poll_region own = { .region = -1 };
     struct poll_region *p = poll_borrow();
+    struct parked me = { 0, 0 };
     uint32_t i, status;
+    int called;
 
     if (p == 0) {
         p = &own;
@@ -511,6 +569,26 @@ uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_t
         p->at[i].got = 0;
     }
 
+    /* The wake entry, parked where `net_client_wake` will find it - and
+     * marked at once if a wake came since the caller looked. */
+    me.word = 0;
+    for (i = 0; woken && i < n; i++) {
+        if (p->at[i].want & NET_WANT_WAKE) {
+            p->at[i].handle = 0;
+            me.word = &p->at[i].handle;
+            break;
+        }
+    }
+    if (me.word != 0) {
+        kosmos_lock(&polls_lock);
+        me.next = parked;
+        parked = &me;
+        kosmos_unlock(&polls_lock);
+        if (net_client_wakes() != seen) {
+            __atomic_store_n(me.word, 1, __ATOMIC_RELEASE);
+        }
+    }
+
     memset(&req, 0, sizeof(req));
     req.op         = NET_OP_POLL;
     req.wait_ticks = wait_ticks;
@@ -521,7 +599,22 @@ uint32_t net_client_poll(struct net_poll_entry *set, uint32_t n, uint32_t wait_t
     msg.cap_plus_one = (uint32_t)(p->region + 1);
     memcpy(msg.data, &req, sizeof(req));
 
-    if (net < 0 || kosmos_call(net, &msg, &out) != 0 || out.length < sizeof(rep)) {
+    called = net >= 0 && kosmos_call(net, &msg, &out) == 0;
+
+    if (me.word != 0) {
+        struct parked **at;
+
+        kosmos_lock(&polls_lock);
+        for (at = &parked; *at != 0; at = &(*at)->next) {
+            if (*at == &me) {
+                *at = me.next;
+                break;
+            }
+        }
+        kosmos_unlock(&polls_lock);
+    }
+
+    if (!called || out.length < sizeof(rep)) {
         status = ~0u;
         goto done;
     }

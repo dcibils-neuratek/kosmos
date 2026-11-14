@@ -37,6 +37,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <panic.h>
@@ -679,9 +680,51 @@ size_t malloc_usable_size(void *p)
     return p == NULL ? 0 : BLOCK(p)->size;
 }
 
+/*
+ * Said with where it was called from. In an image with the C++ runtime
+ * the unwinder walks the tables every C++ image carries (`--eh-frame-hdr`)
+ * and gives the true chain, a dozen frames of it; elsewhere it is the
+ * caller alone. `addr2line -e` on the unstripped image turns either into
+ * lines: a port's `abort` is otherwise anonymous.
+ */
+struct _Unwind_Context;
+typedef int (*kosmos_unwind_fn)(struct _Unwind_Context *, void *);
+int _Unwind_Backtrace(kosmos_unwind_fn, void *) __attribute__((weak));
+unsigned long _Unwind_GetIP(struct _Unwind_Context *) __attribute__((weak));
+
+struct frames {
+    char said[256];
+    int used, count;
+};
+
+static int one_frame(struct _Unwind_Context *context, void *arg)
+{
+    struct frames *f = arg;
+
+    if (f->count++ >= 14 || f->used >= (int)sizeof f->said - 24) {
+        return 5;                       /* _URC_END_OF_STACK */
+    }
+
+    f->used += snprintf(f->said + f->used, sizeof f->said - (size_t)f->used,
+                        " %#lx", _Unwind_GetIP(context));
+    return 0;                           /* _URC_NO_REASON */
+}
+
 void abort(void)
 {
-    panic("abort() was called");
+    struct frames f;
+
+    f.used = snprintf(f.said, sizeof f.said, "abort() was called, from");
+    f.count = 0;
+
+    if (_Unwind_Backtrace != 0 && _Unwind_GetIP != 0) {
+        (void)_Unwind_Backtrace(one_frame, &f);
+    } else {
+        snprintf(f.said + f.used, sizeof f.said - (size_t)f.used, " %#lx",
+                 (unsigned long)__builtin_return_address(0));
+    }
+
+    panic(f.said);
 }
 
 /*

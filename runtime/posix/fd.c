@@ -56,6 +56,8 @@ struct open_file {
     int      flags;                     /* O_ACCMODE, O_APPEND, O_NONBLOCK */
     int      dir;
     struct posix_socket *sock;          /* a socket's, NULL for a file */
+    struct posix_pipe *pipe;            /* a pipe's end, NULL otherwise (`pipe.c`) */
+    int      pipe_end;                  /* 0 reads, 1 writes */
     uint64_t offset;
     int      unlinked;                  /* removed at the last close (`unlink`) */
     char     path[STORAGE_PATH_MAX];
@@ -169,7 +171,7 @@ static int take(int fd, struct taken *t)
     pthread_mutex_lock(&lock);
     f = file_of(fd);
 
-    if (f != NULL && f->sock != NULL) {
+    if (f != NULL && (f->sock != NULL || f->pipe != NULL)) {
         is_socket = 1;
     } else if (f != NULL) {
         t->flags = f->flags;
@@ -241,6 +243,81 @@ struct posix_socket *posix_fd_socket(int fd, int *flags)
 
     pthread_mutex_unlock(&lock);
     return s;
+}
+
+int posix_fd_pipe_new(struct posix_pipe *p, int end, int flags)
+{
+    struct open_file *f = calloc(1, sizeof(*f));
+    int fd;
+
+    if (f == NULL) {
+        return fails(ENOMEM);
+    }
+
+    f->refs = 1;
+    f->flags = (end ? O_WRONLY : O_RDONLY) | (flags & O_NONBLOCK);
+    f->pipe = p;
+    f->pipe_end = end;
+
+    pthread_mutex_lock(&lock);
+    fd = free_slot(CONSOLE);
+
+    if (fd >= 0) {
+        slots[fd].file = f;
+        slots[fd].cloexec = (flags & O_CLOEXEC) != 0;
+    }
+
+    pthread_mutex_unlock(&lock);
+
+    if (fd < 0) {
+        free(f);
+        return fails(EMFILE);
+    }
+
+    return fd;
+}
+
+struct posix_pipe *posix_fd_pipe(int fd, int *flags, int *end)
+{
+    struct open_file *f;
+    struct posix_pipe *p = NULL;
+
+    pthread_mutex_lock(&lock);
+    f = file_of(fd);
+
+    if (f != NULL && f->pipe != NULL) {
+        p = f->pipe;
+
+        if (flags != NULL) {
+            *flags = f->flags;
+        }
+
+        if (end != NULL) {
+            *end = f->pipe_end;
+        }
+    }
+
+    pthread_mutex_unlock(&lock);
+    return p;
+}
+
+/* An open file whose last descriptor has gone, with the lock not held:
+ * whatever is behind it let go of, and it freed. */
+static void release(struct open_file *f)
+{
+    if (f == NULL) {
+        return;
+    }
+
+    if (f->sock != NULL) {
+        posix_socket_close(f->sock);
+    }
+
+    if (f->pipe != NULL) {
+        posix_pipe_close(f->pipe, f->pipe_end);
+    }
+
+    free(f);
 }
 
 int posix_fd_open(int fd)
@@ -459,15 +536,11 @@ int close(int fd)
         return fails(EBADF);
     }
 
-    if (f != NULL && f->sock != NULL) {
-        posix_socket_close(f->sock);
-    }
-
     if (remove_now) {
         (void)storage_delete(f->path);
     }
 
-    free(f);
+    release(f);
     return 0;
 }
 
@@ -508,7 +581,7 @@ static int duplicate(int fd, int to, int exact, int cloexec)
                 slots[got].cloexec = cloexec;
                 f->refs++;
                 pthread_mutex_unlock(&lock);
-                free(old);
+                release(old);
                 return got;
             }
         }
@@ -640,6 +713,14 @@ static ssize_t console_write(const void *buf, size_t bytes)
     return (ssize_t)bytes;
 }
 
+/* A process's last words - `panic()` and Lua's (`user/init/`) - by the
+ * same road as standard error, so a program that is not the console's
+ * owner is heard as it ends rather than spilling into a ring nobody reads. */
+void posix_last_words(const char *s, unsigned long bytes)
+{
+    (void)console_write(s, (size_t)bytes);
+}
+
 ssize_t pread(int fd, void *buf, size_t bytes, off_t offset)
 {
     struct taken t;
@@ -686,6 +767,15 @@ ssize_t read(int fd, void *buf, size_t bytes)
 
     if ((s = posix_fd_socket(fd, &flags)) != NULL) {
         return posix_socket_recv(s, buf, bytes, (flags & O_NONBLOCK) != 0);
+    }
+
+    {
+        int end;
+        struct posix_pipe *p = posix_fd_pipe(fd, &flags, &end);
+
+        if (p != NULL) {
+            return end ? fails(EBADF) : posix_pipe_read(p, buf, bytes, (flags & O_NONBLOCK) != 0);
+        }
     }
 
     if (take(fd, &t) != 0) {
@@ -756,6 +846,15 @@ ssize_t write(int fd, const void *buf, size_t bytes)
 
     if ((s = posix_fd_socket(fd, &flags)) != NULL) {
         return posix_socket_send(s, buf, bytes, (flags & O_NONBLOCK) != 0);
+    }
+
+    {
+        int end;
+        struct posix_pipe *p = posix_fd_pipe(fd, &flags, &end);
+
+        if (p != NULL) {
+            return !end ? fails(EBADF) : posix_pipe_write(p, buf, bytes, (flags & O_NONBLOCK) != 0);
+        }
     }
 
     if (take(fd, &t) != 0) {
@@ -953,6 +1052,14 @@ int fstat(int fd, struct stat *out)
         out->st_mode = S_IFCHR | 0620;
         out->st_nlink = 1;
         out->st_blksize = 1024;
+        return 0;
+    }
+
+    if (posix_fd_pipe(fd, NULL, NULL) != NULL) {
+        memset(out, 0, sizeof(*out));
+        out->st_mode = S_IFIFO | 0600;
+        out->st_nlink = 1;
+        out->st_blksize = 4096;
         return 0;
     }
 

@@ -10,6 +10,9 @@
  * the main run loop until its navigation finishes and a picture has
  * arrived after it. The picture is then painted by `WKPagePaintKosmos`.
  *
+ * In `WEBKIT2TEST_URL` the page is an address, and the network process
+ * fetches it and everything it refers to, through curl (W7b).
+ *
  * The control (`WEBKIT2TEST_KILL`): the web process is ended as soon as
  * the navigation commits. The UI process must be told, say so, and load
  * the page again - its string, a new web process has never seen it - in a
@@ -77,6 +80,11 @@ struct Load {
 };
 
 Load& of(const void* info) { return *const_cast<Load*>(static_cast<const Load*>(info)); }
+
+void didStart(WKPageRef page, WKNavigationRef, WKTypeRef, const void* info)
+{
+    of(info).line("started in %d", static_cast<int>(WKPageGetProcessIdentifier(page)));
+}
 
 void didCommit(WKPageRef page, WKNavigationRef, WKTypeRef, const void* info)
 {
@@ -167,6 +175,7 @@ extern "C" int webkit2test_load(const char* html, uint32_t* pixels, unsigned wid
     load.page = WKViewGetPage(view.get());
     WKPageNavigationClientV0 navigation { };
     navigation.base = { 0, &load };
+    navigation.didStartProvisionalNavigation = didStart;
     navigation.didCommitNavigation = didCommit;
     navigation.didFinishNavigation = didFinish;
     navigation.didFailNavigation = didFail;
@@ -174,9 +183,14 @@ extern "C" int webkit2test_load(const char* html, uint32_t* pixels, unsigned wid
     navigation.webProcessDidCrash = didCrash;
     WKPageSetPageNavigationClient(load.page, &navigation.base);
 
-    auto string = adoptWK(WKStringCreateWithUTF8CString(html));
-    auto base = adoptWK(WKURLCreateWithUTF8CString("about:blank"));
-    WKPageLoadHTMLString(load.page, string.get(), base.get());
+    if (mode == WEBKIT2TEST_URL) {
+        auto url = adoptWK(WKURLCreateWithUTF8CString(html));
+        WKPageLoadURL(load.page, url.get());
+    } else {
+        auto string = adoptWK(WKStringCreateWithUTF8CString(html));
+        auto base = adoptWK(WKURLCreateWithUTF8CString("about:blank"));
+        WKPageLoadHTMLString(load.page, string.get(), base.get());
+    }
 
     WTF::RunLoop::Timer deadline(WTF::RunLoop::mainSingleton(), "webkit2test deadline"_s, [&load] {
         load.timedOut = true;

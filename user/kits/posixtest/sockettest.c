@@ -14,6 +14,9 @@
  *     the network kit's poll regions lent to all four;
  *   - a refusal: `connect` to a port nobody answers is `ECONNREFUSED`;
  *   - a timeout: `poll` on a listener nobody calls, 200 ms, answers 0;
+ *   - pipes (W7b): `poll` with no deadline on a pipe, alone and beside that
+ *     listener, ended by another thread's write; a blocking `read` woken;
+ *     `EAGAIN`, the end, `EPIPE` and `S_IFIFO`;
  *   - and a listener: `bind`, `listen`, `poll`, `accept`, and a line each
  *     way with whoever the harness sends through QEMU's port forward;
  *   - descriptors: `read` and `write` on a socket, `fstat` says a socket,
@@ -195,6 +198,16 @@ static void *fetch_one(void *arg)
 /*
  *--------------------------------------------------------------------------
  */
+
+/* A byte down the pipe, after 100 ms: for a thread waiting on it. */
+static void *write_later(void *fd)
+{
+    struct timespec t = { 0, 100 * 1000000L };
+
+    nanosleep(&t, NULL);
+    (void)write(*(int *)fd, "w", 1);
+    return NULL;
+}
 
 int kosmos_sockettest_run(char *out, unsigned long size, const char *to, int at,
                           int refused_at, int listen_at)
@@ -472,6 +485,87 @@ int kosmos_sockettest_run(char *out, unsigned long size, const char *to, int at,
             SAY("sockets: poll on nobody said %d after %lld ms", r, now_ms() - began);
         }
 
+        /* A pipe (W7b): `poll` with no deadline, on the pipe alone and
+         * then beside this listener - where the stack holds the wait, as
+         * curl's thread is held - is ended by a write from another thread.
+         * A wake that does not arrive is the deadline, 3 s, and says so. */
+        {
+            int fds[2], rounds;
+            struct stat st;
+            char c = 0;
+
+            if (pipe(fds) != 0 || fstat(fds[0], &st) != 0 || !S_ISFIFO(st.st_mode)) {
+                SAY("pipes: pipe or fstat: errno %d", errno);
+            }
+
+            for (rounds = 0; rounds < 2; rounds++) {
+                struct pollfd both[2] = { { fds[0], POLLIN, 0 }, { quiet, POLLIN, 0 } };
+                pthread_t writer;
+                long long waited;
+
+                if (pthread_create(&writer, NULL, write_later, &fds[1]) != 0) {
+                    SAY("pipes: pthread_create");
+                }
+
+                began = now_ms();
+                r = poll(both, rounds == 0 ? 1 : 2, 3000);
+                waited = now_ms() - began;
+                pthread_join(writer, NULL);
+
+                if (r != 1 || !(both[0].revents & POLLIN) || waited < 90 || waited > 2000) {
+                    SAY("pipes: poll on a pipe%s said %d (%#x) after %lld ms",
+                        rounds ? " beside a listener" : "", r, both[0].revents, waited);
+                }
+
+                if (read(fds[0], &c, 1) != 1 || c != 'w') {
+                    SAY("pipes: read after poll: errno %d", errno);
+                }
+            }
+
+            /* Blocking read, woken; then what an empty, a finished and a
+             * readerless pipe say. */
+            {
+                pthread_t writer;
+
+                if (pthread_create(&writer, NULL, write_later, &fds[1]) != 0
+                    || read(fds[0], &c, 1) != 1 || c != 'w') {
+                    SAY("pipes: a blocking read: errno %d", errno);
+                }
+
+                pthread_join(writer, NULL);
+            }
+
+            fcntl(fds[0], F_SETFL, O_NONBLOCK);
+
+            if (read(fds[0], &c, 1) != -1 || errno != EAGAIN) {
+                SAY("pipes: an empty pipe was errno %d, not EAGAIN", errno);
+            }
+
+            if (write(fds[1], "end", 3) != 3 || close(fds[1]) != 0) {
+                SAY("pipes: write and close: errno %d", errno);
+            }
+
+            {
+                char got[8];
+                struct pollfd hup = { fds[0], POLLIN, 0 };
+
+                if (read(fds[0], got, sizeof got) != 3 || memcmp(got, "end", 3) != 0
+                    || poll(&hup, 1, 0) != 1 || !(hup.revents & POLLHUP)
+                    || read(fds[0], got, sizeof got) != 0) {
+                    SAY("pipes: the bytes before the end, then the end, not said");
+                }
+            }
+
+            close(fds[0]);
+
+            if (pipe(fds) != 0 || close(fds[0]) != 0
+                || write(fds[1], "x", 1) != -1 || errno != EPIPE) {
+                SAY("pipes: a write with no reader was errno %d, not EPIPE", errno);
+            }
+
+            close(fds[1]);
+        }
+
         close(quiet);
     }
 
@@ -510,6 +604,7 @@ int kosmos_sockettest_run(char *out, unsigned long size, const char *to, int at,
 
     free(body);
     snprintf(out, size, "sockets: names, fetched %d, two under poll, four threads, "
-             "refused, timed out, accepted, descriptors", BIG_BODY);
+             "refused, timed out, pipes woken alone and beside a listener, accepted, "
+             "descriptors", BIG_BODY);
     return 0;
 }

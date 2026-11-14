@@ -791,8 +791,8 @@ static short socket_now(struct posix_socket *s, short events)
 
 int poll(struct pollfd *set, nfds_t count, int timeout_ms)
 {
-    struct net_poll_entry few[16], *entries = few;
-    nfds_t *which = NULL, few_which[16];
+    struct net_poll_entry few[17], *entries = few;
+    nfds_t *which = NULL, few_which[17];
     long long until = timeout_ms > 0 ? now_ns() + (long long)timeout_ms * 1000000LL : 0;
     nfds_t i;
     int ready;
@@ -801,9 +801,10 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
         return fails(EFAULT);
     }
 
+    /* One more than the set: a pipe's wake entry (`pipe.c`). */
     if (count > 16) {
-        entries = malloc(count * sizeof(*entries));
-        which = malloc(count * sizeof(*which));
+        entries = malloc((count + 1) * sizeof(*entries));
+        which = malloc((count + 1) * sizeof(*which));
 
         if (entries == NULL || which == NULL) {
             free(entries);
@@ -816,6 +817,9 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
 
     for (;;) {
         uint32_t asked = 0;
+        /* What a pipe's change is counted against, taken before looking. */
+        uint32_t piped = posix_pipe_generation(), wakes = net_client_wakes();
+        int pipes = 0;
 
         ready = 0;
 
@@ -828,6 +832,21 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
 
             if (fd < 0) {
                 continue;
+            }
+
+            {
+                int end;
+                struct posix_pipe *pp = posix_fd_pipe(fd, NULL, &end);
+
+                if (pp != NULL) {
+                    set[i].revents = posix_pipe_now(pp, end, set[i].events);
+                    if (set[i].revents != 0) {
+                        ready++;
+                    } else {
+                        pipes++;
+                    }
+                    continue;
+                }
             }
 
             s = posix_fd_socket(fd, NULL);
@@ -873,6 +892,15 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
             int listeners = 0;
             uint32_t k, r;
 
+            /* A pipe waited on beside sockets: the stack holds the wait,
+             * and a write to the pipe ends it (`net_client_wake`). */
+            if (pipes > 0) {
+                entries[asked].handle = 0;
+                entries[asked].want = NET_WANT_WAKE;
+                entries[asked].got = 0;
+                which[asked++] = (nfds_t)-1;
+            }
+
             for (k = 0; k < asked; k++) {
                 listeners += entries[k].want == NET_WANT_ACCEPT;
             }
@@ -882,9 +910,9 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
                     break;
                 }
 
-                r = net_client_poll(entries, asked, 1);
+                r = net_client_poll_woken(entries, asked, 1, wakes);
             } else {
-                r = net_client_poll(entries, asked, stretch(until));
+                r = net_client_poll_woken(entries, asked, stretch(until), wakes);
             }
 
             if (r != NET_OK) {
@@ -895,9 +923,15 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
             }
 
             for (k = 0; k < asked; k++) {
-                struct pollfd *p = &set[which[k]];
+                struct pollfd *p;
                 uint32_t got = entries[k].got;
                 short add = 0;
+
+                if (which[k] == (nfds_t)-1) {
+                    continue;               /* the wake: looked at again above */
+                }
+
+                p = &set[which[k]];
 
                 if (got & NET_WANT_ACCEPT) add |= (short)(p->events & (POLLIN | POLLRDNORM));
                 if (got & NET_WANT_READ)   add |= (short)(p->events & (POLLIN | POLLRDNORM));
@@ -920,6 +954,14 @@ int poll(struct pollfd *set, nfds_t count, int timeout_ms)
 
         if (ready > 0 || timeout_ms == 0) {
             break;
+        }
+
+        /* Pipes and nothing of the stack's: their word, waited on. */
+        if (pipes > 0) {
+            if (!posix_pipe_wait(piped, until)) {
+                break;
+            }
+            continue;
         }
 
         /* Nothing that can become ready: the time, slept. */

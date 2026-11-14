@@ -190,6 +190,16 @@
  */
 #define NET_OP_STATS    15u     /* its shapes are below `struct net_addr` */
 
+/*
+ * **Look at every parked poll again** (`docs/w7.md` W7b). Answered at once,
+ * and it asks nothing: what it does is answer any `NET_OP_POLL` whose
+ * `NET_WANT_WAKE` entry has been written since it parked. A pipe in a
+ * process - curl's own wake-up, which its thread sleeps on with no
+ * deadline - is something the stack knows nothing about, and this is how
+ * writing one ends a wait the stack is holding.
+ */
+#define NET_OP_NUDGE    16u
+
 
 /* The most a datagram carries: an Ethernet frame's, less IP and UDP. */
 #define NET_DATAGRAM_MAX  1472u
@@ -257,6 +267,10 @@
 #define NET_WANT_WRITE   2u
 #define NET_WANT_ACCEPT  4u
 #define NET_GOT_OVER     8u
+/* An entry that names no connection: ready once its `handle` is not zero,
+ * which another thread of the caller's own writes while the poll is parked,
+ * before it sends `NET_OP_NUDGE`. The stack only reads it. */
+#define NET_WANT_WAKE   16u
 
 struct net_poll_entry {
     uint64_t handle;

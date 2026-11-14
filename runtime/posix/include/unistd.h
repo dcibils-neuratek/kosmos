@@ -78,6 +78,9 @@ int     fsync(int fd);
 int     fdatasync(int fd);
 int     dup(int fd);
 int     dup2(int fd, int to);
+/* A pipe between this process's own threads (`pipe.c`): it never leaves it. */
+int     pipe(int fds[2]);
+int     pipe2(int fds[2], int flags);
 int     unlink(const char *path);
 int     rmdir(const char *path);
 int     rename(const char *from, const char *to);

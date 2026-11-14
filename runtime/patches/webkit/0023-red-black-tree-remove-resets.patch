@@ -1,0 +1,26 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A node removed from a RedBlackTree is reset (docs/w7.md W7b).
+
+remove() left the removed node's left and right links in place, and
+only insert() cleared them. Since those links became CheckedPtrs, a node
+out of the tree kept its old neighbours checked: RunLoopGeneric's timers
+are such nodes, and a timer that had fired and stayed stopped made
+freeing its neighbour crash - WebKit2's BackgroundProcessResponsivenessTimer
+as a closed page's web process proxy went (testing.md 18.807). Upstream
+has the same code; its other run loops do not keep timers in this tree.
+
+--- a/Source/WTF/wtf/RedBlackTree.h	2026-11-14 14:50:00.566905671 -0300
++++ b/Source/WTF/wtf/RedBlackTree.h	2026-11-14 14:50:00.582195142 -0300
+@@ -286,6 +286,11 @@
+         } else if (y->color() == Black)
+             removeFixup(x, xParent);
+ 
++        // Z is out of the tree: its links go, as insert() clears a node's
++        // before it goes in. They are CheckedPtrs, and a removed node that
++        // kept them - a timer that fired and stays stopped - held its old
++        // neighbours checked, so freeing one of them crashed.
++        z->reset();
+         return z;
+     }
+     

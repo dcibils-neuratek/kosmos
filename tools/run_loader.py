@@ -535,7 +535,8 @@ def main():
 
         socket_said[0] = said if CXX else "not in TinyCC's images"
         check(not CXX or said == "sockettest: sockets: names, fetched 200000, two under "
-                                 "poll, four threads, refused, timed out, accepted, descriptors",
+                                 "poll, four threads, refused, timed out, pipes woken alone and "
+                                 "beside a listener, accepted, descriptors",
               "the sockets' checks in posixtest.elf did not all hold: %r" % said)
         # The guest has answered by now, and the caller's thread may not
         # have read the answer yet: a few seconds for it to.

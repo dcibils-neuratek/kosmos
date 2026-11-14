@@ -2877,3 +2877,49 @@ other side's first call always failed. The answer now goes first.
 
 **Measurements.** 2.1 seconds in the test machine for the three loads, the
 killed one included. WebKit2's own code compiled to 205 objects.
+
+## 14 November 2026 - Pages from the network
+
+**In short.** The browser now fetches pages over the network itself: the
+page, then every font and picture it names, by WebKit's own loader in its
+network process. Getting there needed a pipe, which Kosmos did not have,
+and a fix to a bug in WebKit that crashed the window on the second page.
+
+**What.** WebKit's network process uses curl. curl keeps one thread
+asleep, waiting on its sockets, and wakes it by writing a byte down a pipe
+whenever there is new work. Kosmos had no pipes, so curl was built without
+that wake-up: it fetched the first page and then slept through the request
+for its font. The POSIX layer, the part of a ported program that speaks
+Unix to it, now has a pipe. Like every descriptor here, it never leaves its
+process. The hard part was waking a thread that waits on a pipe and on
+sockets at once, because a wait on sockets is held in the network stack.
+So a write to a pipe also asks the stack to look again.
+
+**Why.** W7b is the browser using the network. Everything after it, such
+as HTTPS, cookies and YouTube, stands on pages arriving this way.
+
+**Visible impact.** Still headless: the window is W7c. Eight test pages
+are now fetched from a server and painted exactly as their references.
+
+**How it is checked.** `x86-sites` serves WebKit's own font and picture
+tests from this Mac. The guest loads each one by address and compares it
+pixel for pixel with its reference. To show it bites, the server refuses
+one font, and that page comes out wrong. A second control takes the
+pipe's nudge to the stack away, and the test of a pipe waited on beside a
+socket then sleeps until its deadline.
+
+**What it found.** Four things. First, curl's missing wake-up, above.
+Second, a program that crashed said nothing, because its last words went
+somewhere only the console's owner may write; now they go to its own
+console. Third, the second page crashed the window, and the bug is in
+WebKit itself. Its timers live in a red-black tree, and removing a node
+left that node still pointing at its old neighbours, through pointers that
+check whether what they point at still exists. So when a neighbour was
+freed, WebKit stopped the program. Kosmos's run loop keeps timers in that
+tree and GTK's does not, which is why nobody else has met it. A patch
+clears the links as a node is removed. Fourth, a reference page drew blank
+because the test server lacked the font it named, and nothing had checked
+that the reference's own requests were answered.
+
+**Measurements.** Eight pages and six fonts and pictures, each page in a
+web process of its own.

@@ -868,6 +868,26 @@ worktree or start work in one, and do not offer anything that would. **A fix
 or a follow-up noticed along the way goes into `docs/roadmap.md`**, and is
 done on `main` when its time comes.
 
+**A lane beside the session, amended 14 November 2026.** Diego asked for
+the Broadcom Ethernet driver to be worked on while the browser is: "Can we
+open a new task to work on the ethernet driver as it doesn't touch the
+browser code?" - "Yes" to a *lane*, which keeps everything the rule above
+protects. A lane is a second worker in the same checkout on `main`, never a
+worktree, with a fixed list of files it may touch - for the driver,
+`user/drivers/net/tg3*`, its host test under `tools/`, and
+`docs/drivers.md`'s Broadcom section. It builds and runs only its own host
+test, by hand, never `make` or `make test`; it never bumps, commits, or
+edits `Makefile`, `VERSION`, `state.md`, `testing.md`, the roadmap or the
+README; and when a piece is ready it says so, and the main session folds it
+into its next commit, version and gate - so there is still one line of
+history, one gate and one set of numbers. Anything that needs the machine
+- a stick for the Mac Pro - is built by the main session between gates.
+**And the merging is never Diego's.** The same day: "The reason I said
+that before is because I didn't know how to merge code between sesiones
+but you should handle that". So whatever shape parallel work takes, folding
+it into `main` - files, versions, documents, the gate - is the main
+session's job, and nothing about it is handed to him.
+
 **Every feature Diego asks for and we agree to build goes into
 `docs/roadmap.md` the day it is agreed**, before any of it is built. Diego, 14
 September 2026: "all the things i request will be pushed to the roadmap file",
