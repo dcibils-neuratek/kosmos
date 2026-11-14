@@ -2,7 +2,30 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-14 (0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+
+---
+
+## 14 November, late night: fonts as files, the lane folded in (0.11.414, not pushed)
+
+`testing.md` 18.809:
+
+- binfs serves a `fonts` view and init mounts it at `/Kosmos/Fonts`, from
+  one table, `BIN_FOLDERS`, the shell and the program runner both use (the
+  runner had its own list, which the new `posixtest` check found). WebKit's
+  default font folder is that path, so `KOSMOS_SITES_LIVE` painted
+  Wikipedia's BeOS page with its words in IBM Plex - sent to Diego.
+- `webkit2test` calls a page pictured after a picture since commit and a
+  quiet second after the finish: big pages paint before they finish.
+- The lane's Broadcom 57765 decode is in: `test_tg3decode` in `make
+  host-check`, 60 checks, control recorded; `tg3.c` a draft, not linked;
+  `docs/drivers.md`'s section. The lane is finished.
+
+Diego chose **window then JIT**. Next: W7c, the JetSki window, as
+`docs/w7.md` *The first slice* has it - `jetski.elf` as the UI process's
+kit, the JetSki app in `/Home/Apps/JetSki`, a screenshot to Diego, then
+the pointer, the wheel and keys. Asked and not answered: whether roadmap
+4h names a Vulkan driver (Mesa's anv) with GL through Zink as its shape.
 
 ---
 

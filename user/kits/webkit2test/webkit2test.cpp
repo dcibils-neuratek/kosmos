@@ -55,7 +55,9 @@ struct Load {
     int mode;
     const char* html;
     bool finished = false;
-    bool pictured = false;      // a picture arrived after the finish
+    bool pictured = false;      // finished, a picture since, and then quiet
+    bool seen = false;          // a picture arrived since the page committed
+    WTF::RunLoop::Timer* settle = nullptr;
     bool crashed = false;
     bool killed = false;
     bool failed = false;
@@ -87,9 +89,26 @@ void didStart(WKPageRef page, WKNavigationRef, WKTypeRef, const void* info)
     of(info).line("started in %d", static_cast<int>(WKPageGetProcessIdentifier(page)));
 }
 
+// **A page is pictured when it has a picture and has stopped changing.** A
+// small page paints after its load event, and that picture was the signal;
+// a large one - Wikipedia - paints as it arrives, and its last picture can
+// come before the finish, after which nothing more ever does. So: a picture
+// since the commit, then a quiet second after the finish with no new one.
+constexpr WTF::Seconds quiet { 1 };
+
+void settled(Load& load)
+{
+    if (load.finished && load.seen && !load.pictured) {
+        load.pictured = true;
+        load.line("pictured");
+    }
+    load.stopIfDone();
+}
+
 void didCommit(WKPageRef page, WKNavigationRef, WKTypeRef, const void* info)
 {
     auto& load = of(info);
+    load.seen = false;                      // pictures of this page, from now
     load.line("committed in %d", static_cast<int>(WKPageGetProcessIdentifier(page)));
     if (load.mode == WEBKIT2TEST_KILL && !load.killed) {
         load.killed = true;
@@ -103,7 +122,8 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     auto& load = of(info);
     load.finished = true;
     load.line("finished");
-    load.stopIfDone();
+    if (load.settle)
+        load.settle->startOneShot(quiet);
 }
 
 void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void* info)
@@ -128,6 +148,7 @@ void didCrash(WKPageRef page, const void* info)
     }
     load.finished = false;
     load.pictured = false;
+    load.seen = false;
     load.line("loading again");
     // The page was given as a string, which a new web process has never
     // seen: it is given again, as a browser loads the address again.
@@ -139,11 +160,9 @@ void didCrash(WKPageRef page, const void* info)
 void needsDisplay(WKViewRef, WKRect, const void* info)
 {
     auto& load = of(info);
-    if (load.finished && !load.pictured) {
-        load.pictured = true;
-        load.line("pictured");
-    }
-    load.stopIfDone();
+    load.seen = true;
+    if (load.finished && !load.pictured && load.settle)
+        load.settle->startOneShot(quiet);
 }
 
 WKContextRef context()
@@ -185,6 +204,11 @@ extern "C" int webkit2test_load(const char* html, uint32_t* pixels, unsigned wid
     navigation.didFailProvisionalNavigation = didFail;
     navigation.webProcessDidCrash = didCrash;
     WKPageSetPageNavigationClient(load.page, &navigation.base);
+
+    WTF::RunLoop::Timer settle(WTF::RunLoop::mainSingleton(), "webkit2test settle"_s, [&load] {
+        settled(load);
+    });
+    load.settle = &settle;
 
     if (mode == WEBKIT2TEST_URL) {
         auto url = adoptWK(WKURLCreateWithUTF8CString(html));

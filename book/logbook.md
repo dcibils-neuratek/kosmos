@@ -2952,3 +2952,29 @@ fails.
 
 **Measurements.** Mozilla's list is 225 KB inside a 160 MB program. One
 page in the run is refused, as it should be.
+
+## 14 November 2026 - Fonts as files, and a page with its words
+
+**In short:** Kosmos's fonts are now files in `/Kosmos/Fonts`, where
+WebKit looks for them by default, so a real page loaded from the internet -
+Wikipedia's article on BeOS - now paints with its text instead of without
+it. The Broadcom network chip's decoding, written beside this work for the
+Mac Pro and the iMac, is folded in and tested.
+
+**What changed.** The faces the system image carries were reachable only
+from inside the drawing kit. The server that serves the image's files now
+offers them as a folder too, and the system mounts it for every program.
+While doing that, the list of those folders turned out to be written twice
+- once for the shell, once for a program started from a file - and the new
+test failed because only one had the new row. They are one table now.
+
+The test harness also learned when a big page is finished: Wikipedia draws
+everything before it says it has finished loading, so the harness now waits
+for a picture since the page began and then a quiet second.
+
+**What you can see.** Wikipedia's BeOS page, fetched over HTTPS and drawn by
+WebKit on Kosmos, with its words in IBM Plex.
+
+**Measured.** The fonts check: 23 of 23 in `x86-loader`, and 1 of 23 failing
+before the second list was fixed. The Broadcom decode: 60 of 60, and 1 of
+60 failing when a receive's error bits are ignored.

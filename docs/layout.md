@@ -91,10 +91,12 @@ machine, a person arrives with everything that is theirs.
 ```
 
 Names are found whatever their case and keep the case they were given:
-`/home` finds `/Home`. What `layout.html` draws beyond this -
-`/Kosmos/Servers`, `Drivers`, `Fonts`, `Settings`, `Logs` - is the plan,
-and waits on what it needs: a server or a driver as a file needs the ELF
-loader, and fonts as files need the image to stop carrying them.
+`/home` finds `/Home`. `/Kosmos/Fonts` is
+the faces the image carries, each a file (binfs's `fonts` view, 0.11.414),
+mounted with the rest from one table in init, `BIN_FOLDERS`. What
+`layout.html` draws beyond this - `/Kosmos/Servers`, `Drivers`,
+`Settings`, `Logs` - is the plan, and waits on what it needs: a server or a
+driver as a file needs the ELF loader.
 
 ---
 

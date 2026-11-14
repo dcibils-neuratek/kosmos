@@ -4459,6 +4459,30 @@ local function keyring_grant(path)
       or path:find("^/Kosmos/Programs/[^/]") ~= nil
 end
 
+--
+-- **The program store's folders** (`binfs.c`, `view_of`): one store in the
+-- image, shown as a folder for each root a mount gives. Written once, for
+-- the shell's namespace and every program's runner alike - it was written
+-- twice, and `/Kosmos/Fonts` went into one and not the other.
+--
+local BIN_FOLDERS = {
+  { "/Kosmos/Apps",      "/apps" },       -- what opens a window
+  { "/Kosmos/Programs",  "/programs" },   -- and the rest
+  { "/Kosmos/Themes",    "/themes" },     -- the looks that ship
+  { "/Kosmos/Desktops",  "/desktops" },
+  { "/Kosmos/Templates", "/templates" },
+  { "/Kosmos/Examples",  "/examples" },
+  { "/Kosmos/Tutorial",  "/tutorial" },
+  { "/Kosmos/Fonts",     "/fonts" },      -- the image's fonts, as files (WebKit's)
+  { "/Kosmos/Deskbar",   "/deskbar" },    -- the menu as it ships (`menu_path`)
+}
+
+local function mount_bin_folders(ns, cap)
+  for _, f in ipairs(BIN_FOLDERS) do
+    ns.mount(f[1], cap, f[2], "bin")
+  end
+end
+
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
@@ -4573,23 +4597,9 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- and to send what is to be shared when it starts with the machine.
   if sharing_cap then ns.sharing_door(sharing_cap) end
 
-  -- The programs this image carries. Read-only, and served by a process of
-  -- its own like everything else.
-  -- The applications and the programs: one store in the image, shown as two
-  -- folders by the root each mount gives (`binfs.c`, `view_of`).
-  ns.mount("/Kosmos/Apps", bin_cap, "/apps", "bin")
-  ns.mount("/Kosmos/Programs", bin_cap, "/programs", "bin")
-
-  -- And the looks that ship, a folder of the same store.
-  ns.mount("/Kosmos/Themes", bin_cap, "/themes", "bin")
-  ns.mount("/Kosmos/Desktops", bin_cap, "/desktops", "bin")
-  ns.mount("/Kosmos/Templates", bin_cap, "/templates", "bin")
-  ns.mount("/Kosmos/Examples", bin_cap, "/examples", "bin")
-  ns.mount("/Kosmos/Tutorial", bin_cap, "/tutorial", "bin")
-
-  -- And the Deskbar's menu as it ships, laid out from each application's
-  -- header (`binfs.c`, `menu_path`); a person's own is `/Home/Deskbar`.
-  ns.mount("/Kosmos/Deskbar", bin_cap, "/deskbar", "bin")
+  -- The programs this image carries, the looks, the fonts and the menu:
+  -- one store, read only, shown as folders (`BIN_FOLDERS`).
+  mount_bin_folders(ns, bin_cap)
 
   -- And what programs load rather than run. Separate from the programs so
   -- that `ls /Kosmos/Programs` lists things you can type and nothing else.
@@ -7027,14 +7037,7 @@ if role == ROLE_RUNNER then
   -- runner cannot tell the two apart and must not need to.
   if req.console then ns.mount("/Devices/console",   req.console, nil, "console") end
   if req.data    then ns.mount("/Temporary",         req.data, nil, "ram") end
-  if req.bin     then ns.mount("/Kosmos/Apps",       req.bin, "/apps", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Programs",   req.bin, "/programs", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Themes",     req.bin, "/themes", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Desktops",   req.bin, "/desktops", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Templates",  req.bin, "/templates", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Examples",   req.bin, "/examples", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Tutorial",   req.bin, "/tutorial", "bin") end
-  if req.bin     then ns.mount("/Kosmos/Deskbar",    req.bin, "/deskbar", "bin") end
+  if req.bin     then mount_bin_folders(ns, req.bin) end
   if req.devices then ns.mount("/Devices",           req.devices, nil, "dev") end
   if req.lib     then ns.mount("/Kosmos/Libraries",  req.lib, nil, "bin") end
 

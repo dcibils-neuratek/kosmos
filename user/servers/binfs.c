@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -46,6 +47,49 @@ extern const unsigned            libraries_lua_count;
 static const struct source_entry *store;
 static unsigned                   store_count;
 static bool                       libraries;     /* which store this serves */
+
+/*
+ * **The image's fonts, as files** (`layout.md` step 2; `docs/w7.md` W7c).
+ * The desktop draws them from the image (`face.c`), and a ported program -
+ * WebKit, reading `/Kosmos/Fonts/` - can only open a file. So the program
+ * store's server shows them as a folder, `/Kosmos/Fonts`, from the same
+ * bytes: one copy in the image, two doors to it. Built once, at start, in
+ * this store's own shape; a request whose view is `fonts` is answered from
+ * it, and everything else from the store as before.
+ */
+struct kosmos_font_asset {
+    const char          *name;
+    const unsigned char *bytes;
+    size_t               length;
+};
+
+extern const struct kosmos_font_asset fonts_table[];
+
+static struct source_entry *fonts;
+static unsigned             fonts_count;
+
+static void fonts_open(void)
+{
+    unsigned i, n = 0;
+
+    while (fonts_table[n].name != NULL) {
+        n++;
+    }
+
+    fonts = calloc(n > 0 ? n : 1, sizeof(*fonts));
+
+    if (fonts == NULL) {
+        return;                             /* no folder, and nothing else lost */
+    }
+
+    for (i = 0; i < n; i++) {
+        fonts[i].name = fonts_table[i].name;
+        fonts[i].text = (const char *)fonts_table[i].bytes;
+        fonts[i].length = (unsigned long)fonts_table[i].length;
+    }
+
+    fonts_count = n;
+}
 
 /* Whatever its case (`roadmap.md` 6s): `/Kosmos/Apps/Clock.lua` is `clock.lua`. */
 static const struct source_entry *find(const char *name)
@@ -141,13 +185,13 @@ static const char *declared(const char *src, unsigned long len,
  * part - `/apps/clock.lua` - and a name with neither is the whole store,
  * as the libraries are served.
  */
-enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR };
+enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR, VIEW_FONTS };
 
 static enum view view_of(const char **name)
 {
     static const struct { const char *word; enum view view; } views[] = {
         { "apps", VIEW_APPS }, { "programs", VIEW_PROGRAMS },
-        { "deskbar", VIEW_DESKBAR },
+        { "deskbar", VIEW_DESKBAR }, { "fonts", VIEW_FONTS },
     };
     const char *n = *name;
     unsigned i;
@@ -174,7 +218,7 @@ static bool in_view(const struct source_entry *e, enum view v)
     unsigned long n = 0;
     bool app;
 
-    if (v == VIEW_ALL) {
+    if (v == VIEW_ALL || v == VIEW_FONTS) {
         return true;
     }
 
@@ -608,6 +652,15 @@ static void answer(const struct message *in, uint64_t sender)
     at = name;
     view = view_of(&at);
 
+    /* The fonts are a store of their own, for this one answer. */
+    const struct source_entry *was = store;
+    unsigned was_count = store_count;
+
+    if (view == VIEW_FONTS && !libraries) {
+        store = fonts;
+        store_count = fonts_count;
+    }
+
     switch (req->op) {
     case BIN_OP_LIST: {
         /*
@@ -776,6 +829,8 @@ static void answer(const struct message *in, uint64_t sender)
         break;
     }
 
+    store = was;
+    store_count = was_count;
     (void)kosmos_reply(sender, &out);
 }
 
@@ -789,6 +844,7 @@ void binfs_server(long endpoint, int serving_libraries)
     } else {
         store = programs_lua_table;
         store_count = programs_lua_count;
+        fonts_open();
     }
 
     for (;;) {

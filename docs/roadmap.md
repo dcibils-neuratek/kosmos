@@ -10079,6 +10079,15 @@ the applications make the system useful, and is not pulled forward.
   over TLS with a refusal; `example.com` from the internet. **Next, in
   Diego's order** ("window then jit", 14 November): W7c, the window; then
   the JIT; cookies, the disk cache and the live sites on the M700 after.
+  **Fonts as files, 14 November** (0.11.414): `/Kosmos/Fonts`, where WebKit
+  looks, so Wikipedia's page from the internet paints with its words.
+  **W7c begun**: `jetski.elf` and `/Home/Apps/JetSki/jetski.lua`, a page
+  in a window below the address field (`x86-jetski`). **Owed by its first
+  slice**: the window runs WebKit's loop a few milliseconds a pass, so it
+  waits a slice at most for the desktop and spends those milliseconds when
+  idle - one wait on both the window manager and WebKit's processes is the
+  fix (*Nothing waits*); and the chrome is a second copy of the NetSurf
+  Browser's header, to become one door when W7d's tabs arrive.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s
   alone, and hung past 720 s in the 0.11.412 gate saying nothing - into
   halves that run side by side, each printing its steps as it passes, so

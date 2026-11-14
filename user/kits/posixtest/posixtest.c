@@ -811,6 +811,38 @@ static int file_checks(char *out, unsigned long size)
         FSAY("files: /Kosmos was not read only (%d)", errno);
     }
 
+    /* The image's fonts as files (`binfs.c`'s fonts view): what WebKit
+     * opens by path. Listed, then opened and read as TrueType - the first
+     * four bytes a version of 1.0 - and as large as a face is. */
+    {
+        DIR *fonts = opendir("/Kosmos/Fonts");
+        struct dirent *e;
+        int listed = 0, fd;
+        unsigned char head[4];
+
+        while (fonts != NULL && (e = readdir(fonts)) != NULL) {
+            listed |= strcmp(e->d_name, "IBMPlexSans-Regular.ttf") == 0;
+        }
+
+        if (fonts != NULL) {
+            closedir(fonts);
+        }
+
+        if (!listed) {
+            FSAY("files: /Kosmos/Fonts did not list IBMPlexSans-Regular.ttf (%d)", errno);
+        }
+
+        fd = open("/Kosmos/Fonts/IBMPlexSans-Regular.ttf", O_RDONLY);
+
+        if (fd < 0 || read(fd, head, 4) != 4 || fstat(fd, &st) != 0
+            || head[0] != 0 || head[1] != 1 || head[2] != 0 || head[3] != 0
+            || st.st_size < 50000) {
+            FSAY("files: /Kosmos/Fonts/IBMPlexSans-Regular.ttf was not TrueType (%d)", errno);
+        }
+
+        close(fd);
+    }
+
     /* Where this process is, and paths made whole. */
     if (getcwd(where, sizeof where) == NULL || where[0] != '/'
         || getcwd(where, 1) != NULL || errno != ERANGE) {

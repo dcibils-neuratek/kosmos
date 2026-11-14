@@ -358,6 +358,125 @@ generalises: a device a firmware has *used* - for its own network boot, its
 own disk - carries that use in state no register dump shows, and QEMU's
 models carry none of it.
 
+### Broadcom Ethernet - read, decoded, a draft unproved
+
+Diego, 14 November 2026 (`roadmap.md`). The Mac Pro 2013 has a **BCM57762**
+and the iMac 2019 a Broadcom gigabit controller of the same **57765 family**
+(believed a BCM57766; its PCI id is read on its first boot). Both are
+Linux's `tg3`, so one driver, `user/drivers/net/tg3.c`, serves the two Macs.
+
+**Where it comes from.** Linux's `drivers/net/ethernet/broadcom/tg3.c` and
+`tg3.h` (master aacb7797, read 14 November), and Broadcom's *BCM57785
+Programmer's Reference Guide*, 57785-PG105-R, March 2012
+(docs.broadcom.com/doc/1211168564335) - the 57765 family's own guide, whose
+Table 2 (p. 47) lists the 57762 and the 57766 among its members. The PRG is
+cited by page below; Linux by function or `tg3.h` macro. Neither is in the
+tree.
+
+**What is built.** `tg3_decode.c` says what the registers, the descriptors
+and the status block mean, and `tools/test_tg3decode.c` holds it to 60
+vectors worked out by hand from those two sources. `tg3.c` is a draft on
+it in `e1000.c`'s shape, **never run**: QEMU has no model of the chip, so
+the Mac Pro is where it is proved, its screen console the log. Before it
+can run, the kernel needs a Broadcom device kind (a vendor 0x14E4 match in
+`hal/pc/devices.c`, `DEV_BROADCOM_ETHERNET`, configuration reads for it) -
+and probably a configuration write (below).
+
+**The identifiers** (`TG3PCI_DEVICE_TIGON3_*`, vendor 0x14E4): 57761
+0x16B0, 57765 0x16B4, 57781 0x16B1, 57785 0x16B5, 57791 0x16B2, 57795
+0x16B6 (the last two 10/100 only, `TG3_DRV_DATA_FLAG_10_100_ONLY`), and
+the 57766 ASIC's 57762 **0x1682**, 57766 **0x1686**, 57782 0x16B7, 57786
+0x16B3. Every one has 0xF in the top nibble of MISC_HOST_CTRL's revision
+(ASIC_REV_USE_PROD_ID_REG) and its real revision in configuration space at
+0xFC, TG3PCI_GEN15_PRODID_ASICREV (`tg3_detect_asic_rev`; PRG p. 47).
+ASIC_REV_57765 is 0x57785 and ASIC_REV_57766 0x57766; both are
+57765_CLASS, which brings 57765_PLUS, a CPMU, hardware TSO 3, MSI and
+MSI-X, and no APE. **A finding in Linux:** CHIPREV_57765_AX is 0x577650,
+which no chip of the class can produce (an A0 reads 0x57785000), so the
+"not AX" transmit-hang fix in `tg3_reset_hw` is applied to every one of
+them; the test holds the draft to that.
+
+**The reset** (`tg3_chip_reset`; PRG pp. 145-146): take the NVRAM
+arbitration (NVRAM_SWARB); write MAGIC1 0x4B657654 to SRAM's firmware
+mailbox 0xB50 (`tg3_write_sig_pre_reset`); GRC_FASTBOOT_PC = 0;
+GRC_MISC_CFG bit 29, then CORECLK_RESET with it; wait; restore PCI_COMMAND,
+MISC_HOST_CTRL and PCISTATE through configuration space and clear PCIe
+DEVCTL's relaxed-ordering and no-snoop bits; MEMARB_MODE enable; then poll
+0xB50 for the complement, ~0x4B657654, up to a second (`tg3_poll_fw`),
+GRC_MODE, MAC_MODE, and the MDIO clock (MAC_MI_MODE_500KHZ_CONST on CPMU
+chips). The two sources disagree on detail and the draft follows Linux:
+the PRG sets GRC_MISC_CFG bit 26 (KEEP_GPHY_POWER) as well, Linux only
+where there is no CPMU; the PRG waits a millisecond, Linux 120 us twice;
+the PRG puts MAC_MODE in GMII and waits 40 ms, Linux writes 0.
+
+**The on-chip CPUs are not halted.** The RX CPU's boot code runs after
+every reset, and its answer in 0xB50 is what the driver waits for; 5705_PLUS
+chips have no TX CPU at all (a BUG_ON in `tg3_halt_cpu`). Linux halts the
+RX CPU only to load firmware, and for the 57766's patch it pauses it
+instead (`tg3_rxcpu_pause`, after RX_CPU_HWBKPT reads 0x51,
+TG3_SBROM_IN_SERVICE_LOOP).
+
+**The 57766 runs without `tigon/tg357766.bin`; what is lost is EEE.**
+`tp->fw_needed = FIRMWARE_TG357766` is the "EEE patch": Linux loads it
+only when the chip has no NVRAM (`tg3_load_57766_firmware`, at SRAM
+0x30000), a failed request prints "EEE capability disabled" and clears
+TG3PHYFLG_EEE_CAP (`tg3_open`), and `tg3_reset_hw` says "If download fails,
+the device will operate with EEE disabled". So 802.3az energy saving is
+off and nothing else changes. The draft loads nothing.
+
+**The rings and the status block.** A host-based send ring
+(GRC_MODE_HOST_SENDBDS) of TG3_TX_RING_SIZE 512 sixteen-byte descriptors
+(addr hi, lo, length << 16 | flags, VLAN; PRG Table 6, p. 69); a standard
+receive producer ring of 512 thirty-two-byte entries, its control block at
+RCVDBDI_STD_BD by MMIO, NIC address 0x6000, buffers of 1536; jumbo
+disabled; one receive return ring, whose control block is in NIC SRAM at
+0x200 (send's at 0x100), the others disabled. The return ring is 1024 in
+Linux (TG3_RX_RET_MAX_SIZE_5700) and 32 to 512 in the PRG (p. 147, step
+36); the draft takes 512. Control blocks in SRAM are reached through the
+memory window, TG3PCI_MEM_WIN_BASE_ADDR / _DATA at 0x7C / 0x84, by MMIO.
+The **status block** is 0x50 bytes the chip writes by DMA (`struct
+tg3_hw_status`): the status word (UPDATED, LINK_CHG, ERROR), the tag, the
+standard ring's consumer, and at 0x10 the return ring's producer and the
+send ring's consumer; PRG Table 14 (p. 81) agrees, except that it puts the
+jumbo consumer at 0x14 where Linux has 0x08. A received length includes
+the four-byte FCS; the receive entry's opaque word says ring and index.
+
+**The PHY and the link.** An internal BCM57765 PHY, TG3_PHY_ID_BCM57765
+0x5C0D8A40, at MDIO address 1 (TG3_PHY_MII_ADDR), reached through
+MAC_MI_COM 0x44C. The link is BMSR's LSTATUS, read twice, and speed and
+duplex are MII_TG3_AUX_STAT 0x19's bits 10:8; MAC_MODE then takes MII at
+10/100 or GMII, and half duplex where the link is. A change arrives as the
+status block's LINK_CHG, with MAC_EVENT_LNKSTATE_CHANGED and
+MAC_MI_STAT_LNKSTAT_ATTN_ENAB set (USE_LINKCHG_REG polling is the 5700's
+only).
+
+**MSI, with tagged status.** The class has MSI, one-shot MSI and MSI-X.
+Linux uses MSI only with tagged status (`tg3_ints_init`): MSGINT_MODE
+enabled, MISC_HOST_CTRL_TAGGED_STATUS, and an interrupt re-armed by
+writing the last tag to the top byte of interrupt mailbox 0 (PRG p. 234,
+step 9); 1 masks. Legacy INTx works the same way through the mailbox. The
+class can lose an MSI, which Linux catches on a timer
+(`tg3_chk_missed_msi`); the draft's 25-tick deadline is that.
+
+**The MAC address** (`tg3_get_device_address`): the platform first
+(device tree or an ACPI property), then the boot code's SRAM mailbox at
+0xC14 / 0xC18 with 0x484B in the top half, then NVRAM at 0x7C, then
+MAC_ADDR_0. Linux has nothing Apple-specific; on a Mac the boot code is
+expected to fill the mailbox and the MAC registers from the chip's own
+storage (self-boot parts may have no NVRAM and keep it in OTP; PRG Table
+3, p. 63). 00:10:18:00:00:00 is the unprogrammed default and means "ask
+the platform". The draft reads the mailbox, then the registers.
+
+**What did not fit `e1000.c`'s shape.** A configuration write: the reset
+can clear what Linux restores through configuration space, and Kosmos's
+SYS_DEV_CONFIG only reads. The draft writes MISC_HOST_CTRL and PCISTATE
+through their MMIO mirror and says whether PCI_COMMAND survived; if
+memory decode did not, the kernel has to grow a write. Rings whose size is
+the chip's (512) rather than the driver's, configured in NIC SRAM through
+a window. A status block in place of descriptor write-back. Tagged
+interrupts. A PHY driven over MDIO where e1000 only sets CTRL.SLU. A boot
+CPU whose answer is waited for.
+
 ### SATA (AHCI) - the M700's drive, found and read
 
 `user/drivers/storage/ahci.c`, a process with device authority as the

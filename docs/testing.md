@@ -33304,3 +33304,47 @@ Outside the gate, `KOSMOS_SITES_LIVE=https://example.com/` loaded the real
 site through QEMU's network by Mozilla's roots alone: committed, finished,
 painted - without its words, since this harness's web process has no
 system fonts (W7c's window gives it `/Kosmos`'s).
+
+## 18.809 Fonts as files, a page settled, and the Broadcom decode
+
+**Fonts are files.** binfs serves a `fonts` view - the faces the image
+carries (`fonts_table`), each a file - and init mounts it at
+`/Kosmos/Fonts` beside `/Kosmos/Apps` and the rest. Those mounts were
+written twice, once for the shell and once for the runner that starts a
+program from a file, and only the first had been given the new row; they
+are now one table, `BIN_FOLDERS`, both use. WebKit's default font folder is
+`/Kosmos/Fonts/`, so a web process now finds its faces with nothing added,
+and Wikipedia painted with its words in IBM Plex (`KOSMOS_SITES_LIVE`).
+
+`posixtest` (in `x86-loader`) holds it: `opendir("/Kosmos/Fonts")` must
+list `IBMPlexSans-Regular.ttf`, and that file must open, start `00 01 00
+00` and be over 50 000 bytes. Control: the check was written first, and
+against the runner's own list it failed - "/Kosmos/Fonts did not list
+... (2)", FAIL 1 of 23 - which is how the second list was found.
+
+**A page that paints before it finishes.** `webkit2test` called a page
+pictured only on a repaint after `didFinish`; Wikipedia paints everything
+before it finishes and never repainted, so it read "no picture in time".
+Now a picture must have arrived since the commit, and then a quiet second
+after the finish - one rule for both shapes. `x86-webkit2` and `x86-sites`
+pass unchanged, and the live load reads "pictured".
+
+**The Broadcom 57765 family's decode** (`docs/drivers.md`), the Mac Pro's
+BCM57762 and the iMac's BCM57766, written in a lane beside this session:
+`test_tg3decode` in `make host-check`, 60 checks - the chip ids, the
+revision, the link from the PHY's registers, the descriptors and a
+receive's errors. Control: a receive's error
+bits ignored (`out->error = false`, built in the scratchpad) - "a bad CRC
+was not an error", 1 of 60 FAILED, exit 1. The driver itself (`tg3.c`) is a draft,
+not linked: it needs a write to PCI configuration space and a device kind
+Kosmos does not have yet, and a machine to prove it on.
+
+**And one suite read its own echo as the answer.** `x86-llmmon` failed in
+0.11.414's gate - 1 of 127 suites - with the question asked on the command
+line answered "kernel" and then the same 24 tokens as from the file: the
+echo of `xavier --tokens 24 what is a kernel` had arrived broken over two
+lines, so no line ended with the command and its last word was taken for
+the answer's first. 18.782 met the echo's other shape. `answer_of` now drops
+a first line that is only the end of the command; held to the gate's own
+lines (the old reading gave `kernel\natar ...`, the new `atar ...`), and the
+suite passes alone, 18 checks.

@@ -80,7 +80,7 @@ for _, load in ipairs({%s}) do
   local name, url = load[1], load[2]
   local surface = gfx.surface{ w = 800, h = 600 }
   print("load " .. name)
-  for _, line in ipairs(kit.load(url, surface, 120000, "url")) do
+  for _, line in ipairs(kit.load(url, surface, name == "live" and 300000 or 120000, "url")) do
     print("said " .. line)
   end
   local ok, why = fs.write(folder .. "/pictures/" .. name .. ".png", gfx.encode_png(surface))
@@ -220,7 +220,7 @@ def main():
         mark = len(guest.seen)
         started = time.monotonic()
         guest.type("run /Home/apps/sites/sites.lua")
-        while time.monotonic() < started + 360 and not done:
+        while time.monotonic() < started + (660 if os.environ.get("KOSMOS_SITES_LIVE") else 360) and not done:
             time.sleep(0.2)
             guest._read_available()
             lines = guest.seen[mark:].replace("\r", "").split("\n")[1:]

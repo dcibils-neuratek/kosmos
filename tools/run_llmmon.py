@@ -222,6 +222,12 @@ def main():
                 if l.strip() and not l.startswith(("loading ", "llm: ", "process "))
                 and not re.match(r"^\d+ tokens in ", l)
                 and not re.search(r" is in, [\d.]+ [KMG]?B in ", l)]
+        # **And an echo broken over two lines** (0.11.414's gate): the
+        # command's last words on a line of their own - "kernel", ahead of
+        # the answer - which the search above takes for the answer's first
+        # line. A first line that is only the end of the command is the echo.
+        while kept and kept[0].strip() and command.endswith(" " + kept[0].strip()):
+            kept.pop(0)
         return "\n".join(kept).strip()
 
     a1 = answer_of(said1, "xavier --tokens 24 what is a kernel")
