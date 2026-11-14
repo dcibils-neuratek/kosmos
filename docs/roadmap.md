@@ -10289,15 +10289,16 @@ the applications make the system useful, and is not pulled forward.
     are measured against, and the decoders come before W7 is done:
     - *The libraries*: *Done, 0.11.405* (W5f, `docs/w5.md`, 18.800):
       Brotli 1.2.1, woff2 1.0.2, dav1d 1.5.4 with its assembly, libavif
-      1.4.2 on it; `x86-formats` holds them to this Mac. Next: WebKit with
-      `USE_WOFF2` and `USE_AVIF` on them. Also wanted: libyuv for libavif's
+      1.4.2 on it; `x86-formats` holds them to this Mac. *Done, 0.11.407*:
+      WebKit with `USE_WOFF2` and `USE_AVIF` on them (18.802). Also wanted: libyuv for libavif's
       colour conversion, and dav1d's own `checkasm` in the guest, which
       holds every assembly routine to its C (with AV1 video).
-    - *Pictures*: **AVIF** (libavif on dav1d) - YouTube's thumbnails are
-      AVIF and are blank today. JPEG XL after.
-    - *Fonts*: **WOFF2** (Google's woff2 on brotli) - YouTube's Roboto,
-      The Verge's, CNN's and Apple's faces all are, and fall back to Plex.
-      Brotli is also HTTP's `br`, which W7's loader needs.
+    - *Pictures*: **AVIF** (libavif on dav1d) - *done, 0.11.407*:
+      YouTube's thumbnails paint. JPEG XL after.
+    - *Fonts*: **WOFF2** (Google's woff2 on brotli) - *done, 0.11.407*:
+      YouTube's Roboto and The Verge's faces paint as themselves.
+      Brotli is also HTTP's `br`, which W7's loader needs: curl to be
+      built against it.
     - *Video and sound*: **AV1** (dav1d - the same decoder as AVIF, one
       door), **VP9**, **H.264** (FFmpeg, there since 4e), **Opus** and
       **AAC**; played by **Media Source Extensions**, which is how YouTube

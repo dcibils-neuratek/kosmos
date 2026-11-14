@@ -19,10 +19,14 @@ names its own kit (`kosmos_project_name`), so a test kit no longer edits
 sources are recompiled on the POSIX layer - no syscall personality
 (`design.md` 17.4).
 
-**Next**: `USE_WOFF2` and `USE_AVIF` on in WebCore
-(`OptionsKosmos.cmake`, `webkit_build.py`'s `webcore_libraries`, `W5F_LIBS`
-into `WEBCORE_W5_LIBS`), the recorded sites painted again; then the media
-design for Diego.
+Then (0.11.407) `USE_WOFF2` and `USE_AVIF` on in WebCore, held by
+WebKit's own reference tests in `x86-webcore` (`testing.md` 18.802):
+YouTube's search paints its AVIF thumbnails and every site its WOFF2
+faces. `run_site.py` gives its guest 2 GB.
+
+**Next**: the media design for Diego (`docs/media.md`: WebKit's player on
+the FFmpeg and Playback kits, MSE, AV1 on dav1d, VP9, H.264, Opus, AAC);
+curl against Brotli for `br`; then W7's network loader.
 
 ## 14 November: the recorded sites; YouTube first (0.11.404, not pushed)
 

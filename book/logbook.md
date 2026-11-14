@@ -2783,3 +2783,22 @@ twenty minutes. `make test ALL=1` still runs everything, and so does
 **Measurements.** Computing a fingerprint of the whole tree takes 0.2 s.
 A build-script edit that changes no library's settings: 2 s, where it had
 been 74 s.
+
+## 14 November 2026 - YouTube's thumbnails and the sites' own fonts
+
+**In short.** The browser engine on Kosmos now draws AVIF pictures and
+WOFF2 fonts. YouTube's thumbnails, which were blank, appear, and every
+recorded site is set in its own typefaces instead of a stand-in.
+
+**What.** The libraries added earlier the same day (Brotli, woff2, dav1d,
+libavif) were switched on inside WebKit. WebKit's own tests for the two
+formats now run on Kosmos: each test page is drawn beside a reference
+page that shows the same thing another way, and the two must match pixel
+for pixel.
+
+**What it found.** The Verge ran out of memory: with its fonts decoded,
+the 512 MB test machine was too small for a news site. Its test machine
+now has 2 GB, still less than any real computer Kosmos runs on.
+
+**Visible impact.** A YouTube search for BeOS, drawn on Kosmos, with every
+thumbnail. Video is next.

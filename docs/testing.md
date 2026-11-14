@@ -33048,3 +33048,28 @@ Probed by appending a line and taking the fingerprint again (0.2 s each):
 `docs/w5.md`, `book/logbook.md`, `formattest.cpp` and `run_formats.py`
 leave the system's fingerprint as it was; `docs/cheatsheet.html`,
 `kernel/ipc.c` and the Makefile change it.
+
+## 18.802 WOFF2 and AVIF in WebCore
+
+`USE_WOFF2` and `USE_AVIF` on in the Kosmos port
+(`runtime/ports/webkit/Source/cmake/OptionsKosmos.cmake`), woff2 and
+libavif named to CMake by their files (`webkit_build.py`), and W5f's
+libraries linked into WebCore's image. WebKit rebuilt in 5:11.
+
+`x86-webcore` gains WebKit's own reference tests of the two formats
+(`upstream.WEBKIT_REF_TESTS`): `fast/text/woff2.html`,
+`fast/text/woff2-totalsfntsize.html`, `fast/images/avif-as-image.html`
+and `fast/images/avif-heif-container-as-image.html`, each painted beside
+its `-expected.html` and held to it pixel for pixel - both Kosmos's
+paintings. GTK and WPE pass all four. All four pass; the picture of
+`woff2.html` is Ahem's black rectangle and `avif-as-image.html`'s box is
+`#008000`. Controls: `KOSMOS_WEBCORE_BREAK=woff2` (the fonts left out)
+fails both WOFF2 tests, 3,398 and 1,234 pixels; `=avif` both AVIF tests,
+97,973 and 160,008.
+
+The recorded sites again (`build/sites/*-w5f.png`): YouTube's BeOS search
+paints its 14 AVIF thumbnails and its 123 WOFF2 fonts; The Verge its own
+typefaces. The Verge first died in `WTF::fastMalloc` (`CRASH()`, a write
+to `0xbbadbeef`): with its 19 fonts decoded beside 92 pictures, a 512 MB
+guest holding a 148 MB image ran out. `run_site.py` now gives its guest
+2 GB (`KOSMOS_SITE_MEMORY`), less than any machine Kosmos runs on.

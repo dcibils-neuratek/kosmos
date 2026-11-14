@@ -219,6 +219,14 @@ def webcore_libraries(arch, w5):
         "-DWebP_INCLUDE_DIR=" + os.path.join(w5, "include"),
         "-DWebP_LIBRARY=" + lib("libwebp.a"),
         "-DWebP_DEMUX_LIBRARY=" + lib("libwebpdemux.a"),
+        # W5f's (`docs/w5.md`): woff2, which reads `<woff2/decode.h>`, and
+        # libavif, whose find module looks in `include/avif` for its version
+        # and reaches `<avif/avif.h>` through `include` as the rest do.
+        "-DWOFF2_INCLUDE_DIR=" + os.path.join(w5, "include"),
+        "-DWOFF2_LIBRARY=" + lib("libwoff2common.a"),
+        "-DWOFF2_DEC_LIBRARY=" + lib("libwoff2dec.a"),
+        "-DAVIF_INCLUDE_DIR=" + os.path.join(w5, "include", "avif"),
+        "-DAVIF_LIBRARY=" + lib("libavif.a"),
         "-DSQLite3_INCLUDE_DIR=" + upstream.where("sqlite"),
         "-DSQLite3_LIBRARY=" + empty,
         "-DLibPSL_INCLUDE_DIR=" + os.path.join(upstream.where("libpsl"), "include"),

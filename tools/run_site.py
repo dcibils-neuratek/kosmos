@@ -74,6 +74,15 @@ def main():
 
     import run_screenshot as R                               # noqa: E402
 
+    # **A real site wants a real machine's memory.** The suites' guests have
+    # 512 MB, and WebCore's image is 148 MB of it before a page: The Verge,
+    # once its WOFF2 fonts were decoded as well as its 92 pictures, ran
+    # WebKit's allocator dry (`testing.md` 18.802). Two gigabytes is less
+    # than any machine Kosmos runs on; `KOSMOS_SITE_MEMORY` says otherwise.
+    memory = os.environ.get("KOSMOS_SITE_MEMORY", "2G")
+    for args in (R.X86_ARGS, R.QEMU_ARGS):
+        args[args.index("-m") + 1] = memory
+
     guest = R.Guest(IMAGE, 900)
     try:
         guest.wait_for("kosmos> ", "reached a prompt")

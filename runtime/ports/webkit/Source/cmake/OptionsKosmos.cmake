@@ -42,15 +42,16 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
 # **What a headless page on Kosmos has not got, yet** (`docs/w6.md` W6b).
 # Each is a piece of the platform a later step brings, not a refusal:
 # video and audio wait for the Playback Kit (`docs/playback.md`), WebGL
-# for a GPU, XSLT for libxslt, WOFF2 for its decoder, AVIF, JPEG XL and
-# colour management for their libraries.
+# for a GPU, XSLT for libxslt, JPEG XL and colour management for their
+# libraries. WOFF2 and AVIF are on since W5f (`docs/w5.md`): woff2 on
+# Brotli, and libavif on dav1d.
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEB_AUDIO PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEBGL PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_XSLT PRIVATE OFF)
-WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_WOFF2 PRIVATE OFF)
-WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_AVIF PRIVATE OFF)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_WOFF2 PRIVATE ON)
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_AVIF PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_JPEGXL PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(USE_LCMS PRIVATE OFF)
 # And what a window brings, at W7: the system's notifications, a
@@ -101,6 +102,14 @@ if (ENABLE_WEBCORE)
     find_package(SQLite3 REQUIRED)
     find_package(WebP REQUIRED COMPONENTS demux)
     find_package(ZLIB REQUIRED)
+    # No versions asked: with no pkg-config, FindWOFF2 cannot read one,
+    # and the releases are `tools/upstream.py`'s.
+    if (USE_WOFF2)
+        find_package(WOFF2 REQUIRED COMPONENTS dec)
+    endif ()
+    if (USE_AVIF)
+        find_package(AVIF REQUIRED)
+    endif ()
 
     # **GL ES from an EGL with no display** (Diego, 13 November, `docs/w6.md`
     # W6b): WebCore links GL ES on every port, and with no display WebKit's

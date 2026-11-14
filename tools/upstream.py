@@ -335,6 +335,24 @@ WEBKIT_SCRIPT_TESTS = [
 ]
 WEBKIT_TEST_FILES = ["fast/css/resources/show-shoes-vs-pie.png"]
 
+# W5f's in WebCore: WebKit's reference tests of WOFF2 and AVIF, each page
+# painted beside its `-expected.html` - the same font as TrueType, the same
+# green as a box - and the two held pixel for pixel. Both are Kosmos's
+# paintings, so no port's pixels come into it; GTK and WPE pass all four.
+WEBKIT_REF_TESTS = [
+    "fast/text/woff2.html",
+    "fast/text/woff2-totalsfntsize.html",
+    "fast/images/avif-as-image.html",
+    "fast/images/avif-heif-container-as-image.html",
+]
+WEBKIT_REF_FILES = [
+    "fast/text/resources/ahem.woff2",
+    "fast/text/resources/header-totalsfntsize-001.woff2",
+    "fast/text/resources/header-totalsfntsize-001.ttf",
+    "fast/images/resources/green-313x313.avif",
+    "fast/images/resources/green-400x400.avif",
+]
+
 WEBKIT_TESTS = {
     "url": WEBKIT_OVERLAY["url"],
     "commit": WEBKIT_OVERLAY["commit"],
@@ -360,7 +378,10 @@ WEBKIT_TESTS = {
         "/LayoutTests/" + t.rsplit(".", 1)[0] + ext
         for t in WEBKIT_TEXT_TESTS + WEBKIT_SCRIPT_TESTS
         for ext in ("." + t.rsplit(".", 1)[1], "-expected.txt")
-    ] + ["/LayoutTests/" + f for f in WEBKIT_TEST_FILES],
+    ] + ["/LayoutTests/" + f for f in WEBKIT_TEST_FILES] + [
+        "/LayoutTests/" + t.rsplit(".", 1)[0] + ext
+        for t in WEBKIT_REF_TESTS for ext in (".html", "-expected.html")
+    ] + ["/LayoutTests/" + f for f in WEBKIT_REF_FILES],
 }
 
 

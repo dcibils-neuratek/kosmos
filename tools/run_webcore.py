@@ -24,6 +24,14 @@ And W6c's text: the LayoutTests whose page is set in Ahem and needs nothing
 loaded (`upstream.WEBKIT_TEXT_TESTS`), held to their trees as text - their
 pictures are the font engine's, so only the fourteen above are compared.
 
+And W5f's: WebKit's reference tests of WOFF2 and AVIF
+(`upstream.WEBKIT_REF_TESTS`), each page painted beside its
+`-expected.html` and the two pictures held pixel for pixel - a WOFF2 font
+as the same font in TrueType, an AVIF picture as a green box. Both are
+Kosmos's paintings, so nothing of another port's comes into it. They sit
+under `pages/ref/` as they do under LayoutTests, so what they load is
+where they name it.
+
 Usage: run_webcore.py IMAGE [APPS]
 
 The controls: `KOSMOS_WEBCORE_BREAK=page` moves one box of one page by a
@@ -33,7 +41,8 @@ picture must; `=text` sets one text test's Ahem a pixel larger, and its
 tree must; `=generic` names IBM Plex Sans beside `serif`, and serif must;
 `=script` takes the one script out of a page that scrolls itself, and its
 tree must; `=image` leaves the picture three pages load off the disk, and
-their trees must - without the process dying.
+their trees must - without the process dying; `=woff2` and `=avif` leave
+out that format's files, and its reference tests must disagree.
 """
 
 import os
@@ -66,14 +75,18 @@ PICTURED = [SUITE + "/abspos-containing-block-initial-%s.htm" % n
             for n in ("004a", "004b", "004c", "004d", "004e", "004f",
                       "005a", "005b", "005c", "005d", "009a", "009b", "009e", "009f")]
 TESTS = PICTURED + upstream.WEBKIT_TEXT_TESTS + upstream.WEBKIT_SCRIPT_TESTS
+# W5f's reference tests, each as the page's name and its reference's.
+REFS = [("ref/" + t, "ref/" + t.rsplit(".", 1)[0] + "-expected.html")
+        for t in upstream.WEBKIT_REF_TESTS]
 # `KOSMOS_WEBCORE_ONLY=a,b` runs only the tests whose path holds one of
 # those, for finding which page did something; the gate sets nothing.
 if os.environ.get("KOSMOS_WEBCORE_ONLY"):
     _only = os.environ["KOSMOS_WEBCORE_ONLY"].split(",")
     TESTS = [t for t in TESTS if any(o in t for o in _only)]
     PICTURED = [t for t in PICTURED if t in TESTS]
+    REFS = [r for r in REFS if any(o in r[0] for o in _only)]
 FONTS = ["IBMPlexSans-Regular.ttf", "IBMPlexSerif-Regular.ttf", "IBMPlexMono-Regular.ttf"]
-BROKEN = TESTS[0]
+BROKEN = TESTS[0] if TESTS else None
 BROKEN_TEXT = "fast/text/soft-hyphen-3.html"
 BROKEN_SCRIPT = "fast/block/positioning/rtl-fixed-positioning.html"
 
@@ -122,12 +135,19 @@ for _, page in ipairs(pages) do
   for _, line in ipairs(kit.paint(folder, page, surface)) do
     print(line)
   end
-  local ok, why = fs.write(folder .. "/pictures/" .. page .. ".png", gfx.encode_png(surface))
+  local file = page:gsub("/", "_")
+  local ok, why = fs.write(folder .. "/pictures/" .. file .. ".png", gfx.encode_png(surface))
   print(ok and ("saved " .. page) or ("unsaved " .. page .. ": " .. tostring(why)))
 end
 print("webcoretest: done")
 """ % ", ".join('"%s"' % n for n in [page_of(t) for t in TESTS]
-               + [n for g in generic_pages(None) for n in g[:2]])
+               + [n for g in generic_pages(None) for n in g[:2]]
+               + [n for r in REFS for n in r])
+
+
+def picture_of(page):
+    """A page's picture's file name: its path, flattened."""
+    return page.replace("/", "_") + ".png"
 
 
 def gather(broken):
@@ -168,6 +188,21 @@ def gather(broken):
             f.write(page)
         lines = open(os.path.join(tests, "LayoutTests", stem(t) + "-expected.txt")).read().rstrip("\n")
         expected[page_of(t)] = [ln.rstrip() for ln in lines.split("\n")]
+    # W5f's, as they sit under LayoutTests, with Ahem where the references
+    # name it; the controls leave out one format's files.
+    ref = os.path.join(FOLDER, "pages", "ref")
+    for t in upstream.WEBKIT_REF_TESTS:
+        for name in (t, t.rsplit(".", 1)[0] + "-expected.html"):
+            os.makedirs(os.path.dirname(os.path.join(ref, name)), exist_ok=True)
+            shutil.copyfile(os.path.join(tests, "LayoutTests", name), os.path.join(ref, name))
+    for f in upstream.WEBKIT_REF_FILES:
+        if broken and f.endswith("." + broken):
+            continue
+        os.makedirs(os.path.dirname(os.path.join(ref, f)), exist_ok=True)
+        shutil.copyfile(os.path.join(tests, "LayoutTests", f), os.path.join(ref, f))
+    os.makedirs(os.path.join(ref, "resources"), exist_ok=True)
+    shutil.copyfile(os.path.join(tests, "LayoutTests", "resources", "Ahem.ttf"),
+                    os.path.join(ref, "resources", "Ahem.ttf"))
     for generic, named, a, b in generic_pages(broken):
         for name, html in ((generic, a), (named, b)):
             with open(os.path.join(FOLDER, "pages", name), "w") as f:
@@ -247,6 +282,29 @@ def pictures_disagree(pictures, broken):
     return failed
 
 
+def refs_disagree(pictures):
+    """Each reference test's picture against its reference's: the pages
+    that differ."""
+    failed = []
+    for page, reference in REFS:
+        mine, theirs = (os.path.join(pictures, picture_of(p)) for p in (page, reference))
+        if not os.path.exists(mine) or not os.path.exists(theirs):
+            print("FAIL %s: no picture" % page)
+            failed.append(page)
+            continue
+        w, h, have = pngread.pixels(mine)
+        _, _, want = pngread.pixels(theirs)
+        wrong = [(x, y) for y in range(h) if have[y] != want[y]
+                 for x in range(w) if have[y][x * 3:x * 3 + 3] != want[y][x * 3:x * 3 + 3]]
+        if wrong:
+            failed.append(page)
+            print("FAIL %s: %d of %d pixels differ from its reference's" % (page, len(wrong), w * h))
+            for x, y in wrong[:3]:
+                print("  (%d,%d): reference %s, test %s" % (x, y, want[y][x * 3:x * 3 + 3].hex(),
+                                                          have[y][x * 3:x * 3 + 3].hex()))
+    return failed
+
+
 def main():
     built = os.path.join(APPS, "webcoretest.elf")
     if not os.path.exists(built):
@@ -313,14 +371,15 @@ def main():
     os.makedirs(pictures)
     for name in [ln[len("saved "):] for ln in said if ln.startswith("saved ")]:
         subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
-                        "/Home/apps/webcore/webcore/pictures/%s.png" % name,
-                        os.path.join(pictures, name + ".png")],
+                        "/Home/apps/webcore/webcore/pictures/" + picture_of(name),
+                        os.path.join(pictures, picture_of(name))],
                        check=True, capture_output=True, cwd=ROOT)
     print("pictures: %d of %d painted, in %s%s" % (
-        len(os.listdir(pictures)), len(expected) + 2 * len(GENERIC), pictures,
+        len(os.listdir(pictures)), len(expected) + 2 * len(GENERIC) + 2 * len(REFS), pictures,
         "" if not unsaved else " - " + "; ".join(unsaved)))
 
     picture_failed = pictures_disagree(pictures, broken)
+    ref_failed = refs_disagree(pictures)
 
     got = trees(said)
     failed = []
@@ -351,11 +410,17 @@ def main():
               % (len(PICTURED) - len(picture_failed), len(PICTURED), ", ".join(picture_failed)))
         return 1
 
+    if ref_failed:
+        print("FAIL: %d of %d WOFF2 and AVIF reference tests painted as their references: %s"
+              % (len(REFS) - len(ref_failed), len(REFS), ", ".join(ref_failed)))
+        return 1
+
     print("PASS: WebCore laid out %d of WebKit's LayoutTests on Kosmos, %d of them with text "
           "in Ahem, every render tree as WebKit expects on every port, and painted the %d "
           "without text through Skia pixel for pixel as GTK's port does; serif, sans-serif, "
-          "monospace and the default font as IBM Plex's three; in %.1f s"
-          % (len(expected), len(expected) - len(PICTURED), len(PICTURED), took))
+          "monospace and the default font as IBM Plex's three; %d WOFF2 and AVIF reference "
+          "tests painted as their references; in %.1f s"
+          % (len(expected), len(expected) - len(PICTURED), len(PICTURED), len(REFS), took))
     return 0
 
 
