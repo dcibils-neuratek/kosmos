@@ -661,18 +661,66 @@ static int leave_together_role(void)
  * index 1 back (15); one region mapped twice, read and write at one address
  * and read and execute at the other, with code written through the first
  * and run from the second (16); a flag SYS_MEM_MAP has no meaning for
- * refused (17); and a write-combining region refused execute (18). The
- * writes that must end a process are 914, 915 and 916, the last through
- * the executable alias of a region.
+ * refused (17); and a write-combining region refused execute (18). A
+ * region's read-only capability (`SYS_MEM_READONLY`, `docs/w7.md` W7a):
+ * mapped, it reads what was written through the writable one, and it is
+ * refused execute (19); sent in a message, what arrives is read-only still
+ * (20); a write-combining region has none (21). The writes that must end a
+ * process are 914, 915 and 916, the last through the executable alias of a
+ * region, and 918, through a read-only capability that came in a message.
  */
 #define CTEST_RESERVE           913UL
 #define CTEST_RESERVE_READONLY  914UL
 #define CTEST_RESERVE_NONE      915UL
 #define CTEST_RESERVE_ALIAS     916UL
+#define CTEST_REGION_READONLY   918UL
 #define RESERVE_BIG_PAGES       (16UL * 1024 * 1024 * 1024 / 4096)
 #define RESERVE_STRIDE          1000UL
 
 static const struct proc_info *own_row(const char *name);
+
+/*
+ * A capability sent to this process itself in a message, and the index it
+ * arrives as: a thread of its own calls an endpoint with it and the first
+ * receives it - the kernel's whole transfer, resolved against the sender's
+ * table and installed in the receiver's, which is where a right could be
+ * lost on the way.
+ */
+static long relay_endpoint, relay_cap;
+
+static void relay_send(unsigned long unused)
+{
+    struct message m = {0}, reply = {0};
+
+    (void)unused;
+    m.cap_plus_one = (uint32_t)(relay_cap + 1);
+    (void)kosmos_call(relay_endpoint, &m, &reply);
+    kosmos_thread_exit(0);
+}
+
+static long through_a_message(long cap)
+{
+    struct message m = {0}, done = {0};
+    uint64_t sender = 0;
+    long t, got;
+
+    relay_endpoint = kosmos_endpoint();
+    relay_cap = cap;
+
+    if (relay_endpoint < 0 || (t = kosmos_thread_start(relay_send, 0)) < 0) {
+        return -1;
+    }
+
+    if (kosmos_receive(relay_endpoint, &m, &sender, 0, 0) < 0) {
+        return -1;
+    }
+
+    got = m.cap_plus_one ? (long)m.cap_plus_one - 1 : -1;
+    (void)kosmos_reply(sender, &done);
+    (void)kosmos_thread_wait((unsigned long)t);
+    (void)kosmos_endpoint_destroy(relay_endpoint);
+    return got;
+}
 
 static unsigned long held_now(const char *name)
 {
@@ -905,6 +953,37 @@ static int reserve_role(void)
 
         if (cap < 0 || kosmos_mem_map_rx(cap) != SYS_ERR_FLAGS) {
             return 18;
+        }
+
+        /* 21 */
+        if (kosmos_mem_readonly(cap) != SYS_ERR_FLAGS) {
+            return 21;
+        }
+    }
+
+    /* 19, 20 */
+    {
+        long cap = kosmos_mem_create(1), ro, sent, rw, at;
+
+        if (cap < 0 || (rw = kosmos_mem_map(cap)) < 0) {
+            return 19;
+        }
+
+        ((volatile unsigned char *)(uintptr_t)rw)[5] = 0x5a;
+        ro = kosmos_mem_readonly(cap);
+
+        if (ro < 0 || (at = kosmos_mem_map(ro)) < 0
+            || ((volatile unsigned char *)(uintptr_t)at)[5] != 0x5a
+            || kosmos_mem_map_rx(ro) != SYS_ERR_DENIED) {
+            return 19;
+        }
+
+        sent = through_a_message(ro);
+
+        if (sent < 0 || sent == ro || kosmos_mem_map_rx(sent) != SYS_ERR_DENIED
+            || (at = kosmos_mem_map(sent)) < 0
+            || ((volatile unsigned char *)(uintptr_t)at)[5] != 0x5a) {
+            return 20;
         }
     }
 
@@ -1179,6 +1258,25 @@ static int suspend_role(void)
      * interrupt; 100 with every thread on one core, reached at the
      * spinner's next tick. The suite asks for both. */
     return across ? 0 : 100;
+}
+
+/* A write through a read-only capability that came in a message ends the
+ * process: what it was sent says it may read, and nothing more. */
+static int region_readonly_role(void)
+{
+    long cap = kosmos_mem_create(1);
+    long ro = cap < 0 ? cap : kosmos_mem_readonly(cap);
+    long sent = ro < 0 ? ro : through_a_message(ro);
+    long at = sent < 0 ? sent : kosmos_mem_map(sent);
+    volatile unsigned char *p = (volatile unsigned char *)(uintptr_t)at;
+
+    if (at < 0) {
+        return 1;
+    }
+
+    (void)p[0];                             /* readable */
+    p[0] = 1;                               /* the fault ends it here */
+    return 3;
 }
 
 /* A write through a region's executable alias ends the process. */
@@ -1639,6 +1737,10 @@ int main(unsigned long arg)
 
     if (arg == CTEST_RESERVE_ALIAS) {
         return reserve_alias_role();
+    }
+
+    if (arg == CTEST_REGION_READONLY) {
+        return region_readonly_role();
     }
 
     if (arg == CTEST_SUSPEND) {

@@ -164,9 +164,9 @@ static struct endpoint *resolve_as(struct thread *t, cap_t index,
                                    unsigned *generation);
 static cap_t install(struct thread *t, struct endpoint *ep, unsigned generation);
 static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
-                                        unsigned *generation);
+                                        unsigned *generation, bool *readonly);
 static cap_t install_memory(struct thread *t, struct memobj *m,
-                            unsigned generation);
+                            unsigned generation, bool readonly);
 
 static void message_copy(struct message *dst, const struct message *src)
 {
@@ -233,10 +233,13 @@ static void message_deliver(struct thread *to, struct thread *from,
              * capability; the application receives its own index for the
              * same pages and can map them. Nobody else can name them.
              */
-            struct memobj *m = resolve_memory_as(from, sending, &generation);
+            bool readonly = false;
+            struct memobj *m = resolve_memory_as(from, sending, &generation, &readonly);
 
             if (m != NULL) {
-                cap_t got = install_memory(to, m, generation);
+                /* Read-only stays read-only: a holder can pass on no more
+                 * than it was given. */
+                cap_t got = install_memory(to, m, generation, readonly);
 
                 message_set_cap(dst, got >= 0 ? got : -1);
             }
@@ -735,7 +738,7 @@ again:
  * anyway - which is where a capability of one kind gets used as the other.
  */
 static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
-                                        unsigned *generation)
+                                        unsigned *generation, bool *readonly)
 {
     struct cap *slot = cap_slot(t->caps, index);
 
@@ -748,6 +751,10 @@ static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
                 *generation = slot->generation;
             }
 
+            if (readonly != NULL) {
+                *readonly = slot->readonly;
+            }
+
             return r;
         }
     }
@@ -757,7 +764,7 @@ static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
 
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
 {
-    return resolve_memory_as(t, index, NULL);
+    return resolve_memory_as(t, index, NULL, NULL);
 }
 
 /*
@@ -767,16 +774,21 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
  * drop it in between, and the generation is what says so - and it is the
  * caller's to let go of.
  */
-struct memobj *ipc_hold_memory(struct thread *t, cap_t index)
+struct memobj *ipc_hold_memory_as(struct thread *t, cap_t index, bool *readonly)
 {
     unsigned generation = 0;
-    struct memobj *m = resolve_memory_as(t, index, &generation);
+    struct memobj *m = resolve_memory_as(t, index, &generation, readonly);
 
     if (m == NULL || !memobj_ref_as(m, generation)) {
         return NULL;
     }
 
     return m;
+}
+
+struct memobj *ipc_hold_memory(struct thread *t, cap_t index)
+{
+    return ipc_hold_memory_as(t, index, NULL);
 }
 
 /*
@@ -929,7 +941,7 @@ void *ipc_resolve_object(struct thread *t, cap_t index, unsigned kind,
  * for a slot is not one.
  */
 static cap_t install_memory(struct thread *t, struct memobj *m,
-                            unsigned generation)
+                            unsigned generation, bool readonly)
 {
     struct captable *c = t->caps;
     unsigned long flags;
@@ -954,6 +966,7 @@ again:
             slot->memory = m;
             slot->irq = NULL;
             slot->generation = generation;
+            slot->readonly = readonly;
             slot_set_kind(slot, CAP_MEMORY);    /* last: see `slot_kind` */
             spin_unlock(&c->lock, flags);
             return i;
@@ -975,7 +988,15 @@ again:
 
 cap_t ipc_install_memory(struct thread *t, struct memobj *m)
 {
-    return install_memory(t, m, m->generation);
+    return install_memory(t, m, m->generation, false);
+}
+
+cap_t ipc_readonly_memory(struct thread *t, cap_t index)
+{
+    unsigned generation = 0;
+    struct memobj *m = resolve_memory_as(t, index, &generation, NULL);
+
+    return m != NULL ? install_memory(t, m, generation, true) : IPC_ERR_BAD_CAP;
 }
 
 /*
@@ -1012,6 +1033,7 @@ static struct memobj *empty_slot(struct cap *slot)
     slot->irq = NULL;
     slot->object = NULL;
     slot->generation = 0;
+    slot->readonly = false;
 
     return m;
 }
@@ -1187,9 +1209,11 @@ cap_t ipc_cap_grant(struct thread *to, cap_t from_index)
      * still the one the slot names, as every region capability is.
      */
     if (ep == NULL) {
-        m = resolve_memory_as(thread_current(), from_index, &generation);
+        bool readonly = false;
 
-        return m != NULL ? install_memory(to, m, generation) : IPC_ERR_BAD_CAP;
+        m = resolve_memory_as(thread_current(), from_index, &generation, &readonly);
+
+        return m != NULL ? install_memory(to, m, generation, readonly) : IPC_ERR_BAD_CAP;
     }
 
     /* The index the recipient gets is unrelated to the one the granter used.

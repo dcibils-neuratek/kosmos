@@ -258,7 +258,16 @@ long vm_guest_map(struct thread *t, long guest, long region, uint64_t ipa)
         return SYS_ERR_NO_ROOM;
     }
 
-    if ((m = ipc_hold_memory(t, (cap_t)region)) == NULL) {
+    bool readonly = false;
+
+    if ((m = ipc_hold_memory_as(t, (cap_t)region, &readonly)) == NULL) {
+        return SYS_ERR_DENIED;
+    }
+
+    /* A guest's second stage maps what it is given writable: a region its
+     * monitor may only read is not one it can give a guest. */
+    if (readonly) {
+        memobj_unref(m);
         return SYS_ERR_DENIED;
     }
 

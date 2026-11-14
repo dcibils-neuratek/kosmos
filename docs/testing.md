@@ -33123,3 +33123,21 @@ The fragmented MP4s seek 83 ms later than the plain one and land on the
 same picture, and their AAC has 1,280 more samples. That is right, and the
 Mac says the same: a fragmented MP4 carries no edit list, which is what
 takes off two B-frames' delay and AAC's priming samples.
+
+## 18.805 A region that may only be read (W7a)
+
+`docs/w7.md` W7a: WebKit's `SharedMemory` hands out read-only views, so
+Nebula's region capabilities gain a right. `SYS_MEM_READONLY` (82) makes a
+second capability to a region that may only be read: it maps without write
+access (`MAP_USER_RO`, filled on touch the same way), is refused execute,
+keeps the bit through a message and through `SYS_SPAWN`, is refused by
+`SYS_GUEST_MAP`, and is not made for a write-combining region.
+
+`x86-kernel`'s reserve test gains checks 19 to 21 and role 918. 19: mapped
+read-only, the region reads what was written through the writable mapping,
+and execute is refused. 20: sent through an endpoint, what arrives is still
+read-only. 21: a write-combining region has no read-only capability. Role
+918 writes through a read-only capability that came in a message and must
+be ended by the fault. PASS. Control: a transfer that installs the
+capability writable - the role says 20, and the write does not end the
+process (it returns 3).

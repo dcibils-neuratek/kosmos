@@ -209,7 +209,8 @@ bool sharemap_fill(struct process *p, uintptr_t va)
             ok = true;                  /* another thread of it, just now */
         } else if ((mem = memobj_fill(s->region, (page - s->va) / PAGE_SIZE)) != NULL) {
             ok = as_map(p->space, page, virt_to_phys(mem), 1,
-                        s->exec ? MAP_USER_RX : MAP_USER_RW) == AS_OK;
+                        s->exec ? MAP_USER_RX
+                        : s->readonly ? MAP_USER_RO : MAP_USER_RW) == AS_OK;
         }
     }
 

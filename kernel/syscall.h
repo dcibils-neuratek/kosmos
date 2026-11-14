@@ -711,7 +711,19 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * process id and reaches the process, so it carries no authority.
  */
 #define SYS_SELF        81  /* ()                     -> this process's id  */
-#define SYS_MAX         82
+
+/*
+ * **A region that may only be read** (`docs/w7.md` W7a): a second
+ * capability to the region `cap` names, through which it maps without
+ * write access and never executable, and which stays so when it is passed
+ * on - a holder can hand on no more than it was given. What WebKit's
+ * shared memory hands a process that must see bytes it may not change; and
+ * a capability's answer rather than a mapping's, so it is the giver who
+ * decides, not the receiver. Refused for a write-combining region, whose
+ * memory type a read-only mapping could not keep.
+ */
+#define SYS_MEM_READONLY 82 /* (cap)                  -> cap or error       */
+#define SYS_MAX         83
 
 #define RESERVE_NONE    0
 #define RESERVE_READ    1

@@ -245,6 +245,10 @@ struct cap {
     struct irq_line *irq;
     void            *object;    /* CAP_GUEST, CAP_VCPU */
     unsigned         generation;
+    /* A region that may only be read through this capability: mapped
+     * without write access, never executable, and still so in whoever it
+     * is passed to (`SYS_MEM_READONLY`, `docs/w7.md` W7a). */
+    bool             readonly;
 };
 
 struct captable {
@@ -291,6 +295,8 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index);
 /* A region, resolved and referenced; NULL if the capability no longer names
  * one. The reference is the caller's to let go of. */
 struct memobj *ipc_hold_memory(struct thread *t, cap_t index);
+/* The same, and whether the capability lets its holder only read it. */
+struct memobj *ipc_hold_memory_as(struct thread *t, cap_t index, bool *readonly);
 
 /* The same pair for an interrupt line. `kernel/irq.h` is the argument, and
  * `ipc.c` has the one difference: a line has no reference count, because it
@@ -299,6 +305,9 @@ struct irq_line;
 struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index);
 cap_t ipc_install_irq(struct thread *t, struct irq_line *line);
 cap_t ipc_install_memory(struct thread *t, struct memobj *m);
+/* A second capability to the region `index` names, which may only read it:
+ * what `SYS_MEM_READONLY` answers. */
+cap_t ipc_readonly_memory(struct thread *t, cap_t index);
 
 /* A guest or a vCPU into a free slot, and back out of one: `kind` is
  * CAP_GUEST or CAP_VCPU, and resolving answers NULL for any other kind.

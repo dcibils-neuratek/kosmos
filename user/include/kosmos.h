@@ -780,6 +780,14 @@ static inline long kosmos_mem_map_rx(long cap)
     return sys2(SYS_MEM_MAP, cap, (long)MEM_MAP_RX);
 }
 
+/* A second capability to the same region, which may only read it
+ * (`SYS_MEM_READONLY`): mapped without write access, never executable,
+ * and still so wherever it is sent. */
+static inline long kosmos_mem_readonly(long cap)
+{
+    return sys1(SYS_MEM_READONLY, cap);
+}
+
 static inline long kosmos_mem_size(long cap)
 {
     return sys2(SYS_MEM_SIZE, cap, 0);

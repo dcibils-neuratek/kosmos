@@ -43,6 +43,7 @@ struct sharemap {
     size_t           pages;
     struct memobj   *region;        /* held while mapped; NULL for a device */
     bool             exec;          /* mapped read and execute (MEM_MAP_RX) */
+    bool             readonly;      /* mapped read only: its capability said so */
     struct sharemap *next;          /* the owner's next, by address */
 };
 

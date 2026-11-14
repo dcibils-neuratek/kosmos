@@ -1658,6 +1658,19 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = (long)p->id;
         break;
 
+    case SYS_MEM_READONLY: {
+        struct memobj *m = ipc_resolve_memory(thread_current(), (cap_t)sc->arg[0]);
+
+        if (m == NULL) {
+            result = SYS_ERR_DENIED;
+        } else if (m->write_combining) {
+            result = SYS_ERR_FLAGS;
+        } else {
+            result = ipc_readonly_memory(thread_current(), (cap_t)sc->arg[0]);
+        }
+        break;
+    }
+
     case SYS_SCREEN_FLUSH:
         /*
          * The holder of the screen, and nobody else: a process that cannot
@@ -2038,6 +2051,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         size_t i;
         unsigned long map_flags = (unsigned long)sc->arg[1];
         bool rx = (map_flags & MEM_MAP_RX) != 0;
+        bool readonly = false;
         uint64_t attrs;
 
         if ((map_flags & ~(unsigned long)MEM_MAP_RX) != 0) {
@@ -2045,9 +2059,17 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        m = ipc_hold_memory(thread_current(), (cap_t)sc->arg[0]);
+        m = ipc_hold_memory_as(thread_current(), (cap_t)sc->arg[0], &readonly);
 
         if (m == NULL) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        /* What may only be read may not be run either: executable is a
+         * right of its own, and a read-only capability does not carry it. */
+        if (rx && readonly) {
+            memobj_unref(m);
             result = SYS_ERR_DENIED;
             break;
         }
@@ -2059,7 +2081,8 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        attrs = rx ? MAP_USER_RX : m->write_combining ? MAP_USER_FB : MAP_USER_RW;
+        attrs = rx ? MAP_USER_RX : readonly ? MAP_USER_RO
+              : m->write_combining ? MAP_USER_FB : MAP_USER_RW;
 
         /*
          * Bounded by address, not by the SYS_MAP budget. Those pages are
@@ -2079,6 +2102,7 @@ void syscall_dispatch(struct syscall_frame *sc)
 
         base = s->va;
         s->exec = rx;
+        s->readonly = readonly;
 
         /* Only the pages it has: a region given on touch is mapped a page
          * at a time as this process touches it (`sharemap_fill`). */

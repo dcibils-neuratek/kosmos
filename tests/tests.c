@@ -5379,14 +5379,16 @@ static bool test_workers_leave_as_their_process_ends(void)
  * 2). Has to match `user/init/main.c`: role 913 does everything that a
  * process survives and names the first check that failed; 914 writes to a
  * page it made read only and 915 touches a guard, and each must be ended
- * by a fault, as must 916, writing through a region's executable alias.
- * After all four nothing may be left: every committed page
+ * by a fault, as must 916, writing through a region's executable alias,
+ * and 918, writing through a read-only capability that came in a message.
+ * After all five nothing may be left: every committed page
  * and every page table given back.
  */
 #define CTEST_RESERVE          913UL
 #define CTEST_RESERVE_READONLY 914UL
 #define CTEST_RESERVE_NONE     915UL
 #define CTEST_RESERVE_ALIAS    916UL
+#define CTEST_REGION_READONLY  918UL
 
 static int run_reserve_role(unsigned long role, const char *name)
 {
@@ -5421,7 +5423,7 @@ static int run_reserve_role(unsigned long role, const char *name)
 static bool test_addresses_reserved_and_protected(void)
 {
     size_t pages_before;
-    int code, readonly, none, alias;
+    int code, readonly, none, alias, region;
     bool ok = true;
 
     /* Once to warm the pools - slabs are never given back - and then
@@ -5433,6 +5435,7 @@ static bool test_addresses_reserved_and_protected(void)
     readonly = run_reserve_role(CTEST_RESERVE_READONLY, "t-readonly");
     none = run_reserve_role(CTEST_RESERVE_NONE, "t-guard");
     alias = run_reserve_role(CTEST_RESERVE_ALIAS, "t-alias");
+    region = run_reserve_role(CTEST_REGION_READONLY, "t-region-ro");
 
     if (code != 0) {
         kputs("\n   (the role said ");
@@ -5451,6 +5454,13 @@ static bool test_addresses_reserved_and_protected(void)
     if (none >= 0) {
         kputs("\n   (a touch of a guard page did not end the process: ");
         kputu((unsigned long)none);
+        kputs(")");
+        ok = false;
+    }
+
+    if (region >= 0) {
+        kputs("\n   (a write through a read-only region did not end the process: ");
+        kputu((unsigned long)region);
         kputs(")");
         ok = false;
     }
