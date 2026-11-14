@@ -10095,8 +10095,10 @@ the applications make the system useful, and is not pulled forward.
   translucent elements painted** (0.11.417, patch 0025: no compositing on
   Kosmos). **Owed**: Google search - the page loads and its script runs,
   and Google answers with its robot check, whose reCAPTCHA box is drawn
-  empty; cookies kept (W7) and what JetSki says it is (its user agent)
-  come first; the pointer's shape over a link; the right
+  empty. **Cookies are the cause to fix first**: a page that sets
+  `document.cookie` reads back nothing - none is kept at all, so Google's
+  script sets its cookie, reloads, and arrives as a stranger. The user agent
+  is GTK's, which Google serves (no quirk for it in WebKit's list); the pointer's shape over a link; the right
   button's menu; and the keys' up and down being one press - Kosmos's
   keyboard says a key, not when it was let go.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s
