@@ -31,7 +31,9 @@ and stop there - so the link is clicked and nothing comes of it; and
 link and the other still pass and that one fails.
 
 Outside the gate, `KOSMOS_JETSKI_LIVE=https://...` opens a real site
-instead, and the picture is kept in `build/jetski/` to be looked at.
+instead, and the picture is kept in `build/jetski/` to be looked at;
+`KOSMOS_JETSKI_LIVE=file:<path>` serves that file from this Mac as the
+page, for a case to look at by eye.
 
 Usage: run_jetski.py [kernel image] [apps folder]
 """
@@ -93,7 +95,7 @@ OTHER = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>%s</title>
 <style>
 body { margin: 0; height: 6000px; background: #fff; }
-#field { display: block; margin: 120px 0 0 40px; width: 320px; height: 44px;
+#field { position: fixed; top: 120px; left: 40px; width: 320px; height: 44px;
          border: 0; padding: 0; outline: none; color: #fff;
          background: rgb(%d, %d, %d); font-size: 20px; }
 </style></head>
@@ -227,7 +229,12 @@ def main():
 
     server = Server(("0.0.0.0", 0), Page)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    global PAGE
     address = LIVE or "http://10.0.2.2:%d/" % server.server_address[1]
+    if LIVE and LIVE.startswith("file:"):
+        with open(LIVE[5:], "rb") as f:
+            PAGE = f.read()
+        address = "http://10.0.2.2:%d/" % server.server_address[1]
 
     image = os.path.join(WORK, "jetski.elf")
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",

@@ -3032,3 +3032,25 @@ types three letters, and the page's own script confirms each one. When the
 page is handed none of these, or only no wheel, or only no keys, exactly
 that check fails. The test also found that elements fixed to the window
 (`position: fixed`) are not drawn yet, which is next.
+
+## 14 November 2026 - Everything on a page, painted
+
+**In short:** Parts of web pages that never showed up in JetSki now do:
+headers and bars that stay put while the page scrolls, anything rotated or
+scaled, and anything see-through.
+
+**What changed.** Browsers on most systems hand those parts of a page to
+the graphics card to put together separately. Kosmos has nothing to do
+that with, but WebKit was still setting those parts aside for it, so they
+were simply never drawn. WebKit also switched the setting back on for any
+system it didn't recognise. Now Kosmos tells WebKit it has no such help,
+and WebKit draws everything into the one picture itself.
+
+**What you can see.** Pages with fixed headers, rotated pictures or faded
+panels look as they should. Google search loads and runs, but Google
+answers with its "are you a robot" check. Keeping cookies, and telling
+sites properly what browser this is, come next.
+
+**Measured.** A test page of seven kinds of box now shows all seven,
+where three were missing. The browser's test types into a field that stays
+fixed on screen, which before this change was not drawn at all.

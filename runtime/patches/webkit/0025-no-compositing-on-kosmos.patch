@@ -1,0 +1,25 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No accelerated compositing on Kosmos (docs/w7.md W7c). WebPage forces the
+setting on for every port but four, and Kosmos has no compositor: its
+drawing area makes no layer tree host, so an element WebCore gives a layer
+of its own - position: fixed, a transform, opacity - was never drawn.
+Off, WebCore paints every layer into the backing store, in software.
+
+diff -ruN a/Source/WebKit/WebProcess/WebPage/WebPage.cpp b/Source/WebKit/WebProcess/WebPage/WebPage.cpp
+--- a/Source/WebKit/WebProcess/WebPage/WebPage.cpp	2026-11-14 17:17:27.410857059 -0300
++++ b/Source/WebKit/WebProcess/WebPage/WebPage.cpp	2026-11-14 17:17:27.425717957 -0300
+@@ -5265,7 +5265,12 @@
+ 
+     updateSettingsGenerated(store, settings);
+ 
+-#if !PLATFORM(GTK) && !PLATFORM(WIN) && !PLATFORM(PLAYSTATION) && !PLATFORM(WPE)
++#if PLATFORM(KOSMOS)
++    // Kosmos has no compositor: the drawing area has no layer tree host,
++    // so a layer WebCore composites is a layer nobody draws. Every layer
++    // is painted into the page's one picture instead.
++    settings.setAcceleratedCompositingEnabled(false);
++#elif !PLATFORM(GTK) && !PLATFORM(WIN) && !PLATFORM(PLAYSTATION) && !PLATFORM(WPE)
+     if (!settings.acceleratedCompositingEnabled()) {
+         WEBPAGE_RELEASE_LOG(Layers, "updatePreferences: acceleratedCompositingEnabled setting was false. WebKit cannot function in this mode; changing setting to true");
+         settings.setAcceleratedCompositingEnabled(true);

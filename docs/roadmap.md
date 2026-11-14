@@ -10091,10 +10091,12 @@ the applications make the system useful, and is not pulled forward.
   **W7c's input** (0.11.416): the pointer, the wheel and keys, into WebKit
   through patch 0024 and `WKPageKosmos`, and a Kosmos `WebPage` whose keys
   edit (PlayStation's typed nothing); `x86-jetski` clicks a link, turns
-  the wheel and types into a field. **Owed**: an element with `position:
-  fixed` is not painted at all (found by that suite: a fixed field was
-  blank, a static one was not) - the coordinated-graphics layer it gets is
-  one the paint never draws; the pointer's shape over a link; the right
+  the wheel and types into a field. **Fixed, transformed and
+  translucent elements painted** (0.11.417, patch 0025: no compositing on
+  Kosmos). **Owed**: Google search - the page loads and its script runs,
+  and Google answers with its robot check, whose reCAPTCHA box is drawn
+  empty; cookies kept (W7) and what JetSki says it is (its user agent)
+  come first; the pointer's shape over a link; the right
   button's menu; and the keys' up and down being one press - Kosmos's
   keyboard says a key, not when it was let go.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s

@@ -33430,3 +33430,30 @@ Controls, each failing exactly its own check: `KOSMOS_JETSKI_BREAK=deaf`
 did not arrive"; `deaf-wheel` - "the wheel was turned over the page and it
 did not scroll", the rest passing; `deaf-key` - "\"kos\" was typed into the
 page's field and it did not arrive", the rest passing.
+
+## 18.812 Fixed, transformed and translucent elements, painted
+
+0.11.417. The fixed field 18.811 found blank was one of a family: a page of
+boxes, served by `KOSMOS_JETSKI_LIVE=file:<path>` (new: a file from the
+Mac as the page, to look at), painted static, absolute, `z-index` and
+sticky ones and not `position: fixed`, a `transform` or `opacity` -
+the three WebCore gives a compositing layer of its own. Kosmos has no
+compositor: `DrawingAreaCoordinatedGraphics` makes no layer tree host
+without `COORDINATED_GRAPHICS`, so those layers went nowhere. And
+`WebPage::updatePreferences` forces accelerated compositing back on for
+every port but GTK, Windows, PlayStation and WPE - JetSki turning it off
+in its preferences changed nothing, which the same page showed. Patch 0025
+turns it off on Kosmos, in the port rather than in each application, and
+WebCore paints every layer into the backing store: all seven boxes, the
+transformed one rotated and the translucent one at half.
+
+`x86-jetski`'s second page has its field `position: fixed` again, as it
+was written first; the control is that first run (0.11.416 without the
+patch): "the second page's field is not on the screen: 0 of its pixels".
+
+Asked by Diego the same evening, whether Google search works, tried live:
+`https://www.google.com/search?q=BeOS` loads, its script runs and
+redirects with its token, and Google answers with its "unusual traffic"
+page and a reCAPTCHA - which a person would answer, and the box it draws
+in is empty. Cookies are not kept yet, and what JetSki tells a site it is
+has not been looked at; both are W7's.
