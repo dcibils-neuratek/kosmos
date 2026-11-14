@@ -2,9 +2,26 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-14 (0.11.417: fixed, transformed and translucent elements painted - no compositing on Kosmos; 0.11.416: JetSki takes the pointer, the wheel and keys - links, scrolling, typing into a field; 0.11.415: JetSki's window - Wikipedia live in a Kosmos window; malloc's arenas reserved and discarded, never spending an address twice; 0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.418: Google search works - cookies kept in /Home, and navigator.platform, the window's size and a canvas's picture as a browser gives them; 0.11.417: fixed, transformed and translucent elements painted - no compositing on Kosmos; 0.11.416: JetSki takes the pointer, the wheel and keys - links, scrolling, typing into a field; 0.11.415: JetSki's window - Wikipedia live in a Kosmos window; malloc's arenas reserved and discarded, never spending an address twice; 0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 14 November, night: Google's search works (0.11.418, not pushed)
+
+`testing.md` 18.813. Cookies are kept, in
+`/Home/Settings/JetSki/cookies.db`, named by JetSki's data store; and
+three things JetSki said of itself that only a headless robot says -
+`navigator.platform` empty, the window's outer size nought, a canvas read
+back as `data:,` - are fixed (patch 0026, `jetski_frame`, Skia's
+encoders). Google answers `?q=BeOS` with its results. `webkit_build.py`
+now hands CMake every cached option as `-D`: `-C` never changed a value a
+cache already held, so changed options had been silently ignored.
+
+**Next, Diego's order of 14 November: "I want youtube working next"** -
+`docs/media.md` M2, `<video src>` through a `MediaPlayerPrivateKosmos` on
+the Media Kit and `gfx_i420` (the plan is written there), then M3 MSE, M4
+sound, M5 YouTube; the JIT after. The full gate has not run since 0.11.415
+and runs before any push.
 
 ## 14 November, evening: everything on a page painted (0.11.417, not pushed)
 

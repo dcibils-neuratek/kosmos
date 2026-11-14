@@ -162,3 +162,40 @@ The vendored closure leaves with M6, as Video's Lua door arrives.
 Video is the closure's one user, and the whole FFmpeg stands on the POSIX
 layer, which belongs in an image of its own rather than the system's.
 
+
+## M2, as it is being built: `<video src>` in WebCore
+
+Diego, 14 November 2026, after Google's search: "I want youtube working
+next" - so the media steps come before the JIT. M2 is the first of them:
+a `<video>` with a file's address plays its picture in a page.
+
+- **`ENABLE_VIDEO` on**, in the port's options; `ENABLE_MEDIA_SOURCE`
+  stays off until M3. Each is a WebKit option, so each is a whole rebuild
+  of WebKit: they are turned on once, together with what they need.
+- **`MediaPlayerPrivateKosmos`**, the port's engine, in
+  `runtime/ports/webkit/Source/WebCore/platform/graphics/kosmos/`,
+  registered in `MediaPlayer.cpp`'s list by a patch as GStreamer's is for
+  GTK.
+- **Bytes through the page's own loader** - WebCore's
+  `PlatformMediaResourceLoader`, which is the network process, cookies and
+  all - into memory as they arrive. The Media Kit's `struct media_io` reads
+  that; a read past what has arrived waits on the decode thread, never on
+  the page's.
+- **A decode thread** per player: `media_open`, the picture stream's
+  decoder, each frame turned into the page's pixels by **`gfx_i420`**, the
+  gfx kit's SIMD conversion with BT.601 and BT.709 (one door: the Video
+  app's films go through the same function), into a ring of three frames.
+- **The clock** is the counter from `play()` until M4 puts the Playback
+  Kit's position under it; a frame is shown when its time has come, and
+  one that is late is dropped rather than shown late.
+- **`paint()`** draws the newest due frame as a Skia image into the
+  element's rectangle - in software, as everything on a Kosmos page is
+  since patch 0025.
+- **What it says it plays** (`canPlayType`, `isTypeSupported` later): what
+  the Media Kit decodes - WebM with VP8, VP9, AV1, Opus and Vorbis; MP4
+  with H.264, AV1, AAC and Opus; MP3, FLAC, Ogg and WAV.
+- **Test, in `x86-jetski`**: a film made at the test's start by this Mac's
+  FFmpeg from its own test pattern (no site's bytes), served beside the
+  page; the page plays it, and the check is the pattern's colours in the
+  window and `currentTime` moving, which the page reports to the server.
+  The control is the film served as a 404.

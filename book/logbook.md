@@ -3054,3 +3054,34 @@ sites properly what browser this is, come next.
 **Measured.** A test page of seven kinds of box now shows all seven,
 where three were missing. The browser's test types into a field that stays
 fixed on screen, which before this change was not drawn at all.
+
+## 14 November 2026 - Google search works
+
+**In short:** You can search Google in JetSki. It used to take the
+browser for a robot and answer every search with its "unusual traffic"
+check; now it answers with results.
+
+**What changed.** Two things were wrong. First, the browser kept no
+cookies at all. WebKit only says where to keep them on Apple's systems,
+and elsewhere it looked for a file in no folder, so nothing was ever
+kept. JetSki now keeps them in a file of its own in `/Home`.
+
+Cookies alone didn't satisfy Google. Before showing results, its page
+checks the browser, and JetSki answered three questions the way a program
+pretending to be a browser does: it named no operating system, it
+said its window was zero pixels across, and a picture drawn in the page
+read back empty. Now it names Kosmos, it gives its real window size, and
+it can turn a drawing into a PNG, which needed WebKit built with its
+picture writers.
+
+**What you can see.** A Google search shows its results: the search box,
+the result list, the side panel. Sites that remember you between pages
+now do, and they still remember you after the machine restarts.
+
+**Measured.** The browser's test now has 14 checks, up from 8. A cookie
+from the server and one from the page's script both come back with the
+next request, and the lasting one is in the file on the disk. The page
+also reports the platform, the window size and a canvas picture. With the
+fixes taken out, exactly the new checks fail and nothing else. One fault in
+the build turned up along the way: changing WebKit's build options had
+silently done nothing to a build that already existed.

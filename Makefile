@@ -3649,7 +3649,7 @@ $(UBUILD)/apps/posixtest.elf: $(USER_OBJS) $(POSIXTEST_OBJS) $(POSIX_OBJS) $(UBU
 # leaves the rest to ninja.
 #
 W5_DIR  := build/w5/$(ARCH)/install
-W5_LIBS := $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/libpng.a \
+W5_LIBS := $(W5_DIR)/lib/libwebpmux.a $(W5_DIR)/lib/libwebp.a $(W5_DIR)/lib/libsharpyuv.a $(W5_DIR)/lib/libpng.a \
            $(W5_DIR)/lib/libjpeg.a $(W5_DIR)/lib/libz.a
 W5_TEXT_LIBS := $(W5_DIR)/lib/libharfbuzz.a $(W5_DIR)/lib/libfreetype.a
 

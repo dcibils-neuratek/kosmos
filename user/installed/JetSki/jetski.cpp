@@ -23,11 +23,14 @@
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageKosmos.h>
 #include <WebKit/WKPageNavigationClient.h>
+#include <WebKit/WKPageUIClient.h>
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKView.h>
 #include <WebKit/WKViewClient.h>
+#include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
+#include <WebKit/WKWebsiteDataStoreRef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wtf/MonotonicTime.h>
@@ -104,11 +107,44 @@ void needsDisplay(WKViewRef, WKRect, const void*)
     browser.stop();
 }
 
+/*
+ * **The window a page is in** (`jetski_frame`): what `window.outerWidth`,
+ * `screenX` and the rest answer. Without it they are all nought, which no
+ * browser a person uses says and which a site's robot check reads as a
+ * browser with no window at all - the mark of one driven by a program.
+ */
+WKRect windowFrame;
+
+WKRect getWindowFrame(WKPageRef, const void*)
+{
+    return windowFrame;
+}
+
 WKContextRef context()
 {
     static WKContextRef shared = [] {
         auto configuration = adoptWK(WKContextConfigurationCreate());
         return WKContextCreateWithConfiguration(configuration.get());
+    }();
+    return shared;
+}
+
+/*
+ * **Where cookies are kept**: a file of curl's `CookieJarDB`, on SQLite, in
+ * `/Home/Settings/JetSki` beside the cache - which only the network
+ * process reaches (`WebsiteDataStoreKosmos.cpp`). WebKit names a cookie
+ * file for a data store only on Cocoa; everywhere else the network process
+ * falls back to `cookie.jar.db` in no folder at all, which on Kosmos is
+ * nowhere, so no cookie was ever kept - not even for the page that set it,
+ * and Google's script, setting one and reloading, came back a stranger.
+ */
+WKWebsiteDataStoreRef dataStore()
+{
+    static WKWebsiteDataStoreRef shared = [] {
+        auto configuration = adoptWK(WKWebsiteDataStoreConfigurationCreate());
+        auto path = adoptWK(WKStringCreateWithUTF8CString("/Home/Settings/JetSki/cookies.db"));
+        WKWebsiteDataStoreConfigurationSetCookieStorageFile(configuration.get(), path.get());
+        return WKWebsiteDataStoreCreateWithConfiguration(configuration.get());
     }();
     return shared;
 }
@@ -131,6 +167,7 @@ extern "C" int jetski_open(unsigned width, unsigned height)
 
     auto configuration = adoptWK(WKPageConfigurationCreate());
     WKPageConfigurationSetContext(configuration.get(), context());
+    WKPageConfigurationSetWebsiteDataStore(configuration.get(), dataStore());
     browser.view = WKViewCreate(configuration.get());
     browser.width = width;
     browser.height = height;
@@ -155,11 +192,21 @@ extern "C" int jetski_open(unsigned width, unsigned height)
     navigation.webProcessDidCrash = didCrash;
     WKPageSetPageNavigationClient(browser.page, &navigation.base);
 
+    static WKPageUIClientV0 ui { };
+    ui.base = { 0, nullptr };
+    ui.getWindowFrame = getWindowFrame;
+    WKPageSetPageUIClient(browser.page, &ui.base);
+
     static WTF::RunLoop::Timer slice(WTF::RunLoop::mainSingleton(), "jetski slice"_s, [] {
         browser.stop();
     });
     browser.slice = &slice;
     return 0;
+}
+
+extern "C" void jetski_frame(int x, int y, unsigned width, unsigned height)
+{
+    windowFrame = WKRectMake(x, y, width, height);
 }
 
 extern "C" void jetski_resize(unsigned width, unsigned height)

@@ -10095,10 +10095,26 @@ the applications make the system useful, and is not pulled forward.
   translucent elements painted** (0.11.417, patch 0025: no compositing on
   Kosmos). **Owed**: Google search - the page loads and its script runs,
   and Google answers with its robot check, whose reCAPTCHA box is drawn
-  empty. **Cookies are the cause to fix first**: a page that sets
-  `document.cookie` reads back nothing - none is kept at all, so Google's
-  script sets its cookie, reloads, and arrives as a stranger. The user agent
-  is GTK's, which Google serves (no quirk for it in WebKit's list); the pointer's shape over a link; the right
+  empty. **Cookies** - *done, 0.11.418*: none was kept at all, because
+  WebKit names a cookie file for a data store only on Cocoa and the curl
+  network process fell back to `cookie.jar.db` in no folder; JetSki's
+  data store keeps them in `/Home/Settings/JetSki/cookies.db`, and
+  `x86-jetski` holds a server's cookie and a script's to the next request
+  and the file on the disk. **Google still answered with its robot
+  check with cookies kept** - it is not the user agent (Safari's own got
+  the same page) and not this network (a desktop browser here gets
+  results): Google's script runs a check of the browser, and three things
+  JetSki said of itself are what a headless robot says - `navigator.platform`
+  empty, the window's outer size nought, and a canvas that read back as
+  `data:,`. *Done, 0.11.418* (`testing.md` 18.813): patch 0026 names the
+  platform "Kosmos x86_64", JetSki tells WebKit its window's frame, and
+  Skia's encoders are built (`USE_SKIA_ENCODERS`, with libwebp's mux); held
+  by `x86-jetski`. **Google's search answers with its results.** What a page still finds missing beside a desktop browser:
+  WebAssembly (with the JIT), WebGL and Web Audio (`AudioContext`) - each
+  its own step, and each a mark a robot check may read. **Diego, 14
+  November: "I want youtube working next", "And Google"** - so Google's
+  search and then YouTube (`docs/media.md` M2-M5) come before the JIT.
+  Still owed by W7c: the pointer's shape over a link; the right
   button's menu; and the keys' up and down being one press - Kosmos's
   keyboard says a key, not when it was let go.
   **Split `x86-cafesa3d-2`** (found 14 November, `testing.md` 18.807): 232 s

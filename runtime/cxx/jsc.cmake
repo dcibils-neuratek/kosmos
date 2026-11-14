@@ -69,8 +69,10 @@ set(CMAKE_EXE_LINKER_FLAGS
 # **Skia** (`docs/w5.md` W5e), WebKit's own copy in `Source/ThirdParty/skia`:
 # on the processor, its fonts through the same FreeType as the Text Kit's,
 # and pictures through W5a's libpng and libjpeg-turbo - found where
-# `tools/w5_build.py` installed them, as `webkit_build.py` says. No encoders
-# yet: they need libwebp's mux, and nothing asks Skia to write a picture
-# before WebCore does (W6).
+# `tools/w5_build.py` installed them, as `webkit_build.py` says. And its
+# encoders, PNG, JPEG and WebP through libwebp's mux, since a page asks for
+# them (W7c): `canvas.toDataURL()` and `toBlob()` wrote nothing without
+# them - `data:,` - and a site's robot check draws on a canvas and reads it
+# back, so an empty picture is a browser that is not one.
 set(USE_SKIA ON CACHE BOOL "")
-set(USE_SKIA_ENCODERS OFF CACHE BOOL "")
+set(USE_SKIA_ENCODERS ON CACHE BOOL "")

@@ -33457,3 +33457,56 @@ redirects with its token, and Google answers with its "unusual traffic"
 page and a reCAPTCHA - which a person would answer, and the box it draws
 in is empty. Cookies are not kept yet, and what JetSki tells a site it is
 has not been looked at; both are W7's.
+
+## 18.813 Google's search: cookies kept, and a browser that says what one says
+
+0.11.418. **Cookies**: none was kept, not even for the page that set
+one - a page that wrote `document.cookie` read back nothing. WebKit names a
+data store's cookie file only on Cocoa (`initializePaths`), and curl's
+network process then falls back to `cookie.jar.db` in no folder, which on
+Kosmos is nowhere, so `CookieJarDB` never opened and dropped every cookie.
+JetSki's pages now have a data store whose cookie file is
+`/Home/Settings/JetSki/cookies.db`, on SQLite through the POSIX layer.
+`x86-jetski`'s first page is answered with a `Set-Cookie` that has a
+lifetime and sets a second cookie from its script; the second page must be
+asked for with both, and after the machine stops the cookie file is read
+off the disk with `kfs.lua` and must be SQLite holding the lasting one.
+Controls: the JetSki before the change - "the second page was asked for
+without jetski", "... without script", "there is no
+/Home/Settings/JetSki/cookies.db on the disk", the other eight passing;
+and `KOSMOS_JETSKI_BREAK=foreign-cookie`, the server's cookie set for
+`example.com` and none from the script, which a browser must refuse - the
+same three.
+
+**Google still answered with its robot check with cookies kept** - five of
+its own in the file (`live-cookies.db`, kept beside a live run's picture
+now). Not the user agent: Safari's own, for one run, got the same page.
+Not this network: a desktop browser here gets results. Google's first
+page runs a check of the browser and sends its verdict with the
+reload, so a probe page printed what any page sees (console messages
+reach the serial line with WebKit's
+`LogsPageMessagesToSystemConsoleEnabled`, for that run only). Three
+answers are what a headless robot gives and no browser a person uses
+does: **`navigator.platform` empty** (WebCore names one for Linux, macOS,
+Windows and Haiku and nothing else); **`outerWidth` and `outerHeight`
+nought**, since JetSki never told WebKit its window; and **a canvas read
+back as `data:,`**, because Skia's encoders were not built. So: patch
+0026 names the platform `Kosmos x86_64`, matching the user agent; JetSki
+gives WebKit its window's frame (`jetski_frame`, `getWindowFrame`); and
+`USE_SKIA_ENCODERS` is on, with libwebp's mux library, which they need.
+`x86-jetski`'s first page reports all three to the server; the control is
+the JetSki before them - "navigator.platform is \"\"", "the window's outer
+size is 0x0", "a canvas drawn on encodes as \"data:,\"", the other eleven
+passing. With them, `https://www.google.com/search?q=BeOS` is answered with
+its results.
+
+**And a build that silently did not change**: the first rebuild with
+`USE_SKIA_ENCODERS ON` in `runtime/cxx/jsc.cmake` finished in two minutes
+with it still OFF in `CMakeCache.txt`. The options file is given to CMake
+as `-C`, an initial cache, which never replaces a value a cache already
+holds - so every option changed since the first configure had been
+ignored, with nothing said. `webkit_build.py` now gives every
+`set(... CACHE ...)` in the file again as `-D`, which does.
+
+Still different from a desktop browser, and each a mark a check may read:
+no WebAssembly (it waits for the JIT), no WebGL and no Web Audio.

@@ -38,6 +38,9 @@ struct jetski_state {
 /* The view, `width` by `height`; 0 when it was made. Once a process. */
 int jetski_open(unsigned width, unsigned height);
 void jetski_resize(unsigned width, unsigned height);
+/* Where the page's window is on the screen and how big, frame and all:
+ * what `window.screenX`, `outerWidth` and the rest answer. */
+void jetski_frame(int x, int y, unsigned width, unsigned height);
 
 void jetski_load(const char *address);
 void jetski_back(void);

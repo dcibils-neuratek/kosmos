@@ -57,6 +57,14 @@ static int l_resize(lua_State *L)
     return 0;
 }
 
+/* web.frame(x, y, w, h): where the window is, and its whole size. */
+static int l_frame(lua_State *L)
+{
+    jetski_frame((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2),
+                 side(L, 3), side(L, 4));
+    return 0;
+}
+
 static int l_load(lua_State *L)
 {
     jetski_load(luaL_checkstring(L, 1));
@@ -176,7 +184,7 @@ void kosmos_jetski_kit(lua_State *L)
         { "back", l_back },     { "forward", l_forward }, { "reload", l_reload },
         { "stop", l_stop },     { "pump", l_pump },     { "paint", l_paint },
         { "mouse", l_mouse },   { "wheel", l_wheel },   { "key", l_key },
-        { "focus", l_focus },
+        { "focus", l_focus },   { "frame", l_frame },
         { NULL, NULL },
     };
 

@@ -30,8 +30,23 @@ and stop there - so the link is clicked and nothing comes of it; and
 `deaf-wheel` and `deaf-key` keep only the wheel or only the keys, so the
 link and the other still pass and that one fails.
 
+**And it keeps cookies**: the first page's answer sets one, with a
+lifetime, and its script sets another; the second page must be asked for
+with both, and the one with a lifetime must be in the cookie file on
+`/Home` when the machine is off - read from the disk with `kfs.lua`.
+**And it says what a browser says of itself**: the first page reports
+`navigator.platform`, its window's outer size and a canvas it drew on,
+encoded, to the server - each of which a site's robot check reads, and each
+of which was empty here until Google's search answered every query with
+one.
+
+`KOSMOS_JETSKI_BREAK=foreign-cookie` has the server set its cookie for
+another site and the script set none, which a browser must refuse, so the
+second page arrives without them.
+
 Outside the gate, `KOSMOS_JETSKI_LIVE=https://...` opens a real site
-instead, and the picture is kept in `build/jetski/` to be looked at;
+instead, and the picture is kept in `build/jetski/` to be looked at,
+with the cookie file the site left as `live-cookies.db`;
 `KOSMOS_JETSKI_LIVE=file:<path>` serves that file from this Mac as the
 page, for a case to look at by eye.
 
@@ -46,6 +61,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -67,6 +83,17 @@ BLOCK = (0x13, 0x7a, 0x5c)
 BLOCK_W, BLOCK_H = 320, 160
 TITLE = "JetSki window test"
 
+# The cookies: one from the server's answer, with a lifetime so it is
+# kept on the disk, and one from the page's script.
+SERVER_COOKIE = "jetski=from-the-server"
+SCRIPT_COOKIE = "script=from-the-page"
+COOKIE_FILE = "/Home/Settings/JetSki/cookies.db"
+
+# What a page sees of the browser: the system it names, its window, and a
+# canvas it can read back - each of which a robot check asks.
+PLATFORM = "Kosmos x86_64" if "x86_64" in IMAGE else "Kosmos aarch64"
+WINDOW = (1200, 800)
+
 PAGE = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>%s</title>
 <style>
@@ -77,9 +104,18 @@ body { margin: 24px; font-family: sans-serif; background: #fff; color: #222; }
 <h1>A page in a window</h1>
 <p>WebKit laid this out and painted it, and JetSki put it on the screen.</p>
 <div id="block"></div>
+<script>document.cookie = "%s; path=/";
+var canvas = document.createElement("canvas");
+canvas.width = 40; canvas.height = 20;
+var g = canvas.getContext("2d");
+g.fillStyle = "rgb(200, 40, 40)"; g.fillRect(0, 0, 40, 20);
+var said = { platform: navigator.platform, outer: outerWidth + "x" + outerHeight,
+             canvas: canvas.toDataURL() };
+new Image().src = "/report?" + new URLSearchParams(said);
+</script>
 <p><a id="go" href="/other.html">Another page</a></p>
 </body></html>
-""" % ((TITLE.encode(), BLOCK_W, BLOCK_H) + BLOCK)
+""" % ((TITLE.encode(), BLOCK_W, BLOCK_H) + BLOCK + (SCRIPT_COOKIE.encode(),))
 
 # The link and the second page's field, each a colour of its own, so they
 # are found on the screen rather than assumed to be where a layout put them.
@@ -114,15 +150,26 @@ field.addEventListener("input", function () { document.title = "typed " + field.
 
 class Page(http.server.BaseHTTPRequestHandler):
     asked = []
+    cookies = {}
+    report = None
 
     def do_GET(self):
         Page.asked.append(self.path)
+        Page.cookies[self.path] = self.headers.get("Cookie", "")
+        if self.path.startswith("/report?"):
+            Page.report = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
+            self.send_response(204)
+            self.end_headers()
+            return
         body = {"/": PAGE, "/other.html": OTHER}.get(self.path)
         if BROKEN == "missing" or body is None:
             self.send_error(404)
             return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        if self.path == "/" and not LIVE:
+            self.send_header("Set-Cookie", SERVER_COOKIE + "; Path=/; Max-Age=86400"
+                             + ("; Domain=example.com" if BROKEN == "foreign-cookie" else ""))
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -221,6 +268,47 @@ def use(guest, R, dump, window, mark):
     return failed
 
 
+def itself():
+    """What the page said of the browser it is in: what every browser says."""
+    if Page.report is None:
+        return ["the page never said what it sees of the browser"]
+    said = {k: v[0] for k, v in Page.report.items()}
+    failed = []
+    if said.get("platform") != PLATFORM:
+        failed.append("navigator.platform is \"%s\", not \"%s\"" % (said.get("platform"), PLATFORM))
+    if said.get("outer") != "%dx%d" % WINDOW:
+        failed.append("the window's outer size is %s, not %dx%d" % ((said.get("outer"),) + WINDOW))
+    picture = said.get("canvas", "")
+    if not picture.startswith("data:image/png;base64,") or len(picture) < 80:
+        failed.append("a canvas drawn on encodes as \"%s\", not a PNG" % picture[:40])
+    return failed
+
+
+def cookies():
+    """The second page asked for with both cookies, the lasting one on the disk."""
+    failed = []
+    sent = Page.cookies.get("/other.html", "")
+    for cookie in (SERVER_COOKIE, SCRIPT_COOKIE):
+        if cookie not in sent:
+            failed.append("the second page was asked for without %s: Cookie: [%s]"
+                          % (cookie.split("=")[0], sent))
+    kept = os.path.join(WORK, "cookies.db")
+    if os.path.exists(kept):
+        os.remove(kept)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK, COOKIE_FILE, kept],
+                   capture_output=True, cwd=ROOT)
+    if not os.path.exists(kept):
+        failed.append("there is no %s on the disk" % COOKIE_FILE)
+    else:
+        with open(kept, "rb") as f:
+            data = f.read()
+        if not data.startswith(b"SQLite format 3"):
+            failed.append("%s is not a SQLite database" % COOKIE_FILE)
+        elif SERVER_COOKIE.split("=")[1].encode() not in data:
+            failed.append("the server's cookie, with its lifetime, is not in %s" % COOKIE_FILE)
+    return failed
+
+
 def main():
     built = os.path.join(APPS, "jetski.elf")
     if not os.path.exists(built):
@@ -240,6 +328,8 @@ def main():
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
     lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
+    if BROKEN == "foreign-cookie":
+        PAGE = PAGE.replace(SCRIPT_COOKIE.encode(), b"")
     if BROKEN in ("deaf", "deaf-wheel", "deaf-key"):
         # The page's view keeps what it is handed: everything, or the one.
         with open(lua) as f:
@@ -313,6 +403,9 @@ def main():
                       % (re.findall(r"jetski: [^\r\n]*", seen)[-3:] or "nothing said"))
 
     if LIVE:
+        # What the site left in the cookie file, kept beside the picture.
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK, COOKIE_FILE,
+                        os.path.join(KEPT, "live-cookies.db")], capture_output=True, cwd=ROOT)
         print("%s: %s - the picture is %s" % ("FAIL" if failed else "PASS",
                                                "; ".join(failed) or "loaded", picture))
         return 1 if failed else 0
@@ -337,8 +430,10 @@ def main():
         failed.append("nothing was clicked: the page was not there to use")
     else:
         failed.extend(used)
+        failed.extend(cookies())
+        failed.extend(itself())
 
-    checks = 8
+    checks = 14
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -347,8 +442,11 @@ def main():
           "a page fetched over HTTP by WebKit's network process and painted below the "
           "address field, %dx%d at %d,%d in the window, and the title the page's; "
           "then its link clicked to a second page, the wheel turned and its script told "
-          "the page scrolled, and its field clicked and \"%s\" typed into it"
-          % (box[2], box[3], box[0] - x, box[1] - y, TYPED))
+          "the page scrolled, and its field clicked and \"%s\" typed into it; and the "
+          "second page asked for with the server's cookie and the script's, the lasting "
+          "one kept on /Home; and the page saw \"%s\" as the platform, its window "
+          "1200x800 and a canvas read back as a PNG"
+          % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 
 

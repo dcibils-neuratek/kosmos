@@ -1,0 +1,22 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+navigator.platform on Kosmos (docs/w7.md W7c): the system and its
+processor, as Linux's uname gives "Linux x86_64" and Haiku says "Haiku",
+matching the user agent's "Kosmos x86_64". It was empty, which no browser
+a person uses answers and which a site's robot check reads as one that is
+not - Google's search answered every query with its robot check.
+
+diff -ruN a/Source/WebCore/page/NavigatorBase.cpp b/Source/WebCore/page/NavigatorBase.cpp
+--- a/Source/WebCore/page/NavigatorBase.cpp	2026-11-14 19:11:42.209095809 -0300
++++ b/Source/WebCore/page/NavigatorBase.cpp	2026-11-14 19:11:42.222451866 -0300
+@@ -110,6 +110,10 @@
+     return "Win32"_s;
+ #elif OS(HAIKU)
+     return "Haiku"_s;
++#elif PLATFORM(KOSMOS) && CPU(X86_64)
++    return "Kosmos x86_64"_s;
++#elif PLATFORM(KOSMOS) && CPU(ARM64)
++    return "Kosmos aarch64"_s;
+ #else
+     return ""_s;
+ #endif

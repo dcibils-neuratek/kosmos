@@ -57,7 +57,8 @@ local STAT = 26                      -- what the page is doing, along the bottom
 local VIEW_Y = HEAD
 local VIEW_H = H - HEAD - STAT
 
-local win, why = ui.window{ title = "JetSki", w = W, h = H, x = 70, y = 50, direct = true }
+local X, Y = 70, 50
+local win, why = ui.window{ title = "JetSki", w = W, h = H, x = X, y = Y, direct = true }
 
 if not win then
   print("jetski: " .. tostring(why))
@@ -76,6 +77,10 @@ if not made then
   win:close()
   return
 end
+
+-- What a page's `window.screenX` and `outerWidth` answer: the window, frame
+-- and all. Left at nought, a site's robot check reads it as no window.
+web.frame(X, Y, W, H)
 
 --------------------------------------------------------------------------
 -- The header: the kit's widgets, in this window's own pixels.
