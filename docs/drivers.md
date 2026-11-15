@@ -495,6 +495,45 @@ probe before it serves anyone; serving `/Devices/blocks`' protocol - which
 has one server today, xHCI, so diskfs and drives will ask two - waits on the
 controller's interrupt, and is the next step (`roadmap.md`).
 
+**A2, its blocks served, read only (0.11.438).** Diego, 15 November 2026,
+on the M700: "i dont see the drive in m700 in our disk utility", then "do
+the sata driver first, i want local storage". The driver stays after its
+probe and serves `blockproto.h`, the protocol the USB driver serves a
+stick's blocks in, at **`/Devices/disks`**, an endpoint of its own that
+init mounts for every program as it mounts `/Devices/blocks`.
+- A unit is a disk found, numbered by port.
+- INFO says "ATA" and the model's first sixteen characters.
+- A read goes through the port's own 1 MB buffer, which is
+  `BLOCK_TRANSFER_MOST`, so a client's pages never reach the controller.
+- **Write, flush and guard are refused** (`BLOCK_ERR_READ_ONLY`). This
+  step is given no endpoint that writes, so nothing in Kosmos can change
+  the disk Windows is on.
+
+`blocks.lua` takes which server as `where` (`blocks.DISKS`), and the
+Drives window's model (`drivelist.lua`) lists each disk as a *SATA drive*
+after the sticks, its partitions not read yet. A command is still polled:
+watched closely for 2 ms, then once a tick. The controller's interrupt is
+for later, with requests held while a command runs.
+
+**A3, `/Home` on it (0.11.438).** The driver serves a second endpoint,
+the one that writes, and init hands it only to the disk servers (`/Home`,
+`/Sandboxes`, `/Models`), beside the USB driver's. A write lands only
+**inside a range one of them has guarded**: a disk server sends GUARD for
+its partition when it finds it, and from then on reads of that range on
+`/Devices/disks` are refused as well (`BLOCK_ERR_GUARDED`). Anything else
+asked to be written is refused, so the partition table and Windows' own
+partition are out of reach even of a disk server with a bug in it.
+- FLUSH is FLUSH CACHE EXT.
+- diskfs looks on both block servers, sticks first. A partition named by
+  GUID on the boot line is taken whatever its type, since the one Windows
+  makes for Kosmos is a *basic data* partition.
+- On a SATA disk the filesystem is made only by `mkfs --yes`, never
+  because the first block happens to be zeros.
+
+`tools/run_sata_home.py` is the proof. It lays out a Windows-like disk,
+formats only on `mkfs`, keeps a file across a reboot, and checks that
+every byte outside the partition is unchanged.
+
 ### WiFi - OpenBSD, not FreeBSD
 
 The card is an **Intel AX201**, `VEN_8086&DEV_A0F0`. It is **CNVi**: the MAC

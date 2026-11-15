@@ -440,6 +440,20 @@ undone, the group is committed, and the step is tried again alone.
 **Reads see the group**, because `kfs_read_block` answers from the held
 blocks before the disk.
 
+**What a step frees waits for the commit, unless the group made it.** A
+freed block stays marked used in the held bitmap, because an undo may
+put back the file that pointed at it. But a block the group itself
+allocated, freed by an earlier step, was never in the last commit, and
+no undo reaches back past the current step. So `kfs_step` gives those
+back as it begins. It reads the bitmap as the last commit left it, from
+the disk underneath the held copy, and clears in the held copy each
+freed block that is clear there.
+
+Without that, a file rewritten in place inside a group could never reuse
+the hole its last rewrite left, since every rewrite is copy-on-write.
+SQLite's database ended in 1317 extents where it had 26, and speedtest1
+ran five times slower (`testing.md` 18.836).
+
 Held by `tools/test_kfs.lua`, on the host:
 - two operations grouped take two journal-header writes, against twelve
   alone;
@@ -448,9 +462,11 @@ Held by `tools/test_kfs.lua`, on the host:
   undone, the earlier step kept;
 - a removal undone, and the free blocks counted;
 - a power cut mid-group;
-- a step too big, refused, committed and retried.
+- a step too big, refused, committed and retried;
+- a file rewritten and appended to over 200 steps of one group ends in no
+  more pieces than the same writes committed one by one.
 
 Its control, without the undo copy, fails five of these. On the guest,
-`x86-disk` writes forty small files at an offset, as ported code writes,: 81 device writes grouped, against
+`x86-disk` writes forty small files at an offset, as ported code writes: 81 device writes grouped, against
 286 when the control commits every operation. After two seconds and a
 reboot, all forty are there, committed by the clock alone.

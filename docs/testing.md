@@ -34189,3 +34189,138 @@ of it (`docs/diskfs.md`):
 
 **Not yet measured**: the M700 again, with the `.device` counts and the
 trace. That needs a netboot.
+
+## 18.835 SATA A2: the M700's disk served, read only (0.11.438)
+
+Diego could not see the M700's internal drive in the Drives window. The
+driver found it and stopped, because A1 only probed. Now it serves
+`blockproto.h` at `/Devices/disks`, read only.
+
+`x86-ahci`, 6 -> 11 checks, on q35's ICH9 with a 64 MB disk laid out like
+Windows' (a protective MBR, a GPT, an NTFS partition):
+- the driver says it serves one disk, rather than ending;
+- a program reads `/Devices/disks`' INFO: one unit, 131072 sectors of 512,
+  QEMU HARDDISK;
+- sector 1 reads `EFI PART` and the partition's first sector `NTFS`;
+- a sector past the end is refused by name;
+- a write sent as the protocol's own bytes is refused as read only (7);
+- the Drives window's model lists a SATA drive of 67108864 bytes;
+- the image is the same bytes afterwards.
+
+Controls:
+- a driver that finds the disk but serves no units fails five checks;
+- one that answers a write fails the write check.
+
+**One of the checks raced itself at first.** It waited for `SATADONE`,
+which the echo of the line writing the program also carries, so it
+matched before the program ran. Now every marker is waited for with the
+tab that only the program's own output has.
+
+## 18.836 SATA A3: `/Home` in a partition Windows made (0.11.438)
+
+Diego wants local storage on the M700, and chose how on 15 November:
+Windows makes the partition, and Kosmos formats it only when `mkfs`
+asks. `x86-satahome` is new, 8 checks, on a 128 MB disk on q35's AHCI
+controller. The disk is laid out like such a machine's:
+- a protective MBR and a GPT at both ends;
+- Windows' basic data partition, with an NTFS boot sector and a megabyte
+  of its own bytes;
+- a second basic data partition for Kosmos, whose first block is zeros
+  and whose next 256 KB are not.
+
+The machine boots three times with `opt/kosmos/home` set to that
+partition's GUID:
+- the first runs `mkfs --yes`;
+- the second saves a file;
+- the third reads it back.
+
+The checks:
+- `diskinfo` says `/Home` is that partition on SATA disk 0, on all three
+  boots. It was found by its GUID, although its type is Windows';
+- it is not formatted before `mkfs --yes`, even with a first block of
+  zeros, and the disk server says so and names `mkfs --yes`;
+- `mkfs --yes` formats it, and the next boot finds the filesystem;
+- the second boot saves to the disk, not to memory;
+- a program reading a block inside the partition through
+  `/Devices/disks` is refused, and block 1 is answered;
+- the third boot reads the file;
+- **every byte outside the partition is what it was**, hashed before
+  and after.
+
+Controls, each failing the checks it should:
+- formatting a blank first block as a stick's is: 2 checks;
+- a guard 1024 blocks narrower than the partition: 3, because the driver
+  refuses the disk server's own writes outside its guard;
+- the driver accepting any write, with diskfs writing block 0 eight
+  sectors early: 4, including the bytes outside the partition;
+- taking a Kosmos partition by type only: 7.
+
+**`mkfs` could not reach the disk it was there to format.** init puts
+`/Home` in memory when the disk has no filesystem. That took `.super`,
+`.format` and `.device` with it, so `mkfs` said "no such path". This was
+true of any disk holding something that is not kfs, and nothing had hit
+it, because a blank virtio disk or stick formats itself. Now those three
+names stay mounted on the disk server whenever it answered, for the shell
+and for every program. `mkfs` says that `/Home` is in memory until the
+machine restarts.
+
+**Grouped commits had made SQLite five times slower, and the cause was
+fragmentation.** Grouped commits landed in 0.11.437. On the x86 suite
+with them, speedtest1's total went from 49 s to 250 s, and test 140
+alone from 4 s to 62 s. Both builds made about 190,000 reads. A read cost
+35 µs without groups and 374 to 925 µs with them. So the reads had got
+slower, not more numerous.
+
+They were slower because the database was in pieces:
+- `speed.db` was in 1317 extents, against 26 without groups;
+- `kept.db` was in 55, against 3.
+
+Past twelve extents, a file keeps the rest in a chain of blocks, and every
+read of a far page walks it.
+
+Each rewrite is copy-on-write: the new page goes in new blocks, and the
+old ones are freed. Inside a group, what a step frees was not handed out
+again until the group committed, because an undo might still need it. So
+the next page could not go into the hole the last one left, and stepped
+over it.
+
+**Most of what an open group frees, nobody can ask for back.** A block the
+group itself allocated, freed by an earlier step, was never in the last
+commit, and only the current step can be undone. So `kfs_step` now gives
+those blocks back as it begins. To tell them apart, it reads the bitmap
+as the last commit left it on the disk, underneath the group's held copy:
+- a block clear on the disk was this group's own, and is given back;
+- a block set on the disk stays held until the commit.
+
+The first version only stopped re-checking freed blocks at each
+allocation, and kept them used until the commit. It took speedtest1 from
+250 s to about 180 s, and left the fragmentation where it was.
+
+A host check is new in `test_kfs.lua`, 156 checks now. A file is
+rewritten and appended to over 200 steps of one group. It must end in no
+more pieces than the same writes committed one by one:
+- with the fix: 15 pieces, and 15 committed one by one;
+- control, the release switched off: 67, and the check fails.
+
+On the x86 suite, with the release:
+
+| | no groups | groups, 0.11.437 | groups, the release |
+|---|---|---|---|
+| speedtest1, TOTAL | 49 s | 258 s | 96 s |
+| test 140, queries against J1 | 4 s | 62 s | 34 s |
+| `speed.db`'s extents, at the end | 26 | 1317 | 809 |
+| `kept.db`'s extents | 3 | 55 | 19 |
+
+**Half of it is still there, and its cause is not found yet.** It was
+not the blocks freed from the last commit, which wait for the group's
+commit. Committing a group as soon as it held 32 of them changed
+nothing: 801 extents, the same time. Nor does the host's SQLite-shaped
+test show it: its database ends in 12 extents with groups. Both builds
+allocate first-fit from block 0. What still differs on the guest is
+open (`roadmap.md`, *Grouped commits*).
+
+The full gate: 123 of 127 suites passed, in 674 s, at a load average of
+18 on this Mac. `x86-switcher`, `x86-profile`, `x86-film` and
+`x86-llmmon` failed, and all four passed run alone. The first three are
+timing checks. The fourth read the keyring's first-boot line as part of
+an answer, a race in the suite (`roadmap.md`).

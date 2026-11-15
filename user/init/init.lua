@@ -4573,7 +4573,8 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           blocks_cap, drives_cap, backlight_cap, camera_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
-                          usb_cap, gpu_cap, bluetooth_cap, models_cap, sandboxes_cap)
+                          usb_cap, gpu_cap, bluetooth_cap, models_cap, disks_cap,
+                          sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -4613,6 +4614,8 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- process, the disk server, and not mounted like this.
   --
   if blocks_cap then ns.mount("/Devices/blocks", blocks_cap, nil, "blocks") end
+  -- And `/Devices/disks`, the SATA disks' blocks in the same protocol (A2).
+  if disks_cap then ns.mount("/Devices/disks", disks_cap, nil, "blocks") end
 
   --
   -- `/Devices/backlight`: the screen's brightness, from the backlight driver.
@@ -4757,6 +4760,19 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
       -- that did not happen.
       --
       ns.send("/Home", { type = "mkdir" })
+
+      --
+      -- **The disk server's own names stay its own** (SATA A3): `.super`,
+      -- `.format` and `.device` are what it says about the disk under it,
+      -- and a disk with no filesystem yet - a partition Windows made, which
+      -- is formatted only when a person asks - is exactly the one `mkfs`
+      -- has to reach. In memory, they were paths nobody had made.
+      --
+      if type(sb) == "table" then
+        for _, name in ipairs({ ".super", ".format", ".device" }) do
+          ns.mount("/Home/" .. name, disk_cap, "/Home/" .. name, "disk")
+        end
+      end
     end
   end
 
@@ -5451,6 +5467,8 @@ query. `find` and `watch` are built on exactly these two calls.
     -- And the GPU's driver, as the backlight's is: a device of the machine.
     local gpu = gpu_cap
     local usb = usb_cap
+    -- And the SATA disks' blocks, as the sticks' are.
+    local disks = disks_cap
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
@@ -5511,6 +5529,8 @@ query. `find` and `watch` are built on exactly these two calls.
     if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
     local usb_at = nil
     if usb then caps[#caps + 1] = usb; usb_at = #caps - 1 end
+    local disks_at = nil
+    if disks then caps[#caps + 1] = disks; disks_at = #caps - 1 end
     local bluetooth_at = nil
     if bluetooth then caps[#caps + 1] = bluetooth; bluetooth_at = #caps - 1 end
 
@@ -5533,7 +5553,7 @@ query. `find` and `watch` are built on exactly these two calls.
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
       sharing = sharing_at, sandboxes = sandboxes_at, models = models_at,
-      gpu = gpu_at, usb = usb_at,
+      gpu = gpu_at, usb = usb_at, disks = disks_at,
       bluetooth = bluetooth_at,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
@@ -6302,6 +6322,13 @@ if role == ROLE_INIT then
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
   local BLOCKS_WRITE_EP = sys.endpoint()
+  -- `/Devices/disks`: the SATA disks' blocks, from the SATA driver, in
+  -- `/Devices/blocks`' protocol - read only, and to every program
+  -- (`roadmap.md`, *SATA*, A2).
+  local DISKS_EP = sys.endpoint()
+  -- And the SATA disks' write endpoint, for the disk servers alone, as
+  -- `BLOCKS_WRITE_EP` is the sticks' (A3).
+  local DISKS_WRITE_EP = sys.endpoint()
 
   --
   -- **Frames, between the USB driver and the network stack** (`usb.md` 7d).
@@ -6436,9 +6463,11 @@ if role == ROLE_INIT then
   -- every program is handed through `/Home` reaches `/Home` alone, and this
   -- one reaches `/Keyring` alone, for the keyring and nothing else.
   local diskfs  = start("the disk server", ROLE_DISKFS,
-                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP,
-                          CONSOLE_EP, KEYRING_DISK_EP, MAPS_CACHE_DISK_EP,
-                          MODELS_DISK_EP },
+                        -- The SATA disks' two endpoints beside the sticks'
+                        -- (A3), so `/Home` can be a partition on either.
+                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DISKS_EP,
+                          DISKS_WRITE_EP, DEVICES_EP, CONSOLE_EP,
+                          KEYRING_DISK_EP, MAPS_CACHE_DISK_EP, MODELS_DISK_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
@@ -6452,7 +6481,8 @@ if role == ROLE_INIT then
   --
   if SANDBOXES_EP then
     start("the sandboxes drive", ROLE_SANDBOXFS,
-          { SANDBOXES_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP, CONSOLE_EP }, 0)
+          { SANDBOXES_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DISKS_EP, DISKS_WRITE_EP,
+            DEVICES_EP, CONSOLE_EP }, 0)
   end
 
   --
@@ -6463,7 +6493,8 @@ if role == ROLE_INIT then
   --
   if MODELS_WORD then
     start("the models drive", ROLE_MODELSFS,
-          { MODELS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DEVICES_EP, CONSOLE_EP }, 0)
+          { MODELS_EP, BLOCKS_EP, BLOCKS_WRITE_EP, DISKS_EP, DISKS_WRITE_EP,
+            DEVICES_EP, CONSOLE_EP }, 0)
   end
 
   --
@@ -6519,14 +6550,14 @@ if role == ROLE_INIT then
   --
   --
   -- **A SATA controller's driver** (`roadmap.md`, *SATA (AHCI)*): device
-  -- authority and the console, as the Ethernet card's. For now it finds
-  -- the disks behind the controller, reads what they are and whether they
-  -- hold a GPT, and says so - it writes nothing - and ends; serving their
-  -- blocks is its next step. On a machine without one it is told so and
-  -- says nothing.
+  -- authority and the console, as the Ethernet card's, and `/Devices/disks`
+  -- to serve. It finds the disks behind the controller, reads what they are
+  -- and whether they hold a GPT, says so, and serves their blocks - read
+  -- only: it is given no endpoint that writes (A2). On a machine without
+  -- one it answers that there are no disks.
   --
   do
-    local _, err = sys.spawn(ROLE_AHCI, { CONSOLE_EP }, SPAWN_DEVICES)
+    local _, err = sys.spawn(ROLE_AHCI, { CONSOLE_EP, DISKS_EP, DISKS_WRITE_EP }, SPAWN_DEVICES)
 
     if err then line("init: no SATA driver: " .. tostring(err)) end
   end
@@ -6900,7 +6931,8 @@ if role == ROLE_INIT then
                         KEYRING_MAIL_EP, WINDOW_EP, MDNS_EP, SMBD_EP,
                         -- Before `/Sandboxes`, which a machine may not have:
                         -- a list with a gap in it ends at the gap.
-                        USB_EP, GPU_EP, BLUETOOTH_EP, MODELS_EP, SANDBOXES_EP },
+                        USB_EP, GPU_EP, BLUETOOTH_EP, MODELS_EP, DISKS_EP,
+                        SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -6974,7 +7006,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22, 23, 24, 25, 26)
+             22, 23, 24, 25, 26, 27)
   return
 end
 
@@ -7147,6 +7179,13 @@ if role == ROLE_RUNNER then
   -- started it, and then `ls /Home` would depend on who was asking.
   if req.home_in_memory and req.data then
     ns.mount("/Home", req.data, "/Home", "ram")
+
+    -- What the disk says about itself, from the disk, as the shell's are.
+    if req.disk then
+      for _, name in ipairs({ ".super", ".format", ".device" }) do
+        ns.mount("/Home/" .. name, req.disk, "/Home/" .. name, "disk")
+      end
+    end
   end
 
   -- After `/Devices`, because longest prefix wins and this is a different
@@ -7154,6 +7193,7 @@ if role == ROLE_RUNNER then
   if req.audio   then ns.mount("/Devices/audio",   req.audio, nil, "audio") end
   if req.net     then ns.mount("/Network",         req.net, nil, "net", req.share) end
   if req.blocks  then ns.mount("/Devices/blocks",  req.blocks, nil, "blocks") end
+  if req.disks   then ns.mount("/Devices/disks",   req.disks, nil, "blocks") end
   if req.drives  then ns.mount("/Drives",          req.drives, nil, "drives") end
   if req.usb then
     ns.mount("/Devices/usb", req.usb, nil, "usb")
@@ -7389,6 +7429,14 @@ if role == ROLE_RUNNER then
       gpu_at = #caps - 1
     end
 
+    -- And the SATA disks' blocks (A2), as `/Devices/blocks` is.
+    local disks_at = nil
+
+    if req.disks then
+      caps[#caps + 1] = req.disks
+      disks_at = #caps - 1
+    end
+
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
 
@@ -7474,7 +7522,7 @@ if role == ROLE_RUNNER then
       camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
       mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
       sandboxes = sandboxes_at, models = models_at, gpu = gpu_at, usb = usb_at,
-      bluetooth = bluetooth_at,
+      disks = disks_at, bluetooth = bluetooth_at,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

@@ -1,5 +1,8 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- The block protocol from Lua: a USB stick's blocks, through the USB driver.
+-- The block protocol from Lua: a USB stick's blocks, through the USB driver
+-- at `/Devices/blocks`, and a SATA disk's, through the SATA driver at
+-- `/Devices/disks` - one protocol, two servers. Every call takes which, as
+-- `where`, and the sticks when it is left out.
 --
 -- **The layout below is `blockproto.h` written a second time**, as `audio.lua`
 -- writes `audioproto.h` a second time and for its reason: the server is C and
@@ -13,6 +16,9 @@
 -- disk server holds the endpoint that takes them (`blockproto.h`).
 
 local blocks = {}
+
+blocks.STICKS = "/Devices/blocks"
+blocks.DISKS  = "/Devices/disks"
 
 local OP_INFO, OP_OPEN, OP_READ, OP_CLOSE = 1, 2, 3, 5
 
@@ -37,11 +43,11 @@ blocks.TRANSFER_MOST = 256 * 4096
 --
 local ERRORS = {
   [1] = "the USB driver did not understand that",
-  [2] = "no stick at that unit",
+  [2] = "no drive at that unit",
   [3] = "that was not opened",
   [4] = "more blocks than one read can move",
   [5] = "that block is past the last",
-  [6] = "the stick failed it",
+  [6] = "the drive failed it",
   [7] = "that writes, and this endpoint only reads",
   [8] = "every open slot is taken",
   [9] = "the stick does not write out a cache",
@@ -54,15 +60,15 @@ end
 
 -- One request and its reply, whatever the reply's error: an INFO says how
 -- many units have been named even when the unit it asked about is not there.
-local function exchange(op, fields, pass)
+local function exchange(op, fields, pass, where)
   local bytes = string.pack(REQUEST, op, fields.unit or 0, fields.lba or 0,
                             fields.count or 0, fields.handle or 0)
-  local reply, why = fs.raw("/Devices/blocks", bytes, pass, "blocks")
+  local reply, why = fs.raw(where or blocks.STICKS, bytes, pass, "blocks")
 
   if not reply then return nil, tostring(why) end
 
   if #reply < REPLY_SIZE then
-    return nil, "the USB driver sent a reply of the wrong size"
+    return nil, "the driver sent a reply of the wrong size"
   end
 
   local err, size, count, moved, handle, vendor, product =
@@ -73,8 +79,8 @@ local function exchange(op, fields, pass)
            product = trimmed(product) }
 end
 
-local function request(op, fields, pass)
-  local r, why = exchange(op, fields, pass)
+local function request(op, fields, pass, where)
+  local r, why = exchange(op, fields, pass, where)
 
   if not r then return nil, why end
 
@@ -86,15 +92,15 @@ local function request(op, fields, pass)
 end
 
 -- What a unit is: how many blocks, how long one is, and what it says it is.
-function blocks.info(unit)
-  return request(OP_INFO, { unit = unit })
+function blocks.info(unit, where)
+  return request(OP_INFO, { unit = unit }, nil, where)
 end
 
 -- How many unit numbers the driver has given out. Every stick it holds is a
 -- unit below this; one that left is a gap, because its number is never given
 -- to another stick (`blockproto.h`).
-function blocks.units()
-  local r, why = exchange(OP_INFO, {})
+function blocks.units(where)
+  local r, why = exchange(OP_INFO, {}, nil, where)
 
   if not r then return nil, why end
 
@@ -105,25 +111,25 @@ local reader = {}
 reader.__index = reader
 
 -- A region for reads, created here and handed to the driver once.
-function blocks.open()
+function blocks.open(where)
   local cap, why = sys.memory(blocks.TRANSFER_MOST // 4096)
 
   if not cap then return nil, tostring(why) end
 
-  local r, err = request(OP_OPEN, {}, cap)
+  local r, err = request(OP_OPEN, {}, cap, where)
 
   if not r then
     sys.release(cap)
     return nil, err
   end
 
-  return setmetatable({ cap = cap, handle = r.handle }, reader)
+  return setmetatable({ cap = cap, handle = r.handle, where = where }, reader)
 end
 
 -- `count` blocks from `lba` of `unit`, as a string of bytes.
 function reader:read(unit, lba, count)
   local r, why = request(OP_READ, { unit = unit, lba = lba, count = count,
-                                    handle = self.handle })
+                                    handle = self.handle }, nil, self.where)
 
   if not r then return nil, why end
 
@@ -136,7 +142,7 @@ end
 -- copy as well as the stick.
 function reader:fill(unit, lba, count)
   local r, why = request(OP_READ, { unit = unit, lba = lba, count = count,
-                                    handle = self.handle })
+                                    handle = self.handle }, nil, self.where)
 
   if not r then return nil, why end
 
@@ -145,7 +151,7 @@ end
 
 -- The region given back, to the driver and then to the machine.
 function reader:close()
-  local r, why = request(OP_CLOSE, { handle = self.handle })
+  local r, why = request(OP_CLOSE, { handle = self.handle }, nil, self.where)
 
   sys.release(self.cap)
 

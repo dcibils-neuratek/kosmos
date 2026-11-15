@@ -69,6 +69,25 @@ function drivelist.drives()
     end
   end
 
+  -- **The SATA disks** (`roadmap.md`, *SATA*, A2): the machine's own,
+  -- through `/Devices/disks`, after the sticks. Their volumes are not read
+  -- yet - `/Drives` mounts a stick's - so all of one is unclaimed.
+  local disks = have_blocks and blocks.units(blocks.DISKS) or 0
+
+  for unit = 0, (disks or 0) - 1 do
+    local info = blocks.info(unit, blocks.DISKS)
+
+    if info and (info.blocks or 0) > 0 then
+      local bytes = info.blocks * (info.block_size or 512)
+
+      out[#out + 1] = {
+        kind = "SATA drive", unit = unit, sata = true,
+        name = trimmed(info.product) ~= "" and trimmed(info.product) or ("SATA drive " .. unit),
+        bytes = bytes, volumes = {}, unclaimed = bytes, internal = true,
+      }
+    end
+  end
+
   local disk = sys.disk and sys.disk()
 
   if type(disk) == "table" and (disk.bytes or 0) > 0 then

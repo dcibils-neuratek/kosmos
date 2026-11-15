@@ -3531,3 +3531,67 @@ because a group is written whole or not at all.
 **What it changes.** Fewer, larger writes to the stick. How much faster
 pages load on the M700 is not measured yet: that needs the machine
 booted with this build.
+
+## 15 November 2026 - The M700's own disk, seen
+
+**In short.** Kosmos can now read the M700's internal drive, the SATA disk
+Windows is on, and the Drives window lists it. It cannot write to it yet:
+nothing in Kosmos is given the right to. That is deliberate, until
+`/Home` has a partition of its own there.
+
+**What happened.** The SATA driver used to find the disk, print what it
+was, and stop. Now it stays and answers requests for the disk's blocks.
+It uses the same protocol the USB driver uses for sticks, at a new place,
+`/Devices/disks`. The Drives window asks both.
+
+**Why read only first.** The disk holds Windows. The next step, `/Home`
+on that disk, needs a partition Diego makes in Windows, and a write path
+that only the disk server holds.
+
+## 15 November 2026 - `/Home` on the M700's own disk
+
+**In short.** Kosmos can now keep `/Home` on the M700's internal SATA
+drive, in a partition Windows makes and Kosmos formats only when asked.
+It never writes a byte outside that partition, and a test holds it to
+that. On the way, grouped commits turned out to have made SQLite five
+times slower by scattering its database across the disk. Half of that is
+fixed; the other half is still being looked for.
+
+**What happened.** Diego chose the safe way to share the drive with
+Windows. Windows shrinks its own partition and makes a new one, left
+unformatted. Kosmos is told that partition's unique ID when it boots, and
+finds it on the SATA disk. Then:
+- a blank partition there is not formatted by itself, as a blank stick
+  is. A drive inside the machine holding Windows is not a disk with
+  nothing to lose, so `mkfs --yes` has to ask;
+- the disk server can write only inside the range it claimed. The SATA
+  driver refuses anything else, and a program cannot read inside it
+  either.
+
+The new test makes a disk shaped like the M700's: a partition table,
+Windows' partition with bytes of its own, and Kosmos's partition. It
+boots three times, formats, saves a file and reads it back. Then it
+checks that every byte outside Kosmos's partition is unchanged.
+
+**The bug it found.** `mkfs` could not reach a disk that held no
+filesystem. When there is none, `/Home` is put in memory, and that took
+away the names `mkfs` uses to reach the disk. Those names now stay.
+
+**The slowdown.** Grouped commits made SQLite's speed test take 258 s
+where it took 49. The database had ended in 1317 pieces where it had 26.
+Every rewrite puts the new copy in new blocks and frees the old ones.
+Inside a group, freed blocks were kept until the group committed, in
+case a failed step had to be undone. So nothing could go back into the
+hole the last rewrite left.
+
+But a block the group itself made, freed by an earlier step, was never
+part of the last commit, and no undo can reach it. Those are now given
+back at the next step.
+
+**What it changes.**
+- speedtest1: 96 s, from 258; still about twice the 49 s without groups.
+- The database: 809 pieces, from 1317.
+
+**Still open.** What makes up the rest. Committing a group early when it
+has freed many blocks changed nothing, so it is something else, and the
+next step is logging where each block of the database goes.

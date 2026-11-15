@@ -308,26 +308,44 @@ int kfs_read_block(struct kfs *k, uint32_t n, void *to)
     return disk_read(k, n, 1, to);
 }
 
-/* `count` blocks from `first`: in runs, unless the transaction holds one. */
+/*
+ * `count` blocks from `first`, in runs: what the open group holds from the
+ * group, and every stretch between those from the disk in one read. This
+ * fell back to a read a block when any block of the range was held - with a
+ * group open for a second rather than an operation, that was most reads,
+ * and a 1 MB one became 256 (`testing.md` 18.836).
+ */
 static int read_blocks(struct kfs *k, uint32_t first, uint32_t count, uint8_t *to)
 {
-    if (k->open && k->held > 0) {
-        for (uint32_t i = 0; i < count; i++) {
-            if (held_slot(k, first + i) >= 0) {
-                for (uint32_t j = 0; j < count; j++) {
-                    int r = kfs_read_block(k, first + j, to + (size_t)j * KFS_BLOCK);
+    uint32_t run = 0;           /* where the stretch not held began */
 
-                    if (r != KFS_OK) {
-                        return r;
-                    }
-                }
-
-                return KFS_OK;
-            }
-        }
+    if (!k->open || k->held == 0) {
+        return disk_read(k, first, count, to);
     }
 
-    return disk_read(k, first, count, to);
+    for (uint32_t i = 0; i <= count; i++) {
+        int slot = i < count ? held_slot(k, first + i) : -1;
+
+        if (i < count && slot < 0) {
+            continue;
+        }
+
+        if (i > run) {
+            int r = disk_read(k, first + run, i - run, to + (size_t)run * KFS_BLOCK);
+
+            if (r != KFS_OK) {
+                return r;
+            }
+        }
+
+        if (slot >= 0) {
+            memcpy(to + (size_t)i * KFS_BLOCK, k->journal[slot + 1], KFS_BLOCK);
+        }
+
+        run = i + 1;
+    }
+
+    return KFS_OK;
 }
 
 /*
@@ -422,11 +440,115 @@ void kfs_rollback(struct kfs *k)
     txn_reset(k);
 }
 
-int kfs_step(struct kfs *k)
+static int bitmap_range(struct kfs *k, const struct kfs_super *sb,
+                        uint64_t first, uint64_t count, bool used);
+
+/* Whether `block` is free in the bitmap as the last commit left it - read
+ * under the group, whose copy is held and not yet written. */
+static int committed_free(struct kfs *k, const struct kfs_super *sb, uint64_t block,
+                          uint32_t *loaded, bool *free)
+{
+    const uint64_t per = (uint64_t)KFS_BLOCK * 8;
+    uint32_t at = (uint32_t)(block / per);
+
+    if (*loaded != at) {
+        int r = disk_read(k, sb->bitmap_at + at, 1, k->committed);
+
+        if (r != KFS_OK) {
+            return r;
+        }
+
+        *loaded = at;
+    }
+
+    block %= per;
+    *free = (k->committed[block / 8] & (1u << (block % 8))) == 0;
+    return KFS_OK;
+}
+
+/*
+ * The blocks the group made that earlier steps freed, given back for good:
+ * their bits cleared in the bitmap the group holds, and the rest of each
+ * run kept noted until the commit. In two passes - the runs kept found
+ * first, in `spare`, and nothing changed when they do not fit - so a run
+ * cut into pieces cannot overrun the list it is read from.
+ */
+static int release_own(struct kfs *k, const struct kfs_super *sb)
+{
+    uint32_t loaded = UINT32_MAX, released = 0;
+    int r;
+
+    k->spare_n = 0;
+
+    for (int pass = 0; pass < 2; pass++) {
+        for (uint32_t i = 0; i < k->freed_runs; i++) {
+            uint64_t b = k->freed[i].start, end = b + k->freed[i].count;
+
+            while (b < end) {
+                uint64_t e = b + 1;
+                bool own, next;
+
+                if ((r = committed_free(k, sb, b, &loaded, &own)) != KFS_OK) {
+                    return r;
+                }
+
+                while (e < end) {
+                    if ((r = committed_free(k, sb, e, &loaded, &next)) != KFS_OK) {
+                        return r;
+                    }
+
+                    if (next != own) {
+                        break;
+                    }
+
+                    e++;
+                }
+
+                if (pass == 0) {
+                    if (own) {
+                        released++;
+                    } else if (k->spare_n == KFS_FILE_RUNS) {
+                        return KFS_OK;              /* no room to say what stays */
+                    } else {
+                        k->spare[k->spare_n].start = (uint32_t)b;
+                        k->spare[k->spare_n].count = (uint32_t)(e - b);
+                        k->spare_n++;
+                    }
+                } else if (own && (r = bitmap_range(k, sb, b, e - b, false)) != KFS_OK) {
+                    return r;
+                }
+
+                b = e;
+            }
+        }
+
+        if (released == 0) {
+            return KFS_OK;
+        }
+    }
+
+    memcpy(k->freed, k->spare, (size_t)k->spare_n * sizeof k->spare[0]);
+    k->freed_runs = k->spare_n;
+    k->spare_n = 0;
+    return KFS_OK;
+}
+
+int kfs_step(struct kfs *k, const struct kfs_super *sb)
 {
     if (!k->open) {
         txn_reset(k);
         k->open = true;
+    } else if (k->freed_runs > 0) {
+        /* Before this step's marks: what is given back is the steps' before
+         * it, which no undo takes back. */
+        int r;
+
+        forget_saved(k);
+        k->stepping = false;
+
+        if ((r = release_own(k, sb)) != KFS_OK) {
+            return r;
+        }
     }
 
     forget_saved(k);
@@ -491,13 +613,31 @@ static void pack_header(uint8_t *block, uint32_t state, uint32_t count,
 
 int kfs_commit(struct kfs *k, const struct kfs_super *sb, bool stop_after_commit)
 {
-    uint32_t count = k->held;
+    uint32_t count;
     uint32_t sum;
     int r;
 
     if (!k->open) {
         return KFS_E_NOT_OPEN;
     }
+
+    /*
+     * **What was freed, given back now** (`kfs_free_run`): its bits cleared
+     * in bitmap blocks the transaction already holds, so the count below
+     * is what it was and the frees are part of what commits.
+     */
+    k->stepping = false;
+
+    for (uint32_t i = 0; i < k->freed_runs && !k->too_big; i++) {
+        r = bitmap_range(k, sb, k->freed[i].start, k->freed[i].count, false);
+
+        if (r != KFS_OK) {
+            txn_reset(k);
+            return r;
+        }
+    }
+
+    count = k->held;
 
     if (count == 0) {
         txn_reset(k);
@@ -711,22 +851,6 @@ static int bitmap_range(struct kfs *k, const struct kfs_super *sb,
     return KFS_OK;
 }
 
-static bool freed_here(const struct kfs *k, uint64_t block)
-{
-    if (!k->open) {
-        return false;
-    }
-
-    for (uint32_t i = 0; i < k->freed_runs; i++) {
-        if (block >= k->freed[i].start
-            && block < (uint64_t)k->freed[i].start + k->freed[i].count) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 static int note_freed(struct kfs *k, uint32_t first, uint32_t count)
 {
     /* Joined to a run it continues, which is the usual case: an extent -
@@ -792,7 +916,7 @@ int kfs_alloc_run(struct kfs *k, const struct kfs_super *sb, uint32_t want,
                     goto done;
                 }
 
-                open_bit = (v & (1u << bit)) == 0 && !freed_here(k, block);
+                open_bit = (v & (1u << bit)) == 0;
 
                 if (found) {
                     if (!open_bit) {
@@ -838,7 +962,19 @@ static int alloc_block(struct kfs *k, const struct kfs_super *sb, uint32_t *bloc
     return kfs_alloc_run(k, sb, 1, block, &got);
 }
 
-/* Given back - and, inside a transaction, kept from being handed out again. */
+/*
+ * Given back - and, inside a transaction, kept from being handed out again
+ * until it commits: the blocks stay marked used in the bitmap, the run is
+ * noted, and `kfs_commit` clears them. Their bitmap blocks are held now
+ * (marking used blocks used changes nothing in them), so the commit holds
+ * no block it did not already.
+ *
+ * This asked the allocator to skip them, a search of every run freed so
+ * far for every clear bit it passed - and with a group open for a second
+ * rather than an operation, thousands of runs: SQLite's lock files made
+ * and removed for each query took speedtest1 from 49 s to 250 s
+ * (`testing.md` 18.836). Where a file goes is what it was.
+ */
 int kfs_free_run(struct kfs *k, const struct kfs_super *sb, uint32_t first,
                  uint32_t count)
 {
@@ -852,6 +988,8 @@ int kfs_free_run(struct kfs *k, const struct kfs_super *sb, uint32_t first,
         if (r != KFS_OK) {
             return r;
         }
+
+        return bitmap_range(k, sb, first, count, true);
     }
 
     return bitmap_range(k, sb, first, count, false);

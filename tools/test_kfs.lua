@@ -1335,7 +1335,7 @@ do
 
   local grouped = header_writes(function()
     for i = 1, 6 do
-      assert(kfs.step())
+      assert(kfs.step(sb))
       assert(kfs.store(sb, "/grouped-" .. i, "g" .. i, 1))
     end
     assert(kfs.commit(sb))
@@ -1363,10 +1363,10 @@ do
   -- root's directory, held by the first and changed again by the second.
   sb = fresh()
   local free_before = kfs.free_blocks(sb)
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.store(sb, "/kept-step", string.rep("k", 2 * kfs.BLOCK), 1))
   local free_after_first = kfs.free_blocks(sb)
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.store(sb, "/undone-step", string.rep("u", 3 * kfs.BLOCK), 1))
   assert(kfs.mkdir(sb, "/undone-dir", 1))
   kfs.step_undo()
@@ -1389,9 +1389,9 @@ do
   assert(kfs.store(sb, "/stays", string.rep("s", 4 * kfs.BLOCK), 1))
   assert(kfs.commit(sb))
   local free_both = kfs.free_blocks(sb)
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.unlink(sb, "/goes"))
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.unlink(sb, "/stays"))
   kfs.step_undo()
   assert(kfs.commit(sb))
@@ -1403,9 +1403,9 @@ do
 
   -- The power, in the middle of a group: nothing of it, and nothing lost.
   local free_steady = kfs.free_blocks(sb)
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.store(sb, "/stays", string.rep("n", 5 * kfs.BLOCK), 2))
-  assert(kfs.step())
+  assert(kfs.step(sb))
   assert(kfs.store(sb, "/never", "x", 2))
   kfs.rollback()
   sb = assert(kfs.mount())
@@ -1426,15 +1426,15 @@ do
     return true
   end
   local base = sb.data_at + 200
-  assert(kfs.step()); assert(fill(1, base))
-  assert(kfs.step()); assert(fill(2, base + 100))
-  assert(kfs.step())
+  assert(kfs.step(sb)); assert(fill(1, base))
+  assert(kfs.step(sb)); assert(fill(2, base + 100))
+  assert(kfs.step(sb))
   local ok, why = fill(3, base + 200)
   local refused = not ok and why == "more blocks changed than the journal can hold"
   kfs.step_undo()
   local held_then = kfs.held()
   assert(kfs.commit(sb))
-  assert(kfs.step())
+  assert(kfs.step(sb))
   local retried = fill(3, base + 200)
   assert(kfs.commit(sb))
   local function first(b)
@@ -1446,6 +1446,132 @@ do
         ("a step too big for the group's room is refused (%s), taken back to the "
          .. "200 blocks before it (%s), the group committed, and it fits alone")
         :format(tostring(why), tostring(held_then)))
+end
+
+--------------------------------------------------------------------------
+-- **SQLite's shape, in long groups** (`testing.md` 18.836): a database
+-- written a page at a time where it already is, and a journal made, written
+-- and removed for every transaction - every operation a step, committed
+-- when the group holds half the journal, as `diskfs` does. Freed blocks are
+-- not handed out again until their group commits; what is read after a
+-- mount has to be what was written. And a step refused because the disk
+-- is full is tried again after a commit, which gives back what the group
+-- freed - as one refused for the journal's room is.
+--------------------------------------------------------------------------
+
+do
+  sb = fresh()
+  local PAGE = 1024
+  local model = {}                  -- the database, as it should read
+  local seed = 7
+
+  local function rand(n)
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  end
+
+  local function step(f)
+    assert(kfs.step(sb))
+    local ok, why = f()
+    if not ok then
+      kfs.step_undo()
+      if why == "more blocks changed than the journal can hold" or why == "the disk is full" then
+        assert(kfs.commit(sb)); assert(kfs.step(sb))
+        assert(f())
+      else
+        error(why)
+      end
+    end
+    if kfs.held() >= 127 then assert(kfs.commit(sb)) end
+  end
+
+  for txn = 1, 120 do
+    if txn % 10 == 0 then assert(kfs.commit(sb)) end      -- the group's second
+    local journal = "/db-journal"
+    step(function() return kfs.store_at(sb, journal, 0, string.rep("j", 512 + rand(6000)), true, 1) end)
+    for _ = 1, 1 + rand(6) do
+      local page = rand(48)
+      local bytes = string.char(65 + rand(26)):rep(PAGE)
+      step(function() return kfs.store_at(sb, "/db", page * PAGE, bytes, true, 1) end)
+      model[page] = bytes
+    end
+    step(function() return kfs.unlink(sb, journal) end)
+  end
+  assert(kfs.commit(sb))
+
+  sb = assert(kfs.mount())
+  local whole = contents("/db") or ""
+  local same = true
+  for page, bytes in pairs(model) do
+    same = same and whole:sub(page * PAGE + 1, (page + 1) * PAGE) == bytes
+  end
+  check(same and not kfs.find(sb, "/db-journal"),
+        "a database rewritten in place and a journal made and removed 120 times, "
+        .. "in groups, reads back as written after a mount")
+end
+
+--------------------------------------------------------------------------
+-- A file rewritten and appended to over many steps of one group stays in
+-- few pieces. Each rewrite is copy-on-write: new blocks, the old freed.
+-- When nothing a step freed could be handed out before the commit, a
+-- page rewritten in the group the page was made in left a hole the next
+-- allocation stepped over, and SQLite's database on a disk ended in 1317
+-- pieces where it had 26 - every read of it a walk of a chain, speedtest1
+-- five times slower (`testing.md` 18.836). A block the group itself made,
+-- freed by an earlier step, is given back at the next step: the last
+-- commit never held it.
+--------------------------------------------------------------------------
+
+do
+  local PAGE = 4096
+
+  -- The same writes either way: committed one at a time, or in one group.
+  local function grow(grouped)
+    sb = fresh()
+    local model, made = {}, 1
+
+    assert(kfs.step(sb))
+    assert(kfs.store_at(sb, "/grown", 0, ("a"):rep(PAGE), true, 1))
+    model[0] = ("a"):rep(PAGE)
+
+    for round = 1, 200 do
+      if not grouped then assert(kfs.commit(sb)) end
+      assert(kfs.step(sb))
+      local page
+      if round % 3 == 0 then
+        page, made = made, made + 1
+      else
+        page = (round * 7) % made
+      end
+      local bytes = string.char(65 + round % 26):rep(PAGE)
+      local ok, why = kfs.store_at(sb, "/grown", page * PAGE, bytes, true, 1)
+      if not ok then
+        kfs.step_undo()
+        assert(kfs.commit(sb)); assert(kfs.step(sb))
+        assert(kfs.store_at(sb, "/grown", page * PAGE, bytes, true, 1), why)
+      end
+      model[page] = bytes
+    end
+    assert(kfs.commit(sb))
+
+    sb = assert(kfs.mount())
+    local _, node = kfs.find(sb, "/grown")
+    local whole = contents("/grown") or ""
+    local same = #whole == made * PAGE
+    for page, bytes in pairs(model) do
+      same = same and whole:sub(page * PAGE + 1, (page + 1) * PAGE) == bytes
+    end
+    return same, type(node) == "table" and node.extent_count or -1
+  end
+
+  local alone_same, alone = grow(false)
+  local group_same, grouped = grow(true)
+  check(alone_same and group_same, "a file rewritten and appended to over 200 "
+        .. "steps reads back as written, committed one by one and in one group")
+  check(grouped >= 1 and grouped <= alone,
+        ("a file rewritten and appended to over 200 steps of one group is in %d "
+         .. "pieces, and in %d committed one by one: what the group made and an "
+         .. "earlier step freed is not being handed out again"):format(grouped, alone))
 end
 
 --------------------------------------------------------------------------

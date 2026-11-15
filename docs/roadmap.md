@@ -375,7 +375,35 @@ frees in Windows - never formatting what is there; then the M700.
 **Asked again on 15 November 2026**, when JetSki's speed was found to be
 the stick (66.8 s of a 75 s load writing): "cant we just use part of the
 nvme drive for local storage instead of the usb drive?" - the M700's drive
-is SATA, so this is A2 and A3, next after grouped commits in diskfs.
+is SATA, so this is A2 and A3, next after grouped commits in diskfs. Then
+"do the sata driver first, i want local storage". **A2 built, 0.11.438**
+(`testing.md` 18.835, `drivers.md`): `/Devices/disks`, read only, the
+disk in the Drives window. **Next: A3**, `/Home` on it. That needs:
+- a write endpoint for the disk server alone;
+- `diskfs` finding its partition by GUID on either block server;
+- a partition Diego makes in space he frees in Windows.
+
+**Decided, 15 November 2026: Windows makes the partition.** Asked how,
+Diego chose the first of three:
+1. Windows makes it: in Disk Management, in space freed by shrinking
+   Windows, with "Do not format this volume". Windows edits its own
+   partition table, and Kosmos never writes it.
+2. Kosmos writes the new GPT entry itself.
+3. Kosmos takes the whole drive.
+
+Kosmos finds the partition by its unique GUID on the boot line, as a
+stick's `/Home` is found (`opt/kosmos/home`). It formats the partition
+only when a person types `mkfs` naming it, since a partition Windows
+made holds whatever bytes were there before, not the zeros that let a
+blank disk format itself.
+**A3 built, 0.11.438** (`testing.md` 18.836, `drivers.md`): the SATA
+driver has a write endpoint, given only to the three disk servers, and it
+writes nothing outside a range one of them has guarded. diskfs looks for
+its partition on the sticks and then the SATA disks. A partition named by
+its GUID is taken whatever its type, so Windows' *basic data* type is
+fine. On a SATA disk it is never formatted until `mkfs --yes`, even when
+its first block is zeros. **Next**: the M700. Diego shrinks Windows,
+makes the partition, and its GUID goes on the boot line.
 
 **A VNC client: the Mac's screen in a Kosmos window** - Diego, 12 October
 2026: "is there any way we can create a quick vnc client for kosmos so i can
@@ -10665,6 +10693,23 @@ the applications make the system useful, and is not pulled forward.
       it corrupt, which throws every cookie away and is the likeliest
       reason Google's sign-in says cookies are disabled (below); (c) then
       the list above, measured again.
+    - *Grouped commits leave SQLite twice as slow as without them*
+      (15 November 2026, `testing.md` 18.836). Grouping fragmented
+      `speed.db` to 1317 extents where it had 26, and speedtest1 took
+      258 s where it took 49. `kfs_step` now gives back the blocks the
+      group made and an earlier step freed, which brings it to 809
+      extents and 96 s. The rest is not found yet: committing on 32 freed
+      committed blocks changed nothing, and the host's SQLite-shaped
+      test does not fragment. Next: log each allocation for `speed.db` on
+      the guest, grouped and not, and see where the two first part.
+      Reads of a file in many extents should not cost ten times more
+      either, which is worth its own look at `physical_of`.
+    - *`x86-llmmon` can read the keyring's first-boot line as part of an
+      answer* (15 November 2026, a gate at a load of 18): "keyring: a key
+      made for this machine" printed on the console while the question
+      ran, and the check compares the whole output. The suite should
+      wait for the keyring's line, or compare only what the program
+      printed. It passed alone the same evening.
     - *Our TCP sends every data segment twice* (seen 15 November 2026 in
       QEMU's capture of a live page: the same sequence numbers 0.4 ms
       apart, every segment the guest sends; ACKs are single). Twice the
@@ -11510,6 +11555,25 @@ a roadmap question; nothing decided. What it would take, honestly:
   with its type, and not opened (`docs/drives.html`). **Asked for again on 8 October**
   ("can we add ntfs read only fs driver to the roadmap?"): wanted, beside
   FAT32 and exFAT behind `/Drives`, read only.
+  **Asked a third time on 15 November, with a choice: vendor ntfs-3g**
+  ("for the roadmap can we vendor in a ntfs3g driver to read windows
+  partitions in kosmos?"), and the M700's SATA disk is what makes it real -
+  its Windows partition is beside the `/Home` Windows makes for Kosmos
+  (*SATA*, A3). **Agreed as the way**, over a reader of Kosmos's own:
+  `libntfs-3g` is a library over a table of device operations
+  (`ntfs_device_operations`: open, read, write, seek, sync), and that table
+  is exactly the block protocol - so it is vendored untouched under
+  `runtime/upstream/ntfs-3g/`, built against `runtime/posix/` as ported
+  code, and its device table written once over `blockproto.h`'s READ on
+  `/Devices/disks` or `/Devices/blocks`. It runs in a server of its own,
+  C, beside FAT's behind `/Drives`, speaking the declared shape every drive
+  server speaks. **Read only first**: mounted `NTFS_MNT_RDONLY`, and the
+  partition is a disk server's never - the SATA driver's guard holds writes
+  to the Kosmos partition, so a Windows partition cannot be written even if
+  the reader is wrong. Writing is a decision for later. A partition BitLocker
+  holds is listed as such and not opened. Its suite: an image made by
+  `mkntfs` on the host (Homebrew's ntfs-3g), files of known sums read back
+  through `/Drives`.
 - **SMP.** Moved up to *Being built now* — see there, and `docs/smp.md` for
   the map. **This entry used to claim the kernel was "written SMP-ready: no
   loose mutable globals, a per-CPU pointer, a per-CPU runqueue with one CPU

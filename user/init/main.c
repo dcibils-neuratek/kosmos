@@ -86,7 +86,7 @@ void xhci_server(long console, long blocks, long writes, long frames,
  * transport's, the USB driver's HCI door. */
 void bluetooth_server(long console, long endpoint, long transport);
 void e1000_server(long console, long frames);
-void ahci_server(long console);
+void ahci_server(long console, long disks, long writes);
 /* The POSIX layer's, where an image has it (`runtime/posix/fd.c`). */
 extern void posix_changes_kept(void) __attribute__((weak));
 
@@ -96,15 +96,16 @@ extern void posix_changes_kept(void) __attribute__((weak));
 void drives_server(long endpoint, long blocks, long console);
 
 /* /Home (`docs/diskfs.md` step 3): its own endpoint, the USB driver's read
- * and write endpoints for a stick's partition, the devices server's for the
+ * and write endpoints for a stick's partition and a SATA disk's, the devices server's for the
  * clock, and the console's to say what it did. */
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
+                   long disks_read, long disks_write,
                    long devices, long console, long keyring, long maps_cache,
                    long models);
 void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
-                      long devices, long console);
+                      long disks_read, long disks_write, long devices, long console);
 void modelsfs_server(long endpoint, long blocks_read, long blocks_write,
-                     long devices, long console);
+                     long disks_read, long disks_write, long devices, long console);
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 void llm_server(long running_cap, long models_disk_ep, long console_ep, long models_drive_ep,
                 long gpu_ep);
@@ -1895,7 +1896,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_AHCI) {
         named("ahci");
-        ahci_server(0);
+        ahci_server(0, 1, 2);
         kosmos_exit(0);             /* never into init's chunk below */
     }
 
@@ -1916,20 +1917,20 @@ int main(unsigned long arg)
 
     if (arg == ROLE_DISKFS) {
         named("diskfs");
-        diskfs_server(0, 1, 2, 3, 4, kosmos_cap_check(5) == 0 ? 5 : -1,
-                      kosmos_cap_check(6) == 0 ? 6 : -1,
-                      kosmos_cap_check(7) == 0 ? 7 : -1);
+        diskfs_server(0, 1, 2, 3, 4, 5, 6, kosmos_cap_check(7) == 0 ? 7 : -1,
+                      kosmos_cap_check(8) == 0 ? 8 : -1,
+                      kosmos_cap_check(9) == 0 ? 9 : -1);
     }
 
     if (arg == ROLE_SANDBOXFS) {
         named("sandboxfs");
-        sandboxfs_server(0, 1, 2, 3, 4);
+        sandboxfs_server(0, 1, 2, 3, 4, 5, 6);
         kosmos_exit(0);             /* never into init's chunk below */
     }
 
     if (arg == ROLE_MODELSFS) {
         named("modelsfs");
-        modelsfs_server(0, 1, 2, 3, 4);
+        modelsfs_server(0, 1, 2, 3, 4, 5, 6);
         kosmos_exit(0);
     }
 

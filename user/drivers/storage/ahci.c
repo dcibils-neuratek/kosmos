@@ -10,24 +10,37 @@
  * controller to read commands from and write data to, and the console to
  * say what it found.
  *
- * **This first step finds and reads, and writes nothing.** The controller
+ * **It finds, then serves, and writes nothing** (A1, then A2). The controller
  * is put into AHCI mode and taken from the firmware where it offers that;
  * each implemented port with a disk on it has its command list and its
  * received-FIS area set and is started; each disk is asked IDENTIFY DEVICE
  * and its first two sectors are read - which says whether there is a GPT -
- * and all of it is said. Serving `/Devices/blocks`' protocol, and `/Home`
- * in a partition of its own, are the steps after (`roadmap.md`). The disk
- * in the suite has a GPT and a partition like Windows', and must be the same
- * bytes afterwards.
+ * and all of it is said. Then its blocks are served in `blockproto.h`'s
+ * shape - the protocol a USB stick's blocks are served in - on two
+ * endpoints, as the USB driver's are: `/Devices/disks`, which every program
+ * is given and which only reads (A2), and a write endpoint only the disk
+ * servers are given (A3), which takes writes, flushes and guards.
+ *
+ * **A write lands only inside a partition a disk server has claimed**: the
+ * range it guarded, which is the partition it serves. Windows is on the
+ * M700's disk, and a request to write anywhere else is refused here, by the
+ * driver, whoever sends it - so no bug in a disk server can reach Windows'
+ * partitions or the table that names them. The disks in the suites have a
+ * GPT and a partition like Windows', and the bytes outside Kosmos's
+ * partition must be the same afterwards.
  *
  * **References**: Serial ATA AHCI 1.3.1 - §3 the registers, §4.2 the
  * command list and table, §10.1.2 the order a port is brought up in, §10.6
  * the BIOS/OS hand-off; ACS-3 for the commands. The offsets were checked
  * against QEMU's `hw/ide/ahci-internal.h`.
  *
- * **Polled, with a deadline, for this step**: it is a probe at the start,
- * before it answers anyone. Serving requests waits on the controller's
- * interrupt, as `CLAUDE.md` asks of a driver - never inside a request.
+ * **A command is polled, with a deadline**, at the probe and in a request:
+ * watched closely for the first two milliseconds - an SSD answers a read in a
+ * tenth of one - and then once a scheduler tick. That is a request waiting on
+ * its hardware, which `CLAUDE.md` asks a driver not to do; it is the shape
+ * the USB driver's bulk transfers have too, it is one disk's request at a
+ * time, and the controller's interrupt, with requests held while a command
+ * runs, is the step after (`roadmap.md`, *SATA*).
  */
 
 #include <stdbool.h>
@@ -39,6 +52,7 @@
 #include "mmio.h"
 #include "init/say.h"
 #include "ahci_decode.h"
+#include "blockproto.h"
 
 /* The host's registers (AHCI 1.3.1 §3.1). */
 #define HBA_CAP         0x00u
@@ -93,17 +107,21 @@
  * 1 KB aligned) at 0, the received-FIS area (256 bytes, 256 aligned) at 0x400
  * and one command table (128 aligned: the FIS at 0, the PRDT at 0x80) at
  * 0x800 - slot 0 is the only one used. The data goes through a buffer of
- * its own, BUFFER_PAGES, which the controller reads and writes and nothing
- * else ever hands it.
+ * its own, BUFFER_PAGES - the most one request moves, `BLOCK_TRANSFER_MOST` -
+ * which the controller reads and writes and nothing else ever hands it: a
+ * client's pages are never given to the controller (`blockproto.h`).
  */
 #define AT_LIST         0x000u
 #define AT_FIS          0x400u
 #define AT_TABLE        0x800u
 #define TABLE_PRDT      0x80u
-#define BUFFER_PAGES    16u
+#define BUFFER_PAGES    (BLOCK_TRANSFER_MOST / 4096u)  /* one request's most */
 
 #define PORTS_MOST      32u
 #define WAIT_MS         2000u            /* a command, a port stopping, BSY */
+#define CLOSE_US        2000u            /* a command watched closely this long */
+#define UNITS_MOST      PORTS_MOST
+#define OPENS_MAX       8u
 
 #if defined(__x86_64__)
 /* x86 keeps stores in order, so the command table is seen before the
@@ -275,7 +293,8 @@ static bool bring_up(struct port *p)
  * **One command in slot 0**: its FIS, one PRDT entry over the buffer, and
  * the header pointing at the table; issued, and waited for until the
  * controller clears the slot or the disk reports an error. `bytes` is what
- * moves through the buffer.
+ * moves through the buffer - none for FLUSH CACHE EXT, which then has no
+ * PRDT entry at all.
  */
 static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
                     uint32_t bytes, bool write)
@@ -308,7 +327,7 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
 
     /* The header in slot 0: its first word, PRDBC zero, the table's address. */
     memset(list, 0, 32);
-    word0 = ahci_header_word(write, 1);
+    word0 = ahci_header_word(write, bytes != 0 ? 1u : 0u);
     memcpy(list, &word0, 4);
 
     for (unsigned i = 0; i < 4; i++) {
@@ -322,6 +341,7 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
 
     {
         unsigned long start = kosmos_ticks(), span = counter_hz / 1000ul * WAIT_MS;
+        unsigned long close = counter_hz / 1000000ul * CLOSE_US;
 
         for (;;) {
             if ((px(n, PX_IS) & IS_TFES) != 0 || (px(n, PX_TFD) & TFD_ERR) != 0) {
@@ -336,7 +356,10 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
                 return false;
             }
 
-            kosmos_sleep(1);
+            /* Closely at first, then once a tick (the top of this file). */
+            if (kosmos_ticks() - start > close) {
+                kosmos_sleep(1);
+            }
         }
     }
 
@@ -344,15 +367,16 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
     return (px(n, PX_TFD) & TFD_ERR) == 0;
 }
 
-/* What a disk is, and its first two sectors, said. */
-static void look(struct port *p)
+/* What a disk is, and its first two sectors, said; whether it can be
+ * served - its sectors 512 bytes, and read. */
+static bool look(struct port *p)
 {
     struct say_line line;
     bool gpt;
 
     if (!command(p, ATA_IDENTIFY, 0, 0, 512, false) || !ahci_identity(p->data, &p->id)) {
         tell("the disk on port ", p->n, " did not answer IDENTIFY");
-        return;
+        return false;
     }
 
     say_begin(&line);
@@ -370,12 +394,12 @@ static void look(struct port *p)
 
     if (p->id.sector_bytes != 512u) {
         tell("a disk whose sectors are not 512 bytes is not read yet, port ", p->n, "");
-        return;
+        return false;
     }
 
     if (!command(p, ATA_READ_DMA_EXT, 0, 2, 1024, false)) {
         tell("the disk on port ", p->n, " did not read its first sectors");
-        return;
+        return false;
     }
 
     gpt = ahci_is_gpt_header(p->data + 512);
@@ -387,9 +411,414 @@ static void look(struct port *p)
     say_text(&line, p->data[510] == 0x55 && p->data[511] == 0xAA ? ", its first sector a protective MBR"
                                                                    : ", its first sector no MBR");
     say_send(console, &line);
+    return true;
 }
 
-void ahci_server(long console_cap)
+/*
+ * ---- Serving the blocks (A2) ---------------------------------------------
+ *
+ * **A unit is a disk found**, numbered in the order its port is, from 0. A
+ * SATA disk does not come and go as a stick does, so the numbers never have
+ * gaps; INFO answers how many there are in `count`, as the USB driver's does.
+ *
+ * **A region is opened once** and named by a handle after, as
+ * `/Devices/blocks`' are: the handle is its slot and a generation, so a stale
+ * one is refused rather than taken for somebody else's.
+ */
+struct opened {
+    bool          used;
+    uint32_t      generation;
+    long          cap;
+    uintptr_t     at;
+    unsigned long pages;
+};
+
+static struct port *units[UNITS_MOST];
+static unsigned units_found;
+static struct opened opens[OPENS_MAX];
+
+static struct opened *opened_by(uint32_t handle)
+{
+    uint32_t place = handle & 0xFFu;
+    struct opened *o;
+
+    if (place == 0u || place > OPENS_MAX) {
+        return NULL;
+    }
+
+    o = &opens[place - 1u];
+    return (o->used && o->generation == handle >> 8) ? o : NULL;
+}
+
+static void block_open(long cap, struct block_reply *rep)
+{
+    long pages = cap < 0 ? -1 : kosmos_mem_size(cap);
+    long at;
+    unsigned i;
+
+    if (pages < (long)(BLOCK_TRANSFER_MOST / 4096u)) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    for (i = 0; i < OPENS_MAX && opens[i].used; i++) {
+    }
+
+    if (i == OPENS_MAX) {
+        rep->error = BLOCK_ERR_FULL;
+        return;
+    }
+
+    at = kosmos_mem_map(cap);
+
+    if (at < 0) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    opens[i].used = true;
+    opens[i].generation = (opens[i].generation + 1u) & 0xFFFFFFu;
+    opens[i].cap = cap;
+    opens[i].at = (uintptr_t)at;
+    opens[i].pages = (unsigned long)pages;
+    rep->handle = (i + 1u) | (opens[i].generation << 8);
+}
+
+static void block_close(uint32_t handle, struct block_reply *rep)
+{
+    struct opened *o = opened_by(handle);
+
+    if (o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    (void)kosmos_share_unmap(o->at, o->pages);
+    (void)kosmos_cap_drop(o->cap);
+    o->used = false;
+}
+
+/* A disk's names as INQUIRY's would be: "ATA", and its model's first
+ * sixteen characters, space-padded. */
+static void names(const struct port *p, struct block_reply *rep)
+{
+    size_t n = strlen(p->id.model);
+
+    memset(rep->vendor, ' ', sizeof(rep->vendor));
+    memcpy(rep->vendor, "ATA", 3);
+    memset(rep->product, ' ', sizeof(rep->product));
+    memcpy(rep->product, p->id.model, n < sizeof(rep->product) ? n : sizeof(rep->product));
+}
+
+/*
+ * **A read**: held to the unit, the handle, one transfer's size and the
+ * disk's last sector before the disk is asked anything, then READ DMA EXT
+ * through the port's buffer and the sectors copied into the client's region.
+ */
+static void block_read(const struct block_request *req, struct block_reply *rep)
+{
+    struct opened *o = opened_by(req->handle);
+    struct port *p;
+
+    if (req->unit >= units_found) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return;
+    }
+
+    p = units[req->unit];
+    rep->block_size = p->id.sector_bytes;
+    rep->blocks = p->id.sectors;
+
+    if (o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    if (req->count == 0u || req->count > BLOCK_TRANSFER_MOST / p->id.sector_bytes) {
+        rep->error = BLOCK_ERR_TOO_MANY;
+        return;
+    }
+
+    if (req->lba >= p->id.sectors || req->count > p->id.sectors - req->lba) {
+        rep->error = BLOCK_ERR_PAST_END;
+        return;
+    }
+
+    if (!command(p, ATA_READ_DMA_EXT, req->lba, req->count,
+                 req->count * p->id.sector_bytes, false)) {
+        tell("a read failed on port ", p->n, "");
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    memcpy((void *)o->at, p->data, (size_t)req->count * p->id.sector_bytes);
+    rep->count = req->count;
+}
+
+/* One request, answered: exactly a `struct block_request` long, or refused.
+ * A capability with anything but an open is given back rather than kept. */
+/*
+ * **The ranges a disk server claimed** (`BLOCK_OP_GUARD`, on the write
+ * endpoint): refused to reads on `/Devices/disks`, as the USB driver refuses
+ * a stick's, so `/Keyring` is no more readable underneath the disk server
+ * than through it - and the only ranges a write may touch.
+ */
+#define GUARDS_MOST     4u
+
+struct guard {
+    uint64_t lba, count;
+};
+
+static struct guard guards[UNITS_MOST][GUARDS_MOST];
+static unsigned guards_held[UNITS_MOST];
+
+static bool overlaps(unsigned unit, uint64_t lba, uint64_t count)
+{
+    for (unsigned i = 0; i < guards_held[unit]; i++) {
+        if (lba < guards[unit][i].lba + guards[unit][i].count && lba + count > guards[unit][i].lba) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool inside(unsigned unit, uint64_t lba, uint64_t count)
+{
+    for (unsigned i = 0; i < guards_held[unit]; i++) {
+        if (lba >= guards[unit][i].lba && lba + count <= guards[unit][i].lba + guards[unit][i].count) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* What a read and a write are both held to: the unit, the handle, one
+ * transfer's size and the disk's last sector. */
+static bool in_range(const struct block_request *req, struct block_reply *rep,
+                     struct opened **o, struct port **p)
+{
+    *o = opened_by(req->handle);
+
+    if (req->unit >= units_found) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return false;
+    }
+
+    *p = units[req->unit];
+    rep->block_size = (*p)->id.sector_bytes;
+    rep->blocks = (*p)->id.sectors;
+
+    if (*o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return false;
+    }
+
+    if (req->count == 0u || req->count > BLOCK_TRANSFER_MOST / (*p)->id.sector_bytes) {
+        rep->error = BLOCK_ERR_TOO_MANY;
+        return false;
+    }
+
+    if (req->lba >= (*p)->id.sectors || req->count > (*p)->id.sectors - req->lba) {
+        rep->error = BLOCK_ERR_PAST_END;
+        return false;
+    }
+
+    return true;
+}
+
+/* A write: inside a claimed range, or refused; then the sectors copied into
+ * the port's buffer and WRITE DMA EXT. */
+static void block_write(const struct block_request *req, struct block_reply *rep)
+{
+    struct opened *o;
+    struct port *p;
+
+    if (!in_range(req, rep, &o, &p)) {
+        return;
+    }
+
+    if (!inside(req->unit, req->lba, req->count)) {
+        rep->error = BLOCK_ERR_GUARDED;
+        return;
+    }
+
+    memcpy(p->data, (const void *)o->at, (size_t)req->count * p->id.sector_bytes);
+
+    if (!command(p, ATA_WRITE_DMA_EXT, req->lba, req->count,
+                 req->count * p->id.sector_bytes, true)) {
+        tell("a write failed on port ", p->n, "");
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    rep->count = req->count;
+}
+
+static void block_flush(const struct block_request *req, struct block_reply *rep)
+{
+    if (req->unit >= units_found) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return;
+    }
+
+    if (!command(units[req->unit], ATA_FLUSH_CACHE_EXT, 0, 0, 0, false)) {
+        rep->error = BLOCK_ERR_DEVICE;
+    }
+}
+
+static void block_guard(const struct block_request *req, struct block_reply *rep)
+{
+    struct say_line line;
+    unsigned u = req->unit;
+
+    if (u >= units_found) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return;
+    }
+
+    if (req->count == 0u || req->lba >= units[u]->id.sectors
+        || req->count > units[u]->id.sectors - req->lba) {
+        rep->error = BLOCK_ERR_PAST_END;
+        return;
+    }
+
+    if (!inside(u, req->lba, req->count)) {
+        if (guards_held[u] == GUARDS_MOST) {
+            rep->error = BLOCK_ERR_FULL;
+            return;
+        }
+
+        guards[u][guards_held[u]].lba = req->lba;
+        guards[u][guards_held[u]].count = req->count;
+        guards_held[u]++;
+    }
+
+    say_begin(&line);
+    say_text(&line, "ahci: disk ");
+    say_dec(&line, u);
+    say_text(&line, "'s sectors ");
+    say_dec(&line, (unsigned long)req->lba);
+    say_text(&line, " on, ");
+    say_dec(&line, (unsigned long)req->count);
+    say_text(&line, " of them, a disk server's: written only by it, and kept from /Devices/disks");
+    say_send(console, &line);
+}
+
+static void block_answer(const struct message *in, uint64_t sender, long cap, bool may_write)
+{
+    struct message out;
+    struct block_reply *rep = (struct block_reply *)(void *)out.data;
+    const struct block_request *req = (const struct block_request *)(const void *)in->data;
+
+    memset(&out, 0, sizeof(out));
+    out.tag = in->tag;
+    out.length = (uint32_t)sizeof(*rep);
+
+    if (in->length != sizeof(*req)) {
+        rep->error = BLOCK_ERR_BAD_OP;
+    } else {
+        switch (req->op) {
+        case BLOCK_OP_INFO:
+            rep->count = units_found;
+            if (req->unit < units_found) {
+                rep->block_size = units[req->unit]->id.sector_bytes;
+                rep->blocks = units[req->unit]->id.sectors;
+                names(units[req->unit], rep);
+            } else {
+                rep->error = BLOCK_ERR_NO_UNIT;
+            }
+            break;
+        case BLOCK_OP_OPEN:
+            block_open(cap, rep);
+            if (rep->error == BLOCK_OK) {
+                cap = -1;               /* kept, in `opens` */
+            }
+            break;
+        case BLOCK_OP_READ:
+            /* A disk server's sectors, to anybody but a disk server: refused. */
+            if (!may_write && req->unit < units_found && overlaps(req->unit, req->lba, req->count)) {
+                rep->error = BLOCK_ERR_GUARDED;
+            } else {
+                block_read(req, rep);
+            }
+            break;
+        case BLOCK_OP_CLOSE:
+            block_close(req->handle, rep);
+            break;
+        case BLOCK_OP_WRITE:
+            if (may_write) {
+                block_write(req, rep);
+            } else {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            }
+            break;
+        case BLOCK_OP_FLUSH:
+            if (may_write) {
+                block_flush(req, rep);
+            } else {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            }
+            break;
+        case BLOCK_OP_GUARD:
+            if (may_write) {
+                block_guard(req, rep);
+            } else {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            }
+            break;
+        default:
+            rep->error = BLOCK_ERR_BAD_OP;
+            break;
+        }
+    }
+
+    if (cap >= 0) {
+        (void)kosmos_cap_drop(cap);
+    }
+
+    (void)kosmos_reply(sender, &out);
+}
+
+/* Every request waiting on one endpoint, answered without blocking. */
+static void drain(long endpoint, bool may_write)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (endpoint >= 0 && kosmos_receive(endpoint, &msg, &sender, 1, 0) == 0) {
+        long cap = msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1;
+
+        block_answer(&msg, sender, cap, may_write);
+    }
+}
+
+/*
+ * **Served for ever, disks or none.** `/Devices/disks` is in the list every
+ * program is started with, so this answers on a machine with no SATA
+ * controller too - no disk at that unit - as the USB driver does with no
+ * controller. Both endpoints are waited on at once, the write endpoint's
+ * requests answered first, and nothing but a wait the kernel refuses ends
+ * it.
+ */
+static void serve(long reads, long writes)
+{
+    const long ends[2] = { writes, reads };
+
+    for (;;) {
+        long woke = kosmos_irq_wait_any(NULL, 0, 0, ends, 2u);
+
+        if (woke < 0 && woke != SYS_NO_INTERRUPT) {
+            kosmos_exit(1);
+        }
+
+        drain(writes, true);
+        drain(reads, false);
+    }
+}
+
+void ahci_server(long console_cap, long disks_cap, long writes_cap)
 {
     struct dev_info dev;
     struct sysinfo info;
@@ -405,7 +834,7 @@ void ahci_server(long console_cap)
     }
 
     if (kosmos_dev_find(DEV_AHCI, 0, &dev) != 0) {
-        kosmos_exit(0);             /* no SATA controller here: not an error */
+        serve(disks_cap, writes_cap);           /* no SATA controller here: no disks, said */
     }
 
     /*
@@ -417,7 +846,7 @@ void ahci_server(long console_cap)
 
     if (mapped < 0) {
         tell("the controller's registers could not be mapped", 0, NULL);
-        kosmos_exit(1);
+        serve(disks_cap, writes_cap);
     }
 
     abar = (uintptr_t)mapped + (dev.base & 0xFFFul);
@@ -475,16 +904,21 @@ void ahci_server(long console_cap)
             continue;
         }
 
-        look(&ports[n]);
+        if (look(&ports[n]) && units_found < UNITS_MOST) {
+            units[units_found++] = &ports[n];
+        }
+
         found++;
     }
 
     tell("", found, found == 1 ? " disk found" : " disks found");
+    tell("serving ", units_found, units_found == 1 ? " disk at /Devices/disks"
+                                                   : " disks at /Devices/disks");
 
     /*
-     * **Ended, never returned**: a role that returns falls through `main.c`
+     * **Served, never returned**: a role that returns falls through `main.c`
      * into init's own chunk and runs a second init - which, on 13 October,
      * took the screen from the shell and failed thirty suites at once.
      */
-    kosmos_exit(0);
+    serve(disks_cap, writes_cap);
 }

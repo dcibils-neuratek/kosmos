@@ -66,11 +66,14 @@
 #include "packflat.h"
 
 void diskfs_server(long endpoint, long blocks_read, long blocks_write,
+                   long disks_read, long disks_write,
                    long devices, long console, long keyring, long maps_cache,
                    long models);
 void sandboxfs_server(long endpoint, long blocks_read, long blocks_write,
+                      long disks_read, long disks_write,
                       long devices, long console);
 void modelsfs_server(long endpoint, long blocks_read, long blocks_write,
+                     long disks_read, long disks_write,
                      long devices, long console);
 
 /* The names a Kosmos disk keeps for itself (the Lua server's `RESERVED`). */
@@ -126,8 +129,26 @@ static struct arena *A;
 
 static long console = -1;
 static long devices = -1;
-static long blocks_read = -1;
-static long blocks_write = -1;
+/*
+ * **The block servers a drive may be on** (`roadmap.md`, *SATA*, A3): the
+ * USB driver's sticks and the SATA driver's disks, one protocol on each, a
+ * read endpoint to look and a write endpoint to use. Each is opened with a
+ * region of its own, since a capability handed over is the server's.
+ */
+struct blocks_server {
+    long        rd, wr;
+    const char *called;         /* what the log calls a unit on it */
+    long        region;
+    uint8_t    *at;
+    uint32_t    handle;
+};
+
+static struct blocks_server servers[] = {
+    { -1, -1, "USB unit ", -1, NULL, 0 },
+    { -1, -1, "SATA disk ", -1, NULL, 0 },
+};
+
+#define SERVERS (sizeof servers / sizeof servers[0])
 
 static struct kfs_super SB;
 static bool mounted_ok;
@@ -296,6 +317,7 @@ static struct {
     uint8_t *at;
     uint32_t handle;
     bool found;
+    unsigned server;            /* which of `servers` it is on */
     uint32_t unit;
     uint64_t first, sectors;
     char where[128];
@@ -374,39 +396,52 @@ static bool look(void)
 
 #define REACHED(n) do { if ((n) > stop) stop = (n); } while (0)
 
-    if (stick.at == NULL) {
+    for (unsigned s = 0; s < SERVERS; s++) {
+    struct blocks_server *srv = &servers[s];
+
+    if (srv->rd < 0) {
+        continue;
+    }
+
+    if (srv->at == NULL) {
         long cap = kosmos_mem_create(STICK_MOST / 4096u);
         long at;
 
+        stick.handle = 0;
+
         if (cap < 0) {
             REACHED(1);
-            goto stopped;
+            continue;
         }
 
-        if (!ask(blocks_read, BLOCK_OP_OPEN, 0, 0, 0, cap, &r, &error)) {
+        if (!ask(srv->rd, BLOCK_OP_OPEN, 0, 0, 0, cap, &r, &error)) {
             kosmos_cap_drop(cap);
             REACHED(2);
-            goto stopped;
+            continue;
         }
 
         at = kosmos_mem_map(cap);
 
         if (at < 0) {
             REACHED(2);
-            goto stopped;
+            continue;
         }
 
-        stick.region = cap;
-        stick.handle = r.handle;
-        stick.at = (uint8_t *)(uintptr_t)at;
+        srv->region = cap;
+        srv->handle = r.handle;
+        srv->at = (uint8_t *)(uintptr_t)at;
     }
+
+    /* What `ask` names and where its reads land: this server's. */
+    stick.handle = srv->handle;
+    stick.at = srv->at;
 
     REACHED(3);
 
     /* How many units have been named: an INFO answers it whether or not the
      * unit it asked about is there (`blockproto.h`). */
     memset(&r, 0, sizeof r);
-    ask(blocks_read, BLOCK_OP_INFO, 0, 0, 0, -1, &r, &error);
+    ask(srv->rd, BLOCK_OP_INFO, 0, 0, 0, -1, &r, &error);
     units = r.count;
 
     for (uint32_t u = 0; u < units; u++) {
@@ -416,7 +451,7 @@ static bool look(void)
         unsigned count = 0, size = 0, found;
         uint32_t need;
 
-        if (!ask(blocks_read, BLOCK_OP_INFO, u, 0, 0, -1, &info, &error)) {
+        if (!ask(srv->rd, BLOCK_OP_INFO, u, 0, 0, -1, &info, &error)) {
             REACHED(4);
             continue;
         }
@@ -426,7 +461,7 @@ static bool look(void)
             continue;
         }
 
-        if (!ask(blocks_read, BLOCK_OP_READ, u, 1, 1, -1, &r, &error)) {
+        if (!ask(srv->rd, BLOCK_OP_READ, u, 1, 1, -1, &r, &error)) {
             REACHED(6);
             continue;
         }
@@ -440,7 +475,7 @@ static bool look(void)
 
         need = (uint32_t)(((uint64_t)count * size + SECTOR - 1) / SECTOR);
 
-        if (!ask(blocks_read, BLOCK_OP_READ, u, entries_at, need, -1, &r, &error)) {
+        if (!ask(srv->rd, BLOCK_OP_READ, u, entries_at, need, -1, &r, &error)) {
             REACHED(8);
             continue;
         }
@@ -457,18 +492,25 @@ static bool look(void)
             uint64_t hi = parts[i].first + parts[i].sectors - 1u;
 
             drives_guid_text(parts[i].type_guid, type);
+            drives_guid_text(parts[i].guid, own);
 
-            if (strcmp(type, KOSMOS_PARTITION) != 0) {
+            /*
+             * Kosmos's own partitions, unless one is named by its own GUID:
+             * then that one whatever its type, since a partition Windows
+             * made for `/Home` is a basic data partition (Diego, 15 November
+             * 2026: Windows makes it, `roadmap.md`, *SATA*).
+             */
+            if (strcmp(type, KOSMOS_PARTITION) != 0
+                && !(stick.have_wanted && strcmp(own, stick.wanted) == 0)) {
                 continue;
             }
-
-            drives_guid_text(parts[i].guid, own);
 
             if (stick.have_wanted && strcmp(own, stick.wanted) != 0) {
                 REACHED(10);
             } else if (hi < info.blocks) {
                 struct say_line line;
 
+                stick.server = s;
                 stick.unit = u;
                 stick.first = lo;
                 stick.sectors = hi - lo + 1;
@@ -476,7 +518,8 @@ static bool look(void)
                 stick.found_at = kosmos_ticks();
 
                 say_begin(&line);
-                say_text(&line, "the Kosmos partition on USB unit ");
+                say_text(&line, "the Kosmos partition on ");
+                say_text(&line, srv->called);
                 say_dec(&line, u);
                 say_text(&line, ", blocks ");
                 say_dec(&line, (unsigned long)lo);
@@ -494,7 +537,7 @@ static bool look(void)
                     struct block_reply g;
                     uint32_t ignored;
 
-                    if (!ask(blocks_write, BLOCK_OP_GUARD, u, lo,
+                    if (!ask(srv->wr, BLOCK_OP_GUARD, u, lo,
                              (uint32_t)(hi - lo + 1), -1, &g, &ignored)) {
                         tell("the driver would not keep this drive's partition "
                              "from /Devices/blocks", 0, false, NULL);
@@ -507,8 +550,8 @@ static bool look(void)
             }
         }
     }
+    }
 
-stopped:
     if (stop > 0) {
         stick.stops[stop - 1]++;
     }
@@ -596,8 +639,8 @@ static int stick_io(uint32_t op, uint32_t block, uint32_t count)
         return -1;
     }
 
-    return ask(blocks_write, op, stick.unit, stick.first + sector, sectors, -1,
-               &r, &error) ? 0 : -1;
+    return ask(servers[stick.server].wr, op, stick.unit, stick.first + sector,
+               sectors, -1, &r, &error) ? 0 : -1;
 }
 
 /* What a stick holds in its cache, written out - asked every time, and why
@@ -612,7 +655,7 @@ static void device_flush(void)
         return;
     }
 
-    if (!ask(blocks_write, BLOCK_OP_FLUSH, stick.unit, 0, 0, -1, &f, &error)
+    if (!ask(servers[stick.server].wr, BLOCK_OP_FLUSH, stick.unit, 0, 0, -1, &f, &error)
         && (error == BLOCK_ERR_NO_FLUSH || stick.flush_why[0] == '\0')) {
         put_text(stick.flush_why, sizeof stick.flush_why,
                  error == BLOCK_ERR_NO_FLUSH
@@ -718,8 +761,18 @@ static bool mounted(void)
 
     A->kfs.disk.most = most;
 
+    /*
+     * **A drive inside the machine is formatted only when a person asks**
+     * (Diego, 15 November 2026: a partition Windows made is formatted by
+     * `mkfs` naming it, `roadmap.md`, *SATA*). Windows' "do not format"
+     * leaves what was there before, which may well be zeros, so a blank
+     * block 0 on a SATA disk says nothing about whether it has anything to
+     * lose: it is left alone and `mkfs --yes` is the way.
+     */
+    bool asks = stick.use && stick.found && stick.server == 1;
+
     if (kfs_mount(&A->kfs, &SB) != KFS_OK) {
-        if (blank()) {
+        if (!asks && blank()) {
             int r = kfs_mkfs(&A->kfs, sectors, stamp(), drive.layout, &SB);
 
             if (r != KFS_OK) {
@@ -731,8 +784,10 @@ static bool mounted(void)
         } else {
             if (!told_unreadable) {
                 told_unreadable = true;
-                tell("there is something on this disk that is not a filesystem "
-                     "this understands, so it has been left alone", 0, false, NULL);
+                tell(asks ? "this partition holds no Kosmos filesystem, so it has "
+                            "been left alone; `mkfs --yes` makes one"
+                          : "there is something on this disk that is not a filesystem "
+                            "this understands, so it has been left alone", 0, false, NULL);
             }
 
             return false;
@@ -817,7 +872,7 @@ static int group_commit(void)
 static int group_step(void)
 {
     bool was_open = A->kfs.open;
-    int r = kfs_step(&A->kfs);
+    int r = kfs_step(&A->kfs, &SB);
 
     if (r == KFS_OK && !was_open) {
         group_began = kosmos_ticks();
@@ -857,7 +912,9 @@ static unsigned long group_wait(void)
  * commit's refusal. Everything that changes the disk goes through here. A
  * step that failed is taken back alone; one that would not fit beside the
  * group's others is taken back, the others committed, and it is tried
- * again as the group's first.
+ * again as the group's first. So is one refused because the disk is full
+ * while the group has freed blocks: they are not handed out until it
+ * commits, and committing gives them back.
  */
 #define ATOMIC(r, call)                                                      \
     do {                                                                     \
@@ -871,7 +928,9 @@ static unsigned long group_wait(void)
             if ((r) != KFS_OK) {                                             \
                 kfs_step_undo(&A->kfs);                                      \
                                                                              \
-                if ((r) == KFS_E_TOO_BIG && !first_                          \
+                if (((r) == KFS_E_TOO_BIG                                    \
+                     || ((r) == KFS_E_FULL && A->kfs.freed_runs > 0))        \
+                    && !first_                                               \
                     && ((r) = group_commit()) == KFS_OK                      \
                     && ((r) = group_step()) == KFS_OK) {                     \
                     (r) = (call);                                            \
@@ -2071,7 +2130,8 @@ static void door_main(unsigned long which)
     }
 }
 
-static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
+static void serve(long endpoint, long read_ep, long write_ep, long disks_read_ep,
+                  long disks_write_ep, long devices_ep,
                   long console_ep, long keyring_ep, long maps_cache_ep, long models_ep)
 {
     long at = kosmos_map((sizeof(struct arena) + 4095u) / 4096u);
@@ -2079,8 +2139,10 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
     char home[64];
     long n;
 
-    blocks_read = read_ep;
-    blocks_write = write_ep;
+    servers[0].rd = read_ep;
+    servers[0].wr = write_ep;
+    servers[1].rd = disks_read_ep;
+    servers[1].wr = disks_write_ep;
     devices = devices_ep;
     console = console_ep;
 
@@ -2203,17 +2265,18 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
     }
 }
 
-void diskfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
+void diskfs_server(long endpoint, long read_ep, long write_ep, long disks_read_ep,
+                   long disks_write_ep, long devices_ep,
                    long console_ep, long keyring_ep, long maps_cache_ep, long models_ep)
 {
-    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, keyring_ep,
-          maps_cache_ep, models_ep);
+    serve(endpoint, read_ep, write_ep, disks_read_ep, disks_write_ep, devices_ep,
+          console_ep, keyring_ep, maps_cache_ep, models_ep);
 }
 
 /* `/Sandboxes`: the same server on the partition `opt/kosmos/sandboxes`
  * names, with no further doors - nothing but the Sandboxes reach in. */
-void sandboxfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
-                      long console_ep)
+void sandboxfs_server(long endpoint, long read_ep, long write_ep, long disks_read_ep,
+                      long disks_write_ep, long devices_ep, long console_ep)
 {
     drive.option = "opt/kosmos/sandboxes";
     drive.root = "Sandboxes";
@@ -2221,13 +2284,14 @@ void sandboxfs_server(long endpoint, long read_ep, long write_ep, long devices_e
     drive.called = "/Sandboxes";
     drive.tag = "sandboxes: ";
     drive.named = true;
-    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1, -1);
+    serve(endpoint, read_ep, write_ep, disks_read_ep, disks_write_ep, devices_ep,
+          console_ep, -1, -1, -1);
 }
 
 /* `/Models`: the same again on the partition `opt/kosmos/models` names -
  * the language models, which the LLM server alone is handed. */
-void modelsfs_server(long endpoint, long read_ep, long write_ep, long devices_ep,
-                     long console_ep)
+void modelsfs_server(long endpoint, long read_ep, long write_ep, long disks_read_ep,
+                     long disks_write_ep, long devices_ep, long console_ep)
 {
     drive.option = "opt/kosmos/models";
     drive.root = "Models";
@@ -2235,5 +2299,6 @@ void modelsfs_server(long endpoint, long read_ep, long write_ep, long devices_ep
     drive.called = "/Models";
     drive.tag = "models: ";
     drive.named = true;
-    serve(endpoint, read_ep, write_ep, devices_ep, console_ep, -1, -1, -1);
+    serve(endpoint, read_ep, write_ep, disks_read_ep, disks_write_ep, devices_ep,
+          console_ep, -1, -1, -1);
 }

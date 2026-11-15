@@ -471,7 +471,10 @@ static int l_rollback(lua_State *L)
 
 static int l_step(lua_State *L)
 {
-    return answer(L, kfs_step(K));
+    struct kfs_super sb;
+
+    get_sb(L, 1, &sb);
+    return answer(L, kfs_step(K, &sb));
 }
 
 static int l_step_undo(lua_State *L)

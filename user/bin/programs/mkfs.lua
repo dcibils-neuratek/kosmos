@@ -50,3 +50,9 @@ end
 
 print("")
 print("Formatted. `diskinfo` says what is there.")
+
+-- There was no filesystem when the machine started, so `/Home` is in
+-- memory until it starts again (`init.lua`, which decides once at boot).
+if not sb.formatted then
+  print("/Home is in memory until the machine restarts; from then on it is here.")
+end

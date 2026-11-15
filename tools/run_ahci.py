@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The SATA driver's first step: a disk behind AHCI found, and read only.
+"""The SATA driver: a disk behind AHCI found (A1), and served read only (A2).
 
 `docs/roadmap.md`, *SATA (AHCI)*: the M700's drive is behind an Intel SATA
 controller, and Windows is on it. q35's own ICH9 AHCI controller is given a
@@ -11,7 +11,12 @@ Microsoft basic data partition beginning with an NTFS boot sector - and:
   - the disk on port 0 answers IDENTIFY: QEMU's model, 64 MB in 131072
     sectors of 512;
   - its first sectors read: a protective MBR and a GPT;
-  - one disk found, said, and the driver ending with 0;
+  - one disk found and said, and served at `/Devices/disks`, read only;
+  - at the prompt, `blocks.lua` sees one unit there, 131072 sectors of 512
+    named QEMU HARDDISK; its sector 1 reads "EFI PART" and the partition's
+    first sector "NTFS"; a sector past the end is refused by name; a write
+    is refused as read only;
+  - the Drives window's model lists it as a SATA drive of 64 MB;
   - and afterwards the image is the same bytes it was - nothing written.
 
 Usage: run_ahci.py IMAGE
@@ -30,7 +35,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import scratch                                              # noqa: E402
 
-CHECKS = 6
+CHECKS = 11
 SECTOR = 512
 SECTORS = 131072                       # 64 MB
 BASIC_DATA = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"     # Microsoft basic data
@@ -116,10 +121,64 @@ def main():
               "the disk's GPT and protective MBR were not read: %r" % layout)
         count = guest.wait_for_line("ahci: 1 disk", "how many disks")
         check(count.strip() == "found", "the driver did not say one disk found: %r" % count)
-        # And ended, cleanly: a role that returns runs init's chunk again,
-        # which took the screen from the shell on 13 October.
-        ended = guest.wait_for_line("(ahci) ended, code ", "the driver to end")
-        check(ended.strip() == "0", "the driver did not end with 0: %r" % ended)
+        # And served rather than ended: a role that returns runs init's
+        # chunk again, which took the screen from the shell on 13 October.
+        served = guest.wait_for_line("ahci: serving ", "the driver to serve")
+        check(served == "1 disk at /Devices/disks",
+              "the driver did not say it serves one disk: %r" % served)
+
+        # ---- A2: the blocks, from a program ----
+        #
+        # A program, written to /Temporary and run, as `run_x86.py` reads a
+        # stick's blocks: `use` is a program's, not the prompt's. A write is
+        # sent as the protocol's own bytes, since `blocks.lua` has none -
+        # refused, because the endpoint every program has only reads - and
+        # `fs.raw` answers more than the reply, so it is in parentheses.
+        guest.wait_for("kosmos> ", "reached a prompt")
+        guest.type('fs.write("/Temporary/sata.lua", [['
+                   'local b = use("/Kosmos/Libraries/blocks.lua") '
+                   'local i, why = b.info(0, b.DISKS) '
+                   'print("SATAINFO", b.units(b.DISKS), i and i.blocks, '
+                   'i and i.block_size, i and i.product or why) '
+                   'local r = b.open(b.DISKS) '
+                   'local g = r:read(0, 1, 1) local n = r:read(0, 2048, 1) '
+                   'local e, past = r:read(0, 131072, 1) '
+                   'print("SATAREAD", g and g:sub(1, 8), n and n:sub(4, 7), '
+                   'tostring(e), past) '
+                   'print("SATAWRITE", (string.unpack("<I4", (fs.raw("/Devices/disks", '
+                   'string.pack("<I4I4I8I4I4", 4, 0, 0, 1, r.handle), nil, "blocks"))))) '
+                   'r:close() '
+                   'local dl = use("/Kosmos/Libraries/drivelist.lua") '
+                   'for _, d in ipairs(dl.drives()) do if d.sata then '
+                   'print("SATADRIVE", d.kind, d.name, d.bytes) end end '
+                   'print("SATADONE", 1)]])')
+        # The prompt again before the mark: the line above echoes every
+        # marker without its tab, and `SATADONE` with nothing after it was
+        # matched in that echo, before the program had run.
+        guest.wait_for_line("true", "the program written", len(guest.seen) - 1)
+        mark = len(guest.seen)
+        guest.type("/Temporary/sata.lua")
+
+        info = guest.wait_for_line("SATAINFO\t", "a SATA disk's INFO", mark).split("\t")
+        check(info == ["1", "131072", "512", "QEMU HARDDISK"],
+              "/Devices/disks did not say one 64 MB disk named QEMU HARDDISK: %r" % info)
+
+        read = guest.wait_for_line("SATAREAD\t", "sectors read from /Devices/disks", mark).split("\t")
+        check(read[:2] == ["EFI PART", "NTFS"],
+              "the disk's GPT header and its partition's first sector did not "
+              "read back from /Devices/disks: %r" % read[:2])
+        check(read[2:] == ["nil", "that block is past the last"],
+              "a sector past the disk's end was not refused by name: %r" % read[2:])
+
+        wrote = guest.wait_for_line("SATAWRITE\t", "a write to /Devices/disks answered", mark)
+        check(wrote == "7", "a write to /Devices/disks was not refused as read "
+              "only (BLOCK_ERR_READ_ONLY, 7): %r" % wrote)
+
+        guest.wait_for_line("SATADONE\t", "the drive list", mark)
+        drive = guest.seen[mark:].split("SATADRIVE\t")
+        drive = drive[-1].split("\n")[0].strip().split("\t") if len(drive) > 1 else []
+        check(drive == ["SATA drive", "QEMU HARDDISK", "67108864"],
+              "the Drives window's model did not list the SATA disk: %r" % drive)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the machine stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:
@@ -138,7 +197,9 @@ def main():
         return 1
 
     print("PASS: %d checks on the SATA driver (q35's ICH9 found in AHCI mode; a 64 MB disk's "
-          "IDENTIFY; its protective MBR and GPT read; one disk said; the driver ending with 0; the disk not written)" % CHECKS)
+          "IDENTIFY; its protective MBR and GPT read; one disk said and served; /Devices/disks' "
+          "INFO, a GPT header and an NTFS sector read, past the end refused, a write refused; "
+          "the drive in the Drives model; the disk not written)" % CHECKS)
     return 0
 
 

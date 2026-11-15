@@ -251,14 +251,27 @@ def main():
         subprocess.run([LUA, KFS, "put", HOME_DISK, out, KEPT], check=True,
                        capture_output=True, cwd=ROOT)
 
+    # The disk as the first boot left it, kept until this run passes - or
+    # always, with KOSMOS_SQL_KEEP set: what a failed read after the reboot
+    # is looked into with (`kfs.lua ls`), and how its files lie.
+    kept_disk = os.path.join(ROOT, "build", "gate", "sql-first-boot-%s.img"
+                             % os.environ.get("KOSMOS_SUITE", "sql"))
+    shutil.copyfile(HOME_DISK, kept_disk)
+
     again, took2 = boot(R, "/Home/apps/sql/second.lua", "sql-done: second", 120)
     read = line(again, "sql-keep:")
     if read != mac_keep:
+        listed = subprocess.run([LUA, KFS, "ls", kept_disk, "/Home/apps/sql"],
+                                capture_output=True, text=True, cwd=ROOT)
         print("FAIL: the rows read after a reboot are not the rows written:\n"
               "  written: %s\n  read:    %s" % (mac_keep, read))
+        print("  the disk as the first boot left it is %s; /Home/apps/sql on it:\n    %s"
+              % (kept_disk, (listed.stdout + listed.stderr).strip().replace("\n", "\n    ")))
         print("--- the guest's last words ---\n" + again[-1500:])
         return 1
 
+    if not os.environ.get("KOSMOS_SQL_KEEP"):
+        os.remove(kept_disk)
     print("PASS: SQLite %s on Kosmos - fuzzcheck's %s tests over %d databases without an "
           "error, speedtest1's hash as on this Mac, the dotfile lock refusing a second "
           "writer and letting it in after, and %s across a reboot (%.0f s + %.0f s)"

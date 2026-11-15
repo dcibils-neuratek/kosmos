@@ -267,6 +267,7 @@ struct kfs {
     uint32_t spare_n;
     struct kfs_extent spare[KFS_FILE_RUNS];
     uint8_t head[KFS_BLOCK];            /* the journal's header, the superblock */
+    uint8_t committed[KFS_BLOCK];       /* a bitmap block as the last commit left it */
 
     /*
      * **Zeroes to write a gap with, many blocks a call** (`docs/linux.md`
@@ -342,8 +343,15 @@ void kfs_rollback(struct kfs *k);
  * before it did. `kfs_commit` commits them all. A step that would not fit
  * beside the others fails `KFS_E_TOO_BIG` as a transaction does; its
  * owner undoes it, commits the rest, and tries it again alone.
+ *
+ * What a step frees is not handed out again until the group commits -
+ * except a block the group itself made, freed by a step before this one:
+ * the last commit never held it, and no undo can reach back to the step
+ * that did. `kfs_step` gives those back as it begins, so a file rewritten
+ * or appended to over many steps stays in few pieces (`testing.md`
+ * 18.836). `sb` says where the bitmap is.
  */
-int kfs_step(struct kfs *k);
+int kfs_step(struct kfs *k, const struct kfs_super *sb);
 void kfs_step_undo(struct kfs *k);
 
 /* `stop_after_commit` returns once the commit has landed and before any of
