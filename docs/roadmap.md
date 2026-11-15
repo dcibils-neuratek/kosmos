@@ -10459,10 +10459,60 @@ the applications make the system useful, and is not pulled forward.
       (one decoder a buffer, so not heard); `<video src>`'s sound; a
       pause plays out the stream's ring, about a fifth of a second; a
       rate or channel change part way; the web process's sound thread in
-      the audio band. **Next: M6.**
+      the audio band. **On the M700, 14 November: "youtube plays with sound
+      on the m700" (Diego).** **Next: M6.**
+    - *What Diego found on the M700, 14 November 2026*, with 0.11.422:
+      "the first version of the browser works really good", and "i found
+      various issues": **the window cannot be resized** (it was opened
+      without a grip, and `jetski_resize` had no caller); **no tabs**; **no
+      settings**. **The order, his the same evening**: these fixes, then
+      the JIT, then M6 - so the browser is finished for daily use before
+      Video moves ("after the browser is done"). Tabs and settings are
+      drawn first (`docs/jetski.html`) and agreed before code.
+      **More, the same evening**: "the brower needs some indicator of
+      loading progress", "right now i click some links and nothing
+      happens" - a click on a link has to show at once that something
+      began; today the 2-pixel bar under the toolbar appears only once
+      WebKit reports progress, which after a click waits for the policy
+      decision and often a new web process. And in the Process Viewer:
+      "show the memory consumption in MB instead of KB ... when memory is
+      above 1024kb", and "a gpu column ... so we can also measure how much
+      gpu is being used by the process (if any)" - which needs the GPU
+      driver to count its work per client, the piece to design first.
+    - *Settings, agreed, and About, drawn* (14 November 2026): Settings
+      as `docs/webkit.html` draws it - Diego: "mokcup is perfect". And
+      "jetski needs an about screen showing all the libraries it uses like
+      webkit and else", in his words "jetski is a native Kosmos internet
+      browser built for speed and compliant to modern web standards" -
+      drawn in `docs/webkit.html`, its list read from the same entries as
+      `LICENSE` and held by a test to what the image links; drawing it
+      found Brotli, WOFF2, dav1d and libavif missing from `LICENSE`.
+    - *Why one page has several web processes* (Diego asked, 14 November
+      2026, on the M700 with one tab: five `web` processes, 607, 446, 167,
+      19 and 0 MB): WebKit gives each site a process and keeps the ones a
+      tab left - two in the back-forward cache, and up to four a GB (32
+      here) in the web process cache for five minutes each - plus one
+      prewarmed. Diego: "dont turn off cache", "i just want to
+      understand". **What is ours**: a cached process is meant to go early
+      under memory pressure, which WebKit hears from Linux and Kosmos never
+      says, so here they leave only on the timer - to be given a source.
+      **Diego's answer, the same evening**: "i want the browser to be super
+      fast, so i dont care about the memory if its released accordingly
+      and returned to the OS when not needed anymore. i dont want memory
+      leaks". So the caches stay as WebKit sizes them, and three pieces
+      follow the loading indicator and the Process Viewer's columns:
+      (1) **`malloc` gives back free pages, not only free arenas** - a freed
+      run spanning whole pages is discarded and comes back zeroed on first
+      touch (`runtime/libc/malloc.c`; every process, so the whole gate);
+      (2) **a memory-pressure source** WebKit's `MemoryPressureHandler`
+      hears, from the kernel's free pages, so cached processes and caches
+      go early when the machine runs short; (3) **a leak test**: a run of
+      sites opened and left, the cache's lifetime waited out, and every
+      `web` process gone and the free pages back where they began.
     - *The order after M4, Diego, 14 November 2026*: "now that we have
       all these decoders, can we do the video player with support for all
-      these new formats?" - so **M6 comes next after M4, before M5's
+      these new formats?" - so **M6 comes after M4 - and after the browser's
+      fixes and the JIT, by his order of the same evening - before M5's
       refinements**: Video on the Media Kit, every container and codec it
       reads (WebM, MKV, MP4, MOV; AV1, VP9, VP8, H.264, HEVC; Opus,
       Vorbis, AAC, FLAC, MP3), its sound through the Playback Kit's C door

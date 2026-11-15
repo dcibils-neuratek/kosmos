@@ -3197,6 +3197,38 @@ working: the test page had its films muted, and muting now really turns
 the stream's fader down. There are two controls: a silent sound track,
 and the film muted on purpose. Each fails exactly the sound check.
 
-**Next:** a build for the M700 to try the browser on real hardware, then
-the Video app moved onto the same Media Kit, so it plays every format the
+**On real hardware.** The same evening the build went to the M700 over the
+network, and Diego opened YouTube there: "youtube plays with sound on the
+m700".
+
+**Next:** the Video app moved onto the same Media Kit, so it plays every format the
 browser does, starting with Diego's Big Buck Bunny.
+
+## 14 November 2026 - The browser window can be resized
+
+**In short:** JetSki's window now has a grip in its corner and can be made
+any size, and the web page inside reflows to fit. Diego found it couldn't
+be resized on the M700.
+
+**What happened.** Two things were missing. JetSki opened its window
+without asking for a resizable one, so there was no grip. And when the
+window did change size, WebKit's view kept the new size to itself: the
+part of WebKit Kosmos borrows (from the PlayStation port) stores a new
+size but never passes it to the page. A small patch makes it pass it on.
+
+**Visible impact.** Drag the corner and the page reflows, the way a
+browser should.
+
+**How it is tested.** The browser test drags the grip 300 pixels left and
+100 up and checks two things: that JetSki got smaller, and that the page
+itself saw its new width - the page has a listener that writes its width
+into its title. The control (JetSki not telling WebKit) fails exactly the
+second check. The control was itself broken at first, by a quirk of Lua
+that joined two lines into one call; it is the second time a control
+needed its own control.
+
+**Also that evening.** Diego asked why one page had five web processes
+using 1.2 GB. It is WebKit keeping pages ready: the last two for Back,
+and others warm for five minutes in case he returns. He wants it fast and
+kept, as long as memory goes back when it isn't needed and nothing leaks,
+so the next memory work is making sure it does.

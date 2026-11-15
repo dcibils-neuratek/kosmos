@@ -2,9 +2,24 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-11-14 (0.11.422: a film's sound heard - the Media Kit decodes, the Playback Kit plays (M4); 0.11.421: YouTube plays, picture only; 0.11.420: MSE - a film appended in pieces plays (M3); 0.11.419: <video> plays - Kosmos's media engine on the Media Kit (M2); 0.11.418: Google search works - cookies kept in /Home, and navigator.platform, the window's size and a canvas's picture as a browser gives them; 0.11.417: fixed, transformed and translucent elements painted - no compositing on Kosmos; 0.11.416: JetSki takes the pointer, the wheel and keys - links, scrolling, typing into a field; 0.11.415: JetSki's window - Wikipedia live in a Kosmos window; malloc's arenas reserved and discarded, never spending an address twice; 0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
+Last updated: 2026-11-14 (0.11.423: JetSki resizes, and the page is told; 0.11.422: a film's sound heard - the Media Kit decodes, the Playback Kit plays (M4); 0.11.421: YouTube plays, picture only; 0.11.420: MSE - a film appended in pieces plays (M3); 0.11.419: <video> plays - Kosmos's media engine on the Media Kit (M2); 0.11.418: Google search works - cookies kept in /Home, and navigator.platform, the window's size and a canvas's picture as a browser gives them; 0.11.417: fixed, transformed and translucent elements painted - no compositing on Kosmos; 0.11.416: JetSki takes the pointer, the wheel and keys - links, scrolling, typing into a field; 0.11.415: JetSki's window - Wikipedia live in a Kosmos window; malloc's arenas reserved and discarded, never spending an address twice; 0.11.414: fonts as files in /Kosmos/Fonts, so Wikipedia paints with its words; the Broadcom decode folded in from the lane; 0.11.413: HTTPS in JetSki - Mozilla's roots built in, authorities added in /Home, x86-sites over TLS; 0.11.412: W7b begun - pages over HTTP through the network process, pipes in the POSIX layer, WebKit's RedBlackTree fix, `x86-sites`; 0.11.411: W7a - WebKit2's UI, web and network processes on Nebula, `x86-webkit2`; 0.11.404: the recorded sites - YouTube, The Verge, apple.com, CNN - painted; YouTube and every decoder made the priority; 0.11.403: Wikipedia's BeOS page painted by WebCore on Kosmos, `tools/run_site.py`; 0.11.402: W6d - scripts run and a page's files load, 76 LayoutTests; IPv6 as text in the POSIX layer; 0.11.401: generic font families as IBM Plex - the first text WebKit drew here; 0.11.400: W6c text - 25 LayoutTests in Ahem, families without case; 0.11.399: W6c painting - fourteen pages painted pixel for pixel as GTK's; 0.11.398: W6b - WebCore lays out fourteen LayoutTests as WebKit expects; 0.11.397: HarfBuzz's ICU library; 0.11.396: W6a - WebKit as PORT=Kosmos, with what the tarball lacks from WebKit's git; 0.11.395: W5e - Skia, so W5 is done; 0.11.394: library suites only when they changed; 0.11.393: W5d finished - OpenSSL and curl; the Mac Pro on its desktop (0.11.391); nothing since 0.11.363 pushed)
 
 ---
+
+## 14 November, late: JetSki resizes (0.11.423, not pushed)
+
+`testing.md` 18.818: JetSki's window has a grip, and the page is told its
+new size - a WebKit patch, since PlayStation's view kept the size to
+itself. **Diego's findings on the M700 and what came of them**
+(`roadmap.md`, M4's notes): Settings drawn in `docs/webkit.html` and
+agreed ("mokcup is perfect"); an About window drawn, waiting on him, and
+four libraries it found missing from `LICENSE` added; why one tab has
+several web processes, explained (WebKit's back-forward and process
+caches) - he keeps the caches, and wants memory returned and no leaks,
+which is three pieces on the roadmap. **Next**: a loading indicator that
+shows the moment a link is clicked ("i click some links and nothing
+happens"), the Process Viewer's MB, then tabs, Settings, About, the
+memory pieces, the JIT, M6.
 
 ## 14 November, night: a film's sound (0.11.422, not pushed)
 
@@ -13,9 +28,9 @@ suite machine's sound card - decoded by the Media Kit, played by the
 Playback Kit through its new C door (`playback.h`) into a stream opened
 from C (`user/kits/audio/audioclient.h`); the clock is the sound's, and a
 page's mute and volume are the stream's fader. 25 checks, controls a
-silent track and a muted film. Not yet tried live on YouTube with sound.
-**Next, Diego's order of 14 November**: an M700 build of the browser now
-that YouTube has sound (the full gate, `make netboot`); then M6, Video on
+silent track and a muted film. **On the M700** (netbooted, 192.168.1.35
+that day): Diego, "youtube plays with sound on the m700".
+**Next, Diego's order of 14 November**: M6, Video on
 the Media Kit with every format, its first real film his Big Buck Bunny
 (`~/Downloads/big_buck_bunny (1).mp4`, H.264 + AAC, played from `/Home`).
 

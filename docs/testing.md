@@ -33658,3 +33658,38 @@ The full gate: 129 of 130 suites in 754 s. The one that failed was
 (18.272 and after) is QEMU being held off by the Mac under the gate's
 load, which the test counts too - and run again alone it passed, 217 of
 217 in 32 s. Nothing in this change is in the kernel.
+
+**On the M700, the same evening**: 0.11.422 netbooted, JetSki installed
+from the packages (3.9 s), Wikipedia's BeOS page loaded live in 1.5 s -
+and Diego, of YouTube: "youtube plays with sound on the m700". The first
+film heard on real hardware through the Media Kit and the Playback Kit.
+
+## 18.818 JetSki resizes, and the page is told (0.11.423)
+
+Diego, on the M700 with 0.11.422: "i cant resize the browser". JetSki
+opened without a grip, and `jetski_resize` had no caller. Now its window
+is `resizable`, `win.on_resize` lays the header, field and view out
+again and calls `web.resize`, and `web.frame` tells the page where the
+window is.
+
+**The suite caught a second break the first run did not show**: with the
+window resized, the page still had its old width. PlayStation's view,
+which the Kosmos port uses, keeps a new size in `setViewSize` and tells
+nobody; the page learns it only from its drawing area. A patch,
+`0029-a-view-resized-tells-its-page.patch`, calls the drawing area's
+`setSize` under `PLATFORM(KOSMOS)`.
+
+`x86-jetski`, now 26 checks: the grip dragged 300 left and 100 up in
+five steps, JetSki prints `resized to WxH` with the width 300 less, and
+the page's own `resize` listener titles the page with its new
+`innerWidth`, which must match. 29 s.
+
+**Controls**, each failing the one check: before the patch, the page was
+not told; `KOSMOS_JETSKI_BREAK=fixed`, where JetSki lays itself out and
+never calls `web.resize`, fails "JetSki was resized and the page was not
+told". **The control itself was wrong at first** - its no-op,
+`(function() end)()`, on the line after `layout()`, made Lua read
+`layout()(function() end)()`, and the kit's `pcall` around `on_resize`
+swallowed the error, so it failed on the earlier check, the window not
+resized. It is `do end` now. A control that fails is not enough; it has
+to fail where it says.

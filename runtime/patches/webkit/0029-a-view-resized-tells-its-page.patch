@@ -1,0 +1,22 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A view made larger or smaller tells its page (JetSki's resize, 14 November
+2026): PlayStation's view kept the new size and told nobody, so the page
+stayed at the size it opened at.
+
+diff -ruN a/Source/WebKit/UIProcess/playstation/PlayStationWebView.cpp b/Source/WebKit/UIProcess/playstation/PlayStationWebView.cpp
+--- a/Source/WebKit/UIProcess/playstation/PlayStationWebView.cpp	2026-11-14 22:06:43.244124176 -0300
++++ b/Source/WebKit/UIProcess/playstation/PlayStationWebView.cpp	2026-11-14 22:06:43.263440273 -0300
+@@ -95,6 +95,12 @@
+ void PlayStationWebView::setViewSize(WebCore::IntSize viewSize)
+ {
+     m_viewSize = viewSize;
++#if PLATFORM(KOSMOS)
++    // The page learns its new size only from its drawing area; without
++    // this a window made larger kept the page at the size it opened at.
++    if (m_page && m_page->drawingArea())
++        m_page->drawingArea()->setSize(viewSize);
++#endif
+ }
+ 
+ void PlayStationWebView::setViewState(OptionSet<WebCore::ActivityState> flags)

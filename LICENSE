@@ -222,6 +222,26 @@ Vendored third-party code keeps its own licence, which travels beside it:
       GitHub's SHA-256 (docs/w5.md W5d); the terms are its COPYING. Only
       curltest.elf, W5d's test, links it
 
+  Brotli 1.2.1, by the Brotli authors, under the MIT
+      licence
+      Not in the tree: tools/upstream.py fetches it by git at the release's
+      commit (docs/w5.md W5f); the terms are its LICENSE. Linked by the
+      images that read WOFF2 fonts and HTTP's `br`, JetSki's among them
+
+  WOFF2 1.0.2, by the WOFF2 authors, under the MIT licence
+      Not in the tree: fetched by git at the tag's commit (W5f); the terms
+      are its LICENSE. Linked by JetSki's image, for a site's own fonts
+
+  dav1d 1.5.4, by VideoLAN and the dav1d authors, a BSD 2-clause licence
+      Not in the tree: fetched by git at the tag's commit (W5f); the terms
+      are its COPYING. Linked by the images that decode AV1 - AVIF's
+      pictures and the Media Kit's video
+
+  libavif 1.4.2, by Joe Drago and the libavif authors, a BSD 2-clause
+      licence
+      Not in the tree: fetched by git at the tag's commit (W5f); the terms
+      are its LICENSE. Linked by JetSki's image, for AVIF pictures
+
   Skia, as WebKitGTK 2.54.2 carries it (milestone 154), by Google LLC and
       the Skia authors, a BSD-style licence
       Not in the tree: tools/webkit_build.py fetches WebKit's release

@@ -51,6 +51,8 @@ end
 
 local HOME = "https://en.wikipedia.org/wiki/BeOS"
 
+-- The window's size, which a person changes with its grip: every other
+-- size here is worked out from these two in `layout`.
 local W, H = 1200, 800
 local HEAD = ui.layout.head          -- back, forward, reload and the address
 local STAT = 26                      -- what the page is doing, along the bottom
@@ -58,7 +60,8 @@ local VIEW_Y = HEAD
 local VIEW_H = H - HEAD - STAT
 
 local X, Y = 70, 50
-local win, why = ui.window{ title = "JetSki", w = W, h = H, x = X, y = Y, direct = true }
+local win, why = ui.window{ title = "JetSki", w = W, h = H, x = X, y = Y, direct = true,
+                            resizable = true }
 
 if not win then
   print("jetski: " .. tostring(why))
@@ -109,7 +112,6 @@ do
   end
 
   field.x = x + 4
-  field.w = W - edge - field.x
   field.y = (HEAD - 1 - field.h) // 2
   header:add(field)
 end
@@ -123,6 +125,17 @@ win:add(header)
 --
 
 local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
+
+-- **Every size from the window's**: the header and the address across it,
+-- the page below it, and the status line along the bottom.
+local function layout()
+  VIEW_H = math.max(1, H - HEAD - STAT)
+  header.w = W
+  field.w = W - ui.layout.head_edge - field.x
+  view.w, view.h = W, VIEW_H
+end
+
+layout()
 
 view.focusable = true
 view.takes_tab = true                -- Tab is the page's, between its fields
@@ -240,6 +253,19 @@ local function frame()
 end
 
 win.on_paint = function() frame() end
+
+-- Resized by its grip: everything laid out again, and WebKit told the
+-- page's new size, which it lays out and paints at.
+win.on_resize = function(_, w, h)
+  if w == W and h == H then return end
+
+  W, H = w, h
+  layout()
+  web.resize(W, VIEW_H)
+  web.frame(X, Y, W, H)
+  print(("jetski: resized to %dx%d"):format(W, H))
+  frame()
+end
 
 --
 -- **WebKit, a slice a pass**: longer while a page is arriving, short when

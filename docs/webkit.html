@@ -1,7 +1,7 @@
 <!--
   Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
   JetSki, the browser on WebKit: its window, the address field's suggestions, a tab
-  whose page stopped, and downloads. Drawn on 11 November 2026, before it is
+  whose page stopped, downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
   built, from Diego's "I need a new web browser that is current and usable
   like safari or chrome". Its feature set and architecture are
   docs/webkit.md, its diagram docs/webkit-architecture.png. The pages drawn
@@ -111,6 +111,39 @@ code { font-family: var(--mono); font-size: 13px; }
 .dlr .pb { height: 5px; background: #eef0f3; border-radius: 3px; }
 .dlr .pb i { display: block; height: 5px; border-radius: 3px; background: var(--w-accent); }
 .dlr .a { color: var(--w-accent); text-align: right; }
+/* Settings: a tab of the browser's own, in Preferences' groups. */
+.set { padding: 20px 28px 26px; background: #f4f5f7; }
+.setcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+.grouplabel { font-weight: 600; font-size: 12.5px; margin: 14px 0 6px 3px; }
+.grouplabel:first-child { margin-top: 0; }
+.group { background: #fff; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+.row { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--w-line); min-height: 44px; }
+.row:last-child { border-bottom: 0; }
+.row .label { flex: 1; min-width: 0; }
+.row .label b { font-weight: 500; display: block; }
+.row .label span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+.field { font-size: 12.5px; padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; min-width: 160px; }
+.drop { padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; color: var(--w-ink); }
+.sw { width: 40px; height: 23px; border-radius: 12px; background: #cdd0d6; position: relative; flex: none; }
+.sw.on { background: var(--w-accent); }
+.sw::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
+.sw.on::after { left: 19px; }
+/* About JetSki. */
+.about { padding: 20px 26px 18px; }
+.about .hero { display: flex; gap: 18px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--w-line); }
+.about .logo { width: 64px; height: 64px; border-radius: 16px; flex: none; background: linear-gradient(150deg, #5fb4ff, #2f6bdc 55%, #173a8a); box-shadow: inset 0 -10px 0 rgba(255,255,255,.18); }
+.about .name { font-size: 22px; font-weight: 600; }
+.about .ver { color: var(--w-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.about .hero p { margin: 6px 0 0; font-size: 13px; }
+.about .built { font-weight: 600; font-size: 12.5px; margin: 14px 0 4px; }
+.libs { max-height: 330px; overflow-y: auto; border: 1px solid var(--w-line); border-radius: 10px; }
+.libs .lg { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8a92a0; padding: 9px 14px 3px; background: #fafbfc; }
+.libs .lib { display: grid; grid-template-columns: 150px 64px 1fr 110px; gap: 10px; padding: 5px 14px; font-size: 12.5px; border-top: 1px solid #f0f1f4; align-items: baseline; }
+.libs .lib b { font-weight: 500; }
+.libs .lib span { color: var(--w-dim); font-variant-numeric: tabular-nums; }
+.libs .lib i { font-style: normal; color: #3c4553; }
+.libs .lib em { font-style: normal; color: var(--w-dim); text-align: right; font-size: 12px; }
+.about .foot { display: flex; align-items: center; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -191,7 +224,113 @@ code { font-family: var(--mono); font-size: 13px; }
 </div></div>
 <p class="cap">From the downloads button. What arrives goes to <code>/Home/Downloads</code>; a notification says when one finishes, and Open hands it to the application its file type names - a PDF to the PDF reader, a picture to Photos. A download that stops hearing gives up after a time and goes on from where it was when asked again, as Models' do.</p>
 
+<h2>Settings</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Settings<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="host">Settings</span><span class="path" style="margin-left:8px">about:settings</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="set">
+    <div class="setcols">
+      <div>
+        <div class="grouplabel">Starting</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Home page</b></div><span class="field">about:start</span></div>
+          <div class="row"><div class="label"><b>When JetSki opens</b></div><span class="drop">The tabs it had &#9662;</span></div>
+          <div class="row"><div class="label"><b>Show the favorites bar</b></div><span class="sw on"></span></div>
+        </div>
+        <div class="grouplabel">Pages</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Zoom</b></div><span class="drop">100%, normal &#9662;</span></div>
+          <div class="row"><div class="label"><b>Load images</b></div><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>JavaScript</b><span>Off makes most sites plain or blank; for reading, or a page that misbehaves</span></div><span class="sw on"></span></div>
+        </div>
+        <div class="grouplabel">Searching</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Search with</b><span>Words in the address field that are not an address</span></div><span class="drop">DuckDuckGo &#9662;</span></div>
+        </div>
+        <div class="grouplabel">Downloads</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Save into</b></div><span class="field">/Home/Downloads</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="grouplabel">History</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Keep history for</b></div><span class="drop">30 days &#9662;</span></div>
+          <div class="row"><div class="label"><b>Clear history</b><span>Every page visited, from every tab</span></div><span class="btn q2" style="margin:0">Clear&hellip;</span></div>
+        </div>
+        <div class="grouplabel">Cookies and site data</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Keep cookies</b><span>What keeps you signed in to a site</span></div><span class="drop">Always &#9662;</span></div>
+          <div class="row"><div class="label"><b>Third-party cookies</b><span>Set by a site other than the one you are on - mostly advertising</span></div><span class="drop">Blocked &#9662;</span></div>
+          <div class="row"><div class="label"><b>Stored by sites</b><span>38 sites, 61 MB - cookies, storage and the cache</span></div><span class="btn q2" style="margin:0">Manage&hellip;</span></div>
+        </div>
+        <div class="grouplabel">Security</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Trusted authorities</b><span>Mozilla's list, as the system's TLS has it</span></div><span class="btn q2" style="margin:0">Show</span></div>
+          <div class="row"><div class="label"><b>A page with a bad certificate</b><span>Refused, with the reason, and Open anyway for that tab</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">A tab of its own, at <code>about:settings</code>, opened from the menu button or Control+comma - as Safari and Chrome have it, so a setting is read beside the page it is about. Every change is kept the moment it is made; there is no Save. The groups are the old browser's, agreed on 1 October, with what WebKit adds: <b>JavaScript</b> on or off, and <b>Cookies and site data</b> - how long cookies are kept, third-party ones blocked by default, and what each site has stored, cleared one site at a time or all at once. Kept in <code>/Home/Settings/JetSki</code> beside the cookies. The numbers are examples.</p>
+
+<h2>About JetSki</h2>
+<div class="scroller"><div class="win" style="width:720px">
+  <div class="band"><span class="t">About JetSki</span><span class="grow"></span>
+    <span class="lights"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="about">
+    <div class="hero">
+      <div class="logo"></div>
+      <div>
+        <div class="name">JetSki</div>
+        <div class="ver">Version 0.11.424 &middot; Kosmos 0.11.424</div>
+        <p>A native Kosmos internet browser, built for speed and compliant with modern web standards.</p>
+      </div>
+    </div>
+    <div class="built">Built on</div>
+    <div class="libs">
+      <div class="lg">Engine</div>
+      <div class="lib"><b>WebKit</b><span>2.54.2</span><i>Pages: HTML, CSS, layout, the DOM</i><em>LGPL 2.1, BSD</em></div>
+      <div class="lib"><b>JavaScriptCore</b><span>2.54.2</span><i>JavaScript</i><em>LGPL 2.1, BSD</em></div>
+      <div class="lib"><b>Skia</b><span>m154</span><i>Drawing</i><em>BSD</em></div>
+      <div class="lg">Network</div>
+      <div class="lib"><b>curl</b><span>8.23.0</span><i>HTTP, cookies</i><em>curl</em></div>
+      <div class="lib"><b>OpenSSL</b><span>4.1.0</span><i>TLS: the padlock</i><em>Apache 2.0</em></div>
+      <div class="lib"><b>libpsl</b><span>0.23.3</span><i>Which part of a name is the site</i><em>MIT</em></div>
+      <div class="lib"><b>Brotli</b><span>1.2.1</span><i>Compressed pages and fonts</i><em>MIT</em></div>
+      <div class="lib"><b>zlib</b><span>1.4</span><i>Compressed pages</i><em>zlib</em></div>
+      <div class="lg">Text</div>
+      <div class="lib"><b>ICU</b><span>79.1</span><i>Every language's text</i><em>Unicode</em></div>
+      <div class="lib"><b>HarfBuzz</b><span>15.1.0</span><i>Shaping letters into words</i><em>MIT</em></div>
+      <div class="lib"><b>FreeType</b><span>2.15.0</span><i>Drawing letters</i><em>FTL</em></div>
+      <div class="lib"><b>WOFF2</b><span>1.0.2</span><i>A site's own fonts</i><em>MIT</em></div>
+      <div class="lg">Pictures</div>
+      <div class="lib"><b>libjpeg-turbo</b><span>3.2.1</span><i>JPEG</i><em>BSD</em></div>
+      <div class="lib"><b>libpng</b><span>1.6.59</span><i>PNG</i><em>PNG</em></div>
+      <div class="lib"><b>libwebp</b><span>1.6.0</span><i>WebP</i><em>BSD</em></div>
+      <div class="lib"><b>libavif</b><span>1.4.2</span><i>AVIF</i><em>BSD</em></div>
+      <div class="lib"><b>dav1d</b><span>1.5.4</span><i>AV1, for AVIF and video</i><em>BSD</em></div>
+      <div class="lg">Sound and video</div>
+      <div class="lib"><b>FFmpeg</b><span>9.0.2</span><i>Decoding films and their sound, in the Media Kit</i><em>LGPL 2.1</em></div>
+      <div class="lg">Kept on this machine</div>
+      <div class="lib"><b>SQLite</b><span>3.54.1</span><i>Cookies, history, site storage</i><em>Public domain</em></div>
+      <div class="lib"><b>libxml2</b><span>2.15.4</span><i>XML and XSLT</i><em>MIT</em></div>
+      <div class="lg">Kosmos</div>
+      <div class="lib"><b>Media Kit &middot; Playback Kit &middot; Storage Kit &middot; Crypto Kit</b><span>0.11.424</span><i>Kosmos's own, under the browser</i><em>MIT</em></div>
+    </div>
+    <div class="foot"><span class="btn q2" style="margin:0">Licences&hellip;</span><span class="grow"></span><span style="color:var(--w-dim);font-size:12px">Copyright &copy; 2026 Diego Cibils</span></div>
+  </div>
+</div></div>
+<p class="cap">From the menu button, <b>About JetSki</b>: a small window of its own, not a tab. What JetSki is, in Diego's words, and every library it is built on - what each one does for the browser, its version and its licence - grouped by what they are for. Licences&hellip; opens each one's text, as the system's About does. <b>The list is not typed twice</b>: it is read from the same entries as <code>LICENSE</code>, and a test holds the two to the libraries the image links, so a library added to JetSki cannot be missing here. (Drawing it found four missing from <code>LICENSE</code> today: Brotli, WOFF2, dav1d and libavif.) Versions are those in the tree on 14 November.</p>
+
 <h2>Decided by Diego, 11 November</h2>
+<div class="q"><b>Settings, as drawn here</b> - Diego, 14 November: "mokcup is perfect".</div>
 <div class="q"><b>JetSki</b>, the name; <b>tabs in the band</b>, as drawn here; <b>OpenSSL</b> as the system's one TLS; and <b>fast</b>, with the GPU where it pays - <code>docs/webkit.md</code>, <i>Fast</i>.</div>
 </div>
 </body>

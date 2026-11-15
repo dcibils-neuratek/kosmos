@@ -281,6 +281,9 @@ window.addEventListener("scroll", function () {
   if (window.scrollY > 0) document.title = "scrolled " + window.scrollY;
 });
 field.addEventListener("input", function () { document.title = "typed " + field.value; });
+window.addEventListener("resize", function () {
+  document.title = "resized " + window.innerWidth + "x" + window.innerHeight;
+});
 </script>
 </body></html>
 """ % ((SECOND.encode(),) + FIELD)
@@ -447,7 +450,38 @@ def use(guest, R, dump, window, mark):
     R.write_png(os.path.join(KEPT, "jetski-film.png"), shot)
     failed.extend(film(R, shot, window))
     failed.extend(appended(R, shot, window))
+    failed.extend(resized(guest, R, window, mark, sw, sh))
     return failed
+
+
+def resized(guest, R, window, mark, sw, sh):
+    """The grip, the window's bottom right corner, dragged 300 left and 100
+    up: the window manager resizes the frame, JetSki lays itself out again
+    and tells WebKit, and the page's `resize` event says its new size."""
+    x, y, w, h = window
+    since = len(guest.seen)
+    gx, gy = x + w - 6, y + h - 6
+    guest.mouse_to(*R._to_tablet(gx, gy, sw, sh))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    for step in range(1, 6):
+        guest.mouse_to(*R._to_tablet(gx - 60 * step, gy - 20 * step, sw, sh))
+        time.sleep(0.15)
+    guest.mouse_button(False)
+    time.sleep(0.4)
+    guest.mouse_to(*R._to_tablet(sw - 30, sh - 30, sw, sh))
+    if not said(guest, since, "jetski: resized to ", 30):
+        return ["the grip was dragged and JetSki was not resized: %s"
+                % (re.findall(r"(?:wm|jetski): [^\r\n]*", guest.seen[since:])[-3:] or "nothing said")]
+    if not said(guest, since, "jetski: title resized ", 30):
+        return ["JetSki was resized and the page was not told"]
+    got = re.findall(r"jetski: resized to (\d+)x(\d+)", guest.seen[since:])[-1]
+    page = re.findall(r"jetski: title resized (\d+)x(\d+)", guest.seen[since:])[-1]
+    if int(got[0]) != w - 300 or int(page[0]) != int(got[0]):
+        return ["the grip dragged 300 left made the window %sx%s and the page %sx%s, not %d wide"
+                % (got + page + (w - 300,))]
+    return []
 
 
 def itself():
@@ -652,6 +686,13 @@ def main():
     lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
     if BROKEN == "foreign-cookie":
         PAGE = PAGE.replace(SCRIPT_COOKIE.encode(), b"")
+    if BROKEN == "fixed":
+        # Laid out again at the new size, and WebKit never told.
+        with open(lua) as f:
+            text = f.read().replace("web.resize(W, VIEW_H)", "do end")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
     if BROKEN in ("deaf", "deaf-wheel", "deaf-key"):
         # The page's view keeps what it is handed: everything, or the one.
         with open(lua) as f:
@@ -769,7 +810,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 25
+    checks = 26
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -785,7 +826,8 @@ def main():
           "the second page by WebKit's Media Kit engine, its picture in the window; and "
           "beside it a film appended in pieces to a MediaSource, VP9 and Opus in "
           "SourceBuffers of their own, played, all of it buffered, on the screen, and "
-          "its tone heard from the sound card"
+          "its tone heard from the sound card; and the window resized by its grip, the "
+          "page told its new width"
           % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 
