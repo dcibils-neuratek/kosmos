@@ -188,8 +188,15 @@ def main():
         drawn = {}
         for item in (said("procs: drawn: ", mark) or "").split("; "):
             parts = item.strip().split(":")
-            if len(parts) == 3:
-                drawn[parts[0]] = (parts[1], parts[2])
+            if len(parts) >= 3:
+                drawn[parts[0]] = (parts[1], parts[2], parts[3] if len(parts) > 3 else "")
+        # Memory as Tracker writes a size: a megabyte and more in MB (Diego,
+        # 14 November 2026), and the window manager holds more than one.
+        sizes = [v[2] for v in drawn.values() if v[2] != "-"]
+        check(sizes and all(re.fullmatch(r"\d+(\.\d)? (B|KB|MB|GB)", m) for m in sizes)
+              and drawn.get("wm", ("", "", ""))[2].endswith(" MB"),
+              "memory is not written as a size, the window manager's in MB: wm %r, %r"
+              % (drawn.get("wm"), sizes[:6]))
         check(drawn.get("nebula", ("", ""))[0] == "kernel",
               "the kernel's row is not Nebula, of kind kernel: %r" % (drawn.get("nebula"),))
         check(drawn.get("windowserver", ("", ""))[1] == "screen"

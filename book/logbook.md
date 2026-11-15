@@ -3232,3 +3232,24 @@ using 1.2 GB. It is WebKit keeping pages ready: the last two for Back,
 and others warm for five minutes in case he returns. He wants it fast and
 kept, as long as memory goes back when it isn't needed and nothing leaks,
 so the next memory work is making sure it does.
+
+## 14 November 2026 - A click on a link shows at once
+
+**In short:** clicking a link in JetSki now shows straight away that
+something is happening: a blue bar under the toolbar, "Opening
+news.google.com..." in the status line, and the reload button turns into
+a stop button. And the Process Viewer shows memory in MB.
+
+**Why it looked like nothing happened.** WebKit only says a page has started
+loading once it has decided to follow the link and, for another site, has
+started a fresh process for it. On the M700 that takes a second or more,
+and until then the screen didn't change. Diego's clicks were arriving; they
+just weren't shown.
+
+**What changed.** JetSki now listens for the very first thing a link does,
+WebKit asking "may I go there?", and starts the indicator then. The test
+clicks a link and checks JetSki says so before the new page arrives; with
+that part switched off, it fails exactly there.
+
+**The Process Viewer** writes memory the way Tracker writes file sizes,
+with the same function: 640 KB, 4.3 MB, 607 MB.

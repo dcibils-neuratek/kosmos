@@ -33693,3 +33693,38 @@ told". **The control itself was wrong at first** - its no-op,
 swallowed the error, so it failed on the earlier check, the window not
 resized. It is `do end` now. A control that fails is not enough; it has
 to fail where it says.
+
+## 18.819 A followed link shows at once; Reload is Stop while loading (0.11.424)
+
+Diego, on the M700: "the brower needs some indicator of loading progress",
+"right now i click some links and nothing happens". There was a bar - two
+pixels along the header's rule - but it was drawn only once WebKit gave a
+figure, and WebKit says a navigation began only after it is decided and,
+for another site, a web process started for it: on the M700 a second or
+more after the click with nothing on screen. The log showed his clicks did
+arrive, slowly.
+
+JetSki now answers WebKit's `decidePolicyForNavigationAction`, the first
+thing a followed link does: for the page itself (not a frame inside it) the
+page is loading from that moment, and where it is going is kept. The bar is
+three pixels and a sixteenth of the window wide at once; the status line
+says `Opening <host>...` until the load begins and `Loading N%` after; and
+Reload becomes Stop (the kit's `close` icon) while a page is on its way. A
+link to a place on the same page clears it (`didSameDocumentNavigation`),
+as do Stop, a failure and the end, and thirty seconds asked and never begun.
+
+`x86-jetski`, 27 checks: the link clicked must print `jetski: following
+http...` before the second page's title. 26 s. Control
+`KOSMOS_JETSKI_BREAK=unannounced`, JetSki ignoring what it was told: fails
+that one check, "the link was followed and JetSki did not show it until
+the page came".
+
+## 18.820 The Process Viewer writes memory as a size (0.11.424)
+
+Diego: "process viewer needs to show the memory consumption in MB instead
+of KB ... when memory is above 1024kb". The column is `files.size` now -
+the one door to a size, Tracker's - so 640 KB, 4.3 MB, 607 MB. Its
+`procs: drawn:` line carries each row's memory, and `x86-sysapps` (40
+checks, 69 s) holds every one to the shape of a size and the window
+manager's to MB. Control: the old `%d KB` back in `procs.lua` fails that
+one check - "wm ('program', '-', '2608 KB')".

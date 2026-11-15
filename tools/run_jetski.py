@@ -409,10 +409,18 @@ def use(guest, R, dump, window, mark):
     count, link = block_at(R.parse_ppm, dump, x, y, w, h, LINK)
     if count < 200:
         return ["the link is not on the screen: %d of its pixels" % count]
+    clicked = len(guest.seen)
     click(link)
     if not said(guest, mark, "jetski: title " + SECOND, 60):
         return ["the link was clicked and the second page did not arrive: %s"
                 % (re.findall(r"jetski: [^\r\n]*", guest.seen[mark:])[-3:] or "nothing said")]
+    # Said the moment it was followed, before the page began to arrive
+    # (Diego: "i click some links and nothing happens").
+    after = guest.seen[clicked:]
+    followed = after.find("jetski: following http")
+    titled = after.find("jetski: title " + SECOND)
+    if followed < 0 or followed > titled:
+        failed.append("the link was followed and JetSki did not show it until the page came")
 
     time.sleep(1.5)                     # its picture, painted and composed
     second = guest.screendump()
@@ -693,6 +701,13 @@ def main():
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
+    if BROKEN == "unannounced":
+        # A link followed, and nothing shown until WebKit begins the load.
+        with open(lua) as f:
+            text = f.read().replace("if st.asked then", "if false then")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
     if BROKEN in ("deaf", "deaf-wheel", "deaf-key"):
         # The page's view keeps what it is handed: everything, or the one.
         with open(lua) as f:
@@ -810,7 +825,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 26
+    checks = 27
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -818,7 +833,7 @@ def main():
     print("PASS: JetSki's window - opened from the shell, installed in /Home/Apps/JetSki, "
           "a page fetched over HTTP by WebKit's network process and painted below the "
           "address field, %dx%d at %d,%d in the window, and the title the page's; "
-          "then its link clicked to a second page, the wheel turned and its script told "
+          "then its link clicked to a second page, shown as followed the moment it was clicked, the wheel turned and its script told "
           "the page scrolled, and its field clicked and \"%s\" typed into it; and the "
           "second page asked for with the server's cookie and the script's, the lasting "
           "one kept on /Home; and the page saw \"%s\" as the platform, its window "

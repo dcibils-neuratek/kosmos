@@ -10479,6 +10479,8 @@ the applications make the system useful, and is not pulled forward.
       above 1024kb", and "a gpu column ... so we can also measure how much
       gpu is being used by the process (if any)" - which needs the GPU
       driver to count its work per client, the piece to design first.
+      **Built in 0.11.424**: the indicator from the click (`testing.md` 18.819)
+      and memory as a size (18.820); the GPU column is still to design.
     - *Settings, agreed, and About, drawn* (14 November 2026): Settings
       as `docs/webkit.html` draws it - Diego: "mokcup is perfect". And
       "jetski needs an about screen showing all the libraries it uses like

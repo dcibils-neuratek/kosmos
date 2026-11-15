@@ -19,6 +19,9 @@
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
 #include <WebKit/WKErrorRef.h>
+#include <WebKit/WKFrameInfoRef.h>
+#include <WebKit/WKFramePolicyListener.h>
+#include <WebKit/WKNavigationActionRef.h>
 #include <WebKit/WKPage.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageKosmos.h>
@@ -27,6 +30,7 @@
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
+#include <WebKit/WKURLRequest.h>
 #include <WebKit/WKView.h>
 #include <WebKit/WKViewClient.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
@@ -54,6 +58,9 @@ struct Browser {
     unsigned happened = 0;
     int error = 0;
     bool loading = false;
+    bool asked = false;             // a link followed, its load not begun
+    WTF::MonotonicTime askedAt;
+    char going[2048] { };
     bool running = false;           // inside `jetski_pump`'s run loop
     WTF::RunLoop::Timer* slice = nullptr;
 
@@ -68,10 +75,51 @@ struct Browser {
 
 Browser browser;
 
+void copy(WKStringRef, char* into, size_t room);
+
 void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
 {
     browser.happened |= JETSKI_STARTED;
     browser.loading = true;
+    browser.asked = false;
+}
+
+/*
+ * **A link, the moment it is followed** (Diego, 14 November 2026: "right
+ * now i click some links and nothing happens"). WebKit says a navigation
+ * began only once it is decided and, for another site, a web process has
+ * been started for it - on the M700 a second or more after the click, with
+ * nothing on screen. Asking is the first thing that happens, so the page is
+ * loading from here: for the page itself, not a frame inside it.
+ */
+void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListenerRef listener, WKTypeRef, const void*)
+{
+    if (WKNavigationActionShouldPerformDownload(action)) {
+        WKFramePolicyListenerDownload(listener);
+        return;
+    }
+
+    auto frame = adoptWK(WKNavigationActionCopyTargetFrameInfo(action));
+    if (frame && WKFrameInfoGetIsMainFrame(frame.get())) {
+        browser.happened |= JETSKI_ASKED;
+        browser.asked = true;
+        browser.askedAt = WTF::MonotonicTime::now();
+        browser.going[0] = '\0';
+        auto request = adoptWK(WKNavigationActionCopyRequest(action));
+        auto url = request ? adoptWK(WKURLRequestCopyURL(request.get())) : nullptr;
+        if (url) {
+            auto string = adoptWK(WKURLCopyString(url.get()));
+            copy(string.get(), browser.going, sizeof browser.going);
+        }
+        browser.stop();
+    }
+    WKFramePolicyListenerUse(listener);
+}
+
+// A link to a place on the same page, `#notes`: asked, and never loaded.
+void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, WKTypeRef, const void*)
+{
+    browser.asked = false;
 }
 
 void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
@@ -83,6 +131,7 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
 {
     browser.happened |= JETSKI_FINISHED;
     browser.loading = false;
+    browser.asked = false;
     browser.stop();
 }
 
@@ -91,6 +140,7 @@ void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void
     browser.happened |= JETSKI_FAILED;
     browser.error = error ? WKErrorGetErrorCode(error) : 0;
     browser.loading = false;
+    browser.asked = false;
     browser.stop();
 }
 
@@ -190,6 +240,8 @@ extern "C" int jetski_open(unsigned width, unsigned height)
     navigation.didFailNavigation = didFail;
     navigation.didFailProvisionalNavigation = didFail;
     navigation.webProcessDidCrash = didCrash;
+    navigation.decidePolicyForNavigationAction = decidePolicy;
+    navigation.didSameDocumentNavigation = didSameDocument;
     WKPageSetPageNavigationClient(browser.page, &navigation.base);
 
     static WKPageUIClientV0 ui { };
@@ -248,6 +300,7 @@ extern "C" void jetski_stop(void)
 {
     if (browser.page)
         WKPageStopLoading(browser.page);
+    browser.asked = false;          // stopped before it began says nothing
 }
 
 extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
@@ -269,7 +322,13 @@ extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
     out->error = browser.error;
     browser.happened = 0;
     browser.error = 0;
-    out->loading = browser.loading;
+    // Asked and never begun - a navigation a script cancelled, say - is
+    // not loading for ever: thirty seconds is longer than any start.
+    if (browser.asked && WTF::MonotonicTime::now() - browser.askedAt > 30_s)
+        browser.asked = false;
+    out->loading = browser.loading || browser.asked;
+    if (browser.asked)
+        memcpy(out->going, browser.going, sizeof out->going);
     out->progress = WKPageGetEstimatedProgress(browser.page);
     out->can_back = WKPageCanGoBack(browser.page);
     out->can_forward = WKPageCanGoForward(browser.page);

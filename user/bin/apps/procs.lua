@@ -19,6 +19,12 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 local duration = use("/Kosmos/Libraries/clock.lua").duration   -- up 12:34
+
+-- **Memory as Tracker writes a size** (Diego, 14 November 2026: "show the
+-- memory consumption in MB instead of KB ... when memory is above
+-- 1024kb"): 640 KB, 4.3 MB, 607 MB - `files.size`, the one door to it.
+local size = use("/Kosmos/Libraries/files.lua").size
+local function memory(r) return size((r.kb or 0) * 1024) end
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -279,7 +285,7 @@ local function text_of(r, key)
   if key == "priority" then return r.band or "" end
   if key == "core" then return r.cpu and tostring(r.cpu + 1) or "" end
   if key == "threads" then return tostring(r.threads or "") end
-  if key == "memory" then return ("%d KB"):format(r.kb or 0) end
+  if key == "memory" then return memory(r) end
   return "100%"
 end
 
@@ -355,7 +361,8 @@ local function say_rows(what)
   local how = {}
 
   for _, r in ipairs(rows) do
-    how[#how + 1] = ("%s:%s:%s"):format(r.name, r.kind or "-", r.video or "-")
+    how[#how + 1] = ("%s:%s:%s:%s"):format(r.name, r.kind or "-", r.video or "-",
+                                          r.synthetic and "-" or memory(r))
   end
 
   print("procs: drawn: " .. table.concat(how, "; "))
@@ -521,7 +528,7 @@ function table_view:draw(g)
     -- What it holds: the image, the heap, the stacks and any surface it
     -- asked for.
     if not r.synthetic then
-      cols:cell(g, "memory", wy, ("%d KB"):format(r.kb or 0), fg, bg, CELL)
+      cols:cell(g, "memory", wy, memory(r), fg, bg, CELL)
     end
 
     --

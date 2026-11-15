@@ -183,7 +183,7 @@ end
 --
 
 local st = {}                        -- `jetski.pump` fills it, every pass
-local page = { title = "", address = HOME, said = "", loading = false,
+local page = { title = "", address = HOME, said = "", loading = false, going = "",
                progress = 0, can_back = false, can_forward = false }
 
 local function say(text)
@@ -214,9 +214,17 @@ end
 
 back.on_click = function() web.back() end
 forward.on_click = function() web.forward() end
-reload.on_click = function() web.reload() end
+-- Reload is Stop while a page is on its way, as in every browser.
+reload.on_click = function()
+  if page.loading then web.stop() else web.reload() end
+end
 
 local function status_text()
+  -- Followed and not begun: where to, by its host, from the first frame.
+  if page.loading and page.going ~= "" then
+    return "Opening " .. (page.going:match("^%a[%w+.%-]*://([^/?#]+)") or page.going) .. "..."
+  end
+
   if page.loading then
     return ("Loading %d%%"):format(math.floor(page.progress * 100 + 0.5))
   end
@@ -235,12 +243,14 @@ local function frame()
 
   back.disabled = not page.can_back
   forward.disabled = not page.can_forward
+  reload.icon = page.loading and "close" or "reload"
 
   ui.paint_view(header, s, 0, 0)
 
-  -- A page on its way, along the header's rule.
-  if page.loading and page.progress > 0 then
-    s:fill(0, HEAD - 2, math.floor(W * page.progress), 2, theme.accent)
+  -- A page on its way, along the header's rule - a sliver of it from the
+  -- moment a link is followed, before WebKit has a figure to give.
+  if page.loading then
+    s:fill(0, HEAD - 3, math.max(math.floor(W * page.progress), W // 16), 3, theme.accent)
   end
 
   web.paint(s, 0, VIEW_Y, W, VIEW_H)
@@ -280,6 +290,10 @@ win.on_frame = function()
   local changed = st.picture
 
   if st.started then page.loading = true end
+  if st.asked then
+    print("jetski: following " .. st.going)
+    changed = true
+  end
   if st.committed then say("") end
 
   if st.failed then
@@ -297,12 +311,12 @@ win.on_frame = function()
     changed = true
   end
 
-  if st.loading ~= page.loading or st.progress ~= page.progress
+  if st.loading ~= page.loading or st.progress ~= page.progress or st.going ~= page.going
      or st.can_back ~= page.can_back or st.can_forward ~= page.can_forward then
     changed = true
   end
 
-  page.loading, page.progress = st.loading, st.progress
+  page.loading, page.progress, page.going = st.loading, st.progress, st.going
   page.can_back, page.can_forward = st.can_back, st.can_forward
 
   if st.title ~= page.title then

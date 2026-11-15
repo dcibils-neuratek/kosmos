@@ -23,6 +23,7 @@ enum jetski_happened {
     JETSKI_FAILED    = 1 << 3,     /* it failed; `error` says how */
     JETSKI_PICTURE   = 1 << 4,     /* the page has a new picture to paint */
     JETSKI_CRASHED   = 1 << 5,     /* the web process ended */
+    JETSKI_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
 };
 
 struct jetski_state {
@@ -33,6 +34,7 @@ struct jetski_state {
     int can_back, can_forward;
     char title[256];
     char address[2048];
+    char going[2048];              /* where it was asked to go, until it starts */
 };
 
 /* The view, `width` by `height`; 0 when it was made. Once a process. */

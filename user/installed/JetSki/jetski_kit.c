@@ -97,6 +97,7 @@ static int l_pump(lua_State *L)
     flag(L, "failed", st.happened & JETSKI_FAILED);
     flag(L, "picture", st.happened & JETSKI_PICTURE);
     flag(L, "crashed", st.happened & JETSKI_CRASHED);
+    flag(L, "asked", st.happened & JETSKI_ASKED);
     flag(L, "loading", st.loading);
     flag(L, "can_back", st.can_back);
     flag(L, "can_forward", st.can_forward);
@@ -108,6 +109,8 @@ static int l_pump(lua_State *L)
     lua_setfield(L, 2, "title");
     lua_pushstring(L, st.address);
     lua_setfield(L, 2, "address");
+    lua_pushstring(L, st.going);
+    lua_setfield(L, 2, "going");
     lua_settop(L, 2);
     return 1;
 }
