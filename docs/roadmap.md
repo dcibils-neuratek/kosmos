@@ -10590,6 +10590,21 @@ the applications make the system useful, and is not pulled forward.
       the Mac's package server when the copy there is missing, for other
       protocols or of another build. Read from the disk when it starts - no
       boot or memory cost. **Built in 0.11.431.**
+    - *WebKit as a kit for Mail* (15 November 2026). **AGREED: one WebKit
+      image** - Diego chose it over a page server of its own and over text
+      until later. JetSki's image becomes Kosmos's WebKit image,
+      `/Kosmos/WebKit/webkit.elf`, a `system` package, named by a program's
+      `-- kosmos: image webkit`; JetSki and Mail both run inside it, through
+      one door, `/Kosmos/Kits/webkit`, made of views. A message's view runs
+      no scripts, answers `cid:` itself and holds every network load until
+      Load Pictures; a link opens in JetSki. Designed in `docs/mailweb.md`
+      (feature set and architecture), `docs/mailweb.html` (the window) and
+      `docs/mailweb-architecture.png`. Steps: W1 the WebKit image, W2 views
+      (JetSki's tabs become views), W3 a page from a string without scripts
+      and with `cid:`, W4 remote loads held (content extensions turned on),
+      W5 Mail's pane on it, W6 NetSurf out of Mail. **Two of Diego's before
+      W1**: where the image lives (`/Kosmos/WebKit` recommended) and where a
+      link opens (a tab of the open JetSki recommended).
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's

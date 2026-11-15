@@ -1,0 +1,275 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Mail's HTML message drawn by WebKit, before it is built. Diego, 15
+  November 2026: "jetski in the system image, and webkit for mail", then
+  "One WebKit image". The reading pane of `docs/mail.html`, with what
+  WebKit changes in it: the sender's layout as WebKit draws it, network
+  pictures held behind the bar until asked for, a link's address in the
+  status line while the pointer is over it, text that can be selected.
+  Every name and message here is made up; example.com is the domain set
+  aside for examples. `docs/mailweb.md` is the feature set and the
+  architecture.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mail on WebKit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;600&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f2f4f8; --ink: #182030; --muted: #5a6577; --rule: #dbe1ea; --card: #ffffff; --accent: #2a55c9;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1240px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 40px)/1.1 var(--display); margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 23px/1.2 var(--display); margin: 44px 0 10px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+  code { font: .88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 18px 0 10px; }
+  .seg { display: flex; gap: 6px; align-items: center; }
+  .seg span { font-size: 13px; color: var(--muted); margin-right: 2px; }
+  .seg button { font: 500 14px var(--body); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: transparent; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+
+  /* ---- The window, drawn at its size and scaled to the page ---- */
+  .shell { width: 100%; overflow: hidden; border-radius: 14px; }
+  .stage { width: 1200px; height: 780px; transform-origin: 0 0; position: relative; font: 14px/1.35 var(--body); }
+  .win { position: absolute; inset: 0; border-radius: 10px; overflow: hidden; display: grid; grid-template-rows: 46px 1fr 26px;
+         background: var(--w-window); color: var(--w-text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .night { --w-window: #1e2636; --w-raised: #2a3446; --w-sunken: #161d2b; --w-line: #313b4e; --w-text: #e6eaf2; --w-dim: #a3adbf;
+           --w-accent: #a8c7fa; --w-sel: #2f3f5e; --w-unread: #6ea8ff; --w-paper: #ffffff; }
+  .day   { --w-window: #f6f5f4; --w-raised: #ffffff; --w-sunken: #ffffff; --w-line: #e3e0dd; --w-text: #241f31; --w-dim: #77767b;
+           --w-accent: #3584e4; --w-sel: #dbe8fb; --w-unread: #3584e4; --w-paper: #ffffff; }
+  .head { display: flex; align-items: center; gap: 6px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--w-line); }
+  .head .t { font-weight: 600; font-size: 15px; margin-left: 4px; }
+  .head .sub { color: var(--w-dim); font-size: 13.5px; margin-left: 6px; }
+  .head .sp { flex: 1; }
+  .ib { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; }
+  .ib svg { width: 17px; height: 17px; }
+  .lights { display: flex; gap: 8px; margin-left: 8px; }
+  .lights i { width: 16px; height: 16px; border-radius: 50%; display: block; background: var(--w-line); }
+  .body2 { display: grid; grid-template-columns: 340px 1fr; min-height: 0; }
+  .list { border-right: 1px solid var(--w-line); background: var(--w-sunken); overflow: hidden; }
+  .lhead { padding: 10px 12px 8px; border-bottom: 1px solid var(--w-line); background: var(--w-window); }
+  .lhead .n { font-weight: 600; font-size: 16px; } .lhead .m { font-size: 12.5px; color: var(--w-dim); }
+  .msg { display: grid; grid-template-columns: 14px 1fr; gap: 6px; padding: 9px 12px 10px 8px; border-bottom: 1px solid var(--w-line); }
+  .msg .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; }
+  .msg .dot.u { background: var(--w-unread); }
+  .msg .top { display: flex; gap: 8px; align-items: baseline; }
+  .msg .who { font-weight: 600; font-size: 14px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .when { font-size: 12px; color: var(--w-dim); font-variant-numeric: tabular-nums; }
+  .msg .subj { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .pre { font-size: 12.5px; color: var(--w-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg.on { background: var(--w-sel); }
+  .read { display: flex; flex-direction: column; min-height: 0; }
+  .rhead { padding: 14px 20px 12px; border-bottom: 1px solid var(--w-line); display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; }
+  .av { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; background: #b4532a; }
+  .rhead .from { font-weight: 600; font-size: 15px; } .rhead .addr { color: var(--w-dim); font-weight: 400; font-size: 13px; }
+  .rhead .subj { font-size: 17px; font-weight: 600; margin-top: 6px; } .rhead .when { font-size: 12.5px; color: var(--w-dim); }
+  .bar { display: flex; align-items: center; gap: 10px; margin: 10px 20px 0; padding: 8px 12px; border-radius: 9px; background: var(--w-raised); font-size: 13px; color: var(--w-dim); }
+  .bar svg { width: 15px; height: 15px; flex: none; }
+  .bar .b { margin-left: auto; white-space: nowrap; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--w-line); color: var(--w-text); font-size: 12.5px; }
+  .bar[hidden] { display: none; }
+  .paper { margin: 12px 20px 14px; border-radius: 10px; background: var(--w-paper); overflow: hidden; flex: 1; border: 1px solid var(--w-line); position: relative; }
+  .status { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-top: 1px solid var(--w-line); font-size: 12.5px; color: var(--w-dim); }
+  .status .url { font-family: var(--mono); color: var(--w-text); }
+  .status .eng { margin-left: auto; }
+
+  /* ---- The message, as its sender wrote it: drawn by WebKit ---- */
+  .nl { font: 15px/1.6 "IBM Plex Serif", Georgia, serif; color: #26221d; background: #faf6ee; height: 100%; overflow: hidden; }
+  .nl .mast { display: grid; grid-template-columns: 1fr auto; align-items: end; padding: 22px 34px 14px; border-bottom: 3px double #26221d; }
+  .nl .mast h3 { margin: 0; font: 600 34px/1 "Fraunces", Georgia, serif; letter-spacing: -.01em; }
+  .nl .mast small { font: 500 11.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: #6c6457; }
+  .nl .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 26px; padding: 18px 34px; }
+  .nl h4 { margin: 0 0 6px; font: 600 21px/1.2 "Fraunces", Georgia, serif; }
+  .nl p { margin: 0 0 10px; }
+  .nl a { color: #9a3412; text-decoration: underline; text-underline-offset: 2px; }
+  .nl a.hover { background: #fde7d6; }
+  .nl ::selection, .nl .sel { background: #b8d3fb; }
+  .nl .fig { border-radius: 6px; margin: 4px 0 10px; height: 148px; display: grid; place-items: center; font: 12.5px var(--body); color: #8b8478; }
+  .nl .fig.held { border: 1.5px dashed #cfc6b6; background: repeating-linear-gradient(135deg, #f3ede1 0 10px, #efe8da 10px 20px); }
+  .nl .fig.shown { border: 0; background: linear-gradient(160deg, #2f6b5a 0%, #4f9a7e 45%, #e3c27a 46%, #d9a25a 100%); color: #fff; align-items: end; justify-items: start; padding: 10px 12px; }
+  .nl .fig.inside { height: 64px; width: 64px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f1b27b, #b4532a); border: 0; margin: 0 0 8px; }
+  .nl .side { border-left: 1px solid #ddd3c2; padding-left: 22px; }
+  .nl .pill { display: inline-block; font: 600 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: #fff; background: #26221d; padding: 2px 8px; border-radius: 999px; margin-bottom: 6px; }
+  .nl .cta { display: inline-block; margin-top: 4px; padding: 8px 16px; border-radius: 6px; background: #26221d; color: #faf6ee; font: 600 13px var(--body); text-decoration: none; }
+  .astext { padding: 18px 26px; font: 14px/1.6 var(--body); color: #22252b; white-space: pre-line; }
+  .astext[hidden], .nl[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+<h1>Mail on WebKit</h1>
+<p class="lede">An HTML message in Mail's reading pane, drawn by WebKit, the engine JetSki uses. It runs in the same WebKit image as JetSki. Nothing in a message runs, and nothing it names on the network is fetched until you ask.</p>
+<p class="said">Diego, 15 November 2026: "jetski in the system image, and webkit for mail", and then, of how: one WebKit image.</p>
+
+<div class="controls">
+  <div class="seg" role="group" aria-label="State"><span>State</span>
+    <button type="button" data-state="held" aria-pressed="true">Pictures held</button>
+    <button type="button" data-state="loaded" aria-pressed="false">Pictures loaded</button>
+    <button type="button" data-state="text" aria-pressed="false">No WebKit</button>
+  </div>
+  <div class="seg" role="group" aria-label="Look"><span>Look</span>
+    <button type="button" data-look="night" aria-pressed="true">Night</button>
+    <button type="button" data-look="day" aria-pressed="false">Day</button>
+  </div>
+</div>
+
+<div class="shell" id="shell">
+<div class="stage" id="stage">
+  <div class="win night" id="win">
+    <div class="head">
+      <div class="ib" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>
+      <span class="t">Inbox</span><span class="sub">diego@example.com</span>
+      <span class="sp"></span>
+      <div class="ib" title="Reply" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 8 5 12l5 4"/><path d="M5 12h9a5 5 0 0 1 5 5v1"/></svg></div>
+      <div class="ib" title="Archive" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/></svg></div>
+      <div class="ib" title="Delete" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></div>
+      <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+    <div class="body2">
+      <div class="list">
+        <div class="lhead"><div class="n">Inbox</div><div class="m">3 unread of 128</div></div>
+        <div class="msg on"><span class="dot"></span><div><div class="top"><span class="who">The Field Notes</span><span class="when">09:12</span></div><div class="subj">Issue 41: the long way round</div><div class="pre">A walk up the river, and three letters from readers…</div></div></div>
+        <div class="msg"><span class="dot u"></span><div><div class="top"><span class="who">Ana Ruiz</span><span class="when">08:40</span></div><div class="subj">Photos from Saturday</div><div class="pre">Here they are, the ones from the market.</div></div></div>
+        <div class="msg"><span class="dot u"></span><div><div class="top"><span class="who">Builds</span><span class="when">Yesterday</span></div><div class="subj">Nightly passed, 128 of 128</div><div class="pre">Every suite passed in 11:52.</div></div></div>
+        <div class="msg"><span class="dot"></span><div><div class="top"><span class="who">Kim at the shop</span><span class="when">Yesterday</span></div><div class="subj">Your order is on its way</div><div class="pre">It left the warehouse this morning.</div></div></div>
+        <div class="msg"><span class="dot u"></span><div><div class="top"><span class="who">Tomás</span><span class="when">Thu</span></div><div class="subj">Lunch next week?</div><div class="pre">Tuesday or Wednesday both work for me.</div></div></div>
+      </div>
+      <div class="read">
+        <div class="rhead">
+          <div class="av">FN</div>
+          <div><div class="from">The Field Notes <span class="addr">&lt;letters@example.com&gt;</span></div>
+            <div class="subj">Issue 41: the long way round</div></div>
+          <div class="when">Today, 09:12</div>
+        </div>
+        <div class="bar" id="bar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 8"/></svg>
+          <span id="bar-text">3 pictures from the network not loaded, so its sender cannot see it was read</span>
+          <span class="b" id="bar-button">Load Pictures</span>
+        </div>
+        <div class="paper">
+          <div class="nl" id="nl">
+            <div class="mast"><h3>The Field Notes</h3><small>Issue 41 · November</small></div>
+            <div class="cols">
+              <div>
+                <span class="pill">Walks</span>
+                <h4>The long way round</h4>
+                <div class="fig held" id="fig1">a picture on the network: held</div>
+                <p><span class="sel">We took the river path because the bridge was closed, and it turned out to be the better walk</span>: two hours of herons, a ferry that runs when the ferryman feels like it, and a bakery at the far end that sells out by eleven.</p>
+                <p>The route is on <a href="#" class="hover">our map of the valley</a>, with the ferry's hours as best we could learn them.</p>
+              </div>
+              <div class="side">
+                <div class="fig inside" title="sent inside the message"></div>
+                <h4>From readers</h4>
+                <p>Three letters this month, one about the bakery. We are told the rye goes first.</p>
+                <a class="cta" href="#">Write to us</a>
+              </div>
+            </div>
+          </div>
+          <div class="astext" id="astext" hidden>The Field Notes - Issue 41 · November
+
+WALKS
+The long way round
+
+We took the river path because the bridge was closed, and it turned out to be the better walk: two hours of herons, a ferry that runs when the ferryman feels like it, and a bakery at the far end that sells out by eleven.
+
+The route is on our map of the valley [https://example.com/map], with the ferry's hours as best we could learn them.
+
+FROM READERS
+Three letters this month, one about the bakery. We are told the rye goes first.</div>
+        </div>
+      </div>
+    </div>
+    <div class="status">
+      <span id="status-label">Opens in JetSki:</span><span class="url" id="status-url">https://example.com/map</span>
+      <span class="eng" id="eng">drawn by WebKit · scripts off</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="notes">
+  <div class="note"><b>Drawn by WebKit</b><p>The newsletter's two columns, its web fonts and its colours come out as Safari would draw them. NetSurf stopped at CSS 2.1, which is why Mail needed its own fixes for newsletters.</p></div>
+  <div class="note"><b>Held means held</b><p>Until Load Pictures is pressed, no request leaves the machine: no picture, stylesheet, font or tracking pixel. The round picture was sent inside the message, so it shows at once.</p></div>
+  <div class="note"><b>Links go to JetSki</b><p>The pointer over a link puts its address in the status line. Pressing it opens the address in JetSki, and the message pane never leaves the message.</p></div>
+  <div class="note"><b>Text can be selected</b><p>Drag, double-click a word, Control-C. The blue run above is a selection.</p></div>
+  <div class="note"><b>No WebKit, no surprise</b><p>On a machine whose disk has no WebKit image yet, the message is shown as its text, and the status line says why.</p></div>
+</div>
+
+<h2>Yours to decide</h2>
+<ol class="q">
+  <li><b>Where the WebKit image lives.</b> In <code>/Kosmos/WebKit</code>, a folder of its own beside Apps, Kits and Libraries, with Web Inspector's files in it. <span class="rec">Recommended: Mail should not depend on an application.</span> Or in JetSki's folder, with Mail naming JetSki's image.</li>
+  <li><b>Where a link opens.</b> In a new tab of the JetSki that is open, or a new JetSki when none is. <span class="rec">Recommended.</span> Or always in a new JetSki window.</li>
+</ol>
+</main>
+
+<script>
+(function () {
+  var stage = document.getElementById('stage'), shell = document.getElementById('shell');
+  function fit() {
+    var s = Math.min(1, shell.clientWidth / 1200);
+    stage.style.transform = 'scale(' + s + ')';
+    shell.style.height = (780 * s) + 'px';
+  }
+  window.addEventListener('resize', fit); fit();
+
+  var win = document.getElementById('win');
+  var bar = document.getElementById('bar'), barText = document.getElementById('bar-text'), barButton = document.getElementById('bar-button');
+  var nl = document.getElementById('nl'), astext = document.getElementById('astext'), fig1 = document.getElementById('fig1');
+  var label = document.getElementById('status-label'), url = document.getElementById('status-url'), eng = document.getElementById('eng');
+
+  function press(group, attr, value) {
+    document.querySelectorAll('[data-' + attr + ']').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-' + attr) === value));
+    });
+  }
+  function state(s) {
+    press('state', 'state', s);
+    nl.hidden = s === 'text'; astext.hidden = s !== 'text';
+    if (s === 'held') {
+      bar.hidden = false; barButton.hidden = false;
+      barText.textContent = '3 pictures from the network not loaded, so its sender cannot see it was read';
+      fig1.className = 'fig held'; fig1.textContent = 'a picture on the network: held';
+      label.textContent = 'Opens in JetSki:'; url.textContent = 'https://example.com/map';
+      eng.textContent = 'drawn by WebKit · scripts off';
+    } else if (s === 'loaded') {
+      bar.hidden = true;
+      fig1.className = 'fig shown'; fig1.textContent = 'the river path, from the network';
+      label.textContent = 'Opens in JetSki:'; url.textContent = 'https://example.com/map';
+      eng.textContent = 'drawn by WebKit · scripts off · pictures loaded';
+    } else {
+      bar.hidden = false; barButton.hidden = true;
+      barText.textContent = 'Shown as its text: this machine has no WebKit image yet';
+      label.textContent = ''; url.textContent = '';
+      eng.textContent = 'as text';
+    }
+  }
+  function look(l) { press('look', 'look', l); win.className = 'win ' + l; }
+  document.querySelectorAll('[data-state]').forEach(function (b) { b.addEventListener('click', function () { state(b.getAttribute('data-state')); }); });
+  document.querySelectorAll('[data-look]').forEach(function (b) { b.addEventListener('click', function () { look(b.getAttribute('data-look')); }); });
+})();
+</script>
+</body>
