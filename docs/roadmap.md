@@ -10693,15 +10693,26 @@ the applications make the system useful, and is not pulled forward.
       it corrupt, which throws every cookie away and is the likeliest
       reason Google's sign-in says cookies are disabled (below); (c) then
       the list above, measured again.
-    - *Grouped commits leave SQLite twice as slow as without them*
+    - *Grouped commits left SQLite twice as slow as without them* - done
       (15 November 2026, `testing.md` 18.836). Grouping fragmented
       `speed.db` to 1317 extents where it had 26, and speedtest1 took
       258 s where it took 49. `kfs_step` now gives back the blocks the
       group made and an earlier step freed, which brings it to 809
       extents and 96 s. The rest is not found yet: committing on 32 freed
       committed blocks changed nothing, and the host's SQLite-shaped
-      test does not fragment. Next: log each allocation for `speed.db` on
-      the guest, grouped and not, and see where the two first part.
+      test does not fragment. **Found** (18.836): copy-on-write against
+      SQLite's rewrites of 1 KB pages in 4 KB blocks. Alone, a block
+      bounces out and straight back home; in a group its home is held
+      until the commit. **Diego chose (a), 15 November 2026, and it is
+      built** (`DISK_OVER`, `kfs_overwrite`): speedtest1 in 34 s and
+      `speed.db` in 35 extents (18.836). The choice was between:
+      (a) ported code's writes inside a file's size go **in place**, over
+      the blocks it has, outside the group - the path the Linux sandbox's
+      disk images already take (`DISK_IN_PLACE`). A crash can tear what a
+      write was laying down, which SQLite's own journal is there for; its
+      journal is kept by `fsync`, which commits the group, before it
+      overwrites the database;
+      (b) keep every write copy-on-write, and live with the factor of two.
       Reads of a file in many extents should not cost ten times more
       either, which is worth its own look at `physical_of`.
     - *`x86-llmmon` can read the keyring's first-boot line as part of an

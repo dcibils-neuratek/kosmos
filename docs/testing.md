@@ -34324,3 +34324,51 @@ The full gate: 123 of 127 suites passed, in 674 s, at a load average of
 `x86-llmmon` failed, and all four passed run alone. The first three are
 timing checks. The fourth read the keyring's first-boot line as part of
 an answer, a race in the suite (`roadmap.md`).
+
+**The other half, found the same night: copy-on-write against a
+database's rewrites.** A log in the disk server printed `speed.db`'s
+extent count whenever a write changed it. With every operation committed
+alone, it never went above 28 in the whole of speedtest1. Every write
+there is 1 KB, SQLite's page, into a 4 KB block, and SQLite writes a
+block's four pages one after another. So:
+- **alone**, a rewrite of block X goes to the lowest hole, E, and X is
+  freed at once. The next page of the same block goes to the lowest hole
+  again, which is X. The block keeps coming home;
+- **in a group**, X is held until the commit. The block bounces between
+  two new places, E and E+1, and X is free again only after the commit,
+  when nothing is rewriting it any more.
+
+On the host, random 1 KB rewrites leave every block of a 256-block file
+in a piece of its own, grouped or not. Trying a rewritten block after the
+block before it first, as ext4's goal does, gave 246 pieces where
+first-fit gave 256, and was taken out again.
+
+This is what any copy-on-write filesystem does under a database. btrfs
+has `nodatacow` for it. The open choice is in `roadmap.md`, *Grouped
+commits*.
+
+**Diego chose (a): a ported program's write inside a file goes over the
+file's blocks** (`DISK_OVER`, `kfs_overwrite`, 0.11.439; the full gate, 129 suites, passed). The POSIX
+layer's `write` asks for it. The disk server lays the bytes over the
+file where it is when they lie inside it, and sets the file's time in
+the group. Otherwise the write is copy-on-write as before.
+
+| | no groups | 0.11.437 | 0.11.438 | over the file |
+|---|---|---|---|---|
+| speedtest1, TOTAL | 49 s | 258 s | 96 s | 34 s |
+| test 140 | 4 s | 62 s | 34 s | 4.4 s |
+| `speed.db`'s extents | 26 | 1317 | 809 | 35 |
+| `kept.db`'s extents | 3 | 55 | 19 | 3 |
+
+Faster than without groups at all, because a page rewritten is now one
+block written where it is, with no allocation and no extents to store.
+
+`test_kfs.lua`, 160 checks now. 600 random 1 KB pages are written over a
+64-block file in groups, and the file must:
+- read back as written after a mount;
+- still be one piece, with no block taken;
+- have its time set;
+- and an overwrite past its end, or of no file, is refused.
+
+Control: `kfs_overwrite` writing copy-on-write instead leaves the file in
+63 pieces, and the check fails.

@@ -367,6 +367,10 @@ static long disk_write(const struct where *w, uint64_t offset, const uint8_t *bu
             f |= DISK_CUT;              /* the last piece ends it */
         }
 
+        if (flags & STORAGE_OVER) {
+            f |= DISK_OVER;
+        }
+
         e = diskask(d, DISK_OP_WRITE_AT, w->path, f, offset + done, n, -1,
                     buf != NULL ? buf + done : NULL, (uint32_t)n);
 

@@ -1575,6 +1575,59 @@ do
 end
 
 --------------------------------------------------------------------------
+-- A ported program's write over a file, inside it, goes where the file's
+-- blocks already are (`kfs_overwrite`, `DISK_OVER`; Diego, 15 November
+-- 2026): no block taken, no piece added, the bytes there, the file's time
+-- set. Past the end it is refused, and written anew by its caller. SQLite
+-- rewrites 1 KB pages inside 4 KB blocks, and written anew inside a group
+-- each block ended somewhere of its own (`testing.md` 18.836).
+--------------------------------------------------------------------------
+
+do
+  sb = fresh()
+  local PAGE, BLOCKS = 1024, 64
+  local model = {}
+  assert(kfs.step(sb))
+  assert(kfs.store_at(sb, "/over.db", 0, ("z"):rep(BLOCKS * 4096), true, 1))
+  assert(kfs.commit(sb))
+  local free = kfs.free_blocks(sb)
+  local seed = 5
+
+  for round = 1, 600 do
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    local page = seed % (BLOCKS * 4)
+    local bytes = string.char(65 + round % 26):rep(PAGE)
+    assert(kfs.step(sb))
+    assert(kfs.overwrite(sb, "/over.db", page * PAGE, bytes, kfs.stamp(1763200000 + round)))
+    model[page] = bytes
+    if round % 50 == 0 then assert(kfs.commit(sb)) end
+  end
+
+  assert(kfs.step(sb))
+  local past, why = kfs.overwrite(sb, "/over.db", BLOCKS * 4096 - 10, ("p"):rep(20))
+  local none = kfs.overwrite(sb, "/not-there.db", 0, "x")
+  kfs.step_undo()
+  kfs.commit(sb)
+
+  sb = assert(kfs.mount())
+  local _, node = kfs.find(sb, "/over.db")
+  local whole = contents("/over.db") or ""
+  local same = #whole == BLOCKS * 4096
+  for page, bytes in pairs(model) do
+    same = same and whole:sub(page * PAGE + 1, (page + 1) * PAGE) == bytes
+  end
+  check(same, "600 pages written over a file, in groups, read back as written after a mount")
+  check(node.extent_count == 1 and kfs.free_blocks(sb) == free,
+        ("a file written over 600 times is in %d pieces, and %d blocks were taken: "
+         .. "an overwrite inside a file goes where its blocks are")
+          :format(node.extent_count, free - kfs.free_blocks(sb)))
+  check(kfs.modified(node) == 1763200600, "an overwrite sets the file's time")
+  check(past == nil and why ~= nil and none == nil
+          and #whole == BLOCKS * 4096 and whole:sub(-10) ~= ("p"):rep(10),
+        "an overwrite reaching past the file's end, or of no file, is refused and writes nothing")
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")

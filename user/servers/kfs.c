@@ -1327,6 +1327,41 @@ int kfs_place_at(struct kfs *k, const struct kfs_super *sb, const char *path,
     return kfs_write_in_place(k, sb, &node, offset, bytes, size);
 }
 
+int kfs_overwrite(struct kfs *k, const struct kfs_super *sb, const char *path,
+                  size_t len, uint64_t offset, const void *bytes, uint64_t size,
+                  uint64_t now, uint32_t *number)
+{
+    struct kfs_inode node;
+    int r;
+
+    if (!k->open) {
+        return KFS_E_NOT_OPEN;
+    }
+
+    if ((r = kfs_find(k, sb, path, len, number, &node)) != KFS_OK) {
+        return r;
+    }
+
+    if (node.kind != KFS_KIND_FILE) {
+        return KFS_E_IS_DIR;
+    }
+
+    if (offset + size < offset || offset + size > node.size) {
+        return KFS_E_PAST_END;
+    }
+
+    if ((r = kfs_write_in_place(k, sb, &node, offset, bytes, size)) != KFS_OK) {
+        return r;
+    }
+
+    if (now == KFS_NO_TIME || node.mtime == now) {
+        return KFS_OK;
+    }
+
+    node.mtime = now;
+    return kfs_write_inode(k, sb, *number, &node);
+}
+
 int kfs_read_range(struct kfs *k, const struct kfs_super *sb,
                    const struct kfs_inode *node, uint64_t offset, uint64_t want,
                    void *to, uint64_t *placed)

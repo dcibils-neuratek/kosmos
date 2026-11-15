@@ -873,7 +873,9 @@ static ssize_t write_at(const struct taken *t, const void *buf, size_t bytes, ui
         return fails(EBADF);
     }
 
-    r = storage_write(t->path, at, buf, bytes, 0);
+    /* Over the file where it already is: a database's pages rewritten in
+     * place, not into new blocks each time (`DISK_OVER`). */
+    r = storage_write(t->path, at, buf, bytes, STORAGE_OVER);
     return r < 0 ? kit_fails(r) : (ssize_t)r;
 }
 

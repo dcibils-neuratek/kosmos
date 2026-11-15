@@ -88,6 +88,18 @@
  * folder lists has changed.
  */
 #define DISK_IN_PLACE     8u
+/*
+ * WRITE_AT: **over the file, when inside it** (Diego, 15 November 2026) -
+ * a range that lies inside the file's size laid over the blocks it has,
+ * as `DISK_IN_PLACE`, and its time set; past its end, or with
+ * `DISK_CREATE` and no file, or with `DISK_CUT`, written anew as any
+ * WRITE_AT is. A ported program's writes: a database rewrites its pages
+ * where they are, and written anew each time inside a group of commits
+ * they ended in hundreds of pieces (`testing.md` 18.836). A crash can tear
+ * what such a write was laying down, which the program's own journal is
+ * there for; that journal is kept by `fsync`, which commits the group.
+ */
+#define DISK_OVER        16u
 
 #define DISK_OK                 0u
 #define DISK_ERR_BAD_OP         1u  /* no such operation, the wrong size, a path with no end */

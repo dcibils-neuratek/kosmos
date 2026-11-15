@@ -454,6 +454,22 @@ the hole its last rewrite left, since every rewrite is copy-on-write.
 SQLite's database ended in 1317 extents where it had 26, and speedtest1
 ran five times slower (`testing.md` 18.836).
 
+**A ported program's write inside a file goes over its blocks**
+(`DISK_OVER`, `kfs_overwrite`; Diego, 15 November 2026). The release above
+was half of it. SQLite rewrites 1 KB pages inside 4 KB blocks, and a block
+rewritten in a group could not go back to where it was, since its old
+copy was held until the commit. So the POSIX layer's `write` asks for the
+bytes to be laid over the file where it already is, when they lie inside
+it, and the file's time set in the group. Past the end, or with
+`DISK_CUT`, the write is copy-on-write as any other. Every write a Kosmos
+program makes stays copy-on-write: only ported code, whose databases keep
+journals of their own, is written over.
+
+What it gives up: a crash can tear a block such a write was laying down.
+SQLite's journal is for exactly that, and it is safe here because
+SQLite's `fsync` of its journal commits the group, so the journal is on
+the disk before the database is written over.
+
 Held by `tools/test_kfs.lua`, on the host:
 - two operations grouped take two journal-header writes, against twelve
   alone;

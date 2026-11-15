@@ -465,6 +465,17 @@ int kfs_write_in_place(struct kfs *k, const struct kfs_super *sb,
 int kfs_place_at(struct kfs *k, const struct kfs_super *sb, const char *path,
                  size_t len, uint64_t offset, const void *bytes, uint64_t size);
 
+/*
+ * **Over a file, when inside it** (`DISK_OVER`): as `kfs_place_at`, and
+ * the file's time set to `now` - which is the one thing written in the
+ * transaction, so one must be open. KFS_E_PAST_END, and nothing written,
+ * for a range that reaches past the file's end; KFS_E_NO_FILE for no
+ * file. Its inode's number.
+ */
+int kfs_overwrite(struct kfs *k, const struct kfs_super *sb, const char *path,
+                  size_t len, uint64_t offset, const void *bytes, uint64_t size,
+                  uint64_t now, uint32_t *number);
+
 /* The same by path: the file made first when `create` and it is not there.
  * Its inode's number. */
 int kfs_store_at(struct kfs *k, const struct kfs_super *sb, const char *path,

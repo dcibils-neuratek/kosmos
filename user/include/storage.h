@@ -95,6 +95,9 @@ long storage_read(const char *path, uint64_t offset, void *buf, size_t bytes);
 
 #define STORAGE_CREATE 1u               /* made if it is not there */
 #define STORAGE_CUT    2u               /* and it ends where these bytes end */
+/* Bytes inside the file laid over its blocks rather than written anew:
+ * POSIX's `write` (`DISK_OVER`, `testing.md` 18.836). */
+#define STORAGE_OVER   4u
 
 /* `bytes` at `offset`; without STORAGE_CREATE a file that is not there is
  * STORAGE_ERR_NO_FILE. How many were written, or an error. */

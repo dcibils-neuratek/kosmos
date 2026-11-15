@@ -1209,6 +1209,8 @@ static void op_write_at(const struct disk_request *rq, struct disk_reply *rp, lo
     const char *name = last_name(rq->path, &len);
     bool create = (rq->flags & DISK_CREATE) != 0;
     bool cut = (rq->flags & DISK_CUT) != 0;
+    /* Over the file where it is, when the range lies inside it. */
+    bool over = (rq->flags & DISK_OVER) != 0 && !cut;
     int r;
 
     if (reserved(name, len)) {
@@ -1265,8 +1267,18 @@ static void op_write_at(const struct disk_request *rq, struct disk_reply *rp, lo
             return;
         }
 
-        ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
-                               region.at, rq->bytes, stamp(), create, cut, &number));
+        r = KFS_E_PAST_END;
+
+        if (over) {
+            ATOMIC(r, kfs_overwrite(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                                    region.at, rq->bytes, stamp(), &number));
+        }
+
+        if (r == KFS_E_PAST_END || (r == KFS_E_NO_FILE && create)) {
+            ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                                   region.at, rq->bytes, stamp(), create, cut, &number));
+        }
+
         unmap_region(&region);
         rp->bytes = rq->bytes;
     } else {
@@ -1275,8 +1287,18 @@ static void op_write_at(const struct disk_request *rq, struct disk_reply *rp, lo
             return;
         }
 
-        ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
-                               rq->u.data, rq->length, stamp(), create, cut, &number));
+        r = KFS_E_PAST_END;
+
+        if (over) {
+            ATOMIC(r, kfs_overwrite(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                                    rq->u.data, rq->length, stamp(), &number));
+        }
+
+        if (r == KFS_E_PAST_END || (r == KFS_E_NO_FILE && create)) {
+            ATOMIC(r, kfs_store_at(&A->kfs, &SB, rq->path, strlen(rq->path), rq->offset,
+                                   rq->u.data, rq->length, stamp(), create, cut, &number));
+        }
+
         rp->bytes = rq->length;
     }
 

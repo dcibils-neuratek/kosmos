@@ -3595,3 +3595,29 @@ back at the next step.
 **Still open.** What makes up the rest. Committing a group early when it
 has freed many blocks changed nothing, so it is something else, and the
 next step is logging where each block of the database goes.
+
+## 15 November 2026 - SQLite's other half: writing over the page
+
+**In short.** SQLite on Kosmos is now faster than it was before writes
+were grouped: its speed test takes 34 s, where it took 49 s before
+grouping and 258 s just after. A program ported from elsewhere, like
+SQLite, now writes over a file's existing blocks when it rewrites bytes
+inside the file, instead of putting every rewrite somewhere new.
+
+**What was wrong.** kfs writes every change into new blocks and frees the
+old ones. That is what keeps a file whole if the power goes. SQLite
+rewrites small 1 KB pages inside 4 KB blocks, over and over. Without
+groups, the freed block was free at once, so the next rewrite went
+straight back into it. With groups, the old block is held until the group
+commits, so each rewrite went somewhere new, and the database ended
+scattered across the disk in hundreds of pieces.
+
+**What Diego chose.** A ported program's write inside a file goes over the
+file where it is. Its own journal protects it from a crash: SQLite saves
+the old pages to a journal and asks for it to be kept (`fsync`) before it
+writes over the database, and here `fsync` commits the group. Kosmos's own
+programs, and any write that makes a file longer, still write into new
+blocks.
+
+**What it changes.** The database stays in a few dozen pieces, and a
+rewritten page is one block written, with nothing allocated or recorded.

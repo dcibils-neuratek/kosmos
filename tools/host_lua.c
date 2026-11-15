@@ -1169,6 +1169,39 @@ static int l_store_at(lua_State *L)
     return 1;
 }
 
+/* `overwrite(sb, path, offset, bytes, now)`: a range laid over the file
+ * inside its size and its time set (`kfs_overwrite`, `DISK_OVER`) - its
+ * inode's number, or nil and why. */
+static int l_overwrite(lua_State *L)
+{
+    struct kfs_super sb;
+    const char *path, *bytes;
+    size_t len, size;
+    uint32_t number;
+    lua_Integer offset;
+    int r;
+
+    get_sb(L, 1, &sb);
+    path = luaL_checklstring(L, 2, &len);
+    offset = luaL_checkinteger(L, 3);
+    bytes = luaL_checklstring(L, 4, &size);
+    enter(L);
+
+    if (offset < 0) {
+        return answer(L, KFS_E_PAST_END);
+    }
+
+    r = kfs_overwrite(K, &sb, path, len, (uint64_t)offset, bytes, size, opt_time(L, 5),
+                      &number);
+
+    if (r != KFS_OK) {
+        return answer(L, r);
+    }
+
+    lua_pushinteger(L, number);
+    return 1;
+}
+
 /* `place_at(sb, path, offset, bytes)`: a range written where the file's
  * blocks are (`kfs_place_at`, `docs/linux.md` L1b) - true, or nil and why. */
 static int l_place_at(lua_State *L)
@@ -1389,6 +1422,7 @@ static int luaopen_kfsc(lua_State *L)
         { "store",           l_store },
         { "store_at",        l_store_at },
         { "place_at",        l_place_at },
+        { "overwrite",       l_overwrite },
         { "zeros",           l_zeros },
         { "rename",          l_rename },
         { "unlink",          l_unlink },
