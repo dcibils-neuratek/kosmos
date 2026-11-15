@@ -33764,3 +33764,32 @@ close and `tab 1 of 1` with the first page shown (its colour on the
 screen), and a `target=_blank` link opening the second page in `tab 2 of
 2`. Control `KOSMOS_JETSKI_BREAK=tabless`, Control-T unanswered: fails the
 one check, "Control-T opened no tab".
+
+## 18.822 The gate before the M700 build (0.11.426)
+
+The whole gate for the netboot image Diego asked for ("yes make the m700
+build"): **126 of 130 in 738 s (12:18)**, and the four that failed each
+passed on its own:
+
+| suite | under the gate | alone |
+|---|---|---|
+| `x86-xavier` | the box's answer left the kit's after 45 tokens | passes, 103 s |
+| `x86-script` | the reopened scene's script not the saved one | passes, 68 s |
+| `x86-film` | 38,799 of 266,240 samples more than two steps from FFmpeg's | passes, 15 s |
+| `rebuilds` | `web_netsurf.c.o` and `tcc_kosmos.c.o` would not be rebuilt | fails again; passes with them removed |
+
+**`x86-xavier` under load, a third time** (18.792 counts two): still on the
+roadmap as its own item. `x86-film` and `x86-script` are new to that list -
+both are timing-bound suites run beside a headless Chrome rendering an icon
+and a gate at 98% of the Mac's disk.
+
+**`rebuilds` was right, about the build directory rather than the
+Makefile.** `build/user-x86_64-test/` held the browser's and the C Kit's
+objects, made at 22:29 by a build with them in its list and linked into
+nothing since - the test image's map names neither. The check skips an
+object whose source is gone (38 of them) but counts one whose source
+exists, so an object from another list in the same directory reads as one
+a header would not rebuild. Removed, 8 of 8 and 178 objects. **To do**:
+which build put a FULL list's objects into the test variant's directory -
+`VARIANT` names `-web` for a browser build, so something compiled them
+with a list `VARIANT` did not see.

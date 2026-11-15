@@ -10492,6 +10492,16 @@ the applications make the system useful, and is not pulled forward.
       drawn in `docs/webkit.html`, its list read from the same entries as
       `LICENSE` and held by a test to what the image links; drawing it
       found Brotli, WOFF2, dav1d and libavif missing from `LICENSE`.
+      Diego agreed About too: "about mockup is good too".
+    - *An icon of its own* (14 November 2026; Diego: "can you create a
+      specific icon for jetski app following the same style as the other
+      ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's
+      manner - a heavy outline, light from the upper left, three-quarter
+      view, a shadow under it - as a jet ski riding over the globe, its
+      wake curving behind: a vector in `assets/icons/drawn/`, rendered at
+      16, 32 and 64 by `tools/appicons.py` into the folders the Haiku
+      icons are in, each PNG signed as Kosmos's own so the build does not
+      credit Haiku with it. For Diego to look at before it goes in.
     - *Why one page has several web processes* (Diego asked, 14 November
       2026, on the M700 with one tab: five `web` processes, 607, 446, 167,
       19 and 0 MB): WebKit gives each site a process and keeps the ones a
