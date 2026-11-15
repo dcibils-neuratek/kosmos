@@ -34138,3 +34138,54 @@ present the day it arrived.
 The whole gate passed but `x86-film`, which passed alone twice after it
 and failed under the 0.11.435 gate too; W2 is not on its path. It is in
 the roadmap to be found before the next push.
+
+## 18.834 JetSki's time was the disk's, and commits grouped (0.11.437)
+
+**What was measured.** JetSki's load-time telemetry on the M700, during
+one load of The Verge:
+- first contentful paint at 33 s, load at 80 s;
+- stylesheets from the same host waiting 20 to 26 s;
+- the machine 98.7% idle (`profile`).
+
+What was ruled out:
+- name lookups, timed in `getaddrinfo`: about 1 s in all;
+- curl's `poll`, which never slept 200 ms with a socket ready;
+- the network itself: QEMU's packet capture puts the gaps on the guest's
+  side, before each next request is sent.
+
+What `/Home/.device` said over the load: 15,338 device writes, 89 MB, and
+66.8 s of the 75 s spent writing. Every kfs operation committed before it
+was answered, and each commit forced the stick to flush. The POSIX layer's
+slow operations on the M700: a write's median 28 ms, a `stat`'s 99 ms, and
+stops of 2.5 to 2.9 s.
+
+**Grouped commits** (`docs/diskfs.md`). An operation is a step in an open
+group, and the group is committed on `DISK_OP_FLUSH`, at half the
+journal, or 1000 ms after its first step.
+
+`tools/test_kfs.lua`, 153 checks, plain and with `KFS_CACHE=1`:
+- two operations grouped take 2 journal-header writes, against 12 alone;
+- the files are there after the commit and after a mount;
+- a step undone that rewrote a block an earlier step held;
+- a removal undone;
+- a power cut mid-group;
+- a step too big for the journal, refused, committed and retried.
+
+Control: without the undo copy, five of these fail.
+
+`x86-disk`, 34 -> 36 checks: forty small files take **81 device writes,
+against 286** when the control commits every operation (it fails the new
+check alone). After two seconds and a reboot, all forty are there and the
+last reads back, committed by the clock with nobody flushing.
+
+**The first full gate failed seven suites**, and six of them were the
+same lesson. Each stops QEMU the moment its work is done, which is a power
+cut, and reads the disk afterwards. A picture saved by `fs.write`, a
+Cafesa3D model, `tcc`'s ELF, SQLite's and libxml2's test output and `acpi
+save`'s tables were all in a group not yet committed. Two rules came out
+of it (`docs/diskfs.md`):
+- a whole file replaced, which is a save, commits at once;
+- a ported program's end commits what it changed.
+
+**Not yet measured**: the M700 again, with the `.device` counts and the
+trace. That needs a netboot.

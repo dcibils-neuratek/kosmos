@@ -133,6 +133,7 @@ function packages.current(p)
   local m = packages.installed(p.name)
 
   return m ~= nil and m.version == p.version and (m.build or "") == (p.build or "")
+         and (p.sums == nil or m.sums == p.sums)
 end
 
 --

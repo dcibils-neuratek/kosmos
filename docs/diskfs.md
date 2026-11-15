@@ -378,3 +378,79 @@ Held by `tools/test_kfs.lua` (eight checks: only the file's own blocks
 written, its extents and time as they were, the refusals, and a 2 MB gap in
 517 calls without the buffer and far fewer with it - each with a control
 that bites) and `arm-sandbox-linux` (`testing.md` 18.637).
+
+## Grouped commits (15 November 2026)
+
+**Decided by Diego on 15 November 2026**: "yes, build grouped commits in
+diskfs". JetSki was slow on the M700, and the browser's telemetry found
+the machine 98.7% idle and the stick busy: across one load of The Verge,
+15,338 device writes, 89 MB, and 66.8 s of the 75 s spent writing
+(`roadmap.md`, *JetSki's speed*). kfs journals metadata only, so file
+data goes straight to blocks nothing points at yet. But every operation
+was its own transaction, committed before it was answered: its blocks in
+the journal, two journal headers, its blocks home, and the stick told to
+write out what it holds each time. A cookie written, a cache entry
+touched, a SQLite page: each paid that.
+
+**An operation is now a step in an open group**, answered once its blocks
+are held. The group is committed as one transaction on whichever comes
+first:
+
+- `DISK_OP_FLUSH`, which is `fsync`, so whatever asks for its writes to
+  be on the disk still gets exactly that;
+- half the journal held (`KFS_TXN_MAX / 2`, 127 blocks);
+- 1000 ms after the group's first step, on the disk server's own clock.
+  The receive waits until then, and a group is never held longer;
+- **a whole file replaced** (`DISK_OP_WRITE`, Lua's `fs.write`), which is
+  how a Kosmos program saves - a document, a setting, a picture - so a save
+  is on the disk when it is answered.
+
+**What is grouped is what ported code writes**: an offset at a time
+(`WRITE_AT`), with creating, renaming and removing. POSIX's own rule
+applies to it: kept when the program asks, by `fsync`. **And when a ported
+program ends**: the POSIX layer notes each drive a program changed and
+asks each for its writes once, at the end (`posix_changes_kept`) - a
+POSIX `main` returning, and a Lua program ending in an image that carries
+the layer, since SQLite and WebKit are reached from Lua. SQLite's commit
+is deleting its journal, which it never asks to be kept: without the
+second, `x86-sql`'s 5000 rows came back after a reboot as none, the
+transaction rolled back from the journal that was still there. Never on
+`close`, because WebKit's caches open, write and close a file at a time,
+and committing on each close would bring back the cost grouping removed.
+
+The first gate without those two found it: six suites stop QEMU the moment
+their work is done, which is a power cut, and read the disk image
+afterwards. A picture saved by `fs.write`, a model saved in Cafesa3D, an
+ELF `tcc` wrote and SQLite's test output were all lost in that last
+second. The disk was consistent, but the files were not there.
+
+That is what every other system does with its page cache and a flush
+every few seconds. What a power cut loses is at most that second, never
+the filesystem: a group not committed leaves the disk as it was before
+the group, and one committed is whole.
+
+**A step that fails is undone alone** (`kfs_step`, `kfs_step_undo`). A
+step marks where the group stood. Any block it overwrites that an
+earlier step already held is copied first. On failure those blocks are
+put back and the held count and the freed runs are cut back to the
+marks. So one refused write never takes its neighbours' writes with it.
+A step too big for what is left of the journal (`KFS_E_TOO_BIG`) is
+undone, the group is committed, and the step is tried again alone.
+
+**Reads see the group**, because `kfs_read_block` answers from the held
+blocks before the disk.
+
+Held by `tools/test_kfs.lua`, on the host:
+- two operations grouped take two journal-header writes, against twelve
+  alone;
+- the files are there after the commit and after a mount;
+- a step that rewrote the root directory held by an earlier step is
+  undone, the earlier step kept;
+- a removal undone, and the free blocks counted;
+- a power cut mid-group;
+- a step too big, refused, committed and retried.
+
+Its control, without the undo copy, fails five of these. On the guest,
+`x86-disk` writes forty small files at an offset, as ported code writes,: 81 device writes grouped, against
+286 when the control commits every operation. After two seconds and a
+reboot, all forty are there, committed by the clock alone.

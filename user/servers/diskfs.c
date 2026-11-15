@@ -762,20 +762,128 @@ static bool mounted(void)
 }
 
 /*
+ * ------------------------------------------------------------------------
+ * **Grouped commits** (`docs/diskfs.md`, *Grouped commits*; Diego, 15
+ * November 2026: "yes, build grouped commits in diskfs").
+ *
+ * An operation was a transaction of its own, committed before it was
+ * answered: the journal, its header, the blocks where they belong and the
+ * header again, a stick's cache written out twice - for every write a
+ * program made. SQLite under WebKit makes thousands, and one load of The
+ * Verge on the M700 was 15,338 writes to the stick, 89 MB and 66.8 s of the
+ * 75 (`testing.md` 18.834); everything else that asked `/Home` anything
+ * waited behind them.
+ *
+ * Now an operation is a step of the group that is open, answered when its
+ * blocks are held, and the group is committed - one transaction, all of it
+ * or none - when a program asks for its writes to be kept (`DISK_OP_FLUSH`,
+ * which `fsync` is), when a whole file is replaced (`op_write`: a save),
+ * when it holds half the journal, or a second after its first step,
+ * whichever is first. A power cut loses the steps since the last
+ * commit and never leaves the disk between two of them: the journal makes
+ * the group whole as it made an operation whole. What a program reads
+ * meanwhile is what it wrote, from the group (`kfs_read_block`).
+ * ------------------------------------------------------------------------
+ */
+#define GROUP_HELD_MOST (KFS_TXN_MAX / 2u)  /* blocks: committed past this */
+#define GROUP_MS        1000u               /* a group's longest life */
+
+static uint64_t group_began;                /* the counter at its first step */
+static uint64_t counter_hz = 1000000000u;   /* `kosmos_ticks`, a second */
+static uint64_t tick_hz = 250u;             /* the scheduler's, a second */
+
+/* The group committed, if one is open; what the commit said. A refusal is
+ * said in the log too: steps already answered are what it lost. */
+static int group_commit(void)
+{
+    int r;
+
+    if (!A->kfs.open) {
+        return KFS_OK;
+    }
+
+    r = kfs_commit(&A->kfs, &SB, false);
+
+    if (r != KFS_OK) {
+        say(console, drive.tag);
+        say(console, "a group of writes could not be committed: ");
+        say(console, kfs_why(r));
+        say(console, "\n");
+    }
+
+    return r;
+}
+
+static int group_step(void)
+{
+    bool was_open = A->kfs.open;
+    int r = kfs_step(&A->kfs);
+
+    if (r == KFS_OK && !was_open) {
+        group_began = kosmos_ticks();
+    }
+
+    return r;
+}
+
+/* A step done: committed with the rest at once when the group is full. */
+static int group_after(void)
+{
+    return A->kfs.held >= GROUP_HELD_MOST ? group_commit() : KFS_OK;
+}
+
+/* Scheduler ticks until the open group is due, at least one; 0, wait for
+ * ever, when none is open. */
+static unsigned long group_wait(void)
+{
+    uint64_t due, now = kosmos_ticks(), left;
+
+    if (!A->kfs.open) {
+        return 0;
+    }
+
+    due = group_began + counter_hz * GROUP_MS / 1000u;
+
+    if (now >= due) {
+        return 1;
+    }
+
+    left = (due - now) * tick_hz / counter_hz;
+    return left > 0 ? (unsigned long)left : 1;
+}
+
+/*
  * One operation, all of it or none of it: `r` is what `call` said, or the
- * commit's refusal. Everything that changes the disk goes through here.
+ * commit's refusal. Everything that changes the disk goes through here. A
+ * step that failed is taken back alone; one that would not fit beside the
+ * group's others is taken back, the others committed, and it is tried
+ * again as the group's first.
  */
 #define ATOMIC(r, call)                                                      \
     do {                                                                     \
-        (r) = kfs_begin(&A->kfs);                                            \
+        bool first_ = !A->kfs.open;                                          \
+                                                                             \
+        (r) = group_step();                                                  \
                                                                              \
         if ((r) == KFS_OK) {                                                 \
             (r) = (call);                                                    \
                                                                              \
+            if ((r) != KFS_OK) {                                             \
+                kfs_step_undo(&A->kfs);                                      \
+                                                                             \
+                if ((r) == KFS_E_TOO_BIG && !first_                          \
+                    && ((r) = group_commit()) == KFS_OK                      \
+                    && ((r) = group_step()) == KFS_OK) {                     \
+                    (r) = (call);                                            \
+                                                                             \
+                    if ((r) != KFS_OK) {                                     \
+                        kfs_step_undo(&A->kfs);                              \
+                    }                                                        \
+                }                                                            \
+            }                                                                \
+                                                                             \
             if ((r) == KFS_OK) {                                             \
-                (r) = kfs_commit(&A->kfs, &SB, false);                       \
-            } else {                                                         \
-                kfs_rollback(&A->kfs);                                       \
+                (r) = group_after();                                         \
             }                                                                \
         }                                                                    \
     } while (0)
@@ -1013,6 +1121,20 @@ static void op_write(const struct disk_request *rq, struct disk_reply *rp, long 
         ATOMIC(r, kfs_store(&A->kfs, &SB, rq->path, strlen(rq->path), rq->u.data,
                             rq->length, stamp(), &number));
         rp->bytes = rq->length;
+    }
+
+    /*
+     * **A file replaced is a save, and a save is on the disk when it is
+     * answered** - the group committed with it (`docs/diskfs.md`, *Grouped
+     * commits*). This is what Kosmos's own programs write with: a document,
+     * a setting, a picture. What is grouped is what ported code writes, an
+     * offset at a time, which asks for its writes to be on the disk with
+     * `fsync` as it would anywhere else. Without this, a file saved in
+     * Cafesa3D and the machine switched off within the second was gone, and
+     * six suites that stop QEMU the moment their work is done said so.
+     */
+    if (r == KFS_OK) {
+        r = group_commit();
     }
 
     if (r != KFS_OK) {
@@ -1708,6 +1830,7 @@ static void op_format(const struct disk_request *rq, struct disk_reply *rp)
     }
 
     A->kfs.disk.most = most;
+    kfs_rollback(&A->kfs);              /* a group of the disk that goes */
     diskcache_clear(&A->cache);
     r = kfs_mkfs(&A->kfs, sectors, stamp(), drive.layout, &SB);
 
@@ -1764,6 +1887,7 @@ static void answer(const struct message *msg, uint64_t sender)
     struct disk_reply *rp = (struct disk_reply *)out.data;
     long cap = msg->cap_plus_one ? (long)msg->cap_plus_one - 1 : -1;
     const struct door *through = NULL;
+    int r_flush;
 
     for (size_t d = 0; d < DOORS && msg->tag != 0; d++) {
         if (doors[d].open && msg->tag == doors[d].token) {
@@ -1809,7 +1933,14 @@ static void answer(const struct message *msg, uint64_t sender)
         case DISK_OP_MKDIR:   op_mkdir(rq, rp); break;
         case DISK_OP_SETATTR: op_setattr(rq, rp); break;
         case DISK_OP_QUERY:   op_query(rq, rp); break;
-        case DISK_OP_FLUSH:   device_flush(); break;
+        case DISK_OP_FLUSH:
+            /* What `fsync` is: the group committed, then the stick's own
+             * cache written out. */
+            if ((r_flush = group_commit()) != KFS_OK) {
+                rp->error = kfs_error(r_flush);
+            }
+            device_flush();
+            break;
         case DISK_OP_WATCH:
             if (cap < 0 || !folderwatch_add(&watches, rq->path, cap, (uint32_t)rq->offset,
                                             asker(through))) {
@@ -2028,15 +2159,47 @@ static void serve(long endpoint, long read_ep, long write_ep, long devices_ep,
     A->kfs.zeros = A->zeros;
     A->kfs.zero_blocks = STICK_MOST / KFS_BLOCK;
 
+    {
+        struct sysinfo info;
+        struct schedinfo sched;
+
+        if (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0) {
+            counter_hz = info.counter_hz;
+        }
+
+        if (kosmos_sched_info(&sched) == 0 && sched.tick_hz != 0) {
+            tick_hz = sched.tick_hz;
+        }
+    }
+
     for (;;) {
         static struct message msg;
         uint64_t sender = 0;
+        unsigned long wait = group_wait();
+        long got = kosmos_receive(endpoint, &msg, &sender, 0, wait);
 
-        if (kosmos_receive(endpoint, &msg, &sender, 0, 0) != 0) {
+        /*
+         * Nobody asked by the time the open group was due: committed. A
+         * receive that timed out says `IPC_NO_MESSAGE` (-7), not what
+         * `kosmos.h` names (`smbfs.c` stopped serving over the difference),
+         * so with a deadline set anything but a message is the deadline.
+         */
+        if (got != 0 && wait != 0) {
+            (void)group_commit();
+            continue;
+        }
+
+        if (got != 0) {
             return;
         }
 
         answer(&msg, sender);
+
+        /* A group older than its second, under requests that never stop. */
+        if (A->kfs.open && group_wait() == 1
+            && kosmos_ticks() >= group_began + counter_hz * GROUP_MS / 1000u) {
+            (void)group_commit();
+        }
     }
 }
 

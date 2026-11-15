@@ -147,6 +147,11 @@ end
 -- began, finished or ended.
 function web.pump(ms, st)
   webkit.pump(ms, events)
+  -- What the kit wrote - the trace's lines - into the log, a line a print.
+  local said = webkit.said()
+  if said ~= "" then
+    for line in said:gmatch("[^\n]+") do print(line) end
+  end
   if events.opened ~= 0 then
     local v = webkit.adopt(events.opened)
     views[events.opened] = v
@@ -234,6 +239,13 @@ web.frame(X, Y, W, H)
 local WEBKIT = "/Kosmos/WebKit"
 web.inspector_files(WEBKIT .. "/Inspector")
 web.developer(DEVELOPER)
+
+-- **A page's load, traced in the log** (`webkit.cpp`, *A page's load,
+-- traced*): every request as it ends, and what a page still waits on, for
+-- measuring JetSki's speed. On while `/Home/Settings/JetSki/trace` exists -
+-- `touch` it, and open JetSki again; `log webkit` reads what it said.
+local TRACE = "/Home/Settings/JetSki/trace"
+webkit.trace(fs.getattr(TRACE) ~= nil)
 
 --------------------------------------------------------------------------
 -- The header: the kit's widgets, in this window's own pixels.

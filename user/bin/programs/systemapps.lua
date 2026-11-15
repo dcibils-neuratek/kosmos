@@ -59,6 +59,13 @@ local function stale(m, p)
     return ("build %s, and the server's is %s"):format(tostring(m.build), tostring(p.build))
   end
 
+  -- The same build's name with other files in it: a tree rebuilt before it
+  -- was committed (`tools/packages.py`, `sums`).
+  if p and p.sums and m.sums ~= p.sums then
+    return ("build %s with other files (%s; the server's %s)"):format(tostring(m.build),
+                                                                     tostring(m.sums), p.sums)
+  end
+
   return nil
 end
 

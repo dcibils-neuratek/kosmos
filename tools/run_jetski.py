@@ -1052,6 +1052,12 @@ def main():
     # Web Inspector's front end, as `installed.py` puts it in WebKit's folder.
     import inspector
     files += [(host, "/Home/System/WebKit/Inspector/" + inside) for host, inside in inspector.files()]
+    # JetSki's load trace on (`webkit.cpp`, *A page's load, traced*): the
+    # file's being there is the switch.
+    if BROKEN != "untraced":
+        switch = os.path.join(WORK, "trace")
+        open(switch, "w").close()
+        files.append((switch, "/Home/Settings/JetSki/trace"))
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],
@@ -1073,6 +1079,11 @@ def main():
     setattr(R, board, [(("2G" if LIVE else "1G") if a == "512M" else a) for a in args])
     setattr(R, board, getattr(R, board) + [
         "-netdev", "user,id=net0", "-device", R.device(IMAGE, "net") + ",netdev=net0"])
+    # Every frame the card saw, as a pcap, when asked - a live page's
+    # packets, to tell a wait on the wire from one in this machine.
+    if os.environ.get("KOSMOS_JETSKI_PCAP"):
+        setattr(R, board, getattr(R, board) + [
+            "-object", "filter-dump,id=dump0,netdev=net0,file=%s" % os.environ["KOSMOS_JETSKI_PCAP"]])
     # A sound card, whose output is kept: the film's sound must come out.
     if R.machine(IMAGE) == "x86_64":
         if os.path.exists(HEARD):

@@ -43,6 +43,9 @@ struct posix_pipe;
 
 int   posix_fd_pipe_new(struct posix_pipe *p, int end, int flags);
 struct posix_pipe *posix_fd_pipe(int fd, int *flags, int *end);
+/* What this process changed on a disk, asked to be kept: a program's end
+ * (`fd.c`, *What a program changed*). */
+void posix_changes_kept(void);
 
 void  posix_pipe_close(struct posix_pipe *p, int end);
 long  posix_pipe_read(struct posix_pipe *p, void *buf, unsigned long bytes, int nonblock);

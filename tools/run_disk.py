@@ -218,6 +218,21 @@ def main():
             'local a = row() fs.write("/Home/counted.bin", string.rep("c", 2000)) '
             'local b = fs.read("/Home/counted.bin") local z = row() '
             'print("PROGRAMS", z.write_bytes - a.write_bytes, z.read_bytes - a.read_bytes, #b, z.last)',
+            # **Grouped commits** (`docs/diskfs.md`): forty small files,
+            # counted in the device's own writes. Committed one by one each
+            # was a journal entry, two journal headers and its blocks home -
+            # about ten writes; grouped, the file's own block and a share of
+            # one commit. Written at an offset, as ported code writes -
+            # `fs.write` replaces a file, which is a save and commits at
+            # once. Then two seconds, longer than a group is held, so the
+            # second boot finds them committed by the clock alone.
+            'local d0 = fs.read("/Home/.device") fs.send("/Home/grouped", { type = "mkdir" }) '
+            'local m = sys.memory(1) '
+            'for i = 1, 40 do local t = "group " .. i sys.region_write(m, 0, t) '
+            'fs.write_from_at("/Home/grouped/g" .. i, m, 0, #t, true) end '
+            'local d1 = fs.read("/Home/.device") '
+            'print("GROUPED", d1.writes - d0.writes) '
+            'sys.sleep(2 * ((sys.info() or {}).tick_hz or 250)) print("RESTED")',
         ], trace=started)
 
         #
@@ -420,7 +435,10 @@ def main():
                                     '"/Home/big", b, 0, 200 * 1024) '
                                     'print("BIGREAD", got, size, '
                                     'sys.region_read(b, 0, 3), '
-                                    'sys.region_read(b, 8192, 3))'])
+                                    'sys.region_read(b, 8192, 3))',
+                                    'local l = fs.list("/Home/grouped") '
+                                    'print("KEPT", l and #l or -1, '
+                                    'tostring(fs.read("/Home/grouped/g40")))'])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -661,8 +679,34 @@ def main():
 
         checks += 1
 
+        # ---- grouped commits ----
+        grouped = first.replace("\t", " ").split("GROUPED")[-1].split()
+
+        if not grouped or not grouped[0].isdigit() or int(grouped[0]) > 120:
+            raise Failure(
+                "forty small files took %s device writes, more than three "
+                "each. Committed one at a time they take about ten; grouped, "
+                "the commit is shared, so either diskfs is committing every "
+                "operation again or a group is being closed early.\n%s"
+                % (grouped[:1], first[-600:]))
+
+        checks += 1
+
+        kept = second.replace("\t", " ").split("KEPT")[-1].split()
+
+        if kept[:3] != ["40", "group", "40"]:
+            raise Failure(
+                "the forty grouped files did not survive the reboot: %r. A "
+                "group held longer than its second is committed by the "
+                "clock, without anybody flushing - so either the timer "
+                "never fires or what it commits is not what was written.\n%s"
+                % (kept[:3], second[-600:]))
+
+        checks += 1
+
         print(second.strip())
-        print(f"\nPASS: {checks} disk checks across two boots of one image.")
+        print(f"\ngrouped: forty small files in {grouped[0]} device writes")
+        print(f"PASS: {checks} disk checks across two boots of one image.")
         return 0
 
     except Failure as e:

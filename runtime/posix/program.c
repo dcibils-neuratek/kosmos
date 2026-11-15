@@ -14,6 +14,7 @@
 #include <stdlib.h>
 
 #include "kosmos.h"
+#include "posix.h"
 
 static jmp_buf leaving;
 static int     left_with;
@@ -79,6 +80,7 @@ int posix_program_run(int (*entry)(int, char **), int argc, char **argv,
 
     fflush(stdout);
     fflush(stderr);
+    posix_changes_kept();               /* its files on the disk as it ends */
     return r.code;
 }
 
@@ -113,6 +115,7 @@ int posix_program_run_to(int (*entry)(int, char **), int argc, char **argv,
     stdout = was_out;
     stderr = was_err;
     fclose(out);
+    posix_changes_kept();               /* and what it printed, kept too */
     errno = saved;
     return code;
 }

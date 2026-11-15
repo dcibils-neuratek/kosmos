@@ -95,6 +95,11 @@ void webkit_forward(int id);
 void webkit_reload(int id);
 void webkit_stop(int id);
 
+/* Every view's page loads traced in the log, or not (`webkit.cpp`, *A
+ * page's load, traced*): each request as it ends, and what a page still
+ * waits on every five seconds while it loads. */
+void webkit_trace(int on);
+
 /* WebKit's run loop for at most `ms` milliseconds, or until a view shown
  * has news; then what happened to the views together. */
 void webkit_pump(unsigned ms, struct webkit_events *out);

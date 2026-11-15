@@ -1308,6 +1308,147 @@ do
 end
 
 --------------------------------------------------------------------------
+-- **Grouped commits** (`docs/diskfs.md`, *Grouped commits*; Diego, 15
+-- November 2026): many operations in one transaction, a step each, and one
+-- commit for them all - the journal written once rather than once an
+-- operation. A step that fails is taken back alone: the steps before it
+-- stay, the blocks it changed are as they were, the runs it freed are not.
+--------------------------------------------------------------------------
+
+do
+  sb = fresh()
+
+  -- What the journal's header is written for: twice a commit.
+  local function header_writes(f)
+    written = {}
+    f()
+    return written[sb.journal_at] or 0
+  end
+
+  local alone = header_writes(function()
+    for i = 1, 6 do
+      assert(kfs.begin())
+      assert(kfs.store(sb, "/alone-" .. i, "a" .. i, 1))
+      assert(kfs.commit(sb))
+    end
+  end)
+
+  local grouped = header_writes(function()
+    for i = 1, 6 do
+      assert(kfs.step())
+      assert(kfs.store(sb, "/grouped-" .. i, "g" .. i, 1))
+    end
+    assert(kfs.commit(sb))
+  end)
+
+  check(alone == 12 and grouped == 2,
+        ("six operations in one group write the journal's header twice, "
+         .. "as one does (%d), not twelve times (%d)"):format(grouped, alone))
+
+  local whole = true
+  for i = 1, 6 do
+    whole = whole and contents("/grouped-" .. i) == "g" .. i
+  end
+  check(whole, "and every one of the six is there after the commit")
+
+  local again = assert(kfs.mount())
+  sb = again
+  whole = true
+  for i = 1, 6 do
+    whole = whole and contents("/grouped-" .. i) == "g" .. i
+  end
+  check(whole, "and after a mount: the group reached the disk")
+
+  -- A step taken back, when it rewrote a block a step before it held: the
+  -- root's directory, held by the first and changed again by the second.
+  sb = fresh()
+  local free_before = kfs.free_blocks(sb)
+  assert(kfs.step())
+  assert(kfs.store(sb, "/kept-step", string.rep("k", 2 * kfs.BLOCK), 1))
+  local free_after_first = kfs.free_blocks(sb)
+  assert(kfs.step())
+  assert(kfs.store(sb, "/undone-step", string.rep("u", 3 * kfs.BLOCK), 1))
+  assert(kfs.mkdir(sb, "/undone-dir", 1))
+  kfs.step_undo()
+  check(contents("/kept-step") == string.rep("k", 2 * kfs.BLOCK)
+        and contents("/undone-step") == nil and not kfs.find(sb, "/undone-dir"),
+        "a step undone takes back its file and folder, and the step before it stays")
+  check(kfs.free_blocks(sb) == free_after_first,
+        "and gives back the blocks it took, in the group's bitmap")
+  assert(kfs.commit(sb))
+  sb = assert(kfs.mount())
+  check(contents("/kept-step") == string.rep("k", 2 * kfs.BLOCK)
+        and not kfs.find(sb, "/undone-step") and not kfs.find(sb, "/undone-dir"),
+        "and on the disk after the commit: the first step and nothing of the second")
+  check(kfs.free_blocks(sb) == free_before - 2,
+        "with the first step's two blocks used and no more")
+
+  -- A step that freed, undone: what it freed is still the file's.
+  assert(kfs.begin())
+  assert(kfs.store(sb, "/goes", string.rep("g", 4 * kfs.BLOCK), 1))
+  assert(kfs.store(sb, "/stays", string.rep("s", 4 * kfs.BLOCK), 1))
+  assert(kfs.commit(sb))
+  local free_both = kfs.free_blocks(sb)
+  assert(kfs.step())
+  assert(kfs.unlink(sb, "/goes"))
+  assert(kfs.step())
+  assert(kfs.unlink(sb, "/stays"))
+  kfs.step_undo()
+  assert(kfs.commit(sb))
+  sb = assert(kfs.mount())
+  check(not kfs.find(sb, "/goes") and contents("/stays") == string.rep("s", 4 * kfs.BLOCK),
+        "a removal undone leaves the file, and the one before it is gone")
+  check(kfs.free_blocks(sb) == free_both + 4,
+        "and only the removed file's four blocks are free")
+
+  -- The power, in the middle of a group: nothing of it, and nothing lost.
+  local free_steady = kfs.free_blocks(sb)
+  assert(kfs.step())
+  assert(kfs.store(sb, "/stays", string.rep("n", 5 * kfs.BLOCK), 2))
+  assert(kfs.step())
+  assert(kfs.store(sb, "/never", "x", 2))
+  kfs.rollback()
+  sb = assert(kfs.mount())
+  check(kfs.recover(sb) == 0 and contents("/stays") == string.rep("s", 4 * kfs.BLOCK)
+        and not kfs.find(sb, "/never") and kfs.free_blocks(sb) == free_steady,
+        "a power cut before a group's commit leaves the disk as the last commit made it")
+
+  -- A step that does not fit beside the others: refused, taken back, the
+  -- rest committed, and the step again alone. A hundred blocks a step,
+  -- written straight, so the group's room - the journal's, 254 blocks -
+  -- runs out on the third.
+  sb = fresh()
+  local function fill(step, from)
+    for b = 0, 99 do
+      local ok, why = kfs.write_block(from + b, string.rep(string.char(64 + step), 64))
+      if not ok then return nil, why end
+    end
+    return true
+  end
+  local base = sb.data_at + 200
+  assert(kfs.step()); assert(fill(1, base))
+  assert(kfs.step()); assert(fill(2, base + 100))
+  assert(kfs.step())
+  local ok, why = fill(3, base + 200)
+  local refused = not ok and why == "more blocks changed than the journal can hold"
+  kfs.step_undo()
+  local held_then = kfs.held()
+  assert(kfs.commit(sb))
+  assert(kfs.step())
+  local retried = fill(3, base + 200)
+  assert(kfs.commit(sb))
+  local function first(b)
+    local block = kfs.read_block(b)
+    return block and block:sub(1, 1)
+  end
+  check(refused and held_then == 200 and retried
+        and first(base) == "A" and first(base + 199) == "B" and first(base + 299) == "C",
+        ("a step too big for the group's room is refused (%s), taken back to the "
+         .. "200 blocks before it (%s), the group committed, and it fits alone")
+        :format(tostring(why), tostring(held_then)))
+end
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed (kfs.c%s).")

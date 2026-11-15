@@ -124,7 +124,7 @@ def sha256(path):
 
 def facts_text(facts):
     keys = ("name", "title", "kind", "about", "version", "build", "protocols",
-            "into", "icon", "needs", "depends", "bytes")
+            "into", "icon", "needs", "depends", "bytes", "sums")
     return "".join("%-11s %s\n" % (k, facts.get(k, "")) for k in keys)
 
 
@@ -161,6 +161,11 @@ def manifest(facts, pairs):
     lines = ["file        %d %s %s\n" % (os.path.getsize(here), sha256(here), inside)
              for here, inside in files]
     facts["bytes"] = sum(os.path.getsize(here) for here, _ in files)
+    # **What is inside, as one sum**: `build` is `git describe`, the same
+    # for every rebuild of a tree with changes not yet committed, so a
+    # machine took a new image for the one it had and kept it (`systemapps`,
+    # 15 November 2026). This changes whenever a file does.
+    facts["sums"] = hashlib.sha256("".join(lines).encode()).hexdigest()[:16]
     return "# Made by tools/packages.py; a line a fact.\n" + facts_text(facts) + "".join(lines)
 
 

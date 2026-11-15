@@ -949,6 +949,8 @@ The division M8 introduces is therefore narrower than it looks:
 
 That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while scanning a folder is cheaper than the complexity an index costs, and stops holding at a file count this system is nowhere near. `docs/diskfs.md` step 3b measured it - a folder under a millisecond, two thousand files six to fifteen - and Diego chose the scan on those numbers (`testing.md` 18.283).
 
+**Commits are grouped, since 15 November 2026** (`docs/diskfs.md`, *Grouped commits*). The journal used to commit every operation before answering it. That made each write durable the moment it returned, and cost a stick's flush per write, which made JetSki's slowness the disk's: on the M700, 66.8 s of a 75 s page load was spent writing. An operation is now a step in an open group, and the group commits on `fsync`, at half the journal, or a second after its first step. Durability is what `fsync` asks for, as on every system with a page cache. What a power cut can cost is the last second, and never consistency, because a group is committed whole or not at all.
+
 ### 8.3a `/Home` always exists, and says which kind it is
 
 `/Home` is the disk - what somebody has, their applications among it - and

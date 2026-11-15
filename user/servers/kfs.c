@@ -72,6 +72,11 @@ void kfs_init(struct kfs *k, const struct kfs_disk *disk)
     k->too_big = false;
     k->held = 0;
     k->freed_runs = 0;
+    k->stepping = false;
+    k->mark_held = 0;
+    k->mark_freed = 0;
+    k->saved_n = 0;
+    memset(k->saved, 0, sizeof k->saved);
     k->dir_len = 0;
     k->zeros = NULL;
     k->zero_blocks = 0;
@@ -351,6 +356,11 @@ static int put_block(struct kfs *k, uint32_t n, const uint8_t *block)
 
         slot = (int)k->held++;
         k->held_at[slot] = n;
+    } else if (k->stepping && (uint32_t)slot < k->mark_held && !k->saved[slot]) {
+        /* Held by an earlier step: kept as it was, for `kfs_step_undo`. */
+        memcpy(k->undo[slot], k->journal[slot + 1], KFS_BLOCK);
+        k->saved[slot] = true;
+        k->saved_slot[k->saved_n++] = (uint32_t)slot;
     }
 
     if (k->journal[slot + 1] != block) {
@@ -374,12 +384,26 @@ int kfs_write_block(struct kfs *k, uint32_t n, const void *from, uint32_t len)
     return put_block(k, n, k->part);
 }
 
+/* No block kept for an undo: the step that kept them is over. */
+static void forget_saved(struct kfs *k)
+{
+    for (uint32_t i = 0; i < k->saved_n; i++) {
+        k->saved[k->saved_slot[i]] = false;
+    }
+
+    k->saved_n = 0;
+}
+
 static void txn_reset(struct kfs *k)
 {
     k->open = false;
     k->too_big = false;
     k->held = 0;
     k->freed_runs = 0;
+    forget_saved(k);
+    k->stepping = false;
+    k->mark_held = 0;
+    k->mark_freed = 0;
 }
 
 int kfs_begin(struct kfs *k)
@@ -396,6 +420,43 @@ int kfs_begin(struct kfs *k)
 void kfs_rollback(struct kfs *k)
 {
     txn_reset(k);
+}
+
+int kfs_step(struct kfs *k)
+{
+    if (!k->open) {
+        txn_reset(k);
+        k->open = true;
+    }
+
+    forget_saved(k);
+    k->stepping = true;
+    k->too_big = false;
+    k->mark_held = k->held;
+    k->mark_freed = k->freed_runs;
+    return KFS_OK;
+}
+
+void kfs_step_undo(struct kfs *k)
+{
+    if (!k->open) {
+        return;
+    }
+
+    for (uint32_t i = 0; i < k->saved_n; i++) {
+        uint32_t slot = k->saved_slot[i];
+
+        memcpy(k->journal[slot + 1], k->undo[slot], KFS_BLOCK);
+    }
+
+    forget_saved(k);
+    k->held = k->mark_held;
+    k->freed_runs = k->mark_freed;
+    k->too_big = false;
+
+    if (k->held == 0 && k->freed_runs == 0) {
+        txn_reset(k);
+    }
 }
 
 /*
@@ -668,8 +729,9 @@ static bool freed_here(const struct kfs *k, uint64_t block)
 
 static int note_freed(struct kfs *k, uint32_t first, uint32_t count)
 {
-    /* Joined to a run it continues, which is the usual case: an extent. */
-    for (uint32_t i = 0; i < k->freed_runs; i++) {
+    /* Joined to a run it continues, which is the usual case: an extent -
+     * one of this step's, so an undo that drops its runs drops all of it. */
+    for (uint32_t i = k->stepping ? k->mark_freed : 0; i < k->freed_runs; i++) {
         struct kfs_extent *run = &k->freed[i];
 
         if ((uint64_t)run->start + run->count == first) {

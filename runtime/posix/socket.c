@@ -1043,8 +1043,39 @@ static int service_port(const char *service, int numeric_only, uint16_t *port)
     return 0;
 }
 
+static int lookup(const char *node, const char *service,
+                  const struct addrinfo *hints, struct addrinfo **out);
+
+/*
+ * **A name's lookup, timed**: curl here looks names up as the call is made
+ * (`tools/w5_build.py`, no threaded resolver), so while one is looked up,
+ * every transfer of the network process waits - The Verge's own files
+ * waited 20 s for a first byte on connections already open (`testing.md`
+ * 18.834). One that took 20 ms or more is said, with its name, so the log
+ * shows what a page's lookups cost.
+ */
 int getaddrinfo(const char *node, const char *service,
                 const struct addrinfo *hints, struct addrinfo **out)
+{
+    struct timespec from, to;
+    long ms;
+    int r;
+
+    clock_gettime(CLOCK_MONOTONIC, &from);
+    r = lookup(node, service, hints, out);
+    clock_gettime(CLOCK_MONOTONIC, &to);
+    ms = (to.tv_sec - from.tv_sec) * 1000 + (to.tv_nsec - from.tv_nsec) / 1000000;
+
+    if (ms >= 20) {
+        fprintf(stderr, "posix: looking up %s took %ld ms%s\n",
+                node != NULL ? node : "(no name)", ms, r != 0 ? ", and failed" : "");
+    }
+
+    return r;
+}
+
+static int lookup(const char *node, const char *service,
+                  const struct addrinfo *hints, struct addrinfo **out)
 {
     int flags = hints != NULL ? hints->ai_flags : 0;
     int family = hints != NULL ? hints->ai_family : AF_UNSPEC;

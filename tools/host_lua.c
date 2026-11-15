@@ -469,6 +469,25 @@ static int l_rollback(lua_State *L)
     return 0;
 }
 
+static int l_step(lua_State *L)
+{
+    return answer(L, kfs_step(K));
+}
+
+static int l_step_undo(lua_State *L)
+{
+    (void)L;
+    kfs_step_undo(K);
+    return 0;
+}
+
+/* How many blocks the open transaction holds: what a group has used. */
+static int l_held(lua_State *L)
+{
+    lua_pushinteger(L, (lua_Integer)(K->open ? K->held : 0));
+    return 1;
+}
+
 static int l_commit(lua_State *L)
 {
     struct kfs_super sb;
@@ -1339,6 +1358,9 @@ static int luaopen_kfsc(lua_State *L)
         { "write_block",     l_write_block },
         { "begin",           l_begin },
         { "rollback",        l_rollback },
+        { "step",            l_step },
+        { "step_undo",       l_step_undo },
+        { "held",            l_held },
         { "commit",          l_commit },
         { "recover",         l_recover },
         { "alloc_run",       l_alloc_run },

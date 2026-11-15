@@ -40,7 +40,7 @@
 
 #include "webkit.h"
 #include "kits/gfx/gfx_draw.h"      /* kosmos_surface_pixels */
-#include "kits/kitenv.h"            /* kit_capability */
+#include "kits/kitenv.h"            /* kit_capability, kit_push_spill */
 
 /* `posix_program.h`: where this process's standard error goes, and so
  * the web and network processes' it starts. */
@@ -195,6 +195,22 @@ static int l_developer(lua_State *L)
 {
     webkit_developer(lua_toboolean(L, 1));
     return 0;
+}
+
+static int l_trace(lua_State *L)
+{
+    webkit_trace(lua_toboolean(L, 1));
+    return 0;
+}
+
+/* webkit.said() - what the kit wrote since it was last asked, its trace's
+ * lines among it, or "". The kit's standard error is the spill ring in a
+ * process that does not own the console, and only QEMU's serial line
+ * showed it: on a machine, its program says it into the log. */
+static int l_said(lua_State *L)
+{
+    kit_push_spill(L);
+    return 1;
 }
 
 static int l_inspector_files(lua_State *L)
@@ -443,6 +459,8 @@ void kosmos_webkit_kit(lua_State *L)
     static const luaL_Reg fns[] = {
         { "view", l_view },       { "adopt", l_adopt },     { "pump", l_pump },
         { "views", l_views },     { "frame", l_frame },     { "developer", l_developer },
+        { "trace", l_trace },
+        { "said", l_said },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },
         { NULL, NULL },
     };

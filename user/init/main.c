@@ -87,6 +87,8 @@ void xhci_server(long console, long blocks, long writes, long frames,
 void bluetooth_server(long console, long endpoint, long transport);
 void e1000_server(long console, long frames);
 void ahci_server(long console);
+/* The POSIX layer's, where an image has it (`runtime/posix/fd.c`). */
+extern void posix_changes_kept(void) __attribute__((weak));
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
  * Never the write endpoint: `/Drives` is read-only by what it was handed
@@ -2033,6 +2035,19 @@ int main(unsigned long arg)
         lua_pushinteger(L, (lua_Integer)(arg - base));
         lua_pushinteger(L, (lua_Integer)base);
         status = lua_pcall(L, 2, 0, 0);
+    }
+
+    /*
+     * **What the program changed on a disk, kept as it ends** (`docs/diskfs.md`,
+     * *Grouped commits*): in an image that carries the POSIX layer - SQLite,
+     * WebKit, a ported program run from Lua - its writes were grouped, and a
+     * machine switched off within the second would lose them. SQLite's own
+     * commit is deleting its journal, which it never asks to be kept; without
+     * this, `x86-sql`'s 5000 rows came back as none. A weak reference, so an
+     * image without the layer has nothing to call.
+     */
+    if (posix_changes_kept != NULL) {
+        posix_changes_kept();
     }
 
     if (status != LUA_OK) {

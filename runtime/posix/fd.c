@@ -49,6 +49,78 @@
 #include "posix.h"
 #include "storage.h"
 
+/*
+ * **What a program changed is on the disk when it ends** (`docs/diskfs.md`,
+ * *Grouped commits*). A disk server groups what it is asked into one commit
+ * a second, and keeps it sooner only when asked - `fsync`, as anywhere. A
+ * ported program that writes its files and ends, as `tcc` and a test do,
+ * has never asked; with nothing done here, a machine switched off within
+ * the second of its end has none of them. So each change is noted against
+ * the drive it is on - its path's first name, `/Home` or `/Sandboxes` - and
+ * the program's end asks each of those for its writes once
+ * (`posix_changes_kept`). Never on `close`: WebKit's caches open, write and
+ * close a file at a time, and a commit for each is what grouping removed.
+ */
+#define CHANGED_DRIVES 4
+
+static char changed_on[CHANGED_DRIVES][64];
+static pthread_mutex_t changed_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void changed(const char *path, long r)
+{
+    size_t n;
+    const char *end;
+
+    if (r < 0 || path == NULL || path[0] != '/') {
+        return;
+    }
+
+    end = strchr(path + 1, '/');
+    n = end != NULL ? (size_t)(end - path) : strlen(path);
+
+    if (n >= sizeof changed_on[0]) {
+        return;
+    }
+
+    pthread_mutex_lock(&changed_lock);
+
+    for (unsigned i = 0; i < CHANGED_DRIVES; i++) {
+        if (changed_on[i][0] == 0) {
+            memcpy(changed_on[i], path, n);
+            changed_on[i][n] = 0;
+            break;
+        }
+
+        if (strncmp(changed_on[i], path, n) == 0 && changed_on[i][n] == 0) {
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&changed_lock);
+}
+
+void posix_changes_kept(void)
+{
+    char drives[CHANGED_DRIVES][64];
+
+    pthread_mutex_lock(&changed_lock);
+    memcpy(drives, changed_on, sizeof drives);
+    memset(changed_on, 0, sizeof changed_on);
+    pthread_mutex_unlock(&changed_lock);
+
+    for (unsigned i = 0; i < CHANGED_DRIVES && drives[i][0] != 0; i++) {
+        (void)storage_flush(drives[i]);
+    }
+}
+
+#define NOTED(path, call) ({ __typeof__(call) noted_r_ = (call); \
+                             changed(path, (long)noted_r_); noted_r_; })
+#define storage_write(p, ...)    NOTED(p, (storage_write)(p, __VA_ARGS__))
+#define storage_truncate(p, ...) NOTED(p, (storage_truncate)(p, __VA_ARGS__))
+#define storage_delete(p, ...)   NOTED(p, (storage_delete)(p, ##__VA_ARGS__))
+#define storage_rename(p, ...)   NOTED(p, (storage_rename)(p, __VA_ARGS__))
+#define storage_mkdir(p)         NOTED(p, (storage_mkdir)(p))
+
 #define CONSOLE 3                       /* 0, 1 and 2 */
 
 struct open_file {

@@ -35,6 +35,7 @@
 #include <WebKit/WKPageKosmos.h>
 #include <WebKit/WKPageLoadTypes.h>
 #include <WebKit/WKPageNavigationClient.h>
+#include <WebKit/WKPageResourceLoadClient.h>
 #include <WebKit/WKPagePrivate.h>
 #include <WebKit/WKPageUIClient.h>
 #include <WebKit/WKPreferencesRef.h>
@@ -42,6 +43,7 @@
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKURLRequest.h>
+#include <WebKit/WKURLResponse.h>
 #include <WebKit/WKView.h>
 #include <WebKit/WKViewClient.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
@@ -69,6 +71,26 @@ namespace {
  * dark is the caller's to say; a dark one goes on unseen and inactive, as
  * a browser's background tab does.
  */
+/*
+ * **A page's load, traced** (Diego, 15 November 2026: "i find the jetski
+ * browser really slow to use and load pages", "start measuring the page
+ * load on the m700"; a page on the M700 held at 90%). WebKit tells the
+ * page's owner of every request its page makes - sent, answered, ended -
+ * through the resource load client, and with `webkit_trace` on, each is
+ * kept from the moment it is sent and said in one line when it ends: when
+ * it began after the page was asked for, its status, its first byte, its
+ * end. While a page loads, what has not ended is said every five seconds;
+ * that list is what holds a page at 90%. Off, nothing is kept or said.
+ */
+struct Load {
+    char url[200];
+    WTF::MonotonicTime sent, answered;
+    int status = 0;
+    bool answeredYet = false;
+};
+
+bool tracing = false;
+
 struct View {
     int id = 0;
     WKViewRef view = nullptr;
@@ -88,6 +110,12 @@ struct View {
     char crashedAddress[2048] { };
     WKViewRef inspector = nullptr;  // its Web Inspector's view, while docked
     bool toInspector = false;       // input goes to the inspector's page
+
+    // Its page's load, while traced (`webkit_trace`): the requests not yet
+    // ended, and how the ones that did went.
+    Vector<struct Load> loads;
+    WTF::MonotonicTime traceFrom, lastReport;
+    unsigned loadsDone = 0, loadsFailed = 0;
 };
 
 /*
@@ -235,6 +263,11 @@ void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListener
         }
         view->asked = true;
         view->askedAt = WTF::MonotonicTime::now();
+        if (mainFrame) {
+            view->traceFrom = view->lastReport = view->askedAt;
+            view->loads.clear();
+            view->loadsDone = view->loadsFailed = 0;
+        }
         told(view, WEBKIT_ASKED);
     }
     WKFramePolicyListenerUse(listener);
@@ -251,9 +284,12 @@ void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     told(viewOf(info), WEBKIT_COMMITTED);
 }
 
+void traceSummary(View*, const char* how);
+
 void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
     auto* view = viewOf(info);
+    traceSummary(view, "finished");
     view->loading = false;
     view->asked = false;
     told(view, WEBKIT_FINISHED);
@@ -262,6 +298,7 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void* info)
 {
     auto* view = viewOf(info);
+    traceSummary(view, "failed");
     view->error = error ? WKErrorGetErrorCode(error) : 0;
     view->loading = false;
     view->asked = false;
@@ -399,6 +436,170 @@ void copy(WKStringRef string, char* into, size_t room)
     }
 }
 
+double since(const View* view, WTF::MonotonicTime when)
+{
+    return (when - view->traceFrom).milliseconds();
+}
+
+void urlInto(WKURLRef url, char* into, size_t room)
+{
+    auto string = url ? adoptWK(WKURLCopyString(url)) : nullptr;
+    copy(string.get(), into, room);
+}
+
+// The oldest request for this address not yet ended.
+Load* loadOf(View* view, WKURLRef url)
+{
+    char at[sizeof(Load::url)];
+    urlInto(url, at, sizeof at);
+    for (auto& load : view->loads) {
+        if (!strcmp(load.url, at))
+            return &load;
+    }
+    return nullptr;
+}
+
+void loadSent(const void* info, WKPageRef, WKURLRequestRef request)
+{
+    if (!tracing)
+        return;
+    auto* view = viewOf(info);
+    Load load;
+    auto url = adoptWK(WKURLRequestCopyURL(request));
+    urlInto(url.get(), load.url, sizeof load.url);
+    load.sent = WTF::MonotonicTime::now();
+    view->loads.append(load);
+}
+
+void loadAnswered(const void* info, WKPageRef, WKURLRef url, WKURLResponseRef response)
+{
+    if (!tracing)
+        return;
+    if (auto* load = loadOf(viewOf(info), url)) {
+        load->answered = WTF::MonotonicTime::now();
+        load->answeredYet = true;
+        load->status = response ? WKURLResponseHTTPStatusCode(response) : 0;
+    }
+}
+
+void loadEnded(const void* info, WKPageRef, WKURLRef url, WKURLResponseRef response, WKErrorRef error)
+{
+    if (!tracing)
+        return;
+    auto* view = viewOf(info);
+    auto* load = loadOf(view, url);
+    if (!load)
+        return;
+    auto now = WTF::MonotonicTime::now();
+    int status = load->status ? load->status : (response ? WKURLResponseHTTPStatusCode(response) : 0);
+    double first = load->answeredYet ? (load->answered - load->sent).milliseconds() : -1;
+    fprintf(stderr, "webkit: load view %d at %6.0f ms, first byte %6.0f, took %6.0f, %3d%s%d %s\n",
+           view->id, since(view, load->sent), first, (now - load->sent).milliseconds(), status,
+           error ? " error " : "", error ? WKErrorGetErrorCode(error) : 0, load->url);
+    if (error)
+        view->loadsFailed++;
+    else
+        view->loadsDone++;
+    view->loads.removeFirstMatching([&](const Load& each) { return &each == load; });
+}
+
+// What has not ended, oldest first, at most a dozen of them.
+void tracePending(View* view, WTF::MonotonicTime now)
+{
+    unsigned shown = 0;
+    for (auto& load : view->loads) {
+        if (shown++ == 12)
+            break;
+        fprintf(stderr, "webkit:   waiting %6.0f ms, %s %s\n", (now - load.sent).milliseconds(),
+               load.answeredYet ? "answered" : "no answer", load.url);
+    }
+}
+
+/*
+ * **Where a page's time went, by the page's own clock**: the Navigation,
+ * Resource and Paint Timing that WebKit keeps for every page - a request's
+ * name lookup, connection, TLS, wait for its first byte and download; the
+ * page's own, its DOM ready and its load; its first paint - asked of the
+ * page as a script and said in the log, a line a part. Times are ms from
+ * the navigation's start. A request from another site that does not allow
+ * it (`Timing-Allow-Origin`) has its total and nothing finer: "hidden".
+ */
+const char* TIMING_SCRIPT = R"JS((function () {
+  function ms(x) { return Math.round(x || 0); }
+  function d(a, b) { return a > 0 && b > a ? b - a : 0; }      // a phase, never negative
+  function phases(e) {
+    return "dns " + ms(d(e.domainLookupStart, e.domainLookupEnd))
+      + " connect " + ms(d(e.connectStart, e.connectEnd))
+      + " tls " + ms(d(e.secureConnectionStart, e.connectEnd))
+      + " wait " + ms(d(e.requestStart, e.responseStart))
+      + " download " + ms(d(e.responseStart, e.responseEnd));
+  }
+  var out = [];
+  var n = performance.getEntriesByType("navigation")[0];
+  if (n) {
+    out.push("page " + phases(n) + ", first byte at " + ms(n.responseStart)
+      + ", dom ready at " + ms(n.domContentLoadedEventEnd) + ", loaded at " + ms(n.loadEventEnd)
+      + ", " + ms(n.transferSize / 1024) + " KB, " + (n.nextHopProtocol || "?"));
+  }
+  var paints = performance.getEntriesByType("paint").map(function (e) { return e.name + " at " + ms(e.startTime); });
+  out.push("paint " + (paints.join(", ") || "none yet"));
+  var r = performance.getEntriesByType("resource");
+  var sum = { dns: 0, connect: 0, tls: 0, wait: 0, download: 0 }, kinds = {}, bytes = 0, hidden = 0, fresh = 0, last = 0;
+  r.forEach(function (e) {
+    kinds[e.initiatorType] = (kinds[e.initiatorType] || 0) + 1;
+    bytes += e.transferSize || 0;
+    last = Math.max(last, e.responseEnd);
+    if (!e.requestStart) { hidden++; return; }
+    sum.dns += d(e.domainLookupStart, e.domainLookupEnd);
+    if (e.connectEnd > e.connectStart) fresh++;
+    sum.connect += d(e.connectStart, e.connectEnd);
+    sum.tls += d(e.secureConnectionStart, e.connectEnd);
+    sum.wait += d(e.requestStart, e.responseStart);
+    sum.download += d(e.responseStart, e.responseEnd);
+  });
+  out.push("requests " + r.length + ", " + ms(bytes / 1024) + " KB, last ended at " + ms(last)
+    + ", " + fresh + " on new connections, " + hidden + " hidden; "
+    + Object.keys(kinds).map(function (k) { return k + " " + kinds[k]; }).join(" "));
+  out.push("summed dns " + ms(sum.dns) + " connect " + ms(sum.connect) + " tls " + ms(sum.tls)
+    + " wait " + ms(sum.wait) + " download " + ms(sum.download));
+  r.slice().sort(function (a, b) { return b.duration - a.duration; }).slice(0, 8).forEach(function (e) {
+    out.push("slow " + ms(e.duration) + " from " + ms(e.startTime) + ", "
+      + (e.requestStart ? phases(e) : "hidden") + ", " + e.name.slice(0, 110));
+  });
+  return out.join("\n");
+})())JS";
+
+void timingsSaid(WKTypeRef result, WKErrorRef, void* context)
+{
+    int id = static_cast<int>(reinterpret_cast<intptr_t>(context));
+    if (!result || WKGetTypeID(result) != WKStringGetTypeID())
+        return;
+    static char text[16384];
+    copy(static_cast<WKStringRef>(result), text, sizeof text);
+    for (char* line = strtok(text, "\n"); line; line = strtok(nullptr, "\n"))
+        fprintf(stderr, "webkit: timing view %d: %s\n", id, line);
+}
+
+void askTimings(View* view)
+{
+    if (!view->options.scripts)
+        return;                     // a page that runs nothing is not asked
+    static WKStringRef script = WKStringCreateWithUTF8CString(TIMING_SCRIPT);
+    WKPageEvaluateJavaScriptInMainFrame(view->page, script,
+        reinterpret_cast<void*>(static_cast<intptr_t>(view->id)), timingsSaid);
+}
+
+void traceSummary(View* view, const char* how)
+{
+    if (!tracing)
+        return;
+    askTimings(view);
+    auto now = WTF::MonotonicTime::now();
+    fprintf(stderr, "webkit: load view %d %s at %.0f ms: %u requests ended, %u failed, %u still open\n",
+           view->id, how, since(view, now), view->loadsDone, view->loadsFailed, static_cast<unsigned>(view->loads.size()));
+    tracePending(view, now);
+}
+
 WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef, WKNavigationActionRef, WKWindowFeaturesRef, const void*);
 void closePage(WKPageRef, const void*);
 
@@ -438,6 +639,13 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     navigation.decidePolicyForNavigationAction = decidePolicy;
     navigation.didSameDocumentNavigation = didSameDocument;
     WKPageSetPageNavigationClient(view->page, &navigation.base);
+
+    WKPageResourceLoadClientV0 loads { };
+    loads.base = { 0, view.get() };
+    loads.didSendRequest = loadSent;
+    loads.didReceiveResponse = loadAnswered;
+    loads.didCompleteWithError = loadEnded;
+    WKPageSetResourceLoadClient(view->page, &loads.base);
 
     WKPageUIClientV8 ui { };
     ui.base = { 8, view.get() };
@@ -640,6 +848,11 @@ extern "C" void webkit_stop(int id)
     }
 }
 
+extern "C" void webkit_trace(int on)
+{
+    tracing = on;
+}
+
 extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
 {
     memset(out, 0, sizeof *out);
@@ -661,6 +874,17 @@ extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
         WTF::RunLoop::run();
         views.running = false;
         views.slice->stop();
+    }
+
+    // A traced page still loading: what it waits on, every five seconds.
+    if (tracing) {
+        auto now = WTF::MonotonicTime::now();
+        for (auto& each : views.all) {
+            if (each->loading && now - each->lastReport >= 5_s) {
+                each->lastReport = now;
+                traceSummary(each.get(), "still loading");
+            }
+        }
     }
 
     // A view in the dark that began, finished or ended: its caller draws

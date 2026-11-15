@@ -372,6 +372,10 @@ interrupt, through `blockproto.h` on endpoints of its own, which diskfs and
 drives learn to ask beside xHCI's; A3, `/Home` in a partition of its own on
 that disk, by its GUID as a stick's is (`opt/kosmos/home`), on space Diego
 frees in Windows - never formatting what is there; then the M700.
+**Asked again on 15 November 2026**, when JetSki's speed was found to be
+the stick (66.8 s of a 75 s load writing): "cant we just use part of the
+nvme drive for local storage instead of the usb drive?" - the M700's drive
+is SATA, so this is A2 and A3, next after grouped commits in diskfs.
 
 **A VNC client: the Mac's screen in a Kosmos window** - Diego, 12 October
 2026: "is there any way we can create a quick vnc client for kosmos so i can
@@ -10609,6 +10613,94 @@ the applications make the system useful, and is not pulled forward.
       **W1 built in 0.11.435** (`testing.md` 18.831). **W2 built in
       0.11.436** (18.833): `/Kosmos/Kits/webkit`, views with `scripts` and
       `follow`; JetSki's tabs are views.
+    - *JetSki's speed* (Diego, 15 November 2026: "i find the jetski
+      browser really slow to use and load pages", "we need to work on
+      speed"; on the M700 a page stuck at 90%). What is known to cost,
+      from the code, none of it yet measured against a page's load:
+      (1) **no disk cache** - every visit fetches everything (below);
+      (2) **no HTTP/2** - nghttp2 is not built (`docs/w5.md`), so a page's
+      hundred requests share six HTTP/1.1 connections a host, each a
+      round trip at a time; (3) **a 64 KB receive window** a connection
+      (below); (4) **JavaScript without its JIT** - JavaScriptCore runs in
+      its interpreter, several times slower on script-heavy sites (the
+      JIT is on this list); (5) painting in software, no compositing.
+      **First a measure**: a page's load timed on the M700 with each
+      request's start, wait and end from WebKit (Web Inspector's Network
+      panel already has them), so the order of the fixes is the
+      measurement's and not this list's. A page that never finishes is a
+      request that never ends, and the same timeline names it.
+      **Measured, the same day, on the M700** (the trace and the page's
+      own Navigation, Resource and Paint Timing in `log jetski`, a
+      `profile`, QEMU's packets): The Verge's first paint came at 33 s
+      and its load at 80 s; its own CSS waited 20-26 s for a first byte on
+      connections already open; and through 45 s of it the machine was
+      **98.7% idle**. Not the list above. Ruled out by measuring: name
+      lookups (about ten, under a second in all), curl's thread (it never
+      slept 200 ms with a transfer in hand), the wire (in QEMU's capture a
+      response arrives within milliseconds; the waits are all this side's,
+      before it sends its next request). **What the time was: the disk.**
+      The network process's main thread keeps cookies, IndexedDB,
+      LocalStorage and the alt-svc cache in SQLite on `/Home`, which on
+      the M700 is a USB stick; one load of The Verge made 116 journals,
+      238 syncs and 314 lock files for cookies alone (counted in QEMU),
+      and on the M700 those operations took 112 s together - a write's
+      median 28 ms, a `stat` of `/Home` 99 ms, and every kind of
+      operation stopping at times for 2.5-2.9 s at once, which looks like
+      the disk server held behind something of its own. Every request
+      waits behind that thread. **And the disk server's own counters
+      (`/Home/.device`) across one load of The Verge: 66.8 s of 75 spent
+      writing - 15,338 writes to the stick, 89 MB, 4.4 ms each - for a
+      page that downloads 2.5 MB.** Every file write is a transaction of
+      its own, committed at once, its data journalled: the blocks into the
+      journal, the commit, the blocks where they belong, the header
+      cleared - a 4 KB page of SQLite's is four or more writes and about
+      eight blocks, and SQLite writes thousands. To do, in order: (a) the
+      disk's writing - grouped commits (a write answered from memory, a
+      transaction committed on `fsync` or after a short while, as ext4's
+      five seconds; the journal keeps each group whole), and a `stat` or
+      read answered while the stick writes - Diego's decision before it is
+      built; (b) why `cookies.db` itself was
+      deleted nine times in that load on the M700 and never in QEMU -
+      WebKit's `CookieJarDB` deletes it when it cannot open it or thinks
+      it corrupt, which throws every cookie away and is the likeliest
+      reason Google's sign-in says cookies are disabled (below); (c) then
+      the list above, measured again.
+    - *Our TCP sends every data segment twice* (seen 15 November 2026 in
+      QEMU's capture of a live page: the same sequence numbers 0.4 ms
+      apart, every segment the guest sends; ACKs are single). Twice the
+      bytes out, and a peer's duplicate ACKs. To be found in the stack's
+      send path, with a check in `x86-tcploss` or a suite of its own.
+    - *`systemapps` took an image for the one it had* (15 November 2026):
+      a package's `build` is `git describe`, the same for every rebuild of
+      a tree with changes not committed, so a machine kept the old WebKit.
+      Packages now carry `sums`, one digest of their files, and
+      `systemapps` and `packages.current` compare it; the M700 has the
+      fix from its next netboot.
+    - *JetSki downloads at 110 Mbps where the Mac gets 730* (Diego, 15
+      November 2026, fast.com on both, the same switch). The likeliest
+      bound, from reading, not yet measured: a connection's receive ring
+      is 64 KB unless it asks for more (`ring_bytes_for`, `SO_RCVBUF`), and
+      curl never asks, so each of WebKit's connections carries at most
+      64 KB a round trip - about 50 Mbps at 10 ms to a CDN; fast.com's few
+      connections together make about 110. The stack itself has done 52
+      MB/s (416 Mbps) across the room (18.533). To measure first: one
+      download with the ring at 64 KB and at 4 MB.
+    - *Google's sign-in says "Cookies are disabled"* (Diego, 15 November
+      2026, signing in to Gmail in JetSki: accounts.google.com/v3/signin/
+      rejected). Google search's cookies work (0.11.418), so this is a
+      cookie the sign-in sets and does not get back - a `__Host-` or
+      `Secure` one, `SameSite=None`, one set on a redirect, or
+      `navigator.cookieEnabled`. To be found on the M700 with the network
+      process's log of what it was given and what it sent.
+      **Ruled out the same afternoon**, in QEMU against a server on the
+      Mac: `navigator.cookieEnabled` is true; cookies set by script, by a
+      page and on a 302 - session, lasting, `SameSite=None`, `Lax`,
+      `HttpOnly` - all come back, on navigations, `fetch`, a POST and
+      `XMLHttpRequest`; Google's own sign-in page leaves `__Host-GAPS`,
+      `OTZ` and `NID` in `cookies.db`. (httpbin.org and postman-echo.com
+      lose theirs, rightly: both are in the public suffix list's private
+      section.) What is left is Google's next step, which needs an address
+      typed - to be watched on the M700 with Diego.
     - *`x86-film` fails under a full gate's load* (found 15 November
       2026, 0.11.435 and 0.11.436): alone it passes every time; in the
       gate it failed twice running - once a 3.00 s film clocked at

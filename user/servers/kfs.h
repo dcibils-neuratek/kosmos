@@ -232,6 +232,22 @@ struct kfs {
     uint32_t freed_runs;
     struct kfs_extent freed[KFS_FREED_RUNS];
 
+    /*
+     * **A step of a group** (`kfs_step`, `docs/diskfs.md`, *Grouped
+     * commits*): where the transaction stood when the step began - how
+     * many blocks it held and how many freed runs - and, for each block
+     * held from before the step that the step changed, what it was, so
+     * a step that fails leaves the group exactly as it found it.
+     * `saved_slot` lists which `undo` slots are filled.
+     */
+    bool stepping;
+    uint32_t mark_held;
+    uint32_t mark_freed;
+    uint32_t saved_n;
+    uint32_t saved_slot[KFS_TXN_MAX];
+    bool saved[KFS_TXN_MAX];
+    uint8_t undo[KFS_TXN_MAX][KFS_BLOCK];
+
     /* A directory's entries, without the empty ones, while it is used. */
     uint32_t dir_len;
     uint8_t dir[KFS_DIR_ROOM];
@@ -316,6 +332,19 @@ int kfs_recover(struct kfs *k, const struct kfs_super *sb, uint32_t *replayed);
 
 int kfs_begin(struct kfs *k);
 void kfs_rollback(struct kfs *k);
+
+/*
+ * **Grouped commits** (`docs/diskfs.md`, *Grouped commits*; Diego, 15
+ * November 2026): many operations in one transaction, committed together.
+ * `kfs_step` begins one more operation in the transaction - opening it
+ * when none is - and `kfs_step_undo` takes back everything that operation
+ * did, the blocks it changed and the runs it freed, leaving what the steps
+ * before it did. `kfs_commit` commits them all. A step that would not fit
+ * beside the others fails `KFS_E_TOO_BIG` as a transaction does; its
+ * owner undoes it, commits the rest, and tries it again alone.
+ */
+int kfs_step(struct kfs *k);
+void kfs_step_undo(struct kfs *k);
 
 /* `stop_after_commit` returns once the commit has landed and before any of
  * it is where it belongs - the instant a power cut cannot be aimed at, for

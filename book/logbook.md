@@ -3505,3 +3505,29 @@ stops the test when its line is not there.
 and the command prompt - the system's own image - is told there is no
 kit called `webkit`, so the kit lives in WebKit's image alone. Five
 broken builds each fail only their own checks.
+
+## 15 November 2026 - The browser was waiting on the disk
+
+**In short.** JetSki felt slow because the USB stick was slow to write,
+not because the browser was. Kosmos used to write every small change to
+the disk and wait for it to land. Now it groups changes and writes them
+together, about once a second or whenever a program asks for its data to
+be safe. Forty small files now take 81 writes to the stick instead of 286.
+
+**What happened.** Diego found JetSki too slow to use. Timing added to
+the browser showed pages waiting tens of seconds for files from a server
+that had already answered, while the processor sat 98.7% idle. Counting
+the disk's writes showed the cause: over one page load the stick spent
+67 of 75 seconds writing. A browser writes constantly: cookies, saved
+site data, its databases. Kosmos's filesystem committed each of those
+writes on its own, and told the stick to flush every time.
+
+**Why grouping is safe.** Every mainstream system does the same thing
+with a page cache. A program that needs its data on the disk asks for it
+(`fsync`), and that still works exactly as before. A power cut can lose
+the last second's changes, but it can never break the filesystem,
+because a group is written whole or not at all.
+
+**What it changes.** Fewer, larger writes to the stick. How much faster
+pages load on the M700 is not measured yet: that needs the machine
+booted with this build.
