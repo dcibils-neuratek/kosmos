@@ -4257,10 +4257,12 @@ $(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(CA_ROOTS_OBJ)
 	    || { echo "apps: the system's image has WebKit2 in it"; rm -f $@; exit 1; }
 
 #
-# **JetSki's image** (`docs/w7.md` W7c): the browser, installed in
-# `/Home/System/Apps/JetSki` beside `jetski.lua`, seen as `/Kosmos/Apps/JetSki` - WebKit2's UI process as a kit
-# (`jetski.cpp`), and again as each page's web process and as the network
-# process. Linked as `webkit2test.elf` is, and held to the same promises.
+# **Kosmos's WebKit image** (`docs/w7.md` W7c, `docs/mailweb.md` W1):
+# `webkit.elf`, installed in `/Home/System/WebKit` with Web Inspector's
+# pages and seen as `/Kosmos/WebKit`, the image JetSki runs in (`-- kosmos:
+# image webkit`) - WebKit2's UI process as a kit (`jetski.cpp`), and again
+# as each page's web process and as the network process. Linked as
+# `webkit2test.elf` is, and held to the same promises.
 #
 JETSKI_OBJS := $(UBUILD)/user/installed/JetSki/jetski.cpp.o \
                $(UBUILD)/user/installed/JetSki/jetski_kit.c.o
@@ -4274,7 +4276,7 @@ $(UBUILD)/user/installed/JetSki/jetski.cpp.o: user/installed/JetSki/jetski.cpp \
 	    -isystem $(WEBKIT_DIR)/WebKit/Headers -isystem $(ICU_DIR)/include \
 	    -isystem user/include -iquote kernel -c $< -o $@
 
-$(UBUILD)/apps/jetski.elf: $(USER_OBJS) $(JETSKI_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
+$(UBUILD)/apps/webkit.elf: $(USER_OBJS) $(JETSKI_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
         $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) $(WEBCORE_W5_LIBS) $(ICU_LIBS) \
         $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
 	@mkdir -p $(dir $@)
@@ -4283,7 +4285,7 @@ $(UBUILD)/apps/jetski.elf: $(USER_OBJS) $(JETSKI_OBJS) $(CA_ROOTS_OBJ) $(POSIX_O
 	    $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) \
 	    $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
 	@$(NM) $@ | grep -q ' T kosmos_jetski_kit$$' \
-	    || { echo "apps: jetski.elf does not have its kit"; rm -f $@; exit 1; }
+	    || { echo "apps: webkit.elf does not have its kit"; rm -f $@; exit 1; }
 	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_jetski_kit|kosmos_webkit_role)$$' \
 	    || { echo "apps: the system's image has JetSki in it"; rm -f $@; exit 1; }
 
@@ -4460,7 +4462,7 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
 WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf $(UBUILD)/apps/webkit2test.elf \
-                 $(UBUILD)/apps/jetski.elf)
+                 $(UBUILD)/apps/webkit.elf)
 
 .PHONY: apps app-images
 apps:
@@ -5992,7 +5994,7 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	else \
 	    $(HOSTDIR)/test_elfimage; \
 	fi
-	@for image in $(UBUILD)/init.elf build/installed/x86_64/jetski.elf; do \
+	@for image in $(UBUILD)/init.elf build/installed/x86_64/webkit.elf; do \
 	    [ -f $$image ] || continue; \
 	    x86_64-elf-readelf -sW $$image | awk '$$4=="FUNC" {print $$2, $$3, $$8}' \
 	        > $(HOSTDIR)/debug-functions.txt || exit 1; \

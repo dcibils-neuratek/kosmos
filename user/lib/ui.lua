@@ -2441,7 +2441,26 @@ local function field_width(self, text)
   return gfx.measure(field_view(self, text))
 end
 
+--
+-- **A field's places, inside its text**: the caret, the anchor and where
+-- the shown text starts are byte places, and a window may set `text` under
+-- them - JetSki gives the address field a new tab's empty address while the
+-- caret is still at the end of the last one's. `utf8.offset` refuses a place
+-- past the end, and on the M700 that ended JetSki at the next paint (15
+-- November 2026). So every way into a field - drawing it, a key, the
+-- pointer - brings them inside first, rather than each window remembering
+-- to with `set_text`.
+--
+local function field_within(self)
+  local n = #self.text + 1
+
+  self.caret = math.max(1, math.min(self.caret or n, n))
+  if self.anchor then self.anchor = math.max(1, math.min(self.anchor, n)) end
+  if self.from then self.from = math.max(1, math.min(self.from, n)) end
+end
+
 local function field_from(self, room)
+  field_within(self)
   local text, caret = self.text, self.caret
   local from = math.max(1, math.min(self.from or 1, caret))
 
@@ -2667,6 +2686,7 @@ function ui.field(spec)
   end
 
   function v:key(c)
+    field_within(self)
     --
     -- Anything at all ends the selection, and a key that puts a character
     -- in replaces what was selected first.
@@ -2858,6 +2878,7 @@ function ui.field(spec)
   end
 
   function v:mouse(action, x, y)
+    field_within(self)
     if action == "press" then
       local now, at = sys.ticks(), place_at(self, x)
 

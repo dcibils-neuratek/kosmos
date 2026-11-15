@@ -12,6 +12,14 @@ release. Then, with QEMU's own pointer and keyboard:
   Control-Shift-Left               the b's and " cc"
   x                                typed over the selection
   Home, Shift-End, Delete          nothing left
+  #, then $                        the window gives it 300 w's, so it
+                                   scrolls, then empties `text` under
+                                   the caret, as JetSki does when tabs
+                                   switch; q typed must leave "q"
+
+The last is what ended JetSki on the M700 on 15 November: the caret and
+the shown start stayed past the end of the new text, and `utf8.offset`
+refused them at the next paint.
 
 Before 9 November a field had select-all and nothing else, so every one
 of these said no selection.
@@ -38,7 +46,10 @@ PROBE = (
     "local function tell(how) local a, b if f.selection then a, b = f:selection() end "
     "print(('fsel ' .. '%%s %%d %%d %%d|%%s'):format(how, a or 0, b or 0, f.caret, f.text)) end "
     "local k, m = f.key, f.mouse "
-    "function f:key(c) local r = k(self, c) tell('key') return r end "
+    "function f:key(c) "
+    "if c == 35 then self:set_text(string.rep('w', 300)) tell('key') return true end "
+    "if c == 36 then self.text = '' tell('key') return true end "
+    "local r = k(self, c) tell('key') return r end "
     "function f:mouse(a, x, y) local r = m(self, a, x, y) "
     "if a ~= 'move' then tell(a) end return r end "
     "win:add(f) win:focus_on(f) win:run()"
@@ -164,6 +175,18 @@ def main():
             got = last(mark)
             check(got and got[3] == "",
                   "Home, Shift-End and Delete did not empty the field: %r" % (got,))
+
+            # A long text, drawn scrolled, then emptied under the caret.
+            mark = len(guest.seen)
+            guest.sendkey("shift-3")
+            time.sleep(0.8)
+            guest.sendkey("shift-4")
+            time.sleep(0.8)
+            guest.sendkey("q")
+            got = last(mark)
+            check(got and got[3] == "q" and "bad argument" not in guest.seen[mark:],
+                  "a field emptied under its caret did not take q: %r %r"
+                  % (got, re.findall(r"[^\r\n]*bad argument[^\r\n]*", guest.seen[mark:])))
     finally:
         if failed:
             print(guest.seen[-3000:])

@@ -10602,9 +10602,11 @@ the applications make the system useful, and is not pulled forward.
       `docs/mailweb-architecture.png`. Steps: W1 the WebKit image, W2 views
       (JetSki's tabs become views), W3 a page from a string without scripts
       and with `cid:`, W4 remote loads held (content extensions turned on),
-      W5 Mail's pane on it, W6 NetSurf out of Mail. **Two of Diego's before
-      W1**: where the image lives (`/Kosmos/WebKit` recommended) and where a
-      link opens (a tab of the open JetSki recommended).
+      W5 Mail's pane on it, W6 NetSurf out of Mail. **Diego's two, the same
+      day**: the image lives in `/Kosmos/WebKit` ("/Kosmos/WebKit"), and a
+      link opens in a new tab of the open JetSki, or a new JetSki when none
+      is ("Tab of open JetSki").
+      **W1 built in 0.11.435** (`testing.md` 18.831).
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's

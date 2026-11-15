@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""What the build installs into /Home/Apps, /Home/System/Apps, /Home/Fonts and
-/Home/Developer, as `host:/Home/path` pairs.
+"""What the build installs into /Home/Apps, /Home/System/Apps,
+/Home/System/WebKit, /Home/Fonts and /Home/Developer, as `host:/Home/path`
+pairs.
 
     python3 tools/installed.py aarch64 ~/Kosmos/home
     python3 tools/installed.py x86_64  ~/Kosmos/home
@@ -46,6 +47,15 @@ APPS = "/Home/Apps"
 SYSTEM = {"JetSki"}
 SYSTEM_APPS = "/Home/System/Apps"
 
+# **Kosmos's WebKit, on the disk** (Diego, 15 November 2026: "One WebKit
+# image", in "/Kosmos/WebKit"; `docs/mailweb.md` W1): the image JetSki and
+# Mail both run in, `webkit.elf`, and Web Inspector's pages, in a folder of
+# their own, seen read only as /Kosmos/WebKit. A program's header names it
+# `-- kosmos: image webkit` - a system image, `IMAGES.SYSTEM` in `init.lua` -
+# so it is not looked for beside the program. A `system` package of its own.
+WEBKIT = "/Home/System/WebKit"
+SYSTEM_IMAGES = {"webkit": "webkit.elf"}
+
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
     "Quake": [("id1/pak0.pak", "id1/pak0.pak")],
@@ -53,14 +63,45 @@ DATA = {
 
 
 def inspector():
-    """JetSki's Web Inspector, its front end's pages (`tools/inspector.py`)."""
+    """WebKit's Web Inspector, its front end's pages (`tools/inspector.py`)."""
     import inspector as front_end
 
     return [(host, "Inspector/" + inside) for host, inside in front_end.files()]
 
 
 # What the build makes for an application's folder besides its image.
-MADE = {"JetSki": inspector}
+MADE = {}
+
+
+def stripped(image, apps, staged, objcopy):
+    """`image` from `apps`, stripped of its debugging sections into `staged`."""
+    built = os.path.join(apps, image)
+
+    if not os.path.exists(built):
+        sys.exit("installed: no %s - `make apps` (and ARCH=x86_64) builds it" % built)
+
+    os.makedirs(staged, exist_ok=True)
+    out = os.path.join(staged, image)
+    subprocess.run([objcopy, "--strip-debug", built, out], check=True)
+    return out
+
+
+def webkit(arch, apps, staged, objcopy):
+    """/Home/System/WebKit's pairs: the image, Web Inspector, and the folder's
+    `package.txt`. x86-64 only, as WebCore is (`ONLY`)."""
+    if arch != "x86_64":
+        return []
+
+    import packages
+
+    mine = [(stripped("webkit.elf", apps, staged, objcopy), "webkit.elf")] + inspector()
+    manifest = os.path.join(staged, "WebKit.package.txt")
+
+    with open(manifest, "w") as f:
+        f.write(packages.manifest(packages.webkit_facts(), mine))
+
+    mine.append((manifest, "package.txt"))
+    return ["%s:%s/%s" % (here, WEBKIT, inside) for here, inside in mine]
 
 
 def image_of(program):
@@ -106,16 +147,9 @@ def pairs(arch, home, apps=None):
         program = os.path.join(folder, name.lower() + ".lua")
         image = os.path.exists(program) and image_of(program)
 
-        if image:
-            built = os.path.join(apps, image)
-
-            if not os.path.exists(built):
-                sys.exit("installed: no %s - `make apps` (and ARCH=x86_64) builds it" % built)
-
-            os.makedirs(staged, exist_ok=True)
-            stripped = os.path.join(staged, image)
-            subprocess.run([objcopy, "--strip-debug", built, stripped], check=True)
-            mine.append((stripped, image))
+        # A system image is not beside its program: it is WebKit's folder's.
+        if image and image not in SYSTEM_IMAGES:
+            mine.append((stripped(image, apps, staged, objcopy), image))
 
         if name in MADE:
             mine.extend(MADE[name]())
@@ -140,7 +174,7 @@ def pairs(arch, home, apps=None):
 
         out.extend("%s:%s/%s" % (here, guest, inside) for here, inside in mine)
 
-    return out
+    return out + webkit(arch, apps, staged, objcopy)
 
 
 def fonts():

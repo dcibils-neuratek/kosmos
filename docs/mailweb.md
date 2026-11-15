@@ -210,10 +210,11 @@ unchanged once JetSki stands on views.
 6. **W6, NetSurf out of Mail.** Then step two of the browser change, the
    old browser removed, has nothing left standing on NetSurf.
 
-## Yours to decide
+## Decided
 
-1. **Where the image lives**: `/Kosmos/WebKit`, a folder of its own beside
-   Apps, Kits and Libraries (recommended). Or JetSki's folder, with Mail
-   naming JetSki's image, which makes Mail depend on an application.
-2. **Where a link opens**: a new tab of the JetSki that is open, or a new
-   JetSki when none is (recommended). Or always a new JetSki window.
+Diego, 15 November 2026, both as recommended:
+
+1. **The image lives in `/Kosmos/WebKit`**, a folder of its own beside
+   Apps, Kits and Libraries, so Mail does not depend on an application.
+2. **A link opens in a new tab of the JetSki that is open**, or in a new
+   JetSki when none is.

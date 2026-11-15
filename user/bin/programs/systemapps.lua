@@ -11,6 +11,9 @@
 -- disk in /Home/System/Apps/JetSki and every program sees it, read only, as
 -- /Kosmos/Apps/JetSki (`ns.SYSTEM_APPS`). A stick's build writes it there
 -- with its `package.txt`, so a stick's is its own build's already.
+-- **And Kosmos's WebKit** (`docs/mailweb.md` W1), the image JetSki and Mail
+-- run in, in /Home/System/WebKit, seen as /Kosmos/WebKit: a `system`
+-- package as JetSki is, and brought the same way.
 --
 -- **A netboot brings the rest of the system and not the disk**, so the
 -- copy there is whatever the last stick or netboot left. Started by the
@@ -28,6 +31,7 @@ local ipv4 = use("/Kosmos/Libraries/ipv4.lua")
 local packages = use("/Kosmos/Libraries/packages.lua")
 
 local HERE = "/Home/System/Apps"
+local WEBKIT = "/Home/System/WebKit"
 local ADDRESS_S = 60                      -- seconds to wait for DHCP's answer
 
 local function say(line)
@@ -61,13 +65,20 @@ end
 local server = packages.server()
 
 if not server then
+  local folders = {}
+
   for _, entry in ipairs(fs.list(HERE) or {}) do
-    local name = tostring(type(entry) == "table" and entry.name or entry)
-    local why = stale(on_disk(files.join(HERE, name)))
+    folders[#folders + 1] = files.join(HERE, tostring(type(entry) == "table" and entry.name or entry))
+  end
+
+  if fs.getattr(WEBKIT) then folders[#folders + 1] = WEBKIT end
+
+  for _, folder in ipairs(folders) do
+    local why = stale(on_disk(folder))
 
     if why then
       say(("%s is %s, with no server to bring this build's from - write the stick "
-           .. "again, or netboot"):format(name, why))
+           .. "again, or netboot"):format(folder:match("([^/]+)$"), why))
     end
   end
 

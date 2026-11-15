@@ -1,7 +1,9 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * The door to `jetski.cpp` (`docs/w7.md` W7c): a kit in no image but
- * `jetski.elf`, reached as `use("jetski.elf")` by `jetski.lua`.
+ * Kosmos's WebKit image, `webkit.elf` (`docs/mailweb.md` W1), reached as
+ * `use("jetski.elf")` by `jetski.lua` - the kit's name, not the file's,
+ * until it becomes `/Kosmos/Kits/webkit` (W2).
  *
  *   open(w, h)                   the page's view; true, or nil and why
  *   resize(w, h)

@@ -6,7 +6,8 @@
 -- kosmos: section applications
 -- kosmos: needs network
 -- kosmos: about WebKit on Kosmos: the web as Safari draws it
--- kosmos: image jetski.elf
+-- kosmos: image webkit
+-- kosmos: depends webkit
 -- kosmos: opens html htm
 --
 --   wm jetski                              the start page
@@ -31,9 +32,12 @@
 -- process and as the network process - and this file, the window around
 -- them. Kosmos's own application, kept on the disk because it is too big
 -- for the image (Diego, 15 November 2026: "/Home/System, seen as /Kosmos"):
--- this file and `jetski.elf` in `/Home/System/Apps/JetSki`, which every
--- program sees, read only, as `/Kosmos/Apps/JetSki`; the system's image
--- carries none of it.
+-- this file in `/Home/System/Apps/JetSki`, which every program sees, read
+-- only, as `/Kosmos/Apps/JetSki`; the system's image carries none of it.
+-- **The image it runs in is Kosmos's WebKit** (Diego, 15 November 2026:
+-- "One WebKit image", in "/Kosmos/WebKit"), which Mail runs in too:
+-- `webkit.elf` in `/Kosmos/WebKit`, named by `-- kosmos: image webkit`
+-- (`docs/mailweb.md`).
 --
 -- **A window that draws its own pixels** (`gfx.md` 19.4), as the NetSurf
 -- browser's is: the kit's widgets - back, forward, reload and the address
@@ -115,9 +119,9 @@ end
 -- and all. Left at nought, a site's robot check reads it as no window.
 web.frame(X, Y, W, H)
 
--- Web Inspector's pages, in the folder beside this file (`tools/inspector.py`).
-local HERE = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Kosmos/Apps/JetSki"
-web.inspector_files(HERE .. "/Inspector")
+-- Web Inspector's pages, WebKit's own, in its folder (`tools/inspector.py`).
+local WEBKIT = "/Kosmos/WebKit"
+web.inspector_files(WEBKIT .. "/Inspector")
 web.developer(DEVELOPER)
 
 --------------------------------------------------------------------------
@@ -412,7 +416,7 @@ end
 -- the 7 MB of symbols to be read; the kit's table given back after.
 local have_debug, debugkit = pcall(use, "/Kosmos/Kits/debug")
 if not have_debug or type(debugkit) ~= "table" then debugkit = nil end
-local IMAGE = HERE .. "/jetski.elf"
+local IMAGE = WEBKIT .. "/webkit.elf"
 local named = {}                     -- an address -> its function's name, or false
 
 local function look_up(pc)
@@ -438,7 +442,7 @@ local function crash_rows(c)
   elseif c.fault then
     rows[#rows + 1] = { "fault", fault_words(c) }
     rows[#rows + 1] = { "address", address_words(c) }
-    rows[#rows + 1] = { "at", hex(c.pc) .. " in jetski.elf" }
+    rows[#rows + 1] = { "at", hex(c.pc) .. " in webkit.elf" }
     rows[#rows + 1] = { "in", function_of(c.pc) }
     rows[#rows + 1] = { "thread", ("%d, stack pointer %s"):format(c.thread, hex(c.sp)) }
   else

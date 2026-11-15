@@ -76,7 +76,16 @@ local IMAGES = { WINDOW = 256 * 1024, made = {}, window = nil,
                  -- Where it says so when it makes one: Lua's `print`, which
                  -- reaches the log from any program; the shell writes to its
                  -- console instead, and says so where it is typed.
-                 say = print }
+                 say = print,
+                 -- **A system image, named rather than placed** (Diego, 15
+                 -- November 2026: "One WebKit image", in "/Kosmos/WebKit"):
+                 -- `-- kosmos: image webkit` is the WebKit image JetSki and
+                 -- Mail both run in, kept on the disk and seen read only
+                 -- (`ns.mount_system_apps`). Only a name in this list is
+                 -- looked up this way, and the list is in the system's
+                 -- image, so a header cannot name a file a person put
+                 -- somewhere.
+                 SYSTEM = { webkit = "/Kosmos/WebKit/webkit.elf" } }
 
 -- The name in a program's header, or nil. The header is the comment its file
 -- opens with, blank lines and all.
@@ -181,6 +190,20 @@ function IMAGES.spawn(ns, path, role, caps, flags, pace)
     local id, why = sys.spawn(role, caps, flags)
 
     return id, id == nil and ("could not start a process for it: " .. tostring(why)) or nil
+  end
+
+  local file = IMAGES.SYSTEM[image]
+
+  if file then
+    local region, length = IMAGES.load(ns, file, pace)
+
+    if not region then return nil, length end
+
+    local id, why = sys.spawn_image(region, length, role, caps, flags)
+
+    if not id then return nil, image .. ": " .. tostring(why) end
+
+    return id
   end
 
   -- **Beside its program, or in the `build` folder beside it** - where the
@@ -618,12 +641,20 @@ local function new_namespace()
   -- `/Home/System` is still reachable through `/Home`, as all of `/Home` is
   -- to every program today (`layout.md` §3, *the column is the drawing*).
   --
+  -- **And Kosmos's WebKit** (Diego, 15 November 2026: "One WebKit image",
+  -- "/Kosmos/WebKit"): the image JetSki and Mail both run in, with Web
+  -- Inspector's pages, in `/Home/System/WebKit` and seen as `/Kosmos/WebKit`
+  -- (`docs/mailweb.md`). A program names it `-- kosmos: image webkit`
+  -- (`IMAGES.SYSTEM`).
+  --
   ns.SYSTEM_APPS = { "JetSki" }
 
   function ns.mount_system_apps(disk)
     for _, name in ipairs(ns.SYSTEM_APPS) do
       ns.mount("/Kosmos/Apps/" .. name, disk, "/Home/System/Apps/" .. name, "disk", nil, true)
     end
+
+    ns.mount("/Kosmos/WebKit", disk, "/Home/System/WebKit", "disk", nil, true)
   end
 
   --
@@ -3350,7 +3381,8 @@ local function new_namespace()
   --
   --
   -- **What a read-only mount refuses** - a system application's folder,
-  -- `/Kosmos/Apps/JetSki`, which is on the disk (`ns.mount_system_apps`):
+  -- `/Kosmos/Apps/JetSki`, or `/Kosmos/WebKit`, which are on the disk
+  -- (`ns.mount_system_apps`):
   -- anything that would change it, refused here with a sentence, before
   -- any server is asked.
   --

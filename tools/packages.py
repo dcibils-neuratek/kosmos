@@ -144,6 +144,15 @@ def app_facts(folder, into):
             "needs": words.get("needs", ""), "depends": words.get("depends", "")}
 
 
+def webkit_facts():
+    """Kosmos's WebKit's facts (`installed.WEBKIT`): no program of its own,
+    so no header to read them from. Its folder is its package's."""
+    return {"version": version(), "build": build_name(), "protocols": stamp(),
+            "name": "webkit", "title": "WebKit", "kind": "system",
+            "about": "The web engine JetSki and Mail draw pages with",
+            "into": I.WEBKIT, "icon": "", "needs": "", "depends": ""}
+
+
 def manifest(facts, pairs):
     """`package.txt` for `pairs` of (here, path inside): the facts, and a
     line a file. The same text a package carries and a stick's folder does,
@@ -192,8 +201,18 @@ def main():
     # Each application's files by its folder, wherever it goes: /Home/Apps,
     # or /Home/System/Apps for Kosmos's own. Its `package.txt` is made again
     # by `make`, so the one a stick's folder carries is left out.
+    webkit = []
+
     for pair in I.pairs("x86_64", home):
         here, guest = pair.split(":", 1)
+
+        # Kosmos's WebKit: its folder is the package's, with no folder above.
+        if guest.startswith(I.WEBKIT + "/"):
+            inside = guest[len(I.WEBKIT) + 1:]
+
+            if inside != "package.txt":
+                webkit.append((here, inside))
+            continue
 
         for into in (I.APPS, I.SYSTEM_APPS):
             if guest.startswith(into + "/"):
@@ -206,6 +225,9 @@ def main():
 
     for folder, into in sorted(apps):
         made.append(make(app_facts(folder, into), folder, apps[(folder, into)]))
+
+    if webkit:
+        made.append(make(webkit_facts(), "WebKit", webkit))
 
     dev = [(p.split(":", 1)[0], p.split(":", 1)[1][len("/Home/Developer/"):])
            for p in I.developer("x86_64")]

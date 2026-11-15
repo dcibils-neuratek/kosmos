@@ -3427,3 +3427,49 @@ Xavier's AI models.
 The file-types test checks that JetSki is listed as Kosmos's own. The
 package tests now run with a real disk, as every machine has, and check
 that a download leaves nothing behind.
+
+## 15 November 2026 - One WebKit, in /Kosmos/WebKit
+
+**In short.** The big program JetSki runs in is now Kosmos's WebKit,
+`webkit.elf`, in a folder of its own, `/Kosmos/WebKit`, read only like
+the rest of Kosmos. JetSki names it, and Mail will name it too, so there
+is one copy of the web engine on the machine, not one per application.
+
+**What.** `jetski.elf` was renamed `webkit.elf` and moved, with Web
+Inspector's pages, from JetSki's folder into `/Home/System/WebKit`,
+which every program sees as `/Kosmos/WebKit`. JetSki's folder now holds
+only JetSki's own Lua. A program's first lines say which image it runs
+in; JetSki's now say `image webkit`, a name rather than a file. Only
+names Kosmos itself lists can be used that way, so a program cannot
+point at a file somebody put somewhere else. WebKit is a package of its
+own, and a network boot brings it the way it brings JetSki.
+
+**Why.** Diego chose one WebKit image for Mail and JetSki to share, in a
+folder of its own, so Mail does not depend on an application being
+there. This is the first of six steps; the next turns JetSki's door into
+WebKit's, made of views, which Mail's message pane will be one of.
+
+**How it is tested.** The browser test installs WebKit in its new place,
+opens JetSki, and checks that both folders refuse writes. Its control
+puts the image back beside JetSki, where it used to be found, and JetSki
+must not start: it says `/Kosmos/WebKit/webkit.elf: not there`.
+
+## 15 November 2026 - A text field that outlived its text
+
+**In short.** JetSki stopped on the M700 a few seconds after switching to
+a new, empty tab. The address field still had its cursor at the end of
+the previous page's long address, and the next time it was drawn, Lua
+refused a position past the end of the now empty text. Every text field
+now brings its cursor back inside its text before it is drawn, typed in
+or clicked.
+
+**Why it happened.** A field's cursor is a position in its text. A window
+that changes the text by assigning it, as JetSki does when tabs switch,
+does not move the cursor. The field already guarded against that when
+it worked out a selection, but not where it works out which part of a
+long text to show.
+
+**How it is tested.** The field test now gives a field 300 characters,
+so it scrolls, then empties it underneath the cursor and types one
+letter. With the old code the window ends with the same error the M700
+showed; with the fix the field holds the letter.

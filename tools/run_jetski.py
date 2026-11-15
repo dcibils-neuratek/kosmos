@@ -5,7 +5,10 @@
 `x86-sites` says WebKit loads and paints pages with no window. This says
 the browser does it as an application a person opens: `wm jetski:<address>`
 from the shell, JetSki on the disk in /Home/System/Apps/JetSki and seen as
-/Kosmos/Apps/JetSki, read only, as Kosmos's own (Diego, 15 November), its window
+/Kosmos/Apps/JetSki, read only, as Kosmos's own (Diego, 15 November) - and
+the image it runs in Kosmos's WebKit, `webkit.elf` in /Home/System/WebKit,
+seen as /Kosmos/WebKit and named `-- kosmos: image webkit`
+(`docs/mailweb.md` W1) - its window
 opened, the page fetched from a server on this Mac and painted into the
 window's surface below the address field.
 
@@ -29,7 +32,9 @@ fails. `KOSMOS_JETSKI_BREAK=deaf` installs a `jetski.lua` whose page view
 hands WebKit nothing - the pointer, the wheel and keys reach the window
 and stop there - so the link is clicked and nothing comes of it; and
 `deaf-wheel` and `deaf-key` keep only the wheel or only the keys, so the
-link and the other still pass and that one fails.
+link and the other still pass and that one fails. `KOSMOS_JETSKI_BREAK=beside`
+puts `webkit.elf` beside `jetski.lua`, where an image was looked for before
+it had a name, and not in /Home/System/WebKit - so JetSki must not start.
 
 **And it keeps cookies**: the first page's answer sets one, with a
 lifetime, and its script sets another; the second page must be asked for
@@ -924,7 +929,7 @@ def cookies():
 
 
 def main():
-    built = os.path.join(APPS, "jetski.elf")
+    built = os.path.join(APPS, "webkit.elf")
     if not os.path.exists(built):
         print("FAIL: no %s - `make ARCH=x86_64 apps` builds it" % built)
         return 1
@@ -944,7 +949,7 @@ def main():
 
     global NAMED
     NAMED = named_function(built)
-    image = os.path.join(WORK, "jetski.elf")
+    image = os.path.join(WORK, "webkit.elf")
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
     lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
@@ -1026,14 +1031,15 @@ def main():
     with open(dropped_html, "wb") as f:
         f.write(DROPPED_HTML)
     files = [(lua, "/Home/System/Apps/JetSki/jetski.lua"),
-             (image, "/Home/System/Apps/JetSki/jetski.elf"),
+             (image, "/Home/System/Apps/JetSki/webkit.elf" if BROKEN == "beside"
+                     else "/Home/System/WebKit/webkit.elf"),
              (local_html, "/Home/Pages/local.html"),
              (local_js, "/Home/Pages/local.js"),
              (chosen_html, "/Home/Pages/a-chosen.html"),
              (dropped_html, "/Home/Pages/dropped.html")]
-    # Web Inspector's front end, as `installed.py` puts it beside JetSki.
+    # Web Inspector's front end, as `installed.py` puts it in WebKit's folder.
     import inspector
-    files += [(host, "/Home/System/Apps/JetSki/Inspector/" + inside) for host, inside in inspector.files()]
+    files += [(host, "/Home/System/WebKit/Inspector/" + inside) for host, inside in inspector.files()]
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],
@@ -1069,12 +1075,15 @@ def main():
     try:
         guest.wait_for(R.PROMPT, "the prompt")
         guest.wait_for("net: an address from DHCP", "a lease")
-        # Kosmos's own, on the disk: /Home/System/Apps/JetSki, seen by every
-        # program as /Kosmos/Apps/JetSki and read only there.
+        # Kosmos's own, on the disk: /Home/System/Apps/JetSki and
+        # /Home/System/WebKit, seen by every program as /Kosmos/Apps/JetSki
+        # and /Kosmos/WebKit, and read only there.
         mark = len(guest.seen)
         guest.type('local ok, why = fs.write("/Kosmos/Apps/JetSki/mine.txt", "x") '
-                   'print("SYS" .. "TEM " .. tostring(fs.getattr("/Kosmos/Apps/JetSki/jetski.elf") '
-                   '~= nil) .. " " .. tostring(ok) .. " " .. tostring(why))')
+                   'local ok2, why2 = fs.write("/Kosmos/WebKit/mine.txt", "x") '
+                   'print("SYS" .. "TEM " .. tostring(fs.getattr("/Kosmos/WebKit/webkit.elf") '
+                   '~= nil) .. " " .. tostring(ok) .. " " .. tostring(why) .. " | " '
+                   '.. tostring(ok2) .. " " .. tostring(why2))')
         guest.wait_for("SYSTEM ", "JetSki looked for in /Kosmos")
         time.sleep(0.5)
         guest._read_available()
@@ -1129,8 +1138,10 @@ def main():
                                                "; ".join(failed) or "loaded", picture))
         return 1 if failed else 0
 
-    if system != "true false /Kosmos/Apps/JetSki/mine.txt is part of Kosmos, and read only":
-        failed.append("JetSki is not Kosmos's own, read only in /Kosmos/Apps/JetSki: %r" % system)
+    if system != ("true false /Kosmos/Apps/JetSki/mine.txt is part of Kosmos, and read only"
+                  " | false /Kosmos/WebKit/mine.txt is part of Kosmos, and read only"):
+        failed.append("JetSki and WebKit are not Kosmos's own, read only in /Kosmos/Apps/JetSki "
+                      "and /Kosmos/WebKit: %r" % system)
     if "/" not in Page.asked:
         failed.append("the page was never asked for")
     if "jetski: title " + TITLE not in seen:

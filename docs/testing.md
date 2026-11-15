@@ -34070,3 +34070,41 @@ Found by elimination on the machine: the folder was readable from
 Telnet's shell; a boot with the folder already present failed the same
 way, so timing was not it; the window manager's namespace was a child's,
 like every other. That left only the image's own runtime.
+
+## 18.831 One WebKit image, in /Kosmos/WebKit (0.11.435)
+
+`docs/mailweb.md` W1, after Diego chose one WebKit image and
+`/Kosmos/WebKit`. `jetski.elf` is `webkit.elf`, in `/Home/System/WebKit`
+with Web Inspector's pages, mounted read only as `/Kosmos/WebKit`
+(`ns.mount_system_apps`). `-- kosmos: image webkit` names it through
+`IMAGES.SYSTEM`, a list in the system's image, so a header names no path
+of its own. `installed.py` and `packages.py` make a `webkit` package of
+kind `system`; JetSki's is its Lua alone and depends on it.
+
+`x86-jetski` installs WebKit in its new folder and checks that
+`/Kosmos/Apps/JetSki` and `/Kosmos/WebKit` both refuse a write. Its control,
+`KOSMOS_JETSKI_BREAK=beside`, puts the image beside `jetski.lua`, where an
+image was looked for before it had a name: JetSki does not start, and the
+window manager says `/Kosmos/WebKit/webkit.elf: not there`. The whole gate
+passed with it.
+
+## 18.832 A field emptied under its caret (0.11.435)
+
+JetSki ended on the M700 three seconds after showing a new tab:
+`ui.lua:2415: bad argument #3 to 'offset' (position out of bounds)`. The
+address field had scrolled to show a long Wikipedia address; JetSki then
+assigned the new tab's empty address to `field.text`, and the caret and
+the shown start stayed past its end. `field_from`, at the next paint,
+asked `utf8.offset` for a place the text does not have.
+
+A field already clamped the caret where it worked out a selection and a
+buffer move, but not in `field_from`, a key or the pointer. Fixed as a
+class: `field_within` brings the caret, the anchor and the shown start
+inside the text at each of those three entries, so no window has to
+remember `set_text`.
+
+`x86-fieldselect` adds the case: 300 w's set, drawn scrolled, `text`
+emptied by assignment, then `q` typed, which must leave `q`. Control: with
+the committed `ui.lua` the window ends with the M700's error at the same
+line, and only that check fails (7 of 8).
+
