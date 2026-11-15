@@ -3473,3 +3473,35 @@ long text to show.
 so it scrolls, then empties it underneath the cursor and types one
 letter. With the old code the window ends with the same error the M700
 showed; with the fix the field holds the letter.
+
+## 15 November 2026 - WebKit's door, made of views
+
+**In short.** The code JetSki used to drive WebKit was JetSki's own: one
+page, with tabs inside it. It is now the WebKit Kit, Kosmos's one door to
+the web engine, and it deals in *views* - a page each, of a size, with
+rules fixed when it is made. JetSki's tabs are views. Mail's message pane
+will be one too, with scripts off and links handed on rather than
+followed.
+
+**What.** `user/kits/webkit/` holds the kit, in C++ because WebKit is. A
+view is made with two options: whether its pages may run scripts, and
+whether a link pressed in it is followed or only reported, so its owner
+can decide - Mail will send it to JetSki. A view is shown or dark, as a
+browser's background tabs are, and paints into pixels its owner holds.
+What a person sees in JetSki did not change: its window code speaks to a
+small table that turns tabs into views.
+
+**Why.** Mail and JetSki must stand on the same door, or there would be
+two copies of the hardest piece of the system. A door shaped like JetSki
+- tabs, one page - fits nothing else; a door shaped like a page fits
+both.
+
+**What it found.** One of the browser test's deliberately broken builds
+had stopped breaking anything five revisions ago: the line it removed had
+been rewritten, so it removed nothing and passed. Every such edit now
+stops the test when its line is not there.
+
+**How it is tested.** The whole browser test passes unchanged, 38 checks,
+and the command prompt - the system's own image - is told there is no
+kit called `webkit`, so the kit lives in WebKit's image alone. Five
+broken builds each fail only their own checks.

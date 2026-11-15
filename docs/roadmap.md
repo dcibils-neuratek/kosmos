@@ -10606,7 +10606,35 @@ the applications make the system useful, and is not pulled forward.
       day**: the image lives in `/Kosmos/WebKit` ("/Kosmos/WebKit"), and a
       link opens in a new tab of the open JetSki, or a new JetSki when none
       is ("Tab of open JetSki").
-      **W1 built in 0.11.435** (`testing.md` 18.831).
+      **W1 built in 0.11.435** (`testing.md` 18.831). **W2 built in
+      0.11.436** (18.833): `/Kosmos/Kits/webkit`, views with `scripts` and
+      `follow`; JetSki's tabs are views.
+    - *`x86-film` fails under a full gate's load* (found 15 November
+      2026, 0.11.435 and 0.11.436): alone it passes every time; in the
+      gate it failed twice running - once a 3.00 s film clocked at
+      2.84 s, once 1506 samples where channels after the first came out
+      as 0 against FFmpeg's reference. Either the test reads before the
+      sound is all there, or the sound path really drops under load,
+      which is what "not jerky under heavy load" forbids. To be found
+      before the next push.
+      **The old browser goes in two halves** (Diego, 15 November 2026:
+      "remember we need to delete the old browser based on netsurf when
+      possible as we now will use only jetski"). Its application -
+      `browser.lua`, `browserprefs.lua`, its dock pin, its file types and
+      its suites - right after W2: Cafesa3D's, the IDE's and Mail's links
+      open JetSki instead, through one door (a tab of the open JetSki, or
+      a new one). Its engine - NetSurf's tree and `/Kosmos/Kits/web` -
+      with W6, the day Mail stops drawing HTML with it.
+    - *Loading in the status line* (Diego, 15 November 2026: "we need a
+      progress bar in the bottom status section of jetski so the user knows
+      when the webpage finished loading"). The status line along the
+      bottom carries a bar and WebKit's figure at its right while a page
+      loads, from a sliver the moment a link is followed, and says when it
+      has finished: the bar full and green, "Done in 1.4 s", for two
+      seconds. Stopped or failed says so at once. Drawn in
+      `docs/webkit.html`, *Loading, in the status line*; for Diego to look
+      at before it is built. Today there is a 3-pixel bar along the
+      header's rule and "Loading 42%" as text, and nothing when it ends.
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's
@@ -10881,7 +10909,16 @@ the applications make the system useful, and is not pulled forward.
     `CLOCK_PROCESS_CPUTIME_ID` and `getrusage` say nothing yet. That is
     what JavaScriptCore's watchdog will want.
   - *How much room a file system has*: a Storage Kit request, behind
-    `statvfs`.
+    `statvfs`. **It costs JetSki its disk cache** (Diego, 15 November
+    2026: "is jetski working with a cache already? it feels is loading
+    all the content all the time with no cache"): WebKit sizes its
+    network cache from `FileSystem::volumeFreeSpace`, which is
+    `std::filesystem::space`, which is `statvfs` - and when that fails
+    the cache is given 0 bytes (`NetworkCache.cpp`, `computeCapacity`),
+    so `/Home/Settings/JetSki/Cache/NetworkCache` keeps nothing and every
+    visit fetches everything again. The answer is already in `diskfs`:
+    `DISK_OP_SUPER` reports `free_blocks` and `block_size`. Next, after
+    W2, with a check that a page fetched twice reaches the server once.
   - *Setting a file's times*: `utimensat`.
   - *`chdir`*: it needs the Storage Kit's working directory to be
     changeable under threads.

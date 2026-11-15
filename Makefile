@@ -4260,15 +4260,16 @@ $(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(CA_ROOTS_OBJ)
 # **Kosmos's WebKit image** (`docs/w7.md` W7c, `docs/mailweb.md` W1):
 # `webkit.elf`, installed in `/Home/System/WebKit` with Web Inspector's
 # pages and seen as `/Kosmos/WebKit`, the image JetSki runs in (`-- kosmos:
-# image webkit`) - WebKit2's UI process as a kit (`jetski.cpp`), and again
-# as each page's web process and as the network process. Linked as
-# `webkit2test.elf` is, and held to the same promises.
+# image webkit`) - WebKit2's UI process as the WebKit Kit, views
+# (`user/kits/webkit/`, `docs/mailweb.md` W2), and again as each page's web
+# process and as the network process. Linked as `webkit2test.elf` is, and
+# held to the same promises.
 #
-JETSKI_OBJS := $(UBUILD)/user/installed/JetSki/jetski.cpp.o \
-               $(UBUILD)/user/installed/JetSki/jetski_kit.c.o
+JETSKI_OBJS := $(UBUILD)/user/kits/webkit/webkit.cpp.o \
+               $(UBUILD)/user/kits/webkit/webkit_kit.c.o
 
-$(UBUILD)/user/installed/JetSki/jetski.cpp.o: user/installed/JetSki/jetski.cpp \
-        user/installed/JetSki/jetski.h $(WEBKIT_DIR)/.built
+$(UBUILD)/user/kits/webkit/webkit.cpp.o: user/kits/webkit/webkit.cpp \
+        user/kits/webkit/webkit.h $(WEBKIT_DIR)/.built
 	@mkdir -p $(dir $@)
 	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
 	    $(WEBKIT_USER_FLAGS) \
@@ -4284,10 +4285,10 @@ $(UBUILD)/apps/webkit.elf: $(USER_OBJS) $(JETSKI_OBJS) $(CA_ROOTS_OBJ) $(POSIX_O
 	    -Wl,--start-group $(WEBKIT2_LIBS) $(WEBCORE_LIBS) $(JSC_LIBS) $(SKIA_LIB) $(WEBKIT_LIBS) \
 	    $(WEBCORE_W5_LIBS) $(ICU_LIBS) $(LIBPSL_OBJS) $(WEBKIT_SQLITE_OBJ) $(EGL_KIT_OBJS) \
 	    $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group -Wl,-z,noexecstack -o $@ $(LIBS)
-	@$(NM) $@ | grep -q ' T kosmos_jetski_kit$$' \
+	@$(NM) $@ | grep -q ' T kosmos_webkit_kit$$' \
 	    || { echo "apps: webkit.elf does not have its kit"; rm -f $@; exit 1; }
-	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_jetski_kit|kosmos_webkit_role)$$' \
-	    || { echo "apps: the system's image has JetSki in it"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -qE ' T (kosmos_webkit_kit|kosmos_webkit_role)$$' \
+	    || { echo "apps: the system's image has WebKit in it"; rm -f $@; exit 1; }
 
 #
 # **Doom's image** (`docs/elf.md` step 5): the system's objects and Doom's,

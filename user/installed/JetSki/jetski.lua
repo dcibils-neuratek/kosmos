@@ -58,12 +58,123 @@ local files = use("/Kosmos/Libraries/files.lua")
 local prefs = use("/Kosmos/Libraries/browserprefs.lua")
 local theme = ui.theme
 
-local have, web = pcall(use, "jetski.elf")
+local have, webkit = pcall(use, "/Kosmos/Kits/webkit")
 
-if not have or type(web) ~= "table" then
-  print("jetski: " .. tostring(web))
+if not have or type(webkit) ~= "table" then
+  print("jetski: " .. tostring(webkit))
   return
 end
+
+--
+-- **JetSki's tabs, over the WebKit Kit's views** (`docs/mailweb.md` W2).
+-- The kit makes views - a page each, painted into this window's surface -
+-- and knows nothing of tabs; a tab is a view, and which one is shown is
+-- JetSki's to say. `web` is the tab shown, and the tabs, in the words the
+-- window below was written in when the kit was JetSki's own door: one
+-- page, with tabs inside it. (The pointer's, the wheel's and the keys' are
+-- written `web.key = function`, so `x86-jetski`'s deaf controls change only
+-- the calls.)
+--
+local web = {}
+local views = {}                     -- a view's id -> the view
+local shown                          -- the view in the window
+local targeting = false              -- input to Web Inspector's page
+local size_w, size_h = 1, 1          -- every view's size: the page's
+local events = {}                    -- `webkit.pump` fills it
+
+local function show(v)
+  if shown == v then return end
+  if shown then shown:show(false) end
+  shown = v
+  v:show(true)
+  v:target(targeting)
+end
+
+function web.open(w, h)
+  size_w, size_h = w, h
+  local v, why = webkit.view(w, h)
+  if not v then return nil, why end
+  views[v:id()] = v
+  show(v)
+  v:focus(true)
+  return true
+end
+
+-- A tab: its id, or nil. Dark until `tab_select`.
+function web.tab_new()
+  local v = webkit.view(size_w, size_h)
+  if not v then return nil end
+  views[v:id()] = v
+  return v:id()
+end
+
+function web.tab_select(id)
+  if not views[id] then return false end
+  show(views[id])
+  return true
+end
+
+-- A tab closed - never the last, which is the window's to close - and the
+-- one after it shown in its place, or the one before when it was last.
+local order = {}
+function web.tab_close(id)
+  local v = views[id]
+  local n = webkit.views(order)
+  if not v or n < 2 then return false end
+  local after
+  for i = 1, n do
+    if order[i].id == id then after = order[i + 1] or order[i - 1] break end
+  end
+  v:close()
+  views[id] = nil
+  if v == shown then
+    shown = nil
+    show(views[after.id])
+  end
+  return true
+end
+
+function web.tabs(list) return webkit.views(list) end
+
+function web.resize(w, h)
+  size_w, size_h = w, h
+  for _, v in pairs(views) do v:resize(w, h) end
+end
+
+-- WebKit for a while, then the tab shown's news into `st`: `tab` is which
+-- one, `opened` a tab a page opened - shown, as a browser shows it -
+-- `closing` one whose page asked to close, and `tabs` that a tab not shown
+-- began, finished or ended.
+function web.pump(ms, st)
+  webkit.pump(ms, events)
+  if events.opened ~= 0 then
+    local v = webkit.adopt(events.opened)
+    views[events.opened] = v
+    show(v)
+  end
+  shown:state(st)
+  st.tab, st.opened, st.closing, st.tabs = shown:id(), events.opened, events.closing,
+                                           events.others
+  return st
+end
+
+function web.crash(id) return views[id] and views[id]:crash() end
+function web.target(on) targeting = on shown:target(on) end
+function web.load(address) shown:load(address) end
+function web.back() shown:back() end
+function web.forward() shown:forward() end
+function web.reload() shown:reload() end
+function web.stop() shown:stop() end
+function web.focus(on) shown:focus(on) end
+web.mouse = function(...) shown:mouse(...) end
+web.wheel = function(...) shown:wheel(...) end
+web.key = function(c) return shown:key(c) end
+function web.paint(...) shown:paint(...) end
+function web.paint_inspector(...) shown:paint_inspector(...) end
+function web.inspect(on) shown:inspect(on) end
+function web.inspecting() return shown:inspecting() end
+web.frame, web.developer = webkit.frame, webkit.developer
+web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
 local HOME = "https://en.wikipedia.org/wiki/BeOS"
 
@@ -593,9 +704,8 @@ field.on_enter = function(_, text)
 end
 
 --------------------------------------------------------------------------
--- **Tabs**: WebKit's pages, one shown. Which tab is shown is WebKit's to
--- say (`st.tab`); the strip is drawn from `web.tabs`, asked again whenever
--- a tab may have changed.
+-- **Tabs**: views, one shown (`web`, above). The strip is drawn from
+-- `web.tabs`, asked again whenever a tab may have changed.
 --
 
 local function tabs_changed()
@@ -768,7 +878,7 @@ win.on_frame = function()
     changed = true
   end
 
-  -- A page that opened a tab, `target=_blank`: WebKit shows it already.
+  -- A page that opened a tab, `target=_blank`: shown already, by `web.pump`.
   if st.opened ~= 0 then
     print("jetski: a page opened a tab")
     shown_changed()

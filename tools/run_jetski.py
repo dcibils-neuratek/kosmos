@@ -552,7 +552,7 @@ def inspected(guest, R, window, sw, sh):
         return ["Control-Alt-I docked no Web Inspector: %s"
                 % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
     failed = []
-    if not re.search(r"jetski: tab \d+'s inspector docked", guest.seen[since:]):
+    if not re.search(r"webkit: view \d+'s inspector docked", guest.seen[since:]):
         failed.append("WebKit made no inspector's view for the tab")
     page = int(re.findall(r"jetski: Web Inspector docked, the page (\d+) wide",
                           guest.seen[since:])[-1])
@@ -617,7 +617,7 @@ def stopped(guest, R, window, sw, sh):
                          re.findall(r"jetski: (?:test names|no function)[^\r\n]*",
                                     guest.seen[since:]) or "nothing said"))
     # Collected: the zombie gone from Nebula's table, and its death known.
-    if not said(guest, since, "jetski: process %s ended, code" % pid, 10):
+    if not said(guest, since, "webkit: process %s ended, code" % pid, 10):
         failed.append("JetSki never collected its ended web process %s" % pid)
     if not said(guest, since, "jetski: process   web, %s" % pid, 10) \
        or not said(guest, since, "jetski: ended     with code", 10):
@@ -928,6 +928,18 @@ def cookies():
     return failed
 
 
+def changed(text, old, new):
+    """`text` with `old` made `new` - a control's change to `jetski.lua`.
+    Stopped when `old` is not there: a control whose string has gone changes
+    nothing and passes, and so proves nothing. `fixed` did that from 0.11.430,
+    when `web.resize(W, VIEW_H)` became `web.resize(PAGE_W, VIEW_H)`, until
+    0.11.436 (`testing.md` 18.833)."""
+    if old not in text:
+        sys.exit("FAIL: %s finds nothing to change: %r is not in jetski.lua"
+                 % ("the control " + BROKEN if BROKEN else "the suite's own hook", old))
+    return text.replace(old, new)
+
+
 def main():
     built = os.path.join(APPS, "webkit.elf")
     if not os.path.exists(built):
@@ -958,21 +970,21 @@ def main():
     if BROKEN == "fixed":
         # Laid out again at the new size, and WebKit never told.
         with open(lua) as f:
-            text = f.read().replace("web.resize(W, VIEW_H)", "do end")
+            text = changed(f.read(), "web.resize(PAGE_W, VIEW_H)", "do end")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
     if BROKEN == "tabless":
         # Control-T, the window's, never answered.
         with open(lua) as f:
-            text = f.read().replace("if c == 20 then new_tab() return true end", "")
+            text = changed(f.read(), "if c == 20 then new_tab() return true end", "")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
     if BROKEN == "unannounced":
         # A link followed, and nothing shown until WebKit begins the load.
         with open(lua) as f:
-            text = f.read().replace("if st.asked then", "if false then")
+            text = changed(f.read(), "if st.asked then", "if false then")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
@@ -983,38 +995,38 @@ def main():
         calls = {"deaf": ("web.mouse(", "web.wheel(", "web.key("),
                  "deaf-wheel": ("web.wheel(",), "deaf-key": ("web.key(",)}[BROKEN]
         for call in calls:
-            text = text.replace(call, "(function() return false end)(")
+            text = changed(text, call, "(function() return false end)(")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = text.replace("if c == 12 or c == 15 or c == 20 then return true end",
+    text = changed(text, "if c == 12 or c == 15 or c == 20 then return true end",
                         "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 then return true end")
-    text = text.replace("win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
+    text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
     if BROKEN == "nameless":
         # The Debug Kit never asked.
-        text = text.replace("debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
+        text = changed(text, "debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
     if BROKEN == "pathless":
         # A path typed is a search, not a file.
-        text = text.replace('if text:match("^%s*/") then', 'if false then')
+        text = changed(text, 'if text:match("^%s*/") then', 'if false then')
     if BROKEN == "openless":
         # Control-O, never answered.
-        text = text.replace("if c == 15 then\n    local chooser", "if false then\n    local chooser")
+        text = changed(text, "if c == 15 then\n    local chooser", "if false then\n    local chooser")
     if BROKEN == "dropless":
         # A file dropped, never taken.
-        text = text.replace('if kind ~= "files" then return false end\n  local first',
+        text = changed(text, 'if kind ~= "files" then return false end\n  local first',
                             'do return false end\n  local first')
     if BROKEN == "uninspected":
         # Control-Alt-I and the button, never asking WebKit.
-        text = text.replace("web.inspect(not inspecting)", "do end")
+        text = changed(text, "web.inspect(not inspecting)", "do end")
     if BROKEN == "unpainted":
         # Docked and never drawn.
-        text = text.replace("web.paint_inspector(s,", "local _ = (function() end)(s,")
+        text = changed(text, "web.paint_inspector(s,", "local _ = (function() end)(s,")
     if BROKEN == "unexplained":
         # The page that stopped, never asked why.
-        text = text.replace("crash = web.crash(st.tab)", "crash = nil")
+        text = changed(text, "crash = web.crash(st.tab)", "crash = nil")
     lua = os.path.join(WORK, "jetski.lua")
     with open(lua, "w") as f:
         f.write(text)
@@ -1081,9 +1093,11 @@ def main():
         mark = len(guest.seen)
         guest.type('local ok, why = fs.write("/Kosmos/Apps/JetSki/mine.txt", "x") '
                    'local ok2, why2 = fs.write("/Kosmos/WebKit/mine.txt", "x") '
+                   'local kit, kwhy = sys.kit("webkit") '
                    'print("SYS" .. "TEM " .. tostring(fs.getattr("/Kosmos/WebKit/webkit.elf") '
                    '~= nil) .. " " .. tostring(ok) .. " " .. tostring(why) .. " | " '
-                   '.. tostring(ok2) .. " " .. tostring(why2))')
+                   '.. tostring(ok2) .. " " .. tostring(why2) .. " | " .. tostring(kit) .. " " '
+                   '.. tostring(kwhy))')
         guest.wait_for("SYSTEM ", "JetSki looked for in /Kosmos")
         time.sleep(0.5)
         guest._read_available()
@@ -1139,9 +1153,11 @@ def main():
         return 1 if failed else 0
 
     if system != ("true false /Kosmos/Apps/JetSki/mine.txt is part of Kosmos, and read only"
-                  " | false /Kosmos/WebKit/mine.txt is part of Kosmos, and read only"):
+                  " | false /Kosmos/WebKit/mine.txt is part of Kosmos, and read only"
+                  " | nil there is no kit called webkit"):
         failed.append("JetSki and WebKit are not Kosmos's own, read only in /Kosmos/Apps/JetSki "
-                      "and /Kosmos/WebKit: %r" % system)
+                      "and /Kosmos/WebKit, or the WebKit Kit is not WebKit's image's alone: %r"
+                      % system)
     if "/" not in Page.asked:
         failed.append("the page was never asked for")
     if "jetski: title " + TITLE not in seen:

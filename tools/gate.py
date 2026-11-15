@@ -749,7 +749,7 @@ SUITES = [
     # from a server on this Mac painted below its address field.
     Suite("x86-jetski", ["python3", "tools/run_jetski.py", X86,
                          "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_jetski.py", "user/installed/JetSki", "user/lib",
+          watch=library("tools/run_jetski.py", "user/installed/JetSki", "user/kits/webkit", "user/lib",
                         "user/bin/programs/wm.lua", "user/kits/gfx", "user/kits/egl",
                         "user/servers/net.c", *WEBKIT, *W5)),
 

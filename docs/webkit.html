@@ -89,6 +89,13 @@ code { font-family: var(--mono); font-size: 13px; }
 .art td { padding: 3px 0; border-top: 1px solid #eceef1; }
 .art td:first-child { color: #54595d; width: 44%; }
 .status { position: absolute; left: 0; bottom: 0; background: #f7f8fa; border: 1px solid var(--w-line); border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; padding: 3px 10px; font-size: 11.5px; color: #5a6474; }
+/* The status line while a page loads, and when it has (15 November 2026). */
+.sline { display: flex; align-items: center; gap: 12px; background: #f7f8fa; border: 1px solid var(--w-line); border-radius: 8px; padding: 5px 12px; font-size: 11.5px; color: #5a6474; max-width: 760px; margin: 8px 0; }
+.sline .grow { flex: 1; }
+.sline .bar { width: 180px; height: 6px; border-radius: 3px; background: #e2e6ec; overflow: hidden; }
+.sline .bar i { display: block; height: 100%; background: var(--w-accent, #2f6fde); border-radius: 3px; }
+.sline .pct { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.sline.done { color: var(--w-good); }
 /* The address field's suggestions. */
 .sugg { position: absolute; left: 112px; right: 128px; top: 44px; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.18); padding: 6px; font-size: 13px; z-index: 2; }
 .sugg .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px 4px; }
@@ -224,6 +231,13 @@ code { font-family: var(--mono); font-size: 13px; }
   </div>
 </div></div>
 <p class="cap">The tabs are the band, as Safari and Chrome have them: the menu button at the left holds File, Edit, View, History and Bookmarks (and under a desktop with a menu bar, Pewter, they are the screen's), the window's three lights at the right, and the band still drags the window. Below, back, forward and reload, the address field, a star for bookmarks, downloads (a thin bar while one runs) and the rest. Super with a number goes to a tab, Control+T opens one, Control+L is the address field. A link under the pointer shows its address at the bottom left. The page is drawn by WebKit's web process into a region and shown as it is - fonts, layout and colours are the site's.</p>
+
+<h2>Loading, in the status line</h2>
+<div class="sline"><span>Opening en.encyclopedia.example&hellip;</span><span class="grow"></span><span class="bar"><i style="width:4%"></i></span><span class="pct">&nbsp;</span></div>
+<div class="sline"><span>Loading en.encyclopedia.example</span><span class="grow"></span><span class="bar"><i style="width:42%"></i></span><span class="pct">42%</span></div>
+<div class="sline done"><span>&#10003; Done in 1.4 s</span><span class="grow"></span><span class="bar"><i style="width:100%;background:var(--w-good)"></i></span><span class="pct">100%</span></div>
+<div class="sline"><span>en.encyclopedia.example/wiki/Rings_of_Saturn</span><span class="grow"></span></div>
+<p class="cap"><b>Proposed, 15 November 2026</b> (Diego: "we need a progress bar in the bottom status section of jetski so the user knows when the webpage finished loading"). The status line carries the load: from the moment a link is followed a sliver of the bar and the host it is going to; then WebKit's estimate as a bar and a figure at the right; and when the page has finished, the bar full and green with "Done in 1.4 s", held for two seconds, after which the line goes back to the link under the pointer, or nothing. Stop or a failure ends it at once, saying which. The thin bar along the header's rule stays, or goes - Diego's choice.</p>
 
 <h2>Typing in the address field</h2>
 <div class="scroller"><div class="win">

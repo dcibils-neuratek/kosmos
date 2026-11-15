@@ -1,0 +1,171 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * **The WebKit Kit, as a door** (`docs/mailweb.md` W2): Kosmos's one way to
+ * WebKit, in no image but `webkit.elf` (`/Kosmos/WebKit`), reached as
+ * `use("/Kosmos/Kits/webkit")` by a program that runs in it - JetSki, and
+ * Mail's message pane next (W5).
+ *
+ * **Views**: a page of a size, with options fixed when it is made, painted
+ * into pixels the caller owns. JetSki's tabs are views, and the tab strip
+ * is JetSki's; a view knows nothing of windows or tabs. WebKit's run loop
+ * is run for a while at a time (`webkit_pump`) between the window's own
+ * events. This was `jetski.h`, one page with tabs inside it, until W2.
+ */
+
+#ifndef KOSMOS_WEBKIT_H
+#define KOSMOS_WEBKIT_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* What happened to a view since it was last asked (`webkit_state`). */
+enum webkit_happened {
+    WEBKIT_STARTED   = 1 << 0,     /* a navigation began */
+    WEBKIT_COMMITTED = 1 << 1,     /* its first bytes arrived: a new page */
+    WEBKIT_FINISHED  = 1 << 2,     /* it finished loading */
+    WEBKIT_FAILED    = 1 << 3,     /* it failed; `error` says how */
+    WEBKIT_PICTURE   = 1 << 4,     /* the page has a new picture to paint */
+    WEBKIT_CRASHED   = 1 << 5,     /* the web process ended */
+    WEBKIT_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
+    WEBKIT_INSPECTOR = 1 << 7,     /* its inspector came, went, or has a picture */
+};
+
+/*
+ * **A view's options**, fixed when it is made (`docs/mailweb.md`, *The
+ * WebKit Kit*): whether its pages run scripts - off for a message, which is
+ * a document and never a program; and whether a link it is asked to follow
+ * is followed, or only reported (`WEBKIT_ASKED` and `going`) and left to the
+ * caller - Mail hands it to JetSki, and its pane stays on the message.
+ */
+struct webkit_options {
+    int scripts;
+    int follow;
+};
+
+struct webkit_state {
+    unsigned happened;             /* `webkit_happened`, since the last ask */
+    int error;                     /* curl's or WebKit's code, with FAILED */
+    double progress;               /* 0 to 1, WebKit's estimate */
+    int loading;                   /* a navigation is under way */
+    int can_back, can_forward;
+    char title[256];
+    char address[2048];
+    char going[2048];              /* where it was asked to go, until it starts */
+};
+
+/* What happened to the views together since the last pump. */
+struct webkit_events {
+    int opened, opener;            /* a view a page opened, and whose page */
+    int closing;                   /* a view whose page asked to close, or 0 */
+    int others;                    /* a view not shown began, finished or ended */
+};
+
+/* A view as a list of them shows it: JetSki's tab strip. */
+struct webkit_view_info {
+    int id;
+    int shown, loading;
+    int pid;                       /* its web process, the last one seen; 0 before */
+    char title[256];
+};
+
+/* A view, `width` by `height`; its id, or 0. Not shown until `webkit_show`.
+ * `options` may be null: scripts on, links followed. */
+int webkit_view(unsigned width, unsigned height, const struct webkit_options *options);
+/* Its page closed - which ends its web process, unless another shares it -
+ * and its id no more. */
+void webkit_close(int id);
+/* Shown in the window, or dark - unseen and inactive, as a browser's
+ * background tabs are. A dark view's news does not end a pump's slice. */
+void webkit_show(int id, int shown);
+/* Every view of this process, in the order they were made, as many as
+ * `room`. */
+unsigned webkit_views(struct webkit_view_info *out, unsigned room);
+
+void webkit_resize(int id, unsigned width, unsigned height);
+/* Where the window views are in is on the screen and how big, frame and
+ * all: what `window.screenX`, `outerWidth` and the rest answer. */
+void webkit_frame(int x, int y, unsigned width, unsigned height);
+
+void webkit_load(int id, const char *address);
+void webkit_back(int id);
+void webkit_forward(int id);
+void webkit_reload(int id);
+void webkit_stop(int id);
+
+/* WebKit's run loop for at most `ms` milliseconds, or until a view shown
+ * has news; then what happened to the views together. */
+void webkit_pump(unsigned ms, struct webkit_events *out);
+/* What happened to view `id` since it was last asked, and how it stands;
+ * 0 when there is no such view. */
+int webkit_state(int id, struct webkit_state *out);
+
+/*
+ * **Why a view's page stopped** (Diego, 14 November 2026: "why dont we show
+ * useful debugging info in the browser when something bad happens?"): its
+ * web process's id while it ran, what it was loading, and - once the kit
+ * has collected it, which may be a pass after WebKit says it ended - what
+ * Nebula recorded of its death: `known` 0 until then.
+ */
+struct webkit_crash {
+    int pid;                       /* the web process, as it was spawned */
+    int known;                     /* its death has been collected */
+    int faulted;                   /* a fault ended it, and the rest says how */
+    long code;                     /* its exit code */
+    char fault[32];                /* the exception's name */
+    unsigned kind, thread;         /* the exception's number; which thread */
+    uint64_t pc, addr, sp, detail; /* where, what it touched, its stack, syndrome */
+    char address[2048];            /* the page it was showing or loading */
+};
+
+/* 1 and `out` filled when view `id`'s page process ended since it last
+ * loaded; 0 when it did not. */
+int webkit_crash(int id, struct webkit_crash *out);
+
+/* View `id`'s picture, `width` by `height` from its top left, into the
+ * pixels at `pitch` bytes a row. */
+void webkit_paint(int id, uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
+
+/* What a person does to a view, in its pixels. */
+enum webkit_mouse { WEBKIT_PRESS, WEBKIT_RELEASE, WEBKIT_MOVE };
+enum webkit_button { WEBKIT_LEFT, WEBKIT_MIDDLE, WEBKIT_RIGHT, WEBKIT_NONE = -1 };
+
+/* `mods` are `keys.lua`'s bits: 1 Shift, 2 Alt, 4 Control, 8 Super. A press
+ * close to the last one in place and time is counted as its second. */
+void webkit_mouse(int id, enum webkit_mouse action, enum webkit_button button, int x, int y, unsigned mods);
+
+/* `notches` away from the person, as the window manager counts them. */
+void webkit_wheel(int id, int x, int y, int notches, unsigned mods);
+
+/* One key, as `keys.lua` numbers it: a character 0 to 255, or a key that is
+ * none - the arrows, Home, the function keys - as a negative number, with
+ * its modifiers inside. 0 when it was not one WebKit could be given. */
+int webkit_key(int id, int code);
+
+/* Whether view `id` has the keyboard. */
+void webkit_focus(int id, int focused);
+
+/*
+ * **Web Inspector, docked** (`docs/webkit.html`, *Developer mode*): a view's
+ * inspector shown or closed; whether it has one; its picture, as
+ * `webkit_paint` paints the page's, at the size `webkit_inspector_size`
+ * gave every inspector; and which of the two the pointer, the wheel and
+ * keys go to (`webkit_target`, 1 the inspector). Developer features are on
+ * or off for every view that runs scripts (`webkit_developer`), and the
+ * front end's files are the folder `webkit_inspector_files` names.
+ */
+void webkit_developer(int on);
+void webkit_inspector_files(const char *folder);
+void webkit_inspect(int id, int show);
+int  webkit_inspecting(int id);
+void webkit_inspector_size(unsigned width, unsigned height);
+void webkit_paint_inspector(int id, uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
+void webkit_target(int id, int inspector);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

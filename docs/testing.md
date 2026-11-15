@@ -34108,3 +34108,33 @@ emptied by assignment, then `q` typed, which must leave `q`. Control: with
 the committed `ui.lua` the window ends with the M700's error at the same
 line, and only that check fails (7 of 8).
 
+
+## 18.833 WebKit's door, made of views (0.11.436)
+
+`docs/mailweb.md` W2. JetSki's own C++ door - one page with tabs inside
+it, `jetski.cpp` and `jetski_kit.c` - is the WebKit Kit,
+`user/kits/webkit/`, reached as `use("/Kosmos/Kits/webkit")` and linked
+into `webkit.elf` alone. It deals in **views**: a page of a size, with
+options fixed when it is made - `scripts`, and `follow`, which when off
+reports a link or a form as `WEBKIT_ASKED` and has WebKit ignore it - shown
+or dark, painted into the caller's pixels. JetSki's tabs are views and its
+tab strip is JetSki's: `jetski.lua` keeps a `web` table over the kit, so
+the window's code did not change. A page's own new window is a dark view,
+adopted by JetSki as a tab. The kit's log says `webkit:`.
+
+`x86-jetski` passes unchanged, 38 of 38, with two of its greps moved to
+the kit's prefix, and its SYSTEM probe asks the prompt - the system's own
+image - for the kit: `nil there is no kit called webkit`, so it is
+WebKit's image's alone. Controls: `fixed`, `deaf`, `uninspected`,
+`unpainted` and `unexplained` each fail only their own checks.
+
+**A control that had stopped biting.** `fixed` replaced
+`web.resize(W, VIEW_H)`, which became `web.resize(PAGE_W, VIEW_H)` in
+0.11.430 - so from then it changed nothing, and passed. Fixed as a class:
+every control's edit to `jetski.lua` goes through `changed()`, which stops
+the suite when its string is not there. All thirteen strings were counted
+present the day it arrived.
+
+The whole gate passed but `x86-film`, which passed alone twice after it
+and failed under the 0.11.435 gate too; W2 is not on its path. It is in
+the roadmap to be found before the next push.
