@@ -4258,7 +4258,7 @@ $(UBUILD)/apps/webkit2test.elf: $(USER_OBJS) $(WEBKIT2TEST_OBJS) $(CA_ROOTS_OBJ)
 
 #
 # **JetSki's image** (`docs/w7.md` W7c): the browser, installed in
-# `/Home/Apps/JetSki` beside `jetski.lua` - WebKit2's UI process as a kit
+# `/Home/System/Apps/JetSki` beside `jetski.lua`, seen as `/Kosmos/Apps/JetSki` - WebKit2's UI process as a kit
 # (`jetski.cpp`), and again as each page's web process and as the network
 # process. Linked as `webkit2test.elf` is, and held to the same promises.
 #

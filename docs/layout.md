@@ -148,7 +148,8 @@ the image.
 
 | what | today | what is left |
 |---|---|---|
-| applications and programs | inside the image, served by `binfs` as `/Kosmos/Apps` and `/Kosmos/Programs`; installed ones in `/Home/Apps` - Doom, in its own image (6t, `elf.md` step 5) | Quake and the Super Nintendo, the same way |
+| applications and programs | inside the image, served by `binfs` as `/Kosmos/Apps` and `/Kosmos/Programs`; installed ones in `/Home/Apps` - Doom, Quake and the Super Nintendo, each in its own image (6t, `elf.md` step 5) | done |
+| Kosmos's own, on the disk | JetSki, too big for the image: `/Home/System/Apps/JetSki`, mounted read only in every namespace as `/Kosmos/Apps/JetSki` (`ns.SYSTEM_APPS`), written by a stick's build and brought to the build at a netboot's login by `systemapps` (15 November 2026) | done |
 | the Deskbar's menu | `/Kosmos/Deskbar`, a view of the same store, merged with `/Home/Deskbar` (6zd) | done |
 | libraries and kits | `/Kosmos/Libraries` served from the image, `/Kosmos/Kits` answered in-process | done |
 | the looks | `/Kosmos/Themes`, a file each; a person's in `/Home/Preferences/Themes`, where one named like a look that ships replaces it (13 October) | done |

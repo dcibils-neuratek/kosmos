@@ -93,6 +93,10 @@ function filetypes.table(store)
     table.sort(names)
 
     for _, file in ipairs(names) do
+      -- A folder here is a system application on the disk, and is read
+      -- with the installed ones below (`filetypes.SYSTEM`).
+      if not tostring(file):lower():match("%.lua$") then goto next_file end
+
       local attrs = from.getattr(dir .. "/" .. file) or {}
       local short = tostring(file):gsub("%.lua$", "")
 
@@ -101,6 +105,8 @@ function filetypes.table(store)
         out[ext] = out[ext] or {}
         out[ext][#out[ext] + 1] = short
       end
+
+      ::next_file::
     end
   end
 
@@ -507,21 +513,41 @@ end
 --
 filetypes.INSTALLED = "/Home/Apps"
 
+--
+-- **And the applications Kosmos carries on the disk** (`ns.SYSTEM_APPS`):
+-- JetSki, a folder seen at `/Kosmos/Apps/JetSki`. Everything else in
+-- `/Kosmos/Apps` is a file - the image's applications, one Lua file each -
+-- so a folder there is one of these, and they come first.
+--
+filetypes.SYSTEM = "/Kosmos/Apps"
+
+local function folders_in(from, where, only_folders)
+  local names = from.list(where) or {}
+  local out = {}
+
+  for _, n in ipairs(names) do
+    n = tostring(n)
+    if not (only_folders and n:lower():match("%.lua$")) then out[#out + 1] = n end
+  end
+
+  table.sort(out)
+  return out
+end
+
 function filetypes.installed(store)
   local from = store or fs
   local out = {}
-  local names = from.list(filetypes.INSTALLED) or {}
 
-  table.sort(names)
+  for _, place in ipairs({ { filetypes.SYSTEM, true }, { filetypes.INSTALLED, false } }) do
+    for _, folder in ipairs(folders_in(from, place[1], place[2])) do
+      local name = folder:lower()
+      local program = place[1] .. "/" .. folder .. "/" .. name .. ".lua"
+      local source = from.read(program)
 
-  for _, folder in ipairs(names) do
-    local name = tostring(folder):lower()
-    local program = filetypes.INSTALLED .. "/" .. folder .. "/" .. name .. ".lua"
-    local source = from.read(program)
-
-    if type(source) == "string" and filetypes.declares(source, "application") then
-      out[#out + 1] = { name = name, folder = folder, program = program,
-                        source = source }
+      if type(source) == "string" and filetypes.declares(source, "application") then
+        out[#out + 1] = { name = name, folder = folder, program = program,
+                          source = source, system = place[2] or nil }
+      end
     end
   end
 

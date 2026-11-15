@@ -27,6 +27,20 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import scratch                                               # noqa: E402
+import subprocess                                            # noqa: E402
+
+# A disk for /Home, as every machine a package goes to has: a package comes
+# down onto the disk a region at a time, which a /Home in memory does not
+# take (`packages.lua`). `run_packages.py` boots with it too, importing this
+# before `run_screenshot`, which reads it.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DISK = os.path.join(scratch.directory("install"), "disk.img")
+subprocess.run([os.path.join(os.path.dirname(_HERE), "build", "host", "lua"),
+                os.path.join(_HERE, "kfs.lua"), "create", _DISK, "16"],
+               check=True, capture_output=True, cwd=os.path.dirname(_HERE))
+os.environ["KOSMOS_DISK"] = _DISK
+
 import run_screenshot as R                                   # noqa: E402
 
 
@@ -72,7 +86,8 @@ def main():
 
     offer("hello", *package("Hello", {"hello.txt": "the first\n"}, facts("hello", "Hello", "/Home/Apps/Hello")))
     served["broken.zip"] = b"PK\x03\x04 this is not a zip"
-    offered["broken"] = dict(facts("broken", "Broken", "/Home/Apps/Broken"), bytes=0, zip=28)
+    offered["broken"] = dict(facts("broken", "Broken", "/Home/Apps/Broken"), bytes=0,
+                              zip=len(served["broken.zip"]))
     offer("bent", *package("Bent", {"bent.txt": "as it was made\n"},
                            facts("bent", "Bent", "/Home/Apps/Bent"), tamper=True))
     offer("other", *package("Other", {"other.txt": "elsewhere\n"},
@@ -154,11 +169,14 @@ def main():
                                 facts("hello", "Hello", "/Home/Apps/Hello")))
         run("install hello", "install: hello")
         got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
-        check("GOT the second" in got and "Hello.old" not in run("ls /Home/Apps", "kosmos> ", 10),
-              "installing again did not replace the file, or left the old folder: %r"
-              % got[-200:])
+        apps = run("ls /Home/Apps", "kosmos> ", 10)
+        check("GOT the second" in got and "Hello.old" not in apps and "Hello.zip" not in apps,
+              "installing again did not replace the file, or left the old folder or its "
+              "archive: %r %r" % (got[-200:], apps[-200:]))
 
-        run('fs.write("/Home/Apps/Broken/kept.txt", "kept")', "kosmos> ", 10)
+        # A disk makes no folder for a file written into it, as memory did.
+        run('fs.send("/Home/Apps/Broken", { type = "mkdir" }) '
+            'fs.write("/Home/Apps/Broken/kept.txt", "kept")', "kosmos> ", 10)
         broken = run("install broken", "install: broken")
         kept = run('print("KEPT " .. tostring(fs.read("/Home/Apps/Broken/kept.txt")))', "KEPT ")
         check("not installed: it would not open" in broken and "KEPT kept" in kept,
@@ -212,6 +230,34 @@ def main():
         got = run('print("GOT " .. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "GOT ")
         check("pkg: hello - 1.0 -> 2.0 in /Home/Apps/Hello" in updated and "GOT the third" in got,
               "pkg update did not bring hello from 1.0 to 2.0: %r %r" % (updated[-300:], got[-200:]))
+
+        # **Kosmos's own on the disk** (`systemapps.lua`): a package of kind
+        # `system`, brought when it is not there, left when it is this
+        # build's, and brought again when the server's is another build.
+        def system(build, text):
+            offer("sysdemo", *package("Demo", {"demo.txt": text},
+                                      dict(facts("sysdemo", "Demo", "/Home/System/Apps/Demo"),
+                                           kind="system", build=build)))
+
+        system("test", "the first build\n")
+        brought = run("systemapps", "\nkosmos> ", 60)
+        got = run('print("GOT " .. tostring(fs.read("/Home/System/Apps/Demo/demo.txt")))', "GOT ")
+        check("systemapps: sysdemo here is not on this disk: bringing" in brought
+              and "systemapps: sysdemo is in /Home/System/Apps/Demo, build test" in brought
+              and "GOT the first build" in got,
+              "systemapps did not bring a system package that was not there: %r %r"
+              % (brought[-400:], got[-200:]))
+        kept = run("systemapps", "\nkosmos> ", 60)
+        check("systemapps: sysdemo is this build's, test" in kept and "bringing" not in kept,
+              "systemapps did not leave a system package of this build where it was: %r"
+              % kept[-400:])
+        system("next", "the next build\n")
+        again = run("systemapps", "\nkosmos> ", 60)
+        got = run('print("GOT " .. tostring(fs.read("/Home/System/Apps/Demo/demo.txt")))', "GOT ")
+        check("systemapps: sysdemo here is build test, and the server's is next: bringing" in again
+              and "GOT the next build" in got,
+              "systemapps did not bring the server's build over another: %r %r"
+              % (again[-400:], got[-200:]))
     finally:
         transcript = guest.seen
         guest.close()
@@ -230,7 +276,9 @@ def main():
           "there kept, and a file whose SHA-256 differs and a package for other "
           "protocols refused, leaving nothing; a dependency installed first, a removal "
           "refused while another needs it, both removed together keeping what a "
-          "person put beside them, and pkg update bringing a newer version)" % checks)
+          "person put beside them, and pkg update bringing a newer version; and "
+          "systemapps bringing Kosmos's own when it is missing or another build's, and "
+          "leaving it when it is this build's)" % checks)
     return 0
 
 

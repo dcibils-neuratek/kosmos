@@ -27,8 +27,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import run_install as I                                      # noqa: E402 - its disk first
 import run_screenshot as R                                   # noqa: E402
-import run_install as I                                      # noqa: E402
 
 
 def main():

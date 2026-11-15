@@ -33990,3 +33990,54 @@ the page's folder, where the `Inspector` folder now comes first, and
 Return would have gone into it. `.htm` joined `.html` in the File types
 page's Documents; JetSki began opening it in 0.11.429, which had put it
 alone in an "Other" group and failed `host`.
+
+## 18.829 JetSki, Kosmos's own on the disk (0.11.431)
+
+Diego, 15 November: "/Home/System, seen as /Kosmos". JetSki's folder is
+`/Home/System/Apps/JetSki` on the disk, and every namespace mounts it read
+only as `/Kosmos/Apps/JetSki` (`ns.mount_system_apps`, in all three places
+a `/Home` disk is mounted). A read-only mount refuses write, delete,
+rename, mkdir and setattr with "<path> is part of Kosmos, and read only".
+The name resolver finds `jetski` there, and the File types page and the
+launch grid list it first as Kosmos's own. A stick's build
+(`installed.py`, `installed.SYSTEM`) writes the folder with a
+`package.txt`, the same manifest a package carries (`packages.manifest`).
+At login, `systemapps` asks a netboot's package server and brings any
+package of kind `system` whose copy on the disk is missing, for other
+protocols, or of another build.
+
+**What it found on the way: an install held everything in Lua strings.**
+`packages.install` read the zip whole into memory and then read each file
+whole to sum it. JetSki's zip is 72 MB and its image 208 MB, about 280 MB
+at the peak, inside one Lua process. Now the zip comes down with
+`download.file` straight onto the disk beside its folder, as `.new` and
+`.old` already were (a region reaches a disk's file but not
+`/Temporary`). Each file is summed by `download.sum`, a region at a time,
+the code that sums Xavier's 1.6 GB models.
+
+**So the package suites boot with a disk.** `x86-install` and
+`x86-packages` ran with `/Home` in memory, which takes no region writes,
+and every machine a package goes to has a disk. Two of the fixture's
+assumptions did not hold on one: the broken package's index gave its zip
+as 28 bytes when it is 22 (nothing compared the two until the download
+held it to its size), and a file was written into a folder nobody made,
+which memory made by itself.
+
+**Tests.**
+- `x86-install`, 15 checks (12 before):
+  - a system package not on the disk is brought into
+    `/Home/System/Apps/Demo`;
+  - one of this build is left where it is;
+  - one of another build is replaced by the server's;
+  - and the downloaded archive is not left beside the folder.
+- `x86-jetski`, 38 checks (37 before): `/Kosmos/Apps/JetSki/jetski.elf`
+  is there, and a write beside it is refused with the sentence above.
+- `host`'s file types, 58 checks: JetSki is listed from
+  `/Kosmos/Apps/JetSki/jetski.lua`, marked as Kosmos's own, first, with no
+  `.lua` folder stray.
+
+**Controls**, each failing at exactly its own check:
+- `systemapps` blind to the build fails "did not bring the server's build
+  over another";
+- the mount made writable fails the JetSki check with `true true nil`;
+- the system scan taken out of `filetypes.installed` fails 2 of 58.

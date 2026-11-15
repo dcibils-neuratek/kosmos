@@ -23,12 +23,13 @@
 -- **Checked before anything installed is touched**: the manifest's
 -- protocols must be this build's (`sys.protostamp`), and every file must
 -- have the size and the SHA-256 the manifest gives; a package that fails
--- either is left in /Temporary's leftovers and nothing installed changes.
+-- either is taken away again and nothing installed changes.
 -- **Put in place without a moment of nothing there**: unpacked beside the
 -- installed folder on the same disk, swapped in by renames, the old one
 -- removed. **Kept**: the manifest it was installed from, in /Home/Packages -
 -- what is installed, from which version, and every file it put there.
 
+local download = use("/Kosmos/Libraries/download.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local http = use("/Kosmos/Libraries/http.lua")
 local zip = use("/Kosmos/Libraries/zip.lua")
@@ -139,17 +140,14 @@ end
 -- SHA-256 by the Crypto Kit. Nil and the first that is not.
 --
 local function verify(folder, manifest)
-  local crypto = use("/Kosmos/Kits/crypto")
-
   for _, f in ipairs(manifest.files) do
-    local where = files.join(folder, f.path)
-    local data = fs.read(where)
+    local size, sha = download.sum(files.join(folder, f.path))
 
-    if type(data) ~= "string" then return nil, f.path .. " is missing" end
-    if #data ~= f.size then
-      return nil, ("%s is %d bytes, not %d"):format(f.path, #data, f.size)
+    if not size then return nil, f.path .. " is missing" end
+    if size ~= f.size then
+      return nil, ("%s is %d bytes, not %d"):format(f.path, size, f.size)
     end
-    if crypto.sha256(data) ~= f.sha then
+    if sha ~= f.sha then
       return nil, f.path .. " is not what was made: its SHA-256 differs"
     end
   end
@@ -161,23 +159,27 @@ end
 -- **One package fetched, checked and put in place.** True, or nil and why.
 --
 function packages.install(p, server)
-  local body, err = get(server, p.name .. ".zip")
+  local fresh, old, archive = p.into .. ".new", p.into .. ".old", p.into .. ".zip"
 
-  if not body then return nil, err end
+  -- Onto the disk as it arrives, beside where it goes as `.new` and `.old`
+  -- are, never a Lua string: JetSki's is 72 MB, and a region reaches a
+  -- disk's file and not /Temporary. A leftover archive is another build's,
+  -- and would be resumed, so it goes.
+  files.make_folder(files.parent(p.into))
+  if fs.getattr(archive) then files.remove(archive) end
 
-  local archive = "/Temporary/install-" .. p.name .. ".zip"
-  local fresh, old = p.into .. ".new", p.into .. ".old"
+  local ok, oops = download.file("http://" .. server .. "/" .. p.name .. ".zip", archive,
+                                 { size = (p.zip or 0) > 0 and p.zip or nil })
 
-  local ok, oops = fs.write(archive, body)
-
-  body = nil
-  if not ok then return nil, "no room for it in /Temporary: " .. tostring(oops) end
+  if not ok then
+    if fs.getattr(archive) then files.remove(archive) end
+    return nil, tostring(oops)
+  end
 
   -- Leftovers of an install that stopped halfway, first.
   if fs.getattr(fresh) then files.remove(fresh) end
   if fs.getattr(old) then files.remove(old) end
 
-  files.make_folder(files.parent(p.into))
   ok, oops = zip.extract{ from = archive, into = fresh }
   files.remove(archive)
 

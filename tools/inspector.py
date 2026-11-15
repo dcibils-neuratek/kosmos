@@ -3,7 +3,7 @@
 """**Web Inspector's front end, for JetSki** (`docs/webkit.html`, *Developer
 mode*): Safari's inspector pages - `Main.html` and the rest of
 `WebInspectorUI` - made from the WebKit source the build already unpacked,
-for `/Home/Apps/JetSki/Inspector/`.
+for `/Home/System/Apps/JetSki/Inspector/`, seen as `/Kosmos/Apps/JetSki/Inspector/`.
 
     python3 tools/inspector.py          # makes build/inspector/res/WebInspectorUI
 

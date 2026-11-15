@@ -2931,7 +2931,8 @@ static const struct {
     /* WebKit2, its three processes, in no image but its test's
      * (`docs/w7.md` W7a). */
     { "webkit2test", kosmos_webkit2test_kit, 1 },
-    /* JetSki, the browser, installed in /Home/Apps/JetSki (`docs/w7.md` W7c). */
+    /* JetSki, the browser, Kosmos's own on the disk: /Home/System/Apps/JetSki,
+     * seen as /Kosmos/Apps/JetSki (`docs/w7.md` W7c). */
     { "jetski",   kosmos_jetski_kit, 1 },
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */

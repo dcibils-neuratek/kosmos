@@ -37,9 +37,13 @@ local INSTALLED = {}
 for _, file in ipairs(arg) do
   local folder, main = file:match("^user/installed/([^/]+)/([^/]+)%.lua$")
 
+  -- JetSki is Kosmos's own, on the disk and seen in /Kosmos/Apps as a
+  -- folder (`installed.py`'s SYSTEM, the namespace's `SYSTEM_APPS`).
+  local where = (folder == "JetSki") and "/Kosmos/Apps" or "/Home/Apps"
+
   if folder and main == folder:lower() then
-    STORE["/Home/Apps"][folder] = true
-    INSTALLED["/Home/Apps/" .. folder .. "/" .. main .. ".lua"] = file
+    STORE[where][folder] = true
+    INSTALLED[where .. "/" .. folder .. "/" .. main .. ".lua"] = file
   end
 end
 
@@ -417,6 +421,25 @@ check(types.describe("/Home/data.xyz") == "XYZ file"
 check(types.app_name("pdfview") == "PDF" and types.app_name("video") == "Video"
       and types.app_name("newthing") == "Newthing",
       "an opener is not called what its window is called")
+
+-- **A system application on the disk** (`filetypes.SYSTEM`): JetSki, a
+-- folder in /Kosmos/Apps, is listed with its program there and first; the
+-- image's applications, files in the same folder, are not taken for one.
+do
+  local list = types.installed()
+  local jetski, stray
+
+  for _, app in ipairs(list) do
+    if app.name == "jetski" then jetski = app end
+    if app.program:match("%.lua/") then stray = app.program end
+  end
+
+  check(jetski ~= nil and jetski.program == "/Kosmos/Apps/JetSki/jetski.lua" and jetski.system,
+        "JetSki is not listed as Kosmos's own, from /Kosmos/Apps: "
+        .. tostring(jetski and jetski.program))
+  check(list[1] and list[1].system, "a system application is not listed first")
+  check(stray == nil, "a file in /Kosmos/Apps was taken for a folder: " .. tostring(stray))
+end
 
 if failed == 0 then
   print(("PASS: %d checks on what a file is and what opens it, on this "

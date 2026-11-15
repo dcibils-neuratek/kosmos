@@ -29,9 +29,11 @@
 -- **The browser, W7c's first slice** (`docs/w7.md`): WebKit's three
 -- processes - this image as the UI process, and again as each page's web
 -- process and as the network process - and this file, the window around
--- them. An installed application (`docs/elf.md` step 5): this file and
--- `jetski.elf` in `/Home/Apps/JetSki`; the system's image carries none of
--- it.
+-- them. Kosmos's own application, kept on the disk because it is too big
+-- for the image (Diego, 15 November 2026: "/Home/System, seen as /Kosmos"):
+-- this file and `jetski.elf` in `/Home/System/Apps/JetSki`, which every
+-- program sees, read only, as `/Kosmos/Apps/JetSki`; the system's image
+-- carries none of it.
 --
 -- **A window that draws its own pixels** (`gfx.md` 19.4), as the NetSurf
 -- browser's is: the kit's widgets - back, forward, reload and the address
@@ -114,7 +116,7 @@ end
 web.frame(X, Y, W, H)
 
 -- Web Inspector's pages, in the folder beside this file (`tools/inspector.py`).
-local HERE = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/JetSki"
+local HERE = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Kosmos/Apps/JetSki"
 web.inspector_files(HERE .. "/Inspector")
 web.developer(DEVELOPER)
 

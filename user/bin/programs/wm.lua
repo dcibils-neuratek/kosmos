@@ -4442,6 +4442,19 @@ function D.open_startup()
       break
     end
   end
+
+  --
+  -- **Kosmos's own applications on the disk, held to this build**
+  -- (`systemapps.lua`): JetSki in /Home/System/Apps, brought from the
+  -- boot's package server when the copy there is another build's - which
+  -- after a netboot it usually is - or said, on a stick, when it is for
+  -- other protocols.
+  --
+  local server = sys.boot and sys.boot("opt/kosmos/packages")
+
+  if (type(server) == "string" and server ~= "") or fs.getattr("/Home/System/Apps") then
+    D.launch_entry("systemapps")
+  end
 end
 
 --

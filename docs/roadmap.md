@@ -10583,9 +10583,13 @@ the applications make the system useful, and is not pulled forward.
       **Measured and changed the same day**: JetSki is 170 MB stripped (62 MB
       gzipped) against a 43 MB image held whole in RAM. Diego chose **a
       system application on disk** over linking it in ("System app on
-      disk"): every stick and netboot carries it in a system folder on the
-      disk, versioned and updated with Kosmos, never optional, read from
-      the disk when it starts - no boot or memory cost.
+      disk"), and where ("/Home/System, seen as /Kosmos"): its folder is
+      `/Home/System/Apps/JetSki`, seen by every program, read only, as
+      `/Kosmos/Apps/JetSki`; a stick's build writes it with its
+      `package.txt`, and a netboot's `systemapps`, at login, brings it from
+      the Mac's package server when the copy there is missing, for other
+      protocols or of another build. Read from the disk when it starts - no
+      boot or memory cost. **Built in 0.11.431.**
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's

@@ -2,8 +2,9 @@
 -- **A file downloaded to a disk, of any size** (`docs/xavier.md`, *Models*):
 -- the bytes go from the connection into a region, from the region onto the
 -- disk, and through a SHA-256 on the way, all in C - so a model of 1.6 GB is
--- the same to this as a page of text. Models is the first user; Packages and
--- the browser's downloads are the next.
+-- the same to this as a page of text. Models is the first user, Packages
+-- the second (a package is fetched and its files summed here); the
+-- browser's downloads are the next.
 --
 --   local download = use("/Kosmos/Libraries/download.lua")
 --   local ok, why = download.file("https://huggingface.co/x/resolve/main/m.gguf",
@@ -219,15 +220,49 @@ local function one(address, path, from, hash, opts, state)
   end
 end
 
-function download.file(address, path, opts)
-  opts = opts or {}
-
+-- The region pieces pass through, made the first time it is needed.
+local function the_piece()
   if not piece then
     local why
     piece, why = regions.make(download.PIECE)
 
     if not piece then return nil, why end
   end
+
+  return piece
+end
+
+--
+-- **A file on the disk, summed** a region at a time, as a cut download's
+-- bytes are: its size and its SHA-256, or nil and why. However big it is,
+-- none of it becomes a Lua string - Packages holds what it unpacked to its
+-- manifest this way, and JetSki's image is 208 MB.
+--
+function download.sum(path)
+  local ok, why = the_piece()
+
+  if not ok then return nil, why end
+
+  local a = fs.getattr(path)
+
+  if not a then return nil, path .. " is missing" end
+
+  local hash = crypto.sha256_begin()
+  local size = a.size or 0
+  local got
+  got, why = sum_existing(path, size, hash)
+
+  if not got then return nil, why end
+
+  return size, hash:hex()
+end
+
+function download.file(address, path, opts)
+  opts = opts or {}
+
+  local made, why = the_piece()
+
+  if not made then return nil, why end
 
   -- What a cut download left: kept, and summed.
   local hash = crypto.sha256_begin()

@@ -3390,3 +3390,40 @@ Elements on what is under the pointer. WebKit's own right-click menus are
 turned off in this build, and the item waits for them. The Settings
 switch for developer features waits for JetSki's Settings window; until
 then, the features are always on.
+
+## 15 November 2026 - JetSki, part of Kosmos
+
+**In short:** JetSki is now part of Kosmos rather than an application you
+install. It is too big to go inside the file Kosmos boots from (208 MB,
+against 43 MB for the whole rest of the system), so it lives on the disk,
+in `/Home/System/Apps/JetSki`. Every program sees it as
+`/Kosmos/Apps/JetSki`, beside the applications built into Kosmos, and
+nothing can change it there.
+
+**Why this way.** Diego decided that JetSki replaces the old browser, and
+a browser has to be on every machine, not only on the ones somebody
+installed it on. Putting it inside the boot file would have made every
+boot and every test machine five times larger and kept 170 MB of memory
+taken all the time. On the disk, it costs nothing until it is opened.
+
+**Keeping it in step.** A copy on the disk has to match the Kosmos that
+runs it, or it may not start. A USB stick is built with both at once, so
+its copy always matches. A network boot is different: the Mac sends the
+new system, but the disk keeps whatever copy it had. So when you log in,
+a small program called `systemapps` asks the Mac's package server whether
+its JetSki is newer, and if it is, downloads it and swaps it in. Each copy
+carries a label saying which build it came from, which is how the program
+can tell.
+
+**A fix on the way.** Installing a package used to read the whole download
+into the program's memory, and then every file again to check it. That
+was fine for Doom; it is not fine for a 72 MB download that unpacks to
+208 MB. Packages now go straight to the disk as they arrive, and are
+checked a few megabytes at a time, using the same code that downloads
+Xavier's AI models.
+
+**How it is tested.** The browser test now opens JetSki from
+`/Kosmos/Apps/JetSki` and checks that writing a file there is refused.
+The file-types test checks that JetSki is listed as Kosmos's own. The
+package tests now run with a real disk, as every machine has, and check
+that a download leaves nothing behind.

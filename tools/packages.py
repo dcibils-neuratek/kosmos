@@ -128,18 +128,42 @@ def facts_text(facts):
     return "".join("%-11s %s\n" % (k, facts.get(k, "")) for k in keys)
 
 
-def make(facts, folder, pairs):
-    """One package: `pairs` of (here, path inside), and its manifest, zipped
-    under `folder/` so the folder is the zip's one top folder."""
+def app_facts(folder, into):
+    """An application's facts, from its program's header - the folder in
+    `user/installed/` and where it goes on the machine. A system
+    application's kind is `system` (`installed.SYSTEM`): Kosmos's own, read
+    as /Kosmos/Apps/<folder>, and brought up to its build at a netboot."""
+    program = next((os.path.join(I.INSTALLED, folder, f)
+                    for f in sorted(os.listdir(os.path.join(I.INSTALLED, folder)))
+                    if f.endswith(".lua")), None)
+    words = header(program) if program else {}
+    kind = "system" if folder in I.SYSTEM else words.get("kind", "application")
+    return {"version": version(), "build": build_name(), "protocols": stamp(),
+            "name": folder.lower(), "title": words.get("name", folder), "kind": kind,
+            "about": words.get("about", ""), "into": into, "icon": words.get("icon", ""),
+            "needs": words.get("needs", ""), "depends": words.get("depends", "")}
+
+
+def manifest(facts, pairs):
+    """`package.txt` for `pairs` of (here, path inside): the facts, and a
+    line a file. The same text a package carries and a stick's folder does,
+    so a machine reads either the same way."""
     files = sorted(pairs, key=lambda p: p[1])
     lines = ["file        %d %s %s\n" % (os.path.getsize(here), sha256(here), inside)
              for here, inside in files]
     facts["bytes"] = sum(os.path.getsize(here) for here, _ in files)
-    manifest = "# Made by tools/packages.py; a line a fact.\n" + facts_text(facts) + "".join(lines)
+    return "# Made by tools/packages.py; a line a fact.\n" + facts_text(facts) + "".join(lines)
+
+
+def make(facts, folder, pairs):
+    """One package: `pairs` of (here, path inside), and its manifest, zipped
+    under `folder/` so the folder is the zip's one top folder."""
+    files = sorted(pairs, key=lambda p: p[1])
+    text = manifest(facts, files)
     path = os.path.join(OUT, facts["name"] + ".zip")
 
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(folder + "/package.txt", manifest)
+        z.writestr(folder + "/package.txt", text)
 
         for here, inside in files:
             z.write(here, folder + "/" + inside)
@@ -156,25 +180,23 @@ def main():
     common = {"version": version(), "build": build_name(), "protocols": stamp()}
     apps = {}
 
+    # Each application's files by its folder, wherever it goes: /Home/Apps,
+    # or /Home/System/Apps for Kosmos's own. Its `package.txt` is made again
+    # by `make`, so the one a stick's folder carries is left out.
     for pair in I.pairs("x86_64", home):
         here, guest = pair.split(":", 1)
-        parts = guest.split("/")                    # "", "Home", "Apps", "Doom", ...
 
-        if len(parts) > 4 and parts[1] == "Home" and parts[2] == "Apps":
-            apps.setdefault(parts[3], []).append((here, "/".join(parts[4:])))
+        for into in (I.APPS, I.SYSTEM_APPS):
+            if guest.startswith(into + "/"):
+                folder, _, inside = guest[len(into) + 1:].partition("/")
+
+                if inside and inside != "package.txt":
+                    apps.setdefault((folder, into + "/" + folder), []).append((here, inside))
 
     made = []
 
-    for folder in sorted(apps):
-        program = next((os.path.join(I.INSTALLED, folder, f)
-                        for f in sorted(os.listdir(os.path.join(I.INSTALLED, folder)))
-                        if f.endswith(".lua")), None)
-        words = header(program) if program else {}
-        facts = dict(common, name=folder.lower(), title=words.get("name", folder),
-                     kind=words.get("kind", "application"), about=words.get("about", ""),
-                     into="/Home/Apps/" + folder, icon=words.get("icon", ""),
-                     needs=words.get("needs", ""), depends=words.get("depends", ""))
-        made.append(make(facts, folder, apps[folder]))
+    for folder, into in sorted(apps):
+        made.append(make(app_facts(folder, into), folder, apps[(folder, into)]))
 
     dev = [(p.split(":", 1)[0], p.split(":", 1)[1][len("/Home/Developer/"):])
            for p in I.developer("x86_64")]

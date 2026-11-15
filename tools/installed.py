@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""What the build installs into /Home/Apps, /Home/Fonts and /Home/Developer, as
-`host:/Home/path` pairs.
+"""What the build installs into /Home/Apps, /Home/System/Apps, /Home/Fonts and
+/Home/Developer, as `host:/Home/path` pairs.
 
     python3 tools/installed.py aarch64 ~/Kosmos/home
     python3 tools/installed.py x86_64  ~/Kosmos/home
@@ -33,6 +33,18 @@ INSTALLED = os.path.join(ROOT, "user", "installed")
 # What only one architecture builds: JetSki stands on WebCore, which is
 # built for x86-64 alone while AArch64's suites wait (`CLAUDE.md`).
 ONLY = {"JetSki": "x86_64"}
+
+APPS = "/Home/Apps"
+
+# **Kosmos's own applications, on the disk** (Diego, 15 November 2026:
+# "/Home/System, seen as /Kosmos"): too big for the image the machine boots
+# from, so kept in /Home/System/Apps, and seen by every program, read only,
+# as /Kosmos/Apps/<name> (`ns.SYSTEM_APPS` in `init.lua`). Their folder
+# carries its `package.txt` - this build's, from `packages.py` - so a
+# netboot can tell a copy from another build and bring this one
+# (`systemapps.lua`).
+SYSTEM = {"JetSki"}
+SYSTEM_APPS = "/Home/System/Apps"
 
 DATA = {
     "Doom": [("doom1.wad", "doom1.wad")],
@@ -84,11 +96,12 @@ def pairs(arch, home, apps=None):
         if ONLY.get(name, arch) != arch:
             continue
 
-        guest = "/Home/Apps/" + name
+        guest = (SYSTEM_APPS if name in SYSTEM else APPS) + "/" + name
+        mine = []                                   # (here, inside), this folder's
 
         for file in sorted(os.listdir(folder)):
             if file.endswith(".lua"):
-                out.append("%s:%s/%s" % (os.path.join(folder, file), guest, file))
+                mine.append((os.path.join(folder, file), file))
 
         program = os.path.join(folder, name.lower() + ".lua")
         image = os.path.exists(program) and image_of(program)
@@ -102,17 +115,30 @@ def pairs(arch, home, apps=None):
             os.makedirs(staged, exist_ok=True)
             stripped = os.path.join(staged, image)
             subprocess.run([objcopy, "--strip-debug", built, stripped], check=True)
-            out.append("%s:%s/%s" % (stripped, guest, image))
+            mine.append((stripped, image))
 
         if name in MADE:
-            out.extend("%s:%s/%s" % (host, guest, inside) for host, inside in MADE[name]())
+            mine.extend(MADE[name]())
 
         for there, here in DATA.get(name, []):
             source = os.path.join(home, there) if home else ""
             own = os.path.join(home, "Apps", name, here) if home else ""
 
             if source and os.path.isfile(source) and not os.path.isfile(own):
-                out.append("%s:%s/%s" % (source, guest, here))
+                mine.append((source, here))
+
+        if name in SYSTEM:
+            import packages
+
+            os.makedirs(staged, exist_ok=True)
+            manifest = os.path.join(staged, name + ".package.txt")
+
+            with open(manifest, "w") as f:
+                f.write(packages.manifest(packages.app_facts(name, guest), mine))
+
+            mine.append((manifest, "package.txt"))
+
+        out.extend("%s:%s/%s" % (here, guest, inside) for here, inside in mine)
 
     return out
 

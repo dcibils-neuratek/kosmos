@@ -576,7 +576,7 @@ local function new_namespace()
   -- `/Network` (`docs/sharing.md`, *`/Network` is already somebody's*).
   -- Only the `share_*` calls below take it.
   --
-  function ns.mount(prefix, capability, root, proto, also)
+  function ns.mount(prefix, capability, root, proto, also, readonly)
     --
     -- Mounting over a prefix replaces what was there.
     --
@@ -598,10 +598,32 @@ local function new_namespace()
     end
 
     mounts[#mounts + 1] = { prefix = prefix, key = fold(prefix), cap = capability,
-                            root = root, proto = proto, also = also }
+                            root = root, proto = proto, also = also, readonly = readonly }
 
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
+  end
+
+  --
+  -- **The applications Kosmos carries on the disk** (Diego, 15 November
+  -- 2026: "System app on disk", then "/Home/System, seen as /Kosmos").
+  -- JetSki is 170 MB, and the system's image is held whole in memory, so it
+  -- is not linked in: it is on the disk in `/Home/System/Apps/JetSki`, put
+  -- there by the stick's build or, on a netboot, fetched from the package
+  -- server when the disk's copy is missing or from another build
+  -- (`systemapps`). Every program sees it here, as part of Kosmos and read
+  -- only. A name in this list whose folder is not on the disk is a path
+  -- that does not exist, as any other.
+  --
+  -- `/Home/System` is still reachable through `/Home`, as all of `/Home` is
+  -- to every program today (`layout.md` §3, *the column is the drawing*).
+  --
+  ns.SYSTEM_APPS = { "JetSki" }
+
+  function ns.mount_system_apps(disk)
+    for _, name in ipairs(ns.SYSTEM_APPS) do
+      ns.mount("/Kosmos/Apps/" .. name, disk, "/Home/System/Apps/" .. name, "disk", nil, true)
+    end
   end
 
   --
@@ -673,7 +695,7 @@ local function new_namespace()
           rest = (rest == "/") and m.root or (m.root .. rest)
         end
 
-        return m.cap, rest, m.prefix, m.proto, m.root, m.also
+        return m.cap, rest, m.prefix, m.proto, m.root, m.also, m.readonly
       end
     end
     return nil
@@ -734,7 +756,7 @@ local function new_namespace()
     -- ordinary longest-prefix rule picks it from then on and this costs one
     -- exchange the first time and nothing afterwards.
     --
-    local cap, rest, prefix, proto, root, also = match(path)
+    local cap, rest, prefix, proto, root, also, readonly = match(path)
 
     for _, a in ipairs(autos) do
       if prefix == a.prefix and rest ~= "/" then
@@ -762,7 +784,7 @@ local function new_namespace()
       end
     end
 
-    if cap then return cap, rest, prefix, proto, root, also end
+    if cap then return cap, rest, prefix, proto, root, also, readonly end
 
     -- Nothing matched at all. Still worth asking, for a registry mounted
     -- somewhere this path only partly overlaps.
@@ -830,6 +852,16 @@ local function new_namespace()
       local path = dir .. "/" .. name .. ".lua"
 
       if ns.getattr(path) then return path end
+    end
+
+    -- **A system application on the disk**: `/Kosmos/Apps/JetSki/jetski.lua`
+    -- for `jetski` (`ns.SYSTEM_APPS`).
+    for _, folder in ipairs(ns.SYSTEM_APPS or {}) do
+      if folder:lower() == name:lower() then
+        local path = "/Kosmos/Apps/" .. folder .. "/" .. folder:lower() .. ".lua"
+
+        if ns.getattr(path) then return path end
+      end
     end
 
     --
@@ -3316,17 +3348,32 @@ local function new_namespace()
   -- stack is asked - connect, ping, resolve - never comes this way; it goes
   -- through the network kit's `net_at`, as it always has.
   --
+  --
+  -- **What a read-only mount refuses** - a system application's folder,
+  -- `/Kosmos/Apps/JetSki`, which is on the disk (`ns.mount_system_apps`):
+  -- anything that would change it, refused here with a sentence, before
+  -- any server is asked.
+  --
+  local CHANGES = { write = true, delete = true, rename = true, mkdir = true,
+                    setattr = true }
+
+  local function part_of_kosmos(path)
+    return tostring(path) .. " is part of Kosmos, and read only"
+  end
+
   local SHARE_FILE_OPS = { list = true, getattr = true, read = true, write = true,
                            delete = true, rename = true, mkdir = true,
                            setattr = true, query = true }
 
   local function request(op, path, extra, pass, again)
-    local capability, rest, prefix, proto, _, also = resolve(path)
+    local capability, rest, prefix, proto, _, also, readonly = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
       return nil, "no such path: " .. path
     end
+
+    if readonly and CHANGES[op] then return nil, part_of_kosmos(path) end
 
     if proto == "net" and also and SHARE_FILE_OPS[op] then
       return disk_request(also, op, rest, extra, pass)
@@ -3932,10 +3979,14 @@ local function new_namespace()
   -- an index means something different on each side and only the kernel can
   -- translate it.
   function ns.send(path, message, pass, again)
-    local capability, rest, prefix, proto, _, also = resolve(path)
+    local capability, rest, prefix, proto, _, also, readonly = resolve(path)
 
     if not capability then
       return nil, "no such path: " .. path
+    end
+
+    if readonly and CHANGES[tostring(message.type or "")] then
+      return nil, part_of_kosmos(path)
     end
 
     --
@@ -4627,6 +4678,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- it had to be the whole disk at one name, and a file written by
   -- `mkimage` at `/Home/notes` arrived as `/Home/home/notes`.
   ns.mount("/Home", disk_cap, "/Home", "disk")
+  ns.mount_system_apps(disk_cap)
 
   --
   -- ...and `/Home` moves into memory when there is no disk under it.
@@ -6724,7 +6776,10 @@ if role == ROLE_INIT then
 
     mine.mount("/Network", NET_EP, nil, "net")
 
-    if DISKFS_EP then mine.mount("/Home", DISKFS_EP, "/Home", "disk") end
+    if DISKFS_EP then
+      mine.mount("/Home", DISKFS_EP, "/Home", "disk")
+      mine.mount_system_apps(DISKFS_EP)
+    end
 
     --
     -- Nothing by default: an address, a router and a resolver come from
@@ -7047,7 +7102,10 @@ if role == ROLE_RUNNER then
   -- that lists them, answered in-process (`kits_request`).
   ns.mount("/Kosmos/Kits", true, nil, "kits")
   if req.app     then ns.mount_registry("/Running", req.app, "app") end
-  if req.disk    then ns.mount("/Home", req.disk, "/Home", "disk") end
+  if req.disk    then
+    ns.mount("/Home", req.disk, "/Home", "disk")
+    ns.mount_system_apps(req.disk)
+  end
   if req.sandboxes then ns.mount("/Sandboxes", req.sandboxes, "/Sandboxes", "disk") end
   if req.models then ns.mount("/Models", req.models, "/Models", "disk") end
 
