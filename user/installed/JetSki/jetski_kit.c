@@ -98,6 +98,13 @@ static int l_pump(lua_State *L)
     flag(L, "picture", st.happened & JETSKI_PICTURE);
     flag(L, "crashed", st.happened & JETSKI_CRASHED);
     flag(L, "asked", st.happened & JETSKI_ASKED);
+    flag(L, "tabs", st.happened & JETSKI_TABS);
+    lua_pushinteger(L, st.tab);
+    lua_setfield(L, 2, "tab");
+    lua_pushinteger(L, st.opened);
+    lua_setfield(L, 2, "opened");
+    lua_pushinteger(L, st.closing);
+    lua_setfield(L, 2, "closing");
     flag(L, "loading", st.loading);
     flag(L, "can_back", st.can_back);
     flag(L, "can_forward", st.can_forward);
@@ -174,6 +181,69 @@ static int l_key(lua_State *L)
     return 1;
 }
 
+/* `tab_new()`: a tab, its id; not shown until `tab_select`. */
+static int l_tab_new(lua_State *L)
+{
+    int id = jetski_tab_new();
+
+    if (!id) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no tab could be made");
+        return 2;
+    }
+    lua_pushinteger(L, id);
+    return 1;
+}
+
+static int l_tab_select(lua_State *L)
+{
+    lua_pushboolean(L, jetski_tab_select((int)luaL_checkinteger(L, 1)));
+    return 1;
+}
+
+/* `tab_close(id)`: false for the last one, which is the window's to close. */
+static int l_tab_close(lua_State *L)
+{
+    lua_pushboolean(L, jetski_tab_close((int)luaL_checkinteger(L, 1)));
+    return 1;
+}
+
+/* `tabs(list)`: the tabs in order, into `list`, reused - `{ id, shown,
+ * loading, title }` each - and how many. A tab's table is kept between
+ * calls, so a strip drawn every pass makes no garbage once it is full. */
+static int l_tabs(lua_State *L)
+{
+    static struct jetski_tab tabs[64];
+    unsigned n = jetski_tabs(tabs, 64), i;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    for (i = 0; i < n; i++) {
+        if (lua_rawgeti(L, 1, (lua_Integer)i + 1) != LUA_TTABLE) {
+            lua_pop(L, 1);
+            lua_createtable(L, 0, 4);
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, 1, (lua_Integer)i + 1);
+        }
+        lua_pushinteger(L, tabs[i].id);
+        lua_setfield(L, -2, "id");
+        lua_pushboolean(L, tabs[i].shown);
+        lua_setfield(L, -2, "shown");
+        lua_pushboolean(L, tabs[i].loading);
+        lua_setfield(L, -2, "loading");
+        lua_pushstring(L, tabs[i].title);
+        lua_setfield(L, -2, "title");
+        lua_pop(L, 1);
+    }
+    for (i = n + 1; lua_rawgeti(L, 1, (lua_Integer)i) != LUA_TNIL; i++) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        lua_rawseti(L, 1, (lua_Integer)i);
+    }
+    lua_pop(L, 1);
+    lua_pushinteger(L, n);
+    return 1;
+}
+
 static int l_focus(lua_State *L)
 {
     jetski_focus(lua_toboolean(L, 1));
@@ -188,6 +258,8 @@ void kosmos_jetski_kit(lua_State *L)
         { "stop", l_stop },     { "pump", l_pump },     { "paint", l_paint },
         { "mouse", l_mouse },   { "wheel", l_wheel },   { "key", l_key },
         { "focus", l_focus },   { "frame", l_frame },
+        { "tab_new", l_tab_new }, { "tab_select", l_tab_select },
+        { "tab_close", l_tab_close }, { "tabs", l_tabs },
         { NULL, NULL },
     };
 

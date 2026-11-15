@@ -33728,3 +33728,39 @@ the one door to a size, Tracker's - so 640 KB, 4.3 MB, 607 MB. Its
 checks, 69 s) holds every one to the shape of a size and the window
 manager's to MB. Control: the old `%d KB` back in `procs.lua` fails that
 one check - "wm ('program', '-', '2608 KB')".
+
+## 18.821 Tabs (0.11.425)
+
+Diego, on the M700: "there is no tabs yet". As `docs/webkit.html` drew
+them on 11 November: the tabs are the window's top row - a window with a
+header of its own (`header = true`), so the kit draws no band and the
+window manager's three sit at the strip's right end - each with its close,
++ after the last, the shown one joined to the bar below. Control-T opens
+one with the address field waiting, Super with a digit goes to that tab (9
+the last), and the last tab's close closes the window.
+
+**Each tab is a WebKit page of its own** (`jetski.cpp`'s `Tab`): its view,
+its callbacks told which tab through `clientInfo`, its state since the last
+pump. The tab shown is visible and active; the others are neither, as a
+browser's background tabs are. **A link to a new window opens a tab** -
+`createNewPage`, which JetSki never answered, so a `target=_blank` link did
+nothing at all; Google News opens its articles that way, which is likely
+part of Diego's "i click some links and nothing happens". `window.close()`
+closes its tab.
+
+**Control-W is not the browser's here**: the window manager keeps it as the
+desktop's prefix (Control-W then Q), and it never reaches an application -
+found when the suite's Control-W arrived nowhere. A tab closes by its close.
+
+Two things found on the way: making the slice timer before the first view
+faulted in WTF's allocator - the first view is what starts WTF's main
+thread - so it is made after; and the first page, loaded again in a tab
+after the window was made smaller, reported its new outer size over the
+first report, so the suite keeps the first.
+
+`x86-jetski`, 32 checks, 34 s: Control-T and `tab 2 of 2`, the first page's
+address typed there and loaded, Super-1 and `tab 1 of 2`, the first tab's
+close and `tab 1 of 1` with the first page shown (its colour on the
+screen), and a `target=_blank` link opening the second page in `tab 2 of
+2`. Control `KOSMOS_JETSKI_BREAK=tabless`, Control-T unanswered: fails the
+one check, "Control-T opened no tab".

@@ -40,6 +40,8 @@
 #include <wtf/MonotonicTime.h>
 #include <wtf/RunLoop.h>
 #include <wtf/Seconds.h>
+#include <wtf/Vector.h>
+#include <memory>
 
 extern "C" int kosmos_webkit_role(unsigned long role);
 
@@ -51,16 +53,31 @@ extern "C" int kosmos_project_role(unsigned long role)
 
 namespace {
 
-struct Browser {
+/*
+ * **A tab** (`docs/webkit.html`, agreed 11 November 2026): a view and its
+ * page, a web process of its own, and what its page has said since the
+ * last pump. The window shows one, `browser.tab`; the rest go on in the
+ * dark, unseen and inactive, as a browser's background tabs do.
+ */
+struct Tab {
+    int id = 0;
     WKViewRef view = nullptr;
     WKPageRef page = nullptr;
-    unsigned width = 0, height = 0;
     unsigned happened = 0;
     int error = 0;
     bool loading = false;
     bool asked = false;             // a link followed, its load not begun
     WTF::MonotonicTime askedAt;
     char going[2048] { };
+};
+
+struct Browser {
+    Vector<std::unique_ptr<Tab>> tabs;
+    Tab* tab = nullptr;             // the one in the window
+    int nextId = 1;
+    int opened = 0;                 // a tab a page opened, not yet told
+    int closing = 0;                // a tab whose page asked to be closed
+    unsigned width = 0, height = 0;
     bool running = false;           // inside `jetski_pump`'s run loop
     WTF::RunLoop::Timer* slice = nullptr;
 
@@ -71,17 +88,40 @@ struct Browser {
             WTF::RunLoop::mainSingleton().stop();
         }
     }
+
+    Tab* find(int id)
+    {
+        for (auto& tab : tabs) {
+            if (tab->id == id)
+                return tab.get();
+        }
+        return nullptr;
+    }
 };
 
 Browser browser;
 
+Tab* tabOf(const void* clientInfo)
+{
+    return const_cast<Tab*>(static_cast<const Tab*>(clientInfo));
+}
+
+// What the window shows is told at once; a tab in the dark waits its turn.
+void told(Tab* tab, unsigned what)
+{
+    tab->happened |= what;
+    if (tab == browser.tab || what & (JETSKI_FINISHED | JETSKI_FAILED | JETSKI_CRASHED))
+        browser.stop();
+}
+
 void copy(WKStringRef, char* into, size_t room);
 
-void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
+void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
-    browser.happened |= JETSKI_STARTED;
-    browser.loading = true;
-    browser.asked = false;
+    auto* tab = tabOf(info);
+    tab->loading = true;
+    tab->asked = false;
+    told(tab, JETSKI_STARTED);
 }
 
 /*
@@ -92,7 +132,7 @@ void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
  * nothing on screen. Asking is the first thing that happens, so the page is
  * loading from here: for the page itself, not a frame inside it.
  */
-void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListenerRef listener, WKTypeRef, const void*)
+void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListenerRef listener, WKTypeRef, const void* info)
 {
     if (WKNavigationActionShouldPerformDownload(action)) {
         WKFramePolicyListenerDownload(listener);
@@ -101,60 +141,59 @@ void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListener
 
     auto frame = adoptWK(WKNavigationActionCopyTargetFrameInfo(action));
     if (frame && WKFrameInfoGetIsMainFrame(frame.get())) {
-        browser.happened |= JETSKI_ASKED;
-        browser.asked = true;
-        browser.askedAt = WTF::MonotonicTime::now();
-        browser.going[0] = '\0';
+        auto* tab = tabOf(info);
+        tab->asked = true;
+        tab->askedAt = WTF::MonotonicTime::now();
+        tab->going[0] = '\0';
         auto request = adoptWK(WKNavigationActionCopyRequest(action));
         auto url = request ? adoptWK(WKURLRequestCopyURL(request.get())) : nullptr;
         if (url) {
             auto string = adoptWK(WKURLCopyString(url.get()));
-            copy(string.get(), browser.going, sizeof browser.going);
+            copy(string.get(), tab->going, sizeof tab->going);
         }
-        browser.stop();
+        told(tab, JETSKI_ASKED);
     }
     WKFramePolicyListenerUse(listener);
 }
 
 // A link to a place on the same page, `#notes`: asked, and never loaded.
-void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, WKTypeRef, const void*)
+void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, WKTypeRef, const void* info)
 {
-    browser.asked = false;
+    tabOf(info)->asked = false;
 }
 
-void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
+void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
-    browser.happened |= JETSKI_COMMITTED;
+    told(tabOf(info), JETSKI_COMMITTED);
 }
 
-void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void*)
+void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
-    browser.happened |= JETSKI_FINISHED;
-    browser.loading = false;
-    browser.asked = false;
-    browser.stop();
+    auto* tab = tabOf(info);
+    tab->loading = false;
+    tab->asked = false;
+    told(tab, JETSKI_FINISHED);
 }
 
-void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void*)
+void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void* info)
 {
-    browser.happened |= JETSKI_FAILED;
-    browser.error = error ? WKErrorGetErrorCode(error) : 0;
-    browser.loading = false;
-    browser.asked = false;
-    browser.stop();
+    auto* tab = tabOf(info);
+    tab->error = error ? WKErrorGetErrorCode(error) : 0;
+    tab->loading = false;
+    tab->asked = false;
+    told(tab, JETSKI_FAILED);
 }
 
-void didCrash(WKPageRef, const void*)
+void didCrash(WKPageRef, const void* info)
 {
-    browser.happened |= JETSKI_CRASHED;
-    browser.loading = false;
-    browser.stop();
+    auto* tab = tabOf(info);
+    tab->loading = false;
+    told(tab, JETSKI_CRASHED);
 }
 
-void needsDisplay(WKViewRef, WKRect, const void*)
+void needsDisplay(WKViewRef, WKRect, const void* info)
 {
-    browser.happened |= JETSKI_PICTURE;
-    browser.stop();
+    told(tabOf(info), JETSKI_PICTURE);
 }
 
 /*
@@ -208,32 +247,46 @@ void copy(WKStringRef string, char* into, size_t room)
     }
 }
 
-} // namespace
-
-extern "C" int jetski_open(unsigned width, unsigned height)
+// The window's tab shown, and every other one dark.
+void show(Tab* tab)
 {
-    if (browser.view || !width || !height)
-        return browser.view ? 0 : 1;
+    for (auto& each : browser.tabs) {
+        bool shown = each.get() == tab;
+        WKViewSetVisible(each->view, shown);
+        WKViewSetActive(each->view, shown);
+        if (!shown)
+            WKViewSetFocus(each->view, false);
+    }
+    browser.tab = tab;
+    if (tab)
+        tab->happened |= JETSKI_PICTURE;
+}
 
-    auto configuration = adoptWK(WKPageConfigurationCreate());
-    WKPageConfigurationSetContext(configuration.get(), context());
-    WKPageConfigurationSetWebsiteDataStore(configuration.get(), dataStore());
-    browser.view = WKViewCreate(configuration.get());
-    browser.width = width;
-    browser.height = height;
-    WKViewSetSize(browser.view, WKSizeMake(width, height));
-    WKViewSetVisible(browser.view, true);
-    WKViewSetActive(browser.view, true);
-    WKViewSetFocus(browser.view, true);
+WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef, WKNavigationActionRef, WKWindowFeaturesRef, const void*);
+void closePage(WKPageRef, const void*);
 
-    static WKViewClientV0 viewClient { };
-    viewClient.base = { 0, nullptr };
+/*
+ * **A tab, from a configuration**: JetSki's own for one a person opens,
+ * and the one WebKit hands over for one a page opens - `target=_blank`,
+ * `window.open` - which carries the page that opened it.
+ */
+Tab* makeTab(WKPageConfigurationRef configuration)
+{
+    auto tab = std::make_unique<Tab>();
+    tab->id = browser.nextId++;
+    tab->view = WKViewCreate(configuration);
+    if (!tab->view)
+        return nullptr;
+    WKViewSetSize(tab->view, WKSizeMake(browser.width, browser.height));
+
+    WKViewClientV0 viewClient { };
+    viewClient.base = { 0, tab.get() };
     viewClient.setViewNeedsDisplay = needsDisplay;
-    WKViewSetViewClient(browser.view, &viewClient.base);
+    WKViewSetViewClient(tab->view, &viewClient.base);
 
-    browser.page = WKViewGetPage(browser.view);
-    static WKPageNavigationClientV0 navigation { };
-    navigation.base = { 0, nullptr };
+    tab->page = WKViewGetPage(tab->view);
+    WKPageNavigationClientV0 navigation { };
+    navigation.base = { 0, tab.get() };
     navigation.didStartProvisionalNavigation = didStart;
     navigation.didCommitNavigation = didCommit;
     navigation.didFinishNavigation = didFinish;
@@ -242,18 +295,137 @@ extern "C" int jetski_open(unsigned width, unsigned height)
     navigation.webProcessDidCrash = didCrash;
     navigation.decidePolicyForNavigationAction = decidePolicy;
     navigation.didSameDocumentNavigation = didSameDocument;
-    WKPageSetPageNavigationClient(browser.page, &navigation.base);
+    WKPageSetPageNavigationClient(tab->page, &navigation.base);
 
-    static WKPageUIClientV0 ui { };
-    ui.base = { 0, nullptr };
+    WKPageUIClientV8 ui { };
+    ui.base = { 8, tab.get() };
     ui.getWindowFrame = getWindowFrame;
-    WKPageSetPageUIClient(browser.page, &ui.base);
+    ui.createNewPage = createNewPage;
+    ui.close = closePage;
+    WKPageSetPageUIClient(tab->page, &ui.base);
 
+    auto* made = tab.get();
+    browser.tabs.append(WTF::move(tab));
+    return made;
+}
+
+Tab* makeTab()
+{
+    auto configuration = adoptWK(WKPageConfigurationCreate());
+    WKPageConfigurationSetContext(configuration.get(), context());
+    WKPageConfigurationSetWebsiteDataStore(configuration.get(), dataStore());
+    return makeTab(configuration.get());
+}
+
+// A link to a new window, or `window.open`: a new tab, beside, and shown.
+WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef configuration, WKNavigationActionRef, WKWindowFeaturesRef, const void*)
+{
+    auto* tab = makeTab(configuration);
+    if (!tab)
+        return nullptr;
+    browser.opened = tab->id;
+    show(tab);
+    browser.stop();
+    return static_cast<WKPageRef>(const_cast<void*>(WKRetain(tab->page)));
+}
+
+// `window.close()`: the window says which tab, and closes it.
+void closePage(WKPageRef, const void* info)
+{
+    browser.closing = tabOf(info)->id;
+    browser.stop();
+}
+
+WKPageRef current()
+{
+    return browser.tab ? browser.tab->page : nullptr;
+}
+
+} // namespace
+
+extern "C" int jetski_open(unsigned width, unsigned height)
+{
+    if (!browser.tabs.isEmpty() || !width || !height)
+        return browser.tabs.isEmpty() ? 1 : 0;
+
+    browser.width = width;
+    browser.height = height;
+
+    // The first view first: making it is what starts WTF's main thread and
+    // run loop, which the timer below is made on.
+    auto* tab = makeTab();
+    if (!tab)
+        return 1;
     static WTF::RunLoop::Timer slice(WTF::RunLoop::mainSingleton(), "jetski slice"_s, [] {
         browser.stop();
     });
     browser.slice = &slice;
+    show(tab);
+    WKViewSetFocus(tab->view, true);
     return 0;
+}
+
+extern "C" int jetski_tab_new(void)
+{
+    if (browser.tabs.isEmpty())
+        return 0;
+    auto* tab = makeTab();
+    return tab ? tab->id : 0;
+}
+
+extern "C" int jetski_tab_select(int id)
+{
+    auto* tab = browser.find(id);
+    if (!tab)
+        return 0;
+    show(tab);
+    return 1;
+}
+
+/*
+ * **A tab closed**: its page closed - which ends its web process, unless
+ * another page shares it - and its view let go. The window chooses which
+ * is shown next; the last one is never closed here.
+ */
+extern "C" int jetski_tab_close(int id)
+{
+    if (browser.tabs.size() < 2)
+        return 0;
+    for (size_t i = 0; i < browser.tabs.size(); i++) {
+        auto& tab = browser.tabs[i];
+        if (tab->id != id)
+            continue;
+        WKPageClose(tab->page);
+        WKRelease(tab->view);
+        if (browser.tab == tab.get())
+            browser.tab = nullptr;
+        browser.tabs.removeAt(i);
+        if (!browser.tab)
+            show(browser.tabs[std::min(i, browser.tabs.size() - 1)].get());
+        return 1;
+    }
+    return 0;
+}
+
+extern "C" unsigned jetski_tabs(struct jetski_tab* out, unsigned room)
+{
+    unsigned n = 0;
+    for (auto& tab : browser.tabs) {
+        if (n == room)
+            break;
+        auto& each = out[n++];
+        each.id = tab->id;
+        each.shown = tab.get() == browser.tab;
+        each.loading = tab->loading || tab->asked;
+        auto title = adoptWK(WKPageCopyTitle(tab->page));
+        copy(title.get(), each.title, sizeof each.title);
+        if (!each.title[0]) {
+            auto url = adoptWK(WKPageCopyActiveURL(tab->page));
+            auto string = url ? adoptWK(WKURLCopyString(url.get())) : nullptr;
+            copy(string.get(), each.title, sizeof each.title);
+        }
+    }
+    return n;
 }
 
 extern "C" void jetski_frame(int x, int y, unsigned width, unsigned height)
@@ -263,80 +435,98 @@ extern "C" void jetski_frame(int x, int y, unsigned width, unsigned height)
 
 extern "C" void jetski_resize(unsigned width, unsigned height)
 {
-    if (!browser.view || !width || !height)
+    if (!width || !height)
         return;
     browser.width = width;
     browser.height = height;
-    WKViewSetSize(browser.view, WKSizeMake(width, height));
+    for (auto& tab : browser.tabs)
+        WKViewSetSize(tab->view, WKSizeMake(width, height));
 }
 
 extern "C" void jetski_load(const char* address)
 {
-    if (!browser.page || !address)
+    if (!current() || !address)
         return;
     auto url = adoptWK(WKURLCreateWithUTF8CString(address));
-    WKPageLoadURL(browser.page, url.get());
+    WKPageLoadURL(current(), url.get());
 }
 
 extern "C" void jetski_back(void)
 {
-    if (browser.page && WKPageCanGoBack(browser.page))
-        WKPageGoBack(browser.page);
+    if (current() && WKPageCanGoBack(current()))
+        WKPageGoBack(current());
 }
 
 extern "C" void jetski_forward(void)
 {
-    if (browser.page && WKPageCanGoForward(browser.page))
-        WKPageGoForward(browser.page);
+    if (current() && WKPageCanGoForward(current()))
+        WKPageGoForward(current());
 }
 
 extern "C" void jetski_reload(void)
 {
-    if (browser.page)
-        WKPageReload(browser.page);
+    if (current())
+        WKPageReload(current());
 }
 
 extern "C" void jetski_stop(void)
 {
-    if (browser.page)
-        WKPageStopLoading(browser.page);
-    browser.asked = false;          // stopped before it began says nothing
+    if (browser.tab) {
+        WKPageStopLoading(browser.tab->page);
+        browser.tab->asked = false; // stopped before it began says nothing
+    }
 }
 
 extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
 {
     memset(out, 0, sizeof *out);
-    if (!browser.page)
+    auto* tab = browser.tab;
+    if (!tab)
         return;
 
     // Something already waiting to be said is said now, without a slice.
-    if (!browser.happened && ms) {
+    if (!tab->happened && !browser.opened && !browser.closing && ms) {
         browser.running = true;
         browser.slice->startOneShot(WTF::Seconds::fromMilliseconds(ms));
         WTF::RunLoop::run();
         browser.running = false;
         browser.slice->stop();
+        tab = browser.tab;
     }
 
-    out->happened = browser.happened;
-    out->error = browser.error;
-    browser.happened = 0;
-    browser.error = 0;
+    out->happened = tab->happened;
+    out->error = tab->error;
+    tab->happened = 0;
+    tab->error = 0;
+
+    // A tab in the dark that began, finished or ended: its tab is drawn
+    // again, for its title and whether it is loading.
+    for (auto& each : browser.tabs) {
+        if (each.get() != tab && each->happened & ~JETSKI_PICTURE)
+            out->happened |= JETSKI_TABS;
+        if (each.get() != tab)
+            each->happened = 0;
+    }
+    out->opened = browser.opened;
+    out->closing = browser.closing;
+    browser.opened = browser.closing = 0;
+
     // Asked and never begun - a navigation a script cancelled, say - is
     // not loading for ever: thirty seconds is longer than any start.
-    if (browser.asked && WTF::MonotonicTime::now() - browser.askedAt > 30_s)
-        browser.asked = false;
-    out->loading = browser.loading || browser.asked;
-    if (browser.asked)
-        memcpy(out->going, browser.going, sizeof out->going);
-    out->progress = WKPageGetEstimatedProgress(browser.page);
-    out->can_back = WKPageCanGoBack(browser.page);
-    out->can_forward = WKPageCanGoForward(browser.page);
+    if (tab->asked && WTF::MonotonicTime::now() - tab->askedAt > 30_s)
+        tab->asked = false;
+    out->loading = tab->loading || tab->asked;
+    if (tab->asked)
+        memcpy(out->going, tab->going, sizeof out->going);
+    out->tab = tab->id;
+    out->progress = WKPageGetEstimatedProgress(tab->page);
+    out->can_back = WKPageCanGoBack(tab->page);
+    out->can_forward = WKPageCanGoForward(tab->page);
 
-    auto title = adoptWK(WKPageCopyTitle(browser.page));
+    auto title = adoptWK(WKPageCopyTitle(tab->page));
     copy(title.get(), out->title, sizeof out->title);
 
-    auto url = adoptWK(WKPageCopyActiveURL(browser.page));
+    auto url = adoptWK(WKPageCopyActiveURL(tab->page));
     if (url) {
         auto string = adoptWK(WKURLCopyString(url.get()));
         copy(string.get(), out->address, sizeof out->address);
@@ -345,9 +535,9 @@ extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
 
 extern "C" void jetski_paint(uint32_t* pixels, unsigned width, unsigned height, unsigned pitch)
 {
-    if (!browser.page)
+    if (!current())
         return;
-    WKPagePaintKosmos(browser.page, pixels, width, height, pitch, WKRectMake(0, 0, width, height));
+    WKPagePaintKosmos(current(), pixels, width, height, pitch, WKRectMake(0, 0, width, height));
 }
 
 //
@@ -381,7 +571,7 @@ unsigned heldBit(int button)
 
 extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button, int x, int y, unsigned mods)
 {
-    if (!browser.page)
+    if (!current())
         return;
 
     if (action == JETSKI_PRESS) {
@@ -394,14 +584,14 @@ extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button
         pointer.y = y;
         pointer.at = now;
         pointer.held |= heldBit(button);
-        WKPageMouseKosmos(browser.page, kWKKosmosMouseDown, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
+        WKPageMouseKosmos(current(), kWKKosmosMouseDown, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
     } else if (action == JETSKI_RELEASE) {
         pointer.held &= ~heldBit(button);
-        WKPageMouseKosmos(browser.page, kWKKosmosMouseUp, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
+        WKPageMouseKosmos(current(), kWKKosmosMouseUp, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
     } else {
         // A move with a button held is a drag of that button, as WebKit has it.
         int moving = pointer.held & 1 ? JETSKI_LEFT : pointer.held & 4 ? JETSKI_MIDDLE : pointer.held & 2 ? JETSKI_RIGHT : JETSKI_NONE;
-        WKPageMouseKosmos(browser.page, kWKKosmosMouseMove, moving, pointer.held, x, y, 0, modifiersOf(mods));
+        WKPageMouseKosmos(current(), kWKKosmosMouseMove, moving, pointer.held, x, y, 0, modifiersOf(mods));
     }
 }
 
@@ -412,13 +602,13 @@ extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button
 //
 extern "C" void jetski_wheel(int x, int y, int notches, unsigned mods)
 {
-    if (!browser.page || !notches)
+    if (!current() || !notches)
         return;
     float ticks = notches, pixels = notches * 3 * 40;
     if (mods & 1)
-        WKPageWheelKosmos(browser.page, x, y, pixels, 0, ticks, 0, modifiersOf(mods & ~1u));
+        WKPageWheelKosmos(current(), x, y, pixels, 0, ticks, 0, modifiersOf(mods & ~1u));
     else
-        WKPageWheelKosmos(browser.page, x, y, 0, pixels, 0, ticks, modifiersOf(mods));
+        WKPageWheelKosmos(current(), x, y, 0, pixels, 0, ticks, modifiersOf(mods));
 }
 
 //
@@ -462,15 +652,15 @@ const char shiftedDigits[] = ")!@#$%^&*(";
 
 void send(const char* key, const char* dom, const char* text, int virtualKey, unsigned mods)
 {
-    WKPageKeyKosmos(browser.page, true, key, dom, text, virtualKey, modifiersOf(mods));
-    WKPageKeyKosmos(browser.page, false, key, dom, nullptr, virtualKey, modifiersOf(mods));
+    WKPageKeyKosmos(current(), true, key, dom, text, virtualKey, modifiersOf(mods));
+    WKPageKeyKosmos(current(), false, key, dom, nullptr, virtualKey, modifiersOf(mods));
 }
 
 }
 
 extern "C" int jetski_key(int c)
 {
-    if (!browser.page)
+    if (!current())
         return 0;
 
     // `keys.parts`: the key, and its modifiers in steps of 1024 below it.
@@ -569,6 +759,6 @@ extern "C" int jetski_key(int c)
 
 extern "C" void jetski_focus(int focused)
 {
-    if (browser.view)
-        WKViewSetFocus(browser.view, focused);
+    if (browser.tab)
+        WKViewSetFocus(browser.tab->view, focused);
 }

@@ -3253,3 +3253,28 @@ that part switched off, it fails exactly there.
 
 **The Process Viewer** writes memory the way Tracker writes file sizes,
 with the same function: 640 KB, 4.3 MB, 607 MB.
+
+## 14 November 2026 - Tabs
+
+**In short:** JetSki has tabs. They sit along the top of the window, as
+drawn and agreed on 11 November: each with a close button, a + to open
+another, and the window's three buttons at the right end. Control-T opens
+a tab, Super with a number jumps to one, and a link meant to open in a
+new window now opens in a new tab.
+
+**What happened.** Underneath, each tab is its own WebKit page with its own
+process; the one shown is visible and the rest wait in the background.
+The surprise was that links meant for a new window had been doing nothing
+at all, because JetSki never answered WebKit's "open a new window" call.
+Google News opens its articles that way, so that's likely part of why
+Diego's clicks seemed to do nothing.
+
+**One key that isn't the browser's.** Control-W closes a tab in other
+browsers, but in Kosmos it's the desktop's own prefix key (Control-W then
+Q, and others), so it never reaches an application. A tab closes with its
+close button.
+
+**How it is tested.** The browser test opens a tab, types an address
+into it, switches back with Super-1, closes the first tab with its close
+button, and clicks a "new window" link and checks it opens in a tab. With
+Control-T switched off, exactly that check fails.

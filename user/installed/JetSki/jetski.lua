@@ -13,6 +13,10 @@
 --
 --   Control-L    type an address
 --   Escape       the address as it was
+--   Control-T    a new tab           Super-1..9  that tab
+--
+-- A tab closes by its close; Control-W is the desktop's own prefix
+-- (`wm.lua`, Control-W then Q), so it is never a browser's here.
 --
 -- The page takes the pointer, the wheel and keys once it is clicked, and
 -- after an address is typed.
@@ -38,6 +42,7 @@
 -- both the window manager and WebKit's processes.
 
 local ui    = use("/Kosmos/Libraries/ui.lua")
+local keys  = use("/Kosmos/Libraries/keys.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local prefs = use("/Kosmos/Libraries/browserprefs.lua")
 local theme = ui.theme
@@ -54,14 +59,22 @@ local HOME = "https://en.wikipedia.org/wiki/BeOS"
 -- The window's size, which a person changes with its grip: every other
 -- size here is worked out from these two in `layout`.
 local W, H = 1200, 800
-local HEAD = ui.layout.head          -- back, forward, reload and the address
+local TABS = 38                      -- the tabs, the window's top row
+local BAR = ui.layout.head           -- back, forward, reload and the address
+local HEAD = TABS + BAR
 local STAT = 26                      -- what the page is doing, along the bottom
 local VIEW_Y = HEAD
 local VIEW_H = H - HEAD - STAT
 
 local X, Y = 70, 50
+--
+-- **The tabs are the window's top row** (`docs/webkit.html`, agreed 11
+-- November 2026): a window with a header of its own, so the kit draws no
+-- band above it, and the window manager's three sit at the strip's right
+-- end - where the look has no title bars; where it has, they stay above.
+--
 local win, why = ui.window{ title = "JetSki", w = W, h = H, x = X, y = Y, direct = true,
-                            resizable = true }
+                            header = true, resizable = true }
 
 if not win then
   print("jetski: " .. tostring(why))
@@ -89,7 +102,7 @@ web.frame(X, Y, W, H)
 -- The header: the kit's widgets, in this window's own pixels.
 --
 
-local header = ui.view{ x = 0, y = 0, w = W, h = HEAD }
+local header = ui.view{ x = 0, y = TABS, w = W, h = BAR }
 
 function header:draw(g)
   g:fill(0, 0, self.w, self.h, theme.window)
@@ -106,17 +119,113 @@ do
   local x = edge
 
   for _, b in ipairs({ back, forward, reload }) do
-    b.x, b.y = x, (HEAD - 1 - b.h) // 2
+    b.x, b.y = x, (BAR - 1 - b.h) // 2
     x = x + b.w + gap
     header:add(b)
   end
 
   field.x = x + 4
-  field.y = (HEAD - 1 - field.h) // 2
+  field.y = (BAR - 1 - field.h) // 2
   header:add(field)
 end
 
 win:add(header)
+
+--------------------------------------------------------------------------
+-- **The strip**: a tab for each page, the shown one joined to the bar
+-- below it, a close on each, and + after the last. Its empty band moves
+-- the window, so the tabs and the + are views of their own on it.
+--
+
+local strip = ui.view{ x = 0, y = 0, w = W, h = TABS, moves_window = true }
+local new_tab, select_tab, close_tab     -- below, once the page's state is
+local tabs = {}                      -- `web.tabs` fills it: id, shown, loading, title
+local TAB_W, TAB_MIN, CLOSE = 210, 90, 22
+
+-- The strip's ground, between the window and its rules as the mockup's
+-- `#eef0f4` is, so it is right in every look (`theme.mix`).
+local function strip_ground() return theme.mix(theme.window, theme.line_soft, 500) end
+local LIGHTS_ROOM = 84               -- the three, where they sit on the strip
+
+function strip:draw(g)
+  g:fill(0, 0, self.w, self.h, strip_ground())
+  g:fill(0, self.h - 1, self.w, 1, theme.line)
+  if win.headed and win.lights then
+    win:place_lights(self, self.w - ui.layout.lights_in - win.lights.w,
+                     (self.h - win.lights.h) // 2)
+  end
+end
+
+local function tab_view(i)
+  local v = ui.view{ h = TABS - 6, y = 6 }
+
+  function v:draw(g)
+    local t = tabs[i]
+    if not t then return end
+    local fill = t.shown and theme.window or strip_ground()
+    g:fill_round(0, 0, self.w, self.h + 8, fill, 8)
+    if not t.shown then g:fill(self.w - 1, 7, 1, self.h - 14, theme.line) end
+    local dot = t.loading and theme.accent or theme.text_dim
+    g:fill_round(10, (self.h - 8) // 2, 8, 8, dot, 4)
+    local title = t.title ~= "" and t.title or "New tab"
+    g:text(26, (self.h - gfx.height()) // 2,
+           ui.fitted(title, self.w - 26 - CLOSE - 6),
+           t.shown and theme.text or theme.text_dim, fill)
+    g:line_icon(self.w - CLOSE - 2, (self.h - 15) // 2, "close", theme.text_dim)
+  end
+
+  function v:mouse(action, x)
+    local t = tabs[i]
+    if action ~= "press" or not t then return false end
+    if x >= self.w - CLOSE - 6 then
+      close_tab(t.id)
+    else
+      select_tab(t.id)
+    end
+    return true
+  end
+
+  return v
+end
+
+local plus = ui.view{ w = 30, h = TABS - 8, y = 4 }
+
+function plus:draw(g)
+  g:line_icon((self.w - 15) // 2, (self.h - 15) // 2, "plus", theme.text_dim)
+end
+
+function plus:mouse(action)
+  if action == "press" then new_tab() end
+  return true
+end
+
+local tab_views = {}
+
+-- The tabs laid along the strip: as wide as `TAB_W`, narrower as they
+-- crowd, and never under `TAB_MIN`.
+local function lay_tabs()
+  local room = W - 12 - plus.w - LIGHTS_ROOM
+  local each = math.max(TAB_MIN, math.min(TAB_W, room // math.max(1, #tabs)))
+
+  for i = #tab_views + 1, #tabs do
+    tab_views[i] = tab_view(i)
+    strip:add(tab_views[i])
+  end
+  for i = #tabs + 1, #tab_views do
+    strip:remove(tab_views[i])
+    tab_views[i] = nil
+  end
+
+  local x = 8
+  for i = 1, #tabs do
+    tab_views[i].x, tab_views[i].w = x, each
+    x = x + each
+  end
+  plus.x = x + 4
+end
+
+strip:add(plus)
+win:add(strip)
 
 --------------------------------------------------------------------------
 -- **The page's place**, a view the kit routes the pointer, the wheel and
@@ -130,7 +239,8 @@ local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
 -- the page below it, and the status line along the bottom.
 local function layout()
   VIEW_H = math.max(1, H - HEAD - STAT)
-  header.w = W
+  strip.w, header.w = W, W
+  lay_tabs()
   field.w = W - ui.layout.head_edge - field.x
   view.w, view.h = W, VIEW_H
 end
@@ -160,8 +270,16 @@ function view:wheel(n, x, y)
   return true
 end
 
+-- Keys that are the window's, never the page's: Control-L, Control-T,
+-- and Super with a digit.
+local function windows_key(c)
+  if c == 12 or c == 20 then return true end
+  local key, mods = keys.parts(c)
+  return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
+end
+
 function view:key(c)
-  if c == 12 then return false end   -- Control-L is the window's
+  if windows_key(c) then return false end
   return web.key(c)
 end
 
@@ -212,6 +330,50 @@ field.on_enter = function(_, text)
   visit(text)
 end
 
+--------------------------------------------------------------------------
+-- **Tabs**: WebKit's pages, one shown. Which tab is shown is WebKit's to
+-- say (`st.tab`); the strip is drawn from `web.tabs`, asked again whenever
+-- a tab may have changed.
+--
+
+local function tabs_changed()
+  web.tabs(tabs)
+  lay_tabs()
+end
+
+-- The window's state forgotten, so the next pass takes the tab shown.
+local function shown_changed()
+  page.title, page.address = nil, ""
+  tabs_changed()
+  for i, t in ipairs(tabs) do
+    if t.shown then print(("jetski: tab %d of %d"):format(i, #tabs)) end
+  end
+end
+
+function select_tab(id)
+  if web.tab_select(id) then shown_changed() end
+end
+
+-- A new tab, shown, its address field waiting for something typed.
+function new_tab()
+  local id = web.tab_new()
+  if not id then return end
+  web.tab_select(id)
+  shown_changed()
+  field.text = ""
+  web.focus(false)
+  win:focus_on(field)
+end
+
+-- The last tab closed is the window closed, as Safari's is.
+function close_tab(id)
+  if #tabs <= 1 then
+    win:close()                      -- `win:run` ends with it
+    return
+  end
+  if web.tab_close(id) then shown_changed() end
+end
+
 back.on_click = function() web.back() end
 forward.on_click = function() web.forward() end
 -- Reload is Stop while a page is on its way, as in every browser.
@@ -245,7 +407,8 @@ local function frame()
   forward.disabled = not page.can_forward
   reload.icon = page.loading and "close" or "reload"
 
-  ui.paint_view(header, s, 0, 0)
+  ui.paint_view(strip, s, 0, 0)
+  ui.paint_view(header, s, 0, TABS)
 
   -- A page on its way, along the header's rule - a sliver of it from the
   -- moment a link is followed, before WebKit has a figure to give.
@@ -289,6 +452,21 @@ win.on_frame = function()
 
   local changed = st.picture
 
+  -- A page that opened a tab, `target=_blank`: WebKit shows it already.
+  if st.opened ~= 0 then
+    print("jetski: a page opened a tab")
+    shown_changed()
+    changed = true
+  end
+  if st.closing ~= 0 then
+    close_tab(st.closing)
+    changed = true
+  end
+  if st.tabs or st.started or st.finished or st.failed or st.crashed or st.asked then
+    tabs_changed()
+    changed = true
+  end
+
   if st.started then page.loading = true end
   if st.asked then
     print("jetski: following " .. st.going)
@@ -321,6 +499,7 @@ win.on_frame = function()
 
   if st.title ~= page.title then
     page.title = st.title
+    tabs_changed()
     win:retitle(page.title ~= "" and page.title or "JetSki")
     print("jetski: title " .. page.title)
   end
@@ -344,9 +523,20 @@ win.on_key = function(_, c)
     return true
   end
 
+  if c == 20 then new_tab() return true end
+
+  -- Super with a digit: that tab, and 9 the last, as every browser has it.
+  local key, mods = keys.parts(c)
+  if mods & keys.SUPER ~= 0 and key >= 49 and key <= 57 then
+    local t = (key == 57) and tabs[#tabs] or tabs[key - 48]
+    if t then select_tab(t.id) end
+    return true
+  end
+
   return false
 end
 
+tabs_changed()
 win:focus_on(view)
 visit(files.words(args)[1] or HOME)
 win:run()

@@ -149,6 +149,7 @@ body { margin: 24px; font-family: sans-serif; background: #fff; color: #222; }
 </style></head>
 <body>
 <h1>A page in a window</h1>
+<p><a id="blank" href="/other.html" target="_blank">In a new tab</a></p>
 <p>WebKit laid this out and painted it, and JetSki put it on the screen.</p>
 <div id="block"></div>
 <script>document.cookie = "%s; path=/";
@@ -167,12 +168,15 @@ new Image().src = "/report?" + new URLSearchParams(said);
 # The link and the second page's field, each a colour of its own, so they
 # are found on the screen rather than assumed to be where a layout put them.
 LINK = (0x8a, 0x2b, 0x6e)
+BLANK = (0x6e, 0x8a, 0x2b)          # the link to a new tab, `target=_blank`
 FIELD = (0x2b, 0x4f, 0x8a)
 SECOND = "JetSki second page"
 TYPED = "kos"
 
 PAGE = PAGE.replace(b"#block {", b"#go { display: block; width: 240px; height: 48px; "
                     b"background: rgb(%d, %d, %d); color: #fff; }\n#block {" % LINK)
+PAGE = PAGE.replace(b"#block {", b"#blank { display: block; width: 240px; height: 36px; "
+                    b"background: rgb(%d, %d, %d); color: #fff; }\n#block {" % BLANK)
 
 OTHER = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>%s</title>
@@ -332,7 +336,10 @@ class Page(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path.startswith("/report?"):
-            Page.report = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
+            # The first page's first report: it is loaded again later, in a
+            # tab of its own, after the window was made smaller.
+            if Page.report is None:
+                Page.report = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
             self.send_response(204)
             self.end_headers()
             return
@@ -459,7 +466,68 @@ def use(guest, R, dump, window, mark):
     failed.extend(film(R, shot, window))
     failed.extend(appended(R, shot, window))
     failed.extend(resized(guest, R, window, mark, sw, sh))
+    failed.extend(tabbed(guest, R, window, sw, sh))
     return failed
+
+
+# A character as QEMU's `sendkey` names its key.
+QEMU_KEYS = {":": "shift-semicolon", "/": "slash", ".": "dot", "-": "minus", "\n": "ret"}
+
+
+def tabbed(guest, R, window, sw, sh):
+    """Tabs (`docs/webkit.html`): Control-T opens one and an address typed
+    loads in it, Super-1 goes back to the first, its close closes it, and a
+    link to a new window - `target=_blank` - opens in a tab of its own."""
+    def step(keys, want, seconds=20):
+        since = len(guest.seen)
+        for key in keys:
+            guest.sendkey(key)
+        return said(guest, since, want, seconds)
+
+    if not step(["ctrl-t"], "jetski: tab 2 of 2"):
+        return ["Control-T opened no tab: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen)[-2:])]
+    time.sleep(0.5)
+    typed = [QEMU_KEYS.get(c, c) for c in Page.address + "\n"]
+    if not step(typed, "jetski: title " + TITLE, 30):
+        return ["an address typed into a new tab did not load there: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen)[-3:])]
+    if not step(["meta_l-1"], "jetski: tab 1 of 2"):
+        return ["Super-1 did not go back to the first tab"]
+    # Its close, at the shown tab's right end: the first tab, at the
+    # strip's left, as wide as a tab is (`TAB_W` in `jetski.lua`).
+    x, y, w, h = window
+    since = len(guest.seen)
+    guest.mouse_to(*R._to_tablet(x + 8 + 210 - 17, y + 6 + 16, sw, sh))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.15)
+    guest.mouse_button(False)
+    if not said(guest, since, "jetski: tab 1 of 1", 20):
+        return ["the shown tab's close did not close it"]
+
+    time.sleep(1.5)                     # the tab left, painted and composed
+    shot = guest.screendump()
+    count, link = block_at(R.parse_ppm, shot, x, y, w - 300, h - 100, BLANK)
+    if count < 200:
+        R.write_png(os.path.join(KEPT, "jetski-tabs.png"), shot)
+        return ["the tab left after the close is not the first page: its link to a new tab "
+                "is not on the screen (%d of its pixels)" % count]
+    since = len(guest.seen)
+    cx, cy = link[0] + link[2] // 2, link[1] + link[3] // 2
+    guest.mouse_to(*R._to_tablet(cx, cy, sw, sh))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.15)
+    guest.mouse_button(False)
+    if not said(guest, since, "jetski: a page opened a tab", 20) \
+       or not said(guest, since, "jetski: tab 2 of 2", 5) \
+       or not said(guest, since, "jetski: title " + SECOND, 30):
+        return ["a link to a new window did not open a tab of its own: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said")]
+    time.sleep(1.5)
+    R.write_png(os.path.join(KEPT, "jetski-tabs.png"), guest.screendump())
+    return []
 
 
 def resized(guest, R, window, mark, sw, sh):
@@ -683,6 +751,7 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     global PAGE
     address = LIVE or "http://10.0.2.2:%d/" % server.server_address[1]
+    Page.address = address
     if LIVE and LIVE.startswith("file:"):
         with open(LIVE[5:], "rb") as f:
             PAGE = f.read()
@@ -698,6 +767,13 @@ def main():
         # Laid out again at the new size, and WebKit never told.
         with open(lua) as f:
             text = f.read().replace("web.resize(W, VIEW_H)", "do end")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
+    if BROKEN == "tabless":
+        # Control-T, the window's, never answered.
+        with open(lua) as f:
+            text = f.read().replace("if c == 20 then new_tab() return true end", "")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
@@ -825,7 +901,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 27
+    checks = 32
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

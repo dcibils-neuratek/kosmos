@@ -24,6 +24,7 @@ enum jetski_happened {
     JETSKI_PICTURE   = 1 << 4,     /* the page has a new picture to paint */
     JETSKI_CRASHED   = 1 << 5,     /* the web process ended */
     JETSKI_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
+    JETSKI_TABS      = 1 << 7,     /* a tab not shown began, finished or ended */
 };
 
 struct jetski_state {
@@ -35,10 +36,29 @@ struct jetski_state {
     char title[256];
     char address[2048];
     char going[2048];              /* where it was asked to go, until it starts */
+    int tab;                       /* the tab shown, which all of this is about */
+    int opened;                    /* a tab a page opened and showed, or 0 */
+    int closing;                   /* a tab whose page asked to close, or 0 */
 };
 
-/* The view, `width` by `height`; 0 when it was made. Once a process. */
+/* A tab, as the strip draws it. */
+struct jetski_tab {
+    int id;
+    int shown, loading;
+    char title[256];
+};
+
+/* The view, `width` by `height`, with its first tab; 0 when it was made.
+ * Once a process. */
 int jetski_open(unsigned width, unsigned height);
+
+/* Tabs: one made (its id, or 0), one shown, one closed - never the last -
+ * and the list, in order, as many as `room`. Everything else here is
+ * about the tab shown. */
+int jetski_tab_new(void);
+int jetski_tab_select(int id);
+int jetski_tab_close(int id);
+unsigned jetski_tabs(struct jetski_tab *out, unsigned room);
 void jetski_resize(unsigned width, unsigned height);
 /* Where the page's window is on the screen and how big, frame and all:
  * what `window.screenX`, `outerWidth` and the rest answer. */

@@ -10481,6 +10481,9 @@ the applications make the system useful, and is not pulled forward.
       driver to count its work per client, the piece to design first.
       **Built in 0.11.424**: the indicator from the click (`testing.md` 18.819)
       and memory as a size (18.820); the GPU column is still to design.
+      **Tabs built in 0.11.425** (18.821), as drawn; Control-W stays the
+      desktop's prefix, so a tab closes by its close. Settings and About
+      next, then the memory pieces, the JIT, M6.
     - *Settings, agreed, and About, drawn* (14 November 2026): Settings
       as `docs/webkit.html` draws it - Diego: "mokcup is perfect". And
       "jetski needs an about screen showing all the libraries it uses like
