@@ -1112,6 +1112,11 @@ static inline long kosmos_pulse(long cap, uint32_t code, uint64_t value)
 #define USER_MAIN_STACK_PAGES 64UL
 #define USER_THREAD_SLOTS     (USER_TEXT + 0x200000000UL)
 #define USER_THREAD_SLOT      (1024UL * 1024UL)
+/* The block, then a guard page never given, then the stack to the slot's
+ * top - its lower pages given on first touch (`kernel/process.h`,
+ * `USER_TSTACK_FLOOR`). What a thread is told its stack is. */
+#define USER_THREAD_STACK_FLOOR (2UL * 4096UL)
+#define USER_THREAD_STACK       (USER_THREAD_SLOT - USER_THREAD_STACK_FLOOR)
 
 /*
  * **The spill ring** (`runtime/libc/stdio.c`): where C output goes when

@@ -381,8 +381,8 @@ static void trampoline(unsigned long arg)
     uintptr_t block = (uintptr_t)kosmos_tls();
 
     me->index = (block - USER_THREAD_SLOTS) / USER_THREAD_SLOT;
-    me->stack_low = block + 4096UL;
-    me->stack_bytes = USER_THREAD_SLOT - 4096UL;
+    me->stack_low = block + USER_THREAD_STACK_FLOOR;
+    me->stack_bytes = USER_THREAD_STACK;
     me->tls_made = kosmos_tls_begin();
     self_ = me;
 
@@ -407,7 +407,7 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
     struct kosmos_pthread *t;
     long index;
 
-    if (attr != NULL && attr->stacksize > USER_THREAD_SLOT - 4096UL) {
+    if (attr != NULL && attr->stacksize > USER_THREAD_STACK) {
         return EINVAL;              /* the slot is all a thread's stack can be */
     }
 
@@ -519,7 +519,7 @@ int pthread_attr_destroy(pthread_attr_t *a)
 
 int pthread_attr_setstacksize(pthread_attr_t *a, size_t bytes)
 {
-    if (bytes > USER_THREAD_SLOT - 4096UL) {
+    if (bytes > USER_THREAD_STACK) {
         return EINVAL;
     }
 
@@ -543,7 +543,7 @@ int pthread_attr_setstack(pthread_attr_t *a, void *lowest, size_t bytes)
 
 int pthread_attr_getstacksize(const pthread_attr_t *a, size_t *bytes)
 {
-    *bytes = a->stacksize != 0 ? a->stacksize : USER_THREAD_SLOT - 4096UL;
+    *bytes = a->stacksize != 0 ? a->stacksize : USER_THREAD_STACK;
     return 0;
 }
 

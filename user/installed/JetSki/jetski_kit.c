@@ -9,6 +9,7 @@
  *   pump(ms, into)               WebKit for at most `ms`, or until there
  *                                is a picture; what happened, into `into`
  *   paint(surface, x, y, w, h)   the page, w by h, at x, y in the surface
+ *   crash(id)                    why tab `id`'s page stopped, or nil
  *
  * `pump` fills a table the caller keeps rather than making one: it runs on
  * every pass of the window's loop, and a table a pass is garbage the
@@ -122,6 +123,49 @@ static int l_pump(lua_State *L)
     return 1;
 }
 
+/* web.crash(id): why tab `id`'s page stopped, as a table, or nil when it
+ * did not. `known` is false until JetSki has collected the process, and
+ * the fault's fields are there only once it is and a fault ended it. */
+static int l_crash(lua_State *L)
+{
+    struct jetski_crash c;
+
+    if (!jetski_crash((int)luaL_checkinteger(L, 1), &c)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    c.fault[sizeof c.fault - 1] = '\0';
+    c.address[sizeof c.address - 1] = '\0';
+    lua_createtable(L, 0, 12);
+    lua_pushinteger(L, c.pid);
+    lua_setfield(L, -2, "pid");
+    lua_pushboolean(L, c.known);
+    lua_setfield(L, -2, "known");
+    lua_pushstring(L, c.address);
+    lua_setfield(L, -2, "address");
+    if (c.known) {
+        lua_pushinteger(L, c.code);
+        lua_setfield(L, -2, "code");
+    }
+    if (c.known && c.faulted) {
+        lua_pushstring(L, c.fault);
+        lua_setfield(L, -2, "fault");
+        lua_pushinteger(L, c.kind);
+        lua_setfield(L, -2, "kind");
+        lua_pushinteger(L, c.thread);
+        lua_setfield(L, -2, "thread");
+        lua_pushinteger(L, (lua_Integer)c.pc);
+        lua_setfield(L, -2, "pc");
+        lua_pushinteger(L, (lua_Integer)c.addr);
+        lua_setfield(L, -2, "addr");
+        lua_pushinteger(L, (lua_Integer)c.sp);
+        lua_setfield(L, -2, "sp");
+        lua_pushinteger(L, (lua_Integer)c.detail);
+        lua_setfield(L, -2, "detail");
+    }
+    return 1;
+}
+
 /* The page into the surface, cut to it: Lua says where and how much, and
  * the arithmetic of where that is in memory is done here. */
 static int l_paint(lua_State *L)
@@ -209,7 +253,7 @@ static int l_tab_close(lua_State *L)
 }
 
 /* `tabs(list)`: the tabs in order, into `list`, reused - `{ id, shown,
- * loading, title }` each - and how many. A tab's table is kept between
+ * loading, pid, title }` each - and how many. A tab's table is kept between
  * calls, so a strip drawn every pass makes no garbage once it is full. */
 static int l_tabs(lua_State *L)
 {
@@ -230,6 +274,8 @@ static int l_tabs(lua_State *L)
         lua_setfield(L, -2, "shown");
         lua_pushboolean(L, tabs[i].loading);
         lua_setfield(L, -2, "loading");
+        lua_pushinteger(L, tabs[i].pid);
+        lua_setfield(L, -2, "pid");
         lua_pushstring(L, tabs[i].title);
         lua_setfield(L, -2, "title");
         lua_pop(L, 1);
@@ -256,6 +302,7 @@ void kosmos_jetski_kit(lua_State *L)
         { "open", l_open },     { "resize", l_resize }, { "load", l_load },
         { "back", l_back },     { "forward", l_forward }, { "reload", l_reload },
         { "stop", l_stop },     { "pump", l_pump },     { "paint", l_paint },
+        { "crash", l_crash },
         { "mouse", l_mouse },   { "wheel", l_wheel },   { "key", l_key },
         { "focus", l_focus },   { "frame", l_frame },
         { "tab_new", l_tab_new }, { "tab_select", l_tab_select },

@@ -185,6 +185,34 @@ static void *checks_stack(void *arg)
     return my_stack_holds_me() ? (void *)1 : NULL;
 }
 
+/*
+ * **And every page of it there**, touched from its lowest to a page below
+ * this frame (`testing.md` 18.823): the slot's megabyte was said and only
+ * its top 256 KB were mapped, so JavaScriptCore - which sizes its
+ * recursion limit from `pthread_getattr_np` - faulted 256 KB down rather
+ * than throwing. A fault here ends the process, and the suite with it.
+ */
+static void *uses_whole_stack(void *arg)
+{
+    pthread_attr_t a;
+    void *low;
+    size_t size, at;
+    char here;
+
+    (void)arg;
+
+    if (pthread_getattr_np(pthread_self(), &a) != 0
+        || pthread_attr_getstack(&a, &low, &size) != 0) {
+        return NULL;
+    }
+
+    for (at = 0; (uintptr_t)low + at + 8192 < (uintptr_t)&here; at += 4096) {
+        ((volatile char *)low)[at] = 1;
+    }
+
+    return size >= 1000UL * 1024UL ? (void *)(uintptr_t)(at / 1024) : NULL;
+}
+
 static void *ends_at_once(void *arg)
 {
     return arg;
@@ -1338,6 +1366,13 @@ int kosmos_posixtest_run(char *out, unsigned long size)
             my_stack_holds_me(), got != NULL);
     }
 
+    pthread_create(&t[0], NULL, uses_whole_stack, NULL);
+    pthread_join(t[0], &got);
+
+    if (got == NULL || (uintptr_t)got < 1000) {
+        SAY("posix: a thread's stack is not all there (%lu KB)", (unsigned long)(uintptr_t)got);
+    }
+
     /* 8: detached threads collected - their indices come back. A
      * thousand, each ending at once, and then the heap used: a record
      * written after its thread was collected corrupts malloc's links, and
@@ -1463,7 +1498,7 @@ int kosmos_posixtest_run(char *out, unsigned long size)
         }
 
         snprintf(out, size, "posix: counted %ld, ring %d, timed out, once %d, keys %d, "
-                 "thread-locals in turn, recursive, stacks, reaped, rwlock %s, joined %ld; %s; %s; %s; %s",
+                 "thread-locals in turn, recursive, stacks, a whole stack, reaped, rwlock %s, joined %ld; %s; %s; %s; %s",
                  counted, ring_passes, once_ran, destroyed,
                  most_inside > 1 ? "shared" : "one at a time", (long)(intptr_t)got,
                  memory, process, files, streams);

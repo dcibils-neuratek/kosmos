@@ -1019,9 +1019,38 @@ struct spawn_image {
     uint64_t length;        /* its bytes, from the region's start */
 };
 
+/*
+ * **How a process died, when it did not choose to** (15 November 2026,
+ * `testing.md` 18.824). Written by the trap that ends it, before it ends,
+ * and handed to the parent with the wait that collects it - so a parent
+ * that collects its children learns why in the same call, and nothing
+ * stays in the table for the asking. Diego: "why dont we show useful
+ * debugging info in the browser when something bad happens?" - JetSki's
+ * page that stopped reads this.
+ *
+ * `faulted` is 0 for a process that ended itself or was killed, and the
+ * rest is then zero. `kind` is the exception: the vector on x86-64, the
+ * exception class (ESR_EL1.EC) on AArch64, named in `name`; `detail` its
+ * error code or syndrome; `addr` the address a memory access went to (CR2,
+ * FAR_EL1), 0 when it is not a memory fault; `thread` the index of the
+ * thread that faulted - 0 the first, else its stack slot's.
+ */
+struct process_death {
+    uint32_t faulted;
+    uint32_t kind;
+    uint32_t thread;
+    uint32_t reserved;
+    uint64_t detail;
+    uint64_t pc;
+    uint64_t addr;
+    uint64_t sp;
+    char     name[32];
+};
+
 struct wait_result {
     uint64_t id;
     int64_t  code;
+    struct process_death death;
 };
 
 /*

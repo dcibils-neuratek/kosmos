@@ -20,6 +20,7 @@
 #include "profile.h"
 #include "thread.h"
 #include "process.h"
+#include <string.h>
 #include "reserve.h"
 #include "syscall.h"
 
@@ -520,6 +521,24 @@ void trap_handler(unsigned index, struct trapframe *tf)
             kputs("\" died: ");
             kputs(ec_name((unsigned)ESR_EC(tf->esr)));
             dump_body(index, tf);
+
+            /* What its parent is told with the wait that collects it
+             * (`struct process_death`). A data or instruction abort's
+             * address is FAR_EL1's; anything else has none. */
+            {
+                struct process_death d;
+                unsigned ec = (unsigned)ESR_EC(tf->esr);
+
+                memset(&d, 0, sizeof d);
+                d.kind = ec;
+                d.thread = thread_current() != NULL ? thread_current()->index : 0;
+                d.detail = tf->esr;
+                d.pc = tf->elr;
+                d.addr = (ec == EC_DABT_LOWER || ec == EC_IABT_LOWER) ? tf->far : 0;
+                d.sp = tf->sp;
+                strncpy(d.name, ec_name(ec), sizeof d.name - 1);
+                process_record_death(p, &d);
+            }
 
             process_exit(p, -1);    /* never returns */
         }

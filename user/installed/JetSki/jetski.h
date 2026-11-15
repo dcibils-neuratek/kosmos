@@ -45,6 +45,7 @@ struct jetski_state {
 struct jetski_tab {
     int id;
     int shown, loading;
+    int pid;                       /* its web process, the last one seen; 0 before */
     char title[256];
 };
 
@@ -73,6 +74,28 @@ void jetski_stop(void);
 /* WebKit's run loop for at most `ms` milliseconds, or until the page has a
  * new picture; then what happened since the last call. */
 void jetski_pump(unsigned ms, struct jetski_state *out);
+
+/*
+ * **Why a tab's page stopped** (Diego, 14 November 2026: "why dont we show
+ * useful debugging info in the browser when something bad happens?"). Its
+ * web process's id while it ran, what it was loading, and - once JetSki has
+ * collected it, which may be a pass after WebKit says it ended - what
+ * Nebula recorded of its death: `known` 0 until then.
+ */
+struct jetski_crash {
+    int pid;                       /* the web process, as it was spawned */
+    int known;                     /* its death has been collected */
+    int faulted;                   /* a fault ended it, and the rest says how */
+    long code;                     /* its exit code */
+    char fault[32];                /* the exception's name */
+    unsigned kind, thread;         /* the exception's number; which thread */
+    uint64_t pc, addr, sp, detail; /* where, what it touched, its stack, syndrome */
+    char address[2048];            /* the page it was showing or loading */
+};
+
+/* 1 and `out` filled when tab `id`'s page process ended since it last
+ * loaded; 0 when it did not. */
+int jetski_crash(int id, struct jetski_crash *out);
 
 /* The page's picture, `width` by `height` from its top left, into the
  * pixels at `pitch` bytes a row. */

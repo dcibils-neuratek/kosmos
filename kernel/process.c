@@ -662,6 +662,32 @@ int process_thread_create(struct process *p, unsigned long entry,
  * A thread of `p` that has ended: off the list, its stack given back, and
  * whoever was waiting for it woken with its code.
  */
+
+/*
+ * A thread's stack pages below its eager ones, given on touch
+ * (`USER_TSTACK_FLOOR`), unmapped and given back as it ends. Under the
+ * fill lock, so a first touch on another core of a page here - which only
+ * a pointer into this stack could make - is seen before or after.
+ */
+static void give_back_stack_below(struct process *p, unsigned index)
+{
+    uintptr_t va = (uintptr_t)USER_TBLOCK(index) + USER_TSTACK_FLOOR;
+    uintptr_t end = (uintptr_t)USER_TSTACK_TOP(index) - USER_STACK_PAGES * PAGE_SIZE;
+    unsigned long flags = spin_lock(&p->fill_lock);
+
+    for (; va < end; va += PAGE_SIZE) {
+        uintptr_t phys = as_page_phys(p->space, va);
+
+        if (phys != 0) {
+            (void)as_unmap(p->space, va, 1);
+            pmm_free_page(phys_to_virt(phys));
+            p->touched_pages--;
+        }
+    }
+
+    spin_unlock(&p->fill_lock, flags);
+}
+
 void process_thread_ended(struct process *p, struct thread *t, int code)
 {
     unsigned long flags;
@@ -685,6 +711,7 @@ void process_thread_ended(struct process *p, struct thread *t, int code)
     }
 
     if (t->user_stack_pages != NULL) {
+        give_back_stack_below(p, t->index);
         (void)as_unmap(p->space,
                        (uintptr_t)USER_TSTACK_TOP(t->index)
                        - USER_STACK_PAGES * PAGE_SIZE,
@@ -1344,6 +1371,7 @@ static struct process *create(const char *name, const void *image,
      * this line and that the window above is open.
      */
     p->exited = false;
+    memset(&p->death, 0, sizeof p->death);
 
     /* The id under the pool's lock, for the reason the thread id is: two
      * cores creating a process at once would otherwise be handed the same
@@ -1489,7 +1517,7 @@ struct process *process_spawn_image(struct process *parent,
 }
 
 int process_wait(struct process *parent, unsigned *id, int *code,
-                 bool nonblocking)
+                 struct process_death *death, bool nonblocking)
 {
     unsigned i;
 
@@ -1525,6 +1553,10 @@ int process_wait(struct process *parent, unsigned *id, int *code,
 
                 if (code != NULL) {
                     *code = c->exit_code;
+                }
+
+                if (death != NULL) {
+                    *death = c->death;
                 }
 
                 /* Reaped here, so a supervisor looping on wait does not have
@@ -2549,6 +2581,20 @@ void process_exit(struct process *p, int code)
     thread_exit();
 }
 
+/*
+ * **How it died**, written by the trap that is about to end it
+ * (`struct process_death`): only its own thread writes it, before
+ * `process_exit` publishes `exited`, and the parent reads it after - under
+ * the lock that publication is made under.
+ */
+void process_record_death(struct process *p, const struct process_death *d)
+{
+    if (p != NULL && d != NULL) {
+        p->death = *d;
+        p->death.faulted = 1;
+    }
+}
+
 void process_reap(struct process *p)
 {
     unsigned long flags;
@@ -2608,9 +2654,15 @@ bool process_fill(struct process *p, uintptr_t va)
         return reserve_fill(p, page);
     }
 
+    /* A thread's stack below its eager pages, down to the floor, in a slot
+     * whose block is mapped - a live thread's (`USER_TSTACK_FLOOR`). */
+    bool tstack = page >= USER_TSTACK_VA && page < USER_TSTACK_END
+                  && (page - USER_TSTACK_VA) % USER_TSTACK_SLOT >= USER_TSTACK_FLOOR
+                  && as_page_phys(p->space, page - (page - USER_TSTACK_VA) % USER_TSTACK_SLOT) != 0;
+
     /* Anywhere else, a region it mapped that is given on touch - a
      * sandbox's memory, in its monitor (`sharemap_fill`) - or nothing. */
-    if (!image
+    if (!image && !tstack
         && !(page >= USER_HEAP_VA && page < USER_HEAP_VA + USER_HEAP_PAGES * PAGE_SIZE)
         && !(page >= stack_bottom && page < USER_STACK_TOP)) {
         return sharemap_fill(p, page);

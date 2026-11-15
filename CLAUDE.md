@@ -150,6 +150,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - JavaScriptCore on Kosmos, JetSki's W4 - its source fetched, not committed - built, test262 counted (`make test262`): `docs/w4.md`
 - JetSki W7 - a browser to use every day: WebKit2's processes, pages from the network, the window, then tabs and the rest - the order, being built: `docs/w7.md`
 - The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a (pictures), W5b (text) and W5c (SQLite, libxml2, libpsl) built: `docs/w5.md`
+- The Debug Kit - a function's name from an address, for a page that stopped and any crash - before it is built: `docs/debug.md`
 - Glossary: `docs/glossary.md`
 
 ---

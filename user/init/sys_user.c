@@ -547,12 +547,17 @@ static int l_spawn(lua_State *L)
 }
 
 /* The id and exit code of a child that has ended - any code, a killed
- * child's -1 included, which read as "no children" until 27 September. */
+ * child's -1 included, which read as "no children" until 27 September -
+ * and, for one a fault ended, how: a table of what Nebula recorded
+ * (`struct process_death`), so a supervisor can say why. */
 static int l_wait(lua_State *L)
 {
-    struct wait_result got = { 0, 0 };
+    struct wait_result got;
     int nonblocking = lua_toboolean(L, 1);
-    long status = kosmos_wait(&got, nonblocking);
+    long status;
+
+    memset(&got, 0, sizeof got);
+    status = kosmos_wait(&got, nonblocking);
 
     if (status == SYS_NO_CHILD_READY) {
         lua_pushnil(L);
@@ -568,7 +573,28 @@ static int l_wait(lua_State *L)
 
     lua_pushinteger(L, (lua_Integer)got.id);
     lua_pushinteger(L, (lua_Integer)got.code);
-    return 2;
+
+    if (!got.death.faulted) {
+        return 2;
+    }
+
+    got.death.name[sizeof got.death.name - 1] = '\0';
+    lua_createtable(L, 0, 6);
+    lua_pushstring(L, got.death.name);
+    lua_setfield(L, -2, "fault");
+    lua_pushinteger(L, (lua_Integer)got.death.kind);
+    lua_setfield(L, -2, "kind");
+    lua_pushinteger(L, (lua_Integer)got.death.thread);
+    lua_setfield(L, -2, "thread");
+    lua_pushinteger(L, (lua_Integer)got.death.pc);
+    lua_setfield(L, -2, "pc");
+    lua_pushinteger(L, (lua_Integer)got.death.addr);
+    lua_setfield(L, -2, "addr");
+    lua_pushinteger(L, (lua_Integer)got.death.sp);
+    lua_setfield(L, -2, "sp");
+    lua_pushinteger(L, (lua_Integer)got.death.detail);
+    lua_setfield(L, -2, "detail");
+    return 3;
 }
 
 static int l_exit(lua_State *L)

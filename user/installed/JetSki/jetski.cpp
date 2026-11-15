@@ -16,6 +16,10 @@
 
 #include "jetski.h"
 
+#include <kosmos.h>                 // kosmos_wait, struct process_death
+#include <stdio.h>
+#include <string.h>
+
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
 #include <WebKit/WKErrorRef.h>
@@ -26,6 +30,7 @@
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageKosmos.h>
 #include <WebKit/WKPageNavigationClient.h>
+#include <WebKit/WKPagePrivate.h>
 #include <WebKit/WKPageUIClient.h>
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
@@ -69,7 +74,59 @@ struct Tab {
     bool asked = false;             // a link followed, its load not begun
     WTF::MonotonicTime askedAt;
     char going[2048] { };
+    long pid = 0;                   // its web process, the last one seen
+    bool crashed = false;           // that process ended, since the last load
+    long crashedPid = 0;
+    char crashedAddress[2048] { };
 };
+
+/*
+ * **The children, collected** (Diego, 14 November 2026: "yes fix the
+ * zombie processes too"). The web and network processes are JetSki's
+ * children - `ProcessLauncherKosmos.cpp` spawns them - and one that ended
+ * stayed in Nebula's table until JetSki did, because nothing waited for it.
+ * Every pump collects whoever has ended, without waiting, and keeps the
+ * last few deaths by id: a tab whose page stopped asks for its own.
+ */
+struct Death {
+    long pid = 0;
+    long code = 0;
+    struct process_death death { };
+};
+
+constexpr unsigned deathsKept = 16;
+Death deaths[deathsKept];
+unsigned deathsNext = 0;
+
+void collect()
+{
+    for (;;) {
+        struct wait_result got;
+        memset(&got, 0, sizeof got);
+        if (kosmos_wait(&got, 1) != 0)
+            return;
+        auto& d = deaths[deathsNext++ % deathsKept];
+        d.pid = static_cast<long>(got.id);
+        d.code = static_cast<long>(got.code);
+        d.death = got.death;
+        d.death.name[sizeof d.death.name - 1] = '\0';
+        if (got.death.faulted)
+            fprintf(stderr, "jetski: process %ld ended: %s at %#lx, touching %#lx, thread %u\n",
+                d.pid, d.death.name, static_cast<unsigned long>(d.death.pc),
+                static_cast<unsigned long>(d.death.addr), d.death.thread);
+        else
+            fprintf(stderr, "jetski: process %ld ended, code %ld\n", d.pid, d.code);
+    }
+}
+
+const Death* deathOf(long pid)
+{
+    for (auto& d : deaths) {
+        if (pid && d.pid == pid)
+            return &d;
+    }
+    return nullptr;
+}
 
 struct Browser {
     Vector<std::unique_ptr<Tab>> tabs;
@@ -119,6 +176,7 @@ void copy(WKStringRef, char* into, size_t room);
 void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
     auto* tab = tabOf(info);
+    tab->crashed = false;
     tab->loading = true;
     tab->asked = false;
     told(tab, JETSKI_STARTED);
@@ -184,10 +242,21 @@ void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void
     told(tab, JETSKI_FAILED);
 }
 
-void didCrash(WKPageRef, const void* info)
+void didCrash(WKPageRef page, const void* info)
 {
     auto* tab = tabOf(info);
     tab->loading = false;
+    tab->crashed = true;
+    tab->crashedPid = tab->pid;
+    tab->crashedAddress[0] = '\0';
+    if (tab->asked)
+        memcpy(tab->crashedAddress, tab->going, sizeof tab->crashedAddress);
+    else if (auto url = adoptWK(WKPageCopyActiveURL(page))) {
+        auto string = adoptWK(WKURLCopyString(url.get()));
+        copy(string.get(), tab->crashedAddress, sizeof tab->crashedAddress);
+    }
+    fprintf(stderr, "jetski: tab %d's page process %ld ended, at %s\n",
+        tab->id, tab->crashedPid, tab->crashedAddress);
     told(tab, JETSKI_CRASHED);
 }
 
@@ -417,6 +486,7 @@ extern "C" unsigned jetski_tabs(struct jetski_tab* out, unsigned room)
         each.id = tab->id;
         each.shown = tab.get() == browser.tab;
         each.loading = tab->loading || tab->asked;
+        each.pid = static_cast<int>(tab->pid);
         auto title = adoptWK(WKPageCopyTitle(tab->page));
         copy(title.get(), each.title, sizeof each.title);
         if (!each.title[0]) {
@@ -424,6 +494,9 @@ extern "C" unsigned jetski_tabs(struct jetski_tab* out, unsigned room)
             auto string = url ? adoptWK(WKURLCopyString(url.get())) : nullptr;
             copy(string.get(), each.title, sizeof each.title);
         }
+        // A page that stopped has no address left in WebKit: the one kept.
+        if (!each.title[0] && tab->crashed)
+            snprintf(each.title, sizeof each.title, "%s", tab->crashedAddress);
     }
     return n;
 }
@@ -480,6 +553,11 @@ extern "C" void jetski_stop(void)
 extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
 {
     memset(out, 0, sizeof *out);
+    collect();
+    for (auto& each : browser.tabs) {
+        if (auto pid = WKPageGetProcessIdentifier(each->page))
+            each->pid = pid;
+    }
     auto* tab = browser.tab;
     if (!tab)
         return;
@@ -531,6 +609,30 @@ extern "C" void jetski_pump(unsigned ms, struct jetski_state* out)
         auto string = adoptWK(WKURLCopyString(url.get()));
         copy(string.get(), out->address, sizeof out->address);
     }
+}
+
+extern "C" int jetski_crash(int id, struct jetski_crash* out)
+{
+    memset(out, 0, sizeof *out);
+    auto* tab = browser.find(id);
+    if (!tab || !tab->crashed)
+        return 0;
+    collect();
+    out->pid = static_cast<int>(tab->crashedPid);
+    memcpy(out->address, tab->crashedAddress, sizeof out->address);
+    if (auto* d = deathOf(tab->crashedPid)) {
+        out->known = 1;
+        out->code = d->code;
+        out->faulted = d->death.faulted != 0;
+        memcpy(out->fault, d->death.name, sizeof out->fault);
+        out->kind = d->death.kind;
+        out->thread = d->death.thread;
+        out->pc = d->death.pc;
+        out->addr = d->death.addr;
+        out->sp = d->death.sp;
+        out->detail = d->death.detail;
+    }
+    return 1;
 }
 
 extern "C" void jetski_paint(uint32_t* pixels, unsigned width, unsigned height, unsigned pitch)

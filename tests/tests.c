@@ -1301,6 +1301,9 @@ extern char user_pointer_held_start[], user_pointer_held_end[];
 
 /* Runs a blob to completion and returns its exit code, or a large negative
  * on anything going wrong. The process is reaped, so the slot comes back. */
+/* How the last process `run_user` ran died, read before its slot went. */
+static struct process_death last_death;
+
 static int run_user(const char *name, const char *start, const char *end)
 {
     struct process *p = process_create(name, start, (size_t)(end - start), 0);
@@ -1333,6 +1336,7 @@ static int run_user(const char *name, const char *start, const char *end)
     }
 
     code = p->exit_code;
+    last_death = p->death;
     process_reap(p);
     return code;
 }
@@ -1541,7 +1545,7 @@ static void waits_for_children(void *arg)
         child->thread->sched.cpu = 1 + round % (cores - 1);
         process_start(child);
 
-        (void)process_wait(wait_parent, &id, NULL, false);
+        (void)process_wait(wait_parent, &id, NULL, NULL, false);
 
         if (id != want) {
             wait_ok = false;
@@ -1998,8 +2002,22 @@ static bool test_a_null_dereference_kills_only_the_process(void)
 
     /* -1 is what the fault path exits with. 41 is what the program exits
      * with if the fault never happened, which would mean address zero was
-     * readable. */
-    return code == -1 && process_count() == before;
+     * readable.
+     *
+     * **And how it died is kept for its parent** (`struct process_death`,
+     * `testing.md` 18.824): a fault, a memory one - the page fault's vector
+     * on x86-64, a data abort from EL0 on AArch64 - at address zero, by the
+     * first thread, at a place in its code and with a name a person reads. */
+    bool told = last_death.faulted == 1 && last_death.addr == 0
+                && last_death.thread == 0 && last_death.pc != 0
+                && last_death.sp != 0 && last_death.name[0] != '\0'
+#if defined(__x86_64__)
+                && last_death.kind == 14;
+#else
+                && last_death.kind == 0x24;
+#endif
+
+    return code == -1 && process_count() == before && told;
 }
 
 static bool test_a_process_cannot_read_the_kernel(void)

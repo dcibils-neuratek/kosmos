@@ -22,6 +22,7 @@
 #include "console.h"
 #include "cpu.h"
 #include "process.h"
+#include <string.h>
 #include "reserve.h"
 #include "sched.h"
 #include "profile.h"
@@ -641,6 +642,21 @@ void trap_handle(struct trapframe *f)
         struct process *p = process_current();
 
         if (p != NULL) {
+            /* What its parent is told with the wait that collects it
+             * (`struct process_death`). */
+            struct process_death d;
+            const char *name = f->vector < 32 ? names[f->vector] : "unknown exception";
+
+            memset(&d, 0, sizeof d);
+            d.kind = (uint32_t)f->vector;
+            d.thread = thread_current() != NULL ? thread_current()->index : 0;
+            d.detail = f->error;
+            d.pc = f->rip;
+            d.addr = f->vector == 14 ? cr2 : 0;
+            d.sp = f->rsp;
+            strncpy(d.name, name, sizeof d.name - 1);
+            process_record_death(p, &d);
+
             process_exit(p, -1);    /* never returns */
         }
     }

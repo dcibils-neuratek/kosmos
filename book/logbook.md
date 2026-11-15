@@ -3278,3 +3278,41 @@ close button.
 into it, switches back with Super-1, closes the first tab with its close
 button, and clicks a "new window" link and checks it opens in a tab. With
 Control-T switched off, exactly that check fails.
+
+## 15 November 2026 - The Verge opens, and a page that stops says why
+
+**In short:** The Verge and Mercado Libre stopped JetSki's page process
+the moment they opened. The cause was in Nebula: a thread was told it had
+a megabyte of stack and was given a quarter of one. That is fixed. A page
+that stops now says why in its own tab, and JetSki no longer leaves the
+processes it started behind as zombies.
+
+**Why it crashed.** JavaScriptCore guards against running out of stack by
+asking how big its stack is, and stopping a deep recursion well before the
+end with "Maximum call stack size exceeded". The POSIX layer answered a
+megabyte, which is the slot each thread has; but Nebula mapped only the
+top 256 KB of it, and nothing below ever appeared. The Verge's scripts are
+deep enough to parse past 256 KB, so JavaScriptCore walked off the end of
+what was really there and the process died on a page fault. Now a thread's
+whole slot is filled in as it is touched, so the number JavaScriptCore
+reads is true.
+
+**Seeing what went wrong.** Diego: "right now we are blind on whats going
+in". The fault was on the serial line and nowhere else. Now Nebula writes
+down how a process died - the kind of fault, the instruction, the address
+it touched, the thread, the stack - and hands that to the parent when it
+collects the child. JetSki collects its web processes as they end, and a
+tab whose page stopped shows **This page stopped**, with Reload, Close tab
+and Copy details, and **What happened** underneath. The function's name is
+not there yet: that needs a kit that reads a program's symbols, next.
+
+**The zombies.** WebKit starts a process per site, and JetSki never
+collected one, so each that ended kept its slot in the process table until
+JetSki quit. It collects them now, every pump, without waiting.
+
+**How it is tested.** A POSIX test thread touches every page of the stack
+it is told it has; with the fix switched off, it dies at 256 KB. The kernel
+test that dereferences null now reads the record its child left; with the
+record not written, it fails. And the browser test kills a tab's page
+process and checks the tab says so, names the process and how it ended;
+with the explanation switched off, it fails there.

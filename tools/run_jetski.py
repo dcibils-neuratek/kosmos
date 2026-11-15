@@ -467,7 +467,49 @@ def use(guest, R, dump, window, mark):
     failed.extend(appended(R, shot, window))
     failed.extend(resized(guest, R, window, mark, sw, sh))
     failed.extend(tabbed(guest, R, window, sw, sh))
+    failed.extend(stopped(guest, R, window, sw, sh))
     return failed
+
+
+def stopped(guest, R, window, sw, sh):
+    """A tab whose page stopped (`docs/webkit.html`): its web process ended
+    - by the test's own key, which `sys.kill`s the shown tab's (`HOOK`) -
+    and JetSki collects it, says so with what Nebula recorded, and draws the
+    stopped page in the page's place."""
+    since = len(guest.seen)
+    guest.sendkey("ctrl-k")
+    if not said(guest, since, "jetski: the page's process ended", 30):
+        return ["a tab's web process was ended and JetSki did not say so: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said")]
+    after = guest.seen[since:]
+    ended = re.search(r"jetski: test ends process (\d+)", after)
+    failed = []
+    if not ended or ended.group(1) == "0":
+        return ["the shown tab had no web process to end: %s" % (ended and ended.group(0))]
+    pid = ended.group(1)
+    # Collected: the zombie gone from Nebula's table, and its death known.
+    if not said(guest, since, "jetski: process %s ended, code" % pid, 10):
+        failed.append("JetSki never collected its ended web process %s" % pid)
+    if not said(guest, since, "jetski: process   web, %s" % pid, 10) \
+       or not said(guest, since, "jetski: ended     with code", 10):
+        failed.append("the stopped page does not say which process ended or how: %s"
+                      % re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-6:])
+    time.sleep(1.5)                     # the stopped page, painted and composed
+    shot = guest.screendump()
+    R.write_png(os.path.join(KEPT, "jetski-stopped.png"), shot)
+    x, y, w, h = window
+    count, _ = block_at(R.parse_ppm, shot, x, y, w, h, FIELD)
+    if count >= 200:
+        failed.append("the page that stopped is still drawn: %d of its field's pixels" % count)
+    return failed
+
+
+# **The test's key** (`stopped`): Control-K ends the shown tab's web
+# process, as a fault would have, by JetSki's own right over its children.
+# Only in the suite's copy of `jetski.lua`.
+HOOK = ("if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
+        "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
+        "return true end\n")
 
 
 # A character as QEMU's `sendkey` names its key.
@@ -795,6 +837,17 @@ def main():
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
+    with open(lua) as f:
+        text = f.read()
+    text = text.replace("if c == 12 or c == 20 then return true end",
+                        "if c == 12 or c == 20 or c == 11 then return true end")
+    text = text.replace("win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n" + HOOK)
+    if BROKEN == "unexplained":
+        # The page that stopped, never asked why.
+        text = text.replace("crash = web.crash(st.tab)", "crash = nil")
+    lua = os.path.join(WORK, "jetski.lua")
+    with open(lua, "w") as f:
+        f.write(text)
     files = [(lua, "/Home/Apps/JetSki/jetski.lua"),
              (image, "/Home/Apps/JetSki/jetski.elf")]
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
@@ -901,7 +954,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 32
+    checks = 33
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))
@@ -918,7 +971,8 @@ def main():
           "beside it a film appended in pieces to a MediaSource, VP9 and Opus in "
           "SourceBuffers of their own, played, all of it buffered, on the screen, and "
           "its tone heard from the sound card; and the window resized by its grip, the "
-          "page told its new width"
+          "page told its new width; and a tab's web process ended, collected, and the "
+          "stopped page drawn in its place, saying which process and how"
           % (box[2], box[3], box[0] - x, box[1] - y, TYPED, PLATFORM))
     return 0
 

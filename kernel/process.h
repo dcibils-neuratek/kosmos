@@ -8,6 +8,7 @@
  * the order it happens to be included. */
 #include "mmu.h"
 #include "ipc.h"
+#include "syscall.h"     /* struct process_death */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -343,6 +344,22 @@ _Static_assert(USER_SCREEN_MAX >= 7680UL * 4320UL * 4UL,
     (USER_TSTACK_VA + (unsigned long)(index) * USER_TSTACK_SLOT)
 
 /*
+ * **The whole slot is the stack, given on touch** (15 November 2026,
+ * `testing.md` 18.823). The top `USER_STACK_PAGES` are mapped when the
+ * thread is made, as they always were; below them, down to this floor, a
+ * page is given zeroed the first time it is touched (`process_fill`), and
+ * the thread's end gives back whatever was. The page between the floor's
+ * end and the block is never given: a stack that runs the whole slot
+ * faults there rather than writing over its own block.
+ *
+ * It used to stop at the eager 256 KB while `pthread_getattr_np` said the
+ * slot's megabyte less the block - and JavaScriptCore, which sets its
+ * recursion limit from that, parsed The Verge's script 256 KB down and
+ * faulted into the unmapped three quarters instead of throwing.
+ */
+#define USER_TSTACK_FLOOR (2UL * 4096UL)
+
+/*
  * **The stacks' window ends at 64 GB, and reservations have the rest**
  * (`docs/w2.md` part 2, agreed by Diego on 11 November 2026). Until then
  * the stacks ran to the end of the address space, half a million slots;
@@ -621,6 +638,7 @@ struct process {
     unsigned long     collected_ticks;
 
     int               exit_code;
+    struct process_death death;     /* how it died, if by a fault */
     bool              exited;
 
     /*
@@ -812,8 +830,10 @@ bool process_image_ok(const void *header, size_t len);
  * The look and the sleep are one step under `processes_lock`, so a child
  * ending on another core cannot land its wake between them.
  */
+void process_record_death(struct process *p, const struct process_death *d);
+
 int process_wait(struct process *parent, unsigned *id, int *code,
-                 bool nonblocking);
+                 struct process_death *death, bool nonblocking);
 
 /*
  * Ends a child. Returns 0, or an error when `id` is not this process's

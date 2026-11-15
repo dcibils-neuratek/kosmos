@@ -33793,3 +33793,95 @@ a header would not rebuild. Removed, 8 of 8 and 178 objects. **To do**:
 which build put a FULL list's objects into the test variant's directory -
 `VARIANT` names `-web` for a browser build, so something compiled them
 with a list `VARIANT` did not see.
+
+## 18.823 A thread's whole stack is there (0.11.427)
+
+**The Verge and Mercado Libre both stopped JetSki's page process at the
+same instruction**, `0x43131296`, in JavaScriptCore's parser
+(`JSC::Parser<...>::parseMemberExpression`), on a write to `0x240cbffe8`
+with the stack pointer at `0x240cbff80` - inside a thread's 1 MB slot at
+`USER_TSTACK_VA`, 256 KB below its top.
+
+**JavaScriptCore was told it had a megabyte and was given a quarter.** Its
+recursion limit comes from `pthread_getattr_np`, which reported the slot
+less its block and guard pages. Nebula mapped only the top
+`USER_STACK_PAGES` (64 pages, 256 KB) when a thread was born, and nothing
+below them ever arrived: a deep parse went past 256 KB, still well inside
+what JSC believed was its stack, and met an unmapped page - a fault rather
+than JSC's own "Maximum call stack size exceeded".
+
+**The fix makes the report true rather than smaller.** `process_fill`
+gives a page of a live thread's slot on first touch, down to
+`USER_TSTACK_FLOOR` (the block and the guard, 8 KB); the slot is live while
+its block page is mapped, so a dead thread's slot still faults.
+`give_back_stack_below` returns what was filled when the thread ends, and
+`touched_pages` counts it both ways. The POSIX layer's
+`USER_THREAD_STACK` is the slot less the floor, the same number, from one
+header.
+
+**Test**: `posixtest` grew a thread that touches every page from the
+bottom its attributes report to 8 KB below its own frame, and says so if
+it reached less than 1000 KB - `x86-loader` passes. **Control**: with the
+fill's `tstack` condition false, the same suite fails at that thread, the
+process killed by a page fault at the first page below the eager 256 KB.
+
+## 18.824 Nebula says how a process died (0.11.427)
+
+Diego, 14 November 2026, after The Verge stopped a page with nothing on
+screen to say why: "why dont we show useful debugging info in the browser
+when something bad happens?", "its a development build", "right now we are
+blind on whats going in". What a fault knew was printed on the serial line
+and nowhere else, so a parent - JetSki, for its web processes - could learn
+that a child ended, never how.
+
+**The trap that ends a process writes down why, before it ends it**:
+`struct process_death` (`kernel/syscall.h`) - the exception (x86's vector,
+ARM's class), its name, the thread, the instruction, the address a page
+fault was about, the stack pointer and the raw syndrome - kept in the
+process beside its exit code. **`SYS_WAIT` carries it**, in
+`struct wait_result`, so collecting a child and learning why it died are one
+call, and only the parent who reaps it is told. A process that exits by
+itself leaves it zeroed, `faulted` 0. `sys.wait` returns it to Lua as a
+third value, a table, only for a fault.
+
+**Test**: `el0: a null deref kills only it` reads the record its child left:
+faulted, a page fault (vector 14 on x86, a lower-level data abort, class
+0x24, on ARM), at address 0, by thread 0, with an instruction, a stack
+pointer and a name - `x86-kernel` 217 of 217.
+**Control**: with the x86 trap's `process_record_death` taken out, the same
+test fails (`not ok 28`), the process killed and its record empty.
+
+## 18.825 JetSki collects its children, and a stopped page says why (0.11.427)
+
+**The zombies** (Diego: "yes fix the zombie processes too"). JetSki's web
+and network processes are its children - `ProcessLauncherKosmos.cpp`
+spawns them - and nothing ever waited for one, so each that ended stayed
+in Nebula's process table until JetSki did. Every `jetski_pump` now
+collects whoever has ended, without waiting (`kosmos_wait`, non-blocking),
+and keeps the last sixteen deaths by id, each said on the console: in the
+suite, process 31 - the web process of the tab the test closes - is
+collected the moment it ends.
+
+**The stopped page** (`docs/webkit.html`, drawn the same day). Each tab
+remembers its web process's id while it runs (`WKPageGetProcessIdentifier`,
+asked every pump, since a navigation to another site changes it); when
+WebKit says it ended, the tab keeps that id and what it was loading, and
+`web.crash(id)` answers with the death JetSki collected for it - the
+record 18.824 carries, the fault in words (x86's error code and ARM's
+syndrome decoded into a read, a write or a fetch, not present or not
+allowed), the address and what it was near, the instruction, the thread
+and the stack pointer. The page is drawn in the dead page's place:
+**This page stopped**, Reload, Close tab and Copy details, and **What
+happened** under them, each row also said on the console. A tab whose page
+stopped keeps its address as its title; WebKit has none left to give.
+
+The instruction is an address in `jetski.elf`, not yet a function's name:
+naming it is the Debug Kit's, next.
+
+**Test**: `x86-jetski`, after its tabs, presses a key its own copy of
+`jetski.lua` gives the test - Control-K, which `sys.kill`s the shown tab's
+web process, as JetSki may its own children. It checks the process was
+collected, that the page names it and how it ended, and that the dead
+page's picture is gone from the window
+(`build/jetski/jetski-stopped.png`). A process two tabs share - a page and
+the one it opened - stops both, and each says so.

@@ -10493,6 +10493,75 @@ the applications make the system useful, and is not pulled forward.
       `LICENSE` and held by a test to what the image links; drawing it
       found Brotli, WOFF2, dav1d and libavif missing from `LICENSE`.
       Diego agreed About too: "about mockup is good too".
+    - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
+      the M700, killed its page's process and JetSki showed nothing - the
+      fault was in the system's log, read over telnet. Diego: "why dont we
+      show useful debugging info in the browser when something bad
+      happens?", "its a development build", "it should help us work in
+      bugs and edge cases easily", "right now we are blind on whats going
+      in" - and "we should have a developer mode that shows errors,
+      network requests, javascript console, errors, debug info, etc".
+      **AGREED**, three pieces in this order: (1) **the cause** - a
+      thread's stack was said to be a megabyte and only 256 KB of it was
+      mapped, so JavaScriptCore's recursion limit was past the stack's end
+      (`testing.md` 18.823); (2) **a page that stopped says why**, in the
+      tab - the mockup's *A tab whose page stopped*, with, in a
+      development build, the fault, its addresses, the function it was in,
+      the thread and its stack, and the page's address, so a crash is read
+      where it happens; (3) **a developer mode** - WebKit's own Web
+      Inspector (console, network requests, errors, elements, sources),
+      whose front end is itself a web page JetSki can show, drawn in
+      `docs/webkit.html` before it is built. **Docked beside the page, as
+      Chrome's DevTools** - Diego sent a picture of them on reddit.com, the
+      tools taking the right half of the window: the console's failed
+      loads, errors and warnings, each with its source, and Elements,
+      Sources, Network, Performance, Memory and Application as tabs; Web
+      Inspector's own panels are the same set under WebKit's names. Diego:
+      "just copy the safari one if possible", "that is a good one" - so it
+      is Safari's Web Inspector itself, WebKit's `WebInspectorUI` from the
+      release already built, shown as Safari shows it, not a drawing of it.
+      **(1) done in 0.11.427** (`testing.md` 18.823); **(2) done in 0.11.427
+      but for the function's name** (18.825) - the tab shows the fault in
+      words, the addresses, the thread and the page, and Copy details; the
+      name waits on a Debug Kit that reads an image's symbols, as a piece
+      of its own, since Tracker's crash reports and the Process Viewer
+      want it too.
+      Its note, before it is built: `docs/debug.md`.
+    - *Zombie web processes* (15 November 2026; Diego: "yes fix the
+      zombie processes too"): JetSki never collected the web and network
+      processes it started, so each one that ended kept its slot in the
+      process table until JetSki quit - and WebKit starts one per site.
+      **AGREED**: Nebula's wait answer (`struct wait_result`) carries how
+      the child died beside its code, and JetSki collects its children as
+      they end, keeping the last few records for the page that stopped.
+      **Done in 0.11.427** (`testing.md` 18.824, 18.825).
+    - *HTML files from the disk* (15 November 2026; Diego: "also jetski
+      needs to allow opening html files from disk"). **AGREED**, after the
+      crash work: Control-O and the system's Open window, an `.html` file
+      opened from Tracker by its file type, an `.html` file dropped on
+      JetSki's window opened in it (Diego: "and also accepting dropping html
+      files on it and open it"), and `file://` addresses in the field. A web process has no `/Home` by design, so the file reaches
+      the page through WebKit's own door for it (`WKPageLoadFile` and its
+      resource folder) and whichever process may read it - to be settled
+      when it is built.
+    - *The old browser removed* (15 November 2026; Diego: "also we should
+      delete our old browser code and app as now jetski is much better
+      overall"). **AGREED.** What stands on it, read on 15 November: Mail
+      renders HTML mail with its engine (`/Kosmos/Kits/web`); Cafesa3D, the
+      IDE and Mail open a link by launching `browser.lua`; the dock pins
+      it; `x86-browser-1`/`-2` and the file-type, launch-grid and keyring
+      checks name it; NetSurf's tree, its GPLv2 layout engine and
+      `browserprefs.lua`. **Two decisions of Diego's before it goes**: what
+      draws Mail's HTML (WebKit in Mail, or plain text until then), and
+      whether JetSki joins the system's image - it is a package in
+      `/Home/Apps` today, so a machine without it installed would have no
+      browser at all. Links then open through one door to JetSki.
+      **Decided the same day** (Diego: "jetski in the system image, and
+      webkit for mail"): JetSki moves into the system's image, and WebKit
+      becomes a kit with one door - JetSki its first user and Mail's HTML
+      its second - so the old engine has nothing left standing on it. The
+      image grows by WebKit's size: what that costs at boot (netboot and a
+      stick) and in memory is measured as it moves.
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's
@@ -10967,6 +11036,82 @@ the applications make the system useful, and is not pulled forward.
   - The machine for it: a second office mini PC of the M700's kind, newer -
     a ThinkCentre M720q or M920q, or an OptiPlex 7060 Micro: an Intel I219
     for the network and UHD 630 graphics, both families Kosmos drives.
+
+### A daily driver - BeOS reimagined for this era
+
+**AGREED on 14 November 2026.** Diego asked what is left for Kosmos to be
+a real daily driver like macOS, Linux or Windows, and then: "Yeah let's
+keep that check list for daily driver but always with a focus on
+performance, media machine and productivity", and "Kosmos is my reimagined
+beos for this era". So this is not a race to the big three's feature
+lists. It is the list of what stops a person using Kosmos all day, read
+through BeOS's bet: **fast**, **a media machine**, and **productive**. Each
+item is weighed by those three before it is started, and each one, when
+started, is a design of its own (feature set, mockup, architecture,
+diagram, as an application's is). It keeps the order *one thing at a
+time* - this is the list, not the queue.
+
+**What a day on Kosmos is today** (checked against the tree on 14
+November): JetSki for the web, YouTube with sound; Mail, Write, Tracker,
+Music, Video, Photo, Paint, the IDE and TinyCC; Packages; SMB sharing;
+Xavier; Bluetooth keyboards and mice; storage on AHCI, NVMe
+(`hal/pc/nvme.c`, written for the ThinkPad) and USB sticks; Ethernet on
+Intel and Broadcom; sound on HDA. A desk machine on a wire can already
+spend a day here; a laptop cannot.
+
+**1. Performance - fast, and still fast when busy**
+- **JetSki finished**: the JIT, Settings, About, and hours of use without
+  growing - the browser is most of a working day, so it leads.
+- **Memory returned**: free pages given back, a pressure signal for
+  WebKit, a leak test (the three pieces above, under JetSki).
+- **The GPU for the desktop and for applications**: composing on the GPU
+  (`docs/m700-2d.md`), then a 3D API applications can use (4h) - WebGL,
+  video and scrolling all lean on it.
+- **Bounded under load**: the `x86-xavier`, `x86-film` and `x86-script`
+  divergences under a full gate (`testing.md` 18.822) are what `make
+  stress` exists for - a busy machine must still give the same answer.
+- **The optimisation phase** below, as it stands.
+
+**2. A media machine**
+- **Video**: M6, the Video application on the Media Kit, every format,
+  Big Buck Bunny first (`docs/media.md`).
+- **Low-latency audio, in and out**: a microphone, USB audio interfaces,
+  and the audio band for a web process (M4's owed pieces).
+- **Video calls**: WebRTC in JetSki - the camera that exists, the
+  microphone, an echo canceller.
+- **Displays**: a second monitor, one plugged in while running, and a
+  scale per screen.
+- **Music and photos as libraries**: Music after VOX (`docs/music.html`),
+  photos by their attributes - BeOS's queries, not a database beside the
+  files.
+
+**3. Productivity - a machine you live in**
+- **Wi-Fi**: the one missing piece that keeps Kosmos off a laptop; Intel
+  first, the AX201 in the ThinkPad and the M700's family.
+- **Sleep and wake, and power**: a lid closed and opened to the same
+  desktop (ACPI S3/S0ix, every driver saving its device), idle cores in
+  deep states, devices powered down - an hour's battery is not a laptop.
+- **Search**: the indexer and a search window over names and contents,
+  on kfs's attributes and live queries - BeOS had it first.
+- **Calendar and contacts**, beside Mail; Sheets and Present after Write.
+- **System updates with a way back**: Kosmos itself updated as Packages
+  updates applications, and the last working one kept to boot if the new
+  one does not.
+- **Login, lock screen and encryption at rest**: `/Home` sealed with the
+  Crypto Kit, so a lost laptop gives nothing away.
+- **Permissions a person grants**: the per-launcher consent step.
+- **Crash recovery**: a server or application that dies restarted, with
+  a report, the desktop untouched.
+- **Backups**: `/Home` kept elsewhere, automatically, and restorable.
+- **Typing every language**: dead keys and layouts first (Spanish), then
+  input methods; accessibility - zoom, contrast, a screen reader.
+- **Printing**, last; and **Linux in a sandbox** (`docs/linux.md`) as the
+  safety net for whatever Kosmos does not have.
+
+**The order proposed**, for Diego to change: JetSki finished, Wi-Fi, sleep
+and wake, M6, updates with a way back, then login and encryption. And the
+part no tool replaces: using it as a daily machine for weeks, fixing what
+annoys.
 
 ### The system
 

@@ -2997,6 +2997,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          */
         unsigned id = 0;
         int code = 0;
+        struct process_death death;
         uintptr_t out = sc->arg[0];
 
         if (out != 0 && !process_may_write(p, out, sizeof(struct wait_result))) {
@@ -3004,7 +3005,8 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        result = process_wait(p, &id, &code, (sc->arg[1] & 1u) != 0);
+        memset(&death, 0, sizeof death);
+        result = process_wait(p, &id, &code, &death, (sc->arg[1] & 1u) != 0);
 
         if (result == -2) {
             result = SYS_NO_CHILD_READY;
@@ -3013,6 +3015,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         } else if (out != 0) {
             ((struct wait_result *)out)->id = (uint64_t)id;
             ((struct wait_result *)out)->code = (int64_t)code;
+            ((struct wait_result *)out)->death = death;
         }
         break;
     }
