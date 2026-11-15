@@ -8637,7 +8637,10 @@ static bool test_a_modified_key_is_one_sequence(void)
         && strcmp(hal_key_super(0, 0, buffer), "\x1b[1;9~") == 0
         && strcmp(hal_key_super('c', 0, buffer), "\x1b[27;9;99~") == 0
         && strcmp(hal_key_super('1', KEY_MOD_ALT, buffer), "\x1b[27;11;49~") == 0
-        && strcmp(hal_key_super(255, KEY_MOD_ALT, buffer), "\x1b[27;11;255~") == 0;
+        && strcmp(hal_key_super(255, KEY_MOD_ALT, buffer), "\x1b[27;11;255~") == 0
+        /* Control-Alt-I, JetSki's Web Inspector: the letter, not a Tab. */
+        && strcmp(hal_key_chord('i', KEY_MOD_ALT | KEY_MOD_CTRL, buffer), "\x1b[27;7;105~") == 0
+        && strcmp(hal_key_chord('I', KEY_MOD_ALT | KEY_MOD_CTRL, buffer), "\x1b[27;7;73~") == 0;
 }
 
 static bool test_the_boot_announced_every_stage(void)

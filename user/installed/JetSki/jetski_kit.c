@@ -100,6 +100,7 @@ static int l_pump(lua_State *L)
     flag(L, "crashed", st.happened & JETSKI_CRASHED);
     flag(L, "asked", st.happened & JETSKI_ASKED);
     flag(L, "tabs", st.happened & JETSKI_TABS);
+    flag(L, "inspector", st.happened & JETSKI_INSPECTOR);
     lua_pushinteger(L, st.tab);
     lua_setfield(L, 2, "tab");
     lua_pushinteger(L, st.opened);
@@ -296,6 +297,69 @@ static int l_focus(lua_State *L)
     return 0;
 }
 
+/*
+ * **Web Inspector** (`docs/webkit.html`, *Developer mode*):
+ * `developer(on)`, `inspector_files(folder)`, `inspect(show)`,
+ * `inspecting()`, `inspector_size(w, h)`, `paint_inspector(surface, x, y,
+ * w, h)` as `paint` is, and `target(inspector)` - where the pointer, the
+ * wheel and keys go.
+ */
+static int l_developer(lua_State *L)
+{
+    jetski_developer(lua_toboolean(L, 1));
+    return 0;
+}
+
+static int l_inspector_files(lua_State *L)
+{
+    jetski_inspector_files(luaL_checkstring(L, 1));
+    return 0;
+}
+
+static int l_inspect(lua_State *L)
+{
+    jetski_inspect(lua_toboolean(L, 1));
+    return 0;
+}
+
+static int l_inspecting(lua_State *L)
+{
+    lua_pushboolean(L, jetski_inspecting());
+    return 1;
+}
+
+static int l_inspector_size(lua_State *L)
+{
+    lua_Integer w = luaL_checkinteger(L, 1), h = luaL_checkinteger(L, 2);
+    if (w > 0 && h > 0)
+        jetski_inspector_size((unsigned)w, (unsigned)h);
+    return 0;
+}
+
+static int l_paint_inspector(lua_State *L)
+{
+    unsigned sw, sh, pitch;
+    uint32_t *pixels = kosmos_surface_pixels(L, 1, &sw, &sh, &pitch);
+    lua_Integer x = luaL_checkinteger(L, 2), y = luaL_checkinteger(L, 3);
+    lua_Integer w = luaL_checkinteger(L, 4), h = luaL_checkinteger(L, 5);
+
+    luaL_argcheck(L, x >= 0 && (lua_Unsigned)x < sw, 2, "inside the surface");
+    luaL_argcheck(L, y >= 0 && (lua_Unsigned)y < sh, 3, "inside the surface");
+    if (w > (lua_Integer)sw - x) w = (lua_Integer)sw - x;
+    if (h > (lua_Integer)sh - y) h = (lua_Integer)sh - y;
+    if (w <= 0 || h <= 0) return 0;
+
+    jetski_paint_inspector((uint32_t *)((uint8_t *)pixels + (size_t)y * pitch) + x,
+                           (unsigned)w, (unsigned)h, pitch);
+    return 0;
+}
+
+static int l_target(lua_State *L)
+{
+    jetski_target(lua_toboolean(L, 1));
+    return 0;
+}
+
 void kosmos_jetski_kit(lua_State *L)
 {
     static const luaL_Reg fns[] = {
@@ -307,6 +371,10 @@ void kosmos_jetski_kit(lua_State *L)
         { "focus", l_focus },   { "frame", l_frame },
         { "tab_new", l_tab_new }, { "tab_select", l_tab_select },
         { "tab_close", l_tab_close }, { "tabs", l_tabs },
+        { "developer", l_developer }, { "inspector_files", l_inspector_files },
+        { "inspect", l_inspect }, { "inspecting", l_inspecting },
+        { "inspector_size", l_inspector_size }, { "paint_inspector", l_paint_inspector },
+        { "target", l_target },
         { NULL, NULL },
     };
 

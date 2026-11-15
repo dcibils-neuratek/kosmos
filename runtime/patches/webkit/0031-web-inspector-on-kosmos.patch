@@ -1,0 +1,57 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Web Inspector on Kosmos (docs/webkit.html, Developer mode, 15 November
+2026). The UI process's platform half is Kosmos's own
+(UIProcess/Inspector/kosmos/WebInspectorUIProxyKosmos.cpp), so the stubs
+for ports without one are left out; and the front end's localized
+strings are found beside its own page, in the folder on the disk it was
+loaded from; and its folder is one the UI process takes the web
+process to read already, as Safari's port does for its own bundle, so a
+page of the inspector's is never asked for a sandbox extension - which
+WebKit asserts it never needs.
+
+diff -ruN a/Source/WebKit/UIProcess/Inspector/WebInspectorUIProxy.cpp b/Source/WebKit/UIProcess/Inspector/WebInspectorUIProxy.cpp
+--- a/Source/WebKit/UIProcess/Inspector/WebInspectorUIProxy.cpp	2026-11-15 08:49:54.326691144 -0300
++++ b/Source/WebKit/UIProcess/Inspector/WebInspectorUIProxy.cpp	2026-11-15 08:49:54.346179665 -0300
+@@ -898,8 +898,9 @@
+ }
+ 
+ // Unsupported configurations can use the stubs provided here.
++// Kosmos has its own (`UIProcess/Inspector/kosmos/WebInspectorUIProxyKosmos.cpp`).
+ 
+-#if !PLATFORM(MAC) && !PLATFORM(GTK) && !PLATFORM(WIN) && !ENABLE(WPE_PLATFORM)
++#if !PLATFORM(MAC) && !PLATFORM(GTK) && !PLATFORM(WIN) && !ENABLE(WPE_PLATFORM) && !PLATFORM(KOSMOS)
+ 
+ RefPtr<WebPageProxy> WebInspectorUIProxy::platformCreateFrontendPage()
+ {
+diff -ruN a/Source/WebKit/WebProcess/Inspector/WebInspectorUI.cpp b/Source/WebKit/WebProcess/Inspector/WebInspectorUI.cpp
+--- a/Source/WebKit/WebProcess/Inspector/WebInspectorUI.cpp	2026-11-15 08:49:54.333518581 -0300
++++ b/Source/WebKit/WebProcess/Inspector/WebInspectorUI.cpp	2026-11-15 08:49:54.350432526 -0300
+@@ -494,8 +494,15 @@
+ 
+ String WebInspectorUI::localizedStringsURL() const
+ {
++#if PLATFORM(KOSMOS)
++    // Beside the front end's own page: its folder on the disk, wherever
++    // the application put it (`WKInspectorSetResourcesKosmos`).
++    URL page = m_page->mainWebFrame().url();
++    return URL(page, "Localizations/en.lproj/localizedStrings.js"_s).string();
++#else
+     notImplemented();
+     return emptyString();
++#endif
+ }
+ 
+ void WebInspectorUI::didEstablishConnection()
+--- a/Source/WebKit/UIProcess/WebProcessProxy.cpp	2026-11-15 09:11:28.472275820 -0300
++++ b/Source/WebKit/UIProcess/WebProcessProxy.cpp	2026-11-15 09:11:28.486161232 -0300
+@@ -2416,7 +2416,8 @@
+     m_backgroundResponsivenessTimer->updateState();
+ }
+ 
+-#if !PLATFORM(COCOA)
++// Kosmos's is its Web Inspector's folder (`WebInspectorUIProxyKosmos.cpp`).
++#if !PLATFORM(COCOA) && !PLATFORM(KOSMOS)
+ const MemoryCompactLookupOnlyRobinHoodHashSet<String>& WebProcessProxy::platformPathsWithAssumedReadAccess()
+ {
+     static NeverDestroyed<MemoryCompactLookupOnlyRobinHoodHashSet<String>> platformPathsWithAssumedReadAccess;

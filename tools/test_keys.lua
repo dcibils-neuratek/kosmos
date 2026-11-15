@@ -125,6 +125,9 @@ local SUPER, ALT = keys.SUPER, keys.ALT
 
 check(same(decode("a\27[27;9;116~b"), { 97, keys.with(116, SUPER), 98 }),
       "Super+T did not reach a window as Super+T: " .. show(decode("a\27[27;9;116~b")))
+-- Control-Alt-I (`hal_key_chord`): JetSki's Web Inspector, the letter with both.
+check(same(decode("\27[27;7;105~"), { keys.with(105, keys.CTRL | keys.ALT) }),
+      "Control-Alt-I did not reach a window: " .. show(decode("\27[27;7;105~")))
 check(same(decode("a\27[27;9;49~b"), { 97, keys.with(49, SUPER), 98 }),
       "Super+1 did not reach a window, or ate the key after it: "
       .. show(decode("a\27[27;9;49~b")))

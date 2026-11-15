@@ -826,6 +826,17 @@ static int keyboard_getchar_locked(void)
             return (unsigned char)pending[pending_at++];
         }
 
+        /* Control with Alt: a command too, the character without Control. */
+        if (alt && ctrl) {
+            char buffer[KEY_SEQUENCE_MAX];
+            int plain = hal_key_char(event.code, shift, false, caps);
+
+            if (plain > 0) {
+                queue(hal_key_chord(plain, KEY_MOD_ALT | KEY_MOD_CTRL, buffer));
+                return (unsigned char)pending[pending_at++];
+            }
+        }
+
         return c;
     }
 }

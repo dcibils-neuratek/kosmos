@@ -10523,7 +10523,8 @@ the applications make the system useful, and is not pulled forward.
       **(3) drawn 15 November** in `docs/webkit.html`, *Developer mode*:
       Console, Network and Elements docked right, Control-Alt-I, Inspect
       Element, a toolbar button, and Settings' *Show developer features*
-      (on in a development build) - waiting on Diego before it is built.
+      (on in a development build). **Agreed as drawn**, 15 November
+      (Diego: "Build it as drawn").
       **(1) done in 0.11.427** (`testing.md` 18.823); **(2) done in 0.11.427
       but for the function's name** (18.825) - the tab shows the fault in
       words, the addresses, the thread and the page, and Copy details; the
@@ -10532,6 +10533,17 @@ the applications make the system useful, and is not pulled forward.
       want it too.
       Its note: `docs/debug.md`. **Built in 0.11.428** (`testing.md`
       18.826): *What happened* names the function.
+      **(3) built in 0.11.430** (`testing.md` 18.828): Web Inspector
+      docked by Control-Alt-I, the toolbar's button or the right-click,
+      WebKit's own front end installed in `/Home/Apps/JetSki/Inspector`.
+      Left of what was drawn: **Inspect Element**, which waits for
+      WebKit's context menus (the port builds with `ENABLE_CONTEXT_MENUS`
+      off), and Settings' **Show developer features**, which waits for
+      JetSki's Settings, so the features are on in every build for now.
+      Found on the way, to do: **a process that runs out of memory says
+      so**. Nebula refusing to fill a reserved page is reported as a page
+      fault, and the stopped page says "page fault in
+      parseMemberExpression" when the cause was no memory left.
     - *Zombie web processes* (15 November 2026; Diego: "yes fix the
       zombie processes too"): JetSki never collected the web and network
       processes it started, so each one that ended kept its slot in the
@@ -10567,9 +10579,13 @@ the applications make the system useful, and is not pulled forward.
       **Decided the same day** (Diego: "jetski in the system image, and
       webkit for mail"): JetSki moves into the system's image, and WebKit
       becomes a kit with one door - JetSki its first user and Mail's HTML
-      its second - so the old engine has nothing left standing on it. The
-      image grows by WebKit's size: what that costs at boot (netboot and a
-      stick) and in memory is measured as it moves.
+      its second - so the old engine has nothing left standing on it.
+      **Measured and changed the same day**: JetSki is 170 MB stripped (62 MB
+      gzipped) against a 43 MB image held whole in RAM. Diego chose **a
+      system application on disk** over linking it in ("System app on
+      disk"): every stick and netboot carries it in a system folder on the
+      disk, versioned and updated with Kosmos, never optional, read from
+      the disk when it starts - no boot or memory cost.
     - *An icon of its own* (14 November 2026; Diego: "can you create a
       specific icon for jetski app following the same style as the other
       ones?"): JetSki wore NetSurf's surfing monkey. Drawn in Haiku's

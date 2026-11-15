@@ -52,6 +52,9 @@ list(APPEND WebKit_SOURCES
 
     UIProcess/Launcher/kosmos/ProcessLauncherKosmos.cpp
 
+    # Web Inspector, docked beside the page (`docs/webkit.html`).
+    UIProcess/Inspector/kosmos/WebInspectorUIProxyKosmos.cpp
+
     UIProcess/WebsiteData/kosmos/WebsiteDataStoreKosmos.cpp
 
     UIProcess/kosmos/WebPageProxyKosmos.cpp

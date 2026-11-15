@@ -17,6 +17,7 @@
 
 #include <WebKit/WKBase.h>
 #include <WebKit/WKGeometry.h>
+#include <WebKit/WKView.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -52,6 +53,19 @@ WK_EXPORT void WKPageWheelKosmos(WKPageRef, int x, int y, float dx, float dy, fl
  * UTF-8, `virtualKey` Windows's code, which WebCore's editing commands
  * are keyed by everywhere but the Mac. */
 WK_EXPORT void WKPageKeyKosmos(WKPageRef, bool down, const char* key, const char* code, const char* text, int virtualKey, unsigned modifiers);
+
+/*
+ * **Web Inspector, docked** (`docs/webkit.html`, *Developer mode*, agreed
+ * 15 November 2026): WebKit makes the inspector's own page, in a view of
+ * its own, and the application shows it beside the page it inspects. The
+ * handler is told when an inspected page's inspector view appears - and,
+ * with a null view, when it goes - so the window can split and join. The
+ * front end's files are a folder on the disk (`Main.html` in it), read as
+ * any page from the disk is.
+ */
+typedef void (*WKInspectorViewHandlerKosmos)(WKPageRef inspected, WKViewRef inspector, void* context);
+WK_EXPORT void WKInspectorSetViewHandlerKosmos(WKInspectorViewHandlerKosmos, void* context);
+WK_EXPORT void WKInspectorSetResourcesKosmos(const char* folder);
 
 #ifdef __cplusplus
 }

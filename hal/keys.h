@@ -142,4 +142,10 @@ int hal_key_char(unsigned code, bool shift, bool ctrl, bool caps);
  */
 const char *hal_key_super(int c, unsigned mods, char out[KEY_SEQUENCE_MAX]);
 
+/*
+ * A character held with Control and Alt, or with Super, as
+ * `ESC [ 27 ; m ; c ~` - `c` the character without Control.
+ */
+const char *hal_key_chord(int c, unsigned mods, char out[KEY_SEQUENCE_MAX]);
+
 #endif

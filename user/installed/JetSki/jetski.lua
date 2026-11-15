@@ -18,6 +18,7 @@
 --   Control-T    a new tab           Super-1..9  that tab
 --   Control-O    an HTML file from the disk, by the Open window;
 --                one dropped on the window opens as well
+--   Control-Alt-I  Web Inspector, docked to the right, and away again
 --
 -- A tab closes by its close; Control-W is the desktop's own prefix
 -- (`wm.lua`, Control-W then Q), so it is never a browser's here.
@@ -71,6 +72,16 @@ local VIEW_Y = HEAD
 local VIEW_H = H - HEAD - STAT
 
 local X, Y = 70, 50
+
+-- **Developer features** (`docs/webkit.html`, *Developer mode*): Web
+-- Inspector, its toolbar button and its right-click item. On by default
+-- in a development build and off in a stable one, by Settings' *Show
+-- developer features* - and JetSki has no Settings yet, and every build
+-- is a development one until Diego renames it, so on.
+local DEVELOPER = true
+-- Web Inspector's width, docked against the page's right edge as the
+-- drawing has it; never more than half the window.
+local INSPECTOR_W = 548
 --
 -- **The tabs are the window's top row** (`docs/webkit.html`, agreed 11
 -- November 2026): a window with a header of its own, so the kit draws no
@@ -102,6 +113,11 @@ end
 -- and all. Left at nought, a site's robot check reads it as no window.
 web.frame(X, Y, W, H)
 
+-- Web Inspector's pages, in the folder beside this file (`tools/inspector.py`).
+local HERE = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/JetSki"
+web.inspector_files(HERE .. "/Inspector")
+web.developer(DEVELOPER)
+
 --------------------------------------------------------------------------
 -- The header: the kit's widgets, in this window's own pixels.
 --
@@ -117,6 +133,8 @@ local back    = ui.iconbutton{ icon = "back" }
 local forward = ui.iconbutton{ icon = "forward" }
 local reload  = ui.iconbutton{ icon = "reload" }
 local field   = ui.field{ text = HOME, hint = "Search, or type an address" }
+-- Web Inspector's, at the bar's right end, while the developer features are on.
+local inspect = ui.iconbutton{ icon = "debug", hidden = not DEVELOPER }
 
 do
   local gap, edge = ui.layout.head_gap, ui.layout.head_edge
@@ -131,6 +149,8 @@ do
   field.x = x + 4
   field.y = (BAR - 1 - field.h) // 2
   header:add(field)
+  inspect.y = (BAR - 1 - inspect.h) // 2
+  header:add(inspect)
 end
 
 win:add(header)
@@ -240,15 +260,29 @@ win:add(strip)
 local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
 local gone                           -- a tab whose page stopped, below
 
+-- **The page and its inspector, side by side**: the page `PAGE_W` wide, a
+-- rule, and the inspector after it. `inspecting` is WebKit's word - the
+-- shown tab's inspector is docked - and `to_inspector` where the pointer
+-- was pressed last, which is where keys go.
+local PAGE_W, SPLIT_W = W, 0
+local inspecting, to_inspector = false, false
+
 -- **Every size from the window's**: the header and the address across it,
 -- the page below it, and the status line along the bottom.
 local function layout()
   VIEW_H = math.max(1, H - HEAD - STAT)
   strip.w, header.w = W, W
   lay_tabs()
-  field.w = W - ui.layout.head_edge - field.x
+  local right = W - ui.layout.head_edge
+  if not inspect.hidden then
+    inspect.x = right - inspect.w
+    right = inspect.x - ui.layout.head_gap
+  end
+  field.w = right - field.x
+  SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
+  PAGE_W = W - SPLIT_W
   view.w, view.h = W, VIEW_H
-  if gone then gone.w, gone.h = W, VIEW_H end
+  if gone then gone.w, gone.h = PAGE_W, VIEW_H end
 end
 
 layout()
@@ -258,28 +292,54 @@ view.takes_tab = true                -- Tab is the page's, between its fields
 
 function view:draw() end
 
+-- Which of the two a point is over, and the point in its coordinates: the
+-- page left of the rule, the inspector right of it.
+local function over(x, y)
+  if inspecting and x >= PAGE_W then
+    return true, math.max(0, x - PAGE_W - 1), y
+  end
+  return false, x, y
+end
+
 function view:mouse(action, x, y)
   if action == "press" then
+    local there, px, py = over(x, y)
+    to_inspector = there
+    web.target(there)
     web.focus(true)
-    web.mouse("press", "left", x, y)
-  elseif action == "release" then
-    web.mouse("release", "left", x, y)
+    web.mouse("press", "left", px, py)
   else
-    web.mouse("move", nil, x, y)
+    -- A drag stays with what was pressed, even across the rule.
+    local px = to_inspector and math.max(0, x - PAGE_W - 1) or x
+    if action == "release" then
+      web.mouse("release", "left", px, y)
+    else
+      web.mouse("move", nil, px, y)
+    end
   end
 
   return false                       -- WebKit says when there is a picture
 end
 
 function view:wheel(n, x, y)
-  web.wheel(x, y, n)
+  local there, px, py = over(x, y)
+  web.target(there)
+  web.wheel(px, py, n)
+  web.target(to_inspector)
   return true
 end
 
 -- Keys that are the window's, never the page's: Control-L, Control-T,
 -- and Super with a digit.
+local function inspector_key(c)
+  local key, mods = keys.parts(c)
+  return DEVELOPER and mods & keys.CTRL ~= 0 and mods & keys.ALT ~= 0
+         and (key == 73 or key == 105)
+end
+
 local function windows_key(c)
   if c == 12 or c == 15 or c == 20 then return true end
+  if inspector_key(c) then return true end
   local key, mods = keys.parts(c)
   return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
 end
@@ -350,8 +410,7 @@ end
 -- the 7 MB of symbols to be read; the kit's table given back after.
 local have_debug, debugkit = pcall(use, "/Kosmos/Kits/debug")
 if not have_debug or type(debugkit) ~= "table" then debugkit = nil end
-local IMAGE = (tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/JetSki")
-              .. "/jetski.elf"
+local IMAGE = HERE .. "/jetski.elf"
 local named = {}                     -- an address -> its function's name, or false
 
 local function look_up(pc)
@@ -572,6 +631,34 @@ function close_tab(id)
 end
 
 back.on_click = function() web.back() end
+
+-- **Web Inspector shown or put away**, for the tab shown. WebKit makes its
+-- page and says so (`st.inspector`), and the split follows that rather
+-- than this: what is docked is what WebKit says is.
+local function toggle_inspector()
+  if not DEVELOPER then return end
+  print("jetski: " .. (inspecting and "hiding" or "showing") .. " Web Inspector")
+  web.inspect(not inspecting)
+end
+inspect.on_click = toggle_inspector
+
+-- The page's right-click: the toolbar's three, and Web Inspector while the
+-- developer features are on. *Inspect Element* - Elements opened on what
+-- was under the pointer - waits for WebKit's context menus, which this
+-- port builds without (`OptionsKosmos.cmake`).
+function view:on_context(x, y)
+  local items = {
+    { text = "Back", disabled = not page.can_back, on_choose = function() web.back() end },
+    { text = "Forward", disabled = not page.can_forward, on_choose = function() web.forward() end },
+    { text = "Reload", on_choose = function() web.reload() end },
+  }
+  if DEVELOPER then
+    items[#items + 1] = { text = inspecting and "Hide Web Inspector" or "Show Web Inspector",
+                          on_choose = toggle_inspector }
+  end
+  win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y, items)
+  return true
+end
 forward.on_click = function() web.forward() end
 -- Reload is Stop while a page is on its way, as in every browser.
 reload.on_click = function()
@@ -616,7 +703,12 @@ local function frame()
   if crash then
     ui.paint_view(gone, s, 0, VIEW_Y)
   else
-    web.paint(s, 0, VIEW_Y, W, VIEW_H)
+    web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H)
+  end
+
+  if inspecting then
+    s:fill(PAGE_W, VIEW_Y, 1, VIEW_H, theme.line)
+    web.paint_inspector(s, PAGE_W + 1, VIEW_Y, SPLIT_W - 1, VIEW_H)
   end
 
   s:fill(0, H - STAT, W, STAT, theme.window)
@@ -635,7 +727,8 @@ win.on_resize = function(_, w, h)
 
   W, H = w, h
   layout()
-  web.resize(W, VIEW_H)
+  web.resize(PAGE_W, VIEW_H)
+  if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
   web.frame(X, Y, W, H)
   print(("jetski: resized to %dx%d"):format(W, H))
   frame()
@@ -652,6 +745,22 @@ win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
 
   local changed = st.picture
+
+  -- Web Inspector docked or gone, for the tab shown - by a key, its
+  -- button, its own close, or another tab shown: the page narrower or
+  -- whole again, and laid out for it.
+  if st.inspector or web.inspecting() ~= inspecting then
+    local now = web.inspecting()
+    if now ~= inspecting then
+      inspecting = now
+      if not now then to_inspector = false web.target(false) end
+      layout()
+      web.resize(PAGE_W, VIEW_H)
+      if now then web.inspector_size(SPLIT_W - 1, VIEW_H) end
+      print(("jetski: Web Inspector %s, the page %d wide"):format(now and "docked" or "away", PAGE_W))
+    end
+    changed = true
+  end
 
   -- A page that opened a tab, `target=_blank`: WebKit shows it already.
   if st.opened ~= 0 then
@@ -755,6 +864,8 @@ win.on_key = function(_, c)
   end
 
   if c == 20 then new_tab() return true end
+
+  if inspector_key(c) then toggle_inspector() return true end
 
   -- Control-O: an HTML file, chosen in the system's Open window.
   if c == 15 then

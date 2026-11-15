@@ -185,6 +185,15 @@ static bool pushed_meaning(unsigned code)
         return false;
     }
 
+    if (pushed_alt && pushed_ctrl) {
+        int plain = hal_key_char(code, pushed_shift, false, pushed_caps);
+
+        if (plain > 0) {
+            pushed_string(hal_key_chord(plain, KEY_MOD_ALT | KEY_MOD_CTRL, buffer));
+            return false;
+        }
+    }
+
     pushed_char((unsigned char)c);
     return true;
 }
@@ -556,23 +565,39 @@ const char *hal_key_sequence(unsigned code, unsigned mods,
  */
 const char *hal_key_super(int c, unsigned mods, char out[KEY_SEQUENCE_MAX])
 {
-    unsigned at = 0, m = 1u + KEY_MOD_SUPER + (mods & KEY_MOD_ALT);
+    if (c <= 0) {
+        out[0] = 0x1b;
+        out[1] = '[';
+        out[2] = '1';
+        out[3] = ';';
+        out[4] = '9';
+        out[5] = '~';
+        out[6] = '\0';
+        return out;
+    }
+
+    return hal_key_chord(c, KEY_MOD_SUPER | (mods & KEY_MOD_ALT), out);
+}
+
+/*
+ * **A character held with modifiers that make it a command**, as
+ * `ESC [ 27 ; m ; c ~`, `m` one more than the modifiers: Super's chords,
+ * above, and since 15 November 2026 **Control with Alt** - JetSki's
+ * Control-Alt-I, Web Inspector, as every browser has it. Control alone
+ * names a control character and Alt alone still means nothing here, but
+ * the two together named Control's character with Alt dropped, so
+ * Control-Alt-I arrived as a Tab. `c` is the character without Control,
+ * Shift already in it, so Control-Alt-I is `ESC [ 27 ; 7 ; 105 ~`.
+ */
+const char *hal_key_chord(int c, unsigned mods, char out[KEY_SEQUENCE_MAX])
+{
+    unsigned at = 0, m = 1u + (mods & (KEY_MOD_ALT | KEY_MOD_CTRL | KEY_MOD_SUPER));
     unsigned n = (unsigned)c & 0xffu;
     char digits[3];
     unsigned d = 0;
 
     out[at++] = 0x1b;
     out[at++] = '[';
-
-    if (c <= 0) {
-        out[at++] = '1';
-        out[at++] = ';';
-        out[at++] = '9';
-        out[at++] = '~';
-        out[at] = '\0';
-        return out;
-    }
-
     out[at++] = '2';
     out[at++] = '7';
     out[at++] = ';';

@@ -468,6 +468,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(resized(guest, R, window, mark, sw, sh))
     failed.extend(tabbed(guest, R, window, sw, sh))
     failed.extend(from_disk(guest, R, window, sw, sh))
+    failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
     return failed
 
@@ -504,7 +505,7 @@ def from_disk(guest, R, window, sw, sh):
     time.sleep(0.5)
     since = len(guest.seen)
     # A path, as a person types one: JetSki makes it `file:`.
-    for key in keys_for("/Home/Apps/JetSki/local.html\n"):
+    for key in keys_for("/Home/Pages/local.html\n"):
         guest.sendkey(key)
     if not said(guest, since, "jetski: title " + LOCAL_TITLE, 30):
         return ["a file from /Home did not load with its script: %s"
@@ -529,6 +530,61 @@ def from_disk(guest, R, window, sw, sh):
                       % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:]
                          or "nothing said"))
     return failed
+
+
+def inspected(guest, R, window, sw, sh):
+    """Web Inspector (`docs/webkit.html`, *Developer mode*): Control-Alt-I
+    docks it against the page's right edge - WebKit's own front end, from
+    `/Home/Apps/JetSki/Inspector`, in a page of its own - the page laid out
+    narrower for it, and the same key puts it away."""
+    x, y, w, h = window
+    width = re.findall(r"jetski: resized to (\d+)x(\d+)", guest.seen)
+    width = int(width[-1][0]) if width else w
+    since = len(guest.seen)
+    guest.sendkey("ctrl-alt-i")
+    if not said(guest, since, "jetski: Web Inspector docked, the page", 60):
+        return ["Control-Alt-I docked no Web Inspector: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    failed = []
+    if not re.search(r"jetski: tab \d+'s inspector docked", guest.seen[since:]):
+        failed.append("WebKit made no inspector's view for the tab")
+    page = int(re.findall(r"jetski: Web Inspector docked, the page (\d+) wide",
+                          guest.seen[since:])[-1])
+    split = min(548, width // 2)
+    if page != width - split:
+        failed.append("the page is %d wide beside the inspector, not %d" % (page, width - split))
+    # The front end, painted: its toolbar and tabs, many colours, where the
+    # page's right half was white with a line of text.
+    time.sleep(INSPECTOR_WAIT)
+    shot = guest.screendump()
+    R.write_png(os.path.join(KEPT, "jetski-inspector.png"), shot)
+    colours = inspector_colours(R, shot, x + page + 1, y + 76, split - 1, 120)
+    if colours < INSPECTOR_COLOURS:
+        failed.append("the inspector's half has %d colours in its top 120 rows: nothing of "
+                      "Web Inspector drawn" % colours)
+    since = len(guest.seen)
+    guest.sendkey("ctrl-alt-i")
+    if not said(guest, since, "jetski: Web Inspector away, the page %d wide" % width, 30):
+        failed.append("Control-Alt-I again did not put Web Inspector away: %s"
+                      % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said"))
+    return failed
+
+
+# How long the front end has to arrive and draw - 254 files, 8.7 MB of
+# script and style, under TCG - and how many colours its toolbar and tabs
+# make at the least, measured where the page's own half has two or three.
+INSPECTOR_WAIT = 20
+INSPECTOR_COLOURS = 12
+
+
+def inspector_colours(R, shot, x, y, w, h):
+    sw, sh, pixels = R.parse_ppm(shot)
+    seen = set()
+    for row in range(max(0, y), min(sh, y + h)):
+        for col in range(max(0, x), min(sw, x + w), 2):
+            at = (row * sw + col) * 3
+            seen.add(pixels[at:at + 3])
+    return len(seen)
 
 
 def stopped(guest, R, window, sw, sh):
@@ -574,7 +630,7 @@ def stopped(guest, R, window, sw, sh):
 # **The test's key** (`stopped`): Control-K ends the shown tab's web
 # process, as a fault would have, by JetSki's own right over its children.
 # Only in the suite's copy of `jetski.lua`.
-HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Apps/JetSki/dropped.html\\n\") end "
+HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
         "if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
         "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
@@ -944,6 +1000,12 @@ def main():
         # A file dropped, never taken.
         text = text.replace('if kind ~= "files" then return false end\n  local first',
                             'do return false end\n  local first')
+    if BROKEN == "uninspected":
+        # Control-Alt-I and the button, never asking WebKit.
+        text = text.replace("web.inspect(not inspecting)", "do end")
+    if BROKEN == "unpainted":
+        # Docked and never drawn.
+        text = text.replace("web.paint_inspector(s,", "local _ = (function() end)(s,")
     if BROKEN == "unexplained":
         # The page that stopped, never asked why.
         text = text.replace("crash = web.crash(st.tab)", "crash = nil")
@@ -964,10 +1026,13 @@ def main():
         f.write(DROPPED_HTML)
     files = [(lua, "/Home/Apps/JetSki/jetski.lua"),
              (image, "/Home/Apps/JetSki/jetski.elf"),
-             (local_html, "/Home/Apps/JetSki/local.html"),
-             (local_js, "/Home/Apps/JetSki/local.js"),
-             (chosen_html, "/Home/Apps/JetSki/a-chosen.html"),
-             (dropped_html, "/Home/Apps/JetSki/dropped.html")]
+             (local_html, "/Home/Pages/local.html"),
+             (local_js, "/Home/Pages/local.js"),
+             (chosen_html, "/Home/Pages/a-chosen.html"),
+             (dropped_html, "/Home/Pages/dropped.html")]
+    # Web Inspector's front end, as `installed.py` puts it beside JetSki.
+    import inspector
+    files += [(host, "/Home/Apps/JetSki/Inspector/" + inside) for host, inside in inspector.files()]
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],
@@ -979,9 +1044,14 @@ def main():
     # A real site is a real browser's memory: Wikipedia's article in three
     # WebKit processes does not fit beside the desktop in the suites' 512 MB
     # (`testing.md` 18.810), and no machine it is meant for has so little.
-    if LIVE:
-        args = getattr(R, board)
-        setattr(R, board, [("2G" if a == "512M" else a) for a in args])
+    #
+    # And Web Inspector is a fourth web process beside three tabs', reading
+    # 4 MB of script into JavaScriptCore's parser: at 512 MB the machine ran
+    # out under it, and the parser met a reserved page Nebula had no page
+    # to fill (`testing.md` 18.828). A gigabyte, which is still less than
+    # any machine it is meant for.
+    args = getattr(R, board)
+    setattr(R, board, [(("2G" if LIVE else "1G") if a == "512M" else a) for a in args])
     setattr(R, board, getattr(R, board) + [
         "-netdev", "user,id=net0", "-device", R.device(IMAGE, "net") + ",netdev=net0"])
     # A sound card, whose output is kept: the film's sound must come out.
@@ -1072,7 +1142,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 33
+    checks = 37
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

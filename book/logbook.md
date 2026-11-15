@@ -3360,3 +3360,33 @@ decided elsewhere, by the browser's main process.
 with the Open window, and drops a third on the window, checking each
 page's title. Each of the four pieces switched off makes exactly its own
 check fail.
+
+## 15 November 2026 - Web Inspector
+
+**In short:** JetSki has Safari's Web Inspector. Press Control-Alt-I, or
+the bug button at the right of the address bar, and the inspector opens
+beside the page: Elements, Console, Sources, Network and the rest, exactly
+as Safari has them. It is not a copy. It is WebKit's own inspector, a
+web page that comes with WebKit, shown in a second panel of the window.
+
+**What it took.** Very little of the inspector is Kosmos's: a file that
+gives WebKit somewhere to put the inspector's view, which JetSki then draws
+beside the page and sends the mouse and keys to. Three things were in the
+way. The keyboard could not say Control and Alt together with a letter,
+so Control-Alt-I arrived as a Tab; it can now, for every application.
+WebKit refuses to let its inspector read files from the disk unless they
+sit where the system already allows every page to read, so JetSki's
+inspector folder is now such a place. And the test machine, at 512 MB,
+ran out of memory with three pages and the inspector open; it now has a
+gigabyte, still less than any computer Kosmos is meant for.
+
+**How it is tested.** The browser test presses Control-Alt-I, checks that
+the page became narrower and that the inspector's half is drawn, then
+presses it again and checks the page is whole. Switching off either
+opening or drawing the inspector makes its own check fail.
+
+**Not yet:** *Inspect Element* on the right-click menu, which opens
+Elements on what is under the pointer. WebKit's own right-click menus are
+turned off in this build, and the item waits for them. The Settings
+switch for developer features waits for JetSki's Settings window; until
+then, the features are always on.

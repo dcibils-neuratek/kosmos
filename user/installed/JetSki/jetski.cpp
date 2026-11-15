@@ -25,6 +25,7 @@
 #include <WebKit/WKErrorRef.h>
 #include <WebKit/WKFrameInfoRef.h>
 #include <WebKit/WKFramePolicyListener.h>
+#include <WebKit/WKInspector.h>
 #include <WebKit/WKNavigationActionRef.h>
 #include <WebKit/WKPage.h>
 #include <WebKit/WKPageConfigurationRef.h>
@@ -32,6 +33,7 @@
 #include <WebKit/WKPageNavigationClient.h>
 #include <WebKit/WKPagePrivate.h>
 #include <WebKit/WKPageUIClient.h>
+#include <WebKit/WKPreferencesRef.h>
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
@@ -78,6 +80,7 @@ struct Tab {
     bool crashed = false;           // that process ended, since the last load
     long crashedPid = 0;
     char crashedAddress[2048] { };
+    WKViewRef inspector = nullptr;  // its Web Inspector's view, while docked
 };
 
 /*
@@ -135,6 +138,8 @@ struct Browser {
     int opened = 0;                 // a tab a page opened, not yet told
     int closing = 0;                // a tab whose page asked to be closed
     unsigned width = 0, height = 0;
+    unsigned inspectorWidth = 0, inspectorHeight = 0;
+    bool toInspector = false;       // input goes to the inspector's page
     bool running = false;           // inside `jetski_pump`'s run loop
     WTF::RunLoop::Timer* slice = nullptr;
 
@@ -265,6 +270,55 @@ void needsDisplay(WKViewRef, WKRect, const void* info)
     told(tabOf(info), JETSKI_PICTURE);
 }
 
+// The inspector's view has a picture: its tab's, said as the inspector's.
+void inspectorNeedsDisplay(WKViewRef, WKRect, const void* info)
+{
+    told(tabOf(info), JETSKI_INSPECTOR);
+}
+
+/*
+ * **The inspector's view, from WebKit** (`WebInspectorUIProxyKosmos.cpp`):
+ * the tab whose page it inspects keeps it, sized to its half of the
+ * window; a null view is the inspector gone.
+ */
+void inspectorView(WKPageRef inspected, WKViewRef view, void*)
+{
+    for (auto& tab : browser.tabs) {
+        if (tab->page != inspected)
+            continue;
+        if (tab->inspector == view)
+            return;
+        if (tab->inspector)
+            WKRelease(tab->inspector);
+        tab->inspector = view ? static_cast<WKViewRef>(const_cast<void*>(WKRetain(view))) : nullptr;
+        if (view) {
+            if (browser.inspectorWidth && browser.inspectorHeight)
+                WKViewSetSize(view, WKSizeMake(browser.inspectorWidth, browser.inspectorHeight));
+            WKViewClientV0 client { };
+            client.base = { 0, tab.get() };
+            client.setViewNeedsDisplay = inspectorNeedsDisplay;
+            WKViewSetViewClient(view, &client.base);
+            WKViewSetVisible(view, tab.get() == browser.tab);
+            WKViewSetActive(view, tab.get() == browser.tab);
+        } else if (tab.get() == browser.tab)
+            browser.toInspector = false;
+        fprintf(stderr, "jetski: tab %d's inspector %s\n", tab->id, view ? "docked" : "closed");
+        told(tab.get(), JETSKI_INSPECTOR);
+        return;
+    }
+}
+
+/*
+ * **Developer features** (`docs/webkit.html`: Settings, *Show developer
+ * features*): one preferences object every tab JetSki makes is given, so
+ * turning them on or off is one call for all of them.
+ */
+WKPreferencesRef preferences()
+{
+    static WKPreferencesRef shared = WKPreferencesCreate();
+    return shared;
+}
+
 /*
  * **The window a page is in** (`jetski_frame`): what `window.outerWidth`,
  * `screenX` and the rest answer. Without it they are all nought, which no
@@ -323,6 +377,10 @@ void show(Tab* tab)
         bool shown = each.get() == tab;
         WKViewSetVisible(each->view, shown);
         WKViewSetActive(each->view, shown);
+        if (each->inspector) {
+            WKViewSetVisible(each->inspector, shown);
+            WKViewSetActive(each->inspector, shown);
+        }
         if (!shown)
             WKViewSetFocus(each->view, false);
     }
@@ -383,6 +441,7 @@ Tab* makeTab()
     auto configuration = adoptWK(WKPageConfigurationCreate());
     WKPageConfigurationSetContext(configuration.get(), context());
     WKPageConfigurationSetWebsiteDataStore(configuration.get(), dataStore());
+    WKPageConfigurationSetPreferences(configuration.get(), preferences());
     return makeTab(configuration.get());
 }
 
@@ -408,6 +467,15 @@ void closePage(WKPageRef, const void* info)
 WKPageRef current()
 {
     return browser.tab ? browser.tab->page : nullptr;
+}
+
+// What the pointer, the wheel and keys go to: the shown tab's page, or its
+// inspector's while the window says so (`jetski_target`).
+WKPageRef input()
+{
+    if (browser.toInspector && browser.tab && browser.tab->inspector)
+        return WKViewGetPage(browser.tab->inspector);
+    return current();
 }
 
 } // namespace
@@ -464,6 +532,11 @@ extern "C" int jetski_tab_close(int id)
         auto& tab = browser.tabs[i];
         if (tab->id != id)
             continue;
+        if (tab->inspector)
+            WKInspectorClose(WKPageGetInspector(tab->page));
+        if (tab->inspector)
+            WKRelease(tab->inspector);
+        tab->inspector = nullptr;
         WKPageClose(tab->page);
         WKRelease(tab->view);
         if (browser.tab == tab.get())
@@ -673,7 +746,7 @@ unsigned heldBit(int button)
 
 extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button, int x, int y, unsigned mods)
 {
-    if (!current())
+    if (!input())
         return;
 
     if (action == JETSKI_PRESS) {
@@ -686,14 +759,14 @@ extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button
         pointer.y = y;
         pointer.at = now;
         pointer.held |= heldBit(button);
-        WKPageMouseKosmos(current(), kWKKosmosMouseDown, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
+        WKPageMouseKosmos(input(), kWKKosmosMouseDown, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
     } else if (action == JETSKI_RELEASE) {
         pointer.held &= ~heldBit(button);
-        WKPageMouseKosmos(current(), kWKKosmosMouseUp, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
+        WKPageMouseKosmos(input(), kWKKosmosMouseUp, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
     } else {
         // A move with a button held is a drag of that button, as WebKit has it.
         int moving = pointer.held & 1 ? JETSKI_LEFT : pointer.held & 4 ? JETSKI_MIDDLE : pointer.held & 2 ? JETSKI_RIGHT : JETSKI_NONE;
-        WKPageMouseKosmos(current(), kWKKosmosMouseMove, moving, pointer.held, x, y, 0, modifiersOf(mods));
+        WKPageMouseKosmos(input(), kWKKosmosMouseMove, moving, pointer.held, x, y, 0, modifiersOf(mods));
     }
 }
 
@@ -704,13 +777,13 @@ extern "C" void jetski_mouse(enum jetski_mouse action, enum jetski_button button
 //
 extern "C" void jetski_wheel(int x, int y, int notches, unsigned mods)
 {
-    if (!current() || !notches)
+    if (!input() || !notches)
         return;
     float ticks = notches, pixels = notches * 3 * 40;
     if (mods & 1)
-        WKPageWheelKosmos(current(), x, y, pixels, 0, ticks, 0, modifiersOf(mods & ~1u));
+        WKPageWheelKosmos(input(), x, y, pixels, 0, ticks, 0, modifiersOf(mods & ~1u));
     else
-        WKPageWheelKosmos(current(), x, y, 0, pixels, 0, ticks, modifiersOf(mods));
+        WKPageWheelKosmos(input(), x, y, 0, pixels, 0, ticks, modifiersOf(mods));
 }
 
 //
@@ -754,15 +827,15 @@ const char shiftedDigits[] = ")!@#$%^&*(";
 
 void send(const char* key, const char* dom, const char* text, int virtualKey, unsigned mods)
 {
-    WKPageKeyKosmos(current(), true, key, dom, text, virtualKey, modifiersOf(mods));
-    WKPageKeyKosmos(current(), false, key, dom, nullptr, virtualKey, modifiersOf(mods));
+    WKPageKeyKosmos(input(), true, key, dom, text, virtualKey, modifiersOf(mods));
+    WKPageKeyKosmos(input(), false, key, dom, nullptr, virtualKey, modifiersOf(mods));
 }
 
 }
 
 extern "C" int jetski_key(int c)
 {
-    if (!current())
+    if (!input())
         return 0;
 
     // `keys.parts`: the key, and its modifiers in steps of 1024 below it.
@@ -861,6 +934,62 @@ extern "C" int jetski_key(int c)
 
 extern "C" void jetski_focus(int focused)
 {
-    if (browser.tab)
-        WKViewSetFocus(browser.tab->view, focused);
+    if (!browser.tab)
+        return;
+    bool toInspector = browser.toInspector && browser.tab->inspector;
+    WKViewSetFocus(browser.tab->view, focused && !toInspector);
+    if (browser.tab->inspector)
+        WKViewSetFocus(browser.tab->inspector, focused && toInspector);
+}
+
+extern "C" void jetski_developer(int on)
+{
+    WKPreferencesSetDeveloperExtrasEnabled(preferences(), on);
+}
+
+extern "C" void jetski_inspector_files(const char* folder)
+{
+    WKInspectorSetResourcesKosmos(folder);
+    WKInspectorSetViewHandlerKosmos(inspectorView, nullptr);
+}
+
+extern "C" void jetski_inspect(int show)
+{
+    if (!current())
+        return;
+    auto inspector = WKPageGetInspector(current());
+    if (show) {
+        WKInspectorShow(inspector);
+        WKInspectorAttach(inspector);
+    } else
+        WKInspectorClose(inspector);
+}
+
+extern "C" int jetski_inspecting(void)
+{
+    return browser.tab && browser.tab->inspector;
+}
+
+extern "C" void jetski_inspector_size(unsigned width, unsigned height)
+{
+    if (!width || !height)
+        return;
+    browser.inspectorWidth = width;
+    browser.inspectorHeight = height;
+    for (auto& tab : browser.tabs) {
+        if (tab->inspector)
+            WKViewSetSize(tab->inspector, WKSizeMake(width, height));
+    }
+}
+
+extern "C" void jetski_paint_inspector(uint32_t* pixels, unsigned width, unsigned height, unsigned pitch)
+{
+    if (!browser.tab || !browser.tab->inspector)
+        return;
+    WKPagePaintKosmos(WKViewGetPage(browser.tab->inspector), pixels, width, height, pitch, WKRectMake(0, 0, width, height));
+}
+
+extern "C" void jetski_target(int inspector)
+{
+    browser.toInspector = inspector != 0;
 }

@@ -584,6 +584,16 @@ static void kbd_byte(uint8_t b)
         return;
     }
 
+    /* Control with Alt: a command too, the character without Control. */
+    if (alt && ctrl) {
+        int plain = hal_key_char(code, shift, false, caps);
+
+        if (plain > 0) {
+            put_sequence(hal_key_chord(plain, KEY_MOD_ALT | KEY_MOD_CTRL, buffer));
+            return;
+        }
+    }
+
     put_char(c);
 }
 

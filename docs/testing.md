@@ -33942,3 +33942,51 @@ window manager. **Controls**: without patch 0030 the page loads and its
 script fails (`onerror`: "The script beside it failed"); `pathless` makes
 the path a search (`https:///Home/...`, error 6); `openless` and
 `dropless` fail at their own checks, one each.
+
+## 18.828 Web Inspector, docked (0.11.430)
+
+**Safari's Web Inspector in JetSki**, as drawn in `docs/webkit.html`,
+*Developer mode*, and agreed 15 November 2026 ("Build it as drawn").
+Control-Alt-I, the toolbar's button or the page's right-click docks it
+against the page's right edge, 548 pixels or half the window, with a rule
+between them, and the page is laid out narrower for it. It is WebKit's
+own front end, `WebInspectorUI` from the release JetSki is built from,
+made by WebKit's script (`tools/inspector.py`) into 255 files and
+installed in `/Home/Apps/JetSki/Inspector/`. It runs in a web process of
+its own, and `WebInspectorUIProxyKosmos.cpp` gives its view to JetSki.
+
+**Three things stood in the way, and each was found by the test.**
+
+- **The keyboard never said Control-Alt with a letter.** Control names a
+  control character and Alt alone means nothing, so Control-Alt-I arrived
+  as a Tab. `hal_key_chord` now sends a character held with Control and Alt
+  as Super's chords are sent, `ESC [ 27 ; 7 ; 105 ~`, from all three
+  keyboard paths (the pushed keys, the i8042, virtio input). The kernel
+  suite checks the bytes, and `test_keys.lua` checks the decode.
+- **WebKit asserts that an inspector page never needs a sandbox
+  extension**, and on Kosmos it is a `file:` page in a folder no web
+  process was assumed to read. Safari's bundle is such a folder, and GTK's
+  and WPE's front ends are `resource:` pages that never ask. So patch 0031
+  leaves Kosmos to define `platformPathsWithAssumedReadAccess`, and the
+  folder JetSki names is in it. Before this, JetSki's own process aborted
+  on the assertion.
+- **512 MB was not enough.** The inspector is a fourth web process beside
+  three tabs' and parses 4 MB of script. At 512 MB the parser met a
+  reserved page Nebula had no page to fill, which was reported as a page
+  fault in `parseMemberExpression`. The suite runs at a gigabyte now. A
+  page that runs out of memory should say that rather than "page fault";
+  that is on the roadmap.
+
+**Test** (`x86-jetski`, 37 checks): Control-Alt-I, then WebKit's "tab N's
+inspector docked" and JetSki's "the page 450 wide" in a 900-wide window;
+twenty seconds later, at least 12 colours in the top 120 rows of the
+inspector's half, where the page had white and a line of text; then
+Control-Alt-I again, and the page 900 wide. **Controls**:
+`KOSMOS_JETSKI_BREAK=uninspected` (WebKit never asked) and `unpainted`
+(docked, never drawn) each fail at their own check.
+
+The suite's own pages moved to `/Home/Pages`: the Open window starts in
+the page's folder, where the `Inspector` folder now comes first, and
+Return would have gone into it. `.htm` joined `.html` in the File types
+page's Documents; JetSki began opening it in 0.11.429, which had put it
+alone in an "Other" group and failed `host`.

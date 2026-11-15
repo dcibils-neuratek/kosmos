@@ -40,6 +40,17 @@ DATA = {
 }
 
 
+def inspector():
+    """JetSki's Web Inspector, its front end's pages (`tools/inspector.py`)."""
+    import inspector as front_end
+
+    return [(host, "Inspector/" + inside) for host, inside in front_end.files()]
+
+
+# What the build makes for an application's folder besides its image.
+MADE = {"JetSki": inspector}
+
+
 def image_of(program):
     """The image a program's header names, or None."""
     with open(program, encoding="utf-8") as f:
@@ -92,6 +103,9 @@ def pairs(arch, home, apps=None):
             stripped = os.path.join(staged, image)
             subprocess.run([objcopy, "--strip-debug", built, stripped], check=True)
             out.append("%s:%s/%s" % (stripped, guest, image))
+
+        if name in MADE:
+            out.extend("%s:%s/%s" % (host, guest, inside) for host, inside in MADE[name]())
 
         for there, here in DATA.get(name, []):
             source = os.path.join(home, there) if home else ""

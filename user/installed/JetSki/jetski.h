@@ -25,6 +25,7 @@ enum jetski_happened {
     JETSKI_CRASHED   = 1 << 5,     /* the web process ended */
     JETSKI_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
     JETSKI_TABS      = 1 << 7,     /* a tab not shown began, finished or ended */
+    JETSKI_INSPECTOR = 1 << 8,     /* the inspector came, went, or has a picture */
 };
 
 struct jetski_state {
@@ -119,6 +120,23 @@ int jetski_key(int code);
 
 /* Whether the page has the keyboard - not while the address is typed. */
 void jetski_focus(int focused);
+
+/*
+ * **Web Inspector, docked** (`docs/webkit.html`, *Developer mode*): the
+ * shown tab's inspector shown or closed; whether it has one; its picture,
+ * as `jetski_paint` paints the page's, at the size `jetski_inspector_size`
+ * gave it; and which of the two the pointer, the wheel and keys go to
+ * (`jetski_target`, 1 the inspector). Developer features - the inspector,
+ * Inspect Element - are on or off for every page (`jetski_developer`),
+ * and the front end's files are the folder `jetski_inspector_files` names.
+ */
+void jetski_developer(int on);
+void jetski_inspector_files(const char *folder);
+void jetski_inspect(int show);
+int  jetski_inspecting(void);
+void jetski_inspector_size(unsigned width, unsigned height);
+void jetski_paint_inspector(uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
+void jetski_target(int inspector);
 
 #ifdef __cplusplus
 }
