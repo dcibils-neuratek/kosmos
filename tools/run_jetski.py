@@ -467,7 +467,67 @@ def use(guest, R, dump, window, mark):
     failed.extend(appended(R, shot, window))
     failed.extend(resized(guest, R, window, mark, sw, sh))
     failed.extend(tabbed(guest, R, window, sw, sh))
+    failed.extend(from_disk(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
+    return failed
+
+
+# **A page from the disk** (`roadmap.md`, *HTML files from the disk*): an
+# HTML file in /Home, and a script beside it that the page names by a
+# relative address - so what loads is the file and its folder, not only
+# the one file. The script sets the title; the title is what is checked.
+LOCAL_HTML = (b"<!doctype html><html><head><title>Not yet</title>"
+              b"<script src=\"local.js\" onerror=\"document.title='The script beside it failed'\"></script></head>"
+              b"<body><h1>From the disk</h1></body></html>\n")
+LOCAL_JS = b"document.title = 'From the disk, with its script';\n"
+LOCAL_TITLE = "From the disk, with its script"
+CHOSEN_HTML = b"<!doctype html><html><head><title>Chosen in the Open window</title></head><body>Chosen</body></html>\n"
+DROPPED_HTML = b"<!doctype html><html><head><title>Dropped on the window</title></head><body>Dropped</body></html>\n"
+
+
+def keys_for(text):
+    """QEMU's names for the keys that type `text`: a capital is Shift and
+    its letter."""
+    return [("shift-" + c.lower()) if c.isupper() else QEMU_KEYS.get(c, c) for c in text]
+
+
+def from_disk(guest, R, window, sw, sh):
+    """An address `file:` - an HTML file in /Home, typed into a new tab -
+    loads, with the script beside it."""
+    since = len(guest.seen)
+    guest.sendkey("ctrl-t")
+    deadline = time.time() + 20
+    while not re.search(r"jetski: tab (\d+) of \1\b", guest.seen[since:]):
+        if time.time() > deadline:
+            return ["Control-T opened no tab for a file"]
+        time.sleep(0.2)
+    time.sleep(0.5)
+    since = len(guest.seen)
+    # A path, as a person types one: JetSki makes it `file:`.
+    for key in keys_for("/Home/Apps/JetSki/local.html\n"):
+        guest.sendkey(key)
+    if not said(guest, since, "jetski: title " + LOCAL_TITLE, 30):
+        return ["a file from /Home did not load with its script: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    failed = []
+    # Control-O: the Open window, in the folder of the page shown, where
+    # `a-chosen.html` is the first web page and is selected; Return opens it.
+    since = len(guest.seen)
+    guest.sendkey("ctrl-o")
+    time.sleep(2.0)
+    guest.sendkey("ret")
+    if not said(guest, since, "jetski: title Chosen in the Open window", 30):
+        failed.append("Control-O and Return did not open the web page the Open window chose: %s"
+                      % (re.findall(r"(?:jetski|panel): [^\r\n]*", guest.seen[since:])[-4:]
+                         or "nothing said"))
+    # A file dropped on the window, as Tracker drops one: by the window
+    # manager's own drop, which the test's key hands it (`HOOK`).
+    since = len(guest.seen)
+    guest.sendkey("ctrl-d")
+    if not said(guest, since, "jetski: title Dropped on the window", 30):
+        failed.append("a web page dropped on the window did not open: %s"
+                      % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:]
+                         or "nothing said"))
     return failed
 
 
@@ -514,7 +574,8 @@ def stopped(guest, R, window, sw, sh):
 # **The test's key** (`stopped`): Control-K ends the shown tab's web
 # process, as a fault would have, by JetSki's own right over its children.
 # Only in the suite's copy of `jetski.lua`.
-HOOK = ("if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
+HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Apps/JetSki/dropped.html\\n\") end "
+        "if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
         "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
         "return true end\n")
@@ -866,21 +927,47 @@ def main():
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = text.replace("if c == 12 or c == 20 then return true end",
-                        "if c == 12 or c == 20 or c == 11 then return true end")
+    text = text.replace("if c == 12 or c == 15 or c == 20 then return true end",
+                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 then return true end")
     text = text.replace("win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
     if BROKEN == "nameless":
         # The Debug Kit never asked.
         text = text.replace("debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
+    if BROKEN == "pathless":
+        # A path typed is a search, not a file.
+        text = text.replace('if text:match("^%s*/") then', 'if false then')
+    if BROKEN == "openless":
+        # Control-O, never answered.
+        text = text.replace("if c == 15 then\n    local chooser", "if false then\n    local chooser")
+    if BROKEN == "dropless":
+        # A file dropped, never taken.
+        text = text.replace('if kind ~= "files" then return false end\n  local first',
+                            'do return false end\n  local first')
     if BROKEN == "unexplained":
         # The page that stopped, never asked why.
         text = text.replace("crash = web.crash(st.tab)", "crash = nil")
     lua = os.path.join(WORK, "jetski.lua")
     with open(lua, "w") as f:
         f.write(text)
+    local_html = os.path.join(WORK, "local.html")
+    local_js = os.path.join(WORK, "local.js")
+    with open(local_html, "wb") as f:
+        f.write(LOCAL_HTML)
+    with open(local_js, "wb") as f:
+        f.write(LOCAL_JS)
+    chosen_html = os.path.join(WORK, "a-chosen.html")
+    dropped_html = os.path.join(WORK, "dropped.html")
+    with open(chosen_html, "wb") as f:
+        f.write(CHOSEN_HTML)
+    with open(dropped_html, "wb") as f:
+        f.write(DROPPED_HTML)
     files = [(lua, "/Home/Apps/JetSki/jetski.lua"),
-             (image, "/Home/Apps/JetSki/jetski.elf")]
+             (image, "/Home/Apps/JetSki/jetski.elf"),
+             (local_html, "/Home/Apps/JetSki/local.html"),
+             (local_js, "/Home/Apps/JetSki/local.js"),
+             (chosen_html, "/Home/Apps/JetSki/a-chosen.html"),
+             (dropped_html, "/Home/Apps/JetSki/dropped.html")]
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],

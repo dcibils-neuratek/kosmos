@@ -10549,6 +10549,9 @@ the applications make the system useful, and is not pulled forward.
       the page through WebKit's own door for it (`WKPageLoadFile` and its
       resource folder) and whichever process may read it - to be settled
       when it is built.
+      **Built in 0.11.429** (`testing.md` 18.827): the network process
+      reads it, and WebKit patch 0030 lets the page show the files beside
+      it; Control-O, a drop, a typed path and Tracker's file type.
     - *The old browser removed* (15 November 2026; Diego: "also we should
       delete our old browser code and app as now jetski is much better
       overall"). **AGREED.** What stands on it, read on 15 November: Mail

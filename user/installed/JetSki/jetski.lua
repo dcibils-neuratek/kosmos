@@ -7,13 +7,17 @@
 -- kosmos: needs network
 -- kosmos: about WebKit on Kosmos: the web as Safari draws it
 -- kosmos: image jetski.elf
+-- kosmos: opens html htm
 --
 --   wm jetski                              the start page
 --   wm jetski:https://en.wikipedia.org/    that page
+--   wm jetski:/Home/page.html              a page from the disk
 --
 --   Control-L    type an address
 --   Escape       the address as it was
 --   Control-T    a new tab           Super-1..9  that tab
+--   Control-O    an HTML file from the disk, by the Open window;
+--                one dropped on the window opens as well
 --
 -- A tab closes by its close; Control-W is the desktop's own prefix
 -- (`wm.lua`, Control-W then Q), so it is never a browser's here.
@@ -275,7 +279,7 @@ end
 -- Keys that are the window's, never the page's: Control-L, Control-T,
 -- and Super with a digit.
 local function windows_key(c)
-  if c == 12 or c == 20 then return true end
+  if c == 12 or c == 15 or c == 20 then return true end
   local key, mods = keys.parts(c)
   return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
 end
@@ -502,6 +506,9 @@ end
 -- An address as WebKit wants one: a scheme always, `https` when none was
 -- typed; words are a search, as the NetSurf browser's field has them.
 local function visit(text)
+  -- A path is a file of this machine's: `file:` and the path, which
+  -- WebKit's network process reads from /Home with the files beside it.
+  if text:match("^%s*/") then text = "file://" .. text:match("^%s*(.-)%s*$") end
   local where = prefs.destination(text, "duckduckgo")
 
   if not where then return end
@@ -749,6 +756,19 @@ win.on_key = function(_, c)
 
   if c == 20 then new_tab() return true end
 
+  -- Control-O: an HTML file, chosen in the system's Open window.
+  if c == 15 then
+    local chooser = use("/Kosmos/Libraries/panel.lua").open{
+      -- Where the page shown is, when it is a file; /Home otherwise.
+      start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
+      title = "Open a web page",
+      filter = function(name) return name:lower():match("%.html?$") ~= nil end,
+      on_choose = function(path) win:focus_on(view) web.focus(true) visit(path) end,
+    }
+    if chooser then chooser:run() end
+    return true
+  end
+
   -- Super with a digit: that tab, and 9 the last, as every browser has it.
   local key, mods = keys.parts(c)
   if mods & keys.SUPER ~= 0 and key >= 49 and key <= 57 then
@@ -758,6 +778,22 @@ win.on_key = function(_, c)
   end
 
   return false
+end
+
+-- **A file dropped on the window** - from Tracker, a path a line - opens
+-- in the tab shown, the first of them; a web page is one page.
+function win:on_drop(kind, payload)
+  if kind ~= "files" then return false end
+  local first = payload:match("^[^\n]+")
+  if not first or not first:lower():match("%.html?$") then
+    say("only a web page opens here - an .html file")
+    return first ~= nil
+  end
+  print("jetski: dropped " .. first)
+  win:focus_on(view)
+  web.focus(true)
+  visit(first)
+  return true
 end
 
 tabs_changed()

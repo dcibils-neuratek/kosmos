@@ -3339,3 +3339,24 @@ list of functions, in the system's image and JetSki's, and with its sort
 switched off it gets 70 of 249 wrong. In the browser test, JetSki names a
 known function from its own file on the virtual disk; with the kit not
 asked, that check fails.
+
+## 15 November 2026 - Web pages from the disk
+
+**In short:** JetSki opens HTML files from the machine itself. Type a path
+such as `/Home/page.html`, press Control-O and choose one in the Open
+window, or drop one on the window. The page loads with the files beside
+it, its scripts, styles and pictures.
+
+**The snag.** The page itself loaded at once, but a script next to it was
+refused. WebKit allows a page from the disk to use another file only if
+both are on the same disk, and checks that by looking at both files. The
+part of the browser that runs the page is deliberately not allowed to see
+the disk at all on Kosmos, so the check always failed. Apple's iPhone
+browser and Linux's sandboxed one skip that check for exactly this
+reason, and now Kosmos does too. Which files a page can reach is still
+decided elsewhere, by the browser's main process.
+
+**How it is tested.** The browser test types a path, opens a second page
+with the Open window, and drops a third on the window, checking each
+page's title. Each of the four pieces switched off makes exactly its own
+check fail.

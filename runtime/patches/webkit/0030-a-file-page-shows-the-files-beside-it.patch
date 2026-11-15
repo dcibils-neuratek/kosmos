@@ -1,0 +1,25 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A page from the disk may show the files beside it (JetSki, HTML files
+from the disk, 15 November 2026). WebCore lets a file: page display
+another file only on the same volume, and asks by stat()ing both - from
+the web process, which on Kosmos has no /Home and cannot. iOS and a
+bubblewrap sandbox leave the check out for that reason; so does Kosmos.
+Which files a page reaches is the UI process's grant of its folder and the
+network process's namespace.
+
+diff -ruN a/Source/WebCore/page/SecurityOrigin.cpp b/Source/WebCore/page/SecurityOrigin.cpp
+--- a/Source/WebCore/page/SecurityOrigin.cpp	2026-11-15 08:29:54.021868388 -0300
++++ b/Source/WebCore/page/SecurityOrigin.cpp	2026-11-15 08:29:54.034988554 -0300
+@@ -375,7 +375,10 @@
+     if (m_universalAccess)
+         return true;
+ 
+-#if !PLATFORM(IOS_FAMILY) && !ENABLE(BUBBLEWRAP_SANDBOX)
++#if !PLATFORM(IOS_FAMILY) && !ENABLE(BUBBLEWRAP_SANDBOX) && !OS(KOSMOS)
++    // Not on Kosmos, for the reason a bubblewrap sandbox is left out: the
++    // web process cannot see the files to compare them - it has no /Home -
++    // so every file beside a page from the disk was refused.
+     if (m_data.protocol() == "file"_s && url.protocolIsFile() && !FileSystem::filesHaveSameVolume(m_filePath, url.fileSystemPath()))
+         return false;
+ #endif

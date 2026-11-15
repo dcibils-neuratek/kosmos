@@ -33912,3 +33912,33 @@ from `nm -C`, and the guest says
 the Storage Kit, from `/Home`, demangled. **Control**:
 `KOSMOS_JETSKI_BREAK=nameless` fails 1 of 33, exactly there ("test names
 false").
+
+## 18.827 HTML files from the disk (0.11.429)
+
+Diego, 15 November 2026: "jetski needs to allow opening html files from
+disk", "and also accepting dropping html files on it and open it". A
+`file:` address already reached the page - WebKit's network process reads
+`/Home` - but nothing beside it did: `SecurityOrigin::canDisplay` lets a
+file page show another file only on the same volume, and asks by
+`stat()`ing both from the web process, which has no `/Home` by design.
+iOS and a bubblewrap sandbox leave that check out for the same reason;
+**patch 0030** leaves it out on Kosmos. Which files a page reaches is still
+decided outside it: the UI process grants the page's folder, and the
+network process reads through its own namespace.
+
+JetSki: a path typed - or given as `wm jetski:/Home/page.html` - is made
+`file:`; **Control-O** opens the system's Open window, listing web pages,
+in the folder of the page shown when that is a file and in `/Home`
+otherwise; **a file dropped** on the window opens in the tab shown, the
+first of them; and `-- kosmos: opens html htm` puts JetSki among what
+opens a web page in Tracker (beside the old browser until it is removed).
+
+**Test**: `x86-jetski`'s `from_disk`, in a new tab: `/Home/Apps/JetSki/local.html`
+typed, whose relative `local.js` sets the title; Control-O and Return,
+which open `a-chosen.html`, the first web page in that folder; and a drop
+of `dropped.html` - handed to the window's drop as the toolkit's dispatch
+hands a drop from Tracker, by the test's Control-D, not by a drag in the
+window manager. **Controls**: without patch 0030 the page loads and its
+script fails (`onerror`: "The script beside it failed"); `pathless` makes
+the path a search (`https:///Home/...`, error 6); `openless` and
+`dropless` fail at their own checks, one each.
