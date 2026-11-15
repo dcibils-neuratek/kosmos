@@ -33885,3 +33885,30 @@ collected, that the page names it and how it ended, and that the dead
 page's picture is gone from the window
 (`build/jetski/jetski-stopped.png`). A process two tabs share - a page and
 the one it opened - stops both, and each says so.
+
+## 18.826 The Debug Kit names a function (0.11.428)
+
+`docs/debug.md`. What a page that stopped could not yet say was which
+function the fault was in: for The Verge that took a Mac and `addr2line`.
+**The Debug Kit** (`user/kits/debug/`) reads an image's `.symtab` - which
+an installed application keeps, stripped only of DWARF - and keeps its
+functions sorted by address: JetSki's 252,275 from 7.1 MB of symbols, its
+28 MB of names never read whole, one read at a name's offset when it is
+asked for. The core takes a read function, so the same C builds on the Mac;
+its Lua door, `use("/Kosmos/Kits/debug")`, reads through the Storage Kit
+and demangles through a weak `__cxa_demangle`, which a C++ image has and
+the system's does not. JetSki's *What happened* gains an **in** row, filled
+the pass after the stopped page first shows.
+
+**Test**: `test_debug` in `host-check` holds the kit to `readelf -sW` on
+the system's `init.elf` (11,831 functions, 12 looked up) and on JetSki's
+(249 looked up, opened in 18 ms): the same start, a name the list gives it,
+nothing below the first function, a name cut to its room, a file that is
+not an image refused. **Control**: built `-DDEBUG_NO_SORT`, 70 of 249 named
+wrong. In `x86-jetski` the test's key asks JetSki's `look_up` to name an
+address four bytes into a `WebKit::WebPageProxy` function the runner takes
+from `nm -C`, and the guest says
+`WebKit::WebPageProxy::changeFont(WebCore::FontChanges&&) + 0x4` - through
+the Storage Kit, from `/Home`, demangled. **Control**:
+`KOSMOS_JETSKI_BREAK=nameless` fails 1 of 33, exactly there ("test names
+false").

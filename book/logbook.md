@@ -3316,3 +3316,26 @@ test that dereferences null now reads the record its child left; with the
 record not written, it fails. And the browser test kills a tab's page
 process and checks the tab says so, names the process and how it ended;
 with the explanation switched off, it fails there.
+
+## 15 November 2026 - A crash says which function
+
+**In short:** when a page in JetSki stops, *What happened* now names the
+function the fault was in, not only its address. It comes from a new
+Debug Kit, which any program can use.
+
+**Why it was needed.** For The Verge, the address was `0x43131296`. Turning
+that into "JavaScriptCore's parser, reading a member expression" took a
+Mac, the build's own copy of the program and a developer's tool. Now the
+machine does it itself.
+
+**How.** Every program keeps a table of its functions and where each one
+starts. JetSki's has 252,000. The kit reads that table once, sorts it, and
+finds an address by halving the search. The names themselves are 28 MB, so
+it reads only the one it needs. C++ names come out in their written form
+(`WebKit::WebPageProxy::changeFont(...)`), not the linker's coded spelling.
+
+**How it is tested.** On the Mac, the kit is held to the toolchain's own
+list of functions, in the system's image and JetSki's, and with its sort
+switched off it gets 70 of 249 wrong. In the browser test, JetSki names a
+known function from its own file on the virtual disk; with the kit not
+asked, that check fails.

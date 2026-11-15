@@ -928,6 +928,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/tls/tls_core.c \
              user/kits/network/netclient.c \
              user/kits/storage/storage.c \
+             user/kits/debug/debug.c \
+             user/kits/debug/debug_kosmos.c \
              user/kits/network/httpc.c \
              user/servers/tiles.c \
              user/servers/llm.c \
@@ -2800,6 +2802,15 @@ $(HOSTDIR)/test_elfimage: tools/test_elfimage.c user/init/elfimage.c user/includ
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/include -o $@ \
 	        tools/test_elfimage.c user/init/elfimage.c
+
+# The Debug Kit (`docs/debug.md`): a function's name from an address, held
+# to the functions `readelf` lists in the system's own image - every
+# thousandth looked up at the middle of its span - and in JetSki's, when
+# it has been built.
+$(HOSTDIR)/test_debug: tools/test_debug.c user/kits/debug/debug.c user/kits/debug/debug.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
+	        tools/test_debug.c user/kits/debug/debug.c
 
 $(HOSTDIR)/test_dnsmsg: tools/test_dnsmsg.c user/servers/dnsmsg.c user/servers/dnsmsg.h
 	@mkdir -p $(dir $@)
@@ -5599,7 +5610,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
+host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -5982,6 +5993,12 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	else \
 	    $(HOSTDIR)/test_elfimage; \
 	fi
+	@for image in $(UBUILD)/init.elf build/installed/x86_64/jetski.elf; do \
+	    [ -f $$image ] || continue; \
+	    x86_64-elf-readelf -sW $$image | awk '$$4=="FUNC" {print $$2, $$3, $$8}' \
+	        > $(HOSTDIR)/debug-functions.txt || exit 1; \
+	    $(HOSTDIR)/test_debug $$image $(HOSTDIR)/debug-functions.txt || exit 1; \
+	done
 	@# And LICENSE, read the way the About window reads it: every line of
 	@# it, and every vendored tree named in it - so a library added without
 	@# an entry fails here, by name.

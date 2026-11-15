@@ -2785,6 +2785,7 @@ static int l_libraries(lua_State *L)
  * §18.40).
  */
 void kosmos_compress_kit(lua_State *L);
+void kosmos_debug_kit(lua_State *L);
 void kosmos_pdf_kit(lua_State *L);
 void kosmos_gl_kit(lua_State *L);
 void kosmos_console_kit(lua_State *L);
@@ -2861,6 +2862,8 @@ static const struct {
     int         own;
 } kits[] = {
     { "compress", kosmos_compress_kit, 0 },
+    /* A function's name from an address (`docs/debug.md`). */
+    { "debug",    kosmos_debug_kit, 0 },
     { "pdf",      kosmos_pdf_kit, 0 },
     { "gl",       kosmos_gl_kit, 0 },
     { "console",  kosmos_console_kit, 0 },

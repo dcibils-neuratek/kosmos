@@ -10520,13 +10520,18 @@ the applications make the system useful, and is not pulled forward.
       "just copy the safari one if possible", "that is a good one" - so it
       is Safari's Web Inspector itself, WebKit's `WebInspectorUI` from the
       release already built, shown as Safari shows it, not a drawing of it.
+      **(3) drawn 15 November** in `docs/webkit.html`, *Developer mode*:
+      Console, Network and Elements docked right, Control-Alt-I, Inspect
+      Element, a toolbar button, and Settings' *Show developer features*
+      (on in a development build) - waiting on Diego before it is built.
       **(1) done in 0.11.427** (`testing.md` 18.823); **(2) done in 0.11.427
       but for the function's name** (18.825) - the tab shows the fault in
       words, the addresses, the thread and the page, and Copy details; the
       name waits on a Debug Kit that reads an image's symbols, as a piece
       of its own, since Tracker's crash reports and the Process Viewer
       want it too.
-      Its note, before it is built: `docs/debug.md`.
+      Its note: `docs/debug.md`. **Built in 0.11.428** (`testing.md`
+      18.826): *What happened* names the function.
     - *Zombie web processes* (15 November 2026; Diego: "yes fix the
       zombie processes too"): JetSki never collected the web and network
       processes it started, so each one that ended kept its slot in the

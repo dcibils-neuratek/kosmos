@@ -1,7 +1,7 @@
 <!--
   Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
   JetSki, the browser on WebKit: its window, the address field's suggestions, a tab
-  whose page stopped, downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
+  whose page stopped, developer mode (Web Inspector docked right, drawn 15 November), downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
   built, from Diego's "I need a new web browser that is current and usable
   like safari or chrome". Its feature set and architecture are
   docs/webkit.md, its diagram docs/webkit-architecture.png. The pages drawn
@@ -152,6 +152,43 @@ code { font-family: var(--mono); font-size: 13px; }
 .libs .lib i { font-style: normal; color: #3c4553; }
 .libs .lib em { font-style: normal; color: var(--w-dim); text-align: right; font-size: 12px; }
 .about .foot { display: flex; align-items: center; margin-top: 14px; }
+/* Developer mode: Safari's Web Inspector, docked to the right. */
+.win.wide { width: 1088px; }
+.split { display: grid; grid-template-columns: 1fr 548px; height: 560px; }
+.split .view { height: 100%; border-right: 1px solid #c9ced6; }
+.wi { display: flex; flex-direction: column; background: #fff; font: 11.5px/1.45 -apple-system, "IBM Plex Sans", system-ui, sans-serif; color: #1d1d1f; min-width: 0; }
+.wi-bar { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 6px; background: #f2f2f4; border-bottom: 1px solid #d6d6da; }
+.wi-bar .ic { width: 18px; text-align: center; color: #6e6e73; font-size: 12px; }
+.wi-bar .t { padding: 2px 5px; font-size: 11px; border-radius: 5px; color: #3a3a3c; white-space: nowrap; }
+.wi-bar .t.on { background: #dcdce1; color: #000; }
+.wi-bar .badge { color: #d70015; font-weight: 600; margin-left: 4px; }
+.wi-bar .badge.w { color: #b25000; }
+.wi-filter { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; height: 26px; padding: 0 8px; border-bottom: 1px solid #e3e3e6; color: #6e6e73; }
+.wi-filter .fld { flex: 1; border: 1px solid #d6d6da; border-radius: 5px; padding: 1px 7px; color: #a1a1a6; }
+.wi-filter .chip { padding: 0 6px; border-radius: 4px; }
+.wi-filter .chip.on { background: #0a64d8; color: #fff; }
+.con { flex: 1; overflow: hidden; font: 11px/1.5 var(--mono); }
+.con .l { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; gap: 6px; padding: 3px 8px; border-bottom: 1px solid #eeeef0; }
+.con .l .src { color: #0a64d8; white-space: nowrap; }
+.con .l.err { background: #fff1f2; color: #b3001b; border-bottom-color: #ffd6da; }
+.con .l.warn { background: #fffbe6; color: #6b4b00; border-bottom-color: #f3e5ad; }
+.con .l.in { color: #0a64d8; }
+.con .l.out { color: #1d1d1f; }
+.con .prompt { display: grid; grid-template-columns: 16px 1fr; gap: 6px; padding: 4px 8px; color: #0a64d8; }
+.net { flex: 1; overflow: hidden; }
+.net table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.net th { text-align: left; font-weight: 500; color: #6e6e73; background: #f7f7f9; border-bottom: 1px solid #d6d6da; padding: 3px 6px; }
+.net td { padding: 3px 6px; border-bottom: 1px solid #f0f0f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.net tr.sel td { background: #0a64d8; color: #fff; }
+.net tr.bad td { color: #d70015; }
+.net .wf { position: relative; height: 9px; }
+.net .wf i { position: absolute; top: 1px; height: 7px; border-radius: 2px; background: #5e9cff; }
+.net .wf i.w { background: #c8c8ce; }
+.wi-foot { height: 22px; display: flex; align-items: center; gap: 16px; padding: 0 8px; border-top: 1px solid #e3e3e6; color: #6e6e73; font-variant-numeric: tabular-nums; }
+.dom { font: 11px/1.6 var(--mono); padding: 6px 8px; color: #881280; }
+.dom .a { color: #994500; } .dom .v { color: #1a1aa6; } .dom .tx { color: #1d1d1f; }
+.dom .sel { background: #d7e6fb; margin: 0 -8px; padding: 0 8px; }
+.hl { position: absolute; border: 1px solid #5e9cff; background: rgba(94,156,255,.18); }
 </style>
 </head>
 <body>
@@ -243,6 +280,99 @@ code { font-family: var(--mono); font-size: 13px; }
     <span class="btn">Reload</span><span class="btn q2">Close tab</span></div></div>
 </div></div>
 <p class="cap">Each tab's page runs in a process of its own. When one ends - a fault, or the page itself - only its tab says so; the browser and the other tabs go on. A page that stops answering for several seconds offers Wait or Stop the page in the same place.</p>
+
+<h2>Developer mode: Web Inspector, docked to the right</h2>
+<div class="scroller"><div class="win wide">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#5b2bd9"></span>The week in gadgets<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">www.example.news</span><span class="path">/</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span style="color:#2f6bdc">&#10070;</span><span>&#8942;</span></span></div>
+  <div class="split"><div class="view" style="position:relative"><div class="art" style="grid-template-columns:1fr;padding:20px 24px">
+      <div><h3 style="font-family:Georgia,serif;font-weight:700;font-size:26px;border:0;margin:0 0 10px">The week in gadgets</h3>
+        <div style="height:150px;border-radius:6px;background:linear-gradient(135deg,#ff3e7f,#5b2bd9 60%,#111)"></div>
+        <p class="lede">A made-up front page, the kind a news site has: a lead picture, a headline, columns of stories underneath, and a script for everything.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div></div>
+      </div></div></div>
+    <div class="wi"><div class="wi-bar"><span class="ic">&#10005;</span><span class="ic">&#9707;</span><span class="ic">&#8982;</span><span class="t">Elements</span><span class="t on">Console<span class="badge">3</span><span class="badge w">2</span></span><span class="t">Sources</span><span class="t">Network</span><span class="t">Timelines</span><span class="t">Storage</span><span class="t">Graphics</span><span class="t">Audit</span><span class="grow"></span><span class="ic">&#9881;</span></div>
+      <div class="wi-filter"><span class="fld">Filter</span><span class="chip on">All</span><span class="chip">Evaluations</span><span class="chip">Errors</span><span class="chip">Warnings</span><span class="chip">Logs</span></div>
+      <div class="con">
+        <div class="l err"><span>&#9940;</span><span>Failed to load resource: the server responded with a status of 404 (Not Found)</span><span class="src">ads.js</span></div>
+        <div class="l warn"><span>&#9888;</span><span>[Deprecation] Synchronous XMLHttpRequest on the main thread is deprecated</span><span class="src">vendor.js:2:18342</span></div>
+        <div class="l out"><span></span><span>[consent] region resolved: UY</span><span class="src">consent.js:41</span></div>
+        <div class="l err"><span>&#9940;</span><span>TypeError: undefined is not an object (evaluating 'window.__NEXT_DATA__.props')<br>&nbsp;&nbsp;hydrate &mdash; app-7f3a.js:1:90211<br>&nbsp;&nbsp;(anonymous function) &mdash; app-7f3a.js:1:91002</span><span class="src">app-7f3a.js:1:90211</span></div>
+        <div class="l warn"><span>&#9888;</span><span>The resource https://www.example.news/fonts/display.woff2 was preloaded but not used within a few seconds</span><span class="src">index.html</span></div>
+        <div class="l err"><span>&#9940;</span><span>Refused to load https://tracker.example/pixel.gif because it does not appear in the img-src directive of the Content Security Policy</span><span class="src">index.html</span></div>
+        <div class="l in"><span>&rsaquo;</span><span>document.querySelectorAll("article").length</span><span></span></div>
+        <div class="l out"><span>&lsaquo;</span><span style="color:#1a1aa6">24</span><span></span></div>
+        <div class="prompt"><span>&rsaquo;</span><span style="border-left:1px solid #0a64d8;height:14px"></span></div>
+      </div>
+      <div class="wi-foot"><span>3 errors</span><span>2 warnings</span><span class="grow"></span><span>Auto &mdash; www.example.news</span></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>The Console.</b> Safari's Web Inspector itself, WebKit's own <code>WebInspectorUI</code> from the release JetSki is built from, not a drawing of it - docked against the page's right edge as Chrome's DevTools are in Diego's picture, the page narrower and laid out again for it. Errors and warnings each with their source and line, failed loads, what the Content Security Policy refused, and a prompt evaluating in the page. Its tab shows the count of errors and of warnings even while another panel is open.</p>
+
+<div class="scroller"><div class="win wide">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#5b2bd9"></span>The week in gadgets<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">www.example.news</span><span class="path">/</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span style="color:#2f6bdc">&#10070;</span><span>&#8942;</span></span></div>
+  <div class="split"><div class="view"><div class="art" style="grid-template-columns:1fr;padding:20px 24px">
+      <div><h3 style="font-family:Georgia,serif;font-weight:700;font-size:26px;border:0;margin:0 0 10px">The week in gadgets</h3>
+        <div style="height:150px;border-radius:6px;background:linear-gradient(135deg,#ff3e7f,#5b2bd9 60%,#111)"></div>
+        <p class="lede">A made-up front page, the kind a news site has: a lead picture, a headline, columns of stories underneath, and a script for everything.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div></div>
+      </div></div></div>
+    <div class="wi"><div class="wi-bar"><span class="ic">&#10005;</span><span class="ic">&#9707;</span><span class="ic">&#8982;</span><span class="t">Elements</span><span class="t">Console<span class="badge">3</span><span class="badge w">2</span></span><span class="t">Sources</span><span class="t on">Network</span><span class="t">Timelines</span><span class="t">Storage</span><span class="t">Graphics</span><span class="t">Audit</span><span class="grow"></span><span class="ic">&#9881;</span></div>
+      <div class="wi-filter"><span class="fld">Filter Full URL</span><span class="chip on">All</span><span class="chip">Document</span><span class="chip">CSS</span><span class="chip">Image</span><span class="chip">Font</span><span class="chip">JS</span><span class="chip">XHR/Fetch</span></div>
+      <div class="net"><table>
+        <colgroup><col style="width:132px"><col style="width:62px"><col style="width:58px"><col style="width:30px"><col style="width:56px"><col style="width:50px"><col></colgroup>
+        <tr><th>Name</th><th>Type</th><th>Status</th><th>Proto</th><th>Size</th><th>Time</th><th>Waterfall</th></tr><tr class="sel"><td>index.html</td><td>Document</td><td>200</td><td>h2</td><td>142 KB</td><td>312 ms</td><td><div class="wf"><i class="w" style="left:0%;width:3%"></i><i style="left:3%;width:19%"></i></div></td></tr><tr class=""><td>app-7f3a.js</td><td>Script</td><td>200</td><td>h2</td><td>1.9 MB</td><td>1.21 s</td><td><div class="wf"><i class="w" style="left:20%;width:3%"></i><i style="left:23%;width:37%"></i></div></td></tr><tr class=""><td>vendor.js</td><td>Script</td><td>200</td><td>h2</td><td>812 KB</td><td>640 ms</td><td><div class="wf"><i class="w" style="left:20%;width:3%"></i><i style="left:23%;width:19%"></i></div></td></tr><tr class=""><td>display.woff2</td><td>Font</td><td>200</td><td>h2</td><td>38 KB</td><td>96 ms</td><td><div class="wf"><i class="w" style="left:24%;width:3%"></i><i style="left:27%;width:3%"></i></div></td></tr><tr class=""><td>hero.avif</td><td>Image</td><td>200</td><td>h2</td><td>214 KB</td><td>388 ms</td><td><div class="wf"><i class="w" style="left:28%;width:3%"></i><i style="left:31%;width:21%"></i></div></td></tr><tr class="bad"><td>ads.js</td><td>Script</td><td>404</td><td>h2</td><td>0.4 KB</td><td>88 ms</td><td><div class="wf"><i class="w" style="left:30%;width:3%"></i><i style="left:33%;width:3%"></i></div></td></tr><tr class=""><td>api/stories?page=1</td><td>Fetch</td><td>200</td><td>h2</td><td>64 KB</td><td>530 ms</td><td><div class="wf"><i class="w" style="left:62%;width:3%"></i><i style="left:65%;width:21%"></i></div></td></tr><tr class="bad"><td>pixel.gif</td><td>Image</td><td>(blocked)</td><td></td><td></td><td></td><td><div class="wf"><i class="w" style="left:64%;width:3%"></i><i style="left:67%;width:1%"></i></div></td></tr></table></div>
+      <div class="wi-foot"><span>8 requests</span><span>3.2 MB transferred</span><span>Load 2.41 s</span><span class="grow"></span><span>Preserve log</span></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>Network.</b> Every request the page made, through WebKit's network process: its type, status, protocol, size, time and its place on the waterfall; the failed in red, and a row opened shows its headers, its body and its timing. Preserve log keeps the list across a navigation.</p>
+
+<div class="scroller"><div class="win wide">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#5b2bd9"></span>The week in gadgets<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">www.example.news</span><span class="path">/</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span style="color:#2f6bdc">&#10070;</span><span>&#8942;</span></span></div>
+  <div class="split"><div class="view" style="position:relative"><div class="art" style="grid-template-columns:1fr;padding:20px 24px">
+      <div><h3 style="font-family:Georgia,serif;font-weight:700;font-size:26px;border:0;margin:0 0 10px">The week in gadgets</h3>
+        <div style="height:150px;border-radius:6px;background:linear-gradient(135deg,#ff3e7f,#5b2bd9 60%,#111)"></div>
+        <p class="lede">A made-up front page, the kind a news site has: a lead picture, a headline, columns of stories underneath, and a script for everything.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div><div style="height:80px;background:#eef0f3;border-radius:4px"></div></div>
+      </div></div><div class="hl" style="left:22px;top:18px;width:330px;height:36px"></div></div>
+    <div class="wi"><div class="wi-bar"><span class="ic">&#10005;</span><span class="ic">&#9707;</span><span class="ic">&#8982;</span><span class="t on">Elements</span><span class="t">Console<span class="badge">3</span><span class="badge w">2</span></span><span class="t">Sources</span><span class="t">Network</span><span class="t">Timelines</span><span class="t">Storage</span><span class="t">Graphics</span><span class="t">Audit</span><span class="grow"></span><span class="ic">&#9881;</span></div>
+      <div class="dom">
+        <div>&lt;!DOCTYPE html&gt;</div>
+        <div>&#9662; &lt;html <span class="a">lang</span>=<span class="v">"en"</span>&gt;</div>
+        <div>&nbsp;&nbsp;&#9656; &lt;head&gt;&hellip;&lt;/head&gt;</div>
+        <div>&nbsp;&nbsp;&#9662; &lt;body <span class="a">class</span>=<span class="v">"front"</span>&gt;</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&#9656; &lt;header <span class="a">class</span>=<span class="v">"masthead"</span>&gt;&hellip;&lt;/header&gt;</div>
+        <div class="sel">&nbsp;&nbsp;&nbsp;&nbsp;&#9662; &lt;h1 <span class="a">class</span>=<span class="v">"lead-title"</span>&gt; = $0</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tx">The week in gadgets</span></div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/h1&gt;</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&#9656; &lt;figure <span class="a">class</span>=<span class="v">"hero"</span>&gt;&hellip;&lt;/figure&gt;</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&#9656; &lt;section <span class="a">class</span>=<span class="v">"stories"</span>&gt;&hellip;&lt;/section&gt;</div>
+      </div>
+      <div style="border-top:1px solid #d6d6da;background:#f7f7f9;padding:3px 8px;color:#6e6e73">Styles &nbsp; Computed &nbsp; Layout &nbsp; Font &nbsp; Changes</div>
+      <div class="dom" style="color:#1d1d1f;flex:1">
+        <div><span style="color:#881280">.lead-title</span> { <span style="color:#6e6e73;float:right">front.css:212</span></div>
+        <div>&nbsp;&nbsp;<span class="a">font-family</span>: Georgia, serif;</div>
+        <div>&nbsp;&nbsp;<span class="a">font-size</span>: 26px;</div>
+        <div>&nbsp;&nbsp;<span class="a">margin</span>: 0 0 10px;</div>
+        <div>}</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>Elements.</b> The page's tree, the element under the pointer outlined on the page, and its styles with the file and line each came from. <b>Sources</b>, <b>Timelines</b>, <b>Storage</b> (cookies, local storage, IndexedDB), <b>Graphics</b> and <b>Audit</b> are Web Inspector's other panels, as Safari has them.</p>
+
+<div class="q"><b>How it opens.</b> <b>Control-Alt-I</b>, or <b>Inspect Element</b> on the page's right-click menu, which opens Elements on what was under the pointer; the <b>&#10070;</b> button in the toolbar shows and hides it, and is there only while the developer features are on. In Settings, Advanced: <b>Show developer features</b> - on by default in a development build, off in a stable one. The inspector's own buttons, top left: close, dock to the right or to the bottom, and pick an element. It is per tab: each tab's inspector shows that tab's page, and follows it across navigations.</div>
+<div class="q"><b>What it is made of.</b> Web Inspector's front end is a web page of WebKit's - HTML, CSS and JavaScript, built with WebKit and shipped beside JetSki - and it runs in a page of its own, in a web process of its own, talking to the inspected page through the UI process. So the Kosmos port's part is small: a <code>WebInspectorUIProxy</code> for Kosmos that makes that second page, shows it in JetSki's window beside the inspected one and gives the split its divider, and the front end's files installed where it reads them. A page's crash, its address and the function it was in stay on the stopped page, which the inspector cannot outlive.</div>
 
 <h2>Downloads</h2>
 <div class="scroller"><div class="win" style="width:760px">

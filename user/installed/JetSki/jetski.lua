@@ -339,6 +339,33 @@ end
 
 -- **What happened**, as label and value: what is drawn, and what Copy
 -- details puts on the clipboard.
+-- **Which function** (`docs/debug.md`): the Debug Kit reads this image's
+-- symbols - the web process runs this same image, so a fault's instruction
+-- is an address in the file beside this one. Looked up once per address,
+-- the pass after the stopped page is first drawn, so it never waits for
+-- the 7 MB of symbols to be read; the kit's table given back after.
+local have_debug, debugkit = pcall(use, "/Kosmos/Kits/debug")
+if not have_debug or type(debugkit) ~= "table" then debugkit = nil end
+local IMAGE = (tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Home/Apps/JetSki")
+              .. "/jetski.elf"
+local named = {}                     -- an address -> its function's name, or false
+
+local function look_up(pc)
+  if named[pc] == nil and debugkit then
+    local name, offset = debugkit.name(IMAGE, pc)
+    named[pc] = name and ("%s + 0x%x"):format(name, offset) or false
+    if not name then print("jetski: no function's name for " .. hex(pc) .. ": " .. tostring(offset)) end
+    debugkit.forget()
+  end
+  return named[pc]
+end
+
+local function function_of(pc)
+  local n = named[pc]
+  if n == nil then return debugkit and "looking it up" or "no Debug Kit here" end
+  return n or "no symbol holds it"
+end
+
 local function crash_rows(c)
   local rows = { { "process", ("web, %d"):format(c.pid) } }
   if not c.known then
@@ -347,6 +374,7 @@ local function crash_rows(c)
     rows[#rows + 1] = { "fault", fault_words(c) }
     rows[#rows + 1] = { "address", address_words(c) }
     rows[#rows + 1] = { "at", hex(c.pc) .. " in jetski.elf" }
+    rows[#rows + 1] = { "in", function_of(c.pc) }
     rows[#rows + 1] = { "thread", ("%d, stack pointer %s"):format(c.thread, hex(c.sp)) }
   else
     rows[#rows + 1] = { "ended", ("with code %d, not by a fault"):format(c.code or 0) }
@@ -463,7 +491,8 @@ end
 
 local st = {}                        -- `jetski.pump` fills it, every pass
 local page = { title = "", address = HOME, said = "", loading = false, going = "",
-               progress = 0, can_back = false, can_forward = false, crash_asks = 0 }
+               progress = 0, can_back = false, can_forward = false, crash_asks = 0,
+               naming = false }
 
 local function say(text)
   page.said = text
@@ -668,6 +697,15 @@ win.on_frame = function()
       end
     end
     changed = true
+  end
+  -- The function, the pass after the stopped page first showed.
+  if crash and crash.fault and named[crash.pc] == nil then
+    if page.naming == crash.pc then
+      print("jetski: in        " .. tostring(look_up(crash.pc) or "no symbol holds it"))
+      changed = true
+    else
+      page.naming = crash.pc
+    end
   end
 
   if st.finished then

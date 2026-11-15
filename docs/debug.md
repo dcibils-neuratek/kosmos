@@ -77,10 +77,21 @@ arrives. It never waits.
 
 ## How it is tested
 
-The host test (`tools/test_debug.c`) builds the kit on the Mac and looks
-up known addresses in the build's own `jetski.elf`, held to what
-`x86_64-elf-nm -C` says. The control is a lookup with the sort left out,
-which must fail. In the guest, `x86-jetski`'s stopped-page check also
-reads the function's name on *What happened*. The process the test kills
-is waiting in the event loop, so the name it checks is that loop's
-function.
+**On the Mac** (`tools/test_debug.c`, in `host-check`): the system's
+`init.elf`, and JetSki's image when it has been built, are opened by the
+kit, and every thousandth function `readelf -sW` lists is looked up at the
+middle of its span. The kit must give the same start and a name the list
+gives that start. Then an address below every function must find none, a
+name must be cut to the room it is given, and a file that is not an image
+must be refused. JetSki's 252,275 functions open in 18 ms of the Mac's
+time. **Control**: the kit built with `-DDEBUG_NO_SORT`, its table left in
+the file's order, names 70 of 249 wrong.
+
+**In the guest** (`x86-jetski`): the process the test ends is killed, not
+faulted, so it has no instruction of its own to name. So the test's key
+also asks JetSki's `look_up` to name an address four bytes into a
+`WebKit::WebPageProxy` function that the runner picks from `nm -C`. That
+goes through the kit's Lua door, the Storage Kit's read of
+`/Home/Apps/JetSki/jetski.elf` and libc++abi's demangler, and it must come
+back as `nm -C` spells it, `+ 0x4`. **Control**: `KOSMOS_JETSKI_BREAK=nameless`,
+the kit never asked, fails exactly there.

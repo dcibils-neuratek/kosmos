@@ -487,6 +487,13 @@ def stopped(guest, R, window, sw, sh):
     if not ended or ended.group(1) == "0":
         return ["the shown tab had no web process to end: %s" % (ended and ended.group(0))]
     pid = ended.group(1)
+    # The function an address is in, by the Debug Kit, from the image's
+    # own symbols in /Home and demangled (`docs/debug.md`).
+    if not said(guest, since, "jetski: test names %s + 0x4" % NAMED[1], 10):
+        failed.append("the Debug Kit did not name %#x as %s + 0x4: %s"
+                      % (NAMED[0], NAMED[1],
+                         re.findall(r"jetski: (?:test names|no function)[^\r\n]*",
+                                    guest.seen[since:]) or "nothing said"))
     # Collected: the zombie gone from Nebula's table, and its death known.
     if not said(guest, since, "jetski: process %s ended, code" % pid, 10):
         failed.append("JetSki never collected its ended web process %s" % pid)
@@ -509,7 +516,25 @@ def stopped(guest, R, window, sw, sh):
 # Only in the suite's copy of `jetski.lua`.
 HOOK = ("if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
+        "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
         "return true end\n")
+
+
+def named_function(built):
+    """A function of WebKit's in the image, its address and its name as
+    binutils demangles it - one with a size, in a class, and no template,
+    so libc++abi's demangler and `nm -C` spell it alike. The test's key
+    asks the Debug Kit to name an address inside it (`docs/debug.md`): a
+    page the test ends was killed rather than faulted, so it has no
+    instruction of its own to name."""
+    out = subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "nm",
+                          "-S", "-C", "--defined-only", built],
+                         check=True, capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        got = re.match(r"([0-9a-f]+) ([0-9a-f]+) T (WebKit::WebPageProxy::\w+\([^<>]*\))$", line)
+        if got and int(got.group(2), 16) > 8:
+            return int(got.group(1), 16) + 4, got.group(3)
+    raise SystemExit("run_jetski: no WebKit::WebPageProxy function in %s to name" % built)
 
 
 # A character as QEMU's `sendkey` names its key.
@@ -799,6 +824,8 @@ def main():
             PAGE = f.read()
         address = "http://10.0.2.2:%d/" % server.server_address[1]
 
+    global NAMED
+    NAMED = named_function(built)
     image = os.path.join(WORK, "jetski.elf")
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
@@ -841,7 +868,11 @@ def main():
         text = f.read()
     text = text.replace("if c == 12 or c == 20 then return true end",
                         "if c == 12 or c == 20 or c == 11 then return true end")
-    text = text.replace("win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n" + HOOK)
+    text = text.replace("win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
+                        + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
+    if BROKEN == "nameless":
+        # The Debug Kit never asked.
+        text = text.replace("debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
     if BROKEN == "unexplained":
         # The page that stopped, never asked why.
         text = text.replace("crash = web.crash(st.tab)", "crash = nil")
