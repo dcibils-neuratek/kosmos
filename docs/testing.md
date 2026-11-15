@@ -34045,3 +34045,28 @@ which memory made by itself.
   over another";
 - the mount made writable fails the JetSki check with `true true nil`;
 - the system scan taken out of `filetypes.installed` fails 2 of 58.
+
+## 18.830 A package from last night's image (0.11.433)
+
+0.11.432 netbooted onto the M700. `systemapps` brought JetSki in 55 s
+(70 MB from the Mac), and the copy an install had left in
+`/Home/Apps/JetSki` went. Then JetSki would not open: "no such program",
+two seconds after the window manager launched it, at every boot.
+
+**What it was**: a program that names an image is started inside that
+image (`IMAGES.spawn`), and an installed image carries its own copy of the
+runtime, the namespace included. `jetski.elf` had been built the night
+before, so its namespace had no `/Kosmos/Apps/JetSki` mount. Reading its
+own program there went to binfs, which answered with its own sentence.
+The image came from `tools/packages.py`, run directly, which packages
+whatever `make apps` last left in build/. `make packages` built the apps
+first, but the M700's notes said to run the script. The gate builds its
+own images, so `x86-jetski` could not see it.
+
+**Fixed where it can happen**: `packages.py` runs `make apps` itself, so
+no way of running it packages an image another tree built.
+
+Found by elimination on the machine: the folder was readable from
+Telnet's shell; a boot with the folder already present failed the same
+way, so timing was not it; the window manager's namespace was a child's,
+like every other. That left only the image's own runtime.

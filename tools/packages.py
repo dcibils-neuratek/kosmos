@@ -177,6 +177,15 @@ def main():
     home = home if os.path.isdir(home) else None
     os.makedirs(OUT, exist_ok=True)
 
+    # **The images from this tree, always**: `installed.py` takes what `make
+    # apps` last left in build/, and run on its own this packaged a JetSki
+    # from the night before - its runtime's namespace older than the
+    # system's, so on the M700 it could not find its own program at
+    # /Kosmos/Apps/JetSki (`testing.md` 18.830). Made here, so no way of
+    # running this can package an image another tree built.
+    subprocess.run(["make", "--no-print-directory", "ARCH=x86_64", "apps"], cwd=ROOT,
+                   check=True, stdout=subprocess.DEVNULL)
+
     common = {"version": version(), "build": build_name(), "protocols": stamp()}
     apps = {}
 

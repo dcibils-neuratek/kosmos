@@ -5493,7 +5493,6 @@ netboot-serve:
 # (Diego, 12 October 2026: "i need them on demand"). `packages-serve` serves
 # them on PACKAGES_PORT, which `make netboot` names on the command line.
 packages:
-	@$(MAKE) --no-print-directory ARCH=x86_64 apps
 	python3 tools/packages.py $(HOME_DIR)
 
 packages-serve:
