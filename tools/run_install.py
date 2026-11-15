@@ -239,8 +239,19 @@ def main():
                                       dict(facts("sysdemo", "Demo", "/Home/System/Apps/Demo"),
                                            kind="system", build=build)))
 
+        # Its copy from before, an application in /Home/Apps, and a person's
+        # folder of another name beside it.
+        offer("sysdemo", *package("Demo", {"demo.txt": "an application\n"},
+                                  facts("sysdemo", "Demo", "/Home/Apps/Demo")))
+        run("pkg install sysdemo", "pkg: sysdemo")
         system("test", "the first build\n")
         brought = run("systemapps", "\nkosmos> ", 60)
+        old = run('print("OLD " .. tostring(fs.getattr("/Home/Apps/Demo")) .. " " '
+                  '.. tostring(fs.read("/Home/Apps/Hello/hello.txt")))', "OLD ")
+        check("systemapps: sysdemo's copy from before it was Kosmos's own, in /Home/Apps/Demo, "
+              "is gone" in brought and "OLD nil the third" in old,
+              "systemapps did not take away the application copy of a system package, or "
+              "took another: %r %r" % (brought[-400:], old[-200:]))
         got = run('print("GOT " .. tostring(fs.read("/Home/System/Apps/Demo/demo.txt")))', "GOT ")
         check("systemapps: sysdemo here is not on this disk: bringing" in brought
               and "systemapps: sysdemo is in /Home/System/Apps/Demo, build test" in brought
@@ -277,8 +288,9 @@ def main():
           "protocols refused, leaving nothing; a dependency installed first, a removal "
           "refused while another needs it, both removed together keeping what a "
           "person put beside them, and pkg update bringing a newer version; and "
-          "systemapps bringing Kosmos's own when it is missing or another build's, and "
-          "leaving it when it is this build's)" % checks)
+          "systemapps bringing Kosmos's own when it is missing or another build's, "
+          "leaving it when it is this build's, and taking away its copy from when it "
+          "was an application)" % checks)
     return 0
 
 

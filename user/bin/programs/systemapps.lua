@@ -98,12 +98,36 @@ end
 
 local failed = false
 
+--
+-- **A copy from before it was Kosmos's own**: JetSki was a package that
+-- installed into /Home/Apps/JetSki until 0.11.431. Once this build's is in
+-- place, a folder of the same name there whose manifest names the same
+-- package is that old copy - 208 MB, and a second JetSki in every list -
+-- and goes. A folder with any other manifest, or none, is a person's, and
+-- stays.
+--
+local function old_copy(p)
+  local folder = files.join("/Home/Apps", tostring(p.into):match("([^/]+)$") or "")
+  local m = on_disk(folder)
+
+  if folder ~= "/Home/Apps/" and m and m.name == p.name and m.into ~= p.into then
+    local ok, oops = files.remove(folder)
+
+    if ok then
+      say(("%s's copy from before it was Kosmos's own, in %s, is gone"):format(p.name, folder))
+    else
+      say(("%s's old copy in %s stayed: %s"):format(p.name, folder, tostring(oops)))
+    end
+  end
+end
+
 for _, p in ipairs(list) do
   if p.kind == "system" and p.into then
     local reason = stale(on_disk(p.into), p)
 
     if not reason then
       say(("%s is this build's, %s"):format(p.name, tostring(p.build)))
+      old_copy(p)
     elseif sys.protostamp and p.protocols ~= sys.protostamp then
       say(("%s here is %s, and the server's is for other protocols too (%s) - make "
            .. "the packages again from this tree"):format(p.name, reason, tostring(p.protocols)))
@@ -115,6 +139,7 @@ for _, p in ipairs(list) do
 
       if ok then
         say(("%s is in %s, build %s"):format(p.name, p.into, tostring(p.build)))
+        old_copy(p)
       else
         say(("%s was not brought: %s"):format(p.name, tostring(oops)))
         failed = true

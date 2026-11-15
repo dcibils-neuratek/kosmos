@@ -34024,7 +34024,11 @@ held it to its size), and a file was written into a folder nobody made,
 which memory made by itself.
 
 **Tests.**
-- `x86-install`, 15 checks (12 before):
+- `x86-install`, 16 checks (12 before):
+  - (0.11.432) the copy an old install left in `/Home/Apps`, whose
+    manifest names the same package, is taken away once the system's is
+    in place, and a folder of another name stays (control: `old_copy`
+    turned off fails exactly that check);
   - a system package not on the disk is brought into
     `/Home/System/Apps/Demo`;
   - one of this build is left where it is;
