@@ -11225,6 +11225,18 @@ the applications make the system useful, and is not pulled forward.
     `-Werror=return-type` in WebKit's build (`runtime/cxx/kosmos.cmake`)
     at the next full WebKit rebuild, so every other function that runs
     off its end on Kosmos is named rather than found by a crash.
+  - *`x86-script`'s budget check under load* (16 November, 0.11.448's
+    prepush): "a loop without end was not stopped by its budget" and the
+    reopened scene's Run, in a gate where the suite took 268 s; alone it
+    passes in 71 s. A budget measured on the counter in a guest whose
+    host is busy - the check should hold to what the budget is, not to
+    how fast TCG ran that minute. Look at `tools/run_script*.py`.
+    The second prepush the same afternoon failed `x86-smbd` instead -
+    "the guest never [showed] the visitor on the page within 120s", 189 s
+    in the gate, 90 s alone, as at 0.11.362 and 0.11.373. **The class**:
+    the gate ran 774 s and 684 s, over the ten-minute budget, and the
+    suites that wait a fixed time are the ones that give way. The gate is
+    what to fix - back under ten minutes - and then the fixed waits.
   - *Setting a file's times*: `utimensat`.
   - *`chdir`*: it needs the Storage Kit's working directory to be
     changeable under threads.
