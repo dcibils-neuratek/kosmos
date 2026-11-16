@@ -10721,6 +10721,12 @@ the applications make the system useful, and is not pulled forward.
       ran, and the check compares the whole output. The suite should
       wait for the keyring's line, or compare only what the program
       printed. It passed alone the same evening.
+    - *JetSki writes 229 MB to load The Verge once* (15 November 2026, the
+      M700 with `/Home` on its SATA drive, `testing.md` 18.836): 51,231
+      device writes and 30.7 s of a 55 s load, for a `/Home` that grew
+      362 KB. Which files take them is not known: the POSIX layer's
+      telemetry should count writes and bytes per file over a load. The
+      cookie database deleted nine times a load is the first suspect.
     - *Our TCP sends every data segment twice* (seen 15 November 2026 in
       QEMU's capture of a live page: the same sequence numbers 0.4 ms
       apart, every segment the guest sends; ACKs are single). Twice the

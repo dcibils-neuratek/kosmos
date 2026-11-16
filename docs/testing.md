@@ -34382,3 +34382,28 @@ partitions, with each one's name, size, type, what its first block holds
   empty one, with its GUID;
 - once named, that partition shows as in use.
 x86-usb-1 and -2 pass on `sticks` through the library.
+
+**On the M700, the same evening: `/Home` on its own drive.** `disks`
+listed the drive, a 256 GB Samsung SATA SSD (MZ7LN256): EFI 200 MB,
+Microsoft reserved 16 MB, Windows 173.4 GB NTFS, the new partition
+64.0 GB empty, and recovery 930 MB. Diego chose partition 4 (GUID
+`B28F1C44-...`). The next boot found it, left it unformatted, and
+showed it as in use; `mkfs --yes` formatted it, 16,776,960 blocks. On the
+boot after, a file was saved there and read back. `systemapps` brought
+JetSki and WebKit to it, once the packages were made again for this
+tree's protocols.
+
+The Verge, one load, against the stick's (18.834):
+
+| | the stick | the SATA drive |
+|---|---|---|
+| load | about 80 s | 55 s |
+| device writes | 15,338 | 51,231 |
+| written | 89 MB | 229 MB |
+| time writing | 66.8 s | 30.7 s |
+| a write | 4.4 ms | 0.6 ms |
+
+A write costs a seventh of what it did, but JetSki wrote 229 MB in a
+load that left `/Home` 362 KB larger. Something is written over and over,
+or made and removed, and finding which files is next (`roadmap.md`).
+That was the first load on an empty `/Home`.

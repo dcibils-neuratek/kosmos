@@ -26,16 +26,14 @@ asks.
   goes over the file's own blocks (`DISK_OVER`). speedtest1 now takes
   34 s, against 49 s before groups, and `speed.db` is in 35 extents.
 
-**Next**: Diego, on the M700 under Windows:
-1. Disk Management: shrink C:, and make a new partition in the space
-   with "Do not format this volume";
-2. in PowerShell, `Get-Partition -DiskNumber 0 | Format-List
-   PartitionNumber, Size, Guid` gives the new partition's unique GUID;
-3. that GUID goes on the netboot's boot line as `opt/kosmos/home` -
-   the session adds it to `--words`;
-4. at the Kosmos prompt, `mkfs --yes`, then restart.
+**Done on the M700 the same night**: `disks` (0.11.440) listed the drive;
+Diego chose partition 4, 64 GB; `mkfs --yes` formatted it; `/Home` is on
+it from the next boot (`opt/kosmos/home=B28F1C44-2262-41E7-86A9-E0222ED2EC4E`
+in the netboot's words; `/Sandboxes` and `/Models` still on the stick).
+The Verge loads in 55 s, against about 80 s from the stick.
 
-Then measure JetSki's loads again on that disk.
+**Next**: find what JetSki writes 229 MB of in one load (`roadmap.md`).
+Diego's files from the stick's `/Home` are not copied across yet; ask.
 
 Diego asked for the roadmap: ntfs-3g vendored, to read Windows'
 partitions (`roadmap.md`, *SATA*).
