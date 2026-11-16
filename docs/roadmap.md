@@ -10647,8 +10647,8 @@ the applications make the system useful, and is not pulled forward.
       to avoid tracking cookies and else", "Can you see how Adblock works
       and replicate it and create our own Adblock extension for jetski?").
       It was in JetSki's feature set from 11 November (`webkit.md`, *Ads
-      and trackers blocked*) and never on this list. **Designed, for Diego
-      to agree**: `docs/adblock.md` (how Adblock does it, the feature set,
+      and trackers blocked*) and never on this list. **AGREED, 16 November
+      2026**, as *Privacy and Ad Blocking*: `docs/adblock.md` (how Adblock does it, the feature set,
       the architecture), `docs/adblock.html` (the shield, its pop-over,
       Settings' *Blocking*, `filters` at the prompt) and
       `docs/adblock-architecture.png`. WebKit's own content blocker,
@@ -10661,9 +10661,13 @@ the applications make the system useful, and is not pulled forward.
       B4 the shield, B5 Settings, B6 lists kept current, B7 element hiding
       emulation and snippets if missed, B8 Mail. Why: The Verge leaves 235
       cookies on the M700, 206 of them from 97 other sites
-      (`testing.md` 18.837). Open for Diego: the name, the default lists,
-      Acceptable Ads (not offered, as drawn), and whether the trackers'
-      cookies already kept are cleared by themselves.
+      (`testing.md` 18.837). **Diego's four, the same day**: the name
+      *Privacy and Ad Blocking*; the three lists on by default ("yes");
+      Acceptable Ads offered and off ("default is we dont show any
+      banners"); the trackers' cookies cleared by themselves the first time,
+      and cookies allowed one site at a time ("clear them and have a way to
+      opt out for cookies on a site-basis") - a Kosmos patch to
+      `CookieJarDB`'s accept policy, in B3.
     - *JetSki's speed* (Diego, 15 November 2026: "i find the jetski
       browser really slow to use and load pages", "we need to work on
       speed"; on the M700 a page stuck at 90%). What is known to cost,

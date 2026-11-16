@@ -1,4 +1,4 @@
-# Blocking: adverts and trackers kept out of JetSki
+# Privacy and Ad Blocking: adverts and trackers kept out of JetSki
 
 Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 
@@ -144,8 +144,13 @@ What a person can do:
    `||annoying.example^`, `example.com##.popup`.
 7. **Lists stay current by themselves**: each is fetched again when its
    `Expires` says, in the background, and *Update now* does it at once.
-8. **Clear what trackers already left**: one button removes every cookie
-   whose site a list blocks. On the M700 today that is 206 of 235.
+8. **Clear what trackers already left**: the first time blocking runs,
+   every cookie whose site a list blocks is removed, by itself. On the
+   M700 today that is 206 of 235. A button does it again later.
+11. **Cookies allowed one site at a time**: a site that needs third
+    parties' cookies - a sign-in spread across domains - is given them,
+    from the shield or from Settings, and every other site still refuses
+    them.
 9. **Mail gets the same lists** (`docs/mailweb.md`): a message's tracking
    pixels are kept out like a page's, from the same compiled file.
 10. **From the prompt**: `filters` lists the lists and their rules,
@@ -154,9 +159,9 @@ What a person can do:
     rule.
 
 Not in it, deliberately:
-- **Acceptable Ads.** It is eyeo's business, a paid allowlist. Diego's aim
-  is not to load what tracks him, and an allowlist sold to advertisers is
-  the opposite. It can be one more list a person turns on.
+- **Acceptable Ads on by default.** It is eyeo's business, a paid
+  allowlist. It is offered as a list a person can turn on, and is off
+  (Diego, 16 November: "default is we dont show any banners").
 - **An extension runtime.** Kosmos's applications are kits put together
   (*What this is aiming at*); blocking is a kit WebKit already has, not a
   WebExtensions API to implement.
@@ -278,7 +283,8 @@ M700: requests made, bytes, cookies kept, load time.
   against filters taken from EasyList's own syntax and their expected
   rules. Measured: converting and compiling each list on the M700.
 - **B3. Third-party cookies refused**, and `block-cookies` from
-  EasyPrivacy. Test: a page on one host that a second host sets a cookie
+  EasyPrivacy, with sites allowed them one at a time (a patch to
+  `CookieJarDB`), and the trackers' cookies cleared the first time. Test: a page on one host that a second host sets a cookie
   for; the second's cookie is not in `cookies.db`. Control: the policy
   `Always`, and it is.
 - **B4. The shield.** Counts from `contentRuleListNotification`, the
@@ -293,13 +299,24 @@ M700: requests made, bytes, cookies kept, load time.
 
 ---
 
-## Open for Diego
+## Decided by Diego, 16 November 2026
 
-1. **The name.** *Blocking* in Settings and a shield in the toolbar, as
-   drawn. Or a name of its own, as Safari and Brave give theirs.
-2. **Default lists.** EasyList, EasyPrivacy and EasyList Cookie, all on,
-   as drawn. EasyList Cookie hides the "we use cookies" banners; some
-   people want to see them.
-3. **Acceptable Ads**: not offered (*Feature set*). Or offered, off.
-4. **The trackers' cookies already kept**: cleared once, by itself, when
-   blocking first runs, or only when the button is pressed, as drawn.
+1. **The name: Privacy and Ad Blocking** ("Privacy and Ad Blocking").
+   Settings' group is called that, and the shield's pop-over is headed
+   with it.
+2. **The default lists: EasyList, EasyPrivacy and EasyList Cookie, all
+   on** ("yes").
+3. **Acceptable Ads: offered, off by default** ("offer it to switch on and
+   off but default is we dont show any banners"). A row in Settings' lists,
+   eyeo's list, off until a person turns it on.
+4. **The trackers' cookies already kept are cleared by themselves**, the
+   first time blocking runs, **and cookies can be allowed one site at a
+   time** ("clear them and have a way to opt out for cookies on a
+   site-basis"). Each site has its own cookie switch: in the shield's
+   pop-over, *Allow cross-site cookies on this site*, and in Settings
+   under *Cookies allowed*. A site on that list may have third parties'
+   cookies kept while it is the page, which some sign-ins need. This is
+   a Kosmos patch to curl's `CookieJarDB`: its accept policy is one value
+   for every page, and asking it per site is `checkCookieAcceptPolicy`
+   looking the page's site up in that list (step B3). The *Clear* button
+   stays for later.

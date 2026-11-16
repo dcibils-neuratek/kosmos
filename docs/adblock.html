@@ -13,7 +13,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Blocking in JetSki</title>
+<title>Privacy and Ad Blocking</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
@@ -247,7 +247,7 @@ code { font-family: var(--mono); font-size: 13px; }
 </head>
 <body>
 <div class="wrap">
-<h1>Blocking, in JetSki</h1>
+<h1>Privacy and Ad Blocking, in JetSki</h1>
 <p class="sub">Adverts and trackers kept out of every page, on WebKit's own content blocker, the engine Safari's blockers run on. The public filter lists AdBlock and Adblock Plus use are converted into its rules by a Kosmos library, and third-party cookies are refused. Drawn on 16 November 2026, before it is built; <code>docs/adblock.md</code> is the feature set and the architecture.</p>
 <p class="sub">Diego: "We need a way to have adblocking plugin for browsing to avoid loading and saving in unnecessary data", "I want to be able to avoid tracking cookies and else".</p>
 
@@ -274,18 +274,19 @@ code { font-family: var(--mono); font-size: 13px; }
       </div>
     </div>
     <div class="pop">
-      <div class="hd"><span class="shield" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Blocking on news.example</b><span>EasyList, EasyPrivacy, EasyList Cookie</span></div></div>
+      <div class="hd"><span class="shield" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Privacy and Ad Blocking</b><span>EasyList, EasyPrivacy, EasyList Cookie</span></div></div>
       <div class="nums"><div><b>143</b><span>requests kept out</span></div><div><b>206</b><span>cookies refused</span></div><div><b>4.1 MB</b><span>not downloaded</span></div></div>
       <div class="lst"><div class="h">Most blocked on this page</div>
         <div class="r"><span>pubmatic.com</span><span>21</span></div>
         <div class="r"><span>rubiconproject.com</span><span>14</span></div>
         <div class="r"><span>sonobi.com</span><span>11</span></div>
         <div class="r"><span>and 94 other sites</span><span>97</span></div></div>
-      <div class="ft"><span class="sw on"></span><span style="flex:1">Block on this site</span><a href="#settings">Settings&hellip;</a></div>
+      <div class="ft" style="border-bottom:1px solid var(--w-line)"><span class="sw on"></span><span style="flex:1">Block adverts and trackers on news.example</span></div>
+      <div class="ft"><span class="sw"></span><span style="flex:1">Allow cross-site cookies on news.example</span><a href="#settings">Settings&hellip;</a></div>
     </div>
   </div>
 </div></div>
-<p class="cap">The shield sits in the toolbar before the star and counts what was kept out of this page as it loads: green with a number while blocking is on. Pressed, it opens the pop-over: requests kept out, cookies refused, an estimate of the bytes not downloaded (from the size each blocked address gave last time it was let through, or the median for its kind), and the sites blocked most. <b>Block on this site</b> off reloads the page with blocking off for that site alone; nothing large is compiled again, so it is instant. Where an advert's box would have been, the page closes up: EasyList's element-hiding rules hide the empty slot. The page, its numbers and its sites are examples; the sites are among those that set cookies on the M700 during The Verge's load on 15 November.</p>
+<p class="cap">The shield sits in the toolbar before the star and counts what was kept out of this page as it loads: green with a number while blocking is on. Pressed, it opens the pop-over: requests kept out, cookies refused, an estimate of the bytes not downloaded (from the size each blocked address gave last time it was let through, or the median for its kind), and the sites blocked most. <b>Block adverts and trackers</b> off reloads the page with blocking off for that site alone; nothing large is compiled again, so it is instant. <b>Allow cross-site cookies</b> is the site's own cookie switch (Diego, 16 November): on, third parties' cookies are kept while this site is the page - for a sign-in spread across domains - and every other site still refuses them. Where an advert's box would have been, the page closes up: EasyList's element-hiding rules hide the empty slot. The page, its numbers and its sites are examples; the sites are among those that set cookies on the M700 during The Verge's load on 15 November.</p>
 
 <h2>Off for one site</h2>
 <div class="scroller"><div class="win" style="width:760px">
@@ -296,7 +297,7 @@ code { font-family: var(--mono); font-size: 13px; }
   <div style="height:200px;position:relative;background:#fff">
     <div class="pop" style="right:40px;top:10px">
       <div class="hd"><span class="shield off" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Blocking is off on news.example</b><span>Everything this site asks for is loaded</span></div></div>
-      <div class="ft"><span class="sw"></span><span style="flex:1">Block on this site</span><a href="#settings">Settings&hellip;</a></div>
+      <div class="ft"><span class="sw"></span><span style="flex:1">Block adverts and trackers on news.example</span><a href="#settings">Settings&hellip;</a></div>
     </div>
   </div>
 </div></div>
@@ -317,26 +318,27 @@ code { font-family: var(--mono); font-size: 13px; }
 </div>
 <p class="cap">The left is measured (<code>testing.md</code> 18.837, the M700's <code>cookies.db</code> read on 16 November). The right is what refusing third-party cookies alone would leave; what blocking saves in requests, bytes and time is measured on the M700 at each step, and the numbers replace these.</p>
 
-<h2 id="settings">Settings, Blocking</h2>
+<h2 id="settings">Settings, Privacy and Ad Blocking</h2>
 <div class="scroller"><div class="win">
   <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Settings<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
   <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
-    <div class="url"><span class="host">Settings</span><span class="path" style="margin-left:8px">about:settings#blocking</span></div>
+    <div class="url"><span class="host">Settings</span><span class="path" style="margin-left:8px">about:settings#privacy</span></div>
     <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
   <div class="set">
     <div class="setcols">
       <div>
-        <div class="grouplabel">Blocking</div>
+        <div class="grouplabel">Privacy and Ad Blocking</div>
         <div class="group">
           <div class="row"><div class="label"><b>Block adverts and trackers</b><span>In every tab, and in Mail's messages</span></div><span class="sw on"></span></div>
           <div class="row"><div class="label"><b>Third-party cookies</b><span>Set by a site other than the one you are on - mostly advertising</span></div><span class="drop">Refused &#9662;</span></div>
-          <div class="row"><div class="label"><b>Cookies trackers already left</b><span>206 cookies, set by sites other than the one they were kept for</span></div><span class="btn q2" style="margin:0">Clear</span></div>
+          <div class="row"><div class="label"><b>Cookies trackers left</b><span>Cleared the first time blocking ran: 206 cookies. Again now and then</span></div><span class="btn q2" style="margin:0">Clear</span></div>
         </div>
         <div class="grouplabel">Lists</div>
         <div class="group lists">
           <div class="row"><div class="label"><b>EasyList</b><span>Adverts &middot; fetched 2 hours ago</span></div><span class="cnt">71,204 rules</span><span class="sw on"></span></div>
           <div class="row"><div class="label"><b>EasyPrivacy</b><span>Trackers and analytics &middot; fetched 2 hours ago</span></div><span class="cnt">48,911 rules</span><span class="sw on"></span></div>
           <div class="row"><div class="label"><b>EasyList Cookie</b><span>The "we use cookies" banners, hidden</span></div><span class="cnt">22,630 rules</span><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>Acceptable Ads</b><span>eyeo's list of adverts it allows; off shows none</span></div><span class="cnt">offered</span><span class="sw"></span></div>
           <div class="row"><div class="label"><b>Add a list&hellip;</b><span>By language, or by its address</span></div><span class="btn q2" style="margin:0">Add</span></div>
           <div class="row"><div class="label"><b>Fetched again</b><span>When each list says, every four days for these</span></div><span class="btn q2" style="margin:0">Update now</span></div>
         </div>
@@ -346,6 +348,10 @@ code { font-family: var(--mono); font-size: 13px; }
         <div class="group"><div class="row" style="display:block;padding:10px 14px">
           <span class="chip2">news.example &times;</span><span class="chip2">shop.example &times;</span>
           <div style="color:var(--w-dim);font-size:12px;margin-top:6px">Blocking is off on these. Turned on again with &times;, or from the shield.</div></div></div>
+        <div class="grouplabel">Cookies allowed</div>
+        <div class="group"><div class="row" style="display:block;padding:10px 14px">
+          <span class="chip2">mail.example &times;</span>
+          <div style="color:var(--w-dim);font-size:12px;margin-top:6px">Third parties' cookies are kept while one of these is the page. Added from the shield.</div></div></div>
         <div class="grouplabel">Your own filters</div>
         <div class="own">! Adblock Plus syntax, one filter a line
 ||annoying.example^
@@ -375,11 +381,11 @@ EasyList: fetched, 71,204 rules, compiled in 2.8 s
 EasyPrivacy: not changed</div>
 <p class="cap"><code>filters test</code> is what a person and a test both use to ask why something was or was not blocked: the address, the page it was asked for from, and the filter that decided, in the list's own words. Times are illustrative.</p>
 
-<h2>Open for Diego</h2>
-<div class="q"><b>The name.</b> <i>Blocking</i> and a shield, as drawn; or a name of its own.</div>
-<div class="q"><b>Default lists.</b> EasyList, EasyPrivacy and EasyList Cookie, all on, as drawn.</div>
-<div class="q"><b>Acceptable Ads.</b> Not offered, as drawn: it is eyeo's paid allowlist. Or offered, off.</div>
-<div class="q"><b>The cookies trackers already left.</b> Cleared by the button, as drawn; or once, by themselves, the first time blocking runs.</div>
+<h2>Decided by Diego, 16 November</h2>
+<div class="q"><b>The name: Privacy and Ad Blocking.</b></div>
+<div class="q"><b>Default lists:</b> EasyList, EasyPrivacy and EasyList Cookie, all on - "yes".</div>
+<div class="q"><b>Acceptable Ads: offered, off</b> - "offer it to switch on and off but default is we dont show any banners".</div>
+<div class="q"><b>The trackers' cookies cleared by themselves, and cookies allowed one site at a time</b> - "clear them and have a way to opt out for cookies on a site-basis".</div>
 </div>
 </body>
 </html>
