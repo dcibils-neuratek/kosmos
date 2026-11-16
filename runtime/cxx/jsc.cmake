@@ -6,9 +6,13 @@
 #
 # The Kosmos port (`runtime/ports/webkit/Source/cmake/OptionsKosmos.cmake`,
 # `docs/w6.md` W6a) - JSCOnly's until W6 - with the Generic event loop and
-# no GLib, built static so it links into an image as every kit here does. No JIT of any tier, and no WebAssembly, whose tiers are JITs: the
-# LLInt interprets, and nothing a process writes is ever run (`docs/w4.md`,
-# *Not yet decided*). No remote inspector, which is a socket server, and
+# no GLib, built static so it links into an image as every kit here does.
+# **The Baseline and DFG JITs** (`docs/jit.md` step 1), their code written
+# through one mapping of a region and run from the other (patch 0037): the
+# LLInt interprets first, a function run often enough is compiled, and one
+# run more often still is optimised. Together, since on 64 bits the
+# Baseline JIT's own files use DFG's types and upstream never builds one
+# without the other. Not yet FTL, and no WebAssembly, whose tiers are JITs. No remote inspector, which is a socket server, and
 # no tests of WebKit's own, which are programs CMake would link for a
 # system it cannot run.
 
@@ -20,8 +24,8 @@ set(DEVELOPER_MODE OFF CACHE BOOL "")
 set(ENABLE_API_TESTS OFF CACHE BOOL "")
 set(ENABLE_TOOLS OFF CACHE BOOL "")
 
-set(ENABLE_JIT OFF CACHE BOOL "")
-set(ENABLE_DFG_JIT OFF CACHE BOOL "")
+set(ENABLE_JIT ON CACHE BOOL "")
+set(ENABLE_DFG_JIT ON CACHE BOOL "")
 set(ENABLE_FTL_JIT OFF CACHE BOOL "")
 set(ENABLE_WEBASSEMBLY OFF CACHE BOOL "")
 set(ENABLE_WEBASSEMBLY_BBQJIT OFF CACHE BOOL "")

@@ -70,6 +70,19 @@ static int l_case(lua_State *L)
     return 2;
 }
 
+long kosmos_jsc_jit_pages(void);
+
+unsigned long kosmos_jsc_jit_bytes(void);
+
+/* The JIT's pool (`docs/jit.md`): its pages written, as Nebula counts them,
+ * and the bytes the JIT wrote into it. */
+static int l_jit_pages(lua_State *L)
+{
+    lua_pushinteger(L, kosmos_jsc_jit_pages());
+    lua_pushinteger(L, (lua_Integer)kosmos_jsc_jit_bytes());
+    return 2;
+}
+
 void kosmos_jsc_kit(lua_State *L)
 {
     lua_newtable(L);
@@ -81,4 +94,6 @@ void kosmos_jsc_kit(lua_State *L)
     lua_setfield(L, -2, "t262");
     lua_pushcfunction(L, l_case);
     lua_setfield(L, -2, "case");
+    lua_pushcfunction(L, l_jit_pages);
+    lua_setfield(L, -2, "jit_pages");
 }

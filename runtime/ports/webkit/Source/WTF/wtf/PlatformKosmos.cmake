@@ -17,6 +17,7 @@ list(APPEND WTF_SOURCES
     generic/WorkQueueGeneric.cpp
 
     kosmos/KosmosCapability.cpp
+    kosmos/KosmosJITPool.cpp
     kosmos/MemoryFootprintKosmos.cpp
     kosmos/SignalsKosmos.cpp
 
@@ -50,8 +51,13 @@ list(APPEND WTF_PUBLIC_HEADERS
     kosmos/KosmosCapability.h
 )
 
+# The JIT's pool, one region mapped twice (`docs/jit.md`, patch 0037).
+list(APPEND WTF_PUBLIC_HEADERS
+    kosmos/KosmosJITPool.h
+)
+
 # Nebula's calls (`user/include/kosmos.h`), which take the kernel's
 # `syscall.h` by quotes: the kernel's folder is searched for quoted names in
 # this file alone, as WebCore's `PlatformKosmos.cmake` says why.
-set_source_files_properties(kosmos/KosmosCapability.cpp
+set_source_files_properties(kosmos/KosmosCapability.cpp kosmos/KosmosJITPool.cpp
     PROPERTIES COMPILE_OPTIONS "-iquote;${KOSMOS_ROOT}/kernel")

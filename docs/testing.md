@@ -34825,3 +34825,87 @@ the month went to 4, the reload's blocks counted as they should be.
 Cookies refused per site wait for B3's switch; the shield's panel says
 what it counts and nothing about cookies allowed.
 
+## 18.845 The 23 sites on the M700 at 0.11.448, and the disk cache's second visit
+
+`tools/top20.py`, on the M700 (now 192.168.1.35) netbooted to 0.11.448,
+twice in a row: the first run with whatever the cache held from 0.11.446's
+boot, the second with the first's pages in
+`/Home/Settings/JetSki/Cache` - 226 MB of `NetworkCache` and 28 MB of
+`CacheStorage` after it. Still the interpreter: no JIT in this build.
+
+| site | first | second |
+|---|---|---|
+| Google | 1.8 | 2.2 |
+| YouTube | 5.4 | 3.5 |
+| Google News | 2.6 | 3.9 |
+| Amazon | 1.4 | 1.3 |
+| Reddit | 3.9 | 7.1 |
+| Yahoo! | 3.8 | 5.3 |
+| Bing | 1.8 | 1.5 |
+| IMDb | 2.1 | 1.8 |
+| CNN | 6.5 | 5.4 |
+| Apple | 2.8 | 3.0 |
+| The Guardian | 4.9 | 2.2 |
+| Wikipedia | 1.3 | 1.5 |
+| BBC | 7.4 | 2.4 |
+| ESPN | 6.3 | 2.8 |
+| Walmart | 4.2 | 3.0 |
+| TikTok | 19.5 | 21.1 |
+| eBay | 5.8 | 5.9 |
+| The Weather Channel | 5.2 | 2.3 |
+| The New York Times | 55.9 | 5.5 |
+| Temu | 3.1 | 2.0 |
+| Infobae | 9.1 | 8.7 |
+| El Observador | 5.0 | 4.3 |
+| El País (Uruguay) | 10.8 | 6.6 |
+
+All 23 load both times. Within five seconds: 13 the first time, 15 the
+second. The cache shows where a page's weight is its files - the New York
+Times 55.9 s to 5.5, the BBC 7.4 to 2.4, ESPN 6.3 to 2.8 - and not where
+it is script: TikTok and Infobae are as slow warm as cold, and Reddit and
+Yahoo! moved the other way, which is the sites' own variation from one run
+to the next. Those are the JIT's to answer (`docs/jit.md`). Kept as
+`bench/top20/0.11.448-m700.json` (the second run's).
+
+
+## 18.846 JavaScriptCore's JIT, step 1 - Baseline and DFG (0.11.449)
+
+`docs/jit.md`. The code pool is one region of 64 MB, given on touch and
+mapped twice: JavaScriptCore runs it from the read-and-execute mapping and
+writes it only through the other, by `performJITMemcpy` and a writer of
+Kosmos's own (patch 0037, `wtf/kosmos/KosmosJITPool.cpp`).
+
+- **`x86-jsc`** now runs a hot function - `f(1000)` three thousand times -
+  and asks `jsc.elf` for the pool's pages touched and bytes written before
+  and after. It must answer `hot=832504`, as the interpreter does, with
+  bytes written growing: 18,876 bytes, 6 pages of the pool touched. Pages
+  alone did not move during the hot loop - the new code went into pages
+  the first tiers had touched - which is why bytes are what is held.
+- **Control**: the writer pointed at `startExecutableMemory`, the
+  read-and-execute mapping, instead of the writable one. The first write
+  faults (`cr2 0x140000000`, write protection), so the suite FAILS - every
+  write goes through the second mapping, and the pool cannot be written
+  where it runs.
+- **test262** (`make test262`): 22,409 pass against the interpreter's
+  22,408, none that passed before failing. The first full run had one test
+  without a verdict, `private-method-comparison.js`, which passes alone and
+  in the second full run.
+- Each process that makes a pool says so once - `jit: a pool of 64 MB, run
+  at ... and written at ...` - three in a JetSki session: the UI process's
+  and two web processes'.
+- **x86-webkit2, x86-jetski, x86-sites, x86-padlock** pass on the JIT.
+
+**What `x86-padlock` failing on the way turned out to be, and it was not
+the JIT.** Three runs in a row, the shield pressed said nothing: the
+shield was at 1115,60 on a screen 1024 pixels wide. The image was not the
+gate's. `make test262` builds `build/x86_64/kosmos.bin` with `FULL=0`, and
+`build/x86_64` is one directory for both variants; the gate's `FULL=1`
+build then found `init_bin.c` and `kosmos.bin` newer than the whole
+image's `init.bin` and kept them, so every suite booted the lean image at
+the 1024x768 the lean build falls back to. Fixed in the Makefile:
+`build/x86_64/variant` records the userland directory, the flags and the
+sources, is rewritten only when they change, and both files depend on it.
+Checked: a lean build then a whole one links 27.8 MB and then 44.6 MB, and
+a second whole build links nothing. `x86-padlock` now also keeps a
+picture when the shield's press fails (`shield-failed.png`), which is
+what showed the shield off the screen.

@@ -14,6 +14,12 @@ a script that throws, whose exception must come back as a sentence with
 its line. Then `jsc.lua` itself, typed at the prompt as a person would,
 with a script given by `-e`.
 
+And the JIT (`docs/jit.md`): a hot function called three thousand times
+must give the interpreter's answer, and the bytes written into the code
+pool through its writable mapping must grow while it runs - the proof that
+Baseline and DFG compiled it, into a pool run from a mapping that cannot
+be written (`testing.md` 18.846).
+
 Usage: run_jsc.py IMAGE [APPS]
 
 `APPS` is where `make apps` linked `jsc.elf` - the gate's test userland,
@@ -21,6 +27,7 @@ or the lean one's by default.
 """
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -43,12 +50,25 @@ PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- JavaScriptCore's test program (`tools/run_jsc.py`).
 -- kosmos: image jsc.elf
 local jsc = use("jsc.elf")
+local HOT = [[
+function f(n) { let s = 0; for (let i = 0; i < n; i++) s = (s + i * i) % 1000003; return s; }
+let r = 0;
+for (let k = 0; k < 3000; k++) r = f(1000);
+print("hot=" + r);
+]]
 local said, ok = jsc.run("/Home/apps/jsc/language.js")
 local threw, clean = jsc.eval("let a = 1;\\nnull.property;")
 local lines = {}
 for line in said:gmatch("([^\\n]*)\\n") do lines[#lines + 1] = line end
 print("jscsays: " .. table.concat(lines, " ") .. (ok and " finished" or " threw")
       .. " | " .. threw:gsub("\\n$", "") .. (clean and " finished" or " threw"))
+-- The JIT (`docs/jit.md`): a function run until it is compiled, and the
+-- pool's pages written before and after, as Nebula counts them.
+local pages, before = jsc.jit_pages()
+local hot = jsc.eval(HOT)
+local pages_after, after = jsc.jit_pages()
+print(("jscjit: pages=%d,%d before=%d after=%d %s"):format(pages, pages_after, before, after,
+      (hot:gsub("\\n", " "))))
 """
 
 # The language, a piece a line, each printed so its answer can be held.
@@ -116,6 +136,11 @@ WANT = " ".join([
 ])
 
 
+# The hot function's answer: the sum of i * i for i below 1000, modulo
+# 1000003, as Python works it out.
+HOT_WANT = "832504"
+
+
 def main():
     built = os.path.join(APPS, "jsc.elf")
 
@@ -148,6 +173,7 @@ def main():
 
     guest = R.Guest(IMAGE, 180)
     said = None
+    jit = None
     program = False
 
     try:
@@ -156,12 +182,13 @@ def main():
         started = time.monotonic()
         guest.type("run /Home/apps/jsc/jsctest.lua")
 
-        while time.monotonic() < started + 240 and said is None:
+        while time.monotonic() < started + 240 and (said is None or jit is None):
             for line in guest.seen[mark:].split("\n")[1:-1]:
                 if line.strip().startswith("jscsays: "):
                     said = line.strip()
-                    break
-            if said is None:
+                if line.strip().startswith("jscjit: "):
+                    jit = line.strip()
+            if said is None or jit is None:
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
@@ -195,9 +222,21 @@ def main():
             print("--- the guest's last words ---\n" + guest.seen[mark:][-1500:])
         return 1
 
+    # The JIT: the hot function's answer, the pool's pages written as Nebula
+    # counts them, and code written into the pool while it ran - the bytes
+    # through its one writer grew. Pages alone need not grow: a new
+    # function's code can land in a page already touched.
+    m = re.match(r"jscjit: pages=(-?\d+),(-?\d+) before=(\d+) after=(\d+) hot=(\d+)", jit or "")
+    if not m or m.group(5) != HOT_WANT or int(m.group(2)) <= 0 \
+       or int(m.group(4)) <= int(m.group(3)):
+        print("FAIL: the JIT did not compile the hot function into its pool: %s" % jit)
+        return 1
+
     print("PASS: JavaScriptCore on Kosmos, from a %.1f MB image, in %.1f s: %s; "
-          "and jsc.lua -e printed 42 object"
-          % (os.path.getsize(image) / 1e6, took, want))
+          "and jsc.lua -e printed 42 object; and the JIT compiled a hot function "
+          "into its pool, %s bytes written by it (%s pages of the pool touched), hot=%s"
+          % (os.path.getsize(image) / 1e6, took, want, int(m.group(4)) - int(m.group(3)),
+             m.group(2), HOT_WANT))
     return 0
 
 

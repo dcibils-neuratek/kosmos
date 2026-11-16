@@ -336,6 +336,7 @@ def main():
             if not words or words.group(1) != want or not switch:
                 failed.append("the shield pressed did not say %r: %s"
                               % (want, words.group(1) if words else last_words(guest, pressed)))
+                shot("shield-failed")
             else:
                 print("the shield: %s" % words.group(1))
                 time.sleep(1)

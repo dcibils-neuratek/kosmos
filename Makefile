@@ -5193,7 +5193,21 @@ $(X86_BUILD)/%.c.o: %.c
 # `$(UBUILD)`, not a written-out path: inside the recursive call above it is
 # `build-user-x86_64`, and naming it literally is how the two came to
 # disagree once already.
-$(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums
+# **What this image was built as**, rewritten only when it changes. Make
+# compares times and not variants: `build/x86_64` is one directory for the
+# lean image and the whole one, so after `make test262` (FULL=0) the gate's
+# FULL=1 build found `init_bin.c` and `kosmos.bin` newer than the whole
+# image's `init.bin` and kept the lean ones - and every suite booted a
+# 1024x768 image without the browser's half (`testing.md` 18.846). The
+# same stamp catches a source dropped from `X86_SRCS`, which relinked
+# nothing either.
+$(X86_BUILD)/variant: FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(UBUILD) $(X86_FLAGS) $(X86_SRCS)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
+$(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums $(X86_BUILD)/variant
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py --incbin $(HOSTDIR)/imagesums $< init_image $@
 
@@ -5248,7 +5262,7 @@ $(X86_BUILD)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bdf2c.py $< font_8x16 $@
 
-$(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld
+$(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld $(X86_BUILD)/variant
 	@mkdir -p $(X86_BUILD)
 	$(CC) $(X86_FLAGS) -T boot/x86_64/kosmos.ld -Wl,--build-id=none \
 	      -o $(X86_BUILD)/kosmos.elf $(X86_SRCS)

@@ -3885,3 +3885,40 @@ step that checks the count, the month's total and the switch against a
 server on the Mac, and a control that proves the switch is what lets the
 blocked file through.
 
+## 16 November 2026 - The JIT
+
+**In short.** JavaScript on Kosmos is no longer only interpreted. A
+function that runs often is now turned into machine code by JavaScriptCore's
+two first compilers, Baseline and DFG, and runs as that - without Nebula
+ever letting a page be writable and runnable at the same address.
+
+**What.** JavaScriptCore keeps the code it compiles in one pool of 64 MB.
+On Kosmos that pool is a region mapped twice into the process: once read
+and execute, where the code runs, and once read and write, where it is
+written. Every write JavaScriptCore makes into its code - a new function,
+or a jump patched later - goes through a small writer that copies into the
+second mapping.
+
+**Why.** Most of what keeps the New York Times, Reddit and CNN slow on the
+M700 is script, and an interpreter is several times slower than compiled
+code. Diego had said the browser needs the JIT; it came after the cache,
+the padlock and the shield, in the order agreed.
+
+**How.** This is the shape iOS uses, and JavaScriptCore already had it:
+its *separated heap*. iOS makes the second mapping with a Mach call;
+here it is a region mapped twice, which Nebula could already do. Three
+things needed changing in WebKit: telling it Kosmos uses the separated
+heap, handing it a pool already mapped, and making ten of the Intel code
+writer's patching writes go through the writer - on Intel they were
+stores in place, which iOS, being ARM, never hit. The Baseline compiler
+could not be built without DFG, so both came on together.
+
+**Visible impact.** Nothing to see yet; the numbers come from the M700.
+The JavaScriptCore suite now checks that a hot function is compiled and
+gives the interpreter's answer, and a control that writes the wrong
+mapping crashes, as it must. test262 passes one more test than before.
+
+Along the way the gate turned out to have been testing the wrong image
+after any `make test262`: both builds share a directory and make compares
+times, not variants. The image now records what it was built as.
+

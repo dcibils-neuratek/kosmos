@@ -10163,8 +10163,11 @@ the applications make the system useful, and is not pulled forward.
   ThinkPad, never under TCG, before and after, and kept only if it pays.
   Today's build leaves all of it on the table:
   - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
-    need JIT for sure"). The build is the interpreter alone (`ENABLE_JIT`,
-    `DFG`, `FTL` and WebAssembly off in `runtime/cxx/jsc.cmake`). Built on
+    need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
+    `testing.md` 18.846): Baseline and DFG together - on 64 bits the
+    Baseline JIT uses DFG's types, so (1) and (2) below became one step -
+    on the separated heap, held to test262 and `x86-jsc` with a control;
+    measured on the M700 next. FTL and WebAssembly still off. Built on
     Nebula's W^X as it stands: the code pool mapped twice, written through
     one mapping and run from the `MEM_MAP_RX` one - JavaScriptCore's
     `ENABLE_SEPARATED_WX_HEAP`, iOS's shape, with its Mach remap ported to
@@ -11237,6 +11240,11 @@ the applications make the system useful, and is not pulled forward.
     the gate ran 774 s and 684 s, over the ten-minute budget, and the
     suites that wait a fixed time are the ones that give way. The gate is
     what to fix - back under ten minutes - and then the fixed waits.
+    0.11.449's gate (738 s) failed `x86-llmmon` once: the answer read
+    from a file had `keyring: a key made for this machine` in front of it
+    - the first use of the keyring in that boot saying so on the same
+    output - and passed alone. The suite should hold the answer's own
+    lines, or the keyring say it once at boot, not to whoever asks first.
   - *Setting a file's times*: `utimensat`.
   - *`chdir`*: it needs the Storage Kit's working directory to be
     changeable under threads.

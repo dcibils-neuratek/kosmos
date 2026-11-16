@@ -1,0 +1,302 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+JavaScriptCore's JIT on Kosmos (Kosmos docs/jit.md, step 1). Nebula never
+maps a page writable and executable at one address, so the pool of
+compiled code is one region mapped twice - read and execute where the code
+runs, read and write at another address - which is iOS's separated heap
+(ENABLE_SEPARATED_WX_HEAP) with Mach's remap replaced by SYS_MEM_MAP's two
+mappings. Every write into the pool goes through performJITMemcpy, and the
+separated heap sends it to the writable mapping.
+
+- PlatformEnable.h: the separated heap on Kosmos.
+- PageReservation.h: `adoptMapped`, a reservation of memory its caller
+  mapped - the pool, whose pages are given as they are first touched, so
+  never committed, decommitted or released here.
+- ExecutableAllocator.cpp: a 64 MB pool from WTF's `kosmosMakeJITPool`
+  (Kosmos's port, wtf/kosmos/KosmosJITPool.cpp: a region given on touch,
+  mapped read and execute and read and write); the writer, one atomic
+  store where a repatch is one; commit and decommit nothing, since Nebula
+  cannot yet give back part of a region.
+- X86Assembler.h: x86's writes into finished code - a repatched jump, call,
+  pointer or immediate, nops - went through performJITMemcpy only in the
+  mprotect mode, and stored in place otherwise, which with the separated
+  heap is a store into a page mapped read and execute. They take the
+  separated heap's path too. ARM64's always did, which is why iOS never
+  needed this.
+- InlineCacheCompiler.h: two return types named `CCallHelpers::Jump` and
+  `JumpList` where `CCallHelpers` is only declared - which compiled where
+  something had included it first, and not in LLIntOffsetsExtractor with
+  the JIT on. They are MacroAssembler's types, and named so.
+- ScriptExecutable.cpp: `CompilationResult` compared by name where only its
+  declaration was in scope, with the JIT on; its header included.
+
+diff -ruN a/Source/JavaScriptCore/assembler/X86Assembler.h b/Source/JavaScriptCore/assembler/X86Assembler.h
+--- a/Source/JavaScriptCore/assembler/X86Assembler.h	2026-11-16 17:17:34.937290315 -0300
++++ b/Source/JavaScriptCore/assembler/X86Assembler.h	2026-11-16 17:18:31.844333199 -0300
+@@ -6434,7 +6434,7 @@
+ 
+     static void replaceWithHlt(void* instructionStart)
+     {
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t op = OP_HLT;
+         performJITMemcpy<jitMemcpyRepatch>(instructionStart, &op, 1);
+ #else
+@@ -6447,7 +6447,7 @@
+         uint8_t* ptr = std::bit_cast<uint8_t*>(instructionStart);
+         uint8_t* dstPtr = std::bit_cast<uint8_t*>(to);
+         intptr_t distance = (intptr_t)(dstPtr - (ptr + 5));
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t buffer[5];
+         buffer[0] = static_cast<uint8_t>(OP_JMP_rel32);
+         WTF::unalignedStore<int32_t>(buffer + 1, static_cast<int32_t>(distance));
+@@ -6485,7 +6485,7 @@
+             uint8_t asBytes[8];
+         } u;
+         u.asWord = imm;
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t buffer[instructionSize];
+         buffer[0] = PRE_REX | (1 << 3) | (dst >> 3);
+         buffer[1] = OP_MOV_EAXIv | (dst & 7);
+@@ -6515,7 +6515,7 @@
+             uint8_t asBytes[4];
+         } u;
+         u.asWord = imm;
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t buffer[instructionSize];
+         buffer[0] = PRE_REX | (1 << 3) | (dst >> 3);
+         buffer[1] = OP_MOV_EAXIv | (dst & 7);
+@@ -6540,7 +6540,7 @@
+             uint8_t asBytes[4];
+         } u;
+         u.asWord = imm;
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t buffer[maxJumpReplacementSize()];
+         buffer[0] = OP_GROUP1_EvIz;
+         buffer[1] = (X86InstructionFormatter::ModRmRegister << 6) | (GROUP1_OP_CMP << 3) | dst;
+@@ -6566,7 +6566,7 @@
+             uint8_t asBytes[4];
+         } u;
+         u.asWord = imm;
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         uint8_t buffer[maxJumpReplacementSize()];
+         buffer[0] = OP_GROUP1_EvIz;
+         buffer[1] = (X86InstructionFormatter::ModRmMemoryNoDisp << 6) | (GROUP1_OP_CMP << 3) | dst;
+@@ -6643,7 +6643,7 @@
+                 *bufferWriter++ = nops[nopRest-1][i];
+ 
+             ASSERT(nopSize == bufferWriter - buffer);
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+             machineCodeCopy<jitMemcpyRepatch>(where, buffer, nopSize);
+ #else
+             machineCodeCopy<memcpyRepatch>(where, buffer, nopSize);
+@@ -6660,7 +6660,7 @@
+ 
+     static void setPointer(void* where, void* value)
+     {
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         performJITMemcpy<jitMemcpyRepatch>(std::bit_cast<void**>(where) - 1, &value, sizeof(void*));
+ #else
+         WTF::unalignedStore<void*>(std::bit_cast<void**>(where) - 1, value);
+@@ -6669,7 +6669,7 @@
+ 
+     static void setInt32(void* where, int32_t value)
+     {
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         performJITMemcpy<jitMemcpyRepatch>(std::bit_cast<int32_t*>(where) - 1, &value, sizeof(int32_t));
+ #else
+         WTF::unalignedStore<int32_t>(std::bit_cast<int32_t*>(where) - 1, value);
+@@ -6678,7 +6678,7 @@
+     
+     static void setInt8(void* where, int8_t value)
+     {
+-#if ENABLE(MPROTECT_RX_TO_RWX)
++#if ENABLE(MPROTECT_RX_TO_RWX) || ENABLE(SEPARATED_WX_HEAP)
+         performJITMemcpy<jitMemcpyRepatch>(std::bit_cast<int8_t*>(where) - 1, &value, sizeof(int8_t));
+ #else
+         WTF::unalignedStore<int8_t>(std::bit_cast<int8_t*>(where) - 1, value);
+diff -ruN a/Source/JavaScriptCore/bytecode/InlineCacheCompiler.h b/Source/JavaScriptCore/bytecode/InlineCacheCompiler.h
+--- a/Source/JavaScriptCore/bytecode/InlineCacheCompiler.h	2026-11-16 17:23:37.206582285 -0300
++++ b/Source/JavaScriptCore/bytecode/InlineCacheCompiler.h	2026-11-16 17:23:37.228840563 -0300
+@@ -275,8 +275,8 @@
+     static void NODELETE emitDataICEpilogue(CCallHelpers&);
+     static void emitDataICPrepareForCall(CCallHelpers&);
+     static void emitDataICRestoreAfterCall(CCallHelpers&);
+-    static CCallHelpers::Jump emitDataICCheckStructure(CCallHelpers&, GPRReg baseGPR, GPRReg scratchGPR);
+-    static CCallHelpers::JumpList emitDataICCheckUid(CCallHelpers&, bool isSymbol, JSValueRegs, GPRReg scratchGPR);
++    static MacroAssembler::Jump emitDataICCheckStructure(CCallHelpers&, GPRReg baseGPR, GPRReg scratchGPR);
++    static MacroAssembler::JumpList emitDataICCheckUid(CCallHelpers&, bool isSymbol, JSValueRegs, GPRReg scratchGPR);
+     static void emitDataICJumpNextHandler(CCallHelpers&);
+ 
+     bool NODELETE useHandlerIC() const;
+diff -ruN a/Source/JavaScriptCore/jit/ExecutableAllocator.cpp b/Source/JavaScriptCore/jit/ExecutableAllocator.cpp
+--- a/Source/JavaScriptCore/jit/ExecutableAllocator.cpp	2026-11-16 17:17:34.933392170 -0300
++++ b/Source/JavaScriptCore/jit/ExecutableAllocator.cpp	2026-11-16 17:33:09.074335575 -0300
+@@ -61,6 +61,10 @@
+ #include <wtf/cocoa/Entitlements.h>
+ #endif
+ 
++#if OS(KOSMOS)
++#include <wtf/kosmos/KosmosJITPool.h>
++#endif
++
+ #if OS(DARWIN)
+ #include <fcntl.h>
+ #include <mach/mach.h>
+@@ -89,6 +93,12 @@
+ static constexpr size_t minimumPoolSizeForSegregatedHeap = 256 * MB;
+ #endif
+ 
++// Kosmos: 64 MB, for a web process's code. Its pages are given only as
++// they are written, so the size is address space, and a region's.
++#if OS(KOSMOS) && !defined(FIXED_EXECUTABLE_MEMORY_POOL_SIZE_IN_MB)
++#define FIXED_EXECUTABLE_MEMORY_POOL_SIZE_IN_MB 64
++#endif
++
+ #if defined(FIXED_EXECUTABLE_MEMORY_POOL_SIZE_IN_MB) && FIXED_EXECUTABLE_MEMORY_POOL_SIZE_IN_MB > 0
+ static constexpr size_t fixedExecutableMemoryPoolSize = FIXED_EXECUTABLE_MEMORY_POOL_SIZE_IN_MB * MB;
+ #elif CPU(ARM64)
+@@ -358,6 +368,36 @@
+     size_t size { 0 };
+ };
+ 
++#if OS(KOSMOS)
++// **The pool on Kosmos** (Kosmos docs/jit.md): one region, its pages given as
++// they are first touched, mapped twice (WTF's `kosmosMakeJITPool`) - read
++// and execute where the code runs, which is the pool JavaScriptCore knows,
++// and read and write at an address only the writer below holds. Nebula never maps a page writable
++// and executable at one address, so this is the only way code is made here:
++// every write into the pool is `performJITMemcpy`'s, which the separated
++// heap sends through `kosmosWriteToJITRegion`.
++static void kosmosWriteToJITRegion(off_t offset, const void* data, size_t dataSize)
++{
++WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
++    // A repatch of a live jump or pointer is one aligned store, as it is
++    // when the pool is written in place.
++    memcpyAtomicIfPossible(reinterpret_cast<void*>(g_jscConfig.startOfFixedWritableMemoryPool + offset), data, dataSize);
++WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
++    kosmosJITPoolWrote(dataSize);
++}
++
++static PageReservation kosmosReserveJITPool(size_t size)
++{
++    KosmosJITPool pool = kosmosMakeJITPool(size, executablePageSize());
++    if (!pool.executable)
++        return { };
++    g_jscConfig.startOfFixedWritableMemoryPool = pool.writable;
++    g_jscConfig.jitWriteSeparateHeaps = reinterpret_cast<JITWriteSeparateHeapsFunction>(
++        tagCFunctionPtr<JITThunkPtrTag>(&kosmosWriteToJITRegion));
++    return PageReservation::adoptMapped(pool.executable, size);
++}
++#endif
++
+ WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN
+ 
+ static ALWAYS_INLINE JITReservation initializeJITPageReservation()
+@@ -403,10 +443,15 @@
+         return PageReservation::tryReserveWithGuardPages(reservationSize, OSAllocator::JSJITCodePages, hintAddress, EXECUTABLE_POOL_WRITABLE, true, false, false);
+     };
+ 
++#if OS(KOSMOS)
++    UNUSED_VARIABLE(tryCreatePageReservation);
++    reservation.pageReservation = kosmosReserveJITPool(reservation.size);
++#else
+     void* addressHint = reinterpret_cast<void*>(Options::jitMemoryReservationAddress());
+     reservation.pageReservation = tryCreatePageReservation(reservation.size, addressHint);
+     if (addressHint)
+         RELEASE_ASSERT(reservation.pageReservation.base() == addressHint && "Failed to accomodate JSC_jitMemoryReservationAddress");
++#endif
+ 
+     if (Options::verboseExecutablePoolAllocation())
+         dataLog(getpid(), ": Got executable pool reservation at ", RawPointer(reservation.pageReservation.base()), "...", RawPointer(reservation.pageReservation.end()), ", while I'm at ", RawPointer(reinterpret_cast<void*>(initializeJITPageReservation)), "\n");
+@@ -419,7 +464,7 @@
+         if (g_jscConfig.useFastJITPermissions)
+             threadSelfRestrict<MemoryRestriction::kRwxToRx>();
+ 
+-#if ENABLE(SEPARATED_WX_HEAP)
++#if ENABLE(SEPARATED_WX_HEAP) && OS(DARWIN)
+         if (!g_jscConfig.useFastJITPermissions) {
+             // First page of our JIT allocation is reserved.
+             ASSERT(reservation.size >= executablePageSize() * 2);
+@@ -933,12 +978,24 @@
+ 
+         void notifyNeedPage(void* page, size_t count) override
+         {
++#if OS(KOSMOS)
++            // Given as they are touched (kosmosReserveJITPool).
++            UNUSED_PARAM(page);
++            UNUSED_PARAM(count);
++#else
+             m_fixedAllocator.m_reservation.commit(page, executablePageSize() * count);
++#endif
+         }
+ 
+         void notifyPageIsFree(void* page, size_t count) override
+         {
++#if OS(KOSMOS)
++            // Kept: Nebula cannot yet give back part of a region.
++            UNUSED_PARAM(page);
++            UNUSED_PARAM(count);
++#else
+             m_fixedAllocator.m_reservation.decommit(page, executablePageSize() * count);
++#endif
+         }
+ #endif // !ENABLE(LIBPAS_JIT_HEAP)
+ 
+diff -ruN a/Source/JavaScriptCore/runtime/ScriptExecutable.cpp b/Source/JavaScriptCore/runtime/ScriptExecutable.cpp
+--- a/Source/JavaScriptCore/runtime/ScriptExecutable.cpp	2026-11-16 17:24:53.545666674 -0300
++++ b/Source/JavaScriptCore/runtime/ScriptExecutable.cpp	2026-11-16 17:24:53.567693451 -0300
+@@ -26,6 +26,7 @@
+ #include "config.h"
+ 
+ #include "CodeBlock.h"
++#include "CompilationResult.h"
+ #include "Debugger.h"
+ #include "EvalCodeBlock.h"
+ #include "FunctionCodeBlock.h"
+diff -ruN a/Source/WTF/wtf/PageReservation.h b/Source/WTF/wtf/PageReservation.h
+--- a/Source/WTF/wtf/PageReservation.h	2026-11-16 17:17:34.929192899 -0300
++++ b/Source/WTF/wtf/PageReservation.h	2026-11-16 17:18:31.843650071 -0300
+@@ -126,6 +126,17 @@
+     }
+ 
+ 
++#if OS(KOSMOS)
++    // Kosmos: memory its caller mapped itself - the JIT's pool, a region
++    // mapped read and execute (ExecutableAllocator.cpp). Its pages are
++    // given as they are first touched, so it is never committed or
++    // decommitted here, and it is never deallocated.
++    static PageReservation adoptMapped(void* base, size_t size)
++    {
++        return PageReservation(base, size, false, true, false);
++    }
++#endif
++
+     void deallocate()
+     {
+         ASSERT(!m_committed);
+diff -ruN a/Source/WTF/wtf/PlatformEnable.h b/Source/WTF/wtf/PlatformEnable.h
+--- a/Source/WTF/wtf/PlatformEnable.h	2026-11-16 17:17:34.924625418 -0300
++++ b/Source/WTF/wtf/PlatformEnable.h	2026-11-16 17:18:31.843473153 -0300
+@@ -535,6 +535,13 @@
+ #endif
+ #endif
+ 
++#if !defined(ENABLE_SEPARATED_WX_HEAP) && OS(KOSMOS)
++/* Kosmos: no page is writable and executable at once, and none is ever
++   made so - the JIT's pool is one region mapped twice, written through one
++   mapping and run from the other (ExecutableAllocator.cpp). */
++#define ENABLE_SEPARATED_WX_HEAP 1
++#endif
++
+ #if !defined(ENABLE_SEPARATED_WX_HEAP)
+ #define ENABLE_SEPARATED_WX_HEAP 0
+ #endif

@@ -20,6 +20,7 @@
 
 #include <JavaScriptCore/JavaScript.h>
 #include <wtf/FileSystem.h>
+#include <wtf/kosmos/KosmosJITPool.h>
 #include <wtf/text/WTFString.h>
 
 #include <stdio.h>
@@ -106,6 +107,19 @@ static int run(const std::string& source, const char *where, char **out, unsigne
     *out = said.data();
     *length = said.size();
     return exception ? 1 : 0;
+}
+
+// The JIT's pool's pages written so far - code made - or -1 with no pool
+// (`docs/jit.md`): what says the JIT ran, counted by Nebula.
+extern "C" long kosmos_jsc_jit_pages(void)
+{
+    return kosmosJITPoolPagesWritten();
+}
+
+// And the bytes the JIT has written into it, every compilation's.
+extern "C" unsigned long kosmos_jsc_jit_bytes(void)
+{
+    return kosmosJITPoolBytesWritten();
 }
 
 extern "C" int kosmos_jsc_eval(const char *source, unsigned long size, char **out, unsigned long *length)

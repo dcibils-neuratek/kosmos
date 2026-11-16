@@ -6,6 +6,22 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: JavaScriptCore's JIT, step 1 (0.11.449)
+
+- **Baseline and DFG on** (`docs/jit.md`): the code pool one region mapped
+  twice, run from the read-and-execute mapping and written through the
+  other - JavaScriptCore's separated heap, patch 0037 and WTF's
+  `KosmosJITPool`. FTL and WebAssembly off.
+- `x86-jsc` holds a hot function compiled into the pool, with a control
+  that writes the executable mapping and faults; test262 22,409 against
+  22,408 (18.846).
+- **The gate had been booting the lean image** after `make test262`: one
+  `build/x86_64` for both variants, and make compares times.
+  `build/x86_64/variant` relinks when the variant changes.
+
+**Next**: the M700 at .35 - netboot, packages, the 23 sites against
+18.845's interpreter numbers. Then HTTP/2, the GPU.
+
 ## 16 November: JetSki's shield (0.11.448)
 
 - **The shield** (`adblock.md` B4): this page's count in JetSki's header,
