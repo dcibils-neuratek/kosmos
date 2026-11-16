@@ -42,6 +42,9 @@
 #include <WebKit/WKRetainPtr.h>
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
+#include <WebKit/WKArray.h>
+#include <WebKit/WKUserContentControllerRef.h>
+#include <WebKit/WKUserContentExtensionStoreRef.h>
 #include <WebKit/WKURLRequest.h>
 #include <WebKit/WKURLResponse.h>
 #include <WebKit/WKView.h>
@@ -49,6 +52,7 @@
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
 #include <stdlib.h>
+#include <wtf/FileSystem.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/RunLoop.h>
 #include <wtf/Seconds.h>
@@ -108,6 +112,9 @@ struct View {
     bool crashed = false;           // that process ended, since the last load
     long crashedPid = 0;
     char crashedAddress[2048] { };
+    char held[2048] { };            // a load waiting for the rule lists
+    unsigned blocked = 0;           // what the rule lists kept out of this page
+    unsigned cookiesBlocked = 0;
     WKViewRef inspector = nullptr;  // its Web Inspector's view, while docked
     bool toInspector = false;       // input goes to the inspector's page
 
@@ -218,6 +225,7 @@ void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     view->crashed = false;
     view->loading = true;
     view->asked = false;
+    view->blocked = view->cookiesBlocked = 0;
     told(view, WEBKIT_STARTED);
 }
 
@@ -279,6 +287,19 @@ void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, W
     viewOf(info)->asked = false;
 }
 
+// What a rule list kept out of the page: patch 0033's two names.
+void ruleListActed(WKPageRef, WKURLRef, WKArrayRef, WKArrayRef notifications, const void* info)
+{
+    auto* view = viewOf(info);
+    for (size_t i = 0; i < WKArrayGetSize(notifications); i++) {
+        auto said = static_cast<WKStringRef>(WKArrayGetItemAtIndex(notifications, i));
+        if (WKStringIsEqualToUTF8CString(said, "kosmos:blocked"))
+            view->blocked++;
+        else if (WKStringIsEqualToUTF8CString(said, "kosmos:cookies"))
+            view->cookiesBlocked++;
+    }
+}
+
 void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
     told(viewOf(info), WEBKIT_COMMITTED);
@@ -290,6 +311,8 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
     auto* view = viewOf(info);
     traceSummary(view, "finished");
+    if (view->blocked || view->cookiesBlocked)
+        fprintf(stderr, "webkit: view %d kept out %u requests, cookies of %u\n", view->id, view->blocked, view->cookiesBlocked);
     view->loading = false;
     view->asked = false;
     told(view, WEBKIT_FINISHED);
@@ -405,6 +428,78 @@ WKContextRef context()
         return WKContextCreateWithConfiguration(configuration.get());
     }();
     return shared;
+}
+
+/*
+ * **Privacy and Ad Blocking's rule lists** (`docs/adblock.md`, B1). Every
+ * `.json` in `/Kosmos/Filters` - the lists the image carries - and in
+ * `/Home/Settings/Filters` - the person's - is a WebKit content rule list.
+ * Each is compiled into `/Home/Settings/Filters/Rules` on a WebKit work
+ * queue, and added to the one content controller every view shares, so a
+ * list applies to every page at once. A load asked for while any list is
+ * still compiling is held, and made when the last one is ready: a page
+ * that loaded before its lists would be the one page nothing was kept out
+ * of.
+ */
+struct Rules {
+    bool started = false;
+    unsigned compiling = 0;
+    WTF::MonotonicTime from;
+};
+Rules rules;
+
+WKUserContentControllerRef contentController()
+{
+    static WKUserContentControllerRef shared = WKUserContentControllerCreate();
+    return shared;
+}
+
+void releaseHeld();
+
+void ruleListCompiled(WKUserContentFilterRef filter, WKUserContentExtensionStoreResult result, void* context)
+{
+    auto* name = static_cast<char*>(context);
+    if (result == kWKUserContentExtensionStoreSuccess && filter) {
+        WKUserContentControllerAddUserContentFilter(contentController(), filter);
+        fprintf(stderr, "webkit: rules %s ready in %.0f ms\n", name, (WTF::MonotonicTime::now() - rules.from).milliseconds());
+    } else
+        fprintf(stderr, "webkit: rules %s refused (%u)\n", name, result);
+    free(name);
+    if (rules.compiling && !--rules.compiling)
+        releaseHeld();
+}
+
+void startRules()
+{
+    if (rules.started)
+        return;
+    rules.started = true;
+    rules.from = WTF::MonotonicTime::now();
+
+    auto storePath = "/Home/Settings/Filters/Rules"_s;
+    FileSystem::makeAllDirectories(storePath);
+    static WKUserContentExtensionStoreRef store = [&] {
+        auto path = adoptWK(WKStringCreateWithUTF8CString(storePath.characters()));
+        return WKUserContentExtensionStoreCreate(path.get());
+    }();
+
+    struct Folder { const char* path; const char* tag; };
+    for (auto folder : { Folder { "/Kosmos/Filters", "kosmos-" }, Folder { "/Home/Settings/Filters", "home-" } }) {
+        for (auto& name : FileSystem::listDirectory(String::fromLatin1(folder.path))) {
+            if (!name.endsWith(".json"_s))
+                continue;
+            auto bytes = FileSystem::readEntireFile(FileSystem::pathByAppendingComponent(String::fromLatin1(folder.path), name));
+            if (!bytes)
+                continue;
+            bytes->append(0);
+            char identifier[256];
+            snprintf(identifier, sizeof identifier, "%s%s", folder.tag, name.left(name.length() - 5).utf8().data());
+            auto id = adoptWK(WKStringCreateWithUTF8CString(identifier));
+            auto json = adoptWK(WKStringCreateWithUTF8CString(reinterpret_cast<const char*>(bytes->span().data())));
+            rules.compiling++;
+            WKUserContentExtensionStoreCompile(store, id.get(), json.get(), strdup(identifier), ruleListCompiled);
+        }
+    }
 }
 
 /*
@@ -628,8 +723,9 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     WKViewSetViewClient(view->view, &viewClient.base);
 
     view->page = WKViewGetPage(view->view);
-    WKPageNavigationClientV0 navigation { };
-    navigation.base = { 0, view.get() };
+    WKPageNavigationClientV2 navigation { };
+    navigation.base = { 2, view.get() };
+    navigation.contentRuleListNotification = ruleListActed;
     navigation.didStartProvisionalNavigation = didStart;
     navigation.didCommitNavigation = didCommit;
     navigation.didFinishNavigation = didFinish;
@@ -712,6 +808,7 @@ extern "C" int webkit_view(unsigned width, unsigned height, const struct webkit_
     WKPageConfigurationSetContext(configuration.get(), context());
     WKPageConfigurationSetWebsiteDataStore(configuration.get(), dataStore());
     WKPageConfigurationSetPreferences(configuration.get(), preferences(chosen.scripts));
+    WKPageConfigurationSetUserContentController(configuration.get(), contentController());
 
     // The first view first: making it is what starts WTF's main thread and
     // run loop, which the timer below is made on.
@@ -724,6 +821,7 @@ extern "C" int webkit_view(unsigned width, unsigned height, const struct webkit_
         });
         views.slice = &slice;
     }
+    startRules();
     return view->id;
 }
 
@@ -811,11 +909,31 @@ extern "C" void webkit_resize(int id, unsigned width, unsigned height)
     WKViewSetSize(view->view, WKSizeMake(width, height));
 }
 
+namespace {
+
+void releaseHeld()
+{
+    for (auto& each : views.all) {
+        if (!each->held[0])
+            continue;
+        auto url = adoptWK(WKURLCreateWithUTF8CString(each->held));
+        each->held[0] = '\0';
+        WKPageLoadURL(each->page, url.get());
+    }
+}
+
+} // namespace
+
 extern "C" void webkit_load(int id, const char* address)
 {
     auto page = pageOf(id);
     if (!page || !address)
         return;
+    if (rules.compiling) {
+        auto* view = views.find(id);
+        snprintf(view->held, sizeof view->held, "%s", address);
+        return;
+    }
     auto url = adoptWK(WKURLCreateWithUTF8CString(address));
     WKPageLoadURL(page, url.get());
 }
@@ -923,6 +1041,10 @@ extern "C" int webkit_state(int id, struct webkit_state* out)
     out->progress = WKPageGetEstimatedProgress(view->page);
     out->can_back = WKPageCanGoBack(view->page);
     out->can_forward = WKPageCanGoForward(view->page);
+    out->blocked = view->blocked;
+    out->cookies_blocked = view->cookiesBlocked;
+    if (view->held[0])
+        out->loading = 1;
 
     auto title = adoptWK(WKPageCopyTitle(view->page));
     copy(title.get(), out->title, sizeof out->title);

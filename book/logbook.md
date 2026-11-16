@@ -3654,3 +3654,37 @@ last second's cookies, never the database.
 **Still open.** Each commit of the filesystem writes about 250 KB, for a
 database of 90 KB. That is kfs's own cost, every program that saves pays
 it, and it is next.
+
+## 16 November 2026 - Privacy and Ad Blocking, the engine on
+
+**In short.** JetSki can now stop a page's adverts and trackers before
+they are fetched. Nothing is blocked yet on real sites, because the lists
+that say what to block (EasyList and the others) come in the next step.
+What exists now is the machinery, proved on a test page.
+
+**What it is.** Safari blocks adverts with a feature of WebKit called
+content blockers: a list of rules in JSON ("block any address ending in
+`ad.js`") that WebKit compiles into a fast matcher once and then checks
+every request against. Kosmos's browser is built on WebKit, so rather than
+write a blocker of our own we switched that feature on. Adblock Plus did
+the same on Safari: it converts its filter lists into these rules.
+
+**What was needed.**
+- The feature was off in our build of WebKit. Switched on, it wanted one
+  thing WebKit only had on Windows: a way to hand the compiled list to each
+  page's process as shared memory. Kosmos's version copies it into a
+  region that process can read and not write.
+- The WebKit Kit, which every app that shows web pages uses, now finds
+  rule lists in `/Kosmos/Filters` and `/Home/Settings/Filters`, compiles
+  them, and applies them to every page. A page asked for in the
+  milliseconds before they are ready waits for them.
+- A small patch to WebKit so an application hears what was blocked. The
+  shield in JetSki's toolbar will show those counts.
+
+**How it is tested.** The browser suite's test page now has an advert
+script and a tracking pixel, and the suite writes a list that blocks both.
+The web server on the Mac must never be asked for either file, and the
+page must still work as before. The list compiled in 72 ms.
+
+**Next.** The converter: EasyList, EasyPrivacy and EasyList Cookie
+turned into WebKit's rules, so the system blocks from its first boot.

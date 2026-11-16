@@ -79,6 +79,14 @@ the page, which must silence it at the audio server's fader.
 another site and the script set none, which a browser must refuse, so the
 second page arrives without them.
 
+**And it keeps adverts out** (`docs/adblock.md` B1): WebKit's content
+blocker is on, and a rule list on the disk, `/Home/Settings/Filters/
+test.json`, blocks the first page's `ad.js` and `track.gif`. The server
+must never be asked for either, the page must still load, the list must
+be compiled, and the WebKit Kit must count both as kept out.
+`KOSMOS_JETSKI_BREAK=unblocked` leaves the list off the disk, and both are
+asked for.
+
 Outside the gate, `KOSMOS_JETSKI_LIVE=https://...` opens a real site
 instead, and the picture is kept in `build/jetski/` to be looked at,
 with the cookie file the site left as `live-cookies.db`;
@@ -168,6 +176,7 @@ var said = { platform: navigator.platform, outer: outerWidth + "x" + outerHeight
 new Image().src = "/report?" + new URLSearchParams(said);
 </script>
 <p><a id="go" href="/other.html">Another page</a></p>
+<script src="/ad.js"></script><img src="/track.gif" width="1" height="1" alt="">
 </body></html>
 """ % ((TITLE.encode(), BLOCK_W, BLOCK_H) + BLOCK + (SCRIPT_COOKIE.encode(),))
 
@@ -348,6 +357,17 @@ class Page(http.server.BaseHTTPRequestHandler):
                 Page.report = urllib.parse.parse_qs(self.path.split("?", 1)[1], keep_blank_values=True)
             self.send_response(204)
             self.end_headers()
+            return
+        if self.path in ("/ad.js", "/track.gif"):
+            # What the rule list keeps out: answered, harmlessly, when it
+            # is let through, so only being asked for tells.
+            body = (b"var advert = 1;" if self.path == "/ad.js" else
+                    b"GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript" if self.path == "/ad.js" else "image/gif")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         body = {"/": PAGE, "/other.html": OTHER}.get(self.path)
         if BROKEN == "missing" or body is None:
@@ -1058,6 +1078,13 @@ def main():
         switch = os.path.join(WORK, "trace")
         open(switch, "w").close()
         files.append((switch, "/Home/Settings/JetSki/trace"))
+    # The rule list B1 is held to: WebKit's own JSON, by hand.
+    if BROKEN != "unblocked":
+        rules = os.path.join(WORK, "test.json")
+        with open(rules, "w") as f:
+            f.write('[{"trigger": {"url-filter": "/ad\\\\.js$"}, "action": {"type": "block"}},'
+                    ' {"trigger": {"url-filter": "/track\\\\.gif$"}, "action": {"type": "block"}}]')
+        files.append((rules, "/Home/Settings/Filters/test.json"))
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)] + ["%s:%s" % f for f in files],
@@ -1171,6 +1198,16 @@ def main():
                       % system)
     if "/" not in Page.asked:
         failed.append("the page was never asked for")
+    kept_out = [path for path in ("/ad.js", "/track.gif") if path in Page.asked]
+    if kept_out:
+        failed.append("the rule list did not keep out %s: the server was asked for it"
+                      % " and ".join(kept_out))
+    if not re.search(r"webkit: rules home-test ready in \d+ ms", seen):
+        failed.append("the rule list was not compiled: %s"
+                      % (re.findall(r"webkit: rules [^\r\n]*", seen) or "nothing said"))
+    if not re.search(r"webkit: view \d+ kept out [2-9]\d* requests", seen):
+        failed.append("the WebKit Kit did not count what was kept out: %s"
+                      % (re.findall(r"webkit: view \d+ kept out [^\r\n]*", seen) or "nothing said"))
     if "jetski: title " + TITLE not in seen:
         failed.append("the window was not given the page's title")
 
@@ -1205,7 +1242,8 @@ def main():
           "then its link clicked to a second page, shown as followed the moment it was clicked, the wheel turned and its script told "
           "the page scrolled, and its field clicked and \"%s\" typed into it; and the "
           "second page asked for with the server's cookie and the script's, the lasting "
-          "one kept on /Home; and the page saw \"%s\" as the platform, its window "
+          "one kept on /Home, its advert and tracker kept out by a rule list in "
+          "/Home/Settings/Filters, never asked for; and the page saw \"%s\" as the platform, its window "
           "1200x800 and a canvas read back as a PNG; and a VP9 film in WebM played on "
           "the second page by WebKit's Media Kit engine, its picture in the window; and "
           "beside it a film appended in pieces to a MediaSource, VP9 and Opus in "

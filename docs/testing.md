@@ -34466,3 +34466,46 @@ patch. `x86-jetski` checks that the server's lasting cookie is in
 `cookies.db` on the disk. Control: the batch's `COMMIT` made `SELECT 1`,
 so it is never committed. `x86-jetski` fails 1 of 38, the server's
 cookie not in `cookies.db`.
+
+## 18.838 Privacy and Ad Blocking B1: WebKit's content blocker on (0.11.442)
+
+**In short: JetSki can now keep a page's adverts and trackers from being
+fetched at all. WebKit's own content blocker, Safari's, is switched on in
+our port, and every view the WebKit Kit makes applies the rule lists it
+finds on the disk.**
+
+What is built (`docs/adblock.md`, step B1):
+
+- `ENABLE_CONTENT_EXTENSIONS` on in `OptionsKosmos.cmake`. A compiled list
+  is handed to each web process as shared memory. The curl port makes that
+  memory only on Windows, so Kosmos's
+  `NetworkCacheDataKosmos.cpp` copies the file's bytes into a region, which
+  the web process maps read only.
+- The WebKit Kit reads every `*.json` in `/Kosmos/Filters` (none yet; B2
+  puts EasyList and the others there) and in `/Home/Settings/Filters`,
+  compiles each into `/Home/Settings/Filters/Rules`, and applies them to
+  every view through one user content controller. A page asked for while
+  the lists compile is held and loaded when they are ready, so no first
+  page goes out unfiltered.
+- **WebKit patch 0033.** The web process tells the UI process every
+  request a list blocked and every load whose cookies it kept back, but
+  the C API passed on only `notify` rules' names. On Kosmos it passes on
+  `kosmos:blocked` and `kosmos:cookies` as well. The kit counts them per
+  view: `state().blocked` and `state().cookies_blocked`, for the shield in
+  B4, and a line when a page finishes:
+  `webkit: view 1 kept out 2 requests, cookies of 0`.
+
+`x86-jetski` holds it. The first page now carries `<script src="/ad.js">`
+and a 1x1 `track.gif`, and the suite writes a hand-made list blocking both
+into `/Home/Settings/Filters/test.json` before JetSki opens. Checks: the
+list compiled (`webkit: rules home-test ready in 72 ms`), the server was
+never asked for either file, the kit says it kept two requests out, and
+the page still paints, links, types, plays its films and the rest as
+before. Control: `KOSMOS_JETSKI_BREAK=unblocked` leaves the list off the
+disk. `x86-jetski` fails 3 of 38: the server asked for both files, no list
+compiled, nothing counted. The other 35 still pass.
+
+The full gate passed 129 of 131 suites in 743 s, run while `tools/top20.py`
+loaded the Mac. `x86-display-4` (the gallery's selection bar, one picture
+taken without waiting) and `x86-script` (Cafesa3D's script saved) failed,
+and both passed run alone at once after, in 167 s. Neither touches WebKit.

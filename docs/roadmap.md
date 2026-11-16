@@ -10667,7 +10667,33 @@ the applications make the system useful, and is not pulled forward.
       banners"); the trackers' cookies cleared by themselves the first time,
       and cookies allowed one site at a time ("clear them and have a way to
       opt out for cookies on a site-basis") - a Kosmos patch to
-      `CookieJarDB`'s accept policy, in B3.
+      `CookieJarDB`'s accept policy, in B3. **B1 built in 0.11.442** (`testing.md`
+      18.838): the content blocker on, lists from `/Kosmos/Filters` and
+      `/Home/Settings/Filters` applied to every view, what they kept out
+      counted. **The preferences panel, asked for the same day** (Diego: "Make
+      sure add a preferences panel for privacy and ad blocking in jet ski
+      so the user can change settings, manage cookies, etc"): B5 grown to
+      JetSki Settings' *Privacy and Ad Blocking* group and a *Manage
+      cookies* page - every site's cookies listed, opened, removed, kept -
+      drawn in `docs/adblock.html` (`adblock.md` feature 12).
+    - *The top 20: JetSki's benchmark* (Diego, 16 November 2026, with a
+      list of the twenty most visited sites in the United States: "Once
+      done I want to do a test that opens each website of this list which
+      are the top 20 websites and see how they behave", "This list is our
+      benchmark for our Browser"). google.com, youtube.com, facebook.com,
+      amazon.com, reddit.com, yahoo.com, bing.com, chatgpt.com,
+      instagram.com, x.com, cloud.microsoft, wikipedia.org, linkedin.com,
+      espn.com, walmart.com, tiktok.com, ebay.com, instructure.com,
+      nytimes.com, temu.com. A tool, `tools/top20.py`, outside the gate
+      because the sites are live: each opened in a fresh JetSki, on the
+      M700 by default (its times are real) or in QEMU, and for each the
+      load's time, how it ended (loaded, failed, the page's process
+      stopped, or still loading after 90 s), what Privacy and Ad Blocking
+      kept out, a picture, and the cookies it left; this Mac's Chrome
+      loads the same twenty for a picture and a time beside each. The
+      results are kept by version in `bench/top20/`, and a page shows a
+      run beside the one before. First run before blocking, as the
+      baseline, then after each blocking step.
     - *JetSki's speed* (Diego, 15 November 2026: "i find the jetski
       browser really slow to use and load pages", "we need to work on
       speed"; on the M700 a page stuck at 90%). What is known to cost,

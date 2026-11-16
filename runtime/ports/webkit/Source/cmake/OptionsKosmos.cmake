@@ -70,6 +70,11 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_NOTIFICATIONS PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_USER_MESSAGE_HANDLERS PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_SMOOTH_SCROLLING PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_IMAGE_DIFF PRIVATE OFF)
+# **Privacy and Ad Blocking** (`docs/adblock.md`, B1): WebKit's content
+# extensions, Safari's content blocker - lists compiled into a DFA's
+# bytecode, which each web process matches a request against before it is
+# made. Mail on WebKit's W4 holds a message's network pictures with it too.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_CONTENT_EXTENSIONS PRIVATE ON)
 WEBKIT_OPTION_END()
 
 # WebKit's generic run loop, as PlayStation's: no GLib anywhere in the process.

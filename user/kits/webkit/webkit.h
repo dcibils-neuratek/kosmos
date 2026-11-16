@@ -54,6 +54,8 @@ struct webkit_state {
     char title[256];
     char address[2048];
     char going[2048];              /* where it was asked to go, until it starts */
+    unsigned blocked;              /* requests a rule list kept out, this page */
+    unsigned cookies_blocked;      /* loads whose cookies a rule list kept back */
 };
 
 /* What happened to the views together since the last pump. */

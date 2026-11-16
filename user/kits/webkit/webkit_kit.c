@@ -298,6 +298,10 @@ static int v_state(lua_State *L)
     flag(L, 2, "can_forward", st.can_forward);
     lua_pushinteger(L, st.error);
     lua_setfield(L, 2, "error");
+    lua_pushinteger(L, st.blocked);
+    lua_setfield(L, 2, "blocked");
+    lua_pushinteger(L, st.cookies_blocked);
+    lua_setfield(L, 2, "cookies_blocked");
     lua_pushnumber(L, st.progress);
     lua_setfield(L, 2, "progress");
     lua_pushstring(L, st.title);

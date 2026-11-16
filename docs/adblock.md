@@ -147,16 +147,29 @@ What a person can do:
 8. **Clear what trackers already left**: the first time blocking runs,
    every cookie whose site a list blocks is removed, by itself. On the
    M700 today that is 206 of 235. A button does it again later.
-11. **Cookies allowed one site at a time**: a site that needs third
-    parties' cookies - a sign-in spread across domains - is given them,
-    from the shield or from Settings, and every other site still refuses
-    them.
 9. **Mail gets the same lists** (`docs/mailweb.md`): a message's tracking
    pixels are kept out like a page's, from the same compiled file.
 10. **From the prompt**: `filters` lists the lists and their rules,
     `filters update` fetches them, and `filters test URL [PAGE]` says
     whether that address would be blocked on that page, and by which
     rule.
+11. **Cookies allowed one site at a time**: a site that needs third
+    parties' cookies - a sign-in spread across domains - is given them,
+    from the shield or from Settings, and every other site still refuses
+    them.
+12. **A preferences panel, and cookies managed** (Diego, 16 November:
+    "Make sure add a preferences panel for privacy and ad blocking in jet
+    ski so the user can change settings, manage cookies, etc"). JetSki's
+    Settings has a group of its own, *Privacy and Ad Blocking*: blocking on
+    and off, third-party cookies, the lists, Acceptable Ads, your own
+    filters, allowed sites, cookies allowed, and *When JetSki closes*
+    (keep cookies, or clear all but the sites kept). *Manage cookies*
+    lists every site JetSki keeps cookies for - how many, how large, when
+    last used, a site you visited or a tracker that came along - opens a
+    site to its cookies by name, domain and expiry (never their values),
+    removes one cookie, a site's, the trackers', or all, and stars a site
+    to keep. Every change applies to open tabs at once. Drawn in
+    `docs/adblock.html`, *Settings* and *Manage cookies*.
 
 Not in it, deliberately:
 - **Acceptable Ads on by default.** It is eyeo's business, a paid
@@ -274,10 +287,12 @@ M700: requests made, bytes, cookies kept, load time.
 - **B1. The engine on.** `ENABLE_CONTENT_EXTENSIONS` in our port. The
   WebKit Kit takes a list of rule files and applies them to every page it
   makes. Check that the compiled file maps into a web process on Kosmos.
-  Test: `x86-sites` serves a page whose `ad.js` and `track.gif` a
+  Test: `x86-jetski` serves a page whose `ad.js` and `track.gif` a
   hand-written list blocks; the server must never be asked for them, and
   the page must still paint. Control: the list off, and both are asked
-  for.
+  for. **Built in 0.11.442** (`testing.md` 18.838): the compiled list is
+  copied into a region the web process maps read only, and WebKit patch
+  0033 tells the application what a list kept out.
 - **B2. The converter.** `filters.lua`: Adblock Plus syntax into WebKit's
   JSON, request filters, exceptions, options, element hiding. Host tests
   against filters taken from EasyList's own syntax and their expected
@@ -289,8 +304,17 @@ M700: requests made, bytes, cookies kept, load time.
   `Always`, and it is.
 - **B4. The shield.** Counts from `contentRuleListNotification`, the
   pop-over, *Off for this site* with its allowlist compiled alone.
-- **B5. Settings, *Blocking*.** Lists, own filters, allowed sites, *Clear
-  tracker cookies*.
+- **B5. The preferences panel** (feature 12): Settings' *Privacy and Ad
+  Blocking* - blocking, third-party cookies, lists, own filters, allowed
+  sites, cookies allowed, *When JetSki closes* - and *Manage cookies*,
+  read and removed through WebKit's cookie store
+  (`WKHTTPCookieStoreGetHTTPCookies`, `DeleteHTTPCookie`), so the network
+  process that owns `cookies.db` is the only thing that writes it. The
+  settings are a file in `/Home/Settings/Filters`, read by the WebKit Kit
+  for every view, and the same file Mail reads. Test: a setting changed
+  in the panel, read back by the kit; a site's cookies listed, one
+  removed, and gone from `cookies.db`. Control: the removal skipped, and
+  the cookie is still there.
 - **B6. Lists fetched and kept current**, in the background, when each
   one's `Expires` says; `filters update` at the prompt.
 - **B7. Element hiding emulation and snippets**, through WebKit's user

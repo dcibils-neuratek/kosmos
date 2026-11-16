@@ -1,0 +1,33 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+What a content rule list blocked, told to the application through the C
+API (Kosmos docs/adblock.md, step B1). WebKit's web process tells the UI
+process of every request a list blocked and every load whose cookies it
+kept back, but the C API's navigation client passes on only `notify`
+rules' names, so a C application cannot count what was kept out. On
+Kosmos those two are passed on as well, under names no rule can give
+itself: `kosmos:blocked` and `kosmos:cookies`. JetSki's shield counts them.
+
+diff -ruN a/Source/WebKit/UIProcess/API/C/WKPage.cpp b/Source/WebKit/UIProcess/API/C/WKPage.cpp
+--- a/Source/WebKit/UIProcess/API/C/WKPage.cpp	2026-11-16 08:03:07.195449598 -0300
++++ b/Source/WebKit/UIProcess/API/C/WKPage.cpp	2026-11-16 08:03:07.211952123 -0300
+@@ -2515,6 +2515,19 @@
+                     apiListIdentifiers.append(API::String::create(listIdentifier));
+                     apiNotifications.append(API::String::create(notification));
+                 }
++#if OS(KOSMOS)
++                // Kosmos: what a list blocked is said too, as two names no
++                // `notify` rule can have - Privacy and Ad Blocking counts
++                // them on JetSki's shield (Kosmos docs/adblock.md).
++                if (result.blockedLoad) {
++                    apiListIdentifiers.append(API::String::create(listIdentifier));
++                    apiNotifications.append(API::String::create("kosmos:blocked"_s));
++                }
++                if (result.blockedCookies) {
++                    apiListIdentifiers.append(API::String::create(listIdentifier));
++                    apiNotifications.append(API::String::create("kosmos:cookies"_s));
++                }
++#endif
+             }
+ 
+             if (!apiNotifications.isEmpty())

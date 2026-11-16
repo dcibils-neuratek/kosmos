@@ -24,6 +24,12 @@ WEBKIT_ADD_TARGET_CXX_FLAGS(WebKit -Wno-unused-lambda-capture)
 list(APPEND WebKit_SOURCES
     NetworkProcess/NetworkDataTaskDataURL.cpp
 
+    # Privacy and Ad Blocking (`docs/adblock.md`, B1): a compiled rule
+    # list's bytes copied into a region for the web processes, and no
+    # default store.
+    NetworkProcess/cache/kosmos/NetworkCacheDataKosmos.cpp
+    UIProcess/API/kosmos/APIContentRuleListStoreKosmos.cpp
+
     NetworkProcess/Classifier/WebResourceLoadStatisticsStore.cpp
 
     Platform/classifier/ResourceLoadStatisticsClassifier.cpp

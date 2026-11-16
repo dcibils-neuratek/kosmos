@@ -237,6 +237,22 @@ code { font-family: var(--mono); font-size: 13px; }
 .pair td:last-child { text-align: right; font-weight: 600; }
 .pair .est { color: var(--muted); font-weight: 400; font-size: 12px; }
 /* Settings, Blocking. */
+.cookies .row { gap: 10px; }
+.cookies .head { min-height: 32px; color: var(--w-dim); font-size: 12px; font-weight: 600; }
+.cookies .c-site { flex: 1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cookies .c-n, .cookies .c-kb { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.cookies .c-when { width: 90px; color: var(--w-dim); font-size: 12.5px; }
+.cookies .c-x { width: 52px; text-align: right; color: var(--w-dim); }
+.cookies .open { background: #f4f7fb; }
+.cookies .detail { display: block; padding: 6px 14px 12px 28px; background: #f4f7fb; }
+.cookies .ctag { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #eef0f3; color: var(--w-dim); }
+.cookies .ctag.trk { background: #fdecea; color: #b03a2e; }
+.cookies .ctag.ok { background: #e7f6ec; color: #23824a; }
+.cookies .keep { color: #c3c8cf; margin-right: 6px; }
+.cookies .keep.on { color: #f0a500; }
+table.ck { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+table.ck th { text-align: left; color: var(--w-dim); font-weight: 600; padding: 3px 10px 3px 0; }
+table.ck td { padding: 3px 10px 3px 0; border-top: 1px solid var(--w-line); }
 .lists .row .cnt { color: var(--w-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .own { font: 12px/1.6 var(--mono); background: #fff; border: 1px solid var(--w-line); border-radius: 8px; padding: 8px 12px; color: #2a3240; white-space: pre; overflow-x: auto; }
 .chip2 { display: inline-flex; align-items: center; gap: 6px; background: #eef0f3; border-radius: 6px; padding: 2px 8px; font-size: 12px; margin: 2px 4px 2px 0; }
@@ -332,6 +348,8 @@ code { font-family: var(--mono); font-size: 13px; }
           <div class="row"><div class="label"><b>Block adverts and trackers</b><span>In every tab, and in Mail's messages</span></div><span class="sw on"></span></div>
           <div class="row"><div class="label"><b>Third-party cookies</b><span>Set by a site other than the one you are on - mostly advertising</span></div><span class="drop">Refused &#9662;</span></div>
           <div class="row"><div class="label"><b>Cookies trackers left</b><span>Cleared the first time blocking ran: 206 cookies. Again now and then</span></div><span class="btn q2" style="margin:0">Clear</span></div>
+          <div class="row"><div class="label"><b>Cookies and site data</b><span>235 cookies from 98 sites, 412 KB</span></div><a class="btn q2" style="margin:0;text-decoration:none" href="#cookies">Manage&hellip;</a></div>
+          <div class="row"><div class="label"><b>When JetSki closes</b><span>What happens to cookies of sites you did not keep</span></div><span class="drop">Keep them &#9662;</span></div>
         </div>
         <div class="grouplabel">Lists</div>
         <div class="group lists">
@@ -363,6 +381,48 @@ news.example##.newsletter-popup</div>
   </div>
 </div></div>
 <p class="cap">A group of Settings' own, beside <i>Cookies and site data</i> (which the third-party cookie row moves out of). The rule counts are what each list gives after conversion; the numbers here are illustrative and are replaced by B2's. Every change applies to open tabs at once.</p>
+
+<h2 id="cookies">Manage cookies</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Settings<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="host">Settings</span><span class="path" style="margin-left:8px">about:settings#cookies</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="set">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+      <a href="#settings" style="color:var(--w-accent);text-decoration:none">&#8249; Privacy and Ad Blocking</a>
+      <span style="flex:1"></span>
+      <span class="drop" style="min-width:220px">&#128269; Search sites</span>
+      <span class="drop">Most cookies &#9662;</span>
+    </div>
+    <div class="group cookies">
+      <div class="row head"><span class="c-site">Site</span><span class="c-n">Cookies</span><span class="c-kb">Size</span><span class="c-when">Last used</span><span class="c-x"></span></div>
+      <div class="row"><span class="c-site"><b>theverge.com</b><span class="ctag own">sites you visit</span></span><span class="c-n">29</span><span class="c-kb">38 KB</span><span class="c-when">today</span><span class="c-x"><span class="keep on" title="Kept when JetSki closes">&#9733;</span> &times;</span></div>
+      <div class="row"><span class="c-site"><b>doubleclick.net</b><span class="ctag trk">tracker &middot; on 6 sites</span></span><span class="c-n">14</span><span class="c-kb">9 KB</span><span class="c-when">today</span><span class="c-x"><span class="keep">&#9734;</span> &times;</span></div>
+      <div class="row open"><span class="c-site"><b>google.com</b><span class="ctag own">sites you visit</span></span><span class="c-n">11</span><span class="c-kb">22 KB</span><span class="c-when">today</span><span class="c-x"><span class="keep on">&#9733;</span> &times;</span></div>
+      <div class="row detail"><div>
+        <table class="ck">
+          <tr><th>Name</th><th>For</th><th>Expires</th><th>Sent to</th><th></th></tr>
+          <tr><td>NID</td><td>.google.com</td><td>in 6 months</td><td>any connection</td><td>&times;</td></tr>
+          <tr><td>SOCS</td><td>.google.com</td><td>in 13 months</td><td>secure only</td><td>&times;</td></tr>
+          <tr><td>AEC</td><td>.google.com</td><td>in 6 months</td><td>secure only &middot; not to scripts</td><td>&times;</td></tr>
+          <tr><td colspan="5" style="color:var(--w-dim)">and 8 more</td></tr>
+        </table>
+        <div style="color:var(--w-dim);font-size:12px;margin-top:6px">A cookie's value is not shown: it is the site's, and a sign-in's often works as a password.</div>
+      </div></div>
+      <div class="row"><span class="c-site"><b>pubmatic.com</b><span class="ctag trk">tracker &middot; on 4 sites</span></span><span class="c-n">8</span><span class="c-kb">3 KB</span><span class="c-when">yesterday</span><span class="c-x"><span class="keep">&#9734;</span> &times;</span></div>
+      <div class="row"><span class="c-site"><b>mail.example</b><span class="ctag own">sites you visit</span><span class="ctag ok">cross-site allowed</span></span><span class="c-n">6</span><span class="c-kb">4 KB</span><span class="c-when">3 days ago</span><span class="c-x"><span class="keep on">&#9733;</span> &times;</span></div>
+      <div class="row" style="color:var(--w-dim)"><span class="c-site">and 93 more sites</span></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <span class="btn q2" style="margin:0">Remove trackers' cookies</span>
+      <span class="btn q2" style="margin:0">Remove all but kept</span>
+      <span style="flex:1"></span>
+      <span class="btn" style="background:#d9534f">Remove all&hellip;</span>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Opened from <i>Cookies and site data, Manage&hellip;</i>. Every site JetSki keeps cookies for, read from <code>cookies.db</code> through WebKit's cookie store: how many, how large, when last sent, and whether it is a site you visited or one that only ever came along inside other sites' pages - a tracker, named from EasyPrivacy, with how many sites it was seen on. A site opens to its cookies, by name, domain, expiry and how they are sent; never their values. &times; removes one cookie or a whole site's; the star keeps a site's cookies when <i>When JetSki closes</i> says to clear the rest (signed in to Mail, say, and nothing else remembered). <b>Remove trackers' cookies</b> is the same as the row in Privacy and Ad Blocking. Removal applies to open tabs at once and asks first only for <i>Remove all</i>. The sites and numbers are examples, shaped like The Verge's load on the M700.</p>
 
 <h2>At the prompt</h2>
 <div class="term"><span class="p">/Home $</span> filters
