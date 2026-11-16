@@ -42,7 +42,7 @@ sys.path.insert(0, HERE)
 import run_x86                                              # noqa: E402
 import scratch                                              # noqa: E402
 
-CHECKS = 8
+CHECKS = 10
 SECTOR = 512
 SECTORS = 262144                        # 128 MB
 BASIC_DATA = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"     # Microsoft basic data
@@ -134,11 +134,17 @@ def main():
              'local c = r:read(0, 1, 1) print("outside:", c and #c) r:close()]])'
              % (HOME[0] + 64))
 
+    # Before any of it, as Diego's first boot on the M700 is: no partition
+    # named, and `disks` lists what is on the drive, so the one to name is
+    # read from the drive rather than copied out of Windows.
+    zero = run_x86.boot(image, None, 150.0, typed=("disks",),
+                        extra=extra[:4], after="ahci: serving")
+
     # Formatted on the first boot, while `/Home` is in memory because there
     # was nothing on the disk when the machine started; on it from the
     # second, which saves; and the third reads the file back.
     one = run_x86.boot(image, None, 150.0,
-                       typed=("diskinfo", "mkfs --yes", "diskinfo", guard,
+                       typed=("disks", "diskinfo", "mkfs --yes", "diskinfo", guard,
                               "/Temporary/guard.lua"),
                        extra=extra, after="ahci: serving")
     two = run_x86.boot(image, None, 150.0,
@@ -148,9 +154,27 @@ def main():
                          typed=("diskinfo", "cat /Home/notes.txt"),
                          extra=extra, after="ahci: serving")
 
-    if one is None or two is None or three is None:
+    if one is None or two is None or three is None or zero is None:
         check(False, "the machine would not boot with /Home named on a SATA disk")
-        one, two, three = one or "", two or "", three or ""
+        zero, one, two, three = zero or "", one or "", two or "", three or ""
+
+    def listed(out):
+        return "\n    ".join(l.strip() for l in out.splitlines()
+                              if re.match(r"\s*(disk \d|\d+\. |GUID )", l))
+
+    lines = [l.strip() for l in zero.splitlines()]
+    home_line = next((i for i, l in enumerate(lines) if l.startswith("2. ")), None)
+    check(any(l.startswith("1. ") and "Microsoft basic data" in l and "holds NTFS" in l
+              for l in lines)
+          and home_line is not None and "holds nothing - empty" in lines[home_line]
+          and home_line + 1 < len(lines)
+          and lines[home_line + 1] == "GUID " + HOME_GUID,
+          "`disks` did not list Windows' partition as NTFS and the one Windows "
+          "left as empty, with its GUID, on a boot with no /Home named:\n    %s"
+          % listed(zero))
+    check(re.search(r"^\s*2\. .*holds Kosmos, in use", one, re.M) is not None,
+          "`disks` did not say the partition /Home is on is in use, once named:\n    %s"
+          % listed(one))
 
     where = ("on the Kosmos partition on SATA disk 0, blocks %d to %d" % HOME)
     sectors = "disk: %d sectors of 512 bytes" % (HOME[1] - HOME[0] + 1)
@@ -202,7 +226,8 @@ def main():
     if fails:
         kept = os.path.join("build", "gate", "sata-home.log")
         with open(kept, "w") as f:
-            f.write(one + "\n==== the second boot ====\n" + two
+            f.write(zero + "\n==== the first boot ====\n" + one
+                    + "\n==== the second boot ====\n" + two
                     + "\n==== the third boot ====\n" + three)
         print("FAIL: %d of %d checks on /Home on a SATA disk (the boots in %s):"
               % (len(fails), CHECKS, kept))
@@ -213,7 +238,8 @@ def main():
                 print("  | " + l.strip()[:200])
         return 1
 
-    print("PASS: %d checks on /Home on a SATA disk (the partition Windows made found "
+    print("PASS: %d checks on /Home on a SATA disk (`disks` listing the partitions, "
+          "the empty one by its GUID; the partition Windows made found "
           "by its GUID on SATA disk 0; left unformatted until `mkfs --yes`; formatted "
           "and a file saved; a read inside it refused on /Devices/disks; the file "
           "there on the next boot; every byte outside it unchanged)" % CHECKS)

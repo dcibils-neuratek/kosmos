@@ -34372,3 +34372,13 @@ block written where it is, with no allocation and no extents to store.
 
 Control: `kfs_overwrite` writing copy-on-write instead leaves the file in
 63 pieces, and the check fails.
+
+**`disks`, so the partition is read from the drive** (0.11.440). Diego
+could not copy a GUID out of Windows. `disks` lists each SATA disk's
+partitions, with each one's name, size, type, what its first block holds
+(NTFS, kfs, nothing) and its own GUID. The GPT reading moved out of
+`sticks` into `gpt.lua`, which both use. `x86-satahome`, 10 checks now:
+- a boot with no `/Home` named lists Windows' partition as NTFS and the
+  empty one, with its GUID;
+- once named, that partition shows as in use.
+x86-usb-1 and -2 pass on `sticks` through the library.
