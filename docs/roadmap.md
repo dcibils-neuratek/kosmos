@@ -10540,6 +10540,21 @@ the applications make the system useful, and is not pulled forward.
       all (`adblock.html`, *Manage cookies*). **S4** the Privacy and Ad
       Blocking group, which is B5. Downloads' row comes with Downloads,
       and the favorites bar with favorites.
+      **And two asked on 16 November, to be drawn in `docs/webkit.html`
+      before either is built.** (1) Diego: "we need to show how many ads
+      are blocked, and cookies, and else somewhere in jetski" - the shield
+      (`adblock.md` B4) with this page's counts, and **totals across all
+      browsing** beside them and in Settings' Privacy group: adverts and
+      trackers kept out, cookies refused, bytes not downloaded, since
+      JetSki was first used, kept in `/Home/Settings/Filters`. (2) "its
+      lacking a ssl certificate and safe page indicator like we did with
+      the old browser": the old browser's words in the address field -
+      Secure, Not encrypted, Not secure, This machine, and JetSki for its
+      own pages - a panel with the certificate (to whom, by whom, until
+      when), and a page for one refused with *Open anyway* for that tab
+      (`browser.lua`, `how_came`, the refused page). First: what WebKit's
+      network process does with a bad certificate on Kosmos today. Test:
+      a self-signed server refused; control, checking off, and it loads.
     - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
       the M700, killed its page's process and JetSki showed nothing - the
       fault was in the system's log, read over telnet. Diego: "why dont we
@@ -10712,7 +10727,24 @@ the applications make the system useful, and is not pulled forward.
       loads the same twenty for a picture and a time beside each. The
       results are kept by version in `bench/top20/`, and a page shows a
       run beside the one before. First run before blocking, as the
-      baseline, then after each blocking step.
+      baseline, then after each blocking step. **Five seconds is the
+      standard** (Diego, 16 November: "every website that we load can't
+      take more than 5 seconds. That's a standard. If it takes more than 5
+      seconds, the browser is not behaving as expected"): a site not
+      loaded within 5 s fails the run, named, and is a fault of JetSki's
+      to find, never a slow site to note. 0.11.444 broke it on 14 of 20 -
+      every launch read its compiled blocking lists back through the
+      Storage Kit a kilobyte a message (`testing.md` 18.841); fixed, and
+      The New York Times (27.5 s), eBay (11.4 s) and Reddit (11.3 s) are
+      next whatever that fix leaves. **The list changed the same day**
+      (Diego: "a lot of the wbsites require login to show all the real
+      content", "we will need to find other websites like
+      news.google.com", one kept only if it "shows a lot of content
+      without login"): Facebook, Instagram, LinkedIn, Microsoft 365,
+      Instructure Canvas, ChatGPT and X replaced by news.google.com,
+      cnn.com, bbc.com, theguardian.com, weather.com, imdb.com and
+      apple.com, and infobae.com, elobservador.com.uy and elpais.com.uy
+      added - 23 sites, every one held to the five seconds.
     - *JetSki's speed* (Diego, 15 November 2026: "i find the jetski
       browser really slow to use and load pages", "we need to work on
       speed"; on the M700 a page stuck at 90%). What is known to cost,

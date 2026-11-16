@@ -3751,3 +3751,28 @@ switch, and the test failed.
 compile the first time JetSki starts there, in the background, and 3.6 s
 to be found every time after.
 
+## 16 November 2026 - Five seconds
+
+**In short.** Diego set a standard: a website loads in JetSki within five
+seconds, on any computer, or the browser is at fault. The build from this
+morning broke it on most of the top 20, and the reason was that every
+program's files on `/Home` were being read a kilobyte at a time. They are
+read a megabyte at a time now.
+
+**What happened.** Every time JetSki starts, it reads back its compiled
+blocking lists - 67 MB - and holds the first page until they are in. That
+took 3.8 seconds on the M700, so even Google took five.
+
+**Why it was slow.** Programs ported to Kosmos, WebKit among them, reach
+their files through the Storage Kit, and for `/Home` it asked the disk
+server for one kilobyte per message. The disk server could always fill a
+shared piece of memory of any size in one request; this path had simply
+never used it. Now a large read or write gets a region of its own, a
+megabyte a request.
+
+**What you see.** The lists are in after a third of a second instead of
+four, and 16 of the 20 sites load within five seconds. The New York
+Times, eBay, Canvas and Reddit still do not, and they are next. Every
+program on Kosmos that was ported from elsewhere reads and writes large
+files faster too, not only JetSki.
+

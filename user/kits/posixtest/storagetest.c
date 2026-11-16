@@ -25,6 +25,9 @@
 #define OWN_SOURCE OWN_FOLDER "/storagetest.lua"
 
 #define BIG 3000                        /* three of `/Home`'s messages */
+/* Past three of the kit's regions, a megabyte each, with a tail: what
+ * WebKit's compiled blocking lists are read through (`testing.md` 18.841). */
+#define HUGE ((size_t)2 * 1024 * 1024 + 512 * 1024 + 123)
 
 static unsigned char pattern(size_t i)
 {
@@ -129,6 +132,45 @@ static int files_in(const char *dir, char *out, unsigned long size)
 
     if (storage_read(path, BIG, got, sizeof got) != 0) {
         SAY("storage: %s: a read at the end was not 0", dir);
+    }
+
+    /* Megabytes each way, through regions, and read again from an offset
+     * that is no region's edge. */
+    {
+        unsigned char *h = malloc(HUGE), *hb = malloc(HUGE);
+        size_t at = 1024 * 1024 + 7, part = 1200 * 1024;
+
+        if (h == NULL || hb == NULL) {
+            SAY("storage: no memory for %s's megabytes", dir);
+        }
+
+        for (i = 0; i < HUGE; i++) {
+            h[i] = pattern(i * 13u + 1u);
+        }
+
+        if ((r = storage_write(path, 0, h, HUGE, STORAGE_CUT)) != (long)HUGE) {
+            SAY("storage: %s: writing %zu bytes said %ld", dir, HUGE, r);
+        }
+
+        memset(hb, 0, HUGE);
+
+        if ((r = storage_read(path, 0, hb, HUGE)) != (long)HUGE || memcmp(h, hb, HUGE) != 0) {
+            SAY("storage: %s: %zu bytes read back as %ld, or not as written", dir, HUGE, r);
+        }
+
+        memset(hb, 0, HUGE);
+
+        if ((r = storage_read(path, at, hb, part)) != (long)part || memcmp(h + at, hb, part) != 0) {
+            SAY("storage: %s: %zu bytes at %zu read as %ld, or not as written", dir, part, at, r);
+        }
+
+        free(h);
+        free(hb);
+
+        /* What the checks below cut and grow. */
+        if ((r = storage_write(path, 0, big, BIG, STORAGE_CUT)) != BIG) {
+            SAY("storage: %s: writing %d bytes again said %ld", dir, BIG, r);
+        }
     }
 
     /* Shorter, and longer again with nothing in the gap but zeros. */

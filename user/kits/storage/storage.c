@@ -7,9 +7,11 @@
  * Three protocols, and the differences are the servers', not this file's:
  *
  *   `/Home`      diskproto, through `diskask` - the one C door to it. Read
- *                and written a kilobyte a message at an offset; `WRITE_AT`
- *                with `DISK_CREATE` and `DISK_CUT` is POSIX's write and
- *                truncate. Names page by index.
+ *                and written at an offset: a few kilobytes in the message,
+ *                and more through a region of the call's own, a megabyte a
+ *                request (`PIECE_BYTES`); `WRITE_AT` with `DISK_CREATE` and
+ *                `DISK_CUT` is POSIX's write and truncate. Names page by
+ *                index.
  *   `/Temporary` ramproto. A write always makes the file, so "not there"
  *                is asked first when it must not; `RAM_KEEP` keeps what is
  *                there, `RAM_CUT` ends it. Four names a page.
@@ -309,6 +311,100 @@ static int disk_stat(const struct where *w, struct storage_stat *out)
     return disk_error(e);
 }
 
+/*
+ * **A read or a write of more than a few kilobytes goes through a region**
+ * (16 November 2026). Every `/Home` read here was a kilobyte a message, so
+ * WebKit finding its three compiled blocking lists - 67 MB - was some
+ * 68,000 round trips to `diskfs` and 3.8 s on the M700 before JetSki's
+ * first page could load (`testing.md` 18.841), where `diskfs` reads a
+ * region of any size in one request, as `smbd` and the LLM server ask it.
+ *
+ * The region is the call's own - made, used and given back inside it -
+ * because nothing here is shared between calls and any thread may be in
+ * this file at once (above); one shared region would need a lock and would
+ * put every thread's reads behind each other's. A megabyte a request at
+ * most, so a call of any size holds a bounded region.
+ */
+#define PIECE_BYTES  (1024u * 1024u)
+#define PIECE_LEAST  (4u * DISK_DATA_MAX)  /* below it, messages are cheaper */
+
+struct piece {
+    long cap;
+    uint8_t *at;
+    unsigned long pages;
+    size_t room;
+};
+
+/* A region for `bytes`, a megabyte at most; false when none could be had,
+ * and the caller goes on a kilobyte a message as before. */
+static bool piece_open(struct piece *p, size_t bytes)
+{
+    long at;
+
+    p->room = bytes < PIECE_BYTES ? bytes : PIECE_BYTES;
+    p->pages = (p->room + 4095u) / 4096u;
+    p->cap = kosmos_mem_create(p->pages);
+
+    if (p->cap < 0) {
+        return false;
+    }
+
+    at = kosmos_mem_map(p->cap);
+
+    if (at < 0) {
+        kosmos_cap_drop(p->cap);
+        return false;
+    }
+
+    p->at = (uint8_t *)(uintptr_t)at;
+    return true;
+}
+
+static void piece_close(struct piece *p)
+{
+    kosmos_share_unmap((unsigned long)(uintptr_t)p->at, p->pages);
+    kosmos_cap_drop(p->cap);
+}
+
+/* `bytes` from `offset`, a megabyte a request into a region: how many were
+ * read, an error, or STORAGE_ERR_FULL with nothing done when there was no
+ * region to be had. */
+static long disk_read_pieces(struct diskask *d, const struct where *w, uint64_t offset,
+                             uint8_t *buf, size_t bytes)
+{
+    struct piece p;
+    size_t got = 0;
+    long r = 0;
+
+    if (!piece_open(&p, bytes)) {
+        return STORAGE_ERR_FULL;
+    }
+
+    while (got < bytes) {
+        size_t want = bytes - got > p.room ? p.room : bytes - got;
+        uint32_t e = diskask(d, DISK_OP_READ, w->path, DISK_REGION, offset + got, want,
+                             p.cap, NULL, 0);
+        size_t n;
+
+        if (e != DISK_OK) {
+            r = disk_error(e);
+            break;
+        }
+
+        n = diskask_said(d)->bytes;
+        n = n < want ? n : want;
+        memcpy(buf + got, p.at, n);
+        got += n;
+
+        if (n < want) {
+            break;                      /* the end of the file */
+        }
+    }
+
+    piece_close(&p);
+    return got > 0 ? (long)got : r;
+}
+
 static long disk_read(const struct where *w, uint64_t offset, uint8_t *buf, size_t bytes)
 {
     struct diskask *d = disk_door(w);
@@ -317,6 +413,17 @@ static long disk_read(const struct where *w, uint64_t offset, uint8_t *buf, size
 
     if (d == NULL) {
         return STORAGE_ERR_FULL;
+    }
+
+    if (bytes >= PIECE_LEAST) {
+        r = disk_read_pieces(d, w, offset, buf, bytes);
+
+        if (r != STORAGE_ERR_FULL) {
+            free(d);
+            return r;
+        }
+
+        r = 0;
     }
 
     while (got < bytes) {
@@ -347,6 +454,8 @@ static long disk_write(const struct where *w, uint64_t offset, const uint8_t *bu
                        size_t bytes, unsigned flags)
 {
     struct diskask *d = disk_door(w);
+    struct piece p = { -1, NULL, 0, 0 };
+    bool pieces = false;
     size_t done = 0;
     long r = 0;
 
@@ -354,8 +463,13 @@ static long disk_write(const struct where *w, uint64_t offset, const uint8_t *bu
         return STORAGE_ERR_FULL;
     }
 
+    if (buf != NULL && bytes >= PIECE_LEAST && piece_open(&p, bytes)) {
+        pieces = true;
+    }
+
     do {
-        size_t n = bytes - done > DISK_DATA_MAX ? DISK_DATA_MAX : bytes - done;
+        size_t most = pieces ? p.room : DISK_DATA_MAX;
+        size_t n = bytes - done > most ? most : bytes - done;
         uint32_t f = 0;
         uint32_t e;
 
@@ -371,8 +485,14 @@ static long disk_write(const struct where *w, uint64_t offset, const uint8_t *bu
             f |= DISK_OVER;
         }
 
-        e = diskask(d, DISK_OP_WRITE_AT, w->path, f, offset + done, n, -1,
-                    buf != NULL ? buf + done : NULL, (uint32_t)n);
+        if (pieces) {
+            memcpy(p.at, buf + done, n);
+            e = diskask(d, DISK_OP_WRITE_AT, w->path, f | DISK_REGION, offset + done, n,
+                        p.cap, NULL, 0);
+        } else {
+            e = diskask(d, DISK_OP_WRITE_AT, w->path, f, offset + done, n, -1,
+                        buf != NULL ? buf + done : NULL, (uint32_t)n);
+        }
 
         if (e != DISK_OK) {
             r = disk_error(e);
@@ -381,6 +501,10 @@ static long disk_write(const struct where *w, uint64_t offset, const uint8_t *bu
 
         done += n;
     } while (done < bytes);
+
+    if (pieces) {
+        piece_close(&p);
+    }
 
     free(d);
     return r < 0 && done == 0 ? r : (long)done;

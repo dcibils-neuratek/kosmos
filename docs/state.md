@@ -6,6 +6,20 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: the Storage Kit through a region (0.11.445, not pushed)
+
+- **Five seconds a site is the standard** (Diego). 0.11.444 broke it on 14
+  of the top 20: every launch read its blocking lists through the Storage
+  Kit a kilobyte a message. Now a region, a megabyte a request: the lists
+  in 355 ms, not 3.8 s; 16 of 20 within five seconds (18.841).
+- Over still: The New York Times 17.1 s, eBay 5.6, Canvas 5.3, Reddit 5.1.
+- The benchmark is 23 sites now, every one with content without signing
+  in; `top20.py` fails a site over 5 s.
+
+**Next** (Diego: "yes do the padlock and shield next"): the padlock and
+the shield, with blocking's totals, drawn in `docs/webkit.html` first;
+then Settings S2, Downloads, B3. And the four sites over five seconds.
+
 ## 16 November: JetSki Settings, S1 (0.11.444, not pushed)
 
 - **S1 built** (`testing.md` 18.840): `about:settings`, by the menu button

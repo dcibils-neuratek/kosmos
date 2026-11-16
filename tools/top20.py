@@ -3,7 +3,8 @@
 """**The top 20: JetSki's benchmark** (`roadmap.md`; Diego, 16 November
 2026: "This list is our benchmark for our Browser").
 
-The twenty most visited sites in the United States, each opened in a fresh
+Twenty-three sites that show a lot of content without signing in - most of
+the twenty most visited in the United States, and news - each opened in a fresh
 JetSki on a Kosmos machine, and for each:
 
 - **how it ended**: loaded, could not load, its page's process stopped, or
@@ -19,6 +20,12 @@ JetSki on a Kosmos machine, and for each:
 Beside each, this Mac's Chrome, headless at the same size: a picture and a
 time (a whole process's, start to screenshot, so a second or so above the
 page's own).
+
+**Five seconds is the standard** (Diego, 16 November 2026: "every
+website that we load can't take more than 5 seconds. That's a standard. If
+it takes more than 5 seconds, the browser is not behaving as expected"). A
+site that has not loaded within `STANDARD` seconds is a failure of the
+browser's, named at the end, and the run exits 1 - not a site being slow.
 
 Not in the gate: the sites are live, and change by the hour. The results
 are kept by version in `bench/top20/<version>-<machine>.json`, and
@@ -48,28 +55,39 @@ sys.path.insert(0, HERE)
 
 import kosmos_telnet                                         # noqa: E402
 
-# Diego's list, 16 November 2026, in its order.
+# The most a site may take, from `jetski: loading` to `jetski: loaded`.
+STANDARD = 5.0
+
+# Diego's list, 16 November 2026, in its order - and the same day, the
+# seven that show a sign-in page rather than their content replaced: "a
+# lot of the wbsites require login to show all the real content", "we will
+# need to find other websites like news.google.com", a site kept only if it
+# "shows a lot of content without login". Then infobae.com,
+# elobservador.com.uy and elpais.com.uy added.
 SITES = [
     (1, "Google", "google.com"),
     (2, "YouTube", "youtube.com"),
-    (3, "Facebook", "facebook.com"),
+    (3, "Google News", "news.google.com"),
     (4, "Amazon", "amazon.com"),
     (5, "Reddit", "reddit.com"),
     (6, "Yahoo!", "yahoo.com"),
     (7, "Microsoft Bing", "bing.com"),
-    (8, "ChatGPT", "chatgpt.com"),
-    (9, "Instagram", "instagram.com"),
-    (10, "X", "x.com"),
-    (11, "Microsoft 365", "cloud.microsoft"),
+    (8, "IMDb", "imdb.com"),
+    (9, "CNN", "cnn.com"),
+    (10, "Apple", "apple.com"),
+    (11, "The Guardian", "theguardian.com"),
     (12, "Wikipedia", "wikipedia.org"),
-    (13, "LinkedIn", "linkedin.com"),
+    (13, "BBC", "bbc.com"),
     (14, "ESPN", "espn.com"),
     (15, "Walmart", "walmart.com"),
     (16, "TikTok", "tiktok.com"),
     (17, "eBay", "ebay.com"),
-    (18, "Instructure Canvas", "instructure.com"),
+    (18, "The Weather Channel", "weather.com"),
     (19, "The New York Times", "nytimes.com"),
     (20, "Temu", "temu.com"),
+    (21, "Infobae", "infobae.com"),
+    (22, "El Observador", "elobservador.com.uy"),
+    (23, "El País (Uruguay)", "elpais.com.uy"),
 ]
 
 COOKIES = "/Home/Settings/JetSki/cookies.db"
@@ -316,9 +334,12 @@ def main(argv):
                 if result["chrome_seconds"] is not None:
                     result["chrome_picture"] = shot
             run["sites"].append(result)
-            print(" %-26s %6s  kept out %4d  cookies %3d own, %3d others'"
+            result["within"] = (result["ended"] == "loaded" and result["seconds"] is not None
+                                and result["seconds"] <= STANDARD)
+            print(" %-26s %6s  kept out %4d  cookies %3d own, %3d others'%s"
                   % (result["ended"], "%.1f s" % result["seconds"] if result["seconds"] is not None else "-",
-                     result["kept_out"], result["cookies_own"], result["cookies_others"]), flush=True)
+                     result["kept_out"], result["cookies_own"], result["cookies_others"],
+                     "" if result["within"] else "  OVER %.0f s" % STANDARD), flush=True)
         session.run("kill jetski")
     finally:
         session.close()
@@ -335,6 +356,14 @@ def main(argv):
     loaded = sum(1 for s in run["sites"] if s["ended"] == "loaded")
     print("top20: %d of %d loaded; %s; kept as %s" % (loaded, len(run["sites"]), page,
                                                      os.path.relpath(kept_file, ROOT)))
+    over = [s for s in run["sites"] if not s.get("within")]
+    if over:
+        print("top20: FAIL: %d of %d not loaded within %.0f s: %s"
+              % (len(over), len(run["sites"]), STANDARD,
+                 ", ".join("%s %s" % (s["name"], "%.1f s" % s["seconds"] if s["seconds"] is not None
+                                      else s["ended"]) for s in over)))
+        return 1
+    print("top20: PASS: every site loaded within %.0f s" % STANDARD)
     return 0
 
 

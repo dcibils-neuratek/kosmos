@@ -34632,3 +34632,43 @@ room beside its control and the row grows to hold it.
 Gate: 131 of 131 suites in 699 s (11:38) - over the ten minutes; the
 slowest `x86-cafesa3d-2` at 312 s and `host-llm` at 253 s.
 
+## 18.841 The Storage Kit reads and writes `/Home` through a region - JetSki's lists 3.8 s to 0.36 s (0.11.445)
+
+The top 20 on 0.11.444 broke Diego's standard - a site loaded within five
+seconds - on 14 of 20: Google 0.9 s on 0.11.441 and 5.2 s, Reddit 0.3 and
+11.3, eBay 0.7 and 11.4. The M700's log for Temu said where: `jetski:
+loading` at 794.5 s, the last list "found compiled" at 798.3, the page
+loaded at 800.3 - 3.8 of its 5.7 s were the kit holding the load until its
+blocking lists were in, which every fresh JetSki does.
+
+Finding them is WebKit reading 67 MB of compiled lists, and that was slow
+for a reason older than blocking: the Storage Kit - every ported
+program's file access, WebKit, SQLite, JetSki's cache - read and wrote
+`/Home` a kilobyte a message (`DISK_DATA_MAX`), some 68,000 round trips to
+`diskfs` for the three. `diskfs` has always read a region of any size in
+one request, and `smbd` and the LLM server ask it so. The kit now does
+too, for 4 KB and more: a region of the call's own, a megabyte a request
+at most, made and given back inside the call, since any thread may be in
+the kit at once and a shared one would need a lock.
+
+On the M700, the three lists found compiled: **3795 ms before, 355 ms
+after**. The top 20 again (`bench/top20/0.11.444-m700.json`, the fixed
+build): 16 of 20 within five seconds - Google 1.8 s, Amazon 1.9, Wikipedia
+1.3 - and four over: Reddit 5.1 s, Instructure Canvas 5.3, eBay 5.6, The
+New York Times 17.1.
+
+`x86-loader`: the Storage Kit's checks in `posixtest.elf` gain a file of
+2.5 MB and 123 bytes, written through `/Home` and read back whole and
+from 1 MB + 7 bytes in, from four threads at once as the rest are.
+**Control**: the region's bytes copied one byte off - "2621563 bytes read
+back as 2621563, or not as written".
+
+`tools/top20.py` holds the standard: a site not loaded within 5 s is named
+and the run exits 1. And its list is Diego's of the same day: the seven
+that show a sign-in page replaced by sites that show their content,
+and three news sites added - 23.
+
+Gate: 129 of 130 in 713 s, run beside the top 20 on the M700;
+`x86-desktops` ("the loader's window was never drawn") passed 15 of 15
+alone at once after, in 22 s.
+
