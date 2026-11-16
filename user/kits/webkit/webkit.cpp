@@ -43,6 +43,11 @@
 #include <WebKit/WKString.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKArray.h>
+#include <WebKit/WKAuthenticationChallenge.h>
+#include <WebKit/WKAuthenticationDecisionListener.h>
+#include <WebKit/WKCredential.h>
+#include <WebKit/WKProtectionSpace.h>
+#include <WebKit/WKProtectionSpaceCurl.h>
 #include <WebKit/WKUserContentControllerRef.h>
 #include <WebKit/WKUserContentExtensionStoreRef.h>
 #include <WebKit/WKURLRequest.h>
@@ -117,6 +122,17 @@ struct View {
     char held[2048] { };            // a load waiting for the rule lists
     unsigned blocked = 0;           // what the rule lists kept out of this page
     unsigned cookiesBlocked = 0;
+    // **A certificate refused, or taken anyway** (`docs/padlock.html`):
+    // the server, `host:port`, whose certificate this view takes as it
+    // is, after Open anyway; and while a page is asked for, the server
+    // refused and why -
+    // which becomes `refused` when the page's own load fails for it.
+    char anyway[256] { };
+    char refusedHost[256] { };
+    int refusedError = 0;
+    char refusedReason[256] { };
+    bool refused = false;
+    char refusedAddress[2048] { };
     WKViewRef inspector = nullptr;  // its Web Inspector's view, while docked
     bool toInspector = false;       // input goes to the inspector's page
 
@@ -228,7 +244,93 @@ void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     view->loading = true;
     view->asked = false;
     view->blocked = view->cookiesBlocked = 0;
+    view->refused = false;
+    view->refusedHost[0] = '\0';
     told(view, WEBKIT_STARTED);
+}
+
+// **A URL's server, as `host:port`**, into `into` - the port said even
+// where the URL leaves it out, 443 for https and 80 for http - so a
+// certificate's server and a page's compare as one string. "" for none.
+void serverOf(WKURLRef url, char* into, size_t room)
+{
+    into[0] = '\0';
+    if (!url)
+        return;
+    auto host = adoptWK(WKURLCopyHostName(url));
+    auto scheme = adoptWK(WKURLCopyScheme(url));
+    auto whole = adoptWK(WKURLCopyString(url));
+    char name[256], how[16], text[2048];
+    copy(host.get(), name, sizeof name);
+    copy(scheme.get(), how, sizeof how);
+    copy(whole.get(), text, sizeof text);
+    if (!name[0])
+        return;
+    // The port, if the address says one: after the host, before the path.
+    long port = !strcmp(how, "https") ? 443 : 80;
+    const char* at = strstr(text, "://");
+    if (at) {
+        at += 3;
+        const char* end = at + strcspn(at, "/?#");
+        // After an IPv6 address's bracket, whose own colons are not one.
+        const char* from = at;
+        for (const char* c = at; c < end; c++)
+            if (*c == ']')
+                from = c;
+        const char* colon = nullptr;
+        for (const char* c = from; c < end; c++)
+            if (*c == ':')
+                colon = c;
+        if (colon)
+            port = strtol(colon + 1, nullptr, 10);
+    }
+    snprintf(into, room, "%s:%ld", name, port);
+}
+
+/*
+ * **A certificate that did not check out** (`docs/padlock.html`). curl
+ * refused it, and WebKit's network process asks the page's owner whether
+ * to go on: the host this view opens anyway is let through - a credential
+ * of no account, which is how the curl port is told to load again without
+ * checking (`NetworkDataTaskCurl::restartWithCredential`) - and any other is
+ * left to WebKit, which refuses it, the reason kept for the page JetSki
+ * shows instead. A challenge of another kind - a password - is WebKit's as
+ * it was before the kit answered any.
+ */
+void challenged(WKPageRef, WKAuthenticationChallengeRef challenge, const void* info)
+{
+    auto* view = viewOf(info);
+    auto space = WKAuthenticationChallengeGetProtectionSpace(challenge);
+    auto listener = WKAuthenticationChallengeGetDecisionListener(challenge);
+
+    if (WKProtectionSpaceGetAuthenticationScheme(space) != kWKProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested) {
+        WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(listener);
+        return;
+    }
+
+    char name[200], host[256];
+    auto named = adoptWK(WKProtectionSpaceCopyHost(space));
+    copy(named.get(), name, sizeof name);
+    snprintf(host, sizeof host, "%s:%d", name, WKProtectionSpaceGetPort(space));
+
+    if (view->anyway[0] && !strcmp(host, view->anyway)) {
+        fprintf(stderr, "webkit: view %d takes %s's certificate as it is\n", view->id, host);
+        auto user = adoptWK(WKStringCreateWithUTF8CString("anyway"));
+        auto password = adoptWK(WKStringCreateWithUTF8CString(""));
+        auto credential = adoptWK(WKCredentialCreate(user.get(), password.get(), kWKCredentialPersistenceNone));
+        WKAuthenticationDecisionListenerUseCredential(listener, credential.get());
+        return;
+    }
+
+    memcpy(view->refusedHost, host, sizeof view->refusedHost);
+    view->refusedError = WKProtectionSpaceGetCertificateVerificationError(space);
+    auto reason = adoptWK(WKProtectionSpaceCopyCertificateVerificationErrorDescription(space));
+    view->refusedReason[0] = '\0';
+    if (reason)
+        copy(reason.get(), view->refusedReason, sizeof view->refusedReason);
+    fprintf(stderr, "webkit: view %d refused %s's certificate: %d, %s\n",
+        view->id, host, view->refusedError, view->refusedReason);
+    WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(listener);
 }
 
 /*
@@ -302,9 +404,20 @@ void ruleListActed(WKPageRef, WKURLRef, WKArrayRef, WKArrayRef notifications, co
     }
 }
 
-void didCommit(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
+void didCommit(WKPageRef page, WKNavigationRef, WKTypeRef, const void* info)
 {
-    told(viewOf(info), WEBKIT_COMMITTED);
+    auto* view = viewOf(info);
+    // A page of another host: Open anyway was for the one before.
+    if (view->anyway[0]) {
+        char host[256];
+        auto url = adoptWK(WKPageCopyCommittedURL(page));
+        serverOf(url.get(), host, sizeof host);
+        if (strcmp(host, view->anyway)) {
+            fprintf(stderr, "webkit: view %d left %s, its certificate checked again\n", view->id, view->anyway);
+            view->anyway[0] = '\0';
+        }
+    }
+    told(view, WEBKIT_COMMITTED);
 }
 
 void traceSummary(View*, const char* how);
@@ -325,6 +438,20 @@ void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void
     auto* view = viewOf(info);
     traceSummary(view, "failed");
     view->error = error ? WKErrorGetErrorCode(error) : 0;
+    // The page itself refused for its certificate - not a picture of
+    // another host's in it, which only goes missing.
+    if (view->refusedHost[0] && error) {
+        char host[256];
+        auto url = adoptWK(WKErrorCopyFailingURL(error));
+        serverOf(url.get(), host, sizeof host);
+        if (!strcmp(host, view->refusedHost)) {
+            view->refused = true;
+            auto string = url ? adoptWK(WKURLCopyString(url.get())) : nullptr;
+            view->refusedAddress[0] = '\0';
+            if (string)
+                copy(string.get(), view->refusedAddress, sizeof view->refusedAddress);
+        }
+    }
     view->loading = false;
     view->asked = false;
     told(view, WEBKIT_FAILED);
@@ -853,6 +980,7 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     navigation.webProcessDidCrash = didCrash;
     navigation.decidePolicyForNavigationAction = decidePolicy;
     navigation.didSameDocumentNavigation = didSameDocument;
+    navigation.didReceiveAuthenticationChallenge = challenged;
     WKPageSetPageNavigationClient(view->page, &navigation.base);
 
     WKPageResourceLoadClientV0 loads { };
@@ -1048,6 +1176,10 @@ extern "C" void webkit_load(int id, const char* address)
     auto page = pageOf(id);
     if (!page || !address)
         return;
+    // A page asked for is no longer the one refused: said at once, not
+    // when WebKit begins it, so the caller's own page gives way now.
+    if (auto* view = views.find(id))
+        view->refused = false;
     if (rules.compiling) {
         auto* view = views.find(id);
         snprintf(view->held, sizeof view->held, "%s", address);
@@ -1162,6 +1294,12 @@ extern "C" int webkit_state(int id, struct webkit_state* out)
     out->can_forward = WKPageCanGoForward(view->page);
     out->blocked = view->blocked;
     out->cookies_blocked = view->cookiesBlocked;
+    if (view->refused) {
+        out->refused = 1;
+        out->certificate_error = view->refusedError;
+        memcpy(out->refused_reason, view->refusedReason, sizeof out->refused_reason);
+        memcpy(out->refused_address, view->refusedAddress, sizeof out->refused_address);
+    }
     if (view->held[0])
         out->loading = 1;
 
@@ -1173,6 +1311,59 @@ extern "C" int webkit_state(int id, struct webkit_state* out)
         auto string = adoptWK(WKURLCopyString(url.get()));
         copy(string.get(), out->address, sizeof out->address);
     }
+    return 1;
+}
+
+extern "C" int webkit_security(int id, struct webkit_security* out)
+{
+    memset(out, 0, sizeof *out);
+    auto* view = views.find(id);
+    if (!view)
+        return 0;
+
+    auto url = adoptWK(WKPageCopyCommittedURL(view->page));
+    auto scheme = url ? adoptWK(WKURLCopyScheme(url.get())) : nullptr;
+    char how[16] = "";
+    if (scheme)
+        copy(scheme.get(), how, sizeof how);
+
+    WKSecurityKosmos seen;
+    WKPageGetSecurityKosmos(view->page, &seen);
+    out->error = seen.verificationError;
+    out->chain = seen.chainLength;
+    memcpy(out->subject, seen.subject, sizeof out->subject);
+    memcpy(out->issuer, seen.issuer, sizeof out->issuer);
+    memcpy(out->names, seen.names, sizeof out->names);
+    out->valid_from = seen.validFrom;
+    out->valid_until = seen.validUntil;
+
+    if (!strcmp(how, "file"))
+        out->came = WEBKIT_CAME_FILE;
+    else if (!strcmp(how, "http"))
+        out->came = WEBKIT_CAME_PLAIN;
+    else if (!strcmp(how, "https")) {
+        char host[256];
+        serverOf(url.get(), host, sizeof host);
+        if (view->anyway[0] && !strcmp(host, view->anyway))
+            out->came = WEBKIT_CAME_ANYWAY;
+        else if (seen.insecureContent || !seen.secureOnly)
+            out->came = WEBKIT_CAME_MIXED;
+        else
+            out->came = WEBKIT_CAME_SECURE;
+    } else
+        out->came = WEBKIT_CAME_NONE;
+    return 1;
+}
+
+extern "C" int webkit_anyway(int id)
+{
+    auto* view = views.find(id);
+    if (!view || !view->refused || !view->refusedHost[0])
+        return 0;
+    memcpy(view->anyway, view->refusedHost, sizeof view->anyway);
+    view->refused = false;
+    fprintf(stderr, "webkit: view %d opens %s anyway, for this tab\n", view->id, view->anyway);
+    webkit_load(id, view->refusedAddress);
     return 1;
 }
 

@@ -754,6 +754,15 @@ SUITES = [
                         "user/bin/programs/wm.lua", "user/kits/gfx", "user/kits/egl",
                         "user/servers/net.c", *WEBKIT, *W5)),
 
+    # **JetSki's padlock** (`docs/padlock.html`): pages over HTTPS with a
+    # certificate refused, opened anyway, checked, out of its dates, and
+    # over plain HTTP, and what JetSki's address field says of each.
+    Suite("x86-padlock", ["python3", "tools/run_padlock.py", X86,
+                          "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_padlock.py", "tools/run_tls.py", "user/installed/JetSki",
+                        "user/kits/webkit", "user/lib", "user/kits/network",
+                        "user/servers/net.c", *WEBKIT, *W5)),
+
     # **W5d's OpenSSL** (`docs/w5.md`): its own `evp_test` over every
     # vector file, `bntest` and `sslapitest` over its test certificates,
     # each run's results held line for line to this Mac's. In three parts

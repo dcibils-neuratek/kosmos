@@ -34720,3 +34720,64 @@ in 853 s; the four it did not - `x86-network` (a lookup timed out),
 `x86-profile` (634 samples of about 1020), `arm-sandbox` (218 of 219
 arrived) and `x86-cafesa3d-2` - passed together alone at once after, in
 254 s. Then `mega` and `shot`.
+
+## 18.843 JetSki's padlock - how a page came, a certificate refused and opened anyway (0.11.447)
+
+`docs/padlock.html`, agreed 16 November. What WebKit's network process did
+with a bad certificate on Kosmos was checked first: curl refuses it,
+`NetworkDataTaskCurl` asks the page's owner (`tryServerTrustEvaluation`),
+and with no navigation client answering, WebKit's default cancels the load
+with curl's 60. So refusing already worked; what was missing was saying so,
+and a way past it.
+
+- **The WebKit side** (`WKPageKosmos.h`): `WKPageGetSecurityKosmos` gives
+  what the UI process knows of the committed page - HTTPS with nothing
+  plain in it (`PageLoadState::hasOnlySecureContent`), and the certificate
+  as curl handed it on: subject, the names and addresses it is for, its
+  dates, and its issuer, read from the certificate's own issuer field,
+  since a server often sends nothing above its own certificate.
+  `WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos` is the one
+  answer the C API lacked.
+- **The kit** answers certificate challenges for each view: a server
+  (`host:port`) the view was told to open anyway gets a credential of no
+  account, which is how the curl port is told to load again unchecked
+  (`restartWithCredential`); any other is left to WebKit, which refuses it,
+  and the reason is kept. `webkit_security`, `webkit_anyway`, and the
+  refusal in `webkit_state`. Open anyway is forgotten the moment the view
+  commits a page from another server.
+- **JetSki**: the old browser's words at the head of the address - the
+  green padlock alone for Secure, Not encrypted, Not secure for opened
+  anyway or mixed content, This machine, JetSki, Refused - and pressing it
+  opens the connection's panel. A refused page is JetSki's own, with the
+  reason in this machine's words and *Open anyway, in this tab*.
+
+**What the padlock found in WebKit.** The first run passed every step but
+one: the certificate was "for true". The curl port's `OpenSSLHelper.cpp`
+calls `toString` on ASN.1 strings - a subject's common name, every DNS
+name - and defines no such function, so the call found WTF's variadic
+`toString`, which writes a pointer as "true". Every certificate summary
+the curl port has made says so; nothing had shown one before. Patch 0036
+gives the file its `toString` - twice, since one taking a const string
+alone still lost to the template for a pointer that is not const, and the
+second run said "true" again.
+
+`x86-padlock`, new, 22 s: servers on this Mac with `run_tls.pki`'s
+certificates. One an authority nobody added signed - refused, curl's 60,
+OpenSSL's 20, the field says Refused; *Open anyway* pressed - the page's
+title arrives and the field says Not secure. One the test's authority in
+`/Home/Settings/JetSki/Certificates` signed - the padlock alone, the
+certificate "for 10.0.2.2, 10.0.2.2, by Kosmos test authority ca", the
+panel opened by a press. One out of its dates - refused, "has expired".
+Plain HTTP - Not encrypted.
+
+**Controls.** `anywayless` - Open anyway pressed and the kit never asked -
+"Open anyway was pressed and the page did not load". `trusting` - the
+other authority added too - "a certificate nobody vouches for was not
+refused". And the first of them found a bug of JetSki's: after it, the
+padlock of the next page could not be pressed. An address typed on a page
+of JetSki's own - refused, or stopped - gave the keys to the page with
+`focus_on`, which skips a hidden view, so the field kept them, and a
+focused field draws its text and no padlock. The page takes them now when
+it is shown again (`cover`), and the kit forgets a refusal the moment
+another page is asked for. Step 4 types its address on the refused page
+and presses the padlock; `keyless`, the old `focus_on`, fails it.

@@ -329,7 +329,63 @@ static int v_state(lua_State *L)
     lua_setfield(L, 2, "address");
     lua_pushstring(L, st.going);
     lua_setfield(L, 2, "going");
+    flag(L, 2, "refused", st.refused);
+    if (st.refused) {
+        lua_pushinteger(L, st.certificate_error);
+        lua_setfield(L, 2, "certificate_error");
+        lua_pushstring(L, st.refused_reason);
+        lua_setfield(L, 2, "refused_reason");
+        lua_pushstring(L, st.refused_address);
+        lua_setfield(L, 2, "refused_address");
+    }
     lua_settop(L, 2);
+    return 1;
+}
+
+/* `v:security()`: how its page came (`docs/padlock.html`) - `came` one of
+ * "secure", "plain", "mixed", "anyway", "file" or "none" - and, when the
+ * network process handed it on, the certificate: `subject`, `issuer`,
+ * `names`, `valid_from` and `valid_until` in seconds since 1970, `error`,
+ * and `chain`, how many the server sent. */
+static int v_security(lua_State *L)
+{
+    static const char *const words[] = { "none", "secure", "plain", "mixed", "anyway", "file" };
+    struct webkit_security sec;
+
+    if (!webkit_security(id_of(L), &sec)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    sec.subject[sizeof sec.subject - 1] = '\0';
+    sec.issuer[sizeof sec.issuer - 1] = '\0';
+    sec.names[sizeof sec.names - 1] = '\0';
+    lua_createtable(L, 0, 8);
+    lua_pushstring(L, sec.came >= 0 && sec.came <= WEBKIT_CAME_FILE ? words[sec.came] : "none");
+    lua_setfield(L, -2, "came");
+    lua_pushinteger(L, sec.chain);
+    lua_setfield(L, -2, "chain");
+    lua_pushinteger(L, sec.error);
+    lua_setfield(L, -2, "error");
+    if (sec.chain) {
+        lua_pushstring(L, sec.subject);
+        lua_setfield(L, -2, "subject");
+        lua_pushstring(L, sec.issuer);
+        lua_setfield(L, -2, "issuer");
+        lua_pushstring(L, sec.names);
+        lua_setfield(L, -2, "names");
+        lua_pushinteger(L, (lua_Integer)sec.valid_from);
+        lua_setfield(L, -2, "valid_from");
+        lua_pushinteger(L, (lua_Integer)sec.valid_until);
+        lua_setfield(L, -2, "valid_until");
+    }
+    return 1;
+}
+
+/* `v:anyway()`: its refused page loaded, its certificate taken as it is,
+ * for this view alone; false when nothing was refused. */
+static int v_anyway(lua_State *L)
+{
+    lua_pushboolean(L, webkit_anyway(id_of(L)));
     return 1;
 }
 
@@ -477,6 +533,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "mouse", v_mouse },     { "wheel", v_wheel },     { "key", v_key },
         { "focus", v_focus },     { "inspect", v_inspect }, { "inspecting", v_inspecting },
         { "paint_inspector", v_paint_inspector },           { "target", v_target },
+        { "security", v_security }, { "anyway", v_anyway },
         { NULL, NULL },
     };
     static const luaL_Reg fns[] = {

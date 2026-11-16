@@ -3810,3 +3810,44 @@ on the roadmap for the next full WebKit build.
 **Visible impact.** A page seen before can come from the disk instead of
 the network. How much faster that makes the top 23 is measured on the
 M700 next.
+
+## 16 November 2026 - The padlock
+
+**In short.** JetSki now says how each page came, at the start of its
+address: a green padlock for a secure page, and words for anything less.
+A page whose certificate doesn't check out is replaced by JetSki's own page
+saying why, with a button to open it anyway in that one tab. Building it
+found a WebKit bug that wrote every certificate's name as "true".
+
+**What.** The address field reads as the old browser's did:
+- a green padlock alone when the page came over HTTPS and its certificate
+  checked out;
+- *Not encrypted* for plain HTTP;
+- *Not secure* for a page opened anyway, or a secure page with something
+  plain in it;
+- *This machine* for a file, *JetSki* for JetSki's own pages;
+- *Refused* when JetSki would not open the page.
+
+Pressing the padlock opens a panel: who the certificate is for, who
+issued it, and until when.
+
+**Why.** Diego noticed JetSki was missing what the old browser had: a way
+to tell a safe page from one that isn't.
+
+**How.** WebKit already refused a bad certificate. curl checks it, and
+WebKit asks the page's owner whether to go on; nobody answered, so WebKit
+said no. The kit now answers. A server the person chose to open anyway is
+let through, for that tab only and remembered nowhere. Anything else is
+refused, with the reason kept for the page JetSki shows. The certificate's
+details come from WebKit's own record of the page.
+
+**The bug.** The first test passed everything except one line: the
+certificate was "for true". WebKit's helper for reading certificates calls
+a function to turn a name into text, and the curl version of it never
+defined one. So the call found a general-purpose one, which turns any
+pointer into the word "true". Every port of WebKit that uses curl has this.
+A small WebKit patch adds the missing function.
+
+**Visible impact.** Every page says how it came, and a refused certificate
+is a clear page rather than a status line saying "error 60". A new suite,
+`x86-padlock`, checks each case against servers on the Mac in 22 seconds.

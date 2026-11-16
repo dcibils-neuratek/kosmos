@@ -56,6 +56,7 @@ local ui    = use("/Kosmos/Libraries/ui.lua")
 local keys  = use("/Kosmos/Libraries/keys.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 local prefs = use("/Kosmos/Libraries/browserprefs.lua")
+local clock = use("/Kosmos/Libraries/clock.lua")
 local theme = ui.theme
 
 local have, webkit = pcall(use, "/Kosmos/Kits/webkit")
@@ -179,6 +180,8 @@ function web.paint(...) shown:paint(...) end
 function web.paint_inspector(...) shown:paint_inspector(...) end
 function web.inspect(on) shown:inspect(on) end
 function web.inspecting() return shown:inspecting() end
+function web.security() return shown:security() end
+function web.anyway() return shown:anyway() end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
@@ -409,6 +412,8 @@ win:add(strip)
 
 local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
 local gone                           -- a tab whose page stopped, below
+local refused_page                   -- a tab whose certificate was refused, below
+local lock_close                     -- the padlock's panel put away, below
 local settings_page                  -- Settings, in a tab of its own, below
 local open_settings, fill_settings, cover
 local settings_tab                   -- the tab Settings is in, or nil
@@ -439,6 +444,7 @@ local function layout()
   PAGE_W = W - SPLIT_W
   view.w, view.h = W, VIEW_H
   if gone then gone.w, gone.h = PAGE_W, VIEW_H end
+  if refused_page then refused_page.w, refused_page.h = PAGE_W, VIEW_H end
   if settings_page then settings_page.w, settings_page.h = W, VIEW_H end
 end
 
@@ -460,6 +466,7 @@ end
 
 function view:mouse(action, x, y)
   if action == "press" then
+    lock_close()
     local there, px, py = over(x, y)
     to_inspector = there
     web.target(there)
@@ -820,6 +827,262 @@ local function say(text)
   print("jetski: " .. text)
 end
 
+--------------------------------------------------------------------------
+-- **The padlock: how the page came** (`docs/padlock.html`, agreed 16
+-- November 2026). At the head of the address, in the old browser's words
+-- (`browser.lua`, `how_came`): a green padlock alone for a page whose
+-- certificate checked out, as Safari and Chrome show it; Not encrypted for
+-- plain HTTP; Not secure for one opened anyway, or one with something
+-- plain in it; This machine for a file; JetSki for its own pages; and
+-- Refused for a page JetSki would not open. `page.came` is the kit's
+-- `security()` for the tab shown, asked again when its page changes.
+--
+
+local refusal = nil                  -- the tab shown's refused page, from `st`
+
+local function how_came()
+  if settings_tab and web.shown_id() == settings_tab then return "settings", "JetSki" end
+  if refusal then return "refused", "Refused" end
+  local c = page.came and page.came.came
+  if c == "secure" then return "secure", nil end
+  if c == "plain" then return "plain", "Not encrypted" end
+  if c == "mixed" or c == "anyway" then return "refused", "Not secure" end
+  if c == "file" then return "drive", "This machine" end
+  return nil
+end
+
+local function came_ink(kind)
+  if kind == "secure" then return theme.good end
+  if kind == "refused" then return theme.bad end
+  return theme.text_dim
+end
+
+-- The address in two: the host, drawn dark, and the rest, dim. The scheme
+-- goes, since the padlock has just said how the page came.
+local function address_parts(text)
+  local bare = tostring(text or ""):gsub("^%a[%w+.-]*://", "")
+  local host = bare:match("^[^/]*") or ""
+  return host, bare:sub(#host + 1)
+end
+
+-- The padlock's width at the head of the field, 0 when there is none.
+local function badge_w(kind, words)
+  if not kind then return 0 end
+  if not words then return 4 + 15 + 6 end
+  return 4 + 15 + 5 + gfx.measure(words, "label") + 7
+end
+
+do
+  local field_draw = field.draw
+
+  function field:draw(g)
+    if self.focused then return field_draw(self, g) end
+
+    local h = self.h
+    g:fill_round(0, 0, self.w, h, theme.sunken, 7)
+    g:frame_round(0, 0, self.w, h, theme.line_soft, 7)
+
+    local x = 9
+    local kind, words = how_came()
+    if kind then
+      local ink = came_ink(kind)
+      local bw = badge_w(kind, words)
+      if words then
+        g:fill_round(4, 3, bw, h - 6, theme.mix(theme.sunken, ink, 140), 6)
+        g:text(28, (h - gfx.height("label")) // 2, words, ink, nil, "label")
+      end
+      g:line_icon(8, (h - 15) // 2, kind, ink)
+      x = 4 + bw + 6
+    end
+
+    local host, rest = address_parts(self.text)
+    local room = self.w - x - 8
+    local hw = gfx.measure(host, "label")
+    if hw > room then
+      host = ui.fitted(host, room, "label")
+      hw, rest = gfx.measure(host, "label"), ""
+    end
+    g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
+    g:text(x + hw, (h - gfx.height()) // 2, ui.fitted(rest, room - hw), theme.text_dim)
+  end
+end
+
+-- **Pressed: the connection and the certificate**, under the padlock. What
+-- the certificate says is what WebKit's network process saw.
+local lockpanel = ui.view{ w = 480, h = 10, hidden = true }
+local lock = ui.view{ w = 1, h = 1 }  -- the padlock's place over the field
+
+local function when(epoch)
+  if not epoch or epoch <= 0 then return "not said" end
+  local t = clock.at(epoch, 0)
+  return ("%d %s %d"):format(t.day, clock.FULL_MONTHS[t.month], t.year)
+end
+
+-- The panel's heading, its line under it, and its rows.
+local function lock_words()
+  local kind = how_came()
+  local host = host_of(page.address or "")
+  local c = page.came or {}
+  local head, under
+  if kind == "secure" then
+    head = ("The connection to %s is secure"):format(host)
+    under = "Encrypted, and its certificate checked out"
+  elseif c.came == "anyway" then
+    head = ("The connection to %s is not secure"):format(host)
+    under = "Opened anyway: its certificate did not check out, so this may not be " .. host
+  elseif c.came == "mixed" then
+    head = ("The connection to %s is not secure"):format(host)
+    under = "Something on this page came over plain HTTP, and could have been changed on the way"
+  elseif kind == "plain" then
+    head = ("The connection to %s is not encrypted"):format(host)
+    under = "Anyone on the way can read what is sent, and change it"
+  elseif kind == "drive" then
+    head, under = "This page is a file of this machine's", "No network had a part in it"
+  elseif kind == "refused" then
+    head, under = ("JetSki did not open %s"):format(host_of(refusal.address)), refusal.why
+  else
+    head, under = "One of JetSki's own pages", "Nothing of it came from a network"
+  end
+  local rows = {}
+  if c.chain and c.chain > 0 then
+    rows[#rows + 1] = { "Certificate for", c.names ~= "" and c.names or c.subject }
+    rows[#rows + 1] = { "Issued by", c.issuer ~= "" and c.issuer or "not said" }
+    rows[#rows + 1] = { "Valid until", when(c.valid_until) }
+  end
+  return head, under, rows
+end
+
+local PANEL_LH = 22
+
+function lockpanel:draw(g)
+  local head, under, rows = lock_words()
+  local kind = how_came()
+  local ink = came_ink(kind)
+  g:fill_round(0, 0, self.w, self.h, theme.line, 9)
+  g:fill_round(1, 1, self.w - 2, self.h - 2, theme.window, 8)
+  if kind then g:line_icon(14, 16, kind, ink) end
+  g:text(38, 14, ui.fitted(head, self.w - 52, "ui"), theme.text, nil, "ui")
+  g:text(38, 36, ui.fitted(under, self.w - 52), theme.text_dim)
+  local y = 64
+  if #rows > 0 then
+    g:fill(1, y - 6, self.w - 2, 1, theme.line_soft)
+    for _, r in ipairs(rows) do
+      g:text(14, y + 2, r[1], theme.text_dim)
+      g:text(140, y + 2, ui.fitted(r[2], self.w - 154), theme.text)
+      y = y + PANEL_LH
+    end
+  end
+end
+
+function lockpanel:mouse() return true end
+
+function lock_close()
+  if lockpanel.hidden then return false end
+  lockpanel.hidden = true
+  return true
+end
+
+local function lock_open()
+  local _, _, rows = lock_words()
+  lockpanel.h = 64 + #rows * PANEL_LH + (#rows > 0 and 10 or 0)
+  lockpanel.x = field.x
+  lockpanel.y = HEAD + 2
+  lockpanel.hidden = false
+  print(("jetski: the padlock pressed: %s"):format((lock_words())))
+end
+
+function lock:draw() end
+header:add(lock)
+function lock:mouse(action)
+  if action ~= "press" then return true end
+  if not lock_close() then lock_open() end
+  return true
+end
+
+-- Laid over the badge's place, as wide as the badge is now.
+local function lay_lock()
+  local kind, words = how_came()
+  lock.hidden = kind == nil or field.focused
+  lock.x, lock.y = field.x + 4, field.y + 3
+  lock.w, lock.h = math.max(1, badge_w(kind, words)), math.max(1, field.h - 6)
+  -- Said when it changes, with where it is, for whoever drives the window
+  -- from outside (`x86-padlock`).
+  local now = tostring(kind) .. tostring(words)
+  if now ~= lock.said then
+    lock.said = now
+    local x, y = lock:in_window()
+    print(("jetski: padlock %s%s at %d,%d"):format(tostring(kind),
+          words and (", " .. words) or "", x + lock.w // 2, y + lock.h // 2))
+  end
+end
+
+-- **A certificate refused** (`docs/padlock.html`): a page of JetSki's own
+-- in the site's place, the reason in this machine's words, and *Open
+-- anyway* for this tab alone, remembered nowhere.
+local REASONS = {
+  [2]  = "its certificate is signed by nobody this machine trusts",
+  [9]  = "its certificate is not valid yet",
+  [10] = "its certificate has expired",
+  [18] = "its certificate signed itself, and nobody this machine trusts vouches for it",
+  [19] = "its certificate's chain ends in an authority this machine does not trust",
+  [20] = "its certificate is signed by nobody this machine trusts",
+  [21] = "its certificate is signed by nobody this machine trusts",
+  [23] = "its certificate was revoked",
+  [62] = "its certificate is for another name",
+}
+
+local function refusal_why(code, words)
+  return REASONS[code] or (words ~= "" and words) or "its certificate did not check out"
+end
+
+refused_page = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H, hidden = true }
+
+local refused_back = ui.button{ text = "Go back", go = true, on_click = function()
+  web.back()
+end }
+local refused_anyway = ui.button{ text = "Open anyway, in this tab", on_click = function()
+  if refusal then
+    print("jetski: opened anyway: " .. refusal.address)
+    web.anyway()
+  end
+end }
+refused_page:add(refused_back)
+refused_page:add(refused_anyway)
+
+function refused_page:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+  if not refusal then return end
+  local mid = self.w // 2
+  local y = math.max(20, (self.h - 200) // 2)
+  local function centred(text, color, role, px, at)
+    local tw = gfx.measure(text, role and px and ui.sized(role, px) or nil)
+    g:text(mid - tw // 2, at, text, color, theme.window, role, px)
+  end
+  g:line_icon(mid - 7, y, "refused", theme.bad)
+  y = y + 30
+  centred(("JetSki did not open %s"):format(host_of(refusal.address)), theme.text, "ui", 18, y)
+  y = y + 32
+  centred("The server answered with a certificate this machine cannot check, so JetSki",
+          theme.text_dim, nil, nil, y)
+  y = y + 20
+  centred(("cannot tell whether it is talking to %s or to someone pretending to be it.")
+          :format(host_of(refusal.address)), theme.text_dim, nil, nil, y)
+  y = y + 30
+  centred(refusal.why, theme.bad, nil, nil, y)
+  y = y + 34
+  local widths = refused_back.w + refused_anyway.w + 8
+  refused_back.x, refused_back.y = mid - widths // 2, y
+  refused_anyway.x, refused_anyway.y = refused_back.x + refused_back.w + 8, y
+  if refusal.placed ~= refused_anyway.x * 65536 + y then
+    refusal.placed = refused_anyway.x * 65536 + y
+    local ax, ay = refused_anyway:in_window()
+    print(("jetski: open anyway at %d,%d"):format(ax + refused_anyway.w // 2,
+                                                  ay + refused_anyway.h // 2))
+  end
+end
+
+win:add(refused_page)
+
 -- An address as WebKit wants one: a scheme always, `https` when none was
 -- typed; words are a search, as the NetSurf browser's field has them.
 local function visit(text)
@@ -850,7 +1113,11 @@ local function visit(text)
 end
 
 field.on_enter = function(_, text)
-  win:focus_on(view)
+  -- The page takes the keys; while a page of JetSki's own covers it - a
+  -- refused or a stopped one - it cannot, and takes them when it is shown
+  -- again (`cover`). Left in the field, the field stayed focused and drew
+  -- no padlock (`x86-padlock`'s control found it).
+  page.wants_keys = not win:focus_on(view)
   web.focus(true)
   visit(text)
 end
@@ -896,8 +1163,12 @@ function cover()
   local here = settings_tab ~= nil and web.shown_id() == settings_tab
   settings_page.hidden = not here
   gone.hidden = here or crash == nil
-  view.hidden = here or crash ~= nil
+  refused_page.hidden = here or crash ~= nil or refusal == nil
+  view.hidden = here or crash ~= nil or refusal ~= nil
   if here then fill_settings() end
+  if page.wants_keys and not view.hidden then
+    page.wants_keys = not win:focus_on(view)
+  end
 end
 
 -- A tab made for an address and not shown yet - the tabs JetSki had - takes
@@ -1030,6 +1301,7 @@ local function frame()
 
   if not s then return end
 
+  lay_lock()
   back.disabled = not page.can_back
   forward.disabled = not page.can_forward
   reload.icon = page.loading and "close" or "reload"
@@ -1047,6 +1319,8 @@ local function frame()
     ui.paint_view(settings_page, s, 0, VIEW_Y)
   elseif crash then
     ui.paint_view(gone, s, 0, VIEW_Y)
+  elseif refusal then
+    ui.paint_view(refused_page, s, 0, VIEW_Y)
   else
     web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H)
   end
@@ -1055,6 +1329,8 @@ local function frame()
     s:fill(PAGE_W, VIEW_Y, 1, VIEW_H, theme.line)
     web.paint_inspector(s, PAGE_W + 1, VIEW_Y, SPLIT_W - 1, VIEW_H)
   end
+
+  if not lockpanel.hidden then ui.paint_view(lockpanel, s, lockpanel.x, lockpanel.y) end
 
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
@@ -1139,6 +1415,38 @@ win.on_frame = function()
   if st.failed then
     say(("could not load %s: error %d"):format(page.address, st.error))
     changed = true
+  end
+
+  -- A page refused for its certificate, or no longer: JetSki's own page
+  -- in its place, or the page again.
+  local was_refused = refusal and refusal.address
+  if st.refused then
+    if was_refused ~= st.refused_address then
+      refusal = { address = st.refused_address, code = st.certificate_error,
+                  why = refusal_why(st.certificate_error, st.refused_reason) }
+      say(("refused %s: %s (curl's %d, OpenSSL's %d: %s)"):format(host_of(refusal.address),
+          refusal.why, st.error, st.certificate_error, st.refused_reason))
+    end
+  else
+    refusal = nil
+  end
+  if (refusal and refusal.address) ~= was_refused then
+    lock_close()
+    cover()
+    changed = true
+  end
+
+  -- How the page came, asked again whenever it may have changed.
+  if st.committed or st.finished or st.started or st.failed or st.tab ~= page.came_tab then
+    local was = page.came and page.came.came
+    page.came, page.came_tab = web.security(), st.tab
+    local now = page.came and page.came.came
+    if now ~= was then
+      print(("jetski: came %s%s"):format(tostring(now),
+            page.came and page.came.chain > 0 and (", certificate for " .. tostring(page.came.names)
+                                                   .. " by " .. tostring(page.came.issuer)) or ""))
+      changed = true
+    end
   end
 
   -- The tab shown: its page stopped, or stopped and now collected, or
@@ -1268,6 +1576,7 @@ function win:on_drop(kind, payload)
   return true
 end
 
+win:add(lockpanel)                   -- over everything, while it is open
 tabs_changed()
 win:focus_on(view)
 

@@ -10560,7 +10560,14 @@ the applications make the system useful, and is not pulled forward.
       this month's, every month kept. **The order, Diego the same day**
       ("let's continue on your suggested order"): JetSki's disk cache
       (`statvfs`, below), the padlock and the shield, the JIT, HTTP/2,
-      the GPU.
+      the GPU. **The padlock built in 0.11.447**
+      (`testing.md` 18.843, `x86-padlock`): the field's words, the green
+      padlock, its panel, a refused page with Open anyway, keyed by
+      `host:port` and forgotten on another server's page; it found WebKit
+      writing every certificate's names as "true" (patch 0036). Left of
+      it: *Show the whole certificate* (the chain), and the panel's
+      *Connection* line, which needs curl's TLS version carried to the UI
+      process.
       **And JetSki's three known costs, AGREED on 16 November** (Diego:
       "also lets add http/2, jit and gpu"): (1) **HTTP/2** - nghttp2
       built and curl's HTTP/2 on, so a page's requests share one

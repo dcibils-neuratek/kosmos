@@ -67,6 +67,35 @@ typedef void (*WKInspectorViewHandlerKosmos)(WKPageRef inspected, WKViewRef insp
 WK_EXPORT void WKInspectorSetViewHandlerKosmos(WKInspectorViewHandlerKosmos, void* context);
 WK_EXPORT void WKInspectorSetResourcesKosmos(const char* folder);
 
+/*
+ * **How a page came** (`docs/padlock.html`, Diego, 16 November 2026: "its
+ * lacking a ssl certificate and safe page indicator"): what the UI process
+ * knows of the page committed - whether it came over HTTPS with nothing
+ * over plain HTTP in it, and the certificate WebKit's network process saw,
+ * as curl handed it on. The issuer is what the certificate's own issuer
+ * field names. Times are seconds since 1970; names are the certificate's
+ * DNS names, with ", " between them, as many as fit.
+ */
+struct WKSecurityKosmos {
+    bool secureOnly;                /* HTTPS, and nothing came over plain HTTP */
+    bool insecureContent;           /* something it showed or ran came plain */
+    int verificationError;          /* OpenSSL's, as curl saw it; 0 checked out */
+    unsigned chainLength;           /* certificates the server sent; 0 none known */
+    char subject[256];
+    char issuer[256];
+    char names[512];
+    double validFrom, validUntil;
+};
+WK_EXPORT void WKPageGetSecurityKosmos(WKPageRef, struct WKSecurityKosmos*);
+
+/*
+ * **A challenge left to WebKit**, as no client at all would: the C API
+ * offers a credential, a cancel and a rejection, and not this - which is
+ * what a page owner that answers only some challenges (a certificate
+ * opened anyway) needs for the rest.
+ */
+WK_EXPORT void WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(WKAuthenticationDecisionListenerRef);
+
 #ifdef __cplusplus
 }
 #endif

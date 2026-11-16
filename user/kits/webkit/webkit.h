@@ -56,7 +56,49 @@ struct webkit_state {
     char going[2048];              /* where it was asked to go, until it starts */
     unsigned blocked;              /* requests a rule list kept out, this page */
     unsigned cookies_blocked;      /* loads whose cookies a rule list kept back */
+    int refused;                   /* its page was refused for its certificate */
+    int certificate_error;         /* OpenSSL's number for why, with `refused` */
+    char refused_reason[256];      /* and OpenSSL's words */
+    char refused_address[2048];    /* the address that was refused */
 };
+
+/*
+ * **How a view's page came** (`docs/padlock.html`): over HTTPS with its
+ * certificate checked and nothing plain in it, over plain HTTP, over HTTPS
+ * with something plain in it, over HTTPS opened anyway (`webkit_anyway`),
+ * or from this machine's disk; NONE for a page of no scheme of those -
+ * about:blank. The certificate is what WebKit's network process saw, as
+ * far as it handed it on: `chain` 0 when it handed nothing.
+ */
+enum webkit_came {
+    WEBKIT_CAME_NONE,
+    WEBKIT_CAME_SECURE,
+    WEBKIT_CAME_PLAIN,
+    WEBKIT_CAME_MIXED,
+    WEBKIT_CAME_ANYWAY,
+    WEBKIT_CAME_FILE,
+};
+
+struct webkit_security {
+    int came;                      /* `webkit_came` */
+    int error;                     /* the certificate's, as checked; 0 good */
+    unsigned chain;                /* certificates the server sent */
+    char subject[256];             /* to whom */
+    char issuer[256];              /* by whom */
+    char names[512];               /* the names and addresses it is good for */
+    double valid_from, valid_until;/* seconds since 1970 */
+};
+
+/* How view `id`'s page came; 0 when there is no such view. */
+int webkit_security(int id, struct webkit_security *out);
+
+/*
+ * **Open anyway** (Diego, 16 November 2026: "Yes, open anyway"): view
+ * `id`'s refused page loaded again with its host's certificate taken as it
+ * is, for this view alone and remembered nowhere - until the view's page is
+ * of another host, when it is forgotten. 0 when nothing was refused.
+ */
+int webkit_anyway(int id);
 
 /* What happened to the views together since the last pump. */
 struct webkit_events {

@@ -1,0 +1,43 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A certificate's names as text. The curl port's OpenSSL helper calls
+`toString` on ASN.1 strings - a subject's common name, a certificate's DNS
+names - and defines no such function, so the call finds WTF's variadic
+`toString`, which writes a pointer as "true" - and a declaration for a
+const one alone still loses to that template for a pointer that is not. JetSki's padlock showed a
+certificate "for true" (Kosmos docs/padlock.html, testing.md 18.843).
+
+diff -ruN a/Source/WebCore/platform/network/curl/OpenSSLHelper.cpp b/Source/WebCore/platform/network/curl/OpenSSLHelper.cpp
+--- a/Source/WebCore/platform/network/curl/OpenSSLHelper.cpp	2026-11-16 15:02:43.292393610 -0300
++++ b/Source/WebCore/platform/network/curl/OpenSSLHelper.cpp	2026-11-16 15:02:43.311567005 -0300
+@@ -184,6 +184,30 @@
+     return pemDataFromCtx(StackOfX509(ctx));
+ }
+ 
++#if OS(KOSMOS)
++// Kosmos: an ASN.1 string as text. Nothing in this file defined it, so a
++// call with an ASN1_STRING* found WTF's variadic `toString`, which makes a
++// pointer "true" - every certificate's subject and DNS names said "true".
++static String toString(const ASN1_STRING* name)
++{
++    if (!name)
++        return String();
++    unsigned char* utf8 = nullptr;
++    int length = ASN1_STRING_to_UTF8(&utf8, name);
++    if (length < 0)
++        return String();
++    auto result = String::fromUTF8(std::span<const char8_t>(reinterpret_cast<const char8_t*>(utf8), length));
++    OPENSSL_free(utf8);
++    return result;
++}
++
++// And for one that is not const, which WTF's template would match exactly.
++static String toString(ASN1_STRING* name)
++{
++    return toString(const_cast<const ASN1_STRING*>(name));
++}
++#endif
++
+ static String getSubjectEntry(const X509* x509, int nid)
+ {
+     auto subjectName = X509_get_subject_name(x509);

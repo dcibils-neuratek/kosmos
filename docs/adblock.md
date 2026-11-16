@@ -135,7 +135,7 @@ What a person can do:
 4. **Turn blocking off for one site**, from the shield, for a site that
    breaks or that you want to support. It is on again from the same place
    or from Settings. The page reloads at once, and nothing is compiled
-   again (*Architecture*, the allowlist).
+   again: WebKit's own per-navigation switch (B4).
 5. **Choose lists** in Settings, *Blocking*: EasyList (adverts),
    EasyPrivacy (trackers), EasyList Cookie (the "we use cookies" banners),
    each on or off, with when it was last fetched and how many rules it
@@ -245,15 +245,20 @@ one notification per rule that acted - an address and a rule's
 identifier, a one-shot message of the kind *Control by message* allows -
 and JetSki adds it to the page's count. Nothing about blocking is a stream.
 
-### Each list compiled alone, and the allowlist on its own
+### Each list compiled alone, and sites allowed by WebKit's own switch
 
-WebKit takes several compiled lists at once and applies them in order. So:
+WebKit takes several compiled lists at once and applies each on its own. So:
 - **one compiled file per list**, so turning EasyPrivacy off compiles
   nothing;
-- **the allowlist is a list of its own, last**: one rule per site,
-  `ignore-previous-rules` with `if-top-url`. Turning blocking off for The
-  Verge compiles that one tiny list in milliseconds, never EasyList;
-- **your own filters** are a list of their own as well.
+- **a site allowed is not a list.** This said it was - one rule per site,
+  `ignore-previous-rules` with `if-top-url`, a list of its own, last - and
+  that cannot work: `ignore-previous-rules` reaches only the rules before
+  it *in the same list*, and every list is evaluated alone (corrected 16
+  November, before B4 was built). A site allowed is WebKit's
+  per-navigation switch, Safari's: the navigation's decision handed back
+  with website policies whose content blockers are off
+  (`WKWebsitePoliciesSetContentBlockersEnabled`). Nothing is compiled;
+- **your own filters** are a list of their own.
 
 ### The busiest path: a page's request
 
@@ -313,7 +318,14 @@ M700: requests made, bytes, cookies kept, load time.
   for; the second's cookie is not in `cookies.db`. Control: the policy
   `Always`, and it is.
 - **B4. The shield.** Counts from `contentRuleListNotification`, the
-  pop-over, *Off for this site* with its allowlist compiled alone.
+  pop-over, *Off for this site*. **Corrected 16 November, before it is
+  built**: an allowlist compiled alone cannot do it - WebKit evaluates
+  each rule list on its own, and `ignore-previous-rules` reaches only the
+  rules before it in the same list. *Off for this site* is WebKit's own
+  per-navigation switch instead, Safari's: `WKWebsitePoliciesSetContent
+  BlockersEnabled(false)` handed with the navigation's decision
+  (`WKFramePolicyListenerUseWithPolicies`) for a site on the list. Nothing
+  is compiled, and the page reloads.
 - **B5. The preferences panel** (feature 12): Settings' *Privacy and Ad
   Blocking* - blocking, third-party cookies, lists, own filters, allowed
   sites, cookies allowed, *When JetSki closes* - and *Manage cookies*,

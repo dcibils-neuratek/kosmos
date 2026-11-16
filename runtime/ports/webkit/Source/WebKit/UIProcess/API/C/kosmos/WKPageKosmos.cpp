@@ -13,12 +13,16 @@
 #include "config.h"
 #include "WKPageKosmos.h"
 
+#include "AuthenticationDecisionListener.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
 #include "NativeWebKeyboardEvent.h"
 #include "NativeWebMouseEvent.h"
 #include "NativeWebWheelEvent.h"
 #include "WKAPICast.h"
+#include "PageLoadState.h"
 #include "WebPageProxy.h"
+#include <WebCore/CertificateInfo.h>
+#include <WebCore/CertificateSummary.h>
 #include <WebCore/Color.h>
 #include <WebCore/Region.h>
 #include <skia/core/SkCanvas.h>
@@ -27,6 +31,9 @@
 #include <wtf/MonotonicTime.h>
 #include <wtf/text/MakeString.h>
 #include <wtf/text/WTFString.h>
+#include <string.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 
 static void paintBackground(SkCanvas* canvas, const std::optional<WebCore::Color>& color, const WebCore::IntRect& rect)
 {
@@ -114,4 +121,87 @@ void WKPageKeyKosmos(WKPageRef pageRef, bool down, const char* key, const char* 
     WebKit::WebKeyboardEvent event({ down ? WebKit::WebEventType::KeyDown : WebKit::WebEventType::KeyUp, modifiersOf(modifiers), MonotonicTime::now() },
         typed, typed, keyName, codeName, identifier, virtualKey, virtualKey, 0, false, false, false);
     WebKit::toImpl(pageRef)->handleKeyboardEvent(WebKit::NativeWebKeyboardEvent(event));
+}
+
+// A string into a fixed field, cut to fit and always ended.
+static void copyInto(const String& string, char* out, size_t room)
+{
+    auto utf8 = string.utf8();
+    size_t length = std::min<size_t>(utf8.length(), room - 1);
+    memcpy(out, utf8.data(), length);
+    out[length] = '\0';
+}
+
+// Who signed a certificate, as its own issuer field says: the common name,
+// else the organisation, else the whole name. A server sends its own
+// certificate and often nothing above it, so the field is the one place
+// this is always said.
+static void issuerOf(const Vector<uint8_t>& pem, char* out, size_t room)
+{
+    out[0] = '\0';
+    BIO* bio = BIO_new_mem_buf(pem.span().data(), static_cast<int>(pem.size()));
+    if (!bio)
+        return;
+    X509* certificate = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (!certificate)
+        return;
+    const X509_NAME* name = X509_get_issuer_name(certificate);
+    bool said = false;
+    for (int nid : { NID_commonName, NID_organizationName }) {
+        int index = X509_NAME_get_index_by_NID(name, nid, -1);
+        const ASN1_STRING* data = index < 0 ? nullptr : X509_NAME_ENTRY_get_data(X509_NAME_get_entry(name, index));
+        unsigned char* utf8 = nullptr;
+        int length = data ? ASN1_STRING_to_UTF8(&utf8, data) : -1;
+        if (length > 0) {
+            size_t n = std::min<size_t>(length, room - 1);
+            memcpy(out, utf8, n);
+            out[n] = '\0';
+            said = true;
+        }
+        OPENSSL_free(utf8);
+        if (said)
+            break;
+    }
+    if (!said)
+        X509_NAME_oneline(name, out, static_cast<int>(room));
+    X509_free(certificate);
+}
+
+void WKPageGetSecurityKosmos(WKPageRef pageRef, WKSecurityKosmos* out)
+{
+    memset(out, 0, sizeof *out);
+    RefPtr page = WebKit::toImpl(pageRef);
+    auto& state = page->pageLoadState();
+
+    out->secureOnly = state.hasOnlySecureContent();
+    out->insecureContent = state.committedHasInsecureContent();
+
+    auto& info = state.certificateInfo();
+    auto& chain = info.certificateChain();
+    out->verificationError = info.verificationError();
+    out->chainLength = chain.size();
+    if (chain.isEmpty())
+        return;
+
+    if (auto summary = info.summary()) {
+        copyInto(summary->subject, out->subject, sizeof out->subject);
+        out->validFrom = summary->validFrom.seconds();
+        out->validUntil = summary->validUntil.seconds();
+        // Its DNS names, then its addresses: a server named by an address
+        // is held to the second (`run_tls.pki`).
+        String names;
+        for (const auto* list : { &summary->dnsNames, &summary->ipAddresses }) {
+            for (const String& name : *list)
+                names = names.isEmpty() ? name : makeString(names, ", "_s, name);
+        }
+        copyInto(names, out->names, sizeof out->names);
+    }
+
+    issuerOf(chain[0], out->issuer, sizeof out->issuer);
+}
+
+void WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(WKAuthenticationDecisionListenerRef listener)
+{
+    protect(WebKit::toImpl(listener))->completeChallenge(WebKit::AuthenticationChallengeDisposition::PerformDefaultHandling);
 }

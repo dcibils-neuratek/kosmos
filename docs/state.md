@@ -6,6 +6,23 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: JetSki's padlock (0.11.447)
+
+- **The padlock** (`docs/padlock.html`): the field's words, the green
+  padlock alone, the connection's panel, and a refused page of JetSki's
+  own with *Open anyway, in this tab* (18.843). The kit answers WebKit's
+  certificate challenges per view, keyed by `host:port`.
+- **WebKit wrote every certificate's names as "true"**: the curl port's
+  `OpenSSLHelper.cpp` never defines `toString` for an ASN.1 string, so
+  WTF's variadic one took it. Patch 0036.
+- `x86-padlock`, new, 22 s, with two controls.
+- The shield's per-site switch corrected before it is built: WebKit's
+  website policies, not an allowlist compiled alone (`adblock.md` B4).
+
+**Next**: the shield (B4) - this page's counts, the month's totals in
+`/Home/Settings/Filters`, *Block adverts and trackers on this site*. And
+on the M700, the cache measured and the 23 sites again.
+
 ## 16 November: a disk cache for JetSki (0.11.446)
 
 - **JetSki had no disk cache**: WebKit sizes it from the free space, and
