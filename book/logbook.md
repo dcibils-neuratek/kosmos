@@ -3851,3 +3851,37 @@ A small WebKit patch adds the missing function.
 **Visible impact.** Every page says how it came, and a refused certificate
 is a clear page rather than a status line saying "error 60". A new suite,
 `x86-padlock`, checks each case against servers on the Mac in 22 seconds.
+
+## 16 November 2026 - The shield
+
+**In short.** JetSki now shows what its ad blocking did: a shield beside
+the address with the number of requests kept out of this page, a panel
+naming who was blocked, and this month's totals across every site. One
+switch in that panel turns blocking off for the site you are on.
+
+**What.** Press the shield and the panel says which lists are in use, how
+many requests were kept out of this page and how many cookies refused, the
+hosts blocked most, and the month's totals. The switch at the bottom,
+*Block adverts and trackers on* the site, turns blocking off there; the
+shield is drawn struck through on that site from then on, and the page
+reloads with everything it asks for.
+
+**Why.** Diego asked for it: to see how many adverts and cookies were
+blocked, totals by month, and a button to switch blocking off for one
+site.
+
+**How.** WebKit already reports each request its rule lists block; the kit
+now keeps the host of each as well. JetSki adds the page's counts to the
+month's as they grow and writes them to a small file in
+`/Home/Settings/Filters`. Turning a site off uses WebKit's own switch, the
+one Safari uses: when a page from that site is about to load, WebKit is
+told to load it with its blockers off. The first design, a list of allowed
+sites compiled as another rule list, could not have worked, because WebKit
+judges each list alone - that was found and corrected before any of it was
+built.
+
+**Visible impact.** The shield and its panel; the padlock suite gains a
+step that checks the count, the month's total and the switch against a
+server on the Mac, and a control that proves the switch is what lets the
+blocked file through.
+

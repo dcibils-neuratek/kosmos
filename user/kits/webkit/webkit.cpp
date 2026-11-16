@@ -56,6 +56,7 @@
 #include <WebKit/WKViewClient.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
+#include <WebKit/WKWebsitePolicies.h>
 #include <stdlib.h>
 #include <wtf/FileSystem.h>
 #include <wtf/text/MakeString.h>
@@ -65,6 +66,7 @@
 #include <wtf/Seconds.h>
 #include <wtf/Vector.h>
 #include <memory>
+#include <algorithm>
 
 extern "C" int kosmos_webkit_role(unsigned long role);
 
@@ -102,6 +104,28 @@ struct Load {
 
 bool tracing = false;
 
+/*
+ * **Sites allowed** (`adblock.md` B4, Diego: "i want a button that i can
+ * press and disable ad blocking and else on a per website basis"): hosts
+ * whose pages load with WebKit's content blockers off - Safari's own
+ * per-navigation switch, website policies handed with the decision. A
+ * host on the list allows itself and every host under it.
+ */
+Vector<String> allowedSites;
+
+bool allowedSite(const char* host)
+{
+    String name = String::fromUTF8(host);
+    for (auto& site : allowedSites) {
+        if (name == site)
+            return true;
+        if (name.length() > site.length() && name.endsWith(site)
+            && name[name.length() - site.length() - 1] == '.')
+            return true;
+    }
+    return false;
+}
+
 struct View {
     int id = 0;
     WKViewRef view = nullptr;
@@ -133,6 +157,12 @@ struct View {
     char refusedReason[256] { };
     bool refused = false;
     char refusedAddress[2048] { };
+    // **What was kept out, by whom** (`adblock.md` B4, the shield's *Most
+    // blocked on this page*): the host each blocked request was for, and
+    // how many; and whether this page was loaded with blocking off, its
+    // site being one a person allowed.
+    Vector<struct webkit_kept> kept;
+    bool unblocked = false;
     WKViewRef inspector = nullptr;  // its Web Inspector's view, while docked
     bool toInspector = false;       // input goes to the inspector's page
 
@@ -244,6 +274,7 @@ void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     view->loading = true;
     view->asked = false;
     view->blocked = view->cookiesBlocked = 0;
+    view->kept.clear();
     view->refused = false;
     view->refusedHost[0] = '\0';
     told(view, WEBKIT_STARTED);
@@ -381,6 +412,22 @@ void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListener
             view->loadsDone = view->loadsFailed = 0;
         }
         told(view, WEBKIT_ASKED);
+        // A site a person allowed: its page, and everything in it, with the
+        // rule lists off.
+        if (mainFrame && url) {
+            auto host = adoptWK(WKURLCopyHostName(url.get()));
+            char name[256];
+            copy(host.get(), name, sizeof name);
+            if (allowedSite(name)) {
+                auto policies = adoptWK(WKWebsitePoliciesCreate());
+                WKWebsitePoliciesSetContentBlockersEnabled(policies.get(), false);
+                fprintf(stderr, "webkit: view %d loads %s with blocking off\n", view->id, name);
+                view->unblocked = true;
+                WKFramePolicyListenerUseWithPolicies(listener, policies.get());
+                return;
+            }
+            view->unblocked = false;
+        }
     }
     WKFramePolicyListenerUse(listener);
 }
@@ -392,13 +439,35 @@ void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, W
 }
 
 // What a rule list kept out of the page: patch 0033's two names.
-void ruleListActed(WKPageRef, WKURLRef, WKArrayRef, WKArrayRef notifications, const void* info)
+// One more request kept out for `host`, on the view's list of them.
+void keptFor(View* view, const char* host)
+{
+    for (auto& each : view->kept) {
+        if (!strcmp(each.host, host)) {
+            each.count++;
+            return;
+        }
+    }
+    struct webkit_kept one { };
+    snprintf(one.host, sizeof one.host, "%s", host);
+    one.count = 1;
+    view->kept.append(one);
+}
+
+void ruleListActed(WKPageRef, WKURLRef url, WKArrayRef, WKArrayRef notifications, const void* info)
 {
     auto* view = viewOf(info);
     for (size_t i = 0; i < WKArrayGetSize(notifications); i++) {
         auto said = static_cast<WKStringRef>(WKArrayGetItemAtIndex(notifications, i));
-        if (WKStringIsEqualToUTF8CString(said, "kosmos:blocked"))
+        if (WKStringIsEqualToUTF8CString(said, "kosmos:blocked")) {
             view->blocked++;
+            char host[128] = "";
+            if (url) {
+                auto name = adoptWK(WKURLCopyHostName(url));
+                copy(name.get(), host, sizeof host);
+            }
+            keptFor(view, host[0] ? host : "an address with no host");
+        }
         else if (WKStringIsEqualToUTF8CString(said, "kosmos:cookies"))
             view->cookiesBlocked++;
     }
@@ -1294,6 +1363,7 @@ extern "C" int webkit_state(int id, struct webkit_state* out)
     out->can_forward = WKPageCanGoForward(view->page);
     out->blocked = view->blocked;
     out->cookies_blocked = view->cookiesBlocked;
+    out->unblocked = view->unblocked;
     if (view->refused) {
         out->refused = 1;
         out->certificate_error = view->refusedError;
@@ -1353,6 +1423,40 @@ extern "C" int webkit_security(int id, struct webkit_security* out)
     } else
         out->came = WEBKIT_CAME_NONE;
     return 1;
+}
+
+extern "C" unsigned webkit_kept(int id, struct webkit_kept* out, unsigned room)
+{
+    auto* view = views.find(id);
+    if (!view)
+        return 0;
+    auto list = view->kept;
+    std::sort(list.begin(), list.end(), [](auto& a, auto& b) { return a.count > b.count; });
+    unsigned n = std::min<unsigned>(room, list.size());
+    for (unsigned i = 0; i < n; i++)
+        out[i] = list[i];
+    return list.size();
+}
+
+extern "C" void webkit_allow_sites(const char* list)
+{
+    allowedSites.clear();
+    for (const char* at = list ? list : ""; *at;) {
+        size_t length = strcspn(at, "\n");
+        const char* from = at;
+        const char* to = at + length;
+        while (from < to && (*from == ' ' || *from == '\t' || *from == '\r'))
+            from++;
+        while (to > from && (to[-1] == ' ' || to[-1] == '\t' || to[-1] == '\r'))
+            to--;
+        if (to > from)
+            allowedSites.append(String::fromUTF8(std::span<const char>(from, to - from)).convertToASCIILowercase());
+        at += length;
+        if (*at)
+            at++;
+    }
+    fprintf(stderr, "webkit: %zu site%s allowed past blocking\n",
+        static_cast<size_t>(allowedSites.size()), allowedSites.size() == 1 ? "" : "s");
 }
 
 extern "C" int webkit_anyway(int id)

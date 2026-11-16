@@ -329,6 +329,7 @@ static int v_state(lua_State *L)
     lua_setfield(L, 2, "address");
     lua_pushstring(L, st.going);
     lua_setfield(L, 2, "going");
+    flag(L, 2, "unblocked", st.unblocked);
     flag(L, 2, "refused", st.refused);
     if (st.refused) {
         lua_pushinteger(L, st.certificate_error);
@@ -379,6 +380,38 @@ static int v_security(lua_State *L)
         lua_setfield(L, -2, "valid_until");
     }
     return 1;
+}
+
+/* `v:kept([room])`: what was kept out of its page, by host, the most
+ * first - a list of { host =, count = } - and how many hosts in all. */
+static int v_kept(lua_State *L)
+{
+    struct webkit_kept list[16];
+    lua_Integer room = luaL_optinteger(L, 2, 16);
+    if (room < 0) room = 0;
+    if (room > 16) room = 16;
+    unsigned all = webkit_kept(id_of(L), list, (unsigned)room);
+    unsigned n = all < (unsigned)room ? all : (unsigned)room;
+
+    lua_createtable(L, (int)n, 0);
+    for (unsigned i = 0; i < n; i++) {
+        list[i].host[sizeof list[i].host - 1] = '\0';
+        lua_createtable(L, 0, 2);
+        lua_pushstring(L, list[i].host);
+        lua_setfield(L, -2, "host");
+        lua_pushinteger(L, list[i].count);
+        lua_setfield(L, -2, "count");
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    lua_pushinteger(L, all);
+    return 2;
+}
+
+/* `webkit.allow(list)`: the sites allowed past blocking, one a line. */
+static int l_allow(lua_State *L)
+{
+    webkit_allow_sites(luaL_checkstring(L, 1));
+    return 0;
 }
 
 /* `v:anyway()`: its refused page loaded, its certificate taken as it is,
@@ -533,7 +566,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "mouse", v_mouse },     { "wheel", v_wheel },     { "key", v_key },
         { "focus", v_focus },     { "inspect", v_inspect }, { "inspecting", v_inspecting },
         { "paint_inspector", v_paint_inspector },           { "target", v_target },
-        { "security", v_security }, { "anyway", v_anyway },
+        { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
         { NULL, NULL },
     };
     static const luaL_Reg fns[] = {
@@ -541,7 +574,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "views", l_views },     { "frame", l_frame },     { "developer", l_developer },
         { "trace", l_trace },
         { "settings", l_settings }, { "zoom", l_zoom },
-        { "said", l_said },
+        { "said", l_said },       { "allow", l_allow },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },
         { NULL, NULL },
     };

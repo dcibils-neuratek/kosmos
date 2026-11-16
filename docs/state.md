@@ -6,6 +6,19 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: JetSki's shield (0.11.448)
+
+- **The shield** (`adblock.md` B4): this page's count in JetSki's header,
+  a panel with the hosts most blocked and this month's totals, kept in
+  `/Home/Settings/Filters/kept`, and *Block adverts and trackers on* the
+  site - WebKit's website policies with its blockers off, for the sites in
+  `/Home/Settings/Filters/allowed` (18.844).
+- `x86-padlock` has the shield as a fifth step, with a control
+  (`unallowed`).
+
+**Next**: on the M700 tonight, the cache measured and the 23 sites again;
+then the JIT, HTTP/2, the GPU. 0.11.447 and 0.11.448 not pushed yet.
+
 ## 16 November: JetSki's padlock (0.11.447)
 
 - **The padlock** (`docs/padlock.html`): the field's words, the green

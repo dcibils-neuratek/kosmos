@@ -139,6 +139,8 @@ ICONS = {
     "secure":     ("lock", None),
     "plain":      ("lock-open", None),
     "refused":    ("shield-x", None),
+    "shield":     ("shield", None),       # JetSki's blocking (adblock.md B4)
+    "unshielded": ("shield-off", None),   # and off for a site
     "star":       ("star", None),
     "sidebar":    ("panel-left", None),
     "plus":       ("plus", None),

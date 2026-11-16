@@ -34781,3 +34781,47 @@ focused field draws its text and no padlock. The page takes them now when
 it is shown again (`cover`), and the kit forgets a refusal the moment
 another page is asked for. Step 4 types its address on the refused page
 and presses the padlock; `keyless`, the old `focus_on`, fails it.
+
+## 18.844 JetSki's shield - what blocking kept out, the month's totals, and blocking off for one site (0.11.448)
+
+`adblock.md` B4, drawn in `docs/padlock.html` and agreed 16 November:
+Diego's "we need to show how many ads are blocked, and cookies, and else
+somewhere in jetski", "Let's do totals by month", and "a button that i can
+press and disable ad blocking and else on a per website basis".
+
+- **The shield** in JetSki's header, left of the Inspector's bug: a shield
+  and this page's count, or the shield struck through when blocking is off
+  for the site. Pressed, a panel: the lists in use, this page's requests
+  kept out and cookies refused, the hosts most blocked on it, this month's
+  totals across every site, and *Block adverts and trackers on* the site.
+- **The counts** are WebKit's own: `contentRuleListNotification` already
+  counted the page's blocks (B1); the kit now keeps the host of each as
+  well (`webkit_kept`), so the panel can say who.
+- **The month's totals** are kept in `/Home/Settings/Filters/kept`, a row a
+  month, added to as the shown tab's counts grow and written when a page
+  finishes, another tab is shown, or JetSki closes. Bytes not downloaded
+  are not among them: a request kept out never says how big it would have
+  been.
+- **Blocking off for a site** is WebKit's own per-navigation switch, as the
+  correction of 16 November has it: the sites allowed are
+  `/Home/Settings/Filters/allowed`, handed to the kit (`webkit_allow_sites`),
+  and a main-frame navigation to one is decided with website policies
+  whose content blockers are off (`WKWebsitePoliciesSetContentBlockersEnabled`,
+  `WKFramePolicyListenerUseWithPolicies`). A host matches itself and its
+  subdomains; `www.` is dropped. The switch reloads the page.
+
+`x86-padlock` grows a fifth step, 37 s in all: a page whose `ad.js` and
+`track.gif` a list on the disk keeps out. The shield says 2, the server is
+asked for neither, the month is written as 2, and the panel says "2 kept
+out, 0 cookies refused; most blocked 10.0.2.2 2; this month 2, 0". The
+switch pressed: "blocking off for 10.0.2.2", the page reloads, the server
+is asked for `ad.js`, the shield says off, and the month stays at 2.
+
+**Control.** `KOSMOS_PADLOCK_BREAK=unallowed` never hands the kit the sites
+allowed, so the switch reloads the page with blocking still on: "blocking
+turned off for the site, and its page reloaded still without ad.js" - and
+the month went to 4, the reload's blocks counted as they should be.
+
+Cookies refused per site wait for B3's switch; the shield's panel says
+what it counts and nothing about cookies allowed.
+

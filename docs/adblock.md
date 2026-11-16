@@ -325,7 +325,12 @@ M700: requests made, bytes, cookies kept, load time.
   per-navigation switch instead, Safari's: `WKWebsitePoliciesSetContent
   BlockersEnabled(false)` handed with the navigation's decision
   (`WKFramePolicyListenerUseWithPolicies`) for a site on the list. Nothing
-  is compiled, and the page reloads.
+  is compiled, and the page reloads. **Built in 0.11.448** (`testing.md` 18.844):
+  the shield in JetSki's header with this page's count, its panel with the
+  hosts most blocked, the month's totals in
+  `/Home/Settings/Filters/kept`, and the sites allowed in
+  `/Home/Settings/Filters/allowed`. Bytes not downloaded are not counted:
+  a request kept out never says its size.
 - **B5. The preferences panel** (feature 12): Settings' *Privacy and Ad
   Blocking* - blocking, third-party cookies, lists, own filters, allowed
   sites, cookies allowed, *When JetSki closes* - and *Manage cookies*,

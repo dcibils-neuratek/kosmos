@@ -18,13 +18,23 @@ field says of each read from the log, where the window says it:
    certificate has expired".
 4. Plain HTTP, typed on the refused page: Not encrypted, and its padlock
    pressed.
+5. The shield (`adblock.md` B4): a page whose `ad.js` and `track.gif` a
+   rule list on the disk keeps out. The shield counts 2, the server is
+   asked for neither, the month's total is written as 2, and the shield
+   pressed names the host most blocked. Its switch pressed turns blocking
+   off for the site: the page loads again with WebKit's blockers off for
+   it, the server is asked for `ad.js`, the shield says off, and the
+   month's total does not move.
 
 The controls: `KOSMOS_PADLOCK_BREAK=anywayless` - Open anyway pressed and
 never asking the kit - leaves the refused page where it was, FAIL;
 `KOSMOS_PADLOCK_BREAK=trusting` adds the other authority too, so nothing is
 refused, FAIL; and `KOSMOS_PADLOCK_BREAK=keyless` leaves the keys in the
 field when an address is typed on the refused page - as JetSki did until
-the second control found it - so step 4's padlock cannot be pressed, FAIL.
+the second control found it - so step 4's padlock cannot be pressed, FAIL; and
+`KOSMOS_PADLOCK_BREAK=unallowed` never hands the kit the sites allowed, so
+the switch reloads the page with blocking still on and `ad.js` is never
+asked for, FAIL.
 
 Usage: run_padlock.py [kernel image] [apps folder]
 """
@@ -59,6 +69,14 @@ BROKEN = os.environ.get("KOSMOS_PADLOCK_BREAK")
 TITLE = "Padlock test page"
 PAGE = ("<!doctype html><html><head><title>%s</title></head>"
         "<body style=\"background:#fff\"><h1>A page</h1></body></html>\n" % TITLE).encode()
+SHIELDED = ("<!doctype html><html><head><title>Shielded page</title>"
+            "<script src=\"/ad.js\"></script></head><body style=\"background:#fff\">"
+            "<h1>Adverts kept out</h1><img src=\"/track.gif\" width=\"1\" height=\"1\" alt=\"\">"
+            "</body></html>\n").encode()
+GIF = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00"
+       b"\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+RULES = ('[{"trigger": {"url-filter": "/ad\\\\.js$"}, "action": {"type": "block"}},'
+         ' {"trigger": {"url-filter": "/track\\\\.gif$"}, "action": {"type": "block"}}]')
 QEMU_KEYS = {":": "shift-semicolon", "/": "slash", ".": "dot", "-": "minus", "\n": "ret"}
 
 
@@ -67,11 +85,14 @@ class Page(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         Page.asked.append((self.server.server_address[1], self.path))
+        body, kind = {"/shielded": (SHIELDED, "text/html"),
+                      "/ad.js": (b"var advert = 1;", "text/javascript"),
+                      "/track.gif": (GIF, "image/gif")}.get(self.path, (PAGE, "text/html"))
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(PAGE)))
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(PAGE)
+        self.wfile.write(body)
 
     def log_message(self, *args):
         pass
@@ -148,10 +169,20 @@ def main():
             print("FAIL: the control's line is not in jetski.lua any more")
             return 1
         text = text.replace(line, "  win:focus_on(view)\n  web.focus(true)\n")
+    if BROKEN == "unallowed":
+        line = "  if have then webkit.allow(table.concat(allowed, \"\\n\")) end\n"
+        if line not in text:
+            print("FAIL: the control's line is not in jetski.lua any more")
+            return 1
+        text = text.replace(line, "  do end\n")
     lua = os.path.join(WORK, "jetski.lua")
     with open(lua, "w") as f:
         f.write(text)
+    rules = os.path.join(WORK, "test.json")
+    with open(rules, "w") as f:
+        f.write(RULES)
     files = [(lua, "/Home/System/Apps/JetSki/jetski.lua"),
+             (rules, "/Home/Settings/Filters/test.json"),
              (image, "/Home/System/WebKit/webkit.elf"),
              (os.path.join(PKI, "ca.pem"), "/Home/Settings/JetSki/Certificates/test-authority.pem")]
     if BROKEN == "trusting":
@@ -278,6 +309,58 @@ def main():
                               "its padlock pressed said nothing: %s" % last_words(guest, pressed))
         time.sleep(1)
         shot("plain")
+
+        # 5. The shield: what a list kept out, the month's total, and
+        # blocking off for the site.
+        plain_port = servers["plain"][1]
+        since = visit(at["plain"] + "shielded")
+        counted = said(guest, since, r"jetski: shield 2 at (\d+),(\d+)", 120)
+        loaded = said(guest, since, r"jetski: loaded [^\r\n]*/shielded", 60)
+        month = said(guest, since, r"jetski: kept this month (\d+) requests, (\d+) cookies", 20)
+        asked = [p for port, p in Page.asked if port == plain_port and p in ("/ad.js", "/track.gif")]
+        if not counted or not loaded:
+            failed.append("a page with two requests a list keeps out did not count 2 on the shield: %s"
+                          % last_words(guest, since))
+        elif asked:
+            failed.append("the list did not keep out %s" % asked)
+        elif not month or month.group(1) != "2":
+            failed.append("the month's total was not written as 2: %s"
+                          % (month.group(0) if month else last_words(guest, since)))
+        else:
+            time.sleep(1)
+            pressed = len(guest.seen)
+            click(int(counted.group(1)), int(counted.group(2)))
+            words = said(guest, pressed, r"jetski: the shield pressed: ([^\r\n]*)", 10)
+            switch = said(guest, pressed, r"jetski: blocking switch at (\d+),(\d+)", 10)
+            want = "2 kept out, 0 cookies refused; most blocked 10.0.2.2 2; this month 2, 0"
+            if not words or words.group(1) != want or not switch:
+                failed.append("the shield pressed did not say %r: %s"
+                              % (want, words.group(1) if words else last_words(guest, pressed)))
+            else:
+                print("the shield: %s" % words.group(1))
+                time.sleep(1)
+                shot("shield")
+                flipped = len(guest.seen)
+                click(int(switch.group(1)), int(switch.group(2)))
+                if not said(guest, flipped, r"jetski: blocking off for 10\.0\.2\.2\b", 10):
+                    failed.append("the shield's switch pressed did not turn blocking off: %s"
+                                  % last_words(guest, flipped))
+                else:
+                    off = said(guest, flipped, r"jetski: shield 0, off at", 60)
+                    said(guest, flipped, r"jetski: loaded [^\r\n]*/shielded", 60)
+                    time.sleep(2)
+                    asked = [p for port, p in Page.asked if port == plain_port and p == "/ad.js"]
+                    if not asked:
+                        failed.append("blocking turned off for the site, and its page reloaded "
+                                      "still without ad.js: %s" % last_words(guest, flipped))
+                    elif not off:
+                        failed.append("blocking off, and the shield did not say so: %s"
+                                      % last_words(guest, flipped))
+                    elif said(guest, flipped, r"jetski: kept this month (?!2 requests)", 3):
+                        failed.append("the month's total moved with blocking off")
+                    else:
+                        print("blocking off: ad.js asked for, the shield off")
+                    shot("unshielded")
     finally:
         guest.close()
         for server, _ in servers.values():
@@ -298,7 +381,8 @@ def passed():
     print("PASS: JetSki's padlock - a certificate nobody vouches for refused, curl's 60, "
           "with JetSki's own page and Open anyway, which loaded it Not secure; one of an "
           "authority in /Home a green padlock, its names as sent and its panel; one out of "
-          "its dates refused as expired; and plain HTTP Not encrypted")
+          "its dates refused as expired; plain HTTP Not encrypted; and the shield, which counted "
+          "what a list kept out, kept the month's total and turned blocking off for the site")
     return 0
 
 

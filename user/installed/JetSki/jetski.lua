@@ -182,6 +182,7 @@ function web.inspect(on) shown:inspect(on) end
 function web.inspecting() return shown:inspecting() end
 function web.security() return shown:security() end
 function web.anyway() return shown:anyway() end
+function web.kept(n) return shown:kept(n) end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
@@ -306,6 +307,24 @@ do
   header:add(more)
 end
 
+-- **The shield** (`docs/padlock.html`, `adblock.md` B4): what Privacy and
+-- Ad Blocking kept out of this page, its count beside it, and pressed, its
+-- panel (below). Off for this site, it is the shield struck through.
+local shield = ui.view{ w = 30, h = 26 }
+shield.count, shield.off = 0, false
+function shield:draw(g)
+  local icon = self.off and "unshielded" or "shield"
+  local ink = self.off and theme.text_dim or (self.count > 0 and theme.accent or theme.text_dim)
+  local words = self.count > 0 and tostring(self.count) or ""
+  local x = (self.w - 15 - (words ~= "" and gfx.measure(words, "label") + 3 or 0)) // 2
+  g:line_icon(x, (self.h - 15) // 2, icon, ink)
+  if words ~= "" then
+    g:text(x + 18, (self.h - gfx.height("label")) // 2, words, ink, nil, "label")
+  end
+end
+shield.y = (BAR - 1 - shield.h) // 2
+header:add(shield)
+
 win:add(header)
 
 --------------------------------------------------------------------------
@@ -414,6 +433,7 @@ local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
 local gone                           -- a tab whose page stopped, below
 local refused_page                   -- a tab whose certificate was refused, below
 local lock_close                     -- the padlock's panel put away, below
+local shield_close                   -- the shield's, below
 local settings_page                  -- Settings, in a tab of its own, below
 local open_settings, fill_settings, cover
 local settings_tab                   -- the tab Settings is in, or nil
@@ -438,6 +458,10 @@ local function layout()
   if not inspect.hidden then
     inspect.x = right - inspect.w
     right = inspect.x - ui.layout.head_gap
+  end
+  if shield then
+    shield.x = right - shield.w
+    right = shield.x - ui.layout.head_gap
   end
   field.w = right - field.x
   SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
@@ -467,6 +491,7 @@ end
 function view:mouse(action, x, y)
   if action == "press" then
     lock_close()
+    shield_close()
     local there, px, py = over(x, y)
     to_inspector = there
     web.target(there)
@@ -995,6 +1020,7 @@ function lock:draw() end
 header:add(lock)
 function lock:mouse(action)
   if action ~= "press" then return true end
+  if shield_close then shield_close() end
   if not lock_close() then lock_open() end
   return true
 end
@@ -1013,6 +1039,251 @@ local function lay_lock()
     local x, y = lock:in_window()
     print(("jetski: padlock %s%s at %d,%d"):format(tostring(kind),
           words and (", " .. words) or "", x + lock.w // 2, y + lock.h // 2))
+  end
+end
+
+--------------------------------------------------------------------------
+-- **What was kept out** (`adblock.md` B4, `docs/padlock.html`; Diego, 16
+-- November: "we need to show how many ads are blocked, and cookies, and
+-- else somewhere in jetski", and "Let's do totals by month"). This page's
+-- counts are the kit's; the month's are JetSki's, every tab's added as
+-- they grow and kept in `/Home/Settings/Filters/kept`, a month a row, so
+-- they outlive a restart and earlier months stay. The sites a person
+-- allowed past blocking are `/Home/Settings/Filters/allowed`, handed to
+-- the kit, which loads their pages with WebKit's content blockers off.
+--
+
+local KEPT_FILE = "/Home/Settings/Filters/kept"
+local ALLOWED_FILE = "/Home/Settings/Filters/allowed"
+local kept = fs.read(KEPT_FILE)
+if type(kept) ~= "table" then kept = {} end
+kept.months = type(kept.months) == "table" and kept.months or {}
+local allowed = fs.read(ALLOWED_FILE)
+if type(allowed) ~= "table" then allowed = {} end
+local counted = { tab = nil, blocked = 0, cookies = 0 }
+local kept_dirty = false
+
+local function month_now()
+  local t = clock.now()
+  return t and ("%04d-%02d"):format(t.year, t.month) or "unknown"
+end
+
+local function month_of(key)
+  local m = kept.months[key]
+  if type(m) ~= "table" then
+    m = { requests = 0, cookies = 0 }
+    kept.months[key] = m
+  end
+  return m
+end
+
+-- Written when a page finishes or another tab is shown, and as JetSki
+-- closes: a page's later blocks join the next write.
+local function save_kept()
+  if not kept_dirty then return end
+  kept_dirty = false
+  files.make_folder("/Home/Settings/Filters")
+  fs.write(KEPT_FILE, kept)
+  local m = month_of(month_now())
+  print(("jetski: kept this month %d requests, %d cookies"):format(m.requests, m.cookies))
+end
+
+-- The site a switch is for: the page's host, its port and a leading www.
+-- left off, so the switch holds for the site and everything under it.
+local function site_of(address)
+  local host = host_of(address or ""):gsub(":%d+$", ""):lower()
+  return (host:gsub("^www%.", ""))
+end
+
+local function site_allowed(site)
+  for _, s in ipairs(allowed) do
+    if s == site then return true end
+  end
+  return false
+end
+
+local function hand_allowed()
+  if have then webkit.allow(table.concat(allowed, "\n")) end
+end
+hand_allowed()
+
+-- The lists in use, by the names people know them by.
+local LIST_NAMES = { easylist = "EasyList", easyprivacy = "EasyPrivacy",
+                     ["easylist-cookie"] = "EasyList Cookie", cookie = "EasyList Cookie" }
+local function list_names()
+  local out = {}
+  for _, folder in ipairs({ "/Kosmos/Filters", "/Home/Settings/Filters" }) do
+    for _, name in ipairs(fs.list(folder) or {}) do
+      local stem = type(name) == "string" and name:match("^(.-)%.json") or nil
+      if stem then out[#out + 1] = LIST_NAMES[stem:lower()] or stem end
+    end
+  end
+  return #out > 0 and table.concat(out, ", ") or "no lists"
+end
+
+local function plural(n, one, many) return ("%d %s"):format(n, n == 1 and one or many) end
+
+local function thousands(n)
+  local s = tostring(n)
+  while true do
+    local done
+    s, done = s:gsub("^(%d+)(%d%d%d)", "%1,%2")
+    if done == 0 then return s end
+  end
+end
+
+local shieldpanel = ui.view{ w = 420, h = 10, hidden = true }
+local blocking_switch = ui.switch{ on = true }
+shieldpanel:add(blocking_switch)
+local SHIELD_LH = 22
+
+local function shield_words()
+  local site = site_of(page.address)
+  local here = { requests = page.blocked or 0, cookies = page.cookies_blocked or 0 }
+  local list, all = web.kept(2)
+  local month = month_of(month_now())
+  return site, here, list or {}, all or 0, month
+end
+
+-- How tall the panel is for what it says: the rows `draw` lays.
+local function shield_height()
+  local _, _, list, all = shield_words()
+  local y = 66
+  if shield.off then
+    y = y + SHIELD_LH
+  else
+    y = y + SHIELD_LH + 6
+    if #list > 0 then y = y + SHIELD_LH * (1 + #list + (all > #list and 1 or 0)) end
+  end
+  return y + 6 + 2 * SHIELD_LH + 8 + blocking_switch.h + 12
+end
+
+function shieldpanel:draw(g)
+  local site, here, list, all, month = shield_words()
+  g:fill_round(0, 0, self.w, self.h, theme.line, 9)
+  g:fill_round(1, 1, self.w - 2, self.h - 2, theme.window, 8)
+  g:line_icon(14, 16, shield.off and "unshielded" or "shield", shield.off and theme.text_dim or theme.accent)
+  g:text(38, 14, "Privacy and Ad Blocking", theme.text, nil, "ui")
+  g:text(38, 36, ui.fitted(list_names(), self.w - 52), theme.text_dim)
+  local y = 66
+  g:fill(1, y - 8, self.w - 2, 1, theme.line_soft)
+  if shield.off then
+    g:text(14, y, ui.fitted(("Blocking is off on %s"):format(site), self.w - 28), theme.text)
+    y = y + SHIELD_LH
+  else
+    g:text(14, y, ("%s kept out    %s refused"):format(plural(here.requests, "request", "requests"),
+           plural(here.cookies, "cookie", "cookies")), theme.text)
+    y = y + SHIELD_LH + 6
+    if #list > 0 then
+      g:text(14, y, "Most blocked on this page", theme.text_dim)
+      y = y + SHIELD_LH
+      local shown_n = 0
+      for _, k in ipairs(list) do
+        g:text(14, y, ui.fitted(k.host, self.w - 90), theme.text)
+        local n = tostring(k.count)
+        g:text(self.w - 14 - gfx.measure(n), y, n, theme.text)
+        shown_n = shown_n + k.count
+        y = y + SHIELD_LH
+      end
+      if all > #list then
+        local rest = ("and %s"):format(plural(all - #list, "other site", "other sites"))
+        g:text(14, y, rest, theme.text_dim)
+        local n = tostring(here.requests - shown_n)
+        g:text(self.w - 14 - gfx.measure(n), y, n, theme.text_dim)
+        y = y + SHIELD_LH
+      end
+    end
+  end
+  y = y + 6
+  g:fill(1, y - 6, self.w - 2, 1, theme.line_soft)
+  g:text(14, y, "This month, every site", theme.text_dim)
+  y = y + SHIELD_LH
+  g:text(14, y, ("%s requests kept out    %s cookies refused"):format(thousands(month.requests),
+         thousands(month.cookies)), theme.text)
+  y = y + SHIELD_LH + 8
+  g:fill(1, y - 6, self.w - 2, 1, theme.line_soft)
+  g:text(14, y + (blocking_switch.h - gfx.height()) // 2,
+         ui.fitted(("Block adverts and trackers on %s"):format(site), self.w - 40 - blocking_switch.w),
+         theme.text)
+  blocking_switch.x, blocking_switch.y = self.w - 14 - blocking_switch.w, y
+  if not self.said then
+    self.said = true
+    local x, sy = blocking_switch:in_window()
+    print(("jetski: blocking switch at %d,%d"):format(x + blocking_switch.w // 2,
+                                                       sy + blocking_switch.h // 2))
+  end
+end
+
+function shieldpanel:mouse() return true end
+
+function shield_close()
+  if shieldpanel.hidden then return false end
+  shieldpanel.hidden = true
+  return true
+end
+
+local function shield_open()
+  local site, here, list, all, month = shield_words()
+  blocking_switch.on = not site_allowed(site)
+  shieldpanel.said = false
+  shieldpanel.x = math.max(8, shield.x + shield.w - shieldpanel.w)
+  shieldpanel.y = HEAD + 2
+  shieldpanel.hidden = false
+  print(("jetski: the shield pressed: %d kept out, %d cookies refused; most blocked %s; this month %d, %d")
+        :format(here.requests, here.cookies,
+                list[1] and (list[1].host .. " " .. list[1].count) or "none",
+                month.requests, month.cookies))
+end
+
+blocking_switch.on_change = function(_, on)
+  local site = site_of(page.address)
+  if site == "" then return end
+  local list = {}
+  for _, s in ipairs(allowed) do
+    if s ~= site then list[#list + 1] = s end
+  end
+  if not on then list[#list + 1] = site end
+  allowed = list
+  files.make_folder("/Home/Settings/Filters")
+  fs.write(ALLOWED_FILE, allowed)
+  hand_allowed()
+  print(("jetski: blocking %s for %s"):format(on and "on" or "off", site))
+  web.reload()
+end
+
+function shield:mouse(action)
+  if action ~= "press" then return true end
+  lock_close()
+  if not shield_close() then shield_open() end
+  return true
+end
+
+-- Where the shield is and what it says, said when that changes, for
+-- whoever drives the window from outside (`x86-padlock`).
+local function shield_said()
+  local now = ("%d %s"):format(shield.count, tostring(shield.off))
+  if now == shield.said_was then return end
+  shield.said_was = now
+  local x, y = shield:in_window()
+  print(("jetski: shield %d%s at %d,%d"):format(shield.count, shield.off and ", off" or "",
+        x + shield.w // 2, y + shield.h // 2))
+end
+
+-- The page's counts into the month's, as they grow: the tab shown's, from
+-- the moment it is shown or begins a page.
+local function count_kept()
+  if st.tab ~= counted.tab or st.started then
+    counted.tab, counted.blocked, counted.cookies = st.tab, st.blocked or 0, st.cookies_blocked or 0
+    return
+  end
+  local more = (st.blocked or 0) - counted.blocked
+  local cookies = (st.cookies_blocked or 0) - counted.cookies
+  if more > 0 or cookies > 0 then
+    local m = month_of(month_now())
+    m.requests = m.requests + math.max(0, more)
+    m.cookies = m.cookies + math.max(0, cookies)
+    counted.blocked, counted.cookies = st.blocked or 0, st.cookies_blocked or 0
+    kept_dirty = true
   end
 end
 
@@ -1302,6 +1573,7 @@ local function frame()
   if not s then return end
 
   lay_lock()
+  shield_said()
   back.disabled = not page.can_back
   forward.disabled = not page.can_forward
   reload.icon = page.loading and "close" or "reload"
@@ -1331,6 +1603,10 @@ local function frame()
   end
 
   if not lockpanel.hidden then ui.paint_view(lockpanel, s, lockpanel.x, lockpanel.y) end
+  if not shieldpanel.hidden then
+    shieldpanel.h = shield_height()
+    ui.paint_view(shieldpanel, s, shieldpanel.x, shieldpanel.y)
+  end
 
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
@@ -1435,6 +1711,17 @@ win.on_frame = function()
     cover()
     changed = true
   end
+
+  -- What blocking kept out: the shield's count, the month's, kept.
+  if st.tab ~= counted.tab then save_kept() end
+  count_kept()
+  if st.finished then save_kept() end
+  page.blocked, page.cookies_blocked = st.blocked or 0, st.cookies_blocked or 0
+  if page.blocked ~= shield.count or (st.unblocked or false) ~= shield.off then
+    shield.count, shield.off = page.blocked, st.unblocked or false
+    changed = true
+  end
+  if not shieldpanel.hidden and st.picture then changed = true end
 
   -- How the page came, asked again whenever it may have changed.
   if st.committed or st.finished or st.started or st.failed or st.tab ~= page.came_tab then
@@ -1577,6 +1864,7 @@ function win:on_drop(kind, payload)
 end
 
 win:add(lockpanel)                   -- over everything, while it is open
+win:add(shieldpanel)
 tabs_changed()
 win:focus_on(view)
 
@@ -1599,3 +1887,4 @@ do
   end
 end
 win:run()
+save_kept()

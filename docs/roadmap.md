@@ -10546,7 +10546,10 @@ the applications make the system useful, and is not pulled forward.
       (`adblock.md` B4) with this page's counts, and **totals across all
       browsing** beside them and in Settings' Privacy group: adverts and
       trackers kept out, cookies refused, bytes not downloaded, since
-      JetSki was first used, kept in `/Home/Settings/Filters`. (2) "its
+      JetSki was first used, kept in `/Home/Settings/Filters`. **Built in 0.11.448**
+      as totals by month (Diego: "Let's do totals by month"), with the
+      per-site switch (`testing.md` 18.844); Settings' Privacy group shows
+      them with B5, and bytes not downloaded cannot be known. (2) "its
       lacking a ssl certificate and safe page indicator like we did with
       the old browser": the old browser's words in the address field -
       Secure, Not encrypted, Not secure, This machine, and JetSki for its

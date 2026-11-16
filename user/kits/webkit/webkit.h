@@ -56,6 +56,7 @@ struct webkit_state {
     char going[2048];              /* where it was asked to go, until it starts */
     unsigned blocked;              /* requests a rule list kept out, this page */
     unsigned cookies_blocked;      /* loads whose cookies a rule list kept back */
+    int unblocked;                 /* its page was loaded with blocking off */
     int refused;                   /* its page was refused for its certificate */
     int certificate_error;         /* OpenSSL's number for why, with `refused` */
     char refused_reason[256];      /* and OpenSSL's words */
@@ -99,6 +100,23 @@ int webkit_security(int id, struct webkit_security *out);
  * of another host, when it is forgotten. 0 when nothing was refused.
  */
 int webkit_anyway(int id);
+
+/*
+ * **What the rule lists kept out of a view's page, by host** (`adblock.md`
+ * B4): as many as `room`, the most first; how many hosts there are in all.
+ */
+struct webkit_kept {
+    char host[128];
+    unsigned count;
+};
+unsigned webkit_kept(int id, struct webkit_kept *out, unsigned room);
+
+/*
+ * **Sites allowed past blocking**: one host a line, each allowing itself and
+ * every host under it. Their pages load from now on with the rule lists off
+ * - WebKit's website policies, handed with each navigation's decision.
+ */
+void webkit_allow_sites(const char *list);
 
 /* What happened to the views together since the last pump. */
 struct webkit_events {
