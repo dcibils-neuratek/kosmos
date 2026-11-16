@@ -216,6 +216,14 @@ def main():
         The command's echo is found by what it says, not taken to be the
         first line: a system line can arrive between the mark and the echo,
         and once did (`testing.md` 18.782), leaving the echo in the answer."""
+        # **And a system line in the middle of one of the answer's**
+        # (0.11.449's gate): the network stack's `net: port 5353 bound ...`
+        # landed between "antip" and "bart", and the keyring's first use
+        # said so on a line of its own - output nobody holds still while a
+        # model streams its tokens. Cut wherever they land, by their own
+        # words, so an answer that happens to say "net:" is left alone.
+        said = re.sub(r"net: port \d+ bound for [^\r\n]*\r?\n", "", said)
+        said = re.sub(r"keyring: a key made for this machine[^\r\n]*\r?\n", "", said)
         lines = said.replace("\r", "").split("\n")
         echo = next((i for i, l in enumerate(lines) if l.rstrip().endswith(command)), 0)
         kept = [l for l in lines[echo + 1:]

@@ -3649,6 +3649,7 @@ $(UBUILD)/user/installed/JSC/jsc_kosmos.cpp.o: user/installed/JSC/jsc_kosmos.cpp
 	    $(WEBKIT_USER_FLAGS) \
 	    -isystem build/webkit/src/Source/WTF -isystem $(WEBKIT_DIR)/bmalloc/Headers \
 	    -isystem $(WEBKIT_DIR)/JavaScriptCore/Headers \
+	    -isystem $(WEBKIT_DIR)/JavaScriptCore/PrivateHeaders \
 	    -isystem $(ICU_DIR)/include -c $< -o $@
 
 $(UBUILD)/apps/jsc.elf: $(USER_OBJS) $(JSC_OBJS) $(POSIX_OBJS) $(JSC_LIBS) $(WEBKIT_LIBS) $(ICU_LIBS) $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld

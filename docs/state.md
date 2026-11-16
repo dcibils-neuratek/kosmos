@@ -19,8 +19,16 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
   `build/x86_64` for both variants, and make compares times.
   `build/x86_64/variant` relinks when the variant changes.
 
-**Next**: the M700 at .35 - netboot, packages, the 23 sites against
-18.845's interpreter numbers. Then HTTP/2, the GPU.
+- **On the M700** (18.847): `jsc --no-jit` against the JIT, 220 ms to
+  65 ms - and the 23 sites no faster, 15 of 23 within five seconds as
+  before. The slow sites are not waiting on script.
+- `x86-llmmon` cuts the network's and the keyring's lines wherever they
+  land in an answer; the gate's other load flakes (`x86-smbd`,
+  `x86-film`) are the gate's overrun, on the roadmap.
+
+**Next**: each slow load measured by stage, to find where the time goes;
+then HTTP/2, the GPU. 0.11.449 not pushed - its prepush failed on load
+flakes twice.
 
 ## 16 November: JetSki's shield (0.11.448)
 

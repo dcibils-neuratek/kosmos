@@ -202,6 +202,22 @@ def main():
                 time.sleep(0.2)
                 guest._read_available()
             program = "42 object" in guest.seen[mark:]
+
+            # And `--no-jit` (`docs/jit.md`): a loop hot enough to be
+            # compiled, run on the interpreter alone - its answer, and not
+            # a byte of code written. The hot function above, with the JIT
+            # on, is the control: the same engine writes code there.
+            if program:
+                interp = len(guest.seen)
+                guest.type('/Home/apps/jsc/jsc.lua --no-jit -e '
+                           '"var s = 0; for (var i = 0; i < 300000; i++) s = (s + i) % 997; print(s)"')
+                stop = time.monotonic() + 120
+                said_interp = None
+                while time.monotonic() < stop and said_interp is None:
+                    said_interp = re.search(r"(\d+)\r?\njsc: on the interpreter alone, (\d+) bytes",
+                                            guest.seen[interp:])
+                    time.sleep(0.2)
+                    guest._read_available()
     finally:
         guest.close()
 
@@ -209,6 +225,8 @@ def main():
         with open(os.environ["KOSMOS_JSC_SERIAL"], "w") as f:
             f.write(guest.seen)
 
+    if said is None:
+        said_interp = None
     if said == "jscsays: " + want and not program:
         print("FAIL: `jsc.lua -e` did not print 42 object")
         print("--- the guest's last words ---\n" + guest.seen[mark:][-1500:])
@@ -232,9 +250,15 @@ def main():
         print("FAIL: the JIT did not compile the hot function into its pool: %s" % jit)
         return 1
 
+    if not said_interp or said_interp.group(1) != "765" or said_interp.group(2) != "0":
+        print("FAIL: `jsc --no-jit` did not run its loop on the interpreter alone: %s"
+              % (said_interp.group(0) if said_interp else guest.seen[interp:][-800:]))
+        return 1
+
     print("PASS: JavaScriptCore on Kosmos, from a %.1f MB image, in %.1f s: %s; "
           "and jsc.lua -e printed 42 object; and the JIT compiled a hot function "
-          "into its pool, %s bytes written by it (%s pages of the pool touched), hot=%s"
+          "into its pool, %s bytes written by it (%s pages of the pool touched), hot=%s; "
+          "and with --no-jit a hot loop ran with no code written"
           % (os.path.getsize(image) / 1e6, took, want, int(m.group(4)) - int(m.group(3)),
              m.group(2), HOT_WANT))
     return 0

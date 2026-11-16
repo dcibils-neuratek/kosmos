@@ -101,6 +101,19 @@ Held to:
 - **The 23 sites on the M700** (`tools/top20.py`), before and after: the
   number this is for.
 
+## What it showed (0.11.449, on the M700)
+
+`testing.md` 18.847. Script is **3.4 times faster** - 65 ms against
+220 ms for the same `jsc -e`, the same image with `--no-jit` - and the
+23 sites load **no faster**: 15 of 23 within five seconds, as on the
+interpreter. So the JIT is kept, because script that runs is faster and
+pages that run more of it later (a site in use, not loading) will show
+it; and the five-second sites are not waiting on JavaScript. Where they
+do wait is the next measurement: each load broken into the network,
+parsing, style and layout, painting and the hops between JetSki's
+processes, before anything is changed. FTL and WebAssembly wait for that,
+since they would speed up the same stage that is not the slow one.
+
 ## Then
 
 2. **FTL**, on B3.

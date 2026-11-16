@@ -34909,3 +34909,60 @@ Checked: a lean build then a whole one links 27.8 MB and then 44.6 MB, and
 a second whole build links nothing. `x86-padlock` now also keeps a
 picture when the shield's press fails (`shield-failed.png`), which is
 what showed the shield off the screen.
+
+## 18.847 The JIT on the M700: script 3.4 times faster, the 23 sites not
+
+The M700 (192.168.1.35) netbooted to 0.11.449, with WebKit's package
+carrying the JIT, the cache still warm from 18.845.
+
+**Script.** One `jsc -e` run, the same `jsc.elf` both ways, `--no-jit`
+(new in this revision: JavaScriptCore's options set before the first VM,
+since Kosmos has no environment to read them from) - `fib(27)`, three
+million iterations of arithmetic, two hundred thousand objects made and
+read, fifty thousand strings joined:
+
+| | first | second |
+|---|---|---|
+| the JIT (Baseline and DFG) | 65 ms | 65 ms |
+| the interpreter alone | 220 ms | 221 ms |
+
+**3.4 times**, and the same answers. `x86-jsc` now holds `--no-jit` too: a
+hot loop's answer with no byte of code written; its control, the switch
+setting `useJIT=true`, writes code and FAILS.
+
+**The 23 sites** (`tools/top20.py`, twice), against 18.845's second run
+on the interpreter with the same warm cache:
+
+| site | interpreter | JIT, first | JIT, second |
+|---|---|---|---|
+| Google | 2.2 | 2.2 | - |
+| YouTube | 3.5 | 3.7 | 3.6 |
+| Google News | 3.9 | 3.5 | 3.3 |
+| Amazon | 1.3 | 1.4 | 1.6 |
+| Reddit | 7.1 | 7.8 | 8.1 |
+| Yahoo! | 5.3 | 8.3 | 4.9 |
+| Bing | 1.5 | 1.9 | 1.9 |
+| IMDb | 1.8 | 2.3 | 2.3 |
+| CNN | 5.4 | 8.4 | 6.2 |
+| Apple | 3.0 | 3.7 | 3.8 |
+| The Guardian | 2.2 | 1.8 | 2.2 |
+| Wikipedia | 1.5 | 1.9 | 1.9 |
+| BBC | 2.4 | 3.0 | 3.1 |
+| ESPN | 2.8 | 3.9 | 3.4 |
+| Walmart | 3.0 | 4.4 | 3.4 |
+| TikTok | 21.1 | 2.2 | 9.3 |
+| eBay | 5.9 | 5.6 | 5.5 |
+| The Weather Channel | 2.3 | 4.0 | 2.6 |
+| The New York Times | 5.5 | 6.9 | 7.1 |
+| Temu | 2.0 | 2.4 | 2.7 |
+| Infobae | 8.7 | 11.4 | 9.6 |
+| El Observador | 4.3 | 8.5 | 7.0 |
+| El País (Uruguay) | 6.6 | 7.0 | 9.3 |
+
+15 of 23 within five seconds both times, as on the interpreter. **The
+JIT does not move a page's load**, though it runs the engine's script 3.4
+times faster - so what keeps the eight over five seconds is not
+JavaScript running. That is the next thing to measure, by stage: the
+network, parsing, style and layout, painting, and the hops between
+JetSki's processes (`docs/jit.md`, *What it showed*). Kept as
+`bench/top20/0.11.449-m700.json` (the second run's).

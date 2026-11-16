@@ -19,6 +19,7 @@
  */
 
 #include <JavaScriptCore/JavaScript.h>
+#include <JavaScriptCore/Options.h>
 #include <wtf/FileSystem.h>
 #include <wtf/kosmos/KosmosJITPool.h>
 #include <wtf/text/WTFString.h>
@@ -78,10 +79,14 @@ static void thrown(JSContextRef ctx, JSValueRef exception)
     said += '\n';
 }
 
+// Whether a script has run, after which JavaScriptCore's options are fixed.
+static bool ran;
+
 /* Runs `source`, named `where` in its messages; 0 when it threw nothing. */
 static int run(const std::string& source, const char *where, char **out, unsigned long *length)
 {
     said.clear();
+    ran = true;
 
     JSGlobalContextRef ctx = JSGlobalContextCreate(nullptr);
     JSObjectRef global = JSContextGetGlobalObject(ctx);
@@ -107,6 +112,25 @@ static int run(const std::string& source, const char *where, char **out, unsigne
     *out = said.data();
     *length = said.size();
     return exception ? 1 : 0;
+}
+
+// The JIT off, for timing the same script on the interpreter alone
+// (`jsc --no-jit`). JavaScriptCore reads its options from the environment
+// elsewhere, and Kosmos has none, so it is a call - before the first VM,
+// after which the options are frozen.
+extern "C" int kosmos_jsc_interpret_only(void)
+{
+    if (ran) {
+        return -1;
+    }
+    // Options are read once a process; the first reading takes this
+    // callback, and JavaScriptCore's own, at the first VM, finds them read.
+    bool set = false;
+    JSC::Options::initialize([&] {
+        JSC::Options::AllowUnfinalizedAccessScope scope;
+        set = JSC::Options::setOptions("useJIT=false");
+    });
+    return set ? 0 : -1;
 }
 
 // The JIT's pool's pages written so far - code made - or -1 with no pool

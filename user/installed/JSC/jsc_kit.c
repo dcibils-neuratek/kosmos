@@ -7,6 +7,8 @@
  *   eval(text)   the script given
  *   t262(bundle) test262's cases, read; how many (`docs/w4.md` W4e)
  *   case(n)      the nth of them run: true, or false and why
+ *   jit_pages()  the JIT's pool: pages touched, bytes written
+ *   no_jit()     the interpreter alone, asked before the first script
  *
  * Each returns what the script printed and whether it finished without
  * throwing. A file's bytes go from the disk to the engine without passing
@@ -83,6 +85,17 @@ static int l_jit_pages(lua_State *L)
     return 2;
 }
 
+int kosmos_jsc_interpret_only(void);
+
+/* The JIT off for this process, before its first script (`docs/jit.md`):
+ * the same engine timed both ways. False once a script has run, when
+ * JavaScriptCore's options can no longer change. */
+static int l_no_jit(lua_State *L)
+{
+    lua_pushboolean(L, kosmos_jsc_interpret_only() == 0);
+    return 1;
+}
+
 void kosmos_jsc_kit(lua_State *L)
 {
     lua_newtable(L);
@@ -96,4 +109,6 @@ void kosmos_jsc_kit(lua_State *L)
     lua_setfield(L, -2, "case");
     lua_pushcfunction(L, l_jit_pages);
     lua_setfield(L, -2, "jit_pages");
+    lua_pushcfunction(L, l_no_jit);
+    lua_setfield(L, -2, "no_jit");
 }

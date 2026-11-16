@@ -10166,8 +10166,12 @@ the applications make the system useful, and is not pulled forward.
     need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
     `testing.md` 18.846): Baseline and DFG together - on 64 bits the
     Baseline JIT uses DFG's types, so (1) and (2) below became one step -
-    on the separated heap, held to test262 and `x86-jsc` with a control;
-    measured on the M700 next. FTL and WebAssembly still off. Built on
+    on the separated heap, held to test262 and `x86-jsc` with a control.
+    **Measured on the M700** (18.847): script 3.4 times faster, the 23
+    sites no faster - so the five-second sites are not waiting on
+    JavaScript. **Next: each load measured by stage** (network, parsing,
+    style and layout, painting, the hops between processes) before FTL or
+    WebAssembly, which speed up the stage that is not the slow one. Built on
     Nebula's W^X as it stands: the code pool mapped twice, written through
     one mapping and run from the `MEM_MAP_RX` one - JavaScriptCore's
     `ENABLE_SEPARATED_WX_HEAP`, iOS's shape, with its Mach remap ported to
