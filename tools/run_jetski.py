@@ -188,6 +188,10 @@ LINK = (0x8a, 0x2b, 0x6e)
 BLANK = (0x6e, 0x8a, 0x2b)          # the link to a new tab, `target=_blank`
 FIELD = (0x2b, 0x4f, 0x8a)
 SECOND = "JetSki second page"
+# A page whose script renames it: what Settings' JavaScript switch is held to.
+SCRIPTED = (b"<!doctype html><html><head><title>Without its script</title>"
+            b"<script>document.title = 'With its script';</script></head>"
+            b"<body>Scripted</body></html>\n")
 TYPED = "kos"
 
 PAGE = PAGE.replace(b"#block {", b"#go { display: block; width: 240px; height: 48px; "
@@ -371,7 +375,7 @@ class Page(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        body = {"/": PAGE, "/other.html": OTHER}.get(self.path)
+        body = {"/": PAGE, "/other.html": OTHER, "/scripted.html": SCRIPTED}.get(self.path)
         if BROKEN == "missing" or body is None:
             self.send_error(404)
             return
@@ -496,6 +500,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(resized(guest, R, window, mark, sw, sh))
     failed.extend(tabbed(guest, R, window, sw, sh))
     failed.extend(from_disk(guest, R, window, sw, sh))
+    failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
     return failed
@@ -684,6 +689,64 @@ def named_function(built):
 
 # A character as QEMU's `sendkey` names its key.
 QEMU_KEYS = {":": "shift-semicolon", "/": "slash", ".": "dot", "-": "minus", "\n": "ret"}
+
+
+def settings(guest, R, window, sw, sh):
+    """JetSki's Settings (`roadmap.md`, S1): Control-comma opens it in a tab
+    of its own; JavaScript switched off there, a page's script does not
+    run - its title stays the page's own - and switched on, it runs again.
+    The setting is kept in JetSki's file, checked after the run."""
+    x, y, _, _ = window
+
+    def opened():
+        since = len(guest.seen)
+        guest.sendkey("ctrl-comma")
+        if not said(guest, since, "jetski: settings opened", 20) \
+           or not said(guest, since, "jetski: settings, ", 5):
+            return None
+        time.sleep(0.5)
+        m = re.search(r"jetski: settings, \d+ columns, javascript (\d+),(\d+)", guest.seen[since:])
+        return (int(m.group(1)), int(m.group(2))) if m else None
+
+    def switched(at, want):
+        since = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(x + at[0], y + at[1], sw, sh))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.15)
+        guest.mouse_button(False)
+        return said(guest, since, "jetski: set javascript " + want, 10)
+
+    def loaded(title):
+        since = len(guest.seen)
+        guest.sendkey("ctrl-l")
+        time.sleep(0.3)
+        for key in [QEMU_KEYS.get(c, c) for c in Page.address + "scripted.html\n"]:
+            guest.sendkey(key)
+        if not said(guest, since, "jetski: loaded " + Page.address + "scripted.html", 30):
+            return False
+        time.sleep(2)                   # a script that would rename it, run
+        titles = re.findall(r"jetski: title ([^\r\n]*)", guest.seen[since:])
+        return titles[-1:] == [title]
+
+    at = opened()
+    if not at:
+        return ["Control-comma did not open Settings: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen)[-3:])]
+    shot = guest.screendump()
+    R.write_png(os.path.join(KEPT, "jetski-settings.png"), shot)
+    if not switched(at, "false"):
+        return ["Settings' JavaScript switch was clicked and nothing was set"]
+    if not loaded("Without its script"):
+        return ["with JavaScript off a page's script still ran, or the page did not load: %s"
+                % (re.findall(r"jetski: title [^\r\n]*", guest.seen)[-2:])]
+    at = opened()
+    if not at or not switched(at, "true"):
+        return ["Settings did not open again, or JavaScript did not switch back on"]
+    if not loaded("With its script"):
+        return ["with JavaScript on again a page's script did not run: %s"
+                % (re.findall(r"jetski: title [^\r\n]*", guest.seen)[-2:])]
+    return []
 
 
 def tabbed(guest, R, window, sw, sh):
@@ -945,6 +1008,22 @@ def compiled():
     if ANOTHER_LIST not in listing:
         failed.append("another list's compiled file was removed with this one's")
     return failed
+
+
+def kept_settings():
+    """Settings' switches in JetSki's own file on the disk, as last set."""
+    kept = os.path.join(WORK, "settings")
+    if os.path.exists(kept):
+        os.remove(kept)
+    subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK,
+                    "/Home/Settings/JetSki/settings", kept], capture_output=True, cwd=ROOT)
+    if not os.path.exists(kept):
+        return ["Settings kept nothing in /Home/Settings/JetSki/settings"]
+    with open(kept, "rb") as f:
+        text = f.read().decode("latin-1")
+    if not re.search(r"javascript\W+true", text):
+        return ["JetSki's settings file does not say JavaScript is on: %r" % text[:200]]
+    return []
 
 
 def cookies():
@@ -1280,6 +1359,7 @@ def main():
     else:
         failed.extend(used)
         failed.extend(cookies())
+        failed.extend(kept_settings())
         if BROKEN != "unblocked":
             failed.extend(compiled())
         failed.extend(itself())

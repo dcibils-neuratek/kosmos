@@ -38,6 +38,7 @@ prefs.DEFAULTS = {
   bar = true,                   -- Show the favorites bar
   zoom = 100,                   -- Zoom, per cent: all of the page
   images = true,                -- Load images
+  javascript = true,            -- JavaScript (JetSki's; NetSurf runs none)
   costs = true,                 -- What each page cost, in the status line
   search = "duckduckgo",        -- Search with (d6)
   history_days = 30,            -- Keep history for
@@ -114,13 +115,25 @@ local function valid(key, value)
 end
 
 -- What the file says, over the defaults, each value checked.
-function prefs.read(file)
+--
+-- **Another browser's file and defaults** (`file`, `defaults`): JetSki keeps
+-- its own in `/Home/Settings/JetSki` and opens on a page of its own rather
+-- than `about:start`, which it has not got. A key `defaults` does not name
+-- takes `DEFAULTS`' value.
+--
+local function default_of(key, defaults)
+  if defaults and defaults[key] ~= nil then return defaults[key] end
+  return prefs.DEFAULTS[key]
+end
+
+function prefs.read(file, defaults)
   local got = fs.read(file or prefs.FILE)
   local out = {}
 
   -- Not `ok and v or default`, which is the default for every `false` -
   -- and "Show the favorites bar" off is one.
-  for key, default in pairs(prefs.DEFAULTS) do
+  for key in pairs(prefs.DEFAULTS) do
+    local default = default_of(key, defaults)
     local v = nil
 
     if type(got) == "table" then v = got[key] end
@@ -132,14 +145,15 @@ function prefs.read(file)
 end
 
 -- The settings written, what is known and valid of them; true when kept.
-function prefs.write(t, file)
+function prefs.write(t, file, defaults)
   file = file or prefs.FILE
 
   if not files.make_folder(files.parent(file)) then return false end
 
   local out = {}
 
-  for key, default in pairs(prefs.DEFAULTS) do
+  for key in pairs(prefs.DEFAULTS) do
+    local default = default_of(key, defaults)
     local v = t[key]
 
     if v ~= nil and valid(key, v) then out[key] = v else out[key] = default end

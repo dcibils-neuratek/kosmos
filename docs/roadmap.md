@@ -10525,6 +10525,21 @@ the applications make the system useful, and is not pulled forward.
       `LICENSE` and held by a test to what the image links; drawing it
       found Brotli, WOFF2, dav1d and libavif missing from `LICENSE`.
       Diego agreed About too: "about mockup is good too".
+      **Steps, 16 November**, each with its test in `x86-jetski`:
+      **S1** the page - a tab that is JetSki's own, not a WebKit view,
+      at `about:settings`, by the menu button or Control+comma, the old
+      browser's cards (`browser.lua`, d5) ported, kept in
+      `browserprefs.lua`'s file; with what WebKit can do from the first
+      day: the home page, when JetSki opens, zoom, loading images and
+      JavaScript (new kit calls over `WKPreferences` and the page's zoom),
+      and the search engine. **S1 built in 0.11.444** (`testing.md`
+      18.840); to do from it: the status line on Settings' tab still says
+      the last page's "loaded ...". **S2** history, which JetSki does not keep
+      yet: recorded, kept for its days, cleared. **S3** cookies and site
+      data: how long kept, and *Manage…* - every site's, cleared one or
+      all (`adblock.html`, *Manage cookies*). **S4** the Privacy and Ad
+      Blocking group, which is B5. Downloads' row comes with Downloads,
+      and the favorites bar with favorites.
     - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
       the M700, killed its page's process and JetSki showed nothing - the
       fault was in the system's log, read over telnet. Diego: "why dont we

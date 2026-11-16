@@ -181,6 +181,33 @@ do
   check(to("   ") == "nil", "nothing typed goes nowhere")
 end
 
+-- **JetSki's own file and defaults** (`roadmap.md`, S1): its home page in
+-- place of `about:start`, JavaScript on unless written off, and the old
+-- browser's file untouched by either.
+do
+  local FILE, OWN = "/Home/Settings/JetSki/settings", { home = "https://en.wikipedia.org/wiki/BeOS" }
+  local s = prefs.read(FILE, OWN)
+
+  check(s.home == OWN.home and s.javascript == true and s.zoom == 100,
+        "no file is JetSki's defaults, its own home page among them: " .. tostring(s.home))
+
+  s.javascript, s.zoom = false, 125
+  check(prefs.write(s, FILE, OWN), "JetSki's written")
+
+  local back = prefs.read(FILE, OWN)
+
+  check(back.javascript == false and back.zoom == 125 and back.home == OWN.home,
+        "JavaScript off read back as off, not as the default")
+  check(prefs.read().home ~= OWN.home and prefs.read().javascript == true,
+        "the old browser's file is not JetSki's")
+
+  files[FILE] = { javascript = "no", home = 7 }
+  local bad = prefs.read(FILE, OWN)
+
+  check(bad.javascript == true and bad.home == OWN.home,
+        "a value of the wrong kind is JetSki's default, not the old browser's")
+end
+
 if failures == 0 then
   print(("PASS: %d checks on the browser's settings, on this machine."):format(checks))
   os.exit(0)

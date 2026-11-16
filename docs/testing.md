@@ -34579,3 +34579,56 @@ The full gate passed 128 of 130 suites in 740 s. `x86-cafesa3d-1` (the
 Plane's colours, 917 pixels) and `arm-sandbox-linux` (the guest's file
 not yet in `/Home`) failed, and both passed run alone at once after, in
 138 s. Neither touches WebKit, the lists or the IPC.
+
+**On the M700**, 16 November, 0.11.443 netbooted, JetSki opened once and
+then again (`log webkit`, the time since JetSki began):
+
+| list | first launch, compiled | second launch, found compiled | compiled file |
+|---|---|---|---|
+| EasyList Cookie | 14.5 s | 0.6 s | 12 122 KB |
+| EasyList | 44.1 s | 2.1 s | 29 244 KB |
+| EasyPrivacy | 69.7 s | 3.6 s | 25 782 KB |
+
+The three compile one after another on WebKit's queue, so each figure
+includes the ones before it: about 14, 30 and 26 s apiece, against 24, 36
+and 29 under TCG, so the M700 is barely faster than the emulator here;
+why is not yet measured. It happens once per list update and off the
+page's path; the cost met at every later launch is the 3.6 s of finding
+them (`adblock.md`, *What it costs*).
+
+## 18.840 JetSki Settings S1: the page, JavaScript, images, zoom and search (0.11.444)
+
+`about:settings` is a tab of JetSki's own - a WebKit view left blank with
+`ui.cards` drawn over it - opened by the menu button beside the address or
+by Control (or Super) and comma. Its groups: *Starting* (the home page,
+when JetSki opens: the home page or the tabs it had), *Pages* (zoom, load
+images, JavaScript) and *Searching* (the engine for words that are not an
+address). Kept in `/Home/Settings/JetSki/settings` by `browserprefs.lua`,
+which now takes a file and the defaults that are its owner's. The WebKit
+Kit gained `webkit.settings{scripts=, images=}` over `WKPreferences` and
+`webkit.zoom(percent)` over every page's zoom factor, and `webkit.views()`
+says each view's address.
+
+`x86-jetski` (38 checks): Control-comma opens Settings; its JavaScript
+switch is clicked off and the file says so; `scripted.html` - whose title
+its script changes - then keeps the title it was served with; switched on
+again, the script runs; and after the run the file on the disk says
+JavaScript is on. `tools/test_browserprefs.lua`: 27 checks, a file with
+its own defaults among them.
+
+**Controls**: JetSki handing WebKit `scripts = true` whatever the switch
+says fails "with JavaScript off a page's script still ran"; `prefs.read`
+ignoring the defaults it is passed fails 3 host checks.
+
+**What it found on the way, both older than Settings**: the page view kept
+every key that was not on its short list of the window's, so Control-comma
+went to the page; and Control-L focused the address without choosing it,
+so what was typed was added to what was there, on every tab - the suite
+typed an address on Settings' tab and asked for
+`about:settingshttp://...`. And `ui.cards` cut a row's note to one line,
+mid-word, in every application that has cards: a note now wraps to the
+room beside its control and the row grows to hold it.
+
+Gate: 131 of 131 suites in 699 s (11:38) - over the ten minutes; the
+slowest `x86-cafesa3d-2` at 312 s and `host-llm` at 253 s.
+

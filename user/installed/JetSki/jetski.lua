@@ -165,6 +165,7 @@ end
 
 function web.crash(id) return views[id] and views[id]:crash() end
 function web.target(on) targeting = on shown:target(on) end
+function web.shown_id() return shown and shown:id() end
 function web.load(address) shown:load(address) end
 function web.back() shown:back() end
 function web.forward() shown:forward() end
@@ -181,7 +182,19 @@ function web.inspecting() return shown:inspecting() end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
-local HOME = "https://en.wikipedia.org/wiki/BeOS"
+--
+-- **JetSki's Settings** (`docs/webkit.html`, *Settings*; `roadmap.md`,
+-- S1): its own file beside the cookies, read for what this JetSki knows
+-- (`browserprefs.lua`), its own page in place of the old browser's
+-- `about:start`. The tabs it had are read before any tab is made, which
+-- would write over them.
+--
+local SETTINGS = "/Home/Settings/JetSki/settings"
+local TABS_FILE = "/Home/Settings/JetSki/tabs"
+local OWN = { home = "https://en.wikipedia.org/wiki/BeOS" }
+local setting = prefs.read(SETTINGS, OWN)
+local had, had_shown = prefs.tabs(TABS_FILE)
+local HOME = setting.home
 
 -- The window's size, which a person changes with its grip: every other
 -- size here is worked out from these two in `layout`.
@@ -240,6 +253,10 @@ local WEBKIT = "/Kosmos/WebKit"
 web.inspector_files(WEBKIT .. "/Inspector")
 web.developer(DEVELOPER)
 
+-- What Settings says of every page, from the first one.
+webkit.settings{ scripts = setting.javascript, images = setting.images }
+webkit.zoom(setting.zoom)
+
 -- **A page's load, traced in the log** (`webkit.cpp`, *A page's load,
 -- traced*): every request as it ends, and what a page still waits on, for
 -- measuring JetSki's speed. On while `/Home/Settings/JetSki/trace` exists -
@@ -264,6 +281,8 @@ local reload  = ui.iconbutton{ icon = "reload" }
 local field   = ui.field{ text = HOME, hint = "Search, or type an address" }
 -- Web Inspector's, at the bar's right end, while the developer features are on.
 local inspect = ui.iconbutton{ icon = "debug", hidden = not DEVELOPER }
+-- The menu, at the end as the drawing's three dots are: Settings in it.
+local more    = ui.iconbutton{ icon = "more" }
 
 do
   local gap, edge = ui.layout.head_gap, ui.layout.head_edge
@@ -280,6 +299,8 @@ do
   header:add(field)
   inspect.y = (BAR - 1 - inspect.h) // 2
   header:add(inspect)
+  more.y = (BAR - 1 - more.h) // 2
+  header:add(more)
 end
 
 win:add(header)
@@ -388,6 +409,10 @@ win:add(strip)
 
 local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
 local gone                           -- a tab whose page stopped, below
+local settings_page                  -- Settings, in a tab of its own, below
+local open_settings, fill_settings, cover
+local settings_tab                   -- the tab Settings is in, or nil
+local pending = {}                   -- a tab's address, loaded when it is first shown
 
 -- **The page and its inspector, side by side**: the page `PAGE_W` wide, a
 -- rule, and the inspector after it. `inspecting` is WebKit's word - the
@@ -403,6 +428,8 @@ local function layout()
   strip.w, header.w = W, W
   lay_tabs()
   local right = W - ui.layout.head_edge
+  more.x = right - more.w
+  right = more.x - ui.layout.head_gap
   if not inspect.hidden then
     inspect.x = right - inspect.w
     right = inspect.x - ui.layout.head_gap
@@ -412,6 +439,7 @@ local function layout()
   PAGE_W = W - SPLIT_W
   view.w, view.h = W, VIEW_H
   if gone then gone.w, gone.h = PAGE_W, VIEW_H end
+  if settings_page then settings_page.w, settings_page.h = W, VIEW_H end
 end
 
 layout()
@@ -459,7 +487,7 @@ function view:wheel(n, x, y)
 end
 
 -- Keys that are the window's, never the page's: Control-L, Control-T,
--- and Super with a digit.
+-- Control or Super with a comma, and Super with a digit.
 local function inspector_key(c)
   local key, mods = keys.parts(c)
   return DEVELOPER and mods & keys.CTRL ~= 0 and mods & keys.ALT ~= 0
@@ -470,6 +498,7 @@ local function windows_key(c)
   if c == 12 or c == 15 or c == 20 then return true end
   if inspector_key(c) then return true end
   local key, mods = keys.parts(c)
+  if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
   return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
 end
 
@@ -666,6 +695,106 @@ end
 
 win:add(gone)
 
+--------------------------------------------------------------------------
+-- **Settings** (`docs/webkit.html`, *Settings*; `roadmap.md`, S1): a tab
+-- of JetSki's own at `about:settings` - a view of the kit's that loads
+-- nothing, which this page is drawn over - in the kit's cards, as the old
+-- browser's (`browser.lua`, d5), two columns when there is room. Every
+-- change is kept the moment it is made, and reaches every tab at once.
+-- History, cookies, and Privacy and Ad Blocking are S2 to S4.
+--
+
+settings_page = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H, hidden = true }
+settings_page.scroll, settings_page.tall = 0, 0
+
+function settings_page:draw(g)
+  g:fill(0, 0, self.w, self.h, theme.window)
+end
+
+function settings_page:wheel(n)
+  local most = math.max(0, self.tall - self.h)
+  self.scroll = math.max(0, math.min(most, self.scroll - n * 48))
+  for _, c in ipairs(self.children) do c.y = c.top - self.scroll end
+  return true
+end
+
+win:add(settings_page)
+
+-- What Settings says of pages, handed to the kit: every view's.
+local function apply_pages()
+  webkit.settings{ scripts = setting.javascript, images = setting.images }
+end
+
+function fill_settings()
+  local page = settings_page
+  page.children = {}
+
+  local function save(key, value, after)
+    setting[key] = value
+    prefs.write(setting, SETTINGS, OWN)
+    print(("jetski: set %s %s"):format(key, tostring(value)))
+    if after then after(value) end
+  end
+
+  local function switch(key, after)
+    return ui.switch{ on = setting[key], on_change = function(_, on) save(key, on, after) end }
+  end
+
+  local function choice(key, after)
+    return ui.dropdown{ choices = prefs.CHOICES[key], value = setting[key],
+                        on_change = function(_, v) save(key, v, after) end }
+  end
+
+  local home = ui.field{ text = setting.home, w = 260 }
+  home.on_change = function(_, text)
+    if text ~= "" and not text:find("%c") and text ~= setting.home then save("home", text) end
+  end
+
+  local zoom = choice("zoom", function(v) webkit.zoom(v) end)
+  local images = switch("images", apply_pages)
+  local javascript = switch("javascript", apply_pages)
+  local search = choice("search")
+
+  local groups = {
+    { name = "Starting", rows = {
+        { label = "Home page", control = home },
+        { label = "When JetSki opens", control = choice("opens") } } },
+    { name = "Pages", rows = {
+        { label = "Zoom", note = "All of the page: its words, pictures and boxes", control = zoom },
+        { label = "Load images", control = images },
+        { label = "JavaScript",
+          note = "Off makes most sites plain or blank; for reading, or a page that misbehaves",
+          control = javascript } } },
+    { name = "Searching", rows = {
+        { label = "Search with", note = "Words in the address field that are not an address",
+          control = search } } },
+  }
+
+  local two = page.w >= 860
+  local columns = two and { { groups[1], groups[2] }, { groups[3] } } or { groups }
+  local each = page.w // #columns
+
+  page.tall = 0
+  for i, list in ipairs(columns) do
+    local c = ui.cards{ x = (i - 1) * each, y = 0, w = each, h = 4000, groups = list, width = 440 }
+    c.h = c.content_h + 16
+    c.top = 0
+    page:add(c)
+    page.tall = math.max(page.tall, c.h)
+  end
+  page.scroll = math.max(0, math.min(page.scroll, page.tall - page.h))
+  for _, c in ipairs(page.children) do c.y = c.top - page.scroll end
+
+  -- Where its controls are in the window, for whoever drives it from
+  -- outside (`x86-jetski`).
+  local function at(v)
+    local x, y = v:in_window()
+    return ("%d,%d"):format(x + v.w // 2, y + v.h // 2)
+  end
+  print(("jetski: settings, %d columns, javascript %s, images %s, zoom %s, search %s")
+        :format(#columns, at(javascript), at(images), at(zoom), at(search)))
+end
+
 -- The pointer passing over, nothing held: links light up, and say so.
 use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
 
@@ -694,14 +823,25 @@ end
 -- An address as WebKit wants one: a scheme always, `https` when none was
 -- typed; words are a search, as the NetSurf browser's field has them.
 local function visit(text)
+  if text:match("^%s*" .. prefs.PAGE .. "%s*$") then
+    open_settings()
+    return
+  end
+
   -- A path is a file of this machine's: `file:` and the path, which
   -- WebKit's network process reads from /Home with the files beside it.
   if text:match("^%s*/") then text = "file://" .. text:match("^%s*(.-)%s*$") end
-  local where = prefs.destination(text, "duckduckgo")
+  local where = prefs.destination(text, setting.search)
 
   if not where then return end
 
   if not where:match("^%a[%w+.%-]*:") then where = "https://" .. where end
+
+  -- An address typed in Settings' tab: the tab a page's again.
+  if settings_tab and web.shown_id() == settings_tab then
+    settings_tab = nil
+    cover()
+  end
 
   page.address = where
   field.text = where
@@ -720,22 +860,85 @@ end
 -- `web.tabs`, asked again whenever a tab may have changed.
 --
 
+-- **The tabs kept as they change** (*When JetSki opens: The tabs it had*):
+-- their addresses and which is shown, written only when that changed.
+local kept_tabs
+local function keep_tabs()
+  local list, at = {}, 1
+  for _, t in ipairs(tabs) do
+    if t.address ~= "" and t.address ~= "about:blank" then
+      list[#list + 1] = t.address
+      if t.shown then at = #list end
+    end
+  end
+  local now = table.concat(list, "\n") .. "\n" .. at
+  if now == kept_tabs then return end
+  kept_tabs = now
+  prefs.save_tabs(list, at, TABS_FILE)
+end
+
 local function tabs_changed()
   web.tabs(tabs)
+  for _, t in ipairs(tabs) do
+    if t.id == settings_tab then
+      t.title, t.address, t.loading = "Settings", prefs.PAGE, false
+    elseif pending[t.id] then
+      t.title, t.address = pending[t.id], pending[t.id]
+    end
+  end
   lay_tabs()
+  keep_tabs()
+end
+
+-- Which of the three is over the page's place: Settings, a stopped page's
+-- account, or the page.
+function cover()
+  local here = settings_tab ~= nil and web.shown_id() == settings_tab
+  settings_page.hidden = not here
+  gone.hidden = here or crash == nil
+  view.hidden = here or crash ~= nil
+  if here then fill_settings() end
+end
+
+-- A tab made for an address and not shown yet - the tabs JetSki had - takes
+-- it the first time it is shown, so opening loads one page, not all.
+local function take_pending(id)
+  local a = pending[id]
+  if not a then return end
+  pending[id] = nil
+  if a == prefs.PAGE then settings_tab = id else visit(a) end
 end
 
 -- The window's state forgotten, so the next pass takes the tab shown.
 local function shown_changed()
   page.title, page.address = nil, ""
+  cover()
   tabs_changed()
+
   for i, t in ipairs(tabs) do
     if t.shown then print(("jetski: tab %d of %d"):format(i, #tabs)) end
   end
 end
 
 function select_tab(id)
-  if web.tab_select(id) then shown_changed() end
+  if web.tab_select(id) then
+    take_pending(id)
+    shown_changed()
+  end
+end
+
+-- Settings, in its tab if it has one, or a new one.
+function open_settings()
+  if settings_tab then
+    select_tab(settings_tab)
+    return
+  end
+  local id = web.tab_new()
+  if not id then return end
+  settings_tab = id
+  web.tab_select(id)
+  shown_changed()
+  print("jetski: settings opened")
 end
 
 -- A new tab, shown, its address field waiting for something typed.
@@ -755,7 +958,11 @@ function close_tab(id)
     win:close()                      -- `win:run` ends with it
     return
   end
-  if web.tab_close(id) then shown_changed() end
+  if web.tab_close(id) then
+    if id == settings_tab then settings_tab = nil end
+    pending[id] = nil
+    shown_changed()
+  end
 end
 
 back.on_click = function() web.back() end
@@ -769,6 +976,14 @@ local function toggle_inspector()
   web.inspect(not inspecting)
 end
 inspect.on_click = toggle_inspector
+
+more.on_click = function()
+  local x, y = more:in_window()
+  win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + more.h, {
+    { text = "New tab", on_choose = function() new_tab() end },
+    { text = "Settings", on_choose = function() open_settings() end },
+  })
+end
 
 -- The page's right-click: the toolbar's three, and Web Inspector while the
 -- developer features are on. *Inspect Element* - Elements opened on what
@@ -828,7 +1043,9 @@ local function frame()
     s:fill(0, HEAD - 3, math.max(math.floor(W * page.progress), W // 16), 3, theme.accent)
   end
 
-  if crash then
+  if not settings_page.hidden then
+    ui.paint_view(settings_page, s, 0, VIEW_Y)
+  elseif crash then
     ui.paint_view(gone, s, 0, VIEW_Y)
   else
     web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H)
@@ -858,6 +1075,7 @@ win.on_resize = function(_, w, h)
   web.resize(PAGE_W, VIEW_H)
   if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
   web.frame(X, Y, W, H)
+  if not settings_page.hidden then fill_settings() end
   print(("jetski: resized to %dx%d"):format(W, H))
   frame()
 end
@@ -871,6 +1089,12 @@ win.poll_wait_ticks = 1
 
 win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
+
+  -- Settings' tab is JetSki's: its name and address, whatever the view
+  -- under it says.
+  if settings_tab and st.tab == settings_tab then
+    st.title, st.address = "Settings", prefs.PAGE
+  end
 
   local changed = st.picture
 
@@ -932,8 +1156,7 @@ win.on_frame = function()
     page.crash_tab = st.tab
   end
   if crash ~= was then
-    gone.hidden = crash == nil
-    view.hidden = crash ~= nil
+    cover()
     if crash and (not was or crash.known ~= was.known) then
       say("the page's process ended")
       for _, r in ipairs(crash_rows(crash)) do
@@ -983,15 +1206,25 @@ win.on_frame = function()
   return changed
 end
 
--- Control-L: the address, to type over.
+-- Control-L: the address, all of it chosen, to type over.
 win.on_key = function(_, c)
   if c == 12 then
     web.focus(false)
     win:focus_on(field)
+    field:set_text(nil, true)
     return true
   end
 
   if c == 20 then new_tab() return true end
+
+  -- Control or Super with a comma: Settings, as Safari and Chrome have it.
+  do
+    local key, mods = keys.parts(c)
+    if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then
+      open_settings()
+      return true
+    end
+  end
 
   if inspector_key(c) then toggle_inspector() return true end
 
@@ -1037,5 +1270,23 @@ end
 
 tabs_changed()
 win:focus_on(view)
-visit(files.words(args)[1] or HOME)
+
+do
+  local start = files.words(args)[1]
+  if not start and setting.opens == "tabs" and #had > 0 then
+    -- The tab `web.open` made is the first; the rest wait to be shown.
+    local ids = { web.shown_id() }
+    for i = 2, #had do ids[i] = web.tab_new() end
+    for i, a in ipairs(had) do
+      if ids[i] then pending[ids[i]] = a end
+    end
+    local first = ids[had_shown] or ids[1]
+    web.tab_select(first)
+    take_pending(first)
+    shown_changed()
+    print(("jetski: opened on the tabs it had, %d"):format(#had))
+  else
+    visit(start or HOME)
+  end
+end
 win:run()

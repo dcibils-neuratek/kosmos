@@ -3719,3 +3719,35 @@ same.
 and trackers, and nothing is fetched for them. Under the emulator the
 three lists take about 90 s to compile the first time; how long the M700
 takes is the next measurement.
+
+## 16 November 2026 - JetSki's Settings
+
+**In short.** JetSki has a Settings page now: Control and comma, or the
+menu beside the address. It has the home page, whether JetSki opens on it
+or on the tabs it had, zoom, pictures, JavaScript and the search engine,
+and it remembers them. Building it found three small faults that every
+user had been living with.
+
+**What it is.** Settings is a tab like any other, but JetSki draws it
+itself rather than WebKit, with the same cards the system's other
+settings windows use. A change is written to a file in
+`/Home/Settings/JetSki` the moment it is made and handed to WebKit at
+once: switch JavaScript off and the next page loads without running its
+scripts.
+
+**What it found.** Control-L put the cursor in the address but did not
+select what was there, so typing an address added it to the old one -
+the test asked for `about:settingshttp://...`. The page kept keys it
+should have passed to the window, which is why Control-comma did nothing
+at first. And the cards cut a long description off mid-word, in every
+application that has them; it now runs onto a second line.
+
+**How it is proved.** The test switches JavaScript off and opens a page
+whose script changes its own title: the title must stay as served. Then
+on again, and it must change. As a control, JetSki was made to ignore the
+switch, and the test failed.
+
+**And the M700.** The blocking lists from this morning take 70 s to
+compile the first time JetSki starts there, in the background, and 3.6 s
+to be found every time after.
+

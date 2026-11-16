@@ -274,8 +274,9 @@ measurable.**
 
 The slow part is compiling, and it is off the page's path: once per list
 update, on a WebKit work queue, while JetSki goes on drawing. For EasyList
-on Safari's hardware it is a few seconds. B2 measures it on the M700, and
-until a compile finishes the previous compiled file goes on being used.
+on Safari's hardware it is a few seconds; on the M700 the three lists take
+70 s the first time and 3.6 s to be found compiled after (B2). Until a
+compile finishes the previous compiled file goes on being used.
 
 ---
 
@@ -302,7 +303,10 @@ M700: requests made, bytes, cookies kept, load time.
   carried gzipped in FULL images, compiled on a machine's first launch
   and found compiled after, by their bytes' hash. It found an IPC bug: a
   message with two regions handed each under the other's name. Under TCG
-  the three compile in 89 s; the M700's number is next.
+  the three compile in 89 s; on the M700, 16 November, in 70 s - the
+  Cookie list ready at 14.5 s, EasyList at 44 s, EasyPrivacy at 70 s, one
+  after another on WebKit's queue while the page went on - and JetSki
+  opened again found all three compiled in 3.6 s.
 - **B3. Third-party cookies refused**, and `block-cookies` from
   EasyPrivacy, with sites allowed them one at a time (a patch to
   `CookieJarDB`), and the trackers' cookies cleared the first time. Test: a page on one host that a second host sets a cookie

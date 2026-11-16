@@ -418,6 +418,9 @@ WKPreferencesRef preferences(bool scripts)
  */
 WKRect windowFrame;
 
+// Every page's zoom, Settings' (`webkit_zoom`): 1 is 100%.
+static double zoomFactor = 1;
+
 WKRect getWindowFrame(WKPageRef, const void*)
 {
     return windowFrame;
@@ -838,6 +841,7 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     WKViewSetViewClient(view->view, &viewClient.base);
 
     view->page = WKViewGetPage(view->view);
+    WKPageSetPageZoomFactor(view->page, zoomFactor);
     WKPageNavigationClientV2 navigation { };
     navigation.base = { 2, view.get() };
     navigation.contentRuleListNotification = ruleListActed;
@@ -997,14 +1001,14 @@ extern "C" unsigned webkit_views(struct webkit_view_info* out, unsigned room)
         each.pid = static_cast<int>(view->pid);
         auto title = adoptWK(WKPageCopyTitle(view->page));
         copy(title.get(), each.title, sizeof each.title);
-        if (!each.title[0]) {
-            auto url = adoptWK(WKPageCopyActiveURL(view->page));
-            auto string = url ? adoptWK(WKURLCopyString(url.get())) : nullptr;
-            copy(string.get(), each.title, sizeof each.title);
-        }
+        auto url = adoptWK(WKPageCopyActiveURL(view->page));
+        auto string = url ? adoptWK(WKURLCopyString(url.get())) : nullptr;
+        copy(string.get(), each.address, sizeof each.address);
         // A page that stopped has no address left in WebKit: the one kept.
-        if (!each.title[0] && view->crashed)
-            snprintf(each.title, sizeof each.title, "%s", view->crashedAddress);
+        if (!each.address[0] && view->crashed)
+            snprintf(each.address, sizeof each.address, "%s", view->crashedAddress);
+        if (!each.title[0])
+            snprintf(each.title, sizeof each.title, "%s", each.address);
     }
     return n;
 }
@@ -1436,6 +1440,32 @@ extern "C" void webkit_focus(int id, int focused)
 extern "C" void webkit_developer(int on)
 {
     WKPreferencesSetDeveloperExtrasEnabled(preferences(true), on);
+}
+
+/*
+ * **What JetSki's Settings say of every page** (`docs/webkit.html`,
+ * *Pages*; `roadmap.md`, S1): scripts on or off for the views that run
+ * them - a view made without scripts keeps them off whatever this says -
+ * and pictures loaded or not for all of them. One object a kind, so a
+ * change reaches every open tab at once, as Settings promises.
+ */
+extern "C" void webkit_settings(int scripts, int images)
+{
+    WKPreferencesSetJavaScriptEnabled(preferences(true), scripts);
+    WKPreferencesSetLoadsImagesAutomatically(preferences(true), images);
+    WKPreferencesSetLoadsImagesAutomatically(preferences(false), images);
+}
+
+/*
+ * **The zoom, all of a page** (Settings' *Zoom*, Chrome's four): WebKit's
+ * page zoom, which scales words, pictures and boxes together, for every
+ * view there is and every one made after.
+ */
+extern "C" void webkit_zoom(int percent)
+{
+    zoomFactor = percent / 100.0;
+    for (auto& view : views.all)
+        WKPageSetPageZoomFactor(view->page, zoomFactor);
 }
 
 extern "C" void webkit_inspector_files(const char* folder)

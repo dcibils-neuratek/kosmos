@@ -4767,10 +4767,23 @@ function ui.cards(spec)
         local c = row.control
         local right = cx + width - 1 - L.row_in
         local left = cx + 1 + L.row_in
-        local words = (row.label and row.label ~= "" and L.line or 0)
-                      + (row.note and L.note or 0)
         local name_w = row.label and gfx.measure(row.label, "label") or 0
         local ch = c and c.h or (row.value and gfx.height() or 0)
+
+        -- What the row's words have beside its control, known before
+        -- either is placed: a note wraps to it, and the row is as tall
+        -- as its lines - a note cut off mid-word says nothing.
+        local beside = row.value and gfx.measure(tostring(row.value)) or 0
+        if c and c.fill then
+          beside = right - (left + (name_w > 0 and (row.name_w or name_w)
+                                    + L.row_in or 0))
+        elseif c then
+          beside = c.w
+        end
+        local room = right - (beside > 0 and beside + L.row_in or 0) - left
+        local notes = row.note and ui.wrapped(row.note, room, "ui") or {}
+        local words = (row.label and row.label ~= "" and L.line or 0)
+                      + #notes * L.note
         local h = math.max(least - ((i < #rows) and 1 or 0),
                            2 * pad + math.max(words, ch))
         local taken = 0
@@ -4800,7 +4813,7 @@ function ui.cards(spec)
                              color = theme.text_dim, role = "ui" })
         end
 
-        local room = right - (taken > 0 and taken + L.row_in or 0) - left
+        room = right - (taken > 0 and taken + L.row_in or 0) - left
         local top = y + (h - words) // 2
 
         if row.label and row.label ~= "" then
@@ -4811,10 +4824,11 @@ function ui.cards(spec)
                              text = row.label, role = "label" })
         end
 
-        if row.note then
+        for n, line in ipairs(notes) do
           self:add(ui.label{ x = left,
-                             y = top + L.line + (L.note - gfx.height()) // 2,
-                             w = room, text = row.note,
+                             y = top + L.line + (n - 1) * L.note
+                                 + (L.note - gfx.height()) // 2,
+                             w = room, text = line,
                              color = theme.text_dim, role = "ui" })
         end
 

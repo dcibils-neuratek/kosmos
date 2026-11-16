@@ -6,6 +6,22 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: JetSki Settings, S1 (0.11.444, not pushed)
+
+- **S1 built** (`testing.md` 18.840): `about:settings`, by the menu button
+  or Control-comma - home page, when JetSki opens (the tabs it had are
+  restored), zoom, images, JavaScript, search - kept in
+  `/Home/Settings/JetSki/settings`; new kit calls `webkit.settings` and
+  `webkit.zoom`.
+- Fixed on the way: Control-L now chooses the whole address; Control-comma
+  reaches the window; `ui.cards` wraps a note instead of cutting it.
+- **B2's compile measured on the M700** (18.839): 70 s for the three lists
+  the first time, found compiled in 3.6 s after.
+- Old session transcripts deleted (Diego's yes): 1.8 GB back, 7.9 GB free.
+
+**Next**: S2, history. Then S3 cookies and Manage..., S4 the Privacy
+group (B5), Downloads, B3.
+
 ## 16 November: Privacy and Ad Blocking, B2 (0.11.443, not pushed)
 
 - **B2 built** (`testing.md` 18.839): EasyList, EasyPrivacy and EasyList
@@ -20,9 +36,7 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 - Gate: 128 of 130 in 740 s; `x86-cafesa3d-1` and `arm-sandbox-linux`
   passed alone at once after.
 
-**Next**: the compile timed on the M700 (Diego's ask) - the image is in
-`build/netboot`, waiting for Diego to say the monitor is on before a
-restart. Then JetSki Settings (`about:settings`), then Downloads, then B3.
+**Next** was the compile on the M700 - done, in the entry above.
 
 ## 16 November: Privacy and Ad Blocking, B1 (0.11.442, not pushed)
 

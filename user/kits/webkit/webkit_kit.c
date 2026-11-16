@@ -158,7 +158,7 @@ static int l_views(lua_State *L)
     for (i = 0; i < n; i++) {
         if (lua_rawgeti(L, 1, (lua_Integer)i + 1) != LUA_TTABLE) {
             lua_pop(L, 1);
-            lua_createtable(L, 0, 5);
+            lua_createtable(L, 0, 6);
             lua_pushvalue(L, -1);
             lua_rawseti(L, 1, (lua_Integer)i + 1);
         }
@@ -172,6 +172,8 @@ static int l_views(lua_State *L)
         lua_setfield(L, -2, "pid");
         lua_pushstring(L, info[i].title);
         lua_setfield(L, -2, "title");
+        lua_pushstring(L, info[i].address);
+        lua_setfield(L, -2, "address");
         lua_pop(L, 1);
     }
     for (i = n + 1; lua_rawgeti(L, 1, (lua_Integer)i) != LUA_TNIL; i++) {
@@ -194,6 +196,23 @@ static int l_frame(lua_State *L)
 static int l_developer(lua_State *L)
 {
     webkit_developer(lua_toboolean(L, 1));
+    return 0;
+}
+
+/* webkit.settings{ scripts = true, images = true }: every view's. */
+static int l_settings(lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    webkit_settings(option(L, 1, "scripts", 1), option(L, 1, "images", 1));
+    return 0;
+}
+
+/* webkit.zoom(125): every page's, in per cent. */
+static int l_zoom(lua_State *L)
+{
+    lua_Integer percent = luaL_checkinteger(L, 1);
+    luaL_argcheck(L, percent >= 25 && percent <= 500, 1, "a zoom from 25 to 500 per cent");
+    webkit_zoom((int)percent);
     return 0;
 }
 
@@ -464,6 +483,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "view", l_view },       { "adopt", l_adopt },     { "pump", l_pump },
         { "views", l_views },     { "frame", l_frame },     { "developer", l_developer },
         { "trace", l_trace },
+        { "settings", l_settings }, { "zoom", l_zoom },
         { "said", l_said },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },
         { NULL, NULL },

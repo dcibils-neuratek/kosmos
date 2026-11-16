@@ -71,6 +71,7 @@ struct webkit_view_info {
     int shown, loading;
     int pid;                       /* its web process, the last one seen; 0 before */
     char title[256];
+    char address[1024];            /* its page's, or the stopped page's; "" for none */
 };
 
 /* A view, `width` by `height`; its id, or 0. Not shown until `webkit_show`.
@@ -164,6 +165,14 @@ void webkit_focus(int id, int focused);
  * front end's files are the folder `webkit_inspector_files` names.
  */
 void webkit_developer(int on);
+
+/*
+ * **JetSki's Settings, for every view** (`roadmap.md`, S1): scripts and
+ * pictures on or off (`webkit_settings`), and the zoom in per cent - 100,
+ * 125, 150, 200 - for every page now and after (`webkit_zoom`).
+ */
+void webkit_settings(int scripts, int images);
+void webkit_zoom(int percent);
 void webkit_inspector_files(const char *folder);
 void webkit_inspect(int id, int show);
 int  webkit_inspecting(int id);
