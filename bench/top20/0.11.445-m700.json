@@ -1,0 +1,22 @@
+{
+ "version": "0.11.445",
+ "machine": "m700",
+ "when": "2026-11-16 11:24",
+ "wait": 90.0,
+ "sites": [
+  {
+   "ended": "loaded",
+   "seconds": 27.9,
+   "kept_out": 19,
+   "cookies_kept_back": 0,
+   "address": "https://www.nytimes.com/",
+   "rank": 19,
+   "name": "The New York Times",
+   "site": "nytimes.com",
+   "cookies_own": 0,
+   "cookies_others": 0,
+   "cookie_sites": [],
+   "within": false
+  }
+ ]
+}

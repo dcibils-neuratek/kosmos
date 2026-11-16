@@ -1,0 +1,29 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A network cache file's times on Kosmos (Kosmos docs/testing.md 18.842).
+`fileTimes` has a branch for systems with a birth time, for Soup and for
+Windows, and none for Kosmos, so it ran off its end - undefined, and clang
+left the function with no return at all: the cache's first touch of a
+record ran into whatever followed it. Kosmos keeps one time, the last
+write, and gives it as both.
+
+diff -ruN a/Source/WebKit/NetworkProcess/cache/NetworkCacheFileSystem.cpp b/Source/WebKit/NetworkProcess/cache/NetworkCacheFileSystem.cpp
+--- a/Source/WebKit/NetworkProcess/cache/NetworkCacheFileSystem.cpp	2026-11-16 11:59:51.100310835 -0300
++++ b/Source/WebKit/NetworkProcess/cache/NetworkCacheFileSystem.cpp	2026-11-16 11:59:51.113704588 -0300
+@@ -78,6 +78,16 @@
+         return { };
+     return { WallTime::fromRawSeconds(g_ascii_strtoull(birthtimeString, nullptr, 10)),
+         WallTime::fromRawSeconds(g_file_info_get_attribute_uint64(fileInfo.get(), "time::modified")) };
++#elif OS(KOSMOS)
++    // Kosmos: a file keeps one time, when it was last written, so that is
++    // both. Without this branch the function ran off its end, which clang
++    // took for unreachable and the next function in the image ran instead
++    // (Kosmos docs/testing.md 18.842).
++    struct stat fileInfo;
++    if (stat(FileSystem::fileSystemRepresentation(path).data(), &fileInfo))
++        return { };
++    auto modified = WallTime::fromRawSeconds(fileInfo.st_mtim.tv_sec);
++    return { modified, modified };
+ #elif OS(WINDOWS)
+     auto createTime = FileSystem::fileCreationTime(path);
+     auto modifyTime = FileSystem::fileModificationTime(path);

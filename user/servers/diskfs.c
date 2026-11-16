@@ -1883,6 +1883,21 @@ static void op_super(struct disk_reply *rp)
     }
 }
 
+/* The filesystem's size and its free bytes, through any door. */
+static void op_room(struct disk_reply *rp)
+{
+    uint64_t free_blocks;
+    int r = kfs_free_blocks(&A->kfs, &SB, &free_blocks);
+
+    if (r != KFS_OK) {
+        rp->error = kfs_error(r);
+        return;
+    }
+
+    rp->size = (uint64_t)SB.blocks * SB.block_size;
+    rp->bytes = free_blocks * SB.block_size;
+}
+
 static void op_device(struct disk_reply *rp)
 {
     rp->u.device = cost;
@@ -2006,6 +2021,7 @@ static void answer(const struct message *msg, uint64_t sender)
     } else {
         switch (rq->op) {
         case DISK_OP_LIST:    op_list(rq, rp); break;
+        case DISK_OP_ROOM:    op_room(rp); break;
         case DISK_OP_READ:    op_read(rq, rp, cap); break;
         case DISK_OP_WRITE:   op_write(rq, rp, cap); break;
         case DISK_OP_WRITE_AT: op_write_at(rq, rp, cap); break;

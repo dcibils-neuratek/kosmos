@@ -1637,25 +1637,65 @@ int link(const char *from, const char *to)
 }
 
 /*
- * **How much room a file system has is not yet asked.** The Storage Kit
- * has no request for it, so `statvfs` finds the path and says ENOTSUP;
- * a port's free-space figure is then "not known", which WebKit's and
- * libc++'s both allow for (`roadmap.md`, W4c's follow-ups).
+ * **How much room a file system has** (16 November 2026): the Storage
+ * Kit's `storage_room`, `DISK_OP_ROOM` on `/Home`, in blocks of 4 KB. It
+ * said ENOTSUP before, and WebKit, sizing its disk cache from the free
+ * space, gave the cache none - every visit fetched every file again. A
+ * mount that cannot say - `/Temporary`, `/Kosmos` - is still ENOTSUP.
  */
+static int room_of(const char *path, struct statvfs *out)
+{
+    const unsigned long block = 4096;
+    uint64_t size, free_bytes;
+    int r = storage_room(path, &size, &free_bytes);
+
+    if (r == STORAGE_ERR_BAD) {
+        return fails(ENOTSUP);
+    }
+
+    if (r != STORAGE_OK) {
+        return kit_fails(r);
+    }
+
+    memset(out, 0, sizeof *out);
+    out->f_bsize = block;
+    out->f_frsize = block;
+    out->f_blocks = (fsblkcnt_t)(size / block);
+    out->f_bfree = (fsblkcnt_t)(free_bytes / block);
+    out->f_bavail = out->f_bfree;
+    out->f_namemax = 255;
+    return 0;
+}
+
 int statvfs(const char *path, struct statvfs *out)
 {
-    struct stat st;
+    char whole[STORAGE_PATH_MAX];
+    int r;
 
-    (void)out;
-    return stat(path, &st) != 0 ? -1 : fails(ENOTSUP);
+    if (path == NULL || out == NULL) {
+        return fails(EFAULT);
+    }
+
+    if ((r = storage_absolute(path, whole)) != STORAGE_OK) {
+        return kit_fails(r);
+    }
+
+    return room_of(whole, out);
 }
 
 int fstatvfs(int fd, struct statvfs *out)
 {
     struct taken t;
 
-    (void)out;
-    return take(fd, &t) != 0 ? -1 : fails(ENOTSUP);
+    if (out == NULL) {
+        return fails(EFAULT);
+    }
+
+    if (take(fd, &t) != 0) {
+        return -1;
+    }
+
+    return room_of(t.path, out);
 }
 
 long pathconf(const char *path, int name)

@@ -72,6 +72,15 @@
  */
 #define DISK_OP_FLUSH    17u
 
+/*
+ * **How much room there is** (16 November 2026, for `statvfs`): the
+ * filesystem's bytes in `size` and its free bytes in `bytes` - nothing
+ * else, so any door may ask it, where SUPER, which names the device, is the
+ * whole disk's only. WebKit sizes its disk cache from the free space, and
+ * without an answer gave it none (`roadmap.md`, W4c's follow-ups).
+ */
+#define DISK_OP_ROOM     18u
+
 /* The request's region is the bytes: read into it, or written from it. */
 #define DISK_REGION       1u
 /* WRITE_AT: the file made when it is not there. */

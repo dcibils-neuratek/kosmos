@@ -3776,3 +3776,37 @@ Times, eBay, Canvas and Reddit still do not, and they are next. Every
 program on Kosmos that was ported from elsewhere reads and writes large
 files faster too, not only JetSki.
 
+
+## 16 November 2026 - A cache that had no room
+
+**In short.** JetSki fetched every file of every page on every visit,
+because WebKit had given its disk cache no space. It asks the system how
+much room the disk has, and Kosmos used to answer "I can't say", which WebKit
+read as none. Now `/Home` says how big it is and how much is free. Giving the
+cache room then found a bug in WebKit that had been waiting for it.
+
+**What happened.** WebKit sizes its disk cache from the free space where
+the cache lives. Kosmos's `statvfs`, the call that answers that, said "not
+supported", because there was no request to ask the disk server. So the
+cache was 0 bytes and nothing was kept.
+
+**What changed.** The disk server answers a new request, "how much room",
+with the disk's size and its free bytes. The Storage Kit asks it, and
+`statvfs` answers from it. A test writes a megabyte and checks the free
+space fell by at least that much. Its control, a disk server that says
+nothing is free, fails both checks.
+
+**What it woke.** The first full gate with the cache on failed JetSki twice:
+WebKit's network process died the moment it touched a cached page. One of
+WebKit's functions, which reads a cache file's dates, has a branch for
+macOS, Linux's GNOME and Windows, and none for anything else. On Kosmos it
+ran off its end without returning. The compiler is allowed to assume that
+never happens, so it left out every path through the function, and the
+machine ran straight into the function next to it in memory. A WebKit
+patch now gives Kosmos its branch. Turning that kind of mistake into a
+build error, so the rest of them are named instead of found by a crash, is
+on the roadmap for the next full WebKit build.
+
+**Visible impact.** A page seen before can come from the disk instead of
+the network. How much faster that makes the top 23 is measured on the
+M700 next.

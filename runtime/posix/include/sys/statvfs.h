@@ -5,8 +5,9 @@
 /*
  * **How much room a file system has**, for ported code (`docs/w4.md`
  * W4c) - named so libc++'s `std::filesystem::space` and WebKit's
- * free-space figure compile. The Storage Kit has no request for it yet,
- * so both calls find what they were given and say ENOTSUP (`fd.c`).
+ * free-space figure - which sizes its disk cache - have an answer: the
+ * Storage Kit's `storage_room`, in blocks of 4 KB, where a mount can say,
+ * and ENOTSUP where it cannot (`fd.c`, `testing.md` 18.842).
  */
 
 #include <sys/cdefs.h>

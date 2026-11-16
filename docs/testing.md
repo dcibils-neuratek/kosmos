@@ -34672,3 +34672,51 @@ Gate: 129 of 130 in 713 s, run beside the top 20 on the M700;
 `x86-desktops` ("the loader's window was never drawn") passed 15 of 15
 alone at once after, in 22 s.
 
+
+## 18.842 `statvfs` says how much room `/Home` has - JetSki's disk cache had none (0.11.446)
+
+Looking at why The New York Times took 24 s found that JetSki fetches every
+file of every page every time: it had no disk cache. WebKit sizes its cache
+from the free space where it lives (`NetworkCache.cpp`, `computeCapacity`,
+through `std::filesystem::space`, which libc++ answers with `statvfs`), and
+`statvfs` said ENOTSUP - written that way in W4c because the Storage Kit had
+nothing to ask. No answer is a capacity of nothing.
+
+`diskfs` answers a new request, `DISK_OP_ROOM` (`diskproto.h`): the disk's
+bytes in `size`, its free bytes in `bytes`, from `kfs_free_blocks`. Any door
+may ask it of a path in its own folder, as it may a `getattr`. The Storage
+Kit asks it in `storage_room`, and `statvfs` and `fstatvfs` give it in
+blocks of 4 KB; a mount that cannot say - `/Temporary`, `/Kosmos` - is still
+ENOTSUP. `webkit.elf`'s `__space` was checked to call this `statvfs`.
+
+`x86-loader`, two checks with one control:
+
+- the POSIX layer's file checks: `statvfs` of `/Home` gives 4 KB blocks,
+  some free, no more free than there are and all of them available;
+  `fstatvfs` of a folder there the same; `/Temporary` ENOTSUP;
+- the Storage Kit's: the room on `/Home` falls by at least a megabyte when
+  a megabyte is written, and `/Temporary` has none to say.
+
+**Control**: `diskfs` saying no byte free - "statvfs of /Home said 2: 0 of
+57344 blocks free" and "the room on /Home said 0: 0 free of 234881024".
+
+**What the room woke.** The first gate with it failed `x86-jetski` twice in
+a row: an address typed into a new tab, and a page reloaded with
+JavaScript, "could not load ...: error 300". WebKit's network process had
+died of a read at 0, in a `HashTable::rehash` entered with a null size.
+Nothing called it so: the function before it in `webkit.elf`, the lambda
+`Storage::updateFileModificationTime` hands its I/O queue, was a frame
+set up and then nothing - no call, no return - so it ran on into the
+rehash. Its callee, `NetworkCache::fileTimes`, has a branch for systems
+with a birth time, for Soup and for Windows, and none for Kosmos; it ran
+off its end, which is undefined, and clang dropped every path through it.
+It had never run because the cache had never been given a byte. Patch
+0035 gives Kosmos a branch: one time a file keeps, its last write, as both.
+
+Gate: two runs of `make prepush`. The first, before patch 0035, failed
+`x86-jetski` (above) and `x86-film`, which passed 13 of 13 alone and
+fails only beside JetSki's suite. The second, with it, passed 127 of 131
+in 853 s; the four it did not - `x86-network` (a lookup timed out),
+`x86-profile` (634 samples of about 1020), `arm-sandbox` (218 of 219
+arrived) and `x86-cafesa3d-2` - passed together alone at once after, in
+254 s. Then `mega` and `shot`.

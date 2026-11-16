@@ -509,7 +509,7 @@ def main():
                    % ("x86_64" if X86 else "aarch64")) in said
               and "; files: made, excl, read and written, positioned, appended, cut, dup "
                   "shared, flags, closed, folders listed and removed, read only, cwd, "
-                  "realpath, console, 200 open, 4 threads; " in said
+                  "realpath, console, room, 200 open, 4 threads; " in said
               and said.endswith("; stdio: written and read by line, a thousand of them, "
                                 "positioned, scanned, given back, getline, r+, appended, wx "
                                 "refused, ten thousand bytes, fdopen, tmpfile gone, a "

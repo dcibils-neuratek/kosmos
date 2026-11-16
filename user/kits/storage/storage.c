@@ -1108,6 +1108,36 @@ int storage_rename(const char *from, const char *to)
     }
 }
 
+int storage_room(const char *path, uint64_t *size, uint64_t *free_bytes)
+{
+    struct where w;
+    struct diskask *d;
+    uint32_t e;
+    int r = resolve(path, &w);
+
+    if (r != STORAGE_OK) {
+        return r;
+    }
+
+    if (w.m->proto != STORAGE_DISK) {
+        return STORAGE_ERR_BAD;
+    }
+
+    if ((d = disk_door(&w)) == NULL) {
+        return STORAGE_ERR_FULL;
+    }
+
+    e = diskask(d, DISK_OP_ROOM, w.path, 0, 0, 0, -1, NULL, 0);
+
+    if (e == DISK_OK) {
+        *size = diskask_said(d)->size;
+        *free_bytes = diskask_said(d)->bytes;
+    }
+
+    free(d);
+    return e == DISK_ERR_BAD_OP ? STORAGE_ERR_BAD : disk_error(e);
+}
+
 int storage_flush(const char *path)
 {
     struct where w;

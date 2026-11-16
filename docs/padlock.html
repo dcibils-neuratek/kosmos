@@ -1,0 +1,392 @@
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+  JetSki's padlock and shield - how a page came, its certificate, a page
+  refused for one, and blocking's totals beside a page's counts - drawn on
+  16 November 2026, before it is built, from Diego's "its lacking a ssl
+  certificate and safe page indicator like we did with the old browser"
+  and "we need to show how many ads are blocked, and cookies, and else
+  somewhere in jetski". The shield and its per-site switches are
+  docs/adblock.html's, agreed; this page adds what is new. Styles are
+  docs/adblock.html's, which are JetSki's own mockup's. Sites, certificates
+  and numbers drawn are examples unless the caption says measured.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JetSki Padlock and Shield</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --w-bg: #ffffff; --w-side: #f4f5f7; --w-line: #e3e6eb; --w-ink: #1b2330; --w-dim: #6b7484;
+  --w-accent: #2f6bdc; --w-good: #2e9b5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 840px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The Kosmos window: its band - title, menus, the three - as a direct
+   window with a menu bar has it. */
+.win { width: 980px; background: var(--w-bg); color: var(--w-ink); border-radius: 12px; overflow: hidden;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; }
+.band { display: flex; align-items: center; gap: 18px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--w-line); background: #f7f8fa; }
+.band .t { font-weight: 600; font-size: 14px; }
+.band .m { color: var(--w-dim); }
+.band .m.on { color: #fff; background: var(--w-accent); border-radius: 6px; padding: 2px 9px; margin: 0 -9px; }
+.grow { flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+
+/* The browser's own top: tabs in the band's row below, then the toolbar. */
+.menu-btn { align-self: center; padding: 0 10px 6px 4px; color: #4a5262; font-size: 15px; }
+.tabs { display: flex; align-items: flex-end; gap: 2px; padding: 10px 14px 0; background: #eef0f4; border-bottom: 1px solid var(--w-line); }
+.tab { display: flex; align-items: center; gap: 8px; background: transparent; border-radius: 9px 9px 0 0; padding: 7px 12px; font-size: 12.5px; color: #4a5262; width: 210px; white-space: nowrap; overflow: hidden; }
+.tab.on { background: #fff; color: #111; box-shadow: 0 -1px 0 var(--w-line) inset; }
+.tab .ic { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.tab .x { margin-left: auto; color: #9aa2b0; }
+.tab.plus { width: auto; color: #6b7484; font-size: 16px; padding: 4px 10px; }
+.tool { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--w-line); background: #fff; position: relative; }
+.tool .nav { color: #6b7484; letter-spacing: 8px; font-size: 15px; }
+.url { flex: 1; display: flex; align-items: center; gap: 8px; background: #f1f3f6; border: 1px solid transparent; border-radius: 9px; padding: 6px 12px; color: #2a3240; font-size: 13px; }
+.url.focus { gap: 0; background: #fff; border-color: var(--w-accent); box-shadow: 0 0 0 3px rgba(47,107,220,.18); }
+.url .lock { color: var(--w-good); font-size: 12px; }
+.url .host { color: #111; font-weight: 500; }
+.url .path { color: #6b7484; }
+.tool .act { color: #6b7484; font-size: 13px; display: flex; gap: 14px; }
+.tool .dl { position: relative; }
+.tool .dl i { position: absolute; left: -2px; right: -2px; bottom: -6px; height: 3px; border-radius: 2px; background: #e3e6eb; }
+.tool .dl i b { display: block; width: 62%; height: 3px; border-radius: 2px; background: var(--w-accent); }
+.view { height: 470px; background: #fff; overflow: hidden; }
+/* A made-up page: a wiki article. */
+.art { display: grid; grid-template-columns: 190px 1fr 230px; gap: 26px; padding: 22px 28px; }
+.art .toc { font-size: 12.5px; color: #3c4a60; }
+.art .toc div { padding: 4px 0; }
+.art .toc .on { color: #1d3f7a; font-weight: 600; }
+.art h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 28px; margin: 0 0 4px; border-bottom: 1px solid #e3e6eb; padding-bottom: 6px; }
+.art .lede { font-size: 13.5px; line-height: 1.65; color: #202122; margin: 10px 0; }
+.art .box { border: 1px solid #e3e6eb; background: #f8f9fa; padding: 10px; font-size: 12px; }
+.art .pic { height: 120px; border-radius: 4px; background: linear-gradient(160deg,#0e1a33,#2a4f8f 55%,#d8a35a); margin-bottom: 8px; }
+.art table { width: 100%; border-collapse: collapse; }
+.art td { padding: 3px 0; border-top: 1px solid #eceef1; }
+.art td:first-child { color: #54595d; width: 44%; }
+.status { position: absolute; left: 0; bottom: 0; background: #f7f8fa; border: 1px solid var(--w-line); border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; padding: 3px 10px; font-size: 11.5px; color: #5a6474; }
+/* The status line while a page loads, and when it has (15 November 2026). */
+.sline { display: flex; align-items: center; gap: 12px; background: #f7f8fa; border: 1px solid var(--w-line); border-radius: 8px; padding: 5px 12px; font-size: 11.5px; color: #5a6474; max-width: 760px; margin: 8px 0; }
+.sline .grow { flex: 1; }
+.sline .bar { width: 180px; height: 6px; border-radius: 3px; background: #e2e6ec; overflow: hidden; }
+.sline .bar i { display: block; height: 100%; background: var(--w-accent, #2f6fde); border-radius: 3px; }
+.sline .pct { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.sline.done { color: var(--w-good); }
+/* The address field's suggestions. */
+.sugg { position: absolute; left: 112px; right: 128px; top: 44px; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.18); padding: 6px; font-size: 13px; z-index: 2; }
+.sugg .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px 4px; }
+.sugg .r { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 10px; border-radius: 6px; align-items: center; }
+.sugg .r.on { background: var(--w-accent); color: #fff; }
+.sugg .r.on span { color: #dfe8fb; }
+.sugg .r span { color: #8a92a0; font-size: 12px; }
+/* A page that stopped. */
+.gone { height: 430px; display: grid; place-items: center; background: #fbfbfc; }
+.gone .c { text-align: center; max-width: 440px; }
+.gone h3 { margin: 10px 0 6px; font-size: 18px; }
+.gone p { color: var(--w-dim); margin: 0 auto 16px; font-size: 13px; }
+.gone.dev { height: auto; padding: 28px 0 22px; }
+.why { margin: 18px auto 0; width: 560px; text-align: left; border: 1px solid var(--w-line); border-radius: 8px; background: #fff; font: 12px/1.55 var(--mono); }
+.why .h { font: 600 12px var(--ui, system-ui); padding: 7px 12px; border-bottom: 1px solid var(--w-line); display: flex; }
+.why .h span { margin-left: auto; color: var(--w-dim); font-weight: 400; }
+.why dl { display: grid; grid-template-columns: 112px 1fr; margin: 0; padding: 8px 12px 10px; gap: 1px 10px; }
+.why dt { color: var(--w-dim); }
+.why dd { margin: 0; overflow-wrap: anywhere; }
+.why .fn { color: #8a3b12; }
+.btn { display: inline-block; background: var(--w-accent); color: #fff; border-radius: 7px; padding: 6px 16px; font-weight: 500; }
+.btn.q2 { background: #eef0f3; color: var(--w-ink); margin-left: 8px; }
+/* Downloads. */
+.dls { padding: 8px 0; }
+.dlr { display: grid; grid-template-columns: 34px 1fr 140px 90px; gap: 12px; align-items: center; padding: 10px 20px; border-bottom: 1px solid #f0f1f4; font-size: 13px; }
+.dlr .ico { width: 30px; height: 36px; border-radius: 4px; background: #e8f0fd; border: 1px solid #c9d8f3; }
+.dlr .s { color: var(--w-dim); font-size: 12px; }
+.dlr .pb { height: 5px; background: #eef0f3; border-radius: 3px; }
+.dlr .pb i { display: block; height: 5px; border-radius: 3px; background: var(--w-accent); }
+.dlr .a { color: var(--w-accent); text-align: right; }
+/* Settings: a tab of the browser's own, in Preferences' groups. */
+.set { padding: 20px 28px 26px; background: #f4f5f7; }
+.setcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+.grouplabel { font-weight: 600; font-size: 12.5px; margin: 14px 0 6px 3px; }
+.grouplabel:first-child { margin-top: 0; }
+.group { background: #fff; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+.row { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--w-line); min-height: 44px; }
+.row:last-child { border-bottom: 0; }
+.row .label { flex: 1; min-width: 0; }
+.row .label b { font-weight: 500; display: block; }
+.row .label span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+.field { font-size: 12.5px; padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; min-width: 160px; }
+.drop { padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; color: var(--w-ink); }
+.sw { width: 40px; height: 23px; border-radius: 12px; background: #cdd0d6; position: relative; flex: none; }
+.sw.on { background: var(--w-accent); }
+.sw::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
+.sw.on::after { left: 19px; }
+/* About JetSki. */
+.about { padding: 20px 26px 18px; }
+.about .hero { display: flex; gap: 18px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--w-line); }
+.about .logo { width: 64px; height: 64px; border-radius: 16px; flex: none; background: linear-gradient(150deg, #5fb4ff, #2f6bdc 55%, #173a8a); box-shadow: inset 0 -10px 0 rgba(255,255,255,.18); }
+.about .name { font-size: 22px; font-weight: 600; }
+.about .ver { color: var(--w-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.about .hero p { margin: 6px 0 0; font-size: 13px; }
+.about .built { font-weight: 600; font-size: 12.5px; margin: 14px 0 4px; }
+.libs { max-height: 330px; overflow-y: auto; border: 1px solid var(--w-line); border-radius: 10px; }
+.libs .lg { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8a92a0; padding: 9px 14px 3px; background: #fafbfc; }
+.libs .lib { display: grid; grid-template-columns: 150px 64px 1fr 110px; gap: 10px; padding: 5px 14px; font-size: 12.5px; border-top: 1px solid #f0f1f4; align-items: baseline; }
+.libs .lib b { font-weight: 500; }
+.libs .lib span { color: var(--w-dim); font-variant-numeric: tabular-nums; }
+.libs .lib i { font-style: normal; color: #3c4553; }
+.libs .lib em { font-style: normal; color: var(--w-dim); text-align: right; font-size: 12px; }
+.about .foot { display: flex; align-items: center; margin-top: 14px; }
+/* Developer mode: Safari's Web Inspector, docked to the right. */
+.win.wide { width: 1088px; }
+.split { display: grid; grid-template-columns: 1fr 548px; height: 560px; }
+.split .view { height: 100%; border-right: 1px solid #c9ced6; }
+.wi { display: flex; flex-direction: column; background: #fff; font: 11.5px/1.45 -apple-system, "IBM Plex Sans", system-ui, sans-serif; color: #1d1d1f; min-width: 0; }
+.wi-bar { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 6px; background: #f2f2f4; border-bottom: 1px solid #d6d6da; }
+.wi-bar .ic { width: 18px; text-align: center; color: #6e6e73; font-size: 12px; }
+.wi-bar .t { padding: 2px 5px; font-size: 11px; border-radius: 5px; color: #3a3a3c; white-space: nowrap; }
+.wi-bar .t.on { background: #dcdce1; color: #000; }
+.wi-bar .badge { color: #d70015; font-weight: 600; margin-left: 4px; }
+.wi-bar .badge.w { color: #b25000; }
+.wi-filter { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; height: 26px; padding: 0 8px; border-bottom: 1px solid #e3e3e6; color: #6e6e73; }
+.wi-filter .fld { flex: 1; border: 1px solid #d6d6da; border-radius: 5px; padding: 1px 7px; color: #a1a1a6; }
+.wi-filter .chip { padding: 0 6px; border-radius: 4px; }
+.wi-filter .chip.on { background: #0a64d8; color: #fff; }
+.con { flex: 1; overflow: hidden; font: 11px/1.5 var(--mono); }
+.con .l { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; gap: 6px; padding: 3px 8px; border-bottom: 1px solid #eeeef0; }
+.con .l .src { color: #0a64d8; white-space: nowrap; }
+.con .l.err { background: #fff1f2; color: #b3001b; border-bottom-color: #ffd6da; }
+.con .l.warn { background: #fffbe6; color: #6b4b00; border-bottom-color: #f3e5ad; }
+.con .l.in { color: #0a64d8; }
+.con .l.out { color: #1d1d1f; }
+.con .prompt { display: grid; grid-template-columns: 16px 1fr; gap: 6px; padding: 4px 8px; color: #0a64d8; }
+.net { flex: 1; overflow: hidden; }
+.net table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.net th { text-align: left; font-weight: 500; color: #6e6e73; background: #f7f7f9; border-bottom: 1px solid #d6d6da; padding: 3px 6px; }
+.net td { padding: 3px 6px; border-bottom: 1px solid #f0f0f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.net tr.sel td { background: #0a64d8; color: #fff; }
+.net tr.bad td { color: #d70015; }
+.net .wf { position: relative; height: 9px; }
+.net .wf i { position: absolute; top: 1px; height: 7px; border-radius: 2px; background: #5e9cff; }
+.net .wf i.w { background: #c8c8ce; }
+.wi-foot { height: 22px; display: flex; align-items: center; gap: 16px; padding: 0 8px; border-top: 1px solid #e3e3e6; color: #6e6e73; font-variant-numeric: tabular-nums; }
+.dom { font: 11px/1.6 var(--mono); padding: 6px 8px; color: #881280; }
+.dom .a { color: #994500; } .dom .v { color: #1a1aa6; } .dom .tx { color: #1d1d1f; }
+.dom .sel { background: #d7e6fb; margin: 0 -8px; padding: 0 8px; }
+.hl { position: absolute; border: 1px solid #5e9cff; background: rgba(94,156,255,.18); }
+
+/* Blocking, 16 November 2026: the shield and its pop-over. */
+.shield { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 7px; color: #1f6b43; background: #e5f4ec; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shield svg { width: 14px; height: 14px; }
+.shield.off { color: #6b7484; background: #eef0f3; }
+.pop { position: absolute; right: 64px; top: 46px; width: 330px; background: #fff; border: 1px solid #dfe3ea; border-radius: 12px; box-shadow: 0 16px 38px rgba(0,0,0,.2); z-index: 3; font-size: 13px; overflow: hidden; }
+.pop .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; border-bottom: 1px solid var(--w-line); }
+.pop .hd b { font-weight: 600; }
+.pop .hd span { color: var(--w-dim); font-size: 12px; display: block; }
+.pop .nums { display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 6px; border-bottom: 1px solid var(--w-line); }
+.pop .nums div { text-align: center; }
+.pop .nums b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pop .nums span { color: var(--w-dim); font-size: 11.5px; }
+.pop .lst { padding: 6px 14px 8px; border-bottom: 1px solid var(--w-line); }
+.pop .lst .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin: 4px 0; }
+.pop .lst .r { display: flex; gap: 8px; padding: 2px 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pop .lst .r span:first-child { flex: 1; color: #2a3240; }
+.pop .lst .r span:last-child { color: var(--w-dim); }
+.pop .ft { display: flex; align-items: center; padding: 10px 14px; gap: 10px; }
+.pop .ft a { color: var(--w-accent); font-size: 12.5px; text-decoration: none; }
+/* A made-up news page, with the holes adverts leave closed. */
+.news { padding: 18px 28px; display: grid; grid-template-columns: 1fr 260px; gap: 26px; }
+.news .mast { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 18px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+.news .mast b { font: 700 26px Georgia, serif; letter-spacing: -.01em; }
+.news .mast span { color: #6b7484; font-size: 12px; }
+.news h3 { font: 600 24px/1.2 Georgia, serif; margin: 6px 0 8px; }
+.news p { font-size: 13.5px; line-height: 1.65; color: #26303d; margin: 0 0 10px; }
+.news .hero { height: 150px; border-radius: 4px; background: linear-gradient(135deg,#2b3a55,#5a7bb5 60%,#e6b26a); margin-bottom: 10px; }
+.news .side div { border-top: 1px solid #e6e8ec; padding: 8px 0; font-size: 12.5px; color: #2a3240; }
+.news .side div b { display: block; font-weight: 600; }
+.gonead { border: 1px dashed #b9c6d8; border-radius: 6px; color: #7a8698; font-size: 11.5px; text-align: center; padding: 10px; background: #f7f9fc; }
+/* Before and after, side by side. */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 980px; }
+.pair .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+.pair .card h4 { margin: 0 0 8px; font-family: var(--display); font-size: 16px; }
+.pair table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.pair td { padding: 4px 0; border-top: 1px solid var(--rule); }
+.pair td:last-child { text-align: right; font-weight: 600; }
+.pair .est { color: var(--muted); font-weight: 400; font-size: 12px; }
+/* Settings, Blocking. */
+.cookies .row { gap: 10px; }
+.cookies .head { min-height: 32px; color: var(--w-dim); font-size: 12px; font-weight: 600; }
+.cookies .c-site { flex: 1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cookies .c-n, .cookies .c-kb { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.cookies .c-when { width: 90px; color: var(--w-dim); font-size: 12.5px; }
+.cookies .c-x { width: 52px; text-align: right; color: var(--w-dim); }
+.cookies .open { background: #f4f7fb; }
+.cookies .detail { display: block; padding: 6px 14px 12px 28px; background: #f4f7fb; }
+.cookies .ctag { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: #eef0f3; color: var(--w-dim); }
+.cookies .ctag.trk { background: #fdecea; color: #b03a2e; }
+.cookies .ctag.ok { background: #e7f6ec; color: #23824a; }
+.cookies .keep { color: #c3c8cf; margin-right: 6px; }
+.cookies .keep.on { color: #f0a500; }
+table.ck { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+table.ck th { text-align: left; color: var(--w-dim); font-weight: 600; padding: 3px 10px 3px 0; }
+table.ck td { padding: 3px 10px 3px 0; border-top: 1px solid var(--w-line); }
+.lists .row .cnt { color: var(--w-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.own { font: 12px/1.6 var(--mono); background: #fff; border: 1px solid var(--w-line); border-radius: 8px; padding: 8px 12px; color: #2a3240; white-space: pre; overflow-x: auto; }
+.chip2 { display: inline-flex; align-items: center; gap: 6px; background: #eef0f3; border-radius: 6px; padding: 2px 8px; font-size: 12px; margin: 2px 4px 2px 0; }
+/* The prompt. */
+.term { background: #10141b; color: #d6dde8; border-radius: 10px; padding: 14px 16px; font: 12.5px/1.6 var(--mono); max-width: 860px; white-space: pre; overflow-x: auto; }
+.term .p { color: #7fd1a8; } .term .d { color: #8b96a8; } .term .y { color: #f2c46d; }
+
+/* 16 November 2026: the padlock, its pop-over, a refused page, totals. */
+.url .how { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 1px 7px 1px 5px; border-radius: 6px; margin-left: -4px; white-space: nowrap; }
+.url .how svg { width: 13px; height: 13px; }
+.how.secure { color: #1f6b43; }
+.how.plain { color: #5a6474; background: #e6e9ee; }
+.how.bad { color: #b3261e; background: #fbe3e0; }
+.how.here { color: #5a6474; }
+.how.own { color: #2f6bdc; }
+.states { display: grid; gap: 10px; max-width: 900px; }
+.states .st { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: center; }
+.states .st .note { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) { .states .st { grid-template-columns: 1fr; gap: 4px; } }
+.pop .kv { display: grid; grid-template-columns: 108px 1fr; gap: 3px 10px; padding: 10px 14px; border-bottom: 1px solid var(--w-line); font-size: 12.5px; margin: 0; }
+.pop .kv dt { color: var(--w-dim); }
+.pop .kv dd { margin: 0; overflow-wrap: anywhere; color: #2a3240; }
+.pop .tot { padding: 8px 14px 10px; border-bottom: 1px solid var(--w-line); background: #f7f9fc; }
+.pop .tot .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin: 2px 0 6px; }
+.pop .tot .g { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pop .tot b { display: block; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pop .tot span { color: var(--w-dim); font-size: 11px; }
+.refused { height: 430px; display: grid; place-items: center; background: #fbfbfc; }
+.refused .c { max-width: 500px; padding: 0 16px; }
+.refused h3 { margin: 10px 0 8px; font-size: 19px; color: #1b2330; }
+.refused p { color: #3c4553; font-size: 13px; margin: 0 0 10px; }
+.refused .why2 { font: 12px/1.55 var(--mono); background: #fff; border: 1px solid var(--w-line); border-radius: 8px; padding: 8px 12px; color: #6b2a24; margin: 12px 0 16px; }
+.refused .ico { color: #b3261e; display: block; }
+.ask { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; max-width: 860px; }
+.ask li { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; }
+.ask li b { font-family: var(--display); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>JetSki's padlock and shield</h1>
+<p class="sub">Two things in JetSki's toolbar that say what a page is. The padlock, at the head of the address, says how the page came and whether its certificate checked out. The shield, beside the address, says what Privacy and Ad Blocking kept out: this page's, and all of it since JetSki was first used. Drawn on 16 November 2026, before either is built. The shield's pop-over and its two per-site switches are agreed already in <code>adblock.html</code>; what is new here is the padlock, the page for a refused certificate, and the totals.</p>
+<p class="sub">Diego: "its lacking a ssl certificate and safe page indicator like we did with the old browser", "we need to show how many ads are blocked, and cookies, and else somewhere in jetski", "i want a button that i can press and disable ad blocking and else on a per website basis".</p>
+
+<h2>The padlock: how the page came</h2>
+<div class="states">
+  <div class="st"><div class="url"><span class="how secure"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span><span class="host">news.example</span><span class="path">/2026/11/laptop-week</span></div><div class="note"><b>Secure.</b> HTTPS, and its certificate checked out against the authorities this machine trusts. A green padlock alone, no word, as Safari and Chrome show it, so the address keeps the room.</div></div>
+  <div class="st"><div class="url"><span class="how plain"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.4-1" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>Not encrypted</span><span class="host">example.org</span><span class="path">/</span></div><div class="note"><b>Not encrypted.</b> Plain HTTP: anyone on the way can read it and change it. Grey, said in words.</div></div>
+  <div class="st"><div class="url"><span class="how bad"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1Z" fill="currentColor"/><path d="M8 6v4M8 11.6v.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Not secure</span><span class="host">self-signed.example</span><span class="path">/</span></div><div class="note"><b>Not secure.</b> HTTPS whose certificate did not check out, opened with <i>Open anyway</i> for this tab. Red, in words, for as long as the tab stays on that site.</div></div>
+  <div class="st"><div class="url"><span class="how here"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.5h6l3 3v10h-9Z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>This machine</span><span class="host"></span><span class="path">/Home/Pages/notes.html</span></div><div class="note"><b>This machine.</b> A file from the disk: no network had a part in it.</div></div>
+  <div class="st"><div class="url"><span class="how own"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>JetSki</span><span class="host"></span><span class="path">about:settings</span></div><div class="note"><b>JetSki.</b> One of JetSki&rsquo;s own pages: Settings, Downloads, About.</div></div>
+</div>
+<p class="cap">The old browser's words (<code>browser.lua</code>, <code>how_came</code>), kept. A page that is Secure but loads something over plain HTTP - a picture, a script - is shown as Not secure: what was not encrypted could have been changed on the way.</p>
+
+<h2>Pressed: the connection and the certificate</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#111"></span>The Daily Example - Technology<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span><div class="url"><span class="how secure"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span><span class="host">news.example</span><span class="path">/2026/11/laptop-week</span></div><span class="act"><span class="shield"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>19</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative">
+    <div class="news">
+      <div class="mast"><b>The Daily Example</b><span>Technology &middot; Science &middot; Reviews</span></div>
+      <div><div class="hero"></div><h3>A laptop that lasts a week, measured</h3><p>We ran it from Monday to Saturday on one charge, with the screen at half brightness and the radio on.</p></div>
+      <div class="side"><div><b>The week in gadgets</b>Five things worth your time</div><div><b>Hands on</b>A camera with no screen at all</div></div>
+    </div>
+    <div class="pop" style="left:20px;right:auto;top:8px;width:360px">
+      <div class="hd"><span class="how secure"><svg style="width:22px;height:22px" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span><div><b>The connection to news.example is secure</b><span>What is sent and received is encrypted, and the certificate checked out</span></div></div>
+      <dl class="kv">
+        <dt>Certificate for</dt><dd>*.news.example, news.example</dd>
+        <dt>Issued by</dt><dd>Example Trust RSA CA 2026</dd>
+        <dt>Valid until</dt><dd>14 March 2027</dd>
+        <dt>Connection</dt><dd>TLS 1.3, HTTP/1.1</dd>
+      </dl>
+      <div class="ft" style="border-bottom:1px solid var(--w-line)"><span style="flex:1">Cookies kept from this site</span><span style="color:var(--w-dim)">2</span></div>
+      <div class="ft"><a href="#">Show the whole certificate&hellip;</a><span class="grow"></span><a href="#">Settings&hellip;</a></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Pressing the padlock opens this, under it. What the certificate says comes from WebKit's network process, the only thing that saw it. The four lines are what a person can check; <i>Show the whole certificate</i> lists the chain, each certificate with its dates and fingerprint. <i>Connection</i> will say HTTP/2 once that is built (agreed the same day). The certificate drawn is an example.</p>
+
+<h2>A certificate refused</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#b3261e"></span>Not opened<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span><div class="url"><span class="how bad"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1Z" fill="currentColor"/><path d="M8 6v4M8 11.6v.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Refused</span><span class="host">self-signed.example</span><span class="path">/</span></div><span class="act"><span>&#8942;</span></span></div>
+  <div class="refused"><div class="c">
+    <span class="ico"><svg style="width:44px;height:44px" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1Z" fill="currentColor"/><path d="M8 6v4M8 11.6v.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+    <h3>JetSki did not open self-signed.example</h3>
+    <p>The server answered with a certificate this machine cannot check, so JetSki cannot tell whether it is talking to self-signed.example or to someone pretending to be it.</p>
+    <div class="why2">its certificate is signed by nobody this machine trusts</div>
+    <span class="btn">Go back</span><span class="btn q2">Open anyway, in this tab</span>
+  </div></div>
+</div></div>
+<p class="cap">A page of JetSki's own in place of the site, with the reason in the network process's words. <i>Open anyway</i> loads the site for this tab only and is remembered nowhere; the tab then says Not secure for as long as it stays on that site, the old browser's rule. Nothing from a refused certificate is kept in the cache, and none of its cookies are kept.</p>
+
+<h2>The shield, with what it has kept out in all</h2>
+<div class="scroller"><div class="win" style="width:820px">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#111"></span>The Daily Example - Technology<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span><div class="url"><span class="how secure"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span><span class="host">news.example</span><span class="path">/2026/11/laptop-week</span></div><span class="act"><span class="shield"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>19</span><span>&#8942;</span></span></div>
+  <div style="height:440px;position:relative;background:#fff">
+    <div class="pop" style="right:40px;top:8px;width:360px">
+      <div class="hd"><span class="shield" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Privacy and Ad Blocking</b><span>EasyList, EasyPrivacy, EasyList Cookie</span></div></div>
+      <div class="nums"><div><b>19</b><span>requests kept out</span></div><div><b>6</b><span>cookies refused</span></div><div><b>1.2 MB</b><span>not downloaded</span></div></div>
+      <div class="lst"><div class="h">Most blocked on this page</div>
+        <div class="r"><span>doubleclick.net</span><span>7</span></div>
+        <div class="r"><span>chartbeat.com</span><span>4</span></div>
+        <div class="r"><span>and 6 other sites</span><span>8</span></div></div>
+      <div class="tot"><div class="h">This month, every site</div>
+        <div class="g"><div><b>12,418</b><span>requests kept out</span></div><div><b>3,106</b><span>cookies refused</span></div><div><b>842 MB</b><span>not downloaded</span></div></div></div>
+      <div class="ft" style="border-bottom:1px solid var(--w-line)"><span class="sw on"></span><span style="flex:1">Block adverts and trackers on news.example</span></div>
+      <div class="ft"><span class="sw"></span><span style="flex:1">Allow cross-site cookies on news.example</span><a href="#">Settings&hellip;</a></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">The pop-over agreed in <code>adblock.html</code>, with one band added: everything kept out <b>since JetSki was first used</b>, across every tab and site. The totals are kept in a small file in <code>/Home/Settings/Filters</code>, written when a page finishes, so they survive a restart. The two switches are the per-site button Diego asked for. The first turns blocking off for this site alone and reloads it. The second lets this site's cross-site cookies through. Either one fixes a site that breaks. The numbers are examples.</p>
+
+<h2>And in Settings</h2>
+<div class="scroller"><div class="win" style="width:820px">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#2f6bdc"></span>Settings<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span><div class="url"><span class="how own"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>JetSki</span><span class="host"></span><span class="path">about:settings</span></div><span class="act"><span>&#8942;</span></span></div>
+  <div class="set"><div class="grouplabel">Privacy and Ad Blocking</div><div class="group">
+    <div class="row"><div class="label"><b>Kept out in November</b><span>12,418 requests, 3,106 cookies, about 842 MB not downloaded</span></div><span class="drop">Earlier months&hellip;</span></div>
+    <div class="row"><div class="label"><b>Block adverts and trackers</b><span>On every site but the 2 allowed</span></div><span class="sw on"></span></div>
+    <div class="row"><div class="label"><b>Allowed sites</b><span>bank.example, shop.example</span></div><span class="drop">Edit&hellip;</span></div>
+  </div></div>
+</div></div>
+<p class="cap">The totals' row heads the group that B5 builds (<code>adblock.html</code>, <i>Settings</i>); <i>Start again</i> sets them back to nought from today. The other two rows are B5's, shown here only so the totals have their place.</p>
+
+<h2>Decided by Diego, 16 November</h2>
+<ul class="ask">
+  <li><b>Open anyway: kept</b> ("Yes, open anyway"), as the old browser had it - for this tab, remembered nowhere, and the tab says Not secure while it stays on that site.</li>
+  <li><b>Secure is a green padlock alone</b> ("yes, secure as with a green lock"), no word, as Safari and Chrome show it.</li>
+  <li><b>Totals by month</b> ("Let's do totals by month"): the shield's band and Settings' row say this month's - "This month, every site" - and start again on the first of each month, every month kept in the file so earlier months can be listed. No <i>Start again</i> button is needed.</li>
+</ul>
+</div>
+</body>
+</html>

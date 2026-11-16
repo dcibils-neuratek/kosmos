@@ -119,6 +119,11 @@ int  storage_delete(const char *path);              /* a file, or an empty direc
 int  storage_rename(const char *from, const char *to);
 int  storage_flush(const char *path);               /* to the device, where there is one */
 
+/* The room on the filesystem `path` is on: its bytes and its free bytes
+ * (`DISK_OP_ROOM`). STORAGE_ERR_BAD where a mount cannot say - `/Temporary`
+ * and `/Kosmos` - or its server does not know the request. */
+int  storage_room(const char *path, uint64_t *size, uint64_t *free_bytes);
+
 #ifdef __cplusplus
 }
 #endif

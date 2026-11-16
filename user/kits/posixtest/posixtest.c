@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #include <sys/random.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
 #include <time.h>
@@ -866,6 +867,34 @@ static int file_checks(char *out, unsigned long size)
         return 1;
     }
 
+    /* How much room there is, which WebKit sizes its disk cache from: on
+     * `/Home` blocks of 4 KB, some free and no more free than there are;
+     * `/Temporary` and `/Kosmos` cannot say. ENOTSUP everywhere, before,
+     * and the cache was given nothing (`testing.md` 18.842). */
+    {
+        struct statvfs vs;
+        int fd;
+
+        if (statvfs("/Home/apps/apptest", &vs) != 0 || vs.f_bsize != 4096
+            || vs.f_frsize != 4096 || vs.f_blocks == 0 || vs.f_bfree == 0
+            || vs.f_bfree > vs.f_blocks || vs.f_bavail != vs.f_bfree) {
+            FSAY("files: statvfs of /Home said %d: %lu of %lu blocks free, of %lu bytes",
+                 errno, (unsigned long)vs.f_bfree, (unsigned long)vs.f_blocks,
+                 (unsigned long)vs.f_bsize);
+        }
+
+        if ((fd = open("/Home/apps/apptest", O_RDONLY | O_DIRECTORY)) < 0
+            || fstatvfs(fd, &vs) != 0 || vs.f_blocks == 0) {
+            FSAY("files: fstatvfs of /Home said %d", errno);
+        }
+
+        close(fd);
+
+        if (statvfs("/Temporary", &vs) != -1 || errno != ENOTSUP) {
+            FSAY("files: statvfs of /Temporary was not ENOTSUP (%d)", errno);
+        }
+    }
+
     /* Read only where it is. */
     if (access("/Kosmos/Programs", R_OK) != 0 || access("/Kosmos/Programs", W_OK) == 0
         || errno != EROFS) {
@@ -978,7 +1007,7 @@ static int file_checks(char *out, unsigned long size)
 
     snprintf(out, size, "files: made, excl, read and written, positioned, appended, cut, "
              "dup shared, flags, closed, folders listed and removed, read only, cwd, "
-             "realpath, console, 200 open, %d threads", FILE_THREADS);
+             "realpath, console, room, 200 open, %d threads", FILE_THREADS);
     return 0;
 }
 

@@ -339,6 +339,34 @@ int kosmos_storagetest_run(char *out, unsigned long size)
         return 1;
     }
 
+    /* 6b: the room on /Home, which falls as a file is written, and none
+     * said for memory */
+    {
+        uint64_t total_bytes, before, after;
+        char *mb = calloc(1, 1024 * 1024);
+        long w;
+
+        if ((r = storage_room(OWN_FOLDER, &total_bytes, &before)) != STORAGE_OK
+            || total_bytes == 0 || before == 0 || before > total_bytes) {
+            SAY("storage: the room on /Home said %ld: %llu free of %llu", r,
+                (unsigned long long)before, (unsigned long long)total_bytes);
+        }
+
+        w = mb ? storage_write(OWN_FOLDER "/st-room", 0, mb, 1024 * 1024, STORAGE_CREATE) : -1;
+        free(mb);
+        r = storage_room(OWN_FOLDER, &total_bytes, &after);
+        storage_delete(OWN_FOLDER "/st-room");
+
+        if (w != 1024 * 1024 || r != STORAGE_OK || after + 1024 * 1024 > before) {
+            SAY("storage: a megabyte written left %llu free of %llu before (%ld, %ld)",
+                (unsigned long long)after, (unsigned long long)before, w, r);
+        }
+
+        if ((r = storage_room("/Temporary", &total_bytes, &after)) != STORAGE_ERR_BAD) {
+            SAY("storage: the room on /Temporary said %ld", r);
+        }
+    }
+
     /* 7: /Kosmos, read and never written */
     if (storage_stat("/Kosmos/Programs", &st) != STORAGE_OK || st.kind != STORAGE_KIND_DIR) {
         SAY("storage: /Kosmos/Programs is not a folder");

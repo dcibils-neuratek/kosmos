@@ -10554,7 +10554,24 @@ the applications make the system useful, and is not pulled forward.
       when), and a page for one refused with *Open anyway* for that tab
       (`browser.lua`, `how_came`, the refused page). First: what WebKit's
       network process does with a bad certificate on Kosmos today. Test:
-      a self-signed server refused; control, checking off, and it loads.
+      a self-signed server refused; control, checking off, and it loads. **Drawn in
+      `docs/padlock.html`**; Diego, 16 November: "Yes, open anyway",
+      "secure as with a green lock", and "Let's do totals by month" -
+      this month's, every month kept. **The order, Diego the same day**
+      ("let's continue on your suggested order"): JetSki's disk cache
+      (`statvfs`, below), the padlock and the shield, the JIT, HTTP/2,
+      the GPU.
+      **And JetSki's three known costs, AGREED on 16 November** (Diego:
+      "also lets add http/2, jit and gpu"): (1) **HTTP/2** - nghttp2
+      built and curl's HTTP/2 on, so a page's requests share one
+      connection a host at once rather than six one at a time; (2)
+      **JavaScriptCore's JIT**, Baseline then DFG, with W^X through the
+      region's second mapping (`kosmos_mem_map_rx`), held to test262 as
+      the interpreter is; (3) **the GPU** - WebKit compositing its layers
+      and painting on the GPU, on the M700's (`docs/m700-2d.md`). Each
+      measured on the 23 sites before and after, against the five
+      seconds, and scrolling a heavy page measured too. In that order,
+      after the padlock and the shield.
     - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
       the M700, killed its page's process and JetSki showed nothing - the
       fault was in the system's log, read over telnet. Diego: "why dont we
@@ -11188,8 +11205,16 @@ the applications make the system useful, and is not pulled forward.
     the cache is given 0 bytes (`NetworkCache.cpp`, `computeCapacity`),
     so `/Home/Settings/JetSki/Cache/NetworkCache` keeps nothing and every
     visit fetches everything again. The answer is already in `diskfs`:
-    `DISK_OP_SUPER` reports `free_blocks` and `block_size`. Next, after
-    W2, with a check that a page fetched twice reaches the server once.
+    `DISK_OP_SUPER` reports `free_blocks` and `block_size`. **Built,
+    0.11.446** (`testing.md` 18.842): `DISK_OP_ROOM`, which any door may
+    ask (`DISK_OP_SUPER` is the first door's alone), `storage_room`, and
+    `statvfs` / `fstatvfs` from it. Giving the cache room woke a WebKit function
+    with no branch for Kosmos: `NetworkCache::fileTimes` ran off its end,
+    clang left it no return, and the network process died on its first
+    cached load - patch 0035. **Still to do, the class of it**:
+    `-Werror=return-type` in WebKit's build (`runtime/cxx/kosmos.cmake`)
+    at the next full WebKit rebuild, so every other function that runs
+    off its end on Kosmos is named rather than found by a crash.
   - *Setting a file's times*: `utimensat`.
   - *`chdir`*: it needs the Storage Kit's working directory to be
     changeable under threads.

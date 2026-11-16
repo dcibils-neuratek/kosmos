@@ -6,7 +6,24 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
-## 16 November: the Storage Kit through a region (0.11.445, not pushed)
+## 16 November: a disk cache for JetSki (0.11.446)
+
+- **JetSki had no disk cache**: WebKit sizes it from the free space, and
+  `statvfs` said ENOTSUP, so it was given nothing and every visit fetched
+  every file. `diskfs` answers `DISK_OP_ROOM` now, the Storage Kit asks
+  it (`storage_room`), and `statvfs` gives it (18.842).
+- **Giving the cache room woke a WebKit bug**: `NetworkCache::fileTimes`
+  had no branch for Kosmos and ran off its end, so the network process
+  died on its first cached load. Patch 0035; `-Werror=return-type` for
+  WebKit at its next full rebuild is on the roadmap.
+- Pushed with 0.11.444 and 0.11.445.
+
+**Next**: on the M700, a page loaded twice served from
+`/Home/Settings/JetSki/Cache` the second time, and the 23 sites again;
+then the padlock and the shield (`docs/padlock.html`), the JIT, HTTP/2,
+the GPU.
+
+## 16 November: the Storage Kit through a region (0.11.445)
 
 - **Five seconds a site is the standard** (Diego). 0.11.444 broke it on 14
   of the top 20: every launch read its blocking lists through the Storage
@@ -20,7 +37,7 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 the shield, with blocking's totals, drawn in `docs/webkit.html` first;
 then Settings S2, Downloads, B3. And the four sites over five seconds.
 
-## 16 November: JetSki Settings, S1 (0.11.444, not pushed)
+## 16 November: JetSki Settings, S1 (0.11.444)
 
 - **S1 built** (`testing.md` 18.840): `about:settings`, by the menu button
   or Control-comma - home page, when JetSki opens (the tabs it had are
