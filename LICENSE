@@ -133,6 +133,13 @@ Vendored third-party code keeps its own licence, which travels beside it:
       assets/ca/cacert.pem, the roots the TLS Kit trusts; where it came
       from, its hash and its licence are in the README beside it
 
+  The filter lists, by The EasyList authors and Fanboy
+      assets/filters/: EasyList and EasyPrivacy under the GPL version 3
+      or CC BY-SA 3.0, EasyList Cookie under CC BY 3.0, unmodified, and
+      converted into WebKit's rules when the image is built; where each
+      came from and its hash are in the README beside them. In images
+      that carry WebKit only
+
   "Dam", the Wikipedia article, by its contributors, CC BY-SA 4.0
       assets/www/dam.html, as en.wikipedia.org served it on 30 September
       2026 to the browser's User-Agent, unmodified: the browser's standing

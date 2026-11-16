@@ -6,6 +6,24 @@ Last updated: 2026-11-16 (0.11.442: Privacy and Ad Blocking B1 - WebKit's conten
 
 ---
 
+## 16 November: Privacy and Ad Blocking, B2 (0.11.443, not pushed)
+
+- **B2 built** (`testing.md` 18.839): EasyList, EasyPrivacy and EasyList
+  Cookie vendored in `assets/filters/`, converted by `filters.lua` at build
+  time, gzipped into FULL images' `/Kosmos/Filters` (1.6 MB); the kit
+  compiles a list once and finds it by its bytes' hash after.
+- **The IPC bug it found**: `ConnectionKosmos.cpp` gave a message's
+  regions to the decoder in the wrong order, so two lists in one message
+  were each the other's bytes. Reversed on arrival, as Unix does;
+  `x86-jetski` now has two lists of different sizes, with a control.
+- `abort()` walks the frame pointers when the unwinder cannot.
+- Gate: 128 of 130 in 740 s; `x86-cafesa3d-1` and `arm-sandbox-linux`
+  passed alone at once after.
+
+**Next**: the compile timed on the M700 (Diego's ask) - the image is in
+`build/netboot`, waiting for Diego to say the monitor is on before a
+restart. Then JetSki Settings (`about:settings`), then Downloads, then B3.
+
 ## 16 November: Privacy and Ad Blocking, B1 (0.11.442, not pushed)
 
 Diego asked for an ad blocker like Adblock's. Designed and agreed

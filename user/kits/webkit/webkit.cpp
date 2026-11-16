@@ -53,6 +53,8 @@
 #include <WebKit/WKWebsiteDataStoreRef.h>
 #include <stdlib.h>
 #include <wtf/FileSystem.h>
+#include <wtf/text/MakeString.h>
+#include <zlib.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/RunLoop.h>
 #include <wtf/Seconds.h>
@@ -431,15 +433,24 @@ WKContextRef context()
 }
 
 /*
- * **Privacy and Ad Blocking's rule lists** (`docs/adblock.md`, B1). Every
- * `.json` in `/Kosmos/Filters` - the lists the image carries - and in
- * `/Home/Settings/Filters` - the person's - is a WebKit content rule list.
+ * **Privacy and Ad Blocking's rule lists** (`docs/adblock.md`, B1 and B2).
+ * Every `.json` - or `.json.gz`, as the image carries EasyList and the
+ * others, 1.6 MB where the JSON is 25 - in `/Kosmos/Filters` and in
+ * `/Home/Settings/Filters`, the person's, is a WebKit content rule list.
  * Each is compiled into `/Home/Settings/Filters/Rules` on a WebKit work
  * queue, and added to the one content controller every view shares, so a
  * list applies to every page at once. A load asked for while any list is
  * still compiling is held, and made when the last one is ready: a page
  * that loaded before its lists would be the one page nothing was kept out
  * of.
+ *
+ * **Compiled once, not at every start.** A list's identifier carries a
+ * hash of its file's bytes as they are kept - the gzip, 1.6 MB for all
+ * three - so a list whose file has not changed is found already compiled
+ * and used as it is, and nothing is inflated (Diego, 16 November:
+ * "Unzipping on every launch should be expensive"). Only a list that is
+ * new or has changed is inflated, compiled under its new name, and its old
+ * compiled file removed.
  */
 struct Rules {
     bool started = false;
@@ -454,19 +465,127 @@ WKUserContentControllerRef contentController()
     return shared;
 }
 
+WKUserContentExtensionStoreRef ruleStore();
+
 void releaseHeld();
+
+// A list's file, as text: inflated when it is gzipped.
+std::optional<Vector<uint8_t>> readList(const String& path)
+{
+    auto bytes = FileSystem::readEntireFile(path);
+    if (!bytes || !path.endsWith(".gz"_s))
+        return bytes;
+
+    Vector<uint8_t> text;
+    z_stream z { };
+    if (inflateInit2(&z, 16 + MAX_WBITS) != Z_OK)
+        return std::nullopt;
+    z.next_in = const_cast<Bytef*>(bytes->span().data());
+    z.avail_in = bytes->size();
+    int status = Z_OK;
+    while (status == Z_OK) {
+        size_t at = text.size();
+        text.grow(at + 1024 * 1024);
+        z.next_out = text.mutableSpan().data() + at;
+        z.avail_out = 1024 * 1024;
+        status = inflate(&z, Z_NO_FLUSH);
+        text.shrink(text.size() - z.avail_out);
+    }
+    inflateEnd(&z);
+    if (status != Z_STREAM_END)
+        return std::nullopt;
+    return text;
+}
+
+// FNV-1a: a name for a list's bytes, so its compiled file is found again.
+uint64_t hashOf(std::span<const uint8_t> bytes)
+{
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (auto b : bytes) {
+        h ^= b;
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+struct Pending {
+    char identifier[256];
+    char base[200];
+    String path;
+};
+
+void ruleListAdded(WKUserContentFilterRef filter, WKUserContentExtensionStoreResult result, void* context, bool compiled)
+{
+    auto* pending = static_cast<Pending*>(context);
+    if (result == kWKUserContentExtensionStoreSuccess && filter) {
+        WKUserContentControllerAddUserContentFilter(contentController(), filter);
+        auto bytes = FileSystem::fileSize(makeString("/Home/Settings/Filters/Rules/ContentRuleList-"_s,
+            String::fromUTF8(pending->identifier)));
+        fprintf(stderr, "webkit: rules %s %s in %.0f ms, %llu KB\n", pending->base,
+            compiled ? "ready" : "found compiled", (WTF::MonotonicTime::now() - rules.from).milliseconds(),
+            static_cast<unsigned long long>(bytes.value_or(0) / 1024));
+    } else
+        fprintf(stderr, "webkit: rules %s refused (%u)\n", pending->base, result);
+    delete pending;
+    if (rules.compiling && !--rules.compiling)
+        releaseHeld();
+}
 
 void ruleListCompiled(WKUserContentFilterRef filter, WKUserContentExtensionStoreResult result, void* context)
 {
-    auto* name = static_cast<char*>(context);
+    ruleListAdded(filter, result, context, true);
+}
+
+void ruleListRemoved(WKUserContentFilterRef, WKUserContentExtensionStoreResult, void* context)
+{
+    free(context);
+}
+
+// Not compiled under this name yet: compiled now, and the same list's
+// files of other bytes removed from the store.
+void ruleListLookedUp(WKUserContentFilterRef filter, WKUserContentExtensionStoreResult result, void* context)
+{
+    auto* pending = static_cast<Pending*>(context);
     if (result == kWKUserContentExtensionStoreSuccess && filter) {
-        WKUserContentControllerAddUserContentFilter(contentController(), filter);
-        fprintf(stderr, "webkit: rules %s ready in %.0f ms\n", name, (WTF::MonotonicTime::now() - rules.from).milliseconds());
-    } else
-        fprintf(stderr, "webkit: rules %s refused (%u)\n", name, result);
-    free(name);
-    if (rules.compiling && !--rules.compiling)
-        releaseHeld();
+        ruleListAdded(filter, result, context, false);
+        return;
+    }
+
+    // New, or changed: only now is it read as text.
+    auto text = readList(pending->path);
+    if (!text) {
+        fprintf(stderr, "webkit: rules %s could not be read\n", pending->base);
+        ruleListAdded(nullptr, kWKUserContentExtensionStoreCompileFailed, context, true);
+        return;
+    }
+    text->append(0);
+    auto json = adoptWK(WKStringCreateWithUTF8CString(reinterpret_cast<const char*>(text->span().data())));
+    text = std::nullopt;
+
+    String stem = makeString("ContentRuleList-"_s, String::fromUTF8(pending->base), '-');
+    for (auto& name : FileSystem::listDirectory("/Home/Settings/Filters/Rules"_s)) {
+        // The same list's, of other bytes: its stem and a hash, nothing
+        // more - `kosmos-easylist-` is not `kosmos-easylist-cookie-`.
+        if (!name.startsWith(stem) || name.length() != stem.length() + 16
+            || !name.substring(stem.length()).containsOnly<isASCIIHexDigit>())
+            continue;
+        auto old = name.substring(strlen("ContentRuleList-"));
+        auto id = adoptWK(WKStringCreateWithUTF8CString(old.utf8().data()));
+        WKUserContentExtensionStoreRemove(ruleStore(), id.get(), strdup(old.utf8().data()), ruleListRemoved);
+    }
+
+    auto id = adoptWK(WKStringCreateWithUTF8CString(pending->identifier));
+    WKUserContentExtensionStoreCompile(ruleStore(), id.get(), json.get(), pending, ruleListCompiled);
+}
+
+WKUserContentExtensionStoreRef ruleStore()
+{
+    static WKUserContentExtensionStoreRef store = [] {
+        FileSystem::makeAllDirectories("/Home/Settings/Filters/Rules"_s);
+        auto path = adoptWK(WKStringCreateWithUTF8CString("/Home/Settings/Filters/Rules"));
+        return WKUserContentExtensionStoreCreate(path.get());
+    }();
+    return store;
 }
 
 void startRules()
@@ -476,28 +595,24 @@ void startRules()
     rules.started = true;
     rules.from = WTF::MonotonicTime::now();
 
-    auto storePath = "/Home/Settings/Filters/Rules"_s;
-    FileSystem::makeAllDirectories(storePath);
-    static WKUserContentExtensionStoreRef store = [&] {
-        auto path = adoptWK(WKStringCreateWithUTF8CString(storePath.characters()));
-        return WKUserContentExtensionStoreCreate(path.get());
-    }();
-
     struct Folder { const char* path; const char* tag; };
     for (auto folder : { Folder { "/Kosmos/Filters", "kosmos-" }, Folder { "/Home/Settings/Filters", "home-" } }) {
         for (auto& name : FileSystem::listDirectory(String::fromLatin1(folder.path))) {
-            if (!name.endsWith(".json"_s))
+            size_t suffix = name.endsWith(".json"_s) ? 5 : name.endsWith(".json.gz"_s) ? 8 : 0;
+            if (!suffix)
                 continue;
-            auto bytes = FileSystem::readEntireFile(FileSystem::pathByAppendingComponent(String::fromLatin1(folder.path), name));
+            auto path = FileSystem::pathByAppendingComponent(String::fromLatin1(folder.path), name);
+            auto bytes = FileSystem::readEntireFile(path);
             if (!bytes)
                 continue;
-            bytes->append(0);
-            char identifier[256];
-            snprintf(identifier, sizeof identifier, "%s%s", folder.tag, name.left(name.length() - 5).utf8().data());
-            auto id = adoptWK(WKStringCreateWithUTF8CString(identifier));
-            auto json = adoptWK(WKStringCreateWithUTF8CString(reinterpret_cast<const char*>(bytes->span().data())));
+            auto* pending = new Pending;
+            pending->path = path;
+            snprintf(pending->base, sizeof pending->base, "%s%s", folder.tag, name.left(name.length() - suffix).utf8().data());
+            snprintf(pending->identifier, sizeof pending->identifier, "%s-%016llx", pending->base,
+                static_cast<unsigned long long>(hashOf(bytes->span())));
             rules.compiling++;
-            WKUserContentExtensionStoreCompile(store, id.get(), json.get(), strdup(identifier), ruleListCompiled);
+            auto id = adoptWK(WKStringCreateWithUTF8CString(pending->identifier));
+            WKUserContentExtensionStoreLookup(ruleStore(), id.get(), pending, ruleListLookedUp);
         }
     }
 }

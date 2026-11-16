@@ -87,6 +87,7 @@ ifndef BENCH
 WEB  := 1
 FFMPEG := 1
 WALLPAPERS := 1
+FILTERS := 1
 FB   ?= 1920x1080
 endif
 endif
@@ -963,6 +964,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(GEN)/assets.c \
              $(GEN)/wallpapers.c \
              $(GEN)/fonts.c \
+             $(GEN)/filters.c \
              runtime/upstream/stb/stb_impl.c \
              $(GEN)/libraries.c \
              lua/kosmos/serialize.c \
@@ -3258,6 +3260,37 @@ $(GEN)/wallpapers.c: $(WALLPAPER_FILES) $(WALLPAPER_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py wallpapers_table $@ --prefix=wallpaper/ $(WALLPAPER_FILES)
 
+#
+# **The filter lists blocking starts with** (`docs/adblock.md` B2):
+# EasyList, EasyPrivacy and EasyList Cookie, vendored in `assets/filters/`,
+# converted into WebKit's content rules by `filters.lua` on this Mac and
+# gzipped - 1.6 MB, against 25 MB of JSON - and served as `/Kosmos/Filters`
+# by the program store (`binfs.c`). In the images that carry the browser
+# only, as the wallpapers are: the test and bench images have an empty
+# table, so a browser suite never compiles 120,000 rules under TCG.
+#
+FILTER_LISTS := $(if $(FILTERS),$(sort $(wildcard assets/filters/*.txt)))
+FILTER_RULES := $(patsubst assets/filters/%.txt,$(GEN)/filters/%.json.gz,$(FILTER_LISTS))
+
+FILTER_LIST := $(GEN)/filters.list
+$(shell mkdir -p $(GEN); [ "$$(cat $(FILTER_LIST) 2>/dev/null)" = '$(FILTER_LISTS)' ] \
+        || printf '%s' '$(FILTER_LISTS)' > $(FILTER_LIST))
+
+$(FILTER_LIST):
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(FILTER_LISTS)' > $@
+
+$(GEN)/filters/%.json.gz: assets/filters/%.txt user/lib/filters.lua user/lib/json.lua \
+                          tools/filters_build.lua $(HOSTDIR)/lua
+	@mkdir -p $(dir $@)
+	@cp assets/filters/README.md $(dir $@)LICENSE
+	$(HOSTDIR)/lua tools/filters_build.lua $< $(@:.gz=)
+	gzip -9 -n -f $(@:.gz=)
+
+$(GEN)/filters.c: $(FILTER_RULES) $(FILTER_LIST) tools/assets2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/assets2c.py filters_table $@ $(FILTER_RULES)
+
 $(GEN)/fonts.c: $(FONT_FILES) $(FONT_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py fonts_table $@ $(FONT_FILES)
@@ -4274,7 +4307,7 @@ $(UBUILD)/user/kits/webkit/webkit.cpp.o: user/kits/webkit/webkit.cpp \
 	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++23 -fno-exceptions -fno-rtti \
 	    $(WEBKIT_USER_FLAGS) \
 	    -isystem $(WEBKIT_DIR)/WTF/Headers -isystem $(WEBKIT_DIR)/bmalloc/Headers \
-	    -isystem $(WEBKIT_DIR)/WebKit/Headers -isystem $(ICU_DIR)/include \
+	    -isystem $(WEBKIT_DIR)/WebKit/Headers -isystem $(ICU_DIR)/include -isystem $(W5_DIR)/include \
 	    -isystem user/include -iquote kernel -c $< -o $@
 
 $(UBUILD)/apps/webkit.elf: $(USER_OBJS) $(JETSKI_OBJS) $(CA_ROOTS_OBJ) $(POSIX_OBJS) $(WEBKIT2_LIBS) \
@@ -5707,6 +5740,9 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# And its settings: read back as written, false included, and what is
 	@# not one of the choices the default (6zz d5).
 	$(HOSTDIR)/lua tools/test_browserprefs.lua
+	@# Filter lists in Adblock Plus syntax into WebKit's content rules,
+	@# every pattern one WebKit takes (`docs/adblock.md` B2).
+	$(HOSTDIR)/lua tools/test_filters.lua
 	@# A menu longer than the screen grouped into submenus that fit, every
 	@# item reached once and in order (a select's options, 6zz j6).
 	$(HOSTDIR)/lua tools/test_longmenu.lua
@@ -6043,11 +6079,17 @@ J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 # a chosen suite reads `build/user-test/apps`; by hand it is 1.
 GATE_ARM_APPS ?= 1
 
+# **The x86 image without the filter lists** (`docs/adblock.md` B2). The
+# suites boot the full image, and with EasyList in it every page a browser
+# suite opens would wait for 124,000 rules to compile under TCG - minutes,
+# where B1's two rules take 72 ms. `FILTERS=` on the command line empties
+# the table; the lists' conversion is held by `tools/test_filters.lua`, and
+# their compile is measured on the M700.
 gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
 	@$(if $(filter 1,$(GATE_ARM_APPS)),$(MAKE) --no-print-directory -j$(J) TEST=1 apps,echo "gate-images: ARM's applications left out - no suite chosen reads them")
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
-	    $(MAKE) --no-print-directory -j$(J) x86-build >/dev/null && \
+	    $(MAKE) --no-print-directory -j$(J) FILTERS= x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) ARCH=x86_64 TEST=1 apps >/dev/null && \
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \

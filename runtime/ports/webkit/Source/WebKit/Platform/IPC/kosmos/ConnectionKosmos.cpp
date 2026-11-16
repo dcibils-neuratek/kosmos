@@ -295,6 +295,13 @@ bool Connection::readRing()
             || ((record.flags & outOfLine) && !record.attachments))
             return false;
 
+        // **The decoder takes attachments from the end** (`takeLastAttachment`),
+        // so the first one encoded has to be the last one handed to it - as
+        // `ConnectionUnix.cpp` lays out its descriptors. They arrive here in
+        // the order they were encoded, so they are reversed: a message with
+        // one region could not tell, and with two - the rule lists a web
+        // process is handed together (`docs/adblock.md` B2) - each list was
+        // the other's bytes, and the matcher ran over JSON as bytecode.
         Vector<Attachment> attachments;
         attachments.reserveInitialCapacity(record.attachments);
         for (unsigned i = 0; i < record.attachments; ++i)
@@ -307,11 +314,13 @@ bool Connection::readRing()
             long address = pages > 0 ? kosmos_mem_map(body.capability()) : -1;
             if (address < 0 || static_cast<uint64_t>(record.bytes) > static_cast<uint64_t>(pages) * KOSMOS_PAGE_SIZE || !record.bytes)
                 return false;
+            attachments.reverse();
             decoder = Decoder::create(std::span { reinterpret_cast<const uint8_t*>(address), record.bytes }, WTF::move(attachments));
             kosmos_share_unmap(static_cast<unsigned long>(address), static_cast<unsigned long>(pages));
         } else {
             if (!record.bytes)
                 return false;
+            attachments.reverse();
             decoder = Decoder::create(std::span { bytes + offset + sizeof record, record.bytes }, WTF::move(attachments));
         }
 

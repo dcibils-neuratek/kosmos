@@ -80,10 +80,12 @@ another site and the script set none, which a browser must refuse, so the
 second page arrives without them.
 
 **And it keeps adverts out** (`docs/adblock.md` B1): WebKit's content
-blocker is on, and a rule list on the disk, `/Home/Settings/Filters/
-test.json`, blocks the first page's `ad.js` and `track.gif`. The server
-must never be asked for either, the page must still load, the list must
-be compiled, and the WebKit Kit must count both as kept out.
+blocker is on, and two rule lists on the disk, `/Home/Settings/Filters/
+test.json` and `second.json`, block the first page's `ad.js` and
+`track.gif`. The server must never be asked for either, the page must
+still load, both lists must be compiled, and the WebKit Kit must count
+both as kept out. They are of different sizes on purpose: a web process
+is handed every list in one message, and the regions must not be crossed.
 `KOSMOS_JETSKI_BREAK=unblocked` leaves the list off the disk, and both are
 asked for.
 
@@ -923,6 +925,28 @@ def appended(R, picture, window):
     return failed
 
 
+RULES_DIR = "/Home/Settings/Filters/Rules"
+STALE_LIST = "ContentRuleList-home-test-0000000000000000"
+ANOTHER_LIST = "ContentRuleList-home-test-more-0000000000000000"
+
+
+def compiled():
+    """A list compiled under its name and its bytes' hash (B2), so the next
+    JetSki finds it rather than compiling it again: the same list's file of
+    other bytes removed, another list's kept."""
+    listing = subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "ls", HOME_DISK, RULES_DIR],
+                             capture_output=True, text=True, cwd=ROOT).stdout
+    failed = []
+    if not re.search(r"ContentRuleList-home-test-[0-9a-f]{16}\b", listing.replace(STALE_LIST, "")):
+        failed.append("the list was not kept compiled under its hash in %s: %r"
+                      % (RULES_DIR, listing.strip()[-300:]))
+    if STALE_LIST in listing:
+        failed.append("the list's compiled file of other bytes was not removed")
+    if ANOTHER_LIST not in listing:
+        failed.append("another list's compiled file was removed with this one's")
+    return failed
+
+
 def cookies():
     """The second page asked for with both cookies, the lasting one on the disk."""
     failed = []
@@ -1082,12 +1106,38 @@ def main():
     if BROKEN != "unblocked":
         rules = os.path.join(WORK, "test.json")
         with open(rules, "w") as f:
-            f.write('[{"trigger": {"url-filter": "/ad\\\\.js$"}, "action": {"type": "block"}},'
-                    ' {"trigger": {"url-filter": "/track\\\\.gif$"}, "action": {"type": "block"}}]')
+            f.write('[{"trigger": {"url-filter": "/ad\\\\.js$"}, "action": {"type": "block"}}]')
         files.append((rules, "/Home/Settings/Filters/test.json"))
+        # And a second list, of another size, keeping out the other request:
+        # a web process is handed every list in one message, a region each,
+        # and on 16 November it mapped each list's region under the other's
+        # name and read JSON as bytecode (`ConnectionKosmos.cpp`). Two lists
+        # of one size would not have shown it.
+        second = os.path.join(WORK, "second.json")
+        with open(second, "w") as f:
+            f.write("[" + ", ".join(['{"trigger": {"url-filter": "/track\\\\.gif$"}, "action": {"type": "block"}}']
+                                    + ['{"trigger": {"url-filter": "/never-%d\\\\.png$"}, "action": {"type": "block"}}' % n
+                                       for n in range(40)]) + "]")
+        files.append((second, "/Home/Settings/Filters/second.json"))
+        # And two compiled files from before (B2): this list's of other
+        # bytes, which the kit must remove, and another list's, whose name
+        # begins with this one's, which it must leave.
+        for stale in (STALE_LIST, ANOTHER_LIST):
+            path = os.path.join(WORK, stale)
+            with open(path, "w") as f:
+                f.write("not a compiled list")
+            files.append((path, RULES_DIR + "/" + stale))
+    # The real lists, for looking into them by hand (B2): what a FULL build
+    # converted, on this disk, as a person's own. Not in the gate - each
+    # takes minutes to compile under TCG.
+    lists = os.environ.get("KOSMOS_JETSKI_LISTS")
+    if lists:
+        for name in sorted(os.listdir(lists)):
+            if name.endswith(".json.gz"):
+                files.append((os.path.join(lists, name), "/Home/Settings/Filters/" + name))
     megabytes = sum(os.path.getsize(src) for src, _ in files) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
-                    str(megabytes + 32)] + ["%s:%s" % f for f in files],
+                    str(megabytes + (512 if lists else 32))] + ["%s:%s" % f for f in files],
                    check=True, capture_output=True, cwd=ROOT)
     os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -1202,6 +1252,9 @@ def main():
     if kept_out:
         failed.append("the rule list did not keep out %s: the server was asked for it"
                       % " and ".join(kept_out))
+    if not re.search(r"webkit: rules home-second ready in \d+ ms", seen):
+        failed.append("the second rule list was not compiled: %s"
+                      % (re.findall(r"webkit: rules [^\r\n]*", seen) or "nothing said"))
     if not re.search(r"webkit: rules home-test ready in \d+ ms", seen):
         failed.append("the rule list was not compiled: %s"
                       % (re.findall(r"webkit: rules [^\r\n]*", seen) or "nothing said"))
@@ -1227,6 +1280,8 @@ def main():
     else:
         failed.extend(used)
         failed.extend(cookies())
+        if BROKEN != "unblocked":
+            failed.extend(compiled())
         failed.extend(itself())
         if not LIVE:
             failed.extend(sound())

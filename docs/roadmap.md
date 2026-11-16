@@ -10670,7 +10670,11 @@ the applications make the system useful, and is not pulled forward.
       `CookieJarDB`'s accept policy, in B3. **B1 built in 0.11.442** (`testing.md`
       18.838): the content blocker on, lists from `/Kosmos/Filters` and
       `/Home/Settings/Filters` applied to every view, what they kept out
-      counted. **The preferences panel, asked for the same day** (Diego: "Make
+      counted. **B2 built in 0.11.443** (`testing.md` 18.839): the three
+      lists converted at build time, gzipped into FULL images, compiled
+      once and found by their hash after; an IPC bug that crossed two
+      regions in one message fixed. The compile on the M700 is to be
+      timed. **The preferences panel, asked for the same day** (Diego: "Make
       sure add a preferences panel for privacy and ad blocking in jet ski
       so the user can change settings, manage cookies, etc"): B5 grown to
       JetSki Settings' *Privacy and Ad Blocking* group and a *Manage

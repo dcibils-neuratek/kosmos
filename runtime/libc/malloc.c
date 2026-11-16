@@ -745,7 +745,7 @@ int _Unwind_Backtrace(kosmos_unwind_fn, void *) __attribute__((weak));
 unsigned long _Unwind_GetIP(struct _Unwind_Context *) __attribute__((weak));
 
 struct frames {
-    char said[256];
+    char said[640];
     int used, count;
 };
 
@@ -766,14 +766,40 @@ void abort(void)
 {
     struct frames f;
 
-    f.used = snprintf(f.said, sizeof f.said, "abort() was called, from");
+    /* Its caller first, always: the unwinder starts inside this function,
+     * and when it cannot step out of it - as on 16 November, a web process
+     * that said only "from" and this function's own address - the caller
+     * is the one address that says who. */
+    f.used = snprintf(f.said, sizeof f.said, "abort() was called, from %#lx;",
+                      (unsigned long)__builtin_return_address(0));
     f.count = 0;
 
     if (_Unwind_Backtrace != 0 && _Unwind_GetIP != 0) {
         (void)_Unwind_Backtrace(one_frame, &f);
-    } else {
-        snprintf(f.said + f.used, sizeof f.said - (size_t)f.used, " %#lx",
-                 (unsigned long)__builtin_return_address(0));
+    }
+
+    /* And the frame pointers' chain, where the unwinder found nothing to
+     * step through: each frame's record is its caller's frame and the
+     * address it returns to, on both architectures. Followed only upwards,
+     * aligned, and a megabyte at most a step, so a chain that is not one
+     * ends rather than faults. */
+    {
+        unsigned long *fp = (unsigned long *)__builtin_frame_address(0);
+        int i;
+
+        f.used += snprintf(f.said + f.used, sizeof f.said - (size_t)f.used, " frames:");
+
+        for (i = 0; i < 16 && fp != NULL && f.used < (int)sizeof f.said - 24; i++) {
+            unsigned long *next = (unsigned long *)fp[0];
+
+            f.used += snprintf(f.said + f.used, sizeof f.said - (size_t)f.used, " %#lx", fp[1]);
+
+            if (next <= fp || ((unsigned long)next & 7) != 0
+                || (unsigned long)next - (unsigned long)fp > (1ul << 20)) {
+                break;
+            }
+            fp = next;
+        }
     }
 
     panic(f.said);

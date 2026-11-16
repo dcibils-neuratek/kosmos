@@ -297,6 +297,12 @@ M700: requests made, bytes, cookies kept, load time.
   JSON, request filters, exceptions, options, element hiding. Host tests
   against filters taken from EasyList's own syntax and their expected
   rules. Measured: converting and compiling each list on the M700.
+  **Built in 0.11.443** (`testing.md` 18.839): the three lists converted
+  on the Mac at build time (about 0.6 s each, so the loop stays Lua) and
+  carried gzipped in FULL images, compiled on a machine's first launch
+  and found compiled after, by their bytes' hash. It found an IPC bug: a
+  message with two regions handed each under the other's name. Under TCG
+  the three compile in 89 s; the M700's number is next.
 - **B3. Third-party cookies refused**, and `block-cookies` from
   EasyPrivacy, with sites allowed them one at a time (a patch to
   `CookieJarDB`), and the trackers' cookies cleared the first time. Test: a page on one host that a second host sets a cookie

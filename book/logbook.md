@@ -3688,3 +3688,34 @@ page must still work as before. The list compiled in 72 ms.
 
 **Next.** The converter: EasyList, EasyPrivacy and EasyList Cookie
 turned into WebKit's rules, so the system blocks from its first boot.
+
+## 16 November 2026 - Privacy and Ad Blocking, the lists
+
+**In short.** JetSki now blocks with the same lists Adblock Plus starts
+from: EasyList for adverts, EasyPrivacy for trackers, and EasyList Cookie
+for cookie banners. Getting there found an old bug in how the browser's
+processes hand each other memory, which had never shown because nothing
+had sent two pieces at once.
+
+**What it is.** The lists are written in Adblock Plus's own syntax, about
+120,000 lines between them. A Lua library, `filters.lua`, translates them
+into the rules WebKit's blocker reads. That happens on the Mac when the
+system is built, in about half a second a list, so each machine gets them
+already translated: 1.6 MB gzipped. The first time JetSki starts, WebKit
+compiles them into its fast matcher and keeps the result on the disk. The
+next time, it recognises the lists by their bytes and uses what it kept.
+
+**The bug.** With the real lists, every page crashed before it loaded.
+The compiled files turned out to be perfect: same sizes, and a copy of
+WebKit's matcher written in Python ran them happily. The browser's main
+process saw them perfectly too. The page's process did not. When a
+message carried two shared pieces of memory, ours handed them over in the
+wrong order, so each list was read under the other's name - and the
+matcher found itself reading JSON text as if it were its own code. WebKit
+on Linux puts them in the order its decoder expects; ours now does the
+same.
+
+**What you see.** A page in JetSki now loads without most of its adverts
+and trackers, and nothing is fetched for them. Under the emulator the
+three lists take about 90 s to compile the first time; how long the M700
+takes is the next measurement.

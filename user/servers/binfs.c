@@ -56,39 +56,49 @@ static bool                       libraries;     /* which store this serves */
  * bytes: one copy in the image, two doors to it. Built once, at start, in
  * this store's own shape; a request whose view is `fonts` is answered from
  * it, and everything else from the store as before.
+ *
+ * **And the filter lists, the same way** (`docs/adblock.md` B2): the rules
+ * the build converted from EasyList and the others, gzipped, as
+ * `/Kosmos/Filters`, which the WebKit Kit reads for every view. An image
+ * without the browser carries an empty table, and an empty folder.
  */
-struct kosmos_font_asset {
+struct kosmos_asset {
     const char          *name;
     const unsigned char *bytes;
     size_t               length;
 };
 
-extern const struct kosmos_font_asset fonts_table[];
+extern const struct kosmos_asset fonts_table[];
+extern const struct kosmos_asset filters_table[];
 
-static struct source_entry *fonts;
-static unsigned             fonts_count;
+struct folder {
+    struct source_entry *entries;
+    unsigned             count;
+};
 
-static void fonts_open(void)
+static struct folder fonts, filters;
+
+static void folder_open(struct folder *f, const struct kosmos_asset *table)
 {
     unsigned i, n = 0;
 
-    while (fonts_table[n].name != NULL) {
+    while (table[n].name != NULL) {
         n++;
     }
 
-    fonts = calloc(n > 0 ? n : 1, sizeof(*fonts));
+    f->entries = calloc(n > 0 ? n : 1, sizeof(*f->entries));
 
-    if (fonts == NULL) {
+    if (f->entries == NULL) {
         return;                             /* no folder, and nothing else lost */
     }
 
     for (i = 0; i < n; i++) {
-        fonts[i].name = fonts_table[i].name;
-        fonts[i].text = (const char *)fonts_table[i].bytes;
-        fonts[i].length = (unsigned long)fonts_table[i].length;
+        f->entries[i].name = table[i].name;
+        f->entries[i].text = (const char *)table[i].bytes;
+        f->entries[i].length = (unsigned long)table[i].length;
     }
 
-    fonts_count = n;
+    f->count = n;
 }
 
 /* Whatever its case (`roadmap.md` 6s): `/Kosmos/Apps/Clock.lua` is `clock.lua`. */
@@ -185,13 +195,14 @@ static const char *declared(const char *src, unsigned long len,
  * part - `/apps/clock.lua` - and a name with neither is the whole store,
  * as the libraries are served.
  */
-enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR, VIEW_FONTS };
+enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR, VIEW_FONTS, VIEW_FILTERS };
 
 static enum view view_of(const char **name)
 {
     static const struct { const char *word; enum view view; } views[] = {
         { "apps", VIEW_APPS }, { "programs", VIEW_PROGRAMS },
         { "deskbar", VIEW_DESKBAR }, { "fonts", VIEW_FONTS },
+        { "filters", VIEW_FILTERS },
     };
     const char *n = *name;
     unsigned i;
@@ -218,7 +229,7 @@ static bool in_view(const struct source_entry *e, enum view v)
     unsigned long n = 0;
     bool app;
 
-    if (v == VIEW_ALL || v == VIEW_FONTS) {
+    if (v == VIEW_ALL || v == VIEW_FONTS || v == VIEW_FILTERS) {
         return true;
     }
 
@@ -652,13 +663,16 @@ static void answer(const struct message *in, uint64_t sender)
     at = name;
     view = view_of(&at);
 
-    /* The fonts are a store of their own, for this one answer. */
+    /* The fonts and the filter lists are stores of their own, for this
+     * one answer. */
     const struct source_entry *was = store;
     unsigned was_count = store_count;
 
-    if (view == VIEW_FONTS && !libraries) {
-        store = fonts;
-        store_count = fonts_count;
+    if ((view == VIEW_FONTS || view == VIEW_FILTERS) && !libraries) {
+        const struct folder *f = (view == VIEW_FONTS) ? &fonts : &filters;
+
+        store = f->entries;
+        store_count = f->count;
     }
 
     switch (req->op) {
@@ -844,7 +858,8 @@ void binfs_server(long endpoint, int serving_libraries)
     } else {
         store = programs_lua_table;
         store_count = programs_lua_count;
-        fonts_open();
+        folder_open(&fonts, fonts_table);
+        folder_open(&filters, filters_table);
     }
 
     for (;;) {

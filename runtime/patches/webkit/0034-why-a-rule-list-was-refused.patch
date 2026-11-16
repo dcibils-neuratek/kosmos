@@ -1,0 +1,25 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Why a content rule list was refused (Kosmos docs/adblock.md, step B2). The
+C API's compile result is only "compile failed", whatever WebKit's parser
+or compiler said; on Kosmos the reason is logged with the list's name, so a
+converted filter list that WebKit will not take says which part of it.
+
+diff -ruN a/Source/WebKit/UIProcess/API/C/WKUserContentExtensionStoreRef.cpp b/Source/WebKit/UIProcess/API/C/WKUserContentExtensionStoreRef.cpp
+--- a/Source/WebKit/UIProcess/API/C/WKUserContentExtensionStoreRef.cpp	2026-11-16 08:39:11.322775550 -0300
++++ b/Source/WebKit/UIProcess/API/C/WKUserContentExtensionStoreRef.cpp	2026-11-16 08:39:11.339371154 -0300
+@@ -76,7 +76,13 @@
+ void WKUserContentExtensionStoreCompile(WKUserContentExtensionStoreRef store, WKStringRef identifier, WKStringRef jsonSource, void* context, WKUserContentExtensionStoreFunction callback)
+ {
+ #if ENABLE(CONTENT_EXTENSIONS)
+-    protect(toImpl(store))->compileContentRuleList(toWTFString(identifier), toWTFString(jsonSource), [context, callback](RefPtr<API::ContentRuleList> contentRuleList, std::error_code error) {
++    protect(toImpl(store))->compileContentRuleList(toWTFString(identifier), toWTFString(jsonSource), [context, callback, name = toWTFString(identifier)](RefPtr<API::ContentRuleList> contentRuleList, std::error_code error) {
++#if OS(KOSMOS)
++        // Kosmos: the reason a list was refused, which the C API's result
++        // folds into "compile failed" (Kosmos docs/adblock.md, B2).
++        if (error)
++            WTFLogAlways("webkit: rules %s refused: %s", name.utf8().data(), error.message().c_str());
++#endif
+         callback(error ? nullptr : toAPILeakingRef(WTF::move(contentRuleList)), toResult(error), context);
+     });
+ #else

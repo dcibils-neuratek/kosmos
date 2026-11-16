@@ -34509,3 +34509,73 @@ The full gate passed 129 of 131 suites in 743 s, run while `tools/top20.py`
 loaded the Mac. `x86-display-4` (the gallery's selection bar, one picture
 taken without waiting) and `x86-script` (Cafesa3D's script saved) failed,
 and both passed run alone at once after, in 167 s. Neither touches WebKit.
+
+## 18.839 Privacy and Ad Blocking B2: EasyList, EasyPrivacy and the Cookie list (0.11.443)
+
+**In short: JetSki now blocks with the lists every ad blocker starts
+from. EasyList, EasyPrivacy and EasyList Cookie are converted on this Mac
+when the image is built, carried in it gzipped, and compiled into
+WebKit's bytecode on a machine's first launch. The launches after that
+find them compiled. Making them work found a bug in our IPC that had been
+there since W6: a message carrying two regions handed each one under the
+other's name.**
+
+What is built (`docs/adblock.md`, step B2):
+
+- `user/lib/filters.lua` converts Adblock Plus syntax into WebKit's
+  content rules, held by `tools/test_filters.lua` (121 checks) to a Lua
+  copy of the rules WebKit's parser refuses. Given the real lists it
+  converts all three, and WebKit's parser takes every rule it writes.
+  Control: the start-of-host pattern written with `(http|https)`, which
+  WebKit refuses, fails 18 of 121.
+- The Makefile converts `assets/filters/*.txt` and gzips them, 25.6 MB of
+  JSON into 1.6 MB. `binfs` serves them as `/Kosmos/Filters`. They are in
+  FULL images only; the gate's images are built with `FILTERS=` empty,
+  because the gate's x86 suites boot the FULL image.
+- The WebKit Kit names a list by its stored bytes' hash
+  (`home-easylist-<16 hex>`), so it asks the store for it first and
+  inflates the gzip only when the store does not have it. It then removes
+  the same list's compiled files of other bytes, and no other list's.
+
+**The bug.** With the real lists, every web process died on its first
+request, in WebKit's request matcher (`DFABytecodeInterpreter.cpp:464`,
+"Invalid bytecode"). How it was found:
+
+| question | how | answer |
+|---|---|---|
+| is the disk full? | 2 GB disk, compiled sizes logged | no: 12, 29 and 26 MB, same crash |
+| was the file written whole? | file copied off the disk; header sizes add to its length; stored JSON compared to the input | yes, byte for byte |
+| is the bytecode sound? | every DFA decoded in Python, every jump checked | yes: 67 + 15 DFAs, 0 problems |
+| does it match? | a Python copy of WebKit's interpreter on the test's URLs | yes, every DFA ends properly |
+| is WebKit's new resume cache at fault? | cache turned off | no, same crash |
+| does the UI process see the same bytes? | read, `mmap`, region, read-only map compared | yes, all four the same |
+| does the web process? | FNV hash of each region on arrival | the 348-byte test list's hash was the Cookie list's first 348 bytes |
+
+`ConnectionKosmos.cpp` queued a message's capabilities in the order they
+were sent and gave them to the decoder in that order. The decoder takes
+them from the end (`takeLastAttachment`), as `ConnectionUnix.cpp` expects
+when it lays its descriptors out reversed. With one region in a message
+the order cannot matter; with two, each list's handle mapped the other
+list's region, and the matcher ran over JSON as though it were bytecode.
+The attachments are now reversed on arrival, as Unix does. Before this,
+every message had carried at most one region.
+
+`abort()` also now walks the frame pointers when the unwinder cannot step
+out of it, which is what named the matcher. Before, a web process that
+aborted said only "from" and an address inside `abort`.
+
+`x86-jetski` holds it, with no big lists and in 89 s. The suite's list is
+now two lists of different sizes: `test.json` blocks `ad.js`, and
+`second.json` blocks `track.gif` among 40 other rules. Both must compile,
+and both requests must be kept out. Control: the reversal taken out. The
+web process dies in the matcher at `interpret + 0x14a9`, as it did with
+the real lists, and the suite fails 6 of 38.
+
+With all three real lists (`KOSMOS_JETSKI_LISTS`, 512 MB `/Home`), the
+suite passes in 160 s. Under TCG the lists compile one after another: the
+Cookie list is ready at 24 s, EasyList at 60 s, EasyPrivacy at 89 s.
+
+The full gate passed 128 of 130 suites in 740 s. `x86-cafesa3d-1` (the
+Plane's colours, 917 pixels) and `arm-sandbox-linux` (the guest's file
+not yet in `/Home`) failed, and both passed run alone at once after, in
+138 s. Neither touches WebKit, the lists or the IPC.
