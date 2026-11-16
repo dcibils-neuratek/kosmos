@@ -99,9 +99,19 @@ static void changed(const char *path, long r)
     pthread_mutex_unlock(&changed_lock);
 }
 
+static int io_on;                       /* the tally below (`io_note`) */
+static pthread_mutex_t io_lock;
+static void io_report(void);
+
 void posix_changes_kept(void)
 {
     char drives[CHANGED_DRIVES][64];
+
+    if (io_on > 0) {
+        pthread_mutex_lock(&io_lock);
+        io_report();
+        pthread_mutex_unlock(&io_lock);
+    }
 
     pthread_mutex_lock(&changed_lock);
     memcpy(drives, changed_on, sizeof drives);
@@ -113,13 +123,124 @@ void posix_changes_kept(void)
     }
 }
 
+/*
+ * **What a program writes, by file** (`testing.md` 18.836, `roadmap.md`:
+ * JetSki wrote 229 MB to load one page into a `/Home` that grew 362 KB).
+ * With `/Home/Settings/POSIX/io` there, every change is tallied against
+ * its path - writes, bytes, truncations, removals, renames, `fsync`s -
+ * and every IO_EVERY writes the busiest files by bytes go to the log,
+ * with the whole since the program began. Without the file, one look at
+ * the first change and nothing after.
+ */
+#define IO_FILES 96u
+#define IO_EVERY 4000u
+#define IO_SHOWN 12u
+
+enum io_kind { IO_WRITE, IO_CUT, IO_DELETE, IO_RENAME, IO_MKDIR, IO_SYNC };
+
+struct io_file {
+    char     path[96];
+    uint64_t bytes;
+    uint32_t count[IO_SYNC + 1];
+};
+
+static struct io_file io_files[IO_FILES];
+static uint32_t io_used, io_writes, io_dropped;
+static uint64_t io_bytes;
+static int io_on = -1;                  /* -1: not looked yet */
+static pthread_mutex_t io_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void io_report(void)
+{
+    uint32_t order[IO_FILES];
+
+    for (uint32_t i = 0; i < io_used; i++) {
+        order[i] = i;
+    }
+
+    for (uint32_t i = 1; i < io_used; i++) {     /* by bytes, most first */
+        uint32_t o = order[i], j = i;
+
+        while (j > 0 && io_files[order[j - 1]].bytes < io_files[o].bytes) {
+            order[j] = order[j - 1];
+            j--;
+        }
+
+        order[j] = o;
+    }
+
+    fprintf(stderr, "posix: io %u writes, %llu KB, over %u files%s\n", io_writes,
+            (unsigned long long)(io_bytes / 1024), io_used,
+            io_dropped ? " (more not tallied)" : "");
+
+    for (uint32_t i = 0; i < io_used && i < IO_SHOWN; i++) {
+        const struct io_file *f = &io_files[order[i]];
+
+        fprintf(stderr, "posix: io %8llu KB %6u w %4u cut %4u rm %4u mv %4u sync  %s\n",
+                (unsigned long long)(f->bytes / 1024), f->count[IO_WRITE],
+                f->count[IO_CUT], f->count[IO_DELETE], f->count[IO_RENAME],
+                f->count[IO_SYNC], f->path);
+    }
+}
+
+static void io_note(const char *path, enum io_kind kind, uint64_t bytes, long r)
+{
+    struct io_file *f = NULL;
+
+    if (path == NULL || r < 0) {
+        return;
+    }
+
+    if (io_on < 0) {
+        struct storage_stat st;
+
+        io_on = (storage_stat)("/Home/Settings/POSIX/io", &st) == STORAGE_OK;
+    }
+
+    if (!io_on) {
+        return;
+    }
+
+    pthread_mutex_lock(&io_lock);
+
+    for (uint32_t i = 0; i < io_used; i++) {
+        if (strncmp(io_files[i].path, path, sizeof io_files[i].path - 1) == 0) {
+            f = &io_files[i];
+            break;
+        }
+    }
+
+    if (f == NULL && io_used < IO_FILES) {
+        f = &io_files[io_used++];
+        snprintf(f->path, sizeof f->path, "%s", path);
+    }
+
+    if (f == NULL) {
+        io_dropped++;
+    } else {
+        f->count[kind]++;
+        f->bytes += bytes;
+    }
+
+    io_bytes += bytes;
+
+    if (kind == IO_WRITE && ++io_writes % IO_EVERY == 0) {
+        io_report();
+    }
+
+    pthread_mutex_unlock(&io_lock);
+}
+
 #define NOTED(path, call) ({ __typeof__(call) noted_r_ = (call); \
                              changed(path, (long)noted_r_); noted_r_; })
-#define storage_write(p, ...)    NOTED(p, (storage_write)(p, __VA_ARGS__))
-#define storage_truncate(p, ...) NOTED(p, (storage_truncate)(p, __VA_ARGS__))
-#define storage_delete(p, ...)   NOTED(p, (storage_delete)(p, ##__VA_ARGS__))
-#define storage_rename(p, ...)   NOTED(p, (storage_rename)(p, __VA_ARGS__))
-#define storage_mkdir(p)         NOTED(p, (storage_mkdir)(p))
+#define TALLIED(path, kind, n, call) ({ __typeof__(call) tallied_r_ = (call); \
+                             io_note(path, kind, n, (long)tallied_r_); tallied_r_; })
+#define storage_write(p, at, buf, n, f) \
+    TALLIED(p, IO_WRITE, n, NOTED(p, (storage_write)(p, at, buf, n, f)))
+#define storage_truncate(p, ...) TALLIED(p, IO_CUT, 0, NOTED(p, (storage_truncate)(p, __VA_ARGS__)))
+#define storage_delete(p, ...)   TALLIED(p, IO_DELETE, 0, NOTED(p, (storage_delete)(p, ##__VA_ARGS__)))
+#define storage_rename(p, ...)   TALLIED(p, IO_RENAME, 0, NOTED(p, (storage_rename)(p, __VA_ARGS__)))
+#define storage_mkdir(p)         TALLIED(p, IO_MKDIR, 0, NOTED(p, (storage_mkdir)(p)))
 
 #define CONSOLE 3                       /* 0, 1 and 2 */
 
@@ -1040,7 +1161,9 @@ int fsync(int fd)
         return -1;
     }
 
-    return (r = storage_flush(t.path)) == STORAGE_OK ? 0 : kit_fails(r);
+    r = storage_flush(t.path);
+    io_note(t.path, IO_SYNC, 0, r);
+    return r == STORAGE_OK ? 0 : kit_fails(r);
 }
 
 int fdatasync(int fd)

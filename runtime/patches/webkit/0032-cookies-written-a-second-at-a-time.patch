@@ -1,0 +1,134 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Cookies written a second at a time (Diego, 15 November 2026: "fix the
+cache and see why are who storing all that data"). One load of The Verge
+set 261 cookies, each a transaction of its own: SQLite's journal made,
+written, fsynced and removed, and the database fsynced - 522 disk commits,
+129 MB written to the device for 13 MB of cookies, 15.7 s of a 32 s load
+(Kosmos testing.md 18.836). WebKit asks for WAL, which makes this cheap
+elsewhere; WAL needs memory shared between processes, which SQLite's
+dotfile VFS on Kosmos has not got, so the database stayed in DELETE mode.
+The changes now go into one transaction, committed a second after its
+first change and when the database closes, as Chromium keeps cookies. A
+crash loses the last second's cookies and never the database.
+
+diff -ruN a/Source/WebCore/platform/network/curl/CookieJarDB.cpp b/Source/WebCore/platform/network/curl/CookieJarDB.cpp
+--- a/Source/WebCore/platform/network/curl/CookieJarDB.cpp	2026-11-15 21:55:20.604570803 -0300
++++ b/Source/WebCore/platform/network/curl/CookieJarDB.cpp	2026-11-15 21:55:50.995388414 -0300
+@@ -96,9 +96,43 @@
+ 
+ CookieJarDB::CookieJarDB(const String& databasePath)
+     : m_databasePath(databasePath)
++    , m_commitTimer(RunLoop::currentSingleton(), "CookieJarDB::commit"_s, [this] { commitBatch(); })
+ {
+ }
+ 
++// Kosmos: a page and its trackers set cookies by the hundred, and each was
++// a transaction of its own - SQLite's journal made, written, fsynced and
++// removed, and the database fsynced - 522 disk commits for one load of The
++// Verge (Kosmos testing.md 18.836). WAL, which makes that cheap elsewhere,
++// needs memory shared between processes, which SQLite's dotfile VFS here
++// has not got. So the changes go into one transaction, committed a second
++// after its first change and whenever the database closes - as Chromium
++// keeps its cookies, writing them out every so often. A crash loses the
++// last second of cookies, never the database.
++void CookieJarDB::beginBatch()
++{
++    if (m_batchOpen || isOnMemory() || !m_database.isOpen())
++        return;
++
++    if (!m_database.executeCommand("BEGIN"_s))
++        return;
++
++    m_batchOpen = true;
++    m_commitTimer.startOneShot(1_s);
++}
++
++void CookieJarDB::commitBatch()
++{
++    if (!m_batchOpen)
++        return;
++
++    m_batchOpen = false;
++    m_commitTimer.stop();
++
++    if (m_database.isOpen() && !m_database.executeCommand("COMMIT"_s))
++        LOG_ERROR("Unable to commit the cookies (%d %s)", m_database.lastError(), m_database.lastErrorMsg());
++}
++
+ CookieJarDB::~CookieJarDB()
+ {
+     closeDatabase();
+@@ -184,6 +218,8 @@
+ 
+ void CookieJarDB::closeDatabase()
+ {
++    commitBatch();
++
+     if (m_database.isOpen()) {
+         m_statements.clear();
+         m_database.close();
+@@ -523,6 +559,7 @@
+     if (!cookie.session && MonotonicTime::fromRawSeconds(expires / msPerSecond) <= MonotonicTime::now())
+         return deleteCookieInternal(cookie.name, cookie.domain, cookie.path);
+ 
++    beginBatch();
+     auto& statement = preparedStatement(SET_COOKIE_SQL);
+ 
+     // FIXME: We should have some eviction policy when a domain goes over MAX_COOKIE_PER_DOMAIN
+@@ -607,6 +644,7 @@
+ 
+ bool CookieJarDB::deleteCookieInternal(const String& name, const String& domain, const String& path)
+ {
++    beginBatch();
+     auto& statement = preparedStatement(path.isEmpty() ? DELETE_COOKIE_BY_NAME_DOMAIN_SQL : DELETE_COOKIE_BY_NAME_DOMAIN_PATH_SQL);
+     statement.bindText(1, name);
+     statement.bindText(2, domain);
+@@ -624,6 +662,7 @@
+ 
+ bool CookieJarDB::deleteCookiesForHostname(const String& hostname, IncludeHttpOnlyCookies includeHttpOnlyCookies)
+ {
++    beginBatch();
+     auto& statement = preparedStatement(includeHttpOnlyCookies == IncludeHttpOnlyCookies::Yes ? DELETE_COOKIES_BY_DOMAIN_SQL : DELETE_COOKIES_BY_DOMAIN_EXCEPT_HTTP_ONLY_SQL);
+     statement.bindText(1, hostname);
+     return checkSQLiteReturnCode(statement.step());
+@@ -634,6 +673,7 @@
+     if (!isEnabled() || !m_database.isOpen())
+         return false;
+ 
++    beginBatch();
+     return executeSQLStatement(m_database.prepareStatement(DELETE_ALL_COOKIE_SQL));
+ }
+ 
+diff -ruN a/Source/WebCore/platform/network/curl/CookieJarDB.h b/Source/WebCore/platform/network/curl/CookieJarDB.h
+--- a/Source/WebCore/platform/network/curl/CookieJarDB.h	2026-11-15 21:55:20.600691665 -0300
++++ b/Source/WebCore/platform/network/curl/CookieJarDB.h	2026-11-15 21:55:50.994688703 -0300
+@@ -30,6 +30,7 @@
+ #include "SQLiteStatement.h"
+ #include <wtf/HashMap.h>
+ #include <wtf/Noncopyable.h>
++#include <wtf/RunLoop.h>
+ #include <wtf/TZoneMalloc.h>
+ #include <wtf/text/StringHash.h>
+ 
+@@ -99,6 +100,12 @@
+     bool executeSQLStatement(std::unique_ptr<SQLiteStatement>&&);
+ 
+     bool deleteCookieInternal(const String& name, const String& domain, const String& path);
++
++    // Kosmos: changes kept in one transaction, committed a second after
++    // the first of them, rather than one transaction and two fsyncs each.
++    void beginBatch();
++    void commitBatch();
++    bool m_batchOpen { false };
+     bool hasHttpOnlyCookie(const String& name, const String& domain, const String& path);
+     bool canAcceptCookie(const Cookie&, const URL& firstParty, const URL&, CookieJarDB::Source);
+     bool checkCookieAcceptPolicy(const URL& firstParty, const URL&);
+@@ -106,6 +113,7 @@
+ 
+     SQLiteDatabase m_database;
+     HashMap<String, std::unique_ptr<SQLiteStatement>> m_statements;
++    RunLoop::Timer m_commitTimer;
+ };
+ 
+ } // namespace WebCore

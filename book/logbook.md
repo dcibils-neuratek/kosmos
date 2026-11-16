@@ -3621,3 +3621,36 @@ blocks.
 
 **What it changes.** The database stays in a few dozen pieces, and a
 rewritten page is one block written, with nothing allocated or recorded.
+
+## 15 November 2026 - Cookies a second at a time
+
+**In short.** The Verge now loads in 13 seconds on the M700, where it
+took 32. Most of the time was spent on the disk, saving cookies one at a
+time.
+
+**What was wrong.** Diego asked why one website wrote so much. The POSIX
+layer, where ported programs like WebKit meet Kosmos's files, can now
+count what a program does to each file. One load of The Verge set 261
+cookies. WebKit saved each in a SQLite transaction of its own: a journal
+file made, written, made safe on the disk, and deleted, then the database
+written and made safe. That is 522 trips to the disk for one page. On
+other systems WebKit puts SQLite in WAL mode, which makes this cheap. WAL
+needs memory shared between processes, which SQLite on Kosmos does not
+have, so it fell back to the expensive way.
+
+**The fix.** A small patch to WebKit. The first cookie opens a
+transaction, and it is committed a second later, or when the browser
+closes. Chromium keeps its cookies the same way. A crash can lose the
+last second's cookies, never the database.
+
+**What it changes.**
+
+| | before | after |
+|---|---|---|
+| The Verge, one load | 32 s | 13 s |
+| written to the disk | 129 MB | 23 MB |
+| time writing | 15.7 s | 2.1 s |
+
+**Still open.** Each commit of the filesystem writes about 250 KB, for a
+database of 90 KB. That is kfs's own cost, every program that saves pays
+it, and it is next.

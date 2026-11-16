@@ -34407,3 +34407,62 @@ A write costs a seventh of what it did, but JetSki wrote 229 MB in a
 load that left `/Home` 362 KB larger. Something is written over and over,
 or made and removed, and finding which files is next (`roadmap.md`).
 That was the first load on an empty `/Home`.
+
+## 18.837 Cookies a second at a time (0.11.441)
+
+**In short: The Verge loads in 13 s on the M700 where it took 32, because
+WebKit's cookie database now commits once a second instead of once a
+cookie.**
+
+Diego asked why one website wrote so much ("So fix the cache and see why
+are who storing all that data"). The POSIX layer can now count what a
+ported program does to each file: `/Home/Settings/POSIX/io` switches it
+on, and it logs `posix: io` lines every 4000 writes and when the program
+ends, with each file's bytes, writes, cuts, deletions, renames and syncs.
+
+One load of The Verge, the second on that `/Home`:
+
+| file | writes | deleted | synced |
+|---|---|---|---|
+| `cookies.db-journal` | 4,986 | 261 | 262 |
+| `cookies.db` | 1,399 | 0 | 261 |
+| ten `AlternativeServices/*.tmp` | 2 each | 1 each | 0 |
+
+**261 cookies, each set in a transaction of its own.** SQLite's journal is
+made, written, synced and deleted, and the database written and synced,
+for every one. That is 522 syncs and about 250 KB to the device for each
+commit, against a database of 90 KB. WebKit asks for WAL, which makes
+this cheap on other systems. WAL needs memory shared between processes,
+and the dotfile VFS SQLite uses here has none, so the database stayed in
+DELETE mode. Neither alternative was taken:
+- `synchronous=OFF` would let the database's pages, now written over the
+  file in place (`DISK_OVER`, 18.836), reach the disk before the journal
+  that undoes them;
+- WAL with exclusive locking would leave its lock behind when JetSki
+  crashes.
+
+**WebKit patch 0032**: `CookieJarDB` opens one transaction at its first
+change and commits it a second later, and when the database closes.
+This is how Chromium keeps its cookies. A crash loses the last second's
+cookies, never the database, because each commit is still SQLite's own.
+
+On the M700, The Verge, the same `/Home`, the device's counters around
+one load:
+
+| | before | patch 0032 |
+|---|---|---|
+| load | 32 s | 12.6 s, then 13.3 s |
+| device writes | 29,406 | 5,386 |
+| written | 129 MB | 23 MB |
+| time writing | 15.7 s | 2.1 s |
+
+Idle afterwards, the device took no writes in 30 s. Another load in
+between did not finish at all. That was the page: its lookups went on for
+ten seconds and stopped, the disk kept being written, and nothing was
+left in the folder. A request of its own never answered.
+
+`x86-jetski`, `x86-webkit2`, `x86-sites` and `x86-webcore` pass with the
+patch. `x86-jetski` checks that the server's lasting cookie is in
+`cookies.db` on the disk. Control: the batch's `COMMIT` made `SELECT 1`,
+so it is never committed. `x86-jetski` fails 1 of 38, the server's
+cookie not in `cookies.db`.

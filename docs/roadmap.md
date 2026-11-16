@@ -10724,9 +10724,22 @@ the applications make the system useful, and is not pulled forward.
     - *JetSki writes 229 MB to load The Verge once* (15 November 2026, the
       M700 with `/Home` on its SATA drive, `testing.md` 18.836): 51,231
       device writes and 30.7 s of a 55 s load, for a `/Home` that grew
-      362 KB. Which files take them is not known: the POSIX layer's
-      telemetry should count writes and bytes per file over a load. The
-      cookie database deleted nine times a load is the first suspect.
+      362 KB. **Found and fixed, 0.11.441** (`testing.md` 18.837): the
+      POSIX layer counts each file's writes when `/Home/Settings/POSIX/io`
+      exists, and 261 of a load's transactions were WebKit's cookie
+      database, one a cookie, each with its journal made, synced and
+      deleted. WebKit patch 0032 commits them once a second: The Verge in
+      13 s where it took 32, 23 MB written where 129 were.
+    - *A kfs commit costs about 250 KB of writes* (15 November 2026,
+      `testing.md` 18.837): 261 cookie commits wrote 129 MB, for a
+      database of 90 KB and a journal of a few KB. What a group's commit
+      writes besides the file's own blocks - the bitmap, the inode
+      table's blocks, the journal's copy of each - is to be counted and
+      made smaller; every program that syncs pays it.
+    - *WebKit's `AlternativeServices` writes a file and renames it per
+      host per load* (the same load): ten small files a load, each
+      written, synced and renamed over the last. Small now; worth one
+      look once the commit's own cost is down.
     - *Our TCP sends every data segment twice* (seen 15 November 2026 in
       QEMU's capture of a live page: the same sequence numbers 0.4 ms
       apart, every segment the guest sends; ACKs are single). Twice the
