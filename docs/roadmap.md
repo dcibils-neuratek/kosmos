@@ -10641,6 +10641,29 @@ the applications make the system useful, and is not pulled forward.
       **W1 built in 0.11.435** (`testing.md` 18.831). **W2 built in
       0.11.436** (18.833): `/Kosmos/Kits/webkit`, views with `scripts` and
       `follow`; JetSki's tabs are views.
+    - *Blocking: adverts and trackers kept out of JetSki* (Diego, 16
+      November 2026: "We need a way to have adblocking plugin for browsing
+      to avoid loading and saving in unnecessary data", "I want to be able
+      to avoid tracking cookies and else", "Can you see how Adblock works
+      and replicate it and create our own Adblock extension for jetski?").
+      It was in JetSki's feature set from 11 November (`webkit.md`, *Ads
+      and trackers blocked*) and never on this list. **Designed, for Diego
+      to agree**: `docs/adblock.md` (how Adblock does it, the feature set,
+      the architecture), `docs/adblock.html` (the shield, its pop-over,
+      Settings' *Blocking*, `filters` at the prompt) and
+      `docs/adblock-architecture.png`. WebKit's own content blocker,
+      Safari's, turned on (`ENABLE_CONTENT_EXTENSIONS`); EasyList,
+      EasyPrivacy and EasyList Cookie converted into its rules by a new
+      Lua library, `filters.lua`, which runs on the host as well, so the
+      image blocks from its first boot; third-party cookies refused, as
+      Settings agreed on 14 November and the code never did. Steps: B1 the
+      engine on (Mail's W4 too), B2 the converter, B3 third-party cookies,
+      B4 the shield, B5 Settings, B6 lists kept current, B7 element hiding
+      emulation and snippets if missed, B8 Mail. Why: The Verge leaves 235
+      cookies on the M700, 206 of them from 97 other sites
+      (`testing.md` 18.837). Open for Diego: the name, the default lists,
+      Acceptable Ads (not offered, as drawn), and whether the trackers'
+      cookies already kept are cleared by themselves.
     - *JetSki's speed* (Diego, 15 November 2026: "i find the jetski
       browser really slow to use and load pages", "we need to work on
       speed"; on the M700 a page stuck at 90%). What is known to cost,

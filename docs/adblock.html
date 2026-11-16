@@ -1,0 +1,385 @@
+<!--
+  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+  Blocking in JetSki - adverts and trackers kept out on WebKit's content
+  blocker, third-party cookies refused - drawn on 16 November 2026, before
+  it is built, from Diego's "can you see how Adblock works and replicate it
+  and create our own Adblock extension for jetski?". Its feature set and
+  architecture are docs/adblock.md, its diagram docs/adblock-architecture.png.
+  The page and the numbers drawn in it are examples unless the caption says
+  measured. Styles are JetSki's own mockup's, docs/webkit.html.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blocking in JetSki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground: #eef0f4; --ink: #18202c; --muted: #5a6474; --rule: #d9dee6;
+  --accent: #2f6bdc; --card: #ffffff;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --w-bg: #ffffff; --w-side: #f4f5f7; --w-line: #e3e6eb; --w-ink: #1b2330; --w-dim: #6b7484;
+  --w-accent: #2f6bdc; --w-good: #2e9b5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+}
+:root[data-theme="dark"] { --ground: #12151b; --ink: #e6e9ee; --muted: #9aa3b1; --rule: #262c36; --card: #1a1e25; --accent: #6d9cf5; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-family: var(--display); font-size: 32px; margin: 0 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 22px; max-width: 76ch; }
+h2 { font-family: var(--display); font-size: 20px; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid var(--rule); }
+p, li { max-width: 78ch; }
+code { font-family: var(--mono); font-size: 13px; }
+.cap { color: var(--muted); font-size: 13px; margin: 10px 0 0; max-width: 86ch; }
+.q { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 16px; margin: 10px 0; max-width: 840px; }
+.q b { font-family: var(--display); }
+.scroller { overflow-x: auto; max-width: 100%; padding-bottom: 6px; }
+
+/* The Kosmos window: its band - title, menus, the three - as a direct
+   window with a menu bar has it. */
+.win { width: 980px; background: var(--w-bg); color: var(--w-ink); border-radius: 12px; overflow: hidden;
+       box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 13px; position: relative; }
+.band { display: flex; align-items: center; gap: 18px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--w-line); background: #f7f8fa; }
+.band .t { font-weight: 600; font-size: 14px; }
+.band .m { color: var(--w-dim); }
+.band .m.on { color: #fff; background: var(--w-accent); border-radius: 6px; padding: 2px 9px; margin: 0 -9px; }
+.grow { flex: 1; }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+
+
+/* The browser's own top: tabs in the band's row below, then the toolbar. */
+.menu-btn { align-self: center; padding: 0 10px 6px 4px; color: #4a5262; font-size: 15px; }
+.tabs { display: flex; align-items: flex-end; gap: 2px; padding: 10px 14px 0; background: #eef0f4; border-bottom: 1px solid var(--w-line); }
+.tab { display: flex; align-items: center; gap: 8px; background: transparent; border-radius: 9px 9px 0 0; padding: 7px 12px; font-size: 12.5px; color: #4a5262; width: 210px; white-space: nowrap; overflow: hidden; }
+.tab.on { background: #fff; color: #111; box-shadow: 0 -1px 0 var(--w-line) inset; }
+.tab .ic { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.tab .x { margin-left: auto; color: #9aa2b0; }
+.tab.plus { width: auto; color: #6b7484; font-size: 16px; padding: 4px 10px; }
+.tool { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--w-line); background: #fff; position: relative; }
+.tool .nav { color: #6b7484; letter-spacing: 8px; font-size: 15px; }
+.url { flex: 1; display: flex; align-items: center; gap: 8px; background: #f1f3f6; border: 1px solid transparent; border-radius: 9px; padding: 6px 12px; color: #2a3240; font-size: 13px; }
+.url.focus { gap: 0; background: #fff; border-color: var(--w-accent); box-shadow: 0 0 0 3px rgba(47,107,220,.18); }
+.url .lock { color: var(--w-good); font-size: 12px; }
+.url .host { color: #111; font-weight: 500; }
+.url .path { color: #6b7484; }
+.tool .act { color: #6b7484; font-size: 13px; display: flex; gap: 14px; }
+.tool .dl { position: relative; }
+.tool .dl i { position: absolute; left: -2px; right: -2px; bottom: -6px; height: 3px; border-radius: 2px; background: #e3e6eb; }
+.tool .dl i b { display: block; width: 62%; height: 3px; border-radius: 2px; background: var(--w-accent); }
+.view { height: 470px; background: #fff; overflow: hidden; }
+/* A made-up page: a wiki article. */
+.art { display: grid; grid-template-columns: 190px 1fr 230px; gap: 26px; padding: 22px 28px; }
+.art .toc { font-size: 12.5px; color: #3c4a60; }
+.art .toc div { padding: 4px 0; }
+.art .toc .on { color: #1d3f7a; font-weight: 600; }
+.art h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 28px; margin: 0 0 4px; border-bottom: 1px solid #e3e6eb; padding-bottom: 6px; }
+.art .lede { font-size: 13.5px; line-height: 1.65; color: #202122; margin: 10px 0; }
+.art .box { border: 1px solid #e3e6eb; background: #f8f9fa; padding: 10px; font-size: 12px; }
+.art .pic { height: 120px; border-radius: 4px; background: linear-gradient(160deg,#0e1a33,#2a4f8f 55%,#d8a35a); margin-bottom: 8px; }
+.art table { width: 100%; border-collapse: collapse; }
+.art td { padding: 3px 0; border-top: 1px solid #eceef1; }
+.art td:first-child { color: #54595d; width: 44%; }
+.status { position: absolute; left: 0; bottom: 0; background: #f7f8fa; border: 1px solid var(--w-line); border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; padding: 3px 10px; font-size: 11.5px; color: #5a6474; }
+/* The status line while a page loads, and when it has (15 November 2026). */
+.sline { display: flex; align-items: center; gap: 12px; background: #f7f8fa; border: 1px solid var(--w-line); border-radius: 8px; padding: 5px 12px; font-size: 11.5px; color: #5a6474; max-width: 760px; margin: 8px 0; }
+.sline .grow { flex: 1; }
+.sline .bar { width: 180px; height: 6px; border-radius: 3px; background: #e2e6ec; overflow: hidden; }
+.sline .bar i { display: block; height: 100%; background: var(--w-accent, #2f6fde); border-radius: 3px; }
+.sline .pct { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.sline.done { color: var(--w-good); }
+/* The address field's suggestions. */
+.sugg { position: absolute; left: 112px; right: 128px; top: 44px; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.18); padding: 6px; font-size: 13px; z-index: 2; }
+.sugg .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px 4px; }
+.sugg .r { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 10px; border-radius: 6px; align-items: center; }
+.sugg .r.on { background: var(--w-accent); color: #fff; }
+.sugg .r.on span { color: #dfe8fb; }
+.sugg .r span { color: #8a92a0; font-size: 12px; }
+/* A page that stopped. */
+.gone { height: 430px; display: grid; place-items: center; background: #fbfbfc; }
+.gone .c { text-align: center; max-width: 440px; }
+.gone h3 { margin: 10px 0 6px; font-size: 18px; }
+.gone p { color: var(--w-dim); margin: 0 auto 16px; font-size: 13px; }
+.gone.dev { height: auto; padding: 28px 0 22px; }
+.why { margin: 18px auto 0; width: 560px; text-align: left; border: 1px solid var(--w-line); border-radius: 8px; background: #fff; font: 12px/1.55 var(--mono); }
+.why .h { font: 600 12px var(--ui, system-ui); padding: 7px 12px; border-bottom: 1px solid var(--w-line); display: flex; }
+.why .h span { margin-left: auto; color: var(--w-dim); font-weight: 400; }
+.why dl { display: grid; grid-template-columns: 112px 1fr; margin: 0; padding: 8px 12px 10px; gap: 1px 10px; }
+.why dt { color: var(--w-dim); }
+.why dd { margin: 0; overflow-wrap: anywhere; }
+.why .fn { color: #8a3b12; }
+.btn { display: inline-block; background: var(--w-accent); color: #fff; border-radius: 7px; padding: 6px 16px; font-weight: 500; }
+.btn.q2 { background: #eef0f3; color: var(--w-ink); margin-left: 8px; }
+/* Downloads. */
+.dls { padding: 8px 0; }
+.dlr { display: grid; grid-template-columns: 34px 1fr 140px 90px; gap: 12px; align-items: center; padding: 10px 20px; border-bottom: 1px solid #f0f1f4; font-size: 13px; }
+.dlr .ico { width: 30px; height: 36px; border-radius: 4px; background: #e8f0fd; border: 1px solid #c9d8f3; }
+.dlr .s { color: var(--w-dim); font-size: 12px; }
+.dlr .pb { height: 5px; background: #eef0f3; border-radius: 3px; }
+.dlr .pb i { display: block; height: 5px; border-radius: 3px; background: var(--w-accent); }
+.dlr .a { color: var(--w-accent); text-align: right; }
+/* Settings: a tab of the browser's own, in Preferences' groups. */
+.set { padding: 20px 28px 26px; background: #f4f5f7; }
+.setcols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+.grouplabel { font-weight: 600; font-size: 12.5px; margin: 14px 0 6px 3px; }
+.grouplabel:first-child { margin-top: 0; }
+.group { background: #fff; border: 1px solid var(--w-line); border-radius: 10px; overflow: hidden; }
+.row { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--w-line); min-height: 44px; }
+.row:last-child { border-bottom: 0; }
+.row .label { flex: 1; min-width: 0; }
+.row .label b { font-weight: 500; display: block; }
+.row .label span { color: var(--w-dim); font-size: 12px; display: block; line-height: 1.4; }
+.field { font-size: 12.5px; padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; min-width: 160px; }
+.drop { padding: 5px 9px; border: 1px solid var(--w-line); border-radius: 7px; background: #fff; font-size: 12.5px; flex: none; color: var(--w-ink); }
+.sw { width: 40px; height: 23px; border-radius: 12px; background: #cdd0d6; position: relative; flex: none; }
+.sw.on { background: var(--w-accent); }
+.sw::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
+.sw.on::after { left: 19px; }
+/* About JetSki. */
+.about { padding: 20px 26px 18px; }
+.about .hero { display: flex; gap: 18px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--w-line); }
+.about .logo { width: 64px; height: 64px; border-radius: 16px; flex: none; background: linear-gradient(150deg, #5fb4ff, #2f6bdc 55%, #173a8a); box-shadow: inset 0 -10px 0 rgba(255,255,255,.18); }
+.about .name { font-size: 22px; font-weight: 600; }
+.about .ver { color: var(--w-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.about .hero p { margin: 6px 0 0; font-size: 13px; }
+.about .built { font-weight: 600; font-size: 12.5px; margin: 14px 0 4px; }
+.libs { max-height: 330px; overflow-y: auto; border: 1px solid var(--w-line); border-radius: 10px; }
+.libs .lg { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8a92a0; padding: 9px 14px 3px; background: #fafbfc; }
+.libs .lib { display: grid; grid-template-columns: 150px 64px 1fr 110px; gap: 10px; padding: 5px 14px; font-size: 12.5px; border-top: 1px solid #f0f1f4; align-items: baseline; }
+.libs .lib b { font-weight: 500; }
+.libs .lib span { color: var(--w-dim); font-variant-numeric: tabular-nums; }
+.libs .lib i { font-style: normal; color: #3c4553; }
+.libs .lib em { font-style: normal; color: var(--w-dim); text-align: right; font-size: 12px; }
+.about .foot { display: flex; align-items: center; margin-top: 14px; }
+/* Developer mode: Safari's Web Inspector, docked to the right. */
+.win.wide { width: 1088px; }
+.split { display: grid; grid-template-columns: 1fr 548px; height: 560px; }
+.split .view { height: 100%; border-right: 1px solid #c9ced6; }
+.wi { display: flex; flex-direction: column; background: #fff; font: 11.5px/1.45 -apple-system, "IBM Plex Sans", system-ui, sans-serif; color: #1d1d1f; min-width: 0; }
+.wi-bar { display: flex; align-items: center; gap: 2px; height: 30px; padding: 0 6px; background: #f2f2f4; border-bottom: 1px solid #d6d6da; }
+.wi-bar .ic { width: 18px; text-align: center; color: #6e6e73; font-size: 12px; }
+.wi-bar .t { padding: 2px 5px; font-size: 11px; border-radius: 5px; color: #3a3a3c; white-space: nowrap; }
+.wi-bar .t.on { background: #dcdce1; color: #000; }
+.wi-bar .badge { color: #d70015; font-weight: 600; margin-left: 4px; }
+.wi-bar .badge.w { color: #b25000; }
+.wi-filter { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; height: 26px; padding: 0 8px; border-bottom: 1px solid #e3e3e6; color: #6e6e73; }
+.wi-filter .fld { flex: 1; border: 1px solid #d6d6da; border-radius: 5px; padding: 1px 7px; color: #a1a1a6; }
+.wi-filter .chip { padding: 0 6px; border-radius: 4px; }
+.wi-filter .chip.on { background: #0a64d8; color: #fff; }
+.con { flex: 1; overflow: hidden; font: 11px/1.5 var(--mono); }
+.con .l { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; gap: 6px; padding: 3px 8px; border-bottom: 1px solid #eeeef0; }
+.con .l .src { color: #0a64d8; white-space: nowrap; }
+.con .l.err { background: #fff1f2; color: #b3001b; border-bottom-color: #ffd6da; }
+.con .l.warn { background: #fffbe6; color: #6b4b00; border-bottom-color: #f3e5ad; }
+.con .l.in { color: #0a64d8; }
+.con .l.out { color: #1d1d1f; }
+.con .prompt { display: grid; grid-template-columns: 16px 1fr; gap: 6px; padding: 4px 8px; color: #0a64d8; }
+.net { flex: 1; overflow: hidden; }
+.net table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.net th { text-align: left; font-weight: 500; color: #6e6e73; background: #f7f7f9; border-bottom: 1px solid #d6d6da; padding: 3px 6px; }
+.net td { padding: 3px 6px; border-bottom: 1px solid #f0f0f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.net tr.sel td { background: #0a64d8; color: #fff; }
+.net tr.bad td { color: #d70015; }
+.net .wf { position: relative; height: 9px; }
+.net .wf i { position: absolute; top: 1px; height: 7px; border-radius: 2px; background: #5e9cff; }
+.net .wf i.w { background: #c8c8ce; }
+.wi-foot { height: 22px; display: flex; align-items: center; gap: 16px; padding: 0 8px; border-top: 1px solid #e3e3e6; color: #6e6e73; font-variant-numeric: tabular-nums; }
+.dom { font: 11px/1.6 var(--mono); padding: 6px 8px; color: #881280; }
+.dom .a { color: #994500; } .dom .v { color: #1a1aa6; } .dom .tx { color: #1d1d1f; }
+.dom .sel { background: #d7e6fb; margin: 0 -8px; padding: 0 8px; }
+.hl { position: absolute; border: 1px solid #5e9cff; background: rgba(94,156,255,.18); }
+
+/* Blocking, 16 November 2026: the shield and its pop-over. */
+.shield { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 7px; color: #1f6b43; background: #e5f4ec; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shield svg { width: 14px; height: 14px; }
+.shield.off { color: #6b7484; background: #eef0f3; }
+.pop { position: absolute; right: 64px; top: 46px; width: 330px; background: #fff; border: 1px solid #dfe3ea; border-radius: 12px; box-shadow: 0 16px 38px rgba(0,0,0,.2); z-index: 3; font-size: 13px; overflow: hidden; }
+.pop .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; border-bottom: 1px solid var(--w-line); }
+.pop .hd b { font-weight: 600; }
+.pop .hd span { color: var(--w-dim); font-size: 12px; display: block; }
+.pop .nums { display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 6px; border-bottom: 1px solid var(--w-line); }
+.pop .nums div { text-align: center; }
+.pop .nums b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pop .nums span { color: var(--w-dim); font-size: 11.5px; }
+.pop .lst { padding: 6px 14px 8px; border-bottom: 1px solid var(--w-line); }
+.pop .lst .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin: 4px 0; }
+.pop .lst .r { display: flex; gap: 8px; padding: 2px 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pop .lst .r span:first-child { flex: 1; color: #2a3240; }
+.pop .lst .r span:last-child { color: var(--w-dim); }
+.pop .ft { display: flex; align-items: center; padding: 10px 14px; gap: 10px; }
+.pop .ft a { color: var(--w-accent); font-size: 12.5px; text-decoration: none; }
+/* A made-up news page, with the holes adverts leave closed. */
+.news { padding: 18px 28px; display: grid; grid-template-columns: 1fr 260px; gap: 26px; }
+.news .mast { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 18px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+.news .mast b { font: 700 26px Georgia, serif; letter-spacing: -.01em; }
+.news .mast span { color: #6b7484; font-size: 12px; }
+.news h3 { font: 600 24px/1.2 Georgia, serif; margin: 6px 0 8px; }
+.news p { font-size: 13.5px; line-height: 1.65; color: #26303d; margin: 0 0 10px; }
+.news .hero { height: 150px; border-radius: 4px; background: linear-gradient(135deg,#2b3a55,#5a7bb5 60%,#e6b26a); margin-bottom: 10px; }
+.news .side div { border-top: 1px solid #e6e8ec; padding: 8px 0; font-size: 12.5px; color: #2a3240; }
+.news .side div b { display: block; font-weight: 600; }
+.gonead { border: 1px dashed #b9c6d8; border-radius: 6px; color: #7a8698; font-size: 11.5px; text-align: center; padding: 10px; background: #f7f9fc; }
+/* Before and after, side by side. */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 980px; }
+.pair .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+.pair .card h4 { margin: 0 0 8px; font-family: var(--display); font-size: 16px; }
+.pair table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.pair td { padding: 4px 0; border-top: 1px solid var(--rule); }
+.pair td:last-child { text-align: right; font-weight: 600; }
+.pair .est { color: var(--muted); font-weight: 400; font-size: 12px; }
+/* Settings, Blocking. */
+.lists .row .cnt { color: var(--w-dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.own { font: 12px/1.6 var(--mono); background: #fff; border: 1px solid var(--w-line); border-radius: 8px; padding: 8px 12px; color: #2a3240; white-space: pre; overflow-x: auto; }
+.chip2 { display: inline-flex; align-items: center; gap: 6px; background: #eef0f3; border-radius: 6px; padding: 2px 8px; font-size: 12px; margin: 2px 4px 2px 0; }
+/* The prompt. */
+.term { background: #10141b; color: #d6dde8; border-radius: 10px; padding: 14px 16px; font: 12.5px/1.6 var(--mono); max-width: 860px; white-space: pre; overflow-x: auto; }
+.term .p { color: #7fd1a8; } .term .d { color: #8b96a8; } .term .y { color: #f2c46d; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Blocking, in JetSki</h1>
+<p class="sub">Adverts and trackers kept out of every page, on WebKit's own content blocker, the engine Safari's blockers run on. The public filter lists AdBlock and Adblock Plus use are converted into its rules by a Kosmos library, and third-party cookies are refused. Drawn on 16 November 2026, before it is built; <code>docs/adblock.md</code> is the feature set and the architecture.</p>
+<p class="sub">Diego: "We need a way to have adblocking plugin for browsing to avoid loading and saving in unnecessary data", "I want to be able to avoid tracking cookies and else".</p>
+
+<h2>A page, and the shield</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#5b2bd9"></span>The Daily Example<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">news.example</span><span class="path">/2026/11/laptop-week</span></div>
+    <span class="act"><span class="shield"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>143</span><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative">
+    <div class="news">
+      <div class="mast"><b>The Daily Example</b><span>Technology &middot; Science &middot; Reviews</span></div>
+      <div>
+        <div class="hero"></div>
+        <h3>A laptop that lasts a week, measured</h3>
+        <p>We ran it from Monday to Saturday on one charge, with the screen at half brightness and the radio on. It ended the week at 9%, which no machine we have tested before has come near.</p>
+        <p>The cost is weight: at 1.9 kg it is heavier than last year's model, and most of that is battery.</p>
+      </div>
+      <div class="side">
+        <div class="gonead">space an advert would have taken - closed</div>
+        <div><b>The week in gadgets</b>Five things worth your time</div>
+        <div><b>Hands on</b>A camera with no screen at all</div>
+        <div><b>Reviewed</b>Three keyboards for writers</div>
+      </div>
+    </div>
+    <div class="pop">
+      <div class="hd"><span class="shield" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Blocking on news.example</b><span>EasyList, EasyPrivacy, EasyList Cookie</span></div></div>
+      <div class="nums"><div><b>143</b><span>requests kept out</span></div><div><b>206</b><span>cookies refused</span></div><div><b>4.1 MB</b><span>not downloaded</span></div></div>
+      <div class="lst"><div class="h">Most blocked on this page</div>
+        <div class="r"><span>pubmatic.com</span><span>21</span></div>
+        <div class="r"><span>rubiconproject.com</span><span>14</span></div>
+        <div class="r"><span>sonobi.com</span><span>11</span></div>
+        <div class="r"><span>and 94 other sites</span><span>97</span></div></div>
+      <div class="ft"><span class="sw on"></span><span style="flex:1">Block on this site</span><a href="#settings">Settings&hellip;</a></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">The shield sits in the toolbar before the star and counts what was kept out of this page as it loads: green with a number while blocking is on. Pressed, it opens the pop-over: requests kept out, cookies refused, an estimate of the bytes not downloaded (from the size each blocked address gave last time it was let through, or the median for its kind), and the sites blocked most. <b>Block on this site</b> off reloads the page with blocking off for that site alone; nothing large is compiled again, so it is instant. Where an advert's box would have been, the page closes up: EasyList's element-hiding rules hide the empty slot. The page, its numbers and its sites are examples; the sites are among those that set cookies on the M700 during The Verge's load on 15 November.</p>
+
+<h2>Off for one site</h2>
+<div class="scroller"><div class="win" style="width:760px">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:#5b2bd9"></span>The Daily Example<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">news.example</span><span class="path">/2026/11/laptop-week</span></div>
+    <span class="act"><span class="shield off"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>off</span><span>&#9734;</span><span>&#8942;</span></span></div>
+  <div style="height:200px;position:relative;background:#fff">
+    <div class="pop" style="right:40px;top:10px">
+      <div class="hd"><span class="shield off" style="padding:5px"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2 2.5 3.3v4.1c0 3.4 2.3 6.1 5.5 7.4 3.2-1.3 5.5-4 5.5-7.4V3.3Z" fill="currentColor" opacity=".9"/><path d="m5.4 8 1.8 1.8 3.4-3.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Blocking is off on news.example</b><span>Everything this site asks for is loaded</span></div></div>
+      <div class="ft"><span class="sw"></span><span style="flex:1">Block on this site</span><a href="#settings">Settings&hellip;</a></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">For a site that breaks with blocking on, or one you want to support. The shield goes grey and says <i>off</i>. The site is listed under <i>Allowed sites</i> in Settings, where it can be turned back on as well. Third-party cookies stay refused on it: that is a setting of its own.</p>
+
+<h2>What it changes: The Verge on the M700</h2>
+<div class="pair">
+  <div class="card"><h4>Today, 0.11.441</h4><table>
+    <tr><td>Cookies kept</td><td>235</td></tr>
+    <tr><td>Sites they belong to</td><td>98</td></tr>
+    <tr><td>The Verge's own</td><td>29</td></tr>
+    <tr><td>Load</td><td>13 s</td></tr></table></div>
+  <div class="card"><h4>With Blocking <span class="est">- to be measured</span></h4><table>
+    <tr><td>Cookies kept</td><td>about 29 <span class="est">its own</span></td></tr>
+    <tr><td>Sites they belong to</td><td>about 2</td></tr>
+    <tr><td>Requests never made</td><td>measured at B1</td></tr>
+    <tr><td>Load</td><td>measured at B1</td></tr></table></div>
+</div>
+<p class="cap">The left is measured (<code>testing.md</code> 18.837, the M700's <code>cookies.db</code> read on 16 November). The right is what refusing third-party cookies alone would leave; what blocking saves in requests, bytes and time is measured on the M700 at each step, and the numbers replace these.</p>
+
+<h2 id="settings">Settings, Blocking</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span><div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Settings<span class="x">&times;</span></div><div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span></div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="host">Settings</span><span class="path" style="margin-left:8px">about:settings#blocking</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="set">
+    <div class="setcols">
+      <div>
+        <div class="grouplabel">Blocking</div>
+        <div class="group">
+          <div class="row"><div class="label"><b>Block adverts and trackers</b><span>In every tab, and in Mail's messages</span></div><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>Third-party cookies</b><span>Set by a site other than the one you are on - mostly advertising</span></div><span class="drop">Refused &#9662;</span></div>
+          <div class="row"><div class="label"><b>Cookies trackers already left</b><span>206 cookies, set by sites other than the one they were kept for</span></div><span class="btn q2" style="margin:0">Clear</span></div>
+        </div>
+        <div class="grouplabel">Lists</div>
+        <div class="group lists">
+          <div class="row"><div class="label"><b>EasyList</b><span>Adverts &middot; fetched 2 hours ago</span></div><span class="cnt">71,204 rules</span><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>EasyPrivacy</b><span>Trackers and analytics &middot; fetched 2 hours ago</span></div><span class="cnt">48,911 rules</span><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>EasyList Cookie</b><span>The "we use cookies" banners, hidden</span></div><span class="cnt">22,630 rules</span><span class="sw on"></span></div>
+          <div class="row"><div class="label"><b>Add a list&hellip;</b><span>By language, or by its address</span></div><span class="btn q2" style="margin:0">Add</span></div>
+          <div class="row"><div class="label"><b>Fetched again</b><span>When each list says, every four days for these</span></div><span class="btn q2" style="margin:0">Update now</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="grouplabel">Allowed sites</div>
+        <div class="group"><div class="row" style="display:block;padding:10px 14px">
+          <span class="chip2">news.example &times;</span><span class="chip2">shop.example &times;</span>
+          <div style="color:var(--w-dim);font-size:12px;margin-top:6px">Blocking is off on these. Turned on again with &times;, or from the shield.</div></div></div>
+        <div class="grouplabel">Your own filters</div>
+        <div class="own">! Adblock Plus syntax, one filter a line
+||annoying.example^
+@@||cdn.example/player.js
+news.example##.newsletter-popup</div>
+        <p style="color:var(--w-dim);font-size:12px;margin:6px 3px 0">Kept the moment it is typed, in <code>/Home/Settings/Filters/own.txt</code>. A line that is not a filter is underlined and says why.</p>
+      </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">A group of Settings' own, beside <i>Cookies and site data</i> (which the third-party cookie row moves out of). The rule counts are what each list gives after conversion; the numbers here are illustrative and are replaced by B2's. Every change applies to open tabs at once.</p>
+
+<h2>At the prompt</h2>
+<div class="term"><span class="p">/Home $</span> filters
+<span class="d">list              rules    fetched          expires</span>
+EasyList          71,204   2 hours ago      in 4 days
+EasyPrivacy       48,911   2 hours ago      in 4 days
+EasyList Cookie   22,630   2 hours ago      in 4 days
+own                    3
+allowed sites          2   news.example shop.example
+
+<span class="p">/Home $</span> filters test https://ads.pubmatic.com/AdServer/js/pwt.js news.example
+<span class="y">blocked</span> by EasyList: ||pubmatic.com^$third-party
+
+<span class="p">/Home $</span> filters update
+EasyList: fetched, 71,204 rules, compiled in 2.8 s
+EasyPrivacy: not changed</div>
+<p class="cap"><code>filters test</code> is what a person and a test both use to ask why something was or was not blocked: the address, the page it was asked for from, and the filter that decided, in the list's own words. Times are illustrative.</p>
+
+<h2>Open for Diego</h2>
+<div class="q"><b>The name.</b> <i>Blocking</i> and a shield, as drawn; or a name of its own.</div>
+<div class="q"><b>Default lists.</b> EasyList, EasyPrivacy and EasyList Cookie, all on, as drawn.</div>
+<div class="q"><b>Acceptable Ads.</b> Not offered, as drawn: it is eyeo's paid allowlist. Or offered, off.</div>
+<div class="q"><b>The cookies trackers already left.</b> Cleared by the button, as drawn; or once, by themselves, the first time blocking runs.</div>
+</div>
+</body>
+</html>
