@@ -3922,3 +3922,19 @@ Along the way the gate turned out to have been testing the wrong image
 after any `make test262`: both builds share a directory and make compares
 times, not variants. The image now records what it was built as.
 
+## 16 November 2026 - What the JIT changed
+
+**In short.** On the M700 the JIT runs JavaScript 3.4 times faster, and
+pages load no faster at all. So the slow sites are not slow because of
+their scripts, and the next step is to find what they do wait on.
+
+**What.** `jsc` gained a `--no-jit` switch, so one engine can run the
+same script both ways: 65 ms with the JIT, 220 ms without. Then the 23
+sites twice: 15 of them within five seconds, exactly as before.
+
+**Why it matters.** It rules a cause out. Reddit, CNN, the New York Times
+and the Uruguayan papers spend their seconds somewhere other than
+running script - the network, building the page, painting it, or the
+messages between JetSki's processes. Measuring those stage by stage comes
+before FTL or WebAssembly, which would only make the fast part faster.
+
