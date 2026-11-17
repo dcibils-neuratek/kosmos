@@ -57,7 +57,7 @@ and found ahead of this one.
 
 What the layout calls of the browser around it - fetching a picture, a
 scrollbar, measuring a word, running work later - is
-`user/bin/apps/browser/web_netsurf.c`, Kosmos's own. These of NetSurf's files
+`user/kits/web/web_netsurf.c`, Kosmos's own. These of NetSurf's files
 were left out, and what of them is used written there instead:
 
 - `utils/utils.c`: two string functions the layout uses, beside POSIX

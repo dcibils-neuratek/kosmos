@@ -82,7 +82,10 @@ end
 check(dir ~= nil, "given no files: build/host/lua tools/test_tutorial.lua docs/cafesa3d-tutorial/*")
 check(files["index.html"], "the folder has no index.html")
 
-local index = app:match('TUTORIAL = { index = "asset:([^"]+)"')
+-- Since 17 November 2026 a file in /Kosmos/Documentation, where binfs shows
+-- the image's `tutorial/cafesa3d/` as `cafesa3d/`, for JetSki to open.
+local index = app:match('TUTORIAL = { index = "/Kosmos/Documentation/([^"]+)"')
+index = index and ("tutorial/" .. index)
 
 check(index == PREFIX .. "index.html",
       ("%s opens the tutorial at %s, not at its first page"):format(APP, tostring(index)))

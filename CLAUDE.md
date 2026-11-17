@@ -224,7 +224,7 @@ make MEGA=1 qemu         # the same as FULL now; kept for the stick's command
 make install-apps        # Doom, Quake, the Super Nintendo into the QEMU disk's /Home/Apps
 make serial      # the same, serial only, no window
 make test        # every suite, side by side, in under ten minutes; 0 or 1
-make test ONLY=arm-browser-1,host   # only the suites for what changed
+make test ONLY=x86-jetski,host     # only the suites for what changed
 make screenshot  # boot, screendump, and check the picture QEMU scans out
 make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
@@ -1005,7 +1005,7 @@ slowest named at the end - so the budget is watched rather than remembered.
 "the tests should be shorter", "and test whats changed", "and then do a
 full gate when a significant pice that affects other apps changed". So a
 change to one application is proved by its own suites -
-`make test ONLY=arm-browser-1,x86-browser-1,host` - with their
+`make test ONLY=x86-jetski,host` - with their
 controls. The whole gate, `make test`, runs
 when a piece other applications stand on changed - the kit (`ui.lua`,
 `keys.lua`), `gfx`, the window manager, a server, a driver, the kernel, the

@@ -501,6 +501,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(resized(guest, R, window, mark, sw, sh))
     failed.extend(tabbed(guest, R, window, sw, sh))
     failed.extend(from_disk(guest, R, window, sw, sh))
+    failed.extend(documentation(guest))
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
@@ -580,6 +581,23 @@ def from_disk(guest, R, window, sw, sh):
                       % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:]
                          or "nothing said"))
     return failed
+
+
+def documentation(guest):
+    """The one door to JetSki (`weblink.lua`) and the documentation as files
+    (17 November 2026, the old browser removed): the IDE's tutorial, handed
+    as a path in /Kosmos/Documentation by the test's key as the IDE's F1
+    hands it, opens in a new tab with its title."""
+    since = len(guest.seen)
+    guest.sendkey("ctrl-b")
+    if not said(guest, since, "jetski: opened for another program: "
+                "/Kosmos/Documentation/ide/index.html", 20):
+        return ["an address written to /Running/JetSki/open did not open a tab: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    if not said(guest, since, "jetski: title Kosmos IDE tutorial", 30):
+        return ["the IDE's tutorial, a file in /Kosmos/Documentation, did not load: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    return []
 
 
 # **Only the page's changes** (`testing.md` 18.856): a block that changes
@@ -879,6 +897,8 @@ def stopped(guest, R, window, sw, sh):
 # not told of - so a buffer's stale corner reaches the screen.
 # Only in the suite's copy of `jetski.lua`.
 HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
+        "if c == 2 then use(\"/Kosmos/Libraries/weblink.lua\").open("
+        "\"/Kosmos/Documentation/ide/index.html\") return true end "
         "if c == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
         "print(\"jetski: test composed again\") return false end "
         "if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
@@ -1367,12 +1387,16 @@ def main():
     with open(lua) as f:
         text = f.read()
     text = changed(text, "if c == 12 or c == 15 or c == 20 then return true end",
-                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 then return true end")
+                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
     if BROKEN == "nameless":
         # The Debug Kit never asked.
         text = changed(text, "debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
+    if BROKEN == "doorless":
+        # No door: an address written to /Running/JetSki/open is refused.
+        text = changed(text, 'win:publish("open", function() return "" end, function(address)',
+                       'win:publish("open", function() return "" end, nil and function(address)')
     if BROKEN == "pathless":
         # A path typed is a search, not a file.
         text = changed(text, 'if text:match("^%s*/") then', 'if false then')

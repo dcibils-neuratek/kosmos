@@ -30,7 +30,7 @@ end
 -- The image's, granted.
 expect("/Kosmos/Apps/passwords.lua", true)
 expect("/Kosmos/Programs/keyring.lua", true)
-expect("/Kosmos/Apps/browser/browser.lua", true)
+expect("/Kosmos/Apps/JetSki/jetski.lua", true)
 
 -- Anything else, refused - and every way of spelling the way out.
 expect("/Home/keyring.lua", false)

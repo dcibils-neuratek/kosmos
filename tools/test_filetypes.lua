@@ -274,16 +274,17 @@ do
 end
 
 -- **A browser's favorite** (`roadmap.md` 6zz d3): an empty file with no
--- extension, what it is in its attributes - the browser opens it, handed
--- its path, and it is called what it is.
+-- extension, what it is in its attributes - JetSki opens it, handed its
+-- path, and it is called what it is (the old browser did until 17 November
+-- 2026).
 do
   local kept = { kind = "file", type = "favorite",
                  address = "https://en.wikipedia.org/wiki/Dam" }
   local fav = types.how_to_open("/Home/Favorites/Dam - Wikipedia", kept)
 
-  check(fav and fav.program == "browser"
+  check(fav and fav.program == "jetski"
         and fav.args == '"/Home/Favorites/Dam - Wikipedia"',
-        "a favorite does not open in the browser, handed its file as one word")
+        "a favorite does not open in JetSki, handed its file as one word")
   check(types.how_to_open("/Home/Favorites/Dam - Wikipedia") == nil,
         "the same file without its attributes is claimed by something")
   check(types.describe("/Home/Favorites/Dam - Wikipedia", kept) == "Favorite",
@@ -326,11 +327,11 @@ check(types.opener("/Home/doom1.wad") == "doom"
       "a Doom level and a cartridge are not opened by the applications that "
       .. "say they open them")
 check(types.opener("/Home/notes.md") == "texteditor"
-      and types.opener("/Home/page.html") == "browser"
+      and types.opener("/Home/page.html") == "jetski"
       and types.opener("/Home/Desktop/Drive", { kind = "launcher" })
           == "launcheredit",
-      "a note, a page and a launcher are not Text Editor's (6zs), the "
-      .. "Browser's and the launcher editor's")
+      "a note, a page and a launcher are not Text Editor's (6zs), "
+      .. "JetSki's and the launcher editor's")
 
 check(types.opener("/Home/renders.zip") == "tracker",
       "a zip is not Tracker's, which opens one by extracting it")

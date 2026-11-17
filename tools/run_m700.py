@@ -52,7 +52,7 @@ OUT = os.path.join(ROOT, "build", "m700")
 # that are open already, that hang on purpose (`stuck`), or that need
 # something left for them (`adopt`); and the three installed in /Home/Apps.
 SKIP = {"deskbar", "desktop", "stuck", "adopt", "logview"}
-ARGS = {"browser": "https://en.wikipedia.org/wiki/BeOS"}
+ARGS = {"jetski": "https://en.wikipedia.org/wiki/BeOS"}
 INSTALLED = ["/Home/Apps/Doom/doom.lua", "/Home/Apps/Quake/quake.lua",
              "/Home/Apps/SNES/snes.lua"]
 BATCH = 12

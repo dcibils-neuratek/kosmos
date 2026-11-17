@@ -467,18 +467,16 @@ def main():
               "Find in the project did not find the lamps: %r" % found)
         press("esc")
 
-        # **The tutorial** (part one, 7 October): F1 opens its first page in
-        # the browser, carried in the image, every picture on it shown.
+        # **The tutorial** (part one, 7 October): F1 hands its first page,
+        # carried in the image as a file in /Kosmos/Documentation, to the one
+        # door to JetSki (`weblink.lua`) - the old browser's until 17 November
+        # 2026. This machine has no disk to carry JetSki; `x86-jetski` holds
+        # JetSki showing it.
         mark = len(guest.seen)
         press("f1")
-        index = "asset:tutorial/ide/index.html"
+        index = "/Kosmos/Documentation/ide/index.html"
         check(said("ide: tutorial at ", mark, 30) == index,
               "F1 did not open the IDE's tutorial")
-        shown = said("browser: showing ", mark, 120)
-        check(shown is not None
-              and re.match(re.escape(index) + r', "Kosmos IDE tutorial", \d+ pixels tall, '
-                           r"\d+ pictures, 0 missing", shown) is not None,
-              "the browser did not show the tutorial's first page whole: %r" % shown)
 
         stop_desktop()
 

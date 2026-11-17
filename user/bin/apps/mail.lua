@@ -32,7 +32,7 @@
 -- engine, with no scripts and no forms; a picture sent inside it (`cid:`)
 -- shown at once, from the Mail Kit's part; a picture on the network not
 -- fetched until Load Pictures is pressed, because fetching one tells its
--- sender the message was read. Links open in the browser.
+-- sender the message was read. Links open in JetSki (`weblink.lua`).
 --
 -- **Writing** (M6) is the composer's (`mailcompose.lua`), a window of its
 -- own for each message, polled here beside this one: New Message, Reply,
@@ -2364,8 +2364,7 @@ local function release(x, y)
 
     if link_at(x, y) == url then
       print("mail: link " .. url)
-      fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
-                               args = url, wait = false })
+      use("/Kosmos/Libraries/weblink.lua").open(url)
     end
 
     return true

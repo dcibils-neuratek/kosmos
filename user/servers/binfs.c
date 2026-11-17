@@ -61,6 +61,13 @@ static bool                       libraries;     /* which store this serves */
  * the build converted from EasyList and the others, gzipped, as
  * `/Kosmos/Filters`, which the WebKit Kit reads for every view. An image
  * without the browser carries an empty table, and an empty folder.
+ *
+ * **And the documentation, the same way** (17 November 2026, the old
+ * browser removed): the cheat sheet and the tutorials' pages and pictures,
+ * which only the old browser could read where they lie in the image
+ * (`asset:` addresses), shown as `/Kosmos/Documentation` - `cheatsheet.html`,
+ * `cafesa3d/` and `ide/` - so JetSki opens them as files. The bytes are the
+ * assets table's own: one copy, a second door.
  */
 struct kosmos_asset {
     const char          *name;
@@ -70,13 +77,14 @@ struct kosmos_asset {
 
 extern const struct kosmos_asset fonts_table[];
 extern const struct kosmos_asset filters_table[];
+extern const struct kosmos_asset assets_table[];
 
 struct folder {
     struct source_entry *entries;
     unsigned             count;
 };
 
-static struct folder fonts, filters;
+static struct folder fonts, filters, documentation;
 
 static void folder_open(struct folder *f, const struct kosmos_asset *table)
 {
@@ -96,6 +104,47 @@ static void folder_open(struct folder *f, const struct kosmos_asset *table)
         f->entries[i].name = table[i].name;
         f->entries[i].text = (const char *)table[i].bytes;
         f->entries[i].length = (unsigned long)table[i].length;
+    }
+
+    f->count = n;
+}
+
+/*
+ * The documentation from the assets table: `cheatsheet.html` as it is, and
+ * `tutorial/<name>/...` as `<name>/...`. Two passes, the first counting.
+ */
+static void documentation_open(struct folder *f)
+{
+    static const char tutorial[] = "tutorial/";
+    unsigned i, n = 0, pass;
+
+    for (pass = 0; pass < 2; pass++) {
+        unsigned at = 0;
+
+        for (i = 0; assets_table[i].name != NULL; i++) {
+            const char *name = assets_table[i].name;
+
+            if (strncmp(name, tutorial, sizeof(tutorial) - 1) == 0) {
+                name += sizeof(tutorial) - 1;
+            } else if (strcmp(name, "cheatsheet.html") != 0) {
+                continue;
+            }
+
+            if (pass == 1) {
+                f->entries[at].name = name;
+                f->entries[at].text = (const char *)assets_table[i].bytes;
+                f->entries[at].length = (unsigned long)assets_table[i].length;
+            }
+            at++;
+        }
+
+        if (pass == 0) {
+            n = at;
+            f->entries = calloc(n > 0 ? n : 1, sizeof(*f->entries));
+            if (f->entries == NULL) {
+                return;
+            }
+        }
     }
 
     f->count = n;
@@ -195,14 +244,15 @@ static const char *declared(const char *src, unsigned long len,
  * part - `/apps/clock.lua` - and a name with neither is the whole store,
  * as the libraries are served.
  */
-enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR, VIEW_FONTS, VIEW_FILTERS };
+enum view { VIEW_ALL, VIEW_APPS, VIEW_PROGRAMS, VIEW_DESKBAR, VIEW_FONTS, VIEW_FILTERS,
+            VIEW_DOCUMENTATION };
 
 static enum view view_of(const char **name)
 {
     static const struct { const char *word; enum view view; } views[] = {
         { "apps", VIEW_APPS }, { "programs", VIEW_PROGRAMS },
         { "deskbar", VIEW_DESKBAR }, { "fonts", VIEW_FONTS },
-        { "filters", VIEW_FILTERS },
+        { "filters", VIEW_FILTERS }, { "documentation", VIEW_DOCUMENTATION },
     };
     const char *n = *name;
     unsigned i;
@@ -337,8 +387,9 @@ static bool is_folder(const char *dir, size_t dlen)
 /*
  * **A page the menu opens** (a `.page` file in `user/pages`, 3 October 2026): one in
  * the store's `pages/` that says `kosmos: page <address>` - the cheat sheet,
- * a tutorial - which is a launcher starting the browser there. Its name in
- * the menu is the file's without `pages/` and `.page`.
+ * a tutorial - which is a launcher starting JetSki there (the old browser
+ * until 17 November 2026). Its name in the menu is the file's without
+ * `pages/` and `.page`.
  */
 #define PAGES_DIR  "pages/"
 #define PAGE_END   ".page"
@@ -602,12 +653,12 @@ static void fill_launcher(const struct source_entry *e, struct bin_reply *rep)
               (s != NULL) ? n : 0);
 
     /*
-     * A page starts the browser, and its address follows the program's
+     * A page starts JetSki, and its address follows the program's
      * name after a NUL - in `data`, which has the room, rather than a field
      * every reply would carry for two launchers. The namespace splits them.
      */
     if (is_page(e)) {
-        static const char browser[] = "browser.lua";
+        static const char browser[] = "JetSki/jetski.lua";
         const char *page = declared(e->text, e->length, "page", &n);
         size_t plen = (page != NULL) ? n : 0;
 
@@ -663,16 +714,24 @@ static void answer(const struct message *in, uint64_t sender)
     at = name;
     view = view_of(&at);
 
-    /* The fonts and the filter lists are stores of their own, for this
-     * one answer. */
+    /* The fonts, the filter lists and the documentation are stores of
+     * their own, for this one answer. */
     const struct source_entry *was = store;
     unsigned was_count = store_count;
 
-    if ((view == VIEW_FONTS || view == VIEW_FILTERS) && !libraries) {
-        const struct folder *f = (view == VIEW_FONTS) ? &fonts : &filters;
+    if ((view == VIEW_FONTS || view == VIEW_FILTERS || view == VIEW_DOCUMENTATION)
+        && !libraries) {
+        const struct folder *f = (view == VIEW_FONTS) ? &fonts
+                               : (view == VIEW_FILTERS) ? &filters : &documentation;
 
         store = f->entries;
         store_count = f->count;
+
+        /* The documentation has folders - `ide/`, `cafesa3d/` - so it is
+         * listed as the whole store is, a folder's children at a time. */
+        if (view == VIEW_DOCUMENTATION) {
+            view = VIEW_ALL;
+        }
     }
 
     switch (req->op) {
@@ -860,6 +919,7 @@ void binfs_server(long endpoint, int serving_libraries)
         store_count = programs_lua_count;
         folder_open(&fonts, fonts_table);
         folder_open(&filters, filters_table);
+        documentation_open(&documentation);
     }
 
     for (;;) {

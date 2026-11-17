@@ -8,7 +8,7 @@
 -- kosmos: about WebKit on Kosmos: the web as Safari draws it
 -- kosmos: image webkit
 -- kosmos: depends webkit
--- kosmos: opens html htm
+-- kosmos: opens html htm favorite
 --
 --   wm jetski                              the start page
 --   wm jetski:https://en.wikipedia.org/    that page
@@ -2120,8 +2120,28 @@ win:add(shieldpanel)
 tabs_changed()
 win:focus_on(view)
 
+-- **The one door to a page from another program** (`weblink.lua`;
+-- `docs/mailweb.md`, decided 15 November 2026: "a new tab of the JetSki
+-- that is open"): an address written to `/Running/JetSki/open` - a link in
+-- Mail, a tutorial, the cheat sheet - opens in a tab of its own here.
+win:publish("open", function() return "" end, function(address)
+  address = tostring(address or "")
+  if address == "" then return end
+  local id = web.tab_new()
+  if not id then return end
+  web.tab_select(id)
+  shown_changed()
+  visit(address)
+  print("jetski: opened for another program: " .. address)
+end)
+
 do
   local start = files.words(args)[1]
+  -- A favorite, handed by Tracker, is the page it keeps (`favorites.lua`);
+  -- the old browser opened them until 17 November 2026.
+  if start and start:sub(1, 1) == "/" then
+    start = use("/Kosmos/Libraries/favorites.lua").address_of(start) or start
+  end
   if not start and setting.opens == "tabs" and #had > 0 then
     -- The tab `web.open` made is the first; the rest wait to be shown.
     local ids = { web.shown_id() }

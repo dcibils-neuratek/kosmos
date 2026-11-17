@@ -73,6 +73,8 @@ machine, a person arrives with everything that is theirs.
   Themes/        the looks, a file each
   Deskbar/       the Deskbar's menu as it ships, laid out from each
                  application's header (roadmap.md 6zd)
+  Documentation/ the cheat sheet and the tutorials, pages and pictures,
+                 for JetSki to open as files (17 November 2026)
 
 /Home/
   Apps/          applications a person installed, each one folder holding
@@ -93,6 +95,8 @@ machine, a person arrives with everything that is theirs.
 Names are found whatever their case and keep the case they were given:
 `/home` finds `/Home`. `/Kosmos/Fonts` is
 the faces the image carries, each a file (binfs's `fonts` view, 0.11.414),
+and `/Kosmos/Documentation` the cheat sheet and tutorials the image
+carries (its `documentation` view, the assets table's own bytes), both
 mounted with the rest from one table in init, `BIN_FOLDERS`. What
 `layout.html` draws beyond this - `/Kosmos/Servers`, `Drivers`,
 `Settings`, `Logs` - is the plan, and waits on what it needs: a server or a

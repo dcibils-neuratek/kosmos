@@ -4218,3 +4218,31 @@ has sat still.
 **Measured.** M700, Wikipedia: 126 ms, worst 501, to 0.6, worst 0.8. The
 test now fails any run where a paint waits 400 ms or more: 504.6 without
 the fix, 3.8 with it.
+
+## 17 November 2026 - One browser
+
+**In short.** Kosmos had two web browsers: the old one, built in
+September on the NetSurf engine, and JetSki, on WebKit, which is the one
+anyone would use. The old one is gone. Everything that used to open it -
+a link in an email, the IDE's and Cafesa3D's tutorials, the cheat sheet
+in the menu - now opens JetSki.
+
+**What.** Removing an application means first finding what leans on it.
+Mail sent its links to it; the IDE and Cafesa3D opened their tutorials in
+it; the menu's Documentation entries started it; the dock had it pinned;
+and favorites - bookmarks kept as files - opened in it. All of those now
+go to JetSki through one small library, so there is one way to say "show
+this page", and it opens a new tab in the JetSki already open rather than
+a window each time.
+
+**The catch was the tutorials.** They are carried inside the system's
+image, and only the old browser knew how to read a page from there. So
+the image now shows them as ordinary files, in a folder called
+`/Kosmos/Documentation`, which JetSki - like any program - can open.
+
+**What is left of it.** The old engine still draws HTML emails in Mail,
+so its C code stays, as a kit, until Mail draws them with WebKit; then it
+goes too.
+
+**Visible.** One browser in the dock and the menu; the tutorials open in
+JetSki.

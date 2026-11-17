@@ -1,7 +1,7 @@
 <!--
   Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
   JetSki, the browser on WebKit: its window, the address field's suggestions, a tab
-  whose page stopped, developer mode (Web Inspector docked right, drawn 15 November), downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
+  whose page stopped, developer mode (Web Inspector docked right, drawn 15 November), the menu, the right button, find, save page and print (drawn 17 November), downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
   built, from Diego's "I need a new web browser that is current and usable
   like safari or chrome". Its feature set and architecture are
   docs/webkit.md, its diagram docs/webkit-architecture.png. The pages drawn
@@ -196,6 +196,50 @@ code { font-family: var(--mono); font-size: 13px; }
 .dom .a { color: #994500; } .dom .v { color: #1a1aa6; } .dom .tx { color: #1d1d1f; }
 .dom .sel { background: #d7e6fb; margin: 0 -8px; padding: 0 8px; }
 .hl { position: absolute; border: 1px solid #5e9cff; background: rgba(94,156,255,.18); }
+
+/* Drawn 17 November 2026: the menu, the right button, find, save, print. */
+.pmenu { position: absolute; background: #fff; border: 1px solid #dfe3ea; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.18); padding: 6px; font-size: 13px; z-index: 3; width: 250px; }
+.pmenu .i { display: flex; justify-content: space-between; padding: 5px 10px; border-radius: 6px; }
+.pmenu .i.on { background: var(--w-accent); color: #fff; }
+.pmenu .i.on kbd { color: #dfe8fb; }
+.pmenu .i.off { color: #a8afbb; }
+.pmenu kbd { font: 11.5px var(--mono); color: #8a92a0; }
+.pmenu .h { color: #8a92a0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 7px 10px 3px; }
+.pmenu hr { border: 0; border-top: 1px solid #eceef2; margin: 5px 4px; }
+.art a.hot { color: #1d3f7a; background: #e6eefc; border-radius: 3px; text-decoration: underline; }
+.art a { color: #3366cc; }
+.findbar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--w-line); background: #fff; font-size: 12.5px; }
+.findbar .ff { width: 280px; border: 1px solid var(--w-accent); border-radius: 8px; padding: 4px 10px; box-shadow: 0 0 0 3px rgba(47,107,220,.18); }
+.findbar .n { color: var(--w-dim); font-variant-numeric: tabular-nums; }
+.findbar .ar { color: #4a5262; letter-spacing: 6px; }
+.findbar .ck { color: var(--w-dim); }
+mark.f { background: #ffe58a; color: inherit; border-radius: 2px; }
+mark.f.cur { background: #f5a524; }
+.sheet { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); background: #fff; border: 1px solid #dfe3ea; border-radius: 12px; box-shadow: 0 18px 44px rgba(0,0,0,.25); z-index: 3; font-size: 12.5px; overflow: hidden; }
+.savep { width: 640px; }
+.savep .trail { padding: 8px 14px; border-bottom: 1px solid var(--w-line); background: #f7f8fa; color: var(--w-dim); }
+.savep .trail b { color: var(--w-ink); font-weight: 500; }
+.savep .panes { display: grid; grid-template-columns: 170px 1fr; height: 190px; }
+.savep .sd { background: #f4f5f7; border-right: 1px solid var(--w-line); padding: 6px; }
+.savep .sd .h { font-size: 11px; color: var(--w-dim); font-weight: 600; padding: 6px 8px 2px; }
+.savep .sd div:not(.h) { padding: 3px 8px; border-radius: 6px; }
+.savep .sd .on { background: #dfe5ef; }
+.savep .fl > div { display: grid; grid-template-columns: 1fr 70px 150px; padding: 4px 14px; }
+.savep .fl .hd { color: var(--w-dim); font-size: 11px; border-bottom: 1px solid var(--w-line); }
+.savep .fl span + span { color: var(--w-dim); }
+.savep .ft { border-top: 1px solid var(--w-line); padding: 10px 14px; display: grid; grid-template-columns: 50px 1fr; gap: 8px 10px; align-items: center; }
+.savep .ft .in { border: 1px solid var(--w-accent); border-radius: 7px; padding: 4px 9px; }
+.savep .ft .dd { border: 1px solid var(--w-line); border-radius: 7px; padding: 4px 9px; justify-self: start; }
+.printp { width: 600px; display: grid; grid-template-columns: 230px 1fr; }
+.printp .pv { background: #e9ecf1; padding: 18px; display: grid; justify-items: center; gap: 8px; color: var(--w-dim); font-size: 11.5px; }
+.printp .pg { width: 160px; height: 226px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.2); padding: 12px 11px; }
+.printp .pg h6 { font: 13px Georgia, serif; margin: 0 0 6px; border-bottom: 1px solid #e3e6eb; padding-bottom: 3px; }
+.printp .pg i { display: block; height: 4px; margin: 4px 0; background: #e3e6eb; border-radius: 1px; }
+.printp .pg .pc { height: 46px; margin: 8px 0 8px 60%; border-radius: 3px; background: linear-gradient(160deg,#0e1a33,#2a4f8f 55%,#d8a35a); }
+.printp .op { padding: 16px 18px; display: grid; gap: 9px; align-content: start; }
+.printp .op h4 { margin: 0 0 4px; font-size: 14px; }
+.printp .op .r { display: flex; justify-content: space-between; align-items: center; }
+.printp .op .dd { border: 1px solid var(--w-line); border-radius: 7px; padding: 3px 9px; }
 </style>
 </head>
 <body>
@@ -399,6 +443,171 @@ code { font-family: var(--mono); font-size: 13px; }
   </div>
 </div></div>
 <p class="cap">From the downloads button. What arrives goes to <code>/Home/Downloads</code>; a notification says when one finishes, and Open hands it to the application its file type names - a PDF to the PDF reader, a picture to Photos. A download that stops hearing gives up after a time and goes on from where it was when asked again, as Models' do.</p>
+
+<h2>The menu</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative">
+    <div class="art">
+      <div class="toc"><div class="on">Saturn</div><div>Name</div><div>Physical characteristics</div><div>Atmosphere</div><div>Rings</div><div>Moons</div></div>
+      <div>
+        <h3>Saturn</h3>
+        <p class="lede"><b>Saturn</b> is the sixth planet from the Sun and the second largest in the Solar System, after Jupiter. It is a gas giant with an average radius of about nine and a half times that of Earth.</p>
+        <p class="lede">Its interior is most likely a core of iron, nickel and rock. Its pale yellow hue comes from ammonia crystals in its upper atmosphere. See <a>Rings of Saturn</a>.</p>
+        <p class="lede">Its ring system is made mostly of ice particles; the main rings are named in order of discovery, and the gaps between rings by the people who found them.</p>
+      </div>
+      <div class="box"><div class="pic"></div>
+        <table><tr><td>Mean radius</td><td>58,232 km</td></tr><tr><td>Moons</td><td>274</td></tr><tr><td>Rings</td><td>7 main</td></tr></table></div>
+    </div>
+    <div class="pmenu" style="left:8px;top:-1px">
+      <div class="h">File</div>
+      <div class="i">New tab <kbd>Ctrl T</kbd></div>
+      <div class="i">Open a file&hellip; <kbd>Ctrl O</kbd></div>
+      <div class="i on">Save page as&hellip; <kbd>Ctrl S</kbd></div>
+      <div class="i">Print&hellip; <kbd>Ctrl P</kbd></div>
+      <hr><div class="h">Edit</div>
+      <div class="i">Find on the page&hellip; <kbd>Ctrl F</kbd></div>
+      <hr><div class="h">View</div>
+      <div class="i">Zoom: 100% <kbd>Ctrl + &minus; 0</kbd></div>
+      <div class="i">Page source <kbd>Ctrl U</kbd></div>
+      <div class="i">Downloads <kbd>Ctrl J</kbd></div>
+      <hr><div class="h">History and bookmarks</div>
+      <div class="i">History <kbd>Ctrl Y</kbd></div>
+      <div class="i">Bookmark this page <kbd>Ctrl D</kbd></div>
+      <hr><div class="i">Settings</div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>Drawn 17 November 2026</b> (Diego: "the browser lacks a save page, open file, downloads, etc", "lets finish the features and then we keep optimizing"). The &#9776; button at the left of the band, as drawn on 11 November, holds File, Edit, View, History and bookmarks, one list with their headings; the &#8942; at the right is the same menu, for the hand that is there. Every entry has its key, Control as JetSki's keys are.</p>
+
+<h2>The right button</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative">
+    <div class="art">
+      <div class="toc"><div class="on">Saturn</div><div>Name</div><div>Physical characteristics</div><div>Atmosphere</div><div>Rings</div><div>Moons</div></div>
+      <div>
+        <h3>Saturn</h3>
+        <p class="lede"><b>Saturn</b> is the sixth planet from the Sun and the second largest in the Solar System, after Jupiter. It is a gas giant with an average radius of about nine and a half times that of Earth.</p>
+        <p class="lede">Its interior is most likely a core of iron, nickel and rock. Its pale yellow hue comes from ammonia crystals in its upper atmosphere. See <a class="hot">Rings of Saturn</a>.</p>
+        <p class="lede">Its ring system is made mostly of ice particles; the main rings are named in order of discovery, and the gaps between rings by the people who found them.</p>
+      </div>
+      <div class="box"><div class="pic"></div>
+        <table><tr><td>Mean radius</td><td>58,232 km</td></tr><tr><td>Moons</td><td>274</td></tr><tr><td>Rings</td><td>7 main</td></tr></table></div>
+    </div>
+    <div class="pmenu" style="left:520px;top:132px">
+      <div class="i on">Open link in a new tab</div>
+      <div class="i">Download the linked file</div>
+      <div class="i">Copy link</div>
+      <hr>
+      <div class="i">Back</div>
+      <div class="i off">Forward</div>
+      <div class="i">Reload</div>
+      <hr>
+      <div class="i">Save page as&hellip;</div>
+      <div class="i">Print&hellip;</div>
+      <div class="i">Page source</div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">What the menu offers depends on what is under the pointer. <b>A link</b>: open it in a new tab, download it, copy its address. <b>A picture</b>: save it, copy it, open it in a new tab. <b>Selected words</b>: copy them, search for them. <b>Anywhere</b>: back, forward, reload, save, print, the source, and Inspect Element while the developer features are on. JetSki builds it from what WebKit says is under the pointer - it already says so for the status line - so WebKit's own context menus stay out of the build.</p>
+
+<h2>Find on the page</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="findbar"><span class="ff">ring</span><span class="n">3 of 4</span><span class="ar">&#8593;&#8595;</span><span class="ck">&#9744; Match case</span><span class="grow"></span><span class="btn q2" style="margin:0">Done</span></div>
+  <div class="view" style="position:relative">
+    <div class="art">
+      <div class="toc"><div class="on">Saturn</div><div>Name</div><div>Physical characteristics</div><div>Atmosphere</div><div>Rings</div><div>Moons</div></div>
+      <div>
+        <h3>Saturn</h3>
+        <p class="lede"><b>Saturn</b> is the sixth planet from the Sun and the second largest in the Solar System, after Jupiter. It is a gas giant with an average radius of about nine and a half times that of Earth.</p>
+        <p class="lede">Its interior is most likely a core of iron, nickel and rock. Its pale yellow hue comes from ammonia crystals in its upper atmosphere. See <a>Rings of Saturn</a>.</p>
+        <p class="lede">Its <mark class="f">ring</mark> system is made mostly of ice particles; the main <mark class="f">rings</mark> are named in order of discovery, and the gaps between <mark class="fcur">ring</mark> by the people who found them.</p>
+      </div>
+      <div class="box"><div class="pic"></div>
+        <table><tr><td>Mean radius</td><td>58,232 km</td></tr><tr><td>Moons</td><td>274</td></tr><tr><td><mark class="f">Rings</mark></td><td>7 main</td></tr></table></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Control+F opens a bar under the toolbar; matches are marked as the words are typed, the current one stronger, and the page scrolls to it. Return or Control+G for the next, Shift for the one before, Escape or Done to close it. WebKit's own find does the marking and the scrolling; JetSki draws the bar and the count.</p>
+
+<h2>Save page as</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative;background:#f0f1f3">
+    <div class="sheet savep">
+      <div class="trail"><b>Home</b> &rsaquo; <b>Downloads</b></div>
+      <div class="panes">
+        <div class="sd"><div class="h">Places</div><div>Home</div><div class="on">Downloads</div><div>Documents</div><div>MyPhotos</div><div class="h">Drives</div><div>KINGSTON</div></div>
+        <div class="fl"><div class="hd"><span>Name</span><span>Size</span><span>Kind</span></div>
+          <div><span>alpine-standard-3.22.iso</span><span>66 MB</span><span>Disk image</span></div>
+          <div><span>lecture-notes.pdf</span><span>880 KB</span><span>PDF document</span></div>
+          <div><span>Mars - Encyclopedia.mhtml</span><span>1.2 MB</span><span>Web page, complete</span></div></div>
+      </div>
+      <div class="ft"><span>Name</span><span class="in">Saturn - Encyclopedia.mhtml</span>
+        <span>As</span><span class="dd">A web page, complete - one file, with its pictures &#9662;</span>
+        <span></span><span style="justify-self:end"><span class="btn q2" style="margin:0 8px 0 0">Cancel</span><span class="btn">Save</span></span></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Control+S opens the system's Save window - the one every application uses (<code>panel.lua</code>, drawn in <code>drives.html</code>) - at <code>/Home/Downloads</code>, named after the page's title. <b>A web page, complete</b> is one file holding the page, its styles and its pictures (MHTML, which JetSki opens again, without the network); <b>The page's HTML only</b> is the document as it came. A picture's <i>Save image as</i> uses the same window.</p>
+
+<h2>Print, as a PDF</h2>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab"><span class="ic" style="background:#d94c3d"></span>Inbox (12)<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url"><span class="lock">&#9679;</span><span class="host">en.encyclopedia.example</span><span class="path">/wiki/Saturn</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view" style="position:relative;background:#f0f1f3">
+    <div class="sheet printp">
+      <div class="pv"><div class="pg"><h6>Saturn</h6><i></i><i style="width:85%"></i><i></i><div class="pc"></div><i></i><i style="width:70%"></i><i></i><i style="width:90%"></i><i></i></div>Page 1 of 3</div>
+      <div class="op"><h4>Print</h4>
+        <div class="r"><span>To</span><span class="dd">Save as PDF &#9662;</span></div>
+        <div class="r"><span>Paper</span><span class="dd">A4 &#9662;</span></div>
+        <div class="r"><span>Pages</span><span class="dd">All &#9662;</span></div>
+        <div class="r"><span>Backgrounds</span><span class="sw"></span></div>
+        <div class="r"><span>The title, address, date and page number</span><span class="sw on"></span></div>
+        <div class="r" style="justify-content:flex-end;margin-top:6px"><span class="btn q2" style="margin:0 8px 0 0">Cancel</span><span class="btn">Save&hellip;</span></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Control+P lays the page out for paper, as WebKit does for printing, and shows the first sheet. <i>To</i> is Save as PDF until Kosmos has a printer; Save opens the Save window. The PDF is written through the PDF Kit, as Write's is (<code>webkit.md</code>, agreed 11 November), with its words as words, so it can be searched and copied.</p>
+
+<p class="cap"><b>Open a file</b> (Control+O) was built in 0.11.429 and stays as it is: HTML and MHTML open in a tab, and a PDF goes to the PDF reader. <b>Page source</b> opens the page's HTML, as WebKit has it, in a new tab.</p>
 
 <h2>Settings</h2>
 <div class="scroller"><div class="win">

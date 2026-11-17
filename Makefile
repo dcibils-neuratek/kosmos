@@ -1198,9 +1198,9 @@ WEB_PATCHED_H := netsurf/content/fetch.h
 
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
-WEB_SRCS += user/bin/apps/browser/web_kosmos.c user/bin/apps/browser/web_select.c user/bin/apps/browser/web_style.c \
-            user/bin/apps/browser/web_paint.c user/bin/apps/browser/web_netsurf.c \
-            user/bin/apps/browser/web_svg.c
+WEB_SRCS += user/kits/web/web_kosmos.c user/kits/web/web_select.c user/kits/web/web_style.c \
+            user/kits/web/web_paint.c user/kits/web/web_netsurf.c \
+            user/kits/web/web_svg.c
 
 #
 # **NetSurf's layout** (`roadmap.md` 6zz j): the box tree, layout, tables,
@@ -1614,7 +1614,7 @@ $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
 # `-Wall -Wextra -Werror` and `-fno-common`, plus the public headers of the
 # libraries it calls. `gl_kosmos.c` has the same arrangement with TinyGL.
 #
-$(UBUILD)/user/bin/apps/browser/web_%.c.o: user/bin/apps/browser/web_%.c $(UFLAGS_FILE) | $(WEB_GEN)
+$(UBUILD)/user/kits/web/web_%.c.o: user/kits/web/web_%.c $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) \
 	      $(foreach l,$(WEB_LIBS),-Iruntime/upstream/netsurf/$(l)/include) \
@@ -5739,9 +5739,6 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# The kit's keys: every sequence the board makes read back whole, as
 	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
 	$(HOSTDIR)/lua tools/test_keys.lua
-	@# The browser's cache: HTTP's dates, what a reply says of keeping it,
-	@# and the store over an fs in memory (`roadmap.md` 6zz k).
-	$(HOSTDIR)/lua tools/test_httpcache.lua
 	@# http.lua's refresh: a <meta http-equiv="refresh"> read as HTML reads it.
 	$(HOSTDIR)/lua tools/test_http.lua
 	@# The browser's favorites as files: names from titles, the order they
@@ -6124,7 +6121,7 @@ gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
 # want 40 minutes tests any more, 5 to 10 minutes max from now on". The same
 # checks as ever, run side by side by `tools/gate.py`, which says why each
 # suite is there and how long it took. `J=` sets how many at once.
-# `make test ONLY=arm-browser-1,x86-browser-1`: the suites for what changed,
+# `make test ONLY=x86-jetski,host`: the suites for what changed,
 # by name (CLAUDE.md, "Test what changed"); with no ONLY, all of them.
 # A suite runs only when what it stands on changed since it last passed -
 # a document changes nothing, a test kit runs its own suites, anything else
@@ -6231,24 +6228,6 @@ web: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory WEB=1 $(TARGET)
 	python3 tools/run_web.py $(TARGET)
 
-#
-# The browser, with a page in it.
-#
-#   make browser
-#   make browser PAGE=/somewhere/else.html
-#
-# `make web` proves the libraries parse, which says nothing about whether
-# anything is drawn - and drawing is the whole difference between a parser
-# and a browser. This boots the same image, serves a page from this computer
-# over slirp so no packet leaves the machine, points the browser at it, and
-# looks at the screen. The picture lands in `build/browser.png` either way,
-# because a failure is exactly when you want to see it.
-#
-browser: $(HOSTDIR)/lua
-	@$(MAKE) --no-print-directory WEB=1 $(TARGET)
-	python3 tools/run_browser.py $(TARGET) --out build/browser.png \
-	  $(if $(PAGE),--page $(PAGE),)
-
 # Cafesa3D's tutorial's pictures, taken again: the image booted, Cafesa3D
 # driven, the car of chapters 6 and 7 built by its steps and rendered, and
 # every picture written into `docs/cafesa3d-tutorial/`. Twenty minutes and
@@ -6302,7 +6281,7 @@ prepush:
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web browser tutorial-shots ide-tutorial-shots packages packages-serve
+.PHONY: shot web tutorial-shots ide-tutorial-shots packages packages-serve
 # **On x86-64**, where the suites run since 8 October, and where the
 # machine's memory is read from the firmware: the ARM board assumes 512 MB
 # whatever `-m` says (`hal/qemu-virt/memory.c`), and twenty applications

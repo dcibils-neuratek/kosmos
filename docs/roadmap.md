@@ -11085,6 +11085,28 @@ the applications make the system useful, and is not pulled forward.
       open JetSki instead, through one door (a tab of the open JetSki, or
       a new one). Its engine - NetSurf's tree and `/Kosmos/Kits/web` -
       with W6, the day Mail stops drawing HTML with it.
+      **Asked again on 17 November** ("also we need to remove the old
+      browser and just leave jetski"): the application's half is overdue -
+      W2 landed in 0.11.436 - and is done next, before JetSki's features.
+      **Done in 0.11.461** (`testing.md` 18.861): `browser.lua`, its suites
+      and `httpcache.lua` gone; one door to JetSki, `weblink.lua`; the cheat
+      sheet and tutorials as files in `/Kosmos/Documentation`; JetSki opens
+      favorites and takes the dock's pin. The engine, now `user/kits/web/`,
+      waits for W6.
+    - *A day of browsing, finished before more speed* (Diego, 17 November
+      2026: "the browser lacks a save page, open file, downloads, etc",
+      "lets finish the features and then we keep optimizing"). Downloads,
+      find, zoom, print to PDF through the PDF Kit, bookmarks and history
+      were agreed on 11 November (`webkit.md`, *What it does*); this adds
+      **Save page as** (the system's Save window, as a web page complete
+      in one MHTML file or as its HTML), **Page source** in a tab, **the
+      right button** built from what WebKit says is under the pointer (a
+      link, a picture, selected words, the page), and **the menu** holding
+      them all with their keys. Open a file was built in 0.11.429. Drawn
+      in `docs/webkit.html` - *The menu*, *The right button*, *Find on the
+      page*, *Save page as*, *Print, as a PDF* - for Diego to look at. The
+      order proposed: downloads (drawn and agreed), the right button, find,
+      save, the menu, bookmarks and history, print, the source.
     - *Loading in the status line* (Diego, 15 November 2026: "we need a
       progress bar in the bottom status section of jetski so the user knows
       when the webpage finished loading"). The status line along the

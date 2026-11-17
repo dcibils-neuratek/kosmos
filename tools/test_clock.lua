@@ -67,7 +67,7 @@ check(clock.long_string(nil) == "no clock",
 
 -- The calendar both ways: a date into days and back, over leap days, the
 -- turn of a century that is not a leap year and one that is, and before
--- 1970 - what `httpcache.lua` reads an HTTP date with.
+-- 1970 - what the old browser's `httpcache.lua` read an HTTP date with.
 clock.set_offset(0)
 
 for _, d in ipairs({ { 1970, 1, 1 }, { 1994, 11, 6 }, { 2000, 2, 29 }, { 2100, 3, 1 },

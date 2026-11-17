@@ -170,8 +170,8 @@ list = recent.add(list, "/Kosmos/Apps/tracker.lua")
 check(#list == 3 and list[1].program == "/Kosmos/Apps/tracker.lua"
       and list[2].program == "/Kosmos/Apps/terminal.lua",
       "opened again, Tracker was not moved to the top once: " .. said(list))
-list = recent.add(list, "/Kosmos/Apps/browser.lua")
-check(#list == 4 and list[1].program == "/Kosmos/Apps/browser.lua", "the browser was not added at the top")
+list = recent.add(list, "/Kosmos/Apps/JetSki/jetski.lua")
+check(#list == 4 and list[1].program == "/Kosmos/Apps/JetSki/jetski.lua", "JetSki was not added at the top")
 
 local many = {}
 

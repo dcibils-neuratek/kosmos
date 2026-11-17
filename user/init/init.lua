@@ -4560,6 +4560,7 @@ local BIN_FOLDERS = {
   { "/Kosmos/Tutorial",  "/tutorial" },
   { "/Kosmos/Fonts",     "/fonts" },      -- the image's fonts, as files (WebKit's)
   { "/Kosmos/Filters",   "/filters" },    -- the blocking lists, converted (`adblock.md`)
+  { "/Kosmos/Documentation", "/documentation" }, -- the cheat sheet, the tutorials (JetSki's)
   { "/Kosmos/Deskbar",   "/deskbar" },    -- the menu as it ships (`menu_path`)
 }
 

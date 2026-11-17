@@ -37,6 +37,12 @@ Google Docs and Sheets, Gemini, Claude, YouTube, and a lot of browsing.**
 - **Find in page, zoom, print to PDF** (through the PDF Kit, as Write
   prints).
 - **Bookmarks and history**, searched from the address field.
+- **Save page as**, a web page complete in one MHTML file or its HTML
+  only, through the system's Save window; **Page source** in a tab; and
+  **the right button** - a link, a picture, selected words, the page -
+  each with what a browser offers there (Diego, 17 November 2026: "the
+  browser lacks a save page, open file, downloads, etc"; drawn in
+  `webkit.html`, for him to look at).
 - **Open a link from anywhere**: Mail, Write, the cheat sheet. Each asks
   the window manager to launch `/Kosmos/Apps/browser.lua` with the address
   (`mail.lua` 2367); that one door is kept, and opens JetSki instead.

@@ -946,29 +946,21 @@ def main():
             m = re.search(r"the view (\d+) by (\d+)", summary)
             vw, vh = (int(v) for v in m.groups()) if m else (900, 700)
 
-            # **The tutorial** (`docs/cafesa3d-tutorial/`): F1 opens the browser
-            # on the pages the image carries, and the first page's pictures are
-            # all read and decoded; the dots' Tutorial opens it again. Between
-            # the two, a click on the foot - where nothing is - brings Cafesa3D
-            # back in front of the browser, and another after them, so what
-            # follows has its window to itself.
-            index = "asset:tutorial/cafesa3d/index.html"
+            # **The tutorial** (`docs/cafesa3d-tutorial/`): F1 opens it, and the
+            # dots' Tutorial opens it again; a click on the foot - where nothing
+            # is - between them closes the menu. The tutorial is JetSki's to show since 17 November 2026, when the
+            # old browser went, and this machine has no disk to carry JetSki:
+            # what is held here is that F1 and the dots' Tutorial hand its first
+            # page to the one door (`weblink.lua`), as a file in
+            # /Kosmos/Documentation. `x86-jetski` holds JetSki showing it, and
+            # `arm-queries` the files being there.
+            index = "/Kosmos/Documentation/cafesa3d/index.html"
             foot = (ox + vw + 300, oy + 46 + vh + 15)
-
-            # The line ends with how the page came (`roadmap.md` 6zz c), and a
-            # page the image carries came from nowhere else.
-            def showed(shown):
-                m = re.match(re.escape(index) + r', "Cafesa3D tutorial", \d+ pixels tall, '
-                             r"(\d+) pictures, (\d+) missing, From this machine$", shown or "")
-                return m and int(m.group(1)) > 0 and int(m.group(2)) == 0
 
             mark = len(guest.seen)
             keys("f1")
             got = said("cafesa3d: tutorial at ", mark, 30)
             check(got == index, "F1 did not open the tutorial: %r" % got)
-            shown = said("browser: showing ", mark, 90)
-            check(showed(shown), "the browser did not show the tutorial's first page with "
-                  "every picture on it: %r" % shown)
 
             click(*foot)
             mark = len(guest.seen)
@@ -982,9 +974,6 @@ def main():
                 click(mx + 24, my + 2 + rh + rh // 2)                   # Tutorial
                 got = said("cafesa3d: tutorial at ", mark, 30)
                 check(got == index, "the dots' Tutorial did not open the tutorial: %r" % got)
-                shown = said("browser: showing ", mark, 90)
-                check(showed(shown), "the browser did not show the tutorial from the dots: %r"
-                      % shown)
 
             click(*foot)
 

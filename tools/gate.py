@@ -519,23 +519,10 @@ SUITES = [
     # at Fit width, keys, zoom, menus by name, resized.
     Suite("x86-pdfview", ["python3", "tools/run_pdfview.py", X86], x86=True),
 
-    # **The browser, browsing** (`roadmap.md` 6zz a, b): the test page in
-    # `assets/www/` served from this Mac - drawn, scrolled, reloaded, a link
-    # followed, Home with nothing served, an address typed after Control-L,
-    # Back, and both pictures on the screen. Diego, 30 September: "make sure
-    # your gate tests now include browser tests".
-    #
-    # In two halves side by side since 1 October (`--part`): the page, and
-    # the window around it - tabs, favorites, history, Settings - which had
-    # grown the one suite to 198 seconds.
-    Suite("arm-browser-1", ["python3", "tools/run_browser.py", ARM, "--part", "1",
-                            "--out", "build/browser.png"]),
-    Suite("arm-browser-2", ["python3", "tools/run_browser.py", ARM, "--part", "2",
-                            "--out", "build/browser-2.png"]),
-    Suite("x86-browser-1", ["python3", "tools/run_browser.py", X86, "--part", "1",
-                            "--out", "build/x86_64/browser.png"], x86=True),
-    Suite("x86-browser-2", ["python3", "tools/run_browser.py", X86, "--part", "2",
-                            "--out", "build/x86_64/browser-2.png"], x86=True),
+    # The old browser's two suites, `arm-`/`x86-browser-1` and `-2`, went with
+    # it on 17 November 2026 (`roadmap.md`, *The old browser removed*); JetSki
+    # is held by `x86-jetski`, and the engine Mail still draws HTML with by
+    # the Mail suites, until Mail is on WebKit (`docs/mailweb.md` W6).
 
     # **The camera recorded** (`roadmap.md` 6d 8f), on a machine of its own
     # with a disk, since the display harness's have none and a recording is

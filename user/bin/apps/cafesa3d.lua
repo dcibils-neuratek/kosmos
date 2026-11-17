@@ -4152,18 +4152,18 @@ function FILE.export(t)
 end
 
 -- The tutorial, `docs/cafesa3d-tutorial/`: pages and pictures the image
--- carries, which the browser reads where they lie (`asset:` addresses), so
--- it is always the tutorial for the Cafesa3D it came with. It used to be
+-- carries, seen as files in `/Kosmos/Documentation` and opened in JetSki
+-- through `weblink.lua`, so it is always the tutorial for the Cafesa3D it
+-- came with. It used to be
 -- copied out into /Home first, and a screenshot is more than one file of
 -- the RAM filesystem holds.
-local TUTORIAL = { index = "asset:tutorial/cafesa3d/index.html" }
+local TUTORIAL = { index = "/Kosmos/Documentation/cafesa3d/index.html" }
 
 function TUTORIAL.open()
-  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
-                                       args = TUTORIAL.index })
+  local ok, why = use("/Kosmos/Libraries/weblink.lua").open(TUTORIAL.index)
 
-  print(ok and ("cafesa3d: tutorial at " .. TUTORIAL.index)
-        or ("cafesa3d: could not start the browser: " .. tostring(why)))
+  print("cafesa3d: tutorial at " .. TUTORIAL.index)
+  if not ok then print("cafesa3d: could not open the tutorial: " .. tostring(why)) end
   return ok and true or false
 end
 

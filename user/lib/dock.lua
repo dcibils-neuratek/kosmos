@@ -67,7 +67,7 @@ function dock.sized(name)
   return dock
 end
 
-dock.PINS = { "tracker", "browser", "terminal", "music", "groove",
+dock.PINS = { "tracker", "jetski", "terminal", "music", "groove",
               "cafesa3d", "ide", "shortcuts", "preferences" }
 
 -- An application's name from the program the window manager reports:

@@ -3038,19 +3038,19 @@ end
 
 --
 -- **The tutorial** (`docs/ide-tutorial.html`, part one 7 October): its
--- pages, carried in the image and read by the browser where they lie, and
+-- pages, carried in the image and seen as files in `/Kosmos/Documentation`,
+-- opened in JetSki through `weblink.lua`, and
 -- each lesson's finished project in `/Kosmos/Tutorial`, opened as a project
 -- in `/Home/development` - the first project's folder - to be read, run and
 -- changed.
 --
-TUTORIAL = { index = "asset:tutorial/ide/index.html", lessons = "/Kosmos/Tutorial" }
+TUTORIAL = { index = "/Kosmos/Documentation/ide/index.html", lessons = "/Kosmos/Tutorial" }
 
 function TUTORIAL.open()
-  local ok, why = fs.send("/Running/wm", { type = "launch", program = "/Kosmos/Apps/browser.lua",
-                                       args = TUTORIAL.index })
+  local ok, why = use("/Kosmos/Libraries/weblink.lua").open(TUTORIAL.index)
 
-  print(ok and ("ide: tutorial at " .. TUTORIAL.index)
-        or ("ide: could not start the browser: " .. tostring(why)))
+  print("ide: tutorial at " .. TUTORIAL.index)
+  if not ok then print("ide: could not open the tutorial: " .. tostring(why)) end
 end
 
 function TUTORIAL.items()

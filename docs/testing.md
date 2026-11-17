@@ -35678,3 +35678,57 @@ M700, en.wikipedia.org/wiki/BeOS, 40 notches down and up:
   0046:      drawn into the window 0.6 ms, most 0.8 (4)
              scrolled 3.4 ms - rendering 0.6, painting 2.7; wheel to picture 5.1
 ```
+
+## 18.861 The old browser's application removed: JetSki is the browser
+
+**In short.** Diego, 17 November: "also we need to remove the old browser
+and just leave jetski". `browser.lua` is gone, with its two suites a board
+and its HTTP cache. What stood on it moved first: Mail's links, Cafesa3D's
+and the IDE's tutorials and the menu's Documentation now open in JetSki
+through one door, `weblink.lua`; the cheat sheet and the tutorials, which
+only the old browser could read inside the image (`asset:` addresses), are
+files in `/Kosmos/Documentation`; JetSki opens favorites and is the dock's
+pin. NetSurf's engine stays, as `user/kits/web/`, only because Mail still
+draws HTML with it - it goes with `mailweb.md` W6.
+
+**The door** (`user/lib/weblink.lua`): an address written to
+`/Running/JetSki/open` - a property JetSki publishes - opens in a new tab
+of the JetSki that is open; when no JetSki holds the name the write is
+refused, and that refusal is what starts one, with the address. As
+decided on 15 November for Mail's links.
+
+**The documentation as files** (binfs's `documentation` view): the assets
+table's `cheatsheet.html` and `tutorial/<name>/...` shown as
+`/Kosmos/Documentation/cheatsheet.html` and `<name>/...`, folders listed as
+the store's own are - the same bytes, a second door, as `/Kosmos/Fonts`.
+A page launcher (`user/pages`) starts `JetSki/jetski.lua` at its address.
+
+**Held by**:
+- `x86-jetski`'s `documentation` step: the test's key hands the IDE's
+  tutorial to `weblink.open`, as the IDE's F1 does; JetSki must say it
+  opened it for another program and then the page's own title, *Kosmos
+  IDE tutorial* - so the file is served and WebKit loads it with its
+  pictures beside it. Control `doorless` (JetSki publishes no `open`)
+  fails it - and the two Settings checks after it, because the refused
+  write starts a second JetSki, as the door should when none is open, and
+  that one takes the keyboard.
+- `arm-queries`' `K-DOCS`: the folder lists `cafesa3d`, `cheatsheet.html`
+  and `ide`, `ide` is a directory, a page reads whole with its title, a
+  picture's bytes begin `PNG`, and a write is refused; `K-DESKBAR`: the
+  cheat sheet's launcher starts `/Kosmos/Apps/JetSki/jetski.lua` at
+  `/Kosmos/Documentation/cheatsheet.html`. Its `K-KOSMOS` and `K-THEMES`
+  had drifted since ARM suites left the gate on 8 October - `/Kosmos` has
+  Desktops, Filters, Fonts and WebKit now, and there are eleven looks - and
+  were brought up to date.
+- `x86-cafesa3d-1` and `x86-ide`: F1 and the dots' Tutorial hand the
+  tutorial's first page to the door, at its path. Their machines carry no
+  disk and so no JetSki, which is why the showing is `x86-jetski`'s.
+- `host`: `test_filetypes.lua` (an `.html` and a favorite are JetSki's),
+  `test_tutorial.lua` (Cafesa3D's first page), `test_keyring_grant.lua`
+  and `test_launchgrid.lua`.
+
+**Removed with it**: `arm-browser-1`/`-2`, `x86-browser-1`/`-2`
+(`tools/run_browser.py`), `make browser`, `user/lib/httpcache.lua` and its
+host test - WebKit keeps its own cache - and the SMP picture's browser
+window. `history.lua` and `longmenu.lua`, which nothing uses now, stay for
+JetSki's history and bookmarks menu.

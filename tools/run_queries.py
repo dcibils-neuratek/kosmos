@@ -248,10 +248,26 @@ def main():
             '"[" .. tostring(a("/Kosmos/Deskbar/System/procs").title) .. "]", '
             '"[" .. tostring(fs.getattr("/Kosmos/Deskbar/Applications/machine") == nil) .. "]", '
             '"[" .. tostring(a("/Kosmos/Apps/machine.lua").title) .. "]", '
-            # A page the menu opens (`user/pages`): the browser, at its address.
+            # A page the menu opens (`user/pages`): JetSki, at its address -
+            # the old browser's until 17 November 2026.
             'a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").program, '
             'a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").args, '
             '"[" .. tostring(a("/Kosmos/Deskbar/Development/Documentation/cheatsheet").title) .. "]")',
+
+            # **The documentation as files** (17 November 2026, the old
+            # browser removed): the cheat sheet and the tutorials, which only
+            # it could read where they lie in the image, as /Kosmos/Documentation
+            # for JetSki - folders listed, a page and a picture read whole.
+            'local d = fs.list("/Kosmos/Documentation") or {} table.sort(d) '
+            'local ide = fs.read("/Kosmos/Documentation/ide/index.html") or "" '
+            'local cs = fs.read("/Kosmos/Documentation/cheatsheet.html") or "" '
+            'local pics = 0 for _, n in ipairs(fs.list("/Kosmos/Documentation/cafesa3d") or {}) do '
+            'if tostring(n):match("%.png$") then pics = pics + 1 end end '
+            'local png = "" for _, n in ipairs(fs.list("/Kosmos/Documentation/cafesa3d") or {}) do '
+            'if tostring(n):match("%.png$") then png = fs.read("/Kosmos/Documentation/cafesa3d/" .. n) or "" break end end '
+            'print("K-DOCS", table.concat(d, ","), (fs.getattr("/Kosmos/Documentation/ide") or {}).kind, '
+            'ide:find("<title>", 1, true) ~= nil, #cs > 1000, pics > 0, png:sub(2, 4), '
+            'not fs.write("/Kosmos/Documentation/mine.html", "x"))',
 
             # **A file's time is a date** (`roadmap.md` 6za step b): written
             # to the disk now, its `modified` is the clock's second, give or
@@ -334,7 +350,7 @@ def main():
              "a rename to a name's own other case was refused"),
             ("C-NAMES", "CASE.txt,CASE.txt",
              "a rename to another case did not change the name's spelling"),
-            ("K-KOSMOS", 'directory Apps,Deskbar,Examples,Kits,Libraries,Programs,Templates,Themes,Tutorial kit a kit is C, and is used rather '
+            ("K-KOSMOS", 'directory Apps,Deskbar,Desktops,Documentation,Examples,Filters,Fonts,Kits,Libraries,Programs,Templates,Themes,Tutorial,WebKit kit a kit is C, and is used rather '
                          'than read: use("/Kosmos/Kits/pdf")',
              "/Kosmos was not a folder of Kits and Libraries, a kit in it a kit, "
              "and reading one an answer saying to use it"),
@@ -342,9 +358,9 @@ def main():
                        "/Kosmos/Programs/ls.lua /Kosmos/Apps/tracker.lua",
              "the Clock was not in /Kosmos/Apps and ls in /Kosmos/Programs, each "
              "only there, and found by name and by a launcher's old /bin path"),
-            ("K-THEMES", "Classic.theme,Endeavour.theme,Night.theme,Plex.theme,"
-                         "PlexNight.theme,Studio.theme file library directory 1 0",
-             "/Kosmos/Themes did not hold the six looks, a look a file and a "
+            ("K-THEMES", "Amethyst.theme,Aurora.theme,Classic.theme,Ember.theme,Endeavour.theme,Meadow.theme,Night.theme,Plex.theme,PlexNight.theme,Sakura.theme,Studio.theme "
+                         "file library directory 1 0",
+             "/Kosmos/Themes did not hold the eleven looks, a look a file and a "
              "library a library, or /Kosmos/Libraries did not show luacheck as "
              "one folder and no path as a name"),
             ("K-KITS", "3",
@@ -359,10 +375,14 @@ def main():
              "an application's `kosmos: opens` did not reach its attributes - "
              "Photo's three, Video's and Play's film - or one that declares "
              "nothing had some"),
+            ("K-DOCS", "cafesa3d,cheatsheet.html,ide directory true true true PNG true",
+             "/Kosmos/Documentation did not hold the cheat sheet and both "
+             "tutorials as files JetSki can open - folders listed, a page with "
+             "its title, a picture read whole - or it took a write"),
             ("K-DESKBAR", "Applications,Demos,Development,Preferences,System launcher "
                           "/Kosmos/Apps/tracker.lua App_Tracker directory "
                           "launcher true true true [Process Viewer] [true] [About This Machine] "
-                          "/Kosmos/Apps/browser.lua asset:cheatsheet.html [Cheat Sheet]",
+                          "/Kosmos/Apps/JetSki/jetski.lua /Kosmos/Documentation/cheatsheet.html [Cheat Sheet]",
              "/Kosmos/Deskbar was not the shipped menu - its five sections, "
              "Tracker a launcher of its own path and picture, GL Demos a "
              "submenu, no Deskbar and no Info, nothing written into it, and "
