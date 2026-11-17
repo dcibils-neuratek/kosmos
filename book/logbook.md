@@ -4246,3 +4246,31 @@ goes too.
 
 **Visible.** One browser in the dock and the menu; the tutorials open in
 JetSki.
+
+## 17 November 2026 - Downloads
+
+**In short.** Clicking a link to a zip file, an installer or a PDF its
+site wants saved used to do nothing useful in JetSki: the page "failed".
+Now the file is saved into the Downloads folder, a button in the bar
+shows how far it has got, and when it is done a notification says so -
+pressing it opens the file.
+
+**What.** WebKit already knows when something is not a page; it needs to
+be told, each time, "download that". The kit now says so for anything
+the page cannot show and anything its server calls an attachment, and
+picks the file's name - the one the server suggested, with `(2)` added
+when there is already one. WebKit's network process, the part that talks
+to servers, writes the bytes into the file itself, so the browser window
+does no copying at all; it only hears how many bytes have arrived.
+
+**Why it took three runs.** The first gave the file the name
+`kosmos-test (9999).bin`, because the check for "is this name taken?"
+found the download itself. The second said each download was a page that
+had failed: WebKit reports the page as stopped a moment *before* it says
+the download began, so the browser has to remember it chose to download
+at the moment it chose.
+
+**Visible.** A downloads button in JetSki's bar with a thin progress line;
+Control-J lists them, with Cancel, Open, Show in Tracker and Retry.
+Pause is not there yet - the networking library WebKit uses here cannot
+pick a download up again from where it stopped.

@@ -35732,3 +35732,48 @@ A page launcher (`user/pages`) starts `JetSki/jetski.lua` at its address.
 host test - WebKit keeps its own cache - and the SMP picture's browser
 window. `history.lua` and `longmenu.lua`, which nothing uses now, stay for
 JetSki's history and bookmarks menu.
+
+## 18.862 Downloads in JetSki
+
+**In short.** Diego, 17 November: "where are the downloads?". A file a
+page cannot show - a zip, an ISO - or one its server calls an attachment
+now downloads into `/Home/Downloads` instead of failing as a page, and the
+page stays where it was. Control-J or the bar's button shows them: how far
+each has got and how fast, Cancel while it runs, Open and Show once it is
+there, Retry when it failed. A notification says when one finishes.
+
+**Who writes the bytes**: WebKit's network process, straight into the
+file (the curl port's `NetworkDataTaskCurl`); JetSki's process only hears
+how far it has got. The kit (`webkit.cpp`, *Downloads*) answers WebKit's
+navigation client - V3 now, for the two callbacks that hand a download
+over - with a response policy: download what the page itself cannot show,
+and any attachment; a frame's odd response is left to WebKit. It names
+the file: the server's suggestion with nothing that makes it a path,
+`download` when that leaves nothing, and `name (2).ext` and on when the
+folder or a running download has it. The curl port reports each chunk
+with totals of nought, so the count is the kit's. `webkit_downloads`,
+`_cancel`, `_forget` and `_folder` are its door; the pump says when one
+began, finished or failed.
+
+**Two things found by the suite.** The first run named the file
+`kosmos-test (9999).bin`: the path being made was in the buffer
+`pathTaken` compared against, so every candidate was taken by the download
+itself. And WebKit ends the page's own load - error 102, "interrupted by a
+change of policy" - *before* it hands the download over, so JetSki said
+"could not load" each time; the view is marked as it is told to download,
+and cleared when its next navigation starts.
+
+**Held by** `x86-jetski`'s `downloaded` step: the test's key loads an
+attachment twice and a zip; each must be said downloaded with its path,
+300 000 bytes - `kosmos-test.bin`, `kosmos-test (2).bin`, `archive.zip` -
+nothing said to have failed to load, and Control-J must show three. After
+the run the three files are read off the disk and must be the server's
+bytes. 42 checks. Control `attachless` (both served as `text/plain`, a
+page) fails the step and the disk check.
+
+**Not yet**: Pause - the curl port cannot take a download up again from
+its part, so a running one has Cancel; a link's *Download the linked
+file*, which needs a WebKit patch (no C entry point starts a download by
+address); and the folder in Settings, which is `/Home/Downloads` until
+then. The list drops from the button, as the padlock's and the shield's
+panels do, rather than being a window of its own as drawn.

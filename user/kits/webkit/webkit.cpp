@@ -26,11 +26,14 @@
 
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
+#include <WebKit/WKDownloadClient.h>
+#include <WebKit/WKDownloadRef.h>
 #include <WebKit/WKErrorRef.h>
 #include <WebKit/WKFrameInfoRef.h>
 #include <WebKit/WKFramePolicyListener.h>
 #include <WebKit/WKInspector.h>
 #include <WebKit/WKNavigationActionRef.h>
+#include <WebKit/WKNavigationResponseRef.h>
 #include <WebKit/WKPage.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageKosmos.h>
@@ -138,6 +141,7 @@ struct View {
     int error = 0;
     bool loading = false;
     bool asked = false;             // a link followed, its load not begun
+    bool becameDownload = false;    // its navigation is a download now
     WTF::MonotonicTime askedAt;
     char going[2048] { };
     long pid = 0;                   // its web process, the last one seen
@@ -282,6 +286,7 @@ void told(View* view, unsigned what)
 }
 
 void copy(WKStringRef, char* into, size_t room);
+void urlInto(WKURLRef, char* into, size_t room);
 
 void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 {
@@ -289,6 +294,7 @@ void didStart(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
     view->crashed = false;
     view->loading = true;
     view->asked = false;
+    view->becameDownload = false;  // a link's `download` that loaded nothing
     view->blocked = view->cookiesBlocked = 0;
     view->kept.clear();
     view->refused = false;
@@ -396,6 +402,7 @@ void challenged(WKPageRef, WKAuthenticationChallengeRef challenge, const void* i
 void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListenerRef listener, WKTypeRef, const void* info)
 {
     if (WKNavigationActionShouldPerformDownload(action)) {
+        viewOf(info)->becameDownload = true;
         WKFramePolicyListenerDownload(listener);
         return;
     }
@@ -452,6 +459,222 @@ void decidePolicy(WKPageRef, WKNavigationActionRef action, WKFramePolicyListener
 void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, WKTypeRef, const void* info)
 {
     viewOf(info)->asked = false;
+}
+
+/*
+ * **Downloads** (`docs/webkit.html`, *Downloads*; Diego, 17 November 2026:
+ * "where are the downloads?"). A response a page cannot show - a zip, an
+ * ISO - or one its server says is an attachment becomes a download rather
+ * than a page; so does a link with `download`. WebKit's network process
+ * writes the bytes itself, straight into the file named here (the curl
+ * port's `NetworkDataTaskCurl`), and the UI process only hears how far it
+ * has got - so a download costs this process nothing but a row.
+ *
+ * Where: the folder JetSki names (`webkit_download_folder`), under the
+ * name the server suggested, made safe - no folder in it, nothing
+ * unprintable - and made unique against the folder and every download
+ * still running, `name (2).ext` as Finder and Tracker do. The curl port
+ * hands each chunk on with totals of nought, so the count is the kit's.
+ */
+struct Download {
+    int id = 0;
+    int view = 0;                   // the view whose page it came from
+    WKRetainPtr<WKDownloadRef> download;
+    int state = WEBKIT_DOWNLOADING;
+    long long received = 0, expected = -1;
+    WTF::MonotonicTime began, ended;
+    int error = 0;
+    char name[256] { };
+    char path[1024] { };
+    char address[1024] { };
+    char reason[256] { };
+};
+
+Vector<std::unique_ptr<Download>> downloads;
+int nextDownload = 1;
+char downloadFolder[512] = "/Home/Downloads";
+bool downloadsChanged = false;      // begun, finished or failed, since the last pump
+
+Download* downloadOf(const void* clientInfo)
+{
+    return const_cast<Download*>(static_cast<const Download*>(clientInfo));
+}
+
+// Said, and the window woken out of its slice to draw it.
+void downloadTold(Download* d, const char* what)
+{
+    downloadsChanged = true;
+    fprintf(stderr, "webkit: download %d %s: %s, %lld bytes\n", d->id, what, d->path[0] ? d->path : d->address, d->received);
+    views.stop();
+}
+
+// A name the folder can hold: the last part of what was suggested, with
+// nothing that would make it a path or a control character; "download"
+// when that leaves nothing.
+void safeName(const char* suggested, char* into, size_t room)
+{
+    const char* from = suggested;
+    for (const char* c = suggested; *c; c++)
+        if (*c == '/' || *c == '\\')
+            from = c + 1;
+    size_t n = 0;
+    for (const char* c = from; *c && n + 1 < room; c++) {
+        unsigned char ch = static_cast<unsigned char>(*c);
+        into[n++] = ch < 32 || ch == 127 || ch == ':' ? '_' : static_cast<char>(ch);
+    }
+    into[n] = '\0';
+    while (n && (into[n - 1] == ' ' || into[n - 1] == '.'))
+        into[--n] = '\0';
+    // Nothing left, or only an extension: "download", with it if there was one.
+    if (!n || into[0] == '.') {
+        char kept[256];
+        snprintf(kept, sizeof kept, "%s", n && strcmp(into, "..") ? into : "");
+        snprintf(into, room, "download%s", kept);
+    }
+}
+
+bool pathTaken(const Download* self, const char* path)
+{
+    for (auto& d : downloads)
+        if (d.get() != self && d->state == WEBKIT_DOWNLOADING && !strcmp(d->path, path))
+            return true;
+    return FileSystem::fileExists(String::fromUTF8(path));
+}
+
+// `folder/name`, or `folder/stem (2).ext` and on, the first not taken -
+// by a file, or by another download still running.
+void uniquePath(const Download* self, const char* name, char* into, size_t room)
+{
+    snprintf(into, room, "%s/%s", downloadFolder, name);
+    if (!pathTaken(self, into))
+        return;
+    const char* dot = strrchr(name, '.');
+    int stem = dot && dot != name ? static_cast<int>(dot - name) : static_cast<int>(strlen(name));
+    for (int n = 2; n < 10000; n++) {
+        snprintf(into, room, "%s/%.*s (%d)%s", downloadFolder, stem, name, n, name + stem);
+        if (!pathTaken(self, into))
+            return;
+    }
+}
+
+WKStringRef downloadWhere(WKDownloadRef, WKURLResponseRef response, WKStringRef suggested, const void* info)
+{
+    auto* d = downloadOf(info);
+    char wanted[256];
+    copy(suggested, wanted, sizeof wanted);
+    if (!wanted[0] && response) {
+        auto again = adoptWK(WKURLResponseCopySuggestedFilename(response));
+        copy(again.get(), wanted, sizeof wanted);
+    }
+    safeName(wanted, d->name, sizeof d->name);
+    FileSystem::makeAllDirectories(String::fromUTF8(downloadFolder));
+    uniquePath(d, d->name, d->path, sizeof d->path);
+    const char* slash = strrchr(d->path, '/');
+    snprintf(d->name, sizeof d->name, "%s", slash ? slash + 1 : d->path);
+    if (response) {
+        // WebKit's C API says the length in 32 bits, and nought or all ones
+        // when the server did not.
+        uint32_t length = WKURLResponseGetExpectedContentLength(response);
+        if (length && length != 0xffffffffu)
+            d->expected = length;
+        if (auto url = adoptWK(WKURLResponseCopyURL(response)))
+            urlInto(url.get(), d->address, sizeof d->address);
+    }
+    downloadTold(d, "into");
+    return WKStringCreateWithUTF8CString(d->path);
+}
+
+void downloadWrote(WKDownloadRef, long long bytes, long long, long long expected, const void* info)
+{
+    auto* d = downloadOf(info);
+    d->received += bytes;
+    if (expected > 0)
+        d->expected = expected;
+}
+
+void downloadFinished(WKDownloadRef, const void* info)
+{
+    auto* d = downloadOf(info);
+    d->state = WEBKIT_DOWNLOADED;
+    d->ended = WTF::MonotonicTime::now();
+    if (d->expected < 0)
+        d->expected = d->received;
+    d->download = nullptr;
+    downloadTold(d, "finished");
+}
+
+void downloadFailed(WKDownloadRef, WKErrorRef error, WKDataRef, const void* info)
+{
+    auto* d = downloadOf(info);
+    if (d->state == WEBKIT_DOWNLOAD_CANCELLED)
+        return;
+    d->state = WEBKIT_DOWNLOAD_FAILED;
+    d->ended = WTF::MonotonicTime::now();
+    d->error = error ? WKErrorGetErrorCode(error) : 0;
+    if (error) {
+        auto words = adoptWK(WKErrorCopyLocalizedDescription(error));
+        copy(words.get(), d->reason, sizeof d->reason);
+    }
+    d->download = nullptr;
+    downloadTold(d, "failed");
+}
+
+// WebKit has made a download of a navigation of `view`'s: a row for it,
+// and the client that hears how it goes.
+void downloadBegan(View* view, WKDownloadRef download)
+{
+    auto d = std::make_unique<Download>();
+    d->id = nextDownload++;
+    d->view = view->id;
+    d->download = download;
+    d->began = WTF::MonotonicTime::now();
+    if (auto request = adoptWK(WKDownloadCopyRequest(download))) {
+        if (auto url = adoptWK(WKURLRequestCopyURL(request.get())))
+            urlInto(url.get(), d->address, sizeof d->address);
+    }
+    WKDownloadClientV0 client { };
+    client.base = { 0, d.get() };
+    client.decideDestinationWithResponse = downloadWhere;
+    client.didWriteData = downloadWrote;
+    client.didFinish = downloadFinished;
+    client.didFailWithError = downloadFailed;
+    WKDownloadSetClient(download, &client.base);
+    downloadTold(d.get(), "began");
+    downloads.append(WTF::move(d));
+}
+
+void actionBecameDownload(WKPageRef, WKNavigationActionRef, WKDownloadRef download, const void* info)
+{
+    downloadBegan(viewOf(info), download);
+}
+
+void responseBecameDownload(WKPageRef, WKNavigationResponseRef, WKDownloadRef download, const void* info)
+{
+    downloadBegan(viewOf(info), download);
+}
+
+/*
+ * **What a response becomes**: a page, unless it is something no page can
+ * show - for the page itself, as a browser does; a frame inside one that
+ * cannot show its response is left to WebKit, so an advert's odd frame does
+ * not fill the folder - or its server says it is an attachment, which is
+ * downloaded wherever it is.
+ */
+void decideResponse(WKPageRef, WKNavigationResponseRef response, WKFramePolicyListenerRef listener, WKTypeRef, const void* info)
+{
+    auto answer = adoptWK(WKNavigationResponseCopyResponse(response));
+    auto frame = adoptWK(WKNavigationResponseCopyFrameInfo(response));
+    bool mainFrame = !frame || WKFrameInfoGetIsMainFrame(frame.get());
+    bool attachment = answer && WKURLResponseIsAttachment(answer.get());
+    if (attachment || (mainFrame && !WKNavigationResponseCanShowMIMEType(response))) {
+        // The page's own load ends now, "interrupted by a change of policy",
+        // before WebKit hands the download over: marked here, not there.
+        if (mainFrame)
+            viewOf(info)->becameDownload = true;
+        WKFramePolicyListenerDownload(listener);
+        return;
+    }
+    WKFramePolicyListenerUse(listener);
 }
 
 // What a rule list kept out of the page: patch 0033's two names.
@@ -521,6 +744,16 @@ void didFinish(WKPageRef, WKNavigationRef, WKTypeRef, const void* info)
 void didFail(WKPageRef, WKNavigationRef, WKErrorRef error, WKTypeRef, const void* info)
 {
     auto* view = viewOf(info);
+    // A navigation that became a download ends here, WebKit's "interrupted
+    // by a change of policy": the page stays as it was, and nothing failed.
+    if (view->becameDownload) {
+        view->becameDownload = false;
+        view->loading = false;
+        view->asked = false;
+        view->going[0] = '\0';
+        told(view, WEBKIT_FINISHED);
+        return;
+    }
     traceSummary(view, "failed");
     view->error = error ? WKErrorGetErrorCode(error) : 0;
     // The page itself refused for its certificate - not a picture of
@@ -1143,8 +1376,11 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
 
     view->page = WKViewGetPage(view->view);
     WKPageSetPageZoomFactor(view->page, zoomFactor);
-    WKPageNavigationClientV2 navigation { };
-    navigation.base = { 2, view.get() };
+    WKPageNavigationClientV3 navigation { };
+    navigation.base = { 3, view.get() };
+    navigation.decidePolicyForNavigationResponse = decideResponse;
+    navigation.navigationActionDidBecomeDownload = actionBecameDownload;
+    navigation.navigationResponseDidBecomeDownload = responseBecameDownload;
     navigation.contentRuleListNotification = ruleListActed;
     navigation.didStartProvisionalNavigation = didStart;
     navigation.didCommitNavigation = didCommit;
@@ -1487,10 +1723,67 @@ extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
             each->happened &= WEBKIT_PICTURE;
         }
     }
+    out->downloads = downloadsChanged;
+    downloadsChanged = false;
+    for (auto& d : downloads)
+        out->downloading += d->state == WEBKIT_DOWNLOADING;
     out->opened = views.opened;
     out->opener = views.opener;
     out->closing = views.closing;
     views.opened = views.opener = views.closing = 0;
+}
+
+extern "C" void webkit_download_folder(const char* folder)
+{
+    if (folder && folder[0])
+        snprintf(downloadFolder, sizeof downloadFolder, "%s", folder);
+}
+
+extern "C" unsigned webkit_downloads(struct webkit_download* out, unsigned room)
+{
+    unsigned n = 0;
+    auto now = WTF::MonotonicTime::now();
+    // The newest first, as the list shows them.
+    for (size_t i = downloads.size(); i-- > 0 && n < room;) {
+        auto& d = *downloads[i];
+        auto& o = out[n++];
+        memset(&o, 0, sizeof o);
+        o.id = d.id;
+        o.view = d.view;
+        o.state = d.state;
+        o.received = d.received;
+        o.expected = d.expected;
+        o.seconds = ((d.state == WEBKIT_DOWNLOADING ? now : d.ended) - d.began).seconds();
+        o.error = d.error;
+        memcpy(o.name, d.name, sizeof o.name);
+        memcpy(o.path, d.path, sizeof o.path);
+        memcpy(o.address, d.address, sizeof o.address);
+        memcpy(o.reason, d.reason, sizeof o.reason);
+    }
+    return n;
+}
+
+extern "C" int webkit_download_cancel(int id)
+{
+    for (auto& d : downloads) {
+        if (d->id != id || d->state != WEBKIT_DOWNLOADING)
+            continue;
+        d->state = WEBKIT_DOWNLOAD_CANCELLED;
+        d->ended = WTF::MonotonicTime::now();
+        if (d->download)
+            WKDownloadCancel(d->download.get(), nullptr, [](WKDataRef, const void*) { });
+        d->download = nullptr;
+        downloadTold(d.get(), "cancelled");
+        return 1;
+    }
+    return 0;
+}
+
+extern "C" void webkit_download_forget(int id)
+{
+    downloads.removeFirstMatching([&](auto& d) {
+        return d->id == id && d->state != WEBKIT_DOWNLOADING;
+    });
 }
 
 extern "C" int webkit_state(int id, struct webkit_state* out)

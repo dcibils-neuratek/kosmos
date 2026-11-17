@@ -1097,7 +1097,58 @@ breath.
 
 ---
 
+## 17 November: what the office kits change here
+
+**Still not built.** On 17 November Diego asked for the office tools to grow
+("i want to work on the email and office productivity tools as they are
+too basic now"). No line of Sheets exists, so nothing is basic yet. But
+the pieces Sheets shares with Write, Mail and Present now have a document
+of their own (`docs/office.md`), and three things here change with it.
+
+**S0 is `office.md`'s O1**, done once for all four applications. If Write's
+next version or Mail's composer comes first, Sheets starts with the moves
+already made.
+
+**The XML Kit comes earlier.** Write's DOCX opening (`office.md` O7)
+moves expat into the XML Kit before XLSX needs it. So S11 finds the kit
+in place, with one more user. And expat has an owner when NetSurf leaves
+Mail (`mailweb.md` W6).
+
+**Four things move from *Later* into the first version**, because without
+them a spreadsheet feels as basic as Diego found Mail and Write:
+
+- **Find and replace** in cells' text and formulas. It is the shared bar
+  (`pk.findbar`) over the Cells Kit's text, so most of it already exists
+  by then. Into S5.
+- **Text wrapped inside a cell**, a cell's look gaining `wrap`, and the
+  row growing to fit. The grid is drawn by the kit, so this is the kit's.
+  Into S5.
+- **Borders**: a cell's four sides, a line's weight and colour, from the
+  Cell part. Drawn by the kit with the gridlines, in the same pass. Into
+  S5.
+- **Merged cells**: a rectangle of cells shown as one, its value the top
+  left's. A reference into a merged cell names its top left, as Excel
+  does. In XLSX it is `mergeCells`. Into S5, after borders.
+
+**And from the shared kits, for free**: spelling in text boxes and
+comments (the Spelling Kit), templates (Budget, Invoice, Checklist) through
+`templates.lua`, kept copies after a crash (`docfile.keep`), and recent
+documents (`recentdocs.lua`).
+
+**What is still later**: conditional highlighting, pop-up menus and
+checkboxes in cells, pivot tables, categories, and formulas that return
+many cells. They stay later because each one is a project, not a gap.
+
+**For Diego**: question 9 below.
+
+---
+
 ## Yours to decide
+
+**Decided on 17 November 2026**: every recommendation below, as
+recommended - Diego, "yes to all, start with write" (`roadmap.md`, *Mail
+and the office applications, less basic*).
+
 
 1. **The arithmetic.** Binary doubles, as Excel and Numbers, with what is
    shown and what is compared rounded to fifteen digits and `ROUND` for an
@@ -1131,3 +1182,7 @@ breath.
    until `pdfwrite` writes pages as it makes them, or that change made now.
    **Recommended: refused for now**, the change made when a real sheet
    needs it.
+9. **Find and replace, wrapped text, borders and merged cells in the first
+   version** (*17 November*, above), rather than later. **Recommended:
+   yes** - all four are what a person reaches for in the first hour, and
+   find is shared with Write by then.

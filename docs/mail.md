@@ -19,6 +19,15 @@ example!", "we put it as an example of a serious system shipped app that the
 user can even make a copy and modify on his own" - and "i need a mail client
 to work so its necessary".
 
+**Built since, through M8 and POP3** (9-12 October), and in daily use on
+the M700. **On 17 November Diego asked for more** ("i want to work on the
+email and office productivity tools as they are too basic now"). What Mail
+does today, what it lacks next to Apple's Mail and Thunderbird, and the
+next version are in *The next Mail* at the end of this document, before
+*Yours to decide*. What it shares with Write, Sheets and Present is in
+`docs/office.md`. Its HTML moving to WebKit is `docs/mailweb.md`, the main
+session's, and is designed around here and not changed.
+
 Every message, name and address in this document and in the mockup is made
 up. A test never reaches a real mailbox: it reaches a mail server of its own,
 on this Mac, holding made-up mail (*How it is tested*).
@@ -519,6 +528,291 @@ Night and a light look), and `docs/mail-architecture.png` from
 written - TLS, the network client and HTTP in C for Maps (M6) - none of it
 changes a choice here: Mail's protocols are Lua over the TLS Kit's door,
 as `http.lua` is, and its C is the Mail Kit's.
+
+## The next Mail - 17 November, before it is built
+
+### What it does today, read from the code
+
+Read from `user/bin/apps/mail.lua`, `user/bin/programs/maild.lua`,
+`user/lib/mailcompose.lua` and the Mail Kit as they are on 17 November
+(0.11.461), not from this document's plan:
+
+- **Accounts**: Google with an app password, any IMAP server, POP3. Add
+  Account checks the password before keeping it. An account can be
+  removed, but there is no window for changing one.
+- **`maild`**: one connection for each account, IDLE, new mail fetched
+  into `/Home/Mail` with its facts as attributes, a notification for each,
+  an Outbox sent, drafts kept on the server, and a trigger for Automations.
+- **The window**: mailboxes by their use, with unread counts, then the
+  account's folders; All Inboxes and Flagged; the list with its dot, flag
+  and clip; a message in HTML by NetSurf, with pictures from the network
+  held and senders whose pictures always load; plain text set by Write's
+  engine; attachments opened, saved and forwarded; search in a mailbox's
+  words or in all mail; a status bar; its controls published by name for
+  Automations.
+- **The tools**: Reply, Reply All, Forward, Get Mail, Flag, Mark as Read,
+  Archive and Delete, each on the one message chosen. The keys are the
+  arrows, Delete, Space and Page Up and Down, and Control-B for the
+  sidebar.
+- **The composer**: To, Cc and Bcc as chips completed from the mail kept;
+  plain text in `docview`; files added by the paperclip or dropped;
+  the draft kept within two seconds; Control-Return sends.
+
+### What makes it too basic
+
+Each of these was checked in the code, not assumed:
+
+- **No conversations.** The first version was to keep a conversation's
+  messages together (decided 8 October, question 6), and nothing does:
+  neither the window nor `maild` reads `References` or keeps a thread.
+- **Nothing can be moved to a mailbox.** `maild` has `move`, but the window
+  has no way to ask for it: there is no Move To, no drag onto a mailbox,
+  and no right-button menu on a message. Mail can be archived or deleted
+  and that is all.
+- **One message at a time.** There is no choosing several, so
+  tidying an Inbox is one press per message.
+- **Hardly any keys.** No Control-N for a new message (asked for in
+  October, `roadmap.md`), no Control-R, no keys to flag or mark.
+- **Writing is plain text only**, with no signature, no spelling, no
+  sending later and no taking a message back.
+- **No junk handling.** The Junk mailbox is listed, but nothing marks a
+  message as junk or not junk.
+- **No settings.** An account cannot be edited, its password cannot be
+  changed (and the one known bug is there: a wrong password typed again
+  replaces the right one before the server has said yes, `roadmap.md`),
+  and there are no signatures, rules or reading preferences.
+- **Search is only of what is kept here.** Mail on the server and not
+  here cannot be found.
+- **No contacts.** Names come from the mail kept, and there is nowhere to
+  keep a person.
+- **No printing or PDF of a message**, no Unsubscribe, and no Calendar
+  invitations (Calendar does not exist yet).
+
+### The next version, in the order a person needs it
+
+New is marked **new**. *Supplied by* names the kit, so a second copy is
+caught here rather than in the code.
+
+**N1 - Mail to live in: tidy an Inbox quickly.** The window's work over
+what `maild` already does, and the cheapest step with the most gain.
+
+- **new - Conversations**: a conversation is listed once, under its newest
+  message, with how many it holds. Opened, its messages are stacked oldest
+  to newest, the earlier ones folded to a line each (who, when, the first
+  words) and opened by a press. Replies from a person's own Sent are part
+  of it. A switch in the dots menu shows messages one by one instead.
+- **new - Move to a mailbox**, by Move To in the dots menu and the right
+  button, with the mailboxes listed by account, by dragging the chosen
+  messages onto a mailbox in the sidebar, or by Control-Shift-M and typing
+  a mailbox's name. Copy with Alt held.
+- **new - Several chosen**: Shift and Control with a press, Shift with the
+  arrows, Control-A. Every tool and menu acts on all of them, and the
+  reading pane says "4 messages chosen" with what can be done to them.
+- **new - The right button on a message**: Reply, Reply All, Forward; Mark
+  as Read or Unread; Flag; Move To; Archive; Junk or Not Junk; Delete; Save
+  as PDF; Copy the sender's address.
+- **new - Keys, Apple's with Control**: Control-N new, Control-R reply,
+  Control-Shift-R reply all, Control-Shift-F forward, Control-Shift-U
+  read or unread, Control-Shift-L flag, Control-Shift-J junk,
+  Control-Shift-A archive, Delete, Control-F search, and Control-Alt-F
+  search on the server. All of them are listed in Shortcuts
+  (`docs/shortcuts.md`).
+- **new - Junk and Not Junk**: moved to the account's Junk and back, with
+  the `$Junk` and `$NotJunk` keywords set, which is how Gmail and most
+  servers learn. A sender can be blocked, which files their mail straight
+  into Junk (a rule, N4).
+
+**N2 - Writing well.** Waits for `textedit.lua` (`office.md` O1), the move
+`mail.md` said rich text would wait for on 7 October.
+
+- **new - Styled text**: bold, italic, underline, strike-through, lists,
+  a quote, a link, the size and the colour, from a row of tools above the
+  body and from the keys Write uses. **The body is a `richtext` document
+  typed through `textedit`**, set on a page as wide as the pane by
+  `pageset`, as a plain message is read today. It is sent as HTML with a
+  plain-text part beside it (`richhtml.lua`, `office.md`), and pictures
+  dropped into the body travel inside the message as `cid:` parts. Plain
+  text stays a choice, for an account and for one message.
+- **new - Signatures**: one or more for each account, chosen in the
+  composer, written in the same styled text, and kept in the account's
+  folder.
+- **new - Spelling as it is typed** (the Spelling Kit, `office.md`), in
+  the message's language, which is guessed from the account's last choice
+  and changed in the composer.
+- **new - Undo Send**: for ten seconds after Send the status bar offers
+  Undo, and the message comes back to the composer. **new - Send Later**,
+  from Send's arrow: today at a time, tomorrow morning, or a chosen day.
+- **Replying to an HTML message** quotes its text as a quote, as today
+  (`office.md`, question 5).
+
+**N3 - People.** The People Kit (`office.md`).
+
+- **new - Add to Contacts** from a sender's name; a contact's name shown
+  for their address; completion that prefers people who are kept; a group
+  typed as one recipient; a `.vcf` in a message opened as a card, and a
+  card sent as one.
+- **new - The sender's picture** beside a message, from their card, and
+  their initials on a colour when there is none, as now.
+
+**N4 - Mail's settings, rules and the server's search.**
+
+- **new - The Settings window** (the dots, and Control-comma): *Accounts*,
+  each one's name, address, servers and ports, its password changed only
+  once the server has taken the new one (which fixes the known bug), and
+  removed; *Signatures*; *Composing*, styled or plain by default and how a
+  reply quotes; *Reading*, when a message counts as read, conversations on
+  or off, and the senders whose pictures load; *Rules*; and *Notifications*,
+  a press away in Preferences, which already holds Mail's.
+- **new - Rules**: "mail from *Northbank Library* is moved to *Receipts*",
+  "mail to *rides@* is marked read and makes no banner". Conditions are
+  on from, to, subject, a mailing list's `List-Id` and attachments, matched
+  all or any; the actions are move, flag, mark read, junk, and no banner.
+  They run in `maild` as mail arrives, **before the banner**, so a rule can
+  keep a banner from appearing at all. That is why they are Mail's and not
+  Automations', which the mail trigger runs after arrival (`mailarrived.lua`).
+  Anything beyond filing a message is an automation.
+- **new - Search on the server**: the list's search goes on to "Search on
+  the server" when what is kept here runs out. `maild` asks with IMAP's
+  `SEARCH`, or Gmail's own search words through `X-GM-RAW`; it fetches
+  the headers of what it finds into a mailbox of results, and each message
+  is fetched whole when it is opened.
+
+**N5 - The rest, each its own step.**
+
+- **new - Save as PDF** of a message. Plain text through `pageset` and
+  `pdf.write`, which exist; HTML through WebKit's printing, once JetSki's
+  Print as a PDF exists (`docs/webkit.html`, the main session's).
+- **new - Unsubscribe**, a button above a message that carries
+  `List-Unsubscribe`, with RFC 8058's one-click POST where the sender
+  offers it, and otherwise a message to the address the header gives.
+- **Calendar's invitations**, once the Calendar Kit exists.
+- **Google's OAuth 2**, then **S/MIME and OpenPGP**, as planned in
+  *Later, each its own step*.
+
+**The HTML message moving to WebKit** (`mailweb.md` W3-W6) is the main
+session's work and happens beside all of this. It changes only the reading
+pane, and nothing above depends on it except N5's Save as PDF of an HTML
+message.
+
+### What is new under it
+
+| Piece | Supplied by | |
+|---|---|---|
+| A conversation's key, from `Message-ID`, `In-Reply-To` and `References` (and Gmail's `X-GM-THRID` when the account is Google's) | **`mailthreads.lua`**, pure Lua, held on the Mac. Kept by `maild` as the `thread` attribute when a message arrives, and in the mailbox's `list` | **new, Lua** |
+| `References` and `List-Id` read | the Mail Kit's `message:header`, which exists | exists |
+| Move, copy, junk keywords | `maild`'s `move` exists; `copy` and the `$Junk` flags are added to `imap.lua` (`COPY`, `STORE +FLAGS`) | **grows** |
+| Several chosen, the right button, dragging onto a mailbox | the window; `win:open_menu` and `pk.menu`, which exist; a drag inside the window as Tracker drags | **window** |
+| The body typed | **`textedit.lua`** (`office.md` O1), in place of `docview` | **moved** |
+| A message built as HTML and text, with pictures inside | the Mail Kit's `mail.build`, **growing `multipart/alternative` and `multipart/related`** (`mailbuild.c` writes neither today) | **grows, C** |
+| HTML written from the body | **`richhtml.lua`** (`office.md` O5) | **new, Lua** |
+| Spelling | **the Spelling Kit** (`office.md` O3) | **new, C** |
+| Contacts | **the People Kit** (`office.md` O6), with `addresses.lua` as its other half | **new, Lua** |
+| Undo Send, Send Later | the Outbox, which exists: an entry's `send_at` attribute, which `maild` waits for on its own clock | **grows** |
+| Rules | **`mailrules.lua`**, pure Lua, held on the Mac, run by `maild` on arrival | **new, Lua** |
+| Server search | `imap.lua` grows `s:search(words)`; `maild` grows a `search` request | **grows** |
+| Signatures, settings | the account's folder (`signatures`, `settings`) as `tabletext`, read by the window and `maild` | **new**, files |
+
+**Still no new server and no new system call.** `maild` stays Mail's own
+(decided 8 October, question 2). What it gains is a few kinds of request
+from the window: `move`, `copy`, `junk`, `search`, `sendat`, `unsend`.
+They go to `/Running/maild` as the others do, because `maild` is a program
+and not a system server.
+
+### Conversations: the one new thing that needs explaining
+
+**Where the key comes from.** A reply carries the `Message-ID`s it
+answers in `References`, oldest first. So a conversation's key is the
+first of them, or `In-Reply-To` when there are no references, or the
+message's own `Message-ID` when it answers nothing. Gmail gives every
+message its thread's number (`X-GM-THRID`), and for a Google account that
+number is used, because Gmail's own idea of a conversation is the one its
+owner has seen in the browser. A subject alone never joins two messages:
+"Hello" and "Hello" from two people are not one conversation.
+
+**Kept, not worked out each time.** `maild` computes the key once, when a
+message arrives, and keeps it as the `thread` attribute and a field in the
+mailbox's `list`. The window reads `list`, as it does now, and groups its
+lines by `thread` as it reads them: one table keyed by thread over a
+mailbox's lines. For 10,000 lines that is a few milliseconds of Lua,
+measured at N1, and done when a mailbox is opened rather than on a frame.
+A conversation shown across mailboxes, with the person's own replies from
+Sent, is one `fs.query` on `thread` when it is opened.
+
+**Mail already kept** has no `thread` attribute. `maild` works it out the
+first time it opens a mailbox after the update, from each file's headers
+through the Mail Kit, a few hundred files a pass between its other work,
+so the window never waits for it. The list is shown ungrouped until it is
+done.
+
+### The busiest paths, after
+
+- **Opening an Inbox of 10,000 messages**: the same as before (one `list`
+  file, the newest forty drawn), plus grouping by `thread` as the lines
+  are read. The budget is still a frame for what shows first.
+- **A key that finishes a word in the composer**: `textedit`'s edit, one
+  paragraph set again by `pageset`, one word looked up by the Spelling
+  Kit. The first is measured in Write at O1 and the rest is microseconds.
+- **Moving 200 chosen messages**: the window takes them out of its list in
+  the frame the drop lands, as it does for one message now, and asks
+  `maild` once with 200 UIDs, which `imap.lua` sends as one `UID MOVE` of
+  a set. One request each way, whatever the count.
+
+### How it is tested
+
+As M1-M8 are, against `tools/mailpeer.py` and never a real mailbox.
+`mailpeer.py` grows `COPY`, keywords and `SEARCH`. `mailthreads.lua` and
+`mailrules.lua` are held on the Mac with made-up headers: a conversation
+of five messages across Inbox and Sent, a reply whose `References` were
+cut short, two messages with the same subject that must stay apart, and a
+Gmail thread number that wins over the headers. Every check has a control
+that fails it alone.
+
+### The order
+
+1. **N1** - conversations, move, several chosen, the right button, the
+   keys, junk. The window and `maild` only, nothing in `office.md`.
+2. **N2** - after `office.md` O1, O3 and O5: the styled composer,
+   signatures, spelling, Undo Send and Send Later.
+3. **N3** - after O6: contacts.
+4. **N4** - the Settings window, rules, search on the server.
+5. **N5** - Save as PDF, Unsubscribe, then invitations, OAuth, encryption.
+
+The windows are drawn in `docs/mail.html`, *The next Mail*, and what it
+stands on in `docs/mail-architecture.png`.
+
+### Yours to decide, 17 November
+
+**Decided on 17 November 2026**: every recommendation below, as
+recommended - Diego, "yes to all, start with write" (`roadmap.md`, *Mail
+and the office applications, less basic*).
+
+
+1. **N1 first, before anything in `office.md`.** It is window work over
+   what `maild` already does, it is where Mail feels most basic every day,
+   and it needs no new kit. *Recommended: yes.* It edits `mail.lua`'s list,
+   sidebar, menus and keys, while `mailweb.md` W5 edits its message pane,
+   so the two are to be ordered by the main session: N1 before W5 or
+   after it, never at the same time.
+2. **Conversations by the headers**, with Gmail's thread number for a
+   Google account, on by default with a switch to turn them off.
+   *Recommended: yes.*
+3. **The styled composer on `textedit` and `richtext`**, Write's engine,
+   rather than WebKit's editing, which Apple's Mail uses and which would
+   come with `mailweb.md`'s image. *Recommended: `textedit`.* It is the one
+   rich-text editor of four applications, it works without the WebKit
+   image, and what it costs is a reply that quotes an HTML message's text
+   rather than its layout.
+4. **Rules in `maild`, run before the banner**, kept here rather than on
+   the server (Sieve). *Recommended: here*, because Gmail does not speak
+   Sieve, and the rules then work the same for every account.
+5. **Junk by the server's Junk and its keywords only**, with no filter of
+   Mail's own. *Recommended: yes for now*. Gmail and the large providers
+   already filter, and a local filter is a project of its own.
+6. **Undo Send of ten seconds, on by default.** *Recommended: yes*, with
+   the length in Settings.
+7. **The Settings window as drawn**, a window of its own rather than a page
+   in Preferences. *Recommended: Mail's own window*, with Notifications a
+   press away in Preferences, where every application's are.
 
 ## Yours to decide
 

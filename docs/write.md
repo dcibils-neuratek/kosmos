@@ -1,6 +1,13 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 # Kosmos Write, its kits, before they are built
 
 Written on 4 October 2026, before any of it is built, as `diskfs.md` was.
+**All of it was built by 5 October** (`roadmap.md` W1-W7). On 17 November
+Diego asked for more ("i want to work on the email and office productivity
+tools as they are too basic now"), and the next version is *The next
+Write*, at the end. What it shares with Mail, Sheets and Present is in
+`docs/office.md`, and what it stands on is drawn in
+`docs/write-architecture.png`, from `docs/write-architecture.html`.
 `docs/write.html` is the window as drawn and agreed; this is what stands
 under it. Diego, 3 and 4 October: "an Apple pages inspired word writing and
 editing app", "Kosmos Write should be able to export as DOCX as well as PDF.
@@ -274,3 +281,219 @@ come after the core, if at all.
 Floating boxes and shapes with text wrapping round them; comments beside
 the page; columns of their own widths; a picture cropped; kerning; opening
 a DOCX, which is later than writing one.
+
+---
+
+## The next Write - 17 November, before it is built
+
+### What it does today, read from the code
+
+Read from `user/bin/apps/writer.lua` (2,797 lines) and its kits as they are
+on 17 November, not from the plan above:
+
+- **Pages as they print**: A4 or Letter, either way round, margins, a
+  header of one line and a footer of page numbers, facing pages,
+  hyphenation in English and Spanish, ligatures, Add Page, a page break.
+- **Text by style**: seven fixed styles; on top of them a face, weight,
+  size, bold, italic, underline, strike-through and colour; four
+  alignments, indents, spacing, lists and a drop cap.
+- **Things in the text**: pictures with captions, tables, text boxes,
+  shapes, charts with Edit Data, and comments shown in the Format panel.
+- **Files**: `.write` saved and opened; PDF and DOCX out.
+- **Keys**: typing, the arrows, Home and End, selection by Shift and by
+  dragging, copy, cut, paste, undo, redo, Control-B and Control-U, save,
+  and Control-E for a PDF.
+
+### What makes it too basic
+
+Next to Pages and Word, and checked in the code:
+
+- **A Word document cannot be opened.** Write sends DOCX and cannot read
+  one back, so the first `.docx` that arrives by mail is a dead end.
+- **No find, and no replace.** Not a key, a menu or a bar.
+- **No spelling.** Nothing in the system checks a word.
+- **No word count.**
+- **Editing keys that every writer reaches for are missing**: Control-I
+  (only B and U exist), a word at a time with Control and the arrows,
+  Control-Backspace, a double press for a word and a triple press for a
+  paragraph, and dragging a selection to move it.
+- **Styles cannot be changed or added.** The seven are fixed, so a
+  document cannot be made to look like itself except paragraph by
+  paragraph. The drawing showed "Character style", and there are none.
+- **No links** in the text.
+- **The header and footer hold almost nothing**: one line of words, and
+  page numbers. There is no "page 3 of 12", no date and no different first
+  page.
+- **No recent documents, no recovery, no templates.** `recentdocs.lua`
+  exists for the PDF Viewer and is not used here; a crash loses whatever
+  was not saved; every document starts empty.
+- **Nothing for a long document**: no outline of its headings, no table
+  of contents, no footnotes, no sections.
+
+### The next version, in the order a person needs it
+
+New is marked **new**. Each says what supplies it.
+
+**R1 - A writer's everyday.** Waits for `office.md` O1 (the moves out of
+Write) and comes with O2-O4.
+
+- **new - Find and replace**: Control-F and Control-H, the find bar across
+  the top of the desk, the matches tinted on the pages, the count, match
+  case and whole words, Replace All as one step to undo. `textedit:find`
+  and `pk.findbar` (`office.md`).
+- **new - Spelling as it is typed**, the red wave, suggestions and Add to
+  Dictionary under the right button, and the document's language in the
+  Document panel, which hyphenation already reads. The Spelling Kit
+  (`office.md` O3).
+- **new - Word count** in the foot of the window, of the document or of
+  what is chosen, words and characters. `richtext` counts it, by version,
+  as the setting is cached.
+- **new - The editing keys**: Control-I, Control-arrows, Control-Backspace
+  and Delete, double and triple presses, and a selection dragged to a new
+  place (Alt to copy). All of these belong to `textedit`, so Mail, Present
+  and Sheets get them too.
+- **new - Recent documents** in File (`recentdocs.lua`, as the PDF Viewer
+  has it), a mark in the title when there are changes not saved, and **the
+  kept copy offered after a crash** (`docfile.keep`, `office.md` O4).
+- **new - New from Template**: Blank, Letter, Report, Essay, CV, and one's
+  own, in the chooser (`templates.lua`, `office.md` O4).
+
+**R2 - Documents that look like themselves.**
+
+- **new - Styles changed and added**: Update Style from what is chosen, New
+  Style, Rename, Delete. Every paragraph that wears a style changes with
+  it, which is what a style is for. A style stays whole, every field
+  present (W1), so a new one is a copy of the one it was made from.
+- **new - Character styles** (Emphasis, Strong, Code, Link), runs whose
+  look is named rather than spelled out, so changing Emphasis changes
+  every emphasised word. A run gains one field, `char_style`, and its own
+  fields still win over it, as they win over a paragraph's style.
+- **new - Links**: a run with a `link`. Control-K makes one, a press with
+  Control follows it in JetSki (`weblink.lua`), and it is kept in the PDF
+  as a link and in DOCX as `w:hyperlink` (`office.md`, *PDF grows links*).
+- **new - Headers and footers with words**, each with a left, a middle and a
+  right; the page number, "page *n* of *m*", the date, the document's
+  title; a different first page; on facing pages, the outsides mirrored.
+
+**R3 - Word's files, opened.** Waits for the XML Kit and `ooxml`'s reading
+(`office.md` O7).
+
+- **new - Opening a DOCX**: paragraphs, runs and their looks; styles (each
+  made whole, as W1 requires, from Word's chain of parents); lists and their
+  numbering; tables; pictures in the text; the page's size and margins; the
+  header and footer's words; comments; links. What has nowhere to go here
+  is simplified and said in a note under the title: a floating picture
+  placed where it is anchored, a tracked change accepted, a field other
+  than the page number shown as its last result, a text box anchored to
+  the page set in the text. **Held by going round**: Write to DOCX and
+  back, equal to itself; then made-up documents from Word, Pages and
+  LibreOffice, each opened and its text checked word for word.
+- **new - Plain text and Markdown opened**, as a document of Body
+  paragraphs, and of headings, lists and quotes for Markdown (`markdown.lua`
+  reads exactly these); **HTML, Markdown and plain text out**
+  (`richhtml.lua`, `office.md` O5).
+
+**R4 - Long documents.**
+
+- **new - The outline**: View's sidebar gains a second tab, the headings as
+  a tree, pressed to go there and dragged to move a section, a heading with
+  everything under it.
+- **new - A table of contents**, a paragraph of its own kind made from the
+  headings and their pages, set again as the pages move. It is a thing in
+  the text, like a picture or a table (W5), so the setting, the PDF and
+  DOCX each meet one more kind of paragraph and not a second layout.
+- **new - Footnotes**, numbered, set at the foot of their page above the
+  footer, with the page's text shortened to make room. This is the one
+  item in this document that changes how `pageset` fills a page, and it is
+  said here so it is decided deliberately: a page's height becomes its
+  text's and its notes', found by setting both.
+- **new - Sections**: a section break, after which the paper, its
+  orientation, the margins and the header may change (a landscape table in
+  a portrait report), and **text in columns**, two or three, balanced on a
+  section's last page.
+
+**R5 - Later, each its own step**: comments beside the page rather than in
+the panel; **tracked changes**, insertions and deletions kept with who and
+when, accepted and refused; pictures and shapes floating over the page
+with the text running round them (W7's "a layout of its own"); a picture
+cropped; columns of a table at their own widths; kerning; mail merge from
+Sheets or the People Kit; equations; ODT; printing when Kosmos prints.
+
+### What is new under it
+
+| Piece | Supplied by | |
+|---|---|---|
+| The caret, keys, selection, drag, undo | **`textedit.lua`** (`office.md` O1) | **moved** |
+| Find | `textedit:find`, **`pk.findbar`** | **new** |
+| Spelling | **the Spelling Kit** | **new, C** |
+| The wave under a word | `pagedraw` marks, as the selection's rectangles are | **grows** |
+| Word count | `richtext`, by version | **grows** |
+| Kept copies, previews | `docfile.keep`, `preview.png` | **grows** |
+| Templates | **`templates.lua`** | **new** |
+| Recent documents | `recentdocs.lua` | exists |
+| Styles changed, character styles | `writedoc.lua` (its styles' list and checks), `richtext` (`char_style`) | **grows** |
+| Links | `richtext` (`link`), `pdfwrite.lua` (link annotations), `docxwrite.lua` (`w:hyperlink`) | **grows** |
+| Headers and footers | `writedoc.lua` (their fields), `pageset` (their pieces) | **grows** |
+| DOCX in | **`docxread.lua`** over `ooxml.lua` and **the XML Kit** | **new** |
+| HTML, Markdown, text out | **`richhtml.lua`** | **new** |
+| Markdown in | `markdown.lua` | exists |
+| The outline, contents, footnotes, sections, columns | `pageset` and `richtext`, each a kind of paragraph or a field | **grows** |
+
+**No new C in Write itself, and none in its kits except the Spelling Kit
+and the XML Kit**, which are `office.md`'s. If the O1 measurement says
+setting a long document is the cost, that is where C would go, in
+`pageset`'s line breaking, and only with the number in hand.
+
+### The busiest path: a key in a long document
+
+A key goes into `textedit`, which makes a new body sharing every paragraph
+it did not touch. `pageset` sets that paragraph again, and the paragraphs
+after it only as far as the page where the lines come back into step;
+`pagedraw` draws the pages on the screen. R1 adds a spelling lookup of the
+word just finished, in microseconds, and a word count by paragraph
+version, which only counts the paragraph that changed. R4's footnotes are
+the one addition that could push the setting further, since a note moving
+to the next page moves text with it, and they are measured against O1's
+number when they arrive.
+
+**The first number, on the Mac, 17 November** (`tools/test_textedit.lua`,
+a keystroke in the middle of 100 pages, against the host's half-an-em
+measure): **1.5 ms. The edit takes 0.03 ms of it and setting the pages
+again takes the rest**, with about 1 MB allocated a key, nearly all of it
+by the setting. So the sentence above, that the setting stops where the
+lines come back into step, is the intention and not yet the code. The
+cache keeps each paragraph's lines, but every page is put together again
+on every key. That is where a long document's cost is, ahead of anything
+the window draws, and it is `pageset`'s to fix, not `textedit`'s. The QEMU
+number, with the drawing in it, is O1's record.
+
+### The order
+
+1. **R1** - with `office.md` O1-O4.
+2. **R2** - styles, character styles, links, headers and footers.
+3. **R3** - DOCX, plain text and Markdown opened; HTML, Markdown and text
+   out.
+4. **R4** - the outline, contents, footnotes, sections and columns.
+
+Drawn in `docs/write.html`, *The next Write*.
+
+### Yours to decide, 17 November
+
+**Decided on 17 November 2026**: every recommendation below, as
+recommended - Diego, "yes to all, start with write" (`roadmap.md`, *Mail
+and the office applications, less basic*).
+
+
+1. **R1 before anything else in Write**, the moves out of Write first
+   (`office.md`, question 1). *Recommended: yes.*
+2. **Opening DOCX in R3**, after the everyday and the styles, rather than
+   first. *Recommended: R3*, because a DOCX opened into a Write that cannot
+   change its styles cannot be kept looking like itself. If a DOCX arriving
+   by mail matters more than that today, it moves to R1.
+3. **Footnotes change how a page is filled.** *Recommended: yes, in R4*,
+   because a report and an essay need them and Pages and Word both have
+   them.
+4. **Tracked changes later (R5).** *Recommended: later*: they touch every
+   edit, and a person writing alone does not need them.
+5. **Floating pictures with text round them, still later**, as decided on
+   4 October. *Recommended: still later.*

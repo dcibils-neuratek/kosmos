@@ -263,6 +263,68 @@
   .q .rec { color: var(--muted); }
   .q .rec b { color: var(--ink); }
   ul.feats { padding-left: 20px; } ul.feats li { margin: 4px 0; }
+
+  /* ---- The next Write, 17 November. Its own drawings, scaled as the first one is. ---- */
+  .nx-tag { display: inline-block; font: 600 11px var(--body); letter-spacing: .05em; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: #fff; vertical-align: 4px; margin-left: 6px; }
+  .nx-frame { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: #000; margin-top: 10px; }
+  .nx-shell { position: relative; overflow: hidden; }
+  .nx-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .nx-app { position: absolute; inset: 0; background: var(--d-surface-solid); display: grid; grid-template-rows: 40px 62px 44px 1fr 30px; color: var(--d-ink); font: 14px/1.4 var(--body); }
+  .nx-ic { width: 22px; height: 22px; border-radius: 5px; background: #f2f2ee; color: #2a55c9; display: grid; place-items: center; font: 700 13px var(--body); }
+  .nx-find { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--d-line); background: #1a2130; font-size: 13px; }
+  .nx-find .f { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 8px; background: var(--d-raised); min-width: 230px; }
+  .nx-find .f b { font-weight: 500; }
+  .nx-find .n { color: var(--d-muted); font-size: 12.5px; }
+  .nx-find .k { padding: 3px 9px; border-radius: 7px; background: var(--d-raised); color: var(--d-ink); font-size: 12.5px; }
+  .nx-find .k.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .nx-find .x { margin-left: auto; color: var(--d-muted); }
+  .nx-work { display: grid; grid-template-columns: 210px 1fr 290px; min-height: 0; }
+  .nx-side { background: #141a26; border-right: 1px solid var(--d-line); padding: 10px 10px; font-size: 13px; overflow: hidden; }
+  .nx-side .segs { margin-bottom: 10px; }
+  .nx-ol div { padding: 5px 8px; border-radius: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nx-ol .l2 { padding-left: 22px; color: var(--d-muted); }
+  .nx-ol .on { background: var(--d-raised); color: var(--d-ink); }
+  .nx-desk { background: #0d1119; overflow: hidden; position: relative; }
+  .nx-page { position: absolute; left: 50%; top: 18px; width: 560px; height: 760px; margin-left: -280px; background: #fff; color: #161616; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 10.5pt/1.5 "IBM Plex Serif", Georgia, serif; }
+  .nx-page .in { position: absolute; left: 64px; right: 64px; top: 46px; bottom: 46px; }
+  .nx-hf { display: flex; justify-content: space-between; font: 8.5pt var(--body); color: #666; }
+  .nx-page h2 { font: 600 15pt var(--body); margin: 22px 0 8px; color: #1b2330; }
+  .nx-page p { margin: 0 0 8px; max-width: none; }
+  .nx-hit { background: #ffe58a; border-radius: 2px; }
+  .nx-hit.cur { background: #ffb347; box-shadow: 0 0 0 1.5px #e08a00; }
+  .nx-wave { text-decoration: underline wavy #e5484d; text-decoration-thickness: 1.3px; text-underline-offset: 3px; }
+  .nx-link { color: #2a55c9; text-decoration: underline; }
+  .nx-em { font-style: italic; }
+  .nx-sup { font-size: 7pt; vertical-align: super; color: #2a55c9; }
+  .nx-notes { position: absolute; left: 0; right: 0; bottom: 18px; border-top: 1px solid #bbb; padding-top: 6px; width: 40%; font: 8pt/1.4 "IBM Plex Serif", serif; color: #333; }
+  .nx-notes span { display: block; width: 250%; }
+  .nx-foot { position: absolute; left: 0; right: 0; bottom: -4px; display: flex; justify-content: space-between; font: 8.5pt var(--body); color: #666; }
+  .nx-menu { position: absolute; z-index: 5; min-width: 190px; padding: 5px; border-radius: 12px; background: var(--d-surface); box-shadow: 0 18px 44px rgba(0,0,0,.55), 0 0 0 1px var(--d-line); font-size: 13px; color: var(--d-ink); }
+  .nx-menu div { padding: 5px 10px; border-radius: 7px; display: flex; justify-content: space-between; gap: 14px; }
+  .nx-menu div.on { background: var(--d-accent); color: var(--d-accent-ink); }
+  .nx-menu div span { color: var(--d-muted); font-family: var(--mono); font-size: 11.5px; }
+  .nx-menu .sl { height: 1px; padding: 0; background: var(--d-line); margin: 4px 6px; }
+  .nx-btn { text-align: center; padding: 6px 0; border-radius: 9px; background: var(--d-raised); font-size: 13px; }
+  .nx-status { display: flex; align-items: center; gap: 18px; padding: 0 14px; border-top: 1px solid var(--d-line); font-size: 12.5px; color: var(--d-muted); }
+  .nx-status b { color: var(--d-ink); font-weight: 500; }
+  .nx-status .r { margin-left: auto; }
+  .nx-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .nx-pair { grid-template-columns: 1fr; } }
+  .nx-cap { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; }
+  .nx-win { position: absolute; inset: 0; background: var(--d-surface-solid); color: var(--d-ink); font: 14px/1.4 var(--body); display: grid; grid-template-rows: 44px 1fr; }
+  .nx-win .tb { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--d-line); font-weight: 500; }
+  .nx-tpl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 18px 20px; align-content: start; }
+  .nx-tpl .t { display: grid; gap: 6px; justify-items: center; font-size: 13px; }
+  .nx-tpl .pv { width: 132px; height: 176px; background: #fff; border-radius: 3px; position: relative; box-shadow: 0 0 0 2px transparent; }
+  .nx-tpl .t.on .pv { box-shadow: 0 0 0 3px var(--d-accent); }
+  .nx-tpl .pv i { position: absolute; left: 14px; right: 14px; height: 3px; background: #c9ced8; border-radius: 2px; }
+  .nx-tpl small { color: var(--d-muted); font-size: 11.5px; }
+  .nx-note { margin: 14px 18px 0; padding: 10px 14px; border-radius: 12px; background: var(--d-raised); font-size: 13px; display: grid; gap: 6px; }
+  .nx-note b { font-weight: 600; }
+  .nx-note ul { margin: 0; padding-left: 18px; color: var(--d-muted); }
+  .nx-acts { display: flex; gap: 8px; justify-content: flex-end; }
+  .nx-acts span { padding: 5px 14px; border-radius: 8px; background: var(--d-raised-2); font-size: 13px; }
+  .nx-acts span.go { background: var(--d-accent); color: var(--d-accent-ink); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -397,6 +459,159 @@
       <p class="rec"><b>Export first</b>; opening DOCX later, since reading Word's files well is the larger
       half.</p></div>
   </div>
+  <p class="rec" style="color:var(--muted)">Decided 4 October: "Yes, yes, yes, yes and pdf export is key". All of the above was built by
+  5 October.</p>
+
+  <!-- ================= The next Write, 17 November ================= -->
+  <h2>The next Write <span class="nx-tag">17 NOVEMBER</span></h2>
+  <p class="said">"i want to work on the email and office productivity tools as they are too basic now" - Diego, 17 November 2026</p>
+  <p>What Write lacks today, read from <code>writer.lua</code>: find and replace, spelling, a word count, Control-I and
+  the word-at-a-time keys, styles of one's own, links, headers and footers with words, recent documents, recovery after a
+  crash, templates, opening a DOCX, and anything for a long document. The drawing has R1 to R4 of <code>docs/write.md</code> in one
+  window. Find, spelling, templates and kept copies are shared with Mail, Sheets and Present (<code>docs/office.md</code>).</p>
+
+  <div class="nx-frame"><div class="nx-shell" data-w="1280" data-h="860"><div class="nx-stage" style="width:1280px;height:860px"><div class="nx-app">
+    <div class="tbar"><span class="nx-ic">W</span><span class="name">Kosmos Write</span><span class="file">&#8212; Report on the river path.write &#8226; edited</span>
+      <span class="three" style="margin-left:auto"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span></div>
+    <div class="tools">
+      <div class="tool on"><span class="g">&#9707;</span>View</div>
+      <div class="tool"><span class="zoom">100% &#9662;</span>Zoom</div>
+      <div class="tool"><span class="g">&#8862;</span>Add Page</div>
+      <div class="gapx"></div>
+      <div class="tool"><span class="g">&#8801;</span>Insert</div>
+      <div class="tool"><span class="g">&#9638;</span>Table</div>
+      <div class="tool"><span class="g">&#9684;</span>Chart</div>
+      <div class="tool"><span class="g">T</span>Text</div>
+      <div class="tool"><span class="g">&#9671;</span>Shape</div>
+      <div class="tool"><span class="g">&#9635;</span>Media</div>
+      <div class="tool"><span class="g">&#9993;</span>Comment</div>
+      <div class="gapx"></div>
+      <div class="tool"><span class="g">&#8682;</span>Export</div>
+      <div class="tool on"><span class="g">&#10002;</span>Format</div>
+      <div class="tool"><span class="g">&#9636;</span>Document</div>
+    </div>
+    <div class="nx-find">
+      <span class="f">&#8981; <b>river path</b></span><span class="n">3 of 11</span>
+      <span class="k">&#9650;</span><span class="k">&#9660;</span>
+      <span class="f" style="min-width:200px;color:var(--d-muted)">Replace with&#8230;</span>
+      <span class="k">Replace</span><span class="k">All</span>
+      <span class="k">Aa</span><span class="k on">Whole words</span><span class="k">In selection</span>
+      <span class="x">Esc &#10005;</span>
+    </div>
+    <div class="nx-work">
+      <div class="nx-side">
+        <div class="segs"><span>Pages</span><span class="on">Outline</span></div>
+        <div class="nx-ol">
+          <div>Contents</div>
+          <div>1 Why the path matters</div>
+          <div class="l2">1.1 Who uses it</div>
+          <div class="on">2 The state of the river path</div>
+          <div class="l2">2.1 Surfaces</div>
+          <div class="l2">2.2 Lighting</div>
+          <div>3 What it would cost</div>
+          <div class="l2">3.1 Three options</div>
+          <div>4 Recommendation</div>
+          <div>Notes</div>
+        </div>
+      </div>
+      <div class="nx-desk">
+        <div class="nx-page"><div class="in">
+          <div class="nx-hf"><span>Report on the river path</span><span>Greenway Cycling Club</span></div>
+          <h2>2 The state of the <span class="nx-hit">river path</span></h2>
+          <p>The <span class="nx-hit cur">river path</span> runs for eleven kilometres from the bridge to the old mill. Most of it
+          was resurfaced in 2019, but the stretch past the boatyard is still gravel and floods in <span class="nx-wave">Febuary</span>
+          most years.<span class="nx-sup">3</span></p>
+          <p>Riders describe it as <span class="nx-em">the best ride in the county</span>, and the council's own count, published in
+          the <span class="nx-link">2025 transport survey</span>, puts it at four hundred cyclists on a dry Saturday.</p>
+          <h2>2.1 Surfaces</h2>
+          <p>Three surfaces meet along the <span class="nx-hit">river path</span>: asphalt in town, resin-bound gravel through the
+          park, and loose gravel past the boatyard. Each has a different cost to keep, set out in section 3.</p>
+          <p>The loose gravel is the part that floods, and it is the part riders avoid in winter.</p>
+          <div class="nx-notes"><span><b>3</b> Flooding in six of the last eight winters, from the club's own ride logs.</span></div>
+          <div class="nx-foot"><span>17 November 2026</span><span>Page 2 of 6</span></div>
+        </div></div>
+        <div class="nx-menu" style="left:270px;top:150px">
+          <div class="on">February</div><div>Febrile</div>
+          <div class="sl"></div><div>Ignore</div><div>Add to Dictionary</div>
+          <div class="sl"></div><div>Language: English (US)</div>
+        </div>
+      </div>
+      <div class="insp">
+        <div class="tabs"><span class="on">Text</span><span>Document</span></div>
+        <div class="panel on">
+          <div class="style"><b style="font-size:18px">Heading 1</b><span>&#9662;</span></div>
+          <div class="nx-btn">Update Style from Selection</div>
+          <div class="nx-btn">New Style&#8230;</div>
+          <div class="segs"><span class="on">Style</span><span>Layout</span><span>More</span></div>
+          <div class="lbl">Font</div>
+          <div class="field">IBM Plex Sans <span>&#9662;</span></div>
+          <div class="row2"><div class="field">SemiBold <span>&#9662;</span></div><div class="field">15 pt <span>&#8693;</span></div></div>
+          <div class="bius"><span>B</span><span><i>I</i></span><span><u>U</u></span><span><s>S</s></span></div>
+          <div class="line2">Character style <span class="field" style="width:120px">Emphasis &#9662;</span></div>
+          <div class="line2">Link <span class="field" style="width:120px">Ctrl K &#9662;</span></div>
+          <div class="lbl">Header and footer</div>
+          <div class="field">Left: title &#183; Right: club</div>
+          <div class="field">Left: date &#183; Right: page n of m</div>
+          <span class="chk"><i class="on">&#10003;</i>Different first page</span>
+        </div>
+      </div>
+    </div>
+    <div class="nx-status"><span><b>1,284</b> words</span><span><b>7,906</b> characters</span><span>Page <b>2</b> of 6</span><span>English (US)</span><span class="r">Kept 18:42 &#183; not saved</span></div>
+  </div></div></div></div>
+  <p class="nx-cap"><b>R1 to R4 in one window.</b> The find bar with the matches tinted and the current one marked; a misspelling waved,
+  with suggestions under the right button; the word count and the page in the foot; the outline of headings beside the pages;
+  Update Style and New Style; a character style and a link; a header and footer with words, page <i>n</i> of <i>m</i>; a footnote at
+  the foot of its page; and "Kept 18:42", the copy kept for recovery since the last save.</p>
+
+  <div class="nx-pair" style="margin-top:18px">
+    <div>
+      <div class="nx-frame"><div class="nx-shell" data-w="620" data-h="520"><div class="nx-stage" style="width:620px;height:520px"><div class="nx-win">
+        <div class="tb">New from Template<span style="margin-left:auto;color:var(--d-muted)">&#10005;</span></div>
+        <div style="display:grid;grid-template-rows:1fr auto">
+          <div class="nx-tpl">
+            <div class="t on"><div class="pv"></div>Blank<small>A4</small></div>
+            <div class="t"><div class="pv"><i style="top:20px;width:40%"></i><i style="top:34px;width:30%"></i><i style="top:64px"></i><i style="top:72px"></i><i style="top:80px"></i><i style="top:88px;width:60%"></i></div>Letter<small>system</small></div>
+            <div class="t"><div class="pv"><i style="top:50px;height:9px;width:70%"></i><i style="top:66px;width:45%"></i><i style="top:120px"></i><i style="top:128px"></i></div>Report<small>system</small></div>
+            <div class="t"><div class="pv"><i style="top:20px;height:6px;width:55%"></i><i style="top:36px"></i><i style="top:44px"></i><i style="top:52px"></i><i style="top:60px"></i></div>Essay<small>system</small></div>
+            <div class="t"><div class="pv"><i style="top:18px;height:8px;width:50%"></i><i style="top:32px;width:35%"></i><i style="top:50px;width:25%;background:#2a55c9"></i><i style="top:60px"></i><i style="top:68px"></i></div>CV<small>system</small></div>
+            <div class="t"><div class="pv"><i style="top:16px;height:16px;background:#0f5c4d"></i><i style="top:44px"></i><i style="top:52px"></i></div>Club newsletter<small>yours, /Home/Templates</small></div>
+          </div>
+          <div class="nx-acts" style="padding:0 20px 18px"><span>Cancel</span><span class="go">Create</span></div>
+        </div>
+      </div></div></div></div>
+      <p class="nx-cap"><b>R1, templates.</b> File, New from Template: the system's and your own, each an ordinary <code>.write</code> in a
+      folder, shown by the preview the file carries. The same chooser opens for Sheets and Present.</p>
+    </div>
+    <div>
+      <div class="nx-frame"><div class="nx-shell" data-w="620" data-h="520"><div class="nx-stage" style="width:620px;height:520px"><div class="nx-win">
+        <div class="tb">Kosmos Write<span style="color:var(--d-muted);font-weight:400">&#8212; Minutes, October.docx</span><span style="margin-left:auto;color:var(--d-muted)">&#10005;</span></div>
+        <div>
+          <div class="nx-note"><b>Opened from Word, with three things simplified</b>
+            <ul><li>2 floating pictures placed in the text where they were anchored</li><li>1 tracked change accepted</li><li>a date field shown as it last read: 3 October 2026</li></ul>
+            <div class="nx-acts"><span>Keep as .docx</span><span class="go">Save as .write</span></div></div>
+          <div class="nx-note" style="margin-top:22px"><b>Kosmos Write kept a copy of "Letter to the council"</b>
+            <span style="color:var(--d-muted)">Kept at 18:42, after the last save at 17:55. Kosmos stopped before it was saved.</span>
+            <div class="nx-acts"><span>Throw Away</span><span class="go">Open the Kept Copy</span></div></div>
+        </div>
+      </div></div></div></div>
+      <p class="nx-cap"><b>R3 and R1.</b> A Word document opened, with what came across simplified said under its title rather than lost
+      without a word. And after a crash, the kept copy offered the next time Write starts.</p>
+    </div>
+  </div>
+
+  <h2>The next Write - yours to decide</h2>
+  <div class="decide">
+    <div class="q"><h3>1. The everyday first (R1)</h3><p>Find and replace, spelling, word count, the editing keys, recent
+      documents, recovery and templates - after the moves out of Write that every office application shares.</p>
+      <p class="rec"><b>Yes</b>.</p></div>
+    <div class="q"><h3>2. When a DOCX opens</h3><p>R3, after styles can be changed, or brought forward into R1.</p>
+      <p class="rec"><b>R3</b>: a Word document whose styles cannot be changed cannot be kept looking like itself.
+      Brought forward if a DOCX arriving by mail matters more today.</p></div>
+    <div class="q"><h3>3. Footnotes</h3><p>They change how a page is filled - its height becomes its text's and its notes'.</p>
+      <p class="rec"><b>Yes, in R4.</b></p></div>
+    <div class="q"><h3>4. Tracked changes and floating pictures</h3><p>Now, or later.</p>
+      <p class="rec"><b>Later (R5)</b>: tracked changes touch every edit, and a floating picture is a second layout.</p></div>
+  </div>
 </main>
 <script>
 (function () {
@@ -428,6 +643,16 @@
   document.getElementById("viewtool").addEventListener("click", function () { toggle(null, "show-thumbs", "thumbbtn"); });
   document.getElementById("exportbtn").addEventListener("click", function () { toggle(null, "show-export", "exportbtn"); });
   document.getElementById("exporttool").addEventListener("click", function () { toggle(null, "show-export", "exportbtn"); });
+  // The next Write's drawings, each scaled to the width it has.
+  var nx = document.querySelectorAll(".nx-shell");
+  function fitnx() {
+    nx.forEach(function (sh) {
+      var w = +sh.dataset.w, h = +sh.dataset.h, k = sh.clientWidth / w;
+      sh.firstElementChild.style.transform = "scale(" + k + ")";
+      sh.style.height = (h * k) + "px";
+    });
+  }
+  window.addEventListener("resize", fitnx); fitnx();
 })();
 </script>
 </body>

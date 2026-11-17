@@ -112,6 +112,33 @@ unblocks.
 
 ### Being built now
 
+**Mail and the office applications, less basic - AGREED on 17 November
+2026, Write first.** Diego: "i want to work on the email and office
+productivity tools as they are too basic now", worked as a lane beside
+JetSki's (CLAUDE.md, *A lane beside the session*). Designed in
+`docs/office.md`, `mail.md` (*The next Mail*, N1-N5), `write.md` (*The
+next Write*, R1-R5), `sheets.md` and `present.md`, drawn in `mail.html`,
+`write.html` and `office-architecture.png`; Diego, the same day: "yes to
+all, start with write". So every recommendation in those documents'
+questions is decided as recommended, and the order is:
+- **O1** - the moves out of Write (`textedit`, `inspector`, `pagedesk`,
+  `pk.toolbar`, `chart.lua`), Write's suites unchanged as the proof.
+- **Write R1** with **O2** (find and replace), **O3** (the Spelling Kit,
+  our own over Hunspell's dictionaries expanded at build time; US English
+  and one Spanish) and **O4** (kept copies every 30 s, previews,
+  templates as documents in a folder): word count, the editing keys,
+  recent documents.
+- Write R2 (styles, links, headers and footers), R3 (DOCX, text and
+  Markdown opened, with O7's XML Kit; ODT later), R4 (outline, contents,
+  footnotes, sections).
+- Mail N1-N5 after `mailweb.md` W5 has the window: conversations on by
+  default, rules in `maild`, the server's Junk folder, Undo Send 10 s, a
+  Settings window of Mail's own; its styled composer on Write's
+  `textedit` with `richhtml` (O5), contacts as files in `/Home/People`
+  (O6).
+- Sheets and Present after, on the same kits.
+
+
 **A gate that runs what a change reaches - AGREED and BUILT on 14 November
 2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire
 gate and rebuild all every time? cant we just be smart on what needs to be
@@ -11107,6 +11134,15 @@ the applications make the system useful, and is not pulled forward.
       page*, *Save page as*, *Print, as a PDF* - for Diego to look at. The
       order proposed: downloads (drawn and agreed), the right button, find,
       save, the menu, bookmarks and history, print, the source.
+      **AGREED the same day**, all three as recommended: the drawings as
+      they are ("Yes, build them"); Save page as saves the complete page in
+      one MHTML file by default, the HTML only the other choice; and the
+      order above, downloads first.
+      **Downloads built in 0.11.462** (`testing.md` 18.862): into
+      `/Home/Downloads`, the list from a button and Control-J, Cancel,
+      Open, Show, Retry, a notification. Still to do of them: Pause (the
+      curl port cannot resume), *Download the linked file* (a WebKit
+      patch, with the right button), and the folder in Settings.
     - *Loading in the status line* (Diego, 15 November 2026: "we need a
       progress bar in the bottom status section of jetski so the user knows
       when the webpage finished loading"). The status line along the

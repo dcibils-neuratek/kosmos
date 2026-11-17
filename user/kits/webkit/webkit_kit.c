@@ -143,8 +143,85 @@ static int l_pump(lua_State *L)
     lua_pushinteger(L, ev.closing);
     lua_setfield(L, 2, "closing");
     flag(L, 2, "others", ev.others);
+    flag(L, 2, "downloads", ev.downloads);
+    lua_pushinteger(L, ev.downloading);
+    lua_setfield(L, 2, "downloading");
     lua_settop(L, 2);
     return 1;
+}
+
+/* `downloads(list)`: every download, the newest first, into `list`,
+ * reused as `views` is; how many. Each: id, view, state ("downloading",
+ * "done", "failed", "cancelled"), received, expected (nil when unsaid),
+ * seconds, error, name, path, address, reason. */
+static int l_downloads(lua_State *L)
+{
+    static struct webkit_download info[64];
+    static const char *states[] = { "downloading", "done", "failed", "cancelled" };
+    unsigned n = webkit_downloads(info, 64), i;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    for (i = 0; i < n; i++) {
+        if (lua_rawgeti(L, 1, (lua_Integer)i + 1) != LUA_TTABLE) {
+            lua_pop(L, 1);
+            lua_createtable(L, 0, 12);
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, 1, (lua_Integer)i + 1);
+        }
+        lua_pushinteger(L, info[i].id);
+        lua_setfield(L, -2, "id");
+        lua_pushinteger(L, info[i].view);
+        lua_setfield(L, -2, "view");
+        lua_pushstring(L, states[info[i].state & 3]);
+        lua_setfield(L, -2, "state");
+        lua_pushinteger(L, info[i].received);
+        lua_setfield(L, -2, "received");
+        if (info[i].expected >= 0)
+            lua_pushinteger(L, info[i].expected);
+        else
+            lua_pushnil(L);
+        lua_setfield(L, -2, "expected");
+        lua_pushnumber(L, info[i].seconds);
+        lua_setfield(L, -2, "seconds");
+        lua_pushinteger(L, info[i].error);
+        lua_setfield(L, -2, "error");
+        lua_pushstring(L, info[i].name);
+        lua_setfield(L, -2, "name");
+        lua_pushstring(L, info[i].path);
+        lua_setfield(L, -2, "path");
+        lua_pushstring(L, info[i].address);
+        lua_setfield(L, -2, "address");
+        lua_pushstring(L, info[i].reason);
+        lua_setfield(L, -2, "reason");
+        lua_pop(L, 1);
+    }
+    /* Rows past the end, from a longer list before, go. */
+    for (i = n + 1; lua_rawgeti(L, 1, (lua_Integer)i) != LUA_TNIL; i++) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        lua_rawseti(L, 1, (lua_Integer)i);
+    }
+    lua_pop(L, 1);
+    lua_pushinteger(L, n);
+    return 1;
+}
+
+static int l_download_cancel(lua_State *L)
+{
+    lua_pushboolean(L, webkit_download_cancel((int)luaL_checkinteger(L, 1)));
+    return 1;
+}
+
+static int l_download_forget(lua_State *L)
+{
+    webkit_download_forget((int)luaL_checkinteger(L, 1));
+    return 0;
+}
+
+static int l_download_folder(lua_State *L)
+{
+    webkit_download_folder(luaL_checkstring(L, 1));
+    return 0;
 }
 
 /* `views(list)`: every view in order, into `list`, reused - a view's table
@@ -683,6 +760,8 @@ void kosmos_webkit_kit(lua_State *L)
         { "store_forgets", l_store_forgets },
         { "settings", l_settings }, { "zoom", l_zoom },
         { "said", l_said },       { "allow", l_allow },
+        { "downloads", l_downloads }, { "download_cancel", l_download_cancel },
+        { "download_forget", l_download_forget }, { "download_folder", l_download_folder },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },
         { NULL, NULL },
     };

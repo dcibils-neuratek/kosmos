@@ -826,7 +826,50 @@ Each step its own revision and its own test, as Write's were:
 
 ---
 
+## 17 November: what the office kits change here
+
+**Still not built**, and still for Diego to agree. On 17 November he asked
+for the office tools to grow ("i want to work on the email and office
+productivity tools as they are too basic now"). The pieces Present shares
+with Write, Mail and Sheets now have their own document, `docs/office.md`,
+and three things change here.
+
+**P0 is `office.md`'s O1.** The moves out of Write are everybody's first
+step now, not Present's. Mail's styled composer and Write's next version
+wait on them as well, so Present will most likely find them made.
+
+**Builds come into the first version**, as their own step after the
+transitions (P5b). The first version left them for later. But a deck whose
+bullets cannot arrive one at a time is the one thing about Keynote
+everybody uses, and without it Present would be basic on its first day.
+Only the simple ones come in: **Appear, Dissolve and Move In**, for a
+whole thing or for each paragraph of its text, started by a press or
+after the one before. Each build is a list of steps on the slide
+(`presentdoc`'s `builds`), and presenting walks the slide's steps before
+moving to the next slide. Each step is drawn by `transition.lua`'s
+cross-fade and move, over just the thing's frame and not the whole slide,
+so it costs less than a transition. Build Out, Action and Magic Move stay
+later.
+
+**The light table comes earlier**: every slide in a grid, dragged into
+order. `pagedesk`'s thumbnails at a larger size, so it is little more than
+a View choice. Into P4.
+
+**And from the shared kits, for free**: spelling in boxes and notes,
+find and replace across the slides and their notes (`pk.findbar` over each
+box's `textedit:find`), the two themes as templates that a third can join
+(`templates.lua`), kept copies after a crash, and recent documents.
+
+**For Diego**: question 10 below.
+
+---
+
 ## What is Diego's to decide
+
+**Decided on 17 November 2026**: every recommendation below, as
+recommended - Diego, "yes to all, start with write" (`roadmap.md`, *Mail
+and the office applications, less basic*).
+
 
 1. **The kits out of Write first (P0).** `textedit.lua`, `inspector.lua`,
    `pagedesk.lua` and `pk.toolbar` moved out of `writer.lua`, and
@@ -854,3 +897,6 @@ Each step its own revision and its own test, as Write's were:
    mockup shows. *Recommended*: as drawn, and changed on the page.
 9. **The kits' names**, with Kosmos Sheets': `ooxml`, `inspector`,
    `textedit`, `canvas`, `pagedesk`.
+10. **Builds in the first version** - Appear, Dissolve and Move In, by
+   thing or by paragraph (*17 November*, above) - and the light table in
+   P4. *Recommended*: yes.

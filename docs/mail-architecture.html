@@ -1,15 +1,16 @@
-<!doctype html>
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
 <!--
   Kosmos Mail, and what it stands on, as one picture: the window and maild
-  on top, the Lua libraries beside them, the Mail Kit marked new, the Web
-  Kit, the TLS Kit and the Compression Kit as they are, the servers, and
-  Nebula at the bottom. The busiest path - a message arriving - drawn
-  through it (A). Drawn on 8 October 2026, before any of it is built;
-  `docs/mail.md` is the argument and `docs/mail.html` the windows.
+  on top, the Lua libraries beside them, the Mail Kit, the TLS Kit and the
+  Compression Kit, the servers, and Nebula at the bottom. The busiest path -
+  a message arriving - drawn through it (A). Drawn on 8 October 2026 before
+  any of it was built, and drawn again on 17 November for the next Mail:
+  what is marked new, grows or moved is the next version's, and the rest is
+  built. `docs/mail.md` is the argument and `docs/mail.html` the windows.
 
-  Rendered to docs/mail-architecture.png by headless Chrome at twice its
-  size, as docs/stack.png is:
+  Rendered to docs/mail-architecture.png by headless Chrome at twice its size, as
+  docs/stack.png is:
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
       --disable-gpu --screenshot=docs/mail-architecture.png \
@@ -69,96 +70,28 @@
   .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
   .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
   .side td:first-child { color: var(--dim); width: 44%; }
+  .mov { border-color: #b26a00 !important; border-style: dotted !important; border-width: 2px !important; }
+  .tag.m { background: #b26a00; }
+  .built { opacity: .92; }
+  .b { color: #1565c0; font: 600 13px "Plex Mono", monospace; }
 </style>
+
 </head>
 <body>
-<h1>Kosmos Mail - what it stands on</h1>
-<p class="sub">A native mail client: IMAP and SMTP spoken in Lua over the TLS Kit, a message's bytes undone in C by a new Mail Kit, HTML drawn by the browser's own engine, and <code>maild</code> fetching and announcing new mail with the window closed. No new server and no new system call; one door grows on the keyring.</p>
+<h1>Kosmos Mail - what it stands on, and what the next version adds</h1>
+<p class="sub">A native mail client: IMAP and SMTP in Lua over the TLS Kit, a message's bytes undone in C by the Mail Kit, and <code>maild</code> fetching and announcing new mail with the window closed. The next version adds conversations, rules and the server's search to <code>maild</code>, and a styled composer, spelling and contacts from the office kits (<code>docs/office.md</code>).</p>
 <div class="legend">
   <span><i style="border-color:var(--new);background:#fff"></i>new</span>
   <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
-  <span><i style="border-color:var(--app-line);background:var(--app)"></i>application</span>
+  <span><i style="border-color:#b26a00;border-style:dotted;border-width:2px;background:#fff"></i>moved out of an application into a kit</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
   <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
   <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
   <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
   <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
   <span class="a">A</span><span>a message arriving</span>
 </div>
-<div class="grid">
-  <div>
-    <div class="layer app"><h2>Application - a Lua project, shipped and copied in the IDE</h2>
-      <div class="row" style="grid-template-columns:1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b><code>maild</code> - started with the desktop</b><p>one IMAP connection an account, held in IDLE <span class="a">A1</span>; new mail fetched to a file <span class="a">A2</span>, its facts written <span class="a">A4</span>; a banner for each <span class="a">A5</span>; flags, moves and sending, asked by the window</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>Mail - the window</b><p>mailboxes, the list, the message, the composer; reads <code>/Home/Mail</code> and never the network; told "this mailbox changed" by a post <span class="a">A6</span></p></div>
-      </div>
-    </div>
-    <div class="layer lua"><h2>Lua libraries</h2>
-      <div class="row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="box new"><span class="tag">NEW</span><b>imap.lua</b><p>IMAP4rev1, IDLE, UIDPLUS, MOVE, SPECIAL-USE, CONDSTORE; never waits - stepped</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>smtp.lua</b><p>a message sent: EHLO, STARTTLS, AUTH, DATA</p></div>
-        <div class="box new"><span class="tag">NEW</span><b>addresses.lua</b><p>every address kept, by how often; Calendar wants it too</p></div>
-        <div class="box"><b>notify.lua</b><p>the banner, its press opening the message</p></div>
-      </div>
-      <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
-        <div class="box grow"><span class="tag g">GROWS</span><b>pageset.lua</b><p>a plain-text message on a page as tall as its text</p></div>
-        <div class="box"><b>richtext, pagedraw</b><p>Write's engine, setting it</p></div>
-        <div class="box"><b>docview, textbuf</b><p>the composer's plain-text body</p></div>
-        <div class="box"><b>ui, pixelkit, filetypes</b><p>the window; attachments opened and saved</p></div>
-      </div>
-    </div>
-    <div class="layer c"><h2>C kits (in each program's own process)</h2>
-      <div class="row" style="grid-template-columns:2fr 1fr 1fr">
-        <div class="box new"><span class="tag">NEW</span><b>Mail Kit - <code>/Kosmos/Kits/mail</code></b>
-          <p>a message parsed once <span class="a">A3</span>: headers unfolded, encoded words decoded, its parts as a tree, base64 and quoted-printable undone, character sets to UTF-8 (libparserutils, moved from the browser's build), dates with their zone; a message built for sending</p></div>
-        <div class="box"><b>Web Kit</b><p>an HTML message parsed, laid out and painted; no scripts; it fetches nothing</p></div>
-        <div class="box"><b>TLS Kit</b><p>IMAP over 993, SMTP over 465 or STARTTLS</p></div>
-      </div>
-      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
-        <div class="box grow"><span class="tag g">GROWS</span><b>Compression Kit</b><p><code>base64</code> with a message's line breaks allowed</p></div>
-        <div class="box"><b>gfx</b><p>surfaces, text</p></div>
-      </div>
-    </div>
-    <div class="layer srv"><h2>Servers</h2>
-      <div class="row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="box"><b>network</b><p>TCP, rings; never waiting</p></div>
-        <div class="box"><b>diskfs</b><p><code>/Home/Mail</code>: a file a message, its facts as attributes; queries</p></div>
-        <div class="box grow"><span class="tag g">GROWS</span><b>keyring</b><p>a door for mail: an account's password kept and read, lent to the system's Mail</p></div>
-        <div class="box"><b>notify, window manager</b><p>the banner; the windows</p></div>
-      </div>
-    </div>
-    <div class="layer kern"><h2>Nebula</h2>
-      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>regions for a message's bytes between the C stages; posts between <code>maild</code> and the window</p></div></div>
-    </div>
-  </div>
-  <div class="side">
-    <div class="card"><h3>A - a message arriving</h3>
-      <ol>
-        <li><b>A1</b> The server says <code>* 18433 EXISTS</code> on the connection <code>maild</code> holds in IDLE.</li>
-        <li><b>A2</b> <code>maild</code> leaves IDLE and fetches the message, copied from the connection into its file as it arrives.</li>
-        <li><b>A3</b> The Mail Kit parses it once, from a region.</li>
-        <li><b>A4</b> Its facts - from, subject, date, preview, seen - written as the file's attributes.</li>
-        <li><b>A5</b> A banner posted through the notifications.</li>
-        <li><b>A6</b> The window told, by a post, and adds one line; <code>maild</code> goes back to IDLE.</li>
-      </ol>
-      <p style="font-size:13px;color:var(--dim);margin-top:6px">Most of the time is the network's. Nothing waits on the window, and the window waits on nothing.</p>
-    </div>
-    <div class="card"><h3>What crosses where</h3>
-      <table>
-        <tr><td>A message from the network</td><td>the TCP ring to its file - never a message payload</td></tr>
-        <tr><td>A message read</td><td>its file to a region, the Mail Kit, a part in a region, the Web Kit</td></tr>
-        <tr><td>"Flag these", "send that"</td><td>a message to <code>/Running/maild</code></td></tr>
-        <tr><td>"Mail arrived"</td><td>a post to the window, and a notification</td></tr>
-        <tr><td>The password</td><td>the keyring's door for mail, read for a login and not kept</td></tr>
-      </table>
-    </div>
-    <div class="card"><h3>C or Lua</h3>
-      <table>
-        <tr><td>MIME's byte work</td><td>C - the Mail Kit, a loop over bytes, held to its tests on the Mac</td></tr>
-        <tr><td>IMAP, SMTP, maild, the window</td><td>Lua - conversations and policy, never on a frame's clock</td></tr>
-      </table>
-    </div>
-  </div>
-</div>
+<div class="grid"><div><div class="layer app"><h2>Application - a Lua project, shipped and copied in the IDE</h2><div class="row" style="grid-template-columns:1fr 1fr;"><div class="box grow"><span class="tag g">GROWS</span><b>maild - started with the desktop</b><p>one connection an account, IDLE <span class='a'>A1</span>; a message to its file <span class='a'>A2</span>; its facts as attributes and its conversation's key <span class='a'>A4</span>; rules before the banner <span class='a'>A5</span>; the Outbox, Send Later, Undo Send; the server's search</p></div><div class="box grow"><span class="tag g">GROWS</span><b>Mail - the window</b><p>mailboxes, conversations, the list, the message; several chosen, Move To, the right button, keys; reads /Home/Mail and never the network; told by a post <span class='a'>A7</span></p></div></div></div><div class="layer lua"><h2>Lua libraries</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box grow"><span class="tag g">GROWS</span><b>imap.lua</b><p>IMAP4rev1, IDLE, MOVE, CONDSTORE; COPY, keywords, SEARCH</p></div><div class="box "><b>smtp.lua, pop3.lua</b><p>sending; a POP3 account</p></div><div class="box new"><span class="tag">NEW</span><b>mailthreads.lua</b><p>a conversation's key from the headers, or Gmail's thread number</p></div><div class="box new"><span class="tag">NEW</span><b>mailrules.lua</b><p>conditions and actions, on arrival</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box grow"><span class="tag g">GROWS</span><b>mailcompose.lua</b><p>the composer, any application's: now styled, signatures, spelling</p></div><div class="box mov"><span class="tag m">MOVED</span><b>textedit.lua</b><p>the styled body, Write's typing (office.md O1)</p></div><div class="box new"><span class="tag">NEW</span><b>richhtml.lua</b><p>the body as HTML and text (O5)</p></div><div class="box new"><span class="tag">NEW</span><b>people.lua</b><p>contacts; addresses.lua its other half (O6)</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box "><b>richtext, pageset, pagedraw</b><p>a plain message set; the composer's body</p></div><div class="box "><b>mailout, mailarrived, notify</b><p>the Outbox's door; the trigger; the banner</p></div><div class="box new"><span class="tag">NEW</span><b>spelling.lua</b><p>a person's own words (O3)</p></div><div class="box "><b>ui, pixelkit, filetypes, panel</b><p>the window; attachments</p></div></div></div><div class="layer c"><h2>C kits (in each program's own process)</h2><div class="row" style="grid-template-columns:2fr 1fr 1fr;"><div class="box grow"><span class="tag g">GROWS</span><b>Mail Kit - /Kosmos/Kits/mail</b><p>a message parsed once <span class='a'>A3</span>: headers, encoded words, parts, transfer encodings, character sets; built - now with multipart/alternative and related for styled mail</p></div><div class="box new"><span class="tag">NEW</span><b>Spelling Kit</b><p>a word looked up (O3)</p></div><div class="box "><b>TLS Kit</b><p>IMAP over 993, SMTP over 465 or STARTTLS</p></div></div><div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px"><div class="box "><b>Web Kit (NetSurf), then WebKit</b><p>an HTML message drawn; moving to WebKit is mailweb.md, the main session's</p></div><div class="box "><b>Compression Kit</b><p>base64 with line breaks</p></div><div class="box "><b>gfx</b><p>surfaces, text</p></div></div></div><div class="layer srv"><h2>Servers</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box "><b>network</b><p>TCP, rings; never waiting</p></div><div class="box "><b>diskfs</b><p>/Home/Mail: a file a message, its facts and thread as attributes; /Home/People</p></div><div class="box "><b>keyring</b><p>the door for mail</p></div><div class="box "><b>notify, window manager</b><p>the banner; the windows</p></div></div></div><div class="layer kern"><h2>Nebula</h2><div class="row" style="grid-template-columns:1fr;"><div class="box "><b>threads, address spaces, IPC, capabilities</b><p>regions for a message's bytes between the C stages; posts between maild and the window</p></div></div></div></div><div class="side"><div class="card"><h3>A - a message arriving</h3><ol><li><b>A1</b> The server says <code>* 18433 EXISTS</code> on the connection held in IDLE.</li><li><b>A2</b> <code>maild</code> fetches it into its file as it arrives.</li><li><b>A3</b> The Mail Kit parses it once, from a region.</li><li><b>A4</b> Its facts written as attributes, with its conversation's key (<code>mailthreads</code>).</li><li><b>A5</b> The rules run (<code>mailrules</code>): moved, flagged, read, junk, or no banner.</li><li><b>A6</b> A banner, unless a rule said none.</li><li><b>A7</b> The window told by a post, and the line added to its conversation.</li></ol></div><div class="card"><h3>The steps of the next Mail</h3><ol><li><b>N1</b> conversations, Move To, several chosen, the right button, keys, junk</li><li><b>N2</b> styled writing, signatures, spelling, Undo Send, Send Later</li><li><b>N3</b> contacts</li><li><b>N4</b> Settings, rules, the server's search</li><li><b>N5</b> Save as PDF, Unsubscribe, invitations, OAuth</li></ol></div><div class="card"><h3>What crosses where</h3><table><tr><td>A message from the network</td><td>the TCP ring to its file - never a message payload</td></tr><tr><td>A message read</td><td>its file to a region, the Mail Kit, a part in a region</td></tr><tr><td>Move, junk, search, send at</td><td>a message to /Running/maild</td></tr><tr><td>200 messages moved</td><td>one request, one UID MOVE of a set</td></tr><tr><td>Mail arrived</td><td>a post to the window, and a notification</td></tr></table></div></div></div>
 <script>document.title = document.title + " - " + document.body.scrollHeight;</script>
 </body>
 </html>

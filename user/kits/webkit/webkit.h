@@ -123,7 +123,44 @@ struct webkit_events {
     int opened, opener;            /* a view a page opened, and whose page */
     int closing;                   /* a view whose page asked to close, or 0 */
     int others;                    /* a view not shown began, finished or ended */
+    int downloads;                 /* a download began, finished or failed */
+    int downloading;               /* how many are running */
 };
+
+/*
+ * **Downloads** (`docs/webkit.html`, *Downloads*): what a page could not
+ * show, or its server called an attachment, written by WebKit's network
+ * process into the folder named here - `/Home/Downloads` unless JetSki
+ * says otherwise - under the name the server suggested, made unique.
+ */
+enum webkit_download_state {
+    WEBKIT_DOWNLOADING,
+    WEBKIT_DOWNLOADED,
+    WEBKIT_DOWNLOAD_FAILED,
+    WEBKIT_DOWNLOAD_CANCELLED,
+};
+
+struct webkit_download {
+    int id;
+    int view;                      /* the view whose page it came from */
+    int state;                     /* `webkit_download_state` */
+    long long received;            /* bytes so far */
+    long long expected;            /* bytes in all; -1 when the server did not say */
+    double seconds;                /* how long it ran, or has run */
+    int error;                     /* with FAILED, curl's or WebKit's code */
+    char name[256];                /* the file's name, in the folder */
+    char path[1024];               /* the whole of it; "" until it is decided */
+    char address[1024];            /* where it came from */
+    char reason[256];              /* with FAILED, WebKit's words */
+};
+
+void webkit_download_folder(const char *folder);
+/* Every download since JetSki began, the newest first; how many. */
+unsigned webkit_downloads(struct webkit_download *out, unsigned room);
+/* A running one stopped, and its part-written file removed; 0 if none. */
+int webkit_download_cancel(int id);
+/* One that ended taken off the list - its file stays. */
+void webkit_download_forget(int id);
 
 /* A view as a list of them shows it: JetSki's tab strip. */
 struct webkit_view_info {

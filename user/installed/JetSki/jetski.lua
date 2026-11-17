@@ -161,8 +161,13 @@ function web.pump(ms, st)
   shown:state(st)
   st.tab, st.opened, st.closing, st.tabs = shown:id(), events.opened, events.closing,
                                            events.others
+  st.downloads, st.downloading = events.downloads, events.downloading
   return st
 end
+
+function web.downloads(list) return webkit.downloads(list) end
+function web.download_cancel(id) return webkit.download_cancel(id) end
+function web.download_forget(id) webkit.download_forget(id) end
 
 function web.crash(id) return views[id] and views[id]:crash() end
 function web.target(on) targeting = on shown:target(on) end
@@ -390,6 +395,28 @@ end
 shield.y = (BAR - 1 - shield.h) // 2
 header:add(shield)
 
+-- **Downloads** (`docs/webkit.html`, *Downloads*): the button, with a thin
+-- bar under it while one runs - how far all of them have got - and
+-- pressed, or Control-J, the list (below).
+local dlbutton = ui.view{ w = 30, h = 26 }
+dlbutton.part = nil                  -- 0 to 1 while one runs; nil when none
+local downloads_toggle               -- below
+function dlbutton:draw(g)
+  local ink = self.part and theme.accent or theme.text_dim
+  g:line_icon((self.w - 15) // 2, (self.h - 15) // 2 - (self.part and 2 or 0), "downloads", ink)
+  if self.part then
+    local w = self.w - 8
+    g:fill_round(4, self.h - 5, w, 3, theme.line_soft, 1)
+    g:fill_round(4, self.h - 5, math.max(2, math.floor(w * self.part)), 3, theme.accent, 1)
+  end
+end
+function dlbutton:mouse(action)
+  if action == "press" then downloads_toggle() end
+  return true
+end
+dlbutton.y = (BAR - 1 - dlbutton.h) // 2
+header:add(dlbutton)
+
 win:add(header)
 
 --------------------------------------------------------------------------
@@ -499,6 +526,7 @@ local gone                           -- a tab whose page stopped, below
 local refused_page                   -- a tab whose certificate was refused, below
 local lock_close                     -- the padlock's panel put away, below
 local shield_close                   -- the shield's, below
+local dlpanel, downloads_close, downloads_frame   -- the downloads', below
 local settings_page                  -- Settings, in a tab of its own, below
 local open_settings, fill_settings, cover
 local settings_tab                   -- the tab Settings is in, or nil
@@ -527,6 +555,10 @@ local function layout()
   if shield then
     shield.x = right - shield.w
     right = shield.x - ui.layout.head_gap
+  end
+  if dlbutton then
+    dlbutton.x = right - dlbutton.w
+    right = dlbutton.x - ui.layout.head_gap
   end
   field.w = right - field.x
   SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
@@ -557,6 +589,7 @@ function view:mouse(action, x, y)
   if action == "press" then
     lock_close()
     shield_close()
+    downloads_close()
     local there, px, py = over(x, y)
     to_inspector = there
     web.target(there)
@@ -595,7 +628,7 @@ local function inspector_key(c)
 end
 
 local function windows_key(c)
-  if c == 12 or c == 15 or c == 20 then return true end
+  if c == 10 or c == 12 or c == 15 or c == 20 then return true end
   if inspector_key(c) then return true end
   local key, mods = keys.parts(c)
   if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
@@ -1089,6 +1122,7 @@ header:add(lock)
 function lock:mouse(action)
   if action ~= "press" then return true end
   if shield_close then shield_close() end
+  if downloads_close then downloads_close() end
   if not lock_close() then lock_open() end
   return true
 end
@@ -1322,6 +1356,7 @@ end
 function shield:mouse(action)
   if action ~= "press" then return true end
   lock_close()
+  downloads_close()
   if not shield_close() then shield_open() end
   return true
 end
@@ -1879,9 +1914,202 @@ do
   end
 end
 
+--------------------------------------------------------------------------
+-- **The downloads** (`docs/webkit.html`, *Downloads*): what WebKit's
+-- network process is writing into `/Home/Downloads`, or wrote, the newest
+-- first - a row each, with how far it has got, and what can be done with
+-- it: Cancel while it runs; Open, with the application its type names,
+-- and Show, in Tracker, once it is there; Retry when it failed. A
+-- notification says when one finishes, and pressing it opens the file.
+--
+
+do
+  local notify = use("/Kosmos/Libraries/notify.lua")
+  local filetypes = use("/Kosmos/Libraries/filetypes.lua")
+  local DL_FOLDER = "/Home/Downloads"
+  local dl = {}                        -- `web.downloads` fills it, reused
+  local dl_n = 0
+  local dl_seen = {}                   -- id -> the state last seen
+  local dl_frames = 0
+  local DL_ROW, DL_HEAD, DL_ROWS = 52, 44, 6
+
+  dlpanel = ui.view{ w = 460, h = 10, hidden = true }
+
+  local function amount(n)
+    if not n then return "?" end
+    if n < 1024 then return ("%d bytes"):format(n) end
+    if n < 1024 * 1024 then return ("%.0f KB"):format(n / 1024) end
+    if n < 1024 * 1024 * 1024 then return ("%.1f MB"):format(n / 1048576) end
+    return ("%.2f GB"):format(n / 1073741824)
+  end
+
+  -- What a row says under its name.
+  local function dl_words(d)
+    local from = host_of(d.address)
+    if d.state == "downloading" then
+      local rate = d.seconds > 0.5 and (" - %s/s"):format(amount(d.received / d.seconds)) or ""
+      if d.expected then
+        return ("%s of %s%s"):format(amount(d.received), amount(d.expected), rate)
+      end
+      return amount(d.received) .. rate
+    elseif d.state == "done" then
+      return ("%s - %s"):format(from, amount(d.received))
+    elseif d.state == "cancelled" then
+      return "Cancelled"
+    end
+    return ("Failed: %s"):format(d.reason ~= "" and d.reason or ("error " .. d.error))
+  end
+
+  -- The actions a row has, right to left.
+  local function dl_actions(d)
+    if d.state == "downloading" then return { "Cancel" } end
+    if d.state == "done" then return { "Show", "Open" } end
+    return { "Retry" }
+  end
+
+  local function dl_open(d)
+    local how = filetypes.how_to_open(d.path)
+    if not how then
+      say(("nothing opens %s - it is in %s"):format(d.name, DL_FOLDER))
+      return
+    end
+    print(("jetski: opening download %s with %s"):format(d.path, how.program))
+    fs.send("/Running/wm", { type = "launch", program = how.program, args = how.args, wait = false })
+  end
+
+  local function dl_show(d)
+    local folder = d.path:match("^(.*)/[^/]*$") or DL_FOLDER
+    print("jetski: showing download in " .. folder)
+    fs.send("/Running/wm", { type = "launch", program = "tracker", args = files.quote(folder), wait = false })
+  end
+
+  function dlpanel:draw(g)
+    g:fill_round(0, 0, self.w, self.h, theme.line, 9)
+    g:fill_round(1, 1, self.w - 2, self.h - 2, theme.window, 8)
+    g:line_icon(14, 14, "downloads", theme.accent)
+    g:text(38, 12, "Downloads", theme.text, nil, "ui")
+    local into = "into " .. DL_FOLDER
+    self.hits = {}
+    local clear_x = self.w - 14 - gfx.measure("Clear")
+    if dl_n > 0 then
+      g:text(clear_x, 14, "Clear", theme.accent)
+      self.hits[#self.hits + 1] = { x = clear_x - 4, y = 8, w = gfx.measure("Clear") + 8, h = 24, act = "Clear" }
+    end
+    g:text(clear_x - 16 - gfx.measure(into), 14, into, theme.text_dim)
+    g:fill(1, DL_HEAD - 4, self.w - 2, 1, theme.line_soft)
+    if dl_n == 0 then
+      g:text(14, DL_HEAD + 10, "Nothing downloaded yet. A file a page cannot show comes here.", theme.text_dim)
+      return
+    end
+    local y = DL_HEAD
+    for i = 1, math.min(dl_n, DL_ROWS) do
+      local d = dl[i]
+      local x = self.w - 14
+      for _, a in ipairs(dl_actions(d)) do
+        local w = gfx.measure(a)
+        x = x - w
+        g:text(x, y + 10, a, theme.accent)
+        self.hits[#self.hits + 1] = { x = x - 4, y = y, w = w + 8, h = DL_ROW - 6, act = a, d = d }
+        x = x - 14
+      end
+      local room = x - 14 - 8
+      g:line_icon(14, y + 10, d.state == "done" and "document" or "downloads",
+                  d.state == "failed" and theme.text_dim or theme.text)
+      g:text(38, y + 8, ui.fitted(d.name ~= "" and d.name or d.address, room - 24), theme.text, nil, "ui")
+      g:text(38, y + 28, ui.fitted(dl_words(d), room - 24), theme.text_dim)
+      if d.state == "downloading" then
+        local w = room - 24
+        local part = d.expected and d.expected > 0 and math.min(1, d.received / d.expected) or 0
+        g:fill_round(38, y + DL_ROW - 8, w, 3, theme.line_soft, 1)
+        g:fill_round(38, y + DL_ROW - 8, math.max(2, math.floor(w * part)), 3, theme.accent, 1)
+      end
+      y = y + DL_ROW
+    end
+  end
+
+  function dlpanel:mouse(action, x, y)
+    if action ~= "press" then return true end
+    for _, h in ipairs(self.hits or {}) do
+      if x >= h.x and x < h.x + h.w and y >= h.y and y < h.y + h.h then
+        print(("jetski: download %s%s"):format(h.act, h.d and (" " .. h.d.name) or ""))
+        if h.act == "Clear" then
+          for i = 1, dl_n do
+            if dl[i].state ~= "downloading" then web.download_forget(dl[i].id) end
+          end
+        elseif h.act == "Cancel" then web.download_cancel(h.d.id)
+        elseif h.act == "Open" then dl_open(h.d)
+        elseif h.act == "Show" then dl_show(h.d)
+        elseif h.act == "Retry" then
+          web.download_forget(h.d.id)
+          web.load(h.d.address)
+        end
+        dl_n = web.downloads(dl)
+        self.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
+        return true
+      end
+    end
+    return true
+  end
+
+  downloads_close = function()
+    if dlpanel.hidden then return false end
+    dlpanel.hidden = true
+    return true
+  end
+
+  downloads_toggle = function()
+    lock_close()
+    shield_close()
+    if downloads_close() then return end
+    dl_n = web.downloads(dl)
+    dlpanel.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
+    dlpanel.x = math.max(8, dlbutton.x + dlbutton.w - dlpanel.w)
+    dlpanel.y = HEAD + 2
+    dlpanel.hidden = false
+    print(("jetski: the downloads shown, %d"):format(dl_n))
+  end
+
+  -- Every frame: whether the downloads changed enough to draw again. The
+  -- list is asked for when one began or ended, and a few times a second
+  -- while one runs, never every frame.
+  downloads_frame = function()
+    local running = (st.downloading or 0) > 0
+    if not st.downloads and not (running or dlbutton.part) then return false end
+    dl_frames = dl_frames + 1
+    if not st.downloads and dl_frames % 20 ~= 0 then return false end
+    dl_n = web.downloads(dl)
+    local got, all = 0, 0
+    for i = 1, dl_n do
+      local d = dl[i]
+      if d.state == "downloading" then
+        got = got + d.received
+        all = all + (d.expected or math.max(d.received * 2, 1))
+      end
+      if dl_seen[d.id] ~= d.state then
+        local was = dl_seen[d.id]
+        dl_seen[d.id] = d.state
+        if d.state == "downloading" and not was then
+          say(("downloading %s"):format(d.name ~= "" and d.name or d.address))
+        elseif d.state == "done" then
+          say(("downloaded %s, %d bytes, into %s"):format(d.name, d.received, d.path))
+          notify.post{ title = "Downloaded", body = d.name, open = d.path }
+        elseif d.state == "failed" then
+          say(("download of %s failed: %s"):format(d.name, dl_words(d)))
+        end
+      end
+    end
+    dlbutton.part = running and (all > 0 and got / all or 0) or nil
+    if not dlpanel.hidden then
+      dlpanel.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
+    end
+    return true
+  end
+end
+
 win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
   if tracing then commits_said() end
+  local downloads_changed = downloads_frame()
 
   -- Settings' tab is JetSki's: its name and address, whatever the view
   -- under it says.
@@ -1891,7 +2119,7 @@ win.on_frame = function()
 
   -- Anything here that changed is more than the picture, and draws the
   -- whole window; the picture alone may draw only the page's changes.
-  local changed = false
+  local changed = downloads_changed
 
   -- Web Inspector docked or gone, for the tab shown - by a key, its
   -- button, its own close, or another tab shown: the page narrower or
@@ -2064,6 +2292,10 @@ win.on_key = function(_, c)
 
   if c == 20 then new_tab() return true end
 
+  -- Control-J: the downloads, as Safari's Option-Command-L and Chrome's
+  -- Control-J show them.
+  if c == 10 then downloads_toggle() return true end
+
   -- Control or Super with a comma: Settings, as Safari and Chrome have it.
   do
     local key, mods = keys.parts(c)
@@ -2117,6 +2349,7 @@ end
 
 win:add(lockpanel)                   -- over everything, while it is open
 win:add(shieldpanel)
+win:add(dlpanel)
 tabs_changed()
 win:focus_on(view)
 

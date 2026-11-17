@@ -1,0 +1,96 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Kosmos Write, and what it stands on, as one picture: the application on
+  top, its kits beneath - the ones moved out of writer.lua for every office
+  application, the ones that grow, the new ones - and the busiest path, a
+  key that ends a word (A). Drawn on 17 November 2026 for the next Write,
+  before it is built; `docs/write.md` is the argument, `docs/write.html` the
+  window, `docs/office.md` the shared kits.
+
+  Rendered to docs/write-architecture.png by headless Chrome at twice its size, as
+  docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/write-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/write-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Write architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --grows: #0f7a5a; --path-a: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .grow { border-color: var(--grows) !important; border-style: dashed !important; }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.g { background: var(--grows); }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .a { color: var(--path-a); font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .mov { border-color: #b26a00 !important; border-style: dotted !important; border-width: 2px !important; }
+  .tag.m { background: #b26a00; }
+  .built { opacity: .92; }
+  .b { color: #1565c0; font: 600 13px "Plex Mono", monospace; }
+</style>
+
+</head>
+<body>
+<h1>Kosmos Write - what it stands on</h1>
+<p class="sub">A word processor that is mostly kits: Write's own file is what each key and control means, and the text, the pages, the PDF, Word's files, spelling and find are all things that other applications share.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
+  <span><i style="border-color:#b26a00;border-style:dotted;border-width:2px;background:#fff"></i>moved out of an application into a kit</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="a">A</span><span>a key that ends a word</span>
+</div>
+<div class="grid"><div><div class="layer app"><h2>Application</h2><div class="row" style="grid-template-columns:1fr;"><div class="box "><b>Kosmos Write - writer.lua</b><p>what each key, press and control means; the window, its tools, the desk and the panel. After O1 about half its size: the rest is the kits beneath</p></div></div></div><div class="layer lua"><h2>Lua libraries</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box mov"><span class="tag m">MOVED</span><b>textedit.lua</b><p>the caret, keys, selection, drag, undo; find <span class='a'>A1</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>inspector.lua</b><p>the Format panel; Update Style, New Style</p></div><div class="box mov"><span class="tag m">MOVED</span><b>pagedesk.lua</b><p>the pages on the desk; thumbnails; the outline</p></div><div class="box mov"><span class="tag m">MOVED</span><b>pk.toolbar, pk.findbar</b><p>the tools; the find bar</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box grow"><span class="tag g">GROWS</span><b>richtext.lua</b><p>paragraphs, runs, styles; character styles, links, word count</p></div><div class="box grow"><span class="tag g">GROWS</span><b>writedoc.lua</b><p>paper, margins, styles changed; headers and footers with words; sections</p></div><div class="box grow"><span class="tag g">GROWS</span><b>pageset.lua</b><p>lines onto pages <span class='a'>A2</span>; footnotes, contents, columns</p></div><div class="box grow"><span class="tag g">GROWS</span><b>pagedraw.lua</b><p>a page drawn <span class='a'>A4</span>; the matches and the wave</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box grow"><span class="tag g">GROWS</span><b>docfile.lua</b><p>.write; a kept copy; preview.png</p></div><div class="box new"><span class="tag">NEW</span><b>docxwrite.lua, docxread.lua</b><p>Word's files out, and in</p></div><div class="box mov"><span class="tag m">MOVED</span><b>ooxml.lua, chart.lua</b><p>Office's package; charts</p></div><div class="box new"><span class="tag">NEW</span><b>richhtml.lua</b><p>HTML, Markdown and text out</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box new"><span class="tag">NEW</span><b>templates.lua</b><p>New from Template</p></div><div class="box new"><span class="tag">NEW</span><b>spelling.lua</b><p>a person's own words</p></div><div class="box "><b>faces.lua, hyphen.lua</b><p>faces and their measures; hyphenation</p></div><div class="box "><b>recentdocs, markdown, pdfwrite</b><p>recent documents; Markdown in; PDF out, with links</p></div></div></div><div class="layer c"><h2>C kits</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box new"><span class="tag">NEW</span><b>Spelling Kit</b><p>a word looked up <span class='a'>A3</span>, suggestions</p></div><div class="box mov"><span class="tag m">MOVED</span><b>XML Kit</b><p>expat, for a DOCX's parts</p></div><div class="box "><b>gfx</b><p>surfaces, faces, glyphs, subsets</p></div><div class="box "><b>Compression Kit</b><p>zips, deflate, for .write, .docx and PDF</p></div></div></div><div class="layer srv"><h2>Servers</h2><div class="row" style="grid-template-columns:repeat(3,1fr);"><div class="box "><b>diskfs</b><p>/Home: documents, saved whole in one request; templates; kept copies</p></div><div class="box "><b>binfs</b><p>/Kosmos: dictionaries, templates, faces</p></div><div class="box "><b>window manager</b><p>the window; the clipboard</p></div></div></div><div class="layer kern"><h2>Nebula</h2><div class="row" style="grid-template-columns:1fr;"><div class="box "><b>threads, address spaces, IPC, capabilities</b><p>nothing new</p></div></div></div></div><div class="side"><div class="card"><h3>A - a key that ends a word</h3><ol><li><b>A1</b> <code>textedit</code>: a new body, every other paragraph shared.</li><li><b>A2</b> <code>pageset</code> sets that paragraph again, and the next only as far as the lines come back into step.</li><li><b>A3</b> the Spelling Kit checks the word just finished.</li><li><b>A4</b> <code>pagedraw</code> draws the pages on the screen.</li></ol><p style='font-size:13px;color:var(--dim)'>Measured in a 100-page document at O1, by stage and by what it allocates. Footnotes (R4) are the one addition that can push A2 further, and are held to that number.</p></div><div class="card"><h3>The steps</h3><ol><li><b>R1</b> find, spelling, word count, the editing keys, recent documents, recovery, templates</li><li><b>R2</b> styles changed and added, character styles, links, headers and footers</li><li><b>R3</b> DOCX, text and Markdown opened; HTML and Markdown out</li><li><b>R4</b> the outline, contents, footnotes, sections, columns</li></ol></div><div class="card"><h3>What crosses where</h3><table><tr><td>A document saved</td><td>its zip made whole, one request to /Home</td></tr><tr><td>A DOCX read</td><td>its parts from the zip into a region, expat over the region</td></tr><tr><td>A dictionary</td><td>read where it lies in the image</td></tr><tr><td>Everything else</td><td>inside Write's process</td></tr></table></div></div></div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

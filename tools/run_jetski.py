@@ -364,6 +364,21 @@ class Page(http.server.BaseHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return
+        if self.path in ("/file.bin", "/archive.zip"):
+            # Downloads: one its server calls an attachment, and one no
+            # page can show. `attachless` serves both as a page of text.
+            self.send_response(200)
+            if BROKEN == "attachless":
+                self.send_header("Content-Type", "text/plain")
+            elif self.path == "/file.bin":
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Disposition", 'attachment; filename="%s"' % DOWNLOAD_NAME)
+            else:
+                self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(DOWNLOAD)))
+            self.end_headers()
+            self.wfile.write(DOWNLOAD)
+            return
         if self.path in ("/ad.js", "/track.gif"):
             # What the rule list keeps out: answered, harmlessly, when it
             # is let through, so only being asked for tells.
@@ -502,6 +517,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(tabbed(guest, R, window, sw, sh))
     failed.extend(from_disk(guest, R, window, sw, sh))
     failed.extend(documentation(guest))
+    failed.extend(downloaded(guest))
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
@@ -598,6 +614,60 @@ def documentation(guest):
         return ["the IDE's tutorial, a file in /Kosmos/Documentation, did not load: %s"
                 % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
     return []
+
+
+# **Downloads** (`docs/webkit.html`, *Downloads*): bytes a page cannot
+# show, or its server calls an attachment, are not a page - WebKit's network
+# process writes them into /Home/Downloads, under the name the server
+# suggested, made unique, and the page stays where it was.
+DOWNLOAD_NAME = "kosmos-test.bin"
+DOWNLOAD = bytes((i * 7 + i // 251) % 256 for i in range(300000))
+DOWNLOADED = ["/Home/Downloads/kosmos-test.bin", "/Home/Downloads/kosmos-test (2).bin",
+              "/Home/Downloads/archive.zip"]
+
+
+def downloaded(guest):
+    """An attachment downloaded twice - the second made `(2)` - and a zip,
+    each said with its path; the page shown stays, and Control-J shows the
+    three. Their bytes are checked on the disk after (`downloads_kept`)."""
+    failed = []
+    for key, path in (("ctrl-y", DOWNLOADED[0]), ("ctrl-y", DOWNLOADED[1]), ("ctrl-u", DOWNLOADED[2])):
+        since = len(guest.seen)
+        guest.sendkey(key)
+        name = path.rsplit("/", 1)[1]
+        if not said(guest, since, "jetski: downloaded %s, %d bytes, into %s" % (name, len(DOWNLOAD), path), 60):
+            return failed + ["%s was not downloaded into %s: %s"
+                             % (name, path, re.findall(r"(?:jetski|webkit): [^\r\n]*download[^\r\n]*",
+                                                      guest.seen[since:])[-4:] or "nothing said")]
+        if "jetski: could not load" in guest.seen[since:]:
+            failed.append("a download was said to be a page that could not load")
+    since = len(guest.seen)
+    guest.sendkey("ctrl-j")
+    if not said(guest, since, "jetski: the downloads shown, 3", 20):
+        failed.append("Control-J did not show the three downloads: %s"
+                      % (re.findall(r"jetski: the downloads[^\r\n]*", guest.seen[since:]) or "nothing said"))
+    guest.sendkey("ctrl-j")
+    return failed
+
+
+def downloads_kept():
+    """The downloads' bytes on the disk, as the server sent them."""
+    failed = []
+    for path in DOWNLOADED:
+        kept = os.path.join(WORK, "downloaded")
+        if os.path.exists(kept):
+            os.remove(kept)
+        subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", HOME_DISK, path, kept],
+                       capture_output=True, cwd=ROOT)
+        if not os.path.exists(kept):
+            failed.append("%s is not on the disk" % path)
+            continue
+        with open(kept, "rb") as f:
+            got = f.read()
+        if got != DOWNLOAD:
+            failed.append("%s holds %d bytes, not the %d the server sent%s"
+                          % (path, len(got), len(DOWNLOAD), "" if len(got) != len(DOWNLOAD) else ", different ones"))
+    return failed
 
 
 # **Only the page's changes** (`testing.md` 18.856): a block that changes
@@ -897,6 +967,8 @@ def stopped(guest, R, window, sw, sh):
 # not told of - so a buffer's stale corner reaches the screen.
 # Only in the suite's copy of `jetski.lua`.
 HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
+        "if c == 25 then web.load(\"ADDRESS_ATfile.bin\") return true end "
+        "if c == 21 then web.load(\"ADDRESS_ATarchive.zip\") return true end "
         "if c == 2 then use(\"/Kosmos/Libraries/weblink.lua\").open("
         "\"/Kosmos/Documentation/ide/index.html\") return true end "
         "if c == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
@@ -1386,10 +1458,11 @@ def main():
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = changed(text, "if c == 12 or c == 15 or c == 20 then return true end",
-                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2 then return true end")
+    text = changed(text, "if c == 10 or c == 12 or c == 15 or c == 20 then return true end",
+                        "if c == 10 or c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
+                        " or c == 25 or c == 21 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
-                        + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
+                        + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))
     if BROKEN == "nameless":
         # The Debug Kit never asked.
         text = changed(text, "debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
@@ -1626,13 +1699,14 @@ def main():
         failed.extend(used)
         failed.extend(cookies())
         failed.extend(kept_settings())
+        failed.extend(downloads_kept())
         if BROKEN != "unblocked":
             failed.extend(compiled())
         failed.extend(itself())
         if not LIVE:
             failed.extend(sound())
 
-    checks = 38
+    checks = 42
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

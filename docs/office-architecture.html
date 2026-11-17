@@ -1,0 +1,94 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  The office kits, as one picture: Mail, Write, Sheets and Present on top,
+  the kits they share beneath - moved out of Write, grown, or new - and what
+  those stand on. Drawn on 17 November 2026, before any of it is built;
+  `docs/office.md` is the argument.
+
+  Rendered to docs/office-architecture.png by headless Chrome at twice its size, as
+  docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/office-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/office-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos office kits architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --grows: #0f7a5a; --path-a: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .grow { border-color: var(--grows) !important; border-style: dashed !important; }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.g { background: var(--grows); }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .a { color: var(--path-a); font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .mov { border-color: #b26a00 !important; border-style: dotted !important; border-width: 2px !important; }
+  .tag.m { background: #b26a00; }
+  .built { opacity: .92; }
+  .b { color: #1565c0; font: 600 13px "Plex Mono", monospace; }
+</style>
+
+</head>
+<body>
+<h1>The office kits - what Mail, Write, Sheets and Present share</h1>
+<p class="sub">Spelling, find and replace, a rich-text editor, contacts, templates, kept copies and Office's files, each a kit with one door, built once by whichever application needs it first. Every kit runs in its user's own process: no new server, no new system call.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
+  <span><i style="border-color:#b26a00;border-style:dotted;border-width:2px;background:#fff"></i>moved out of an application into a kit</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="b">O1-O7</span><span>the order, office.md</span>
+</div>
+<div class="grid"><div><div class="layer app"><h2>Applications - each the thinnest layer</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box "><b>Mail</b><p>conversations, the styled composer, contacts, rules</p></div><div class="box "><b>Kosmos Write</b><p>find, spelling, styles, links, DOCX opened, long documents</p></div><div class="box new"><span class="tag">NEW</span><b>Kosmos Sheets</b><p>designed, not built - the Cells Kit and the canvas</p></div><div class="box new"><span class="tag">NEW</span><b>Kosmos Present</b><p>designed, not built - slides, presenting, builds</p></div></div><div class="row" style="grid-template-columns:repeat(3,1fr);margin-top:10px"><div class="box "><b>Text Editor, the IDE</b><p>the find bar and spelling, later</p></div><div class="box "><b>PDF Viewer</b><p>the desk and the find bar</p></div><div class="box "><b>Calendar, Contacts</b><p>later: the People Kit's next users</p></div></div></div><div class="layer lua"><h2>Lua libraries - the office kits</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box mov"><span class="tag m">MOVED</span><b>textedit.lua</b><p>a body of rich text with a caret: keys, selection, drag, undo <span class='b'>O1</span>; and <code>find</code> <span class='b'>O2</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>inspector.lua</b><p>the Format panel's parts <span class='b'>O1</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>pagedesk.lua</b><p>pages on a desk, thumbnails <span class='b'>O1</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>pk.toolbar, pk.findbar</b><p>the tools row; the find bar, one for every window <span class='b'>O2</span></p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box new"><span class="tag">NEW</span><b>richhtml.lua</b><p>a body written as HTML, plain text, Markdown <span class='b'>O5</span></p></div><div class="box new"><span class="tag">NEW</span><b>people.lua</b><p>contacts as files with attributes; vCard <span class='b'>O6</span></p></div><div class="box new"><span class="tag">NEW</span><b>templates.lua</b><p>a template is a document in a folder; the chooser <span class='b'>O4</span></p></div><div class="box new"><span class="tag">NEW</span><b>spelling.lua</b><p>a person's own words, over the Spelling Kit <span class='b'>O3</span></p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box grow"><span class="tag g">GROWS</span><b>docfile.lua</b><p>a document's zip; a kept copy for recovery; preview.png <span class='b'>O4</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>ooxml.lua</b><p>Office's package, written and read <span class='b'>O1, O7</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>chart.lua</b><p>a chart's plan, frame and part <span class='b'>O1</span></p></div><div class="box grow"><span class="tag g">GROWS</span><b>pdfwrite.lua</b><p>pages to PDF; links</p></div></div><div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="box "><b>richtext, pageset, pagedraw</b><p>Write's engine: paragraphs, lines, pages; the wave under a word</p></div><div class="box "><b>addresses.lua</b><p>who a person writes to; the People Kit's other half</p></div><div class="box "><b>recentdocs.lua</b><p>the documents opened last</p></div><div class="box "><b>markup.lua, markdown.lua</b><p>the one escaper; Markdown read</p></div></div></div><div class="layer c"><h2>C kits - in each process</h2><div class="row" style="grid-template-columns:repeat(4,1fr);"><div class="box new"><span class="tag">NEW</span><b>Spelling Kit - /Kosmos/Kits/spell</b><p>a DAWG of every word form, read where it lies in the image; check, words, suggest <span class='b'>O3</span></p></div><div class="box mov"><span class="tag m">MOVED</span><b>XML Kit - /Kosmos/Kits/xml</b><p>expat, out of NetSurf's build into every image <span class='b'>O7</span></p></div><div class="box new"><span class="tag">NEW</span><b>Cells Kit</b><p>Sheets' formula engine and grid (sheets.md)</p></div><div class="box grow"><span class="tag g">GROWS</span><b>Mail Kit</b><p>multipart/alternative and related for styled mail</p></div></div><div class="row" style="grid-template-columns:repeat(3,1fr);margin-top:10px"><div class="box "><b>Compression Kit</b><p>deflate, zips</p></div><div class="box "><b>PDF Kit</b><p>read and write</p></div><div class="box "><b>gfx</b><p>surfaces, faces, encode_png for previews</p></div></div></div><div class="layer srv"><h2>Servers</h2><div class="row" style="grid-template-columns:repeat(3,1fr);"><div class="box "><b>diskfs</b><p>/Home: documents, /Home/People, /Home/Templates, /Home/System/Recovery; attributes and queries</p></div><div class="box "><b>binfs</b><p>/Kosmos: the dictionaries and templates in the image, read only</p></div><div class="box "><b>window manager</b><p>windows, the clipboard</p></div></div></div><div class="layer kern"><h2>Nebula</h2><div class="row" style="grid-template-columns:1fr;"><div class="box "><b>threads, address spaces, IPC, capabilities</b><p>nothing new: every office kit runs in its user's own process</p></div></div></div></div><div class="side"><div class="card"><h3>Asked of every piece</h3><ol><li><b>Does another application want this?</b> Each kit here has two users or more from the start.</li><li><b>Does something already supply this?</b> <code>textbuf:find</code>, <code>pdf.text</code>, <code>markup.lua</code>'s escaper, <code>recentdocs</code>, <code>addresses</code>, expat in the tree, <code>gfx.encode_png</code> - each used rather than written again.</li></ol></div><div class="card"><h3>The order</h3><ol><li><b>O1</b> the moves out of Write, Write's suites unchanged</li><li><b>O2</b> find and replace</li><li><b>O3</b> the Spelling Kit, English and Spanish</li><li><b>O4</b> kept copies, previews, templates</li><li><b>O5</b> <code>richhtml</code> - Mail's styled composer</li><li><b>O6</b> the People Kit - Mail's contacts</li><li><b>O7</b> the XML Kit, <code>ooxml</code> read - DOCX opened</li></ol></div><div class="card"><h3>The busiest path - a key that ends a word</h3><ol><li><code>textedit</code> makes a new body, sharing every paragraph it did not touch.</li><li><code>pageset</code> sets that paragraph again.</li><li>The Spelling Kit looks the word up: one walk of the graph, microseconds.</li><li><code>pagedraw</code> draws the page, the wave as one more mark.</li></ol><p style='font-size:13px;color:var(--dim)'>Measured in Write at O1, by stage and by what each allocates; every step after is held to it.</p></div><div class="card"><h3>C or Lua</h3><table><tr><td>A word looked up</td><td>C - a loop over a dictionary's bytes, on every word</td></tr><tr><td>XML read</td><td>C - expat, every byte of a file</td></tr><tr><td>Everything else</td><td>Lua - structure and policy, called when a person does something</td></tr></table></div></div></div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>
