@@ -10162,6 +10162,16 @@ the applications make the system useful, and is not pulled forward.
   the browser, not an afterthought: each item measured on the M700 and the
   ThinkPad, never under TCG, before and after, and kept only if it pays.
   Today's build leaves all of it on the table:
+  - **A frame's copies, then the GPU - AGREED 17 November 2026** (Diego:
+    "copies first, then GPU", after `testing.md` 18.852 found no layers to
+    composite and scrolling 1.6% busy on the M700; `webkit.md` *Fast*).
+    **1a** a scrolled frame timed stage by stage (web process paint and
+    send, UI incorporate and scroll, `WKPagePaintKosmos`, commit), a
+    `webkit:` line; **1b** the copies out - the update's region reused
+    rather than made per update, the backing store scrolled in place, only
+    damage drawn into the window and committed; **1c** the page drawn into
+    the window by the GPU (`GPU_OP_BLIT`/`GPU_OP_DRAW`), the processor where
+    there is none. Each measured on the M700 before and after.
   - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
     need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
     `testing.md` 18.846): Baseline and DFG together - on 64 bits the

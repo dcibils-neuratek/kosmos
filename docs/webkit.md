@@ -370,6 +370,18 @@ numbers):
   Each falls back to the processor where there is no GPU - QEMU, the Mac
   Pro's FirePros - and is chosen by measuring, not assumed.
 
+  **Step 1 changed on 17 November 2026, after measuring** (`testing.md`
+  18.852): JetSki has no layers to composite - accelerated compositing is
+  off (patch 0025) - and scrolling Wikipedia on the M700 used 1.6% of the
+  machine, its cost a region made per update and the whole page drawn and
+  committed every frame. Diego chose "copies first, then GPU": **1a** a
+  frame's time measured, stage by stage; **1b** the processor's copies
+  taken out - the update region reused, a scroll moved in place, only what
+  changed drawn into the window and committed; **1c** then the page drawn
+  into the window by the GPU's blitter or render engine
+  (`GPU_OP_BLIT`/`GPU_OP_DRAW`), with the processor where there is no GPU.
+  Compositing WebKit's own layers waits for a GL or Vulkan driver.
+
 ## Decided by Diego, 11 November 2026
 
 1. **The design agreed**: "yes go ahead".
