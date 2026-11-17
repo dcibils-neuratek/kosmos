@@ -80,8 +80,8 @@ static struct diskcache cache;
 
 int main(void)
 {
-    static uint8_t buf[8 * KFS_BLOCK];
-    struct kfs_disk dev = { NULL, dev_read, dev_write, 31 };
+    static uint8_t buf[16 * KFS_BLOCK];
+    struct kfs_disk dev = { NULL, dev_read, dev_write, 31, NULL };
     struct kfs_disk d;
 
     diskcache_init(&cache, &dev, 8, 4);
@@ -164,6 +164,66 @@ int main(void)
     check(cache.evicted >= 1, "and it is counted evicted");
     check(cache.hits > 0 && cache.misses > 0, "hits and misses are counted");
 
+    /* A directory's read is kept whatever its size, up to the bound
+     * (`read_kept`, `testing.md` 18.849): a folder forty blocks long was
+     * read from the disk at every path through it. */
+    diskcache_clear(&cache);
+
+    for (uint32_t b = 60; b < 66; b++) {
+        fill(disk[b], (char)('A' + (b - 60)), 1);
+    }
+
+    calls = 0;
+    d.read_kept(d.ctx, 60, 6, buf);
+    d.read_kept(d.ctx, 60, 6, buf);
+    check(calls == 1 && holds(buf, 'A', 1) && holds(buf + 5 * KFS_BLOCK, 'F', 1),
+          "a kept read of more than `small` blocks is answered twice with one call");
+    d.read(d.ctx, 63, 1, buf);
+    check(calls == 1 && holds(buf, 'D', 1),
+          "a block of a kept read is there for an ordinary read too");
+    d.read_kept(d.ctx, 60, 9, buf);
+    check(calls == 2, "a read past the bound passes by, even kept");
+
+    /* Kept blocks written through and forgotten like any other: the hash
+     * finds each after a block is moved into the slot a forgotten one
+     * left. */
+    refuse = 1;
+    fill(buf, 'z', 1);
+    d.write(d.ctx, 61, 1, buf);            /* refused: 61 forgotten */
+    refuse = 0;
+    calls = 0;
+    d.read(d.ctx, 65, 1, buf);
+    d.read(d.ctx, 62, 1, buf);
+    check(calls == 0 && holds(buf, 'C', 1),
+          "blocks kept beside a forgotten one are still found, uncalled");
+    d.read(d.ctx, 61, 1, buf);
+    check(calls == 1 && holds(buf, 'B', 1), "the forgotten block is read again");
+
+    /* Blocks whose numbers share a bucket: each its own. */
+    {
+        static struct diskcache big;
+        struct kfs_disk bd;
+        int right = 1;
+
+        diskcache_init(&big, &dev, DISKCACHE_MOST, 4);
+        bd = diskcache_disk(&big);
+
+        for (uint32_t b = 0; b < BLOCKS; b++) {
+            fill(disk[b], (char)(b & 0x7F), 1);
+            bd.read(bd.ctx, b, 1, buf);
+        }
+
+        calls = 0;
+
+        for (uint32_t b = 0; b < BLOCKS; b++) {
+            bd.read(bd.ctx, b, 1, buf);
+            right = right && holds(buf, (char)(b & 0x7F), 1);
+        }
+
+        check(calls == 0 && right && big.count == BLOCKS,
+              "every block of a full disk is kept and found by its own number");
+    }
+
     if (failed > 0) {
         printf("FAIL: %d of %d checks on the disk cache in C.\n", failed,
                passed + failed);
@@ -172,7 +232,8 @@ int main(void)
 
     printf("PASS: %d checks on the disk cache in C (a small read answered twice "
            "with one call, written through, never added by a write, a refused "
-           "write forgotten, large reads not kept, bounded by recency).\n",
+           "write forgotten, large reads not kept but a directory's kept, bounded by "
+           "recency, found by a hash).\n",
            passed);
     return 0;
 }

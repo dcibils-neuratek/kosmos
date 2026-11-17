@@ -3938,3 +3938,38 @@ running script - the network, building the page, painting it, or the
 messages between JetSki's processes. Measuring those stage by stage comes
 before FTL or WebAssembly, which would only make the fast part faster.
 
+
+## 16 November 2026 - The folder read a thousand times
+
+**In short.** Every web request JetSki made cost about 70 ms before it
+went anywhere, because of one folder. WebKit keeps its disk cache in a
+folder of 3,606 files, and the disk server re-read that whole folder from
+the disk every time anything inside it was touched. The server now keeps
+a folder in memory whatever its size. A request costs 6 ms now, and eight
+together 28 ms instead of half a second.
+
+**What.** Two fixes to the disk, found one after the other. First the
+SATA driver stopped polling: a command now ends when the controller
+raises its interrupt, instead of being checked once every 4 ms. That
+helped less than expected (43 ms to 36), and counting the disk's commands
+showed why: during one page the disk was 86% busy reading 4 KB pieces, a
+gigabyte in a few seconds. Moving the browser's cache aside cut a
+start's reads from 530 MB to 82. The disk server's cache kept only small
+reads, and a folder of 3,606 names is forty blocks - so it counted as a
+large read and was never kept. Looking up any file in that folder read
+all forty blocks from the disk again.
+
+**Why it matters.** The browser asks its cache about every request, so
+this was a tax on all of them, and it grew with every site visited: the
+fuller the cache, the bigger the folder, and the slower everything got.
+It also explains the "22 ms floor" left with the cache off: the same
+large folders, elsewhere on the path.
+
+**Visible impact.** Pages that make many requests start quickly, and a
+browser that has been used for a while is no longer slower than a fresh
+one. The 23 sites' numbers are in `testing.md` 18.849.
+
+**Measured.** On the M700: a 10 KB request 43 + 30 ms before, 4 + 2
+after; 1 MB 43 + 45 before, 4 + 14 after; eight 10 KB requests at once
+523 ms before, 28 after. Disk read for one JetSki start 530 MB before,
+66 after.

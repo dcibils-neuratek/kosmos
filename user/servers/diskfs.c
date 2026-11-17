@@ -2173,7 +2173,7 @@ static void serve(long endpoint, long read_ep, long write_ep, long disks_read_ep
                   long console_ep, long keyring_ep, long maps_cache_ep, long models_ep)
 {
     long at = kosmos_map((sizeof(struct arena) + 4095u) / 4096u);
-    struct kfs_disk dev = { NULL, device_read, device_write, 1 };
+    struct kfs_disk dev = { NULL, device_read, device_write, 1, NULL };
     char home[64];
     long n;
 

@@ -1358,7 +1358,7 @@ static int l_mount(lua_State *L)
  * together (`docs/diskfs.md` step 3). `test_kfs.lua` asks for the cache with
  * `KFS_CACHE=1`, and clears it where it changes the disk behind the core.
  */
-static const struct kfs_disk host_disk = { NULL, host_read, host_write, 1 };
+static const struct kfs_disk host_disk = { NULL, host_read, host_write, 1, NULL };
 static struct diskcache *C;
 
 static int l_use_cache(lua_State *L)

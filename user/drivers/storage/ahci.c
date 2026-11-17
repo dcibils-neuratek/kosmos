@@ -34,13 +34,21 @@
  * the BIOS/OS hand-off; ACS-3 for the commands. The offsets were checked
  * against QEMU's `hw/ide/ahci-internal.h`.
  *
- * **A command is polled, with a deadline**, at the probe and in a request:
- * watched closely for the first two milliseconds - an SSD answers a read in a
- * tenth of one - and then once a scheduler tick. That is a request waiting on
- * its hardware, which `CLAUDE.md` asks a driver not to do; it is the shape
- * the USB driver's bulk transfers have too, it is one disk's request at a
- * time, and the controller's interrupt, with requests held while a command
- * runs, is the step after (`roadmap.md`, *SATA*).
+ * **A command ends with the controller's interrupt** (`testing.md`
+ * 18.848): every port's completions and errors are armed (`PX_IE`), the
+ * controller's interrupt on (`GHC_IE`), and a command waits on the line -
+ * on its MSI, which `pci_enable` chooses where the device has one - with a
+ * look once a scheduler tick as well, so an interrupt that never comes
+ * costs what polling did and nothing worse. It was polled: watched for the
+ * first two milliseconds and then once a tick, so a command the disk took
+ * longer than that over cost a whole 4 ms tick, and on the M700 every web
+ * request paid about 50 ms for the disk cache's few commands, with this
+ * driver the busiest thing on the machine. Without a line it can claim, it
+ * is polled as before.
+ *
+ * Still one disk's request at a time, waited for inside the request: the
+ * step after is requests held while a command runs, and then several
+ * commands in flight (`roadmap.md`, *SATA*).
  */
 
 #include <stdbool.h>
@@ -97,6 +105,20 @@
 #define TFD_BSY         (1u << 7)
 #define IS_TFES         (1u << 30)       /* task file error */
 
+/* What a port interrupts for (PxIS and PxIE, AHCI 1.3.1 §3.3.5-3.3.6, as
+ * QEMU's `ahci-internal.h` has them): the FISes that end a command - the
+ * device's register FIS for DMA, PIO Setup for IDENTIFY, DMA Setup and Set
+ * Device Bits - and the errors, so a failed command wakes its wait too. */
+#define IS_DHRS         (1u << 0)
+#define IS_PSS          (1u << 1)
+#define IS_DSS          (1u << 2)
+#define IS_SDBS         (1u << 3)
+#define IS_IFS          (1u << 27)       /* interface fatal error */
+#define IS_HBDS         (1u << 28)       /* host bus data error */
+#define IS_HBFS         (1u << 29)       /* host bus fatal error */
+#define IE_COMMANDS     (IS_DHRS | IS_PSS | IS_DSS | IS_SDBS \
+                         | IS_IFS | IS_HBDS | IS_HBFS | IS_TFES)
+
 #define SSTS_DET(s)     ((s) & 0xFu)
 #define SSTS_IPM(s)     (((s) >> 8) & 0xFu)
 #define DET_PRESENT     3u               /* a device, and Phy talking to it */
@@ -144,6 +166,13 @@ static long console = -1;
 static uintptr_t abar;
 static uint32_t cap;
 static unsigned long counter_hz = 62500000ul;
+/* The controller's interrupt line, as a capability, or negative: polled. */
+static long irq = -1;
+
+/* What the waits came to, said once the disks are found: a wait the
+ * interrupt ended, and one a tick ended with the command still running -
+ * which, on a machine whose interrupt works, a probe never needs. */
+static unsigned long woken, missed;
 
 static uint32_t hba(uint32_t off) { return mmio_read32(abar + off); }
 static void hba_set(uint32_t off, uint32_t v) { mmio_write32(abar + off, v); }
@@ -278,7 +307,7 @@ static bool bring_up(struct port *p)
     px_set(n, PX_CMD, px(n, PX_CMD) | CMD_FRE);
     px_set(n, PX_SERR, 0xFFFFFFFFu);        /* write-one-to-clear */
     px_set(n, PX_IS, 0xFFFFFFFFu);
-    px_set(n, PX_IE, 0);                     /* polled, for now */
+    px_set(n, PX_IE, irq >= 0 ? IE_COMMANDS : 0u);
 
     if (!wait_until(n, PX_TFD, TFD_BSY | TFD_DRQ, 0, WAIT_MS)) {
         tell("the disk on port ", n, " stayed busy; left alone");
@@ -344,7 +373,9 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
         unsigned long close = counter_hz / 1000000ul * CLOSE_US;
 
         for (;;) {
-            if ((px(n, PX_IS) & IS_TFES) != 0 || (px(n, PX_TFD) & TFD_ERR) != 0) {
+            uint32_t is = px(n, PX_IS);
+
+            if ((is & IS_TFES) != 0 || (px(n, PX_TFD) & TFD_ERR) != 0) {
                 return false;
             }
 
@@ -356,8 +387,26 @@ static bool command(struct port *p, uint8_t ata, uint64_t lba, uint32_t count,
                 return false;
             }
 
-            /* Closely at first, then once a tick (the top of this file). */
-            if (kosmos_ticks() - start > close) {
+            if (irq >= 0) {
+                /* Until the controller says, or a tick: the look a tick
+                 * is for an interrupt that never comes. Then this port's
+                 * reasons cleared - its own register first, then its bit
+                 * in the controller's (§10.7.2.1), and the line unmasked
+                 * where it is not an MSI. */
+                if (kosmos_irq_wait_for(irq, 1) == SYS_NO_INTERRUPT) {
+                    missed++;
+                } else {
+                    woken++;
+                }
+                is = px(n, PX_IS);
+                if ((is & IS_TFES) != 0) {
+                    return false;
+                }
+                px_set(n, PX_IS, is);
+                hba_set(HBA_IS, 1u << n);
+                (void)kosmos_irq_ack(irq);
+            } else if (kosmos_ticks() - start > close) {
+                /* Polled: closely at first, then once a tick. */
                 kosmos_sleep(1);
             }
         }
@@ -853,6 +902,17 @@ void ahci_server(long console_cap, long disks_cap, long writes_cap)
 
     take_from_firmware();
     hba_set(HBA_GHC, hba(HBA_GHC) | GHC_AE);
+
+    /* The line, and the controller's interrupt on, before any port is
+     * brought up: each port is armed as it comes (`bring_up`), and the
+     * probe's own commands - IDENTIFY, the first sectors - end by it too.
+     * Turned on after the probe, as it first was, its waits each lasted a
+     * tick, which the suite's count of them found (18.849). */
+    irq = dev.intid != 0 ? kosmos_irq_claim(dev.intid) : -1;
+    if (irq >= 0) {
+        hba_set(HBA_IS, 0xFFFFFFFFu);            /* nothing the firmware left */
+        hba_set(HBA_GHC, hba(HBA_GHC) | GHC_IE);
+    }
     cap = hba(HBA_CAP);
     implemented = hba(HBA_PI);
 
@@ -909,6 +969,24 @@ void ahci_server(long console_cap, long disks_cap, long writes_cap)
         }
 
         found++;
+    }
+
+    if (irq >= 0) {
+        struct say_line line;
+
+        /* One line, so the boot log keeps its length (`x86-display-*`
+         * looks for the stage lines' blue near the top of the screen). */
+        say_begin(&line);
+        say_text(&line, "ahci: commands end with interrupt ");
+        say_dec(&line, dev.intid);
+        say_text(&line, ", the probe's waits ");
+        say_dec(&line, woken);
+        say_text(&line, " by it and ");
+        say_dec(&line, missed);
+        say_text(&line, " by a tick");
+        say_send(console, &line);
+    } else {
+        tell("polled: interrupt ", dev.intid, " could not be claimed");
     }
 
     tell("", found, found == 1 ? " disk found" : " disks found");

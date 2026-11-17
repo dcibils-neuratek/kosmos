@@ -18,10 +18,18 @@
  *   the write was refused. A write never adds a block: what is kept is what
  *   was read.
  * - **Small reads only** - `small` blocks or fewer: an inode block, a bitmap
- *   block, a directory, a settings file. A file read in one large piece
- *   passes by, rather than pushing all of that out for bytes nobody reads
- *   twice.
- * - **Bounded**: `most` blocks, the least recently used going first.
+ *   block, a small directory, a settings file. A file read in one large
+ *   piece passes by, rather than pushing all of that out for bytes nobody
+ *   reads twice.
+ * - **And a directory, whatever its size** - the reads `kfs.c` asks to be
+ *   kept (`read_kept`). A folder is read whole at every path through it,
+ *   and one of 3,606 entries is forty blocks: passed by as a large read,
+ *   it was read from the disk again for every file in it. On the M700 that
+ *   was WebKit's disk cache - 450 MB read each time its network process
+ *   started, and a folder's 160 KB before and after every request
+ *   (`testing.md` 18.849).
+ * - **Bounded**: `most` blocks, the least recently used going first, and
+ *   found by a hash of the block's number rather than a walk of them all.
  *
  * `tools/test_diskcache.c` holds it to the checks `test_blockcache.lua` held
  * the Lua to.
@@ -31,7 +39,10 @@
 
 #include "kfs.h"
 
-#define DISKCACHE_MOST 64u
+/* Four megabytes: a few large folders and every small read beside them. It
+ * was 64 blocks while only small reads came here. */
+#define DISKCACHE_MOST    1024u
+#define DISKCACHE_BUCKETS 2048u           /* a power of two, twice `MOST` */
 
 struct diskcache {
     struct kfs_disk under;
@@ -41,6 +52,8 @@ struct diskcache {
     uint64_t clock;
     uint32_t block[DISKCACHE_MOST];
     uint64_t used[DISKCACHE_MOST];
+    int32_t  next[DISKCACHE_MOST];      /* the slot after this in its bucket, or -1 */
+    int32_t  head[DISKCACHE_BUCKETS];   /* a bucket's first slot, or -1 */
     uint8_t data[DISKCACHE_MOST][KFS_BLOCK];
 
     /* Reads answered here, those passed on, and blocks pushed out. */

@@ -238,7 +238,10 @@ static int disk_read(struct kfs *k, uint32_t block, uint32_t count, void *to)
     while (count > 0) {
         uint32_t n = count < per_call(k) ? count : per_call(k);
 
-        if (k->disk.read(k->disk.ctx, block, n, at) < 0) {
+        int (*read)(void *, uint32_t, uint32_t, void *) =
+            k->keeping && k->disk.read_kept != NULL ? k->disk.read_kept : k->disk.read;
+
+        if (read(k->disk.ctx, block, n, at) < 0) {
             return KFS_E_DISK;
         }
 
@@ -1956,7 +1959,9 @@ int kfs_open_dir(struct kfs *k, const struct kfs_super *sb,
     }
 
     k->dir_len = 0;
+    k->keeping = true;
     r = kfs_read_range(k, sb, dir, 0, dir->size, k->dir, &got);
+    k->keeping = false;
 
     if (r != KFS_OK) {
         return r;

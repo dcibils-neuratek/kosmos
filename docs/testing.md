@@ -34966,3 +34966,143 @@ JavaScript running. That is the next thing to measure, by stage: the
 network, parsing, style and layout, painting, and the hops between
 JetSki's processes (`docs/jit.md`, *What it showed*). Kept as
 `bench/top20/0.11.449-m700.json` (the second run's).
+
+## 18.848 Where a slow load's time goes, on the M700: every request pays the disk
+
+The question 18.847 left: the JIT ran script 3.4 times faster and no page
+loaded faster. Measured on the M700 at 0.11.450, by stages, each with the
+step before it ruled out.
+
+**The trace** (`/Home/Settings/JetSki/trace`, the kit's per-request lines
+and the page's own Navigation and Resource Timing): requests' *download*
+phase dominates - Reddit's 95 KB page 491 ms after its first byte,
+Infobae's 79 requests 12.6 s summed for 9 KB that crossed the network,
+the rest from the cache. The trace itself slows a load (CNN 12.4 s
+traced), so its totals are not top20's.
+
+**A page of known files from this Mac** (`fetch` from the page, timed by
+`performance.now()`, nothing traced), each request headers + body in ms:
+
+| | 10 KB | 100 KB | 1 MB | 8 x 10 KB at once |
+|---|---|---|---|---|
+| JetSki as it is | 43 + 30 | 43 + 31 | 43 + 45 | 523 ms |
+| the disk cache impossible | 22 + 0 | 22 + 1 | 22 + 15 | 264 ms |
+| and blocking off for the site | 22 + 0 | 22 + 1 | 22 + 15 | 269 ms |
+
+Ruled out on the way:
+
+- **The server**: its own stamps say each request answered in under a
+  millisecond, the requests arriving 70 ms apart on one kept connection;
+  Nagle off on its side changes nothing.
+- **The network stack**: ten requests from a Lua program through
+  `http.lua` on the M700 take 1.1 ms each for 10 KB and 21.6 ms for 1 MB.
+- **WebKit's processes' messages**: a hundred `document.cookie` reads,
+  each a synchronous round trip to the network process, take 68 ms.
+- **The content blocker**: the same with blocking off for the site.
+
+**What is left is the disk.** A profile of the whole machine while the
+page loads (`profile 15`, `make profile-report`): 96.1% idle, and the
+busiest thing on it the SATA driver - `ahci`'s `command`, 64% of the busy
+time - against `diskfs` at 0.3%. `command` issues one command at a time in
+slot 0, watches it for 2 ms, and then looks once a scheduler tick (4 ms):
+the polling its own header says `CLAUDE.md` asks a driver not to do, with
+the interrupt as its next step. Every request makes the network process
+ask its disk cache, through the Storage Kit to `/Home` and `diskfs` to
+`ahci`, before and after - about 20 ms before and 30 ms after, even for a
+response that is `no-store`.
+
+**The 23 sites with the cache impossible** (ten of them): Reddit 1.3 s
+from 8, eBay 3.0 from 5.5; the New York Times 18.1 and CNN 14.5, whose
+weight is files the cache held. So the cache is worth having and costs
+every request its disk's latency; what to fix is the latency.
+
+**And the 22 ms left without the cache** is not explained yet: not the
+server, the stack, the messages or the blocker. Next, when the disk is
+answered.
+
+**Found on the way, and worse than slow: the cookie store emptied.**
+`/Home/Settings/JetSki/cookies.db` went from 229,376 bytes to 0 between
+two sites of 0.11.449's second top20 run (Temu, then Infobae, 19:13 to
+19:14), and kept nothing after: every site since reads "cookies 0 own".
+SQLite is built with `unix-dotfile` locking, whose lock is a folder,
+`cookies.db.lock`; top20 ends JetSki with `kill jetski` before every
+site, and a network process killed holding the lock leaves the folder for
+ever. Every network process after finds the database locked, and WebKit's
+`CookieJarDB` takes a database it cannot open for a corrupt one - deletes
+it, makes it again, cannot write its table under the lock, and goes on
+with no cookies. The folder was there with no JetSki running; removed by
+hand, so cookies are kept again. The class - a lock that outlives its
+holder - is on the roadmap.
+
+## 18.849 The disk answered: SATA by interrupt, and a large folder kept
+
+What 18.848 left: every request JetSki made paid its disk cache about
+50 ms, and the SATA driver polled. Diego chose the interrupt first.
+Measured on the M700 at 0.11.451.
+
+**SATA by interrupt** (`ahci.c`). Every port's completions and errors
+are armed (`PxIE`), the controller's interrupt is on (`GHC.IE`) before
+the probe, and a command waits on the line, with a look once a tick for
+an interrupt that never comes. The driver says how the probe's waits
+ended, and `x86-ahci` holds it to "all by the interrupt, none by the
+tick" (14 checks, from 11). It says so in one line: three, at first,
+scrolled the boot log's blue stage lines out of the box the screen suites
+look in, and all six `x86-display-*` suites and `x86-virtio-gpu` failed
+until they were one.
+
+- **Control**: the interrupt first turned on *after* the probe, as it was
+  first written, and the suite failed: 0 waits ended by the interrupt and
+  1 by the tick. That was the bug, and the check is what found it.
+- **The M700's own controller** (8086:a102, AHCI 1.3): interrupt 21, the
+  probe's two waits both ended by it, none by the tick.
+
+It bought less than expected: 43 + 30 ms a 10 KB request to about 36 +
+33. **So the disk was counted**, with a tally in `ahci` for one
+measurement, not kept: reads, writes and flushes a second, with their
+time. During one page the disk was 86% busy - 5,000 to 6,000 reads a
+second, most of them 4 KB - and a JetSki start alone read 530 MB. With
+the browser's cache folder moved aside the same start read 82 MB.
+
+**What read it.** `diskstat /Home` said the processes asked `diskfs` for
+69 MB in that start, and the disk was read 530: the reads were `diskfs`'s
+own. Its cache kept reads of four blocks or fewer, written when a folder
+was a block or two. WebKit's disk cache is one folder of 3,606 records -
+forty blocks - so it went past the cache as a large read, and every path
+through it read the forty blocks from the disk again: a stat of every
+record when a network process starts, and the folder before and after
+every request. Listing that folder at the prompt took 28.9 s.
+
+**The fix** (`kfs.c`, `diskcache.c`, `design.md` 8.3d). `kfs` marks a
+directory's read as one to keep (`read_kept` in `struct kfs_disk`), and
+the cache keeps it whatever its size, up to its bound. The bound grew
+from 64 blocks to 1,024 - 4 MB - and a block is found by a hash of its
+number. `test_diskcache` holds both, 19 checks from 13; the control,
+kept reads treated as any other, fails 5 of them.
+
+**The same page of known files** (18.848), each request headers + body
+in ms:
+
+| | 10 KB | 100 KB | 1 MB | 8 x 10 KB at once |
+|---|---|---|---|---|
+| 0.11.450 | 43 + 30 | 43 + 31 | 43 + 45 | 523 ms |
+| the interrupt alone | 36 + 33 | 36 + 35 | 37 + 47 | 520 ms |
+| and the folder kept | 4 + 2 | 4 + 4 | 4 + 14 | 28 ms |
+| again | 5 + 4 | 5 + 5 | 5 + 18 | 51 ms |
+
+Faster than 18.848's "cache impossible" row, 22 + 0: that floor was the
+same folders, elsewhere on the path. A JetSki start reads 66 MB, from
+530.
+
+**The 23 sites** (`bench/top20/0.11.451-m700.json`), against 0.11.450's
+second run (18.847): **19 within five seconds, from 15.** Reddit 8.1 s
+to 1.0, eBay 5.5 to 1.5, TikTok 9.3 to 1.4, the New York Times 7.1 to
+4.5, Yahoo! 4.9 to 3.5, Infobae 9.6 to 5.3. Over the standard still:
+CNN 11.2 (6.2 before; CNN has varied from 5.4 to 14.5 between runs),
+Infobae 5.3, El Observador 5.7, El País 5.6.
+
+Found on the way, each on the roadmap rather than done here: a folder's
+listing reads and sorts the whole folder for every page of it; `ls`
+still takes 26 s over that folder; something reads 2 MB from `/Home`
+every eleven seconds on an idle machine; and `link` refuses and
+`st_nlink` is always 1, so WebKit's blobs - a body shared by several
+records - are never used.

@@ -1083,6 +1083,21 @@ The spelling walk 8.3c says is paid "because kfs has no block cache" costs
 no disk calls now; it still costs a second walk in Lua, which is where a
 random read's time is (89% of it outside the device).
 
+**And a directory whatever its size** (16 November 2026, `testing.md`
+18.849). "Four blocks or fewer" counted a directory as small, and one of
+3,606 entries - WebKit's disk cache, one folder of records - is forty
+blocks. Read as a large read, it went past the cache, and every path
+through it read all forty from the disk again: 160 KB for each request
+the browser's cache looked up or stored, and 450 MB each time a network
+process started and asked about every record. So the size rule stays for
+a file's bytes and stops applying to a directory: `kfs.c` marks the read
+of one as a read to keep (`read_kept`, a member of `struct kfs_disk` that
+a disk without a cache leaves empty), and the cache keeps it whatever its
+size, up to its bound. That rule is kfs's to state because only kfs knows
+what a block is; the cache still decides nothing about the format. The
+cache grew from 64 blocks to 1,024, 4 MB, and finds a block by a hash of
+its number rather than a walk of every slot.
+
 ### 8.3c A name is found whatever its case, and keeps the case it was given
 
 Decided on 27 September 2026 by Diego, once the layout gave every name a capital - `/Kosmos/Libraries`, `/Home` - "it doesnet make sense to have case sensitiveness in this day and age". Kosmos had compared names exactly everywhere but the FAT reader.

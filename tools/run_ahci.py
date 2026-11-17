@@ -25,6 +25,7 @@ Usage: run_ahci.py IMAGE
 import hashlib
 import os
 import struct
+import re
 import sys
 import uuid
 import zlib
@@ -35,7 +36,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import scratch                                              # noqa: E402
 
-CHECKS = 11
+CHECKS = 14
 SECTOR = 512
 SECTORS = 131072                       # 64 MB
 BASIC_DATA = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"     # Microsoft basic data
@@ -119,6 +120,17 @@ def main():
         layout = guest.wait_for_line("ahci: port 0 holds", "the disk's first sectors")
         check(layout.strip() == "a GPT, its first sector a protective MBR",
               "the disk's GPT and protective MBR were not read: %r" % layout)
+        # Commands end with the controller's interrupt, and no wait at the
+        # probe had to be ended by its one-tick look instead (18.849).
+        line = guest.wait_for_line("ahci: commands end with interrupt ",
+                                   "the driver to wait on its interrupt")
+        said = re.match(r"(\d+), the probe's waits (\d+) by it and (\d+) by a tick$",
+                        line.strip())
+        check(said is not None, "the interrupt was not claimed: %r" % line)
+        check(said is not None and int(said.group(2)) > 0,
+              "no command at the probe was ended by its interrupt: %r" % line)
+        check(said is not None and said.group(3) == "0", "a command at the probe "
+              "waited a tick for an interrupt that did not come: %r" % line)
         count = guest.wait_for_line("ahci: 1 disk", "how many disks")
         check(count.strip() == "found", "the driver did not say one disk found: %r" % count)
         # And served rather than ended: a role that returns runs init's

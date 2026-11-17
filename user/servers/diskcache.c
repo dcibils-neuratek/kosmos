@@ -5,6 +5,7 @@
 
 #include "diskcache.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 void diskcache_init(struct diskcache *c, const struct kfs_disk *under,
@@ -13,25 +14,55 @@ void diskcache_init(struct diskcache *c, const struct kfs_disk *under,
     c->under = *under;
     c->most = most < DISKCACHE_MOST ? most : DISKCACHE_MOST;
     c->small = small;
-    c->count = 0;
     c->clock = 0;
     c->hits = c->misses = c->evicted = 0;
+    diskcache_clear(c);
 }
 
 void diskcache_clear(struct diskcache *c)
 {
     c->count = 0;
+
+    for (uint32_t i = 0; i < DISKCACHE_BUCKETS; i++) {
+        c->head[i] = -1;
+    }
 }
+
+static uint32_t bucket(uint32_t block)
+{
+    return (block * 2654435761u) >> 21;   /* the top 11 bits: 2048 buckets */
+}
+
+_Static_assert(DISKCACHE_BUCKETS == 1u << 11, "bucket() gives eleven bits");
 
 static int slot_of(const struct diskcache *c, uint32_t block)
 {
-    for (uint32_t i = 0; i < c->count; i++) {
+    for (int32_t i = c->head[bucket(block)]; i >= 0; i = c->next[i]) {
         if (c->block[i] == block) {
             return (int)i;
         }
     }
 
     return -1;
+}
+
+static void link_slot(struct diskcache *c, int slot)
+{
+    uint32_t b = bucket(c->block[slot]);
+
+    c->next[slot] = c->head[b];
+    c->head[b] = slot;
+}
+
+static void unlink_slot(struct diskcache *c, int slot)
+{
+    int32_t *at = &c->head[bucket(c->block[slot])];
+
+    while (*at != slot) {
+        at = &c->next[*at];
+    }
+
+    *at = c->next[slot];
 }
 
 static void keep(struct diskcache *c, uint32_t block, const uint8_t *bytes)
@@ -50,10 +81,12 @@ static void keep(struct diskcache *c, uint32_t block, const uint8_t *bytes)
                 }
             }
 
+            unlink_slot(c, slot);
             c->evicted++;
         }
 
         c->block[slot] = block;
+        link_slot(c, slot);
     }
 
     memcpy(c->data[slot], bytes, KFS_BLOCK);
@@ -65,20 +98,31 @@ static void forget(struct diskcache *c, uint32_t block)
     int slot = slot_of(c, block);
 
     if (slot >= 0) {
+        int last = (int)c->count - 1;
+
+        unlink_slot(c, slot);
+
+        if (slot != last) {
+            unlink_slot(c, last);
+            c->block[slot] = c->block[last];
+            c->used[slot] = c->used[last];
+            memcpy(c->data[slot], c->data[last], KFS_BLOCK);
+            link_slot(c, slot);
+        }
+
         c->count--;
-        c->block[slot] = c->block[c->count];
-        c->used[slot] = c->used[c->count];
-        memcpy(c->data[slot], c->data[c->count], KFS_BLOCK);
     }
 }
 
-static int cache_read(void *ctx, uint32_t block, uint32_t count, void *to)
+/* A read kept, whatever its size up to `most`: past that it would push out
+ * its own first blocks, so it passes by. */
+static int read_through(struct diskcache *c, uint32_t block, uint32_t count, void *to,
+                        bool any_size)
 {
-    struct diskcache *c = ctx;
     uint8_t *out = to;
     int r;
 
-    if (count > c->small) {
+    if (count > (any_size ? c->most : c->small)) {
         return c->under.read(c->under.ctx, block, count, to);
     }
 
@@ -111,6 +155,16 @@ miss:
     return r;
 }
 
+static int cache_read(void *ctx, uint32_t block, uint32_t count, void *to)
+{
+    return read_through(ctx, block, count, to, false);
+}
+
+static int cache_read_kept(void *ctx, uint32_t block, uint32_t count, void *to)
+{
+    return read_through(ctx, block, count, to, true);
+}
+
 static int cache_write(void *ctx, uint32_t block, uint32_t count, const void *from)
 {
     struct diskcache *c = ctx;
@@ -136,7 +190,7 @@ static int cache_write(void *ctx, uint32_t block, uint32_t count, const void *fr
 
 struct kfs_disk diskcache_disk(struct diskcache *c)
 {
-    struct kfs_disk d = { c, cache_read, cache_write, c->under.most };
+    struct kfs_disk d = { c, cache_read, cache_write, c->under.most, cache_read_kept };
 
     return d;
 }

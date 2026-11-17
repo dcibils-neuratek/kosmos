@@ -202,12 +202,17 @@ struct kfs_inode {
  * The disk: `count` blocks from `block`, to or from memory. Negative is a
  * refusal. `most` is how many blocks one call may move, and nothing asks
  * for more; 0 is taken as one.
+ *
+ * `read_kept`, where there is one, is `read` for blocks the filesystem will
+ * want again soon whatever their number - a directory's, read whole at every
+ * path that passes through it (`testing.md` 18.849). NULL: `read`.
  */
 struct kfs_disk {
     void *ctx;
     int (*read)(void *ctx, uint32_t block, uint32_t count, void *to);
     int (*write)(void *ctx, uint32_t block, uint32_t count, const void *from);
     uint32_t most;
+    int (*read_kept)(void *ctx, uint32_t block, uint32_t count, void *to);
 };
 
 /*
@@ -225,6 +230,7 @@ struct kfs {
      * the journal gets them in, so the whole of it is one run in memory.
      */
     bool open;
+    bool keeping;                       /* reading a directory: `read_kept` */
     bool too_big;
     uint32_t held;
     uint32_t held_at[KFS_TXN_MAX];

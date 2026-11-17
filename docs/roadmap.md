@@ -10184,6 +10184,43 @@ the applications make the system useful, and is not pulled forward.
     window** - Diego, 14 November: "window then jit" - so the browser is in
     use first and the JIT speeds up something already used. If the two mappings cannot work, one region writable and
     executable is the fallback, and that is Diego's decision then.
+  - **Every request pays the disk** (16 November, `testing.md` 18.848 and
+    18.849): the disk cache's lookup and store cost each request about
+    50 ms on the M700. **Chosen first** (Diego, 16 November: "SATA by
+    interrupt" over the lock and HTTP/2; the emptied cookies left empty).
+    **Built, 0.11.451**, in two parts, the second found by the first:
+    - *SATA by interrupt*: `ahci` arms every port's completions and
+      errors and waits on the controller's line, with a look once a tick
+      for an interrupt that never comes; the suite counts the waits each
+      ended. It bought 43 ms to 36.
+    - *A large folder kept*: what was left was the disk itself, 86% busy
+      during a page - `diskfs`'s cache kept only reads of four blocks, and
+      WebKit's cache folder of 3,606 records is forty, so it was read from
+      the disk at every path through it: 450 MB each time a network
+      process started. `kfs` now marks a directory's read as one to keep
+      and the cache keeps it whatever its size, in 4 MB found by a hash.
+      A 10 KB request 43 + 30 ms to 4 + 2, eight at once 523 ms to 28.
+    Left, each its own item when its time comes: requests held while a
+    command runs and NCQ (*SATA* below); a folder's listing sorts the
+    whole folder for every page of it; `ls` on that folder still takes 26
+    s; something reads 2 MB from `/Home` every eleven seconds while the
+    machine is idle; and our `link` refuses and `st_nlink` is always 1,
+    so WebKit's blobs - one body shared by several records - are never
+    used and each record holds its own copy.
+  - **The screen suites look for blue in a fixed box** (16 November,
+    18.849): `run_screenshot.py`'s boot check wants the stage lines' blue
+    in the top-left 200 by 400 pixels, and three new lines from `ahci` at
+    boot scrolled them out - every `x86-display-*` suite and
+    `x86-virtio-gpu` failed on it. The driver says one line now; the
+    check should find the stage lines wherever the log has put them.
+  - **A lock that outlives its holder** (16 November, 18.848): SQLite is
+    built with `unix-dotfile` locking, whose lock is a folder; a process
+    killed holding it leaves it for ever, and WebKit's cookie store then
+    deletes `cookies.db` as corrupt and keeps no cookie. What a lock
+    needs here is to end with its process - a lock `diskfs` holds for a
+    caller, released when the caller's endpoint ends, as an endpoint
+    ends with its process (0.10.30) - and then SQLite's own `unix` VFS
+    over it. For Diego to choose, since it is a new thing `diskfs` does.
   - **WebKit's own allocator.** bmalloc/libpas is off and the libc's
     `malloc` stands under every allocation; libpas wants wide address
     reservations, which `vmm` can be taught to give.
