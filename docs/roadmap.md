@@ -11148,6 +11148,10 @@ the applications make the system useful, and is not pulled forward.
       Open, Show, Retry, a notification. Still to do of them: Pause (the
       curl port cannot resume), *Download the linked file* (a WebKit
       patch, with the right button), and the folder in Settings.
+      **The right button built in 0.11.464** (`testing.md` 18.864): a
+      link's, a picture's and a selection's items from WebKit's hit test,
+      and the hovered link in the status line. Still to do: *Download the
+      linked file* and *Save image as* (the same patch), *Copy image*.
     - *Loading in the status line* (Diego, 15 November 2026: "we need a
       progress bar in the bottom status section of jetski so the user knows
       when the webpage finished loading"). The status line along the

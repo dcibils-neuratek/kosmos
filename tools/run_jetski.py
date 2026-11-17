@@ -464,10 +464,47 @@ def use(guest, R, dump, window, mark):
     count, link = block_at(R.parse_ppm, dump, x, y, w, h, LINK)
     if count < 200:
         return ["the link is not on the screen: %d of its pixels" % count]
+
+    # **The right button** over the link: its menu leads with the link's
+    # own two, and the first opens it in a tab of its own - which the
+    # test's key closes again, so the page clicked below is the first tab's.
+    cx, cy = link[0] + link[2] // 2, link[1] + link[3] // 2
+    guest.mouse_to(*R._to_tablet(cx, cy, sw, sh))
+    time.sleep(0.5)
+    since = len(guest.seen)
+    guest.mouse_button(True, "right")
+    time.sleep(0.15)
+    guest.mouse_button(False, "right")
+    menu = None
+    if said(guest, since, "jetski: the page's menu", 20):
+        menu = re.search(r"jetski: the page's menu, (\d+) items, link (\S+), image \S+, selected \d+, "
+                         r"at (\d+),(\d+), rows of (\d+)", guest.seen[since:])
+    if not menu or not menu.group(2).endswith("/other.html"):
+        failed.append("the right button over the link did not offer the link: %s"
+                      % (menu.group(0) if menu else "no menu"))
+        guest.sendkey("esc")                # the menu put away, or it takes the click
+        time.sleep(0.5)
+    else:
+        mx, my, row = int(menu.group(3)), int(menu.group(4)), int(menu.group(5))
+        since = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(mx + 24, my + 2 + row // 2, sw, sh))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.15)
+        guest.mouse_button(False)
+        if not said(guest, since, "jetski: a new tab for " + menu.group(2), 20) \
+           or not said(guest, since, "jetski: title " + SECOND, 60):
+            failed.append("Open link in a new tab did not open %s in a tab: %s"
+                          % (menu.group(2), re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:]
+                             or "nothing said"))
+        since = len(guest.seen)
+        guest.sendkey("ctrl-e")
+        said(guest, since, "jetski: test closed the tab", 10)
+        time.sleep(1.5)
     clicked = len(guest.seen)
     click(link)
-    if not said(guest, mark, "jetski: title " + SECOND, 60):
-        return ["the link was clicked and the second page did not arrive: %s"
+    if not said(guest, clicked, "jetski: title " + SECOND, 60):
+        return failed + ["the link was clicked and the second page did not arrive: %s"
                 % (re.findall(r"jetski: [^\r\n]*", guest.seen[mark:])[-3:] or "nothing said")]
     # Said the moment it was followed, before the page began to arrive
     # (Diego: "i click some links and nothing happens").
@@ -517,7 +554,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(tabbed(guest, R, window, sw, sh))
     failed.extend(from_disk(guest, R, window, sw, sh))
     failed.extend(documentation(guest))
-    failed.extend(downloaded(guest))
+    failed.extend(downloaded(guest, R))
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
@@ -626,7 +663,22 @@ DOWNLOADED = ["/Home/Downloads/kosmos-test.bin", "/Home/Downloads/kosmos-test (2
               "/Home/Downloads/archive.zip"]
 
 
-def downloaded(guest):
+def changed_in(R, before, after, box):
+    """How much of `box` (x, y, w, h) differs between two screendumps."""
+    sw, sh, a = R.parse_ppm(before)
+    _, _, b = R.parse_ppm(after)
+    x, y, w, h = box
+    differ = total = 0
+    for row in range(max(0, y), min(sh, y + h), 2):
+        for col in range(max(0, x), min(sw, x + w), 2):
+            i = (row * sw + col) * 3
+            total += 1
+            if a[i:i + 3] != b[i:i + 3]:
+                differ += 1
+    return differ / total if total else 0.0
+
+
+def downloaded(guest, R):
     """An attachment downloaded twice - the second made `(2)` - and a zip,
     each said with its path; the page shown stays, and Control-J shows the
     three. Their bytes are checked on the disk after (`downloads_kept`)."""
@@ -642,10 +694,18 @@ def downloaded(guest):
         if "jetski: could not load" in guest.seen[since:]:
             failed.append("a download was said to be a page that could not load")
     since = len(guest.seen)
+    before = guest.screendump()
     guest.sendkey("ctrl-j")
     if not said(guest, since, "jetski: the downloads shown, 3", 20):
         failed.append("Control-J did not show the three downloads: %s"
                       % (re.findall(r"jetski: the downloads[^\r\n]*", guest.seen[since:]) or "nothing said"))
+    else:
+        # And drawn: 0.11.462's said so and painted nothing (18.864).
+        time.sleep(1.5)
+        at = re.search(r"jetski: the downloads shown, 3, at (\d+),(\d+) (\d+)x(\d+)", guest.seen[since:])
+        part = changed_in(R, before, guest.screendump(), [int(v) for v in at.groups()]) if at else 0.0
+        if part < 0.5:
+            failed.append("the downloads panel was said shown and %.0f%% of it is on the screen" % (part * 100))
     guest.sendkey("ctrl-j")
     return failed
 
@@ -969,6 +1029,7 @@ def stopped(guest, R, window, sw, sh):
 HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
         "if c == 25 then web.load(\"ADDRESS_ATfile.bin\") return true end "
         "if c == 21 then web.load(\"ADDRESS_ATarchive.zip\") return true end "
+        "if c == 5 then close_tab(web.shown_id()) print(\"jetski: test closed the tab\") return true end "
         "if c == 2 then use(\"/Kosmos/Libraries/weblink.lua\").open("
         "\"/Kosmos/Documentation/ide/index.html\") return true end "
         "if c == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
@@ -1460,9 +1521,16 @@ def main():
         text = f.read()
     text = changed(text, "if c == 10 or c == 12 or c == 15 or c == 20 then return true end",
                         "if c == 10 or c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
-                        " or c == 25 or c == 21 then return true end")
+                        " or c == 25 or c == 21 or c == 5 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))
+    if BROKEN == "unpainted":
+        # 0.11.462's: the downloads panel added to the window, never painted.
+        text = changed(text, "  if not dlpanel.hidden then ui.paint_view(dlpanel, s, dlpanel.x, dlpanel.y) end\n", "")
+    if BROKEN == "underless":
+        # The menu never asks what is under the pointer.
+        text = changed(text, "  local u = web.under()\n  page.under = u\n",
+                       "  local u = { link = \"\", label = \"\", image = \"\", selected = \"\" }\n")
     if BROKEN == "nameless":
         # The Debug Kit never asked.
         text = changed(text, "debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
@@ -1706,7 +1774,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 42
+    checks = 44
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

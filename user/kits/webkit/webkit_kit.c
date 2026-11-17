@@ -405,6 +405,7 @@ static int v_state(lua_State *L)
     flag(L, 2, "crashed", st.happened & WEBKIT_CRASHED);
     flag(L, 2, "asked", st.happened & WEBKIT_ASKED);
     flag(L, 2, "inspector", st.happened & WEBKIT_INSPECTOR);
+    flag(L, 2, "hover", st.happened & WEBKIT_HOVER);
     flag(L, 2, "loading", st.loading);
     flag(L, 2, "can_back", st.can_back);
     flag(L, 2, "can_forward", st.can_forward);
@@ -732,6 +733,27 @@ static int v_inspecting(lua_State *L)
     return 1;
 }
 
+/* `v:under()`: what is under the pointer - `{ link, label, image,
+ * editable, selected }`, the strings "" where there is none. */
+static int v_under(lua_State *L)
+{
+    static struct webkit_under u;
+
+    webkit_under(id_of(L), &u);
+    lua_createtable(L, 0, 5);
+    lua_pushstring(L, u.link);
+    lua_setfield(L, -2, "link");
+    lua_pushstring(L, u.label);
+    lua_setfield(L, -2, "label");
+    lua_pushstring(L, u.image);
+    lua_setfield(L, -2, "image");
+    lua_pushboolean(L, u.editable);
+    lua_setfield(L, -2, "editable");
+    lua_pushstring(L, u.selected);
+    lua_setfield(L, -2, "selected");
+    return 1;
+}
+
 static int v_target(lua_State *L)
 {
     webkit_target(id_of(L), lua_toboolean(L, 2));
@@ -751,6 +773,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "damage", v_damage },
         { "shown", v_shown },
         { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
+        { "under", v_under },
         { NULL, NULL },
     };
     static const luaL_Reg fns[] = {

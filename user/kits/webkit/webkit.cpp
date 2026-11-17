@@ -31,6 +31,7 @@
 #include <WebKit/WKErrorRef.h>
 #include <WebKit/WKFrameInfoRef.h>
 #include <WebKit/WKFramePolicyListener.h>
+#include <WebKit/WKHitTestResult.h>
 #include <WebKit/WKInspector.h>
 #include <WebKit/WKNavigationActionRef.h>
 #include <WebKit/WKNavigationResponseRef.h>
@@ -142,6 +143,15 @@ struct View {
     bool loading = false;
     bool asked = false;             // a link followed, its load not begun
     bool becameDownload = false;    // its navigation is a download now
+    // **What is under the pointer** (`docs/webkit.html`, *The right
+    // button*): the link, its words, the picture and whether it is a field,
+    // as WebKit last said; and the words selected, asked of the page after
+    // each release of the button and each key.
+    char underLink[2048] { };
+    char underLabel[256] { };
+    char underImage[2048] { };
+    bool underEditable = false;
+    char selected[1024] { };
     WTF::MonotonicTime askedAt;
     char going[2048] { };
     long pid = 0;                   // its web process, the last one seen
@@ -1350,6 +1360,50 @@ void traceSummary(View* view, const char* how)
 WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef, WKNavigationActionRef, WKWindowFeaturesRef, const void*);
 void closePage(WKPageRef, const void*);
 
+// WebKit says what is under the pointer on every move; the view is told
+// only when it changed, so the status line's address costs nothing between.
+void movedOver(WKPageRef, WKHitTestResultRef hit, WKEventModifiers, WKTypeRef, const void* info)
+{
+    auto* view = viewOf(info);
+    char link[2048] = "", label[256] = "", image[2048] = "";
+    if (auto url = adoptWK(WKHitTestResultCopyAbsoluteLinkURL(hit)))
+        urlInto(url.get(), link, sizeof link);
+    if (auto words = adoptWK(WKHitTestResultCopyLinkLabel(hit)))
+        copy(words.get(), label, sizeof label);
+    if (auto url = adoptWK(WKHitTestResultCopyAbsoluteImageURL(hit)))
+        urlInto(url.get(), image, sizeof image);
+    bool editable = WKHitTestResultIsContentEditable(hit);
+    if (!strcmp(link, view->underLink) && !strcmp(image, view->underImage) && editable == view->underEditable)
+        return;
+    memcpy(view->underLink, link, sizeof link);
+    memcpy(view->underLabel, label, sizeof label);
+    memcpy(view->underImage, image, sizeof image);
+    view->underEditable = editable;
+    if (view->shown)
+        told(view, WEBKIT_HOVER);
+}
+
+// The words selected, asked of the page: the answer comes on WebKit's run
+// loop, to the view by its id, which may have closed meanwhile.
+void selectionArrived(WKTypeRef result, WKErrorRef, void* context)
+{
+    auto* view = views.find(static_cast<int>(reinterpret_cast<intptr_t>(context)));
+    if (!view)
+        return;
+    view->selected[0] = '\0';
+    if (result && WKGetTypeID(result) == WKStringGetTypeID())
+        copy(static_cast<WKStringRef>(result), view->selected, sizeof view->selected);
+}
+
+void askSelection(View* view)
+{
+    if (!view || !view->page)
+        return;
+    auto script = adoptWK(WKStringCreateWithUTF8CString("String(window.getSelection ? window.getSelection() : '')"));
+    WKPageEvaluateJavaScriptInMainFrame(view->page, script.get(),
+        reinterpret_cast<void*>(static_cast<intptr_t>(view->id)), selectionArrived);
+}
+
 /*
  * **A view, from a configuration**: the kit's own for one a caller makes,
  * and the one WebKit hands over for one a page opens - `target=_blank`,
@@ -1405,6 +1459,7 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     ui.getWindowFrame = getWindowFrame;
     ui.createNewPage = createNewPage;
     ui.close = closePage;
+    ui.mouseDidMoveOverElement = movedOver;
     WKPageSetPageUIClient(view->page, &ui.base);
 
     auto* made = view.get();
@@ -1786,6 +1841,20 @@ extern "C" void webkit_download_forget(int id)
     });
 }
 
+extern "C" int webkit_under(int id, struct webkit_under* out)
+{
+    auto* view = views.find(id);
+    memset(out, 0, sizeof *out);
+    if (!view)
+        return 0;
+    memcpy(out->link, view->underLink, sizeof out->link);
+    memcpy(out->label, view->underLabel, sizeof out->label);
+    memcpy(out->image, view->underImage, sizeof out->image);
+    out->editable = view->underEditable;
+    memcpy(out->selected, view->selected, sizeof out->selected);
+    return 1;
+}
+
 extern "C" int webkit_state(int id, struct webkit_state* out)
 {
     memset(out, 0, sizeof *out);
@@ -2044,6 +2113,8 @@ extern "C" void webkit_mouse(int id, enum webkit_mouse action, enum webkit_butto
     } else if (action == WEBKIT_RELEASE) {
         pointer.held &= ~heldBit(button);
         WKPageMouseKosmos(page, kWKKosmosMouseUp, button, pointer.held, x, y, pointer.clicks, modifiersOf(mods));
+        if (button == WEBKIT_LEFT)
+            askSelection(views.find(id));
     } else {
         // A move with a button held is a drag of that button, as WebKit has it.
         int moving = pointer.held & 1 ? WEBKIT_LEFT : pointer.held & 4 ? WEBKIT_MIDDLE : pointer.held & 2 ? WEBKIT_RIGHT : WEBKIT_NONE;
@@ -2121,7 +2192,7 @@ void send(WKPageRef page, const char* key, const char* dom, const char* text, in
 
 }
 
-extern "C" int webkit_key(int id, int c)
+static int keyInto(int id, int c)
 {
     auto page = input(views.find(id));
     if (!page)
@@ -2219,6 +2290,16 @@ extern "C" int webkit_key(int id, int c)
     }
     send(page, text, dom[0] ? dom : "Unidentified", text, virtualKey, mods);
     return 1;
+}
+
+// A key the page took may have changed what is selected - Control-A,
+// Shift with an arrow - so the page is asked again.
+extern "C" int webkit_key(int id, int c)
+{
+    int taken = keyInto(id, c);
+    if (taken)
+        askSelection(views.find(id));
+    return taken;
 }
 
 extern "C" void webkit_focus(int id, int focused)

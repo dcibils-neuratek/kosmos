@@ -31,6 +31,7 @@ enum webkit_happened {
     WEBKIT_CRASHED   = 1 << 5,     /* the web process ended */
     WEBKIT_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
     WEBKIT_INSPECTOR = 1 << 7,     /* its inspector came, went, or has a picture */
+    WEBKIT_HOVER     = 1 << 8,     /* what is under the pointer changed */
 };
 
 /*
@@ -153,6 +154,21 @@ struct webkit_download {
     char address[1024];            /* where it came from */
     char reason[256];              /* with FAILED, WebKit's words */
 };
+
+/*
+ * **What is under the pointer** (`docs/webkit.html`, *The right button*):
+ * a link, its words, a picture, whether it is a field - as WebKit last said,
+ * `WEBKIT_HOVER` when it changes - and the words selected, as the page said
+ * after the button's last release. 0 when there is no such view.
+ */
+struct webkit_under {
+    char link[2048];
+    char label[256];
+    char image[2048];
+    int editable;
+    char selected[1024];
+};
+int webkit_under(int id, struct webkit_under *out);
 
 void webkit_download_folder(const char *folder);
 /* Every download since JetSki began, the newest first; how many. */

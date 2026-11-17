@@ -190,6 +190,7 @@ function web.inspecting() return shown:inspecting() end
 function web.security() return shown:security() end
 function web.anyway() return shown:anyway() end
 function web.kept(n) return shown:kept(n) end
+function web.under() return shown:under() end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
@@ -946,7 +947,7 @@ end
 local st = {}                        -- `jetski.pump` fills it, every pass
 local page = { title = "", address = HOME, said = "", loading = false, going = "",
                progress = 0, can_back = false, can_forward = false, crash_asks = 0,
-               naming = false }
+               naming = false, under = { link = "", label = "", image = "", selected = "" } }
 
 local function say(text)
   page.said = text
@@ -1630,21 +1631,65 @@ more.on_click = function()
   })
 end
 
--- The page's right-click: the toolbar's three, and Web Inspector while the
--- developer features are on. *Inspect Element* - Elements opened on what
--- was under the pointer - waits for WebKit's context menus, which this
--- port builds without (`OptionsKosmos.cmake`).
+-- **The page's right-click** (`roadmap.md`, JetSki's features): what is
+-- under the pointer first - a link, a picture, the words selected - as
+-- WebKit's hit test and the page's own selection say, and then the
+-- toolbar's three and Web Inspector while the developer features are on.
+-- *Download the linked file* and *Save image as* wait for a way to start
+-- a download by its address, which WebKit's C API has not got.
+local copy_text = use("/Kosmos/Libraries/wmproto.lua").copy
+
+-- A tab of its own for an address, shown, as Safari's Command-click is not.
+local function in_new_tab(address)
+  local id = web.tab_new()
+  if not id then return end
+  print("jetski: a new tab for " .. address)
+  web.tab_select(id)
+  shown_changed()
+  visit(address)
+end
+
+local function quoted(words)
+  words = words:gsub("%s+", " "):match("^%s*(.-)%s*$")
+  if #words > 24 then words = words:sub(1, 23) .. "..." end
+  return words
+end
+
 function view:on_context(x, y)
-  local items = {
-    { text = "Back", disabled = not page.can_back, on_choose = function() web.back() end },
-    { text = "Forward", disabled = not page.can_forward, on_choose = function() web.forward() end },
-    { text = "Reload", on_choose = function() web.reload() end },
-  }
+  local u = web.under()
+  page.under = u
+  local items = {}
+  local function add(text, fn) items[#items + 1] = { text = text, on_choose = fn } end
+
+  if u.link ~= "" then
+    add("Open link in a new tab", function() in_new_tab(u.link) end)
+    add("Copy link", function() copy_text(u.link) say("copied " .. u.link) end)
+  end
+  if u.image ~= "" then
+    add("Open image in a new tab", function() in_new_tab(u.image) end)
+    add("Copy image address", function() copy_text(u.image) say("copied " .. u.image) end)
+  end
+  if u.selected:match("%S") then
+    add("Copy", function() copy_text(u.selected) say("copied the selection") end)
+    add(('Search for "%s"'):format(quoted(u.selected)), function()
+      local words = u.selected:gsub("%s+", " "):match("^%s*(.-)%s*$")
+      in_new_tab((prefs.SEARCH[setting.search] or prefs.SEARCH.duckduckgo)
+                 :format(prefs.form_encode(words)))
+    end)
+  end
+  if #items > 0 then items[#items + 1] = { separator = true } end
+
+  items[#items + 1] = { text = "Back", disabled = not page.can_back, on_choose = function() web.back() end }
+  items[#items + 1] = { text = "Forward", disabled = not page.can_forward, on_choose = function() web.forward() end }
+  items[#items + 1] = { text = "Reload", on_choose = function() web.reload() end }
   if DEVELOPER then
     items[#items + 1] = { text = inspecting and "Hide Web Inspector" or "Show Web Inspector",
                           on_choose = toggle_inspector }
   end
-  win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y, items)
+  local m = win:open_menu(win.origin_x + self.x + x, win.origin_y + self.y + y, items)
+  print(("jetski: the page's menu, %d items, link %s, image %s, selected %d, at %d,%d, rows of %d")
+        :format(#items, u.link ~= "" and u.link or "none", u.image ~= "" and u.image or "none",
+                #u.selected, m and m.x or 0, m and m.y or 0, m and m.row or 0))
   return true
 end
 forward.on_click = function() web.forward() end
@@ -1662,6 +1707,9 @@ local function status_text()
   if page.loading then
     return ("Loading %d%%"):format(math.floor(page.progress * 100 + 0.5))
   end
+
+  -- A link under the pointer: where it goes, as every browser's foot says.
+  if page.under.link ~= "" then return page.under.link end
 
   return page.said
 end
@@ -1707,7 +1755,7 @@ local inset = { gen = nil, view = nil }        -- gen nil: no inset shown
 
 local function page_clear()
   return settings_page.hidden and not crash and not refusal
-         and lockpanel.hidden and shieldpanel.hidden
+         and lockpanel.hidden and shieldpanel.hidden and dlpanel.hidden
 end
 
 local function inset_off()
@@ -1807,6 +1855,7 @@ local function frame(page_only)
     shieldpanel.h = shield_height()
     ui.paint_view(shieldpanel, s, shieldpanel.x, shieldpanel.y)
   end
+  if not dlpanel.hidden then ui.paint_view(dlpanel, s, dlpanel.x, dlpanel.y) end
 
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
@@ -2067,7 +2116,8 @@ do
     dlpanel.x = math.max(8, dlbutton.x + dlbutton.w - dlpanel.w)
     dlpanel.y = HEAD + 2
     dlpanel.hidden = false
-    print(("jetski: the downloads shown, %d"):format(dl_n))
+    print(("jetski: the downloads shown, %d, at %d,%d %dx%d"):format(dl_n,
+          (win.origin_x or 0) + dlpanel.x, (win.origin_y or 0) + dlpanel.y, dlpanel.w, dlpanel.h))
   end
 
   -- Every frame: whether the downloads changed enough to draw again. The
@@ -2194,6 +2244,11 @@ win.on_frame = function()
     changed = true
   end
   if not shieldpanel.hidden and st.picture then changed = true end
+  if st.hover then
+    local was = page.under.link
+    page.under = web.under()
+    if page.under.link ~= was then changed = true end
+  end
 
   -- How the page came, asked again whenever it may have changed.
   if st.committed or st.finished or st.started or st.failed or st.tab ~= page.came_tab then
@@ -2273,7 +2328,8 @@ win.on_frame = function()
   if changed then return true end
   if st.picture then
     if settings_page.hidden and not crash and not refusal and not inspecting
-       and lockpanel.hidden and shieldpanel.hidden and status_text() == status_drawn then
+       and lockpanel.hidden and shieldpanel.hidden and dlpanel.hidden
+       and status_text() == status_drawn then
       page_frame()
     else
       return true

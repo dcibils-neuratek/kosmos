@@ -35808,3 +35808,52 @@ page again on every key. So a long document's cost is `pageset`'s, and
 **Also**: a `line_icon` call in JetSki's downloads with the word `"done"`
 among its arguments failed `test_lineicons.py`, which reads a literal
 there as an icon's name; the icon is chosen on the line before.
+
+## 18.864 JetSki's right button
+
+**In short.** Diego's second of the browser's features (17 November, the
+order agreed). The right button on a page offers what is under the
+pointer first: a link's *Open link in a new tab* and *Copy link*, a
+picture's *Open image in a new tab* and *Copy image address*, selected
+words' *Copy* and *Search for "..."* (at the engine Settings chose, in a
+tab of its own) - then Back, Forward, Reload and Web Inspector as before.
+And the status line says where a link goes while the pointer is over it.
+
+**Where it comes from.** WebKit's UI client says what the pointer moved
+over (`mouseDidMoveOverElement`, a `WKHitTestResult`): the kit keeps the
+link's address and label, the picture's address and whether it is
+editable, and tells the pump `hover` only when one of them changed. The
+selection is not in the hit test, so the kit asks the page for it -
+`window.getSelection()` through `WKPageEvaluateJavaScriptInMainFrame` -
+after a left release and after any key the page took, and keeps the
+answer. `v:under()` hands the five over; JetSki builds the menu from them
+at the press, and prints it with where it opened and its rows' height.
+
+**Held by** `x86-jetski`'s `use` step: the right button over the test
+page's link must offer that link, the menu's first row must open
+`/other.html` in a new tab, whose title must arrive; the test's key
+closes that tab before the link is clicked. And `downloaded` now takes a
+picture before Control-J and after it: at least half of the panel's
+rectangle, as JetSki says where it put it, must have changed on the
+screen. 44 checks. Control `underless` (the menu never asks what is under
+the pointer) fails the menu's check; control `unpainted` (0.11.462's
+missing paint put back) fails the panel's.
+
+**Found on the way.** The step's new tab printed the second page's title
+before the old check waited for it, and that check counted from the run's
+start rather than from its click - so it returned before the click did
+anything, and "followed and not shown until the page came" failed. It
+counts from the click now. And 0.11.462's downloads panel was never drawn:
+JetSki paints its panels itself in a window it draws directly, and the
+downloads' was added to the window and not to the paint - Control-J said
+"the downloads shown, 3" and nothing appeared, and the step believed it.
+It is painted now, the page is no longer handed over as an inset while it
+is open, and the step looks at the screen. The `use` step also returned
+early on a failed click and threw away what it had already found, which
+the control's first run showed: its menu check vanished from the list.
+
+**Not yet**: *Download the linked file* and *Save image as*, which need a
+way to start a download by address that WebKit's C API has not got (a
+patch); *Copy image* itself, as pixels, which needs the clipboard to hold
+a picture; and the selection's Copy is capped at what the clipboard takes
+(1900 bytes).

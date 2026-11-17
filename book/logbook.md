@@ -4275,6 +4275,27 @@ Control-J lists them, with Cancel, Open, Show in Tracker and Retry.
 Pause is not there yet - the networking library WebKit uses here cannot
 pick a download up again from where it stopped.
 
+## 17 November 2026 - The right button
+
+**In short.** Right-clicking a page in JetSki now offers what you
+pointed at: a link can be opened in a new tab or copied, a picture's
+address the same, and selected words copied or searched for. Moving the
+pointer over a link shows where it goes at the foot of the window.
+
+**What.** WebKit tells the browser what the pointer is over every time it
+moves onto something new. The kit keeps that, and asks the page for the
+selected words whenever a click or a key might have changed them; the
+menu is built from both at the moment of the press.
+
+**Why it matters.** Opening a link in a tab of its own and copying an
+address are two of the things a browser is used for most, and without
+them every link was a one-way trip.
+
+**Found on the way.** The downloads panel added a day earlier had never
+appeared: JetSki paints its own panels, and that one had been added to
+the window without being added to the painting. Its test checked what
+JetSki *said*, not what was on the screen.
+
 ## 17 November 2026 - Write, taken apart
 
 **In short.** Kosmos Write's editor - the part that takes your typing,
