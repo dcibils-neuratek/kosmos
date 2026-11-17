@@ -266,7 +266,32 @@ webkit.zoom(setting.zoom)
 -- measuring JetSki's speed. On while `/Home/Settings/JetSki/trace` exists -
 -- `touch` it, and open JetSki again; `log webkit` reads what it said.
 local TRACE = "/Home/Settings/JetSki/trace"
-webkit.trace(fs.getattr(TRACE) ~= nil)
+local tracing = fs.getattr(TRACE) ~= nil
+webkit.trace(tracing)
+
+-- And the window's commits while traced (`testing.md` 18.853): how long
+-- `win:commit()` took, said with the kit's `webkit: frames` line - once a
+-- second has passed with none.
+local COUNTER_HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+local commits = { n = 0, sum = 0, most = 0, last = 0 }
+
+local function commit_timed(win)
+  if not tracing then return win:commit() end
+  local t0 = sys.ticks()
+  win:commit()
+  local now = sys.ticks()
+  local ms = (now - t0) * 1000 / COUNTER_HZ
+  commits.n, commits.sum = commits.n + 1, commits.sum + ms
+  if ms > commits.most then commits.most = ms end
+  commits.last = now
+end
+
+local function commits_said()
+  if commits.n == 0 or (sys.ticks() - commits.last) < COUNTER_HZ then return end
+  print(("jetski: frames committed %d, %.1f ms, most %.1f"):format(
+    commits.n, commits.sum / commits.n, commits.most))
+  commits.n, commits.sum, commits.most = 0, 0, 0
+end
 
 --------------------------------------------------------------------------
 -- The header: the kit's widgets, in this window's own pixels.
@@ -1612,7 +1637,7 @@ local function frame()
   s:fill(0, H - STAT, W, 1, theme.line)
   s:text(10, H - STAT + (STAT - gfx.height()) // 2, status_text(), theme.text_dim)
 
-  win:commit()
+  commit_timed(win)
 end
 
 win.on_paint = function() frame() end
@@ -1641,6 +1666,7 @@ win.poll_wait_ticks = 1
 
 win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
+  if tracing then commits_said() end
 
   -- Settings' tab is JetSki's: its name and address, whatever the view
   -- under it says.

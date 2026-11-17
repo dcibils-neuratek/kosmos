@@ -15,6 +15,7 @@
 
 #include "AuthenticationDecisionListener.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
+#include "KosmosFrameTimes.h"
 #include "NativeWebKeyboardEvent.h"
 #include "NativeWebMouseEvent.h"
 #include "NativeWebWheelEvent.h"
@@ -204,4 +205,14 @@ void WKPageGetSecurityKosmos(WKPageRef pageRef, WKSecurityKosmos* out)
 void WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(WKAuthenticationDecisionListenerRef listener)
 {
     protect(WebKit::toImpl(listener))->completeChallenge(WebKit::AuthenticationChallengeDisposition::PerformDefaultHandling);
+}
+
+void WKKosmosSetFramesTraced(bool on)
+{
+    WebKit::kosmosFramesTraced = on;
+}
+
+unsigned WKKosmosTakeIncorporated(double* average, double* most)
+{
+    return WebKit::kosmosTakeIncorporated(average, most);
 }

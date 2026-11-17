@@ -10171,7 +10171,12 @@ the applications make the system useful, and is not pulled forward.
     rather than made per update, the backing store scrolled in place, only
     damage drawn into the window and committed; **1c** the page drawn into
     the window by the GPU (`GPU_OP_BLIT`/`GPU_OP_DRAW`), the processor where
-    there is none. Each measured on the M700 before and after.
+    there is none. Each measured on the M700 before and after. **1a built in
+    0.11.454** (`testing.md` 18.853-18.854): `webkit: frames` lines with
+    the trace on, patch 0038 inside WebKit. Found: of a scrolled frame's
+    13.9 ms, about 2.5 are work and 11 waiting - JetSki runs WebKit only in
+    a slice after each poll of the window manager. No suite holds the
+    lines yet; one is owed if they stay.
   - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
     need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
     `testing.md` 18.846): Baseline and DFG together - on 64 bits the

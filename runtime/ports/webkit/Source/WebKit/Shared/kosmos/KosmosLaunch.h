@@ -33,6 +33,7 @@ struct KosmosLaunch {
     int32_t network;    // the network's capability, or -1
     int32_t console;    // the console's (`posix_console`), or -1
     int32_t audio;      // `/Devices/audio`'s (`audioclient.h`), or -1
+    uint32_t framesTraced; // a frame's time said in the log (`KosmosFrameTimes.h`)
     char cwd[STORAGE_PATH_MAX];
     struct storage_mount mount[STORAGE_MOUNTS_MAX];
 };

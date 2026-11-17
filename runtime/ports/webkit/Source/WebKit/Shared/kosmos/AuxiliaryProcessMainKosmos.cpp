@@ -14,6 +14,7 @@
 #include "AuxiliaryProcessMain.h"
 
 #include "AuxiliaryProcess.h"
+#include "KosmosFrameTimes.h"
 #include "KosmosLaunch.h"
 #include "NetworkProcessMain.h"
 #include "WebProcessMain.h"
@@ -74,6 +75,7 @@ extern "C" int kosmos_webkit_role(unsigned long role)
         net_client_start(launch.network);
     if (launch.audio >= 0)
         audio_client_start(launch.audio);
+    kosmosFramesTraced = launch.framesTraced;
 
     char identifier[24];
     snprintf(identifier, sizeof identifier, "%llu", static_cast<unsigned long long>(launch.processIdentifier));

@@ -1,0 +1,99 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A frame's time, traced (Kosmos docs/webkit.md, Fast, step 1a; testing.md
+18.854). While JetSki's trace is on - the UI process says so, and a web
+process hears it in its launch page - the web process times each
+display(): rendering (updateRendering and what follows it), the region
+made for the picture (ShareableBitmap::create and its handle), and
+painting it; and the UI process times the picture taken into its backing
+store (BackingStore::incorporateUpdate, a scroll's move of the store's
+pixels included). The tallies and the line they make are the port's
+(Shared/kosmos/KosmosFrameTimes.cpp); nothing here changes what is drawn.
+
+diff -ru a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp
+--- a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp	2026-11-17 07:39:26.804305481 -0300
++++ b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp	2026-11-17 07:39:46.925270370 -0300
+@@ -45,6 +45,11 @@
+ #include <wtf/glib/RunLoopSourcePriority.h>
+ #endif
+ 
++#if PLATFORM(KOSMOS)
++#include "KosmosFrameTimes.h"
++#include <wtf/MonotonicTime.h>
++#endif
++
+ namespace WebKit {
+ using namespace WebCore;
+ 
+@@ -139,7 +144,15 @@
+     } else
+         damageRegion = IntRect(IntPoint(), page->viewSize());
+ 
++#if PLATFORM(KOSMOS)
++    bool scrolled = !updateInfo.scrollRect.isEmpty();
++    auto began = kosmosFramesTraced ? MonotonicTime::now() : MonotonicTime();
++#endif
+     m_backingStore->incorporateUpdate(WTF::move(updateInfo));
++#if PLATFORM(KOSMOS)
++    if (kosmosFramesTraced)
++        kosmosUIIncorporated((MonotonicTime::now() - began).milliseconds(), scrolled);
++#endif
+     page->setViewNeedsDisplay(damageRegion);
+ }
+ #endif
+diff -ru a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 07:39:26.796976382 -0300
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 07:39:46.925138290 -0300
+@@ -48,7 +48,9 @@
+ #include <wtf/SetForScope.h>
+ 
+ #if PLATFORM(KOSMOS)
++#include "KosmosFrameTimes.h"
+ #include "LayerTreeHostKosmos.h"
++#include <wtf/MonotonicTime.h>
+ #endif
+ 
+ #if PLATFORM(PLAYSTATION)
+@@ -620,9 +622,15 @@
+     ASSERT(!m_layerTreeHost);
+ 
+     Ref webPage = m_webPage.get();
++#if PLATFORM(KOSMOS)
++    auto began = kosmosFramesTraced ? MonotonicTime::now() : MonotonicTime();
++#endif
+     webPage->updateRendering();
+     webPage->finalizeRenderingUpdate({ });
+     webPage->flushPendingEditorStateUpdate();
++#if PLATFORM(KOSMOS)
++    auto rendered = kosmosFramesTraced ? MonotonicTime::now() : MonotonicTime();
++#endif
+ 
+     // The layout may have put the page into accelerated compositing mode. If the LayerTreeHost is
+     // in charge of displaying, we have nothing more to do.
+@@ -649,6 +657,10 @@
+         updateInfo.bitmapHandle = WTF::move(*handle);
+     else
+         return;
++#if PLATFORM(KOSMOS)
++    auto regioned = kosmosFramesTraced ? MonotonicTime::now() : MonotonicTime();
++    bool scrolled = !m_scrollRect.isEmpty();
++#endif
+ 
+     auto rects = m_dirtyRegion.rects();
+     if (shouldPaintBoundsRect(bounds, rects)) {
+@@ -679,6 +691,15 @@
+ 
+     webPage->didUpdateRendering();
+ 
++#if PLATFORM(KOSMOS)
++    if (kosmosFramesTraced) {
++        auto painted = MonotonicTime::now();
++        kosmosWebFrame((rendered - began).milliseconds(), (regioned - rendered).milliseconds(),
++            (painted - regioned).milliseconds(), scrolled,
++            static_cast<unsigned long>(bitmapSize.width()) * bitmapSize.height());
++    }
++#endif
++
+     // Layout can trigger more calls to setNeedsDisplay and we don't want to process them
+     // until the UI process has painted the update, so we stop the timer here.
+     m_displayTimer.stop();

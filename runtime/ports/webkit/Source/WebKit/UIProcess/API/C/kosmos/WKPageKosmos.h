@@ -96,6 +96,14 @@ WK_EXPORT void WKPageGetSecurityKosmos(WKPageRef, struct WKSecurityKosmos*);
  */
 WK_EXPORT void WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(WKAuthenticationDecisionListenerRef);
 
+/*
+ * **A frame's time, traced** (`KosmosFrameTimes.h`): on before a page's
+ * process is started, it is timed too; and the updates the UI process took
+ * in since the last asking - how many, on average and the most, in ms.
+ */
+WK_EXPORT void WKKosmosSetFramesTraced(bool);
+WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most);
+
 #ifdef __cplusplus
 }
 #endif

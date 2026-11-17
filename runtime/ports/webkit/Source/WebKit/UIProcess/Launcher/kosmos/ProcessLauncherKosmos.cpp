@@ -18,6 +18,7 @@
 #include "ProcessLauncher.h"
 
 #include "IPCUtilities.h"
+#include "KosmosFrameTimes.h"
 #include "KosmosLaunch.h"
 #include <kosmos.h>
 #include "netclient.h"
@@ -65,6 +66,7 @@ void ProcessLauncher::launchProcess()
     launch.processIdentifier = m_launchOptions.processIdentifier.toUInt64();
     launch.mounts = 0;
     launch.network = -1;
+    launch.framesTraced = kosmosFramesTraced;
     strncpy(launch.cwd, storage_cwd(), sizeof launch.cwd - 1);
     for (unsigned i = 0; i < count; ++i) {
         if (!reachable(mounts[i], m_launchOptions.processType))

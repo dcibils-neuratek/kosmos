@@ -35248,3 +35248,59 @@ copying and a region made and unmade per update - neither of which a GPU
 removes. Found on the way: **`vncd` was not running** after the netboot
 with `opt/kosmos/vnc=control` (`open vncd` started it); and **a telnet
 connection runs `neofetch` for about 11 s** before its first command.
+
+## 18.853 A scrolled frame, timed (JetSki's GPU step 1a)
+
+With `/Home/Settings/JetSki/trace` on, the WebKit Kit now says one
+`webkit: frames` line once a second passes with no frame - a turn of the
+wheel to the picture it brought back (the web process painting, the hop,
+the UI process taking it in, together), and the page drawn into the window
+(`webkit_paint`) - and JetSki a `jetski: frames committed` line for
+`win:commit()`.
+
+**On the M700** (Wikipedia's BeOS page, 40 notches down):
+
+```
+webkit: frames view 1, 457 pictures in 20242 ms: wheel to picture 14.2 ms, most 18.4 (40);
+        drawn into the window 1.8 ms, most 3.8 (503)
+jetski: frames committed 503, 0.1 ms, most 2.0
+```
+
+**Fourteen of a scrolled frame's sixteen milliseconds are inside WebKit**,
+before JetSki has the picture; drawing it into the window is 1.8 and the
+commit 0.1. A GPU drawing the page into the window would take at most
+those 1.8 ms - so the next measurement splits the fourteen, in the web
+process (painting the strip that came into view, the region made for it,
+the send) and the UI process (`BackingStore::scroll` and
+`incorporateUpdate`). And `vncd` did not start at boot a second time, on
+the same build: not chance.
+
+## 18.854 Where the fourteen milliseconds go: waiting, not work
+
+Patch 0038 times inside WebKit, with the switch carried to a web process
+in its launch page (`KosmosLaunch.framesTraced`, since a web process has
+no `/Home`), and the port's `KosmosFrameTimes.cpp` keeping the tallies.
+**On the M700**, the same page and the same 40 notches:
+
+```
+webkit: frames painted 393 (40 scrolled) in 17517 ms, 44.9 Mpx: each 2.2 ms, most 69.2 -
+        rendering 1.1, most 65.1; region 0.13, most 1.83; painting 0.9, most 8.6
+webkit: frames view 1, 392 pictures in 18620 ms: wheel to picture 13.9 ms, most 19.9 (40);
+        taken in 0.3 ms, most 4.1 (392); drawn into the window 3.0 ms, most 503.9 (438)
+jetski: frames committed 438, 0.1 ms, most 1.3
+```
+
+**About 2.5 ms of a scrolled frame is work, and about 11 is waiting.**
+The web process renders, makes its region and paints in 2.2 ms; the UI
+process takes the picture in in 0.3 (a scroll's move of the store
+included) and draws it into the window in 3.0; the commit is 0.1. The
+region made per update, which 18.852's syscalls pointed at, is 0.13 ms.
+
+The waiting is JetSki's loop. It asks the window manager for news with a
+wait of one scheduler tick (`poll_wait_ticks = 1`, 4 ms at `TICK_HZ`
+250) and then runs WebKit for a slice (`web.pump(4)`), and WebKit's
+messages between the processes are only handled inside a slice - so a
+turn of the wheel goes to the web process in one pass, its picture is
+taken in during a later one, and it is drawn in the pass after that.
+Neither a copy taken out nor a GPU shortens that; a loop woken by either
+the window manager or WebKit's connection, whichever speaks first, would.

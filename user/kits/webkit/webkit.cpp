@@ -171,6 +171,17 @@ struct View {
     Vector<struct Load> loads;
     WTF::MonotonicTime traceFrom, lastReport;
     unsigned loadsDone = 0, loadsFailed = 0;
+
+    // Its frames, while traced (*A frame's time, traced*): a turn of the
+    // wheel to the picture it brought, and the page drawn into the window.
+    struct Times {
+        unsigned count = 0;
+        double sum = 0, most = 0;
+        void add(double ms) { count++; sum += ms; most = std::max(most, ms); }
+    } toPicture, drawn;
+    unsigned pictures = 0;
+    bool wheelWaiting = false;
+    WTF::MonotonicTime wheelAt, firstFrame, lastFrame;
 };
 
 /*
@@ -544,9 +555,51 @@ void didCrash(WKPageRef page, const void* info)
     told(view, WEBKIT_CRASHED);
 }
 
+/*
+ * **A frame's time, traced** (`webkit.md` *Fast*, step 1a; `testing.md`
+ * 18.853): with `webkit_trace` on, how long a turn of the wheel took to
+ * come back as a picture - the web process's painting, the hop and the UI
+ * process taking it in, together - and how long the page took to draw into
+ * the window, said as one line when a second passes with no frame.
+ */
+void frameSeen(View* view, WTF::MonotonicTime now)
+{
+    if (!view->pictures && !view->drawn.count)
+        view->firstFrame = now;
+    view->lastFrame = now;
+}
+
+void framesSaid(View* view, WTF::MonotonicTime now)
+{
+    if ((!view->pictures && !view->drawn.count) || now - view->lastFrame < 1_s)
+        return;
+    auto average = [](const View::Times& t) { return t.count ? t.sum / t.count : 0.0; };
+    double takenAverage, takenMost;
+    unsigned taken = WKKosmosTakeIncorporated(&takenAverage, &takenMost);
+    fprintf(stderr, "webkit: frames view %d, %u pictures in %.0f ms: wheel to picture %.1f ms, most %.1f (%u); "
+        "taken in %.1f ms, most %.1f (%u); drawn into the window %.1f ms, most %.1f (%u)\n",
+        view->id, view->pictures, (view->lastFrame - view->firstFrame).milliseconds(),
+        average(view->toPicture), view->toPicture.most, view->toPicture.count,
+        takenAverage, takenMost, taken,
+        average(view->drawn), view->drawn.most, view->drawn.count);
+    view->toPicture = { };
+    view->drawn = { };
+    view->pictures = 0;
+}
+
 void needsDisplay(WKViewRef, WKRect, const void* info)
 {
-    told(viewOf(info), WEBKIT_PICTURE);
+    auto* view = viewOf(info);
+    if (tracing && view) {
+        auto now = WTF::MonotonicTime::now();
+        frameSeen(view, now);
+        view->pictures++;
+        if (view->wheelWaiting) {
+            view->toPicture.add((now - view->wheelAt).milliseconds());
+            view->wheelWaiting = false;
+        }
+    }
+    told(view, WEBKIT_PICTURE);
 }
 
 // The inspector's view has a picture: its view's, said as the inspector's.
@@ -1289,6 +1342,7 @@ extern "C" void webkit_stop(int id)
 extern "C" void webkit_trace(int on)
 {
     tracing = on;
+    WKKosmosSetFramesTraced(on);    // and a page's process, when it starts
 }
 
 extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
@@ -1314,9 +1368,12 @@ extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
         views.slice->stop();
     }
 
-    // A traced page still loading: what it waits on, every five seconds.
+    // A traced page still loading: what it waits on, every five seconds;
+    // and its frames, once they have stopped for a second.
     if (tracing) {
         auto now = WTF::MonotonicTime::now();
+        for (auto& each : views.all)
+            framesSaid(each.get(), now);
         for (auto& each : views.all) {
             if (each->loading && now - each->lastReport >= 5_s) {
                 each->lastReport = now;
@@ -1497,8 +1554,17 @@ extern "C" int webkit_crash(int id, struct webkit_crash* out)
 
 extern "C" void webkit_paint(int id, uint32_t* pixels, unsigned width, unsigned height, unsigned pitch)
 {
-    if (auto page = pageOf(id))
-        WKPagePaintKosmos(page, pixels, width, height, pitch, WKRectMake(0, 0, width, height));
+    auto page = pageOf(id);
+    if (!page)
+        return;
+    auto* view = tracing ? views.find(id) : nullptr;
+    auto from = view ? WTF::MonotonicTime::now() : WTF::MonotonicTime();
+    WKPagePaintKosmos(page, pixels, width, height, pitch, WKRectMake(0, 0, width, height));
+    if (view) {
+        auto now = WTF::MonotonicTime::now();
+        frameSeen(view, now);
+        view->drawn.add((now - from).milliseconds());
+    }
 }
 
 //
@@ -1564,9 +1630,14 @@ extern "C" void webkit_mouse(int id, enum webkit_mouse action, enum webkit_butto
 //
 extern "C" void webkit_wheel(int id, int x, int y, int notches, unsigned mods)
 {
-    auto page = input(views.find(id));
+    auto* view = views.find(id);
+    auto page = input(view);
     if (!page || !notches)
         return;
+    if (tracing && !view->wheelWaiting) {
+        view->wheelAt = WTF::MonotonicTime::now();
+        view->wheelWaiting = true;
+    }
     float ticks = notches, pixels = notches * 3 * 40;
     if (mods & 1)
         WKPageWheelKosmos(page, x, y, pixels, 0, ticks, 0, modifiersOf(mods & ~1u));
