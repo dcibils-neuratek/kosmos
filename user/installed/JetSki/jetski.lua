@@ -2013,7 +2013,8 @@ do
         x = x - 14
       end
       local room = x - 14 - 8
-      g:line_icon(14, y + 10, d.state == "done" and "document" or "downloads",
+      local finished = d.state == "done"
+      g:line_icon(14, y + 10, finished and "document" or "downloads",
                   d.state == "failed" and theme.text_dim or theme.text)
       g:text(38, y + 8, ui.fitted(d.name ~= "" and d.name or d.address, room - 24), theme.text, nil, "ui")
       g:text(38, y + 28, ui.fitted(dl_words(d), room - 24), theme.text_dim)

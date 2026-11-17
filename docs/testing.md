@@ -35777,3 +35777,34 @@ file*, which needs a WebKit patch (no C entry point starts a download by
 address); and the folder in Settings, which is `/Home/Downloads` until
 then. The list drops from the button, as the padlock's and the shield's
 panels do, rather than being a window of its own as drawn.
+
+## 18.863 Write's parts made kits (office O1)
+
+**In short.** The first step of the office plan (`docs/office.md` O1,
+agreed 17 November: "yes to all, start with write"): what Mail, Sheets
+and Present will need of Kosmos Write is out of `writer.lua` and in five
+kits in `/Kosmos/Libraries` - `textedit.lua` (a rich-text body with a
+caret: keys, selection, drag, undo), `pagedesk.lua` (pages on a desk,
+zoom, thumbnails), `inspector.lua` (the Format panel's parts),
+`toolbar.lua` (`pk.toolbar`, the tools row) and `chart.lua` (a chart's
+kinds, plan and part, as a door to what `pageset` and `docxwrite` still
+hold). `writer.lua` went from 2797 lines to 1652. Written by the office
+lane; built and gated here.
+
+**Held by** Write's suites unchanged - `arm-write` and `arm-writeapp`,
+every string they look for still said, the window's pixels as before -
+and a new host test, `tools/test_textedit.lua`, 63 checks over the kit
+alone: typing, deleting, formatting, undo and redo, the caret's moves.
+It caught a defect before anything booted: the undo lists were first
+`ed.undo` and `ed.redo`, the methods' own names.
+
+**The keystroke measured**, as `office.md` asked before anything moved:
+on this Mac, typing in the middle of 100 pages is 1.5 ms a key - the
+edit 0.03 ms, the pages set again 1.47 ms, about 1 MB allocated, nearly
+all in `pageset.set`, which keeps each paragraph's lines but builds every
+page again on every key. So a long document's cost is `pageset`'s, and
+`write.md`'s claim that setting stops early is not yet true of the code.
+
+**Also**: a `line_icon` call in JetSki's downloads with the word `"done"`
+among its arguments failed `test_lineicons.py`, which reads a literal
+there as an icon's name; the icon is chosen on the line before.

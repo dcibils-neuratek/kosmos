@@ -123,6 +123,11 @@ all, start with write". So every recommendation in those documents'
 questions is decided as recommended, and the order is:
 - **O1** - the moves out of Write (`textedit`, `inspector`, `pagedesk`,
   `pk.toolbar`, `chart.lua`), Write's suites unchanged as the proof.
+  **Built in 0.11.463** (`testing.md` 18.863). Its second half - the
+  chart's plan out of `pageset.lua` and `docxwrite.lua` into `chart.lua`,
+  `pk.toolbar` into `pixelkit.lua` - and `pageset` setting only the pages
+  a key changed (1.5 ms a key in 100 pages, nearly all of it there) come
+  with R1.
 - **Write R1** with **O2** (find and replace), **O3** (the Spelling Kit,
   our own over Hunspell's dictionaries expanded at build time; US English
   and one Spanish) and **O4** (kept copies every 30 s, previews,

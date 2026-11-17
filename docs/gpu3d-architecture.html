@@ -1,0 +1,191 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  A 3D API for Kosmos, as one picture: the programs on top, the GL, EGL and
+  Vulkan Kits as their doors, Mesa's drivers in each program's own process
+  meeting Kosmos at a KMD backend of its own, intelgpu as the GPU server
+  with contexts and a page table per program, Nebula unchanged beneath, and
+  the hardware per machine. A frame of a Vulkan program drawn through it
+  (F). Drawn on 17 November 2026, before any of it is built;
+  `docs/gpu3d.md` is the argument.
+
+  Rendered to docs/gpu3d-architecture.png by headless Chrome at twice its size, as
+  docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/gpu3d-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/gpu3d-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A 3D API for Kosmos - architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --up: #f6f1f8; --up-line: #d2b6dc; --up-ink: #6a2f7a;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --gpu: #f3ecfd; --gpu-line: #c4a8ef; --gpu-ink: #4b2a8a;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1050px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 390px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .88; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .up { background: var(--up); border-color: var(--up-line); } .up h2 { color: var(--up-ink); } .up .box { border-color: var(--up-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 40%; }
+</style>
+</head>
+<body>
+<h1>A 3D API for Kosmos - what it stands on</h1>
+<p class="sub">Vulkan is the contract every GPU driver supplies, and Mesa supplies it; GL and GL ES come from Zink on top, so there is one GL on every machine. Mesa runs in each program's own process and meets Kosmos at its KMD seam, speaking a declared protocol to <code>intelgpu</code> - no ioctl, no DRM shim. <code>lavapipe</code> gives the whole API in QEMU first; on the M700 only the bottom changes. Nebula gains nothing. Recommended answers drawn; <code>gpu3d.md</code> has the others.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--later);background:#fff;border-style:dashed"></i>later</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>programs</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>kits and Kosmos glue (C, in the program)</span>
+  <span><i style="border-color:var(--up-line);background:var(--up)"></i>Mesa, fetched (in the program)</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>the GPU</span>
+  <span class="f">F</span><span>a frame of a Vulkan program on the M700</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Programs</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>cube3d, glgears and TinyGL's demos</b><p>GL 1.1 programs, run unchanged on Mesa's GL (G4)</p></div>
+        <div class="box new"><span class="tag">G3</span><b>vkcube, Vulkan programs</b><p>records, submits <span class="f">F1</span>, presents <span class="f">F5</span></p></div>
+        <div class="box new"><span class="tag">G5</span><b>JetSki: WebGL</b><p>WebKit's ANGLE over the EGL Kit's GL ES; Skia's GPU path, measured</p></div>
+        <div class="box later-box"><span class="tag later">G8</span><b>Quake GL, SDL, Godot</b><p>installed in <code>/Home/Apps</code>, each with its own copy</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">later</span><b>Cafesa3D's Solid view</b><p>the 3D Kit's scene drawn by Vulkan; Lua's door stays the kit</p></div>
+        <div class="box later-box"><span class="tag later">G9</span><b>Astra's GPU compositor</b><p>7d on the driver's own <code>draw</code> now; a Vulkan program later; samples swapchain images <span class="f">F6</span></p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>The doors and Kosmos's glue (C, in the program)</h2>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="box new"><span class="tag">G4</span><b>the GL Kit</b><p>GL 4.6 and GL ES 3.2 from Mesa; <code>kosmos_gl_run</code> and <code>use("/Kosmos/Kits/gl")</code> keep their calls; TinyGL retired</p></div>
+        <div class="box new"><span class="tag">G4</span><b>the EGL Kit, with a display</b><p>a Kosmos EGL platform; WebKit and Skia unpatched</p></div>
+        <div class="box new"><span class="tag">G2</span><b>the Vulkan Kit</b><p><code>vulkan.h</code>; every driver linked in, chosen at <code>vkCreateInstance</code> - no loader, no <code>dlopen</code></p></div>
+      </div>
+      <div class="row" style="grid-template-columns:repeat(3,1fr);margin-top:10px">
+        <div class="box new"><span class="tag">G7</span><b><code>anv_kosmos.c</code> - the KMD backend</b><p>Mesa's ten hooks: buffers as regions, bind, exec - as a message each</p></div>
+        <div class="box new"><span class="tag">G3</span><b><code>VK_KHR_kosmos_surface</code></b><p>the swapchain into a window: a shared surface, or a GPU buffer</p></div>
+        <div class="box new"><span class="tag">G6</span><b>a <code>vk_sync</code> of fences</b><p>a timeline read from the fence page; sleep by pulse</p></div>
+      </div>
+    </div>
+    <div class="layer up"><h2>Mesa 26.2.5, fetched and built by its Meson (C and C++, in the program)</h2>
+      <div class="row" style="grid-template-columns:1fr 1.2fr 1fr">
+        <div class="box new"><span class="tag">G4</span><b>Zink + the GL frontend</b><p>GL and GL ES on any Vulkan driver</p></div>
+        <div class="box new"><span class="tag">G7</span><b><code>anv</code> + the Intel compiler</b><p>Gen9 and Gen12; NIR to the GPU's instructions, in the process - data, no JIT</p></div>
+        <div class="box new"><span class="tag">G2</span><b><code>lavapipe</code> + LLVM</b><p>the processor's Vulkan, everywhere; shaders compiled into a region mapped twice</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">later</span><b><code>v3dv</code></b><p>the Pi 5</p></div>
+        <div class="box later-box"><span class="tag later">later</span><b><code>radv</code></b><p>the Mac Pro; its winsys seam</p></div>
+        <div class="box later-box"><span class="tag later">later</span><b><code>venus</code></b><p>QEMU with virglrenderer</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers and drivers</h2>
+      <div class="row" style="grid-template-columns:1.6fr 1fr">
+        <div class="box new"><span class="tag">G6</span><b><code>intelgpu</code> at <code>/Devices/gpu</code> - the GPU server</b><p>execlists for the legacy ring; a hardware context and a 48-bit page table per client; <code>QUERY</code>, <code>CONTEXT_NEW</code>, <code>BIND</code>, <code>EXEC</code>, <code>FENCE_WAIT</code> in <code>gpuproto.h</code> <span class="f">F2</span>; priority bands, preemption, a hang timer and reset; fence pages and pulses <span class="f">F4</span>. Keeps the display, flips, the blitter and the Compute Kit's runs</p></div>
+        <div class="box"><b>the window manager</b><p>takes "image k is live, after fence N" <span class="f">F5</span>, as it takes a surface now; flips a full-screen game's image</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula - nothing new</h2>
+      <div class="row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="box"><b>regions by capability</b><p>buffer objects; sharing is handing the capability</p></div>
+        <div class="box"><b><code>SYS_MEM_PHYS</code>, <code>SYS_DEV_MAP</code></b><p>pages for the GPU's tables; the BAR</p></div>
+        <div class="box"><b>pulses, interrupts</b><p>fences without a reply; MSI as a capability</p></div>
+        <div class="box"><b><code>MEM_MAP_RX</code>, write-combining</b><p>LLVM's code; scanout buffers</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr;margin-top:10px">
+        <div class="box later-box"><span class="tag later">open</span><b>an IOMMU</b><p>none for now, as storage: clients cannot write past their page tables, the server's own mistakes could</p></div>
+      </div>
+    </div>
+    <div class="layer gpu"><h2>The GPU, by machine</h2>
+      <div class="row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="box new"><span class="tag">G2</span><b>QEMU</b><p>the processor's cores, by <code>lavapipe</code>; virtio-gpu 2D</p></div>
+        <div class="box new"><span class="tag">G7</span><b>M700</b><p>HD 530, Gen9, 24 EUs - <code>anv</code> <span class="f">F3</span></p></div>
+        <div class="box later-box"><span class="tag later">next</span><b>T14</b><p>Iris Xe, Gen12 - <code>anv</code></p></div>
+        <div class="box later-box"><span class="tag later">board</span><b>Pi 5</b><p>VideoCore VII - <code>v3dv</code></p></div>
+        <div class="box later-box"><span class="tag later">last</span><b>Mac Pro</b><p>FirePro, GCN 1.0 - <code>radv</code></p></div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>F - a frame on the M700</h3><ol>
+      <li><span class="f">F1</span> the program records; Mesa writes the batch into a region bound in its context.</li>
+      <li><span class="f">F2</span> <code>vkQueueSubmit</code>: one message, <code>GPU_OP_EXEC</code> - where the batch is, the waits, the value to signal. Answered at once.</li>
+      <li><span class="f">F3</span> the context on the submission port; the GPU draws into the swapchain image, in the program's own address space.</li>
+      <li><span class="f">F4</span> the fence page written, the interrupt; a pulse to whoever waits.</li>
+      <li><span class="f">F5</span> <code>vkQueuePresentKHR</code>: one message to the window manager, the image and its fence.</li>
+      <li><span class="f">F6</span> the GPU compositor samples it at the next refresh - or a full-screen game's image is flipped.</li></ol></div>
+    <div class="card"><h3>What crosses where</h3><table>
+      <tr><td>Command buffers</td><td>regions bound in the context - never messages</td></tr>
+      <tr><td>Vertices, textures, images</td><td>regions; shared by capability</td></tr>
+      <tr><td>A submission</td><td>one message, a fixed shape</td></tr>
+      <tr><td>A fence</td><td>a value in a page; a pulse to wake</td></tr>
+      <tr><td>Shaders</td><td>compiled in the program; GPU code is data</td></tr>
+      <tr><td>Isolation</td><td>a page table per context: the capability rule on the GPU</td></tr></table></div>
+    <div class="card"><h3>Who else uses what is new</h3><table>
+      <tr><td>Contexts and page tables</td><td>the Compute Kit, the GPU compositor, video decode</td></tr>
+      <tr><td>Fence pages and pulses</td><td>every engine: blitter, video, render</td></tr>
+      <tr><td>LLVM on Kosmos</td><td>anything else that compiles at run time</td></tr>
+      <tr><td>The EGL Kit's display</td><td>WebKit, Skia, SDL, every GL ES port</td></tr></table></div>
+    <div class="card"><h3>Steps</h3><table>
+      <tr><td>G1</td><td>Mesa and LLVM build for Kosmos</td></tr>
+      <tr><td>G2</td><td><code>lavapipe</code>, headless, in QEMU</td></tr>
+      <tr><td>G3</td><td>a window: <code>vkcube</code></td></tr>
+      <tr><td>G4</td><td>GL by Zink; TinyGL retired</td></tr>
+      <tr><td>G5</td><td>WebGL in JetSki</td></tr>
+      <tr><td>G6</td><td><code>intelgpu</code>: execlists, contexts, PPGTT</td></tr>
+      <tr><td>G7</td><td><code>anv</code> on the M700</td></tr>
+      <tr><td>G8</td><td>GL and WebGL on the M700</td></tr>
+      <tr><td>G9</td><td>sharing, preemption, presenting</td></tr></table></div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

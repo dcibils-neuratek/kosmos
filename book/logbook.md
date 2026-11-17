@@ -4274,3 +4274,21 @@ at the moment it chose.
 Control-J lists them, with Cancel, Open, Show in Tracker and Retry.
 Pause is not there yet - the networking library WebKit uses here cannot
 pick a download up again from where it stopped.
+
+## 17 November 2026 - Write, taken apart
+
+**In short.** Kosmos Write's editor - the part that takes your typing,
+moves the caret and remembers what to undo - and its page view, its
+formatting panel, its toolbar and its charts were all inside Write. They
+are now separate pieces any application can use, so Mail's new
+composer, a spreadsheet and a presentation program will share them
+instead of copying them. Write works exactly as before.
+
+**How it was done.** By a second worker beside this one - a "lane" -
+which may only touch its own files and never builds or commits; this
+session built the system and ran Write's tests on it before taking it in.
+
+**What it found.** Typing one letter into the middle of a 100-page
+document takes 1.5 ms here, and nearly all of that is laying out the
+pages again - every page, on every key. That is the next thing to fix for
+long documents.

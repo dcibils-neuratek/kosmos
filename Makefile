@@ -5831,6 +5831,7 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# Its pages (W2): lines broken and placed, pages filled without a
 	@# line left alone, and which face a look is set in.
 	$(HOSTDIR)/lua tools/test_pageset.lua
+	$(HOSTDIR)/lua tools/test_textedit.lua
 	@# Its hyphenation (W4e) and its DOCX (W6).
 	$(HOSTDIR)/lua tools/test_hyphen.lua
 	$(HOSTDIR)/lua tools/test_docx.lua
