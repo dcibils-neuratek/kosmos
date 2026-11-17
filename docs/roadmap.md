@@ -10176,7 +10176,19 @@ the applications make the system useful, and is not pulled forward.
     the trace on, patch 0038 inside WebKit. Found: of a scrolled frame's
     13.9 ms, about 2.5 are work and 11 waiting - JetSki runs WebKit only in
     a slice after each poll of the window manager. No suite holds the
-    lines yet; one is owed if they stay.
+    lines yet; one is owed if they stay. **Then the waiting, first - AGREED 17
+    November** (Diego, "Fix the waiting first", over 1b and 1c): JetSki
+    woken as soon as either the window manager or WebKit has news, rather
+    than polling and running WebKit in slices; then 1b and 1c as agreed. **Built
+    in 0.11.455** (`testing.md` 18.855): a connection's news pulses the
+    window manager, which answers JetSki's poll - wheel to picture 14.1 ms
+    to 9.4 on the M700, idle still idle. Found on the way and fixed: WTF's
+    `MonotonicTime` was the wall clock on Kosmos (patch 0040). Still owed:
+    a suite that holds the wake (a control that leaves the code out and
+    sees the slice late), and `poll_wait_ticks` lengthened once WebKit's
+    own timers also wake the window. And `x86-automate` failed once under the
+    whole gate's load (0.11.455's prepush: telnetd not listening within
+    120 s) and passed alone in 75 s - a load flake beside `x86-ahci`'s.
   - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
     need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
     `testing.md` 18.846): Baseline and DFG together - on 64 bits the

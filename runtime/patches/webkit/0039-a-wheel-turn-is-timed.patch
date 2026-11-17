@@ -1,0 +1,34 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A turn of the wheel, traced (Kosmos testing.md 18.855). With 0038's trace
+on, the web process notes when a wheel event reaches its main thread,
+against the time the UI process turned it; the port's
+KosmosFrameTimes.cpp times the display that answers it from there and
+says a `webkit: wheels` line. Nothing here changes what is done with the
+event.
+
+diff -ru a/Source/WebKit/WebProcess/WebPage/WebPage.cpp b/Source/WebKit/WebProcess/WebPage/WebPage.cpp
+--- a/Source/WebKit/WebProcess/WebPage/WebPage.cpp	2026-11-17 09:17:58.341281874 -0300
++++ b/Source/WebKit/WebProcess/WebPage/WebPage.cpp	2026-11-17 09:18:17.991241264 -0300
+@@ -518,6 +518,10 @@
+ #include "RemoteMediaSessionManager.h"
+ #endif
+ 
++#if PLATFORM(KOSMOS)
++#include "KosmosFrameTimes.h"
++#endif
++
+ #if __has_include(<WebKitAdditions/WebPreferencesDefaultValuesAdditions.h>)
+ #include <WebKitAdditions/WebPreferencesDefaultValuesAdditions.h>
+ #endif
+@@ -4173,6 +4177,10 @@
+ 
+ std::pair<HandleUserInputEventResult, OptionSet<EventHandling>> WebPage::wheelEvent(const FrameIdentifier& frameID, const WebWheelEvent& wheelEvent, OptionSet<WheelEventProcessingSteps> processingSteps)
+ {
++#if PLATFORM(KOSMOS)
++    if (kosmosFramesTraced)
++        kosmosWebWheelOnMain(wheelEvent.timestamp());
++#endif
+     m_internals->userActivity.impulse();
+ 
+     CurrentEvent currentEvent(wheelEvent);

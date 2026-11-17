@@ -68,6 +68,7 @@ list(APPEND WebKit_SOURCES
 
     Shared/kosmos/AuxiliaryProcessMainKosmos.cpp
     Shared/kosmos/KosmosFrameTimes.cpp
+    Shared/kosmos/KosmosWake.cpp
 
     WebProcess/InjectedBundle/kosmos/InjectedBundleKosmos.cpp
 

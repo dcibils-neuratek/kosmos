@@ -1,0 +1,48 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+WTF's monotonic clocks from Kosmos's monotonic clock (Kosmos testing.md
+18.855). Kosmos was none of the systems CurrentTime.cpp names, so
+MonotonicTime, ContinuousTime and ContinuousApproximateTime fell through
+to the wall clock, held to never go back by a static every thread shares.
+Each process works its wall clock out from a date in whole seconds read
+when it starts, so two processes' "monotonic" times differed by up to a
+second - a wheel event's timestamp read 487 ms in the web process's
+future - and every timer in WebKit ran on the date. CLOCK_MONOTONIC is
+Nebula's counter, the same in every process and never set.
+
+diff -ru a/Source/WTF/wtf/CurrentTime.cpp b/Source/WTF/wtf/CurrentTime.cpp
+--- a/Source/WTF/wtf/CurrentTime.cpp	2026-11-17 09:22:17.606441258 -0300
++++ b/Source/WTF/wtf/CurrentTime.cpp	2026-11-17 09:22:17.620088675 -0300
+@@ -303,7 +303,7 @@
+     return fromMachAbsoluteTime(mach_absolute_time());
+ #elif OS(FUCHSIA)
+     return fromRawSeconds(zx_clock_get_monotonic() / static_cast<double>(ZX_SEC(1)));
+-#elif OS(LINUX) || OS(FREEBSD) || OS(OPENBSD) || OS(NETBSD)
++#elif OS(LINUX) || OS(FREEBSD) || OS(OPENBSD) || OS(NETBSD) || OS(KOSMOS)
+     struct timespec ts { };
+     clock_gettime(CLOCK_MONOTONIC, &ts);
+     return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);
+@@ -348,6 +348,11 @@
+     struct timespec ts { };
+     clock_gettime(CLOCK_BOOTTIME, &ts);
+     return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);
++#elif OS(KOSMOS)
++    // Nebula's counter does not stop: nothing here sleeps the machine.
++    struct timespec ts { };
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);
+ #else
+     static double lastTime = 0;
+     double currentTimeNow = currentTime();
+@@ -366,6 +371,11 @@
+     struct timespec ts { };
+     clock_gettime(CLOCK_BOOTTIME, &ts);
+     return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);
++#elif OS(KOSMOS)
++    // Nebula's counter does not stop: nothing here sleeps the machine.
++    struct timespec ts { };
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return fromRawSeconds(static_cast<double>(ts.tv_sec) + ts.tv_nsec / 1.0e9);
+ #else
+     static double lastTime = 0;
+     double currentTimeNow = currentTime();

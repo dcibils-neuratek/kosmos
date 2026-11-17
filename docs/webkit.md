@@ -380,7 +380,13 @@ numbers):
   changed drawn into the window and committed; **1c** then the page drawn
   into the window by the GPU's blitter or render engine
   (`GPU_OP_BLIT`/`GPU_OP_DRAW`), with the processor where there is no GPU.
-  Compositing WebKit's own layers waits for a GL or Vulkan driver.
+  Compositing WebKit's own layers waits for a GL or Vulkan driver. And
+  **before 1b, the waiting** (Diego, the same day, after 18.854 found a
+  scrolled frame 2.5 ms of work in 13.9): JetSki woken by whichever of the
+  window manager and WebKit speaks first - **built in 0.11.455**
+  (`testing.md` 18.855): wheel to picture 14.1 ms to 9.4 on the M700,
+  what is left being work - the strip painted, 5.6 ms, and the page drawn
+  into the window, 3.0 - which is 1b's and 1c's.
 
 ## Decided by Diego, 11 November 2026
 

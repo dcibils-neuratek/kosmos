@@ -216,6 +216,14 @@ static int l_zoom(lua_State *L)
     return 0;
 }
 
+/* webkit.wake(door, code) - the window manager's door and the window's
+ * code from `watch_code`: WebKit's news then wakes the window's poll. */
+static int l_wake(lua_State *L)
+{
+    webkit_wake((long)luaL_checkinteger(L, 1), (unsigned)luaL_checkinteger(L, 2));
+    return 0;
+}
+
 static int l_trace(lua_State *L)
 {
     webkit_trace(lua_toboolean(L, 1));
@@ -572,7 +580,7 @@ void kosmos_webkit_kit(lua_State *L)
     static const luaL_Reg fns[] = {
         { "view", l_view },       { "adopt", l_adopt },     { "pump", l_pump },
         { "views", l_views },     { "frame", l_frame },     { "developer", l_developer },
-        { "trace", l_trace },
+        { "trace", l_trace },     { "wake", l_wake },
         { "settings", l_settings }, { "zoom", l_zoom },
         { "said", l_said },       { "allow", l_allow },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },

@@ -16,6 +16,7 @@
 #include "AuthenticationDecisionListener.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
 #include "KosmosFrameTimes.h"
+#include "KosmosWake.h"
 #include "NativeWebKeyboardEvent.h"
 #include "NativeWebMouseEvent.h"
 #include "NativeWebWheelEvent.h"
@@ -212,7 +213,12 @@ void WKKosmosSetFramesTraced(bool on)
     WebKit::kosmosFramesTraced = on;
 }
 
-unsigned WKKosmosTakeIncorporated(double* average, double* most)
+void WKKosmosOnMessages(void (*told)(void))
 {
-    return WebKit::kosmosTakeIncorporated(average, most);
+    WebKit::kosmosOnMessages(told);
+}
+
+unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost)
+{
+    return WebKit::kosmosTakeIncorporated(average, most, fromRing, fromRingMost);
 }

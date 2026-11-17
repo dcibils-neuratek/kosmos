@@ -102,7 +102,13 @@ WK_EXPORT void WKAuthenticationDecisionListenerPerformDefaultHandlingKosmos(WKAu
  * in since the last asking - how many, on average and the most, in ms.
  */
 WK_EXPORT void WKKosmosSetFramesTraced(bool);
-WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most);
+
+/*
+ * **Told when a connection has news** (`KosmosWake.h`): `told` is called
+ * on a receiving thread after messages arrive, and must not block.
+ */
+WK_EXPORT void WKKosmosOnMessages(void (*told)(void));
+WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost);
 
 #ifdef __cplusplus
 }

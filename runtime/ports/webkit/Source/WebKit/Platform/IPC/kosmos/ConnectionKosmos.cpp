@@ -47,6 +47,8 @@
 
 #include "Decoder.h"
 #include "Encoder.h"
+#include "KosmosFrameTimes.h"
+#include "KosmosWake.h"
 #include "Logging.h"
 #include <kosmos.h>
 #include <wtf/StdLibExtras.h>
@@ -270,12 +272,17 @@ bool Connection::readRing()
     auto& written = control(m_rings).written[which].value;
     auto& read = control(m_rings).read[which].value;
     uint8_t* bytes = ring(m_rings, which);
+    bool handed = false;
 
     while (true) {
         uint64_t end = written.load();
         uint64_t at = read.load();
-        if (at == end)
+        if (at == end) {
+            // Said once for all of them, after the last is handed on.
+            if (handed)
+                WebKit::kosmosMessagesArrived();
             return true;
+        }
         if (end - at > ringBytes || (at & 7))
             return false;
 
@@ -329,7 +336,10 @@ bool Connection::readRing()
 
         if (!decoder)
             return false;
+        if (WebKit::kosmosFramesTraced)
+            WebKit::kosmosRecordRead();
         processIncomingMessage(makeUniqueRefFromNonNullUniquePtr(WTF::move(decoder)));
+        handed = true;
     }
 }
 

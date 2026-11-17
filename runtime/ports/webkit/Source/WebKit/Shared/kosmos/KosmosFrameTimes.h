@@ -1,7 +1,7 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * **A frame's time, traced** (`webkit.md` *Fast*, step 1a; `testing.md`
- * 18.853-18.854): while JetSki's trace is on, the web process times each
+ * 18.853-18.855): while JetSki's trace is on, the web process times each
  * `display()` - rendering (style, layout), the region made for the picture,
  * and painting it - and the UI process the picture taken into its backing
  * store (`incorporateUpdate`, a scroll's move included). The web process
@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <wtf/MonotonicTime.h>
+
 namespace WebKit {
 
 extern bool kosmosFramesTraced;
@@ -22,10 +24,21 @@ extern bool kosmosFramesTraced;
 // The web process: one `display()`, its stages in milliseconds.
 void kosmosWebFrame(double rendering, double region, double painting, bool scrolled, unsigned long pixels);
 
+// The web process: a turn of the wheel, turned in the UI process at `turned`,
+// reaching the main thread (patch 0039). The display that follows is timed
+// from it, and the line says how long each hop took.
+void kosmosWebWheelOnMain(MonotonicTime turned);
+
 // The UI process: one update taken in.
 void kosmosUIIncorporated(double milliseconds, bool scrolled);
 
-// The UI process's updates since the last take: how many, on average, the most.
-unsigned kosmosTakeIncorporated(double* average, double* most);
+// Either process: a record read off a connection's ring, by its receiving
+// thread. An update taken in is timed from the last one read - its own,
+// since the receiving thread hands it on as it reads it.
+void kosmosRecordRead();
+
+// The UI process's updates since the last take: how many, on average, the
+// most; and from the record read off the ring to the main thread taking it.
+unsigned kosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost);
 
 } // namespace WebKit

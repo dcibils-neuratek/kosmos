@@ -4047,3 +4047,37 @@ That should no longer happen, anywhere.
 same fresh two megabytes at the same moment, 256 times: **680 of 1,024
 pages lost before the fix, none after.**
 
+
+## 17 November 2026 - The browser was waiting for a clock
+
+**In short.** Scrolling a page in JetSki took 14 milliseconds from a turn
+of the wheel to a new picture, and almost half of it was nobody working:
+the picture was ready and waiting for JetSki to look. Now WebKit taps
+JetSki on the shoulder when it has something, and the same scroll is 9.4
+milliseconds. On the way, it turned out WebKit's "monotonic" clock on
+Kosmos was really the calendar clock, and different in every process.
+
+**What.** JetSki talks to two things: the window manager (keys, the
+mouse, the wheel) and WebKit (pages, pictures). It used to ask the window
+manager for news, waiting up to one scheduler tick, and then give WebKit
+a few milliseconds to handle its messages. A picture that arrived between
+those two moments sat until the tick ran out. Now WebKit's connection
+says "messages arrived", and the WebKit Kit sends the window manager a
+pulse with a code the window manager gave JetSki - the same mechanism
+Tracker uses to hear that a folder changed. The window manager answers
+JetSki's waiting question at once, and JetSki lets WebKit run.
+
+**Why.** Diego chose to fix the waiting before taking out copies or using
+the GPU, because the measurement said the waiting was the bigger part.
+And a first, cheaper guess - simply giving WebKit longer after each turn
+- was tried and changed nothing, which is how the real cause (the order
+of JetSki's loop) showed itself.
+
+**Visible.** Scrolling answers about a third faster. When nothing is
+happening, nothing runs: with a page open, the machine was 99.8% idle.
+
+**Measured** (M700, Wikipedia's BeOS page, 40 notches): wheel to picture
+14.1 ms before, 9.4 after; the picture's wait after arriving 3.9 ms
+before, 0.2 after. What is left is work: 5.6 ms painting the strip that
+scrolled into view and 3.0 ms drawing the page into the window - which is
+what the next two steps, the copies and the GPU, are for.

@@ -20,6 +20,7 @@
 #include "webkit.h"
 
 #include <kosmos.h>                 // kosmos_wait, struct process_death
+#include <atomic>
 #include <stdio.h>
 #include <string.h>
 
@@ -178,9 +179,9 @@ struct View {
         unsigned count = 0;
         double sum = 0, most = 0;
         void add(double ms) { count++; sum += ms; most = std::max(most, ms); }
-    } toPicture, drawn;
-    unsigned pictures = 0;
-    bool wheelWaiting = false;
+    } toPicture, drawn, toSlice;
+    unsigned pictures = 0, unsliced = 0;
+    bool wheelWaiting = false, wheelSliced = false;
     WTF::MonotonicTime wheelAt, firstFrame, lastFrame;
 };
 
@@ -574,15 +575,21 @@ void framesSaid(View* view, WTF::MonotonicTime now)
     if ((!view->pictures && !view->drawn.count) || now - view->lastFrame < 1_s)
         return;
     auto average = [](const View::Times& t) { return t.count ? t.sum / t.count : 0.0; };
-    double takenAverage, takenMost;
-    unsigned taken = WKKosmosTakeIncorporated(&takenAverage, &takenMost);
+    double takenAverage, takenMost, ringAverage, ringMost;
+    unsigned taken = WKKosmosTakeIncorporated(&takenAverage, &takenMost, &ringAverage, &ringMost);
     fprintf(stderr, "webkit: frames view %d, %u pictures in %.0f ms: wheel to picture %.1f ms, most %.1f (%u); "
+        "wheel to a slice %.1f, most %.1f (%u, %u passes without); "
+        "read off the ring to taken %.1f, most %.1f; "
         "taken in %.1f ms, most %.1f (%u); drawn into the window %.1f ms, most %.1f (%u)\n",
         view->id, view->pictures, (view->lastFrame - view->firstFrame).milliseconds(),
         average(view->toPicture), view->toPicture.most, view->toPicture.count,
+        average(view->toSlice), view->toSlice.most, view->toSlice.count, view->unsliced,
+        ringAverage, ringMost,
         takenAverage, takenMost, taken,
         average(view->drawn), view->drawn.most, view->drawn.count);
     view->toPicture = { };
+    view->toSlice = { };
+    view->unsliced = 0;
     view->drawn = { };
     view->pictures = 0;
 }
@@ -1339,6 +1346,34 @@ extern "C" void webkit_stop(int id)
     }
 }
 
+/*
+ * **Woken when WebKit has news** (`testing.md` 18.855). WebKit's messages
+ * are handled only inside a slice (`webkit_pump`), and a slice runs after
+ * the window's poll - so a picture that arrived between two waited for the
+ * poll to time out. Given a code and a door to the window manager
+ * (`webkit_wake`), a connection's news pulses it once a slice; the manager
+ * answers the window's poll with a `changed` event and the loop pumps now.
+ * Called on WebKit's receiving threads, so it touches only atomics.
+ */
+std::atomic<long> wakeDoor { -1 };
+std::atomic<uint32_t> wakeCode { 0 };
+std::atomic<bool> woken { false };
+
+void messagesArrived()
+{
+    long door = wakeDoor.load(std::memory_order_relaxed);
+    if (door < 0 || woken.exchange(true))
+        return;
+    (void)kosmos_pulse(door, wakeCode.load(std::memory_order_relaxed), 0);
+}
+
+extern "C" void webkit_wake(long door, unsigned code)
+{
+    wakeCode.store(code, std::memory_order_relaxed);
+    wakeDoor.store(door, std::memory_order_relaxed);
+    WKKosmosOnMessages(door >= 0 ? messagesArrived : nullptr);
+}
+
 extern "C" void webkit_trace(int on)
 {
     tracing = on;
@@ -1347,6 +1382,9 @@ extern "C" void webkit_trace(int on)
 
 extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
 {
+    // News from here on wakes the window again: what arrived before is
+    // handled in this slice.
+    woken.store(false);
     memset(out, 0, sizeof *out);
     collect();
     bool waiting = false;
@@ -1360,6 +1398,20 @@ extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
         return;
 
     // Something already waiting to be said is said now, without a slice.
+    if (tracing) {
+        bool slicing = !waiting && !views.opened && !views.closing && ms;
+        auto now = WTF::MonotonicTime::now();
+        for (auto& each : views.all) {
+            if (!each->wheelWaiting || each->wheelSliced)
+                continue;
+            if (!slicing) {
+                each->unsliced++;
+                continue;
+            }
+            each->toSlice.add((now - each->wheelAt).milliseconds());
+            each->wheelSliced = true;
+        }
+    }
     if (!waiting && !views.opened && !views.closing && ms) {
         views.running = true;
         views.slice->startOneShot(WTF::Seconds::fromMilliseconds(ms));
@@ -1637,6 +1689,7 @@ extern "C" void webkit_wheel(int id, int x, int y, int notches, unsigned mods)
     if (tracing && !view->wheelWaiting) {
         view->wheelAt = WTF::MonotonicTime::now();
         view->wheelWaiting = true;
+        view->wheelSliced = false;
     }
     float ticks = notches, pixels = notches * 3 * 40;
     if (mods & 1)

@@ -35304,3 +35304,65 @@ turn of the wheel goes to the web process in one pass, its picture is
 taken in during a later one, and it is drawn in the pass after that.
 Neither a copy taken out nor a GPU shortens that; a loop woken by either
 the window manager or WebKit's connection, whichever speaks first, would.
+
+## 18.855 The wait found and taken out: JetSki woken by WebKit, and WTF's clock
+
+**A first guess, measured and dropped.** If the eleven milliseconds were
+JetSki's slice, a longer slice after a turn of the wheel would shorten
+them. Twenty milliseconds after each turn, on the M700: wheel to picture
+**14.0 ms, unchanged**. The reason was in `ui.lua`'s loop, which runs
+`on_frame` - where JetSki pumps WebKit - *before* the events of the same
+poll: the pass that brings a turn pumps, then sends the turn, and the
+longer slice was given to a pass that had nothing to wait for.
+
+**So each hop was timed** (patch 0039): when the turn reaches the web
+process's main thread, when its display begins and when its picture is
+sent, each from the turn in the UI process. The first run said the turn
+reached the web process **487 ms before it was turned**, and that was its
+own finding: **WTF's `MonotonicTime` on Kosmos was the wall clock.**
+`CurrentTime.cpp` names Linux, the BSDs, Darwin, Fuchsia and Haiku, and
+anything else falls through to `currentTime()` held never to go back by a
+static every thread shares; each process works its wall clock out from a
+date in whole seconds read when it starts, so two processes disagreed by
+up to a second, and every timer in WebKit ran on the date. Patch 0040
+gives `MonotonicTime`, `ContinuousTime` and `ContinuousApproximateTime`
+`CLOCK_MONOTONIC`, which is Nebula's counter - the same in every process.
+
+**With one clock** (the same page, the same 40 notches down):
+
+```
+webkit: wheels 40, after the turn: on the main thread 0.3 ms, most 4.5;
+        its display began 1.0, most 12.9; its picture sent 6.7, most 17.8
+webkit: frames view 1, ...: wheel to picture 14.1 ms, most 18.2 (40);
+        wheel to a slice 12.0, most 16.0 (40, 0 passes without);
+        read off the ring to taken 3.9, most 51.9; ...
+```
+
+The web process had sent the picture 6.7 ms after the turn; JetSki's next
+slice began at 12.0, and the picture had sat read off the ring for 3.9.
+**18.854's "2.5 ms of work" was an average over every frame**, most of
+which repaint little; a scrolled one is about 5.6 ms in the web process -
+the strip that came into view, laid out and painted - and its wait was
+seven, not eleven.
+
+**The fix** (`webkit.md` *Fast*, the waiting first): each connection's
+receiving thread says when it has handed messages on (`KosmosWake.cpp`,
+the port's; `WKKosmosOnMessages`), and the WebKit Kit, given the window
+manager's code for the window and its door (`watch_code`, `docs/pulses.md`
+P4, the same as a folder that tells), pulses it once a slice
+(`webkit.wake`). The manager answers the window's held poll with a
+`changed` event, and the loop pumps at once. **On the M700**:
+
+```
+webkit: wheels 40, after the turn: on the main thread 0.2 ms, most 4.6;
+        its display began 0.9, most 7.1; its picture sent 6.5, most 13.6
+webkit: frames view 1, ...: wheel to picture 9.4 ms, most 12.3 (40);
+        wheel to a slice 7.0, most 7.8; read off the ring to taken 0.2, most 4.4;
+        taken in 0.3 ms, most 2.8; drawn into the window 3.0 ms, most 503.8
+```
+
+**Wheel to picture 14.1 ms to 9.4; the picture's wait 3.9 ms to 0.2.**
+Idle, with the page open, the machine read 99.8% idle over ten seconds
+and JetSki was not among what ran: news wakes it, and no news does not.
+What is left of a scrolled frame is work - 5.6 ms in the web process and
+3.0 drawing the page into the window - which is 1b and 1c.

@@ -163,6 +163,11 @@ void webkit_stop(int id);
  * waits on every five seconds while it loads. */
 void webkit_trace(int on);
 
+/* Woken when WebKit has news: `door` is the window manager's endpoint and
+ * `code` the window's, from `watch_code`; a pulse with them answers the
+ * window's poll. A door below nought stops it. */
+void webkit_wake(long door, unsigned code);
+
 /* WebKit's run loop for at most `ms` milliseconds, or until a view shown
  * has news; then what happened to the views together. */
 void webkit_pump(unsigned ms, struct webkit_events *out);

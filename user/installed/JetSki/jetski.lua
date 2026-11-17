@@ -1664,6 +1664,20 @@ end
 --
 win.poll_wait_ticks = 1
 
+-- **And woken when WebKit has news** (`testing.md` 18.855): a picture, a
+-- page's answer, anything WebKit's processes send. The window manager's
+-- code for this window and its door go to the kit, which pulses them once
+-- a slice; the poll is answered then, rather than when its tick runs out.
+do
+  local r = fs.send("/Running/wm", { type = "watch_code", window = win.handle })
+
+  if r and r.code and r.passed then
+    webkit.wake(r.passed, r.code)
+  else
+    print("jetski: no code from the window manager; WebKit waits for the tick")
+  end
+end
+
 win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
   if tracing then commits_said() end
