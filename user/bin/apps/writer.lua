@@ -72,7 +72,13 @@ local pagedesk  = use("/Kosmos/Libraries/pagedesk.lua")
 local inspector = use("/Kosmos/Libraries/inspector.lua")
 local chart     = use("/Kosmos/Libraries/chart.lua")
 
+local findbar   = use("/Kosmos/Libraries/findbar.lua")
+local docfile   = use("/Kosmos/Libraries/docfile.lua")
+local recentdocs = use("/Kosmos/Libraries/recentdocs.lua")
+local prefs     = use("/Kosmos/Libraries/prefs.lua")
+
 use("/Kosmos/Libraries/toolbar.lua").into(ui, pk)
+findbar.into(ui, pk)
 
 local theme = ui.theme
 
@@ -123,9 +129,20 @@ end
 --
 local function head_h() return win.headed and ui.layout.head or 0 end
 
--- Where the tools' row ends and the desk, the panel and the thumbnails
--- begin.
-local function work_top() return head_h() + TOOLS_H end
+--
+-- **The find bar** (`office.md` O2), open across the window under the
+-- tools, as the drawing has it - nil when it is not: what is looked for,
+-- what replaces it, the switches, the matches and which one is shown.
+--
+local find = nil
+local FIND_H = findbar.H
+
+-- Where the tools' row ends.
+local function tools_bottom() return head_h() + TOOLS_H end
+
+-- Where the desk, the panel and the thumbnails begin: under the find bar
+-- when it is open.
+local function work_top() return tools_bottom() + (find and FIND_H or 0) end
 
 -- The three, at the band's right end: said again only when where changes.
 local lights_said = nil
@@ -193,6 +210,7 @@ local drawer = pagedraw.new(measure, function(name)
 end)
 local cache = pageset.cache()
 local doc, said
+local was_read = false
 
 if path then
   local held
@@ -208,6 +226,8 @@ if path then
   else
     local zip = use("/Kosmos/Libraries/zip.lua")
 
+    was_read = true
+
     for _, name in ipairs(held or {}) do
       local bytes = zip.read(path, name, 64 * 1024 * 1024)
       pictures[name] = bytes and { bytes = bytes } or false
@@ -219,6 +239,21 @@ end
 
 local by_name = {}
 for _, s in ipairs(doc.styles) do by_name[s.name] = s end
+
+--
+-- **Recent documents** (R1, `recentdocs.lua`, as the PDF Viewer keeps
+-- them): in Write's settings, the newest first, a document put at the top
+-- when it is opened and when it is saved. Export's list offers them.
+--
+local store = prefs.open("writer")
+local recent = recentdocs.parse(store.recent)
+
+local function remember(p)
+  recent = recentdocs.add(recent, p)
+  store:set("recent", recentdocs.format(recent))
+end
+
+if path and was_read then remember(path) end
 
 -- The chart whose data is shown as a table above it, for typing into
 -- (W7c): its paragraph's number, or nil. The window's, not the document's.
@@ -287,6 +322,12 @@ end
 -- Where the comments stand, worked out once for what the pages show.
 local noted = { version = nil, marks = {} }
 
+-- A match found, under the text; the one shown is the selection over it.
+local FOUND = 0xffffe08a
+
+-- No more than this many matches are tinted: past it the count says it.
+local FOUND_MOST = 2000
+
 -- What is marked under the text on page `i`: the words comments are
 -- about, and the selection.
 local function marks_on(i)
@@ -303,6 +344,26 @@ local function marks_on(i)
         out[#out + 1] = { page = r.page, x_pt = r.x_pt, y_pt = r.y_pt, w_pt = r.w_pt,
                           h_pt = r.h_pt, colour = NOTED }
       end
+    end
+  end
+
+  if find and #find.matches > 0 then
+    if noted.found_version ~= version then
+      noted.found_version = version
+      noted.found = {}
+
+      for k = 1, math.min(#find.matches, FOUND_MOST) do
+        local m = find.matches[k]
+
+        for _, r in ipairs(pageset.selection(set, measure, m.from, m.to)) do
+          r.colour = FOUND
+          noted.found[#noted.found + 1] = r
+        end
+      end
+    end
+
+    for _, r in ipairs(noted.found) do
+      if r.page == i then out[#out + 1] = r end
     end
   end
 
@@ -685,6 +746,8 @@ end
 -- A frame.
 --------------------------------------------------------------------------
 
+local counted_words
+
 local function caret_page()
   local here = pageset.locate(set, measure, ed.caret)
   return here and here.page or 1
@@ -705,6 +768,42 @@ end
 
 -- The look the last frame was drawn in, to know when it changed.
 local drawn_in = nil
+
+--
+-- **The word count** (R1): the document's words, or the selection's of
+-- them, in the note - `textedit` counts, a paragraph at a time - worked
+-- out once a version, and said in the log when the words change.
+--
+local count = { version = nil, words = "", said = nil }
+
+function counted_words()
+  if count.version ~= version then
+    count.version = version
+
+    local words, chars = ed:count()
+    local plural = words == 1 and "" or "s"
+    local line
+
+    if ed:selected() then
+      local all = select(1, ed:count(true))
+      count.words = ("%d of %d words"):format(words, all)
+      line = ("writer: %d word%s, %d characters chosen"):format(words, plural, chars)
+    else
+      count.words = ("%d word%s"):format(words, plural)
+      line = ("writer: %d word%s, %d characters"):format(words, plural, chars)
+    end
+
+    -- Said when the words change, not at every letter.
+    local key = count.words
+
+    if key ~= count.said then
+      count.said = key
+      print(line)
+    end
+  end
+
+  return count.words
+end
 
 function frame()
   local s = win:surface()
@@ -731,10 +830,38 @@ function frame()
     desk:thumbs(s, 0, wt, THUMBS_W, H - wt, caret_page())
   end
 
-  -- What was last said, in the tools' row between the two groups.
-  draw_tools(s, said or ("%s%s  -  %d page%s"):format(name, ed.dirty and " (edited)" or "",
-                                                       #set.pages,
-                                                       #set.pages == 1 and "" or "s"))
+  -- What was last said, in the tools' row between the two groups - or the
+  -- document's name, its pages and its words.
+  draw_tools(s, said or ("%s%s  -  %d page%s  -  %s"):format(name, ed.dirty and " (edited)" or "",
+                                                             #set.pages,
+                                                             #set.pages == 1 and "" or "s",
+                                                             counted_words()))
+
+  if find then
+    local b = find.bar
+    b.x, b.y, b.w = 0, tools_bottom(), W
+    b.needle, b.count, b.current = find.needle, #find.matches, find.current
+    b.replacing, b.replacement = find.replacing, find.replacement
+    b.case, b.words, b.within = find.case, find.words, find.within
+    b.focus = (focus == "find" or focus == "replace") and focus or nil
+    b.chosen = find.chosen
+    pk.findbar(s, b)
+
+    -- Where each part is, once for each shape of the bar - for a harness
+    -- to press it by name, as the panel's controls are said.
+    local shape_of = ("%d:%s"):format(W, tostring(b.replacing))
+
+    if find.parts_said ~= shape_of then
+      find.parts_said = shape_of
+
+      for _, bit in ipairs(b.parts) do
+        local box = bit.box
+        print(("writer: find %s at %d,%d %dx%d"):format(bit.key, box.x, box.y,
+                                                       box.w or 0, box.h or 0))
+      end
+    end
+  end
+
   draw_panel(s)
   ins:draw_menu(s)
 
@@ -800,6 +927,8 @@ local function changed()
   frame()
 end
 
+local touched
+
 -- What an undo puts back besides the body and the caret: the document's
 -- settings, each a table no edit changes in place.
 local function settings()
@@ -836,6 +965,21 @@ end
 -- pages are drawn again only when the selection changed, or a chart's
 -- data opened or closed.
 --
+--
+-- **Kept copies** (`office.md` O4, `docfile.keep`): a document with changes
+-- not saved is kept after thirty seconds of quiet - on the window's own
+-- clock, never in a paint - and the copy goes when it is saved. `edits`
+-- counts what has changed, so a copy is not kept twice for the same.
+--
+local KEEP_QUIET_S = 30
+local edits, kept_edits, last_edit = 0, 0, 0
+local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+
+function touched()
+  edits = edits + 1
+  last_edit = sys.ticks()
+end
+
 ed = textedit.new{
   doc = doc, by_name = by_name, measure = measure,
   set = function() return set end,
@@ -843,6 +987,7 @@ ed = textedit.new{
   keep = settings, put_back = put_back,
   on = {
     edited = function()
+      touched()
       fit_data()
       said = nil
       set = setting()
@@ -851,6 +996,7 @@ ed = textedit.new{
       report_if_changed()
     end,
     undone = function()
+      touched()
       fit_data()
       set = setting()
       follow()
@@ -896,6 +1042,7 @@ function doc_edit(kind, fields)
   doc.ligatures, doc.language = checked.ligatures, checked.language
   doc.comments = checked.comments
   ed.dirty = true
+  touched()
   said = nil
   set = setting()
   changed()
@@ -938,7 +1085,27 @@ function apply_picture(width_mm)
   ed:edited(body, ed.caret, "format", true)
 end
 
+-- The pictures the body shows, each its bytes as they came - whether or not
+-- this build can draw them - for the file and for a kept copy.
+local function held_pictures()
+  local shown, list = {}, {}
+
+  for _, p in ipairs(doc.body) do
+    local pname = p.picture and p.picture.name
+    local held = pname and pictures[pname]
+
+    if held and not shown[pname] then
+      shown[pname] = true
+      list[#list + 1] = { name = pname, bytes = held.bytes }
+    end
+  end
+
+  return list
+end
+
 local function save()
+  local was = path
+
   if not path then
     local n = 1
 
@@ -950,24 +1117,17 @@ local function save()
     name = path:match("([^/]+)$")
   end
 
-  local shown, list = {}, {}
-
-  for _, p in ipairs(doc.body) do
-    local name = p.picture and p.picture.name
-
-    -- Its bytes as they came, whether or not this build can draw them.
-    local held = name and pictures[name]
-
-    if held and not shown[name] then
-      shown[name] = true
-      list[#list + 1] = { name = name, bytes = held.bytes }
-    end
-  end
-
-  local ok, why = writedoc.save(path, doc, list)
+  local ok, why = writedoc.save(path, doc, held_pictures())
 
   if ok then
     ed.dirty = false
+
+    -- Saved, the kept copy is not needed - under the name it had, and the
+    -- one it has now.
+    docfile.forget("write", was)
+    if was ~= path then docfile.forget("write", path) end
+    kept_edits = edits
+    remember(path)
     said = "Saved " .. name
     print(("writer: saved %s, %d paragraphs"):format(path, #doc.body))
   else
@@ -1022,6 +1182,344 @@ local function export_docx()
   end
 
   frame()
+end
+
+-- A copy kept now, as the file would be saved.
+local function keep_now()
+  kept_edits = edits
+
+  local clean = writedoc.check(doc)
+
+  if not clean then return end
+
+  local ok, why = docfile.keep("write", path, clean, held_pictures(), name)
+
+  if ok then
+    print(("writer: kept %s"):format(path or name))
+  else
+    print("writer: not kept: " .. tostring(why))
+  end
+end
+
+--
+-- **The kept copy opened** in place of what the file holds: the document,
+-- its pictures and its styles, the caret at the top, edited and not saved.
+--
+local function restore(kept)
+  local kept_doc, held = writedoc.open(kept.file)
+
+  if not kept_doc then
+    said = "The kept copy could not be read: " .. tostring(held)
+    frame()
+    return
+  end
+
+  local zip = use("/Kosmos/Libraries/zip.lua")
+
+  for _, pname in ipairs(held or {}) do
+    local bytes = zip.read(kept.file, pname, 64 * 1024 * 1024)
+    pictures[pname] = bytes and { bytes = bytes } or false
+  end
+
+  -- The same tables, filled again: the editor and the setting hold them.
+  for k in pairs(doc) do doc[k] = nil end
+  for k, v in pairs(kept_doc) do doc[k] = v end
+  for k in pairs(by_name) do by_name[k] = nil end
+  for _, st in ipairs(doc.styles) do by_name[st.name] = st end
+
+  ed.caret, ed.anchor, ed.column = { para = 1, at = 1 }, nil, nil
+  ed.undo_steps, ed.redo_steps = {}, {}
+  ed.dirty = true
+  data_open = nil
+  said = "The kept copy - not saved"
+  set = setting()
+  version = version + 1
+  follow()
+  frame()
+  report_if_changed()
+  print(("writer: kept copy opened, %d paragraphs"):format(#doc.body))
+end
+
+--
+-- **Offered back** when the document is opened: a copy kept for this path
+-- is what was lost when the machine or Write stopped. A copy of a document
+-- never saved is offered to a new one only when it was kept before the
+-- machine last started, since one kept since then may be another window's,
+-- still open.
+--
+local function offer_kept()
+  local _, boot = docfile.now()
+
+  for _, e in ipairs(docfile.kept("write")) do
+    local mine = (path and e.path == path)
+                 or (not path and not e.path and boot and e.boot > 0 and e.boot < boot - 5)
+
+    if mine then
+      local clock = use("/Kosmos/Libraries/clock.lua")
+      local when = e.epoch > 0 and clock.time_string(clock.at(e.epoch)) or "before"
+
+      said = ("Kosmos Write kept %s from %s"):format(e.name, when)
+      print(("writer: kept copy offered, %s from %s"):format(e.name, when))
+      ins:open_menu("recovery", 12, tools_bottom() + 2, 300,
+                    { "Open the copy kept at " .. when, "Leave the copy, and do not ask" }, nil,
+                    function(i)
+                      if i == 1 then
+                        restore(e)
+                      else
+                        docfile.forget("write", e.path)
+                        said = nil
+                        print("writer: kept copy left")
+                        frame()
+                      end
+                    end)
+      return
+    end
+  end
+end
+
+-- **A recent document**, opened as Tracker opens one: in a window of its own.
+local function open_recent(p)
+  local how = use("/Kosmos/Libraries/filetypes.lua").how_to_open(p, fs.getattr(p))
+
+  if not how then
+    said = "Nothing opens " .. p
+    frame()
+    return
+  end
+
+  print(("writer: opening recent %s"):format(p))
+  fs.send("/Running/wm", { type = "launch", program = how.program, args = how.args, wait = false })
+end
+
+--------------------------------------------------------------------------
+-- Find and replace (`office.md` O2): `textedit:find` the search, and
+-- `pk.findbar` the bar.
+--------------------------------------------------------------------------
+
+local function find_opts()
+  return { case = find.case, words = find.words, within = find.within and find.range or nil }
+end
+
+-- Match `i` shown: selected, the desk following it. None: the selection
+-- let go, the caret at its start.
+local function show_match(i)
+  local m = find.matches[i]
+
+  find.current = m and i or 0
+  version = version + 1
+
+  if not m then
+    if ed:selected() then
+      local a, b = ed:range()
+      ed:move(richtext.before(b, a) and b or a)
+    else
+      frame()
+    end
+
+    return
+  end
+
+  print(("writer: match %d of %d"):format(i, #find.matches))
+  ed.anchor = nil
+  ed.caret = m.from
+  ed:move(m.to, true)
+end
+
+--
+-- **Looked for again** - a letter typed into the field, a switch pressed,
+-- a replacement made - and the first match at or after `from` shown, or
+-- the first of all when there is none after it.
+--
+local function search(from)
+  find.matches = ed:find(find.needle, find_opts())
+  print(("writer: found %d"):format(#find.matches))
+
+  local first = #find.matches > 0 and 1 or 0
+
+  if from then
+    for i, m in ipairs(find.matches) do
+      if not richtext.before(m.from, from) then
+        first = i
+        break
+      end
+    end
+  end
+
+  show_match(first)
+end
+
+-- The next match, or the one before: round from the last to the first.
+local function step_match(by)
+  local n = #find.matches
+
+  if n == 0 then return end
+
+  show_match((find.current - 1 + by) % n + 1)
+end
+
+-- The start of the selection, or the caret.
+local function selection_start()
+  local a, b = ed:range()
+  return richtext.before(b, a) and b or a
+end
+
+-- Whether the match shown is what is selected: a replacement replaces
+-- what a person sees chosen, and a first press only chooses it.
+local function showing(m)
+  local a, b = ed.anchor, ed.caret
+
+  if not a or not m then return false end
+
+  local function same(p, q)
+    return p.para == q.para and p.at == q.at and p.row == q.row and p.col == q.col
+  end
+
+  return (same(a, m.from) and same(b, m.to)) or (same(a, m.to) and same(b, m.from))
+end
+
+local function replace_one()
+  local m = find.matches[find.current]
+
+  if not m then return end
+
+  if not showing(m) then
+    show_match(find.current)
+    return
+  end
+
+  ed:replace(m, find.replacement)
+  print("writer: replaced 1")
+  search(ed.caret)
+end
+
+local function replace_every()
+  local n = ed:replace_all(find.matches, find.replacement)
+
+  print(("writer: replaced %d"):format(n))
+  search(ed.caret)
+end
+
+--
+-- **Control-F** opens the bar, its field with the keyboard - holding what
+-- is selected, when that is a few words on one line - and Control-Shift-F
+-- opens it with Replace. Control-H is Backspace's byte, so it cannot be.
+--
+local function open_find(replacing)
+  if not find then
+    find = { needle = "", replacement = "", replacing = false,
+             case = false, words = false, within = false,
+             matches = {}, current = 0, origin = selection_start(), bar = {} }
+
+    if ed:selected() then
+      local t = richtext.text(doc.body, ed.anchor, ed.caret)
+
+      if #t <= 64 and not t:find("\n") then find.needle = t end
+    end
+
+    desk:refit()
+  end
+
+  find.replacing = find.replacing or replacing
+  focus = "find"
+  -- What the field holds, chosen: a word typed now replaces it, as
+  -- Safari's Control-F and Word's do.
+  find.chosen = find.needle ~= ""
+  print(("writer: find bar open%s"):format(find.replacing and ", with replace" or ""))
+
+  if find.needle ~= "" then
+    search(find.origin)
+  else
+    version = version + 1
+    frame()
+  end
+end
+
+-- **Escape closes it**, the caret left on the match.
+local function close_find()
+  find = nil
+
+  if focus == "find" or focus == "replace" then focus = nil end
+
+  desk:refit()
+  version = version + 1
+  print("writer: find bar closed")
+  frame()
+end
+
+-- A press on the bar: a field, an arrow, a replacement, a switch.
+local function find_press(x, y)
+  local hit = pk.findbar_at(find.bar, x, y)
+
+  if hit == "find" then
+    focus = "find"
+  elseif hit == "replacement" then
+    focus = "replace"
+  elseif hit == "next" then
+    step_match(1)
+  elseif hit == "previous" then
+    step_match(-1)
+  elseif hit == "replace" then
+    replace_one()
+  elseif hit == "all" then
+    replace_every()
+  elseif hit == "case" then
+    find.case = not find.case
+    search(find.origin)
+  elseif hit == "words" then
+    find.words = not find.words
+    search(find.origin)
+  elseif hit == "within" then
+    -- In what is selected now; nothing selected, nothing to be in.
+    if find.within then
+      find.within, find.range = false, nil
+    elseif ed:selected() then
+      find.within, find.range = true, { ed.anchor, ed.caret }
+    end
+
+    search(find.origin)
+  elseif hit == "close" then
+    close_find()
+    return
+  end
+
+  frame()
+end
+
+-- A key with the find bar's field: typed into it, Return the next match -
+-- or the replacement, in the Replace field - Shift-Return the one before,
+-- Tab the other field, Escape the bar closed.
+local function find_key(c)
+  local k, mods = keys.parts(c)
+  local field = focus == "find" and "needle" or "replacement"
+  local chosen = find.chosen and field == "needle"
+
+  find.chosen = false
+
+  if c == 27 then
+    close_find()
+  elseif c == 9 then
+    if find.replacing then focus = (focus == "find") and "replace" or "find" end
+    frame()
+  elseif k == 13 and mods == keys.SHIFT then
+    step_match(-1)
+  elseif c == 13 or c == 10 then
+    if focus == "replace" then replace_one() else step_match(1) end
+  elseif c == 8 or c == 127 then
+    local t = chosen and "" or find[field]
+
+    if chosen then
+      find[field] = ""
+    elseif #t > 0 then find[field] = t:sub(1, (utf8.offset(t, 0, #t) or #t) - 1) end
+
+    if field == "needle" then search(find.origin) else frame() end
+  elseif c >= 32 and c < 256 then
+    -- A character of several bytes is looked for once it is whole.
+    find[field] = (chosen and "" or find[field]) .. string.char(c)
+
+    if field == "needle" and utf8.len(find.needle) then search(find.origin) else frame() end
+  end
+
+  return true
 end
 
 --------------------------------------------------------------------------
@@ -1210,7 +1708,7 @@ end
 local function chart_menu(x)
   local labels = {}
   for i, k in ipairs(CHART_KINDS) do labels[i] = k[2] end
-  ins:open_menu("chart", x, work_top() + 2, 160, labels, nil,
+  ins:open_menu("chart", x, tools_bottom() + 2, 160, labels, nil,
             function(i) insert_chart(CHART_KINDS[i][1]) end)
 end
 
@@ -1276,7 +1774,7 @@ end
 local function shape_menu(x)
   local labels = {}
   for i, k in ipairs(SHAPE_KINDS) do labels[i] = k[2] end
-  ins:open_menu("shape", x, work_top() + 2, 200, labels, nil,
+  ins:open_menu("shape", x, tools_bottom() + 2, 200, labels, nil,
             function(i) insert_shape(SHAPE_KINDS[i][1]) end)
 end
 
@@ -1356,7 +1854,7 @@ TOOL_ACTS = {
   --
   insert = function(t)
     local items = { "Page Break", "Table", "Picture...", "Text Box", "Shape...", "Chart..." }
-    ins:open_menu("insert", t.x, work_top() + 2, 180, items, nil, function(i)
+    ins:open_menu("insert", t.x, tools_bottom() + 2, 180, items, nil, function(i)
       if i == 1 then
         TOOL_ACTS.addpage()
       elseif i == 2 then
@@ -1376,14 +1874,28 @@ TOOL_ACTS = {
   zoom = function(t)
     local labels = {}
     for i, z in ipairs(ZOOMS) do labels[i] = z .. "%" end
-    ins:open_menu("zoom", t.x, work_top() + 2, 120, labels, desk.zoom,
+    ins:open_menu("zoom", t.x, tools_bottom() + 2, 120, labels, desk.zoom,
               function(i) zoom_to(i) end)
   end,
+  --
+  -- **Export**: the document saved, as a PDF and as Word's - and after
+  -- them the recent documents, each opened in a window of its own.
+  --
   export = function(t)
     local items = { "Save as .write", "Export PDF", "Export Word (.docx)" }
-    ins:open_menu("export", math.min(t.x, W - 220), work_top() + 2, 200, items, nil,
+    local others = {}
+
+    for _, e in ipairs(recent) do
+      if e.path ~= path then
+        others[#others + 1] = e.path
+        items[#items + 1] = ui.fitted("Open " .. (e.path:match("([^/]+)$") or e.path), 156, "ui")
+      end
+    end
+
+    ins:open_menu("export", math.min(t.x, W - 220), tools_bottom() + 2, 200, items, nil,
               function(i)
-                if i == 1 then save() elseif i == 2 then export() else export_docx() end
+                if i == 1 then save() elseif i == 2 then export() elseif i == 3 then export_docx()
+                else open_recent(others[i - 3]) end
               end)
   end,
   format = function()
@@ -1443,19 +1955,41 @@ function sink:wheel(n)
   return true
 end
 
+-- The last press on the pages, `{ x, y, at, n }`, for the second and the
+-- third: anything else pressed between, or a key, and the next is a first.
+local last_press = nil
+
 --
--- **A key**: a list's Escape while one is open; the comment's or the
--- header's words while a field has the keyboard; Page Up and Down, which
--- scroll; Control-S and Control-E; and anything else is the text's
--- (`textedit`).
+-- **A key**: a list's Escape while one is open; the find bar's field
+-- while it has the keyboard; Control-F and Control-Shift-F, the find bar
+-- opened; the comment's or the header's words while a field has the
+-- keyboard; Page Up and Down, which scroll; Control-S and Control-E; and
+-- anything else is the text's (`textedit`).
 --
 function sink:key(c)
-  local k = keys.parts(c)
+  local k, mods = keys.parts(c)
+
+  last_press = nil
 
   if ins.menu then
     if c == 27 then ins.menu = nil frame() return true end
     return true
   end
+
+  -- Control-F, find; Control-Shift-F and Control-Shift-H, with Replace -
+  -- from the bar's own field too, to add Replace to it.
+  if c == 6 then
+    open_find(false)
+    return true
+  elseif (k == 102 or k == 104 or k == 70 or k == 72) and mods == (keys.CTRL | keys.SHIFT) then
+    open_find(true)
+    return true
+  elseif c == 27 and find and not focus then
+    close_find()
+    return true
+  end
+
+  if find and (focus == "find" or focus == "replace") then return find_key(c) end
 
   -- **The comment's words**, typed into its field.
   if focus == "comment" then
@@ -1545,8 +2079,18 @@ function sink:mouse(action, x, y)
     return true
   end
 
+  -- A press counts after one on the pages only when nothing came between.
+  local before = last_press
+
+  if action == "press" then last_press = nil end
+
   if action == "press" and ins.menu then
     ins:pick(x, y)
+    return true
+  end
+
+  if action == "press" and find and y >= tools_bottom() and y < work_top() then
+    find_press(x, y)
     return true
   end
 
@@ -1571,7 +2115,7 @@ function sink:mouse(action, x, y)
     return true
   end
 
-  if action == "press" and y < work_top() then
+  if action == "press" and y < tools_bottom() then
     local t = pk.tool_at(TOOLS, x)
 
     if t then
@@ -1599,10 +2143,32 @@ function sink:mouse(action, x, y)
 
   if place then
     if action == "press" then
+      -- **The second press in a row is the word, the third the paragraph**,
+      -- at the kit's double-click speed and within a few pixels.
+      local now = sys.ticks()
+      local n = 1
+      local last = before
+
+      if last and now - last.at <= ui.double_click_ticks()
+         and math.abs(x - last.x) <= 4 and math.abs(y - last.y) <= 4 then
+        n = last.n % 3 + 1
+      end
+
+      last_press = { x = x, y = y, at = now, n = n }
       pressed = true
-      if ed:press(place) then version = version + 1 end
+
+      if ed:press(place, n) then version = version + 1 end
+
+      if n >= 2 then
+        print(("writer: pressed %d times, %q chosen"):format(n,
+              richtext.text(doc.body, ed.anchor, ed.caret)))
+      end
+
       frame()
-    else
+    elseif not (last_press and last_press.n >= 2
+                and math.abs(x - last_press.x) <= 4 and math.abs(y - last_press.y) <= 4) then
+      -- A word or a paragraph chosen stays chosen until the pointer
+      -- really moves.
       ed:drag(place)
       version = version + 1
       frame()
@@ -1636,6 +2202,13 @@ win.on_resize = function(_, w, h)
         W, H, (last.x or 0) + (last.w or 0)))
 end
 
+function sink:tick()
+  if ed.dirty and edits ~= kept_edits
+     and sys.ticks() - last_edit >= KEEP_QUIET_S * counter_hz then
+    keep_now()
+  end
+end
+
 win:add(sink)
 frame()
 report()
@@ -1648,5 +2221,7 @@ end
 
 shape = ("%d:%s:%s:%s"):format(#set.pages, set.pages[1].width_pt, set.pages[1].height_pt,
                                tostring(set.facing))
+
+offer_kept()
 
 win:run()

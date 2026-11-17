@@ -100,7 +100,8 @@ allocates, as Present's P4 already asks. A 100-page document is where the
 kit's cost would show. The number is kept, and every later step is held to
 it.
 
-**Status, 17 November 2026: moved, waiting for its gate.** `textedit.lua`,
+**Status, 17 November 2026: done, in 0.11.463**, with Write's two suites
+unchanged. `textedit.lua`,
 `pagedesk.lua`, `inspector.lua`, `toolbar.lua` (which puts `pk.toolbar` and
 `pk.tool_at` into a `pixelkit`) and `chart.lua` are in `user/lib/`, and
 `writer.lua` stands on them, 2797 lines down to 1652. Proved so far by
@@ -140,6 +141,18 @@ bar and leaves the caret on the match.
   exists). One bar, four searches, and nobody writes the field again.
 
 **What crosses**: nothing. Both halves are in the window's process.
+
+**Status, 17 November 2026: done, in 0.11.465** (`testing.md` 18.865).
+`textedit:find`, `ed:replace` and `ed:replace_all` (one step to undo) are
+in `textedit.lua`; the bar is `user/lib/findbar.lua`, which puts
+`pk.findbar` and `pk.findbar_at` into a `pixelkit` as `toolbar.lua` does.
+Write opens it with Control-F, and with Replace by **Control-Shift-F or
+Control-Shift-H** - Control-H is Backspace's byte, 8, and cannot be told
+from it. It searches as it is typed and says `writer: found N`; the
+matches are tinted on the pages, the first 2000 of them.
+`tools/test_findreplace.lua` holds the search, the replacements and the
+undo on the Mac, and `arm-writeapp` presses it in QEMU. A bar opened
+again holds its words chosen, so a word typed replaces them.
 
 ---
 
@@ -362,6 +375,18 @@ in a repaint. The kit only writes.
 **Not yet: versions** (every saved state browsable, as macOS's Revert To
 does). That is a store of its own, and the kept copy is a smaller promise
 that is kept first.
+
+**Status, 17 November 2026: kept copies written, waiting for their gate;
+previews not begun.** `docfile.keep(app, path, doc, pictures, name)`,
+`docfile.kept(app)` and `docfile.forget(app, path)`: the copy is the
+document's own zip with a `kept` entry saying its path, its name, when,
+and when the machine had started. Write keeps one after thirty seconds of
+quiet, on its window's clock, and says `writer: kept ...`; a save forgets
+it. Opening a document with a copy kept for it offers the copy in a list
+under the tools; a copy of a document never saved is offered to a new
+window only when it was kept before the machine last started, since one
+kept since may be another window's. **Not yet: a copy kept on switching
+away** - the window has no event for losing the keyboard to read.
 
 ### A document shows what it is in Tracker
 

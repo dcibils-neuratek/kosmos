@@ -23,7 +23,14 @@
 --   ed:format(fields)  ed:arrange(fields)  ed:restyle(name)
 --   ed:undo()  ed:redo()
 --   ed:move(place, extend, keep_column)
---   ed:press(place)  ed:drag(place)  a pointer's press, and its drag
+--   ed:press(place, presses)  ed:drag(place)   a pointer's press - a word
+--                                    on the second, a paragraph on the third -
+--                                    and its drag
+--   ed:word_step(place, forward)     where Control-Left and Control-Right go
+--   ed:count(all)                    words, characters: the selection's, or all
+--                                    (always all, with `all`)
+--   ed:find(needle, opts)            every place it occurs, in order
+--   ed:replace(match, text)  ed:replace_all(matches, text)   one step each
 --   ed:selected()  ed:range()  ed:look()
 --   ed:edited(body, place, kind, keep, comments)   a new body, for undo
 --   ed:step(kind, joins)             a step to undo, for an edit the window makes
@@ -68,6 +75,31 @@ function textedit.new(o)
   local function nothing() end
 
   local function hook(name) return on[name] or nothing end
+
+  -- A word's bytes: letters, digits, `_`, and any byte of a character past
+  -- ASCII, so a word in Spanish is one word.
+  local WORD = "[%w_\128-\255]"
+
+  local function is_word(text, i)
+    return i >= 1 and i <= #text and text:sub(i, i):find(WORD) ~= nil
+  end
+
+  -- The word a press at `at` is on - or the one it ends, pressed just
+  -- past it - as byte positions `from` and `to`, `to` past its last byte;
+  -- on spaces, the run of them.
+  local function word_around(text, at)
+    local i = at
+
+    if not is_word(text, i) and is_word(text, i - 1) then i = i - 1 end
+
+    local want = is_word(text, i)
+    local from, to = i, i
+
+    while from > 1 and is_word(text, from - 1) == want do from = from - 1 end
+    while to <= #text and is_word(text, to) == want do to = to + 1 end
+
+    return from, to
+  end
 
   local ed = {
     caret = { para = 1, at = 1 },
@@ -227,19 +259,236 @@ function textedit.new(o)
 
   -- A pointer pressed on `place`: the caret there, nothing selected. True
   -- when a selection was there before, which the pages showed.
-  function ed:press(place)
+  --
+  -- `presses` is how many came in a row at that place - the window's to
+  -- count, since only it knows the time: the second is the word, the third
+  -- the paragraph, or the cell. True when the pages have to draw again,
+  -- because a selection was there before or is now.
+  --
+  function ed:press(place, presses)
     local had = self:selected()
 
     self.anchor, self.caret, self.column = place, place, nil
     self.last_kind = nil
     self.pending = {}
 
-    return had and true or false
+    if presses and presses >= 2 then
+      local text = self:text_at(place)
+      local from, to
+
+      if presses >= 3 then
+        from, to = 1, #text + 1
+      else
+        from, to = word_around(text, place.at)
+      end
+
+      self.anchor = { para = place.para, at = from, row = place.row, col = place.col }
+      self.caret = { para = place.para, at = to, row = place.row, col = place.col }
+    end
+
+    return (had or self:selected()) and true or false
   end
 
   -- And dragged to `place`: the selection's far end, kept in its cell.
   function ed:drag(place)
     self.caret = self:clamp(place)
+  end
+
+  -- The text a place is in: its paragraph's, or its cell's.
+  function ed:text_at(place)
+    local p = doc.body[place.para]
+    if place.row then return richtext.plain(p.table.rows[place.row][place.col]) end
+    return richtext.plain(p)
+  end
+
+  --
+  -- **A word at a time** (Control-Left, Control-Right): to the start of the
+  -- word before, or the end of the word after, inside the paragraph or the
+  -- cell; from its edge, one step across it, as an arrow goes.
+  --
+  function ed:word_step(place, forward)
+    local text = self:text_at(place)
+    local at = place.at
+
+    if forward then
+      if at > #text then return richtext.step(doc.body, place, true) end
+      while at <= #text and not is_word(text, at) do at = at + 1 end
+      while at <= #text and is_word(text, at) do at = at + 1 end
+    else
+      if at <= 1 then return richtext.step(doc.body, place, false) end
+      while at > 1 and not is_word(text, at - 1) do at = at - 1 end
+      while at > 1 and is_word(text, at - 1) do at = at - 1 end
+    end
+
+    return { para = place.para, at = at, row = place.row, col = place.col }
+  end
+
+  -- Control-Backspace and Control-Delete: the selection, or the word up to
+  -- the caret - Backspace's own answer at a paragraph's or a cell's edge.
+  function ed:delete_word(forward)
+    if self:selected() then return self:delete(forward) end
+
+    local caret = self.caret
+    local other = self:word_step(caret, forward)
+
+    if other.para ~= caret.para or other.row ~= caret.row or other.col ~= caret.col
+       or other.at == caret.at then
+      return self:delete(forward)
+    end
+
+    local body, place = richtext.delete(doc.body, caret, other)
+    self:edited(body, place, "delete")
+  end
+
+  --
+  -- **How many words and characters** (R1's count, at the window's foot):
+  -- the selection's, or the document's - a table's cells and a text box's
+  -- counted, a chart's numbers not. A word is what spaces separate, as
+  -- Pages and Word count; the characters include the spaces.
+  --
+  -- **By paragraph, as the setting caches lines**: an edit makes a new
+  -- table only for the paragraph it touched, so a keystroke counts one
+  -- paragraph again and takes the rest from `counted`.
+  --
+  local counted = setmetatable({}, { __mode = "k" })
+
+  local function count_text(text)
+    local words = 0
+    for _ in text:gmatch("%S+") do words = words + 1 end
+    return words, utf8.len(text) or #text
+  end
+
+  local function count_para(p)
+    local c = counted[p]
+
+    if c then return c[1], c[2] end
+
+    local words, chars = 0, 0
+
+    if p.table and not p.table.chart then
+      for _, row in ipairs(p.table.rows) do
+        for _, cell in ipairs(row) do
+          local w, n = count_text(richtext.plain(cell))
+          words, chars = words + w, chars + n
+        end
+      end
+    elseif not p.table then
+      words, chars = count_text(richtext.plain(p))
+    end
+
+    counted[p] = { words, chars }
+    return words, chars
+  end
+
+  function ed:count(all)
+    if self:selected() and not all then
+      return count_text(richtext.text(doc.body, self.anchor, self.caret))
+    end
+
+    local words, chars = 0, 0
+
+    for _, p in ipairs(doc.body) do
+      local w, n = count_para(p)
+      words, chars = words + w, chars + n
+    end
+
+    return words, chars
+  end
+
+  --
+  -- **Find** (`office.md` O2): every place `needle` occurs, in the
+  -- document's order, each `{ from =, to = }` - places as a caret has them,
+  -- so a match in a table's cell is found and shown like any other. `opts`:
+  --
+  --   case     match the letters' case; otherwise A is a
+  --   words    whole words only: no word's byte either side
+  --   within   { a, b }, a range: only what is inside it
+  --
+  -- A chart's numbers are not text and are not looked in. Case is folded
+  -- for ASCII, which leaves every byte where it was - so a place found in
+  -- the folded text is the place in the text.
+  --
+  function ed:find(needle, opts)
+    opts = opts or {}
+
+    local out = {}
+
+    if type(needle) ~= "string" or needle == "" then return out end
+
+    local nd = opts.case and needle or needle:lower()
+
+    local function look(text, n, row, col)
+      local hay = opts.case and text or text:lower()
+      local init = 1
+
+      while true do
+        local i, j = hay:find(nd, init, true)
+
+        if not i then break end
+
+        if not opts.words or (not is_word(text, i - 1) and not is_word(text, j + 1)) then
+          out[#out + 1] = { from = { para = n, at = i, row = row, col = col },
+                            to = { para = n, at = j + 1, row = row, col = col } }
+        end
+
+        init = j + 1
+      end
+    end
+
+    for n, p in ipairs(doc.body) do
+      if p.table and not p.table.chart then
+        for r, row in ipairs(p.table.rows) do
+          for c, cell in ipairs(row) do look(richtext.plain(cell), n, r, c) end
+        end
+      elseif not p.table then
+        look(richtext.plain(p), n)
+      end
+    end
+
+    if opts.within then
+      local a, b = opts.within[1], opts.within[2]
+      if richtext.before(b, a) then a, b = b, a end
+
+      local kept = {}
+
+      for _, m in ipairs(out) do
+        if not richtext.before(m.from, a) and not richtext.before(b, m.to) then
+          kept[#kept + 1] = m
+        end
+      end
+
+      out = kept
+    end
+
+    return out
+  end
+
+  -- One match replaced by `text`, as one step to undo, the caret after it.
+  function ed:replace(m, text)
+    local body, place = richtext.delete(doc.body, m.from, m.to)
+
+    if text ~= "" then body, place = richtext.type(body, place, text) end
+
+    self:edited(body, place, "replace")
+  end
+
+  --
+  -- **Every match replaced**, as one step to undo: the last first, so the
+  -- places of the ones before it still hold. How many.
+  --
+  function ed:replace_all(matches, text)
+    if #matches == 0 then return 0 end
+
+    local body, place = doc.body, nil
+
+    for i = #matches, 1, -1 do
+      body, place = richtext.delete(body, matches[i].from, matches[i].to)
+
+      if text ~= "" then body, place = richtext.type(body, place, text) end
+    end
+
+    self:edited(body, place, "replace")
+    return #matches
   end
 
   local function without_selection(self)
@@ -405,7 +654,9 @@ function textedit.new(o)
 
   --
   -- **A key, if it is the text's**: the caret's keys, with Shift a
-  -- selection; Backspace, Delete, Return and Tab; Control-A, B, U, Z and Y;
+  -- selection and with Control a word at a time; Backspace, Delete, Return
+  -- and Tab, Control-Backspace and Control-Delete a word; Control-A, B, I,
+  -- U, Z and Y;
   -- and what is typed, a character of several bytes held until it is
   -- whole. False for a key the text does not take, which the window may.
   --
@@ -415,7 +666,9 @@ function textedit.new(o)
     local ctrl = (mods & keys.CTRL) ~= 0
     local caret = self.caret
 
-    if k == keys.LEFT or k == keys.RIGHT then
+    if (k == keys.LEFT or k == keys.RIGHT) and ctrl then
+      self:move(self:word_step(caret, k == keys.RIGHT), shift)
+    elseif k == keys.LEFT or k == keys.RIGHT then
       self:move(richtext.step(doc.body, caret, k == keys.RIGHT), shift)
     elseif k == keys.UP or k == keys.DOWN then
       local place
@@ -432,6 +685,14 @@ function textedit.new(o)
       end
     elseif k == keys.DELETE and mods == 0 then
       self:delete(true)
+    elseif k == keys.DELETE and mods == keys.CTRL then
+      self:delete_word(true)
+    elseif (k == 8 or k == 127) and mods == keys.CTRL then
+      self:delete_word(false)
+    elseif (k == 105 or k == 73) and (mods & ~keys.SHIFT) == keys.CTRL then
+      -- **Control-I, italic** - as the board sends it with Shift, or once it
+      -- sends it without: Control and a lone I is byte 9, which is Tab.
+      self:format({ italic = not self:look().italic })
     elseif k == 9 and caret.row and (mods == 0 or mods == keys.SHIFT) then
       self:cell_key(mods == keys.SHIFT and -1 or 1)
     elseif (k == 13 or k == 10) and mods == keys.SHIFT then

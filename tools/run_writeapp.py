@@ -767,6 +767,91 @@ def main():
             check(saved == "/Home/Untitled.write, 16 paragraphs",
                   "Control-S did not save the typed document: %r" % saved)
 
+            # **Find and replace** (`office.md` O2): Control-F, "Item" typed
+            # - the list's two - Return to the next, Shift-Return back;
+            # Control-Shift-H for the replacement, All, and none left.
+            def fl(key):
+                m = None
+                for m in re.finditer(r"writer: find %s at (\d+),(\d+) (\d+)x(\d+)" % key,
+                                     guest.seen[seen_from:]):
+                    pass
+                return tuple(int(v) for v in m.groups()) if m else None
+
+            mark = len(guest.seen)
+            press("ctrl-f")
+            check(said("writer: find bar open", mark, 15) is not None,
+                  "Control-F did not open the find bar")
+            press(*letters("Ite"))
+            mark = len(guest.seen)
+            press("m")
+            check(said("writer: found ", mark, 15) == "2",
+                  "\"Item\" was not found twice: %r" % said("writer: found ", mark, 1))
+            mark = len(guest.seen)
+            press("ret")
+            check(said("writer: match ", mark, 15) == "2 of 2", "Return did not go to the second match")
+            mark = len(guest.seen)
+            press("shift-ret")
+            check(said("writer: match ", mark, 15) == "1 of 2", "Shift-Return did not go back to the first")
+
+            mark = len(guest.seen)
+            press("ctrl-shift-h")
+            check(said("writer: find bar open", mark, 15) == ", with replace",
+                  "Control-Shift-H did not open the replacement")
+            said("writer: find all at ", mark, 10)
+            press("tab", *letters("Entry"))
+            all_box = fl("all")
+            mark = len(guest.seen)
+            if all_box:
+                press_at(all_box[0] + all_box[2] // 2, all_box[1] + all_box[3] // 2)
+            check(said("writer: replaced ", mark, 15) == "2",
+                  "All did not replace the two: %r" % said("writer: replaced ", mark, 1))
+            check(said("writer: found ", mark, 15) == "0", "Item was still found after All")
+            mark = len(guest.seen)
+            press("esc")
+            check(said("writer: find bar closed", mark, 15) is not None, "Escape did not close the find bar")
+
+            # **Words counted, and Control-Backspace takes one** (R1).
+            counts = re.findall(r"writer: (\d+) words?, \d+ characters\r?\n", guest.seen[seen_from:])
+            mark = len(guest.seen)
+            press("ctrl-end", "ctrl-backspace")
+            now = re.search(r"writer: (\d+) words?, \d+ characters\r?\n", guest.seen[mark:]) \
+                if said(" characters", mark, 15) is not None else None
+            check(counts and now and int(now.group(1)) == int(counts[-1]) - 1,
+                  "Control-Backspace at the end did not take one word: %s then %s"
+                  % (counts[-1:] or "nothing counted", now.group(1) if now else "nothing"))
+            press("ctrl-z")
+
+            # **A double press chooses the word, a triple the paragraph.**
+            def quick(n):
+                for _ in range(n):
+                    guest.mouse_button(True)
+                    time.sleep(0.04)
+                    guest.mouse_button(False)
+                    time.sleep(0.05)
+
+            guest.mouse_to(*R._to_tablet(wx + fx + 120, wy + fy + 98, sw, sh))
+            time.sleep(0.6)
+            mark = len(guest.seen)
+            quick(2)
+            check(said("writer: pressed 2 times, ", mark, 15) is not None,
+                  "a double press did not choose the word")
+            time.sleep(1.0)
+            mark = len(guest.seen)
+            quick(3)
+            check(said("writer: pressed 3 times", mark, 15) is not None,
+                  "a triple press did not choose the paragraph")
+            press("ctrl-end")
+
+            # **Recent documents** in Export's list, after its three.
+            if export_tool:
+                mark = len(guest.seen)
+                press_at(export_tool[0] + export_tool[2] // 2, export_tool[1] + 20)
+                listed = said("writer: menu export at ", mark, 15)
+                check(listed is not None and listed.endswith("4 items"),
+                      "Export's list did not offer a recent document: %r" % listed)
+                press("esc")
+                time.sleep(0.5)
+
             # **Resized, as the browser is** (Diego, 5 October: "I need to be
             # able to resizse the window like we do with the browsser"): the
             # grip, the window's bottom right corner, dragged 300 left and

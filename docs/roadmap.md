@@ -133,6 +133,12 @@ questions is decided as recommended, and the order is:
   and one Spanish) and **O4** (kept copies every 30 s, previews,
   templates as documents in a folder): word count, the editing keys,
   recent documents.
+  **Built in 0.11.465** (`testing.md` 18.865): O2's find and replace, R1's
+  word count, keys by word, double and triple presses and recent
+  documents, and O4's kept copies and their recovery. Still to do of
+  them: O3 (spelling), previews, templates, dragging a selection, a copy
+  kept on switching away, plain Control-I (the board sends it as Tab;
+  CSI u in `hal/`), and the pages set only where a key changed them.
 - Write R2 (styles, links, headers and footers), R3 (DOCX, text and
   Markdown opened, with O7's XML Kit; ODT later), R4 (outline, contents,
   footnotes, sections).

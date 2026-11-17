@@ -35857,3 +35857,43 @@ way to start a download by address that WebKit's C API has not got (a
 patch); *Copy image* itself, as pixels, which needs the clipboard to hold
 a picture; and the selection's Copy is capped at what the clipboard takes
 (1900 bytes).
+
+## 18.865 Write's find and replace, words, and kept copies (office O2, R1, O4)
+
+**In short.** Written by the office lane, folded in here. Control-F opens
+a find bar under Write's tools that searches as it is typed, tints every
+match and says "3 of 11"; Return and Shift-Return go between them;
+Control-Shift-H adds Replace - one at a time or All, one step to undo -
+with Match case, Whole words and Within the selection. The word count is
+in the tools' note ("12 of 340 words" with a selection); Control-arrows
+go by word, Control-Backspace and Control-Delete take one; a double press
+chooses a word and a triple its paragraph or cell; recent documents are in
+Export's list after its three. And after thirty seconds of quiet a copy is
+kept in `/Home/System/Recovery/writer/`, which opening the document again
+offers back; a save forgets it.
+
+**Where it lives.** `textedit` (`ed:find`, `ed:replace`, `ed:replace_all`,
+`ed:press`, `ed:word_step`, `ed:count`), a kit of its own for the bar
+(`user/lib/findbar.lua`, `pk.findbar` put into a `pixelkit` as
+`toolbar.lua` puts `pk.toolbar`), and `docfile` (`keep`, `kept`,
+`forget`). Mail's search and Sheets' find are the next to use the bar.
+
+**Held by** `tools/test_findreplace.lua` on the Mac (42 checks: the
+search across paragraphs and cells, case, words, within, the replacements
+and their undo; breaking `ed:count` fails it), and `arm-writeapp` in
+QEMU, 67 checks now: Control-F, "Item" found twice, Return to the second,
+Shift-Return back, Control-Shift-H, All replacing the two and none found
+after, Escape; Control-Backspace taking one word off the count; a double
+and a triple press; Export's list holding a recent document.
+
+**Found by the suite.** The bar opens with the selected word in it, and
+the letters typed after it were added to it - "word" and "Item" made
+"wordItem", found nowhere; that run, the old behaviour, is the step's
+control. A bar opened again now holds its words *chosen*, drawn in the
+accent as a selection is, and the first key replaces them, as Safari's
+Control-F and Word's do.
+
+**Not held yet**: the kept copy and its recovery (about 35 seconds of a
+suite's ten minutes - for the next split of `arm-writeapp`), and Control-I
+for italic, which is Control-Shift-I while the board sends Control-I as
+Tab.

@@ -358,6 +358,21 @@ Write) and comes with O2-O4.
 - **new - New from Template**: Blank, Letter, Report, Essay, CV, and one's
   own, in the chooser (`templates.lua`, `office.md` O4).
 
+**Status, 17 November 2026: the Lua parts written, waiting for their
+gate.** Find and replace (`office.md` O2), with Replace on Control-Shift-F
+or Control-Shift-H, since Control-H is Backspace. The word count is in the
+note in the tools' row rather than in a foot, because the window has none
+and the pages run to its bottom; with a selection it reads "12 of 340
+words". Control-arrows by word, Control-Backspace and Control-Delete, and
+double and triple presses, all in `textedit`. **Control-I is Control-Shift-I
+for now**: Control-I is Tab's byte, 9, and the board sends it as Tab; the
+kit takes italic from Control-I as soon as the board sends it as its own
+key (CSI u, as it already sends Control-Shift and a letter). Recent
+documents are in Export's list after its three, each opened in a window of
+its own, since Write has no File list yet. The kept copy is `office.md`
+O4's. Not yet: spelling (O3), templates, and dragging a selection to move
+it.
+
 **R2 - Documents that look like themselves.**
 
 - **new - Styles changed and added**: Update Style from what is chosen, New
