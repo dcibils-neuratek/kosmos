@@ -35556,3 +35556,20 @@ inset's five fields moved every slot after them - fixed. `x86-film`,
 four together in 137 s, with the disk at 97%. 1b's `wholly` and `owing-one` no longer bite, since the inset
 replaced the path they broke, and are retired with it; 1b's path is the
 fallback now, used under a panel.
+
+## 18.858 The wake held by a suite
+
+**In short.** 0.11.455 made WebKit wake JetSki the moment it has news
+rather than leave it for the poll's tick, and nothing tested it - owed
+since. JetSki now counts the polls WebKit's pulse answered, and
+`x86-jetski` requires some.
+
+The pulse reaches JetSki as a `changed` event carrying the code the window
+manager handed out for it (`watch_code`); JetSki takes that event as the
+wake and counts it (`jetski: woken by WebKit N times`, with the frames
+trace). The `changes` step, a page whose square blinks, must see the
+count above nought: 29 and 149 in two seconds' reports of the run that
+passed. Control `sleeper` leaves `webkit.wake` out, as before 0.11.455:
+it fails exactly "JetSki was never woken by WebKit, only by its poll's
+tick", and nothing else. What the wake is worth is 18.855's figure on the
+M700 (wheel to picture 14.1 ms to 9.4); a count is what QEMU can hold.

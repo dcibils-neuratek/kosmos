@@ -279,7 +279,7 @@ local commits = { n = 0, sum = 0, most = 0, last = 0 }
 
 -- And the whole frame, split: the chrome JetSki paints, the page the kit
 -- draws, the commit - each summed over the second's frames.
-local frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0 }
+local frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0, woken = 0 }
 local frame_t0, frame_page = 0, 0
 
 local function frame_mark(what)
@@ -312,7 +312,7 @@ local function commit_timed(win, damage)
 end
 
 local function commits_said()
-  if (commits.n == 0 and frames.inset == 0) or (sys.ticks() - commits.last) < COUNTER_HZ then
+  if (commits.n == 0 and frames.inset == 0 and frames.woken == 0) or (sys.ticks() - commits.last) < COUNTER_HZ then
     return
   end
   if commits.n > 0 then
@@ -328,8 +328,11 @@ local function commits_said()
       frames.part, frames.part > 0 and frames.part_px / frames.part / 1e6 or 0))
     print(("jetski: the page shown as an inset %d times"):format(frames.inset))
   end
+  if frames.woken > 0 then
+    print(("jetski: woken by WebKit %d times"):format(frames.woken))
+  end
   commits.n, commits.sum, commits.most = 0, 0, 0
-  frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0 }
+  frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0, woken = 0 }
 end
 
 --------------------------------------------------------------------------
@@ -1860,6 +1863,19 @@ do
 
   if r and r.code and r.passed then
     webkit.wake(r.passed, r.code)
+
+    -- The pulse arrives as a `changed` event with this code, which answers
+    -- the poll and is otherwise nothing to do: the pass pumps anyway.
+    -- Counted, so that a suite can see the wake is what answered it.
+    local code, folder_changed = r.code, win.folder_changed
+
+    function win:folder_changed(ev)
+      if ev.code == code then
+        frames.woken = frames.woken + 1
+        return
+      end
+      return folder_changed(self, ev)
+    end
   else
     print("jetski: no code from the window manager; WebKit waits for the tick")
   end

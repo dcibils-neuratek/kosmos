@@ -646,6 +646,12 @@ def changes(guest, R, window, sw, sh):
         failed.append("the page was never shown as an inset: %s"
                       % (re.findall(r"jetski: (?:the page|frames)[^\r\n]*", guest.seen[since:])[-3:]
                          or "nothing said"))
+    woken = [int(n) for n in re.findall(r"jetski: woken by WebKit (\d+) times",
+                                        guest.seen[since:])]
+    if not any(woken):
+        failed.append("JetSki was never woken by WebKit, only by its poll's tick: %s"
+                      % (re.findall(r"jetski: (?:woken|no code)[^\r\n]*", guest.seen[since:])[-3:]
+                         or "nothing said"))
     return failed
 
 
@@ -1191,6 +1197,15 @@ def main():
         with open(lua) as f:
             text = changed(f.read(), "  local id = web.shown_id()\n  local fresh",
                            "  do return false end\n  local id = web.shown_id()\n  local fresh")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
+    if BROKEN == "sleeper":
+        # WebKit not handed the window's code: every picture waits for the
+        # poll's tick, as before 0.11.455.
+        with open(lua) as f:
+            text = changed(f.read(), "    webkit.wake(r.passed, r.code)\n",
+                           "    -- (the wake left out)\n")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
