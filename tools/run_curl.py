@@ -26,6 +26,9 @@ What is asked, and what each holds:
     guest was never given - each exit 60, curl's "peer certificate cannot
     be authenticated";
   - **8 MB**, its bytes and how long they took.
+  - **HTTP/2** (nghttp2, since 0.11.452): the page four times at once,
+    from a server of Node's own `http2` (`h2serve.js`) - each over HTTP/2,
+    and all four on one connection, as a page's requests to one host go.
 
 The authority, the certificates and the servers are `run_tls.py`'s, made
 fresh each run. The guest and this Mac each have servers of their own,
@@ -36,8 +39,11 @@ served and not this Mac:
   KOSMOS_CURL_BREAK=cookie  the guest's second cookie for the host's own
                             domain, so the jar keeps it
   KOSMOS_CURL_BREAK=brotli  one byte of the guest's Brotli stream
+  KOSMOS_CURL_BREAK=http2   the guest's HTTP/2 server speaking HTTP/1.1
+                            alone, so its four come over four connections
 """
 
+import atexit
 import gzip
 import hashlib
 import http.server
@@ -179,13 +185,28 @@ def serve(work, cert, broken):
     return server.server_address[1]
 
 
+def serve_h2(work, broken):
+    """An HTTP/2 server on this Mac (`h2serve.js`); the port, and the
+    process, which ends with this one."""
+    page = os.path.join(work, "page.bin")
+    if not os.path.exists(page):
+        with open(page, "wb") as f:
+            f.write(PAGE)
+    node = subprocess.Popen(["node", os.path.join(HERE, "h2serve.js"),
+                             os.path.join(work, "good.pem"), os.path.join(work, "server.key"),
+                             page] + (["h1"] if broken == "http2" else []),
+                            stdout=subprocess.PIPE, text=True)
+    atexit.register(node.kill)
+    return int(node.stdout.readline()), node
+
+
 def commands(ports, address, cacert, folder):
     """Every command, as (name, arguments): `folder` is where it saves."""
     def at(port, path, name=NAME):
         return ["--resolve", "%s:%d:%s" % (name, port, address),
                 "https://%s:%d%s" % (name, port, path)]
 
-    good, expired, untrusted = ports
+    good, expired, untrusted, h2 = ports
     out = lambda n: ["-o", "%s/%s.out" % (folder, n)]          # noqa: E731
     said = ["-sS", "--cacert", cacert, "-w",
             "%{http_code} %{size_download} %{num_redirects} %{ssl_verify_result}\\n"]
@@ -203,13 +224,20 @@ def commands(ports, address, cacert, folder):
         ("expired", said + at(expired, "/page")),
         ("untrusted", said + at(untrusted, "/page")),
         ("big", said + out("big") + at(good, "/big")),
+        # Four at once (`-Z`), each saved, and how each came: the HTTP
+        # version, and whether it opened a connection or rode another's.
+        ("http2", ["-sS", "--cacert", cacert, "-Z", "--parallel-max", "4", "-w",
+                   "%{http_code} %{size_download} h%{http_version} c%{num_connects}\\n",
+                   "--resolve", "%s:%d:%s" % (NAME, h2, address)]
+         + sum((["-o", "%s/http2%s.out" % (folder, "" if i == 0 else i),
+                 "https://%s:%d/page" % (NAME, h2)] for i in range(4)), [])),
     ]
 
 
 def mac_curl():
     """curl's program, built for this Mac from the same release."""
     subprocess.run(["python3", os.path.join(HERE, "w5_build.py"), "host",
-                    "zlib", "openssl", "brotli", "curl"], check=True, capture_output=True)
+                    "zlib", "openssl", "brotli", "nghttp2", "curl"], check=True, capture_output=True)
     return os.path.join(ROOT, "build", "w5", "host", "curl", "src", "curl")
 
 
@@ -219,24 +247,28 @@ def outcome(text):
     kept = []
     for line in text.splitlines():
         line = line.rstrip()
-        if re.match(r"^\d{3} \d+ \d+ \d+$", line):
+        if re.match(r"^\d{3} \d+ \d+ \d+$", line) \
+                or re.match(r"^\d{3} \d+ h\S+ c\d+$", line):
             kept.append(line)
         elif line.startswith("curl: ("):
             kept.append(re.sub(r"curl: \((\d+)\).*", r"curl: (\1)", line))
-    return kept
+    # Four at once finish in any order: the same lines, whichever came first.
+    return sorted(kept)
 
 
 def main():
-    if BROKEN not in (None, "page", "cookie", "brotli"):
-        print("FAIL: KOSMOS_CURL_BREAK is page, cookie or brotli, not %s" % BROKEN)
+    if BROKEN not in (None, "page", "cookie", "brotli", "http2"):
+        print("FAIL: KOSMOS_CURL_BREAK is page, cookie, brotli or http2, not %s" % BROKEN)
         return 1
     if not os.path.exists(BUILT):
         print("FAIL: no %s - make app-images" % BUILT)
         return 1
 
     pki(WORK, NAME)
-    mac_ports = [serve(WORK, c, None) for c in ("good", "expired", "untrusted")]
-    guest_ports = [serve(WORK, c, BROKEN) for c in ("good", "expired", "untrusted")]
+    mac_h2, _ = serve_h2(WORK, None)
+    guest_h2, _ = serve_h2(WORK, BROKEN)
+    mac_ports = [serve(WORK, c, None) for c in ("good", "expired", "untrusted")] + [mac_h2]
+    guest_ports = [serve(WORK, c, BROKEN) for c in ("good", "expired", "untrusted")] + [guest_h2]
 
     # This Mac's answers.
     curl = mac_curl()
@@ -268,6 +300,10 @@ def main():
         (all(expected[n][0] == 60 for n in ("name", "expired", "untrusted")),
          "every refusal 60"),
         (expected["big"][2] == hashlib.sha256(BIG).hexdigest(), "8 MB"),
+        (expected["http2"][2] == page_sha and len(expected["http2"][1]) == 4
+         and all(" h2 " in l for l in expected["http2"][1])
+         and sum(int(l.rsplit("c", 1)[1]) for l in expected["http2"][1]) == 1,
+         "four at once over HTTP/2, on one connection"),
     ]
     wrong = [what for ok, what in claims if not ok]
     if wrong:
@@ -331,8 +367,8 @@ def main():
     print("PASS: curl 8.23.0 on Kosmos, over HTTPS to this Mac - the page plain, gzip'd, "
           "Brotli's file as br, "
           "chunked and redirected, cookies kept and refused by the public suffix list, "
-          "three certificates refused (60), 8 MB in %.1f s; every command as on this Mac"
-          % times["big"])
+          "three certificates refused (60), 8 MB in %.1f s, four at once over HTTP/2 on one "
+          "connection; every command as on this Mac" % times["big"])
     return 0
 
 

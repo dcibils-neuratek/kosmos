@@ -51,13 +51,27 @@
 #define ETH_RING_SLOT    2048u
 
 /*
- * Thirty-two each way. At a gigabit and 1500 bytes that is about four tenths
- * of a millisecond of buffering, which is enough to cover the stack being
- * busy for one pass and not enough to hide a stack that has stopped reading.
- * What decides it properly is a measurement, and there is nothing to measure
- * until frames move.
+ * **Two hundred and fifty-six each way** (16 November 2026), about three
+ * milliseconds of a gigabit in full-size frames, and Linux's own default
+ * for a card's receive ring. It was thirty-two, four tenths of a
+ * millisecond - "enough to cover the stack being busy for one pass", with
+ * the note that a measurement would decide. The measurement came when a
+ * POSIX socket's window went from 64 KB to 2 MB (`runtime/posix/socket.c`):
+ * the New York Times' video server, 11 ms from the M700, sent in bursts the
+ * window now allowed, and three downloads lost 1,444 frames for want of a
+ * slot here, against 2 at 64 KB - with the card's own ring missing none.
+ * Each one a segment sent again from across the world, so the bigger window
+ * read slower, 1.3 MB/s where 64 KB read 5 (`testing.md` 18.850).
+ *
+ * Both length arrays live in the first page with the indices, which holds
+ * up to 508; a power of two, so the indices wrap at 2^32 on a slot boundary.
  */
-#define ETH_RING_SLOTS   32u
+#define ETH_RING_SLOTS   256u
+
+_Static_assert(32u + 2u * 4u * ETH_RING_SLOTS <= 4096u,
+               "the lengths and indices of an eth_ring fit its first page");
+_Static_assert((ETH_RING_SLOTS & (ETH_RING_SLOTS - 1u)) == 0,
+               "an eth_ring's slots are a power of two");
 
 /* The frames start a page in, so the indices never share a cache line with
  * them - the same reason `tcpring.h` does it. */

@@ -123,6 +123,15 @@ RELEASES = {
         "sha256": "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5",
         "top": "curl-8.23.0",
     },
+    # **HTTP/2 for curl** (`docs/w5.md`; Diego, 16 November 2026: "also
+    # lets add http/2"): nghttp2 1.71.0, its library only, the GitHub
+    # release with its digest.
+    "nghttp2": {
+        "url": "https://github.com/nghttp2/nghttp2/releases/download/v1.71.0/"
+               "nghttp2-1.71.0.tar.xz",
+        "sha256": "c0f55121d88650e4b9227aec28cebaf664d2417ca60fe70be0f8d38829f52116",
+        "top": "nghttp2-1.71.0",
+    },
 }
 
 # **Releases that are tags**, with no asset GitHub keeps a digest for:

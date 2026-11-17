@@ -23,10 +23,16 @@ What it does as a sender, and nothing more:
 - **it sends again** from the oldest byte not acknowledged on three
   repeated acknowledgements, or when nothing has been acknowledged for
   three round trips;
-- **its FIN** follows the last byte, and it answers the guest's.
+- **its FIN** follows the last byte, and it answers the guest's;
+- **selective acknowledgements** (RFC 2018, 16 November 2026): its SYN-ACK
+  says they may be sent when the guest's SYN did, and it **loses three
+  segments of one window on purpose** - every third from `LOSE_FROM`, the
+  first time each is sent - then reads every block the guest names, and on
+  three repeated acknowledgements sends again only what no block covers.
 
 It speaks to one connection, once, and says what it saw: the scale the
-guest offered and the most window the guest said.
+guest offered, the most window the guest said, whether it offered SACK,
+and every block it named - each held to what was sent and lost.
 """
 
 import heapq
@@ -40,6 +46,8 @@ PEER_IP = bytes([10, 9, 0, 1])
 GUEST_IP = bytes([10, 9, 0, 2])
 MSS = 1460
 OUR_SCALE = 7
+LOSE_FROM = 64 * MSS        # where the three segments lost begin, in bytes
+LOST = (LOSE_FROM, LOSE_FROM + 3 * MSS, LOSE_FROM + 6 * MSS)
 
 ETH_IP, ETH_ARP = 0x0800, 0x0806
 SYN, ACK, FIN, RST, PSH = 0x02, 0x10, 0x01, 0x04, 0x08
@@ -56,7 +64,14 @@ def checksum(data):
 
 def tcp_options(raw):
     """MSS and window scale from a segment's options; None where absent."""
+    return tcp_options_all(raw)[:2]
+
+
+def tcp_options_all(raw):
+    """MSS, window scale, whether SACK is permitted, and SACK's blocks as
+    (left, right) sequence numbers."""
     mss = scale = None
+    sack_ok, blocks = False, []
     at = 0
     while at < len(raw):
         kind = raw[at]
@@ -72,8 +87,13 @@ def tcp_options(raw):
             mss = struct.unpack("!H", raw[at + 2:at + 4])[0]
         if kind == 3 and length == 3:
             scale = min(raw[at + 2], 14)
+        if kind == 4 and length == 2:
+            sack_ok = True
+        if kind == 5 and length >= 10 and (length - 2) % 8 == 0:
+            for b in range(at + 2, at + length, 8):
+                blocks.append(struct.unpack("!II", raw[b:b + 8]))
         at += length
-    return mss, scale
+    return mss, scale, sack_ok, blocks
 
 
 class FarPeer:
@@ -89,7 +109,11 @@ class FarPeer:
         self.n = 0
         self.conn = None
         self.said = {"offered_scale": None, "most_window": 0, "resent": 0,
-                     "done": False, "acked": 0, "frames": 0, "kinds": {}}
+                     "done": False, "acked": 0, "frames": 0, "kinds": {},
+                     "offered_sack": False, "blocks": 0, "most_blocks": 0,
+                     "wrong_blocks": [], "lost": 0, "holes_resent": 0}
+        self.lost_once = set()          # what was lost on purpose, by offset
+        self.resent_at = set()          # what of that was sent again
 
     # -- the wire, with its distance --------------------------------------
 
@@ -146,18 +170,21 @@ class FarPeer:
             return
 
         if flags & SYN and not flags & ACK:
-            mss, scale = tcp_options(tcp[20:hlen])
+            mss, scale, sack_ok, _ = tcp_options_all(tcp[20:hlen])
             self.said["offered_scale"] = scale
+            self.said["offered_sack"] = sack_ok
             self.conn = {
                 "guest_port": sport, "rcv_nxt": seq + 1, "iss": 1000,
                 "snd_una": 1001, "snd_nxt": 1001, "scaled": scale is not None,
                 "their_scale": scale or 0, "window": window, "mss": min(mss or 536, MSS),
                 "dupacks": 0, "progress_at": time.monotonic(), "fin_sent": False,
-                "open": False,
+                "open": False, "sack": sack_ok, "sacked": [],
             }
             options = struct.pack("!BBH", 2, 4, MSS)
             if scale is not None:
                 options += bytes([1, 3, 3, OUR_SCALE])
+            if sack_ok:
+                options += bytes([1, 1, 4, 2])
             self.segment(SYN | ACK, 1000, seq + 1, options=options)
             return
 
@@ -171,6 +198,9 @@ class FarPeer:
         c["open"] = True
         said_window = window << c["their_scale"]
         self.said["most_window"] = max(self.said["most_window"], said_window)
+
+        if flags & ACK and c["sack"]:
+            self.blocks_of(tcp[20:hlen], ack)
 
         if flags & ACK:
             if ack - c["snd_una"] > 0 and ack <= c["snd_nxt"] + 1:
@@ -197,8 +227,49 @@ class FarPeer:
         if c["fin_sent"] and c["snd_una"] == c["snd_nxt"]:
             self.said["done"] = self.said["done"] or bool(flags & FIN)
 
+    def blocks_of(self, options, ack):
+        """The blocks an acknowledgement named, each held to the truth: past
+        what it acknowledged, inside what was sent, on segment boundaries,
+        and covering no segment that was lost and not yet sent again."""
+        c = self.conn
+        blocks = tcp_options_all(options)[3]
+        if not blocks:
+            return
+        self.said["blocks"] += 1
+        self.said["most_blocks"] = max(self.said["most_blocks"], len(blocks))
+        for left, right in blocks:
+            l, r = left - 1001, right - 1001
+            wrong = None
+            if not (ack <= left < right <= c["snd_nxt"]):
+                wrong = "outside what was acknowledged and sent"
+            elif l % MSS or (r % MSS and right != 1001 + len(self.data)):
+                wrong = "not on a segment's edge"
+            elif any(l <= x < r and x in self.lost_once and x not in self.resent_at
+                     for x in LOST):
+                wrong = "over a segment that never arrived"
+            if wrong and len(self.said["wrong_blocks"]) < 4:
+                self.said["wrong_blocks"].append("[%d, %d) after %d: %s" % (l, r, ack - 1001, wrong))
+            if not wrong:
+                c["sacked"].append((left, right))
+
+    def resend_holes(self):
+        """What the blocks say is missing, sent again, and nothing else."""
+        c = self.conn
+        top = max(r for _, r in c["sacked"])
+        at = c["snd_una"]
+        while at < top:
+            if not any(l <= at < r for l, r in c["sacked"]):
+                piece = self.data[at - 1001:at - 1001 + c["mss"]]
+                self.resent_at.add(at - 1001)
+                self.said["holes_resent"] += 1
+                self.segment(ACK | PSH, at, c["rcv_nxt"], piece)
+            at += c["mss"]
+
     def resend(self):
         c = self.conn
+        if c["sack"] and c["sacked"] and max(r for _, r in c["sacked"]) > c["snd_una"]:
+            self.resend_holes()
+            return
         self.said["resent"] += 1
         c["snd_nxt"] = c["snd_una"]
         c["fin_sent"] = c["fin_sent"] and c["snd_una"] - 1001 > len(self.data)
@@ -211,7 +282,15 @@ class FarPeer:
         while c["snd_nxt"] < end and c["snd_nxt"] - c["snd_una"] + c["mss"] <= c["window"]:
             at = c["snd_nxt"] - 1001
             piece = self.data[at:at + c["mss"]]
-            self.segment(ACK | PSH, c["snd_nxt"], c["rcv_nxt"], piece)
+            if at in LOST and at not in self.lost_once and c["sack"]:
+                self.lost_once.add(at)          # on its way, and never arriving
+                self.said["lost"] += 1
+                self.n += 1
+            elif at in self.lost_once and at not in self.resent_at:
+                self.resent_at.add(at)
+                self.segment(ACK | PSH, c["snd_nxt"], c["rcv_nxt"], piece)
+            else:
+                self.segment(ACK | PSH, c["snd_nxt"], c["rcv_nxt"], piece)
             c["snd_nxt"] += len(piece)
         if c["snd_nxt"] == end and not c["fin_sent"]:
             self.segment(FIN | ACK, c["snd_nxt"], c["rcv_nxt"])

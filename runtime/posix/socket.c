@@ -53,11 +53,25 @@
 
 enum { SOCK_NEW, SOCK_CONNECTED, SOCK_LISTENING };
 
+/*
+ * **The ring a connection asks for when its program did not say** (16
+ * November 2026): 2 MB rather than the stack's 64 KB. A connection brings in
+ * at most a window a round trip, and the window is the ring's free space, so
+ * 64 KB from 11 ms away - the New York Times' video server from the M700 -
+ * is 5.9 MB/s, measured, where this Mac's curl over the same line read 37.
+ * curl never sets `SO_RCVBUF`, and under HTTP/2 every request to a host
+ * shares one connection, so a page's five videos came in at 5.9 MB/s between
+ * them and the page took 48 s where six HTTP/1.1 connections had taken 4.5.
+ * 2 MB is 20 MB/s from 100 ms away; the stack gives no ring more than a
+ * 256th of the machine's memory (`ring_bytes_for` in `net.c`).
+ */
+#define POSIX_RING_BYTES (2u << 20)
+
 struct posix_socket {
     int             state;
     int             nonblock_connect;   /* connected without waiting */
     int             shut_write;
-    uint32_t        ring_bytes;         /* SO_RCVBUF's, 0 for the stack's */
+    uint32_t        ring_bytes;         /* SO_RCVBUF's, 0 for POSIX_RING_BYTES */
     long long       recv_timeout_ns;    /* SO_RCVTIMEO; 0: none */
     struct net_conn conn;
     uint64_t        listener;
@@ -377,7 +391,7 @@ int connect(int fd, const struct sockaddr *address, socklen_t length)
     struct posix_socket *s = socket_of(fd, &flags);
     uint8_t to[4];
     uint16_t port;
-    uint32_t r;
+    uint32_t r, ring;
 
     if (s == NULL) {
         return -1;
@@ -395,10 +409,12 @@ int connect(int fd, const struct sockaddr *address, socklen_t length)
         return fails(EINVAL);
     }
 
+    ring = s->ring_bytes != 0 ? s->ring_bytes : POSIX_RING_BYTES;
+
     if (flags & O_NONBLOCK) {
-        r = net_client_connect_ring(&s->conn, to, port, s->ring_bytes);
+        r = net_client_connect_ring(&s->conn, to, port, ring);
     } else {
-        r = net_client_connect_wait(&s->conn, to, port, s->ring_bytes);
+        r = net_client_connect_wait(&s->conn, to, port, ring);
     }
 
     if (r != NET_OK) {
@@ -706,7 +722,7 @@ int getsockopt(int fd, int level, int name, void *value, socklen_t *length)
         answer = SOCK_STREAM;
     } else if (level == SOL_SOCKET && (name == SO_RCVBUF || name == SO_SNDBUF)) {
         answer = s->state == SOCK_CONNECTED ? (int)s->conn.ring->bytes
-               : s->ring_bytes != 0 ? (int)s->ring_bytes : (int)TCP_RING_BYTES;
+               : s->ring_bytes != 0 ? (int)s->ring_bytes : (int)POSIX_RING_BYTES;
     } else if ((level == SOL_SOCKET && (name == SO_REUSEADDR || name == SO_KEEPALIVE))
                || (level == IPPROTO_TCP && name == TCP_NODELAY)) {
         answer = 0;

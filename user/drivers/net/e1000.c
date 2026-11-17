@@ -252,6 +252,8 @@ static struct {
     uint64_t      started_at;       /* when the rings were handed over */
     bool          rx_said;          /* the first five seconds, said */
     unsigned      counts_said;      /* how many of the counts' lines */
+    uint64_t      lost_looked_at;   /* when frames lost were last looked for */
+    unsigned long lost_said;        /* missed, no buffer and dropped, as said */
     struct {
         unsigned long good, broadcast, multicast, missed, no_buffer, crc;
         unsigned long management, management_dropped;
@@ -1414,13 +1416,23 @@ static void count_up(void)
  * last cleared, so the first carries what came before Kosmos - the kernel
  * itself, on a network boot.
  */
+static void lost_watch(struct say_line *line);
+
 static void counts_watch(struct say_line *line)
 {
     static const unsigned long at[] = { 30, 60, 120 };
     unsigned long unicast;
 
-    if (!card.pch || card.started_at == 0 || card.counts_said >= 3u
-        || kosmos_ticks() - card.started_at < at[card.counts_said] * card.hz) {
+    if (!card.pch || card.started_at == 0) {
+        return;
+    }
+
+    if (card.counts_said >= 3u) {
+        lost_watch(line);
+        return;
+    }
+
+    if (kosmos_ticks() - card.started_at < at[card.counts_said] * card.hz) {
         return;
     }
 
@@ -1484,6 +1496,47 @@ static void counts_watch(struct say_line *line)
     }
 
     card.counts_said++;
+    card.lost_said = card.counted.missed + card.counted.no_buffer + card.dropped;
+    card.lost_looked_at = kosmos_ticks();
+}
+
+/*
+ * **Frames lost, said when there are more** (16 November 2026): after the
+ * three lines above, a look once a minute, and a line only when the card
+ * missed a frame for want of a descriptor or room, or this driver had no
+ * room in the stack's ring for one, since the last. A lost frame is a TCP
+ * segment sent again, and from across the world that is a round trip or a
+ * timeout: it is how a bigger window came to read slower (`testing.md`
+ * 18.850).
+ */
+static void lost_watch(struct say_line *line)
+{
+    unsigned long lost;
+
+    if (kosmos_ticks() - card.lost_looked_at < 60u * card.hz) {
+        return;
+    }
+
+    card.lost_looked_at = kosmos_ticks();
+    count_up();
+    lost = card.counted.missed + card.counted.no_buffer + card.dropped;
+
+    if (lost == card.lost_said) {
+        return;
+    }
+
+    card.lost_said = lost;
+
+    say_begin(line);
+    say_text(line, "e1000: frames lost so far: missed ");
+    say_dec(line, card.counted.missed);
+    say_text(line, ", no buffer ");
+    say_dec(line, card.counted.no_buffer);
+    say_text(line, ", no room in the stack's ring ");
+    say_dec(line, card.dropped);
+    say_text(line, "; taken ");
+    say_dec(line, card.received);
+    say_send(console, line);
 }
 
 /* Whatever the stack has put in the ring, onto the wire. */

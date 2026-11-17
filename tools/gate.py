@@ -695,10 +695,12 @@ SUITES = [
     # cookies held to the public suffix list, three certificates refused,
     # 8 MB - every command held to the same program built for this Mac.
     Suite("arm-curl", ["python3", "tools/run_curl.py", ARM, "build/user-test/apps"],
-          watch=library("tools/run_curl.py", "tools/run_tls.py", "user/kits/curltest", *W5)),
+          watch=library("tools/run_curl.py", "tools/run_tls.py", "tools/h2serve.js",
+                        "user/kits/curltest", *W5)),
     Suite("x86-curl", ["python3", "tools/run_curl.py", X86,
                        "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_curl.py", "tools/run_tls.py", "user/kits/curltest", *W5)),
+          watch=library("tools/run_curl.py", "tools/run_tls.py", "tools/h2serve.js",
+                        "user/kits/curltest", *W5)),
 
     # **W5e's Skia** (`docs/w5.md`): `skiatest.elf`, Skia as WebKit carries
     # it drawing eight scenes - paths, gradients, text through FreeType,

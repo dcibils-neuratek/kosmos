@@ -370,6 +370,18 @@ struct conn {
     uint8_t  rcv_scale, snd_scale;
     bool     offer_scale;
 
+    /*
+     * **Selective acknowledgement** (RFC 2018), the receiving half:
+     * `offer_sack` is whether this end's SYN says it may be sent - always
+     * when this end connects, on a SYN-ACK only when their SYN said it -
+     * and `sack` whether both said so, after which every acknowledgement
+     * names what is held in `ahead`. `sack_latest` is where the newest
+     * piece kept ahead of a gap began, an offset like `ahead`'s, so its
+     * block can go first, as 2018 asks.
+     */
+    bool     offer_sack, sack;
+    uint32_t sack_latest;
+
     /* For a listener: the ring each connection it makes is given. */
     uint32_t ring_ask;
 
@@ -2218,7 +2230,7 @@ static uint32_t mss_of(const uint8_t *tcp, unsigned header)
  * keeps a window under 2^30; -1 when it said nothing, which is "no scaling,
  * either way".
  */
-static int wscale_of(const uint8_t *tcp, unsigned header)
+static int option_at(const uint8_t *tcp, unsigned header, uint8_t want, uint8_t length)
 {
     unsigned at = TCP_HEADER;
 
@@ -2238,14 +2250,75 @@ static int wscale_of(const uint8_t *tcp, unsigned header)
             break;
         }
 
-        if (kind == 3 && tcp[at + 1] == 3) {
-            return tcp[at + 2] > 14 ? 14 : tcp[at + 2];
+        if (kind == want && tcp[at + 1] == length) {
+            return (int)at;
         }
 
         at += tcp[at + 1];
     }
 
     return -1;
+}
+
+static int wscale_of(const uint8_t *tcp, unsigned header)
+{
+    int at = option_at(tcp, header, 3, 3);
+
+    return at < 0 ? -1 : tcp[at + 2] > 14 ? 14 : tcp[at + 2];
+}
+
+/* Whether their SYN said selective acknowledgements may be sent to it
+ * (RFC 2018 2, option kind 4, length 2). */
+static bool sack_permitted(const uint8_t *tcp, unsigned header)
+{
+    return option_at(tcp, header, 4, 2) >= 0;
+}
+
+/*
+ * **What is held past a gap, said** (RFC 2018 3): option kind 5, after two
+ * no-ops to keep the header in whole words, a block of two sequence numbers
+ * for each stretch in `ahead` - up to four, all that fits beside nothing
+ * else in forty bytes of options. The one holding the newest piece first,
+ * then the rest in order. Without it a sender that lost several segments
+ * of one window learns of one a round trip, or waits for its timer; with
+ * it, of all of them at once. Returns the bytes written.
+ */
+static unsigned sack_blocks(const struct conn *c, uint8_t *at)
+{
+    uint32_t i, first = c->ahead.count, n = 0;
+    uint32_t most = c->ahead.count < 4u ? c->ahead.count : 4u;
+
+    if (!c->sack || most == 0) {
+        return 0;
+    }
+
+    for (i = 0; i < c->ahead.count; i++) {
+        if (c->ahead.range[i].from <= c->sack_latest
+            && c->sack_latest < c->ahead.range[i].to) {
+            first = i;
+        }
+    }
+
+    at[0] = 1;
+    at[1] = 1;
+    at[2] = 5;
+    at[3] = (uint8_t)(2u + 8u * most);
+
+    if (first < c->ahead.count) {
+        put_be32(at + 4, c->rcv_nxt + c->ahead.range[first].from);
+        put_be32(at + 8, c->rcv_nxt + c->ahead.range[first].to);
+        n = 1;
+    }
+
+    for (i = 0; i < c->ahead.count && n < most; i++) {
+        if (i != first) {
+            put_be32(at + 4 + 8u * n, c->rcv_nxt + c->ahead.range[i].from);
+            put_be32(at + 8 + 8u * n, c->rcv_nxt + c->ahead.range[i].to);
+            n++;
+        }
+    }
+
+    return 4u + 8u * most;
 }
 
 /* The shift this end asks for: the least that lets the whole ring be said
@@ -2264,14 +2337,14 @@ static uint8_t scale_for(uint32_t ring_bytes)
 static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
                      const uint8_t *data, unsigned length)
 {
-    uint8_t segment[TCP_HEADER + 8 + 1460];
+    uint8_t segment[TCP_HEADER + 40 + 1460];
     unsigned header = TCP_HEADER;
 
-    if (length > sizeof(segment) - TCP_HEADER - 8) {
+    if (length > 1460u) {
         return false;
     }
 
-    memset(segment, 0, TCP_HEADER + 8);
+    memset(segment, 0, TCP_HEADER + 40);
 
     put_be16(segment + TCP_SPORT, c->local_port);
     put_be16(segment + TCP_DPORT, c->remote_port);
@@ -2297,6 +2370,20 @@ static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
             segment[TCP_HEADER + 7] = c->ring != NULL ? scale_for(c->ring_bytes) : 0;
             header = TCP_HEADER + 8;
         }
+
+        /* Two no-ops, then kind 4, length 2: selective acknowledgements
+         * may be sent here. */
+        if (c->offer_sack) {
+            segment[header + 0] = 1;
+            segment[header + 1] = 1;
+            segment[header + 2] = 4;
+            segment[header + 3] = 2;
+            header += 4;
+        }
+    } else if ((flags & TCP_ACK_FLAG) != 0 && length == 0) {
+        /* On an acknowledgement alone: beside a full segment the blocks
+         * would carry the packet past the MTU. */
+        header += sack_blocks(c, segment + TCP_HEADER);
     }
 
     /* The data offset is in 32-bit words, in the high nibble. A stack that
@@ -2991,6 +3078,8 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             made->snd_scale   = theirs >= 0 ? (uint8_t)theirs : 0;
             made->rcv_scale   = theirs >= 0 ? scale_for(made->ring_bytes) : 0;
         }
+        made->offer_sack    = sack_permitted(tcp, header);
+        made->sack          = made->offer_sack;
         made->ssthresh      = 0xffffffffu;
         made->dupacks       = 0;
         made->state         = ST_SYN_RCVD;
@@ -3064,6 +3153,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
             c->snd_scale = theirs >= 0 ? (uint8_t)theirs : 0;
             c->rcv_scale = theirs >= 0 ? scale_for(c->ring_bytes) : 0;
         }
+        c->sack = c->offer_sack && sack_permitted(tcp, header);
         c->state = ST_OPEN;
 
         (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
@@ -3244,6 +3334,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
                 tcp_ring_publish(&c->ring->in_write, write + run);
                 c->rcv_nxt += run;
+                c->sack_latest = c->sack_latest > run ? c->sack_latest - run : 0;
                 c->bytes_in += run;
                 wake_waiter(c);
 
@@ -3271,6 +3362,7 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
                 }
             } else if (tcp_reasm_add(&c->ahead, past, past + len)) {
                 c->kept_ahead++;
+                c->sack_latest = past;
             }
         }
 
@@ -3883,6 +3975,7 @@ static void serve(const struct message *msg, uint64_t sender)
         c->from_listener = -1;
         c->process       = asker();
         c->offer_scale   = true;        /* RFC 7323: the one who connects offers */
+        c->offer_sack    = true;        /* and RFC 2018 */
         c->opened_by     = sender;
         c->sent_at     = kosmos_ticks();
 

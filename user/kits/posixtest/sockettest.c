@@ -244,6 +244,44 @@ int kosmos_sockettest_run(char *out, unsigned long size, const char *to, int at,
     freeaddrinfo(found);
     hints.ai_flags = AI_NUMERICHOST;
 
+    /* The ring a connection gets (`socket.c`, POSIX_RING_BYTES): 2 MB, or
+     * a 256th of the machine, when the program said nothing - curl never
+     * does - and what it asked for when it set SO_RCVBUF before connecting. */
+    {
+        int said = 0, asked = 65536;
+        socklen_t length = sizeof said;
+
+        if ((fd = connected(at)) < 0
+            || getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &said, &length) != 0) {
+            SAY("sockets: a connection's ring: errno %d", errno);
+        }
+
+        close(fd);
+
+        /* 2 MB, or a 256th of the machine where that is less (`net.c`'s
+         * `ring_bytes_for`): a test machine's is 1 MB. Past the stack's own
+         * 64 KB either way, which is what was asked for. */
+        if (said <= 65536) {
+            SAY("sockets: a connection that asked for nothing has a ring of %d bytes, "
+                "the stack's own rather than POSIX's 2 MB", said);
+        }
+
+        if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0
+            || setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &asked, sizeof asked) != 0
+            || address(&a, at) != 0
+            || connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0
+            || getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &said, &length) != 0) {
+            SAY("sockets: a connection asking for 64 KB: errno %d", errno);
+        }
+
+        close(fd);
+        fd = -1;
+
+        if (said != asked) {
+            SAY("sockets: a connection that asked for 64 KB has %d bytes", said);
+        }
+    }
+
     if ((r = getaddrinfo("kosmos.invalid", "80", &hints, &found)) != EAI_NONAME) {
         SAY("sockets: a name with AI_NUMERICHOST was %d, not EAI_NONAME", r);
     }
@@ -603,7 +641,7 @@ int kosmos_sockettest_run(char *out, unsigned long size, const char *to, int at,
     }
 
     free(body);
-    snprintf(out, size, "sockets: names, fetched %d, two under poll, four threads, "
+    snprintf(out, size, "sockets: names, rings past 64 KB and as asked, fetched %d, two under poll, four threads, "
              "refused, timed out, pipes woken alone and beside a listener, accepted, "
              "descriptors", BIG_BODY);
     return 0;

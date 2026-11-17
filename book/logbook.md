@@ -3973,3 +3973,44 @@ one. The 23 sites' numbers are in `testing.md` 18.849.
 after; 1 MB 43 + 45 before, 4 + 14 after; eight 10 KB requests at once
 523 ms before, 28 after. Disk read for one JetSki start 530 MB before,
 66 after.
+
+## 17 November 2026 - One connection, made fast
+
+**In short.** HTTP/2 lets the browser send all its requests to a site
+over one connection instead of six. On Kosmos that made the New York
+Times take 48 seconds instead of 4.5, because one Kosmos connection could
+only bring in about 6 MB a second from across town. The connection's
+buffer is bigger now, the driver keeps more frames waiting, and when
+frames go missing Kosmos tells the sender exactly which ones (selective
+acknowledgements). One connection now reads 40 to 50 MB a second, faster
+than this Mac's, and 22 of the 23 test sites load within five seconds.
+
+**What.** Three changes in the network, each one found by measuring
+after the last. A connection can only have as much data on the way as
+its receive buffer holds, and a POSIX program like curl got the stack's
+default 64 KB: 64 KB every 11 ms is 5.9 MB a second. Giving those
+programs 2 MB made things *worse*, which the network driver's new
+counter explained: the sender now sent in big bursts, and the small queue
+between the network card's driver and the network server (32 frames)
+overflowed, so frames were dropped. A bigger queue (256) helped but did
+not stop it. What changed everything was selective acknowledgement: before,
+when frames were lost the sender could only learn of one gap per round
+trip, or wait a second for its timer; now each acknowledgement names
+what has arrived past the gaps, and only the missing frames are sent
+again.
+
+**Why it matters.** A web page today pulls most of its weight from a few
+servers, and with HTTP/2 each of them is one connection, so one
+connection's speed is the browser's speed. Videos, pictures and large
+scripts all arrive faster, and they no longer queue behind each other.
+
+**Visible impact.** CNN loads in 5.0 seconds instead of 11.2, El País in
+2.7 instead of 5.6, and the New York Times is back at 5.0. Reddit's page
+crashed in this run, on a different problem: a new thread found its
+stack missing. It is on the roadmap.
+
+**Measured.** One 10 MB video from 11 ms away, on the M700: 5.9 MB/s
+before; with a 2 MB buffer alone, 1.3 to 7.2; with 256 frame slots, 1.3
+to 3.4 (one 48); with selective acknowledgements, 38.9 to 52.7, six times
+out of six. This Mac reads the same video at 37 MB/s. Details in
+`testing.md` 18.850.

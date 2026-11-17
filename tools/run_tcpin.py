@@ -133,23 +133,36 @@ def far_mode(image):
     if said.get("offered_scale") is None or said.get("most_window", 0) <= 65535:
         fails.append("the guest did not scale its window: offered %r, the most it said %d bytes"
                      % (said.get("offered_scale"), said.get("most_window", 0)))
+    if not said.get("offered_sack"):
+        fails.append("the guest's SYN did not offer selective acknowledgements (RFC 2018)")
+    elif said.get("lost") != 3 or said.get("most_blocks", 0) < 2:
+        fails.append("three segments lost on purpose, %d; the guest named %d of what it held "
+                     "past them at most, in %d acknowledgements" % (said.get("lost", 0),
+                     said.get("most_blocks", 0), said.get("blocks", 0)))
+    if said.get("wrong_blocks"):
+        fails.append("the guest's blocks said what was not so: " + "; ".join(said["wrong_blocks"]))
     if took and float(took.group(3)) <= ceiling * 1.5:
         fails.append("%s MB/s, no faster than a 64 KB window can bring from %d ms away (%.2f MB/s)"
                      % (took.group(3), HOLD_US // 1000, ceiling))
 
     if fails:
-        print("the peer: %d frames, by kind %r, %d sent" % (said.get("frames", 0), said.get("kinds"), said.get("sent", 0)))
+        print("the peer: %d frames, by kind %r, %d sent, SACK %r in %d, at most %d blocks, %d holes sent again"
+              % (said.get("frames", 0), said.get("kinds"), said.get("sent", 0), said.get("offered_sack"),
+                 said.get("blocks", 0), said.get("most_blocks", 0), said.get("holes_resent", 0)))
         print("the guest: " + " | ".join(l.strip() for l in seen.splitlines() if l.startswith("net:") or "virtio-net" in l or "network" in l.lower())[:1500])
-        print("FAIL: %d of 4 checks on TCP receiving from far away:" % len(fails))
+        print("FAIL: %d of 6 checks on TCP receiving from far away:" % len(fails))
         for f in fails:
             print("  " + f)
         return 1
 
-    print("PASS: 4 checks on TCP receiving from far away (%d MB from a server %d ms away "
+    print("PASS: 6 checks on TCP receiving from far away (%d MB from a server %d ms away "
           "that scales its window: the guest offered a shift of %d and said windows up to "
           "%d KB, a ring of %s KB; %s MB/s against a 64 KB window's %.2f; whole by its SHA-256; "
-          "%d sent again)" % (MB, HOLD_US // 1000, said["offered_scale"], said["most_window"] // 1024,
-                              ring[0][0] if ring else "?", took.group(3), ceiling, said["resent"]))
+          "three segments of one window lost, the guest's selective acknowledgements naming up "
+          "to %d blocks in %d, every one true, %d holes sent again and %d windows from the oldest)"
+          % (MB, HOLD_US // 1000, said["offered_scale"], said["most_window"] // 1024,
+             ring[0][0] if ring else "?", took.group(3), ceiling, said["most_blocks"],
+             said["blocks"], said["holes_resent"], said["resent"]))
     return 0
 
 

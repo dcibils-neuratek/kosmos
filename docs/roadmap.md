@@ -10625,7 +10625,39 @@ the applications make the system useful, and is not pulled forward.
       and painting on the GPU, on the M700's (`docs/m700-2d.md`). Each
       measured on the 23 sites before and after, against the five
       seconds, and scrolling a heavy page measured too. In that order,
-      after the padlock and the shield.
+      after the padlock and the shield. **HTTP/2 built in 0.11.452**
+      (`w5.md`, `testing.md` 18.850): nghttp2 1.71.0 under curl, held by
+      `x86-curl`'s four-at-once check; WebKit needed nothing. Left of it:
+      nghttp2's own tests, which `w7.md` promised and which are not run
+      yet - curl's suite holds it from outside.
+      **And what one connection needed, built with it**: HTTP/2 puts a
+      host's requests on one connection, and a POSIX socket's ring was
+      the stack's 64 KB - 5.9 MB/s from 11 ms away, so the New York
+      Times' five videos shared it and the page took 48 s. A POSIX
+      socket asks for 2 MB now; the frame ring between a driver and the
+      stack is 256 slots, from 32; and the stack sends **selective
+      acknowledgements** (RFC 2018), so the frames a burst still loses
+      cost a segment each rather than a window. One connection on the
+      M700: **39 to 53 MB/s**, the New York Times 5.0 s, 22 of 23 sites
+      within five seconds (`testing.md` 18.850). Left of it:
+      - **The stack drains slower than a gigabit arrives**: 1,586 frames
+        lost for want of a slot in six downloads even at 256. SACK makes
+        them cheap; a stack that keeps up would make them none - where
+        its time goes per frame is to be measured first.
+      - **The sending half of SACK** - reading the far end's blocks when
+        Kosmos is the one sending - is not built; nothing here uploads
+        enough for it to matter yet.
+    - **A new thread's stack, gone before its first push** (16 November
+      2026, found by the 23 sites on 0.11.452). Reddit's page process
+      died in `trampoline + 0` - `rsp` 0x2437ffff8, thread 55, the write
+      of 0x2437ffff0 not present and its PTE 0: the top of slot 55,
+      which `process_thread_create` maps before the thread is woken. So
+      something unmapped it in between, or mapped it elsewhere. Read
+      once, and nothing found: a slot is taken only when no thread of
+      the process holds its index, collection needs `ended`, and ending
+      unmaps first. Seen once in the tree's life; to be made to happen -
+      threads made and ended on four cores as fast as they can be, under
+      a page process's collector - before it can be fixed.
     - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
       the M700, killed its page's process and JetSki showed nothing - the
       fault was in the system's log, read over telnet. Diego: "why dont we

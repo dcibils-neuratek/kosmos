@@ -229,6 +229,12 @@ Vendored third-party code keeps its own licence, which travels beside it:
       GitHub's SHA-256 (docs/w5.md W5d); the terms are its COPYING. Only
       curltest.elf, W5d's test, links it
 
+  nghttp2 1.71.0, by Tatsuhiro Tsujikawa and the nghttp2 contributors,
+      under the MIT licence
+      Not in the tree: tools/upstream.py fetches its release, held to
+      GitHub's SHA-256 (docs/w5.md); the terms are its COPYING. Its library
+      only, linked with curl: curltest.elf and JetSki's WebKit, for HTTP/2
+
   Brotli 1.2.1, by the Brotli authors, under the MIT
       licence
       Not in the tree: tools/upstream.py fetches it by git at the release's

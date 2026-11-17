@@ -35106,3 +35106,78 @@ still takes 26 s over that folder; something reads 2 MB from `/Home`
 every eleven seconds on an idle machine; and `link` refuses and
 `st_nlink` is always 1, so WebKit's blobs - a body shared by several
 records - are never used.
+
+## 18.850 HTTP/2, and what one connection needed: a 2 MB ring, 256 frame slots, SACK
+
+**HTTP/2** (`w5.md`): nghttp2 1.71.0, built by `w5_build.py` before curl
+and linked into curl, `curltest.elf` and WebKit. WebKit's curl port asks
+for HTTP/2 on its own once curl says it has it. `x86-curl` holds it with a
+fifth server, `tools/h2serve.js` (Node's `http2`, since Python's library
+has none): four requests at once with `-Z`, and the claim is four answers,
+every one "2", over one connection between them. **Control**:
+`KOSMOS_CURL_BREAK=http2` serves the guest over HTTP/1.1 alone, and the
+suite fails - "1.1", three connections.
+
+**What it did to the New York Times**: 4.5 s to 48.0, 54.1 and then 6.5
+in three tries. The trace showed the load waiting on five 1080p AV1
+videos from `vp.nyt.com`, their headers back at once and their bodies
+taking tens of seconds - on one connection, where HTTP/1.1 had given each
+its own. One connection's speed is a window a round trip, and the window
+is the connection's ring (`net.c`, `ring_bytes_for`): a POSIX socket got
+the stack's 64 KB unless its program set `SO_RCVBUF`, and curl never does.
+**Measured on the M700**, one video of 10 MB, 11 ms away: **5.9 MB/s**,
+which is 64 KB ÷ 11 ms; this Mac's curl over the same line, 37.
+
+**A 2 MB ring for a POSIX socket** (`runtime/posix/socket.c`,
+`POSIX_RING_BYTES`) - and it read *slower*: 7.2, 1.3, 2.6, 1.6, 1.8 MB/s
+against 64 KB's 5.4, 5.1, 3.9, 5.0, 5.9, the two binaries side by side on
+the same machine. The I219's driver now says what was lost once a minute
+when there is more (`e1000.c`, `lost_watch`): three downloads with the
+big window lost **1,444 frames for want of room in the ring between the
+driver and the stack**, against 2 with 64 KB, and the card itself missed
+none. That ring was 32 slots, four tenths of a millisecond of a gigabit,
+and its comment had said a measurement would decide. **256 slots**
+(`ethring.h`, Linux's own default for a card's ring): still 2,110 lost,
+the downloads still 1.3 to 3.4 MB/s, one of them 48. The stack drains
+slower than a burst arrives, and every frame lost cost a round trip at
+least: with no SACK a sender learns of one hole a round trip, or waits
+for its timer.
+
+**Selective acknowledgements** (RFC 2018, the receiving half, `net.c`):
+the SYN says they may be sent, and every acknowledgement alone then names
+up to four stretches held in `ahead` past a gap - the newest first.
+**On the M700, six downloads in a row: 52.7, 38.9, 43.0, 39.9, 42.7, 47.5
+MB/s** - every one, eight times the 64 KB ring's and faster than this
+Mac's curl. Frames are still lost, 1,586 in those six; each now costs one
+segment sent again.
+
+**The tests.** `x86-tcpfar`'s peer (`tools/farpeer.py`, 50 ms away on a
+`-netdev dgram` link) now answers SACK, loses three segments of one
+window on purpose, and holds every block the guest names to the truth:
+past what it acknowledged, inside what was sent, on segment boundaries,
+and never over a segment that has not arrived. 6 checks from 4; in the
+pass, up to 4 blocks in 1,606 acknowledgements, every one true. The
+peer's first recovery sent exactly the holes it had made - 64 and 67,
+then 70 - and its later ones sent the frames the *guest* dropped, the
+peer having no congestion window and sending a megabyte at once: the
+same disease as the M700's, said truthfully. **Control**: the image
+before SACK fails, "the guest's SYN did not offer selective
+acknowledgements". And `posixtest.elf`'s sockets check that a connection
+that asked for nothing has a ring past 64 KB and one that set `SO_RCVBUF`
+has what it asked; **control**: `POSIX_RING_BYTES` as the stack's own
+fails, "a ring of 65536 bytes".
+
+A delay put in `x86-curl`'s network with QEMU's `filter-buffer` cannot
+show any of this: slirp does not scale its window, so a guest's window
+behind it is 64 KB whatever it offers - 3.9 MB/s at 64 KB and 4.2 with
+2 MB. It was tried and taken out.
+
+**The 23 sites** (`bench/top20/0.11.452-m700.json`), against 0.11.451's
+(18.849): **22 within five seconds, from 19.** CNN 11.2 s to 5.0, El País
+5.6 to 2.7, El Observador 5.7 to 4.1, Infobae 5.3 to 4.4, ESPN 4.7 to
+2.7, the Guardian 3.1 to 1.8; the New York Times 5.0, against HTTP/1.1's
+4.5 and HTTP/2's 48 before the ring. Slower: BBC 2.2 to 4.8, eBay 1.5 to
+4.6, Walmart 2.3 to 3.4 - one run each, and CNN alone has ranged from 5.4
+to 14.5 between runs. **Reddit did not load**: its page process died
+with a new thread's first push, in `trampoline + 0`, the top of its
+stack slot not mapped (`roadmap.md`; seen once, not yet made to happen).

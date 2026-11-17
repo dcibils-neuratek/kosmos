@@ -150,6 +150,13 @@ LIBRARIES = {
         "-DAVIF_LIBXML2=OFF", "-DAVIF_JPEG=OFF", "-DAVIF_ZLIBPNG=OFF",
         "-DAVIF_BUILD_APPS=OFF", "-DAVIF_BUILD_TESTS=OFF", "-DAVIF_BUILD_EXAMPLES=OFF",
     ],
+    # **HTTP/2**, nghttp2's library and nothing of its programs, which want
+    # libev, OpenSSL's QUIC and a shell: what curl frames HTTP/2 with.
+    "nghttp2": [
+        "-DENABLE_LIB_ONLY=ON", "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_STATIC_LIBS=ON",
+        "-DENABLE_DOC=OFF", "-DBUILD_TESTING=OFF", "-DENABLE_HTTP3=OFF",
+        "-DWITH_LIBXML2=OFF", "-DWITH_JEMALLOC=OFF", "-DENABLE_FAILMALLOC=OFF",
+    ],
     # **W5d's curl**, by its own CMake, on OpenSSL, zlib and libpsl.
     "curl": [
         "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_STATIC_LIBS=ON",
@@ -162,10 +169,11 @@ LIBRARIES = {
         "-DCURL_USE_OPENSSL=ON", "-DCURL_ZLIB=ON", "-DCURL_USE_LIBPSL=ON",
         # What Kosmos does not have, or the browser does not ask curl for:
         # SSH, LDAP, Kerberos, IDN (WebKit hands curl hosts in ASCII),
-        # brotli and zstd (not built), HTTP/2 (nghttp2, not yet - roadmap).
+        # zstd (not built), HTTP/3 (QUIC is datagrams). Brotli and HTTP/2
+        # are on, on W5f's Brotli and the nghttp2 above.
         "-DCURL_USE_LIBSSH2=OFF", "-DCURL_USE_LIBSSH=OFF", "-DCURL_DISABLE_LDAP=ON",
         "-DCURL_USE_GSSAPI=OFF", "-DUSE_LIBIDN2=OFF", "-DCURL_BROTLI=ON",
-        "-DCURL_ZSTD=OFF", "-DUSE_NGHTTP2=OFF", "-DUSE_NGTCP2=OFF",
+        "-DCURL_ZSTD=OFF", "-DUSE_NGHTTP2=ON", "-DUSE_NGTCP2=OFF",
         # The POSIX layer's sockets are IPv4 and TCP.
         "-DENABLE_IPV6=OFF",
         # A pipe is what `curl_multi_wakeup` writes to end a `poll` with no
@@ -285,6 +293,7 @@ TARGETS = {
     "libxml2": ["LibXml2"],
     "curl": ["libcurl_static"],
     "brotli": ["brotlicommon", "brotlidec", "brotlienc"],
+    "nghttp2": ["nghttp2_static"],
     "woff2": ["woff2common", "woff2dec"],
     "libavif": ["avif"],
 }
@@ -459,6 +468,9 @@ def curl_extra(arch, src, top, prefix):
              "-DBROTLI_INCLUDE_DIR=" + os.path.join(prefix, "include"),
              "-DBROTLICOMMON_LIBRARY=" + lib("libbrotlicommon.a"),
              "-DBROTLIDEC_LIBRARY=" + lib("libbrotlidec.a"),
+             # HTTP/2's frames, by the nghttp2 built before curl.
+             "-DNGHTTP2_INCLUDE_DIR=" + os.path.join(prefix, "include"),
+             "-DNGHTTP2_LIBRARY=" + lib("libnghttp2.a"),
              "-DOPENSSL_ROOT_DIR=" + prefix, "-DOPENSSL_USE_STATIC_LIBS=ON"] + trial,
             says)
 
@@ -702,8 +714,9 @@ def main():
     for flag in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "GNUMAKEFLAGS"):
         os.environ.pop(flag, None)
 
-    names = sys.argv[2:] or [n for n in LIBRARIES if n not in ("curl", "brotli", "woff2", "libavif")] \
-        + ["openssl", "brotli", "curl", "woff2", "dav1d", "libavif", "ffmpeg"]
+    names = sys.argv[2:] or [n for n in LIBRARIES
+                             if n not in ("curl", "brotli", "nghttp2", "woff2", "libavif")] \
+        + ["openssl", "brotli", "nghttp2", "curl", "woff2", "dav1d", "libavif", "ffmpeg"]
     for name in names:
         if name not in LIBRARIES and name not in ("openssl", "dav1d", "ffmpeg"):
             sys.exit("w5_build: no library %s" % name)
