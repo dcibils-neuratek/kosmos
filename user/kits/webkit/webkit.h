@@ -198,8 +198,15 @@ struct webkit_crash {
 int webkit_crash(int id, struct webkit_crash *out);
 
 /* View `id`'s picture, `width` by `height` from its top left, into the
- * pixels at `pitch` bytes a row. */
-void webkit_paint(int id, uint32_t *pixels, unsigned width, unsigned height, unsigned pitch);
+ * pixels at `pitch` bytes a row - only the part `px`, `py`, `pw`, `ph` of
+ * it, in the view's pixels, and the rest of `pixels` left as it was. */
+void webkit_paint(int id, uint32_t *pixels, unsigned width, unsigned height, unsigned pitch,
+                  int px, int py, int pw, int ph);
+
+/* 1 and the rectangle WebKit has said changed in view `id`'s picture
+ * since this was last asked, every rectangle it said joined into one; 0
+ * when nothing changed. Asking forgets it. */
+int webkit_damage(int id, int *x, int *y, int *w, int *h);
 
 /* What a person does to a view, in its pixels. */
 enum webkit_mouse { WEBKIT_PRESS, WEBKIT_RELEASE, WEBKIT_MOVE };

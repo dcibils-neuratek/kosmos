@@ -386,7 +386,12 @@ numbers):
   window manager and WebKit speaks first - **built in 0.11.455**
   (`testing.md` 18.855): wheel to picture 14.1 ms to 9.4 on the M700,
   what is left being work - the strip painted, 5.6 ms, and the page drawn
-  into the window, 3.0 - which is 1b's and 1c's.
+  into the window, 3.0 - which is 1b's and 1c's. **1b built in 0.11.456**
+  (`testing.md` 18.856): no copy of the backing store to draw or scroll
+  it, the update's region used again, and only the page's changes drawn
+  into the window and committed - wheel to picture 2.5 ms on a plain page
+  and 5.0-5.7 on Wikipedia, whose web process still repaints its whole
+  view on a scroll until there are layers.
 
 ## Decided by Diego, 11 November 2026
 

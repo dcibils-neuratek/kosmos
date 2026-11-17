@@ -1,0 +1,22 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+What a scrolled frame repaints, traced (Kosmos testing.md 18.856). With
+0038's trace on, the web process hands each scrolled display's dirty
+rectangles, their bounds, the scroll and whether the bounds are painted
+whole to the port's KosmosFrameTimes.cpp, which tallies the area painted
+and says the first few frames' rectangles.
+
+diff -ru a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 10:19:59.568182044 -0300
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 10:19:59.582386890 -0300
+@@ -663,6 +663,10 @@
+ #endif
+ 
+     auto rects = m_dirtyRegion.rects();
++#if PLATFORM(KOSMOS)
++    if (kosmosFramesTraced && !m_scrollRect.isEmpty())
++        kosmosWebDirty(bounds, rects, m_scrollOffset, shouldPaintBoundsRect(bounds, rects));
++#endif
+     if (shouldPaintBoundsRect(bounds, rects)) {
+         rects.clear();
+         rects.append(bounds);

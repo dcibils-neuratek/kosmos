@@ -1,0 +1,82 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+An update's picture painted into the last one's region (Kosmos webkit.md
+Fast, step 1b; testing.md 18.856). The web process made a region the size
+of the dirty bounds for every update - for a scrolled frame the view's, as
+the scrollbar runs down its edge: 3.3 MB, 0.7 ms on the M700. Only the
+dirty rectangles are painted and only they are taken in, so once the UI
+process has answered the update before (DidUpdate, which display() waits
+for), its picture serves for the next of the same size. Never in
+updateGeometry, whose update is sent without waiting for an answer.
+
+diff -ru a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 10:28:26.238922886 -0300
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.cpp	2026-11-17 10:28:26.255108827 -0300
+@@ -575,7 +575,14 @@
+         return;
+ 
+     UpdateInfo updateInfo;
++#if PLATFORM(KOSMOS)
++    {
++        SetForScope reusing(m_kosmosReusing, true);
++        display(updateInfo);
++    }
++#else
+     display(updateInfo);
++#endif
+ 
+     if (updateInfo.updateRectBounds.isEmpty())
+         return;
+@@ -649,7 +656,24 @@
+     IntSize bitmapSize = bounds.size();
+     float deviceScaleFactor = webPage->corePage()->deviceScaleFactor();
+     bitmapSize.scale(deviceScaleFactor);
++#if PLATFORM(KOSMOS)
++    // **The region before, used again** (testing.md 18.856): a picture the
++    // size of the bounds was a region made afresh for every update - 3.3 MB
++    // and 0.7 ms on the M700 for a scrolled frame, whose bounds are the
++    // view's because the scrollbar runs down its edge. Only the dirty
++    // rectangles are painted and only they are taken in, so the last
++    // update's picture serves for the next of its size once the UI process
++    // has said it is done with it, which is what `display()` waits for.
++    bool reusable = m_kosmosReusing && !m_isWaitingForDidUpdate;
++    RefPtr<ShareableBitmap> bitmap;
++    if (reusable && m_kosmosLastUpdate && m_kosmosLastUpdate->size() == bitmapSize)
++        bitmap = m_kosmosLastUpdate;
++    else
++        bitmap = ShareableBitmap::create({ bitmapSize });
++    m_kosmosLastUpdate = reusable ? bitmap : nullptr;
++#else
+     auto bitmap = ShareableBitmap::create({ bitmapSize });
++#endif
+     if (!bitmap)
+         return;
+ 
+diff -ru a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.h b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.h
+--- a/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.h	2026-11-17 10:28:26.240712934 -0300
++++ b/Source/WebKit/WebProcess/WebPage/CoordinatedGraphics/DrawingAreaCoordinatedGraphics.h	2026-11-17 10:28:26.254977909 -0300
+@@ -29,6 +29,9 @@
+ 
+ #include "DrawingArea.h"
+ #include <WebCore/Region.h>
++#if PLATFORM(KOSMOS)
++#include <WebCore/ShareableBitmap.h>
++#endif
+ #include <wtf/RunLoop.h>
+ 
+ namespace WebCore {
+@@ -141,6 +144,14 @@
+     bool m_isWaitingForDidUpdate { false };
+     bool m_scheduledWhileWaitingForDidUpdate { false };
+ 
++#if PLATFORM(KOSMOS)
++    // The last update's picture, painted again for the next of its size
++    // rather than a region made afresh: only when `display()` is answering
++    // its timer (`m_kosmosReusing`), never while an update is unanswered.
++    RefPtr<WebCore::ShareableBitmap> m_kosmosLastUpdate;
++    bool m_kosmosReusing { false };
++#endif
++
+     bool m_alwaysUseCompositing { false };
+     bool m_supportsAsyncScrolling { true };
+     bool m_shouldSendEnterAcceleratedCompositingMode { false };

@@ -375,7 +375,8 @@ class Page(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        body = {"/": PAGE, "/other.html": OTHER, "/scripted.html": SCRIPTED}.get(self.path)
+        body = {"/": PAGE, "/other.html": OTHER, "/scripted.html": SCRIPTED,
+                "/changes.html": CHANGES}.get(self.path)
         if BROKEN == "missing" or body is None:
             self.send_error(404)
             return
@@ -503,6 +504,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
+    failed.extend(changes(guest, R, window, sw, sh))
     return failed
 
 
@@ -561,6 +563,80 @@ def from_disk(guest, R, window, sw, sh):
     if not said(guest, since, "jetski: title Dropped on the window", 30):
         failed.append("a web page dropped on the window did not open: %s"
                       % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:]
+                         or "nothing said"))
+    return failed
+
+
+# **Only the page's changes** (`testing.md` 18.856): a block that changes
+# colour three times and stays, then a square far from it that blinks for
+# nine seconds. JetSki draws each change into the window's buffer it draws
+# into, and only that - so every buffer has to have been given the block's
+# last colour, or the one before it is there on every other blink. The
+# window manager composes only what a commit names, so each picture is
+# taken after the whole window is composed again (Control-G, `HOOK`).
+CHANGES_FINAL = (0x5a, 0x13, 0x7c)
+CHANGES = b"""<!doctype html>
+<html><head><title>Changes</title><style>
+body { margin: 0; background: #ffffff; }
+#a { position: absolute; left: 40px; top: 40px; width: 200px; height: 100px; background: rgb(200, 30, 30); }
+#b { position: absolute; left: 600px; top: 300px; width: 40px; height: 40px; background: #000000; }
+</style></head><body><div id="a"></div><div id="b"></div><script>
+var colours = ["rgb(30, 30, 200)", "rgb(200, 200, 30)", "rgb(90, 19, 124)"], i = 0;
+var t = setInterval(function () {
+    document.getElementById("a").style.background = colours[i++];
+    if (i < colours.length) return;
+    clearInterval(t);
+    var n = 0, u = setInterval(function () {
+        document.getElementById("b").style.background = n % 2 ? "#000000" : "#888888";
+        if (++n == 60) { clearInterval(u); document.title = "Changes done"; }
+    }, 150);
+}, 300);
+document.title = "Changes begun";
+</script></body></html>
+"""
+
+
+def changes(guest, R, window, sw, sh):
+    """A page whose picture changes in a corner: drawn into the window a
+    change at a time, never the whole window, and never a stale corner."""
+    x, y, w, h = window
+    since = len(guest.seen)
+    guest.sendkey("ctrl-t")
+    deadline = time.time() + 20
+    while not re.search(r"jetski: tab (\d+) of \1\b", guest.seen[since:]):
+        if time.time() > deadline:
+            return ["Control-T opened no tab for the page that changes"]
+        time.sleep(0.2)
+    time.sleep(0.5)
+    since = len(guest.seen)
+    for key in keys_for(Page.address + "changes.html\n"):
+        guest.sendkey(key)
+    if not said(guest, since, "jetski: title Changes begun", 30):
+        return ["the page that changes did not load: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    time.sleep(2.0)                     # the block's colours, all three
+    failed, stale = [], []
+    for n in range(6):
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-g")
+        said(guest, mark, "jetski: test composed again", 10)
+        time.sleep(0.3)
+        shot = guest.screendump()
+        count, _ = block_at(R.parse_ppm, shot, x, y, w, h, CHANGES_FINAL)
+        if count < 18000:
+            stale.append(count)
+            R.write_png(os.path.join(KEPT, "jetski-changes.png"), shot)
+        time.sleep(0.4)
+    if stale:
+        failed.append("the block's last colour was not on the screen while the square blinked: "
+                      "%d of 6 pictures had %s of its 20000 pixels" % (len(stale), stale))
+    said(guest, since, "jetski: title Changes done", 30)
+    time.sleep(1.5)                     # the second's frames, said
+    parts = [int(n) for n in re.findall(r"jetski: frames of the page's changes only (\d+)",
+                                        guest.seen[since:])]
+    if not any(parts):
+        failed.append("no frame drew only the page's changes: %s"
+                      % (re.findall(r"jetski: frames[^\r\n]*", guest.seen[since:])[-3:]
                          or "nothing said"))
     return failed
 
@@ -660,10 +736,15 @@ def stopped(guest, R, window, sw, sh):
     return failed
 
 
-# **The test's key** (`stopped`): Control-K ends the shown tab's web
+# **The test's keys** (`stopped`): Control-K ends the shown tab's web
 # process, as a fault would have, by JetSki's own right over its children.
+# (`changes`) Control-G has the window manager compose the whole window
+# again from the buffer it shows - a move to where it is, which JetSki is
+# not told of - so a buffer's stale corner reaches the screen.
 # Only in the suite's copy of `jetski.lua`.
 HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
+        "if c == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
+        "print(\"jetski: test composed again\") return false end "
         "if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
         "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
@@ -1097,6 +1178,22 @@ def main():
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
+    if BROKEN == "wholly":
+        # Every picture the whole window, as before 0.11.456.
+        with open(lua) as f:
+            text = changed(f.read(), "    if settings_page.hidden and not crash", "    if false and not crash")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
+    if BROKEN == "owing-one":
+        # What changed owed only by the buffer drawn now, not the other.
+        with open(lua) as f:
+            text = changed(f.read(), "  for slot, o in pairs(owed) do",
+                           "  local now = win.region and win.region.draw_into\n"
+                           "  for slot, o in pairs({ [now] = owed[now] }) do")
+        lua = os.path.join(WORK, "jetski.lua")
+        with open(lua, "w") as f:
+            f.write(text)
     if BROKEN == "tabless":
         # Control-T, the window's, never answered.
         with open(lua) as f:
@@ -1125,7 +1222,7 @@ def main():
     with open(lua) as f:
         text = f.read()
     text = changed(text, "if c == 12 or c == 15 or c == 20 then return true end",
-                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 then return true end")
+                        "if c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]))
     if BROKEN == "nameless":

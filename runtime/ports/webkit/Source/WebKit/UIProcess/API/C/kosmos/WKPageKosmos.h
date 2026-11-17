@@ -108,7 +108,7 @@ WK_EXPORT void WKKosmosSetFramesTraced(bool);
  * on a receiving thread after messages arrive, and must not block.
  */
 WK_EXPORT void WKKosmosOnMessages(void (*told)(void));
-WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost);
+WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost, double* scrolled, double* scrolledMost);
 
 #ifdef __cplusplus
 }

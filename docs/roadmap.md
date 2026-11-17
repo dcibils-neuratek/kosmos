@@ -10189,6 +10189,22 @@ the applications make the system useful, and is not pulled forward.
     own timers also wake the window. And `x86-automate` failed once under the
     whole gate's load (0.11.455's prepush: telnetd not listening within
     120 s) and passed alone in 75 s - a load flake beside `x86-ahci`'s.
+    **1b built in 0.11.456** (`testing.md` 18.856): the backing store
+    drawn and scrolled without a copy (patch 0041), the update's region
+    used again (0043), only the page's changes drawn into the window and
+    committed, each of its two buffers owing what it has not drawn, and a
+    wheel turn no longer drawing a frame of its own. Wheel to picture on
+    the M700: a plain page 5.7 ms to 2.5, Wikipedia 7.5 to 5.0-5.7; a
+    still Wikipedia 0.08 Mpx a frame rather than the window's 0.96. Held
+    by `x86-jetski`'s `changes` step, controls `wholly` and `owing-one`.
+    **Next: 1c**, the page into the window by the GPU. Left for layers:
+    Wikipedia's web process repaints its whole view on every scroll
+    (3.6 ms) - viewport-constrained boxes without compositing. Its
+    prepush lost four suites to load, each passing alone in 88 s:
+    `x86-ahci` (as before), `x86-profile` (730 samples where 1050 were
+    due), `arm-sandbox` (cut short at 219 of 220) and `x86-script`
+    (Cafesa3D's typed script arrived with a syntax error) - with the disk
+    at 97%, 6.3 GB free.
   - **JavaScriptCore's JITs - required** (Diego, 14 November: "JavaScript
     need JIT for sure"). **Step 1 built in 0.11.449** (`docs/jit.md`,
     `testing.md` 18.846): Baseline and DFG together - on 64 bits the

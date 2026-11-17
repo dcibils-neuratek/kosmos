@@ -181,6 +181,10 @@ struct View {
         void add(double ms) { count++; sum += ms; most = std::max(most, ms); }
     } toPicture, drawn, toSlice;
     unsigned pictures = 0, unsliced = 0;
+    // **What changed since JetSki last drew** (`testing.md` 18.856): every
+    // rectangle WebKit said needs drawing, joined into one, until
+    // `webkit_damage` hands it over.
+    int damageX0 = 0, damageY0 = 0, damageX1 = 0, damageY1 = 0; // empty when x1 <= x0
     bool wheelWaiting = false, wheelSliced = false;
     WTF::MonotonicTime wheelAt, firstFrame, lastFrame;
 };
@@ -575,17 +579,17 @@ void framesSaid(View* view, WTF::MonotonicTime now)
     if ((!view->pictures && !view->drawn.count) || now - view->lastFrame < 1_s)
         return;
     auto average = [](const View::Times& t) { return t.count ? t.sum / t.count : 0.0; };
-    double takenAverage, takenMost, ringAverage, ringMost;
-    unsigned taken = WKKosmosTakeIncorporated(&takenAverage, &takenMost, &ringAverage, &ringMost);
+    double takenAverage, takenMost, ringAverage, ringMost, scrolledAverage, scrolledMost;
+    unsigned taken = WKKosmosTakeIncorporated(&takenAverage, &takenMost, &ringAverage, &ringMost, &scrolledAverage, &scrolledMost);
     fprintf(stderr, "webkit: frames view %d, %u pictures in %.0f ms: wheel to picture %.1f ms, most %.1f (%u); "
         "wheel to a slice %.1f, most %.1f (%u, %u passes without); "
         "read off the ring to taken %.1f, most %.1f; "
-        "taken in %.1f ms, most %.1f (%u); drawn into the window %.1f ms, most %.1f (%u)\n",
+        "taken in %.1f ms, most %.1f (%u), a scrolled one %.1f, most %.1f; drawn into the window %.1f ms, most %.1f (%u)\n",
         view->id, view->pictures, (view->lastFrame - view->firstFrame).milliseconds(),
         average(view->toPicture), view->toPicture.most, view->toPicture.count,
         average(view->toSlice), view->toSlice.most, view->toSlice.count, view->unsliced,
         ringAverage, ringMost,
-        takenAverage, takenMost, taken,
+        takenAverage, takenMost, taken, scrolledAverage, scrolledMost,
         average(view->drawn), view->drawn.most, view->drawn.count);
     view->toPicture = { };
     view->toSlice = { };
@@ -594,9 +598,19 @@ void framesSaid(View* view, WTF::MonotonicTime now)
     view->pictures = 0;
 }
 
-void needsDisplay(WKViewRef, WKRect, const void* info)
+void needsDisplay(WKViewRef, WKRect rect, const void* info)
 {
     auto* view = viewOf(info);
+    if (view && rect.size.width > 0 && rect.size.height > 0) {
+        int x0 = static_cast<int>(rect.origin.x), y0 = static_cast<int>(rect.origin.y);
+        int x1 = x0 + static_cast<int>(rect.size.width), y1 = y0 + static_cast<int>(rect.size.height);
+        if (view->damageX1 <= view->damageX0) {
+            view->damageX0 = x0, view->damageY0 = y0, view->damageX1 = x1, view->damageY1 = y1;
+        } else {
+            view->damageX0 = std::min(view->damageX0, x0), view->damageY0 = std::min(view->damageY0, y0);
+            view->damageX1 = std::max(view->damageX1, x1), view->damageY1 = std::max(view->damageY1, y1);
+        }
+    }
     if (tracing && view) {
         auto now = WTF::MonotonicTime::now();
         frameSeen(view, now);
@@ -1604,19 +1618,33 @@ extern "C" int webkit_crash(int id, struct webkit_crash* out)
     return 1;
 }
 
-extern "C" void webkit_paint(int id, uint32_t* pixels, unsigned width, unsigned height, unsigned pitch)
+extern "C" void webkit_paint(int id, uint32_t* pixels, unsigned width, unsigned height, unsigned pitch,
+    int px, int py, int pw, int ph)
 {
     auto page = pageOf(id);
     if (!page)
         return;
     auto* view = tracing ? views.find(id) : nullptr;
     auto from = view ? WTF::MonotonicTime::now() : WTF::MonotonicTime();
-    WKPagePaintKosmos(page, pixels, width, height, pitch, WKRectMake(0, 0, width, height));
+    WKPagePaintKosmos(page, pixels, width, height, pitch, WKRectMake(px, py, pw, ph));
     if (view) {
         auto now = WTF::MonotonicTime::now();
         frameSeen(view, now);
         view->drawn.add((now - from).milliseconds());
     }
+}
+
+extern "C" int webkit_damage(int id, int* x, int* y, int* w, int* h)
+{
+    auto* view = views.find(id);
+    if (!view || view->damageX1 <= view->damageX0)
+        return 0;
+    *x = view->damageX0;
+    *y = view->damageY0;
+    *w = view->damageX1 - view->damageX0;
+    *h = view->damageY1 - view->damageY0;
+    view->damageX0 = view->damageY0 = view->damageX1 = view->damageY1 = 0;
+    return 1;
 }
 
 //

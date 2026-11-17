@@ -495,8 +495,60 @@ static int paint_with(lua_State *L,
     return 0;
 }
 
-static int v_paint(lua_State *L)           { return paint_with(L, webkit_paint); }
+/*
+ * `v:paint(s, x, y, w, h [, px, py, pw, ph])`: the page, `w` by `h`, at
+ * `x`, `y` in the surface - all of it, or only the part `px`, `py`, `pw`,
+ * `ph` of it in the page's own pixels, the rest of the surface untouched.
+ */
+static void paint_whole(int id, uint32_t *pixels, unsigned w, unsigned h, unsigned pitch)
+{
+    webkit_paint(id, pixels, w, h, pitch, 0, 0, (int)w, (int)h);
+}
+
+static int v_paint(lua_State *L)
+{
+    if (lua_isnoneornil(L, 7))
+        return paint_with(L, paint_whole);
+
+    int id = id_of(L);
+    unsigned sw, sh, pitch;
+    uint32_t *pixels = kosmos_surface_pixels(L, 2, &sw, &sh, &pitch);
+    lua_Integer x = luaL_checkinteger(L, 3), y = luaL_checkinteger(L, 4);
+    lua_Integer w = luaL_checkinteger(L, 5), h = luaL_checkinteger(L, 6);
+    lua_Integer px = luaL_checkinteger(L, 7), py = luaL_checkinteger(L, 8);
+    lua_Integer pw = luaL_checkinteger(L, 9), ph = luaL_checkinteger(L, 10);
+
+    luaL_argcheck(L, x >= 0 && (lua_Unsigned)x < sw, 3, "inside the surface");
+    luaL_argcheck(L, y >= 0 && (lua_Unsigned)y < sh, 4, "inside the surface");
+    if (w > (lua_Integer)sw - x) w = (lua_Integer)sw - x;
+    if (h > (lua_Integer)sh - y) h = (lua_Integer)sh - y;
+    // The part, cut to the page: nothing outside it is ever drawn.
+    if (px < 0) { pw += px; px = 0; }
+    if (py < 0) { ph += py; py = 0; }
+    if (pw > w - px) pw = w - px;
+    if (ph > h - py) ph = h - py;
+    if (w <= 0 || h <= 0 || pw <= 0 || ph <= 0) return 0;
+
+    webkit_paint(id, (uint32_t *)((uint8_t *)pixels + (size_t)y * pitch) + x,
+                 (unsigned)w, (unsigned)h, pitch, (int)px, (int)py, (int)pw, (int)ph);
+    return 0;
+}
+
 static int v_paint_inspector(lua_State *L) { return paint_with(L, webkit_paint_inspector); }
+
+/* `v:damage()`: x, y, w, h of what changed in the page's picture since
+ * this was last asked, in the page's pixels, or nil when nothing did. */
+static int v_damage(lua_State *L)
+{
+    int x, y, w, h;
+
+    if (!webkit_damage(id_of(L), &x, &y, &w, &h)) return 0;
+    lua_pushinteger(L, x);
+    lua_pushinteger(L, y);
+    lua_pushinteger(L, w);
+    lua_pushinteger(L, h);
+    return 4;
+}
 
 /*
  * `v:mouse(action, button, x, y [, mods])`: "press", "release" or "move";
@@ -574,6 +626,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "mouse", v_mouse },     { "wheel", v_wheel },     { "key", v_key },
         { "focus", v_focus },     { "inspect", v_inspect }, { "inspecting", v_inspecting },
         { "paint_inspector", v_paint_inspector },           { "target", v_target },
+        { "damage", v_damage },
         { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
         { NULL, NULL },
     };

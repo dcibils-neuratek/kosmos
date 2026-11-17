@@ -4081,3 +4081,39 @@ happening, nothing runs: with a page open, the machine was 99.8% idle.
 before, 0.2 after. What is left is work: 5.6 ms painting the strip that
 scrolled into view and 3.0 ms drawing the page into the window - which is
 what the next two steps, the copies and the GPU, are for.
+
+## 17 November 2026 - Drawing only what changed
+
+**In short.** Scrolling a plain page in JetSki now takes 2.5 milliseconds
+from the wheel to the new picture on the M700, down from 5.7, and
+Wikipedia 5 down from 7.5. The browser stopped copying the whole page
+around for every frame, and when only a corner of a page changes, only
+that corner is drawn and handed to the screen.
+
+**What.** Four copies came out. WebKit's own store of the page was copied
+in full before being drawn into the window; now it is drawn straight from
+its own pixels. Scrolling moved that store through a spare copy; now the
+rows slide in place. The web process made a fresh shared buffer for every
+update; now it reuses the last one. And JetSki redrew its whole window -
+tabs, address bar, page, status line - for every picture WebKit sent,
+even a picture where only a little box changed. Now WebKit says which
+rectangle changed, and JetSki draws and sends just that rectangle. The
+catch is that a window has two buffers taking turns on the screen, so each
+buffer keeps its own list of what it has missed; a test checks that a
+change is never lost from one of them. And one more surprise: every turn
+of the wheel drew a whole frame of its own before the new picture had even
+arrived, which doubled the frames and made the real one wait.
+
+**Why.** This is the step Diego chose before using the GPU: take out the
+work that should not be there at all, then give what is left to the
+graphics hardware.
+
+**Visible.** Scrolling feels quicker, and a page that animates something
+small (Wikipedia does, about twenty times a second) costs the machine a
+twelfth of what it did.
+
+**Measured** (M700, 40 notches): plain page, wheel to picture 5.7 ms to
+2.5 and 80 frames to 40; Wikipedia 7.5 ms to 5.0-5.7; a still Wikipedia
+draws 0.08 million pixels a frame instead of 0.96. What remains on
+Wikipedia is WebKit repainting its whole view on every scroll, which needs
+layers and a GL driver - a later step.

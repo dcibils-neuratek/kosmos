@@ -1,0 +1,85 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The UI process's backing store without its copies (Kosmos webkit.md Fast,
+step 1b; testing.md 18.856). JetSki draws a page by asking for the store
+to be painted into its window, every frame: SkSurface::draw made an image
+of the store with asImage(), which copies a raster surface whose pixels
+can still change - the whole store - and then blended it over the window
+source-over. Now the store's pixels are wrapped without a copy and drawn
+with kSrc, which Skia does with its memcpy blitter. And a scroll moved the
+store through a bitmap allocated for it (readPixels, writePixels); now its
+rows are moved in place. Only where the scale is one, as it is here.
+
+diff -ru a/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp b/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp
+--- a/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp	2026-11-17 10:13:48.007612085 -0300
++++ b/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp	2026-11-17 10:13:48.022829703 -0300
+@@ -33,6 +33,12 @@
+ #include <skia/core/SkBitmap.h>
+ #include <skia/core/SkCanvas.h>
+ 
++#if PLATFORM(KOSMOS)
++#include <skia/core/SkImage.h>
++#include <skia/core/SkPixmap.h>
++#include <string.h>
++#endif
++
+ namespace WebKit {
+ 
+ BackingStore::BackingStore(const WebCore::IntSize& size, float deviceScaleFactor)
+@@ -55,6 +61,25 @@
+     WebCore::IntRect scaledRect { rect };
+     scaledRect.scale(m_deviceScaleFactor);
+     cr->clipIRect(scaledRect);
++#if PLATFORM(KOSMOS)
++    // The store's own pixels, drawn as they are. `SkSurface::draw` makes an
++    // image of a raster surface with `asImage()`, which copies a bitmap
++    // that can still change - the whole store, every frame - and then
++    // blends it over what the window held. Wrapped without a copy, and
++    // drawn with `kSrc` at a whole-pixel offset, it is Skia's memcpy
++    // blitter instead: what the page painted is what the window shows,
++    // with nothing of the frame before it underneath.
++    SkPixmap pixels;
++    if (m_deviceScaleFactor == 1 && m_surface->peekPixels(&pixels)) {
++        if (auto image = SkImages::RasterFromPixmap(pixels, nullptr, nullptr)) {
++            SkPaint copy;
++            copy.setBlendMode(SkBlendMode::kSrc);
++            cr->drawImage(image.get(), 0, 0, SkSamplingOptions { SkFilterMode::kNearest }, &copy);
++            cr->restore();
++            return;
++        }
++    }
++#endif
+     SkSamplingOptions option { SkFilterMode::kLinear };
+     m_surface->draw(cr, 0, 0, option, nullptr);
+     cr->restore();
+@@ -109,6 +134,30 @@
+     targetRect.scale(m_deviceScaleFactor);
+     scaledScrollOffset.scale(m_deviceScaleFactor, m_deviceScaleFactor);
+ 
++#if PLATFORM(KOSMOS)
++    // Moved in place, a row at a time: a scroll down copies the rows from
++    // the bottom up, so none is overwritten before it is read, and up from
++    // the top down; `memmove` takes care of a row against itself when the
++    // offset is sideways. It was the whole rectangle read into a bitmap
++    // allocated for it and written back - two copies and an allocation the
++    // size of the view, every scrolled frame.
++    SkPixmap pixels;
++    if (m_surface->peekPixels(&pixels) && pixels.info().bytesPerPixel() == 4) {
++        m_surface->notifyContentWillChange(SkSurface::kRetain_ContentChangeMode);
++        int rows = targetRect.height();
++        size_t bytes = static_cast<size_t>(targetRect.width()) * 4;
++        int fromX = targetRect.x() - scaledScrollOffset.width();
++        int fromY = targetRect.y() - scaledScrollOffset.height();
++        bool bottomUp = scaledScrollOffset.height() > 0;
++        for (int i = 0; i < rows; ++i) {
++            int row = bottomUp ? rows - 1 - i : i;
++            memmove(pixels.writable_addr32(targetRect.x(), targetRect.y() + row),
++                pixels.addr32(fromX, fromY + row), bytes);
++        }
++        return;
++    }
++#endif
++
+     SkBitmap bitmap;
+     bitmap.allocPixels(m_surface->imageInfo().makeWH(targetRect.width(), targetRect.height()));
+ 

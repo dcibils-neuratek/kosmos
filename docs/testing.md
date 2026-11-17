@@ -35366,3 +35366,97 @@ Idle, with the page open, the machine read 99.8% idle over ten seconds
 and JetSki was not among what ran: news wakes it, and no news does not.
 What is left of a scrolled frame is work - 5.6 ms in the web process and
 3.0 drawing the page into the window - which is 1b and 1c.
+
+## 18.856 The copies taken out (JetSki's GPU step 1b)
+
+**In short.** Four copies the processor made for every scrolled frame are
+gone, and a frame that changes a corner of the page now draws and commits
+that corner. On the M700, with 40 notches down the same pages: wheel to
+picture on a plain long page **5.7 ms to 2.5**, in half the frames; on
+Wikipedia **7.5 ms to 5.0-5.7**; and Wikipedia sitting still - it repaints
+something about twenty times a second - draws **0.08 Mpx a frame instead
+of the whole window's 0.96**. What is left on Wikipedia is the web process
+painting its whole view on every scroll, which wants WebKit's layers and
+a GL driver, not 1b.
+
+**One: the backing store drawn without a copy** (patch 0041,
+`BackingStoreSkia.cpp`). JetSki asks for the UI process's store to be
+painted into its window every frame, and `SkSurface::draw` made an image of
+it with `asImage()` - which copies a raster surface whose pixels can still
+change, the whole store - and then blended it source-over. The store's
+pixels are now wrapped as they are (`peekPixels`, `RasterFromPixmap`) and
+drawn with `kSrc`, which is Skia's memcpy blitter. And a scroll moved the
+store through a bitmap allocated for it and back (`readPixels`,
+`writePixels`); its rows are now moved in place, bottom up or top down by
+the direction. Drawn into the window **2.6 ms to 0.8**; a scrolled update
+taken in **2.1 to 1.2**.
+
+**Two: the update's region used again** (patch 0043,
+`DrawingAreaCoordinatedGraphics.cpp`). The web process made a shared region
+the size of the dirty bounds for every update, and a scrolled frame's
+bounds are the whole view because the scrollbar runs down its edge: 3.3 MB
+and 0.35-0.7 ms. Only the dirty rectangles are painted into it and only
+they are taken in, so once the UI process has answered the last update
+(`DidUpdate`, which `display()` waits for), its region serves for the next
+of the same size. Never for `updateGeometry`'s, which is sent without
+waiting. The long page: region **0.35 ms to 0.00**, wheel to picture to
+5.5.
+
+**Three: only what changed, drawn and committed** (`jetski.lua`, the
+WebKit Kit). WebKit says which rectangle of the view changed with every
+picture (`setViewNeedsDisplay`, the whole view for a scroll); the kit joins
+them per view and `v:damage()` hands them over, and `v:paint` takes the
+part to draw. The window has two buffers - JetSki draws into one while the
+screen shows the other - so a buffer drawn now holds what it held two
+frames ago: each owes the page's changes since it was last drawn, joined,
+or everything after a frame that changed more than the page. A pass in
+which only WebKit's picture moved, with nothing over the page and the
+status line as it was drawn, draws from `on_frame` exactly what this
+buffer owes and commits that rectangle. Anything else - a key, the
+pointer, a tab, the shield - draws the whole window as before.
+
+(A first version asked `ui.lua` for a flag saying only `on_frame` wanted
+the paint. It read nil on the M700 - `ui.lua` is the system's, in the
+image, and JetSki's package does not carry it - which is also the reason
+it belongs in JetSki: the decision is JetSki's, and no other window has
+asked for it.)
+
+**Four: a wheel turn drew a frame of its own.** The page's view answered
+the wheel `true`, which `ui.lua` takes as "paint", so every notch drew the
+whole window once *before* WebKit's picture arrived - 80 frames for 40
+notches, and the picture's pass waited behind the first. It answers
+`false` now, as the pointer always did: WebKit says when there is a
+picture.
+
+**On the M700** (`/Home/long.html`, 400 paragraphs; then
+`en.wikipedia.org/wiki/BeOS`; 40 notches each):
+
+```
+long page, before three and four:
+  wheel to picture 5.7 ms, most 7.1; wheel to a slice 4.4
+  jetski: frames whole 80, 1.3 ms - chrome 0.5, page 0.7
+long page, after:
+  wheel to picture 2.5 ms, most 10.1; wheel to a slice 0.1
+  jetski: frames whole 40, 0.7 ms - chrome 0.0, page 0.6
+  jetski: frames of the page's changes only 40, 0.828 Mpx each
+Wikipedia, after:
+  wheel to picture 5.0 ms, most 7.4
+  webkit: frames scrolled 40, 0.83 Mpx each, 0.83 painted,
+          40 painted their bounds whole: each 3.6 ms
+  jetski: frames whole 398 ... page 1.4
+  jetski: frames of the page's changes only 383, 0.117 Mpx each
+```
+
+**Held by `x86-jetski`** (its `changes` step): a page whose block turns
+three colours and stays, and then a square across the page blinks for
+nine seconds. Six screendumps while it blinks must each show the block's
+last colour, and the trace must count frames that drew only the page's
+changes. The window manager composes only what a commit names, so a
+stale corner in the buffer it shows never reaches the screen by itself:
+before each screendump the suite's own key (Control-G, in its copy of
+`jetski.lua`) moves the window to where it is, quietly, which composes it
+whole from that buffer and tells JetSki nothing. The first version of the
+check had no such key, and its control passed. Controls: `wholly` (every
+picture the whole window) fails the count and only that; `owing-one` (a
+change owed only by the buffer drawn now) fails the screendumps, 3 of 6
+showing the block's colour before the last.

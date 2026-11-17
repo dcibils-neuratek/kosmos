@@ -218,7 +218,7 @@ void WKKosmosOnMessages(void (*told)(void))
     WebKit::kosmosOnMessages(told);
 }
 
-unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost)
+unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost, double* scrolled, double* scrolledMost)
 {
-    return WebKit::kosmosTakeIncorporated(average, most, fromRing, fromRingMost);
+    return WebKit::kosmosTakeIncorporated(average, most, fromRing, fromRingMost, scrolled, scrolledMost);
 }

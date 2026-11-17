@@ -177,6 +177,7 @@ web.mouse = function(...) shown:mouse(...) end
 web.wheel = function(...) shown:wheel(...) end
 web.key = function(c) return shown:key(c) end
 function web.paint(...) shown:paint(...) end
+function web.damage() if shown then return shown:damage() end end
 function web.paint_inspector(...) shown:paint_inspector(...) end
 function web.inspect(on) shown:inspect(on) end
 function web.inspecting() return shown:inspecting() end
@@ -275,12 +276,35 @@ webkit.trace(tracing)
 local COUNTER_HZ = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local commits = { n = 0, sum = 0, most = 0, last = 0 }
 
-local function commit_timed(win)
-  if not tracing then return win:commit() end
+-- And the whole frame, split: the chrome JetSki paints, the page the kit
+-- draws, the commit - each summed over the second's frames.
+local frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0 }
+local frame_t0, frame_page = 0, 0
+
+local function frame_mark(what)
+  if not tracing then return end
+  local now = sys.ticks()
+  if what == "start" then
+    frame_t0, frame_page = now, 0
+  elseif what == "page" then
+    frame_page = now
+  elseif what == "paged" then
+    frame_page = now - frame_page
+  end
+end
+
+local function commit_timed(win, damage)
+  if not tracing then return win:commit(damage) end
   local t0 = sys.ticks()
-  win:commit()
+  win:commit(damage)
   local now = sys.ticks()
   local ms = (now - t0) * 1000 / COUNTER_HZ
+  local whole = (now - frame_t0) * 1000 / COUNTER_HZ
+  local page_ms = frame_page * 1000 / COUNTER_HZ
+  frames.n = frames.n + 1
+  frames.whole, frames.page = frames.whole + whole, frames.page + page_ms
+  frames.chrome = frames.chrome + (whole - page_ms - ms)
+  if whole > frames.most then frames.most = whole end
   commits.n, commits.sum = commits.n + 1, commits.sum + ms
   if ms > commits.most then commits.most = ms end
   commits.last = now
@@ -290,7 +314,14 @@ local function commits_said()
   if commits.n == 0 or (sys.ticks() - commits.last) < COUNTER_HZ then return end
   print(("jetski: frames committed %d, %.1f ms, most %.1f"):format(
     commits.n, commits.sum / commits.n, commits.most))
+  if frames.n > 0 then
+    print(("jetski: frames whole %d, %.1f ms, most %.1f - chrome %.1f, page %.1f"):format(
+      frames.n, frames.whole / frames.n, frames.most, frames.chrome / frames.n, frames.page / frames.n))
+    print(("jetski: frames of the page's changes only %d, %.3f Mpx each"):format(
+      frames.part, frames.part > 0 and frames.part_px / frames.part / 1e6 or 0))
+  end
   commits.n, commits.sum, commits.most = 0, 0, 0
+  frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0 }
 end
 
 --------------------------------------------------------------------------
@@ -540,7 +571,10 @@ function view:wheel(n, x, y)
   web.target(there)
   web.wheel(px, py, n)
   web.target(to_inspector)
-  return true
+  -- Nothing of JetSki's own moved: WebKit says when there is a picture,
+  -- and a frame drawn now is the one already on screen (`testing.md`
+  -- 18.856; it was every wheel turn's first frame, the whole window).
+  return false
 end
 
 -- Keys that are the window's, never the page's: Control-L, Control-T,
@@ -1589,13 +1623,46 @@ local function status_text()
 end
 
 --------------------------------------------------------------------------
--- One frame: the header, the page, the status line.
+-- **What each of the window's two buffers has not drawn** (`testing.md`
+-- 18.856): the window draws into one while the screen shows the other, so
+-- a buffer drawn now holds what it held two frames ago, and the page's
+-- changes since it was last drawn are what it owes - a rectangle in the
+-- page's pixels, joined from everything WebKit said; true for everything,
+-- false for nothing.
 --
 
-local function frame()
+local owed = { [1] = true, [2] = true }
+local status_drawn
+
+-- What WebKit said changed since it was last asked, owed by every buffer.
+local function take_damage()
+  local x, y, w, h = web.damage()
+
+  if not x then return end
+  for slot, o in pairs(owed) do
+    if o == false then
+      owed[slot] = { x, y, w, h }
+    elseif o ~= true then
+      local x1, y1 = math.max(o[1] + o[3], x + w), math.max(o[2] + o[4], y + h)
+      o[1], o[2] = math.min(o[1], x), math.min(o[2], y)
+      o[3], o[4] = x1 - o[1], y1 - o[2]
+    end
+  end
+end
+
+--------------------------------------------------------------------------
+-- One frame: the header, the page, the status line. `page_only` is a frame
+-- drawn whole because its buffer owed it all, nothing outside the page
+-- having changed; any other has the other buffer owe everything too.
+--
+
+local function frame(page_only)
   local s = win:surface()
 
   if not s then return end
+
+  frame_mark("start")
+  take_damage()
 
   lay_lock()
   shield_said()
@@ -1619,7 +1686,9 @@ local function frame()
   elseif refusal then
     ui.paint_view(refused_page, s, 0, VIEW_Y)
   else
+    frame_mark("page")
     web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H)
+    frame_mark("paged")
   end
 
   if inspecting then
@@ -1635,9 +1704,50 @@ local function frame()
 
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
-  s:text(10, H - STAT + (STAT - gfx.height()) // 2, status_text(), theme.text_dim)
+  status_drawn = status_text()
+  s:text(10, H - STAT + (STAT - gfx.height()) // 2, status_drawn, theme.text_dim)
 
+  local slot = win.region and win.region.draw_into
+  for other in pairs(owed) do
+    if other == slot then owed[other] = false elseif not page_only then owed[other] = true end
+  end
   commit_timed(win)
+end
+
+--
+-- **Only the page's changes** (`testing.md` 18.856): a pass in which
+-- nothing but WebKit's picture moved - nothing over the page, the status
+-- line as it was drawn - draws into this buffer only what it owes of the
+-- page, and commits only that, from `on_frame` itself. A page that
+-- repaints a corner twenty times a second was the whole window drawn and
+-- committed each time. Anything else that pass - a key, the pointer -
+-- still paints the whole window after it.
+--
+local function page_frame()
+  take_damage()
+
+  local slot = win.region and win.region.draw_into
+  local o = owed[slot]
+
+  if o == nil or o == true then return frame(true) end
+  if o == false then return end
+
+  local s = win:surface()
+
+  if not s then return end
+
+  local x, y = math.max(0, o[1]), math.max(0, o[2])
+  local w, h = math.min(PAGE_W, o[1] + o[3]) - x, math.min(VIEW_H, o[2] + o[4]) - y
+
+  owed[slot] = false
+  if w <= 0 or h <= 0 then return end
+
+  if tracing then frames.part, frames.part_px = frames.part + 1, frames.part_px + w * h end
+  frame_mark("start")
+  frame_mark("page")
+  web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H, x, y, w, h)
+  frame_mark("paged")
+  commit_timed(win, { x = x, y = VIEW_Y + y, w = w, h = h })
 end
 
 win.on_paint = function() frame() end
@@ -1688,7 +1798,9 @@ win.on_frame = function()
     st.title, st.address = "Settings", prefs.PAGE
   end
 
-  local changed = st.picture
+  -- Anything here that changed is more than the picture, and draws the
+  -- whole window; the picture alone may draw only the page's changes.
+  local changed = false
 
   -- Web Inspector docked or gone, for the tab shown - by a key, its
   -- button, its own close, or another tab shown: the page narrower or
@@ -1838,7 +1950,16 @@ win.on_frame = function()
     changed = true
   end
 
-  return changed
+  if changed then return true end
+  if st.picture then
+    if settings_page.hidden and not crash and not refusal and not inspecting
+       and lockpanel.hidden and shieldpanel.hidden and status_text() == status_drawn then
+      page_frame()
+    else
+      return true
+    end
+  end
+  return false
 end
 
 -- Control-L: the address, all of it chosen, to type over.

@@ -15,7 +15,9 @@
 
 #pragma once
 
+#include <WebCore/IntRect.h>
 #include <wtf/MonotonicTime.h>
+#include <wtf/Vector.h>
 
 namespace WebKit {
 
@@ -29,6 +31,10 @@ void kosmosWebFrame(double rendering, double region, double painting, bool scrol
 // from it, and the line says how long each hop took.
 void kosmosWebWheelOnMain(MonotonicTime turned);
 
+// The web process: a scrolled display's dirty rectangles, their bounds, the
+// scroll so far, and whether the bounds are painted whole (patch 0042).
+void kosmosWebDirty(const WebCore::IntRect& bounds, const Vector<WebCore::IntRect, 1>& rects, const WebCore::IntSize& scrolled, bool wholeBounds);
+
 // The UI process: one update taken in.
 void kosmosUIIncorporated(double milliseconds, bool scrolled);
 
@@ -39,6 +45,6 @@ void kosmosRecordRead();
 
 // The UI process's updates since the last take: how many, on average, the
 // most; and from the record read off the ring to the main thread taking it.
-unsigned kosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost);
+unsigned kosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost, double* scrolled, double* scrolledMost);
 
 } // namespace WebKit
