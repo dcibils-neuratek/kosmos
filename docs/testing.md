@@ -35573,3 +35573,69 @@ passed. Control `sleeper` leaves `webkit.wake` out, as before 0.11.455:
 it fails exactly "JetSki was never woken by WebKit, only by its poll's
 tick", and nothing else. What the wake is worth is 18.855's figure on the
 M700 (wheel to picture 14.1 ms to 9.4); a count is what QEMU can hold.
+
+## 18.859 Wikipedia's whole-view repaint: sticky boxes laid out on every scroll
+
+**In short.** Scrolling Wikipedia made WebKit repaint the whole view on
+every notch, 3.8 ms in the web process. The cause was WebKit laying out
+every sticky box again on each scroll, and with it every block it sits in -
+on Wikipedia, two grids, which then repaint their items from top to
+bottom. Without compositing a sticky box's place is not a matter of layout,
+so it is now placed rather than laid out (patch 0045): **rendering 1.2 ms
+to 0.5, a scrolled frame 3.8 to 3.1-3.4, wheel to picture 5.3 to 4.7-4.9**
+on the M700.
+
+**Found by asking the web process who repaints** (a diagnostic patch, kept
+out of the tree; `KosmosFrameTimes`' rectangles first). Every scrolled
+frame dirtied one rectangle, the whole view, though the scroll had taken
+the fast path - its pixels were moved. After the move, the renderers that
+asked for a large repaint were Wikipedia's content container, its footer,
+both columns and `bodyContent`, each twice at its full 15,000-pixel height:
+the shape of a layout's repaint before and after. The page's own script
+changed nothing but a table-of-contents class now and then (watched with a
+MutationObserver in another browser). The layout was WebKit's: every
+scroll moves the layout viewport (`setBaseLayoutViewportOrigin`), which
+marks each fixed and sticky box for layout. A fixed box's containing block
+is the view; a sticky box is in flow, so the marks go up through its
+blocks, and a grid lays out and repaints all its items.
+
+**The patch** (0045, `LocalFrameView::setViewportConstrainedObjectsNeedLayout`).
+A sticky box's offset comes from the layout viewport when its layer is
+placed (`offsetForInFlowPosition`). Outside a layout and without
+compositing, sticky boxes are not marked: the layers are placed again once
+the viewport has moved, and each sticky box is repainted where it now is.
+**The first version only skipped the mark, and was wrong**: the layers are
+placed *before* the viewport moves (`completeUpdatesAfterScrollTo`), so
+every sticky box was one scroll behind - Wikipedia's columns were fine to
+the eye only because they stay put once stuck. The suite's new check caught
+it at once: the header gone and the sidebar 40 pixels high.
+
+**Two more things tried and left out.** Painting a scroll's rectangles one
+by one rather than their bounds (WebKit paints the bounds past ten
+rectangles, or when they cover a quarter of them): 0.35 Mpx in six
+rectangles took 2.6-2.9 ms to paint against 2.6-2.7 for the whole 0.83 -
+each rectangle walks the page again - and the UI process took 0.7 ms more.
+And the diagnostic itself: each of its lines cost about 8 ms, the time a
+line takes to leave over the serial port, which put wheel to picture at
+11-13 ms until it was taken out.
+
+**Held by `x86-jetski`** (its `stuck` step): a page laid out as
+Wikipedia's - a grid with a sticky header and a sticky column, the page's
+column itself a grid with a sticky column - scrolled four notches. The
+header and the sidebar must be where they were, whole, and the first
+scrolled frames must dirty at most 60% of the view. Without the patch they
+dirtied all of it, `[1.0, 1.0, 1.0]`, and that check alone failed; with it,
+seven rectangles, about 45%. Controls: `unstuck` (the boxes `position:
+relative`) fails only the boxes' places; `relaid` (the page's script
+changes the grid on every scroll) fails only the dirtied view.
+
+Also: 0.11.458's wake count was said on every pass with nothing else to
+say - every 20 ms with the trace on - and is said with the frames' lines
+now, once a second.
+
+```
+M700, en.wikipedia.org/wiki/BeOS, 40 notches down and up:
+  1c (0.11.457):   scrolled 3.8 ms - rendering 1.2, painting 2.4; wheel to picture 5.3
+  0045, run one:   scrolled 3.1 ms - rendering 0.5, painting 2.4; wheel to picture 4.7
+  0045, run two:   scrolled 3.4 ms - rendering 0.5, painting 2.7; wheel to picture 4.9
+```

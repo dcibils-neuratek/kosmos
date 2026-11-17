@@ -10219,9 +10219,11 @@ the applications make the system useful, and is not pulled forward.
     without JetSki. Held by `x86-jetski`'s `changes` step, controls
     `no-inset` and `forgetting`. Still to see: whether the blitter takes
     the inset's pieces (its check passed, 0 pixels different).
-    Left for layers:
-    Wikipedia's web process repaints its whole view on every scroll
-    (3.6 ms) - viewport-constrained boxes without compositing. Its
+    **Wikipedia's whole-view repaint was not layers** (0.11.459,
+    `testing.md` 18.859): WebKit laid out every sticky box on every
+    scroll, and the grids they sit in repainted their items whole. Patch
+    0045 places them instead: rendering 1.2 ms to 0.5, wheel to picture
+    5.3 to 4.7-4.9. What is left of a scroll there is painting the view. Its
     prepush lost four suites to load, each passing alone in 88 s:
     `x86-ahci` (as before), `x86-profile` (730 samples where 1050 were
     due), `arm-sandbox` (cut short at 219 of 220) and `x86-script`

@@ -1,0 +1,58 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+A sticky box placed, not laid out, on a scroll (Kosmos testing.md
+18.859). Every scroll moves the layout viewport, and WebKit marks each
+fixed and sticky box for layout. A fixed box's containing block is the
+view, so that is cheap; a sticky box is in flow, so its blocks are marked
+too, and a grid among them lays out and repaints its items whole -
+Wikipedia, the whole view on every turn of the wheel. Without compositing
+a sticky box's offset comes from the layout viewport as its layer is
+placed; the layers were placed before the viewport moved, so outside a
+layout they are placed again and each sticky box repainted where it is.
+
+diff -ru a/Source/WebCore/page/LocalFrameView.cpp b/Source/WebCore/page/LocalFrameView.cpp
+--- a/Source/WebCore/page/LocalFrameView.cpp	2026-11-17 16:28:23.737809212 -0300
++++ b/Source/WebCore/page/LocalFrameView.cpp	2026-11-17 16:28:23.776449705 -0300
+@@ -3747,13 +3747,42 @@
+     if (!hasViewportConstrainedObjects())
+         return;
+ 
++#if PLATFORM(KOSMOS)
++    // **A sticky box placed, not laid out** (Kosmos testing.md 18.859).
++    // Marking a sticky box for layout marks every block it is in, and a
++    // grid among them lays out and repaints its items whole - Wikipedia's
++    // page, the whole view on every turn of the wheel. Without compositing
++    // its offset is not laid out at all: its layer takes it from the layout
++    // viewport as it is placed (`offsetForInFlowPosition`). The layers were
++    // placed before the viewport moved (`completeUpdatesAfterScrollTo`), so
++    // they are placed again now, and each sticky box repainted where it is.
++    // Inside a layout, or composited, as before.
++    bool placeSticky = !layoutContext().isInLayout() && renderView() && !renderView()->usesCompositing();
++    Vector<CheckedRef<RenderLayer>> sticky;
++#endif
+     for (CheckedRef renderer : *m_viewportConstrainedObjects) {
++#if PLATFORM(KOSMOS)
++        if (placeSticky && renderer->isStickilyPositioned() && renderer->hasLayer()) {
++            sticky.append(*downcast<RenderBoxModelObject>(renderer).layer());
++            continue;
++        }
++#endif
+         renderer->setNeedsLayout();
+         if (renderer->hasLayer()) {
+             auto* layer = downcast<RenderBoxModelObject>(renderer).layer();
+             layer->setNeedsCompositingGeometryUpdate();
+         }
+     }
++#if PLATFORM(KOSMOS)
++    if (sticky.isEmpty())
++        return;
++    updateLayerPositionsAfterScrolling();
++    for (auto& layer : sticky) {
++        IntRect rect = contentsToRootView(enclosingIntRect(layer->repaintRectIncludingNonCompositingDescendants()));
++        if (!rect.isEmpty())
++            protect(m_frame->page())->chrome().invalidateContentsAndRootView(rect);
++    }
++#endif
+ }
+ 
+ void LocalFrameView::didChangeScrollOffset()

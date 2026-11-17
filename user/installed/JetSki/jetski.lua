@@ -312,7 +312,7 @@ local function commit_timed(win, damage)
 end
 
 local function commits_said()
-  if (commits.n == 0 and frames.inset == 0 and frames.woken == 0) or (sys.ticks() - commits.last) < COUNTER_HZ then
+  if (commits.n == 0 and frames.inset == 0) or (sys.ticks() - commits.last) < COUNTER_HZ then
     return
   end
   if commits.n > 0 then
@@ -327,8 +327,6 @@ local function commits_said()
     print(("jetski: frames of the page's changes only %d, %.3f Mpx each"):format(
       frames.part, frames.part > 0 and frames.part_px / frames.part / 1e6 or 0))
     print(("jetski: the page shown as an inset %d times"):format(frames.inset))
-  end
-  if frames.woken > 0 then
     print(("jetski: woken by WebKit %d times"):format(frames.woken))
   end
   commits.n, commits.sum, commits.most = 0, 0, 0

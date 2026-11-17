@@ -376,7 +376,7 @@ class Page(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         body = {"/": PAGE, "/other.html": OTHER, "/scripted.html": SCRIPTED,
-                "/changes.html": CHANGES}.get(self.path)
+                "/changes.html": CHANGES, "/stuck.html": STUCK}.get(self.path)
         if BROKEN == "missing" or body is None:
             self.send_error(404)
             return
@@ -505,6 +505,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
     failed.extend(changes(guest, R, window, sw, sh))
+    failed.extend(stuck(guest, R, window, sw, sh))
     return failed
 
 
@@ -595,6 +596,113 @@ document.title = "Changes begun";
 </script></body></html>
 """
 
+
+
+# **Sticky boxes in a grid** (`testing.md` 18.859, patch 0045): a header and
+# a sidebar held at the top as the page scrolls under them, inside a grid as
+# Wikipedia's are, one grid inside another. WebKit laid every sticky box out
+# again on each scroll, and its blocks with it, so a grid repainted its items
+# whole - the whole view, on every turn of the wheel. Without compositing a sticky box's
+# offset comes from the scroll as its layer is placed, so it is left out of
+# that layout: the boxes must still be where they were after the page has
+# scrolled under them, and a scroll must not dirty the page's column.
+# `KOSMOS_JETSKI_BREAK=unstuck` serves them `position: relative`, which
+# scrolls them away; `relaid` lays the grid out again on every scroll from
+# the page's own script, which dirties the column.
+STUCK_HEAD = (0x14, 0x8a, 0x3c)
+STUCK_SIDE = (0x8c, 0x2a, 0x1e)
+STUCK = (b"""<!doctype html>
+<html><head><title>Stuck</title><style>
+body { margin: 0; background: #ffffff; }
+#grid { display: grid; grid-template-columns: 220px 1fr; }
+#head { grid-column: 1 / 3; position: STICKY; top: 0; height: 40px; background: rgb(20, 138, 60); z-index: 1; }
+#side { position: STICKY; top: 40px; height: 260px; background: rgb(140, 42, 30); }
+#main { display: grid; grid-template-columns: 1fr 160px; }
+#text { position: relative; }
+#tools { position: STICKY; top: 40px; height: 200px; background: rgb(40, 60, 150); }
+#text div { height: 180px; margin: 10px; background: #e8e8f0; }
+#text div:nth-child(2n) { background: #d0d8e0; }
+</style></head><body><div id="grid"><div id="head"></div><div><div id="side"></div></div>
+<div id="main"><div id="text">""" + b"<div></div>" * 40 + b"""</div><div><div id="tools"></div></div></div></div><script>
+window.addEventListener("scroll", function () {
+    RELAID
+    if (window.scrollY > 0) document.title = "Stuck " + window.scrollY;
+});
+document.title = "Stuck begun";
+</script></body></html>
+""").replace(b"STICKY", b"relative" if BROKEN == "unstuck" else b"sticky").replace(
+    b"RELAID", b"var g = document.getElementById('grid'); g.style.paddingBottom = "
+               b"(g.style.paddingBottom == '1px' ? '0px' : '1px');" if BROKEN == "relaid" else b"")
+
+
+def stuck(guest, R, window, sw, sh):
+    """Sticky boxes inside a grid stay where they were as the page scrolls
+    under them, and a scroll dirties only what it should."""
+    x, y, w, h = window
+    since = len(guest.seen)
+    guest.sendkey("ctrl-t")
+    deadline = time.time() + 20
+    while not re.search(r"jetski: tab (\d+) of \1\b", guest.seen[since:]):
+        if time.time() > deadline:
+            return ["Control-T opened no tab for the page with sticky boxes"]
+        time.sleep(0.2)
+    time.sleep(0.5)
+    since = len(guest.seen)
+    for key in keys_for(Page.address + "stuck.html\n"):
+        guest.sendkey(key)
+    if not said(guest, since, "jetski: title Stuck begun", 30):
+        return ["the page with sticky boxes did not load: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:] or "nothing said")]
+    time.sleep(1.0)
+
+    def boxes():
+        mark = len(guest.seen)
+        guest.sendkey("ctrl-g")
+        said(guest, mark, "jetski: test composed again", 10)
+        time.sleep(0.3)
+        shot = guest.screendump()
+        return (shot, block_at(R.parse_ppm, shot, x, y, w, h, STUCK_HEAD),
+                block_at(R.parse_ppm, shot, x, y, w, h, STUCK_SIDE))
+
+    _, head0, side0 = boxes()
+    if head0[0] < 4000 or side0[0] < 4000:
+        return ["the sticky boxes were not on the screen before the page scrolled: header %s, sidebar %s"
+                % (head0, side0)]
+    mark = len(guest.seen)
+    guest.mouse_to(*R._to_tablet(side0[1][0] + side0[1][2] + 200, side0[1][1] + 200, sw, sh))
+    time.sleep(0.3)
+    for _ in range(4):
+        guest.mouse_button(True, "wheel-down")
+        time.sleep(0.05)
+        guest.mouse_button(False, "wheel-down")
+        time.sleep(0.3)
+    if not said(guest, mark, "jetski: title Stuck ", 30):
+        return ["the wheel was turned over the page with sticky boxes and it did not scroll"]
+    time.sleep(1.5)
+    failed = []
+    shot, head1, side1 = boxes()
+    # Where each is, and whole there: the pointer may cover a few pixels.
+    def held(before, after):
+        (_, (_, _, bw, bh)) = before
+        return after[1] == before[1] and after[0] >= 0.95 * bw * bh
+    if not held(head0, head1) or not held(side0, side1):
+        R.write_png(os.path.join(KEPT, "jetski-stuck.png"), shot)
+        failed.append("the sticky boxes moved as the page scrolled under them: header %s then %s, "
+                      "sidebar %s then %s" % (head0, head1, side0, side1))
+
+    # What the first scrolled frames dirtied, as the web process says it
+    # (patch 0042): a strip, the boxes and the scrollbar, never most of
+    # the view - which is what a grid laid out again gives.
+    dirtied = []
+    for b in re.finditer(r"webkit: scrolled by -?\d+,-?\d+, bounds -?\d+,-?\d+ (\d+)x(\d+)[^,]*, "
+                         r"\d+ rectangles:((?: -?\d+,-?\d+ \d+x\d+)+)", guest.seen[mark:]):
+        area = sum(int(rw) * int(rh) for rw, rh in re.findall(r" -?\d+,-?\d+ (\d+)x(\d+)", b.group(3)))
+        dirtied.append(round(area / (int(b.group(1)) * int(b.group(2))), 2))
+    if not dirtied:
+        failed.append("the web process said nothing of what its scrolled frames dirtied")
+    elif max(dirtied) > 0.6:
+        failed.append("a scroll past sticky boxes dirtied most of the view: %s of it" % dirtied)
+    return failed
 
 def changes(guest, R, window, sw, sh):
     """A page whose picture changes in a corner: shown from WebKit's own two

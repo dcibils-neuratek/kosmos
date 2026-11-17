@@ -4151,3 +4151,39 @@ or a 3D view could hand its picture to the screen the same way.
 (before, 0.7 ms a scrolled frame); wheel to picture 2.7 ms on a plain page,
 5.3 on Wikipedia; a still Wikipedia's 598 pictures in 24 seconds reached
 the screen without JetSki copying a pixel.
+
+## 17 November 2026 - Why Wikipedia repainted everything
+
+**In short.** Every turn of the wheel on Wikipedia made the browser redraw
+the whole page, not just the strip that scrolled into view. The reason was
+inside WebKit: on each scroll it re-measured the boxes that stick to the
+top of the screen - Wikipedia's contents and tools columns - and that made
+it re-measure and redraw everything around them. Kosmos now just moves
+those boxes. A scrolled frame costs the page's process 3.1-3.4 ms instead
+of 3.8.
+
+**What.** Some boxes on a page are "sticky": they scroll with the page
+until they reach the top, then stay there. Wikipedia's two side columns
+are. WebKit, after every scroll, asked for these boxes to be laid out
+again - re-measured from scratch - and because a sticky box sits inside
+the page's normal flow, every container around it was re-measured too.
+Wikipedia's page is a grid, and a grid that is re-measured redraws all its
+contents, so the whole view was redrawn every time. But where a sticky box
+sits after a scroll doesn't need measuring at all: it is worked out from
+the scroll position when the box is placed on screen. So Kosmos skips the
+re-measuring and just places the boxes again.
+
+**How it was found.** By asking: the page's process was made to say, for
+every scroll, who asked for something big to be redrawn - and the answer
+was the page's main containers, each twice, from top to bottom, which is
+what re-measuring looks like. The first version of the fix forgot that the
+boxes are placed before the scroll's new position is known, and left them
+one step behind; a new test page that sticks a header and a column inside
+grids, as Wikipedia does, caught it straight away.
+
+**Visible.** Scrolling Wikipedia is a little lighter; the sticky columns
+look the same.
+
+**Measured** (M700, 40 notches): the re-measuring 1.2 ms to 0.5 a frame;
+wheel to picture 5.3 ms to 4.7-4.9. What is left is drawing the page,
+2.4-2.7 ms, because half the view really does change.

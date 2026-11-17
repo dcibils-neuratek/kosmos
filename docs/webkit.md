@@ -427,6 +427,12 @@ numbers):
   1b for the second buffer), 5.3 on Wikipedia, whose 598 pictures in 24
   seconds still reach the screen without JetSki copying a pixel.
 
+  **And Wikipedia's whole-view repaint** (0.11.459, `testing.md` 18.859)
+  turned out not to want layers: WebKit laid out every sticky box on each
+  scroll, and the grids around them repainted their items whole. Patch
+  0045 places a sticky box rather than laying it out, when nothing is
+  composited - rendering 1.2 ms to 0.5 a scrolled frame on the M700.
+
 ## Decided by Diego, 11 November 2026
 
 1. **The design agreed**: "yes go ahead".
