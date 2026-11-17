@@ -35181,3 +35181,37 @@ behind it is 64 KB whatever it offers - 3.9 MB/s at 64 KB and 4.2 with
 to 14.5 between runs. **Reddit did not load**: its page process died
 with a new thread's first push, in `trampoline + 0`, the top of its
 stack slot not mapped (`roadmap.md`; seen once, not yet made to happen).
+
+## 18.851 Two cores mapping at once lost a page: a lock in every address space
+
+**What Reddit found** (18.850): its page process died on a new thread's
+first push, in `trampoline + 0`, writing 0x2437ffff0 with its PTE 0 - the
+top of thread slot 55, which `process_thread_create` maps before the
+thread is ever woken. The thread code was read for an ordering that could
+unmap it and had none: a slot is taken only when no thread holds its
+index, collection needs `ended`, and ending unmaps first.
+
+**It was below that, in the page tables.** `as_map` makes a missing table
+as it walks (`descend`), and nothing serialised two cores doing it in one
+space: each found the directory entry empty, each made a table, and the
+second published its own over the first's - so the first core's page sat
+in a table nothing pointed at, and the address read as never mapped. A
+table is missing only the first time two megabytes are used; two thread
+slots share one, so slot 55 was a fresh one, made while another thread of
+the same process was being made or touching a page next to it. The
+kernel's own map had had exactly this fixed with a lock in 18.422; a
+process's never had one, because it was written when a process had one
+thread, and nothing looked again when it had several on four cores.
+
+**Made to happen first**, in the guest suite: *mmu: one core at a time
+edits a process's map* - 256 rounds, in each every core maps its own page
+into the same fresh two megabytes of one space at the same moment, and
+every page is looked up after. **Without the lock: 680 of 1,024 pages
+lost**, the test failing. **With it**, every page there.
+
+**The fix**: a spinlock in every `struct addrspace`, on both
+architectures, held by `as_map` and `as_unmap` while they walk and edit
+the tables and let go before the x86 shootdown, which waits on the other
+cores and cannot be waited for with interrupts masked - the shape of
+`kernel_map_lock`. Order: inside `fill_lock` where both are held; the page
+allocator takes its own and never this one.

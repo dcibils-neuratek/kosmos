@@ -1121,6 +1121,17 @@ struct addrspace {
     uint64_t *pml4;
     uint64_t *pdpt;
     bool      in_use;
+    /*
+     * **One core at a time edits this space's tables** (`testing.md`
+     * 18.851), as `kernel_map_lock` does the kernel's. `as_map` makes a
+     * missing table as it walks, and two cores mapping into the same fresh
+     * two megabytes each made one and published it, the second over the
+     * first - losing the first core's page. A process had one thread when
+     * this was written; it has had several on four cores since 0.10.22.
+     * Taken inside `fill_lock` where both are held, never across a
+     * shootdown, and the page allocator takes its own and never this one.
+     */
+    struct spinlock lock;
 };
 
 /* A pool that grows a slab at a time up to the ceiling `as_pool_init` was
@@ -1199,6 +1210,7 @@ again:
 
         space(i)->in_use = true;
         space(i)->pml4 = NULL;
+        space(i)->lock = (struct spinlock)SPINLOCK("an address space");
         space(i)->pdpt = NULL;
         spin_unlock(&spaces_lock, flags);
 
@@ -1295,6 +1307,7 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
     size_t i;
     uintptr_t start = va;
     bool replaced = false;
+    unsigned long flags;
 
     if ((va & PAGE_MASK) != 0 || (pa & PAGE_MASK) != 0) {
         return AS_ERR_ALIGN;
@@ -1311,6 +1324,8 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
         return AS_ERR_RANGE;
     }
 
+    flags = spin_lock(&as->lock);
+
     for (i = 0; i < pages; i++) {
         uint64_t *pd = reach_pd(as->pml4, va);
         uint64_t *pt = descend(pd, (unsigned)PD_INDEX(va));
@@ -1325,6 +1340,8 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
         va += PAGE_SIZE;
         pa += PAGE_SIZE;
     }
+
+    spin_unlock(&as->lock, flags);
 
     /* A page put where one already was is a changed translation. A page put
      * where there was none needs no round: a TLB caches translations, not
@@ -1349,12 +1366,14 @@ int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
     }
 
     uintptr_t start = va;
+    unsigned long flags = spin_lock(&as->lock);
 
     for (i = 0; i < pages; i++) {
         unmap_page(as->pml4, va);
         va += PAGE_SIZE;
     }
 
+    spin_unlock(&as->lock, flags);
     shoot(as->pml4, start, pages);
 
     return AS_OK;

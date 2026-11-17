@@ -7853,6 +7853,127 @@ static bool test_one_core_at_a_time_splits_the_kernels_map(void)
 }
 
 /*
+ * **One core at a time edits a process's map** (`testing.md` 18.851).
+ *
+ * The kernel's own map had a lock since 18.422 and a process's never did -
+ * written when a process had one thread, and never looked at again when it
+ * had several on four cores. `as_map` makes a missing page table as it goes,
+ * and two cores mapping into the same fresh two megabytes each made one and
+ * published it, the second over the first: the first core's page was in a
+ * table nothing pointed at any more. Reddit's page process lost a new
+ * thread's stack that way, between the kernel mapping it and its first push
+ * (slot 55 - two slots share a table, so it was a fresh one).
+ *
+ * Run as it happens: every round, every core maps its own page into the
+ * same fresh two megabytes of one space at the same moment, and every page
+ * is then looked up. A lost one is a page that is not there.
+ */
+#define EDIT_ROUNDS  256
+#define EDIT_RANGE   (512u * PAGE_SIZE)
+
+static volatile unsigned edit_go;
+static volatile unsigned edit_done[NR_CPUS];
+static struct addrspace *volatile edit_space;
+static uintptr_t edit_page[NR_CPUS];
+
+static uintptr_t edit_va(unsigned round, unsigned c)
+{
+    return USER_VA_BASE + 64UL * 1024 * 1024 + (uintptr_t)round * EDIT_RANGE
+           + (uintptr_t)(c + 1) * 7u * PAGE_SIZE;
+}
+
+static void edits_with_the_others(void *arg)
+{
+    unsigned c = (unsigned)(uintptr_t)arg;
+    unsigned round;
+
+    for (round = 1; round <= EDIT_ROUNDS; round++) {
+        while (edit_go < round) {
+            cpu_relax();
+        }
+
+        (void)as_map(edit_space, edit_va(round, c), edit_page[c], 1, MAP_USER_RW);
+        edit_done[c] = round;
+    }
+}
+
+static bool test_one_core_at_a_time_edits_a_processs_map(void)
+{
+    unsigned online = smp_online();
+    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned c, r, lost = 0;
+    void *pages[NR_CPUS] = { 0 };
+    bool ok = true;
+
+    if (online < 2) {
+        return true;            /* one processor; nothing to race */
+    }
+
+    edit_space = as_create();
+
+    if (edit_space == NULL) {
+        return false;
+    }
+
+    for (c = 0; c < cores; c++) {
+        pages[c] = pmm_alloc_page();
+
+        if (pages[c] == NULL) {
+            ok = false;
+            break;
+        }
+
+        edit_page[c] = virt_to_phys(pages[c]);
+    }
+
+    edit_go = 0;
+    for (c = 0; c < NR_CPUS; c++) {
+        edit_done[c] = 0;
+    }
+
+    for (c = 1; ok && c < cores; c++) {
+        if (thread_create_on(c, "edits", edits_with_the_others,
+                             (void *)(uintptr_t)c) == NULL) {
+            ok = false;
+        }
+    }
+
+    for (r = 1; ok && r <= EDIT_ROUNDS; r++) {
+        edit_go = r;
+        (void)as_map(edit_space, edit_va(r, 0), edit_page[0], 1, MAP_USER_RW);
+
+        if (!all_said(edit_done, cores, r)) {
+            ok = false;
+            break;
+        }
+
+        for (c = 0; c < cores; c++) {
+            if (as_page_phys(edit_space, edit_va(r, c)) != edit_page[c]) {
+                lost++;
+            }
+        }
+    }
+
+    if (lost != 0) {
+        kputs("  lost ");
+        kputu(lost);
+        kputs(" of ");
+        kputu(EDIT_ROUNDS * cores);
+        kputs(" pages mapped at once\n");
+    }
+
+    as_destroy(edit_space);
+
+    for (c = 0; c < cores; c++) {
+        if (pages[c] != NULL) {
+            pmm_free_page(pages[c]);
+        }
+    }
+
+    return ok && lost == 0;
+}
+
+/*
  * **A reference is taken only for the region it names** (`threads.md` step
  * 1).
  *
@@ -11777,6 +11898,7 @@ static const struct test tests[] = {
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },
     { "ipc: endpoints made at once are each their own", test_endpoints_made_at_once_are_each_their_own },
     { "mmu: one core at a time splits the kernel's map", test_one_core_at_a_time_splits_the_kernels_map },
+    { "mmu: one core at a time edits a process's map", test_one_core_at_a_time_edits_a_processs_map },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "irq: a line is claimed, counted and given back",

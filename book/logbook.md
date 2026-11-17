@@ -4014,3 +4014,36 @@ before; with a 2 MB buffer alone, 1.3 to 7.2; with 256 frame slots, 1.3
 to 3.4 (one 48); with selective acknowledgements, 38.9 to 52.7, six times
 out of six. This Mac reads the same video at 37 MB/s. Details in
 `testing.md` 18.850.
+
+## 17 November 2026 - Two cores, one page table
+
+**In short.** Reddit's page crashed because a brand-new thread found its
+stack missing. The cause was in the kernel's handling of memory maps:
+when two processor cores added memory to the same corner of one program
+at the same instant, each built a new page table for it and the second
+replaced the first, so the first core's memory silently vanished. Now
+each program's map has a lock, so only one core edits it at a time.
+
+**What.** A program's memory is described by page tables, a tree of
+pages that says where each address lives. A table at the bottom covers
+two megabytes and is made the first time anything is put there. Two
+cores could each see "no table here yet", each make one, and each write
+it into the tree - and the second write erased the first. Whatever the
+first core had just mapped was in a table nothing pointed at any more.
+
+**Why it hid.** The kernel's own map had the same bug and got a lock
+months ago (18.422). A program's map was written when a program had one
+thread, so one core at a time was guaranteed by construction; when
+programs got threads spread over four cores, nobody went back to it. And
+a table is only missing the first time, so it takes two cores touching a
+fresh two megabytes at the same instant - a browser making threads is
+exactly that, and even then it was seen once.
+
+**Visible impact.** A page whose process made threads quickly - Reddit
+first - could die with a thread that never ran its first instruction.
+That should no longer happen, anywhere.
+
+**Measurements.** A new kernel test makes every core map a page into the
+same fresh two megabytes at the same moment, 256 times: **680 of 1,024
+pages lost before the fix, none after.**
+

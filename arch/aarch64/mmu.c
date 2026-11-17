@@ -462,6 +462,17 @@ bool mmu_is_enabled(void)
 struct addrspace {
     uint64_t *root;
     bool      in_use;
+    /*
+     * **One core at a time edits this space's tables** (`testing.md`
+     * 18.851), as `kernel_map_lock` does the kernel's. `as_map` makes a
+     * missing table as it walks, and two cores mapping into the same fresh
+     * two megabytes each made one and published it, the second over the
+     * first - losing the first core's page. A process had one thread when
+     * this was written; it has had several on four cores since 0.10.22.
+     * Taken inside `fill_lock` where both are held, never across a
+     * shootdown, and the page allocator takes its own and never this one.
+     */
+    struct spinlock lock;
 };
 
 /* A pool that grows a slab at a time up to the ceiling `as_pool_init` was
@@ -549,6 +560,7 @@ again:
          */
         space(i)->in_use = true;
         space(i)->root = NULL;
+        space(i)->lock = (struct spinlock)SPINLOCK("an address space");
         spin_unlock(&spaces_lock, flags);
 
         space(i)->root = pmm_alloc_kernel_page();
@@ -625,6 +637,7 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
            uint64_t attrs)
 {
     size_t i;
+    unsigned long flags;
 
     if ((va & PAGE_MASK) != 0 || (pa & PAGE_MASK) != 0) {
         return AS_ERR_ALIGN;
@@ -641,6 +654,8 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
         return AS_ERR_RANGE;
     }
 
+    flags = spin_lock(&as->lock);
+
     for (i = 0; i < pages; i++) {
         uint64_t *l2 = descend(as->root, (unsigned)L1_INDEX(va));
         uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
@@ -652,12 +667,14 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
         pa += PAGE_SIZE;
     }
 
+    spin_unlock(&as->lock, flags);
     return AS_OK;
 }
 
 int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
 {
     size_t i;
+    unsigned long flags;
 
     if ((va & PAGE_MASK) != 0) {
         return AS_ERR_ALIGN;
@@ -667,11 +684,14 @@ int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
         return AS_ERR_RANGE;
     }
 
+    flags = spin_lock(&as->lock);
+
     for (i = 0; i < pages; i++) {
         unmap_page(as->root, va);
         va += PAGE_SIZE;
     }
 
+    spin_unlock(&as->lock, flags);
     return AS_OK;
 }
 

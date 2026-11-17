@@ -10655,9 +10655,18 @@ the applications make the system useful, and is not pulled forward.
       something unmapped it in between, or mapped it elsewhere. Read
       once, and nothing found: a slot is taken only when no thread of
       the process holds its index, collection needs `ended`, and ending
-      unmaps first. Seen once in the tree's life; to be made to happen -
-      threads made and ended on four cores as fast as they can be, under
-      a page process's collector - before it can be fixed.
+      unmaps first. **DONE in 0.11.453** (`testing.md` 18.851): it was
+      below the threads - two cores mapping into the same fresh two
+      megabytes of one space each made a page table, and the second
+      published its own over the first's. Made to happen in the guest
+      suite (680 of 1,024 pages lost), and fixed with a lock in every
+      address space, as the kernel's own map has had since 18.422.
+    - *`x86-ahci` under a full gate* (17 November 2026, 0.11.453's
+      prepush): "no command at the probe was ended by its interrupt" -
+      waits 0 by it and 0 by a tick, so every command had finished before
+      anything waited. It passed alone in 2 s. The check needs a command
+      that is made to wait (one large enough, or issued and waited for at
+      once), not the luck of a busy host.
     - *Seeing what goes wrong* (15 November 2026). The Verge, opened on
       the M700, killed its page's process and JetSki showed nothing - the
       fault was in the system's log, read over telnet. Diego: "why dont we
