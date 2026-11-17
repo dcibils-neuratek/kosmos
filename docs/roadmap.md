@@ -10223,7 +10223,11 @@ the applications make the system useful, and is not pulled forward.
     `testing.md` 18.859): WebKit laid out every sticky box on every
     scroll, and the grids they sit in repainted their items whole. Patch
     0045 places them instead: rendering 1.2 ms to 0.5, wheel to picture
-    5.3 to 4.7-4.9. What is left of a scroll there is painting the view. Its
+    5.3 to 4.7-4.9. What is left of a scroll there is painting the view. **And
+    the half-second freezes** (0.11.460, `testing.md` 18.860): drawing a
+    page with no picture yet made WebKit wait up to 500 ms for one; patch
+    0046 draws nothing instead and keeps a visible page's picture - on
+    the M700 four paints of 126 ms (worst 501) became 0.6 (worst 0.8). Its
     prepush lost four suites to load, each passing alone in 88 s:
     `x86-ahci` (as before), `x86-profile` (730 samples where 1050 were
     due), `arm-sandbox` (cut short at 219 of 220) and `x86-script`

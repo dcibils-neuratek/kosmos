@@ -506,7 +506,21 @@ def use(guest, R, dump, window, mark):
     failed.extend(stopped(guest, R, window, sw, sh))
     failed.extend(changes(guest, R, window, sw, sh))
     failed.extend(stuck(guest, R, window, sw, sh))
+    failed.extend(never_waited(guest))
     return failed
+
+
+def never_waited(guest):
+    """No paint into the window waited for the web process (`testing.md`
+    18.860, patch 0046): painting a page with no picture yet forced one and
+    waited up to half a second for it, the window frozen - 501-505 ms,
+    several times a run, before."""
+    worst = [float(m) for m in re.findall(r"drawn into the window [0-9.]+ ms, most ([0-9.]+)", guest.seen)]
+    if not worst:
+        return ["the kit said nothing of drawing pages into the window"]
+    if max(worst) >= 400:
+        return ["a page drawn into the window waited for its web process: %.1f ms at worst" % max(worst)]
+    return []
 
 
 # **A page from the disk** (`roadmap.md`, *HTML files from the disk*): an

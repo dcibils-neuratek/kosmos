@@ -433,6 +433,11 @@ numbers):
   0045 places a sticky box rather than laying it out, when nothing is
   composited - rendering 1.2 ms to 0.5 a scrolled frame on the M700.
 
+  **And the half second** (0.11.460, `testing.md` 18.860): asked to draw a
+  page it had no picture of, WebKit's UI side forced one and waited up to
+  500 ms for the web process, GTK's way. Patch 0046 returns instead and
+  keeps a visible page's picture; the update comes when it is ready.
+
 ## Decided by Diego, 11 November 2026
 
 1. **The design agreed**: "yes go ahead".

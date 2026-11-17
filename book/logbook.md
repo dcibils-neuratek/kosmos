@@ -4187,3 +4187,34 @@ look the same.
 **Measured** (M700, 40 notches): the re-measuring 1.2 ms to 0.5 a frame;
 wheel to picture 5.3 ms to 4.7-4.9. What is left is drawing the page,
 2.4-2.7 ms, because half the view really does change.
+
+## 17 November 2026 - Never waiting for a picture
+
+**In short.** Every so often the browser's window stopped for half a
+second. When it was asked to show a page whose picture wasn't ready yet,
+the part of WebKit inside the browser asked the page's process for one
+and waited - up to 500 ms - with the whole window frozen meanwhile. Now
+it doesn't wait: it shows nothing new and draws the picture when it
+comes. On the M700 those moments went from 126 ms each, the worst half a
+second, to under a millisecond.
+
+**What.** A page in the browser lives in another process, which sends
+pictures of it as they are ready. WebKit was written for desktops where a
+window must produce its pixels the moment it is asked, so when it had no
+picture it demanded one and sat waiting. It also threw its picture away
+ten seconds after it was last used, so a page left still and then shown
+again paid the same wait. On Kosmos the picture always arrives on its own,
+so waiting buys nothing: the browser returns at once, and keeps the
+picture of a page that is on screen.
+
+**How it was found.** The numbers had said it for days - "most 501 ms"
+beside the time taken to draw the page into the window - in the test runs
+and on the M700, and nobody had read that line. Following it led to the
+one function that waits with a half-second timeout.
+
+**Visible.** No more half-second stops while a page loads or after it
+has sat still.
+
+**Measured.** M700, Wikipedia: 126 ms, worst 501, to 0.6, worst 0.8. The
+test now fails any run where a paint waits 400 ms or more: 504.6 without
+the fix, 3.8 with it.

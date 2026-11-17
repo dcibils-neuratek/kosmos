@@ -1,0 +1,51 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Never waiting for the web process to paint (Kosmos testing.md 18.860).
+Painting a page with no backing store yet - while it loads, or a tab just
+opened - forced an update and waited up to half a second for it, the
+window frozen, and a loading page's process is busy: on the M700 one paint
+in four took 500 ms when Wikipedia was opened. The area is left unpainted
+instead, and the picture comes when it comes. And a visible page's store,
+which the screen shows (patch 0044), is not discarded ten seconds after
+the window last painted it.
+
+diff -ru a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp
+--- a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp	2026-11-17 17:03:51.429537340 -0300
++++ b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.cpp	2026-11-17 17:03:51.446350974 -0300
+@@ -83,8 +83,21 @@
+     if (isInAcceleratedCompositingMode())
+         return;
+ 
++#if PLATFORM(KOSMOS)
++    // **Never waiting for the web process to paint** (Kosmos testing.md
++    // 18.860). Without a backing store yet - a page still loading, a tab
++    // just opened - `forceUpdateIfNeeded` asked the web process for a
++    // picture and waited up to half a second for it, the window frozen,
++    // and a page loading is exactly when its process is busy. The area is
++    // left unpainted (the caller fills it with the page's background), and
++    // the picture comes when the web process has one, as every picture
++    // does.
++    if (!m_backingStore)
++        return;
++#else
+     if (!m_backingStore && !forceUpdateIfNeeded())
+         return;
++#endif
+ 
+     m_backingStore->paint(cr, rect);
+     unpaintedRegion.subtract(IntRect(IntPoint(), m_backingStore->size()));
+@@ -333,6 +346,14 @@
+ {
+     if (!m_backingStore)
+         return;
++#if PLATFORM(KOSMOS)
++    // A visible page's store is what the screen shows (patch 0044), and
++    // throwing it away ten seconds after the window last painted it, as
++    // other ports do, only makes the web process paint the whole view
++    // again into a new one (Kosmos testing.md 18.860).
++    if (RefPtr page = this->page(); page && page->isViewVisible())
++        return;
++#endif
+ 
+     m_backingStore = nullptr;
+     send(Messages::DrawingArea::DidDiscardBackingStore());

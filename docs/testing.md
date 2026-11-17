@@ -35639,3 +35639,42 @@ M700, en.wikipedia.org/wiki/BeOS, 40 notches down and up:
   0045, run one:   scrolled 3.1 ms - rendering 0.5, painting 2.4; wheel to picture 4.7
   0045, run two:   scrolled 3.4 ms - rendering 0.5, painting 2.7; wheel to picture 4.9
 ```
+
+## 18.860 Half a second waiting for a picture: JetSki's paint never waits
+
+**In short.** Now and then JetSki's window froze for half a second: asked
+to draw a page WebKit had no picture of yet - while it loads, or ten
+seconds after the last time it was drawn - WebKit's UI side asked the web
+process for one and waited for it, up to 500 ms, inside JetSki's frame.
+On Kosmos it no longer waits (patch 0046): a page with no picture yet is
+not drawn, and the next one arrives on its own. **On the M700, Wikipedia's
+four such paints took 126 ms each, the worst 501; now 0.6, the worst 0.8.**
+
+**Where.** `DrawingAreaProxyCoordinatedGraphics::paint` calls
+`forceUpdateIfNeeded` when it has no backing store, which sends the web
+process a request and waits for its `Update` with a 500 ms timeout - the
+GTK port's way, where a widget's draw must produce pixels now. And
+`discardBackingStore` throws the store away ten seconds after the last
+`paint()`, so a page left alone and then drawn again paid it again. JetSki
+draws the page itself only when its own chrome covers it (the inset shows
+it otherwise, 18.857), so ten seconds passed often. The wait was in every
+`x86-jetski` run already - "most 501.1 (37)", "most 504.7 (27)" - and
+nothing read it.
+
+**The patch** (0046, `DrawingAreaProxyCoordinatedGraphics.cpp`, under
+`PLATFORM(KOSMOS)`): `paint()` returns when there is no backing store
+rather than forcing one, and a visible page's store is not discarded.
+Nothing goes unshown: the web process sends its update when it has one,
+and JetSki draws then.
+
+**Held by `x86-jetski`** (`never_waited`): no "drawn into the window"
+line of the whole run may say a worst of 400 ms or more. With the patch
+the worst was 3.8 ms; without it (the control, the patch moved aside)
+504.6, and that check alone failed.
+
+```
+M700, en.wikipedia.org/wiki/BeOS, 40 notches down and up:
+  0.11.459:  drawn into the window 126.2-126.9 ms, most 500.8-503.3 (4)
+  0046:      drawn into the window 0.6 ms, most 0.8 (4)
+             scrolled 3.4 ms - rendering 0.6, painting 2.7; wheel to picture 5.1
+```
