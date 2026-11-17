@@ -391,7 +391,41 @@ numbers):
   it, the update's region used again, and only the page's changes drawn
   into the window and committed - wheel to picture 2.5 ms on a plain page
   and 5.0-5.7 on Wikipedia, whose web process still repaints its whole
-  view on a scroll until there are layers.
+  view on a scroll until there are layers. **1c changed on 17 November**
+  (Diego: "No copy at all"): the page is not drawn into the window by the
+  GPU but not drawn into it at all - WebKit's backing store handed to the
+  window manager as a second surface of JetSki's window and composed
+  straight to the screen, by the GPU where the compositor is the GPU's and
+  by the processor elsewhere. **Two buffers**, the same day (Diego, "Two
+  page buffers", once it was plain that composing from WebKit's one store
+  would tear a scroll - the window manager never reads what an
+  application is writing):
+
+  - **The window manager's inset.** A window that draws its own pixels may
+    hand over a second region - two surfaces, the second after the first -
+    placed at a rectangle of its picture (`inset`), and say which buffer
+    shows and what changed in it (`inset_show`, the buffer named, never
+    inferred). The scene carries it beside the window's picture
+    (`sc:inset`, five more words a window on the wire), composed over the
+    picture by `scene_core.c` and, where the GPU composes, as pieces of its
+    own from the inset's buffer. The region arrives read-only. Reusable:
+    a film or a 3D view could be shown the same way.
+  - **WebKit's store in it** (patch 0044, `KosmosStore.h`). The UI
+    process's backing store is two buffers in a region the WebKit Kit
+    makes; WebKit writes one while the other is shown. `kosmosShow` says
+    the buffer just finished and what changed, and starts the other, which
+    first catches up: every scroll it missed in one move in place, then the
+    rectangles the first changed copied across - or the whole, when that
+    is most of the view or two scrolls disagree.
+  - **JetSki** shows the page as the inset whenever nothing of its own
+    covers it; Settings, a crash, a refusal or a panel over the page take
+    the inset away and the page is painted into the window as in 1b.
+
+  **Built in 0.11.457** (`testing.md` 18.857). On the M700: the page drawn
+  into the window 0 times (1b: 0.7 ms a scrolled frame), wheel to picture
+  2.7 ms on a plain page (WebKit taking an update in 1.4 ms, 0.2 more than
+  1b for the second buffer), 5.3 on Wikipedia, whose 598 pictures in 24
+  seconds still reach the screen without JetSki copying a pixel.
 
 ## Decided by Diego, 11 November 2026
 

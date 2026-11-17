@@ -168,6 +168,10 @@ void webkit_trace(int on);
  * window's poll. A door below nought stops it. */
 void webkit_wake(long door, unsigned code);
 
+/* For a suite's control only (`run_jetski.py`, `forgetting`): WebKit's
+ * buffer not being drawn owes nothing, and shows what it held before. */
+void webkit_store_forgets(int on);
+
 /* WebKit's run loop for at most `ms` milliseconds, or until a view shown
  * has news; then what happened to the views together. */
 void webkit_pump(unsigned ms, struct webkit_events *out);
@@ -207,6 +211,28 @@ void webkit_paint(int id, uint32_t *pixels, unsigned width, unsigned height, uns
  * since this was last asked, every rectangle it said joined into one; 0
  * when nothing changed. Asking forgets it. */
 int webkit_damage(int id, int *x, int *y, int *w, int *h);
+
+/*
+ * **The page shown from WebKit's own two buffers** (`webkit.md` *Fast*
+ * 1c): 1 and `out` filled when view `id`'s page changed since this was
+ * last asked - the buffer, 1 or 2, just finished and to be shown from now,
+ * and what changed in it - and WebKit then writes the other; 0 when
+ * nothing changed, or when its store is not in a region (then
+ * `webkit_paint`). `everything` says all of it changed, for a window
+ * manager not shown this store before. `region` is the process's own capability to both
+ * buffers, the second `bytes` after the first, rows at `pitch`; a new
+ * `generation` is a new store and a new region.
+ */
+struct webkit_shown {
+    long region;
+    unsigned width, height, pitch;
+    unsigned long bytes;
+    int buffer;
+    int x, y, w, h;
+    unsigned generation;
+};
+
+int webkit_shown(int id, int everything, struct webkit_shown *out);
 
 /* What a person does to a view, in its pixels. */
 enum webkit_mouse { WEBKIT_PRESS, WEBKIT_RELEASE, WEBKIT_MOVE };

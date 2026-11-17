@@ -2637,6 +2637,12 @@ function OUT.describe()
     scene:window(k, win.x, win.y, win.w, h, flags, pic(shown),
                  win.src_w or win.w, win.shaded and lower or (win.src_h or lower),
                  pic(bar and bar.surface or nil), bar and bar.h or 0, bx, by, held, bx2)
+
+    local inset = win.inset
+
+    if inset then
+      scene:inset(k, pic(inset[inset.live]), inset.x, inset.y, inset.w, inset.h)
+    end
   end
 
   scene:menus(#menus)
@@ -5013,6 +5019,32 @@ end
 -- Swaps which buffer is shown and damages what it said changed. Nothing is
 -- copied: the compositor simply reads the other one from now on.
 --
+--
+-- **Damage in a picture's pixels, onto the screen**: `x`..`x + w` of what a
+-- window that draws its own pixels drew, held to the picture and, at a
+-- scale, where those pixels land, rounded outwards (`ui.md` 16.18). In the
+-- buffer's own coordinates, which start below a menu bar when the window
+-- has one (`strips`): the damage moves down with it.
+--
+local function damage_picture(win, x, y, w_, h_)
+  local below = strips.below(win)
+  local sw_ = win.src_w or win.w
+  local sh_ = win.src_h or (win.h - below)
+
+  x, y = math.max(0, math.floor(x)), math.max(0, math.floor(y))
+  w_ = math.min(sw_ - x, math.floor(w_))
+  h_ = math.min(sh_ - y, math.floor(h_))
+
+  if w_ > 0 and h_ > 0 then
+    local dw_, dh_ = win.w, win.h - below
+    local x0, y0 = x * dw_ // sw_, y * dh_ // sh_
+    local x1 = ((x + w_) * dw_ + sw_ - 1) // sw_
+    local y1 = ((y + h_) * dh_ + sh_ - 1) // sh_
+
+    add_damage(win.x + x0, win.y + below + y0, x1 - x0, y1 - y0)
+  end
+end
+
 handlers.commit = function(req)
   local win = by_handle[req.window]
 
@@ -5055,29 +5087,9 @@ handlers.commit = function(req)
 
   win.shared.live = (win.shared.live == 1) and 2 or 1
 
-  -- In the buffer's own coordinates, which start below a menu bar when
-  -- the window has one (`strips`): the damage moves down with it, and is
-  -- held to the buffer rather than to the window around it.
-  local below = strips.below(win)
-  local sw_ = win.src_w or win.w
-  local sh_ = win.src_h or (win.h - below)
-  local x = math.max(0, math.floor(tonumber(req.x) or 0))
-  local y = math.max(0, math.floor(tonumber(req.y) or 0))
-  local w_ = math.min(sw_ - x, math.floor(tonumber(req.w) or sw_))
-  local h_ = math.min(sh_ - y, math.floor(tonumber(req.h) or sh_))
-
-  if w_ > 0 and h_ > 0 then
-    --
-    -- In the surface's pixels, which at a scale are not the screen's: the
-    -- damage is where they land, rounded outwards (`ui.md` 16.18).
-    --
-    local dw_, dh_ = win.w, win.h - below
-    local x0, y0 = x * dw_ // sw_, y * dh_ // sh_
-    local x1 = ((x + w_) * dw_ + sw_ - 1) // sw_
-    local y1 = ((y + h_) * dh_ + sh_ - 1) // sh_
-
-    add_damage(win.x + x0, win.y + below + y0, x1 - x0, y1 - y0)
-  end
+  damage_picture(win, tonumber(req.x) or 0, tonumber(req.y) or 0,
+                 tonumber(req.w) or (win.src_w or win.w),
+                 tonumber(req.h) or (win.src_h or (win.h - strips.below(win))))
 
   -- The buffer the application should draw into next: the one this process
   -- has just stopped showing.
@@ -5219,6 +5231,104 @@ handlers.surface = function(req, _, cap)
   }
 
   return { ok = true, draw_into = 1 }
+end
+
+--
+-- **An inset** (`webkit.md` *Fast* 1c, agreed 17 November 2026): a second
+-- picture a window that draws its own pixels lays over its first - a
+-- browser's page, which its engine draws into a region of its own, so that
+-- nothing copies the page into the window. `{ window, x, y, w, h, buffer }`
+-- and the region's capability: two surfaces `w` by `h`, the second after
+-- the first as a window's are, placed at `x`, `y` in the window's picture
+-- and showing `buffer`, 1 or 2. Sent again, it replaces the one there -
+-- another size, another tab - and the old is let go once this is held.
+-- With no region, the window has no inset any more.
+--
+-- **Which buffer shows is said, never inferred** (`inset_show`): the
+-- engine knows which of its two it has finished, and the two sides cannot
+-- fall out of step over a commit that went missing.
+--
+local function let_go_inset(win)
+  if win.inset then
+    damage_picture(win, win.inset.x, win.inset.y, win.inset.w, win.inset.h)
+    OUT.let_go_buffers(win.inset)
+    win.inset = nil
+  end
+end
+
+handlers.inset = function(req, _, cap)
+  local win = by_handle[req.window]
+
+  local function refuse(why)
+    if cap and cap >= 0 then sys.release(cap) end
+    return { ok = false, error = why }
+  end
+
+  if not win or not win.shared then
+    return refuse("that window does not draw its own pixels")
+  end
+
+  if not cap or cap < 0 then
+    let_go_inset(win)
+    return { ok = true }
+  end
+
+  local int = math.tointeger
+  local x, y = int(tonumber(req.x)), int(tonumber(req.y))
+  local w, h = int(tonumber(req.w)), int(tonumber(req.h))
+  local buffer = int(tonumber(req.buffer))
+
+  if not x or not y or not w or not h or w < 1 or h < 1 or x < 0 or y < 0
+     or (buffer ~= 1 and buffer ~= 2) then
+    return refuse("an inset needs a place, a size and the buffer it shows")
+  end
+
+  local bytes = gfx.bytes(w, h)
+
+  if (sys.memory_size(cap) or 0) * 4096 < bytes * 2 then
+    return refuse("that region does not hold two surfaces that size")
+  end
+
+  local at, why = sys.memory_map(cap)
+
+  if not at then return refuse("it could not be mapped: " .. tostring(why)) end
+
+  let_go_inset(win)
+
+  win.inset = {
+    cap = cap, x = x, y = y, w = w, h = h, live = buffer,
+    [1] = gfx.wrap{ at = at, w = w, h = h, region = cap },
+    [2] = gfx.wrap{ at = at + bytes, w = w, h = h, region = cap, offset = bytes },
+  }
+
+  damage_picture(win, x, y, w, h)
+  return { ok = true }
+end
+
+-- `{ window, buffer, x, y, w, h }`: the inset's `buffer` shown from now,
+-- and what changed in it, in its own pixels.
+handlers.inset_show = function(req)
+  local win = by_handle[req.window]
+  local inset = win and win.inset
+  local int = math.tointeger
+  local buffer = int(tonumber(req.buffer))
+
+  if not inset then return { ok = false, error = "that window has no inset" } end
+  if buffer ~= 1 and buffer ~= 2 then return { ok = false, error = "no such buffer" } end
+
+  P.answered(win)
+  inset.live = buffer
+
+  local x = math.max(0, int(tonumber(req.x)) or 0)
+  local y = math.max(0, int(tonumber(req.y)) or 0)
+  local w_ = math.min(inset.w - x, int(tonumber(req.w)) or inset.w)
+  local h_ = math.min(inset.h - y, int(tonumber(req.h)) or inset.h)
+
+  if w_ > 0 and h_ > 0 then
+    damage_picture(win, inset.x + x, inset.y + y, w_, h_)
+  end
+
+  return { ok = true }
 end
 
 handlers.resize = function(req)
@@ -6154,6 +6264,12 @@ handlers.close = function(req)
   if win.shared_next then
     OUT.let_go_buffers(win.shared_next)
     win.shared_next = nil
+  end
+
+  -- And its inset (`handlers.inset`).
+  if win.inset then
+    OUT.let_go_buffers(win.inset)
+    win.inset = nil
   end
 
   return { ok = true }

@@ -9,6 +9,7 @@
  *   sc:windows(n)                                       how many, in order
  *   sc:window(k, x, y, w, h, flags, picture, src_w, src_h,
  *             bar, bar_h, bx, by, held)                 the k-th from the back
+ *   sc:inset(k, picture, ix, iy, iw, ih)              a second picture over it
  *   sc:menus(n)  sc:menu(k, x, y, w, h, picture)        above every window
  *   sc:above(outline x, y, w, h, colour | nil, osd, ox, oy, alpha | nil,
  *            cursor, cx, cy | nil, badge, bx, by | nil,
@@ -43,7 +44,7 @@
 #define SCENE_MT "kosmos.scene"
 
 /* The user value's slots: what the scene names, kept alive. */
-enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_MISC, UV_COUNT = UV_MISC };
+enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_INSETS, UV_MISC, UV_COUNT = UV_MISC };
 enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE, MISC_PANEL };
 
 static struct scene *check_scene(lua_State *L)
@@ -205,6 +206,7 @@ static int l_scene_windows(lua_State *L)
 
     let_go(L, UV_WINDOWS, n, had);
     let_go(L, UV_BARS, n, had);
+    let_go(L, UV_INSETS, n, had);
     return 0;
 }
 
@@ -231,8 +233,54 @@ static int l_scene_window(lua_State *L)
     w->held    = (int)luaL_optinteger(L, 15, -1);
     w->bx2     = (long)luaL_optinteger(L, 16, 0);
 
+    /* No inset unless `sc:inset` says so, after this, on the same pass. */
+    w->inset = NULL;
+    w->inset_slot = WS_NONE;
+    w->ix = w->iy = w->iw = w->ih = 0;
+
     hold(L, UV_WINDOWS, k, 8);
     hold(L, UV_BARS, k, 11);
+    lua_pushnil(L);
+    hold(L, UV_INSETS, k, -1);
+    lua_pop(L, 1);
+    return 0;
+}
+
+/*
+ * `sc:inset(k, picture, ix, iy, iw, ih)`: the k-th window's second picture,
+ * laid over its first at `ix`, `iy` in the first's pixels (`sc_window`).
+ * Said after `sc:window(k, ...)`, which clears it, on every pass it shows.
+ */
+static int l_scene_inset(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    int k = (int)luaL_checkinteger(L, 2);
+    struct sc_window *w;
+
+    luaL_argcheck(L, k >= 1 && k <= sc->nwin, 2, "no such window in the scene");
+    w = &sc->win[k - 1];
+    w->inset = opt_picture(L, 3, &w->inset_slot);
+    w->ix = (long)luaL_checkinteger(L, 4);
+    w->iy = (long)luaL_checkinteger(L, 5);
+    w->iw = (long)luaL_checkinteger(L, 6);
+    w->ih = (long)luaL_checkinteger(L, 7);
+
+    if (w->iw < 0) {
+        w->iw = 0;
+    }
+    if (w->ih < 0) {
+        w->ih = 0;
+    }
+    if (w->inset != NULL) {
+        if ((unsigned long)w->iw > w->inset->width) {
+            w->iw = (long)w->inset->width;
+        }
+        if ((unsigned long)w->ih > w->inset->height) {
+            w->ih = (long)w->inset->height;
+        }
+    }
+
+    hold(L, UV_INSETS, k, 3);
     return 0;
 }
 
@@ -434,7 +482,9 @@ static int l_scene_wire(lua_State *L)
             (int32_t)w->x, (int32_t)w->y, (int32_t)w->w, (int32_t)w->h, w->flags,
             (int32_t)w->picture_slot, (int32_t)w->src_w, (int32_t)w->src_h,
             (int32_t)w->bar_slot, (int32_t)w->bar_h,
-            (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, (int32_t)w->bx2
+            (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, (int32_t)w->bx2,
+            (int32_t)w->inset_slot, (int32_t)w->ix, (int32_t)w->iy,
+            (int32_t)w->iw, (int32_t)w->ih
         };
     }
 
@@ -470,6 +520,7 @@ static const luaL_Reg scene_methods[] = {
     { "desktop",  l_scene_desktop },
     { "windows",  l_scene_windows },
     { "window",   l_scene_window },
+    { "inset",    l_scene_inset },
     { "menus",    l_scene_menus },
     { "menu",     l_scene_menu },
     { "above",    l_scene_above },

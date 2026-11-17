@@ -324,6 +324,16 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         w->picture_slot = in.picture;
         w->bar_slot = in.bar;
 
+        /* An inset, held to its picture as `src_w` is below. */
+        w->inset = picture(in.inset);
+        w->inset_slot = in.inset;
+        if (w->inset != NULL) {
+            w->iw = clamp(in.iw, (long)w->inset->width);
+            w->ih = clamp(in.ih, (long)w->inset->height);
+            w->ix = in.ix;
+            w->iy = in.iy;
+        }
+
         /* What is stretched from is never more than the picture holds. */
         w->src_w = w->picture ? clamp(in.src_w, (long)w->picture->width) : 0;
         w->src_h = w->picture ? clamp(in.src_h, (long)w->picture->height) : 0;
@@ -982,6 +992,7 @@ static uint32_t in_us(unsigned long ticks)
 struct piece {
     long x, y, w, h;
     int  win;                       /* the window it is copied from */
+    int  inset;                     /* 1: from its inset (`sc_window.inset`) */
 };
 
 static unsigned compose_checks = 20;
@@ -1068,10 +1079,10 @@ static bool cut(struct piece *list, int *n, int max, long bx, long by, long bw, 
             continue;
         }
 
-        if (y0 > p.y) out[m++] = (struct piece){ p.x, p.y, p.w, y0 - p.y, p.win };
-        if (y1 < p.y + p.h) out[m++] = (struct piece){ p.x, y1, p.w, p.y + p.h - y1, p.win };
-        if (x0 > p.x) out[m++] = (struct piece){ p.x, y0, x0 - p.x, y1 - y0, p.win };
-        if (x1 < p.x + p.w) out[m++] = (struct piece){ x1, y0, p.x + p.w - x1, y1 - y0, p.win };
+        if (y0 > p.y) out[m++] = (struct piece){ p.x, p.y, p.w, y0 - p.y, p.win, p.inset };
+        if (y1 < p.y + p.h) out[m++] = (struct piece){ p.x, y1, p.w, p.y + p.h - y1, p.win, p.inset };
+        if (x0 > p.x) out[m++] = (struct piece){ p.x, y0, x0 - p.x, y1 - y0, p.win, p.inset };
+        if (x1 < p.x + p.w) out[m++] = (struct piece){ x1, y0, p.x + p.w - x1, y1 - y0, p.win, p.inset };
     }
 
     if (m > max) {
@@ -1165,10 +1176,43 @@ static int opaque_pieces(long rx, long ry, long rw, long rh, struct piece *out, 
             continue;
         }
 
-        list[0] = (struct piece){ x0, y0, x1 - x0, y1 - y0, k };
+        list[0] = (struct piece){ x0, y0, x1 - x0, y1 - y0, k, 0 };
 
         if (!uncovered(list, &n, k)) {
             continue;
+        }
+
+        /*
+         * **Its inset** (`webkit.md` *Fast* 1c): what the window's picture
+         * would give under it is not its to give, so the inset's place is
+         * cut from the picture's pieces - and given as pieces of its own,
+         * from the inset, when the GPU holds it too. Otherwise that part is
+         * composed here with the rest, inset and all.
+         */
+        if (w->inset != NULL && w->iw > 0 && w->ih > 0) {
+            long dx, dy, dw, dh;
+            int m = n, q;
+
+            scene_inset_place(w, w->y, w->h, &dx, &dy, &dw, &dh);
+
+            if (dw == w->iw && dh == w->ih && picture_gpu(w->inset_slot) != 0) {
+                for (q = 0; q < n && total < max; q++) {
+                    long ax0 = list[q].x > dx ? list[q].x : dx;
+                    long ay0 = list[q].y > dy ? list[q].y : dy;
+                    long ax1 = list[q].x + list[q].w < dx + dw ? list[q].x + list[q].w : dx + dw;
+                    long ay1 = list[q].y + list[q].h < dy + dh ? list[q].y + list[q].h : dy + dh;
+
+                    if (ax1 > ax0 && ay1 > ay0 && (ax1 - ax0) * (ay1 - ay0) >= PIECE_LEAST) {
+                        out[total++] = (struct piece){ ax0, ay0, ax1 - ax0, ay1 - ay0, k, 1 };
+                    }
+                }
+            }
+
+            if (!cut(list, &m, PIECES_MAX, dx, dy, dw, dh)) {
+                continue;
+            }
+
+            n = m;
         }
 
         for (p = 0; p < n && total < max; p++) {
@@ -1190,21 +1234,29 @@ static bool blit_pieces(const struct piece *pc, int n, uint32_t *fence)
     int i = 0;
 
     while (i < n) {
-        int win = pc[i].win;
+        int win = pc[i].win, inset = pc[i].inset;
         const struct sc_window *w = &sc->win[win];
+        long ox = w->x, oy = w->y;
 
         memset(&b, 0, sizeof b);
         b.op = gpu_engine ? GPU_OP_DRAW : GPU_OP_BLIT;
-        b.src = picture_gpu(w->picture_slot);
+        b.src = picture_gpu(inset ? w->inset_slot : w->picture_slot);
         b.dst = back_id;
 
-        while (i < n && pc[i].win == win && b.n < GPU_BLIT_RECTS) {
+        /* An inset's pixels are counted from where it lands. */
+        if (inset) {
+            long dw, dh;
+
+            scene_inset_place(w, w->y, w->h, &ox, &oy, &dw, &dh);
+        }
+
+        while (i < n && pc[i].win == win && pc[i].inset == inset && b.n < GPU_BLIT_RECTS) {
             b.rects[b.n].x = (int32_t)pc[i].x;
             b.rects[b.n].y = (int32_t)pc[i].y;
             b.rects[b.n].w = (int32_t)pc[i].w;
             b.rects[b.n].h = (int32_t)pc[i].h;
-            b.rects[b.n].sx = (int32_t)(pc[i].x - w->x);
-            b.rects[b.n].sy = (int32_t)(pc[i].y - w->y);
+            b.rects[b.n].sx = (int32_t)(pc[i].x - ox);
+            b.rects[b.n].sy = (int32_t)(pc[i].y - oy);
             b.n++;
             i++;
         }
@@ -1316,7 +1368,7 @@ static long compose_rect(long x, long y, long w, long h, uint32_t *fence, bool *
 
     if (n > 0 && blit_pieces(pc, n, fence)) {
         *gave = true;
-        rest[0] = (struct piece){ x, y, w, h, -1 };
+        rest[0] = (struct piece){ x, y, w, h, -1, 0 };
 
         for (i = 0; i < n; i++) {
             if (!cut(rest, &nrest, PIECES_MAX * 2, pc[i].x, pc[i].y, pc[i].w, pc[i].h)) {

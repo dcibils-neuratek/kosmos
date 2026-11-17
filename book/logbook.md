@@ -4117,3 +4117,37 @@ twelfth of what it did.
 draws 0.08 million pixels a frame instead of 0.96. What remains on
 Wikipedia is WebKit repainting its whole view on every scroll, which needs
 layers and a GL driver - a later step.
+
+## 17 November 2026 - The page is never copied
+
+**In short.** JetSki no longer copies the web page into its window at
+all. WebKit draws the page into two buffers that the window manager reads
+directly and puts on the screen, so the browser's own copy - about 0.7 ms
+of every scrolled frame on the M700 - is gone.
+
+**What.** Until now WebKit drew the page into its own store, and JetSki
+copied the part that changed into its window, which the window manager
+then put on the screen. Now the window manager can be handed a second
+picture to lay over part of a window - an *inset* - and WebKit's store is
+that picture. It has two buffers, like every window: WebKit draws into one
+while the screen shows the other, then they swap. The buffer that was on
+the screen has missed what changed in the meantime - a scroll, a box
+redrawn - so before WebKit draws into it again it catches up, sliding its
+rows by every scroll it missed in one move and copying across the
+rectangles that changed.
+
+**Why.** Diego chose this over having the graphics chip do the copy: a
+copy nobody makes is cheaper than a copy made faster, and the M700's
+blitter is slow at reading an application's buffers. The second buffer
+was his choice too, once it was clear that showing WebKit's single store
+would let the screen catch it half drawn during a scroll.
+
+**Visible.** Scrolling costs a little less; a page that animates costs the
+browser nothing at all for each picture, since it no longer touches the
+pixels. And the inset is a piece any application can use - a film player
+or a 3D view could hand its picture to the screen the same way.
+
+**Measured** (M700, 40 notches): the page drawn into the window 0 times
+(before, 0.7 ms a scrolled frame); wheel to picture 2.7 ms on a plain page,
+5.3 on Wikipedia; a still Wikipedia's 598 pictures in 24 seconds reached
+the screen without JetSki copying a pixel.

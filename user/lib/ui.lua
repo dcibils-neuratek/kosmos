@@ -8429,6 +8429,41 @@ function window:commit(damage)
 end
 
 --
+-- **An inset** (`webkit.md` *Fast* 1c): a second picture the window manager
+-- lays over this window's, at `x`, `y` in the window's content and `w` by
+-- `h` - pixels some engine draws into a region of its own, two buffers the
+-- second after the first, so that nothing copies them into the window. A
+-- browser's page is the first. `buffer` is the one shown, 1 or 2; `cap` the
+-- region, which the window manager is given its own capability to and the
+-- caller may let go of after. With no `cap`, the window has no inset.
+--
+function window:inset(cap, x, y, w, h, buffer)
+  if not self.region then return false, "this window does not draw its own pixels" end
+
+  local reply, why = fs.send("/Running/wm", {
+    type = "inset", window = self.handle,
+    x = x, y = (y or 0) + (self.band and self.head_h or 0), w = w, h = h, buffer = buffer,
+  }, cap)
+
+  if not reply then return false, why end
+  if not reply.ok then return false, reply.error end
+  return true
+end
+
+-- The inset's `buffer` shown from now, and what changed in it - `damage`
+-- in its own pixels, all of it when there is none. Said, never inferred:
+-- the engine knows which of its two it finished.
+function window:inset_show(buffer, damage)
+  local reply = fs.send("/Running/wm", {
+    type = "inset_show", window = self.handle, buffer = buffer,
+    x = damage and damage.x, y = damage and damage.y,
+    w = damage and damage.w, h = damage and damage.h,
+  })
+
+  return reply ~= nil and reply.ok == true
+end
+
+--
 -- **A window that draws its own pixels, at a new size** (`roadmap.md` 6zz
 -- e): a region of two surfaces that size, handed to the window manager in
 -- place of the one it has, and the old one let go once it has been. The

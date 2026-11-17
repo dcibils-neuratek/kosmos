@@ -10197,7 +10197,29 @@ the applications make the system useful, and is not pulled forward.
     the M700: a plain page 5.7 ms to 2.5, Wikipedia 7.5 to 5.0-5.7; a
     still Wikipedia 0.08 Mpx a frame rather than the window's 0.96. Held
     by `x86-jetski`'s `changes` step, controls `wholly` and `owing-one`.
-    **Next: 1c**, the page into the window by the GPU. Left for layers:
+    **1c changed - AGREED 17 November** (Diego chose "No copy at all"
+    over the GPU copy as written and over skipping 1c): after 1b the copy
+    of the page into the window is about 0.7 ms a frame, and the blitter
+    reads an application's buffers slowly (`m700-2d.md` 6b). So the page
+    is not copied at all: WebKit's backing store is handed to the window
+    manager as a second surface inside JetSki's window, at its place below
+    the strip, and composed straight to the screen - by the render engine
+    in GPU composing, by the processor everywhere else, QEMU included. No
+    application gets the GPU driver, and it is the shape WebKit's layers
+    can use later. A shared piece (the window manager), so the whole gate.
+    **Two page buffers**, the same day (Diego: "Two page buffers", once
+    composing from WebKit's one store was shown to tear a scroll). **Built
+    in 0.11.457** (`testing.md` 18.857): the window manager's inset (a
+    second region of two buffers at a rectangle of a window's picture,
+    the buffer shown named), WebKit's store as two buffers in it (patch
+    0044), and JetSki showing the page through it whenever nothing of its
+    own covers it. On the M700 the page is drawn into the window 0 times
+    (1b: 0.7 ms a scrolled frame), wheel to picture 2.7 ms on a plain
+    page; a still Wikipedia's 598 pictures in 24 s all reach the screen
+    without JetSki. Held by `x86-jetski`'s `changes` step, controls
+    `no-inset` and `forgetting`. Still to see: whether the blitter takes
+    the inset's pieces (its check passed, 0 pixels different).
+    Left for layers:
     Wikipedia's web process repaints its whole view on every scroll
     (3.6 ms) - viewport-constrained boxes without compositing. Its
     prepush lost four suites to load, each passing alone in 88 s:

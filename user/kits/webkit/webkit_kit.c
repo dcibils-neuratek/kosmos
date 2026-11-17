@@ -39,6 +39,7 @@
 #include "lauxlib.h"
 
 #include "webkit.h"
+#include <kosmos.h>
 #include "kits/gfx/gfx_draw.h"      /* kosmos_surface_pixels */
 #include "kits/kitenv.h"            /* kit_capability, kit_push_spill */
 
@@ -221,6 +222,13 @@ static int l_zoom(lua_State *L)
 static int l_wake(lua_State *L)
 {
     webkit_wake((long)luaL_checkinteger(L, 1), (unsigned)luaL_checkinteger(L, 2));
+    return 0;
+}
+
+/* webkit.store_forgets(true): a suite's control only (`webkit.h`). */
+static int l_store_forgets(lua_State *L)
+{
+    webkit_store_forgets(lua_toboolean(L, 1));
     return 0;
 }
 
@@ -551,6 +559,43 @@ static int v_damage(lua_State *L)
 }
 
 /*
+ * `v:shown([generation [, everything]])` (`webkit.md` *Fast* 1c): when the page changed
+ * since this was last asked, the buffer just finished, 1 or 2, and what
+ * changed in it, `x`, `y`, `w`, `h`, then its store's `generation`, width
+ * and height - and, when that generation is not the one given, a
+ * capability to the store's region that can only read it, for the window
+ * manager, which the caller lets go once it is handed over. Nothing when
+ * nothing changed, or when the store is not in a region. `everything`:
+ * the whole buffer said to have changed, for a window manager not shown it.
+ */
+static int v_shown(lua_State *L)
+{
+    struct webkit_shown out;
+    lua_Integer known = luaL_optinteger(L, 2, -1);
+
+    if (!webkit_shown(id_of(L), lua_toboolean(L, 3), &out)) return 0;
+    lua_pushinteger(L, out.buffer);
+    lua_pushinteger(L, out.x);
+    lua_pushinteger(L, out.y);
+    lua_pushinteger(L, out.w);
+    lua_pushinteger(L, out.h);
+    lua_pushinteger(L, out.generation);
+    lua_pushinteger(L, out.width);
+    lua_pushinteger(L, out.height);
+
+    if ((lua_Integer)out.generation != known) {
+        long ro = kosmos_mem_readonly(out.region);
+
+        if (ro >= 0) {
+            lua_pushinteger(L, ro);
+            return 9;
+        }
+    }
+
+    return 8;
+}
+
+/*
  * `v:mouse(action, button, x, y [, mods])`: "press", "release" or "move";
  * "left", "middle", "right", or nil for a move with nothing held. In the
  * view's pixels, from its top left.
@@ -627,6 +672,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "focus", v_focus },     { "inspect", v_inspect }, { "inspecting", v_inspecting },
         { "paint_inspector", v_paint_inspector },           { "target", v_target },
         { "damage", v_damage },
+        { "shown", v_shown },
         { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
         { NULL, NULL },
     };
@@ -634,6 +680,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "view", l_view },       { "adopt", l_adopt },     { "pump", l_pump },
         { "views", l_views },     { "frame", l_frame },     { "developer", l_developer },
         { "trace", l_trace },     { "wake", l_wake },
+        { "store_forgets", l_store_forgets },
         { "settings", l_settings }, { "zoom", l_zoom },
         { "said", l_said },       { "allow", l_allow },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },

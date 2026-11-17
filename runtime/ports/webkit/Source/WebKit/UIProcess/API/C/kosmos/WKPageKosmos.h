@@ -110,6 +110,33 @@ WK_EXPORT void WKKosmosSetFramesTraced(bool);
 WK_EXPORT void WKKosmosOnMessages(void (*told)(void));
 WK_EXPORT unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost, double* scrolled, double* scrolledMost);
 
+/*
+ * **The page shown as it is, never copied** (`webkit.md` *Fast* 1c): the
+ * UI process's backing store made in memory the caller makes -
+ * `WKKosmosSetStoreMemory`, a region a window manager can be handed - as
+ * two buffers, written one while the other is shown. `WKPageShowKosmos`
+ * says the buffer just finished, which the caller shows from now, and
+ * what changed in it, and starts writing the other; false when nothing
+ * changed, or when this page's store is not in such memory (painted into
+ * the window by `WKPagePaintKosmos` then, as before) - unless `everything`,
+ * which says the whole buffer changed, for a store not shown before. A new `generation`
+ * is a new store - another size, another page - and a new region.
+ */
+struct WKKosmosShown {
+    long region;
+    unsigned width, height, pitch;
+    unsigned long bytes;            /* each buffer's; the second follows the first */
+    int buffer;                     /* 1 or 2 */
+    int x, y, w, h;                 /* what changed, in the buffer's pixels */
+    unsigned generation;
+};
+WK_EXPORT bool WKPageShowKosmos(WKPageRef, bool everything, struct WKKosmosShown*);
+WK_EXPORT void WKKosmosSetStoreMemory(bool (*make)(unsigned long bytes, void** at, long* region),
+    void (*release)(void* at, unsigned long bytes, long region));
+/* For a suite's control only (`KosmosStore.h`): the other buffer owes
+ * nothing, and shows what it held before. */
+WK_EXPORT void WKKosmosSetStoreForgets(bool);
+
 #ifdef __cplusplus
 }
 #endif

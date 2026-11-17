@@ -387,6 +387,68 @@ static void stale_into(struct scene *sc, const struct sc_window *w, long top, lo
     }
 }
 
+/*
+ * **A window's inset** (`sc_window.inset`), over its picture: where the
+ * picture's pixels `ix`..`ix + iw` land on the screen, worked out as the
+ * picture's are - at its own size when it is stale or not scaled, and
+ * stretched with it when the window is at another scale than its pixels.
+ * `top` and `tall` are the picture's part of the frame, as `stale_into`
+ * has them; `x0`..`y1` the rectangle being composed.
+ */
+void scene_inset_place(const struct sc_window *w, long top, long tall,
+                       long *dx, long *dy, long *dw, long *dh)
+{
+    if ((w->flags & SC_STALE) || (w->src_w == w->w && w->src_h == tall)
+        || w->src_w <= 0 || w->src_h <= 0) {
+        *dx = w->x + w->ix;
+        *dy = top + w->iy;
+        *dw = w->iw;
+        *dh = w->ih;
+        return;
+    }
+
+    *dx = w->x + w->ix * w->w / w->src_w;
+    *dy = top + w->iy * tall / w->src_h;
+    *dw = w->x + (w->ix + w->iw) * w->w / w->src_w - *dx;
+    *dh = top + (w->iy + w->ih) * tall / w->src_h - *dy;
+}
+
+static void inset_into(struct scene *sc, const struct sc_window *w, long top, long tall,
+                       long x0, long y0, long x1, long y1)
+{
+    long dx, dy, dw, dh, ax0, ay0, ax1, ay1;
+
+    if (w->inset == NULL || w->iw <= 0 || w->ih <= 0) {
+        return;
+    }
+
+    scene_inset_place(w, top, tall, &dx, &dy, &dw, &dh);
+
+    /* Never past the picture's part of the frame, nor the rectangle. */
+    if (y0 < top) {
+        y0 = top;
+    }
+    if (y1 > top + tall) {
+        y1 = top + tall;
+    }
+
+    ax0 = x0 > dx ? x0 : dx;
+    ay0 = y0 > dy ? y0 : dy;
+    ax1 = x1 < dx + dw ? x1 : dx + dw;
+    ay1 = y1 < dy + dh ? y1 : dy + dh;
+
+    if (ax1 <= ax0 || ay1 <= ay0) {
+        return;
+    }
+
+    if (dw == w->iw && dh == w->ih) {
+        blit_on(sc->back, w->inset, ax0 - dx, ay0 - dy, ax1 - ax0, ay1 - ay0, ax0, ay0);
+    } else {
+        stretch_into(sc->back, w->inset, 0, 0, w->iw, w->ih, dx, dy, dw, dh, -1, false,
+                     ax0, ay0, ax1, ay1);
+    }
+}
+
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
 {
     long kept[4][6];
@@ -444,6 +506,13 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                          w->x, w->y, w->w, w->h, -1, false, x0, y0, x1, y1);
         } else {
             blit_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0, x0, y0);
+        }
+
+        /* And its inset over it, below a menu bar when there is one. */
+        if (!(w->flags & SC_BLEND)) {
+            long top = w->bar != NULL ? w->y + w->bar_h : w->y;
+
+            inset_into(sc, w, top, w->y + w->h - top, x0, y0, x1, y1);
         }
     }
 

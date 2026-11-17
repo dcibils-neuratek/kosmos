@@ -48,9 +48,19 @@ struct sc_window {
     long bx2;                   /* the second run, under `SC_PLATINUM` */
     int held;                   /* the light pressed, its slot, or -1 */
 
+    /*
+     * **An inset** (`webkit.md` *Fast* 1c): a second picture of the
+     * application's own, laid over the first at `ix`, `iy` in the
+     * picture's pixels and `iw` by `ih` - opaque, and scaled as the picture
+     * is. A browser's page, which its engine draws into a region of its own
+     * so that nothing copies it into the window. NULL for none.
+     */
+    struct surface *inset;
+    long ix, iy, iw, ih;
+
     /* Described for the window server (`scene.c`), the pictures by slot -
      * `WS_NONE` for none - in place of the surfaces above. */
-    int picture_slot, bar_slot;
+    int picture_slot, bar_slot, inset_slot;
 };
 
 struct sc_menu {
@@ -131,5 +141,10 @@ bool scene_set_menus(struct scene *sc, int n);
 /* One damaged rectangle into the back buffer: the pixels drawn, or -1 when
  * there was no memory for its scratch. */
 long scene_compose(struct scene *sc, long x, long y, long w, long h);
+
+/* Where a window's inset lands on the screen (`sc_window.inset`): `top` and
+ * `tall` the picture's part of the frame, below a menu bar. */
+void scene_inset_place(const struct sc_window *w, long top, long tall,
+                       long *dx, long *dy, long *dw, long *dh);
 
 #endif

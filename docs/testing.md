@@ -35460,3 +35460,99 @@ check had no such key, and its control passed. Controls: `wholly` (every
 picture the whole window) fails the count and only that; `owing-one` (a
 change owed only by the buffer drawn now) fails the screendumps, 3 of 6
 showing the block's colour before the last.
+
+## 18.857 The page never copied: WebKit's two buffers as the window's inset (JetSki's GPU step 1c)
+
+**In short.** JetSki no longer copies the page into its window at all.
+WebKit's backing store now lives in two buffers in a region the window
+manager is handed, and the window manager lays it over JetSki's window as
+an *inset*, composing it straight to the screen. On the M700, scrolling a
+long page draws nothing into the window (1b: 0.7 ms a frame), and every
+picture of a still Wikipedia page - 598 in 24 seconds - reaches the screen
+without JetSki touching a pixel.
+
+**What step 1c became** (`webkit.md` *Fast*; Diego, 17 November). As
+written, 1c was the GPU copying the page into the window. After 1b that
+copy was 0.7 ms and the M700's blitter reads an application's buffers
+slowly (`m700-2d.md` 6b), so Diego chose "No copy at all". Composing from
+WebKit's one store would tear a scroll - the window manager never reads a
+buffer an application is writing, which is why every window has two - so,
+asked again, "Two page buffers":
+
+- **An inset, in the window manager** (`wm.lua` `inset` and `inset_show`;
+  `sc:inset` in the Graphics Kit's scene; five more words a window on the
+  scene's wire, `windowproto.h`). A window that draws its own pixels may
+  hand over a second region of two buffers, placed at a rectangle of its
+  picture, and say which buffer shows and what changed in it - the buffer
+  named, never inferred. `scene_core.c` lays it over the picture, scaled as
+  the picture is; where the GPU composes, its uncovered part is pieces of
+  its own from the inset's buffer and the window's picture is cut around
+  it. The region arrives read-only. `window:inset` and `window:inset_show`
+  in `ui.lua`.
+- **WebKit's store in it** (patch 0044, `KosmosStore.h`, the WebKit Kit's
+  `makeStore`). Two buffers, written one while the other is shown;
+  `WKPageShowKosmos` says the buffer just finished and what changed, and
+  WebKit goes on in the other. That one owes what the first did since:
+  every scroll added into one, and the rectangles changed, moved by later
+  scrolls - or everything, past 60% of the view or for two scrolls of
+  different rectangles. It pays as the next update arrives, and the
+  update's own scroll is folded in: one move in place by both scrolls,
+  the owed rectangles copied from the other shifted by the new one.
+- **JetSki** shows the page as the inset whenever nothing of its own
+  covers it; Settings, a crash, a refusal or the lock's or shield's panel
+  take it away, and the page is painted into the window as in 1b.
+
+**The first version moved the lagging buffer twice**: the scroll it owed,
+then the update's own - two passes over 0.83 Mpx, and an update taken in in
+1.6 ms where 1b took 1.2, wheel to picture 3.2 ms against 2.5. Folding the
+two scrolls into one move brought it to 1.4 and 2.7. The 0.2 ms left over
+1b is the two buffers alternating (6.6 MB where one was 3.3, colder in the
+cache) and the region arithmetic.
+
+**On the M700** (`/Home/long.html`, then `en.wikipedia.org/wiki/BeOS`; 40
+notches each; page flips, mode 2). "Wheel to picture" ends when WebKit has
+taken the picture in, before it is drawn anywhere:
+
+```
+long page, 1b (0.11.456):
+  wheel to picture 2.5 ms, most 10.1; then drawn into the window 0.7 ms
+long page, 1c:
+  wheel to picture 2.7 ms, most 10.5; taken in 1.4 ms (40)
+  drawn into the window 0.0 ms (0)
+  jetski: the page shown as an inset 40 times
+Wikipedia, 1c:
+  wheel to picture 5.3 ms, most 8.8 (1b: 5.0-5.7)
+  jetski: frames whole 10 ... page 0.4
+  jetski: the page shown as an inset 598 times, 0.068 Mpx each
+```
+
+So a scrolled frame costs about half a millisecond less end to end, and the
+page's pixels cross no process: WebKit's UI process writes them and the
+window server reads them.
+
+**Blitter composing** (mode 4, chosen in Preferences for one try and let
+go back): the window server's own check over its first 20 frames, with
+JetSki's page on the screen, found **0 of 11,047,258** composed pixels
+different from the processor's. That check does not say whether the
+inset's pieces went to the blitter or were composed by the processor (an
+inset whose region the GPU will not take is composed here, with the
+rest). GPU composing (mode 5) is not offered on this GPU yet.
+
+**Held by `x86-jetski`** (its `changes` step, as 1b's, now through the
+inset): the six screendumps, each composed whole by the suite's quiet move,
+must show the block's last colour while the square blinks, and the trace
+must count pictures shown as an inset. Controls, each failing exactly its
+own check: `no-inset` (the page never an inset, painted into the window as
+in 1b) - "the page was never shown as an inset" and nothing else; and
+`forgetting` (`webkit.store_forgets`, the buffer not drawn owing nothing:
+a suite's control only) - 3 and then 5 of 6 screendumps without the
+block's last colour, over two runs against this WebKit.
+
+**The gate**: `make prepush` failed four of 132 suites. One was real:
+`host`'s `test_draw.c` builds `struct sc_window` positionally, and the
+inset's five fields moved every slot after them - fixed. `x86-film`,
+`x86-maps` (each answer a step late, tiles in 3 to 6 s) and
+`x86-cafesa3d-1` (Plane's colours not yet on the screen) passed alone, the
+four together in 137 s, with the disk at 97%. 1b's `wholly` and `owing-one` no longer bite, since the inset
+replaced the path they broke, and are retired with it; 1b's path is the
+fallback now, used under a panel.

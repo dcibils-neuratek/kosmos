@@ -1,0 +1,351 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The UI process's backing store in two buffers, in memory the WebKit Kit
+makes (Kosmos webkit.md Fast, step 1c; KosmosStore.h). JetSki copied the
+page from the store into its window every frame; now the window manager
+is handed the store's region and shows the page from it, as an inset over
+the window. So it is written into one buffer while the other is on the
+screen: kosmosShow says the buffer just finished and what changed in it,
+and starts the other, which first catches up - every scroll it missed in
+one move in place, then the rectangles the first changed, copied across -
+rather than the whole view each frame. Where there is no such memory, or
+another scale than one, one buffer of its own, as before.
+
+diff -ru a/Source/WebKit/UIProcess/BackingStore.h b/Source/WebKit/UIProcess/BackingStore.h
+--- a/Source/WebKit/UIProcess/BackingStore.h	2026-11-17 13:57:41.446749119 -0300
++++ b/Source/WebKit/UIProcess/BackingStore.h	2026-11-17 14:17:25.651077684 -0300
+@@ -28,6 +28,11 @@
+ #if !PLATFORM(WPE) && !PLATFORM(GTK)
+ 
+ #include <WebCore/IntSize.h>
++#if PLATFORM(KOSMOS)
++#include <WebCore/IntRect.h>
++#include <WebCore/Region.h>
++#include <wtf/Vector.h>
++#endif
+ #include <WebCore/PlatformImage.h>
+ #include <pal/HysteresisActivity.h>
+ #include <wtf/Noncopyable.h>
+@@ -69,9 +74,52 @@
+     void paint(PlatformPaintContextPtr, const WebCore::IntRect&);
+     void incorporateUpdate(UpdateInfo&&);
+ 
++#if PLATFORM(KOSMOS) && USE(SKIA)
++    // The buffer just finished, to be shown, and what changed in it since
++    // the last one was (`webkit.md` Fast 1c): false when nothing did, or
++    // when this store is not in a region a window manager can be handed.
++    // `everything`: the whole of it said to have changed, for a window
++    // manager that has not been shown this store before.
++    struct KosmosShown {
++        long region { -1 };
++        unsigned width { 0 }, height { 0 }, pitch { 0 };
++        size_t bytes { 0 };
++        int buffer { 0 };
++        WebCore::IntRect damage;
++        unsigned generation { 0 };
++    };
++    bool kosmosShow(KosmosShown&, bool everything);
++#endif
++
+ private:
+     void scroll(const WebCore::IntRect&, const WebCore::IntSize&);
+ 
++#if PLATFORM(KOSMOS) && USE(SKIA)
++    // What a buffer owes to be the other's picture again: one scroll, all
++    // the scrolls since added together, and then the region the other
++    // changed, copied from it - or the whole of it.
++    struct KosmosOwed {
++        bool whole { false };
++        WebCore::IntRect scrollRect;
++        WebCore::IntSize scroll;
++        WebCore::Region region;
++    };
++    void kosmosCatchUp();
++    bool kosmosCatchUpScrolled(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset);
++    void kosmosOwe(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset, const Vector<WebCore::IntRect>& rects);
++    void kosmosCopy(const WebCore::IntRect&, const WebCore::IntSize& from = { });
++
++    sk_sp<SkSurface> m_kosmosBuffers[2];
++    int m_kosmosDraw { 0 };
++    KosmosOwed m_kosmosOwed[2];
++    WebCore::Region m_kosmosChanged;
++    void* m_kosmosAt { nullptr };
++    long m_kosmosRegion { -1 };
++    size_t m_kosmosBytes { 0 };
++    unsigned m_kosmosPitch { 0 };
++    unsigned m_kosmosGeneration { 0 };
++#endif
++
+     WebCore::IntSize m_size;
+     float m_deviceScaleFactor { 1 };
+ #if USE(CAIRO)
+diff -ru a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.h b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.h
+--- a/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.h	2026-11-17 13:57:41.461842850 -0300
++++ b/Source/WebKit/UIProcess/CoordinatedGraphics/DrawingAreaProxyCoordinatedGraphics.h	2026-11-17 13:58:44.979120483 -0300
+@@ -56,6 +56,11 @@
+ 
+ #if !PLATFORM(WPE) && !PLATFORM(GTK)
+     void paint(PlatformPaintContextPtr, const WebCore::IntRect&, WebCore::Region& unpaintedRegion);
++#if PLATFORM(KOSMOS)
++    // The store itself, for its buffers to be shown as they are (`webkit.md`
++    // Fast 1c); null outside it, or before the first update.
++    BackingStore* kosmosBackingStore() const { return isInAcceleratedCompositingMode() ? nullptr : m_backingStore.get(); }
++#endif
+ #endif
+ 
+     bool isInAcceleratedCompositingMode() const { return !m_layerTreeContext.isEmpty(); }
+diff -ru a/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp b/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp
+--- a/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp	2026-11-17 13:57:41.454775984 -0300
++++ b/Source/WebKit/UIProcess/skia/BackingStoreSkia.cpp	2026-11-17 14:17:25.651575725 -0300
+@@ -34,6 +34,7 @@
+ #include <skia/core/SkCanvas.h>
+ 
+ #if PLATFORM(KOSMOS)
++#include "KosmosStore.h"
+ #include <skia/core/SkImage.h>
+ #include <skia/core/SkPixmap.h>
+ #include <string.h>
+@@ -48,14 +49,221 @@
+     WebCore::IntSize scaledSize(size);
+     scaledSize.scale(deviceScaleFactor);
+     auto info = SkImageInfo::MakeN32Premul(scaledSize.width(), scaledSize.height(), SkColorSpace::MakeSRGB());
++#if PLATFORM(KOSMOS)
++    // **Two buffers, in a region a window manager can be handed** (`webkit.md`
++    // Fast 1c): the page is shown from here, never copied into the window,
++    // so it is written into one buffer while the other is on the screen.
++    // Rows at the pitch the Graphics Kit gives a surface, a cache line's
++    // multiple, so the window manager wraps them as its own. Where there is
++    // no such region - no hook, another scale - one buffer of its own, as
++    // ever, painted into the window.
++    if (deviceScaleFactor == 1 && size.width() > 0 && size.height() > 0) {
++        m_kosmosPitch = (static_cast<unsigned>(size.width()) * 4 + 63) & ~63u;
++        m_kosmosBytes = static_cast<size_t>(m_kosmosPitch) * size.height();
++        KosmosStoreMemory memory;
++        if (kosmosStoreMake(m_kosmosBytes * 2, &memory)) {
++            m_kosmosAt = memory.at;
++            m_kosmosRegion = memory.region;
++            for (int i = 0; i < 2; ++i)
++                m_kosmosBuffers[i] = SkSurfaces::WrapPixels(info, static_cast<uint8_t*>(m_kosmosAt) + i * m_kosmosBytes, m_kosmosPitch, nullptr);
++            if (m_kosmosBuffers[0] && m_kosmosBuffers[1]) {
++                static unsigned generations;
++                m_kosmosGeneration = ++generations;
++                m_kosmosBuffers[0]->getCanvas()->clear(SK_ColorWHITE);
++                m_kosmosOwed[1].whole = true;
++                m_kosmosChanged = WebCore::IntRect(WebCore::IntPoint(), size);
++                m_surface = m_kosmosBuffers[0];
++                return;
++            }
++            m_kosmosBuffers[0] = m_kosmosBuffers[1] = nullptr;
++            kosmosStoreRelease(KosmosStoreMemory { m_kosmosAt, m_kosmosRegion, m_kosmosBytes * 2 });
++            m_kosmosAt = nullptr;
++            m_kosmosRegion = -1;
++        }
++    }
++#endif
+     m_surface = SkSurfaces::Raster(info);
+     RELEASE_ASSERT(m_surface);
+ }
+ 
++#if PLATFORM(KOSMOS)
++BackingStore::~BackingStore()
++{
++    m_surface = nullptr;
++    m_kosmosBuffers[0] = m_kosmosBuffers[1] = nullptr;
++    if (m_kosmosAt)
++        kosmosStoreRelease(KosmosStoreMemory { m_kosmosAt, m_kosmosRegion, m_kosmosBytes * 2 });
++}
++
++// One rectangle of the other buffer copied into the one being drawn, a row
++// at a time - from `from` before it in the other, for a scroll the other
++// has not had.
++void BackingStore::kosmosCopy(const WebCore::IntRect& rect, const WebCore::IntSize& from)
++{
++    WebCore::IntRect view(WebCore::IntPoint(), m_size);
++    WebCore::IntRect r = intersection(rect, view);
++    WebCore::IntRect source = r;
++    source.move(-from);
++    source.intersect(view);
++    source.move(from);
++    r.intersect(source);
++    if (r.isEmpty())
++        return;
++    auto* base = static_cast<uint8_t*>(m_kosmosAt);
++    uint8_t* to = base + m_kosmosDraw * m_kosmosBytes;
++    const uint8_t* other = base + (1 - m_kosmosDraw) * m_kosmosBytes;
++    size_t at = static_cast<size_t>(r.y()) * m_kosmosPitch + static_cast<size_t>(r.x()) * 4;
++    size_t was = static_cast<size_t>(r.y() - from.height()) * m_kosmosPitch + static_cast<size_t>(r.x() - from.width()) * 4;
++    size_t bytes = static_cast<size_t>(r.width()) * 4;
++    for (int row = 0; row < r.height(); ++row, at += m_kosmosPitch, was += m_kosmosPitch)
++        memcpy(to + at, other + was, bytes);
++}
++
++// **The catching up and the update's own scroll as one** (`webkit.md`
++// Fast 1c): the buffer behind owes the scroll the other had and now gets
++// another, so it is moved once by the two added together, and what it owes
++// of the other's rectangles is copied from the other shifted by the new
++// one - rather than moved twice, the whole view each time. Owing the whole,
++// it is the other copied shifted, which is one pass too. False when the
++// two scrolls are of different rectangles: caught up, then scrolled, as
++// before.
++bool BackingStore::kosmosCatchUpScrolled(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset)
++{
++    auto& owed = m_kosmosOwed[m_kosmosDraw];
++    WebCore::IntRect view(WebCore::IntPoint(), m_size);
++
++    if (owed.whole) {
++        WebCore::Region outside(view);
++        outside.subtract(scrollRect);
++        for (const auto& rect : outside.rects())
++            kosmosCopy(rect);
++        WebCore::IntRect kept = scrollRect;
++        kept.move(scrollOffset);
++        kept.intersect(scrollRect);
++        kosmosCopy(kept, scrollOffset);
++        owed = KosmosOwed { };
++        return true;
++    }
++
++    if (!owed.scroll.isZero() && owed.scrollRect != scrollRect)
++        return false;
++
++    scroll(scrollRect, owed.scroll + scrollOffset);
++    for (const auto& rect : owed.region.rects()) {
++        WebCore::Region outside(rect);
++        outside.subtract(scrollRect);
++        for (const auto& part : outside.rects())
++            kosmosCopy(part);
++        WebCore::IntRect inside = intersection(rect, scrollRect);
++        inside.move(scrollOffset);
++        inside.intersect(scrollRect);
++        kosmosCopy(inside, scrollOffset);
++    }
++    owed = KosmosOwed { };
++    return true;
++}
++
++// The buffer about to be drawn made the other's picture again: what it
++// owes, paid. The other is the one on the screen, which nothing writes.
++void BackingStore::kosmosCatchUp()
++{
++    auto& owed = m_kosmosOwed[m_kosmosDraw];
++    if (owed.whole)
++        kosmosCopy(WebCore::IntRect(WebCore::IntPoint(), m_size));
++    else {
++        if (!owed.scroll.isZero())
++            scroll(owed.scrollRect, owed.scroll);
++        for (const auto& rect : owed.region.rects())
++            kosmosCopy(rect);
++    }
++    owed = KosmosOwed { };
++}
++
++// What was just done to the buffer being drawn, added to what the other
++// owes: a scroll joins the scrolls it owes already, which moves the region
++// it owes with it, and the rectangles painted - with any the scroll left
++// behind - join that region. A second scroll of another rectangle, or a
++// region of most of the view, and it owes the whole: one copy, rather than
++// arithmetic that buys nothing.
++void BackingStore::kosmosOwe(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollOffset, const Vector<WebCore::IntRect>& rects)
++{
++    auto& owed = m_kosmosOwed[1 - m_kosmosDraw];
++    if (owed.whole || kosmosStoreForgets)
++        return;
++
++    if (!scrollOffset.isZero()) {
++        if (!owed.scroll.isZero() && owed.scrollRect != scrollRect) {
++            owed = KosmosOwed { true, { }, { }, { } };
++            return;
++        }
++        owed.scrollRect = scrollRect;
++        owed.scroll += scrollOffset;
++
++        WebCore::Region moved;
++        for (const auto& rect : owed.region.rects()) {
++            WebCore::IntRect inside = intersection(rect, scrollRect);
++            WebCore::Region outside(rect);
++            outside.subtract(scrollRect);
++            moved.unite(outside);
++            inside.move(scrollOffset);
++            inside.intersect(scrollRect);
++            moved.unite(inside);
++        }
++        WebCore::Region exposed(scrollRect);
++        WebCore::IntRect kept = scrollRect;
++        kept.move(scrollOffset);
++        exposed.subtract(kept);
++        moved.unite(exposed);
++        owed.region = WTF::move(moved);
++    }
++
++    for (const auto& rect : rects)
++        owed.region.unite(rect);
++
++    if (owed.region.totalArea() * 10 > static_cast<uint64_t>(m_size.width()) * m_size.height() * 6)
++        owed = KosmosOwed { true, { }, { }, { } };
++}
++
++bool BackingStore::kosmosShow(KosmosShown& out, bool everything)
++{
++    if (!m_kosmosAt)
++        return false;
++
++    // All of it, from the buffer being drawn made whole first: a window
++    // manager shown this store for the first time has nothing of it.
++    if (everything) {
++        kosmosCatchUp();
++        m_kosmosChanged = WebCore::IntRect(WebCore::IntPoint(), m_size);
++    }
++
++    if (m_kosmosChanged.isEmpty())
++        return false;
++
++    out.region = m_kosmosRegion;
++    out.width = m_size.width();
++    out.height = m_size.height();
++    out.pitch = m_kosmosPitch;
++    out.bytes = m_kosmosBytes;
++    out.buffer = m_kosmosDraw + 1;
++    out.damage = m_kosmosChanged.bounds();
++    out.generation = m_kosmosGeneration;
++
++    m_kosmosChanged = WebCore::Region();
++    m_kosmosDraw = 1 - m_kosmosDraw;
++    m_surface = m_kosmosBuffers[m_kosmosDraw];
++    return true;
++}
++#else
+ BackingStore::~BackingStore() = default;
++#endif
+ 
+ void BackingStore::paint(PlatformPaintContextPtr cr, const WebCore::IntRect& rect)
+ {
++#if PLATFORM(KOSMOS)
++    // The buffer being drawn, made current first: it is not on the screen.
++    if (m_kosmosAt)
++        kosmosCatchUp();
++#endif
+     cr->save();
+     cr->scale(1 / m_deviceScaleFactor, 1 / m_deviceScaleFactor);
+     WebCore::IntRect scaledRect { rect };
+@@ -100,6 +308,21 @@
+     ASSERT(bitmap->size() == updateSize);
+ #endif
+ 
++#if PLATFORM(KOSMOS)
++    bool scrolled = false;
++    if (m_kosmosAt) {
++        if (!updateInfo.scrollOffset.isZero())
++            scrolled = kosmosCatchUpScrolled(updateInfo.scrollRect, updateInfo.scrollOffset);
++        if (!scrolled)
++            kosmosCatchUp();
++        kosmosOwe(updateInfo.scrollRect, updateInfo.scrollOffset, updateInfo.updateRects);
++        if (!updateInfo.scrollOffset.isZero())
++            m_kosmosChanged.unite(updateInfo.scrollRect);
++        for (const auto& rect : updateInfo.updateRects)
++            m_kosmosChanged.unite(rect);
++    }
++    if (!scrolled)
++#endif
+     scroll(updateInfo.scrollRect, updateInfo.scrollOffset);
+ 
+     // Paint all update rects.

@@ -597,8 +597,10 @@ document.title = "Changes begun";
 
 
 def changes(guest, R, window, sw, sh):
-    """A page whose picture changes in a corner: drawn into the window a
-    change at a time, never the whole window, and never a stale corner."""
+    """A page whose picture changes in a corner: shown from WebKit's own two
+    buffers as an inset over the window (`webkit.md` *Fast* 1c), a change
+    at a time, and never a stale corner - the buffer behind catching up
+    with what the other changed."""
     x, y, w, h = window
     since = len(guest.seen)
     guest.sendkey("ctrl-t")
@@ -637,6 +639,12 @@ def changes(guest, R, window, sw, sh):
     if not any(parts):
         failed.append("no frame drew only the page's changes: %s"
                       % (re.findall(r"jetski: frames[^\r\n]*", guest.seen[since:])[-3:]
+                         or "nothing said"))
+    insets = [int(n) for n in re.findall(r"jetski: the page shown as an inset (\d+) times",
+                                         guest.seen[since:])]
+    if not any(insets):
+        failed.append("the page was never shown as an inset: %s"
+                      % (re.findall(r"jetski: (?:the page|frames)[^\r\n]*", guest.seen[since:])[-3:]
                          or "nothing said"))
     return failed
 
@@ -1178,19 +1186,19 @@ def main():
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
-    if BROKEN == "wholly":
-        # Every picture the whole window, as before 0.11.456.
+    if BROKEN == "no-inset":
+        # The page never an inset: painted into the window, as in 0.11.456.
         with open(lua) as f:
-            text = changed(f.read(), "    if settings_page.hidden and not crash", "    if false and not crash")
+            text = changed(f.read(), "  local id = web.shown_id()\n  local fresh",
+                           "  do return false end\n  local id = web.shown_id()\n  local fresh")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)
-    if BROKEN == "owing-one":
-        # What changed owed only by the buffer drawn now, not the other.
+    if BROKEN == "forgetting":
+        # WebKit's buffer not being drawn owes nothing (`KosmosStore.h`).
         with open(lua) as f:
-            text = changed(f.read(), "  for slot, o in pairs(owed) do",
-                           "  local now = win.region and win.region.draw_into\n"
-                           "  for slot, o in pairs({ [now] = owed[now] }) do")
+            text = changed(f.read(), "local inset = { gen = nil, view = nil }",
+                           "webkit.store_forgets(true)\nlocal inset = { gen = nil, view = nil }")
         lua = os.path.join(WORK, "jetski.lua")
         with open(lua, "w") as f:
             f.write(text)

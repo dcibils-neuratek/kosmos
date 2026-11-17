@@ -16,6 +16,7 @@
 #include "AuthenticationDecisionListener.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
 #include "KosmosFrameTimes.h"
+#include "KosmosStore.h"
 #include "KosmosWake.h"
 #include "NativeWebKeyboardEvent.h"
 #include "NativeWebMouseEvent.h"
@@ -221,4 +222,55 @@ void WKKosmosOnMessages(void (*told)(void))
 unsigned WKKosmosTakeIncorporated(double* average, double* most, double* fromRing, double* fromRingMost, double* scrolled, double* scrolledMost)
 {
     return WebKit::kosmosTakeIncorporated(average, most, fromRing, fromRingMost, scrolled, scrolledMost);
+}
+
+bool WKPageShowKosmos(WKPageRef pageRef, bool everything, WKKosmosShown* out)
+{
+    RefPtr page = WebKit::toImpl(pageRef);
+    auto* drawingArea = page->drawingArea();
+    if (!drawingArea)
+        return false;
+    auto* store = downcast<WebKit::DrawingAreaProxyCoordinatedGraphics>(*drawingArea).kosmosBackingStore();
+    WebKit::BackingStore::KosmosShown shown;
+    if (!store || !store->kosmosShow(shown, everything))
+        return false;
+    out->region = shown.region;
+    out->width = shown.width;
+    out->height = shown.height;
+    out->pitch = shown.pitch;
+    out->bytes = shown.bytes;
+    out->buffer = shown.buffer;
+    out->x = shown.damage.x();
+    out->y = shown.damage.y();
+    out->w = shown.damage.width();
+    out->h = shown.damage.height();
+    out->generation = shown.generation;
+    return true;
+}
+
+// The kit's memory, as `KosmosStore.h` asks for it: `unsigned long` at the
+// C door, `size_t` inside, which are one type on both of Kosmos's machines.
+static bool (*storeMake)(unsigned long, void**, long*);
+static void (*storeRelease)(void*, unsigned long, long);
+
+static bool makeStore(size_t bytes, void** at, long* region)
+{
+    return storeMake(bytes, at, region);
+}
+
+static void releaseStore(void* at, size_t bytes, long region)
+{
+    storeRelease(at, bytes, region);
+}
+
+void WKKosmosSetStoreMemory(bool (*make)(unsigned long, void**, long*), void (*release)(void*, unsigned long, long))
+{
+    storeMake = make;
+    storeRelease = release;
+    WebKit::kosmosOnStoreMemory(make && release ? makeStore : nullptr, make && release ? releaseStore : nullptr);
+}
+
+void WKKosmosSetStoreForgets(bool forgets)
+{
+    WebKit::kosmosStoreForgets = forgets;
 }

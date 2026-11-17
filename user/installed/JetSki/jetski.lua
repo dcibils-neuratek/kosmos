@@ -178,6 +178,7 @@ web.wheel = function(...) shown:wheel(...) end
 web.key = function(c) return shown:key(c) end
 function web.paint(...) shown:paint(...) end
 function web.damage() if shown then return shown:damage() end end
+function web.shown(...) if shown then return shown:shown(...) end end
 function web.paint_inspector(...) shown:paint_inspector(...) end
 function web.inspect(on) shown:inspect(on) end
 function web.inspecting() return shown:inspecting() end
@@ -278,7 +279,7 @@ local commits = { n = 0, sum = 0, most = 0, last = 0 }
 
 -- And the whole frame, split: the chrome JetSki paints, the page the kit
 -- draws, the commit - each summed over the second's frames.
-local frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0 }
+local frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0 }
 local frame_t0, frame_page = 0, 0
 
 local function frame_mark(what)
@@ -311,17 +312,24 @@ local function commit_timed(win, damage)
 end
 
 local function commits_said()
-  if commits.n == 0 or (sys.ticks() - commits.last) < COUNTER_HZ then return end
-  print(("jetski: frames committed %d, %.1f ms, most %.1f"):format(
-    commits.n, commits.sum / commits.n, commits.most))
-  if frames.n > 0 then
-    print(("jetski: frames whole %d, %.1f ms, most %.1f - chrome %.1f, page %.1f"):format(
-      frames.n, frames.whole / frames.n, frames.most, frames.chrome / frames.n, frames.page / frames.n))
+  if (commits.n == 0 and frames.inset == 0) or (sys.ticks() - commits.last) < COUNTER_HZ then
+    return
+  end
+  if commits.n > 0 then
+    print(("jetski: frames committed %d, %.1f ms, most %.1f"):format(
+      commits.n, commits.sum / commits.n, commits.most))
+  end
+  if frames.n > 0 or frames.inset > 0 then
+    if frames.n > 0 then
+      print(("jetski: frames whole %d, %.1f ms, most %.1f - chrome %.1f, page %.1f"):format(
+        frames.n, frames.whole / frames.n, frames.most, frames.chrome / frames.n, frames.page / frames.n))
+    end
     print(("jetski: frames of the page's changes only %d, %.3f Mpx each"):format(
       frames.part, frames.part > 0 and frames.part_px / frames.part / 1e6 or 0))
+    print(("jetski: the page shown as an inset %d times"):format(frames.inset))
   end
   commits.n, commits.sum, commits.most = 0, 0, 0
-  frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0 }
+  frames = { n = 0, chrome = 0, page = 0, whole = 0, most = 0, part = 0, part_px = 0, inset = 0 }
 end
 
 --------------------------------------------------------------------------
@@ -1651,6 +1659,65 @@ local function take_damage()
 end
 
 --------------------------------------------------------------------------
+-- **The page as an inset** (`webkit.md` *Fast* 1c, agreed 17 November
+-- 2026): WebKit's own two buffers, in a region the window manager is
+-- handed, shown over the window where the page is - so the page is never
+-- copied into the window. Whenever something JetSki draws covers the page -
+-- Settings, a crash, a refusal, the lock's or the shield's panel - or
+-- WebKit's store is not in a region, there is no inset and the page is
+-- painted into the window as before (`owed` above).
+--
+local inset = { gen = nil, view = nil }        -- gen nil: no inset shown
+
+local function page_clear()
+  return settings_page.hidden and not crash and not refusal
+         and lockpanel.hidden and shieldpanel.hidden
+end
+
+local function inset_off()
+  if inset.gen then
+    win:inset(nil)
+    inset.gen, inset.view = nil, nil
+    owed[1], owed[2] = true, true
+  end
+end
+
+-- The buffer WebKit just finished shown, a new store handed over first; true
+-- while the page is an inset. Everything when the window manager has not
+-- been shown this store, or this tab's.
+local function inset_page()
+  local id = web.shown_id()
+  local fresh = inset.gen == nil or inset.view ~= id
+  local buffer, x, y, w, h, gen, pw, ph, ro = web.shown(fresh and -1 or inset.gen, fresh)
+
+  if not buffer then return not fresh end
+
+  if ro then
+    local ok, why = win:inset(ro, 0, VIEW_Y, pw, ph, buffer)
+
+    sys.release(ro)
+    if not ok then
+      print("jetski: the page not shown as an inset: " .. tostring(why))
+      inset.gen, inset.view = nil, nil
+      return false
+    end
+    inset.gen, inset.view = gen, id
+    if tracing then
+      frames.part, frames.part_px = frames.part + 1, frames.part_px + pw * ph
+      frames.inset, commits.last = frames.inset + 1, sys.ticks()
+    end
+  else
+    win:inset_show(buffer, { x = x, y = y, w = w, h = h })
+    if tracing then
+      frames.part, frames.part_px = frames.part + 1, frames.part_px + w * h
+      frames.inset, commits.last = frames.inset + 1, sys.ticks()
+    end
+  end
+
+  return true
+end
+
+--------------------------------------------------------------------------
 -- One frame: the header, the page, the status line. `page_only` is a frame
 -- drawn whole because its buffer owed it all, nothing outside the page
 -- having changed; any other has the other buffer owe everything too.
@@ -1685,11 +1752,14 @@ local function frame(page_only)
     ui.paint_view(gone, s, 0, VIEW_Y)
   elseif refusal then
     ui.paint_view(refused_page, s, 0, VIEW_Y)
-  else
+  elseif not (page_clear() and inset_page()) then
+    inset_off()
     frame_mark("page")
     web.paint(s, 0, VIEW_Y, PAGE_W, VIEW_H)
     frame_mark("paged")
   end
+
+  if not page_clear() then inset_off() end
 
   if inspecting then
     s:fill(PAGE_W, VIEW_Y, 1, VIEW_H, theme.line)
@@ -1724,6 +1794,13 @@ end
 -- still paints the whole window after it.
 --
 local function page_frame()
+  -- The page an inset: the buffer WebKit finished shown, and nothing drawn.
+  if inset.gen then
+    web.damage()
+    if not inset_page() then frame() end
+    return
+  end
+
   take_damage()
 
   local slot = win.region and win.region.draw_into

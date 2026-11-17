@@ -696,9 +696,40 @@ WKRect getWindowFrame(WKPageRef, const void*)
     return windowFrame;
 }
 
+/*
+ * **The page's store in a region** (`webkit.md` *Fast* 1c): WebKit's UI
+ * process asks for its backing store's two buffers and is given a region of
+ * Nebula's, mapped here, so that the window manager can be handed it and
+ * show the page from it - never copied into the window. Dropped, it is
+ * unmapped and its capability let go; a window manager that holds one of
+ * its own goes on showing the last picture until it is told another.
+ */
+static bool makeStore(unsigned long bytes, void** at, long* region)
+{
+    unsigned long pages = (bytes + 4095) / 4096;
+    long cap = kosmos_mem_create(pages);
+    if (cap < 0)
+        return false;
+    long mapped = kosmos_mem_map(cap);
+    if (mapped < 0) {
+        kosmos_cap_drop(cap);
+        return false;
+    }
+    *at = reinterpret_cast<void*>(mapped);
+    *region = cap;
+    return true;
+}
+
+static void releaseStore(void* at, unsigned long bytes, long region)
+{
+    kosmos_share_unmap(reinterpret_cast<unsigned long>(at), (bytes + 4095) / 4096);
+    kosmos_cap_drop(region);
+}
+
 WKContextRef context()
 {
     static WKContextRef shared = [] {
+        WKKosmosSetStoreMemory(makeStore, releaseStore);
         auto configuration = adoptWK(WKContextConfigurationCreate());
         return WKContextCreateWithConfiguration(configuration.get());
     }();
@@ -1634,6 +1665,30 @@ extern "C" void webkit_paint(int id, uint32_t* pixels, unsigned width, unsigned 
     }
 }
 
+extern "C" int webkit_shown(int id, int everything, struct webkit_shown* out)
+{
+    auto page = pageOf(id);
+    WKKosmosShown shown;
+    if (!page || !WKPageShowKosmos(page, everything != 0, &shown))
+        return 0;
+    out->region = shown.region;
+    out->width = shown.width;
+    out->height = shown.height;
+    out->pitch = shown.pitch;
+    out->bytes = shown.bytes;
+    out->buffer = shown.buffer;
+    out->x = shown.x;
+    out->y = shown.y;
+    out->w = shown.w;
+    out->h = shown.h;
+    out->generation = shown.generation;
+    // What WebKit said changed, as `webkit_damage` would have handed it: the
+    // buffer's own damage is what is shown now.
+    if (auto* view = views.find(id))
+        view->damageX0 = view->damageY0 = view->damageX1 = view->damageY1 = 0;
+    return 1;
+}
+
 extern "C" int webkit_damage(int id, int* x, int* y, int* w, int* h)
 {
     auto* view = views.find(id);
@@ -1964,4 +2019,9 @@ extern "C" void webkit_target(int id, int inspector)
 {
     if (auto* view = views.find(id))
         view->toInspector = inspector != 0;
+}
+
+extern "C" void webkit_store_forgets(int on)
+{
+    WKKosmosSetStoreForgets(on != 0);
 }
