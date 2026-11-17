@@ -35215,3 +35215,8 @@ the tables and let go before the x86 shootdown, which waits on the other
 cores and cannot be waited for with interrupts masked - the shape of
 `kernel_map_lock`. Order: inside `fill_lock` where both are held; the page
 allocator takes its own and never this one.
+
+**On the M700, 0.11.453**: Reddit three times alone - 5.2, 4.5 and 2.8 s,
+loaded each time - and then the 23: **all 23 loaded, the first run with
+none stopped**, 21 within five seconds; CNN 5.2 s and the New York Times
+5.7 just over, BBC back to 2.2 and eBay 4.5 (`bench/top20/0.11.453-m700.json`).
