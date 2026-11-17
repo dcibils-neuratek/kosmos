@@ -1,0 +1,210 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  The next Kosmos IDE, and what it stands on, as one picture: the IDE on top
+  with the other applications that share its pieces, the Lua libraries, the
+  C kits - the Inspect Kit new among them - the servers, and Nebula. Two
+  paths drawn through it: a key typed in a long file (A), and a save that
+  restarts the preview (B). Drawn on 17 November 2026, before any of it is
+  built; `docs/ide.md` is the argument and `docs/ide.html` the windows.
+
+  Rendered to docs/ide-architecture.png by headless Chrome at twice its size, as
+  docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/ide-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/ide-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos IDE architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --grows: #0f7a5a; --path-a: #d81b60; --path-b: #7b1fa2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, li code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .grow { border-color: var(--grows) !important; border-style: dashed !important; }
+  .mov { border-color: #b26a00 !important; border-style: dotted !important; border-width: 2px !important; }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.g { background: var(--grows); }
+  .tag.m { background: #b26a00; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .a { color: var(--path-a); font: 600 13px "Plex Mono", monospace; }
+  .bp { color: var(--path-b); font: 600 13px "Plex Mono", monospace; }
+  .b { color: #1565c0; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .big { grid-column: span 2; }
+  .wire { font-size: 12.5px; color: var(--dim); margin-top: 8px; padding-top: 8px; border-top: 1px dashed #c9d6ee; }
+</style>
+</head>
+<body>
+<h1>Kosmos IDE - the next one, and what it stands on</h1>
+<p class="sub">A preview that is the real app hosted by the window manager, a debugger and profiler that reach a program only through a door the IDE handed it at its start, and what the IDE knows about code moved out of <code>ide.lua</code> into libraries the Script panel and Xavier share. The IDE stays the thinnest layer: almost every piece has a second user.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
+  <span><i style="border-color:#b26a00;border-style:dotted;border-width:2px;background:#fff"></i>moved out of the IDE into a library</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="a">A1-A6</span><span>a key in a long file</span>
+  <span class="bp">B1-B4</span><span>a save, the preview restarted</span>
+  <span class="b">I1-I15</span><span>the order, ide.md</span>
+</div>
+
+<div class="grid"><div>
+
+<div class="layer app"><h2>Applications - each the thinnest layer</h2>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);">
+    <div class="box grow big"><span class="tag g">GROWS</span><b>Kosmos IDE</b>
+      <p>the editor, the preview <span class="b">I5</span>, Reference and go to definition <span class="b">I6</span>, Debug <span class="b">I7-I8</span>, Profile <span class="b">I9</span>, the app's page, Install and Package <span class="b">I10</span>, Layout <span class="b">I11</span>, Tests <span class="b">I12</span>, History <span class="b">I13</span>, Xavier <span class="b">I15</span></p>
+      <div class="wire"><span class="a">A1</span> a key reaches the editor &nbsp; <span class="bp">B1</span> Ctrl S saves, and asks for a restart</div></div>
+    <div class="box new"><span class="tag">NEW</span><b>The app being made</b><p>its own process, started by the IDE with <code>/Devices/console</code> and <code>/Devices/inspect</code> in its namespace</p></div>
+    <div class="box"><b>Cafesa3D's Script panel</b><p>the same editor; given the index and the formatter</p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+    <div class="box"><b>App Inspector</b><p>still to be drawn: the profiler's engine, pointed at any app</p></div>
+    <div class="box"><b>Xavier</b><p>X11: the index for context, diffs to accept</p></div>
+    <div class="box"><b>Packages, <code>pkg</code></b><p>installs what Make Package makes</p></div>
+    <div class="box"><b>Paint, Text Editor, Automations</b><p>an icon drawn; <code>textbuf</code> and versions; controls by name</p></div>
+  </div>
+</div>
+
+<div class="layer lua"><h2>Lua libraries</h2>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);">
+    <div class="box grow"><span class="tag g">GROWS</span><b>ui.editor, textbuf, lualex, clex</b><p>notes at a line's end, breakpoint and cost gutters, a diff view <span class="a">A2 A3 A4</span></p></div>
+    <div class="box mov"><span class="tag m">MOVED</span><b>luaindex.lua</b><p><code>libdoc.lua</code> grown, and what <code>ide.lua</code> knew: definitions, uses, rename, hover, signatures <span class="b">I6</span> <span class="a">A5</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>luafmt.lua</b><p>Lua and C set out, over the lexers <span class="b">I2</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>lint.lua, <code>lint --report</code></b><p>luacheck in a process of its own <span class="b">I1</span> <span class="a">A6</span></p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+    <div class="box new"><span class="tag">NEW</span><b>form.lua, ui.form</b><p>a window's controls as a data file, read and written <span class="b">I11</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>diff.lua</b><p>two texts compared <span class="b">I13</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>versions.lua</b><p>every save kept <span class="b">I13</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>packages.lua</b><p><code>make</code>: the zip and <code>package.txt</code> <span class="b">I10</span></p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+    <div class="box"><b>automate.lua</b><p>tests by a control's name <span class="b">I12</span></p></div>
+    <div class="box"><b>tccbuild.lua</b><p>a project's C into its image</p></div>
+    <div class="box"><b>zip.lua, files.lua, prefs.lua</b><p>as they are</p></div>
+    <div class="box"><b>llm.lua</b><p>Xavier's door</p></div>
+  </div>
+</div>
+
+<div class="layer c"><h2>C kits - in each process</h2>
+  <div class="row" style="grid-template-columns:repeat(3,1fr);">
+    <div class="box new"><span class="tag">NEW</span><b>Inspect Kit - the agent</b><p>in every Lua process's runtime, dormant; armed by <code>/Devices/inspect</code>; Lua's hooks set from C, never <code>debug</code> to the program <span class="b">I7-I9</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>Inspect Kit - the door</b><p><code>use("/Kosmos/Kits/inspect")</code>: <code>inspectproto.h</code> messages, <code>inspectring.h</code> samples</p></div>
+    <div class="box"><b>Debug Kit</b><p>a fault in a project's C named, function and offset</p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);margin-top:10px">
+    <div class="box"><b>C Kit (TinyCC)</b><p>Build</p></div>
+    <div class="box"><b>Crypto Kit</b><p>SHA-256 for a package's sums</p></div>
+    <div class="box"><b>Console Kit</b><p>the app's print and its lines</p></div>
+    <div class="box"><b>WebKit Kit</b><p>a lesson's page in a pane <span class="b">I14</span></p></div>
+  </div>
+</div>
+
+<div class="layer srv"><h2>Servers</h2>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);">
+    <div class="box grow"><span class="tag g">GROWS</span><b>window manager</b><p>a <b style="display:inline;font-size:13px">hosted window</b> - another window's picture composed in a rectangle, its input sent on, beside the inset; frame times per window <span class="b">I5</span> <span class="bp">B4</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>init, the launcher</b><p>a person's program given what its header declares, asked once <span class="b">I3</span>; ends and starts the app <span class="bp">B2 B3</span></p></div>
+    <div class="box"><b>diskfs</b><p>/Home/Projects, /Home/Apps, the kept versions</p></div>
+    <div class="box"><b>llm, the audio server</b><p>Xavier's model; the Sound template's band</p></div>
+  </div>
+</div>
+
+<div class="layer kern"><h2>Nebula</h2>
+  <div class="row" style="grid-template-columns:1fr 1fr;">
+    <div class="box grow"><span class="tag g">GROWS</span><b>sampling (<code>kernel/profile.c</code>)</b><p>one process's samples read live, for the layers <span class="b">I9</span></p></div>
+    <div class="box"><b>threads, address spaces, IPC, capabilities</b><p>nothing else new: a paused program is its own thread waiting on its own endpoint</p></div>
+  </div>
+</div>
+
+</div><div class="side">
+
+<div class="card"><h3>Asked of every piece</h3><ol>
+  <li><b>Does another application want this?</b> The index and the formatter: Cafesa3D and Xavier. The Inspect Kit: the App Inspector and Automations' scripts. The hosted window: the layout builder and the tutorial. <code>diff</code>: Xavier and Git.</li>
+  <li><b>Does something already supply this?</b> <code>ui.editor</code>, <code>ui.splitter</code>, luacheck, Automations' controls, the Debug Kit, Nebula's sampling, <code>frames</code>, <code>packages.lua</code>, <code>zip.lua</code>, Paint - each used, not written again.</li>
+</ol></div>
+
+<div class="card"><h3>The order</h3><ol>
+  <li><b>I1</b> panes dragged, checking off the key path, the key measured</li>
+  <li><b>I2</b> Format Code &nbsp; <b>I3</b> a program's <code>needs</code></li>
+  <li><b>I4</b> New Project by kind &nbsp; <b>I5</b> the preview</li>
+  <li><b>I6</b> the index</li>
+  <li><b>I7</b> stopping at an error &nbsp; <b>I8</b> the debugger &nbsp; <b>I9</b> the profiler</li>
+  <li><b>I10</b> the app's page, install, package &nbsp; <b>I11</b> layouts</li>
+  <li><b>I12</b> tests &nbsp; <b>I13</b> history &nbsp; <b>I14</b> the tutorial &nbsp; <b>I15</b> Xavier</li>
+</ol></div>
+
+<div class="card"><h3>A - a key in a long file</h3><ol>
+  <li><span class="a">A1</span> the key reaches the editor.</li>
+  <li><span class="a">A2</span> <code>textbuf</code> changes one line.</li>
+  <li><span class="a">A3</span> <code>lualex</code> colours it, and the next only while a line's end state changed.</li>
+  <li><span class="a">A4</span> the rows on the screen are drawn.</li>
+  <li><span class="a">A5</span> completion looks the prefix up.</li>
+  <li><span class="a">A6</span> on a pause, Lua's parser; on save, luacheck in its own process.</li>
+</ol><p style="font-size:13px;color:var(--dim)">Nothing in A1-A5 grows with the file. Measured on <code>ui.lua</code>, 10,708 lines, on the M700, in I1.</p></div>
+
+<div class="card"><h3>B - a save, the preview restarted</h3><ol>
+  <li><span class="bp">B1</span> the file is saved.</li>
+  <li><span class="bp">B2</span> the running app is ended.</li>
+  <li><span class="bp">B3</span> it is started again, with its console and inspect doors.</li>
+  <li><span class="bp">B4</span> the window manager hosts its first frame where the last was. No pixel crosses to the IDE.</li>
+</ol></div>
+
+<div class="card"><h3>C or Lua, region or message</h3><table>
+  <tr><td>The agent's hooks</td><td>C - on the program's busiest path; must not allocate</td></tr>
+  <tr><td>Everything else</td><td>Lua - structure, when a person acts</td></tr>
+  <tr><td>Debugger requests, values</td><td>messages, declared shapes</td></tr>
+  <tr><td>Profile samples</td><td>a ring in a region - they recur on a clock</td></tr>
+  <tr><td>A preview's pixels</td><td>none travel - the window manager has them</td></tr>
+</table></div>
+
+</div></div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

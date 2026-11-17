@@ -1,0 +1,885 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The next Kosmos IDE, drawn before it is built (docs/ide.md). One CSS pixel
+  to one screen pixel, in the IDE's own palette and Kosmos Write's tools, as
+  docs/kosmos-ide.html and docs/ide-layout.html have them - those two stay as
+  the record of what was agreed in September and October.
+
+  Diego, 17 November 2026: "review the kosmos IDE - it is outdated and it
+  needs new features to create wonderful apps".
+
+  The toggle shows the one window in five moments: writing with the preview
+  beside the code, stopped in the debugger, the profiler on a running app,
+  New Project, and the layout builder. Under it, the app's page and the More
+  menu.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos IDE, Next</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #15181d; --ink: #e7eaf0; --muted: #a0a8b6; --rule: #2c323b; color-scheme: dark; }
+
+  /* The window's own look - Kosmos's light palette, and its dark one on `.dark`. */
+  .win, .sheetwin, .menu {
+    --w-body: #fafafb; --w-panel: #ffffff; --w-side: #f6f7f9; --w-line: #e0e2e6; --w-ink: #1d1f24;
+    --w-dim: #74787f; --w-faint: #b3b7be; --w-accent: #2a55c9; --w-head: #ffffff; --w-sel: #e9eefb;
+    --w-cur: #f4f6fb; --w-btn: #ffffff; --w-out: #f7f8fa; --w-pop: #ffffff; --w-popdoc: #f7f8fa; --w-raised: #eef0f4;
+    --c-kw: #7a3fb8; --c-num: #b3541e; --c-str: #2f7a32; --c-com: #8b919a; --c-fn: #1f5fbf; --c-lib: #0f7d86;
+    --err: #c0392b; --errbg: #fde8e6; --warn: #b7791f; --warnbg: #fdf3dc; --ok: #1f6b2c; --okbg: #e8f6eb;
+    --stop: #fff4c2; --stopline: #e0b100; --hot: #d9480f;
+    --desk: #3d63b8;
+  }
+  .dark {
+    --w-body: #1f2228; --w-panel: #1a1d22; --w-side: #1c1f24; --w-line: #30343c; --w-ink: #dfe3ea;
+    --w-dim: #8d95a3; --w-faint: #5a616d; --w-accent: #5b86f0; --w-head: #23262c; --w-sel: #26324d;
+    --w-cur: #22262d; --w-btn: #2a2e35; --w-out: #1c1f24; --w-pop: #262a31; --w-popdoc: #21252b; --w-raised: #2a2e35;
+    --c-kw: #c792ea; --c-num: #f0a36b; --c-str: #9ccc7b; --c-com: #6f7885; --c-fn: #82aaff; --c-lib: #5fd3d9;
+    --err: #ff7b72; --errbg: #3a2224; --warn: #e0b060; --warnbg: #36301f; --ok: #7fd08c; --okbg: #1f3324;
+    --stop: #3b3415; --stopline: #e0b100; --hot: #ff8a50;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1520px; margin: 0 auto; padding-block: 40px 80px; padding-inline: 20px; }
+  h1 { font-family: var(--display); font-size: 30px; margin: 0 0 6px; }
+  h2 { font-family: var(--display); font-size: 19px; margin: 46px 0 6px; padding-top: 22px; border-top: 1px solid var(--rule); text-wrap: balance; }
+  .sub, .why { color: var(--muted); max-width: 80ch; }
+  .why { margin: 0 0 14px; font-size: 14px; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  kbd { border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+  .new { color: #2a55c9; font-weight: 600; font-size: 12px; letter-spacing: .04em; }
+  .grows { color: #0f7a5a; font-weight: 600; font-size: 12px; letter-spacing: .04em; }
+
+  .toggles { display: flex; gap: 8px; margin: 14px 0 0; flex-wrap: wrap; align-items: center; }
+  .toggles .lab { font-size: 13px; color: var(--muted); margin-right: 2px; }
+  .toggles .gap { width: 18px; }
+  .toggles button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--rule);
+                    background: transparent; color: var(--ink); cursor: pointer; }
+  .toggles button[aria-pressed="true"] { border-color: #2a55c9; color: #2a55c9; font-weight: 500; }
+  .toggles button:focus-visible { outline: 2px solid #2a55c9; outline-offset: 2px; }
+  .caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; max-width: 100ch; min-height: 44px; }
+
+  .stage { background: #3d63b8; background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%);
+           padding: 30px 24px; border-radius: 12px; overflow-x: auto; margin-top: 10px; }
+  .win { width: 1440px; height: 860px; margin: 0 auto; background: var(--w-body); border-radius: 10px; overflow: hidden; position: relative;
+         box-shadow: 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.2); font-size: 13px; color: var(--w-ink);
+         display: flex; flex-direction: column; }
+
+  /* The header: the subject, where you are, the state, Find a file, More. */
+  .head { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; background: var(--w-head);
+          border-bottom: 1px solid var(--w-line); flex: none; }
+  .head .t { font-weight: 600; font-size: 14px; }
+  .head .s { color: var(--w-dim); white-space: nowrap; }
+  .grow { flex: 1; }
+  .pill { border: 1px solid var(--w-line); border-radius: 999px; padding: 1px 10px; color: var(--w-dim); font-size: 12px; white-space: nowrap; }
+  .pill.on { color: var(--ok); border-color: currentColor; background: var(--okbg); }
+  .pill.paused { color: #8a6a00; border-color: var(--stopline); background: var(--stop); }
+  .dark .pill.paused { color: #f0d060; }
+  .field { display: flex; align-items: center; gap: 6px; width: 250px; height: 26px; border: 1px solid var(--w-line);
+           border-radius: 7px; padding: 0 8px; color: var(--w-faint); background: var(--w-panel); white-space: nowrap; }
+  .field svg { width: 13px; height: 13px; }
+  .dots { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--w-dim); }
+  .lights { display: flex; gap: 7px; margin-left: 6px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #3cb24a; } .lights i:nth-child(2) { background: #e8a23a; } .lights i:nth-child(3) { background: #e2574c; }
+
+  /* The tools: Kosmos Write's - an icon and its word, 56 wide. */
+  .tools { height: 62px; display: flex; align-items: center; gap: 2px; padding: 0 12px; background: var(--w-head);
+           border-bottom: 1px solid var(--w-line); flex: none; }
+  .tool { width: 56px; height: 48px; border-radius: 10px; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 4px; color: var(--w-ink); font-size: 11.5px; position: relative; flex: none; }
+  .tool span { color: var(--w-dim); white-space: nowrap; }
+  .tool svg { width: 15px; height: 15px; }
+  .tool.on { background: var(--w-raised); }
+  .tool.on svg, .tool.go svg { color: var(--w-accent); }
+  .tool.red svg { color: var(--err); }
+  .tool.off { opacity: .4; }
+  .tool .nb { position: absolute; top: 2px; right: 4px; font-size: 9px; color: #fff; background: #2a55c9; border-radius: 6px; padding: 0 4px; line-height: 13px; }
+  .sep { width: 1px; height: 30px; background: var(--w-line); margin: 0 8px; flex: none; }
+
+  /* The body: sidebar, editor, and the right pane. */
+  .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 236px 1fr 470px; }
+  .body.wide { grid-template-columns: 236px 1fr 560px; }
+  .split { position: relative; }
+  .split::after { content: ""; position: absolute; top: 0; bottom: 0; right: -3px; width: 5px; cursor: col-resize; z-index: 3; }
+  .side { background: var(--w-side); border-right: 1px solid var(--w-line); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .stabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--w-line); flex: none; }
+  .stab { padding: 4px 9px; border-radius: 6px 6px 0 0; color: var(--w-dim); font-size: 12.5px; white-space: nowrap; }
+  .stab.on { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-bottom-color: var(--w-panel); margin-bottom: -1px; }
+  .tree { padding: 8px 6px; font-size: 13px; overflow: hidden; flex: 1; }
+  .row { padding: 3px 8px; border-radius: 5px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .row.sel { background: var(--w-sel); color: var(--w-accent); }
+  .row .note { margin-left: auto; color: var(--w-faint); font-size: 11.5px; }
+  .row svg { width: 13px; height: 13px; flex: none; }
+  .cap { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--w-dim); padding: 12px 8px 4px; }
+  .refdoc { margin: 8px 6px; padding: 8px 10px; border: 1px solid var(--w-line); border-radius: 8px; background: var(--w-panel); font-size: 12px; color: var(--w-dim); line-height: 1.45; }
+  .refdoc .sig { font-family: var(--mono); color: var(--w-ink); font-size: 11.5px; margin-bottom: 4px; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--w-panel); border-right: 1px solid var(--w-line); }
+  .ftabs { display: flex; align-items: end; gap: 2px; padding: 0 8px; height: 31px; border-bottom: 1px solid var(--w-line); background: var(--w-side); flex: none; }
+  .ftab { padding: 5px 12px; font-size: 12.5px; color: var(--w-dim); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .ftab.on { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-bottom-color: var(--w-panel); border-radius: 6px 6px 0 0; margin-bottom: -1px; }
+  .ftab svg { width: 13px; height: 13px; flex: none; }
+  .ftab .mod { width: 7px; height: 7px; border-radius: 50%; background: var(--w-dim); display: inline-block; }
+  .ftab .seg { margin-left: 10px; display: inline-flex; border: 1px solid var(--w-line); border-radius: 6px; overflow: hidden; font-size: 11.5px; }
+  .ftab .seg b { font-weight: 400; padding: 0 8px; } .ftab .seg b.on { background: var(--w-sel); color: var(--w-accent); font-weight: 500; }
+
+  .debugbar { height: 34px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 10px; background: var(--stop); border-bottom: 1px solid var(--stopline); font-size: 12.5px; }
+  .dark .debugbar { color: #f0d060; }
+  .debugbar .db { height: 24px; padding: 0 9px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(0,0,0,.12); background: var(--w-btn); color: var(--w-ink); }
+  .debugbar .db kbd { border: 0; padding: 0; color: var(--w-dim); font-size: 10.5px; }
+  .debugbar .db svg { width: 12px; height: 12px; }
+  .debugbar .why2 { margin-left: auto; color: #6b5410; }
+  .dark .debugbar .why2 { color: #e0c060; }
+
+  .edit { position: relative; flex: 1; overflow: hidden; font-family: var(--mono); font-size: 12.5px; line-height: 19px; padding: 6px 0; background: var(--w-panel); min-height: 0; }
+  .l { display: grid; grid-template-columns: 18px 22px 36px 1fr; white-space: pre; }
+  .l .bp { text-align: center; font-family: var(--body); font-size: 10px; line-height: 19px; color: var(--err); }
+  .l .mk { text-align: center; font-family: var(--body); font-size: 11px; line-height: 19px; }
+  .l .n { color: var(--w-faint); text-align: right; padding-right: 12px; user-select: none; }
+  .l .cost { color: var(--hot); font-family: var(--body); font-size: 10px; text-align: right; padding-right: 3px; }
+  .l.cur { background: var(--w-cur); } .l.cur .n { color: var(--w-dim); }
+  .l.bad { background: var(--errbg); } .l.warn { background: var(--warnbg); }
+  .l.stopped { background: var(--stop); box-shadow: inset 3px 0 0 var(--stopline); }
+  .l.picked { background: var(--w-sel); box-shadow: inset 3px 0 0 var(--w-accent); }
+  .l.hotl { background: linear-gradient(90deg, rgba(217,72,15,.10), transparent 60%); }
+  .mk.e { color: var(--err); } .mk.w { color: var(--warn); }
+  .inl { font-family: var(--body); font-size: 11.5px; margin-left: 16px; padding: 0 6px; border-radius: 4px; }
+  .inl.e { color: var(--err); background: var(--errbg); } .inl.w { color: var(--warn); background: var(--warnbg); }
+  .inl.v { color: var(--w-dim); background: var(--w-raised); }
+  .squig-w { text-decoration: underline wavy var(--warn); text-underline-offset: 3px; text-decoration-skip-ink: none; }
+  .caret { border-left: 2px solid var(--w-accent); margin-left: -1px; }
+  .kw { color: var(--c-kw); } .num { color: var(--c-num); } .str { color: var(--c-str); }
+  .com { color: var(--c-com); font-style: italic; } .fn { color: var(--c-fn); } .lib { color: var(--c-lib); }
+  .sighelp { position: absolute; font-family: var(--body); font-size: 12px; padding: 7px 10px; border-radius: 7px; max-width: 470px;
+             background: var(--w-pop); border: 1px solid var(--w-line); box-shadow: 0 6px 18px rgba(0,0,0,.14); color: var(--w-dim); line-height: 1.45; }
+  .sighelp .sig { font-family: var(--mono); font-size: 12px; color: var(--w-ink); }
+  .sighelp .sig b { color: var(--w-accent); }
+
+  .bottom { height: 170px; flex: none; border-top: 1px solid var(--w-line); display: flex; flex-direction: column; background: var(--w-out); position: relative; }
+  .bottom::before { content: ""; position: absolute; left: 0; right: 0; top: -3px; height: 5px; cursor: row-resize; }
+  .btabs { display: flex; gap: 2px; padding: 0 8px; align-items: end; height: 30px; border-bottom: 1px solid var(--w-line); background: var(--w-side); flex: none; }
+  .btabs .right { margin-left: auto; color: var(--w-dim); font-size: 12px; align-self: center; }
+  .badge { background: var(--w-accent); color: #fff; border-radius: 999px; font-size: 10.5px; padding: 0 6px; }
+  .badge.r { background: var(--err); }
+  .out { flex: 1; font-family: var(--mono); font-size: 12px; padding: 8px 14px; line-height: 19px; overflow: hidden; }
+  .out .d { color: var(--w-dim); } .out .ok { color: var(--ok); } .out .er { color: var(--err); } .out .p { color: var(--w-accent); }
+  .out .ans { color: var(--c-str); }
+
+  /* The right pane: Preview, Debug or Profile. */
+  .right { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--w-side); }
+  .rtabs { display: flex; gap: 2px; padding: 0 8px; align-items: end; height: 31px; border-bottom: 1px solid var(--w-line); flex: none; }
+  .rhead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--w-line); flex: none; font-size: 12px; color: var(--w-dim); flex-wrap: wrap; }
+  .chip { height: 24px; border: 1px solid var(--w-line); border-radius: 6px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px;
+          color: var(--w-dim); font-size: 12px; background: var(--w-panel); white-space: nowrap; }
+  .chip.on { color: var(--w-accent); border-color: var(--w-accent); }
+  .chip svg { width: 12px; height: 12px; }
+  .rbody { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+
+  /* The preview: a little of the desktop, and the app's own window on it. */
+  .desk { position: absolute; inset: 0; background: var(--desk); background-image: radial-gradient(120% 90% at 30% 10%, #5679cc 0%, #3d63b8 45%, #2f4e99 100%); }
+  .appwin { position: absolute; left: 50px; top: 46px; width: 368px; background: #fafafb; border-radius: 9px; overflow: hidden;
+            box-shadow: 0 10px 26px rgba(0,0,0,.30); font-size: 13px; color: #1d1f24; font-family: var(--body); }
+  .appwin.dk { background: #1f2228; color: #dfe3ea; }
+  .appwin .ah { height: 34px; display: flex; align-items: center; padding: 0 12px; font-weight: 600; background: #fff; border-bottom: 1px solid #e0e2e6; }
+  .appwin.dk .ah { background: #23262c; border-color: #30343c; }
+  .appwin .ab { padding: 14px 16px 16px; position: relative; height: 196px; }
+  .ac { position: absolute; }
+  .ac.lab { color: #74787f; font-size: 12.5px; }
+  .ac.fld { height: 28px; border: 1px solid #d6d9de; border-radius: 6px; background: #fff; padding: 0 9px; display: flex; align-items: center; font-family: var(--mono); font-size: 12.5px; }
+  .appwin.dk .ac.fld { background: #1a1d22; border-color: #3a3f48; }
+  .ac.sl { height: 16px; } .ac.sl i { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: #dfe2e7; }
+  .ac.sl b { position: absolute; left: 0; top: 6px; height: 4px; border-radius: 2px; background: #2a55c9; }
+  .ac.sl u { position: absolute; top: 0; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 1px solid #c8ccd3; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .ac.btn { height: 30px; border: 1px solid #d6d9de; border-radius: 7px; background: #fff; display: grid; place-items: center; font-size: 12.5px; }
+  .appwin.dk .ac.btn { background: #2a2e35; border-color: #3a3f48; }
+  .pick { outline: 2px solid #2a55c9; outline-offset: 2px; border-radius: 6px; }
+  .picktag { position: absolute; font-size: 11px; font-family: var(--body); color: #fff; background: #2a55c9; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .pfoot { flex: none; border-top: 1px solid var(--w-line); padding: 6px 10px; font-size: 12px; color: var(--w-dim); display: flex; gap: 14px; background: var(--w-side); }
+
+  /* The debugger. */
+  .dsec { border-bottom: 1px solid var(--w-line); }
+  .dsec h4 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--w-dim); padding: 8px 12px 4px; display: flex; }
+  .dsec h4 span { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--w-faint); }
+  .frame { display: grid; grid-template-columns: 1fr auto; padding: 3px 12px; font-size: 12.5px; }
+  .frame .w { color: var(--w-faint); font-family: var(--mono); font-size: 11.5px; }
+  .frame.on { background: var(--w-sel); color: var(--w-accent); }
+  .frame.ro { color: var(--w-dim); }
+  .var { display: grid; grid-template-columns: 14px 110px 1fr auto; gap: 4px; padding: 2px 12px; font-family: var(--mono); font-size: 12px; align-items: baseline; }
+  .var .ch { color: var(--w-dim); font-size: 10px; }
+  .var .k { color: var(--w-ink); } .var .v { color: var(--c-num); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .var .v.s { color: var(--c-str); } .var .v.t { color: var(--w-dim); }
+  .var .ty { color: var(--w-faint); font-family: var(--body); font-size: 11px; }
+  .var.in1 { padding-left: 28px; }
+
+  /* The profiler. */
+  .pchips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px 12px; }
+  .pc { background: var(--w-panel); border: 1px solid var(--w-line); border-radius: 8px; padding: 6px 9px; }
+  .pc b { display: block; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pc span { font-size: 11px; color: var(--w-dim); }
+  .pc.bad b { color: var(--err); }
+  .graph { margin: 0 12px; height: 104px; background: var(--w-panel); border: 1px solid var(--w-line); border-radius: 8px; position: relative; overflow: hidden; }
+  .graph .bars { position: absolute; left: 8px; right: 8px; bottom: 6px; top: 8px; display: flex; align-items: flex-end; gap: 2px; }
+  .graph .bars i { flex: 1; background: #8fb0ea; border-radius: 1px; }
+  .graph .bars i.gc { background: #e8a23a; } .graph .bars i.over { background: var(--err); }
+  .graph .line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--err); }
+  .graph .lbl { position: absolute; right: 8px; font-size: 10.5px; color: var(--err); background: var(--w-panel); padding: 0 3px; }
+  .layers { margin: 10px 12px 0; }
+  .layers .bar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; font-size: 10.5px; color: #fff; }
+  .layers .bar i { display: grid; place-items: center; font-style: normal; white-space: nowrap; overflow: hidden; }
+  .layers .key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--w-dim); margin-top: 6px; }
+  .layers .key b { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  table.fn { width: calc(100% - 24px); margin: 10px 12px; border-collapse: collapse; font-size: 12px; background: var(--w-panel); border: 1px solid var(--w-line); border-radius: 8px; }
+  table.fn th { text-align: right; font-weight: 500; color: var(--w-dim); font-size: 11px; padding: 5px 8px; border-bottom: 1px solid var(--w-line); }
+  table.fn th:first-child, table.fn td:first-child { text-align: left; }
+  table.fn td { text-align: right; padding: 4px 8px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--w-line); }
+  table.fn td:first-child { font-family: var(--mono); font-size: 11.5px; }
+  table.fn td .w { color: var(--w-faint); }
+  table.fn tr.on td { background: var(--w-sel); }
+  .meter { display: inline-block; width: 46px; height: 6px; background: var(--w-raised); border-radius: 3px; vertical-align: 1px; margin-left: 6px; position: relative; overflow: hidden; }
+  .meter b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--hot); }
+
+  /* New Project, over everything. */
+  .veil { position: absolute; inset: 0; background: rgba(20,24,32,.42); display: grid; place-items: center; z-index: 5; }
+  .dlg { width: 980px; background: var(--w-body); border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.35); overflow: hidden; }
+  .dlg .dh { padding: 16px 22px 10px; }
+  .dlg .dh b { font-size: 17px; font-weight: 600; display: block; }
+  .dlg .dh span { color: var(--w-dim); font-size: 13px; }
+  .kinds { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; padding: 6px 22px 14px; }
+  .kind { border: 1px solid var(--w-line); border-radius: 10px; background: var(--w-panel); padding: 10px 6px 8px; text-align: center; font-size: 12px; }
+  .kind svg { width: 26px; height: 26px; display: block; margin: 0 auto 6px; color: var(--w-dim); }
+  .kind.on { border-color: var(--w-accent); box-shadow: 0 0 0 2px rgba(42,85,201,.18); color: var(--w-accent); font-weight: 500; }
+  .kind.on svg { color: var(--w-accent); }
+  .tmpls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 0 22px; }
+  .tm { border: 1px solid var(--w-line); border-radius: 10px; background: var(--w-panel); overflow: hidden; }
+  .tm.on { border-color: var(--w-accent); box-shadow: 0 0 0 2px rgba(42,85,201,.18); }
+  .tm .pic { height: 118px; position: relative; overflow: hidden; }
+  .tm .tx { padding: 8px 12px 10px; }
+  .tm .tx b { display: block; font-size: 13px; font-weight: 600; }
+  .tm .tx p { margin: 2px 0 6px; font-size: 12px; color: var(--w-dim); line-height: 1.4; }
+  .tm .uses { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tm .uses i { font-style: normal; font-family: var(--mono); font-size: 10.5px; color: var(--c-lib); border: 1px solid var(--w-line); border-radius: 4px; padding: 0 4px; }
+  .tm .uses i.need { color: var(--warn); }
+  .dfoot { display: flex; align-items: center; gap: 10px; padding: 16px 22px; margin-top: 14px; border-top: 1px solid var(--w-line); }
+  .dfoot .in { width: 220px; height: 30px; border: 1.5px solid var(--w-accent); border-radius: 7px; display: flex; align-items: center; padding: 0 9px; font-family: var(--mono); font-size: 12.5px; background: var(--w-panel); }
+  .dfoot .path { color: var(--w-dim); font-family: var(--mono); font-size: 12px; }
+  .bt { height: 30px; padding: 0 14px; border-radius: 7px; border: 1px solid var(--w-line); background: var(--w-btn); display: inline-flex; align-items: center; font-size: 13px; }
+  .bt.go { background: var(--w-accent); border-color: var(--w-accent); color: #fff; font-weight: 500; }
+
+  /* The layout builder. */
+  .lb { flex: 1; min-height: 0; display: grid; grid-template-columns: 150px 1fr; }
+  .palette { border-right: 1px solid var(--w-line); background: var(--w-side); padding: 8px 6px; overflow: hidden; }
+  .palette .pi { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; font-size: 12.5px; }
+  .palette .pi i { width: 22px; height: 16px; border: 1px solid var(--w-faint); border-radius: 4px; display: inline-block; flex: none; }
+  .palette .pi.drag { background: var(--w-sel); color: var(--w-accent); }
+  .canvas { position: relative; background-color: var(--w-panel);
+            background-image: radial-gradient(var(--w-line) 1px, transparent 1px); background-size: 8px 8px; overflow: hidden; }
+  .canvas .appwin { left: 70px; top: 50px; }
+  .guide { position: absolute; border-left: 1px solid #e2574c; }
+  .handles i { position: absolute; width: 7px; height: 7px; background: #fff; border: 1.5px solid #2a55c9; }
+  .ghost { position: absolute; opacity: .75; }
+  .props { padding: 10px 12px; font-size: 12.5px; }
+  .props .pr { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .props .pr span { color: var(--w-dim); }
+  .props .pv { height: 26px; border: 1px solid var(--w-line); border-radius: 6px; background: var(--w-panel); display: flex; align-items: center; padding: 0 8px; font-family: var(--mono); font-size: 12px; }
+  .props .four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .edges { width: 120px; height: 76px; border: 1px solid var(--w-line); border-radius: 6px; position: relative; background: var(--w-panel); }
+  .edges .box { position: absolute; left: 36px; top: 24px; width: 48px; height: 28px; border: 1.5px solid var(--w-accent); border-radius: 3px; }
+  .edges .e { position: absolute; background: var(--w-accent); }
+  .edges .e.off { background: var(--w-line); }
+  .props .link { color: var(--w-accent); font-family: var(--mono); font-size: 12px; }
+
+  .foot { height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 14px; border-top: 1px solid var(--w-line);
+          color: var(--w-dim); font-size: 12px; background: var(--w-side); flex: none; white-space: nowrap; overflow: hidden; }
+  .foot .r { margin-left: auto; }
+
+  /* Under the window. */
+  .sheetwin { width: 760px; background: var(--w-body); color: var(--w-ink); border-radius: 10px; overflow: hidden; border: 1px solid var(--w-line);
+              box-shadow: 0 10px 34px rgba(20,30,50,.16); font-size: 13px; }
+  .sheetwin .head { height: 44px; }
+  .sheetbody { padding: 16px 20px 18px; display: grid; grid-template-columns: 130px 1fr; gap: 12px 16px; align-items: start; }
+  .sheetbody .k { color: var(--w-dim); padding-top: 5px; }
+  .sheetbody .pv { height: 28px; border: 1px solid var(--w-line); border-radius: 6px; background: var(--w-panel); display: flex; align-items: center; padding: 0 9px; }
+  .icons { display: flex; gap: 14px; align-items: flex-end; }
+  .icons .ic { border: 1px dashed var(--w-line); border-radius: 6px; display: grid; place-items: center; background: var(--w-panel); }
+  .icons small { display: block; text-align: center; color: var(--w-faint); font-size: 11px; margin-top: 3px; }
+  .needs { display: grid; gap: 6px; }
+  .needs label { display: grid; grid-template-columns: 18px 120px 1fr; gap: 6px; align-items: baseline; }
+  .needs .bx { width: 14px; height: 14px; border: 1.5px solid var(--w-faint); border-radius: 3px; display: inline-block; vertical-align: -2px; }
+  .needs .bx.on { background: var(--w-accent); border-color: var(--w-accent); box-shadow: inset 0 0 0 2px var(--w-panel); }
+  .needs em { font-style: normal; color: var(--w-dim); font-size: 12px; }
+  .hdr { font-family: var(--mono); font-size: 12px; background: var(--w-side); border: 1px solid var(--w-line); border-radius: 6px; padding: 8px 10px; white-space: pre; color: var(--c-com); }
+  .actions { grid-column: 1 / -1; display: flex; gap: 8px; border-top: 1px solid var(--w-line); padding-top: 14px; }
+
+  .menus { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 18px; align-items: flex-start; }
+  .menu { background: var(--w-panel); color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 9px; padding: 6px 0; width: 300px;
+          box-shadow: 0 10px 26px rgba(20,30,50,.14); font-size: 13px; }
+  .menu .h { padding: 6px 14px 2px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--w-faint); }
+  .menu .i { padding: 4px 14px; display: flex; gap: 8px; }
+  .menu .i span { margin-left: auto; color: var(--w-faint); font-family: var(--mono); font-size: 11.5px; }
+  .menu .i em { font-style: normal; font-size: 10px; color: #2a55c9; font-weight: 600; align-self: center; }
+  .menu .sep2 { border-top: 1px solid var(--w-line); margin: 5px 0; }
+  .mcap { font-size: 13px; color: var(--muted); margin: 6px 0 0; max-width: 300px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+  .cols p { max-width: 60ch; }
+  ol.q li { margin: 9px 0; max-width: 80ch; }
+  .rec { color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { .caret { animation: blink 1.1s steps(2, start) infinite; } }
+  @keyframes blink { to { border-color: transparent; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kosmos IDE, Next</h1>
+<p class="sub">The IDE as the place a wonderful app is made: the app running beside its code and restarted on every save, a debugger that stops where it went wrong, a profiler that says where the frame went, a New Project for each kind of app Kosmos is for, a layout builder, and everything that turns a project into an installed app with its own icon. The same window, the same tools and the same palette as today, grown. <code>docs/ide.md</code> is the argument.</p>
+
+<div class="toggles" role="group" aria-label="What the drawing shows">
+  <span class="lab">Show</span>
+  <button type="button" data-state="preview" aria-pressed="true">Preview</button>
+  <button type="button" data-state="debug" aria-pressed="false">Debugging</button>
+  <button type="button" data-state="profile" aria-pressed="false">Profiling</button>
+  <button type="button" data-state="new" aria-pressed="false">New Project</button>
+  <button type="button" data-state="layout" aria-pressed="false">Layout</button>
+  <span class="gap"></span>
+  <span class="lab">IDE</span>
+  <button type="button" data-look="light" aria-pressed="true">Light</button>
+  <button type="button" data-look="dark" aria-pressed="false">Dark</button>
+</div>
+<p class="caption" id="caption"></p>
+
+<div class="stage">
+  <div class="win" id="win" role="img" aria-label="The Kosmos IDE: tools, sidebar, editor, and a pane at the right">
+    <div class="head">
+      <span class="t">Kosmos IDE</span><span class="s" id="where">Converter · converter.lua</span>
+      <span class="grow"></span>
+      <span class="pill on" id="pill">running, 4 s</span>
+      <span class="field"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/></svg>Find a file  Ctrl P</span>
+      <span class="dots">⋯</span>
+      <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+    <div class="tools" id="tools"></div>
+    <div id="bodyhost" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
+    <div class="foot" id="foot"></div>
+    <div id="overlay"></div>
+  </div>
+</div>
+
+<h2>The app's page</h2>
+<p class="why"><span class="new">NEW</span> The <b>App</b> tool. What the Deskbar, the launcher, Tracker and Packages read about the app, set as a form and written into the header, which stays the one source - the lines under the form are what it writes. Install and Make Package are here.</p>
+<div class="scroll" style="overflow-x:auto">
+<div class="sheetwin" role="img" aria-label="The app's page: name, icon, section, file types, powers, and the header it writes">
+  <div class="head"><span class="t">Orbits</span><span class="s">the app's page</span><span class="grow"></span><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span></div>
+  <div class="sheetbody">
+    <span class="k">Name</span><span class="pv">Orbits</span>
+    <span class="k">Icon</span>
+    <div>
+      <div class="icons">
+        <div><div class="ic" style="width:68px;height:68px"><svg width="64" height="64" viewBox="0 0 64 64"><ellipse cx="32" cy="34" rx="27" ry="10" fill="none" stroke="#2a55c9" stroke-width="2.5" transform="rotate(-18 32 34)"/><circle cx="32" cy="34" r="12" fill="#f3b33d" stroke="#1d1f24" stroke-width="2.5"/><circle cx="54" cy="24" r="5" fill="#5b86f0" stroke="#1d1f24" stroke-width="2"/></svg></div><small>64</small></div>
+        <div><div class="ic" style="width:36px;height:36px"><svg width="32" height="32" viewBox="0 0 64 64"><ellipse cx="32" cy="34" rx="27" ry="10" fill="none" stroke="#2a55c9" stroke-width="4" transform="rotate(-18 32 34)"/><circle cx="32" cy="34" r="12" fill="#f3b33d" stroke="#1d1f24" stroke-width="4"/></svg></div><small>32</small></div>
+        <div><div class="ic" style="width:20px;height:20px"><svg width="16" height="16" viewBox="0 0 64 64"><circle cx="32" cy="34" r="16" fill="#f3b33d" stroke="#1d1f24" stroke-width="6"/></svg></div><small>16</small></div>
+        <span class="bt">Choose a system icon…</span><span class="bt">Draw in Paint…</span>
+      </div>
+      <div style="color:var(--w-dim);font-size:12px;margin-top:6px">icon.png in the project, the three sizes in one file. Paint opens on it.</div>
+    </div>
+    <span class="k">Section</span><span class="pv" style="width:220px">Education ▾</span>
+    <span class="k">Opens</span><span class="pv" style="width:220px;font-family:var(--mono)">.orbit</span>
+    <span class="k">Needs</span>
+    <div class="needs">
+      <label><span class="bx on"></span><b>Sound</b><em>the audio band - its sound above every program (<code>audio</code>)</em></label>
+      <label><span class="bx"></span><b>MIDI</b><em>keyboards and controllers (<code>midi</code>)</em></label>
+      <label><span class="bx"></span><b>Network</b><em>the internet (<code>network</code>)</em></label>
+      <label><span class="bx"></span><b>Camera</b><em>(<code>camera</code>)</em></label>
+      <em>Asked of the person the first time the app runs from the IDE, and when it is installed.</em>
+    </div>
+    <span class="k">Writes</span>
+    <div class="hdr">-- kosmos: application
+-- kosmos: name Orbits
+-- kosmos: icon icon.png
+-- kosmos: section education
+-- kosmos: opens orbit
+-- kosmos: needs audio</div>
+    <div class="actions"><span class="bt">Install in /Home/Apps</span><span class="bt">Make Package…</span><span class="grow"></span><span style="color:var(--w-dim);font-size:12px;align-self:center">orbits-0.1.zip, 3 files, 41 KB, with package.txt for Packages</span></div>
+  </div>
+</div>
+</div>
+
+<h2>The menus</h2>
+<div class="menus">
+  <div>
+    <div class="menu" role="img" aria-label="The More menu, grown">
+      <div class="h">File</div>
+      <div class="i">Open… <span>Ctrl O</span></div>
+      <div class="i">Save <span>Ctrl S</span></div>
+      <div class="i">Save All</div>
+      <div class="i">History… <em>NEW</em><span>Ctrl Alt H</span></div>
+      <div class="sep2"></div>
+      <div class="h">Code</div>
+      <div class="i">Go to Definition <em>NEW</em><span>F12</span></div>
+      <div class="i">Find Uses <em>NEW</em><span>Shift F12</span></div>
+      <div class="i">Rename <em>NEW</em><span>F2</span></div>
+      <div class="i">Format Code <em>NEW</em><span>Ctrl Shift I</span></div>
+      <div class="i">Find in Project <span>Ctrl Shift F</span></div>
+      <div class="sep2"></div>
+      <div class="h">Run</div>
+      <div class="i">Run <span>F5</span></div>
+      <div class="i">Debug <em>NEW</em><span>Ctrl F5</span></div>
+      <div class="i">Profile <em>NEW</em><span>Alt F5</span></div>
+      <div class="i">Run Tests <em>NEW</em><span>Ctrl T</span></div>
+      <div class="i">Toggle Breakpoint <em>NEW</em><span>F9</span></div>
+      <div class="sep2"></div>
+      <div class="h">App</div>
+      <div class="i">The App's Page… <em>NEW</em></div>
+      <div class="i">Install in /Home/Apps <em>NEW</em></div>
+      <div class="i">Make Package… <em>NEW</em></div>
+      <div class="sep2"></div>
+      <div class="h">Help</div>
+      <div class="i">Tutorial <span>F1</span></div>
+      <div class="i">Reference <span>Ctrl Shift R</span></div>
+      <div class="i">Keyboard Shortcuts</div>
+      <div class="i">Ask Xavier <em>NEW</em><span>Ctrl Shift X</span></div>
+    </div>
+    <p class="mcap"><b>⋯ More</b>, grouped as a menu bar would group it. <i>Kits and their calls</i>, disabled today, is the Reference tab; <i>Keyboard Shortcuts</i> opens Shortcuts on the IDE's keys.</p>
+  </div>
+  <div>
+    <div class="menu" role="img" aria-label="The preview's size menu">
+      <div class="h">Preview size</div>
+      <div class="i">The window's own · 368 × 230</div>
+      <div class="i">Fit the pane</div>
+      <div class="sep2"></div>
+      <div class="i">800 × 600</div>
+      <div class="i">1280 × 800</div>
+      <div class="i">1920 × 1080 · scaled</div>
+      <div class="sep2"></div>
+      <div class="i">Restart on Save <span>on</span></div>
+      <div class="i">Restart Now <span>Ctrl R</span></div>
+      <div class="i">Open as Its Own Window</div>
+    </div>
+    <p class="mcap">The preview's <b>size</b> chip. A size larger than the pane is drawn smaller, and says so. <i>Open as Its Own Window</i> gives the window back to the desktop, as Run does today.</p>
+  </div>
+</div>
+
+<h2>What each moment shows</h2>
+<div class="cols">
+  <p class="why"><b>Preview</b> <span class="new">NEW</span> The app runs in its own process, as Run runs it today; the window manager draws its window inside the IDE's right pane rather than on the desktop. Saving restarts it in place. Resting on a control names it from what Automations already publishes, and a click puts the editor on the line that made it. Light and Dark switch the app's look without touching Preferences. Signature help and the problem's words at the end of its line are in the editor.</p>
+  <p class="why"><b>Debugging</b> <span class="new">NEW</span> A breakpoint at line 16 was hit. The bar over the editor has Continue and the three steps; the Debug pane has the stack - a Kosmos library's frame shown, read only - the locals, the upvalues opened a level, and a watch. The Console evaluates in the frame chosen. The app is paused and its window in the preview says so.</p>
+  <p class="why"><b>Profiling</b> <span class="new">NEW</span> A planet simulation, Orbits, with sound. Each frame a bar against 16.7 ms, the collector's in orange; where the time went by layer, from Nebula's sampling; the Lua functions by their own time and what they allocate; and the hottest lines' share in the gutter, so <code>pull</code> making a table per pair is in front of you.</p>
+  <p class="why"><b>New Project</b> <span class="grows">GROWS</span> By what you are making. Each template runs as it is, shows what it looks like, and names the kits it stands on - so the Sound template is also a way to learn the Playback Kit. One that needs a power says so in orange.</p>
+  <p class="why"><b>Layout</b> <span class="new">NEW</span> <code>main.form</code> opened in Design. The canvas is the real window, hosted as the preview is; a slider is being dragged in from the palette, with the guides at the kit's spacing. Properties set the name the code uses, the words, the place and the edges it follows; <i>on_change</i> is a link to where the code sets it.</p>
+</div>
+
+<h2>What's yours to decide</h2>
+<ol class="q">
+  <li><b>The preview inside the IDE's window</b>, hosted by the window manager. <span class="rec">Recommended. The app's own window kept beside the IDE needs nothing new, and loses the one window.</span></li>
+  <li><b>A restart on save</b>, not a reload that keeps the app's state. <span class="rec">Recommended. <code>ui.keep</code> later, if a restart loses too much.</span></li>
+  <li><b>The debugger reaches only programs the IDE started.</b> <span class="rec">Recommended: that is the capability.</span></li>
+  <li><b>Layouts as form files</b>, which the code loads and names. <span class="rec">Recommended.</span></li>
+  <li><b>A program in /Home asks once for its powers</b> when the IDE runs it. <span class="rec">Recommended.</span></li>
+  <li><b>History now, Git when its client is designed.</b> <span class="rec">Recommended.</span></li>
+  <li><b>The tutorial in a pane</b> of the IDE. <span class="rec">Recommended.</span></li>
+  <li><b>The order</b>: the loop first, then knowing the code, then the debugger and profiler. <span class="rec">Recommended.</span></li>
+  <li><b>The kit's name, the Inspect Kit.</b> <span class="rec">Recommended.</span></li>
+</ol>
+<p class="why">Each is argued in <code>docs/ide.md</code>, <i>Yours to decide</i>.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function colour(line) {
+  const c = line.indexOf("--");
+  if (c >= 0 && !/"[^"]*--/.test(line.slice(0, c + 2))) return colour(line.slice(0, c)) + '<span class="com">' + esc(line.slice(c)) + "</span>";
+  return line.split(/("[^"]*")/).map(part => {
+    if (part.startsWith('"')) return '<span class="str">' + esc(part) + "</span>";
+    return esc(part)
+      .replace(/\b(local|function|end|if|then|return|for|do|else|in|nil|and|not)\b/g, '<span class="kw">$1</span>')
+      .replace(/\b(ui|win|math|tonumber|tostring|print|use|ipairs|form|sound|gfx|g)\b(?![^<]*>)/g, '<span class="lib">$1</span>')
+      .replace(/(\.|:)(window|field|slider|label|button|add|run|max|min|format|form|sqrt|on_frame|fill|circle|play|tone)\b/g, '$1<span class="fn">$2</span>')
+      .replace(/\b(\d+(\.\d+)?)\b(?![^<]*>)/g, '<span class="num">$1</span>');
+  }).join("");
+}
+
+const CONVERTER = [
+  "-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.",
+  "-- kosmos: application",
+  "-- kosmos: name Converter",
+  "",
+  "local ui = use(\"/Kosmos/Libraries/ui.lua\")",
+  "",
+  "local win = ui.window{ title = \"Converter\", w = 368, h = 196 }",
+  "local f = ui.form(win, \"main.form\")     -- celsius, fahrenheit, dial, reset",
+  "",
+  "-- The other two, from a temperature in Celsius.",
+  "local function show(c)",
+  "  local far = c * 9 / 5 + 32",
+  "",
+  "  f.fahrenheit.text = (\"%.1f\"):format(far)",
+  "  f.dial.value = math.max(-40, math.min(100, c))",
+  "  print((\"%.1f C is %.1f F\"):format(c, far))",
+  "end",
+  "",
+  "f.celsius.on_change = function(_, text)",
+  "  local c = tonumber(text)",
+  "  if c then show(c) end",
+  "end",
+  "",
+  "f.dial.on_change = function(_, value)",
+  "  f.celsius.text = tostring(value)",
+  "  show(value)",
+  "end",
+  "",
+  "f.reset.on_click = function()",
+  "  f.celsius.text = \"20\"",
+  "  show(20)",
+  "end",
+  "",
+  "win:run()",
+];
+
+const ORBITS = [
+  "-- Every body pulled by every other, then moved: once a frame.",
+  "local function pull(a, b)",
+  "  local dx, dy = b.x - a.x, b.y - a.y",
+  "  local d2 = dx * dx + dy * dy + SOFT",
+  "  local f = G * b.m / (d2 * math.sqrt(d2))",
+  "  return { x = dx * f, y = dy * f }",
+  "end",
+  "",
+  "local function step(dt)",
+  "  for i, a in ipairs(bodies) do",
+  "    local ax, ay = 0, 0",
+  "    for j, b in ipairs(bodies) do",
+  "      if i ~= j then",
+  "        local p = pull(a, b)",
+  "        ax, ay = ax + p.x, ay + p.y",
+  "      end",
+  "    end",
+  "    a.vx, a.vy = a.vx + ax * dt, a.vy + ay * dt",
+  "  end",
+  "  for _, a in ipairs(bodies) do a.x, a.y = a.x + a.vx * dt, a.y + a.vy * dt end",
+  "end",
+  "",
+  "-- Drawn into the window's surface: the trails, then the bodies.",
+  "function view:draw(g)",
+  "  g:fill(0, 0, self.w, self.h, SPACE)",
+  "  trails:draw(g)",
+  "  for _, a in ipairs(bodies) do g:circle(a.x, a.y, a.r, a.colour) end",
+  "end",
+  "",
+  "win.on_frame = function(dt)",
+  "  step(dt)",
+  "  if near_miss() then sound.play(\"chime\") end",
+  "  view:paint()",
+  "end",
+];
+
+const ic = {
+  dir: '<svg viewBox="0 0 14 14" fill="none" stroke="#c49a35" stroke-width="1.3"><path d="M1.5 3.5V12h11V5H6.5L5 3.5z" fill="#f3d78a"/></svg>',
+  lua: '<svg viewBox="0 0 14 14" fill="none" stroke="#2a55c9" stroke-width="1.3"><circle cx="7" cy="7" r="5.2"/><circle cx="9.3" cy="4.7" r="1.4" fill="#2a55c9"/></svg>',
+  form: '<svg viewBox="0 0 14 14" fill="none" stroke="#0f7d86" stroke-width="1.3"><rect x="1.5" y="2" width="11" height="10" rx="1.5"/><path d="M3.5 5h4M3.5 8h7"/></svg>',
+  png: '<svg viewBox="0 0 14 14" fill="none" stroke="#b3541e" stroke-width="1.3"><rect x="1.5" y="2" width="11" height="10" rx="1.5"/><path d="m2 11 4-4 3 3 2-2 2 2"/></svg>',
+  test: '<svg viewBox="0 0 14 14" fill="none" stroke="#1f6b2c" stroke-width="1.5"><path d="m2.5 7.5 3 3 6-7"/></svg>',
+};
+
+const T = (svg, word, cls = "", nb = "") => '<div class="tool ' + cls + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">' + svg + '</svg><span>' + word + '</span>' + (nb ? '<span class="nb">' + nb + '</span>' : '') + '</div>';
+const SEP = '<div class="sep"></div>';
+const ICON = {
+  new: '<path d="M8 3v10M3 8h10"/>', open: '<path d="M2 5h4l1.5 1.5H14V13H2z"/>', save: '<path d="M3 2h8l2 2v10H3z M5 2v4h6V2 M5 10h6"/>',
+  undo: '<path d="M5 4 2 7l3 3M2 7h8a4 4 0 0 1 0 8H7"/>', find: '<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/>',
+  build: '<path d="M9.5 2.5a3 3 0 0 0 3.8 3.8l-6.8 6.8a1.6 1.6 0 0 1-2.3-2.3z"/>', run: '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>',
+  stop: '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>', check: '<path d="m3 8.5 3 3 7-7"/>',
+  debug: '<circle cx="8" cy="9" r="4"/><path d="M8 5V3M5 5 3.5 3.5M11 5l1.5-1.5M4 9H1.5M12 9h2.5M4.8 12.2 3 14M11.2 12.2 13 14"/>',
+  profile: '<path d="M2 13h12M4 11V7M7 11V3M10 11V6M13 11V9"/>', preview: '<rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M2 6h12"/>',
+  layout: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6h12M6 6v8"/>', app: '<rect x="3" y="3" width="10" height="10" rx="2.5"/><circle cx="8" cy="8" r="2"/>',
+  tests: '<path d="M6 2v4l-3.5 6.5A1 1 0 0 0 3.4 14h9.2a1 1 0 0 0 .9-1.5L10 6V2M5 2h6"/>', xavier: '<path d="M8 1.5 9.6 6.4 14.5 8l-4.9 1.6L8 14.5 6.4 9.6 1.5 8l4.9-1.6z"/>',
+  console: '<path d="M2 3h12v10H2z M2 6h12"/>', sidebar: '<path d="M3 3h10v10H3z M6 3v10"/>',
+};
+
+function tools(state) {
+  const running = state === "preview" || state === "profile";
+  return T(ICON.new, "New ▾", state === "new" ? "on" : "") + T(ICON.open, "Open") + T(ICON.save, "Save") + SEP +
+    T(ICON.undo, "Undo") + T(ICON.find, "Find") + SEP +
+    T(ICON.build, "Build") + T(ICON.run, "Run", "go") + T(ICON.stop, "Stop", running || state === "debug" ? "red" : "off") + T(ICON.check, "Check") + SEP +
+    T(ICON.preview, "Preview", state === "preview" ? "on" : "", "new") + T(ICON.debug, "Debug", state === "debug" ? "on" : "", "new") +
+    T(ICON.profile, "Profile", state === "profile" ? "on" : "", "new") + T(ICON.tests, "Tests", "", "new") + SEP +
+    T(ICON.layout, "Layout", state === "layout" ? "on" : "", "new") + T(ICON.app, "App", "", "new") +
+    '<div class="grow"></div>' + T(ICON.xavier, "Xavier", "", "new") + T(ICON.console, "Console") + T(ICON.sidebar, "Sidebar");
+}
+
+function side(state) {
+  if (state === "layout") {
+    return '<div class="side split"><div class="stabs"><span class="stab on">Project</span><span class="stab">Outline</span><span class="stab">System</span><span class="stab">Reference</span></div><div class="tree">' +
+      '<div class="row">▾ ' + ic.dir + ' Converter <span class="note">/Home/Projects</span></div>' +
+      '<div class="row" style="padding-left:24px">' + ic.lua + ' converter.lua</div>' +
+      '<div class="row sel" style="padding-left:24px">' + ic.form + ' main.form</div>' +
+      '<div class="row" style="padding-left:24px">' + ic.png + ' icon.png</div>' +
+      '<div class="row" style="padding-left:24px">▸ ' + ic.dir + ' tests</div></div></div>';
+  }
+  if (state === "profile") {
+    return '<div class="side split"><div class="stabs"><span class="stab">Project</span><span class="stab on">Outline</span><span class="stab">System</span><span class="stab">Reference</span></div><div class="tree">' +
+      '<div class="row">pull <span class="note">2 · 51%</span></div><div class="row sel">step <span class="note">9 · 74%</span></div>' +
+      '<div class="row">view:draw <span class="note">24 · 14%</span></div><div class="row">win.on_frame <span class="note">30</span></div>' +
+      '<div class="row">near_miss <span class="note">41 · 3%</span></div><div class="row">trails:draw <span class="note">58 · 6%</span></div>' +
+      '<div class="cap">Each function\'s share, while profiling</div></div></div>';
+  }
+  // The Reference: every library and kit, its names and their comments.
+  return '<div class="side split"><div class="stabs"><span class="stab">Project</span><span class="stab">Outline</span><span class="stab">System</span><span class="stab on">Reference</span></div><div class="tree">' +
+    '<div class="field" style="width:auto;margin:0 2px 6px">' + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 4 4"/></svg>slider</div>' +
+    '<div class="cap">Libraries</div>' +
+    '<div class="row">▾ ui.lua <span class="note">the UI kit</span></div>' +
+    '<div class="row sel" style="padding-left:22px">ui.slider <span class="note">fn</span></div>' +
+    '<div class="row" style="padding-left:22px">ui.stepper <span class="note">fn</span></div>' +
+    '<div class="row" style="padding-left:22px">ui.form <span class="note">fn · new</span></div>' +
+    '<div class="row">▸ files.lua</div><div class="row">▸ automate.lua</div>' +
+    '<div class="cap">Kits</div>' +
+    '<div class="row">▸ /Kosmos/Kits/playback <span class="note">C</span></div><div class="row">▸ /Kosmos/Kits/game <span class="note">C</span></div><div class="row">▸ /Kosmos/Kits/3d <span class="note">C</span></div>' +
+    '<div class="refdoc"><div class="sig">ui.slider{ x, y, w, value, min, max, on_change }</div>A value you drag: a rail 4 high, the part up to the value in the accent, a knob 16 across.<div style="margin-top:4px;color:var(--w-faint)">ui.lua, line 2947 · used by Mixer, Music, Groove, Preferences</div></div>' +
+    '</div></div>';
+}
+
+function editor(lines, opts) {
+  return lines.map((l, i) => {
+    const n = (opts.first || 1) + i;
+    const o = (opts.lines || {})[n] || {};
+    let body = colour(l) || " ";
+    if (o.squig) body = body.replace(o.squig, '<span class="squig-w">' + o.squig + '</span>');
+    if (o.after) body += o.after;
+    return '<div class="l ' + (o.cls || "") + '"><span class="bp">' + (o.bp || "") + '</span><span class="mk ' + (o.mkc || "") + '">' + (o.mk || "") + '</span>' +
+      '<span class="n">' + (o.cost ? '<span class="cost">' + o.cost + '</span>' : n) + '</span><span>' + body + '</span></div>';
+  }).join("");
+}
+
+function appwin(dark, paused, picked) {
+  const d = dark ? " dk" : "";
+  return '<div class="appwin' + d + '"' + (paused ? ' style="filter:saturate(.6) brightness(.96)"' : '') + '><div class="ah">Converter' + (paused ? '<span style="margin-left:auto;font-weight:400;font-size:11.5px;color:#8a6a00;background:#fff4c2;border-radius:4px;padding:0 6px">paused</span>' : '') + '</div><div class="ab">' +
+    '<span class="ac lab" style="left:16px;top:12px">Celsius</span><span class="ac lab" style="left:200px;top:12px">Fahrenheit</span>' +
+    '<span class="ac fld' + (picked ? " pick" : "") + '" style="left:16px;top:34px;width:150px">37.5</span>' +
+    '<span class="ac fld" style="left:200px;top:34px;width:150px">99.5</span>' +
+    '<span class="ac sl" style="left:16px;top:88px;width:334px"><i></i><b style="width:' + (0.556 * 334) + 'px"></b><u style="left:' + (0.556 * 334 - 8) + 'px"></u></span>' +
+    '<span class="ac btn" style="left:16px;top:132px;width:110px">Reset</span>' +
+    (picked ? '<span class="picktag" style="left:16px;top:68px">field · celsius · 150 × 28 · line 19</span>' : '') +
+    '</div></div>';
+}
+
+function bottom(tabs, on, right, html) {
+  return '<div class="bottom"><div class="btabs">' + tabs.map((t, i) => '<span class="ftab' + (i === on ? " on" : "") + '">' + t + '</span>').join("") +
+    '<span class="right">' + right + '</span></div><div class="out">' + html + '</div></div>';
+}
+
+const BT = ["Output", "Problems", "Console", "Search", "Tests"];
+
+const CAPTION = {
+  preview: "Writing, with the app running beside its code. Saved a moment ago: the preview restarted in 0.4 s. The pointer rests on the Celsius field in the preview, which names it and puts the editor on line 19.",
+  debug: "Stopped at a breakpoint on line 16, reached from the slider's on_change. Locals, upvalues and a watch at the right; the Console evaluates in this frame.",
+  profile: "A planet simulation with sound, profiled for 10 seconds. One frame in nine misses 16.7 ms, and the table says why: pull makes a table for every pair, so the collector runs every few frames.",
+  new: "New Project, by what you are making. Sound is chosen, and its first template is a synth played from the keyboard or a MIDI keyboard.",
+  layout: "main.form in Design: the Converter's window on the canvas, a slider being dragged in from the palette, the Celsius field selected and its properties at the right.",
+};
+
+function show(state) {
+  $("caption").textContent = CAPTION[state];
+  $("tools").innerHTML = tools(state);
+  $("overlay").innerHTML = "";
+  const pill = $("pill");
+  pill.className = "pill" + (state === "debug" ? " paused" : (state === "preview" || state === "profile") ? " on" : "");
+  pill.textContent = state === "debug" ? "paused at line 16" : state === "profile" ? "profiling, 10 s" : state === "preview" ? "running, 4 s" : "not running";
+  $("where").textContent = state === "profile" ? "Orbits · orbits.lua" : state === "layout" ? "Converter · main.form" : "Converter · converter.lua";
+  const dark = document.querySelector("[data-look=dark]").getAttribute("aria-pressed") === "true";
+  let html = "";
+
+  if (state === "preview" || state === "new") {
+    const ed = editor(CONVERTER.slice(4, 34), { first: 5, lines: {
+      12: { after: '<span class="inl v">far is used once - fine</span>' },
+      15: { cls: "cur", after: '<span class="caret"></span>' },
+      19: { cls: "picked" },
+      22: { cls: "warn", mk: "&#9650;", mkc: "w", squig: "_", after: '<span class="inl w">unused argument _ - luacheck</span>' },
+    }});
+    const sig = '<div class="sighelp" style="left:300px;top:' + (6 + 10 * 19 + 22) + 'px"><div class="sig">math.max(<b>x</b>, ...)</div>The largest of its arguments. <span style="color:var(--w-faint)">Lua 5.4 manual, 6.7</span></div>';
+    html = '<div class="body">' + side("preview") +
+      '<div class="main split"><div class="ftabs"><span class="ftab on">' + ic.lua + ' converter.lua</span><span class="ftab">' + ic.form + ' main.form</span><span class="ftab">ui.lua</span></div>' +
+      '<div class="edit">' + ed + sig + '</div>' +
+      bottom(BT, 2, "process 41 · Converter", '<div class="d">converter.lua restarted after the save, as process 41 - 0.4 s to its first frame</div><div>37.5 C is 99.5 F</div><div><span class="p">›</span> f.celsius.text</div><div class="ans">"37.5"</div><div><span class="p">›</span> <span class="caret"></span></div>') +
+      '</div><div class="right"><div class="rtabs"><span class="ftab on">Preview</span><span class="ftab">Debug</span><span class="ftab">Profile</span></div>' +
+      '<div class="rhead"><span class="chip on">368 × 196 ▾</span><span class="chip">Light</span><span class="chip">Dark</span><span class="chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5"/></svg>Restart</span><span class="grow"></span><span>restarts on save</span></div>' +
+      '<div class="rbody"><div class="desk"></div>' + appwin(dark, false, true) + '</div>' +
+      '<div class="pfoot"><span>Converter · process 41</span><span>restarted 0.4 s after save</span><span style="margin-left:auto">4 controls, by name</span></div></div></div>';
+  }
+
+  if (state === "debug") {
+    const ed = editor(CONVERTER.slice(4, 34), { first: 5, lines: {
+      12: { after: '<span class="inl v">c = 55.6</span>' },
+      14: { bp: "&#9679;" },
+      16: { cls: "stopped", mk: "&#10148;", after: '<span class="inl v">far = 132.08</span>' },
+      24: { bp: "&#9679;" },
+    }});
+    html = '<div class="body">' + side("preview") +
+      '<div class="main split"><div class="ftabs"><span class="ftab on">' + ic.lua + ' converter.lua</span><span class="ftab">' + ic.form + ' main.form</span></div>' +
+      '<div class="debugbar"><span class="db"><svg viewBox="0 0 12 12"><path d="M3 2v8l6-4z" fill="currentColor"/></svg>Continue <kbd>F5</kbd></span>' +
+      '<span class="db">Step Over <kbd>F10</kbd></span><span class="db">Step In <kbd>F11</kbd></span><span class="db">Step Out <kbd>Shift F11</kbd></span>' +
+      '<span class="db" style="color:var(--err)">Stop <kbd>Shift F5</kbd></span><span class="why2">paused at a breakpoint · converter.lua, line 16</span></div>' +
+      '<div class="edit">' + ed + '</div>' +
+      bottom(BT, 2, "in show(c), converter.lua:16", '<div class="d">paused at line 16 - the Console evaluates in show\'s frame</div><div><span class="p">›</span> far - 32</div><div class="ans">100.08</div><div><span class="p">›</span> f.dial.value</div><div class="ans">20</div><div><span class="p">›</span> <span class="caret"></span></div>') +
+      '</div><div class="right"><div class="rtabs"><span class="ftab">Preview</span><span class="ftab on">Debug</span><span class="ftab">Profile</span></div>' +
+      '<div class="rbody" style="overflow:hidden">' +
+      '<div class="dsec"><h4>Call stack <span>main thread</span></h4>' +
+      '<div class="frame on"><span>show(c)</span><span class="w">converter.lua:16</span></div>' +
+      '<div class="frame"><span>f.dial.on_change(_, value)</span><span class="w">converter.lua:25</span></div>' +
+      '<div class="frame ro"><span>slider:mouse(action, x, y)</span><span class="w">ui.lua:3011 · read only</span></div>' +
+      '<div class="frame ro"><span>window:run()</span><span class="w">ui.lua:8820 · read only</span></div>' +
+      '<div class="frame"><span>main chunk</span><span class="w">converter.lua:34</span></div></div>' +
+      '<div class="dsec"><h4>Variables</h4>' +
+      '<div class="var"><span class="ch"></span><span class="k">c</span><span class="v">55.6</span><span class="ty">number</span></div>' +
+      '<div class="var"><span class="ch"></span><span class="k">far</span><span class="v">132.08</span><span class="ty">number</span></div>' +
+      '<div class="var" style="color:var(--w-dim)"><span class="ch">▾</span><span class="k" style="font-family:var(--body);font-size:11.5px;color:var(--w-dim)">upvalues</span><span></span><span></span></div>' +
+      '<div class="var in1"><span class="ch">▾</span><span class="k">f</span><span class="v t">form: 4 controls</span><span class="ty">table</span></div>' +
+      '<div class="var in1" style="padding-left:44px"><span class="ch">▸</span><span class="k">celsius</span><span class="v t">field { text = "55.6", x = 16, … }</span><span class="ty">field</span></div>' +
+      '<div class="var in1" style="padding-left:44px"><span class="ch">▸</span><span class="k">dial</span><span class="v t">slider { value = 20, max = 100, … }</span><span class="ty">slider</span></div>' +
+      '<div class="var in1"><span class="ch">▸</span><span class="k">math</span><span class="v t">the standard library</span><span class="ty">table</span></div></div>' +
+      '<div class="dsec"><h4>Watch <span>+ add</span></h4>' +
+      '<div class="var"><span class="ch"></span><span class="k">far - 32</span><span class="v">100.08</span><span class="ty">number</span></div>' +
+      '<div class="var"><span class="ch"></span><span class="k">#f.celsius.text</span><span class="v">4</span><span class="ty">number</span></div></div>' +
+      '<div class="dsec" style="border:0"><h4>Breakpoints</h4>' +
+      '<div class="frame"><span><span style="color:var(--err)">&#9679;</span> converter.lua:14</span><span class="w"></span></div>' +
+      '<div class="frame"><span><span style="color:var(--err)">&#9679;</span> converter.lua:24 · when value &gt; 90</span><span class="w"></span></div>' +
+      '<div class="frame"><span><span style="color:var(--warn)">&#9679;</span> on any error</span><span class="w">on</span></div></div>' +
+      '</div></div></div>';
+  }
+
+  if (state === "profile") {
+    const ed = editor(ORBITS, { first: 1, lines: {
+      2: { cost: "", cls: "" },
+      3: { cost: "9%", cls: "hotl" }, 4: { cost: "8%", cls: "hotl" }, 5: { cost: "12%", cls: "hotl" },
+      6: { cost: "22%", cls: "hotl", after: '<span class="inl w">a table per pair - 2.1 MB/s, the collector every 3 frames</span>' },
+      14: { cost: "6%", cls: "hotl" }, 15: { cost: "5%", cls: "hotl" },
+      27: { cost: "9%", cls: "hotl" },
+    }});
+    const bars = [];
+    const pat = [9, 10, 9, 11, 10, 22, 9, 10, 9, 10, 11, 23, 10, 9, 10, 9, 10, 21, 9, 10, 9, 11, 10, 24, 9, 10, 10, 9, 10, 22, 9, 9, 10, 11, 10, 21, 10, 9, 10, 9];
+    for (const v of pat) bars.push('<i class="' + (v > 16.7 ? "over gc" : "") + '" style="height:' + Math.round(v / 26 * 100) + '%"></i>');
+    html = '<div class="body wide">' + side("profile") +
+      '<div class="main split"><div class="ftabs"><span class="ftab on">' + ic.lua + ' orbits.lua</span><span class="ftab">sound.lua</span></div>' +
+      '<div class="edit">' + ed + '</div>' +
+      bottom(BT, 0, "Orbits · process 52", '<div class="d">orbits.lua, as process 52, profiled - every 1000 instructions, and Nebula\'s samples of process 52</div><div>600 frames in 10 s, 66 over 16.7 ms - every one a collection</div><div class="er">the collector paused 7.9 ms at worst: pull makes a table for every pair of 40 bodies, 1560 a frame</div>') +
+      '</div><div class="right"><div class="rtabs"><span class="ftab">Preview</span><span class="ftab">Debug</span><span class="ftab on">Profile</span></div>' +
+      '<div class="rhead"><span class="chip on">Last 10 s</span><span class="chip">Live</span><span class="chip">Compare with before</span><span class="grow"></span><span>Orbits · 40 bodies</span></div>' +
+      '<div class="rbody">' +
+      '<div class="pchips"><div class="pc"><b>60</b><span>frames a second</span></div><div class="pc bad"><b>24.1 ms</b><span>worst frame</span></div><div class="pc bad"><b>7.9 ms</b><span>collector, worst pause</span></div><div class="pc"><b>2.1 MB</b><span>allocated a second</span></div></div>' +
+      '<div class="graph"><div class="bars">' + bars.join("") + '</div><div class="line" style="bottom:' + (6 + (16.7 / 26) * 90) + 'px"></div><div class="lbl" style="bottom:' + (8 + (16.7 / 26) * 90) + 'px">16.7 ms</div></div>' +
+      '<div class="layers"><div class="bar">' +
+      '<i style="width:46%;background:#2a55c9">Lua, orbits.lua 46%</i><i style="width:17%;background:#e8a23a">collector 17%</i><i style="width:14%;background:#0f7d86">gfx kit 14%</i>' +
+      '<i style="width:9%;background:#7a3fb8">wm 9%</i><i style="width:6%;background:#b3541e">sound 6%</i><i style="width:8%;background:#8b919a">other</i></div>' +
+      '<div class="key"><span><b style="background:#2a55c9"></b>the program\'s Lua</span><span><b style="background:#e8a23a"></b>Lua\'s collector</span><span><b style="background:#0f7d86"></b>C kits</span><span><b style="background:#7a3fb8"></b>the window manager, composing</span><span><b style="background:#b3541e"></b>the audio server</span><span><b style="background:#8b919a"></b>Nebula, ui.lua, waiting</span></div></div>' +
+      '<table class="fn"><tr><th>function</th><th>self</th><th>total</th><th>allocated</th></tr>' +
+      '<tr class="on"><td>pull <span class="w">orbits.lua:2</span></td><td>51%<span class="meter"><b style="width:51%"></b></span></td><td>51%</td><td>2.0 MB/s</td></tr>' +
+      '<tr><td>step <span class="w">orbits.lua:9</span></td><td>23%<span class="meter"><b style="width:23%"></b></span></td><td>74%</td><td>0</td></tr>' +
+      '<tr><td>view:draw <span class="w">orbits.lua:24</span></td><td>9%<span class="meter"><b style="width:9%"></b></span></td><td>14%</td><td>12 KB/s</td></tr>' +
+      '<tr><td>trails:draw <span class="w">trails.lua:31</span></td><td>5%<span class="meter"><b style="width:5%"></b></span></td><td>6%</td><td>96 KB/s</td></tr>' +
+      '<tr><td>near_miss <span class="w">orbits.lua:41</span></td><td>3%<span class="meter"><b style="width:3%"></b></span></td><td>3%</td><td>0</td></tr>' +
+      '</table></div></div></div>';
+  }
+
+  if (state === "layout") {
+    const palette = ["Label", "Button", "Field", "Slider", "Checkbox", "Switch", "Dropdown", "Stepper", "Segments", "List", "Tabs", "Editor", "Image", "Meter", "View"];
+    html = '<div class="body">' + side("layout") +
+      '<div class="main split"><div class="ftabs"><span class="ftab">' + ic.lua + ' converter.lua</span><span class="ftab on">' + ic.form + ' main.form <span class="mod"></span><span class="seg"><b class="on">Design</b><b>Text</b></span></span></div>' +
+      '<div class="lb"><div class="palette"><div class="cap" style="padding-top:2px">The kit\'s controls</div>' +
+      palette.map(p => '<div class="pi' + (p === "Slider" ? " drag" : "") + '"><i></i>' + p + '</div>').join("") + '</div>' +
+      '<div class="canvas">' + appwin(false, false, false).replace('<span class="ac sl"', '<span class="ac sl" data-x').replace(/<span class="ac fld" style="left:16px/, '<span class="ac fld pick" style="left:16px') +
+      '<div class="handles">' + [[86,118],[161,118],[236,118],[86,146],[161,146],[236,146]].map(([x,y]) => '<i style="left:' + (x - 4) + 'px;top:' + (y - 4) + 'px"></i>').join("") + '</div>' +
+      '<div class="ghost" style="left:86px;top:310px;width:334px"><span class="ac sl" style="position:relative;display:block;width:334px"><i></i><b style="width:90px"></b><u style="left:82px"></u></span></div>' +
+      '<div class="guide" style="left:86px;top:84px;height:250px"></div><div class="guide" style="left:420px;top:84px;height:250px"></div>' +
+      '<div style="position:absolute;left:86px;top:340px;font-size:11.5px;color:var(--w-dim)">a slider, dropped here: <b style="color:var(--w-ink)">dial2</b> - on the guides 16 from either side, 334 wide, following left and right</div>' +
+      '</div></div>' +
+      bottom(BT, 1, "main.form", '<div class="ok">main.form: 5 controls, each with a name the code can use</div><div class="d">converter.lua uses celsius, fahrenheit, dial and reset; dial2 is new and nothing sets it yet</div>') +
+      '</div><div class="right"><div class="rtabs"><span class="ftab on">Properties</span><span class="ftab">Preview</span></div>' +
+      '<div class="rbody"><div class="props">' +
+      '<div class="pr"><span>Kind</span><b>field</b></div>' +
+      '<div class="pr"><span>Name</span><div class="pv">celsius</div></div>' +
+      '<div class="pr"><span>Text</span><div class="pv">20</div></div>' +
+      '<div class="pr"><span>Hint</span><div class="pv" style="color:var(--w-faint)">a temperature</div></div>' +
+      '<div class="pr"><span>Place</span><div class="four"><div class="pv">16</div><div class="pv">34</div><div class="pv">150</div><div class="pv">28</div></div></div>' +
+      '<div class="pr" style="align-items:start"><span style="padding-top:4px">Follows</span><div><div class="edges"><div class="box"></div>' +
+      '<div class="e" style="left:0;top:37px;width:36px;height:2px"></div><div class="e" style="left:59px;top:0;width:2px;height:24px"></div>' +
+      '<div class="e off" style="left:84px;top:37px;width:36px;height:2px"></div><div class="e off" style="left:59px;top:52px;width:2px;height:24px"></div></div>' +
+      '<div style="color:var(--w-dim);font-size:11.5px;margin-top:4px">the left and the top: it stays where it is as the window grows</div></div></div>' +
+      '<div class="pr"><span>on_change</span><span class="link">converter.lua:19 ↗</span></div>' +
+      '<div class="pr"><span>on_enter</span><span style="color:var(--w-faint)">not set</span></div>' +
+      '<div class="cap" style="padding:14px 0 4px">What the form file says</div>' +
+      '<div class="hdr" style="color:var(--w-ink)">{ kind = "field", name = "celsius",\n  x = 16, y = 34, w = 150, h = 28,\n  text = "20", hint = "a temperature",\n  follow = { "left", "top" } },</div>' +
+      '</div></div></div></div>';
+  }
+
+  $("bodyhost").innerHTML = html;
+
+  if (state === "new") {
+    const pic = (bg, inner) => '<div class="pic" style="background:' + bg + '">' + inner + '</div>';
+    const kinds = [
+      ["App", '<rect x="3" y="5" width="20" height="16" rx="2.5"/><path d="M3 9h20"/>'],
+      ["Game", '<rect x="2" y="8" width="22" height="11" rx="5"/><path d="M7 11v5M4.5 13.5h5"/><circle cx="17" cy="12" r="1.2"/><circle cx="19.5" cy="15" r="1.2"/>'],
+      ["3D scene", '<path d="m13 3 9 5v10l-9 5-9-5V8z"/><path d="m4 8 9 5 9-5M13 13v10"/>'],
+      ["Sound", '<path d="M3 13h3l3-7 4 14 3-9 2 2h5"/>'],
+      ["Document", '<path d="M6 3h9l5 5v15H6z"/><path d="M15 3v5h5M9 13h8M9 17h8"/>'],
+      ["Program", '<rect x="3" y="5" width="20" height="16" rx="2"/><path d="m7 11 3 2-3 2M12 16h5"/>'],
+      ["Library", '<path d="M5 4h5v18H5zM11 4h5v18h-5zM17 5l4 1-3 16-4-1z"/>'],
+      ["Kit in C", '<path d="M17 8a6 6 0 1 0 0 10"/><path d="M3 13h2M21 13h2"/>'],
+      ["Examples", '<path d="M4 6h18M4 12h18M4 18h12"/>'],
+    ];
+    $("overlay").innerHTML = '<div class="veil"><div class="dlg" role="dialog" aria-label="New Project">' +
+      '<div class="dh"><b>New Project</b><span>What are you making? Each template runs as it is, and says which kits it is made of.</span></div>' +
+      '<div class="kinds">' + kinds.map(([n, s]) => '<div class="kind' + (n === "Sound" ? " on" : "") + '"><svg viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">' + s + '</svg>' + n + '</div>').join("") + '</div>' +
+      '<div class="tmpls">' +
+      '<div class="tm on">' + pic("#1d2230", '<div style="position:absolute;left:14px;right:14px;bottom:14px;height:44px;display:flex;gap:2px">' + Array.from({length: 14}, (_, i) => '<i style="flex:1;background:' + ([1,3,6,8,10].includes(i) ? "#1d1f24" : "#f4f4f6") + ';border-radius:0 0 3px 3px;' + ([1,3,6,8,10].includes(i) ? "height:60%" : "") + '"></i>').join("") + '</div><svg style="position:absolute;left:14px;top:14px" width="250" height="44"><path d="M0 22 Q 15 2 30 22 T 60 22 T 90 22 T 120 22 T 150 22 T 180 22 T 210 22 T 240 22" fill="none" stroke="#7fd08c" stroke-width="2"/></svg>') +
+      '<div class="tx"><b>Synth</b><p>Notes from the keyboard or a MIDI keyboard, a wave and an envelope to shape them, a level meter.</p><div class="uses"><i>playback</i><i>synth</i><i>midi.lua</i><i>ui</i><i class="need">needs audio, midi</i></div></div></div>' +
+      '<div class="tm">' + pic("#22262d", '<div style="position:absolute;left:14px;right:14px;top:22px;height:72px;background:repeating-linear-gradient(90deg,#3a3f48 0 1px,transparent 1px 22px);border-radius:4px"></div><div style="position:absolute;left:14px;top:58px;width:240px;height:2px;background:#5b86f0"></div><div style="position:absolute;left:30px;top:38px;width:18px;height:18px;background:#e8a23a;border-radius:3px"></div><div style="position:absolute;left:96px;top:30px;width:18px;height:18px;background:#e2574c;border-radius:3px"></div>') +
+      '<div class="tx"><b>Drum Machine</b><p>Sixteen steps a bar, four sounds, a tempo. A loop the audio thread keeps, never the window.</p><div class="uses"><i>playback</i><i>wav.lua</i><i>ui</i><i class="need">needs audio</i></div></div></div>' +
+      '<div class="tm">' + pic("#f6f7f9", '<svg style="position:absolute;left:14px;top:22px" width="250" height="72"><path d="M0 36 L8 20 L14 50 L22 10 L30 60 L38 28 L46 44 L54 16 L62 56 L70 30 L78 40 L86 22 L94 52 L102 34 L110 38 L118 24 L126 48 L134 30 L142 42 L150 26 L158 46 L166 33 L174 39 L182 28 L190 44 L198 31 L206 40 L214 34 L222 37 L230 35 L238 36 L246 36" fill="none" stroke="#2a55c9" stroke-width="1.5"/><rect x="60" y="0" width="70" height="72" fill="rgba(42,85,201,.12)"/></svg>') +
+      '<div class="tx"><b>Sound Editor</b><p>A sound file\'s wave, a selection, Play, Cut and Save: the start of an audio editor.</p><div class="uses"><i>media</i><i>playback</i><i>wav.lua</i><i>docfile</i><i class="need">needs audio</i></div></div></div>' +
+      '</div>' +
+      '<div class="dfoot"><span>Name</span><span class="in">Synth</span><span class="path">/Home/Projects/Synth</span><span class="grow"></span><span class="bt">Cancel</span><span class="bt go">Create</span></div>' +
+      '</div></div>';
+  }
+
+  $("foot").innerHTML = state === "debug"
+    ? '<span>Ln 16, Col 3</span><span>Lua 5.4</span><span>paused - the program waits for Continue</span><span class="r">F5 continue · F10 over · F11 in · Shift F11 out · F9 breakpoint</span>'
+    : state === "profile"
+    ? '<span>Ln 6, Col 3</span><span>Lua 5.4</span><span>profiling: 0.9% of the program\'s time spent sampling it</span><span class="r">Alt F5 profile · F12 definition · Ctrl P find a file</span>'
+    : state === "layout"
+    ? '<span>main.form</span><span>a form: 5 controls</span><span>Design</span><span class="r">Arrows nudge · Shift arrows by 8 · Delete removes · Ctrl D duplicates</span>'
+    : '<span>Ln 15, Col 31</span><span>Lua 5.4</span><span>2 spaces</span><span>1 warning</span><span class="r">Ctrl S saves and restarts the preview · F5 run · Ctrl F5 debug · F12 definition</span>';
+}
+
+for (const b of document.querySelectorAll("[data-state]")) {
+  b.onclick = () => {
+    for (const o of document.querySelectorAll("[data-state]")) o.setAttribute("aria-pressed", o === b ? "true" : "false");
+    show(b.dataset.state);
+  };
+}
+for (const b of document.querySelectorAll("[data-look]")) {
+  b.onclick = () => {
+    for (const o of document.querySelectorAll("[data-look]")) o.setAttribute("aria-pressed", o === b ? "true" : "false");
+    const dark = b.dataset.look === "dark";
+    for (const el of document.querySelectorAll(".win, .sheetwin, .menu")) el.classList.toggle("dark", dark);
+    show(document.querySelector("[data-state][aria-pressed=true]").dataset.state);
+  };
+}
+show("preview");
+</script>
+</body>
+</html>
