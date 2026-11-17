@@ -10661,6 +10661,12 @@ the applications make the system useful, and is not pulled forward.
       published its own over the first's. Made to happen in the guest
       suite (680 of 1,024 pages lost), and fixed with a lock in every
       address space, as the kernel's own map has had since 18.422.
+    - *`vncd` not started after a netboot* (17 November 2026, 0.11.453 on
+      the M700, `testing.md` 18.852): `opt/kosmos/vnc=control` was given and
+      port 5900 was shut; `open vncd` started it. The window manager starts
+      it - to find why it did not, from the boot's log.
+    - *Every telnet connection waits about 11 s for `neofetch`* before its
+      first command (18.852) - every `kosmos_telnet.py` call pays it.
     - *`x86-ahci` under a full gate* (17 November 2026, 0.11.453's
       prepush): "no command at the probe was ended by its interrupt" -
       waits 0 by it and 0 by a tick, so every command had finished before

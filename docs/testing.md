@@ -35220,3 +35220,31 @@ allocator takes its own and never this one.
 loaded each time - and then the 23: **all 23 loaded, the first run with
 none stopped**, 21 within five seconds; CNN 5.2 s and the New York Times
 5.7 just over, BBC back to 2.2 and eBay 4.5 (`bench/top20/0.11.453-m700.json`).
+
+## 18.852 JetSki's scrolling measured, before the GPU
+
+`webkit.md`'s *Fast* puts **compositing WebKit's layers on the GPU** first,
+"chosen by measuring, not assumed". Read first: **JetSki has no layers** -
+patch 0025 turns accelerated compositing off, so every layer is painted by
+Skia on the processor into one backing store, by the web process's main
+thread. One update is a fresh `ShareableBitmap` region of the dirty bounds,
+painted and sent; the UI process copies it into its own Skia raster
+(`BackingStore::incorporateUpdate`); a scroll moves the store's pixels
+through a temporary bitmap (`BackingStore::scroll`, `readPixels` then
+`writePixels`) and damages the whole view; JetSki then draws the **whole**
+store into its window and commits the **whole** window.
+
+**Measured on the M700** (0.11.453, Wikipedia's BeOS page, 40 wheel
+notches over eight seconds inside a ten-second `profile`): the machine
+**1.6% busy** - windowserver 0.5%, jetski 0.4%, web 0.3%, wm 0.3% of eight
+processors, about **32 ms of processor time a notch** across the four.
+Among the syscalls, `SYS_MEM_CREATE` 10 a second at **383 µs each** (a
+region per update, with `SYS_MEM_MAP` and `SYS_SHARE_UNMAP` beside it) and
+`SYS_PROTECT` 17 a second at 117 µs. WebKit's code has no symbols on the
+Mac yet, so its own functions are "unknown" in the report.
+
+So scrolling there is not short of processor, and what it spends is
+copying and a region made and unmade per update - neither of which a GPU
+removes. Found on the way: **`vncd` was not running** after the netboot
+with `opt/kosmos/vnc=control` (`open vncd` started it); and **a telnet
+connection runs `neofetch` for about 11 s** before its first command.
