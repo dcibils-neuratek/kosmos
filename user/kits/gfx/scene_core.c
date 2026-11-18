@@ -434,7 +434,7 @@ static long box_left(const struct scene *sc, const struct sc_window *w, int slot
  * rectangle being composed, which nothing here draws outside.
  */
 static void stale_into(struct scene *sc, const struct sc_window *w, long top, long tall,
-                       long x0, long y0, long x1, long y1)
+                       long global, long x0, long y0, long x1, long y1)
 {
     long pw = w->src_w < w->w ? w->src_w : w->w;
     long ph = w->src_h < tall ? w->src_h : tall;
@@ -450,28 +450,31 @@ static void stale_into(struct scene *sc, const struct sc_window *w, long top, lo
         long ax1 = x1 < w->x + pw ? x1 : w->x + pw;
         long ay1 = y1 < top + ph ? y1 : top + ph;
 
-        if (ax1 > ax0 && ay1 > ay0) {
+        if (ax1 > ax0 && ay1 > ay0 && global < 0) {
             blit_on(sc->back, w->picture, ax0 - w->x, ay0 - top, ax1 - ax0, ay1 - ay0,
                     ax0, ay0);
+        } else if (ax1 > ax0 && ay1 > ay0) {
+            blend_on(sc->back, w->picture, ax0 - w->x, ay0 - top, ax1 - ax0, ay1 - ay0,
+                     ax0, ay0, (unsigned)global);
         }
     }
 
     /* Its last column, across the room to the right. */
     if (w->w > pw) {
         stretch_into(sc->back, w->picture, pw - 1, 0, 1, ph,
-                     w->x + pw, top, w->w - pw, ph, -1, false, x0, y0, x1, y1);
+                     w->x + pw, top, w->w - pw, ph, global, false, x0, y0, x1, y1);
     }
 
     /* Its last row, down the room below, column for column. */
     if (tall > ph) {
         stretch_into(sc->back, w->picture, 0, ph - 1, pw, 1,
-                     w->x, top + ph, pw, tall - ph, -1, false, x0, y0, x1, y1);
+                     w->x, top + ph, pw, tall - ph, global, false, x0, y0, x1, y1);
     }
 
     /* And the corner beyond both, its last pixel. */
     if (w->w > pw && tall > ph) {
         stretch_into(sc->back, w->picture, pw - 1, ph - 1, 1, 1,
-                     w->x + pw, top + ph, w->w - pw, tall - ph, -1, false,
+                     w->x + pw, top + ph, w->w - pw, tall - ph, global, false,
                      x0, y0, x1, y1);
     }
 }
@@ -667,6 +670,19 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
 
             o[x] = gr != NULL && gx >= 0 && gx < (long)g->width ? gr[gx] : sc->desktop;
         }
+    }
+}
+
+/* The wallpaper's glass over a rectangle of the screen, flat: no lens and
+ * no picture to say where - a glass window's frame in a resize. */
+static void glass_flat(struct scene *sc, long x0, long y0, long x1, long y1)
+{
+    long x, y;
+
+    for (y = y0; y < y1; y++) {
+        uint32_t *o = row_of(sc->back, (unsigned)y);
+
+        for (x = x0; x < x1; x++) o[x] = glass_px(sc, x - sc->wx, y - sc->wy);
     }
 }
 
@@ -1092,7 +1108,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                 long lower = w->h - w->bar_h;
 
                 if (w->flags & SC_STALE) {
-                    stale_into(sc, w, split, lower, x0, ya, x1, y1);
+                    stale_into(sc, w, split, lower, -1, x0, ya, x1, y1);
                 } else if (w->src_w != w->w || w->src_h != lower) {
                     stretch_into(sc->back, w->picture, 0, 0, w->src_w, w->src_h,
                                  w->x, split, w->w, lower, -1, false,
@@ -1102,8 +1118,25 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                             x0, ya);
                 }
             }
+        } else if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL) {
+            /*
+             * A glass window in a resize (LG4): stretched or stale, its
+             * picture no longer lies over its frame pixel for pixel, so the
+             * wallpaper's glass is laid over the whole frame, flat, and the
+             * picture blended over that as it is stretched or drawn out -
+             * glass all the way, rather than its tint as a solid colour
+             * until the resize ends. Its rim comes back with its picture.
+             */
+            glass_flat(sc, x0, y0, x1, y1);
+
+            if (w->flags & SC_STALE) {
+                stale_into(sc, w, w->y, w->h, 255, x0, y0, x1, y1);
+            } else {
+                stretch_into(sc->back, w->picture, 0, 0, w->src_w, w->src_h,
+                             w->x, w->y, w->w, w->h, 255, false, x0, y0, x1, y1);
+            }
         } else if (w->flags & SC_STALE) {
-            stale_into(sc, w, w->y, w->h, x0, y0, x1, y1);
+            stale_into(sc, w, w->y, w->h, -1, x0, y0, x1, y1);
         } else if (w->src_w != w->w || w->src_h != w->h) {
             stretch_into(sc->back, w->picture, 0, 0, w->src_w, w->src_h,
                          w->x, w->y, w->w, w->h, -1, false, x0, y0, x1, y1);

@@ -258,7 +258,9 @@ static void glass(void)
 
     /* A window whose ground is glass: `SC_GLASS` without `SC_BLEND`, the
      * strip as its picture over the blue window. Frosted when shown as it
-     * is; stretched, as in a resize, copied as any window is. */
+     * is; stretched or stale, as in a resize, the glass laid over its
+     * frame and its picture blended over that, still glass (LG4) - and a
+     * window that is not glass, stretched, copied as it always was. */
     check(scene_set_windows(sc, 2) && scene_set_menus(sc, 0), "room for two windows");
     sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
     (void)scene_compose(sc, 0, 0, 120, 60);
@@ -267,7 +269,21 @@ static void glass(void)
           "a glass window's ground over the glass, not over the window under it");
     sc->win[1].src_w = 50;
     (void)scene_compose(sc, 0, 0, 120, 60);
-    check(at(&back, 80, 30) == 0x80ffffffu, "a glass window stretched in a resize, copied");
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "a glass window stretched in a resize, its tint still over the glass");
+    sc->win[1].flags = SC_GLASS | SC_STALE;
+    sc->win[1].src_w = 40;              /* its picture to 90, drawn on past */
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "a glass window's picture from before a resize, its tint over the glass");
+    p = at(&back, 95, 30);              /* past its 40: its last column drawn on */
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "and the room it was drawn out across, glass as well");
+    sc->win[1].flags = 0;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    check(at(&back, 80, 30) == 0x80ffffffu, "a window that is not glass, stretched, copied");
 
     scene_free(sc);
     free(sc);
@@ -737,6 +753,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; live glass - a strip and a menu over what is under them, blurred as gfx_blur blurs it, clear glass sharp, and the damage widened to hold the reach; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a glass strip's rim bent and lit inside its shape, at its own radius, and flat outside it; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, a glass window stretched or stale in a resize still glass, and one that is not copied; live glass - a strip and a menu over what is under them, blurred as gfx_blur blurs it, clear glass sharp, and the damage widened to hold the reach; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a glass strip's rim bent and lit inside its shape, at its own radius, and flat outside it; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

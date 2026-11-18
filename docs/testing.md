@@ -36861,3 +36861,21 @@ What holds it:
 **The gate** (132 suites, 695 s): 131 passed; `x86-profile` counted 674
 samples where about 1010 were due, as it did under load at 0.11.489, and
 passed alone (12 checks).
+
+## 18.890 A glass window in a resize stays glass (LG4)
+
+**In short**: while a glass window was resized, its picture - stretched,
+or stale and drawn out - was copied as any window's is, so its
+translucent tint showed as a solid colour until the resize ended
+(18.878's rough edge). Now the wallpaper's glass is laid over its frame
+first, flat, and the picture blended over that as it is stretched or
+drawn out: glass all the way through the resize. Its rim comes back with
+its picture.
+
+`stale_into` takes a `global` - below 0 copies, 255 blends - as
+`stretch_into` does, and a window that is not glass is copied as before.
+
+What holds it: `tools/test_draw.c` (81 checks, from 78) - a glass window
+stretched, and one stale with the room it was drawn out across, each its
+tint over the glass; a window that is not glass, stretched, copied as it
+is. **Control**: the branch taken out, those three fail.
