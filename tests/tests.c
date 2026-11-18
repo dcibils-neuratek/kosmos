@@ -8708,6 +8708,7 @@ static bool test_a_modified_key_is_one_sequence(void)
         { KEY_TAB,      false, true,  "\x1b[9;5u", 0 },
         { 57,           false, true,  "\x1b[32;5u", 0 },    /* Ctrl+Space */
         { 28,           false, true,  "\x1b[13;5u", 0 },    /* Ctrl+Enter */
+        { 28,           true,  false, "\x1b[13;2u", 0 },    /* Shift+Enter */
         { 53,           false, true,  "\x1b[47;5u", 0 },    /* Ctrl+/ */
         { 41,           true,  true,  "\x1b[96;6u", 0 },    /* the longest */
         { 33,           true,  true,  "\x1b[102;6u", 0 },   /* Ctrl+Shift+F */
@@ -8755,6 +8756,7 @@ static bool test_a_modified_key_is_one_sequence(void)
         && hal_key_sequence(KEY_TAB, KEY_MOD_SHIFT | KEY_MOD_SUPER, buffer) == NULL
         && hal_key_sequence(57, KEY_MOD_SHIFT, buffer) == NULL        /* Space */
         && hal_key_sequence(28, 0, buffer) == NULL                    /* Enter */
+        && hal_key_sequence(28, KEY_MOD_SHIFT | KEY_MOD_ALT, buffer) == NULL  /* as before */
         && strcmp(hal_key_super(0, 0, buffer), "\x1b[1;9~") == 0
         && strcmp(hal_key_super('c', 0, buffer), "\x1b[27;9;99~") == 0
         && strcmp(hal_key_super('1', KEY_MOD_ALT, buffer), "\x1b[27;11;49~") == 0

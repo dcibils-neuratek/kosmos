@@ -11216,6 +11216,13 @@ the applications make the system useful, and is not pulled forward.
       `ESC [ 13 ; 2 u`, the kit's fields taking it as Return where they
       have no use for Shift. A shared piece, so with the whole gate.
       JetSki's downloads moved to Control-Shift-J meanwhile (18.866).
+      **Built in 0.11.489** (18.888): `hal/keys.c` sends Shift-Return -
+      Shift alone - as `ESC [ 13 ; 2 u`; `ui.lua`'s dispatch hands it on as
+      Return when neither the focused view nor the window took it; the
+      console's line editor ends the line on any `ESC [ 13 ; ... u`, so
+      Shift- and Control-Return at the prompt are Return; and WebKit's kit
+      already sent it as Enter with Shift held. Find's "the one before" in
+      Write, JetSki and the IDE, each written ahead for it, now arrives.
     - *Loading in the status line* (Diego, 15 November 2026: "we need a
       progress bar in the bottom status section of jetski so the user knows
       when the webpage finished loading"). The status line along the

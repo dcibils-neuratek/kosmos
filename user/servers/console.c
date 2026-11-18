@@ -291,6 +291,11 @@ static void edit(void)
     enum { PLAIN, ESCAPED, CSI, SS3 };
     static unsigned esc = PLAIN;
     static unsigned params;
+    /* Its first parameter, as a number, and whether a `;` has ended it:
+     * `ESC [ 13 ; 2 u` is Shift-Return (`hal/keys.c`), and Control-Return
+     * `ESC [ 13 ; 5 u`, each of which ends the line as Return does. */
+    static unsigned first;
+    static bool first_done;
 
     for (;;) {
         int c = next_byte();
@@ -302,11 +307,18 @@ static void edit(void)
         if (esc == ESCAPED) {
             esc = (c == '[') ? CSI : (c == 'O') ? SS3 : PLAIN;
             params = 0;
+            first = 0;
+            first_done = false;
             continue;
         }
 
         if (esc == CSI && c >= 0x20 && c <= 0x3f) {
             params++;                   /* a parameter or intermediate byte */
+            if (c >= '0' && c <= '9' && !first_done && first < 100000u) {
+                first = first * 10u + (unsigned)(c - '0');
+            } else {
+                first_done = true;
+            }
             continue;
         }
 
@@ -319,6 +331,13 @@ static void edit(void)
                 /* Cut short by a byte that ends no sequence: that byte is
                  * a key of its own, handled below. */
             } else {
+                if (c == 'u' && first == 13) {
+                    /* Return with Shift or Control: the line, as Return. */
+                    put("\n", 1, 0);
+                    deliver();
+                    return;
+                }
+
                 if (plain && c == 'A') {
                     recall_to(recall + 1);
                 } else if (plain && c == 'B') {

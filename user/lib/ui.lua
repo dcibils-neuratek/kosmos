@@ -1058,6 +1058,7 @@ ui.HOME, ui.END, ui.PAGEUP, ui.PAGEDOWN = keys.HOME, keys.END,
 ui.INSERT, ui.DELETE, ui.F = keys.INSERT, keys.DELETE, keys.F
 ui.SHIFT, ui.ALT, ui.CTRL, ui.SUPER = keys.SHIFT, keys.ALT, keys.CTRL, keys.SUPER
 ui.keyparts, ui.keywith = keys.parts, keys.with
+local SHIFT_RETURN = keys.with(keys.ENTER, keys.SHIFT)   -- `hal/keys.c`: ESC [ 13 ; 2 u
 ui.key_decoder = keys.decoder
 
 --------------------------------------------------------------------------
@@ -10236,7 +10237,11 @@ local function dispatch(self, c)
     return true
   end
 
-  if self.on_key then return self.on_key(self, c) end
+  if self.on_key and self.on_key(self, c) then return true end
+
+  -- Shift-Return is a key of its own (`hal/keys.c`), and whoever has no
+  -- use for Shift takes it as Return: a field, a button, a window's own.
+  if c == SHIFT_RETURN then return dispatch(self, 10) end
 
   return false
 end

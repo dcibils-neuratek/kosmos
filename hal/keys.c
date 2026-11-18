@@ -528,6 +528,18 @@ const char *hal_key_sequence(unsigned code, unsigned mods,
         }
     }
 
+    /*
+     * Shift-Return, as a key of its own: `ESC [ 13 ; 2 u`, as Control-Return
+     * is `ESC [ 13 ; 5 u` above. Return with Shift alone was byte 10 and
+     * nothing could tell it from Return. Shift only: Alt-Shift-Return keeps
+     * what it made before. Whoever has no use for Shift takes it as Return -
+     * the kit's dispatch, and the console's line editor.
+     */
+    if (code < 128u && keymap_plain[code] == '\n'
+        && (mods & (KEY_MOD_SHIFT | KEY_MOD_ALT | KEY_MOD_CTRL | KEY_MOD_SUPER)) == KEY_MOD_SHIFT) {
+        return sequence_of(out, 13u, m, 'u', false);
+    }
+
     return NULL;
 }
 

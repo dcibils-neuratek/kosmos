@@ -36773,3 +36773,40 @@ startup scripts are typed without their indentation, since the console's
 **Still owed**: LG6's cost on the M700 - `frames` with a film under the
 dock, live glass on and off, under 1 ms a pass more - before it can be
 the default anywhere.
+
+## 18.888 Shift-Return, a key of its own
+
+**In short**: Return arrived as byte 10 with Shift or without, so no
+application could tell Shift-Return from Return - find's "the one
+before" in Write, JetSki and the IDE was written for a key that never
+came. The board now sends Shift-Return as `ESC [ 13 ; 2 u`, as it sends
+Control-Return as `ESC [ 13 ; 5 u`, and whoever has no use for Shift
+takes it as Return.
+
+What changed:
+
+- `hal/keys.c`: Return held with Shift alone is `ESC [ 13 ; 2 u`; with
+  Alt as well it is what it was.
+- `ui.lua`'s dispatch: a Shift-Return that neither the focused view nor
+  the window's `on_key` took is dispatched again as Return, so every
+  field and button that knew Return keeps working.
+- `console.c`'s line editor: a CSI whose first parameter is 13 and whose
+  final is `u` ends the line, so Shift- and Control-Return at the prompt
+  are Return rather than dropped.
+- WebKit's kit took it apart already: Enter, with Shift held, to the page.
+
+What holds it:
+
+- `tools/test_keys.lua`: `ESC [ 13 ; 2 u` read as `keys.with(ENTER,
+  SHIFT)` (80 checks).
+- The guest suite's key table: Shift+Enter makes `ESC [ 13 ; 2 u`, and
+  Alt-Shift-Enter still makes no sequence.
+- `x86-desktops` opens Preferences from the launcher pad with Shift-Return,
+  whose field has no use for Shift: 15 checks passed. **Control**: the
+  kit's fallback taken out, 3 of 15 failed - Preferences never opened.
+
+**The gate** (132 suites, 701 s): 130 passed. `x86-desktops` missed the
+loader's window after a desktop switch, the check that failed under load
+in 0.11.468 too, after its Shift-Return had opened Preferences; and
+`x86-sound` read a 440 Hz, 333 ms tone as 410 Hz and 365 ms. Both passed
+run alone (15 and 14 checks).

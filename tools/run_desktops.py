@@ -133,7 +133,10 @@ def main():
             guest.sendkey(ch)
             time.sleep(0.05)
         time.sleep(0.5)
-        guest.sendkey("ret")
+        # Shift-Return, a key of its own since 0.11.489 (`hal/keys.c`), and
+        # the launcher pad's field has no use for Shift: the kit takes it as
+        # Return, so Preferences opens as it did for Return.
+        guest.sendkey("shift-ret")
         window = line(r"wm: window Preferences at (\d+),(\d+) (\d+)x(\d+)", mark, 30)
         line(r"preferences: \d+x\d+, ", mark, 30)
         time.sleep(1.5)
