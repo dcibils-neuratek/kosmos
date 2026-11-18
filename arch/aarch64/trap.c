@@ -174,6 +174,8 @@ static void dump_body(unsigned index, const struct trapframe *tf)
         if (access != NULL) {
             kputs("\n  reserved, ");
             kputs(access);
+            kputs("\n");
+            reserve_say_refusal(process_current());
         }
     }
 

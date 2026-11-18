@@ -11218,7 +11218,8 @@ the applications make the system useful, and is not pulled forward.
       machine out of memory and fifteen times slower than usual, then
       the same binaries passed; the image and log are kept in
       `build/gate/kept-posixtest/`. If it comes back: what holds the
-      memory - `sysinfo`'s pools and `pmm`'s free count said at the fault.
+      memory - `sysinfo`'s pools and `pmm`'s free count said at the fault. **Came back in 0.11.504's prepush** (18.905): the fault's report now
+      says which refusal it was and the free pages and reserve then.
       **One suggestions list in the kit**: JetSki's address field is to
       offer a search, history and favorites as letters are typed
       (`webkit.html`, *Typing in the address field*). Mail's compose

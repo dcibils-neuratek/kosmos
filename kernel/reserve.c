@@ -47,6 +47,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "console.h"
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
@@ -427,6 +428,54 @@ long reserve_release(struct process *p, uintptr_t va, size_t pages)
     return 0;
 }
 
+/*
+ * **Why the last first touch was refused** (`testing.md` 18.903, 18.905):
+ * a process that dies writing a reserved page says "a reserved page, read
+ * and write", which is true of all three refusals below and tells nothing.
+ * So the refusal is kept - which of them, the free pages and the reserve
+ * then, and the process's committed pages - and the fault's report says
+ * it (`reserve_say_refusal`). One record for the machine: the fault is
+ * reported on the thread that was refused, straight after, and a page
+ * given to the same process since clears it.
+ */
+static struct {
+    const char *why;
+    size_t free, reserve, committed;
+    unsigned id;
+} refusal;
+
+static void refused(struct process *p, const char *why)
+{
+    refusal.why = why;
+    refusal.free = pmm_free_pages();
+    refusal.reserve = pmm_reserve_pages();
+    refusal.committed = p->committed_pages;
+    refusal.id = p->id;
+}
+
+const char *reserve_refusal(struct process *p)
+{
+    return (p != NULL && refusal.why != NULL && refusal.id == p->id) ? refusal.why : NULL;
+}
+
+void reserve_say_refusal(struct process *p)
+{
+    if (reserve_refusal(p) == NULL) {
+        return;
+    }
+
+    kputs("  refused: ");
+    kputs(refusal.why);
+    kputs(" - ");
+    kputu(refusal.free);
+    kputs(" pages free, ");
+    kputu(refusal.reserve);
+    kputs(" kept back, ");
+    kputu(refusal.committed);
+    kputs(" committed to it\n");
+    refusal.why = NULL;
+}
+
 bool reserve_fill(struct process *p, uintptr_t va)
 {
     uintptr_t page = va & ~(uintptr_t)(PAGE_SIZE - 1);
@@ -442,7 +491,11 @@ bool reserve_fill(struct process *p, uintptr_t va)
 
         if (as_page_phys(p->space, page) != 0) {
             ok = true;                  /* another thread of it, just now */
-        } else if (pmm_room_for_user(1) && (mem = pmm_alloc_page()) != NULL) {
+        } else if (!pmm_room_for_user(1)) {
+            refused(p, "no room past the reserve");
+        } else if ((mem = pmm_alloc_page()) == NULL) {
+            refused(p, "no page from pmm");
+        } else {
             /* Zeroed before the process can see it, as every page is. */
             memset(mem, 0, PAGE_SIZE);
 
@@ -450,8 +503,13 @@ bool reserve_fill(struct process *p, uintptr_t va)
                        attrs_for(s->access)) == AS_OK) {
                 p->committed_pages++;
                 ok = true;
+
+                if (refusal.id == p->id) {
+                    refusal.why = NULL;     /* given since: no longer why */
+                }
             } else {
                 pmm_free_page(mem);
+                refused(p, "the page could not be mapped");
             }
         }
     }

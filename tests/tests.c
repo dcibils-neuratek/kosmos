@@ -29,6 +29,7 @@
 #include "keys.h"
 #include "vm.h"
 #include "futex.h"
+#include "reserve.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -4599,6 +4600,55 @@ static bool test_pmm_kernel_pages_are_not_free(void)
     /* The image and the bitmap are inside RAM but must never be handed out.
      * If they were, the count would equal the total. */
     return pmm_free_pages() < pmm_total_pages();
+}
+
+/*
+ * **A first touch refused says why** (`testing.md` 18.905): posixtest
+ * died four times writing a reserved page and the report said only "a
+ * reserved page, read and write". Every page a program may have taken, a
+ * first touch is refused for want of room, and the refusal says so - once
+ * - and a page given since leaves nothing to say.
+ */
+static bool test_reserve_refusal_says_why(void)
+{
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p = process_create("t-refused", init_image, (size_t)init_image_len, 0);
+    const char *why;
+    void *head = NULL, *q;
+    long va;
+    bool ok;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    va = reserve_create(p, 2);
+    ok = va > 0 && reserve_protect(p, (uintptr_t)va, 2, RESERVE_RW) == 0;
+
+    while (ok && pmm_room_for_user(1) && (q = pmm_alloc_page()) != NULL) {
+        *(void **)q = head;
+        head = q;
+    }
+
+    ok = ok && !reserve_fill(p, (uintptr_t)va);
+    why = reserve_refusal(p);
+    ok = ok && why != NULL && strcmp(why, "no room past the reserve") == 0;
+    reserve_say_refusal(p);
+    ok = ok && reserve_refusal(p) == NULL;
+
+    /* Refused again, and then given: the refusal is no longer why. */
+    ok = ok && !reserve_fill(p, (uintptr_t)va + PAGE_SIZE) && reserve_refusal(p) != NULL;
+
+    while (head != NULL) {
+        void *next = *(void **)head;
+        pmm_free_page(head);
+        head = next;
+    }
+
+    ok = ok && reserve_fill(p, (uintptr_t)va + PAGE_SIZE) && reserve_refusal(p) == NULL;
+    process_abandon(p);
+    return ok;
 }
 
 static bool test_pmm_exhaustion_returns_null(void)
@@ -11950,6 +12000,7 @@ static const struct test tests[] = {
     { "pmm: a page is writable end to end",    test_pmm_page_is_writable },
     { "pmm: kernel pages are never free",      test_pmm_kernel_pages_are_not_free },
     { "pmm: exhaustion returns NULL",          test_pmm_exhaustion_returns_null },
+    { "reserve: a refused first touch says why", test_reserve_refusal_says_why },
 };
 
 #define TEST_COUNT (sizeof(tests) / sizeof(tests[0]))

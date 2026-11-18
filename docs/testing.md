@@ -37318,3 +37318,27 @@ the hand-over, and JetSki stops saying "J.say was never handed to its
 files" - 11 fail. And the two corrected controls fail as they always
 should have: `returnless` with Return never reaching the page's field,
 `openless` with Control-O opening nothing - one check each.
+
+## 18.905 A refused first touch says why
+
+**In short**: 0.11.504's prepush failed `x86-loader` the way 18.903 did -
+`posixtest` dying in `malloc`, writing a reserved page "read and write"
+that was never given a page, in a run of 201 s where the suite takes 12 to
+32 - the fourth such death in two prepushes. The report could not say
+which of three refusals it was, so it now does: `reserve_fill` keeps why
+it refused - no room past the reserve, no page from `pmm`, or the page
+could not be mapped - with the free pages, the reserve and the pages
+committed to the process then, and the fault's report says it under "a
+reserved page" on both boards:
+
+    refused: no room past the reserve - 57336 pages free, 57336 kept back, 0 committed to it
+
+One record for the machine, keyed by the process, said once and cleared by
+a page given to the same process since. The cause of the starving is still
+not known; the next time it happens, the line says what the kernel saw.
+
+Held by `reserve: a refused first touch says why` in `x86-kernel` (219):
+every page a program may take is taken, a first touch is refused, the
+refusal names no room and is said once; refused again and then given, it
+is gone. The control - the no-room branch recording nothing - fails that
+test alone.

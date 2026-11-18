@@ -39,6 +39,15 @@ bool reserve_fill(struct process *p, uintptr_t va);
  * is not reserved. */
 const char *reserve_describe(struct process *p, uintptr_t va);
 
+/* Why `p`'s last first touch was refused, for its fault's report - which
+ * refusal, the free pages and the reserve then - once; nothing when it was
+ * not refused. */
+void reserve_say_refusal(struct process *p);
+
+/* Which refusal that was - "no room past the reserve", "no page from
+ * pmm", "the page could not be mapped" - or NULL. */
+const char *reserve_refusal(struct process *p);
+
 /* Every committed page given back and every span with them, as the
  * process ends - before its tables are freed. */
 void reserve_teardown(struct process *p);

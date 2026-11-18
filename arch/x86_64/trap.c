@@ -624,6 +624,7 @@ void trap_handle(struct trapframe *f)
                     say("  a reserved page, ");
                     say(access);
                     say("\n");
+                    reserve_say_refusal(process_current());
                 }
             }
         }
