@@ -3358,6 +3358,7 @@ ui.layout = {
   platinum_gap  = 7,    --   and the plain ground kept round what is on them
   plate_in      = 16,   -- Starlight's plate: before its title (S1)
   plate_out     = 30,   --   and after it, the slanted edge included
+  plate_star    = 22,   --   a star before it, and the gap after (S5)
   page_top  = 22,   -- a page of cards: from the header to the first name
   page_side = 26,   --   and in from either side
   page_foot = 26,   --   and below the last card
@@ -3990,7 +3991,9 @@ function ui.header(spec)
     if self.starlight then
       local title = tostring(self.title or win.title or "")
 
-      self.plate_w = L.plate_in + gfx.measure(title, "title") + L.plate_out
+      -- And a star before the title where the look has one (S5).
+      self.plate_w = L.plate_in + (theme.star and L.plate_star or 0)
+                     + gfx.measure(title, "title") + L.plate_out
       win:place_plate(self, self.plate_w, L.head - 1, title)
       x = self.plate_w + L.head_gap
     end

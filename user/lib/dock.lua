@@ -441,4 +441,37 @@ function dock.cut_outline(x, y, w, h, r, c, t)
   return pts
 end
 
+--
+-- **The four-point star** (`docs/astra.md` S5, I8): Kosmos's mark, and the
+-- dock's glint under a running application. A flat list of points about
+-- `cx`, `cy`, its tips `r` out, up, right, down and left, and its sides
+-- curved in - "less spiky", as Diego asked of the drawing - each a
+-- quadratic curve from tip to tip pulled toward the middle, to `waist` of
+-- `r` on the diagonal (0.3 unless said).
+--
+function dock.star(cx, cy, r, waist)
+  local pts = {}
+  local w = (waist or 0.3) * r
+  local tips = { { 0, -r }, { r, 0 }, { 0, r }, { -r, 0 } }
+
+  for i = 1, 4 do
+    local a, b = tips[i], tips[i % 4 + 1]
+    -- The curve's pull: where the waist on this diagonal is, from a
+    -- quadratic's middle being a quarter of each end and half its pull.
+    local mx, my = (a[1] + b[1]) / 2, (a[2] + b[2]) / 2
+    local len = math.sqrt(mx * mx + my * my)
+    local kx, ky = 2 * (mx / len * w) - mx, 2 * (my / len * w) - my
+
+    for k = 0, 5 do
+      local t = k / 6
+      local p, q, u = (1 - t) * (1 - t), 2 * (1 - t) * t, t * t
+
+      pts[#pts + 1] = cx + p * a[1] + q * kx + u * b[1]
+      pts[#pts + 1] = cy + p * a[2] + q * ky + u * b[2]
+    end
+  end
+
+  return pts
+end
+
 return dock

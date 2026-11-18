@@ -36089,3 +36089,44 @@ the load against 22 s alone and found Preferences' Desktop row's choices
 not open when it pressed it. Neither touches the cut; recorded as flakes
 under load, and `x86-desktops` is to be made to wait for the row rather
 than press it on time.
+
+## 18.870 Kosmos's star - the mark, the plate's, and the dock's glint
+
+**In short.** Under Starlight Kosmos's mark is a four-point star with its
+sides curved in: on the Deskbar's amber Kosmos plate and the dock's Kosmos
+button, before the title on every window's plate in the plate's ink, and
+under a running application in the dock as a *glint* - amber and larger
+for the one in front, small and quiet for the rest - where every other
+look has a dot or a line.
+
+**Where it lives.** A look says `star = yes` (`theme.lua`, beside `cut`).
+The shape is `dock.star(cx, cy, r, waist)`: four tips at `r`, each side a
+quadratic curve pulled in to the waist on its diagonal, 0.3 of `r`. The
+Deskbar draws it on the bar's plate, the dock's button and as the glint;
+the window manager draws it on a plate (`OUT.plate_picture`), whose
+header leaves 22 more points for it (`L.plate_star`). `dock.lua` is
+arithmetic only and the window manager is at Lua's two hundred locals, so
+it is fetched where it is wanted.
+
+**Held by** `tools/test_dock.lua`, 4 more checks (59): the star reaching
+its radius and no further, its middle and each tip's root inside, a point
+on a diagonal past the waist outside, one inside the waist inside; its
+control, the waist moved out to 0.71 so the sides are straight, fails the
+curve. And `x86-starlight`, now 9: the star's middle on the plate in
+front in the plate's dark ink; its control, the window manager drawing no
+star, fails exactly that check. The dock is seen in a picture
+(`build/starlight/s5-dock.png`): its cut top-left, the star on its button,
+the amber glint under the Text Editor and quiet ones under Calculator and
+Processes.
+
+**Found by the suite.** The bar's star stopped the Deskbar on its first
+run: `dock` in its file is declared below the bar's drawing, and is nil
+anyway unless the bar is a dock. The check for an application stopped by
+an error, added for S1, is what said so.
+
+**The gate** (131 suites, 707 s) failed two, both passing alone at once:
+`x86-dock` - its boot stopped before the dock said its Large size, 248 s
+into a loaded gate, with no error in the Deskbar's log - and
+`x86-film-load`, a gap in a film's sound under four spinners and the
+gate's load besides. Recorded as load flakes; the dock's is the second
+suite this week that waits on a time where it should wait on the thing.

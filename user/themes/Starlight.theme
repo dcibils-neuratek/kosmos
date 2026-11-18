@@ -22,6 +22,8 @@ name       = starlight
 flat       = yes
 # What floats - the dock, menus - cut at its top-left, eased (S2).
 cut        = yes
+# Kosmos's mark a four-point star, and the dock's glint (S5).
+star       = yes
 title_bars = no
 shadow     = 24
 

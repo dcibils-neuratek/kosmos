@@ -1253,7 +1253,15 @@ function bar:draw(g)
            lit(lit(theme.tab, FACE), PRESSED))
   end
 
-  g:icon(12, iy, "App_Deskbar.png", ICON)
+  -- Kosmos's mark the four-point star where the look says so (S5).
+  if plated and theme.star then
+    -- `dock` is nil unless the bar is a dock; the star is `dock.lua`'s.
+    g:polygon(use("/Kosmos/Libraries/dock.lua").star(12 + ICON / 2, self.h / 2, ICON * 0.42),
+              theme.tab_text)
+  else
+    g:icon(12, iy, "App_Deskbar.png", ICON)
+  end
+
   g:text(12 + ICON + 8, ty, "Kosmos",
          plated and theme.tab_text or (theme.strip_text or theme.tab_text))
 
@@ -1766,7 +1774,13 @@ if DOCKED then
       -- The rocket (Haiku's Launchbox), as `docs/sandboxes.html` drew the
       -- dock; Diego, 11 October: "can we use the rocket icon for the
       -- kosmos button in the dock?"
-      g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Launchbox.png", dock.MARK)
+      -- Or the four-point star, Kosmos's mark, where the look says so (S5).
+      if theme.star then
+        g:polygon(dock.star(x + dock.KOSMOS_IN + dock.MARK / 2, cy, dock.MARK * 0.45),
+                  open and theme.text_on or theme.tab)
+      else
+        g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Launchbox.png", dock.MARK)
+      end
       g:text(x + dock.KOSMOS_IN + dock.MARK + 8, cy - gfx.font.h // 2, "Kosmos",
              open and theme.text_on or theme.text)
     elseif it.kind == "separator" then
@@ -1779,7 +1793,14 @@ if DOCKED then
       -- was 9 off the dock's bottom edge, which left it nearer the edge
       -- than the icon it belongs to (Diego, 7 October: "put the active
       -- and open indicator dot and line below closer to the icon").
-      if it.running then
+      if it.running and theme.star then
+        --
+        -- **A glint** (S5): a small four-point star under the picture,
+        -- amber and larger for the one in front, where today's is a dot.
+        --
+        g:polygon(dock.star(x + it.w / 2, cy + dock.ICON // 2 + 2, it.front and 5 or 3.5),
+                  it.front and theme.tab or theme.text_dim)
+      elseif it.running then
         local mw = it.front and 16 or 6
 
         g:fill_round(x + (it.w - mw) // 2, cy - 3 + dock.ICON // 2 + 3, mw, 4,

@@ -2223,7 +2223,7 @@ function OUT.plate_picture(win, front)
   local ink = front and theme.tab_text or (theme.tab_idle_text or theme.tab_text)
 
   if made and made.w == spec.w and made.h == spec.h and made.title == spec.title
-     and made.face == face and made.ink == ink then
+     and made.face == face and made.ink == ink and made.star == theme.star then
     return made.picture
   end
 
@@ -2242,13 +2242,23 @@ function OUT.plate_picture(win, front)
     W - u(24.24), H - u(0.25), W - u(26), H, 0, H,
   }, face)
 
+  local tx = scale.px(16, pct)
+
+  -- Kosmos's star before the title where the look has one (S5): the
+  -- header left the room for it (`L.plate_star`).
+  if theme.star then
+    -- `dock.lua` is arithmetic only; fetched here, where it is wanted,
+    -- since this file is at Lua's two hundred locals.
+    picture:polygon(use("/Kosmos/Libraries/dock.lua").star(tx + u(6.5), H / 2, u(6.5)), ink)
+    tx = tx + scale.px(22, pct)
+  end
+
   if spec.title ~= "" then
-    picture:text(scale.px(16, pct), (H - gfx.height("title")) // 2, spec.title,
-                 ink, face, "title")
+    picture:text(tx, (H - gfx.height("title")) // 2, spec.title, ink, face, "title")
   end
 
   win.plate_made = { picture = picture, w = W, h = H, title = spec.title,
-                     face = face, ink = ink }
+                     face = face, ink = ink, star = theme.star }
 
   return picture
 end

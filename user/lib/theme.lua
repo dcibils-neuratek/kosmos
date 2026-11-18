@@ -301,6 +301,14 @@ theme.tokens = {
   "cut",
 
   --
+  -- **`star`: Kosmos's mark a four-point star** (`docs/astra.md` S5, I8) -
+  -- on the Deskbar's Kosmos plate and the dock's button, before a title on
+  -- its plate, and under a running application in the dock as a *glint*,
+  -- amber for the one in front, where today's is a dot. `yes` or `no`.
+  --
+  "star",
+
+  --
   -- **`title_bars`: whether a window with a header of its own wears a
   -- title bar above it** (`roadmap.md` 6zj, `docs/nochrome.html`). Diego,
   -- 27 September 2026, of the mockups: "i love the fact that the mokcups
@@ -538,7 +546,7 @@ function theme.read(text, base)
                              .. "%d, not `%s`"):format(n, key,
                                                        theme.METRIC_MOST, value)
         end
-      elseif key == "flat" or key == "title_bars" or key == "cut" then
+      elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -568,6 +576,7 @@ function theme.read(text, base)
   --
   if out.flat == nil then out.flat = false end
   if out.cut == nil then out.cut = false end
+  if out.star == nil then out.star = false end
   if out.title_bars == nil then out.title_bars = true end
   out.corner = theme.CORNER             -- every look's, never its own
   if out.shadow == nil then out.shadow = theme.SHADOW end

@@ -14,6 +14,8 @@ and the one in front dragged by its header clear of the other:
     the look's quiet `tab_idle`, never amber;
   - the one behind, clicked on its plate, comes to the front, and the two
     plates change places: amber on it, quiet on the other;
+  - Kosmos's four-point star on the plate in front, before its title, in
+    the plate's ink (S5);
   - the Kosmos menu opened, its top-left corner cut on a slant - not the
     mirror of its round top-right, as every corner is elsewhere (S2);
   - nothing died, and no application stopped on an error - the Deskbar
@@ -37,11 +39,12 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 8
+CHECKS = 9
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
 TAB_IDLE = (0x2a, 0x2d, 0x4c)
+TAB_TEXT = (0x1e, 0x13, 0x05)
 
 
 def startup(items):
@@ -176,6 +179,16 @@ def run(fails):
             fails.append("clicked, %s's plate is %r and %s's %r, not swapped"
                          % (back, a, front, b))
 
+        # Kosmos's star before the title (S5), in the plate's ink: its middle,
+        # 16 in and half its 13 across.
+        wx, wy = where[back][0], where[back][1]
+        px, py, pw, ph = plates[back]
+        star = at(wx + px + 16 + 6, wy + py + ph // 2)
+
+        if not near(star, TAB_TEXT, 30):
+            fails.append("%s's plate has no star in its ink before the title: %r"
+                         % (back, star))
+
         # ---- the Kosmos menu, its top-left cut (S2) ----
         # A round corner is the same mirrored at the top-right; the cut is
         # not: it takes more along the diagonal and eases into the sides.
@@ -250,7 +263,7 @@ def main():
     print("PASS: %d checks on Starlight's plate (the desktop in Starlight's look and "
           "chrome; Calculator and Processes each placed a plate; the window in front's "
           "amber and the one behind's quiet; the one behind clicked, the two swapped; "
-          "the Kosmos menu's top-left cut; nothing died)" % CHECKS)
+          "its star; the Kosmos menu's top-left cut; nothing died)" % CHECKS)
     return 0
 
 

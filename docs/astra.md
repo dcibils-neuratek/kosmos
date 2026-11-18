@@ -209,7 +209,10 @@ softened cut on the dock and menus (**built in 0.11.469**, `testing.md`
 18.869: a look's `cut = yes`, menus cut by the compositor at 8 and the
 floating dock by the Deskbar at 12; banners, quick settings and tiles
 later, when each is drawn for Starlight); S3 the nebula glass's grain and its
-amber horizon; S4 the unfurl; S5 the star.
+amber horizon, which waits for wallpaper glass (the review's G1), not
+built yet; S4 the unfurl; S5 the star (**built in 0.11.470**, `testing.md`
+18.870: the mark on the Kosmos plate and the dock's button, before a
+title on its plate, and the dock's glint).
 
 What follows is the list as it was put to him.
 

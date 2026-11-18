@@ -231,10 +231,47 @@ do
   check(inside(16, 1) and inside(1, 16), "past the eased meetings, the edges are whole")
 end
 
+--
+-- 8. Kosmos's four-point star (`dock.star`, S5): four tips at the radius,
+-- the sides curved in to its waist, so the middle is inside, a point on a
+-- diagonal past the waist outside, and each tip's root inside.
+--
+do
+  local r = 10
+  local pts = dock.star(0, 0, r)
+
+  local function inside(px, py)
+    local n, hit, j = #pts // 2, false, #pts // 2
+
+    for i = 1, n do
+      local xi, yi, xj, yj = pts[2 * i - 1], pts[2 * i], pts[2 * j - 1], pts[2 * j]
+
+      if (yi > py) ~= (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi then
+        hit = not hit
+      end
+
+      j = i
+    end
+
+    return hit
+  end
+
+  local far = 0
+
+  for i = 1, #pts, 2 do far = math.max(far, math.sqrt(pts[i] ^ 2 + pts[i + 1] ^ 2)) end
+
+  check(math.abs(far - r) < 1e-6, "the star reaches its radius and no further")
+  check(inside(0, 0) and inside(0, -r * 0.8) and inside(r * 0.8, 0)
+        and inside(0, r * 0.8) and inside(-r * 0.8, 0), "the middle and each tip's root are inside")
+  check(not inside(r * 0.3, r * 0.3) and not inside(-r * 0.3, -r * 0.3),
+        "past the waist on a diagonal is outside: the sides curve in")
+  check(inside(r * 0.15, r * 0.15), "inside the waist is inside")
+end
+
 if fails == 0 then
   print(("PASS: %d checks on the dock's arithmetic (names, the cells for what is pinned "
          .. "and what runs, where each goes, what a press hit and what it does, and "
-         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go - and magnified under the pointer, and its outline cut for Starlight)."):format(checks))
+         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go - and magnified under the pointer, its outline cut for Starlight, and Kosmos's star)."):format(checks))
   os.exit(0)
 end
 

@@ -4410,3 +4410,19 @@ between a cut and a round corner - because a night-blue menu on a
 night-blue desktop differs by only fourteen levels, and the check was
 looking for thirty. Printing the two corners as characters showed the cut
 was there all along.
+
+## 18 November 2026 - Kosmos's star
+
+**In short.** Under Starlight, Kosmos's mark is now a four-pointed star:
+on the top bar's amber Kosmos button, before each window's title, and as
+a small "glint" under each running application in the dock - amber for
+the one you are using - where other desktops put a dot.
+
+**What.** Astra means stars, and the star was the third of the signatures
+agreed for Starlight. Diego found the first drawing's star too spiky, so
+its sides curve inward, a softer shape. One small function draws it
+everywhere.
+
+**Why it matters.** Together with the amber plate and the cut corner, it
+is what makes a screenshot of Kosmos recognisable as Kosmos rather than a
+copy of something else.
