@@ -50,6 +50,8 @@ import sys
 import threading
 import time
 
+import jetski_files
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
@@ -137,6 +139,20 @@ def last_words(guest, mark):
     return re.findall(r"jetski: [^\r\n]*", guest.seen[mark:])[-4:] or ["nothing said"]
 
 
+
+# **The controls' changes to JetSki's files** (`jetski_files.py`), each
+# tried on a copy before every run; the one named by the break is made.
+CONTROLS = {
+    # Open anyway pressed, and never asking the kit.
+    "anywayless": [("    web.anyway()\n", "    do end\n")],
+    # The keys left in the field when an address is typed on the refused page.
+    "keyless": [("  page.wants_keys = not win:focus_on(view)\n  web.focus(true)\n",
+                 "  win:focus_on(view)\n  web.focus(true)\n")],
+    # The sites allowed never handed to the kit.
+    "unallowed": [("  if have then webkit.allow(table.concat(allowed, \"\\n\")) end\n", "  do end\n")],
+}
+
+
 def main():
     built = os.path.join(APPS, "webkit.elf")
     if not os.path.exists(built):
@@ -155,34 +171,14 @@ def main():
     image = os.path.join(WORK, "webkit.elf")
     subprocess.run(["x86_64-elf-objcopy" if "x86_64" in IMAGE else "aarch64-elf-objcopy",
                     "--strip-debug", built, image], check=True)
-    lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
-    with open(lua) as f:
-        text = f.read()
-    if BROKEN == "anywayless":
-        if "    web.anyway()\n" not in text:
-            print("FAIL: the control's line is not in jetski.lua any more")
-            return 1
-        text = text.replace("    web.anyway()\n", "    do end\n")
-    if BROKEN == "keyless":
-        line = "  page.wants_keys = not win:focus_on(view)\n  web.focus(true)\n"
-        if line not in text:
-            print("FAIL: the control's line is not in jetski.lua any more")
-            return 1
-        text = text.replace(line, "  win:focus_on(view)\n  web.focus(true)\n")
-    if BROKEN == "unallowed":
-        line = "  if have then webkit.allow(table.concat(allowed, \"\\n\")) end\n"
-        if line not in text:
-            print("FAIL: the control's line is not in jetski.lua any more")
-            return 1
-        text = text.replace(line, "  do end\n")
-    lua = os.path.join(WORK, "jetski.lua")
-    with open(lua, "w") as f:
-        f.write(text)
+    texts = jetski_files.read()
+    jetski_files.tried(CONTROLS)
+    for old, new in CONTROLS.get(BROKEN, []):
+        jetski_files.change(texts, old, new, "the control " + BROKEN)
     rules = os.path.join(WORK, "test.json")
     with open(rules, "w") as f:
         f.write(RULES)
-    files = [(lua, "/Home/System/Apps/JetSki/jetski.lua"),
-             (rules, "/Home/Settings/Filters/test.json"),
+    files = jetski_files.install(texts, WORK) + [(rules, "/Home/Settings/Filters/test.json"),
              (image, "/Home/System/WebKit/webkit.elf"),
              (os.path.join(PKI, "ca.pem"), "/Home/Settings/JetSki/Certificates/test-authority.pem")]
     if BROKEN == "trusting":

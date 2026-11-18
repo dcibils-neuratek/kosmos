@@ -37270,3 +37270,51 @@ it ran after the cluster had passed.
 
 Kept for whoever takes it up: the image and the serial log, in
 `build/gate/kept-posixtest/`. `roadmap.md` has it as an open item.
+
+## 18.904 JetSki in files, and two controls that proved nothing
+
+**In short**: JetSki was one file of 2,938 lines whose main chunk used
+201 of Lua's 200 registers' worth of room - the star (18.902) only fitted
+by folding names into tables. It is now `jetski.lua` and five files beside
+it in `/Kosmos/Apps/JetSki` - `stopped.lua` (a page whose process ended),
+`settings.lua`, `downloads.lua`, `find.lua` and `menu.lua` - each a
+function handed `J`, the window's things by name, and giving back what the
+window calls. The main chunk is 2,164 lines and 175 registers. Splitting
+it found two of `x86-jetski`'s controls changing nothing.
+
+**How the files are handed what they need.** `J` is one table, made where
+the first file is loaded, with what exists by then - the kit, the window,
+the page's view, the find bar's `F` - and given the rest (`say`, `st`,
+`visit`, `cover` ...) once they are made, before the window runs. A file
+reads `J.name` when it runs rather than when it loads, so the order the
+names are made in does not matter; and `J` has a metatable that stops
+JetSki at a read of a name never handed, saying which - where a missing
+local would have read as nil and failed somewhere else.
+
+Two second copies went with it. Settings and the zoom keys both wrote the
+settings file by hand, and now both call `J.keep(key, value)`; and
+`web.save_frame`, hung on `web` only to save a local, is the menu's.
+
+**The suites install the folder.** `x86-jetski` and `x86-padlock` each
+make a /Home of their own and put `jetski.lua` in it - only `jetski.lua`,
+so JetSki would have stopped at its first file. `tools/jetski_files.py`
+reads every file, makes a control's change in whichever holds its string,
+and installs them all.
+
+**And every control is now tried on every run.** A control whose string
+has gone was already a failure (18.833) - but only on a run of that
+control, and controls are run by hand. Moving their strings into one
+table per suite, and trying each one's changes on a copy of the files
+before every ordinary run, found two that had been proving nothing:
+`returnless` looked for the line JetSki's keys were kept by before the
+zoom keys joined it (0.11.502), and `openless` for Control-O's handler
+before it became `MENU.open_file()` (0.11.502). Both are corrected; a
+third, `unexplained`, follows its line into `stopped.lua`.
+
+The controls, now in the table with the rest: `partless` never loads
+`find.lua`, so the window's first frame calls a nil `F.frame` and the page
+is never loaded - 8 of 46 checks fail; `unhanded` leaves `J.say` out of
+the hand-over, and JetSki stops saying "J.say was never handed to its
+files" - 11 fail. And the two corrected controls fail as they always
+should have: `returnless` with Return never reaching the page's field,
+`openless` with Control-O opening nothing - one check each.

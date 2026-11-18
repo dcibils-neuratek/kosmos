@@ -11207,11 +11207,12 @@ the applications make the system useful, and is not pulled forward.
       History's own list behind Control-Y, to be drawn first.
       **JetSki at Lua's 200 locals** (18 November 2026): the star's step
       reached the limit on one chunk's locals, and the favorites, the menu
-      and a constant were folded into tables to stay under it. Before the
-      next feature, JetSki is split - the menu, the downloads panel, find
-      and Settings into files of their own beside `jetski.lua` in
-      `/Home/Apps/JetSki`, each handed what it needs - rather than more
-      folding, which only moves the limit.
+      and a constant were folded into tables to stay under it. **Split in
+      0.11.504** (`testing.md` 18.904): the stopped page, Settings, the
+      downloads, find and the menu are files beside `jetski.lua` in
+      `/Kosmos/Apps/JetSki`, each a function handed `J`; the main chunk
+      went from 201 registers to 175. The padlock and the shield are the
+      next to move when room is wanted again.
       **posixtest starved, cause unknown** (`testing.md` 18.903): three
       runs in a quarter of an hour died of a page fault in `malloc` on a
       machine out of memory and fifteen times slower than usual, then

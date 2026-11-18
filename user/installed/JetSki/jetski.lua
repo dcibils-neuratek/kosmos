@@ -403,8 +403,8 @@ header:add(shield)
 -- bar under it while one runs - how far all of them have got - and
 -- pressed, or Control-Shift-J, the list (below).
 local dlbutton = ui.view{ w = 30, h = 26 }
+local DL                             -- the list (`downloads.lua`), below
 dlbutton.part = nil                  -- 0 to 1 while one runs; nil when none
-local downloads_toggle               -- below
 function dlbutton:draw(g)
   local ink = self.part and theme.accent or theme.text_dim
   g:line_icon((self.w - 15) // 2, (self.h - 15) // 2 - (self.part and 2 or 0), "downloads", ink)
@@ -415,7 +415,7 @@ function dlbutton:draw(g)
   end
 end
 function dlbutton:mouse(action)
-  if action == "press" then downloads_toggle() end
+  if action == "press" then DL.toggle() end
   return true
 end
 dlbutton.y = (BAR - 1 - dlbutton.h) // 2
@@ -546,16 +546,16 @@ win:add(strip)
 --
 
 local view = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H }
-local gone                           -- a tab whose page stopped, below
+local STOP                           -- a tab whose page stopped (`stopped.lua`), below
 local refused_page                   -- a tab whose certificate was refused, below
 local lock_close                     -- the padlock's panel put away, below
 local shield_close                   -- the shield's, below
-local dlpanel, downloads_close, downloads_frame   -- the downloads', below
 -- Find on the page's, below: `F.state` while the bar is open, `F.view`,
 -- `F.H`, and `F.open`, `F.close`, `F.paint`, `F.frame`.
 local F = { H = 0 }
-local settings_page                  -- Settings, in a tab of its own, below
-local open_settings, fill_settings, cover
+local SET                            -- Settings, in a tab of its own (`settings.lua`), below
+local MENU                           -- the menu and its doors (`menu.lua`), below
+local open_settings, cover
 local settings_tab                   -- the tab Settings is in, or nil
 local pending = {}                   -- a tab's address, loaded when it is first shown
 
@@ -602,9 +602,9 @@ local function layout()
   SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
   PAGE_W = W - SPLIT_W
   view.w, view.h = W, VIEW_H
-  if gone then gone.y, gone.w, gone.h = VIEW_Y, PAGE_W, VIEW_H end
+  if STOP then STOP.view.y, STOP.view.w, STOP.view.h = VIEW_Y, PAGE_W, VIEW_H end
   if refused_page then refused_page.y, refused_page.w, refused_page.h = VIEW_Y, PAGE_W, VIEW_H end
-  if settings_page then settings_page.y, settings_page.w, settings_page.h = VIEW_Y, W, VIEW_H end
+  if SET then SET.view.y, SET.view.w, SET.view.h = VIEW_Y, W, VIEW_H end
 end
 
 layout()
@@ -627,7 +627,7 @@ function view:mouse(action, x, y)
   if action == "press" then
     lock_close()
     shield_close()
-    downloads_close()
+    DL.close()
     local there, px, py = over(x, y)
     to_inspector = there
     web.target(there)
@@ -700,290 +700,41 @@ end
 win:add(view)
 
 --------------------------------------------------------------------------
--- **A tab whose page stopped** (`docs/webkit.html`, drawn 14 November
--- 2026): its process ended, so there is no picture, and this is drawn in
--- the page's place instead - with **What happened** under it, how Nebula
--- recorded the death, because a development build should say (Diego: "it
--- should help us work in bugs and edge cases easily", "right now we are
--- blind on whats going in"). `crash` is `web.crash`'s table for the tab
--- shown, or nil while its page is alive.
+-- **JetSki's files** (`roadmap.md`, 18 November 2026): the stopped page,
+-- Settings, the downloads, find on the page and the menu are files of
+-- their own beside this one - a function each, handed `J`, the window's
+-- things by name, and giving back what the window calls. A file reads
+-- `J` as it runs, so a name handed later is there by the time it is
+-- asked for; a name never handed stops JetSki where it was asked, saying
+-- which, rather than reading as nil. It was one file of 2,938 lines,
+-- folding its names into tables to stay under Lua's 200 locals a chunk.
 --
+local HERE = tostring(sys.program or ""):match("^(.*)/[^/]+$") or "/Kosmos/Apps/JetSki"
+local J = setmetatable({ ui = ui, keys = keys, files = files, prefs = prefs, theme = theme,
+                         webkit = webkit, web = web, win = win, view = view, F = F, FAV = FAV,
+                         HEAD = HEAD, WEBKIT = WEBKIT, DEVELOPER = DEVELOPER, more = more,
+                         dlbutton = dlbutton, tabs = tabs, setting = setting },
+                       { __index = function(_, name)
+                           error("jetski: J." .. tostring(name) .. " was never handed to its files", 2)
+                         end })
 
-local crash = nil
-gone = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H, hidden = true }
-local MONO_LH = gfx.height("mono") + 3
-local LABEL_W = 112
+function J.width() return W end
 
-local function hex(n) return n and ("0x%x"):format(n) or "?" end
+-- A setting changed, and kept: Settings' and the zoom's one door.
+function J.keep(key, value)
+  setting[key] = value
+  prefs.write(setting, SETTINGS, OWN)
+end
+
+local function part(name) return use(HERE .. "/" .. name .. ".lua")(J) end
 
 local function host_of(address)
   return address:match("^%a[%w+.%-]*://([^/?#]+)") or address
 end
 
--- The fault in words: which kind of access, and whether the page was there.
-local function fault_words(c)
-  if c.fault == "page fault" then              -- x86: the error code's bits
-    local d = c.detail
-    local what = d & 16 ~= 0 and "an instruction fetch"
-                 or (d & 2 ~= 0 and "a write" or "a read")
-    return ("page fault: %s, %s"):format(what, d & 1 ~= 0 and "not allowed" or "not present")
-  elseif c.fault and c.fault:match("abort") then -- ARM: the syndrome's ISS
-    local iss = c.detail & 0x1ffffff
-    local status = iss & 0x3f
-    local what = c.fault:match("instruction") and "an instruction fetch"
-                 or (iss & 64 ~= 0 and "a write" or "a read")
-    local why = (status >= 4 and status <= 7) and "not present"
-                or ((status >= 12 and status <= 15) and "not allowed" or ("status 0x%x"):format(status))
-    return ("%s: %s, %s"):format(c.fault, what, why)
-  end
-  return c.fault or "?"
-end
+STOP = part("stopped")
 
--- What an address is, as far as can be told from the record alone.
-local function address_words(c)
-  local a = c.addr
-  if a < 4096 then return hex(a) .. " - a null pointer" end
-  if c.sp and math.abs(a - c.sp) < 64 * 1024 then
-    return ("%s - %d bytes from thread %d's stack pointer"):format(hex(a), a - c.sp, c.thread)
-  end
-  return hex(a)
-end
-
--- **What happened**, as label and value: what is drawn, and what Copy
--- details puts on the clipboard.
--- **Which function** (`docs/debug.md`): the Debug Kit reads this image's
--- symbols - the web process runs this same image, so a fault's instruction
--- is an address in the file beside this one. Looked up once per address,
--- the pass after the stopped page is first drawn, so it never waits for
--- the 7 MB of symbols to be read; the kit's table given back after.
-local have_debug, debugkit = pcall(use, "/Kosmos/Kits/debug")
-if not have_debug or type(debugkit) ~= "table" then debugkit = nil end
-local IMAGE = WEBKIT .. "/webkit.elf"
-local named = {}                     -- an address -> its function's name, or false
-
-local function look_up(pc)
-  if named[pc] == nil and debugkit then
-    local name, offset = debugkit.name(IMAGE, pc)
-    named[pc] = name and ("%s + 0x%x"):format(name, offset) or false
-    if not name then print("jetski: no function's name for " .. hex(pc) .. ": " .. tostring(offset)) end
-    debugkit.forget()
-  end
-  return named[pc]
-end
-
-local function function_of(pc)
-  local n = named[pc]
-  if n == nil then return debugkit and "looking it up" or "no Debug Kit here" end
-  return n or "no symbol holds it"
-end
-
-local function crash_rows(c)
-  local rows = { { "process", ("web, %d"):format(c.pid) } }
-  if not c.known then
-    rows[#rows + 1] = { "fault", "not collected yet" }
-  elseif c.fault then
-    rows[#rows + 1] = { "fault", fault_words(c) }
-    rows[#rows + 1] = { "address", address_words(c) }
-    rows[#rows + 1] = { "at", hex(c.pc) .. " in webkit.elf" }
-    rows[#rows + 1] = { "in", function_of(c.pc) }
-    rows[#rows + 1] = { "thread", ("%d, stack pointer %s"):format(c.thread, hex(c.sp)) }
-  else
-    rows[#rows + 1] = { "ended", ("with code %d, not by a fault"):format(c.code or 0) }
-  end
-  if c.address ~= "" then rows[#rows + 1] = { "loading", c.address } end
-  return rows
-end
-
-local function crash_details(c)
-  local b = sys.build and sys.build() or {}
-  local out = { ("JetSki, Kosmos %s - a page stopped"):format(b.version or "?") }
-  for _, r in ipairs(crash_rows(c)) do
-    out[#out + 1] = ("%-9s %s"):format(r[1], r[2])
-  end
-  return table.concat(out, "\n") .. "\n"
-end
-
-local gone_reload = ui.button{ text = "Reload", go = true, on_click = function()
-  web.reload()
-end }
-local gone_close = ui.button{ text = "Close tab", on_click = function()
-  for _, t in ipairs(tabs) do
-    if t.shown then close_tab(t.id) return end
-  end
-end }
-local gone_copy = ui.button{ text = "Copy details", on_click = function()
-  if crash then
-    use("/Kosmos/Libraries/wmproto.lua").copy(crash_details(crash))
-    print("jetski: the page's details copied")
-  end
-end }
-
-gone:add(gone_reload)
-gone:add(gone_close)
-gone:add(gone_copy)
-
--- Where everything on it goes, from its size: one column, in the middle.
-local GONE_COL = 600
-
-local function gone_top()
-  local rows = crash and #crash_rows(crash) or 0
-  local tall = 40 + 32 + 28 + 26 + 30 + 18 + 30 + rows * MONO_LH + 12
-  return math.max(20, (gone.h - tall) // 2)
-end
-
-local function lay_gone()
-  local top = gone_top() + 40 + 32 + 28 + 26
-  local widths = gone_reload.w + gone_close.w + gone_copy.w + 16
-  local x = (gone.w - widths) // 2
-  gone_reload.x, gone_reload.y = x, top
-  gone_close.x, gone_close.y = x + gone_reload.w + 8, top
-  gone_copy.x, gone_copy.y = gone_close.x + gone_close.w + 8, top
-end
-
-function gone:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
-  if not crash then return end
-  lay_gone()
-
-  local y = gone_top()
-  local mid = self.w // 2
-  local function centred(text, color, role, px, at)
-    local tw = gfx.measure(text, role and px and ui.sized(role, px) or nil)
-    g:text(mid - tw // 2, at, text, color, theme.window, role, px)
-  end
-
-  g:fill_round(mid - 16, y, 32, 32, theme.line_soft, 16)
-  g:fill_round(mid - 12, y + 4, 24, 24, theme.window, 12)
-  y = y + 40
-  centred("This page stopped", theme.text, "ui", 18, y)
-  y = y + 32
-  centred(("The page at %s ended unexpectedly. Your other tabs are fine."):format(
-          host_of(crash.address)), theme.text_dim, nil, nil, y)
-
-  -- What happened, in a box under the buttons.
-  local rows = crash_rows(crash)
-  local bw = math.min(GONE_COL, self.w - 32)
-  local bx = mid - bw // 2
-  local by = gone_reload.y + gone_reload.h + 18
-  local bh = 30 + #rows * MONO_LH + 12
-  g:fill_round(bx, by, bw, bh, theme.line, 8)
-  g:fill_round(bx + 1, by + 1, bw - 2, bh - 2, theme.field or theme.window, 7)
-  g:text(bx + 12, by + 8, "What happened", theme.text, nil)
-  local b = sys.build and sys.build() or {}
-  local tag = ("Kosmos %s - development"):format(b.version or "?")
-  g:text(bx + bw - 12 - gfx.measure(tag), by + 8, tag, theme.text_dim, nil)
-  g:fill(bx + 1, by + 28, bw - 2, 1, theme.line)
-
-  local ry = by + 36
-  for _, r in ipairs(rows) do
-    g:text(bx + 12, ry, r[1], theme.text_dim, nil, "mono")
-    g:text(bx + 12 + LABEL_W, ry, ui.fitted(r[2], bw - 24 - LABEL_W, "mono"),
-           theme.text, nil, "mono")
-    ry = ry + MONO_LH
-  end
-end
-
-win:add(gone)
-
---------------------------------------------------------------------------
--- **Settings** (`docs/webkit.html`, *Settings*; `roadmap.md`, S1): a tab
--- of JetSki's own at `about:settings` - a view of the kit's that loads
--- nothing, which this page is drawn over - in the kit's cards, as the old
--- browser's (`browser.lua`, d5), two columns when there is room. Every
--- change is kept the moment it is made, and reaches every tab at once.
--- History, cookies, and Privacy and Ad Blocking are S2 to S4.
---
-
-settings_page = ui.view{ x = 0, y = VIEW_Y, w = W, h = VIEW_H, hidden = true }
-settings_page.scroll, settings_page.tall = 0, 0
-
-function settings_page:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
-end
-
-function settings_page:wheel(n)
-  local most = math.max(0, self.tall - self.h)
-  self.scroll = math.max(0, math.min(most, self.scroll - n * 48))
-  for _, c in ipairs(self.children) do c.y = c.top - self.scroll end
-  return true
-end
-
-win:add(settings_page)
-
--- What Settings says of pages, handed to the kit: every view's.
-local function apply_pages()
-  webkit.settings{ scripts = setting.javascript, images = setting.images }
-end
-
-function fill_settings()
-  local page = settings_page
-  page.children = {}
-
-  local function save(key, value, after)
-    setting[key] = value
-    prefs.write(setting, SETTINGS, OWN)
-    print(("jetski: set %s %s"):format(key, tostring(value)))
-    if after then after(value) end
-  end
-
-  local function switch(key, after)
-    return ui.switch{ on = setting[key], on_change = function(_, on) save(key, on, after) end }
-  end
-
-  local function choice(key, after)
-    return ui.dropdown{ choices = prefs.CHOICES[key], value = setting[key],
-                        on_change = function(_, v) save(key, v, after) end }
-  end
-
-  local home = ui.field{ text = setting.home, w = 260 }
-  home.on_change = function(_, text)
-    if text ~= "" and not text:find("%c") and text ~= setting.home then save("home", text) end
-  end
-
-  local zoom = choice("zoom", function(v) webkit.zoom(v) end)
-  local images = switch("images", apply_pages)
-  local javascript = switch("javascript", apply_pages)
-  local search = choice("search")
-
-  local groups = {
-    { name = "Starting", rows = {
-        { label = "Home page", control = home },
-        { label = "When JetSki opens", control = choice("opens") } } },
-    { name = "Pages", rows = {
-        { label = "Zoom", note = "All of the page: its words, pictures and boxes", control = zoom },
-        { label = "Load images", control = images },
-        { label = "JavaScript",
-          note = "Off makes most sites plain or blank; for reading, or a page that misbehaves",
-          control = javascript } } },
-    { name = "Searching", rows = {
-        { label = "Search with", note = "Words in the address field that are not an address",
-          control = search } } },
-  }
-
-  local two = page.w >= 860
-  local columns = two and { { groups[1], groups[2] }, { groups[3] } } or { groups }
-  local each = page.w // #columns
-
-  page.tall = 0
-  for i, list in ipairs(columns) do
-    local c = ui.cards{ x = (i - 1) * each, y = 0, w = each, h = 4000, groups = list, width = 440 }
-    c.h = c.content_h + 16
-    c.top = 0
-    page:add(c)
-    page.tall = math.max(page.tall, c.h)
-  end
-  page.scroll = math.max(0, math.min(page.scroll, page.tall - page.h))
-  for _, c in ipairs(page.children) do c.y = c.top - page.scroll end
-
-  -- Where its controls are in the window, for whoever drives it from
-  -- outside (`x86-jetski`).
-  local function at(v)
-    local x, y = v:in_window()
-    return ("%d,%d"):format(x + v.w // 2, y + v.h // 2)
-  end
-  print(("jetski: settings, %d columns, javascript %s, images %s, zoom %s, search %s")
-        :format(#columns, at(javascript), at(images), at(zoom), at(search)))
-end
+SET = part("settings")
 
 -- The pointer passing over, nothing held: links light up, and say so.
 use("/Kosmos/Libraries/wmproto.lua").track(win.handle, true)
@@ -1267,7 +1018,7 @@ header:add(lock)
 function lock:mouse(action)
   if action ~= "press" then return true end
   if shield_close then shield_close() end
-  if downloads_close then downloads_close() end
+  if DL then DL.close() end
   if not lock_close() then lock_open() end
   return true
 end
@@ -1501,7 +1252,7 @@ end
 function shield:mouse(action)
   if action ~= "press" then return true end
   lock_close()
-  downloads_close()
+  DL.close()
   if not shield_close() then shield_open() end
   return true
 end
@@ -1686,11 +1437,11 @@ end
 -- account, or the page.
 function cover()
   local here = settings_tab ~= nil and web.shown_id() == settings_tab
-  settings_page.hidden = not here
-  gone.hidden = here or crash == nil
-  refused_page.hidden = here or crash ~= nil or refusal == nil
-  view.hidden = here or crash ~= nil or refusal ~= nil
-  if here then fill_settings() end
+  SET.view.hidden = not here
+  STOP.view.hidden = here or STOP.now() == nil
+  refused_page.hidden = here or STOP.now() ~= nil or refusal == nil
+  view.hidden = here or STOP.now() ~= nil or refusal ~= nil
+  if here then SET.fill() end
   if page.wants_keys and not view.hidden then
     page.wants_keys = not win:focus_on(view)
   end
@@ -1898,8 +1649,8 @@ end
 local inset = { gen = nil, view = nil }        -- gen nil: no inset shown
 
 local function page_clear()
-  return settings_page.hidden and not crash and not refusal
-         and lockpanel.hidden and shieldpanel.hidden and dlpanel.hidden
+  return SET.view.hidden and not STOP.now() and not refusal
+         and lockpanel.hidden and shieldpanel.hidden and DL.panel.hidden
 end
 
 local function inset_off()
@@ -1975,10 +1726,10 @@ local function frame(page_only)
     s:fill(0, HEAD - 3, math.max(math.floor(W * page.progress), W // 16), 3, theme.accent)
   end
 
-  if not settings_page.hidden then
-    ui.paint_view(settings_page, s, 0, VIEW_Y)
-  elseif crash then
-    ui.paint_view(gone, s, 0, VIEW_Y)
+  if not SET.view.hidden then
+    ui.paint_view(SET.view, s, 0, VIEW_Y)
+  elseif STOP.now() then
+    ui.paint_view(STOP.view, s, 0, VIEW_Y)
   elseif refusal then
     ui.paint_view(refused_page, s, 0, VIEW_Y)
   elseif not (page_clear() and inset_page()) then
@@ -2000,7 +1751,7 @@ local function frame(page_only)
     shieldpanel.h = shield_height()
     ui.paint_view(shieldpanel, s, shieldpanel.x, shieldpanel.y)
   end
-  if not dlpanel.hidden then ui.paint_view(dlpanel, s, dlpanel.x, dlpanel.y) end
+  if not DL.panel.hidden then ui.paint_view(DL.panel, s, DL.panel.x, DL.panel.y) end
 
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
@@ -2069,7 +1820,7 @@ win.on_resize = function(_, w, h)
   web.resize(PAGE_W, VIEW_H)
   if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
   web.frame(X, Y, W, H)
-  if not settings_page.hidden then fill_settings() end
+  if not SET.view.hidden then SET.fill() end
   print(("jetski: resized to %dx%d"):format(W, H))
   frame()
 end
@@ -2108,206 +1859,14 @@ do
   end
 end
 
---------------------------------------------------------------------------
--- **The downloads** (`docs/webkit.html`, *Downloads*): what WebKit's
--- network process is writing into `/Home/Downloads`, or wrote, the newest
--- first - a row each, with how far it has got, and what can be done with
--- it: Cancel while it runs; Open, with the application its type names,
--- and Show, in Tracker, once it is there; Retry when it failed. A
--- notification says when one finishes, and pressing it opens the file.
---
-
-do
-  local notify = use("/Kosmos/Libraries/notify.lua")
-  local filetypes = use("/Kosmos/Libraries/filetypes.lua")
-  local DL_FOLDER = "/Home/Downloads"
-  local dl = {}                        -- `web.downloads` fills it, reused
-  local dl_n = 0
-  local dl_seen = {}                   -- id -> the state last seen
-  local dl_frames = 0
-  local DL_ROW, DL_HEAD, DL_ROWS = 52, 44, 6
-
-  dlpanel = ui.view{ w = 460, h = 10, hidden = true }
-
-  local function amount(n)
-    if not n then return "?" end
-    if n < 1024 then return ("%d bytes"):format(n) end
-    if n < 1024 * 1024 then return ("%.0f KB"):format(n / 1024) end
-    if n < 1024 * 1024 * 1024 then return ("%.1f MB"):format(n / 1048576) end
-    return ("%.2f GB"):format(n / 1073741824)
-  end
-
-  -- What a row says under its name.
-  local function dl_words(d)
-    local from = host_of(d.address)
-    if d.state == "downloading" then
-      local rate = d.seconds > 0.5 and (" - %s/s"):format(amount(d.received / d.seconds)) or ""
-      if d.expected then
-        return ("%s of %s%s"):format(amount(d.received), amount(d.expected), rate)
-      end
-      return amount(d.received) .. rate
-    elseif d.state == "done" then
-      return ("%s - %s"):format(from, amount(d.received))
-    elseif d.state == "cancelled" then
-      return "Cancelled"
-    end
-    return ("Failed: %s"):format(d.reason ~= "" and d.reason or ("error " .. d.error))
-  end
-
-  -- The actions a row has, right to left.
-  local function dl_actions(d)
-    if d.state == "downloading" then return { "Cancel" } end
-    if d.state == "done" then return { "Show", "Open" } end
-    return { "Retry" }
-  end
-
-  local function dl_open(d)
-    local how = filetypes.how_to_open(d.path)
-    if not how then
-      say(("nothing opens %s - it is in %s"):format(d.name, DL_FOLDER))
-      return
-    end
-    print(("jetski: opening download %s with %s"):format(d.path, how.program))
-    fs.send("/Running/wm", { type = "launch", program = how.program, args = how.args, wait = false })
-  end
-
-  local function dl_show(d)
-    local folder = d.path:match("^(.*)/[^/]*$") or DL_FOLDER
-    print("jetski: showing download in " .. folder)
-    fs.send("/Running/wm", { type = "launch", program = "tracker", args = files.quote(folder), wait = false })
-  end
-
-  function dlpanel:draw(g)
-    g:fill_round(0, 0, self.w, self.h, theme.line, 9)
-    g:fill_round(1, 1, self.w - 2, self.h - 2, theme.window, 8)
-    g:line_icon(14, 14, "downloads", theme.accent)
-    g:text(38, 12, "Downloads", theme.text, nil, "ui")
-    local into = "into " .. DL_FOLDER
-    self.hits = {}
-    local clear_x = self.w - 14 - gfx.measure("Clear")
-    if dl_n > 0 then
-      g:text(clear_x, 14, "Clear", theme.accent)
-      self.hits[#self.hits + 1] = { x = clear_x - 4, y = 8, w = gfx.measure("Clear") + 8, h = 24, act = "Clear" }
-    end
-    g:text(clear_x - 16 - gfx.measure(into), 14, into, theme.text_dim)
-    g:fill(1, DL_HEAD - 4, self.w - 2, 1, theme.line_soft)
-    if dl_n == 0 then
-      g:text(14, DL_HEAD + 10, "Nothing downloaded yet. A file a page cannot show comes here.", theme.text_dim)
-      return
-    end
-    local y = DL_HEAD
-    for i = 1, math.min(dl_n, DL_ROWS) do
-      local d = dl[i]
-      local x = self.w - 14
-      for _, a in ipairs(dl_actions(d)) do
-        local w = gfx.measure(a)
-        x = x - w
-        g:text(x, y + 10, a, theme.accent)
-        self.hits[#self.hits + 1] = { x = x - 4, y = y, w = w + 8, h = DL_ROW - 6, act = a, d = d }
-        x = x - 14
-      end
-      local room = x - 14 - 8
-      local finished = d.state == "done"
-      g:line_icon(14, y + 10, finished and "document" or "downloads",
-                  d.state == "failed" and theme.text_dim or theme.text)
-      g:text(38, y + 8, ui.fitted(d.name ~= "" and d.name or d.address, room - 24), theme.text, nil, "ui")
-      g:text(38, y + 28, ui.fitted(dl_words(d), room - 24), theme.text_dim)
-      if d.state == "downloading" then
-        local w = room - 24
-        local part = d.expected and d.expected > 0 and math.min(1, d.received / d.expected) or 0
-        g:fill_round(38, y + DL_ROW - 8, w, 3, theme.line_soft, 1)
-        g:fill_round(38, y + DL_ROW - 8, math.max(2, math.floor(w * part)), 3, theme.accent, 1)
-      end
-      y = y + DL_ROW
-    end
-  end
-
-  function dlpanel:mouse(action, x, y)
-    if action ~= "press" then return true end
-    for _, h in ipairs(self.hits or {}) do
-      if x >= h.x and x < h.x + h.w and y >= h.y and y < h.y + h.h then
-        print(("jetski: download %s%s"):format(h.act, h.d and (" " .. h.d.name) or ""))
-        if h.act == "Clear" then
-          for i = 1, dl_n do
-            if dl[i].state ~= "downloading" then web.download_forget(dl[i].id) end
-          end
-        elseif h.act == "Cancel" then web.download_cancel(h.d.id)
-        elseif h.act == "Open" then dl_open(h.d)
-        elseif h.act == "Show" then dl_show(h.d)
-        elseif h.act == "Retry" then
-          web.download_forget(h.d.id)
-          web.load(h.d.address)
-        end
-        dl_n = web.downloads(dl)
-        self.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
-        return true
-      end
-    end
-    return true
-  end
-
-  downloads_close = function()
-    if dlpanel.hidden then return false end
-    dlpanel.hidden = true
-    return true
-  end
-
-  downloads_toggle = function()
-    lock_close()
-    shield_close()
-    if downloads_close() then return end
-    dl_n = web.downloads(dl)
-    dlpanel.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
-    dlpanel.x = math.max(8, dlbutton.x + dlbutton.w - dlpanel.w)
-    dlpanel.y = HEAD + 2
-    dlpanel.hidden = false
-    print(("jetski: the downloads shown, %d, at %d,%d %dx%d"):format(dl_n,
-          (win.origin_x or 0) + dlpanel.x, (win.origin_y or 0) + dlpanel.y, dlpanel.w, dlpanel.h))
-  end
-
-  -- Every frame: whether the downloads changed enough to draw again. The
-  -- list is asked for when one began or ended, and a few times a second
-  -- while one runs, never every frame.
-  downloads_frame = function()
-    local running = (st.downloading or 0) > 0
-    if not st.downloads and not (running or dlbutton.part) then return false end
-    dl_frames = dl_frames + 1
-    if not st.downloads and dl_frames % 20 ~= 0 then return false end
-    dl_n = web.downloads(dl)
-    local got, all = 0, 0
-    for i = 1, dl_n do
-      local d = dl[i]
-      if d.state == "downloading" then
-        got = got + d.received
-        all = all + (d.expected or math.max(d.received * 2, 1))
-      end
-      if dl_seen[d.id] ~= d.state then
-        local was = dl_seen[d.id]
-        dl_seen[d.id] = d.state
-        if d.state == "downloading" and not was then
-          say(("downloading %s"):format(d.name ~= "" and d.name or d.address))
-        elseif d.state == "done" then
-          say(("downloaded %s, %d bytes, into %s"):format(d.name, d.received, d.path))
-          notify.post{ title = "Downloaded", body = d.name, open = d.path }
-        elseif d.state == "failed" then
-          say(("download of %s failed: %s"):format(d.name, dl_words(d)))
-        end
-      end
-    end
-    dlbutton.part = running and (all > 0 and got / all or 0) or nil
-    if not dlpanel.hidden then
-      dlpanel.h = DL_HEAD + math.max(1, math.min(dl_n, DL_ROWS)) * DL_ROW + 8
-    end
-    return true
-  end
-end
+DL = part("downloads")
 
 win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
   if tracing then commits_said() end
-  local downloads_changed = downloads_frame()
+  local downloads_changed = DL.frame()
   if F.frame() then downloads_changed = true end
-  if web.save_frame() then downloads_changed = true end
+  if MENU.save_frame() then downloads_changed = true end
 
   -- Settings' tab is JetSki's: its name and address, whatever the view
   -- under it says.
@@ -2410,39 +1969,7 @@ win.on_frame = function()
     end
   end
 
-  -- The tab shown: its page stopped, or stopped and now collected, or
-  -- loading again - whichever it is, the stopped page follows.
-  local was = crash
-  -- A process not yet collected is asked about again, for a second or two
-  -- of passes, and then left as it is.
-  if st.crashed or st.started or st.tab ~= page.crash_tab then
-    page.crash_asks = 120
-  end
-  if page.crash_asks > 0 and (st.crashed or st.started or st.tab ~= page.crash_tab
-                              or (crash and not crash.known)) then
-    page.crash_asks = page.crash_asks - 1
-    crash = web.crash(st.tab)
-    page.crash_tab = st.tab
-  end
-  if crash ~= was then
-    cover()
-    if crash and (not was or crash.known ~= was.known) then
-      say("the page's process ended")
-      for _, r in ipairs(crash_rows(crash)) do
-        print(("jetski: %-9s %s"):format(r[1], r[2]))
-      end
-    end
-    changed = true
-  end
-  -- The function, the pass after the stopped page first showed.
-  if crash and crash.fault and named[crash.pc] == nil then
-    if page.naming == crash.pc then
-      print("jetski: in        " .. tostring(look_up(crash.pc) or "no symbol holds it"))
-      changed = true
-    else
-      page.naming = crash.pc
-    end
-  end
+  if STOP.frame() then changed = true end
 
   -- The address that became the page shown (`FAV.remember`): a load
   -- finishing at another address - a download's - was never shown. A flag
@@ -2492,8 +2019,8 @@ win.on_frame = function()
 
   if changed then return true end
   if st.picture then
-    if settings_page.hidden and not crash and not refusal and not inspecting
-       and lockpanel.hidden and shieldpanel.hidden and dlpanel.hidden
+    if SET.view.hidden and not STOP.now() and not refusal and not inspecting
+       and lockpanel.hidden and shieldpanel.hidden and DL.panel.hidden
        and status_text() == status_drawn then
       page_frame()
     else
@@ -2503,323 +2030,17 @@ win.on_frame = function()
   return false
 end
 
--- Control-L: the address, all of it chosen, to type over.
---------------------------------------------------------------------------
--- **Find on the page** (`docs/webkit.html`, *Find on the page*, agreed 17
--- November 2026): Control-F opens a bar under the header - the Writer's,
--- `findbar.lua`, one bar for every application that looks for words - and
--- the page moves down to make room. WebKit marks every match, selects the
--- one shown and scrolls to it; the bar says how many and which, as WebKit
--- answers (`st.found`). Return the next, Shift-Return the one before,
--- Escape or the bar's cross to close it, which takes the marks off.
---
-do
-  local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
-  local findbar = use("/Kosmos/Libraries/findbar.lua")
-  findbar.into(ui, pk)
-  F.H = findbar.H
-
-  F.view = ui.view{ x = 0, y = HEAD, w = W, h = F.H, hidden = true }
-  F.view.focusable = true
-  function F.view:draw() end
-
-  -- The page's size changed with the bar: WebKit told, the window drawn.
-  local function relaid()
-    layout()
-    web.resize(PAGE_W, VIEW_H)
-    if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
-    frame()
-  end
-
-  local function look(fresh, backwards)
-    if F.state.words == "" then F.state.count, F.state.current = 0, 0 end
-    web.find(F.state.words, F.state.case, backwards, fresh)
-    frame()
-  end
-
-  F.paint = function(s)
-    local b = F.state.bar
-    b.x, b.y, b.w = 0, HEAD, W
-    b.needle, b.count, b.current = F.state.words, math.max(0, F.state.count), F.state.current
-    b.case, b.words, b.within, b.replacing = F.state.case, false, false, false
-    b.only = { case = true }
-    b.chosen = F.state.chosen
-    b.focus = win.frame:focusables()[win.focus] == F.view and "find" or nil
-    pk.findbar(s, b)
-    if F.state.count < 0 and F.state.words ~= "" then        -- past the thousand
-      local at = (b.parts or {})[1]
-      if at then
-        s:fill(at.box.x + at.box.w + 8, b.y + 4, 70, b.h - 8, theme.window)
-        s:text(at.box.x + at.box.w + 8, b.y + (b.h - gfx.height()) // 2, "1000+", theme.text_dim, nil, "ui")
-      end
-    end
-  end
-
-  F.open = function()
-    if downloads_close then downloads_close() end
-    lock_close()
-    shield_close()
-    if not F.state then
-      F.state = { words = "", case = false, count = 0, current = 0, bar = {} }
-      F.view.hidden = false
-      relaid()
-    end
-    -- The words already there chosen, so a word typed replaces them.
-    F.state.chosen = F.state.words ~= ""
-    web.focus(false)
-    win:focus_on(F.view)
-    print("jetski: find bar open")
-    if F.state.words ~= "" then look(true, false) else frame() end
-  end
-
-  F.close = function()
-    if not F.state then return end
-    web.find("", false, false, false)
-    F.state = nil
-    F.view.hidden = true
-    relaid()
-    win:focus_on(view)
-    web.focus(true)
-    print("jetski: find bar closed")
-  end
-
-  local function step(backwards)
-    if F.state and F.state.words ~= "" then look(false, backwards) end
-  end
-
-  function F.view:key(c)
-    local k, mods = keys.parts(c)
-    local chosen = F.state.chosen
-    if c == 27 then
-      F.close()
-      return true
-    elseif k == 13 and mods & keys.SHIFT ~= 0 then
-      -- Shift-Return, once the board sends it as a key of its own; today it
-      -- is Return's byte (`roadmap.md`).
-      F.state.chosen = false
-      step(true)
-      return true
-    elseif c == 13 or c == 10 then
-      F.state.chosen = false
-      step(false)
-      return true
-    elseif c == 8 or c == 127 then
-      local t = F.state.words
-      F.state.words = chosen and "" or t:sub(1, (utf8.offset(t, -1) or (#t + 1)) - 1)
-      F.state.chosen = false
-      look(true, false)
-      return true
-    elseif c >= 32 and c < 256 then
-      F.state.words = (chosen and "" or F.state.words) .. string.char(c)
-      F.state.chosen = false
-      -- A character of several bytes is looked for once it is whole.
-      if utf8.len(F.state.words) then look(true, false) end
-      return true
-    end
-    return false                       -- the window's keys, Control-F among them
-  end
-
-  function F.view:mouse(action, x, y)
-    if action ~= "press" then return true end
-    local part = pk.findbar_at(F.state.bar, x + self.x, y + self.y)
-    if part == "close" then
-      F.close()
-    elseif part == "next" then
-      step(false)
-    elseif part == "previous" then
-      step(true)
-    elseif part == "case" then
-      F.state.case = not F.state.case
-      look(true, false)
-    end
-    win:focus_on(F.view)
-    if part then print("jetski: find " .. part) end
-    return true
-  end
-
-  -- Every frame: WebKit's answer, drawn. What it says is said once, for a
-  -- suite to read.
-  F.frame = function()
-    if not F.state or not st.found then return false end
-    F.state.count, F.state.current = web.found()
-    if F.state.count == 0 then
-      print(("jetski: found nothing for %q"):format(F.state.words))
-    else
-      print(("jetski: found %d, showing %d"):format(F.state.count, F.state.current))
-    end
-    return true
-  end
-
-  win:add(F.view)
+-- The page's size changed with the find bar: WebKit told, the window drawn.
+function J.relaid()
+  layout()
+  web.resize(PAGE_W, VIEW_H)
+  if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
+  frame()
 end
 
---
--- **Save page as** (`docs/webkit.html`): Control-S opens the system's Save
--- window at `/Home/Downloads`, named after the page's title. As a web page,
--- complete - one MHTML file with its styles and pictures, which JetSki
--- opens again without the network - or the page's HTML only, as it came.
--- WebKit writes the bytes (`v:save`); what came of it is said when it says
--- (`st.saved`, `save_frame`).
---
-local function save_page()
-  if not page.address or page.address == "" or page.address:match("^about:") then
-    say("there is no page here to save")
-    return
-  end
+part("find")
 
-  local folder = "/Home/Downloads"
-
-  if not files.make_folder(folder) then folder = "/Home" end
-
-  -- The title as a name: no slashes, nothing unprintable, not too long.
-  local stem = tostring(page.title or ""):gsub("[/%c]", " "):gsub("%s+", " ")
-                                         :match("^%s*(.-)%s*$"):sub(1, 80)
-
-  if stem == "" then stem = page.address:match("^%a+://([^/:]+)") or "page" end
-
-  local chooser = use("/Kosmos/Libraries/panel.lua").save{
-    start = folder, title = "Save page as",
-    name = files.free_name(folder, stem .. ".mhtml"),
-    as = { { "complete", "A web page, complete - one file, with its pictures", "mhtml" },
-           { "html", "The page's HTML only", "html" } },
-    on_choose = function(path, as)
-      win:focus_on(view)
-      web.focus(true)
-      web.saving = { path = path, as = as }
-      web.save(path, as == "complete")
-      say(("saving %s as %s"):format(path, as == "complete" and "a web page, complete"
-                                                       or "its HTML"))
-    end,
-  }
-
-  if chooser then chooser:run() end
-end
-
--- What a save came to, said once WebKit has written it.
-function web.save_frame()
-  if not (st.saved and web.saving) then return false end
-
-  local s = web.saving
-  local bytes, why = web.saved()
-
-  web.saving = nil
-
-  if bytes then
-    say(("saved %s, %d bytes, as %s"):format(s.path, bytes, s.as))
-    use("/Kosmos/Libraries/notify.lua").post{ title = "Saved", body = s.path:match("[^/]+$") or s.path, open = s.path }
-  else
-    say(("could not save %s: %s"):format(s.path, tostring(why)))
-  end
-
-  return true
-end
-
--- The menu's and the keys' doors, in one table: the file is at Lua's 200.
-local MENU = {}
-
--- Control-O's: an HTML file, chosen in the system's Open window.
-function MENU.open_file()
-  local chooser = use("/Kosmos/Libraries/panel.lua").open{
-    -- Where the page shown is, when it is a file; /Home otherwise.
-    start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
-    title = "Open a web page",
-    filter = function(name)
-      local n = name:lower()
-      return n:match("%.html?$") ~= nil or n:match("%.mhtm?l?$") ~= nil
-    end,
-    on_choose = function(path) win:focus_on(view) web.focus(true) visit(path) end,
-  }
-  if chooser then chooser:run() end
-end
-
--- **The zoom, a step at a time**: Settings' four (Diego, 1 October, "just
--- put 4 options"), Control-plus up one, Control-minus down one and
--- Control-nought back to the first - and kept, as choosing it in Settings
--- keeps it. `to` is 1, -1 or 0; `MENU.zoom_to` sets one of the four.
-function MENU.zoom_to(percent)
-  if percent ~= setting.zoom then
-    setting.zoom = percent
-    prefs.write(setting, SETTINGS, OWN)
-    webkit.zoom(percent)
-  end
-
-  say(("zoom %d%%"):format(percent))
-end
-
-function MENU.zoom_step(to)
-  local list, at = prefs.CHOICES.zoom, 1
-
-  for i, z in ipairs(list) do
-    if z[1] == setting.zoom then at = i end
-  end
-
-  MENU.zoom_to(((to == 0) and list[1] or list[math.max(1, math.min(#list, at + to))])[1])
-end
-
--- **The menu** (`docs/webkit.html`, *The menu*): everything JetSki does,
--- under the drawing's headings, each with its key - one door to each, so
--- the row and the key do the same thing. A row whose feature is not built
--- yet is drawn greyed, which says it is coming where a missing row says
--- nothing; *Bookmark this page* is *Add to favorites*, since on Kosmos
--- they are (`webkit.md`, *Doubts*).
-function MENU.items()
-  local function heading(text) return { text = text, heading = true } end
-  local function row(text, hint, fn) return { text = text, hint = hint, on_choose = fn } end
-  local function later(text, hint) return { text = text, hint = hint, disabled = true } end
-  local sep = { separator = true }
-
-  local zooms = {}
-  for _, z in ipairs(prefs.CHOICES.zoom) do
-    zooms[#zooms + 1] = { text = z[2], mark = (z[1] == setting.zoom),
-                          on_choose = function() MENU.zoom_to(z[1]) end }
-  end
-
-  local items = {
-    heading("File"),
-    row("New tab", "Ctrl T", new_tab),
-    row("Open a file...", "Ctrl O", MENU.open_file),
-    row("Save page as...", "Ctrl S", save_page),
-    later("Print...", "Ctrl P"),
-    sep, heading("Edit"),
-    row("Find on the page...", "Ctrl F", function() F.open() end),
-    sep, heading("View"),
-    { text = ("Zoom: %d%%"):format(setting.zoom), hint = "Ctrl + - 0", submenu = zooms },
-    later("Page source", "Ctrl U"),
-    row("Downloads", "Ctrl Shift J", function() downloads_toggle() end),
-    sep, heading("History and favorites"),
-    later("History", "Ctrl Y"),
-    row(FAV.star.lit and "Remove from favorites" or "Add to favorites", "Ctrl D", FAV.toggle),
-    sep,
-    row("Settings", "Ctrl ,", open_settings),
-  }
-
-  if DEVELOPER then
-    table.insert(items, #items, row("Web Inspector", "Ctrl Alt I", toggle_inspector))
-  end
-
-  return items
-end
-
--- Opened under the three dots, and said - the rows by where they are, for
--- a suite to press one as a hand does.
-function MENU.open()
-  local x, y = more:in_window()
-  local items = MENU.items()
-  local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + more.h, items)
-
-  if m and m.row then
-    local at, names = 2, {}
-    for _, it in ipairs(items) do
-      local h = it.separator and m.row // 3 or m.row
-      if it.text and not it.heading then
-        names[#names + 1] = ("%s%s at %d"):format(it.text, it.disabled and " (later)" or "", at + h // 2)
-      end
-      at = at + h
-    end
-    print(("jetski: the menu at %d,%d %dx%d: %s"):format(m.x or -1, m.y or -1, m.w or 0, m.h or 0,
-                                                       table.concat(names, "; ")))
-  end
-end
+MENU = part("menu")
 more.on_click = function() MENU.open() end
 
 win.on_key = function(_, c)
@@ -2827,7 +2048,7 @@ win.on_key = function(_, c)
   if c == 6 then F.open() return true end
 
   -- Control-S: Save page as.
-  if c == 19 then save_page() return true end
+  if c == 19 then MENU.save_page() return true end
 
   -- Control-D: the page a favorite, or no longer one - the star's.
   if c == 4 then FAV.toggle() return true end
@@ -2843,7 +2064,7 @@ win.on_key = function(_, c)
 
   -- Control-Shift-J: the downloads, as Safari's Option-Command-L and
   -- Chrome's Control-J show them (`downloads_key`, above).
-  if downloads_key(c) then downloads_toggle() return true end
+  if downloads_key(c) then DL.toggle() return true end
 
   -- Control or Super with a comma: Settings, as Safari and Chrome have it.
   do
@@ -2890,9 +2111,14 @@ function win:on_drop(kind, payload)
   return true
 end
 
+-- What JetSki's files ask for that is made after the first of them.
+J.downloads, J.st, J.page, J.say, J.visit, J.frame = DL, st, page, say, visit, frame
+J.new_tab, J.open_settings, J.toggle_inspector, J.cover = new_tab, open_settings, toggle_inspector, cover
+J.close_tab, J.lock_close, J.shield_close, J.host_of = close_tab, lock_close, shield_close, host_of
+
 win:add(lockpanel)                   -- over everything, while it is open
 win:add(shieldpanel)
-win:add(dlpanel)
+win:add(DL.panel)
 tabs_changed()
 win:focus_on(view)
 

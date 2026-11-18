@@ -111,6 +111,8 @@ import subprocess
 import sys
 import threading
 import time
+
+import jetski_files
 import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1252,7 +1254,7 @@ HOOK = ("local t do local hk, hm = keys.parts(c) if hm == (keys.CTRL | keys.ALT)
         "print(\"jetski: test composed again\") return false end "
         "if t == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
-        "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
+        "print(\"jetski: test names \" .. tostring(STOP.look_up(NAMED_AT))) "
         "return true end\n")
 
 
@@ -1637,16 +1639,66 @@ def cookies():
     return failed
 
 
-def changed(text, old, new):
-    """`text` with `old` made `new` - a control's change to `jetski.lua`.
-    Stopped when `old` is not there: a control whose string has gone changes
-    nothing and passes, and so proves nothing. `fixed` did that from 0.11.430,
-    when `web.resize(W, VIEW_H)` became `web.resize(PAGE_W, VIEW_H)`, until
-    0.11.436 (`testing.md` 18.833)."""
-    if old not in text:
-        sys.exit("FAIL: %s finds nothing to change: %r is not in jetski.lua"
-                 % ("the control " + BROKEN if BROKEN else "the suite's own hook", old))
-    return text.replace(old, new)
+# **The controls' changes to JetSki's files** (`jetski_files.py`), each a
+# list of `(old, new)`, made in order. Every one is tried on a copy before
+# every run, so a control whose string has gone stops the suite on an
+# ordinary run rather than only on its own; the one named by
+# `KOSMOS_JETSKI_BREAK` is made.
+DEAF = "(function() return false end)("
+CONTROLS = {
+    # Laid out again at the new size, and WebKit never told.
+    "fixed": [("web.resize(PAGE_W, VIEW_H)", "do end")],
+    # The page never an inset: painted into the window, as in 0.11.456.
+    "no-inset": [("  local id = web.shown_id()\n  local fresh",
+                  "  do return false end\n  local id = web.shown_id()\n  local fresh")],
+    # WebKit not handed the window's code: every picture waits for the
+    # poll's tick, as before 0.11.455.
+    "sleeper": [("    webkit.wake(r.passed, r.code)\n", "    -- (the wake left out)\n")],
+    # WebKit's buffer not being drawn owes nothing (`KosmosStore.h`).
+    "forgetting": [("local inset = { gen = nil, view = nil }",
+                    "webkit.store_forgets(true)\nlocal inset = { gen = nil, view = nil }")],
+    # Control-T, the window's, never answered.
+    "tabless": [("if c == 20 then new_tab() return true end", "")],
+    # A link followed, and nothing shown until WebKit begins the load.
+    "unannounced": [("if st.asked then", "if false then")],
+    # The page's view keeps what it is handed: everything, or the one.
+    "deaf": [("web.mouse(", DEAF), ("web.wheel(", DEAF), ("web.key(", DEAF)],
+    "deaf-wheel": [("web.wheel(", DEAF)],
+    "deaf-key": [("web.key(", DEAF)],
+    # 0.11.462's: the downloads panel added to the window, never painted;
+    # and Web Inspector docked and never drawn.
+    "unpainted": [("  if not DL.panel.hidden then ui.paint_view(DL.panel, s, DL.panel.x, DL.panel.y) end\n", ""),
+                  ("web.paint_inspector(s,", "local _ = (function() end)(s,")],
+    # 0.11.462's: byte 10 - Return's and Control-J's - JetSki's own.
+    "returnless": [("  if inspector_key(c) or downloads_key(c) or zoom_key(c) then return true end\n",
+                    "  if c == 10 or inspector_key(c) or downloads_key(c) or zoom_key(c) then return true end\n")],
+    # The bar asks WebKit nothing.
+    "unfound": [("function web.find(...) if shown then shown:find(...) end end", "function web.find(...) end")],
+    # The menu never asks what is under the pointer.
+    "underless": [("  local u = web.under()\n  page.under = u\n",
+                   "  local u = { link = \"\", label = \"\", image = \"\", selected = \"\" }\n")],
+    # The Debug Kit never asked.
+    "nameless": [("debugkit.name(IMAGE, pc)", "nil, \"not asked\"")],
+    # No door: an address written to /Running/JetSki/open is refused.
+    "doorless": [('win:publish("open", function() return "" end, function(address)',
+                  'win:publish("open", function() return "" end, nil and function(address)')],
+    # A path typed is a search, not a file.
+    "pathless": [('if text:match("^%s*/") then', 'if false then')],
+    # Control-O, never answered.
+    "openless": [("if c == 15 then MENU.open_file() return true end", "")],
+    # A file dropped, never taken.
+    "dropless": [('if kind ~= "files" then return false end\n  local first',
+                  'do return false end\n  local first')],
+    # Control-Alt-I and the button, never asking WebKit.
+    "uninspected": [("web.inspect(not inspecting)", "do end")],
+    # The page that stopped, never asked why.
+    "unexplained": [("crash = J.web.crash(st.tab)", "crash = nil")],
+    # One of JetSki's files never loaded: find's.
+    "partless": [('part("find")\n', "")],
+    # A name a file asks for never handed to it (`J`'s metatable).
+    "unhanded": [("J.downloads, J.st, J.page, J.say, J.visit, J.frame = DL, st, page, say, visit, frame",
+                  "J.downloads, J.st, J.page, J.visit, J.frame = DL, st, page, visit, frame")],
+}
 
 
 def main():
@@ -1673,117 +1725,19 @@ def main():
     image = os.path.join(WORK, "webkit.elf")
     subprocess.run([("x86_64-elf-" if "x86_64" in IMAGE else "aarch64-elf-") + "objcopy",
                     "--strip-debug", built, image], check=True)
-    lua = os.path.join(ROOT, "user", "installed", "JetSki", "jetski.lua")
     if BROKEN == "foreign-cookie":
         PAGE = PAGE.replace(SCRIPT_COOKIE.encode(), b"")
-    if BROKEN == "fixed":
-        # Laid out again at the new size, and WebKit never told.
-        with open(lua) as f:
-            text = changed(f.read(), "web.resize(PAGE_W, VIEW_H)", "do end")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN == "no-inset":
-        # The page never an inset: painted into the window, as in 0.11.456.
-        with open(lua) as f:
-            text = changed(f.read(), "  local id = web.shown_id()\n  local fresh",
-                           "  do return false end\n  local id = web.shown_id()\n  local fresh")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN == "sleeper":
-        # WebKit not handed the window's code: every picture waits for the
-        # poll's tick, as before 0.11.455.
-        with open(lua) as f:
-            text = changed(f.read(), "    webkit.wake(r.passed, r.code)\n",
-                           "    -- (the wake left out)\n")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN == "forgetting":
-        # WebKit's buffer not being drawn owes nothing (`KosmosStore.h`).
-        with open(lua) as f:
-            text = changed(f.read(), "local inset = { gen = nil, view = nil }",
-                           "webkit.store_forgets(true)\nlocal inset = { gen = nil, view = nil }")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN == "tabless":
-        # Control-T, the window's, never answered.
-        with open(lua) as f:
-            text = changed(f.read(), "if c == 20 then new_tab() return true end", "")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN == "unannounced":
-        # A link followed, and nothing shown until WebKit begins the load.
-        with open(lua) as f:
-            text = changed(f.read(), "if st.asked then", "if false then")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    if BROKEN in ("deaf", "deaf-wheel", "deaf-key"):
-        # The page's view keeps what it is handed: everything, or the one.
-        with open(lua) as f:
-            text = f.read()
-        calls = {"deaf": ("web.mouse(", "web.wheel(", "web.key("),
-                 "deaf-wheel": ("web.wheel(",), "deaf-key": ("web.key(",)}[BROKEN]
-        for call in calls:
-            text = changed(text, call, "(function() return false end)(")
-        lua = os.path.join(WORK, "jetski.lua")
-        with open(lua, "w") as f:
-            f.write(text)
-    with open(lua) as f:
-        text = f.read()
-    text = changed(text, "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end",
-                        "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20"
-                        " or select(2, keys.parts(c)) == (keys.CTRL | keys.ALT) then return true end")
-    text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
-                        + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))
-    if BROKEN == "unpainted":
-        # 0.11.462's: the downloads panel added to the window, never painted.
-        text = changed(text, "  if not dlpanel.hidden then ui.paint_view(dlpanel, s, dlpanel.x, dlpanel.y) end\n", "")
-    if BROKEN == "returnless":
-        # 0.11.462's: byte 10 - Return's and Control-J's - JetSki's own.
-        text = changed(text, "  if inspector_key(c) or downloads_key(c) then return true end\n",
-                       "  if c == 10 or inspector_key(c) or downloads_key(c) then return true end\n")
-    if BROKEN == "unfound":
-        # The bar asks WebKit nothing.
-        text = changed(text, "function web.find(...) if shown then shown:find(...) end end",
-                       "function web.find(...) end")
-    if BROKEN == "underless":
-        # The menu never asks what is under the pointer.
-        text = changed(text, "  local u = web.under()\n  page.under = u\n",
-                       "  local u = { link = \"\", label = \"\", image = \"\", selected = \"\" }\n")
-    if BROKEN == "nameless":
-        # The Debug Kit never asked.
-        text = changed(text, "debugkit.name(IMAGE, pc)", "nil, \"not asked\"")
-    if BROKEN == "doorless":
-        # No door: an address written to /Running/JetSki/open is refused.
-        text = changed(text, 'win:publish("open", function() return "" end, function(address)',
-                       'win:publish("open", function() return "" end, nil and function(address)')
-    if BROKEN == "pathless":
-        # A path typed is a search, not a file.
-        text = changed(text, 'if text:match("^%s*/") then', 'if false then')
-    if BROKEN == "openless":
-        # Control-O, never answered.
-        text = changed(text, "if c == 15 then\n    local chooser", "if false then\n    local chooser")
-    if BROKEN == "dropless":
-        # A file dropped, never taken.
-        text = changed(text, 'if kind ~= "files" then return false end\n  local first',
-                            'do return false end\n  local first')
-    if BROKEN == "uninspected":
-        # Control-Alt-I and the button, never asking WebKit.
-        text = changed(text, "web.inspect(not inspecting)", "do end")
-    if BROKEN == "unpainted":
-        # Docked and never drawn.
-        text = changed(text, "web.paint_inspector(s,", "local _ = (function() end)(s,")
-    if BROKEN == "unexplained":
-        # The page that stopped, never asked why.
-        text = changed(text, "crash = web.crash(st.tab)", "crash = nil")
-    lua = os.path.join(WORK, "jetski.lua")
-    with open(lua, "w") as f:
-        f.write(text)
+    texts = jetski_files.read()
+    jetski_files.tried(CONTROLS)
+    for old, new in CONTROLS.get(BROKEN, []):
+        jetski_files.change(texts, old, new, "the control " + BROKEN)
+    # The suite's own hook, after the control, which never changes it.
+    jetski_files.change(texts, "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end",
+            "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20"
+            " or select(2, keys.parts(c)) == (keys.CTRL | keys.ALT) then return true end", "the suite's own hook")
+    jetski_files.change(texts, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
+            + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address), "the suite's own hook")
+    app = jetski_files.install(texts, WORK)
     local_html = os.path.join(WORK, "local.html")
     local_js = os.path.join(WORK, "local.js")
     with open(local_html, "wb") as f:
@@ -1796,8 +1750,7 @@ def main():
         f.write(CHOSEN_HTML)
     with open(dropped_html, "wb") as f:
         f.write(DROPPED_HTML)
-    files = [(lua, "/Home/System/Apps/JetSki/jetski.lua"),
-             (image, "/Home/System/Apps/JetSki/webkit.elf" if BROKEN == "beside"
+    files = app + [(image, "/Home/System/Apps/JetSki/webkit.elf" if BROKEN == "beside"
                      else "/Home/System/WebKit/webkit.elf"),
              (local_html, "/Home/Pages/local.html"),
              (local_js, "/Home/Pages/local.js"),
