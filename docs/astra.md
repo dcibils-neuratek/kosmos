@@ -476,7 +476,7 @@ of section 6.
    edge profile equals the corner's along its axes, and that a rim with
    refraction 0 is the backdrop exactly.
 4. **LG4 - wallpaper glass everywhere: floating surfaces first, then
-   windows** (**begun in 0.11.475** with the dock, `testing.md` 18.875; the banners in 0.11.476, 18.876; menus in 0.11.477, 18.877; windows' grounds in 0.11.478, 18.878; the rim in 0.11.479, 18.879; sidebars and feet, the kit's `panel`, in 0.11.487, 18.886). `SC_GLASS` reading the blurred copy; the strip, dock, menus,
+   windows** (**begun in 0.11.475** with the dock, `testing.md` 18.875; the banners in 0.11.476, 18.876; menus in 0.11.477, 18.877; windows' grounds in 0.11.478, 18.878; the rim in 0.11.479, 18.879; sidebars and feet, the kit's `panel`, in 0.11.487, 18.886 - **LG4 built**: quick settings join when they exist, and two refinements are left - a rim on the dock and the banners, whose shapes are not a window's corner, and a glass window's ground shown solid while it is stretched in a resize). `SC_GLASS` reading the blurred copy; the strip, dock, menus,
    banners, quick settings; then windows' grounds through the kit. *Test*:
    a display suite in Liquid Glass reads a sidebar pixel as the blurred
    wallpaper under the tint, a rim pixel as the wallpaper at the table's
