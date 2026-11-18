@@ -504,6 +504,39 @@ static void inset_into(struct scene *sc, const struct sc_window *w, long top, lo
     }
 }
 
+/*
+ * **Glass under a window** (`SC_GLASS`, Liquid Glass LG4): wherever its
+ * picture draws anything at all - alpha above nought - the wallpaper's
+ * glass, from where the wallpaper lies, or the desktop's colour past it;
+ * then the picture is blended over that, as any blended window is. So the
+ * dock's tint frosts the wallpaper behind it, and what is under the dock -
+ * a window - is not seen through it, which is wallpaper glass's one
+ * honest difference from real glass (`docs/astra.md`, Liquid Glass 1).
+ * Where it draws nothing, its rounded ends, what is under it shows.
+ */
+static void glass_under(struct scene *sc, const struct sc_window *w,
+                        long x0, long y0, long x1, long y1)
+{
+    const struct surface *g = sc->glass;
+    long x, y;
+
+    for (y = y0; y < y1; y++) {
+        const uint32_t *p = row_of(w->picture, (unsigned)(y - w->y));
+        uint32_t *o = row_of(sc->back, (unsigned)y);
+        long gy = y - sc->wy;
+        bool in_y = gy >= 0 && gy < (long)g->height;
+        const uint32_t *gr = in_y ? row_of(g, (unsigned)gy) : NULL;
+
+        for (x = x0; x < x1; x++) {
+            long gx = x - sc->wx;
+
+            if ((p[x - w->x] >> 24) == 0) continue;
+
+            o[x] = gr != NULL && gx >= 0 && gx < (long)g->width ? gr[gx] : sc->desktop;
+        }
+    }
+}
+
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
 {
     long kept[4][6];
@@ -527,6 +560,10 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
 
     if (x1 > x0 && y1 > y0 && w->picture != NULL) {
         if (w->flags & SC_BLEND) {
+            if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
+                && w->src_w == w->w && w->src_h == w->h) {
+                glass_under(sc, w, x0, y0, x1, y1);
+            }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
         } else if (w->bar != NULL) {

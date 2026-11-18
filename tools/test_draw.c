@@ -194,6 +194,60 @@ static void scene(void)
 }
 
 /*
+ * **A glass strip** (`SC_GLASS`, Liquid Glass LG4): a blended strip over a
+ * window, with the wallpaper's glass somewhere else entirely. Where the
+ * strip draws its tint, the tint is over the glass and not over the window
+ * under it; where it draws nothing, the window shows; past the glass's
+ * edge it is over the desktop's colour. Without the flag, the same strip
+ * is over the window - the control, in the same scene.
+ */
+static void glass(void)
+{
+    struct surface back = make(120, 60, 0xff000000u);
+    struct surface win = make(120, 60, 0xff0000ffu);      /* blue, under it */
+    struct surface strip = make(60, 20, 0x80ffffffu);     /* half white */
+    struct surface frost = make(100, 60, 0xff00ff00u);    /* green: the glass */
+    struct scene *sc = malloc(sizeof(*sc));
+    unsigned x, y;
+    uint32_t p;
+
+    /* The strip's left quarter draws nothing: a pill's rounded end. */
+    for (y = 0; y < 20; y++) {
+        for (x = 0; x < 15; x++) row_of(&strip, y)[x] = 0;
+    }
+
+    scene_init(sc, &back);
+    sc->desktop = 0xffff0000u;                             /* red past it */
+    sc->glass = &frost;
+    sc->wx = sc->wy = 0;
+    check(scene_set_windows(sc, 2), "room for a window and a strip");
+    sc->win[0] = (struct sc_window){ 0, 0, 120, 60, 0, &win, 120, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_BLEND | SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "a glass strip's tint over the glass, not over the window under it");
+    check(at(&back, 55, 30) == 0xff0000ffu, "where the strip draws nothing, the window under it");
+    p = at(&back, 105, 30);
+    check(((p >> 16) & 0xff) > 0xb0 && ((p >> 8) & 0xff) > 0x70 && ((p >> 8) & 0xff) < 0x90,
+          "past the glass's edge, the tint over the desktop's colour");
+
+    sc->win[1].flags = SC_BLEND;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) < 0x90 && (p & 0xff) > 0xb0,
+          "the same strip, not glass, over the window under it");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(win.pixels);
+    free(strip.pixels);
+    free(frost.pixels);
+}
+
+/*
  * **A picture from before a resize** (`SC_STALE`): a 40 by 30 picture whose
  * every pixel is its own, in a frame resized to 60 by 50. Shown at its size,
  * pixel for pixel, its last column drawn on across the new room and its
@@ -250,6 +304,7 @@ int main(void)
 {
     primitives();
     scene();
+    glass();
     stale();
 
     if (failed) {
@@ -260,6 +315,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip frosted with the wallpaper's glass where it draws and not where it does not; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

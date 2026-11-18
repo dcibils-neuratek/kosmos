@@ -115,6 +115,7 @@ struct ws_scene_head {
     uint32_t desktop;
     int32_t  wallpaper, wx, wy, ww, wh;
     int32_t  stamp, sx, sy;
+    int32_t  glass;             /* the wallpaper blurred, where it lies (LG4) */
 
     uint32_t outline_on;
     int32_t  ox, oy, ow, oh;

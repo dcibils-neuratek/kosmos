@@ -13,14 +13,18 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
     100% - and in less than a few seconds even under TCG;
   - Endeavour, which is not glass, gives the glass back;
   - Liquid Glass Night, which is, makes it again;
+  - the dock, in Liquid Glass Night, frosted: a row of its ground above
+    its icons far smoother than the wallpaper's row just above the dock;
   - nothing died, and no program stopped on a Lua error.
 
 The control is Endeavour: a window manager that made the glass for every
 look, or never gave it back, fails the third; one that never made it
-fails the second.
+fails the second. And a dock the compositor does not frost - `SC_GLASS`
+left unset - fails the fifth: the tint over the sharp wallpaper keeps two
+thirds of its roughness.
 
-The pixels of the glass are LG4's to check, when something shows them;
-the blur itself is held to arithmetic on the Mac (`tools/test_blur.c`).
+The blur itself is held to arithmetic on the Mac (`tools/test_blur.c`),
+and the compositor's glass to pixels there (`tools/test_draw.c`).
 
 Usage: run_glass.py IMAGE
 """
@@ -35,7 +39,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 6
+CHECKS = 7
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -68,6 +72,48 @@ def line(guest, pattern, mark, seconds=60):
     return None
 
 
+def roughness(at, x0, x1, y):
+    """How much a row changes pixel to pixel: the sum over its channels."""
+    total = 0
+    prev = at(x0, y)
+    for x in range(x0 + 1, x1):
+        p = at(x, y)
+        total += sum(abs(a - b) for a, b in zip(p, prev))
+        prev = p
+    return total / max(1, x1 - x0 - 1)
+
+
+def frosted(guest, dockat, fails):
+    """The dock's ground frosted: a row of it inside the pill, above its
+    icons, far smoother than the wallpaper's row just above the dock - the
+    blur's doing. Over the sharp wallpaper the tint alone would leave two
+    thirds of the wallpaper's roughness."""
+    if not dockat:
+        fails.append("the dock never said where it is")
+        return None
+    x, y, w, h = (int(dockat.group(i)) for i in range(1, 5))
+    shot = guest.screendump()
+    os.makedirs("build/glass", exist_ok=True)
+    open("build/glass/dock.ppm", "wb").write(shot)
+    head = shot.split(b"\n", 3)
+    sw, _ = (int(v) for v in head[1].split())
+    data = head[3]
+
+    def at(px, py):
+        o = (py * sw + px) * 3
+        return tuple(data[o:o + 3])
+
+    x0, x1 = x + w // 4, x + 3 * w // 4
+    inside = roughness(at, x0, x1, y + 4)
+    above = roughness(at, x0, x1, y - 8)
+    print("frost: the dock at %d,%d %dx%d; a row inside %.1f, the wallpaper above %.1f"
+          % (x, y, w, h, inside, above))
+    if not (above > 3 and inside < 0.4 * above):
+        fails.append("the dock's ground is not frosted: a row inside it changes %.1f a pixel, "
+                     "the wallpaper above it %.1f" % (inside, above))
+    return inside
+
+
 def lua_string(text):
     return "[==[" + text + "]==]"
 
@@ -80,7 +126,8 @@ def run(fails):
         mark = len(guest.seen)
         guest.type('print("PREFS", fs.write("/Temporary/glassswap.lua", %s), '
                    'fs.write("/Home/Preferences/appearance", { palette = "liquidglass", '
-                   'wallpaper = "wallpaper/glass-wave.jpg", wallpaper_fit = "fill" }), '
+                   'wallpaper = "wallpaper/paint-storm.jpg", wallpaper_fit = "fill", '
+                   'bar = "dock", dock = "floating" }), '
                    'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua" } }))'
                    % lua_string(SWAP.replace("\n", " ")))
         guest.wait_for_line("PREFS", "the appearance and startup settings", mark)
@@ -90,7 +137,14 @@ def run(fails):
         screen = line(guest, r"wm: the window server answers, the screen (\d+)x(\d+)", mark, 120)
         made = line(guest, r"wm: the wallpaper's glass, (\d+)x(\d+), three passes at (\d+), "
                            r"in (\d+) ms", mark, 60)
+        dockat = line(guest, r"wm: window Deskbar at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 60)
         swapped = line(guest, r"GLASSSWAP liquidglassnight (\S+)", mark, 60)
+        # The dock looked at in the look the program left - Liquid Glass
+        # Night, glass again - once its glass is made and the dock redrawn.
+        line(guest, r"wm: the wallpaper's glass given back[\s\S]*wm: the wallpaper's glass, ",
+             mark, 30)
+        time.sleep(3)
+        frosted(guest, dockat, fails)
         time.sleep(2)
         guest._read_available()
         seen = guest.seen[mark:]
@@ -159,7 +213,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; nothing stopped)." % CHECKS)
+          "Night; the dock frosted; nothing stopped)." % CHECKS)
     return 0
 
 

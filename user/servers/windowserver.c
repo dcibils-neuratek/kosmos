@@ -280,6 +280,7 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     sc->stamp = picture(h.stamp);
     sc->sx = h.sx;
     sc->sy = h.sy;
+    sc->glass = picture(h.glass);
 
     sc->outline_on = h.outline_on != 0;
     sc->ox = h.ox;

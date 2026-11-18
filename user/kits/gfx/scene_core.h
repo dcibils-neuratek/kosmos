@@ -31,6 +31,9 @@ enum {
     SC_PLATINUM = 1u << 11,     /* Platinum's boxes (`docs/pewter.md` P2):
                                    close alone at `bx`, zoom and collapse
                                    at `bx2` */
+    SC_GLASS    = 1u << 12,     /* blended, and glass where it draws: over
+                                   the wallpaper's glass rather than what
+                                   is under it (Liquid Glass LG4) */
 };
 
 /* The lights, from the left: maximise, minimise, close (`OUT.SLOT`) - and
@@ -105,6 +108,9 @@ struct scene {
     uint32_t desktop;
     struct surface *wallpaper, *stamp;
     long wx, wy, ww, wh, sx, sy;
+    /* The wallpaper blurred (`OUT.glass_wallpaper`), lying where it lies,
+     * for an `SC_GLASS` window to be frosted with; NULL for none. */
+    struct surface *glass;
 
     /* Over everything. */
     bool outline_on;
@@ -125,6 +131,7 @@ struct scene {
 
     /* The pictures above, by slot, when described for the window server. */
     int wallpaper_slot, stamp_slot, osd_slot, cursor_slot, badge_slot, panel_slot;
+    int glass_slot;
 
     /* Scratch: the pieces of a rectangle not yet covered, two lists that
      * alternate, each `cap_pieces` long, and what each window shows of it -

@@ -1812,18 +1812,31 @@ if DOCKED then
   function paint_ground(g, x, y, w, h)
     local fill = (255 * (100 - transparency) + 50) // 100
     local edge = (0x18 * (100 - transparency) + 50) // 100
+    local ground = theme.window
+
+    --
+    -- **Under a glass look** (Liquid Glass LG4) the dock is the look's tint
+    -- - its colour, and its own alpha, at Appearance's transparency as well
+    -- - and the window manager frosts what is behind it with the
+    -- wallpaper's glass: the pill is frosted glass, its hairline the rim.
+    --
+    if theme.glass and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0 then
+      ground = theme.glass_tint
+      fill = ((theme.glass_tint >> 24) * (100 - transparency) + 50) // 100
+      edge = (0x60 * (100 - transparency) + 50) // 100
+    end
 
     if FLOATING and theme.cut then
       -- Starlight's cut (`docs/astra.md` S2): the top-left on a slant,
       -- eased, the other three round - its edge a pixel of the light.
       g:polygon(dock.cut_outline(x, y, w, h, 14, 12, 3), at(0xffffffff, edge))
       g:polygon(dock.cut_outline(x + 1, y + 1, w - 2, h - 2, 13, 11.6, 3),
-                at(theme.window, fill))
+                at(ground, fill))
     elseif FLOATING then
       g:fill_round(x, y, w, h, at(0xffffffff, edge), dock.RADIUS)
-      g:fill_round(x + 1, y + 1, w - 2, h - 2, at(theme.window, fill), dock.RADIUS - 1)
+      g:fill_round(x + 1, y + 1, w - 2, h - 2, at(ground, fill), dock.RADIUS - 1)
     else
-      g:fill(x, y, w, h, at(theme.window, fill))
+      g:fill(x, y, w, h, at(ground, fill))
       g:fill(x, y, w, 1, at(0xffffffff, edge))
     end
   end

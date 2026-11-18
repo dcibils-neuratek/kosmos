@@ -36286,3 +36286,42 @@ them the light on the wrong side.
 **Not yet**: the rim pass in the scene (LG4), and the split - the warm
 channels read at the offset times 1 + split, the cool ones 1 - split -
 which belongs to that pass, not to the table.
+
+## 18.875 Glass you can see - the dock frosted (LG4, first part)
+
+**In short.** In Liquid Glass the dock is now frosted glass: what shows
+through it is the wallpaper blurred, under the look's white tint, and no
+longer the wallpaper sharp. It is the first surface made of glass; menus,
+banners, the strip and windows' own grounds follow.
+
+**How** (`scene_core.c`'s `glass_under`, `SC_GLASS`): a blended strip
+flagged glass - the window manager flags one when the look is glass and
+there is a wallpaper's glass - has, wherever its picture draws anything,
+the wallpaper's glass put under it first, read from where the wallpaper
+lies (the desktop's colour past it); its picture is then blended over that
+as any blended strip is. Where it draws nothing - the pill's rounded ends,
+the room round it - what is under it shows. So a window under the dock is
+not seen through it: that is wallpaper glass's one honest difference from
+real glass (`astra.md`, *Liquid Glass*, 1). The scene is told the glass as
+the desktop's eleventh argument and the window server as `ws_scene_head`'s
+`glass` slot. The dock's ground under a glass look is the look's
+`glass_tint`, its own alpha at Appearance's transparency.
+
+**Held by** `tools/test_draw.c` (in `host`): a glass strip over a blue
+window, with the glass green somewhere else - its tint over the green, not
+the blue; where it draws nothing, the blue; past the glass's edge, over the
+desktop's red; the same strip unflagged over the blue. Its control,
+`glass_under` never called, fails two. And `x86-glass`, now 7: the dock in
+Liquid Glass Night, a row of its ground above its icons against the
+wallpaper's row just above the dock, over the carried *paint storm* -
+1.2 a pixel inside against 11.4 above. Its control, the flag never set,
+reads 7.3 inside - the tint over the sharp wallpaper, the two thirds the
+tint's alpha leaves - and fails that check alone.
+
+**Not yet**: the rim (LG3's table, its pass), menus, banners and the strip,
+and windows' grounds through the kit.
+
+**The gate** (131 suites, 694 s): three failed and passed alone straight
+after - `x86-ahci` and `x86-film`, which have before under load, and
+`x86-smbd`, whose Servers window never showed its visitor within 120 s,
+188 s into a suite that takes 90 alone. None of them composes glass.

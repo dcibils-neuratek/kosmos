@@ -5,7 +5,7 @@
  *   local sc = gfx.scene(back)
  *   sc:look(corner, shadow, grip, edge_light, edge_dark, box, box_w, run, d,
  *           track, line_soft, outline, lights...)       what it looks like
- *   sc:desktop(colour, wallpaper, wx, wy, ww, wh, stamp, sx, sy)
+ *   sc:desktop(colour, wallpaper, wx, wy, ww, wh, stamp, sx, sy, glass)
  *   sc:windows(n)                                       how many, in order
  *   sc:window(k, x, y, w, h, flags, picture, src_w, src_h,
  *             bar, bar_h, bx, by, held)                 the k-th from the back
@@ -46,7 +46,8 @@
 
 /* The user value's slots: what the scene names, kept alive. */
 enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_INSETS, UV_PLATES, UV_MISC, UV_COUNT = UV_MISC };
-enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE, MISC_PANEL };
+enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE, MISC_PANEL,
+       MISC_GLASS };
 
 static struct scene *check_scene(lua_State *L)
 {
@@ -120,6 +121,7 @@ static int l_scene(lua_State *L)
 
     scene_init(sc, back);
     sc->wallpaper_slot = sc->stamp_slot = sc->osd_slot = WS_NONE;
+    sc->glass_slot = WS_NONE;
     sc->cursor_slot = sc->badge_slot = sc->panel_slot = WS_NONE;
 
     lua_createtable(L, UV_COUNT, 0);
@@ -192,9 +194,12 @@ static int l_scene_desktop(lua_State *L)
     sc->stamp = opt_picture(L, 8, &sc->stamp_slot);
     sc->sx = (long)luaL_optinteger(L, 9, 0);
     sc->sy = (long)luaL_optinteger(L, 10, 0);
+    /* The wallpaper's glass, lying where the wallpaper lies (LG4). */
+    sc->glass = opt_picture(L, 11, &sc->glass_slot);
 
     hold(L, UV_MISC, MISC_WALLPAPER, 3);
     hold(L, UV_MISC, MISC_STAMP, 8);
+    hold(L, UV_MISC, MISC_GLASS, 11);
     return 0;
 }
 
@@ -487,6 +492,7 @@ static int l_scene_wire(lua_State *L)
     head->stamp = (int32_t)sc->stamp_slot;
     head->sx = (int32_t)sc->sx;
     head->sy = (int32_t)sc->sy;
+    head->glass = (int32_t)sc->glass_slot;
 
     head->outline_on = sc->outline_on ? 1u : 0u;
     head->ox = (int32_t)sc->ox;
