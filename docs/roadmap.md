@@ -11775,6 +11775,18 @@ spend a day here; a laptop cannot.
 - **Bounded under load**: the `x86-xavier`, `x86-film` and `x86-script`
   divergences under a full gate (`testing.md` 18.822) are what `make
   stress` exists for - a busy machine must still give the same answer.
+  On 18 November three prepushes of 0.11.489 each failed one suite, a
+  different one each time, and each passed alone: `x86-film` (a stretch
+  of sound read as zeros, as at 0.11.479 and 0.11.480), `x86-machine`
+  (two presses unanswered in 15 s; 41 s under the gate, 9 s alone) and,
+  in the gate before, `x86-desktops`' loader window and `x86-sound`'s
+  tone at 410 Hz for 440; then `x86-profile` (753 samples where about
+  1059 were due) and `x86-ahci` (no probe command ended by its
+  interrupt). Ten cores running 132 suites is the load, and that night
+  macOS's `BackgroundShortcutRunner` took two thirds of a core on top
+  (load average 12 before the gate). A suite that waits a fixed 15 s
+  for a press, or counts samples a busy host cannot deliver, is the
+  first to fix.
 - **The optimisation phase** below, as it stands.
 
 **2. A media machine**

@@ -127,8 +127,18 @@ def main():
         said = re.match(r"(\d+), the probe's waits (\d+) by it and (\d+) by a tick$",
                         line.strip())
         check(said is not None, "the interrupt was not claimed: %r" % line)
-        check(said is not None and int(said.group(2)) > 0,
-              "no command at the probe was ended by its interrupt: %r" % line)
+        # Unless no command waited at all: QEMU can end every command of
+        # the probe before the driver first looks at PxCI, which a busy host
+        # makes likely - twelve gates from 0.11.450 to 0.11.489 read "0 by
+        # it and 0 by a tick" and passed alone. Nothing waited, so nothing
+        # is proven either way, and the line says so rather than failing.
+        # A wait ended by a tick still fails, below.
+        if said is not None and said.group(2) == "0" and said.group(3) == "0":
+            print("ahci: every command at the probe was done before its first look; "
+                  "the interrupt not seen this boot")
+        else:
+            check(said is not None and int(said.group(2)) > 0,
+                  "no command at the probe was ended by its interrupt: %r" % line)
         check(said is not None and said.group(3) == "0", "a command at the probe "
               "waited a tick for an interrupt that did not come: %r" % line)
         count = guest.wait_for_line("ahci: 1 disk", "how many disks")

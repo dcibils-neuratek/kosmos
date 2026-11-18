@@ -36810,3 +36810,12 @@ loader's window after a desktop switch, the check that failed under load
 in 0.11.468 too, after its Shift-Return had opened Preferences; and
 `x86-sound` read a 440 Hz, 333 ms tone as 410 Hz and 365 ms. Both passed
 run alone (15 and 14 checks).
+
+**`x86-ahci` under a gate.** Its check that a command at the probe was
+ended by the controller's interrupt failed twelve gates from 0.11.450 to
+0.11.489, each time reading "0 by it and 0 by a tick", and passed alone.
+No command had waited: QEMU ended each before the driver's first look at
+PxCI, which a busy host makes likely, and the driver is right not to
+wait. So the check now says, when nothing waited, that the interrupt was
+not seen this boot, and does not fail; a wait ended by a tick still
+fails it, and alone it still proves the interrupt (14 checks).
