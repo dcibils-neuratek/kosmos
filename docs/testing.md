@@ -36162,3 +36162,32 @@ check.
 needs a window kept on screen after its application has let it go; the
 plate's amber sweeping in as focus arrives (90 ms); and *Reduce motion*,
 which this system does not have yet - when it does, the unfurl is a cut.
+
+## 18.872 Liquid Glass's two looks, and the glass keys (LG1)
+
+**In short.** Appearance offers two more looks, *Liquid Glass* and *Liquid
+Glass Night* - today's Astra on Endeavour's and Night's colours, with the
+window in front's tab amber. A look file can now say what its glass is
+made of, and the two say it; nothing draws the glass yet, so for now each
+is its tints said as solid colours. Fourteen looks, from twelve.
+
+**What a look can say** (`theme.lua`, `docs/astra.md` *Liquid Glass*):
+`glass` (`none`, `frosted`, `clear`), `glass_tint` (`#aarrggbb`),
+`glass_blur` and `bevel` in points to 64, and `refraction`, `split` and
+`specular` in percent, and `rim_front`, the warm rim's colour. Each is
+read like `shadow` and `flat`: a word or a number out of range is a line
+the reader names, never a value quietly clamped. A look that does not say
+them has `glass = none` and noughts - said by `theme.read`, and by
+`theme.apply` for a palette with no glass in it, so a look chosen after a
+glass one, or a built-in palette, is not glass.
+
+**Held by** `tools/test_theme.lua` (in `host`): every look read with no
+refused line; the two glass looks frosted, translucent, with a frost, a
+rim, percentages in range and a warm rim; every other look not glass, key
+by key; five bad glass lines each told; and Endeavour, then a built-in
+palette, applied after a glass look, not glass. Its control, `theme.apply`
+not resetting the glass, fails one check - the built-in palette's.
+`x86-display-3` counts fourteen looks in Preferences.
+
+**Next**: LG2, the blur in `gfx` and the wallpaper's blurred copy - which
+is also wallpaper glass, G1, and so what Starlight's S3 waits for.

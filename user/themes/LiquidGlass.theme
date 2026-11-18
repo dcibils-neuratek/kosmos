@@ -1,0 +1,85 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Liquid Glass: the current Astra, made of glass.
+#
+# Diego, 17 November 2026: "Can we try another desktop style called glass
+# inspired by this repo https://github.com/zakisheriff/Liquid-Glass", "It's
+# the current asta but full glass", "Let's call it Liquid Glass", "It
+# shouod have identity cues but feel like Liquid Glass" - and of the
+# drawing, `docs/liquidglass.html`, "Love the Liquid Glass!". The method is
+# Zaki Sheriff's library's (MIT): glass that bends what is behind it at its
+# rim, not only blurs it. Nothing of it is vendored; `docs/astra.md`,
+# *Liquid Glass*, is how it is done here.
+#
+# **The light one, on Endeavour's colours** (L1): the default look's
+# layout and palette, so this is Astra with its material changed. Its dark
+# partner is `LiquidGlassNight.theme`, on Night's.
+#
+# **Opaque, for now** (LG1): the colours below are what each glass
+# surface's tint looks like over the wallpaper it is paired with, said as
+# solid colours, so the look is whole before there is a blur to see through.
+# The glass keys after them say what the material is; the scene reads them
+# from LG2 on, and until then nothing draws them.
+
+name       = liquidglass
+flat       = yes
+
+desktop    = #4f7fd0
+window     = #eef1f8
+raised     = #fbfcff
+sunken     = #ffffff
+
+line       = #c9cfdd
+line_soft  = #e1e5ef
+track      = #d0d6e4
+swatch     = #a7c7ee
+
+edge_light = #ffffff
+edge_dark  = #d4d9e6
+
+text       = #1b1e2c
+text_dim   = #4f566c
+text_on    = #ffffff
+
+tab        = #f2a93b
+tab_idle   = #dfe4ef
+tab_text   = #2a1703
+tab_idle_text = #4f566c
+
+# The strip is glass, not the flare: the amber is the window in front's.
+strip      = #e7ebf5
+strip_text = #1b1e2c
+desktop_text = #ffffff
+
+console      = #1b1e2c
+console_text = #eef0fa
+
+accent     = #2f78d8
+good       = #2ec27e
+bad        = #e01b24
+ring       = #2f78d8
+stamp      = #99c1f1
+
+# **The glass** (`docs/astra.md`, *Liquid Glass*). `frosted` is blurred and
+# tinted, for anything with words on it; `clear` unblurred, only its rim
+# bending (L4 keeps that for the dock and the strip).
+glass       = frosted
+# The tint over the blur, with its alpha: white at a third.
+glass_tint  = #57ffffff
+# How far the frost reaches, in points.
+glass_blur  = 24
+# The rim's width, in points: where the glass bends what is behind it.
+bevel       = 12
+# How hard the rim bends, how far its colours split - amber one way and
+# indigo the other (L6) - and how bright its lit edge is, each in percent.
+refraction  = 60
+split       = 20
+specular    = 85
+# The window in front's rim is lit warm, every other cool (L6).
+rim_front   = #ffe2aa
+
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

@@ -1,0 +1,63 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Liquid Glass Night: Liquid Glass in the dark, on Night's colours.
+#
+# The partner of `LiquidGlass.theme`, which says where the look comes from
+# and what its glass keys mean (`docs/astra.md`, *Liquid Glass*, L1). As
+# there, the colours are the glass's tint over its wallpaper said as solid
+# colours until the blur exists (LG1).
+
+name       = liquidglassnight
+flat       = yes
+shadow     = 24
+
+desktop    = #111a33
+window     = #1d2238
+raised     = #272d47
+sunken     = #161a2d
+
+line       = #0b0e1a
+line_soft  = #2f3552
+track      = #3a405e
+swatch     = #a8c7fa
+
+edge_light = #343b5a
+edge_dark  = #0b0e1a
+
+text       = #eef0fa
+text_dim   = #aab1c9
+text_on    = #0a1b38
+
+tab        = #f2a93b
+tab_idle   = #262b44
+tab_text   = #2a1703
+tab_idle_text = #aab1c9
+
+strip      = #1a1f35
+strip_text = #eef0fa
+desktop_text = #ffffff
+
+console      = #0d1020
+console_text = #d6dae0
+
+accent     = #a8c7fa
+good       = #6dd58c
+bad        = #ffb4ab
+ring       = #a8c7fa
+stamp      = #3a4a6e
+
+glass       = frosted
+# Indigo at two fifths.
+glass_tint  = #6616182c
+glass_blur  = 24
+bevel       = 12
+refraction  = 60
+split       = 20
+specular    = 60
+rim_front   = #ffc878
+
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

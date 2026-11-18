@@ -135,7 +135,12 @@ end
 -- offered among the looks - Diego, "yes to starlight but dont replace the
 -- current astra one" (`docs/astra.md`, *Identity*).
 --
-check(#themes.order == 12, "there are " .. #themes.order .. " looks, not twelve")
+--
+-- **Fourteen since 18 November**: Liquid Glass and Liquid Glass Night -
+-- Diego, "Let's call it Liquid Glass", "Love the Liquid Glass!"
+-- (`docs/astra.md`, *Liquid Glass*, L1).
+--
+check(#themes.order == 14, "there are " .. #themes.order .. " looks, not fourteen")
 
 for _, name in ipairs(themes.order) do
   local p = theme.read(themes[name], "dark")
@@ -166,6 +171,65 @@ for _, name in ipairs(themes.order) do
   --
   check(math.abs(luminance(p.tab_idle) - luminance(p.tab_idle_text or p.tab_text)) >= 100,
         name .. "'s title words are too close to an unfocused tab to read")
+end
+
+-- 2b. The glass (`docs/astra.md`, *Liquid Glass*, LG1): Liquid Glass's two
+-- looks say every glass key, within its range; every other look is not
+-- glass, and says so with noughts rather than by leaving the keys out.
+do
+  local glassy = { liquidglass = true, liquidglassnight = true }
+
+  for _, name in ipairs(themes.order) do
+    local p, said = theme.read(themes[name], "dark")
+
+    check(#said == 0, name .. " has lines its reader refused: "
+          .. table.concat(said, "; "))
+
+    if glassy[name] then
+      check(p.glass == "frosted", name .. "'s glass is " .. tostring(p.glass)
+            .. ", not frosted")
+      check(p.glass_tint >> 24 > 0 and p.glass_tint >> 24 < 0xff,
+            name .. "'s tint is not translucent: " .. ("%08x"):format(p.glass_tint))
+      check(p.glass_blur > 0 and p.bevel > 0, name .. " has no frost or no rim")
+      for _, k in ipairs({ "refraction", "split", "specular" }) do
+        check(p[k] > 0 and p[k] <= 100, name .. "'s " .. k .. " is " .. p[k])
+      end
+      check(p.rim_front >> 24 == 0xff, name .. " has no warm rim")
+    else
+      for k, v in pairs(theme.GLASS_NONE) do
+        check(p[k] == v, name .. "'s " .. k .. " is " .. tostring(p[k])
+              .. ", not " .. tostring(v) .. " - it is not glass")
+      end
+    end
+  end
+
+  -- What a file can get wrong about glass, each told.
+  local _, said = theme.read([[
+glass = liquid
+bevel = 65
+refraction = 101
+split = -1
+glass_tint = #12345
+]], "dark")
+
+  check(#said == 5, "five bad glass lines gave " .. #said .. " complaints: "
+        .. table.concat(said, "; "))
+  check((said[1] or ""):find("none, frosted or clear", 1, true),
+        "a glass that is not one was told as: " .. tostring(said[1]))
+  check((said[2] or ""):find("points from 0 to 64", 1, true),
+        "a bevel of 65 was told as: " .. tostring(said[2]))
+  check((said[3] or ""):find("percent from 0 to 100", 1, true),
+        "a refraction of 101 was told as: " .. tostring(said[3]))
+
+  -- Applied after a glass look, a look without glass is not glass.
+  theme.apply(theme.read(themes.liquidglass, "dark"))
+  check(theme.glass == "frosted" and theme.bevel > 0, "Liquid Glass applied is not glass")
+  theme.apply(theme.read(themes.endeavour, "dark"))
+  check(theme.glass == "none" and theme.bevel == 0 and theme.glass_tint == 0,
+        "Endeavour after Liquid Glass kept its glass: " .. tostring(theme.glass))
+  theme.apply(theme.read(themes.liquidglassnight, "dark"))
+  theme.apply("dark")
+  check(theme.glass == "none", "a built-in palette after a glass look kept the glass")
 end
 
 -- 3. Plex, value for value against `docs/plex.html`.

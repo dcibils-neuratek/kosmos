@@ -55,8 +55,12 @@ local themes = {}
 --
 -- **Starlight on 17 November** (`docs/astra.md`, *Identity*): the look the
 -- Starlight desktop wears, and offered here for its colours alone.
+--
+-- **Liquid Glass and Liquid Glass Night on 18 November** (`docs/astra.md`,
+-- *Liquid Glass*, L1): today's Astra made of glass, light and dark.
 themes.order = { "endeavour", "plex", "plexnight", "classic", "studio", "night",
-                 "aurora", "amethyst", "ember", "sakura", "meadow", "starlight" }
+                 "aurora", "amethyst", "ember", "sakura", "meadow", "starlight",
+                 "liquidglass", "liquidglassnight" }
 
 -- What each is called where a person reads it.
 themes.titles = {
@@ -64,6 +68,7 @@ themes.titles = {
   studio = "Studio", endeavour = "Endeavour", night = "Night",
   aurora = "Aurora", amethyst = "Amethyst", ember = "Ember",
   sakura = "Sakura", meadow = "Meadow", starlight = "Starlight",
+  liquidglass = "Liquid Glass", liquidglassnight = "Liquid Glass Night",
 }
 
 --

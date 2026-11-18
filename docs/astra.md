@@ -461,7 +461,7 @@ Each step touches the kit, the scene or the window manager, so each runs
 the whole gate. It stands on A1 (tokens) and A2 (applications on the kit)
 of section 6.
 
-1. **LG1 - the look files and their tokens.** The two `.theme` files, the
+1. **LG1 - the look files and their tokens** (**built in 0.11.472**, `testing.md` 18.872). The two `.theme` files, the
    glass keys in `theme.lua`, Appearance listing Liquid Glass. Opaque at
    first: the tints as solid colours. *Test*: `tools/test_theme.lua` holds
    both looks to every token and the glass keys to their ranges.

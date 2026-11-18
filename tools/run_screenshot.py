@@ -4834,10 +4834,14 @@ def check_appearance(guest):
     # wears and offered among the others - Diego, "yes to starlight but dont
     # replace the current astra one" (`docs/astra.md`, *Identity*).
     #
-    if looks != 12:
-        raise Failure("Preferences offers %d looks; there are twelve - Plex, "
+    # **Fourteen since 18 November**: Liquid Glass and Liquid Glass Night,
+    # today's Astra made of glass - "Love the Liquid Glass!".
+    #
+    if looks != 14:
+        raise Failure("Preferences offers %d looks; there are fourteen - Plex, "
                       "Plex Night, Classic, Studio, Endeavour, Night, Aurora, "
-                      "Amethyst, Ember, Sakura, Meadow and Starlight" % looks)
+                      "Amethyst, Ember, Sakura, Meadow, Starlight, Liquid Glass "
+                      "and Liquid Glass Night" % looks)
 
     checks += 1
 

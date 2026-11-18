@@ -334,7 +334,39 @@ theme.tokens = {
   -- all themes the same" - 10 being what every look but Night had.
   --
   "shadow",
+
+  --
+  -- **The glass** (`docs/astra.md`, *Liquid Glass*; LG1). Liquid Glass's
+  -- two looks say them and no other look does; a look that does not has
+  -- `glass = none` and noughts (`theme.GLASS_NONE`), said by `theme.read`
+  -- and by `theme.apply`, so a look chosen after a glass one is not glass.
+  --
+  --   - `glass`: `none`, `frosted` (blurred and tinted, for anything with
+  --     words on it) or `clear` (unblurred, only the rim bending);
+  --   - `glass_tint`: the colour over the blur, `#aarrggbb` with its alpha;
+  --   - `glass_blur` and `bevel`: how far the frost reaches and how wide
+  --     the rim is, in points;
+  --   - `refraction`, `split` and `specular`: how hard the rim bends, how
+  --     far its colours part, and how bright its lit edge is - in percent;
+  --   - `rim_front`: the colour the window in front's rim is lit in.
+  --
+  -- What the scene does with them arrives a step at a time (LG2 the blur,
+  -- LG3 the lens); until then a glass look is its tints said as solid
+  -- colours.
+  --
+  "glass", "glass_tint", "glass_blur", "bevel", "refraction", "split",
+  "specular", "rim_front",
 }
+
+-- What a look that is not glass has, and what each glass number may be.
+theme.GLASS_NONE = {
+  glass = "none", glass_tint = 0, glass_blur = 0, bevel = 0, refraction = 0,
+  split = 0, specular = 0, rim_front = 0,
+}
+theme.GLASS_KINDS = { none = true, frosted = true, clear = true }
+theme.GLASS_POINTS_MOST = 64
+local GLASS_POINTS = { glass_blur = true, bevel = true }
+local GLASS_PERCENT = { refraction = true, split = true, specular = true }
 
 -- What `corner` and `shadow` are in a look that does not name them, and the
 -- most a look may: past that a window is a capsule.
@@ -546,6 +578,24 @@ function theme.read(text, base)
                              .. "%d, not `%s`"):format(n, key,
                                                        theme.METRIC_MOST, value)
         end
+      elseif key == "glass" then
+        if theme.GLASS_KINDS[value] then
+          out[key] = value
+        else
+          said[#said + 1] = ("line %d: `glass` is none, frosted or clear, "
+                             .. "not `%s`"):format(n, value)
+        end
+      elseif GLASS_POINTS[key] or GLASS_PERCENT[key] then
+        local v = math.tointeger(tonumber(value))
+        local most = GLASS_POINTS[key] and theme.GLASS_POINTS_MOST or 100
+        local unit = GLASS_POINTS[key] and "points" or "percent"
+
+        if v and v >= 0 and v <= most then
+          out[key] = v
+        else
+          said[#said + 1] = ("line %d: `%s` is a number of %s from 0 to %d, "
+                             .. "not `%s`"):format(n, key, unit, most, value)
+        end
       elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
@@ -578,6 +628,9 @@ function theme.read(text, base)
   if out.cut == nil then out.cut = false end
   if out.star == nil then out.star = false end
   if out.title_bars == nil then out.title_bars = true end
+  for k, v in pairs(theme.GLASS_NONE) do
+    if out[k] == nil then out[k] = v end
+  end
   out.corner = theme.CORNER             -- every look's, never its own
   if out.shadow == nil then out.shadow = theme.SHADOW end
 
@@ -667,6 +720,12 @@ function theme.apply(palette)
   end
   if palette.tab_idle_text == nil and palette.tab_text ~= nil then
     theme.tab_idle_text = palette.tab_text
+  end
+
+  -- A palette that says nothing of glass - a built-in one, or one an older
+  -- Preferences sent - is not glass, whatever the look before it was.
+  for k, v in pairs(theme.GLASS_NONE) do
+    if palette[k] == nil then theme[k] = v end
   end
 
   -- A window's corner and shadow are the look's, and every look's are said
