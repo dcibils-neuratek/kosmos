@@ -2273,9 +2273,15 @@ function OUT.plate_picture(win, front)
   local made = win.plate_made
   local face = front and theme.tab or theme.tab_idle
   local ink = front and theme.tab_text or (theme.tab_idle_text or theme.tab_text)
+  -- **Under glass** (Liquid Glass L5), over a frosted window: the plate in
+  -- front amber glass - the amber at 0xc8, the window's glass through it,
+  -- and a specular line along its top - and the others no plate at all,
+  -- their titles on the header's own glass.
+  local glass = (OUT.wall_glass and theme.glassy()) and true or false
 
   if made and made.w == spec.w and made.h == spec.h and made.title == spec.title
-     and made.face == face and made.ink == ink and made.star == theme.star then
+     and made.face == face and made.ink == ink and made.star == theme.star
+     and made.glass == glass then
     return made.picture
   end
 
@@ -2286,13 +2292,26 @@ function OUT.plate_picture(win, front)
   local function u(v) return v * pct / 100 end
   local picture = gfx.surface{ w = W, h = H, shared = true }   -- zeroed: clear
 
-  picture:polygon({
+  local edge = {
     0, u(10), u(0.62), u(5.62), u(2.5), u(2.5), u(5.62), u(0.62), u(10), 0,
     W - u(5), 0, W - u(2.82), u(0.31), W - u(1.28), u(1.25),
     W - u(0.37), u(2.81), W - u(0.11), u(5),
     W - u(21.91), H - u(4), W - u(22.2), H - u(2.25), W - u(22.98), H - u(1),
     W - u(24.24), H - u(0.25), W - u(26), H, 0, H,
-  }, face)
+  }
+
+  if not glass then
+    picture:polygon(edge, face)
+  elseif front then
+    -- The polygon paints opaque; its coverage is the mask the amber is
+    -- laid through at the glass's alpha, which `tint` multiplies.
+    local mask = gfx.surface{ w = W, h = H }
+
+    mask:polygon(edge, 0xffffffff)
+    picture:tint(mask, 0, 0, W, H, 0, 0, 0xc8000000 | (face & 0xffffff))
+    mask:free()
+    picture:fill_round(u(10), 0, W - u(15), 1, 0x90ffffff)
+  end
 
   local tx = scale.px(16, pct)
 
@@ -2306,11 +2325,13 @@ function OUT.plate_picture(win, front)
   end
 
   if spec.title ~= "" then
-    picture:text(tx, (H - gfx.height("title")) // 2, spec.title, ink, face, "title")
+    -- On glass the words have no ground of their own to be drawn against.
+    picture:text(tx, (H - gfx.height("title")) // 2, spec.title, ink,
+                 not glass and face or nil, "title")
   end
 
   win.plate_made = { picture = picture, w = W, h = H, title = spec.title,
-                     face = face, ink = ink, star = theme.star }
+                     face = face, ink = ink, star = theme.star, glass = glass }
 
   return picture
 end
@@ -2858,7 +2879,7 @@ function OUT.describe()
 
     local plate = win.plate_spec
 
-    if plate and win.chrome == "starlight" and win.headed then
+    if plate and (win.chrome == "starlight" or theme.plate) and win.headed then
       scene:plate(k, pic(OUT.plate_picture(win, win == front)), plate.x, plate.y)
     end
   end
@@ -5798,7 +5819,7 @@ handlers.plate = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
 
-  if win.chrome ~= "starlight" then
+  if win.chrome ~= "starlight" and not (theme.plate and win.headed) then
     return { ok = false, error = "this window wears no plate" }
   end
 

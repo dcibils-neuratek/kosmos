@@ -4000,8 +4000,9 @@ function ui.header(spec)
     -- that process knows. The header leaves the plate's room, says how wide
     -- it is and what it says, and draws no title of its own.
     --
+    -- A look may wear it on any desktop (`theme.plate`, L5).
     self.starlight = self.title_bar and win and win.headed
-                     and win.chrome == "starlight" or nil
+                     and (win.chrome == "starlight" or theme.plate) or nil
 
     if self.starlight then
       local title = tostring(self.title or win.title or "")

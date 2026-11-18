@@ -195,7 +195,11 @@ do
         check(p[k] > 0 and p[k] <= 100, name .. "'s " .. k .. " is " .. p[k])
       end
       check(p.rim_front >> 24 == 0xff, name .. " has no warm rim")
+      check(p.plate == true, name .. " wears no amber plate (L5)")
     else
+      -- The plate is Liquid Glass's to wear on any desktop; Starlight's is
+      -- its desktop's, so the look itself says nothing of it.
+      check(p.plate == false, name .. " wears a plate of its own")
       for k, v in pairs(theme.GLASS_NONE) do
         check(p[k] == v, name .. "'s " .. k .. " is " .. tostring(p[k])
               .. ", not " .. tostring(v) .. " - it is not glass")
@@ -237,7 +241,13 @@ glass_tint = #12345
   check(theme.glass == "none" and theme.bevel == 0 and theme.glass_tint == 0,
         "Endeavour after Liquid Glass kept its glass: " .. tostring(theme.glass))
   theme.apply(theme.read(themes.liquidglassnight, "dark"))
+  check(theme.plate and theme.star, "Liquid Glass Night applied wears no plate or star")
+
+  -- A built-in palette names neither cue, and wears neither because the
+  -- look before it did.
   theme.apply("dark")
+  check(not theme.plate and not theme.star,
+        "a built-in palette after Liquid Glass kept its plate or star")
   check(theme.glass == "none", "a built-in palette after a glass look kept the glass")
 end
 

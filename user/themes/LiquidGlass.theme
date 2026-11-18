@@ -25,6 +25,8 @@ name       = liquidglass
 flat       = yes
 # Kosmos's mark, the four-point star, and the dock's glints (L5).
 star       = yes
+# The window in front's title on a plate of amber glass (L5).
+plate      = yes
 
 desktop    = #4f7fd0
 window     = #eef1f8

@@ -482,7 +482,7 @@ of section 6.
    wallpaper under the tint, a rim pixel as the wallpaper at the table's
    offset, and a pixel of Write's page as opaque white; `frames` dragging a
    window on the M700 under 8 ms a pass.
-5. **LG5 - the cues** (**begun in 0.11.480** - the star, the glints, the warm rim and the split; `testing.md` 18.880; the beads in 0.11.481, 18.881). The amber glass plate, the beads, the warm rim and
+5. **LG5 - the cues** (**begun in 0.11.480** - the star, the glints, the warm rim and the split; `testing.md` 18.880; the beads in 0.11.481, 18.881; the amber glass plate in 0.11.482, 18.882, a look's `plate` key as well as Starlight's desktop's). The amber glass plate, the beads, the warm rim and
    the star specular on the window in front, the star on the strip and the
    dock, the glints. *Test*: a focus change redraws only the two plates
    and the two rims (`frames`' damage), and the gallery shot in Liquid

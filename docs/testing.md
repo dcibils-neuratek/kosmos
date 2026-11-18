@@ -36506,8 +36506,8 @@ check alone. And `x86-glass`, now 12: About in front, red over blue 36 at
 its top row against -23 in its header; the control, no front light, -14,
 fails that check alone.
 
-**Not yet** (LG5): the amber plate, the beads (18.881), and the star specular
-at the front window's top-left corner.
+**Not yet** (LG5): the amber plate (18.882), the beads (18.881), and the
+star specular at the front window's top-left corner.
 
 **The gate** (131 suites, 694 s): `x86-film` failed as in 18.878 and passed alone straight after; it composes no glass. The rest passed.
 
@@ -36533,3 +36533,37 @@ The control - the bead never drawn - fails the first check alone.
 `x86-xavier`, `x86-film` and `x86-usb-2` failed - a run cut short, a
 token stream, a film's sound and a USB drive, none of which reads a pixel -
 and all four passed alone straight after (219 s). The rest passed.
+
+## 18.882 The amber plate (LG5): a look's cue, made of glass
+
+**In short.** Under Liquid Glass the window in front wears Starlight's
+amber plate - its title, after the star, on an amber trapezoid at its
+header's left - now made of amber glass: the amber laid at about four
+fifths over what is beneath, with a line of light along its top. A window
+behind wears no plate at all; its title sits on the header's own glass.
+Over Night's dark header the plate reads as a deeper gold.
+
+**How.** The plate was Starlight's desktop's: the kit left room for it and
+the window manager drew it only where a window's chrome was `starlight`.
+Liquid Glass is worn on Astra's desktop, so the plate is now also a look's
+cue - a `plate` key, as `star` is - and either one puts it there. The
+window manager's `plate_picture` draws the shape into a mask and `tint`s
+the amber through it at 0xc8, since `polygon` paints opaque; the picture
+is made again when the glass comes or goes.
+
+**Found on the way**: `theme.apply` kept `star` from the look before when
+the next palette - a built-in one - did not name it. A palette that names
+neither cue now wears neither.
+
+**Held by** `tools/test_theme.lua`, now 639: both Liquid Glass looks wear
+the plate and no other look does; Night applied wears the plate and the
+star, and a built-in palette after it neither. Its control - the reset
+taken out - fails that check alone. And `x86-glass`, now 14: About wears a
+plate under Liquid Glass Night, and along its foot red 195 and blue 55,
+the amber mixed with the header; the control, the plate painted as
+before, reads 242 and 59, paint's own, and fails that check alone.
+
+**The gate** (115 suites, 627 s; the library suites unchanged and skipped):
+`x86-profile` counted 635 samples where 1051 were due - a timing check
+under every suite at once - and passed alone straight after with 1040. The
+rest passed.

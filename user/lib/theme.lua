@@ -309,6 +309,15 @@ theme.tokens = {
   "star",
 
   --
+  -- **`plate`: the window in front's title on an amber plate** (`docs/
+  -- astra.md` S1, L5) on a desktop whose chrome is not Starlight's - a
+  -- look's cue rather than a desktop's. Under glass the plate is amber
+  -- glass and the others' the header's own. `yes` or `no`; the Starlight
+  -- desktop wears one whatever its look says.
+  --
+  "plate",
+
+  --
   -- **`title_bars`: whether a window with a header of its own wears a
   -- title bar above it** (`roadmap.md` 6zj, `docs/nochrome.html`). Diego,
   -- 27 September 2026, of the mockups: "i love the fact that the mokcups
@@ -596,7 +605,8 @@ function theme.read(text, base)
           said[#said + 1] = ("line %d: `%s` is a number of %s from 0 to %d, "
                              .. "not `%s`"):format(n, key, unit, most, value)
         end
-      elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star" then
+      elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star"
+             or key == "plate" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -627,6 +637,7 @@ function theme.read(text, base)
   if out.flat == nil then out.flat = false end
   if out.cut == nil then out.cut = false end
   if out.star == nil then out.star = false end
+  if out.plate == nil then out.plate = false end
   if out.title_bars == nil then out.title_bars = true end
   for k, v in pairs(theme.GLASS_NONE) do
     if out[k] == nil then out[k] = v end
@@ -721,6 +732,11 @@ function theme.apply(palette)
   if palette.tab_idle_text == nil and palette.tab_text ~= nil then
     theme.tab_idle_text = palette.tab_text
   end
+
+  -- Nor does it wear a cue it does not name - Starlight's star or Liquid
+  -- Glass's plate - because the look before it did.
+  if palette.star == nil then theme.star = false end
+  if palette.plate == nil then theme.plate = false end
 
   -- A palette that says nothing of glass - a built-in one, or one an older
   -- Preferences sent - is not glass, whatever the look before it was.
