@@ -213,7 +213,7 @@ amber horizon (**built in 0.11.492**, `testing.md` 18.891: the dock, menus
 and banners glass and the windows not - `glass_windows = no` - the
 gradient and a grain of 5 baked into the wallpaper's glass in 1.3 ms at
 1920x1080, and the horizon a row of the scene's); S4 the unfurl (**opening built in 0.11.471**, `testing.md`
-18.871; closing's roll and the focus sweep to come); S5 the star (**built in 0.11.470**, `testing.md`
+18.871; **closing's roll built in 0.11.497**, 18.896 - a copy of the last picture rolled up into the plate in 120 ms, composed above the windows and below the dock; the focus sweep to come); S5 the star (**built in 0.11.470**, `testing.md`
 18.870: the mark on the Kosmos plate and the dock's button, before a
 title on its plate, and the dock's glint).
 

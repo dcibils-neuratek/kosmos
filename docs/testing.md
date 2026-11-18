@@ -37050,3 +37050,25 @@ is the window manager gone. `x86-smbd` failed once in the same run - its
 visitor's connection ended before the page named its share, on a host at
 twice its usual time - and passed alone in 92 s; seen once, not chased.
 
+
+## 18.896 Starlight's roll (S4)
+
+**In short**: a Starlight window closing rolls back up into its plate in
+120 ms, the unfurl's other half (`astra.md` S4). The window is closed the
+moment it is asked - its process told, its buffers given back, out of
+every list a click or a key reaches - and what lingers is a copy of the
+last picture it showed (`OUT.roll_begin`), composed above the windows and
+below the dock and tips (`OUT.order`), clipped shorter each pass, eased in,
+and freed with the plate when it is done (`OUT.roll_step`).
+
+- **`x86-starlight`** (14): Calculator, in front, closed by its close
+  light; it says it rolled from 414 to its header's 46 in 123 ms, 10 steps.
+  The check wants the close, a roll from taller to shorter, 120 to 1500 ms
+  and two steps at least. **Control**: `OUT.roll_begin` returning at once -
+  "closed Calculator", no roll, the check failed.
+
+The check comes before the Kosmos menu's: written after it, the press
+landed while the menu, a popup, was open, and a press outside a popup only
+closes the popup - Calculator never heard it. The roll's pictures are not
+read; what is checked is that it happened, how long, and that the copy and
+plate are given back (`x86-display-*`'s regions would show one kept).

@@ -45,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 13
+CHECKS = 14
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -219,6 +219,39 @@ def run(fails):
             fails.append("%s's plate has no star in its ink before the title: %r"
                          % (back, star))
 
+        # ---- the roll (S4): the window in front closed by its light ----
+        # Back in front since it was clicked, and where it opened. Before the
+        # menu, which is a popup: a press outside one only closes it. Its close
+        # is the third of its three (`OUT.SLOT`), 20 across and 24 apart.
+        three = re.findall(r"wm: %s's three at (\d+),(\d+) in it" % re.escape(back), guest.seen)
+
+        if not three:
+            fails.append("%s never said where its three are, to be closed" % back)
+        else:
+            tx, ty = (int(v) for v in three[-1])
+            cx, cy = where[back][0] + tx + 2 * 24 + 10, where[back][1] + ty + 10
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(cx, cy, sw, sh))
+            time.sleep(0.4)
+            guest.mouse_button(True)
+            time.sleep(0.05)
+            guest.mouse_button(False)
+            done = line(guest, r"wm: %s rolled up in (\d+) ms, (\d+) steps" % re.escape(back),
+                        mark, 15)
+            after = guest.seen[mark:]
+            began = re.search(r"wm: %s rolling up from (\d+) to (\d+)" % re.escape(back), after)
+            print("roll: clicked %d,%d for its close, its three at %d,%d; heard: %s"
+                  % (cx, cy, tx, ty, "; ".join(re.findall(r"wm: (button[^\n]*|[^\n]*close[^\n]*)",
+                                                         after))[:400]))
+            print("roll: " + "; ".join(re.findall(r"wm: (%s (?:rolling up|rolled up)[^\n]*)"
+                                                  % re.escape(back), after)))
+
+            if not ("wm: closed %s" % back in after and began and done
+                    and int(began.group(1)) > int(began.group(2))
+                    and 120 <= int(done.group(1)) <= 1500 and int(done.group(2)) >= 2):
+                fails.append("%s, closed, did not roll up into its plate over 120 ms: %r, %r"
+                             % (back, began and began.group(0), done and done.group(0)))
+
         # ---- the Kosmos menu, its top-left cut (S2) ----
         # A round corner is the same mirrored at the top-right; the cut is
         # not: it takes more along the diagonal and eases into the sides.
@@ -302,7 +335,7 @@ def main():
           "chrome; Calculator and Processes each placed a plate and unfurled; the window in front's "
           "amber and the one behind's quiet; the one behind clicked, the two swapped; "
           "its star; the Kosmos menu's top-left cut; the nebula baked and the menu's "
-          "amber horizon; nothing died)" % CHECKS)
+          "amber horizon; the one in front closed, rolling up into its plate; nothing died)" % CHECKS)
     return 0
 
 

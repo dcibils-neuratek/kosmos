@@ -1705,13 +1705,18 @@ function OUT.order()
     if w.tip then tips = true end
   end
 
-  if not dock and not tips then return nil end
+  if not dock and not tips and #OUT.rolling == 0 then return nil end
 
   local n = 0
 
   for i, w in ipairs(windows) do
     if w.strip ~= "bottom" and not w.tip then n = n + 1; drawing_order[n] = i end
   end
+
+  -- A Starlight window rolling up as it closes (`OUT.roll_begin`): above
+  -- the windows, as it was when it closed, and below the dock and tips. Its
+  -- record rather than an index, since it is in no list a click reaches.
+  for _, g in ipairs(OUT.rolling) do n = n + 1; drawing_order[n] = g end
 
   for i, w in ipairs(windows) do
     if w.strip == "bottom" then n = n + 1; drawing_order[n] = i end
@@ -2370,6 +2375,79 @@ function OUT.unfurl_begin(win)
   damage_window(win)
 end
 
+--
+-- **The roll** (`docs/astra.md` S4): the unfurl's other half. A Starlight
+-- window closing rolls back up into its plate in 120 ms, eased in -
+-- settled at first, then gone - from a copy of the last picture it showed,
+-- since its own buffers are the application's and go back with the window.
+-- The copy is composed above the windows and below the dock and tips
+-- (`OUT.order`), in no list a click, a key or focus reaches, so the window
+-- is closed the moment it is asked to be and only its picture lingers.
+--
+OUT.ROLL_MS = 120
+OUT.rolling = {}
+
+function OUT.roll_begin(win)
+  if win.chrome ~= "starlight" or not win.headed or win.kind == "menu" or win.hidden
+     or win.drawn == false or win.strip or win.tip or win.backdrop or win.fullscreen then
+    return
+  end
+
+  local shown = win.shared and win.shared[win.shared.live] or win.surface
+  local bar = win.menubar
+  local sw = win.src_w or win.w
+  local sh = win.src_h or (bar and (win.h - bar.h) or win.h)
+
+  if not shown or sw <= 0 or sh <= 0 then return end
+
+  local copy = gfx.surface{ w = sw, h = sh, shared = true }
+  local from = win.shaded or win.h
+
+  copy:blit(shown, 0, 0, sw, sh, 0, 0)
+
+  local g = { x = win.x, y = win.y, w = win.w, h = from, surface = copy,
+              src_w = sw, src_h = sh, headed = true, pinned = true, popup = true,
+              chrome = win.chrome, title = win.title, pct = win.pct,
+              glassable = win.glassable, plate_spec = win.plate_spec,
+              plate_made = win.plate_made,
+              rolling = { at = sys.ticks(), from = from, h = from,
+                          to = math.min(win.band or scale.px(46), from) } }
+
+  -- Its plate goes with the copy, and is freed when the roll ends.
+  win.plate_made = nil
+  OUT.rolling[#OUT.rolling + 1] = g
+  damage_window(g)
+  print(("wm: %s rolling up from %d to %d"):format(tostring(win.title), from, g.rolling.to))
+end
+
+function OUT.roll_step()
+  local now = sys.ticks()
+
+  for i = #OUT.rolling, 1, -1 do
+    local g = OUT.rolling[i]
+    local r = g.rolling
+    local t = (now - r.at) * 1000 / (COUNTER_HZ * OUT.ROLL_MS)
+
+    damage_window(g)
+
+    if t >= 1 then
+      table.remove(OUT.rolling, i)
+      g.surface:free()
+      if g.plate_made then g.plate_made.picture:free() end
+      print(("wm: %s rolled up in %d ms, %d steps"):format(tostring(g.title),
+            (now - r.at) * 1000 // COUNTER_HZ, r.steps or 0))
+    else
+      -- Eased in: it leaves slowly, then quickly.
+      local h = r.from - math.floor((r.from - r.to) * t * t)
+
+      if h ~= r.h then
+        r.h = h
+        r.steps = (r.steps or 0) + 1
+      end
+    end
+  end
+end
+
 function OUT.unfurl_step(win)
   local u = win.unfurl
   local t = (sys.ticks() - u.at) * 1000 / (COUNTER_HZ * OUT.UNFURL_MS)
@@ -2828,7 +2906,7 @@ function OUT.describe()
 
   for k = 1, count do
     local i = order and order[k] or k
-    local win = windows[i]
+    local win = type(i) == "table" and i or windows[i]
     local framed = not (win.backdrop or win.strip or win.fullscreen or win.tip)
     local flags = 0
 
@@ -2915,10 +2993,15 @@ function OUT.describe()
       -- only its top rows, as a collapsed window's are.
       h = win.unfurl.h
       lower = math.min(lower, h)
+    elseif win.rolling then
+      -- Rolling back up into it as it closes (`OUT.roll_step`), from the
+      -- last picture it showed.
+      h = win.rolling.h
+      lower = math.min(lower, h)
     end
 
     scene:window(k, win.x, win.y, win.w, h, flags, pic(shown),
-                 win.src_w or win.w, win.shaded and lower or (win.src_h or lower),
+                 win.src_w or win.w, (win.shaded or win.rolling) and lower or (win.src_h or lower),
                  pic(bar and bar.surface or nil), bar and bar.h or 0, bx, by, held, bx2)
 
     local inset = win.inset
@@ -6666,6 +6749,10 @@ handlers.close = function(req)
     print(("wm: closed %s"):format(tostring(win.title)))
   end
 
+  -- Under Starlight, its picture rolls up into its plate (S4), from a
+  -- copy taken before its buffers go; the plate goes with it.
+  if win.kind ~= "menu" then OUT.roll_begin(win) end
+
   -- Its plate, if it wore one (`OUT.plate_picture`).
   if win.plate_made then
     win.plate_made.picture:free()
@@ -8321,6 +8408,8 @@ while OUT.running do
 
   -- A new window that has not drawn within half a second, shown anyway
   -- (`win.drawn`): a few windows looked at, every pass.
+  if OUT.rolling[1] then OUT.roll_step() end
+
   for _, win in ipairs(windows) do
     if win.unfurl then OUT.unfurl_step(win) end
 
