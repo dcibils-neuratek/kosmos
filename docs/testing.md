@@ -36598,3 +36598,38 @@ each fail that check alone.
 tick rather than its interrupt, as in 18.878) and `x86-smbd` (a page that
 did not show within 120 s) failed, and both passed alone straight after
 (108 s). Neither composes a window. The rest passed.
+
+## 18.884 A change of focus composes the window going back only where it changes (LG5)
+
+**In short.** Clicking one window to the front used to compose the window
+it covered again, whole - under glass a frosting of all of it, for a few
+lines of light that changed. Now the window going back is composed only
+where the window manager draws something that says which window is in
+front: its shadow, its three lights, its plate and, under glass, a band
+round its inside as deep as its rim. Ten changes of focus between two
+windows composed 3.48 million pixels where they had composed 4.93.
+
+**How.** `raise` damaged both windows whole, so that the one losing the
+focus was not left looking focused. `OUT.damage_focus` damages that
+window's parts: the ring of its shadow, which is lighter behind; its
+lights' rectangle; its plate's; and four bands that do not overlap, the
+corner and the bevel deep, which hold its rim's light and the star. An
+application is never told of focus, so its own picture does not change. A
+window whose title bar this process draws, or one collapsed or unrolling,
+is damaged whole as before.
+
+**Held by** `x86-glass`, now 15. A startup item opens Calculator, moves it
+clear of About and raises the two in turn ten times under `profile`, then
+closes it and leaves About in front for everything after. Composed 3.48
+Mpx against a bound of 3.97: the window coming forward with its shadow,
+half the other's bare area, and the dock's once a raise for its glints.
+The control - the window going back damaged whole - composed 4.93 and
+fails that check alone. **The first control passed**: Calculator opens
+over About, and overlapping damage is merged into one rectangle, so a
+whole window going back cost little more than its parts. Apart, it does.
+
+**The gate** (114 suites, 582 s): `x86-profile` (755 samples where about
+1042 were due) and `x86-ahci` (the probe's command not ended by its
+interrupt) failed and passed alone straight after, as both have tonight;
+the three that keep doing it are in the roadmap to be found. The rest
+passed.

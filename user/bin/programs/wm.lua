@@ -3378,6 +3378,54 @@ function fit_backdrop()
   end
 end
 
+--
+-- **What a window losing the focus changes** (Liquid Glass LG5): where this
+-- process draws something that says which window is in front, and nothing
+-- else - the window coming forward is damaged whole, and covers the rest.
+-- Its shadow, lighter behind (`SC_DIM`); its three lights, grey; its
+-- plate, amber in front and the look's quiet one behind; and under glass
+-- its rim, lit warm in front and cool behind, with the star at its corner
+-- - a band the lens deep round its inside. An application is not told of
+-- focus, so its own picture does not change. A window with no header of
+-- its own, whose title bar this process draws, is damaged whole as before.
+--
+-- A large window behind was composed again whole at every click elsewhere,
+-- which under glass is a frosting of all of it for four bands of light.
+--
+function OUT.damage_focus(win)
+  if not win.headed or win.shaded or win.unfurl then
+    damage_window(win)
+    return
+  end
+
+  local x, y, w, h = win.x, win.y, win.w, win.h
+  local fx, fy, fw, fh = OUT.shadowed(win)
+
+  -- The shadow's ring, outside the window.
+  add_damage(fx, fy, fw, y - fy)
+  add_damage(fx, y + h, fw, fy + fh - (y + h))
+  add_damage(fx, y, x - fx, h)
+  add_damage(x + w, y, fx + fw - (x + w), h)
+
+  OUT.damage_boxes(win)
+
+  local plate = win.plate_spec
+
+  if plate then add_damage(x + plate.x, y + plate.y, plate.w, plate.h) end
+
+  -- The rim: four bands as deep as the lens's side, which is the corner
+  -- and the bevel, so the corners' light is inside them. Not overlapping,
+  -- so nothing in them is composed twice.
+  if win.glassable and OUT.wall_glass and theme.glassy() then
+    local side = math.min(OUT.corner + scale.px(theme.bevel or 0), w // 2, h // 2)
+
+    add_damage(x, y, w, side)
+    add_damage(x, y + h - side, w, side)
+    add_damage(x, y + side, side, h - side * 2)
+    add_damage(x + w - side, y + side, side, h - side * 2)
+  end
+end
+
 local function raise(win)
   --
   -- The backdrop is never raised. It is the thing windows are in front of,
@@ -3440,7 +3488,7 @@ local function raise(win)
   damage_window(win)
 
   if losing then
-    damage_window(losing)
+    OUT.damage_focus(losing)
   end
 end
 

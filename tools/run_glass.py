@@ -54,7 +54,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 14
+CHECKS = 15
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -96,6 +96,39 @@ end
 local notify = use("/Kosmos/Libraries/notify.lua")
 
 print("GLASSBANNER " .. tostring(notify.post{ title = "Glass", body = "A banner on the wallpaper's glass", alert = true }))
+'''
+
+# Ten changes of focus between About and Calculator under `profile`, and
+# what was composed for them - the last of the startup items, so that it is
+# over before anything else is looked at: Calculator closed and About in
+# front again. Typed as BANNER is, with no comments. (Typed after the
+# desktop is up, a line goes to the window in front as keys.)
+FOCUS = r'''
+local S = function(m) return fs.send("/Running/wm", m) end
+S{ type = "launch", program = "/Kosmos/Apps/calc.lua" }
+local a, c
+for _ = 1, 200 do
+  for _, w in ipairs((use("/Kosmos/Libraries/wmproto.lua").windows() or {}).windows or {}) do
+    if w.title == "About Kosmos" then a = w.handle end
+    if w.title == "Calculator" then c = w.handle end
+  end
+  if a and c then break end
+  sys.sleep(5)
+end
+S{ type = "move", window = c, x = 1300, y = 300 }
+sys.sleep(100)
+S{ type = "profile", on = true }
+for _ = 1, 5 do
+  S{ type = "raise", window = a }
+  sys.sleep(30)
+  S{ type = "raise", window = c }
+  sys.sleep(30)
+end
+local p = S{ type = "profile" } or {}
+S{ type = "profile", on = false }
+S{ type = "close", window = c }
+S{ type = "raise", window = a }
+print("GLASSFOCUS " .. tostring(p.px) .. " " .. tostring(p.frames))
 '''
 
 
@@ -274,6 +307,45 @@ def plate_glass(guest, mark, fails):
                      "where paint is 242 and 59" % (r, b))
 
 
+def focus_damage(guest, fails):
+    """LG5's test: a change of focus composes the window coming forward
+    whole and, of the one going back, only what says it is behind - its
+    shadow, its lights, its plate and its rim. Ten raises, About and
+    Calculator in turn, Calculator moved clear of About - where they overlap,
+    damage merged covers both whichever is damaged whole, and the control
+    passed: what was composed, against the two windows' areas.
+    Damaged whole as before, each raise would be both windows and their
+    shadows; the bound is the one coming forward with its shadow and half
+    the other's bare area, and the dock's once for its glints. Measured
+    3.48 Mpx for ten raises against a bound of 3.97; the control, the window
+    going back damaged whole, 4.93."""
+    said = line(guest, r"GLASSFOCUS (\d+) (\d+)", 0, 60)
+    seen = guest.seen
+    about = re.findall(r"wm: window About Kosmos at -?\d+,-?\d+ (\d+)x(\d+)", seen)
+    calc = re.findall(r"wm: window Calculator at -?\d+,-?\d+ (\d+)x(\d+)", seen)
+    dock = re.findall(r"wm: the dock at -?\d+,-?\d+ (\d+)x(\d+)", seen)
+    if not (said and about and calc):
+        fails.append("the changes of focus were not measured: %r" % (said and said.group(0)))
+        return
+    px = int(said.group(1))
+    aw, ah = (int(v) for v in about[-1])
+    cw, ch = (int(v) for v in calc[-1])
+    dw, dh = (int(v) for v in dock[-1]) if dock else (0, 0)
+    sh = 24
+
+    def shadowed(w, h):
+        return (w + 2 * sh) * (h + 2 * sh)
+
+    bound = (5 * (shadowed(aw, ah) + shadowed(cw, ch)) + int(0.5 * 5 * (aw * ah + cw * ch))
+             + 10 * dw * dh)
+    whole = 5 * 2 * (shadowed(aw, ah) + shadowed(cw, ch))
+    print("focus: ten raises composed %d px; whole windows would be %d, the bound %d"
+          % (px, whole, bound))
+    if not px < bound:
+        fails.append("a change of focus composed %d px for ten raises, over the %d of the "
+                     "window forward and the parts of the one behind" % (px, bound))
+
+
 # The card's own measures (`notifications.lua`): the banners' window has 8
 # round the cards, a card's words start 12 down, and are 372 wide.
 EDGE, PAD_Y, CARD_W = 8, 12, 372
@@ -309,13 +381,18 @@ def run(fails):
                    'wallpaper = "wallpaper/paint-storm.jpg", wallpaper_fit = "fill", '
                    'bar = "dock", dock = "floating" }), '
                    'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua", '
-                   '"/Temporary/glassbanner.lua", "/Kosmos/Apps/about.lua" } }))'
+                   '"/Temporary/glassbanner.lua", "/Kosmos/Apps/about.lua", '
+                   '"/Temporary/glassfocus.lua" } }))'
                    % lua_string(SWAP.replace("\n", " ")))
         guest.wait_for_line("PREFS", "the appearance and startup settings", mark)
         mark = len(guest.seen)
         guest.type('print("BANNERFILE", fs.write("/Temporary/glassbanner.lua", %s))'
                    % lua_string(BANNER.replace("\n", " ")))
         guest.wait_for_line("BANNERFILE", "the banner's script", mark)
+        mark = len(guest.seen)
+        guest.type('print("FOCUSFILE", fs.write("/Temporary/glassfocus.lua", %s))'
+                   % lua_string(FOCUS.replace("\n", " ")))
+        guest.wait_for_line("FOCUSFILE", "the focus script", mark)
         mark = len(guest.seen)
         guest.type("wm")
 
@@ -338,6 +415,7 @@ def run(fails):
         plate_glass(guest, mark, fails)
         menu_frosted(guest, screen, len(guest.seen), fails)
         time.sleep(2)
+        focus_damage(guest, fails)
         guest._read_available()
         seen = guest.seen[mark:]
         print("glass: " + "; ".join(re.findall(r"wm: (the wallpaper[^\r\n]*)", seen)))
