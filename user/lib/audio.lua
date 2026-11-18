@@ -423,4 +423,43 @@ function audio.set(what)
   return true
 end
 
+--
+-- **How the sound held, the machine's half** - for a report that says
+-- whose a gap was (the Video app's and `listen`'s `--report`):
+--
+--   - `audio.device_holds()`: how much the audio device holds, in ms -
+--     what any party may be away for before the sound skips;
+--   - `audio.held_off_since()`: a function giving the most any processor
+--     was held off since it was made, in ms, by its own ticks (a tick that
+--     came more than two intervals late adds what it was late by) - an
+--     emulator's host stopping the machine, which no band in it can help.
+--
+function audio.device_holds()
+  local stats = audio.stats() or {}
+  local info = sys.info() or {}
+  local period = (info.audio_period or 0) // (2 * math.max(1, info.audio_channels or 2))
+  local kept = stats.kept or info.audio_periods or 0
+
+  return kept * period / math.max(1, info.audio_rate or 44100) * 1000, stats
+end
+
+function audio.held_off_since()
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+  local from = {}
+
+  for _, c in ipairs(sys.cpuload and sys.cpuload() or {}) do
+    from[c.index] = c.held_off_counter or 0
+  end
+
+  return function()
+    local most = 0
+
+    for _, c in ipairs(sys.cpuload and sys.cpuload() or {}) do
+      most = math.max(most, (c.held_off_counter or 0) - (from[c.index] or 0))
+    end
+
+    return most / hz * 1000
+  end
+end
+
 return audio

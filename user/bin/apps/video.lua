@@ -524,28 +524,11 @@ local held = nil                        -- what the press landed on
 --
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 local report_at = report and (sys.ticks() + report * hz)
-local held_off_from = {}
-
-if report then
-  for _, c in ipairs(sys.cpuload() or {}) do
-    held_off_from[c.index] = c.held_off_counter or 0
-  end
-end
+local held_off = report and use("/Kosmos/Libraries/audio.lua").held_off_since()
 
 local function report_sound()
   local h = film:heard() or {}
-  local stats = use("/Kosmos/Libraries/audio.lua").stats() or {}
-  local info = sys.info() or {}
-  local period = (info.audio_period or 0)
-                 // (2 * math.max(1, info.audio_channels or 2))
-  local kept = stats.kept or info.audio_periods or 0
-  local holds = kept * period / math.max(1, info.audio_rate or 44100) * 1000
-  local held_off = 0
-
-  for _, c in ipairs(sys.cpuload() or {}) do
-    held_off = math.max(held_off, (c.held_off_counter or 0)
-                                  - (held_off_from[c.index] or 0))
-  end
+  local holds, stats = use("/Kosmos/Libraries/audio.lua").device_holds()
 
   print(("video: after %d s: the device holds %.1f ms, the film's ring %d periods; "
          .. "the kit's worst pass %.1f ms, the audio server's worst turn %.1f ms; "
@@ -555,7 +538,7 @@ local function report_sound()
                 h.audio_band and "in the audio band" or "not in the audio band",
                 h.periods or 0, h.dry or 0))
   print(("video: the machine was held off %.1f ms in the %d s, by its own ticks")
-        :format(held_off / hz * 1000, report))
+        :format(held_off(), report))
 end
 
 while win.running do

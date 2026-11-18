@@ -259,7 +259,7 @@ def main():
         mark = os.path.getsize(wav) if os.path.exists(wav) else WAV_HEADER
         seen = len(guest.seen)
         guest.type("listen --report /Home/sound.mp4")
-        guest.wait_for("listen: its sound thread", "the film to play through")
+        guest.wait_for("listen: the device holds", "the film to play through")
         time.sleep(0.5)
         guest._read_available()
         said = re.search(r"^listen: (\S+) heard (\S+), ([\d.]+) s in ([\d.]+) s, "
@@ -309,7 +309,29 @@ def main():
             # audio`. Its suite's own program, in /Temporary, never was.
             check(heard_line is not None and heard_line.group(1) == "in",
                   "listen's sound thread was not in the audio band%s" % how)
-            check(far == 0,
+
+            # **Whose a gap is**, as the loaded run decides it: the machine
+            # itself held off - QEMU's host not running it, by its own
+            # ticks - longer than the device holds is a gap nothing inside
+            # could have prevented, and is said rather than failed. The
+            # thread away longer than that, past what the machine was held
+            # off, is Kosmos's, and fails.
+            machine = re.search(r"^listen: the device holds ([\d.]+) ms; the machine was "
+                                r"held off ([\d.]+) ms", guest.seen[seen:], re.M)
+            holds, off = (float(machine.group(1)), float(machine.group(2))) \
+                if machine else (0.0, 0.0)
+            check(machine is not None, "listen did not say how the machine held")
+            if heard_line:
+                away = float(heard_line.group(2))
+                check(holds > 0 and away - off < holds,
+                      "listen's sound thread was away %.1f ms, the machine held off "
+                      "%.1f of it - longer than the device's %.1f" % (away, off, holds))
+            hosts = far > 0 and holds > 0 and off >= holds
+            if hosts:
+                print("film: a gap of %d samples, and the machine itself held off "
+                      "%.1f ms, longer than the device's %.1f: the host's, not "
+                      "Kosmos's" % (far, off, holds))
+            check(far == 0 or hosts,
                   "%d samples of %d more than two steps from FFmpeg's "
                   "reference (the worst %d; the first at %.4f s, channel "
                   "%d: %s against %s)%s"

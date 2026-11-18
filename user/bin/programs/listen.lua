@@ -16,12 +16,16 @@
 -- `--report` is what `x86-film` reads (`tools/run_film.py`): the codec,
 -- whether it was heard, its length, how long it took, the frames handed
 -- over and taken, and the sound thread's band, its longest time away and
--- how often its input ran dry. Its suite played a program written to
+-- how often its input ran dry - and the machine's own part beside them:
+-- how much the device holds, and how long the machine was held off by its
+-- own ticks, an emulator's host stopping it, which no band can help. Its
+-- suite played a program written to
 -- `/Temporary` until 18 November 2026, which no file the image serves
 -- could be, so it was never in the band and a busy host made it gap.
 --
 
 local video = use("/Kosmos/Libraries/video.lua")
+local audio = use("/Kosmos/Libraries/audio.lua")
 local files = use("/Kosmos/Libraries/files.lua")
 
 local path, report = nil, false
@@ -56,6 +60,7 @@ end
 local heard, silent = f:audible()
 local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
 local began = sys.ticks()
+local held_off = audio.held_off_since()
 
 -- Played by the sound's clock to its length, and never for ever: a film
 -- that stopped being heard ends twenty seconds past its length.
@@ -86,6 +91,8 @@ if report then
          .. "its input dry %d times")
         :format(h.audio_band and "in" or "not in", (h.worst_pass or 0) / hz * 1000,
                 h.dry or 0))
+  print(("listen: the device holds %.1f ms; the machine was held off %.1f ms, by its own ticks")
+        :format(audio.device_holds(), held_off()))
 else
   print(("listen: %s, %s, %.1f s"):format(path, f.sound.codec or "sound", f.duration))
 end

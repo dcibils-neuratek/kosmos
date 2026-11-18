@@ -566,20 +566,28 @@ static int futex_role(void)
     futex_gate = 0;
 
     /* 5-6: a deadline, held to a sleep of the same length, since the
-     * counter's rate is not something a role can read. */
-    t0 = kosmos_ticks();
-    kosmos_sleep(FUTEX_TICKS);
-    slept = kosmos_ticks() - t0;
+     * counter's rate is not something a role can read. Up to three times:
+     * on an emulator whose host is busy, either one of the pair can be
+     * stretched by the host's stopping the machine (0.11.494's prepush, on
+     * ARM), which is one try lost; a deadline that is wrong is wrong on
+     * all three. */
+    for (i = 0; i < 3; i++) {
+        t0 = kosmos_ticks();
+        kosmos_sleep(FUTEX_TICKS);
+        slept = kosmos_ticks() - t0;
 
-    t0 = kosmos_ticks();
+        t0 = kosmos_ticks();
 
-    if (kosmos_futex_wait(&futex_gate, 0, FUTEX_TICKS) != SYS_TIMED_OUT) {
-        return 5;
+        if (kosmos_futex_wait(&futex_gate, 0, FUTEX_TICKS) != SYS_TIMED_OUT) {
+            return 5;
+        }
+
+        waited = kosmos_ticks() - t0;
+
+        if (waited * 5 >= slept * 4 && waited <= slept * 3) break;
     }
 
-    waited = kosmos_ticks() - t0;
-
-    if (waited * 5 < slept * 4 || waited > slept * 3) {
+    if (i == 3) {
         return 6;
     }
 

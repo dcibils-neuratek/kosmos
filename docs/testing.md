@@ -36987,3 +36987,33 @@ quarter either way.
 
 **Control**: the check handed half the samples - "509 samples in 4.09 s
 ... 0.01 s of it held off, where about 1018 were due" - fails.
+
+## 18.894 Whose a film's gap is, and the futex deadline three times
+
+**In short**: 0.11.494's prepush failed two suites on a host running the
+whole gate. `x86-film` had its sound thread in the audio band (18.892)
+and still a gap, the thread away 83.7 ms: below the scheduler, the
+emulator's host had stopped the machine. And `arm-sandbox`'s futex role
+ended with code 6, its deadline timed against a sleep and one of the two
+stretched the same way.
+
+- **A film's gap, said whose it is**, as the loaded run already decided
+  it: `listen --report` now also says how much the device holds and how
+  long the machine was held off by its own ticks (`audio.device_holds`,
+  `audio.held_off_since`, shared with the Video app's report, which had
+  them inline). The thread away longer than the device holds past what
+  the machine was held off fails, and so does a gap; a gap while the
+  machine itself was held off longer than the device holds is printed
+  as the host's and not failed - nothing inside could have prevented it.
+  `x86-film` 16 checks.
+- **The futex deadline, up to three tries** (`user/init/main.c`): a
+  wrong deadline is wrong on every try and a host's stall lands on one.
+  **Control**: the wait four times its length, code 6 every time.
+
+The host's-gap allowance has no control of its own: provoking a held-off
+machine on purpose is what the gate's load does by accident. Its two
+other halves - a gap, and the thread away - still fail as before.
+
+The arm-sandbox line read "the plan promised 220 and 219 arrived": the
+role's message ran onto `not ok 72`'s line, so the count missed it. The
+line's beginning is the kernel suite's, not the parser's to guess.
