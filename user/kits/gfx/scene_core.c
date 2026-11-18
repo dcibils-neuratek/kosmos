@@ -513,15 +513,18 @@ static void inset_into(struct scene *sc, const struct sc_window *w, long top, lo
  * a window - is not seen through it, which is wallpaper glass's one
  * honest difference from real glass (`docs/astra.md`, Liquid Glass 1).
  * Where it draws nothing, its rounded ends, what is under it shows.
+ *
+ * Of a picture whose top-left is at `px`, `py` on the screen: a window's,
+ * or a menu's.
  */
-static void glass_under(struct scene *sc, const struct sc_window *w,
+static void glass_under(struct scene *sc, const struct surface *picture, long px, long py,
                         long x0, long y0, long x1, long y1)
 {
     const struct surface *g = sc->glass;
     long x, y;
 
     for (y = y0; y < y1; y++) {
-        const uint32_t *p = row_of(w->picture, (unsigned)(y - w->y));
+        const uint32_t *p = row_of(picture, (unsigned)(y - py));
         uint32_t *o = row_of(sc->back, (unsigned)y);
         long gy = y - sc->wy;
         bool in_y = gy >= 0 && gy < (long)g->height;
@@ -530,7 +533,7 @@ static void glass_under(struct scene *sc, const struct sc_window *w,
         for (x = x0; x < x1; x++) {
             long gx = x - sc->wx;
 
-            if ((p[x - w->x] >> 24) == 0) continue;
+            if ((p[x - px] >> 24) == 0) continue;
 
             o[x] = gr != NULL && gx >= 0 && gx < (long)g->width ? gr[gx] : sc->desktop;
         }
@@ -562,7 +565,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
         if (w->flags & SC_BLEND) {
             if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
                 && w->src_w == w->w && w->src_h == w->h) {
-                glass_under(sc, w, x0, y0, x1, y1);
+                glass_under(sc, w->picture, w->x, w->y, x0, y0, x1, y1);
             }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
@@ -847,7 +850,17 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
         size = sc->cut > sc->corner ? sc->cut : sc->corner;
         nkept = corners(sc, m->x, m->y, m->w, m->h, &r, kept, size);
         keep_corners(sc, kept, nkept);
-        blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
+
+        /* Under a glass look, a menu is glass as the dock is (LG4): the
+         * wallpaper's glass where it draws, its tint blended over that. */
+        if ((m->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
+            && m->w <= (long)m->picture->width && m->h <= (long)m->picture->height) {
+            glass_under(sc, m->picture, m->x, m->y, x0, y0, x1, y1);
+            blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
+                     x0, y0, 255);
+        } else {
+            blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
+        }
         put_back(sc, kept, nkept, m->x, m->y, m->w, m->h, size, sc->cut);
     }
 

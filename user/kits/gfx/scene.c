@@ -11,7 +11,8 @@
  *             bar, bar_h, bx, by, held)                 the k-th from the back
  *   sc:inset(k, picture, ix, iy, iw, ih)              a second picture over it
  *   sc:plate(k, picture, px, py)                      Starlight's plate over it
- *   sc:menus(n)  sc:menu(k, x, y, w, h, picture)        above every window
+ *   sc:menus(n)  sc:menu(k, x, y, w, h, picture[, flags])  above every window;
+ *                                                       flags 4096 is glass
  *   sc:above(outline x, y, w, h, colour | nil, osd, ox, oy, alpha | nil,
  *            cursor, cx, cy | nil, badge, bx, by | nil,
  *            panel, px, py | nil)                       over everything
@@ -349,6 +350,7 @@ static int l_scene_menu(lua_State *L)
     m->w = (long)luaL_checkinteger(L, 5);
     m->h = (long)luaL_checkinteger(L, 6);
     m->picture = opt_picture(L, 7, &m->picture_slot);
+    m->flags = (unsigned)luaL_optinteger(L, 8, 0) & SC_GLASS;
     hold(L, UV_MENUS, k, 7);
     return 0;
 }
@@ -533,7 +535,7 @@ static int l_scene_wire(lua_State *L)
 
         menu[k] = (struct ws_scene_menu){
             (int32_t)m->x, (int32_t)m->y, (int32_t)m->w, (int32_t)m->h,
-            (int32_t)m->picture_slot, 0
+            (int32_t)m->picture_slot, (uint32_t)m->flags
         };
     }
 

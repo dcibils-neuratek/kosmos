@@ -1820,7 +1820,7 @@ if DOCKED then
     -- - and the window manager frosts what is behind it with the
     -- wallpaper's glass: the pill is frosted glass, its hairline the rim.
     --
-    if theme.glass and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0 then
+    if theme.glassy() then
       ground = theme.glass_tint
       fill = ((theme.glass_tint >> 24) * (100 - transparency) + 50) // 100
       edge = (0x60 * (100 - transparency) + 50) // 100

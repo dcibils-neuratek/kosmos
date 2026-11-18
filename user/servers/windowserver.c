@@ -358,6 +358,7 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         m->h = in.h < 0 ? 0 : in.h;
         m->picture = picture(in.picture);
         m->picture_slot = in.picture;
+        m->flags = in.flags & SC_GLASS;
     }
 
     *rects = (const struct ws_rect *)(menu + h.nmenu);

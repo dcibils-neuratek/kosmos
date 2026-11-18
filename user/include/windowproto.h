@@ -143,7 +143,7 @@ struct ws_scene_window {
 struct ws_scene_menu {
     int32_t  x, y, w, h;
     int32_t  picture;
-    int32_t  reserved;
+    uint32_t flags;             /* SC_GLASS (1 << 12), or 0 */
 };
 
 struct ws_rect {

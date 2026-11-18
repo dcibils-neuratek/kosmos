@@ -17,13 +17,17 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
     its icons far smoother than the wallpaper's row just above the dock;
   - a notification's banner frosted the same way: a row of its card above
     its words far smoother than the wallpaper's row just under the banners;
+  - a menu - the Deskbar's, the right button on the Kosmos button - frosted too: a
+    row of it above its first item's words against the wallpaper's just
+    above it;
   - nothing died, and no program stopped on a Lua error.
 
 The control is Endeavour: a window manager that made the glass for every
 look, or never gave it back, fails the third; one that never made it
 fails the second. And a dock the compositor does not frost - `SC_GLASS`
 left unset - fails the fifth: the tint over the sharp wallpaper keeps two
-thirds of its roughness. A banner left out of the glass fails the sixth.
+thirds of its roughness. A banner left out of the glass fails the sixth,
+and a menu the seventh.
 
 The blur itself is held to arithmetic on the Mac (`tools/test_blur.c`),
 and the compositor's glass to pixels there (`tools/test_draw.c`).
@@ -41,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 8
+CHECKS = 9
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -126,11 +130,18 @@ def frosted(guest, what, row, x0, x1, inside_y, above_y, most, fails):
 
     inside = roughness(at, x0, x1, inside_y)
     above = roughness(at, x0, x1, above_y)
-    print("frost: the %s %s; a row inside %.1f, the wallpaper beside %.1f"
-          % (what, row, inside, above))
-    if not (above > 3 and inside < most * above):
-        fails.append("the %s's ground is not frosted: a row inside it changes %.1f a pixel, "
-                     "the wallpaper beside it %.1f" % (what, inside, above))
+    # And not merely smooth: a solid ground is smooth too, and is one colour
+    # end to end, where glass drifts with the wallpaper under it. The menu
+    # came out solid once - composed on a path that knew no glass - and read
+    # 0.0, which the smoothness alone passed.
+    pixels = [at(x, inside_y) for x in range(x0, x1)]
+    spread = max(max(p[c] for p in pixels) - min(p[c] for p in pixels) for c in range(3))
+    print("frost: the %s %s; a row inside %.1f, the wallpaper beside %.1f; the row spreads %d"
+          % (what, row, inside, above, spread))
+    if not (above > 3 and inside < most * above and spread >= 8):
+        fails.append("the %s's ground is not frosted: a row inside it changes %.1f a pixel and "
+                     "spreads %d end to end, the wallpaper beside it %.1f"
+                     % (what, inside, spread, above))
     return inside
 
 
@@ -143,6 +154,36 @@ def dock_frosted(guest, dockat, fails):
     x, y, w, h = (int(dockat.group(i)) for i in range(1, 5))
     return frosted(guest, "dock", "at %d,%d %dx%d" % (x, y, w, h),
                    x + w // 4, x + 3 * w // 4, y + 4, y - 8, 0.4, fails)
+
+
+def menu_frosted(guest, screen, mark, fails):
+    """The Deskbar's menu, opened by the right button on the Kosmos button
+    at the dock's left end, 30 in - the left one opens the launcher pad: a row of it 5 down - its first item starts 2 down, its
+    words in the middle of a row - over its right half, against the
+    wallpaper's row 8 above it."""
+    # Where the dock is now: it is first placed 400 wide and grows to its
+    # icons after (`wm: the dock at`), and a press where it first was lands
+    # on an icon and launches it.
+    guest._read_available()
+    now = re.findall(r"wm: the dock at (-?\d+),(-?\d+) (\d+)x(\d+)", guest.seen)
+    if not now:
+        fails.append("no dock to open the menu from")
+        return None
+    x, y, w, h = (int(v) for v in now[-1])
+    sw, sh = (int(screen.group(1)), int(screen.group(2))) if screen else (1920, 1080)
+    guest.mouse_to((x + 30) * 32767 // (sw - 1), (y + h // 2) * 32767 // (sh - 1))
+    time.sleep(0.3)
+    guest.mouse_button(True, "right")
+    time.sleep(0.1)
+    guest.mouse_button(False, "right")
+    at = line(guest, r"wm: menu of [^\r\n]* at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
+    if not at:
+        fails.append("the Kosmos menu never opened")
+        return None
+    mx, my, mw, mh = (int(at.group(i)) for i in range(1, 5))
+    time.sleep(2)
+    return frosted(guest, "menu", "at %d,%d %dx%d" % (mx, my, mw, mh),
+                   mx + mw // 2, mx + mw - 12, my + 5, my - 8, 0.4, fails)
 
 
 # The card's own measures (`notifications.lua`): the banners' window has 8
@@ -204,6 +245,7 @@ def run(fails):
         banner_at = line(guest, r"notifications: banners at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
         time.sleep(2)
         banner_frosted(guest, banner_at, fails)
+        menu_frosted(guest, screen, len(guest.seen), fails)
         time.sleep(2)
         guest._read_available()
         seen = guest.seen[mark:]
@@ -272,7 +314,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock and a banner frosted; nothing stopped)." % CHECKS)
+          "Night; the dock, a banner and a menu frosted; nothing stopped)." % CHECKS)
     return 0
 
 

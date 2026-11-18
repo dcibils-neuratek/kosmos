@@ -130,7 +130,7 @@ static void scene(void)
     sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
     sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
     sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
-    sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu, -1 };
+    sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu, -1, 0 };
 
     drawn = scene_compose(sc, 0, 0, 200, 120);
     check(drawn > 0, "the scene composed");
@@ -239,6 +239,22 @@ static void glass(void)
     check(((p >> 8) & 0xff) < 0x90 && (p & 0xff) > 0xb0,
           "the same strip, not glass, over the window under it");
 
+    /* A menu, on the scene's own list, glass the same way: the strip as a
+     * menu's picture, where the strip was, and the strip itself gone. */
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 1), "room for a window and a menu");
+    sc->menu[0] = (struct sc_menu){ 50, 20, 60, 20, &strip, -1, SC_GLASS };
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "a glass menu's tint over the glass, not over the window under it");
+    check(at(&back, 55, 30) == 0xff0000ffu, "where a glass menu draws nothing, the window under it");
+
+    /* And without the flag, copied as a menu always was: its pixels as
+     * they are, alpha and all, whatever is under it. */
+    sc->menu[0].flags = 0;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    check(at(&back, 80, 30) == 0x80ffffffu, "a menu that is not glass, copied as it is");
+
     scene_free(sc);
     free(sc);
     free(back.pixels);
@@ -315,6 +331,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip frosted with the wallpaper's glass where it draws and not where it does not; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip and a glass menu frosted with the wallpaper's glass where they draw and not where they do not; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

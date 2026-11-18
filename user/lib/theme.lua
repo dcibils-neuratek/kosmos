@@ -737,6 +737,16 @@ function theme.apply(palette)
   return theme
 end
 
+--
+-- **Whether the look in force is glass** (Liquid Glass LG4): a glass kind
+-- and a tint to see it through. A floating surface - the dock, a banner, a
+-- menu - asks this before painting its ground as the tint and leaving the
+-- frosting to the window manager; one question, asked in one place.
+--
+function theme.glassy()
+  return theme.glass ~= nil and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0
+end
+
 -- Whatever a caller hands over on top of a palette: the desktop colour is
 -- chosen separately from the palette it sits with, so a light theme with a
 -- dark desktop is a thing somebody can have.

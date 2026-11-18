@@ -152,7 +152,7 @@ local TITLE = ui.sized("ui", 15, "bold")
 -- banners: the history is a window, and its cards stay solid on its ground.
 --
 local function palette(banner)
-  local glass = banner and theme.glass and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0
+  local glass = banner and theme.glassy()
 
   return {
     card  = glass and theme.glass_tint or theme.raised or 0xff2a3344,

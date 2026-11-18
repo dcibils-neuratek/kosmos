@@ -2765,8 +2765,8 @@ function OUT.describe()
     -- **Glass** (Liquid Glass LG4): a blended strip - the dock, its lens -
     -- and a notification's banner, frosted with the wallpaper's glass
     -- where they draw, under a glass look, rather than showing what is
-    -- under them. Floating surfaces first; windows' own grounds follow
-    -- through the kit.
+    -- under them; menus the same, below, on their own list. Floating
+    -- surfaces first; windows' own grounds follow through the kit.
     --
     if win.blend and (win.strip or win.banner) and OUT.wall_glass then
       flags = flags | 4096
@@ -2843,7 +2843,8 @@ function OUT.describe()
   scene:menus(#menus)
 
   for k, m in ipairs(menus) do
-    scene:menu(k, m.x, m.y, m.w, m.h, pic(m.shared and m.shared[m.shared.live] or m.surface))
+    scene:menu(k, m.x, m.y, m.w, m.h, pic(m.shared and m.shared[m.shared.live] or m.surface),
+               (m.blend and OUT.wall_glass) and 4096 or 0)
   end
 
   local o = PT.outline
@@ -4125,10 +4126,12 @@ handlers.open = function(req, who, cap)
   -- **A strip may be blended**, as the backdrop always is: what it has not
   -- drawn shows what is behind it. The dock's strip at the top is the time
   -- and the indicators over the wallpaper, and the dock a pill with the
-  -- screen round it. Strips only, since blending costs more than a copy and
-  -- an application window has no reason to.
+  -- screen round it. And a menu under a glass look, whose ground is the
+  -- look's tint over the wallpaper's glass (Liquid Glass LG4). Not an
+  -- application window: blending costs more than a copy, and until its
+  -- ground is glass it has no reason to.
   --
-  if req.blend == true and win.strip then win.blend = true end
+  if req.blend == true and (win.strip or req.kind == "menu") then win.blend = true end
 
   --
   -- **Full screen: the window *is* the screen.**

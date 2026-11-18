@@ -36353,3 +36353,43 @@ the two by a factor of two each way, and the control fails that check
 alone.
 
 **The gate** (132 suites, 691 s): all passed.
+
+## 18.877 Menus frosted (LG4, third part)
+
+**In short.** In Liquid Glass every menu - the Deskbar's, an application's,
+a right-click's - is frosted glass: the look's tint, the wallpaper blurred
+behind it, its words drawn straight onto the glass. It is the kit's menu,
+so every application has it at once.
+
+**How.** The kit (`ui.lua`'s `push_menu`, `paint_menu`) asks the window
+manager for a blended menu under a glass look, fills its ground with the
+look's tint - a fill writes the colour, alpha and all - with a hairline for
+the rim, and draws its words without a ground of their own. Menus are on
+the scene's own list, composed by a path of their own that only ever
+copied, so the glass needed carrying there: `sc:menu` takes flags, the
+wire's menu has a `flags` word where it had a reserved one
+(`windowproto.h`), and the scene lays the wallpaper's glass under a glass
+menu and blends it (`scene_core.c`; `glass_under` now takes a picture and
+where it lies, a window's or a menu's). One question asks whether the look
+is glass, `theme.glassy()`, for the dock, the banners and menus alike.
+
+**Held by** `tools/test_draw.c`, now 34: a glass menu's tint over the
+glass and not over the window under it, the window where it draws nothing,
+and a menu that is not glass copied as it is. Its control, the scene's
+glass branch for menus never taken, fails the first two. And `x86-glass`,
+now 9: the Deskbar's menu, opened with the right button on the Kosmos
+button (the left opens the launcher pad; and the press has to go where the
+dock is *now* - it is placed 400 wide and grows to its icons, and a press
+where it first was launched Tracker), a row of it above its first item's
+words: 0.6 a pixel against the wallpaper's 5.7.
+
+**The check that passed a solid menu.** The first run, before the scene
+knew about menus, passed: the menu came out in the tint's colour at full
+strength, and a solid ground is perfectly smooth - 0.0. So every surface's
+row is now also held to *spread*, how far its colour moves end to end -
+glass drifts with the wallpaper under it, a solid ground does not: the
+dock 64, the banner 43, the menu 33, and at least 8 asked. The control,
+the scene never told a menu is glass, reads 0.0 and spreads 0, and fails
+that check alone.
+
+**The gate** (132 suites, 692 s): all passed.

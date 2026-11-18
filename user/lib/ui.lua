@@ -9561,7 +9561,20 @@ function window:paint_menu(m)
   -- `theme.metrics.corner`, so the line is drawn on that same arc - and
   -- with rounding switched off the square is the menu, in its own colour.
   --
-  if theme.flat then
+  --
+  -- **Under a glass look** (Liquid Glass LG4) the ground is the look's tint,
+  -- its own alpha kept - a fill writes the colour, it does not blend it -
+  -- and the window manager frosts what is behind it with the wallpaper's
+  -- glass, as it does the dock and the banners; the hairline is the rim.
+  -- Its words are drawn without a ground of their own, which over a
+  -- see-through ground would be a box round each one.
+  --
+  local glass = theme.glassy()
+
+  if glass then
+    g:fill(0, 0, m.w, m.h, theme.glass_tint)
+    g:frame_round(0, 0, m.w, m.h, 0x60ffffff, theme.metrics.corner or 0)
+  elseif theme.flat then
     g:fill(0, 0, m.w, m.h, "raised")
     g:frame_round(0, 0, m.w, m.h, theme.line_soft, theme.metrics.corner or 0)
   else
@@ -9583,7 +9596,7 @@ function window:paint_menu(m)
       -- A greyed item is drawn and never lit: it is there to say the thing
       -- exists and is not ready, which a missing item cannot say.
       local hot = (i == m.hot) and not it.disabled
-      local bg  = hot and theme.accent or theme.raised
+      local bg  = hot and theme.accent or (not glass and theme.raised) or nil
 
       if hot then g:fill(2, y, m.w - 4, m.row, "accent") end
 
@@ -9680,9 +9693,12 @@ function window:push_menu(x, y, items, above)
   local pct = scale_now()
   local region, cap = direct_region(at_scale(w, pct), at_scale(h, pct))
 
+  -- Blended under a glass look (Liquid Glass LG4), so its ground can be
+  -- the look's tint and the window manager frost what is behind it.
   local reply = fs.send("/Running/wm", { type = "open", kind = "menu",
                                      owner = self.handle,
                                      x = x, y = y, w = w, h = h,
+                                     blend = theme.glassy() or nil,
                                      draws_itself = region and true or nil }, cap)
 
   if not reply or not reply.ok or not reply.draws_itself then

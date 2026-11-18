@@ -80,6 +80,7 @@ struct sc_menu {
     long x, y, w, h;
     struct surface *picture;
     int picture_slot;
+    unsigned flags;             /* SC_GLASS, or 0: copied as it always was */
 };
 
 struct sc_rect {
