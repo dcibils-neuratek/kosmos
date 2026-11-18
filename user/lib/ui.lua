@@ -10168,7 +10168,7 @@ function window:paint()
     g.cw, g.ch = self.frame.w, self.frame.h
 
     -- Glass when the window manager was told it may be and the look is.
-    glass_ground = self.glassable and theme.glassy() and theme.glass_ground() or nil
+    glass_ground = self.glassable and theme.glass_window() and theme.glass_ground() or nil
 
     if self.background ~= false then
       g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
@@ -10502,11 +10502,13 @@ end
 -- rectangle inside the window's picture - its pill, its card - at `x`, `y`
 -- from its corner and `w` by `h`, rounded at `r`, so the window manager
 -- bends and lights its rim there. Said from a paint; told only when it
--- changed, so a paint that draws the same shape sends nothing. `r` 0, or
--- no arguments, for none.
+-- changed, so a paint that draws the same shape sends nothing. `r` 0 for
+-- a square one - a strip's, along whose top Starlight draws its horizon
+-- (S3) - and no arguments for none.
 --
 function window:rim(x, y, w, h, r)
-  local key = r and r > 0 and ("%d %d %d %d %d"):format(x, y, w, h, r) or ""
+  -- A shape is any rectangle, square or round; none when nothing is said.
+  local key = x and ("%d %d %d %d %d"):format(x, y, w, h, r or 0) or ""
 
   if key == self.rim_said then return true end
 

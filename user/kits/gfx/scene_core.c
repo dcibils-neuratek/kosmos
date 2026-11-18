@@ -932,6 +932,40 @@ static void rim_light(struct scene *sc, const struct surface *picture, long px, 
 }
 
 /*
+ * **Starlight's horizon** (S3, `docs/astra.md`): the one-pixel line of the
+ * look's colour along the top of a glass surface, over its picture once it
+ * is blended - its shape's first row, wherever the picture draws there.
+ * Solid, not by the picture's alpha: a glass surface's picture is its
+ * light tint, and the line by that was a third of an amber (the first
+ * gate). A cut or a rounded corner draws nothing at its ends, so the line
+ * stops where the surface does; a menu's corners are put back after.
+ */
+static void horizon(struct scene *sc, const struct surface *picture, long px, long py,
+                    const struct rim_shape *shape, long x0, long y0, long x1, long y1)
+{
+    uint32_t c = sc->rim_horizon;
+    const uint32_t *p;
+    uint32_t *o;
+    long x, y;
+
+    if (c == 0 || shape == NULL) return;
+
+    y = shape->y;
+    if (y < y0 || y >= y1 || y < py || y >= py + (long)picture->height) return;
+    if (x0 < shape->x) x0 = shape->x;
+    if (x1 > shape->x + shape->w) x1 = shape->x + shape->w;
+    if (x0 < px) x0 = px;
+    if (x1 > px + (long)picture->width) x1 = px + (long)picture->width;
+
+    p = row_of(picture, (unsigned)(y - py));
+    o = row_of(sc->back, (unsigned)y);
+
+    for (x = x0; x < x1; x++) {
+        if ((p[x - px] >> 24) != 0) o[x] = c | 0xff000000u;
+    }
+}
+
+/*
  * The lens for the scene's corner and rim, made when one of the four
  * changed since it was last made - once a look, never in a frame. A rim
  * the lens cannot be made for - no bevel, a corner or a bevel past
@@ -1017,14 +1051,16 @@ static bool strip_shape(struct scene *sc, const struct sc_window *w, struct rim_
 {
     const struct gfx_lens *l;
 
-    if (w->rr <= 0 || w->rx < 0 || w->ry < 0 || w->rw <= 0 || w->rh <= 0
+    if (w->rr < 0 || w->rx < 0 || w->ry < 0 || w->rw <= 0 || w->rh <= 0
         || w->rx + w->rw > w->w || w->ry + w->rh > w->h) {
         return false;
     }
 
-    l = lens_for(sc, w->rr);
+    /* No lens - a look with no rim, a square strip - is a shape still,
+     * flat: what the horizon is drawn along. */
+    l = w->rr > 0 ? lens_for(sc, w->rr) : NULL;
 
-    if (l == NULL || w->rw < 2 * (long)l->side || w->rh < 2 * (long)l->side) return false;
+    if (l != NULL && (w->rw < 2 * (long)l->side || w->rh < 2 * (long)l->side)) l = NULL;
 
     *out = (struct rim_shape){ l, w->x + w->rx, w->y + w->ry, w->rw, w->rh };
     return true;
@@ -1068,8 +1104,10 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
             /* And its rim's light, cool, over the picture (LG4). */
-            if (shaped) rim_light(sc, w->picture, w->x, w->y, &shape, 0xffffffffu,
-                                  x0, y0, x1, y1);
+            if (shaped) {
+                rim_light(sc, w->picture, w->x, w->y, &shape, 0xffffffffu, x0, y0, x1, y1);
+                horizon(sc, w->picture, w->x, w->y, &shape, x0, y0, x1, y1);
+            }
         } else if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
                    && w->bar == NULL && !(w->flags & SC_STALE)
                    && w->src_w == w->w && w->src_h == w->h) {
@@ -1082,6 +1120,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
             glass_under(sc, w->picture, w->x, w->y, &shape, x0, y0, x1, y1);
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+            horizon(sc, w->picture, w->x, w->y, &shape, x0, y0, x1, y1);
             /* Warm on the window in front, cool on the rest (L6): focus
              * shown by the light in the glass. */
             if (w->flags & SC_ROUNDED) {
@@ -1417,6 +1456,7 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
             blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
             rim_light(sc, m->picture, m->x, m->y, &shape, 0xffffffffu, x0, y0, x1, y1);
+            horizon(sc, m->picture, m->x, m->y, &shape, x0, y0, x1, y1);
         } else {
             blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
         }

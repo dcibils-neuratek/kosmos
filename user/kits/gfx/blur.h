@@ -42,4 +42,22 @@ void gfx_blur_scalar(const uint32_t *src, uint32_t *dst, size_t pitch,
                      unsigned w, unsigned h, unsigned r, unsigned passes,
                      uint32_t *tmp, uint32_t *sums);
 
+/*
+ * **Nebula glass** (Starlight S3, `docs/astra.md`): the blurred wallpaper
+ * given its tint once, when it is made, so a frame pays nothing for it. A
+ * vertical gradient - `top` on the first row to `bottom` on the last,
+ * `#aarrggbb` each, its alpha how much of it covers the glass - and a
+ * grain over it, the same on the three channels: each pixel moved by up to
+ * `grain` levels of 255 either way, by a hash of where it is and `seed`,
+ * so it is the same dust every time. Alpha is the pixel's own.
+ */
+#define GFX_NEBULA_GRAIN_MOST 32u
+
+void gfx_nebula(uint32_t *pixels, size_t pitch, unsigned w, unsigned h,
+                uint32_t top, uint32_t bottom, unsigned grain, uint32_t seed);
+
+/* The same a pixel at a time: the reference and the tail. */
+void gfx_nebula_scalar(uint32_t *pixels, size_t pitch, unsigned w, unsigned h,
+                       uint32_t top, uint32_t bottom, unsigned grain, uint32_t seed);
+
 #endif /* KOSMOS_GFX_BLUR_H */

@@ -121,6 +121,7 @@ struct ws_scene_head {
     int32_t  rim_specular;      /* and how much it is lit, in percent */
     uint32_t rim_front;         /* the window in front's light, 0 for white */
     int32_t  rim_split;         /* how far its colours part, in percent */
+    uint32_t rim_horizon;       /* a glass surface's top row, 0 none (S3) */
     int32_t  live_blur;         /* live glass's radius (LG6); 0 clear, -1 none */
 
     uint32_t outline_on;

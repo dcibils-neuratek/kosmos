@@ -36887,3 +36887,68 @@ showed it anyway ("shown before it had drawn"), which is its rule for a
 slow first frame, and the line the check waited for never came. Either is
 the loader's window on the screen, and the loader's own lines after it
 say it ran, so the check takes either and prints which.
+
+## 18.891 Starlight's nebula glass (S3)
+
+**In short**: Starlight's floating surfaces - the dock, the menus, the
+banners - are glass now, as `docs/astra.md` drew them, and its windows
+keep their ground. The wallpaper's glass is shaded once when it is made,
+from a violet dusk at the head of the screen to the night at its foot,
+with a faint star dust in it, and a one-pixel amber horizon runs along
+the top of every glass surface. It costs nothing a frame: the gradient
+and the dust are in the blurred copy, and the horizon is one row.
+
+What it is made of:
+
+- **`gfx_nebula`** (`user/kits/gfx/blur.c`, `surface:nebula`): a vertical
+  gradient from `glass_top` to `glass_bottom`, each `#aarrggbb`, over the
+  blurred wallpaper, divided by 255 exactly, and a grey grain of up to
+  `grain` levels either way, chosen by a hash of where the pixel is - the
+  same dust every time, and nobody's state. Eight at a time in the vector
+  unit, the scalar loop its reference and tail. Through pointers: a
+  32-byte vector passed or returned by value changes the ABI on an x86
+  without AVX, which the compiler refused in the first gate.
+- **The horizon** (`scene_core.c`, `horizon`): the look's colour along a
+  glass shape's first row, solid wherever the picture draws, so it stops
+  where a cut or a rounded corner does. It was by the picture's alpha
+  first, and the first gate's menu showed a third of an amber: a glass
+  surface's picture is its light tint. The shape is a menu's rectangle, or the
+  one a strip says (`window:rim`) - which may now be square (`r` 0) or
+  have no lens, a look with no rim: Starlight's edges are cut, not bent.
+  The cut dock says its shape too.
+- **Four keys** (`theme.lua`): `glass_top`, `glass_bottom`, `grain` (0 to
+  32) and `horizon`, and `glass_windows = no` for a look whose windows are
+  not glass (`theme.glass_window()`, asked by the kit and by the window
+  manager). The window manager makes the glass again when any of them
+  changes.
+
+What holds it:
+
+- `tools/test_blur.c` (276 checks, from 246): the nebula's vector
+  loop the scalar one's to the bit at eight awkward sizes and three
+  grains; a plain gradient's first and last rows exactly `top` and
+  `bottom` over the glass, alpha the pixel's own; the grain within its
+  amount, the same on three channels, more than one value along a row of
+  one colour and the same for the same seed; a grain past the most the
+  most. 1920x1080 in 1.3 ms here (1.7 through Rosetta) - the estimate
+  was 1-2 ms. **Controls**: one hash constant changed in the vector loop,
+  five sizes differ; the clamp taken out, four checks fail.
+- `tools/test_draw.c` (93 checks, from 81): no horizon, the top row is
+  glass; with one, the shape's top row amber from its first column to its
+  last, the row under it untouched, nothing outside its columns or on the
+  picture's own top row above it, solid over a light tint and absent where
+  the picture draws nothing;
+  a glass menu's top row amber and its second its own. **Control**: the
+  horizon drawn a row low, six fail.
+- `tools/test_theme.lua` (715 checks): Starlight frosted with a light
+  tint, no rim, its windows not glass, its nebula darkening down the
+  screen, a grain, and its horizon its `tab`; Liquid Glass's windows
+  glass and no nebula, after Starlight as well; a grain of 33 and
+  `glass_windows = maybe` each told. **Control**: the horizon one off and
+  the windows glass, three fail.
+- `x86-starlight` (12 checks, from 10), on a carried wallpaper: the
+  wallpaper's glass made with its nebula, and the Kosmos menu's top row
+  the look's amber with the row under it not. Its first gate found the
+  plates glass - Liquid Glass's amber glass plate (L5) asked `glassy()`,
+  true of Starlight now - and asks `glass_window()` instead: the plate is
+  glass where the windows are.

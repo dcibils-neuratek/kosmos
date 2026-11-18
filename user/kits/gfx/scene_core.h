@@ -139,6 +139,7 @@ struct scene {
      * changes, never in a frame otherwise; `lens_ok` says it was. */
     long rim_bevel, rim_refraction, rim_specular, rim_split;
     uint32_t rim_front;         /* the window in front's light; 0, white */
+    uint32_t rim_horizon;       /* a glass surface's top row, 0 none (Starlight S3) */
     struct gfx_lens lens;
     void *lens_mem;
     long lens_of[4];

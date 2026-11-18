@@ -357,25 +357,37 @@ theme.tokens = {
   --     the rim is, in points;
   --   - `refraction`, `split` and `specular`: how hard the rim bends, how
   --     far its colours part, and how bright its lit edge is - in percent;
-  --   - `rim_front`: the colour the window in front's rim is lit in.
+  --   - `rim_front`: the colour the window in front's rim is lit in;
+  --   - **Starlight's nebula glass** (S3): `glass_top` and `glass_bottom`,
+  --     the gradient the glass itself is shaded with from the head of the
+  --     screen to its foot, `#aarrggbb` - under the surfaces' own
+  --     `glass_tint`; `grain`, its star dust, in levels of 255 from 0
+  --     to 32; `horizon`, the one-pixel line along the top of every glass
+  --     surface, `#rrggbb`. Each baked into the wallpaper's glass once, or
+  --     a row, so a frame pays nothing for them;
+  --   - `glass_windows`: `no` for a look whose windows keep their own
+  --     ground and only its floating surfaces are glass - Starlight's,
+  --     whose plate is on a header. `yes` when not said.
   --
   -- What the scene does with them arrives a step at a time (LG2 the blur,
   -- LG3 the lens); until then a glass look is its tints said as solid
   -- colours.
   --
   "glass", "glass_tint", "glass_blur", "bevel", "refraction", "split",
-  "specular", "rim_front",
+  "specular", "rim_front", "glass_top", "glass_bottom", "grain", "horizon", "glass_windows",
 }
 
 -- What a look that is not glass has, and what each glass number may be.
 theme.GLASS_NONE = {
   glass = "none", glass_tint = 0, glass_blur = 0, bevel = 0, refraction = 0,
-  split = 0, specular = 0, rim_front = 0,
+  split = 0, specular = 0, rim_front = 0, glass_top = 0, glass_bottom = 0, grain = 0,
+  horizon = 0, glass_windows = true,
 }
 theme.GLASS_KINDS = { none = true, frosted = true, clear = true }
 theme.GLASS_POINTS_MOST = 64
 local GLASS_POINTS = { glass_blur = true, bevel = true }
 local GLASS_PERCENT = { refraction = true, split = true, specular = true }
+theme.GRAIN_MOST = 32
 
 -- What `corner` and `shadow` are in a look that does not name them, and the
 -- most a look may: past that a window is a capsule.
@@ -594,6 +606,15 @@ function theme.read(text, base)
           said[#said + 1] = ("line %d: `glass` is none, frosted or clear, "
                              .. "not `%s`"):format(n, value)
         end
+      elseif key == "grain" then
+        local v = math.tointeger(tonumber(value))
+
+        if v and v >= 0 and v <= theme.GRAIN_MOST then
+          out[key] = v
+        else
+          said[#said + 1] = ("line %d: `grain` is a number of levels from 0 "
+                             .. "to %d, not `%s`"):format(n, theme.GRAIN_MOST, value)
+        end
       elseif GLASS_POINTS[key] or GLASS_PERCENT[key] then
         local v = math.tointeger(tonumber(value))
         local most = GLASS_POINTS[key] and theme.GLASS_POINTS_MOST or 100
@@ -606,7 +627,7 @@ function theme.read(text, base)
                              .. "not `%s`"):format(n, key, unit, most, value)
         end
       elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star"
-             or key == "plate" then
+             or key == "plate" or key == "glass_windows" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -769,6 +790,15 @@ end
 --
 function theme.glassy()
   return theme.glass ~= nil and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0
+end
+
+--
+-- **Whether a window's own ground is glass**: a glass look whose windows
+-- are - Liquid Glass's - and not Starlight's, whose glass is the dock's,
+-- the menus' and the banners' and whose windows keep their ground.
+--
+function theme.glass_window()
+  return theme.glassy() and theme.glass_windows ~= false
 end
 
 --

@@ -288,3 +288,144 @@ void gfx_blur(const uint32_t *src, uint32_t *dst, size_t pitch,
         }
     }
 }
+
+/* ---- the nebula ------------------------------------------------------- */
+
+/*
+ * The grain's number for a pixel: a hash of where it is, so the same
+ * wallpaper is given the same dust every time and a pixel's grain is
+ * nobody's state. Spread over [-grain, grain] by a multiply rather than a
+ * remainder, which a vector does not have.
+ */
+static inline uint32_t dust(uint32_t x, uint32_t y, uint32_t seed)
+{
+    uint32_t h = (x * 0x9E3779B1u) ^ (y * 0x85EBCA77u + seed);
+
+    h ^= h >> 15;
+    h *= 0x2C1B3C6Du;
+    h ^= h >> 12;
+    h *= 0x297A2D39u;
+    h ^= h >> 15;
+    return h;
+}
+
+/* A row's colour: `top` to `bottom`, alpha too, at `y` of `h`, rounded. */
+static uint32_t nebula_row(uint32_t top, uint32_t bottom, unsigned y, unsigned h)
+{
+    uint32_t out = 0;
+    unsigned k, d = h > 1 ? h - 1 : 1;
+
+    for (k = 0; k < 32; k += 8) {
+        uint32_t a = (top >> k) & 0xFFu, b = (bottom >> k) & 0xFFu;
+
+        out |= ((a * (d - y) + b * y + d / 2) / d) << k;
+    }
+
+    return out;
+}
+
+/* One channel: `c` at alpha `a` over `v`, divided by 255 exactly, and the
+ * grain `n` added and held to a byte. */
+static inline int32_t nebula_channel(int32_t v, int32_t c, int32_t a, int32_t n)
+{
+    int32_t t = c * a + v * (255 - a) + 128;
+    int32_t o = ((t + (t >> 8)) >> 8) + n;
+
+    return o < 0 ? 0 : o > 255 ? 255 : o;
+}
+
+static void nebula_px(uint32_t *row, unsigned from, unsigned to, unsigned y,
+                      uint32_t c, unsigned grain, uint32_t seed)
+{
+    int32_t a = (int32_t)(c >> 24);
+    unsigned x;
+
+    for (x = from; x < to; x++) {
+        uint32_t p = row[x];
+        int32_t n = (int32_t)(((dust(x, y, seed) >> 16) * (2u * grain + 1u)) >> 16)
+                  - (int32_t)grain;
+
+        row[x] = (p & 0xFF000000u)
+               | (uint32_t)nebula_channel((int32_t)((p >> 16) & 0xFFu),
+                                          (int32_t)((c >> 16) & 0xFFu), a, n) << 16
+               | (uint32_t)nebula_channel((int32_t)((p >> 8) & 0xFFu),
+                                          (int32_t)((c >> 8) & 0xFFu), a, n) << 8
+               | (uint32_t)nebula_channel((int32_t)(p & 0xFFu),
+                                          (int32_t)(c & 0xFFu), a, n);
+    }
+}
+
+void gfx_nebula_scalar(uint32_t *pixels, size_t pitch, unsigned w, unsigned h,
+                       uint32_t top, uint32_t bottom, unsigned grain, uint32_t seed)
+{
+    unsigned y;
+
+    if (grain > GFX_NEBULA_GRAIN_MOST) grain = GFX_NEBULA_GRAIN_MOST;
+
+    for (y = 0; y < h; y++) {
+        nebula_px(pixels + (size_t)y * pitch, 0, w, y,
+                  nebula_row(top, bottom, y, h), grain, seed);
+    }
+}
+
+typedef int32_t i32x8 __attribute__((vector_size(32)));
+
+/* The same channel, eight pixels at a time, in place in `v`: the clamp is
+ * masks, since a vector in C has no `?:`. Through pointers, because a
+ * 32-byte vector passed or returned by value changes the ABI on an x86
+ * without AVX, which the compiler refuses. */
+static inline void channel8(i32x8 *v, int32_t c, int32_t a, const i32x8 *n)
+{
+    i32x8 t = c * a + *v * (255 - a) + 128;
+    i32x8 o = ((t + (t >> 8)) >> 8) + *n;
+    i32x8 over;
+
+    o &= ~(o >> 31);
+    over = o > 255;
+    *v = (o & ~over) | (255 & over);
+}
+
+void gfx_nebula(uint32_t *pixels, size_t pitch, unsigned w, unsigned h,
+                uint32_t top, uint32_t bottom, unsigned grain, uint32_t seed)
+{
+    static const u32x8 step = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    unsigned x, y;
+
+    if (grain > GFX_NEBULA_GRAIN_MOST) grain = GFX_NEBULA_GRAIN_MOST;
+
+    for (y = 0; y < h; y++) {
+        uint32_t *row = pixels + (size_t)y * pitch;
+        uint32_t c = nebula_row(top, bottom, y, h);
+        int32_t a = (int32_t)(c >> 24);
+        int32_t cr = (int32_t)((c >> 16) & 0xFFu);
+        int32_t cg = (int32_t)((c >> 8) & 0xFFu);
+        int32_t cb = (int32_t)(c & 0xFFu);
+
+        for (x = 0; x + LANES <= w; x += LANES) {
+            u32x8 p, hx, o;
+            i32x8 n, r, g, b;
+
+            __builtin_memcpy(&p, row + x, sizeof(p));
+
+            hx = ((step + x) * 0x9E3779B1u) ^ (y * 0x85EBCA77u + seed);
+            hx ^= hx >> 15;
+            hx *= 0x2C1B3C6Du;
+            hx ^= hx >> 12;
+            hx *= 0x297A2D39u;
+            hx ^= hx >> 15;
+            n = (i32x8)(((hx >> 16) * (2u * grain + 1u)) >> 16) - (int32_t)grain;
+
+            r = (i32x8)((p >> 16) & 0xFFu);
+            g = (i32x8)((p >> 8) & 0xFFu);
+            b = (i32x8)(p & 0xFFu);
+            channel8(&r, cr, a, &n);
+            channel8(&g, cg, a, &n);
+            channel8(&b, cb, a, &n);
+            o = (p & 0xFF000000u) | (u32x8)r << 16 | (u32x8)g << 8 | (u32x8)b;
+
+            __builtin_memcpy(row + x, &o, sizeof(o));
+        }
+
+        nebula_px(row, x, w, y, c, grain, seed);
+    }
+}

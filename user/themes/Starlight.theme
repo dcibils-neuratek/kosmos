@@ -65,6 +65,22 @@ stamp      = #34386a
 
 # Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
 # look has them.
+# **Nebula glass** (`docs/astra.md`, Starlight S3): the dock, the menus and
+# the banners are glass, the windows keep their ground - the plate is on
+# a header. The wallpaper's glass is shaded once, when it is made, from a
+# violet dusk at the head of the screen to the night at its foot, with a
+# faint star dust in it; each surface's own tint is light over that, and
+# an amber horizon runs along its top. No rim: Starlight's edges are cut,
+# not bent.
+glass         = frosted
+glass_tint    = #2e191b31
+glass_blur    = 24
+glass_top     = #a6241c4c
+glass_bottom  = #c70b0c1f
+grain         = 5
+horizon       = #f2a93b
+glass_windows = no
+
 font.title   = ibmplexsans-semibold 18
 font.ui      = ibmplexsans 18
 font.heading = ibmplexsans-semibold 18

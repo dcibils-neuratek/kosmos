@@ -20,6 +20,10 @@ and the one in front dragged by its header clear of the other:
     the plate's ink (S5);
   - the Kosmos menu opened, its top-left corner cut on a slant - not the
     mirror of its round top-right, as every corner is elsewhere (S2);
+  - the nebula glass (S3), on a carried wallpaper: the wallpaper's glass
+    made and its nebula baked into it once; the Kosmos menu glass, with
+    the look's amber horizon along its top row and not on the row under
+    it;
   - nothing died, and no application stopped on an error - the Deskbar
     drawing its Kosmos button on a plate among them.
 
@@ -41,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 10
+CHECKS = 12
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -50,7 +54,10 @@ TAB_TEXT = (0x1e, 0x13, 0x05)
 
 
 def startup(items):
-    return ('print("STARTUP", fs.write("/Home/Preferences/startup", { items = { %s } }))'
+    # A carried wallpaper, so the look's glass has something to frost (S3).
+    return ('print("STARTUP", fs.write("/Home/Preferences/startup", { items = { %s } }), '
+            'fs.write("/Home/Preferences/appearance", { wallpaper = "wallpaper/paint-storm.jpg", '
+            'wallpaper_fit = "fill" }))'
             % ", ".join('"%s"' % i for i in items))
 
 
@@ -102,6 +109,12 @@ def run(fails):
             fails.append("the desktop did not wear Starlight's look")
         if not re.search(r"wm: chrome starlight", seen):
             fails.append("Starlight's chrome was not starlight")
+        baked = re.search(r"wm: the wallpaper's glass, \d+x\d+, three passes at \d+, "
+                          r"in \d+ ms, its nebula in (\d+\.\d) ms", seen)
+        if baked:
+            print("nebula: " + baked.group(0))
+        else:
+            fails.append("the wallpaper's glass was not made with its nebula")
         if not (loaded and int(loaded.group(2)) == 0 and screen):
             fails.append("the two did not open under Starlight: %r"
                          % (loaded and loaded.group(0)))
@@ -240,6 +253,14 @@ def run(fails):
                 fails.append("the menu's top-left is its top-right mirrored (%d pixels differ): "
                              "no cut" % odd)
 
+            # The horizon (S3): the look's amber along the menu's top row,
+            # and the row under it the menu's own glass.
+            top, under = at(mx + mw // 2, my), at(mx + mw // 2, my + 1)
+
+            if not near(top, TAB) or near(under, TAB, 40):
+                fails.append("the menu's top row is %r and the one under it %r: "
+                             "no amber horizon %r along its top" % (top, under, TAB))
+
             guest.type("\x1b")
             time.sleep(0.5)
 
@@ -278,7 +299,8 @@ def main():
     print("PASS: %d checks on Starlight's plate (the desktop in Starlight's look and "
           "chrome; Calculator and Processes each placed a plate and unfurled; the window in front's "
           "amber and the one behind's quiet; the one behind clicked, the two swapped; "
-          "its star; the Kosmos menu's top-left cut; nothing died)" % CHECKS)
+          "its star; the Kosmos menu's top-left cut; the nebula baked and the menu's "
+          "amber horizon; nothing died)" % CHECKS)
     return 0
 
 

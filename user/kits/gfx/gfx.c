@@ -2998,6 +2998,32 @@ static int l_blur(lua_State *L)
     return 1;
 }
 
+/*
+ * `glass:nebula(top, bottom, grain, seed)` - Starlight's nebula glass (S3,
+ * `blur.c`): this surface, a wallpaper's glass once it is blurred, given a
+ * vertical gradient from `top` to `bottom` (`#aarrggbb` numbers, their
+ * alpha how much each covers) and a grain of up to `grain` levels either
+ * way, the dust chosen by `seed`. In place, once a wallpaper.
+ */
+static int l_nebula(lua_State *L)
+{
+    struct surface *d = check_surface(L, 1);
+    lua_Integer top = luaL_checkinteger(L, 2);
+    lua_Integer bottom = luaL_checkinteger(L, 3);
+    lua_Integer grain = luaL_optinteger(L, 4, 0);
+    lua_Integer seed = luaL_optinteger(L, 5, 0);
+
+    if (grain < 0 || grain > (lua_Integer)GFX_NEBULA_GRAIN_MOST) {
+        return luaL_error(L, "nebula: a grain is 0 to %d, not %d",
+                          (int)GFX_NEBULA_GRAIN_MOST, (int)grain);
+    }
+    if (d->pixels == NULL || d->width == 0 || d->height == 0) return 0;
+
+    gfx_nebula(d->pixels, d->pitch / 4u, d->width, d->height,
+               (uint32_t)top, (uint32_t)bottom, (unsigned)grain, (uint32_t)seed);
+    return 0;
+}
+
 /* `gfx_draw.h`: all of `src` into [dx, dx+dw) by [dy, dy+dh) of `dst`,
  * smoothed when scaled, within the clip - and over what is there, by the
  * picture's own alpha, so a transparent PNG or an SVG's empty background
@@ -3511,6 +3537,7 @@ static const luaL_Reg surface_methods[] = {
     { "tint",   l_tint },
     { "stretch", l_stretch },
     { "blur", l_blur },
+    { "nebula", l_nebula },
     { "pixels",  l_pixels },
     { "text",   l_text },
     { "get",    l_get },

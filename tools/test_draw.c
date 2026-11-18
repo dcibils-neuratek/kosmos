@@ -682,6 +682,70 @@ static void strip_rim(void)
 }
 
 /*
+ * **Starlight's horizon** (S3): with no rim at all, a strip's square glass
+ * shape (8,2 60x36 inside an 80 by 40 picture at 20,20) gets one row of the
+ * look's amber along its top, wherever the picture draws - and nothing
+ * on the row below, nothing outside the shape's columns, nothing with no
+ * horizon. A glass menu's first row gets it too.
+ */
+static void horizon_row(void)
+{
+    struct surface back = make(120, 80, 0xff000000u);
+    struct surface pic = make(80, 40, 0xff202020u);
+    struct surface menu = make(30, 12, 0xff202020u);
+    struct surface frost = make(120, 80, 0xff102030u);
+    struct scene *sc = malloc(sizeof(*sc));
+    const uint32_t amber = 0xfff2a93bu;
+    uint32_t plain_top, plain_below, p;
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff000000u;
+    sc->glass = &frost;
+    sc->corner = 8;
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a strip");
+    sc->win[0] = (struct sc_window){ 20, 20, 80, 40, SC_BLEND | SC_GLASS, &pic, 80, 40, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 8, 2, 60, 36, 0 };
+
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    plain_top = at(&back, 50, 22);
+    plain_below = at(&back, 50, 23);
+    check(plain_top == plain_below, "no horizon: the shape's top row is its glass");
+
+    sc->rim_horizon = amber;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    check(at(&back, 50, 22) == amber, "the horizon along the shape's top, amber");
+    check(at(&back, 28, 22) == amber && at(&back, 87, 22) == amber,
+          "the horizon from the shape's first column to its last");
+    check(at(&back, 50, 23) == plain_below, "the row under the horizon untouched");
+    check(at(&back, 25, 22) == plain_top && at(&back, 90, 22) == plain_top,
+          "outside the shape's columns, no horizon");
+    check(at(&back, 50, 20) == at(&back, 50, 21), "the picture's own top row, above "
+          "its shape, no horizon");
+
+    /* A light tint - a glass surface's picture - still a solid line, and
+     * where the picture draws nothing, a cut's end, none. */
+    row_of(&pic, 2)[30] = 0x2e202020u;
+    row_of(&pic, 2)[31] = 0;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    check(at(&back, 50, 22) == amber, "the horizon over a light tint, solid amber");
+    p = at(&back, 51, 22);
+    check(p != amber, "where the picture draws nothing, no horizon");
+
+    /* A glass menu's first row. */
+    check(scene_set_windows(sc, 0) && scene_set_menus(sc, 1), "room for a menu");
+    sc->menu[0] = (struct sc_menu){ 40, 50, 30, 12, &menu, -1, SC_GLASS };
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    check(at(&back, 55, 50) == amber, "a glass menu's top row, amber");
+    check(at(&back, 55, 51) != amber, "a glass menu's second row, its own");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(pic.pixels);
+    free(menu.pixels);
+    free(frost.pixels);
+}
+
+/*
  * **A picture from before a resize** (`SC_STALE`): a 40 by 30 picture whose
  * every pixel is its own, in a frame resized to 60 by 50. Shown at its size,
  * pixel for pixel, its last column drawn on across the new room and its
@@ -742,6 +806,7 @@ int main(void)
     live();
     rim();
     strip_rim();
+    horizon_row();
     beads();
     stale();
 

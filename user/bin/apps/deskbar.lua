@@ -1832,6 +1832,9 @@ if DOCKED then
       g:polygon(dock.cut_outline(x, y, w, h, 14, 12, 3), at(0xffffffff, edge))
       g:polygon(dock.cut_outline(x + 1, y + 1, w - 2, h - 2, 13, 11.6, 3),
                 at(ground, fill))
+
+      -- Its glass's shape, for Starlight's horizon along its top (S3).
+      if into and theme.glassy() then into:rim(x, y, w, h, dock.RADIUS) end
     elseif FLOATING then
       g:fill_round(x, y, w, h, at(0xffffffff, edge), dock.RADIUS)
       g:fill_round(x + 1, y + 1, w - 2, h - 2, at(ground, fill), dock.RADIUS - 1)
@@ -1842,6 +1845,9 @@ if DOCKED then
     else
       g:fill(x, y, w, h, at(ground, fill))
       g:fill(x, y, w, 1, at(0xffffffff, edge))
+
+      -- A strip's glass is square: a shape with no rim to bend (S3).
+      if into and theme.glassy() then into:rim(x, y, w, h, 0) end
     end
   end
 

@@ -295,6 +295,8 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     } else {
         sc->rim_bevel = sc->rim_refraction = sc->rim_specular = 0;
     }
+    /* Starlight's horizon (S3): a colour, whatever it is, or none. */
+    sc->rim_horizon = h.rim_horizon;
     /* Live glass (LG6): a radius the blur takes, or none. */
     sc->live_blur = h.live_blur >= 0 && h.live_blur <= (int32_t)GFX_BLUR_MOST
                     ? h.live_blur : -1;

@@ -209,8 +209,10 @@ softened cut on the dock and menus (**built in 0.11.469**, `testing.md`
 18.869: a look's `cut = yes`, menus cut by the compositor at 8 and the
 floating dock by the Deskbar at 12; banners, quick settings and tiles
 later, when each is drawn for Starlight); S3 the nebula glass's grain and its
-amber horizon, which waits for wallpaper glass (the review's G1), not
-built yet; S4 the unfurl (**opening built in 0.11.471**, `testing.md`
+amber horizon (**built in 0.11.492**, `testing.md` 18.891: the dock, menus
+and banners glass and the windows not - `glass_windows = no` - the
+gradient and a grain of 5 baked into the wallpaper's glass in 1.3 ms at
+1920x1080, and the horizon a row of the scene's); S4 the unfurl (**opening built in 0.11.471**, `testing.md`
 18.871; closing's roll and the focus sweep to come); S5 the star (**built in 0.11.470**, `testing.md`
 18.870: the mark on the Kosmos plate and the dock's button, before a
 title on its plate, and the dock's glint).

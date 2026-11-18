@@ -6,9 +6,11 @@
  *   sc:look(corner, shadow, grip, edge_light, edge_dark, box, box_w, run, d,
  *           track, line_soft, outline, lights...)       what it looks like
  *   sc:desktop(colour, wallpaper, wx, wy, ww, wh, stamp, sx, sy, glass)
- *   sc:rim(bevel, refraction, specular, front, split)   a glass edge's lens,
+ *   sc:rim(bevel, refraction, specular, front, split, horizon)
+ *                                                       a glass edge's lens,
  *                                                       its light in front,
- *                                                       its colours apart
+ *                                                       its colours apart,
+ *                                                       and its top row
  *   sc:windows(n)                                       how many, in order
  *   sc:window(k, x, y, w, h, flags, picture, src_w, src_h,
  *             bar, bar_h, bx, by, held)                 the k-th from the back
@@ -231,6 +233,7 @@ static int l_scene_rim(lua_State *L)
     sc->rim_front = (uint32_t)luaL_optinteger(L, 5, 0);
     sc->rim_split = (long)luaL_optinteger(L, 6, 0);
     if (sc->rim_split < 0 || sc->rim_split > 100) sc->rim_split = 0;
+    sc->rim_horizon = (uint32_t)luaL_optinteger(L, 7, 0);
     return 0;
 }
 
@@ -613,6 +616,7 @@ static int l_scene_wire(lua_State *L)
     head->rim_specular = (int32_t)sc->rim_specular;
     head->rim_front = sc->rim_front;
     head->rim_split = (int32_t)sc->rim_split;
+    head->rim_horizon = sc->rim_horizon;
     head->live_blur = (int32_t)sc->live_blur;
 
     head->outline_on = sc->outline_on ? 1u : 0u;

@@ -178,6 +178,9 @@ end
 -- glass, and says so with noughts rather than by leaving the keys out.
 do
   local glassy = { liquidglass = true, liquidglassnight = true }
+  -- Starlight's nebula glass (S3): its floating surfaces glass, its
+  -- windows not, no rim, and the gradient, the dust and the horizon.
+  local nebula = { starlight = true }
 
   for _, name in ipairs(themes.order) do
     local p, said = theme.read(themes[name], "dark")
@@ -196,6 +199,22 @@ do
       end
       check(p.rim_front >> 24 == 0xff, name .. " has no warm rim")
       check(p.plate == true, name .. " wears no amber plate (L5)")
+      check(p.glass_windows == true, name .. "'s windows are not glass")
+      check(p.glass_top == 0 and p.glass_bottom == 0 and p.grain == 0 and p.horizon == 0,
+            name .. " says Starlight's nebula")
+    elseif nebula[name] then
+      check(p.glass == "frosted" and p.glass_blur > 0, name .. " is not frosted glass")
+      check(p.glass_tint >> 24 > 0 and p.glass_tint >> 24 < 0x80,
+            name .. "'s tint is not light: " .. ("%08x"):format(p.glass_tint))
+      check(p.glass_windows == false, name .. "'s windows are glass")
+      check(p.bevel == 0 and p.refraction == 0 and p.specular == 0,
+            name .. " has a rim; its edges are cut, not bent")
+      check(p.glass_top >> 24 > 0 and p.glass_bottom >> 24 > p.glass_top >> 24,
+            ("%s's nebula is %08x to %08x, not darkening down the screen")
+              :format(name, p.glass_top, p.glass_bottom))
+      check(p.grain > 0 and p.grain <= theme.GRAIN_MOST, name .. "'s grain is " .. p.grain)
+      check(p.horizon == p.tab, ("%s's horizon is %08x, not its amber %08x")
+                                  :format(name, p.horizon, p.tab))
     else
       -- The plate is Liquid Glass's to wear on any desktop; Starlight's is
       -- its desktop's, so the look itself says nothing of it.
@@ -214,9 +233,11 @@ bevel = 65
 refraction = 101
 split = -1
 glass_tint = #12345
+grain = 33
+glass_windows = maybe
 ]], "dark")
 
-  check(#said == 5, "five bad glass lines gave " .. #said .. " complaints: "
+  check(#said == 7, "seven bad glass lines gave " .. #said .. " complaints: "
         .. table.concat(said, "; "))
   check((said[1] or ""):find("none, frosted or clear", 1, true),
         "a glass that is not one was told as: " .. tostring(said[1]))
@@ -224,11 +245,22 @@ glass_tint = #12345
         "a bevel of 65 was told as: " .. tostring(said[2]))
   check((said[3] or ""):find("percent from 0 to 100", 1, true),
         "a refraction of 101 was told as: " .. tostring(said[3]))
+  check((said[6] or ""):find("levels from 0 to 32", 1, true),
+        "a grain of 33 was told as: " .. tostring(said[6]))
+  check((said[7] or ""):find("yes or no", 1, true),
+        "glass_windows = maybe was told as: " .. tostring(said[7]))
 
   -- Applied after a glass look, a look without glass is not glass.
   theme.apply(theme.read(themes.liquidglass, "dark"))
   check(theme.glass == "frosted" and theme.bevel > 0, "Liquid Glass applied is not glass")
   check(theme.glassy(), "Liquid Glass applied is not glassy")
+  check(theme.glass_window(), "Liquid Glass's windows are not glass")
+  theme.apply(theme.read(themes.starlight, "dark"))
+  check(theme.glassy() and not theme.glass_window(),
+        "Starlight applied is not glass, or its windows are")
+  theme.apply(theme.read(themes.liquidglass, "dark"))
+  check(theme.glass_window() and theme.horizon == 0 and theme.grain == 0,
+        "Liquid Glass after Starlight kept its windows solid or its nebula")
 
   -- A window's glass: the tint's colour, its alpha halfway to opaque.
   local ground = theme.glass_ground()

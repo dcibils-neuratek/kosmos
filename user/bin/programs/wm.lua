@@ -753,7 +753,13 @@ OUT.wall_glass, OUT.wall_glass_of = nil, nil
 function OUT.glass_wallpaper()
   local glassy = theme.glass and theme.glass ~= "none" and (theme.glass_blur or 0) > 0
   local r = glassy and math.max(1, scale.px(theme.glass_blur) // 3) or 0
-  local key = glassy and wall_filled and (tostring(wall_filled) .. "/" .. r) or nil
+  -- Starlight's nebula (S3): a gradient and its dust, baked in with the
+  -- blur, so a look that changes only them makes the glass again.
+  local top, bottom, grain = theme.glass_top or 0, theme.glass_bottom or 0, theme.grain or 0
+  local nebula = top ~= 0 or bottom ~= 0 or grain > 0
+  local key = glassy and wall_filled
+              and ("%s/%d/%x/%x/%d"):format(tostring(wall_filled), r, top, bottom, grain)
+              or nil
 
   if key and key == OUT.wall_glass_of then return end
 
@@ -778,9 +784,16 @@ function OUT.glass_wallpaper()
     return
   end
 
+  local blurred = sys.ticks()
+
+  if nebula then glass:nebula(top, bottom, grain, w * 65537 + h) end
+
+  local baked = (sys.ticks() - blurred) * 10000 // hz
+
   OUT.wall_glass = glass
-  print(("wm: the wallpaper's glass, %dx%d, three passes at %d, in %d ms")
-        :format(w, h, r, (sys.ticks() - t0) * 1000 // hz))
+  print(("wm: the wallpaper's glass, %dx%d, three passes at %d, in %d ms%s")
+        :format(w, h, r, (blurred - t0) * 1000 // hz,
+                nebula and (", its nebula in %d.%d ms"):format(baked // 10, baked % 10) or ""))
 end
 
 if not WS.w then
@@ -2277,8 +2290,9 @@ function OUT.plate_picture(win, front)
   -- **Under glass** (Liquid Glass L5), over a frosted window: the plate in
   -- front amber glass - the amber at 0xc8, the window's glass through it,
   -- and a specular line along its top - and the others no plate at all,
-  -- their titles on the header's own glass.
-  local glass = (OUT.wall_glass and theme.glassy()) and true or false
+  -- their titles on the header's own glass. Only where the windows are
+  -- glass: Starlight's floating surfaces are, its windows and plates not.
+  local glass = (OUT.wall_glass and theme.glass_window()) and true or false
 
   if made and made.w == spec.w and made.h == spec.h and made.title == spec.title
      and made.face == face and made.ink == ink and made.star == theme.star
@@ -2789,7 +2803,7 @@ function OUT.describe()
   -- glass. The scene makes its lens from these when they change.
   if wallpaper and OUT.wall_glass and theme.glassy() then
     scene:rim(scale.px(theme.bevel or 0), theme.refraction or 0, theme.specular or 0,
-              theme.rim_front or 0, theme.split or 0)
+              theme.rim_front or 0, theme.split or 0, theme.horizon or 0)
   else
     scene:rim(0, 0, 0)
   end
@@ -2844,7 +2858,7 @@ function OUT.describe()
     -- picture is shown as it is" - not while it is stretched in a resize,
     -- or stale, or under a menu bar, when it is copied as any window is.
     --
-    if win.glassable and OUT.wall_glass and not win.blend then
+    if win.glassable and OUT.wall_glass and not win.blend and theme.glass_window() then
       flags = flags | 4096
     end
     if framed then flags = flags | 4 | 8 end
@@ -3457,7 +3471,7 @@ function OUT.damage_focus(win)
   -- The rim: four bands as deep as the lens's side, which is the corner
   -- and the bevel, so the corners' light is inside them. Not overlapping,
   -- so nothing in them is composed twice.
-  if win.glassable and OUT.wall_glass and theme.glassy() then
+  if win.glassable and OUT.wall_glass and theme.glass_window() then
     local side = math.min(OUT.corner + scale.px(theme.bevel or 0), w // 2, h // 2)
 
     add_damage(x, y, w, side)
@@ -5749,7 +5763,8 @@ handlers.rim = function(req)
   local was = win.rim
   local rim = nil
 
-  if n(req.r) > 0 and n(req.w) > 0 and n(req.h) > 0 then
+  -- Round or square (Starlight's strip, S3): a radius of 0 is a shape too.
+  if n(req.r) >= 0 and n(req.w) > 0 and n(req.h) > 0 then
     rim = { x = scale.px(n(req.x), pct), y = scale.px(n(req.y), pct),
             w = scale.px(n(req.w), pct), h = scale.px(n(req.h), pct),
             r = scale.px(n(req.r), pct) }
