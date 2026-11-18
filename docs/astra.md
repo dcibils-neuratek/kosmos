@@ -470,7 +470,7 @@ of section 6.
    the window manager makes the copy when it resamples. *Test*:
    `tools/test_blur.c`, vector against scalar, natively and through
    Rosetta; the same step as A4's.
-3. **LG3 - the lens.** `lens.c`: the Snell table per radius, bevel and
+3. **LG3 - the lens** (**the table built in 0.11.474**, `testing.md` 18.874; the rim pass with LG4, when there is a backdrop to bend). `lens.c`: the Snell table per radius, bevel and
    scale, and the rim pass in the scene. *Test*: `tools/test_lens.c` holds
    every entry to a ray traced in doubles (within a pixel), checks that the
    edge profile equals the corner's along its axes, and that a rim with
