@@ -35938,3 +35938,57 @@ arrives as Return too, so Write's "Shift-Return back" check passes by
 wrapping round two matches rather than by stepping back: `hal/keys.c`
 sending Shift-Return as a key of its own is on the roadmap, with the
 whole gate since every keyboard stands on it.
+
+## 18.867 The dock's icons magnified under the pointer
+
+**In short.** With the bar a dock, the icon under the pointer grows - by
+half at the default, up to twice its size - and its neighbours less with
+distance, following the pointer along the row and settling back when it
+leaves. Appearance has *The dock's magnification*, a slider from 0 (off)
+to 100%.
+
+**Where it lives.** `dock.magnify(items, px, peak)` in `dock.lua` is the
+arithmetic: each application's cell and picture scaled along half a
+cosine of its distance from the pointer, two and a half cells either way,
+the Kosmos button and separators as they are, and the row shifted so the
+point under the pointer stays under it - the same function either side of
+every edge, so the row does not jump as the pointer crosses one. The
+grown icons stand taller than the dock and a window draws only inside
+itself, so the Deskbar opens a *lens*: a tip window over the dock and the
+room above it, which the window manager shows and never hands a press. It
+draws the whole row grown while the dock draws only its ground, and a
+press on the dock is matched against the cells the lens is showing. It
+grows over a tenth of a second and settles the same; settled, the dock
+draws its icons again and the lens closes on the pass after, so there is
+no frame with neither. The name over the icon is raised by the growth.
+Only the lens is drawn as the pointer moves. Floating, the lens also draws
+the pill under the grown row, as wide as it has grown - the row spills past
+the dock's own ends at either end of it, as macOS's dock widens - and the
+dock draws nothing while it does. Passes come at sixty a second while the
+lens lives (`pace_breathing`), so it follows and settles without waiting
+for the next event.
+
+**Held by** `tools/test_dock.lua` on the Mac, 49 checks now: the cell
+under the pointer at 54 pixels and 75 wide at a peak of 1.5, its
+neighbours less and alike, a cell three away and the Kosmos button
+untouched, the pointer's cell still under it, a press hitting it, a peak
+of 1 moving nothing, and no jump across an edge; a copy of `dock.lua`
+with the growth taken out fails two of them. And by `x86-dock` in QEMU:
+the pointer over the last cell, a lens opened and "magnified ... to 54
+px" said, `/Running/Deskbar/magnified` listing a cell at 54, pixels
+above the dock's top edge changed while the lens is up, the icons settled
+and the lens closed when the pointer left, and `setprop
+/Running/Deskbar/magnify` heard. Its control, `KOSMOS_DOCK_BREAK=flat`,
+sets the magnification to nothing for the rest of the run, and exactly
+those three checks fail - the icon at 54, the published cells, the pixels
+above the edge.
+
+**Found by the suite.** The transparency step read the dock's pill at its
+right end while the pointer was still on the dock from the click before,
+and the grown row had spread its last icon over that pixel: the saved
+screen showed it, which is why the step now moves the pointer away first
+and why the lens draws the pill as wide as the row. The lens repainting
+only for itself left the Kosmos button unlit with its menu open, since the
+lens draws the button while it is up; it repaints now whenever the dock
+does. The suite keeps the serial line in `build/dock/serial.txt`, and with
+`KOSMOS_DOCK_SHOTS=1` the transparency step's screens.

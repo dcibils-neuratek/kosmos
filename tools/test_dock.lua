@@ -138,10 +138,56 @@ check(what == "unpinned" and list(out) == "tracker,terminal", "a pin dropped aft
 out, what = dock.drop(pins, items, "logview", items[7].x + 10, -dock.REMOVE_ABOVE - 5)
 check(what == nil, "an unpinned one let go above the dock did something")
 
+-- 6. Magnified under the pointer: the cell under it the largest, its
+-- neighbours less and the same either side, the far ones untouched; the
+-- point under the pointer kept there; nothing at a peak of 1; and no jump
+-- as the pointer crosses from one cell into the next.
+do
+  dock.sized("medium")
+
+  local row = { { kind = "kosmos" } }
+
+  for i = 1, 9 do row[#row + 1] = { kind = "app", name = "a" .. i } end
+
+  dock.layout(row, 60)
+
+  local mid = row[6]
+  local px = mid.x + mid.w // 2
+  local m = dock.magnify(row, px, 1.5)
+
+  check(m[6].size == 54 and m[6].w == 75, "the cell under the pointer did not grow by half: "
+        .. tostring(m[6].size) .. " " .. tostring(m[6].w))
+  check(m[5].size == m[7].size and m[5].size < 54 and m[5].size > 36,
+        "the neighbours did not grow less, alike: " .. tostring(m[5].size) .. " " .. tostring(m[7].size))
+  check(m[2].size == 36 and m[10].size == 36, "a cell three away grew")
+  check(m[1].w == row[1].w and m[1].size == nil, "the Kosmos button grew")
+  check(math.abs(m[6].x + m[6].w / 2 - px) <= 1, "the cell under the pointer moved from under it: "
+        .. (m[6].x + m[6].w / 2) .. " for " .. px)
+  check(m[6].orig == mid and m[6].name == "a5", "a grown cell is not the cell it grew from")
+  check(dock.hit(m, px) and dock.hit(m, px).orig == mid, "a press under the pointer missed the grown cell")
+
+  local flat = dock.magnify(row, px, 1)
+  local same = true
+
+  for i, c in ipairs(flat) do
+    if c.x ~= row[i].x or c.w ~= row[i].w then same = false end
+  end
+
+  check(same, "a peak of 1 moved something")
+
+  -- Across the edge between two cells, the row's ends move by a pixel or two.
+  local edge = row[6].x + row[6].w
+  local a, b = dock.magnify(row, edge - 1, 1.5), dock.magnify(row, edge + 1, 1.5)
+
+  check(math.abs(a[1].x - b[1].x) <= 3 and math.abs(a[10].x - b[10].x) <= 3,
+        "the row jumped as the pointer crossed into the next cell: "
+        .. a[1].x .. "/" .. b[1].x .. ", " .. a[10].x .. "/" .. b[10].x)
+end
+
 if fails == 0 then
   print(("PASS: %d checks on the dock's arithmetic (names, the cells for what is pinned "
          .. "and what runs, where each goes, what a press hit and what it does, and "
-         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go)."):format(checks))
+         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go - and magnified under the pointer)."):format(checks))
   os.exit(0)
 end
 

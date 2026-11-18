@@ -638,6 +638,8 @@ small on its own. Together they are what makes a system feel unfinished.
 
 ## Decisions that are Diego's
 
+**DECIDED on 17 November 2026: every recommendation, as written.** Diego: "Yes to all recommendations".
+
 Each comes with a recommendation.
 
 1. **A daily-driver season before new applications.** Should items 1 to

@@ -4335,3 +4335,26 @@ since downloads arrived. The keyboard sends Return and Control-J as the
 same code, and Control-J was the downloads' key. Downloads moved to
 Control-Shift-J, and the test now types into a page's field and presses
 Return, which would have caught it.
+
+## 17 November 2026 - The dock's magnifying glass
+
+**In short.** Moving the pointer along the dock now makes the icon under
+it grow, and the ones beside it a little less, the way the Mac's dock
+does; a slider in Appearance sets how much, or turns it off.
+
+**What.** A window can only draw inside itself, and a grown icon is taller
+than the dock. So while the pointer is over the dock, a second, invisible
+window sits over it and the space above it, and draws the whole row of
+icons grown - and, when the dock floats, the dock's own pill, widened to
+fit them. The dock underneath still takes the clicks, matched against
+what the grown row shows, so you click what you see.
+
+**Why it matters.** Diego asked for it as a priority. It is the kind of
+small, live thing that makes a desktop feel responsive: the icons follow
+the pointer at sixty frames a second, and only that small window is
+redrawn as they do.
+
+**Found on the way.** The dock's test of its transparency read a pixel at
+the dock's right end - which, with the pointer still resting on the dock,
+was now covered by a grown icon. A saved picture of the screen showed it
+at once, where three runs of guessing had not.

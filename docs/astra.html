@@ -1,0 +1,816 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Astra with an identity of its own: the nicer desktop docs/astra.md
+  proposes - tokens, shadows, glass, motion, quick settings - given visual
+  cues that say Kosmos at first glance, as BeOS's yellow tab and Deskbar
+  said BeOS and Indigo Magic's blue-grey and vector icons said IRIX.
+
+  Written 17 November 2026, after Diego, of the first version of this page:
+  "i like the nicer astra, but it looks like macos exactly the same. no real
+  personality". Nothing here is built.
+
+  Three directions and the earlier proposal for comparison, switched at the
+  top: Starlight (chosen 17 November, as a look in Appearance beside the
+  others, round buttons, geometric only in a few cues), Observatory,
+  Aurora, and "Earlier proposal",
+  which is what Diego called macOS. Starlight has a dark and a light look.
+  "Open", "Close" and "Minimise" play each direction's motion. The page
+  needs nothing but this file and the IBM Plex faces in assets/fonts; every
+  wallpaper is drawn in CSS so wallpaper glass can show the part behind it.
+-->
+<title>Astra identity</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  /* ---------------------------------------------------------------------
+     The page around the screen.
+     --------------------------------------------------------------------- */
+  :root {
+    --page: #f1f0f5; --page-ink: #1d1b2e; --page-dim: #5f5c76; --page-rule: #dcd9e6; --page-card: #fff;
+    --pick: #2b2a5e; --flare: #f2a93b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--page); color: var(--page-ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", system-ui, sans-serif; padding: 28px 28px 60px; }
+  h1 { font-weight: 600; font-size: 28px; }
+  .sub { color: var(--page-dim); max-width: 1040px; margin: 4px 0 18px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 34px 0 6px; }
+  h2 + p { color: var(--page-dim); max-width: 1000px; margin-bottom: 14px; }
+  code { font: 13px "Plex Mono", monospace; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; background: var(--page-card); border: 1px solid var(--page-rule); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; position: sticky; top: 8px; z-index: 50; box-shadow: 0 6px 20px rgba(20,20,50,.08); }
+  .controls .lab { color: var(--page-dim); font-size: 13px; margin-right: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--page-rule); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 6px 12px; font: 500 13px "Plex", system-ui, sans-serif; color: var(--page-ink); cursor: pointer; border-right: 1px solid var(--page-rule); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--pick); color: #fff; }
+  .seg button .rec { font-size: 10.5px; font-weight: 600; color: var(--flare); margin-left: 5px; letter-spacing: .04em; }
+  .act { border: 1px solid var(--page-rule); background: #fff; border-radius: 8px; padding: 6px 12px; font: 500 13px "Plex", system-ui, sans-serif; cursor: pointer; }
+  .act:hover { border-color: var(--pick); }
+  label.chk { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .only-star { display: inline-flex; align-items: center; }
+  .why { background: var(--page-card); border: 1px solid var(--page-rule); border-left: 4px solid var(--flare); border-radius: 10px; padding: 10px 14px; margin: -4px 0 16px; font-size: 14px; max-width: 1440px; }
+  .why b { font-weight: 600; }
+
+  /* ---------------------------------------------------------------------
+     The screen: 1440 x 900, scaled to the page's width.
+     --------------------------------------------------------------------- */
+  .frame { width: 100%; max-width: 1440px; aspect-ratio: 1440 / 900; position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 20px 50px rgba(10,10,40,.28); }
+  .screen { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; transform-origin: 0 0; overflow: hidden;
+            background: var(--wall); background-size: var(--wall-size); font: 400 14px/1.4 "Plex", sans-serif; color: var(--text); }
+
+  /* Wallpapers, drawn so a glass surface can show its own part of them.
+     Each is layers of tiles plus one screen-sized picture; --wall-size
+     names every layer's size so the glass copy can repeat it exactly. */
+  .screen.d-star {
+    --wall:
+      radial-gradient(1.3px 1.3px at 23px 41px, rgba(255,255,255,.95) 50%, transparent 52%),
+      radial-gradient(1px 1px at 71px 13px, rgba(255,240,210,.8) 50%, transparent 52%),
+      radial-gradient(1.6px 1.6px at 140px 120px, rgba(210,220,255,.9) 50%, transparent 52%),
+      radial-gradient(1.1px 1.1px at 40px 60px, rgba(255,255,255,.75) 50%, transparent 52%),
+      radial-gradient(ellipse 520px 380px at 74% 34%, rgba(176,92,214,.55), transparent 70%),
+      radial-gradient(ellipse 560px 420px at 22% 78%, rgba(48,96,200,.55), transparent 70%),
+      radial-gradient(ellipse 300px 220px at 58% 62%, rgba(242,169,59,.22), transparent 70%),
+      linear-gradient(160deg, #0d1030 0%, #1c1748 50%, #2b1440 100%);
+    --wall-size: 97px 89px, 151px 137px, 263px 241px, 67px 71px, 1440px 900px, 1440px 900px, 1440px 900px, 1440px 900px;
+  }
+  .screen.d-obs {
+    --wall:
+      linear-gradient(0deg, rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(180deg, #5d7189 0%, #48596f 100%);
+    --wall-size: 48px 48px, 48px 48px, 1440px 900px;
+  }
+  .screen.d-aur {
+    --wall:
+      radial-gradient(1px 1px at 31px 57px, rgba(255,255,255,.7) 50%, transparent 52%),
+      radial-gradient(ellipse 900px 160px at 40% 30%, rgba(46,230,170,.42), transparent 70%),
+      radial-gradient(ellipse 700px 140px at 62% 42%, rgba(80,140,255,.38), transparent 70%),
+      radial-gradient(ellipse 600px 200px at 75% 22%, rgba(190,90,255,.30), transparent 70%),
+      linear-gradient(180deg, #05070d 0%, #0b1220 70%, #10192a 100%);
+    --wall-size: 113px 101px, 1440px 900px, 1440px 900px, 1440px 900px, 1440px 900px;
+  }
+  .screen.d-plain {
+    --wall: linear-gradient(135deg, #0d3b66 0%, #1b6ca8 35%, #f4a259 62%, #e76f51 100%);
+    --wall-size: 1440px 900px;
+  }
+
+  /* ---------------------------------------------------------------------
+     Tokens per direction - the names theme.lua uses where it has one.
+     --------------------------------------------------------------------- */
+  .d-star.dark {
+    --window: #191b31; --raised: #22253f; --sunken: #13152a; --line: #0a0b18; --line-soft: #2c2f4f;
+    --text: #ebe8f7; --text-dim: #9b98ba; --accent: #8a93ff; --text-on: #0d0f2a; --select: #272a49;
+    --tab: #f2a93b; --tab-text: #1e1305; --tab-idle: #2a2d4c; --tab-idle-text: #b9b6d4;
+    --glass-a: rgba(30,26,72,.74); --glass-b: rgba(16,14,40,.66); --rim: rgba(242,169,59,.85); --edge: rgba(255,255,255,.08);
+    --grain: rgba(255,255,255,.55); --hot: #8a93ff; --hot-ink: #0d0f2a; --page-white: #fbfaf6;
+  }
+  .d-star.light {
+    --window: #f7f6fb; --raised: #ffffff; --sunken: #efedf6; --line: #c9c5da; --line-soft: #e4e1ef;
+    --text: #1d1b33; --text-dim: #6c6a85; --accent: #4f5bd5; --text-on: #ffffff; --select: #ebe9f6;
+    --tab: #f2a93b; --tab-text: #1e1305; --tab-idle: #e9e6f2; --tab-idle-text: #57546f;
+    --glass-a: rgba(252,250,255,.78); --glass-b: rgba(236,232,250,.70); --rim: rgba(226,146,30,.95); --edge: rgba(40,30,90,.10);
+    --grain: rgba(60,50,130,.35); --hot: #4f5bd5; --hot-ink: #fff; --page-white: #fff;
+  }
+  .d-obs {
+    --window: #c6ced8; --raised: #d6dde5; --sunken: #eef1f4; --line: #5d6b7b; --line-soft: #a9b4c0;
+    --text: #18212c; --text-dim: #4f5d6d; --accent: #2f6f8f; --text-on: #fff; --select: #b4c0cc;
+    --tab: #2f6f8f; --tab-text: #fff; --tab-idle: #a9b4c1; --tab-idle-text: #2e3946;
+    --hi: #f2f5f8; --lo: #6f7d8d; --hot: #2f6f8f; --hot-ink: #fff; --page-white: #fff;
+  }
+  .d-aur {
+    --window: #121722; --raised: #1a2130; --sunken: #0d121b; --line: #05070c; --line-soft: #232c3d;
+    --text: #e4ecf5; --text-dim: #8d9bb0; --accent: #2ee6aa; --text-on: #04140e; --select: #1d2636;
+    --tab: #2ee6aa; --tab-text: #04140e; --tab-idle: #1a2130; --tab-idle-text: #8d9bb0;
+    --glass-a: rgba(12,18,30,.74); --glass-b: rgba(12,18,30,.66); --rim: transparent; --edge: rgba(255,255,255,.08);
+    --hot: #2ee6aa; --hot-ink: #04140e; --page-white: #f4f6f8;
+  }
+  .d-plain {
+    --window: #f6f5f4; --raised: #ffffff; --sunken: #ffffff; --line: #cdc7c2; --line-soft: #e3e0dd;
+    --text: #241f31; --text-dim: #77767b; --accent: #3584e4; --text-on: #fff; --select: #e3e0dd;
+    --tab: #a7c7ee; --tab-text: #1b3557;
+    --glass-a: rgba(246,245,244,.62); --glass-b: rgba(246,245,244,.62); --rim: transparent; --edge: rgba(255,255,255,.55);
+    --hot: #3584e4; --hot-ink: #fff; --page-white: #fff;
+  }
+
+  /* ---------------------------------------------------------------------
+     Windows: the header is the title bar (ui.md 16.25), in every direction.
+     --------------------------------------------------------------------- */
+  .win { position: absolute; background: var(--window); color: var(--text); }
+  .hdr { height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 0; border-bottom: 1px solid var(--line-soft); position: relative; }
+  .plate { height: 100%; display: flex; align-items: center; gap: 9px; padding: 0 30px 0 16px; font-weight: 600; font-size: 14.5px; position: relative; }
+  .plate .mk { width: 13px; height: 13px; flex: none; display: none; }
+  .hdr .doc { color: var(--text-dim); font-size: 13px; }
+  .ctl { margin-left: auto; display: flex; gap: 9px; align-items: center; }
+  .ctl i { display: block; width: 13px; height: 13px; position: relative; cursor: pointer; }
+  .body { display: flex; height: calc(100% - 46px); }
+  .side { width: 186px; padding: 8px; border-right: 1px solid var(--line-soft); }
+  .side .row { height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 14px; margin-bottom: 4px; }
+  .side .row svg { width: 15px; height: 15px; stroke: var(--text-dim); fill: none; stroke-width: 1.8; }
+  .side .row.on { background: var(--select); }
+  .side .row.on svg { stroke: var(--accent); }
+  .side .cap { font-size: 11.5px; color: var(--text-dim); padding: 10px 10px 4px; font-weight: 600; }
+  .list { flex: 1; padding: 6px 10px; font-size: 14px; }
+  .list .r { height: 31px; display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+  .list .r .d { margin-left: auto; color: var(--text-dim); font-size: 12.5px; }
+  .list .r.sel { background: var(--accent); color: var(--text-on); }
+  .list .r.sel .d { color: var(--text-on); opacity: .8; }
+  .list .r svg { width: 18px; height: 18px; flex: none; }
+
+  .w-files { left: 86px; top: 96px; width: 640px; height: 420px; }
+  .w-write { left: 600px; top: 176px; width: 620px; height: 470px; }
+  .w-write .desk { background: var(--sunken); height: calc(100% - 46px); overflow: hidden; }
+  .w-write .page { margin: 18px auto; width: 380px; height: 360px; background: var(--page-white); color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.25); padding: 30px 34px; font-size: 12px; }
+  .w-write .page h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .w-write .page p { margin-bottom: 8px; color: #333; }
+  .tools { display: flex; gap: 4px; margin-left: 8px; }
+  .tools i { width: 28px; height: 28px; display: grid; place-items: center; }
+  .tools i svg { width: 15px; height: 15px; stroke: var(--text-dim); fill: none; stroke-width: 1.8; }
+  .tools i.hov { background: var(--select); }
+
+  /* Icons: one set of shapes, drawn two ways - as objects (a body filled,
+     a heavy outline, the light from the upper left, Haiku's manner) or as
+     lines. The direction decides which. */
+  /* The shapes live in <symbol>s, whose copies a selector cannot reach,
+     so each direction says how to draw them through custom properties set
+     on the icon, which the copy inherits. */
+  .ico { --b-fill: var(--c); --b-line: #1d1630; --d-line: #1d1630; --sh: rgba(255,255,255,.45); }
+  .bd { fill: var(--b-fill); stroke: var(--b-line); stroke-width: 1.5; stroke-linejoin: round; }
+  .dt { fill: none; stroke: var(--d-line); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .sh { fill: var(--sh); stroke: none; }
+  .st { fill: var(--star, currentColor); }
+
+  /* ---------------------------------------------------------------------
+     The strip across the top, the dock, a menu, a banner, quick settings.
+     --------------------------------------------------------------------- */
+  .strip { position: absolute; left: 0; top: 0; right: 0; height: 32px; display: flex; align-items: center; gap: 4px; padding: 0 14px 0 0; z-index: 20; font: 500 13.5px "Plex", system-ui, sans-serif; color: var(--text); }
+  .kplate { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 26px 0 14px; font-weight: 700; letter-spacing: .02em; }
+  .kplate svg { width: 15px; height: 15px; }
+  .ent { height: 26px; display: flex; align-items: center; gap: 7px; padding: 0 10px; font-weight: 500; }
+  .ent svg { width: 17px; height: 17px; }
+  .ent .n { font: 600 10.5px "Plex"; padding: 0 5px; border-radius: 6px; background: var(--select); color: var(--text-dim); }
+  .ent.front { background: var(--select); }
+  .strip .ind { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  .strip .ind svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; cursor: pointer; }
+  .clock { font: 500 13px "Plex", sans-serif; }
+
+  .fl { position: absolute; z-index: 20; }
+  .dock { height: 64px; display: flex; align-items: center; gap: 4px; padding: 0 12px; position: relative; }
+  .kbtn { height: 42px; padding: 0 18px 0 14px; display: flex; align-items: center; gap: 8px; font: 700 14px "Plex", system-ui, sans-serif; margin-right: 6px; }
+  .kbtn svg { width: 18px; height: 18px; }
+  .cell { width: 52px; height: 52px; display: grid; place-items: center; position: relative; }
+  .cell svg.ico { width: 38px; height: 38px; }
+  .cell .run { position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%); }
+  .sep { width: 1px; height: 36px; background: var(--line-soft); margin: 0 6px; }
+
+  .menu { width: 232px; padding: 6px; color: var(--text); font-size: 14px; position: relative; }
+  .menu .it { height: 30px; display: flex; align-items: center; padding: 0 12px; }
+  .menu .it .k { margin-left: auto; color: var(--text-dim); font-size: 12.5px; }
+  .menu .it.hot { background: var(--hot); color: var(--hot-ink); }
+  .menu .it.hot .k { color: var(--hot-ink); }
+  .menu hr { border: 0; height: 1px; background: var(--line-soft); margin: 5px 8px; }
+
+  .banner { width: 360px; padding: 12px 14px; display: flex; gap: 12px; color: var(--text); position: relative; }
+  .banner svg.ico { width: 38px; height: 38px; flex: none; }
+  .banner b { font-weight: 600; font-size: 14px; display: block; }
+  .banner span { color: var(--text-dim); font-size: 12.5px; }
+  .banner .acts { display: flex; gap: 8px; margin-top: 8px; }
+  .banner .acts em { font-style: normal; font: 500 12.5px "Plex", system-ui, sans-serif; padding: 4px 10px; background: var(--select); }
+
+  .quick { width: 380px; padding: 14px; color: var(--text); position: relative; }
+  .quick .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .quick .tile { height: 54px; display: flex; align-items: center; padding: 0 14px; background: var(--select); font-size: 12.5px; }
+  .quick .tile.on { background: var(--accent); color: var(--text-on); }
+  .quick .tile b { font-weight: 600; display: block; font-size: 14px; }
+  .quick .slider { height: 38px; background: var(--select); margin-top: 10px; position: relative; overflow: hidden; }
+  .quick .slider i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+  .quick .slider span { position: absolute; left: 14px; top: 9px; font-size: 12.5px; color: var(--text-on); font-weight: 500; }
+  .quick .foot { display: flex; justify-content: space-between; margin-top: 12px; color: var(--text-dim); font-size: 12.5px; }
+  #fl-quick { display: none; }
+  #fl-quick.open { display: block; }
+
+  /* Wallpaper glass (astra.md 4.3, G1): the surface shows its part of the
+     wallpaper, blurred, under a tint. The blur here is the browser's; in
+     the scene it is made once, when the wallpaper changes. */
+  .glass { overflow: hidden; isolation: isolate; }
+  .glass::before { content: ""; position: absolute; inset: -30px; z-index: -2; background: var(--wall); background-size: var(--wall-size);
+      background-position: calc(var(--bx, 0px) + 30px) calc(var(--by, 0px) + 30px); filter: blur(16px) saturate(1.25); }
+  .glass::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, var(--glass-a), var(--glass-b)); }
+  .opaque .glass::before { display: none; }
+  .opaque .glass::after { background: var(--raised); }
+
+  /* =====================================================================
+     STARLIGHT - the plate, the star, the glint, nebula glass; the rest soft.
+     ===================================================================== */
+  /* A mix (Diego, 17 November: "a good mix between geometric look and
+     some more pleasant rounded or soften style"): the plate's slanted
+     edge, the star and the glint stay geometric; windows, buttons, rows,
+     tiles, banners and quick settings are rounded as today. */
+  .d-star .win { border-radius: 10px; box-shadow: 0 0 0 1px var(--line), 0 22px 44px rgba(0,0,0,.42), 0 2px 6px rgba(0,0,0,.3); }
+  .d-star.light .win { box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(20,10,60,.22), 0 2px 6px rgba(20,10,60,.16); }
+  .d-star .hdr { border-bottom: 1px solid var(--line-soft); }
+  .d-star .plate { clip-path: polygon(0 10.0px, 0.62px 5.62px, 2.5px 2.5px, 5.62px 0.62px, 10.0px 0, calc(100% - 5.0px) 0, calc(100% - 2.82px) 0.31px, calc(100% - 1.28px) 1.25px, calc(100% - 0.37px) 2.81px, calc(100% - 0.11px) 5.0px, calc(100% - 21.91px) calc(100% - 4.0px), calc(100% - 22.2px) calc(100% - 2.25px), calc(100% - 22.98px) calc(100% - 1.0px), calc(100% - 24.24px) calc(100% - 0.25px), calc(100% - 26.0px) 100%, 0 100%); background: var(--tab-idle); color: var(--tab-idle-text); }
+  .d-star .win.front .plate { background: var(--tab); color: var(--tab-text); }
+  .d-star .plate .mk { display: block; }
+  /* The three stay round, as today (Diego: "the rhombus shaped buttons
+     are just too geometric"), in Starlight's colours: astral blue,
+     lavender and the flare, grey on the windows behind. */
+  .d-star .ctl i { border-radius: 50%; background: var(--tab-idle); box-shadow: inset 0 0 0 1px var(--line-soft); }
+  .d-star .win.front .ctl i.mx { background: var(--accent); box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+  .d-star .win.front .ctl i.mn { background: #c3b6f2; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+  .d-star .win.front .ctl i.cl { background: var(--tab); box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+  .d-star .side .row, .d-star .list .r, .d-star .menu .it, .d-star .tools i { border-radius: 7px; }
+  .d-star .side .row.on { box-shadow: inset 3px 0 0 var(--tab); }
+  .d-star .ico { --b-line: #140f24; --d-line: #140f24; }
+
+  .d-star .strip { color: var(--text); }
+  .d-star .strip { box-shadow: 0 1px 0 rgba(242,169,59,.45); }
+  .d-star .kplate { background: var(--tab); color: var(--tab-text); clip-path: polygon(0 0, calc(100% - 5.0px) 0, calc(100% - 2.82px) 0.31px, calc(100% - 1.27px) 1.25px, calc(100% - 0.36px) 2.81px, calc(100% - 0.08px) 5.0px, calc(100% - 15.94px) calc(100% - 4.0px), calc(100% - 16.21px) calc(100% - 2.25px), calc(100% - 16.98px) calc(100% - 1.0px), calc(100% - 18.25px) calc(100% - 0.25px), calc(100% - 20.0px) 100%, 0 100%); }
+  .d-star .ent { border-radius: 7px; }
+  .d-star .clock { font-family: "Plex Mono", monospace; letter-spacing: .02em; }
+
+  .d-star .fl { filter: drop-shadow(0 14px 26px rgba(0,0,0,.42)) drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
+  .d-star.light .fl { filter: drop-shadow(0 12px 22px rgba(20,10,60,.22)); }
+  /* Soft, with one geometric accent: the dock and menus keep a single
+     small cut at the top-left, its two edges eased; every other corner,
+     and the banner and quick settings whole, are rounded as today. */
+  .d-star .dock { clip-path: polygon(9.88px 2.12px, 10.99px 1.19px, 12.22px 0.53px, 13.55px 0.13px, 15.0px 0, calc(100% - 14.0px) 0, calc(100% - 7.88px) 0.88px, calc(100% - 3.5px) 3.5px, calc(100% - 0.88px) 7.88px, 100% 14.0px, 100% calc(100% - 14.0px), calc(100% - 0.88px) calc(100% - 7.88px), calc(100% - 3.5px) calc(100% - 3.5px), calc(100% - 7.88px) calc(100% - 0.88px), calc(100% - 14.0px) 100%, 14.0px 100%, 7.88px calc(100% - 0.88px), 3.5px calc(100% - 3.5px), 0.88px calc(100% - 7.88px), 0 calc(100% - 14.0px), 0 15.0px, 0.13px 13.55px, 0.53px 12.22px, 1.19px 10.99px, 2.12px 9.88px); }
+  .d-star .menu { clip-path: polygon(5.88px 2.12px, 6.99px 1.19px, 8.22px 0.53px, 9.55px 0.13px, 11.0px 0, calc(100% - 10.0px) 0, calc(100% - 5.62px) 0.62px, calc(100% - 2.5px) 2.5px, calc(100% - 0.62px) 5.62px, 100% 10.0px, 100% calc(100% - 10.0px), calc(100% - 0.62px) calc(100% - 5.62px), calc(100% - 2.5px) calc(100% - 2.5px), calc(100% - 5.62px) calc(100% - 0.62px), calc(100% - 10.0px) 100%, 10.0px 100%, 5.62px calc(100% - 0.62px), 2.5px calc(100% - 2.5px), 0.62px calc(100% - 5.62px), 0 calc(100% - 10.0px), 0 11.0px, 0.13px 9.55px, 0.53px 8.22px, 1.19px 6.99px, 2.12px 5.88px); }
+  .d-star .banner, .d-star .quick { border-radius: 14px; }
+  /* The horizon: one pixel of the flare along the top of every glass
+     surface, and the star-dust grain baked into the wallpaper's blur. */
+  .d-star .glass { box-shadow: inset 0 0 0 1px var(--edge); }
+  .d-star .glass::after { background:
+      linear-gradient(var(--rim), var(--rim)) top left / 100% 1px no-repeat,
+      radial-gradient(.8px .8px at 7px 11px, var(--grain) 50%, transparent 55%),
+      radial-gradient(.7px .7px at 19px 3px, var(--grain) 50%, transparent 55%),
+      linear-gradient(180deg, var(--glass-a), var(--glass-b));
+      background-size: 100% 1px, 29px 23px, 41px 37px, 100% 100%; }
+  .d-star .kbtn { background: var(--tab); color: var(--tab-text); border-radius: 10px; }
+  /* The glint: a four-point star under a running application, flare on
+     the one in front. */
+  .d-star .cell .run { width: 9px; height: 9px; background: var(--text-dim); clip-path: polygon(50% 0, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0 50%, 37% 37%); border-radius: 2px; }
+  .d-star .cell .run.front { background: var(--tab); width: 11px; height: 11px; }
+  .d-star .cell .run.tw { animation: twinkle 420ms ease-out; }
+  @keyframes twinkle { 0% { transform: translateX(-50%) scale(1) rotate(0); } 40% { transform: translateX(-50%) scale(2.4) rotate(45deg); background: #fff; } 100% { transform: translateX(-50%) scale(1) rotate(90deg); } }
+  .d-star .cell:hover { background: rgba(255,255,255,.08); border-radius: 10px; }
+  .d-star .banner .acts em, .d-star .quick .tile, .d-star .quick .slider, .d-star .quick .slider i { border-radius: 8px; }
+  .d-star .quick .tile.on { background: var(--tab); color: var(--tab-text); }
+  .d-star .quick .slider span { color: var(--text); }
+  .d-star .quick .slider i { background: linear-gradient(90deg, var(--accent), var(--tab)); }
+  .d-star .ent .n { border-radius: 6px; }
+
+  /* Motion: the plate arrives first, then the body unrolls under it; a
+     close rolls back into the plate. A clip, not a scale: no pixel blended. */
+  .d-star .win.unfurl { animation: unfurl 150ms cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes unfurl { from { clip-path: inset(0 0 calc(100% - 46px) 0); } to { clip-path: inset(0 0 0 0); } }
+  .d-star .win.roll { animation: roll 120ms cubic-bezier(.4,0,1,1) both; }
+  @keyframes roll { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 calc(100% - 46px) 0); opacity: .4; } }
+  .d-star .win.focusing .plate { animation: sweep 90ms linear both; }
+  @keyframes sweep { from { background: linear-gradient(90deg, var(--tab) 0%, var(--tab-idle) 0%); } to { background: var(--tab); } }
+
+  /* =====================================================================
+     OBSERVATORY - Indigo Magic's manner: slate, bevels, a toolchest.
+     ===================================================================== */
+  .d-obs .win { border-radius: 2px; box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo), 0 0 0 1px #2b3540, 6px 8px 0 rgba(0,0,0,.18); }
+  .d-obs .hdr { background: linear-gradient(180deg, #b7c1cd, #a6b2bf); border-bottom: 1px solid var(--lo); box-shadow: inset 0 1px 0 var(--hi); margin: 2px 2px 0; height: 40px; padding-right: 8px; }
+  .d-obs .win.front .hdr { background: linear-gradient(180deg, #4a87a6, #2f6f8f); }
+  .d-obs .plate { color: var(--tab-idle-text); padding-left: 8px; text-shadow: 0 1px 0 rgba(255,255,255,.5); }
+  .d-obs .win.front .plate { color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+  .d-obs .win.front .doc { color: #d7e6ef; }
+  .d-obs .plate::before { content: ""; width: 18px; height: 18px; background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); display: block; flex: none; }
+  .d-obs .ctl i { width: 18px; height: 18px; background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); }
+  .d-obs .ctl i::after { content: ""; position: absolute; left: 5px; top: 5px; width: 8px; height: 8px; border: 1.5px solid #2e3946; }
+  .d-obs .ctl i.mn::after { height: 0; top: 11px; border-width: 1.5px 0 0; }
+  .d-obs .body { height: calc(100% - 42px); }
+  .d-obs .side { background: var(--window); box-shadow: inset -1px 0 0 var(--hi); border-right: 1px solid var(--lo); }
+  .d-obs .side .row.on { background: var(--select); box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi); }
+  .d-obs .list { background: var(--sunken); margin: 6px; box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi); }
+  .d-obs .w-write .desk { height: calc(100% - 42px); }
+  .d-obs .ico { --b-fill: none; --b-line: #24506a; --d-line: #24506a; --sh: none; }
+  .d-obs .strip { background: linear-gradient(180deg, #c6ced8, #aeb9c5); box-shadow: inset 0 1px 0 var(--hi), 0 1px 0 #2b3540; }
+  .d-obs .kplate { margin: 3px 8px 3px 4px; height: 26px; background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); padding: 0 12px; font-weight: 600; }
+  .d-obs .kplate svg { --star: #2f6f8f; }
+  .d-obs .ent.front { background: var(--sunken); box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi); }
+  .d-obs .dock { background: linear-gradient(180deg, #c6ced8, #aeb9c5); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo), 0 0 0 1px #2b3540, 5px 6px 0 rgba(0,0,0,.2); }
+  .d-obs .glass::before, .d-obs .glass::after { display: none; }
+  .d-obs .menu, .d-obs .banner, .d-obs .quick { background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo), 0 0 0 1px #2b3540, 5px 6px 0 rgba(0,0,0,.2); }
+  .d-obs .kbtn { background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); font-weight: 600; }
+  .d-obs .kbtn svg { --star: #2f6f8f; }
+  .d-obs .cell { background: var(--raised); box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); margin: 0 1px; }
+  .d-obs .cell .run { width: 22px; height: 3px; background: #2f6f8f; bottom: 3px; }
+  .d-obs .cell .run:not(.front) { background: var(--lo); }
+  .d-obs .quick .tile, .d-obs .quick .slider, .d-obs .banner .acts em { box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo); background: var(--window); }
+  .d-obs .quick .tile.on { background: var(--accent); box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi); }
+  .zr { position: absolute; border: 1px solid #fff; z-index: 40; pointer-events: none; mix-blend-mode: difference; }
+
+  /* =====================================================================
+     AURORA - every application its own colour, a band across its top.
+     ===================================================================== */
+  .d-aur .win { border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 24px 50px rgba(0,0,0,.6); }
+  .d-aur .win::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--hue); opacity: .55; transform-origin: 0 50%; }
+  .d-aur .win.front::before { height: 4px; opacity: 1; box-shadow: 0 0 18px 2px var(--hue); }
+  .d-aur .win.sweep::before { animation: band 160ms ease-out both; }
+  @keyframes band { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .d-aur .plate { padding-left: 16px; }
+  .d-aur .win.front .plate { color: var(--text); }
+  .d-aur .ctl i::after { content: ""; position: absolute; left: 1px; right: 1px; top: 6px; height: 1.6px; background: var(--text-dim); }
+  .d-aur .ctl i.mx::after { top: 1px; bottom: 1px; height: auto; background: none; border: 1.6px solid var(--text-dim); }
+  .d-aur .ctl i.cl::before, .d-aur .ctl i.cl::after { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 1.6px; background: var(--text-dim); transform: rotate(45deg); }
+  .d-aur .ctl i.cl::before { transform: rotate(-45deg); }
+  .d-aur .side .row, .d-aur .list .r, .d-aur .menu .it, .d-aur .tools i { border-radius: 4px; }
+  .d-aur .side .row.on svg { stroke: var(--hue); }
+  .d-aur .list .r.sel { background: var(--hue); }
+  .d-aur .ico { --b-fill: none; --b-line: var(--c); --d-line: var(--c); --sh: none; }
+  .d-aur .strip { box-shadow: 0 2px 0 var(--front-hue, #2ee6aa), 0 2px 14px var(--front-hue, #2ee6aa); }
+  .d-aur .kplate { font-weight: 700; }
+  .d-aur .kplate svg { --star: url(#aur-g); }
+  .d-aur .ent.front { background: transparent; box-shadow: inset 0 -2px 0 var(--front-hue); }
+  .d-aur .dock { border-radius: 10px; }
+  .d-aur .menu, .d-aur .banner, .d-aur .quick { border-radius: 8px; }
+  .d-aur .fl { filter: drop-shadow(0 18px 30px rgba(0,0,0,.55)); }
+  .d-aur .kbtn svg { --star: url(#aur-g); }
+  .d-aur .cell .run { width: 18px; height: 2.5px; border-radius: 2px; background: var(--c); bottom: 1px; opacity: .6; }
+  .d-aur .cell .run.front { opacity: 1; box-shadow: 0 0 8px var(--c); }
+  .d-aur .quick .tile, .d-aur .quick .slider, .d-aur .banner .acts em { border-radius: 6px; }
+  .d-aur .quick .slider i { border-radius: 6px; }
+  .d-aur .glass { box-shadow: inset 0 0 0 1px var(--edge); }
+  .d-aur .win.fadein { animation: fade 140ms ease-out both; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* =====================================================================
+     EARLIER PROPOSAL - what Diego called macOS: kept to compare against.
+     ===================================================================== */
+  .d-plain .win { border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,.10), 0 18px 40px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.20); }
+  .d-plain .ctl i { border-radius: 50%; }
+  .d-plain .ctl i.mx { background: #28c840; } .d-plain .ctl i.mn { background: #febc2e; } .d-plain .ctl i.cl { background: #ff5f57; }
+  .d-plain .win:not(.front) .ctl i { background: var(--line-soft); }
+  .d-plain .side .row, .d-plain .list .r, .d-plain .menu .it, .d-plain .tools i { border-radius: 7px; }
+  .d-plain .dock { border-radius: 18px; }
+  .d-plain .menu { border-radius: 10px; } .d-plain .banner { border-radius: 14px; } .d-plain .quick { border-radius: 22px; }
+  .d-plain .quick .tile, .d-plain .quick .slider, .d-plain .quick .slider i, .d-plain .banner .acts em { border-radius: 999px; }
+  .d-plain .glass { box-shadow: inset 0 0 0 1px var(--edge); }
+  .d-plain .fl { filter: drop-shadow(0 14px 30px rgba(0,0,0,.25)); }
+  .d-plain .cell svg.ico { width: 40px; height: 40px; padding: 7px; border-radius: 10px; background: linear-gradient(160deg, color-mix(in srgb, var(--c) 70%, #fff), var(--c)); }
+  .d-plain .ico { --b-fill: none; --b-line: #fff; --d-line: #fff; --sh: none; }
+  .d-plain .list .ico, .d-plain .ent .ico, .d-plain .banner .ico { --b-fill: var(--c); --b-line: rgba(0,0,0,.35); --d-line: rgba(0,0,0,.35); }
+  .d-plain .cell .run { width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); bottom: -3px; }
+  .d-plain .kbtn { border-radius: 999px; background: var(--select); }
+  .d-plain .kbtn svg { --star: #e05d1f; }
+  .d-plain .strip { color: var(--text); }
+  .d-plain .ent .n { border-radius: 999px; }
+  .d-plain .win.grow { animation: grow 150ms cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes grow { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+
+  .reduce * { animation: none !important; }
+  .outline { position: absolute; border: 2px solid var(--tab); z-index: 40; pointer-events: none; }
+  .d-plain .outline { border-color: rgba(255,255,255,.9); border-radius: 10px; }
+
+  /* ---------------------------------------------------------------------
+     Under the screen.
+     --------------------------------------------------------------------- */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--page-card); border: 1px solid var(--page-rule); border-radius: 12px; padding: 16px 18px; }
+  .card.rec { border: 2px solid var(--flare); }
+  .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .card .kin { color: var(--page-dim); font-size: 13px; margin-bottom: 10px; }
+  .card dl { font-size: 13.5px; }
+  .card dt { font-weight: 600; margin-top: 8px; }
+  .card dd { color: #3c3a52; }
+  .card dd .c { color: #0f7a5a; font-size: 12.5px; }
+  .tagr { display: inline-block; font: 600 11px "Plex"; letter-spacing: .05em; padding: 1px 8px; border-radius: 999px; color: #1e1305; background: var(--flare); margin-left: 6px; vertical-align: 2px; }
+  .sheet { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; padding: 20px; background: #191b31; border-radius: 12px; color: #ebe8f7; }
+  .sheet figure { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12px; color: #b9b6d4; text-align: center; max-width: 170px; }
+  .sw { display: flex; gap: 6px; }
+  .sw i { width: 34px; height: 34px; display: block; clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+  table.cost { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  table.cost th { text-align: left; font-weight: 600; padding: 6px 8px; border-bottom: 2px solid var(--page-rule); }
+  table.cost td { padding: 6px 8px; border-bottom: 1px solid var(--page-rule); vertical-align: top; }
+  table.cost td.n { font-family: "Plex Mono", monospace; font-size: 12.5px; }
+  .est { color: #b26a00; font-size: 11.5px; }
+  @media (max-width: 900px) { .grid3, .grid2 { grid-template-columns: 1fr; } body { padding: 16px; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="aur-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ee6aa"/><stop offset=".5" stop-color="#508cff"/><stop offset="1" stop-color="#be5aff"/></linearGradient>
+    <!-- The Kosmos mark: a four-point star. -->
+    <symbol id="star" viewBox="0 0 24 24"><path class="st" d="M12 2.5Q13.3 10.7 21.5 12Q13.3 13.3 12 21.5Q10.7 13.3 2.5 12Q10.7 10.7 12 2.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" style="stroke: var(--star, currentColor)"/></symbol>
+    <!-- Application icons: a body, its details, a highlight from the upper left. -->
+    <symbol id="i-folder" viewBox="0 0 24 24"><path class="bd" d="M2.5 6.5h7l2 2.2h10v10.8h-19z"/><path class="sh" d="M4 10h16v1.4H4z"/><path class="dt" d="M2.5 10.5h19"/></symbol>
+    <symbol id="i-write" viewBox="0 0 24 24"><path class="bd" d="M5 2.5h9.5l4.5 4.5v14.5H5z"/><path class="sh" d="M6.5 4h6.5v1.3H6.5z"/><path class="dt" d="M14.5 2.5V7H19M8 11h8M8 14h8M8 17h5"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><path class="bd" d="M2.5 4.5h19v15h-19z"/><path class="sh" d="M4 6h16v1.3H4z"/><path class="dt" d="M6 10l3 2.2L6 14.5M11 15h6"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><path class="bd" d="M12 2.5a9.5 9.5 0 1 1 0 19a9.5 9.5 0 1 1 0-19z"/><path class="sh" d="M6 7.5a8 8 0 0 1 5-3.6v1.4a7 7 0 0 0-4 3z"/><path class="dt" d="M2.5 12h19M12 2.5c3 3 3 16 0 19M12 2.5c-3 3-3 16 0 19"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path class="bd" d="M4 17.5a3 3 0 1 0 6 0a3 3 0 1 0-6 0zM13 15a3 3 0 1 0 6 0a3 3 0 1 0-6 0zM8.4 5.2 19 2.5V15h-1.6V5.1L10 7v10.5H8.4z"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path class="bd" d="M12 2.5l8.5 4.8v9.4L12 21.5l-8.5-4.8V7.3z"/><path class="sh" d="M4.8 7.6 12 3.8l7.2 3.8-1.3.7L12 5.2 6.1 8.3z"/><path class="dt" d="M3.5 7.3L12 12l8.5-4.7M12 12v9.5"/></symbol>
+  </defs>
+</svg>
+
+<h1>Astra, with an identity</h1>
+<p class="sub">The nicer desktop <code>docs/astra.md</code> proposed - one sheet of tokens, shadows, glass, motion, quick settings - given cues of its own, so that a screenshot says Kosmos before anyone reads a word. Three directions, and the earlier proposal for comparison. Press the sound or bell icon in the strip for quick settings; the buttons play each direction's motion. Nothing here is built. <a href="liquidglass.html">Liquid Glass</a>, the current Astra made of glass with Kosmos's cues, is a page of its own.</p>
+
+<div class="controls">
+  <span><span class="lab">Direction</span><span class="seg" id="dir">
+    <button data-v="d-star" class="on">Starlight<span class="rec">CHOSEN</span></button>
+    <button data-v="d-obs">Observatory</button>
+    <button data-v="d-aur">Aurora</button>
+    <button data-v="d-plain">Earlier proposal</button></span></span>
+  <span class="only-star" id="lookbox"><span class="lab">Look</span><span class="seg" id="look"><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></span></span>
+  <span id="glassbox"><span class="lab">Transparency</span><span class="seg" id="glass"><button data-v="opaque">Off</button><button data-v="wall" class="on">Wallpaper glass</button></span></span>
+  <label class="chk"><input type="checkbox" id="reduce"> Reduce motion</label>
+  <button class="act" id="open">Open</button>
+  <button class="act" id="close">Close</button>
+  <button class="act" id="mini">Minimise</button>
+  <button class="act" id="focus">Bring Files forward</button>
+</div>
+<div class="why" style="border-left-color:#2b2a5e"><b>Decided 17 November:</b> Starlight is <b>a look</b>, chosen in Preferences' Appearance beside the others - Endeavour, Plex, Night and the rest. It does not replace today's Astra and is not the default. Its window buttons stay round, as today's, in its own colours, and it mixes a few geometric signatures - the plate's slanted edge, the star, the glint - with a rounded, soft rest.</div>
+<div class="why" id="why"></div>
+
+<div class="frame" id="frame">
+  <div class="screen d-star dark wall" id="screen">
+
+    <div class="strip glass" id="strip">
+      <span class="kplate"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Kosmos</span>
+      <span class="ent" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Files<span class="n">2</span></span>
+      <span class="ent front" id="ent-write" style="--c:#8fb4ff"><svg class="ico"><use href="#i-write"/></svg>Write</span>
+      <span class="ent" style="--c:#7fe0a8"><svg class="ico"><use href="#i-term"/></svg>Terminal<span class="n">3</span></span>
+      <span class="ent" style="--c:#6fd3ff"><svg class="ico"><use href="#i-globe"/></svg>JetSki</span>
+      <span class="ind">
+        <svg viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1"/></svg>
+        <svg viewBox="0 0 24 24" class="qs"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+        <svg viewBox="0 0 24 24" class="qs"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="clock">23:19</span><span style="opacity:.75">Tue 17 Nov</span>
+      </span>
+    </div>
+
+    <!-- Files: the kit's sidebar and list. -->
+    <div class="win w-files" id="files" style="--hue:#f0b44c">
+      <div class="hdr"><span class="plate"><svg class="mk" viewBox="0 0 24 24"><use href="#star"/></svg>Files</span><span class="doc">Home</span>
+        <div class="ctl"><i class="mx"></i><i class="mn"></i><i class="cl"></i></div></div>
+      <div class="body">
+        <div class="side">
+          <div class="row on"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21H3z"/></svg>Home</div>
+          <div class="row"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg>Desktop</div>
+          <div class="row"><svg viewBox="0 0 24 24"><path d="M4 4h10l6 6v10H4z"/></svg>Documents</div>
+          <div class="row"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 21h16"/></svg>Downloads</div>
+          <div class="row"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 8"/></svg>Photos</div>
+          <div class="cap">Network</div>
+          <div class="row"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>All of the network</div>
+        </div>
+        <div class="list">
+          <div class="r" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Captures<span class="d">Today, 23:05</span></div>
+          <div class="r" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Desktop<span class="d">Today, 23:05</span></div>
+          <div class="r sel" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Documents<span class="d">Today, 23:05</span></div>
+          <div class="r" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Downloads<span class="d">Today, 23:05</span></div>
+          <div class="r" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Music<span class="d">Today, 23:05</span></div>
+          <div class="r" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg>Photos<span class="d">Today, 23:05</span></div>
+          <div class="r" style="--c:#8fb4ff"><svg class="ico"><use href="#i-write"/></svg>Notes.write<span class="d">Yesterday</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Write, in front. -->
+    <div class="win w-write front" id="write" style="--hue:#9b7bff">
+      <div class="hdr"><span class="plate"><svg class="mk" viewBox="0 0 24 24"><use href="#star"/></svg>Kosmos Write</span><span class="doc">Gallery.write</span>
+        <div class="tools">
+          <i><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-4"/></svg></i>
+          <i class="hov"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></i>
+          <i><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></i>
+        </div>
+        <div class="ctl"><i class="mx"></i><i class="mn"></i><i class="cl"></i></div></div>
+      <div class="desk">
+        <div class="page" id="page"><h3>Starlight</h3><p>The window in front wears the flare: its title on an amber plate whose right edge is slanted, its ends eased, and its round close button in the flare.</p><p>Windows, buttons and rows are rounded; the dock and menus keep one small softened cut, and glass carries a one-pixel horizon along the top.</p><p style="color:#888">The tool under the pointer is lit, at the move.</p></div>
+      </div>
+    </div>
+
+    <!-- A right-click menu over Files. -->
+    <div class="fl" style="left:330px;top:256px" id="fl-menu">
+      <div class="menu glass">
+        <div class="it">Open</div>
+        <div class="it hot">Open with<span class="k">&rsaquo;</span></div>
+        <div class="it">Get info<span class="k">Super I</span></div>
+        <hr>
+        <div class="it">Compress</div>
+        <div class="it">Pin to the sidebar</div>
+        <hr>
+        <div class="it">Move to the Trash</div>
+      </div>
+    </div>
+
+    <!-- A banner. -->
+    <div class="fl" style="right:16px;top:46px" id="fl-banner">
+      <div class="banner glass">
+        <svg class="ico" style="--c:#c08bff"><use href="#i-cube"/></svg>
+        <div><b>Cafesa3D</b><span>The render of still-life.scene is done - 64 samples, 1 min 12 s.</span>
+          <div class="acts"><em>Open</em><em>Show in Files</em></div></div>
+      </div>
+    </div>
+
+    <!-- Quick settings. -->
+    <div class="fl" style="right:16px;top:46px" id="fl-quick">
+      <div class="quick glass">
+        <div class="tiles">
+          <div class="tile on"><div><b>Network</b>Wired · 10.0.2.15</div></div>
+          <div class="tile"><div><b>Do Not Disturb</b>Off</div></div>
+          <div class="tile on"><div><b>Night light</b>Until 07:00</div></div>
+          <div class="tile"><div><b>Servers</b>Web, Screen</div></div>
+          <div class="tile"><div><b>Screenshot</b>Super Shift 3</div></div>
+          <div class="tile"><div><b>Dark</b>At sunset</div></div>
+        </div>
+        <div class="slider"><i style="width:62%"></i><span>Sound 62%</span></div>
+        <div class="slider"><i style="width:80%"></i><span>Brightness 80%</span></div>
+        <div class="foot"><span>Kosmos 0.11.465 · up 2:14</span><span>Restart · Shut Down</span></div>
+      </div>
+    </div>
+
+    <!-- The dock. -->
+    <div class="fl" style="left:50%;bottom:14px;transform:translateX(-50%)" id="fl-dock">
+      <div class="dock glass" id="dock">
+        <div class="kbtn"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Kosmos</div>
+        <div class="cell" style="--c:#f0b44c"><svg class="ico"><use href="#i-folder"/></svg><i class="run"></i></div>
+        <div class="cell" id="cell-write" style="--c:#8fb4ff"><svg class="ico"><use href="#i-write"/></svg><i class="run front" id="run-write"></i></div>
+        <div class="cell" style="--c:#7fe0a8"><svg class="ico"><use href="#i-term"/></svg><i class="run"></i></div>
+        <div class="cell" style="--c:#6fd3ff"><svg class="ico"><use href="#i-globe"/></svg><i class="run"></i></div>
+        <div class="cell" style="--c:#ff8fb1"><svg class="ico"><use href="#i-music"/></svg></div>
+        <div class="cell" style="--c:#c08bff"><svg class="ico"><use href="#i-cube"/></svg></div>
+        <div class="sep"></div>
+        <div class="cell" style="--c:#a9b4c9"><svg class="ico" viewBox="0 0 24 24"><path class="bd" d="M5 7h14l-1.3 14H6.3z"/><path class="dt" d="M3.5 7h17M9.5 7V4h5v3M10 11v6M14 11v6"/></svg></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>The three directions</h2>
+<p>Each is a set of signature cues - a title shape, a colour, a material, a Deskbar and dock, an icon style and one motion. Every cue is priced for the scene in C on the processor, where composing measures 3.4 ns a pixel on the M700 (<code>testing.md</code> 18.657). <span class="c" style="color:#0f7a5a">Green</span> is what each costs.</p>
+<div class="grid3">
+  <div class="card rec"><h3>Starlight <span class="tagr">CHOSEN, AS A LOOK</span></h3><p class="kin">Astra means stars. BeOS's "the focused one is the yellow one", carried into the header Diego chose.</p>
+    <dl>
+      <dt>The plate</dt><dd>The title of the window in front sits on an amber plate at the header's left, its right edge cut at 45 degrees; behind, the plate is the header's own tone. The window's top-left corner is square where the plate meets it. <span class="c">A trapezoid fill, ~9 kpx, on a change of front only.</span></dd>
+      <dt>Colour</dt><dd>Flare amber (<code>tab</code>) on night indigo; astral blue for selection. A light look keeps the amber and the indigo ink. <span class="c">Tokens: nothing.</span></dd>
+      <dt>Material: nebula glass</dt><dd>Wallpaper glass tinted by a gradient, with star-dust grain, and a one-pixel amber horizon along its top. <span class="c">Gradient and grain baked into the blurred wallpaper once; the horizon is a 1 px line.</span></dd>
+      <dt>The cut, used sparingly</dt><dd>One small cut at the top-left of the dock and of a menu, its two edges eased; everything else rounded as today. <span class="c">Cheaper than a rounded corner: a span offset a row.</span></dd>
+      <dt>Deskbar and dock</dt><dd>The strip opens on the Kosmos plate with the four-point star; the dock is a cut bridge, and a running application is marked by a glint, amber for the one in front. <span class="c">A 9 px sprite each.</span></dd>
+      <dt>The three</dt><dd>Round, as today, in Starlight's colours: astral blue, lavender, and close in the flare; grey behind. <span class="c">As <code>OUT.light</code> draws them now: only the colours change.</span></dd>
+      <dt>Icons</dt><dd>Haiku's manner, kept and made the rule: free-standing objects, never on a tile.</dd>
+      <dt>Motion: unfurl</dt><dd>The plate arrives, the window unrolls beneath it in 150 ms; a close rolls back up into it. <span class="c">A clip, not a scale: only the rows revealed, nothing blended.</span></dd>
+    </dl></div>
+  <div class="card"><h3>Observatory</h3><p class="kin">Indigo Magic's manner: an instrument rather than a toy. The dimensional principle of <code>ui.md</code> 16.8b, kept literally.</p>
+    <dl>
+      <dt>Title</dt><dd>A bevelled bar, slate when behind and deep teal in front, a window-menu square at its left. <span class="c">A gradient a row and two 1 px edges.</span></dd>
+      <dt>Colour</dt><dd>Blue-grey slate everywhere, one teal. <span class="c">Nothing.</span></dd>
+      <dt>Material</dt><dd>No glass: raised, sunken and grooved, light from the upper left, a hard offset shadow. <span class="c">The cheapest of the three; no blur ever.</span></dd>
+      <dt>Deskbar and dock</dt><dd>A bevelled console strip with a Toolchest button; the dock a row of raised keys.</dd>
+      <dt>Icons</dt><dd>Line vectors in one colour each, as Indigo Magic's scaled ones were.</dd>
+      <dt>Motion: zoom rectangles</dt><dd>Six outlines from the dock to the window and back. <span class="c">Four thin rectangles a frame.</span></dd>
+      <dt>Risk</dt><dd>Diego chose flat looks (Endeavour, Plex) after Classic; this is Classic's road, and reads 1996.</dd>
+    </dl></div>
+  <div class="card"><h3>Aurora</h3><p class="kin">Every application a colour of its own, the way a planetarium labels a sky.</p>
+    <dl>
+      <dt>Title</dt><dd>A 3 px band in the application's hue across every window's top; the one in front is 4 px and glows. <span class="c">A 3 px line; the glow a 16 px falloff from <code>shadow.c</code>'s table.</span></dd>
+      <dt>Colour</dt><dd>Near-black, with each application's hue - a new <code>-- kosmos: hue</code> line in its opening comment.</dd>
+      <dt>Material</dt><dd>Dark glass whose edge takes the front application's hue. <span class="c">Wallpaper glass; the hue is a tint.</span></dd>
+      <dt>Deskbar and dock</dt><dd>The strip's bottom edge glows the front application's hue; running marks are hue bars.</dd>
+      <dt>Icons</dt><dd>Line glyphs in the hue.</dd>
+      <dt>Motion: band sweep</dt><dd>The band sweeps across on focus and opening. <span class="c">A 3 px line.</span></dd>
+      <dt>Risk</dt><dd>Forty hues to choose and keep apart, and a band is a quieter mark than a plate - at a glance it can still read as "dark macOS".</dd>
+    </dl></div>
+</div>
+
+<h2>Starlight's sheet</h2>
+<p>The cues, one by one, as the scene would draw them.</p>
+<div class="sheet">
+  <figure><div style="display:flex;height:40px;align-items:center;background:#22253f;width:200px"><span style="height:40px;display:flex;align-items:center;gap:8px;padding:0 28px 0 12px;background:#f2a93b;color:#1e1305;font-weight:600;border-top-left-radius:8px;clip-path:polygon(0 0,calc(100% - 4px) 0,calc(100% - 1px) 1px,100% 4px,calc(100% - 20px) calc(100% - 2px),calc(100% - 23px) 100%,0 100%)"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#star" fill="#1e1305"/></svg>Files</span></div>The plate, in front</figure>
+  <figure><div style="display:flex;height:40px;align-items:center;background:#22253f;width:200px"><span style="height:40px;display:flex;align-items:center;gap:8px;padding:0 28px 0 12px;background:#2a2d4c;color:#b9b6d4;font-weight:600;border-top-left-radius:8px;clip-path:polygon(0 0,calc(100% - 4px) 0,calc(100% - 1px) 1px,100% 4px,calc(100% - 20px) calc(100% - 2px),calc(100% - 23px) 100%,0 100%)"><svg width="13" height="13" viewBox="0 0 24 24"><use href="#star" fill="#b9b6d4"/></svg>Files</span></div>The plate, behind</figure>
+  <figure><div style="display:flex;gap:12px;padding:10px"><i style="width:13px;height:13px;border-radius:50%;background:#8a93ff"></i><i style="width:13px;height:13px;border-radius:50%;background:#c3b6f2"></i><i style="width:13px;height:13px;border-radius:50%;background:#f2a93b"></i></div>The three, round: maximise, minimise, close</figure>
+  <figure><div style="width:120px;height:60px;background:linear-gradient(180deg,rgba(60,50,130,.9),rgba(30,26,72,.9));box-shadow:inset 0 1px 0 #f2a93b;border-radius:12px;clip-path:polygon(9px 0,100% 0,100% 100%,0 100%,0 9px)"></div>One small cut, and the horizon</figure>
+  <figure><div style="display:flex;gap:14px;align-items:center;height:30px"><i style="width:9px;height:9px;background:#9b98ba;clip-path:polygon(50% 0,63% 37%,100% 50%,63% 63%,50% 100%,37% 63%,0 50%,37% 37%)"></i><i style="width:13px;height:13px;background:#f2a93b;clip-path:polygon(50% 0,63% 37%,100% 50%,63% 63%,50% 100%,37% 63%,0 50%,37% 37%)"></i></div>The glint: running, and in front</figure>
+  <figure><div class="sw"><i style="background:#f2a93b"></i><i style="background:#8a93ff"></i><i style="background:#191b31;outline:1px solid #2c2f4f"></i><i style="background:#1c1748"></i><i style="background:#ebe8f7"></i></div>Flare, astral, window, night, ink</figure>
+</div>
+
+<h2>What each cue costs</h2>
+<p>M700, 1920x1080. <span class="est">Estimates</span> from the measured 3.4 ns a composed pixel, to be measured with <code>frames</code> before each lands.</p>
+<div class="card">
+<table class="cost">
+  <tr><th>Cue</th><th>When it costs</th><th>Cost</th><th>Who draws it</th></tr>
+  <tr><td>Starlight's plate</td><td>a change of the window in front: two plates</td><td class="n">~9 kpx each, ~0.03 ms <span class="est">est.</span></td><td>window manager, as it draws the three; the header leaves room</td></tr>
+  <tr><td>The three, round</td><td>with the plate, or under the pointer</td><td class="n">as today: only the colours</td><td>window manager (<code>OUT.light</code>)</td></tr>
+  <tr><td>The cut (<code>SC_CUT</code>), dock and menus only</td><td>wherever that corner is damaged</td><td class="n">less than a rounded corner: an offset a row, one pixel of coverage</td><td>the scene</td></tr>
+  <tr><td>Nebula glass (gradient, grain)</td><td>once, when the wallpaper changes</td><td class="n">0 a frame; +1-2 ms on the 8-10 ms blur <span class="est">est.</span></td><td><code>gfx</code>, beside G1's blur</td></tr>
+  <tr><td>The horizon</td><td>with the surface</td><td class="n">one row of pixels</td><td>the scene, as a hairline</td></tr>
+  <tr><td>Glints</td><td>a change of running or front</td><td class="n">9x9 sprites</td><td>Deskbar</td></tr>
+  <tr><td>Unfurl / roll</td><td>9 / 7 frames</td><td class="n">only the rows revealed; nothing blended - less than the 2.8 ms a frame the scale-and-fade cost <span class="est">est.</span></td><td>window manager decides, the scene clips</td></tr>
+  <tr><td>Observatory's bevels</td><td>with the window</td><td class="n">two 1 px lines an edge</td><td>kit and window manager</td></tr>
+  <tr><td>Aurora's band and glow</td><td>a change of front</td><td class="n">3 px line; glow ~16 px band through <code>shadow.c</code></td><td>window manager</td></tr>
+</table>
+</div>
+
+<script>
+  var screen = document.getElementById("screen");
+  var frame = document.getElementById("frame");
+  var write = document.getElementById("write");
+  var files = document.getElementById("files");
+
+  var WHY = {
+    "d-star": "<b>Starlight.</b> What says Kosmos at a glance: the amber plate on the window in front, a four-point star for the Kosmos mark and the running glint, and a one-pixel amber horizon on glass. The rest is soft: rounded windows, round window buttons in Starlight's colours, and one small eased cut on the dock and menus.",
+    "d-obs": "<b>Observatory.</b> Indigo Magic's manner: slate blue-grey, bevels that say raised and sunken, a teal title in front, a console strip, line icons. No glass at all.",
+    "d-aur": "<b>Aurora.</b> Each application wears its own hue as a band across its top; the one in front glows, and the strip's edge takes its colour.",
+    "d-plain": "<b>The earlier proposal</b>, kept to compare: neutral frosted glass, round traffic lights, pills and squircle tiles - what Diego called macOS with no personality."
+  };
+
+  var PAGE = {
+    "d-star": "<h3>Starlight</h3><p>The window in front wears the flare: its title on an amber plate whose right edge is slanted, its ends eased, and its round close button in the flare.</p><p>Windows, buttons and rows are rounded; the dock and menus keep one small softened cut, and glass carries a one-pixel horizon along the top.</p><p style='color:#888'>The tool under the pointer is lit, at the move.</p>",
+    "d-obs": "<h3>Observatory</h3><p>The window in front has a deep teal bar; the rest are slate. Raised means it can be pressed, sunken means content lives in it.</p><p>Nothing is see-through, and nothing is blurred.</p>",
+    "d-aur": "<h3>Aurora</h3><p>Every application declares a hue, and wears it as a band across its top. The one in front is thicker and glows, and the strip's edge takes its colour.</p>",
+    "d-plain": "<h3>The earlier proposal</h3><p>Neutral frosted glass, three coloured lights, pills, squircle icon tiles, a centred dock: each cue right on its own, and together a desktop that could be anyone's.</p>"
+  };
+
+  function fit() { screen.style.transform = "scale(" + (frame.clientWidth / 1440) + ")"; place(); }
+
+  // Where each glass surface sits, so wallpaper glass shows the part of
+  // the wallpaper behind it - as the scene copies from its blurred copy.
+  function place() {
+    var sr = screen.getBoundingClientRect(), k = sr.width / 1440;
+    document.querySelectorAll(".glass").forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      el.style.setProperty("--bx", (-(r.left - sr.left) / k) + "px");
+      el.style.setProperty("--by", (-(r.top - sr.top) / k) + "px");
+    });
+  }
+
+  function seg(id, apply) {
+    var box = document.getElementById(id);
+    box.querySelectorAll("button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        box.querySelectorAll("button").forEach(function (o) { o.classList.remove("on"); });
+        b.classList.add("on"); apply(b.dataset.v); place();
+      });
+    });
+  }
+  function swap(list, v) { list.forEach(function (c) { screen.classList.remove(c); }); screen.classList.add(v); }
+  function dir() { return ["d-star", "d-obs", "d-aur", "d-plain"].filter(function (c) { return screen.classList.contains(c); })[0]; }
+
+  function showDir(v) {
+    swap(["d-star", "d-obs", "d-aur", "d-plain"], v);
+    document.getElementById("lookbox").style.display = v === "d-star" ? "" : "none";
+    document.getElementById("glassbox").style.display = v === "d-obs" ? "none" : "";
+    document.getElementById("why").innerHTML = WHY[v];
+    document.getElementById("page").innerHTML = PAGE[v];
+    frontHue();
+  }
+  seg("dir", showDir);
+  seg("look", function (v) { swap(["dark", "light"], v); });
+  seg("glass", function (v) { swap(["opaque", "wall"], v); });
+  document.getElementById("reduce").addEventListener("change", function (e) { screen.classList.toggle("reduce", e.target.checked); });
+
+  function frontHue() {
+    var f = document.querySelector(".win.front");
+    if (f) screen.style.setProperty("--front-hue", getComputedStyle(f).getPropertyValue("--hue"));
+  }
+
+  document.querySelectorAll(".qs").forEach(function (s) {
+    s.addEventListener("click", function () {
+      var q = document.getElementById("fl-quick");
+      q.classList.toggle("open");
+      document.getElementById("fl-banner").style.display = q.classList.contains("open") ? "none" : "";
+      place();
+    });
+  });
+
+  function moving() { return !screen.classList.contains("reduce"); }
+  function replay(el, cls, ms, then) {
+    el.classList.remove("unfurl", "roll", "grow", "fadein", "sweep", "focusing");
+    void el.offsetWidth;
+    if (!moving()) { if (then) then(); return; }
+    el.classList.add(cls);
+    setTimeout(function () { el.classList.remove(cls); if (then) then(); }, ms);
+  }
+
+  // Observatory's zoom rectangles: six outlines between two boxes.
+  function zoom(a, b, then) {
+    if (!moving()) { then(); return; }
+    var n = 6, i = 0;
+    (function step() {
+      var t = (i + 1) / n, z = document.createElement("div"); z.className = "zr";
+      z.style.left = (a.x + (b.x - a.x) * t) + "px"; z.style.top = (a.y + (b.y - a.y) * t) + "px";
+      z.style.width = (a.w + (b.w - a.w) * t) + "px"; z.style.height = (a.h + (b.h - a.h) * t) + "px";
+      screen.appendChild(z); setTimeout(function () { z.remove(); }, 90);
+      if (++i < n) setTimeout(step, 28); else setTimeout(then, 40);
+    })();
+  }
+  function boxOf(el) { return { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; }
+  function cellBox() {
+    var sr = screen.getBoundingClientRect(), k = sr.width / 1440, r = document.getElementById("cell-write").getBoundingClientRect();
+    return { x: (r.left - sr.left) / k, y: (r.top - sr.top) / k, w: r.width / k, h: r.height / k };
+  }
+  var WIN = { x: 600, y: 176, w: 620, h: 470 };
+
+  function setFront(el) {
+    document.querySelectorAll(".win").forEach(function (w) { w.classList.remove("front"); });
+    el.classList.add("front");
+    document.getElementById("run-write").classList.toggle("front", el === write);
+    document.getElementById("ent-write").classList.toggle("front", el === write);
+    frontHue();
+  }
+
+  document.getElementById("open").addEventListener("click", function () {
+    if (write.style.display !== "none") { write.style.display = "none"; }
+    var d = dir();
+    function show() { write.style.display = ""; setFront(write); write.style.zIndex = 5; files.style.zIndex = 1; }
+    if (d === "d-obs") { zoom(cellBox(), WIN, show); return; }
+    show();
+    if (d === "d-star") replay(write, "unfurl", 160);
+    else if (d === "d-aur") { replay(write, "fadein", 150); write.classList.add("sweep"); setTimeout(function () { write.classList.remove("sweep"); }, 170); }
+    else replay(write, "grow", 160);
+  });
+  document.getElementById("close").addEventListener("click", function () {
+    if (write.style.display === "none") return;
+    var d = dir();
+    function hide() { write.style.display = "none"; setFront(files); }
+    if (d === "d-star") replay(write, "roll", 120, hide);
+    else if (d === "d-obs") { hide(); zoom(WIN, cellBox(), function () {}); }
+    else hide();
+  });
+  document.getElementById("mini").addEventListener("click", function () {
+    if (write.style.display === "none") return;
+    var d = dir(), from = boxOf(write), to = cellBox();
+    write.style.display = "none"; setFront(files);
+    if (d === "d-obs") { zoom(from, to, function () {}); return; }
+    if (!moving()) return;
+    var o = document.createElement("div"); o.className = "outline"; screen.appendChild(o);
+    var t0 = performance.now(), D = 200;
+    function step(t) {
+      var p = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - p, 3);
+      o.style.left = (from.x + (to.x - from.x) * e) + "px"; o.style.top = (from.y + (to.y - from.y) * e) + "px";
+      o.style.width = (from.w + (to.w - from.w) * e) + "px"; o.style.height = (from.h + (to.h - from.h) * e) + "px";
+      if (p < 1) requestAnimationFrame(step);
+      else { o.remove(); if (d === "d-star") { var g = document.getElementById("run-write"); g.classList.remove("tw"); void g.offsetWidth; g.classList.add("tw"); } }
+    }
+    requestAnimationFrame(step);
+  });
+  document.getElementById("focus").addEventListener("click", function () {
+    var other = files.classList.contains("front") ? write : files;
+    if (other.style.display === "none") return;
+    setFront(other);
+    files.style.zIndex = other === files ? 5 : 1; write.style.zIndex = other === write ? 5 : 1;
+    this.textContent = other === files ? "Bring Write forward" : "Bring Files forward";
+    if (dir() === "d-star") replay(other, "focusing", 100);
+    if (dir() === "d-aur") replay(other, "sweep", 170);
+  });
+
+  window.addEventListener("resize", fit);
+  window.addEventListener("load", fit);
+  showDir("d-star"); fit(); setTimeout(fit, 60);
+</script>
+</body>
+</html>

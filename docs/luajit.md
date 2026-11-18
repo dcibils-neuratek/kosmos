@@ -134,6 +134,11 @@ Diego's to decide.
 
 ## Reconsidered, 17 November 2026 - now that a JIT runs here
 
+**DECIDED the same day: not now.** Diego: "lets discard the luajit for
+now". Kosmos keeps Lua 5.4; a measured loop still moves to C. The
+generational collector below is a separate, cheap measurement and is not
+discarded with it.
+
 Diego, 17 November 2026: "does it makes sense to jave LuaJIT now that we
 changed our premises and already have javascript jit?"
 

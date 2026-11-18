@@ -1,0 +1,714 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Liquid Glass: the current Astra, made of glass, with Kosmos's cues.
+
+  Diego, 17 November 2026: "Can we try another desktop style called glass
+  inspired by this repo https://github.com/zakisheriff/Liquid-Glass", "It's
+  the current astra but full glass", "Let's call it Liquid Glass", and "It
+  should have identity cues but feel like Liquid Glass". docs/astra.md,
+  "Liquid Glass, a look of its own", is the text; this is the drawing.
+  Nothing here is built.
+
+  The method is the repo's (Zaki Sheriff, MIT), re-written here in plain
+  JavaScript: every glass surface gets a refraction map traced by Snell's
+  law through a quarter-circle bevel at its rim, cached by size, and handed
+  to the browser as an SVG displacement map through backdrop-filter. Only
+  Chromium applies an SVG filter to a backdrop; elsewhere the page falls
+  back to a plain blur and says so. The colour split is Kosmos's: the warm
+  channels are displaced further than the cool ones, so a rim fringes amber
+  and indigo rather than red, green and blue.
+
+  The wallpapers and icons are the ones Kosmos ships (assets/wallpapers,
+  assets/icons, Haiku's, MIT); the faces are IBM Plex from assets/fonts.
+-->
+<title>Liquid Glass</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+
+  /* The page around the screen. */
+  :root {
+    --page: #f1f0f5; --ink: #1d1b2e; --dim: #5f5c76; --rule: #dcd9e6; --card: #fff;
+    --pick: #2b2a5e; --flare: #f2a93b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --page: #12131c; --ink: #e8e8f2; --dim: #a2a1b8; --rule: #2c2d3d; --card: #1b1c28; --pick: #a8b4ff; }
+  }
+  :root[data-theme="dark"] { --page: #12131c; --ink: #e8e8f2; --dim: #a2a1b8; --rule: #2c2d3d; --card: #1b1c28; --pick: #a8b4ff; }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--page); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", system-ui, sans-serif; padding: 24px 16px 60px; }
+  main { max-width: 1312px; margin: 0 auto; }
+  h1 { font-weight: 600; font-size: 28px; }
+  .sub { color: var(--dim); max-width: 1000px; margin: 4px 0 16px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 34px 0 6px; }
+  h2 + p { color: var(--dim); max-width: 1000px; margin-bottom: 14px; }
+  code { font: 13px "Plex Mono", monospace; }
+  a { color: var(--pick); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; position: sticky; top: 8px; z-index: 50; box-shadow: 0 6px 20px rgba(20,20,50,.08); }
+  .controls .lab { color: var(--dim); font-size: 13px; margin-right: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--card); color: var(--ink); padding: 5px 11px; font: 500 13px "Plex", system-ui, sans-serif; cursor: pointer; border-right: 1px solid var(--rule); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--pick); color: var(--card); }
+  label.chk { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  input[type=range] { width: 92px; vertical-align: middle; }
+  .note { font-size: 13px; color: var(--dim); margin: 0 0 12px; }
+  .note.warn { color: #b0571b; }
+
+  .stage { overflow-x: auto; border-radius: 14px; box-shadow: 0 18px 50px rgba(10,10,40,.25); }
+
+  /* ---------------------------------------------------------------------
+     The desktop, 1280 x 800. Every colour in it is a token of the look.
+     --------------------------------------------------------------------- */
+  .desk {
+    --tint: rgba(255,255,255,.34); --tint-strong: rgba(255,255,255,.52); --tint-clear: rgba(255,255,255,.06);
+    --text: #1b1e2c; --text-dim: #4f566c; --rule-g: rgba(255,255,255,.45); --rule-d: rgba(20,30,60,.10);
+    --sel: rgba(53,132,228,.30); --accent: #2f78d8; --hi: rgba(255,255,255,.85); --lo: rgba(255,255,255,.25);
+    --spec-cool: rgba(255,255,255,.95); --spec-warm: rgba(255,226,170,1); --lift: 0 18px 44px rgba(20,24,60,.22), 0 3px 8px rgba(20,24,60,.12);
+    --plate-idle: rgba(255,255,255,.22); --plate-ink: #2a1703; --bead-off: rgba(140,148,170,.55);
+    --page-bg: #fffefb; --page-ink: #23222c;
+    position: relative; width: 1280px; height: 800px; overflow: hidden;
+    background: #3a5 center / cover no-repeat; color: var(--text);
+    font: 400 14px/1.35 "Plex", system-ui, sans-serif; user-select: none;
+  }
+  .desk.dark {
+    --tint: rgba(22,24,44,.40); --tint-strong: rgba(22,24,44,.58); --tint-clear: rgba(10,12,30,.08);
+    --text: #eef0fa; --text-dim: #aab1c9; --rule-g: rgba(255,255,255,.10); --rule-d: rgba(0,0,0,.25);
+    --sel: rgba(168,199,250,.24); --accent: #a8c7fa; --hi: rgba(255,255,255,.42); --lo: rgba(255,255,255,.06);
+    --spec-cool: rgba(220,230,255,.75); --spec-warm: rgba(255,200,120,.95); --lift: 0 22px 54px rgba(0,0,0,.45), 0 3px 10px rgba(0,0,0,.3);
+    --plate-idle: rgba(255,255,255,.07); --bead-off: rgba(120,128,150,.45);
+    --page-bg: #fbfaf7;
+  }
+
+  /* A glass surface. The backdrop filter is set by the script, per surface:
+     an SVG filter with that surface's own refraction map. */
+  .glass {
+    position: absolute; background: var(--tint); isolation: isolate;
+    box-shadow: var(--lift), inset 0 1px 0 var(--hi), inset 0 -1px 0 var(--lo), inset 0 0 18px rgba(255,255,255,.10);
+  }
+  .desk.clear .glass.clearable { background: var(--tint-clear); }
+  .desk.reduce .glass { background: var(--tint-strong) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .desk.dark.reduce .glass { background: #232640 !important; }
+  .desk:not(.dark).reduce .glass { background: #eef1f6 !important; }
+  /* Windows on wallpaper glass (L2): the window's glass is drawn from the
+     wallpaper behind it, not from the windows behind it - a layer under
+     its content holding the wallpaper at the window's place, run through
+     the same filter. What the processor would do, once a wallpaper. */
+  .desk.g1 .win { background: transparent; }
+  .under { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; z-index: -1; display: none; pointer-events: none; }
+  .desk.g1 .win .under { display: block; }
+  .desk.reduce .win .under { display: none; }
+  .under .wp { position: absolute; width: 1280px; height: 800px; background: center / cover no-repeat; }
+  .under .tn { position: absolute; inset: 0; background: var(--tint); }
+  /* The specular rim: a ring lit from the upper left, faint at the lower right. */
+  .glass::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.4px; pointer-events: none; z-index: 20;
+    background: linear-gradient(135deg, var(--spec-cool) 0%, rgba(255,255,255,.18) 22%, transparent 45%, transparent 70%, rgba(255,255,255,.45) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+  /* Kosmos: the window in front has a warm rim. */
+  .desk.cues .win.front::before {
+    background: linear-gradient(135deg, var(--spec-warm) 0%, rgba(255,205,130,.45) 18%, transparent 42%, transparent 70%, rgba(255,230,190,.5) 100%);
+    padding: 1.8px;
+  }
+  /* Kosmos: the star specular at the top-left of the window in front. */
+  .sparkle { position: absolute; left: -9px; top: -9px; width: 26px; height: 26px; pointer-events: none; z-index: 30; display: none; filter: drop-shadow(0 0 4px rgba(255,214,140,.95)); }
+  .desk.cues .win.front .sparkle { display: block; }
+
+  /* The strip along the top: today's Astra bar. */
+  .strip { left: 0; top: 0; width: 1280px; height: 34px; border-radius: 0; display: flex; align-items: center; gap: 4px; padding: 0 8px; z-index: 40; }
+  .kbtn { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px 0 10px; border-radius: 8px; font-weight: 600; margin-right: 6px; }
+  .kbtn svg { width: 14px; height: 14px; fill: currentColor; }
+  .desk.cues .kbtn { background: linear-gradient(180deg, rgba(255,205,130,.92), rgba(242,169,59,.82)); color: var(--plate-ink); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 1px 3px rgba(120,70,0,.25); clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, calc(100% - 9px) 100%, 0 100%); border-radius: 8px 0 0 8px; padding-right: 18px; }
+  .ent { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13.5px; cursor: default; }
+  .ent img { width: 16px; height: 16px; }
+  .ent.front { background: rgba(255,255,255,.28); box-shadow: inset 0 1px 0 var(--hi); font-weight: 500; }
+  .desk.dark .ent.front { background: rgba(255,255,255,.10); }
+  .tray { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+  .tray .ti { height: 26px; padding: 0 8px; border-radius: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .tray .ti:hover, .tray .ti.on { background: rgba(255,255,255,.26); }
+  .desk.dark .tray .ti:hover, .desk.dark .tray .ti.on { background: rgba(255,255,255,.10); }
+  .tray svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .clock { font-weight: 500; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+
+  /* Windows. */
+  .win { border-radius: 16px; display: flex; flex-direction: column; overflow: visible; }
+  .win > .body { flex: 1; display: flex; min-height: 0; border-radius: 0 0 16px 16px; overflow: hidden; }
+  .hdr { height: 46px; flex: none; display: flex; align-items: center; gap: 10px; padding-right: 14px; border-bottom: 1px solid var(--rule-g); border-radius: 16px 16px 0 0; cursor: grab; position: relative; }
+  .hdr:active { cursor: grabbing; }
+  .plate { height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 30px 0 16px; font-weight: 600; border-top-left-radius: 16px; color: var(--text); }
+  .plate svg { width: 13px; height: 13px; fill: currentColor; display: none; }
+  .desk.cues .plate { background: var(--plate-idle); clip-path: polygon(0 0, calc(100% - 5px) 0, calc(100% - 1px) 2px, 100% 5px, calc(100% - 21px) calc(100% - 2px), calc(100% - 24px) 100%, 0 100%); }
+  .desk.cues .plate svg { display: inline; }
+  .desk.cues .win.front .plate { background: linear-gradient(180deg, rgba(255,210,140,.92) 0%, rgba(242,169,59,.80) 100%); color: var(--plate-ink); box-shadow: inset 0 1px 0 rgba(255,255,255,.8), inset 0 -8px 14px rgba(200,110,0,.18); }
+  .doc { color: var(--text-dim); font-size: 13.5px; }
+  .tools { display: flex; gap: 4px; margin-left: 8px; }
+  .tb { height: 28px; min-width: 28px; padding: 0 9px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--text); background: rgba(255,255,255,.22); box-shadow: inset 0 1px 0 var(--hi); }
+  .desk.dark .tb { background: rgba(255,255,255,.07); }
+  .beads { margin-left: auto; display: flex; gap: 9px; }
+  .bead { width: 14px; height: 14px; border-radius: 50%; position: relative;
+    background: radial-gradient(circle at 34% 30%, rgba(255,255,255,.95) 0 1.6px, rgba(255,255,255,0) 3.2px),
+                radial-gradient(circle at 50% 62%, var(--c) 0 55%, color-mix(in srgb, var(--c) 72%, #000) 100%);
+    box-shadow: inset 0 0 0 .6px rgba(0,0,0,.22), inset 0 -2px 3px rgba(255,255,255,.35), 0 1px 2px rgba(0,0,0,.18); }
+  .win:not(.front) .bead { --c: var(--bead-off) !important; }
+
+  .side { width: 184px; flex: none; padding: 10px 8px; border-right: 1px solid var(--rule-g); background: rgba(255,255,255,.08); }
+  .desk.dark .side { background: rgba(0,0,0,.08); }
+  .sh { font-size: 12px; font-weight: 600; color: var(--text-dim); padding: 8px 8px 4px; }
+  .r { height: 30px; border-radius: 8px; display: flex; align-items: center; gap: 9px; padding: 0 8px; font-size: 14px; white-space: nowrap; }
+  .r img { width: 20px; height: 20px; }
+  .r.sel { background: var(--sel); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+  .r .d { margin-left: auto; color: var(--text-dim); font-size: 12.5px; }
+  .list { flex: 1; padding: 8px 10px; display: flex; flex-direction: column; }
+  .cols { display: flex; font-size: 12px; color: var(--text-dim); font-weight: 600; padding: 4px 8px 6px; border-bottom: 1px solid var(--rule-g); margin-bottom: 4px; }
+  .cols span:last-child { margin-left: auto; }
+  .status { height: 28px; flex: none; display: flex; align-items: center; padding: 0 14px; font-size: 12.5px; color: var(--text-dim); border-top: 1px solid var(--rule-g); }
+
+  /* Write: its page is content and stays opaque. */
+  .wbody { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .pagewrap { flex: 1; overflow: hidden; padding: 18px 0 0; display: flex; justify-content: center; }
+  .page { width: 400px; background: var(--page-bg); color: var(--page-ink); border-radius: 3px 3px 0 0; box-shadow: 0 6px 22px rgba(0,0,0,.18); padding: 34px 40px; font: 400 13px/1.55 "Plex", serif; }
+  .page h3 { font-size: 19px; font-weight: 600; margin-bottom: 10px; }
+  .page p { margin-bottom: 9px; }
+
+  /* Terminal: frosted, dark, a choice of its own (L3). */
+  .term .tbody { flex: 1; padding: 12px 14px; font: 12.5px/1.5 "Plex Mono", monospace; color: var(--text); white-space: pre; }
+  .term .ok { color: #2ea86b; } .desk.dark .term .ok { color: #7fe0a8; }
+  .term .pr { color: var(--accent); }
+
+  /* The dock. */
+  .dock { left: 50%; bottom: 14px; transform: translateX(-50%); height: 74px; border-radius: 24px; display: flex; align-items: flex-start; gap: 6px; padding: 9px 12px 0; z-index: 35; }
+  .cell { width: 52px; height: 56px; display: flex; flex-direction: column; align-items: center; position: relative; }
+  .cell img { width: 48px; height: 48px; filter: drop-shadow(0 3px 4px rgba(0,0,0,.22)); }
+  .cell .glint { position: absolute; bottom: -3px; width: 8px; height: 8px; display: none; }
+  .cell.run .glint { display: block; fill: var(--text); opacity: .7; }
+  .cell.run.front .glint { fill: #f2a93b; opacity: 1; filter: drop-shadow(0 0 3px rgba(242,169,59,.9)); }
+  .desk:not(.cues) .cell .glint { width: 5px; height: 5px; border-radius: 50%; }
+  .desk:not(.cues) .cell.run .glint { fill: var(--text); }
+  .dsep { width: 1px; height: 46px; background: var(--rule-g); margin: 2px 4px 0; }
+  .kcell { width: 52px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.2); box-shadow: inset 0 1px 0 var(--hi); }
+  .desk.cues .kcell { background: linear-gradient(180deg, rgba(255,210,140,.92), rgba(242,169,59,.80)); }
+  .kcell svg { width: 24px; height: 24px; fill: var(--text); }
+  .desk.cues .kcell svg { fill: var(--plate-ink); }
+
+  /* Menu, banner, quick settings. */
+  .menu { width: 230px; border-radius: 14px; padding: 6px; z-index: 60; }
+  .mi { height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 8px; font-size: 14px; }
+  .mi .k { margin-left: auto; color: var(--text-dim); font-size: 12.5px; }
+  .mi.lit { background: var(--sel); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+  .msep { height: 1px; background: var(--rule-g); margin: 5px 8px; }
+  .banner { right: 14px; top: 46px; width: 350px; border-radius: 20px; padding: 12px 14px 12px; z-index: 55; }
+  .bn-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-dim); }
+  .bn-top img { width: 18px; height: 18px; }
+  .bn-top .t { margin-left: auto; }
+  .bn-title { font-weight: 600; margin: 6px 0 2px; }
+  .bn-acts { display: flex; gap: 8px; margin-top: 10px; }
+  .pill { flex: 1; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 500; background: rgba(255,255,255,.26); box-shadow: inset 0 1px 0 var(--hi); }
+  .desk.dark .pill { background: rgba(255,255,255,.08); }
+  .qs { right: 14px; top: 46px; width: 350px; border-radius: 22px; padding: 14px; z-index: 56; display: none; }
+  .qs.show { display: block; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { height: 58px; border-radius: 14px; padding: 9px 11px; display: flex; flex-direction: column; justify-content: center; background: rgba(255,255,255,.22); box-shadow: inset 0 1px 0 var(--hi); cursor: pointer; }
+  .desk.dark .tile { background: rgba(255,255,255,.07); }
+  .tile b { font-weight: 600; font-size: 13.5px; } .tile span { font-size: 12px; color: var(--text-dim); }
+  .tile.on { background: linear-gradient(180deg, rgba(120,170,245,.75), rgba(53,132,228,.65)); color: #fff; }
+  .tile.on span { color: rgba(255,255,255,.85); }
+  .desk.cues .tile.on { background: linear-gradient(180deg, rgba(255,210,140,.9), rgba(242,169,59,.78)); color: var(--plate-ink); }
+  .desk.cues .tile.on span { color: rgba(42,23,3,.75); }
+  .slider { margin-top: 12px; }
+  .slider .lab2 { font-size: 12.5px; color: var(--text-dim); margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .track { height: 24px; border-radius: 12px; background: rgba(255,255,255,.22); box-shadow: inset 0 1px 2px rgba(0,0,0,.12); position: relative; overflow: hidden; }
+  .desk.dark .track { background: rgba(255,255,255,.07); }
+  .fill { position: absolute; inset: 0 auto 0 0; border-radius: 12px; background: rgba(255,255,255,.75); box-shadow: inset 0 1px 0 #fff; }
+  .desk.dark .fill { background: rgba(220,228,255,.55); }
+  .looks { display: flex; gap: 8px; margin-top: 12px; align-items: center; font-size: 12.5px; color: var(--text-dim); }
+  .sw { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.6), 0 1px 3px rgba(0,0,0,.2); }
+
+  /* Below the screen. */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .card canvas, .card svg.x { width: 100%; height: auto; display: block; border-radius: 8px; background: #808080; }
+  .card p { font-size: 13.5px; color: var(--dim); margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; color: var(--dim); font-size: 12.5px; }
+  td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+  .tag.k { background: #fbe6c4; color: #6b3d00; } .tag.g { background: #dfe8fb; color: #1f3d73; } .tag.n { background: #e6dcf8; color: #3e2470; }
+  .tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+<h1>Liquid Glass</h1>
+<p class="sub">The current Astra, made of glass - and still Kosmos. Every chrome surface bends the light at its rim: a refraction map traced by Snell's law through a curved bevel, as in <a href="https://github.com/zakisheriff/Liquid-Glass">Zaki Sheriff's Liquid-Glass</a> (MIT), computed here per surface. Kosmos's cues sit on it: the amber plate on the window in front, the star, the glints, round glass beads, a warm rim on the focused window and an amber-and-indigo colour split. Drag a window by its header, click one to bring it forward, open quick settings from the tray. <em>Windows show</em> switches between what the processor would draw - a window's glass shows the wallpaper behind it, made once a wallpaper - and real glass over the windows behind, which waits for the GPU. The text is <code>docs/astra.md</code>, <em>Liquid Glass, a look of its own</em>; the other looks are in <a href="astra.html">astra.html</a>. Nothing here is built.</p>
+
+<div class="controls" id="controls">
+  <span><span class="lab">Look</span><span class="seg" id="c-look"><button data-v="light" class="on">Liquid Glass</button><button data-v="dark">Liquid Glass Night</button></span></span>
+  <span><span class="lab">Wallpaper</span><span class="seg" id="c-wall"><button data-v="glass-wave" class="on">Glass wave</button><button data-v="dusk-ribbon">Dusk ribbon</button><button data-v="night-bloom">Night bloom</button><button data-v="white-turbine">White turbine</button></span></span>
+  <span><span class="lab">Dock and strip</span><span class="seg" id="c-mat"><button data-v="clear" class="on">Clear</button><button data-v="frosted">Frosted</button></span></span>
+  <span><span class="lab">Windows show</span><span class="seg" id="c-win"><button data-v="wall" class="on">The wallpaper (processor)</button><button data-v="live">What is behind (GPU)</button></span></span>
+  <label class="chk"><input type="checkbox" id="c-cues" checked> Kosmos cues</label>
+  <label class="chk"><input type="checkbox" id="c-refr" checked> Refraction</label>
+  <label class="chk"><span class="lab">Bevel</span><input type="range" id="c-bevel" min="1" max="4" step="1" value="2"></label>
+  <label class="chk"><span class="lab">Split</span><input type="range" id="c-split" min="0" max="0.6" step="0.05" value="0.3"></label>
+  <label class="chk"><input type="checkbox" id="c-menu" checked> Menu</label>
+  <label class="chk"><input type="checkbox" id="c-reduce"> Reduce transparency</label>
+</div>
+<p class="note" id="engine-note"></p>
+
+<div class="stage">
+<div class="desk cues clear g1" id="desk">
+
+  <!-- The strip -->
+  <div class="glass strip clearable" id="strip" data-bevel="0.6">
+    <div class="kbtn"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Kosmos</div>
+    <div class="ent" data-win="w-files"><img src="../assets/icons/16x16/App_Tracker.png" alt="">Files</div>
+    <div class="ent" data-win="w-write"><img src="../assets/icons/16x16/App_StyledEdit.png" alt="">Kosmos Write</div>
+    <div class="ent" data-win="w-term"><img src="../assets/icons/16x16/App_Terminal.png" alt="">Terminal</div>
+    <div class="tray">
+      <div class="ti" id="tray" title="Quick settings">
+        <svg viewBox="0 0 24 24"><path d="M3 9h3l4-4v14l-4-4H3z"/><path d="M15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/></svg>
+        <svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 11v2"/><rect x="5" y="9" width="10" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v4M12 11v9M17 6v14"/></svg>
+      </div>
+      <div class="ti clock" id="clock">Tue 17 Nov 23:41</div>
+    </div>
+  </div>
+
+  <!-- Kosmos Write, behind: its page is content and stays opaque. -->
+  <div class="glass win" id="w-write" style="left:600px;top:92px;width:600px;height:500px">
+    <svg class="sparkle" viewBox="0 0 24 24"><use href="#star" fill="#fff6dc"/></svg>
+    <div class="hdr"><span class="plate"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Kosmos Write</span><span class="doc">Liquid Glass.write</span>
+      <span class="beads"><i class="bead" style="--c:#34c759"></i><i class="bead" style="--c:#ffbd2e"></i><i class="bead" style="--c:#ff5f57"></i></span></div>
+    <div class="body"><div class="wbody">
+      <div style="display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--rule-g)"><span class="tb">B</span><span class="tb" style="font-style:italic">I</span><span class="tb" style="text-decoration:underline">U</span><span class="tb" style="font-weight:500;padding:0 12px">Heading 1 &#9662;</span><span class="tb" style="font-weight:500">Plex 13</span></div>
+      <div class="pagewrap"><div class="page">
+        <h3>Liquid Glass, a look of its own</h3>
+        <p>The current Astra, made of glass. Every surface that is chrome bends the light at its rim; what a person reads or watches does not - this page is content, and stays opaque.</p>
+        <p>The rim is a bevel a few pixels wide. A ray meets a quarter-circle surface, Snell's law at n = 1.5 bends it, and where it lands a glass-depth below is the pixel the rim shows. The table is made once per radius and bevel and kept.</p>
+        <p>Windows show the wallpaper's blur behind them, made once a wallpaper. Real glass over other windows waits for the GPU.</p>
+      </div></div>
+    </div></div>
+  </div>
+
+  <!-- Terminal, behind: frosted, a choice of its own. -->
+  <div class="glass win term" id="w-term" style="left:40px;top:470px;width:470px;height:240px">
+    <svg class="sparkle" viewBox="0 0 24 24"><use href="#star" fill="#fff6dc"/></svg>
+    <div class="hdr"><span class="plate"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Terminal</span><span class="doc">/Home</span>
+      <span class="beads"><i class="bead" style="--c:#34c759"></i><i class="bead" style="--c:#ffbd2e"></i><i class="bead" style="--c:#ff5f57"></i></span></div>
+    <div class="body"><div class="tbody"><span class="pr">/Home&gt;</span> look Liquid Glass
+<span class="ok">Liquid Glass</span>: frosted, bevel 12, split 0.30
+<span class="pr">/Home&gt;</span> frames
+composing  3.4 ns a pixel, rim 0.25 ms, 0 dropped
+<span class="pr">/Home&gt;</span> _</div></div>
+  </div>
+
+  <!-- Files, in front. -->
+  <div class="glass win front" id="w-files" style="left:110px;top:70px;width:640px;height:440px">
+    <svg class="sparkle" viewBox="0 0 24 24"><use href="#star" fill="#fff6dc"/></svg>
+    <div class="hdr"><span class="plate"><svg viewBox="0 0 24 24"><use href="#star"/></svg>Files</span><span class="doc">Home &rsaquo; Documents</span>
+      <span class="beads"><i class="bead" style="--c:#34c759"></i><i class="bead" style="--c:#ffbd2e"></i><i class="bead" style="--c:#ff5f57"></i></span></div>
+    <div class="body">
+      <div class="side">
+        <div class="sh">Places</div>
+        <div class="r"><img src="../assets/icons/64x64/Folder_home.png" alt="">Home</div>
+        <div class="r sel"><img src="../assets/icons/64x64/Folder_generic.png" alt="">Documents</div>
+        <div class="r"><img src="../assets/icons/64x64/Folder_generic.png" alt="">Music</div>
+        <div class="r"><img src="../assets/icons/64x64/Folder_generic.png" alt="">Photos</div>
+        <div class="sh">Drives</div>
+        <div class="r"><img src="../assets/icons/64x64/Device_Harddisk.png" alt="">Kosmos</div>
+        <div class="r"><img src="../assets/icons/64x64/Device_Ramdisk.png" alt="">Stick</div>
+        <div class="r"><img src="../assets/icons/64x64/Trash_Empty.png" alt="">Trash</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div class="list">
+          <div class="cols"><span>Name</span><span>Modified</span></div>
+          <div class="r"><img src="../assets/icons/64x64/Folder_generic.png" alt="">Letters<span class="d">Today, 22:10</span></div>
+          <div class="r"><img src="../assets/icons/64x64/Folder_generic.png" alt="">Scans<span class="d">Yesterday</span></div>
+          <div class="r sel" id="row-sel"><img src="../assets/icons/64x64/File_Text.png" alt="">Liquid Glass.write<span class="d">Today, 23:40</span></div>
+          <div class="r"><img src="../assets/icons/64x64/File_PDF.png" alt="">M700 datasheet.pdf<span class="d">12 Nov</span></div>
+          <div class="r"><img src="../assets/icons/64x64/File_Image_1.png" alt="">Turbine.jpg<span class="d">9 Nov</span></div>
+          <div class="r"><img src="../assets/icons/64x64/File_Audio.png" alt="">Night drive.flac<span class="d">3 Nov</span></div>
+          <div class="r"><img src="../assets/icons/64x64/File_SourceCode.png" alt="">lens.c<span class="d">17 Nov</span></div>
+          <div class="r"><img src="../assets/icons/64x64/File_HTML.png" alt="">liquidglass.html<span class="d">17 Nov</span></div>
+        </div>
+        <div class="status">8 items, 1 chosen &middot; 214 GB free</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- A menu, over Files. -->
+  <div class="glass menu" id="menu" style="left:470px;top:262px">
+    <div class="mi">Open</div>
+    <div class="mi">Open with<span class="k">&rsaquo;</span></div>
+    <div class="msep"></div>
+    <div class="mi lit">Pin to sidebar</div>
+    <div class="mi">Compress</div>
+    <div class="mi">Info<span class="k">Super+I</span></div>
+    <div class="msep"></div>
+    <div class="mi">Move to Trash<span class="k">Del</span></div>
+  </div>
+
+  <!-- A banner. -->
+  <div class="glass banner" id="banner">
+    <div class="bn-top"><img src="../assets/icons/64x64/App_Mail.png" alt="">Mail<span class="t">now</span></div>
+    <div class="bn-title">Diego Cibils</div>
+    <div style="font-size:13.5px">Liquid Glass over the turbine - can we see it light and dark?</div>
+    <div class="bn-acts"><span class="pill">Reply</span><span class="pill">Mark read</span></div>
+  </div>
+
+  <!-- Quick settings, from the tray. -->
+  <div class="glass qs" id="qs">
+    <div class="tiles">
+      <div class="tile on"><b>Network</b><span>Wired, 1 Gb/s</span></div>
+      <div class="tile on"><b>Bluetooth</b><span>Mouse</span></div>
+      <div class="tile"><b>Do not disturb</b><span>Off</span></div>
+      <div class="tile"><b>Night light</b><span>From 21:00</span></div>
+    </div>
+    <div class="slider"><div class="lab2"><span>Volume</span><span>62%</span></div><div class="track"><div class="fill" style="width:62%"></div></div></div>
+    <div class="slider"><div class="lab2"><span>Brightness</span><span>80%</span></div><div class="track"><div class="fill" style="width:80%"></div></div></div>
+    <div class="looks">Look
+      <span class="sw" style="background:linear-gradient(135deg,#fff,#cfe0f7)" title="Liquid Glass"></span>
+      <span class="sw" style="background:linear-gradient(135deg,#2a2f55,#141628)" title="Liquid Glass Night"></span>
+      <span class="sw" style="background:linear-gradient(135deg,#2b2a5e,#f2a93b)" title="Starlight"></span>
+      <span class="sw" style="background:#f6f5f4" title="Endeavour"></span>
+    </div>
+  </div>
+
+  <!-- The dock. -->
+  <div class="glass dock clearable" id="dock">
+    <div class="cell"><div class="kcell"><svg viewBox="0 0 24 24"><use href="#star"/></svg></div></div>
+    <div class="dsep"></div>
+    <div class="cell run front" data-win="w-files"><img src="../assets/icons/64x64/App_Tracker.png" alt="Files"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell run" data-win="w-write"><img src="../assets/icons/64x64/App_StyledEdit.png" alt="Write"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell run" data-win="w-term"><img src="../assets/icons/64x64/App_Terminal.png" alt="Terminal"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/App_NetSurf.png" alt="JetSki"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/App_Mail.png" alt="Mail"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/App_MediaPlayer.png" alt="Music"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/App_Wonderbrush.png" alt="Paint"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/App_Calculator.png" alt="Calculator"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="cell"><img src="../assets/icons/64x64/Prefs_Appearance.png" alt="Preferences"><svg class="glint" viewBox="0 0 24 24"><use href="#star"/></svg></div>
+    <div class="dsep"></div>
+    <div class="cell"><img src="../assets/icons/64x64/Trash_Empty.png" alt="Trash"></div>
+  </div>
+</div>
+</div>
+
+<h2>The edge, and the map behind it</h2>
+<p>What makes it liquid rather than frosted. The map on the left is the one this page computed for the window in front - red is how far a pixel looks sideways, green how far up or down, grey is none - and it is all rim: the inside of a surface is untouched.</p>
+<div class="grid2">
+  <div class="card"><h3>The front window's refraction map, as computed</h3><canvas id="mapview" width="640" height="440"></canvas>
+    <p>Here a map is made per size, as the repo does. In Kosmos it would be smaller: the rim is the same all along each straight edge, so the table is one edge profile and one corner quadrant per radius and bevel - 2.7 KB for 18 and 12 (<code>lens.c</code>).</p></div>
+  <div class="card"><h3>A ray through the bevel</h3>
+    <svg class="x" viewBox="0 0 640 300" style="background:var(--card)">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f2a93b"/></marker></defs>
+      <rect x="0" y="230" width="640" height="70" fill="#9fb7d9"/>
+      <text x="16" y="285" font-size="13" fill="#1d2b44" font-family="Plex">the backdrop - the wallpaper's blur, or the back buffer</text>
+      <path d="M40 120 L470 120 Q600 120 600 230 L40 230 Z" fill="rgba(200,225,255,.55)" stroke="#5a7fb5" stroke-width="2"/>
+      <text x="60" y="180" font-size="13" fill="#1d2b44" font-family="Plex">glass, n = 1.5 - flat inside, where nothing bends</text>
+      <text x="470" y="105" font-size="13" fill="#1d2b44" font-family="Plex">the bevel: a quarter circle</text>
+      <line x1="300" y1="20" x2="300" y2="230" stroke="#f2a93b" stroke-width="2" marker-end="url(#ah)"/>
+      <line x1="560" y1="20" x2="560" y2="140" stroke="#f2a93b" stroke-width="2"/>
+      <line x1="560" y1="140" x2="505" y2="230" stroke="#f2a93b" stroke-width="2" marker-end="url(#ah)"/>
+      <circle cx="505" cy="230" r="4" fill="#3b2a8f"/>
+      <text x="380" y="260" font-size="13" fill="#3b2a8f" font-family="Plex">the rim pixel shows this point</text>
+      <text x="310" y="40" font-size="13" fill="var(--ink)" font-family="Plex">straight through</text>
+      <text x="572" y="40" font-size="13" fill="var(--ink)" font-family="Plex">bent inward</text>
+    </svg>
+    <p>A ray straight down meets the bevel's slope and bends toward the inside, so the pixel at the rim shows the backdrop from a little further in: the picture seems to pour over the edge. The specular is the same slope against a light at the upper left. Warm channels are bent a little more than cool ones, which is the amber-and-indigo fringe.</p></div>
+</div>
+
+<h2>Kosmos's cues, and the glass's</h2>
+<p>The glass is what makes it feel like Liquid Glass; the cues are what make it Kosmos. Untick <em>Kosmos cues</em> above to see the glass alone - and how much it then reads as somebody else's.</p>
+<div class="tablewrap"><table>
+  <tr><th>Cue</th><th>Whose</th><th>Here</th></tr>
+  <tr><td>Refraction at the rim, frost, tint, specular edge</td><td><span class="tag g">the glass's</span></td><td>as the repo and iOS 26</td></tr>
+  <tr><td>The amber plate on the window in front</td><td><span class="tag k">Kosmos's</span></td><td>amber glass, slanted and eased right edge, with its own specular</td></tr>
+  <tr><td>The four-point star</td><td><span class="tag k">Kosmos's</span></td><td>the Kosmos button on the strip and in the dock</td></tr>
+  <tr><td>The glint under a running application</td><td><span class="tag k">Kosmos's</span></td><td>a star, amber for the one in front, where iOS has a dot</td></tr>
+  <tr><td>Round window buttons, today's colours</td><td><span class="tag k">Kosmos's</span></td><td>glass beads; grey glass on windows behind</td></tr>
+  <tr><td>A warm rim on the window in front</td><td><span class="tag n">new</span></td><td>focus shown by the light in the glass</td></tr>
+  <tr><td>The star specular</td><td><span class="tag n">new</span></td><td>the front window's highlight ends in a star at its top-left corner</td></tr>
+  <tr><td>Amber and indigo, not a rainbow</td><td><span class="tag n">new</span></td><td>the colour split at the rim fringes in Kosmos's two colours</td></tr>
+</table></div>
+
+<h2>What each part costs</h2>
+<p>The M700 at 1920x1080, from 3.4 ns a composed pixel (measured); the rest are estimates. A frame is 16.7 ms.</p>
+<div class="tablewrap"><table>
+  <tr><th>Part</th><th>When it is paid</th><th>M700</th></tr>
+  <tr><td>The wallpaper's blurred copy</td><td>once, when the wallpaper changes</td><td class="n">8-10 ms once; 8.3 MB</td></tr>
+  <tr><td>A glass window's ground over it (windows show the wallpaper)</td><td>only where damage is redrawn</td><td class="n">+1 ms a whole 1000x700 window; 0 when still</td></tr>
+  <tr><td>The rim: refraction, specular, split</td><td>the rim's band, where redrawn</td><td class="n">0.25 ms a large window; 0.1 the dock</td></tr>
+  <tr><td>The lens table</td><td>once per radius and bevel</td><td class="n">~0.05 ms; 2.7 KB</td></tr>
+  <tr><td>Live frosted glass: dock / menu / quick settings</td><td>when what is under it changes</td><td class="n">0.5 / 0.3 / 0.6 ms</td></tr>
+  <tr><td>Live frosted glass: a 1000x700 window / maximised</td><td>when what is under it changes</td><td class="n">2.3 / 6.2 ms</td></tr>
+  <tr><td>Live clear glass: dock / window</td><td>when what is under it changes</td><td class="n">0.1 / 1 ms</td></tr>
+  <tr><td>On the GPU (7d, not built)</td><td>every frame, on the render engine</td><td class="n">0 on the processor</td></tr>
+</table></div>
+
+</main>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- The Kosmos star: four points, sides curved, points rounded. -->
+    <symbol id="star" viewBox="0 0 24 24"><path d="M12 1.6c.5 0 .8.3.9.8.6 4.4 1.9 6.8 7.9 8.6.5.1.7.5.7 1s-.2.8-.7 1c-6 1.8-7.3 4.2-7.9 8.6-.1.5-.4.8-.9.8s-.8-.3-.9-.8c-.6-4.4-1.9-6.8-7.9-8.6-.5-.2-.7-.5-.7-1s.2-.9.7-1c6-1.8 7.3-4.2 7.9-8.6.1-.5.4-.8.9-.8z"/></symbol>
+  </defs>
+</svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" id="filters"><defs id="fdefs"></defs></svg>
+
+<script>
+(function () {
+  "use strict";
+  var desk = document.getElementById("desk");
+  var fdefs = document.getElementById("fdefs");
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var ua = navigator.userAgent;
+  // Only Chromium applies an SVG filter to what is behind an element.
+  var svgBackdrop = /Chrome\/|Chromium\//.test(ua);
+  var state = { dark: false, wall: "glass-wave", mat: "clear", win: "wall", cues: true, refract: true, bevel: 2, split: 0.3, reduce: false };
+  var cache = {};
+
+  document.getElementById("engine-note").textContent = svgBackdrop
+    ? "The rims here are refracting for real: each glass surface has its own displacement map, computed by this page."
+    : "This browser cannot apply an SVG filter to a backdrop, so the glass here is a plain blur without the bending rim. Open the page in Chrome, Edge or Arc to see the refraction.";
+  if (!svgBackdrop) document.getElementById("engine-note").className = "note warn";
+
+  // ---------------------------------------------------------------------
+  // The refraction map: a rounded rectangle w x h with corner radius r,
+  // a bevel `bevel` pixels wide whose height is a quarter circle. A ray
+  // straight down is bent by Snell's law (n = 1.5) and lands `depth`
+  // below; the map holds how far sideways it landed. Inside the bevel the
+  // glass is flat and nothing moves.
+  // ---------------------------------------------------------------------
+  function lensMap(w, h, r, bevel, depth) {
+    var key = [w, h, r, bevel, depth].join("x");
+    if (cache[key]) return cache[key];
+    var dx = new Float32Array(w * h), dy = new Float32Array(w * h), max = 0.0001;
+    var eta = 1 / 1.5, hw = w / 2, hh = h / 2, x, y;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        var px = x + 0.5 - hw, py = y + 0.5 - hh;
+        var qx = Math.abs(px) - (hw - r), qy = Math.abs(py) - (hh - r);
+        var ox, oy, sdf;
+        if (qx > 0 && qy > 0) {
+          var len = Math.sqrt(qx * qx + qy * qy);
+          sdf = len - r; ox = qx / len * Math.sign(px); oy = qy / len * Math.sign(py);
+        } else if (qx > qy) { sdf = qx - r; ox = Math.sign(px); oy = 0; }
+        else { sdf = qy - r; ox = 0; oy = Math.sign(py); }
+        var d = -sdf;                         // distance in from the edge
+        if (d <= 0 || d >= bevel) continue;
+        var t = Math.max(d / bevel, 0.04), u = 1 - t;
+        var slope = u / Math.sqrt(1 - u * u); // the quarter circle's slope
+        // The surface normal leans outward by the slope.
+        var nx = ox * slope, ny = oy * slope, nz = 1, nl = Math.sqrt(nx * nx + ny * ny + 1);
+        nx /= nl; ny /= nl; nz /= nl;
+        var cosi = nz, k = 1 - eta * eta * (1 - cosi * cosi);
+        var c = eta * cosi - Math.sqrt(k);    // negative: the ray bends inward
+        var tx = c * nx, ty = c * ny, tz = -eta + c * nz;
+        var i = y * w + x;
+        dx[i] = tx / -tz * depth; dy[i] = ty / -tz * depth;
+        var m = Math.max(Math.abs(dx[i]), Math.abs(dy[i]));
+        if (m > max) max = m;
+      }
+    }
+    var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    var cx = cv.getContext("2d"), img = cx.createImageData(w, h), p = img.data;
+    for (var j = 0; j < w * h; j++) {
+      p[j * 4] = Math.round(128 + dx[j] / max * 127);
+      p[j * 4 + 1] = Math.round(128 + dy[j] / max * 127);
+      p[j * 4 + 2] = 128; p[j * 4 + 3] = 255;
+    }
+    cx.putImageData(img, 0, 0);
+    var out = { url: cv.toDataURL(), max: max, canvas: cv };
+    cache[key] = out;
+    return out;
+  }
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(SVGNS, name);
+    for (var a in attrs) e.setAttribute(a, attrs[a]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  // One filter a surface: blur (frosted), saturate, then the backdrop
+  // displaced twice - warm channels further, cool ones less - and added.
+  function glassFilter(id, w, h, map, frosted) {
+    var old = document.getElementById(id);
+    if (old) old.remove();
+    var f = el("filter", { id: id, x: 0, y: 0, width: w, height: h, filterUnits: "userSpaceOnUse", primitiveUnits: "userSpaceOnUse", "color-interpolation-filters": "sRGB" }, fdefs);
+    var src = "SourceGraphic";
+    if (frosted) { el("feGaussianBlur", { in: src, stdDeviation: state.dark ? 10 : 9, edgeMode: "duplicate", result: "b" }, f); src = "b"; }
+    el("feColorMatrix", { in: src, type: "saturate", values: frosted ? 1.7 : 1.25, result: "s" }, f);
+    if (!state.refract) return;
+    el("feImage", { href: map.url, x: 0, y: 0, width: w, height: h, preserveAspectRatio: "none", result: "m" }, f);
+    var s = 2 * map.max, split = state.split;
+    el("feDisplacementMap", { in: "s", in2: "m", scale: (s * (1 + split)).toFixed(2), xChannelSelector: "R", yChannelSelector: "G", result: "dw" }, f);
+    el("feDisplacementMap", { in: "s", in2: "m", scale: (s * (1 - split)).toFixed(2), xChannelSelector: "R", yChannelSelector: "G", result: "dc" }, f);
+    // Warm: all of red, half of green. Cool: the other half of green, all of blue.
+    el("feColorMatrix", { in: "dw", type: "matrix", values: "1 0 0 0 0  0 .5 0 0 0  0 0 0 0 0  0 0 0 1 0", result: "w" }, f);
+    el("feColorMatrix", { in: "dc", type: "matrix", values: "0 0 0 0 0  0 .5 0 0 0  0 0 1 0 0  0 0 0 1 0", result: "c" }, f);
+    el("feComposite", { in: "w", in2: "c", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 }, f);
+  }
+
+  function applyGlass() {
+    var all = desk.querySelectorAll(".glass"), n = 0;
+    var bevelPx = 6 + state.bevel * 5;   // thickness 1-4: 11-26 px
+    for (var i = 0; i < all.length; i++) {
+      var g = all[i], w = g.offsetWidth, h = g.offsetHeight;
+      if (!w || !h) continue;
+      var frosted = !(state.mat === "clear" && g.classList.contains("clearable"));
+      if (state.win === "wall" && g.classList.contains("win")) place(g);
+      if (!svgBackdrop) {
+        if (state.win === "wall" && g.classList.contains("win")) {
+          under(g).style.filter = "blur(9px) saturate(1.7)";
+          continue;
+        }
+        var fb = frosted ? "blur(18px) saturate(1.7)" : "blur(2px) saturate(1.25)";
+        g.style.backdropFilter = fb; g.style.webkitBackdropFilter = fb;
+        continue;
+      }
+      var r = parseFloat(getComputedStyle(g).borderTopLeftRadius) || 0;
+      var scale = parseFloat(g.dataset.bevel || "1");
+      var bevel = Math.max(3, Math.min(bevelPx * scale, Math.min(w, h) / 2 - 1));
+      var map = lensMap(w, h, Math.min(r, Math.min(w, h) / 2), Math.round(bevel), Math.round(bevel * 1.4));
+      var id = "lg-" + (g.id || ("s" + n++));
+      glassFilter(id, w, h, map, frosted);
+      if (g.id === "w-files") drawMapView(map);
+      if (state.win === "wall" && g.classList.contains("win")) {
+        under(g).style.filter = "url(#" + id + ")";
+        g.style.backdropFilter = "none"; g.style.webkitBackdropFilter = "none";
+        continue;
+      }
+      g.style.backdropFilter = "url(#" + id + ")";
+      g.style.webkitBackdropFilter = "url(#" + id + ")";
+    }
+  }
+
+  // The layer under a window's content that holds the wallpaper at its place.
+  function under(win) {
+    var u = win.querySelector(":scope > .under");
+    if (!u) {
+      u = document.createElement("div"); u.className = "under";
+      u.innerHTML = '<div class="wp"></div><div class="tn"></div>';
+      win.insertBefore(u, win.firstChild);
+    }
+    return u;
+  }
+  function place(win) {
+    var wp = under(win).firstChild;
+    wp.style.left = -win.offsetLeft + "px"; wp.style.top = -win.offsetTop + "px";
+    wp.style.backgroundImage = desk.style.backgroundImage;
+  }
+
+  function drawMapView(map) {
+    var v = document.getElementById("mapview"), c = v.getContext("2d");
+    v.width = map.canvas.width; v.height = map.canvas.height;
+    c.drawImage(map.canvas, 0, 0);
+  }
+
+  function setWall() {
+    desk.style.backgroundImage = "url('../assets/wallpapers/" + state.wall + ".jpg')";
+  }
+
+  function render() {
+    desk.classList.toggle("dark", state.dark);
+    desk.classList.toggle("cues", state.cues);
+    desk.classList.toggle("clear", state.mat === "clear");
+    desk.classList.toggle("reduce", state.reduce);
+    desk.classList.toggle("g1", state.win === "wall");
+    setWall();
+    if (!state.reduce) applyGlass();
+  }
+
+  // Controls.
+  function seg(id, fn) {
+    var box = document.getElementById(id);
+    box.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      box.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); });
+      fn(b.dataset.v); render();
+    });
+  }
+  function pickWall(v) {
+    state.wall = v;
+    document.querySelectorAll("#c-wall button").forEach(function (x) { x.classList.toggle("on", x.dataset.v === v); });
+  }
+  seg("c-look", function (v) { state.dark = v === "dark"; pickWall(state.dark ? "dusk-ribbon" : "glass-wave"); });
+  seg("c-wall", function (v) { state.wall = v; });
+  seg("c-mat", function (v) { state.mat = v; });
+  seg("c-win", function (v) { state.win = v; });
+  document.getElementById("c-cues").onchange = function (e) { state.cues = e.target.checked; render(); };
+  document.getElementById("c-refr").onchange = function (e) { state.refract = e.target.checked; render(); };
+  document.getElementById("c-bevel").oninput = function (e) { state.bevel = +e.target.value; render(); };
+  document.getElementById("c-split").oninput = function (e) { state.split = +e.target.value; render(); };
+  document.getElementById("c-reduce").onchange = function (e) { state.reduce = e.target.checked; render(); };
+  document.getElementById("c-menu").onchange = function (e) { document.getElementById("menu").style.display = e.target.checked ? "" : "none"; };
+
+  // Quick settings from the tray; the banner steps aside for it.
+  var qs = document.getElementById("qs"), tray = document.getElementById("tray"), banner = document.getElementById("banner");
+  function toggleQs(show) {
+    qs.classList.toggle("show", show); tray.classList.toggle("on", show);
+    banner.style.display = show ? "none" : "";
+    if (show) render();
+  }
+  tray.addEventListener("click", function (e) { e.stopPropagation(); toggleQs(!qs.classList.contains("show")); });
+  qs.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var t = e.target.closest(".tile"); if (t) t.classList.toggle("on");
+  });
+  desk.addEventListener("click", function () { if (qs.classList.contains("show")) toggleQs(false); });
+
+  // Windows: click to bring forward, drag by the header.
+  var z = 10;
+  function front(win) {
+    desk.querySelectorAll(".win").forEach(function (w) { w.classList.toggle("front", w === win); });
+    win.style.zIndex = ++z;
+    desk.querySelectorAll(".ent").forEach(function (e) { e.classList.toggle("front", e.dataset.win === win.id); });
+    desk.querySelectorAll(".cell[data-win]").forEach(function (c) { c.classList.toggle("front", c.dataset.win === win.id); });
+  }
+  desk.querySelectorAll(".win").forEach(function (w) {
+    w.addEventListener("pointerdown", function () { front(w); });
+    var hdr = w.querySelector(".hdr");
+    hdr.addEventListener("pointerdown", function (e) {
+      var sx = e.clientX, sy = e.clientY, ox = w.offsetLeft, oy = w.offsetTop;
+      hdr.setPointerCapture(e.pointerId);
+      function move(ev) {
+        w.style.left = Math.max(-200, Math.min(1180, ox + ev.clientX - sx)) + "px";
+        w.style.top = Math.max(34, Math.min(740, oy + ev.clientY - sy)) + "px";
+        if (state.win === "wall") place(w);
+      }
+      function up() { hdr.removeEventListener("pointermove", move); hdr.removeEventListener("pointerup", up); }
+      hdr.addEventListener("pointermove", move); hdr.addEventListener("pointerup", up);
+    });
+  });
+  desk.querySelectorAll("[data-win]").forEach(function (e) {
+    e.addEventListener("click", function () { front(document.getElementById(e.dataset.win)); });
+  });
+  front(document.getElementById("w-files"));
+
+  // The clock in the strip, as the Deskbar shows it.
+  function tick() {
+    var d = new Date(), days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    document.getElementById("clock").textContent = days[d.getDay()] + " " + d.getDate() + " " + mon[d.getMonth()] + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  tick(); setInterval(tick, 30000);
+
+  render();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+})();
+</script>
+</body>
+</html>

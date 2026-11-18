@@ -437,6 +437,14 @@ local APPLY = {
     return true
   end,
 
+  dock_magnify = function(percent)
+    local ok, why = fs.write("/Running/Deskbar/magnify", tostring(percent))
+
+    if not ok then print("preferences: the Deskbar was not told: " .. tostring(why)) end
+
+    return true
+  end,
+
   bar = function(where)
     local ok, why = fs.write("/Running/Deskbar/bar", tostring(where))
 

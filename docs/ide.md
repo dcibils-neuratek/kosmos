@@ -500,6 +500,8 @@ profiler follow.
 
 ## Yours to decide
 
+**DECIDED on 17 November 2026: every recommendation, as written.** Diego: "Yes to all recommendations".
+
 Each with a recommendation first.
 
 1. **The preview inside the IDE's window, hosted by the window manager.**

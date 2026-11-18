@@ -117,6 +117,13 @@ CELLS = ('print("CELLS " .. tostring(fs.read("/Running/Deskbar/cells")))\n'
          'print("KEPT " .. (type(f) == "table" and type(f.pins) == "table" '
          'and table.concat(f.pins, ",") or "nothing"))\n')
 
+# The cells as the lens draws them, magnified (`/Running/Deskbar/magnified`).
+MAGNIFIED = 'print("MAGNIFIED " .. tostring(fs.read("/Running/Deskbar/magnified")))\n'
+
+# A control: `flat` - the dock's magnification set to nothing before the
+# pointer goes over it, so no lens is drawn and its checks must fail.
+BREAK = os.environ.get("KOSMOS_DOCK_BREAK")
+
 # Which window has the focus, as the window manager lists them.
 FOCUS = ('local r = use("/Kosmos/Libraries/wmproto.lua").windows()\n'
          'for _, w in ipairs(r and r.windows or {}) do\n'
@@ -257,18 +264,64 @@ def main():
         session.put(FOCUS.encode(), "/Temporary/focus.lua")
         dx, dy, dw, dh = said["dock"]
         over = dx + dw - PAD - 25                 # the last cell, always an application
+
+        if BREAK == "flat":
+            session.run("setprop /Running/Deskbar/magnify 0")
+            time.sleep(1)
+
         mark = len(guest.seen)
         guest.mouse_to(*R._to_tablet(over, dy + dh // 2, width, height))
         said["tip name"] = guest.wait_for_line("deskbar: tip ", "a name over an icon", mark)
         said["tip"] = guest.wait_for_line("wm: window Deskbar tip at ", "the tip's window", mark)
         time.sleep(1)
         said["tip focus"] = session.run("/Temporary/focus.lua").decode(errors="replace")
+
+        # ---- 2b': the icons magnified under the pointer (Diego, 8 and 17
+        # November) - the one under it grown by half at the default 50%,
+        # drawn by a lens over the dock, standing above the dock's top
+        # edge; and gone when the pointer leaves. Taken with the tip's
+        # pointer, which is already over the last cell.
+        mark_m = mark
+        said["magnified"] = None
+
+        try:
+            said["magnified"] = guest.wait_for_line("deskbar: magnified ", "an icon magnified", mark_m)
+        except Exception:                  # noqa: BLE001 - its check says
+            pass
+
+        said["lens"] = "wm: window Deskbar lens at " in guest.seen[mark_m:]
+        session.put(MAGNIFIED.encode(), "/Temporary/magnified.lua")
+        said["magnified cells"] = session.run("/Temporary/magnified.lua").decode(errors="replace")
+        _, _, at_m = R.pixel_reader(guest.screendump())
+        above_with = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
+
         mark = len(guest.seen)
         guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
         time.sleep(2)
+
+        try:
+            guest.wait_for("deskbar: the icons settled", "the icons settled")
+        except Exception:                  # noqa: BLE001 - its check says
+            pass
+
         guest._read_available()
         said["tip gone"] = "wm: closed Deskbar tip" in guest.seen[mark:]
+        said["lens gone"] = "deskbar: the icons settled" in guest.seen[mark:] \
+            and "wm: closed Deskbar lens" in guest.seen[mark:]
         said["tip over"] = over
+        _, _, at_m = R.pixel_reader(guest.screendump())
+        above_without = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
+        said["above changed"] = sum(1 for a_, b_ in zip(above_with, above_without) if a_ != b_)
+
+        # The setting, as Appearance's slider tells it.
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/magnify 80")
+        try:
+            said["magnify set"] = guest.wait_for_line("deskbar: the dock magnifies 80%",
+                                                      "the magnification set", mark)
+        except Exception:                  # noqa: BLE001 - its check says
+            said["magnify set"] = None
+        session.run("setprop /Running/Deskbar/magnify %d" % (0 if BREAK == "flat" else 50))
 
         # ---- 2c: the dock arranged by hand ----
         session.put(CELLS.encode(), "/Temporary/cells.lua")
@@ -381,12 +434,22 @@ def main():
         found, _, _ = cells()
         cell = found.get("terminal") or found.get("tracker")
 
+        # Away from the dock, so its icons are not magnified over the pill.
+        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+        time.sleep(1)
+
         def dock_at(percent):
             mark_ = len(guest.seen)
             session.run("setprop /Running/Deskbar/transparency %d" % percent)
             heard = maybe("deskbar: the dock %d%% transparent" % percent, "the transparency", mark_)
             time.sleep(1)
-            _, _, at_ = R.pixel_reader(guest.screendump())
+            shot_ = guest.screendump()
+
+            if os.environ.get("KOSMOS_DOCK_SHOTS"):
+                with open(os.path.join(ROOT, "build", "dock", "clear-%d.ppm" % percent), "wb") as f_:
+                    f_.write(shot_)
+
+            _, _, at_ = R.pixel_reader(shot_)
             pill = at_(dx + dw - 5, dy + dh // 2)
             icon = at_(dx + cell[0] + cell[1] // 2, dy + dh // 2) if cell else None
             return heard is not None, pill, icon
@@ -857,6 +920,14 @@ def main():
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the boot stopped: %s: %s" % (type(e).__name__, e))
     finally:
+        # The serial line, kept in build/dock, for a failure to be read.
+        try:
+            os.makedirs(os.path.join(ROOT, "build", "dock"), exist_ok=True)
+
+            with open(os.path.join(ROOT, "build", "dock", "serial.txt"), "w") as f_:
+                f_.write(guest.seen)
+        except Exception:                  # noqa: BLE001
+            pass
         guest.close()
 
     seen = guest.seen
@@ -928,6 +999,26 @@ def main():
 
     if not said.get("tip gone"):
         fails.append("the tip stayed when the pointer left the dock")
+
+    m_ = re.match(r"(\w+) to (\d+) px", said.get("magnified") or "")
+
+    if not m_ or int(m_.group(2)) != 54 or not said.get("lens"):
+        fails.append("the icon under the pointer was not magnified to 54 px by a lens: %r, lens %r"
+                     % (said.get("magnified"), said.get("lens")))
+
+    if not re.search(r"\w+ \d+ \d+ 54\b", said.get("magnified cells") or ""):
+        fails.append("/Running/Deskbar/magnified did not list a cell at 54 px: %r"
+                     % said.get("magnified cells"))
+
+    if said.get("above changed", 0) < 3:
+        fails.append("nothing of the grown icon stood above the dock's top edge: %d of 18 "
+                     "pixels changed" % said.get("above changed", 0))
+
+    if said.get("magnified") and not said.get("lens gone"):
+        fails.append("the icons did not settle and the lens close when the pointer left")
+
+    if said.get("magnify set") is None:
+        fails.append("setprop /Running/Deskbar/magnify 80 was not heard by the dock")
 
     menu = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("menu", ""))
 

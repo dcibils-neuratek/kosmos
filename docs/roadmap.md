@@ -6913,6 +6913,9 @@ not static**, since a static one is in every process.
    the protocols, a file's date and the counter depend on; and the
    compiler needs executable memory Kosmos is built not to hand out. The
    page recommends keeping 5.4 and moving a measured loop to C, as before.
+   **Asked again and DISCARDED for now on 17 November 2026**, after the
+   JIT premise changed (`luajit.md`, *Reconsidered*): Diego, "lets discard
+   the luajit for now". Lua 5.4 stays.
 
 6zn. **ASKED on 27 September - `wm.lua` in several files.** Diego:
    "Perhaps we need to partition WM.lua in smaller files as it keeps
@@ -12925,6 +12928,64 @@ to what the dock already draws - the Deskbar's own icons, at the sizes
 the icon exports have, so a large icon is drawn at its size rather than
 stretched - and held to the frame: the growth is a few icons redrawn per
 pass, not the whole bar. Drawn in `docs/dock.html` before it is built.
+**Made a priority and built on 17 November 2026, in 0.11.467** (Diego:
+"can we make the magnification on the dock bar a priority ? its on the
+roadmap but i want to see it working"; built rather than drawn first, the
+dock being drawn and agreed already). `dock.magnify` grows the cell under
+the pointer and its neighbours along half a cosine, two and a half cells
+either way, and keeps the point under the pointer where it was; a *lens*,
+a tip window over the dock and the room above it, draws the grown row
+while the dock draws its ground, so presses still go to the dock and are
+matched against what the lens shows. It grows and settles over a tenth of
+a second. Appearance's *The dock's magnification*, 0 to 100% - off to
+twice the size - half unless said (`testing.md` 18.867). Still to do:
+the pictures past 64 pixels are the 64 export stretched, as no larger one
+exists.
+
+**Every open recommendation taken - DECIDED on 17 November 2026.** Diego:
+"Yes to all recommendations", twice, the second for the lists still open.
+So, as each document recommends: the general review's ten
+(`review.md`), 3D on the GPU's (`gpu3d.md` - Vulkan underneath, GL and GL
+ES by Zink, Mesa with a Kosmos kernel-mode backend at its seam), the
+IDE's nine (`ide.md`), the first Astra review's ten (`astra.md`), Blender's
+(`blender.md` - Cafesa3D grows now, Blender is not ported), and LuaJIT not
+now (`luajit.md`). Each document carries the line; the work each opens
+joins the queue behind what is under way - the dock's magnification, then
+Starlight, then Liquid Glass.
+
+**Starlight, a look with an identity of its own - AGREED on 17 November
+2026.** Diego, on the Astra review (`docs/astra.md`, *Identity*): "i like
+the nicer astra, but it looks like macos exactly the same. no real
+personality", "we need to have some identity like beos had or sgi irix
+had"; then, of the three directions drawn in `docs/astra.html`, "yes to
+starlight but dont replace the current astra one, just add starlight to
+the desktop styles in preferences", and of the diamonds, "those should be
+rounded buttons", "like today", "the rhombus shaped buttons are just too
+geometric". So Starlight is one more of Appearance's looks, not the
+default, and the current Astra and the other eleven are unchanged.
+Choosing it brings, together: night indigo with an amber accent (and a
+light partner later); the front window's title on an amber plate at the
+header's left, its right edge cut at 45 degrees, drawn by the window
+manager; two opposite corners cut at 45 on what floats - the dock, menus,
+banners; nebula glass with a grain and an amber line along its top; a
+window unrolling from its plate as it opens; the four-point star as the
+Kosmos mark and the dock's running mark. **The three window buttons stay
+round, as today**, in Starlight's colours. Steps: S1 the look's colours
+and the plate; S2 the cut corners (a `gfx` shape); S3 the glass's grain;
+S4 the unroll; S5 the star.
+
+**Liquid Glass, a look of its own - ASKED on 17 November 2026; drawn and AGREED the same day** (`docs/liquidglass.html`, `astra.md` *Liquid Glass*; Diego: "Love the Liquid Glass!" - the nine decisions taken as recommended, LG1-LG7 in that order, after Starlight's first steps).
+Named by Diego: "Let's call it Liquid Glass". Diego: "Can we try another desktop style called glass inspired by this repo
+https://github.com/zakisheriff/Liquid-Glass", "It's the current asta but
+full glass". One more of Appearance's looks beside Starlight: today's Astra
+- its layout, round buttons, dock and strip - with every surface made of
+glass, the liquid kind that bends what is behind it at the rim rather than
+only blurring it (the repo is MIT, Zaki Sheriff's: a refraction map
+through a curved bevel, frosted and clear). Drawn and costed in
+`docs/astra.md` and the mockup before it is built: wallpaper glass is
+cheap, refraction at a rim's band can be a map made once per size, and a
+live blur of other windows behind every surface is the expensive part on
+the CPU compositor.
 
 **Xavier in the middle of the top bar, as a drawer - ASKED on 8 November
 2026, to be drawn.** Diego: "can we draw a simple icon in the middle of

@@ -186,6 +186,79 @@ function dock.hit(items, x)
 end
 
 --
+-- **Magnified under the pointer** (Diego, 8 November 2026: "a setting in
+-- preferences that allow to magnify between off and large (a slider)
+-- icons upon hoverig them"; made a priority on 17 November: "i want to see
+-- it working"). The cells as they are drawn with the pointer at `px`, in
+-- the same coordinates as `items`: each application's cell and picture
+-- grown by up to `peak` times - the most under the pointer, less with
+-- distance, nothing past `dock.REACH` cells away, along half a cosine so
+-- the growth has no corner in it. The Kosmos button and a separator keep
+-- their size.
+--
+-- **The cell under the pointer stays under it.** The row grows outward
+-- from the pointer: the point of the row under `px` is where it was, so an
+-- icon does not slide away from the pointer that is over it - the shift
+-- that keeps it there is worked out from where `px` falls, in a cell or
+-- between two, and is the same function either side of every edge, which
+-- is what keeps the row from jumping as the pointer crosses one.
+--
+-- A new list, each entry the cell's own fields with `x`, `w` and `size` -
+-- the picture's side - of its own; `items` is not changed.
+--
+dock.REACH = 2.5
+
+function dock.magnify(items, px, peak)
+  local reach = dock.REACH * (dock.CELL + dock.GAP)
+  local out, x = {}, nil
+
+  for i, it in ipairs(items) do
+    local s = 1
+
+    if it.kind == "app" and peak > 1 then
+      local d = math.abs(it.x + it.w / 2 - px)
+
+      if d < reach then s = 1 + (peak - 1) * (math.cos(math.pi * d / reach) + 1) / 2 end
+    end
+
+    x = x and (x + (it.x - (items[i - 1].x + items[i - 1].w))) or it.x
+
+    local w = (it.kind == "app") and math.floor(it.w * s + 0.5) or it.w
+    local cell = setmetatable({ x = x, w = w, orig = it,
+                                size = (it.kind == "app") and math.floor(dock.ICON * s + 0.5) or nil },
+                              { __index = it })
+
+    out[i] = cell
+    x = x + w
+  end
+
+  -- Where `px` lands in the grown row, and the shift that puts it back.
+  local at = nil
+
+  for i, it in ipairs(items) do
+    if px < it.x then
+      at = out[i].x - (it.x - px)
+      break
+    elseif px < it.x + it.w then
+      at = out[i].x + (px - it.x) * out[i].w / it.w
+      break
+    end
+  end
+
+  if not at and #items > 0 then
+    local last, grown = items[#items], out[#items]
+
+    at = grown.x + grown.w + (px - (last.x + last.w))
+  end
+
+  local shift = math.floor(px - (at or px) + 0.5)
+
+  for _, c in ipairs(out) do rawset(c, "x", c.x + shift) end
+
+  return out
+end
+
+--
 -- **What a press on an application does**, as a word for the window
 -- manager and the window it is about - the Deskbar's own rule, a cell
 -- rather than a button:

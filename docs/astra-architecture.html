@@ -1,0 +1,198 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Astra, nicer and with an identity of its own (Starlight, astra.md
+  Identity), as one picture: where each proposed effect and cue lives - the
+  look's tokens, the kit, the window manager, the scene in the Graphics Kit,
+  the window server and the GPU - and what is new, what grows and what
+  already exists. Drawn on 17 November 2026, before any of it is built;
+  `docs/astra.md` is the argument and `docs/astra.html` the mockup.
+
+  Rendered to docs/astra-architecture.png by headless Chrome at twice its
+  size, as docs/stack.png is:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/astra-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/astra-architecture.html
+
+  where H is the page's height, which the script at the end puts in the
+  title.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Astra effects architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --gpu: #f3e8f7; --gpu-line: #cfa6e0; --gpu-ink: #5b2a75;
+    --new: #2a55c9; --grows: #0f7a5a; --path-a: #d81b60;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 1000px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 390px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code, td code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .grow { border-color: var(--grows) !important; border-style: dashed !important; }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.g { background: var(--grows); }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .gpu { background: var(--gpu); border-color: var(--gpu-line); } .gpu h2 { color: var(--gpu-ink); } .gpu .box { border-color: var(--gpu-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .b { color: #1565c0; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .est { color: #b26a00; }
+  .flow { font: 12.5px/1.6 "Plex Mono", monospace; color: var(--ink); white-space: pre; background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 14px 16px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Astra, nicer and Starlight - where each effect and cue lives</h1>
+<p class="sub">A look's tokens decide; the kit and the window manager say; the scene in the Graphics Kit draws, in C, only where damage is; the GPU takes it over where there is one. Nothing new in Nebula, no new server, no new system call. Each effect has a switch in Appearance. Starlight's cues - the plate, the cut, the diamonds, the glint, nebula glass, the unfurl - are marked <span style="color:#c27a10;font-weight:600">&#10022;</span>.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--grows);border-style:dashed;background:#fff"></i>grows</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications and Astra's own windows</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua: the look, the kit, the window manager</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C: the Graphics Kit</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers and drivers</span>
+  <span><i style="border-color:var(--gpu-line);background:var(--gpu)"></i>the GPU</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="b">A1-A10</span><span>the order, astra.md 6</span>
+</div>
+
+<div class="grid"><div>
+
+<div class="layer app"><h2>Windows - every one draws itself (astra-display.md D2)</h2>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);">
+    <div class="box grow"><span class="tag g">GROWS</span><b>Deskbar: strip and dock</b><p>glass instead of a see-through fill; the bar grouped by application; &#10022; the Kosmos plate and star, the dock cut, a glint for a running application <span class="b">A4</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>Quick settings</b><p>agreed in <code>dock.html</code>; a popup on glass, tiles and sliders, &#10022; cut rather than pills <span class="b">A6</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>Notifications, launcher pad, switcher</b><p>on glass; banners with actions; kit sidebar and switch <span class="b">A2, A4</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>Sandboxes, Packages, Mail</b><p>their sidebars become <code>ui.sidebar</code> <span class="b">A2</span></p></div>
+  </div>
+</div>
+
+<div class="layer lua"><h2>Lua - what a person decides</h2>
+  <div class="row" style="grid-template-columns:repeat(3,1fr);">
+    <div class="box grow"><span class="tag g">GROWS</span><b>The look - theme.lua, *.theme</b><p>the token sheet: <code>radius</code> (control, card, window), &#10022; <code>cut</code> (control, surface, the plate's slant), the type scale (13, 15, 18, 22, 28), <code>overlay</code>, <code>glass</code> &#10022; a gradient, grain and horizon colour, two-layer <code>shadow</code>, motion durations; an accent of the person's own; &#10022; a night-indigo look with the flare in <code>tab</code> <span class="b">A1, A8</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>The kit - ui.lua</b><p>reads only tokens; hover and press drawn at the move; a menu's lit row inset; <code>ui.empty</code>; <code>pixelkit.lua</code>'s second copy of the header folded in; &#10022; the header leaves room at its left for the plate <span class="b">A2</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>Window manager - wm.lua, lib/wm/</b><p>decides: which windows are glass; &#10022; draws the plate and the title on the window in front, as it draws the three, now diamonds (<code>OUT.light</code>); &#10022; the unfurl and roll as a clip a frame; the minimise outline and the glint's twinkle; Reduce motion; the overview later <span class="b">A5, A9</span></p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(2,1fr);margin-top:10px">
+    <div class="box grow"><span class="tag g">GROWS</span><b>Preferences - settings.lua</b><p>Appearance: <i>Transparency</i> Off, Tinted, Wallpaper glass, Glass; <i>Drop shadows</i> on by default; <i>Reduce motion</i>; <i>Accent</i>; light and dark by the time</p></div>
+    <div class="box new"><span class="tag">NEW</span><b>A host check on literals</b><p>no radius or type size in <code>user/bin/apps</code> outside the stated exceptions, as <code>tools/test_theme.lua</code> holds faces <span class="b">A1</span></p></div>
+  </div>
+</div>
+
+<div class="layer c"><h2>C - the Graphics Kit's scene (scene_core.c), composing only the damage</h2>
+  <div class="row" style="grid-template-columns:repeat(4,1fr);">
+    <div class="box new"><span class="tag">NEW</span><b>gfx_blur</b><p>down twice, blur, up twice, at a quarter size; vector lanes, scalar tail; <code>tools/test_blur.c</code>; &#10022; the gradient and grain baked in once <span class="b">A4</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>Wallpaper glass</b><p>the wallpaper blurred once when it or its fit changes, beside the copy made today; a glass window shows its part <span class="b">A4</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>SC_GLASS</b><p>damage near a glass window redraws all of it; the back buffer under it blurred in place, then the window blended <span class="b">A7</span></p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>shadow.c</b><p>two layers from the falloff table it keeps (6zk) <span class="b">A3</span></p></div>
+  </div>
+  <div class="row" style="grid-template-columns:repeat(3,1fr);margin-top:10px">
+    <div class="box grow"><span class="tag g">GROWS</span><b>A window's clip height</b><p>&#10022; the unfurl: only the rows revealed are composed, nothing blended - cheaper than the scale and fade it replaces <span class="b">A5</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>SC_CUT</b><p>&#10022; corners cut at 45 degrees: an offset a row and one pixel of coverage, beside <code>SC_ROUNDED</code>; the horizon a hairline <span class="b">A1</span></p></div>
+    <div class="box"><b>The watcher's copy</b><p>for VNC today; screen recording through the Record Kit later</p></div>
+  </div>
+</div>
+
+<div class="layer srv"><h2>Servers and drivers</h2>
+  <div class="row" style="grid-template-columns:repeat(3,1fr);">
+    <div class="box"><b>windowserver</b><p>holds the scene and composes it (D3b); nothing in its door changes but a flag and two numbers a window</p></div>
+    <div class="box grow"><span class="tag g">GROWS</span><b>intelgpu</b><p>the display engine's gamma table for night light, at no cost a frame <span class="b">A8</span></p></div>
+    <div class="box"><b>notifyd</b><p>as now; a banner's actions are words it carries</p></div>
+  </div>
+</div>
+
+<div class="layer gpu"><h2>The GPU - m700-2d.md 7d</h2>
+  <div class="row" style="grid-template-columns:repeat(2,1fr);">
+    <div class="box new"><span class="tag">NEW</span><b>Composing on the render engine</b><p>windows as textures; blur a two-pass shader; shadows, opacity and scale for nothing the processor sees <span class="b">A10</span></p></div>
+    <div class="box new"><span class="tag">NEW</span><b>See-through windows</b><p>only here: a window is up to 2 Mpx, too much to blur on the processor every frame</p></div>
+  </div>
+</div>
+
+<div class="layer kern"><h2>Nebula</h2>
+  <div class="row" style="grid-template-columns:1fr;"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>nothing new</p></div></div>
+</div>
+
+</div><div class="side">
+
+<div class="card"><h3>The busiest path - a film playing under the dock, with Glass on</h3>
+<ol>
+<li>The film's window commits a frame; its rectangle is damage.</li>
+<li>The damage reaches the dock's blur margin, so the whole dock is damage.</li>
+<li>The scene composes the layers below the dock into the back buffer, as now.</li>
+<li>That rectangle, plus the blur's reach, is blurred at a quarter size from the back buffer.</li>
+<li>The dock's tint and its cells are blended over it; the screen is flushed.</li>
+</ol>
+<p style="font-size:13px;color:var(--dim)">About 0.5-0.6 ms a frame on the M700 <span class="est">(estimate, 3.4 ns a composed pixel measured, 18.657)</span>; a still desktop pays nothing. Measured with <code>frames</code> before G2 lands.</p></div>
+
+<div class="card"><h3>What each costs, M700, 1920x1080</h3>
+<table>
+<tr><td>Two-layer shadow</td><td>0.05-0.15 ms a window redrawn <span class="est">est.</span></td></tr>
+<tr><td>Wallpaper glass</td><td>0 a frame; 8-10 ms once per wallpaper <span class="est">est.</span></td></tr>
+<tr><td>Backdrop glass, strip and dock</td><td>0.5-0.6 ms when under changes <span class="est">est.</span></td></tr>
+<tr><td>&#10022; The plate</td><td>~0.03 ms when the front changes <span class="est">est.</span></td></tr>
+<tr><td>&#10022; The cut, the horizon, glints</td><td>less than rounding; a row; 9 px sprites</td></tr>
+<tr><td>&#10022; Unfurl or roll, 1000x700</td><td>only the rows revealed, under the 2.8 ms of a scale and fade <span class="est">est.</span></td></tr>
+<tr><td>Minimise outline</td><td>four rectangles</td></tr>
+<tr><td>Night light</td><td>0 on the display engine</td></tr>
+<tr><td>See-through windows</td><td>GPU only</td></tr>
+</table></div>
+
+<div class="card"><h3>C or Lua</h3>
+<table>
+<tr><td>Blur, shadow, blending, scaling</td><td>C - loops over pixels, every frame they show</td></tr>
+<tr><td>Which window, when, how long, eased how</td><td>Lua - the window manager, a few numbers a frame</td></tr>
+<tr><td>The tokens</td><td>Lua - read when the look changes</td></tr>
+</table></div>
+
+<div class="card"><h3>The order</h3>
+<ol>
+<li><b>A1</b> the token sheet and its check; &#10022; the cut and the Starlight look</li>
+<li><b>A2</b> the inconsistencies against it; &#10022; the plate and the diamonds</li>
+<li><b>A3</b> shadows on, two layers</li>
+<li><b>A4</b> wallpaper glass</li>
+<li><b>A5</b> motion and Reduce motion</li>
+<li><b>A6</b> quick settings</li>
+<li><b>A7</b> backdrop glass</li>
+<li><b>A8</b> accent, light and dark by the time, night light</li>
+<li><b>A9</b> overview, then workspaces</li>
+<li><b>A10</b> all of it on the GPU</li>
+</ol></div>
+
+</div></div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

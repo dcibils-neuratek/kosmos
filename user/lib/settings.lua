@@ -211,6 +211,18 @@ settings.ITEMS = {
         default = 25 },
 
   --
+  -- **How much the dock's icons grow under the pointer** (Diego, 8
+  -- November: "a setting in preferences that allow to magnify between off
+  -- and large (a slider)"): 0 not at all, 100 twice their size. Told to the
+  -- Deskbar as it moves (`preferences.lua`).
+  --
+  item{ category = "appearance", group = "Look",
+        label = "The dock's magnification",
+        note = "How much an icon grows under the pointer; 0 is off",
+        kind = "percent", file = settings.APPEARANCE, key = "dock_magnify",
+        default = 50 },
+
+  --
   -- **The dock's size** (Diego, 7 October: "can we add a preferences setting
   -- for it?", "so we can resize as needed"): its height and its icons
   -- together (`dock.SIZES`). Told to the Deskbar, which starts itself again

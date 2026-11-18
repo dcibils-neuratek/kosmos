@@ -515,6 +515,8 @@ the M700. G7 is the backend and its bugs; G8 and G9 are measuring.
 
 ## 8. Yours to decide
 
+**DECIDED on 17 November 2026: every recommendation, as written.** Diego: "Yes to all recommendations" - Vulkan underneath with GL and GL ES by Zink, Mesa with a Kosmos kernel-mode backend at its seam, in the order of section 4.
+
 1. **Vulkan as the contract, GL and GL ES by Zink** *(recommended)* - one
    driver per GPU, GL the same everywhere. Or GL ES first by `iris`, faster
    on Intel and Intel only; or Vulkan with GL ES by ANGLE only, no desktop

@@ -409,6 +409,20 @@ local function transparency_of(v)
 end
 
 local transparency = transparency_of(appearance.dock_transparency)
+
+-- **How much the icon under the pointer grows** (Diego, 8 November: "a
+-- setting in preferences that allow to magnify between off and large (a
+-- slider)"): Appearance's `dock_magnify`, a percentage - 0 none, 100 twice
+-- its size; half unless said.
+local DOCK_MAGNIFY = 50
+
+local function magnify_of(v)
+  v = math.floor(tonumber(v) or DOCK_MAGNIFY)
+
+  return math.max(0, math.min(100, v))
+end
+
+local magnify = magnify_of(appearance.dock_magnify)
 local dock = DOCKED and use("/Kosmos/Libraries/dock.lua").sized(DOCK_SIZE) or nil
 local topstrip = nil              -- the dock's strip across the top
 local kosmos_at = nil             -- where the dock drew its Kosmos button, in it
@@ -589,6 +603,14 @@ win:publish("transparency",
     print(("deskbar: the dock %d%% transparent"):format(transparency))
   end)
 
+-- And its magnification, as Appearance's slider moves.
+win:publish("magnify",
+  function() return tostring(magnify) end,
+  function(v)
+    magnify = magnify_of(v)
+    print(("deskbar: the dock magnifies %d%%"):format(magnify))
+  end)
+
 --------------------------------------------------------------------------
 -- What is running, told by the window manager when it changes.
 --
@@ -661,8 +683,11 @@ end
 
 -- Woken twelve times a second while something breathes, and not otherwise:
 -- a bar that animates for nothing is a bar that keeps the machine awake.
+local lens_live = false      -- the dock's icons magnified (`lens`): passes at 60 a second
+
 local function pace_breathing()
-  win.poll_wait_ticks = any_starting() and math.max(1, tick_hz // 12) or nil
+  win.poll_wait_ticks = lens_live and math.max(1, tick_hz // 60)
+                        or any_starting() and math.max(1, tick_hz // 12) or nil
 end
 
 --
@@ -1661,6 +1686,7 @@ end
 
 local dock_frame = nil        -- the dock's own work each pass, below
 local dock_tip_hide = nil     -- the name over an icon, taken away
+local dock_lens_frame = nil   -- the magnified icons' pass
 
 if DOCKED then
   local wmproto = use("/Kosmos/Libraries/wmproto.lua")
@@ -1669,7 +1695,7 @@ if DOCKED then
   local items = {}
   local wanted_w = nil            -- the dock's width once its cells are known
   local drag = nil                -- an icon pressed and maybe dragged (`bar:mouse`)
-  local act, save_pins, show_tip_text
+  local act, save_pins, show_tip_text, paint_cell, paint_ground, lens_drawing, lens_redraw, hit_at
 
   local function pinned_icon(name)
     local attrs = programs[name]
@@ -1709,8 +1735,62 @@ if DOCKED then
   -- little see-through, as the drawing's is.
   local function at(c, a) return (c & 0x00ffffff) | (a << 24) end
 
+  --
+  -- **One cell, drawn** at `x` in `g` with the dock's middle at `cy`, its
+  -- picture `size` across - the dock's own, or the lens's grown one.
+  --
+  function paint_cell(g, it, x, cy, size)
+    if it.kind == "kosmos" then
+      local open = #win.menus > 0 or launcher_open
+                   or (launcher_asked ~= nil
+                       and sys.ticks() - launcher_asked < 2 * counter_hz)
+      local bh = dock.KOSMOS_H
+
+      g:fill_round(x, cy - bh // 2, it.w, bh, open and theme.accent or theme.raised, bh // 2)
+      -- The rocket (Haiku's Launchbox), as `docs/sandboxes.html` drew the
+      -- dock; Diego, 11 October: "can we use the rocket icon for the
+      -- kosmos button in the dock?"
+      g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Launchbox.png", dock.MARK)
+      g:text(x + dock.KOSMOS_IN + dock.MARK + 8, cy - gfx.font.h // 2, "Kosmos",
+             open and theme.text_on or theme.text)
+    elseif it.kind == "separator" then
+      g:fill(x + it.w // 2, cy - 15, 1, 30, at(theme.text_dim, 0x70))
+    else
+      -- Grown upwards from where its foot is: the row's dots stay put.
+      g:icon(x + (it.w - size) // 2, cy + dock.ICON // 2 - 3 - size, it.icon .. ".png", size)
+
+      -- Open, and in front: a dot, or a line, 3 under the picture - it
+      -- was 9 off the dock's bottom edge, which left it nearer the edge
+      -- than the icon it belongs to (Diego, 7 October: "put the active
+      -- and open indicator dot and line below closer to the icon").
+      if it.running then
+        local mw = it.front and 16 or 6
+
+        g:fill_round(x + (it.w - mw) // 2, cy - 3 + dock.ICON // 2 + 3, mw, 4,
+                     it.front and theme.accent or theme.text_dim, 2)
+      end
+    end
+  end
+
+  function paint_ground(g, x, y, w, h)
+    local fill = (255 * (100 - transparency) + 50) // 100
+    local edge = (0x18 * (100 - transparency) + 50) // 100
+
+    if FLOATING then
+      g:fill_round(x, y, w, h, at(0xffffffff, edge), dock.RADIUS)
+      g:fill_round(x + 1, y + 1, w - 2, h - 2, at(theme.window, fill), dock.RADIUS - 1)
+    else
+      g:fill(x, y, w, h, at(theme.window, fill))
+      g:fill(x, y, w, 1, at(0xffffffff, edge))
+    end
+  end
+
   function bar:draw(g)
     lay_out()
+
+    -- What the dock draws, the lens draws over it: the Kosmos button lit
+    -- with its menu open, a mark that came or went.
+    if lens_drawing() then lens_redraw() end
 
     --
     -- **While an icon is dragged**, the cells as they would be if it were
@@ -1740,57 +1820,25 @@ if DOCKED then
     -- much less than opaque, and the hairline with it, so at 100% the pill
     -- is gone and only what is on it is left.
     --
-    local fill = (255 * (100 - transparency) + 50) // 100
-    local edge = (0x18 * (100 - transparency) + 50) // 100
-
-    if FLOATING then
-      g:fill_round(0, 0, self.w, self.h, at(0xffffffff, edge), dock.RADIUS)
-      g:fill_round(1, 1, self.w - 2, self.h - 2, at(theme.window, fill), dock.RADIUS - 1)
-    else
-      g:fill(0, 0, self.w, self.h, at(theme.window, fill))
-      g:fill(0, 0, self.w, 1, at(0xffffffff, edge))
-    end
+    -- Floating and magnified, the lens draws the pill as wide as the grown
+    -- row (`lens`, below), as a dock widens under the pointer; the whole
+    -- width has room for it, and keeps its own.
+    if not (FLOATING and lens_drawing()) then paint_ground(g, 0, 0, self.w, self.h) end
 
     -- Centred in the whole width, as the floating dock is on the screen.
     local off = FLOATING and 0 or (self.w - (dock.layout(items, gfx.measure("Kosmos")))) // 2
     local cy = self.h // 2
 
-    for _, it in ipairs(shown) do
+    -- While the icons are magnified, the lens above draws them all
+    -- (`lens`, below), and the dock only its ground.
+    for _, it in ipairs(lens_drawing() and {} or shown) do
       local x = it.x + off
 
       if it.kind == "app" and it.name == dragged then
         goto next_cell                    -- drawn under the pointer, below
       end
 
-      if it.kind == "kosmos" then
-        local open = #win.menus > 0 or launcher_open
-                     or (launcher_asked ~= nil
-                         and sys.ticks() - launcher_asked < 2 * counter_hz)
-        local bh = dock.KOSMOS_H
-
-        g:fill_round(x, cy - bh // 2, it.w, bh, open and theme.accent or theme.raised, bh // 2)
-        -- The rocket (Haiku's Launchbox), as `docs/sandboxes.html` drew the
-        -- dock; Diego, 11 October: "can we use the rocket icon for the
-        -- kosmos button in the dock?"
-        g:icon(x + dock.KOSMOS_IN, cy - dock.MARK // 2, "App_Launchbox.png", dock.MARK)
-        g:text(x + dock.KOSMOS_IN + dock.MARK + 8, cy - gfx.font.h // 2, "Kosmos",
-               open and theme.text_on or theme.text)
-      elseif it.kind == "separator" then
-        g:fill(x + it.w // 2, cy - 15, 1, 30, at(theme.text_dim, 0x70))
-      else
-        g:icon(x + (it.w - dock.ICON) // 2, cy - dock.ICON // 2 - 3, it.icon .. ".png", dock.ICON)
-
-        -- Open, and in front: a dot, or a line, 3 under the picture - it
-        -- was 9 off the dock's bottom edge, which left it nearer the edge
-        -- than the icon it belongs to (Diego, 7 October: "put the active
-        -- and open indicator dot and line below closer to the icon").
-        if it.running then
-          local mw = it.front and 16 or 6
-
-          g:fill_round(x + (it.w - mw) // 2, cy - 3 + dock.ICON // 2 + 3, mw, 4,
-                       it.front and theme.accent or theme.text_dim, 2)
-        end
-      end
+      paint_cell(g, it, x, cy, dock.ICON)
 
       ::next_cell::
     end
@@ -1855,7 +1903,7 @@ if DOCKED then
     if action == "release" and kosmos_held then
       kosmos_held = nil
 
-      local it = dock.hit(items, x - (self.offset or 0))
+      local it = hit_at(x)
 
       if it and it.kind == "kosmos" and y >= 0 and y < self.h then dock_open_launcher() end
 
@@ -1885,7 +1933,7 @@ if DOCKED then
 
     if dock_tip_hide then dock_tip_hide() end
 
-    local it = dock.hit(items, x - (self.offset or 0))
+    local it = hit_at(x)
 
     if not it then return false end
 
@@ -1936,7 +1984,7 @@ if DOCKED then
   -- The right button on the Kosmos button: the Deskbar's menu, with
   -- Restart and Shut Down, until quick settings hold those (step 5).
   function bar:on_context(x, _)
-    local it = dock.hit(items, x - (self.offset or 0))
+    local it = hit_at(x)
 
     if it and it.kind == "kosmos" then
       open_kosmos_menu()
@@ -2047,7 +2095,9 @@ if DOCKED then
     local h = TIP_H + TIP_ARROW
 
     tip = ui.window{ title = "Deskbar tip", w = w, h = h,
-                     x = centre - w // 2, y = win.origin_y - h - 4, tip = true }
+                     x = centre - w // 2,
+                     y = win.origin_y - h - 4 - (magnify > 0 and math.ceil(dock.ICON * magnify / 100) or 0),
+                     tip = true }
 
     if not tip then return end
 
@@ -2070,8 +2120,202 @@ if DOCKED then
     print("deskbar: tip " .. name)
   end
 
+  --
+  -- **The icons magnified under the pointer** (`dock.magnify`; Diego, 8
+  -- November: "the magnification animation of icons on the bottom bar when
+  -- moving the mouse over the icons"). The grown icons stand taller than
+  -- the dock, and a window draws only inside itself, so they are drawn by a
+  -- *lens*: a tip window - shown and nothing else, every press going
+  -- through it to what is under it - over the dock and the room above it,
+  -- wide enough for the row grown at both ends. While it is up the dock
+  -- draws its ground and nothing on it, and a press on the dock is matched
+  -- against the cells as the lens draws them, so what is pressed is what
+  -- is seen under the pointer.
+  --
+  -- It grows over about a tenth of a second as the pointer arrives and
+  -- settles back as it leaves, and then closes, the dock drawing its icons
+  -- again first. Only the lens is drawn while the pointer moves, a few
+  -- hundred pixels by a hundred and some: the dock and everything behind
+  -- it stay as they are.
+  --
+  local lens, lens_px, lens_cells = nil, nil, nil
+  local lens_amount, lens_want = 0, 0       -- how grown now, and going to
+  local lens_last, lens_peak_said = nil, nil
+  local lens_closing = false
+  local LENS_TIME = counter_hz // 10        -- nought to all of it
+
+  local function lens_peak() return 1 + magnify / 100 end
+
+  function lens_drawing() return lens ~= nil and lens.painted == true end
+
+  function lens_redraw() if lens then lens.dirty_px = true end end
+
+  -- The cells a press matches: the grown ones while the lens shows them.
+  function hit_at(x)
+    if lens_drawing() and lens_cells then
+      local it = dock.hit(lens_cells, x - (bar.offset or 0))
+
+      return it and it.orig or nil
+    end
+
+    return dock.hit(items, x - (bar.offset or 0))
+  end
+
+  -- Where the lens is on the screen, and its size: the dock's top less the
+  -- tallest a grown icon stands over it, and the dock's width and a margin
+  -- for the row's growth either side, onto the screen.
+  local function lens_box()
+    local lift = math.ceil(dock.ICON * (lens_peak() - 1)) + 6
+    local spare = math.ceil((lens_peak() - 1) * (dock.CELL + dock.GAP) * dock.REACH)
+    local x0 = math.max(0, win.origin_x - spare)
+    local x1 = math.min(W, win.origin_x + win.w + spare)
+
+    return x0, win.origin_y - lift, x1 - x0, H + lift, lift
+  end
+
+  local function close_lens()
+    if lens then
+      lens:close()
+      print("deskbar: the icons settled")
+    end
+
+    lens, lens_cells, lens_px, lens_amount, lens_want = nil, nil, nil, 0, 0
+    lens_closing, lens_peak_said = false, nil
+    lens_live = false
+    pace_breathing()
+  end
+
+  local function open_lens()
+    local lx, ly, lw, lh, lift = lens_box()
+
+    lens = ui.window{ title = "Deskbar lens", w = lw, h = lh, x = lx, y = ly, tip = true }
+
+    if not lens then return end
+
+    local face = ui.view{ x = 0, y = 0, w = lw, h = lh }
+
+    function face:draw(g)
+      g:fill(0, 0, self.w, self.h, 0x00000000)
+
+      local cells = lens_px and dock.magnify(items, lens_px, 1 + (lens_peak() - 1) * lens_amount)
+                    or items
+
+      lens_cells = cells
+
+      -- The dock's coordinates in the lens's: its left edge and its top.
+      local ox = win.origin_x - lx + (bar.offset or 0)
+      local cy = lift + H // 2
+
+      -- Floating, the pill under the grown row: never narrower than the
+      -- dock, and wider by what the row grew at either end.
+      if FLOATING and #cells > 0 then
+        local last = cells[#cells]
+        local left = math.min(ox + cells[1].x - dock.PAD, win.origin_x - lx)
+        local right = math.max(ox + last.x + last.w + dock.PAD, win.origin_x - lx + win.w)
+
+        left, right = math.max(0, left), math.min(self.w, right)
+        paint_ground(g, left, lift, right - left, H)
+      end
+
+      for _, it in ipairs(cells) do
+        paint_cell(g, it, ox + it.x, cy, it.size or dock.ICON)
+      end
+    end
+
+    lens:add(face)
+    lens.face = face
+
+    -- Passes come at the frame's rate while it lives, so it grows, follows
+    -- and settles without waiting for the next thing to happen.
+    lens_live = true
+    pace_breathing()
+    print(("deskbar: a lens over the dock at %d,%d %dx%d"):format(lx, ly, lw, lh))
+  end
+
+  -- A pass of it, from the dock's frame (`dock_frame`): grown or settled a
+  -- step, drawn, and closed once settled. True while it still moves.
+  local function lens_frame()
+    if lens_closing then
+      close_lens()
+      return false
+    end
+
+    if not lens then return false end
+
+    wmproto.poll(lens.handle, 0)
+
+    local now = sys.ticks()
+    local step = lens_last and (now - lens_last) / LENS_TIME or 0
+
+    lens_last = now
+
+    if lens_amount < lens_want then
+      lens_amount = math.min(lens_want, lens_amount + step)
+    elseif lens_amount > lens_want then
+      lens_amount = math.max(lens_want, lens_amount - step)
+    end
+
+    if lens.dirty_px or lens_amount ~= lens.drawn_amount then
+      lens.dirty_px = false
+      lens.drawn_amount = lens_amount
+      lens:paint()
+
+      if not lens.painted then
+        lens.painted = true
+        win.dirty = true                  -- the dock without its icons now
+      end
+    end
+
+    -- Said once it has grown, for what is under the pointer.
+    if lens_amount >= 1 and lens_cells and lens_px then
+      local under = dock.hit(lens_cells, lens_px)
+
+      if under and under.kind == "app" and lens_peak_said ~= under.name then
+        lens_peak_said = under.name
+        print(("deskbar: magnified %s to %d px"):format(under.name, under.size or 0))
+      end
+    end
+
+    if lens_amount <= 0 and lens_want <= 0 then
+      -- The dock its icons again first, and the lens gone the pass after.
+      win.dirty = true
+      lens_closing = true
+      return true
+    end
+
+    return lens_amount ~= lens_want
+  end
+
+  -- The pointer over the dock at `x`, or away (-1).
+  local function lens_hover(x)
+    if magnify <= 0 or (drag and drag.at) then
+      if lens then
+        win.dirty = true
+        lens_closing = true
+      end
+
+      return
+    end
+
+    if x >= 0 then
+      if not lens then
+        lens_last = nil
+        open_lens()
+      end
+
+      lens_closing = false
+      lens_px = x - (bar.offset or 0)
+      lens_want = 1
+      if lens then lens.dirty_px = true end
+    else
+      lens_want = 0
+    end
+  end
+
   win.on_hover = function(_, x, _)
-    local it = (x >= 0) and dock.hit(items, x - (bar.offset or 0)) or nil
+    lens_hover(x)
+
+    local it = (x >= 0) and hit_at(x) or nil
 
     if it and it.kind == "app" then
       show_tip(it)
@@ -2081,6 +2325,24 @@ if DOCKED then
 
     return false
   end
+
+  -- The magnified cells, to read: `name x w size` each, in the dock's
+  -- coordinates, or nothing while there is no lens.
+  win:publish("magnified", function()
+    if not (lens_drawing() and lens_cells) then return "" end
+
+    local out = {}
+
+    for _, it in ipairs(lens_cells) do
+      if it.kind == "app" then
+        out[#out + 1] = ("%s %d %d %d"):format(it.name, it.x + (bar.offset or 0), it.w, it.size or 0)
+      end
+    end
+
+    return table.concat(out, "; ")
+  end)
+
+  dock_lens_frame = lens_frame
 
   wmproto.track(win.handle, true)
   dock_tip_hide = hide_tip
@@ -2239,6 +2501,8 @@ if DOCKED then
   function dock_frame(self)
     if tip then wmproto.poll(tip.handle, 0) end
 
+    local lens_moving = dock_lens_frame and dock_lens_frame() or false
+
     if topstrip then
       local reply = wmproto.poll(topstrip.handle, 0)
 
@@ -2269,7 +2533,7 @@ if DOCKED then
       return true
     end
 
-    return false
+    return lens_moving
   end
 end
 

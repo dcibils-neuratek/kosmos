@@ -522,6 +522,8 @@ now; the AArch64 build must still compile.
 
 ## 7. Yours to decide
 
+**DECIDED on 17 November 2026: every recommendation, as written.** Diego: "Yes to all recommendations" - Cafesa3D grows now and Blender is not ported; the later questions wait for a Blender that is.
+
 1. **Port Blender, or grow Cafesa3D.** *(Recommended: grow Cafesa3D now;
    keep Blender as a later project, started only after `gpu3d.md` is
    decided.)*
