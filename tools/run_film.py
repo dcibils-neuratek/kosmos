@@ -81,6 +81,9 @@ PROGRAM = (
     'took, f.voice_state and f.voice_state.frames_out or 0, '
     '(f.voice_state and f.voice_state.frames_in or 0) .. " " .. '
     'tostring(silent))) '
+    'local h = f:heard() or {} '
+    'print(("FILM" .. "HEARD %s %.1f %d"):format(tostring(h.audio_band), '
+    '(h.worst_pass or 0) / hz * 1000, h.dry or 0)) '
     'f:close() '
     'print("FILM" .. "-DONE")')
 
@@ -319,14 +322,26 @@ def main():
             check(shared >= int(RATE * 2.9),
                   "only %.2f s of the film's sound came out, of %.2f"
                   % (shared / RATE, len(ref) / 2 / RATE))
+            # How the sound's thread held, so a gap says whose it was: in
+            # the audio band or not, its longest away between two passes,
+            # and how often its input ran dry (roadmap, "Bounded under load").
+            # A program in /Temporary is not in the band - only a file the
+            # image serves can declare `kosmos: needs audio` - so on a busy
+            # host the display band can outrank it.
+            heard_line = re.search(r"^FILMHEARD (\S+) ([\d.]+) (\d+)", guest.seen[seen:], re.M)
+            how = ("; its sound thread %s the audio band, away at most %s ms, "
+                   "its input dry %s times" % ("in" if heard_line.group(1) == "true" else "not in",
+                                               heard_line.group(2), heard_line.group(3))
+                   if heard_line else "")
+            print("film: the sound thread%s" % (how[len("; its sound thread"):] if how else " said nothing"))
             check(far == 0,
                   "%d samples of %d more than two steps from FFmpeg's "
                   "reference (the worst %d; the first at %.4f s, channel "
-                  "%d: %s against %s)"
+                  "%d: %s against %s)%s"
                   % (far, shared * 2, worst,
                      first[0] / RATE if first else 0,
                      first[1] if first else 0,
-                     first[4] if first else "", first[5] if first else ""))
+                     first[4] if first else "", first[5] if first else "", how))
 
         # Paused, and sought.
         guest.type('fs.write("/Temporary/seek.lua", [=[' + SEEKS + ']=])')

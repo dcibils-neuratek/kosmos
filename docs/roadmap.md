@@ -11787,6 +11787,17 @@ spend a day here; a laptop cannot.
   (load average 12 before the gate). A suite that waits a fixed 15 s
   for a press, or counts samples a busy host cannot deliver, is the
   first to fix.
+  **`x86-film`'s gap, found** (18 November): the suite's program runs
+  from `/Temporary`, and its sound thread is *not in the audio band* -
+  `run_film.py` now prints it, "away at most 15.8 ms, its input dry 0
+  times" on a quiet host. Only a file the image serves can declare
+  `kosmos: needs audio` (`binfs` reports needs, `ramfs` and `diskfs` do
+  not), so the display band can outrank it on a busy one; `--load`
+  plays through the Video app, in the band, and failed once in all these
+  gates. **For Diego**: should a program in `/Home` or `/Temporary` be
+  able to ask for the band - it is bounded by its budget, which is what
+  made the band safe - or does the suite play through a program the
+  image serves?
 - **The optimisation phase** below, as it stands.
 
 **2. A media machine**
