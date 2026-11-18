@@ -465,7 +465,7 @@ of section 6.
    glass keys in `theme.lua`, Appearance listing Liquid Glass. Opaque at
    first: the tints as solid colours. *Test*: `tools/test_theme.lua` holds
    both looks to every token and the glass keys to their ranges.
-2. **LG2 - the blur, and the wallpaper's blurred copy.** `blur.c` in `gfx`,
+2. **LG2 - the blur, and the wallpaper's blurred copy** (**built in 0.11.473**, `testing.md` 18.873). `blur.c` in `gfx`,
    vector types for NEON and SSE2 with the scalar loop as the reference;
    the window manager makes the copy when it resamples. *Test*:
    `tools/test_blur.c`, vector against scalar, natively and through

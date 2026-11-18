@@ -676,9 +676,15 @@ local function wallpaper_place()
   if wall_filled then
     wall_filled:free()
     wall_filled = nil
+    -- Its glass was of it: made again from the next, never taken for it
+    -- because a new picture's address happens to be the old one's.
+    OUT.wall_glass_of = nil
   end
 
-  if not wallpaper then return end
+  if not wallpaper then
+    OUT.glass_wallpaper()
+    return
+  end
 
   local sw, sh = WS.w, WS.h
   local pw, ph = wallpaper:size()
@@ -712,6 +718,7 @@ local function wallpaper_place()
     wall_x, wall_y, wall_w, wall_h = 0, 0, sw, sh
     print(("wm: the wallpaper, %dx%d, fills the screen from %dx%d of it")
           :format(pw, ph, cw, ch))
+    OUT.glass_wallpaper()
     return
   end
 
@@ -728,6 +735,51 @@ local function wallpaper_place()
   -- from (D3b-2): the picture as it was read is this process's alone.
   wall_filled = gfx.surface{ w = pw, h = ph, shared = true }
   wall_filled:blit(wallpaper, 0, 0, pw, ph, 0, 0)
+  OUT.glass_wallpaper()
+end
+
+--
+-- **The wallpaper's glass** (`docs/astra.md`, Liquid Glass LG2; wallpaper
+-- glass, G1): the picture as shown, blurred once, in a region of its own,
+-- for a glass look's surfaces to show the part of it under them. Made when
+-- the wallpaper is placed or a look is applied, and only for a look that is
+-- glass - anything else frees it, so a desktop that is not glass pays
+-- neither the memory nor the blur. Three passes whose reach is the look's
+-- `glass_blur`. Nothing composes it yet (LG4).
+--
+OUT.wall_glass, OUT.wall_glass_of = nil, nil
+
+function OUT.glass_wallpaper()
+  local glassy = theme.glass and theme.glass ~= "none" and (theme.glass_blur or 0) > 0
+  local r = glassy and math.max(1, scale.px(theme.glass_blur) // 3) or 0
+  local key = glassy and wall_filled and (tostring(wall_filled) .. "/" .. r) or nil
+
+  if key and key == OUT.wall_glass_of then return end
+
+  if OUT.wall_glass then
+    OUT.wall_glass:free()
+    OUT.wall_glass = nil
+    if not key then print("wm: the wallpaper's glass given back") end
+  end
+  OUT.wall_glass_of = key
+
+  if not key then return end
+
+  local w, h = wall_filled:size()
+  local glass = gfx.surface{ w = w, h = h, shared = true }
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
+  local t0 = sys.ticks()
+  local ok, why = glass:blur(wall_filled, r, 3)
+
+  if not ok then
+    glass:free()
+    print("wm: the wallpaper's glass was not made: " .. tostring(why))
+    return
+  end
+
+  OUT.wall_glass = glass
+  print(("wm: the wallpaper's glass, %dx%d, three passes at %d, in %d ms")
+        :format(w, h, r, (sys.ticks() - t0) * 1000 // hz))
 end
 
 if not WS.w then
@@ -4671,6 +4723,7 @@ function D.start(name, watcher)
       OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
       OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
       add_damage(0, 0, W, H)
+      OUT.glass_wallpaper()
       print(("wm: look %s, the desktop's"):format(d.look))
     else
       print(("wm: look %s would not load: %s"):format(d.look, tostring(why)))
@@ -6822,6 +6875,7 @@ handlers.theme = function(req)
     OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
     OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
     add_damage(0, 0, W, H)
+    OUT.glass_wallpaper()
   end
 
   -- The desktop colour is chosen separately from the palette it sits with,

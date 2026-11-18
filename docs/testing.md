@@ -36191,3 +36191,98 @@ not resetting the glass, fails one check - the built-in palette's.
 
 **Next**: LG2, the blur in `gfx` and the wallpaper's blurred copy - which
 is also wallpaper glass, G1, and so what Starlight's S3 waits for.
+
+## 18.873 The blur, and the wallpaper's glass (LG2)
+
+**In short.** Kosmos can blur a picture now, in C and in the vector unit,
+and a desktop in a glass look keeps a blurred copy of its wallpaper - the
+frost every glass surface will show the part of under it. It is made once,
+when the wallpaper or the look changes, never in a frame; a look that is
+not glass gives it back. Nothing shows it yet: that is LG4.
+
+**The blur** (`user/kits/gfx/blur.c`, `surface:blur(src, radius,
+passes)`): box passes, across each row and then down each column, each
+keeping a running sum per channel, so a pass costs the same at any radius;
+three are within a few per cent of a Gaussian. Down the columns eight at
+a time, eight neighbouring columns being one load; across a row a pixel's
+four channels as the four lanes. The average is rounded by one reciprocal,
+`(sum * m + 2^22) >> 23` with `m = round(2^23 / (2r + 1))`: a plain colour
+comes back exactly, and the product stays in 32 bits for every radius to
+255.
+
+**Tried and dropped**: across a row eight rows as eight lanes - each lane's
+pixel loaded on its own, a gather - which lost on NEON (14.4 ms against
+10.6 one pixel at a time).
+
+**Measured** on this Mac's cores, the screen at 1920x1080, three passes
+at radius 8: 9.8 ms against 10.4 a pixel at a time natively, where Apple's
+compiler vectorises the scalar loop by itself, and 10.5 against 16.5
+through Rosetta - the doc's estimate was 8 to 10 ms. Once a wallpaper.
+
+**The wallpaper's glass** (`wm.lua`, `OUT.glass_wallpaper`): the picture as
+shown - the screen's size when it fills the screen, its own when it is
+larger and only its middle shows, as the 3440x1440 pictures Kosmos carries
+are at 1920x1080, so the glass lies where the picture lies - blurred in three passes whose reach is the look's `glass_blur` (24
+points: 8 a pass at 100%), in a region of its own for the window server
+to compose from later. Made when the wallpaper is placed and when a look
+is applied - the desktop's, a saved one, or one Appearance sends - and
+freed for a look that is not glass, so a desktop that is not glass pays
+neither its 8 MB nor its blur.
+
+**Held by** `tools/test_blur.c` (in `host`, natively and through
+Rosetta): eight at a time the scalar loop's to the bit at 8 sizes from
+1x1 and 5 radii, one and three passes, in place and not, with a pitch
+wider than the picture and nothing written past a row; one pass within
+one of the true average taken in doubles; a plain colour back exactly at
+every radius to 255; a radius of 0 or past 255 a copy. And `x86-glass`,
+new, 6 checks: the desktop started in Liquid Glass with a carried
+wallpaper placed; the glass made the picture's size, 8 a pass;
+a program at login choosing Endeavour, and the glass given back; Liquid
+Glass Night, and made again; nothing stopped. Under TCG the carried
+3440x1440 picture's glass took 874 ms - QEMU's figure, not the machine's. Its control is Endeavour:
+a window manager that made the glass for every look fails that check,
+and only that one.
+
+**The gate** (131 suites, 736 s): two failed and passed alone straight
+after - `x86-mail-6`, whose QEMU exited before the bar at second 0, and
+`x86-tcpin`, whose guest never had telnetd listening within 120 s - both
+before a line of either suite's own had run, which is the machine under
+the whole gate's load, not the glass.
+
+## 18.874 The lens - Liquid Glass's rim as a table (LG3)
+
+**In short.** The rim of a Liquid Glass surface is where it looks like
+glass rather than frosted plastic: the edge bends what is behind it. That
+bending is now computed - Snell's law through a curved bevel, as Zaki
+Sheriff's Liquid-Glass does it in a browser - once per corner radius and
+bevel width, into a small table the compositor will read. Nothing draws
+with it yet; the rim pass arrives with the first glass surfaces (LG4),
+when there is a backdrop for it to bend.
+
+**What it is** (`user/kits/gfx/lens.c`, `lens.h`): the bevel's height a
+quarter circle; a ray straight down enters at n = 1.5 and lands on the
+backdrop a glass-depth below, so the rim pixel reads the backdrop at that
+offset - at the very edge 1.12 bevels inward, at the flat nothing, times
+the look's `refraction`. The lit edge is the same normal against a light
+at the upper left, times `specular`. **Per radius and bevel, not per
+size**: a rounded rectangle's rim is the same all along each straight
+edge, so a lens is four side profiles of `bevel` entries and four corner
+squares of `radius + bevel` a side - 10,944 bytes for 18 and 12, made in
+doubles once, with only `sqrt` from the libc. The repo keeps a map a size.
+
+**Held by** `tools/test_lens.c` (in `host`, natively and through
+Rosetta), 79 checks: every side's entry the ray traced again another way -
+the slope as an angle, Snell's law as `asin`, the deviation's tangent -
+within a pixel and its light within a step, at six shapes from a bevel of
+1 to 96 and two strengths; every corner's entry likewise, its distance and
+direction from a rounded box's signed distance and that distance's
+gradient taken numerically; a corner's square past its curve the sides'
+profile exactly; the top-right the top-left's mirror; refraction 0
+bending nothing; light only on the top and left; no bevel, no lens. Two
+controls: glass of n = 1.33 fails 16 checks, and the arc's outward
+direction turned round - the bug the first draft had - fails 20, among
+them the light on the wrong side.
+
+**Not yet**: the rim pass in the scene (LG4), and the split - the warm
+channels read at the offset times 1 + split, the cool ones 1 - split -
+which belongs to that pass, not to the table.

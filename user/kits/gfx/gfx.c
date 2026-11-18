@@ -30,6 +30,7 @@
  */
 
 #include "pack.h"
+#include "blur.h"
 #include "zrle.h"
 #include "rows.h"
 #include "shadow.h"
@@ -2935,6 +2936,68 @@ static int l_stretch(lua_State *L)
     return 0;
 }
 
+/*
+ * `dst:blur(src, radius, passes)` - `src` blurred into this surface, the
+ * same size: `passes` box passes (3 when not said, which is within a few
+ * per cent of a Gaussian) at `radius` each, so the blur reaches about
+ * `radius * passes` (`blur.c`; Liquid Glass LG2). `src` may be this surface.
+ * What glass is frosted with: the window manager's blurred wallpaper. The
+ * working memory - the picture once more and four sums a column - is taken
+ * for the call and given back, since it is made once a wallpaper.
+ */
+static int l_blur(lua_State *L)
+{
+    struct surface *d = check_surface(L, 1);
+    struct surface *s = check_surface(L, 2);
+    lua_Integer r = luaL_checkinteger(L, 3);
+    lua_Integer passes = luaL_optinteger(L, 4, 3);
+    uint32_t *tmp, *sums;
+    unsigned y;
+
+    if (d->pixels == NULL || s->pixels == NULL) {
+        return luaL_error(L, "blur: a surface was freed");
+    }
+    if (d->width != s->width || d->height != s->height) {
+        return luaL_error(L, "blur: %dx%d into %dx%d; they are the same size",
+                          (int)s->width, (int)s->height, (int)d->width,
+                          (int)d->height);
+    }
+    if (r < 1 || r > (lua_Integer)GFX_BLUR_MOST) {
+        return luaL_error(L, "blur: a radius is 1 to %d, not %d",
+                          (int)GFX_BLUR_MOST, (int)r);
+    }
+    if (passes < 1 || passes > 8) {
+        return luaL_error(L, "blur: 1 to 8 passes, not %d", (int)passes);
+    }
+    if (d->width == 0 || d->height == 0) return 0;
+
+    tmp = malloc((size_t)d->width * d->height * 4u);
+    sums = malloc((size_t)d->width * 16u);
+    if (tmp == NULL || sums == NULL) {
+        free(tmp);
+        free(sums);
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "no memory for the blur");
+        return 2;
+    }
+
+    /* Into this surface first, at its own pitch, then blurred in place:
+     * the loop takes one pitch, and the two surfaces' may differ. */
+    if (d != s) {
+        for (y = 0; y < d->height; y++) {
+            memmove(row_of(d, y), row_of(s, y), (size_t)d->width * 4u);
+        }
+    }
+
+    gfx_blur(d->pixels, d->pixels, d->pitch / 4u, d->width, d->height,
+             (unsigned)r, (unsigned)passes, tmp, sums);
+
+    free(tmp);
+    free(sums);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 /* `gfx_draw.h`: all of `src` into [dx, dx+dw) by [dy, dy+dh) of `dst`,
  * smoothed when scaled, within the clip - and over what is there, by the
  * picture's own alpha, so a transparent PNG or an SVG's empty background
@@ -3447,6 +3510,7 @@ static const luaL_Reg surface_methods[] = {
     { "blend",  l_blend },
     { "tint",   l_tint },
     { "stretch", l_stretch },
+    { "blur", l_blur },
     { "pixels",  l_pixels },
     { "text",   l_text },
     { "get",    l_get },
