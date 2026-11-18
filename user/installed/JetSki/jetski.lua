@@ -8,7 +8,7 @@
 -- kosmos: about WebKit on Kosmos: the web as Safari draws it
 -- kosmos: image webkit
 -- kosmos: depends webkit
--- kosmos: opens html htm favorite
+-- kosmos: opens html htm mhtml mht favorite
 --
 --   wm jetski                              the start page
 --   wm jetski:https://en.wikipedia.org/    that page
@@ -193,6 +193,8 @@ function web.kept(n) return shown:kept(n) end
 function web.under() return shown:under() end
 function web.find(...) if shown then shown:find(...) end end
 function web.found() if shown then return shown:found() end return 0, 0 end
+function web.save(...) if shown then shown:save(...) end end
+function web.saved() if shown then return shown:saved() end return nil, "no page" end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
@@ -646,7 +648,7 @@ local function downloads_key(c)
 end
 
 local function windows_key(c)
-  if c == 6 or c == 12 or c == 15 or c == 20 then return true end
+  if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end
   if inspector_key(c) or downloads_key(c) then return true end
   local key, mods = keys.parts(c)
   if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
@@ -1485,8 +1487,14 @@ local function visit(text)
 
   -- A path is a file of this machine's: `file:` and the path, which
   -- WebKit's network process reads from /Home with the files beside it.
-  if text:match("^%s*/") then text = "file://" .. text:match("^%s*(.-)%s*$") end
-  local where = prefs.destination(text, setting.search)
+  -- A path is never search words, though a name in it has spaces: they
+  -- are encoded, since a saved page is named after its title.
+  local where
+  if text:match("^%s*/") then
+    where = "file://" .. text:match("^%s*(.-)%s*$"):gsub(" ", "%%20")
+  else
+    where = prefs.destination(text, setting.search)
+  end
 
   if not where then return end
 
@@ -2180,6 +2188,7 @@ win.on_frame = function()
   if tracing then commits_said() end
   local downloads_changed = downloads_frame()
   if F.frame() then downloads_changed = true end
+  if web.save_frame() then downloads_changed = true end
 
   -- Settings' tab is JetSki's: its name and address, whatever the view
   -- under it says.
@@ -2507,9 +2516,73 @@ do
   win:add(F.view)
 end
 
+--
+-- **Save page as** (`docs/webkit.html`): Control-S opens the system's Save
+-- window at `/Home/Downloads`, named after the page's title. As a web page,
+-- complete - one MHTML file with its styles and pictures, which JetSki
+-- opens again without the network - or the page's HTML only, as it came.
+-- WebKit writes the bytes (`v:save`); what came of it is said when it says
+-- (`st.saved`, `save_frame`).
+--
+local function save_page()
+  if not page.address or page.address == "" or page.address:match("^about:") then
+    say("there is no page here to save")
+    return
+  end
+
+  local folder = "/Home/Downloads"
+
+  if not files.make_folder(folder) then folder = "/Home" end
+
+  -- The title as a name: no slashes, nothing unprintable, not too long.
+  local stem = tostring(page.title or ""):gsub("[/%c]", " "):gsub("%s+", " ")
+                                         :match("^%s*(.-)%s*$"):sub(1, 80)
+
+  if stem == "" then stem = page.address:match("^%a+://([^/:]+)") or "page" end
+
+  local chooser = use("/Kosmos/Libraries/panel.lua").save{
+    start = folder, title = "Save page as",
+    name = files.free_name(folder, stem .. ".mhtml"),
+    as = { { "complete", "A web page, complete - one file, with its pictures", "mhtml" },
+           { "html", "The page's HTML only", "html" } },
+    on_choose = function(path, as)
+      win:focus_on(view)
+      web.focus(true)
+      web.saving = { path = path, as = as }
+      web.save(path, as == "complete")
+      say(("saving %s as %s"):format(path, as == "complete" and "a web page, complete"
+                                                       or "its HTML"))
+    end,
+  }
+
+  if chooser then chooser:run() end
+end
+
+-- What a save came to, said once WebKit has written it.
+function web.save_frame()
+  if not (st.saved and web.saving) then return false end
+
+  local s = web.saving
+  local bytes, why = web.saved()
+
+  web.saving = nil
+
+  if bytes then
+    say(("saved %s, %d bytes, as %s"):format(s.path, bytes, s.as))
+    use("/Kosmos/Libraries/notify.lua").post{ title = "Saved", body = s.path:match("[^/]+$") or s.path, open = s.path }
+  else
+    say(("could not save %s: %s"):format(s.path, tostring(why)))
+  end
+
+  return true
+end
+
 win.on_key = function(_, c)
   -- Control-F: find on the page, as every browser has it.
   if c == 6 then F.open() return true end
+
+  -- Control-S: Save page as.
+  if c == 19 then save_page() return true end
 
   if c == 12 then
     web.focus(false)
@@ -2541,7 +2614,10 @@ win.on_key = function(_, c)
       -- Where the page shown is, when it is a file; /Home otherwise.
       start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
       title = "Open a web page",
-      filter = function(name) return name:lower():match("%.html?$") ~= nil end,
+      filter = function(name)
+        local n = name:lower()
+        return n:match("%.html?$") ~= nil or n:match("%.mhtm?l?$") ~= nil
+      end,
       on_choose = function(path) win:focus_on(view) web.focus(true) visit(path) end,
     }
     if chooser then chooser:run() end
@@ -2564,8 +2640,8 @@ end
 function win:on_drop(kind, payload)
   if kind ~= "files" then return false end
   local first = payload:match("^[^\n]+")
-  if not first or not first:lower():match("%.html?$") then
-    say("only a web page opens here - an .html file")
+  if not first or not (first:lower():match("%.html?$") or first:lower():match("%.mhtm?l?$")) then
+    say("only a web page opens here - an .html or .mhtml file")
     return first ~= nil
   end
   print("jetski: dropped " .. first)

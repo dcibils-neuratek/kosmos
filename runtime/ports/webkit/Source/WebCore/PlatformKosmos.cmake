@@ -44,7 +44,7 @@ list(APPEND WebCore_SOURCES
     # there is a window to ask.
     platform/graphics/playstation/SystemFontDatabasePlayStation.cpp
     platform/network/playstation/NetworkStateNotifierPlayStation.cpp
-    platform/playstation/MIMETypeRegistryPlayStation.cpp
+    platform/kosmos/MIMETypeRegistryKosmos.cpp
     platform/playstation/PlatformScreenPlayStation.cpp
 
     # The display a GPU would be reached through, and its contexts and

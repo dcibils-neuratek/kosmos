@@ -33,6 +33,7 @@ enum webkit_happened {
     WEBKIT_INSPECTOR = 1 << 7,     /* its inspector came, went, or has a picture */
     WEBKIT_HOVER     = 1 << 8,     /* what is under the pointer changed */
     WEBKIT_FOUND     = 1 << 9,     /* find on the page answered */
+    WEBKIT_SAVED     = 1 << 10,    /* Save page as finished, or failed */
 };
 
 /*
@@ -181,6 +182,17 @@ int webkit_under(int id, struct webkit_under *out);
  */
 void webkit_find(int id, const char *words, int match_case, int backwards, int fresh);
 int webkit_found(int id, int *count, int *current);
+
+/*
+ * **Save page as** (`docs/webkit.html`): the page shown written to `path` -
+ * `complete`, as WebKit's MHTML, the page with its styles and pictures in
+ * one file; otherwise its HTML as it came, the main resource's bytes. The
+ * bytes go from WebKit to the file here and never through Lua.
+ * `WEBKIT_SAVED` when it is done; then `webkit_saved` says how many bytes
+ * were written, or 0 and why not, into `why`.
+ */
+void webkit_save(int id, const char *path, int complete);
+long long webkit_saved(int id, char *why, unsigned room);
 
 void webkit_download_folder(const char *folder);
 /* Every download since JetSki began, the newest first; how many. */

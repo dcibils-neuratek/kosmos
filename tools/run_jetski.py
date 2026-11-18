@@ -598,12 +598,86 @@ def use(guest, R, dump, window, mark):
     failed.extend(from_disk(guest, R, window, sw, sh))
     failed.extend(documentation(guest))
     failed.extend(downloaded(guest, R))
+    failed.extend(saved_page(guest))
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
     failed.extend(changes(guest, R, window, sw, sh))
     failed.extend(stuck(guest, R, window, sw, sh))
     failed.extend(never_waited(guest))
+    return failed
+
+
+def saved_page(guest):
+    """**Save page as** (Control-S, `docs/webkit.html`): the system's Save
+    window at /Home/Downloads, named after the page; Return in its name
+    saves a web page, complete - WebKit's MHTML, written by the kit - and
+    then the page's HTML only, chosen in the window's As row from the keys -
+    Tab to it and Down, then Tab to Save and Return - and smaller than the
+    MHTML; and the MHTML, typed into the address, opens again as a page."""
+    failed = []
+
+    def outcome(since, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            guest._read_available()
+            m = re.search(r"jetski: (saved ([^\r\n]+?), (\d+) bytes, as (\w+)|could not save [^\r\n]*)",
+                          guest.seen[since:])
+            if m:
+                return m
+            time.sleep(0.25)
+        return None
+
+    since = len(guest.seen)
+    guest.sendkey("ctrl-s")
+    time.sleep(2.5)
+    guest.sendkey("ret")
+    got = outcome(since, 40)
+    print("save: " + (got.group(0) if got else "nothing said"))
+    if not got or not got.group(2) or not got.group(2).startswith("/Home/Downloads/") \
+       or not got.group(2).endswith(".mhtml") or got.group(4) != "complete" or int(got.group(3)) < 200:
+        return ["Control-S and Return did not save the page as one MHTML file in /Home/Downloads: %s"
+                % (got.group(0) if got else "nothing said")]
+
+    # And the HTML only, from the As row, of the same page: smaller than
+    # the MHTML, which holds this and everything the page is drawn from.
+    path, whole = got.group(2), int(got.group(3))
+    since = len(guest.seen)
+    guest.sendkey("ctrl-s")
+    time.sleep(2.5)
+    for k in ("tab", "down"):
+        guest.sendkey(k)
+        time.sleep(0.6)
+    chose = said(guest, since, "panel: saving as html", 5)
+    for k in ("tab", "ret"):
+        guest.sendkey(k)
+        time.sleep(0.6)
+    got = outcome(since, 40)
+    print("save: " + (got.group(0) if got else "nothing said") + ("" if chose else " (the As row said nothing)"))
+    if not chose or not got or not got.group(2) or not got.group(2).endswith(".html") \
+       or got.group(4) != "html" or not 100 <= int(got.group(3)) < whole:
+        failed.append("the As row's \"the page's HTML only\" did not save the HTML: %s, %s, the MHTML %d bytes"
+                      % ("chosen" if chose else "not chosen", got.group(0) if got else "nothing said", whole))
+
+    # The file, opened again from the address field.
+    since = len(guest.seen)
+    guest.sendkey("ctrl-l")
+    time.sleep(0.6)
+    for c, k in zip(path, keys_for(path)):
+        guest.sendkey("spc" if c == " " else k)
+        time.sleep(0.02)
+    guest.sendkey("ret")
+    if not said(guest, since, "jetski: loaded file://", 60):
+        failed.append("the saved %s did not open again: %s"
+                      % (path, re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said"))
+    else:
+        time.sleep(1.0)
+        guest._read_available()
+        after = guest.seen[since:]
+        loaded = re.search(r"jetski: loaded (file://[^\r\n]*)", after)
+        print("save: opened again, " + loaded.group(1))
+        if "could not load" in after or not loaded.group(1).endswith(".mhtml"):
+            failed.append("the saved page opened as something else: %s" % loaded.group(0))
     return failed
 
 
@@ -1562,8 +1636,8 @@ def main():
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = changed(text, "if c == 6 or c == 12 or c == 15 or c == 20 then return true end",
-                        "if c == 6 or c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
+    text = changed(text, "if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end",
+                        "if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
                         " or c == 25 or c == 21 or c == 5 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))

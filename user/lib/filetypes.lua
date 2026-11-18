@@ -233,6 +233,7 @@ end
 filetypes.names = {
   lua = "Lua source", txt = "Text", md = "Note", conf = "Settings", log = "Log",
   pdf = "PDF document", html = "Web page", write = "Kosmos Write document",
+  mhtml = "Web page, complete", mht = "Web page, complete",
   png = "Picture", jpg = "Photograph", jpeg = "Photograph",
   mp3 = "Song", wav = "Sound", mp4 = "Film",
   wad = "Doom level", sfc = "Super Nintendo cartridge",
@@ -276,7 +277,7 @@ end
 -- through `choose` rather than a key written by hand.
 --
 filetypes.GROUPS = {
-  { "Documents", { "txt", "md", "write", "pdf", "html", "htm", "lua", "conf", "log" } },
+  { "Documents", { "txt", "md", "write", "pdf", "html", "htm", "mhtml", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
   { "Sound and film", { "mp3", "wav", "mp4" } },
   { "Games", { "wad", "sfc", "smc" } },
@@ -599,6 +600,7 @@ end
 --
 local MIME = {
   html = "text/html", htm = "text/html", css = "text/css", js = "text/javascript",
+  mhtml = "multipart/related", mht = "multipart/related",
   txt = "text/plain", md = "text/plain", lua = "text/plain", c = "text/plain",
   h = "text/plain", csv = "text/csv", json = "application/json", xml = "application/xml",
   png = "image/png", jpg = "image/jpeg", jpeg = "image/jpeg", gif = "image/gif",

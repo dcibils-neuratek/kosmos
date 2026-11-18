@@ -2332,8 +2332,29 @@ function ui.dropdown(spec)
     return false
   end
 
+  -- Up and Down step the choice without the menu, as a combo box's do:
+  -- a menu takes no keys, so this is the dropdown's only way from the
+  -- keyboard alone. It stops at the ends, as the stepper does.
   function v:key(c)
     if c == 32 or c == 10 or c == 13 then return self:open() end
+
+    if c == keys.UP or c == keys.DOWN then
+      local at = 1
+
+      for i, one in ipairs(self.choices) do
+        if one[1] == self.value then at = i end
+      end
+
+      local to = self.choices[at + (c == keys.DOWN and 1 or -1)]
+
+      if to and to[1] ~= self.value then
+        self.value = to[1]
+        if self.on_change then self.on_change(self, to[1]) end
+      end
+
+      return true
+    end
+
     return false
   end
 

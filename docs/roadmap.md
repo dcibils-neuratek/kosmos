@@ -11191,6 +11191,10 @@ the applications make the system useful, and is not pulled forward.
       typed, Return and Shift-Return step, Esc clears; Match case. Whole
       words and Within wait for WebKit options the C API does not carry.
       Downloads moved to Control-Shift-J, since Control-J is Return's byte.
+      **Save page as built in 0.11.500** (`testing.md` 18.899): Control-S,
+      the system's Save window at `/Home/Downloads` with an As row - a web
+      page complete in one MHTML file, WebKit's, or the HTML only - and the
+      file opens again as a page. Next: the menu.
     - *The start page* (Diego, 17 November 2026: "jetski needs a new empty
       page with my favorites and or with out top 20 sites added as
       favorites so we can clik and open them", with Safari's start page

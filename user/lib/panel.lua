@@ -32,6 +32,16 @@
 --   panel.folder{ start = "/Home", title = "Share a folder", button = "Share",
 --                 on_choose = function(path) ... end }
 --
+-- **What it is saved as, when there is a choice** (JetSki's Save page as,
+-- `docs/webkit.html`): `as` lists them - a value, the words, the extension -
+-- and an *As* row under the name chooses one, the name's extension
+-- following it. `on_choose` is handed the value beside the path.
+--
+--   panel.save{ start = "/Home/Downloads", name = "Saturn.mhtml",
+--               as = { { "complete", "A web page, complete - one file, with its pictures", "mhtml" },
+--                      { "html", "The page's HTML only", "html" } },
+--               on_choose = function(path, as) ... end }
+--
 -- **A folder is chosen as a file is opened** (`docs/sharing.md` N12c-2, the
 -- Servers window's Share a folder of /Home): only folders are listed, a
 -- second click or Return goes into one, and the button chooses the one
@@ -61,6 +71,12 @@ local FOOT   = 72                     -- the name, the buttons, the status
 local fitted = ui.fitted
 
 local function open(spec, mode)
+  -- Taller by a row when saving offers a choice of what as.
+  local choices = mode == "save" and spec.as and #spec.as > 0 and spec.as or nil
+  local FOOT = choices and FOOT + 40 or FOOT
+  local H = choices and H + 40 or H
+  local as = choices and (spec.as_value or choices[1][1]) or nil
+
   local win, err = ui.window{
     title = spec.title or (mode == "save" and "Save" or mode == "folder" and "Choose a folder"
                            or "Open"),
@@ -162,7 +178,7 @@ local function open(spec, mode)
   local function finish(path)
     win:close()
 
-    if spec.on_choose then spec.on_choose(path) end
+    if spec.on_choose then spec.on_choose(path, as) end
   end
 
   -- A folder is entered; a file is chosen when opening, and its name offered
@@ -222,6 +238,34 @@ local function open(spec, mode)
                      text = spec.name or "untitled",
                      on_enter = function() save() end }
     win:add(name)
+
+    -- As: the choice under the name, and the name's extension with it.
+    if choices then
+      local list = {}
+
+      for _, c in ipairs(choices) do list[#list + 1] = { c[1], c[2] } end
+
+      win:add(ui.label{ x = 12, y = H - FOOT + 50, w = 30, h = 24, text = "As" })
+      win:add(ui.dropdown{
+        x = 44, y = H - FOOT + 44, choices = list, value = as,
+        on_change = function(_, value)
+          local from, to
+
+          for _, c in ipairs(choices) do
+            if c[1] == as then from = c[3] end
+            if c[1] == value then to = c[3] end
+          end
+
+          as = value
+
+          local typed = tostring(name.text or "")
+          local stem = from and typed:match("^(.*)%." .. from:gsub("%W", "%%%0") .. "$")
+
+          if to and stem then name:set_text(stem .. "." .. to) end
+          print(("panel: saving as %s"):format(tostring(value)))
+        end,
+      })
+    end
 
     win:add(ui.button{
       x = bx, y = H - FOOT + 10, w = 96, h = 24, text = "Save",

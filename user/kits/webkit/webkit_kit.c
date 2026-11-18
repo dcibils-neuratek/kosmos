@@ -27,6 +27,7 @@
  *   v:key(code)  v:focus(on)
  *   v:inspect(show)  v:inspecting()  v:paint_inspector(surface, x, y, w, h)
  *   v:target(inspector)
+ *   v:save(path, complete)  v:saved()   Save page as; `saved` in v:state
  *
  * `pump` and `state` fill tables the caller keeps rather than making them:
  * they run on every pass of the window's loop, and a table a pass is
@@ -407,6 +408,7 @@ static int v_state(lua_State *L)
     flag(L, 2, "inspector", st.happened & WEBKIT_INSPECTOR);
     flag(L, 2, "hover", st.happened & WEBKIT_HOVER);
     flag(L, 2, "found", st.happened & WEBKIT_FOUND);
+    flag(L, 2, "saved", st.happened & WEBKIT_SAVED);
     flag(L, 2, "loading", st.loading);
     flag(L, 2, "can_back", st.can_back);
     flag(L, 2, "can_forward", st.can_forward);
@@ -776,6 +778,28 @@ static int v_found(lua_State *L)
     return 2;
 }
 
+/* v:save(path, complete) - Save page as; `saved` in `v:state` when done. */
+static int v_save(lua_State *L)
+{
+    webkit_save(id_of(L), luaL_checkstring(L, 2), lua_toboolean(L, 3));
+    return 0;
+}
+
+/* v:saved() - the bytes written, or nil and why not. */
+static int v_saved(lua_State *L)
+{
+    char why[160];
+    long long bytes = webkit_saved(id_of(L), why, sizeof why);
+
+    if (bytes > 0) {
+        lua_pushinteger(L, (lua_Integer)bytes);
+        return 1;
+    }
+    lua_pushnil(L);
+    lua_pushstring(L, why[0] ? why : "nothing was saved");
+    return 2;
+}
+
 static int v_target(lua_State *L)
 {
     webkit_target(id_of(L), lua_toboolean(L, 2));
@@ -796,6 +820,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "shown", v_shown },
         { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
         { "under", v_under }, { "find", v_find }, { "found", v_found },
+        { "save", v_save }, { "saved", v_saved },
         { NULL, NULL },
     };
     static const luaL_Reg fns[] = {

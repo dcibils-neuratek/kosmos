@@ -26,9 +26,11 @@
 
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
+#include <WebKit/WKData.h>
 #include <WebKit/WKDownloadClient.h>
 #include <WebKit/WKDownloadRef.h>
 #include <WebKit/WKErrorRef.h>
+#include <WebKit/WKFrame.h>
 #include <WebKit/WKFrameInfoRef.h>
 #include <WebKit/WKFramePolicyListener.h>
 #include <WebKit/WKHitTestResult.h>
@@ -153,6 +155,9 @@ struct View {
     bool underEditable = false;
     int foundCount = 0;             // find on the page: -1 past the most
     int foundIndex = 0;             // the shown match, from 1; 0 for none
+    String savePath;                // Save page as: where it is going
+    long long saved = 0;            // its bytes written, once it is done
+    String saveWhy;                 // or why not
     char selected[1024] { };
     WTF::MonotonicTime askedAt;
     char going[2048] { };
@@ -1877,6 +1882,55 @@ extern "C" void webkit_find(int id, const char* words, int matchCase, int backwa
         WKPageEvaluateJavaScriptInMainFrame(view->page, script.get(), nullptr, nullptr);
     }
     WKPageFindKosmos(view->page, words, matchCase, backwards, FIND_MOST);
+}
+
+// **Save page as**: WebKit's bytes - MHTML, or the main resource as it
+// came - written where the person chose, then said (`WEBKIT_SAVED`). The
+// view is found again by its number, since it may have closed meanwhile.
+static void savedPage(WKDataRef data, WKErrorRef error, void* context)
+{
+    auto* view = views.find(static_cast<int>(reinterpret_cast<intptr_t>(context)));
+    if (!view)
+        return;
+    view->saved = 0;
+    if (error || !data)
+        view->saveWhy = "WebKit gave nothing to save"_s;
+    else if (!WKDataGetSize(data))
+        view->saveWhy = "the page is empty"_s;
+    else if (auto wrote = FileSystem::overwriteEntireFile(view->savePath, WKDataGetSpan(data)))
+        view->saved = static_cast<long long>(*wrote);
+    else
+        view->saveWhy = "the file could not be written"_s;
+    told(view, WEBKIT_SAVED);
+}
+
+extern "C" void webkit_save(int id, const char* path, int complete)
+{
+    auto* view = views.find(id);
+    if (!view || !view->page)
+        return;
+    view->savePath = String::fromUTF8(path);
+    view->saved = 0;
+    view->saveWhy = String();
+    auto* context = reinterpret_cast<void*>(static_cast<intptr_t>(id));
+    if (complete)
+        WKPageGetContentsAsMHTMLData(view->page, context, savedPage);
+    else
+        WKFrameGetMainResourceData(WKPageGetMainFrame(view->page), savedPage, context);
+}
+
+extern "C" long long webkit_saved(int id, char* why, unsigned room)
+{
+    auto* view = views.find(id);
+    if (room)
+        why[0] = 0;
+    if (!view)
+        return 0;
+    if (room && !view->saveWhy.isEmpty()) {
+        auto utf8 = view->saveWhy.utf8();
+        snprintf(why, room, "%s", utf8.data());
+    }
+    return view->saved;
 }
 
 extern "C" int webkit_found(int id, int* count, int* current)

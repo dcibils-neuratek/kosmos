@@ -48,6 +48,11 @@ WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_REMOTE_INSPECTOR PRIVATE OFF)
 # `<video>` plays through the port's engine on the Media Kit, and since M3
 # a page's MediaSource does - which is how YouTube plays.
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO PRIVATE ON)
+# **MHTML**, for JetSki's Save page as (`docs/webkit.html`): a page, its
+# styles and its pictures in one file, as WebKit writes it from what it
+# holds (`WKPageGetContentsAsMHTMLData`), and opened again without the
+# network. WebKitGTK's saving works the same way; off by WebKit's default.
+WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_MHTML PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_MEDIA_SOURCE PRIVATE ON)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN PRIVATE OFF)
 WEBKIT_OPTION_DEFAULT_PORT_VALUE(ENABLE_WEB_AUDIO PRIVATE OFF)

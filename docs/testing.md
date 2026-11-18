@@ -37111,3 +37111,49 @@ again` says so, and only the second is held to the bounds.
 
 **Control**: the suite told the tone is 400 Hz - the capture 439 Hz,
 played again, 439 again, failed.
+
+## 18.899 Save page as
+
+**In short**: Control-S in JetSki opens the system's Save window at
+`/Home/Downloads`, named after the page, with an As row: *Web page,
+complete* - one MHTML file, WebKit's own, the default Diego chose - or
+*HTML only*, the main frame's source. The file written opens again as a
+page when its path is typed into the address. `x86-jetski` holds all
+three: Control-S and Return save `.mhtml` - 4793 bytes of the IDE
+tutorial - the As row chosen from the keys alone saves the same page's
+`.html`, 3974 and so smaller, and the MHTML typed into the address
+loads again.
+
+What it took: `ENABLE_MHTML`, which WebKit's ports leave off, turned on
+in `OptionsKosmos.cmake`; a MIME registry of the port's own
+(`platform/kosmos/MIMETypeRegistryKosmos.cpp`, PlayStation's table plus
+mhtml, mht and webp) so a `.mhtml` from the disk is `multipart/related`
+rather than a download; `webkit_save` and `webkit_saved` in the WebKit
+Kit, the bytes written by WebKit's `FileSystem` in the UI process and
+`WEBKIT_SAVED` on the view's state when they are; and the As row in
+`panel.lua`, whose choices swap the name's extension - Write's PDF export
+can use it next.
+
+**The bug the check found first**: Control-S did nothing, and said
+nothing. The page's key filter (`windows_key`) hands the window only the
+control bytes it names, and 19 was not among them, so WebKit was given
+Control-S and ignored it. Find on the page met the same filter in
+0.11.466; a window key added since needs adding there too.
+
+**Then two more, both the check's doing.** The saved page's path,
+typed into the address, was searched for at DuckDuckGo: a typed path
+became `file://` and the path, and then went through the same test as
+anything typed, where a space means words. A page saved is named after
+its title, so its name has spaces; a path now goes to `file://` with
+them encoded and never to the search. And the As row could not be
+chosen from the keys: a window's menu takes no keys at all, so Space
+opened it and Down and Return went nowhere. A dropdown now steps with
+Up and Down without opening, as a combo box does - every dropdown in the
+system, which is why the whole gate ran for it.
+
+And the check's first pass proved less than it said: it saved the HTML
+after reopening the MHTML, so the "HTML" was the archive again, 4793
+bytes both. Both are saved from one page now, and the HTML must come out
+smaller.
+
+**Control**: `save_page` made to return at once - "nothing said", failed.
