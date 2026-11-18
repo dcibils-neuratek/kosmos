@@ -285,6 +285,50 @@ static void glass(void)
  * from further down (more green). With light from the upper left: the left
  * edge brighter, the right edge not. And without a rim, the edge unbent.
  */
+/*
+ * **The beads** (Liquid Glass L5): under a rim a round button is a bead -
+ * its upper left caught by the light, brighter than its lower right. With
+ * no rim, the two are one colour.
+ */
+static void beads(void)
+{
+    struct surface back = make(120, 60, 0xff000000u);
+    struct surface pic = make(100, 40, 0xff202020u);
+    struct scene *sc = malloc(sizeof(*sc));
+    uint32_t p, q;
+    int s;
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff000000u;
+    sc->d = 14;
+    sc->box = 16;
+    sc->box_w = 20;
+    for (s = 0; s < SC_SLOTS; s++) {
+        sc->fill[s] = sc->held_fill[s] = 0xff803020u;
+        sc->ring[s] = 0xff803020u;
+    }
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a window with buttons");
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 40, SC_LIGHTS | SC_FOCUSED | SC_MAXIMISE, &pic, 100, 40, NULL, 0, 20, 12, 0, -1, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+
+    sc->rim_bevel = 4;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 20 + 1 + 5, 12 + 1 + 3);      /* a bead's upper left */
+    q = at(&back, 20 + 1 + 10, 12 + 1 + 11);    /* and its lower right */
+    check(((p >> 8) & 0xff) > ((q >> 8) & 0xff) + 30,
+          "under a rim, a button's upper left lit like a bead");
+
+    sc->rim_bevel = 0;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 20 + 1 + 5, 12 + 1 + 3);
+    q = at(&back, 20 + 1 + 10, 12 + 1 + 11);
+    check(p == q, "with no rim, a button one colour");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(pic.pixels);
+}
+
 static void rim(void)
 {
     struct surface back = make(120, 80, 0xff000000u);
@@ -431,6 +475,7 @@ int main(void)
     scene();
     glass();
     rim();
+    beads();
     stale();
 
     if (failed) {

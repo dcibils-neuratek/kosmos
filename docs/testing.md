@@ -36506,7 +36506,30 @@ check alone. And `x86-glass`, now 12: About in front, red over blue 36 at
 its top row against -23 in its header; the control, no front light, -14,
 fails that check alone.
 
-**Not yet** (LG5): the amber plate, the beads, and the star specular at the
-front window's top-left corner.
+**Not yet** (LG5): the amber plate, the beads (18.881), and the star specular
+at the front window's top-left corner.
 
 **The gate** (131 suites, 694 s): `x86-film` failed as in 18.878 and passed alone straight after; it composes no glass. The rest passed.
+
+## 18.881 The beads (LG5): a window's buttons as drops of glass
+
+**In short.** Under a look with a rim, a window's three round buttons are
+beads of glass now: each keeps its own colour, and a softer round of white
+at its upper left says the light from there has caught it - the same light
+the rims are lit from. A window behind, whose buttons are grey, has a
+fainter highlight, and a pressed button fainter still. A look with no rim
+draws them flat, as before.
+
+**How.** `light()` in `scene_core.c`, after the fill and the ring, blends
+a round half the button's width and two fifths its height at its upper
+left, white at 0x90 (0x50 pressed, 0x40 behind). It is the scene's work,
+so the window manager says nothing new: a rim is what turns it on.
+
+**Held by** `tools/test_draw.c`, now 52: under a rim a button's upper left
+more than 30 brighter than its lower right, and without a rim one colour.
+The control - the bead never drawn - fails the first check alone.
+
+**The gate** (132 suites, 695 s, the disk at 5 GB free): `arm-sandbox`,
+`x86-xavier`, `x86-film` and `x86-usb-2` failed - a run cut short, a
+token stream, a film's sound and a USB drive, none of which reads a pixel -
+and all four passed alone straight after (219 s). The rest passed.

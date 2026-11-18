@@ -307,6 +307,25 @@ static void draw_desktop(struct scene *sc, const struct sc_rect *r)
 
 /* One light (`OUT.light`): a disc in its colours, and its glyph when the
  * pointer is over the three. */
+/*
+ * **A glass bead** (Liquid Glass L5): under a look with a rim, a round
+ * button is a bead of its colour's glass - its highlight a smaller round of
+ * white at its upper left, as light from there catches a drop. Grey glass
+ * behind, its highlight fainter; pressed, fainter too. `alpha` is the
+ * highlight's. Nothing without a rim: the light is the glass's.
+ */
+static void bead(struct scene *sc, long dx, long dy, long d, unsigned alpha)
+{
+    long hw = d / 2, hh = d * 2 / 5;
+
+    if (sc->rim_bevel <= 0 || hw < 2 || hh < 2) {
+        return;
+    }
+
+    fill_round_on(sc->back, dx + d / 5, dy + d / 10, hw, hh,
+                  (uint32_t)alpha << 24 | 0xffffffu, hh / 2);
+}
+
 static void light(struct scene *sc, long x, long y, int slot, bool lit, bool off,
                   bool held)
 {
@@ -317,12 +336,14 @@ static void light(struct scene *sc, long x, long y, int slot, bool lit, bool off
     if (off) {
         fill_round_on(sc->back, dx, dy, d, d, sc->track, d / 2);
         frame_round_on(sc->back, dx, dy, d, d, sc->line_soft, d / 2);
+        bead(sc, dx, dy, d, 0x40);
         return;
     }
 
     fill_round_on(sc->back, dx, dy, d, d, held ? sc->held_fill[slot] : sc->fill[slot],
                   d / 2);
     frame_round_on(sc->back, dx, dy, d, d, sc->ring[slot], d / 2);
+    bead(sc, dx, dy, d, held ? 0x50 : 0x90);
 
     if (!lit) {
         return;
