@@ -32,6 +32,7 @@ enum webkit_happened {
     WEBKIT_ASKED     = 1 << 6,     /* the page asked to go somewhere: a link */
     WEBKIT_INSPECTOR = 1 << 7,     /* its inspector came, went, or has a picture */
     WEBKIT_HOVER     = 1 << 8,     /* what is under the pointer changed */
+    WEBKIT_FOUND     = 1 << 9,     /* find on the page answered */
 };
 
 /*
@@ -169,6 +170,17 @@ struct webkit_under {
     char selected[1024];
 };
 int webkit_under(int id, struct webkit_under *out);
+
+/*
+ * **Find on the page** (`docs/webkit.html`): every match marked, the next
+ * one - or, `backwards`, the one before - selected and scrolled to.
+ * `fresh` for words that changed: looked for again from where the last
+ * match began, so typing a letter more stays on the match it extends.
+ * "" takes the marks off. `WEBKIT_FOUND` when WebKit answered; then
+ * `webkit_found` says how many (-1: more than 1000) and which, from 1.
+ */
+void webkit_find(int id, const char *words, int match_case, int backwards, int fresh);
+int webkit_found(int id, int *count, int *current);
 
 void webkit_download_folder(const char *folder);
 /* Every download since JetSki began, the newest first; how many. */

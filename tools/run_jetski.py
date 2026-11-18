@@ -306,6 +306,9 @@ window.addEventListener("scroll", function () {
   if (window.scrollY > 0) document.title = "scrolled " + window.scrollY;
 });
 field.addEventListener("input", function () { document.title = "typed " + field.value; });
+field.addEventListener("keydown", function (e) {
+  if (e.key == "Enter") document.title = "entered " + field.value;
+});
 window.addEventListener("resize", function () {
   document.title = "resized " + window.innerWidth + "x" + window.innerHeight;
 });
@@ -465,6 +468,38 @@ def use(guest, R, dump, window, mark):
     if count < 200:
         return ["the link is not on the screen: %d of its pixels" % count]
 
+    # **Find on the page** (Control-F): "page" is on it twice - "A page in a
+    # window" and "Another page" - and WebKit says which is shown; Return
+    # the next, Shift-Return back, Escape the bar closed. And the bar takes
+    # its room: the page's top moves down by it, and back.
+    since = len(guest.seen)
+    guest.sendkey("ctrl-f")
+    if not said(guest, since, "jetski: find bar open", 15):
+        failed.append("Control-F did not open the find bar")
+    else:
+        since = len(guest.seen)
+        for k in "page":
+            guest.sendkey(k)
+            time.sleep(0.1)
+        # Return twice: the second, then round to the first. Shift-Return
+        # is Return's byte from the board until it sends it as its own.
+        steps = (("ret", "found 2, showing 2"), ("ret", "found 2, showing 1"))
+        if not said(guest, since, "jetski: found 2, showing 1", 20):
+            failed.append("\"page\" was not found twice, the first shown: %s"
+                          % (re.findall(r"jetski: found[^\r\n]*", guest.seen[since:])[-2:] or "nothing said"))
+            steps = ()
+        for key, want in steps:
+            since = len(guest.seen)
+            guest.sendkey(key)
+            if not said(guest, since, "jetski: " + want, 15):
+                failed.append("%s after \"page\" did not say %s: %s"
+                              % (key, want, re.findall(r"jetski: found[^\r\n]*", guest.seen[since:]) or "nothing"))
+        since = len(guest.seen)
+        guest.sendkey("esc")
+        if not said(guest, since, "jetski: find bar closed", 15):
+            failed.append("Escape did not close the find bar")
+        time.sleep(1.0)
+
     # **The right button** over the link: its menu leads with the link's
     # own two, and the first opens it in a tab of its own - which the
     # test's key closes again, so the page clicked below is the first tab's.
@@ -529,6 +564,14 @@ def use(guest, R, dump, window, mark):
     if not said(guest, mark, "jetski: title typed " + TYPED, 30):
         failed.append("\"%s\" was typed into the page's field and it did not arrive: %s"
                       % (TYPED, re.findall(r"jetski: title [^\r\n]*", guest.seen[mark:])[-2:]))
+    # And Return reaches the page: from 0.11.462 Control-J's downloads took
+    # it, since the board sends both as one byte (18.866).
+    since = len(guest.seen)
+    guest.sendkey("ret")
+    if not said(guest, since, "jetski: title entered " + TYPED, 20):
+        failed.append("Return in the page's field did not reach the page: %s"
+                      % (re.findall(r"jetski: (?:title|the downloads)[^\r\n]*", guest.seen[since:])[-2:]
+                         or "nothing said"))
 
     # The wheel, over the page and below the field.
     guest.mouse_to(*R._to_tablet(field[0] + 40, field[1] + field[3] + 120, sw, sh))
@@ -680,7 +723,7 @@ def changed_in(R, before, after, box):
 
 def downloaded(guest, R):
     """An attachment downloaded twice - the second made `(2)` - and a zip,
-    each said with its path; the page shown stays, and Control-J shows the
+    each said with its path; the page shown stays, and Control-Shift-J shows the
     three. Their bytes are checked on the disk after (`downloads_kept`)."""
     failed = []
     for key, path in (("ctrl-y", DOWNLOADED[0]), ("ctrl-y", DOWNLOADED[1]), ("ctrl-u", DOWNLOADED[2])):
@@ -695,9 +738,9 @@ def downloaded(guest, R):
             failed.append("a download was said to be a page that could not load")
     since = len(guest.seen)
     before = guest.screendump()
-    guest.sendkey("ctrl-j")
+    guest.sendkey("ctrl-shift-j")
     if not said(guest, since, "jetski: the downloads shown, 3", 20):
-        failed.append("Control-J did not show the three downloads: %s"
+        failed.append("Control-Shift-J did not show the three downloads: %s"
                       % (re.findall(r"jetski: the downloads[^\r\n]*", guest.seen[since:]) or "nothing said"))
     else:
         # And drawn: 0.11.462's said so and painted nothing (18.864).
@@ -706,7 +749,7 @@ def downloaded(guest, R):
         part = changed_in(R, before, guest.screendump(), [int(v) for v in at.groups()]) if at else 0.0
         if part < 0.5:
             failed.append("the downloads panel was said shown and %.0f%% of it is on the screen" % (part * 100))
-    guest.sendkey("ctrl-j")
+    guest.sendkey("ctrl-shift-j")
     return failed
 
 
@@ -1519,14 +1562,22 @@ def main():
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = changed(text, "if c == 10 or c == 12 or c == 15 or c == 20 then return true end",
-                        "if c == 10 or c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
+    text = changed(text, "if c == 6 or c == 12 or c == 15 or c == 20 then return true end",
+                        "if c == 6 or c == 12 or c == 15 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
                         " or c == 25 or c == 21 or c == 5 then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))
     if BROKEN == "unpainted":
         # 0.11.462's: the downloads panel added to the window, never painted.
         text = changed(text, "  if not dlpanel.hidden then ui.paint_view(dlpanel, s, dlpanel.x, dlpanel.y) end\n", "")
+    if BROKEN == "returnless":
+        # 0.11.462's: byte 10 - Return's and Control-J's - JetSki's own.
+        text = changed(text, "  if inspector_key(c) or downloads_key(c) then return true end\n",
+                       "  if c == 10 or inspector_key(c) or downloads_key(c) then return true end\n")
+    if BROKEN == "unfound":
+        # The bar asks WebKit nothing.
+        text = changed(text, "function web.find(...) if shown then shown:find(...) end end",
+                       "function web.find(...) end")
     if BROKEN == "underless":
         # The menu never asks what is under the pointer.
         text = changed(text, "  local u = web.under()\n  page.under = u\n",
@@ -1774,7 +1825,7 @@ def main():
         if not LIVE:
             failed.extend(sound())
 
-    checks = 44
+    checks = 46
     if failed:
         print("FAIL: %d of %d checks on JetSki's window (the picture is %s):\n  "
               % (len(failed), checks, picture) + "\n  ".join(failed))

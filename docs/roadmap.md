@@ -11158,6 +11158,37 @@ the applications make the system useful, and is not pulled forward.
       link's, a picture's and a selection's items from WebKit's hit test,
       and the hovered link in the status line. Still to do: *Download the
       linked file* and *Save image as* (the same patch), *Copy image*.
+      **Find on the page built in 0.11.466** (`testing.md` 18.866):
+      Control-F opens Write's find bar (`findbar.lua`) under JetSki's
+      head, WebKit tints every match and says "2 of 5" as the words are
+      typed, Return and Shift-Return step, Esc clears; Match case. Whole
+      words and Within wait for WebKit options the C API does not carry.
+      Downloads moved to Control-Shift-J, since Control-J is Return's byte.
+    - *The start page* (Diego, 17 November 2026: "jetski needs a new empty
+      page with my favorites and or with out top 20 sites added as
+      favorites so we can clik and open them", with Safari's start page
+      beside it). A new tab and an empty home show the favorites - the
+      files in `/Home/Favorites`, `favorites.lua`'s, which Tracker already
+      shows - as tiles with the site's icon or its letter, and the top 20
+      sites (`tools/top20.py`) when there are none yet. Drawn in
+      `docs/webkit.html`, *The start page*, and designed in `webkit.md`.
+      **AGREED the same day** (Diego: "yes to the start page, all 23, go
+      ahead"): every recommendation as written - JetSki draws it in Lua as
+      Settings is; all 23 sites written once as real favorites when
+      `/Home/Favorites` does not exist, "Add the top sites" when it is
+      empty; letter tiles first and site icons (`siteicons.lua`, WebKit's
+      icon loading client) the second step; Control-T, +, a new window and
+      the home page at `about:start`; Frequently visited after history,
+      the privacy summary after that; "Add to favorites" on Control-D.
+    - *Shift-Return as a key of its own* (found 17 November 2026, by find
+      on the page): the board sends Return as byte 10 with or without
+      Shift, as it sends Control-J, so no application can tell Shift-Return
+      from Return - find's "the one before" in JetSki and Write, a line
+      break in a chat's field - nor Control-J from either. To do in
+      `hal/keys.c`, as Control-Return already is: Shift-Return as
+      `ESC [ 13 ; 2 u`, the kit's fields taking it as Return where they
+      have no use for Shift. A shared piece, so with the whole gate.
+      JetSki's downloads moved to Control-Shift-J meanwhile (18.866).
     - *Loading in the status line* (Diego, 15 November 2026: "we need a
       progress bar in the bottom status section of jetski so the user knows
       when the webpage finished loading"). The status line along the

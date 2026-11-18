@@ -35897,3 +35897,44 @@ Control-F and Word's do.
 suite's ten minutes - for the next split of `arm-writeapp`), and Control-I
 for italic, which is Control-Shift-I while the board sends Control-I as
 Tab.
+
+## 18.866 Find on the page in JetSki
+
+**In short.** Control-F in JetSki opens a find bar under the head - the
+one Write has, `findbar.lua`, so the two look and behave alike. WebKit
+marks every match on the page as the words are typed and scrolls to the
+one shown; the bar says "1 of 2"; Return goes to the next, Shift-Return
+to the one before, Escape closes it and clears the marks. Match case is
+offered; Whole words and Within the selection are not, since WebKit's
+find does not do them.
+
+**Where it lives.** The port's `WKPageKosmos` gains
+`WKPageSetFindHandlerKosmos` and `WKPageFindKosmos`: a find client of
+WebKit's own C++ kind, because the C API's says how many matches there
+are and never which one is shown, and options with `DetermineMatchIndex`,
+which the C enum does not carry. WebKit works out the index only when the
+selection is a caret and otherwise counts on from the last, so a fresh
+search first collapses the selection to its start, by a script sent
+ahead on the same page's ordered channel. The kit adds `v:find(words,
+case, backwards, fresh)` and `v:found()` and a `found` flag in the pump;
+JetSki keeps the bar's state in one table, `F`, since its main chunk is
+at Lua's two hundred locals.
+
+**Held by** `x86-jetski`, 46 checks: Control-F, "page" typed and found
+twice with the first shown, Return to the second, Return wrapping to the
+first, Escape closing the bar. Its controls bite on one check each:
+`unfound` (`web.find` doing nothing) fails the find, and `returnless`
+fails the next.
+
+**Found on the way: Return had been opening the downloads.** The board
+sends Return as byte 10, which is also Control-J's, and Control-J was the
+downloads since 0.11.462 - so every Return typed into a page's field, a
+search box's say, opened the panel and never reached the page. The suite
+types into a field on its second page and presses Return now, and the
+page sets its title from the key it heard; the control `returnless`
+(Control-J's byte handed back to the window's keys) fails that step.
+Downloads are on Control-Shift-J, as in Chrome on Windows. Shift-Return
+arrives as Return too, so Write's "Shift-Return back" check passes by
+wrapping round two matches rather than by stepping back: `hal/keys.c`
+sending Shift-Return as a key of its own is on the roadmap, with the
+whole gate since every keyboard stands on it.

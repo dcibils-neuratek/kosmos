@@ -444,6 +444,192 @@ numbers):
   500 ms for the web process, GTK's way. Patch 0046 returns instead and
   keeps a visible page's picture; the update comes when it is ready.
 
+## The start page: the favorites, in a new tab
+
+Diego, 17 November 2026: "jetski needs a new empty page with my favorites
+and or with out top 20 sites added as favorites so we can clik and open
+them", with Safari's start page beside it. Drawn in `docs/webkit.html`,
+*The start page*, for him to look at before any of it is built; nothing
+here is agreed yet.
+
+### What a person can do with it
+
+- **Open a new tab and see their favorites**, as tiles: the site's icon,
+  or its host's first letter on a colour, with the name under it - with
+  the address field waiting, as a new tab's is now.
+- **Click one to open it** in this tab; **Control-click or the middle
+  button** opens it in a new tab behind.
+- **The right button on a tile**: open, open in a new tab, copy the
+  address, rename, change the address, show it in Tracker, remove it (to
+  the Trash).
+- **Edit**: a cross on every tile, drag to reorder, *Add a favorite* by
+  address and name; out of Edit a tile is dragged by holding it.
+- **A folder of favorites** is a tile of its first four; a click opens it
+  on the page with a trail back.
+- **The keyboard**: Tab from the address field to the tiles, the arrows,
+  Return, Control-Return, Delete.
+- **The top sites to start with**: on a `/Home` with no `Favorites`
+  folder, the folder is made with the list `tools/top20.py` measures;
+  emptied, the page offers *Add the top sites* rather than putting them
+  back on its own.
+- **It is the home page**: `about:start`, beside `about:settings`, which is
+  what Settings' *Home page* is already drawn with.
+
+Later steps, drawn under the favorites so the page's shape is seen whole:
+**Frequently visited**, once JetSki keeps history, and a **Privacy**
+summary, once the shield's counts are kept from page to page. A Reading
+List, as Safari has, is not proposed.
+
+### What it is made of
+
+| Piece | Who supplies it | Language | Shared with |
+|---|---|---|---|
+| The page: heading, grid, Edit, menus, drag | **JetSki**, a `ui.view` over the page's place, as `settings_page` is, shown by `cover()` | Lua | - |
+| The favorites: read, add, move, remove | **`favorites.lua`**, as it is - files in `/Home/Favorites` with `type`, `address`, `order`. Two functions added there, not in JetSki: `rename(path, name)` (through `name_for`) and `set_address(path, address)`; one tile's removal is `files.to_trash` | Lua | Tracker, the favorites bar, the star |
+| The top sites | **one list, typed once**: `user/lib/topsites.lua`, a table of `{ name, host }`, which `favorites.lua` seeds from and `tools/top20.py` reads rather than keeping its own `SITES` | Lua (data) | the five-second standard's measurement |
+| A site's icon: which one, fetched | **the WebKit Kit**, through an icon handler added to `WKPageKosmos.h` (below): WebKit loads it through the network process as any subresource, so the blocker and cookies apply | C++ | - |
+| A site's icon: decoded, made 64 by 64, written | **the WebKit Kit**, in C: WebKit's own image decoders, already in the image (PNG, ICO, JPEG, WebP, GIF), then libpng, already vendored (W5a), into the file | C++ | - |
+| Site icons: where they are kept, read, the letter tile | **new: `siteicons.lua`**, a library - `path(address)`, `surface(address)` (decoded once by `gfx`'s PNG decoder and kept for the process's life), `letter(address)` returning the letter and the colour | Lua, over `gfx`'s C | **JetSki's tabs** (a plain square today), **Tracker's favorite files** (drawn as a generic web page today), the favorites bar; Mail later, for a link |
+| A privacy summary (a later step) | the shield's counts - `page.blocked`, `page.cookies_blocked`, `shield.count` - which are per page today, added to a running total a day in `/Home/Settings/JetSki` | Lua | - |
+| Frequently visited (a later step) | `history.lua` (`roadmap.md` 6zz d4), which is in the tree and has had no caller since the old browser went in 0.11.461 | Lua | - |
+
+**Does another application want it?** The icons do - a favorite is a file
+Tracker draws, and a tab, a bar and a menu all want the same picture and
+the same letter on the same colour - so they get one door, `siteicons.lua`,
+and JetSki is its first user. The grid does not: it is this page's layout,
+and is JetSki's. **Does something already supply it?** The favorites,
+PNG decoding (`gfx`), PNG writing (libpng, in the image), image decoding
+(WebKit's), the Trash (`files.lua`), and the list of sites (`top20.py`'s,
+moved to where the guest can read it rather than copied).
+
+**Where the icons are kept**: `/Home/Settings/Site Icons/<host>.png`, the
+host without `www.`, 64 by 64. Not under `JetSki/`, because Tracker reads
+them too. A host longer than a file name holds (64 bytes) gets the letter.
+
+**Region and message.** The favorites are a list and an attribute read
+per entry - one-shot replies from `/Home`, messages. An icon's bytes come
+from the network process to the UI process over WebKit's own IPC, which
+puts a large one in a region; they are decoded and written by C in the
+UI process and never become a Lua string. Lua is told `st.icon = host` and
+reads the file back as a surface - pixels in a userdata, never a table.
+The page's pixels are the window's surface, painted by `ui.paint_view` as
+Settings' are.
+
+**C and Lua.** The page is Lua - layout and events for two dozen tiles is
+policy, not a loop over bytes. Every pixel is C: fills, rounded squares,
+text and the blit of a 64 by 64 surface. Fetching, decoding and writing an
+icon are C in the WebKit Kit, once a site.
+
+### What WebKit offers for site icons
+
+Read in `build/upstream/webkit/webkitgtk-2.54.2`:
+
+- **The C API's icon database is a stub.** `WKContextGetIconDatabase`
+  (`UIProcess/API/C/WKContext.h`), `WKContextSetIconDatabasePath`
+  (`WKContextPrivate.h`) and every `WKIconDatabase*` function in
+  `UIProcess/API/C/WKIconDatabase.h` - `SetIconDatabaseClient`,
+  `CopyIconDataForPageURL`, `CopyIconURLForPageURL`, the client's
+  `iconDataReadyForPageURL` - compile and do nothing: `WKIconDatabase.cpp`
+  returns `nullptr` and calls nothing. It is the legacy database, kept for
+  the symbols.
+- **What works is `API::IconLoadingClient`**
+  (`UIProcess/API/APIIconLoadingClient.h`), set with
+  `WebPageProxy::setIconLoadingClient`: `getLoadDecisionForIcons` is
+  offered each icon the page declares as a `WebCore::LinkIcon`
+  (`WebCore/platform/LinkIcon.h`: `url`, `type`, `mimeType`, `size`), and
+  answers which to load; `iconLoaded` is handed the bytes as `API::Data`.
+  WebCore collects them in `DocumentLoader::startIconLoading` - `Favicon`,
+  `TouchIcon` and `TouchPrecomposedIcon` (`LinkIconType.h`), the main
+  frame only, `/favicon.ico` added when a page declares none, nothing for
+  an `about:` page. The default client loads none, so **no icon is
+  fetched today**. WebKitGTK uses exactly this
+  (`UIProcess/API/glib/WebKitIconLoadingClient.cpp`, kept in its
+  `WebKitFaviconDatabase.cpp`). **It has no C API**, so the Kosmos port
+  adds one to `WKPageKosmos.h` beside `WKPageSetFindHandlerKosmos`: a
+  `WKPageSetIconHandlerKosmos(page, choose, loaded, context)`, a few dozen
+  lines in `WKPageKosmos.cpp`.
+- **`WKPreferencesSetLoadsSiteIconsIgnoringImageLoadingPreference`**
+  (`WKPreferencesRef.h`) decides whether icons load while Settings' *Load
+  images* is off. Recommended: left off, so images off means no icons.
+
+**Which icon**: the largest touch icon (usually 180 pixels, drawn for a
+tile, as Safari's start page uses them), else the largest favicon by its
+`size`, else `/favicon.ico`. An SVG icon gets the letter for now.
+
+### The busiest path: Control-T
+
+1. **The key reaches `new_tab()`** (Lua). Today it makes a WebKit view at
+   once (`web.tab_new`, `webkit.view`, a `WKPageRef`). With the start page
+   the tab is marked as the start page and **its view is not made until it
+   goes somewhere** - `pending` already defers a restored tab's load, and
+   this defers the view as well. Whether a `WKPageRef` starts a web
+   process before its first load is to be measured; if it does, a tab
+   opened and closed again from the start page never starts one.
+2. **The favorites read** (`favorites.read`): one `fs.list` and one
+   `fs.getattr` an entry - 24 messages to `/Home`, which is C, for the
+   seeded list. Read when the page is shown, not on a clock: the old
+   browser read the folder every three seconds; nothing is painted while
+   the page is hidden, and Pulses (`docs/pulses.md`) will say when Tracker
+   changed the folder.
+3. **The icons**: the first time in JetSki's life, a read of a few
+   kilobytes and a PNG decode into a 16 KB surface each, kept; every later
+   tab reuses them. No icon is a letter: one fill and one glyph.
+4. **Layout and paint**: two dozen rectangles worked out in Lua, painted
+   by `ui.paint_view` with the C primitives, one frame.
+
+**No network, no web process, no wait** - nothing on it can be slow for a
+reason outside the machine, so the bar is **the frame after the key**, not
+five seconds. Measured as a `jetski: start page shown in N ms` line and
+`frames`, on the M700, never under TCG. Idle, it allocates nothing: it
+does not animate.
+
+### Decisions, for Diego - a recommendation first in each
+
+**Decided on 17 November 2026, every one as recommended**, with all 23
+sites (Diego: "yes to the start page, all 23, go ahead").
+
+1. **What draws it: JetSki, in Lua, over the page's place, as Settings
+   is.** The other way, an HTML page under `kosmos:` drawn by WebKit,
+   needs a web process (a spawn, JavaScriptCore, Skia) for a page of
+   tiles; the favorites passed into it, which is a second copy of
+   `favorites.lua` in JavaScript; and its right button, Edit and drag
+   told back to the UI process by script messages. It would also be the
+   one page in JetSki not in the look's colours. Settings already shows
+   the Lua way works.
+2. **Seed the top sites as real favorite files, once.** Only when
+   `/Home/Favorites` does not exist - never again on its own, and an empty
+   folder offers *Add the top sites*. Files rather than "suggested" tiles:
+   suggestions would be a second kind of tile with its own state (which
+   ones were dismissed) kept somewhere else, and Tracker would not see
+   them; files have one door. **All 23**, since Diego added the last three
+   himself on 16 November - or the first 20, as he said; his call.
+   Addresses are `https://<host>/`.
+3. **Icons through `siteicons.lua`, kept in `/Home/Settings/Site Icons`,
+   captured only when a site is visited** - never fetched for a favorite
+   nobody has opened, so JetSki makes no request it was not asked for.
+   The other way, fetching each favorite's icon in the background, gives
+   23 icons at once and makes requests to 23 sites at first boot.
+4. **Interaction as listed above**: click here, Control or middle in a new
+   tab, the right button, Edit with drag, Delete to the Trash.
+5. **The first step is the favorites alone**: the page, the seed, letter
+   tiles, the right button and Edit (S1); icons next (S2: the handler, the
+   kit's capture, `siteicons.lua`, then the tabs and Tracker using it);
+   then Frequently visited with history, which is already next-but-one in
+   the order decided on 17 November ("bookmarks and history"); then the
+   privacy summary.
+6. **When it shows**: Control-T and the +, a new window, and as the home
+   page - `OWN.home` becomes `about:start` instead of the BeOS article,
+   as Settings is already drawn. The field is shown empty, as Safari's
+   is. Back from the first page opened from it comes back to it.
+
+**Doubts.** The menu drawn on 17 November says *Bookmark this page*; on
+Kosmos they are favorites, so it should read *Add to favorites*, Control-D.
+JetSki has no star yet (the old browser's went with it), so until the
+bookmarks step lands, favorites are added on this page, from Tracker, or
+by the seed. A first run that seeds `/Home/Favorites` will find the
+favorites in the gate's and the sticks' `/Home` too: a suite that counts
+them makes the folder first.
+
 ## Decided by Diego, 11 November 2026
 
 1. **The design agreed**: "yes go ahead".

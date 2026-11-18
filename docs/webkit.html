@@ -1,7 +1,7 @@
 <!--
   Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
   JetSki, the browser on WebKit: its window, the address field's suggestions, a tab
-  whose page stopped, developer mode (Web Inspector docked right, drawn 15 November), the menu, the right button, find, save page and print (drawn 17 November), downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
+  whose page stopped, developer mode (Web Inspector docked right, drawn 15 November), the menu, the right button, find, save page and print (drawn 17 November), the start page with the favorites (drawn 17 November), downloads, Settings and About (drawn 14 November). Drawn on 11 November 2026, before it is
   built, from Diego's "I need a new web browser that is current and usable
   like safari or chrome". Its feature set and architecture are
   docs/webkit.md, its diagram docs/webkit-architecture.png. The pages drawn
@@ -240,6 +240,80 @@ mark.f.cur { background: #f5a524; }
 .printp .op h4 { margin: 0 0 4px; font-size: 14px; }
 .printp .op .r { display: flex; justify-content: space-between; align-items: center; }
 .printp .op .dd { border: 1px solid var(--w-line); border-radius: 7px; padding: 3px 9px; }
+
+/* Drawn 17 November 2026: the start page - the favorites as tiles, in a new tab. */
+.url .ph { color: #9aa2b0; }
+.url .caret { display: inline-block; width: 1px; height: 15px; background: var(--w-ink); margin-right: 1px; vertical-align: -3px; }
+.start { background: var(--w-bg); padding: 26px 0 34px; position: relative; min-height: 470px; }
+.start .in { width: 852px; margin: 0 auto; }
+.start .hd { display: flex; align-items: baseline; margin: 0 0 12px; }
+.start .hd b { font-size: 17px; font-weight: 600; color: var(--w-ink); }
+.start .hd .n { color: var(--w-dim); font-size: 12px; margin-left: 10px; font-variant-numeric: tabular-nums; }
+.start .hd .ed { margin-left: auto; font-size: 12.5px; color: var(--w-accent); padding: 2px 10px; border-radius: 6px; }
+.start .hd .ed.done { background: var(--w-accent); color: #fff; }
+.start .later { margin-top: 28px; }
+.start .later .tag { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--w-dim); border: 1px solid var(--w-line); border-radius: 5px; padding: 0 6px; margin-left: 10px; }
+.fav { display: grid; grid-template-columns: repeat(8, 96px); gap: 12px 12px; }
+.ft { position: relative; text-align: center; font-size: 11.5px; padding: 8px 4px 6px; border-radius: 10px; color: var(--w-ink); }
+.ft .sq { width: 64px; height: 64px; border-radius: 15px; margin: 0 auto 6px; display: grid; place-items: center; font: 600 30px/1 var(--body); color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.16), inset 0 0 0 1px rgba(0,0,0,.05); overflow: hidden; position: relative; }
+.ft .nm { line-height: 1.3; max-height: 2.6em; overflow: hidden; }
+.ft.hov { background: rgba(47,107,220,.09); }
+.ft.hov .nm { color: var(--w-accent); }
+.ft.key { box-shadow: 0 0 0 2px var(--w-accent); }
+.ft.menu { background: rgba(47,107,220,.14); }
+.ft .del { position: absolute; top: 1px; left: 12px; width: 20px; height: 20px; border-radius: 50%; background: #5d6676; color: #fff; font: 600 13px/20px var(--body); box-shadow: 0 1px 3px rgba(0,0,0,.3); z-index: 1; }
+.ft.lift { transform: translate(14px,-6px) rotate(-3deg); z-index: 2; }
+.ft.lift .sq { box-shadow: 0 10px 22px rgba(0,0,0,.32); }
+.ft.drop .sq { background: transparent; box-shadow: none; border: 2px dashed var(--w-accent); }
+.ft.drop .nm { color: var(--w-accent); }
+.ft.add .sq { background: transparent; box-shadow: none; border: 2px dashed #b9c0cc; color: #8a92a0; font-weight: 400; }
+.ft.folder .sq { background: #e9ecf1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 9px; place-items: stretch; }
+.ft.folder .sq i { border-radius: 5px; display: block; }
+/* Letter tiles: the host's first letter, on a colour the host chooses. */
+.c1 { background: #4f7fd9; } .c2 { background: #3fa37a; } .c3 { background: #d9822b; } .c4 { background: #c2457a; }
+.c5 { background: #7a5bd1; } .c6 { background: #2b9db3; } .c7 { background: #b8873a; } .c8 { background: #5e6b7d; }
+/* Icon tiles: stand-ins drawn here for each site's own icon, as WebKit fetched it. */
+.ft .ic-w { background: #fff; }
+.ft .ic-goo { color: #4285f4; font-weight: 700; font-size: 36px; }
+.ft .ic-yt i { width: 40px; height: 28px; border-radius: 8px; background: #ff0033; display: grid; place-items: center; }
+.ft .ic-yt i::after { content: ""; border-left: 12px solid #fff; border-top: 7px solid transparent; border-bottom: 7px solid transparent; margin-left: 3px; }
+.ft .ic-am { color: #111; font-weight: 700; font-size: 34px; padding-bottom: 6px; }
+.ft .ic-am::after { content: ""; position: absolute; left: 17px; right: 17px; bottom: 13px; height: 6px; border-bottom: 3px solid #ff9900; border-radius: 0 0 50% 50%; }
+.ft .ic-rd { background: #ff4500; }
+.ft .ic-rd i { width: 34px; height: 26px; border-radius: 50%; background: #fff; display: block; position: relative; }
+.ft .ic-rd i::before, .ft .ic-rd i::after { content: ""; position: absolute; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: #ff4500; }
+.ft .ic-rd i::before { left: 9px; } .ft .ic-rd i::after { right: 9px; }
+.ft .ic-cnn { background: #cc0000; font: 800 16px/1 var(--display); letter-spacing: .02em; }
+.ft .ic-wp { color: #202122; font: 400 36px/1 Georgia, "Times New Roman", serif; }
+.ft .ic-bbc { display: flex !important; gap: 2px; }
+.ft .ic-bbc i { width: 15px; height: 15px; background: #111; color: #fff; font: 700 10px/15px var(--body); font-style: normal; }
+.ft .ic-gu { background: #052962; font: 700 34px/1 Georgia, "Times New Roman", serif; }
+.ft .ic-ny { color: #111; font: 700 36px/1 Georgia, "Times New Roman", serif; }
+/* Later steps, drawn so the page's shape can be seen whole. */
+.fq { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.fq div { display: flex; align-items: center; gap: 10px; background: var(--w-side); border: 1px solid var(--w-line); border-radius: 10px; padding: 9px 11px; font-size: 12px; min-width: 0; }
+.fq .s { width: 28px; height: 28px; border-radius: 7px; flex: none; display: grid; place-items: center; color: #fff; font: 600 14px var(--body); }
+.fq b { font-weight: 500; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq span span { color: var(--w-dim); font-size: 11px; }
+.prv { display: flex; align-items: center; gap: 14px; background: var(--w-side); border: 1px solid var(--w-line); border-radius: 12px; padding: 12px 16px; font-size: 12.5px; }
+.prv svg { flex: none; }
+.prv .big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.prv .dim { color: var(--w-dim); }
+/* A dark look: the start page is drawn in the look's colours, as Settings is. */
+.win.dk { background: #1c1f26; --w-bg: #1c1f26; --w-side: #23272f; --w-line: #2f343e; --w-ink: #e4e7ec; --w-dim: #9098a6; --w-accent: #6d9cf5; }
+.win.dk .tabs { background: #15181e; }
+.win.dk .tab { color: #9098a6; }
+.win.dk .tab.on { background: #1c1f26; color: #e4e7ec; }
+.win.dk .tool { background: #1c1f26; }
+.win.dk .url { background: #272b34; color: #cfd4dc; }
+.win.dk .url.focus { background: #1c1f26; box-shadow: 0 0 0 3px rgba(109,156,245,.22); }
+.win.dk .url .ph { color: #6f7785; }
+.win.dk .menu-btn, .win.dk .tool .nav, .win.dk .tool .act { color: #9098a6; }
+.win.dk .status { background: #23272f; color: #9098a6; }
+.win.dk .pmenu { background: #262a33; border-color: #353a45; color: #e4e7ec; box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+.win.dk .pmenu hr { border-top-color: #353a45; }
+.win.dk .pmenu kbd { color: #8a92a0; }
+.win.dk .ft .ic-w { background: #f4f5f7; }
 </style>
 </head>
 <body>
@@ -609,6 +683,154 @@ mark.f.cur { background: #f5a524; }
 <p class="cap">Control+P lays the page out for paper, as WebKit does for printing, and shows the first sheet. <i>To</i> is Save as PDF until Kosmos has a printer; Save opens the Save window. The PDF is written through the PDF Kit, as Write's is (<code>webkit.md</code>, agreed 11 November), with its words as words, so it can be searched and copied.</p>
 
 <p class="cap"><b>Open a file</b> (Control+O) was built in 0.11.429 and stays as it is: HTML and MHTML open in a tab, and a PDF goes to the PDF reader. <b>Page source</b> opens the page's HTML, as WebKit has it, in a new tab.</p>
+
+<h2>The start page</h2>
+<p class="sub" style="margin-bottom:14px">Diego, 17 November 2026: "jetski needs a new empty page with my favorites and or with out top 20 sites added as favorites so we can clik and open them". A new tab opens on it, Control-T or the +, with the address field waiting as it does now; it is <code>about:start</code>, the home page Settings is already drawn with. The favorites are the files in <code>/Home/Favorites</code> (<code>favorites.lua</code>), so what Tracker shows is what this shows. Drawn before it is built; <code>docs/webkit.md</code>, <i>The start page</i>, is what it is made of.</p>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Start page<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url focus"><span class="caret"></span><span class="ph">Search, or type an address</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view start" style="height:auto">
+    <div class="in">
+    <div class="hd"><b>Favorites</b><span class="n">23</span><span class="ed">Edit</span></div>
+    <div class="fav">
+      <div class="ft"><div class="sq ic-w ic-goo">G</div><div class="nm">Google</div></div>
+      <div class="ft"><div class="sq ic-w ic-yt"><i></i></div><div class="nm">YouTube</div></div>
+      <div class="ft"><div class="sq c1">N</div><div class="nm">Google News</div></div>
+      <div class="ft"><div class="sq ic-w ic-am">a</div><div class="nm">Amazon</div></div>
+      <div class="ft"><div class="sq ic-rd"><i></i></div><div class="nm">Reddit</div></div>
+      <div class="ft"><div class="sq c5">Y</div><div class="nm">Yahoo!</div></div>
+      <div class="ft"><div class="sq c6">B</div><div class="nm">Microsoft Bing</div></div>
+      <div class="ft"><div class="sq c7">I</div><div class="nm">IMDb</div></div>
+      <div class="ft"><div class="sq ic-cnn">CNN</div><div class="nm">CNN</div></div>
+      <div class="ft"><div class="sq c8">A</div><div class="nm">Apple</div></div>
+      <div class="ft"><div class="sq ic-gu">G</div><div class="nm">The Guardian</div></div>
+      <div class="ft hov"><div class="sq ic-w ic-wp">W</div><div class="nm">Wikipedia</div></div>
+      <div class="ft"><div class="sq ic-w ic-bbc"><i>B</i><i>B</i><i>C</i></div><div class="nm">BBC</div></div>
+      <div class="ft"><div class="sq c4">E</div><div class="nm">ESPN</div></div>
+      <div class="ft"><div class="sq c1">W</div><div class="nm">Walmart</div></div>
+      <div class="ft"><div class="sq c8">T</div><div class="nm">TikTok</div></div>
+      <div class="ft"><div class="sq c3">E</div><div class="nm">eBay</div></div>
+      <div class="ft"><div class="sq c6">W</div><div class="nm">The Weather Channel</div></div>
+      <div class="ft"><div class="sq ic-w ic-ny">T</div><div class="nm">The New York Times</div></div>
+      <div class="ft"><div class="sq c3">T</div><div class="nm">Temu</div></div>
+      <div class="ft"><div class="sq c2">I</div><div class="nm">Infobae</div></div>
+      <div class="ft"><div class="sq c5">E</div><div class="nm">El Observador</div></div>
+      <div class="ft"><div class="sq c7">E</div><div class="nm">El Pa&iacute;s (Uruguay)</div></div>
+    </div>
+    </div>
+    <span class="status">https://wikipedia.org/</span>
+  </div>
+</div></div>
+<p class="cap"><b>The first time JetSki opens on a <code>/Home</code> with no <code>Favorites</code> folder</b>, the folder is made with the top sites in it - the list <code>tools/top20.py</code> measures, in its order, each a favorite file like any other - so they are renamed, moved and removed as favorites are. <b>Icon tiles</b> are a site's own icon, kept the first time the site is visited (drawn here as stand-ins); <b>letter tiles</b> are the host's first letter, without <code>www.</code>, on one of eight colours chosen by the host - a site not visited yet, or one with no icon WebKit can read. The pointer is over Wikipedia: its tile lit, its address in the status line, as a link's is. A click opens it in this tab; Control or the middle button opens it in a new tab behind.</p>
+<div class="scroller"><div class="win dk">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab"><span class="ic" style="background:#cfd5dd"></span>Saturn - Encyclopedia<span class="x">&times;</span></div>
+    <div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Start page<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url focus"><span class="caret"></span><span class="ph">Search, or type an address</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view start" style="height:auto;position:relative">
+    <div class="in">
+    <div class="hd"><b>Favorites</b><span class="n">23</span><span class="ed">Edit</span></div>
+    <div class="fav">
+      <div class="ft"><div class="sq ic-w ic-goo">G</div><div class="nm">Google</div></div>
+      <div class="ft"><div class="sq ic-w ic-yt"><i></i></div><div class="nm">YouTube</div></div>
+      <div class="ft"><div class="sq c1">N</div><div class="nm">Google News</div></div>
+      <div class="ft"><div class="sq ic-w ic-am">a</div><div class="nm">Amazon</div></div>
+      <div class="ft"><div class="sq ic-rd"><i></i></div><div class="nm">Reddit</div></div>
+      <div class="ft"><div class="sq c5">Y</div><div class="nm">Yahoo!</div></div>
+      <div class="ft"><div class="sq c6">B</div><div class="nm">Microsoft Bing</div></div>
+      <div class="ft"><div class="sq c7">I</div><div class="nm">IMDb</div></div>
+      <div class="ft"><div class="sq ic-cnn">CNN</div><div class="nm">CNN</div></div>
+      <div class="ft"><div class="sq c8">A</div><div class="nm">Apple</div></div>
+      <div class="ft menu"><div class="sq ic-gu">G</div><div class="nm">The Guardian</div></div>
+      <div class="ft"><div class="sq ic-w ic-wp">W</div><div class="nm">Wikipedia</div></div>
+      <div class="ft"><div class="sq ic-w ic-bbc"><i>B</i><i>B</i><i>C</i></div><div class="nm">BBC</div></div>
+      <div class="ft"><div class="sq c4">E</div><div class="nm">ESPN</div></div>
+      <div class="ft"><div class="sq c1">W</div><div class="nm">Walmart</div></div>
+      <div class="ft"><div class="sq c8">T</div><div class="nm">TikTok</div></div>
+      <div class="ft"><div class="sq c3">E</div><div class="nm">eBay</div></div>
+      <div class="ft"><div class="sq c6">W</div><div class="nm">The Weather Channel</div></div>
+      <div class="ft"><div class="sq ic-w ic-ny">T</div><div class="nm">The New York Times</div></div>
+      <div class="ft"><div class="sq c3">T</div><div class="nm">Temu</div></div>
+      <div class="ft"><div class="sq c2">I</div><div class="nm">Infobae</div></div>
+      <div class="ft"><div class="sq c5">E</div><div class="nm">El Observador</div></div>
+      <div class="ft"><div class="sq c7">E</div><div class="nm">El Pa&iacute;s (Uruguay)</div></div>
+    </div>
+    <div class="later"><div class="hd"><b>Frequently visited</b><span class="tag">a later step</span></div>
+      <div class="fq">
+        <div><span class="s c1">W</span><span style="min-width:0"><b>Saturn - Encyclopedia</b><span>en.wikipedia.org</span></span></div>
+        <div><span class="s c2">N</span><span style="min-width:0"><b>Google News</b><span>news.google.com</span></span></div>
+        <div><span class="s c5">E</span><span style="min-width:0"><b>El Observador</b><span>elobservador.com.uy</span></span></div>
+        <div><span class="s c6">L</span><span style="min-width:0"><b>Lua 5.4 Reference Manual</b><span>www.lua.org</span></span></div>
+      </div></div>
+    <div class="later"><div class="hd"><b>Privacy</b><span class="tag">a later step</span></div>
+      <div class="prv"><svg width="30" height="34" viewBox="0 0 30 34"><path d="M15 2 L27 6 V16 C27 24 21 29 15 32 C9 29 3 24 3 16 V6 Z" fill="none" stroke="var(--w-accent)" stroke-width="2.2"/><path d="M10 17 l4 4 7-8" fill="none" stroke="var(--w-accent)" stroke-width="2.2"/></svg>
+        <span><span class="big">1,284</span> <span class="dim">trackers and adverts kept out in the last seven days, on 61 sites</span><br><span class="dim">and 312 third-party cookies refused - the shield's counts, kept as a running total</span></span></div></div>
+    </div>
+    <div class="pmenu" style="left:330px;top:196px;width:236px">
+      <div class="i on">Open</div>
+      <div class="i">Open in a new tab <kbd>Ctrl click</kbd></div>
+      <div class="i">Copy the address</div>
+      <hr>
+      <div class="i">Rename&hellip;</div>
+      <div class="i">Change the address&hellip;</div>
+      <div class="i">Show in Tracker</div>
+      <hr>
+      <div class="i">Remove from favorites</div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>In a dark look.</b> The start page is drawn by JetSki over the page's place, as Settings is, in the look's colours - so it is dark under a dark look without a page of CSS deciding it. <b>The right button on a tile</b>: open it here or in a new tab, copy its address, rename it or change its address (the file's name and its <code>address</code> attribute, through <code>favorites.lua</code>), show its file in Tracker, or remove it - to the Trash, as Tracker's Delete does, so a slip is undone from there. <b>Below the favorites, two later steps</b>, drawn so the page's shape is seen whole and not part of the first one: the pages visited most, once JetSki keeps history (<code>history.lua</code> is there from the old browser and nothing writes to it today), and what the shield kept out, once its counts are kept from page to page rather than for the page shown. The numbers are examples.</p>
+<div class="scroller"><div class="win">
+  <div class="tabs"><span class="menu-btn">&#9776;</span>
+    <div class="tab on"><span class="ic" style="background:var(--w-accent)"></span>Start page<span class="x">&times;</span></div>
+    <div class="tab plus">+</div><span class="grow"></span><span class="lights" style="align-self:center;padding-bottom:6px"><i style="background:#2ec95a"></i><i style="background:#f6b73c"></i><i style="background:#f25c54"></i></span>
+  </div>
+  <div class="tool"><span class="nav">&#8592;&#8594;&#8635;</span>
+    <div class="url focus"><span class="caret"></span><span class="ph">Search, or type an address</span></div>
+    <span class="act"><span>&#9734;</span><span>&#8595;</span><span>&#8942;</span></span></div>
+  <div class="view start" style="height:auto">
+    <div class="in">
+    <div class="hd"><b>Favorites</b><span class="n">drag to change the order; &times; to remove; a name, to rename it</span><span class="ed done">Done</span></div>
+    <div class="fav">
+      <div class="ft drop" style="grid-column:2;grid-row:1"><div class="sq"></div><div class="nm">&nbsp;</div></div>
+      <div class="ft lift" style="grid-column:2;grid-row:1"><span class="del">&times;</span><div class="sq ic-rd"><i></i></div><div class="nm">Reddit</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-goo">G</div><div class="nm">Google</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-yt"><i></i></div><div class="nm">YouTube</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c1">N</div><div class="nm">Google News</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-am">a</div><div class="nm">Amazon</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c5">Y</div><div class="nm">Yahoo!</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c6">B</div><div class="nm">Microsoft Bing</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c7">I</div><div class="nm">IMDb</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-cnn">CNN</div><div class="nm">CNN</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c8">A</div><div class="nm">Apple</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-gu">G</div><div class="nm">The Guardian</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-wp">W</div><div class="nm">Wikipedia</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-bbc"><i>B</i><i>B</i><i>C</i></div><div class="nm">BBC</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c4">E</div><div class="nm">ESPN</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c1">W</div><div class="nm">Walmart</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c8">T</div><div class="nm">TikTok</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c3">E</div><div class="nm">eBay</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c6">W</div><div class="nm">The Weather Channel</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq ic-w ic-ny">T</div><div class="nm">The New York Times</div></div>
+      <div class="ft"><span class="del">&times;</span><div class="sq c3">T</div><div class="nm">Temu</div></div>
+      <div class="ft folder"><span class="del">&times;</span><div class="sq"><i class="c2"></i><i class="c5"></i><i class="c7"></i><i style="background:#cfd5dd"></i></div><div class="nm">R&iacute;o de la Plata</div></div>
+      <div class="ft add"><div class="sq">+</div><div class="nm">Add a favorite</div></div>
+    </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap"><b>Edit</b>, at the right of the heading, and <b>Done</b> to leave it. Every tile has its &times;; one is being dragged - Reddit, from fifth to second - and the others have made room where it will land, which is <code>favorites.move</code>, the order the bar and Tracker keep too. <b>Add a favorite</b> asks for an address and a name, in place. <b>A folder</b> in <code>/Home/Favorites</code> is a tile of its first four (here three of the top sites put in one by hand, as an example); a click opens it on the page with a trail back to Favorites, and a tile dropped on it goes into it. Out of Edit, a tile is also dragged by holding it, as a desktop icon is. <b>From the keyboard</b>: Tab from the address field to the tiles, the arrows between them, Return to open one, Control-Return in a new tab, Delete to remove it.</p>
+<div class="q"><b>When there are none.</b> A <code>Favorites</code> folder that is there and empty is a person's choice, and the top sites are not put back on their own: the page says <i>No favorites yet - the star in the address field keeps the page shown</i>, with <b>Add the top sites</b> beside it.</div>
 
 <h2>Settings</h2>
 <div class="scroller"><div class="win">

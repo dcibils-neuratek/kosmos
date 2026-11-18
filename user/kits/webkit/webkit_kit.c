@@ -406,6 +406,7 @@ static int v_state(lua_State *L)
     flag(L, 2, "asked", st.happened & WEBKIT_ASKED);
     flag(L, 2, "inspector", st.happened & WEBKIT_INSPECTOR);
     flag(L, 2, "hover", st.happened & WEBKIT_HOVER);
+    flag(L, 2, "found", st.happened & WEBKIT_FOUND);
     flag(L, 2, "loading", st.loading);
     flag(L, 2, "can_back", st.can_back);
     flag(L, 2, "can_forward", st.can_forward);
@@ -754,6 +755,27 @@ static int v_under(lua_State *L)
     return 1;
 }
 
+/* `v:find(words, match_case, backwards, fresh)`: every match marked, the
+ * next selected; "" takes the marks off. `v:found()`: how many (-1 past a
+ * thousand) and which is shown, from 1 - as WebKit last answered. */
+static int v_find(lua_State *L)
+{
+    int id = id_of(L);
+    webkit_find(id, luaL_checkstring(L, 2), lua_toboolean(L, 3), lua_toboolean(L, 4),
+                lua_toboolean(L, 5));
+    return 0;
+}
+
+static int v_found(lua_State *L)
+{
+    int count = 0, current = 0;
+
+    webkit_found(id_of(L), &count, &current);
+    lua_pushinteger(L, count);
+    lua_pushinteger(L, current);
+    return 2;
+}
+
 static int v_target(lua_State *L)
 {
     webkit_target(id_of(L), lua_toboolean(L, 2));
@@ -773,7 +795,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "damage", v_damage },
         { "shown", v_shown },
         { "security", v_security }, { "anyway", v_anyway }, { "kept", v_kept },
-        { "under", v_under },
+        { "under", v_under }, { "find", v_find }, { "found", v_found },
         { NULL, NULL },
     };
     static const luaL_Reg fns[] = {

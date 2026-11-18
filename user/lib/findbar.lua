@@ -12,7 +12,8 @@
 --                 needle = "river", count = 11, current = 3,
 --                 replacing = true, replacement = "",
 --                 case = false, words = true, within = false,
---                 focus = "find" }         -- or "replace", or nil
+--                 focus = "find",          -- or "replace", or nil
+--                 only = nil }             -- or { case = true }: those switches
 --   pk.findbar(s, bar)                     -- draws it, and gives it its `h`
 --   pk.findbar_at(bar, x, y)               -- "find", "previous", "next",
 --                                          -- "replacement", "replace", "all",
@@ -115,9 +116,12 @@ function findbar.into(ui, pk)
       x = x + 8
     end
 
-    button("case", "Aa", b.case)
-    button("words", "Whole words", b.words)
-    button("within", "In selection", b.within)
+    -- `only`, when given, names the switches this search has - a web
+    -- page's has Match case alone; all three otherwise.
+    local only = b.only
+    if not only or only.case then button("case", "Aa", b.case) end
+    if not only or only.words then button("words", "Whole words", b.words) end
+    if not only or only.within then button("within", "In selection", b.within) end
 
     local close = { x = b.x + b.w - 14 - 26, y = b.y + (b.h - 26) // 2, icon = "close" }
     pk.iconbutton(s, close)

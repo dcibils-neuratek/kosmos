@@ -13,6 +13,7 @@
 #include "config.h"
 #include "WKPageKosmos.h"
 
+#include "APIFindClient.h"
 #include "AuthenticationDecisionListener.h"
 #include "DrawingAreaProxyCoordinatedGraphics.h"
 #include "KosmosFrameTimes.h"
@@ -23,6 +24,7 @@
 #include "NativeWebWheelEvent.h"
 #include "WKAPICast.h"
 #include "PageLoadState.h"
+#include "WebFindOptions.h"
 #include "WebPageProxy.h"
 #include <WebCore/CertificateInfo.h>
 #include <WebCore/CertificateSummary.h>
@@ -273,4 +275,49 @@ void WKKosmosSetStoreMemory(bool (*make)(unsigned long, void**, long*), void (*r
 void WKKosmosSetStoreForgets(bool forgets)
 {
     WebKit::kosmosStoreForgets = forgets;
+}
+
+namespace {
+
+class KosmosFindClient final : public API::FindClient {
+    WTF_MAKE_TZONE_ALLOCATED_INLINE(KosmosFindClient);
+public:
+    KosmosFindClient(WKPageFoundKosmos found, void* context)
+        : m_found(found)
+        , m_context(context)
+    {
+    }
+
+private:
+    void didFindString(WebKit::WebPageProxy* page, const String&, const Vector<WebCore::IntRect>&, uint32_t count, int32_t index, bool wrapped) override
+    {
+        m_found(WebKit::toAPI(page), count, index, wrapped, m_context);
+    }
+
+    void didFailToFindString(WebKit::WebPageProxy* page, const String&) override
+    {
+        m_found(WebKit::toAPI(page), 0, -1, false, m_context);
+    }
+
+    WKPageFoundKosmos m_found;
+    void* m_context;
+};
+
+}
+
+void WKPageSetFindHandlerKosmos(WKPageRef pageRef, WKPageFoundKosmos found, void* context)
+{
+    WebKit::toImpl(pageRef)->setFindClient(found ? makeUnique<KosmosFindClient>(found, context) : nullptr);
+}
+
+void WKPageFindKosmos(WKPageRef pageRef, const char* words, bool matchCase, bool backwards, unsigned most)
+{
+    using WebKit::FindOptions;
+    OptionSet<FindOptions> options { FindOptions::WrapAround, FindOptions::ShowHighlight,
+        FindOptions::ShowFindIndicator, FindOptions::DetermineMatchIndex };
+    if (!matchCase)
+        options.add(FindOptions::CaseInsensitive);
+    if (backwards)
+        options.add(FindOptions::Backwards);
+    WebKit::toImpl(pageRef)->findString(String::fromUTF8(words), options, most);
 }

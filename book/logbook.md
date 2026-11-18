@@ -4313,3 +4313,25 @@ session built the system and ran Write's tests on it before taking it in.
 document takes 1.5 ms here, and nearly all of that is laying out the
 pages again - every page, on every key. That is the next thing to fix for
 long documents.
+
+## 17 November 2026 - Find on the page
+
+**In short.** Control-F in JetSki now finds words on the page: every
+match is marked, the bar says which one of how many you are looking at,
+and Return moves to the next. It is the same bar as Write's.
+
+**What.** WebKit already knew how to find and mark words. What it did not
+tell a program like JetSki was *which* match was showing - only how many
+there were. A small piece added to Kosmos's side of WebKit asks for that
+too, and the bar shows it.
+
+**Why it matters.** Finding a word on a long page is one of the things a
+browser is used for every day, and the bar being one kit for Write and
+JetSki means Mail and Sheets get the same one rather than a third copy.
+
+**Found on the way.** Pressing Return in any field on a page - a search
+box - had been opening the downloads panel instead of reaching the page,
+since downloads arrived. The keyboard sends Return and Control-J as the
+same code, and Control-J was the downloads' key. Downloads moved to
+Control-Shift-J, and the test now types into a page's field and presses
+Return, which would have caught it.

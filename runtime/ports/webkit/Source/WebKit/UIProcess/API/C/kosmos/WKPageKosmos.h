@@ -137,6 +137,19 @@ WK_EXPORT void WKKosmosSetStoreMemory(bool (*make)(unsigned long bytes, void** a
  * nothing, and shows what it held before. */
 WK_EXPORT void WKKosmosSetStoreForgets(bool);
 
+/*
+ * **Find on the page, with which match is shown** (`docs/webkit.html`,
+ * *Find on the page*). The C API's find client says how many matches there
+ * are and not which one is selected; WebKit's own client is told both,
+ * when it is asked with `DetermineMatchIndex`, which the C options cannot
+ * say. `found` hears `count` (0 when there is none, `(unsigned)-1` past
+ * `most`) and the shown match's `index` from 0. Every match is marked, the
+ * one found selected and scrolled to; WKPageHideFindUI takes the marks off.
+ */
+typedef void (*WKPageFoundKosmos)(WKPageRef, unsigned count, int index, bool wrapped, void* context);
+WK_EXPORT void WKPageSetFindHandlerKosmos(WKPageRef, WKPageFoundKosmos, void* context);
+WK_EXPORT void WKPageFindKosmos(WKPageRef, const char* words, bool matchCase, bool backwards, unsigned most);
+
 #ifdef __cplusplus
 }
 #endif

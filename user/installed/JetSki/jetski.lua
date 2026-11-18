@@ -191,6 +191,8 @@ function web.security() return shown:security() end
 function web.anyway() return shown:anyway() end
 function web.kept(n) return shown:kept(n) end
 function web.under() return shown:under() end
+function web.find(...) if shown then shown:find(...) end end
+function web.found() if shown then return shown:found() end return 0, 0 end
 web.frame, web.developer = webkit.frame, webkit.developer
 web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspector_size
 
@@ -398,7 +400,7 @@ header:add(shield)
 
 -- **Downloads** (`docs/webkit.html`, *Downloads*): the button, with a thin
 -- bar under it while one runs - how far all of them have got - and
--- pressed, or Control-J, the list (below).
+-- pressed, or Control-Shift-J, the list (below).
 local dlbutton = ui.view{ w = 30, h = 26 }
 dlbutton.part = nil                  -- 0 to 1 while one runs; nil when none
 local downloads_toggle               -- below
@@ -528,6 +530,9 @@ local refused_page                   -- a tab whose certificate was refused, bel
 local lock_close                     -- the padlock's panel put away, below
 local shield_close                   -- the shield's, below
 local dlpanel, downloads_close, downloads_frame   -- the downloads', below
+-- Find on the page's, below: `F.state` while the bar is open, `F.view`,
+-- `F.H`, and `F.open`, `F.close`, `F.paint`, `F.frame`.
+local F = { H = 0 }
 local settings_page                  -- Settings, in a tab of its own, below
 local open_settings, fill_settings, cover
 local settings_tab                   -- the tab Settings is in, or nil
@@ -543,7 +548,11 @@ local inspecting, to_inspector = false, false
 -- **Every size from the window's**: the header and the address across it,
 -- the page below it, and the status line along the bottom.
 local function layout()
-  VIEW_H = math.max(1, H - HEAD - STAT)
+  -- The find bar, while it is open, between the header and the page.
+  VIEW_Y = HEAD + (F.state and F.H or 0)
+  VIEW_H = math.max(1, H - VIEW_Y - STAT)
+  view.y = VIEW_Y
+  if F.view then F.view.y, F.view.w = HEAD, W end
   strip.w, header.w = W, W
   lay_tabs()
   local right = W - ui.layout.head_edge
@@ -565,9 +574,9 @@ local function layout()
   SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
   PAGE_W = W - SPLIT_W
   view.w, view.h = W, VIEW_H
-  if gone then gone.w, gone.h = PAGE_W, VIEW_H end
-  if refused_page then refused_page.w, refused_page.h = PAGE_W, VIEW_H end
-  if settings_page then settings_page.w, settings_page.h = W, VIEW_H end
+  if gone then gone.y, gone.w, gone.h = VIEW_Y, PAGE_W, VIEW_H end
+  if refused_page then refused_page.y, refused_page.w, refused_page.h = VIEW_Y, PAGE_W, VIEW_H end
+  if settings_page then settings_page.y, settings_page.w, settings_page.h = VIEW_Y, W, VIEW_H end
 end
 
 layout()
@@ -628,9 +637,17 @@ local function inspector_key(c)
          and (key == 73 or key == 105)
 end
 
+-- **Control-Shift-J: the downloads.** Not Control-J, Chrome's: the board
+-- sends Return as byte 10, Control-J's, so Control-J took every Return a
+-- page was typed into from 0.11.462 until find on the page met it.
+local function downloads_key(c)
+  local key, mods = keys.parts(c)
+  return (key == 106 or key == 74) and mods == (keys.CTRL | keys.SHIFT)
+end
+
 local function windows_key(c)
-  if c == 10 or c == 12 or c == 15 or c == 20 then return true end
-  if inspector_key(c) then return true end
+  if c == 6 or c == 12 or c == 15 or c == 20 then return true end
+  if inspector_key(c) or downloads_key(c) then return true end
   local key, mods = keys.parts(c)
   if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
   return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
@@ -1823,6 +1840,7 @@ local function frame(page_only)
 
   ui.paint_view(strip, s, 0, 0)
   ui.paint_view(header, s, 0, TABS)
+  if F.state then F.paint(s) end
 
   -- A page on its way, along the header's rule - a sliver of it from the
   -- moment a link is followed, before WebKit has a figure to give.
@@ -2161,6 +2179,7 @@ win.on_frame = function()
   web.pump(page.loading and 12 or 4, st)
   if tracing then commits_said() end
   local downloads_changed = downloads_frame()
+  if F.frame() then downloads_changed = true end
 
   -- Settings' tab is JetSki's: its name and address, whatever the view
   -- under it says.
@@ -2339,7 +2358,159 @@ win.on_frame = function()
 end
 
 -- Control-L: the address, all of it chosen, to type over.
+--------------------------------------------------------------------------
+-- **Find on the page** (`docs/webkit.html`, *Find on the page*, agreed 17
+-- November 2026): Control-F opens a bar under the header - the Writer's,
+-- `findbar.lua`, one bar for every application that looks for words - and
+-- the page moves down to make room. WebKit marks every match, selects the
+-- one shown and scrolls to it; the bar says how many and which, as WebKit
+-- answers (`st.found`). Return the next, Shift-Return the one before,
+-- Escape or the bar's cross to close it, which takes the marks off.
+--
+do
+  local pk = use("/Kosmos/Libraries/pixelkit.lua").new(ui)
+  local findbar = use("/Kosmos/Libraries/findbar.lua")
+  findbar.into(ui, pk)
+  F.H = findbar.H
+
+  F.view = ui.view{ x = 0, y = HEAD, w = W, h = F.H, hidden = true }
+  F.view.focusable = true
+  function F.view:draw() end
+
+  -- The page's size changed with the bar: WebKit told, the window drawn.
+  local function relaid()
+    layout()
+    web.resize(PAGE_W, VIEW_H)
+    if inspecting then web.inspector_size(SPLIT_W - 1, VIEW_H) end
+    frame()
+  end
+
+  local function look(fresh, backwards)
+    if F.state.words == "" then F.state.count, F.state.current = 0, 0 end
+    web.find(F.state.words, F.state.case, backwards, fresh)
+    frame()
+  end
+
+  F.paint = function(s)
+    local b = F.state.bar
+    b.x, b.y, b.w = 0, HEAD, W
+    b.needle, b.count, b.current = F.state.words, math.max(0, F.state.count), F.state.current
+    b.case, b.words, b.within, b.replacing = F.state.case, false, false, false
+    b.only = { case = true }
+    b.chosen = F.state.chosen
+    b.focus = win.frame:focusables()[win.focus] == F.view and "find" or nil
+    pk.findbar(s, b)
+    if F.state.count < 0 and F.state.words ~= "" then        -- past the thousand
+      local at = (b.parts or {})[1]
+      if at then
+        s:fill(at.box.x + at.box.w + 8, b.y + 4, 70, b.h - 8, theme.window)
+        s:text(at.box.x + at.box.w + 8, b.y + (b.h - gfx.height()) // 2, "1000+", theme.text_dim, nil, "ui")
+      end
+    end
+  end
+
+  F.open = function()
+    if downloads_close then downloads_close() end
+    lock_close()
+    shield_close()
+    if not F.state then
+      F.state = { words = "", case = false, count = 0, current = 0, bar = {} }
+      F.view.hidden = false
+      relaid()
+    end
+    -- The words already there chosen, so a word typed replaces them.
+    F.state.chosen = F.state.words ~= ""
+    web.focus(false)
+    win:focus_on(F.view)
+    print("jetski: find bar open")
+    if F.state.words ~= "" then look(true, false) else frame() end
+  end
+
+  F.close = function()
+    if not F.state then return end
+    web.find("", false, false, false)
+    F.state = nil
+    F.view.hidden = true
+    relaid()
+    win:focus_on(view)
+    web.focus(true)
+    print("jetski: find bar closed")
+  end
+
+  local function step(backwards)
+    if F.state and F.state.words ~= "" then look(false, backwards) end
+  end
+
+  function F.view:key(c)
+    local k, mods = keys.parts(c)
+    local chosen = F.state.chosen
+    if c == 27 then
+      F.close()
+      return true
+    elseif k == 13 and mods & keys.SHIFT ~= 0 then
+      -- Shift-Return, once the board sends it as a key of its own; today it
+      -- is Return's byte (`roadmap.md`).
+      F.state.chosen = false
+      step(true)
+      return true
+    elseif c == 13 or c == 10 then
+      F.state.chosen = false
+      step(false)
+      return true
+    elseif c == 8 or c == 127 then
+      local t = F.state.words
+      F.state.words = chosen and "" or t:sub(1, (utf8.offset(t, -1) or (#t + 1)) - 1)
+      F.state.chosen = false
+      look(true, false)
+      return true
+    elseif c >= 32 and c < 256 then
+      F.state.words = (chosen and "" or F.state.words) .. string.char(c)
+      F.state.chosen = false
+      -- A character of several bytes is looked for once it is whole.
+      if utf8.len(F.state.words) then look(true, false) end
+      return true
+    end
+    return false                       -- the window's keys, Control-F among them
+  end
+
+  function F.view:mouse(action, x, y)
+    if action ~= "press" then return true end
+    local part = pk.findbar_at(F.state.bar, x + self.x, y + self.y)
+    if part == "close" then
+      F.close()
+    elseif part == "next" then
+      step(false)
+    elseif part == "previous" then
+      step(true)
+    elseif part == "case" then
+      F.state.case = not F.state.case
+      look(true, false)
+    end
+    win:focus_on(F.view)
+    if part then print("jetski: find " .. part) end
+    return true
+  end
+
+  -- Every frame: WebKit's answer, drawn. What it says is said once, for a
+  -- suite to read.
+  F.frame = function()
+    if not F.state or not st.found then return false end
+    F.state.count, F.state.current = web.found()
+    if F.state.count == 0 then
+      print(("jetski: found nothing for %q"):format(F.state.words))
+    else
+      print(("jetski: found %d, showing %d"):format(F.state.count, F.state.current))
+    end
+    return true
+  end
+
+  win:add(F.view)
+end
+
 win.on_key = function(_, c)
+  -- Control-F: find on the page, as every browser has it.
+  if c == 6 then F.open() return true end
+
   if c == 12 then
     web.focus(false)
     win:focus_on(field)
@@ -2349,9 +2520,9 @@ win.on_key = function(_, c)
 
   if c == 20 then new_tab() return true end
 
-  -- Control-J: the downloads, as Safari's Option-Command-L and Chrome's
-  -- Control-J show them.
-  if c == 10 then downloads_toggle() return true end
+  -- Control-Shift-J: the downloads, as Safari's Option-Command-L and
+  -- Chrome's Control-J show them (`downloads_key`, above).
+  if downloads_key(c) then downloads_toggle() return true end
 
   -- Control or Super with a comma: Settings, as Safari and Chrome have it.
   do

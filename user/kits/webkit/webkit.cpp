@@ -151,6 +151,8 @@ struct View {
     char underLabel[256] { };
     char underImage[2048] { };
     bool underEditable = false;
+    int foundCount = 0;             // find on the page: -1 past the most
+    int foundIndex = 0;             // the shown match, from 1; 0 for none
     char selected[1024] { };
     WTF::MonotonicTime askedAt;
     char going[2048] { };
@@ -1404,6 +1406,15 @@ void askSelection(View* view)
         reinterpret_cast<void*>(static_cast<intptr_t>(view->id)), selectionArrived);
 }
 
+// **Find on the page**: WebKit's answer - how many, and which is shown.
+void foundOnPage(WKPageRef, unsigned count, int index, bool, void* context)
+{
+    auto* view = static_cast<View*>(context);
+    view->foundCount = count == static_cast<unsigned>(-1) ? -1 : static_cast<int>(count);
+    view->foundIndex = count && index >= 0 ? index + 1 : 0;
+    told(view, WEBKIT_FOUND);
+}
+
 /*
  * **A view, from a configuration**: the kit's own for one a caller makes,
  * and the one WebKit hands over for one a page opens - `target=_blank`,
@@ -1460,6 +1471,7 @@ View* makeView(WKPageConfigurationRef configuration, unsigned width, unsigned he
     ui.createNewPage = createNewPage;
     ui.close = closePage;
     ui.mouseDidMoveOverElement = movedOver;
+    WKPageSetFindHandlerKosmos(view->page, foundOnPage, view.get());
     WKPageSetPageUIClient(view->page, &ui.base);
 
     auto* made = view.get();
@@ -1839,6 +1851,40 @@ extern "C" void webkit_download_forget(int id)
     downloads.removeFirstMatching([&](auto& d) {
         return d->id == id && d->state != WEBKIT_DOWNLOADING;
     });
+}
+
+// The most matches counted and marked: past it the count is "more than".
+static constexpr unsigned FIND_MOST = 1000;
+
+extern "C" void webkit_find(int id, const char* words, int matchCase, int backwards, int fresh)
+{
+    auto* view = views.find(id);
+    if (!view || !view->page)
+        return;
+    if (!words || !*words) {
+        WKPageHideFindUI(view->page);
+        view->foundCount = view->foundIndex = 0;
+        return;
+    }
+    // Words that changed are looked for from where the match shown began:
+    // WebKit counts which match it is from the selection only when that is
+    // a caret, and steps the count on otherwise - right for Next, wrong for
+    // one letter more. The script and the find are one page's messages,
+    // taken in order.
+    if (fresh) {
+        auto script = adoptWK(WKStringCreateWithUTF8CString(
+            "(function(){var s=window.getSelection();if(s&&s.rangeCount)s.collapseToStart();})()"));
+        WKPageEvaluateJavaScriptInMainFrame(view->page, script.get(), nullptr, nullptr);
+    }
+    WKPageFindKosmos(view->page, words, matchCase, backwards, FIND_MOST);
+}
+
+extern "C" int webkit_found(int id, int* count, int* current)
+{
+    auto* view = views.find(id);
+    *count = view ? view->foundCount : 0;
+    *current = view ? view->foundIndex : 0;
+    return view != nullptr;
 }
 
 extern "C" int webkit_under(int id, struct webkit_under* out)
