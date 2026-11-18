@@ -187,7 +187,21 @@ def first(image, fails, said):
                 time.sleep(0.1)
 
             guest.mouse_button(False)
-            said["scrolled"] = found(r"preferences: scrolled to (\d+) of (\d+)", mark, 10)
+
+            # Where the drag ends, not its first step: a window still making
+            # its wallpapers' thumbnails, 280 ms each, takes the drag a step
+            # a pass, and the first line said was 32 while the rest queued
+            # (0.11.500's prepush). Read until the page is far enough down or
+            # has said nothing new for two seconds.
+            said["scrolled"], last, quiet = None, None, time.time()
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                got = found(r"preferences: scrolled to (\d+) of (\d+)", mark, 0.3)
+                if got != last:
+                    last, quiet = got, time.time()
+                said["scrolled"] = got
+                if (got and int(got[0]) >= 60) or (got and time.time() - quiet > 2):
+                    break
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the first boot stopped: %s: %s" % (type(e).__name__, str(e).splitlines()[0]))
     finally:

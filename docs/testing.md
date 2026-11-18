@@ -37157,3 +37157,19 @@ bytes both. Both are saved from one page now, and the HTML must come out
 smaller.
 
 **Control**: `save_page` made to return at once - "nothing said", failed.
+
+## 18.900 A drag read at its first step
+
+**In short**: `x86-mouse` failed 0.11.500's prepush - "dragging the
+scrollbar's thumb did not scroll the page: 32 of 937", against at least
+60 - and passed alone. Preferences was still making its wallpapers'
+thumbnails, 280 ms each, when the suite dragged Appearance's thumb, so it
+took the drag a step a pass; the suite read the first `scrolled to` line
+said, 32, and the rest were still queued. wm loses none of a held drag's
+moves: only a hover move is folded into the next.
+
+So the check reads until the page is far enough down or has said nothing
+new for two seconds - where the drag ended, not where it began.
+
+**Control**: the drag's moves taken out, the press and release left -
+failed, "did not scroll the page".
