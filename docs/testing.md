@@ -36393,3 +36393,43 @@ the scene never told a menu is glass, reads 0.0 and spreads 0, and fails
 that check alone.
 
 **The gate** (132 suites, 692 s): all passed.
+
+## 18.878 Windows on wallpaper glass (LG4, fourth part)
+
+**In short.** In Liquid Glass a window the kit draws is a sheet of frosted
+glass: its ground shows the wallpaper blurred behind it, under the look's
+tint made denser for reading, and its words sit straight on the glass.
+Its header, its controls and its content - a document, a page, a picture -
+stay solid, as the design has it (L3).
+
+**How.** A window the kit draws on the palette's ground - not one that
+asked for a colour of its own, a strip, a tip or a banner - tells the
+window manager it may be glass (`glassable`). While it paints under a
+glass look, the kit resolves "window" to `theme.glass_ground()`: the
+ground, and the ground every label names for its words, so there is no box
+of the old colour round each one. The window manager flags it `SC_GLASS`
+without `SC_BLEND`, which the scene takes as *frosted when its picture is
+shown as it is*: glass laid where it draws, its picture blended over that,
+its inset over that. Stretched in a resize, stale, or under a menu bar it
+is copied as any window is - and shows the tint as a solid colour until the
+resize ends, which is the one rough edge left.
+
+**A window's glass is denser than the dock's.** At the tint's own 40% the
+About window was legible and tiring: its dimmer words over a vivid
+wallpaper. `theme.glass_ground()` takes the tint's alpha halfway to opaque
+- Night's #66 to #b3, the light look's #57 to #ab - a weight the eye
+decides, written in one place to be tuned.
+
+**Held by** `tools/test_draw.c`, now 37: a glass window's ground over the
+glass and not the window under it, and the same window stretched, copied;
+its control, the scene's branch for glass windows never taken, fails the
+first alone. `tools/test_theme.lua`: `glassy()` for a glass look and not
+after Endeavour, and the window's glass the tint's colour with its alpha
+halfway to opaque. And `x86-glass`, now 10: About, opened at login, a row
+of its ground below its header (52 down: the header runs to 45, and the
+first try at 42 measured the header, solid, spread 0), 0.6 a pixel and
+spreading 42, against the wallpaper's 19.4. Its control, the window
+manager never flagging a glass window, shows the tint as a solid colour,
+0.0 and spread 0, and fails that check alone.
+
+**The gate** (132 suites, 697 s): `x86-film` failed - a stretch of its sound out of step with FFmpeg's reference - and passed alone straight after, as it has before under load (18.875); it composes no glass. The rest passed.

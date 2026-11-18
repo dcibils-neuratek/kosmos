@@ -569,6 +569,16 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
             }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+        } else if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
+                   && w->bar == NULL && !(w->flags & SC_STALE)
+                   && w->src_w == w->w && w->src_h == w->h) {
+            /* A window whose ground is glass (LG4): glass without
+             * `SC_BLEND`, frosted only when its picture is shown as it is;
+             * stretched in a resize, stale or under a menu bar it is
+             * copied below as any window is. Its inset still goes over. */
+            glass_under(sc, w->picture, w->x, w->y, x0, y0, x1, y1);
+            blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
+                     x0, y0, 255);
         } else if (w->bar != NULL) {
             /* A menu bar above the picture (`strips.compose`). */
             long split = w->y + w->bar_h;

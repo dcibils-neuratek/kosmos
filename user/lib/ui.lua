@@ -143,8 +143,23 @@ local gc = {}
 -- which is what an application wants when it is drawing something that is
 -- not part of the theme at all.
 --------------------------------------------------------------------------
+--
+-- **A window's ground under a glass look** (Liquid Glass LG4): while a
+-- window the kit draws is painting and the look is glass, "window" is the
+-- look's tint - its ground, and the ground every label and field names for
+-- its words - so the whole window is one sheet of glass the window manager
+-- frosts, rather than glass with a box of the old colour round each word.
+-- What names a colour by number paints it as it is: an application that
+-- fills its own ground by hand is an opaque island until it moves to the
+-- kit (`docs/astra.md`, Liquid Glass).
+--
+local glass_ground = nil
+
 local function shade(c)
-  if type(c) == "string" then return theme[c] end
+  if type(c) == "string" then
+    if glass_ground and c == "window" then return glass_ground end
+    return theme[c]
+  end
   return c
 end
 
@@ -1427,7 +1442,7 @@ function ui.splitter(spec)
   v.w = v.w > 0 and v.w or 6
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.window)
+    g:fill(0, 0, self.w, self.h, "window")
     g:groove(self.w // 2 - 1, 0, 2, self.h)
   end
 
@@ -3685,7 +3700,7 @@ function ui.tabs(spec)
   end
 
   function v:draw(g)
-    local ground = self.ground or theme.window
+    local ground = self.ground or shade("window")
     local ty = (self.h - 1 - gfx.height("ui")) // 2
 
     g:fill(0, 0, self.w, self.h, ground)
@@ -4933,7 +4948,7 @@ function ui.cards(spec)
   function v:draw(g)
     local cx, width = self:column()
 
-    g:fill(0, 0, self.w, self.h, theme.window)
+    g:fill(0, 0, self.w, self.h, "window")
 
     for _, c in ipairs(self.cards) do
       g:fill_round(cx, c.y, width, c.h, theme.sunken, L.card_r)
@@ -7936,6 +7951,14 @@ function ui.window(spec)
     resizable = (spec.direct and spec.resizable) or draws_itself or nil,
     draws_itself = draws_itself or nil,
 
+    -- **May be glass** (Liquid Glass LG4): a window the kit draws on the
+    -- palette's ground - not one that asked for a colour of its own, and
+    -- not a strip, a tip or a banner, which paint their own glass. Under a
+    -- glass look its ground is the tint and the window manager frosts it;
+    -- under any other it is the window it always was.
+    glassable = (draws_itself and spec.background == nil and not spec.strip
+                 and not spec.tip and not spec.banner) or nil,
+
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
@@ -8112,6 +8135,8 @@ function ui.window(spec)
     -- while every widget inside it followed - which looks like the theme
     -- half worked, and is the one thing that was wrong when it did.
     background = spec.background,
+    glassable = (draws_itself and spec.background == nil and not spec.strip
+                 and not spec.tip and not spec.banner) or nil,
 
     -- Whether its header is its title bar, and the room the three take in
     -- it (`window:place_lights`).
@@ -10137,13 +10162,17 @@ function window:paint()
     local g = new_gc()
     g.cw, g.ch = self.frame.w, self.frame.h
 
+    -- Glass when the window manager was told it may be and the look is.
+    glass_ground = self.glassable and theme.glassy() and theme.glass_ground() or nil
+
     if self.background ~= false then
       g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
                             w = self.frame.w, h = self.frame.h,
-                            color = self.background or theme.window }
+                            color = self.background or shade("window") }
     end
 
     self.frame:paint(g)
+    glass_ground = nil
     ui.paint_ops(self:surface(), g.ops, self.pct)
 
     -- The whole region, in its own pixels.

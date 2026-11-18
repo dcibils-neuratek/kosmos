@@ -224,7 +224,16 @@ glass_tint = #12345
   -- Applied after a glass look, a look without glass is not glass.
   theme.apply(theme.read(themes.liquidglass, "dark"))
   check(theme.glass == "frosted" and theme.bevel > 0, "Liquid Glass applied is not glass")
+  check(theme.glassy(), "Liquid Glass applied is not glassy")
+
+  -- A window's glass: the tint's colour, its alpha halfway to opaque.
+  local ground = theme.glass_ground()
+  local a, ta = ground >> 24, theme.glass_tint >> 24
+  check(ground & 0xffffff == theme.glass_tint & 0xffffff and a > ta and a < 0xff
+        and math.abs(a - (ta + 255) / 2) <= 1,
+        ("a window's glass is %08x over a tint of %08x"):format(ground, theme.glass_tint))
   theme.apply(theme.read(themes.endeavour, "dark"))
+  check(not theme.glassy(), "Endeavour after Liquid Glass is glassy")
   check(theme.glass == "none" and theme.bevel == 0 and theme.glass_tint == 0,
         "Endeavour after Liquid Glass kept its glass: " .. tostring(theme.glass))
   theme.apply(theme.read(themes.liquidglassnight, "dark"))

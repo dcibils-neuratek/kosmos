@@ -31,9 +31,11 @@ enum {
     SC_PLATINUM = 1u << 11,     /* Platinum's boxes (`docs/pewter.md` P2):
                                    close alone at `bx`, zoom and collapse
                                    at `bx2` */
-    SC_GLASS    = 1u << 12,     /* blended, and glass where it draws: over
-                                   the wallpaper's glass rather than what
-                                   is under it (Liquid Glass LG4) */
+    SC_GLASS    = 1u << 12,     /* glass where it draws: over the
+                                   wallpaper's glass rather than what is
+                                   under it (Liquid Glass LG4). With
+                                   SC_BLEND, a strip's; alone, a window's,
+                                   frosted only when shown as it is */
 };
 
 /* The lights, from the left: maximise, minimise, close (`OUT.SLOT`) - and

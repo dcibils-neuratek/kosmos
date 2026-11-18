@@ -2771,6 +2771,15 @@ function OUT.describe()
     if win.blend and (win.strip or win.banner) and OUT.wall_glass then
       flags = flags | 4096
     end
+    --
+    -- And a window the kit draws, whose ground is then the look's tint:
+    -- glass without `SC_BLEND`, which the scene takes as "frosted when its
+    -- picture is shown as it is" - not while it is stretched in a resize,
+    -- or stale, or under a menu bar, when it is copied as any window is.
+    --
+    if win.glassable and OUT.wall_glass and not win.blend then
+      flags = flags | 4096
+    end
     if framed then flags = flags | 4 | 8 end
     if framed and win.headed and win ~= front then flags = flags | 16 end
 
@@ -4132,6 +4141,10 @@ handlers.open = function(req, who, cap)
   -- ground is glass it has no reason to.
   --
   if req.blend == true and (win.strip or req.kind == "menu") then win.blend = true end
+
+  -- A window the kit draws on the palette's ground, which may be glass
+  -- (Liquid Glass LG4): frosted under a glass look, below.
+  if req.glassable == true then win.glassable = true end
 
   --
   -- **Full screen: the window *is* the screen.**

@@ -747,6 +747,21 @@ function theme.glassy()
   return theme.glass ~= nil and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0
 end
 
+--
+-- **A window's glass**: the tint, its alpha taken halfway to opaque. The
+-- dock, a banner and a menu are glanced at; a window is read, for minutes,
+-- and its dimmer words over a vivid wallpaper at the dock's 40% were
+-- legible and tiring. Liquid Glass Night's #66 becomes #b3, Liquid Glass's
+-- #57 #ab - still the wallpaper's colour through it, quieter. A choice of
+-- weight that the eye decides, written in one place to be tuned.
+--
+function theme.glass_ground()
+  local tint = theme.glass_tint or 0
+  local a = tint >> 24
+
+  return ((a + (255 - a + 1) // 2) << 24) | (tint & 0xffffff)
+end
+
 -- Whatever a caller hands over on top of a palette: the desktop colour is
 -- chosen separately from the palette it sits with, so a light theme with a
 -- dark desktop is a thing somebody can have.

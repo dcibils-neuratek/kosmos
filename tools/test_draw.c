@@ -255,6 +255,19 @@ static void glass(void)
     (void)scene_compose(sc, 0, 0, 120, 60);
     check(at(&back, 80, 30) == 0x80ffffffu, "a menu that is not glass, copied as it is");
 
+    /* A window whose ground is glass: `SC_GLASS` without `SC_BLEND`, the
+     * strip as its picture over the blue window. Frosted when shown as it
+     * is; stretched, as in a resize, copied as any window is. */
+    check(scene_set_windows(sc, 2) && scene_set_menus(sc, 0), "room for two windows");
+    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    p = at(&back, 80, 30);
+    check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
+          "a glass window's ground over the glass, not over the window under it");
+    sc->win[1].src_w = 50;
+    (void)scene_compose(sc, 0, 0, 120, 60);
+    check(at(&back, 80, 30) == 0x80ffffffu, "a glass window stretched in a resize, copied");
+
     scene_free(sc);
     free(sc);
     free(back.pixels);
@@ -331,6 +344,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip and a glass menu frosted with the wallpaper's glass where they draw and not where they do not; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

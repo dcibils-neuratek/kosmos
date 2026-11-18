@@ -17,6 +17,9 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
     its icons far smoother than the wallpaper's row just above the dock;
   - a notification's banner frosted the same way: a row of its card above
     its words far smoother than the wallpaper's row just under the banners;
+  - a window the kit draws - About, opened at login - frosted: a row of its
+    ground under its header, clear of words, against the wallpaper's above
+    the window;
   - a menu - the Deskbar's, the right button on the Kosmos button - frosted too: a
     row of it above its first item's words against the wallpaper's just
     above it;
@@ -27,7 +30,8 @@ look, or never gave it back, fails the third; one that never made it
 fails the second. And a dock the compositor does not frost - `SC_GLASS`
 left unset - fails the fifth: the tint over the sharp wallpaper keeps two
 thirds of its roughness. A banner left out of the glass fails the sixth,
-and a menu the seventh.
+a window the seventh, and a menu the eighth - each also held to how far its
+row's colour spreads, which a solid ground does not.
 
 The blur itself is held to arithmetic on the Mac (`tools/test_blur.c`),
 and the compositor's glass to pixels there (`tools/test_draw.c`).
@@ -45,7 +49,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 9
+CHECKS = 10
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -186,6 +190,19 @@ def menu_frosted(guest, screen, mark, fails):
                    mx + mw // 2, mx + mw - 12, my + 5, my - 8, 0.4, fails)
 
 
+def window_frosted(guest, mark, fails):
+    """About, a window the kit draws: a row 52 under its top - below its
+    header, above its first heading - over its right half, against the
+    wallpaper's row 8 above the window."""
+    at = line(guest, r"wm: window About Kosmos at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
+    if not at:
+        fails.append("About never opened")
+        return None
+    x, y, w, h = (int(at.group(i)) for i in range(1, 5))
+    return frosted(guest, "window", "at %d,%d %dx%d" % (x, y, w, h),
+                   x + w // 2, x + w - 20, y + 52, y - 8, 0.4, fails)
+
+
 # The card's own measures (`notifications.lua`): the banners' window has 8
 # round the cards, a card's words start 12 down, and are 372 wide.
 EDGE, PAD_Y, CARD_W = 8, 12, 372
@@ -221,7 +238,7 @@ def run(fails):
                    'wallpaper = "wallpaper/paint-storm.jpg", wallpaper_fit = "fill", '
                    'bar = "dock", dock = "floating" }), '
                    'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua", '
-                   '"/Temporary/glassbanner.lua" } }))'
+                   '"/Temporary/glassbanner.lua", "/Kosmos/Apps/about.lua" } }))'
                    % lua_string(SWAP.replace("\n", " ")))
         guest.wait_for_line("PREFS", "the appearance and startup settings", mark)
         mark = len(guest.seen)
@@ -245,6 +262,7 @@ def run(fails):
         banner_at = line(guest, r"notifications: banners at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
         time.sleep(2)
         banner_frosted(guest, banner_at, fails)
+        window_frosted(guest, mark, fails)
         menu_frosted(guest, screen, len(guest.seen), fails)
         time.sleep(2)
         guest._read_available()
@@ -314,7 +332,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock, a banner and a menu frosted; nothing stopped)." % CHECKS)
+          "Night; the dock, a banner, a window and a menu frosted; nothing stopped)." % CHECKS)
     return 0
 
 
