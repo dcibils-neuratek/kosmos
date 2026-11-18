@@ -22,9 +22,9 @@
 # (LG4), their rims bent and lit (`testing.md` 18.875-18.879).
 
 name       = liquidglass
-flat       = yes
-# The star, the plate and the cut are the desktop's style, not a look's
-# (`desktops.lua`, M.STYLE; Diego, 18 November 2026).
+# The star, the plate and the cut, flat or bevelled, a title bar's room and
+# the shadow are the desktop's style, not a look's (`desktops.lua`, M.STYLE;
+# Diego, 18 November 2026).
 
 desktop    = #4f7fd0
 window     = #eef1f8

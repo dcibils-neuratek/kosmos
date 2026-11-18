@@ -108,7 +108,7 @@ def main():
             fails.append("Astra was not started")
         # Its style is its own, whatever look is chosen (Diego, 18 November
         # 2026: "the theme is colors and transparency"): no star, no plate.
-        if not line(r"wm: style cut no, star no, plate no", mark, 5):
+        if not line(r"wm: style cut no, star no, plate no, flat yes, title bars no, shadow 14", mark, 5):
             fails.append("Astra did not wear its own style: "
                          + str(re.findall(r"wm: style [^\n]*", guest.seen[mark:])))
         for piece in ("Notifications", "Deskbar", "Tracker \\(desktop\\)", "Tracker"):

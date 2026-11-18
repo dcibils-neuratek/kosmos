@@ -457,37 +457,101 @@ end
 -- 6. A window's corner, every look's the same since 8 October (Diego:
 -- "rounded corners should always stay the same regardless of the color
 -- theme") - 18 that morning, 10 by the afternoon ("i want to rever to how
--- it was before, smaller radius", "to all themes the same") - and
--- its shadow, a look's own: Night's 24, every other look's 14, `theme.apply`
--- putting them in force and the next look putting them back; a look that
--- still names a corner is told, and a shadow that is not points too.
+-- it was before, smaller radius", "to all themes the same") - and its
+-- shadow, with `flat` and `title_bars`, a desktop's since 0.11.506 (Diego,
+-- 18 November: "yes move all three to the desktop"): no look says one, a
+-- look that does is told, and the desktop's is worn over every look.
 do
-  local night = theme.read(themes.night, "dark")
-
-  check(theme.CORNER == 10 and night.corner == 10 and night.shadow == 24,
-        ("Night's corner and shadow read %s and %s, not 10 and 24"):format(
-          tostring(night.corner), tostring(night.shadow)))
-
   for _, name in ipairs(themes.order) do
     local p = theme.read(themes[name], "dark")
 
     check(p.corner == theme.CORNER, name .. " has a corner of " .. tostring(p.corner)
           .. ", not every look's " .. theme.CORNER)
+    check(p.flat == nil and p.title_bars == nil and p.shadow == nil,
+          name .. " says a desktop's style - flat, title_bars or shadow")
   end
 
-  theme.apply(night)
-  check(theme.metrics.corner == 10 and theme.metrics.shadow == 24,
-        "Night applied left the corner at " .. tostring(theme.metrics.corner))
-  theme.apply(theme.read(themes.plex, "dark"))
-  check(theme.metrics.corner == 10 and theme.metrics.shadow == theme.SHADOW,
-        "Plex applied after Night left the corner at " .. tostring(theme.metrics.corner))
+  local _, said = theme.read("corner = 6\nshadow = 24\nflat = yes\ntitle_bars = no\n", "dark")
 
-  local _, said = theme.read("corner = 6\nshadow = 99\n", "dark")
-
-  check(#said == 2 and (said[1] or ""):find("no token called `corner`", 1, true)
-        and (said[2] or ""):find("number of points", 1, true),
-        "a look naming its corner, or a shadow not in points, was not told: "
+  check(#said == 4 and (said[1] or ""):find("no token called `corner`", 1, true)
+        and (said[2] or ""):find("a desktop's style", 1, true)
+        and (said[3] or ""):find("a desktop's style", 1, true)
+        and (said[4] or ""):find("a desktop's style", 1, true),
+        "a look naming its corner, shadow, flat or title_bars was told as: "
         .. table.concat(said, "; "))
+
+  -- No style worn - a window manager started with no desktop, or any
+  -- other process given a look's palette: `STYLE_NONE`, whatever came
+  -- before.
+  theme.style = nil
+  theme.apply(theme.read(themes.night, "dark"))
+  check(theme.metrics.corner == 10 and theme.metrics.shadow == theme.SHADOW
+        and theme.flat == false and theme.title_bars == true,
+        ("Night with no desktop: corner %s, shadow %s, flat %s, title bars %s"):format(
+          tostring(theme.metrics.corner), tostring(theme.metrics.shadow),
+          tostring(theme.flat), tostring(theme.title_bars)))
+
+  -- Each desktop that ships says all six, and wears them over any look.
+  local was_use, was_fs = use, fs
+  use = function(path)
+    assert(path == "/Kosmos/Libraries/theme.lua", path)
+    return theme
+  end
+  local desktops = dofile("user/lib/desktops.lua")
+  local want = {
+    Astra     = { cut = false, star = false, plate = false, flat = true,  title_bars = false, shadow = 14 },
+    Starlight = { cut = true,  star = true,  plate = true,  flat = true,  title_bars = false, shadow = 24 },
+    Pewter    = { cut = false, star = false, plate = false, flat = false, title_bars = true,  shadow = 14 },
+  }
+
+  for name, w in pairs(want) do
+    local f = assert(io.open("user/desktops/" .. name .. ".desktop", "rb"))
+    local text = f:read("a")
+    f:close()
+    local d, why, told = desktops.parse(text, name)
+
+    check(d ~= nil and #told == 0, name .. ".desktop: " .. tostring(why) .. " "
+          .. table.concat(told or {}, "; "))
+    for _, k in ipairs(theme.STYLE) do
+      check(text:find("\n" .. k .. " +="), name .. ".desktop does not say " .. k)
+    end
+    if d then
+      theme.wear(d)
+      for _, look in ipairs({ "night", "plex", "classic", "liquidglass" }) do
+        theme.apply(theme.read(themes[look], "dark"))
+        for k, v in pairs(w) do
+          check(theme[k] == v, ("%s in %s: %s is %s, not %s"):format(
+                look, name, k, tostring(theme[k]), tostring(v)))
+        end
+        check(theme.metrics.shadow == w.shadow, ("%s in %s: a shadow of %s in force"):format(
+              look, name, tostring(theme.metrics.shadow)))
+        -- A palette that carries a style of its own - an older
+        -- Preferences', or the last desktop's - does not beat it either.
+        local carried = theme.read(themes[look], "dark")
+        carried.flat, carried.title_bars, carried.shadow = not w.flat, not w.title_bars, 40
+        theme.apply(carried)
+        check(theme.flat == w.flat and theme.title_bars == w.title_bars
+              and theme.metrics.shadow == w.shadow,
+              ("%s in %s: a palette's own flat, title bars or shadow won"):format(look, name))
+        theme.apply(theme.read(themes[look], "dark"))
+        -- And it travels: every other window takes it from the palette.
+        local sent = theme.current()
+        check(sent.flat == w.flat and sent.title_bars == w.title_bars and sent.shadow == w.shadow,
+              ("%s in %s: the palette sent does not carry the style"):format(look, name))
+      end
+    end
+  end
+
+  local d, _, told = desktops.parse("shell = deskbar\nshadow = 99\nflat = maybe\n", "Bad")
+  check(d and #told == 2 and d.shadow == theme.SHADOW and d.flat == false,
+        "a desktop's bad shadow and flat were told as: " .. table.concat(told or {}, "; "))
+  local d2 = desktops.parse("shell = deskbar\n", "Bare")
+  for k, v in pairs(theme.STYLE_NONE) do
+    check(d2[k] == v, "a desktop saying nothing has " .. k .. " " .. tostring(d2[k]))
+  end
+
+  theme.style = nil
+  use, fs = was_use, was_fs
 end
 
 --
@@ -554,7 +618,7 @@ end
 if fails == 0 then
   print(("PASS: %d checks on the themes that ship (every face carried, the "
          .. "the looks sharing their faces, legible and fitting the fixed layout, Plex as docs/plex.html has it, a bad "
-         .. "line told, a palette applied without its faces, and one corner for every look and a look's own shadow)."):format(checks))
+         .. "line told, a palette applied without its faces, and one corner for every look, and flat, title bars and the shadow a desktop's)."):format(checks))
   os.exit(0)
 end
 

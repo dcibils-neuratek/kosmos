@@ -6,12 +6,13 @@
 # One of five looks added on 8 October 2026 - Diego: "add 5 more theme
 # colors, 3 dark ones and 2 light ones with different tones that make the
 # desktop look cool. create the names as well for those". Built as Night
-# is: flat, a title bar on every window, three steps of surface and one
-# colour, and what is written on that colour dark enough to read.
+# is: three steps of surface and one colour, and what is written on that
+# colour dark enough to read.
 
 name       = meadow
-flat       = yes
-title_bars = yes
+# Flat or bevelled, a title bar's room, and the shadow are the desktop's
+# style, not a look's (`desktops.lua`, M.STYLE; Diego, 18 November 2026:
+# "yes move all three to the desktop").
 
 desktop    = #7fa38a
 window     = #f5f7f2

@@ -31,7 +31,8 @@ M.DEFAULT = "Astra"
 -- word misspelt is told rather than quietly doing nothing.
 local KEYS = { name = true, says = true, shell = true, background = true,
                chrome = true, menus = true, look = true,
-               cut = true, star = true, plate = true }
+               cut = true, star = true, plate = true,
+               flat = true, title_bars = true, shadow = true }
 
 --
 -- **The style a desktop wears, which no look can** (Diego, 18 November
@@ -42,9 +43,20 @@ local KEYS = { name = true, says = true, shell = true, background = true,
 --
 --   - `cut`: what floats - the dock, menus - cut at its top-left (S2);
 --   - `star`: Kosmos's four-point star on the plates and glints (S5);
---   - `plate`: the window in front's title on an amber plate (S1).
+--   - `plate`: the window in front's title on an amber plate (S1);
 --
-M.STYLE = { "cut", "star", "plate" }
+-- and since 0.11.506 the three that were still a look's (Diego, 18
+-- November: "yes move all three to the desktop") - choosing Plex took the
+-- room for a title bar from a maximised window and Night gave it back:
+--
+--   - `flat`: a hairline where a bevel would be (`theme.lua`);
+--   - `title_bars`: a maximised window leaves room for a bar, or its
+--     header is its title bar and it has the screen's width;
+--   - `shadow`: how far a window's shadow reaches, in points.
+--
+-- `theme.STYLE_NONE` is each where a file does not say it.
+--
+M.STYLE = theme.STYLE
 
 -- The title bars the kit can draw (`ui.header`): Astra's, Platinum's since
 -- Pewter's P2, and Starlight's - Astra's with the window in front's title on
@@ -76,7 +88,9 @@ end
 --
 function M.parse(text, stem)
   local d = { name = stem, says = "", shell = {}, background = {}, chrome = "astra",
-              menus = "window", cut = false, star = false, plate = false }
+              menus = "window" }
+
+  for k, v in pairs(theme.STYLE_NONE) do d[k] = v end
   local said = {}
 
   for n, key, value in theme.lines(text) do
@@ -101,7 +115,16 @@ function M.parse(text, stem)
         said[#said + 1] = ("line %d: menus go in the `window` or on the `screen`, not `%s`")
                           :format(n, value)
       end
-    elseif key == "cut" or key == "star" or key == "plate" then
+    elseif key == "shadow" then
+      local v = math.tointeger(tonumber(value))
+
+      if v and v >= 0 and v <= theme.METRIC_MOST then
+        d.shadow = v
+      else
+        said[#said + 1] = ("line %d: `shadow` is a number of points from 0 to %d, not `%s`")
+                          :format(n, theme.METRIC_MOST, value)
+      end
+    elseif theme.STYLE_NONE[key] ~= nil then
       if value == "yes" or value == "no" then
         d[key] = (value == "yes")
       else

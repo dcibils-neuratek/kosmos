@@ -38,9 +38,9 @@
 
 name       = endeavour
 
-# **Flat, which is the whole of what makes this look itself.**
-#
-# Diego, 23 September 2026: "the endeavor theme uses flat shading and our
+# **Flat, which was the whole of what made this look itself** - and is
+# the desktop's since 0.11.506 (`desktops.lua`, M.STYLE), Astra's and
+# Starlight's flat whichever look they wear. Diego, 23 September 2026: "the endeavor theme uses flat shading and our
 # theme uses bevels in the deskbar and else, lets use flat shading like the
 # mockups". Every place this system draws two edges to say "this sticks
 # out" draws one hairline instead - the kit's raised and sunken, the window
@@ -52,7 +52,6 @@ name       = endeavour
 # and copying that decision is what Classic is for. This one says it with
 # a line, and the palette is built for that - `line` and `line_soft` are a
 # shade apart rather than the deep grey a moulded edge needs.
-flat       = yes
 
 desktop    = #2e5cb8
 window     = #f6f5f4

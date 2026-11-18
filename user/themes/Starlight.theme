@@ -16,14 +16,10 @@
 # controls' accent are an astral blue, so the flare stays the window in
 # front's alone.
 #
-# Flat, with no title bars: the header is the title bar, as Night's is.
-
 name       = starlight
-flat       = yes
-# The star, the plate and the cut are the desktop's style, not a look's
-# (`desktops.lua`, M.STYLE; Diego, 18 November 2026).
-title_bars = no
-shadow     = 24
+# The star, the plate and the cut, flat or bevelled, a title bar's room and
+# the shadow are the desktop's style, not a look's (`desktops.lua`, M.STYLE;
+# Diego, 18 November 2026).
 
 desktop    = #0b0c1f
 window     = #191b31

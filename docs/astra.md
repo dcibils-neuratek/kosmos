@@ -265,10 +265,28 @@ Astra's and Pewter's none, and the window manager wears the desktop's
 with the palette. A look that still says one is told so, line by line, as
 "a desktop's style, said in its .desktop file, not a look's".
 
-**What else is style by that definition, and is still a look's**: `flat`,
-`title_bars`, a look's own corner and shadow. Each is how a window is drawn
-rather than what colour it is; whether they move too is Diego's (*Decisions
-that are Diego's*).
+**And the three that were still a look's moved too, in 0.11.506**:
+`flat`, `title_bars` and `shadow` (Diego, 18 November 2026: "yes move all
+three to the desktop"). Each is how a window is drawn rather than what
+colour it is, and choosing a look showed it: Plex took away the room a
+maximised window keeps for a title bar and Night gave it back, Classic
+brought bevels back to every control, Night a deeper shadow. The corner
+had gone already, every look's since 8 October (`theme.CORNER`).
+
+So a desktop file says six keys of style, and every one that ships says
+all six (`theme.STYLE`; `theme.STYLE_NONE` where a file is silent and for
+a window manager started with no desktop, as the harness's is):
+
+| | cut | star | plate | flat | title_bars | shadow |
+|---|---|---|---|---|---|---|
+| Astra | no | no | no | yes | no | 14 |
+| Starlight | yes | yes | yes | yes | no | 24 |
+| Pewter | no | no | no | no | yes | 14 |
+
+Astra's are what a first boot had in Plex; Starlight's what its look said;
+Pewter is bevelled because "Platinum's bevels are part of the desktop
+rather than a colour on it" (`pewter.md`). A look is colours, faces and
+glass, and a look that still says one of the six is told, line by line.
 
 ---
 

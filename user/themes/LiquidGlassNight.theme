@@ -6,10 +6,9 @@
 # there, the colours are the solid ones, where a surface is not glass.
 
 name       = liquidglassnight
-flat       = yes
-# The star, the plate and the cut are the desktop's style, not a look's
-# (`desktops.lua`, M.STYLE; Diego, 18 November 2026).
-shadow     = 24
+# The star, the plate and the cut, flat or bevelled, a title bar's room and
+# the shadow are the desktop's style, not a look's (`desktops.lua`, M.STYLE;
+# Diego, 18 November 2026).
 
 desktop    = #111a33
 window     = #1d2238

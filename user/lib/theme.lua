@@ -276,19 +276,18 @@ theme.tokens = {
   "io_in", "io_out",
 
   --
-  -- **`flat` is not a colour, and it is the only one.**
+  -- **`flat`: a hairline where this system would draw two edges** -
+  -- `gc:raised` and `gc:sunken` in the kit, and the window manager's own
+  -- boxes. Diego, 23 September 2026: "the endeavor theme uses flat shading
+  -- and our theme uses bevels in the deskbar and else, lets use flat
+  -- shading like the mockups".
   --
-  -- Diego, 23 September 2026: "the endeavor theme uses flat shading and our
-  -- theme uses bevels in the deskbar and else, lets use flat shading like
-  -- the mockups". A look that says `flat = yes` gets a hairline everywhere
-  -- this system would draw two edges - `gc:raised` and `gc:sunken` in the
-  -- kit, and the window manager's own boxes.
-  --
-  -- It is a *look's* property rather than a setting, because it is not a
-  -- preference about bevels: it is part of what a look is. Endeavour, Plex
-  -- and Night say it; Plex Night, Classic and Studio are dimensional on
-  -- purpose, and a flat one of those would be a look nobody designed
-  -- (`ui.md` 16.8b).
+  -- It was a look's, as "part of what a look is" (`ui.md` 16.8b), and is a
+  -- *desktop's* since 0.11.506 (`desktops.lua`, M.STYLE; Diego, 18
+  -- November: "yes move all three to the desktop"): bevels are how a
+  -- control is drawn, not what colour it is - Astra and Starlight flat,
+  -- Pewter bevelled, since "Platinum's bevels are part of the desktop
+  -- rather than a colour on it" (`docs/pewter.md`).
   --
   "flat",
 
@@ -328,14 +327,17 @@ theme.tokens = {
   -- draws its own pixels may offer a bar of its own the same way - Groove's
   -- (`roadmap.md` 6zh); one that does not keeps its bar in every look.
   --
-  -- A look's property, as `flat` is, and for the same reason: the Plex
-  -- looks are content-first and the BeOS look is its tab.
+  -- A desktop's since 0.11.506, with `flat` and `shadow` (`desktops.lua`,
+  -- M.STYLE): it was a look's, and choosing Plex took the room for a title
+  -- bar away from a maximised window while Night gave it back. Since one
+  -- chrome (7 October) it decides only that room (`wm.lua`, `workarea`).
   --
   "title_bars",
 
   --
   -- **`shadow`: how far a window's shadow reaches**, in points - a look's
-  -- own since Night. **Not `corner` any more**: Diego, 8 October, "rounded
+  -- own from Night until 0.11.506, and a desktop's since (`desktops.lua`,
+  -- M.STYLE). **Not `corner` any more**: Diego, 8 October, "rounded
   -- corners should always stay the same regardless of the color theme, use
   -- the dark one as the default". One radius is every look's (`CORNER`),
   -- and a look that still names one is told it has no such token. It was
@@ -390,13 +392,17 @@ local GLASS_POINTS = { glass_blur = true, bevel = true }
 local GLASS_PERCENT = { refraction = true, split = true, specular = true }
 theme.GRAIN_MOST = 32
 
--- What `corner` and `shadow` are in a look that does not name them, and the
--- most a look may: past that a window is a capsule.
+-- What `corner` and `shadow` are when nothing names them, and the most a
+-- desktop's shadow may be: past that a window is a capsule.
 theme.CORNER, theme.SHADOW, theme.METRIC_MOST = 10, 14, 40
 
 local known = {}
 
 for _, k in ipairs(theme.tokens) do known[k] = true end
+
+-- A desktop's style, which a look is told it may not say (`theme.STYLE`).
+local STYLED = { cut = true, star = true, plate = true,
+                 flat = true, title_bars = true, shadow = true }
 
 --
 -- **The fixed layout** (`roadmap.md` 5x), the same in every look and at
@@ -590,16 +596,6 @@ function theme.read(text, base)
         said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
       elseif key == "name" then
         out.name = value
-      elseif key == "shadow" then
-        local v = math.tointeger(tonumber(value))
-
-        if v and v >= 0 and v <= theme.METRIC_MOST then
-          out[key] = v
-        else
-          said[#said + 1] = ("line %d: `%s` is a number of points from 0 to "
-                             .. "%d, not `%s`"):format(n, key,
-                                                       theme.METRIC_MOST, value)
-        end
       elseif key == "glass" then
         if theme.GLASS_KINDS[value] then
           out[key] = value
@@ -627,11 +623,11 @@ function theme.read(text, base)
           said[#said + 1] = ("line %d: `%s` is a number of %s from 0 to %d, "
                              .. "not `%s`"):format(n, key, unit, most, value)
         end
-      elseif key == "cut" or key == "star" or key == "plate" then
+      elseif STYLED[key] then
         -- A desktop's style, not a look's (`desktops.lua`, M.STYLE).
         said[#said + 1] = ("line %d: `%s` is a desktop's style, said in its "
                            .. ".desktop file, not a look's"):format(n, key)
-      elseif key == "flat" or key == "title_bars" or key == "glass_windows" then
+      elseif key == "glass_windows" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -653,19 +649,10 @@ function theme.read(text, base)
     end
   end
 
-  --
-  -- **The two words, always said**, as the look's own or as its default.
-  -- `theme.apply` copies only what a palette has, so a look that left
-  -- `flat` out kept the last look's: from Plex to Classic, every control
-  -- stayed flat until the window was opened again.
-  --
-  if out.flat == nil then out.flat = false end
-  if out.title_bars == nil then out.title_bars = true end
   for k, v in pairs(theme.GLASS_NONE) do
     if out[k] == nil then out[k] = v end
   end
   out.corner = theme.CORNER             -- every look's, never its own
-  if out.shadow == nil then out.shadow = theme.SHADOW end
 
   return out, said
 end
@@ -732,7 +719,25 @@ end
 -- being loaded to match. The faces are applied on purpose, by whoever
 -- chooses the theme; applying a palette never touches them.
 --
-theme.STYLE = { "cut", "star", "plate" }
+theme.STYLE = { "cut", "star", "plate", "flat", "title_bars", "shadow" }
+
+-- What each is where nothing says it: a desktop file that leaves one out,
+-- and a window manager started with no desktop - the harness's, which
+-- names its programs. Every desktop that ships says all of them.
+theme.STYLE_NONE = { cut = false, star = false, plate = false,
+                     flat = false, title_bars = true, shadow = theme.SHADOW }
+
+-- One of them as a desktop gives it: the yes or no as true or false, the
+-- shadow as points.
+local function styled(k, v)
+  if k == "shadow" then
+    return math.tointeger(tonumber(v)) or theme.STYLE_NONE.shadow
+  end
+
+  if v == nil then return theme.STYLE_NONE[k] end
+
+  return v and true or false
+end
 
 -- The window manager's, from the desktop it started (`desktops.lua`): worn
 -- now and over every look applied after.
@@ -740,9 +745,11 @@ function theme.wear(style)
   theme.style = {}
 
   for _, k in ipairs(theme.STYLE) do
-    theme.style[k] = style and style[k] and true or false
+    theme.style[k] = styled(k, style and style[k])
     theme[k] = theme.style[k]
   end
+
+  theme.metrics.shadow = theme.shadow
 end
 
 function theme.apply(palette)
@@ -769,16 +776,18 @@ function theme.apply(palette)
   end
 
   -- **The desktop's style over whatever came** (`theme.wear`): in the
-  -- window manager, the desktop's `cut`, `star` and `plate`, so a look
-  -- cannot bring them; every other process takes them from the palette
-  -- the window manager sends, which carries them.
-  -- A palette that names none, with no style worn - a look read from a
-  -- file - wears none, rather than the last one's.
+  -- window manager, the desktop's - `cut`, `star`, `plate`, `flat`,
+  -- `title_bars` and `shadow` - so a look cannot bring them; every other
+  -- process takes them from the palette the window manager sends, which
+  -- carries them. A palette that names none, with no style worn - a look
+  -- read from a file - wears `STYLE_NONE`, rather than the last one's:
+  -- from Plex to Classic, every control stayed flat until the window was
+  -- opened again, while `flat` was a look's.
   for _, k in ipairs(theme.STYLE) do
     if theme.style then
-      theme[k] = theme.style[k] and true or false
-    elseif palette[k] == nil then
-      theme[k] = false
+      theme[k] = theme.style[k]
+    else
+      theme[k] = styled(k, palette[k])
     end
   end
 
@@ -796,11 +805,11 @@ function theme.apply(palette)
   -- answers it with the look's tint where the window is glass.
   theme.panel = theme.mix(theme.window, theme.line_soft, 330)
 
-  -- A window's corner and shadow are the look's, and every look's are said
-  -- (`theme.read`); a palette from before they were - a running desktop's,
-  -- sent by an older Preferences - leaves them as they are.
+  -- A window's corner is every look's (`theme.read`); its shadow the
+  -- desktop's, just put in force above. A palette from before the corner
+  -- was said leaves it as it is.
   if palette.corner ~= nil then theme.metrics.corner = palette.corner end
-  if palette.shadow ~= nil then theme.metrics.shadow = palette.shadow end
+  theme.metrics.shadow = theme.shadow
 
   return theme
 end

@@ -12,3 +12,12 @@ shell      = notifications, desktop:pewter, menubar
 background = notifications
 chrome     = platinum
 menus      = screen
+# Its style (`desktops.lua`, M.STYLE): bevelled, since "Platinum's bevels
+# are part of the desktop rather than a colour on it" (`docs/pewter.md`),
+# a title bar's room kept, and the kit's shadow; none of Starlight's.
+cut        = no
+star       = no
+plate      = no
+flat       = no
+title_bars = yes
+shadow     = 14

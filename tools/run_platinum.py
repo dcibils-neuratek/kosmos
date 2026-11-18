@@ -39,7 +39,7 @@ sys.path.insert(0, HERE)
 import run_screenshot as R                                  # noqa: E402
 import run_gallery as G                                     # noqa: E402
 
-CHECKS = 9
+CHECKS = 10
 
 # The gallery's list, with no files behind it: what each opens on is the
 # gallery's to make, and an application opened on nothing still has a bar.
@@ -109,6 +109,11 @@ def gallery(fails):
                      % (loaded and loaded.group(0)))
     if not re.search(r"wm: chrome platinum", seen):
         fails.append("Pewter's chrome was not Platinum")
+    # Bevelled, a title bar's room kept, the kit's shadow - its own style,
+    # whatever look is chosen (0.11.506; Diego, 18 November 2026).
+    if not re.search(r"wm: style cut no, star no, plate no, flat no, title bars yes, shadow 14", seen):
+        fails.append("Pewter did not wear its style from its .desktop file: "
+                     + str(re.findall(r"wm: style [^\n]*", seen)))
     if len({t for t, *_ in told}) < len(APPS) * 2 // 3:
         fails.append("only %d of %d applications placed Platinum's boxes: %s"
                      % (len({t for t, *_ in told}), len(APPS), sorted({t for t, *_ in told})))

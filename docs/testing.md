@@ -37342,3 +37342,31 @@ every page a program may take is taken, a first touch is refused, the
 refusal names no room and is said once; refused again and then given, it
 is gone. The control - the no-room branch recording nothing - fails that
 test alone.
+
+## 18.906 Flat, title bars and the shadow, a desktop's
+
+**In short**: choosing a look no longer changes how windows are built.
+After 18 November's "the theme is colors and transparency", the star, the
+plate and the cut had left the looks (0.11.496); `flat`, `title_bars` and
+`shadow` were still a look's, so Plex took away the room a maximised
+window keeps for a title bar and Night gave it back, Classic brought
+bevels back to every control, Night a shadow of 24. Diego: "yes move all
+three to the desktop". A `.desktop` file says six keys of style
+(`theme.STYLE`) and every one that ships says all six - Astra flat, no
+bar's room, a shadow of 14, what a first boot had in Plex; Starlight the
+same with 24, from its look; Pewter bevelled with a bar's room, Platinum's.
+A look that says one is told, and none does. `theme.STYLE_NONE` is each
+where a file is silent, and for a window manager started with no desktop
+- the harness's, whose built-in dark palette never said any of them, so
+its pictures are what they were.
+
+Held by `host` (`test_theme.lua`, 866): no look says one of the three; a
+look that does is told; Night with no desktop worn wears `STYLE_NONE`;
+each desktop's six, worn under Night, Plex, Classic and Liquid Glass, are
+in force, in the shadow the compositor reads and in the palette sent to
+every window - and a palette carrying a style of its own, an older
+Preferences', does not beat the desktop's; a desktop's bad shadow and flat
+are told. And on the machine: `wm: style ...` in `x86-desktops` (Astra),
+`x86-starlight` and `x86-platinum` (Pewter, 10) names all six. The
+controls: a palette's own style let win over the worn one fails 12 checks;
+`flat = no` put back in Classic's file fails 2.

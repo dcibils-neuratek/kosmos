@@ -23,3 +23,12 @@ shell      = notifications, desktop, deskbar
 background = notifications
 chrome     = astra
 menus      = window
+# Its style (`desktops.lua`, M.STYLE): none of Starlight's cut, star or
+# plate; flat, a window's header its title bar, and the kit's shadow -
+# Plex's, the look a first boot wears.
+cut        = no
+star       = no
+plate      = no
+flat       = yes
+title_bars = no
+shadow     = 14

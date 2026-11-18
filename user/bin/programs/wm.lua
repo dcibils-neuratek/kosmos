@@ -1758,7 +1758,7 @@ end
 --
 -- **Whether this window's header is its title bar**: it has one the kit
 -- can put the three in (`win.can_head`). True or nil. It used to be the
--- look's to say as well (`title_bars = no`), and four looks kept the old
+-- look's to say as well (`title_bars = no`, a desktop's since 0.11.506), and four looks kept the old
 -- tab above every window; there is one chrome now (`roadmap.md`, agreed 7
 -- October), and the kit gives every ordinary window a header.
 --
@@ -5017,10 +5017,14 @@ function D.start(name, watcher)
   D.chrome = d.chrome or "astra"
   print(("wm: chrome %s"):format(D.chrome))
 
-  -- And its style - cut, star, plate - worn over every look from now on.
+  -- And its style - cut, star, plate, flat, title bars, shadow - worn
+  -- over every look from now on.
   theme.wear(d)
-  print(("wm: style cut %s, star %s, plate %s"):format(
-        d.cut and "yes" or "no", d.star and "yes" or "no", d.plate and "yes" or "no"))
+  local function yn(v) return v and "yes" or "no" end
+  print(("wm: style cut %s, star %s, plate %s, flat %s, title bars %s, shadow %d"):format(
+        yn(theme.cut), yn(theme.star), yn(theme.plate), yn(theme.flat),
+        yn(theme.title_bars), theme.shadow))
+  OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
 
   --
   -- **And the look it wears** (`look`, Starlight's): applied before its

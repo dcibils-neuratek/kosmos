@@ -107,7 +107,7 @@ def run(fails):
 
         if not line(guest, r"wm: look starlight, the desktop's", 0, 1):
             fails.append("the desktop did not wear Starlight's look")
-        if not re.search(r"wm: style cut yes, star yes, plate yes", seen):
+        if not re.search(r"wm: style cut yes, star yes, plate yes, flat yes, title bars no, shadow 24", seen):
             fails.append("Starlight did not wear its style from its .desktop file")
         if not re.search(r"wm: chrome starlight", seen):
             fails.append("Starlight's chrome was not starlight")

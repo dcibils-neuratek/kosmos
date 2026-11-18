@@ -18,7 +18,11 @@ menus      = window
 look       = starlight
 # Its style (`desktops.lua`, M.STYLE): what floats cut at its top-left, the
 # star, and the window in front's title on an amber plate - the desktop's,
-# whichever look it wears.
+# whichever look it wears - flat, a window's header its title bar, and a
+# shadow reaching 24.
 cut        = yes
 star       = yes
 plate      = yes
+flat       = yes
+title_bars = no
+shadow     = 24

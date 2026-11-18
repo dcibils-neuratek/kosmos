@@ -368,6 +368,8 @@ both paths itself now and leaves the answers where the host can read them.
 
 ## 16.8b The look: dimensional on purpose
 
+*Since 0.11.506 flat or dimensional is a desktop's choice, not a look's: Astra and Starlight are flat, Pewter is bevelled (`astra.md`, *A desktop's style, a look's colours*). What follows is why bevels were kept at all.*
+
 **Reversed, September 2026.** This section used to say "take the structure,
 not the skin", and it called bevels "a period costume" that would make the
 system look like a museum piece. That was wrong, and it was wrong in a
