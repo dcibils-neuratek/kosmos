@@ -4442,3 +4442,49 @@ the zoom-and-fade other desktops use.
 **Why it matters.** Motion is part of a desktop's personality, and this
 one is Kosmos's own. Under QEMU it ran at about eighty steps a second.
 Closing - the window rolling back up into its title - comes next.
+
+## 18 November 2026 - Liquid Glass
+
+**In short.** Kosmos has a third family of looks, Liquid Glass and Liquid
+Glass Night. The dock, notifications' banners, every menu and the windows
+the kit draws are now made of frosted glass over the wallpaper. Their edges
+bend and catch the light, the window in front has a warm rim, and Kosmos's
+own marks are made of glass too: the amber title plate, round buttons like
+drops, a small star of light at the front window's corner. Built
+overnight in fourteen revisions, 0.11.472 to 0.11.486, and pushed.
+
+**What.** A look says what the material is; the window manager and the
+scene draw it. Once, when the wallpaper is chosen, the wallpaper is
+blurred into a picture of its own - "the glass". After that a glass
+surface never blurs anything: it reads the glass where it lies, which is
+why frosting costs a copy rather than a blur at every frame. The edge is a
+small table made once - "the lens" - that says, for each pixel near a
+rounded edge, where to read the glass from, so the edge seems to bend what
+is behind it; the light is added on top, toward the upper left. Where the
+bend is strongest the colours part, amber one way and indigo the other.
+
+**Why.** Diego's "Love the Liquid Glass!" on 17 November, and the bet the
+whole desktop makes: a material that looks expensive and costs almost
+nothing, because the expensive part is done once. And the cues are
+Kosmos's - the plate, the star, the warm light on the window in front - so
+it is Kosmos made of glass, not a copy of someone else's.
+
+**What you see.** Over a wallpaper, the dock and menus show the wallpaper
+softened through them; a window's ground is the same glass, quieter so its
+words read for minutes. The window you are using has an amber-white rim
+and an amber plate of glass with its title; the others are cool and
+plain. `make shot` now takes the gallery a second time in Liquid Glass.
+
+**Measured.** On the M700, dragging About over the wallpaper: 5.6 ns a
+pixel and 1.35 ms a frame in glass, against 3.6 ns and 1.07 ms in Plex
+Night, the worst pass 2.28 ms against 2.29 - well inside the 8 ms the plan
+allowed. And clicking between two windows used to compose the one going
+back whole; now only its shadow, buttons, plate and rim are composed - ten
+changes of focus 3.48 million pixels where they were 4.93.
+
+**Found on the way.** The window in front was taken to be the last in the
+list, which a notification's banner had become - so the window being typed
+into looked like one behind. The star was drawn under the plate, which
+covered the corner it sits in. And a change to the gallery's test machine
+gave two machines one network port, which three other suites caught at
+once.
