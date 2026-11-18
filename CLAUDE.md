@@ -1117,7 +1117,9 @@ harness, a MEGA link and `make shot`, which puts a
 1920x1080 screenshot of the desktop into `docs/screenshots/` under the date
 and the revision - every application that draws something of its own with
 nothing on a disk, tiled, and the newest one given room (`OPEN` in
-`tools/run_gallery.py`).
+`tools/run_gallery.py`) - and the same desktop again in Liquid Glass,
+beside it as `-liquidglass.png` (`testing.md` 18.885), so the series stays
+one look and the glass has its own.
 
 **A new application joins the picture when it lands.** Diego, 25 September
 2026: "The dated screenshot now needs to have Cafesa3D in it", "So as we

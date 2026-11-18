@@ -36633,3 +36633,23 @@ whole window going back cost little more than its parts. Apart, it does.
 interrupt) failed and passed alone straight after, as both have tonight;
 the three that keep doing it are in the roadmap to be found. The rest
 passed.
+
+## 18.885 The gallery in Liquid Glass (LG5): a second picture beside the first
+
+**In short.** `make shot` - and so `make prepush` - now takes two pictures
+of the desktop with every application open: the one it always took, in
+the default look, and the same desktop a minute later in Liquid Glass, over
+the paint-storm wallpaper, as `<date>-<revision>-liquidglass.png` beside
+it. The series of dated pictures stays one look from day to day, and the
+glass has a picture of its own in each.
+
+**How.** After the first picture a typed line would go to the window in
+front as keys, so the gallery's machine has Telnet as well (`run_servers`'
+`connect`), and a script put over it tells the window manager the
+wallpaper, its fit and Liquid Glass's palette. The gallery waits for the
+wallpaper's glass to be made, lets every window draw again for the same
+settle as the first, and takes the second.
+
+**Seen** on 18 November, in the scratchpad before any push: twenty windows
+whose grounds are the wallpaper's glass, the window in front's amber plate
+and its star, the Deskbar's star. LG5 is built with it.

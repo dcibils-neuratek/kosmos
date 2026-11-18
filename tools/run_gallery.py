@@ -46,6 +46,30 @@ for _args in (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS):
 if "-smp" not in run_screenshot.X86_ARGS:
     run_screenshot.X86_ARGS += ["-smp", "4"]
 
+# **And Telnet**, for the second picture (Liquid Glass LG5): after the
+# first, a line typed would go to the window in front as keys, so the look
+# is changed through a session instead.
+import random as _random                                       # noqa: E402
+
+TELNET = _random.randint(20000, 40000)
+run_screenshot.X86_ARGS += [
+    "-netdev", "user,id=gnet0,hostfwd=tcp::%d-:23" % TELNET,
+    "-device", "virtio-net-pci,netdev=gnet0",
+    "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
+]
+
+# The look the second picture is in, the wallpaper it is glass over.
+GLASS = (
+    'local theme = use("/Kosmos/Libraries/theme.lua")\n'
+    'local themes = use("/Kosmos/Libraries/themes.lua")\n'
+    'local look = theme.read(themes.liquidglass, "light")\n'
+    'local colours = {}\n'
+    'for _, k in ipairs(theme.tokens) do colours[k] = look[k] end\n'
+    'fs.send("/Running/wm", { type = "wallpaper", path = "wallpaper/paint-storm.jpg" })\n'
+    'fs.send("/Running/wm", { type = "wallpaper_fit", fit = "fill" })\n'
+    'local r = fs.send("/Running/wm", { type = "theme", palette = colours })\n'
+    'print("GALLERYGLASS " .. tostring(r and r.ok))\n')
+
 # The tablet's own range, which is what `mouse_to` speaks.
 ABS = 32767
 
@@ -278,6 +302,38 @@ def main():
             f.write(png(w_, h_, rgb))
 
         print("wrote %s (%dx%d)" % (args.out, w_, h_))
+
+        #
+        # **The same desktop in Liquid Glass** (`docs/astra.md` LG5's test),
+        # beside the first rather than instead of it: the series stays one
+        # look from day to day, and the glass has its own picture.
+        #
+        import run_servers as S
+
+        session = S.connect(TELNET)
+        session.put(GLASS.encode(), "/Temporary/gallery-glass.lua")
+        mark = len(guest.seen)
+        session.run("/Temporary/gallery-glass.lua")
+        deadline = time.monotonic() + 120
+
+        while ("wm: the wallpaper's glass, " not in guest.seen[mark:]
+               and time.monotonic() < deadline):
+            time.sleep(1.0)
+            guest._read_available()
+
+        if "wm: the wallpaper's glass, " not in guest.seen[mark:]:
+            raise Failure("the desktop in Liquid Glass made no glass in two minutes")
+
+        time.sleep(args.settle)
+        guest.mouse_to((width - 30) * ABS // width, (height - 30) * ABS // height)
+        time.sleep(2.0)
+        w_, h_, rgb = parse_ppm(guest.screendump())
+        glass = os.path.splitext(args.out)[0] + "-liquidglass.png"
+
+        with open(glass, "wb") as f:
+            f.write(png(w_, h_, rgb))
+
+        print("wrote %s (%dx%d)" % (glass, w_, h_))
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)
