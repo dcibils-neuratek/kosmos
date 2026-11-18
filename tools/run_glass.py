@@ -405,8 +405,18 @@ def run(fails):
         # Night, glass again - once its glass is made and the dock redrawn.
         line(guest, r"wm: the wallpaper's glass given back[\s\S]*wm: the wallpaper's glass, ",
              mark, 30)
+        # And the changes of focus over, the last startup item: Calculator
+        # opened, given a cell in the dock and closed again. Under a loaded
+        # gate the dock was looked at while it held the cell, on 18
+        # November, so it is read where it is now, not where it first was.
+        line(guest, r"GLASSFOCUS ", mark, 90)
         time.sleep(3)
-        dock_frosted(guest, dockat, fails)
+        guest._read_available()
+        last = None
+        for last in re.finditer(r"wm: (?:the dock|window Deskbar) at (-?\d+),(-?\d+) (\d+)x(\d+)",
+                                guest.seen[mark:]):
+            pass
+        dock_frosted(guest, last or dockat, fails)
         banner_at = line(guest, r"notifications: banners at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
         time.sleep(2)
         banner_frosted(guest, banner_at, fails)

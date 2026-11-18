@@ -48,15 +48,20 @@ if "-smp" not in run_screenshot.X86_ARGS:
 
 # **And Telnet**, for the second picture (Liquid Glass LG5): after the
 # first, a line typed would go to the window in front as keys, so the look
-# is changed through a session instead.
-import random as _random                                       # noqa: E402
+# is changed through a session instead. Added in `main` and not when this
+# file is imported: the suites that import it for `OPEN` boot two machines,
+# and both asked for one host port - the second QEMU could not bind it and
+# ended before its prompt (18 November).
+def with_telnet():
+    import random
 
-TELNET = _random.randint(20000, 40000)
-run_screenshot.X86_ARGS += [
-    "-netdev", "user,id=gnet0,hostfwd=tcp::%d-:23" % TELNET,
-    "-device", "virtio-net-pci,netdev=gnet0",
-    "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
-]
+    port = random.randint(20000, 40000)
+    run_screenshot.X86_ARGS += [
+        "-netdev", "user,id=gnet0,hostfwd=tcp::%d-:23" % port,
+        "-device", "virtio-net-pci,netdev=gnet0",
+        "-fw_cfg", "name=opt/kosmos/telnetd,string=23",
+    ]
+    return port
 
 # The look the second picture is in, the wallpaper it is glass over.
 GLASS = (
@@ -199,6 +204,7 @@ def main():
                     help="seconds to let every application draw its first frame")
     args = ap.parse_args()
 
+    telnet = with_telnet()
     guest = Guest(args.image, args.timeout)
 
     try:
@@ -310,7 +316,7 @@ def main():
         #
         import run_servers as S
 
-        session = S.connect(TELNET)
+        session = S.connect(telnet)
         session.put(GLASS.encode(), "/Temporary/gallery-glass.lua")
         mark = len(guest.seen)
         session.run("/Temporary/gallery-glass.lua")

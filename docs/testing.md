@@ -36653,3 +36653,15 @@ settle as the first, and takes the second.
 **Seen** on 18 November, in the scratchpad before any push: twenty windows
 whose grounds are the wallpaper's glass, the window in front's amber plate
 and its star, the Deskbar's star. LG5 is built with it.
+
+**Found by the first prepush after it** (0.11.486): `x86-platinum`,
+`x86-menus` and `x86-spatial` failed every time, alone too, with one of
+their two machines "exited before the prompt". All three import
+`run_gallery` for its list of applications, and 0.11.485 added the gallery's
+Telnet forward to the shared QEMU arguments when the file was imported - so
+both of a suite's machines asked for one host port, and the second could
+not bind it. The forward is added in the gallery's own `main` now; the
+three pass. And `x86-glass` looked at the dock once while the startup focus
+script still held Calculator's cell in it (a row inside 7.3 against 11.4):
+the checks wait for that script to say it is done, and read the dock where
+it is now.
