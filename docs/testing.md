@@ -37092,3 +37092,22 @@ the plate each pass. With it S4 - the unfurl, the roll, the sweep - is built.
 
 The sweep's middle frames are not read: what the suite can see of a 90 ms
 animation from outside is that it ran, how long, and where it ended.
+
+## 18.898 A stretched tone heard twice
+
+**In short**: `x86-sound` failed 0.11.498's prepush - "the captured tone
+is 396 Hz and `beep` played 440", 377 ms against 333 - and passed alone.
+The third time today: 0.11.489's two prepushes heard 410 Hz and 365 ms,
+then 403 and 371. Each is one stretch of 7 to 9%, pitch down by what the
+length is up, under the whole gate and never alone: QEMU's HDA model on a
+loaded host, not the driver.
+
+The bound is not widened, because a driver playing at 44.1 kHz where 48
+was asked stretches the tone by the same 8%. What tells them apart is that
+a wrong rate is wrong on every boot and a host's stall lands on one, as the
+futex deadline's three tries had it (18.894): a tone out of its bounds is
+played again on a second boot, the line `sound: the capture was ... played
+again` says so, and only the second is held to the bounds.
+
+**Control**: the suite told the tone is 400 Hz - the capture 439 Hz,
+played again, 439 again, failed.

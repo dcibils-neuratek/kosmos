@@ -2798,6 +2798,31 @@ def sound(image, check):
     ms, hz, stray = tone(wav)
     os.remove(wav)
 
+    #
+    # **A tone stretched, heard twice before it is believed.** Under the
+    # whole gate QEMU's HDA model has given a tone 7 to 9% low and as much
+    # too long - 410 Hz and 365 ms, 403 and 371, 396 and 377 (0.11.489 twice,
+    # 0.11.498) - and alone it is exact: the host, not the driver. A driver
+    # playing at the wrong rate - 44.1 kHz where 48 was asked - stretches the
+    # tone by the same 8%, so the bound is not widened; it is wrong on every
+    # boot, and a host's stall lands on one. So one boot more, said.
+    #
+    if abs(hz - TONE_HZ) > 4 or abs(ms - TONE_MS) > 25:
+        print("sound: the capture was %d Hz and %d ms against %d and %d - "
+              "played again, in case the host stretched it" % (hz, ms, TONE_HZ, TONE_MS))
+        out = boot(image, "beep", 90.0, extra=(
+            "-device", "ich9-intel-hda",
+            "-device", "hda-output,audiodev=a0",
+            "-audiodev", "wav,id=a0,path=" + wav,
+        ))
+
+        if out is None or not os.path.exists(wav):
+            check(False, "the second boot to play the tone again gave nothing")
+            return
+
+        ms, hz, stray = tone(wav)
+        os.remove(wav)
+
     check(abs(hz - TONE_HZ) <= 4,
           "the captured tone is %d Hz and `beep` played %d" % (hz, TONE_HZ))
     check(abs(ms - TONE_MS) <= 25,
