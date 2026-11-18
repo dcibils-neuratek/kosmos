@@ -36474,3 +36474,39 @@ rather than the scene's corner, and banners', whose cards are inside their
 window; and the warm rim on the window in front (LG5).
 
 **The gate** (132 suites, 703 s): `x86-ahci` failed - no command at the probe ended by its interrupt - and passed alone straight after, as it has before under load (18.875); it composes no glass. The rest passed.
+
+## 18.880 The cues begin (LG5): the star, the glints, the warm rim, the split
+
+**In short.** Liquid Glass now wears four of Kosmos's cues. The dock's
+Kosmos button carries the four-point star, and a running application has a
+glint under it, as Starlight's do. The window in front has a warm rim - its
+lit edge amber-white, every other window's cool - so focus is shown by the
+light in the glass. And where a rim bends the glass, its colours part amber
+one way and indigo the other, rather than a rainbow.
+
+**How.** The star and the glints are Starlight's `star` key, now said by
+both Liquid Glass looks. The warm rim is the look's `rim_front`, which the
+window manager tells the scene with the rest of the rim and the head
+carries to the window server: the light over a rim goes toward it on the
+focused window and toward white elsewhere. The split is the look's
+`split`: at a bent pixel the red and green are read that much further
+along the bend, and the blue that much nearer.
+
+**Found on the way**: `SC_FOCUSED` went to the last window in the list,
+which a notification's banner, arriving after the window being typed into,
+had become - so that window's three buttons were drawn grey, as a window
+behind, and its rim lit cool. It goes to `front`, the focused window,
+which is never a tip or a banner.
+
+**Held by** `tools/test_draw.c`, now 49: the window in front lit warm, red
+up and blue not, and one behind lit white; the warm channels read further
+along the bend than the cool with a split, and together without. Their
+controls - the focus ignored, the split forced to nought - each fail their
+check alone. And `x86-glass`, now 12: About in front, red over blue 36 at
+its top row against -23 in its header; the control, no front light, -14,
+fails that check alone.
+
+**Not yet** (LG5): the amber plate, the beads, and the star specular at the
+front window's top-left corner.
+
+**The gate** (131 suites, 694 s): `x86-film` failed as in 18.878 and passed alone straight after; it composes no glass. The rest passed.

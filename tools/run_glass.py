@@ -23,6 +23,8 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
   - the window's rim lit from the upper left: the top row of About's solid
     header far brighter than the header 12 rows down, and its right edge,
     away from the light, no brighter than 5 pixels in;
+  - and warm, About being the window in front: its top row's red over its
+    blue far more than the header's, as the look's `rim_front` lights it;
   - a menu - the Deskbar's, the right button on the Kosmos button - frosted too: a
     row of it above its first item's words against the wallpaper's just
     above it;
@@ -52,7 +54,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 11
+CHECKS = 12
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -222,6 +224,10 @@ def rim_lit(guest, mark, fails):
         o = (py * sw + px) * 3
         return sum(data[o:o + 3])
 
+    def warmth(px, py):
+        o = (py * sw + px) * 3
+        return data[o] - data[o + 2]
+
     top, under = bright(x + w // 2, y), bright(x + w // 2, y + 12)
     right, inside = bright(x + w - 1, y + h // 2), bright(x + w - 6, y + h // 2)
     print("rim: the header's top %d, 12 rows down %d; the right edge %d, 5 in %d"
@@ -230,6 +236,12 @@ def rim_lit(guest, mark, fails):
         fails.append("the rim is not lit from the upper left: the header's top %d against %d "
                      "12 rows down, the right edge %d against %d 5 in"
                      % (top, under, right, inside))
+
+    warm, plain = warmth(x + w // 2, y), warmth(x + w // 2, y + 12)
+    print("rim: in front, red over blue %d at the top, %d 12 rows down" % (warm, plain))
+    if not warm > plain + 30:
+        fails.append("the window in front's rim is not warm: red over blue %d at its top, "
+                     "%d in its header" % (warm, plain))
 
 
 # The card's own measures (`notifications.lua`): the banners' window has 8
@@ -362,7 +374,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock, a banner, a window and a menu frosted; a window's rim lit from the upper left; nothing stopped)." % CHECKS)
+          "Night; the dock, a banner, a window and a menu frosted; a window's rim lit from the upper left, warm in front; nothing stopped)." % CHECKS)
     return 0
 
 

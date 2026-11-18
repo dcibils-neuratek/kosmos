@@ -3,11 +3,12 @@
 #
 # The partner of `LiquidGlass.theme`, which says where the look comes from
 # and what its glass keys mean (`docs/astra.md`, *Liquid Glass*, L1). As
-# there, the colours are the glass's tint over its wallpaper said as solid
-# colours until the blur exists (LG1).
+# there, the colours are the solid ones, where a surface is not glass.
 
 name       = liquidglassnight
 flat       = yes
+# Kosmos's mark, the four-point star, and the dock's glints (L5).
+star       = yes
 shadow     = 24
 
 desktop    = #111a33

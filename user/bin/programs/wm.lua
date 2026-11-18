@@ -2751,7 +2751,8 @@ function OUT.describe()
   -- bevel at the scale, and how much it bends and is lit; none without
   -- glass. The scene makes its lens from these when they change.
   if wallpaper and OUT.wall_glass and theme.glassy() then
-    scene:rim(scale.px(theme.bevel or 0), theme.refraction or 0, theme.specular or 0)
+    scene:rim(scale.px(theme.bevel or 0), theme.refraction or 0, theme.specular or 0,
+              theme.rim_front or 0, theme.split or 0)
   else
     scene:rim(0, 0, 0)
   end
@@ -2796,7 +2797,11 @@ function OUT.describe()
 
     -- No grip on a window collapsed to its bar: it has no corner to pull.
     if can then flags = flags | (win.shaded and 0 or 32) | 512 end
-    if i == #windows then flags = flags | 256 end
+    -- In front: the focused window, as `front` is - never a tip or a
+    -- banner, which take no focus. It was the last in the list, so a
+    -- notification arriving put the window being typed into among those
+    -- behind: its three lights grey, and its rim lit cool.
+    if win == front then flags = flags | 256 end
     if win.stale then flags = flags | 1024 end
 
     local bx, by, held, bx2 = 0, 0, -1, 0

@@ -562,16 +562,19 @@ static uint32_t glass_px(const struct scene *sc, long gx, long gy)
     return row_of(g, (unsigned)gy)[gx];
 }
 
-/* White added by `spec` of 255: each channel toward 255 by that share. */
-static uint32_t lit(uint32_t c, unsigned spec)
+/* Light of colour `toward` added by `spec` of 255: each channel toward
+ * the light's by that share - white for a cool rim, the look's
+ * `rim_front` for the window in front's warm one. */
+static uint32_t lit(uint32_t c, unsigned spec, uint32_t toward)
 {
     uint32_t out = 0xff000000u;
     unsigned k;
 
     for (k = 0; k < 24; k += 8) {
-        uint32_t v = (c >> k) & 0xffu;
+        int v = (int)((c >> k) & 0xffu);
+        int t = (int)((toward >> k) & 0xffu);
 
-        out |= (v + (((255u - v) * spec + 127u) / 255u)) << k;
+        out |= (uint32_t)(v + ((t - v) * (int)spec + (t >= v ? 127 : -127)) / 255) << k;
     }
 
     return out;
@@ -601,7 +604,17 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
                 struct gfx_lens_px e = lens_at(l, x - px, y - py, pw, ph);
 
                 if (e.dx != 0 || e.dy != 0) {
-                    o[x] = glass_px(sc, gx + e.dx, gy + e.dy);
+                    /* **Amber and indigo** (L6): the warm channels read
+                     * further along the bend than the cool one, by the
+                     * look's `split`, so an edge fringes in Kosmos's two
+                     * colours rather than a rainbow. */
+                    long s = sc->rim_split;
+                    long wx = e.dx * (100 + s) / 100, wy = e.dy * (100 + s) / 100;
+                    long cx = e.dx * (100 - s) / 100, cy = e.dy * (100 - s) / 100;
+                    uint32_t warm = glass_px(sc, gx + wx, gy + wy);
+                    uint32_t cool = glass_px(sc, gx + cx, gy + cy);
+
+                    o[x] = (warm & 0xffffff00u) | (cool & 0xffu);
                     continue;
                 }
             }
@@ -612,11 +625,12 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
 }
 
 /*
- * The rim's light, over a glass surface once its picture is blended: white
- * added by the lens's specular where the picture draws, toward the light.
+ * The rim's light, over a glass surface once its picture is blended: light
+ * of colour `toward` added by the lens's specular where the picture draws,
+ * on the side toward the light.
  */
 static void rim_light(struct scene *sc, const struct surface *picture, long px, long py,
-                      long pw, long ph, long x0, long y0, long x1, long y1)
+                      long pw, long ph, uint32_t toward, long x0, long y0, long x1, long y1)
 {
     const struct gfx_lens *l = sc->lens_ok ? &sc->lens : NULL;
     long b, x, y;
@@ -645,7 +659,7 @@ static void rim_light(struct scene *sc, const struct surface *picture, long px, 
 
             e = lens_at(l, lx, ly, pw, ph);
 
-            if (e.spec != 0) o[x] = lit(o[x], e.spec);
+            if (e.spec != 0) o[x] = lit(o[x], e.spec, toward);
         }
     }
 }
@@ -727,8 +741,13 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                         (w->flags & SC_ROUNDED) != 0, x0, y0, x1, y1);
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+            /* Warm on the window in front, cool on the rest (L6): focus
+             * shown by the light in the glass. */
             if (w->flags & SC_ROUNDED) {
-                rim_light(sc, w->picture, w->x, w->y, w->w, w->h, x0, y0, x1, y1);
+                rim_light(sc, w->picture, w->x, w->y, w->w, w->h,
+                          (w->flags & SC_FOCUSED) && sc->rim_front != 0
+                              ? sc->rim_front : 0xffffffffu,
+                          x0, y0, x1, y1);
             }
         } else if (w->bar != NULL) {
             /* A menu bar above the picture (`strips.compose`). */
@@ -1020,7 +1039,7 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
             glass_under(sc, m->picture, m->x, m->y, m->w, m->h, true, x0, y0, x1, y1);
             blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
-            rim_light(sc, m->picture, m->x, m->y, m->w, m->h, x0, y0, x1, y1);
+            rim_light(sc, m->picture, m->x, m->y, m->w, m->h, 0xffffffffu, x0, y0, x1, y1);
         } else {
             blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
         }

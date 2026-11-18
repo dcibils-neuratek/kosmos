@@ -121,7 +121,8 @@ struct scene {
      * lit, in percent - the look's; a bevel of 0 for none. The lens is
      * made from them and `corner` by `scene_compose` when any of the four
      * changes, never in a frame otherwise; `lens_ok` says it was. */
-    long rim_bevel, rim_refraction, rim_specular;
+    long rim_bevel, rim_refraction, rim_specular, rim_split;
+    uint32_t rim_front;         /* the window in front's light; 0, white */
     struct gfx_lens lens;
     void *lens_mem;
     long lens_of[4];

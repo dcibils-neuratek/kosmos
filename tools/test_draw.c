@@ -328,6 +328,37 @@ static void rim(void)
     check((p & 0xff) > 0x40 + 20, "the left edge, toward the light, lit");
     check((q & 0xff) <= 0x40, "the right edge, away from the light, not lit");
 
+    /* In front, its light the look's warm one - orange here, so it shows:
+     * the left edge's red brighter, its blue not. And behind, white. */
+    sc->rim_front = 0xffff8000u;
+    sc->win[0].flags |= SC_FOCUSED;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    check(((p >> 16) & 0xff) > 40 && (p & 0xff) <= 0x40,
+          "the window in front's rim lit warm: red up, blue not");
+    sc->win[0].flags &= ~(uint32_t)SC_FOCUSED;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    check((p & 0xff) > 0x40 + 20, "a window behind, lit white whatever the warm light is");
+
+    /* The split: glass whose blue is its x as well as its red, no light.
+     * At the left edge red is read further in than blue, so red is the
+     * higher; with no split the two are one. */
+    for (y = 0; y < 80; y++) {
+        for (x = 0; x < 120; x++) row_of(&frost, y)[x] = 0xff000000u | x << 16 | y << 8 | x;
+    }
+    sc->rim_specular = 0;
+    sc->rim_split = 50;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    check(((p >> 16) & 0xff) > (p & 0xff) + 1,
+          "the split: the warm channels read further along the bend than the cool");
+    sc->rim_split = 0;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    check(((p >> 16) & 0xff) <= (p & 0xff) + 1 && (p & 0xff) <= ((p >> 16) & 0xff) + 1,
+          "no split: the channels read together");
+
     sc->rim_bevel = 0;
     (void)scene_compose(sc, 0, 0, 120, 80);
     p = at(&back, 20, 40);
@@ -410,6 +441,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a glass window's rim bent inward and lit toward the light, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

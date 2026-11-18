@@ -14,14 +14,17 @@
 # layout and palette, so this is Astra with its material changed. Its dark
 # partner is `LiquidGlassNight.theme`, on Night's.
 #
-# **Opaque, for now** (LG1): the colours below are what each glass
-# surface's tint looks like over the wallpaper it is paired with, said as
-# solid colours, so the look is whole before there is a blur to see through.
-# The glass keys after them say what the material is; the scene reads them
-# from LG2 on, and until then nothing draws them.
+# **The colours below are the solid ones**: what each surface is where it
+# is not glass - an application's own ground, a control, a header - and
+# what the look is before a wallpaper's glass is made. The glass keys after
+# them say what the material is, and the window manager and the scene draw
+# it: the dock, banners, menus and the windows the kit draws frosted
+# (LG4), their rims bent and lit (`testing.md` 18.875-18.879).
 
 name       = liquidglass
 flat       = yes
+# Kosmos's mark, the four-point star, and the dock's glints (L5).
+star       = yes
 
 desktop    = #4f7fd0
 window     = #eef1f8

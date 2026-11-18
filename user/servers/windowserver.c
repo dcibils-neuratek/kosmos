@@ -289,6 +289,8 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         sc->rim_bevel = h.rim_bevel;
         sc->rim_refraction = h.rim_refraction;
         sc->rim_specular = h.rim_specular;
+        sc->rim_front = h.rim_front;
+        sc->rim_split = h.rim_split >= 0 && h.rim_split <= 100 ? h.rim_split : 0;
     } else {
         sc->rim_bevel = sc->rim_refraction = sc->rim_specular = 0;
     }
