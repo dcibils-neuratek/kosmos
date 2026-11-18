@@ -295,8 +295,9 @@ theme.tokens = {
   --
   -- **`cut`: Starlight's softened cut** (`docs/astra.md` S2) - what floats,
   -- the dock and menus, has its top-left corner cut on a slant, the two
-  -- meetings eased, and the other three round. `yes` or `no`; a look's
-  -- property, as `flat` is, and `no` unless it says.
+  -- meetings eased, and the other three round. A *desktop's* style since
+  -- 18 November (`desktops.lua`, M.STYLE), not a look's: the window
+  -- manager wears the desktop's and sends it with the palette.
   --
   "cut",
 
@@ -304,16 +305,16 @@ theme.tokens = {
   -- **`star`: Kosmos's mark a four-point star** (`docs/astra.md` S5, I8) -
   -- on the Deskbar's Kosmos plate and the dock's button, before a title on
   -- its plate, and under a running application in the dock as a *glint*,
-  -- amber for the one in front, where today's is a dot. `yes` or `no`.
+  -- amber for the one in front, where today's is a dot. The desktop's.
   --
   "star",
 
   --
   -- **`plate`: the window in front's title on an amber plate** (`docs/
-  -- astra.md` S1, L5) on a desktop whose chrome is not Starlight's - a
-  -- look's cue rather than a desktop's. Under glass the plate is amber
-  -- glass and the others' the header's own. `yes` or `no`; the Starlight
-  -- desktop wears one whatever its look says.
+  -- astra.md` S1, L5). Under glass the plate is amber glass and the
+  -- others' the header's own. The desktop's (`desktops.lua`, M.STYLE) -
+  -- it was a look's, and Liquid Glass chosen in Astra wore Starlight's
+  -- plate (Diego, 18 November: "the theme is colors and transparency").
   --
   "plate",
 
@@ -626,8 +627,11 @@ function theme.read(text, base)
           said[#said + 1] = ("line %d: `%s` is a number of %s from 0 to %d, "
                              .. "not `%s`"):format(n, key, unit, most, value)
         end
-      elseif key == "flat" or key == "title_bars" or key == "cut" or key == "star"
-             or key == "plate" or key == "glass_windows" then
+      elseif key == "cut" or key == "star" or key == "plate" then
+        -- A desktop's style, not a look's (`desktops.lua`, M.STYLE).
+        said[#said + 1] = ("line %d: `%s` is a desktop's style, said in its "
+                           .. ".desktop file, not a look's"):format(n, key)
+      elseif key == "flat" or key == "title_bars" or key == "glass_windows" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -656,9 +660,6 @@ function theme.read(text, base)
   -- stayed flat until the window was opened again.
   --
   if out.flat == nil then out.flat = false end
-  if out.cut == nil then out.cut = false end
-  if out.star == nil then out.star = false end
-  if out.plate == nil then out.plate = false end
   if out.title_bars == nil then out.title_bars = true end
   for k, v in pairs(theme.GLASS_NONE) do
     if out[k] == nil then out[k] = v end
@@ -731,6 +732,19 @@ end
 -- being loaded to match. The faces are applied on purpose, by whoever
 -- chooses the theme; applying a palette never touches them.
 --
+theme.STYLE = { "cut", "star", "plate" }
+
+-- The window manager's, from the desktop it started (`desktops.lua`): worn
+-- now and over every look applied after.
+function theme.wear(style)
+  theme.style = {}
+
+  for _, k in ipairs(theme.STYLE) do
+    theme.style[k] = style and style[k] and true or false
+    theme[k] = theme.style[k]
+  end
+end
+
 function theme.apply(palette)
   if type(palette) == "string" then
     palette = theme.palettes[palette]
@@ -754,10 +768,19 @@ function theme.apply(palette)
     theme.tab_idle_text = palette.tab_text
   end
 
-  -- Nor does it wear a cue it does not name - Starlight's star or Liquid
-  -- Glass's plate - because the look before it did.
-  if palette.star == nil then theme.star = false end
-  if palette.plate == nil then theme.plate = false end
+  -- **The desktop's style over whatever came** (`theme.wear`): in the
+  -- window manager, the desktop's `cut`, `star` and `plate`, so a look
+  -- cannot bring them; every other process takes them from the palette
+  -- the window manager sends, which carries them.
+  -- A palette that names none, with no style worn - a look read from a
+  -- file - wears none, rather than the last one's.
+  for _, k in ipairs(theme.STYLE) do
+    if theme.style then
+      theme[k] = theme.style[k] and true or false
+    elseif palette[k] == nil then
+      theme[k] = false
+    end
+  end
 
   -- A palette that says nothing of glass - a built-in one, or one an older
   -- Preferences sent - is not glass, whatever the look before it was.

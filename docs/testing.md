@@ -37017,3 +37017,36 @@ other halves - a gap, and the thread away - still fail as before.
 The arm-sandbox line read "the plan promised 220 and 219 arrived": the
 role's message ran onto `not ok 72`'s line, so the count missed it. The
 line's beginning is the kernel suite's, not the parser's to guess.
+
+## 18.895 A desktop's style, a look's colours
+
+**In short**: Diego chose Liquid Glass in Appearance on Astra and got
+Starlight - the amber plate and the four-point star on Astra's windows -
+because the looks said `star` and `plate` (and Starlight's `cut`). Those
+three are a `.desktop` file's keys now (`desktops.lua`, `M.STYLE`), the
+window manager wears the desktop's over every look (`theme.wear`), and a
+look that says one is told it is the desktop's (`astra.md`, *A desktop's
+style, a look's colours*).
+
+- **`tools/test_theme.lua`**: no look that ships says a style key; Liquid
+  Glass Night applied brings no plate, star or cut; Starlight's style
+  worn keeps all three under Endeavour, Astra's keeps none under Liquid
+  Glass; a look saying all three is told three times. 718 checks.
+- **`x86-desktops`** (16): Astra starts wearing `cut no, star no, plate
+  no`. **`x86-starlight`** (13): Starlight's from its file, yes to all
+  three, and its plate and star drawn as before.
+- **`x86-glass`**: About on Astra under Liquid Glass wears *no* plate - the
+  check turned round. **Control**: 0.11.495's gate, the tree before, found
+  the plate there (`wm: About Kosmos's plate at ...`), which this fails.
+  The amber glass plate's pixels lose their check with it, owed on
+  Starlight's desktop wearing a glass look (`roadmap.md`).
+
+**And a harness race, from 0.11.495's prepush**: `x86-display-1` failed
+"Preferences opened no window the window manager said" with no line from
+its wm at all. `windows_on` counts windows from the last `wm: faces`, so
+before the new wm printed one it counted the gallery's, which its wm never
+closed, and said one was open. It now says none while the last thing heard
+is the window manager gone. `x86-smbd` failed once in the same run - its
+visitor's connection ended before the page named its share, on a host at
+twice its usual time - and passed alone in 92 s; seen once, not chased.
+

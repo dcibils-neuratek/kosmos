@@ -45,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 12
+CHECKS = 13
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -107,6 +107,8 @@ def run(fails):
 
         if not line(guest, r"wm: look starlight, the desktop's", 0, 1):
             fails.append("the desktop did not wear Starlight's look")
+        if not re.search(r"wm: style cut yes, star yes, plate yes", seen):
+            fails.append("Starlight did not wear its style from its .desktop file")
         if not re.search(r"wm: chrome starlight", seen):
             fails.append("Starlight's chrome was not starlight")
         baked = re.search(r"wm: the wallpaper's glass, \d+x\d+, three passes at \d+, "

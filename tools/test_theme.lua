@@ -198,7 +198,8 @@ do
         check(p[k] > 0 and p[k] <= 100, name .. "'s " .. k .. " is " .. p[k])
       end
       check(p.rim_front >> 24 == 0xff, name .. " has no warm rim")
-      check(p.plate == true, name .. " wears no amber plate (L5)")
+      check(p.plate == nil and p.star == nil and p.cut == nil,
+            name .. " says a desktop's style - plate, star or cut")
       check(p.glass_windows == true, name .. "'s windows are not glass")
       check(p.glass_top == 0 and p.glass_bottom == 0 and p.grain == 0 and p.horizon == 0,
             name .. " says Starlight's nebula")
@@ -216,9 +217,9 @@ do
       check(p.horizon == p.tab, ("%s's horizon is %08x, not its amber %08x")
                                   :format(name, p.horizon, p.tab))
     else
-      -- The plate is Liquid Glass's to wear on any desktop; Starlight's is
-      -- its desktop's, so the look itself says nothing of it.
-      check(p.plate == false, name .. " wears a plate of its own")
+      -- The plate, the star and the cut are a desktop's, never a look's.
+      check(p.plate == nil and p.star == nil and p.cut == nil,
+            name .. " says a desktop's style - plate, star or cut")
       for k, v in pairs(theme.GLASS_NONE) do
         check(p[k] == v, name .. "'s " .. k .. " is " .. tostring(p[k])
               .. ", not " .. tostring(v) .. " - it is not glass")
@@ -272,8 +273,24 @@ glass_windows = maybe
   check(not theme.glassy(), "Endeavour after Liquid Glass is glassy")
   check(theme.glass == "none" and theme.bevel == 0 and theme.glass_tint == 0,
         "Endeavour after Liquid Glass kept its glass: " .. tostring(theme.glass))
+  -- Liquid Glass chosen in Astra wears no Starlight (Diego, 18 November:
+  -- "the theme is colors and transparency"): the desktop's style decides.
   theme.apply(theme.read(themes.liquidglassnight, "dark"))
-  check(theme.plate and theme.star, "Liquid Glass Night applied wears no plate or star")
+  check(not theme.plate and not theme.star and not theme.cut,
+        "Liquid Glass Night applied brought a plate, a star or the cut")
+  theme.wear({ cut = true, star = true, plate = true })
+  theme.apply(theme.read(themes.endeavour, "dark"))
+  check(theme.plate and theme.star and theme.cut,
+        "Starlight's style worn lost its plate, star or cut to Endeavour")
+  theme.wear({})
+  theme.apply(theme.read(themes.liquidglass, "dark"))
+  check(not theme.plate and not theme.star and not theme.cut,
+        "Astra's style worn kept Starlight's under Liquid Glass")
+  theme.style = nil
+  local _, told = theme.read("star = yes\nplate = yes\ncut = no\n", "dark")
+  check(#told == 3 and (told[1] or ""):find("a desktop's style", 1, true),
+        "a look saying star, plate and cut was told as: " .. table.concat(told, "; "))
+  theme.apply(theme.read(themes.liquidglassnight, "dark"))
 
   -- A panel - a sidebar, a foot - is derived for every look, the same
   -- thousandths from its window to its soft line that the panels each

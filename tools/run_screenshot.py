@@ -951,6 +951,14 @@ def windows_on(guest):
     there were none to count (one window chrome, 7 October)."""
     guest._read_available()
     start = guest.seen.rfind("wm: faces ")
+
+    # A window manager that has ended has no windows, and the next one has
+    # none until it says so: counted from the last one's start, the windows
+    # it never closed were the new one's (`x86-display-1`, 0.11.495, where
+    # Preferences was taken as open before its wm had printed a line).
+    if guest.seen.rfind("the window manager is gone") > start:
+        return 0
+
     tail = guest.seen[start:] if start >= 0 else guest.seen
     events = []
 

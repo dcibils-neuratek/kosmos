@@ -4004,7 +4004,7 @@ function ui.header(spec)
     -- that process knows. The header leaves the plate's room, says how wide
     -- it is and what it says, and draws no title of its own.
     --
-    -- A look may wear it on any desktop (`theme.plate`, L5).
+    -- Or a desktop whose style says so (`theme.plate`, `desktops.lua`).
     self.starlight = self.title_bar and win and win.headed
                      and (win.chrome == "starlight" or theme.plate) or nil
 

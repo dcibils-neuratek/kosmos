@@ -30,7 +30,21 @@ M.DEFAULT = "Astra"
 -- The keys a desktop file may say. Anything else is a complaint, so a
 -- word misspelt is told rather than quietly doing nothing.
 local KEYS = { name = true, says = true, shell = true, background = true,
-               chrome = true, menus = true, look = true }
+               chrome = true, menus = true, look = true,
+               cut = true, star = true, plate = true }
+
+--
+-- **The style a desktop wears, which no look can** (Diego, 18 November
+-- 2026: "desktop style is the way it works and looks", "the theme is
+-- colors and transparency"). Choosing Liquid Glass in Astra put
+-- Starlight's star and amber plate on Astra's windows, because the look
+-- said `star` and `plate`. They are the desktop's now, each `yes` or `no`:
+--
+--   - `cut`: what floats - the dock, menus - cut at its top-left (S2);
+--   - `star`: Kosmos's four-point star on the plates and glints (S5);
+--   - `plate`: the window in front's title on an amber plate (S1).
+--
+M.STYLE = { "cut", "star", "plate" }
 
 -- The title bars the kit can draw (`ui.header`): Astra's, Platinum's since
 -- Pewter's P2, and Starlight's - Astra's with the window in front's title on
@@ -62,7 +76,7 @@ end
 --
 function M.parse(text, stem)
   local d = { name = stem, says = "", shell = {}, background = {}, chrome = "astra",
-              menus = "window" }
+              menus = "window", cut = false, star = false, plate = false }
   local said = {}
 
   for n, key, value in theme.lines(text) do
@@ -86,6 +100,12 @@ function M.parse(text, stem)
       else
         said[#said + 1] = ("line %d: menus go in the `window` or on the `screen`, not `%s`")
                           :format(n, value)
+      end
+    elseif key == "cut" or key == "star" or key == "plate" then
+      if value == "yes" or value == "no" then
+        d[key] = (value == "yes")
+      else
+        said[#said + 1] = ("line %d: `%s` is yes or no, not `%s`"):format(n, key, value)
       end
     elseif key == "look" then
       -- The look it wears (`user/themes`), by its key - `starlight` - which

@@ -7,10 +7,8 @@
 
 name       = liquidglassnight
 flat       = yes
-# Kosmos's mark, the four-point star, and the dock's glints (L5).
-star       = yes
-# The window in front's title on a plate of amber glass (L5).
-plate      = yes
+# The star, the plate and the cut are the desktop's style, not a look's
+# (`desktops.lua`, M.STYLE; Diego, 18 November 2026).
 shadow     = 24
 
 desktop    = #111a33

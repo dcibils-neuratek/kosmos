@@ -206,7 +206,7 @@ header is split, so its plate says the page's name over the right pane
 rather than the window's at its corner; and Appearance's Theme row still
 marks the look saved there, not the one a desktop put on. S2 the
 softened cut on the dock and menus (**built in 0.11.469**, `testing.md`
-18.869: a look's `cut = yes`, menus cut by the compositor at 8 and the
+18.869: `cut = yes` - a look's then, the desktop's since 0.11.496 - menus cut by the compositor at 8 and the
 floating dock by the Deskbar at 12; banners, quick settings and tiles
 later, when each is drawn for Starlight); S3 the nebula glass's grain and its
 amber horizon (**built in 0.11.492**, `testing.md` 18.891: the dock, menus
@@ -243,6 +243,32 @@ What follows is the list as it was put to him.
 8. **I8 - The Kosmos mark is a four-point star**, on the strip's plate,
    the dock's button and the glint. *Recommended: yes*; the Kosmos
    button's picture today is Haiku's.
+
+---
+
+## A desktop's style, a look's colours
+
+**In short: a look is colours and transparency; how the desktop works and
+looks - the star, the plate, the cut - is the desktop's.** Diego, 18
+November 2026, with Liquid Glass chosen in Appearance on Astra: "i dont
+understand why when i am in astra desktop and select liquid glass theme it
+changes the desktop style to starlight", and "desktop style is the way it
+works and looks. the theme is colors and transparency".
+
+It did, because Liquid Glass's two looks said `star = yes` and `plate =
+yes` (LG5) and Starlight's said `cut = yes` and `star = yes` (S2, S5), so
+choosing one put Starlight's amber plate and four-point star on Astra's
+windows. Since 0.11.496 those three keys are a desktop file's
+(`user/lib/desktops.lua`, `M.STYLE`): `Starlight.desktop` says all three,
+Astra's and Pewter's none, and the window manager wears the desktop's
+(`theme.wear`) over every look applied after, sending it to every window
+with the palette. A look that still says one is told so, line by line, as
+"a desktop's style, said in its .desktop file, not a look's".
+
+**What else is style by that definition, and is still a look's**: `flat`,
+`title_bars`, a look's own corner and shadow. Each is how a window is drawn
+rather than what colour it is; whether they move too is Diego's (*Decisions
+that are Diego's*).
 
 ---
 
@@ -484,7 +510,7 @@ of section 6.
    wallpaper under the tint, a rim pixel as the wallpaper at the table's
    offset, and a pixel of Write's page as opaque white; `frames` dragging a
    window on the M700 under 8 ms a pass.
-5. **LG5 - the cues** (**begun in 0.11.480** - the star, the glints, the warm rim and the split; `testing.md` 18.880; the beads in 0.11.481, 18.881; the amber glass plate in 0.11.482, 18.882, a look's `plate` key as well as Starlight's desktop's; the star specular in 0.11.483, 18.883 - every cue drawn; a focus change composing only the parts of the window going back in 0.11.484, 18.884; the gallery's second picture in Liquid Glass in 0.11.485, 18.885 - **LG5 built**). The amber glass plate, the beads, the warm rim and
+5. **LG5 - the cues** (**begun in 0.11.480** - the star, the glints, the warm rim and the split; `testing.md` 18.880; the beads in 0.11.481, 18.881; the amber glass plate in 0.11.482, 18.882, a look's `plate` key as well as Starlight's desktop's - the desktop's alone since 0.11.496 (*A desktop's style, a look's colours*); the star specular in 0.11.483, 18.883 - every cue drawn; a focus change composing only the parts of the window going back in 0.11.484, 18.884; the gallery's second picture in Liquid Glass in 0.11.485, 18.885 - **LG5 built**). The amber glass plate, the beads, the warm rim and
    the star specular on the window in front, the star on the strip and the
    dock, the glints. *Test*: a focus change redraws only the two plates
    and the two rims (`frames`' damage), and the gallery shot in Liquid

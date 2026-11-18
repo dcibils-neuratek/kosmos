@@ -38,7 +38,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 15
+CHECKS = 16
 
 # The Startup page's setting, as `startup.lua` reads it, written at the
 # prompt - where there is no `use`, so straight to its file.
@@ -106,6 +106,11 @@ def main():
 
         if not chosen:
             fails.append("Astra was not started")
+        # Its style is its own, whatever look is chosen (Diego, 18 November
+        # 2026: "the theme is colors and transparency"): no star, no plate.
+        if not line(r"wm: style cut no, star no, plate no", mark, 5):
+            fails.append("Astra did not wear its own style: "
+                         + str(re.findall(r"wm: style [^\n]*", guest.seen[mark:])))
         for piece in ("Notifications", "Deskbar", "Tracker \\(desktop\\)", "Tracker"):
             if not re.search(r"chooser: heard %s (ready|ended)" % piece, seen):
                 fails.append("the loader never heard %s arrive" % piece.replace("\\", ""))

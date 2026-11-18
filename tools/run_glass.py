@@ -307,33 +307,16 @@ def rim_lit(guest, mark, fails):
 
 
 def plate_glass(guest, mark, fails):
-    """The amber plate on About (LG5), worn by a look rather than a desktop:
-    amber glass, so its colour is the amber laid over the header at 0xc8 -
-    warm, and not the opaque #f2a93b a plate of paint would be - over Night's
-    dark header a deeper gold, its red down and its blue near paint's. Read on a
-    row below its words and short of its slanted edge."""
-    win = re.search(r"wm: window About Kosmos at (-?\d+),(-?\d+) (\d+)x(\d+)", guest.seen[mark:])
+    """No plate on About: the plate is a desktop's style, and Astra's says
+    none, whatever look it wears (Diego, 18 November 2026: "the theme is
+    colors and transparency"). Until 0.11.496 Liquid Glass brought one, and
+    this checked it was amber glass; that plate is Starlight's desktop's
+    alone now, worn under a glass look, and its check there is owed
+    (`roadmap.md`, Liquid Glass)."""
     plate = re.search(r"wm: About Kosmos's plate at (-?\d+),(-?\d+) (\d+)x(\d+)", guest.seen)
-    if not plate:
-        fails.append("About wears no plate under Liquid Glass")
-        return
-    if not win:
-        return
-    wx, wy = int(win.group(1)), int(win.group(2))
-    px, py, pw, ph = (int(plate.group(i)) for i in range(1, 5))
-    shot = open("build/glass/window.ppm", "rb").read()
-    head = shot.split(b"\n", 3)
-    sw, _ = (int(v) for v in head[1].split())
-    data = head[3]
-    y = wy + py + ph - 4
-    xs = range(wx + px + 6, wx + px + pw - 30)
-    r = sum(data[(y * sw + x) * 3] for x in xs) / len(xs)
-    b = sum(data[(y * sw + x) * 3 + 2] for x in xs) / len(xs)
-    print("plate: About's at %d,%d %dx%d, red %.0f and blue %.0f along its foot"
-          % (px, py, pw, ph, r, b))
-    if not (r > b + 60 and max(abs(r - 0xf2), abs(b - 0x3b)) > 12):
-        fails.append("About's plate is not amber glass: red %.0f, blue %.0f along its foot, "
-                     "where paint is 242 and 59" % (r, b))
+    if plate:
+        fails.append("About wears a plate on Astra under Liquid Glass - Starlight's style "
+                     "from a look: %s" % plate.group(0))
 
 
 def sidebar_frosted(guest, fails):

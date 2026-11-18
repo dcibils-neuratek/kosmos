@@ -4875,6 +4875,11 @@ function D.start(name, watcher)
   D.chrome = d.chrome or "astra"
   print(("wm: chrome %s"):format(D.chrome))
 
+  -- And its style - cut, star, plate - worn over every look from now on.
+  theme.wear(d)
+  print(("wm: style cut %s, star %s, plate %s"):format(
+        d.cut and "yes" or "no", d.star and "yes" or "no", d.plate and "yes" or "no"))
+
   --
   -- **And the look it wears** (`look`, Starlight's): applied before its
   -- first window, which is handed the palette as it opens. A look chosen
