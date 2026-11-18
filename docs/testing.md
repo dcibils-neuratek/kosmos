@@ -37173,3 +37173,31 @@ new for two seconds - where the drag ended, not where it began.
 
 **Control**: the drag's moves taken out, the press and release left -
 failed, "did not scroll the page".
+
+## 18.901 JetSki's menu
+
+**In short**: the three dots open the drawing's menu (`docs/webkit.html`,
+*The menu*): File, Edit, View, History and favorites, under headings, each
+row with its key - New tab, Open a file, Save page as, Find on the page,
+Zoom, Downloads, Settings, and Web Inspector while the developer features
+are on. Print, Page source, History and Add to favorites are there and
+greyed until each is built. A row and its key are one function each, so
+the menu cannot do something its key does not.
+
+Zoom got its keys with it: Control-plus and Control-minus step Settings'
+four - Diego's "just put 4 options" of 1 October - and Control-nought goes
+back to 100%; the row opens the four, the one in force marked. Kept, as
+Settings keeps it.
+
+The kit's menus learned a heading: a row that names the ones under it,
+dim, at the edge, never lit and never chosen; and a release over a
+heading or a separator leaves the menu open rather than closing it, as a
+release outside does.
+
+`x86-jetski` presses the dots where JetSki says they are, finds every
+row the drawing has, presses Find on the page by where the menu said it
+is and sees the find bar open, and steps the zoom to 125% and back from
+the keys. The menu, open, is kept as `build/jetski/jetski-menu.png`.
+
+**Control**: the dots made to do nothing - "the three dots did not open
+the menu", failed.

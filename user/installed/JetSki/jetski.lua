@@ -560,6 +560,7 @@ local function layout()
   local right = W - ui.layout.head_edge
   more.x = right - more.w
   right = more.x - ui.layout.head_gap
+  print(("jetski: the menu's button at %d,%d"):format(more.x + more.w // 2, TABS + more.y + more.h // 2))
   if not inspect.hidden then
     inspect.x = right - inspect.w
     right = inspect.x - ui.layout.head_gap
@@ -647,9 +648,20 @@ local function downloads_key(c)
   return (key == 106 or key == 74) and mods == (keys.CTRL | keys.SHIFT)
 end
 
+-- Control with plus (or equals, its key unshifted), minus or nought: 1, -1
+-- or 0 for `zoom_step`, nil for anything else.
+local function zoom_key(c)
+  local key, mods = keys.parts(c)
+  if mods & keys.CTRL == 0 or mods & (keys.ALT | keys.SUPER) ~= 0 then return nil end
+  if key == 43 or key == 61 then return 1 end
+  if key == 45 then return -1 end
+  if key == 48 then return 0 end
+  return nil
+end
+
 local function windows_key(c)
   if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end
-  if inspector_key(c) or downloads_key(c) then return true end
+  if inspector_key(c) or downloads_key(c) or zoom_key(c) then return true end
   local key, mods = keys.parts(c)
   if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
   return mods & keys.SUPER ~= 0 and key >= 49 and key <= 57
@@ -1648,13 +1660,7 @@ local function toggle_inspector()
 end
 inspect.on_click = toggle_inspector
 
-more.on_click = function()
-  local x, y = more:in_window()
-  win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + more.h, {
-    { text = "New tab", on_choose = function() new_tab() end },
-    { text = "Settings", on_choose = function() open_settings() end },
-  })
-end
+-- The menu itself is below, beside the keys it names (`open_the_menu`).
 
 -- **The page's right-click** (`roadmap.md`, JetSki's features): what is
 -- under the pointer first - a link, a picture, the words selected - as
@@ -2577,6 +2583,111 @@ function web.save_frame()
   return true
 end
 
+-- Control-O's: an HTML file, chosen in the system's Open window.
+local function open_file()
+  local chooser = use("/Kosmos/Libraries/panel.lua").open{
+    -- Where the page shown is, when it is a file; /Home otherwise.
+    start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
+    title = "Open a web page",
+    filter = function(name)
+      local n = name:lower()
+      return n:match("%.html?$") ~= nil or n:match("%.mhtm?l?$") ~= nil
+    end,
+    on_choose = function(path) win:focus_on(view) web.focus(true) visit(path) end,
+  }
+  if chooser then chooser:run() end
+end
+
+-- **The zoom, a step at a time**: Settings' four (Diego, 1 October, "just
+-- put 4 options"), Control-plus up one, Control-minus down one and
+-- Control-nought back to the first - and kept, as choosing it in Settings
+-- keeps it. `to` is 1, -1 or 0; `zoom_to` sets one of the four.
+local function zoom_to(percent)
+  if percent ~= setting.zoom then
+    setting.zoom = percent
+    prefs.write(setting, SETTINGS, OWN)
+    webkit.zoom(percent)
+  end
+
+  say(("zoom %d%%"):format(percent))
+end
+
+local function zoom_step(to)
+  local list, at = prefs.CHOICES.zoom, 1
+
+  for i, z in ipairs(list) do
+    if z[1] == setting.zoom then at = i end
+  end
+
+  zoom_to(((to == 0) and list[1] or list[math.max(1, math.min(#list, at + to))])[1])
+end
+
+-- **The menu** (`docs/webkit.html`, *The menu*): everything JetSki does,
+-- under the drawing's headings, each with its key - one door to each, so
+-- the row and the key do the same thing. A row whose feature is not built
+-- yet is drawn greyed, which says it is coming where a missing row says
+-- nothing; *Bookmark this page* is *Add to favorites*, since on Kosmos
+-- they are (`webkit.md`, *Doubts*).
+local function menu_items()
+  local function heading(text) return { text = text, heading = true } end
+  local function row(text, hint, fn) return { text = text, hint = hint, on_choose = fn } end
+  local function later(text, hint) return { text = text, hint = hint, disabled = true } end
+  local sep = { separator = true }
+
+  local zooms = {}
+  for _, z in ipairs(prefs.CHOICES.zoom) do
+    zooms[#zooms + 1] = { text = z[2], mark = (z[1] == setting.zoom),
+                          on_choose = function() zoom_to(z[1]) end }
+  end
+
+  local items = {
+    heading("File"),
+    row("New tab", "Ctrl T", new_tab),
+    row("Open a file...", "Ctrl O", open_file),
+    row("Save page as...", "Ctrl S", save_page),
+    later("Print...", "Ctrl P"),
+    sep, heading("Edit"),
+    row("Find on the page...", "Ctrl F", function() F.open() end),
+    sep, heading("View"),
+    { text = ("Zoom: %d%%"):format(setting.zoom), hint = "Ctrl + - 0", submenu = zooms },
+    later("Page source", "Ctrl U"),
+    row("Downloads", "Ctrl Shift J", function() downloads_toggle() end),
+    sep, heading("History and favorites"),
+    later("History", "Ctrl Y"),
+    later("Add to favorites", "Ctrl D"),
+    sep,
+    row("Settings", "Ctrl ,", open_settings),
+  }
+
+  if DEVELOPER then
+    table.insert(items, #items, row("Web Inspector", "Ctrl Alt I", toggle_inspector))
+  end
+
+  return items
+end
+
+-- Opened under the three dots, and said - the rows by where they are, for
+-- a suite to press one as a hand does.
+local function open_the_menu()
+  local x, y = more:in_window()
+  local items = menu_items()
+  local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + more.h, items)
+
+  if m and m.row then
+    local at, names = 2, {}
+    for _, it in ipairs(items) do
+      local h = it.separator and m.row // 3 or m.row
+      if it.text and not it.heading then
+        names[#names + 1] = ("%s%s at %d"):format(it.text, it.disabled and " (later)" or "", at + h // 2)
+      end
+      at = at + h
+    end
+    print(("jetski: the menu at %d,%d %dx%d: %s"):format(m.x or -1, m.y or -1, m.w or 0, m.h or 0,
+                                                       table.concat(names, "; ")))
+  end
+end
+more.on_click = function() open_the_menu() end
+
 win.on_key = function(_, c)
   -- Control-F: find on the page, as every browser has it.
   if c == 6 then F.open() return true end
@@ -2609,20 +2720,11 @@ win.on_key = function(_, c)
   if inspector_key(c) then toggle_inspector() return true end
 
   -- Control-O: an HTML file, chosen in the system's Open window.
-  if c == 15 then
-    local chooser = use("/Kosmos/Libraries/panel.lua").open{
-      -- Where the page shown is, when it is a file; /Home otherwise.
-      start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
-      title = "Open a web page",
-      filter = function(name)
-        local n = name:lower()
-        return n:match("%.html?$") ~= nil or n:match("%.mhtm?l?$") ~= nil
-      end,
-      on_choose = function(path) win:focus_on(view) web.focus(true) visit(path) end,
-    }
-    if chooser then chooser:run() end
-    return true
-  end
+  if c == 15 then open_file() return true end
+
+  -- Control and plus, minus or nought: the zoom, a step of Settings' four.
+  local zk = zoom_key(c)
+  if zk then zoom_step(zk) return true end
 
   -- Super with a digit: that tab, and 9 the last, as every browser has it.
   local key, mods = keys.parts(c)

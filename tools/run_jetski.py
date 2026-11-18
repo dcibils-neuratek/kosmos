@@ -599,6 +599,7 @@ def use(guest, R, dump, window, mark):
     failed.extend(documentation(guest))
     failed.extend(downloaded(guest, R))
     failed.extend(saved_page(guest))
+    failed.extend(menued(guest, R, window, sw, sh))
     failed.extend(settings(guest, R, window, sw, sh))
     failed.extend(inspected(guest, R, window, sw, sh))
     failed.extend(stopped(guest, R, window, sw, sh))
@@ -678,6 +679,64 @@ def saved_page(guest):
         print("save: opened again, " + loaded.group(1))
         if "could not load" in after or not loaded.group(1).endswith(".mhtml"):
             failed.append("the saved page opened as something else: %s" % loaded.group(0))
+    return failed
+
+
+def menued(guest, R, window, sw, sh):
+    """**The menu** (`docs/webkit.html`, *The menu*): the three dots pressed
+    as a hand does open every row the drawing has, those not built yet
+    greyed; a row pressed does what its key does - Find on the page opens
+    the find bar - and Control-plus and Control-nought step the zoom."""
+    failed = []
+    at = re.findall(r"jetski: the menu's button at (\d+),(\d+)", guest.seen)
+    if not at:
+        return ["JetSki did not say where its menu's button is"]
+    bx, by = window[0] + int(at[-1][0]), window[1] + int(at[-1][1])
+
+    since = len(guest.seen)
+    guest.mouse_to(*R._to_tablet(bx, by, sw, sh))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.15)
+    guest.mouse_button(False)
+    if not said(guest, since, "jetski: the menu at", 20):
+        return ["the three dots did not open the menu: %s"
+                % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said")]
+    menu = re.search(r"jetski: the menu at (-?\d+),(-?\d+) (\d+)x(\d+): ([^\r\n]*)", guest.seen[since:])
+    mx, my = int(menu.group(1)), int(menu.group(2))
+    rows = dict((name, int(y)) for name, y in re.findall(r"([^;]+?) at (\d+)(?:;|$)", menu.group(5)))
+    rows = dict((k.strip(), v) for k, v in rows.items())
+    print("menu: " + menu.group(5))
+    time.sleep(0.8)
+    R.write_png(os.path.join(KEPT, "jetski-menu.png"), guest.screendump())
+    want = ["New tab", "Open a file...", "Save page as...", "Print... (later)", "Find on the page...",
+            "Zoom: 100%", "Page source (later)", "Downloads", "History (later)",
+            "Add to favorites (later)", "Settings"]
+    missing = [w for w in want if w not in rows]
+    if missing:
+        failed.append("the menu is not the drawing's: %s missing from %s" % (missing, menu.group(5)))
+
+    if "Find on the page..." in rows:
+        since = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(mx + 40, my + rows["Find on the page..."], sw, sh))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.15)
+        guest.mouse_button(False)
+        if not said(guest, since, "jetski: find bar open", 15):
+            failed.append("the menu's Find on the page did not open the find bar: %s"
+                          % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said"))
+        guest.sendkey("esc")
+        said(guest, since, "jetski: find bar closed", 10)
+        time.sleep(0.5)
+
+    # The zoom from the keys, and back.
+    for key, word in (("ctrl-equal", "zoom 125%"), ("ctrl-0", "zoom 100%")):
+        since = len(guest.seen)
+        guest.sendkey(key)
+        if not said(guest, since, "jetski: " + word, 10):
+            failed.append("%s did not say %s: %s" % (key, word, re.findall(r"jetski: [^\r\n]*",
+                                                                      guest.seen[since:])[-3:] or "nothing said"))
     return failed
 
 

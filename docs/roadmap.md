@@ -11194,7 +11194,12 @@ the applications make the system useful, and is not pulled forward.
       **Save page as built in 0.11.500** (`testing.md` 18.899): Control-S,
       the system's Save window at `/Home/Downloads` with an As row - a web
       page complete in one MHTML file, WebKit's, or the HTML only - and the
-      file opens again as a page. Next: the menu.
+      file opens again as a page.
+      **The menu built in 0.11.502** (`testing.md` 18.901): the three dots
+      hold everything under the drawing's headings, each row with its key;
+      Print, Page source, History and Add to favorites greyed until built.
+      Zoom's keys came with it (Control-plus, minus, nought). Next:
+      favorites and history.
     - *The start page* (Diego, 17 November 2026: "jetski needs a new empty
       page with my favorites and or with out top 20 sites added as
       favorites so we can clik and open them", with Safari's start page

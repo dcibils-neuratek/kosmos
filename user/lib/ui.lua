@@ -9672,8 +9672,10 @@ function window:paint_menu(m)
                it.icon .. ".png", MENU_ICON)
       end
 
-      g:text(text_x, y + centred(m.row), tostring(it.text or ""),
-             it.disabled and theme.text_dim
+      -- A heading names the rows under it, as a menu bar's title does in a
+      -- menu that has none: at the edge, dim, and never lit or chosen.
+      g:text(it.heading and MENU_PAD + 4 or text_x, y + centred(m.row), tostring(it.text or ""),
+             (it.disabled or it.heading) and theme.text_dim
              or (hot and theme.text_on or theme.text), bg)
 
       if it.hint then
@@ -9999,12 +10001,14 @@ function window:menu_mouse(ev)
 
   if not m then return false end
 
-  local row = nil
+  local row, inside = nil, false
 
   if ev.x >= 0 and ev.x < m.w then
     local i = menu_item_at(m.items, m.row, ev.y)
 
-    if i and not m.items[i].separator then
+    inside = i ~= nil
+
+    if i and not m.items[i].separator and not m.items[i].heading then
       row = i
     end
   end
@@ -10043,7 +10047,9 @@ function window:menu_mouse(ev)
     if item and item.submenu then return false end
 
     -- `disabled`: drawn, and a press on it does nothing - the menu stays.
+    -- So does a release on a heading or a separator, inside the menu.
     if item and item.disabled then return true end
+    if not item and inside then return true end
 
     self:close_menus()
 
