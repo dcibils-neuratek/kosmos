@@ -37247,3 +37247,26 @@ Control-letters to Control-Alt-letters, since Control-D, Control-Y and
 Control-U are JetSki's now or will be.
 
 **Control**: `FAV.toggle` made to do nothing - "Control-D did not make the page a favorite" and "did not let the favorite go", failed. The history checks' controls are the runs that found each fault.
+
+## 18.903 posixtest starved, and not by its code
+
+**In short**: `x86-loader` failed 0.11.503's prepush - `posixtest` died
+of a page fault in libc's `malloc` (`split`, from `take`), writing a
+block's header into a page reserved read and write and never filled - and
+failed twice more alone, each run taking about 200 s where the suite takes
+12 to 32. Then it passed three times running, in 12 to 28 s, **on the
+same binaries**: `posixtest.elf` byte for byte, the same system image, and
+a boot that said the same 84 of 507 MB in use and 5 of 224 MB free.
+
+What the fault means is known: `reserve_fill` (`kernel/reserve.c`) gives
+a reserved page its first zeroed page only while `pmm_room_for_user`
+allows, so a write into a discarded arena - which keeps its addresses and
+is handed out again (18.810) - is where a machine out of memory dies
+first. Why this machine was out of memory, and fifteen times slower, for
+a quarter of an hour and then not, is not known. It is not `history.lua`,
+which 0.11.503 changed and which the passing runs had too; not the disk,
+which said the same; and a run at 1 GB passing proves nothing more, since
+it ran after the cluster had passed.
+
+Kept for whoever takes it up: the image and the serial log, in
+`build/gate/kept-posixtest/`. `roadmap.md` has it as an open item.

@@ -11212,6 +11212,12 @@ the applications make the system useful, and is not pulled forward.
       and Settings into files of their own beside `jetski.lua` in
       `/Home/Apps/JetSki`, each handed what it needs - rather than more
       folding, which only moves the limit.
+      **posixtest starved, cause unknown** (`testing.md` 18.903): three
+      runs in a quarter of an hour died of a page fault in `malloc` on a
+      machine out of memory and fifteen times slower than usual, then
+      the same binaries passed; the image and log are kept in
+      `build/gate/kept-posixtest/`. If it comes back: what holds the
+      memory - `sysinfo`'s pools and `pmm`'s free count said at the fault.
       **One suggestions list in the kit**: JetSki's address field is to
       offer a search, history and favorites as letters are typed
       (`webkit.html`, *Typing in the address field*). Mail's compose
