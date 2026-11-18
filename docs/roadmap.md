@@ -1006,6 +1006,20 @@ command at the probe was ended by its interrupt", both waits nought, as if
 the probe's command was answered before it was waited on. Each passed alone
 straight after every time. Find what each is racing - not a longer wait.
 
+**And `x86-xavier`, twice in 0.11.487's two prepush runs** (18 November,
+under load, 37 of 37 alone straight after). The first run failed "Use the
+fastest did not keep the fastest writer": Compare measured base at 110.7
+tokens a second written and plain lower, and the server kept plain. The
+second failed "the new conversation's answer is not the kit's" in
+tiny-phi2.Q8_0, the same for its first sixteen tokens and different after.
+**Not the loops**: `llm_answer --loops` (a flag added for this, not yet
+committed) gives plain and base the same bytes on the Mac's NEON and on
+x86-64 through Rosetta, for both models, as the kit promises. So two things
+to find: what Use the fastest compares when it chooses, which is not what
+Compare printed; and what, timing-dependent, changes an answer after the
+first sixteen tokens - a Compare still running when the conversation
+begins, sharing the server's state, is the first suspect.
+
 **Tracker's list view, made right** - Diego, on the M700, 10 October 2026:
 "The tracker list view needs some work", "for big files the name overlaps
 the size", "the columns are not resizable", "it needs more columns like
