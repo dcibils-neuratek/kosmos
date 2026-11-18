@@ -116,6 +116,9 @@ struct ws_scene_head {
     int32_t  wallpaper, wx, wy, ww, wh;
     int32_t  stamp, sx, sy;
     int32_t  glass;             /* the wallpaper blurred, where it lies (LG4) */
+    int32_t  rim_bevel;         /* a glass edge's bevel in pixels, 0 for none */
+    int32_t  rim_refraction;    /* and how much it bends, in percent (LG3) */
+    int32_t  rim_specular;      /* and how much it is lit, in percent */
 
     uint32_t outline_on;
     int32_t  ox, oy, ow, oh;

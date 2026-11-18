@@ -470,13 +470,13 @@ of section 6.
    the window manager makes the copy when it resamples. *Test*:
    `tools/test_blur.c`, vector against scalar, natively and through
    Rosetta; the same step as A4's.
-3. **LG3 - the lens** (**the table built in 0.11.474**, `testing.md` 18.874; the rim pass with LG4, when there is a backdrop to bend). `lens.c`: the Snell table per radius, bevel and
+3. **LG3 - the lens** (**the table built in 0.11.474**, `testing.md` 18.874; the rim pass in 0.11.479, 18.879). `lens.c`: the Snell table per radius, bevel and
    scale, and the rim pass in the scene. *Test*: `tools/test_lens.c` holds
    every entry to a ray traced in doubles (within a pixel), checks that the
    edge profile equals the corner's along its axes, and that a rim with
    refraction 0 is the backdrop exactly.
 4. **LG4 - wallpaper glass everywhere: floating surfaces first, then
-   windows** (**begun in 0.11.475** with the dock, `testing.md` 18.875; the banners in 0.11.476, 18.876; menus in 0.11.477, 18.877; windows' grounds in 0.11.478, 18.878). `SC_GLASS` reading the blurred copy; the strip, dock, menus,
+   windows** (**begun in 0.11.475** with the dock, `testing.md` 18.875; the banners in 0.11.476, 18.876; menus in 0.11.477, 18.877; windows' grounds in 0.11.478, 18.878; the rim in 0.11.479, 18.879). `SC_GLASS` reading the blurred copy; the strip, dock, menus,
    banners, quick settings; then windows' grounds through the kit. *Test*:
    a display suite in Liquid Glass reads a sidebar pixel as the blurred
    wallpaper under the tint, a rim pixel as the wallpaper at the table's

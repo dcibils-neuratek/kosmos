@@ -6,6 +6,7 @@
  *   sc:look(corner, shadow, grip, edge_light, edge_dark, box, box_w, run, d,
  *           track, line_soft, outline, lights...)       what it looks like
  *   sc:desktop(colour, wallpaper, wx, wy, ww, wh, stamp, sx, sy, glass)
+ *   sc:rim(bevel, refraction, specular)                 a glass edge's lens
  *   sc:windows(n)                                       how many, in order
  *   sc:window(k, x, y, w, h, flags, picture, src_w, src_h,
  *             bar, bar_h, bx, by, held)                 the k-th from the back
@@ -201,6 +202,29 @@ static int l_scene_desktop(lua_State *L)
     hold(L, UV_MISC, MISC_WALLPAPER, 3);
     hold(L, UV_MISC, MISC_STAMP, 8);
     hold(L, UV_MISC, MISC_GLASS, 11);
+    return 0;
+}
+
+/*
+ * The rim of a glass window and menu (Liquid Glass LG3): its bevel in
+ * pixels and its refraction and specular in percent, the look's; a bevel
+ * of 0 for none. Out of range is none, rather than an error: the lens is
+ * a look's, and a look with no rim is a look.
+ */
+static int l_scene_rim(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    long b = (long)luaL_optinteger(L, 2, 0);
+    long r = (long)luaL_optinteger(L, 3, 0);
+    long s = (long)luaL_optinteger(L, 4, 0);
+
+    if (b < 0 || b > (long)GFX_LENS_MOST || r < 0 || r > 100 || s < 0 || s > 100) {
+        b = r = s = 0;
+    }
+
+    sc->rim_bevel = b;
+    sc->rim_refraction = r;
+    sc->rim_specular = s;
     return 0;
 }
 
@@ -495,6 +519,9 @@ static int l_scene_wire(lua_State *L)
     head->sx = (int32_t)sc->sx;
     head->sy = (int32_t)sc->sy;
     head->glass = (int32_t)sc->glass_slot;
+    head->rim_bevel = (int32_t)sc->rim_bevel;
+    head->rim_refraction = (int32_t)sc->rim_refraction;
+    head->rim_specular = (int32_t)sc->rim_specular;
 
     head->outline_on = sc->outline_on ? 1u : 0u;
     head->ox = (int32_t)sc->ox;
@@ -560,6 +587,7 @@ static int l_scene_wire(lua_State *L)
 static const luaL_Reg scene_methods[] = {
     { "look",     l_scene_look },
     { "desktop",  l_scene_desktop },
+    { "rim",      l_scene_rim },
     { "windows",  l_scene_windows },
     { "window",   l_scene_window },
     { "inset",    l_scene_inset },

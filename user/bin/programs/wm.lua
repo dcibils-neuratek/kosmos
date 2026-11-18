@@ -2747,6 +2747,15 @@ function OUT.describe()
                 wall_x, wall_y, wall_w, wall_h, pic(stamped), sx, sy,
                 pic(wallpaper and OUT.wall_glass or nil))
 
+  -- The rim of a glass window and menu (Liquid Glass LG3): the look's
+  -- bevel at the scale, and how much it bends and is lit; none without
+  -- glass. The scene makes its lens from these when they change.
+  if wallpaper and OUT.wall_glass and theme.glassy() then
+    scene:rim(scale.px(theme.bevel or 0), theme.refraction or 0, theme.specular or 0)
+  else
+    scene:rim(0, 0, 0)
+  end
+
   local order = OUT.order()
   local count = order and #order or #windows
   local front = focused_window()

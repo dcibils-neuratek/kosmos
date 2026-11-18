@@ -277,6 +277,71 @@ static void glass(void)
 }
 
 /*
+ * **The rim** (Liquid Glass LG3, LG4): a glass window, rounded at 8, over
+ * glass whose red is its x and green its y, so where a pixel's glass was
+ * read from shows in it. Its picture is black at an alpha of 1, so what
+ * shows is the glass within a step. With a bevel of 4 and no light: the
+ * middle unbent, the left edge read from further in (more red), the top
+ * from further down (more green). With light from the upper left: the left
+ * edge brighter, the right edge not. And without a rim, the edge unbent.
+ */
+static void rim(void)
+{
+    struct surface back = make(120, 80, 0xff000000u);
+    struct surface pic = make(80, 40, 0x01000000u);
+    struct surface frost = make(120, 80, 0);
+    struct scene *sc = malloc(sizeof(*sc));
+    unsigned x, y;
+    uint32_t p, q;
+
+    for (y = 0; y < 80; y++) {
+        for (x = 0; x < 120; x++) row_of(&frost, y)[x] = 0xff000040u | x << 16 | y << 8;
+    }
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff000000u;
+    sc->glass = &frost;
+    sc->corner = 8;
+    sc->rim_bevel = 4;
+    sc->rim_refraction = 60;
+    sc->rim_specular = 0;
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a window");
+    sc->win[0] = (struct sc_window){ 20, 20, 80, 40, SC_GLASS | SC_ROUNDED, &pic, 80, 40, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    check(sc->lens_ok, "the lens was made for a corner of 8 and a bevel of 4");
+    p = at(&back, 60, 40);
+    check(((p >> 16) & 0xff) + 1 >= 60 && ((p >> 16) & 0xff) <= 60
+          && ((p >> 8) & 0xff) + 1 >= 40 && ((p >> 8) & 0xff) <= 40,
+          "the middle of a glass window, its own glass unbent");
+    p = at(&back, 20, 40);
+    check(((p >> 16) & 0xff) > 21 && ((p >> 8) & 0xff) + 1 >= 40 && ((p >> 8) & 0xff) <= 40,
+          "the left edge's glass read from further in, at its own height");
+    p = at(&back, 60, 20);
+    check(((p >> 8) & 0xff) > 21 && ((p >> 16) & 0xff) + 1 >= 60 && ((p >> 16) & 0xff) <= 60,
+          "the top edge's glass read from further down, at its own column");
+
+    sc->rim_specular = 85;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    q = at(&back, 99, 40);
+    check((p & 0xff) > 0x40 + 20, "the left edge, toward the light, lit");
+    check((q & 0xff) <= 0x40, "the right edge, away from the light, not lit");
+
+    sc->rim_bevel = 0;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 20, 40);
+    check(!sc->lens_ok && ((p >> 16) & 0xff) <= 20 && ((p >> 16) & 0xff) + 1 >= 20,
+          "without a rim, the left edge's glass unbent");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(pic.pixels);
+    free(frost.pixels);
+}
+
+/*
  * **A picture from before a resize** (`SC_STALE`): a 40 by 30 picture whose
  * every pixel is its own, in a frame resized to 60 by 50. Shown at its size,
  * pixel for pixel, its last column drawn on across the new room and its
@@ -334,6 +399,7 @@ int main(void)
     primitives();
     scene();
     glass();
+    rim();
     stale();
 
     if (failed) {
@@ -344,6 +410,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a glass window's rim bent inward and lit toward the light, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

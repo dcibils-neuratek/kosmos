@@ -281,6 +281,17 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     sc->sx = h.sx;
     sc->sy = h.sy;
     sc->glass = picture(h.glass);
+    /* The rim's three numbers; held to their ranges here, as the scene's
+     * own call does, and the lens made from them by `scene_compose`. */
+    if (h.rim_bevel >= 0 && h.rim_bevel <= (int32_t)GFX_LENS_MOST
+        && h.rim_refraction >= 0 && h.rim_refraction <= 100
+        && h.rim_specular >= 0 && h.rim_specular <= 100) {
+        sc->rim_bevel = h.rim_bevel;
+        sc->rim_refraction = h.rim_refraction;
+        sc->rim_specular = h.rim_specular;
+    } else {
+        sc->rim_bevel = sc->rim_refraction = sc->rim_specular = 0;
+    }
 
     sc->outline_on = h.outline_on != 0;
     sc->ox = h.ox;

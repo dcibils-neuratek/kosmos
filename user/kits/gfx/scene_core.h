@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "surface.h"
+#include "lens.h"
 
 /* What a window is, as bits of `flags`. */
 enum {
@@ -114,6 +115,17 @@ struct scene {
     /* The wallpaper blurred (`OUT.glass_wallpaper`), lying where it lies,
      * for an `SC_GLASS` window to be frosted with; NULL for none. */
     struct surface *glass;
+
+    /* **The rim** (Liquid Glass LG3, LG4): how wide a glass window's and
+     * menu's bevel is, in pixels, and how much it bends the glass and is
+     * lit, in percent - the look's; a bevel of 0 for none. The lens is
+     * made from them and `corner` by `scene_compose` when any of the four
+     * changes, never in a frame otherwise; `lens_ok` says it was. */
+    long rim_bevel, rim_refraction, rim_specular;
+    struct gfx_lens lens;
+    void *lens_mem;
+    long lens_of[4];
+    bool lens_ok;
 
     /* Over everything. */
     bool outline_on;

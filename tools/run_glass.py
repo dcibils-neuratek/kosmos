@@ -20,6 +20,9 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
   - a window the kit draws - About, opened at login - frosted: a row of its
     ground under its header, clear of words, against the wallpaper's above
     the window;
+  - the window's rim lit from the upper left: the top row of About's solid
+    header far brighter than the header 12 rows down, and its right edge,
+    away from the light, no brighter than 5 pixels in;
   - a menu - the Deskbar's, the right button on the Kosmos button - frosted too: a
     row of it above its first item's words against the wallpaper's just
     above it;
@@ -49,7 +52,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 10
+CHECKS = 11
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -203,6 +206,32 @@ def window_frosted(guest, mark, fails):
                    x + w // 2, x + w - 20, y + 52, y - 8, 0.4, fails)
 
 
+def rim_lit(guest, mark, fails):
+    """The rim's light on About (LG3): over its header, which is one solid
+    colour, so the light is all that differs down the column."""
+    at = re.search(r"wm: window About Kosmos at (-?\d+),(-?\d+) (\d+)x(\d+)", guest.seen[mark:])
+    if not at:
+        return
+    x, y, w, h = (int(at.group(i)) for i in range(1, 5))
+    shot = open("build/glass/window.ppm", "rb").read()
+    head = shot.split(b"\n", 3)
+    sw, _ = (int(v) for v in head[1].split())
+    data = head[3]
+
+    def bright(px, py):
+        o = (py * sw + px) * 3
+        return sum(data[o:o + 3])
+
+    top, under = bright(x + w // 2, y), bright(x + w // 2, y + 12)
+    right, inside = bright(x + w - 1, y + h // 2), bright(x + w - 6, y + h // 2)
+    print("rim: the header's top %d, 12 rows down %d; the right edge %d, 5 in %d"
+          % (top, under, right, inside))
+    if not (top > under + 90 and right <= inside + 6):
+        fails.append("the rim is not lit from the upper left: the header's top %d against %d "
+                     "12 rows down, the right edge %d against %d 5 in"
+                     % (top, under, right, inside))
+
+
 # The card's own measures (`notifications.lua`): the banners' window has 8
 # round the cards, a card's words start 12 down, and are 372 wide.
 EDGE, PAD_Y, CARD_W = 8, 12, 372
@@ -263,6 +292,7 @@ def run(fails):
         time.sleep(2)
         banner_frosted(guest, banner_at, fails)
         window_frosted(guest, mark, fails)
+        rim_lit(guest, mark, fails)
         menu_frosted(guest, screen, len(guest.seen), fails)
         time.sleep(2)
         guest._read_available()
@@ -332,7 +362,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock, a banner, a window and a menu frosted; nothing stopped)." % CHECKS)
+          "Night; the dock, a banner, a window and a menu frosted; a window's rim lit from the upper left; nothing stopped)." % CHECKS)
     return 0
 
 

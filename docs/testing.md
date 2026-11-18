@@ -36433,3 +36433,44 @@ manager never flagging a glass window, shows the tint as a solid colour,
 0.0 and spread 0, and fails that check alone.
 
 **The gate** (132 suites, 697 s): `x86-film` failed - a stretch of its sound out of step with FFmpeg's reference - and passed alone straight after, as it has before under load (18.875); it composes no glass. The rest passed.
+
+**On the M700** (0.11.478, 1720x1440, `frames` over four drags of About
+across the screen, then the same four in Plex Night): in Liquid Glass Night
+5.6 ns a pixel and 1.35 ms a frame in the window server, against 3.6 ns and
+1.07 ms without glass; the worst pass 2.28 ms against 2.29, and every pass
+under 4 ms in both. The plan asked under 8 ms a pass dragging a window
+(LG4); glass costs about a quarter more a frame and nothing at the worst.
+
+## 18.879 The rim (LG3's pass)
+
+**In short.** A glass window's and a glass menu's edge in Liquid Glass is
+now a bevel: the frosted wallpaper under it is bent inward as through the
+edge of a lens, and light from the upper left catches it - a quiet
+highlight along the top and the left and round the top-left corner, none
+on the side away from the light.
+
+**How.** The window manager tells the scene the look's rim -
+`scene:rim(bevel, refraction, specular)`, the bevel at the scale; nothing
+without glass - and the scene head carries the three to the window server.
+`scene_compose` makes LG3's lens from them and the scene's corner when any
+of the four changes, never in a frame otherwise. Within the bevel of a
+rounded glass surface's edge, the glass is read from where the lens bends
+the pixel to (`glass_under`); the light is added after the surface's
+picture is blended (`rim_light`), because the first try added it under the
+picture and a window's tint at 70% buried it - the highlight is on the
+glass's surface, and goes on top.
+
+**Held by** `tools/test_draw.c`, now 45: a glass window over glass whose
+red is its x and green its y - the middle unbent, the left edge read from
+further in, the top from further down, the left edge lit and the right
+not, and with no rim the edge unbent. Its control, the lens never used,
+fails three. And `x86-glass`, now 11: About's header, one solid colour,
+343 at its top row against 93 twelve rows down, its right edge 188 against
+188 five in. The control, the window manager sending no rim, reads 93
+against 93 and fails that check alone.
+
+**Not yet**: the dock's rim, whose pill is the application's own shape
+rather than the scene's corner, and banners', whose cards are inside their
+window; and the warm rim on the window in front (LG5).
+
+**The gate** (132 suites, 703 s): `x86-ahci` failed - no command at the probe ended by its interrupt - and passed alone straight after, as it has before under load (18.875); it composes no glass. The rest passed.

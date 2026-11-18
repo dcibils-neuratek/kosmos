@@ -35,6 +35,9 @@ void scene_free(struct scene *sc)
     free(sc->pieces[0]);
     free(sc->pieces[1]);
     free(sc->visible);
+    free(sc->lens_mem);
+    sc->lens_mem = NULL;
+    sc->lens_ok = false;
     sc->win = NULL;
     sc->menu = NULL;
     sc->pieces[0] = sc->pieces[1] = NULL;
@@ -516,11 +519,70 @@ static void inset_into(struct scene *sc, const struct sc_window *w, long top, lo
  *
  * Of a picture whose top-left is at `px`, `py` on the screen: a window's,
  * or a menu's.
+ *
+ * **And its rim**, when `rim` and the scene has a lens (LG3): within the
+ * bevel of the surface's rounded edge - `pw` by `ph`, rounded at the
+ * scene's corner, which is the radius the lens was made for - the glass is
+ * read from where the lens bends the pixel to (`docs/astra.md`, Liquid
+ * Glass 3). Its light is not added here but over the picture, after it is
+ * blended (`rim_light`): the highlight is on the glass's surface, and a
+ * window's tint over it buried it.
  */
+static struct gfx_lens_px lens_at(const struct gfx_lens *l, long lx, long ly, long pw, long ph)
+{
+    static const struct gfx_lens_px none = { 0, 0, 0 };
+    long s = (long)l->side, b = (long)l->bevel;
+    long rx = pw - 1 - lx, by = ph - 1 - ly;
+
+    if (lx >= b && rx >= b && ly >= b && by >= b
+        && (lx >= s || ly >= s) && (rx >= s || ly >= s)
+        && (rx >= s || by >= s) && (lx >= s || by >= s)) {
+        return none;
+    }
+
+    if (lx < s && ly < s) return l->corner[GFX_LENS_TL][ly * s + lx];
+    if (rx < s && ly < s) return l->corner[GFX_LENS_TR][ly * s + rx];
+    if (rx < s && by < s) return l->corner[GFX_LENS_BR][by * s + rx];
+    if (lx < s && by < s) return l->corner[GFX_LENS_BL][by * s + lx];
+    if (ly < b) return l->edge[GFX_LENS_TOP][ly];
+    if (by < b) return l->edge[GFX_LENS_BOTTOM][by];
+    if (lx < b) return l->edge[GFX_LENS_LEFT][lx];
+    if (rx < b) return l->edge[GFX_LENS_RIGHT][rx];
+    return none;
+}
+
+static uint32_t glass_px(const struct scene *sc, long gx, long gy)
+{
+    const struct surface *g = sc->glass;
+
+    if (gx < 0 || gy < 0 || gx >= (long)g->width || gy >= (long)g->height) {
+        return sc->desktop;
+    }
+
+    return row_of(g, (unsigned)gy)[gx];
+}
+
+/* White added by `spec` of 255: each channel toward 255 by that share. */
+static uint32_t lit(uint32_t c, unsigned spec)
+{
+    uint32_t out = 0xff000000u;
+    unsigned k;
+
+    for (k = 0; k < 24; k += 8) {
+        uint32_t v = (c >> k) & 0xffu;
+
+        out |= (v + (((255u - v) * spec + 127u) / 255u)) << k;
+    }
+
+    return out;
+}
+
 static void glass_under(struct scene *sc, const struct surface *picture, long px, long py,
+                        long pw, long ph, bool rim,
                         long x0, long y0, long x1, long y1)
 {
     const struct surface *g = sc->glass;
+    const struct gfx_lens *l = rim && sc->lens_ok ? &sc->lens : NULL;
     long x, y;
 
     for (y = y0; y < y1; y++) {
@@ -535,9 +597,93 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
 
             if ((p[x - px] >> 24) == 0) continue;
 
+            if (l != NULL) {
+                struct gfx_lens_px e = lens_at(l, x - px, y - py, pw, ph);
+
+                if (e.dx != 0 || e.dy != 0) {
+                    o[x] = glass_px(sc, gx + e.dx, gy + e.dy);
+                    continue;
+                }
+            }
+
             o[x] = gr != NULL && gx >= 0 && gx < (long)g->width ? gr[gx] : sc->desktop;
         }
     }
+}
+
+/*
+ * The rim's light, over a glass surface once its picture is blended: white
+ * added by the lens's specular where the picture draws, toward the light.
+ */
+static void rim_light(struct scene *sc, const struct surface *picture, long px, long py,
+                      long pw, long ph, long x0, long y0, long x1, long y1)
+{
+    const struct gfx_lens *l = sc->lens_ok ? &sc->lens : NULL;
+    long b, x, y;
+
+    if (l == NULL) return;
+
+    b = (long)l->side;
+
+    for (y = y0; y < y1; y++) {
+        const uint32_t *p = row_of(picture, (unsigned)(y - py));
+        uint32_t *o = row_of(sc->back, (unsigned)y);
+        long ly = y - py, by = ph - 1 - ly;
+        bool band = ly < b || by < b;
+
+        for (x = x0; x < x1; x++) {
+            long lx = x - px, rx = pw - 1 - lx;
+            struct gfx_lens_px e;
+
+            /* Away from every edge by more than a corner's square, nothing. */
+            if (!band && lx >= b && rx >= b) {
+                x = px + pw - b - 1;
+                continue;
+            }
+
+            if ((p[lx] >> 24) == 0) continue;
+
+            e = lens_at(l, lx, ly, pw, ph);
+
+            if (e.spec != 0) o[x] = lit(o[x], e.spec);
+        }
+    }
+}
+
+/*
+ * The lens for the scene's corner and rim, made when one of the four
+ * changed since it was last made - once a look, never in a frame. A rim
+ * the lens cannot be made for - no bevel, a corner or a bevel past
+ * `GFX_LENS_MOST`, no memory - is no rim, and the glass is flat.
+ */
+static void lens_update(struct scene *sc)
+{
+    long want[4] = { sc->corner, sc->rim_bevel, sc->rim_refraction, sc->rim_specular };
+    size_t bytes;
+
+    if (sc->lens_mem != NULL && memcmp(want, sc->lens_of, sizeof(want)) == 0) {
+        return;
+    }
+
+    free(sc->lens_mem);
+    sc->lens_mem = NULL;
+    sc->lens_ok = false;
+    memcpy(sc->lens_of, want, sizeof(want));
+
+    if (sc->rim_bevel <= 0 || sc->corner < 0 || sc->rim_refraction < 0
+        || sc->rim_specular < 0 || sc->rim_refraction > 100 || sc->rim_specular > 100) {
+        return;
+    }
+
+    bytes = gfx_lens_size((unsigned)sc->corner, (unsigned)sc->rim_bevel);
+
+    if (bytes == 0 || (sc->lens_mem = malloc(bytes)) == NULL) {
+        return;
+    }
+
+    sc->lens_ok = gfx_lens_make(&sc->lens, sc->lens_mem, (unsigned)sc->corner,
+                                (unsigned)sc->rim_bevel, (unsigned)sc->rim_refraction,
+                                (unsigned)sc->rim_specular) == 1;
 }
 
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
@@ -565,7 +711,8 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
         if (w->flags & SC_BLEND) {
             if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
                 && w->src_w == w->w && w->src_h == w->h) {
-                glass_under(sc, w->picture, w->x, w->y, x0, y0, x1, y1);
+                glass_under(sc, w->picture, w->x, w->y, w->w, w->h, false,
+                            x0, y0, x1, y1);
             }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
@@ -576,9 +723,13 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
              * `SC_BLEND`, frosted only when its picture is shown as it is;
              * stretched in a resize, stale or under a menu bar it is
              * copied below as any window is. Its inset still goes over. */
-            glass_under(sc, w->picture, w->x, w->y, x0, y0, x1, y1);
+            glass_under(sc, w->picture, w->x, w->y, w->w, w->h,
+                        (w->flags & SC_ROUNDED) != 0, x0, y0, x1, y1);
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+            if (w->flags & SC_ROUNDED) {
+                rim_light(sc, w->picture, w->x, w->y, w->w, w->h, x0, y0, x1, y1);
+            }
         } else if (w->bar != NULL) {
             /* A menu bar above the picture (`strips.compose`). */
             long split = w->y + w->bar_h;
@@ -758,6 +909,7 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
         return -1;
     }
 
+    lens_update(sc);
     sc->pieces[cur][0] = r;
 
     /* Front to back: what each window shows of what is left uncovered. */
@@ -865,9 +1017,10 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
          * wallpaper's glass where it draws, its tint blended over that. */
         if ((m->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
             && m->w <= (long)m->picture->width && m->h <= (long)m->picture->height) {
-            glass_under(sc, m->picture, m->x, m->y, x0, y0, x1, y1);
+            glass_under(sc, m->picture, m->x, m->y, m->w, m->h, true, x0, y0, x1, y1);
             blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+            rim_light(sc, m->picture, m->x, m->y, m->w, m->h, x0, y0, x1, y1);
         } else {
             blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
         }
