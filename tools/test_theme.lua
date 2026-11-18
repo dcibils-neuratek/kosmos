@@ -243,6 +243,16 @@ glass_tint = #12345
   theme.apply(theme.read(themes.liquidglassnight, "dark"))
   check(theme.plate and theme.star, "Liquid Glass Night applied wears no plate or star")
 
+  -- A panel - a sidebar, a foot - is derived for every look, the same
+  -- thousandths from its window to its soft line that the panels each
+  -- worked out for themselves before it had a name.
+  for _, name in ipairs(themes.order) do
+    theme.apply(theme.read(themes[name], "dark"))
+    check(theme.panel == theme.mix(theme.window, theme.line_soft, 330),
+          name .. "'s panel is " .. ("%08x"):format(theme.panel or 0))
+  end
+  theme.apply(theme.read(themes.liquidglassnight, "dark"))
+
   -- A built-in palette names neither cue, and wears neither because the
   -- look before it did.
   theme.apply("dark")

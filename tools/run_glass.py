@@ -54,7 +54,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 15
+CHECKS = 16
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -98,24 +98,26 @@ local notify = use("/Kosmos/Libraries/notify.lua")
 print("GLASSBANNER " .. tostring(notify.post{ title = "Glass", body = "A banner on the wallpaper's glass", alert = true }))
 '''
 
-# Ten changes of focus between About and Calculator under `profile`, and
+# Ten changes of focus between About and Passwords under `profile`, and
 # what was composed for them - the last of the startup items, so that it is
-# over before anything else is looked at: Calculator closed and About in
-# front again. Typed as BANNER is, with no comments. (Typed after the
+# over before anything else is looked at: Passwords, its sidebar looked at
+# in the five seconds it is held in front after, closed and About in front
+# again. Typed as BANNER is, with no comments. (Typed after the
 # desktop is up, a line goes to the window in front as keys.)
 FOCUS = r'''
 local S = function(m) return fs.send("/Running/wm", m) end
-S{ type = "launch", program = "/Kosmos/Apps/calc.lua" }
+local P = use("/Kosmos/Libraries/wmproto.lua")
+S{ type = "launch", program = "/Kosmos/Apps/passwords.lua" }
 local a, c
 for _ = 1, 200 do
-  for _, w in ipairs((use("/Kosmos/Libraries/wmproto.lua").windows() or {}).windows or {}) do
+  for _, w in ipairs((P.windows() or {}).windows or {}) do
     if w.title == "About Kosmos" then a = w.handle end
-    if w.title == "Calculator" then c = w.handle end
+    if w.title == "Passwords" then c = w.handle end
   end
   if a and c then break end
   sys.sleep(5)
 end
-S{ type = "move", window = c, x = 1300, y = 300 }
+S{ type = "move", window = c, x = 978, y = 200 }
 sys.sleep(100)
 S{ type = "profile", on = true }
 for _ = 1, 5 do
@@ -126,9 +128,11 @@ for _ = 1, 5 do
 end
 local p = S{ type = "profile" } or {}
 S{ type = "profile", on = false }
+print("GLASSFOCUS", p.px, p.frames)
+sys.sleep(500)
 S{ type = "close", window = c }
 S{ type = "raise", window = a }
-print("GLASSFOCUS " .. tostring(p.px) .. " " .. tostring(p.frames))
+print("GLASSDONE")
 '''
 
 
@@ -307,11 +311,26 @@ def plate_glass(guest, mark, fails):
                      "where paint is 242 and 59" % (r, b))
 
 
+def sidebar_frosted(guest, fails):
+    """A sidebar's ground (LG4's test): the kit's `panel`, the look's own
+    tint under glass - Passwords', held in front at 978,200 by the focus
+    script for five seconds. A row half way down it, below its two rows,
+    against the wallpaper just above the window."""
+    at = re.findall(r"wm: window Passwords at -?\d+,-?\d+ (\d+)x(\d+)", guest.seen)
+    if not at:
+        fails.append("Passwords never opened for its sidebar")
+        return
+    w, h = (int(v) for v in at[-1])
+    x, y = 978, 200
+    frosted(guest, "sidebar", "of Passwords at %d,%d %dx%d" % (x, y, w, h),
+            x + 12, x + 188, y + h // 2, y - 8, 0.4, fails)
+
+
 def focus_damage(guest, fails):
     """LG5's test: a change of focus composes the window coming forward
     whole and, of the one going back, only what says it is behind - its
     shadow, its lights, its plate and its rim. Ten raises, About and
-    Calculator in turn, Calculator moved clear of About - where they overlap,
+    Passwords in turn, Passwords moved clear of About - where they overlap,
     damage merged covers both whichever is damaged whole, and the control
     passed: what was composed, against the two windows' areas.
     Damaged whole as before, each raise would be both windows and their
@@ -319,10 +338,10 @@ def focus_damage(guest, fails):
     the other's bare area, and the dock's once for its glints. Measured
     3.48 Mpx for ten raises against a bound of 3.97; the control, the window
     going back damaged whole, 4.93."""
-    said = line(guest, r"GLASSFOCUS (\d+) (\d+)", 0, 60)
+    said = line(guest, r"GLASSFOCUS\s+(\d+)\s+(\d+)", 0, 60)
     seen = guest.seen
     about = re.findall(r"wm: window About Kosmos at -?\d+,-?\d+ (\d+)x(\d+)", seen)
-    calc = re.findall(r"wm: window Calculator at -?\d+,-?\d+ (\d+)x(\d+)", seen)
+    calc = re.findall(r"wm: window Passwords at -?\d+,-?\d+ (\d+)x(\d+)", seen)
     dock = re.findall(r"wm: the dock at -?\d+,-?\d+ (\d+)x(\d+)", seen)
     if not (said and about and calc):
         fails.append("the changes of focus were not measured: %r" % (said and said.group(0)))
@@ -405,11 +424,13 @@ def run(fails):
         # Night, glass again - once its glass is made and the dock redrawn.
         line(guest, r"wm: the wallpaper's glass given back[\s\S]*wm: the wallpaper's glass, ",
              mark, 30)
-        # And the changes of focus over, the last startup item: Calculator
+        # And the changes of focus over, the last startup item: Passwords
         # opened, given a cell in the dock and closed again. Under a loaded
         # gate the dock was looked at while it held the cell, on 18
         # November, so it is read where it is now, not where it first was.
-        line(guest, r"GLASSFOCUS ", mark, 90)
+        line(guest, r"GLASSFOCUS\s", mark, 90)
+        sidebar_frosted(guest, fails)
+        line(guest, r"GLASSDONE", mark, 30)
         time.sleep(3)
         guest._read_available()
         last = None

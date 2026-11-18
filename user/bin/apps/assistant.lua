@@ -388,7 +388,7 @@ local function describe(c, side)
 end
 
 function side_ground:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
   g:text(L.head_in, (L.head - 1 - gfx.height("title")) // 2, "Xavier", theme.text, nil, "title")
 end
@@ -514,7 +514,7 @@ function chip:draw(g)
 end
 
 function foot:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(0, 0, self.w, 1, theme.line_soft)
 
   local words
@@ -1616,7 +1616,7 @@ function page:wheel(n)
 end
 
 function page_foot:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(0, 0, self.w, 1, theme.line_soft)
 
   local n, bytes, loaded = 0, 0, nil

@@ -36665,3 +36665,33 @@ three pass. And `x86-glass` looked at the dock once while the startup focus
 script still held Calculator's cell in it (a row inside 7.3 against 11.4):
 the checks wait for that script to say it is done, and read the dock where
 it is now.
+
+## 18.886 Sidebars of glass (LG4): one panel, named once
+
+**In short.** Under Liquid Glass a window's sidebar, and the foot some
+windows have, are glass now - more see-through than the page beside them,
+the wallpaper softened through. And the grey they are painted in has a
+name: it had been worked out separately in ten places in six applications.
+
+**How.** `theme.panel`, derived in `theme.apply` as 330 thousandths from
+`window` to `line_soft` (`docs/preferences.html`'s sidebar), and the kit's
+`shade("panel")` answers it with the look's own tint where the window is
+glass - the dock's alpha, where the page has the tint taken halfway to
+opaque. Tracker, Preferences, Servers, Sandboxes, Passwords and Xavier
+paint their sidebars and feet with `"panel"`; every word on them was
+already drawn with no ground of its own. Calculator's keys, the same grey
+by arithmetic but not a panel, keep theirs.
+
+**Held by** `tools/test_theme.lua`, now 653: every look's panel is the mix.
+And `x86-glass`, now 16: the focus script opens Passwords, places it at
+978,200 - inside the screen; at 1100 it ran 120 off it, and the focus
+bound counted pixels never composed - and holds it in front for five
+seconds after its raises, where a row half down its sidebar reads 1.1
+against the wallpaper's 9.5 and spreads 78. The control - the panel solid
+under glass - reads 0.0 and spreads 0, and fails that check alone. The
+focus check moved with it: ten raises 5.65 Mpx against a bound of 7.46;
+its control 9.33.
+
+**The gate** (115 suites, 625 s): `x86-ahci` failed as it has twice before
+tonight (roadmap, the three that flake) and passed alone straight after.
+The rest passed.

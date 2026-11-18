@@ -744,6 +744,14 @@ function theme.apply(palette)
     if palette[k] == nil then theme[k] = v end
   end
 
+  -- **`panel`: the quiet ground beside or below a window's page** - a
+  -- sidebar, a foot - derived, never named: 330 thousandths from `window`
+  -- to `line_soft`, as `docs/preferences.html` draws it (`theme.mix`).
+  -- Ten panels in eight applications each worked it out for themselves
+  -- until Liquid Glass (L4) needed them to be glass: one name, and the kit
+  -- answers it with the look's tint where the window is glass.
+  theme.panel = theme.mix(theme.window, theme.line_soft, 330)
+
   -- A window's corner and shadow are the look's, and every look's are said
   -- (`theme.read`); a palette from before they were - a running desktop's,
   -- sent by an older Preferences - leaves them as they are.

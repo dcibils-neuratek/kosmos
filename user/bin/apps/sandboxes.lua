@@ -393,7 +393,7 @@ function side:draw(g)
   local y = 14
 
   side_rows = {}
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
 
   y = draw_group(g, y, "Sandboxes")

@@ -269,7 +269,7 @@ local side = ui.sidebar{ x = 0, y = L.head + 2, w = SIDE - 1, h = H - L.head - 2
 local side_ground = ui.view{ x = 0, y = 0, w = SIDE, h = H }
 
 function side_ground:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
   g:text(L.head_in, (L.head - 1 - gfx.height("title")) // 2, "Servers",
          theme.text, nil, "title")

@@ -158,6 +158,9 @@ local glass_ground = nil
 local function shade(c)
   if type(c) == "string" then
     if glass_ground and c == "window" then return glass_ground end
+    -- A panel more glass than the page beside it: the look's own tint, as
+    -- the dock's, where the page's is the tint taken halfway to opaque.
+    if glass_ground and c == "panel" then return theme.glass_tint end
     return theme[c]
   end
   return c

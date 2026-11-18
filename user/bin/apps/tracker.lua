@@ -3337,7 +3337,7 @@ local side_ground = ui.view{ x = 0, y = 0, w = SIDE_W, h = H,
                              follow = { "left", "top", "bottom" } }
 
 function side_ground:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.mix(theme.window, theme.line_soft, 330))
+  g:fill(0, 0, self.w, self.h, "panel")
   g:fill(self.w - 1, 0, 1, self.h, theme.line_soft)
 end
 
