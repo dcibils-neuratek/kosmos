@@ -142,10 +142,23 @@ local TITLE = ui.sized("ui", 15, "bold")
 
 -- The drawing's surfaces for Night, and the look's own otherwise: a card a
 -- shade lighter than a window, its hairline, the muted ink.
-local function palette()
+--
+-- **Under a glass look** (Liquid Glass LG4) a card is the look's tint, with
+-- its own alpha, and the window manager frosts what is behind it with the
+-- wallpaper's glass, as it does the dock. It has no shadow then - glass is
+-- laid wherever the banner draws, so a shadow would be a smudge of frosted
+-- wallpaper rather than a shade - and its words are drawn without a ground
+-- of their own, which over a see-through card would be a box. Only the
+-- banners: the history is a window, and its cards stay solid on its ground.
+--
+local function palette(banner)
+  local glass = banner and theme.glass and theme.glass ~= "none" and (theme.glass_tint or 0) ~= 0
+
   return {
-    card  = theme.raised or 0xff2a3344,
-    line  = 0x30ffffff,
+    card  = glass and theme.glass_tint or theme.raised or 0xff2a3344,
+    back  = not glass and (theme.raised or 0xff2a3344) or nil,
+    glass = glass,
+    line  = glass and 0x60ffffff or 0x30ffffff,
     ink   = theme.text,
     muted = theme.text_dim,
     alert = 0x8cff8c78,
@@ -180,7 +193,7 @@ local function draw_card(g, x, y, e, p, back)
   local text_w = CARD_W - (text_x - x) - PAD_X
 
   -- A soft shadow under it, the hairline round it, the card.
-  g:fill_round(x, y + 6, CARD_W, h, 0x22000000, R)
+  if not p.glass then g:fill_round(x, y + 6, CARD_W, h, 0x22000000, R) end
   g:fill_round(x - 1, y - 1, CARD_W + 2, h + 2, e.alert and p.alert or p.line, R + 1)
   g:fill_round(x, y, CARD_W, h, p.card, R)
 
@@ -189,16 +202,16 @@ local function draw_card(g, x, y, e, p, back)
   local ty = y + PAD_Y
   local age = when(e)
 
-  g:text(text_x, ty, who.name, p.ink, p.card, SMALL)
-  g:text(x + CARD_W - PAD_X - gfx.measure(age, SMALL), ty, age, p.muted, p.card, SMALL)
+  g:text(text_x, ty, who.name, p.ink, p.back, SMALL)
+  g:text(x + CARD_W - PAD_X - gfx.measure(age, SMALL), ty, age, p.muted, p.back, SMALL)
   ty = ty + gfx.height(SMALL) + 2
 
-  g:text(text_x, ty, ui.fitted(e.title, text_w, TITLE), p.ink, p.card, TITLE)
+  g:text(text_x, ty, ui.fitted(e.title, text_w, TITLE), p.ink, p.back, TITLE)
   ty = ty + gfx.height(TITLE)
 
   if e.body ~= "" then
     for _, line in ipairs(ui.wrapped(e.body, text_w, BODY, 2)) do
-      g:text(text_x, ty, line, p.muted, p.card, BODY)
+      g:text(text_x, ty, line, p.muted, p.back, BODY)
       ty = ty + gfx.height(BODY) + 2
     end
   end
@@ -357,7 +370,7 @@ local function banners()
     view = ui.view{ x = 0, y = 0, w = w, h = h }
 
     function view:draw(g)
-      local p = palette()
+      local p = palette(true)
 
       g:fill(0, 0, self.w, self.h, 0x00000000)
 

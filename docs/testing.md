@@ -36325,3 +36325,31 @@ and windows' grounds through the kit.
 after - `x86-ahci` and `x86-film`, which have before under load, and
 `x86-smbd`, whose Servers window never showed its visitor within 120 s,
 188 s into a suite that takes 90 alone. None of them composes glass.
+
+## 18.876 The banners frosted (LG4, second part)
+
+**In short.** In Liquid Glass a notification's banner is frosted glass, as
+the dock has been since 18.875: its card is the look's tint, and what shows
+through it is the wallpaper blurred rather than sharp. The history window's
+cards stay solid: it is a window, not a floating surface.
+
+**How.** The window manager flags a blended banner for glass as it does a
+blended strip. `notifications.lua`'s palette, for the banners only, makes a
+card the look's `glass_tint` under a glass look, drops its shadow - glass
+is laid wherever the banner draws, so a shadow would be a smudge of frosted
+wallpaper rather than a shade - and draws its words without a ground of
+their own, which over a see-through card would be a box round each line.
+
+**Held by** `x86-glass`, now 8: a banner posted at login (a script of its
+own, written on its own line - the two in one typed line were past what the
+console takes, and a Lua comment typed as one line takes the rest of the
+line with it, which is what the first run found), a row of its card above
+its words against the wallpaper's row just under the banners: 0.6 a pixel
+inside against 14.3. **Its control**, banners left out of the glass, read
+3.0 inside and *passed* at the dock's limit of two fifths: a card lies on
+its hairline, and the two leave the sharp wallpaper a fifth of its
+roughness without any glass. So the banner's limit is a tenth, between
+the two by a factor of two each way, and the control fails that check
+alone.
+
+**The gate** (132 suites, 691 s): all passed.

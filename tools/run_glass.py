@@ -15,13 +15,15 @@ at login choosing Endeavour and then Liquid Glass Night, as Appearance does:
   - Liquid Glass Night, which is, makes it again;
   - the dock, in Liquid Glass Night, frosted: a row of its ground above
     its icons far smoother than the wallpaper's row just above the dock;
+  - a notification's banner frosted the same way: a row of its card above
+    its words far smoother than the wallpaper's row just under the banners;
   - nothing died, and no program stopped on a Lua error.
 
 The control is Endeavour: a window manager that made the glass for every
 look, or never gave it back, fails the third; one that never made it
 fails the second. And a dock the compositor does not frost - `SC_GLASS`
 left unset - fails the fifth: the tint over the sharp wallpaper keeps two
-thirds of its roughness.
+thirds of its roughness. A banner left out of the glass fails the sixth.
 
 The blur itself is held to arithmetic on the Mac (`tools/test_blur.c`),
 and the compositor's glass to pixels there (`tools/test_draw.c`).
@@ -39,7 +41,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 7
+CHECKS = 8
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -58,6 +60,29 @@ end
 
 send("endeavour")
 send("liquidglassnight")
+'''
+
+# A banner, in a script of its own: the two in one typed line are past what
+# the console takes.
+#
+# It waits for the banners' program to be there first: a post made before it
+# starts is older than what it shows. No comments in it - it is typed as one
+# line, and a comment would take the rest of the line with it.
+BANNER = r'''
+local function there()
+  for _, n in ipairs(fs.list("/Running") or {}) do
+    if tostring(type(n) == "table" and n.name or n) == "Notifications" then return true end
+  end
+end
+
+for _ = 1, 100 do
+  if there() then break end
+  sys.sleep(5)
+end
+
+local notify = use("/Kosmos/Libraries/notify.lua")
+
+print("GLASSBANNER " .. tostring(notify.post{ title = "Glass", body = "A banner on the wallpaper's glass", alert = true }))
 '''
 
 
@@ -83,18 +108,14 @@ def roughness(at, x0, x1, y):
     return total / max(1, x1 - x0 - 1)
 
 
-def frosted(guest, dockat, fails):
-    """The dock's ground frosted: a row of it inside the pill, above its
-    icons, far smoother than the wallpaper's row just above the dock - the
-    blur's doing. Over the sharp wallpaper the tint alone would leave two
-    thirds of the wallpaper's roughness."""
-    if not dockat:
-        fails.append("the dock never said where it is")
-        return None
-    x, y, w, h = (int(dockat.group(i)) for i in range(1, 5))
+def frosted(guest, what, row, x0, x1, inside_y, above_y, most, fails):
+    """A surface's ground frosted: a row of it, clear of its words and
+    icons, far smoother than a row of the wallpaper beside it - the blur's
+    doing. Over the sharp wallpaper the tint alone would leave two thirds
+    of the wallpaper's roughness."""
     shot = guest.screendump()
     os.makedirs("build/glass", exist_ok=True)
-    open("build/glass/dock.ppm", "wb").write(shot)
+    open("build/glass/%s.ppm" % what, "wb").write(shot)
     head = shot.split(b"\n", 3)
     sw, _ = (int(v) for v in head[1].split())
     data = head[3]
@@ -103,15 +124,45 @@ def frosted(guest, dockat, fails):
         o = (py * sw + px) * 3
         return tuple(data[o:o + 3])
 
-    x0, x1 = x + w // 4, x + 3 * w // 4
-    inside = roughness(at, x0, x1, y + 4)
-    above = roughness(at, x0, x1, y - 8)
-    print("frost: the dock at %d,%d %dx%d; a row inside %.1f, the wallpaper above %.1f"
-          % (x, y, w, h, inside, above))
-    if not (above > 3 and inside < 0.4 * above):
-        fails.append("the dock's ground is not frosted: a row inside it changes %.1f a pixel, "
-                     "the wallpaper above it %.1f" % (inside, above))
+    inside = roughness(at, x0, x1, inside_y)
+    above = roughness(at, x0, x1, above_y)
+    print("frost: the %s %s; a row inside %.1f, the wallpaper beside %.1f"
+          % (what, row, inside, above))
+    if not (above > 3 and inside < most * above):
+        fails.append("the %s's ground is not frosted: a row inside it changes %.1f a pixel, "
+                     "the wallpaper beside it %.1f" % (what, inside, above))
     return inside
+
+
+def dock_frosted(guest, dockat, fails):
+    """The dock: a row inside the pill above its icons, against the
+    wallpaper's just above the dock."""
+    if not dockat:
+        fails.append("the dock never said where it is")
+        return None
+    x, y, w, h = (int(dockat.group(i)) for i in range(1, 5))
+    return frosted(guest, "dock", "at %d,%d %dx%d" % (x, y, w, h),
+                   x + w // 4, x + 3 * w // 4, y + 4, y - 8, 0.4, fails)
+
+
+# The card's own measures (`notifications.lua`): the banners' window has 8
+# round the cards, a card's words start 12 down, and are 372 wide.
+EDGE, PAD_Y, CARD_W = 8, 12, 372
+
+
+def banner_frosted(guest, at, fails):
+    """The banner: a row of its card above its words, against the
+    wallpaper's just under the banners' window - to a tenth, not the dock's
+    two fifths. A card lies on its hairline, and the two leave the sharp
+    wallpaper only a fifth of its roughness without any glass: 3.0 against
+    14.3 when the control was run, and 0.6 with the glass."""
+    if not at:
+        fails.append("the banner never said where it is")
+        return None
+    x, y, w, h = (int(at.group(i)) for i in range(1, 5))
+    return frosted(guest, "banner", "at %d,%d %dx%d" % (x, y, w, h),
+                   x + EDGE + 60, x + EDGE + CARD_W - 30, y + EDGE + PAD_Y // 2,
+                   y + h + 8, 0.1, fails)
 
 
 def lua_string(text):
@@ -128,9 +179,14 @@ def run(fails):
                    'fs.write("/Home/Preferences/appearance", { palette = "liquidglass", '
                    'wallpaper = "wallpaper/paint-storm.jpg", wallpaper_fit = "fill", '
                    'bar = "dock", dock = "floating" }), '
-                   'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua" } }))'
+                   'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua", '
+                   '"/Temporary/glassbanner.lua" } }))'
                    % lua_string(SWAP.replace("\n", " ")))
         guest.wait_for_line("PREFS", "the appearance and startup settings", mark)
+        mark = len(guest.seen)
+        guest.type('print("BANNERFILE", fs.write("/Temporary/glassbanner.lua", %s))'
+                   % lua_string(BANNER.replace("\n", " ")))
+        guest.wait_for_line("BANNERFILE", "the banner's script", mark)
         mark = len(guest.seen)
         guest.type("wm")
 
@@ -144,7 +200,10 @@ def run(fails):
         line(guest, r"wm: the wallpaper's glass given back[\s\S]*wm: the wallpaper's glass, ",
              mark, 30)
         time.sleep(3)
-        frosted(guest, dockat, fails)
+        dock_frosted(guest, dockat, fails)
+        banner_at = line(guest, r"notifications: banners at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
+        time.sleep(2)
+        banner_frosted(guest, banner_at, fails)
         time.sleep(2)
         guest._read_available()
         seen = guest.seen[mark:]
@@ -213,7 +272,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock frosted; nothing stopped)." % CHECKS)
+          "Night; the dock and a banner frosted; nothing stopped)." % CHECKS)
     return 0
 
 

@@ -2763,11 +2763,14 @@ function OUT.describe()
     if win.backdrop or win.blend then flags = flags | 2 end
     --
     -- **Glass** (Liquid Glass LG4): a blended strip - the dock, its lens -
-    -- frosted with the wallpaper's glass where it draws, under a glass
-    -- look, rather than showing what is under it. Strips first; windows'
-    -- own grounds follow through the kit.
+    -- and a notification's banner, frosted with the wallpaper's glass
+    -- where they draw, under a glass look, rather than showing what is
+    -- under them. Floating surfaces first; windows' own grounds follow
+    -- through the kit.
     --
-    if win.blend and win.strip and OUT.wall_glass then flags = flags | 4096 end
+    if win.blend and (win.strip or win.banner) and OUT.wall_glass then
+      flags = flags | 4096
+    end
     if framed then flags = flags | 4 | 8 end
     if framed and win.headed and win ~= front then flags = flags | 16 end
 
