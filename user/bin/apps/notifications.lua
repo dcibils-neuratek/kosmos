@@ -379,6 +379,15 @@ local function banners()
       for _, s in ipairs(stack) do
         cy = cy + draw_card(g, EDGE, cy, s.e, p) + GAP
       end
+
+      -- One banner's glass shape (LG4), so its rim is bent and lit as a
+      -- glass window's; a stack of several is one picture with one shape,
+      -- so it stays flat glass. Said only when it changed.
+      if p.glass and #stack == 1 then
+        win:rim(EDGE, EDGE, CARD_W, card_h(stack[1].e), R)
+      else
+        win:rim()
+      end
     end
 
     -- A banner, or its x: done on the release over the same one - a click

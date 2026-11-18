@@ -343,6 +343,7 @@ static int l_scene_window(lua_State *L)
     w->plate = NULL;
     w->plate_slot = WS_NONE;
     w->px = w->py = 0;
+    w->rx = w->ry = w->rw = w->rh = w->rr = 0;
 
     hold(L, UV_WINDOWS, k, 8);
     hold(L, UV_BARS, k, 11);
@@ -371,6 +372,28 @@ static int l_scene_plate(lua_State *L)
     w->py = (long)luaL_checkinteger(L, 5);
 
     hold(L, UV_PLATES, k, 3);
+    return 0;
+}
+
+/*
+ * `sc:shape(k, rx, ry, rw, rh, radius)`: the k-th window's glass shape - a
+ * glass strip's rounded rectangle inside its picture, from its corner, in
+ * screen pixels (`sc_window.rr`). Said after `sc:window(k, ...)`, which
+ * clears it, on every pass it shows.
+ */
+static int l_scene_shape(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    int k = (int)luaL_checkinteger(L, 2);
+    struct sc_window *w;
+
+    luaL_argcheck(L, k >= 1 && k <= sc->nwin, 2, "no such window in the scene");
+    w = &sc->win[k - 1];
+    w->rx = (long)luaL_checkinteger(L, 3);
+    w->ry = (long)luaL_checkinteger(L, 4);
+    w->rw = (long)luaL_checkinteger(L, 5);
+    w->rh = (long)luaL_checkinteger(L, 6);
+    w->rr = (long)luaL_checkinteger(L, 7);
     return 0;
 }
 
@@ -622,7 +645,9 @@ static int l_scene_wire(lua_State *L)
             (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, (int32_t)w->bx2,
             (int32_t)w->inset_slot, (int32_t)w->ix, (int32_t)w->iy,
             (int32_t)w->iw, (int32_t)w->ih,
-            (int32_t)w->plate_slot, (int32_t)w->px, (int32_t)w->py
+            (int32_t)w->plate_slot, (int32_t)w->px, (int32_t)w->py,
+            (int32_t)w->rx, (int32_t)w->ry, (int32_t)w->rw, (int32_t)w->rh,
+            (int32_t)w->rr
         };
     }
 
@@ -663,6 +688,7 @@ static const luaL_Reg scene_methods[] = {
     { "window",   l_scene_window },
     { "inset",    l_scene_inset },
     { "plate",    l_scene_plate },
+    { "shape",    l_scene_shape },
     { "menus",    l_scene_menus },
     { "menu",     l_scene_menu },
     { "above",    l_scene_above },

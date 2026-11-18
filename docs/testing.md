@@ -36819,3 +36819,45 @@ PxCI, which a busy host makes likely, and the driver is right not to
 wait. So the check now says, when nothing waited, that the interrupt was
 not seen this boot, and does not fail; a wait ended by a tick still
 fails it, and alone it still proves the interrupt (14 checks).
+
+## 18.889 The dock's and a banner's rim (LG4)
+
+**In short**: under Liquid Glass a window's and a menu's edge is bent and
+lit, and the dock's pill and the banners were flat glass - their shapes
+are not a window's corner, and a banner's card sits inside a margin for
+its shadow and cross. Now each says where its glass is, and its rim is
+bent and lit as a window's.
+
+What changed:
+
+- The kit: `win:rim(x, y, w, h, r)`, the rounded rectangle inside the
+  window's picture that is its glass, told to the window manager only
+  when it changed. The dock says its pill, from both the dock and its
+  magnifying lens; a single banner says its card. A stack of banners is
+  one picture with one shape, so it stays flat.
+- wm keeps it in pixels (`handlers.rim`, "wm: Deskbar's glass at ...")
+  and says it to the scene as `scene:shape`; it crosses to the window
+  server as five more words of a scene window (27, from 22).
+- The scene: `glass_under` and `rim_light` take a shape - a lens and its
+  rectangle on the screen - for the flag and the picture's size. A
+  window's and a menu's is their own rectangle and the corner's lens, so
+  they draw as before. A strip's is its glass, with a lens for its radius
+  from `lens_for`, four kept beside the corner's and made only when a
+  radius or a look is new. A shape past its picture, or too small for
+  its lens, is none.
+
+What holds it:
+
+- `tools/test_draw.c` (78 checks, from 69): a strip 80 by 40 whose glass
+  is 60 by 36 inside it, rounded at 12 against the corner's 8 - a lens
+  made for 12; bent at the shape's edge and not the picture's; the
+  margin flat and unlit; lit toward the light; no shape, or one past its
+  picture, flat. **Controls**: no light on strips, 1 fails; the lens laid
+  on the picture's rectangle, 4 fail.
+- `x86-glass` (19 checks, from 17): the dock said its whole pill, 690 by
+  60 round 18, and a banner its card, 372 by 70 at 8,8 round 20.
+  **Control**: the dock not saying it, that check fails.
+
+**The gate** (132 suites, 695 s): 131 passed; `x86-profile` counted 674
+samples where about 1010 were due, as it did under load at 0.11.489, and
+passed alone (12 checks).

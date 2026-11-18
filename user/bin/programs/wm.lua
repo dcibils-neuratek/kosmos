@@ -2918,6 +2918,11 @@ function OUT.describe()
     if plate and (win.chrome == "starlight" or theme.plate) and win.headed then
       scene:plate(k, pic(OUT.plate_picture(win, win == front)), plate.x, plate.y)
     end
+
+    -- A glass strip's shape (LG4): where its glass is bent and lit.
+    local rim = win.rim
+
+    if rim and win.blend then scene:shape(k, rim.x, rim.y, rim.w, rim.h, rim.r) end
   end
 
   scene:menus(#menus)
@@ -5726,6 +5731,42 @@ handlers.resize = function(req)
   if win.strip then recount_strips() end
 
   return { ok = true, w = scale.pt(win.w, pct), h = scale.pt(win.h, pct) }
+end
+
+--
+-- **A glass strip's shape** (Liquid Glass LG4): the rounded rectangle its
+-- glass is inside its picture - the dock's pill, a banner's card - from its
+-- corner, in the application's points, so the scene bends and lights its
+-- rim there with a lens for its radius, as it does a window's. No shape, or
+-- a radius of 0, is flat glass. Told when it changes, never in a frame.
+--
+handlers.rim = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  local pct = win.pct or 100
+  local n = function(v) return math.floor(tonumber(v) or 0) end
+  local was = win.rim
+  local rim = nil
+
+  if n(req.r) > 0 and n(req.w) > 0 and n(req.h) > 0 then
+    rim = { x = scale.px(n(req.x), pct), y = scale.px(n(req.y), pct),
+            w = scale.px(n(req.w), pct), h = scale.px(n(req.h), pct),
+            r = scale.px(n(req.r), pct) }
+  end
+
+  if (was == nil) ~= (rim == nil) or (rim and (was.x ~= rim.x or was.y ~= rim.y
+      or was.w ~= rim.w or was.h ~= rim.h or was.r ~= rim.r)) then
+    win.rim = rim
+    damage_window(win)
+
+    if rim then
+      print(("wm: %s's glass at %d,%d %dx%d, round %d"):format(
+        tostring(win.title), rim.x, rim.y, rim.w, rim.h, rim.r))
+    end
+  end
+
+  return { ok = true }
 end
 
 handlers.retitle = function(req)

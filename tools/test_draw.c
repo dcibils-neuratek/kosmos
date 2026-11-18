@@ -128,9 +128,9 @@ static void scene(void)
     sc->corner = 8;
     check(scene_set_windows(sc, 3) && scene_set_menus(sc, 1), "room for three windows and a menu");
 
-    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
-    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
-    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 60, SC_ROUNDED, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
+    sc->win[1] = (struct sc_window){ 60, 40, 100, 60, SC_ROUNDED, &w2, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
+    sc->win[2] = (struct sc_window){ 150, 5, 40, 40, SC_HIDDEN, &w1, 100, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
     sc->menu[0] = (struct sc_menu){ 140, 80, 40, 30, &menu, -1, 0 };
 
     drawn = scene_compose(sc, 0, 0, 200, 120);
@@ -222,8 +222,8 @@ static void glass(void)
     sc->glass = &frost;
     sc->wx = sc->wy = 0;
     check(scene_set_windows(sc, 2), "room for a window and a strip");
-    sc->win[0] = (struct sc_window){ 0, 0, 120, 60, 0, &win, 120, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
-    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_BLEND | SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 0, 0, 120, 60, 0, &win, 120, 60, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
+    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_BLEND | SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
 
     (void)scene_compose(sc, 0, 0, 120, 60);
     p = at(&back, 80, 30);
@@ -260,7 +260,7 @@ static void glass(void)
      * strip as its picture over the blue window. Frosted when shown as it
      * is; stretched, as in a resize, copied as any window is. */
     check(scene_set_windows(sc, 2) && scene_set_menus(sc, 0), "room for two windows");
-    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[1] = (struct sc_window){ 50, 20, 60, 20, SC_GLASS, &strip, 60, 20, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
     (void)scene_compose(sc, 0, 0, 120, 60);
     p = at(&back, 80, 30);
     check(((p >> 8) & 0xff) > 0xb0 && (p & 0xff) < 0x90 && (p & 0xff) > 0x70,
@@ -327,7 +327,7 @@ static void live(void)
     sc->glass = &frost;
     sc->wx = sc->wy = 0;
     check(scene_set_windows(sc, 1), "room for the window under live glass");
-    sc->win[0] = (struct sc_window){ 0, 0, W, H, 0, &win, W, H, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 0, 0, W, H, 0, &win, W, H, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
 
     /* The reference: the back buffer without the strip, its reach blurred. */
     (void)scene_compose(sc, 0, 0, W, H);
@@ -337,7 +337,7 @@ static void live(void)
     gfx_blur(ref, ref, (size_t)ew, (unsigned)ew, (unsigned)eh, R, 3, tmp, sums);
 
     check(scene_set_windows(sc, 2), "room for the window and a strip");
-    sc->win[1] = (struct sc_window){ SX, SY, SW, SH, SC_BLEND | SC_GLASS | SC_LIVE, &strip, SW, SH, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[1] = (struct sc_window){ SX, SY, SW, SH, SC_BLEND | SC_GLASS | SC_LIVE, &strip, SW, SH, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
     sc->live_blur = R;
     sc->live_made = 0;
     (void)scene_compose(sc, 0, 0, W, H);
@@ -466,7 +466,7 @@ static void beads(void)
         sc->ring[s] = 0xff803020u;
     }
     check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a window with buttons");
-    sc->win[0] = (struct sc_window){ 10, 10, 100, 40, SC_LIGHTS | SC_FOCUSED | SC_MAXIMISE, &pic, 100, 40, NULL, 0, 20, 12, 0, -1, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 10, 10, 100, 40, SC_LIGHTS | SC_FOCUSED | SC_MAXIMISE, &pic, 100, 40, NULL, 0, 20, 12, 0, -1, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
 
     sc->rim_bevel = 4;
     (void)scene_compose(sc, 0, 0, 120, 60);
@@ -509,7 +509,7 @@ static void rim(void)
     sc->rim_refraction = 60;
     sc->rim_specular = 0;
     check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a window");
-    sc->win[0] = (struct sc_window){ 20, 20, 80, 40, SC_GLASS | SC_ROUNDED, &pic, 80, 40, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 20, 20, 80, 40, SC_GLASS | SC_ROUNDED, &pic, 80, 40, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
 
     (void)scene_compose(sc, 0, 0, 120, 80);
     check(sc->lens_ok, "the lens was made for a corner of 8 and a bevel of 4");
@@ -595,6 +595,77 @@ static void rim(void)
 }
 
 /*
+ * **A glass strip's shape** (LG4): a banner's or the dock's glass inside a
+ * larger picture - 80 by 40 at 20,20, its glass 60 by 36 at 8,2 from its
+ * corner and rounded at 12, not the scene's corner of 8. Inside the shape
+ * its edge is bent and lit by a lens made for 12; outside it, in the
+ * picture's margin, the glass is flat and unlit; and a strip with no shape,
+ * or one past its picture, is flat as it was.
+ */
+static void strip_rim(void)
+{
+    struct surface back = make(120, 80, 0xff000000u);
+    struct surface pic = make(80, 40, 0x01000000u);
+    struct surface frost = make(120, 80, 0);
+    struct scene *sc = malloc(sizeof(*sc));
+    unsigned x, y, made = 0, i;
+    uint32_t p;
+
+    for (y = 0; y < 80; y++) {
+        for (x = 0; x < 120; x++) row_of(&frost, y)[x] = 0xff000040u | x << 16 | y << 8;
+    }
+
+    scene_init(sc, &back);
+    sc->desktop = 0xff000000u;
+    sc->glass = &frost;
+    sc->corner = 8;
+    sc->rim_bevel = 4;
+    sc->rim_refraction = 60;
+    sc->rim_specular = 0;
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for a strip");
+    sc->win[0] = (struct sc_window){ 20, 20, 80, 40, SC_BLEND | SC_GLASS, &pic, 80, 40, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 8, 2, 60, 36, 12 };
+
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    for (i = 0; i < sizeof sc->rims / sizeof sc->rims[0]; i++) {
+        if (sc->rims[i].ok && sc->rims[i].of[0] == 12) made++;
+    }
+    check(made == 1, "a lens made for the strip's radius of 12, apart from the corner's");
+    p = at(&back, 28, 40);
+    check(((p >> 16) & 0xff) > 29 && ((p >> 8) & 0xff) + 1 >= 40 && ((p >> 8) & 0xff) <= 40,
+          "the strip's glass bent at its shape's left edge, not its picture's");
+    p = at(&back, 22, 40);
+    check(((p >> 16) & 0xff) + 1 >= 22 && ((p >> 16) & 0xff) <= 22,
+          "the picture's margin, outside the shape: flat glass");
+    p = at(&back, 58, 40);
+    check(((p >> 16) & 0xff) + 1 >= 58 && ((p >> 16) & 0xff) <= 58,
+          "the middle of the strip's glass unbent");
+
+    sc->rim_specular = 85;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    check((at(&back, 28, 40) & 0xff) > 0x40 + 20, "the shape's left edge, toward the light, lit");
+    check((at(&back, 22, 40) & 0xff) <= 0x40, "the margin outside the shape, not lit");
+
+    sc->win[0].rr = 0;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 28, 40);
+    check(((p >> 16) & 0xff) + 1 >= 28 && ((p >> 16) & 0xff) <= 28 && (p & 0xff) <= 0x40,
+          "a strip with no shape: flat and unlit, as before");
+
+    sc->win[0].rr = 12;
+    sc->win[0].rw = 80;                 /* 8 + 80: past its picture */
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 28, 40);
+    check(((p >> 16) & 0xff) + 1 >= 28 && ((p >> 16) & 0xff) <= 28,
+          "a shape past its picture: no shape, flat glass");
+
+    scene_free(sc);
+    free(sc);
+    free(back.pixels);
+    free(pic.pixels);
+    free(frost.pixels);
+}
+
+/*
  * **A picture from before a resize** (`SC_STALE`): a 40 by 30 picture whose
  * every pixel is its own, in a frame resized to 60 by 50. Shown at its size,
  * pixel for pixel, its last column drawn on across the new room and its
@@ -618,7 +689,7 @@ static void stale(void)
     scene_init(sc, &back);
     sc->desktop = 0xff808080u;
     check(scene_set_windows(sc, 1) && scene_set_menus(sc, 0), "room for one window");
-    sc->win[0] = (struct sc_window){ 10, 10, 60, 50, SC_STALE, &pic, 40, 30, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->win[0] = (struct sc_window){ 10, 10, 60, 50, SC_STALE, &pic, 40, 30, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, 0 };
     (void)scene_compose(sc, 0, 0, 100, 80);
 
     for (y = 0; y < 30; y++) {
@@ -654,6 +725,7 @@ int main(void)
     glass();
     live();
     rim();
+    strip_rim();
     beads();
     stale();
 
@@ -665,6 +737,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; live glass - a strip and a menu over what is under them, blurred as gfx_blur blurs it, clear glass sharp, and the damage widened to hold the reach; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; live glass - a strip and a menu over what is under them, blurred as gfx_blur blurs it, clear glass sharp, and the damage widened to hold the reach; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a glass strip's rim bent and lit inside its shape, at its own radius, and flat outside it; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

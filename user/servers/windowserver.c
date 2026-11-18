@@ -359,6 +359,14 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         w->px = in.plate_x;
         w->py = in.plate_y;
 
+        /* A glass strip's shape, held to its picture by the scene itself
+         * (`strip_shape`): one past its window is no shape. */
+        w->rx = in.rim_x;
+        w->ry = in.rim_y;
+        w->rw = in.rim_w;
+        w->rh = in.rim_h;
+        w->rr = in.rim_r;
+
         /* What is stretched from is never more than the picture holds. */
         w->src_w = w->picture ? clamp(in.src_w, (long)w->picture->width) : 0;
         w->src_h = w->picture ? clamp(in.src_h, (long)w->picture->height) : 0;

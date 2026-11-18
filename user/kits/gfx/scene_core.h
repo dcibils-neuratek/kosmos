@@ -83,6 +83,16 @@ struct sc_window {
     /* Described for the window server (`scene.c`), the pictures by slot -
      * `WS_NONE` for none - in place of the surfaces above. */
     int picture_slot, bar_slot, inset_slot, plate_slot;
+
+    /*
+     * **Its glass's shape** (Liquid Glass LG4): for a blended glass strip -
+     * the dock, a banner - the rounded rectangle its glass is, at `rx`, `ry`
+     * from its corner and `rw` by `rh`, rounded at `rr`, in screen pixels.
+     * Inside it the glass is bent and lit by a lens made for `rr`, as a
+     * window's rim is by the scene's corner. `rr` 0 for none, and the strip
+     * is flat glass as before.
+     */
+    long rx, ry, rw, rh, rr;
 };
 
 struct sc_menu {
@@ -133,6 +143,17 @@ struct scene {
     void *lens_mem;
     long lens_of[4];
     bool lens_ok;
+
+    /* Lenses for other radii than the corner - a strip's shape, `rr` - made
+     * when a radius is first asked for under a look and kept, `SC_RIMS` of
+     * them, the oldest given up for a new one. */
+    struct {
+        long of[4];             /* radius, bevel, refraction, specular */
+        void *mem;
+        struct gfx_lens lens;
+        bool ok;
+    } rims[4];
+    unsigned rims_next;
 
     /*
      * **Live glass** (Liquid Glass LG6; G2 of `docs/astra.md` 4.3): the

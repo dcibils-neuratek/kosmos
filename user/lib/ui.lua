@@ -10497,6 +10497,24 @@ end
 -- disagree about what renaming means - which they did, briefly, when
 -- writing `win.title` looked like it worked and only set a field.
 --
+--
+-- **Where a glass strip's glass is** (Liquid Glass LG4): the rounded
+-- rectangle inside the window's picture - its pill, its card - at `x`, `y`
+-- from its corner and `w` by `h`, rounded at `r`, so the window manager
+-- bends and lights its rim there. Said from a paint; told only when it
+-- changed, so a paint that draws the same shape sends nothing. `r` 0, or
+-- no arguments, for none.
+--
+function window:rim(x, y, w, h, r)
+  local key = r and r > 0 and ("%d %d %d %d %d"):format(x, y, w, h, r) or ""
+
+  if key == self.rim_said then return true end
+
+  self.rim_said = key
+  return fs.send("/Running/wm", { type = "rim", window = self.handle,
+                              x = x, y = y, w = w, h = h, r = r or 0 })
+end
+
 function window:retitle(text)
   self.title = tostring(text)
 

@@ -1809,7 +1809,7 @@ if DOCKED then
     end
   end
 
-  function paint_ground(g, x, y, w, h)
+  function paint_ground(g, x, y, w, h, into)
     local fill = (255 * (100 - transparency) + 50) // 100
     local edge = (0x18 * (100 - transparency) + 50) // 100
     local ground = theme.window
@@ -1835,6 +1835,10 @@ if DOCKED then
     elseif FLOATING then
       g:fill_round(x, y, w, h, at(0xffffffff, edge), dock.RADIUS)
       g:fill_round(x + 1, y + 1, w - 2, h - 2, at(ground, fill), dock.RADIUS - 1)
+
+      -- Its glass's shape (LG4), so the window manager bends and lights
+      -- the pill's rim as a glass window's: said only when it changed.
+      if into and theme.glassy() then into:rim(x, y, w, h, dock.RADIUS) end
     else
       g:fill(x, y, w, h, at(ground, fill))
       g:fill(x, y, w, 1, at(0xffffffff, edge))
@@ -1879,7 +1883,7 @@ if DOCKED then
     -- Floating and magnified, the lens draws the pill as wide as the grown
     -- row (`lens`, below), as a dock widens under the pointer; the whole
     -- width has room for it, and keeps its own.
-    if not (FLOATING and lens_drawing()) then paint_ground(g, 0, 0, self.w, self.h) end
+    if not (FLOATING and lens_drawing()) then paint_ground(g, 0, 0, self.w, self.h, win) end
 
     -- Centred in the whole width, as the floating dock is on the screen.
     local off = FLOATING and 0 or (self.w - (dock.layout(items, gfx.measure("Kosmos")))) // 2
@@ -2270,7 +2274,7 @@ if DOCKED then
         local right = math.max(ox + last.x + last.w + dock.PAD, win.origin_x - lx + win.w)
 
         left, right = math.max(0, left), math.min(self.w, right)
-        paint_ground(g, left, lift, right - left, H)
+        paint_ground(g, left, lift, right - left, H, lens)
       end
 
       for _, it in ipairs(cells) do

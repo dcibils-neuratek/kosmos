@@ -144,6 +144,9 @@ struct ws_scene_window {
     int32_t  ix, iy, iw, ih;    /* where, in the first's pixels (`sc_window`) */
     int32_t  plate;             /* Starlight's plate over its header, or WS_NONE */
     int32_t  plate_x, plate_y;  /* where, from the window's corner, on the screen */
+    int32_t  rim_x, rim_y;      /* a glass strip's shape, from its corner */
+    int32_t  rim_w, rim_h;      /*   in screen pixels (`sc_window.rr`), */
+    int32_t  rim_r;             /*   rounded at this; 0 for none */
 };
 
 struct ws_scene_menu {
@@ -156,7 +159,7 @@ struct ws_rect {
     int32_t  x, y, w, h;
 };
 
-_Static_assert(sizeof(struct ws_scene_window) == 88, "a window on the wire is 22 words");
+_Static_assert(sizeof(struct ws_scene_window) == 108, "a window on the wire is 27 words");
 _Static_assert(sizeof(struct ws_scene_menu) == 24, "a menu on the wire is six words");
 
 #endif /* KOSMOS_WINDOWPROTO_H */

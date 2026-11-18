@@ -54,7 +54,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 17
+CHECKS = 19
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -195,6 +195,25 @@ def frosted(guest, what, row, x0, x1, inside_y, above_y, most, fails):
                      "spreads %d end to end, the wallpaper beside it %.1f"
                      % (what, inside, spread, above))
     return inside
+
+
+def rims_said(guest, mark, dockat, fails):
+    """LG4's rims on the floating surfaces: the dock and a banner each told
+    the window manager where their glass is, so the scene bends and lights
+    a rim there - the dock's the whole pill, the dock's own size, and the
+    banner's its card, inside its margin (`tools/test_draw.c` holds what
+    the scene draws from it)."""
+    seen = guest.seen[mark:]
+    pill = re.findall(r"wm: Deskbar's glass at (\d+),(\d+) (\d+)x(\d+), round (\d+)", seen)
+    card = re.findall(r"wm: Notifications's glass at (\d+),(\d+) (\d+)x(\d+), round (\d+)", seen)
+    print("rims: the dock's %r, a banner's %r" % (pill[-1:], card[-1:]))
+    w, h = (int(dockat.group(3)), int(dockat.group(4))) if dockat else (None, None)
+    if not (pill and int(pill[-1][0]) == 0 and int(pill[-1][1]) == 0
+            and (int(pill[-1][2]), int(pill[-1][3])) == (w, h) and int(pill[-1][4]) > 0):
+        fails.append("the dock did not say its glass is its whole pill, %r by %r: %r"
+                     % (w, h, pill[-1:]))
+    if not (card and int(card[-1][0]) > 0 and int(card[-1][1]) > 0 and int(card[-1][4]) > 0):
+        fails.append("a banner did not say its glass is its card, inside its margin: %r" % card[-1:])
 
 
 def dock_frosted(guest, dockat, fails):
@@ -594,6 +613,7 @@ def run(fails):
         banner_at = line(guest, r"notifications: banners at (-?\d+),(-?\d+) (\d+)x(\d+)", mark, 30)
         time.sleep(2)
         banner_frosted(guest, banner_at, fails)
+        rims_said(guest, mark, last or dockat, fails)
         window_frosted(guest, mark, fails)
         rim_lit(guest, mark, fails)
         plate_glass(guest, mark, fails)

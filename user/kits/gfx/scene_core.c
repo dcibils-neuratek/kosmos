@@ -40,6 +40,11 @@ void scene_free(struct scene *sc)
     free(sc->lens_mem);
     sc->lens_mem = NULL;
     sc->lens_ok = false;
+    for (unsigned i = 0; i < sizeof sc->rims / sizeof sc->rims[0]; i++) {
+        free(sc->rims[i].mem);
+        sc->rims[i].mem = NULL;
+        sc->rims[i].ok = false;
+    }
     free(sc->live_mem);
     sc->live_mem = NULL;
     sc->live_cap = 0;
@@ -608,12 +613,23 @@ static uint32_t lit(uint32_t c, unsigned spec, uint32_t toward)
     return out;
 }
 
+/*
+ * **A rim's shape**: the lens and the rounded rectangle on the screen it
+ * bends and lights - a window's or a menu's own, with the scene's lens for
+ * its corner, or a strip's glass inside its picture (`sc_window.rr`) with
+ * a lens for that radius. `lens` NULL for none: flat glass, no light.
+ */
+struct rim_shape {
+    const struct gfx_lens *lens;
+    long x, y, w, h;
+};
+
 static void glass_under(struct scene *sc, const struct surface *picture, long px, long py,
-                        long pw, long ph, bool rim,
+                        const struct rim_shape *shape,
                         long x0, long y0, long x1, long y1)
 {
     const struct surface *g = sc->glass;
-    const struct gfx_lens *l = rim && sc->lens_ok ? &sc->lens : NULL;
+    const struct gfx_lens *l = shape != NULL ? shape->lens : NULL;
     long x, y;
 
     for (y = y0; y < y1; y++) {
@@ -628,8 +644,10 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
 
             if ((p[x - px] >> 24) == 0) continue;
 
-            if (l != NULL) {
-                struct gfx_lens_px e = lens_at(l, x - px, y - py, pw, ph);
+            if (l != NULL && x >= shape->x && x < shape->x + shape->w
+                && y >= shape->y && y < shape->y + shape->h) {
+                struct gfx_lens_px e = lens_at(l, x - shape->x, y - shape->y,
+                                               shape->w, shape->h);
 
                 if (e.dx != 0 || e.dy != 0) {
                     /* **Amber and indigo** (L6): the warm channels read
@@ -855,32 +873,40 @@ static void star_glint(struct scene *sc, long cx, long cy, uint32_t toward,
  * on the side toward the light.
  */
 static void rim_light(struct scene *sc, const struct surface *picture, long px, long py,
-                      long pw, long ph, uint32_t toward, long x0, long y0, long x1, long y1)
+                      const struct rim_shape *shape, uint32_t toward,
+                      long x0, long y0, long x1, long y1)
 {
-    const struct gfx_lens *l = sc->lens_ok ? &sc->lens : NULL;
-    long b, x, y;
+    const struct gfx_lens *l = shape != NULL ? shape->lens : NULL;
+    long b, x, y, pw, ph;
 
     if (l == NULL) return;
 
+    /* Only inside the shape: a strip's picture is larger than its glass. */
+    if (x0 < shape->x) x0 = shape->x;
+    if (y0 < shape->y) y0 = shape->y;
+    if (x1 > shape->x + shape->w) x1 = shape->x + shape->w;
+    if (y1 > shape->y + shape->h) y1 = shape->y + shape->h;
+    pw = shape->w;
+    ph = shape->h;
     b = (long)l->side;
 
     for (y = y0; y < y1; y++) {
         const uint32_t *p = row_of(picture, (unsigned)(y - py));
         uint32_t *o = row_of(sc->back, (unsigned)y);
-        long ly = y - py, by = ph - 1 - ly;
+        long ly = y - shape->y, by = ph - 1 - ly;
         bool band = ly < b || by < b;
 
         for (x = x0; x < x1; x++) {
-            long lx = x - px, rx = pw - 1 - lx;
+            long lx = x - shape->x, rx = pw - 1 - lx;
             struct gfx_lens_px e;
 
             /* Away from every edge by more than a corner's square, nothing. */
             if (!band && lx >= b && rx >= b) {
-                x = px + pw - b - 1;
+                x = shape->x + pw - b - 1;
                 continue;
             }
 
-            if ((p[lx] >> 24) == 0) continue;
+            if ((p[x - px] >> 24) == 0) continue;
 
             e = lens_at(l, lx, ly, pw, ph);
 
@@ -925,12 +951,76 @@ static void lens_update(struct scene *sc)
                                 (unsigned)sc->rim_specular) == 1;
 }
 
+/*
+ * **A lens for another radius** (LG4): a strip's glass, rounded at `radius`
+ * rather than the scene's corner - the dock's, a banner's. The scene's own
+ * when the radius is its corner; otherwise one of `rims`, made the first
+ * time a radius is asked for under the look's bevel, refraction and
+ * specular and kept, so a frame makes one only when a look or a radius is
+ * new. NULL when none can be: no bevel, a radius past the lens's most, or
+ * no memory - flat glass, as before.
+ */
+static const struct gfx_lens *lens_for(struct scene *sc, long radius)
+{
+    long want[4] = { radius, sc->rim_bevel, sc->rim_refraction, sc->rim_specular };
+    unsigned n = sizeof sc->rims / sizeof sc->rims[0], i;
+    size_t bytes;
+
+    if (radius == sc->corner) return sc->lens_ok ? &sc->lens : NULL;
+
+    for (i = 0; i < n; i++) {
+        if (sc->rims[i].mem != NULL && memcmp(want, sc->rims[i].of, sizeof(want)) == 0) {
+            return sc->rims[i].ok ? &sc->rims[i].lens : NULL;
+        }
+    }
+
+    if (radius <= 0 || sc->rim_bevel <= 0 || sc->rim_refraction < 0 || sc->rim_specular < 0
+        || sc->rim_refraction > 100 || sc->rim_specular > 100) {
+        return NULL;
+    }
+
+    bytes = gfx_lens_size((unsigned)radius, (unsigned)sc->rim_bevel);
+    i = sc->rims_next;
+    sc->rims_next = (i + 1) % n;
+    free(sc->rims[i].mem);
+    sc->rims[i].mem = bytes != 0 ? malloc(bytes) : NULL;
+    sc->rims[i].ok = false;
+    memcpy(sc->rims[i].of, want, sizeof(want));
+
+    if (sc->rims[i].mem == NULL) return NULL;
+
+    sc->rims[i].ok = gfx_lens_make(&sc->rims[i].lens, sc->rims[i].mem, (unsigned)radius,
+                                   (unsigned)sc->rim_bevel, (unsigned)sc->rim_refraction,
+                                   (unsigned)sc->rim_specular) == 1;
+    return sc->rims[i].ok ? &sc->rims[i].lens : NULL;
+}
+
+/* A strip's glass shape (`sc_window.rr`), on the screen, with its lens: true
+ * when it has one that fits inside its picture and can be bent. */
+static bool strip_shape(struct scene *sc, const struct sc_window *w, struct rim_shape *out)
+{
+    const struct gfx_lens *l;
+
+    if (w->rr <= 0 || w->rx < 0 || w->ry < 0 || w->rw <= 0 || w->rh <= 0
+        || w->rx + w->rw > w->w || w->ry + w->rh > w->h) {
+        return false;
+    }
+
+    l = lens_for(sc, w->rr);
+
+    if (l == NULL || w->rw < 2 * (long)l->side || w->rh < 2 * (long)l->side) return false;
+
+    *out = (struct rim_shape){ l, w->x + w->rx, w->y + w->ry, w->rw, w->rh };
+    return true;
+}
+
 static void draw_window(struct scene *sc, const struct sc_window *w, const struct sc_rect *r)
 {
     long kept[4][6];
     int nkept = 0;
     long x0, y0, x1, y1;
-    bool starred = false;
+    bool starred = false, shaped = false;
+    struct rim_shape shape;
 
     if ((w->flags & SC_HIDDEN) || w->x >= r->x + r->w || w->x + w->w <= r->x
         || w->y >= r->y + r->h || w->y + w->h <= r->y) {
@@ -954,12 +1044,16 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                 struct glass_was was;
                 bool live = live_under(sc, w->flags, w->x, w->y, w->w, w->h, &was);
 
-                glass_under(sc, w->picture, w->x, w->y, w->w, w->h, false,
+                shaped = strip_shape(sc, w, &shape);
+                glass_under(sc, w->picture, w->x, w->y, shaped ? &shape : NULL,
                             x0, y0, x1, y1);
                 if (live) live_done(sc, &was);
             }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
+            /* And its rim's light, cool, over the picture (LG4). */
+            if (shaped) rim_light(sc, w->picture, w->x, w->y, &shape, 0xffffffffu,
+                                  x0, y0, x1, y1);
         } else if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
                    && w->bar == NULL && !(w->flags & SC_STALE)
                    && w->src_w == w->w && w->src_h == w->h) {
@@ -967,14 +1061,15 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
              * `SC_BLEND`, frosted only when its picture is shown as it is;
              * stretched in a resize, stale or under a menu bar it is
              * copied below as any window is. Its inset still goes over. */
-            glass_under(sc, w->picture, w->x, w->y, w->w, w->h,
-                        (w->flags & SC_ROUNDED) != 0, x0, y0, x1, y1);
+            shape = (struct rim_shape){ sc->lens_ok && (w->flags & SC_ROUNDED) ? &sc->lens : NULL,
+                                        w->x, w->y, w->w, w->h };
+            glass_under(sc, w->picture, w->x, w->y, &shape, x0, y0, x1, y1);
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
             /* Warm on the window in front, cool on the rest (L6): focus
              * shown by the light in the glass. */
             if (w->flags & SC_ROUNDED) {
-                rim_light(sc, w->picture, w->x, w->y, w->w, w->h,
+                rim_light(sc, w->picture, w->x, w->y, &shape,
                           (w->flags & SC_FOCUSED) && sc->rim_front != 0
                               ? sc->rim_front : 0xffffffffu,
                           x0, y0, x1, y1);
@@ -1282,11 +1377,13 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
             struct glass_was was;
             bool live = live_under(sc, m->flags, m->x, m->y, m->w, m->h, &was);
 
-            glass_under(sc, m->picture, m->x, m->y, m->w, m->h, true, x0, y0, x1, y1);
+            struct rim_shape shape = { sc->lens_ok ? &sc->lens : NULL, m->x, m->y, m->w, m->h };
+
+            glass_under(sc, m->picture, m->x, m->y, &shape, x0, y0, x1, y1);
             if (live) live_done(sc, &was);
             blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
-            rim_light(sc, m->picture, m->x, m->y, m->w, m->h, 0xffffffffu, x0, y0, x1, y1);
+            rim_light(sc, m->picture, m->x, m->y, &shape, 0xffffffffu, x0, y0, x1, y1);
         } else {
             blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
         }
