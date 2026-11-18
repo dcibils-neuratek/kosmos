@@ -277,8 +277,7 @@ webkit.zoom(setting.zoom)
 -- traced*): every request as it ends, and what a page still waits on, for
 -- measuring JetSki's speed. On while `/Home/Settings/JetSki/trace` exists -
 -- `touch` it, and open JetSki again; `log webkit` reads what it said.
-local TRACE = "/Home/Settings/JetSki/trace"
-local tracing = fs.getattr(TRACE) ~= nil
+local tracing = fs.getattr("/Home/Settings/JetSki/trace") ~= nil
 webkit.trace(tracing)
 
 -- And the window's commits while traced (`testing.md` 18.853): how long
@@ -421,6 +420,26 @@ function dlbutton:mouse(action)
 end
 dlbutton.y = (BAR - 1 - dlbutton.h) // 2
 header:add(dlbutton)
+
+-- **The star** (`docs/webkit.html`, *Typing in the address field*): lit
+-- while the page shown is a favorite - a file in `/Home/Favorites`, as
+-- Tracker shows them (`favorites.lua`) - and pressed, or Control-D, the
+-- page made one or no longer one (`FAV.toggle`, below).
+-- One table rather than a local each, since the file is at Lua's 200.
+local FAV = { lib = use("/Kosmos/Libraries/favorites.lua"),
+              known = {} }           -- every favorite's address: its file
+FAV.star = ui.view{ w = 30, h = 26 }
+FAV.star.lit = false                     -- set by `FAV.follows`, below the page
+function FAV.star:draw(g)
+  g:line_icon((self.w - 15) // 2, (self.h - 15) // 2, self.lit and "starred" or "star",
+              self.lit and theme.accent or theme.text_dim)
+end
+function FAV.star:mouse(action)
+  if action == "press" then FAV.toggle() end
+  return true
+end
+FAV.star.y = (BAR - 1 - FAV.star.h) // 2
+header:add(FAV.star)
 
 win:add(header)
 
@@ -573,6 +592,12 @@ local function layout()
     dlbutton.x = right - dlbutton.w
     right = dlbutton.x - ui.layout.head_gap
   end
+  if FAV.star then
+    local star = FAV.star
+    star.x = right - star.w
+    right = star.x - ui.layout.head_gap
+    print(("jetski: the star at %d,%d %dx%d"):format(star.x, TABS + star.y, star.w, star.h))
+  end
   field.w = right - field.x
   SPLIT_W = inspecting and math.min(INSPECTOR_W, W // 2) or 0
   PAGE_W = W - SPLIT_W
@@ -649,7 +674,7 @@ local function downloads_key(c)
 end
 
 -- Control with plus (or equals, its key unshifted), minus or nought: 1, -1
--- or 0 for `zoom_step`, nil for anything else.
+-- or 0 for `MENU.zoom_step`, nil for anything else.
 local function zoom_key(c)
   local key, mods = keys.parts(c)
   if mods & keys.CTRL == 0 or mods & (keys.ALT | keys.SUPER) ~= 0 then return nil end
@@ -660,7 +685,7 @@ local function zoom_key(c)
 end
 
 local function windows_key(c)
-  if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end
+  if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end
   if inspector_key(c) or downloads_key(c) or zoom_key(c) then return true end
   local key, mods = keys.parts(c)
   if key == 44 and mods & (keys.CTRL | keys.SUPER) ~= 0 then return true end
@@ -986,6 +1011,89 @@ local function say(text)
 end
 
 --------------------------------------------------------------------------
+-- **Favorites and history** (`docs/webkit.md`, *Bookmarks and history*;
+-- the order agreed 17 November 2026). Both are libraries other programs
+-- read: `favorites.lua`, files Tracker shows, and `history.lua`, a file a
+-- day under `/Home/Settings/JetSki/History`.
+--
+FAV.history = use("/Kosmos/Libraries/history.lua")
+
+-- A page worth keeping: one from the web or the disk, not Settings' tab or
+-- an `about:` page.
+function FAV.keepable(address)
+  return type(address) == "string" and address:match("^%a[%w+.-]*://") ~= nil
+         and not (settings_tab and web.shown_id() == settings_tab)
+end
+
+-- The star lit or not for the page shown; true when that changed.
+function FAV.follows()
+  local lit = FAV.keepable(page.address) and FAV.known[page.address] ~= nil
+  if lit == FAV.star.lit then return false end
+  FAV.star.lit = lit
+  return true
+end
+
+-- Every favorite's address, read again: when JetSki starts, when one is
+-- made or let go here, and as a page finishes - Tracker may have changed
+-- the folder, and the star must not say what the folder no longer does.
+function FAV.read()
+  FAV.known = FAV.lib.all() or {}
+  FAV.follows()
+end
+
+function FAV.toggle()
+  local address = page.address
+  if not FAV.keepable(address) then
+    say("only a page can be a favorite")
+    return
+  end
+  if FAV.known[address] then
+    local gone = FAV.lib.remove(address)
+    say(("no longer a favorite, %s (%d files)"):format(address, gone or 0))
+  else
+    local path, why = FAV.lib.add(address, page.title ~= "" and page.title or address)
+    if path then
+      say(("a favorite, %s as %s"):format(address, path))
+    else
+      say(("could not keep %s as a favorite: %s"):format(address, tostring(why)))
+    end
+  end
+  FAV.read()
+end
+
+-- A page shown, at the top of today's history - once it has finished, and
+-- again when its title comes after, so the day keeps what it was called.
+--
+-- Only a page that was shown - committed, in WebKit's word, since its
+-- load started: a download finishes as a page does, with the address it
+-- came from and the title of the page that stayed (`file.bin` as "Kosmos
+-- IDE tutorial", 0.11.503's suite), and never commits. And not the same
+-- page and title twice in a row, a read and a write of the day for nothing.
+function FAV.remember(address, title)
+  if not FAV.keepable(address) or page.committed ~= address then return end
+  local said = address .. "\n" .. tostring(title)
+  if FAV.last == said then return end
+  local now = clock.now()
+  if now and FAV.history.record(address, title, now) then
+    FAV.last = said
+    print(("jetski: history %s, %s"):format(address, title ~= "" and title or "no title"))
+  end
+end
+
+FAV.read()
+
+-- The days Settings keeps (`history_days`) and no older, let go as JetSki
+-- starts.
+do
+  local now = clock.now()
+  if now and now.epoch then
+    local oldest = FAV.history.day_of(clock.at(now.epoch - (setting.history_days or 30) * 86400))
+    local gone = FAV.history.prune(oldest)
+    if gone > 0 then print(("jetski: history before %s let go, %d days"):format(oldest, gone)) end
+  end
+end
+
+--------------------------------------------------------------------------
 -- **The padlock: how the page came** (`docs/padlock.html`, agreed 16
 -- November 2026). At the head of the address, in the old browser's words
 -- (`browser.lua`, `how_came`): a green padlock alone for a page whose
@@ -1061,6 +1169,11 @@ do
       hw, rest = gfx.measure(host, "label"), ""
     end
     g:text(x, (h - gfx.height("label")) // 2, host, theme.text, nil, "label")
+    -- Shown as a person reads it - `%20` a space - and typed as it is.
+    rest = rest:gsub("%%(%x%x)", function(hex)
+      local b = tonumber(hex, 16)
+      return (b >= 32 and b < 127) and string.char(b) or nil
+    end)
     g:text(x + hw, (h - gfx.height()) // 2, ui.fitted(rest, room - hw), theme.text_dim)
   end
 end
@@ -1660,7 +1773,7 @@ local function toggle_inspector()
 end
 inspect.on_click = toggle_inspector
 
--- The menu itself is below, beside the keys it names (`open_the_menu`).
+-- The menu itself is below, beside the keys it names (`MENU.open`).
 
 -- **The page's right-click** (`roadmap.md`, JetSki's features): what is
 -- under the pointer first - a link, a picture, the words selected - as
@@ -2331,8 +2444,18 @@ win.on_frame = function()
     end
   end
 
+  -- The address that became the page shown (`FAV.remember`): a load
+  -- finishing at another address - a download's - was never shown. A flag
+  -- set at the commit and cleared at the start was not enough: a download's
+  -- start need not be said, and the page before's commit stood for it.
+  if st.committed then page.committed = st.address end
+
   if st.finished then
     say(("loaded %s"):format(st.address))
+    FAV.read()
+    page.finished_at = st.address
+    page.untitled = (st.title or "") == ""
+    FAV.remember(st.address, st.title or "")
     changed = true
   end
 
@@ -2349,6 +2472,13 @@ win.on_frame = function()
     tabs_changed()
     win:retitle(page.title ~= "" and page.title or "JetSki")
     print("jetski: title " .. page.title)
+    -- Its title kept once: a page that finished without one is written
+    -- again when one comes, and never for a title it changes after - a page
+    -- whose title ticks ("(3) Inbox", a clock) would write the day all day.
+    if page.finished_at == st.address and not st.finished and page.untitled and page.title ~= "" then
+      page.untitled = false
+      FAV.remember(st.address, page.title)
+    end
   end
 
   -- The address as WebKit has it - after a redirect, a link, Back - unless
@@ -2358,6 +2488,7 @@ win.on_frame = function()
     field.text = st.address
     changed = true
   end
+  if FAV.follows() then changed = true end
 
   if changed then return true end
   if st.picture then
@@ -2583,8 +2714,11 @@ function web.save_frame()
   return true
 end
 
+-- The menu's and the keys' doors, in one table: the file is at Lua's 200.
+local MENU = {}
+
 -- Control-O's: an HTML file, chosen in the system's Open window.
-local function open_file()
+function MENU.open_file()
   local chooser = use("/Kosmos/Libraries/panel.lua").open{
     -- Where the page shown is, when it is a file; /Home otherwise.
     start = (page.address or ""):match("^file://(/.*)/[^/]*$") or "/Home",
@@ -2601,8 +2735,8 @@ end
 -- **The zoom, a step at a time**: Settings' four (Diego, 1 October, "just
 -- put 4 options"), Control-plus up one, Control-minus down one and
 -- Control-nought back to the first - and kept, as choosing it in Settings
--- keeps it. `to` is 1, -1 or 0; `zoom_to` sets one of the four.
-local function zoom_to(percent)
+-- keeps it. `to` is 1, -1 or 0; `MENU.zoom_to` sets one of the four.
+function MENU.zoom_to(percent)
   if percent ~= setting.zoom then
     setting.zoom = percent
     prefs.write(setting, SETTINGS, OWN)
@@ -2612,14 +2746,14 @@ local function zoom_to(percent)
   say(("zoom %d%%"):format(percent))
 end
 
-local function zoom_step(to)
+function MENU.zoom_step(to)
   local list, at = prefs.CHOICES.zoom, 1
 
   for i, z in ipairs(list) do
     if z[1] == setting.zoom then at = i end
   end
 
-  zoom_to(((to == 0) and list[1] or list[math.max(1, math.min(#list, at + to))])[1])
+  MENU.zoom_to(((to == 0) and list[1] or list[math.max(1, math.min(#list, at + to))])[1])
 end
 
 -- **The menu** (`docs/webkit.html`, *The menu*): everything JetSki does,
@@ -2628,7 +2762,7 @@ end
 -- yet is drawn greyed, which says it is coming where a missing row says
 -- nothing; *Bookmark this page* is *Add to favorites*, since on Kosmos
 -- they are (`webkit.md`, *Doubts*).
-local function menu_items()
+function MENU.items()
   local function heading(text) return { text = text, heading = true } end
   local function row(text, hint, fn) return { text = text, hint = hint, on_choose = fn } end
   local function later(text, hint) return { text = text, hint = hint, disabled = true } end
@@ -2637,13 +2771,13 @@ local function menu_items()
   local zooms = {}
   for _, z in ipairs(prefs.CHOICES.zoom) do
     zooms[#zooms + 1] = { text = z[2], mark = (z[1] == setting.zoom),
-                          on_choose = function() zoom_to(z[1]) end }
+                          on_choose = function() MENU.zoom_to(z[1]) end }
   end
 
   local items = {
     heading("File"),
     row("New tab", "Ctrl T", new_tab),
-    row("Open a file...", "Ctrl O", open_file),
+    row("Open a file...", "Ctrl O", MENU.open_file),
     row("Save page as...", "Ctrl S", save_page),
     later("Print...", "Ctrl P"),
     sep, heading("Edit"),
@@ -2654,7 +2788,7 @@ local function menu_items()
     row("Downloads", "Ctrl Shift J", function() downloads_toggle() end),
     sep, heading("History and favorites"),
     later("History", "Ctrl Y"),
-    later("Add to favorites", "Ctrl D"),
+    row(FAV.star.lit and "Remove from favorites" or "Add to favorites", "Ctrl D", FAV.toggle),
     sep,
     row("Settings", "Ctrl ,", open_settings),
   }
@@ -2668,9 +2802,9 @@ end
 
 -- Opened under the three dots, and said - the rows by where they are, for
 -- a suite to press one as a hand does.
-local function open_the_menu()
+function MENU.open()
   local x, y = more:in_window()
-  local items = menu_items()
+  local items = MENU.items()
   local m = win:open_menu((win.origin_x or 0) + x, (win.origin_y or 0) + y + more.h, items)
 
   if m and m.row then
@@ -2686,7 +2820,7 @@ local function open_the_menu()
                                                        table.concat(names, "; ")))
   end
 end
-more.on_click = function() open_the_menu() end
+more.on_click = function() MENU.open() end
 
 win.on_key = function(_, c)
   -- Control-F: find on the page, as every browser has it.
@@ -2694,6 +2828,9 @@ win.on_key = function(_, c)
 
   -- Control-S: Save page as.
   if c == 19 then save_page() return true end
+
+  -- Control-D: the page a favorite, or no longer one - the star's.
+  if c == 4 then FAV.toggle() return true end
 
   if c == 12 then
     web.focus(false)
@@ -2720,11 +2857,11 @@ win.on_key = function(_, c)
   if inspector_key(c) then toggle_inspector() return true end
 
   -- Control-O: an HTML file, chosen in the system's Open window.
-  if c == 15 then open_file() return true end
+  if c == 15 then MENU.open_file() return true end
 
   -- Control and plus, minus or nought: the zoom, a step of Settings' four.
   local zk = zoom_key(c)
-  if zk then zoom_step(zk) return true end
+  if zk then MENU.zoom_step(zk) return true end
 
   -- Super with a digit: that tab, and 9 the last, as every browser has it.
   local key, mods = keys.parts(c)

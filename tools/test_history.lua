@@ -94,7 +94,7 @@ check(history.day_of({ year = 2026, month = 10, day = 1 }) == "2026-10-01",
 
 check(history.record("https://en.wikipedia.org/wiki/Dam", "Dam - Wikipedia",
                      at(2026, 9, 29, 21, 47))
-      and dirs["/Home/Preferences"] and dirs["/Home/Preferences/browser"]
+      and dirs["/Home/Settings"] and dirs["/Home/Settings/JetSki"]
       and dirs[DIR], "recorded, its folder and the ones above it made")
 
 history.record("https://www.lua.org/manual/5.4/", "Lua 5.4\nReference Manual",

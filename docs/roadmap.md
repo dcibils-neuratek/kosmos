@@ -11198,8 +11198,26 @@ the applications make the system useful, and is not pulled forward.
       **The menu built in 0.11.502** (`testing.md` 18.901): the three dots
       hold everything under the drawing's headings, each row with its key;
       Print, Page source, History and Add to favorites greyed until built.
-      Zoom's keys came with it (Control-plus, minus, nought). Next:
-      favorites and history.
+      Zoom's keys came with it (Control-plus, minus, nought).
+      **Favorites and history built in 0.11.503** (`testing.md` 18.902):
+      the star and Control-D make the page a favorite in `/Home/Favorites`
+      or let it go; every page shown goes into today's history in
+      `/Home/Settings/JetSki/History`, a download never, a title kept once.
+      Still to do of them: the suggestions under the address (below), and
+      History's own list behind Control-Y, to be drawn first.
+      **JetSki at Lua's 200 locals** (18 November 2026): the star's step
+      reached the limit on one chunk's locals, and the favorites, the menu
+      and a constant were folded into tables to stay under it. Before the
+      next feature, JetSki is split - the menu, the downloads panel, find
+      and Settings into files of their own beside `jetski.lua` in
+      `/Home/Apps/JetSki`, each handed what it needs - rather than more
+      folding, which only moves the limit.
+      **One suggestions list in the kit**: JetSki's address field is to
+      offer a search, history and favorites as letters are typed
+      (`webkit.html`, *Typing in the address field*). Mail's compose
+      (`mailcompose.lua`, `draw_suggestions`) and the IDE (`ide.lua`, step
+      5) each draw a list of their own already; the address field's is
+      written as one kit piece, and the other two move onto it after.
     - *The start page* (Diego, 17 November 2026: "jetski needs a new empty
       page with my favorites and or with out top 20 sites added as
       favorites so we can clik and open them", with Safari's start page

@@ -24,8 +24,10 @@ local history = {}
 -- Its folder made, and the ones above it, by the file library.
 local files = use("/Kosmos/Libraries/files.lua")
 
--- In the browser's folder, where the settings kit keeps it (`prefs.lua`).
-history.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser/history")
+-- In JetSki's folder, beside its settings: the browser this was written
+-- for, and its `/Home/Preferences/browser`, went in 0.11.461, and JetSki
+-- is the one that keeps history now (`docs/webkit.md`).
+history.DIR = "/Home/Settings/JetSki/History"
 
 -- A day's name: its date, which sorts as the days do.
 function history.day_of(t)

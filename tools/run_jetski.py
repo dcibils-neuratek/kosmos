@@ -533,7 +533,7 @@ def use(guest, R, dump, window, mark):
                           % (menu.group(2), re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:]
                              or "nothing said"))
         since = len(guest.seen)
-        guest.sendkey("ctrl-e")
+        guest.sendkey("ctrl-alt-e")
         said(guest, since, "jetski: test closed the tab", 10)
         time.sleep(1.5)
     clicked = len(guest.seen)
@@ -711,7 +711,7 @@ def menued(guest, R, window, sw, sh):
     R.write_png(os.path.join(KEPT, "jetski-menu.png"), guest.screendump())
     want = ["New tab", "Open a file...", "Save page as...", "Print... (later)", "Find on the page...",
             "Zoom: 100%", "Page source (later)", "Downloads", "History (later)",
-            "Add to favorites (later)", "Settings"]
+            "Add to favorites", "Settings"]
     missing = [w for w in want if w not in rows]
     if missing:
         failed.append("the menu is not the drawing's: %s missing from %s" % (missing, menu.group(5)))
@@ -729,6 +729,44 @@ def menued(guest, R, window, sw, sh):
         guest.sendkey("esc")
         said(guest, since, "jetski: find bar closed", 10)
         time.sleep(0.5)
+
+    # **A favorite and history**: Control-D makes the page shown a favorite -
+    # a file in /Home/Favorites - and the star lights; again, and it is not.
+    at = re.findall(r"jetski: the star at (\d+),(\d+) (\d+)x(\d+)", guest.seen)
+    box = [window[0] + int(at[-1][0]), window[1] + int(at[-1][1]), int(at[-1][2]), int(at[-1][3])] if at else None
+    before = guest.screendump()
+    since = len(guest.seen)
+    guest.sendkey("ctrl-d")
+    made = said(guest, since, "jetski: a favorite, ", 15)
+    time.sleep(1.0)
+    lit = changed_in(R, before, guest.screendump(), box) if box else 0.0
+    if not made or not re.search(r"jetski: a favorite, \S+ as /Home/Favorites/", guest.seen[since:]):
+        failed.append("Control-D did not make the page a favorite in /Home/Favorites: %s"
+                      % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said"))
+    elif lit < 0.02:
+        failed.append("the page was made a favorite and the star did not light: %.1f%% of it changed" % (lit * 100))
+    print("favorite: star %.1f%% changed" % (lit * 100))
+    since = len(guest.seen)
+    guest.sendkey("ctrl-d")
+    if not said(guest, since, "jetski: no longer a favorite, ", 15) \
+       or not re.search(r"no longer a favorite, \S+ \(1 files\)", guest.seen[since:]):
+        failed.append("Control-D again did not let the favorite go: %s"
+                      % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said"))
+    said_pages = re.findall(r"jetski: history (\S+), ([^\r\n]*)", guest.seen)
+    pages = set(p for p, _ in said_pages)
+    print("history: %d pages, %d writes" % (len(pages), len(said_pages)))
+    if len(pages) < 3:
+        failed.append("history kept %d pages of the run's, not every one shown: %s" % (len(pages), sorted(pages)))
+    if any(p.endswith((".bin", ".zip")) for p in pages):
+        failed.append("a download was kept in history as a page: %s" % sorted(pages))
+    twice = [said_pages[i] for i in range(1, len(said_pages)) if said_pages[i] == said_pages[i - 1]]
+    if twice:
+        failed.append("history wrote the same page twice in a row: %s" % (twice[:2],))
+    # A page's own titles after it finished are not written: other.html
+    # says "typed k", "scrolled 120" and the rest in its title.
+    restless = [t for p, t in said_pages if t.startswith(("typed ", "scrolled ", "resized "))]
+    if restless:
+        failed.append("history was written for a title the page changed after it finished: %s" % restless[:3])
 
     # The zoom from the keys, and back.
     for key, word in (("ctrl-equal", "zoom 125%"), ("ctrl-0", "zoom 100%")):
@@ -804,7 +842,7 @@ def from_disk(guest, R, window, sw, sh):
     # A file dropped on the window, as Tracker drops one: by the window
     # manager's own drop, which the test's key hands it (`HOOK`).
     since = len(guest.seen)
-    guest.sendkey("ctrl-d")
+    guest.sendkey("ctrl-alt-d")
     if not said(guest, since, "jetski: title Dropped on the window", 30):
         failed.append("a web page dropped on the window did not open: %s"
                       % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-4:]
@@ -818,7 +856,7 @@ def documentation(guest):
     as a path in /Kosmos/Documentation by the test's key as the IDE's F1
     hands it, opens in a new tab with its title."""
     since = len(guest.seen)
-    guest.sendkey("ctrl-b")
+    guest.sendkey("ctrl-alt-b")
     if not said(guest, since, "jetski: opened for another program: "
                 "/Kosmos/Documentation/ide/index.html", 20):
         return ["an address written to /Running/JetSki/open did not open a tab: %s"
@@ -859,7 +897,7 @@ def downloaded(guest, R):
     each said with its path; the page shown stays, and Control-Shift-J shows the
     three. Their bytes are checked on the disk after (`downloads_kept`)."""
     failed = []
-    for key, path in (("ctrl-y", DOWNLOADED[0]), ("ctrl-y", DOWNLOADED[1]), ("ctrl-u", DOWNLOADED[2])):
+    for key, path in (("ctrl-alt-y", DOWNLOADED[0]), ("ctrl-alt-y", DOWNLOADED[1]), ("ctrl-alt-u", DOWNLOADED[2])):
         since = len(guest.seen)
         guest.sendkey(key)
         name = path.rsplit("/", 1)[1]
@@ -995,7 +1033,7 @@ def stuck(guest, R, window, sw, sh):
 
     def boxes():
         mark = len(guest.seen)
-        guest.sendkey("ctrl-g")
+        guest.sendkey("ctrl-alt-g")
         said(guest, mark, "jetski: test composed again", 10)
         time.sleep(0.3)
         shot = guest.screendump()
@@ -1066,7 +1104,7 @@ def changes(guest, R, window, sw, sh):
     failed, stale = [], []
     for n in range(6):
         mark = len(guest.seen)
-        guest.sendkey("ctrl-g")
+        guest.sendkey("ctrl-alt-g")
         said(guest, mark, "jetski: test composed again", 10)
         time.sleep(0.3)
         shot = guest.screendump()
@@ -1162,7 +1200,7 @@ def stopped(guest, R, window, sw, sh):
     and JetSki collects it, says so with what Nebula recorded, and draws the
     stopped page in the page's place."""
     since = len(guest.seen)
-    guest.sendkey("ctrl-k")
+    guest.sendkey("ctrl-alt-k")
     if not said(guest, since, "jetski: the page's process ended", 30):
         return ["a tab's web process was ended and JetSki did not say so: %s"
                 % (re.findall(r"jetski: [^\r\n]*", guest.seen[since:])[-3:] or "nothing said")]
@@ -1202,15 +1240,17 @@ def stopped(guest, R, window, sw, sh):
 # again from the buffer it shows - a move to where it is, which JetSki is
 # not told of - so a buffer's stale corner reaches the screen.
 # Only in the suite's copy of `jetski.lua`.
-HOOK = ("if c == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
-        "if c == 25 then web.load(\"ADDRESS_ATfile.bin\") return true end "
-        "if c == 21 then web.load(\"ADDRESS_ATarchive.zip\") return true end "
-        "if c == 5 then close_tab(web.shown_id()) print(\"jetski: test closed the tab\") return true end "
-        "if c == 2 then use(\"/Kosmos/Libraries/weblink.lua\").open("
+HOOK = ("local t do local hk, hm = keys.parts(c) if hm == (keys.CTRL | keys.ALT) then "
+        "t = ({ [100] = 4, [121] = 25, [117] = 21, [101] = 5, [98] = 2, [103] = 7, [107] = 11 })[hk | 32] end end "
+        "if t == 4 then return win:on_drop(\"files\", \"/Home/Pages/dropped.html\\n\") end "
+        "if t == 25 then web.load(\"ADDRESS_ATfile.bin\") return true end "
+        "if t == 21 then web.load(\"ADDRESS_ATarchive.zip\") return true end "
+        "if t == 5 then close_tab(web.shown_id()) print(\"jetski: test closed the tab\") return true end "
+        "if t == 2 then use(\"/Kosmos/Libraries/weblink.lua\").open("
         "\"/Kosmos/Documentation/ide/index.html\") return true end "
-        "if c == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
+        "if t == 7 then fs.send(\"/Running/wm\", { type = \"move\", window = win.handle, quiet = true }) "
         "print(\"jetski: test composed again\") return false end "
-        "if c == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
+        "if t == 11 then web.tabs(tabs) for _, t in ipairs(tabs) do if t.shown then "
         "print(\"jetski: test ends process \" .. t.pid) sys.kill(t.pid) end end "
         "print(\"jetski: test names \" .. tostring(look_up(NAMED_AT))) "
         "return true end\n")
@@ -1695,9 +1735,9 @@ def main():
             f.write(text)
     with open(lua) as f:
         text = f.read()
-    text = changed(text, "if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end",
-                        "if c == 6 or c == 12 or c == 15 or c == 19 or c == 20 or c == 11 or c == 4 or c == 7 or c == 2"
-                        " or c == 25 or c == 21 or c == 5 then return true end")
+    text = changed(text, "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20 then return true end",
+                        "if c == 4 or c == 6 or c == 12 or c == 15 or c == 19 or c == 20"
+                        " or select(2, keys.parts(c)) == (keys.CTRL | keys.ALT) then return true end")
     text = changed(text, "win.on_key = function(_, c)\n", "win.on_key = function(_, c)\n"
                         + HOOK.replace("NAMED_AT", "0x%x" % NAMED[0]).replace("ADDRESS_AT", address))
     if BROKEN == "unpainted":

@@ -37201,3 +37201,49 @@ the keys. The menu, open, is kept as `build/jetski/jetski-menu.png`.
 
 **Control**: the dots made to do nothing - "the three dots did not open
 the menu", failed.
+
+## 18.902 The star and history
+
+**In short**: JetSki keeps favorites and history. The star beside the
+downloads button is lit while the page shown is a favorite - a file in
+`/Home/Favorites`, which Tracker shows - and the star, Control-D or the
+menu's row (*Add to favorites*, *Remove from favorites*) makes the page
+one or lets it go. Every page shown is written to the top of today's
+history, a file a day in `/Home/Settings/JetSki/History`, once it has
+finished and again if its title comes after; the days older than
+Settings' `history_days`, thirty, are let go as JetSki starts. Both are
+the libraries the old browser had, `favorites.lua` and `history.lua`,
+which had had no caller since 0.11.461; `history.lua`'s folder moves
+from the old browser's to JetSki's.
+
+`x86-jetski` presses Control-D and sees the page said a favorite in
+`/Home/Favorites` and the star's pixels change - 16% of it, outline to
+filled in the accent - then Control-D again and the one file let go; and
+reads history's lines: seven pages of the run's, none a download, no page
+written twice in a row.
+
+**The check's first findings**, three, each a run that is its own
+control. History was written for a download: `file.bin` finishes as a
+page does, with the title of the page that stayed; a guard on the kit's
+download count missed it, since on that pass the download is not known
+yet. A flag set when WebKit said *committed* - became the page shown -
+and cleared when a load started passed once and failed the next run, since
+a download's start need not be said and the page before's commit stood
+for it. What holds is the address: JetSki keeps the one WebKit committed,
+and a load that finishes anywhere else was never shown. The same page and title were
+written twice in a row as passes saw a page finish again. And a page's
+own titles after it finished were each written - the suite's pages say
+"typed k", "scrolled 120" in their titles, as an inbox's count or a clock
+would all day - so a title is kept once: the one a page finished with,
+or the first it gets after when it finished with none.
+
+**And a limit met**: JetSki's main chunk reached Lua's 200 locals, so
+the favorites, the menu and one constant went into tables; the roadmap
+has JetSki split into files before its next feature, rather than more
+folding.
+
+The suite's own test keys - a drop, a download, a closed tab - moved from
+Control-letters to Control-Alt-letters, since Control-D, Control-Y and
+Control-U are JetSki's now or will be.
+
+**Control**: `FAV.toggle` made to do nothing - "Control-D did not make the page a favorite" and "did not let the favorite go", failed. The history checks' controls are the runs that found each fault.
