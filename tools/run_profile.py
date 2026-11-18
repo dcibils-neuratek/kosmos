@@ -276,15 +276,22 @@ def main():
     with open(summary) as f:
         s = json.load(f)
 
-    due = s["cores"] * s["tick_hz"] * s["seconds"]
+    # **Due over the time each processor was there to be sampled**: its
+    # held-off time (`sys.cpuload`, a tick that came more than two
+    # intervals late adds what it was late by) is ticks that never came,
+    # so no sample could. 0.11.493's prepush had 756 of "about 1056" over
+    # 4.23 s - and 1323 ms held off, which leaves 727: the sampler was
+    # right and the sum was not. It failed two gates that way.
+    held = sum(c.get("held_off_ms", 0.0) for c in s.get("cpus", [])) / 1000.0
+    there = max(0.0, s["cores"] * s["seconds"] - held)
+    due = s["tick_hz"] * there
 
-    # Below by a quarter at most: a Mac running the whole gate side by side
-    # can make QEMU late with a tick, and a late tick is a sample not taken
-    # rather than a wrong one.
+    # Below by a quarter at most even so: a tick late by less than two
+    # intervals is a sample not taken and not counted as held off.
     if not 0.75 * due <= s["samples"] <= 1.15 * due:
-        fails.append("%d samples in %.2f s on %d processors at %d Hz, where about "
-                     "%d were due" % (s["samples"], s["seconds"], s["cores"],
-                                      s["tick_hz"], due))
+        fails.append("%d samples in %.2f s on %d processors at %d Hz, %.2f s of it "
+                     "held off, where about %d were due"
+                     % (s["samples"], s["seconds"], s["cores"], s["tick_hz"], held, due))
 
     if s["lost"] != 0:
         fails.append("%d samples lost" % s["lost"])

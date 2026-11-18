@@ -36973,3 +36973,17 @@ and checks its sound thread is in the band - "away at most 13.3 ms, its
 input dry 0 times" here, against 83 to 211 ms out of it under the gates.
 **Control**: `needs audio` taken out of `listen`, that check fails
 ("listen's sound thread was not in the audio band").
+
+## 18.893 `x86-profile` counts what was there to be sampled
+
+**In short**: the profiler's suite failed two gates (0.11.492 and
+0.11.493) with "756 samples in 4.23 s ... where about 1056 were due". Its
+own report said the processor was held off 1323 ms of those 4.23 s - QEMU
+late with its ticks on a loaded Mac - which leaves 727 due: the sampler
+was right, and the sum counted ticks that never came. Due is now the tick
+rate over each processor's time less its held-off time, which the profile
+already records (`sys.cpuload`'s `held_off_counter`), within the same
+quarter either way.
+
+**Control**: the check handed half the samples - "509 samples in 4.09 s
+... 0.01 s of it held off, where about 1018 were due" - fails.
