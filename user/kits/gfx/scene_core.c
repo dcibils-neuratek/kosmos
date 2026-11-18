@@ -516,6 +516,20 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
         }
     }
 
+    /* Its plate over its header (Starlight's), blended for the slant. */
+    if (w->plate != NULL && x1 > x0 && y1 > y0) {
+        long dx = w->x + w->px, dy = w->y + w->py;
+        long ax0 = x0 > dx ? x0 : dx;
+        long ay0 = y0 > dy ? y0 : dy;
+        long ax1 = x1 < dx + (long)w->plate->width ? x1 : dx + (long)w->plate->width;
+        long ay1 = y1 < dy + (long)w->plate->height ? y1 : dy + (long)w->plate->height;
+
+        if (ax1 > ax0 && ay1 > ay0) {
+            blend_on(sc->back, w->plate, ax0 - dx, ay0 - dy, ax1 - ax0, ay1 - ay0,
+                     ax0, ay0, 255);
+        }
+    }
+
     /* The sizing grip, three diagonal steps over its bottom-right corner. */
     if (w->flags & SC_GRIP) {
         long gx = w->x + w->w - sc->grip, gy = w->y + w->h - sc->grip;

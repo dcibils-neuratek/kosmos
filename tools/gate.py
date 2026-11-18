@@ -465,6 +465,8 @@ SUITES = [
     # loader told of each piece, Switch Desktop, and the choice kept.
     Suite("x86-desktops", ["python3", "tools/run_desktops.py", X86], x86=True),
     Suite("x86-platinum", ["python3", "tools/run_platinum.py", X86], x86=True),
+    # Starlight's plate (`docs/astra.md` S1): amber on the window in front.
+    Suite("x86-starlight", ["python3", "tools/run_starlight.py", X86], x86=True),
     Suite("x86-menus", ["python3", "tools/run_menus.py", X86], x86=True),
     Suite("x86-spatial", ["python3", "tools/run_spatial.py", X86], x86=True),
     Suite("x86-tracker", ["python3", "tools/run_tracker.py", X86], x86=True),

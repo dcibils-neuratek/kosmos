@@ -4358,3 +4358,31 @@ redrawn as they do.
 the dock's right end - which, with the pointer still resting on the dock,
 was now covered by a grown icon. A saved picture of the screen showed it
 at once, where three runs of guessing had not.
+
+## 17 November 2026 - Starlight's amber plate
+
+**In short.** Under the new Starlight desktop, the window you are working
+in carries its name on an amber plate at its top-left corner, cut on a
+slant; every other window's plate is a quiet indigo. Click another window
+and the amber moves to it at once.
+
+**What.** It is the first of Starlight's identity cues - Diego wanted the
+desktop to stop looking like a copy of macOS and have something of its own,
+as BeOS had its yellow tab. The window draws its header and leaves room;
+the window manager, the one process that knows which window is in front,
+draws the plate as a small picture and the compositor lays it on top. So
+the change of focus costs two small pictures, not a redraw of any window.
+
+**Why it matters.** It is the "you are here" of the screen, made in the
+system's own manner rather than borrowed, and it is built so a window
+cannot get it wrong: it does not know whether it is in front, and does not
+need to.
+
+**Found on the way.** The first picture had the whole top bar amber,
+because every look paints its bar in the same colour as its tabs; a look
+can now give its bar a colour of its own. The second picture had no top
+bar at all - it had crashed on a shape its drawing kit did not offer -
+and the test had passed, because it only looked for processes that died.
+It now looks for a program stopped by an error too, and was shown to fail
+when the shape was taken away again.
+

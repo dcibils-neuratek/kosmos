@@ -1,0 +1,69 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Starlight: Astra with an identity of its own.
+#
+# Diego, 17 November 2026, of a review that made Astra nicer: "it looks
+# like macos exactly the same. no real personality", "we need to have some
+# identity like beos had or sgi irix had". Of three directions drawn in
+# `docs/astra.html`, "yes to starlight but dont replace the current astra
+# one" - so a look of its own, worn by the Starlight desktop
+# (`user/desktops/Starlight.desktop`) and offered among the looks; never
+# the default. Every colour below is that page's `.d-star.dark` tokens.
+#
+# Night indigo, and the flare: an amber `tab`, which is the window in
+# front's plate - its title on an amber trapezoid at the header's left
+# (`docs/astra.md`, *Identity*, I2) - as it was BeOS's yellow tab. What is
+# written on the flare is a dark brown, never white. Selection and the
+# controls' accent are an astral blue, so the flare stays the window in
+# front's alone.
+#
+# Flat, with no title bars: the header is the title bar, as Night's is.
+
+name       = starlight
+flat       = yes
+title_bars = no
+shadow     = 24
+
+desktop    = #0b0c1f
+window     = #191b31
+raised     = #22253f
+sunken     = #13152a
+
+line       = #0a0b18
+line_soft  = #2c2f4f
+track      = #32365a
+swatch     = #8a93ff
+
+edge_light = #2e3154
+edge_dark  = #0a0b18
+
+text       = #ebe8f7
+text_dim   = #9b98ba
+text_on    = #0d0f2a
+
+tab        = #f2a93b
+tab_idle   = #2a2d4c
+tab_text   = #1e1305
+tab_idle_text = #9b98ba
+
+# The Deskbar in the night, the flare kept for the window in front and the
+# Kosmos button's plate (`theme.lua`'s `strip`).
+strip      = #141630
+strip_text = #ebe8f7
+desktop_text = #ffffff
+console      = #0f1024
+console_text = #dcd9ef
+
+accent     = #8a93ff
+good       = #6dd58c
+bad        = #ff9f97
+ring       = #8a93ff
+stamp      = #34386a
+
+# Plex's faces at the sizes the fixed layout holds (`theme.lua`), as every
+# look has them.
+font.title   = ibmplexsans-semibold 18
+font.ui      = ibmplexsans 18
+font.heading = ibmplexsans-semibold 18
+font.text    = ibmplexsans 18
+font.mono    = ibmplexmono 16
+font.label   = ibmplexsans-medium 18

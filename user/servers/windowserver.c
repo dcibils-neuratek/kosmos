@@ -334,6 +334,12 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
             w->iy = in.iy;
         }
 
+        /* A plate (Starlight's), where the window manager put it. */
+        w->plate = picture(in.plate);
+        w->plate_slot = in.plate;
+        w->px = in.plate_x;
+        w->py = in.plate_y;
+
         /* What is stretched from is never more than the picture holds. */
         w->src_w = w->picture ? clamp(in.src_w, (long)w->picture->width) : 0;
         w->src_h = w->picture ? clamp(in.src_h, (long)w->picture->height) : 0;

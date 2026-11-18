@@ -181,6 +181,33 @@ maximise, those should be rounded buttons", "like today". So:
     the other corners rounded; nowhere else. The amber horizon along the
     top of glass stays, as the accent line.
 
+**How it is built: Starlight is a desktop, as Pewter is.** "The desktop
+styles in preferences" are Appearance's *Desktop* row - Astra, Pewter -
+and a desktop is already a file that says how windows are dressed
+(`chrome`). So Starlight is `user/desktops/Starlight.desktop`: Astra's
+programs, `chrome = starlight` and `look = starlight` - the look it wears
+(`user/themes/Starlight.theme`), which a desktop can now name. Astra is
+untouched and stays the default; Starlight's look is also offered among
+the looks for anyone who wants its colours on Astra.
+
+**S1, the plate, by the window manager** (I2): a header under Starlight's
+chrome leaves the room at its left for the plate and tells the window
+manager how wide (`window:place_plate`, beside `place_lights`); the
+window manager draws the plate - the amber trapezoid and the title on it
+for the window in front, the header's tone behind - as a small picture of
+its own, and the compositor lays it over the window's header
+(`scene:plate`, one more picture a window, blended for its slanted
+edge). A focus change repaints two plates and nothing else. **Built in
+0.11.468** (`testing.md` 18.868), with one addition the first picture
+asked for: a look may name the Deskbar's colours apart from its tab
+(`strip`, `strip_text`), so Starlight's bar is night and only its Kosmos
+button stands on an amber plate. Two things left for later: Preferences'
+header is split, so its plate says the page's name over the right pane
+rather than the window's at its corner; and Appearance's Theme row still
+marks the look saved there, not the one a desktop put on. S2 the
+softened cut on the dock and menus; S3 the nebula glass's grain and its
+amber horizon; S4 the unfurl; S5 the star.
+
 What follows is the list as it was put to him.
 
 1. **I1 - Which direction.** *Recommended: Starlight*, with Observatory's

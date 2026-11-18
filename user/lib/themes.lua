@@ -52,15 +52,18 @@ local themes = {}
 -- and 2 light ones with different tones that make the desktop look cool.
 -- create the names as well for those"): Aurora, Amethyst and Ember dark,
 -- Sakura and Meadow light, after Night.
+--
+-- **Starlight on 17 November** (`docs/astra.md`, *Identity*): the look the
+-- Starlight desktop wears, and offered here for its colours alone.
 themes.order = { "endeavour", "plex", "plexnight", "classic", "studio", "night",
-                 "aurora", "amethyst", "ember", "sakura", "meadow" }
+                 "aurora", "amethyst", "ember", "sakura", "meadow", "starlight" }
 
 -- What each is called where a person reads it.
 themes.titles = {
   plex = "Plex", plexnight = "Plex Night", classic = "Classic",
   studio = "Studio", endeavour = "Endeavour", night = "Night",
   aurora = "Aurora", amethyst = "Amethyst", ember = "Ember",
-  sakura = "Sakura", meadow = "Meadow",
+  sakura = "Sakura", meadow = "Meadow", starlight = "Starlight",
 }
 
 --

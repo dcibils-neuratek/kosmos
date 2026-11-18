@@ -4830,10 +4830,14 @@ def check_appearance(guest):
     # **Eleven since 8 October**: Diego, "add 5 more theme colors, 3 dark
     # ones and 2 light ones" - Aurora, Amethyst, Ember, Sakura and Meadow.
     #
-    if looks != 11:
-        raise Failure("Preferences offers %d looks; there are eleven - Plex, "
+    # **Twelve since 17 November**: Starlight, the look the Starlight desktop
+    # wears and offered among the others - Diego, "yes to starlight but dont
+    # replace the current astra one" (`docs/astra.md`, *Identity*).
+    #
+    if looks != 12:
+        raise Failure("Preferences offers %d looks; there are twelve - Plex, "
                       "Plex Night, Classic, Studio, Endeavour, Night, Aurora, "
-                      "Amethyst, Ember, Sakura and Meadow" % looks)
+                      "Amethyst, Ember, Sakura, Meadow and Starlight" % looks)
 
     checks += 1
 

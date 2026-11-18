@@ -58,9 +58,19 @@ struct sc_window {
     struct surface *inset;
     long ix, iy, iw, ih;
 
+    /*
+     * **A plate** (`docs/astra.md`, *Identity*, S1): Starlight's - the
+     * window in front's title on an amber trapezoid at its header's left -
+     * a picture the window manager draws, blended over the window at
+     * `px`, `py` from its corner in screen pixels, under the three and
+     * inside its rounded corners. NULL for none.
+     */
+    struct surface *plate;
+    long px, py;
+
     /* Described for the window server (`scene.c`), the pictures by slot -
      * `WS_NONE` for none - in place of the surfaces above. */
-    int picture_slot, bar_slot, inset_slot;
+    int picture_slot, bar_slot, inset_slot, plate_slot;
 };
 
 struct sc_menu {

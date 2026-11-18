@@ -134,6 +134,8 @@ struct ws_scene_window {
     int32_t  bx2;               /* Platinum's zoom and collapse (`SC_PLATINUM`) */
     int32_t  inset;             /* a second picture over the first, or WS_NONE */
     int32_t  ix, iy, iw, ih;    /* where, in the first's pixels (`sc_window`) */
+    int32_t  plate;             /* Starlight's plate over its header, or WS_NONE */
+    int32_t  plate_x, plate_y;  /* where, from the window's corner, on the screen */
 };
 
 struct ws_scene_menu {
@@ -146,7 +148,7 @@ struct ws_rect {
     int32_t  x, y, w, h;
 };
 
-_Static_assert(sizeof(struct ws_scene_window) == 76, "a window on the wire is 19 words");
+_Static_assert(sizeof(struct ws_scene_window) == 88, "a window on the wire is 22 words");
 _Static_assert(sizeof(struct ws_scene_menu) == 24, "a menu on the wire is six words");
 
 #endif /* KOSMOS_WINDOWPROTO_H */

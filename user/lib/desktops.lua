@@ -30,11 +30,12 @@ M.DEFAULT = "Astra"
 -- The keys a desktop file may say. Anything else is a complaint, so a
 -- word misspelt is told rather than quietly doing nothing.
 local KEYS = { name = true, says = true, shell = true, background = true,
-               chrome = true, menus = true }
+               chrome = true, menus = true, look = true }
 
--- The title bars the kit can draw (`ui.header`): Astra's, and Platinum's
--- since Pewter's P2.
-M.CHROMES = { astra = true, platinum = true }
+-- The title bars the kit can draw (`ui.header`): Astra's, Platinum's since
+-- Pewter's P2, and Starlight's - Astra's with the window in front's title on
+-- the window manager's plate (`docs/astra.md`, *Identity*, S1).
+M.CHROMES = { astra = true, platinum = true, starlight = true }
 
 -- Where an application's menus go (P3): in its window, or handed to the
 -- window manager for the bar across the top of the screen.
@@ -55,7 +56,7 @@ end
 
 --
 -- A desktop from a file's text: `{ name, says, shell = { "a", "b:words" },
--- background = { a = true }, chrome, menus }`, and the lines it did not understand. A
+-- background = { a = true }, chrome, menus, look }`, and the lines it did not understand. A
 -- desktop that names no shell is refused, since choosing it would start
 -- nothing and leave a screen with no way to start anything.
 --
@@ -86,6 +87,10 @@ function M.parse(text, stem)
         said[#said + 1] = ("line %d: menus go in the `window` or on the `screen`, not `%s`")
                           :format(n, value)
       end
+    elseif key == "look" then
+      -- The look it wears (`user/themes`), by its key - `starlight` - which
+      -- the window manager applies before the desktop's first window.
+      d.look = value:lower():gsub("[^%w]", "")
     else
       d[key] = value
     end

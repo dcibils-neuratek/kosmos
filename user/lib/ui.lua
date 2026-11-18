@@ -580,6 +580,33 @@ function gc:polyline(xy, width, color)
 end
 
 --
+-- **A shape filled through points**, anti-aliased: `gfx`'s `polygon`, for
+-- Starlight's slanted plates (`docs/astra.md` S1) - the Deskbar's Kosmos
+-- button on its amber. `xy` is flat, x then y; not clipped to the view, as
+-- `polyline` is not, and one wholly outside the clip is not sent.
+--
+function gc:polygon(xy, color)
+  local ax, ay = self.ox, self.oy
+  local pts = {}
+  local left, right, top, bottom = math.huge, -math.huge, math.huge, -math.huge
+
+  for i = 1, #xy - 1, 2 do
+    local x, y = xy[i] + ax, xy[i + 1] + ay
+
+    pts[i], pts[i + 1] = x, y
+    left, right = math.min(left, x), math.max(right, x)
+    top, bottom = math.min(top, y), math.max(bottom, y)
+  end
+
+  if #pts < 6 or (self.cw and (right <= self.cx or left >= self.cx + self.cw
+                               or bottom <= self.cy or top >= self.cy + self.ch)) then
+    return
+  end
+
+  self.ops[#self.ops + 1] = { op = "polygon", xy = pts, color = shade(color) }
+end
+
+--
 -- **A named picture, drawn at a size.**
 --
 -- `ui.image` is a widget: it holds a picture, pans it, and says so when there
@@ -3329,6 +3356,8 @@ ui.layout = {
   platinum_in   = 10,   -- Platinum's boxes, in from either end (P2)
   platinum_band = 12,   --   its pinstripes, how tall
   platinum_gap  = 7,    --   and the plain ground kept round what is on them
+  plate_in      = 16,   -- Starlight's plate: before its title (S1)
+  plate_out     = 30,   --   and after it, the slanted edge included
   page_top  = 22,   -- a page of cards: from the header to the first name
   page_side = 26,   --   and in from either side
   page_foot = 26,   --   and below the last card
@@ -3948,6 +3977,24 @@ function ui.header(spec)
       x = self.close_x + close + L.head_edge
     end
 
+    --
+    -- **Starlight's plate** (`docs/astra.md` S1): the title, at the left
+    -- before every control, on an amber plate the window manager draws -
+    -- so which window is in front shows the moment it changes, from what
+    -- that process knows. The header leaves the plate's room, says how wide
+    -- it is and what it says, and draws no title of its own.
+    --
+    self.starlight = self.title_bar and win and win.headed
+                     and win.chrome == "starlight" or nil
+
+    if self.starlight then
+      local title = tostring(self.title or win.title or "")
+
+      self.plate_w = L.plate_in + gfx.measure(title, "title") + L.plate_out
+      win:place_plate(self, self.plate_w, L.head - 1, title)
+      x = self.plate_w + L.head_gap
+    end
+
     -- A hidden control takes no room on either side: Tracker's place
     -- button and its search field share one slot, one of them hidden.
     for _, c in ipairs(self.left) do
@@ -3967,6 +4014,8 @@ function ui.header(spec)
       self.left_end = x
       if #self.left == 0 then self.title_x = x + L.platinum_gap end
     end
+
+    if self.starlight then self.title_x = x - L.head_gap + L.head_edge end
 
     local r = self.w - edge_r
 
@@ -4018,7 +4067,9 @@ function ui.header(spec)
       local title = tostring(self.title or "")
       local x = self.title_x
 
-      if title ~= "" then x = x + gfx.measure(title, "title") + 8 end
+      if title ~= "" and not self.starlight then
+        x = x + gfx.measure(title, "title") + 8
+      end
 
       local sub = tostring(self.sub or "")
       local words = self.sub_room or (sub ~= "" and gfx.measure(sub) or 0)
@@ -4045,7 +4096,8 @@ function ui.header(spec)
     local x = self.title_x or L.head_in
     local title = tostring(self.title or "")
 
-    if title ~= "" then
+    -- Under Starlight the title is on the plate (`window:place_plate`).
+    if title ~= "" and not self.starlight then
       g:text(x, (L.head - 1 - gfx.height("title")) // 2, title, theme.text,
              nil, "title")
       x = x + gfx.measure(title, "title") + 8
@@ -8065,7 +8117,10 @@ function ui.window(spec)
 
     -- Which title bar its header draws, the desktop's (`docs/pewter.md`
     -- P2): `astra`, or `platinum` under Pewter.
-    chrome = reply.chrome == "platinum" and "platinum" or "astra",
+    -- And `starlight` under Starlight (`docs/astra.md` S1), whose title is
+    -- on a plate the window manager draws.
+    chrome = (reply.chrome == "platinum" or reply.chrome == "starlight")
+             and reply.chrome or "astra",
 
     focus = 1,
     running = true,
@@ -9127,6 +9182,34 @@ function window:place_lights(view, x, y, x2, band)
 
   if not (reply and reply.ok) then
     print(("ui: %s's three were not placed: %s"):format(
+          tostring(self.title), tostring(reply and reply.error or why)))
+  end
+end
+
+--
+-- **Where Starlight's plate goes** (`docs/astra.md` S1), told to the window
+-- manager, which draws it: at the corner of `view`, the header, `w` wide and
+-- `h` tall, saying `title`. Said once, and again only when it changes, as
+-- the three are.
+--
+function window:place_plate(view, w, h, title)
+  local vx, vy = view:in_window()
+  local told = self.plate_told
+
+  if told and told.x == vx and told.y == vy and told.w == w and told.h == h
+     and told.title == title then
+    return
+  end
+
+  self.plate_told = { x = vx, y = vy, w = w, h = h, title = title }
+
+  local reply, why = fs.send("/Running/wm", { type = "plate",
+                                              window = self.handle,
+                                              x = vx, y = vy, w = w, h = h,
+                                              title = title })
+
+  if not (reply and reply.ok) then
+    print(("ui: %s's plate was not placed: %s"):format(
           tostring(self.title), tostring(reply and reply.error or why)))
   end
 end

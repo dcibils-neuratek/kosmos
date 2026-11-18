@@ -1,0 +1,18 @@
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+# Starlight: Astra with an identity of its own (`docs/astra.md`, *Identity*,
+# agreed 17 November 2026 - Diego: "yes to starlight but dont replace the
+# current astra one, just add starlight to the desktop styles in
+# preferences").
+#
+# Astra's programs - the Deskbar, the dock, the launcher pad - in
+# Starlight's look, with the window in front's title on an amber plate the
+# window manager draws (`chrome = starlight`). The keys are Astra.desktop's,
+# and `look`: the look this desktop wears, from `user/themes`.
+
+name       = Starlight
+says       = Astra in night indigo, the window in front on an amber plate
+shell      = notifications, desktop, deskbar
+background = notifications
+chrome     = starlight
+menus      = window
+look       = starlight

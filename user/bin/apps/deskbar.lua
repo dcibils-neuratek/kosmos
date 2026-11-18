@@ -1211,7 +1211,7 @@ function bar:draw(g)
   for row = 0, self.h - 1 do
     local k = (38 * (self.h - 1 - row)) // (self.h - 1)
 
-    g:fill(0, row, self.w, 1, lit(theme.tab, k))
+    g:fill(0, row, self.w, 1, lit(theme.strip or theme.tab, k))
   end
 
   local ty = (self.h - gfx.font.h) // 2
@@ -1233,13 +1233,29 @@ function bar:draw(g)
   --
   local menu_up = #win.menus > 0
 
-  if menu_up then
+  --
+  -- **On a plate of its own** where the look's bar is not its tab
+  -- (`theme.strip`, Starlight's): the amber the window in front wears, with
+  -- the same slanted edge (`docs/astra.html`'s `.kplate`) - the one piece of
+  -- the bar in the look's flare.
+  --
+  local plated = theme.strip and theme.strip ~= theme.tab
+
+  if plated then
+    local pw, ph = kosmos_w() + 14, self.h
+
+    g:polygon({ 0, 0, pw - 5, 0, pw - 2.82, 0.31, pw - 1.27, 1.25, pw - 0.36, 2.81,
+                pw - 0.08, 5, pw - 15.94, ph - 4, pw - 16.21, ph - 2.25,
+                pw - 16.98, ph - 1, pw - 18.25, ph - 0.25, pw - 20, ph, 0, ph },
+              menu_up and lit(theme.tab, PRESSED) or theme.tab)
+  elseif menu_up then
     g:fill(2, 2, kosmos_w() - 4, self.h - 4,
            lit(lit(theme.tab, FACE), PRESSED))
   end
 
   g:icon(12, iy, "App_Deskbar.png", ICON)
-  g:text(12 + ICON + 8, ty, "Kosmos", theme.tab_text)
+  g:text(12 + ICON + 8, ty, "Kosmos",
+         plated and theme.tab_text or (theme.strip_text or theme.tab_text))
 
   --
   -- The right-hand end: the clock, the date, the volume and the network,
@@ -1269,10 +1285,10 @@ function bar:draw(g)
 
   local x = self.w - PAD - gfx.measure(time)
 
-  g:text(x, ty, time, theme.tab_text)
+  g:text(x, ty, time, (theme.strip_text or theme.tab_text))
 
   x = x - KERN - gfx.measure(date)
-  g:text(x, ty, date, theme.tab_text)
+  g:text(x, ty, date, (theme.strip_text or theme.tab_text))
 
   -- Something said since the history was last opened.
   if news() then
@@ -1302,7 +1318,7 @@ function bar:draw(g)
 
   if level then
     x = x - PAD - LINE
-    g:line_icon(x, ly, muted and "muted" or "sound", theme.tab_text, LINE)
+    g:line_icon(x, ly, muted and "muted" or "sound", (theme.strip_text or theme.tab_text), LINE)
     self.volume_x = x
   else
     self.volume_x = nil
@@ -1319,7 +1335,7 @@ function bar:draw(g)
 
   if net then
     x = x - PAD - LINE
-    g:line_icon(x, ly, net, theme.tab_text, LINE)
+    g:line_icon(x, ly, net, (theme.strip_text or theme.tab_text), LINE)
     self.network_x = x
 
     -- Said in the log when it changes, as the battery is, for a harness.
@@ -1341,8 +1357,8 @@ function bar:draw(g)
     local label = tostring(u.count)
 
     x = x - PAD - LINE - 3 - gfx.measure(label)
-    g:line_icon(x, ly, "usb", theme.tab_text, LINE)
-    g:text(x + LINE + 3, ty, label, theme.tab_text)
+    g:line_icon(x, ly, "usb", (theme.strip_text or theme.tab_text), LINE)
+    g:text(x + LINE + 3, ty, label, (theme.strip_text or theme.tab_text))
     self.usb_x = x
 
     local said = ("%d on the USB ports, %d driven"):format(u.count, u.driven)
@@ -1355,7 +1371,7 @@ function bar:draw(g)
     self.usb_x = nil
   end
 
-  x = draw_reach(self, g, x, ly, PAD, theme.tab_text)
+  x = draw_reach(self, g, x, ly, PAD, (theme.strip_text or theme.tab_text))
 
   --
   -- The battery: its charge, and "charging" while it is.
@@ -1387,7 +1403,7 @@ function bar:draw(g)
     local label = ("%d%%"):format(bat.percent)
     local low = bat.critical == 1
                 or (bat.state == "discharging" and bat.percent <= 10)
-    local ink = low and (theme.bad or 0xffe04848) or theme.tab_text
+    local ink = low and (theme.bad or 0xffe04848) or (theme.strip_text or theme.tab_text)
     local glyph = battery_glyph(bat)
     local lw = gfx.measure(label)
 
@@ -1467,7 +1483,7 @@ function bar:draw(g)
     -- pressed in - and the one thing a taskbar button has to say is "this
     -- is the window you are in".
     --
-    local face = lit(theme.tab, FACE)
+    local face = lit(theme.strip or theme.tab, FACE)
 
     --
     -- No bevel, and no rounding (above `bar`). The shade says which one
@@ -1504,7 +1520,7 @@ function bar:draw(g)
     --
     local room = s.w - ICON - 12
     local text = tostring(w_.title or "")
-    local ink = theme.tab_text
+    local ink = (theme.strip_text or theme.tab_text)
 
     -- A starting name dimmed halfway to the button's face; a failure says
     -- so, in the colour this bar already uses for a battery running out.
@@ -1512,7 +1528,7 @@ function bar:draw(g)
       text = text .. " did not start"
       ink = theme.bad or 0xffe04848
     elseif w_.starting then
-      ink = halfway(theme.tab_text, face)
+      ink = halfway((theme.strip_text or theme.tab_text), face)
     end
 
     if room >= gfx.font.w then

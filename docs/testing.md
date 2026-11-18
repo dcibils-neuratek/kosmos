@@ -35992,3 +35992,60 @@ only for itself left the Kosmos button unlit with its menu open, since the
 lens draws the button while it is up; it repaints now whenever the dock
 does. The suite keeps the serial line in `build/dock/serial.txt`, and with
 `KOSMOS_DOCK_SHOTS=1` the transparency step's screens.
+
+## 18.868 Starlight's plate, amber on the window in front
+
+**In short.** Under the Starlight desktop (`wm Starlight.desktop`, or
+Appearance's Desktop row) each window's title sits on a plate at its
+header's left, its right edge slanted: amber on the window in front, the
+look's quiet `tab_idle` on every other, and the two change places the
+moment another window is clicked. The Deskbar is night, and only its Kosmos
+button stands on an amber plate of the same cut.
+
+**Where it lives.** The header, under the `starlight` chrome, leaves the
+plate's room at its left - 16 before the title, 30 after it, the slant
+included (`L.plate_in`, `L.plate_out`) - draws no title of its own, and
+says how wide and what it says once (`window:place_plate`, beside
+`place_lights`). The window manager keeps that (`handlers.plate`, held
+inside the window) and draws the plate as a picture of its own
+(`OUT.plate_picture`, the polygon `docs/astra.html` clips with, made again
+only when its words, size or colour change); the scene lays it over the
+window after its inset (`scene:plate`, one more slot on the wire -
+`ws_scene_window` is 88 bytes - blended for the slant). A desktop can now
+name a look (`look = starlight`), applied with its chrome before the first
+window. A look may name its bar apart from its tab (`strip`,
+`strip_text`); one that does not keeps its tab's, and the token is reset
+on every change so no look inherits the one before's. The kit's drawing
+context gained `polygon`, which the Deskbar's plate needed.
+
+**Held by** `x86-starlight` (`tools/run_starlight.py`), 7 checks:
+Starlight's look and chrome said; Calculator and Processes each placing a
+plate; Processes, dragged clear of Calculator by its header, amber where
+its plate is and Calculator quiet; Calculator clicked on its plate and the
+two swapped; nothing died and no application stopped on an error. Two
+controls, both run once: the window manager's line handing the plate to
+the scene taken out fails exactly the three pixel checks, the plates' log
+lines still said; and `gc:polygon` renamed away fails exactly the last,
+with the Deskbar's error quoted.
+
+**Found by looking.** The first picture had the whole Deskbar amber -
+every look's bar is its `tab`, and Starlight's amber is meant to be the
+window in front's alone - which is why `strip` exists. The second had no
+Deskbar at all: its context had no `polygon`, and the suite, which looked
+only for a process that died, passed; it now looks for an application
+stopped by an error too, which is the control above. Calculator and
+Processes open together and Processes, larger and later, covers
+Calculator entirely, so the suite drags it clear before reading pixels.
+
+**The gate** (131 suites, 729 s) found three things. `test_theme.lua` and
+`x86-display-3` count the looks, and Starlight is the twelfth, agreed;
+both now say twelve. `test_theme.lua` also found Starlight's idle title
+unreadable - every look writes `tab_text` on its idle tab, and Starlight's
+is dark brown for its amber - so a look may name `tab_idle_text` (resolved
+as `strip` is), Starlight's a lavender grey, and the check reads that; its
+control, the token taken out of `Starlight.theme`, fails exactly it. The
+host's `test_draw.c` builds scene windows field by field and needed the
+plate's three. `x86-ahci` failed once - "no command at the probe was ended
+by its interrupt", waits 0 by it and 0 by a tick - and passed alone; the
+driver is untouched here, and it is recorded as a flake under load.
+

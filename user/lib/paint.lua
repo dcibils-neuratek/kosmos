@@ -88,6 +88,20 @@ function paint.new(picture_named, sized, always)
       end
     end,
 
+    -- A filled shape through points (`gc:polygon`), checked as `polyline`
+    -- is: Starlight's slanted plates (`docs/astra.md` S1).
+    polygon = function(s, o)
+      local xy = type(o.xy) == "table" and o.xy or {}
+
+      for i = 1, #xy do
+        if type(xy[i]) ~= "number" then return end
+      end
+
+      if #xy >= 6 and #xy % 2 == 0 then
+        s:polygon(xy, o.color or 0xffffffff)
+      end
+    end,
+
     text = function(s, o)
       -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
       -- is what every application that does not care wants. `o.px` asks for
@@ -263,6 +277,12 @@ function paint.scale(o, pct, picture_named)
     for _, k in ipairs({ "x1", "y1", "x2", "y2", "x3", "y3" }) do
       o[k] = (tonumber(o[k]) or 0) * pct / 100
     end
+  elseif kind == "polygon" then
+    local xy = {}
+
+    for i, v in ipairs(type(o.xy) == "table" and o.xy or {}) do xy[i] = (tonumber(v) or 0) * pct / 100 end
+
+    o.xy = xy
   elseif kind == "polyline" then
     local xy = {}
 

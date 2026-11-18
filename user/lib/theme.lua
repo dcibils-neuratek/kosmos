@@ -243,6 +243,21 @@ theme.tokens = {
   "edge_light", "edge_dark", "text", "text_dim", "text_on",
   "tab", "tab_idle", "tab_text", "desktop_text",
   --
+  -- **`strip` and `strip_text`: the Deskbar's ground and its words**, where
+  -- a look wants them other than its tab's. Starlight's amber is the window
+  -- in front's alone (`docs/astra.md` S1), so its bar is night and only the
+  -- Kosmos button wears the amber. A look that does not say them has them
+  -- as `tab` and `tab_text`, as every bar had (`theme.apply`).
+  --
+  "strip", "strip_text",
+  --
+  -- **`tab_idle_text`: the words on a tab not in front** - Starlight's
+  -- plates (`docs/astra.md` S1), whose amber is the window in front's alone
+  -- and whose idle plate is night, which the dark brown written on amber
+  -- cannot be read on. A look that does not say it writes `tab_text` there.
+  --
+  "tab_idle_text",
+  --
   -- **`swatch`: the one colour that stands for the look** where somebody
   -- chooses between looks - Preferences' Theme row, as `docs/
   -- preferences.html` draws it, a row of small squares. It is a property of
@@ -624,6 +639,16 @@ function theme.apply(palette)
 
   for _, k in ipairs(theme.tokens) do
     if palette[k] ~= nil then theme[k] = palette[k] end
+  end
+
+  -- A look that names no bar of its own has its tab's - and never the bar
+  -- of the look before it, which a token left as it was would keep.
+  if palette.strip == nil and palette.tab ~= nil then theme.strip = palette.tab end
+  if palette.strip_text == nil and palette.tab_text ~= nil then
+    theme.strip_text = palette.tab_text
+  end
+  if palette.tab_idle_text == nil and palette.tab_text ~= nil then
+    theme.tab_idle_text = palette.tab_text
   end
 
   -- A window's corner and shadow are the look's, and every look's are said

@@ -10,6 +10,7 @@
  *   sc:window(k, x, y, w, h, flags, picture, src_w, src_h,
  *             bar, bar_h, bx, by, held)                 the k-th from the back
  *   sc:inset(k, picture, ix, iy, iw, ih)              a second picture over it
+ *   sc:plate(k, picture, px, py)                      Starlight's plate over it
  *   sc:menus(n)  sc:menu(k, x, y, w, h, picture)        above every window
  *   sc:above(outline x, y, w, h, colour | nil, osd, ox, oy, alpha | nil,
  *            cursor, cx, cy | nil, badge, bx, by | nil,
@@ -44,7 +45,7 @@
 #define SCENE_MT "kosmos.scene"
 
 /* The user value's slots: what the scene names, kept alive. */
-enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_INSETS, UV_MISC, UV_COUNT = UV_MISC };
+enum { UV_WINDOWS = 1, UV_BARS, UV_MENUS, UV_INSETS, UV_PLATES, UV_MISC, UV_COUNT = UV_MISC };
 enum { MISC_WALLPAPER = 1, MISC_STAMP, MISC_OSD, MISC_CURSOR, MISC_BADGE, MISC_PANEL };
 
 static struct scene *check_scene(lua_State *L)
@@ -207,6 +208,7 @@ static int l_scene_windows(lua_State *L)
     let_go(L, UV_WINDOWS, n, had);
     let_go(L, UV_BARS, n, had);
     let_go(L, UV_INSETS, n, had);
+    let_go(L, UV_PLATES, n, had);
     return 0;
 }
 
@@ -233,16 +235,42 @@ static int l_scene_window(lua_State *L)
     w->held    = (int)luaL_optinteger(L, 15, -1);
     w->bx2     = (long)luaL_optinteger(L, 16, 0);
 
-    /* No inset unless `sc:inset` says so, after this, on the same pass. */
+    /* No inset unless `sc:inset` says so, after this, on the same pass;
+     * nor a plate unless `sc:plate` does. */
     w->inset = NULL;
     w->inset_slot = WS_NONE;
     w->ix = w->iy = w->iw = w->ih = 0;
+    w->plate = NULL;
+    w->plate_slot = WS_NONE;
+    w->px = w->py = 0;
 
     hold(L, UV_WINDOWS, k, 8);
     hold(L, UV_BARS, k, 11);
     lua_pushnil(L);
     hold(L, UV_INSETS, k, -1);
+    hold(L, UV_PLATES, k, -1);
     lua_pop(L, 1);
+    return 0;
+}
+
+/*
+ * `sc:plate(k, picture, px, py)`: the k-th window's plate - Starlight's
+ * title on its amber trapezoid - blended over it at `px`, `py` from its
+ * corner (`sc_window`). Said after `sc:window(k, ...)`, which clears it.
+ */
+static int l_scene_plate(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    int k = (int)luaL_checkinteger(L, 2);
+    struct sc_window *w;
+
+    luaL_argcheck(L, k >= 1 && k <= sc->nwin, 2, "no such window in the scene");
+    w = &sc->win[k - 1];
+    w->plate = opt_picture(L, 3, &w->plate_slot);
+    w->px = (long)luaL_checkinteger(L, 4);
+    w->py = (long)luaL_checkinteger(L, 5);
+
+    hold(L, UV_PLATES, k, 3);
     return 0;
 }
 
@@ -484,7 +512,8 @@ static int l_scene_wire(lua_State *L)
             (int32_t)w->bar_slot, (int32_t)w->bar_h,
             (int32_t)w->bx, (int32_t)w->by, (int32_t)w->held, (int32_t)w->bx2,
             (int32_t)w->inset_slot, (int32_t)w->ix, (int32_t)w->iy,
-            (int32_t)w->iw, (int32_t)w->ih
+            (int32_t)w->iw, (int32_t)w->ih,
+            (int32_t)w->plate_slot, (int32_t)w->px, (int32_t)w->py
         };
     }
 
@@ -521,6 +550,7 @@ static const luaL_Reg scene_methods[] = {
     { "windows",  l_scene_windows },
     { "window",   l_scene_window },
     { "inset",    l_scene_inset },
+    { "plate",    l_scene_plate },
     { "menus",    l_scene_menus },
     { "menu",     l_scene_menu },
     { "above",    l_scene_above },

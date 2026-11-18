@@ -130,7 +130,12 @@ end
 -- **Eleven since 8 October**: Aurora, Amethyst, Ember, Sakura and Meadow,
 -- which Diego asked for - "3 dark ones and 2 light ones".
 --
-check(#themes.order == 11, "there are " .. #themes.order .. " looks, not eleven")
+--
+-- **Twelve since 17 November**: Starlight, worn by the Starlight desktop and
+-- offered among the looks - Diego, "yes to starlight but dont replace the
+-- current astra one" (`docs/astra.md`, *Identity*).
+--
+check(#themes.order == 12, "there are " .. #themes.order .. " looks, not twelve")
 
 for _, name in ipairs(themes.order) do
   local p = theme.read(themes[name], "dark")
@@ -154,7 +159,12 @@ for _, name in ipairs(themes.order) do
   -- focused pair is the Deskbar's too (`roadmap.md` 5y).
   check(math.abs(luminance(p.tab) - luminance(p.tab_text)) >= 100,
         name .. "'s title words are too close to its focused tab to read")
-  check(math.abs(luminance(p.tab_idle) - luminance(p.tab_text)) >= 100,
+  --
+  -- The words on an idle tab are `tab_idle_text` where a look names them -
+  -- Starlight's night plates - and `tab_text` where it does not, as
+  -- `theme.apply` resolves them.
+  --
+  check(math.abs(luminance(p.tab_idle) - luminance(p.tab_idle_text or p.tab_text)) >= 100,
         name .. "'s title words are too close to an unfocused tab to read")
 end
 

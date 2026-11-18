@@ -466,6 +466,26 @@ end
 
 local startup_font_why
 
+--
+-- **A look by its name, found where Appearance finds looks** - for the
+-- saved one below, and a desktop's own (`look`, `D.start`).
+--
+function OUT.find_theme(name)
+  if type(name) ~= "string" then return nil, "no name" end
+  if theme.palettes[name] then return theme.palettes[name] end
+
+  -- The system's looks and a person's own in Preferences' Themes, one list
+  -- (`themes.lua`): a file there named like one that ships is that look.
+  local ok, looks = pcall(use, "/Kosmos/Libraries/themes.lua")
+
+  if ok and type(looks) == "table" and type(looks[name]) == "string" then
+    return theme.install(name, (theme.read(looks[name], "dark")))
+  end
+
+  return nil, "no theme called " .. name .. " in /Kosmos/Themes or "
+              .. tostring(ok and type(looks) == "table" and looks.HOME or "a person's Themes folder")
+end
+
 local function load_appearance()
   local saved = prefs.read("appearance")
 
@@ -518,24 +538,9 @@ local function load_appearance()
   -- wallpapers and other things upon restarting"; the wallpaper was 18.133,
   -- and this was the other thing (`testing.md` 18.135).
   --
-  local function find_theme(name)
-    if type(name) ~= "string" then return nil, "no name" end
-    if theme.palettes[name] then return theme.palettes[name] end
-
-    -- The system's looks and a person's own in Preferences' Themes, one list
-    -- (`themes.lua`): a file there named like one that ships is that look.
-    local ok, looks = pcall(use, "/Kosmos/Libraries/themes.lua")
-
-    if ok and type(looks) == "table" and type(looks[name]) == "string" then
-      return theme.install(name, (theme.read(looks[name], "dark")))
-    end
-
-    return nil, "no theme called " .. name .. " in /Kosmos/Themes or "
-                .. tostring(ok and type(looks) == "table" and looks.HOME or "a person's Themes folder")
-  end
 
   if saved.palette then
-    local palette, why = find_theme(saved.palette)
+    local palette, why = OUT.find_theme(saved.palette)
 
     if palette then
       theme.apply(palette)
@@ -2200,6 +2205,55 @@ local function cursor_size()
 end
 
 --
+-- **Starlight's plate** (`docs/astra.md` S1): a window's title on an amber
+-- trapezoid at its header's left - the window in front's alone amber, as
+-- BeOS's tab was yellow, and every other one the look's quiet `tab_idle`.
+-- The header leaves the room and says how wide (`handlers.plate`); this
+-- process draws it, so which window is in front shows the moment it
+-- changes. The edge is `docs/astra.html`'s clip: the top corners eased, the
+-- right edge slanting 22 in over the height and eased into the bottom.
+--
+-- Made again only when what it says, its size or which of the two it is
+-- changes, in a region, so the window server can be handed it.
+--
+function OUT.plate_picture(win, front)
+  local spec = win.plate_spec
+  local made = win.plate_made
+  local face = front and theme.tab or theme.tab_idle
+  local ink = front and theme.tab_text or (theme.tab_idle_text or theme.tab_text)
+
+  if made and made.w == spec.w and made.h == spec.h and made.title == spec.title
+     and made.face == face and made.ink == ink then
+    return made.picture
+  end
+
+  if made then made.picture:free() end
+
+  local W, H = spec.w, spec.h
+  local pct = win.pct or 100
+  local function u(v) return v * pct / 100 end
+  local picture = gfx.surface{ w = W, h = H, shared = true }   -- zeroed: clear
+
+  picture:polygon({
+    0, u(10), u(0.62), u(5.62), u(2.5), u(2.5), u(5.62), u(0.62), u(10), 0,
+    W - u(5), 0, W - u(2.82), u(0.31), W - u(1.28), u(1.25),
+    W - u(0.37), u(2.81), W - u(0.11), u(5),
+    W - u(21.91), H - u(4), W - u(22.2), H - u(2.25), W - u(22.98), H - u(1),
+    W - u(24.24), H - u(0.25), W - u(26), H, 0, H,
+  }, face)
+
+  if spec.title ~= "" then
+    picture:text(scale.px(16, pct), (H - gfx.height("title")) // 2, spec.title,
+                 ink, face, "title")
+  end
+
+  win.plate_made = { picture = picture, w = W, h = H, title = spec.title,
+                     face = face, ink = ink }
+
+  return picture
+end
+
+--
 -- **A drag's label as a picture of its own** (D3b-2), for the scene to
 -- compose last of all: made again only when what it says or looks like
 -- changes, in a region, so the window server can be handed it.
@@ -2642,6 +2696,12 @@ function OUT.describe()
 
     if inset then
       scene:inset(k, pic(inset[inset.live]), inset.x, inset.y, inset.w, inset.h)
+    end
+
+    local plate = win.plate_spec
+
+    if plate and win.chrome == "starlight" and win.headed then
+      scene:plate(k, pic(OUT.plate_picture(win, win == front)), plate.x, plate.y)
     end
   end
 
@@ -4526,6 +4586,25 @@ function D.start(name, watcher)
   D.chrome = d.chrome or "astra"
   print(("wm: chrome %s"):format(D.chrome))
 
+  --
+  -- **And the look it wears** (`look`, Starlight's): applied before its
+  -- first window, which is handed the palette as it opens. A look chosen
+  -- afterwards in Appearance applies as ever, until the next start.
+  --
+  if d.look then
+    local palette, why = OUT.find_theme(d.look)
+
+    if palette then
+      theme.apply(palette)
+      OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
+      OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+      add_damage(0, 0, W, H)
+      print(("wm: look %s, the desktop's"):format(d.look))
+    else
+      print(("wm: look %s would not load: %s"):format(d.look, tostring(why)))
+    end
+  end
+
   -- And where its windows' menus go (P3): in them, or the bar at the top.
   D.menus = d.menus or "window"
   print(("wm: menus in the %s"):format(D.menus))
@@ -5543,6 +5622,47 @@ handlers.lights = function(req)
 end
 
 --
+-- **Where Starlight's plate goes** (`docs/astra.md` S1), said by the header
+-- that left room for it (`window:place_plate`): its corner in the window,
+-- how wide and tall, and what it says. Held inside the window, as the three
+-- are, so nothing a window says can have this process draw over another.
+--
+handlers.plate = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if win.chrome ~= "starlight" then
+    return { ok = false, error = "this window wears no plate" }
+  end
+
+  local x, y = tonumber(req.x), tonumber(req.y)
+  local w, h = tonumber(req.w), tonumber(req.h)
+
+  if not (x and y and w and h) or w < 1 or h < 1 then
+    return { ok = false, error = "a plate needs a place and a size" }
+  end
+
+  local pct = win.pct or 100
+
+  x = math.max(0, math.min(scale.px(x, pct), win.w - 1))
+  y = math.max(0, math.min(scale.px(y, pct), win.h - 1))
+  w = math.max(1, math.min(scale.px(w, pct), win.w - x))
+  h = math.max(1, math.min(scale.px(h, pct), win.h - y))
+
+  local title = tostring(req.title or ""):sub(1, 128)
+  local old = win.plate_spec
+
+  if old then add_damage(win.x + old.x, win.y + old.y, old.w, old.h) end
+
+  win.plate_spec = { x = x, y = y, w = w, h = h, title = title }
+  add_damage(win.x + x, win.y + y, w, h)
+
+  print(("wm: %s's plate at %d,%d %dx%d"):format(tostring(win.title), x, y, w, h))
+
+  return { ok = true }
+end
+
+--
 -- **A press on a header's empty band, taken as a drag** (`roadmap.md`
 -- 6zj). The window is what knows its band from its buttons - it hit-tests
 -- its own views - so the press goes to it as every press does, and it hands
@@ -6211,6 +6331,12 @@ handlers.close = function(req)
   -- click and is not.
   if win.kind ~= "menu" then
     print(("wm: closed %s"):format(tostring(win.title)))
+  end
+
+  -- Its plate, if it wore one (`OUT.plate_picture`).
+  if win.plate_made then
+    win.plate_made.picture:free()
+    win.plate_made = nil
   end
 
   --
