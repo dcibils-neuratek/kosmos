@@ -36130,3 +36130,35 @@ into a loaded gate, with no error in the Deskbar's log - and
 `x86-film-load`, a gap in a film's sound under four spinners and the
 gate's load besides. Recorded as load flakes; the dock's is the second
 suite this week that waits on a time where it should wait on the thing.
+
+## 18.871 Starlight's unfurl - a window unrolls from its header
+
+**In short.** Under Starlight a window opens as its header first, and its
+body unrolls downward beneath it over 150 ms, quick at first and settling
+into place - Mac OS 9's window shade as a gesture. Every other desktop
+opens a window as it did.
+
+**Where it lives.** The window manager, begun with a window's first frame
+(`handlers.commit`, so what unrolls is what it drew) under the
+`starlight` chrome for a window whose header is its title bar
+(`OUT.unfurl_begin`); stepped once a pass beside the windows shown late
+(`OUT.unfurl_step`), eased out, `1 - (1 - t)^3`. The scene is told a
+shorter window, as for one collapsed to its bar (`OUT.shade`) - a clip,
+not a scale: nothing blended, and only the rows revealed composed. It is
+its own field, `win.unfurl`, so nothing that asks whether a window is
+collapsed is told yes for 150 ms. The window manager wakes at least every
+ten milliseconds already, so the unfurl needs no pace of its own.
+
+**Measured** in QEMU: Calculator unfurled in 164 ms in 12 steps,
+Processes in 154 ms in 13 - about eighty a second.
+
+**Held by** `x86-starlight`, now 10: each window said it was unrolling
+from its header's height to its own, and that it had unfurled in 150 ms
+to a second and a half; the pixel checks that follow read both windows
+whole. Its control, an unfurl that never begins, fails exactly that
+check.
+
+**Not yet**: the close rolling back up into the plate (120 ms), which
+needs a window kept on screen after its application has let it go; the
+plate's amber sweeping in as focus arrives (90 ms); and *Reduce motion*,
+which this system does not have yet - when it does, the unfurl is a cut.

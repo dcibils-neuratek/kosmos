@@ -12972,7 +12972,7 @@ window unrolling from its plate as it opens; the four-point star as the
 Kosmos mark and the dock's running mark. **The three window buttons stay
 round, as today**, in Starlight's colours. Steps: S1 the look's colours
 and the plate (**built in 0.11.468**, `testing.md` 18.868); S2 the cut corners (a `gfx` shape; **built in 0.11.469** for menus and the dock, `testing.md` 18.869); S3 the glass's grain;
-S4 the unroll; S5 the star (**built in 0.11.470**, `testing.md` 18.870).
+S4 the unroll (**opening built in 0.11.471**, `testing.md` 18.871; the roll back up on closing and the focus sweep to come); S5 the star (**built in 0.11.470**, `testing.md` 18.870).
 
 **Liquid Glass, a look of its own - ASKED on 17 November 2026; drawn and AGREED the same day** (`docs/liquidglass.html`, `astra.md` *Liquid Glass*; Diego: "Love the Liquid Glass!" - the nine decisions taken as recommended, LG1-LG7 in that order, after Starlight's first steps).
 Named by Diego: "Let's call it Liquid Glass". Diego: "Can we try another desktop style called glass inspired by this repo

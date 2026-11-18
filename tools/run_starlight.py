@@ -9,6 +9,8 @@ and the one in front dragged by its header clear of the other:
     Starlight's, and its chrome is `starlight`;
   - each window's header leaves the plate's room and says so: a plate for
     both, at the header's corner, wider than its title's padding;
+  - each opened unrolling from its header to its whole height, over the
+    150 ms the unfurl takes (S4);
   - drawn: the window in front's plate is amber - the look's `tab`, as
     BeOS's tab was yellow - where it said it is, and the one behind's is
     the look's quiet `tab_idle`, never amber;
@@ -39,7 +41,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 9
+CHECKS = 10
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -117,6 +119,19 @@ def run(fails):
             plates[t] = (int(x), int(y), int(w), int(h))
 
         named = [t for t in plates if t in where]
+
+        # ---- the unfurl (S4): each window unrolled from its header ----
+        rolled = dict((t, (int(a), int(b))) for t, a, b in
+                      re.findall(r"wm: (.+?) unfurling from (\d+) to (\d+)", seen))
+        took = dict((t, int(ms)) for t, ms in re.findall(r"wm: (.+?) unfurled in (\d+) ms", seen))
+        print("unfurled: " + "; ".join(re.findall(r"wm: (.+? unfurled in \d+ ms, \d+ steps)", seen)))
+        short = [t for t in named
+                 if t not in rolled or t not in took or not rolled[t][0] < rolled[t][1]
+                 or not 150 <= took[t] <= 1500]
+
+        if short:
+            fails.append("not every window unrolled from its header over 150 ms: %s, %s"
+                         % (rolled, took))
 
         if len(named) < 2 or any(plates[t][2] < 46 for t in named):
             fails.append("not both windows placed a plate: %s, windows %s"
@@ -261,7 +276,7 @@ def main():
         return 1
 
     print("PASS: %d checks on Starlight's plate (the desktop in Starlight's look and "
-          "chrome; Calculator and Processes each placed a plate; the window in front's "
+          "chrome; Calculator and Processes each placed a plate and unfurled; the window in front's "
           "amber and the one behind's quiet; the one behind clicked, the two swapped; "
           "its star; the Kosmos menu's top-left cut; nothing died)" % CHECKS)
     return 0

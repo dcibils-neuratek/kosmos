@@ -2264,6 +2264,53 @@ function OUT.plate_picture(win, front)
 end
 
 --
+-- **The unfurl** (`docs/astra.md` S4): under Starlight a window opens as
+-- its header first and its body unrolls downward beneath it, 150 ms eased
+-- out - Mac OS 9's window shade as a gesture, and nobody else's opening. A
+-- clip, not a scale: the scene shows the window's top rows, as it does a
+-- window collapsed to its bar (`OUT.shade`), and nothing is blended. Begun
+-- with the window's first frame, so what unrolls is what it drew.
+--
+OUT.UNFURL_MS = 150
+
+function OUT.unfurl_begin(win)
+  if win.chrome ~= "starlight" or not win.headed or win.shaded then return end
+
+  local from = math.min(win.band or scale.px(46), win.h)
+
+  win.unfurl = { at = sys.ticks(), from = from, h = from }
+  damage_window(win)
+end
+
+function OUT.unfurl_step(win)
+  local u = win.unfurl
+  local t = (sys.ticks() - u.at) * 1000 / (COUNTER_HZ * OUT.UNFURL_MS)
+
+  if t >= 1 then
+    win.unfurl = nil
+    damage_window(win)
+    print(("wm: %s unfurled in %d ms, %d steps"):format(tostring(win.title),
+          (sys.ticks() - u.at) * 1000 // COUNTER_HZ, u.steps or 0))
+    return
+  end
+
+  -- Eased out: quick at first, settling into place.
+  local e = 1 - (1 - t) * (1 - t) * (1 - t)
+  local h = u.from + math.floor((win.h - u.from) * e)
+
+  if h ~= u.h then
+    if not u.said then
+      u.said = true
+      print(("wm: %s unfurling from %d to %d"):format(tostring(win.title), u.from, win.h))
+    end
+
+    u.h = h
+    u.steps = (u.steps or 0) + 1
+    damage_window(win)
+  end
+end
+
+--
 -- **A drag's label as a picture of its own** (D3b-2), for the scene to
 -- compose last of all: made again only when what it says or looks like
 -- changes, in a region, so the window server can be handed it.
@@ -2705,6 +2752,11 @@ function OUT.describe()
     --
     if win.shaded then
       h = win.shaded
+      lower = math.min(lower, h)
+    elseif win.unfurl then
+      -- Unrolling from its plate (`OUT.unfurl_step`): the same picture,
+      -- only its top rows, as a collapsed window's are.
+      h = win.unfurl.h
       lower = math.min(lower, h)
     end
 
@@ -5159,6 +5211,7 @@ handlers.commit = function(req)
     damage_window(win)
     print(("wm: %s drawn, shown after %d ms"):format(tostring(win.title),
           (sys.ticks() - (win.born or sys.ticks())) * 1000 // COUNTER_HZ))
+    OUT.unfurl_begin(win)
   end
 
   -- A finished frame, under `wm trace`, as a frame of drawing commands is
@@ -8002,6 +8055,8 @@ while OUT.running do
   -- A new window that has not drawn within half a second, shown anyway
   -- (`win.drawn`): a few windows looked at, every pass.
   for _, win in ipairs(windows) do
+    if win.unfurl then OUT.unfurl_step(win) end
+
     if win.drawn == false and sys.ticks() - win.born > COUNTER_HZ // 2 then
       win.drawn = true
       damage_window(win)

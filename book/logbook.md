@@ -4426,3 +4426,19 @@ everywhere.
 **Why it matters.** Together with the amber plate and the cut corner, it
 is what makes a screenshot of Kosmos recognisable as Kosmos rather than a
 copy of something else.
+
+## 18 November 2026 - Windows that unroll
+
+**In short.** Under Starlight a new window now appears as its title strip
+first, and the rest of it rolls down beneath it in about a sixth of a
+second - like a blind being lowered.
+
+**What.** The window manager already knew how to show only the top of a
+window, for collapsing one to its title bar. The unfurl uses the same
+trick for a moment: it shows a little more of the window each frame until
+all of it is there. Nothing is stretched or faded, so it costs less than
+the zoom-and-fade other desktops use.
+
+**Why it matters.** Motion is part of a desktop's personality, and this
+one is Kosmos's own. Under QEMU it ran at about eighty steps a second.
+Closing - the window rolling back up into its title - comes next.
