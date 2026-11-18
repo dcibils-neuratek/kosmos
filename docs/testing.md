@@ -36952,3 +36952,24 @@ What holds it:
   plates glass - Liquid Glass's amber glass plate (L5) asked `glassy()`,
   true of Starlight now - and asks `glass_window()` instead: the plate is
   glass where the windows are.
+
+## 18.892 `listen`, and `x86-film` in the audio band
+
+**In short**: `x86-film` failed every gate from 0.11.489 to 0.11.492, and
+passed alone. Its program was written to `/Temporary`, and only a file the
+image serves can declare `kosmos: needs audio`, so its sound thread was
+never in the audio band, and a busy host held it off for up to 211 ms. It
+now plays through `listen` (`user/bin/programs/listen.lua`), a program
+anybody can use - `listen <file>` plays a film's or a song's sound at the
+prompt to its end, and `--report` says how it went - which declares
+`needs audio` and so is in the band, as the Video app and Music are.
+
+Whether a program in `/Home` may ask for the band stays Diego's question
+(`roadmap.md`, *Bounded under load*); this answers the suite's half of it
+without changing who may.
+
+What holds it: `x86-film` (14 checks, from 13) reads `listen --report`
+and checks its sound thread is in the band - "away at most 13.3 ms, its
+input dry 0 times" here, against 83 to 211 ms out of it under the gates.
+**Control**: `needs audio` taken out of `listen`, that check fails
+("listen's sound thread was not in the audio band").

@@ -11798,6 +11798,16 @@ spend a day here; a laptop cannot.
   able to ask for the band - it is bounded by its budget, which is what
   made the band safe - or does the suite play through a program the
   image serves?
+  **0.11.492's prepush** failed both: `x86-film` "a 3.00 s film took 2.58
+  s by its own clock" with its sound thread away 211.6 ms, and `--load`
+  a gap at 0.60 s - so the Video app's path, in the band, is not immune
+  either, and the clock running *ahead* when the thread is starved is a
+  bug of its own (the position should not pass what was played). The
+  image serves no program for a test alone; that would be a Makefile
+  list (`KOSMOS_TEST` images only), which the second answer needs.
+  **The suite's half answered in 0.11.493** (18.892): it plays through
+  `listen`, a program of the image's that declares `needs audio`, so it is
+  in the band - 13.3 ms away at most. Who else may ask stays Diego's.
 - **The optimisation phase** below, as it stands.
 
 **2. A media machine**

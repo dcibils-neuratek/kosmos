@@ -10,9 +10,10 @@ involved. FFmpeg's reference for that stream is what those frames decode
 to, so it is also what the machine has to play.
 
 QEMU writes whatever the guest plays to a WAV on this Mac (`virtio-sound`
-on the ARM board, HDA on x86-64). The guest plays the film through
-`/Kosmos/Libraries/video.lua` - the kit's clock, the AAC Kit, `sys.pcm`, the audio
-server - and afterwards the WAV is laid against the reference: found where
+on the ARM board, HDA on x86-64). The guest plays the film with `listen`
+(`user/bin/programs/listen.lua`) through `/Kosmos/Libraries/video.lua` -
+the kit's clock, the AAC Kit, `sys.pcm`, the audio server - in the audio
+band, which `listen` declares, as a person's film is; and afterwards the WAV is laid against the reference: found where
 it starts, and every sample of the three seconds held within two steps.
 Both boards run their sound at 44.1 kHz, so nothing is resampled and the
 comparison can be sample for sample. And the film took about as long as it
@@ -57,36 +58,6 @@ RATE = 44100
 FRAMES = 130                    # AAC frames: 130 x 1024 samples, 3.02 s
 FPS, PICTURES = 10, 30          # the picture: 3.0 s
 WAV_HEADER = 44
-
-# The program the guest runs: open the film, play it by its own clock to
-# its end, let the ring play out, and say what happened. Each line it
-# prints is put together from pieces, so the line typed to start it - which
-# the shell echoes - never holds the words the harness waits for.
-PROGRAM = (
-    'local video = use("/Kosmos/Libraries/video.lua") '
-    'local f, why = video.open(args) '
-    'if not f then print("FILM" .. "-ERR " .. tostring(why)) '
-    'print("FILM" .. "-DONE") return end '
-    'local heard, silent = f:audible() '
-    'local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1 '
-    'local began = sys.ticks() '
-    'f:play(0) '
-    'while f:position() < f.duration '
-    'and (sys.ticks() - began) / hz < f.duration + 20 do '
-    'f:tick() sys.sleep(1) end '
-    'local took = (sys.ticks() - began) / hz '
-    'for _ = 1, 150 do f:tick() sys.sleep(1) end '
-    'print(("FILM" .. " %s %s %.2f %.2f %d %s"):format('
-    'f.sound and f.sound.codec or "none", tostring(heard), f.duration, '
-    'took, f.voice_state and f.voice_state.frames_out or 0, '
-    '(f.voice_state and f.voice_state.frames_in or 0) .. " " .. '
-    'tostring(silent))) '
-    'local h = f:heard() or {} '
-    'print(("FILM" .. "HEARD %s %.1f %d"):format(tostring(h.audio_band), '
-    '(h.worst_pass or 0) / hz * 1000, h.dry or 0)) '
-    'f:close() '
-    'print("FILM" .. "-DONE")')
-
 
 # Paused and sought: a second of the film, a second paused, then from 2.0 to
 # the end. The clock must stand still while paused - bar the ring and the
@@ -282,15 +253,17 @@ def main():
 
     try:
         guest.wait_for("kosmos>", "a shell prompt")
-        guest.type('fs.write("/Temporary/film.lua", [=[' + PROGRAM + ']=])')
-        time.sleep(1.0)
-
+        # `listen` (`user/bin/programs/listen.lua`): a program the image
+        # serves, declaring `needs audio`, so its sound thread is in the
+        # audio band as a person's film or song is.
         mark = os.path.getsize(wav) if os.path.exists(wav) else WAV_HEADER
         seen = len(guest.seen)
-        guest.type("/Temporary/film.lua /Home/sound.mp4")
-        guest.wait_for("FILM-DONE", "the film to play through")
-        said = re.search(r"^FILM (\S+) (\S+) ([\d.]+) ([\d.]+) (\d+) "
-                         r"(.*?)\r?$", guest.seen[seen:], re.M)
+        guest.type("listen --report /Home/sound.mp4")
+        guest.wait_for("listen: its sound thread", "the film to play through")
+        time.sleep(0.5)
+        guest._read_available()
+        said = re.search(r"^listen: (\S+) heard (\S+), ([\d.]+) s in ([\d.]+) s, "
+                         r"(\d+) frames out, (.*?)\r?$", guest.seen[seen:], re.M)
         check(said is not None, "the film did not play: %r"
               % guest.seen[seen:][-400:])
 
@@ -325,15 +298,17 @@ def main():
             # How the sound's thread held, so a gap says whose it was: in
             # the audio band or not, its longest away between two passes,
             # and how often its input ran dry (roadmap, "Bounded under load").
-            # A program in /Temporary is not in the band - only a file the
-            # image serves can declare `kosmos: needs audio` - so on a busy
-            # host the display band can outrank it.
-            heard_line = re.search(r"^FILMHEARD (\S+) ([\d.]+) (\d+)", guest.seen[seen:], re.M)
+            heard_line = re.search(r"^listen: its sound thread (in|not in) the audio band, "
+                                   r"away at most ([\d.]+) ms, its input dry (\d+)",
+                                   guest.seen[seen:], re.M)
             how = ("; its sound thread %s the audio band, away at most %s ms, "
-                   "its input dry %s times" % ("in" if heard_line.group(1) == "true" else "not in",
-                                               heard_line.group(2), heard_line.group(3))
+                   "its input dry %s times" % heard_line.groups()
                    if heard_line else "")
             print("film: the sound thread%s" % (how[len("; its sound thread"):] if how else " said nothing"))
+            # In the band: a program the image serves that declares `needs
+            # audio`. Its suite's own program, in /Temporary, never was.
+            check(heard_line is not None and heard_line.group(1) == "in",
+                  "listen's sound thread was not in the audio band%s" % how)
             check(far == 0,
                   "%d samples of %d more than two steps from FFmpeg's "
                   "reference (the worst %d; the first at %.4f s, channel "
