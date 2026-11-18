@@ -45,7 +45,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 14
+CHECKS = 15
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -197,10 +197,20 @@ def run(fails):
         px, py, pw, ph = plates[back]
         guest.mouse_to(*R._to_tablet(wx + px + pw // 2, wy + py + ph // 2, sw, sh))
         time.sleep(0.4)
+        swept_from = len(guest.seen)
         guest.mouse_button(True)
         time.sleep(0.05)
         guest.mouse_button(False)
         time.sleep(1.5)
+
+        # The sweep (S4): its amber came in from the left over 90 ms.
+        swept = line(guest, r"wm: %s's plate swept in in (\d+) ms, (\d+) steps" % re.escape(back),
+                     swept_from, 5)
+        print("sweep: " + (swept.group(0) if swept else "none"))
+
+        if not (swept and 90 <= int(swept.group(1)) <= 1500 and int(swept.group(2)) >= 2):
+            fails.append("%s, clicked, did not have its amber sweep in over 90 ms: %r"
+                         % (back, swept and swept.group(0)))
 
         _, _, at = pixels(guest.screendump())
         a, b = plate_pixel(at, back), plate_pixel(at, front)
@@ -333,7 +343,7 @@ def main():
 
     print("PASS: %d checks on Starlight's plate (the desktop in Starlight's look and "
           "chrome; Calculator and Processes each placed a plate and unfurled; the window in front's "
-          "amber and the one behind's quiet; the one behind clicked, the two swapped; "
+          "amber and the one behind's quiet; the one behind clicked, its amber swept in and the two swapped; "
           "its star; the Kosmos menu's top-left cut; the nebula baked and the menu's "
           "amber horizon; the one in front closed, rolling up into its plate; nothing died)" % CHECKS)
     return 0

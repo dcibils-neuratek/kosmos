@@ -2299,9 +2299,23 @@ function OUT.plate_picture(win, front)
   -- glass: Starlight's floating surfaces are, its windows and plates not.
   local glass = (OUT.wall_glass and theme.glass_window()) and true or false
 
+  --
+  -- **The sweep** (`docs/astra.md` S4): a plate coming to the front has its
+  -- amber sweep in from the left over 90 ms, rather than appear. Begun the
+  -- first time it is drawn in front after being drawn behind; stepped by
+  -- `OUT.sweep_step`, which says how far it has come (`win.sweep.p`).
+  --
+  if front and made and not made.front and not win.sweep then
+    win.sweep = { at = sys.ticks(), p = 0 }
+  elseif not front then
+    win.sweep = nil
+  end
+
+  local p = win.sweep and win.sweep.p or 1
+
   if made and made.w == spec.w and made.h == spec.h and made.title == spec.title
      and made.face == face and made.ink == ink and made.star == theme.star
-     and made.glass == glass then
+     and made.glass == glass and made.p == p then
     return made.picture
   end
 
@@ -2310,7 +2324,6 @@ function OUT.plate_picture(win, front)
   local W, H = spec.w, spec.h
   local pct = win.pct or 100
   local function u(v) return v * pct / 100 end
-  local picture = gfx.surface{ w = W, h = H, shared = true }   -- zeroed: clear
 
   local edge = {
     0, u(10), u(0.62), u(5.62), u(2.5), u(2.5), u(5.62), u(0.62), u(10), 0,
@@ -2320,40 +2333,86 @@ function OUT.plate_picture(win, front)
     W - u(24.24), H - u(0.25), W - u(26), H, 0, H,
   }
 
-  if not glass then
-    picture:polygon(edge, face)
-  elseif front then
-    -- The polygon paints opaque; its coverage is the mask the amber is
-    -- laid through at the glass's alpha, which `tint` multiplies.
-    local mask = gfx.surface{ w = W, h = H }
+  -- One plate, in front or behind, in its face and ink.
+  local function drawn(infront, f, k)
+    local picture = gfx.surface{ w = W, h = H, shared = true }   -- zeroed: clear
 
-    mask:polygon(edge, 0xffffffff)
-    picture:tint(mask, 0, 0, W, H, 0, 0, 0xc8000000 | (face & 0xffffff))
-    mask:free()
-    picture:fill_round(u(10), 0, W - u(15), 1, 0x90ffffff)
+    if not glass then
+      picture:polygon(edge, f)
+    elseif infront then
+      -- The polygon paints opaque; its coverage is the mask the amber is
+      -- laid through at the glass's alpha, which `tint` multiplies.
+      local mask = gfx.surface{ w = W, h = H }
+
+      mask:polygon(edge, 0xffffffff)
+      picture:tint(mask, 0, 0, W, H, 0, 0, 0xc8000000 | (f & 0xffffff))
+      mask:free()
+      picture:fill_round(u(10), 0, W - u(15), 1, 0x90ffffff)
+    end
+
+    local tx = scale.px(16, pct)
+
+    -- Kosmos's star before the title where the look has one (S5): the
+    -- header left the room for it (`L.plate_star`).
+    if theme.star then
+      -- `dock.lua` is arithmetic only; fetched here, where it is wanted,
+      -- since this file is at Lua's two hundred locals.
+      picture:polygon(use("/Kosmos/Libraries/dock.lua").star(tx + u(6.5), H / 2, u(6.5)), k)
+      tx = tx + scale.px(22, pct)
+    end
+
+    if spec.title ~= "" then
+      -- On glass the words have no ground of their own to be drawn against.
+      picture:text(tx, (H - gfx.height("title")) // 2, spec.title, k,
+                   not glass and f or nil, "title")
+    end
+
+    return picture
   end
 
-  local tx = scale.px(16, pct)
+  local picture = drawn(front, face, ink)
 
-  -- Kosmos's star before the title where the look has one (S5): the
-  -- header left the room for it (`L.plate_star`).
-  if theme.star then
-    -- `dock.lua` is arithmetic only; fetched here, where it is wanted,
-    -- since this file is at Lua's two hundred locals.
-    picture:polygon(use("/Kosmos/Libraries/dock.lua").star(tx + u(6.5), H / 2, u(6.5)), ink)
-    tx = tx + scale.px(22, pct)
-  end
+  -- Part way: the plate behind, and the one in front over it as far as
+  -- the sweep has come. The two have the one outline, so a rectangle of
+  -- the one copied over the other is the sweep, with no clip to compute.
+  if p < 1 then
+    local behind = drawn(false, theme.tab_idle,
+                         theme.tab_idle_text or theme.tab_text)
+    local reach = math.floor(W * p)
 
-  if spec.title ~= "" then
-    -- On glass the words have no ground of their own to be drawn against.
-    picture:text(tx, (H - gfx.height("title")) // 2, spec.title, ink,
-                 not glass and face or nil, "title")
+    if reach > 0 then behind:blit(picture, 0, 0, reach, H, 0, 0) end
+    picture:free()
+    picture = behind
   end
 
   win.plate_made = { picture = picture, w = W, h = H, title = spec.title,
-                     face = face, ink = ink, star = theme.star, glass = glass }
+                     face = face, ink = ink, star = theme.star, glass = glass,
+                     front = front, p = p }
 
   return picture
+end
+
+OUT.SWEEP_MS = 90
+
+-- How far each sweep has come, and its plate damaged so it is drawn again.
+function OUT.sweep_step(win)
+  local sw = win.sweep
+  local spec = win.plate_spec
+  local t = (sys.ticks() - sw.at) * 1000 / (COUNTER_HZ * OUT.SWEEP_MS)
+  local p = t >= 1 and 1 or t
+
+  if spec then add_damage(win.x + spec.x, win.y + spec.y, spec.w, spec.h) end
+
+  if p ~= sw.p then
+    sw.p = p
+    sw.steps = (sw.steps or 0) + 1
+  end
+
+  if p >= 1 then
+    win.sweep = nil
+    print(("wm: %s's plate swept in in %d ms, %d steps"):format(tostring(win.title),
+          (sys.ticks() - sw.at) * 1000 // COUNTER_HZ, sw.steps or 0))
+  end
 end
 
 --
@@ -8412,6 +8471,7 @@ while OUT.running do
 
   for _, win in ipairs(windows) do
     if win.unfurl then OUT.unfurl_step(win) end
+    if win.sweep then OUT.sweep_step(win) end
 
     if win.drawn == false and sys.ticks() - win.born > COUNTER_HZ // 2 then
       win.drawn = true

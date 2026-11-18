@@ -37072,3 +37072,23 @@ landed while the menu, a popup, was open, and a press outside a popup only
 closes the popup - Calculator never heard it. The roll's pictures are not
 read; what is checked is that it happened, how long, and that the copy and
 plate are given back (`x86-display-*`'s regions would show one kept).
+
+## 18.897 Starlight's focus sweep (S4)
+
+**In short**: a plate coming to the front no longer turns amber at once:
+its amber comes in from the left over 90 ms (`astra.md` S4; `docs/
+astra.html` draws it as `sweep`). `OUT.plate_picture` begins it the first
+time a plate is drawn in front after being drawn behind, and while it runs
+draws the plate behind with the one in front copied over it as far as the
+sweep has come - the two share one outline, so a rectangle of one over the
+other is the sweep, with no clip to work out. `OUT.sweep_step` damages only
+the plate each pass. With it S4 - the unfurl, the roll, the sweep - is built.
+
+- **`x86-starlight`** (15): the window behind, clicked on its plate, says
+  its plate swept in - 93 ms, 9 steps - and its plate is amber after, as
+  before. The check wants 90 to 1500 ms and two steps at least.
+  **Control**: the sweep never begun - no line, the check failed, and the
+  plate amber all the same, which is why a pixel after it could not tell.
+
+The sweep's middle frames are not read: what the suite can see of a 90 ms
+animation from outside is that it ran, how long, and where it ended.
