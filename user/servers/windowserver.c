@@ -48,6 +48,7 @@
 #include "kits/gfx/surface.h"
 #include "kits/gfx/draw_primitives.h"
 #include "kits/gfx/scene_core.h"
+#include "kits/gfx/blur.h"
 
 static long console = -1;
 static bool have_screen;
@@ -294,6 +295,9 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     } else {
         sc->rim_bevel = sc->rim_refraction = sc->rim_specular = 0;
     }
+    /* Live glass (LG6): a radius the blur takes, or none. */
+    sc->live_blur = h.live_blur >= 0 && h.live_blur <= (int32_t)GFX_BLUR_MOST
+                    ? h.live_blur : -1;
 
     sc->outline_on = h.outline_on != 0;
     sc->ox = h.ox;
@@ -371,7 +375,7 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
         m->h = in.h < 0 ? 0 : in.h;
         m->picture = picture(in.picture);
         m->picture_slot = in.picture;
-        m->flags = in.flags & SC_GLASS;
+        m->flags = in.flags & (SC_GLASS | SC_LIVE);
     }
 
     *rects = (const struct ws_rect *)(menu + h.nmenu);

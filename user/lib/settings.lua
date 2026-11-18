@@ -280,6 +280,19 @@ settings.ITEMS = {
         default = false },
 
   --
+  -- **Live glass** (Liquid Glass LG6, `docs/astra.md` L7): under a glass
+  -- look, the dock, banners and menus blur what is really under them -
+  -- windows included - rather than the wallpaper alone. Off by default
+  -- until `frames` says a machine has room for it; told to the window
+  -- manager at once.
+  --
+  item{ category = "appearance", group = "Windows",
+        label = "Glass shows what is behind",
+        note = "The dock and menus blur the windows under them. Costly on a slow machine",
+        kind = "switch", file = settings.APPEARANCE, key = "live_glass",
+        default = false },
+
+  --
   -- **Focus follows the pointer** (`roadmap.md`, agreed 7 October; Diego:
   -- "once you hover an app with the mouse for 1 second (configurable in
   -- preferences) the window becomes active (as if you clicked it)"). Off

@@ -44,6 +44,7 @@
  */
 
 #include "scene_core.h"
+#include "blur.h"
 #include "windowproto.h"
 
 #define SCENE_MT "kosmos.scene"
@@ -233,6 +234,66 @@ static int l_scene_rim(lua_State *L)
     return 0;
 }
 
+/*
+ * **Live glass** (Liquid Glass LG6): the floating surfaces over what is
+ * under them, blurred at radius `r` in three passes - 0 for clear glass -
+ * or nil for none, wallpaper glass. Past what the blur takes is none.
+ */
+static int l_scene_live(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    long r = lua_isnoneornil(L, 2) ? -1 : (long)luaL_checkinteger(L, 2);
+
+    sc->live_blur = r >= 0 && r <= (long)GFX_BLUR_MOST ? r : -1;
+    return 0;
+}
+
+/*
+ * The damage, a list of `{x, y, w, h}`, widened in place for live glass
+ * (`scene_widen`): a rectangle touching a live surface's reach grows to
+ * hold it. How many grew.
+ */
+static int l_scene_widen(lua_State *L)
+{
+    struct scene *sc = check_scene(L);
+    int n, i, grew;
+    struct sc_rect *r;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+    n = (int)lua_rawlen(L, 2);
+    if (n == 0 || sc->live_blur < 0) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    r = malloc((size_t)n * sizeof(*r));
+    if (r == NULL) return luaL_error(L, "no memory to widen %d rectangles", n);
+
+    for (i = 0; i < n; i++) {
+        lua_rawgeti(L, 2, i + 1);
+        lua_getfield(L, -1, "x"); r[i].x = (long)lua_tointeger(L, -1);
+        lua_getfield(L, -2, "y"); r[i].y = (long)lua_tointeger(L, -1);
+        lua_getfield(L, -3, "w"); r[i].w = (long)lua_tointeger(L, -1);
+        lua_getfield(L, -4, "h"); r[i].h = (long)lua_tointeger(L, -1);
+        lua_pop(L, 5);
+    }
+
+    grew = scene_widen(sc, r, n);
+
+    for (i = 0; grew > 0 && i < n; i++) {
+        lua_rawgeti(L, 2, i + 1);
+        lua_pushinteger(L, r[i].x); lua_setfield(L, -2, "x");
+        lua_pushinteger(L, r[i].y); lua_setfield(L, -2, "y");
+        lua_pushinteger(L, r[i].w); lua_setfield(L, -2, "w");
+        lua_pushinteger(L, r[i].h); lua_setfield(L, -2, "h");
+        lua_pop(L, 1);
+    }
+
+    free(r);
+    lua_pushinteger(L, grew);
+    return 1;
+}
+
 static int l_scene_windows(lua_State *L)
 {
     struct scene *sc = check_scene(L);
@@ -379,7 +440,7 @@ static int l_scene_menu(lua_State *L)
     m->w = (long)luaL_checkinteger(L, 5);
     m->h = (long)luaL_checkinteger(L, 6);
     m->picture = opt_picture(L, 7, &m->picture_slot);
-    m->flags = (unsigned)luaL_optinteger(L, 8, 0) & SC_GLASS;
+    m->flags = (unsigned)luaL_optinteger(L, 8, 0) & (SC_GLASS | SC_LIVE);
     hold(L, UV_MENUS, k, 7);
     return 0;
 }
@@ -529,6 +590,7 @@ static int l_scene_wire(lua_State *L)
     head->rim_specular = (int32_t)sc->rim_specular;
     head->rim_front = sc->rim_front;
     head->rim_split = (int32_t)sc->rim_split;
+    head->live_blur = (int32_t)sc->live_blur;
 
     head->outline_on = sc->outline_on ? 1u : 0u;
     head->ox = (int32_t)sc->ox;
@@ -595,6 +657,8 @@ static const luaL_Reg scene_methods[] = {
     { "look",     l_scene_look },
     { "desktop",  l_scene_desktop },
     { "rim",      l_scene_rim },
+    { "live",     l_scene_live },
+    { "widen",    l_scene_widen },
     { "windows",  l_scene_windows },
     { "window",   l_scene_window },
     { "inset",    l_scene_inset },

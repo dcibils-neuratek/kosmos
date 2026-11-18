@@ -54,7 +54,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 16
+CHECKS = 17
 
 SWAP = r'''
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -99,7 +99,10 @@ print("GLASSBANNER " .. tostring(notify.post{ title = "Glass", body = "A banner 
 '''
 
 # Ten changes of focus between About and Passwords under `profile`, and
-# what was composed for them - the last of the startup items, so that it is
+# what was composed for them, once the start is over - the banner up and
+# the Desktops chooser gone, since the chooser closing whole inside the
+# measure read 13.6 Mpx on 18 November, when the network made the start
+# slower. It is the last of the startup items, so that it is
 # over before anything else is looked at: Passwords, its sidebar looked at
 # in the five seconds it is held in front after, closed and About in front
 # again. Typed as BANNER is, with no comments. (Typed after the
@@ -108,13 +111,16 @@ FOCUS = r'''
 local S = function(m) return fs.send("/Running/wm", m) end
 local P = use("/Kosmos/Libraries/wmproto.lua")
 S{ type = "launch", program = "/Kosmos/Apps/passwords.lua" }
-local a, c
+local a, c, n, d
 for _ = 1, 200 do
+  d = nil
   for _, w in ipairs((P.windows() or {}).windows or {}) do
     if w.title == "About Kosmos" then a = w.handle end
     if w.title == "Passwords" then c = w.handle end
+    if w.title == "Notifications" then n = 1 end
+    if w.title == "Desktops" then d = 1 end
   end
-  if a and c then break end
+  if a and c and n and not d then break end
   sys.sleep(5)
 end
 S{ type = "move", window = c, x = 978, y = 200 }
@@ -385,12 +391,159 @@ def banner_frosted(guest, at, fails):
                    y + h + 8, 0.1, fails)
 
 
+# **Live glass** (LG6): About moved so that its lower part is under the
+# dock, over Telnet once every other check has looked at it.
+LIVE_MOVE = r'''
+local S = function(m) return fs.send("/Running/wm", m) end
+local P = use("/Kosmos/Libraries/wmproto.lua")
+local a
+for _, w in ipairs((P.windows() or {}).windows or {}) do
+  if w.title == "About Kosmos" then a = w.handle end
+end
+local d = S{ type = "dock" } or {}
+S{ type = "raise", window = a }
+local m = S{ type = "move", window = a, x = (d.x or 900) - 100, y = (d.y or 900) - 160 } or {}
+print("LIVEAT", m.x, m.y)
+'''
+
+LIVE_ON = r'''
+print("LIVEON", fs.send("/Running/wm", { type = "theme", live_glass = true }).ok)
+'''
+
+# Ten small moves of About under the dock with live glass on, under
+# `profile`: what was composed, and that it was composed at all.
+LIVE_MOVES = r'''
+local S = function(m) return fs.send("/Running/wm", m) end
+local P = use("/Kosmos/Libraries/wmproto.lua")
+local a
+for _, w in ipairs((P.windows() or {}).windows or {}) do
+  if w.title == "About Kosmos" then a = w.handle end
+end
+local at = S{ type = "move", window = a } or {}
+S{ type = "profile", on = true }
+for i = 1, 10 do
+  S{ type = "move", window = a, x = at.x + i * 4, y = at.y }
+  sys.sleep(3)
+end
+local p = S{ type = "profile" } or {}
+S{ type = "profile", on = false }
+S{ type = "theme", live_glass = false }
+print("LIVEMOVES", p.px, p.frames)
+'''
+
+
+def screen_at(guest, what):
+    shot = guest.screendump()
+    os.makedirs("build/glass", exist_ok=True)
+    open("build/glass/%s.ppm" % what, "wb").write(shot)
+    head = shot.split(b"\n", 3)
+    sw, _ = (int(v) for v in head[1].split())
+    data = head[3]
+
+    def at(px, py):
+        o = (py * sw + px) * 3
+        return tuple(data[o:o + 3])
+
+    return at
+
+
+def differs(a, b, x0, x1, y):
+    """How far two pictures are apart along a row: the mean, over its
+    pixels, of the largest of the three channels' differences."""
+    total = 0
+    for x in range(x0, x1):
+        total += max(abs(p - q) for p, q in zip(a(x, y), b(x, y)))
+    return total / max(1, x1 - x0)
+
+
+def live_glass(guest, session, dockat, fails):
+    """LG6's test, on the screen: the dock's glass over About, whose ground
+    is darker than the wallpaper under it - wallpaper glass shows the
+    wallpaper's blur there whatever is under the dock, live glass the
+    window. So the same row of the dock, the two ways, is far apart over
+    About and close over the wallpaper beside it, where both are the
+    wallpaper blurred at the same reach. Then About moved under the dock
+    ten times with live glass on: composed, and nothing stopped."""
+    if not dockat:
+        fails.append("live glass: the dock never said where it is")
+        return
+    dx, dy, dw, dh = (int(dockat.group(i)) for i in range(1, 5))
+    said = run_script(guest, session, "livemove", LIVE_MOVE)
+    placed = re.search(r"LIVEAT\s+(-?\d+)\s+(-?\d+)", said)
+    about = re.findall(r"wm: window About Kosmos at -?\d+,-?\d+ (\d+)x(\d+)", guest.seen)
+    if not (placed and about):
+        fails.append("live glass: About was not moved under the dock: %r" % said[-200:])
+        return
+    ax, ay = int(placed.group(1)), int(placed.group(2))
+    aw, ah = (int(v) for v in about[-1])
+    row = dy + 4
+    x0, x1 = max(ax + 16, dx + dw // 8), min(ax + aw - 16, dx + 7 * dw // 8)
+    # The wallpaper beside it: the dock between the Kosmos button, which is
+    # opaque - on 18 November the first try read it and passed on 0.0 - and
+    # About, kept further than the blur's reach from both.
+    w0, w1 = dx + 160, ax - 40
+    if not (ay + ah > row + 2 and x1 - x0 >= 40 and w1 - w0 >= 30):
+        fails.append("live glass: About at %d,%d %dx%d does not lie under the dock at %d,%d %dx%d "
+                     "with wallpaper beside it" % (ax, ay, aw, ah, dx, dy, dw, dh))
+        return
+    # The pointer off the dock and the menu closed by a press on the
+    # desktop: while either holds it the Deskbar keeps its lens over the
+    # dock, and the lens covers the dock, not what is under it.
+    guest.mouse_to(16383, 300 * 32767 // 1079)
+    time.sleep(0.5)
+    guest.mouse_button(True)
+    time.sleep(0.1)
+    guest.mouse_button(False)
+    time.sleep(4)
+    before = screen_at(guest, "live-off")
+    mark = len(guest.seen)
+    run_script(guest, session, "liveon", LIVE_ON)
+    if not line(guest, r"wm: live glass on", mark, 30):
+        fails.append("live glass: the window manager never said it was on")
+        return
+    time.sleep(3)
+    after = screen_at(guest, "live-on")
+    over = differs(before, after, x0, x1, row)
+    beside = differs(before, after, w0, w1, row)
+    print("live: the dock's row %d over About (x %d-%d) moved %.1f with live glass; over the "
+          "wallpaper (x %d-%d) %.1f" % (row, x0, x1, over, w0, w1, beside))
+    if not (over > 12 and beside < 6):
+        fails.append("live glass: the dock over About changed %.1f and over the wallpaper %.1f; "
+                     "live, the first is the window under it and the second the same blur"
+                     % (over, beside))
+    said = run_script(guest, session, "livemoves", LIVE_MOVES)
+    moved = re.search(r"LIVEMOVES\s+(\d+)\s+(\d+)", said)
+    print("live: ten moves under the dock: %r" % (moved and moved.group(0)))
+    if not (moved and int(moved.group(2)) > 0):
+        fails.append("live glass: About moved under the dock was not composed: %r" % said[-200:])
+
+
+def run_script(guest, session, name, text):
+    """A script put on the machine and run there; what it printed, on the
+    session or on the serial line, whichever it reached."""
+    path = "/Temporary/%s.lua" % name
+    session.put(text.encode(), path)
+    mark = len(guest.seen)
+    said = session.run(path).decode(errors="replace")
+    time.sleep(0.5)
+    guest._read_available()
+    return said + guest.seen[mark:]
+
+
+def one_line(script):
+    """A script as one typed line: its lines' indentation dropped, since
+    the console takes 1024 characters and the focus script came near."""
+    return " ".join(l.strip() for l in script.splitlines() if l.strip())
+
+
 def lua_string(text):
     return "[==[" + text + "]==]"
 
 
 def run(fails):
     image = "build/x86_64/kosmos.elf" if len(sys.argv) < 2 else sys.argv[1]
+    import run_gallery
+    telnet = run_gallery.with_telnet()
     guest = R.Guest(image, 150)
     try:
         guest.wait_for_line("kosmos> ", "the prompt")
@@ -402,15 +555,15 @@ def run(fails):
                    'fs.write("/Home/Preferences/startup", { items = { "/Temporary/glassswap.lua", '
                    '"/Temporary/glassbanner.lua", "/Kosmos/Apps/about.lua", '
                    '"/Temporary/glassfocus.lua" } }))'
-                   % lua_string(SWAP.replace("\n", " ")))
+                   % lua_string(one_line(SWAP)))
         guest.wait_for_line("PREFS", "the appearance and startup settings", mark)
         mark = len(guest.seen)
         guest.type('print("BANNERFILE", fs.write("/Temporary/glassbanner.lua", %s))'
-                   % lua_string(BANNER.replace("\n", " ")))
+                   % lua_string(one_line(BANNER)))
         guest.wait_for_line("BANNERFILE", "the banner's script", mark)
         mark = len(guest.seen)
         guest.type('print("FOCUSFILE", fs.write("/Temporary/glassfocus.lua", %s))'
-                   % lua_string(FOCUS.replace("\n", " ")))
+                   % lua_string(one_line(FOCUS)))
         guest.wait_for_line("FOCUSFILE", "the focus script", mark)
         mark = len(guest.seen)
         guest.type("wm")
@@ -447,6 +600,9 @@ def run(fails):
         menu_frosted(guest, screen, len(guest.seen), fails)
         time.sleep(2)
         focus_damage(guest, fails)
+        import run_servers as S
+        session = S.connect(telnet)
+        live_glass(guest, session, last or dockat, fails)
         guest._read_available()
         seen = guest.seen[mark:]
         print("glass: " + "; ".join(re.findall(r"wm: (the wallpaper[^\r\n]*)", seen)))
@@ -514,7 +670,7 @@ def main():
     print("PASS: %d checks on the wallpaper's glass (the desktop in Liquid Glass, its "
           "wallpaper placed; the glass made the picture's size, three passes "
           "at the look's reach; given back for Endeavour and made again for Liquid Glass "
-          "Night; the dock, a banner, a window and a menu frosted; a window's rim lit from the upper left, warm in front; nothing stopped)." % CHECKS)
+          "Night; the dock, a banner, a window and a menu frosted; a window's rim lit from the upper left, warm in front; live glass over About under the dock, and the same blur over the wallpaper; nothing stopped)." % CHECKS)
     return 0
 
 

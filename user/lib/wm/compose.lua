@@ -59,9 +59,18 @@ return function(ctx)
   local function compose()
     if #damage == 0 then return end
 
-    merge()
-
     describe()
+
+    --
+    -- **Live glass** (Liquid Glass LG6): damage that touches a live
+    -- surface's reach grows to hold it, so the dock or a menu is composed
+    -- whole, over what is under it - and merged again, since a rectangle
+    -- that grew can touch another's reach. Rectangles only grow, inside the
+    -- screen, so this ends; without live glass `widen` answers 0 at once.
+    --
+    repeat
+      merge()
+    until scene:widen(damage) == 0
 
     local drawn, why, compose_us, copy_us, held_back = ws.compose(scene, damage, true)
 

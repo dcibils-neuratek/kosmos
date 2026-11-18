@@ -416,6 +416,10 @@ local APPLY = {
     return fs.send("/Running/wm", { type = "theme", shadow = on })
   end,
 
+  live_glass = function(on)
+    return fs.send("/Running/wm", { type = "theme", live_glass = on })
+  end,
+
   -- Where the bar is, and how wide the dock: told to the Deskbar, which
   -- starts itself again there. A machine with no Deskbar running keeps the
   -- setting all the same, for the next one to read.

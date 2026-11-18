@@ -491,6 +491,16 @@ of section 6.
    behind Appearance's choice. *Test*: `x86-scene` with and without
    `SC_GLASS` over 1500 passes, against a reference blur of the same back
    buffer; `frames` with a film under the dock, under 1 ms a pass more.
+   **Built in 0.11.488** (`testing.md` 18.887): *Glass shows what is
+   behind* in Appearance, off by default; the dock, its lens, tips,
+   banners and menus (`SC_LIVE`, the window manager's to give) blurred
+   from the back buffer in a scratch, the damage widened to their reach
+   (`scene_widen`). Held to `gfx_blur` by `test_draw` rather than by
+   `x86-scene`, and on the screen by `x86-glass` - About under the dock,
+   61.6 apart with it on, 0.0 over the wallpaper. **Owed**: the cost on
+   the M700, before it is a default; it uses the full-size blur, not the
+   quarter-size copy drawn above, which is the first thing to try if it
+   is over.
 7. **LG7 - live glass for windows, on the GPU**, with 7d; on the processor
    only as a choice that says what it costs. *Test*: the GPU's glass
    compared pixel for pixel with the processor's, as 7c's blend was.

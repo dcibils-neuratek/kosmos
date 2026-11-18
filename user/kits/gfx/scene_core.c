@@ -17,6 +17,7 @@
 #include "draw_primitives.h"
 #include "shadow.h"
 #include "scene_core.h"
+#include "blur.h"
 
 void scene_init(struct scene *sc, struct surface *back)
 {
@@ -26,6 +27,7 @@ void scene_init(struct scene *sc, struct surface *back)
     sc->keep.width = sc->keep.height = 64;
     sc->keep.pitch = 64 * 4;
     sc->outline = 2;
+    sc->live_blur = -1;
 }
 
 void scene_free(struct scene *sc)
@@ -38,6 +40,9 @@ void scene_free(struct scene *sc)
     free(sc->lens_mem);
     sc->lens_mem = NULL;
     sc->lens_ok = false;
+    free(sc->live_mem);
+    sc->live_mem = NULL;
+    sc->live_cap = 0;
     sc->win = NULL;
     sc->menu = NULL;
     sc->pieces[0] = sc->pieces[1] = NULL;
@@ -577,7 +582,9 @@ static uint32_t glass_px(const struct scene *sc, long gx, long gy)
     const struct surface *g = sc->glass;
 
     if (gx < 0 || gy < 0 || gx >= (long)g->width || gy >= (long)g->height) {
-        return sc->desktop;
+        if (!sc->glass_clamp) return sc->desktop;
+        gx = gx < 0 ? 0 : gx >= (long)g->width ? (long)g->width - 1 : gx;
+        gy = gy < 0 ? 0 : gy >= (long)g->height ? (long)g->height - 1 : gy;
     }
 
     return row_of(g, (unsigned)gy)[gx];
@@ -643,6 +650,176 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
             o[x] = gr != NULL && gx >= 0 && gx < (long)g->width ? gr[gx] : sc->desktop;
         }
     }
+}
+
+/*
+ * **Live glass** (Liquid Glass LG6, G2): a floating glass surface - `sx`,
+ * `sy`, `sw` by `sh` - over what is really under it. Composing goes back
+ * to front, so when the surface's turn comes the back buffer already holds
+ * every layer under it: its rectangle and the blur's reach around it are
+ * copied from there into the scratch and blurred in place - three box
+ * passes at `live_blur`, none for clear glass - and the scratch stands in
+ * for the wallpaper's glass while the surface is drawn, so `glass_under`
+ * and its lens read it exactly as they read that. A menu over the dock
+ * blurs the dock, as it should.
+ *
+ * Only when the rectangle being composed holds the whole of that reach
+ * (`scene_widen` makes it so): anything less would blur pixels from a
+ * frame before. Past the screen's edge the scratch is clipped, and a lens
+ * that bends past the scratch reads its edge pixel. What it does not see
+ * is a window above the surface whose pixels are inside the reach - they
+ * are from the frame before until it is drawn - which is the blur's edge
+ * and nothing more, since that window then covers it.
+ *
+ * Whether it was: false, and nothing changed, for wallpaper glass.
+ */
+struct glass_was {
+    struct surface *glass;
+    long wx, wy;
+};
+
+static long live_reach(const struct scene *sc)
+{
+    return 3 * sc->live_blur + sc->rim_bevel;
+}
+
+/* The surface's reach on the screen, `e`; false when it has none. */
+static bool live_rect(const struct scene *sc, long sx, long sy, long sw, long sh,
+                      struct sc_rect *e)
+{
+    long reach = live_reach(sc);
+    long bw = (long)sc->back->width, bh = (long)sc->back->height;
+    long x0 = sx - reach, y0 = sy - reach, x1 = sx + sw + reach, y1 = sy + sh + reach;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > bw) x1 = bw;
+    if (y1 > bh) y1 = bh;
+    if (x1 <= x0 || y1 <= y0) return false;
+    *e = (struct sc_rect){ x0, y0, x1 - x0, y1 - y0 };
+    return true;
+}
+
+static bool live_under(struct scene *sc, unsigned flags, long sx, long sy, long sw, long sh,
+                       struct glass_was *was)
+{
+    struct sc_rect e;
+    const struct sc_rect *r = &sc->cur;
+    size_t n, need;
+    long y;
+
+    if (!(flags & SC_LIVE) || sc->live_blur < 0 || (unsigned long)sc->live_blur > GFX_BLUR_MOST
+        || !live_rect(sc, sx, sy, sw, sh, &e)
+        || e.x < r->x || e.y < r->y || e.x + e.w > r->x + r->w || e.y + e.h > r->y + r->h) {
+        return false;
+    }
+
+    n = (size_t)e.w * (size_t)e.h;
+    need = 2 * n + 4 * (size_t)e.w;
+
+    if (need > sc->live_cap) {
+        uint32_t *m = realloc(sc->live_mem, need * sizeof(uint32_t));
+
+        if (m == NULL) return false;
+        sc->live_mem = m;
+        sc->live_cap = need;
+    }
+
+    for (y = 0; y < e.h; y++) {
+        memcpy(sc->live_mem + (size_t)y * (size_t)e.w,
+               row_of(sc->back, (unsigned)(e.y + y)) + e.x, (size_t)e.w * sizeof(uint32_t));
+    }
+
+    if (sc->live_blur > 0) {
+        gfx_blur(sc->live_mem, sc->live_mem, (size_t)e.w, (unsigned)e.w, (unsigned)e.h,
+                 (unsigned)sc->live_blur, 3, sc->live_mem + n, sc->live_mem + 2 * n);
+    }
+
+    sc->live_glass = (struct surface){ 0 };
+    sc->live_glass.pixels = sc->live_mem;
+    sc->live_glass.width = (unsigned)e.w;
+    sc->live_glass.height = (unsigned)e.h;
+    sc->live_glass.pitch = (unsigned)e.w * 4u;
+
+    was->glass = sc->glass;
+    was->wx = sc->wx;
+    was->wy = sc->wy;
+    sc->glass = &sc->live_glass;
+    sc->wx = e.x;
+    sc->wy = e.y;
+    sc->glass_clamp = true;
+    sc->live_made++;
+    return true;
+}
+
+static void live_done(struct scene *sc, const struct glass_was *was)
+{
+    sc->glass = was->glass;
+    sc->wx = was->wx;
+    sc->wy = was->wy;
+    sc->glass_clamp = false;
+}
+
+/*
+ * A floating surface that is live glass: blended, glass and live, and shown
+ * as it is. By its flags alone, never its picture: the window manager's
+ * own scene, which widens the damage, names pictures by the window
+ * server's slots and holds none of them - and asked for a picture, it
+ * widened nothing, so the dock was live in the one pass that composed the
+ * screen and wallpaper glass in every pass after (18 November).
+ */
+static bool live_strip(const struct sc_window *w)
+{
+    return (w->flags & (SC_BLEND | SC_GLASS | SC_LIVE | SC_HIDDEN))
+               == (SC_BLEND | SC_GLASS | SC_LIVE)
+           && w->src_w == w->w && w->src_h == w->h;
+}
+
+int scene_widen(const struct scene *sc, struct sc_rect *r, int n)
+{
+    int grew = 0, k, i;
+
+    if (sc->live_blur < 0 || (unsigned long)sc->live_blur > GFX_BLUR_MOST || sc->back == NULL) {
+        return 0;
+    }
+
+    for (k = 0; k < sc->nwin + sc->nmenu; k++) {
+        struct sc_rect e;
+        bool ok;
+
+        if (k < sc->nwin) {
+            const struct sc_window *w = &sc->win[k];
+
+            ok = live_strip(w) && live_rect(sc, w->x, w->y, w->w, w->h, &e);
+        } else {
+            const struct sc_menu *m = &sc->menu[k - sc->nwin];
+
+            ok = (m->flags & (SC_GLASS | SC_LIVE)) == (SC_GLASS | SC_LIVE)
+                 && live_rect(sc, m->x, m->y, m->w, m->h, &e);
+        }
+
+        for (i = 0; ok && i < n; i++) {
+            struct sc_rect *a = &r[i];
+            long x0, y0, x1, y1;
+
+            if (a->w <= 0 || a->h <= 0 || a->x >= e.x + e.w || e.x >= a->x + a->w
+                || a->y >= e.y + e.h || e.y >= a->y + a->h) {
+                continue;
+            }
+
+            x0 = a->x < e.x ? a->x : e.x;
+            y0 = a->y < e.y ? a->y : e.y;
+            x1 = a->x + a->w > e.x + e.w ? a->x + a->w : e.x + e.w;
+            y1 = a->y + a->h > e.y + e.h ? a->y + a->h : e.y + e.h;
+
+            if (x0 != a->x || y0 != a->y || x1 - x0 != a->w || y1 - y0 != a->h) {
+                *a = (struct sc_rect){ x0, y0, x1 - x0, y1 - y0 };
+                grew++;
+            }
+        }
+    }
+
+    return grew;
 }
 
 /*
@@ -774,8 +951,12 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
         if (w->flags & SC_BLEND) {
             if ((w->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
                 && w->src_w == w->w && w->src_h == w->h) {
+                struct glass_was was;
+                bool live = live_under(sc, w->flags, w->x, w->y, w->w, w->h, &was);
+
                 glass_under(sc, w->picture, w->x, w->y, w->w, w->h, false,
                             x0, y0, x1, y1);
+                if (live) live_done(sc, &was);
             }
             blend_on(sc->back, w->picture, x0 - w->x, y0 - w->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
@@ -990,6 +1171,7 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
     }
 
     lens_update(sc);
+    sc->cur = r;
     sc->pieces[cur][0] = r;
 
     /* Front to back: what each window shows of what is left uncovered. */
@@ -1097,7 +1279,11 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
          * wallpaper's glass where it draws, its tint blended over that. */
         if ((m->flags & SC_GLASS) && sc->glass != NULL && sc->glass->pixels != NULL
             && m->w <= (long)m->picture->width && m->h <= (long)m->picture->height) {
+            struct glass_was was;
+            bool live = live_under(sc, m->flags, m->x, m->y, m->w, m->h, &was);
+
             glass_under(sc, m->picture, m->x, m->y, m->w, m->h, true, x0, y0, x1, y1);
+            if (live) live_done(sc, &was);
             blend_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0,
                      x0, y0, 255);
             rim_light(sc, m->picture, m->x, m->y, m->w, m->h, 0xffffffffu, x0, y0, x1, y1);

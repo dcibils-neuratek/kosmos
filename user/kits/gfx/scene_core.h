@@ -37,6 +37,12 @@ enum {
                                    under it (Liquid Glass LG4). With
                                    SC_BLEND, a strip's; alone, a window's,
                                    frosted only when shown as it is */
+    SC_LIVE     = 1u << 13,     /* with SC_GLASS, glass over what is really
+                                   under it when the scene has live glass
+                                   (LG6): the floating surfaces - the
+                                   dock, a strip, a tip, a banner, a menu -
+                                   and never the desktop, whose reach is
+                                   the screen */
 };
 
 /* The lights, from the left: maximise, minimise, close (`OUT.SLOT`) - and
@@ -128,6 +134,27 @@ struct scene {
     long lens_of[4];
     bool lens_ok;
 
+    /*
+     * **Live glass** (Liquid Glass LG6; G2 of `docs/astra.md` 4.3): the
+     * floating surfaces - a glass strip (the dock, a banner) and a glass
+     * menu - over what is really under them rather than the wallpaper's
+     * glass. `live_blur` is the radius of each of three box passes, 0 for
+     * clear glass, and -1 for none (wallpaper glass). A surface is live
+     * only when the rectangle being composed holds all of it and its reach
+     * (`scene_widen`); otherwise it is wallpaper glass, as before.
+     * `live_mem` is the scratch - what is under a surface and its reach,
+     * copied from the back buffer and blurred there - `live_cap` pixels
+     * long, grown and never shrunk; `live_made` counts the surfaces made
+     * live since it was last set to nought, for `frames` and the tests.
+     */
+    long live_blur;
+    uint32_t *live_mem;
+    size_t live_cap;
+    struct surface live_glass;
+    long live_made;
+    bool glass_clamp;           /* past the glass's edge: its edge pixel */
+    struct sc_rect cur;         /* the rectangle `scene_compose` is in */
+
     /* Over everything. */
     bool outline_on;
     long ox, oy, ow, oh;
@@ -176,6 +203,14 @@ bool scene_set_menus(struct scene *sc, int n);
 /* One damaged rectangle into the back buffer: the pixels drawn, or -1 when
  * there was no memory for its scratch. */
 long scene_compose(struct scene *sc, long x, long y, long w, long h);
+
+/*
+ * **The damage widened for live glass** (LG6): each of the `n` rectangles
+ * that touches a live surface's reach grows to hold all of it, so the
+ * surface is composed whole and over what is under it. How many grew; the
+ * caller merges and asks again until none does.
+ */
+int scene_widen(const struct scene *sc, struct sc_rect *r, int n);
 
 /* Where a window's inset lands on the screen (`sc_window.inset`): `top` and
  * `tall` the picture's part of the frame, below a menu bar. */

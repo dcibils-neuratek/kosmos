@@ -26,6 +26,7 @@
 #include "surface.h"
 #include "draw_primitives.h"
 #include "scene_core.h"
+#include "blur.h"
 
 static int failed, passed;
 
@@ -277,6 +278,163 @@ static void glass(void)
 }
 
 /*
+ * **Live glass** (Liquid Glass LG6): a glass strip over a window of
+ * stripes four pixels wide, blue and yellow, with the wallpaper's glass
+ * green somewhere else. The strip's picture is black at an alpha of 1, so
+ * what shows under it is its glass within a step. Live, at a radius of 3:
+ * every pixel of the strip is the stripes blurred - held to `gfx_blur`
+ * over the same back buffer composed without the strip, its reach and
+ * all - and neither green nor the sharp stripes. A rectangle that does not
+ * hold the reach is wallpaper glass, as before, and `scene_widen` is what
+ * makes one hold it. Clear glass is the stripes, sharp; none is green. A
+ * glass menu is live the same way.
+ */
+static bool near(uint32_t a, uint32_t b, unsigned by)
+{
+    unsigned k;
+
+    for (k = 0; k < 24; k += 8) {
+        int d = (int)((a >> k) & 0xffu) - (int)((b >> k) & 0xffu);
+
+        if (d > (int)by || d < -(int)by) return false;
+    }
+    return true;
+}
+
+static void live(void)
+{
+    enum { W = 160, H = 80, SX = 50, SY = 30, SW = 60, SH = 20, R = 3 };
+    struct surface back = make(W, H, 0xff000000u);
+    struct surface win = make(W, H, 0);
+    struct surface strip = make(SW, SH, 0x01000000u);
+    struct surface frost = make(W, H, 0xff00ff00u);
+    struct scene *sc = malloc(sizeof(*sc));
+    long reach = 3 * R, ex = SX - reach, ey = SY - reach;
+    long ew = SW + 2 * reach, eh = SH + 2 * reach;
+    uint32_t *ref = malloc((size_t)ew * (size_t)eh * 4);
+    uint32_t *tmp = malloc((size_t)ew * (size_t)eh * 4);
+    uint32_t *sums = malloc((size_t)ew * 16);
+    struct sc_rect r[2];
+    unsigned x, y, off = 0, green = 0, sharp = 0, clear_off = 0;
+    long y2;
+
+    for (y = 0; y < H; y++) {
+        for (x = 0; x < W; x++) row_of(&win, y)[x] = (x / 4) % 2 ? 0xffffff00u : 0xff0000ffu;
+    }
+
+    scene_init(sc, &back);
+    sc->desktop = 0xffff0000u;
+    sc->glass = &frost;
+    sc->wx = sc->wy = 0;
+    check(scene_set_windows(sc, 1), "room for the window under live glass");
+    sc->win[0] = (struct sc_window){ 0, 0, W, H, 0, &win, W, H, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+
+    /* The reference: the back buffer without the strip, its reach blurred. */
+    (void)scene_compose(sc, 0, 0, W, H);
+    for (y2 = 0; y2 < eh; y2++) {
+        memcpy(ref + y2 * ew, row_of(&back, (unsigned)(ey + y2)) + ex, (size_t)ew * 4);
+    }
+    gfx_blur(ref, ref, (size_t)ew, (unsigned)ew, (unsigned)eh, R, 3, tmp, sums);
+
+    check(scene_set_windows(sc, 2), "room for the window and a strip");
+    sc->win[1] = (struct sc_window){ SX, SY, SW, SH, SC_BLEND | SC_GLASS | SC_LIVE, &strip, SW, SH, NULL, 0, 0, 0, -1, 0, NULL, 0, 0, 0, 0, NULL, 0, 0, -1, -1, -1, -1 };
+    sc->live_blur = R;
+    sc->live_made = 0;
+    (void)scene_compose(sc, 0, 0, W, H);
+
+    for (y = SY; y < SY + SH; y++) {
+        for (x = SX; x < SX + SW; x++) {
+            uint32_t p = at(&back, x, y), q = ref[(y - ey) * ew + (x - ex)];
+
+            if (!near(p, q, 2)) off++;
+            if (near(p, 0xff00ff00u, 8)) green++;
+            if (near(p, at(&win, x, y), 8)) sharp++;
+        }
+    }
+    check(sc->live_made == 1, "one surface made live in one rectangle");
+    check(off == 0, "live glass: the strip is what is under it blurred, as gfx_blur blurs it");
+    check(green == 0, "live glass: not the wallpaper's glass");
+    check(sharp < SW * SH / 10, "live glass: blurred, not the stripes as they are");
+
+    /* A rectangle that does not hold the reach: wallpaper glass, as before. */
+    sc->live_made = 0;
+    (void)scene_compose(sc, SX, SY, SW, SH);
+    check(sc->live_made == 0 && near(at(&back, SX + 30, SY + 10), 0xff00ff00u, 2),
+          "a rectangle short of the reach: wallpaper glass, not a blur of a frame before");
+
+    /* `scene_widen`: a rectangle touching the reach grows to hold it; one
+     * away from it does not; and a second asking grows nothing. */
+    r[0] = (struct sc_rect){ SX + 10, SY + 5, 4, 4 };
+    r[1] = (struct sc_rect){ 0, 0, 10, 10 };
+    check(scene_widen(sc, r, 2) == 1 && r[0].x == ex && r[0].y == ey && r[0].w == ew
+          && r[0].h == eh && r[1].w == 10, "the damage widened to the strip's reach, and only there");
+    check(scene_widen(sc, r, 2) == 0, "widened once, nothing more to widen");
+
+    /* As the window manager's own scene holds it: no pictures, no glass -
+     * slots in the window server - and widened all the same. */
+    {
+        struct surface *pic = sc->win[1].picture, *g = sc->glass;
+
+        sc->win[1].picture = NULL;
+        sc->glass = NULL;
+        r[0] = (struct sc_rect){ SX + 10, SY + 5, 4, 4 };
+        check(scene_widen(sc, r, 1) == 1 && r[0].w == ew,
+              "widened in a scene that names its pictures by slot");
+        sc->win[1].picture = pic;
+        sc->glass = g;
+    }
+
+    /* Glass but not live (`SC_LIVE` absent: the desktop's own window):
+     * wallpaper glass, and no damage widened for it. */
+    sc->win[1].flags = SC_BLEND | SC_GLASS;
+    sc->live_made = 0;
+    (void)scene_compose(sc, 0, 0, W, H);
+    r[0] = (struct sc_rect){ SX + 10, SY + 5, 4, 4 };
+    check(sc->live_made == 0 && near(at(&back, SX + 30, SY + 10), 0xff00ff00u, 2)
+          && scene_widen(sc, r, 1) == 0, "glass that is not live: the wallpaper's glass, nothing widened");
+    sc->win[1].flags = SC_BLEND | SC_GLASS | SC_LIVE;
+    sc->live_blur = -1;
+    r[0] = (struct sc_rect){ SX + 10, SY + 5, 4, 4 };
+    check(scene_widen(sc, r, 1) == 0 && r[0].w == 4, "no live glass, no damage widened");
+
+    /* Clear glass: the stripes as they are; none: the wallpaper's glass. */
+    sc->live_blur = 0;
+    (void)scene_compose(sc, 0, 0, W, H);
+    for (y = SY; y < SY + SH; y++) {
+        for (x = SX; x < SX + SW; x++) {
+            if (!near(at(&back, x, y), at(&win, x, y), 1)) clear_off++;
+        }
+    }
+    check(clear_off == 0, "clear live glass: what is under it, sharp");
+    sc->live_blur = -1;
+    (void)scene_compose(sc, 0, 0, W, H);
+    check(near(at(&back, SX + 30, SY + 10), 0xff00ff00u, 2), "no live glass: the wallpaper's glass");
+
+    /* A glass menu, live the same way. */
+    check(scene_set_windows(sc, 1) && scene_set_menus(sc, 1), "room for the window and a menu");
+    sc->menu[0] = (struct sc_menu){ SX, SY, SW, SH, &strip, -1, SC_GLASS | SC_LIVE };
+    sc->live_blur = R;
+    off = 0;
+    (void)scene_compose(sc, 0, 0, W, H);
+    for (y = SY; y < SY + SH; y++) {
+        for (x = SX; x < SX + SW; x++) {
+            if (!near(at(&back, x, y), ref[(y - ey) * ew + (x - ex)], 2)) off++;
+        }
+    }
+    check(off == 0, "a live glass menu: what is under it blurred");
+
+    scene_free(sc);
+    free(sc);
+    free(ref);
+    free(tmp);
+    free(sums);
+    free(back.pixels);
+    free(win.pixels);
+    free(strip.pixels);
+    free(frost.pixels);
+}
+
+/*
  * **The rim** (Liquid Glass LG3, LG4): a glass window, rounded at 8, over
  * glass whose red is its x and green its y, so where a pixel's glass was
  * read from shows in it. Its picture is black at an alpha of 1, so what
@@ -494,6 +652,7 @@ int main(void)
     primitives();
     scene();
     glass();
+    live();
     rim();
     beads();
     stale();
@@ -506,6 +665,6 @@ int main(void)
 
     printf("PASS: %d checks on the primitives and the scene (fills, copies, a blend, a stretch "
            "and a triangle; two windows, a menu and a hidden one composed, a corner rounded, a "
-           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
+           "drag's label, a panel by its own alpha, and the same again; a glass strip, menu and window frosted with the wallpaper's glass where they draw and not where they do not, and a glass window stretched copied; live glass - a strip and a menu over what is under them, blurred as gfx_blur blurs it, clear glass sharp, and the damage widened to hold the reach; a glass window's rim bent inward and lit toward the light - warm in front, white behind - its colours split amber from indigo, and flat without one; a picture from before a resize shown at its size, its edges drawn on)\n", passed);
     return 0;
 }

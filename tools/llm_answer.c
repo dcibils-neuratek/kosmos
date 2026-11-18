@@ -146,6 +146,7 @@ int main(int argc, char **argv)
   int chained = 0;
   static char stops[2][64];
   int stop_n[2] = { 0, 0 };
+  int loops = -1;
 
   while (argc > 1 && argv[1][0] == '-' && argv[1][1] == '-') {
     if (strcmp(argv[1], "--chain") == 0) {
@@ -162,6 +163,11 @@ int main(int argc, char **argv)
         at = comma ? comma + 1 : NULL;
       }
 
+      argv += 2, argc -= 2;
+    } else if (strcmp(argv[1], "--loops") == 0 && argc > 2) {
+      /* Which loops multiply the weights, LLM_KIT_LOOPS_*: every set is
+       * to give the same answer to the bit, and this is how that is held. */
+      loops = atoi(argv[2]);
       argv += 2, argc -= 2;
     } else {
       break;
@@ -185,6 +191,11 @@ int main(int argc, char **argv)
   /* n_ctx 0, as the server asks: everything the model was trained to hold. */
   if (file == MAP_FAILED || llm_open(&m, file, (size_t)st.st_size, 0, alloc, NULL, why, sizeof why) < 0) {
     fprintf(stderr, "llm_answer: %s\n", why);
+    return 1;
+  }
+
+  if (loops >= 0 && llm_use_loops(&m, (unsigned)loops) < 0) {
+    fprintf(stderr, "llm_answer: this processor has no loops %d\n", loops);
     return 1;
   }
 

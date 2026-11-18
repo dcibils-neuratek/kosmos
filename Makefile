@@ -2819,10 +2819,11 @@ $(HOSTDIR)/test_record: tools/test_record.c user/kits/record/record_core.c \
 # The primitives and the scene, with no Lua (Astra's D3b-1): drawn and
 # composed on this Mac, as the window server will.
 DRAW_HOST_SOURCES = user/kits/gfx/draw.c user/kits/gfx/scene_core.c \
-                    user/kits/gfx/rows.c user/kits/gfx/shadow.c user/kits/gfx/lens.c
+                    user/kits/gfx/rows.c user/kits/gfx/shadow.c user/kits/gfx/lens.c \
+                    user/kits/gfx/blur.c
 $(HOSTDIR)/test_draw: tools/test_draw.c $(DRAW_HOST_SOURCES) user/kits/gfx/surface.h \
                       user/kits/gfx/draw_primitives.h user/kits/gfx/scene_core.h \
-                      user/kits/gfx/lens.h
+                      user/kits/gfx/lens.h user/kits/gfx/blur.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Iuser/kits/gfx -o $@ \
 	        tools/test_draw.c $(DRAW_HOST_SOURCES) -lm

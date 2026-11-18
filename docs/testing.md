@@ -36695,3 +36695,81 @@ its control 9.33.
 **The gate** (115 suites, 625 s): `x86-ahci` failed as it has twice before
 tonight (roadmap, the three that flake) and passed alone straight after.
 The rest passed.
+
+## 18.887 Live glass (LG6): the dock, tips, banners and menus over what is really under them
+
+**In short.** With *Glass shows what is behind* on in Appearance, under a
+glass look the dock, the dock's lens, a tip, a banner and a menu blur the
+windows under them, not only the wallpaper. Slide a window under the dock
+and its colours are seen softened through the pill. Off by default, until
+the M700 says what it costs a frame.
+
+**How.** The scene composes back to front, so when a floating surface's
+turn comes the back buffer already holds every layer under it. Its
+rectangle, and the blur's reach around it (three passes at the look's
+radius, plus the rim's bevel), are copied from there into a scratch and
+blurred in place by `gfx_blur` - the same three box passes the wallpaper's
+glass is made with - and the scratch stands in for the wallpaper's glass
+while the surface is drawn, lens and all (`live_under` in
+`scene_core.c`). Clear glass copies without blurring. It is only done when
+the rectangle being composed holds the whole reach: anything less would
+blur pixels from a frame before. So wm widens the damage first
+(`scene:widen`, `scene_widen`): a rectangle that touches a live surface's
+reach grows to hold it, merged again, until nothing grows. Which surfaces
+are live is the window manager's to say, by a flag of its own (`SC_LIVE`,
+bit 13 on the wire): the dock, the top strip, tips, banners and menus -
+never the desktop's own window, whose reach is the screen and which a
+first try made live, widening every pass to all of it.
+
+**Two things found on the way.**
+
+- *The widening did nothing in the guest.* `scene_widen` asked for each
+  window's picture and for the wallpaper's glass, and the window
+  manager's own scene holds neither: it names them by the window server's
+  slots. So the one pass that composed the whole screen was live and every
+  pass after touching the dock - the lens redraws at the frame's rate -
+  was wallpaper glass again, and the screen looked exactly as before. A
+  trace in the window server showed the scratch differing from the
+  wallpaper's glass by 59 while nothing on the screen moved. It goes by
+  the flags alone now, and `test_draw` widens in a scene with no pictures,
+  as wm's is; its control - the picture asked for again - fails that check
+  alone.
+- *The dock's lens was never glass.* The comment in wm said "the dock,
+  its lens", and the condition asked for strips and banners: the lens, a
+  tip, was laid over the dock while the pointer was on it, and under it
+  About showed sharp through its pill. Every blended tip is glass now -
+  the lens, a name over an icon, a banner.
+
+**Held by** `tools/test_draw.c`, now 69: a strip over stripes four pixels
+wide, live at a radius of 3 - every pixel of it is the stripes blurred, to
+within 2 of `gfx_blur` over the same back buffer composed without it,
+neither green (the wallpaper's glass) nor sharp; a rectangle short of the
+reach is wallpaper glass; the damage widened to the reach and only there,
+once, with no pictures as well; glass that is not live left alone; clear
+glass sharp; none green; a glass menu live the same way. Controls, each
+failing alone: the blur left out (3 checks), `live_under` never taking
+(5), the widening growing nothing (1), a picture required to widen (1).
+
+And `x86-glass`, now 17, over Telnet once every other check has looked:
+About moved so its lower part is under the dock - 100 left of the dock's
+middle, so the dock between the Kosmos button and About is wallpaper
+glass - the menu closed and the pointer taken off the dock, a picture,
+live glass on, a picture. The dock's row over About moved **61.6**; over
+the wallpaper **0.0**, since both are the same three passes over the same
+pixels there, further than the reach from anything else. Then ten moves
+of About under the dock with it on: composed, 4.6 Mpx for the ten. With
+the widening broken it read 0.0 and 0.0 and failed. The first try read
+the wallpaper half under the Kosmos button, which is opaque, and passed
+on 0.0 for the wrong reason; it is read past the button now.
+
+The focus check needed a wait of its own: with Telnet's network the start
+is slower, the Desktops chooser closed inside its ten raises, and it read
+13.6 Mpx. It waits for the banner and for the chooser to be gone, and its
+startup scripts are typed without their indentation, since the console's
+1024 characters were reached.
+
+**The gate** (132 suites, 683 s): all passed.
+
+**Still owed**: LG6's cost on the M700 - `frames` with a film under the
+dock, live glass on and off, under 1 ms a pass more - before it can be
+the default anywhere.

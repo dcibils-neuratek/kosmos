@@ -501,6 +501,7 @@ local function load_appearance()
   --
   if saved.corner ~= nil then OUT.want_corner = saved.corner and true end
   if saved.shadow ~= nil then OUT.want_shadow = saved.shadow and true end
+  if saved.live_glass ~= nil then OUT.want_live_glass = saved.live_glass and true end
 
   -- The rendering mode (`docs/rendering.md`), applied once the window
   -- server and the pointer are set up.
@@ -2734,6 +2735,21 @@ function OUT.cut_size()
   return theme.cut and scale.px(8) or 0
 end
 
+--
+-- Live glass's radius (LG6): the wallpaper glass's, 0 for clear glass, or
+-- nil - none - when Appearance has not asked for it or the look is not
+-- glass.
+--
+OUT.want_live_glass = false
+
+function OUT.live_glass_radius()
+  if not (OUT.want_live_glass and wallpaper and OUT.wall_glass and theme.glassy()) then
+    return nil
+  end
+  if theme.glass == "clear" then return 0 end
+  return math.max(1, scale.px(theme.glass_blur or 0) // 3)
+end
+
 function OUT.describe()
   local L = OUT.LIGHTS
   local lift = theme.lift
@@ -2778,6 +2794,18 @@ function OUT.describe()
     scene:rim(0, 0, 0)
   end
 
+  -- **Live glass** (Liquid Glass LG6), when Appearance asks for it: the
+  -- dock, banners and menus over what is really under them, blurred as the
+  -- wallpaper's glass is - clear glass not blurred at all - and composed
+  -- whole whenever anything under them changes (`scene:widen`).
+  local live = OUT.live_glass_radius()
+
+  if live ~= OUT.live_said then
+    OUT.live_said = live
+    print("wm: live glass at " .. tostring(live))
+  end
+  scene:live(live)
+
   local order = OUT.order()
   local count = order and #order or #windows
   local front = focused_window()
@@ -2793,14 +2821,22 @@ function OUT.describe()
     if win.hidden or win.drawn == false then flags = flags | 1 end
     if win.backdrop or win.blend then flags = flags | 2 end
     --
-    -- **Glass** (Liquid Glass LG4): a blended strip - the dock, its lens -
-    -- and a notification's banner, frosted with the wallpaper's glass
-    -- where they draw, under a glass look, rather than showing what is
-    -- under them; menus the same, below, on their own list. Floating
-    -- surfaces first; windows' own grounds follow through the kit.
+    -- **Glass** (Liquid Glass LG4): a blended strip - the dock - and a
+    -- tip - the dock's lens, a name over an icon, a notification's banner -
+    -- frosted with the wallpaper's glass where they draw, under a glass
+    -- look, rather than showing what is under them; menus the same, below,
+    -- on their own list. Floating surfaces first; windows' own grounds
+    -- follow through the kit. The lens was left out until 18 November,
+    -- when live glass's test looked at the dock with the pointer on it and
+    -- saw About through the lens's pill, sharp: it said "the dock, its
+    -- lens" here and asked for strips and banners only.
     --
-    if win.blend and (win.strip or win.banner) and OUT.wall_glass then
+    if win.blend and (win.strip or win.tip) and OUT.wall_glass then
       flags = flags | 4096
+      -- And live (LG6, `SC_LIVE`): the floating ones over what is really
+      -- under them, when Appearance asks - never the desktop's own window,
+      -- whose reach is the screen and would widen every pass to it.
+      if not win.backdrop then flags = flags | 8192 end
     end
     --
     -- And a window the kit draws, whose ground is then the look's tint:
@@ -2888,7 +2924,7 @@ function OUT.describe()
 
   for k, m in ipairs(menus) do
     scene:menu(k, m.x, m.y, m.w, m.h, pic(m.shared and m.shared[m.shared.live] or m.surface),
-               (m.blend and OUT.wall_glass) and 4096 or 0)
+               (m.blend and OUT.wall_glass) and (4096 | 8192) or 0)
   end
 
   local o = PT.outline
@@ -7018,6 +7054,12 @@ handlers.theme = function(req)
     OUT.want_corner = req.corner and true or false
     OUT.corner = OUT.want_corner
                  and scale.px(theme.metrics.corner or 0) or 0
+    add_damage(0, 0, W, H)
+  end
+
+  if req.live_glass ~= nil then
+    OUT.want_live_glass = req.live_glass and true or false
+    print("wm: live glass " .. (OUT.want_live_glass and "on" or "off"))
     add_damage(0, 0, W, H)
   end
 
