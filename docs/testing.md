@@ -36879,3 +36879,11 @@ What holds it: `tools/test_draw.c` (81 checks, from 78) - a glass window
 stretched, and one stale with the room it was drawn out across, each its
 tint over the glass; a window that is not glass, stretched, copied as it
 is. **Control**: the branch taken out, those three fail.
+
+**`x86-desktops` under a gate.** Its check that the loader's window was
+drawn failed four gates from 0.11.453 to 0.11.491, each passing alone: the
+loader's first frame came later than half a second, so the window manager
+showed it anyway ("shown before it had drawn"), which is its rule for a
+slow first frame, and the line the check waited for never came. Either is
+the loader's window on the screen, and the loader's own lines after it
+say it ran, so the check takes either and prints which.

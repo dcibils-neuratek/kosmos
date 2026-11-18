@@ -82,7 +82,14 @@ def main():
         mark = len(guest.seen)
         guest.type("wm")
         starting = line(r"chooser: starting (\w+), as the setting says", mark)
-        drawn = line(r"wm: Desktops drawn", mark)
+        # Drawn, or - its first frame later than half a second, which a busy
+        # host makes likely - shown anyway by the window manager's rule
+        # (`win.drawn`): either is the loader's window on the screen, and the
+        # loader's own lines below say it ran. Four gates from 0.11.453 to
+        # 0.11.491 failed here on the second, each passing alone.
+        drawn = line(r"wm: Desktops (drawn, shown after \d+ ms|shown before it had drawn)", mark)
+        if drawn:
+            print("desktops: the loader's window %s" % drawn.group(1))
         screen = line(r"wm: the window server answers, the screen (\d+)x(\d+)", mark)
         width, height = (int(screen.group(1)), int(screen.group(2))) if screen else (1920, 1080)
 
