@@ -332,6 +332,7 @@ static void beads(void)
 static void rim(void)
 {
     struct surface back = make(120, 80, 0xff000000u);
+    struct surface plate = make(40, 12, 0xff806020u);
     struct surface pic = make(80, 40, 0x01000000u);
     struct surface frost = make(120, 80, 0);
     struct scene *sc = malloc(sizeof(*sc));
@@ -385,6 +386,24 @@ static void rim(void)
     p = at(&back, 20, 40);
     check((p & 0xff) > 0x40 + 20, "a window behind, lit white whatever the warm light is");
 
+    /* The star specular, on the window in front alone: with one white light
+     * for both, the star is all that differs - an arm two from its middle,
+     * at the top-left corner's 45 degrees (2 in, for a corner of 8). */
+    sc->rim_front = 0xffffffffu;
+    sc->win[0].plate = &plate;         /* over its corner, as a header's is */
+    sc->win[0].px = 0;
+    sc->win[0].py = 0;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    q = at(&back, 24, 22);
+    sc->win[0].flags |= SC_FOCUSED;
+    (void)scene_compose(sc, 0, 0, 120, 80);
+    p = at(&back, 24, 22);
+    check(((p >> 16) & 0xff) + ((p >> 8) & 0xff) + (p & 0xff)
+          > ((q >> 16) & 0xff) + ((q >> 8) & 0xff) + (q & 0xff) + 40,
+          "the window in front's corner ends in a star of light, over its plate");
+    sc->win[0].flags &= ~(uint32_t)SC_FOCUSED;
+    sc->win[0].plate = NULL;
+
     /* The split: glass whose blue is its x as well as its red, no light.
      * At the left edge red is read further in than blue, so red is the
      * higher; with no split the two are one. */
@@ -411,6 +430,7 @@ static void rim(void)
 
     scene_free(sc);
     free(sc);
+    free(plate.pixels);
     free(back.pixels);
     free(pic.pixels);
     free(frost.pixels);

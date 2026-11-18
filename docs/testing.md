@@ -36506,8 +36506,8 @@ check alone. And `x86-glass`, now 12: About in front, red over blue 36 at
 its top row against -23 in its header; the control, no front light, -14,
 fails that check alone.
 
-**Not yet** (LG5): the amber plate (18.882), the beads (18.881), and the
-star specular at the front window's top-left corner.
+**Since** (LG5): the beads (18.881), the amber plate (18.882) and the star
+specular (18.883).
 
 **The gate** (131 suites, 694 s): `x86-film` failed as in 18.878 and passed alone straight after; it composes no glass. The rest passed.
 
@@ -36567,3 +36567,34 @@ before, reads 242 and 59, paint's own, and fails that check alone.
 `x86-profile` counted 635 samples where 1051 were due - a timing check
 under every suite at once - and passed alone straight after with 1040. The
 rest passed.
+
+## 18.883 The star specular (LG5): the light ends in Kosmos's mark
+
+**In short.** Where the window in front's rim is lit most - its top-left
+corner - the light now ends in a small four-point star, nine pixels
+across, in the warm front light. Only the window in front has it, so it is
+one more way of seeing which window is in front, and the last of Liquid
+Glass's cues to be drawn. LG5's own test - a focus change redrawing only
+the two plates and the two rims - is next.
+
+**How.** `star_glint` in `scene_core.c`, after the rim's light on a glass
+window that is `SC_FOCUSED`: four arms of four pixels from a middle at the
+corner's 45 degrees (`corner * 29 / 100` in from each side), fading 255,
+170, 100, 45, 15, times the look's specular, blended toward `rim_front`.
+Nothing new crosses to the window server.
+
+**Found on the way**: drawn with the rim, the star was under the amber
+plate, which is blended over the header after it and covers that corner -
+seen in the glass suite's shot, About's corner amber with no star. It is
+drawn last now, over everything the header holds.
+
+**Held by** `tools/test_draw.c`, now 53: with one white light for both and
+a plate over the corner, a focused window's arm, two from the star's
+middle, more than 40 brighter than the same pixel unfocused. Its controls
+- the star never drawn, and the star drawn with the rim, under the plate -
+each fail that check alone.
+
+**The gate** (114 suites, 621 s): `x86-ahci` (a probe's command ended by a
+tick rather than its interrupt, as in 18.878) and `x86-smbd` (a page that
+did not show within 120 s) failed, and both passed alone straight after
+(108 s). Neither composes a window. The rest passed.

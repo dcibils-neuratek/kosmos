@@ -646,6 +646,33 @@ static void glass_under(struct scene *sc, const struct surface *picture, long px
 }
 
 /*
+ * **The star specular** (Liquid Glass L5): where the window in front's rim
+ * is lit most - its top-left corner, at the arc's 45 degrees - the light
+ * ends in a small four-point star, Kosmos's mark made of the light itself.
+ * Nine pixels across, its arms fading from the middle, toward the warm
+ * light, as strong as the look's specular. Inside `x0`..`y1` only.
+ */
+static void star_glint(struct scene *sc, long cx, long cy, uint32_t toward,
+                       long x0, long y0, long x1, long y1)
+{
+    static const unsigned arm[5] = { 255, 170, 100, 45, 15 };
+    long i, k;
+
+    for (k = 0; k < 4; k++) {
+        for (i = k == 0 ? 0 : 1; i < 5; i++) {
+            long x = cx + (k == 0 ? i : k == 1 ? -i : 0);
+            long y = cy + (k == 2 ? i : k == 3 ? -i : 0);
+            unsigned a = arm[i] * (unsigned)sc->rim_specular / 100u;
+            uint32_t *o;
+
+            if (x < x0 || x >= x1 || y < y0 || y >= y1 || a == 0) continue;
+            o = row_of(sc->back, (unsigned)y) + x;
+            *o = over((toward & 0x00ffffffu) | (uint32_t)a << 24, *o, 255);
+        }
+    }
+}
+
+/*
  * The rim's light, over a glass surface once its picture is blended: light
  * of colour `toward` added by the lens's specular where the picture draws,
  * on the side toward the light.
@@ -726,6 +753,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
     long kept[4][6];
     int nkept = 0;
     long x0, y0, x1, y1;
+    bool starred = false;
 
     if ((w->flags & SC_HIDDEN) || w->x >= r->x + r->w || w->x + w->w <= r->x
         || w->y >= r->y + r->h || w->y + w->h <= r->y) {
@@ -769,6 +797,9 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
                           (w->flags & SC_FOCUSED) && sc->rim_front != 0
                               ? sc->rim_front : 0xffffffffu,
                           x0, y0, x1, y1);
+
+                /* And its star, once everything over the header is on. */
+                starred = (w->flags & SC_FOCUSED) && sc->lens_ok && sc->rim_specular > 0;
             }
         } else if (w->bar != NULL) {
             /* A menu bar above the picture (`strips.compose`). */
@@ -824,6 +855,15 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
             blend_on(sc->back, w->plate, ax0 - dx, ay0 - dy, ax1 - ax0, ay1 - ay0,
                      ax0, ay0, 255);
         }
+    }
+
+    /* The star specular, last, so that a plate over the corner does not
+     * hide it: the light's end is over everything the header holds. */
+    if (starred) {
+        long in = (long)sc->corner * 29 / 100;
+
+        star_glint(sc, w->x + in, w->y + in,
+                   sc->rim_front != 0 ? sc->rim_front : 0xffffffffu, x0, y0, x1, y1);
     }
 
     /* The sizing grip, three diagonal steps over its bottom-right corner. */
