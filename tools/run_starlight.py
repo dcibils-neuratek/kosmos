@@ -14,6 +14,8 @@ and the one in front dragged by its header clear of the other:
     the look's quiet `tab_idle`, never amber;
   - the one behind, clicked on its plate, comes to the front, and the two
     plates change places: amber on it, quiet on the other;
+  - the Kosmos menu opened, its top-left corner cut on a slant - not the
+    mirror of its round top-right, as every corner is elsewhere (S2);
   - nothing died, and no application stopped on an error - the Deskbar
     drawing its Kosmos button on a plate among them.
 
@@ -35,7 +37,7 @@ sys.path.insert(0, HERE)
 
 import run_screenshot as R                                  # noqa: E402
 
-CHECKS = 7
+CHECKS = 8
 
 # `user/themes/Starlight.theme`.
 TAB = (0xf2, 0xa9, 0x3b)
@@ -174,6 +176,45 @@ def run(fails):
             fails.append("clicked, %s's plate is %r and %s's %r, not swapped"
                          % (back, a, front, b))
 
+        # ---- the Kosmos menu, its top-left cut (S2) ----
+        # A round corner is the same mirrored at the top-right; the cut is
+        # not: it takes more along the diagonal and eases into the sides.
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(40, 16, sw, sh))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.05)
+        guest.mouse_button(False)
+        menu = line(guest, r"wm: menu of Deskbar at (\d+),(\d+) (\d+)x(\d+)", mark, 15)
+
+        if not menu:
+            fails.append("the Kosmos menu did not open")
+        else:
+            mx, my, mw, mh = (int(menu.group(k)) for k in range(1, 5))
+            time.sleep(1)
+            shot = guest.screendump()
+            _, _, at = pixels(shot)
+            odd = 0
+
+            if os.environ.get("KOSMOS_STARLIGHT_SHOTS"):
+                os.makedirs("build/starlight", exist_ok=True)
+                open("build/starlight/menu.ppm", "wb").write(shot)
+
+            for y in range(10):
+                for x in range(10):
+                    a, b = at(mx + x, my + y), at(mx + mw - 1 - x, my + y)
+                    # Night on night: the menu and the desktop are 14 to
+                    # 18 apart in each channel.
+                    if max(abs(p - q) for p, q in zip(a, b)) > 8:
+                        odd += 1
+
+            if odd < 6:
+                fails.append("the menu's top-left is its top-right mirrored (%d pixels differ): "
+                             "no cut" % odd)
+
+            guest.type("\x1b")
+            time.sleep(0.5)
+
         # An application stopped by an error is no less broken than a process
         # that died: the Deskbar calling a shape its context did not have
         # was the first thing this look broke.
@@ -209,7 +250,7 @@ def main():
     print("PASS: %d checks on Starlight's plate (the desktop in Starlight's look and "
           "chrome; Calculator and Processes each placed a plate; the window in front's "
           "amber and the one behind's quiet; the one behind clicked, the two swapped; "
-          "nothing died)" % CHECKS)
+          "the Kosmos menu's top-left cut; nothing died)" % CHECKS)
     return 0
 
 

@@ -1792,7 +1792,13 @@ if DOCKED then
     local fill = (255 * (100 - transparency) + 50) // 100
     local edge = (0x18 * (100 - transparency) + 50) // 100
 
-    if FLOATING then
+    if FLOATING and theme.cut then
+      -- Starlight's cut (`docs/astra.md` S2): the top-left on a slant,
+      -- eased, the other three round - its edge a pixel of the light.
+      g:polygon(dock.cut_outline(x, y, w, h, 14, 12, 3), at(0xffffffff, edge))
+      g:polygon(dock.cut_outline(x + 1, y + 1, w - 2, h - 2, 13, 11.6, 3),
+                at(theme.window, fill))
+    elseif FLOATING then
       g:fill_round(x, y, w, h, at(0xffffffff, edge), dock.RADIUS)
       g:fill_round(x + 1, y + 1, w - 2, h - 2, at(theme.window, fill), dock.RADIUS - 1)
     else

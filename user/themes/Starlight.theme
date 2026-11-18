@@ -20,6 +20,8 @@
 
 name       = starlight
 flat       = yes
+# What floats - the dock, menus - cut at its top-left, eased (S2).
+cut        = yes
 title_bars = no
 shadow     = 24
 

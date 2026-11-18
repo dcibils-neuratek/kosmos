@@ -400,4 +400,45 @@ function dock.drop(pins, items, name, x, y)
   return pins, nil
 end
 
+--
+-- **The dock's outline under a look with the cut** (`theme.cut`,
+-- Starlight's; `docs/astra.md` S2): a flat list of points, x then y, for a
+-- polygon - the top-left corner cut on a slant meeting the sides `c` from
+-- the corner, each meeting eased over `t` either side, and the other three
+-- corners round at `r`. `docs/astra.html`'s dock is 12, 3 and 14.
+--
+function dock.cut_outline(x, y, w, h, r, c, t)
+  local pts = {}
+  local function add(px, py) pts[#pts + 1] = x + px; pts[#pts + 1] = y + py end
+
+  -- A quadratic curve from `a` through the corner `k` to `b`, in four steps.
+  local function ease(ax, ay, kx, ky, bx, by)
+    for i = 0, 4 do
+      local s = i / 4
+      local p, q, u = (1 - s) * (1 - s), 2 * (1 - s) * s, s * s
+
+      add(p * ax + q * kx + u * bx, p * ay + q * ky + u * by)
+    end
+  end
+
+  -- A quarter circle about `cx`, `cy` from angle `a0`, in six steps.
+  local function arc(cx, cy, a0)
+    for i = 0, 6 do
+      local a = a0 + (math.pi / 2) * i / 6
+
+      add(cx + r * math.cos(a), cy + r * math.sin(a))
+    end
+  end
+
+  local d = t / math.sqrt(2)
+
+  ease(0, c + t, 0, c, d, c - d)                -- up the left, into the slant
+  ease(c - d, d, c, 0, c + t, 0)                -- out of it, along the top
+  arc(w - r, r, -math.pi / 2)                   -- top right
+  arc(w - r, h - r, 0)                          -- bottom right
+  arc(r, h - r, math.pi / 2)                    -- bottom left
+
+  return pts
+end
+
 return dock

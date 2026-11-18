@@ -161,9 +161,9 @@ static void uncover(struct sc_rect *out, int *n, const struct sc_window *w, long
 /* The four corners of a frame inside `r`: where each lies on the back and
  * where it is kept, `x y w h kx ky` (`OUT.corners`). */
 static int corners(const struct scene *sc, long fx, long fy, long fw, long fh,
-                   const struct sc_rect *r, long out[4][6])
+                   const struct sc_rect *r, long out[4][6], long c)
 {
-    long c = sc->corner;
+    (void)sc;
     long at[4][4] = {
         { fx, fy, 0, 0 }, { fx + fw - c, fy, c, 0 },
         { fx, fy + fh - c, 0, c }, { fx + fw - c, fy + fh - c, c, c },
@@ -204,12 +204,67 @@ static void keep_corners(struct scene *sc, long kept[4][6], int n)
     }
 }
 
+/*
+ * What the cut leaves outside a frame's top-left corner, put back from the
+ * square kept from under it: as much of each pixel as the frame does not
+ * cover (`gfx_cut_cover`), the two meetings eased by a circle seven eighths
+ * of the cut - `docs/astra.html`'s menu, cut at 8 and eased over 3 pixels
+ * either side of each meeting.
+ */
+static void cut_back(struct scene *sc, const long kept[6], long fx, long fy, long cut)
+{
+    long ease = cut * 7 / 8;
+
+    for (long row = 0; row < kept[3]; row++) {
+        long y = kept[1] + row;
+
+        if (y < 0 || y >= (long)sc->back->height) continue;
+
+        for (long col = 0; col < kept[2]; col++) {
+            long x = kept[0] + col;
+            long cover = 255 - gfx_cut_cover(x, y, fx, fy, cut, ease);
+            uint32_t *dp, sp;
+
+            if (cover <= 0 || x < 0 || x >= (long)sc->back->width) continue;
+
+            dp = (uint32_t *)((uint8_t *)sc->back->pixels + (size_t)y * sc->back->pitch) + x;
+            sp = *((uint32_t *)((uint8_t *)sc->keep.pixels
+                                + (size_t)(kept[5] + row) * sc->keep.pitch) + kept[4] + col);
+
+            if (cover >= 255) {
+                *dp = sp;
+            } else {
+                /* The kept pixel over the frame's, by how much is uncovered. */
+                uint32_t a = (uint32_t)cover, b = 255 - a, d = *dp, out = 0xff000000u;
+
+                for (int sh = 0; sh < 24; sh += 8) {
+                    uint32_t v = (((sp >> sh) & 0xffu) * a + ((d >> sh) & 0xffu) * b + 127) / 255;
+
+                    out |= v << sh;
+                }
+
+                *dp = out;
+            }
+        }
+    }
+}
+
 static void put_back(struct scene *sc, long kept[4][6], int n,
-                     long fx, long fy, long fw, long fh)
+                     long fx, long fy, long fw, long fh, long size, long cut)
 {
     int k;
 
     for (k = 0; k < n; k++) {
+        /*
+         * **The top-left of a cut frame** (Starlight's, `docs/astra.md` S2):
+         * kept from the first of the four squares, and what lies outside
+         * the cut put back - the eased chamfer instead of the arc.
+         */
+        if (cut > 0 && kept[k][4] < size && kept[k][5] < size) {
+            cut_back(sc, kept[k], fx, fy, cut);
+            continue;
+        }
+
         blit_round_on(sc->back, &sc->keep, kept[k][4], kept[k][5], kept[k][2],
                       kept[k][3], kept[k][0], kept[k][1], fx, fy, fw, fh,
                       sc->corner, 1);
@@ -461,7 +516,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
     }
 
     if (w->flags & SC_ROUNDED) {
-        nkept = corners(sc, w->x, w->y, w->w, w->h, r, kept);
+        nkept = corners(sc, w->x, w->y, w->w, w->h, r, kept, sc->corner);
         keep_corners(sc, kept, nkept);
     }
 
@@ -570,7 +625,7 @@ static void draw_window(struct scene *sc, const struct sc_window *w, const struc
     }
 
     if (nkept > 0) {
-        put_back(sc, kept, nkept, w->x, w->y, w->w, w->h);
+        put_back(sc, kept, nkept, w->x, w->y, w->w, w->h, sc->corner, 0);
     }
 }
 
@@ -743,17 +798,20 @@ long scene_compose(struct scene *sc, long rx, long ry, long rw, long rh)
         long y0 = m->y > r.y ? m->y : r.y;
         long x1 = m->x + m->w < r.x + r.w ? m->x + m->w : r.x + r.w;
         long y1 = m->y + m->h < r.y + r.h ? m->y + m->h : r.y + r.h;
-        long kept[4][6];
+        long kept[4][6], size;
         int nkept;
 
         if (x1 <= x0 || y1 <= y0 || m->picture == NULL) {
             continue;
         }
 
-        nkept = corners(sc, m->x, m->y, m->w, m->h, &r, kept);
+        /* A menu under a look with the cut keeps a square large enough
+         * for it at each corner (`sc->cut`, Starlight's). */
+        size = sc->cut > sc->corner ? sc->cut : sc->corner;
+        nkept = corners(sc, m->x, m->y, m->w, m->h, &r, kept, size);
         keep_corners(sc, kept, nkept);
         blit_on(sc->back, m->picture, x0 - m->x, y0 - m->y, x1 - x0, y1 - y0, x0, y0);
-        put_back(sc, kept, nkept, m->x, m->y, m->w, m->h);
+        put_back(sc, kept, nkept, m->x, m->y, m->w, m->h, size, sc->cut);
     }
 
     /* The rubber band. */

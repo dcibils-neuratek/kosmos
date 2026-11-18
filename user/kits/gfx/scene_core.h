@@ -98,6 +98,8 @@ struct scene {
     uint32_t track, line_soft;
     uint32_t fill[SC_SLOTS], ring[SC_SLOTS], mark[SC_SLOTS], held_fill[SC_SLOTS];
     long outline;
+    /* Starlight's cut on a menu's top-left corner, or 0 (`docs/astra.md` S2). */
+    long cut;
 
     /* The desktop. */
     uint32_t desktop;

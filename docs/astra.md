@@ -205,7 +205,10 @@ button stands on an amber plate. Two things left for later: Preferences'
 header is split, so its plate says the page's name over the right pane
 rather than the window's at its corner; and Appearance's Theme row still
 marks the look saved there, not the one a desktop put on. S2 the
-softened cut on the dock and menus; S3 the nebula glass's grain and its
+softened cut on the dock and menus (**built in 0.11.469**, `testing.md`
+18.869: a look's `cut = yes`, menus cut by the compositor at 8 and the
+floating dock by the Deskbar at 12; banners, quick settings and tiles
+later, when each is drawn for Starlight); S3 the nebula glass's grain and its
 amber horizon; S4 the unfurl; S5 the star.
 
 What follows is the list as it was put to him.

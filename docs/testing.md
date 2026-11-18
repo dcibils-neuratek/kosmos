@@ -36049,3 +36049,43 @@ plate's three. `x86-ahci` failed once - "no command at the probe was ended
 by its interrupt", waits 0 by it and 0 by a tick - and passed alone; the
 driver is untouched here, and it is recorded as a flake under load.
 
+## 18.869 Starlight's cut, softened, on the dock and menus
+
+**In short.** Under Starlight what floats has its top-left corner cut on
+a slant, the two places the slant meets the sides eased, and its other
+three corners round - a menu at 8 points, the floating dock at 12, as
+`docs/astra.html` draws them. Every other look is as it was.
+
+**Where it lives.** A look says `cut = yes` (`theme.lua`, a word as
+`flat` is; `no` unless said). The window manager hands the compositor the
+menu's cut with the look (`OUT.cut_size`, `scene:look`'s last argument,
+`ws_scene_head.cut` to the window server); a menu then keeps a corner
+square large enough for it, and its top-left is put back through the cut
+rather than the arc (`cut_back` in `scene_core.c`). How much of a pixel
+the frame covers is `gfx_cut_cover` in `shadow.c`: the corner's three
+half-planes shrunk by the ease and grown back, which rounds the meetings
+and leaves the slant straight, with a ramp a pixel wide. The floating dock
+is drawn by the Deskbar as a polygon from `dock.cut_outline`.
+
+**Held by** `tools/test_shadow.c` on the Mac - the cut at the menu's 8
+and the dock's 12: the corner pixel outside, inside past it, a pixel on
+the slant about half, the same either side of the diagonal, never less
+inside along it, the edges whole past the meetings; its control, a cover
+that ignores the cut, fails the corner and the slant at both sizes.
+`tools/test_dock.lua`, 6 more checks: the outline in its box, the cut
+corner outside, past the slant inside, the round corners outside at their
+tips, the sides and the middle inside, the edges whole; its control, no
+cut, fails the corner. And `x86-starlight`, now 8: the Kosmos menu opened
+and its top-left 10 by 10 not the mirror of its top-right - 0 pixels
+differ when the window manager passes no cut, its control. Night on
+night, the menu and the desktop behind it are only 14 to 18 apart in a
+channel, so the difference counted is anything over 8.
+
+
+**The gate** (131 suites, 950 s) failed two, both passing alone at once:
+`x86-film`, a film's sound against FFmpeg's reference, which has failed
+under a loaded gate before; and `x86-desktops`, which took 327 s under
+the load against 22 s alone and found Preferences' Desktop row's choices
+not open when it pressed it. Neither touches the cut; recorded as flakes
+under load, and `x86-desktops` is to be made to wait for the row rather
+than press it on time.

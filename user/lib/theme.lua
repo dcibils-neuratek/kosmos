@@ -293,6 +293,14 @@ theme.tokens = {
   "flat",
 
   --
+  -- **`cut`: Starlight's softened cut** (`docs/astra.md` S2) - what floats,
+  -- the dock and menus, has its top-left corner cut on a slant, the two
+  -- meetings eased, and the other three round. `yes` or `no`; a look's
+  -- property, as `flat` is, and `no` unless it says.
+  --
+  "cut",
+
+  --
   -- **`title_bars`: whether a window with a header of its own wears a
   -- title bar above it** (`roadmap.md` 6zj, `docs/nochrome.html`). Diego,
   -- 27 September 2026, of the mockups: "i love the fact that the mokcups
@@ -530,7 +538,7 @@ function theme.read(text, base)
                              .. "%d, not `%s`"):format(n, key,
                                                        theme.METRIC_MOST, value)
         end
-      elseif key == "flat" or key == "title_bars" then
+      elseif key == "flat" or key == "title_bars" or key == "cut" then
         -- `yes` or `no`, which is what a person writing a theme file would
         -- try first, and the only two words this format has.
         if value == "yes" or value == "no" then
@@ -559,6 +567,7 @@ function theme.read(text, base)
   -- stayed flat until the window was opened again.
   --
   if out.flat == nil then out.flat = false end
+  if out.cut == nil then out.cut = false end
   if out.title_bars == nil then out.title_bars = true end
   out.corner = theme.CORNER             -- every look's, never its own
   if out.shadow == nil then out.shadow = theme.SHADOW end

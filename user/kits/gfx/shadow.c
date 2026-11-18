@@ -77,6 +77,80 @@ long gfx_round_cover(long x, long y, long rx, long ry, long rw, long rh,
 }
 
 /*
+ * **How much of a pixel is inside a cut corner**: the top-left corner of a
+ * frame at `rx`, `ry` cut by a straight edge from `c` down its left side to
+ * `c` along its top, the two places it meets the sides eased by `e` -
+ * Starlight's cut, softened (`docs/astra.md` S2: "tone down the geometric
+ * look"). 0 outside, 255 in, and a ramp a pixel wide across the edge.
+ *
+ * The shape is the corner's three half-planes (`u >= 0`, `v >= 0`,
+ * `u + v >= c`) shrunk by `e` and grown back by it, which is what rounds the
+ * two meetings and leaves the cut straight: the distance from the pixel's
+ * centre to the shrunk shape, less `e`. The shrunk shape's edge is a ray up
+ * from A, the cut from A to B and a ray along from B, so the distance is
+ * the least of three, each a line's or a point's.
+ */
+static float root(float v)
+{
+    float r = v > 1.0f ? v : 1.0f;
+
+    if (v <= 0.0f) return 0.0f;
+
+    for (int i = 0; i < 12; i++) r = 0.5f * (r + v / r);
+
+    return r;
+}
+
+static float to_point(float u, float v, float pu, float pv)
+{
+    return root((u - pu) * (u - pu) + (v - pv) * (v - pv));
+}
+
+long gfx_cut_cover(long x, long y, long rx, long ry, long c, long e)
+{
+    const float s2 = 1.41421356f;
+    float u = (float)(x - rx) + 0.5f, v = (float)(y - ry) + 0.5f;
+    float fe = (float)e, line = (float)c + fe * s2;
+    float au = fe, av = line - fe, bu = line - fe, bv = fe;
+    float da, dcut, db, d, t;
+    int inside;
+
+    if (c <= 0 || u >= (float)c + fe + 1.0f || v >= (float)c + fe + 1.0f) {
+        return u >= 0.0f && v >= 0.0f ? 255 : 0;
+    }
+
+    inside = u >= fe && v >= fe && u + v >= line;
+
+    /* The ray up from A, along `u = e`. */
+    da = v >= av ? (u > fe ? u - fe : fe - u) : to_point(u, v, au, av);
+
+    /* The cut from A to B: the line's distance where the foot falls on it. */
+    t = ((u - au) * (bu - au) + (v - av) * (bv - av))
+        / ((bu - au) * (bu - au) + (bv - av) * (bv - av) + 1e-6f);
+    if (t <= 0.0f) {
+        dcut = to_point(u, v, au, av);
+    } else if (t >= 1.0f) {
+        dcut = to_point(u, v, bu, bv);
+    } else {
+        d = (u + v - line) / s2;
+        dcut = d < 0.0f ? -d : d;
+    }
+
+    /* The ray along from B, `v = e`. */
+    db = u >= bu ? (v > fe ? v - fe : fe - v) : to_point(u, v, bu, bv);
+
+    d = da < dcut ? da : dcut;
+    d = d < db ? d : db;
+    d = inside ? -d - fe : d - fe;
+
+    /* Half a pixel either side of the edge. */
+    t = 0.5f - d;
+    if (t <= 0.0f) return 0;
+    if (t >= 1.0f) return 255;
+    return (long)(t * 255.0f + 0.5f);
+}
+
+/*
  * **Darkening a run of pixels by one amount**, which is most of a shadow:
  * above and below a window every pixel of a row is the same distance from
  * it, so the whole row keeps the same fraction of what is behind. `keep` is

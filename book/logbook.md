@@ -4386,3 +4386,27 @@ and the test had passed, because it only looked for processes that died.
 It now looks for a program stopped by an error too, and was shown to fail
 when the shape was taken away again.
 
+
+## 18 November 2026 - Starlight's cut corner
+
+**In short.** Under Starlight, menus and the floating dock now have their
+top-left corner cut on a slant instead of rounded, the cut's two ends
+softened; the other corners stay round. It is the second of Starlight's
+signatures, after the amber plate.
+
+**What.** Diego asked for "a good mix between geometric look and some
+more pleasant rounded or soften style", so the cut is one corner only, and
+where its slant meets the edges it curves rather than making a point. The
+compositor, which already rounds every window's corners by putting back
+what was behind them, puts back a slanted piece instead on a menu's
+top-left; the dock draws its own outline.
+
+**Why it matters.** It is a shape no other desktop uses, on the things
+that float, and it costs nothing a frame: the corner is restored once per
+repaint, as the rounded one was.
+
+**Found on the way.** The first check of it saw no difference at all
+between a cut and a round corner - because a night-blue menu on a
+night-blue desktop differs by only fourteen levels, and the check was
+looking for thirty. Printing the two corners as characters showed the cut
+was there all along.

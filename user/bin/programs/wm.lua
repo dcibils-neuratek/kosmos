@@ -2595,6 +2595,15 @@ function OUT.let_go_buffers(t)
   sys.release(t.cap)
 end
 
+--
+-- **The cut on a menu's top-left** (`docs/astra.md` S2), in pixels: a
+-- look's, Starlight's, as `docs/astra.html` draws it - the slant meeting
+-- the sides 8 points from the corner, eased - or none.
+--
+function OUT.cut_size()
+  return theme.cut and scale.px(8) or 0
+end
+
 function OUT.describe()
   local L = OUT.LIGHTS
   local lift = theme.lift
@@ -2612,14 +2621,15 @@ function OUT.describe()
                OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(6), theme.track,
                theme.line_soft, OUTLINE,
                P.fill, P.ring, P.mark, P.held, P.fill, P.ring, P.mark, P.held,
-               P.fill, P.ring, P.mark, P.held)
+               P.fill, P.ring, P.mark, P.held, OUT.cut_size())
   else
     scene:look(OUT.corner, OUT.shadow, OUT.GRIP, theme.edge_light, theme.edge_dark,
                OUT.BOX, OUT.BOX_W, OUT.RUN, OUT.BOX - scale.px(4), theme.track,
                theme.line_soft, OUTLINE,
                L.maximise.fill, L.maximise.ring, L.maximise.mark, lift(L.maximise.fill, -40),
                L.minimise.fill, L.minimise.ring, L.minimise.mark, lift(L.minimise.fill, -40),
-               L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40))
+               L.close.fill, L.close.ring, L.close.mark, lift(L.close.fill, -40),
+               OUT.cut_size())
   end
 
   local stamped, sx, sy = stamp_now()

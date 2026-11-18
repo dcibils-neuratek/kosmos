@@ -13,6 +13,10 @@
 long gfx_round_cover(long x, long y, long rx, long ry, long rw, long rh,
                      long r);
 
+/* How much of a pixel is inside a top-left corner cut at `c`, eased by `e`:
+ * 0 to 255 (Starlight's cut, `docs/astra.md` S2). */
+long gfx_cut_cover(long x, long y, long rx, long ry, long c, long e);
+
 /* A run of pixels keeping `keep` of 256 of each channel. */
 void gfx_darken_span(uint32_t *p, long n, uint32_t keep);
 

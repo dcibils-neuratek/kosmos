@@ -184,10 +184,57 @@ do
         .. a[1].x .. "/" .. b[1].x .. ", " .. a[10].x .. "/" .. b[10].x)
 end
 
+--
+-- 7. Starlight's cut (`dock.cut_outline`, `docs/astra.md` S2): the dock's
+-- outline with its top-left cut on a slant, eased, the other three round.
+-- The corner outside it, the slant's middle on it, each round corner's
+-- outside empty, the middle and the sides inside, and no point outside the
+-- box.
+--
+do
+  local w, h = 400, 60
+  local pts = dock.cut_outline(0, 0, w, h, 14, 12, 3)
+
+  local function inside(px, py)
+    local n, hit = #pts // 2, false
+    local j = n
+
+    for i = 1, n do
+      local xi, yi = pts[2 * i - 1], pts[2 * i]
+      local xj, yj = pts[2 * j - 1], pts[2 * j]
+
+      if (yi > py) ~= (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi then
+        hit = not hit
+      end
+
+      j = i
+    end
+
+    return hit
+  end
+
+  local held = true
+
+  for i = 1, #pts, 2 do
+    if pts[i] < -0.01 or pts[i] > w + 0.01 or pts[i + 1] < -0.01 or pts[i + 1] > h + 0.01 then
+      held = false
+    end
+  end
+
+  check(held, "the cut outline stays in its box")
+  check(not inside(2, 2) and not inside(4.5, 4.5), "the cut corner is outside")
+  check(inside(7, 7), "past the slant is inside")
+  check(not inside(w - 1, 1) and not inside(w - 1, h - 1) and not inside(1, h - 1),
+        "the three round corners are outside at their tips")
+  check(inside(w - 1, h // 2) and inside(1, h // 2) and inside(w // 2, 1)
+        and inside(w // 2, h - 1), "the sides and the middle are inside")
+  check(inside(16, 1) and inside(1, 16), "past the eased meetings, the edges are whole")
+end
+
 if fails == 0 then
   print(("PASS: %d checks on the dock's arithmetic (names, the cells for what is pinned "
          .. "and what runs, where each goes, what a press hit and what it does, and "
-         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go - and magnified under the pointer)."):format(checks))
+         .. "the dock arranged by hand - pinned, moved, kept, taken out, let go - and magnified under the pointer, and its outline cut for Starlight)."):format(checks))
   os.exit(0)
 end
 

@@ -109,6 +109,7 @@ struct ws_scene_head {
     int32_t  box, box_w, run, d;
     uint32_t track, line_soft;
     int32_t  outline;
+    int32_t  cut;               /* a menu's top-left cut, or 0 (Starlight's) */
     uint32_t fill[3], ring[3], mark[3], held_fill[3];
 
     uint32_t desktop;

@@ -172,6 +172,10 @@ static int l_scene_look(lua_State *L)
         sc->held_fill[k] = (uint32_t)luaL_checkinteger(L, at++);
     }
 
+    /* The cut on a menu's top-left, a look's (Starlight's); 0 for none. */
+    sc->cut = (long)luaL_optinteger(L, at, 0);
+    if (sc->cut < 0 || sc->cut > 32) sc->cut = 0;
+
     return 0;
 }
 
@@ -465,6 +469,7 @@ static int l_scene_wire(lua_State *L)
     head->track = sc->track;
     head->line_soft = sc->line_soft;
     head->outline = (int32_t)sc->outline;
+    head->cut = (int32_t)sc->cut;
 
     for (k = 0; k < SC_SLOTS; k++) {
         head->fill[k] = sc->fill[k];

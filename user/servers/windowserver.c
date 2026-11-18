@@ -262,6 +262,7 @@ static bool read_scene(const struct ws_rect **rects, uint32_t *nrect)
     sc->track = h.track;
     sc->line_soft = h.line_soft;
     sc->outline = h.outline;
+    sc->cut = h.cut >= 0 && h.cut <= 32 ? h.cut : 0;
 
     for (k = 0; k < SC_SLOTS; k++) {
         sc->fill[k] = h.fill[k];

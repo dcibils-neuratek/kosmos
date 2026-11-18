@@ -242,6 +242,65 @@ int main(void)
                t_old * 1e3, t_new * 1e3, t_old / t_new, t_clip * 1e3);
     }
 
+    /*
+     * **Starlight's cut** (`gfx_cut_cover`, `docs/astra.md` S2), at the
+     * menu's 8 eased by 7 and the dock's 12 by 10: outside at the corner,
+     * inside past it, half a pixel on the slant, the same either side of the
+     * diagonal, never less inside as a pixel moves in along it, and whole
+     * along the edges past the eased meeting.
+     */
+    {
+        long sizes[2][2] = { { 8, 7 }, { 12, 10 } };
+
+        for (int k = 0; k < 2; k++) {
+            long c = sizes[k][0], e = sizes[k][1], prev = -1;
+            int sym = 1, mono = 1, edges = 1;
+            long mid;
+
+            checks++;
+            if (gfx_cut_cover(0, 0, 0, 0, c, e) != 0) {
+                printf("  the cut at %ld: the corner pixel is covered\n", c); failed++;
+            }
+            checks++;
+            if (gfx_cut_cover(c + e + 2, c + e + 2, 0, 0, c, e) != 255) {
+                printf("  the cut at %ld: a pixel well inside is not\n", c); failed++;
+            }
+
+            /* The pixel whose centre sits on the slant, `u + v = c`. */
+            mid = gfx_cut_cover(c / 2, c / 2 - 1, 0, 0, c, e);
+            checks++;
+            if (mid < 96 || mid > 160) {
+                printf("  the cut at %ld: a pixel on the slant is %ld, not half\n", c, mid);
+                failed++;
+            }
+
+            for (long y = 0; y < 2 * c + 2 * e; y++) {
+                for (long x = 0; x < 2 * c + 2 * e; x++) {
+                    if (gfx_cut_cover(x, y, 0, 0, c, e) != gfx_cut_cover(y, x, 0, 0, c, e)) sym = 0;
+                }
+            }
+
+            for (long d = 0; d < 2 * c + 2 * e; d++) {
+                long v = gfx_cut_cover(d, d, 0, 0, c, e);
+
+                if (v < prev) mono = 0;
+                prev = v;
+            }
+
+            for (long x = c + e + 1; x < 4 * c; x++) {
+                if (gfx_cut_cover(x, 0, 0, 0, c, e) != 255
+                    || gfx_cut_cover(0, x, 0, 0, c, e) != 255) {
+                    edges = 0;
+                }
+            }
+
+            checks += 3;
+            if (!sym) { printf("  the cut at %ld is not the same either side\n", c); failed++; }
+            if (!mono) { printf("  the cut at %ld grows less inside along its diagonal\n", c); failed++; }
+            if (!edges) { printf("  the cut at %ld takes from the edges past it\n", c); failed++; }
+        }
+    }
+
     if (failed) {
         printf("FAIL: %ld of %ld checks\n", failed, checks);
         return 1;
@@ -249,6 +308,6 @@ int main(void)
 
     printf("PASS: %ld checks on a window's shadow against the method it "
            "replaced (%ld pixels shadowed, over 400 windows, corners and "
-           "clips)\n", checks, touched);
+           "clips), and on Starlight's cut corner at two sizes\n", checks, touched);
     return 0;
 }
