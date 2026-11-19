@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.11.517. Pushed to 0.11.507; 0.11.508 to
-0.11.517 are committed on `main` and not pushed.
+Last updated: 2026-11-19, at 0.11.518. Pushed to 0.11.507; 0.11.508 to
+0.11.518 are committed on `main` and not pushed.
 
 ---
 
@@ -47,8 +47,11 @@ before we continue"). Eight readers found 205 findings
   comments in about fifty files.
 - **Batch 6, work nobody reads** (0.11.517, 18.917): a window's own
   surface only when it brought no region; Connect's clock out of its
-  repaint; the Deskbar's strip compared field by field. Batches 7
-  (measured before anything changes) and 8 (tests nothing runs) follow.
+  repaint; the Deskbar's strip compared field by field.
+- **Batch 8, tests nothing ran** (0.11.518, 18.918): the layout checker
+  and the PDF test in `host-check`, `run_smpshot.py` gone, eleven x86
+  twins of ARM-only suites; five more need work (roadmap). Batch 7,
+  measured before anything changes, is last.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

@@ -37899,3 +37899,46 @@ time under the gate's load and passed alone, 3 suites in 116 s:
 see its visitor within 120 s, as it also failed at 0.11.510; and
 `x86-film-load` heard a gap. None touches what changed except Starlight's
 roll, which is the window manager's, and it passed alone in 20 s.
+
+## 18.918 Tests nothing ran
+
+**In short:** batch 8 of the review found four tests that existed and
+never ran, and puts them to work. The layout checker, which three
+documents said held the gate, now does, and it had already found one
+thing wrong with itself. The PDF test ran only against a book on
+Diego's disk; it now runs against a document the build makes. A
+screenshot harness nothing could start is gone. And eleven suites that
+only ever ran on ARM now run on x86-64 too, so `make test` sees them
+again.
+
+- **`tools/test_layout.py` in `host-check`** (132). Run for the first
+  time, it failed: `user/drivers/bluetooth/` "holds no file that claims an
+  interrupt, maps registers or asks the board for a device". The Bluetooth
+  host stack drives a controller, by Diego's rule ("a driver drives
+  hardware"), but it does so through `xhci.c`'s endpoints by a ring,
+  `hciring.h`, rather than by registers of its own. The checker now
+  counts a transport ring as reaching a device, for `user/drivers/` only,
+  and passes its 100 checks. Two controls: a `.c` in `user/lib/` fails it,
+  and a server calling `kosmos_irq_claim` fails it. `README.md`,
+  `architecture.md` and `glossary.md` said it kept the line, and now it does.
+- **`tools/test_pdf.lua` against a made document** (136). Its numbers
+  (254 pages, 251 with text, two bare images, Flate) were the book's, so
+  they come on the command line now; `host-check` makes nine pages from
+  four hundred numbered lines with `tools/mkpdf.py` and passes `9 9 0 -`.
+  17 checks; told 9 pages of an 8-page document it fails the count.
+- **`tools/run_smpshot.py` removed** (135). No target ran it, and the
+  `smpshot` target its docstring names never existed. Spreading over every
+  core has been the default since 0.10.22, and every suite boots four.
+- **Eleven x86 twins** (133): `write`, `queries`, `diskbench`, `launch`,
+  `diskwire`, `passwords`, `share-3`, `share-4`, `writeapp`, `windows` and
+  `wmwait`. Each was first run against the x86-64 image as it stood:
+  ten passed, and `queries` failed twice on its own expectations, which
+  had gone stale while nothing ran it - eleven looks where there are
+  fourteen, and Video's one film type where batch 1 gave it three. Its
+  looks are read from `user/themes/` now. The five that need more than a
+  twin - three sound suites, `shell`'s `acpi` and `interchange`'s
+  one-block difference - are in the roadmap as uncovered.
+
+**The gate.** 125 suites in 573 s (9:32), every one passing, the eleven
+twins among them (the longest `x86-writeapp`, 91 s); `host` ran the
+layout checker's 100 checks and the PDF test's 17.

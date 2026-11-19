@@ -39,12 +39,24 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # want one without becoming a driver.
 HARDWARE = ("kosmos_irq_claim", "kosmos_dev_map", "kosmos_dev_find")
 
+# **And a controller driven through another driver's transport.** The
+# Bluetooth host stack sends HCI commands to a piece of silicon and reads
+# its events, which is driving it, but the bytes go by `xhci.c`'s endpoints
+# through a ring rather than by registers it maps itself (`bluetooth.md`
+# B2). Asking only for the three primitives called `user/drivers/bluetooth/`
+# a kind with no driver in it, which is wrong by Diego's own rule. A ring
+# named here is a transport to a device, and a file that speaks one drives
+# it. Only for `user/drivers/`: a server speaking one would still be a
+# server talking to a driver, and the servers' check does not use it.
+TRANSPORTS = ('"hciring.h"',)
 
-def uses_hardware(path):
+
+def uses_hardware(path, transports=False):
     with open(path, encoding="utf-8") as f:
         text = f.read()
 
-    return [name for name in HARDWARE if name in text]
+    names = HARDWARE + (TRANSPORTS if transports else ())
+    return [name for name in names if name in text]
 
 
 def main():
@@ -83,7 +95,7 @@ def main():
             here = os.path.join(drivers, kind)
             driving = [n for n in sorted(os.listdir(here))
                        if n.endswith(".c")
-                       and uses_hardware(os.path.join(here, n))]
+                       and uses_hardware(os.path.join(here, n), True)]
             checks += 1
 
             if not driving:

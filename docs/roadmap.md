@@ -6783,6 +6783,18 @@ be built in the scratchpad and bisected, and each move attributed to what
 it bought - or recorded as a new baseline, with the reason, if it bought
 something worth it.
 
+**Five ARM-only suites with no x86 twin - FOUND on 19 November 2026**
+(`cleanup.md` finding 133, `testing.md` 18.918). Since the x86-only rule of
+8 October a default `make test` runs none of them. Eleven of the sixteen
+pass on x86-64 as they stand and have twins now; these five need work
+before they do. `arm-media`, `arm-synth` and `arm-synth-load` give the
+board a sound device the x86 harness does not (synthtest says "this machine
+has no sound device"; `x86-sound` and `x86-film` show how the PC's is
+given); `arm-shell` checks that `acpi` says a board has no tables, which a
+PC has; and `arm-interchange` finds the guest's `df` and the Mac's
+`kfs.lua df` a block apart on x86's image, 7901 free against 7902, which is
+to be understood rather than allowed. Until then they are uncovered.
+
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need
    lazy fp saving?" What it buys (`CLAUDE.md`, Build): a switch does not

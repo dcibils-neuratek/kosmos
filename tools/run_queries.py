@@ -358,9 +358,14 @@ def main():
                        "/Kosmos/Programs/ls.lua /Kosmos/Apps/tracker.lua",
              "the Clock was not in /Kosmos/Apps and ls in /Kosmos/Programs, each "
              "only there, and found by name and by a launcher's old /bin path"),
-            ("K-THEMES", "Amethyst.theme,Aurora.theme,Classic.theme,Ember.theme,Endeavour.theme,Meadow.theme,Night.theme,Plex.theme,PlexNight.theme,Sakura.theme,Studio.theme "
-                         "file library directory 1 0",
-             "/Kosmos/Themes did not hold the eleven looks, a look a file and a "
+            # The looks the image carries are `user/themes/`, read here rather
+            # than written out: the list said eleven while three more arrived,
+            # and nothing ran this suite to notice (`cleanup.md` finding 133).
+            ("K-THEMES", ",".join(sorted(n for n in os.listdir(
+                             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user", "themes"))
+                             if n.endswith(".theme")))
+                         + " file library directory 1 0",
+             "/Kosmos/Themes did not hold every look in user/themes, a look a file and a "
              "library a library, or /Kosmos/Libraries did not show luacheck as "
              "one folder and no path as a name"),
             ("K-KITS", "3",
@@ -371,9 +376,10 @@ def main():
             # The Super Nintendo's cartridges were here until it became an
             # installed application (28 September); `test_filetypes.lua` holds
             # what an installed one opens.
-            ("K-OPENS", "png jpg jpeg mp4 mp4 true",
+            ("K-OPENS", "png jpg jpeg mp4 m4v mov mp4 true",
              "an application's `kosmos: opens` did not reach its attributes - "
-             "Photo's three, Video's and Play's film - or one that declares "
+             "Photo's three, Video's three (`.m4v` and `.mov` since 0.11.508) "
+             "and Play's film - or one that declares "
              "nothing had some"),
             ("K-DOCS", "cafesa3d,cheatsheet.html,ide directory true true true PNG true",
              "/Kosmos/Documentation did not hold the cheat sheet and both "

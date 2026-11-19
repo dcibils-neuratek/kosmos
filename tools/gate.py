@@ -252,12 +252,14 @@ SUITES = [
     # fonts name themselves, their measures, and a paragraph broken where
     # this Mac breaks it, each held to a reader of the fonts of its own.
     Suite("arm-write", ["python3", "tools/run_write.py", ARM]),
+    Suite("x86-write", ["python3", "tools/run_write.py", X86], x86=True),
 
     # Attributes and the queries over them. M7's definition of done was a
     # live query and nothing here ever checked one: `qbench` measures how
     # fast a query is and would not notice it returning the wrong paths,
     # which is what it did on the disk for as long as the disk could answer.
     Suite("arm-queries", ["python3", "tools/run_queries.py", ARM]),
+    Suite("x86-queries", ["python3", "tools/run_queries.py", X86], x86=True),
 
     # And the prompt as a place to work rather than a place to look. The
     # verbs check each other rather than a constant written in the harness:
@@ -269,10 +271,12 @@ SUITES = [
     # held to saying what it measured and what it could not, rather than to a
     # speed, since under QEMU the speed is QEMU's.
     Suite("arm-diskbench", ["python3", "tools/run_diskbench.py", ARM]),
+    Suite("x86-diskbench", ["python3", "tools/run_diskbench.py", X86], x86=True),
     # The desktop answering while an installed application's image is read
     # off the disk (Diego, 29 September: Doom "will get the desktop stuck for
     # a second and then run").
     Suite("arm-launch", ["python3", "tools/run_launch.py", ARM]),
+    Suite("x86-launch", ["python3", "tools/run_launch.py", X86], x86=True),
 
     # **Doom and Quake started with nothing to play** (`testing.md` 18.281):
     # an empty pak and an empty WAD take each engine through its start, its
@@ -302,6 +306,7 @@ SUITES = [
     # words - are each refused with their own number, and the disk is as it
     # was afterwards.
     Suite("arm-diskwire", ["python3", "tools/run_diskwire.py", ARM]),
+    Suite("x86-diskwire", ["python3", "tools/run_diskwire.py", X86], x86=True),
 
     # The keyring (`docs/keyring.md`, K4): three boots - a disk given its
     # /Keyring, the same disk opened again, a keyring that does not open kept
@@ -326,6 +331,7 @@ SUITES = [
     # Passwords (K6): a keyring made on the Mac, the window used as a person
     # would - sorted, a row, Show, a note, search, Delete asked and done.
     Suite("arm-passwords", ["python3", "tools/run_passwords.py", ARM]),
+    Suite("x86-passwords", ["python3", "tools/run_passwords.py", X86], x86=True),
 
     # **A disk that answers slowly is waited for** (`testing.md` 18.339): the
     # disk throttled to 16 KB a second through QMP, and a 160 KB file nothing
@@ -436,6 +442,7 @@ SUITES = [
     # typed, connected at start on the next boot of the same disk, and a
     # changed password refused in words with the entry kept. Three boots.
     Suite("arm-share-4", ["python3", "tools/run_share.py", ARM, "--part", "4"]),
+    Suite("x86-share-4", ["python3", "tools/run_share.py", X86, "--part", "4"], x86=True),
     Suite("x86-share-2", ["python3", "tools/run_share.py", X86, "--part", "2"],
           x86=True),
 
@@ -449,6 +456,7 @@ SUITES = [
     # sharing's switch disabled. One board: it is Lua over the kit and the
     # window manager, and smbfs's C is held on both by the suites above.
     Suite("arm-share-3", ["python3", "tools/run_share.py", ARM, "--part", "3"]),
+    Suite("x86-share-3", ["python3", "tools/run_share.py", X86, "--part", "3"], x86=True),
 
     # **The Servers window** (`roadmap.md`, remote step 6): opened over
     # Telnet on the M700's own boot, seeing the session that opened it, a
@@ -568,6 +576,7 @@ SUITES = [
     # Kosmos Write's window (`docs/write.md` W4): the page on the screen held
     # line by line to the PDF it exports, as macOS draws it.
     Suite("arm-writeapp", ["python3", "tools/run_writeapp.py", ARM]),
+    Suite("x86-writeapp", ["python3", "tools/run_writeapp.py", X86], x86=True),
     Suite("x86-editor", ["python3", "tools/run_editor.py", X86], x86=True),
     Suite("x86-fieldselect", ["python3", "tools/run_fieldselect.py", X86], x86=True),
 
@@ -962,10 +971,12 @@ SUITES = [
     # More windows than one message can list: twenty Calculators and the
     # Deskbar, and `tile` arranging every one from the list in pages (6zp).
     Suite("arm-windows", ["python3", "tools/run_windows.py", ARM]),
+    Suite("x86-windows", ["python3", "tools/run_windows.py", X86], x86=True),
     # One window polling every tick, as a busy Terminal does: answered at
     # the tick, and the window manager and the console well under one
     # processor - they held all of one on the M700, 2 October (18.345).
     Suite("arm-wmwait", ["python3", "tools/run_wmwait.py", ARM]),
+    Suite("x86-wmwait", ["python3", "tools/run_wmwait.py", X86], x86=True),
     # `/Devices/midi` through its virtual keyboard (6zg, step b): from the
     # wait with no controller on ARM, and from the whole five-endpoint wait
     # on x86, which is given an xHCI for it.

@@ -6006,6 +6006,15 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# Which control a label means and which windows are an application's,
 	@# for every automation that presses something by name (A2).
 	$(HOSTDIR)/lua tools/test_automate.lua
+	@# Servers and drivers in their directories, and Lua and C on their
+	@# sides of the line. Nothing ran this for two months while three
+	@# documents said it held the gate (`cleanup.md` finding 132).
+	python3 tools/test_layout.py
+	@# The PDF object layer against a document made here: four hundred
+	@# numbered lines are nine pages of text (finding 136).
+	seq 1 400 > $(HOSTDIR)/pdf_lines.txt
+	python3 tools/mkpdf.py $(HOSTDIR)/pdf_lines.txt $(HOSTDIR)/pdf_lines.pdf
+	$(HOSTDIR)/lua tools/test_pdf.lua $(HOSTDIR)/pdf_lines.pdf 9 9 0 -
 	@# And when an automation fires next, what a step found in the next
 	@# one's words, and what makes a file not an automation (A3).
 	$(HOSTDIR)/lua tools/test_automations.lua

@@ -37,7 +37,7 @@ before every minor version, and there had not been one since 0.11.0.
 | 5 | **Comments and documents made true**: every stale comment, `CLAUDE.md`'s Build, Layout and HAL sections, README, `state.md` brought to 0.11.507 and cut down, the logbook, the document map's statuses | 1-29, 31, 39, 49, 51, 52, 64-79, 90-92, 109-112, 122-127, 139-142, 150, 160-168, 195-199, 204 | **0.11.516** (`testing.md` 18.916) |
 | 6 | **Work nobody reads**: per-pass allocation in `wm` and the Deskbar, a surface per region window, the clock read in a repaint, a busy poll | 53, 54, 56, 83-86 | **0.11.517** (`testing.md` 18.917) |
 | 7 | **Measured before anything changes**: the image canary hashing 44 MB four times a boot, AArch64's broadcast TLB flush per switch, the sleeper scan over every thread slot, a thread index found in O(n²), the VMCS flushed per guest run, a table per drawing op, the display harness's Python pixel loops, the Deskbar's gradient | 87, 88, 154, 165, 169-173 | - |
-| 8 | **Tests nothing runs**: `test_layout.py` (three documents say it fails the gate), `test_pdf.lua`, `run_smpshot.py`; sixteen ARM-only suites with no x86 twin | 132, 133, 135, 136 | - |
+| 8 | **Tests nothing runs**: `test_layout.py` (three documents say it fails the gate), `test_pdf.lua`, `run_smpshot.py`; sixteen ARM-only suites with no x86 twin | 132, 133, 135, 136 | **0.11.518** (`testing.md` 18.918) |
 
 ## Found while checking
 

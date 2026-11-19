@@ -1,7 +1,14 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The PDF object layer, tested on this machine against a real document.
 --
---   build/host/lua tools/test_pdf.lua [file.pdf]
+--   build/host/lua tools/test_pdf.lua [file.pdf [pages text images filter]]
+--
+-- What the document holds is said on the line, so the test runs against
+-- any of them: `host-check` hands it one `tools/mkpdf.py` makes from four
+-- hundred numbered lines - nine pages, all text, no bare image, its
+-- content stored rather than compressed, which `-` says. With no file it is the book it was
+-- written against, a ConvertAPI PDF of 254 pages that is not in the tree
+-- (`cleanup.md` finding 136: for two months nothing ran this at all).
 --
 -- `pdf.lua` asks its caller for exactly two things - read a range, and say
 -- how big the file is - so given those over an ordinary file it can be
@@ -14,7 +21,17 @@
 -- would test the parser against my reading of the specification. This tests
 -- it against ConvertAPI's output, which is the thing it has to survive.
 
-local path = ... or "/Users/diego/Downloads/pg1727-images-3.pdf"
+local path, want_pages, want_text, want_images, want_filter = ...
+
+if not path then
+  path, want_pages, want_text, want_images, want_filter =
+    "/Users/diego/Downloads/pg1727-images-3.pdf", 254, 251, 2, "FlateDecode"
+end
+
+want_pages, want_text, want_images =
+  math.tointeger(tonumber(want_pages)), math.tointeger(tonumber(want_text)),
+  math.tointeger(tonumber(want_images))
+want_filter = want_filter ~= "-" and want_filter or nil
 
 package.path = "user/lib/?.lua;" .. package.path
 local pdf = dofile("user/lib/pdf.lua")
@@ -127,9 +144,9 @@ report("content stream filter", table.concat(filter, " "))
 print("\n-- checks --")
 ok("the header says 1.4",            doc.version, "1.4")
 ok("the catalog is a catalog",       doc.catalog.Type, "Catalog")
-ok("254 pages, as /Count says",      #doc.pages, 254)
-ok("251 of them carry text",         census.text, 251)
-ok("two are a bare image",           census.image, 2)
+ok(("%s pages, as /Count says"):format(want_pages), #doc.pages, want_pages)
+ok(("%s of them carry text"):format(want_text), census.text, want_text)
+ok(("%s a bare image"):format(want_images), census.image, want_images)
 ok("the page census adds up",        census.text + census.image + census.empty, #doc.pages)
 ok("an embedded TrueType font",      descriptor.FontFile2 ~= nil, true)
 ok("the page is a page",             page.dict.Type, "Page")
@@ -138,7 +155,7 @@ ok("the font is Type0",              first.Subtype, "Type0")
 ok("the encoding is Identity-H",     doc:resolve(first.Encoding), "Identity-H")
 ok("the descendant is CIDFontType2", descendant.Subtype, "CIDFontType2")
 ok("CIDToGIDMap is Identity",        doc:resolve(descendant.CIDToGIDMap), "Identity")
-ok("the content stream is Flate",    filter[1], "FlateDecode")
+ok("the content stream's filter",   filter[1], want_filter)
 ok("the content stream has bytes",   length > 0, true)
 
 -- Every page reachable, not only the first: a page tree that works for
