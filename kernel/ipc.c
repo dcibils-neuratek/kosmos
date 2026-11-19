@@ -786,11 +786,6 @@ struct memobj *ipc_hold_memory_as(struct thread *t, cap_t index, bool *readonly)
     return m;
 }
 
-struct memobj *ipc_hold_memory(struct thread *t, cap_t index)
-{
-    return ipc_hold_memory_as(t, index, NULL);
-}
-
 /*
  * An interrupt line, out of and into a capability table.
  *

@@ -203,7 +203,6 @@ struct thread {
          * calls that function or it is a bug.
          */
         unsigned       effective;
-        uint64_t       key;
         unsigned long  quantum;
 
         /*

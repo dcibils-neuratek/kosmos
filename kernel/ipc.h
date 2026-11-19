@@ -293,9 +293,8 @@ void ipc_timed_out(struct thread *t);
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index);
 
 /* A region, resolved and referenced; NULL if the capability no longer names
- * one. The reference is the caller's to let go of. */
-struct memobj *ipc_hold_memory(struct thread *t, cap_t index);
-/* The same, and whether the capability lets its holder only read it. */
+ * one. The reference is the caller's to let go of. `readonly`, when it is
+ * not NULL, says whether the capability lets its holder only read it. */
 struct memobj *ipc_hold_memory_as(struct thread *t, cap_t index, bool *readonly);
 
 /* The same pair for an interrupt line. `kernel/irq.h` is the argument, and

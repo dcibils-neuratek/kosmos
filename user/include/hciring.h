@@ -84,11 +84,6 @@ struct hci_ring {
 _Static_assert(sizeof(struct hci_ring) <= HCI_RING_DATA,
                "the indices fit before the packets");
 
-static inline uint32_t hci_ring_ready(uint32_t write, uint32_t read)
-{
-    return write - read;
-}
-
 static inline uint32_t hci_ring_space(uint32_t write, uint32_t read)
 {
     return HCI_RING_SLOTS - (write - read);

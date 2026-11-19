@@ -487,7 +487,7 @@ void didSameDocument(WKPageRef, WKNavigationRef, WKSameDocumentNavigationType, W
  * port's `NetworkDataTaskCurl`), and the UI process only hears how far it
  * has got - so a download costs this process nothing but a row.
  *
- * Where: the folder JetSki names (`webkit_download_folder`), under the
+ * Where: `/Home/Downloads`, under the
  * name the server suggested, made safe - no folder in it, nothing
  * unprintable - and made unique against the folder and every download
  * still running, `name (2).ext` as Finder and Tracker do. The curl port
@@ -509,7 +509,7 @@ struct Download {
 
 Vector<std::unique_ptr<Download>> downloads;
 int nextDownload = 1;
-char downloadFolder[512] = "/Home/Downloads";
+const char downloadFolder[] = "/Home/Downloads";
 bool downloadsChanged = false;      // begun, finished or failed, since the last pump
 
 Download* downloadOf(const void* clientInfo)
@@ -1803,12 +1803,6 @@ extern "C" void webkit_pump(unsigned ms, struct webkit_events* out)
     out->opener = views.opener;
     out->closing = views.closing;
     views.opened = views.opener = views.closing = 0;
-}
-
-extern "C" void webkit_download_folder(const char* folder)
-{
-    if (folder && folder[0])
-        snprintf(downloadFolder, sizeof downloadFolder, "%s", folder);
 }
 
 extern "C" unsigned webkit_downloads(struct webkit_download* out, unsigned room)

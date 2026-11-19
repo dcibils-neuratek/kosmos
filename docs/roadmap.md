@@ -8003,6 +8003,11 @@ not static**, since a static one is in every process.
    there, and XCR0 switched at entry and exit, when a guest asks for AVX. MathLab (4k) needs the second
    step too. An aligned allocator was the first thing either needed:
    `posix_memalign` and `aligned_alloc` in `malloc.c` (18.186).
+   **And a failed VM entry told apart** (the review, `docs/cleanup.md`
+   175): bit 31 of the exit reason, `EXIT_FAILED_ENTRY` in `vcpu.c`, is
+   defined and never tested, so a guest whose entry the processor refused
+   reaches the monitor as an ordinary trap with the same basic reason. Its
+   own exit kind, and the monitor saying the guest could not be started.
 
 6k. **FOUND on 24 September - a film reads each sample with a round trip
    of its own.** The Video app's overlay on Diego's clip under QEMU: 5.3 ms

@@ -138,15 +138,6 @@ function grid.categories(items, order, recent)
   return out
 end
 
--- The one after `current`, round to All after the last: what Tab does.
-function grid.next_category(cats, current)
-  for i, c in ipairs(cats or {}) do
-    if c == current then return cats[i % #cats + 1] end
-  end
-
-  return grid.ALL
-end
-
 --
 -- **The sections' rows**: All first - and Recently used under it, when it
 -- is there - and a rule under them, then the rest - each `{ name, y, h }`,

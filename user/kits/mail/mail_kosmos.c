@@ -34,7 +34,6 @@
  *                                         { name =, type =, at =, bytes = },
  *                                         its bytes in a region the caller
  *                                         keeps while this runs (M7)
- *   mail.encode_words(text)               a header's words, encoded if need be
  *
  * A part's `id` is its place in `parts()`, 1 for the message itself. **Its
  * content never passes through a Lua string here**: it goes into a region,
@@ -400,16 +399,6 @@ static int l_build(lua_State *L)
     return 1;
 }
 
-static int l_encode_words(lua_State *L)
-{
-    const char *text = luaL_checkstring(L, 1);
-    char out[2048];
-    size_t n = mail_encode_words(text, out, sizeof out);
-
-    lua_pushlstring(L, out, n < sizeof out ? n : sizeof out);
-    return 1;
-}
-
 void kosmos_mail_kit(lua_State *L)
 {
     static const luaL_Reg methods[] = {
@@ -434,6 +423,4 @@ void kosmos_mail_kit(lua_State *L)
     lua_setfield(L, -2, "parse");
     lua_pushcfunction(L, l_build);
     lua_setfield(L, -2, "build");
-    lua_pushcfunction(L, l_encode_words);
-    lua_setfield(L, -2, "encode_words");
 }

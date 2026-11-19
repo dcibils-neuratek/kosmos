@@ -688,42 +688,6 @@ static int l_blit(lua_State *L)
 }
 
 /*
- * **A rounded rectangle, as the one question both new primitives ask.**
- *
- * Is the destination pixel (x, y) inside the rectangle (rx, ry, rw, rh)
- * with corners of `r`? Everywhere but the four corner squares the answer is
- * yes without arithmetic, which is what makes a rounded blit cost almost
- * nothing: only `4 * r * r` pixels are ever tested, whatever the window's
- * size.
- *
- * The corner test is the circle's, on integers: a pixel is outside when its
- * distance from the corner's centre is more than the radius. Squared on
- * both sides, so there is no square root and no float - `CLAUDE.md` puts
- * floats out of the kernel and there is no reason to want one here either.
- *
- * Half a pixel is added to the radius before squaring. Without it the
- * boundary lands between two integers and the arc comes out visibly
- * flat-sided at small radii, which is exactly the size a window corner is.
- */
-
-static int l_blit_round(lua_State *L)
-{
-    struct surface *dst = check_surface(L, 1);
-    struct surface *src = check_surface(L, 2);
-
-    /* `outside` inverts the test, which is what puts a corner back: the
-     * picture kept from under a window drawn over what the window does not
-     * cover (`blit_round_on`). */
-    blit_round_on(dst, src, (long)luaL_checkinteger(L, 3), (long)luaL_checkinteger(L, 4),
-                  (long)luaL_checkinteger(L, 5), (long)luaL_checkinteger(L, 6),
-                  (long)luaL_checkinteger(L, 7), (long)luaL_checkinteger(L, 8),
-                  (long)luaL_checkinteger(L, 9), (long)luaL_checkinteger(L, 10),
-                  (long)luaL_checkinteger(L, 11), (long)luaL_checkinteger(L, 12),
-                  (long)luaL_checkinteger(L, 13), lua_toboolean(L, 14));
-    return 0;
-}
-
-/*
  * `dst:shadow(rx, ry, rw, rh, radius, spread, alpha, cx, cy, cw, ch)`
  *
  * The soft edge a window casts. `shadow.c` draws it and says how.
@@ -3528,7 +3492,6 @@ static const luaL_Reg surface_methods[] = {
     { "arc",    l_arc },
     { "line",   l_line },
     { "blit",   l_blit },
-    { "blit_round", l_blit_round },
     { "shadow", l_shadow },
     { "camera", l_camera },
     { "fill_round",  l_fill_round },

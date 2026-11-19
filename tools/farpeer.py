@@ -62,11 +62,6 @@ def checksum(data):
     return (~total) & 0xFFFF
 
 
-def tcp_options(raw):
-    """MSS and window scale from a segment's options; None where absent."""
-    return tcp_options_all(raw)[:2]
-
-
 def tcp_options_all(raw):
     """MSS, window scale, whether SACK is permitted, and SACK's blocks as
     (left, right) sequence numbers."""

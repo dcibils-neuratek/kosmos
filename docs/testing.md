@@ -37471,3 +37471,48 @@ The gate: 132 suites, every one passing, in 11:39 - **past the ten
 minutes**, with `x86-dock` alone at 353 s and `x86-cafesa3d-2` at 302 s.
 That is finding 207 in `docs/cleanup.md`, to be fixed in batch 8 before
 0.12.0.
+
+## 18.910 Dead code elsewhere
+
+**In short**: batch 3 of the review (`docs/cleanup.md`): what the compiler
+cannot call dead because something still names it - a public function, a
+binding in a kit's table, a field, a constant, a Makefile variable - and
+nothing uses. Each was grepped across the tree again before it went.
+**Gone**: in the applications, Mail's `unread_total`, Machine's `VENDORS`,
+Tracker's `columns_keep`, and `wm`'s `OUT.MARGIN`, `OUT.TITLE_IN` and
+`OUT.PLATINUM_SLOT`, which nothing has read since the title left the tab;
+in the UI kit, `ui.splitter`, `ui.undrag` and `window:close_menu`; in the
+libraries, `drivelist.is_sandboxes`, `launchgrid.next_category` and
+`settings.name_of`, each called only by its own test; in the kits, **the
+AAC Kit's Lua door** (`aac_kosmos.c`, 147 lines - a film's sound goes
+through the Playback Kit, which calls the decoder from C), Playback's
+`frame_string`, gfx's Lua `blit_round` (the C primitive stays, for the
+scene, and its explanation moved to it), Mail's `encode_words` binding,
+and WebKit's `download_folder`, which JetSki never called - the folder is
+`/Home/Downloads` in one place now, and the comment that said JetSki
+named it is true; in the servers and drivers, the sandbox disk's unread
+counters, `vmmnet_busy`, `gap_kind_name`, `hci_ring_ready`,
+`llm_answer_acquire`, e1000's `LINK_MS` (a wait that no longer happens)
+and xHCI's `ARP_REQUEST_BYTES`; in Nebula, `ipc_hold_memory` (every holder
+uses the `_as` form) and `sched.key`, a field for a queue never built;
+and `CFLAGS_LUA_UPSTREAM`, `USER_DEPS`, two harness helpers and a test
+header's `test_load_from`. The Makefile's paragraph said upstream Lua is
+compiled without `-Werror`; it is compiled with it, and clean.
+
+**Kept, and why**: `hal_blk_present` on the PC (159) is a HAL entry, and
+a board's half of it goes when the entry does; `EXIT_FAILED_ENTRY` (175)
+names a VM-entry failure the monitor should tell apart, which wants
+decoding rather than deleting (`roadmap.md`); `eu.encode_line` (189) is the
+GPU assembler's test seam; sqltest's `exec` (102) is the door for a
+failing statement's whole account - SQLite's message, extended code and
+`errno` - when a W5c check goes wrong; and `ROLE_CLIENT` (205) names role
+0 beside the roles it is not.
+
+Held by the whole gate - nothing removed had a caller, so every suite is
+the check that none appeared - and by the host's launcher-grid (65) and
+settings (262) checks with the lines that tested the removed functions
+taken out. Both images link: an unresolved name anywhere is a link error,
+which is the control a removal of this kind has.
+
+The gate: 132 suites, every one passing, in 12:41 - still past the ten
+minutes (finding 207, batch 8).

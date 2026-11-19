@@ -12,8 +12,8 @@
  * `max_tokens`, and the region is sized for the most a request may ask.
  *
  * The server writes the bytes, then publishes `written` after a barrier;
- * a reader loads `written` with acquire (`sys.region_load32`, or
- * `llm_answer_acquire` in C) and may then read every byte below it. `ended`
+ * a reader loads `written` with acquire (`sys.region_load32` - the one
+ * reader is Lua) and may then read every byte below it. `ended`
  * is published last of all, once nothing more will come.
  */
 
@@ -49,13 +49,6 @@ static inline void llm_answer_publish(volatile uint32_t *at, uint32_t value)
 {
     LLM_ANSWER_BARRIER();
     *at = value;
-}
-
-static inline uint32_t llm_answer_acquire(const volatile uint32_t *at)
-{
-    uint32_t v = *at;
-    LLM_ANSWER_BARRIER();
-    return v;
 }
 
 #endif

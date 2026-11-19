@@ -26,9 +26,6 @@ bool vmmnet_raised(void);
 /* What arrived on Kosmos's side, to the guest: whether anything moved. */
 bool vmmnet_pump(void);
 
-/* Whether any connection is open - the monitor then waits less. */
-bool vmmnet_busy(void);
-
 /* Bytes in to the guest and out from it, for a window's graph. */
 void vmmnet_counted(uint64_t *in, uint64_t *out);
 

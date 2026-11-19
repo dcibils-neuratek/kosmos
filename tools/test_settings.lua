@@ -281,14 +281,6 @@ if theme_item then
 end
 
 --
--- name_of turns a value into what the control shows.
---
-check(settings.name_of(look, "plexnight") == "Plex Night",
-      "name_of did not find a value's name")
-check(settings.name_of(look, "nonsense") == "nonsense",
-      "name_of should fall back to the value itself rather than nothing")
-
---
 -- **Each application that has said something** (`settings.notifiers`,
 -- Preferences' Notifications): newest first, one row a sender, noted with
 -- the last thing it said, on until turned off - and turning one off or on

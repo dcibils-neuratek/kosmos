@@ -194,7 +194,6 @@ int webkit_found(int id, int *count, int *current);
 void webkit_save(int id, const char *path, int complete);
 long long webkit_saved(int id, char *why, unsigned room);
 
-void webkit_download_folder(const char *folder);
 /* Every download since JetSki began, the newest first; how many. */
 unsigned webkit_downloads(struct webkit_download *out, unsigned room);
 /* A running one stopped, and its part-written file removed; 0 if none. */

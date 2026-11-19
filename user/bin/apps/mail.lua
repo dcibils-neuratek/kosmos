@@ -1299,18 +1299,6 @@ local function place_controls()
   end
 end
 
-local function unread_total()
-  local n = 0
-
-  for _, a in ipairs(accounts) do
-    local inbox = box_for(a, "inbox")
-
-    n = n + (inbox and inbox.unseen or 0)
-  end
-
-  return n
-end
-
 -- What the Outbox is doing, for the header: "Sending 1 message", or why
 -- one was not sent.
 local function outbox_said()

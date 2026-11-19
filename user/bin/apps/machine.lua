@@ -454,7 +454,6 @@ head("On the bus")
 --
 -- The tables are `/Kosmos/Libraries/hardware.lua`'s, so that a card this listing names is
 -- called the same thing by `neofetch` and the Network preference.
-local VENDORS = hardware.VENDORS
 local CLASSES = hardware.CLASSES
 local VIRTIO  = hardware.VIRTIO
 

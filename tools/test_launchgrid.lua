@@ -111,8 +111,6 @@ check(table.concat(cats, ",") == "All,Applications,System,Demos,Games",
 check(names(grid.filter(filed, "", "Demos")) == "GL Gears,Plasma", "Demos kept " .. names(grid.filter(filed, "", "Demos")))
 check(names(grid.filter(filed, "pl", "Demos")) == "Plasma", "a search inside Demos left Demos")
 check(#grid.filter(filed, "", "All") == 5 and #grid.filter(filed, "") == 5, "All was not everything")
-check(grid.next_category(cats, "Demos") == "Games" and grid.next_category(cats, "Games") == "All",
-      "the next section after the last was not All")
 
 -- 8. The sections as rows down the column: All, a rule, the rest.
 local rows_ = grid.side_rows(cats)

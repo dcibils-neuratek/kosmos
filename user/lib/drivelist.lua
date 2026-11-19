@@ -138,10 +138,6 @@ local function held(volume)
   return nil
 end
 
-function drivelist.is_sandboxes(volume)
-  return named_by("opt/kosmos/sandboxes", volume)
-end
-
 -- What a volume is called: its label, or the name of the drive a disk
 -- server holds it as.
 function drivelist.label(volume)

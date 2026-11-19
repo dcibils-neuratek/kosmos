@@ -17,7 +17,6 @@
  *                         or false when the input ring is full - an AAC
  *                         frame whole, an MP3's or a WAV's bytes in pieces
  *                         of 16 KB at most
- *   p:frame_string(s)     the same from a string
  *   p:ended()             no frame will come after these
  *   p:play()  p:pause()
  *   p:state(t)            what is heard, into `t`
@@ -198,15 +197,6 @@ static int l_frame(lua_State *L)
     return put(L, p, (const void *)(uintptr_t)at, (size_t)n);
 }
 
-static int l_frame_string(lua_State *L)
-{
-    struct playback *p = check(L);
-    size_t n;
-    const char *s = luaL_checklstring(L, 2, &n);
-
-    return put(L, p, s, n);
-}
-
 /* p:ended() - an empty record that says so. False while the ring is full. */
 static int l_ended(lua_State *L)
 {
@@ -272,7 +262,6 @@ void kosmos_playback_kit(lua_State *L)
         { "pause",        l_pause },
         { "room",         l_room },
         { "frame",        l_frame },
-        { "frame_string", l_frame_string },
         { "ended",        l_ended },
         { "state",        l_state },
         { "close",        l_close },

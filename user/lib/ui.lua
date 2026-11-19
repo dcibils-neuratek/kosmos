@@ -1428,44 +1428,6 @@ function ui.tree(spec)
 end
 
 --------------------------------------------------------------------------
--- Splitters.
---
--- A grip between two views that changes where the boundary is. It moves the
--- *views*, which is the whole of it: everything else about a split pane is
--- the two things either side, and they are ordinary views that already know
--- how to be a size.
---------------------------------------------------------------------------
-
-function ui.splitter(spec)
-  -- Before the view is made, for the reason `ui.header` gives: this default
-  -- was set afterwards from the day it was written, and was never read.
-  spec.follow = spec.follow or { "left", "top", "bottom" }
-
-  local v = ui.view(spec)
-
-  v.w = v.w > 0 and v.w or 6
-
-  function v:draw(g)
-    g:fill(0, 0, self.w, self.h, "window")
-    g:groove(self.w // 2 - 1, 0, 2, self.h)
-  end
-
-  function v:mouse(action, x)
-    if action == "press" then
-      self.holding = x
-    elseif action == "move" and self.holding then
-      if self.on_move then self:on_move(x - self.holding) end
-    elseif action == "release" then
-      self.holding = nil
-    end
-
-    return true
-  end
-
-  return v
-end
-
---------------------------------------------------------------------------
 -- Views.
 --
 -- Follow modes rather than a constraint solver, `ui.md` 16.4. Each edge
@@ -9939,8 +9901,8 @@ function window:close_menus(from)
   return true
 end
 
--- The old single-menu names, kept because the menu bar and anything else
--- that only ever wants one still reads better this way.
+-- The single-menu name, kept because the menu bar and anything else that
+-- only ever wants one still reads better this way.
 --
 -- `above`: `y` is where the menu's bottom edge goes rather than its top -
 -- the dock's Kosmos menu, which opens upwards from the foot of the screen
@@ -9978,10 +9940,6 @@ function window:open_menu(x, y, items, above)
   end
 
   return m
-end
-
-function window:close_menu()
-  return self:close_menus()
 end
 
 --
@@ -10566,10 +10524,6 @@ function ui.drag(win, kind, payload, label)
   return fs.send("/Running/wm", { type = "drag", window = win.handle,
                               kind = kind, payload = payload,
                               label = label })
-end
-
-function ui.undrag(win)
-  return fs.send("/Running/wm", { type = "drag", window = win.handle })
 end
 
 --

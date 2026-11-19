@@ -913,7 +913,6 @@ local CELL = { right = 0 }
 local COL_LEFT = 10         -- where the first column starts
 local cols                  -- made below, once `widest` can see the rows
 
-local columns_keep = { per_folder = false }   -- prefs: where widths are kept
 local columns_from = nil    -- the folder whose own columns are in force
 
 --
@@ -2910,7 +2909,7 @@ function show(path)
   -- folder is as last heard - its server away - which greys it under the
   -- band.
   --
-  local server_label, share_name = netshares.under(path)
+  local _, share_name = netshares.under(path)
 
   stale = listed.last_heard_ms ~= nil
 

@@ -3972,7 +3972,6 @@ static bool dotted_quad(const char **at, const char *end, uint8_t out[4])
 }
 
 #define ETHER_LEAST         60u         /* Ethernet's shortest frame, less FCS */
-#define ARP_REQUEST_BYTES   42u
 
 static void ether_probe(struct controller *c, unsigned slot, unsigned packet,
                         struct say_line *line)

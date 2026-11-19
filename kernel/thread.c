@@ -2377,8 +2377,8 @@ void thread_block(void)
  * sorted queue: the scan is one comparison for every slot the pool has made,
  * `TICK_HZ` times a second, and a sorted structure would be more code to get
  * wrong than the thing it saves. The pool grows, so if the scan ever shows in
- * a profile, `sched.key` is already there for a deadline-ordered queue and
- * `thread_wake_sleepers` is the function to replace.
+ * a profile, `thread_wake_sleepers` is the function to replace with a
+ * deadline-ordered queue.
  */
 /*
  * How fast the counter counts, asked once.

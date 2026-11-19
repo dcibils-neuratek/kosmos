@@ -22,7 +22,4 @@ bool vmmblk_on(void);
 bool vmmblk_mmio(uint64_t off, unsigned size, bool write, uint64_t *value);
 bool vmmblk_raised(void);
 
-/* What it has done, for `VMM_OP_STATE`: requests, and bytes each way. */
-void vmmblk_counted(uint64_t *reads, uint64_t *writes);
-
 #endif /* USER_SERVERS_VMMBLK_H */

@@ -613,12 +613,6 @@ class Guest:
             f"--- what it did say ---\n{self.seen[since:][-1500:]}"
         )
 
-    def line_starting(self, prefix):
-        for text in self.seen.splitlines():
-            if text.startswith(prefix):
-                return text
-        return None
-
     def type(self, text):
         self.proc.stdin.write((text + "\n").encode())
         self.proc.stdin.flush()
@@ -2414,50 +2408,6 @@ def is_tab(px, at, base=TAB):
     return (abs(px[at]     - base[0]) <= TAB_TOL
             and abs(px[at + 1] - base[1]) <= TAB_TOL
             and abs(px[at + 2] - base[2]) <= TAB_TOL)
-
-
-def tab_width(width, height, px):
-    """How wide the widest run of tab colour on screen is, in pixels.
-
-    It used to be that the tab was as wide as its title and no wider, so
-    this measured the title's length. It does not any more - the decoration
-    is one colour across the whole frame - so this now measures the widest
-    *window*, which is still what several checks want.
-    """
-    widest = 0
-
-    for y in range(0, height, 2):
-        run = 0
-
-        for x in range(width):
-            at = (y * width + x) * 3
-
-            if is_tab(px, at):
-                run += 1
-
-                if run > widest:
-                    widest = run
-            else:
-                run = 0
-
-    return widest
-
-
-def tab_top(width, height, px):
-    """The first row holding the focused window's decoration, or None.
-
-    The top of the tab, which is where a title is drawn a few rows below.
-    Searched from the top of the screen so that the frontmost window wins
-    when several overlap.
-    """
-    for y in range(height):
-        for x in range(0, width, 2):
-            at = (y * width + x) * 3
-
-            if is_tab(px, at):
-                return y
-
-    return None
 
 
 def check_default_look(guest, ask_wm):

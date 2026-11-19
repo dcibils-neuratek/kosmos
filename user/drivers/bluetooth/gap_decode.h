@@ -104,9 +104,6 @@ bool gap_decode_inquiry_complete(const struct hci_event *e, uint8_t *status);
 /* What it is, from its class or its appearance or its services. */
 unsigned gap_kind(const struct gap_found *f);
 
-/* "keyboard", "mouse", "headphones" ... for a line in the log. */
-const char *gap_kind_name(unsigned kind);
-
 /* `length` bytes of a name into `out`, which holds `room` with its
  * terminator: cut at a character's start so a UTF-8 character is never
  * halved, and a NUL inside ends it. */

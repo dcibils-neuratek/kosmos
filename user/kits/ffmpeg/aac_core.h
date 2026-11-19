@@ -5,7 +5,8 @@
 /*
  * **AAC, decoded by FFmpeg** (`roadmap.md` 4e): the sound of nearly every
  * film, with no Lua in it, so the Mac holds it to FFmpeg's own conformance
- * references (`tools/test_aac.c`) and `aac_kosmos.c` is only its Lua face.
+ * references (`tools/test_aac.c`), and the Playback Kit calls it from C
+ * (`user/kits/playback/`) - a film's sound never crosses Lua.
  *
  * Unlike H.264 this is one frame in, one frame out: an AAC frame is 1024
  * samples a channel (2048 with SBR, HE-AAC's doubling of the rate), decoded

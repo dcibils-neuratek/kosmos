@@ -313,17 +313,3 @@ unsigned gap_kind(const struct gap_found *f)
     return f->hid ? GAP_KIND_INPUT : GAP_KIND_OTHER;
 }
 
-const char *gap_kind_name(unsigned kind)
-{
-    switch (kind) {
-    case GAP_KIND_KEYBOARD:       return "keyboard";
-    case GAP_KIND_MOUSE:          return "mouse";
-    case GAP_KIND_KEYBOARD_MOUSE: return "keyboard and mouse";
-    case GAP_KIND_HEADPHONES:     return "headphones";
-    case GAP_KIND_GAMEPAD:        return "game controller";
-    case GAP_KIND_PHONE:          return "phone";
-    case GAP_KIND_COMPUTER:       return "computer";
-    case GAP_KIND_INPUT:          return "input device";
-    default:                      return "other";
-    }
-}

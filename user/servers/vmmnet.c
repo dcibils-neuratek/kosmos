@@ -693,19 +693,6 @@ bool vmmnet_pump(void)
     return any;
 }
 
-bool vmmnet_busy(void)
-{
-    unsigned i;
-
-    for (i = 0; on && i < links_n; i++) {
-        if (links[i].used) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 {
     unsigned k;

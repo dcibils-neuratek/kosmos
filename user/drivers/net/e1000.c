@@ -193,7 +193,6 @@
 #define TX_CMD_RS       0x08u       /* report status: write the descriptor back */
 
 #define RESET_MS        20u
-#define LINK_MS         2000u       /* how long a link is waited for, once */
 
 /*
  * **Thirty-two descriptors each way.** The card wants a multiple of eight

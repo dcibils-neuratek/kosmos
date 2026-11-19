@@ -74,20 +74,6 @@ static inline void test_store_to(uintptr_t addr, uint32_t value)
 #endif
 }
 
-/* And the read, for the tests about pages that may not be read. */
-static inline uint32_t test_load_from(uintptr_t addr)
-{
-    uint32_t value;
-
-#if defined(__aarch64__)
-    __asm__ volatile("ldr %w0, [%1]" : "=r"(value) : "r"(addr) : "memory");
-#else
-    __asm__ volatile("movl (%1), %0" : "=r"(value) : "r"(addr) : "memory");
-#endif
-
-    return value;
-}
-
 /* Where the stack is, right here. */
 static inline uintptr_t test_stack_pointer(void)
 {

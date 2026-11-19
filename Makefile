@@ -446,11 +446,9 @@ CFLAGS_FP := $(CFLAGS_BASE)
 # not compile a line of it.
 LUA_FLAGS := -Ilua/upstream -Ilua/kosmos -include lua/kosmos/kosmos_lua.h
 
-# Upstream is compiled without -Werror. It is not our code and its warnings
-# are not ours to fix: the alternative is either editing it, which setup.md
-# forbids for a good reason, or carrying a patch that has to be rebased on
-# every release. Our own files keep -Werror, Lua's included.
-CFLAGS_LUA_UPSTREAM := $(CFLAGS_FP) $(LUA_FLAGS) -Wno-error
+# Upstream Lua is compiled with every flag our own code has, -Werror
+# included, and is clean under them: unlike the other vendored code below,
+# it needs no allowance.
 
 
 $(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
@@ -1022,8 +1020,7 @@ FFMPEG_DIR    := runtime/upstream/ffmpeg
 FFMPEG_KOSMOS := user/kits/ffmpeg/ffmpeg_log.c user/kits/ffmpeg/h264_core.c \
                  user/kits/ffmpeg/aac_core.c
 FFMPEG_SRCS   := $(addprefix $(FFMPEG_DIR)/,$(addsuffix .c,$(FFMPEG_NAMES))) \
-                 $(FFMPEG_KOSMOS) user/kits/ffmpeg/h264_kosmos.c \
-                 user/kits/ffmpeg/aac_kosmos.c
+                 $(FFMPEG_KOSMOS) user/kits/ffmpeg/h264_kosmos.c
 FFMPEG_IFLAGS := -Iuser/kits/ffmpeg/config -I$(FFMPEG_DIR)
 FFMPEG_CFLAGS := -std=c17 -U__STRICT_ANSI__ -O3 -fno-math-errno \
                  -fno-signed-zeros -w -Wno-error -DHAVE_AV_CONFIG_H \
@@ -1319,7 +1316,6 @@ WEB_CFLAGS := -w -Wno-error -fcommon -DWITHOUT_ICONV_FILTER -DNDEBUG \
 endif
 
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
-USER_DEPS := $(USER_OBJS:.o=.d)
 
 # miniz, for its deflater and its inflater (`runtime/upstream/miniz/README.md`,
 # `roadmap.md` 6v and 6zz g): no stdio, no time, no archives and no
@@ -1443,9 +1439,9 @@ $(FB_FILE):
 $(BUILD)/hal/fwcfg/fbpixels.c.o: CFLAGS += $(FB_FLAGS)
 $(BUILD)/hal/fwcfg/fbpixels.c.o: $(FB_FILE)
 
-# Upstream code is compiled without -Werror, the same allowance lua/upstream
-# gets: its warnings are not ours to fix and patching them would mean the
-# tree no longer holding what the author released.
+# Upstream code is compiled without -Werror: its warnings are not ours to
+# fix, and patching them would mean the tree no longer holding what the
+# author released.
 #
 # TinyGL, compiled on its own terms, and above the general upstream rule for
 # the reason that rule's neighbour already records: make takes the first

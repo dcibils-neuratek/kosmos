@@ -625,17 +625,6 @@ function settings.set(it, value, read, write)
 end
 
 --
--- The name of a choice's current value, for a control that shows it.
---
-function settings.name_of(it, value)
-  for _, c in ipairs(it.choices or {}) do
-    if c[1] == value then return c[2] end
-  end
-
-  return tostring(value)
-end
-
---
 -- **The wallpapers there are to choose from**, as `{ value, name }` pairs
 -- for the Wallpaper row: none, then the pictures in `/Home/Wallpapers`,
 -- newest first, then the pictures the image carries (`docs/wallpapers.html`;

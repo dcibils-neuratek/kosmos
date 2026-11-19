@@ -2846,7 +2846,6 @@ void kosmos_webkit2test_kit(lua_State *L) __attribute__((weak));
 void kosmos_webkit_kit(lua_State *L) __attribute__((weak));
 #ifdef KOSMOS_FFMPEG
 void kosmos_h264_kit(lua_State *L);
-void kosmos_aac_kit(lua_State *L);
 #endif
 
 /*
@@ -2938,7 +2937,6 @@ static const struct {
 #ifdef KOSMOS_FFMPEG
     /* `FULL=1`, the default, or `FFMPEG=1`: FFmpeg's decoders. */
     { "h264",     kosmos_h264_kit, 0 },
-    { "aac",      kosmos_aac_kit, 0 },
 #endif
     { NULL, NULL, 0 }
 };

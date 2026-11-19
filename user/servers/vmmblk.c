@@ -50,7 +50,6 @@ static struct {
     uint64_t        bytes;
     long            region;
     uint8_t        *at;
-    uint64_t        reads, writes;
 } B = { .region = -1, .disk = { .ep = -1 } };
 
 /* `n` bytes at `pos` of a chain's buffers of one side, copied to or from
@@ -114,7 +113,6 @@ static uint8_t read_into(struct vdev_chain *c, uint64_t offset, uint64_t n)
         done += piece;
     }
 
-    B.reads += n;
     return S_OK;
 }
 
@@ -136,7 +134,6 @@ static uint8_t write_from(struct vdev_chain *c, uint64_t offset, uint64_t n)
         done += piece;
     }
 
-    B.writes += n;
     return S_OK;
 }
 
@@ -299,10 +296,4 @@ bool vmmblk_mmio(uint64_t off, unsigned size, bool write, uint64_t *value)
 bool vmmblk_raised(void)
 {
     return B.on && vdev_raised(&B.dev);
-}
-
-void vmmblk_counted(uint64_t *reads, uint64_t *writes)
-{
-    *reads = B.reads;
-    *writes = B.writes;
 }

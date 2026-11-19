@@ -277,7 +277,8 @@ void blit_on(struct surface *dst, struct surface *src,
 }
 
 /*
- * `dst:blit_round(src, sx, sy, w, h, dx, dy, rx, ry, rw, rh, radius)`
+ * `blit_round_on(dst, src, sx, sy, w, h, dx, dy, rx, ry, rw, rh, radius,
+ * outside)`, for the window manager's scene (`scene_core.c`).
  *
  * A blit that leaves the destination alone outside a rounded rectangle.
  *
@@ -301,6 +302,23 @@ void blit_on(struct surface *dst, struct surface *src,
  * before the window is painted and puts them back afterwards with this,
  * which rounds the whole thing in one place and needs no drawing call to
  * know it is happening.
+ *
+ * **The rounded rectangle is one question**, asked of each pixel.
+ *
+ * Is the destination pixel (x, y) inside the rectangle (rx, ry, rw, rh)
+ * with corners of `r`? Everywhere but the four corner squares the answer is
+ * yes without arithmetic, which is what makes a rounded blit cost almost
+ * nothing: only `4 * r * r` pixels are ever tested, whatever the window's
+ * size.
+ *
+ * The corner test is the circle's, on integers: a pixel is outside when its
+ * distance from the corner's centre is more than the radius. Squared on
+ * both sides, so there is no square root and no float - `CLAUDE.md` puts
+ * floats out of the kernel and there is no reason to want one here either.
+ *
+ * Half a pixel is added to the radius before squaring. Without it the
+ * boundary lands between two integers and the arc comes out visibly
+ * flat-sided at small radii, which is exactly the size a window corner is.
  */
 void blit_round_on(struct surface *dst, struct surface *src,
                           long sx, long sy, long w, long h, long dx, long dy,

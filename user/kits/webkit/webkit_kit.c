@@ -219,12 +219,6 @@ static int l_download_forget(lua_State *L)
     return 0;
 }
 
-static int l_download_folder(lua_State *L)
-{
-    webkit_download_folder(luaL_checkstring(L, 1));
-    return 0;
-}
-
 /* `views(list)`: every view in order, into `list`, reused - a view's table
  * is kept between calls, so a strip drawn every pass makes no garbage once
  * it is full. */
@@ -831,7 +825,7 @@ void kosmos_webkit_kit(lua_State *L)
         { "settings", l_settings }, { "zoom", l_zoom },
         { "said", l_said },       { "allow", l_allow },
         { "downloads", l_downloads }, { "download_cancel", l_download_cancel },
-        { "download_forget", l_download_forget }, { "download_folder", l_download_folder },
+        { "download_forget", l_download_forget },
         { "inspector_files", l_inspector_files },           { "inspector_size", l_inspector_size },
         { NULL, NULL },
     };

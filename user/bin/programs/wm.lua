@@ -187,24 +187,6 @@ OUT.EDGE       = 4
 --
 OUT.BOX        = 20
 
--- How far the controls sit from the end of the tab, and the title from its
--- start.
---
--- **Two numbers now, and both the drawings'** (`roadmap.md` 5zp). It was one,
--- 4, for both ends, which was fine while a window was square. Diego, 24
--- September, with a photograph of a tab: "The window title needs more left
--- margin as it's too close to the edge and looks bad" - four pixels from a
--- corner rounded at twelve put the first letter inside the curve.
---
--- The title is 18 in, which is where the drawings' header puts its own
--- title (`ui.layout.head_in`) - so a window's name on its tab and the
--- subject in the header under it start at the same x, and read as one
--- column rather than two near-misses. The controls are 10 in, the header's
--- `head_edge`, for the same reason at the other end.
---
-OUT.MARGIN     = 10
-OUT.TITLE_IN   = 18
-
 -- How far each window steps down and across from the one already in its
 -- corner. A tab's height, so the one underneath always has a strip of its
 -- own title bar showing - which is the whole point: a window you can see a
@@ -275,8 +257,6 @@ function scale.chrome()
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
   OUT.EDGE    = scale.px(4)
   OUT.BOX     = scale.px(20)
-  OUT.MARGIN  = scale.px(10)
-  OUT.TITLE_IN = scale.px(18)
   OUT.cascade = scale.px(theme.metrics.tab) + scale.px(8)
   OUT.GRIP    = scale.px(16)
   OUT.BOX_W   = OUT.BOX + scale.px(4)
@@ -1911,9 +1891,6 @@ OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 -- compositor's colours and its held box are one table either way, and
 -- only where each is drawn differs (`SC_PLATINUM`). There is no minimise:
 -- Mac OS's was the collapse.
---
-OUT.PLATINUM_SLOT = { maximise = 0, shade = 1, close = 2 }
-
 --
 -- Their colours, one set for every slot: a box is grey in Platinum, and
 -- which is which is said by where it is and what is drawn in it. A light
