@@ -917,6 +917,49 @@ def main():
         said["switch"] = session.run("/Temporary/switch.lua").decode(errors="replace")
         guest._read_available()
         said["switched"] = guest.seen[mark:]
+
+        # ---- 8: a pin whose program is not there (0.11.507) ----
+        # Diego's dock on the M700 kept `browser` from before JetSki, and a
+        # press said nothing on the screen. Pinned, it is found missing on
+        # the dock's own clock; pressed, it says so and launches nothing.
+        # Last, since 7 leaves the bar at the top: the dock first, and the
+        # pin then says the dock's place afresh (`roadmap.md`, the dock
+        # suite's place from a log line).
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/bar dock")
+        maybe("deskbar: the dock's jetski", "the dock back, its pins looked for", mark)
+        time.sleep(2)
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/pin ghostapp")
+        # The dock comes back as it was kept - the whole width, after 7 -
+        # so along the foot, where a cell's place is the screen's.
+        whole_ = (0, height - DOCK_H, width, DOCK_H)
+        mid = whole_[1] + whole_[3] // 2
+        said["ghost found"] = maybe("deskbar: the dock's ghostapp names no program there is",
+                                    "the missing pin found missing", mark)
+        time.sleep(1)
+        found, _, _ = cells()
+        dx, dy, dw, dh = whole_
+
+        if "ghostapp" in found:
+            gx, gw = found["ghostapp"]
+            mark = len(guest.seen)
+            click(dx + gx + gw // 2, mid, width, height)
+            said["ghost pressed"] = maybe("deskbar: the dock's ghostapp is not installed, so not launched",
+                                          "the missing pin pressed", mark)
+            time.sleep(1)
+            said["ghost launched"] = "wm: launching ghostapp" in guest.seen[mark:]
+        # Off the dock and settled before it is taken out, so the dock does
+        # not shrink under a resting pointer and leave the lens open over
+        # what comes after.
+        mark = len(guest.seen)
+        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+        maybe("deskbar: the icons settled", "the icons settled off the dock", mark)
+        mark = len(guest.seen)
+        session.run("setprop /Running/Deskbar/unpin ghostapp")
+        said["ghost unpinned"] = maybe("deskbar: removed ghostapp - the dock is ",
+                                       "the missing pin taken out", mark)
+        time.sleep(1)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the boot stopped: %s: %s" % (type(e).__name__, e))
     finally:
@@ -984,6 +1027,13 @@ def main():
     if (said.get("launched") or "") != "calc":
         fails.append("a click on a pinned icon did not open it on the release: %r"
                      % said.get("launched"))
+
+    if said.get("ghost found") is None or said.get("ghost pressed") is None \
+       or said.get("ghost launched") or said.get("ghost unpinned") is None:
+        fails.append("a pin to no program was not found missing, said so when pressed, "
+                     "launched nothing and came out: found %r, pressed %r, launched %r, out %r"
+                     % (said.get("ghost found"), said.get("ghost pressed"),
+                        said.get("ghost launched"), said.get("ghost unpinned")))
 
     tip = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("tip", ""))
 
@@ -1278,7 +1328,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 56
+    checks = 57
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

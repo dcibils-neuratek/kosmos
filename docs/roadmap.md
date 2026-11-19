@@ -150,6 +150,15 @@ questions is decided as recommended, and the order is:
 - Sheets and Present after, on the same kits.
 
 
+**The dock suite reads the dock's place from a log line that does not
+always come** (found 18 November 2026, `testing.md` 18.907): `x86-dock`
+samples the pill and the Kosmos button where `wm: the dock at` last put
+the dock, and a dock pinned and unpinned again ended 852 wide on the
+screen while the last line said 798. Either the window manager says every
+move and resize of a strip, or the suite asks the Deskbar (`cells`) for
+where it is. Until then a phase that changes the pins runs where the next
+phase says the place afresh.
+
 **A gate that runs what a change reaches - AGREED and BUILT on 14 November
 2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire
 gate and rebuild all every time? cant we just be smart on what needs to be

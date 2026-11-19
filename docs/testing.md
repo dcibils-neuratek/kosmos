@@ -37370,3 +37370,30 @@ are told. And on the machine: `wm: style ...` in `x86-desktops` (Astra),
 `x86-starlight` and `x86-platinum` (Pewter, 10) names all six. The
 controls: a palette's own style let win over the worn one fails 12 checks;
 `flat = no` put back in Classic's file fails 2.
+
+## 18.907 A dock pin to nothing says so
+
+**In short**: Diego could not open the browser on the M700. JetSki opened
+and loaded Wikipedia in under a second; what he was pressing was a pin
+called `browser`, kept in his dock from before JetSki, whose program was
+removed in 0.11.461. Every press wrote "Browser did not start: no such
+program" to the log and nothing on the screen. Now a pin whose program
+is not there is drawn faded, its tip says "Browser is not installed", and
+a press says the same and asks for no launch. Looked for on the dock's own
+clock - at its start and every five seconds after, a found program
+remembered - never in a draw or a press, and kept rather than dropped,
+since `install` or a stick can bring it back. `setprop
+/Running/Deskbar/unpin` takes a pin out, as `pin` puts one in.
+
+Held by `x86-dock` (57): `ghostapp` pinned is found missing, pressed it
+says it is not installed and the window manager is asked to launch
+nothing, and `unpin` takes it out. Where the check sits taught something:
+put before the transparency or the Kosmos button checks, it made them
+fail - each samples the dock at the place `wm: the dock at` last said,
+and a dock that grows and shrinks again is not always said, so the
+sample landed on an icon; moved later, the whole width's menu check failed
+the same way. Run without it, all 56 others passed - so the Deskbar's
+change was not the cause - and it runs last, after the bar's four moves,
+putting the dock back first (`roadmap.md`, the dock suite's place). The
+same run showed the change at work: the test image carries no JetSki, and
+the restarted dock said "the dock's jetski names no program there is".

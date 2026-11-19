@@ -1727,10 +1727,57 @@ if DOCKED then
     return attrs and attrs.icon or nil
   end
 
+  --
+  -- **A pin whose program is not there** - one kept from a program since
+  -- renamed or removed, or an application not installed yet. Diego's dock
+  -- on the M700 kept `browser` from before JetSki, and every press of it
+  -- said "did not start: no such program" in the log and nothing on the
+  -- screen. It is drawn faded, its tip says so, and a press says so too
+  -- rather than asking for a launch that cannot happen.
+  --
+  -- Asked on the dock's own clock (`dock_frame`), never in a draw or a
+  -- press: a found program is remembered, a missing one asked again every
+  -- few seconds, since `install` can bring it at any time. Kept, not
+  -- dropped: the pin may be to something on a stick not in yet.
+  --
+  local absent = {}               -- name -> true while its program is not there
+  local found = {}                -- name -> true once it was
+  local absent_asked = nil        -- when the pins were last looked for
+
+  local function look_for_pins()
+    local changed = false
+
+    for _, name in ipairs(pins) do
+      if not found[name] then
+        local ok, path = pcall(fs.program, name)
+        local there = ok and path and fs.getattr(path) ~= nil
+
+        if there then found[name] = true end
+        if (not there) ~= (absent[name] == true) then
+          absent[name] = (not there) or nil
+          changed = true
+          print(("deskbar: the dock's %s %s"):format(name,
+                there and "is installed" or "names no program there is"))
+        end
+      end
+    end
+
+    absent_asked = sys.ticks()
+    return changed
+  end
+
+  look_for_pins()
+
   -- The cells and their places, from what runs now; and the width the dock
   -- should be, which `on_frame` asks for outside the draw.
   local function lay_out()
     items = dock.items(pins, running, pinned_icon)
+
+    for _, it in ipairs(items) do
+      if it.kind == "app" then
+        it.absent = (absent[it.name] and not it.running and not it.starting) or nil
+      end
+    end
 
     local width = dock.layout(items, gfx.measure("Kosmos"))
 
@@ -1787,7 +1834,9 @@ if DOCKED then
       g:fill(x + it.w // 2, cy - 15, 1, 30, at(theme.text_dim, 0x70))
     else
       -- Grown upwards from where its foot is: the row's dots stay put.
-      g:icon(x + (it.w - size) // 2, cy + dock.ICON // 2 - 3 - size, it.icon .. ".png", size)
+      -- Faded when its program is not there.
+      g:icon(x + (it.w - size) // 2, cy + dock.ICON // 2 - 3 - size, it.icon .. ".png", size,
+             it.absent and 96 or nil)
 
       -- Open, and in front: a dot, or a line, 3 under the picture - it
       -- was 9 off the dock's bottom edge, which left it nearer the edge
@@ -2025,7 +2074,15 @@ if DOCKED then
   function act(it)
     local what, arg = dock.action(it)
 
-    if what == "launch" then
+    if what == "launch" and it.absent then
+      -- Nothing to start: said where the press was, and nothing asked.
+      local attrs = programs[it.name]
+      local title = (attrs and attrs.title) or tostring(it.title or it.name)
+
+      show_tip_text(title:sub(1, 1):upper() .. title:sub(2) .. " is not installed",
+                    win.origin_x + (bar.offset or 0) + it.x + it.w // 2)
+      print("deskbar: the dock's " .. arg .. " is not installed, so not launched")
+    elseif what == "launch" then
       -- Without waiting for it to start, as the bar's own launch does: a
       -- click on the dock waited for the application until 0.11.
       fs.send("/Running/wm", { type = "launch", program = arg, wait = false })
@@ -2143,7 +2200,10 @@ if DOCKED then
   local function show_tip(it)
     if tip and tip_for == it then return end
 
-    show_tip_at(tip_name(it), win.origin_x + (bar.offset or 0) + it.x + it.w // 2, it)
+    local name = tip_name(it)
+
+    if it.absent then name = name .. " is not installed" end
+    show_tip_at(name, win.origin_x + (bar.offset or 0) + it.x + it.w // 2, it)
   end
 
   -- Any words over the dock, centred on `centre` - "Remove from Dock" over
@@ -2426,6 +2486,13 @@ if DOCKED then
     if name ~= "" then save_pins(dock.pin(pins, name), "kept", name) end
   end)
 
+  -- And `unpin` to take one out, as dragging it off the dock does.
+  win:publish("unpin", function() return "" end, function(v)
+    local name = tostring(v)
+
+    if name ~= "" then save_pins(dock.unpin(pins, name), "removed", name) end
+  end)
+
   win:publish("cells", function()
     local out = {}
 
@@ -2566,6 +2633,12 @@ if DOCKED then
 
   function dock_frame(self)
     if tip then wmproto.poll(tip.handle, 0) end
+
+    -- The pins looked for again, every five seconds (`look_for_pins`).
+    if sys.ticks() - (absent_asked or 0) > 5 * counter_hz and look_for_pins() then
+      lay_out()
+      win.dirty = true
+    end
 
     local lens_moving = dock_lens_frame and dock_lens_frame() or false
 
