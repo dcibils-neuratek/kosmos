@@ -54,24 +54,6 @@ local function civil(days)
   return y, m, d
 end
 
---
--- **And back: a year, month and day into days since 1970** - Hinnant's
--- `days_from_civil`, the same shifted era the other way. For a date that
--- arrives as words rather than as a count, an HTTP `Date` or `Expires`
--- (`httpcache.lua`), which kept its own copy until the review before 0.11
--- found the calendar in two halves in two files.
---
-function clock.days(y, m, d)
-  y = m <= 2 and y - 1 or y
-
-  local era = (y >= 0 and y or y - 399) // 400
-  local yoe = y - era * 400
-  local doy = (153 * (m + (m > 2 and -3 or 9)) + 2) // 5 + d - 1
-  local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
-
-  return era * 146097 + doe - 719468
-end
-
 clock.DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 clock.MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
@@ -95,10 +77,6 @@ function clock.offset()
   end
 
   return 0
-end
-
-function clock.set_offset(minutes)
-  return prefs().open("clock"):set("offset", minutes)
 end
 
 --

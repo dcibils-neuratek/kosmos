@@ -11,11 +11,18 @@
  * libc can satisfy every symbol and still hand back a null on the first
  * allocation. So the first of this parsed a document and reported what was
  * in it, and parsed a stylesheet and reported whether it was understood.
- * Everything else the browser needs is built on top of those two answers:
- * selection, the `css_select_handler` bridging libdom's tree to libcss's
- * questions (`web_select.c`); the page laid out and drawn by NetSurf
- * (`web_netsurf.c`), or by `web_paint.c` where NetSurf could not; its
- * forms; and its SVGs (`web_svg.c`).
+ * Everything else was built on top of those two answers: selection, the
+ * `css_select_handler` bridging libdom's tree to libcss's questions
+ * (`web_select.c`); the page laid out and drawn by NetSurf
+ * (`web_netsurf.c`), or by `web_paint.c` where NetSurf could not; and its
+ * SVGs (`web_svg.c`).
+ *
+ * **Mail is its one user now** - the browser it was built for was removed
+ * in 0.11.461 - and what only that browser called went in the review
+ * before 0.12.0 (`docs/cleanup.md`): the incremental parser, a stylesheet
+ * alone, the DOM's event counts, `meta`, `lang`, and the forms, sheets,
+ * imports, keys and costs of a NetSurf document. `make web`'s probe still
+ * runs `web_paint.c`'s layout (`docs/cleanup.md`, decision 2).
  */
 
 #include <stddef.h>
@@ -376,49 +383,6 @@ static struct parsing *new_parsing(lua_State *L, const char *said)
     return p;
 }
 
-/* `web.parser([charset])` */
-static int l_parser(lua_State *L)
-{
-    struct parsing *p = new_parsing(L, luaL_optstring(L, 1, NULL));
-
-    if (p->failed != NULL) {
-        return parsing_said(L, p);
-    }
-
-    return 1;
-}
-
-/* `p:feed(bytes)` */
-static int l_parsing_feed(lua_State *L)
-{
-    struct parsing *p = luaL_checkudata(L, 1, PARSING_HANDLE);
-    size_t len = 0;
-    const char *bytes = luaL_checklstring(L, 2, &len);
-
-    if (!parsing_feed(p, (const uint8_t *)bytes, len)) {
-        return parsing_said(L, p);
-    }
-
-    lua_pushboolean(L, 1);
-    return 1;
-}
-
-/* `p:refed()` -> the bytes fed again when a `<meta>` changed the
- * encoding part way, or 0: what starting again cost. */
-static int l_parsing_refed(lua_State *L)
-{
-    struct parsing *p = luaL_checkudata(L, 1, PARSING_HANDLE);
-
-    lua_pushinteger(L, (lua_Integer)p->refed);
-    return 1;
-}
-
-/* `p:finish()` */
-static int l_parsing_finish(lua_State *L)
-{
-    return parsing_finish(L, luaL_checkudata(L, 1, PARSING_HANDLE));
-}
-
 static int l_parsing_gc(lua_State *L)
 {
     parsing_drop(luaL_checkudata(L, 1, PARSING_HANDLE));
@@ -522,101 +486,6 @@ static int text_of(lua_State *L, struct doc *d, const char *tag, size_t taglen)
     dom_node_unref(node);
     dom_nodelist_unref(list);
 
-    return 1;
-}
-
-/*
- * An attribute of an element as a field of the table on the top of the
- * stack, when it has one - under the name it has in the markup.
- */
-static void attribute_field(lua_State *L, dom_node *node, const char *attr,
-                            const char *field)
-{
-    dom_string *name = to_dom(attr, strlen(attr));
-    dom_string *value = NULL;
-
-    if (name == NULL) {
-        return;
-    }
-
-    if (dom_element_get_attribute((dom_element *)node, name, &value) == DOM_NO_ERR
-        && value != NULL) {
-        lua_pushlstring(L, dom_string_data(value), dom_string_byte_length(value));
-        lua_setfield(L, -2, field);
-        dom_string_unref(value);
-    }
-
-    dom_string_unref(name);
-}
-
-/*
- * `doc:meta()` -> every `<meta>` in the document, `{ http_equiv =, name =,
- * content = }` each, in order - wherever it is, a `<noscript>`'s included,
- * since no script runs here and a page without them means what is in one.
- * The browser reads a refresh out of it (`roadmap.md` 6zz, meta refresh):
- * DuckDuckGo's front page, to a browser that runs no scripts, is a hidden
- * body and a refresh to its page without them.
- */
-static int l_meta(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    dom_string *tag = to_dom("meta", 4);
-    dom_nodelist *list = NULL;
-    uint32_t n = 0, i;
-
-    lua_newtable(L);
-
-    if (tag == NULL) {
-        return 1;
-    }
-
-    if (dom_document_get_elements_by_tag_name(d->dom, tag, &list) != DOM_NO_ERR
-        || list == NULL) {
-        dom_string_unref(tag);
-        return 1;
-    }
-
-    dom_string_unref(tag);
-    (void)dom_nodelist_get_length(list, &n);
-
-    for (i = 0; i < n; i++) {
-        dom_node *node = NULL;
-
-        if (dom_nodelist_item(list, i, &node) != DOM_NO_ERR || node == NULL) {
-            continue;
-        }
-
-        lua_createtable(L, 0, 3);
-        attribute_field(L, node, "http-equiv", "http_equiv");
-        attribute_field(L, node, "name", "name");
-        attribute_field(L, node, "content", "content");
-        lua_rawseti(L, -2, (lua_Integer)i + 1);
-        dom_node_unref(node);
-    }
-
-    dom_nodelist_unref(list);
-    return 1;
-}
-
-/*
- * `doc:lang()` -> the language the page says it is in, `<html lang>`, or nil:
- * which face draws its Han ideographs, Japanese, Korean or Chinese
- * (`gfx.font_prefer`, `roadmap.md` 6zz j5).
- */
-static int l_lang(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    dom_node *root = NULL;
-
-    lua_createtable(L, 0, 1);
-
-    if (dom_document_get_document_element(d->dom, (void *)&root) == DOM_NO_ERR
-        && root != NULL) {
-        attribute_field(L, root, "lang", "lang");
-        dom_node_unref(root);
-    }
-
-    lua_getfield(L, -1, "lang");
     return 1;
 }
 
@@ -801,83 +670,6 @@ static int l_ns_layout(lua_State *L)
 }
 
 /*
- * `doc:ns_sheets(address)` -> the page's linked stylesheets still to fetch,
- * `{ n = number, url = address }` each, in the order the cascade takes them;
- * and `doc:ns_sheet(n, text)` -> true, a fetched one made a sheet. Both
- * before the first `ns_layout`, which makes the cascade from them all.
- */
-static int l_ns_sheets(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    const char *url = NULL;
-    size_t k = 0, n;
-
-    if (d->ns == NULL) {
-        d->ns = web_ns_open(d->dom, luaL_optstring(L, 2, NULL), d->charset);
-    }
-
-    lua_newtable(L);
-
-    while (d->ns != NULL && (n = web_ns_sheets(d->ns, k, &url)) != 0) {
-        lua_createtable(L, 0, 2);
-        lua_pushinteger(L, (lua_Integer)n);
-        lua_setfield(L, -2, "n");
-        lua_pushstring(L, url);
-        lua_setfield(L, -2, "url");
-        lua_rawseti(L, -2, (lua_Integer)++k);
-    }
-
-    return 1;
-}
-
-static int l_ns_sheet(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    lua_Integer n = luaL_checkinteger(L, 2);
-    size_t len = 0;
-    const char *text = luaL_checklstring(L, 3, &len);
-
-    lua_pushboolean(L, d->ns != NULL && n > 0
-                       && web_ns_sheet(d->ns, (size_t)n, text, len));
-    return 1;
-}
-
-/* `doc:ns_imports()` -> each sheet with an `@import` to fetch, `{ n, url }`;
- * `doc:ns_import(n, text)` hands it back - nil for one that could not be had
- * (`roadmap.md` 6zz j5). */
-static int l_ns_imports(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    const char *url = NULL;
-    size_t k = 0, n;
-
-    lua_newtable(L);
-
-    while (d->ns != NULL && (n = web_ns_imports(d->ns, k, &url)) != 0) {
-        lua_createtable(L, 0, 2);
-        lua_pushinteger(L, (lua_Integer)n);
-        lua_setfield(L, -2, "n");
-        lua_pushstring(L, url);
-        lua_setfield(L, -2, "url");
-        lua_rawseti(L, -2, (lua_Integer)++k);
-    }
-
-    return 1;
-}
-
-static int l_ns_import(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    lua_Integer n = luaL_checkinteger(L, 2);
-    size_t len = 0;
-    const char *text = luaL_optlstring(L, 3, NULL, &len);
-
-    lua_pushboolean(L, d->ns != NULL && n > 0
-                       && web_ns_import(d->ns, (size_t)n, text, len));
-    return 1;
-}
-
-/*
  * `doc:ns_objects()` -> the pictures the layout asked for, in page order:
  * `{ url, x, y, w, h, background, arrived }` each, where its box is now.
  * And `doc:ns_picture(k, surface, width, height)`: the `k`th arrived, its
@@ -962,170 +754,6 @@ static int l_ns_paint(lua_State *L)
     }
 
     return 0;
-}
-
-/* `doc:ns_click(x, y, release)` -> what a press there, or with `release`
- * its release, did to a form field - "field", "select", "pressed",
- * "toggled", "sent" - or nil (`roadmap.md` 6zz j6). */
-static int l_ns_click(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    const char *did = d->ns == NULL ? NULL
-                      : web_ns_click(d->ns, L, (int)luaL_checkinteger(L, 2),
-                                     (int)luaL_checkinteger(L, 3),
-                                     lua_toboolean(L, 4));
-
-    if (did == NULL) {
-        lua_pushnil(L);
-    } else {
-        lua_pushstring(L, did);
-    }
-
-    return 1;
-}
-
-/* `doc:ns_select()` -> the select pressed last: where it is on the page,
- * `multiple`, and `options`, each `{ text, chosen }` - or nil. */
-static int l_ns_select(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-
-    if (d->ns == NULL) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    return web_ns_select(d->ns, L);
-}
-
-/* `doc:ns_select_choose(i)` -> whether its `i`th option was chosen. */
-static int l_ns_select_choose(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-
-    lua_pushboolean(L, d->ns != NULL
-                       && web_ns_select_choose(d->ns, L,
-                                               (int)luaL_checkinteger(L, 2)));
-    return 1;
-}
-
-/* `doc:ns_key(key)` -> whether the field with the caret took it; the key is
- * the kit's number for it (`keys.lua`). */
-static int l_ns_key(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-
-    lua_pushboolean(L, d->ns != NULL
-                       && web_ns_key(d->ns, L,
-                                     (int)luaL_checkinteger(L, 2)));
-    return 1;
-}
-
-/* `doc:ns_focused()` -> whether a field has the caret. */
-static int l_ns_focused(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-
-    lua_pushboolean(L, d->ns != NULL && web_ns_focused(d->ns));
-    return 1;
-}
-
-/* `doc:ns_blur()`: the caret out of its field. */
-static int l_ns_blur(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-
-    if (d->ns != NULL) {
-        web_ns_blur(d->ns, L);
-    }
-
-    return 0;
-}
-
-/* `doc:ns_sent()` -> a form sent - its address, and for a POST its body and
- * its type - or nil; taken, so it is answered once. */
-static int l_ns_sent(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    char *url = NULL, *body = NULL;
-    const char *type = NULL;
-
-    if (d->ns == NULL || !web_ns_sent(d->ns, &url, &body, &type)) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    lua_pushstring(L, url);
-
-    if (body != NULL) {
-        lua_pushstring(L, body);
-        lua_pushstring(L, type != NULL ? type : "");
-    } else {
-        lua_pushnil(L);
-        lua_pushnil(L);
-    }
-
-    free(url);
-    free(body);
-    return 3;
-}
-
-/* One kind of cost into the table on top: `{ ticks, calls }`. */
-static void push_cost(lua_State *L, const char *name,
-                      const struct web_ns_cost *cost)
-{
-    lua_createtable(L, 0, 2);
-    lua_pushinteger(L, (lua_Integer)cost->ticks);
-    lua_setfield(L, -2, "ticks");
-    lua_pushinteger(L, (lua_Integer)cost->calls);
-    lua_setfield(L, -2, "calls");
-    lua_setfield(L, -2, name);
-}
-
-/* `doc:ns_costs()` -> what the last paint spent, by kind - `whole`, `fills`,
- * `text`, `pictures`, `scaled`, `shapes`, `other`, each `{ ticks, calls }` in counter
- * ticks (`roadmap.md` 6zz h). */
-static int l_ns_costs(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    const struct web_ns_costs *c;
-
-    if (d->ns == NULL) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    c = web_ns_costs(d->ns);
-    lua_createtable(L, 0, 9);
-    push_cost(L, "whole", &c->whole);
-    push_cost(L, "fills", &c->fills);
-    push_cost(L, "text", &c->text);
-    push_cost(L, "pictures", &c->pictures);
-    push_cost(L, "scaled", &c->scaled);
-    push_cost(L, "shapes", &c->shapes);
-    push_cost(L, "other", &c->other);
-    push_cost(L, "boxes", &c->boxes);
-    push_cost(L, "layout", &c->layout);
-    return 1;
-}
-
-/* `doc:ns_dirty()` -> x, y, w, h of what changed on the page since last
- * asked, or nil. */
-static int l_ns_dirty(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    int x, y, w, h;
-
-    if (d->ns == NULL || !web_ns_dirty(d->ns, &x, &y, &w, &h)) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    lua_pushinteger(L, x);
-    lua_pushinteger(L, y);
-    lua_pushinteger(L, w);
-    lua_pushinteger(L, h);
-    return 4;
 }
 
 /* `doc:ns_link_at(x, y)` -> the address under a point of the page, whole,
@@ -1307,57 +935,17 @@ static int l_style(lua_State *L)
     return 1;
 }
 
-/*
- * events() -> made, skipped: the DOM mutation events libdom has made and
- * dispatched, and those it did not make because nothing could hear them
- * (`runtime/patches/netsurf/README.md`). A browser without JavaScript
- * should make none; the browser's suite holds it to that.
- */
-static int l_events(lua_State *L)
-{
-    extern unsigned long _dom_events_made, _dom_events_skipped;
-
-    lua_pushinteger(L, (lua_Integer)_dom_events_made);
-    lua_pushinteger(L, (lua_Integer)_dom_events_skipped);
-    return 2;
-}
-
-/* stylesheet(css) -> true, or nil and why. */
-static int l_stylesheet(lua_State *L)
-{
-    size_t len = 0;
-    const char *text = luaL_checklstring(L, 1, &len);
-    css_stylesheet *sheet = web_style_sheet(text, len);
-
-    if (sheet == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "the stylesheet did not parse");
-        return 2;
-    }
-
-    css_stylesheet_destroy(sheet);
-    lua_pushboolean(L, 1);
-    return 1;
-}
-
 void kosmos_web_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
         { "parse",      l_parse },
-        { "parser",     l_parser },
-        { "stylesheet", l_stylesheet },
-        { "events",     l_events },
-        { "join",       web_netsurf_join },
         { "setup",      web_netsurf_setup },
-        { "zoom",       web_netsurf_zoom },
         { "svg",        web_svg },
         { NULL, NULL }
     };
 
     static const luaL_Reg doc[] = {
         { "count", l_count },
-        { "meta",  l_meta },
-        { "lang",  l_lang },
         { "style", l_style },
         { "text",  l_text },
         { "render",  l_render },
@@ -1368,28 +956,8 @@ void kosmos_web_kit(lua_State *L)
         { "ns_layout", l_ns_layout },
         { "ns_paint", l_ns_paint },
         { "ns_link_at", l_ns_link_at },
-        { "ns_sheets", l_ns_sheets },
-        { "ns_sheet", l_ns_sheet },
-        { "ns_imports", l_ns_imports },
-        { "ns_import", l_ns_import },
         { "ns_objects", l_ns_objects },
         { "ns_picture", l_ns_picture },
-        { "ns_click", l_ns_click },
-        { "ns_select", l_ns_select },
-        { "ns_select_choose", l_ns_select_choose },
-        { "ns_key", l_ns_key },
-        { "ns_focused", l_ns_focused },
-        { "ns_blur", l_ns_blur },
-        { "ns_sent", l_ns_sent },
-        { "ns_dirty", l_ns_dirty },
-        { "ns_costs", l_ns_costs },
-        { NULL, NULL }
-    };
-
-    static const luaL_Reg parsing[] = {
-        { "feed",   l_parsing_feed },
-        { "finish", l_parsing_finish },
-        { "refed",  l_parsing_refed },
         { NULL, NULL }
     };
 
@@ -1406,7 +974,6 @@ void kosmos_web_kit(lua_State *L)
     lua_setfield(L, -2, "__index");
     lua_pushcfunction(L, l_parsing_gc);
     lua_setfield(L, -2, "__gc");
-    luaL_setfuncs(L, parsing, 0);
     lua_pop(L, 1);
 
     web_svg_kit(L);

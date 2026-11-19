@@ -31,10 +31,10 @@ before every minor version, and there had not been one since 0.11.0.
 | # | Batch | Findings | Status |
 |---|---|---|---|
 | 1 | **Bugs**: `/Running` unregister by anybody and capabilities kept for ever; the interrupt paths' three copies merged (AArch64 woke neither the audio server from EL0 nor the input reader from EL1); Telnet's command split over two reads; Pewter's menu bar listed as an application; Video not opening `.mov` and `.m4v` | 113, 114, 155, 156, 202, 203, 32, 33, 34 | **0.11.508** (`testing.md` 18.908) |
-| 2 | **The old browser's remains**: the web kit's forms, fetching, zoom, sheets, imports and cost timers; `http.lua`'s cache, streaming and refresh; `browserprefs`' agents and roots; `longmenu.lua`; `clock.days`, `history.lately`; the comments naming `browser.lua` and NetSurf as a browser | 40-44, 93, 95, 96, 107, 134, 144, 145, 152, 176-183, 185, 194, 201 | - |
+| 2 | **The old browser's remains**: the web kit's forms, fetching, zoom, sheets, imports and cost timers; `http.lua`'s cache, streaming and refresh; `browserprefs`' agents and roots; `longmenu.lua`; `clock.days`, `history.lately`; the comments naming `browser.lua` and NetSurf as a browser | 40-44, 93, 95, 96, 107, 134, 144, 145, 151, 152, 176-183, 185, 194, 201 | **0.11.509** (`testing.md` 18.909) |
 | 3 | **Dead code elsewhere**: functions, constants, bindings and fields nothing calls | 35-38, 57-61, 97-102, 115-121, 137, 138, 146-149, 157-159, 175, 184, 186-189, 205 | - |
 | 4 | **One copy**: byte order through `bytes.h`, one UTF-8 header, one opaque mix, `strcasecmp`, one HTML-to-text, one size and rate formatter, one monitor heading, `theme.mix`, `pulse.name`, one place where `needs` become spawn flags, PNG through the Compress Kit, CRC-32 | 45-47, 62, 80-82, 103-106, 128-131, 190-193, 200 | - |
-| 5 | **Comments and documents made true**: every stale comment, `CLAUDE.md`'s Build, Layout and HAL sections, README, `state.md` brought to 0.11.507 and cut down, the logbook, the document map's statuses | 1-29, 31, 39, 49, 51, 52, 64-79, 90-92, 109-112, 122-127, 139-142, 150, 151, 160-168, 195-199, 204 | - |
+| 5 | **Comments and documents made true**: every stale comment, `CLAUDE.md`'s Build, Layout and HAL sections, README, `state.md` brought to 0.11.507 and cut down, the logbook, the document map's statuses | 1-29, 31, 39, 49, 51, 52, 64-79, 90-92, 109-112, 122-127, 139-142, 150, 160-168, 195-199, 204 | - |
 | 6 | **Work nobody reads**: per-pass allocation in `wm` and the Deskbar, a surface per region window, the clock read in a repaint, a busy poll | 53, 54, 56, 83-86 | - |
 | 7 | **Measured before anything changes**: the image canary hashing 44 MB four times a boot, AArch64's broadcast TLB flush per switch, the sleeper scan over every thread slot, a thread index found in O(n²), the VMCS flushed per guest run, a table per drawing op, the display harness's Python pixel loops, the Deskbar's gradient | 87, 88, 154, 165, 169-173 | - |
 | 8 | **Tests nothing runs**: `test_layout.py` (three documents say it fails the gate), `test_pdf.lua`, `run_smpshot.py`; sixteen ARM-only suites with no x86 twin | 132, 133, 135, 136 | - |
@@ -45,6 +45,9 @@ before every minor version, and there had not been one since 0.11.0.
   (`user/include/appproto.h`), against *no compiled-in limits*. With every
   application open a twenty-fifth is refused "too many applications
   registered". To grow as the other tables have.
+- **207.** The gate ran 11:39 on 18 November (`testing.md` 18.909),
+  past the ten minutes `CLAUDE.md` allows; `x86-dock` took 353 s and
+  `x86-cafesa3d-2` 302 s. Split or shorten them, in batch 8.
 
 ## Diego's to decide
 

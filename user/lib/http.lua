@@ -4,7 +4,7 @@
 --   local http = use("/Kosmos/Libraries/http.lua")
 --   local reply, why, how = http.get("https://example.com/")
 --
--- **One place for what `fetch` and the browser both do** (`roadmap.md` 6zz
+-- **One place for what `fetch`, Mail and Packages all do** (`roadmap.md` 6zz
 -- c): an address taken apart, a name looked up, a connection made, TLS laid
 -- over it when the address says `https`, a request written until it has all
 -- gone and a reply read until it is whole. Each had its own copy of
@@ -42,11 +42,10 @@
 -- A body sent in chunks comes back put together, and one sent gzipped comes
 -- back inflated; the head is as it came.
 --
--- Nothing here prints. `opts.say`, when given, is told each step as it
--- starts, which is what the browser's status line shows.
---
--- A GET unless `opts.body` is given: then a POST of that body, with
--- `opts.content_type` its type - a form sent (`roadmap.md` 6zz j6).
+-- Nothing here prints, and every request is a GET. The browser that sent
+-- forms, named its own agent, showed each step and drew a progress bar was
+-- removed in 0.11.461, and those options went with it in the review before
+-- 0.12.0 (`docs/cleanup.md`): nothing else had ever asked for them.
 
 local http = {}
 
@@ -99,55 +98,6 @@ end
 -- a name, and nil and why for four numbers that are not an address.
 local numbers = netstream.numbers
 
---
--- **A refresh's words**, `5; url=next.html`, as a `<meta http-equiv=
--- "refresh">` and the `Refresh` header both say them: the seconds, and the
--- address or nil for the page itself - or nil for words that are not one.
--- The grammar is HTML's ("shared declarative refresh steps"): a number,
--- then `;` or `,` and `url=`, which may be left out, and the address,
--- which may be in quotes. DuckDuckGo's, to a browser that runs no scripts:
--- `0; url="https://html.duckduckgo.com/html"`.
---
-function http.refresh(content)
-  local s = tostring(content or "")
-  local i = s:find("%S") or #s + 1
-  local whole = s:match("^%d*", i)
-
-  i = i + #whole
-
-  if whole == "" and s:sub(i, i) ~= "." then return nil end
-
-  i = i + #s:match("^[%d.]*", i)
-
-  local seconds = tonumber(whole) or 0
-
-  if i > #s then return seconds, nil end
-
-  if not s:sub(i, i):match("[;,%s]") then return nil end
-
-  i = s:find("%S", i) or #s + 1
-
-  if s:sub(i, i):match("[;,]") then i = s:find("%S", i + 1) or #s + 1 end
-
-  if s:sub(i, i + 2):lower() == "url" then
-    local j = s:find("%S", i + 3) or #s + 1
-
-    if s:sub(j, j) == "=" then i = s:find("%S", j + 1) or #s + 1 end
-  end
-
-  local quote, address = s:sub(i, i), nil
-
-  if quote == "'" or quote == '"' then
-    local close = s:find(quote, i + 1, true)
-
-    address = s:sub(i + 1, (close or #s + 1) - 1)
-  else
-    address = s:sub(i):match("^(.-)%s*$")
-  end
-
-  return seconds, address ~= "" and address or nil
-end
-
 -- Kosmos and its revision: `Kosmos/0.10.200`.
 function http.agent()
   local build = sys.build and sys.build() or {}
@@ -161,24 +111,13 @@ local counter = netstream.counter
 -- **Fifteen seconds with nothing new** is when a request is given up on -
 -- measured on the counter, not counted in waits. It was a hundred and fifty
 -- waits of a tenth of a second each, which is what a wait is when this
--- waits for itself; a window stepping a fetch between its passes
--- (`roadmap.md` 6zz l2) waits a pass at a time, and a hundred and fifty of
--- those is half a second.
+-- waits for itself; a caller whose `pause` yields - Mail's pictures, `get_many`
+-- - waits a pass at a time, and a hundred and fifty of those is no time.
 --
 local QUIET_SECONDS = 15
 
 local function quiet_for(since_ticks)
   return sys.ticks() - since_ticks >= QUIET_SECONDS * counter()
-end
-
-function http.authorities()
-  return (netstream.trusted())
-end
-
-function http.authority_names()
-  local _, names = netstream.trusted()
-
-  return names
 end
 
 local plain = netstream.plain
@@ -262,10 +201,9 @@ end
 --
 -- `state` is "done" at the last chunk's end and "bad" at anything that is
 -- not a chunk; `extra` says bytes came after the end, which a connection
--- that is to be used again must not have. `emit`, when there is one, is
--- handed each piece of the body as it is sliced out (`roadmap.md` 6zz l1).
+-- that is to be used again must not have.
 --
-local function dechunk(emit)
+local function dechunk()
   local d = { got = 0, state = "size", extra = false }
   local out, line, need = {}, "", 0
 
@@ -276,12 +214,8 @@ local function dechunk(emit)
       if d.state == "data" then
         local take = math.min(need, n - i + 1)
 
-        local piece = s:sub(i, i + take - 1)
-
-        out[#out + 1] = piece
+        out[#out + 1] = s:sub(i, i + take - 1)
         d.got, need, i = d.got + take, need - take, i + take
-
-        if emit then emit(piece) end
 
         if need == 0 then d.state = "gap" end
       else
@@ -356,31 +290,14 @@ end
 --
 -- `http.get(address [, opts])`.
 --
---   opts.anyway      over TLS, go on whatever the certificate says - or a
---                    function of the address's parts that says it for each
+--   opts.anyway      over TLS, go on whatever the certificate says
 --   opts.anchors     certificates in DER to trust besides the others
 --   opts.name        the name to hold the certificate to and send, for an
 --                    address given by number (`fetch --name`)
---   opts.say         told each step as it starts
---   opts.agent       the User-Agent; Kosmos and its revision without one
---   opts.progress    told `(bytes, total)` as the body arrives - total is the
---                    server's `Content-Length`, or nil when it gave none
 --   opts.pause       called with the connection where this would wait for it;
 --                    `http.get_many` passes one that yields to its scheduler,
 --                    and takes one itself, called where it would wait for
---                    any of its fetches - a window stepping it (6zz l2);
---                    `get_many`'s `opts.each` is told `(i, reply, why, how)`
---                    as each one ends
---   opts.wait_ticks  how long a name may take to look up, scheduler ticks
---   opts.body        sent as a POST, `opts.content_type` its type
---   opts.headers     more fields for the request, by name
---   opts.cache       a cache (`httpcache.lua`) to answer from and keep in;
---                    `opts.revalidate` asks the server even when it is fresh
---   opts.on_body     called with the head when it arrives; may return a
---                    function, which is handed the body as it comes - its
---                    chunks undone and inflated when it came gzipped, never
---                    past the length the head gave. `how.streamed` says it
---                    was handed exactly the body returned (6zz l1)
+--                    any of its fetches - Mail stepping it between passes
 --
 
 --
@@ -390,7 +307,6 @@ end
 -- new one.
 --
 local function exchange(parts, opts, conn, stream, key, was_kept, how)
-  local say = opts.say or function() end
   local hz = (sys.info() or {}).tick_hz or 250
 
   --
@@ -407,42 +323,14 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   -- instead says why - the certificate's reason, when it was that.
   --
   -- **And who is asking.** Wikipedia answers a request that does not say
-  -- with 126 bytes of refusal, and it is not alone. `opts.agent` is the
-  -- caller's to choose - a browser names the engine sites should write for
-  -- - and without one this is Kosmos and its revision, which is what
-  -- `fetch` is.
+  -- with 126 bytes of refusal, and it is not alone. This is Kosmos and its
+  -- revision, which is what `fetch` is.
   local tick = math.max(1, hz // 10)
   local pause = opts.pause or function(c) c:wait(tick) end
 
-  --
-  -- **A body makes it a POST** (`roadmap.md` 6zz j6): a form sent, its
-  -- fields encoded by whoever sent it and said what they are with
-  -- `opts.content_type`.
-  --
-  local posting = opts.body ~= nil
-
-  -- And the caller's own fields - the cache's validators, asking whether
-  -- what it kept is still right (`httpcache.lua`) - in a fixed order.
-  local fields, names = "", {}
-
-  for name in pairs(opts.headers or {}) do names[#names + 1] = name end
-
-  table.sort(names)
-
-  for _, name in ipairs(names) do
-    fields = fields .. name .. ": " .. tostring(opts.headers[name]) .. "\r\n"
-  end
-
-  local request = ("%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
-                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n%s%s\r\n%s")
-                  :format(posting and "POST" or "GET", parts.path,
-                          opts.name or parts.hostport,
-                          opts.agent or http.agent(),
-                          posting and ("Content-Type: %s\r\nContent-Length: %d\r\n")
-                                      :format(opts.content_type
-                                              or "application/x-www-form-urlencoded",
-                                              #opts.body) or "",
-                          fields, opts.body or "")
+  local request = ("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\n"
+                   .. "Accept: text/html, */*\r\nAccept-Encoding: gzip\r\n\r\n")
+                  :format(parts.path, opts.name or parts.hostport, http.agent())
   local sent, moved = 0, sys.ticks()
 
   while sent < #request and not quiet_for(moved) do
@@ -486,8 +374,6 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
 
   how.kept = was_kept or nil
 
-  say("waiting for " .. parts.hostport .. " ...")
-
   --
   -- Until the body is whole, or the far end closes, or fifteen seconds pass
   -- with nothing new.
@@ -504,63 +390,6 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local rule, want, again
   local chunks, body, got = nil, {}, 0
   local heard, reason, ended = sys.ticks(), nil, false
-
-  --
-  -- **The body handed on as it comes** (`roadmap.md` 6zz l1), to whoever
-  -- asked with `opts.on_body` - a browser feeding its parser while the rest
-  -- arrives. The same bytes this returns, and only those: never past the
-  -- head's length, its chunks undone, and inflated as a stream when it came
-  -- gzipped, the pieces kept so the whole need not be inflated again.
-  -- `handed` stays true only while that holds; anything that would make
-  -- the body returned differ from what was handed on clears it, and the
-  -- caller then reads the body returned instead.
-  --
-  local sink, inflating, inflated, handed = nil, nil, {}, false
-  local sent_on = 0
-
-  local function hand_on(piece)
-    if not handed or piece == "" then return end
-
-    if inflating then
-      local text, why = inflating:feed(piece)
-
-      if not text then
-        handed = false
-        how.stream_said = why
-        return
-      end
-
-      if text == "" then return end
-
-      inflated[#inflated + 1] = text
-      piece = text
-    end
-
-    sink(piece)
-  end
-
-  local function begin_handing()
-    sink = opts.on_body and opts.on_body(head) or nil
-
-    if not sink then return end
-
-    handed = true
-
-    local coding = head:lower():match("\r\ncontent%-encoding:%s*([^\r\n]*)")
-
-    if coding and coding:find("gzip", 1, true) then
-      local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
-
-      inflating = use("/Kosmos/Kits/compress").gunzip_stream(room)
-    end
-  end
-
-  --
-  -- **How much, of how much**, for a progress bar (`roadmap.md` 6zz i) and
-  -- for the check below. Told every 32 KB rather than every read, so a page
-  -- of ten megabytes is a few hundred repaints and not thousands.
-  --
-  local progress, told = opts.progress, -1
 
   local function take(text)
     if head == nil then
@@ -581,9 +410,7 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
         rule, want, again = framing(head)
         text, pre = pre:sub(e + 4), nil
 
-        begin_handing()
-
-        if rule == "chunked" then chunks = dechunk(sink and hand_on) end
+        if rule == "chunked" then chunks = dechunk() end
       end
     end
 
@@ -593,22 +420,6 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
     elseif text ~= "" then
       body[#body + 1] = text
       got = got + #text
-
-      -- Never past the length the head gave: the body returned is cut
-      -- there, so what is handed on is too.
-      if sink then
-        local piece = text
-
-        if want then piece = text:sub(1, math.max(0, want - sent_on)) end
-
-        sent_on = sent_on + #piece
-        hand_on(piece)
-      end
-    end
-
-    if progress and got - told >= 32768 then
-      told = got
-      progress(told, want)
     end
   end
 
@@ -689,8 +500,6 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
     how.short = { got = got, want = want }
   end
 
-  if progress then progress(#text, want) end
-
   --
   -- **Inflated, when it came gzipped** - in C, the Compression Kit's
   -- `gunzip`, each member held to its CRC and its length. What it inflates
@@ -703,28 +512,9 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   local coding = head:lower():match("\r\ncontent%-encoding:%s*([^\r\n]*)")
 
   -- Only a body there is: a 304 says the encoding of the one it stands for
-  -- and brings none, and nothing inflated is not a stream cut short - which
-  -- is what a page from the cache said, until it was told apart (6zz k).
+  -- and brings none, and nothing inflated is not a stream cut short.
   --
-  -- Already inflated, as it came, when it was handed on and the stream
-  -- came out whole: the pieces are the body, and inflating the whole of it
-  -- again would be the same work twice. Anything else - a stream that
-  -- stopped short or did not check out - is inflated here as it always was,
-  -- so what is returned does not depend on whether anybody was handed it.
-  --
-  local streamed_whole = false
-
-  if inflating and handed and #text > 0 then
-    if inflating:finish() then
-      how.gzip = #text
-      text = table.concat(inflated)
-      streamed_whole = true
-    else
-      handed = false
-    end
-  end
-
-  if not streamed_whole and coding and coding:find("gzip", 1, true) and #text > 0 then
+  if coding and coding:find("gzip", 1, true) and #text > 0 then
     local compress = use("/Kosmos/Kits/compress")
     local room = ((sys.info() or {}).pages_free or 16384) * 4096 // 2
     local inflated_now, why = compress.gunzip(text, room)
@@ -742,8 +532,6 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
     end
   end
 
-  how.streamed = sink ~= nil and handed or nil
-
   if key and again and whole() and not ended and not over and not how.short then
     keep(key, conn, stream)
   else
@@ -754,10 +542,9 @@ local function exchange(parts, opts, conn, stream, key, was_kept, how)
   return head .. text, nil, how
 end
 
-local function get_uncached(address, opts)
+function http.get(address, opts)
   opts = opts or {}
 
-  local say = opts.say or function() end
   local parts, bad = address, nil
 
   if type(address) ~= "table" then parts, bad = http.split(address) end
@@ -766,20 +553,16 @@ local function get_uncached(address, opts)
 
   local name = opts.name or parts.host
 
-  -- Yes or no, or asked of each address - a browser opening pictures from
-  -- hosts some of which it was told to open anyway.
   local anyway = opts.anyway
-
-  if type(anyway) == "function" then anyway = anyway(parts) end
 
   local key = not (opts.anchors and #opts.anchors > 0)
               and table.concat({ parts.scheme, parts.hostport, name,
                                  anyway and "anyway" or "checked" }, " ")
               or nil
 
-  -- Never a POST on a kept connection: one the server has closed is tried
-  -- again, which for a form would be sending it twice.
-  local k = key and opts.body == nil and take_kept(key)
+  -- A kept connection the server has since closed is tried once more on a
+  -- new one, which a GET may be.
+  local k = key and take_kept(key)
 
   if k then
     local reply, why, how, again = exchange(parts, opts, k.conn, k.stream, key, true,
@@ -794,9 +577,7 @@ local function get_uncached(address, opts)
   if wrong then return nil, wrong, how end
 
   if not where then
-    say("looking up " .. parts.host .. " ...")
-
-    local found, why, said = netstream.address(parts.host, opts.wait_ticks)
+    local found, why, said = netstream.address(parts.host)
 
     if not found then
       return nil, ("cannot look up %s: %s"):format(parts.host, said or tostring(why)), how
@@ -804,7 +585,6 @@ local function get_uncached(address, opts)
 
     where = found
   end
-  say("connecting to " .. parts.hostport .. " ...")
 
   -- At once when something else schedules the waiting: the handshake goes
   -- on while the others' do, and what is written waits in the ring.
@@ -830,72 +610,6 @@ local function get_uncached(address, opts)
 end
 
 --
--- **`http.get`, through the cache when it is given one** (`opts.cache`,
--- `httpcache.lua`, `roadmap.md` 6zz k). A reply kept and still fresh is
--- answered from it, with no request at all; one kept and stale is asked
--- about with its validators, and a `304` means the kept one is used again
--- for as long as the 304 says; a new `200` is kept if it says it may be.
--- `how.cached` is "fresh" or "revalidated" when the cache answered.
--- `opts.revalidate` asks even about a fresh one - Reload.
---
--- A POST is never answered from the cache, and nothing is without the
--- time of day, which is what freshness is measured against.
---
-function http.get(address, opts)
-  opts = opts or {}
-
-  local c = opts.cache
-
-  if c == nil or opts.body ~= nil then return get_uncached(address, opts) end
-
-  local parts, bad = address, nil
-
-  if type(address) ~= "table" then parts, bad = http.split(address) end
-
-  if not parts then return nil, bad, {} end
-
-  local clock = fs.read("/Devices/clock")
-  local now = type(clock) == "table" and clock.epoch or nil
-
-  if not now then return get_uncached(parts, opts) end
-
-  local url = parts.scheme .. "://" .. parts.hostport .. parts.path
-  local kept = c:lookup(url, now)
-
-  if kept and kept.fresh and not opts.revalidate then
-    c:used(url, now)
-
-    return kept.reply, nil, { scheme = parts.scheme, cached = "fresh",
-                              secure = parts.scheme == "https"
-                                       and kept.secure or nil }
-  end
-
-  local asking = opts
-
-  if kept and (kept.etag or kept.last_modified) then
-    asking = setmetatable({ headers = { ["If-None-Match"] = kept.etag,
-                                        ["If-Modified-Since"] = kept.last_modified } },
-                          { __index = opts })
-  end
-
-  local reply, why, how = get_uncached(parts, asking)
-
-  if reply then
-    local status = tonumber(reply:match("^HTTP/%d%.%d%s+(%d%d%d)"))
-
-    if status == 304 and kept then
-      c:revalidated(url, kept, reply:match("^(.-)\r\n\r\n") or reply, now)
-      how.cached = "revalidated"
-      return kept.reply, nil, how
-    elseif status == 200 then
-      c:store(url, reply, how, now)
-    end
-  end
-
-  return reply, why, how
-end
-
---
 -- **Several at once** (`roadmap.md` 6zz g): `http.get_many(addresses [,
 -- opts])` -> a list of `{ reply, why, how }` in the same order.
 --
@@ -916,20 +630,14 @@ function http.get_many(addresses, opts)
 
   for i, address in ipairs(addresses) do queue[#queue + 1] = { at = i, address = address } end
 
-  -- Each told as it ends, to a caller who can use it before the slowest
-  -- is in - a page's pictures, decoded as they come (6zz l2).
-  local each = opts and opts.each
-
   -- One step of one fetch: to its next wait, or to its end.
   local function step(job)
     local ok, a, b, c = coroutine.resume(job.co)
 
     if not ok then
       results[job.at] = { nil, tostring(a), {} }
-      if each then each(job.at, nil, tostring(a), {}) end
     elseif coroutine.status(job.co) == "dead" then
       results[job.at] = { a, b, c }
-      if each then each(job.at, a, b, c) end
     else
       job.conn = a
       waiting[#waiting + 1] = job
@@ -954,10 +662,9 @@ function http.get_many(addresses, opts)
   fill()
 
   --
-  -- **Stepped by somebody else** (`roadmap.md` 6zz l2): given `opts.pause`,
-  -- this polls for a tick rather than a tenth of a second and then calls
-  -- it - a window fetching a page's pictures between its own passes, and
-  -- back at the next one. Quiet is measured in time, so stepping often gives
+  -- **Stepped by somebody else**: given `opts.pause`, this polls for a tick
+  -- rather than a tenth of a second and then calls it - Mail fetching a
+  -- message's pictures between its own passes, and back at the next one. Quiet is measured in time, so stepping often gives
   -- nothing up sooner. The poll is not only for the news: it is a word to
   -- the network's server, which says a connection's window again on the pass
   -- a message brings, once its ring has been read (`net.c`,

@@ -11,7 +11,7 @@
  * miniz, which `runtime/upstream/miniz/` carries as released.
  *
  * **Of miniz, the deflater is used here and the inflater, `tinfl`, in
- * `gzip.c`** - the kit's only inflater, for gzip, zlib, PNG, PDF and zip
+ * `gzip.c`** - the Compress Kit's one inflater, for gzip, zlib, PNG, PDF and zip
  * alike. miniz reads and writes whole zip archives too, but through
  * `malloc` and `stdio`, and neither is how this system moves a file: a
  * file's bytes are read into a region (`fs.read_into`) and written from one

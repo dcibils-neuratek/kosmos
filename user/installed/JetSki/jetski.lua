@@ -35,12 +35,12 @@
 -- this file in `/Home/System/Apps/JetSki`, which every program sees, read
 -- only, as `/Kosmos/Apps/JetSki`; the system's image carries none of it.
 -- **The image it runs in is Kosmos's WebKit** (Diego, 15 November 2026:
--- "One WebKit image", in "/Kosmos/WebKit"), which Mail runs in too:
--- `webkit.elf` in `/Kosmos/WebKit`, named by `-- kosmos: image webkit`
--- (`docs/mailweb.md`).
+-- "One WebKit image", in "/Kosmos/WebKit"), which Mail is to run in too
+-- (`docs/mailweb.md`): `webkit.elf` in `/Kosmos/WebKit`, named by
+-- `-- kosmos: image webkit`.
 --
--- **A window that draws its own pixels** (`gfx.md` 19.4), as the NetSurf
--- browser's is: the kit's widgets - back, forward, reload and the address
+-- **A window that draws its own pixels** (`gfx.md` 19.4), as Maps and Write
+-- do: the kit's widgets - back, forward, reload and the address
 -- field - painted into the surface with `ui.paint_view`, and the page
 -- below them painted by WebKit (`jetski.paint`) straight into the same
 -- surface, so a page's pixels never pass through Lua.
@@ -201,14 +201,12 @@ web.inspector_files, web.inspector_size = webkit.inspector_files, webkit.inspect
 --
 -- **JetSki's Settings** (`docs/webkit.html`, *Settings*; `roadmap.md`,
 -- S1): its own file beside the cookies, read for what this JetSki knows
--- (`browserprefs.lua`), its own page in place of the old browser's
--- `about:start`. The tabs it had are read before any tab is made, which
+-- (`browserprefs.lua`), opening on its own home page. The tabs it had are read before any tab is made, which
 -- would write over them.
 --
 local SETTINGS = "/Home/Settings/JetSki/settings"
 local TABS_FILE = "/Home/Settings/JetSki/tabs"
-local OWN = { home = "https://en.wikipedia.org/wiki/BeOS" }
-local setting = prefs.read(SETTINGS, OWN)
+local setting = prefs.read(SETTINGS)
 local had, had_shown = prefs.tabs(TABS_FILE)
 local HOME = setting.home
 
@@ -723,7 +721,7 @@ function J.width() return W end
 -- A setting changed, and kept: Settings' and the zoom's one door.
 function J.keep(key, value)
   setting[key] = value
-  prefs.write(setting, SETTINGS, OWN)
+  prefs.write(setting, SETTINGS)
 end
 
 local function part(name) return use(HERE .. "/" .. name .. ".lua")(J) end
@@ -846,8 +844,7 @@ end
 
 --------------------------------------------------------------------------
 -- **The padlock: how the page came** (`docs/padlock.html`, agreed 16
--- November 2026). At the head of the address, in the old browser's words
--- (`browser.lua`, `how_came`): a green padlock alone for a page whose
+-- November 2026). At the head of the address: a green padlock alone for a page whose
 -- certificate checked out, as Safari and Chrome show it; Not encrypted for
 -- plain HTTP; Not secure for one opened anyway, or one with something
 -- plain in it; This machine for a file; JetSki for its own pages; and
@@ -1354,7 +1351,7 @@ end
 win:add(refused_page)
 
 -- An address as WebKit wants one: a scheme always, `https` when none was
--- typed; words are a search, as the NetSurf browser's field has them.
+-- typed; words are a search (`browserprefs.destination`).
 local function visit(text)
   if text:match("^%s*" .. prefs.PAGE .. "%s*$") then
     open_settings()

@@ -154,6 +154,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a (pictures), W5b (text) and W5c (SQLite, libxml2, libpsl) built: `docs/w5.md`
 - The Debug Kit - a function's name from an address, for a page that stopped and any crash - built: `docs/debug.md`
 - Blocking in JetSki - adverts and trackers kept out on WebKit's own content blocker, the filter lists converted by a Lua library, third-party cookies refused - designed, for Diego to agree: `docs/adblock.md`, `docs/adblock.html`, `docs/adblock-architecture.png`
+- The review before 0.12.0 - eight batches, 205 findings, and Diego's seven decisions - being done: `docs/cleanup.md`, `docs/cleanup-findings.md`
 - Glossary: `docs/glossary.md`
 
 ---

@@ -142,10 +142,10 @@ struct link {
 /*
  * A picture: the box `<img>` was given, and the address its bytes are at.
  *
- * The box is all this file does with it. Fetching belongs to the browser,
+ * The box is all this file does with it. Fetching belongs to the caller,
  * which knows where the page came from, and decoding to `gfx`, which turns
  * PNG and JPEG into a surface already - so the page says where and how
- * big, and `browser.lua` stretches the picture into the box once the text
+ * big, and the caller stretches the picture into the box once the text
  * round it is painted.
  */
 struct image {

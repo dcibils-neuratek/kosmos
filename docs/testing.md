@@ -37436,3 +37436,38 @@ left its loop (exit 1) partway through the stranger's requests, taking the
 two tests after it down with it. The host's file-types check caught
 the new film types in a group of their own, "Other", and they are in
 "Sound and film" now.
+
+## 18.909 The old browser's remains
+
+**In short**: batch 2 of the review (`docs/cleanup.md`). The old browser
+went in 0.11.461 and JetSki replaced it with WebKit, but what it stood on
+stayed, because Mail stood on part of it: **about two thousand lines with
+no caller**, gone. The web kit keeps exactly what Mail draws a message
+with - parse, set up, lay out, paint, the pictures, a link under the
+pointer - and loses the browser's forms, clicks and keys, stylesheet
+imports, zoom, `join`, the per-plotter cost timers and the Lua bindings
+over all of it (`web_kosmos.c` 1,414 lines to about 990, `web_netsurf.c`
+by 680). `http.lua` is a plain GET again: the cache, streaming bodies,
+`refresh`, the authority list, POST and the options only the browser
+passed went (1,012 lines to about 720), and `get_uncached` is `http.get`.
+`browserprefs.lua` is JetSki's settings and nothing else - the old
+browser's user agents, its roots and its default file went, and the file
+is always named by the caller. `longmenu.lua`, `clock.days`,
+`clock.set_offset` and `test_http.lua` went whole, since nothing but a
+test called them. And every comment that still named `browser.lua`, or
+called NetSurf "the browser", or the Compress Kit's inflater "the
+system's only one" (WebKit's images carry zlib), says what is true now.
+
+Held by the whole gate, since `http.lua` and the web kit are shared: Mail's
+suite draws HTML through what is left of the kit, and JetSki's, the
+network's, the packages' and TLS's go through `http.lua`. The rewritten
+settings check (`test_browserprefs.lua`, 19) and the clock's (22, with the
+two helpers it alone used now its own) run on the host. **The control
+bites**: the new settings check run against 0.11.508's `browserprefs.lua`
+fails 5 of 19 - its home page was `about:start`, and an old file's `agent`
+and the browser's other keys were read and written back.
+
+The gate: 132 suites, every one passing, in 11:39 - **past the ten
+minutes**, with `x86-dock` alone at 353 s and `x86-cafesa3d-2` at 302 s.
+That is finding 207 in `docs/cleanup.md`, to be fixed in batch 8 before
+0.12.0.

@@ -1127,14 +1127,14 @@ DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iruntime/upstream/doom \
                -DDOOMGENERIC_RESY=400 -DFEATURE_SOUND -Iuser/installed/Doom/include
 
 #
-# `make WEB=1 qemu` builds an image with the NetSurf parsing stack in it.
+# `WEB=1` builds an image with the NetSurf parsing stack in it - the web
+# kit Mail draws a message's HTML with, and nothing else since the old
+# browser went in 0.11.461 (JetSki is WebKit, an image of its own).
 #
-# **A build option for the reason Doom was one: size.** These are five
-# libraries and a hundred and forty thousand lines, and a build that does not
-# want a browser should not carry a CSS engine. When the GPLv2 browser core
-# joins them the flag will be doing licence work too, as `DOOM` did before
-# Doom became an application of its own - and drawing that line in the build rather than in a comment is the
-# same argument, because a boundary somebody has to remember is not one.
+# **A build option for size**: five libraries and a hundred and forty
+# thousand lines, which `FULL=1`, the default, turns on and `FULL=0`
+# leaves out. `docs/mailweb.md` replaces it with WebKit, and the flag goes
+# with it.
 #
 # **No heap flag**, which was once a thing worth saying about this build in
 # particular and is now true of every build: nothing carries
@@ -5775,8 +5775,6 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# The kit's keys: every sequence the board makes read back whole, as
 	@# its key and its modifiers, and nothing typed that was not (6n, step 0).
 	$(HOSTDIR)/lua tools/test_keys.lua
-	@# http.lua's refresh: a <meta http-equiv="refresh"> read as HTML reads it.
-	$(HOSTDIR)/lua tools/test_http.lua
 	@# The browser's favorites as files: names from titles, the order they
 	@# were starred, folders, and removed wherever kept (`roadmap.md` 6zz d3).
 	$(HOSTDIR)/lua tools/test_favorites.lua
@@ -5792,9 +5790,6 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	@# Filter lists in Adblock Plus syntax into WebKit's content rules,
 	@# every pattern one WebKit takes (`docs/adblock.md` B2).
 	$(HOSTDIR)/lua tools/test_filters.lua
-	@# A menu longer than the screen grouped into submenus that fit, every
-	@# item reached once and in order (a select's options, 6zz j6).
-	$(HOSTDIR)/lua tools/test_longmenu.lua
 	@# The IDE's editor: the text it edits, every edit undoable, and Lua
 	@# coloured a line at a time with what carries across lines (6n, step 1).
 	$(HOSTDIR)/lua tools/test_textbuf.lua
@@ -6263,8 +6258,8 @@ SHOTDIR := docs/screenshots
 #
 # The web libraries, running rather than merely linked.
 #
-# Its own target rather than part of `make test`, because `WEB=1` is an
-# optional variant and the images the suites build carry none of it.
+# Its own target rather than part of `make test`: the suites' images are
+# built without `WEB=1`, and Mail's own suite is what holds the kit there.
 #
 web: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory WEB=1 $(TARGET)

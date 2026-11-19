@@ -1,18 +1,19 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- The browser's settings (`roadmap.md` 6zz d5, `docs/browser.html`).
+-- JetSki's settings, and where what is typed in its address field goes.
 --
--- **One table, `/Home/Preferences/browser/settings`**, written with
--- `fs.write` and read back with `fs.read` as every settings file in Kosmos
--- is - beside the history, in the folder that is the browser's own (d4).
--- And the tabs that were open, `browser/tabs`, for "When the browser
--- opens: The tabs it had".
+-- **One table, the file JetSki names** (`/Home/Settings/JetSki/settings`),
+-- written with `fs.write` and read back with `fs.read` as every settings
+-- file in Kosmos is; and the tabs that were open, beside it, for "When
+-- JetSki opens: The tabs it had".
 --
--- **What is read is what the browser can use**: each key it knows, of the
--- kind it should be and - for a choice - one of the choices; anything else
--- is the default. A file edited by hand, or written by a browser older or
--- newer than this one, is read for what it still says rather than trusted
--- whole, and what is written is only what is known.
+-- **What is read is what JetSki can use**: each key it knows, of the kind
+-- it should be and - for a choice - one of the choices; anything else is
+-- the default. A file edited by hand, or written by an older JetSki - or by
+-- the browser before it, whose favorites bar, cost line and user agents
+-- went in the review before 0.12.0 (`docs/cleanup.md`) - is read for what
+-- it still says rather than trusted whole, and what is written is only
+-- what is known.
 --
 -- Pure: `fs` is the global every process has, and the host test hands it
 -- one kept in memory (`tools/test_browserprefs.lua`).
@@ -22,28 +23,17 @@ local prefs = {}
 -- Its folder made, and the ones above it, by the file library.
 local files = use("/Kosmos/Libraries/files.lua")
 
--- The browser's own folder, where the settings kit keeps it (`prefs.lua`).
-prefs.DIR = use("/Kosmos/Libraries/prefs.lua").path("browser")
-prefs.FILE = prefs.DIR .. "/settings"
-prefs.TABS = prefs.DIR .. "/tabs"
-
--- The page Settings is, in a tab of its own; and the one its Show opens,
--- the authorities this machine trusts.
+-- The page Settings is, in a tab of its own.
 prefs.PAGE = "about:settings"
-prefs.ROOTS = "about:authorities"
 
 prefs.DEFAULTS = {
-  home = "about:start",         -- Home page
-  opens = "home",               -- When the browser opens
-  bar = true,                   -- Show the favorites bar
+  home = "https://en.wikipedia.org/wiki/BeOS",  -- Home page
+  opens = "home",               -- When JetSki opens
   zoom = 100,                   -- Zoom, per cent: all of the page
   images = true,                -- Load images
-  javascript = true,            -- JavaScript (JetSki's; NetSurf runs none)
-  costs = true,                 -- What each page cost, in the status line
+  javascript = true,            -- JavaScript
   search = "duckduckgo",        -- Search with (d6)
   history_days = 30,            -- Keep history for
-  agent = "lynx",               -- What it tells sites it is
-  agent_words = "",             -- ... in words of its own
 }
 
 -- A choice's value and what it is called, in the order offered.
@@ -58,35 +48,7 @@ prefs.CHOICES = {
   search = { { "duckduckgo", "DuckDuckGo" }, { "google", "Google" } },
   history_days = { { 7, "A week" }, { 30, "30 days" }, { 90, "90 days" },
                    { 365, "A year" } },
-  agent = { { "lynx", "A plain browser, as Lynx" }, { "netsurf", "Its engine, NetSurf" },
-            { "console", "A game console, as a 3DS" }, { "own", "Words of its own" } },
 }
-
---
--- **What the browser tells a site it is** - Diego, 1 October: "we have a
--- very basic browser so we need to announce that to the server", "dont
--- send complex sites, send simple ones", and to keep changing it as the
--- browser grows. Measured before any was offered, against Google,
--- DuckDuckGo, the BBC, Wikipedia, GitHub and YouTube from the Mac: most
--- send everyone the same page. **Lynx is the one that is sent simpler
--- ones** - DuckDuckGo's front page in plain HTML 4 rather than its script -
--- so it is the default; a smart TV's was refused by Google and sent
--- YouTube's "not supported", and a 3DS's only trimmed YouTube. Every one
--- still says Kosmos. Google sends no results to any of them: it stopped
--- answering searches without scripts.
---
-local AGENTS = {
-  lynx = "Lynx/2.9.0 (Kosmos %s; NetSurf/3.11)",
-  netsurf = "NetSurf/3.11 (Kosmos %s)",
-  console = "Mozilla/5.0 (Nintendo 3DS; U; ; en) Version/1.7412.EU Kosmos/%s",
-}
-
--- The words sent, for these settings and this build's version.
-function prefs.agent(t, version)
-  if t.agent == "own" and t.agent_words ~= "" then return t.agent_words end
-
-  return (AGENTS[t.agent] or AGENTS.lynx):format(version or "0")
-end
 
 local function valid(key, value)
   local default = prefs.DEFAULTS[key]
@@ -105,8 +67,7 @@ local function valid(key, value)
     return false
   end
 
-  -- No control character in any of them: an address, a name - and the
-  -- words sent as a header, where a line's end would be a header of its own.
+  -- No control character in any of them: an address is a line.
   if type(value) == "string" then
     return value ~= "" and #value <= 512 and not value:find("%c")
   end
@@ -115,25 +76,14 @@ local function valid(key, value)
 end
 
 -- What the file says, over the defaults, each value checked.
---
--- **Another browser's file and defaults** (`file`, `defaults`): JetSki keeps
--- its own in `/Home/Settings/JetSki` and opens on a page of its own rather
--- than `about:start`, which it has not got. A key `defaults` does not name
--- takes `DEFAULTS`' value.
---
-local function default_of(key, defaults)
-  if defaults and defaults[key] ~= nil then return defaults[key] end
-  return prefs.DEFAULTS[key]
-end
-
-function prefs.read(file, defaults)
-  local got = fs.read(file or prefs.FILE)
+function prefs.read(file)
+  local got = fs.read(file)
   local out = {}
 
   -- Not `ok and v or default`, which is the default for every `false` -
-  -- and "Show the favorites bar" off is one.
+  -- and "Load images" off is one.
   for key in pairs(prefs.DEFAULTS) do
-    local default = default_of(key, defaults)
+    local default = prefs.DEFAULTS[key]
     local v = nil
 
     if type(got) == "table" then v = got[key] end
@@ -145,15 +95,14 @@ function prefs.read(file, defaults)
 end
 
 -- The settings written, what is known and valid of them; true when kept.
-function prefs.write(t, file, defaults)
-  file = file or prefs.FILE
+function prefs.write(t, file)
 
   if not files.make_folder(files.parent(file)) then return false end
 
   local out = {}
 
   for key in pairs(prefs.DEFAULTS) do
-    local default = default_of(key, defaults)
+    local default = prefs.DEFAULTS[key]
     local v = t[key]
 
     if v ~= nil and valid(key, v) then out[key] = v else out[key] = default end
@@ -164,11 +113,10 @@ end
 
 --
 -- **The tabs that are open**, their addresses in order and which is shown,
--- kept as they change, for the next time the browser opens when Settings
--- says it opens on them.
+-- kept as they change, for the next time JetSki opens when Settings says
+-- it opens on them.
 --
 function prefs.save_tabs(addresses, shown, file)
-  file = file or prefs.TABS
 
   if not files.make_folder(files.parent(file)) then return false end
 
@@ -183,7 +131,7 @@ end
 
 -- What was kept: the addresses and which was shown, or an empty list.
 function prefs.tabs(file)
-  local got = fs.read(file or prefs.TABS)
+  local got = fs.read(file)
   local list = {}
 
   if type(got) == "table" and type(got.tabs) == "table" then
@@ -200,9 +148,8 @@ end
 --
 -- **Searching from the address field** (`roadmap.md` 6zz d6): the engines'
 -- pages for a search, `%s` the words as a form sends them. DuckDuckGo's is
--- its page without scripts, which answers this browser whatever it says it
--- is; Google's is offered because the drawing offers it, and answers no
--- browser without scripts now.
+-- its page without scripts, which was the only one the browser before
+-- JetSki could use, and is quick for it too.
 --
 prefs.SEARCH = {
   duckduckgo = "https://html.duckduckgo.com/html/?q=%s",
@@ -222,7 +169,7 @@ local SCHEMES = { http = true, https = true, about = true, asset = true,
 
 --
 -- **Where what is typed goes**: an address when it looks like one - a
--- scheme this browser speaks, a path on this machine, `localhost`, four
+-- scheme JetSki speaks, a path on this machine, `localhost`, four
 -- numbers, or a host with a dot and a name of letters after it, a port and
 -- a path allowed - and otherwise a search at the engine Settings chose.
 -- Anything with a space in it is words. Returns the address, and whether

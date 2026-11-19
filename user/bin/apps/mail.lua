@@ -28,8 +28,8 @@
 -- A window that draws its own pixels (`pixelkit`), as Maps and Write are:
 -- a message's page is drawn into a surface of its own and copied in.
 --
--- **An HTML message is drawn as its sender drew it** (M5): by the browser's
--- engine, with no scripts and no forms; a picture sent inside it (`cid:`)
+-- **An HTML message is drawn as its sender drew it** (M5): by the web kit
+-- (NetSurf's engine, until `docs/mailweb.md` puts Mail on WebKit), with no scripts and no forms; a picture sent inside it (`cid:`)
 -- shown at once, from the Mail Kit's part; a picture on the network not
 -- fetched until Load Pictures is pressed, because fetching one tells its
 -- sender the message was read. Links open in JetSki (`weblink.lua`).
@@ -57,20 +57,19 @@ local http = use("/Kosmos/Libraries/http.lua")
 local compose = use("/Kosmos/Libraries/mailcompose.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 
--- **The browser's engine draws an HTML message** (M5): parsed, laid out at
+-- **The web kit draws an HTML message** (M5): parsed, laid out at
 -- the paper's width and painted into it as a page is. An image built
 -- without it (`FULL=0`) shows the message as its text, and says so.
 local web_found, web = pcall(use, "/Kosmos/Kits/web")
 
 if not web_found or type(web) ~= "table" then web = nil end
 
--- The engine set up once with its own default stylesheets, as the browser
--- sets it up; without them it lays nothing out, and the message is text.
+-- The engine set up once with NetSurf's own default stylesheets; without them it lays nothing out, and the message is text.
 if web then
   local sheet = sys.asset("netsurf/default.css")
 
   if not (web.setup and sheet and web.setup(sheet, sys.asset("netsurf/quirks.css")) == true) then
-    print("mail: the browser's engine would not set up; HTML is shown as text")
+    print("mail: the web kit would not set up; HTML is shown as text")
     web = nil
   end
 end
@@ -94,7 +93,7 @@ if screen then sw, sh = screen:size() end
 local W = math.min(1220, sw - 60)
 local H = math.min(740, sh - 100)
 
--- The status bar along the bottom, as the browser's (`STAT` there too).
+-- The status bar along the bottom.
 local STAT = 26
 
 local win = ui.window{ title = "Mail", w = W, h = H, direct = true, header = true,
@@ -727,7 +726,7 @@ local function clamp_scroll()
 end
 
 --------------------------------------------------------------------------
--- An HTML message: laid out by the browser's engine at the paper's width.
+-- An HTML message: laid out by the web kit at the paper's width.
 --------------------------------------------------------------------------
 
 local function unescaped(cid)

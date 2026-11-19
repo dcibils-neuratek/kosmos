@@ -25,6 +25,28 @@ use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "use
 
 local clock = dofile("user/lib/clock.lua")
 
+-- The zone, written as Preferences writes it: the settings kit's "clock".
+local function set_offset(minutes)
+  return use("/Kosmos/Libraries/prefs.lua").open("clock"):set("offset", minutes)
+end
+
+--
+-- **The calendar the other way, as the reference `clock.at` is held to**:
+-- Hinnant's `days_from_civil`, a year, month and day into days since 1970.
+-- It was `clock.days`, kept in the library for the old browser's HTTP
+-- dates; nothing else read a date as words, so it lives with its test.
+--
+local function days(y, m, d)
+  y = m <= 2 and y - 1 or y
+
+  local era = (y >= 0 and y or y - 399) // 400
+  local yoe = y - era * 400
+  local doy = (153 * (m + (m > 2 and -3 or 9)) + 2) // 5 + d - 1
+  local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+
+  return era * 146097 + doe - 719468
+end
+
 local checks, failed = 0, 0
 
 local function check(ok, what)
@@ -47,7 +69,7 @@ check(t.year == 2026 and t.month == 9 and t.day == 27 and t.hour == 18
 check(clock.long_string(t) == "27 September 2026, 18:00",
       "the long form is the drawings': " .. clock.long_string(t))
 
-clock.set_offset(-180)
+set_offset(-180)
 
 local here = clock.at(SEPT27 + 42 * 60)
 
@@ -67,19 +89,19 @@ check(clock.long_string(nil) == "no clock",
 
 -- The calendar both ways: a date into days and back, over leap days, the
 -- turn of a century that is not a leap year and one that is, and before
--- 1970 - what the old browser's `httpcache.lua` read an HTTP date with.
-clock.set_offset(0)
+-- 1970.
+set_offset(0)
 
 for _, d in ipairs({ { 1970, 1, 1 }, { 1994, 11, 6 }, { 2000, 2, 29 }, { 2100, 3, 1 },
                      { 2026, 12, 31 }, { 1969, 12, 31 }, { 1900, 2, 28 } }) do
-  local back = clock.at(clock.days(d[1], d[2], d[3]) * 86400)
+  local back = clock.at(days(d[1], d[2], d[3]) * 86400)
 
   check(back.year == d[1] and back.month == d[2] and back.day == d[3],
         ("%d-%d-%d into days and back is %d-%d-%d"):format(d[1], d[2], d[3],
                                                            back.year, back.month, back.day))
 end
 
-check(clock.days(1994, 11, 6) == 784111777 // 86400, "6 November 1994 is day 9075")
+check(days(1994, 11, 6) == 784111777 // 86400, "6 November 1994 is day 9075")
 
 -- The names a moment gives a file, and a length of time.
 check(clock.stamp(t) == "2026-09-27-180000", "the stamp a program saves with: " .. clock.stamp(t))

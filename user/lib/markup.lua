@@ -12,10 +12,10 @@
 -- serves both.
 --
 -- **There were two**, the same table in each: Kosmos Write's DOCX writer
--- (`docxwrite.lua`) and the browser's own pages - a refused certificate,
--- a new tab (`browser.lua`). Found on 4 October and made one, under the
--- premise in `CLAUDE.md`: a second copy of anything is a defect. A third
--- caller uses this rather than a table of its own.
+-- (`docxwrite.lua`) and the old browser's own pages. Found on 4 October and
+-- made one, under the premise in `CLAUDE.md`: a second copy of anything is
+-- a defect. The browser has gone and the DOCX writer is its one caller
+-- today; the next one uses this rather than a table of its own.
 
 local markup = {}
 

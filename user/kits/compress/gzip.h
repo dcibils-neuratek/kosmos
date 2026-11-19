@@ -44,7 +44,8 @@ int kosmos_gunzip(const uint8_t *src, size_t len, struct gunzip_work *work,
 /*
  * **Plain DEFLATE, with no gzip member around it** - a zlib stream's body
  * once its two bytes of header are off, a PDF's FlateDecode, a PNG's image
- * data, a zip's entry. The same inflater, and the system's only one.
+ * data, a zip's entry. The same inflater, and the Compress Kit's one (WebKit's images carry
+ * zlib for their own libraries, `docs/w5.md`).
  *
  * `kosmos_inflate` writes it straight into `cap` bytes at `dst`: the results
  * above, `*out` the bytes written, and `GUNZIP_REFUSED` for a stream that

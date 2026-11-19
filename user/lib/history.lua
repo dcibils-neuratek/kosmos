@@ -101,8 +101,10 @@ function history.record(address, title, now, dir)
 end
 
 --
--- **The newest `n` pages**, each once, across the days: what a new tab
--- offers as what was open lately. Each says its day as well.
+-- **The newest `n` pages**, each once, across the days, each saying its
+-- day as well. The old browser's new tab offered them; JetSki's
+-- suggestions under the address field are to (`docs/cleanup.md` kept it
+-- for them, the daily-driver list's third item).
 --
 function history.lately(n, dir)
   local out, seen = {}, {}

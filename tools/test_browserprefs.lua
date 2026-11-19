@@ -1,11 +1,12 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- The browser's settings, on the Mac (`user/lib/browserprefs.lua`,
--- `roadmap.md` 6zz d5): the defaults with no file, what is written read
--- back - `false` included, which `ok and v or default` loses - its folder
--- made, a choice that is not one, a value of the wrong kind and a key
--- nobody knows refused for the default, a choice's name, and the open tabs
--- kept and read back with which was shown.
+-- JetSki's settings, on the Mac (`user/lib/browserprefs.lua`): the
+-- defaults with no file, what is written read back - `false` included,
+-- which `ok and v or default` loses - its folder made, a choice that is not
+-- one, a value of the wrong kind and a key nobody knows refused for the
+-- default (the old browser's three among them), an address with a line's
+-- end refused, the open tabs kept and read back with which was shown, and
+-- where what is typed in the address field goes.
 
 -- The settings kit, as `use` reaches it in a process.
 use = use or function(path) return dofile((path:gsub("^/Kosmos/Libraries/", "user/lib/"))) end
@@ -63,91 +64,78 @@ end
 
 --------------------------------------------------------------------------
 
-do
-  local s = prefs.read()
+local FILE = "/Home/Settings/JetSki/settings"
+local TABS = "/Home/Settings/JetSki/tabs"
+local BEOS = "https://en.wikipedia.org/wiki/BeOS"
 
-  check(s.home == "about:start" and s.opens == "home" and s.bar == true
+do
+  local s = prefs.read(FILE)
+
+  check(s.home == BEOS and s.opens == "home" and s.javascript == true
         and s.zoom == 100 and s.search == "duckduckgo" and s.history_days == 30,
-        "no file is the defaults")
+        "no file is the defaults, JetSki's home page among them: " .. tostring(s.home))
 end
 
 do
-  local s = prefs.read()
+  local s = prefs.read(FILE)
 
-  s.bar, s.images, s.zoom, s.search, s.home = false, false, 150, "google",
-                                              "https://www.lua.org/"
+  s.images, s.javascript, s.zoom, s.search, s.home = false, false, 150, "google",
+                                                     "https://www.lua.org/"
 
-  check(prefs.write(s) and dirs["/Home/Preferences"] and dirs[prefs.DIR],
+  check(prefs.write(s, FILE) and dirs["/Home/Settings"] and dirs["/Home/Settings/JetSki"],
         "written, the folders above it made")
 
-  local back = prefs.read()
+  local back = prefs.read(FILE)
 
-  check(back.bar == false and back.images == false,
+  check(back.images == false and back.javascript == false,
         "false read back as false, not as the default")
   check(back.zoom == 150 and back.search == "google"
-        and back.home == "https://www.lua.org/" and back.costs == true,
+        and back.home == "https://www.lua.org/" and back.history_days == 30,
         "the rest as written, and what was not changed its default")
 end
 
 do
-  files[prefs.FILE] = { zoom = 133, search = "altavista", bar = "yes",
-                        history_days = 30.5, home = "", nonsense = 1,
-                        opens = "tabs" }
+  -- An old file: the browser before JetSki wrote its favorites bar, its
+  -- cost line and its user agent here, and they are read as nothing.
+  files[FILE] = { zoom = 133, search = "altavista", images = "yes",
+                  history_days = 30.5, home = "", nonsense = 1,
+                  opens = "tabs", bar = false, costs = true, agent = "lynx" }
 
-  local s = prefs.read()
+  local s = prefs.read(FILE)
 
-  check(s.zoom == 100 and s.search == "duckduckgo" and s.bar == true
-        and s.history_days == 30 and s.home == "about:start",
+  check(s.zoom == 100 and s.search == "duckduckgo" and s.images == true
+        and s.history_days == 30 and s.home == BEOS,
         "a choice that is not one, the wrong kind, a fraction and an empty "
         .. "home page are the defaults")
-  check(s.opens == "tabs" and s.nonsense == nil,
-        "what is valid kept, and what nobody knows not read")
+  check(s.opens == "tabs" and s.nonsense == nil and s.bar == nil
+        and s.costs == nil and s.agent == nil,
+        "what is valid kept, and what nobody knows - the old browser's three "
+        .. "among it - not read")
 
   s.nonsense = "kept?"
-  prefs.write(s)
-  check(files[prefs.FILE].nonsense == nil, "and not written either")
+  prefs.write(s, FILE)
+  check(files[FILE].nonsense == nil and files[FILE].agent == nil,
+        "and not written either")
+
+  s.home = "https://example.com/\r\nX-Injected: yes"
+  prefs.write(s, FILE)
+  check(prefs.read(FILE).home == BEOS, "an address with a line's end in it refused")
 end
 
 do
-  local s = prefs.read()
-
-  check(s.agent == "lynx" and prefs.agent(s, "0.10.200")
-        == "Lynx/2.9.0 (Kosmos 0.10.200; NetSurf/3.11)",
-        "it says it is a plain browser, Lynx, and Kosmos, unless told otherwise")
-
-  s.agent = "netsurf"
-  check(prefs.agent(s, "1") == "NetSurf/3.11 (Kosmos 1)", "its engine, as it is")
-
-  s.agent, s.agent_words = "own", "Mozilla/5.0 (Kosmos; like nothing else)"
-  prefs.write(s)
-  check(prefs.agent(prefs.read(), "1") == "Mozilla/5.0 (Kosmos; like nothing else)",
-        "words of its own, written and read back")
-
-  s.agent_words = "Evil/1.0\r\nX-Injected: yes"
-  prefs.write(s)
-
-  local back = prefs.read()
-
-  check(back.agent_words == "" and prefs.agent(back, "1"):match("^Lynx/"),
-        "words with a line's end in them refused, so no header can be made of them")
-  s.agent, s.agent_words = "lynx", ""
-  prefs.write(s)
-end
-
-do
-  check(select("#", prefs.tabs()) == 2 and #prefs.tabs() == 0,
+  check(select("#", prefs.tabs(TABS)) == 2 and #prefs.tabs(TABS) == 0,
         "no tabs kept is an empty list")
 
-  prefs.save_tabs({ "about:start", "", "https://en.wikipedia.org/wiki/Dam" }, 2)
+  prefs.save_tabs({ "about:settings", "", "https://en.wikipedia.org/wiki/Dam" }, 2, TABS)
 
-  local list, shown = prefs.tabs()
+  local list, shown = prefs.tabs(TABS)
 
   check(#list == 2 and list[2] == "https://en.wikipedia.org/wiki/Dam" and shown == 2,
         "the open tabs kept in order, an empty one left out, and which was shown")
 
-  files[prefs.TABS] = { tabs = { "a", 7, "b" }, shown = 9 }
+  files[TABS] = { tabs = { "a", 7, "b" }, shown = 9 }
 
-  local again, at = prefs.tabs()
+  local again, at = prefs.tabs(TABS)
 
   check(#again == 2 and at == 2, "a hand-edited list read for what it says, "
         .. "the shown one within it")
@@ -167,8 +155,8 @@ do
   check(to("10.0.2.2:8000/") == "10.0.2.2:8000/" and to("localhost:8080") == "localhost:8080",
         "four numbers, and localhost, are addresses")
   check(to("https://duckduckgo.com") == "https://duckduckgo.com"
-        and to("about:start") == "about:start" and to("/Home/notes.html") == "/Home/notes.html",
-        "a scheme this browser speaks, and a path, are addresses")
+        and to("about:settings") == "about:settings" and to("/Home/notes.html") == "/Home/notes.html",
+        "a scheme JetSki speaks, and a path, are addresses")
   check(to("kosmos rocks") == "https://html.duckduckgo.com/html/?q=kosmos+rocks (search)",
         "words are a search, at DuckDuckGo's page without scripts: " .. to("kosmos rocks"))
   check(to("uruguay") == "https://html.duckduckgo.com/html/?q=uruguay (search)"
@@ -181,37 +169,10 @@ do
   check(to("   ") == "nil", "nothing typed goes nowhere")
 end
 
--- **JetSki's own file and defaults** (`roadmap.md`, S1): its home page in
--- place of `about:start`, JavaScript on unless written off, and the old
--- browser's file untouched by either.
-do
-  local FILE, OWN = "/Home/Settings/JetSki/settings", { home = "https://en.wikipedia.org/wiki/BeOS" }
-  local s = prefs.read(FILE, OWN)
-
-  check(s.home == OWN.home and s.javascript == true and s.zoom == 100,
-        "no file is JetSki's defaults, its own home page among them: " .. tostring(s.home))
-
-  s.javascript, s.zoom = false, 125
-  check(prefs.write(s, FILE, OWN), "JetSki's written")
-
-  local back = prefs.read(FILE, OWN)
-
-  check(back.javascript == false and back.zoom == 125 and back.home == OWN.home,
-        "JavaScript off read back as off, not as the default")
-  check(prefs.read().home ~= OWN.home and prefs.read().javascript == true,
-        "the old browser's file is not JetSki's")
-
-  files[FILE] = { javascript = "no", home = 7 }
-  local bad = prefs.read(FILE, OWN)
-
-  check(bad.javascript == true and bad.home == OWN.home,
-        "a value of the wrong kind is JetSki's default, not the old browser's")
-end
-
 if failures == 0 then
-  print(("PASS: %d checks on the browser's settings, on this machine."):format(checks))
+  print(("PASS: %d checks on JetSki's settings, on this machine."):format(checks))
   os.exit(0)
 end
 
-print(("FAIL: %d of %d checks on the browser's settings."):format(failures, checks))
+print(("FAIL: %d of %d checks on JetSki's settings."):format(failures, checks))
 os.exit(1)

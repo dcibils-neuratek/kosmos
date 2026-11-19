@@ -19,8 +19,9 @@ What each check is really for:
     Missing them is a link error, but a *wrong* one would look like a sheet
     that parses and understands nothing.
 
-Not run by `make test`, because `WEB=1` is an optional variant like `DOOM=1`
-and the ordinary image carries none of this. `make web` is the entry point.
+Not run by `make test`, whose images are built without `WEB=1`; the
+ordinary image (`FULL=1`) does carry the kit, for Mail, and Mail's own
+suite is what holds it in the gate. `make web` is the entry point.
 """
 
 import os

@@ -11,7 +11,7 @@
  * So the deflate that was private to the image decoder becomes something
  * any process can ask for. The inflater is miniz's `tinfl`, vendored
  * unmodified and run in `gzip.c` - the same one a gzip stream goes through,
- * so the system has one inflater rather than two - and this file is what
+ * so the Compress Kit has one inflater rather than two - and this file is what
  * makes it reachable from Lua, and the state it works in.
  *
  * **Why this is C and the PDF parser is not.** `design.md` 6 draws the line

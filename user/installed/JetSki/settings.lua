@@ -5,8 +5,8 @@
 --
 -- **Settings** (`docs/webkit.html`, *Settings*; `roadmap.md`, S1): a tab
 -- of JetSki's own at `about:settings` - a view of the kit's that loads
--- nothing, which this page is drawn over - in the kit's cards, as the old
--- browser's (`browser.lua`, d5), two columns when there is room. Every
+-- nothing, which this page is drawn over - in the kit's cards, two columns
+-- when there is room. Every
 -- change is kept the moment it is made, and reaches every tab at once.
 -- History, cookies, and Privacy and Ad Blocking are S2 to S4.
 --

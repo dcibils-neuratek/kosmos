@@ -179,8 +179,8 @@ _WAV = os.environ.get("KOSMOS_AUDIO_WAV")
 # Which machine, chosen from the image's own path.
 #
 # **Every harness that boots a guest goes through `Guest`**, so making this
-# one function architecture-aware is what lets `run_web.py`,
-# `run_browser.py` and `run_gallery.py` point at either board without
+# one function architecture-aware is what lets `run_web.py` and
+# `run_gallery.py` point at either board without
 # knowing there are two. The alternative was a copy of each per machine,
 # which is how two test suites drift apart.
 #
@@ -1278,7 +1278,8 @@ def check_programs_by_name(guest):
     that is what the Doom, Quake and Super Nintendo kits did: each set a
     global named after its program in every Lua state, the shell's included.
     `snes --scale 3` printed `table: 0x00000081002300` and ran nothing, since
-    `--scale 3` became a comment. They are `use("/Kosmos/Kits/snes")` now.
+    `--scale 3` became a comment. They are installed applications now, each
+    in an image of its own (`snes.elf`), and set no global.
 
     Three checks, and the first is the one that holds the class. The shell
     walks `/Kosmos/Programs` and `/Kosmos/Apps` against its own environment and names every program it

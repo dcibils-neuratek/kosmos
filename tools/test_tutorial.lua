@@ -15,11 +15,12 @@
 --     carries the whole folder, so a stray file would ship and a missing
 --     one would be a hole;
 --   * every picture is one `gfx.png` decodes - eight bits a channel, RGB or
---     RGBA, not interlaced - at the size its page gives it, so the browser
---     shows it pixel for pixel, and carries the licence line in a `tEXt`
+--     RGBA, not interlaced - at the size its page gives it, so JetSki
+--     shows it pixel for pixel and any Kosmos kit can read it, and carries the licence line in a `tEXt`
 --     chunk, as `tools/cafesa3d_tutorial_shots.py` writes it;
---   * every page uses only what Kosmos's browser draws - a table would be
---     dropped without a word - and no symbol its fonts may not have;
+--   * every page keeps to a small, plain subset of HTML - headings,
+--     paragraphs, lists, links, pictures, code - and no symbol the system's
+--     fonts may not have;
 --   * every control a page names in bold - `<b class="ui">Base colour</b>`
 --     - is a name the application's source has in quotes.
 --
@@ -90,15 +91,17 @@ index = index and ("tutorial/" .. index)
 check(index == PREFIX .. "index.html",
       ("%s opens the tutorial at %s, not at its first page"):format(APP, tostring(index)))
 
--- What Kosmos's browser draws: the elements `web_style.c` gives a block
--- or an inline style, and `web_paint.c`'s pictures, less the ones these
--- pages have no use for.
+-- The pages' subset. It was what the old browser's own layout drew;
+-- since 0.11.461 JetSki opens them and WebKit would draw anything, but
+-- the subset is kept on purpose: a tutorial is read beside the thing it
+-- teaches, and plain pages are what make it quick to write, quick to load
+-- and the same in every engine that may ever show it.
 local TAGS = { html = true, head = true, meta = true, title = true, style = true, body = true,
                h1 = true, h2 = true, h3 = true, p = true, ul = true, li = true, a = true,
                b = true, strong = true, i = true, em = true, code = true, kbd = true,
                img = true,
-               -- A program's lines, spaces kept and not wrapped
-               -- (`web_paint.c`'s `put_pre`): the IDE's tutorial is code.
+               -- A program's lines, spaces kept and not wrapped: the
+               -- IDE's tutorial is code.
                pre = true }
 
 -- Every quoted string in the application, folded: a tab is "material" in

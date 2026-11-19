@@ -1,13 +1,23 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * What NetSurf's layout stands on, when the browser around it is Kosmos's.
+ * What NetSurf's layout stands on, with Kosmos around it rather than a
+ * browser.
+ *
+ * **Mail's HTML, and nothing else's, since 0.11.461.** The browser this was
+ * written for was removed that day, JetSki being WebKit, and its half of
+ * this file - forms, linked stylesheets and imports fetched from Lua, keys,
+ * a select's menu, zoom, a URL join and a cost per kind of drawing - went
+ * in the review before 0.12.0 (`docs/cleanup.md`). What stays is what Mail
+ * calls: a document laid out at a width, its pictures handed over, a band
+ * painted, and the link under a point. `docs/mailweb.md` moves Mail onto
+ * WebKit, and this kit goes then.
  *
  * `runtime/upstream/netsurf/netsurf/` is NetSurf 3.11's layout engine as it
  * was released (`roadmap.md` 6zz j): the box tree, layout, tables, flex and
  * the drawing of boxes, with the CSS selection and the few utilities they
  * use. It was written inside a browser, and it calls that browser: to fetch
  * a picture, to ask how wide a content is, to make a scrollbar, to measure
- * a word. This file is that browser, as much of it as the layout reaches.
+ * a word. This file answers it, as much of it as the layout reaches.
  *
  * Four kinds of answer, and each says which it is:
  *
@@ -23,15 +33,12 @@
  *     Each does nothing and says so, so that what the layout does with its
  *     answer is what it does with a browser that has none of those - which
  *     is a case its authors handle.
- *   - **Forms**, since j6: NetSurf's own form and text-area code, and the
- *     browser's half of it here - the caret, what to draw again, what a
- *     click and a key do to a field, a select's menu, which the browser
- *     draws and answers through NetSurf's own code, and a form sent kept for
- *     Lua to fetch.
+ *   - **Forms' stand-ins**: NetSurf's form and text-area code links against
+ *     a browser window and a caret, which a message never has; they answer
+ *     and do nothing, as the others do.
  *
  * **j1** (`roadmap.md` 6zz j1) was enough for it all to link; j2 gave the
- * text real faces and j3 drove a document through it, which is what the
- * browser lays every page out with now.
+ * text real faces and j3 drove a document through it.
  */
 
 #include <stdio.h>
@@ -117,47 +124,6 @@ static bool netsurf_ready(void)
     }
 
     return ready;
-}
-
-/*
- * `web.join(base, href)`, the first of NetSurf's code the browser uses
- * (`roadmap.md` 6zz j1): a link resolved against its page as NetSurf
- * resolves one - `..` and `.` taken out, a scheme-relative `//host` given
- * the page's scheme, a fragment kept. It is the browser's only join:
- * `browser.lua`'s `resolve` is this and a check on the scheme, for a
- * redirect, a refresh, and a page `web_paint.c` laid out, and NetSurf's
- * layout joins its own links and pictures the same way. `resolve` did the
- * arithmetic in Lua until 4 October, without collapsing `..`.
- */
-int web_netsurf_join(lua_State *L)
-{
-    const char *base = luaL_checkstring(L, 1);
-    const char *href = luaL_checkstring(L, 2);
-    nsurl *page = NULL, *joined = NULL;
-    nserror err;
-
-    if (!netsurf_ready()) {
-        return luaL_error(L, "NetSurf's names could not be made");
-    }
-
-    if (nsurl_create(base, &page) != NSERROR_OK) {
-        lua_pushnil(L);
-        lua_pushfstring(L, "%s is not an address", base);
-        return 2;
-    }
-
-    err = nsurl_join(page, href, &joined);
-    nsurl_unref(page);
-
-    if (err != NSERROR_OK) {
-        lua_pushnil(L);
-        lua_pushfstring(L, "%s cannot be joined to %s", href, base);
-        return 2;
-    }
-
-    lua_pushstring(L, nsurl_access(joined));
-    nsurl_unref(joined);
-    return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -1028,98 +994,16 @@ static nserror plot_text(const struct redraw_context *ctx,
     return NSERROR_OK;
 }
 
-/*
- * **What a paint spent, by kind** (`roadmap.md` 6zz h): fills, text,
- * pictures and the other shapes, each timed as NetSurf asks for it - so the
- * vector unit goes where the time is, which is the order 6zz h was agreed
- * in. Two readings of the counter a call, which is nothing beside drawing.
- * What the paint spent outside them all is NetSurf walking its boxes.
- */
-static struct web_ns_costs costs;
-
-#define TIMED(kind, call)                                                  \
-    do {                                                                   \
-        unsigned long t0_ = kosmos_ticks();                                \
-        nserror e_ = (call);                                               \
-                                                                           \
-        costs.kind.ticks += kosmos_ticks() - t0_;                          \
-        costs.kind.calls++;                                                \
-        return e_;                                                         \
-    } while (0)
-
-static nserror timed_clip(const struct redraw_context *ctx,
-                          const struct rect *clip)
-{
-    TIMED(other, plot_clip(ctx, clip));
-}
-
-static nserror timed_arc(const struct redraw_context *ctx,
-                         const plot_style_t *style, int x, int y, int radius,
-                         int angle1, int angle2)
-{
-    TIMED(shapes, plot_arc(ctx, style, x, y, radius, angle1, angle2));
-}
-
-static nserror timed_disc(const struct redraw_context *ctx,
-                          const plot_style_t *style, int x, int y,
-                          int radius)
-{
-    TIMED(shapes, plot_disc(ctx, style, x, y, radius));
-}
-
-static nserror timed_line(const struct redraw_context *ctx,
-                          const plot_style_t *style, const struct rect *line)
-{
-    TIMED(fills, plot_line(ctx, style, line));
-}
-
-static nserror timed_rectangle(const struct redraw_context *ctx,
-                               const plot_style_t *style,
-                               const struct rect *rect)
-{
-    TIMED(fills, plot_rectangle(ctx, style, rect));
-}
-
-static nserror timed_polygon(const struct redraw_context *ctx,
-                             const plot_style_t *style, const int *p,
-                             unsigned int n)
-{
-    TIMED(shapes, plot_polygon(ctx, style, p, n));
-}
-
-static nserror timed_path(const struct redraw_context *ctx,
-                          const plot_style_t *pstyle, const float *p,
-                          unsigned int n, const float transform[6])
-{
-    TIMED(shapes, plot_path(ctx, pstyle, p, n, transform));
-}
-
-static nserror timed_bitmap(const struct redraw_context *ctx,
-                            struct bitmap *bitmap, int x, int y, int width,
-                            int height, colour bg,
-                            bitmap_flags_t flags)
-{
-    TIMED(pictures, plot_bitmap(ctx, bitmap, x, y, width, height, bg,
-                                flags));
-}
-
-static nserror timed_text(const struct redraw_context *ctx,
-                          const struct plot_font_style *fstyle, int x, int y,
-                          const char *text, size_t length)
-{
-    TIMED(text, plot_text(ctx, fstyle, x, y, text, length));
-}
-
 static const struct plotter_table plotters = {
-    .clip = timed_clip,
-    .arc = timed_arc,
-    .disc = timed_disc,
-    .line = timed_line,
-    .rectangle = timed_rectangle,
-    .polygon = timed_polygon,
-    .path = timed_path,
-    .bitmap = timed_bitmap,
-    .text = timed_text,
+    .clip = plot_clip,
+    .arc = plot_arc,
+    .disc = plot_disc,
+    .line = plot_line,
+    .rectangle = plot_rectangle,
+    .polygon = plot_polygon,
+    .path = plot_path,
+    .bitmap = plot_bitmap,
+    .text = plot_text,
     .option_knockout = false,
 };
 
@@ -1197,19 +1081,6 @@ static nserror option_defaults(struct nsoption_s *defaults)
 static css_fixed zoomed_dpi(void)
 {
     return FDIV(INTTOFIX(96 * zoom_pct), INTTOFIX(100));
-}
-
-/* `web.zoom(percent)`: the zoom every page is laid out at from now on. */
-int web_netsurf_zoom(lua_State *L)
-{
-    lua_Integer pct = luaL_checkinteger(L, 1);
-
-    if (pct < 25 || pct > 500) {
-        return luaL_error(L, "a zoom of %d%%", (int)pct);
-    }
-
-    zoom_pct = (int)pct;
-    return 0;
 }
 
 int web_netsurf_setup(lua_State *L)
@@ -1310,14 +1181,7 @@ struct web_ns_doc {
     /* The control a press is held on - a checkbox, a radio button, a
      * submit or image button - which acts on the release over it. */
     struct form_control *pressed;
-
-    struct web_ns_costs costs;      /* what the last paint spent */
 };
-
-const struct web_ns_costs *web_ns_costs(struct web_ns_doc *d)
-{
-    return &d->costs;
-}
 
 /* The box tree finished: NetSurf says whether it was made. The document is
  * the one `web_ns_layout` is waiting on, which is the only one there is
@@ -1341,7 +1205,7 @@ static void converted(html_content *c, bool success)
  * sent. What they ask of the browser around them is here: where the caret
  * is, what to draw again, a clipboard, a few of `utf8.c`'s helpers, and
  * what to do with a form that was sent - which is to keep it for the
- * browser, whose fetching is Lua's (`browser.lua`).
+ * caller, whose fetching is Lua's.
  *
  * What NetSurf's `interaction.c` does with a click and a key is done by
  * `web_ns_click` and `web_ns_key` below, for the form fields alone: its
@@ -1475,8 +1339,8 @@ void browser_window_set_drag_type(struct browser_window *bw,
 }
 
 /*
- * A form sent: kept for the browser, which fetches it as it fetches
- * anything (`browser.lua`). A GET is an address with its query; a POST is
+ * A form sent: kept for the caller, which fetches it as it fetches
+ * anything. A GET is an address with its query; a POST is
  * an address and a body, URL-encoded as NetSurf made it or multipart as it
  * is put together here.
  */
@@ -1808,360 +1672,6 @@ nserror utf8_to_enc(const char *string, const char *encname, size_t len,
     return NSERROR_OK;
 }
 
-/*
- * What a key is to NetSurf, from what the kit makes of it (`keys.lua`): a
- * character is itself - a byte, so a letter beyond ASCII arrives in two to
- * four and is put back together here - and every other key a small
- * negative number, less 1024 for each step of its modifiers. 0 for a key a
- * field has no use for, or a character not yet whole.
- */
-static uint32_t ns_key_of(struct web_ns_doc *d, int c)
-{
-    int mods = (255 - c) / 1024;
-    int key = c + 1024 * mods;
-    bool ctrl = (mods & 4) != 0, shift = (mods & 1) != 0;
-
-    if (c >= 0x80 && c <= 0xff) {
-        if (d->need == 0 || (c & 0xc0) != 0x80) {
-            d->need = c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : c >= 0xc0 ? 2 : 0;
-            d->have = 0;
-
-            if (d->need == 0) {
-                return 0;               /* a continuation with no start */
-            }
-        }
-
-        d->pending[d->have++] = (unsigned char)c;
-
-        if (d->have < d->need) {
-            return 0;
-        }
-
-        d->need = 0;
-        return utf8_to_ucs4((const char *)d->pending, (size_t)d->have);
-    }
-
-    d->need = 0;
-
-    if (key >= 32 && key < 127 && mods == 0) {
-        return (uint32_t)key;
-    }
-
-    switch (key) {
-    case 8: case 127: return NS_KEY_DELETE_LEFT;
-    case 9:           return shift ? NS_KEY_SHIFT_TAB : NS_KEY_TAB;
-    case 10: case 13: return NS_KEY_NL;
-    case 27:          return NS_KEY_ESCAPE;
-    case 1:           return NS_KEY_SELECT_ALL;
-    case 3:           return NS_KEY_COPY_SELECTION;
-    case 21:          return NS_KEY_DELETE_LINE;
-    case 22:          return NS_KEY_PASTE;
-    case 24:          return NS_KEY_CUT_SELECTION;
-    case -1:          return NS_KEY_UP;
-    case -2:          return NS_KEY_DOWN;
-    case -3:          return ctrl ? NS_KEY_WORD_RIGHT : NS_KEY_RIGHT;
-    case -4:          return ctrl ? NS_KEY_WORD_LEFT : NS_KEY_LEFT;
-    case -5:          return ctrl ? NS_KEY_TEXT_START : NS_KEY_LINE_START;
-    case -6:          return ctrl ? NS_KEY_TEXT_END : NS_KEY_LINE_END;
-    case -7:          return NS_KEY_PAGE_UP;
-    case -8:          return NS_KEY_PAGE_DOWN;
-    case -10:         return NS_KEY_DELETE_RIGHT;
-    default:          return 0;
-    }
-}
-
-bool web_ns_focused(struct web_ns_doc *d)
-{
-    return d->focus != NULL;
-}
-
-/* The caret taken out of its field, which gives the keyboard back. */
-void web_ns_blur(struct web_ns_doc *d, lua_State *L)
-{
-    struct box *had = d->focus;
-
-    if (had != NULL && had->gadget != NULL
-        && had->gadget->data.text.ta != NULL) {
-        faces_L = L;
-        acting = d;
-        textarea_set_caret(had->gadget->data.text.ta, -1);
-        acting = NULL;
-        faces_L = NULL;
-    }
-
-    d->focus = NULL;
-}
-
-/* A key for the field with the caret: whether it was taken. */
-bool web_ns_key(struct web_ns_doc *d, lua_State *L, int key)
-{
-    uint32_t ns;
-
-    if (d->focus == NULL || d->focus->gadget == NULL) {
-        return false;
-    }
-
-    ns = ns_key_of(d, key);
-
-    if (ns == 0) {
-        return d->need != 0;            /* half a character is taken */
-    }
-
-    if (ns == NS_KEY_ESCAPE) {
-        web_ns_blur(d, L);
-        return true;
-    }
-
-    faces_L = L;
-    acting = d;
-    (void)box_textarea_keypress(&d->html, d->focus, ns);
-    acting = NULL;
-    faces_L = NULL;
-    return true;
-}
-
-/*
- * Whether a control does something - turns over, is chosen, sends its
- * form - rather than taking the caret or opening a menu. Those act on a
- * click, which is a press and a release over the same control, as
- * NetSurf's `html_mouse_action` acts on `BROWSER_MOUSE_CLICK_1`, which its
- * front ends send on the release.
- */
-static bool web_ns_acts(const struct form_control *g)
-{
-    return g->type == GADGET_CHECKBOX || g->type == GADGET_RADIO
-           || g->type == GADGET_SUBMIT || g->type == GADGET_IMAGE;
-}
-
-/*
- * A press at (x, y) on the page, or its release, for a form field there -
- * as NetSurf's `html_mouse_action` treats one: a text field takes the
- * caret where the press was and a select is opened, on the press; a
- * checkbox turns over, a radio button is chosen from its group, and a
- * submit button sends its form, on the release over the control the press
- * was on - the press only holds it, and says "pressed". What it did, or
- * NULL when there is no field there - which, on a press, takes the caret
- * out of any that had it. A release anywhere lets go of what was held.
- */
-const char *web_ns_click(struct web_ns_doc *d, lua_State *L, int x, int y,
-                         bool release)
-{
-    struct box *box = d->html.layout, *gadget_box = NULL;
-    struct form_control *gadget;
-    int bx = 0, by = 0, gx = 0, gy = 0;
-    const char *did = NULL;
-
-    if (box == NULL) {
-        return NULL;
-    }
-
-    while ((box = box_at_point(&d->html.unit_len_ctx, box, x, y, &bx, &by))
-           != NULL) {
-        if (box->gadget != NULL) {
-            gadget_box = box;
-            gx = bx;
-            gy = by;
-        }
-    }
-
-    if (release) {
-        struct form_control *held = d->pressed;
-
-        d->pressed = NULL;
-
-        if (held == NULL || gadget_box == NULL || gadget_box->gadget != held) {
-            return NULL;
-        }
-    }
-
-    d->pressed = NULL;
-
-    if (gadget_box == NULL) {
-        web_ns_blur(d, L);
-        return NULL;
-    }
-
-    gadget = gadget_box->gadget;
-
-    if (d->focus != NULL && d->focus != gadget_box) {
-        web_ns_blur(d, L);
-    }
-
-    if (!release && web_ns_acts(gadget)) {
-        d->pressed = gadget;
-        return "pressed";
-    }
-
-    faces_L = L;
-    acting = d;
-
-    switch (gadget->type) {
-    case GADGET_TEXTBOX:
-    case GADGET_TEXTAREA:
-    case GADGET_PASSWORD:
-        if (gadget->data.text.ta != NULL) {
-            (void)textarea_mouse_action(gadget->data.text.ta,
-                                        BROWSER_MOUSE_PRESS_1, x - gx,
-                                        y - gy);
-            (void)textarea_mouse_action(gadget->data.text.ta,
-                                        BROWSER_MOUSE_CLICK_1, x - gx,
-                                        y - gy);
-            did = "field";
-        }
-        break;
-
-    case GADGET_CHECKBOX:
-        gadget->selected = !gadget->selected;
-        (void)dom_html_input_element_set_checked(
-            (dom_html_input_element *)gadget->node, gadget->selected);
-        html__redraw_a_box(&d->html, gadget_box);
-        did = "toggled";
-        break;
-
-    case GADGET_RADIO:
-        form_radio_set(gadget);
-        did = "toggled";
-        break;
-
-    /*
-     * **A select's menu is the browser's** (`roadmap.md` 6zz j6): the
-     * kit's, on the window, as NetSurf's GTK front end opens one of its own
-     * rather than the menu `form.c` draws into the page - which wants a
-     * scrollbar this browser does not have. So a press says where it is,
-     * the browser asks for its options (`web_ns_select`), and a choice
-     * comes back through NetSurf's own `form_select_process_selection`.
-     */
-    case GADGET_SELECT:
-        d->select_open = gadget;
-        d->select_x = gx - gadget_box->border[LEFT].width;
-        d->select_y = gy - gadget_box->border[TOP].width;
-        d->select_w = gadget_box->border[LEFT].width + gadget_box->padding[LEFT]
-                      + gadget_box->width + gadget_box->padding[RIGHT]
-                      + gadget_box->border[RIGHT].width;
-        d->select_h = gadget_box->border[TOP].width + gadget_box->padding[TOP]
-                      + gadget_box->height + gadget_box->padding[BOTTOM]
-                      + gadget_box->border[BOTTOM].width;
-        did = "select";
-        break;
-
-    case GADGET_IMAGE:
-        gadget->data.image.mx = x - gx;
-        gadget->data.image.my = y - gy;
-        /* fall through - an image button sends its form, and where */
-
-    case GADGET_SUBMIT:
-        if (gadget->form != NULL
-            && form_submit(d->html.base_url, THE_WINDOW, gadget->form,
-                           gadget) == NSERROR_OK
-            && d->sent_url != NULL) {
-            did = "sent";
-        }
-        break;
-
-    default:
-        break;
-    }
-
-    acting = NULL;
-    faces_L = NULL;
-    return did;
-}
-
-/*
- * The select pressed last: a table of where it is on the page, whether it
- * takes several, and its options in order, each its text and whether it is
- * chosen - or nothing when no select was pressed.
- */
-int web_ns_select(struct web_ns_doc *d, lua_State *L)
-{
-    struct form_control *s = d->select_open;
-    struct form_option *o;
-    lua_Integer n = 0;
-
-    if (s == NULL || s->type != GADGET_SELECT) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    lua_createtable(L, 0, 6);
-    lua_pushinteger(L, d->select_x);
-    lua_setfield(L, -2, "x");
-    lua_pushinteger(L, d->select_y);
-    lua_setfield(L, -2, "y");
-    lua_pushinteger(L, d->select_w);
-    lua_setfield(L, -2, "w");
-    lua_pushinteger(L, d->select_h);
-    lua_setfield(L, -2, "h");
-    lua_pushboolean(L, s->data.select.multiple);
-    lua_setfield(L, -2, "multiple");
-
-    lua_createtable(L, (int)s->data.select.num_items, 0);
-
-    for (o = s->data.select.items; o != NULL; o = o->next) {
-        lua_createtable(L, 0, 2);
-        lua_pushstring(L, o->text != NULL ? o->text : "");
-        lua_setfield(L, -2, "text");
-        lua_pushboolean(L, o->selected);
-        lua_setfield(L, -2, "chosen");
-        lua_rawseti(L, -2, ++n);
-    }
-
-    lua_setfield(L, -2, "options");
-    return 1;
-}
-
-/* The `i`th option of the select pressed last chosen - or, in one that takes
- * several, turned over. False when there is no such select or option. */
-bool web_ns_select_choose(struct web_ns_doc *d, lua_State *L, int i)
-{
-    struct form_control *s = d->select_open;
-    nserror e;
-
-    if (s == NULL || s->type != GADGET_SELECT || i < 1
-        || i > s->data.select.num_items) {
-        return false;
-    }
-
-    faces_L = L;
-    acting = d;
-    e = form_select_process_selection(s, i - 1);
-    acting = NULL;
-    faces_L = NULL;
-
-    return e == NSERROR_OK;
-}
-
-/* A form sent, taken: its address, and its body and type when POSTed. */
-bool web_ns_sent(struct web_ns_doc *d, char **url, char **body,
-                 const char **type)
-{
-    if (d->sent_url == NULL) {
-        return false;
-    }
-
-    *url = d->sent_url;
-    *body = d->sent_body;
-    *type = d->sent_type[0] != '\0' ? d->sent_type : NULL;
-    d->sent_url = NULL;
-    d->sent_body = NULL;
-    return true;
-}
-
-/* What changed on the page since this was last asked, taken. */
-bool web_ns_dirty(struct web_ns_doc *d, int *x, int *y, int *w, int *h)
-{
-    if (!d->is_dirty) {
-        return false;
-    }
-
-    *x = d->dirty.x0;
-    *y = d->dirty.y0;
-    *w = d->dirty.x1 - d->dirty.x0;
-    *h = d->dirty.y1 - d->dirty.y0;
-    d->is_dirty = false;
-    return true;
-}
-
 const char *web_ns_why(struct web_ns_doc *d)
 {
     return d->why != NULL ? d->why : "NetSurf could not lay this page out";
@@ -2368,149 +1878,6 @@ static void page_sheets(struct web_ns_doc *d)
     }
 }
 
-/* The links' addresses still to be fetched: `(n, url)` for each. */
-size_t web_ns_sheets(struct web_ns_doc *d, size_t k, const char **url)
-{
-    size_t i, seen = 0;
-
-    for (i = 0; i < d->nsheets; i++) {
-        if (d->sheets[i].url != NULL && d->sheets[i].sheet == NULL) {
-            if (seen++ == k) {
-                *url = nsurl_access(d->sheets[i].url);
-                return i + 1;
-            }
-        }
-    }
-
-    return 0;
-}
-
-/* A link's text, fetched, made its sheet. */
-bool web_ns_sheet(struct web_ns_doc *d, size_t n, const char *text,
-                  size_t len)
-{
-    struct page_sheet *at;
-
-    if (n == 0 || n > d->nsheets || d->built) {
-        return false;
-    }
-
-    at = &d->sheets[n - 1];
-
-    if (at->url == NULL || at->sheet != NULL) {
-        return false;
-    }
-
-    at->sheet = sheet_of(text, len, nsurl_access(at->url),
-                         d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE);
-    return at->sheet != NULL;
-}
-
-/*
- * **`@import`** (`roadmap.md` 6zz j5). libcss parses a sheet's imports and
- * leaves them for the client to fetch: `css_stylesheet_next_pending_import`
- * names the first one not yet given a sheet, and
- * `css_stylesheet_register_import` gives it one. So a sheet is known by its
- * place in one list that only grows - the page's sheets, then those
- * imported, in the order they came - and the browser is told, for every
- * sheet with an import pending, that place and the address; it fetches them
- * side by side and hands each back, round after round, since an imported
- * sheet may import too. What could not be fetched is handed back empty,
- * which is what NetSurf does, and what ends a sheet that imports itself.
- */
-static css_stylesheet *sheet_at(struct web_ns_doc *d, size_t id)
-{
-    if (id >= 1 && id <= d->nsheets) {
-        return d->sheets[id - 1].sheet;
-    }
-
-    if (id > d->nsheets && id - d->nsheets <= d->nimported) {
-        return d->imported[id - d->nsheets - 1];
-    }
-
-    return NULL;
-}
-
-/* The import a sheet is waiting on - its address, which the sheet's rule
- * keeps alive - or NULL. */
-static const char *pending_import(css_stylesheet *s)
-{
-    lwc_string *u = NULL;
-    const char *url;
-
-    if (s == NULL || css_stylesheet_next_pending_import(s, &u) != CSS_OK
-        || u == NULL) {
-        return NULL;
-    }
-
-    url = lwc_string_data(u);
-    lwc_string_unref(u);            /* the rule holds its own reference */
-    return url;
-}
-
-/* The `k`th sheet with an import to fetch: its place, and the address. */
-size_t web_ns_imports(struct web_ns_doc *d, size_t k, const char **url)
-{
-    size_t id, total = d->nsheets + d->nimported, seen = 0;
-
-    if (d->built) {
-        return 0;
-    }
-
-    for (id = 1; id <= total; id++) {
-        const char *u = pending_import(sheet_at(d, id));
-
-        if (u != NULL && seen++ == k) {
-            *url = u;
-            return id;
-        }
-    }
-
-    return 0;
-}
-
-/* The sheet at place `id`'s pending import, fetched: `text`, or nothing when
- * it could not be had, made a sheet and registered with it. */
-bool web_ns_import(struct web_ns_doc *d, size_t id, const char *text, size_t len)
-{
-    css_stylesheet *parent = sheet_at(d, id), *child;
-    const char *url = pending_import(parent);
-    bool quirks = d->html.quirks != DOM_DOCUMENT_QUIRKS_MODE_NONE;
-
-    if (url == NULL || d->built) {
-        return false;
-    }
-
-    if (d->nimported == d->imported_room) {
-        size_t room = d->imported_room ? d->imported_room * 2 : 8;
-        css_stylesheet **more = realloc(d->imported, room * sizeof(*more));
-
-        if (more == NULL) {
-            return false;
-        }
-
-        d->imported = more;
-        d->imported_room = room;
-    }
-
-    child = sheet_of(text != NULL ? text : "", text != NULL ? len : 0, url, quirks);
-
-    if (child == NULL) {
-        child = sheet_of("", 0, url, quirks);
-    }
-
-    if (child == NULL || css_stylesheet_register_import(parent, child) != CSS_OK) {
-        if (child != NULL) {
-            css_stylesheet_destroy(child);
-        }
-
-        return false;
-    }
-
-    d->imported[d->nimported++] = child;
-    return text != NULL;
-}
-
 struct web_ns_doc *web_ns_open(void *document, const char *base,
                                const char *charset)
 {
@@ -2682,7 +2049,6 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
 {
     html_content *h = &d->html;
     struct box *top;
-    unsigned long began;
     int tall;
 
     faces_L = L;
@@ -2730,15 +2096,12 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
         }
 
         converting = d;
-        began = kosmos_ticks();
         e = dom_to_box(root, h, converted, &h->box_conversion_context);
 
         if (e == NSERROR_OK) {
             web_netsurf_run();
         }
 
-        d->costs.boxes.ticks = kosmos_ticks() - began;
-        d->costs.boxes.calls = 1;
         converting = NULL;
         dom_node_unref(root);
 
@@ -2764,7 +2127,6 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
     h->unit_len_ctx.viewport_height = INTTOFIX(height);
     h->unit_len_ctx.root_style = top->style;
 
-    began = kosmos_ticks();
 
     if (!layout_document(h, width, height)) {
         d->why = "NetSurf's layout ran out of memory";
@@ -2791,9 +2153,6 @@ int web_ns_layout(struct web_ns_doc *d, lua_State *L, int width, int height)
             return -1;
         }
     }
-
-    d->costs.layout.ticks = kosmos_ticks() - began;
-    d->costs.layout.calls++;
 
     /* The margin box, or further where something overflows it - as
      * NetSurf's `html_reformat` measures a page. */
@@ -2877,17 +2236,9 @@ void web_ns_paint(struct web_ns_doc *d, lua_State *L, struct surface *s,
     data.background_colour = 0xffffff;
     data.scale = 1.0f;
 
-    memset(&costs, 0, sizeof(costs));
-    costs.whole.calls = 1;
-    costs.whole.ticks = kosmos_ticks();
     faces_L = L;
     (void)html_redraw(&d->html.base, &data, &clip, &ctx);
     faces_L = NULL;
-    costs.whole.ticks = kosmos_ticks() - costs.whole.ticks;
-    /* The layout's own, which a paint does not measure, kept across it. */
-    costs.boxes = d->costs.boxes;
-    costs.layout = d->costs.layout;
-    d->costs = costs;
 
     if (d->focus != NULL) {
         long cx = d->caret_x, cy = d->caret_y - from, ch = d->caret_h;
@@ -3200,8 +2551,6 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
     int cx1 = clip->x1 < p->clip.x1 ? clip->x1 : p->clip.x1;
     int cy1 = clip->y1 < p->clip.y1 ? clip->y1 : p->clip.y1;
     int x0 = data->x, y0 = data->y, x, y;
-    unsigned long began = kosmos_ticks();
-    unsigned pw, ph;
 
     if (h->pic == NULL || data->width <= 0 || data->height <= 0
         || cx0 >= cx1 || cy0 >= cy1) {
@@ -3231,19 +2580,6 @@ bool content_redraw(struct hlcache_handle *h, struct content_redraw_data *data,
         if (!data->repeat_y) {
             break;
         }
-    }
-
-    /* A page's pictures come here and not through `plot_bitmap`, so they
-     * are counted here (`costs`, above) - scaled apart from those at their
-     * own size, which are a row blended and cost far less. */
-    gfx_draw_size(h->pic, &pw, &ph);
-
-    if (data->width == (int)pw && data->height == (int)ph) {
-        costs.pictures.ticks += kosmos_ticks() - began;
-        costs.pictures.calls++;
-    } else {
-        costs.scaled.ticks += kosmos_ticks() - began;
-        costs.scaled.calls++;
     }
 
     return true;
