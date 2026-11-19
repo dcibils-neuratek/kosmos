@@ -33,21 +33,35 @@
 #define APP_ERR_NOT_YOURS  5u   /* unregister by a process that did not register it */
 
 #define APP_NAME_MAX      24u
-#define APP_MAX           24u   /* applications registered at once */
+
+/*
+ * **How many names one `list` reply carries - a page, not a ceiling.**
+ * This was `APP_MAX`, and it was both: the registry's table was 24 entries
+ * and a twenty-fifth application was refused "too many applications
+ * registered", against *no compiled-in limits* (`cleanup.md` finding 206).
+ * The table grows now, and a list longer than a page is asked for again
+ * `from` where the last reply stopped, until a reply says no `more` - as
+ * the window manager's list of windows is.
+ */
+#define APP_PAGE          24u
 
 struct app_request {
     uint32_t op;
     char     name[APP_NAME_MAX];
+    uint32_t from;                          /* list: the names to skip */
 };
 
 struct app_reply {
     uint32_t error;
     uint32_t count;                         /* names filled, for list */
+    uint32_t more;                          /* list: 1 when names are left */
     char     name[APP_NAME_MAX];            /* what register settled on */
-    char     names[APP_MAX][APP_NAME_MAX];
+    char     names[APP_PAGE][APP_NAME_MAX];
 };
 
+_Static_assert(sizeof(struct app_request) == 32,
+               "init.lua packs the /Running request as <I4c24I4");
 _Static_assert(sizeof(struct app_reply) <= 2048,
-               "a /Running reply must fit in one message - lower APP_MAX");
+               "a /Running reply must fit in one message - lower APP_PAGE");
 
 #endif /* KOSMOS_APPPROTO_H */

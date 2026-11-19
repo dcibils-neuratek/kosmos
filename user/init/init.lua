@@ -706,7 +706,7 @@ local function new_namespace()
     -- so a window registered under a long title is found by that title -
     -- and `string.pack` never sees a string longer than its field.
     --
-    local reply, got = sys.call_raw(cap, string.pack("<I4c24", 2, name:sub(1, 23)))
+    local reply, got = sys.call_raw(cap, string.pack("<I4c24I4", 2, name:sub(1, 23), 0))
 
     if not reply or #reply < 4 or string.unpack("<I4", reply) ~= 0
        or not got or got < 0 then
@@ -1478,11 +1478,11 @@ local function new_namespace()
   -- needs the endpoint itself rather than any bytes.
   --------------------------------------------------------------------------
 
-  local APP_REQUEST = "<I4c24"                   -- op, name[24]
-  local APP_HEAD    = "<I4I4c24"                 -- error, count, name[24]
-  local APP_NAMES   = 32 + 1                     -- past the header, 1-based
+  local APP_REQUEST = "<I4c24I4"                 -- op, name[24], from
+  local APP_HEAD    = "<I4I4I4c24"               -- error, count, more, name[24]
+  local APP_NAMES   = 36 + 1                     -- past the header, 1-based
 
-  assert(#string.pack(APP_REQUEST, 0, "") == 28,
+  assert(#string.pack(APP_REQUEST, 0, "", 0) == 32,
          "namespace: the /Running request layout does not match appproto.h")
 
   local APP_OPS = { register = 1, lookup = 2, list = 3, unregister = 4 }
@@ -1514,31 +1514,42 @@ local function new_namespace()
     --
     local field = tostring(name or ""):sub(1, 23)
 
-    local reply, got = sys.call_raw(capability,
-                                    string.pack(APP_REQUEST, code, field),
-                                    pass)
+    --
+    -- A list comes a page at a time (`APP_PAGE` in `appproto.h`), asked
+    -- again from where the last stopped until a reply says there are no
+    -- more; everything else is one call.
+    --
+    local names, from = {}, 0
 
-    if not reply then return nil, tostring(got) end
-    if #reply < APP_NAMES - 1 then return nil, "a /Running reply of the wrong size" end
+    while true do
+      local reply, got = sys.call_raw(capability,
+                                      string.pack(APP_REQUEST, code, field, from),
+                                      pass)
 
-    local err, count, settled = string.unpack(APP_HEAD, reply)
+      if not reply then return nil, tostring(got) end
+      if #reply < APP_NAMES - 1 then return nil, "a /Running reply of the wrong size" end
 
-    if err ~= 0 then
-      return nil, APP_ERRORS[err] or ("app error " .. tostring(err))
-    end
+      local err, count, more, settled = string.unpack(APP_HEAD, reply)
 
-    if op == "list" then
-      local names = {}
+      if err ~= 0 then
+        return nil, APP_ERRORS[err] or ("app error " .. tostring(err))
+      end
+
+      if op ~= "list" then
+        return { ok = true, name = trim(settled) }
+      end
 
       for i = 1, count do
         local at = APP_NAMES + (i - 1) * 24
-        names[i] = trim(reply:sub(at, at + 23))
+        names[#names + 1] = trim(reply:sub(at, at + 23))
       end
 
-      return { ok = true, entries = names }
-    end
+      if more == 0 or count == 0 then
+        return { ok = true, entries = names }
+      end
 
-    return { ok = true, name = trim(settled) }
+      from = from + count
+    end
   end
 
   --------------------------------------------------------------------------

@@ -36,6 +36,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -49,13 +50,37 @@ struct entry {
     char  name[APP_NAME_MAX];
 };
 
-static struct entry apps[APP_MAX];
+/*
+ * **The table grows**, doubling from a page's worth when a register finds
+ * it full, and is never given back - the kernel's pools' shape, and the
+ * same reason: a slot is claimed in bounded time and nothing fragments. Its
+ * ceiling is the memory this process can have, which is the machine's; a
+ * register past that is refused as full, as every register was past 24
+ * (`cleanup.md` finding 206).
+ */
+static struct entry *apps;
+static unsigned apps_made;
+
+static bool grow(void)
+{
+    unsigned want = apps_made ? apps_made * 2u : APP_PAGE;
+    struct entry *more = realloc(apps, (size_t)want * sizeof(*more));
+
+    if (more == NULL) {
+        return false;
+    }
+
+    memset(more + apps_made, 0, (size_t)(want - apps_made) * sizeof(*more));
+    apps = more;
+    apps_made = want;
+    return true;
+}
 
 static struct entry *find(const char *name)
 {
     unsigned i;
 
-    for (i = 0; i < APP_MAX; i++) {
+    for (i = 0; i < apps_made; i++) {
         /* Whatever its case, as every name (`roadmap.md` 6s). */
         if (apps[i].in_use && strcasecmp(apps[i].name, name) == 0) {
             return &apps[i];
@@ -145,7 +170,7 @@ static void forget_the_dead(void)
 {
     unsigned i;
 
-    for (i = 0; i < APP_MAX; i++) {
+    for (i = 0; i < apps_made; i++) {
         if (apps[i].in_use && kosmos_cap_check(apps[i].cap) != 0) {
             /* Dropped, not destroyed: the endpoint has already gone, and
              * what comes back is the slot in this server's own table. */
@@ -165,6 +190,7 @@ static void answer(const struct message *in, uint64_t sender, long cap)
     struct sender_info who;
     struct entry *e;
     unsigned i;
+    uint32_t from;
     bool kept = false;
 
     memset(&out, 0, sizeof(out));
@@ -184,6 +210,7 @@ static void answer(const struct message *in, uint64_t sender, long cap)
 
     memcpy(name, req->name, APP_NAME_MAX);
     name[APP_NAME_MAX - 1] = '\0';
+    from = req->from;
 
     /* Who asked, as the kernel says: asked before anything else is done
      * with the request, since the message just received is the one this
@@ -203,11 +230,11 @@ static void answer(const struct message *in, uint64_t sender, long cap)
             break;
         }
 
-        for (i = 0; i < APP_MAX && apps[i].in_use; i++) {
+        for (i = 0; i < apps_made && apps[i].in_use; i++) {
             /* looking for a free slot */
         }
 
-        if (i == APP_MAX) {
+        if (i == apps_made && !grow()) {
             rep->error = APP_ERR_FULL;
             break;
         }
@@ -241,14 +268,26 @@ static void answer(const struct message *in, uint64_t sender, long cap)
         copy_name(rep->name, e->name);
         break;
 
-    case APP_OP_LIST:
-        for (i = 0; i < APP_MAX && rep->count < APP_MAX; i++) {
-            if (apps[i].in_use) {
+    case APP_OP_LIST: {
+        uint32_t skip = from;
+
+        for (i = 0; i < apps_made; i++) {
+            if (!apps[i].in_use) {
+                continue;
+            }
+
+            if (skip > 0) {
+                skip--;
+            } else if (rep->count < APP_PAGE) {
                 copy_name(rep->names[rep->count++], apps[i].name);
+            } else {
+                rep->more = 1;
+                break;
             }
         }
 
         break;
+    }
 
     case APP_OP_UNREGISTER:
         e = find(name);
@@ -283,7 +322,7 @@ static void answer(const struct message *in, uint64_t sender, long cap)
 
 void appfs_server(long endpoint)
 {
-    memset(apps, 0, sizeof(apps));
+    (void)grow();               /* a page's worth to start; more on demand */
 
     for (;;) {
         struct message msg;

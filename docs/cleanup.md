@@ -44,7 +44,8 @@ before every minor version, and there had not been one since 0.11.0.
 - **206.** `/Running` holds `APP_MAX` = 24 names in a fixed table
   (`user/include/appproto.h`), against *no compiled-in limits*. With every
   application open a twenty-fifth is refused "too many applications
-  registered". To grow as the other tables have.
+  registered". To grow as the other tables have. **Done in 0.11.520**
+  (`testing.md` 18.920): the table grows, and a list comes in pages.
 - **207.** The gate ran 11:39 on 18 November (`testing.md` 18.909),
   past the ten minutes `CLAUDE.md` allows; `x86-dock` took 353 s and
   `x86-cafesa3d-2` 302 s. **Done in 0.11.511, ahead of the batches**

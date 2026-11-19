@@ -38000,3 +38000,45 @@ allocation a paint (87, 88), which wants an instrument first.
 
 **The gate.** 124 suites in 539 s (8:58), every one passing; the library
 suites, which stand on neither change, skipped by their fingerprints.
+
+## 18.920 Thirty applications in /Running
+
+**In short:** the registry that lets one program find another by name,
+`/Running`, held 24 names in a table of fixed size. With 24 programs
+open, the twenty-fifth was refused "too many applications registered",
+against the rule that nothing has a limit compiled in. The table grows
+now, and its list comes a page at a time. A suite opens thirty
+Calculators and finds every one.
+
+- **`appproto.h`**: `APP_MAX` is `APP_PAGE`, 24 names a reply - a page,
+  not a ceiling. The request gains `from`, the names to skip, and is 32
+  bytes; the reply gains `more`, 1 when names are left. Both sizes are
+  held by `_Static_assert`, the request's against `init.lua`'s
+  `<I4c24I4`.
+- **`appfs.c`**: the table starts at a page and doubles with `realloc`
+  when a register finds it full, never given back - the kernel's pools'
+  shape - and a register is refused as full only when the memory is not
+  there. `list` skips `from` living names and fills a page.
+- **`init.lua`**: `app_request` asks for a list a page at a time until a
+  reply says no more, and the lookup that mounts `/Running/<name>` packs
+  the new request; it packed 28 bytes, which the server, reading 32,
+  would have refused.
+- **`x86-windows` (and `arm-windows`) open thirty Calculators** where they
+  opened twenty, and a program in the desktop's list counts the ones in
+  `/Running`: 3 checks pass. **The control**: `grow` refusing past the
+  first page, which is the old table, and the suite fails - "/Running
+  listed 22 Calculators of 30 open", 24 less the window manager and the
+  Deskbar.
+
+Installed applications carry their own copy of the runtime, so `make apps`
+again before `doom.elf` and the rest speak to this `/Running`.
+
+**The gate.** 143 suites in 619 s, 141 passing. `x86-kernel` and
+`arm-sandbox` failed the same three tests, and the first was the wire:
+`luatest.lua`'s registry test packed `/Running` requests by hand at the
+old 28 bytes, which the server refused - "the first holder was
+registered as error 4", `APP_ERR_BAD_OP` - and the two after it failed
+on what it left running. Its requests are `appproto.h`'s shape now, named
+once at the top of the file, and the name read from its new place in the
+reply: both suites pass, 2 in 68 s. It is the check that was meant to
+catch this, and it did.

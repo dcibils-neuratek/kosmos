@@ -67,6 +67,10 @@ local R_OWNED_SERVER = 42
 local R_OWNED_CLIENT = 43
 local R_NAMES_MAIN   = 44
 local R_NAMES_HOLDER = 45
+-- `appproto.h`'s request and the head of its reply: op, name, from; and
+-- error, count, more, name.
+local APP_REQ = "<I4c24I4"
+local APP_REP = "<I4I4I4c24"
 local R_NAMES_ASKER  = 46
 local R_JPEG         = 47
 local R_STRETCH      = 48
@@ -1911,11 +1915,11 @@ if role == R_NAMES_HOLDER then
   -- 0 reports to the parent and 1 is the registry. Registered the way
   -- `wm.lua` and `ui.window` do it: the endpoint beside the request.
   local mine = sys.endpoint()
-  local reply, err = sys.call_raw(1, string.pack("<I4c24", 1, "wm"), mine)
+  local reply, err = sys.call_raw(1, string.pack(APP_REQ, 1, "wm", 0), mine)
   local name = "no reply: " .. tostring(err)
 
   if reply then
-    local code, _, settled = string.unpack("<I4I4c24", reply)
+    local code, _, _, settled = string.unpack(APP_REP, reply)
     name = (code == 0) and settled:gsub("\0.*", "") or ("error " .. code)
   end
 
@@ -1938,7 +1942,7 @@ if role == R_NAMES_ASKER then
   -- What a program started with `run` does to reach /Running/wm, with nothing
   -- else in the way: ask the registry for the name and call what it hands
   -- over. 0 is the parent and 1 the registry.
-  local reply, got = sys.call_raw(1, string.pack("<I4c24", 2, "wm"))
+  local reply, got = sys.call_raw(1, string.pack(APP_REQ, 2, "wm", 0))
   local code = reply and string.unpack("<I4", reply)
 
   if not reply or code ~= 0 or got < 0 then
@@ -1950,14 +1954,14 @@ if role == R_NAMES_ASKER then
   local answer, why = sys.call(got, { ask = true })
 
   -- Not this process's name to take away: the registry refuses it.
-  local said = sys.call_raw(1, string.pack("<I4c24", 4, "wm"))
+  local said = sys.call_raw(1, string.pack(APP_REQ, 4, "wm", 0))
   local unregistered = said and string.unpack("<I4", said)
 
   -- Fifty requests with an endpoint beside each, none of which the
   -- registry keeps.
   for i = 1, 50 do
     local spare = sys.endpoint()
-    sys.call_raw(1, string.pack("<I4c24", (i % 2 == 0) and 2 or 3, "wm"),
+    sys.call_raw(1, string.pack(APP_REQ, (i % 2 == 0) and 2 or 3, "wm", 0),
                  spare)
     sys.destroy(spare)
   end
