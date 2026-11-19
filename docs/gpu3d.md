@@ -501,7 +501,9 @@ so `lavapipe` is built for both.
    preemption, GPU time per program in GPU Monitor; full-screen flips for
    a game; the GPU compositor sampling swapchain images. *Test on the
    M700*: the desktop's frame time held while a program saturates the GPU.
-   **After G9, a flight simulator** (Diego, 19 November 2026): a simple
+   **After G7, a flight simulator** (Diego, 19 November 2026, and the
+   same day the order: "GPU first: G3, G6, G7, then simulator" - G4, G5,
+   G8 and G9 after it): a simple
    application of Kosmos's own that shows what the API does, designed first
    as every app is (`roadmap.md`).
 10. **Later, by machine**: the T14's Gen12 on the same `anv` (new context

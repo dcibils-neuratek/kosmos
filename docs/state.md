@@ -119,6 +119,12 @@ In this order, agreed on 18 November 2026 (`roadmap.md`, *A daily driver*,
 *The order agreed on 18 November 2026*):
 
 1. **The review's batches 5 to 8, then 0.12.0** - done.
+**Reordered on 19 November 2026, GPU first** (Diego: "GPU first: G3, G6,
+G7, then simulator"): **G3** (a window and `vkcube`), **G6** (`intelgpu`
+for many programs), **G7** (`anv` on the M700), then **the flight
+simulator**, designed first; then the list below from G4 on, G8 and G9
+with the rest of 4.
+
 2. **3D, G1 to G5, in QEMU** (`docs/gpu3d.md` section 6; Diego, 18
    November: "Yes do the 3d api work after the cleanup is done"): Mesa and
    LLVM built for Kosmos (G1 done, 0.12.2), `lavapipe` headless, a window and `vkcube`, GL

@@ -11984,7 +11984,13 @@ helpers area by area and every finding checked before anything is removed.
 the 3d api work after the cleanup is done"): Mesa and LLVM built for
 Kosmos, `lavapipe` headless, a window and `vkcube`, GL and GL ES by Zink
 with TinyGL retired, and WebGL in JetSki - all of it in QEMU. G6 to G9, on
-the M700's GPU, come after the daily-driver items below. **G1's LLVM half built
+the M700's GPU, came after the daily-driver items below. **Reordered on 19
+November 2026, GPU first** (Diego, asked how far the flight simulator was,
+chose "GPU first: G3, G6, G7, then simulator"): G3, a window and `vkcube`;
+then G6, `intelgpu` for many programs, and G7, `anv` on the M700; then
+the flight simulator, designed first. G4, G5, G8, G9 and the daily-driver
+list follow it, in their order; the simulator takes G9's full-screen flip
+when that lands. **G1's LLVM half built
 in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
 JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
 18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and
@@ -12017,7 +12023,8 @@ of memory, which it never can, and is left out of the minute. Committing as
 (d) **more of dEQP-VK**, a group at a time - `api.info`, `descriptor_pool`,
 the rest of `object_management` first - each with its library added to
 `runtime/patches/cts/0003`, toward the mustpass list.
-**And then a flight simulator - ASKED on 19 November 2026** (Diego: "after
+**And then a flight simulator - ASKED on 19 November 2026, after G7 since
+the same day's reorder** (Diego: "after
 the 3d api is done and running on gpu, i want to build a simple flight
 simulator app that shows the 3d api capabilities"). An application of
 Kosmos's own, after G9, when Vulkan runs on the M700's GPU: simple to fly,
