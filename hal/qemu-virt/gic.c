@@ -124,7 +124,7 @@
  * than by anything the GIC knows: the kernel's numbering is the one both
  * sides already agree on.
  */
-static uint64_t cpu_affinity[NR_CPUS];
+static uint64_t cpu_affinity[CPU_MAX];
 
 static uintptr_t gicr_here(void)
 {
@@ -305,7 +305,7 @@ void hal_cpu_wake(unsigned cpu)
     uint64_t mpidr;
     uint64_t sgi;
 
-    if (cpu >= NR_CPUS) {
+    if (cpu >= CPU_MAX) {
         return;
     }
 

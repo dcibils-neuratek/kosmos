@@ -32,7 +32,7 @@
 /* channel 0, low byte then high, mode 3 (square wave), binary */
 #define PIT_SETUP      0x36
 
-static volatile unsigned long ticks[NR_CPUS];
+static volatile unsigned long ticks[CPU_MAX];
 
 /* Which chip is producing them, for the boot log. */
 static bool on_apic_timer;
@@ -447,7 +447,7 @@ unsigned long hal_ticks(void)
  */
 unsigned long hal_ticks_on(unsigned cpu)
 {
-    return (cpu < NR_CPUS) ? ticks[cpu] : 0;
+    return (cpu < CPU_MAX) ? ticks[cpu] : 0;
 }
 
 unsigned long hal_ticks_missed(void)

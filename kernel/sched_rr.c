@@ -45,8 +45,8 @@
  * thread has a home core and does not migrate, so two cores scheduling
  * contend for nothing. The caller holds the queue's lock.
  */
-static struct thread *head[NR_CPUS];
-static struct thread *tail[NR_CPUS];
+static struct thread *head[CPU_MAX];
+static struct thread *tail[CPU_MAX];
 
 /* One core's queue emptied, as it takes this policy up (`sched.h`). */
 static void rr_reset(unsigned cpu)
@@ -59,7 +59,7 @@ static void rr_init(void)
 {
     unsigned c;
 
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < CPU_MAX; c++) {
         rr_reset(c);
     }
 }

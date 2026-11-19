@@ -168,7 +168,7 @@ unsigned hal_memory_entries(unsigned *seen);
  * no tables.
  *
  * **Counting is not starting.** `kernel/smp.c` starts the smaller of this
- * and `NR_CPUS`, each through `hal_cpu_on` - PSCI here, the local APIC and a
+ * and `CPU_MAX`, each through `hal_cpu_on` - PSCI here, the local APIC and a
  * trampoline below 1 MB on a PC - and a processor counted can still refuse
  * to arrive, which is why `smp_online()` is a third number.
  *

@@ -157,8 +157,8 @@ static struct {
 
     /* Each core's local APIC id, which it records for itself as it comes up
      * - the only way to learn it is to be that processor. */
-    uint32_t  ids[NR_CPUS];
-    bool      id_known[NR_CPUS];
+    uint32_t  ids[CPU_MAX];
+    bool      id_known[CPU_MAX];
 } apic;
 
 static const char *description = "a pair of 8259s, because ACPI described "
@@ -759,7 +759,7 @@ void apic_init_here(void)
 {
     unsigned cpu = this_cpu()->index;
 
-    if (!apic.present || cpu >= NR_CPUS) {
+    if (!apic.present || cpu >= CPU_MAX) {
         return;
     }
 
@@ -844,7 +844,7 @@ bool apic_start_processor(uint32_t id, unsigned vector)
 
 void apic_wake(unsigned cpu)
 {
-    if (!apic.present || cpu >= NR_CPUS) {
+    if (!apic.present || cpu >= CPU_MAX) {
         return;
     }
 

@@ -430,14 +430,14 @@ secondary_long_mode:
     movl    $4, (%rsi)
 
     /*
-     * Its stack from `kernel/smp.c`'s array, by index, the way AArch64's
-     * `_secondary_start` finds one: the label is the base, so the top of slot
-     * n is base + (n + 1) * size.
+     * Its stack from the block `kernel/smp.c` made, by index, the way
+     * AArch64's `_secondary_start` finds one: the variable holds the base,
+     * so the top of slot n is base + (n + 1) * size.
      */
     movl    %edi, %edi                      /* the index, zero-extended */
     leaq    1(%rdi), %rax
     imulq   $SECONDARY_STACK_BYTES, %rax
-    leaq    secondary_stacks(%rip), %rsp
+    movq    secondary_stacks(%rip), %rsp
     addq    %rax, %rsp
     xorq    %rbp, %rbp
 

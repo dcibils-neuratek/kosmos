@@ -151,14 +151,23 @@ hyp_install:
     add     x1, x1, :lo12:hyp_vectors
     msr     vbar_el2, x1
 
-    /* A stack of its own, at EL2's own stack pointer. */
+    /*
+     * A stack of its own, at EL2's own stack pointer: core 0's static,
+     * because it gets here before there is anything else; every other
+     * core's from the block `cpu_secondaries_prepare` made for the cores
+     * there are, slot n's top at base + n * size. The pointer is read with
+     * translation off, so core 0 cleaned it to the point of coherency.
+     */
     msr     spsel, #1
-    adrp    x1, hyp_stacks
-    add     x1, x1, :lo12:hyp_stacks
+    cbnz    x0, 1f
+    adrp    x1, hyp_boot_stack_top
+    add     x1, x1, :lo12:hyp_boot_stack_top
+    b       2f
+1:  adrp    x1, hyp_stacks
+    ldr     x1, [x1, :lo12:hyp_stacks]
     mov     x2, #HYP_STACK_BYTES
-    add     x3, x0, #1
-    madd    x1, x3, x2, x1
-    mov     sp, x1
+    madd    x1, x0, x2, x1
+2:  mov     sp, x1
 
     msr     tpidr_el2, xzr
 
@@ -556,7 +565,13 @@ hyp_gic:
 hyp_stuck_esr:
     .quad   0
 
+.global hyp_stacks
+.balign 8
+hyp_stacks:
+    .quad   0                           /* the secondaries', from the page allocator */
+
 .bss
 .balign 16
-hyp_stacks:
-    .skip   (HYP_CORES + 1) * HYP_STACK_BYTES
+hyp_boot_stack:
+    .skip   HYP_STACK_BYTES
+hyp_boot_stack_top:

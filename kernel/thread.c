@@ -70,18 +70,71 @@ unsigned thread_ceiling(void)
  * as it arrives. Everything that was a file-scope global here and is really
  * a property of *a core* lives in it now - `kernel/percpu.h` says which and
  * why, and says what it costs to have had them here.
+ *
+ * **Core zero's is a static slot and the others' are pages**, because core
+ * zero claims its slot before there is a page allocator to ask
+ * (`kernel/main.c`): `boot_cpu` is that one, and `percpu_count` makes the
+ * rest once the machine has said how many there are. Neither ever moves,
+ * so a pointer to a slot stays good.
  */
-static struct percpu cpus[NR_CPUS];
+unsigned nr_cpus = 1;
 
-struct percpu *percpu_at(unsigned index)
-{
-    return (index < NR_CPUS) ? &cpus[index] : NULL;
-}
+static struct percpu  boot_cpu;
+
+/* Where each slot is, for `percpu_at` - one load, inline, on the wake path.
+ * NULL past `nr_cpus`. */
+struct percpu *percpu_slots[CPU_MAX] = { &boot_cpu };
 
 void percpu_init(unsigned index)
 {
-    cpus[index].index = index;
-    cpu_set_self(index, &cpus[index]);
+    struct percpu *p = percpu_at(index);
+
+    p->index = index;
+    cpu_set_self(index, p);
+}
+
+void *percpu_alloc(size_t each)
+{
+    size_t bytes = each * nr_cpus;
+    size_t pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    void *at;
+
+    if (pages == 0) {
+        return NULL;
+    }
+
+    at = pmm_alloc_kernel_contiguous(pages);
+
+    if (at == NULL) {
+        panic("no pages for a table a processor");
+    }
+
+    memset(at, 0, pages * PAGE_SIZE);
+    return at;
+}
+
+void percpu_count(void)
+{
+    unsigned present = hal_cpu_count();
+
+    nr_cpus = (present == 0) ? 1 : (present > CPU_MAX ? CPU_MAX : present);
+
+    if (nr_cpus > 1) {
+        size_t bytes = sizeof(struct percpu) * (nr_cpus - 1);
+        size_t pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+        struct percpu *others = pmm_alloc_kernel_contiguous(pages);
+        unsigned i;
+
+        if (others == NULL) {
+            panic("no pages for the processors' slots");
+        }
+
+        memset(others, 0, pages * PAGE_SIZE);
+
+        for (i = 1; i < nr_cpus; i++) {
+            percpu_slots[i] = &others[i - 1];
+        }
+    }
 }
 
 /*
@@ -126,7 +179,7 @@ static inline struct thread **running_slot(struct percpu *p)
 
 /*
  * The installed policy. One of them, for every CPU: the queues it keeps are
- * indexed by core - `head[NR_CPUS][SCHED_PRIORITIES]` - so the vtable takes
+ * indexed by core - a queue a band, a core - so the vtable takes
  * a `cpu` and the policy is shared while its state is not.
  *
  * This comment used to say "one of them, for one CPU ... when SMP arrives
@@ -144,7 +197,27 @@ static const struct scheduler *policy;
  * a core's queue holds that lock - so a thread is always queued in the
  * structure its core's policy reads, whichever policy that is.
  */
-static const struct scheduler *core_policy[NR_CPUS];
+/*
+ * Kept together, one core to a struct, because `thread_yield` and the
+ * other switch paths take a core's lock and read its policy at once: as
+ * arrays of `CPU_MAX` each they sat kilobytes apart and every switch paid
+ * a second base address and a spill for it (`testing.md` 18.913). 256
+ * bytes a core, so an index is a shift and no two cores share a line.
+ * Static, at 64 KB, rather than made for the cores there are: behind a
+ * pointer the compiler loads it again after every call into the policy,
+ * and a switch cost 1.7% more for it where this costs 0.4%.
+ * `ticks`, `switches`, `second` and `wait` are the lane's (below), and
+ * `lane_waited` runs on every switch too.
+ */
+static struct core_sched {
+    uint64_t                 wait[2][SCHED_PRIORITIES];
+    uint64_t                 second[2];
+    uint64_t                 ticks;
+    uint64_t                 switches;
+    const struct scheduler  *policy;
+    struct spinlock          lock;      /* the queue's: see above `here()` */
+} __attribute__((aligned(256))) cores[CPU_MAX];
+_Static_assert(sizeof(struct core_sched) == 256, "a shift, not a multiply");
 
 /*
  * **What each core ran, kept for whoever wants to see it** (the Scheduler's
@@ -154,38 +227,42 @@ static const struct scheduler *core_policy[NR_CPUS];
  * waited from being woken to running, over the current second and the one
  * before. Each core writes only its own, and a reader gets a snapshot that
  * may be a tick old - which is what a picture of the last two seconds is.
+ *
+ * The band is 512 bytes a core, so it is made for the cores there are
+ * (`lanes_make`, from `thread_init`); the rest is in `cores` above.
  */
 _Static_assert(sizeof(((struct sched_lane *)0)->wait_counter_max) / sizeof(uint64_t)
                == SCHED_PRIORITIES, "a wait a band");
 
-static uint8_t  lane_band[NR_CPUS][SCHED_LANE_TICKS];
-static uint64_t lane_ticks[NR_CPUS];
-static uint64_t lane_switches[NR_CPUS];
-static uint64_t lane_wait[NR_CPUS][2][SCHED_PRIORITIES];
-static uint64_t lane_second[NR_CPUS][2];
+static uint8_t  (*lane_band)[SCHED_LANE_TICKS];
+
+static void lanes_make(void)
+{
+    lane_band = percpu_alloc(sizeof(*lane_band));
+}
 
 /* A wait from wake to run, kept in this second's bucket for its band. */
 static void lane_waited(unsigned cpu, unsigned band, uint64_t counter_ticks)
 {
-    uint64_t second = lane_ticks[cpu] / TICK_HZ;
+    uint64_t second = cores[cpu].ticks / TICK_HZ;
     unsigned b = (unsigned)(second & 1);
 
     if (band >= SCHED_PRIORITIES) {
         return;
     }
 
-    if (lane_second[cpu][b] != second) {
+    if (cores[cpu].second[b] != second) {
         unsigned i;
 
         for (i = 0; i < SCHED_PRIORITIES; i++) {
-            lane_wait[cpu][b][i] = 0;
+            cores[cpu].wait[b][i] = 0;
         }
 
-        lane_second[cpu][b] = second;
+        cores[cpu].second[b] = second;
     }
 
-    if (counter_ticks > lane_wait[cpu][b][band]) {
-        lane_wait[cpu][b][band] = counter_ticks;
+    if (counter_ticks > cores[cpu].wait[b][band]) {
+        cores[cpu].wait[b][band] = counter_ticks;
     }
 }
 
@@ -194,12 +271,12 @@ bool sched_lane(unsigned cpu, struct sched_lane *out)
     uint64_t second;
     unsigned i, b;
 
-    if (cpu >= NR_CPUS || cpu >= smp_online()) {
+    if (cpu >= nr_cpus || cpu >= smp_online()) {
         return false;
     }
 
-    out->ticks = lane_ticks[cpu];
-    out->switches = lane_switches[cpu];
+    out->ticks = cores[cpu].ticks;
+    out->switches = cores[cpu].switches;
     second = out->ticks / TICK_HZ;
 
     for (i = 0; i < SCHED_PRIORITIES; i++) {
@@ -207,8 +284,8 @@ bool sched_lane(unsigned cpu, struct sched_lane *out)
 
         /* This second's and the one before's, and nothing older. */
         for (b = 0; b < 2; b++) {
-            if (second - lane_second[cpu][b] <= 1 && lane_wait[cpu][b][i] > most) {
-                most = lane_wait[cpu][b][i];
+            if (second - cores[cpu].second[b] <= 1 && cores[cpu].wait[b][i] > most) {
+                most = cores[cpu].wait[b][i];
             }
         }
 
@@ -374,8 +451,8 @@ void sched_use(const struct scheduler *p)
 
     policy = p;
 
-    for (c = 0; c < NR_CPUS; c++) {
-        core_policy[c] = p;
+    for (c = 0; c < nr_cpus; c++) {
+        cores[c].policy = p;
     }
 
     policy->init();
@@ -439,7 +516,7 @@ unsigned sched_policy_index(void)
  * statically because C11 has no way to write "this initialiser, N times"
  * without a GNU extension.
  */
-static struct spinlock runq_lock[NR_CPUS];
+/* `cores[cpu].lock`, beside the policy that reads that queue. */
 
 /* This core's queue, which is what almost every caller wants. */
 static inline unsigned here(void)
@@ -457,7 +534,7 @@ static inline unsigned here(void)
 static void change_over(unsigned cpu)
 {
     const struct scheduler *want = __atomic_load_n(&policy, __ATOMIC_ACQUIRE);
-    const struct scheduler *was = core_policy[cpu];
+    const struct scheduler *was = cores[cpu].policy;
     struct thread *drained = NULL;
     struct thread **tail = &drained;
 
@@ -478,7 +555,7 @@ static void change_over(unsigned cpu)
     }
 
     want->reset(cpu);
-    core_policy[cpu] = want;
+    cores[cpu].policy = want;
 
     while (drained != NULL) {
         struct thread *t = drained;
@@ -534,9 +611,9 @@ bool sched_switch_to(unsigned index)
      */
     __atomic_store_n(&policy, next, __ATOMIC_RELEASE);
 
-    irqstate = spin_lock(&runq_lock[here()]);
+    irqstate = spin_lock(&cores[here()].lock);
     change_over(here());
-    spin_unlock(&runq_lock[here()], irqstate);
+    spin_unlock(&cores[here()].lock, irqstate);
 
     return true;
 }
@@ -577,7 +654,7 @@ static int least_busy_except(int skip)
     unsigned c, best_load = ~0u;
     int best = -1;
 
-    for (c = 1; c < smp_online() && c < NR_CPUS; c++) {
+    for (c = 1; c < smp_online() && c < nr_cpus; c++) {
         unsigned i, load = 0;
 
         if ((int)c == skip) {
@@ -646,7 +723,7 @@ int thread_give_core(struct thread *main)
 
 const struct scheduler *sched_policy_on(unsigned cpu)
 {
-    return cpu < NR_CPUS ? core_policy[cpu] : NULL;
+    return cpu < nr_cpus ? cores[cpu].policy : NULL;
 }
 
 const struct scheduler *sched_current(void)
@@ -786,7 +863,7 @@ static bool still_leaving(const struct thread *t)
 {
     unsigned c;
 
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < nr_cpus; c++) {
         if (percpu_at(c)->leaving == t) {
             return true;
         }
@@ -888,16 +965,19 @@ void thread_init(void)
     struct thread *t;
     unsigned c;
 
-    for (c = 0; c < NR_CPUS; c++) {
-        runq_lock[c].locked = 0;
-        runq_lock[c].holder = SPIN_NOBODY;
-        runq_lock[c].name   = "runqueue";
+    lanes_make();
+
+    for (c = 0; c < nr_cpus; c++) {
+        cores[c].lock.locked = 0;
+        cores[c].lock.holder = SPIN_NOBODY;
+        cores[c].lock.name   = "runqueue";
     }
 
-    /* The first slabs, before the boot thread can be adopted into slot zero. */
+    /* The first slabs, before the boot thread can be adopted into slot zero
+     * - and at least one for every processor's idle thread, reserved below. */
     pool_init(&threads, "threads", sizeof(struct thread),
               pool_ceiling_for(THREAD_RAM_EACH, THREAD_BOOT_SLOTS),
-              THREAD_BOOT_SLOTS, NULL);
+              nr_cpus > THREAD_BOOT_SLOTS ? nr_cpus : THREAD_BOOT_SLOTS, NULL);
     t = slot(0);
 
     /* Strict priority, unless a test or a boot option already chose another. */
@@ -967,7 +1047,7 @@ void thread_init(void)
      * `boot/start.S` rather than the page allocator, and nothing may ever
      * hand them back.
      */
-    for (unsigned i = 1; i < NR_CPUS; i++) {
+    for (unsigned i = 1; i < nr_cpus; i++) {
         struct thread *idle = slot(i);
 
         idle->state = THREAD_RUNNING;
@@ -1376,7 +1456,7 @@ static void switch_into(struct thread *prev, struct thread *next)
 
     next->state = THREAD_RUNNING;
     next->switches++;
-    lane_switches[me->index]++;
+    cores[me->index].switches++;
 
     if (next->woken_at != 0) {
         lane_waited(me->index, next->sched.effective, cpu_cycles() - next->woken_at);
@@ -1473,8 +1553,9 @@ static void switch_to(struct thread *next)
  * `current` gets one because it has twenty-nine call sites and because
  * `this_cpu()->current` at every one of them would be a diff whose only
  * content is spelling. These three have a dozen between them, and the macro
- * bought a trap instead: `cpus[index].idle_ticks` in `thread_load_cpu`
- * expanded to `cpus[index].(this_cpu()->idle_ticks)` and would not compile.
+ * bought a trap instead: `cpus[index].idle_ticks`, as `thread_load_cpu` read
+ * it then, expanded to `cpus[index].(this_cpu()->idle_ticks)` and would not
+ * compile.
  *
  * A macro that shadows a *field name* is only safe while nothing indexes
  * the array by hand, which is exactly what the per-CPU work is going to do
@@ -1626,7 +1707,7 @@ void thread_place_across(unsigned cores)
         cores = 1;
     }
 
-    placement_cores = (cores > NR_CPUS) ? NR_CPUS : cores;
+    placement_cores = (cores > nr_cpus) ? nr_cpus : cores;
 }
 
 unsigned thread_cpu_count(void)
@@ -1635,13 +1716,14 @@ unsigned thread_cpu_count(void)
      * **How many processors new threads are spread across.** Three numbers
      * are easy to confuse here and all three exist:
      *
-     *   `NR_CPUS`      how many `struct percpu` slots exist - the room, so
-     *                  a core that starts has somewhere to put itself. Eight.
+     *   `nr_cpus`      how many `struct percpu` slots exist - the room, so
+     *                  a core that starts has somewhere to put itself: as
+     *                  many as the machine has, up to `CPU_MAX`.
      *   `smp_online()` how many have executed kernel code. Four.
      *   this           how many are given work. All of them, unless asked
      *                  for fewer.
      *
-     * Returning `NR_CPUS` here once said "4 scheduling" on a machine where
+     * Returning the slots here once said "4 scheduling" on a machine where
      * three cores were parked in `wfi`, which is why they are kept apart.
      *
      * Every processor that reached `secondary_main` has its own runqueue,
@@ -1695,14 +1777,14 @@ unsigned thread_cpu_count(void)
 
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy)
 {
-    if (index >= NR_CPUS) {
+    if (index >= nr_cpus) {
         *idle = 0;
         *busy = 0;
         return;
     }
 
-    *idle = cpus[index].idle_ticks;
-    *busy = cpus[index].busy_ticks;
+    *idle = percpu_at(index)->idle_ticks;
+    *busy = percpu_at(index)->busy_ticks;
 }
 
 /*
@@ -1720,9 +1802,9 @@ void thread_load(unsigned long *idle, unsigned long *busy)
     *idle = 0;
     *busy = 0;
 
-    for (i = 0; i < NR_CPUS; i++) {
-        *idle += cpus[i].idle_ticks;
-        *busy += cpus[i].busy_ticks;
+    for (i = 0; i < nr_cpus; i++) {
+        *idle += percpu_at(i)->idle_ticks;
+        *busy += percpu_at(i)->busy_ticks;
     }
 }
 
@@ -1753,7 +1835,7 @@ void thread_set_tick_interval(uint64_t counts)
 
 uint64_t thread_held_off_cpu(unsigned index)
 {
-    return index < NR_CPUS ? cpus[index].held_off_counter : 0;
+    return index < nr_cpus ? percpu_at(index)->held_off_counter : 0;
 }
 
 /*
@@ -1774,11 +1856,11 @@ void thread_set_speed(unsigned leaning)
 
 int thread_speed_cpu(unsigned index)
 {
-    if (index >= NR_CPUS || cpus[index].speed_applied == 0) {
+    if (index >= nr_cpus || percpu_at(index)->speed_applied == 0) {
         return -1;
     }
 
-    return cpus[index].speed_leaning;
+    return percpu_at(index)->speed_leaning;
 }
 
 /*
@@ -1833,29 +1915,29 @@ bool thread_heat(struct cpu_heat *out, uint64_t *energy_uj, uint32_t *gpu_energy
 
 int thread_temp_cpu(unsigned index)
 {
-    if (index >= NR_CPUS || cpus[index].last_tick_at == 0) {
+    if (index >= nr_cpus || percpu_at(index)->last_tick_at == 0) {
         return CPU_HEAT_NONE;
     }
 
-    return cpus[index].temp_c;
+    return percpu_at(index)->temp_c;
 }
 
 void thread_clock_cpu(unsigned index, uint64_t *actual, uint64_t *reference)
 {
-    *actual = index < NR_CPUS ? cpus[index].clock_actual : 0;
-    *reference = index < NR_CPUS ? cpus[index].clock_reference : 0;
+    *actual = index < nr_cpus ? percpu_at(index)->clock_actual : 0;
+    *reference = index < nr_cpus ? percpu_at(index)->clock_reference : 0;
 }
 
 void thread_time_cpu(unsigned index, uint64_t *user, uint64_t *kernel)
 {
-    if (index >= NR_CPUS) {
+    if (index >= nr_cpus) {
         *user = 0;
         *kernel = 0;
         return;
     }
 
-    *user = cpus[index].user_counter;
-    *kernel = cpus[index].kernel_counter;
+    *user = percpu_at(index)->user_counter;
+    *kernel = percpu_at(index)->kernel_counter;
 }
 
 void thread_tick(void)
@@ -1903,7 +1985,7 @@ void thread_tick(void)
 
     /* Before thread_init has run there is nothing to preempt, and the timer
      * starts before the first thread exists. */
-    if (current == NULL || core_policy[here()]->tick == NULL) {
+    if (current == NULL || cores[here()].policy->tick == NULL) {
         return;
     }
 
@@ -1956,9 +2038,9 @@ void thread_tick(void)
     current->ticks++;
 
     /* What ran this tick, for the Scheduler's lanes. */
-    lane_band[here()][lane_ticks[here()] % SCHED_LANE_TICKS] =
+    lane_band[here()][cores[here()].ticks % SCHED_LANE_TICKS] =
         current == this_cpu()->idle_thread ? SCHED_LANE_IDLE : (uint8_t)current->sched.effective;
-    lane_ticks[here()]++;
+    cores[here()].ticks++;
 
     /*
      * **The audio band's budget** (`sched.h`): a thread there that has run
@@ -1978,11 +2060,11 @@ void thread_tick(void)
      * **And this core takes up a policy asked for elsewhere**
      * (`sched_switch_to`), before its own decides about the thread here.
      */
-    if (core_policy[here()] != __atomic_load_n(&policy, __ATOMIC_ACQUIRE)) {
-        unsigned long flags = spin_lock(&runq_lock[here()]);
+    if (cores[here()].policy != __atomic_load_n(&policy, __ATOMIC_ACQUIRE)) {
+        unsigned long flags = spin_lock(&cores[here()].lock);
 
         change_over(here());
-        spin_unlock(&runq_lock[here()], flags);
+        spin_unlock(&cores[here()].lock, flags);
     }
 
     /*
@@ -1997,7 +2079,7 @@ void thread_tick(void)
         this_cpu()->preempt_pending = true;
     }
 
-    if (core_policy[here()]->tick(current)) {
+    if (cores[here()].policy->tick(current)) {
         this_cpu()->preempt_pending = true;
     }
 }
@@ -2071,14 +2153,14 @@ void thread_preempt_if_needed(void)
      */
     {
         unsigned      cpu   = here();
-        unsigned long flags = spin_lock(&runq_lock[cpu]);
+        unsigned long flags = spin_lock(&cores[cpu].lock);
 
         choosing();
         refresh_effective(current);     /* game mode, from its next turn */
-        core_policy[cpu]->enqueue(cpu, current);
-        next = core_policy[cpu]->pick_next(cpu);
+        cores[cpu].policy->enqueue(cpu, current);
+        next = cores[cpu].policy->pick_next(cpu);
 
-        spin_unlock(&runq_lock[cpu], flags);
+        spin_unlock(&cores[cpu].lock, flags);
     }
 
     if (next == NULL || next == current) {
@@ -2100,7 +2182,7 @@ bool thread_any_ready(void)
     unsigned long flags;
     bool          any;
 
-    if (core_policy[here()]->ready == NULL) {
+    if (cores[here()].policy->ready == NULL) {
         return false;
     }
 
@@ -2113,9 +2195,9 @@ bool thread_any_ready(void)
      * thread has a home and this is not it.
      */
     cpu = here();
-    flags = spin_lock(&runq_lock[cpu]);
-    any = core_policy[cpu]->ready(cpu);
-    spin_unlock(&runq_lock[cpu], flags);
+    flags = spin_lock(&cores[cpu].lock);
+    any = cores[cpu].policy->ready(cpu);
+    spin_unlock(&cores[cpu].lock, flags);
 
     return any;
 }
@@ -2175,17 +2257,17 @@ void thread_yield(void)
      */
     {
         unsigned      cpu   = here();
-        unsigned long flags = spin_lock(&runq_lock[cpu]);
+        unsigned long flags = spin_lock(&cores[cpu].lock);
 
         choosing();
-        next = core_policy[cpu]->pick_next(cpu);
+        next = cores[cpu].policy->pick_next(cpu);
 
         if (next != NULL) {
             refresh_effective(current);
-            core_policy[cpu]->enqueue(cpu, current);
+            cores[cpu].policy->enqueue(cpu, current);
         }
 
-        spin_unlock(&runq_lock[cpu], flags);
+        spin_unlock(&cores[cpu].lock, flags);
     }
 
     if (next != NULL) {
@@ -2265,14 +2347,14 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
 
     me = this_cpu();            /* once: `switch_into` says why */
     cpu = me->index;
-    rq = spin_lock(&runq_lock[cpu]);
+    rq = spin_lock(&cores[cpu].lock);
 
     (*running_slot(me))->state = THREAD_BLOCKED;
     take_up_move(*running_slot(me));
     choosing();
-    next = core_policy[cpu]->pick_next(cpu);
+    next = cores[cpu].policy->pick_next(cpu);
 
-    spin_unlock(&runq_lock[cpu], rq);
+    spin_unlock(&cores[cpu].lock, rq);
 
     /*
      * Now, and not before: this thread is on the caller's list *and* is
@@ -2346,14 +2428,14 @@ void thread_block(void)
      * `context_switch`.
      */
     cpu = here();
-    flags = spin_lock(&runq_lock[cpu]);
+    flags = spin_lock(&cores[cpu].lock);
 
     current->state = THREAD_BLOCKED;
     take_up_move(current);
     choosing();
-    next = core_policy[cpu]->pick_next(cpu);
+    next = cores[cpu].policy->pick_next(cpu);
 
-    spin_unlock(&runq_lock[cpu], flags);
+    spin_unlock(&cores[cpu].lock, flags);
 
     /* This core's idle thread when its queue is empty; see
      * `thread_block_and_release` for why that is not a deadlock any more. */
@@ -2491,7 +2573,7 @@ void thread_wake(struct thread *t)
      * was three cores going idle with runnable threads on them.
      *
      * `t->state` is read here with nothing held, and a thread becomes
-     * BLOCKED only under `runq_lock[t->sched.cpu]` - so between this test
+     * BLOCKED only under `cores[t->sched.cpu].lock` - so between this test
      * and that lock the answer can change, and when two cores are waking
      * the same thread they can both be told yes. Both then enqueued it.
      *
@@ -2541,7 +2623,7 @@ void thread_wake(struct thread *t)
          * not here.
          */
         unsigned      cpu   = __atomic_load_n(&t->sched.cpu, __ATOMIC_ACQUIRE);
-        unsigned long flags = spin_lock(&runq_lock[cpu]);
+        unsigned long flags = spin_lock(&cores[cpu].lock);
 
         /*
          * **Its home, asked again under the lock that guards it**: a thread
@@ -2550,9 +2632,9 @@ void thread_wake(struct thread *t)
          * taken may be the one it left. The new one, then.
          */
         while (t->sched.cpu != cpu) {
-            spin_unlock(&runq_lock[cpu], flags);
+            spin_unlock(&cores[cpu].lock, flags);
             cpu = __atomic_load_n(&t->sched.cpu, __ATOMIC_ACQUIRE);
-            flags = spin_lock(&runq_lock[cpu]);
+            flags = spin_lock(&cores[cpu].lock);
         }
 
         /*
@@ -2565,7 +2647,7 @@ void thread_wake(struct thread *t)
          * is right: the core has already been told, by the waker that won.
          */
         if (t->state != THREAD_BLOCKED) {
-            spin_unlock(&runq_lock[cpu], flags);
+            spin_unlock(&cores[cpu].lock, flags);
             return;
         }
 
@@ -2603,7 +2685,7 @@ void thread_wake(struct thread *t)
             }
         }
 
-        core_policy[cpu]->enqueue(cpu, t);
+        cores[cpu].policy->enqueue(cpu, t);
 
         /*
          * **And if it outranks whoever is running *there*, say so there.**
@@ -2661,12 +2743,12 @@ void thread_wake(struct thread *t)
 
             if (running != NULL && t != running
                 && t->sched.effective > running->sched.effective
-                && core_policy[cpu]->preempts != NULL && core_policy[cpu]->preempts(running, t)) {
+                && cores[cpu].policy->preempts != NULL && cores[cpu].policy->preempts(running, t)) {
                 target->preempt_pending = true;
             }
         }
 
-        spin_unlock(&runq_lock[cpu], flags);
+        spin_unlock(&cores[cpu].lock, flags);
 
         /*
          * And if it lives somewhere else, tell that processor to look.
@@ -2799,13 +2881,13 @@ void thread_exit(void)
      */
     {
         unsigned      cpu   = here();
-        unsigned long flags = spin_lock(&runq_lock[cpu]);
+        unsigned long flags = spin_lock(&cores[cpu].lock);
 
         current->state = THREAD_DEAD;
         choosing();
-        next = core_policy[cpu]->pick_next(cpu);
+        next = cores[cpu].policy->pick_next(cpu);
 
-        spin_unlock(&runq_lock[cpu], flags);
+        spin_unlock(&cores[cpu].lock, flags);
     }
 
     /* The same fallback `thread_block_and_release` explains: a core with an

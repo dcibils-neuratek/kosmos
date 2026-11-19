@@ -53,22 +53,20 @@
  * it two: this kernel runs on SP_EL0, so an exception switches to SP_EL1
  * and the handler stands on a stack that is not the one that faulted.
  *
- * In `.bss` rather than the linker script because they are indexed - the
- * entry code computes its own from the context word, and an array is the
- * shape that allows it. Core 0's stay in the linker script, where they can
- * have a guard page beneath them; these do not, and that is a real
- * difference worth naming rather than a detail: a secondary that overflows
- * walks into the slot below it instead of faulting. That day has arrived -
- * a secondary runs real threads on every boot - so this wants the linker
- * script treatment now, and it is a real gap rather than a future one. It
- * has not bitten because a kernel stack here carries an idle loop and an
- * exception frame, not a deep call chain.
+ * **Made at boot for the cores there are** (`percpu_alloc`, from
+ * `smp_start_others`), and reached by the entry code through these two
+ * pointers: slot n's top is base + (n + 1) * size, with slot 0 unused -
+ * core 0's stay in the linker script, where they can have a guard page
+ * beneath them. These do not, and that is a real difference worth naming:
+ * a secondary that overflows walks into the slot below it instead of
+ * faulting. It has not bitten because a kernel stack here carries an idle
+ * loop and an exception frame, not a deep call chain.
  *
- * `_Alignas(16)` because AArch64 requires a 16-byte-aligned stack pointer
- * and the entry code does no rounding.
+ * Pages are 4 KB aligned, which covers AArch64's 16-byte rule for a stack
+ * pointer; the entry code does no rounding.
  */
-_Alignas(16) uint8_t secondary_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
-_Alignas(16) uint8_t secondary_exception_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
+uint8_t *secondary_stacks;
+uint8_t *secondary_exception_stacks;
 
 /*
  * How many processors have run kernel code.
@@ -222,7 +220,7 @@ void smp_start_others(void)
 {
     uintptr_t entry   = cpu_secondary_entry();
     unsigned  present = hal_cpu_count();
-    unsigned  want    = (present < NR_CPUS) ? present : NR_CPUS;
+    unsigned  want    = (present < nr_cpus) ? present : nr_cpus;
     unsigned  i;
 
     /*
@@ -231,9 +229,24 @@ void smp_start_others(void)
      * refused as well, separately and on purpose: building one half did not
      * look like building both.
      */
-    if (entry == 0) {
+    if (entry == 0 || want < 2) {
         return;
     }
+
+    /*
+     * Their stacks, before the first of them is asked to start - and seen
+     * by a core whose caches are still off when it reads them
+     * (`cpu_clean_to_poc`).
+     */
+    secondary_stacks = percpu_alloc(SECONDARY_STACK_BYTES);
+    secondary_exception_stacks = percpu_alloc(SECONDARY_STACK_BYTES);
+    cpu_clean_to_poc(&secondary_stacks, sizeof(secondary_stacks));
+    cpu_clean_to_poc(&secondary_exception_stacks,
+                     sizeof(secondary_exception_stacks));
+    cpu_clean_to_poc(secondary_stacks, (size_t)SECONDARY_STACK_BYTES * nr_cpus);
+    cpu_clean_to_poc(secondary_exception_stacks,
+                     (size_t)SECONDARY_STACK_BYTES * nr_cpus);
+    cpu_secondaries_prepare(want);
 
     for (i = 1; i < want; i++) {
         unsigned long spins;

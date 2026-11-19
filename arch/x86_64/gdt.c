@@ -87,14 +87,30 @@ _Static_assert(offsetof(struct cpu_block, user_rsp) == PCPU_USER_RSP,
                "PCPU_USER_RSP");
 _Static_assert(offsetof(struct cpu_block, tss) == PCPU_TSS, "PCPU_TSS");
 
-static struct cpu_block blocks[NR_CPUS];
+/*
+ * Core zero's block is static - `gdt_init` and `cpu_set_self` need it before
+ * there is a page allocator - and every other core's is made for the cores
+ * there are, by `cpu_secondaries_prepare`, before the first one starts.
+ */
+static struct cpu_block  boot_block;
+static struct cpu_block *other_blocks;      /* nr_cpus - 1 of them */
+
+static struct cpu_block *block(unsigned index)
+{
+    return index == 0 ? &boot_block : &other_blocks[index - 1];
+}
 
 /*
  * Six eight-byte slots - five descriptors and a hole - and then a TSS
  * descriptor per core, each taking two slots because a system descriptor in
  * long mode carries a 64-bit base. Core n's is at `SEL_TSS + 16n`.
+ *
+ * One table, sized for every index there can be - sixteen bytes a core, 4 KB
+ * at `CPU_MAX` - rather than made for the cores there are: core zero loads
+ * it before there are pages to make it from, and a table that grew would
+ * have to be loaded again on every core that had it.
  */
-#define GDT_SLOTS   (SEL_TSS / 8 + 2 * NR_CPUS)
+#define GDT_SLOTS   (SEL_TSS / 8 + 2 * CPU_MAX)
 
 static uint64_t gdt[GDT_SLOTS];
 
@@ -152,7 +168,7 @@ static void reload(const struct gdtr *pointer)
  */
 static void tss_descriptor(unsigned index)
 {
-    uintptr_t at = (uintptr_t)&blocks[index].tss;
+    uintptr_t at = (uintptr_t)&block(index)->tss;
     unsigned slot = SEL_TSS / 8 + 2 * index;
 
     gdt[slot] = (uint64_t)(sizeof(struct tss) - 1)
@@ -165,7 +181,6 @@ static void tss_descriptor(unsigned index)
 void gdt_init(void)
 {
     struct gdtr pointer;
-    unsigned i;
 
     gdt[SEL_NULL / 8]        = 0;
     gdt[SEL_KERNEL_CODE / 8] = GDT_KERNEL_CODE;
@@ -184,11 +199,9 @@ void gdt_init(void)
     gdt[SEL_USER_DATA / 8]   = GDT_USER_DATA;
     gdt[SEL_USER_CODE / 8]   = GDT_USER_CODE;
 
-    for (i = 0; i < NR_CPUS; i++) {
-        blocks[i].tss.rsp0 = 0;
-        blocks[i].tss.iomap_base = sizeof(struct tss);
-        tss_descriptor(i);
-    }
+    boot_block.tss.rsp0 = 0;
+    boot_block.tss.iomap_base = sizeof(struct tss);
+    tss_descriptor(0);
 
     /*
      * The stack a fault lands on, in the first interrupt stack table slot.
@@ -213,7 +226,7 @@ void gdt_init(void)
      * The slots are numbered from 1 in a gate descriptor and from 0 here,
      * which is the kind of off-by-one that is worth writing down once.
      */
-    blocks[0].tss.ist[0] = (uint64_t)(uintptr_t)__exception_stack_top;
+    boot_block.tss.ist[0] = (uint64_t)(uintptr_t)__exception_stack_top;
 
     pointer.limit = (uint16_t)(sizeof(gdt) - 1);
     pointer.base  = (uint64_t)(uintptr_t)gdt;
@@ -226,13 +239,31 @@ void gdt_init(void)
 }
 
 /* `kernel/smp.c`'s, a stack per secondary for exceptions. */
-extern uint8_t secondary_exception_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
+extern uint8_t *secondary_exception_stacks;
+
+void cpu_secondaries_prepare(unsigned count)
+{
+    unsigned i;
+
+    if (nr_cpus < 2) {
+        return;
+    }
+
+    (void)count;
+    other_blocks = percpu_alloc(sizeof(struct cpu_block));
+
+    for (i = 1; i < nr_cpus; i++) {
+        block(i)->tss.rsp0 = 0;
+        block(i)->tss.iomap_base = sizeof(struct tss);
+        tss_descriptor(i);
+    }
+}
 
 void gdt_init_here(unsigned index)
 {
     struct gdtr pointer;
 
-    if (index == 0 || index >= NR_CPUS) {
+    if (index == 0 || index >= nr_cpus) {
         return;
     }
 
@@ -243,8 +274,9 @@ void gdt_init_here(unsigned index)
 
     /* The stack #PF and #DF land on, this core's own - the note above
      * `gdt_init` says why it has to be one nobody else is using. */
-    blocks[index].tss.ist[0] = (uint64_t)(uintptr_t)
-        (secondary_exception_stacks[index] + SECONDARY_STACK_BYTES);
+    block(index)->tss.ist[0] = (uint64_t)(uintptr_t)
+        (secondary_exception_stacks
+         + (size_t)(index + 1) * SECONDARY_STACK_BYTES);
 
     __asm__ volatile("ltr %w0"
                      :: "r"((uint16_t)(SEL_TSS + 16u * index)));
@@ -262,13 +294,13 @@ static void write_msr(uint32_t msr, uint64_t value)
 
 void cpu_set_self(unsigned index, void *self)
 {
-    blocks[index].self = self;
+    block(index)->self = self;
 
     /*
      * The kernel's GS base is this core's block, and the other one - the GS
      * a process runs with after `swapgs` - is zero: nothing in ring 3 uses
      * GS, and a process must not be handed a kernel address in a register.
      */
-    write_msr(MSR_GS_BASE, (uint64_t)(uintptr_t)&blocks[index]);
+    write_msr(MSR_GS_BASE, (uint64_t)(uintptr_t)block(index));
     write_msr(MSR_KERNEL_GS_BASE, 0);
 }

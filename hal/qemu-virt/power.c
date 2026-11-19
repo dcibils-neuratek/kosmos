@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "percpu.h"
 
 #define PSCI_SYSTEM_OFF     0x84000008u
 #define PSCI_SYSTEM_RESET   0x84000009u
@@ -59,9 +60,10 @@
  */
 #define PSCI_AFFINITY_INFO  0xC4000004u
 
-/* Enough for anything this runs on, and a bound rather than a promise: the
- * loop below must stop even if a firmware answers "valid" for ever. */
-#define CPUS_ASKED_MAX      64u
+/* Every index the kernel can name (`CPU_MAX`), and a bound rather than a
+ * promise: the loop below must stop even if a firmware answers "valid" for
+ * ever. */
+#define CPUS_ASKED_MAX      CPU_MAX
 
 static long psci(uint32_t function, unsigned long a1, unsigned long a2,
                  unsigned long a3)

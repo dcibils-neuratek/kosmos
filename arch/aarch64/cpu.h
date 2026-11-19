@@ -3,6 +3,7 @@
 #define ARCH_AARCH64_CPU_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -309,6 +310,36 @@ static inline uintptr_t cpu_secondary_entry(void)
 
     return (uintptr_t)_secondary_start;
 }
+
+/*
+ * **Memory a core will read with its caches off**, written by this one with
+ * them on: each line cleaned and invalidated to the point of coherency
+ * (`dc civac`), so the bytes are in memory and no dirty line of this core's
+ * can be written back over them later. A starting secondary reads its
+ * stacks' addresses this way, and its EL2 stub runs on its stack that way
+ * for ever. The line is the smallest the data caches have, from
+ * `CTR_EL0.DminLine` (bits 19:16, log2 of words), not a guessed 64; the
+ * `dsb sy` after is what makes the maintenance complete before the core
+ * that is about to be started can look. QEMU models no caches; a Pi would.
+ */
+static inline void cpu_clean_to_poc(const void *start, size_t bytes)
+{
+    uint64_t ctr;
+    uintptr_t line, at, end = (uintptr_t)start + bytes;
+
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+    line = (uintptr_t)4 << ((ctr >> 16) & 0xf);
+
+    for (at = (uintptr_t)start & ~(line - 1); at < end; at += line) {
+        __asm__ volatile("dc civac, %0" :: "r"(at) : "memory");
+    }
+
+    __asm__ volatile("dsb sy" ::: "memory");
+}
+
+/* Whatever this architecture needs made before secondaries start, for
+ * `count` of them: their EL2 stacks (`vcpu.c`). */
+void cpu_secondaries_prepare(unsigned count);
 
 /*
  * A hint that this core is spinning and the other one should get on with

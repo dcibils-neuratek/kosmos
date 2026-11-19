@@ -3,6 +3,7 @@
 #define ARCH_X86_64_CPU_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -479,6 +480,21 @@ static inline uintptr_t cpu_secondary_entry(void)
 {
     return (uintptr_t)_secondary_start32;
 }
+
+/*
+ * Nothing to do here: a PC's caches are coherent with every processor in
+ * it, started or not, so memory a starting core reads needs no
+ * maintenance. AArch64's says why its does.
+ */
+static inline void cpu_clean_to_poc(const void *start, size_t bytes)
+{
+    (void)start;
+    (void)bytes;
+}
+
+/* Whatever this architecture needs made before secondaries start, for
+ * `count` of them: each one's block and TSS (`gdt.c`). */
+void cpu_secondaries_prepare(unsigned count);
 
 static inline void cpu_relax(void)
 {

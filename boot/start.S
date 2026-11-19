@@ -215,22 +215,24 @@ _secondary_start:
     isb
 
     /*
-     * Two stacks, from the two arrays `kernel/smp.c` declares. x0 is this
-     * core's index, and each slot is `SECONDARY_STACK_BYTES`; the label is
-     * the *base*, so the top of slot n is base + (n + 1) * size.
+     * Two stacks, from the two blocks `kernel/smp.c` made for the cores
+     * there are. x0 is this core's index, and each slot is
+     * `SECONDARY_STACK_BYTES`; the variable holds the block's *base*, so the
+     * top of slot n is base + (n + 1) * size. Read with this core's caches
+     * still off, which is why core 0 cleaned it to the point of coherency.
      */
     mov     x2, #SECONDARY_STACK_BYTES
     add     x3, x0, #1
     mul     x3, x3, x2
 
     adrp    x1, secondary_exception_stacks
-    add     x1, x1, :lo12:secondary_exception_stacks
+    ldr     x1, [x1, :lo12:secondary_exception_stacks]
     add     x1, x1, x3
     mov     sp, x1                  /* arrives with SPSel 1: this is SP_EL1 */
 
     msr     spsel, #0
     adrp    x1, secondary_stacks
-    add     x1, x1, :lo12:secondary_stacks
+    ldr     x1, [x1, :lo12:secondary_stacks]
     add     x1, x1, x3
     mov     sp, x1                  /* and this is SP_EL0, the kernel's */
 

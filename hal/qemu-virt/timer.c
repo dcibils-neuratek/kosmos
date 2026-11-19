@@ -52,9 +52,9 @@ static uint64_t interval;
  * `hal_ticks_on` is for, and it is a torn-read-tolerant unsigned long that
  * only ever rises.
  */
-static uint64_t deadline[NR_CPUS];
-static volatile unsigned long ticks[NR_CPUS];
-static volatile unsigned long missed[NR_CPUS];
+static uint64_t deadline[CPU_MAX];
+static volatile unsigned long ticks[CPU_MAX];
+static volatile unsigned long missed[CPU_MAX];
 
 /* Which processor this is, for indexing the three above. */
 static inline unsigned here(void)
@@ -199,7 +199,7 @@ unsigned long hal_ticks(void)
  */
 unsigned long hal_ticks_on(unsigned cpu)
 {
-    if (cpu >= NR_CPUS) {
+    if (cpu >= CPU_MAX) {
         return 0;
     }
 

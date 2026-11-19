@@ -24,7 +24,7 @@
 #include "../../kernel/syscall.h"
 #include "../../kernel/vm.h"
 
-_Static_assert(HYP_CORES >= NR_CPUS, "hyp.S keeps a flag and a stack per core");
+_Static_assert(HYP_CORES == CPU_MAX, "hyp.S keeps a flag for every index");
 _Static_assert(offsetof(struct hyp_vcpu, pc) == HYP_OFF_PC, "hyp.h");
 _Static_assert(offsetof(struct hyp_vcpu, pstate) == HYP_OFF_PSTATE, "hyp.h");
 _Static_assert(offsetof(struct hyp_vcpu, sys) == HYP_OFF_SYS, "hyp.h");
@@ -46,6 +46,22 @@ _Static_assert(sizeof(struct hyp_vcpu) == HYP_VCPU_BYTES, "hyp.h");
 _Static_assert(HYP_CSSELR == 22, "hyp.S saves 23 registers");
 
 extern volatile uint8_t hyp_ready[HYP_CORES];      /* hyp.S */
+extern uint8_t *hyp_stacks;                         /* hyp.S */
+
+/*
+ * **The secondaries' EL2 stacks, made for the cores there are**, before
+ * the first of them is started (`kernel/smp.c`). They are used at EL2 with
+ * translation off, so neither the pointer nor the pages may be left in
+ * this core's caches: a dirty line written back later would land over what
+ * the other core wrote around it.
+ */
+void cpu_secondaries_prepare(unsigned count)
+{
+    (void)count;
+    hyp_stacks = percpu_alloc(HYP_STACK_BYTES);
+    cpu_clean_to_poc(hyp_stacks, (size_t)HYP_STACK_BYTES * nr_cpus);
+    cpu_clean_to_poc(&hyp_stacks, sizeof(hyp_stacks));
+}
 
 void fp_lend(struct context *guest);                /* fp.c */
 void fp_take_back(struct context *guest);

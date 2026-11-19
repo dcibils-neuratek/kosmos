@@ -26,6 +26,7 @@
 #include "hal.h"
 #include "mmu.h"
 #include "pc.h"
+#include "percpu.h"
 #include "s5_decode.h"
 #include "string.h"
 
@@ -91,9 +92,10 @@ struct madt {
 static bool     found;
 static unsigned cpus;
 
-/* Their local APIC ids, which INIT and STARTUP are addressed to. A table
- * longer than this is still counted; only the ids past it are not kept. */
-#define CPU_IDS_MAX 64
+/* Their local APIC ids, which INIT and STARTUP are addressed to - one for
+ * every index the kernel can name (`CPU_MAX`). A table longer than this is
+ * still counted; only the ids past it are not kept. */
+#define CPU_IDS_MAX CPU_MAX
 
 static uint32_t cpu_ids[CPU_IDS_MAX];
 static uint64_t lapic;

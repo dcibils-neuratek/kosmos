@@ -680,7 +680,8 @@ void thread_disinherit(struct thread *t);
  */
 void thread_load(unsigned long *idle, unsigned long *busy);
 
-/* How many processors this kernel is running on. `NR_CPUS` today. */
+/* How many processors new threads are placed across: every one that
+ * arrived, unless `opt/kosmos/smp` asks for fewer. */
 unsigned thread_cpu_count(void);
 
 /*

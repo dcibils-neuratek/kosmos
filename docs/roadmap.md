@@ -6750,6 +6750,33 @@ not static**, since a static one is in every process.
    manager now tells it as a move first; the display harness's `drag
    order` holds it, and its control fails every time.
 
+**A key lost in Quick Look under load - FOUND on 19 November 2026**
+(`testing.md` 18.913). In the gate at twelve suites at once, `x86-quicklook`
+sent Up four times from the film and Tracker moved three - film, song, PDF,
+text - so Escape and Return were checked on the text file rather than the
+picture; alone it passes, 14 of 14. Four keys sent and three acted on is a
+key dropped somewhere between the window manager and Tracker while a view
+is being made, which a person pressing quickly would meet as well. To find
+where before it is called a test's timing.
+
+**sysinfo past 32 processors - FOUND on 19 November 2026**, with `NR_CPUS`
+taken out (`cleanup.md` decision 7, `testing.md` 18.913). Nebula now makes
+room for every processor a machine has, up to `CPU_MAX` (256), but
+`struct sysinfo` carries `CPUS_MAX` = 32 loads, so a machine past 32 is
+described for its first 32 in the Processes window and `neofetch`. Nothing
+here has more - the Mac Pro has 24 threads - so it waits for one that does;
+growing it is a header both sides compile against, and every installed
+application rebuilt.
+
+**The kernel's benchmarks against their baseline - FOUND on 19 November
+2026** (`testing.md` 18.913). Built on its own, 0.11.512 reads
+`context_switch` +14.7%, `ipc_roundtrip` +20.1%, `alloc_table` +14.7% and
+`serialize` +4.6% over `bench/baselines.json`, all before `NR_CPUS` went.
+`-icount` is exact, so the commits since the baseline was recorded are to
+be built in the scratchpad and bisected, and each move attributed to what
+it bought - or recorded as a new baseline, with the reason, if it bought
+something worth it.
+
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need
    lazy fp saving?" What it buys (`CLAUDE.md`, Build): a switch does not

@@ -1111,8 +1111,8 @@ struct proc_info {
      *
      * `PROC_CPU_NONE` when there is no thread, which reads as "nowhere"
      * rather than as core zero - the two are different and zero is a real
-     * core. A sentinel rather than `NR_CPUS`, so that userland does not
-     * have to know how many processor slots the kernel was built with in
+     * core. A sentinel rather than a count of slots, so that userland does
+     * not have to know how many processors the kernel made room for in
      * order to recognise the answer "none".
      */
     uint32_t cpu;
@@ -1316,10 +1316,12 @@ struct cpuload {
 /*
  * How many processors this interface can describe.
  *
- * Not how many there are - that is `cpu_count`, and `NR_CPUS` in
- * `kernel/percpu.h` is what the kernel was built for. This is the size of
- * the room, and it is bigger than either because a struct that crosses to
- * userland cannot grow without everything on both sides being rebuilt.
+ * Not how many there are - that is `cpu_count`, and `nr_cpus` in
+ * `kernel/percpu.h` is how many the kernel made room for, up to `CPU_MAX`.
+ * This is the size of the room in a struct that crosses to userland, which
+ * cannot grow without everything on both sides being rebuilt - so a machine
+ * past 32 is described for its first 32 (`roadmap.md`, *sysinfo past 32
+ * processors*).
  */
 #define CPUS_MAX        32
 
@@ -1483,7 +1485,7 @@ struct sysinfo {
      *   `cpus_present`  how many the firmware says the machine has. Four.
      *                   The gap above this one is what is left to build.
      *
-     * `cpus` was `NR_CPUS` once and reported four cores scheduling with
+     * `cpus` was the count of slots once and reported four cores scheduling with
      * three of them parked in `wfi`; `cpus_online` did not exist, so a core
      * that had started and died was indistinguishable from one that was
      * simply not being asked to do anything. Both were the same mistake -

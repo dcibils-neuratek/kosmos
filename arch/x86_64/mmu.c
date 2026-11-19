@@ -107,15 +107,15 @@ static void invalidate(uintptr_t va)
  * time for the whole machine: they are rare, and one lock is a discipline
  * simple enough to check by reading.
  */
-static uint64_t *volatile tlb_loaded[NR_CPUS];
+static uint64_t *volatile tlb_loaded[CPU_MAX];
 
 static struct {
     uint64_t *root;             /* NULL: the kernel's own, on every core */
     uintptr_t va;
     size_t    pages;
-} tlb_request[NR_CPUS];
+} tlb_request[CPU_MAX];
 
-static volatile bool tlb_pending[NR_CPUS];
+static volatile bool tlb_pending[CPU_MAX];
 
 static struct spinlock tlb_lock = SPINLOCK("tlb");
 
@@ -152,7 +152,7 @@ void tlb_service(void)
     here = this_cpu()->index;
     cpu_observe();
 
-    if (here >= NR_CPUS || !tlb_pending[here]) {
+    if (here >= CPU_MAX || !tlb_pending[here]) {
         return;
     }
 
@@ -179,8 +179,8 @@ static void shoot(uint64_t *root, uintptr_t va, size_t pages)
         return;
     }
 
-    if (online > NR_CPUS) {
-        online = NR_CPUS;
+    if (online > CPU_MAX) {
+        online = CPU_MAX;
     }
 
     flags = spin_lock(&tlb_lock);
@@ -1450,7 +1450,7 @@ void as_switch(struct addrspace *as)
      * on. Masked around both, because a switch in between would load
      * somebody else's tables and leave this one's name beside them.
      */
-    if (here < NR_CPUS) {
+    if (here < CPU_MAX) {
         tlb_loaded[here] = root;
         cpu_publish();
     }

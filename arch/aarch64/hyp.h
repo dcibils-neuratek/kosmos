@@ -73,9 +73,10 @@
 #define HYP_OFF_CNTV_CVAL   (HYP_OFF_CNTV_CTL + 8)
 #define HYP_VCPU_BYTES      (HYP_OFF_CNTV_CVAL + 16)                /* 880, with a pad */
 
-/* How many cores the stub keeps a stack and a flag for; `vcpu.c` holds it
- * to NR_CPUS, which the assembly cannot include. */
-#define HYP_CORES           8
+/* How many cores the stub keeps a flag for - a byte each, for every index
+ * there can be; `vcpu.c` holds it to `CPU_MAX`, which the assembly cannot
+ * include. Their stacks are made for the cores there are. */
+#define HYP_CORES           256
 
 /* Each core's own stack at EL2, for the handful of words the stub keeps. */
 #define HYP_STACK_BYTES     512

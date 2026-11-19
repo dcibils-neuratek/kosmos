@@ -37607,3 +37607,81 @@ Both boards build without a warning. The gate: **132 suites, every one
 passing, in 614 s (10:14)** - every library suite run, because
 `run_screenshot.py` is in what they stand on; a day that leaves it alone is
 the 8:21 of 18.911.
+
+## 18.913 How many processors, asked of the machine
+
+**In short.** `NR_CPUS`, 8, sized the kernel's per-core memory, so the Mac
+Pro's twenty-four threads came up as eight and the rest stayed in
+firmware. It is two numbers now: `CPU_MAX`, 256, the most an index can
+name (an xAPIC ID's eight bits), and `nr_cpus`, what this machine has,
+asked of the board once the page allocator is up (`cleanup.md` decision 7;
+Diego, 19 November 2026: "Yea to all"). What is real memory a core - two
+stacks, the EL2 stacks, the x86 GDT and TSS blocks, the lanes' bands, the
+syscall profile, the `struct percpu` itself - is allocated for `nr_cpus`
+from `pmm`, once, and never given back. What the switch path reads stays
+static and sized by `CPU_MAX`, because a static address costs no load.
+
+**What it does.** `percpu_count()` runs after `pmm_init` and sets
+`nr_cpus = min(hal_cpu_count(), CPU_MAX)`; `percpu_alloc(each)` hands out
+`each * nr_cpus` bytes, zeroed, and panics when there are none. The boot
+core's slot is static, because `percpu_init(0)` runs before `pmm` exists;
+the others go in `percpu_slots[]`, read through `percpu_at`, which says
+`NULL` past the end. The secondaries' stacks are pointers now, read by
+`boot/start.S` and `boot/x86_64/start.S`, and on AArch64 cleaned to the
+point of coherency with `dc civac` (`cpu_clean_to_poc`, the line from
+`CTR_EL0`) because a secondary reads them with its caches off; x86 needs
+no such thing. The two HALs' 64-core caps (`acpi.c`, `power.c`) are
+`CPU_MAX` too, so they no longer cut a machine short.
+
+**What it cost, and where it went back.** `make bench` put
+`context_switch` 2.6% over 0.11.512 at first (14.630 to 15.005), and
+`make bench-profile` put it at six instructions a switch and thirteen an
+IPC round trip. Not the lanes' waits behind a pointer, not `percpu_at`
+and not the profile's table, each of which was tried and changed nothing.
+The disassembly said it: arrays of 256 each sat kilobytes apart, past
+what one base register and an immediate offset reach, so `thread_yield`
+formed a second base and spilled a register for the queue's lock beside
+the core's policy, and `lane_waited` built three bases where it had one.
+So a core's scheduler state is one 256-byte struct (`cores[]` in
+`thread.c`: the waits, the second, the counts, the policy, the lock) -
+an index is a shift and no two cores share a cache line - and the
+priority queues' heads and tails a 128-byte one, with the bits beside
+them as they were. Measured, against 0.11.512:
+
+| | 0.11.512 | first | now |
+|---|---|---|---|
+| switch, instructions | 234.84 | 240.84 | 235.86 |
+| IPC, instructions | 1142.96 | 1155.96 | 1145.96 |
+| `context_switch` | 14.630 | 15.005 | 14.693 (+0.4%) |
+| `ipc_roundtrip` | 71.340 | 72.153 | 71.528 (+0.3%) |
+
+`cores[]` behind a pointer made for the cores there are was tried as well:
+the compiler loads it again after every call into the policy, and a
+switch cost 1.7% more for it. Static it stays, at 64 KB. The kernel's
+`.bss` is 1,003,307 to 1,055,371 bytes on x86-64 and 925,696 to 962,560 on
+AArch64 - against 2.7 MB had everything been sized for 256.
+
+The rest of `make bench`'s distance from its baseline - `context_switch`
++14.7%, `ipc_roundtrip` +20%, `alloc_table` +14.7%, `serialize` +4.6% -
+was already in 0.11.512, measured on its own build, and is a bisect of its
+own (`roadmap.md`).
+
+**The control.** `test_every_processor_claimed_its_own_slot` now checks
+`nr_cpus` is what the board has (capped at `CPU_MAX`), that the slot past
+the end is `NULL`, and that every slot is a different one. With `nr_cpus`
+set one past what is present it fails, "cpu: every processor claimed its
+own slot"; restored, it passes.
+
+**The gate.** 132 suites, every library suite run, in 640 s (10:40):
+131 passed, and `x86-trackerlist`'s QEMU exited before the bar with not
+a line on its serial - before the guest had run anything, which is the
+host under the whole gate's load (as `x86-mail-6` in 18.873) - and passed
+alone straight after, 11 of 11. Two suites failed once in an earlier full run
+and passed alone and again: `x86-quicklook`, one of four Up keys lost
+under load, which may be a real dropped key and is on the roadmap (*A key
+lost in Quick Look under load*); and `x86-xavier`, the known load flake.
+
+**Not seen yet.** The Mac Pro will now try all twenty-four threads, which
+no build has done on that machine; and the AArch64 cache cleaning is what a
+real board would need and QEMU forgives, so only a board can say it is
+right.

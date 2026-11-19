@@ -91,8 +91,21 @@ static unsigned quantum_ticks = TICK_HZ / 10;
  * the queue's lock across both halves of a yield, and a policy that locked
  * internally would expose a moment with neither thread in the queue.
  */
-static struct thread *head[NR_CPUS][SCHED_PRIORITIES];
-static struct thread *tail[NR_CPUS][SCHED_PRIORITIES];
+/*
+ * **A core's heads and tails together, 128 bytes, a power of two**
+ * (`testing.md` 18.913). Sized for `CPU_MAX` as separate arrays they sat
+ * kilobytes apart, past what one base register and an immediate offset
+ * reach, and every pick and enqueue paid an extra address for it. With the
+ * bits inside as well the stride was 136, and a multiply; the bits are an
+ * array of their own, as they were.
+ */
+static struct prio_core {
+    struct thread *head[SCHED_PRIORITIES];
+    struct thread *tail[SCHED_PRIORITIES];
+} queue[CPU_MAX];
+_Static_assert(sizeof(struct prio_core) == 128, "a shift, not a multiply");
+
+static unsigned occupied[CPU_MAX];
 
 /*
  * Which levels have anybody in them, one bit each.
@@ -108,7 +121,6 @@ static struct thread *tail[NR_CPUS][SCHED_PRIORITIES];
  * the highest occupied level, and `__builtin_clz` compiles to `clz`. Both
  * QNX and Linux keep exactly this, for exactly this reason.
  */
-static unsigned occupied[NR_CPUS];
 
 /*
  * A thread's level. Read, not validated.
@@ -144,8 +156,8 @@ static void prio_reset(unsigned cpu)
     unsigned i;
 
     for (i = 0; i < SCHED_PRIORITIES; i++) {
-        head[cpu][i] = NULL;
-        tail[cpu][i] = NULL;
+        queue[cpu].head[i] = NULL;
+        queue[cpu].tail[i] = NULL;
     }
 
     occupied[cpu] = 0;
@@ -155,7 +167,7 @@ static void prio_init(void)
 {
     unsigned c;
 
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < CPU_MAX; c++) {
         prio_reset(c);
     }
 }
@@ -178,14 +190,14 @@ static void prio_enqueue(unsigned cpu, struct thread *t)
     t->sched.next = NULL;
     occupied[cpu] |= 1u << level;
 
-    if (tail[cpu][level] == NULL) {
-        head[cpu][level] = t;
-        tail[cpu][level] = t;
+    if (queue[cpu].tail[level] == NULL) {
+        queue[cpu].head[level] = t;
+        queue[cpu].tail[level] = t;
         return;
     }
 
-    tail[cpu][level]->sched.next = t;
-    tail[cpu][level] = t;
+    queue[cpu].tail[level]->sched.next = t;
+    queue[cpu].tail[level] = t;
 }
 
 static struct thread *prio_pick_next(unsigned cpu)
@@ -197,12 +209,12 @@ static struct thread *prio_pick_next(unsigned cpu)
         return NULL;
     }
 
-    t = head[cpu][level];
+    t = queue[cpu].head[level];
 
-    head[cpu][level] = t->sched.next;
+    queue[cpu].head[level] = t->sched.next;
 
-    if (head[cpu][level] == NULL) {
-        tail[cpu][level] = NULL;
+    if (queue[cpu].head[level] == NULL) {
+        queue[cpu].tail[level] = NULL;
         occupied[cpu] &= ~(1u << level);
     }
 

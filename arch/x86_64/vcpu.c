@@ -205,8 +205,8 @@ static struct {
     uint64_t cr0_must, cr0_may, cr4_must, cr4_may;
 } vmx;
 
-static uint8_t *vmxon_page[NR_CPUS];
-static bool vmx_on[NR_CPUS];
+static uint8_t *vmxon_page[CPU_MAX];
+static bool vmx_on[CPU_MAX];
 
 static inline uint64_t rdmsr(uint32_t msr)
 {
@@ -345,7 +345,7 @@ bool arch_vm_available(void)
 /* Every core is the same processor, and the firmware set them all. */
 bool arch_vm_here(void)
 {
-    return vmx.usable && this_cpu()->index < NR_CPUS;
+    return vmx.usable && this_cpu()->index < CPU_MAX;
 }
 
 /*

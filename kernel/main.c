@@ -17,6 +17,7 @@
 #include "kernel.h"
 
 #include "percpu.h"
+#include "profile.h"
 #include "smp.h"
 #include "thread.h"
 #include "sched.h"
@@ -409,10 +410,9 @@ void kmain(void)
      * How many processors there are, and how many are being used.
      *
      * **Two numbers, because they are not the same one.** The firmware is
-     * asked what the machine has; `NR_CPUS` is what this kernel was built
-     * for. Booting a four-core machine and saying "1 processor" would be
-     * true about the kernel and a lie about the computer, and the gap is
-     * the honest measure of how far `docs/smp.md` has got.
+     * asked what the machine has, and that many are made room for once
+     * there are pages (`percpu_count`, below) - up to `CPU_MAX`, and the
+     * line says so when a machine has more.
      */
     boot_fact_begin();
     kputu(hal_cpu_count());
@@ -495,6 +495,23 @@ void kmain(void)
     pmm_init();
     boot_stage("physical memory");
     boot_why("A bitmap of every page: page tables are themselves made of pages.");
+
+    /*
+     * **A slot, two stacks and the scheduler's lanes for every processor
+     * the machine has**, now that there are pages to make them from
+     * (`kernel/percpu.h`). Core zero's slot was static until now and stays
+     * where it is; the others' are made here, before any of them starts.
+     */
+    percpu_count();
+    profile_init();
+
+    if (hal_cpu_count() > CPU_MAX) {
+        kputs("percpu: ");
+        kputu(hal_cpu_count());
+        kputs(" processors, and room for the first ");
+        kputu(CPU_MAX);
+        kputs("\n");
+    }
 
     /*
      * **With the address it starts at**, which is not decoration on a PC.

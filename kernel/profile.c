@@ -45,14 +45,21 @@ struct ring {
     uint64_t lost;
 };
 
-static struct ring rings[NR_CPUS];
+static struct ring rings[CPU_MAX];
 
 /* Read at every tick without the lock: a tick that sees it change late
  * records one sample more or one fewer, which is what a tick is worth. */
 static volatile bool active;
 
-/* Each syscall's calls and time, per processor: `profile_syscall`. */
-static struct profile_syscall spent[NR_CPUS][SYS_MAX];
+/* Each syscall's calls and time, per processor: `profile_syscall`. A
+ * kilobyte and more a core, so made for the cores there are
+ * (`profile_init`). */
+static struct profile_syscall (*spent)[SYS_MAX];
+
+void profile_init(void)
+{
+    spent = percpu_alloc(sizeof(*spent));
+}
 
 static struct spinlock owner_lock;
 static struct process *owner;
@@ -127,7 +134,7 @@ static bool owner_alive(void)
 
 static void rings_free(void)
 {
-    for (unsigned i = 0; i < NR_CPUS; i++) {
+    for (unsigned i = 0; i < nr_cpus; i++) {
         unsigned long flags = spin_lock(&rings[i].lock);
         struct profile_sample *s = rings[i].s;
 
@@ -158,9 +165,9 @@ static long start(struct process *p)
 
     active = false;
     rings_free();
-    memset(spent, 0, sizeof(spent));
+    memset(spent, 0, sizeof(*spent) * nr_cpus);
 
-    for (unsigned i = 0; i < NR_CPUS; i++) {
+    for (unsigned i = 0; i < nr_cpus; i++) {
         void *pages = pmm_alloc_kernel_contiguous(RING_PAGES);
 
         if (pages == NULL) {
@@ -190,7 +197,7 @@ static long drain(struct process *p, uintptr_t buf, size_t max)
         return SYS_ERR_FAULT;
     }
 
-    for (unsigned i = 0; i < NR_CPUS && n < max; i++) {
+    for (unsigned i = 0; i < nr_cpus && n < max; i++) {
         struct ring *r = &rings[i];
 
         /* A sample at a time under the lock: a tick is never held off for a
@@ -236,7 +243,7 @@ long profile_call(struct process *p, unsigned long op, uintptr_t buf, size_t max
     if (op == PROFILE_LOST) {
         uint64_t lost = 0;
 
-        for (unsigned i = 0; i < NR_CPUS; i++) {
+        for (unsigned i = 0; i < nr_cpus; i++) {
             lost += rings[i].lost;
         }
 
@@ -256,7 +263,7 @@ long profile_call(struct process *p, unsigned long op, uintptr_t buf, size_t max
         for (size_t k = 0; k < n; k++) {
             uint64_t calls = 0, ticks = 0;
 
-            for (unsigned i = 0; i < NR_CPUS; i++) {
+            for (unsigned i = 0; i < nr_cpus; i++) {
                 calls += spent[i][k].calls;
                 ticks += spent[i][k].counter_ticks;
             }

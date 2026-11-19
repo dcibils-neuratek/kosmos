@@ -2608,7 +2608,7 @@ static bool every_core_runs(const struct scheduler *want, uint64_t deadline)
     for (;;) {
         bool all = true;
 
-        for (c = 0; c < smp_online() && c < NR_CPUS; c++) {
+        for (c = 0; c < smp_online() && c < nr_cpus; c++) {
             all = all && sched_policy_on(c) == want;
         }
 
@@ -2763,7 +2763,7 @@ static bool test_a_core_says_what_it_ran(void)
         && after.switches > before.switches
         && normal > 0
         && after.wait_counter_max[SCHED_PRIO_NORMAL] > 0
-        && !sched_lane(NR_CPUS, &after);
+        && !sched_lane(nr_cpus, &after);
 }
 
 /*
@@ -7565,7 +7565,7 @@ static bool test_a_region_given_on_touch(void)
 
 static struct memobj *volatile counted;
 static volatile bool           count_go;
-static volatile bool           counted_on[NR_CPUS];
+static volatile bool           counted_on[CPU_MAX];
 
 static void count_a_region(void *arg)
 {
@@ -7603,11 +7603,11 @@ static bool test_a_regions_count_holds_on_every_core(void)
 
     count_go = false;
 
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < nr_cpus; c++) {
         counted_on[c] = false;
     }
 
-    for (c = 1; c < online && c < NR_CPUS; c++) {
+    for (c = 1; c < online && c < nr_cpus; c++) {
         if (thread_create_on(c, "counts", count_a_region,
                              (void *)(uintptr_t)c) == NULL) {
             return false;
@@ -7624,7 +7624,7 @@ static bool test_a_regions_count_holds_on_every_core(void)
 
     start = hal_ticks();
 
-    for (c = 1; c < online && c < NR_CPUS; c++) {
+    for (c = 1; c < online && c < nr_cpus; c++) {
         while (!counted_on[c] && hal_ticks() - start < 10UL * TICK_HZ) {
             cpu_relax();
         }
@@ -7657,9 +7657,9 @@ static bool test_a_regions_count_holds_on_every_core(void)
 #define MADE_ROUNDS 16u
 
 static volatile unsigned         made_go, made_drop;
-static volatile unsigned         made_ready[NR_CPUS], made_gone[NR_CPUS];
-static struct endpoint *volatile made[NR_CPUS][MADE_EACH];
-static volatile cap_t            made_cap[NR_CPUS][MADE_EACH];
+static volatile unsigned         made_ready[CPU_MAX], made_gone[CPU_MAX];
+static struct endpoint *volatile made[CPU_MAX][MADE_EACH];
+static volatile cap_t            made_cap[CPU_MAX][MADE_EACH];
 
 static void make_endpoints(unsigned me)
 {
@@ -7730,7 +7730,7 @@ static bool all_said(volatile unsigned *said, unsigned cores, unsigned round)
 static bool test_endpoints_made_at_once_are_each_their_own(void)
 {
     unsigned online = smp_online();
-    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned cores = online < nr_cpus ? online : nr_cpus;
     unsigned c, i, d, j, r;
     bool distinct = true, all_made = true;
 
@@ -7745,7 +7745,7 @@ static bool test_endpoints_made_at_once_are_each_their_own(void)
     made_go = 0;
     made_drop = 0;
 
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < nr_cpus; c++) {
         made_ready[c] = 0;
         made_gone[c] = 0;
     }
@@ -7816,7 +7816,7 @@ static bool test_endpoints_made_at_once_are_each_their_own(void)
 #define SPLIT_BLOCK   (512u * PAGE_SIZE)
 
 static volatile unsigned split_go;
-static volatile unsigned split_done[NR_CPUS];
+static volatile unsigned split_done[CPU_MAX];
 static volatile uintptr_t split_base;
 
 static void split_one(unsigned c)
@@ -7842,7 +7842,7 @@ static void splits_with_the_others(void *arg)
 static bool test_one_core_at_a_time_splits_the_kernels_map(void)
 {
     unsigned online = smp_online();
-    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned cores = online < nr_cpus ? online : nr_cpus;
     unsigned c, r, i, raced = 0;
 
     if (online < 2) {
@@ -7850,7 +7850,7 @@ static bool test_one_core_at_a_time_splits_the_kernels_map(void)
     }
 
     split_go = 0;
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < nr_cpus; c++) {
         split_done[c] = 0;
     }
 
@@ -7934,9 +7934,9 @@ static bool test_one_core_at_a_time_splits_the_kernels_map(void)
 #define EDIT_RANGE   (512u * PAGE_SIZE)
 
 static volatile unsigned edit_go;
-static volatile unsigned edit_done[NR_CPUS];
+static volatile unsigned edit_done[CPU_MAX];
 static struct addrspace *volatile edit_space;
-static uintptr_t edit_page[NR_CPUS];
+static uintptr_t edit_page[CPU_MAX];
 
 static uintptr_t edit_va(unsigned round, unsigned c)
 {
@@ -7962,9 +7962,9 @@ static void edits_with_the_others(void *arg)
 static bool test_one_core_at_a_time_edits_a_processs_map(void)
 {
     unsigned online = smp_online();
-    unsigned cores = online < NR_CPUS ? online : NR_CPUS;
+    unsigned cores = online < nr_cpus ? online : nr_cpus;
     unsigned c, r, lost = 0;
-    void *pages[NR_CPUS] = { 0 };
+    void *pages[CPU_MAX] = { 0 };
     bool ok = true;
 
     if (online < 2) {
@@ -7989,7 +7989,7 @@ static bool test_one_core_at_a_time_edits_a_processs_map(void)
     }
 
     edit_go = 0;
-    for (c = 0; c < NR_CPUS; c++) {
+    for (c = 0; c < nr_cpus; c++) {
         edit_done[c] = 0;
     }
 
@@ -9403,8 +9403,8 @@ static void percpu_looker(void *arg)
  * The machine has processors, and the kernel says how many of them it uses.
  *
  * **Two numbers that must not be one.** `hal_cpu_count` asks the firmware
- * what the machine has; `thread_cpu_count` is `NR_CPUS`, what this kernel
- * was built for. On `-smp 4` the first is four and the second is one, and a
+ * what the machine has; `thread_cpu_count` was the kernel's slots, what it
+ * was built for, when this was written. On `-smp 4` the first is four and the second is one, and a
  * system that reported only the second would look finished on a machine it
  * is using a quarter of.
  *
@@ -9464,7 +9464,7 @@ static bool test_new_threads_go_to_every_core_by_default(void)
  * It also checks the three counts stay in their order, which is the thing
  * that went wrong twice while this was being written: `hal_cpu_count` is
  * what the machine has, `smp_online` is how many ran kernel code, and
- * `thread_cpu_count` is how many schedule threads. Reporting `NR_CPUS` for
+ * `thread_cpu_count` is how many schedule threads. Reporting the slots for
  * the last said "4 scheduling" on a machine with three cores in `wfi`.
  */
 static bool test_every_processor_claimed_its_own_slot(void)
@@ -9485,7 +9485,7 @@ static bool test_every_processor_claimed_its_own_slot(void)
      * `opt/kosmos/smp=8` on four processors would home threads on four that
      * never started, where they would never run.
      */
-    thread_place_across(NR_CPUS);
+    thread_place_across(CPU_MAX);
     widened = thread_cpu_count();
     thread_place_across(1);
 
@@ -9497,6 +9497,23 @@ static bool test_every_processor_claimed_its_own_slot(void)
         const struct percpu *c = percpu_at(i);
 
         if (c == NULL || c->index != i) {
+            return false;
+        }
+    }
+
+    /*
+     * **Room for exactly the machine's** (`kernel/percpu.h`, `cleanup.md`
+     * decision 7): as many slots as the board counted, up to `CPU_MAX`, each
+     * its own, and none past them - a slot there would be a table sized by
+     * a number again rather than by the machine.
+     */
+    if (nr_cpus != (present < CPU_MAX ? present : CPU_MAX)
+        || percpu_at(nr_cpus) != NULL) {
+        return false;
+    }
+
+    for (i = 1; i < nr_cpus; i++) {
+        if (percpu_at(i) == percpu_at(i - 1)) {
             return false;
         }
     }
@@ -9642,7 +9659,7 @@ static bool test_a_waiter_waits_a_second(void)
 static bool test_every_processor_takes_its_own_ticks(void)
 {
     unsigned online = smp_online();
-    unsigned long before[NR_CPUS];
+    unsigned long before[CPU_MAX];
     unsigned long start;
     unsigned i;
 
@@ -9650,7 +9667,7 @@ static bool test_every_processor_takes_its_own_ticks(void)
         return true;            /* one processor; nothing to compare against */
     }
 
-    for (i = 0; i < online && i < NR_CPUS; i++) {
+    for (i = 0; i < online && i < nr_cpus; i++) {
         before[i] = hal_ticks_on(i);
     }
 
@@ -9665,7 +9682,7 @@ static bool test_every_processor_takes_its_own_ticks(void)
         cpu_wait_for_interrupt();
     }
 
-    for (i = 1; i < online && i < NR_CPUS; i++) {
+    for (i = 1; i < online && i < nr_cpus; i++) {
         if (hal_ticks_on(i) - before[i] < 25UL) {
             return false;
         }
@@ -9766,7 +9783,7 @@ static bool test_a_thread_runs_on_another_processor(void)
 static bool test_every_processor_idles_as_a_thread(void)
 {
     unsigned online = smp_online();
-    unsigned long before[NR_CPUS];
+    unsigned long before[CPU_MAX];
     unsigned long start;
     unsigned i;
 
@@ -9774,7 +9791,7 @@ static bool test_every_processor_idles_as_a_thread(void)
         return true;
     }
 
-    for (i = 1; i < online && i < NR_CPUS; i++) {
+    for (i = 1; i < online && i < nr_cpus; i++) {
         const struct percpu *c = percpu_at(i);
         unsigned long waited;
 
@@ -9816,7 +9833,7 @@ static bool test_every_processor_idles_as_a_thread(void)
         cpu_wait_for_interrupt();
     }
 
-    for (i = 1; i < online && i < NR_CPUS; i++) {
+    for (i = 1; i < online && i < nr_cpus; i++) {
         const struct percpu *c = percpu_at(i);
 
         if (c->idle_ticks - before[i] < 25UL) {

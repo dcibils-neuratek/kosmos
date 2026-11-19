@@ -33,19 +33,57 @@
  * carries the same scar.
  */
 
+#include <stddef.h>
+
 /*
- * How many `struct percpu` slots exist - **not how many are given work**,
- * which is `thread_cpu_count`: every core that arrived, unless
- * `opt/kosmos/smp` asks for fewer.
+ * **How many processors an index may name, and how many this machine has**
+ * (`cleanup.md`, decision 7; Diego, 19 November 2026: yes to "derive it
+ * from the machine at boot, as the pools are").
  *
- * It was 1 while nothing could start a second core. `smp.c` can now, and a
- * core that arrives needs somewhere to put itself, so the slots have to
- * exist first. Eight, because the first real machine has eight: it was four
- * - what `make test` boots and what a Pi 5 has - until the ThinkPad started
- * three of its seven others and left four in firmware. The machine is asked
- * how many it really has and the smaller of the two wins.
+ * It was `NR_CPUS`, 8, and it sized everything: two stacks a core, the
+ * scheduler's lanes, the syscall profile - 85 KB of `.bss` at eight, about
+ * 10.7 KB a core. The ThinkPad has eight, so eight was the first real
+ * machine's number; the Mac Pro has twenty-four threads, and the kernel
+ * left sixteen of them in firmware. Raising the number again would have
+ * been 2.7 MB at 256 on every machine, for cores most do not have.
+ *
+ * So it is two numbers now, and the difference between them is the point:
+ *
+ *   `CPU_MAX`  the most an index can name - 256, the eight bits an xAPIC ID
+ *              has. What is sized by it is what the switch path reads,
+ *              which stays static because a static address costs no load:
+ *              the scheduler's state a core, 256 bytes, and the priority
+ *              queues, 128 - and a few words a core besides. The kernel's
+ *              `.bss` grew 52 KB on x86-64 and 36 KB on AArch64 for it,
+ *              against 2.7 MB had the stacks been sized the same way
+ *              (`testing.md` 18.913).
+ *   `nr_cpus`  how many this machine has, up to `CPU_MAX`: 1 until
+ *              `percpu_count` asks the board, once the page allocator is up.
+ *              What is a real amount a core - its stacks, the scheduler's
+ *              queues and lanes, its profile, this struct - is allocated for
+ *              exactly that many, from `pmm`, once, and never given back.
+ *
+ * **Not how many are given work**, which is `thread_cpu_count`: every core
+ * that arrived, unless `opt/kosmos/smp` asks for fewer.
  */
-#define NR_CPUS     8
+#define CPU_MAX     256
+
+extern unsigned nr_cpus;
+
+/*
+ * Asks the board how many processors there are and makes room for that
+ * many slots. Once, on core zero, after `pmm_init` and before anything
+ * below allocates or another core starts.
+ */
+void percpu_count(void);
+
+/*
+ * `nr_cpus` objects of `each` bytes, zeroed, in kernel pages - what a file
+ * that keeps something per core calls from its own init, after
+ * `percpu_count`. Panics rather than returning NULL: it is asked during the
+ * boot, where there is nobody to refuse to.
+ */
+void *percpu_alloc(size_t each);
 
 struct thread;
 
@@ -243,7 +281,12 @@ void percpu_init(unsigned index);
  * need and what the suite needs today to check that each secondary claimed
  * *its own* rather than all of them landing on zero.
  */
-struct percpu *percpu_at(unsigned index);
+extern struct percpu *percpu_slots[CPU_MAX];
+
+static inline struct percpu *percpu_at(unsigned index)
+{
+    return (index < CPU_MAX) ? percpu_slots[index] : NULL;
+}
 
 /*
  * What is running on that processor.

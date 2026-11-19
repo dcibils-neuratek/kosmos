@@ -17,6 +17,9 @@ struct process;
  * and whether a program was running there. One comparison when no profile
  * runs.
  */
+/* Makes the per-processor tables, once, after `percpu_count`. */
+void profile_init(void);
+
 void profile_tick(uint64_t pc, bool user);
 
 long profile_call(struct process *p, unsigned long op, uintptr_t buf, size_t max);
