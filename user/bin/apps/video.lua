@@ -3,7 +3,7 @@
 -- kosmos: icon App_MediaPlayer
 -- kosmos: name Video Player
 -- kosmos: section applications
--- kosmos: opens mp4
+-- kosmos: opens mp4 m4v mov
 -- kosmos: needs audio
 --
 -- Video: a window that plays a film.
@@ -73,12 +73,12 @@ while i <= #words do
   i = i + 1
 end
 
-local FILMS = { mp4 = true, m4v = true, mov = true }
+local FILM_TYPES = { mp4 = true, m4v = true, mov = true }
 
 local function is_film(name)
   local kind = tostring(name):lower():match("%.(%w+)$")
 
-  return kind ~= nil and FILMS[kind] == true
+  return kind ~= nil and FILM_TYPES[kind] == true
 end
 
 --------------------------------------------------------------------------
@@ -95,7 +95,7 @@ end
 -- Where the Open window starts: Movies, the place in Tracker's sidebar for
 -- films (`roadmap.md` 6w), when it is there, and `/Home` when it is not.
 --
-local FILMS = fs.getattr("/Home/Movies") and "/Home/Movies" or "/Home"
+local FILMS_FOLDER = fs.getattr("/Home/Movies") and "/Home/Movies" or "/Home"
 
 local function say_instead(lines, title)
   local W, H = 540, 280
@@ -115,7 +115,7 @@ local function say_instead(lines, title)
   --
   local function open_one()
     local chooser = panel.open{
-      start = FILMS, title = "Open a film", filter = is_film,
+      start = FILMS_FOLDER, title = "Open a film", filter = is_film,
       on_choose = function(chosen)
         fs.send("/Running/wm", { type = "launch", program = "video",
                              args = files.quote(chosen) })
@@ -289,7 +289,7 @@ end
 
 local function open_another()
   local chooser = panel.open{
-    start = FILMS, title = "Open a film", filter = is_film,
+    start = FILMS_FOLDER, title = "Open a film", filter = is_film,
     on_choose = function(chosen)
       local reply = fs.send("/Running/wm", { type = "launch", program = "video",
                                          args = files.quote(chosen) })

@@ -16,6 +16,7 @@
 #include "trap.h"
 #include "console.h"
 #include "hal.h"
+#include "irq.h"
 #include "percpu.h"
 #include "profile.h"
 #include "thread.h"
@@ -328,68 +329,11 @@ void trap_handler(unsigned index, struct trapframe *tf)
      * An IRQ taken at EL0 is vector 9, served below.
      */
     if (index == 1) {
-        bool tick = hal_irq_handle();
-
-        /*
-         * **The machine's half of a tick belongs to one processor, and that
-         * is a temporary invariant rather than a design.**
-         *
-         * Everything below this is machine-wide: the audio wake walks the
-         * process table, `thread_tick` wakes sleepers by scanning
-         * `threads[]`, and `console_tick` drains a device. All three write
-         * structures no lock protects, and running them on four cores at
-         * TICK_HZ each is four cores writing them at once. Core zero owns
-         * them until `docs/smp.md` step two puts locks in.
-         *
-         * What a secondary keeps is `hal_irq_handle` above - it rearms its
-         * own comparator, which is what stops the interrupt reasserting, and
-         * is why this returns after rather than before.
-         *
-         * Named here so it is found when the locks arrive: this is one of
-         * the two places that has to change, the other being the runqueue.
-         */
-        /*
-         * Every core, and it decides for itself what is its own - **but
-         * only when the tick is what fired.**
-         *
-         * `thread_tick` charges this core's idle or busy count and then
-         * stops on any core but zero - the split is in the kernel, where the
-         * knowledge of what is machine-wide lives, rather than here.
-         *
-         * The `if` is what the comment further down asked for on the day it
-         * was written: this board has four virtio devices raising lines as
-         * well as a timer, and each of those was charging a tick nobody had
-         * spent. `hal.h` has the account.
-         */
-        if (tick) {
-            profile_tick(tf->elr, false);
-            thread_tick();
-        }
-
-        if (this_cpu()->index != 0) {
-            return;
-        }
-
-        /*
-         * The sound device asked for a period. Woken here rather than inside
-         * the driver because waking a thread is the kernel's business and
-         * `hal/` may not reach into it - the same separation that keeps
-         * hardware addresses out of everything above it.
-         */
-        if (hal_snd_wants()) {
-            process_wake_audio();
-        }
-
-        /*
-         * The timer is the scheduler's clock, and it is the only interrupt
-         * source there is, so every IRQ is a tick. When there is a second
-         * source, hal_irq_handle has to say which one fired rather than this
-         * assuming.
-         *
-         * It only records what the policy wants. The switch itself happens
-         * in the epilogue, after this returns.
-         */
-        console_tick();
+        /* What the interrupt means is the kernel's: `irq_after` in
+         * `kernel/irq.c`, the one copy all three paths share. A secondary
+         * keeps `hal_irq_handle` - it rearms its own comparator, which is
+         * what stops the interrupt reasserting. */
+        irq_after(hal_irq_handle(), tf->elr, false);
         return;
     }
 
@@ -448,51 +392,10 @@ void trap_handler(unsigned index, struct trapframe *tf)
 
 
         if (index == 9) {
-            bool tick = hal_irq_handle();
-
-            /*
-             * The same guard vector 1 has, and it was missing here.
-             *
-             * **Dormant rather than harmless.** This is the interrupt taken
-             * from EL0, and a secondary today runs only its idle thread,
-             * which is kernel code - so no core but zero ever reaches this
-             * path at all. The moment `docs/smp.md` step five puts a user
-             * thread on a secondary, every core runs
-             * `thread_wake_sleepers_now` and `console_tick` from here, which
-             * are the two calls the other path guards against for exactly
-             * the reason it names.
-             *
-             * Found by auditing the code rather than by running it, which is
-             * the only way this class of thing is ever found: the failure it
-             * would have caused does not exist yet.
-             */
-            if (this_cpu()->index != 0) {
-                if (tick) {
-                    profile_tick(tf->elr, true);
-                    thread_tick();
-                }
-
-                die_if_killed();
-                return;
-            }
-
-            /*
-             * An input interrupt is a reason for somebody to stop sleeping,
-             * and the only thing that knows a thread asked to sleep is the
-             * scheduler. Waking every sleeper is right rather than lazy:
-             * only the reader of input ever sleeps on it, because only it is
-             * allowed to ask.
-             */
-            if (hal_input_pending_peek()) {
-                thread_wake_sleepers_now();
-            }
-
-            if (tick) {
-                profile_tick(tf->elr, true);
-                thread_tick();
-            }
-
-            console_tick();
+            /* From EL0: the same `irq_after` as vector 1, and then the
+             * process that was running passes `die_if_killed` - after it,
+             * since there is nothing to reschedule once it is gone. */
+            irq_after(hal_irq_handle(), tf->elr, true);
             die_if_killed();
             return;
         }

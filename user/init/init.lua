@@ -1477,6 +1477,7 @@ local function new_namespace()
     [2] = "no such application",
     [3] = "too many applications registered",
     [4] = "the /Running registry did not understand that",
+    [5] = "unregister: that name is another program's",
   }
 
   local function app_request(capability, op, name, pass)

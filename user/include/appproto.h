@@ -30,6 +30,7 @@
 #define APP_ERR_NO_APP     2u
 #define APP_ERR_FULL       3u
 #define APP_ERR_BAD_OP     4u
+#define APP_ERR_NOT_YOURS  5u   /* unregister by a process that did not register it */
 
 #define APP_NAME_MAX      24u
 #define APP_MAX           24u   /* applications registered at once */

@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 struct thread;
 struct process;
@@ -137,5 +138,29 @@ void             irq_wake_watcher(struct thread *t);
 void             irq_nudge(struct thread *t);
 
 long             irq_ack(struct irq_line *line);
+
+/*
+ * **What the machine does after a hardware interrupt**, once the board has
+ * acknowledged it (`hal_irq_handle`, which says whether the tick fired).
+ * Every architecture's interrupt path calls this and nothing else, from
+ * kernel mode or from user mode, so there is one copy of it.
+ *
+ * There were three - AArch64's from EL1, AArch64's from EL0, and
+ * x86-64's - and they drifted twice: the core-zero guard went missing from
+ * one copy, and until 0.11.508 AArch64's EL0 path never woke the audio
+ * server and its EL1 path never woke the input reader (the review before
+ * 0.12.0). What goes where is the kernel's knowledge, not the
+ * architecture's:
+ *
+ * - **the tick, on every core**: its idle or busy count, a profile sample
+ *   at `pc` (`from_user` says whose), and the policy's quantum;
+ * - **the machine's work, on core zero only**: the audio server woken for
+ *   a period, the input reader woken for a key, and the console's cursor.
+ *   They walk structures no lock protects (`docs/smp.md`), so one core owns
+ *   them.
+ *
+ * The switch itself happens on the way out, as before.
+ */
+void irq_after(bool tick, uint64_t pc, bool from_user);
 
 #endif /* KERNEL_IRQ_H */

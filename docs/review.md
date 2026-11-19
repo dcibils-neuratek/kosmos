@@ -661,6 +661,7 @@ Each comes with a recommendation.
    positions and leave the meaning to user space, with key release
    delivered? *Recommended: yes.* And which layouts first: Diego's
    keyboards decide between Latin American, Spanish and US International.
+   **Answered on 18 November 2026: Latin American first** (Diego: "Latin").
 6. **Installing Kosmos.** Should Kosmos boot from the M700's own disk,
    beside Windows, with two system slots for updates, and keep netboot
    for development only? *Recommended: yes.*

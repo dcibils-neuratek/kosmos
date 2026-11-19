@@ -2,6 +2,7 @@
 -- kosmos: application
 -- kosmos: icon App_Deskbar
 -- kosmos: name Menu bar
+-- kosmos: section none
 -- kosmos: needs screen network
 -- Pewter's menu bar: one strip across the top of the screen for every
 -- application (`docs/pewter.md` P3).

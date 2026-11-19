@@ -11885,12 +11885,36 @@ spend a day here; a laptop cannot.
 - **Crash recovery**: a server or application that dies restarted, with
   a report, the desktop untouched.
 - **Backups**: `/Home` kept elsewhere, automatically, and restorable.
-- **Typing every language**: dead keys and layouts first (Spanish), then
-  input methods; accessibility - zoom, contrast, a screen reader.
+- **Typing every language**: dead keys and layouts first (Latin American,
+  Diego's keyboards, 18 November 2026: "Latin"), then input methods;
+  accessibility - zoom, contrast, a screen reader.
 - **Printing**, last; and **Linux in a sandbox** (`docs/linux.md`) as the
   safety net for whatever Kosmos does not have.
 
-**The order proposed**, for Diego to change: JetSki finished, Wi-Fi, sleep
+**The order agreed on 18 November 2026**, from `review.md` section 6, for
+the M700 as a desk machine. First **a whole-tree cleanup and review**,
+ending at 0.12.0 (Diego: "I think we can now do a full code cleanup and
+review before we continue", "There is for sure old code that we don't use
+anymore and we can optimise the entire system"): dead code, stale comments,
+work nobody reads, and speed only where a profile says so, read by parallel
+helpers area by area and every finding checked before anything is removed.
+**Then 3D, G1 to G5** (`gpu3d.md` section 6; Diego, the same day: "Yes do
+the 3d api work after the cleanup is done"): Mesa and LLVM built for
+Kosmos, `lavapipe` headless, a window and `vkcube`, GL and GL ES by Zink
+with TinyGL retired, and WebGL in JetSki - all of it in QEMU. G6 to G9, on
+the M700's GPU, come after the daily-driver items below.
+Then, in order: (1) keys - Control-W given back, the desktop's keys on
+Super, press and release delivered, layouts and dead keys out of Nebula,
+Latin American first; (2) the clipboard redone; (3) JetSki's remaining
+basics - find, print, session restore, History's list, suggestions; (4)
+search on one door; (5) memory returned and a day's leak test; (6)
+restarting what dies; (7) booting from its own disk with two slots; (8) USB
+drives - exFAT, writing, NTFS read; (9) other people's files - DOCX, every
+Media Kit format, GIF, WebP, HEIC; (10) Telnet and VNC off in a stable
+build, then the lock screen. Write R1, Mail N1 and the web platform after;
+the laptop's Wi-Fi, touchpad and sleep a season of their own.
+
+**The order proposed before**, superseded by the one above: JetSki finished, Wi-Fi, sleep
 and wake, M6, updates with a way back, then login and encryption. And the
 part no tool replaces: using it as a daily machine for weeks, fixing what
 annoys.

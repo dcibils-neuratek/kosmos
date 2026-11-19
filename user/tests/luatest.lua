@@ -1856,6 +1856,15 @@ if role == R_NAMES_MAIN then
   check(name == "wm", "a holder that was killed kept its name: the next was "
                       .. "registered as " .. tostring(name))
 
+  -- The registry's capability count, as the kernel keeps it.
+  local function registry_caps()
+    for _, p in ipairs(sys.processes() or {}) do
+      if p.id == registry then return p.caps end
+    end
+  end
+
+  local caps_before = registry_caps()
+
   local asker = spawn(R_NAMES_ASKER, { talk, door })
   local heard, who = sys.receive(talk)
   check(heard, "the asker said nothing")
@@ -1863,6 +1872,22 @@ if role == R_NAMES_MAIN then
   check(heard.from == "third", "looking wm up and calling it reached "
                                .. tostring(heard.from or heard.error))
   check(sys.wait() == asker, "the asker did not end")
+
+  -- Only the process that registered a name may take it away (0.11.508):
+  -- the asker's `unregister` of `wm` was refused, and the third holder
+  -- still answers under it.
+  check(heard.unregistered == 5, "an unregister of another program's name "
+        .. "came back " .. tostring(heard.unregistered) .. ", not refused")
+
+  -- And a capability sent with a request the registry does not keep is
+  -- dropped: fifty lookups and lists, each with an endpoint beside it, and
+  -- the registry holds what it held before, give or take the asker's one
+  -- lookup reply (which it never holds) - so the count is exact.
+  local caps_after = registry_caps()
+  check(caps_before and caps_after and caps_after == caps_before,
+        "the registry's capabilities went from " .. tostring(caps_before)
+        .. " to " .. tostring(caps_after) .. " over fifty requests it did "
+        .. "not keep an endpoint for")
 
   -- The registry serves until it is stopped, and so does the last holder.
   check(sys.kill(third), "the third holder could not be killed")
@@ -1923,7 +1948,22 @@ if role == R_NAMES_ASKER then
   end
 
   local answer, why = sys.call(got, { ask = true })
-  sys.call(0, { from = answer and answer.from, error = why })
+
+  -- Not this process's name to take away: the registry refuses it.
+  local said = sys.call_raw(1, string.pack("<I4c24", 4, "wm"))
+  local unregistered = said and string.unpack("<I4", said)
+
+  -- Fifty requests with an endpoint beside each, none of which the
+  -- registry keeps.
+  for i = 1, 50 do
+    local spare = sys.endpoint()
+    sys.call_raw(1, string.pack("<I4c24", (i % 2 == 0) and 2 or 3, "wm"),
+                 spare)
+    sys.destroy(spare)
+  end
+
+  sys.call(0, { from = answer and answer.from, error = why,
+                unregistered = unregistered })
   sys.exit(0)
 end
 

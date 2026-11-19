@@ -279,7 +279,7 @@ end
 filetypes.GROUPS = {
   { "Documents", { "txt", "md", "write", "pdf", "html", "htm", "mhtml", "mht", "lua", "conf", "log" } },
   { "Pictures", { "png", "jpg", "jpeg" } },
-  { "Sound and film", { "mp3", "wav", "mp4" } },
+  { "Sound and film", { "mp3", "wav", "mp4", "m4v", "mov" } },
   { "Games", { "wad", "sfc", "smc" } },
   { "Kosmos", { "zip", "launcher", "favorite", "automation" } },
 }

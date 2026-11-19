@@ -95,6 +95,17 @@ def talk(port):
 
     results["nothing"] = session.run("no-such-thing").decode(errors="replace")
 
+    # **A command cut in two by the network** (0.11.508): `pw`, then IAC
+    # alone in one segment, then DO NAWS and `d` in the next. The server
+    # keeps the IAC and reads it again in front of what follows, so the line
+    # is `pwd`; it used to take the IAC alone and
+    # type the verb and option into the line, which then named no program.
+    session.sock.sendall(b"pw" + bytes([255]))
+    time.sleep(0.4)
+    session.sock.sendall(bytes([253, 31]) + b"d\r\n")
+    split = session.until_prompt()
+    results["split"] = split.decode(errors="replace")
+
     # **Sent the other way**: every byte value, into folders that are not
     # there yet, and read back (`put`, Diego: "write Lua apps in the Mac and
     # push them to the m700").
@@ -240,6 +251,11 @@ def main():
         fails.append("open with no desktop did not say so and fail: %r"
                      % results.get("open"))
 
+    if ("/Kosmos" not in results.get("split", "")
+            or "no such program" in results.get("split", "")):
+        fails.append("a command split across two reads was typed into the "
+                     "line: %r" % results.get("split"))
+
     if " died: " in out:
         fails.append("something died: " + out[out.find(" died: ") - 80:][:400])
 
@@ -276,7 +292,7 @@ def main():
                          l for l in lonely.splitlines()
                          if "telnetd" in l or "TELNETD" in l))
 
-    checks = 13
+    checks = 14
 
     if fails:
         print("FAIL: %d of %d checks on telnetd:" % (len(fails), checks))
@@ -291,7 +307,7 @@ def main():
           "value in them, whole; a read given the next line typed; a failure's "
           "exit code; Control-C as Telnet's interrupt; no such program; a file "
           "put into new folders and back; a program pushed and run; open with "
-          "no desktop refused; nothing dead; and waiting for an address)."
+          "no desktop refused; a command split across two reads; nothing dead; and waiting for an address)."
           % (checks, len(BLOB)))
     return 0
 

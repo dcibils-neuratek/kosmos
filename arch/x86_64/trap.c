@@ -28,6 +28,7 @@
 #include "profile.h"
 #include "thread.h"
 #include "hal.h"
+#include "irq.h"
 #include "mmu.h"
 #include "percpu.h"
 #include "trap.h"
@@ -409,70 +410,12 @@ void trap_handle(struct trapframe *f)
         tlb_service();
 
         /*
-         * **On any core but zero, the tick and nothing else** - the guard
-         * `arch/aarch64/trap.c` keeps, for its reason. Waking input
-         * sleepers, the audio server and the console's cursor are machine
-         * work, and they stay on core zero until there is a reason to move
-         * them. A secondary's own timer still charges its own tick, which is
-         * what makes it preempt and what its processor meter reads.
+         * What the interrupt means is the kernel's - the tick on every
+         * core, the audio server, the input reader and the console's
+         * cursor on core zero - and it is written once, in `irq_after`
+         * (`kernel/irq.c`), for every architecture's path.
          */
-        if (this_cpu()->index != 0) {
-            if (tick) {
-                profile_tick(f->rip, (f->cs & 3) != 0);
-                thread_tick();
-            }
-
-            if (f->cs & 3) {
-                die_if_killed();
-            }
-
-            return;
-        }
-
-        /*
-         * And what an interrupt *means*, which acknowledging it does not
-         * do. `arch/aarch64/trap.c` does all of this and the x86 side did
-         * none of it for a while - which is a machine that boots to a
-         * prompt, prints it, and then ignores everything typed at it,
-         * because nothing was polling the serial line and nothing was
-         * preempting the thread that had the processor.
-         *
-         * The sound device asking for a period is woken here rather than
-         * inside the driver, because waking a thread is the kernel's
-         * business and `hal/` may not reach into it - the same separation
-         * that keeps hardware addresses out of everything above it.
-         */
-        if (hal_snd_wants()) {
-            process_wake_audio();
-        }
-
-        if (hal_input_pending_peek()) {
-            thread_wake_sleepers_now();
-        }
-
-        /*
-         * **Only when the tick is what fired**, which is what the board now
-         * answers rather than what this used to assume.
-         *
-         * The comment here said the timer was the only unmasked source, so
-         * every interrupt was a tick, and named the day that would stop
-         * being true. It stopped: a keyboard, a sound controller asking for
-         * a period 172 times a second, a network card. Each of those was
-         * charging a tick nobody had spent - shortening quanta, inflating
-         * the busy and idle counts every processor meter reads, and sending
-         * core zero through a full scan of the thread table for sleepers
-         * whose deadlines had not moved.
-         *
-         * `thread_tick` only records what the policy wants; the switch
-         * happens on the way out. `die_if_killed` is what a process that
-         * was killed while it ran passes through, and it must come after
-         * both - there is nothing to reschedule once it is gone.
-         */
-        if (tick) {
-            profile_tick(f->rip, (f->cs & 3) != 0);
-            thread_tick();
-        }
-        console_tick();
+        irq_after(tick, f->rip, (f->cs & 3) != 0);
 
         if (f->cs & 3) {
             die_if_killed();

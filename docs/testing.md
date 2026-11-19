@@ -37397,3 +37397,42 @@ change was not the cause - and it runs last, after the bar's four moves,
 putting the dock back first (`roadmap.md`, the dock suite's place). The
 same run showed the change at work: the test image carries no JetSki, and
 the restarted dock said "the dock's jetski names no program there is".
+
+## 18.908 The review's bugs
+
+**In short**: the review before 0.12.0 (`docs/cleanup.md`) read the whole
+tree with eight readers in parallel and found 205 things; this is batch 1,
+the six that were bugs. **`/Running` let any program take any name
+away** - `unregister` destroyed the endpoint under a name for whoever
+asked, so a program handed `/Running` could take `wm`'s - and **kept every
+capability sent with a request it did not store**, a slot each for ever.
+Now the registry keeps who registered a name (`SYS_SENDER`), refuses an
+`unregister` from anybody else with `APP_ERR_NOT_YOURS`, drops its own hold
+rather than destroying the application's endpoint, and drops a capability
+on every path that does not keep it. **What an interrupt means was
+written three times** - AArch64 from EL1, AArch64 from EL0, x86-64 - and
+the copies had drifted: AArch64's EL0 path never woke the audio server for
+a period, and its EL1 path never woke the input reader, so on an idle core
+zero a key waited for the next tick. It is one function now, `irq_after`
+in `kernel/irq.c`, which every path calls. **Telnet typed half a
+command**: an IAC at the end of one read had its verb and option taken as
+characters at the start of the next; the cut-off part is kept and read
+again in front, and plain bytes are taken as a run, so a pasted line costs
+its length rather than its square. And two small ones: Pewter's menu bar
+was listed among the applications (`kosmos: section none`), and Video did
+not offer itself for `.mov` and `.m4v`, which it plays.
+
+Held by `x86-kernel`'s names test: another process's `unregister` of `wm`
+comes back refused and the holder still answers, and fifty lookups and
+lists each carrying an endpoint leave the registry's capability count
+exactly where it was. By `x86-telnetd` (14): `pw`, an IAC alone, then DO
+NAWS and `d` in the next segment runs `pwd`. The interrupt merge by the
+whole gate - `x86-sound`, `x86-film` and the display suites wake the audio
+server and the input reader through it - and the AArch64 image builds;
+its suites stay off until ARM resumes. **The controls bite**: the old
+`telnetd.lua` typed the split command as `pw\xfd\x1fd` - no such program -
+and with the old `appfs.c` the names test failed and the registry itself
+left its loop (exit 1) partway through the stranger's requests, taking the
+two tests after it down with it. The host's file-types check caught
+the new film types in a group of their own, "Other", and they are in
+"Sound and film" now.

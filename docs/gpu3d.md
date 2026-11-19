@@ -422,6 +422,11 @@ every core into the shared surface, and one message to present.
 
 ## 6. The steps
 
+**Scheduled on 18 November 2026**: G1 to G5 straight after the cleanup
+that ends at 0.12.0, before the daily-driver items; G6 to G9 after those
+(`roadmap.md`, *The order agreed on 18 November 2026*). Diego: "Yes do the
+3d api work after the cleanup is done".
+
 Each is a revision with a test that stays and fits the 5-10 minute gate.
 Only x86-64 suites run for now; the AArch64 build must still compile, and
 so `lavapipe` is built for both.

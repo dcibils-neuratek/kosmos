@@ -111,30 +111,61 @@ end
 -- Bytes from the connection: Telnet's commands taken out - every option
 -- refused, an interrupt noted - and what is left gathered into lines.
 --
+-- **A command can arrive in two reads.** IAC at the end of one and its
+-- verb, or a verb and its option, at the start of the next: what is cut
+-- off is kept in `s.carry` and read again in front of what comes after.
+-- Before 0.11.508 the IAC was taken alone and the verb and option bytes
+-- were typed into the line as characters.
+--
+-- **Plain bytes are taken as a run**, one slice appended per run rather
+-- than one string made per byte, so a pasted line costs its length and
+-- not its length squared.
+--
+local SPECIAL = "[%z\3\10\13\255]"
+
 local function take(s, bytes)
+  if s.carry then
+    bytes, s.carry = s.carry .. bytes, nil
+  end
+
   local i = 1
 
   while i <= #bytes do
     local b = bytes:byte(i)
 
     if s.iac == "sub" then
-      if b == IAC and bytes:byte(i + 1) == SE then
-        s.iac = nil
+      if b == IAC then
+        local next_ = bytes:byte(i + 1)
+
+        if next_ == nil then
+          s.carry = "\255"
+          return
+        elseif next_ == SE then
+          s.iac = nil
+        end
+
         i = i + 1
       end
     elseif b == IAC then
       local command, option = bytes:byte(i + 1), bytes:byte(i + 2)
+      local needs_option = command == DO or command == DONT
+                           or command == WILL or command == WONT
+
+      if command == nil or (needs_option and option == nil) then
+        s.carry = bytes:sub(i)
+        return
+      end
 
       if command == IAC then
         s.partial = s.partial .. "\255"
         i = i + 1
       elseif command == DO or command == DONT then
-        if command == DO and option then
+        if command == DO then
           s.out = s.out .. string.char(IAC, WONT, option)
         end
         i = i + 2
       elseif command == WILL or command == WONT then
-        if command == WILL and option then
+        if command == WILL then
           s.out = s.out .. string.char(IAC, DONT, option)
         end
         i = i + 2
@@ -154,7 +185,11 @@ local function take(s, bytes)
         s.partial = ""
       end
     elseif b ~= 0 then
-      s.partial = s.partial .. string.char(b)
+      -- A run of plain bytes, up to the next one with a meaning.
+      local stop = (bytes:find(SPECIAL, i) or (#bytes + 1)) - 1
+      s.partial = s.partial .. bytes:sub(i, stop)
+      i = stop
+      b = bytes:byte(i)
     end
 
     s.last = b

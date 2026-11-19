@@ -14,11 +14,14 @@
 
 #include "irq.h"
 
+#include "console.h"
 #include "cpu.h"
 #include "hal.h"
 #include "ipc.h"
 #include "kernel.h"
+#include "percpu.h"
 #include "process.h"
+#include "profile.h"
 #include "spinlock.h"
 #include "syscall.h"
 #include "thread.h"
@@ -679,4 +682,27 @@ long irq_ack(struct irq_line *line)
     hal_irq_set_masked(intid, false);
 
     return 0;
+}
+
+/* `irq.h` has the account: one copy of what an interrupt means. */
+void irq_after(bool tick, uint64_t pc, bool from_user)
+{
+    if (tick) {
+        profile_tick(pc, from_user);
+        thread_tick();
+    }
+
+    if (this_cpu()->index != 0) {
+        return;
+    }
+
+    if (hal_snd_wants()) {
+        process_wake_audio();
+    }
+
+    if (hal_input_pending_peek()) {
+        thread_wake_sleepers_now();
+    }
+
+    console_tick();
 }

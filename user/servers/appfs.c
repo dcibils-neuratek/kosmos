@@ -18,6 +18,19 @@
  * to unregister for that to be true, which matters: the window manager
  * stopped with Control-C does not, and a process that is killed cannot. See
  * `forget_the_dead`.
+ *
+ * **And only the process that registered a name may take it away.** The
+ * kernel says who sent each message (`SYS_SENDER`), the registry keeps it
+ * beside the name, and an `unregister` from anybody else is refused. It
+ * used to destroy the endpoint under any name for any caller, so a program
+ * handed `/Running` could take `wm`'s away. What is taken away is this
+ * server's hold on the endpoint, never the endpoint: the application owns
+ * it and destroys it itself (`ui.lua`, the window's `close`).
+ *
+ * **A capability that arrives and is not kept is dropped**, on every path:
+ * a refused register, and one sent with a lookup, a list or an unregister.
+ * Each stayed in this server's table for good before, a slot a careless or
+ * hostile client could spend until the table was full.
  */
 
 #include <stdbool.h>
@@ -30,8 +43,9 @@
 #include "appproto.h"
 
 struct entry {
-    bool  in_use;
-    long  cap;
+    bool     in_use;
+    long     cap;
+    uint32_t owner;     /* the process that registered it (`SYS_SENDER`) */
     char  name[APP_NAME_MAX];
 };
 
@@ -148,8 +162,10 @@ static void answer(const struct message *in, uint64_t sender, long cap)
     const struct app_request *req =
         (const struct app_request *)(const void *)in->data;
     char name[APP_NAME_MAX];
+    struct sender_info who;
     struct entry *e;
     unsigned i;
+    bool kept = false;
 
     memset(&out, 0, sizeof(out));
     out.tag = in->tag;
@@ -157,12 +173,26 @@ static void answer(const struct message *in, uint64_t sender, long cap)
 
     if (in->length < sizeof(*req)) {
         rep->error = APP_ERR_BAD_OP;
+
+        if (cap >= 0) {
+            (void)kosmos_cap_drop(cap);
+        }
+
         (void)kosmos_reply(sender, &out);
         return;
     }
 
     memcpy(name, req->name, APP_NAME_MAX);
     name[APP_NAME_MAX - 1] = '\0';
+
+    /* Who asked, as the kernel says: asked before anything else is done
+     * with the request, since the message just received is the one this
+     * describes. A sender that has already gone is nobody. */
+    memset(&who, 0, sizeof(who));
+
+    if (kosmos_sender(&who) != 0) {
+        who.id = 0;
+    }
 
     forget_the_dead();
 
@@ -190,7 +220,9 @@ static void answer(const struct message *in, uint64_t sender, long cap)
 
         apps[i].in_use = true;
         apps[i].cap = cap;
+        apps[i].owner = who.id;
         copy_name(apps[i].name, name);
+        kept = true;
 
         copy_name(rep->name, name);
         break;
@@ -221,8 +253,13 @@ static void answer(const struct message *in, uint64_t sender, long cap)
     case APP_OP_UNREGISTER:
         e = find(name);
 
+        if (e != NULL && (who.id == 0 || e->owner != who.id)) {
+            rep->error = APP_ERR_NOT_YOURS;
+            break;
+        }
+
         if (e != NULL) {
-            (void)kosmos_endpoint_destroy(e->cap);
+            (void)kosmos_cap_drop(e->cap);
             memset(e, 0, sizeof(*e));
         }
 
@@ -235,6 +272,10 @@ static void answer(const struct message *in, uint64_t sender, long cap)
     default:
         rep->error = APP_ERR_BAD_OP;
         break;
+    }
+
+    if (cap >= 0 && !kept) {
+        (void)kosmos_cap_drop(cap);
     }
 
     (void)kosmos_reply(sender, &out);
