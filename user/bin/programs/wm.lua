@@ -283,8 +283,18 @@ end
 -- so this is the one door. Fields that are not positions - a key, a
 -- button, a title - pass untouched.
 --
+-- Made once: this runs for every pointer move.
+scale.PLACES = { "x", "y", "w", "h" }
+
+--
+-- An empty list to walk when a reply had none, rather than a fresh table
+-- each pass (`cleanup.md` finding 84). Never written to. Kept in `scale`
+-- only because this chunk is at Lua's two hundred locals.
+--
+scale.EMPTY = {}
+
 function scale.event(event, pct)
-  for _, k in ipairs({ "x", "y", "w", "h" }) do
+  for _, k in ipairs(scale.PLACES) do
     if math.type(event[k]) == "integer" then
       event[k] = scale.pt(event[k], pct)
     end
@@ -1910,15 +1920,16 @@ OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 -- one on a light look, a dark one on a dark look - as the mockup's 2026
 -- pass has them (`docs/pewter.html`).
 --
+-- Two sets, made once: this is asked on every compose pass under Platinum,
+-- and only read (`cleanup.md` finding 86).
+OUT.PLATINUM_DARK  = { fill = 0xff55565c, ring = 0xff2a2b30, mark = 0xffd8d8de, held = 0xff3c3d42 }
+OUT.PLATINUM_LIGHT = { fill = 0xffe6e6ea, ring = 0xff7a7a80, mark = 0xff4a4a50, held = 0xffb4b4bc }
+
 function OUT.platinum_colours()
   local c = theme.sunken or 0xffe0e0e0
   local r, g, b = (c >> 16) & 255, (c >> 8) & 255, c & 255
 
-  if (r * 3 + g * 6 + b) < 1280 then
-    return { fill = 0xff55565c, ring = 0xff2a2b30, mark = 0xffd8d8de, held = 0xff3c3d42 }
-  end
-
-  return { fill = 0xffe6e6ea, ring = 0xff7a7a80, mark = 0xff4a4a50, held = 0xffb4b4bc }
+  return (r * 3 + g * 6 + b) < 1280 and OUT.PLATINUM_DARK or OUT.PLATINUM_LIGHT
 end
 
 --
@@ -3513,7 +3524,7 @@ local function swap_surface(win, w, h)
 
   fresh:fill(0, 0, w, h, 0xff202020)
 
-  win.surface:free()
+  if win.surface then win.surface:free() end
   win.surface = fresh
   win.w, win.h = w, h
 
@@ -3968,7 +3979,6 @@ handlers.open = function(req, who, cap)
     w       = w_,
     h       = h_,
     pct     = pct,
-    surface = gfx.surface{ w = w_, h = h_, shared = true },
     events  = {},
 
     --
@@ -3990,8 +4000,6 @@ handlers.open = function(req, who, cap)
     --
     last_poll = sys.ticks(),
   }
-
-  win.surface:fill(0, 0, w_, h_, 0xff202020)
 
   --
   -- A shared region came with the request, so this window's contents are
@@ -4080,6 +4088,19 @@ handlers.open = function(req, who, cap)
       -- application no idea why - which is how this arrived the first time.
       print("wm: could not map a shared surface: " .. tostring(why))
     end
+  end
+
+  --
+  -- **Pixels of this process's own only for a window without a region** -
+  -- one whose region was refused or could not be mapped, or that sent none.
+  -- Every window had a surface its size, filled, whether or not a region
+  -- came with it, and only a window without one ever showed it: for every
+  -- kit window and menu that was its size in shared pages held for nothing
+  -- (`cleanup.md` finding 56).
+  --
+  if not win.shared then
+    win.surface = gfx.surface{ w = w_, h = h_, shared = true }
+    win.surface:fill(0, 0, w_, h_, 0xff202020)
   end
 
   -- And a menu bar above it, when one was asked for (`strips`) - unless
@@ -6821,12 +6842,12 @@ handlers.close = function(req)
         damage_window(orphan)
         by_handle[orphan.handle] = nil
         table.remove(menus, i)
-        orphan.surface:free()
+        if orphan.surface then orphan.surface:free() end
       end
     end
   end
 
-  win.surface:free()
+  if win.surface then win.surface:free() end
 
   --
   -- **And the application's own region, which this process was holding.**
@@ -8468,14 +8489,14 @@ while OUT.running do
   end
 
   step("keys")
-  for _, c in ipairs(input.keys or {}) do
+  for _, c in ipairs(input.keys or scale.EMPTY) do
     key(c)
   end
 
   if input.keys and #input.keys > 0 then key(nil) end
 
   -- The same presses as transitions, for whoever wants them that way.
-  for _, ev in ipairs(input.events or {}) do
+  for _, ev in ipairs(input.events or scale.EMPTY) do
     OUT.chord.held[ev.code] = ev.down or nil
 
     -- A fresh Super is a fresh chance to open the menu.
@@ -8604,7 +8625,7 @@ while OUT.running do
   -- already brought it to, so it dispatches nothing and only settles the
   -- position.
   if input.pointer then
-    for _, c in ipairs(input.clicks or {}) do
+    for _, c in ipairs(input.clicks or scale.EMPTY) do
       -- One table, reused: a click is rare, but a table per click per pass
       -- on the frame path is the habit this loop cannot afford.
       pointer_log.replay.x = c.x
@@ -8751,7 +8772,7 @@ if OUT.hw_cursor then OUT.cursor_hide() end
 back:free()
 
 for _, win in ipairs(windows) do
-  win.surface:free()
+  if win.surface then win.surface:free() end
 end
 
 sys.destroy(ep)

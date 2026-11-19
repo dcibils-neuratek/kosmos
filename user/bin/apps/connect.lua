@@ -161,6 +161,7 @@ end
 
 local body = ui.view{ x = 0, y = 0, w = W, h = H }
 local layout = {}
+local said_who, said_who_lines = nil, nil   -- the remembered account, wrapped
 
 local NOTE = "An address, or a name: 192.168.1.38, diego-mac. A share after "
              .. "the slash, or choose one once it answers."
@@ -181,7 +182,20 @@ function place()
 
   local shown = math.min(#recent, 3)
 
+  -- When each recent one was, in words, worked out here rather than in a
+  -- repaint: the date is a question to the clock, and a window draws what
+  -- it has already heard (`cleanup.md` finding 53). The list is read once,
+  -- as the window opens, and this runs again whenever the page changes.
+  layout.recent_when = {}
+
   if shown > 0 then
+    local now = (fs.read("/Devices/clock") or {}).epoch
+
+    for i = 1, shown do
+      local at = recent[i].at
+      layout.recent_when[i] = now and at and clock.day_word(at, now) or nil
+    end
+
     layout.recent = y
     y = y + gfx.height("text") + 6
     layout.recent_rows = y
@@ -267,8 +281,6 @@ function body:draw(g)
     g:fill_round(PAD, top, W - 2 * PAD, n * 30, theme.sunken, ui.layout.card_r)
     g:frame_round(PAD, top, W - 2 * PAD, n * 30, theme.line_soft, ui.layout.card_r)
 
-    local now = (fs.read("/Devices/clock") or {}).epoch
-
     for i = 1, n do
       local r = recent[i]
       local ry = top + (i - 1) * 30
@@ -280,9 +292,9 @@ function body:draw(g)
              ui.fitted(netshares.url(r.address, r.share), W - 2 * PAD - 130),
              theme.text, theme.sunken)
 
-      if now and r.at then
-        local when = clock.day_word(r.at, now)
+      local when = layout.recent_when[i]
 
+      if when then
         g:text(W - PAD - 12 - gfx.measure(when), ry + (30 - gfx.height()) // 2,
                when, theme.text_dim, theme.sunken)
       end
@@ -301,7 +313,7 @@ function body:draw(g)
       ground, icon, ink = warn_ground, "warning", warn
     end
 
-    local lines = ui.wrapped(said.text, W - 2 * PAD - 40)
+    local lines = layout.said_lines    -- `place` wraps it as it is said
     local h = math.max(40, #lines * gfx.height() + 18)
 
     g:fill_round(PAD, layout.said, W - 2 * PAD, h, ground, ui.layout.card_r)
@@ -321,9 +333,14 @@ function body:draw(g)
   local server = netshares.split(address.text)
   local who = server and remembered[server]
 
-  local lines = who and ui.wrapped("Remembered: signs in as " .. who
-                                  .. " with nothing to type.", W - 2 * PAD - 26)
-                or layout.keyring_lines or { KEYRING }
+  -- Wrapped when the account it names changes, not on every paint.
+  if who and who ~= said_who then
+    said_who = who
+    said_who_lines = ui.wrapped("Remembered: signs in as " .. who
+                                .. " with nothing to type.", W - 2 * PAD - 26)
+  end
+
+  local lines = who and said_who_lines or layout.keyring_lines or { KEYRING }
 
   for i, line in ipairs(lines) do
     dim(PAD + 26, layout.keyring + (i - 1) * gfx.height(), line)

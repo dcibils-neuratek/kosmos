@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.11.516. Pushed to 0.11.507; 0.11.508 to
-0.11.516 are committed on `main` and not pushed.
+Last updated: 2026-11-19, at 0.11.517. Pushed to 0.11.507; 0.11.508 to
+0.11.517 are committed on `main` and not pushed.
 
 ---
 
@@ -44,7 +44,10 @@ before we continue"). Eight readers found 205 findings
 - **Batch 5, comments and documents made true** (0.11.516, 18.916): this
   file cut to where the work is, the rest in `state-history.md`;
   `CLAUDE.md`, the README and a dozen documents brought to the tree;
-  comments in about fifty files. Batches 6 (work nobody reads), 7
+  comments in about fifty files.
+- **Batch 6, work nobody reads** (0.11.517, 18.917): a window's own
+  surface only when it brought no region; Connect's clock out of its
+  repaint; the Deskbar's strip compared field by field. Batches 7
   (measured before anything changes) and 8 (tests nothing runs) follow.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**

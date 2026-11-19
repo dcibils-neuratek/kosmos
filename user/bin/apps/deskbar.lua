@@ -2552,7 +2552,7 @@ if DOCKED then
   -- it is painted again when what it shows has changed. And the dock asks
   -- for the width its cells want, outside its own draw.
   --
-  local strip_said = nil
+  local strip_said = {}   -- what the strip last showed, field by field
 
   function dock_frame(self)
     if tip then wmproto.poll(tip.handle, 0) end
@@ -2568,21 +2568,30 @@ if DOCKED then
     if topstrip then
       local reply = wmproto.poll(topstrip.handle, 0)
 
-      for _, ev in ipairs(reply and reply.events or {}) do
-        if ev.type == "mouse" and (ev.action == "press" or ev.action == "release") then
-          ui.click(strip_held, ev.action, ev.x or 0, ev.y or 0, strip_target)
+      if reply and reply.events then
+        for _, ev in ipairs(reply.events) do
+          if ev.type == "mouse" and (ev.action == "press" or ev.action == "release") then
+            ui.click(strip_held, ev.action, ev.x or 0, ev.y or 0, strip_target)
+          end
         end
       end
 
-      local now = table.concat({ heard.now and clock.time_string(heard.now) or "",
-                                 tostring(news()),
-                                 tostring(heard.level), tostring(heard.muted),
-                                 tostring(heard.network),
-                                 heard.battery and heard.battery.percent or "",
-                                 tostring(theme.desktop_text) }, "|")
+      --
+      -- Whether anything the strip shows has changed, field by field
+      -- against what it last showed. This was the seven of them joined
+      -- into a fresh string, twelve times a second while a program
+      -- breathes, only to be compared (`cleanup.md` finding 83).
+      --
+      local S = strip_said
+      local time = heard.now and clock.time_string(heard.now) or ""
+      local count = news()
+      local percent = heard.battery and heard.battery.percent or ""
 
-      if now ~= strip_said then
-        strip_said = now
+      if time ~= S[1] or count ~= S[2] or heard.level ~= S[3]
+         or heard.muted ~= S[4] or heard.network ~= S[5] or percent ~= S[6]
+         or theme.desktop_text ~= S[7] then
+        S[1], S[2], S[3], S[4] = time, count, heard.level, heard.muted
+        S[5], S[6], S[7] = heard.network, percent, theme.desktop_text
         topstrip:paint()
       end
     end

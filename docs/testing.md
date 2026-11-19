@@ -37839,3 +37839,63 @@ there is still no partial write.
 Lua file; `luac -l` finds no global `theme` read in the three applications.
 
 **The gate.** 132 suites in 639 s (10:38), every one passing.
+
+## 18.917 Work nobody reads
+
+**In short:** batch 6 of the review takes out work done again and again
+for nothing. The window manager no longer gives every window a buffer
+of its own pixels when the application brought its own; most windows
+did, and only the rest ever showed it. Connect no longer asks the clock
+from inside a repaint. The Deskbar no longer builds a string twelve
+times a second just to compare it. Adopt Test sleeps between its checks
+where it used to spin.
+
+- **A window's own surface only without a region** (56). `handlers.open`
+  made `gfx.surface{ w, h, shared = true }` and filled it for every
+  window, then mapped the application's region beside it; a window with
+  a region is drawn from the region and never from that surface. So every
+  kit window and menu held its own size in shared pages, a 1280x800
+  window four megabytes, for nothing. It is made now only when no
+  region was mapped - none sent, one refused for its size, or one that
+  could not be mapped - and the three places that free it, closing,
+  a menu orphaned by its window, and the desktop ending, free it only if
+  it is there. `swap_surface` already returned before touching it for a
+  window with a region.
+- **Connect's dates in `place`** (53). `body:draw` read `/Devices/clock`
+  on every repaint to word "today" or "Tuesday" beside each recent
+  connection, a server's round trip inside a draw. The recent list is
+  read once, as the window opens, so its words are worked out where the
+  page is laid out, with one read of the clock. The card under it reuses
+  the lines `place` already wrapped, and the remembered account's sentence
+  is wrapped when the account changes rather than on every paint.
+- **The Deskbar's strip compared field by field** (83): the time, the
+  notification count, the volume, mute, the network, the battery and the
+  desktop's text colour, against what it last showed, in place of seven
+  values joined into a fresh string each pass. And no empty table when
+  the strip's poll had no events.
+- **Adopt Test sleeps a tick between its reads** of `/Temporary` (54)
+  instead of `sys.yield`, which spun at full speed for up to five seconds.
+- **The window manager's main loop and `scale.event`** (84, 85) walk one
+  shared empty list and one list of the four position fields, rather than
+  a new table for each when nothing happened and on every pointer move;
+  **Platinum's box colours** (86) are two tables made once, rather than
+  one made on every compose pass.
+
+`EMPTY`, `PLACES` and the two Platinum sets are fields of `scale` and
+`OUT` rather than locals because `wm.lua`'s main chunk is at Lua's limit
+of two hundred locals; the first build said so.
+
+**Not measured**: finding 83 asked for the frames tool's allocation column
+on the Deskbar first. The change is the same comparison without the
+string, so it was made unmeasured; what it saves is a 7-element table and
+a string, and the four `tostring`s, a pass.
+
+**Checked** with `luac -p` and each file's free names against the commit
+before, none new.
+
+**The gate.** 132 suites in 656 s (10:56), 129 passing. Three failed on
+time under the gate's load and passed alone, 3 suites in 116 s:
+`x86-starlight`'s unroll took 155 ms against its 150; `x86-smbd` did not
+see its visitor within 120 s, as it also failed at 0.11.510; and
+`x86-film-load` heard a gap. None touches what changed except Starlight's
+roll, which is the window manager's, and it passed alone in 20 s.

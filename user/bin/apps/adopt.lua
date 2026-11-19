@@ -39,7 +39,7 @@ local description
 repeat
   description = fs.read("/Temporary/replicants/clock")
   if description then break end
-  sys.yield()
+  sys.sleep(1)    -- a tick between asks, not a spin (`cleanup.md` 54)
 until sys.ticks() > until_
 
 if type(description) ~= "table" then
