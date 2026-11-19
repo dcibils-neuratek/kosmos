@@ -4632,6 +4632,38 @@ $(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_mesatest_kit$$' \
 	    || { echo "apps: the system's image has Mesa's test kit in it"; rm -f $@; exit 1; }
 
+#
+# **Vulkan's test image** (`docs/gpu3d.md` G2): `vulkantest.c` on lavapipe,
+# with no loader - lavapipe's `vk_icdGetInstanceProcAddr` is linked in and
+# called. Its shaders are SPIR-V compiled on the host by `glslangValidator`
+# into arrays; Mesa's archives are the list `mesa_build.py` read from
+# lavapipe's own link (`lavapipe.txt`), with LLVM's and the C++ runtimes.
+#
+VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o
+VULKANTEST_SPV := $(UBUILD)/gen/vulkantest/triangle_vert.h $(UBUILD)/gen/vulkantest/triangle_frag.h
+
+$(UBUILD)/gen/vulkantest/triangle_%.h: user/kits/vulkantest/triangle.%
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn triangle_$* -o $@ $<
+
+$(UBUILD)/user/kits/vulkantest/vulkantest.c.o: user/kits/vulkantest/vulkantest.c $(VULKANTEST_SPV) \
+        $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -I $(UBUILD)/gen/vulkantest \
+	    -Wno-unused-parameter -c $< -o $@
+
+$(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                               $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/lavapipe.txt $(LLVM_DIR)/lib/libLLVM*.a \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_vulkantest_kit$$' \
+	    || { echo "apps: vulkantest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_vulkantest_kit$$' \
+	    || { echo "apps: the system's image has Vulkan's test kit in it"; rm -f $@; exit 1; }
+
 # WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
@@ -4647,7 +4679,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
-            $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf \
+            $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
             $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

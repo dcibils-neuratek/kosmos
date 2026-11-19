@@ -639,6 +639,14 @@ SUITES = [
                        "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_mesa.py", "user/kits/mesatest", *MESA)),
 
+    # **Vulkan** (`docs/gpu3d.md` G2): `vulkantest.elf`, `lavapipe` on
+    # llvmpipe and LLVM's JIT with no loader - a triangle whose corners and
+    # colour are chosen here, drawn into an image and read back as a mask,
+    # every pixel held to edge functions this side computes.
+    Suite("x86-vulkan", ["python3", "tools/run_vulkan.py", X86,
+                         "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_vulkan.py", "user/kits/vulkantest", *MESA)),
+
     # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
     # its interpreter, driven through its C API - a script using closures,
     # classes, generators, a Proxy, a regular expression, Intl, a BigInt,

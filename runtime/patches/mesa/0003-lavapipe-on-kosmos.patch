@@ -1,0 +1,172 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+lavapipe on Kosmos (docs/gpu3d.md G2). What it reaches for that a Kosmos
+process does not have, each left out rather than imitated:
+
+- gallivm's disassembler writes into a std::ostringstream, and Kosmos's
+  libc++ has no locale streams; it writes into LLVM's raw_string_ostream,
+  as LLVM's own patches do (runtime/patches/llvm/).
+- gallivm's LLJIT would search the process for symbols, which needs
+  dlopen, and set up a platform's runtime; as llvmtest's does (G1), it is
+  told there is no process to search and no platform, so what a shader
+  calls is what gallivm defines to it.
+- gallivm's ORC JIT reaches its compiler with dynamic_cast, and LLVM is
+  built without RTTI here; the compiler is a SimpleCompiler by
+  construction - gallivm made it - so a static_cast says the same.
+- drm.h, which lavapipe includes for DRM's format codes alone, includes
+  the BSDs' ioctl header; there is no ioctl on Kosmos (CLAUDE.md), and
+  the codes need none.
+- the Vulkan runtime includes dlfcn.h for RenderDoc, which is off; it is
+  included only when RenderDoc is on.
+- translate's x86 path assembles code into memory it maps writable and
+  executable at once, and Nebula never maps a page both; on Kosmos it is
+  not taken, and the generic path - or LLVM's, which writes then flips -
+  does the work.
+- the drivers' configuration matches a program's name against a regular
+  expression, and Kosmos's libc has no regex.h; it is built with
+  NO_REGEX, as on Windows without one, and such an option never matches.
+
+--- a/include/drm-uapi/drm.h
++++ b/include/drm-uapi/drm.h
+@@ -47,7 +47,7 @@
+ #include <sys/types.h>
+ #if defined(__GNU__)
+ #include <sys/ioctl.h>
+-#else
++#elif !defined(__kosmos__)
+ #include <sys/ioccom.h>
+ #endif
+ typedef int8_t   __s8;
+--- a/meson.build
++++ b/meson.build
+@@ -1867,6 +1867,8 @@
+   if not dep_regex.found()
+     dep_regex = declare_dependency(compile_args : ['-DNO_REGEX'])
+   endif
++elif host_machine.system() == 'kosmos'
++  dep_regex = declare_dependency(compile_args : ['-DNO_REGEX'])
+ else
+   dep_regex = null_dep
+ endif
+--- a/src/gallium/auxiliary/gallivm/lp_bld_debug.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_debug.cpp
+@@ -26,8 +26,9 @@
+  **************************************************************************/
+ 
+ #include <stddef.h>
+-#include <sstream>
+-#include <iomanip>
++#include <string>
++#include <llvm/Support/raw_ostream.h>
++#include <llvm/Support/Format.h>
+ 
+ #include <llvm/Config/llvm-config.h>
+ #include <llvm-c/Core.h>
+@@ -97,7 +98,7 @@
+  * - http://blog.llvm.org/2010/04/intro-to-llvm-mc-project.html
+  */
+ static size_t
+-disassemble(const void* func, std::ostream &buffer)
++disassemble(const void* func, llvm::raw_ostream &buffer)
+ {
+    const uint8_t *bytes = (const uint8_t *)func;
+ 
+@@ -130,8 +131,7 @@
+        * so that between runs.
+        */
+ 
+-      buffer << std::setw(6) << std::hex << (unsigned long)pc
+-             << std::setw(0) << std::dec << ":";
++      buffer << llvm::format("%6lx", (unsigned long)pc) << ":";
+ 
+       Size = LLVMDisasmInstruction(D, (uint8_t *)bytes + pc, extent - pc, 0, outline,
+                                    sizeof(outline));
+@@ -155,9 +155,7 @@
+       if (0) {
+          unsigned i;
+          for (i = 0; i < Size; ++i) {
+-            buffer << std::hex << std::setfill('0') << std::setw(2)
+-                   << static_cast<int> (bytes[pc + i])
+-                   << std::setw(0) << std::dec;
++            buffer << llvm::format("%02x", static_cast<int> (bytes[pc + i]));
+          }
+          for (; i < 16; ++i) {
+             buffer << "   ";
+@@ -205,8 +203,8 @@
+     * Print GDB command, useful to verify output.
+     */
+    if (0) {
+-      buffer << "disassemble " << std::hex << static_cast<const void*>(bytes) << ' '
+-             << static_cast<const void*>(bytes + pc) << std::dec << '\n';
++      buffer << "disassemble " << static_cast<const void*>(bytes) << ' '
++             << static_cast<const void*>(bytes + pc) << '\n';
+    }
+ 
+    return pc;
+@@ -216,12 +214,12 @@
+ extern "C" void
+ lp_disassemble(LLVMValueRef func, const void *code)
+ {
+-   std::ostringstream buffer;
+    std::string s;
++   llvm::raw_string_ostream buffer(s);
+ 
+    buffer << LLVMGetValueName(func) << ":\n";
+    disassemble(code, buffer);
+-   s = buffer.str();
++   buffer.flush();
+    os_log_message(s.c_str());
+    os_log_message("\n");
+ }
+--- a/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
+@@ -243,7 +243,11 @@
+       LPJit* jit = get_instance();
+       auto &ircl = jit->lljit->getIRCompileLayer();
+       auto &irc = ircl.getCompiler();
++#if __has_feature(cxx_rtti)
+       auto &sc = dynamic_cast<llvm::orc::SimpleCompiler &>(irc);
++#else
++      auto &sc = static_cast<llvm::orc::SimpleCompiler &>(irc);
++#endif
+       jit->lookup_mutex.lock();
+       sc.setObjectCache(objcache);
+       auto func = ExitOnErr(jit->lljit->lookup(*JD, func_name));
+@@ -339,6 +343,13 @@
+    lljit = ExitOnErr(
+       LLJITBuilder()
+          .setJITTargetMachineBuilder(std::move(JTMB))
++#if defined(__kosmos__)
++         /* Nothing on Kosmos is loaded, so there is no process to search
++          * for symbols and no platform's runtime to set up: what a shader
++          * calls is defined to it (gallivm_kosmos_symbols, below). */
++         .setLinkProcessSymbolsByDefault(false)
++         .setPlatformSetUp(setUpInactivePlatform)
++#endif
+ #ifdef USE_JITLINK
+          .setObjectLinkingLayerCreator(
+ #if LLVM_VERSION_MAJOR >= 21
+--- a/src/gallium/auxiliary/translate/translate.c
++++ b/src/gallium/auxiliary/translate/translate.c
+@@ -38,7 +38,7 @@
+ {
+    struct translate *translate = NULL;
+ 
+-#if DETECT_ARCH_X86 || DETECT_ARCH_X86_64
++#if (DETECT_ARCH_X86 || DETECT_ARCH_X86_64) && !DETECT_OS_KOSMOS
+    translate = translate_sse2_create( key );
+    if (translate)
+       return translate;
+--- a/src/vulkan/runtime/vk_instance.c
++++ b/src/vulkan/runtime/vk_instance.c
+@@ -39,8 +39,10 @@
+ #endif
+ 
+ #ifndef _WIN32
++#if HAVE_RENDERDOC_INTEGRATION
+ #include "dlfcn.h"
+ #endif
++#endif
+ 
+ #define VERSION_IS_1_0(version) \
+    (VK_API_VERSION_MAJOR(version) == 1 && VK_API_VERSION_MINOR(version) == 0)

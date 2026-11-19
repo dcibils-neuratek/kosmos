@@ -213,6 +213,7 @@ double atanh(double x);
 double fma(double x, double y, double z);
 double nextafter(double x, double y);
 long   lrint(double x);
+long long llrint(double x);   /* Mesa's colour packing (`docs/gpu3d.md` G2) */
 
 /*
  * **Skia's** (`docs/w5.md` W5e): the `float` halves its vector helpers and

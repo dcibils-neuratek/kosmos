@@ -460,6 +460,17 @@ char *strcpy(char *dst, const char *src)
     return out;
 }
 
+/* `strcpy` answering with the terminator it wrote, so the next copy can
+ * start there (POSIX 2008; lavapipe's, `docs/gpu3d.md` G2). */
+char *stpcpy(char *dst, const char *src)
+{
+    while ((*dst = *src++) != '\0') {
+        dst++;
+    }
+
+    return dst;
+}
+
 char *strchr(const char *s, int c)
 {
     char target = (char)c;

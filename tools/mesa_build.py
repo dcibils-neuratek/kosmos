@@ -285,11 +285,53 @@ def main():
     # `MESA_KEEP_GOING=1` builds everything that compiles and lists every
     # file that does not, as `LLVM_KEEP_GOING` does.
     keep = ["-k", "0"] if os.environ.get("MESA_KEEP_GOING") else []
-    targets = sys.argv[3:] or LIBRARIES
+    lavapipe = lavapipe_archives(build)
+    targets = sys.argv[3:] or (LIBRARIES + [a for a in lavapipe if a.endswith(".a")]
+                               + [LAVAPIPE_TARGET])
     r = subprocess.run(["ninja", "-C", build] + keep + targets, env=environment(arch))
     if r.returncode == 0:
         defines(build, out)
+        write_if_changed(os.path.join(out, "lavapipe.txt"),
+                         "".join((a if a.startswith("-") else os.path.join(build, a)) + "\n"
+                                 for a in [LAVAPIPE_TARGET] + lavapipe))
     sys.exit(r.returncode)
+
+
+# `lavapipe_target.c`, which names the software winsys and llvmpipe for
+# Gallium's static loader: compiled by Mesa's build, as Mesa's shared
+# library would have it, and linked into an image instead.
+LAVAPIPE = "src/gallium/targets/lavapipe/libvulkan_lvp.so"
+LAVAPIPE_TARGET = LAVAPIPE + ".p/lavapipe_target.c.o"
+
+
+def lavapipe_archives(build):
+    """Mesa's archives `lavapipe` links, in the order its link names them,
+    read from that link's command - so the list is Meson's for this
+    architecture (x86-64's has `clflush` and `simd` and AArch64's does not)
+    rather than one written here. LLVM's and the C++ runtimes' are not
+    Mesa's and are named by the Makefile."""
+    r = subprocess.run(["ninja", "-C", build, "-t", "commands", LAVAPIPE],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        sys.exit("mesa_build: no command for %s" % LAVAPIPE)
+    found = []
+    for word in shlex.split(r.stdout.strip().splitlines()[-1]):
+        if word.startswith("src/") and word.endswith(".a") and word not in found:
+            found.append(word)
+        elif word in ("-Wl,--whole-archive", "-Wl,--no-whole-archive"):
+            # What Meson links whole - `liblavapipe_st`, whose dispatch
+            # tables name its functions weakly, and a weak name pulls
+            # nothing out of an archive: without this they are NULL.
+            found.append(word)
+    if not [w for w in found if w.endswith(".a")]:
+        sys.exit("mesa_build: %s's link names no archive of Mesa's" % LAVAPIPE)
+    return found
+
+
+def write_if_changed(path, text):
+    if not os.path.exists(path) or open(path).read() != text:
+        with open(path, "w") as f:
+            f.write(text)
 
 
 def defines(build, out):
@@ -309,11 +351,8 @@ def defines(build, out):
     else:
         sys.exit("mesa_build: no compile of nir_print.c to read the defines from")
     wanted = [a for a in args if a.startswith("-D")]
-    text = "".join(shlex.quote(a) + "\n" for a in wanted)
-    path = os.path.join(out, "defines.txt")
-    if not os.path.exists(path) or open(path).read() != text:
-        with open(path, "w") as f:
-            f.write(text)
+    write_if_changed(os.path.join(out, "defines.txt"),
+                     "".join(shlex.quote(a) + "\n" for a in wanted))
 
 
 if __name__ == "__main__":

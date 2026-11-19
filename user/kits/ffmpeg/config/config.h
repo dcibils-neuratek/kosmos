@@ -298,7 +298,7 @@
 #define HAVE_ISINF 1
 #define HAVE_ISNAN 1
 #define HAVE_LDEXPF 1
-#define HAVE_LLRINT 0
+#define HAVE_LLRINT 1
 #define HAVE_LLRINTF 0
 #define HAVE_LOG2 1
 #define HAVE_LOG2F 1

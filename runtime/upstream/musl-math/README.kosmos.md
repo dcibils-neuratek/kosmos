@@ -226,3 +226,14 @@ asks nothing about, because GCC refuses `logb.c` without it.
     795f05c9388ac277ab27cb5dc63fb4f82620a0ee11eaf8403201df5bc65c0f5b  src/math/erf.c
     c9875bc2118b90b16f2a8f3770a61dad59e2e5e076e744d4c054191ba00611be  src/math/ilogb.c
     46f89d69993da5a4b329d8958fbf1c93427b85cca53e45b4d4aa9a91bcc043b1  src/math/logb.c
+
+## And one more, for Mesa (19 November 2026)
+
+Mesa's colour packing (`u_pack_color.h`, `docs/gpu3d.md` G2) rounds with
+`llrint`, which nothing had defined. From the same tarball, checked against
+the same sum; it calls `rint`, already here. Declared in `math.h`, since
+Mesa is C and needs the declaration, and so FFmpeg's config says
+`HAVE_LLRINT 1` with it - `tools/ffmpeg_vendor.py`'s rule, that the config
+says what `math.h` declares.
+
+    16839c5a71ccb7f030d4d4663a1a75f5ca28ae307d85d1955e31f916cdd121f4  src/math/llrint.c

@@ -452,7 +452,10 @@ so `lavapipe` is built for both.
 2. **G2 - `lavapipe`, headless.** Vulkan in QEMU: a triangle and a textured
    cube rendered to an image, read back, held to a reference picture.
    *Test* `x86-vulkan`: the pictures, and a short run of the Khronos
-   conformance suite (dEQP-VK) chosen to fit a minute.
+   conformance suite (dEQP-VK) chosen to fit a minute. **The triangle
+   drawn in 0.12.3** (`testing.md` 18.923): `lavapipe` linked in with no
+   loader, patch 0003 for what it reaches for, and `rtasm`'s writable and
+   executable code left out; the cube and dEQP-VK next.
 3. **G3 - a window.** `VK_KHR_kosmos_surface`, swapchain images as shared
    surfaces, presenting as `cube3d` does. *Demo*: `vkcube`. *Test*: the
    picture QEMU scans out, as `make screenshot` checks; frames a second

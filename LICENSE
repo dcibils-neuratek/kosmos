@@ -228,16 +228,16 @@ Vendored third-party code keeps its own licence, which travels beside it:
       Not in the tree: tools/upstream.py fetches its release, held to
       GitHub's SHA-256 (docs/gpu3d.md G1), and tools/llvm_build.py applies
       runtime/patches/llvm/ as it builds; the terms are its LICENSE.TXT.
-      Only llvmtest.elf, G1's test, links it
+      Only llvmtest.elf and vulkantest.elf, G1's and G2's tests, link it
 
-  Mesa 26.2.5's util, NIR and SPIR-V libraries, by the Mesa contributors,
-      MIT, with BLAKE3 (CC0 or Apache 2.0) and two files under the Boost
-      Software Licence among them
+  Mesa 26.2.5's util, NIR, SPIR-V, Gallium, llvmpipe and lavapipe, by the
+      Mesa contributors, MIT, with BLAKE3 (CC0 or Apache 2.0) and two files
+      under the Boost Software Licence among them
       Not in the tree: tools/upstream.py fetches its release, held to the
       SHA-256 in its release notes (docs/gpu3d.md G1), and
       tools/mesa_build.py applies runtime/patches/mesa/ as it builds; the
       terms are each file's SPDX line and its licenses/ folder. Only
-      mesatest.elf, G1's test, links it
+      mesatest.elf and vulkantest.elf, G1's and G2's tests, link it
 
   curl 8.23.0, by Daniel Stenberg and the curl contributors, under the curl
       licence, MIT-style

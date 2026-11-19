@@ -68,9 +68,11 @@ needs no double mapping (`gpu3d.md` §5.2 corrected). Mesa 26.2.5 by its own
 Meson (`tools/mesa_build.py`), configured for `lavapipe`, two patches in
 `runtime/patches/mesa/`, its trial links answered by
 `tools/mesa_trial_ld.py`; `x86-mesa` has NIR build, fold, print and
-serialize a shader. **Next: G2, `lavapipe` headless** - its Gallium and
-Vulkan driver built and linked with LLVM, a triangle and a cube rendered
-to an image and held to a reference, and a minute of dEQP-VK.
+serialize a shader. **G2 begun (0.12.3, `testing.md` 18.923):** Vulkan
+on Kosmos - `lavapipe` linked into `vulkantest.elf` with no loader draws a
+triangle the runner chose, every pixel where its edge functions say.
+**Next: G2's textured cube**, held to a reference picture, then a minute
+of dEQP-VK.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

@@ -11988,7 +11988,8 @@ the M700's GPU, come after the daily-driver items below. **G1's LLVM half built
 in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
 JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
 18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and
-serializing a shader inside Kosmos. **G1 done; G2, `lavapipe` headless, next.**
+serializing a shader inside Kosmos. **G1 done. G2 begun in 0.12.3** (`testing.md` 18.923): a triangle drawn by
+Vulkan inside Kosmos; the textured cube and dEQP-VK next.
 **And then a flight simulator - ASKED on 19 November 2026** (Diego: "after
 the 3d api is done and running on gpu, i want to build a simple flight
 simulator app that shows the 3d api capabilities"). An application of

@@ -38167,3 +38167,63 @@ second boot's telnetd not listening within 120 s), `x86-desktops`,
 `x86-starlight` (a window unrolled over 281 ms against 150) and
 `x86-cafesa3d-2`, which hung for 720 s and passes alone in 243 s. Their
 logs are kept under `build/gate/failed/`.
+
+## 18.923 A triangle by Vulkan
+
+**In short:** the first part of G2 (`gpu3d.md` §6). Vulkan works on
+Kosmos. `lavapipe` - Mesa's Vulkan driver, which draws with the processor
+and compiles its shaders with LLVM as it goes - is built into a test
+program that draws a triangle and reads the picture back. The test chose
+the triangle's corners and colour, and checks every pixel itself.
+
+- **No Vulkan loader.** A loader opens drivers as shared libraries, and
+  nothing on Kosmos is loaded: `lavapipe` is linked into the image and its
+  `vk_icdGetInstanceProcAddr` is called as a loader would call it.
+- **Linked as Meson links it.** `mesa_build.py` reads the archives from
+  the command Mesa's own build would link `libvulkan_lvp.so` with -
+  eighteen for x86-64, `clflush` and `simd` among them - and writes them,
+  with Meson's `--whole-archive` around `liblavapipe_st`, as
+  `lavapipe.txt`. Without the whole archive the device's dispatch tables,
+  which name lavapipe's functions weakly, were NULL, and the first call
+  through one jumped to address 0.
+- **Patch 0003, `lavapipe-on-kosmos`**, for what lavapipe reaches for that
+  a Kosmos process does not have: gallivm's disassembler writes to a
+  string stream, and is given LLVM's; its JIT takes its compiler with a
+  `dynamic_cast` and LLVM has no RTTI here; DRM's format header includes
+  an `ioctl` header; RenderDoc's `dlfcn.h`; a regular expression in the
+  drivers' configuration, built `NO_REGEX` as on Windows. And two that
+  mattered: **gallivm's LLJIT, told there is no process to search** -
+  `dlopen() not supported on this platform` until it was, as `llvmtest`'s
+  (18.921) - and **Mesa's `translate`, which on x86 assembles vertex code
+  into memory mapped writable and executable at once.** Nebula never maps
+  a page both, so `rtasm` fell through to `malloc`'d memory and the first
+  draw ran its code from a page that could not execute. On Kosmos the
+  generic path is taken; LLVM, which writes then flips, does the rest.
+- **The libc grew `stpcpy`**, and `llrint` from musl 1.2.5 with its sum,
+  which FFmpeg's config now says it has.
+- **A kit's panic is heard.** The first failure ended the process with
+  code 70 and no word: a Lua program's image is not the console's owner,
+  and the POSIX layer spilled its last words into a ring nobody read. The
+  kit hands the POSIX layer the console, as WebKit's does.
+- **`x86-vulkan`** (`tools/run_vulkan.py`, `user/kits/vulkantest/`)
+  passes: llvmpipe draws the triangle (4, 3), (28.5, 10.25), (9, 29.5) in
+  (230, 96, 17) into a 32 by 32 picture, 305 pixels, every one where it
+  must be - a pixel a quarter of a pixel inside every edge must be the
+  triangle's, that far outside one the clear colour's, nearer either, and
+  none a third colour - from an image of 108.6 MB, in 1.5 s. **Two
+  controls**: the guest drawing one corner a pixel away from the one
+  judged, and 7 pixels are named wrong; `mprotect` refusing an executable
+  page, and LLVM says "Failed to materialize symbols".
+- **The image** is 120.2 MB, 108.6 stripped; LLVM is most of it.
+  AArch64's builds and links as well, 116.8 MB, in 4:15 with Mesa rebuilt
+  in front of it after the patches changed; its suites wait with ARM's.
+
+**Left for G2**: the textured cube, held to a reference picture, and a
+minute of dEQP-VK.
+
+**The gate.** 146 suites in 1329 s, 145 passing - `images` 698 s again,
+the libc's headers having changed. `x86-display-4` failed on a screendump
+that was never written, which is what a full disk looks like
+(`FileNotFoundError`): 2.7 GB were free after the gate. With 1 GB of
+scratch removed it passes alone, 76 checks in 154 s. `x86-vulkan` took
+11 s.

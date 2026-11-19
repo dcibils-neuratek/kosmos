@@ -2835,6 +2835,7 @@ void kosmos_icutest_kit(lua_State *L) __attribute__((weak));
 void kosmos_wtftest_kit(lua_State *L) __attribute__((weak));
 void kosmos_llvmtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_mesatest_kit(lua_State *L) __attribute__((weak));
+void kosmos_vulkantest_kit(lua_State *L) __attribute__((weak));
 void kosmos_jsc_kit(lua_State *L) __attribute__((weak));
 void kosmos_picturetest_kit(lua_State *L) __attribute__((weak));
 void kosmos_texttest_kit(lua_State *L) __attribute__((weak));
@@ -2917,6 +2918,7 @@ static const struct {
      * (`docs/gpu3d.md` G1). */
     { "llvmtest", kosmos_llvmtest_kit, 1 },
     { "mesatest", kosmos_mesatest_kit, 1 },
+    { "vulkantest", kosmos_vulkantest_kit, 1 },
     /* JavaScriptCore, installed in /Home/Apps/JSC (`docs/w4.md` W4d). */
     { "jsc",      kosmos_jsc_kit, 1 },
     /* zlib, libpng, libjpeg-turbo and libwebp, in no image but their

@@ -4755,3 +4755,33 @@ known to be testing something.
 
 **Next.** G2: `lavapipe` itself, Mesa's Vulkan driver on LLVM, drawing a
 triangle and a cube into a picture that is checked against a reference.
+
+## 19 November 2026 - Vulkan draws a triangle on Kosmos
+
+**In short.** Kosmos has Vulkan, the modern 3D API, for the first time. A
+test program draws a triangle with Mesa's software Vulkan driver and
+reads the picture back, and every pixel is where it should be. 0.12.3.
+
+**What.** `lavapipe` is a Vulkan driver that draws with the processor
+rather than a graphics card, compiling each shader with LLVM while the
+program runs. It is now built into a test image. There is no Vulkan
+loader - the piece that normally opens a driver from a file - because
+nothing on Kosmos is loaded from a file at run time; the driver is linked
+in and called directly.
+
+**Why it took the turns it did.** Two failures said something about the
+system. One part of Mesa writes processor code into memory that is
+writable and executable at the same time. Nebula never allows that - a
+page is one or the other - so that path is simply not used on Kosmos, and
+LLVM, which writes first and then switches the page over, does the job.
+And the first crash said nothing at all, because a Lua program's last
+words had nowhere to go; the kit now hands them the console, as the web
+kit already did.
+
+**Measured.** The test image is 109 MB, almost all LLVM, and draws in
+1.5 s inside QEMU. Moving one corner by a pixel makes 7 pixels wrong, and
+refusing executable pages stops the shader compiler - both fail the test,
+which is how it is known to be looking.
+
+**Next.** A textured cube held to a reference picture, and a
+minute of Khronos's own conformance tests.
