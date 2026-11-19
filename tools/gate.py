@@ -1261,7 +1261,19 @@ def main():
     # 9:56 at ten with the suites' own seconds 1.3 per cent apart - 5,536
     # and 5,610. This Mac has ten cores, so this is the last slot there is:
     # the next minute has to come out of the suites themselves.
-    parser.add_argument("--at-once", type=int, default=10,
+    #
+    # **Twelve, and that sentence was wrong** (`testing.md` 18.911): a slot
+    # is not a core. A suite is a guest waiting on itself under TCG far more
+    # than it is computing - `x86-dock`, the longest, used 115 s of
+    # processor in 340 alone, a third of a core - so ten at once left the
+    # Mac at about seven cores busy. On 19 November, every suite run each
+    # time: 761 s at ten (6,319 suite-seconds), 588 s at twelve (6,617, 4.7%
+    # more, a mean of 6.9 cores busy) and 564 s at fourteen (6,905, 9% more,
+    # 7.6 busy and a median of 8.9 - contention beginning). Twelve takes
+    # most of the gain while the suites' own seconds stay within a few per
+    # cent; fourteen is where they start to pay for it. The failures seen
+    # at both were known ones of load, each now fixed or on the roadmap.
+    parser.add_argument("--at-once", type=int, default=12,
                         help="suites at once, before the quiet ones")
     parser.add_argument("--arm", action="store_true",
                         help="run the AArch64 suites too (held back for now)")

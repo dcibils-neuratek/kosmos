@@ -4240,13 +4240,13 @@ static bool test_a_nonblocking_receive_returns_empty(void)
  */
 static cap_t          deadline_cap;
 static volatile int   deadline_status;
-static volatile unsigned long deadline_waited;
+static volatile uint64_t deadline_waited;      /* counter cycles */
 
 static void deadline_thread(void *arg)
 {
     struct message msg;
     struct thread *sender = NULL;
-    unsigned long began = hal_ticks();
+    uint64_t began = cpu_cycles();
 
     (void)arg;
 
@@ -4262,7 +4262,7 @@ static void deadline_thread(void *arg)
      * more yielding ran alongside, which is exactly how a race advertises
      * itself.
      */
-    deadline_waited = hal_ticks() - began;
+    deadline_waited = cpu_cycles() - began;
     deadline_status = status;
 }
 
@@ -4270,7 +4270,7 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
 {
     cap_t cap = ipc_endpoint_create();
     struct thread *t;
-    unsigned long limit;
+    uint64_t limit, tick;
     unsigned i;
 
     if (cap < 0) {
@@ -4322,9 +4322,9 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
      * - and the test failed for having been in a hurry. It passed most runs
      * and failed some, which is the worst way for a test to be wrong.
      */
-    limit = hal_ticks() + 100;          /* 400 ms, far past three ticks */
+    limit = thread_deadline_in(100);    /* 400 ms, far past three ticks */
 
-    while (deadline_status == 12345 && hal_ticks() < limit) {
+    while (deadline_status == 12345 && cpu_cycles() < limit) {
         thread_yield();
     }
 
@@ -4335,10 +4335,22 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
 
     ipc_endpoint_destroy(cap);
 
-    /* It waited, and it did not wait for ever. Two ticks is the floor
-     * because the first may land almost immediately. */
-    if (deadline_status == IPC_NO_MESSAGE && deadline_waited >= 2
-        && deadline_waited < 200) {
+    /*
+     * It waited, and it did not wait for ever - **measured on the counter,
+     * the clock the deadline is kept on** (`thread_deadline_in`). This
+     * counted tick interrupts (`hal_ticks`) and allowed two, and under the
+     * gate's load it failed now and then "after 1 ticks" (`testing.md`
+     * 18.593, 18.726, 18.911): a host too busy to deliver each tick on time
+     * delivers them late and together, so the three ticks' worth of counter
+     * the deadline asked for had passed while one interrupt had been
+     * counted. The deadline was right and the test measured with the
+     * waiting clock - `CLAUDE.md`, *Two clocks*. On the counter the floor is
+     * the whole three ticks, since the deadline is set after `began`.
+     */
+    tick = thread_deadline_in(1) - cpu_cycles();
+
+    if (deadline_status == IPC_NO_MESSAGE && deadline_waited >= 3 * tick
+        && deadline_waited < 200 * tick) {
         return true;
     }
 
@@ -4351,8 +4363,8 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
         kputu((unsigned long)deadline_status);
     }
     kputs(" after ");
-    kputu((unsigned long)deadline_waited);
-    kputs(" ticks; wanted no message, after 2 to 199)\n");
+    kputu((unsigned long)(deadline_waited * 100 / (tick ? tick : 1)));
+    kputs(" hundredths of a tick; wanted no message, after 3 to 199 ticks)\n");
     return false;
 }
 

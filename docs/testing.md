@@ -37516,3 +37516,50 @@ which is the control a removal of this kind has.
 
 The gate: 132 suites, every one passing, in 12:41 - still past the ten
 minutes (finding 207, batch 8).
+
+## 18.911 The gate inside ten minutes again, and a flaky test that was measuring with the wrong clock
+
+**In short**: the gate had grown to 11:39 and 12:41 (finding 207), against
+`CLAUDE.md`'s ten. **The fix was the gate, not a suite.** It ran ten
+suites at once because the Mac has ten cores, and a suite is not a core:
+`x86-dock`, the longest at 340 s, used 115 s of processor run alone - the
+rest is a TCG guest waiting on itself (192 s in `select` on its console
+and Telnet, 129 s polling for its lines). So ten at once left about seven
+cores busy. Every suite run each time, on 19 November:
+
+| at once | wall | suites' own seconds | cores busy, mean / median |
+|---|---|---|---|
+| 10 | 761 s (12:41) | 6,319 | - |
+| 12 | 588 s (9:48) | 6,617 (+4.7%) | 6.9 / 7.3 |
+| 14 | 564 s (9:24) | 6,905 (+9.3%) | 7.6 / 8.9 |
+
+**Twelve is the default** (`tools/gate.py`): most of the gain, with the
+suites' own seconds within a few per cent; fourteen is where they start to
+pay for it. The comment that said ten "is the last slot there is" is
+corrected where it stood. A normal day, when the library suites' inputs
+have not changed and they are skipped, is shorter still.
+
+**The two runs found what load finds, and two of them are fixed:**
+
+- `x86-display-1`, at fourteen: "shift-h shift-i did not echo as HI".
+  The keys were right - `H`, then e1000's five-second report, then `I` -
+  and the check wanted the two letters side by side on a console every
+  program shares. It takes a line that names its program out first; the
+  failing text is the control (the old check misses `HI` in it, the new one
+  finds it).
+- `arm-sandbox`'s "ipc: a receive with a deadline gives up", at twelve -
+  the third time under load (18.593, 18.726), and the first since 18.753
+  kept its reason: "after 1 ticks; wanted 2 to 199". **The deadline was
+  not early.** It is kept on the counter (`thread_deadline_in`) and the
+  test counted tick interrupts (`hal_ticks`), and a host too busy to
+  deliver each tick on time delivers them late and together: three ticks'
+  worth of counter had passed with one interrupt counted. *Two clocks*, in
+  `CLAUDE.md`, on a test. Measured on the counter now, with the whole three
+  ticks as the floor. **The control bites**: the receive asked for one
+  tick fails both `arm-sandbox` and `x86-kernel`; restored, both pass.
+- `x86-xavier` (the follow-up's answer leaving the kit's) and `x86-smbd`
+  (the visitor's page not seen in 120 s), at twelve, are the known ones on
+  the roadmap, each passing alone.
+
+The gate at the new default, a normal day: **113 suites in 502 s (8:21)**,
+every one passing, the 19 library suites skipped as unchanged.

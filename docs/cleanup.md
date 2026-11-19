@@ -47,7 +47,11 @@ before every minor version, and there had not been one since 0.11.0.
   registered". To grow as the other tables have.
 - **207.** The gate ran 11:39 on 18 November (`testing.md` 18.909),
   past the ten minutes `CLAUDE.md` allows; `x86-dock` took 353 s and
-  `x86-cafesa3d-2` 302 s. Split or shorten them, in batch 8.
+  `x86-cafesa3d-2` 302 s. **Done in 0.11.511, ahead of the batches**
+  (`CLAUDE.md`: a gate past ten minutes is fixed before anything else
+  lands): the suites wait far more than they compute, so the gate runs
+  twelve at once rather than ten - 9:48 with every suite (`testing.md`
+  18.911).
 
 ## Diego's to decide
 

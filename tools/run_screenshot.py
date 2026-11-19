@@ -1234,11 +1234,18 @@ def check_keyboard(guest):
     # the letters: the next thing typed comes down the serial line, a
     # different source, and arrived ahead of the Enter once the keys were
     # quicker (`testing.md` 18.782), as `HIlocal n = 0 ...`.
+    #
+    # **And with another program's line taken out of the middle**: the
+    # console is shared, and a driver's report - e1000's after its first
+    # five seconds - landed between the `H` and the `I` once fourteen
+    # suites ran at once (`testing.md` 18.911), as `He1000: ...\nI`. The
+    # keys were right; a line that names its program is not the echo.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         guest._read_available()
-        at = guest.seen.find("HI", mark)
-        if at >= 0 and "kosmos> " in guest.seen[at:]:
+        echo = re.sub(r"[a-z][a-z0-9_]*: [^\n]*\n", "", guest.seen[mark:])
+        at = echo.find("HI")
+        if at >= 0 and "kosmos> " in echo[at:]:
             break
         time.sleep(0.2)
     else:
