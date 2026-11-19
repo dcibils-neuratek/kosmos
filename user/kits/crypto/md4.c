@@ -16,16 +16,11 @@
  */
 
 #include "crypto.h"
+#include "../../include/bytes.h"
 
 static uint32_t rol(uint32_t x, unsigned n)
 {
     return (x << n) | (x >> (32 - n));
-}
-
-static uint32_t le32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
-           (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
 #define F(x, y, z) (((x) & (y)) | (~(x) & (z)))
@@ -46,7 +41,7 @@ static void md4_block(uint32_t h[4], const uint8_t block[64])
     uint32_t x[16], a = h[0], b = h[1], c = h[2], d = h[3], t;
     unsigned i;
 
-    for (i = 0; i < 16; i++) x[i] = le32(block + 4 * i);
+    for (i = 0; i < 16; i++) x[i] = get_le32(block + 4 * i);
 
     /* Each step computes a new value for one of a, b, c, d in turn; the
      * rotation of the four names is done by moving the values instead. */

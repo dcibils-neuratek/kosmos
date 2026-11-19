@@ -248,15 +248,7 @@ static void cut_back(struct scene *sc, const long kept[6], long fx, long fy, lon
                 *dp = sp;
             } else {
                 /* The kept pixel over the frame's, by how much is uncovered. */
-                uint32_t a = (uint32_t)cover, b = 255 - a, d = *dp, out = 0xff000000u;
-
-                for (int sh = 0; sh < 24; sh += 8) {
-                    uint32_t v = (((sp >> sh) & 0xffu) * a + ((d >> sh) & 0xffu) * b + 127) / 255;
-
-                    out |= v << sh;
-                }
-
-                *dp = out;
+                *dp = mix_opaque(*dp, sp, (uint32_t)cover);
             }
         }
     }

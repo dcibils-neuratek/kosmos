@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "k3d.h"
+#include "../gfx/surface.h"
 
 #define NEAR 0.05f
 
@@ -157,15 +158,11 @@ static uint32_t scale_rgb(uint32_t c, float k)
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-/* `over` on `under` at `a` of 255. */
+/* `over` on `under` at `a` of 255, the Graphics Kit's mix; this file's
+ * colours carry no alpha, so neither does what it returns. */
 static uint32_t blend(uint32_t under, uint32_t over, unsigned a)
 {
-    unsigned na = 255 - a;
-    uint32_t r = ((((under >> 16) & 0xff) * na + ((over >> 16) & 0xff) * a) / 255);
-    uint32_t g = ((((under >> 8) & 0xff) * na + ((over >> 8) & 0xff) * a) / 255);
-    uint32_t b = (((under & 0xff) * na + (over & 0xff) * a) / 255);
-
-    return (r << 16) | (g << 8) | b;
+    return mix_opaque(under, over, a) & 0x00ffffffu;
 }
 
 /*

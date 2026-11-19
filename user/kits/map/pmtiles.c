@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "kits/compress/gzip.h"
+#include "../../include/bytes.h"
 
 const char *pmt_said(int result)
 {
@@ -38,20 +39,7 @@ const char *pmt_said(int result)
     return "unknown";
 }
 
-static uint64_t u64(const uint8_t *p)
-{
-    uint64_t v = 0;
-
-    for (int i = 7; i >= 0; i--) v = v << 8 | p[i];
-
-    return v;
-}
-
-static int32_t i32(const uint8_t *p)
-{
-    return (int32_t)((uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16
-                     | (uint32_t)p[3] << 24);
-}
+static int32_t i32(const uint8_t *p) { return (int32_t)get_le32(p); }
 
 uint64_t pmt_tile_id(unsigned z, uint32_t x, uint32_t y)
 {
@@ -209,10 +197,10 @@ int pmt_open(struct pmtiles *a, const uint8_t *data, size_t len, void *gunzip)
         return PMT_NOT_PMTILES;
     }
 
-    a->root_off = u64(data + 8),  a->root_len = u64(data + 16);
-    a->meta_off = u64(data + 24), a->meta_len = u64(data + 32);
-    a->leaf_off = u64(data + 40), a->leaf_len = u64(data + 48);
-    a->data_off = u64(data + 56), a->data_len = u64(data + 64);
+    a->root_off = get_le64(data + 8),  a->root_len = get_le64(data + 16);
+    a->meta_off = get_le64(data + 24), a->meta_len = get_le64(data + 32);
+    a->leaf_off = get_le64(data + 40), a->leaf_len = get_le64(data + 48);
+    a->data_off = get_le64(data + 56), a->data_len = get_le64(data + 64);
 
     /* 97: the directories' compression, 98: the tiles', 99: the tiles' kind.
      * 1 none, 2 gzip; 0 "unknown" read as none, as the specification's own

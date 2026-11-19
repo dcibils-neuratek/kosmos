@@ -18,6 +18,7 @@
 /* `user/include/bytes.h`, by its path from here: the host test compiles this
  * file with nothing on its include path. */
 #include "../../include/bytes.h"
+#include "miniz.h"
 
 #define CBW_SIGNATURE   0x43425355u
 #define CSW_SIGNATURE   0x53425355u
@@ -247,21 +248,11 @@ bool scsi_not_supported(const struct scsi_sense *sense)
            && (sense->asc == 0x20u || sense->asc == 0x24u);
 }
 
+/* miniz's, which the Compress Kit already carries into the same image:
+ * a table where this was a bit at a time, and one copy of the checksum. */
 uint32_t storage_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
 {
-    unsigned i, bit;
-
-    crc = ~crc;
-
-    for (i = 0; i < n; i++) {
-        crc ^= bytes[i];
-
-        for (bit = 0; bit < 8u; bit++) {
-            crc = (crc & 1u) ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
-        }
-    }
-
-    return ~crc;
+    return (uint32_t)mz_crc32(crc, bytes, n);
 }
 
 /*

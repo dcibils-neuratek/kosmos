@@ -19,6 +19,7 @@
 
 #include "8859_tables.h"
 #include "ext8_tables.h"
+#include "../../include/utf8.h"
 
 /* "ISO-8859-15" to "iso-8859-15", and "latin1" and the rest to the name
  * this knows them by. */
@@ -66,19 +67,7 @@ static const uint32_t *table_of(const char *name, unsigned *first)
 static size_t put_utf8(uint32_t c, uint8_t *out, size_t at, size_t room)
 {
     uint8_t b[4];
-    size_t n;
-
-    if (c < 0x80) {
-        b[0] = (uint8_t)c, n = 1;
-    } else if (c < 0x800) {
-        b[0] = (uint8_t)(0xC0 | c >> 6), b[1] = (uint8_t)(0x80 | (c & 63)), n = 2;
-    } else if (c < 0x10000) {
-        b[0] = (uint8_t)(0xE0 | c >> 12), b[1] = (uint8_t)(0x80 | ((c >> 6) & 63));
-        b[2] = (uint8_t)(0x80 | (c & 63)), n = 3;
-    } else {
-        b[0] = (uint8_t)(0xF0 | c >> 18), b[1] = (uint8_t)(0x80 | ((c >> 12) & 63));
-        b[2] = (uint8_t)(0x80 | ((c >> 6) & 63)), b[3] = (uint8_t)(0x80 | (c & 63)), n = 4;
-    }
+    size_t n = utf8_put(c, b);
 
     if (at + n > room) return 0;
 
@@ -86,34 +75,6 @@ static size_t put_utf8(uint32_t c, uint8_t *out, size_t at, size_t room)
     return n;
 }
 
-/* The length of a well-formed UTF-8 sequence at `p`, or 0. */
-static size_t utf8_ok(const uint8_t *p, size_t left)
-{
-    uint8_t c = p[0];
-    size_t n;
-    uint32_t v;
-
-    if (c < 0x80) return 1;
-    if (c >= 0xC2 && c <= 0xDF) n = 2, v = c & 0x1F;
-    else if (c >= 0xE0 && c <= 0xEF) n = 3, v = c & 0x0F;
-    else if (c >= 0xF0 && c <= 0xF4) n = 4, v = c & 0x07;
-    else return 0;
-
-    if (left < n) return 0;
-
-    for (size_t i = 1; i < n; i++) {
-        if ((p[i] & 0xC0) != 0x80) return 0;
-        v = v << 6 | (p[i] & 63);
-    }
-
-    /* Not too long a way of writing it, not a surrogate, not past Unicode. */
-    if ((n == 3 && v < 0x800) || (n == 4 && v < 0x10000) || (v >= 0xD800 && v <= 0xDFFF)
-        || v > 0x10FFFF) {
-        return 0;
-    }
-
-    return n;
-}
 
 size_t mime_to_utf8(const char *charset, const uint8_t *in, size_t n, uint8_t *out, size_t room)
 {
@@ -136,7 +97,7 @@ size_t mime_to_utf8(const char *charset, const uint8_t *in, size_t n, uint8_t *o
         } else {
             /* UTF-8, US-ASCII and anything not known: taken as UTF-8, a
              * byte that is not part of a good sequence replaced. */
-            size_t s = utf8_ok(in + i, n - i);
+            size_t s = utf8_valid(in + i, n - i);
 
             if (s == 0) {
                 k = put_utf8(0xFFFD, out, o, room);

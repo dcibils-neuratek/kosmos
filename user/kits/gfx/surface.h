@@ -165,6 +165,25 @@ static inline uint32_t over(uint32_t src, uint32_t dst, uint32_t global)
     }
 }
 
+/*
+ * **`src` on an opaque `dst` by coverage `a` of 255**, every channel
+ * `(s*a + d*(255-a) + 127) / 255`: the `+ 127` puts a half-covered pixel on
+ * the midpoint rather than a step below it, which over a whole edge is the
+ * difference between a smooth line and one that reads slightly thin.
+ * Opaque out. The one copy of what the discs, text, a scene's kept pixels
+ * and the 3D Kit each wrote out (`cleanup.md` finding 105); the 3D Kit's
+ * dropped the `+ 127` and came out a shade dark.
+ */
+static inline uint32_t mix_opaque(uint32_t dst, uint32_t src, uint32_t a)
+{
+    uint32_t inv = 255u - a;
+    uint32_t r = ((((src >> 16) & 0xffu) * a) + (((dst >> 16) & 0xffu) * inv) + 127u) / 255u;
+    uint32_t g = ((((src >>  8) & 0xffu) * a) + (((dst >>  8) & 0xffu) * inv) + 127u) / 255u;
+    uint32_t b = ((( src        & 0xffu) * a) + (( dst        & 0xffu) * inv) + 127u) / 255u;
+
+    return 0xff000000u | (r << 16) | (g << 8) | b;
+}
+
 typedef uint32_t u32x4 __attribute__((vector_size(16)));
 
 static inline u32x4 mul255v(u32x4 x, u32x4 a)

@@ -37685,3 +37685,55 @@ lost in Quick Look under load*); and `x86-xavier`, the known load flake.
 no build has done on that machine; and the AArch64 cache cleaning is what a
 real board would need and QEMU forgives, so only a board can say it is
 right.
+
+## 18.914 One copy, the C half: byte order, UTF-8, the opaque mix, CRC-32, PNG's deflate
+
+**In short.** The first half of `cleanup.md`'s batch 4, the C kits and
+servers: every private copy of something one header or one library already
+supplied goes, and each caller uses that one. About 330 lines leave the
+tree. Two of them change what comes out, on purpose: UTF-8 is read by one
+rule everywhere, and a PNG is 19% smaller and written 29% faster.
+
+- **Byte order through `bytes.h`** (findings 103, 128, 129): the SMB Kit's
+  NTLM names, MD4, the KDF, the Debug Kit's ELF reader, PMTiles, the key
+  file, DNS and mDNS, `smbd`, and the virtual machine monitor's devices -
+  `vdev.h`'s `vget`/`vput`, `vmmfs.c`'s six aliases of them, `vmmgpu.c`'s
+  and `vmmnet.c`'s own. Thirteen files.
+- **`strcasecmp`** (130): `smbfs`, `mdnsd` and `drives_decode` each walked
+  two names a letter at a time; `same_name` is one line over the libc's in
+  each now, the name kept for what it says at the call.
+- **CRC-32** (131): the USB storage driver's bit-at-a-time copy is miniz's
+  table-driven `mz_crc32`, which the Compress Kit already carries into the
+  same image; its two host tests compile miniz beside it.
+- **One UTF-8** (104), `user/include/utf8.h`: `utf8_valid`, `utf8_get` and
+  `utf8_put`, inline. Six private copies - the Graphics Kit's text and its
+  faces (two decoders and an encoder), the LLM Kit's tokenizer, the Mail
+  Kit's charsets, the SMB Kit's names - disagreed about what was
+  malformed: some took C0 and C1 as a lead byte, some F5 to F7, and only
+  Mail's refused a character written longer than it needs, a surrogate, or
+  one past U+10FFFF. Mail's rule is everyone's now; what is not
+  well-formed reads as U+FFFD one byte long, as it did in all of them. The
+  tokenizer reads those few malformed sequences differently from
+  llama.cpp, which a model's text does not contain.
+- **One opaque mix** (105), `mix_opaque` in `surface.h` beside `over`:
+  the discs, text's ink, a scene's kept pixels and the 3D Kit's blend. The
+  3D Kit's had no `+ 127` and came out up to a step dark; it rounds as the
+  others do now.
+- **PNG through miniz's deflater** (106): `stb_impl.c` gives stb's PNG
+  writer `tdefl` as its `STBIW_ZLIB_COMPRESS`. On a 1920x1080 desktop
+  (`docs/screenshots/2026-11-18-2157-0559d522.png`, measured on the host
+  over the same RGB): stb's own deflate 408,643 bytes in 39.5 ms, tdefl at
+  level 6 331,980 bytes in 28.1 ms, and at level 8 323,975 in 64.0 ms - so
+  6, zlib's default, and it round-trips byte for byte. `x86-webcore` is
+  what holds it in the gate: it saves pages through `gfx.encode_png` and
+  reads them back with `pngread.py`, Python's own zlib.
+
+**The controls.** The CRC: `storage_crc32` answering one bit off fails 5
+of `test_storagedecode`'s 56 checks, the check value of "123456789" among
+them; restored, 56 of 56. The rest change no answer the suites can see
+except where said, and the suites that read those paths - the host's
+crypto, NTLM, mail, map, LLM, drives and storage tests, and the text,
+picture, Mail, SMB, sandbox and 3D suites in the guest - are what hold them.
+
+**The gate.** 132 suites, every library suite run, every one passing, in
+616 s (10:16).

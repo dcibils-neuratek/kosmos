@@ -62,6 +62,7 @@
 
 #include "bytes.h"
 #include "stb_truetype.h"
+#include "../../include/utf8.h"
 
 struct kosmos_font_asset {
     const char          *name;
@@ -140,15 +141,14 @@ static bool name_of(const stbtt_fontinfo *info, int id, char *out, size_t max)
                 continue;
             }
 
-            if (c < 0x80 && n + 1 < max) {
-                out[n++] = (char)c;
-            } else if (c < 0x800 && n + 2 < max) {
-                out[n++] = (char)(0xc0 | (c >> 6));
-                out[n++] = (char)(0x80 | (c & 0x3f));
-            } else if (c >= 0x800 && n + 3 < max) {
-                out[n++] = (char)(0xe0 | (c >> 12));
-                out[n++] = (char)(0x80 | ((c >> 6) & 0x3f));
-                out[n++] = (char)(0x80 | (c & 0x3f));
+            {
+                uint8_t b[4];
+                size_t took = utf8_put(c, b);
+
+                if (n + took < max) {
+                    memcpy(out + n, b, took);
+                    n += took;
+                }
             }
         }
     } else {
@@ -295,49 +295,10 @@ static int l_metrics(lua_State *L)
  */
 static unsigned next_char(const unsigned char *s, size_t len, size_t *i)
 {
-    unsigned c = s[*i], need, cp;
+    size_t took;
+    unsigned cp = utf8_get(s + *i, len - *i, &took);
 
-    if (c < 0x80) {
-        *i += 1;
-        return c;
-    }
-
-    if (c >= 0xc2 && c <= 0xdf) {
-        need = 1;
-        cp = c & 0x1f;
-    } else if (c >= 0xe0 && c <= 0xef) {
-        need = 2;
-        cp = c & 0x0f;
-    } else if (c >= 0xf0 && c <= 0xf4) {
-        need = 3;
-        cp = c & 0x07;
-    } else {
-        *i += 1;
-        return 0xfffd;
-    }
-
-    /* The character's other bytes are at i + 1 to i + need. */
-    if (*i + need >= len) {
-        *i += 1;
-        return 0xfffd;
-    }
-
-    {
-        unsigned k;
-
-        for (k = 1; k <= need; k++) {
-            unsigned b = s[*i + k];
-
-            if ((b & 0xc0) != 0x80) {
-                *i += 1;
-                return 0xfffd;
-            }
-
-            cp = (cp << 6) | (b & 0x3f);
-        }
-    }
-
-    *i += need + 1;
+    *i += took;
     return cp;
 }
 

@@ -22,14 +22,7 @@
 #include <bearssl.h>
 
 #include "crypto.h"
-
-static void be32(uint8_t out[4], uint32_t v)
-{
-    out[0] = (uint8_t)(v >> 24);
-    out[1] = (uint8_t)(v >> 16);
-    out[2] = (uint8_t)(v >> 8);
-    out[3] = (uint8_t)v;
-}
+#include "../../include/bytes.h"
 
 void crypto_kdf_ctr_hmac_sha256(const void *key, size_t key_bytes,
                                 const void *label, size_t label_bytes,
@@ -44,10 +37,10 @@ void crypto_kdf_ctr_hmac_sha256(const void *key, size_t key_bytes,
     size_t done = 0, n, j;
 
     br_hmac_key_init(&kc, &br_sha256_vtable, key, key_bytes);
-    be32(length, (uint32_t)(out_bytes * 8));
+    put_be32(length, (uint32_t)(out_bytes * 8));
 
     for (i = 1; done < out_bytes; i++) {
-        be32(counter, i);
+        put_be32(counter, i);
         br_hmac_init(&hc, &kc, 0);
         br_hmac_update(&hc, counter, 4);
         br_hmac_update(&hc, label, label_bytes);

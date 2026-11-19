@@ -2334,8 +2334,9 @@ $(HOSTDIR)/test_ahcidecode: tools/test_ahcidecode.c user/drivers/storage/ahci_de
 #
 $(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/drivers/usb/storage_decode.c user/drivers/usb/storage_decode.h
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	        tools/test_storagedecode.c user/drivers/usb/storage_decode.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iruntime/upstream/miniz -o $@ \
+	        tools/test_storagedecode.c user/drivers/usb/storage_decode.c \
+	        runtime/upstream/miniz/miniz.c
 
 #
 # And what a FAT volume's bytes mean - its boot sector, its table, and a
@@ -2940,11 +2941,11 @@ $(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
 	        user/drivers/usb/storage_decode.c user/drivers/usb/storage_decode.h \
 	        $(HOSTDIR)/kfs-fixture.img
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser -o $@ \
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser -Iruntime/upstream/miniz -o $@ \
 	        -DKFS_FIXTURE='"$(HOSTDIR)/kfs-fixture.img"' \
 	        tools/test_drivesdecode.c user/servers/drives_decode.c \
 	        user/servers/fat_decode.c user/servers/kfs.c \
-	        user/drivers/usb/storage_decode.c
+	        user/drivers/usb/storage_decode.c runtime/upstream/miniz/miniz.c
 
 #
 # And whether the userland image's canary works, which is the same argument

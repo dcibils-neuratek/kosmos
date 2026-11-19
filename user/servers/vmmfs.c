@@ -105,13 +105,6 @@ static struct share shares[VMMFS_MOST];
 static uint8_t *request;
 static uint8_t *reply;
 
-#define get16 vget16
-#define get32 vget32
-#define get64 vget64
-#define put16 vput16
-#define put32 vput32
-#define put64 vput64
-
 /* ---------------------------------------------------------------------
  * The disk, through `/Home`: `diskproto.h` as a client, through `diskask.c`.
  * --------------------------------------------------------------------- */
@@ -197,16 +190,16 @@ static int attr(struct share *s, uint64_t node, uint8_t *a)
 
     dir = n->kind != DISK_KIND_FILE;
     memset(a, 0, 88);
-    put64(a + 0, node);                                     /* ino */
-    put64(a + 8, dir ? 0 : n->size);                        /* size */
-    put64(a + 16, dir ? 0 : (n->size + 511) / 512);         /* blocks */
-    put64(a + 24, n->dated ? n->modified : 0);              /* atime */
-    put64(a + 32, n->dated ? n->modified : 0);              /* mtime */
-    put64(a + 40, n->dated ? n->modified : 0);              /* ctime */
-    put32(a + 60, (dir ? 0040000u : 0100000u)
+    put_le64(a + 0, node);                                     /* ino */
+    put_le64(a + 8, dir ? 0 : n->size);                        /* size */
+    put_le64(a + 16, dir ? 0 : (n->size + 511) / 512);         /* blocks */
+    put_le64(a + 24, n->dated ? n->modified : 0);              /* atime */
+    put_le64(a + 32, n->dated ? n->modified : 0);              /* mtime */
+    put_le64(a + 40, n->dated ? n->modified : 0);              /* ctime */
+    put_le32(a + 60, (dir ? 0040000u : 0100000u)
                   | (s->read_only ? (dir ? 0555u : 0444u) : (dir ? 0755u : 0644u)));
-    put32(a + 64, dir ? 2 : 1);                             /* nlink */
-    put32(a + 80, 4096);                                    /* blksize */
+    put_le32(a + 64, dir ? 2 : 1);                             /* nlink */
+    put_le32(a + 80, 4096);                                    /* blksize */
     return 0;
 }
 
@@ -372,9 +365,9 @@ static long entry_reply(struct share *s, const char *path, uint8_t *out)
     }
 
     memset(out, 0, 40);
-    put64(out + 0, node);                   /* nodeid */
-    put64(out + 16, 1);                     /* entry_valid: a second */
-    put64(out + 24, 1);                     /* attr_valid */
+    put_le64(out + 0, node);                   /* nodeid */
+    put_le64(out + 16, 1);                     /* entry_valid: a second */
+    put_le64(out + 24, 1);                     /* attr_valid */
 
     return attr(s, node, out + 40) == 0 ? 128 : -E_NOENT;
 }
@@ -388,13 +381,13 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
     switch (op) {
     case FUSE_INIT:
         memset(out, 0, 64);
-        put32(out + 0, 7);                  /* major */
-        put32(out + 4, 31);                 /* minor */
-        put32(out + 8, in_len >= 12 ? get32(in + 8) : 0);   /* max_readahead */
-        put16(out + 16, 16);                /* max_background */
-        put16(out + 18, 12);                /* congestion_threshold */
-        put32(out + 20, READ_MOST);         /* max_write */
-        put32(out + 24, 1);                 /* time_gran */
+        put_le32(out + 0, 7);                  /* major */
+        put_le32(out + 4, 31);                 /* minor */
+        put_le32(out + 8, in_len >= 12 ? get_le32(in + 8) : 0);   /* max_readahead */
+        put_le16(out + 16, 16);                /* max_background */
+        put_le16(out + 18, 12);                /* congestion_threshold */
+        put_le32(out + 20, READ_MOST);         /* max_write */
+        put_le32(out + 24, 1);                 /* time_gran */
         return 64;
 
     case FUSE_DESTROY:
@@ -418,7 +411,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
 
     case FUSE_GETATTR:
         memset(out, 0, 16);
-        put64(out + 0, 1);                  /* attr_valid */
+        put_le64(out + 0, 1);                  /* attr_valid */
         return attr(s, nodeid, out + 16) == 0 ? 104 : -E_NOENT;
 
     case FUSE_ACCESS:
@@ -426,14 +419,14 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
 
     case FUSE_STATFS: {
         memset(out, 0, 80);
-        put64(out + 0, 1u << 20);           /* blocks */
-        put64(out + 8, 1u << 19);           /* bfree */
-        put64(out + 16, 1u << 19);          /* bavail */
-        put64(out + 24, 1u << 16);          /* files */
-        put64(out + 32, 1u << 15);          /* ffree */
-        put32(out + 40, 4096);              /* bsize */
-        put32(out + 44, 255);               /* namelen */
-        put32(out + 48, 4096);              /* frsize */
+        put_le64(out + 0, 1u << 20);           /* blocks */
+        put_le64(out + 8, 1u << 19);           /* bfree */
+        put_le64(out + 16, 1u << 19);          /* bavail */
+        put_le64(out + 24, 1u << 16);          /* files */
+        put_le64(out + 32, 1u << 15);          /* ffree */
+        put_le32(out + 40, 4096);              /* bsize */
+        put_le32(out + 44, 255);               /* namelen */
+        put_le32(out + 48, 4096);              /* frsize */
         return 80;
     }
 
@@ -480,14 +473,14 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
         }
 
         memset(out, 0, 16);
-        put64(out, fh);
+        put_le64(out, fh);
         return 16;
     }
 
     case FUSE_READDIR: {
-        struct handle *h = handle(s, get64(in));
-        uint64_t from = get64(in + 8), i;
-        uint32_t room = get32(in + 16), used = 0;
+        struct handle *h = handle(s, get_le64(in));
+        uint64_t from = get_le64(in + 8), i;
+        uint32_t room = get_le32(in + 16), used = 0;
         const char *name;
 
         if (h == NULL || !h->dir) {
@@ -512,9 +505,9 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
                 }
 
                 memset(out + used, 0, rec);
-                put64(out + used + 0, i < 2 ? 1 : 0xffffffff);     /* ino: unknown */
-                put64(out + used + 8, i + 1);                       /* off */
-                put32(out + used + 16, (uint32_t)len);
+                put_le64(out + used + 0, i < 2 ? 1 : 0xffffffff);     /* ino: unknown */
+                put_le64(out + used + 8, i + 1);                       /* off */
+                put_le32(out + used + 16, (uint32_t)len);
                 memcpy(out + used + 24, n, len);
                 used += (uint32_t)rec;
             }
@@ -530,13 +523,13 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
     case FUSE_RELEASEDIR:
     case FUSE_FSYNCDIR:
         if (op == FUSE_RELEASEDIR) {
-            handle_free(s, get64(in));
+            handle_free(s, get_le64(in));
         }
 
         return 0;
 
     case FUSE_OPEN: {
-        uint32_t flags = get32(in);
+        uint32_t flags = get_le32(in);
         bool writing = (flags & O_ACCMODE) != 0;
         uint64_t fh;
         struct handle *h;
@@ -550,7 +543,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
             return -E_NOENT;
         }
 
-        if ((get32(a + 60) & 0170000u) == 0040000u) {
+        if ((get_le32(a + 60) & 0170000u) == 0040000u) {
             return -E_ISDIR;
         }
 
@@ -569,14 +562,14 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
 
         h->dirty = writing && (flags & O_TRUNC) != 0;
         memset(out, 0, 16);
-        put64(out, fh);
+        put_le64(out, fh);
         return 16;
     }
 
     case FUSE_READ: {
-        struct handle *h = handle(s, get64(in));
-        uint64_t offset = get64(in + 8);
-        uint32_t size = get32(in + 16);
+        struct handle *h = handle(s, get_le64(in));
+        uint64_t offset = get_le64(in + 8);
+        uint32_t size = get_le32(in + 16);
         const char *p = path_of(s, nodeid);
 
         if (size > READ_MOST) {
@@ -608,9 +601,9 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
     }
 
     case FUSE_WRITE: {
-        struct handle *h = handle(s, get64(in));
-        uint64_t offset = get64(in + 8);
-        uint32_t size = get32(in + 16);
+        struct handle *h = handle(s, get_le64(in));
+        uint64_t offset = get_le64(in + 8);
+        uint32_t size = get_le32(in + 16);
         uint8_t *bigger;
 
         if (h == NULL || !h->writing) {
@@ -634,27 +627,27 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
         memcpy(h->data + offset, in + 40, size);
         h->dirty = true;
         memset(out, 0, 8);
-        put32(out, size);
+        put_le32(out, size);
         return 8;
     }
 
     case FUSE_FLUSH:
     case FUSE_FSYNC: {
-        struct handle *h = handle(s, get64(in));
+        struct handle *h = handle(s, get_le64(in));
 
         return h != NULL ? write_back(s, h) : 0;
     }
 
     case FUSE_RELEASE: {
-        struct handle *h = handle(s, get64(in));
+        struct handle *h = handle(s, get_le64(in));
         int said = h != NULL ? write_back(s, h) : 0;
 
-        handle_free(s, get64(in));
+        handle_free(s, get_le64(in));
         return said;
     }
 
     case FUSE_CREATE: {
-        uint32_t flags = get32(in);
+        uint32_t flags = get_le32(in);
         uint64_t fh;
         struct handle *h;
         long body;
@@ -676,11 +669,11 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
         }
 
         h = handle(s, fh);
-        h->node = get64(out);
+        h->node = get_le64(out);
         h->writing = true;                  /* made to be written */
         (void)flags;
         memset(out + 128, 0, 16);
-        put64(out + 128, fh);
+        put_le64(out + 128, fh);
         return 144;
     }
 
@@ -723,7 +716,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
         }
 
         if ((err = child(s, nodeid, from, path)) != 0
-            || (err = child(s, get64(in), to, path2)) != 0) {
+            || (err = child(s, get_le64(in), to, path2)) != 0) {
             return err;
         }
 
@@ -731,12 +724,12 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
     }
 
     case FUSE_SETATTR: {
-        uint32_t valid = get32(in);
+        uint32_t valid = get_le32(in);
 
         /* A size: truncation, of a file open for writing or not. */
         if ((valid & (1u << 3)) != 0) {
-            struct handle t, *h = (valid & (1u << 6)) != 0 ? handle(s, get64(in + 8)) : NULL;
-            uint64_t size = get64(in + 16);
+            struct handle t, *h = (valid & (1u << 6)) != 0 ? handle(s, get_le64(in + 8)) : NULL;
+            uint64_t size = get_le64(in + 16);
 
             if (s->read_only) {
                 return -E_ROFS;
@@ -790,7 +783,7 @@ static long fuse(struct share *s, uint32_t op, uint64_t nodeid, const uint8_t *i
         }
 
         memset(out, 0, 16);
-        put64(out, 1);
+        put_le64(out, 1);
         return attr(s, nodeid, out + 16) == 0 ? 104 : -E_NOENT;
     }
 
@@ -819,15 +812,15 @@ static void notify(struct vdev *d, unsigned q)
 
         /* A `fuse_in_header`, and the answer behind a `fuse_out_header`. */
         if (in_len >= 40 && room >= 16) {
-            long body = fuse(s, get32(request + 4), get64(request + 16), request + 40,
+            long body = fuse(s, get_le32(request + 4), get_le64(request + 16), request + 40,
                              in_len - 40, reply + 16, room - 16);
 
             if (body != NO_REPLY) {
                 uint32_t total = 16 + (body > 0 ? (uint32_t)body : 0);
 
-                put32(reply, total);
-                put32(reply + 4, body < 0 ? (uint32_t)body : 0);
-                put64(reply + 8, get64(request + 8));
+                put_le32(reply, total);
+                put_le32(reply + 4, body < 0 ? (uint32_t)body : 0);
+                put_le64(reply + 8, get_le64(request + 8));
                 written = vdev_scatter(&c, reply, total);
             }
         }
@@ -845,7 +838,7 @@ static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 
     memset(cfg, 0, sizeof(cfg));
     memcpy(cfg, s->tag, strlen(s->tag));
-    put32(cfg + 36, 1);
+    put_le32(cfg + 36, 1);
 
     for (k = 0; k < size && off + k < sizeof(cfg); k++) {
         out[k] = cfg[off + k];

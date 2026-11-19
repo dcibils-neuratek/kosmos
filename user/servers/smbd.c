@@ -58,6 +58,7 @@
 #include "smb_kit.h"
 #include "kits/network/netclient.h"
 #include "md4.h"
+#include "../include/bytes.h"
 
 static long console = -1;
 static uint32_t connections;        /* clients connected now */
@@ -1249,10 +1250,6 @@ static bool room_for(size_t bytes)
     return true;
 }
 
-static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static void put32(uint8_t *p, uint32_t v) { put16(p, (uint16_t)v); put16(p + 2, (uint16_t)(v >> 16)); }
-static void put64(uint8_t *p, uint64_t v) { put32(p, (uint32_t)v); put32(p + 4, (uint32_t)(v >> 32)); }
-
 /* The fixed part of an entry, before its name: FileIdBothDirectoryInformation
  * (MS-FSCC 2.4.17) carries a short name, FileIdFullDirectoryInformation
  * (2.4.18) does not. */
@@ -1351,19 +1348,19 @@ static int query_directory(struct smb2_server *server, struct smb2_context *smb2
         }
 
         if (count > 0) {
-            put32(listing + last, used - last);
+            put_le32(listing + last, used - last);
         }
 
         e = listing + used;
         memset(e, 0, wire);
-        put64(e + 8, filetime(f.written));
-        put64(e + 16, filetime(f.written));
-        put64(e + 24, filetime(f.written));
-        put64(e + 32, filetime(f.written));
-        put64(e + 40, f.size);
-        put64(e + 48, allocated(&f));
-        put32(e + 56, attributes_of(&f));
-        put32(e + 60, bytes);
+        put_le64(e + 8, filetime(f.written));
+        put_le64(e + 16, filetime(f.written));
+        put_le64(e + 24, filetime(f.written));
+        put_le64(e + 32, filetime(f.written));
+        put_le64(e + 40, f.size);
+        put_le64(e + 48, allocated(&f));
+        put_le32(e + 56, attributes_of(&f));
+        put_le32(e + 60, bytes);
         memcpy(e + fixed, wide->val, bytes);
         free(wide);
 

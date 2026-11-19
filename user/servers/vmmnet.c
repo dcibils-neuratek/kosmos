@@ -46,6 +46,7 @@
 #include "kits/network/netclient.h"
 #include "vdev.h"
 #include "vmmnet.h"
+#include "../include/bytes.h"
 
 #define VIRTIO_ID_NET       1u
 #define VIRTIO_NET_F_MAC    (1ull << 5)
@@ -140,11 +141,6 @@ static uint16_t fold(uint32_t sum)
     return (uint16_t)~sum;
 }
 
-static void be16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
-static void be32(uint8_t *p, uint32_t v) { be16(p, (uint16_t)(v >> 16)); be16(p + 2, (uint16_t)v); }
-static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] << 8 | p[1]); }
-static uint32_t rd32(const uint8_t *p) { return (uint32_t)rd16(p) << 16 | rd16(p + 2); }
-
 /* ---------------------------------------------------------------------
  * To the guest: a frame into the next buffer it posted, or false.
  * --------------------------------------------------------------------- */
@@ -159,7 +155,7 @@ static bool to_guest(const uint8_t *frame, uint32_t len)
     }
 
     memset(buf, 0, NET_HDR);
-    vput16(buf + 10, 1);                    /* num_buffers */
+    put_le16(buf + 10, 1);                    /* num_buffers */
     memcpy(buf + NET_HDR, frame, len);
     vdev_push(&dev, RX, c.head, vdev_scatter(&c, buf, NET_HDR + len));
     return true;
@@ -177,16 +173,16 @@ static bool ip_to_guest(uint8_t proto, const uint8_t src[4], const uint8_t *payl
 
     memcpy(f, GUEST_MAC, 6);
     memcpy(f + 6, GATE_MAC, 6);
-    be16(f + 12, 0x0800);
+    put_be16(f + 12, 0x0800);
     memset(ip, 0, 20);
     ip[0] = 0x45;
-    be16(ip + 2, (uint16_t)(20 + n));
-    be16(ip + 4, ip_id++);
+    put_be16(ip + 2, (uint16_t)(20 + n));
+    put_be16(ip + 4, ip_id++);
     ip[8] = 64;
     ip[9] = proto;
     memcpy(ip + 12, src, 4);
     memcpy(ip + 16, GUEST_IP, 4);
-    be16(ip + 10, fold(sum16(ip, 20, 0)));
+    put_be16(ip + 10, fold(sum16(ip, 20, 0)));
     memcpy(ip + 20, payload, n);
     return to_guest(f, 14 + 20 + n);
 }
@@ -204,18 +200,18 @@ static bool tcp_to_guest(struct link *l, uint8_t flags, const uint8_t *data, uin
     }
 
     memset(seg, 0, hl);
-    be16(seg + 0, l->dport);
-    be16(seg + 2, l->gport);
-    be32(seg + 4, l->snd_nxt);
-    be32(seg + 8, l->rcv_nxt);
+    put_be16(seg + 0, l->dport);
+    put_be16(seg + 2, l->gport);
+    put_be32(seg + 4, l->snd_nxt);
+    put_be32(seg + 8, l->rcv_nxt);
     seg[12] = (uint8_t)((hl / 4) << 4);
     seg[13] = flags;
-    be16(seg + 14, WINDOW);
+    put_be16(seg + 14, WINDOW);
 
     if (mss_option) {
         seg[20] = 2;
         seg[21] = 4;
-        be16(seg + 22, MSS);
+        put_be16(seg + 22, MSS);
     }
 
     memcpy(seg + hl, data, n);
@@ -223,9 +219,9 @@ static bool tcp_to_guest(struct link *l, uint8_t flags, const uint8_t *data, uin
     memcpy(pseudo + 4, GUEST_IP, 4);
     pseudo[8] = 0;
     pseudo[9] = 6;
-    be16(pseudo + 10, (uint16_t)(hl + n));
+    put_be16(pseudo + 10, (uint16_t)(hl + n));
     sum = sum16(pseudo, 12, 0);
-    be16(seg + 16, fold(sum16(seg, hl + n, sum)));
+    put_be16(seg + 16, fold(sum16(seg, hl + n, sum)));
     return ip_to_guest(6, l->dip, seg, hl + n);
 }
 
@@ -242,18 +238,18 @@ static void arp(const uint8_t *f, uint32_t n)
 {
     uint8_t r[42];
 
-    if (n < 42 || rd16(f + 20) != 1 || !ours(f + 38)) {
+    if (n < 42 || get_be16(f + 20) != 1 || !ours(f + 38)) {
         return;                             /* not a request for us */
     }
 
     memcpy(r, f + 6, 6);
     memcpy(r + 6, GATE_MAC, 6);
-    be16(r + 12, 0x0806);
-    be16(r + 14, 1);                        /* Ethernet */
-    be16(r + 16, 0x0800);
+    put_be16(r + 12, 0x0806);
+    put_be16(r + 14, 1);                        /* Ethernet */
+    put_be16(r + 16, 0x0800);
     r[18] = 6;
     r[19] = 4;
-    be16(r + 20, 2);                        /* a reply */
+    put_be16(r + 20, 2);                        /* a reply */
     memcpy(r + 22, GATE_MAC, 6);
     memcpy(r + 28, f + 38, 4);              /* the address asked about */
     memcpy(r + 32, f + 22, 6);
@@ -271,8 +267,8 @@ static void ping(const uint8_t dst[4], const uint8_t *icmp, uint32_t n)
 
     memcpy(r, icmp, n);
     r[0] = 0;
-    be16(r + 2, 0);
-    be16(r + 2, fold(sum16(r, n, 0)));
+    put_be16(r + 2, 0);
+    put_be16(r + 2, fold(sum16(r, n, 0)));
     ip_to_guest(1, dst, r, n);
 }
 
@@ -317,18 +313,18 @@ static void dns(uint16_t sport, const uint8_t *q, uint32_t n)
         return;
     }
 
-    qtype = rd16(q + at + 1);
+    qtype = get_be16(q + at + 1);
 
     if (qtype == 1 && len > 0) {
         found = net_client_resolve(name, addr, dns_wait_ticks) == NET_OK;
     }
 
     memcpy(m, q, qend);                     /* the header and the question */
-    be16(m + 2, qtype != 1 || found ? 0x8180 : 0x8183);
-    be16(m + 4, 1);
-    be16(m + 6, found ? 1 : 0);
-    be16(m + 8, 0);
-    be16(m + 10, 0);
+    put_be16(m + 2, qtype != 1 || found ? 0x8180 : 0x8183);
+    put_be16(m + 4, 1);
+    put_be16(m + 6, found ? 1 : 0);
+    put_be16(m + 8, 0);
+    put_be16(m + 10, 0);
 
     if (found) {
         static const uint8_t answer[12] = { 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4 };
@@ -338,10 +334,10 @@ static void dns(uint16_t sport, const uint8_t *q, uint32_t n)
         qend += 16;
     }
 
-    be16(r + 0, 53);
-    be16(r + 2, sport);
-    be16(r + 4, (uint16_t)(8 + qend));
-    be16(r + 6, 0);                         /* no checksum, as IPv4 allows */
+    put_be16(r + 0, 53);
+    put_be16(r + 2, sport);
+    put_be16(r + 4, (uint16_t)(8 + qend));
+    put_be16(r + 6, 0);                         /* no checksum, as IPv4 allows */
     ip_to_guest(17, DNS_IP, r, 8 + qend);
 }
 
@@ -406,10 +402,10 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
         return;
     }
 
-    sport = rd16(t);
-    dport = rd16(t + 2);
-    seq = rd32(t + 4);
-    ack = rd32(t + 8);
+    sport = get_be16(t);
+    dport = get_be16(t + 2);
+    seq = get_be32(t + 4);
+    ack = get_be32(t + 8);
     flags = t[13];
     data = n - hl;
     l = link_find(sport, dst, dport);
@@ -459,7 +455,7 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
             l->snd_nxt = l->snd_una;        /* its SYN again: our SYN-ACK again */
         }
 
-        l->wnd = rd16(t + 14);
+        l->wnd = get_be16(t + 14);
         tcp_to_guest(l, TCP_SYN | TCP_ACK, NULL, 0, true);
         l->snd_nxt++;
         return;
@@ -491,7 +487,7 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
         if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK) && l->syn_sent && ack == l->snd_nxt) {
             l->rcv_nxt = seq + 1;
             l->snd_una = ack;
-            l->wnd = rd16(t + 14);
+            l->wnd = get_be16(t + 14);
             l->opening = false;
             tcp_to_guest(l, TCP_ACK, NULL, 0, false);
         }
@@ -504,7 +500,7 @@ static void tcp(const uint8_t dst[4], const uint8_t *t, uint32_t n)
         l->snd_una = ack;
     }
 
-    l->wnd = rd16(t + 14);
+    l->wnd = get_be16(t + 14);
 
     if (data > 0) {
         if (seq == l->rcv_nxt) {
@@ -553,18 +549,18 @@ static void from_guest(const uint8_t *f, uint32_t n)
         return;
     }
 
-    if (rd16(f + 12) == 0x0806) {
+    if (get_be16(f + 12) == 0x0806) {
         arp(f, n);
         return;
     }
 
-    if (rd16(f + 12) != 0x0800 || n < 34) {
+    if (get_be16(f + 12) != 0x0800 || n < 34) {
         return;
     }
 
     ip = f + 14;
     hl = (uint32_t)(ip[0] & 15) * 4;
-    total = rd16(ip + 2);
+    total = get_be16(ip + 2);
 
     if ((ip[0] >> 4) != 4 || hl < 20 || total < hl || 14 + total > n
         || memcmp(ip + 12, GUEST_IP, 4) != 0) {
@@ -578,8 +574,8 @@ static void from_guest(const uint8_t *f, uint32_t n)
         }
         break;
     case 17:
-        if (outgoing && memcmp(ip + 16, DNS_IP, 4) == 0 && total - hl >= 8 && rd16(ip + hl + 2) == 53) {
-            dns(rd16(ip + hl), ip + hl + 8, total - hl - 8);
+        if (outgoing && memcmp(ip + 16, DNS_IP, 4) == 0 && total - hl >= 8 && get_be16(ip + hl + 2) == 53) {
+            dns(get_be16(ip + hl), ip + hl + 8, total - hl - 8);
         }
         break;
     case 6:

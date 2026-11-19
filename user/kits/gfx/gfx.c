@@ -49,6 +49,7 @@
 #include "gfx_draw.h"
 #include "surface.h"           /* the shape, for this kit and its primitives */
 #include "draw_primitives.h"   /* fill, blit, blend, stretch: `draw.c` */
+#include "../../include/utf8.h"
 
 #include "kosmos.h"
 
@@ -510,24 +511,6 @@ static int l_fill(lua_State *L)
  * The circle test is `dx*dx + dy*dy <= r*r` walked outward rather than a
  * square root per row: integer only, no libm here, and exact.
  */
-/*
- * Mixing two colours by coverage.
- *
- * Integer only, and the rounding is `+ 127` so that a half-covered pixel
- * lands on the midpoint rather than a step below it - which over a whole
- * edge is the difference between a smooth line and one that reads slightly
- * thin.
- */
-static uint32_t mix(uint32_t dst, uint32_t src, unsigned a)
-{
-    unsigned inv = 255u - a;
-    unsigned r = ((((src >> 16) & 0xff) * a) + (((dst >> 16) & 0xff) * inv) + 127) / 255;
-    unsigned g = ((((src >>  8) & 0xff) * a) + (((dst >>  8) & 0xff) * inv) + 127) / 255;
-    unsigned b = ((((src      ) & 0xff) * a) + (((dst      ) & 0xff) * inv) + 127) / 255;
-
-    return 0xff000000u | (r << 16) | (g << 8) | b;
-}
-
 static int l_disc(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -584,7 +567,7 @@ static int l_disc(lua_State *L)
                 } else {
                     unsigned a = (unsigned)((outer - d2) * 255 / (outer - inner));
 
-                    p[x] = mix(p[x], colour, a);
+                    p[x] = mix_opaque(p[x], colour, a);
                 }
             }
         }
@@ -1405,40 +1388,10 @@ static const struct fallback_face *fallback_for(unsigned cp)
  */
 static unsigned utf8_next(const char *str, size_t len, size_t *at)
 {
-    const unsigned char *s = (const unsigned char *)str + *at;
-    size_t left = len - *at;
-    unsigned cp;
-    unsigned need;
+    size_t took;
+    unsigned cp = utf8_get((const uint8_t *)str + *at, len - *at, &took);
 
-    if (s[0] < 0x80u) {
-        *at += 1;
-        return s[0];
-    }
-
-    if ((s[0] & 0xe0u) == 0xc0u)      { cp = s[0] & 0x1fu; need = 1; }
-    else if ((s[0] & 0xf0u) == 0xe0u) { cp = s[0] & 0x0fu; need = 2; }
-    else if ((s[0] & 0xf8u) == 0xf0u) { cp = s[0] & 0x07u; need = 3; }
-    else                              { *at += 1; return 0xfffdu; }
-
-    if (left <= need) {
-        *at += 1;
-        return 0xfffdu;
-    }
-
-    {
-        unsigned i;
-
-        for (i = 1; i <= need; i++) {
-            if ((s[i] & 0xc0u) != 0x80u) {
-                *at += 1;
-                return 0xfffdu;
-            }
-
-            cp = (cp << 6) | (s[i] & 0x3fu);
-        }
-    }
-
-    *at += need + 1;
+    *at += took;
     return cp;
 }
 

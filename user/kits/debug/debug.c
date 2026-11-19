@@ -21,6 +21,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "../../include/bytes.h"
 
 #define SHT_SYMTAB  2u
 #define STT_FUNC    2u
@@ -43,14 +44,6 @@ struct debug_image {
     struct fn *fns;
     size_t count;
 };
-
-static uint16_t u16(const unsigned char *p) { return (uint16_t)(p[0] | p[1] << 8); }
-static uint32_t u32(const unsigned char *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 |
-           (uint32_t)p[3] << 24;
-}
-static uint64_t u64(const unsigned char *p) { return u32(p) | (uint64_t)u32(p + 4) << 32; }
 
 static int read_all(struct debug_image *im, uint64_t at, void *into, size_t n)
 {
@@ -93,19 +86,19 @@ struct debug_image *debug_open(debug_read_fn read, void *ctx, const char **why)
     if (read_all(im, 0, head, sizeof head) ||
         memcmp(head, "\177ELF", 4) || head[4] != 2 || head[5] != 1)
         return fail(im, why, "not a 64-bit little-endian ELF image");
-    shoff = u64(head + 0x28);
-    shentsize = u16(head + 0x3A);
-    shnum = u16(head + 0x3C);
+    shoff = get_le64(head + 0x28);
+    shentsize = get_le16(head + 0x3A);
+    shnum = get_le16(head + 0x3C);
     if (shentsize < SHDR_BYTES || shnum == 0)
         return fail(im, why, "no section headers");
 
     for (i = 0; i < shnum; i++) {
         if (read_all(im, shoff + (uint64_t)i * shentsize, sh, sizeof sh))
             return fail(im, why, "section headers cut short");
-        if (u32(sh + 4) == SHT_SYMTAB && u64(sh + 56) == SYM_BYTES) {
-            symoff = u64(sh + 24);
-            symsize = u64(sh + 32);
-            link = u32(sh + 40);
+        if (get_le32(sh + 4) == SHT_SYMTAB && get_le64(sh + 56) == SYM_BYTES) {
+            symoff = get_le64(sh + 24);
+            symsize = get_le64(sh + 32);
+            link = get_le32(sh + 40);
             break;
         }
     }
@@ -114,8 +107,8 @@ struct debug_image *debug_open(debug_read_fn read, void *ctx, const char **why)
     if (link >= shnum ||
         read_all(im, shoff + (uint64_t)link * shentsize, sh, sizeof sh))
         return fail(im, why, "the symbol table's names are missing");
-    im->strtab = u64(sh + 24);
-    im->strtab_size = u64(sh + 32);
+    im->strtab = get_le64(sh + 24);
+    im->strtab_size = get_le64(sh + 32);
 
     chunk = malloc(CHUNK);
     if (!chunk)
@@ -131,9 +124,9 @@ struct debug_image *debug_open(debug_read_fn read, void *ctx, const char **why)
         }
         for (at = 0; at < n; at += SYM_BYTES) {
             const unsigned char *s = chunk + at;
-            uint64_t value = u64(s + 8);
+            uint64_t value = get_le64(s + 8);
             if ((s[4] & 0xf) != STT_FUNC || value == 0 ||
-                u32(s) >= im->strtab_size)
+                get_le32(s) >= im->strtab_size)
                 continue;
             if (im->count == room) {
                 size_t more = room ? room * 2 : 4096;
@@ -146,8 +139,8 @@ struct debug_image *debug_open(debug_read_fn read, void *ctx, const char **why)
                 room = more;
             }
             im->fns[im->count].addr = value;
-            im->fns[im->count].size = u64(s + 16);
-            im->fns[im->count].name = u32(s);
+            im->fns[im->count].size = get_le64(s + 16);
+            im->fns[im->count].name = get_le32(s);
             im->count++;
         }
         done += n;

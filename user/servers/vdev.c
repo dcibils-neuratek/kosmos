@@ -190,7 +190,7 @@ bool vdev_waiting(struct vdev *d, unsigned qi)
     struct vdev_queue *q = qi < d->queues ? &d->q[qi] : NULL;
     uint8_t *avail, *used, *desc;
 
-    return q != NULL && queue_in_memory(q, &avail, &used, &desc) && q->last != vget16(avail + 2);
+    return q != NULL && queue_in_memory(q, &avail, &used, &desc) && q->last != get_le16(avail + 2);
 }
 
 bool vdev_pop(struct vdev *d, unsigned qi, struct vdev_chain *c)
@@ -200,20 +200,20 @@ bool vdev_pop(struct vdev *d, unsigned qi, struct vdev_chain *c)
     uint16_t at;
     unsigned hops = 0;
 
-    if (q == NULL || !queue_in_memory(q, &avail, &used, &desc) || q->last == vget16(avail + 2)) {
+    if (q == NULL || !queue_in_memory(q, &avail, &used, &desc) || q->last == get_le16(avail + 2)) {
         return false;
     }
 
-    c->head = vget16(avail + 4 + 2 * (q->last % q->num));
+    c->head = get_le16(avail + 4 + 2 * (q->last % q->num));
     c->nin = c->nout = 0;
     q->last++;
     at = c->head;
 
     for (;;) {
         uint8_t *e = desc + 16 * (uint64_t)(at % q->num);
-        uint32_t len = vget32(e + 8);
-        uint16_t flags = vget16(e + 12);
-        uint8_t *p = vdev_guest(vget64(e), len);
+        uint32_t len = get_le32(e + 8);
+        uint16_t flags = get_le16(e + 12);
+        uint8_t *p = vdev_guest(get_le64(e), len);
 
         if (p != NULL) {
             if ((flags & DESC_WRITE) != 0 && c->nout < VDEV_SEGMENTS) {
@@ -229,7 +229,7 @@ bool vdev_pop(struct vdev *d, unsigned qi, struct vdev_chain *c)
             break;
         }
 
-        at = vget16(e + 14);
+        at = get_le16(e + 14);
     }
 
     (void)used;
@@ -246,10 +246,10 @@ void vdev_push(struct vdev *d, unsigned qi, uint16_t head, uint32_t written)
         return;
     }
 
-    idx = vget16(used + 2);
-    vput32(used + 4 + 8 * (idx % q->num), head);
-    vput32(used + 4 + 8 * (idx % q->num) + 4, written);
-    vput16(used + 2, (uint16_t)(idx + 1));
+    idx = get_le16(used + 2);
+    put_le32(used + 4 + 8 * (idx % q->num), head);
+    put_le32(used + 4 + 8 * (idx % q->num) + 4, written);
+    put_le16(used + 2, (uint16_t)(idx + 1));
     d->int_status |= 1;
 }
 

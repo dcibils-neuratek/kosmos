@@ -23,6 +23,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "../../include/utf8.h"
+
 /*
  * **A trace of every stage**, compiled in only when asked (`-DLLM_TRACE`,
  * the host test's `--trace`): each named as llama.cpp's graph names it,
@@ -717,35 +719,15 @@ static int char_byte(uint32_t c)
   return -1;
 }
 
-static int put_utf8(uint32_t c, char *out)
-{
-  if (c < 0x80) { out[0] = (char)c; return 1; }
-  if (c < 0x800) { out[0] = (char)(0xc0 | c >> 6); out[1] = (char)(0x80 | (c & 0x3f)); return 2; }
-  if (c < 0x10000) {
-    out[0] = (char)(0xe0 | c >> 12); out[1] = (char)(0x80 | ((c >> 6) & 0x3f));
-    out[2] = (char)(0x80 | (c & 0x3f)); return 3;
-  }
-  out[0] = (char)(0xf0 | c >> 18); out[1] = (char)(0x80 | ((c >> 12) & 0x3f));
-  out[2] = (char)(0x80 | ((c >> 6) & 0x3f)); out[3] = (char)(0x80 | (c & 0x3f));
-  return 4;
-}
+static int put_utf8(uint32_t c, char *out) { return (int)utf8_put(c, (uint8_t *)out); }
 
-/* One character from `s`, as llama.cpp reads one: a malformed byte is
- * U+FFFD and one byte long. */
+/* One character from `s`: a malformed byte is U+FFFD and one byte long,
+ * as llama.cpp reads one - which takes more for well-formed than
+ * `utf8.h` does (C0 and C1, a long way of writing a character), and the
+ * tokenizer meets none of those in a model's text. */
 static uint32_t get_utf8(const char *s, size_t n, size_t *len)
 {
-  const uint8_t *u = (const uint8_t *)s;
-  *len = 1;
-  if (u[0] < 0x80) return u[0];
-
-  size_t need = (u[0] & 0xe0) == 0xc0 ? 2 : (u[0] & 0xf0) == 0xe0 ? 3 : (u[0] & 0xf8) == 0xf0 ? 4 : 0;
-  if (!need || need > n) return 0xfffd;
-  for (size_t i = 1; i < need; i++) if ((u[i] & 0xc0) != 0x80) return 0xfffd;
-
-  uint32_t c = need == 2 ? u[0] & 0x1f : need == 3 ? u[0] & 0x0f : u[0] & 0x07;
-  for (size_t i = 1; i < need; i++) c = c << 6 | (u[i] & 0x3f);
-  *len = need;
-  return c;
+  return utf8_get((const uint8_t *)s, n, len);
 }
 
 /*
@@ -838,7 +820,7 @@ static void bpe_word(const struct llm_model *m, const char *w, uint32_t n, struc
 
     /* Not a token: its bytes, each its own (`byte_to_token`). */
     for (uint32_t j = 0; j < len[i]; j++) {
-      char c[2];
+      char c[4];
       int cl = put_utf8(byte_char((uint8_t)w[start[i] + j]), c);
       id = token_id(m, c, (uint32_t)cl);
       if (id >= 0) emit(o, id);

@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "netproto.h"
@@ -45,6 +46,7 @@
 #include "mdnsproto.h"
 #include "dnsmsg.h"
 #include "init/say.h"
+#include "../include/bytes.h"
 
 #define MDNS_PORT   5353u
 #define BROWSE_FOR    10u           /* seconds a browse is kept asking after it was asked */
@@ -165,23 +167,7 @@ static uint64_t now(void)
 }
 
 /* DNS names are the same whatever their letters' case (RFC 1035 2.3.3). */
-static bool same_name(const char *a, const char *b)
-{
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        char x = *a, y = *b;
-
-        if (x >= 'A' && x <= 'Z') x = (char)(x - 'A' + 'a');
-        if (y >= 'A' && y <= 'Z') y = (char)(y - 'A' + 'a');
-        if (x != y) return false;
-    }
-
-    return *a == *b;
-}
-
-static uint16_t be16(const uint8_t *p)
-{
-    return (uint16_t)((p[0] << 8) | p[1]);
-}
+static bool same_name(const char *a, const char *b) { return strcasecmp(a, b) == 0; }
 
 /* A service type as RFC 6763 7 writes one: `_name._tcp` or `_name._udp`. */
 static bool service_type(const char *t)
@@ -893,7 +879,7 @@ static void record(const uint8_t *m, unsigned len, const struct dns_record *r, b
 
             if (same_name(r->name, full)
                 && dns_read_name(m, len, r->data + 6, in->host, sizeof(in->host), NULL)) {
-                in->port = be16(m + r->data + 4);
+                in->port = get_be16(m + r->data + 4);
                 in->has_srv = true;
             }
         }

@@ -76,12 +76,71 @@
 /*
  * **And PNG out**, for a Cafesa3D render saved and the screen's picture
  * kept: stb_image_write, by the same author and under the same terms,
- * taken from the same commit. Only its PNG writer is used, which carries
- * its own deflate - this image has an inflater and nothing that compresses.
- * No stdio, for the reason there is none above; and its asserts are
- * silenced, for the reason STBI_ASSERT is.
+ * taken from the same commit. Only its PNG writer is used. No stdio, for
+ * the reason there is none above; and its asserts are silenced, for the
+ * reason STBI_ASSERT is.
+ *
+ * **Its deflate is miniz's**, the Compress Kit's deflater, rather than the
+ * one stb carries - which was here because this image once had nothing
+ * else that compressed (`cleanup.md` finding 106). On a 1920x1080 desktop
+ * tdefl at level 6 made 331,980 bytes in 28 ms where stb's made 408,643 in
+ * 40, and at 8 it took 64 ms for 2% less, so 6 it is, as zlib's default is.
+ * Its state is about 320 KB, taken for the picture and given back.
  */
+#include <stdlib.h>
+#include <string.h>
+#include "miniz.h"
+
+struct png_zlib { unsigned char *bytes; size_t used, room; int failed; };
+
+static mz_bool png_zlib_put(const void *from, int len, void *user)
+{
+    struct png_zlib *z = user;
+
+    if (z->used + (size_t)len > z->room) {
+        size_t room = (z->used + (size_t)len) * 2;
+        unsigned char *grown = realloc(z->bytes, room);
+
+        if (grown == NULL) {
+            z->failed = 1;
+            return MZ_FALSE;
+        }
+
+        z->bytes = grown, z->room = room;
+    }
+
+    memcpy(z->bytes + z->used, from, (size_t)len);
+    z->used += (size_t)len;
+    return MZ_TRUE;
+}
+
+static unsigned char *png_zlib(unsigned char *data, int len, int *out_len, int quality)
+{
+    tdefl_compressor *d = malloc(sizeof *d);
+    struct png_zlib z = { NULL, 0, 0, 0 };
+    mz_uint flags = tdefl_create_comp_flags_from_zip_params(6, MZ_DEFAULT_WINDOW_BITS,
+                                                            MZ_DEFAULT_STRATEGY);
+    tdefl_status st = TDEFL_STATUS_BAD_PARAM;
+
+    (void)quality;
+
+    if (d != NULL && tdefl_init(d, png_zlib_put, &z, (int)flags) == TDEFL_STATUS_OKAY) {
+        st = tdefl_compress_buffer(d, data, (size_t)len, TDEFL_FINISH);
+    }
+
+    free(d);
+
+    if (st != TDEFL_STATUS_DONE || z.failed) {
+        free(z.bytes);
+        return NULL;
+    }
+
+    *out_len = (int)z.used;
+    return z.bytes;
+}
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBI_WRITE_NO_STDIO
 #define STBIW_ASSERT(x) ((void)0)
+#define STBIW_ZLIB_COMPRESS png_zlib
 #include "stb_image_write.h"

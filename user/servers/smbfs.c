@@ -87,6 +87,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "kosmos.h"
 #include "progcount.h"
@@ -2071,18 +2072,7 @@ static uint64_t ticks_of_ms(uint64_t ms)
 
 /* SMB's names do not care about case, so neither does anything matched
  * against them here. */
-static bool same_name(const char *a, const char *b)
-{
-    for (;; a++, b++) {
-        char x = *a, y = *b;
-
-        if (x >= 'A' && x <= 'Z') x = (char)(x - 'A' + 'a');
-        if (y >= 'A' && y <= 'Z') y = (char)(y - 'A' + 'a');
-
-        if (x != y) return false;
-        if (x == '\0') return true;
-    }
-}
+static bool same_name(const char *a, const char *b) { return strcasecmp(a, b) == 0; }
 
 static struct tree *tree_find(struct server *s, const char *name)
 {

@@ -97,12 +97,7 @@ uint32_t vdev_gather(const struct vdev_chain *c, uint8_t *to, uint32_t room);
 /* Whether its interrupt should be raised. */
 bool vdev_raised(const struct vdev *d);
 
-/* Little-endian, as virtio's own fields are. */
-static inline uint16_t vget16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
-static inline uint32_t vget32(const uint8_t *p) { return (uint32_t)vget16(p) | (uint32_t)vget16(p + 2) << 16; }
-static inline uint64_t vget64(const uint8_t *p) { return (uint64_t)vget32(p) | (uint64_t)vget32(p + 4) << 32; }
-static inline void vput16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static inline void vput32(uint8_t *p, uint32_t v) { vput16(p, (uint16_t)v); vput16(p + 2, (uint16_t)(v >> 16)); }
-static inline void vput64(uint8_t *p, uint64_t v) { vput32(p, (uint32_t)v); vput32(p + 4, (uint32_t)(v >> 32)); }
+/* Little-endian, as virtio's own fields are: `get_le16` and the rest. */
+#include "../include/bytes.h"
 
 #endif /* USER_SERVERS_VDEV_H */

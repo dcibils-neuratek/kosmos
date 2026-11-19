@@ -13,6 +13,8 @@
  * specification's checks; this reads the array it points at.
  */
 
+#include <strings.h>
+
 #include "drives_decode.h"
 #include "drivers/usb/storage_decode.h"
 
@@ -326,25 +328,9 @@ void drives_label_name(char *out, unsigned bytes, const char *label)
     out[at] = '\0';
 }
 
-static char lower(char c)
-{
-    return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
-}
-
 /* Without regard to case, as FAT compares names - so two drives differing
  * only in case are one name and get numbered apart. */
-static bool same_name(const char *a, const char *b)
-{
-    unsigned i;
-
-    for (i = 0; a[i] != '\0' && b[i] != '\0'; i++) {
-        if (lower(a[i]) != lower(b[i])) {
-            return false;
-        }
-    }
-
-    return a[i] == b[i];
-}
+static bool same_name(const char *a, const char *b) { return strcasecmp(a, b) == 0; }
 
 static bool already_taken(const char *name, const char *const *taken,
                           unsigned count)

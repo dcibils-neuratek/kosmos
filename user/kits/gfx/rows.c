@@ -54,11 +54,9 @@ void gfx_fill_row(uint32_t *p, long n, uint32_t colour, bool vectors)
     }
 }
 
-/* One pixel: `gfx.c`'s `mix`, with its two ends. */
+/* One pixel: `mix_opaque`, with its two ends. */
 static uint32_t cover1(uint32_t dst, uint32_t ink, unsigned a)
 {
-    unsigned inv = 255u - a, r, g, b;
-
     if (a == 0) {
         return dst;
     }
@@ -82,13 +80,7 @@ static uint32_t cover1(uint32_t dst, uint32_t ink, unsigned a)
         return over((ink & 0x00ffffffu) | ((uint32_t)a << 24), dst, 255u);
     }
 
-    r = ((((ink >> 16) & 0xff) * a) + (((dst >> 16) & 0xff) * inv) + 127)
-        / 255;
-    g = ((((ink >> 8) & 0xff) * a) + (((dst >> 8) & 0xff) * inv) + 127)
-        / 255;
-    b = (((ink & 0xff) * a) + ((dst & 0xff) * inv) + 127) / 255;
-
-    return 0xff000000u | (r << 16) | (g << 8) | b;
+    return mix_opaque(dst, ink, a);
 }
 
 /* `x` divided by 255, rounded, in the lanes - for `x` up to 65535. */

@@ -24,6 +24,7 @@
 #include "vdev.h"
 #include "vmmgpu.h"
 #include "vmmscreen.h"
+#include "../include/bytes.h"
 
 #define VIRTIO_ID_GPU           16u
 
@@ -81,10 +82,6 @@ static struct {
     uint32_t           sized;           /* the window's count of sizes, as last seen */
     uint32_t           events;          /* `events_read`: 1, the display changed */
 } G;
-
-static uint32_t get32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
-static uint64_t get64(const uint8_t *p) { uint64_t v; memcpy(&v, p, 8); return v; }
-static void put32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
 
 static struct resource *find(uint32_t id)
 {
@@ -154,10 +151,10 @@ static uint32_t create(const uint8_t *q, uint32_t n)
 
     if (n < HDR + 16) return RESP_ERR_PARAMETER;
 
-    id = get32(q + HDR);
-    format = get32(q + HDR + 4);
-    w = get32(q + HDR + 8);
-    h = get32(q + HDR + 12);
+    id = get_le32(q + HDR);
+    format = get_le32(q + HDR + 4);
+    w = get_le32(q + HDR + 8);
+    h = get_le32(q + HDR + 12);
 
     if (id == 0 || find(id) != NULL) return RESP_ERR_RESOURCE_ID;
 
@@ -198,8 +195,8 @@ static uint32_t attach(const uint8_t *q, uint32_t n)
 
     if (n < HDR + 8) return RESP_ERR_PARAMETER;
 
-    r = find(get32(q + HDR));
-    count = get32(q + HDR + 4);
+    r = find(get_le32(q + HDR));
+    count = get_le32(q + HDR + 4);
 
     if (r == NULL) return RESP_ERR_RESOURCE_ID;
     if (count == 0 || (uint64_t)count * 16 > n - HDR - 8) return RESP_ERR_PARAMETER;
@@ -213,8 +210,8 @@ static uint32_t attach(const uint8_t *q, uint32_t n)
     for (uint32_t i = 0; i < count; i++) {
         const uint8_t *e = q + HDR + 8 + (size_t)i * 16;
 
-        r->backing[i].addr = get64(e);
-        r->backing[i].len = get32(e + 8);
+        r->backing[i].addr = get_le64(e);
+        r->backing[i].len = get_le32(e + 8);
     }
 
     r->spans = count;
@@ -229,12 +226,12 @@ static uint32_t transfer(const uint8_t *q, uint32_t n)
 
     if (n < HDR + 32) return RESP_ERR_PARAMETER;
 
-    x = get32(q + HDR);
-    y = get32(q + HDR + 4);
-    w = get32(q + HDR + 8);
-    h = get32(q + HDR + 12);
-    offset = get64(q + HDR + 16);
-    r = find(get32(q + HDR + 24));
+    x = get_le32(q + HDR);
+    y = get_le32(q + HDR + 4);
+    w = get_le32(q + HDR + 8);
+    h = get_le32(q + HDR + 12);
+    offset = get_le64(q + HDR + 16);
+    r = find(get_le32(q + HDR + 24));
 
     if (r == NULL) return RESP_ERR_RESOURCE_ID;
     if (r->spans == 0) return RESP_ERR_UNSPEC;
@@ -258,15 +255,15 @@ static uint32_t scanout(const uint8_t *q, uint32_t n)
     uint32_t id;
 
     if (n < HDR + 24) return RESP_ERR_PARAMETER;
-    if (get32(q + HDR + 16) != 0) return RESP_ERR_SCANOUT_ID;
+    if (get_le32(q + HDR + 16) != 0) return RESP_ERR_SCANOUT_ID;
 
-    id = get32(q + HDR + 20);
+    id = get_le32(q + HDR + 20);
 
     if (id != 0 && find(id) == NULL) return RESP_ERR_RESOURCE_ID;
 
     G.scanout = id;
-    G.scan_x = get32(q + HDR);
-    G.scan_y = get32(q + HDR + 4);
+    G.scan_x = get_le32(q + HDR);
+    G.scan_y = get_le32(q + HDR + 4);
     return RESP_OK_NODATA;
 }
 
@@ -279,11 +276,11 @@ static uint32_t flush(const uint8_t *q, uint32_t n)
 
     if (n < HDR + 24) return RESP_ERR_PARAMETER;
 
-    x = get32(q + HDR);
-    y = get32(q + HDR + 4);
-    w = get32(q + HDR + 8);
-    h = get32(q + HDR + 12);
-    r = find(get32(q + HDR + 16));
+    x = get_le32(q + HDR);
+    y = get_le32(q + HDR + 4);
+    w = get_le32(q + HDR + 8);
+    h = get_le32(q + HDR + 12);
+    r = find(get_le32(q + HDR + 16));
 
     if (r == NULL) return RESP_ERR_RESOURCE_ID;
     if (r->id != G.scanout) return RESP_OK_NODATA;
@@ -374,20 +371,20 @@ static void notify(struct vdev *d, unsigned qi)
             continue;
         }
 
-        type = get32(G.req);
+        type = get_le32(G.req);
         memset(reply, 0, sizeof reply);
 
         switch (type) {
         case CMD_GET_DISPLAY_INFO:
             answer = RESP_OK_DISPLAY_INFO;
-            put32(reply + HDR + 8, G.width);
-            put32(reply + HDR + 12, G.height);
-            put32(reply + HDR + 16, 1);         /* enabled */
+            put_le32(reply + HDR + 8, G.width);
+            put_le32(reply + HDR + 12, G.height);
+            put_le32(reply + HDR + 16, 1);         /* enabled */
             written = HDR + SCANOUTS_MOST * 24;
             break;
         case CMD_RESOURCE_CREATE_2D: answer = create(G.req, n); break;
         case CMD_RESOURCE_UNREF: {
-            struct resource *r = n >= HDR + 4 ? find(get32(G.req + HDR)) : NULL;
+            struct resource *r = n >= HDR + 4 ? find(get_le32(G.req + HDR)) : NULL;
 
             answer = r ? RESP_OK_NODATA : RESP_ERR_RESOURCE_ID;
 
@@ -399,7 +396,7 @@ static void notify(struct vdev *d, unsigned qi)
         case CMD_TRANSFER_TO_HOST_2D: answer = transfer(G.req, n); break;
         case CMD_ATTACH_BACKING:      answer = attach(G.req, n); break;
         case CMD_DETACH_BACKING: {
-            struct resource *r = n >= HDR + 4 ? find(get32(G.req + HDR)) : NULL;
+            struct resource *r = n >= HDR + 4 ? find(get_le32(G.req + HDR)) : NULL;
 
             answer = r ? RESP_OK_NODATA : RESP_ERR_RESOURCE_ID;
 
@@ -415,11 +412,11 @@ static void notify(struct vdev *d, unsigned qi)
             break;
         }
 
-        put32(reply, answer);
+        put_le32(reply, answer);
 
         /* A fence asked for is a fence kept: everything here is done. */
-        if (get32(G.req + 4) & FLAG_FENCE) {
-            put32(reply + 4, FLAG_FENCE);
+        if (get_le32(G.req + 4) & FLAG_FENCE) {
+            put_le32(reply + 4, FLAG_FENCE);
             memcpy(reply + 8, G.req + 8, 8);
             memcpy(reply + 16, G.req + 16, 4);
         }
@@ -436,8 +433,8 @@ static void config(struct vdev *d, uint64_t off, uint8_t *out, unsigned size)
 
     (void)d;
     memset(cfg, 0, sizeof cfg);
-    put32(cfg, G.events);
-    put32(cfg + 8, 1);
+    put_le32(cfg, G.events);
+    put_le32(cfg + 8, 1);
 
     for (unsigned k = 0; k < size; k++) {
         out[k] = off + k < sizeof cfg ? cfg[off + k] : 0;
@@ -450,7 +447,7 @@ static void config_write(struct vdev *d, uint64_t off, const uint8_t *in, unsign
     (void)d;
 
     if (off == 4 && size == 4) {
-        G.events &= ~get32(in);
+        G.events &= ~get_le32(in);
     }
 }
 

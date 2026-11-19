@@ -36,22 +36,9 @@
 
 #include "crypto.h"
 #include "keyfile.h"
+#include "../include/bytes.h"
 
 static const char MAGIC[8] = { 'K', 'O', 'S', 'K', 'E', 'Y', 'R', '1' };
-
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
-
-static uint32_t get32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16
-         | (uint32_t)p[3] << 24;
-}
 
 size_t keyfile_bytes(size_t count)
 {
@@ -95,13 +82,13 @@ long keyfile_seal(const uint8_t key[KEYFILE_KEY_BYTES],
         return KEYFILE_TOO_SMALL;
 
     memcpy(out, MAGIC, 8);
-    put32(out + 8, KEYFILE_VERSION);
-    put32(out + 12, KEYFILE_PLACE_FILE);
+    put_le32(out + 8, KEYFILE_VERSION);
+    put_le32(out + 12, KEYFILE_PLACE_FILE);
     keyfile_key_id(key, out + 16);
     memcpy(out + 32, nonce, KEYFILE_NONCE_BYTES);
 
-    put32(body, (uint32_t)count);
-    put32(body + 4, next_id);
+    put_le32(body, (uint32_t)count);
+    put_le32(body + 4, next_id);
     if (count > 0)
         memcpy(body + KEYFILE_COUNTS_BYTES, records, count * sizeof(struct key_record));
 
@@ -163,8 +150,8 @@ int keyfile_open(const uint8_t key[KEYFILE_KEY_BYTES], uint8_t *file, size_t byt
     *next_id = 0;
 
     if (holds < 0 || memcmp(file, MAGIC, 8) != 0
-        || get32(file + 8) != KEYFILE_VERSION
-        || get32(file + 12) != KEYFILE_PLACE_FILE) {
+        || get_le32(file + 8) != KEYFILE_VERSION
+        || get_le32(file + 12) != KEYFILE_PLACE_FILE) {
         answer = KEYFILE_NOT_OURS;
         goto refused;
     }
@@ -190,14 +177,14 @@ int keyfile_open(const uint8_t key[KEYFILE_KEY_BYTES], uint8_t *file, size_t byt
         goto refused;
     }
 
-    if (get32(body) != (uint32_t)holds) {
+    if (get_le32(body) != (uint32_t)holds) {
         answer = KEYFILE_MALFORMED;
         goto refused;
     }
 
     if (holds > 0)
         memcpy(records, body + KEYFILE_COUNTS_BYTES, (size_t)holds * sizeof(struct key_record));
-    *next_id = get32(body + 4);
+    *next_id = get_le32(body + 4);
     memset(body, 0, sealed);
 
     if (!well_formed(records, (size_t)holds, *next_id)) {

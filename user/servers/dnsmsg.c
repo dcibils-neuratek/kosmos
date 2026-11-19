@@ -8,11 +8,7 @@
 #include <string.h>
 
 #include "dnsmsg.h"
-
-static uint16_t be16(const uint8_t *p)
-{
-    return (uint16_t)((p[0] << 8) | p[1]);
-}
+#include "../include/bytes.h"
 
 /*
  * RFC 1035 3.1: a name is labels, each its length in one byte (63 at most)
@@ -83,12 +79,12 @@ bool dns_read_header(const uint8_t *msg, unsigned len, struct dns_header *out)
         return false;
     }
 
-    out->id          = be16(msg);
-    out->flags       = be16(msg + 2);
-    out->questions   = be16(msg + 4);
-    out->answers     = be16(msg + 6);
-    out->authorities = be16(msg + 8);
-    out->additionals = be16(msg + 10);
+    out->id          = get_be16(msg);
+    out->flags       = get_be16(msg + 2);
+    out->questions   = get_be16(msg + 4);
+    out->answers     = get_be16(msg + 6);
+    out->authorities = get_be16(msg + 8);
+    out->additionals = get_be16(msg + 10);
     return true;
 }
 
@@ -221,8 +217,8 @@ bool dns_read_question(const uint8_t *msg, unsigned len, unsigned *at,
         return false;
     }
 
-    *type  = be16(msg + after);
-    *class = be16(msg + after + 2);
+    *type  = get_be16(msg + after);
+    *class = get_be16(msg + after + 2);
     *at    = after + 4;
     return true;
 }
@@ -239,10 +235,10 @@ bool dns_read_record(const uint8_t *msg, unsigned len, unsigned *at,
         return false;
     }
 
-    out->type   = be16(msg + after);
-    out->class  = be16(msg + after + 2);
-    out->ttl    = ((uint32_t)be16(msg + after + 4) << 16) | be16(msg + after + 6);
-    out->length = be16(msg + after + 8);
+    out->type   = get_be16(msg + after);
+    out->class  = get_be16(msg + after + 2);
+    out->ttl    = ((uint32_t)get_be16(msg + after + 4) << 16) | get_be16(msg + after + 6);
+    out->length = get_be16(msg + after + 8);
     out->data   = after + 10;
 
     if (out->data + out->length > len) {
