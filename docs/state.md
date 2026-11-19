@@ -7,14 +7,14 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.11.520. Pushed to 0.11.507; 0.11.508 to
-0.11.520 are committed on `main` and not pushed.
+Last updated: 2026-11-19, at 0.12.0. Pushed to 0.11.507; 0.11.508 to
+0.12.0 are committed on `main`, and go out with `make prepush`.
 
 ---
 
 ## Where it is
 
-**The review before 0.12.0 is half done** (`docs/cleanup.md`; Diego, 18
+**The review before 0.12.0 is done** (`docs/cleanup.md`; Diego, 18
 November 2026: "I think we can now do a full code cleanup and review
 before we continue"). Eight readers found 205 findings
 (`docs/cleanup-findings.md`), each checked again before anything changes.
@@ -57,7 +57,8 @@ before we continue"). Eight readers found 205 findings
   measured and left; five measurements need a Pi, the M700 or a new
   instrument (roadmap). **Every batch is done.**
 - **Finding 206** (0.11.520, 18.920): `/Running` grows past its 24 names,
-  and lists in pages. The 0.12.0 bump and a push are next.
+  and lists in pages.
+- **0.12.0** marks the review done.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

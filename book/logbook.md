@@ -4654,3 +4654,42 @@ brought it to 9:48 with every suite, and 8:21 on a normal day.
 **Next.** Batches 5 to 8 - comments and documents, work nobody reads,
 things to measure before changing, tests nothing runs - then 0.12.0, and
 then a 3D API, in QEMU first.
+
+## 19 November 2026 - The review before 0.12.0, second half
+
+**In short.** The review before 0.12.0 is finished. Its second half made
+the documents say what the system is, took out work done repeatedly for
+nothing, measured eight things that might be slow and fixed the two that
+were, and put four forgotten tests back to work. A limit of 24 running
+applications went too. 0.11.516 to 0.12.0.
+
+**What.** `state.md`, which every session reads first, had grown to
+thirteen thousand lines of every session since September, and is now a
+hundred, with the rest kept in a file of its own; `CLAUDE.md` and the README
+were brought up to date, and comments in about fifty files. The window
+manager stopped keeping a full-size picture for every window that already
+supplies its own - most of them - and the Deskbar stopped building a string
+twelve times a second only to compare it. The check that the system image
+is intact, run four times every boot, now reads eight bytes at a time.
+Creating a thread in a program that already has thousands no longer slows
+with the square of their number. A layout checker that three documents
+claimed was in the gate, and was not, now is - and on its first run it
+found its own rule too narrow for the Bluetooth driver. Eleven suites that
+ran only on ARM run on x86 too, and one of them had silently gone stale.
+
+**Why.** `CLAUDE.md` asks for a review before every minor version,
+because nothing else removes what has stopped being needed. "Measure
+first" was the rule for anything that looked slow: six of the eight
+candidates turned out not to be worth changing, or could not be measured
+on this Mac at all.
+
+**Measured.** A boot under emulation reaches its prompt in 1.345 s where
+it took 1.567, because the image check went from 178 ms to 36 ms of
+hashing. At 2,000 threads, making one more took 3.6 ms with interrupts
+off, and now takes 0.014 ms. The scan for sleeping threads costs 0.2% of
+one core at 2,000 threads and was left alone. The display tests' pixel
+loops turned out to take under a second of a two-minute suite, which is
+nearly all waiting.
+
+**Next.** The 3D API, G1 to G5 in QEMU, then the daily-driver list in its
+order: keys, the clipboard, JetSki's find, print and history.

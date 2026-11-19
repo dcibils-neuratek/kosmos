@@ -154,7 +154,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a to W5e built: `docs/w5.md`
 - The Debug Kit - a function's name from an address, for a page that stopped and any crash - built: `docs/debug.md`
 - Blocking in JetSki - adverts and trackers kept out on WebKit's own content blocker, the filter lists converted by a Lua library, third-party cookies refused - agreed on 16 November, B1, B2 and B4 built, B3 not: `docs/adblock.md`, `docs/adblock.html`, `docs/adblock-architecture.png`
-- The review before 0.12.0 - eight batches, 205 findings, and Diego's seven decisions - being done: `docs/cleanup.md`, `docs/cleanup-findings.md`
+- The review before 0.12.0 - eight batches, 205 findings, and Diego's seven decisions - done, 0.11.508 to 0.12.0: `docs/cleanup.md`, `docs/cleanup-findings.md`
 - Network Monitor - feature set, architecture, window, diagram - built (N1-N3): `docs/netmonitor.md`, `docs/netmonitor.html`, `docs/netmonitor-architecture.png`
 - Disk Monitor - built (D1-D3): `docs/diskmonitor.md`, `docs/diskmonitor.html`, `docs/diskmonitor-architecture.png`
 - GPU Monitor - built (`gpumon.lua`; G2 the window, `testing.md` 18.665): `docs/gpumonitor.md`, `docs/gpumonitor.html`, `docs/gpumonitor-architecture.png`
