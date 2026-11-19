@@ -4904,3 +4904,33 @@ about speed; and the 3565 conformance tests still pass with none failing.
 
 **Next.** `intelgpu` for many programs at once (G6), then Vulkan on the
 M700's GPU (G7).
+
+## 19 November 2026 - Two programs' memory on one GPU
+
+**In short.** The M700's graphics chip can now keep two pieces of work in
+memory of their own: each believes it writes to the same address, and each
+lands on its own page. That is what lets many programs share the GPU
+without seeing each other's pictures. 0.12.8.
+
+**What.** Until now the GPU ran Kosmos's work through one queue, with one
+view of memory shared by everything. Modern drivers - Linux's, and the
+Vulkan driver Kosmos will run - give each program a "context": its own
+queue, and its own page table translating the addresses it uses into real
+memory, exactly as the processor does for processes. Today the driver
+built both, the way Intel's Linux driver does, and ran them on the chip.
+
+**How it was made safe.** A wrong bit in this kind of structure does not
+give an error: the engine simply stops. So everything that could be
+checked without the chip was checked on the Mac first - 2185 checks
+against the numbers in Linux's own source. And the first engine moved is
+the video engine, which the desktop never uses, so if it had stopped,
+nothing anyone was looking at would have stopped with it.
+
+**Measured.** One context: 300 writes of 300, 11 microseconds each. Two
+contexts at once, the same address in each: every time, each page held
+only its own number. Given one page table between them on purpose, the
+check saw at once that one write had landed on the other's page.
+
+**Next.** The render engine and the blitter - the ones that draw the
+desktop - move onto contexts too, with a timer that notices a stuck engine
+and a reset that frees it.

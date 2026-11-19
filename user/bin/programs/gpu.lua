@@ -14,6 +14,14 @@
 --                       number written to memory - and whether it came
 --                       (`docs/m700-2d.md` step 5)
 --   gpu engine render [n]   the same on the render engine (step 7a)
+--   gpu el [n]          the video engine on execlists: one context, a page
+--                       table of its own, a number written where only it
+--                       maps (`docs/gpu3d.md` G6b)
+--   gpu el2 [n]         two contexts submitted together, the same GPU
+--                       address in each page table on a page of its own,
+--                       each holding only its own number (G6c)
+--   gpu elshared        its control: two contexts given one page table,
+--                       which the check must call a failure
 --   gpu compute [colour]    the first program on the execution units: a
 --                       64 by 4 surface filled with a byte (step 7b)
 --   gpu state           the render engine's starting state, run once (7c)
@@ -38,8 +46,8 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" then
-  print("gpu: gpu [cursor [seconds] | engine [render] [n] | compute [colour] | kernel [colour]]")
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" and words[1] ~= "el" and words[1] ~= "el2" and words[1] ~= "elshared" then
+  print("gpu: gpu [cursor [seconds] | engine [render] [n] | el [n] | el2 [n] | compute [colour] | kernel [colour]]")
   return
 end
 
@@ -443,6 +451,36 @@ if words[1] == "compute" then
           :format(c.right, c.past, c.head, c.tail, c.esr))
   end
 
+  return
+end
+
+if words[1] == "el" or words[1] == "el2" or words[1] == "elshared" then
+  local contexts = words[1] == "el2" and 2 or words[1] == "elshared" and 3 or 1
+  local times = math.tointeger(tonumber(words[2] or "")) or 1
+  local r, why
+  local done, fastest, slowest = 0, math.huge, 0
+
+  for _ = 1, math.max(1, times) do
+    r, why = gpu.execlist_test(contexts)
+    if not r then break end
+    done = done + 1
+    fastest, slowest = math.min(fastest, r.elapsed_us), math.max(slowest, r.elapsed_us)
+  end
+
+  local e = gpu.last_execlist
+  local held = {}
+  for i, v in ipairs(e and e.values or {}) do held[i] = ("%08x"):format(v) end
+  if r then
+    print(("gpu: the video engine, %d context%s each at the same GPU address, %d of %d runs; %d us fastest, %d slowest; the pages hold %s")
+          :format(math.min(contexts, 2), contexts > 1 and "s" or "", done, times, fastest, slowest, table.concat(held, " and ")))
+  else
+    print("gpu: " .. tostring(why) .. (done > 0 and (" after %d runs"):format(done) or "")
+          .. (#held > 0 and ("; the pages hold " .. table.concat(held, " and ")) or ""))
+  end
+  if e then
+    print(("gpu: %d status events, bits %04x; execlist status %08x, mode %08x, errors %08x")
+          :format(e.events, e.seen, e.status, e.mode, e.esr))
+  end
   return
 end
 

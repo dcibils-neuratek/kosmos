@@ -38465,3 +38465,82 @@ in 356 s. It is the second gate running that the disk has stopped, and room
 for the gate was Diego's to choose: he chose the old development sticks
 (0.11.313, 0.11.363, 0.11.391, their symbols, and the boot partitions left
 of 0.11.83 and 0.11.149) deleted, the two stable ones kept - 5.0 GB free.
+
+## 18.928 Contexts of their own on the M700's GPU
+
+**In short:** the first three steps of `intelgpu` for many programs (G6a
+to G6c, `docs/gpu3d.md`). On the Mac, the driver can now lay out a Gen9 context
+image and a four-level 48-bit GPU page table, held by 2185 checks to
+i915's own fixed indices. On the M700, the video engine runs execlists:
+one context with its own page table wrote a number to GPU address
+0x123456780000, mapped by that table only, 300 times out of 300 in about
+11 µs each, and the status buffer said what i915 expects of it. The
+render engine and the blitter stay on their rings, and the desktop draws
+as before. Then two contexts submitted together, the same GPU address in
+each one's page table on a page of its own: each page held only its own
+context's number, 300 runs of 300, and the control - both given one page
+table - failed as it must.
+
+- **G6a, `intelgpu_lrc.c`.** i915's tables of the registers a context
+  saves (`gen9_rcs_offsets`, `gen9_xcs_offsets`, Linux 6.12) are copied in
+  i915's own byte encoding, so they can be read side by side, and laid out
+  by `set_offsets`' loop. A new context is filled as `__lrc_init_regs`
+  fills one: restore inhibited, save on, the ring, the page table's root
+  where PDP0 is, `STOP_RING` off. Also: its descriptor (valid, privileged,
+  legacy 64-bit, a 21-bit ID), the submit port's four writes in their
+  order, the status buffer read from i915's indices, and the page table
+  over pages it is handed, with the private-PAT index in PWT, PCD and PAT.
+- **`test_intelgpu_lrc`**, in `make host-check`: three engines' images at
+  `intel_lrc_reg.h`'s indices, which are constants and not computed; the
+  loads' headers worked out by hand; the filled values; descriptors; the
+  status buffer round its end; and 2000 pages, scattered over the 48 bits,
+  walked back through the four levels by a walk of the test's own. *Control*:
+  two registers swapped and one load posted in a copy of the table - 13
+  checks fail, each naming the register.
+- **G6b on the M700, `gpu el`.** VCS0 at 0x12000, which nothing on the
+  desktop uses, is woken in its own forcewake domain (media, 0xa270 and
+  0xd88, `__gen9_fw_ranges`) and put in run-list mode as
+  `enable_execlists` does, with the status buffer's pointers reset as
+  `reset_csb_pointers` does. One context, its two pages in the global GTT,
+  a ring of `MI_STORE_DWORD_IMM` without `MI_USE_GGTT`, and a page table
+  of its own mapping one page, uncached, at 0x123456780000.
+- **The private PAT** was 03030303 from the firmware. i915's table is
+  written with entry 0 kept as the firmware left it, because the global
+  GTT always uses index 0 and the desktop is drawn through it.
+
+```
+[18.558] intelgpu: the video engine on execlists: mode 00008000, status page
+         at GTT 02300000, private PAT 03030303 -> 3b2b1b0b00030903
+gpu el:      wrote 4b6f7345 1 of 1 times; 11 us
+             2 status events, the last 0018 (idle to active 01, then
+             complete and active to idle 18); errors 00000000
+gpu el 300:  300 of 300, 11 us fastest, 20 slowest - past the ring's end
+             at 256 and round
+controls:    gpu engine 50 and gpu engine render 50 - 50 of 50 each, on
+             their legacy rings; gpu draw - 480000 of 480000 pixels
+```
+
+- **G6c, `gpu el2`.** Two contexts, each with its image, ring and page
+  table, in the submit port's two elements, so the engine runs element 0
+  and switches to element 1 itself. Both write to 0x123456780000, mapped
+  by each table to its own page. *Control*, `gpu elshared`: both contexts
+  given the first one's page table.
+
+```
+gpu el2:       the pages hold 4b6f7345 and 4b6f7346, 26 us; 3 status events,
+               bits 001d - idle to active, element switch with the first
+               complete, then complete and idle
+gpu el2 300:   300 of 300, 26 us fastest, 36 slowest
+gpu elshared:  the pages hold 4b6f7346 and 00000000 - both numbers on the
+               first page, the second last; called a failure
+```
+
+Each run lays the images out afresh, from where the last run's ring
+ended, with restore inhibited, so nothing yet depends on what the engine
+saves back. A context kept across runs, which a program's will be, comes
+with the protocol (G6e).
+
+**The gate**: 147 suites in 658 s, all passing, the disk at 4.6 GB free
+after 18.927's room. 10:58 is just past the ten minutes; the slowest are
+`x86-dock` at 361 s and `x86-cafesa3d-2` at 330 s, and they are the first
+to split if the next gates stay over.

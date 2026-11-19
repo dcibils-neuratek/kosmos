@@ -164,6 +164,18 @@
  * two kernels, and a run each was a wait for the caller's next look.
  */
 #define GPU_OP_RUNS          25u
+
+/*
+ * **Contexts on the video engine** (`docs/gpu3d.md` G6b and G6c): execlists
+ * on VCS0, `x` contexts - one or two, submitted together (3: two sharing
+ * the first's page table, the isolation check's control) - each with a page
+ * table of its own mapping the same GPU address to a page of its own, and
+ * each writing its own number there. Answered in `engine`: what each page
+ * holds in `value` and `head`, the execlist status in `tail`, the status
+ * events counted in `ctl`'s high half and every bit they carried in its
+ * low half, RING_MODE, RING_ESR and the time.
+ */
+#define GPU_OP_EXECLIST_TEST 26u
 #define GPU_RUN_STEPS        32u
 #define GPU_RUN_BUFFERS      8u
 #define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */

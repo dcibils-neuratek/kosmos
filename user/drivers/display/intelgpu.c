@@ -31,6 +31,7 @@
 #include "intelgpu_decode.h"
 #include "intelgpu_fill.h"
 #include "intelgpu_kernel.h"
+#include "intelgpu_lrc.h"
 #include "intelgpu_renderstate.h"
 #include "intelgpu_render.h"
 #include "intelgpu_blend.h"
@@ -1112,6 +1113,383 @@ static void engine_test(long console, struct engine *e, struct gpu_reply *rep)
     say_text(&line, " esr ");
     say_hex(&line, rep->engine.esr, 8);
     say_send(console, &line);
+}
+
+/*
+ * **One context on the video engine** (`docs/gpu3d.md` G6b): execlists
+ * turned on for VCS0, the one engine nobody uses on the desktop, and one
+ * context run there - its image laid out by `intelgpu_lrc.c`, a page table
+ * of its own, and in its ring one `MI_STORE_DWORD_IMM` to a GPU address
+ * that only that page table maps. The render engine and the blitter stay
+ * on their rings, so whatever happens here the desktop draws as before.
+ *
+ * The sequence is i915's (Linux 6.12): `enable_execlists` - the status
+ * page's writes unmasked, run-list mode, STOP_RING off, the status page -
+ * then `reset_csb_pointers`, then a descriptor written to the submit port,
+ * element 1 first and element 0 last, the last write submitting. A context
+ * never run is submitted with its restore inhibited, so the engine starts
+ * from the image rather than from anything it held; this test lays the
+ * image out afresh for every run, from where the last one's ring ended.
+ */
+#define FORCEWAKE_MEDIA      0x0a270u    /* FORCEWAKE_MEDIA_GEN9: 0x12000-0x13fff are its */
+#define FORCEWAKE_ACK_MEDIA  0x00d88u    /* FORCEWAKE_ACK_MEDIA_GEN9 */
+#define PRIVATE_PAT_LO       0x040e0u    /* GEN8_PRIVATE_PAT_LO and _HI */
+#define PRIVATE_PAT_HI       0x040e4u
+#define EL_TARGET            0x0000123456780000ull  /* past 4 GB, in this page table only */
+#define EL_TABLES            8u          /* a PML4, a PDP, a PD and a PT, and room */
+#define EL_RING_DWORDS       1024u       /* one page */
+
+/* A context of the test's: its image, its ring, its page table and the
+ * page its one address is mapped to. */
+struct el_context {
+    volatile uint32_t *image, *ring, *target;
+    uint32_t           image_gtt, ring_gtt;
+    uint8_t           *pool;              /* the page table's pages, then the target */
+    uint64_t           pool_phys;
+    unsigned           pool_used;
+    struct igpu_ppgtt  pt;
+    uint32_t           tail;              /* in dwords */
+};
+
+#define EL_CONTEXTS 2u
+
+static struct {
+    bool               ready;
+    volatile uint32_t *status;
+    uint32_t           status_gtt;
+    struct el_context  c[EL_CONTEXTS];
+    unsigned           csb_read;
+    uint32_t           next;
+    uint32_t           pat_before;        /* PRIVATE_PAT_LO as the firmware left it */
+} EL;
+
+static void *el_page(void *ctx, uint64_t *phys)
+{
+    struct el_context *c = ctx;
+    uint8_t *p;
+
+    if (c->pool_used == EL_TABLES) {
+        return NULL;
+    }
+
+    p = c->pool + c->pool_used * 4096u;
+    memset(p, 0, 4096);
+    *phys = c->pool_phys + c->pool_used * 4096u;
+    c->pool_used++;
+    return p;
+}
+
+static void *el_cpu(void *ctx, uint64_t phys)
+{
+    struct el_context *c = ctx;
+
+    return c->pool + (phys - c->pool_phys);
+}
+
+static bool media_awake;
+
+/* The media domain kept awake, as `forcewake` keeps the GT's. */
+static bool forcewake_media(bool on)
+{
+    unsigned i;
+
+    if (media_awake == on) {
+        return true;
+    }
+
+    wreg(FORCEWAKE_MEDIA, (IGPU_FORCEWAKE_KERNEL << 16) | (on ? IGPU_FORCEWAKE_KERNEL : 0u));
+
+    for (i = 0; i < 5000 + 50; i++) {
+        if (((reg(G.regs, FORCEWAKE_ACK_MEDIA) & IGPU_FORCEWAKE_KERNEL) != 0) == on) {
+            media_awake = on;
+            return true;
+        }
+
+        if (i >= 5000) {
+            kosmos_sleep(1);
+        }
+    }
+
+    return false;
+}
+
+static uint32_t vcs(uint32_t offset)
+{
+    return reg(G.regs, IGPU_VIDEO_BASE + offset);
+}
+
+static void vcs_write(uint32_t offset, uint32_t value)
+{
+    wreg(IGPU_VIDEO_BASE + offset, value);
+}
+
+static uint32_t execlist_start(long console)
+{
+    struct say_line line;
+    long region, at, phys;
+    uint64_t pat;
+    unsigned i;
+
+    if (EL.ready) {
+        return GPU_OK;
+    }
+
+    if (!gtt_pages(1, &EL.status, &EL.status_gtt)) {
+        return GPU_ERR_NO_MEMORY;
+    }
+
+    /* Each context with its own image, ring and page table - and in each
+     * page table the same GPU address, EL_TARGET, on a page of its own. */
+    for (i = 0; i < EL_CONTEXTS; i++) {
+        struct el_context *c = &EL.c[i];
+        struct igpu_pt_pages pages = { el_page, el_cpu, c };
+
+        if (!gtt_pages(IGPU_LRC_PAGES_OTHER, &c->image, &c->image_gtt) || !gtt_pages(1, &c->ring, &c->ring_gtt)) {
+            return GPU_ERR_NO_MEMORY;
+        }
+
+        region = kosmos_mem_create_flags(EL_TABLES + 1u, MEM_CONTIGUOUS | MEM_WRITE_COMBINE);
+        if (region < 0 || (at = kosmos_mem_map(region)) < 0 || (phys = kosmos_mem_phys(region)) < 0) {
+            return GPU_ERR_NO_MEMORY;
+        }
+
+        c->pool = (uint8_t *)at;
+        c->pool_phys = (uint64_t)phys;
+        c->target = (volatile uint32_t *)(c->pool + EL_TABLES * 4096u);
+        c->tail = 0;
+
+        if (!igpu_ppgtt_init(&c->pt, &pages)
+            || !igpu_ppgtt_map(&c->pt, EL_TARGET, c->pool_phys + EL_TABLES * 4096u, IGPU_PAT_UC)) {
+            return GPU_ERR_NO_MEMORY;
+        }
+    }
+
+    /* i915's private PAT, but its first entry as the firmware left it: the
+     * global GTT always uses index 0, and the desktop is drawn through it. */
+    EL.pat_before = reg(G.regs, PRIVATE_PAT_LO);
+    pat = igpu_private_pat();
+    wreg(PRIVATE_PAT_LO, ((uint32_t)pat & ~0xffu) | (EL.pat_before & 0xffu));
+    wreg(PRIVATE_PAT_HI, (uint32_t)(pat >> 32));
+
+    /* `enable_execlists`. */
+    vcs_write(IGPU_RING_HWSTAM, ~0u);
+    vcs_write(IGPU_RING_MODE, (IGPU_GFX_RUN_LIST_ENABLE << 16) | IGPU_GFX_RUN_LIST_ENABLE);
+    vcs_write(IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);
+    vcs_write(IGPU_RING_HWS_PGA, EL.status_gtt);
+    (void)vcs(IGPU_RING_HWS_PGA);
+
+    /* `reset_csb_pointers`: both pointers at the last entry, so the first
+     * the engine writes is entry 0; the entries all ones, so an entry the
+     * engine never wrote is seen. */
+    for (i = 0; i < 2u * IGPU_CSB_ENTRIES; i++) {
+        EL.status[IGPU_CSB_AT + i] = ~0u;
+    }
+    EL.status[IGPU_CSB_WRITE_AT] = IGPU_CSB_ENTRIES - 1u;
+    vcs_write(IGPU_RING_CONTEXT_STATUS_PTR, 0xffffu << 16 | (IGPU_CSB_ENTRIES - 1u) << 8 | (IGPU_CSB_ENTRIES - 1u));
+    (void)vcs(IGPU_RING_CONTEXT_STATUS_PTR);
+    EL.csb_read = IGPU_CSB_ENTRIES - 1u;
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the video engine on execlists: mode ");
+    say_hex(&line, vcs(IGPU_RING_MODE), 8);
+    say_text(&line, ", status page at GTT ");
+    say_hex(&line, EL.status_gtt, 8);
+    say_text(&line, ", private PAT ");
+    say_hex(&line, EL.pat_before, 8);
+    say_text(&line, " -> ");
+    say_hex(&line, reg(G.regs, PRIVATE_PAT_HI), 8);
+    say_hex(&line, reg(G.regs, PRIVATE_PAT_LO), 8);
+    say_text(&line, ", page table roots ");
+    say_hex(&line, (uint32_t)EL.c[0].pt.pml4_phys, 8);
+    say_text(&line, " and ");
+    say_hex(&line, (uint32_t)EL.c[1].pt.pml4_phys, 8);
+    say_send(console, &line);
+
+    if ((vcs(IGPU_RING_MODE) & IGPU_GFX_RUN_LIST_ENABLE) == 0) {
+        return GPU_ERR_NO_RING;
+    }
+
+    EL.next = 0x4b6f7345u;                   /* "KosE" and a count */
+    EL.ready = true;
+    return GPU_OK;
+}
+
+/* A context's command - a dword to EL_TARGET through its own page table,
+ * MI_STORE_DWORD_IMM without MI_USE_GGTT - and its image laid out afresh,
+ * the ring from where its last run ended. Answers its descriptor, or 0. */
+static uint64_t el_prepare(struct el_context *c, uint32_t value, uint64_t pml4)
+{
+    static uint32_t state_page[1024];
+    struct igpu_lrc_init in;
+    uint32_t head;
+    unsigned i;
+
+    if (c->tail + 4u > EL_RING_DWORDS) {
+        while (c->tail < EL_RING_DWORDS) {
+            c->ring[c->tail++] = IGPU_MI_NOOP;
+        }
+        c->tail = 0;
+    }
+
+    head = c->tail;
+    c->target[0] = 0;
+    c->ring[c->tail++] = IGPU_MI_STORE_DWORD;
+    c->ring[c->tail++] = (uint32_t)EL_TARGET;
+    c->ring[c->tail++] = (uint32_t)(EL_TARGET >> 32);
+    c->ring[c->tail++] = value;
+
+    in.base = IGPU_VIDEO_BASE;
+    in.ring_ggtt = c->ring_gtt;
+    in.ring_pages = 1;
+    in.head = head * 4u;
+    in.tail = (c->tail % EL_RING_DWORDS) * 4u;
+    in.pml4 = pml4;
+
+    if (!igpu_lrc_fill(state_page, IGPU_LRC_OTHER, &in)) {
+        return 0;
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        c->image[i] = 0;                                    /* the per-process status page */
+        c->image[IGPU_LRC_STATE_PAGE * 1024u + i] = state_page[i];
+    }
+
+    return igpu_lrc_descriptor(c->image_gtt, value & 0xffffu);
+}
+
+/*
+ * `contexts` of them, one or two, submitted together: the second in the
+ * port's element 1, so the engine runs element 0 and switches to it. Two
+ * is G6c: the same GPU address in both page tables, a different page
+ * behind each - so each page holding its own context's number and not the
+ * other's says the page tables kept them apart. `shared` is its control:
+ * both contexts given the first one's page table, so both numbers land on
+ * the first page and the second page holds neither - which the test must
+ * call a failure.
+ */
+static void execlist_test(long console, unsigned contexts, bool shared, struct gpu_reply *rep)
+{
+    struct igpu_csb_event ev[IGPU_CSB_ENTRIES];
+    struct say_line line;
+    uint32_t value[EL_CONTEXTS] = { 0, 0 }, error, words[4], last = 0, seen = 0;
+    uint64_t desc[EL_CONTEXTS] = { 0, 0 };
+    unsigned long t0, t1;
+    unsigned i, k, events = 0, n;
+    bool all;
+
+    if (!G.found) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    if (contexts < 1 || contexts > EL_CONTEXTS) {
+        rep->error = GPU_ERR_BAD_OP;
+        return;
+    }
+
+    if (!forcewake(true) || !forcewake_media(true)) {
+        rep->error = GPU_ERR_NO_WAKE;
+        return;
+    }
+
+    if ((error = execlist_start(console)) != GPU_OK) {
+        rep->error = error;
+        (void)forcewake_media(false);
+        return;
+    }
+
+    for (k = 0; k < contexts; k++) {
+        value[k] = EL.next++;
+        if ((desc[k] = el_prepare(&EL.c[k], value[k], EL.c[shared ? 0 : k].pt.pml4_phys)) == 0) {
+            rep->error = GPU_ERR_BAD_OP;
+            return;
+        }
+    }
+
+    igpu_elsp_words(desc[0], desc[1], words);
+
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");    /* the images and rings out before the doorbell */
+#endif
+
+    t0 = kosmos_ticks();
+    for (i = 0; i < 4; i++) {
+        vcs_write(IGPU_RING_ELSP, words[i]);
+    }
+
+    for (i = 0, all = false; i < 20000 + 100 && !all; i++) {
+        all = true;
+        for (k = 0; k < contexts; k++) {
+            all = all && EL.c[k].target[0] == value[k];
+        }
+        if (i >= 20000) {
+            kosmos_sleep(1);
+        }
+        __asm__ volatile("" ::: "memory");
+    }
+    t1 = kosmos_ticks();
+
+    /* And the engine's own account, in the status buffer. */
+    for (i = 0; i < 100; i++) {
+        n = igpu_csb_read(EL.status, &EL.csb_read, ev);
+        for (k = 0; k < n; k++) {
+            last = ev[k].status;
+            seen |= ev[k].status;
+            events++;
+        }
+        if ((last & IGPU_CSB_ACTIVE_IDLE) != 0) {
+            break;
+        }
+        kosmos_sleep(1);
+    }
+
+    {
+        static struct sysinfo machine;
+        unsigned long per_us = kosmos_sysinfo(&machine) == 0 && machine.counter_hz >= 1000000u
+                             ? machine.counter_hz / 1000000u : 1u;
+
+        rep->engine.elapsed_us = (uint32_t)((t1 - t0) / per_us);
+    }
+
+    rep->engine.value = EL.c[0].target[0];
+    rep->engine.head = contexts > 1 ? EL.c[1].target[0] : 0;
+    rep->engine.tail = vcs(IGPU_RING_EXECLIST_STATUS);
+    rep->engine.ctl = events << 16 | (seen & 0xffffu);
+    rep->engine.mode = vcs(IGPU_RING_MODE);
+    rep->engine.esr = vcs(IGPU_RING_ESR);
+    rep->error = all ? GPU_OK : GPU_ERR_NO_ANSWER;
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: the video engine, ");
+    say_dec(&line, contexts);
+    say_text(&line, contexts > 1 ? " contexts at GPU address 123456780000: " : " context at GPU address 123456780000: ");
+    for (k = 0; k < contexts; k++) {
+        say_text(&line, k > 0 ? ", " : "");
+        say_hex(&line, EL.c[k].target[0], 8);
+        say_text(&line, EL.c[k].target[0] == value[k] ? " (its own)" : " (wanted ");
+        if (EL.c[k].target[0] != value[k]) {
+            say_hex(&line, value[k], 8);
+            say_text(&line, ")");
+        }
+    }
+    say_text(&line, "; ");
+    say_dec(&line, events);
+    say_text(&line, " status events, the last ");
+    say_hex(&line, last, 8);
+    say_text(&line, ", all ");
+    say_hex(&line, seen, 8);
+    say_text(&line, ", execlist status ");
+    say_hex(&line, rep->engine.tail, 8);
+    say_text(&line, ", head ");
+    say_hex(&line, vcs(IGPU_RING_HEAD), 8);
+    say_text(&line, " esr ");
+    say_hex(&line, rep->engine.esr, 8);
+    say_send(console, &line);
+
+    (void)forcewake_media(false);
+    if (engine_quiet(&BCS) && engine_quiet(&RCS)) {
+        (void)forcewake(false);
+    }
 }
 
 /*
@@ -3345,6 +3723,10 @@ void intelgpu_server(long console, long endpoint)
                 break;
             case GPU_OP_COMPUTE_TEST:
                 compute_test(console, (uint32_t)rq.x, &rep);
+                break;
+            case GPU_OP_EXECLIST_TEST:
+                /* `x`: 1 or 2 contexts, or 3 for two sharing one page table */
+                execlist_test(console, rq.x == 0 ? 1u : rq.x == 3 ? 2u : (unsigned)rq.x, rq.x == 3, &rep);
                 break;
             case GPU_OP_RENDER_STATE:
                 render_state_test(console, &rep);

@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.12.7. Pushed to 0.11.507; 0.11.508 to
-0.12.7 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-19, at 0.12.8. Pushed to 0.11.507; 0.11.508 to
+0.12.8 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -84,7 +84,15 @@ SSE4.1, and a `malloc` that cannot say NULL. **G3 (0.12.7, 18.927):**
 swapchain over a Window Kit window, the cube presented into it and found
 on the screen by `x86-vulkan`; presenting copies once until a window's
 pixels start on a page, and `vkcube` as an application is a follow-up
-(`roadmap.md`). **Next: G6, `intelgpu` for many programs.**
+(`roadmap.md`). **G6a-G6c (0.12.8, 18.928):** Gen9 context images and
+48-bit page tables in `intelgpu_lrc.c`, held on the Mac by
+`test_intelgpu_lrc`; on the M700 the video engine on execlists, one
+context and then two at the same GPU address on pages of their own, each
+holding only its own number (`gpu el`, `gpu el2`, the control `gpu
+elshared`). **Next: G6d**, the render engine and the blitter on
+execlists, the hang timer and an engine reset; then G6e, the protocol.
+The M700 runs 0.12.8, restarted as needed (Diego, 19 November: "Reboot
+m700 as needed").
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

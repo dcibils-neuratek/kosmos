@@ -92,6 +92,31 @@ function gpu.engine_test(engine)
 end
 
 --
+-- **Contexts on the video engine** (`docs/gpu3d.md` G6b and G6c):
+-- execlists on VCS0, `contexts` of them - one or two, submitted together -
+-- each with a page table of its own mapping the same GPU address to a page
+-- of its own. What the engine said, in `gpu.last_execlist`, whether it
+-- worked or not: what each page holds, in `values`.
+--
+function gpu.execlist_test(contexts)
+  local n = contexts or 1                -- 3: two sharing one page table, a control
+  local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 26, 0, n, 0, 0, 0, 0, 0), nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, first, second, status, ctl, mode, esr, us = string.unpack(REPLY, reply)
+
+  gpu.last_execlist = { values = n > 1 and { first, second } or { first }, status = status,
+                        shared = n == 3,
+                        events = ctl >> 16, seen = ctl & 0xffff, mode = mode, esr = esr, elapsed_us = us }
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  return gpu.last_execlist
+end
+
+--
 -- **The first program on the execution units** (`m700-2d.md` 7b): the
 -- render engine runs a kernel that fills a 64 by 4 surface with `colour`,
 -- a byte. Answers { right, past, elapsed_us, ... } - how many of the 256

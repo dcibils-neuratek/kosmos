@@ -500,6 +500,40 @@ so `lavapipe` is built for both.
    processes each storing to its own buffer at the same addresses, neither
    seeing the other's, and a deliberate hang recovered. The Compute Kit
    moves onto contexts here.
+
+   **G6 in steps** (19 November 2026, from Linux 6.12's i915 -
+   `intel_lrc.c`, `intel_execlists_submission.c`, `gen8_ppgtt.c`,
+   `intel_gtt.c` - fetched into `build/downloads/i915/`). Each step proves
+   one thing, and the first engine moved is the one nobody uses:
+   - **G6a - contexts and page tables, on the Mac** - built in 0.12.8,
+     with G6b and G6c (`testing.md` 18.928). `intelgpu_lrc.c`: a
+     Gen9 context image laid out from i915's own tables of the registers
+     each engine saves (`gen9_rcs_offsets`, `gen9_xcs_offsets`), filled as
+     i915 fills a new one - context control with restore inhibited, the
+     ring, the page table's root, `STOP_RING` off - its descriptor, the
+     context status buffer's events read, and a four-level 48-bit page
+     table (PML4, PDP, PD, PT) built over pages it is handed, each entry
+     present, writable and of a private-PAT index. *Test*:
+     `test_intelgpu_lrc`, the image held to `intel_lrc_reg.h`'s fixed
+     indices - which are constants, not computed - the descriptor to its
+     bits, and every mapped address walked back through the four levels
+     to its page.
+   - **G6b - one context on the video engine, on the M700.** VCS0 at
+     0x12000 is idle on the desktop, so execlists are turned on there and
+     nowhere else: run-list mode, a status page, one context with a page
+     table of its own, a ring of `MI_STORE_DWORD_IMM` to a GPU address only
+     its page table maps, and its completion seen in the status buffer.
+     The render engine and the blitter stay on their rings, so the desktop
+     draws as before whatever happens. `gpu el` over Telnet.
+   - **G6c - two contexts, one address.** Two contexts each with its own
+     page table, the same GPU address in both mapped to different pages;
+     each writes its own value, and neither page holds the other's.
+   - **G6d - the render engine and the blitter on execlists**: the
+     desktop's compositing and copies move to contexts of the driver's
+     own; the hang timer, an engine reset, and the legacy ring gone.
+   - **G6e - the protocol**: `GPU_OP_CONTEXT_NEW`, `_BIND`, `_EXEC`,
+     `_FENCE_WAIT` (§5.3) for many programs at once, and under QEMU a
+     stand-in engine that runs only `MI_` commands, so the gate holds it.
 7. **G7 - `anv` on the M700.** `anv_kosmos.c`, the backend; `vkcube`, then
    a dEQP-VK subset run on the machine by a program that says what passed.
    *Measure*: submit-to-fence latency, `vkcube` frames a second.
