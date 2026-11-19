@@ -39,13 +39,34 @@
 #define IMAGE_SUM_FNV32_BASIS   0x811c9dc5u
 #define IMAGE_SUM_FNV32_PRIME   0x01000193u
 
+/*
+ * **A word at a time, then the bytes left over.** FNV-1a's step is one
+ * multiply that waits for the last, so a byte a step was 42 MB of them in a
+ * row - about 44 ms a check on this Mac's cores, 60 to 70 under TCG, and
+ * four checks a boot (`cleanup.md` finding 169, `testing.md` 18.919). Taking
+ * eight bytes a step, little-endian, is an eighth of the chain for a canary
+ * no worse at its job: what it catches is memory that stopped holding its
+ * bytes, and any byte changed still changes the word it is in. Under eight
+ * bytes it is FNV-1a exactly, so the published vectors still hold it, and
+ * `tools/bin2c.py` computes the same.
+ *
+ * `__builtin_memcpy` of eight bytes is one load on both machines, and the
+ * kernel has no `memcpy` to call.
+ */
 static inline unsigned long image_sum64(const unsigned char *at,
                                         unsigned long bytes)
 {
     unsigned long h = IMAGE_SUM_FNV64_BASIS;
-    unsigned long i;
+    unsigned long i = 0;
 
-    for (i = 0; i < bytes; i++) {
+    for (; i + 8 <= bytes; i += 8) {
+        unsigned long long w;
+
+        __builtin_memcpy(&w, at + i, 8);
+        h = (h ^ (unsigned long)w) * IMAGE_SUM_FNV64_PRIME;
+    }
+
+    for (; i < bytes; i++) {
         h = (h ^ at[i]) * IMAGE_SUM_FNV64_PRIME;
     }
 

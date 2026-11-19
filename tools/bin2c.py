@@ -34,6 +34,7 @@ FNV-1a, which is four lines and needs no table. This is a canary, not a
 signature: nothing here is defending against an adversary choosing the bytes.
 """
 
+import struct
 import sys
 
 FNV64_BASIS = 0xcbf29ce484222325
@@ -45,8 +46,13 @@ PAGE = 4096
 
 
 def fnv64(data):
+    # Eight bytes a step, little-endian, then the rest a byte at a time -
+    # `kernel/image_sum.h`'s `image_sum64`, which says why.
     h = FNV64_BASIS
-    for b in data:
+    whole = len(data) - len(data) % 8
+    for (w,) in struct.iter_unpack("<Q", data[:whole]):
+        h = ((h ^ w) * FNV64_PRIME) & 0xffffffffffffffff
+    for b in data[whole:]:
         h = ((h ^ b) * FNV64_PRIME) & 0xffffffffffffffff
     return h
 

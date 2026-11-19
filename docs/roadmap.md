@@ -6795,6 +6795,27 @@ PC has; and `arm-interchange` finds the guest's `df` and the Mac's
 `kfs.lua df` a block apart on x86's image, 7901 free against 7902, which is
 to be understood rather than allowed. Until then they are uncovered.
 
+**Five measurements the review could not take here - FOUND on 19 November
+2026** (`cleanup.md` batch 7, `testing.md` 18.919). Each is a change worth
+making only if its number says so, and the number needs what this Mac
+under QEMU does not have:
+
+- **AArch64's broadcast TLB flush per address-space switch** (finding
+  170): `tlbi vmalle1is` wipes every core's TLB on each switch, two per
+  IPC round trip. TCG keeps no TLB worth the name, so `ipc_roundtrip` with
+  four busy cores, broadcast against `vmalle1` + `dsb nsh`, is a Pi 5
+  measurement. ASIDs are the larger fix.
+- **The VMCS cleared after every guest run** (173): VMPTRLD, VMLAUNCH and
+  VMCLEAR each time, never VMRESUME. Exits a second for a Linux guest's
+  timer and MMIO, against a path that remembers its core and resumes -
+  on the M700, the one machine here with VT-x.
+- **`pmm_lock`'s hold time** (165) under a JetSki page load on four cores,
+  pages being given on touch from faults, before per-CPU free lists.
+- **A kit window's table per drawing op** (88) and **the Deskbar's
+  gradient a fill per row** (87): what an animating kit window allocates a
+  paint and its worst collection. `frames` says it for the window manager
+  and nothing says it for an application; the instrument comes first.
+
 6zv. **ASKED on 29 September - does lazy FP saving still earn its place?**
    Diego, asking for SIMD "when possible in all you code": "Why do we need
    lazy fp saving?" What it buys (`CLAUDE.md`, Build): a switch does not

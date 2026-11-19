@@ -522,6 +522,54 @@ static void not_starting(struct process *p, struct thread *t)
 }
 
 /*
+ * **The lowest thread index `p` does not hold**, from 1, or `USER_TSTACK_MAX`
+ * when it holds them all. Called with `processes_lock` held.
+ *
+ * Indices are tried 512 at a time: one walk of the living threads and the
+ * ones being made marks which of a window are taken, in a bitmap on the
+ * stack, and the first clear bit is the answer. The lowest free index is at
+ * most one past the number held, so `n` threads cost `n / 512 + 1` walks.
+ * It was one walk per index tried - n squared over two steps, under a lock
+ * that masks interrupts: 3.6 ms a thread made at 2,000 threads and 138 ms at
+ * 8,000, measured on this Mac's cores, against 0.014 and 0.66 like this
+ * (`cleanup.md` finding 172, `testing.md` 18.919).
+ */
+static unsigned lowest_free_index(const struct process *p)
+{
+    enum { WINDOW = 512, WORDS = WINDOW / 64 };
+    unsigned base;
+
+    for (base = 1; base < USER_TSTACK_MAX; base += WINDOW) {
+        uint64_t taken[WORDS] = { 0 };
+        const struct thread *lists[2] = { p->threads, p->starting };
+        unsigned l, w;
+
+        for (l = 0; l < 2; l++) {
+            const struct thread *q;
+
+            for (q = lists[l]; q != NULL; q = q->sibling) {
+                if (q->index >= base && q->index - base < WINDOW) {
+                    unsigned d = q->index - base;
+
+                    taken[d / 64] |= (uint64_t)1 << (d % 64);
+                }
+            }
+        }
+
+        for (w = 0; w < WORDS; w++) {
+            if (taken[w] != ~(uint64_t)0) {
+                unsigned found = base + w * 64
+                                 + (unsigned)__builtin_ctzll(~taken[w]);
+
+                return found < USER_TSTACK_MAX ? found : USER_TSTACK_MAX;
+            }
+        }
+    }
+
+    return USER_TSTACK_MAX;
+}
+
+/*
  * One more thread for `p`, entering at `entry` with `arg`, and its stack.
  * Returns its index, or a negative error. The caller is one of `p`'s own
  * threads; nothing else may make one.
@@ -572,22 +620,7 @@ int process_thread_create(struct process *p, unsigned long entry,
      * day. Now it is 57,344 at once.
      */
     flags = spin_lock(&processes_lock);
-
-    for (index = 1; index < USER_TSTACK_MAX; index++) {
-        const struct thread *q;
-
-        for (q = p->threads; q != NULL && q->index != index; q = q->sibling) {
-        }
-
-        if (q == NULL) {
-            for (q = p->starting; q != NULL && q->index != index; q = q->sibling) {
-            }
-        }
-
-        if (q == NULL) {
-            break;
-        }
-    }
+    index = lowest_free_index(p);
 
     if (index < USER_TSTACK_MAX) {
         t->index = index;

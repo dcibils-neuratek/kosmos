@@ -37942,3 +37942,61 @@ again.
 **The gate.** 125 suites in 573 s (9:32), every one passing, the eleven
 twins among them (the longest `x86-writeapp`, 91 s); `host` ran the
 layout checker's 100 checks and the PDF test's 17.
+
+## 18.919 Measured before anything changes
+
+**In short:** batch 7 of the review was eight places that might be slow.
+The rule for each was to measure first and change only what the number
+asked for. Two changed. The check that the system's image is intact,
+run four times every boot, now reads eight bytes at a step and takes a
+fifth of the time. Each boot under emulation reaches its first program
+215 ms sooner. Finding a new thread's number no longer grows with the
+square of the threads a program has: at 2000 threads it took 3.6 ms with
+interrupts off, and now takes 0.014. Two more were measured and found
+too small to touch. Five need a machine or an instrument this Mac does
+not have, and are in the roadmap.
+
+**Changed:**
+
+- **The userland image's canary** (169). `image_sum64` was FNV-1a a byte
+  a step, one multiply waiting for the last, over a 42.6 MB image four
+  times a boot. Measured: four sums 177.6 ms on this Mac's cores; under
+  TCG each check 61 to 135 ms between serial lines, and the last of them
+  - before init is built - came 0.400 s into the boot. Eight bytes a step,
+  little-endian, then the tail a byte at a time: four sums 36.2 ms
+  natively, and under TCG each check 9 to 14 ms; the last comes at 0.185 s,
+  and the prompt at 1.345 s where it was 1.567. Under eight bytes it is FNV-1a, so the published
+  vectors still hold it; `tools/bin2c.py` computes the same, and
+  `test_imagesum`'s check that the Python and the C agree fails when the
+  Python reads its words big-endian (the control), and passes again
+  after.
+- **A thread's index** (172). `process_thread_create` found the lowest
+  free index by walking the process's threads once per index tried,
+  under `processes_lock` with interrupts masked. The exact loop on this
+  Mac, newest first as the list is kept: 0.009 ms a thread made at 100
+  threads, 0.184 at 500, 3.608 at 2,000, 138 at 8,000. `lowest_free_index`
+  marks 512 indices a walk in a bitmap on the stack - the answer is at
+  most one past the number held - and takes 0.0003, 0.0014, 0.0135 and
+  0.659 ms. Held to the old search on 3,000 random sets of up to 1,500
+  indices, contiguous, scattered and with one hole, across two lists:
+  none differ.
+
+**Measured, and left:**
+
+- **The sleeper scan** (171), every thread slot on core zero 250 times a
+  second. Modelled at a thread's 1,016 bytes: 8.1 us a tick with a cold
+  cache at 2,000 slots, 0.20% of core zero; 86 us and 2.2% at 20,000.
+  A deadline-ordered list is worth its complication around 20,000 slots;
+  `threads_total` in Processes says how many a JetSki session makes.
+- **The display harness's Python pixel loops** (154). `x86-display-1`
+  under cProfile: 128.8 s of the harness's own time, 94.5 in `select`
+  waiting for the guest and 30.4 in `time.sleep` between looks; no pixel
+  helper reaches a second. Vectorising them would buy nothing.
+
+**Needing what is not here** (roadmap, *Five measurements*): the AArch64
+TLB broadcast (170) on a Pi, the VMCS flush (173) on the M700's VT-x,
+`pmm_lock` under load on four real cores (165), and a kit window's
+allocation a paint (87, 88), which wants an instrument first.
+
+**The gate.** 124 suites in 539 s (8:58), every one passing; the library
+suites, which stand on neither change, skipped by their fingerprints.
