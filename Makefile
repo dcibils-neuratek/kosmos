@@ -1197,8 +1197,7 @@ WEB_PATCHED_H := netsurf/content/fetch.h
 
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
-WEB_SRCS += user/kits/web/web_kosmos.c user/kits/web/web_select.c user/kits/web/web_style.c \
-            user/kits/web/web_paint.c user/kits/web/web_netsurf.c \
+WEB_SRCS += user/kits/web/web_kosmos.c user/kits/web/web_netsurf.c \
             user/kits/web/web_svg.c
 
 #
@@ -4969,24 +4968,17 @@ dist: $(TARGET)
 # them speak yet.
 #
 #
-# One size for a full image and three for a lean one.
+# One image, at the size `make qemu` defaults to (`cleanup.md` decision 5).
 #
-# A full image is 6.2 MB against 1.7 - the browser's five vendored libraries
-# and Doom - and stripping saves a quarter of a megabyte, because the bulk
-# is the userland compiled in rather than symbols. Three copies of that in a
-# repository is eighteen megabytes to say the same thing three times, and
-# the one size to pick is the one `make qemu` now defaults to.
+# It was two images for a full release and three for a lean one, each
+# relinked with a different `FB=`, because a compiled-in framebuffer could
+# not be resized and an image too big for the screen is unusable. Since the
+# size is a boot option every one after the first said the same thing again:
+# `run-kosmos.sh -r` takes any size from 640x480 to 7680x4320. The size stays
+# in the name, because it is still the image's default and because
+# `get-and-run-kosmos.sh` reads it from there.
 #
-#
-# Two sizes for a full image and three for a lean one.
-#
-# 1920x1080 is what `make qemu` defaults to, and 1280x720 is there because a
-# laptop panel that size is a real thing to be testing on and a compiled-in
-# framebuffer cannot be resized: the size is the build. A downloaded image
-# too big for the screen is not a preference, it is unusable.
-#
-RELEASE_SIZES := $(if $(WEB),1280x720 1920x1080,\
-                   1024x768 1280x800 1920x1080)
+RELEASE_SIZE := 1920x1080
 
 # What is in it, in the name, because the images are not interchangeable and
 # a name that did not say so is a trap: the browser opens on an image built
@@ -5003,13 +4995,11 @@ RELEASE_TAG := $(if $(filter 1,$(FULL)),-full,$(if $(WEB),-web,))
 # release is the thing somebody else runs without watching it.
 release: $(TARGET) stress
 	@mkdir -p builds
-	@for size in $(RELEASE_SIZES); do \
-	    rm -f $(BUILD)/hal/fwcfg/fbpixels.c.o $(TARGET); \
-	    $(MAKE) --no-print-directory FB=$$size $(TARGET) >/dev/null; \
-	    cp $(TARGET) \
-	       builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf; \
-	    echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf"; \
-	done
+	@rm -f $(BUILD)/hal/fwcfg/fbpixels.c.o $(TARGET)
+	@$(MAKE) --no-print-directory FB=$(RELEASE_SIZE) $(TARGET) >/dev/null
+	@cp $(TARGET) \
+	   builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$(RELEASE_SIZE)$(RELEASE_TAG).elf
+	@echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$(RELEASE_SIZE)$(RELEASE_TAG).elf"
 	@rm -f $(BUILD)/hal/fwcfg/fbpixels.c.o $(TARGET)
 	@$(MAKE) --no-print-directory $(TARGET) >/dev/null
 	@cp run-kosmos.sh builds/run-kosmos.sh
@@ -6251,16 +6241,6 @@ SHOTDIR := docs/screenshots
 # much less than a series without. So it is a step in a target rather than
 # something to remember.
 .PHONY: prepush
-#
-# The web libraries, running rather than merely linked.
-#
-# Its own target rather than part of `make test`: the suites' images are
-# built without `WEB=1`, and Mail's own suite is what holds the kit there.
-#
-web: $(HOSTDIR)/lua
-	@$(MAKE) --no-print-directory WEB=1 $(TARGET)
-	python3 tools/run_web.py $(TARGET)
-
 # Cafesa3D's tutorial's pictures, taken again: the image booted, Cafesa3D
 # driven, the car of chapters 6 and 7 built by its steps and rendered, and
 # every picture written into `docs/cafesa3d-tutorial/`. Twenty minutes and
@@ -6314,7 +6294,7 @@ prepush:
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web tutorial-shots ide-tutorial-shots packages packages-serve
+.PHONY: shot tutorial-shots ide-tutorial-shots packages packages-serve
 # **On x86-64**, where the suites run since 8 October, and where the
 # machine's memory is read from the firmware: the ARM board assumes 512 MB
 # whatever `-m` says (`hal/qemu-virt/memory.c`), and twenty applications

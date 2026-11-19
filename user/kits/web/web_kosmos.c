@@ -11,18 +11,17 @@
  * libc can satisfy every symbol and still hand back a null on the first
  * allocation. So the first of this parsed a document and reported what was
  * in it, and parsed a stylesheet and reported whether it was understood.
- * Everything else was built on top of those two answers: selection, the
- * `css_select_handler` bridging libdom's tree to libcss's questions
- * (`web_select.c`); the page laid out and drawn by NetSurf
- * (`web_netsurf.c`), or by `web_paint.c` where NetSurf could not; and its
- * SVGs (`web_svg.c`).
+ * What is built on top of them now is the page laid out and drawn by
+ * NetSurf (`web_netsurf.c`), and its SVGs (`web_svg.c`).
  *
  * **Mail is its one user now** - the browser it was built for was removed
  * in 0.11.461 - and what only that browser called went in the review
  * before 0.12.0 (`docs/cleanup.md`): the incremental parser, a stylesheet
  * alone, the DOM's event counts, `meta`, `lang`, and the forms, sheets,
- * imports, keys and costs of a NetSurf document. `make web`'s probe still
- * runs `web_paint.c`'s layout (`docs/cleanup.md`, decision 2).
+ * imports, keys and costs of a NetSurf document - and, by Diego's decision
+ * 2, Kosmos's own HTML layout (`web_paint.c`, `web_style.c`,
+ * `web_select.c`), its probe `make web`, and the questions only that probe
+ * asked: `count`, `text`, `title`, `style`, `render`, `link_at`, `images`.
  */
 
 #include <stddef.h>
@@ -34,13 +33,7 @@
 
 #include <dom/dom.h>
 #include <dom/bindings/hubbub/parser.h>
-#include <libcss/libcss.h>
-#include <libcss/fpmath.h>
-#include <libcss/unit.h>
 
-#include "web_select.h"
-#include "web_style.h"
-#include "web_paint.h"
 #include "web_netsurf.h"
 #include "web_svg.h"
 #include "kits/gfx/gfx_draw.h"
@@ -50,33 +43,14 @@
 struct doc {
     dom_document *dom;      /* NULL once closed */
 
-    /*
-     * The last layout, kept.
-     *
-     * `render` is asked twice for every page - once with no surface, to
-     * learn how tall the document is, and once with a surface that height -
-     * and laying out twice would break every line twice for one picture.
-     * The width is the key: a different one means a different set of line
-     * breaks and nothing of the old layout survives.
-     */
-    struct web_page *page;
-    int              page_width;
-
-    /* The same document laid out by NetSurf (`roadmap.md` 6zz j3), made
-     * the first time `ns_layout` is asked. */
+    /* The document laid out by NetSurf (`roadmap.md` 6zz j3), made the
+     * first time `ns_layout` is asked. */
     struct web_ns_doc *ns;
 
     /* The charset it was read in, which its forms are sent in too
      * (`roadmap.md` 6zz j7). */
     char charset[64];
 };
-
-static void forget_layout(struct doc *d)
-{
-    web_page_free(d->page);
-    d->page = NULL;
-    d->page_width = 0;
-}
 
 /*
  * A document is a userdata with a metatable rather than a number, which is
@@ -92,18 +66,6 @@ static struct doc *checkdoc(lua_State *L)
     }
 
     return d;
-}
-
-/* Lua string -> dom_string, which every libdom lookup takes. */
-static dom_string *to_dom(const char *s, size_t len)
-{
-    dom_string *out = NULL;
-
-    if (dom_string_create((const uint8_t *)s, len, &out) != DOM_NO_ERR) {
-        return NULL;
-    }
-
-    return out;
 }
 
 /*
@@ -129,17 +91,10 @@ static const char *parse_error(dom_hubbub_error e)
 }
 
 /*
- * **A document read as it arrives** (`roadmap.md` 6zz l1).
- *
- *   web.parser([charset]) -> p, or nil and why
- *   p:feed(bytes)         -> true, or nil and why once it has failed
- *   p:finish()            -> document, or nil and why
- *
- * hubbub takes a page in whatever pieces it comes in - a tag or a
- * character cut in two at a piece's end included - so the browser hands it
- * each piece as the network does, and the parse goes on while the rest is
- * still arriving rather than after the last byte. `web.parse` is the same
- * thing fed once.
+ * **A parse, begun, fed and finished.** `web.parse` feeds it a whole
+ * message once. It was built to be fed a page as it arrived, for the
+ * browser (`roadmap.md` 6zz l1); the pieces are kept because hubbub's
+ * encoding change below needs them either way.
  *
  * **`charset` is what the server said** in the page's `Content-Type`, and it
  * is held to: HTML ranks the header above anything the page says of itself
@@ -175,9 +130,6 @@ struct parsing {
 
     const char               *failed;    /* why, once it has */
     int                       code;
-
-    /* How many bytes were fed again when the encoding changed, or none. */
-    size_t                    refed;
 };
 
 static void parsing_drop(struct parsing *p)
@@ -291,7 +243,6 @@ static bool parsing_feed(struct parsing *p, const uint8_t *bytes, size_t len)
             }
 
             e = dom_hubbub_parser_parse_chunk(p->parser, kept, kept_len);
-            p->refed = kept_len;
             free(kept);
         }
     }
@@ -361,8 +312,9 @@ static int parsing_finish(lua_State *L, struct parsing *p)
         return 2;
     }
 
-    /* Zeroed before anything reads it: `__gc` is `close`, and close frees a
-     * layout. An uninitialised pointer there is a free of a random word. */
+    /* Zeroed before anything reads it: `__gc` is `close`, and close frees
+     * NetSurf's layout. An uninitialised pointer there is a free of a
+     * random word. */
     d = lua_newuserdatauv(L, sizeof(*d), 0);
     memset(d, 0, sizeof(*d));
     d->dom = document;
@@ -405,229 +357,6 @@ static int l_parse(lua_State *L)
     }
 
     return parsing_finish(L, p);
-}
-
-/* count(tag) -> how many elements have that name. */
-static int l_count(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    size_t len = 0;
-    const char *tag = luaL_checklstring(L, 2, &len);
-    dom_string *name = to_dom(tag, len);
-    dom_nodelist *list = NULL;
-    uint32_t n = 0;
-
-    if (name == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "out of memory");
-        return 2;
-    }
-
-    if (dom_document_get_elements_by_tag_name(d->dom, name, &list)
-        != DOM_NO_ERR || list == NULL) {
-        dom_string_unref(name);
-        lua_pushnil(L);
-        lua_pushliteral(L, "the document could not be searched");
-        return 2;
-    }
-
-    (void)dom_nodelist_get_length(list, &n);
-
-    dom_nodelist_unref(list);
-    dom_string_unref(name);
-
-    lua_pushinteger(L, (lua_Integer)n);
-    return 1;
-}
-
-/*
- * The text of the first element with this name, or nil when there is none.
- *
- * `title()` is this with the name filled in, and both go through here so
- * there is one piece of tree-walking rather than two.
- */
-static int text_of(lua_State *L, struct doc *d, const char *tag, size_t taglen)
-{
-    dom_string *name = to_dom(tag, taglen);
-    dom_nodelist *list = NULL;
-    dom_node *node = NULL;
-    dom_string *text = NULL;
-    uint32_t n = 0;
-
-    if (name == NULL) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    if (dom_document_get_elements_by_tag_name(d->dom, name, &list)
-        != DOM_NO_ERR || list == NULL) {
-        dom_string_unref(name);
-        lua_pushnil(L);
-        return 1;
-    }
-
-    dom_string_unref(name);
-    (void)dom_nodelist_get_length(list, &n);
-
-    if (n == 0 || dom_nodelist_item(list, 0, &node) != DOM_NO_ERR
-        || node == NULL) {
-        dom_nodelist_unref(list);
-        lua_pushnil(L);
-        return 1;
-    }
-
-    if (dom_node_get_text_content(node, &text) == DOM_NO_ERR && text != NULL) {
-        lua_pushlstring(L, dom_string_data(text), dom_string_byte_length(text));
-        dom_string_unref(text);
-    } else {
-        lua_pushnil(L);
-    }
-
-    dom_node_unref(node);
-    dom_nodelist_unref(list);
-
-    return 1;
-}
-
-/*
- * text(tag) -> the text inside the first such element. The browser does not
- * ask it; `tools/run_web.py` does, to see an entity decoded.
- */
-static int l_text(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    size_t len = 0;
-    const char *tag = luaL_checklstring(L, 2, &len);
-
-    return text_of(L, d, tag, len);
-}
-
-static int l_title(lua_State *L)
-{
-    return text_of(L, checkdoc(L), "title", 5);
-}
-
-/*
- * render(surface, width [, height [, from]]) -> the page's whole height; with
- * `from`, the band of it starting that far down, painted into the surface.
- *
- * The whole page in one crossing: layout and painting both happen in C and
- * what comes back is a number. A call per box would cost more than the
- * drawing, which is the same reason `docfont.c` takes a page of glyphs at
- * once rather than one at a time.
- *
- * **A nil surface measures**, and the caller needs that before it can do
- * anything else: a page is laid out once into a surface as tall as the
- * whole document and scrolled by blitting out of it, so the height has to
- * be known before the surface can be asked for.
- *
- * The layout is kept, so the second call paints the boxes the first one
- * made rather than making them again - and `link_at` has something to
- * answer from once the painting is done.
- */
-static int l_render(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    struct surface *s = lua_isnoneornil(L, 2)
-                        ? NULL : gfx_surface_check(L, 2);
-    int width = (int)luaL_checkinteger(L, 3);
-
-    /* Required with a surface and meaningless without one. Defaulted, it
-     * would mean a call that drew nothing and said it had. */
-    unsigned height = (unsigned)(s == NULL ? 0 : luaL_checkinteger(L, 4));
-
-    if (d->page == NULL || d->page_width != width) {
-        forget_layout(d);
-        d->page = web_page_layout(L, d->dom, width);
-
-        if (d->page == NULL) {
-            return luaL_error(L, "no memory to lay the page out");
-        }
-
-        d->page_width = width;
-    }
-
-    /* And the band: the page's row at the surface's first, so a page longer
-     * than any surface is painted a band at a time where it is read. */
-    if (s != NULL) {
-        web_page_paint(d->page, s, (long)luaL_optinteger(L, 5, 0), height);
-    }
-
-    lua_pushinteger(L, web_page_height(d->page));
-
-    return 1;
-}
-
-/*
- * link_at(x, y) -> the href under that point, or nil.
- *
- * In *page* coordinates, which is what the caller has: it laid the page out
- * into a surface of its own and knows where in that surface the window is
- * looking. A browser converts a click once and this answers from the boxes.
- *
- * The href is whatever the document said, relative or absolute. Resolving
- * it against the page's own address is the caller's, because the caller is
- * the one that knows what that address was.
- */
-static int l_link_at(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    int x = (int)luaL_checkinteger(L, 2);
-    int y = (int)luaL_checkinteger(L, 3);
-    size_t len = 0;
-    const char *href;
-
-    if (d->page == NULL) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    href = web_page_link_at(d->page, x, y, &len);
-
-    if (href == NULL) {
-        lua_pushnil(L);
-    } else {
-        lua_pushlstring(L, href, len);
-    }
-
-    return 1;
-}
-
-/*
- * images() -> { { src = "...", x, y, w, h }, ... }, the pictures the layout
- * made boxes for, in page coordinates.
- *
- * The src is whatever the document said, as with `link_at`: fetching it is
- * the caller's, which knows the page's own address, and so is decoding it,
- * which `gfx` does. Empty before `render` has laid the page out.
- */
-static int l_images(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    size_t i, n = web_page_images(d->page);
-
-    lua_createtable(L, (int)n, 0);
-
-    for (i = 0; i < n; i++) {
-        int box[4];
-        size_t len = 0;
-        const char *src = web_page_image(d->page, i, &len, box);
-
-        lua_createtable(L, 0, 5);
-        lua_pushlstring(L, src, len);
-        lua_setfield(L, -2, "src");
-        lua_pushinteger(L, box[0]);
-        lua_setfield(L, -2, "x");
-        lua_pushinteger(L, box[1]);
-        lua_setfield(L, -2, "y");
-        lua_pushinteger(L, box[2]);
-        lua_setfield(L, -2, "w");
-        lua_pushinteger(L, box[3]);
-        lua_setfield(L, -2, "h");
-        lua_rawseti(L, -2, (lua_Integer)i + 1);
-    }
-
-    return 1;
 }
 
 /*
@@ -778,7 +507,6 @@ static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
 
-    forget_layout(d);
     web_ns_close(d->ns, L);
     d->ns = NULL;
 
@@ -788,151 +516,6 @@ static int l_close(lua_State *L)
     }
 
     return 0;
-}
-
-/*
- * style(css, tag) -> the computed colour of the first such element.
- *
- * **The smallest thing that is evidence for the cascade.** Getting a colour
- * out means the selector matched a node in the tree, the cascade ran, and a
- * computed value came back - which is all thirty-six callbacks in
- * `web_select.c` doing their job, or enough of them to matter.
- */
-static int l_style(lua_State *L)
-{
-    struct doc *d = checkdoc(L);
-    size_t csslen = 0, taglen = 0;
-    const char *css = luaL_checklstring(L, 2, &csslen);
-    const char *tag = luaL_checklstring(L, 3, &taglen);
-    css_select_handler *handler = web_select_handler();
-    css_stylesheet *sheet;
-    css_select_ctx *ctx = NULL;
-    css_select_results *results = NULL;
-    css_media media;
-    css_unit_ctx units;
-    dom_string *name;
-    dom_nodelist *list = NULL;
-    dom_node *node = NULL;
-    uint32_t n = 0;
-    css_color colour = 0;
-
-    if (handler == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "the selection handler could not be prepared");
-        return 2;
-    }
-
-    sheet = web_style_sheet(css, csslen);
-
-    if (sheet == NULL) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "the stylesheet did not parse");
-        return 2;
-    }
-
-    if (css_select_ctx_create(&ctx) != CSS_OK
-        || css_select_ctx_append_sheet(ctx, sheet, CSS_ORIGIN_AUTHOR,
-                                       NULL) != CSS_OK) {
-        if (ctx != NULL) { css_select_ctx_destroy(ctx); }
-        css_stylesheet_destroy(sheet);
-        lua_pushnil(L);
-        lua_pushliteral(L, "the stylesheet could not be applied");
-        return 2;
-    }
-
-    name = to_dom(tag, taglen);
-
-    if (name == NULL
-        || dom_document_get_elements_by_tag_name(d->dom, name, &list)
-           != DOM_NO_ERR || list == NULL) {
-        if (name != NULL) { dom_string_unref(name); }
-        css_select_ctx_destroy(ctx);
-        css_stylesheet_destroy(sheet);
-        lua_pushnil(L);
-        lua_pushliteral(L, "the document could not be searched");
-        return 2;
-    }
-
-    dom_string_unref(name);
-    (void)dom_nodelist_get_length(list, &n);
-
-    if (n == 0 || dom_nodelist_item(list, 0, &node) != DOM_NO_ERR
-        || node == NULL) {
-        dom_nodelist_unref(list);
-        css_select_ctx_destroy(ctx);
-        css_stylesheet_destroy(sheet);
-        lua_pushnil(L);
-        lua_pushliteral(L, "there is no such element");
-        return 2;
-    }
-
-    /*
-     * A screen, and a viewport to resolve `em` and percentages against.
-     * Zeroing this would leave the default font size at nothing, and every
-     * relative length would come back zero without saying why.
-     */
-    memset(&media, 0, sizeof(media));
-    memset(&units, 0, sizeof(units));
-
-    media.type = CSS_MEDIA_SCREEN;
-    media.width = INTTOFIX(800);
-    media.height = INTTOFIX(600);
-
-    units.viewport_width     = INTTOFIX(800);
-    units.viewport_height    = INTTOFIX(600);
-    units.font_size_default  = INTTOFIX(16);
-    units.font_size_minimum  = INTTOFIX(6);
-    units.device_dpi         = INTTOFIX(96);
-
-    if (css_select_style(ctx, node, &units, &media, NULL,
-                         handler, NULL, &results) != CSS_OK
-        || results == NULL
-        || results->styles[CSS_PSEUDO_ELEMENT_NONE] == NULL) {
-        if (results != NULL) { css_select_results_destroy(results); }
-        dom_node_unref(node);
-        dom_nodelist_unref(list);
-        css_select_ctx_destroy(ctx);
-        css_stylesheet_destroy(sheet);
-        lua_pushnil(L);
-        lua_pushliteral(L, "no style came back for it");
-        return 2;
-    }
-
-    (void)css_computed_color(results->styles[CSS_PSEUDO_ELEMENT_NONE], &colour);
-
-    css_select_results_destroy(results);
-    dom_node_unref(node);
-    dom_nodelist_unref(list);
-    css_select_ctx_destroy(ctx);
-    css_stylesheet_destroy(sheet);
-
-    /*
-     * `css_color` is 0xAARRGGBB; the alpha is dropped because nothing here
-     * composites yet and a caller comparing strings should not have to.
-     *
-     * Written out by hand rather than with `lua_pushfstring`, which is
-     * Lua's own miniature formatter and understands neither a width nor a
-     * zero pad - `%02x` reaches it as an invalid option and raises. It is
-     * not `snprintf` and the resemblance is the trap.
-     */
-    {
-        static const char hex[] = "0123456789abcdef";
-        char out[8];
-        unsigned i;
-
-        out[0] = '#';
-
-        for (i = 0; i < 3; i++) {
-            unsigned byte = (colour >> (16 - 8 * i)) & 0xffu;
-
-            out[1 + i * 2] = hex[byte >> 4];
-            out[2 + i * 2] = hex[byte & 0xf];
-        }
-
-        lua_pushlstring(L, out, 7);
-    }
-
-    return 1;
 }
 
 void kosmos_web_kit(lua_State *L)
@@ -945,13 +528,6 @@ void kosmos_web_kit(lua_State *L)
     };
 
     static const luaL_Reg doc[] = {
-        { "count", l_count },
-        { "style", l_style },
-        { "text",  l_text },
-        { "render",  l_render },
-        { "link_at", l_link_at },
-        { "images", l_images },
-        { "title", l_title },
         { "close", l_close },
         { "ns_layout", l_ns_layout },
         { "ns_paint", l_ns_paint },

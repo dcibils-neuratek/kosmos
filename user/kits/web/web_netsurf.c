@@ -105,7 +105,6 @@
 
 #include "kits/gfx/gfx_draw.h"
 #include "web_netsurf.h"
-#include "web_select.h"
 
 /*--------------------------------------------------------------------------
  * Once, before anything of NetSurf's runs: its interned names, which its
@@ -1822,6 +1821,16 @@ static void sheet_from_element(struct web_ns_doc *d, dom_node *node,
  * by its first children and next siblings, back up by parents, so it needs
  * no stack however deep the page nests.
  */
+/* Is this node an element, rather than text or a comment? */
+static bool web_is_element(dom_node *node)
+{
+    dom_node_type type;
+
+    return node != NULL
+        && dom_node_get_node_type(node, &type) == DOM_NO_ERR
+        && type == DOM_ELEMENT_NODE;
+}
+
 static void page_sheets(struct web_ns_doc *d)
 {
     dom_node *at = NULL;

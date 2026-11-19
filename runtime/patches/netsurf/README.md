@@ -10,7 +10,7 @@ of the upstream file (`WEB_PATCHED`). Each one says what it does and why.
 
 libdom keeps an element's classes as interned strings, split from its `class`
 attribute when the attribute is set - which is what lets the cascade ask an
-element for its classes without making a single string (`web_select.c`,
+element for its classes without making a single string (NetSurf's selection,
 `roadmap.md` 6zz g). It split on spaces alone. HTML splits a class attribute
 on ASCII white space - space, tab, line feed, form feed, carriage return - so
 `class="said

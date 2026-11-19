@@ -281,35 +281,6 @@ check(wobble and wobble.program == "/Home/Apps/Wobble/wobble.lua",
 check(#installed == 1 and not named(three, "None"),
       "an installed application with `section none` is in the menu")
 
---------------------------------------------------------------------------
--- What the seed left goes to the Trash once: a folder of nothing but its
--- launchers whole, and only its launchers from a folder with anything of
--- the person's.
---------------------------------------------------------------------------
-
-local leftovers = store_of({
-  ["/H/.seeded"] = { kind = "file" },
-  ["/H/Applications"] = DIR,
-  ["/H/Applications/tracker"] = launcher("/Kosmos/Apps/tracker.lua", ""),
-  ["/H/Applications/calc"] = launcher("/bin/calc.lua", "", "App_Calc"),
-  ["/H/Demos"] = DIR,
-  ["/H/Demos/doom"] = launcher("doom", "--scale 2"),      -- changed, still the seed's
-  ["/H/Demos/mine"] = launcher("/Home/mine.lua", ""),    -- the person's
-  ["/H/Demos/GLDemos"] = DIR,
-  ["/H/Demos/GLDemos/glgears"] = launcher("/Kosmos/Apps/glgears.lua", ""),
-  ["/H/Empty"] = DIR,                                    -- the person's, empty
-})
-local moves = menu.seed_leftovers(leftovers, "/H",
-                                  { tracker = true, calc = true, doom = true,
-                                    glgears = true })
-
-table.sort(moves)
-
-check(table.concat(moves, ",")
-      == "/H/Applications,/H/Demos/GLDemos,/H/Demos/doom",
-      "the seed's go: Applications whole, GLDemos whole, and Doom from a "
-      .. "Demos that holds something of the person's - " .. table.concat(moves, ","))
-
 -- A launcher to a program that is gone is not shown; the rest are.
 local exists = function(program)
   return program ~= "/Kosmos/Apps/appearance.lua"

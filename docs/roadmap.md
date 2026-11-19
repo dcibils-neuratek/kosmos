@@ -2742,6 +2742,10 @@ while the desktop draws the larger icons in stages, which the check's own
 time 79 of 79 alone. To wait for the desktop's word that it finished laying
 out, rather than for the screen to hold still.
 
+**Paint is in Demos until then** (0.11.512, `cleanup.md` decision 1): it
+opens, saves and undoes nothing, so it is the brush path's demonstration
+rather than an application.
+
 **WANTED, 7 October - Paint, redesigned as a serious image editor.** Diego:
 "paint needs a massive redesign with more features and more professional
 tools". Designed first, its four documents (`CLAUDE.md`, *And an app is
@@ -7246,6 +7250,11 @@ not static**, since a static one is in every process.
    one thing the record cannot tell: a person's own launcher starting an
    application the seed also gave goes to the Trash too, as Diego's words
    said, and can be dragged back.
+   **The migration removed in 0.11.512** (`cleanup.md`, decision 3): every
+   `/Home` in use - the ThinkPad's stick, the M700's disk - had started a
+   Deskbar since 28 September, so `retire_seed` and
+   `deskbarmenu.seed_leftovers` had nothing left to move. A `.seeded` found
+   now is left alone.
 
 6zc. **FOUND on 27 September, on the M700 with 0.10.175 - a menu's
    separator is as tall as an item.** Diego, with a photograph of Tracker's
@@ -10641,7 +10650,8 @@ the applications make the system useful, and is not pulled forward.
     kept in `~/Kosmos/sites`. `tools/record_site.py` keeps the document a
     desktop Chrome left after its scripts ran, every file local, Chrome's
     own picture beside it and a `record.json` of every file's address and
-    SHA-256; `tools/run_site.py` paints it. All four, and a YouTube search,
+    SHA-256; `tools/run_site.py` paints it (both removed in 0.11.512,
+    `cleanup.md` decision 4: JetSki loads pages itself). All four, and a YouTube search,
     lay out whole; what is missing is decoders.
   - **YouTube first, and every decoder the web needs - AGREED on 14
     November 2026.** Diego: "YouTube is my most used website so it must

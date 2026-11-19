@@ -2,7 +2,7 @@
 -- kosmos: application
 -- kosmos: icon App_Wonderbrush
 -- kosmos: name Paint
--- kosmos: section applications
+-- kosmos: section demos
 -- Paint.
 --
 --   wm paint

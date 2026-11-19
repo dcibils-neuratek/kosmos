@@ -599,6 +599,10 @@ the only way to find that out is to delete it and watch.
 
 ## 18.13 A camera with three checks on it
 
+*Both are gone: `make browser` with the old browser in 0.11.461, and
+`make web` with the web kit's own layout in 0.11.512 (18.912). Kept as the
+record of what they checked.*
+
 ```
 make web                       # the NetSurf libraries, running
 make browser                   # the browser, with a page in it
@@ -37563,3 +37567,43 @@ have not changed and they are skipped, is shorter still.
 
 The gate at the new default, a normal day: **113 suites in 502 s (8:21)**,
 every one passing, the 19 library suites skipped as unchanged.
+
+## 18.912 Diego's six decisions: Paint in Demos, the web kit's own layout gone, one release image
+
+**In short.** Diego, 19 November 2026, to the seven decisions `cleanup.md`
+left him: "Yea to all". Six are this revision and about 3,800 lines leave
+the tree; the seventh, `NR_CPUS` from the machine, is kernel work of its
+own and follows.
+
+1. **Paint is in Demos** (`-- kosmos: section demos`) until *Paint,
+   redesigned* is built; it opens and saves nothing.
+2. **The web kit's own HTML layout is gone**: `web_paint.c`, `web_style.c`
+   and - which the finding did not see - `web_select.c`, whose selection
+   handler only `web_style.c` and the `style` probe asked for. NetSurf's
+   glue used one ten-line helper of it, `web_is_element`, which is now
+   static in `web_netsurf.c`. With them the document's `count`, `text`,
+   `title`, `style`, `render`, `link_at` and `images` went, and the layout
+   kept in `struct doc` for `render`; and `make web` with `run_web.py`,
+   which had been broken since 0.11.509 removed `web.stylesheet` under it.
+   What Mail calls - `parse`, `ns_layout`, `ns_objects`, `ns_picture`,
+   `ns_paint`, `ns_link_at`, `close`, `svg` - is untouched, and Mail's
+   suites are what hold it.
+3. **The Deskbar's seed migration is gone** (`retire_seed`,
+   `deskbarmenu.seed_leftovers`) and its host checks with it.
+   `check_deskbar_layers` keeps what it tested of the two layers - the
+   shipped menu merged with a person's own, a hidden item, Save and Hide in
+   the launcher editor - over a home with no `.seeded` in it: four checks
+   where it had seven.
+4. **`run_site.py` and `record_site.py` are gone**; `w6.md` and the roadmap
+   say so where they named them.
+5. **`make release` builds one image**, at `RELEASE_SIZE` 1920x1080, since
+   `run-kosmos.sh -r` takes any size from 640x480 to 7680x4320. The size
+   stays in the name because `get-and-run-kosmos.sh` reads it from there.
+6. **`TEST=1`, `apps-web-ffmpeg` and `webkit_kit.d` are deleted.** Nothing
+   in the Makefile writes them: the `.d` was a hand compile from a
+   scratchpad, the two directories a typed command on 12 November.
+
+Both boards build without a warning. The gate: **132 suites, every one
+passing, in 614 s (10:14)** - every library suite run, because
+`run_screenshot.py` is in what they stand on; a day that leaves it alone is
+the 8:21 of 18.911.

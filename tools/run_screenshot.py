@@ -179,8 +179,8 @@ _WAV = os.environ.get("KOSMOS_AUDIO_WAV")
 # Which machine, chosen from the image's own path.
 #
 # **Every harness that boots a guest goes through `Guest`**, so making this
-# one function architecture-aware is what lets `run_web.py` and
-# `run_gallery.py` point at either board without
+# one function architecture-aware is what lets `run_gallery.py` and the
+# rest point at either board without
 # knowing there are two. The alternative was a copy of each per machine,
 # which is how two test suites drift apart.
 #
@@ -8441,21 +8441,17 @@ def check_deskbar(guest):
 def check_deskbar_layers(guest):
     """**The Deskbar's menu in two layers** (`roadmap.md` 6zd): the menu as it
     ships in `/Kosmos/Deskbar`, laid out from each application's header, and
-    a person's own in `/Home/Deskbar`, merged - and a home the old Deskbar
-    seeded, whose copies go to the Trash once. Diego: "Send to the trash all
-    seeded".
+    a person's own in `/Home/Deskbar`, merged.
 
-    A home written as the seed left one - Applications with only the seed's
-    Calc and Tracker in it, a Demos holding the seed's Cube and the person's
-    note hiding Plasma, a Games of their own, their own Processes, and the
-    record `.seeded` - and the Deskbar started over it:
+    A home with a person's own menu in it - a Demos holding a note that
+    hides Plasma, a Games of their own and their own Processes - and the
+    Deskbar started over it: its menu, read back, has Applications from the
+    menu that ships, the Cube shipped, no Plasma, their Games and their
+    Processes, marked theirs.
 
-      it says two went to the Trash - Applications whole, the Cube from a
-      Demos that holds something of the person's - and the Trash and the
-      home say the same, the record gone with them;
-      its menu, read back, has Applications from the menu that ships, the
-      Cube shipped rather than the person's, no Plasma, their Games and
-      their Processes, marked theirs.
+    (Until 0.11.512 this home also held what the September Deskbar had
+    seeded, which went to the Trash once; every home in use had started a
+    Deskbar since, and Diego agreed the migration goes - `cleanup.md` 3.)
 
     Then the launcher editor on two shipped items: Save on the Calculator
     writes the person's own at the same place in `/Home/Deskbar`, and Hide
@@ -8463,34 +8459,27 @@ def check_deskbar_layers(guest):
     for what it is (`tools/test_filetypes.lua`).
     """
     setup = (
-        'for _, d in ipairs({ "", "/Applications", "/Demos", "/Games", '
-        '"/System" }) do fs.send("/Home/Deskbar" .. d, { type = "mkdir" }) end '
+        'for _, d in ipairs({ "", "/Demos", "/Games", "/System" }) do '
+        'fs.send("/Home/Deskbar" .. d, { type = "mkdir" }) end '
         'local function l(p, prog, args) fs.write(p, "") fs.setattr(p, '
         '{ kind = "launcher", type = "launcher", program = prog, '
         'args = args or "" }) end '
-        'l("/Home/Deskbar/Applications/calc", "/Kosmos/Apps/calc.lua") '
-        'l("/Home/Deskbar/Applications/tracker", "/bin/tracker.lua") '
-        'l("/Home/Deskbar/Demos/cube3d", "cube3d", "--spin") '
         'fs.write("/Home/Deskbar/Demos/plasma", "") '
         'fs.setattr("/Home/Deskbar/Demos/plasma", { kind = "hidden", '
         'type = "hidden" }) '
         'l("/Home/Deskbar/Games/mine", "/Home/mine.lua") '
         'l("/Home/Deskbar/System/procs", "/Kosmos/Apps/procs.lua", "--wide") '
-        'fs.write("/Home/Deskbar/.seeded", { programs = { "calc", "tracker", '
-        '"cube3d" } }) print("layers" .. "-set")'
+        'print("layers" .. "-set")'
     )
     guest.type(setup)
-    guest.wait_for("layers-set", "write a home as the seed left one")
+    guest.wait_for("layers-set", "write a person's own menu in /Home")
 
     probe = (
         "local hz = fs.read('/Devices/cpu').counter_hz "
         "local till = sys.ticks() + hz * 20 local said "
         "repeat said = fs.read('/Running/Deskbar/menu') "
         "if said then break end sys.yield() until sys.ticks() > till "
-        "print('layers-menu ' .. tostring(said)) "
-        "print('layers-trash ' .. table.concat(fs.list('/Home/Desktop/Trash') or {}, ',')) "
-        "print('layers-home ' .. table.concat(fs.list('/Home/Deskbar') or {}, ',') "
-        ".. ' | ' .. table.concat(fs.list('/Home/Deskbar/Demos') or {}, ','))"
+        "print('layers-menu ' .. tostring(said))"
     )
     guest.type("fs.write('/Temporary/layers.lua', %r)" % probe)
     time.sleep(1.0)
@@ -8512,35 +8501,9 @@ def check_deskbar_layers(guest):
     try:
         mark = len(guest.seen)
         guest.type("wm deskbar,/Temporary/layers.lua")
-        guest.wait_for_line(
-            " of the seed's launchers and folders went to the Trash",
-            "the Deskbar to send the seed's launchers to the Trash", mark)
-        told = guest.seen[mark:]
-        count = re.search(r"deskbar: (\d+) of the seed's launchers", told)
-
-        if not count or count.group(1) != "2":
-            raise Failure("the Deskbar sent %s of the seed's to the Trash - "
-                          "wanted 2, Applications whole and the Cube"
-                          % (count.group(1) if count else "none"))
-
         menu = guest.wait_for_line("layers-menu ", "the menu read back", mark)
-        trash = guest.wait_for_line("layers-trash ", "the Trash listed", mark)
-        home = guest.wait_for_line("layers-home ", "the home listed", mark)
     finally:
         stop()
-
-    trashed = trash.split(",")
-
-    if not ("Applications" in trashed and "cube3d" in trashed
-            and ".seeded" in trashed):
-        raise Failure("the Trash does not hold Applications, the Cube and the "
-                      "seed's record: %r" % trash)
-
-    left, demos = (part.strip() for part in home.split("|"))
-
-    if sorted(left.split(",")) != ["Demos", "Games", "System"] or demos != "plasma":
-        raise Failure("the home kept %r, and in Demos %r - wanted Demos, Games "
-                      "and System, and only the note hiding Plasma" % (left, demos))
 
     sections = dict(part.split(": ", 1) for part in menu.split("; ")[1:])
 
@@ -8602,7 +8565,7 @@ def check_deskbar_layers(guest):
         raise Failure("Save on a shipped launcher and Hide on another did not "
                       "leave the person's own and a note: %r" % edited)
 
-    return 7
+    return 4
 
 
 def check_file_types(guest):
@@ -11814,8 +11777,8 @@ def main():
           f"{types_checks} on what opens what - Play chosen for a film on "
           f"Preferences' File types, kept alone, and shown in Info - "
           f"{layers_checks} on the Deskbar's menu in two layers - the one "
-          f"that ships and the person's merged, a seeded home's copies to the "
-          f"Trash once, and a shipped item saved as theirs and hidden, "
+          f"that ships and the person's merged, and a shipped item saved as "
+          f"theirs and hidden, "
           f"{no_title_checks} on a window whose header is its title bar - "
           f"the three in it, moved by its band, maximised by a double click, "
           f"minimised and closed by the three, and none of it in a look with "

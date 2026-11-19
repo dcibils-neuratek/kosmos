@@ -55,6 +55,10 @@ before every minor version, and there had not been one since 0.11.0.
 
 ## Diego's to decide
 
+**Diego, 19 November 2026: "Yea to all".** One to six are 0.11.512
+(`testing.md` 18.912); seven, `NR_CPUS` from the machine, is kernel work of
+its own and follows.
+
 1. **Paint** (55) is a demonstration of the brush path with no Open, Save
    or undo, listed among the applications. *Recommended: move it to Demos*
    until *Paint, redesigned* is built.
