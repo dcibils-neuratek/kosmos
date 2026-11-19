@@ -101,6 +101,10 @@ void   arc4random_buf(void *buf, size_t n);
  */
 #define RAND_MAX 32767
 
+/* The most bytes a character takes in the locale in use: one, in "C",
+ * which is the only one there is. */
+#define MB_CUR_MAX ((size_t)1)
+
 int    rand(void);
 void   srand(unsigned seed);
 

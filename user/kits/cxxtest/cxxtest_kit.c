@@ -18,12 +18,22 @@ int kosmos_cxxtest_run(char *out, unsigned long size);
 int kosmos_cxxtest_count(int times);
 
 int kosmos_cxxtest_std(char *out, unsigned long size);
+int kosmos_cxxtest_streams(char *out, unsigned long size);
 
 static int l_std(lua_State *L)
 {
     char said[200];
 
     (void)kosmos_cxxtest_std(said, sizeof(said));
+    lua_pushstring(L, said);
+    return 1;
+}
+
+static int l_streams(lua_State *L)
+{
+    char said[200];
+
+    (void)kosmos_cxxtest_streams(said, sizeof(said));
     lua_pushstring(L, said);
     return 1;
 }
@@ -68,4 +78,6 @@ void kosmos_cxxtest_kit(lua_State *L)
     lua_setfield(L, -2, "threads");
     lua_pushcfunction(L, l_std);
     lua_setfield(L, -2, "std");
+    lua_pushcfunction(L, l_streams);
+    lua_setfield(L, -2, "streams");
 }

@@ -4813,3 +4813,27 @@ the test rightly passed - a reminder that a control has to be aimed at
 something the test is looking at.
 
 **Next.** A minute of Khronos's own Vulkan conformance tests.
+
+## 19 November 2026 - C++ learns to print
+
+**In short.** Kosmos's C++ library can now format and parse text and read
+and write files the standard C++ way, with "streams". It was left out a
+year ago because nothing needed it; Khronos's Vulkan conformance tests do.
+
+**What.** C++ programs usually build their messages with streams - `out
+<< "found " << n << " errors"` - and those streams are tied to the idea
+of a locale: the language and country whose way of writing numbers and
+dates a program follows. Kosmos has one locale, plain "C", and the C++
+library had been built with the whole locale machinery switched off.
+
+**What it took.** Telling the C++ library that Kosmos is a system with one
+locale, as LLVM's own C library is - a small patch, kept beside the
+untouched original as the other ports' patches are - and filling in the
+parts of Kosmos's C library that a locale-aware program expects to exist,
+each giving the "C" answer.
+
+**Measured.** A test formats and parses numbers through streams and
+writes a file and reads it back. Pointing the file at a folder that does
+not exist makes the test fail, so it is known to be looking.
+
+**Next.** The Vulkan conformance tests themselves.

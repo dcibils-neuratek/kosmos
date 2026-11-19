@@ -457,7 +457,9 @@ so `lavapipe` is built for both.
    loader, patch 0003 for what it reaches for, and `rtasm`'s writable and
    executable code left out. **The textured cube in 0.12.4** (18.924): a
    vertex buffer, a matrix, a texture and a depth buffer, held to a ray cast
-   through every pixel. dEQP-VK next.
+   through every pixel. dEQP-VK next: the suite writes every message
+   through a C++ string stream, so libc++'s locales were turned on for it
+   (Diego, 19 November 2026; `testing.md` 18.925).
 3. **G3 - a window.** `VK_KHR_kosmos_surface`, swapchain images as shared
    surfaces, presenting as `cube3d` does. *Demo*: `vkcube`. *Test*: the
    picture QEMU scans out, as `make screenshot` checks; frames a second

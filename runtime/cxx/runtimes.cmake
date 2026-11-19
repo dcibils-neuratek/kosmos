@@ -17,14 +17,22 @@
 #
 # **The filesystem on** (`docs/w4.md` W4c): `std::filesystem`, on the
 # POSIX layer's descriptors and the `at` calls, which reach the Storage
-# Kit - WTF's FileSystem is written on it. Without iostreams it copies a
-# file with `sendfile`, which the layer has for that reason.
+# Kit - WTF's FileSystem is written on it. It copies a file with
+# `sendfile`, which the layer has for that reason, and with streams where
+# `sendfile` cannot.
+#
+# **Localization on** (`docs/gpu3d.md` G2; Diego, 19 November 2026), for
+# iostreams - the Vulkan conformance suite writes every message through a
+# string stream. Over the one locale Kosmos has, "C": libc++ reaches the C
+# library through a support header of LLVM's libc's shape
+# (`runtime/patches/cxx/`, built from the copy `tools/cxx_source.py` cuts),
+# and the C library has C's whole `lconv`, its six categories and
+# `MB_CUR_MAX`.
 #
 # **Off, for now, and each for a reason:**
-# - localization and wide characters: text is UTF-8 bytes here, and
-#   WebKit keeps its own UTF-16 - so no iostreams, and no conversion of a
-#   `char8_t` path, which WTF is patched not to ask for (patches 0003,
-#   0004);
+# - wide characters: text is UTF-8 bytes here, and WebKit keeps its own
+#   UTF-16 - so no `wchar_t` streams, and no conversion of a `char8_t`
+#   path, which WTF is patched not to ask for (patches 0003, 0004);
 # - the random device and the time zone database: each is a thing a
 #   process asks the namespace for, not a device file, and arrives when a
 #   port wants it;
@@ -40,7 +48,7 @@ set(LIBCXX_ENABLE_NEW_DELETE_DEFINITIONS OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_THREADS ON CACHE BOOL "")
 set(LIBCXX_HAS_PTHREAD_API ON CACHE BOOL "")
 set(LIBCXX_ENABLE_MONOTONIC_CLOCK ON CACHE BOOL "")
-set(LIBCXX_ENABLE_LOCALIZATION OFF CACHE BOOL "")
+set(LIBCXX_ENABLE_LOCALIZATION ON CACHE BOOL "")
 set(LIBCXX_ENABLE_WIDE_CHARACTERS OFF CACHE BOOL "")
 set(LIBCXX_ENABLE_FILESYSTEM ON CACHE BOOL "")
 set(LIBCXX_ENABLE_RANDOM_DEVICE OFF CACHE BOOL "")

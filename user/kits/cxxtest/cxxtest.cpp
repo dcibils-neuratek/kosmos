@@ -16,7 +16,12 @@
  *   POSIX layer: `std::thread`, a `std::mutex` four of them share, a
  *   `std::condition_variable` handing values over, a function's static
  *   that four threads race to make and only one makes, and
- *   `steady_clock` across a `sleep_for`.
+ *   `steady_clock` across a `sleep_for`;
+ * - and since libc++'s locales were turned on (`docs/gpu3d.md` G2), its
+ *   streams over Kosmos's one locale: numbers formatted through an
+ *   `ostringstream` - in hexadecimal, padded, as a word - parsed back
+ *   through an `istringstream`, and a file written with `ofstream` and
+ *   read back with `ifstream` through the POSIX layer.
  *
  * No Lua here, and no Kosmos header: C++ sees only the C library and
  * libc++, and `cxxtest_kit.c` is the door - it is C, as every kit's is,
@@ -29,6 +34,10 @@
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -211,4 +220,39 @@ extern "C" int kosmos_cxxtest_std(char *out, unsigned long size)
                          "slept %s, own %d", total, handed, sum == 5050 ? "" : " (wrong sum)",
                          made_count.load() == 1 ? "once" : "more than once",
                          slept >= 20 ? "20 ms" : "less than 20 ms", own.load());
+}
+
+/*
+ * "wrote '42 ff 3.25 00007 true', read 12 0.5 word, file 'line one' 99":
+ * what an ostringstream formats, what an istringstream parses, and a line
+ * and a number through a file on /Home.
+ */
+extern "C" int kosmos_cxxtest_streams(char *out, unsigned long size)
+{
+    std::ostringstream wrote;
+    wrote << 42 << ' ' << std::hex << 255 << std::dec << ' ' << 3.25 << ' '
+          << std::setw(5) << std::setfill('0') << 7 << ' ' << std::boolalpha << true;
+
+    std::istringstream parsed("12 0.5 word");
+    int whole = 0;
+    double half = 0;
+    std::string word;
+    parsed >> whole >> half >> word;
+
+    const char *path = "/Home/cxxtest-streams.txt";
+    {
+        std::ofstream file(path);
+        file << "line one\n" << 99 << "\n";
+    }
+    std::ifstream file(path);
+    std::string line;
+    int number = 0;
+    std::getline(file, line);
+    file >> number;
+    file.close();
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+
+    return std::snprintf(out, size, "wrote '%s', read %d %.1f %s, file '%s' %d",
+                         wrote.str().c_str(), whole, half, word.c_str(), line.c_str(), number);
 }

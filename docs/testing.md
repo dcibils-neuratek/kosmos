@@ -38279,3 +38279,51 @@ lookup of a boot unanswered) and `x86-queries` (`cd /home` not answered in
 the mount's spelling) failed under the load and pass alone, 36 and 38
 checks in 51 s. `x86-vulkan` took 10 s, and the triangle said nothing but
 its picture.
+
+## 18.925 libc++'s locales on
+
+**In short:** Kosmos's C++ library has iostreams now - string streams,
+file streams, formatting and parsing - over the one locale Kosmos has,
+"C". The Vulkan conformance suite, G2's last piece, writes every message
+through a string stream, and Diego chose to turn them on (19 November
+2026: "Turn them on") rather than defer it or build a second libc++.
+
+- **How libc++ reaches the C library.** It chooses by the platform's
+  macros, and with none it fell to the fallback written for z/OS, which
+  defines a `vasprintf` over the one Kosmos's `<stdio.h>` has and wants
+  `langinfo.h`. Kosmos's case is LLVM's own libc's - one locale, handed
+  out by `newlocale` - so `runtime/patches/cxx/0001` gives `__kosmos__` a
+  support header of that shape, with libc++'s own `no_locale` shims for
+  the rest, and lists Kosmos among the platforms given libc++'s default
+  character table.
+- **Patched as LLVM is, not edited.** The vendored runtimes stay as
+  shipped; `tools/cxx_source.py` clones them into `build/cxx/tree/`,
+  applies the patches, and refuses a vendored file that has changed.
+  `make cxx-runtimes` configures from the copy.
+- **What the C library grew**: C's whole `struct lconv`, with the C
+  locale's values ("." and otherwise "" and `CHAR_MAX`); `LC_COLLATE`,
+  `LC_MONETARY` and `LC_TIME` and their masks; `MB_CUR_MAX`, one;
+  `isblank`, which libc++ names whether or not it is there; `strxfrm`, a
+  copy in "C"; and `setlocale` refusing a name other than "C", "POSIX"
+  or "", which it had answered "C" whatever was asked.
+- **ICU said `__kosmos__` nowhere**, the one C++ build that did not, and
+  so took the z/OS path; it does now. And its rebuild stamp did not count
+  the C++ runtimes - their headers are libc++'s, changed by an option and
+  by no file of ICU's - so it counts their build now.
+- **`x86-loader` holds it**: `cxxtest-streams: wrote '42 ff 3.25 00007
+  true', read 12 0.5 word, file 'line one' 99` - a number, a hexadecimal,
+  a fraction, a padded one and a word formatted through an
+  `ostringstream`, three parsed back from an `istringstream`, and a line
+  and a number written to `/Home` by `ofstream` and read back by
+  `ifstream`. 24 checks. **Control**: the file in a folder that does not
+  exist, and the check names `file '' 0`.
+
+**The gate** (`ALL=1`, the libc's headers having changed). 146 suites in
+673 s, 144 passing; WTF and JavaScriptCore were compiled again against the
+new headers (2072 of their 2220 objects), LLVM and Mesa with them, in the
+loader's run before it. `x86-cafesa3d-2` (the plane reopened, 165592
+pixels different, at 348 s of its budget) and `arm-sandbox` failed under
+the load and pass alone, 60 checks in 237 s and 221 of 221.
+AArch64's runtimes and its C++ images - `cxxtest`, `jsc`, `llvmtest`,
+`mesatest`, `vulkantest` - build against them as well; its suites wait
+with ARM's.

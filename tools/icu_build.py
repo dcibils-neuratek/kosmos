@@ -92,6 +92,10 @@ def flags(arch):
             "-isystem", os.path.join(resource, "include"),
             "-isystem", os.path.join(ROOT, "runtime", "include"),
             "-isystem", os.path.join(ROOT, "user", "include"),
+            # What it is compiled for, as every C++ build here says
+            # (`runtime/cxx/kosmos.cmake`): libc++ chooses its locale
+            # support by it (`runtime/patches/cxx/`).
+            "-D__kosmos__",
             "-DKOSMOS_USER", "-DKOSMOS_USER_BASE=" + base] + DEFINES
 
 
@@ -142,13 +146,17 @@ def main():
     # Compiled again whole when how it is compiled changed - a define here,
     # or the headers it reads - since an object's date says only that its
     # own source has not moved. The flags and the headers' dates, written
-    # after a build that worked.
+    # after a build that worked; and the C++ runtimes' build, whose headers
+    # are libc++'s - an option of theirs changes every one of those headers
+    # and nothing here (localization, `docs/gpu3d.md` G2).
     #
+    runtimes = os.path.join(ROOT, "build", "cxx", arch, ".built")
     said = repr((base, [os.path.getmtime(os.path.join(d, n))
                         for d in (os.path.join(ROOT, "runtime", "include"),
                                   os.path.join(ROOT, "runtime", "posix", "include"),
                                   os.path.join(ROOT, "runtime", "ports", "icu", "include"))
-                        for n in sorted(os.listdir(d)) if n.endswith(".h")]))
+                        for n in sorted(os.listdir(d)) if n.endswith(".h")],
+                 os.path.getmtime(runtimes) if os.path.exists(runtimes) else None))
     stamp = os.path.join(out, ".flags")
 
     if not os.path.exists(stamp) or open(stamp).read() != said:

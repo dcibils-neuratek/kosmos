@@ -10,6 +10,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <locale.h>
 #include <math.h>
 #include <stdlib.h>
@@ -50,17 +51,39 @@ int *__errno(void)
 }
 
 static char decimal_point[] = ".";
-static struct lconv c_locale = { decimal_point };
+static char nothing[] = "";
+static struct lconv c_locale = {
+    .decimal_point = decimal_point,
+    .thousands_sep = nothing, .grouping = nothing,
+    .int_curr_symbol = nothing, .currency_symbol = nothing,
+    .mon_decimal_point = nothing, .mon_thousands_sep = nothing,
+    .mon_grouping = nothing, .positive_sign = nothing, .negative_sign = nothing,
+    .int_frac_digits = CHAR_MAX, .frac_digits = CHAR_MAX,
+    .p_cs_precedes = CHAR_MAX, .p_sep_by_space = CHAR_MAX,
+    .n_cs_precedes = CHAR_MAX, .n_sep_by_space = CHAR_MAX,
+    .p_sign_posn = CHAR_MAX, .n_sign_posn = CHAR_MAX,
+    .int_p_cs_precedes = CHAR_MAX, .int_p_sep_by_space = CHAR_MAX,
+    .int_n_cs_precedes = CHAR_MAX, .int_n_sep_by_space = CHAR_MAX,
+    .int_p_sign_posn = CHAR_MAX, .int_n_sign_posn = CHAR_MAX,
+};
 
 struct lconv *localeconv(void)
 {
     return &c_locale;
 }
 
+/* "C" is what every category is, and what asking to be in "C", "POSIX" or
+ * the environment's default ("") gets; any other name is refused, as C says,
+ * rather than answered with a locale it did not ask for. */
 char *setlocale(int category, const char *locale)
 {
-    (void)category;
-    (void)locale;
+    if (category < LC_ALL || category > LC_TIME) {
+        return NULL;
+    }
+    if (locale != NULL && locale[0] != '\0' && strcmp(locale, "C") != 0 &&
+        strcmp(locale, "POSIX") != 0) {
+        return NULL;
+    }
     return (char *)"C";
 }
 

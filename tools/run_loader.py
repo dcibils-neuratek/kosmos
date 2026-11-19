@@ -125,6 +125,7 @@ local kit = use("{image}")
 print("cxxtest: " .. kit.run())
 print("cxxtest-threads: " .. kit.threads())
 print("cxxtest-std: " .. kit.std())
+print("cxxtest-streams: " .. kit.streams())
 """
 
 cxx_files = []
@@ -483,6 +484,11 @@ def main():
                                 "slept 20 ms, own 4"],
                   "C++'s standard threads on the POSIX layer (W4a) did not all hold: %r"
                   % line[-1:])
+            line = [l.strip() for l in guest.seen.split("\n") if "cxxtest-streams:" in l
+                    and "print(" not in l]
+            check(line[-1:] == ["cxxtest-streams: wrote '42 ff 3.25 00007 true', read 12 0.5 "
+                                "word, file 'line one' 99"],
+                  "C++'s streams over Kosmos's locale (G2) did not all hold: %r" % line[-1:])
 
             unwound_at = len(guest.seen)
             said, _ = typed("run /Home/apps/unwound/unwound.lua", "unwound", 180)

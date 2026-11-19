@@ -1,0 +1,123 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+libc++'s locales on Kosmos (docs/gpu3d.md G2, for the Vulkan CTS; Diego,
+19 November 2026: localization on). libc++ chooses how to reach the C
+library's locales by the platform's macros, and Kosmos's triple names
+none, so it fell to the fallback written for z/OS, which defines a
+vasprintf of its own over the one Kosmos's <stdio.h> declares. Kosmos has
+one locale, "C", which the POSIX layer's newlocale hands out - LLVM's own
+libc's case exactly - so `__kosmos__` (runtime/cxx/kosmos.cmake) gets a
+support header of that shape: newlocale, freelocale, setlocale and
+localeconv from the C library, and libc++'s own no_locale shims for the
+rest, each the plain C function. The header is listed where libc++ lists
+its headers, to be installed and in its module map; and Kosmos joins the
+platforms libc++ gives its default character table, as llvm-libc does,
+since there is no locale's table to read.
+
+--- a/libcxx/include/CMakeLists.txt
++++ b/libcxx/include/CMakeLists.txt
+@@ -546,6 +546,7 @@
+   __locale_dir/support/freebsd.h
+   __locale_dir/support/fuchsia.h
+   __locale_dir/support/linux.h
++  __locale_dir/support/kosmos.h
+   __locale_dir/support/llvm_libc.h
+   __locale_dir/support/netbsd.h
+   __locale_dir/support/newlib.h
+--- a/libcxx/include/__config
++++ b/libcxx/include/__config
+@@ -298,7 +298,7 @@
+ #  endif
+ 
+ #  if defined(__BIONIC__) || defined(__NuttX__) || defined(__Fuchsia__) || defined(__wasi__) ||                        \
+-      _LIBCPP_HAS_MUSL_LIBC || defined(__OpenBSD__) || _LIBCPP_LIBC_LLVM_LIBC
++      _LIBCPP_HAS_MUSL_LIBC || defined(__OpenBSD__) || _LIBCPP_LIBC_LLVM_LIBC || defined(__kosmos__)
+ #    define _LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE
+ #  endif
+ 
+--- a/libcxx/include/__locale_dir/locale_base_api.h
++++ b/libcxx/include/__locale_dir/locale_base_api.h
+@@ -122,6 +122,8 @@
+ #    include <__locale_dir/support/fuchsia.h>
+ #  elif _LIBCPP_LIBC_LLVM_LIBC
+ #    include <__locale_dir/support/llvm_libc.h>
++#  elif defined(__kosmos__)
++#    include <__locale_dir/support/kosmos.h>
+ #  elif defined(__linux__)
+ #    include <__locale_dir/support/linux.h>
+ #  elif _LIBCPP_LIBC_NEWLIB
+--- a/libcxx/include/__locale_dir/support/kosmos.h
++++ b/libcxx/include/__locale_dir/support/kosmos.h
+@@ -0,0 +1,62 @@
++// -*- C++ -*-
++// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
++//
++// The locale base API on Kosmos (runtime/patches/cxx/): one locale, "C",
++// which the POSIX layer's newlocale hands out (runtime/posix/locale.c) -
++// so every operation is the C library's own, as on LLVM's libc, whose
++// support header this follows.
++
++#ifndef _LIBCPP___LOCALE_DIR_SUPPORT_KOSMOS_H
++#define _LIBCPP___LOCALE_DIR_SUPPORT_KOSMOS_H
++
++#include <__config>
++#include <clocale>
++#include <cstdio>
++#include <cstdlib>
++#include <ctype.h>
++
++#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
++#  pragma GCC system_header
++#endif
++
++_LIBCPP_BEGIN_NAMESPACE_STD
++namespace __locale {
++
++using __locale_t _LIBCPP_NODEBUG = ::locale_t;
++
++#define _LIBCPP_COLLATE_MASK LC_COLLATE_MASK
++#define _LIBCPP_CTYPE_MASK LC_CTYPE_MASK
++#define _LIBCPP_MONETARY_MASK LC_MONETARY_MASK
++#define _LIBCPP_NUMERIC_MASK LC_NUMERIC_MASK
++#define _LIBCPP_TIME_MASK LC_TIME_MASK
++#define _LIBCPP_MESSAGES_MASK LC_MESSAGES_MASK
++#define _LIBCPP_ALL_MASK LC_ALL_MASK
++#define _LIBCPP_LC_ALL LC_ALL
++
++#if defined(_LIBCPP_BUILDING_LIBRARY)
++using __lconv_t _LIBCPP_NODEBUG = std::lconv;
++
++inline _LIBCPP_HIDE_FROM_ABI __locale_t __newlocale(int __category_mask, const char* __locale, __locale_t __base) {
++  return ::newlocale(__category_mask, __locale, __base);
++}
++
++inline _LIBCPP_HIDE_FROM_ABI void __freelocale(__locale_t __loc) { ::freelocale(__loc); }
++
++inline _LIBCPP_HIDE_FROM_ABI char* __setlocale(int __category, char const* __locale) {
++  return ::setlocale(__category, __locale);
++}
++
++inline _LIBCPP_HIDE_FROM_ABI __lconv_t* __localeconv(__locale_t&) { return std::localeconv(); }
++
++inline _LIBCPP_HIDE_FROM_ABI const char* __get_locale_encoding(__locale_t) { return nullptr; }
++#endif // _LIBCPP_BUILDING_LIBRARY
++
++} // namespace __locale
++_LIBCPP_END_NAMESPACE_STD
++
++#include <__locale_dir/support/no_locale/characters.h>
++#include <__locale_dir/support/no_locale/conversions.h>
++#include <__locale_dir/support/no_locale/formatting.h>
++#include <__locale_dir/support/no_locale/strtonum.h>
++
++#endif // _LIBCPP___LOCALE_DIR_SUPPORT_KOSMOS_H
+--- a/libcxx/include/module.modulemap.in
++++ b/libcxx/include/module.modulemap.in
+@@ -1609,6 +1609,7 @@
+       textual header "__locale_dir/support/freebsd.h"
+       textual header "__locale_dir/support/fuchsia.h"
+       textual header "__locale_dir/support/linux.h"
++      textual header "__locale_dir/support/kosmos.h"
+       textual header "__locale_dir/support/llvm_libc.h"
+       textual header "__locale_dir/support/netbsd.h"
+       textual header "__locale_dir/support/no_locale/conversions.h"

@@ -3490,6 +3490,7 @@ cxx-runtimes: $(CXXRT)/.built
 $(CXXRT_LIBS): $(CXXRT)/.built
 
 $(CXXRT)/.built: runtime/cxx/kosmos.cmake runtime/cxx/runtimes.cmake \
+                 tools/cxx_source.py $(wildcard runtime/patches/cxx/*.patch) \
                  $(wildcard runtime/include/*.h runtime/include/sys/*.h) \
                  $(wildcard runtime/posix/include/*.h runtime/posix/include/sys/*.h)
 	@# The options and the toolchain are an initial cache, read only when
@@ -3500,8 +3501,11 @@ $(CXXRT)/.built: runtime/cxx/kosmos.cmake runtime/cxx/runtimes.cmake \
 	@if [ ! -f $(CXXRT)/.configured ] || [ runtime/cxx/runtimes.cmake -nt $(CXXRT)/.configured ] \
 	        || [ runtime/cxx/kosmos.cmake -nt $(CXXRT)/.configured ]; then rm -rf $(CXXRT); fi
 	@mkdir -p $(CXXRT)
+	@# From the vendored runtimes with `runtime/patches/cxx/` in them
+	@# (`tools/cxx_source.py`), cut again only when either changed.
+	python3 tools/cxx_source.py
 	@if [ ! -f $(CXXRT)/build.ninja ]; then \
-	    cmake -G Ninja -S runtime/upstream/llvm/runtimes -B $(CXXRT) -Wno-author \
+	    cmake -G Ninja -S build/cxx/tree/runtimes -B $(CXXRT) -Wno-author \
 	        -C runtime/cxx/runtimes.cmake \
 	        -DCMAKE_TOOLCHAIN_FILE=$(CURDIR)/runtime/cxx/kosmos.cmake \
 	        -DKOSMOS_ARCH=$(ARCH) -DKOSMOS_ROOT=$(CURDIR) > $(CXXRT)/cmake.log \

@@ -11990,7 +11990,12 @@ JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
 18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and
 serializing a shader inside Kosmos. **G1 done. G2 begun in 0.12.3** (`testing.md` 18.923): a triangle drawn by
 Vulkan inside Kosmos; a textured cube with a depth buffer in 0.12.4
-(18.924); dEQP-VK next.
+(18.924); dEQP-VK next. **It asked for iostreams, and libc++'s locales are
+on** (Diego, 19 November: "Turn them on"; 18.925). **And a follow-up it
+leaves**: the patches written because there were none - LLVM's
+`0003-no-iostreams`, the disassembler's half of Mesa's 0003, WebKit's
+WTF 0003 (Int128's printing) and 0004's `char8_t` path - can each go,
+taken out one at a time with its suite.
 **And then a flight simulator - ASKED on 19 November 2026** (Diego: "after
 the 3d api is done and running on gpu, i want to build a simple flight
 simulator app that shows the 3d api capabilities"). An application of
