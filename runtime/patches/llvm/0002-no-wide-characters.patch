@@ -1,0 +1,46 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No wide strings (docs/gpu3d.md G1). Kosmos's libc++ is built without
+wide characters (runtime/cxx/runtimes.cmake): text is UTF-8 bytes here.
+LLVM's conversions to and from std::wstring are for Windows' paths and
+its console; they are left out where the library has no wide
+characters, and kept wherever it has.
+
+--- a/llvm/include/llvm/Support/ConvertUTF.h
++++ b/llvm/include/llvm/Support/ConvertUTF.h
+@@ -237,6 +237,9 @@
+ LLVM_ABI bool ConvertUTF8toWide(unsigned WideCharWidth, llvm::StringRef Source,
+                                 char *&ResultPtr, const UTF8 *&ErrorPtr);
+ 
++// Wide strings exist only where the C++ library has wide characters:
++// not in a libc++ built without them, as Kosmos's is.
++#if !defined(_LIBCPP_VERSION) || _LIBCPP_HAS_WIDE_CHARACTERS
+ /**
+ * Converts a UTF-8 StringRef to a std::wstring.
+ * \return true on success.
+@@ -254,6 +257,7 @@
+  * \return true on success.
+  */
+ LLVM_ABI bool convertWideToUTF8(std::wstring_view Source, std::string &Result);
++#endif
+ 
+ /**
+  * Convert an Unicode code point to UTF8 sequence.
+--- a/llvm/lib/Support/ConvertUTFWrapper.cpp
++++ b/llvm/lib/Support/ConvertUTFWrapper.cpp
+@@ -235,6 +235,7 @@
+   return true;
+ }
+ 
++#if !defined(_LIBCPP_VERSION) || _LIBCPP_HAS_WIDE_CHARACTERS
+ static_assert(sizeof(wchar_t) == 1 || sizeof(wchar_t) == 2 ||
+                   sizeof(wchar_t) == 4,
+               "Expected wchar_t to be 1, 2, or 4 bytes");
+@@ -303,6 +304,7 @@
+         "Control should never reach this point; see static_assert further up");
+   }
+ }
++#endif
+ 
+ bool IsSingleCodeUnitUTF8Codepoint(unsigned V) { return V <= 0x7F; }
+ 

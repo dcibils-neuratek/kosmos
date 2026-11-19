@@ -10,9 +10,12 @@
  * ones such code is written against. `AT_HWCAP` and `AT_HWCAP2` on ARM only:
  * an x86-64 program asks CPUID itself. `AT_SECURE` - started with more
  * authority than its starter, as setuid does - is 0 everywhere: nothing here
- * can be (OpenSSL's `uid.c` asks). Anything else is 0, ENOENT.
+ * can be (OpenSSL's `uid.c` asks). `AT_PAGESZ` is a page's bytes, 4096
+ * on both processors (LLVM's `Process::getPageSize` asks, `docs/gpu3d.md`
+ * G1). Anything else is 0, ENOENT.
  */
 
+#define AT_PAGESZ 6
 #define AT_HWCAP  16
 #define AT_SECURE 23
 #define AT_HWCAP2 26

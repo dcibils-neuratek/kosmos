@@ -11984,7 +11984,9 @@ helpers area by area and every finding checked before anything is removed.
 the 3d api work after the cleanup is done"): Mesa and LLVM built for
 Kosmos, `lavapipe` headless, a window and `vkcube`, GL and GL ES by Zink
 with TinyGL retired, and WebGL in JetSki - all of it in QEMU. G6 to G9, on
-the M700's GPU, come after the daily-driver items below.
+the M700's GPU, come after the daily-driver items below. **G1's LLVM half built
+in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
+JIT running inside Kosmos; Mesa's half next.
 Then, in order: (1) keys - Control-W given back, the desktop's keys on
 Super, press and release delivered, layouts and dead keys out of Nebula,
 Latin American first; (2) the clipboard redone; (3) JetSki's remaining

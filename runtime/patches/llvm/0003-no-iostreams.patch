@@ -1,0 +1,407 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No iostreams (docs/gpu3d.md G1). Kosmos's libc++ is built without
+localisation, so it has no std::ostream and no string streams. LLVM's
+own coding standard keeps iostreams out of its libraries, and these are
+the places that kept a string stream anyway: each becomes LLVM's own
+raw_string_ostream, writing the same text - a hexadecimal number by
+format_hex_no_prefix or utohexstr, a double as an ostream writes one, by
+%g - and the files that reached <cctype> only through <sstream> include
+it themselves. raw_os_ostream, which adapts to a std::ostream, is left
+out where there is none.
+
+--- a/llvm/include/llvm/Analysis/CFGPrinter.h
++++ b/llvm/include/llvm/Analysis/CFGPrinter.h
+@@ -18,6 +18,7 @@
+ #ifndef LLVM_ANALYSIS_CFGPRINTER_H
+ #define LLVM_ANALYSIS_CFGPRINTER_H
+ 
++#include "llvm/Support/raw_ostream.h"
+ #include "llvm/Analysis/BlockFrequencyInfo.h"
+ #include "llvm/Analysis/BranchProbabilityInfo.h"
+ #include "llvm/Analysis/HeatUtils.h"
+@@ -32,7 +33,6 @@
+ #include "llvm/Support/FormatVariadic.h"
+ 
+ #include <functional>
+-#include <sstream>
+ 
+ namespace llvm {
+ class ModuleSlotTracker;
+@@ -318,7 +318,8 @@
+   }
+ 
+   std::string getNodeAttributes(const BasicBlock *Node, DOTFuncInfo *CFGInfo) {
+-    std::stringstream Attrs;
++    std::string AttrsText;
++    raw_string_ostream Attrs(AttrsText);
+ 
+     if (auto NodeIdFmt = CFGInfo->getNodeIdFormatter())
+       if (auto NodeId = (*NodeIdFmt)(Node))
+--- a/llvm/include/llvm/ProfileData/SampleProf.h
++++ b/llvm/include/llvm/ProfileData/SampleProf.h
+@@ -14,6 +14,7 @@
+ #ifndef LLVM_PROFILEDATA_SAMPLEPROF_H
+ #define LLVM_PROFILEDATA_SAMPLEPROF_H
+ 
++#include "llvm/Support/raw_ostream.h"
+ #include "llvm/ADT/DenseMap.h"
+ #include "llvm/ADT/DenseSet.h"
+ #include "llvm/ADT/MapVector.h"
+@@ -33,7 +34,6 @@
+ #include <cstdint>
+ #include <list>
+ #include <map>
+-#include <sstream>
+ #include <string>
+ #include <system_error>
+ #include <unordered_map>
+@@ -532,7 +532,8 @@
+   }
+ 
+   std::string toString(bool OutputLineLocation) const {
+-    std::ostringstream OContextStr;
++    std::string OContextText;
++    raw_string_ostream OContextStr(OContextText);
+     OContextStr << Func.str();
+     if (OutputLineLocation) {
+       OContextStr << ":" << Location.LineOffset;
+@@ -676,7 +677,8 @@
+ 
+   static std::string getContextString(SampleContextFrames Context,
+                                       bool IncludeLeafLineLocation = false) {
+-    std::ostringstream OContextStr;
++    std::string OContextText;
++    raw_string_ostream OContextStr(OContextText);
+     for (uint32_t I = 0; I < Context.size(); I++) {
+       if (OContextStr.str().size()) {
+         OContextStr << " @ ";
+--- a/llvm/include/llvm/ProfileData/MemProfYAML.h
++++ b/llvm/include/llvm/ProfileData/MemProfYAML.h
+@@ -6,6 +6,7 @@
+ #include "llvm/ProfileData/MemProf.h"
+ #include "llvm/Support/Format.h"
+ #include "llvm/Support/YAMLTraits.h"
++#include <cctype>
+ 
+ namespace llvm {
+ namespace memprof {
+--- a/llvm/lib/Target/AArch64/AArch64LowerHomogeneousPrologEpilog.cpp
++++ b/llvm/lib/Target/AArch64/AArch64LowerHomogeneousPrologEpilog.cpp
+@@ -28,7 +28,7 @@
+ #include "llvm/IR/PassManager.h"
+ #include "llvm/Pass.h"
+ #include <optional>
+-#include <sstream>
++#include "llvm/Support/raw_ostream.h"
+ 
+ using namespace llvm;
+ 
+@@ -140,7 +140,8 @@
+ /// OUTLINED_FUNCTION_PROLOG_x19x20.
+ static std::string getFrameHelperName(SmallVectorImpl<unsigned> &Regs,
+                                       FrameHelperType Type, unsigned FpOffset) {
+-  std::ostringstream RegStream;
++  std::string RegText;
++  raw_string_ostream RegStream(RegText);
+   switch (Type) {
+   case FrameHelperType::Prolog:
+     RegStream << "OUTLINED_FUNCTION_PROLOG_";
+--- a/llvm/lib/Target/AArch64/MCTargetDesc/AArch64InstPrinter.cpp
++++ b/llvm/lib/Target/AArch64/MCTargetDesc/AArch64InstPrinter.cpp
+@@ -39,6 +39,7 @@
+ #define GET_INSTRUCTION_NAME
+ #define PRINT_ALIAS_INSTR
+ #include "AArch64GenAsmWriter1.inc"
++#include <cctype>
+ 
+ AArch64InstPrinter::AArch64InstPrinter(const MCAsmInfo &MAI,
+                                        const MCInstrInfo &MII,
+--- a/llvm/lib/TargetParser/ARMTargetParserCommon.cpp
++++ b/llvm/lib/TargetParser/ARMTargetParserCommon.cpp
+@@ -13,6 +13,7 @@
+ #include "llvm/TargetParser/ARMTargetParserCommon.h"
+ #include "llvm/ADT/SmallVector.h"
+ #include "llvm/ADT/StringSwitch.h"
++#include <cctype>
+ 
+ using namespace llvm;
+ 
+--- a/llvm/lib/Transforms/IPO/InstrumentorUtils.cpp
++++ b/llvm/lib/Transforms/IPO/InstrumentorUtils.cpp
+@@ -13,6 +13,7 @@
+ 
+ #include "llvm/ADT/DenseMap.h"
+ #include "llvm/IR/DiagnosticInfo.h"
++#include <cctype>
+ 
+ using namespace llvm;
+ using namespace llvm::instrumentor;
+--- a/llvm/lib/Transforms/IPO/MemProfContextDisambiguation.cpp
++++ b/llvm/lib/Transforms/IPO/MemProfContextDisambiguation.cpp
+@@ -48,7 +48,6 @@
+ #include "llvm/Transforms/Utils/Cloning.h"
+ #include "llvm/Transforms/Utils/Instrumentation.h"
+ #include <deque>
+-#include <sstream>
+ #include <vector>
+ using namespace llvm;
+ using namespace llvm::memprof;
+@@ -3603,10 +3602,7 @@
+   }
+ 
+   static std::string getNodeId(NodeRef Node) {
+-    std::stringstream SStream;
+-    SStream << std::hex << "N0x" << (unsigned long long)Node;
+-    std::string Result = SStream.str();
+-    return Result;
++    return "N0x" + utohexstr((unsigned long long)Node, /*LowerCase=*/true);
+   }
+ 
+   // True if we should highlight a specific context or allocation's contexts in
+--- a/llvm/lib/Transforms/Instrumentation/AddressSanitizer.cpp
++++ b/llvm/lib/Transforms/Instrumentation/AddressSanitizer.cpp
+@@ -72,6 +72,7 @@
+ #include "llvm/Support/ErrorHandling.h"
+ #include "llvm/Support/MathExtras.h"
+ #include "llvm/Support/ModRef.h"
++#include "llvm/Support/Format.h"
+ #include "llvm/Support/raw_ostream.h"
+ #include "llvm/TargetParser/Triple.h"
+ #include "llvm/Transforms/Instrumentation/AddressSanitizerCommon.h"
+@@ -86,9 +87,7 @@
+ #include <cassert>
+ #include <cstddef>
+ #include <cstdint>
+-#include <iomanip>
+ #include <limits>
+-#include <sstream>
+ #include <string>
+ #include <tuple>
+ #include <utility>
+@@ -3261,9 +3260,10 @@
+ 
+   for (size_t Val : {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0xf1, 0xf2,
+                      0xf3, 0xf5, 0xf8}) {
+-    std::ostringstream Name;
++    std::string NameText;
++    raw_string_ostream Name(NameText);
+     Name << kAsanSetShadowPrefix;
+-    Name << std::setw(2) << std::setfill('0') << std::hex << Val;
++    Name << format_hex_no_prefix(Val, 2);
+     AsanSetShadowFunc[Val] = ASan.Inserter.insertFunction(
+         Name.str(), IRB.getVoidTy(), IntptrTy, IntptrTy);
+   }
+--- a/llvm/lib/Support/APFloat.cpp
++++ b/llvm/lib/Support/APFloat.cpp
+@@ -42,6 +42,7 @@
+ 
+ #include "shared/math.h"
+ #include "shared/math_check_exceptions.h"
++#include <cctype>
+ 
+ #define APFLOAT_DISPATCH_ON_SEMANTICS(METHOD_CALL)                             \
+   do {                                                                         \
+--- a/llvm/lib/Support/CachePruning.cpp
++++ b/llvm/lib/Support/CachePruning.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include <set>
+ #include <system_error>
++#include <cctype>
+ 
+ using namespace llvm;
+ 
+--- a/llvm/lib/Support/Mustache.cpp
++++ b/llvm/lib/Support/Mustache.cpp
+@@ -8,9 +8,9 @@
+ #include "llvm/Support/Mustache.h"
+ #include "llvm/ADT/SmallVector.h"
+ #include "llvm/Support/Debug.h"
++#include "llvm/Support/Format.h"
+ #include "llvm/Support/raw_ostream.h"
+ #include <cctype>
+-#include <sstream>
+ 
+ #define DEBUG_TYPE "mustache"
+ 
+@@ -675,9 +675,8 @@
+     return;
+   case json::Value::Number: {
+     auto Num = *Data.getAsNumber();
+-    std::ostringstream SS;
+-    SS << Num;
+-    OS << SS.str();
++    // An ostream's default for a double, six significant digits: %g.
++    OS << format("%g", Num);
+     return;
+   }
+   case json::Value::String: {
+--- a/llvm/lib/Support/raw_os_ostream.cpp
++++ b/llvm/lib/Support/raw_os_ostream.cpp
+@@ -11,6 +11,9 @@
+ //===----------------------------------------------------------------------===//
+ 
+ #include "llvm/Support/raw_os_ostream.h"
++// std::ostream exists only in a C++ library with localisation, which
++// Kosmos's libc++ is built without.
++#if !defined(_LIBCPP_VERSION) || _LIBCPP_HAS_LOCALIZATION
+ #include <ostream>
+ using namespace llvm;
+ 
+@@ -27,3 +30,5 @@
+ }
+ 
+ uint64_t raw_os_ostream::current_pos() const { return OS.tellp(); }
++
++#endif
+--- a/llvm/lib/MC/MCPseudoProbe.cpp
++++ b/llvm/lib/MC/MCPseudoProbe.cpp
+@@ -25,7 +25,6 @@
+ #include <algorithm>
+ #include <cassert>
+ #include <limits>
+-#include <sstream>
+ #include <vector>
+ 
+ #define DEBUG_TYPE "mcpseudoprobe"
+@@ -300,7 +299,8 @@
+ 
+ std::string MCDecodedPseudoProbe::getInlineContextStr(
+     const GUIDProbeFunctionMap &GUID2FuncMAP) const {
+-  std::ostringstream OContextStr;
++  std::string OContextText;
++  raw_string_ostream OContextStr(OContextText);
+   SmallVector<MCPseudoProbeFrameLocation, 16> ContextStack;
+   getInlineContext(ContextStack, GUID2FuncMAP);
+   for (auto &Cxt : ContextStack) {
+--- a/llvm/lib/MC/MCParser/MasmParser.cpp
++++ b/llvm/lib/MC/MCParser/MasmParser.cpp
+@@ -61,7 +61,6 @@
+ #include <deque>
+ #include <memory>
+ #include <optional>
+-#include <sstream>
+ #include <string>
+ #include <tuple>
+ #include <utility>
+@@ -2749,7 +2748,8 @@
+   // eliminate this, although we should protect against infinite loops.
+   unsigned MaxNestingDepth = AsmMacroMaxNestingDepth;
+   if (ActiveMacros.size() == MaxNestingDepth) {
+-    std::ostringstream MaxNestingDepthError;
++    std::string MaxNestingDepthText;
++    raw_string_ostream MaxNestingDepthError(MaxNestingDepthText);
+     MaxNestingDepthError << "macros cannot be nested more than "
+                          << MaxNestingDepth << " levels deep."
+                          << " Use -asm-macro-max-nesting-depth to increase "
+--- a/llvm/lib/MC/MCParser/AsmParser.cpp
++++ b/llvm/lib/MC/MCParser/AsmParser.cpp
+@@ -65,7 +65,6 @@
+ #include <deque>
+ #include <memory>
+ #include <optional>
+-#include <sstream>
+ #include <string>
+ #include <tuple>
+ #include <utility>
+@@ -2826,7 +2825,8 @@
+   // eliminate this, although we should protect against infinite loops.
+   unsigned MaxNestingDepth = AsmMacroMaxNestingDepth;
+   if (ActiveMacros.size() == MaxNestingDepth) {
+-    std::ostringstream MaxNestingDepthError;
++    std::string MaxNestingDepthText;
++    raw_string_ostream MaxNestingDepthError(MaxNestingDepthText);
+     MaxNestingDepthError << "macros cannot be nested more than "
+                          << MaxNestingDepth << " levels deep."
+                          << " Use -asm-macro-max-nesting-depth to increase "
+--- a/llvm/lib/CodeGen/MachinePipeliner.cpp
++++ b/llvm/lib/CodeGen/MachinePipeliner.cpp
+@@ -87,11 +87,9 @@
+ #include <cstdint>
+ #include <deque>
+ #include <functional>
+-#include <iomanip>
+ #include <iterator>
+ #include <map>
+ #include <memory>
+-#include <sstream>
+ #include <tuple>
+ #include <utility>
+ #include <vector>
+@@ -4382,9 +4380,7 @@
+     return;
+ 
+   const auto DumpSU = [](const SUnit *SU) {
+-    std::ostringstream OSS;
+-    OSS << "SU(" << SU->NodeNum << ")";
+-    return OSS.str();
++    return "SU(" + std::to_string(SU->NodeNum) + ")";
+   };
+ 
+   dbgs() << "  Loop carried edges from " << DumpSU(SU) << "\n"
+--- a/llvm/lib/CodeGen/AssignmentTrackingAnalysis.cpp
++++ b/llvm/lib/CodeGen/AssignmentTrackingAnalysis.cpp
+@@ -37,7 +37,6 @@
+ #include <cstdint>
+ #include <optional>
+ #include <queue>
+-#include <sstream>
+ #include <unordered_map>
+ 
+ using namespace llvm;
+@@ -438,7 +437,7 @@
+   /// Format string describing an FragsInMemMap (IntervalMap) interval.
+   std::string toString(FragsInMemMap::const_iterator It, bool Newline = true) {
+     std::string String;
+-    std::stringstream S(String);
++    raw_string_ostream S(String);
+     if (It.valid()) {
+       S << "[" << It.start() << ", " << It.stop()
+         << "): " << toString(It.value());
+--- a/llvm/lib/Analysis/ImportedFunctionsInliningStatistics.cpp
++++ b/llvm/lib/Analysis/ImportedFunctionsInliningStatistics.cpp
+@@ -15,9 +15,8 @@
+ #include "llvm/IR/Module.h"
+ #include "llvm/Support/CommandLine.h"
+ #include "llvm/Support/Debug.h"
++#include "llvm/Support/Format.h"
+ #include "llvm/Support/raw_ostream.h"
+-#include <iomanip>
+-#include <sstream>
+ #include <string>
+ 
+ using namespace llvm;
+@@ -87,8 +86,10 @@
+   if (All != 0)
+     Result = 100 * static_cast<double>(Fraction) / All;
+ 
+-  std::stringstream Str;
+-  Str << std::setprecision(4) << Msg << ": " << Fraction << " [" << Result
++  // Four significant digits, as an ostream with setprecision(4) writes.
++  std::string Text;
++  raw_string_ostream Str(Text);
++  Str << Msg << ": " << Fraction << " [" << format("%.4g", Result)
+       << "% of " << PercentageOfMsg << "]";
+   if (LineEnd)
+     Str << "\n";
+--- a/llvm/lib/Linker/IRMover.cpp
++++ b/llvm/lib/Linker/IRMover.cpp
+@@ -31,6 +31,7 @@
+ #include "llvm/Transforms/Utils/ValueMapper.h"
+ #include <optional>
+ #include <utility>
++#include <cctype>
+ using namespace llvm;
+ 
+ /// Most of the errors produced by this module are inconvertible StringErrors.
+--- a/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
++++ b/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
+@@ -72,6 +72,7 @@
+ #include "llvm/TargetParser/Triple.h"
+ #include <cassert>
+ #include <string>
++#include <cctype>
+ 
+ using namespace llvm;
+ using namespace dwarf;

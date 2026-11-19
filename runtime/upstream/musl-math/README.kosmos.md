@@ -211,3 +211,18 @@ the closure by undefined symbols again; `ldexpf` calls `scalbnf` and
     72b8f2b833b8d4bc5ba24c7321b18b4307c0d333555646c8d6af637631efb2e8  src/math/lround.c
     c9706aa3f83efbf2fe4f00c688ec1cadbedcfb99ad538b97cddf4e74c8249756  src/math/remainderf.c
     f40401d2bc1732932375a64590a6844229d566c1a6907a6aa6480a455284fcf9  src/math/remquof.c
+
+## And three more, for LLVM (19 November 2026)
+
+LLVM's constant folder (`docs/gpu3d.md` G1) calls `erf` and `logb` through
+libc++'s `<cmath>`, and the first image to link it named both; `logb` calls
+`ilogb`. From the same tarball, checked against the same sum, by the same
+closure over undefined symbols. **Defined and not declared in `math.h`**:
+libc++ declares them for C++, and a declaration there would turn FFmpeg's
+`HAVE_ERF` on (`tools/ffmpeg_vendor.py` holds its config to that header),
+which its vendored config does not say. `ilogb` is declared, which FFmpeg
+asks nothing about, because GCC refuses `logb.c` without it.
+
+    795f05c9388ac277ab27cb5dc63fb4f82620a0ee11eaf8403201df5bc65c0f5b  src/math/erf.c
+    c9875bc2118b90b16f2a8f3770a61dad59e2e5e076e744d4c054191ba00611be  src/math/ilogb.c
+    46f89d69993da5a4b329d8958fbf1c93427b85cca53e45b4d4aa9a91bcc043b1  src/math/logb.c

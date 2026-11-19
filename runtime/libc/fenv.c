@@ -157,3 +157,25 @@ int feraiseexcept(int excepts)
 #else
 #error "fenv.c: which architecture is this?"
 #endif
+
+/*
+ * **The flags as a value** (`docs/gpu3d.md` G1, for LLVM's floating-point
+ * support): `fegetexceptflag` reads which of `excepts` are set, and
+ * `fesetexceptflag` puts those back as they were read - cleared, then
+ * the ones that were set set again, which traps nothing because every
+ * exception is masked. Both are written on the three above, so they mean
+ * the same on either processor.
+ */
+int fegetexceptflag(fexcept_t *flags, int excepts)
+{
+    *flags = (fexcept_t)fetestexcept(excepts);
+    return 0;
+}
+
+int fesetexceptflag(const fexcept_t *flags, int excepts)
+{
+    excepts &= FE_ALL_EXCEPT;
+    feclearexcept(excepts);
+    feraiseexcept((int)*flags & excepts);
+    return 0;
+}

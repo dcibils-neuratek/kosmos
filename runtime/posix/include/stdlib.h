@@ -30,6 +30,9 @@ int   unsetenv(const char *name);
  * pointer's size: 0 and `*out`, or EINVAL or ENOMEM (`memalign.c`). */
 int   posix_memalign(void **out, size_t align, size_t n);
 
+/* The process ends now, nothing run on the way: `_exit`'s C99 name. */
+__attribute__((noreturn)) void _Exit(int status);
+
 __END_DECLS
 
 #endif /* POSIX_STDLIB_H */

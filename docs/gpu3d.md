@@ -273,8 +273,13 @@ its compiler, ISL and the Vulkan runtime. It needs **no privilege**: it
 writes commands into its own buffers and asks the server to run them.
 Compiling a shader produces GPU instructions, which are data to the
 processor, so `anv` needs no executable mapping. `lavapipe` does - LLVM
-compiles each shader to processor code - and uses the two mappings of one
-region JavaScriptCore's JIT already uses (`jit.md`).
+compiles each shader to processor code. **It needs no double mapping**,
+measured in G1 (`testing.md` 18.921): LLVM's JITLink writes a function's
+pages while they are readable and writable, then turns them readable and
+executable with `mprotect` before anything runs - one mapping, never
+writable and executable at once, which Nebula already allows. The two
+mappings of one region are JavaScriptCore's (`jit.md`), because its JIT
+patches code that is running; LLVM's never touches code it has finished.
 
 Mesa's source is fetched, not committed, as WebKit's is - Mesa 26.2.5 is
 already in `build/downloads/mesa` - and built by its own Meson with a
@@ -390,7 +395,7 @@ memory in regions:
 | the device's registers and GTT | `SYS_DEV_MAP`, its bound raised to 16 MB in October |
 | the GPU's interrupt | an interrupt capability, MSI on the PC |
 | a fence's wake-up | pulses |
-| `lavapipe`'s compiled shaders | `MEM_MAP_RX`, one region mapped twice |
+| `lavapipe`'s compiled shaders | `mprotect`, read-write then read-execute, one mapping (G1) |
 
 Two things to watch rather than add: a region given on touch
 (`MEM_ON_TOUCH`) has no pages until touched, so binding must populate it
@@ -433,10 +438,13 @@ so `lavapipe` is built for both.
 
 1. **G1 - Mesa and LLVM build for Kosmos.** A Meson cross file, Mesa's
    `util`, NIR and the Vulkan runtime against `runtime/posix/`; LLVM's
-   libraries for x86-64 and AArch64 code generation, with an ORC JIT whose
-   memory is one region mapped twice. *Test* `x86-llvm`: a function
-   compiled at run time in QEMU returns its answer. *Measure*: the build's
-   time, once, cached like WebKit's; the image's size.
+   libraries for x86-64 and AArch64 code generation, with an ORC JIT.
+   *Test* `x86-llvm`: a function compiled at run time in QEMU returns its
+   answer. *Measure*: the build's time, once, cached like WebKit's; the
+   image's size. **LLVM's half built in 0.12.1** (`testing.md` 18.921):
+   LLVM 23.1.2 with seven patches in `runtime/patches/llvm/`, its JIT on
+   JITLink's own memory manager, `setUpInactivePlatform` and no process
+   symbols, since Kosmos has no `dlopen`. Mesa's half next.
 2. **G2 - `lavapipe`, headless.** Vulkan in QEMU: a triangle and a textured
    cube rendered to an image, read back, held to a reference picture.
    *Test* `x86-vulkan`: the pictures, and a short run of the Khronos

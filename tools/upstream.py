@@ -51,6 +51,33 @@ RELEASES = {
         "sha256": "a76345b391bef6211fb5ab6cfab2e86b285d18cda17cbb9ade595f1252b86065",
         "top": "webkitgtk-2.54.2",
     },
+    # **LLVM 23.1.2 whole** (`docs/gpu3d.md` G1): the release this Mac's
+    # clang is and the C++ runtimes were vendored from (`tools/llvm_vendor.py`,
+    # the same tarball and GitHub's digest for it), for LLVM's own libraries
+    # - its code generation for both processors and the ORC JIT - which
+    # Mesa's lavapipe compiles shaders with. Only `parts` are unpacked: the
+    # release is two gigabytes of clang, MLIR, Flang and tests, and none of
+    # those is built here.
+    "llvm": {
+        "url": "https://github.com/llvm/llvm-project/releases/download/"
+               "llvmorg-23.1.2/llvm-project-23.1.2.src.tar.xz",
+        "sha256": "c98bbef08a2b4c2613cd50e9aa9ae7b69b1fe6c16b2c40373bc0ab6116fdf78a",
+        "top": "llvm-project-23.1.2.src",
+        "parts": ["llvm", "cmake", "third-party", "libc", "LICENSE.TXT"],
+        "leave": ["libc/test", "libc/docs", "libc/benchmarks", "libc/fuzzing",
+                  "libc/utils", "llvm/test", "llvm/unittests", "llvm/docs", "llvm/benchmarks",
+                  "llvm/utils/gn", "llvm/utils/lit/tests", "third-party/benchmark",
+                  "third-party/unittest"],
+    },
+    # **Mesa 26.2.5** (`docs/gpu3d.md` G1, decision 8): the release the
+    # M700's assembler corpus was read from (`tools/eu_corpus.py`), its
+    # sum from the release notes on docs.mesa3d.org. Its Vulkan runtime,
+    # NIR and `util` first, then lavapipe (G2); not its tests or docs.
+    "mesa": {
+        "url": "https://archive.mesa3d.org/mesa-26.2.5.tar.xz",
+        "sha256": "794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f6138a0a5",
+        "top": "mesa-26.2.5",
+    },
     # **The Media Kit's FFmpeg** (`docs/media.md` M1): 9.0.2, the release
     # `tools/ffmpeg_vendor.py` vendors H.264 and AAC from and with its sum,
     # built whole here - its demuxers, decoders and assembly - to replace
@@ -467,7 +494,7 @@ def unpack(name):
     into = os.path.join(UNPACKED, name)
     stamp = os.path.join(into, ".unpacked")
 
-    if os.path.exists(stamp) and open(stamp).read() == digest(RELEASES[name])[1]:
+    if os.path.exists(stamp) and open(stamp).read() == unpacked_as(name):
         return into
 
     shutil.rmtree(into, ignore_errors=True)
@@ -477,12 +504,31 @@ def unpack(name):
         with zipfile.ZipFile(path) as z:
             z.extractall(into)
     else:
-        subprocess.run(["tar", "-xf", path, "-C", into], check=True)
+        # A release named with `parts` is unpacked only those, less what it
+        # says to `leave`: the paths are the release's, under its top.
+        release = RELEASES[name]
+        command = ["tar", "-xf", path, "-C", into]
+        top = release.get("top")
+        for left in release.get("leave", []):
+            command += ["--exclude", "%s/%s" % (top, left)]
+        command += ["%s/%s" % (top, part) for part in release.get("parts", [])]
+        subprocess.run(command, check=True)
 
     with open(stamp, "w") as f:
-        f.write(digest(RELEASES[name])[1])
+        f.write(unpacked_as(name))
 
     return into
+
+
+def unpacked_as(name):
+    """What an unpacking is of: the tarball's sum, and the parts taken
+    and left when a release names them - so naming another part unpacks
+    again, as a new tarball does."""
+    release = RELEASES[name]
+    said = digest(release)[1]
+    if "parts" in release:
+        said += " " + " ".join(release["parts"]) + " - " + " ".join(release.get("leave", []))
+    return said
 
 
 def where(name):

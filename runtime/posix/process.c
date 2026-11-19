@@ -124,6 +124,9 @@ unsigned long getauxval(unsigned long type)
     if (type == AT_SECURE) {
         return 0;
     }
+    if (type == AT_PAGESZ) {
+        return 4096;                    /* the page every reservation is in */
+    }
 
 #define FIELD(word, at) ((unsigned)(((word) >> (at)) & 0xf))
     if ((type != AT_HWCAP && type != AT_HWCAP2) || kosmos_sysinfo(&info) != 0
@@ -274,6 +277,12 @@ int getentropy(void *out, size_t bytes)
  * (`SYS_EXIT`).
  */
 void _exit(int status)
+{
+    kosmos_exit(status);
+}
+
+/* `_Exit`, C99's name for the same: the process ends now, nothing run. */
+void _Exit(int status)
 {
     kosmos_exit(status);
 }

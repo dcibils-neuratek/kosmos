@@ -4533,6 +4533,50 @@ $(UBUILD)/apps-tcc/apptest.elf: $(DEV)/.made $(UBUILD)/tcc/apptest-dev.o $(HOSTD
 	$(HOSTDIR)/tcc_stamp $@ $(USER_BASE)
 	@for a in doom quake snes; do ln -sf ../apps/$$a.elf $(dir $@)$$a.elf; done
 
+#
+# **LLVM** (`docs/gpu3d.md` G1): its libraries - code generation for both
+# processors and the ORC JIT - from the release fetched and held to its sum,
+# with `runtime/patches/llvm/` applied; `tools/llvm_build.py` cuts the copy,
+# configures it and has ninja build it, each only when what it stands on
+# moved, as `webkit_build.py` does for WebKit. Mesa's lavapipe (G2) is what
+# it is for; `llvmtest.elf` is what holds it.
+#
+LLVM_DIR := build/llvm/$(ARCH)
+
+$(LLVM_DIR)/.built: tools/llvm_build.py tools/upstream.py runtime/cxx/llvm.cmake \
+                    runtime/cxx/kosmos.cmake $(CXXRT)/.built \
+                    $(wildcard runtime/patches/llvm/*.patch) \
+                    $(wildcard runtime/include/*.h runtime/include/sys/*.h \
+                               runtime/posix/include/*.h runtime/posix/include/*/*.h)
+	@mkdir -p $(LLVM_DIR)
+	@python3 tools/llvm_build.py $(ARCH) > build/llvm-$(ARCH).log 2>&1 \
+	    || { tail -60 build/llvm-$(ARCH).log; exit 1; }
+	@touch $@
+
+#
+# **LLVM's test image**: `llvmtest.cpp` and its door, the POSIX layer, every
+# LLVM library as one group - the linker keeps what the JIT and the two
+# back ends reach - and the C++ runtimes. Compiled as LLVM was: no
+# exceptions, no RTTI, its headers as system headers and its generated
+# ones from the build.
+#
+LLVMTEST_OBJS := $(UBUILD)/user/kits/llvmtest/llvmtest.cpp.o $(UBUILD)/user/kits/llvmtest/llvmtest_kit.c.o
+
+$(UBUILD)/user/kits/llvmtest/llvmtest.cpp.o: user/kits/llvmtest/llvmtest.cpp $(LLVM_DIR)/.built
+	@mkdir -p $(dir $@)
+	/opt/homebrew/opt/llvm/bin/clang++ $(CXXFLAGS_KOSMOS) -std=c++17 -fno-exceptions -fno-rtti \
+	    -isystem build/llvm/tree/llvm/include -isystem $(LLVM_DIR)/include -c $< -o $@
+
+$(UBUILD)/apps/llvmtest.elf: $(USER_OBJS) $(LLVMTEST_OBJS) $(POSIX_OBJS) $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(LLVMTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(LLVM_DIR)/lib/libLLVM*.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_llvmtest_kit$$' \
+	    || { echo "apps: llvmtest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_llvmtest_kit$$' \
+	    || { echo "apps: the system's image has LLVM's test kit in it"; rm -f $@; exit 1; }
+
 # WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
@@ -4548,6 +4592,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
+            $(UBUILD)/apps/llvmtest.elf \
             $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

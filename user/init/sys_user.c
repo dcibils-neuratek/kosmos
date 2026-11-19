@@ -2833,6 +2833,7 @@ void kosmos_cxxtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_posixtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_icutest_kit(lua_State *L) __attribute__((weak));
 void kosmos_wtftest_kit(lua_State *L) __attribute__((weak));
+void kosmos_llvmtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_jsc_kit(lua_State *L) __attribute__((weak));
 void kosmos_picturetest_kit(lua_State *L) __attribute__((weak));
 void kosmos_texttest_kit(lua_State *L) __attribute__((weak));
@@ -2911,6 +2912,9 @@ static const struct {
     { "icutest",  kosmos_icutest_kit, 1 },
     /* WTF, WebKit's foundation, in no image but its own (`docs/w4.md` W4c). */
     { "wtftest",  kosmos_wtftest_kit, 1 },
+    /* LLVM - its back ends and the ORC JIT - in no image but its test's
+     * (`docs/gpu3d.md` G1). */
+    { "llvmtest", kosmos_llvmtest_kit, 1 },
     /* JavaScriptCore, installed in /Home/Apps/JSC (`docs/w4.md` W4d). */
     { "jsc",      kosmos_jsc_kit, 1 },
     /* zlib, libpng, libjpeg-turbo and libwebp, in no image but their

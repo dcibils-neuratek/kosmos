@@ -223,6 +223,13 @@ Vendored third-party code keeps its own licence, which travels beside it:
       GitHub's SHA-256 (docs/w5.md W5d); the terms are its LICENSE.txt.
       Only ssltest.elf, W5d's test, links it
 
+  LLVM 23.1.2's own libraries, by the LLVM project, Apache 2.0 + LLVM
+      Exceptions
+      Not in the tree: tools/upstream.py fetches its release, held to
+      GitHub's SHA-256 (docs/gpu3d.md G1), and tools/llvm_build.py applies
+      runtime/patches/llvm/ as it builds; the terms are its LICENSE.TXT.
+      Only llvmtest.elf, G1's test, links it
+
   curl 8.23.0, by Daniel Stenberg and the curl contributors, under the curl
       licence, MIT-style
       Not in the tree: tools/upstream.py fetches its release, held to

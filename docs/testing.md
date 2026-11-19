@@ -38042,3 +38042,62 @@ on what it left running. Its requests are `appproto.h`'s shape now, named
 once at the top of the file, and the name read from its new place in the
 reply: both suites pass, 2 in 68 s. It is the check that was meant to
 catch this, and it did.
+
+## 18.921 LLVM on Kosmos
+
+**In short:** the first half of G1 (`gpu3d.md` §6). LLVM, the compiler
+the software Vulkan driver turns shaders into processor code with, is
+built for Kosmos on both architectures and runs inside it: a suite has
+LLVM compile two small functions while Kosmos runs, calls them, and
+checks the answers - and has it write an object for the other processor
+too. Mesa is the other half, next.
+
+- **The source** is LLVM 23.1.2's release, fetched and checked by
+  `tools/upstream.py` as WebKit's is, unpacked only in part - `llvm`,
+  `cmake`, `third-party`, `libc` and the licence, less the tests and
+  documents (238 MB). A copy in `build/llvm/tree` has the patches applied.
+- **Built by its own CMake** (`tools/llvm_build.py`, `runtime/cxx/llvm.cmake`)
+  with Kosmos's clang and libc++, Homebrew's `llvm-tblgen` of the same
+  version for the tables, threads, exceptions and RTTI off, the X86 and
+  AArch64 targets only, and fifteen libraries: the ORC JIT and JITLink,
+  both code generators with their assemblers and disassemblers, the IR
+  parser, the passes. **3:00 from nothing for AArch64** on this Mac's
+  cores (2003 steps, 1346 s of processor), and no work at all when nothing
+  changed: a fingerprint of the release and the patches decides.
+- **Seven patches**, `runtime/patches/llvm/`, each saying why: Kosmos is
+  an operating system LLVM does not know (`endian.h`, `EX_IOERR`); there
+  are no wide characters, no locale streams and no `random_device` in
+  Kosmos's libc++, so twenty-one string streams become `raw_string_ostream`
+  - patching LLVM rather than widening the runtime every program shares;
+  no signals and no child processes, so `Program` refuses and `Signals` is
+  quiet; no users, sockets or limits; and no named shared memory.
+- **The libc grew what LLVM asks for**, all portable: `fegetexceptflag`
+  and `fesetexceptflag`, `HUGE_VALF` and `HUGE_VALL`; musl 1.2.5's `erf`,
+  `ilogb` and `logb`, vendored with their sums; `_Exit` and
+  `getauxval(AT_PAGESZ)` in `runtime/posix`.
+- **Its JIT needs no double mapping.** JITLink's own memory manager maps a
+  function's pages read-write, writes them, and turns them read-execute
+  before it runs - never both at once, which Nebula already allows.
+  `gpu3d.md` said `lavapipe` would need JavaScriptCore's two mappings of
+  one region, and is corrected. What LLJIT needs instead is to be told
+  there is no `dlopen`: no process symbols, and the inactive platform.
+- **`x86-llvm`** (`tools/run_llvm.py`, `user/kits/llvmtest/`) passes:
+  "llvm jit=x86_64/squares(1000)=832504/hypot(3,4)=5.000
+  other=aarch64/elf-machine-183/object", from an image of 83.9 MB, in
+  0.8 s. **The control**: `mmap` refusing an executable page, and the
+  suite fails - "jit=lookup:Failed to materialize symbols".
+- **The image's size**: 93 MB for AArch64 and 95.6 MB for x86-64 unstripped,
+  83.9 MB stripped of debugging, almost all of it LLVM. A Vulkan program
+  carries that; `lavapipe` will want only one target, which is the first
+  thing to cut.
+
+**The gate.** 144 suites in 1237 s, 142 passing - twice the budget, and
+the build is why: `images` took 597 s, because `math.h` changed and every
+C file in every image includes it, WebKit's among them; the suites after
+it took 640 s, as they did on 18 November. A gate after a change to the
+libc's headers pays that once. `x86-display-1`'s `wmlatency` (2.4 ms a
+round trip, 0.60 ticks, against a bound of half a tick, measured the
+moment a dozen suites had started) and `x86-cafesa3d-2`'s plane opened
+again (165,592 pixels differing) failed under the load, and pass alone,
+60 and 74 checks in 257 s. The Cafesa3D check had not failed before; its
+log is kept under `build/gate/failed/` for the next time.

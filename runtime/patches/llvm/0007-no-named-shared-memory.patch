@@ -1,0 +1,86 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No shared memory by name (docs/gpu3d.md G1). ORC can link code for
+another process through memory both map by a name - shm_open - and
+Kosmos has no global names: a region is a capability handed to whoever
+may map it. So that mapper is left out, as it is on Android, and says it
+is unsupported; the JIT in its own process, which is what lavapipe is,
+writes code into pages that are writable and then made executable,
+never both at once (runtime/posix/mman.c).
+
+--- a/llvm/lib/ExecutionEngine/Orc/MemoryMapper.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/MemoryMapper.cpp
+@@ -13,7 +13,7 @@
+ #include "llvm/Support/MSVCErrorWorkarounds.h"
+ #include "llvm/Support/WindowsError.h"
+ 
+-#if defined(LLVM_ON_UNIX) && !defined(__ANDROID__)
++#if defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)
+ #include <fcntl.h>
+ #include <sys/mman.h>
+ #if defined(__MVS__)
+@@ -205,7 +205,7 @@
+ 
+ Expected<std::unique_ptr<SharedMemoryMapper>>
+ SharedMemoryMapper::Create(ExecutorProcessControl &EPC, SymbolAddrs SAs) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+   auto PageSize = sys::Process::getPageSize();
+   if (!PageSize)
+     return PageSize.takeError();
+@@ -220,7 +220,7 @@
+ 
+ void SharedMemoryMapper::reserve(size_t NumBytes,
+                                  OnReservedFunction OnReserved) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+ 
+   int SharedMemoryId = -1;
+   EPC.callSPSWrapperAsync<
+@@ -390,7 +390,7 @@
+ 
+ void SharedMemoryMapper::release(ArrayRef<ExecutorAddr> Bases,
+                                  OnReleasedFunction OnReleased) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+   Error Err = Error::success();
+ 
+   {
+@@ -446,7 +446,7 @@
+   std::lock_guard<std::mutex> Lock(Mutex);
+   for (const auto &R : Reservations) {
+ 
+-#if defined(LLVM_ON_UNIX) && !defined(__ANDROID__)
++#if defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)
+ 
+ #if defined(__MVS__)
+     shmdt(R.second.LocalAddr);
+--- a/llvm/lib/ExecutionEngine/Orc/TargetProcess/ExecutorSharedMemoryMapperService.cpp
++++ b/llvm/lib/ExecutionEngine/Orc/TargetProcess/ExecutorSharedMemoryMapperService.cpp
+@@ -50,7 +50,7 @@
+ 
+ Expected<std::pair<ExecutorAddr, std::string>>
+ ExecutorSharedMemoryMapperService::reserve(uint64_t Size) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+ 
+ #if defined(LLVM_ON_UNIX)
+ 
+@@ -139,7 +139,7 @@
+ 
+ Expected<ExecutorAddr> ExecutorSharedMemoryMapperService::initialize(
+     ExecutorAddr Reservation, tpctypes::SharedMemoryFinalizeRequest &FR) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+ 
+   ExecutorAddr MinAddr(~0ULL);
+ 
+@@ -233,7 +233,7 @@
+ 
+ Error ExecutorSharedMemoryMapperService::release(
+     const std::vector<ExecutorAddr> &Bases) {
+-#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__)) || defined(_WIN32)
++#if (defined(LLVM_ON_UNIX) && !defined(__ANDROID__) && !defined(__kosmos__)) || defined(_WIN32)
+   Error Err = Error::success();
+ 
+   for (auto Base : Bases) {

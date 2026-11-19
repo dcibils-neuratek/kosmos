@@ -105,6 +105,7 @@ RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",
 # change there is a change to the library.
 WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py", "tools/upstream.py"]
 W5 = ["tools/w5_build.py", "tools/upstream.py"]
+LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],
              ["qemu-system-x86_64", "--version"], ["qemu-system-aarch64", "--version"]]
@@ -617,6 +618,15 @@ SUITES = [
     Suite("x86-wtf", ["python3", "tools/run_wtf.py", X86,
                       "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_wtf.py", "user/kits/wtftest", *WEBKIT)),
+
+    # **LLVM** (`docs/gpu3d.md` G1): `llvmtest.elf`, its libraries in one
+    # image - a function compiled at run time by the ORC JIT and called with
+    # a number chosen then, one in floating point, and the same module
+    # written as an object for the other processor. x86-64 only, as every
+    # suite but the sandboxes' is for now.
+    Suite("x86-llvm", ["python3", "tools/run_llvm.py", X86,
+                       "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_llvm.py", "user/kits/llvmtest", *LLVM)),
 
     # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
     # its interpreter, driven through its C API - a script using closures,

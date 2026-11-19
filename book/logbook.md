@@ -4693,3 +4693,35 @@ nearly all waiting.
 
 **Next.** The 3D API, G1 to G5 in QEMU, then the daily-driver list in its
 order: keys, the clipboard, JetSki's find, print and history.
+
+## 19 November 2026 - LLVM runs inside Kosmos
+
+**In short.** The first step towards 3D: LLVM, the compiler the software
+Vulkan driver uses to turn shaders into processor code, now builds for
+Kosmos and runs inside it. A test hands it two small functions while the
+system runs, calls the code it produced, and checks the answers. 0.12.1.
+
+**What.** LLVM 23.1.2's release is fetched and checked like WebKit's, and
+built by its own build system with Kosmos's compiler and C++ library, for
+both of Kosmos's processors. Seven patches, each a file anybody can read,
+teach it about a system with no signals, no child processes, no users and
+no locale-aware streams. The C library gained a handful of maths functions
+from musl to go with it.
+
+**Why.** Vulkan in QEMU, before any GPU, means `lavapipe`, and `lavapipe`
+is LLVM underneath: without a working LLVM there is no software Vulkan at
+all. It was also the newest kind of program here - one that writes
+processor code and then runs it - and the question was whether Nebula's
+rule, that a page is never writable and executable at once, would get in
+the way. It does not: LLVM writes a function, then flips its pages to
+executable before running it, which is exactly what the rule allows. The
+design had assumed it would need JavaScriptCore's trick of mapping the same
+memory twice, and that was wrong.
+
+**Measured.** Building LLVM from nothing takes three minutes on this Mac,
+and nothing at all when nothing changed. The test program is 84 MB, nearly
+all of it LLVM, and runs in 0.8 s. Refusing executable pages makes it fail,
+which is how the test is known to be testing something.
+
+**Next.** Mesa's half of the same step: its utilities, its shader language
+NIR and its Vulkan runtime, built against Kosmos's POSIX layer.

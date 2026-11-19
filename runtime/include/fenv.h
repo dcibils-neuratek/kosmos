@@ -72,6 +72,11 @@ int feclearexcept(int excepts);
 int fetestexcept(int excepts);
 int feraiseexcept(int excepts);
 
+/* Those flags as a value: read, of `excepts`, and set back as they were
+ * read, without raising anything. 0 for done. */
+int fegetexceptflag(fexcept_t *flags, int excepts);
+int fesetexceptflag(const fexcept_t *flags, int excepts);
+
 __END_DECLS
 
 #endif /* FENV_H */

@@ -7,7 +7,7 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.12.0. Pushed to 0.11.507; 0.11.508 to
+Last updated: 2026-11-19, at 0.12.1. Pushed to 0.11.507; 0.11.508 to
 0.12.0 are committed on `main`, and go out with `make prepush`.
 
 ---
@@ -60,6 +60,14 @@ before we continue"). Eight readers found 205 findings
   and lists in pages.
 - **0.12.0** marks the review done.
 
+**3D, G1 begun (0.12.1, `testing.md` 18.921):** LLVM 23.1.2 built for
+Kosmos on both architectures - seven patches in `runtime/patches/llvm/`,
+3:00 from nothing - and `x86-llvm` has it compile and run two functions
+inside Kosmos and write an AArch64 object. Its JIT needs no double
+mapping (`gpu3d.md` §5.2 corrected). **Next: Mesa's half of G1** - a Meson
+cross file, `util`, NIR and the Vulkan runtime against `runtime/posix`;
+the source is unpacked in `build/upstream/mesa`.
+
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 
 - **Astra's looks.** Starlight's S3, nebula glass (0.11.492, 18.891), and
@@ -96,11 +104,10 @@ which wants the M700's look switched to Liquid Glass for a minute.
 In this order, agreed on 18 November 2026 (`roadmap.md`, *A daily driver*,
 *The order agreed on 18 November 2026*):
 
-1. **The review's batches 5 to 8, then 0.12.0** - with the review
-   `CLAUDE.md` asks for before a minor version, and a push.
+1. **The review's batches 5 to 8, then 0.12.0** - done.
 2. **3D, G1 to G5, in QEMU** (`docs/gpu3d.md` section 6; Diego, 18
    November: "Yes do the 3d api work after the cleanup is done"): Mesa and
-   LLVM built for Kosmos, `lavapipe` headless, a window and `vkcube`, GL
+   LLVM built for Kosmos (LLVM's half done, 0.12.1), `lavapipe` headless, a window and `vkcube`, GL
    and GL ES by Zink with TinyGL retired, WebGL in JetSki.
 3. **The daily-driver list**, in order: (1) keys - Control-W given back,
    the desktop's keys on Super, press and release delivered, layouts and

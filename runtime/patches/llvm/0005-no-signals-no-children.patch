@@ -1,0 +1,358 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No signals and no child processes (docs/gpu3d.md G1; CLAUDE.md,
+*Compatibility inside a process yes, at system level never*). A Kosmos
+process receives no signals and cannot fork or exec. LLVM's Support
+library has its Unix half for both, so on Kosmos:
+
+- signals and running another program are files of their own,
+  lib/Support/Kosmos/Signals.inc and Program.inc, chosen where Unix's
+  would be: nothing is delivered, a program cannot be started and says
+  so, and what means something without either - callbacks run on a fatal
+  error, files removed when the interrupt handlers run, text and binary
+  modes - is kept;
+- crash recovery keeps setjmp's half with no handlers to install;
+- the watchdog sets no alarm, core files are not prevented because none
+  are written, a descriptor closes without a signal mask, and the
+  terminal's width is not asked of an ioctl Kosmos refuses;
+- <sys/wait.h> and <dlfcn.h> are not included: no children, and no
+  dynamic loader (LLVM already does without one when HAVE_DLOPEN is
+  unset).
+
+--- a/llvm/lib/Support/CrashRecoveryContext.cpp
++++ b/llvm/lib/Support/CrashRecoveryContext.cpp
+@@ -335,6 +335,17 @@
+   }
+ }
+ 
++#elif defined(__kosmos__)
++
++// Kosmos has no signals (`CLAUDE.md`, *Compatibility inside a process*): a
++// fault ends the process and Nebula says where. Crash recovery is setjmp's
++// half alone - `HandleExit` still unwinds to `RunSafely` - with no handlers
++// to install.
++
++static void
++installExceptionOrSignalHandlers(bool NeedsPOSIXUtilitySignalHandling) {}
++static void uninstallExceptionOrSignalHandlers() {}
++
+ #else // !_WIN32
+ 
+ // Generic POSIX implementation.
+@@ -483,6 +494,9 @@
+     return false;
+ #if defined(_WIN32)
+   ::RaiseException(RetCode, 0, 0, NULL);
++#elif defined(__kosmos__)
++  // A code past 128 is a child's signal, and Kosmos runs no child here.
++  abort();
+ #else
+   llvm::sys::unregisterHandlers();
+   raise(RetCode - 128);
+--- a/llvm/lib/Support/Signals.cpp
++++ b/llvm/lib/Support/Signals.cpp
+@@ -357,7 +357,9 @@
+ }
+ 
+ // Include the platform-specific parts of this class.
+-#ifdef LLVM_ON_UNIX
++#if defined(__kosmos__)
++#include "Kosmos/Signals.inc"
++#elif defined(LLVM_ON_UNIX)
+ #include "Unix/Signals.inc"
+ #endif
+ #ifdef _WIN32
+--- a/llvm/lib/Support/Program.cpp
++++ b/llvm/lib/Support/Program.cpp
+@@ -97,7 +97,9 @@
+ }
+ 
+ // Include the platform-specific parts of this class.
+-#ifdef LLVM_ON_UNIX
++#if defined(__kosmos__)
++#include "Kosmos/Program.inc"
++#elif defined(LLVM_ON_UNIX)
+ #include "Unix/Program.inc"
+ #endif
+ #ifdef _WIN32
+--- a/llvm/lib/Support/Kosmos/Program.inc
++++ b/llvm/lib/Support/Kosmos/Program.inc
+@@ -0,0 +1,86 @@
++//===- Kosmos/Program.inc - Running another program, on Kosmos --*- C++ -*-===//
++//
++// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
++//
++// A Kosmos process cannot start another from inside a library: there is no
++// fork and no exec (`CLAUDE.md`, *Compatibility inside a process yes, at
++// system level never*), and a program is started by whoever holds the
++// authority to spawn it, through the namespace. So every way of running a
++// program here says so and fails, as LLVM's callers already expect a
++// failure to start one to be said; and what does not run a program - text
++// and binary modes, writing a file - is Unix's, which it is the same as.
++//
++//===----------------------------------------------------------------------===//
++
++#include "llvm/Support/Errc.h"
++#include "llvm/Support/raw_ostream.h"
++
++using namespace llvm;
++using namespace sys;
++
++ProcessInfo::ProcessInfo() : Pid(0), ReturnCode(0) {}
++
++static const char *const NoPrograms =
++    "Kosmos starts no program from inside another";
++
++ErrorOr<std::string> sys::findProgramByName(StringRef Name,
++                                            ArrayRef<StringRef> Paths) {
++  return errc::function_not_supported;
++}
++
++static bool Execute(ProcessInfo &PI, StringRef Program,
++                    ArrayRef<StringRef> Args,
++                    std::optional<ArrayRef<StringRef>> Env,
++                    ArrayRef<std::optional<StringRef>> Redirects,
++                    unsigned MemoryLimit, std::string *ErrMsg,
++                    BitVector *AffinityMask, bool DetachProcess) {
++  if (ErrMsg)
++    *ErrMsg = NoPrograms;
++  return false;
++}
++
++ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
++                            std::optional<unsigned> SecondsToWait,
++                            std::string *ErrMsg,
++                            std::optional<ProcessStatistics> *ProcStat,
++                            bool Polling) {
++  if (ProcStat)
++    ProcStat->reset();
++  if (ErrMsg)
++    *ErrMsg = NoPrograms;
++  ProcessInfo WaitResult;
++  WaitResult.Pid = PI.Pid;
++  WaitResult.ReturnCode = -1;
++  return WaitResult;
++}
++
++std::error_code llvm::sys::ChangeStdinMode(fs::OpenFlags Flags) {
++  return std::error_code();
++}
++
++std::error_code llvm::sys::ChangeStdoutMode(fs::OpenFlags Flags) {
++  return std::error_code();
++}
++
++std::error_code llvm::sys::ChangeStdinToBinary() { return std::error_code(); }
++
++std::error_code llvm::sys::ChangeStdoutToBinary() { return std::error_code(); }
++
++std::error_code
++llvm::sys::writeFileWithEncoding(StringRef FileName, StringRef Contents,
++                                 WindowsEncodingMethod Encoding /*unused*/) {
++  std::error_code EC;
++  llvm::raw_fd_ostream OS(FileName, EC,
++                          llvm::sys::fs::OpenFlags::OF_TextWithCRLF);
++  if (EC)
++    return EC;
++  OS << Contents;
++  if (OS.has_error())
++    return make_error_code(errc::io_error);
++  return EC;
++}
++
++bool llvm::sys::commandLineFitsWithinSystemLimits(StringRef Program,
++                                                  ArrayRef<StringRef> Args) {
++  return true;
++}
+--- a/llvm/lib/Support/Kosmos/Signals.inc
++++ b/llvm/lib/Support/Kosmos/Signals.inc
+@@ -0,0 +1,98 @@
++//===- Kosmos/Signals.inc - Signals, on a system without them ---*- C++ -*-===//
++//
++// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
++//
++// A Kosmos process receives no signals (`CLAUDE.md`, *Compatibility inside
++// a process yes, at system level never*): nothing interrupts it, nothing
++// asks it for information, no pipe breaks under it, and a fault ends it
++// with Nebula saying where. So nothing here is ever delivered, and what
++// LLVM asks of this file is kept only where it means something without
++// one:
++//
++// - a callback added with `AddSignalHandler` is kept, as Unix keeps it,
++//   because `RunSignalHandlers` - which LLVM's fatal-error path calls - is
++//   in `Signals.cpp` and runs them;
++// - files to remove on a signal are remembered and removed when the
++//   interrupt handlers run, which `report_fatal_error` does too;
++// - a stack trace is not printed: the Debug Kit names functions from the
++//   addresses Nebula reports when a process stops (`docs/debug.md`).
++//
++//===----------------------------------------------------------------------===//
++
++#include "llvm/Support/ExitCodes.h"
++#include "llvm/Support/FileSystem.h"
++#include <mutex>
++#include <string>
++#include <vector>
++
++using namespace llvm;
++
++namespace {
++std::mutex FilesLock;
++std::vector<std::string> &filesToRemove() {
++  static std::vector<std::string> Files;
++  return Files;
++}
++} // namespace
++
++void sys::unregisterHandlers() {}
++
++void sys::CleanupOnSignal(uintptr_t Context) { sys::RunInterruptHandlers(); }
++
++void sys::RunInterruptHandlers() {
++  std::lock_guard<std::mutex> Guard(FilesLock);
++  for (const std::string &File : filesToRemove())
++    sys::fs::remove(File);
++  filesToRemove().clear();
++}
++
++void llvm::sys::SetInterruptFunction(void (*IF)()) {}
++
++void llvm::sys::SetInfoSignalFunction(void (*Handler)()) {}
++
++void llvm::sys::SetOneShotPipeSignalFunction(void (*Handler)()) {}
++
++void llvm::sys::DefaultOneShotPipeSignalHandler() { exit(EX_IOERR); }
++
++bool llvm::sys::RemoveFileOnSignal(StringRef Filename, std::string *ErrMsg) {
++  std::lock_guard<std::mutex> Guard(FilesLock);
++  filesToRemove().push_back(Filename.str());
++  return false;
++}
++
++void llvm::sys::DontRemoveFileOnSignal(StringRef Filename) {
++  std::lock_guard<std::mutex> Guard(FilesLock);
++  std::vector<std::string> &Files = filesToRemove();
++  for (auto I = Files.rbegin(), E = Files.rend(); I != E; ++I) {
++    if (*I == Filename) {
++      Files.erase(std::next(I).base());
++      return;
++    }
++  }
++}
++
++void llvm::sys::AddSignalHandler(sys::SignalHandlerCallback FnPtr, void *Cookie,
++                                 bool NeedsPOSIXUtilitySignalHandling) {
++  insertSignalHandler(FnPtr, Cookie);
++}
++
++void llvm::sys::PrintStackTrace(raw_ostream &OS, int Depth) {}
++
++void llvm::sys::DisableSystemDialogsOnCrash() {}
++
++void llvm::sys::PrintStackTraceOnErrorSignal(StringRef Argv0,
++                                             bool DisableCrashReporting) {}
++
++// What `Signals.cpp`'s symbolizer asks of a platform: the modules the
++// addresses are in, and the markup context. Neither exists here - an image
++// is not a file, and there is no symbolizer to run - so both say no.
++static bool findModulesAndOffsets(void **StackTrace, int Depth,
++                                  const char **Modules, intptr_t *Offsets,
++                                  const char *MainExecutableName,
++                                  StringSaver &StrPool) {
++  return false;
++}
++
++static bool printMarkupContext(raw_ostream &OS, const char *MainExecutableName) {
++  return false;
++}
+--- a/llvm/lib/Support/Unix/Unix.h
++++ b/llvm/lib/Support/Unix/Unix.h
+@@ -29,7 +29,9 @@
+ #include <cstring>
+ #include <string>
+ #include <sys/types.h>
+-#include <sys/wait.h>
++#ifndef __kosmos__
++#include <sys/wait.h> // no child processes on Kosmos
++#endif
+ 
+ #ifdef HAVE_UNISTD_H
+ #include <unistd.h>
+@@ -38,7 +40,9 @@
+ #include <sys/time.h>
+ #include <time.h>
+ 
++#ifdef HAVE_DLOPEN // no dynamic loader on Kosmos
+ #include <dlfcn.h>
++#endif
+ 
+ # include <fcntl.h>
+ 
+--- a/llvm/lib/Support/Unix/Watchdog.inc
++++ b/llvm/lib/Support/Unix/Watchdog.inc
+@@ -19,13 +19,13 @@
+ namespace llvm {
+ namespace sys {
+ Watchdog::Watchdog(unsigned int seconds) {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__kosmos__) // no SIGALRM on Kosmos
+   alarm(seconds);
+ #endif
+ }
+ 
+ Watchdog::~Watchdog() {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__kosmos__) // no SIGALRM on Kosmos
+   alarm(0);
+ #endif
+ }
+--- a/llvm/lib/Support/Unix/Process.inc
++++ b/llvm/lib/Support/Unix/Process.inc
+@@ -136,6 +136,9 @@
+ // their operation. To prevent the disk from filling up, this function does
+ // what's necessary to prevent their generation.
+ void Process::PreventCoreFiles() {
++#if !defined(__kosmos__)
++  // (Kosmos writes no core files: a fault ends the process and Nebula says
++  // where, over the serial line.)
+   struct rlimit rlim;
+   getrlimit(RLIMIT_CORE, &rlim);
+ #ifdef __linux__
+@@ -186,6 +189,7 @@
+   signal(SIGSEGV, _exit);
+   signal(SIGBUS, _exit);
+ #endif
++#endif
+ 
+   coreFilesPrevented = true;
+ }
+@@ -252,6 +256,12 @@
+ }
+ 
+ std::error_code Process::SafelyCloseFileDescriptor(int FD) {
++#if defined(__kosmos__)
++  // No signals on Kosmos to interrupt a close, and so none to mask.
++  if (::close(FD) < 0)
++    return errnoAsErrorCode();
++  return std::error_code();
++#else
+   // Create a signal set filled with *all* signals.
+   sigset_t FullSet, SavedSet;
+   if (sigfillset(&FullSet) < 0 || sigfillset(&SavedSet) < 0)
+@@ -284,6 +294,7 @@
+   if (ErrnoFromClose)
+     return std::error_code(ErrnoFromClose, std::generic_category());
+   return std::error_code(EC, std::generic_category());
++#endif
+ }
+ 
+ bool Process::StandardInIsUserInput() {
+@@ -320,7 +331,7 @@
+   // instead if it isn't available.
+   unsigned Columns = 0;
+ 
+-#if defined(HAVE_SYS_IOCTL_H) && !defined(__sun__)
++#if defined(HAVE_SYS_IOCTL_H) && !defined(__sun__) && !defined(__kosmos__)
+   struct winsize ws;
+   if (ioctl(FileID, TIOCGWINSZ, &ws) == 0)
+     Columns = ws.ws_col;

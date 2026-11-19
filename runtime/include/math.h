@@ -34,6 +34,8 @@ __BEGIN_DECLS
  */
 
 #define HUGE_VAL    __builtin_huge_val()
+#define HUGE_VALF   __builtin_huge_valf()
+#define HUGE_VALL   __builtin_huge_vall()
 #define INFINITY    __builtin_inff()
 #define NAN         __builtin_nanf("")
 
@@ -268,6 +270,14 @@ float  ldexpf(float x, int exponent);
 long   lround(double x);
 float  remainderf(float x, float y);
 float  remquof(float x, float y, int *quo);
+
+/*
+ * **LLVM's** (`docs/gpu3d.md` G1): `ilogb`, which musl's `logb` calls.
+ * `logb` and `erf` themselves are defined and not declared here: libc++
+ * declares them for C++, and FFmpeg's config is held to this header
+ * (`runtime/upstream/musl-math/README.kosmos.md`).
+ */
+int    ilogb(double x);
 
 __END_DECLS
 

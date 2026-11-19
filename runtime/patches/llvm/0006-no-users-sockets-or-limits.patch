@@ -1,0 +1,139 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No users, no Unix sockets, no resource limits (docs/gpu3d.md G1).
+
+- Kosmos has no users and no password database: `~user` is left as it
+  is written, and a home is what HOME says or none;
+- one machine and no sessions: a lock file's owner is "localhost", and a
+  stale one is conservatively taken as still held, as on a system that
+  cannot tell;
+- a file system's statvfs has no flags, so whether it is local is
+  answered conservatively, no, as on z/OS;
+- an image is not a file a process can name, so the main executable's
+  path is empty;
+- no Unix domain sockets: a process speaks through endpoints it was
+  handed, so raw_socket_stream is left out;
+- no rlimits: the default stack size is LLVM's own 8 MB.
+
+--- a/llvm/lib/Support/Unix/Path.inc
++++ b/llvm/lib/Support/Unix/Path.inc
+@@ -31,7 +31,9 @@
+ #endif
+ 
+ #include <dirent.h>
+-#include <pwd.h>
++#ifndef __kosmos__
++#include <pwd.h> // no users and no password database on Kosmos
++#endif
+ 
+ #ifdef __APPLE__
+ #include <copyfile.h>
+@@ -338,6 +340,8 @@
+   char link_path[PATH_MAX];
+   if (realpath(DLInfo.dli_fname, link_path))
+     return link_path;
++#elif defined(__kosmos__)
++  // An image is not a file a process can name: there is nothing to say.
+ #else
+ #error GetMainExecutable is not implemented on this host yet.
+ #endif
+@@ -565,9 +569,10 @@
+ 
+   // vmount entry not found; "remote" is the conservative answer.
+   return false;
+-#elif defined(__MVS__)
++#elif defined(__MVS__) || defined(__kosmos__)
+   // The file system can have an arbitrary structure on z/OS; must go with the
+-  // conservative answer.
++  // conservative answer. (And on Kosmos, where a file may be a drive's or
++  // another machine's, and its statvfs has no flags to say which.)
+   return false;
+ #else
+   return !!(STATVFS_F_FLAG(Vfs) & MNT_LOCAL);
+@@ -704,6 +709,10 @@
+ 
+   // This is a string of the form ~username/, look up this user's entry in the
+   // password database.
++#if defined(__kosmos__)
++  // Kosmos has no users to look up: the path is returned as it was.
++  return;
++#else
+   std::unique_ptr<char[]> Buf;
+   long BufSize = sysconf(_SC_GETPW_R_SIZE_MAX);
+   if (BufSize <= 0)
+@@ -723,6 +732,7 @@
+   Path.clear();
+   Path.append(Entry->pw_dir, Entry->pw_dir + strlen(Entry->pw_dir));
+   llvm::sys::path::append(Path, Storage);
++#endif
+ }
+ 
+ void expand_tilde(const Twine &path, SmallVectorImpl<char> &dest) {
+@@ -1493,6 +1503,9 @@
+ bool home_directory(SmallVectorImpl<char> &result) {
+   std::unique_ptr<char[]> Buf;
+   char *RequestedDir = getenv("HOME");
++  // No users on Kosmos, so no password database: a home is what `HOME`
++  // says, or none.
++#if !defined(__kosmos__)
+   if (!RequestedDir) {
+     long BufSize = sysconf(_SC_GETPW_R_SIZE_MAX);
+     if (BufSize <= 0)
+@@ -1504,6 +1517,7 @@
+     if (pw && pw->pw_dir)
+       RequestedDir = pw->pw_dir;
+   }
++#endif
+   if (!RequestedDir)
+     return false;
+ 
+--- a/llvm/lib/Support/LockFileManager.cpp
++++ b/llvm/lib/Support/LockFileManager.cpp
+@@ -96,7 +96,7 @@
+   StringRef UUIDRef(UUIDStr);
+   HostID.append(UUIDRef.begin(), UUIDRef.end());
+ 
+-#elif LLVM_ON_UNIX
++#elif LLVM_ON_UNIX && !defined(__kosmos__) // one machine, no host name
+   char HostName[256];
+   HostName[255] = 0;
+   HostName[0] = 0;
+@@ -113,7 +113,7 @@
+ }
+ 
+ bool LockFileManager::processStillExecuting(StringRef HostID, int PID) {
+-#if LLVM_ON_UNIX && !defined(__ANDROID__)
++#if LLVM_ON_UNIX && !defined(__ANDROID__) && !defined(__kosmos__) // no sessions
+   SmallString<256> StoredHostID;
+   if (getHostID(StoredHostID))
+     return true; // Conservatively assume it's executing on error.
+--- a/llvm/lib/Support/raw_socket_stream.cpp
++++ b/llvm/lib/Support/raw_socket_stream.cpp
+@@ -11,6 +11,10 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
++// Unix domain sockets, which Kosmos does not have: its processes speak
++// through endpoints they were handed, never a name in a file system.
++#ifndef __kosmos__
++
+ #include "llvm/Support/raw_socket_stream.h"
+ #include "llvm/Config/config.h"
+ #include "llvm/Support/Error.h"
+@@ -370,3 +374,5 @@
+   }
+   return raw_fd_stream::read(Ptr, Size);
+ }
++
++#endif // __kosmos__
+--- a/llvm/lib/Support/ProgramStack.cpp
++++ b/llvm/lib/Support/ProgramStack.cpp
+@@ -42,7 +42,7 @@
+ }
+ 
+ unsigned llvm::getDefaultStackSize() {
+-#ifdef LLVM_ON_UNIX
++#if defined(LLVM_ON_UNIX) && !defined(__kosmos__) // no rlimits on Kosmos
+   rlimit RL;
+   getrlimit(RLIMIT_STACK, &RL);
+   return RL.rlim_cur;

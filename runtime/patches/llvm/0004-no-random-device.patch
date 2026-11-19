@@ -1,0 +1,25 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+No random device (docs/gpu3d.md G1). Kosmos's libc++ is built without
+std::random_device (runtime/cxx/runtimes.cmake). LLVM uses one for the
+jitter between retries of a lock file; without it the jitter comes from
+a generator seeded by the clock, which spreads retries as well.
+
+--- a/llvm/include/llvm/Support/ExponentialBackoff.h
++++ b/llvm/include/llvm/Support/ExponentialBackoff.h
+@@ -57,7 +57,15 @@
+   duration MinWait;
+   duration MaxWait;
+   time_point EndTime;
++#if defined(_LIBCPP_VERSION) && !_LIBCPP_HAS_RANDOM_DEVICE
++  // A C++ library without a random device - Kosmos's - draws the jitter
++  // from a generator seeded by the clock: it spreads retries, and needs
++  // no more randomness than that.
++  std::minstd_rand RandDev{static_cast<std::minstd_rand::result_type>(
++      std::chrono::steady_clock::now().time_since_epoch().count())};
++#else
+   std::random_device RandDev;
++#endif
+   int64_t CurrentMultiplier = 1;
+ };
+ 
