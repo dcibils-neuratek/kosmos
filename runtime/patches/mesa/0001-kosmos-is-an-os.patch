@@ -1,0 +1,104 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Kosmos is an operating system (docs/gpu3d.md G1). Mesa knows a
+platform by its compiler's macros, and Kosmos's triple names none, so
+`__kosmos__` - defined by tools/mesa_build.py's cross file, as WebKit's
+and LLVM's builds define it - makes DETECT_OS_KOSMOS, and POSIX_LITE
+with it, as Fuchsia is: POSIX's names inside a process and none of its
+system. Then the places that choose by system: no libdl to look for
+(meson.build, where Windows is already excused); the sleep is usleep's;
+os_misc.c's headers are unistd.h's, and the memory free is the machine's
+free pages, as sysconf counts them (the total already is); and the log's
+file name has the process's name, as on POSIX.
+
+--- a/meson.build
++++ b/meson.build
+@@ -1759,7 +1759,7 @@
+ 
+ # check for dl support
+ dep_dl = null_dep
+-if host_machine.system() != 'windows'
++if not ['windows', 'kosmos'].contains(host_machine.system())
+   if not cc.has_function('dlopen')
+     dep_dl = cc.find_library('dl', required : true)
+   endif
+--- a/src/util/detect_os.h
++++ b/src/util/detect_os.h
+@@ -91,6 +91,16 @@
+ #define DETECT_OS_POSIX 1
+ #endif
+ 
++/*
++ * Kosmos: POSIX's names inside a process, and none of its system - no
++ * fork, no exec, no signals, no global file tree - so POSIX_LITE, as
++ * Fuchsia is.
++ */
++#if defined(__kosmos__)
++#define DETECT_OS_KOSMOS 1
++#define DETECT_OS_POSIX_LITE 1
++#endif
++
+ 
+ /*
+  * Make sure DETECT_OS_* are always defined, so that they can be used with #if
+@@ -143,6 +153,9 @@
+ #ifndef DETECT_OS_WINDOWS
+ #define DETECT_OS_WINDOWS 0
+ #endif
++#ifndef DETECT_OS_KOSMOS
++#define DETECT_OS_KOSMOS 0
++#endif
+ #ifndef DETECT_OS_MANAGARM
+ #define DETECT_OS_MANAGARM 0
+ #endif
+--- a/src/util/os_time.c
++++ b/src/util/os_time.c
+@@ -86,7 +86,7 @@
+    time.tv_nsec = (usecs % 1000000) * 1000;
+    while (clock_nanosleep(CLOCK_MONOTONIC, 0, &time, &time) == EINTR);
+ 
+-#elif DETECT_OS_POSIX
++#elif DETECT_OS_POSIX || DETECT_OS_KOSMOS
+    usleep(usecs);
+ 
+ #elif DETECT_OS_WINDOWS
+--- a/src/util/os_misc.c
++++ b/src/util/os_misc.c
+@@ -81,6 +81,8 @@
+ #elif DETECT_OS_FUCHSIA
+ #include <unistd.h>
+ #include <zircon/syscalls.h>
++#elif DETECT_OS_KOSMOS
++#  include <unistd.h>
+ #else
+ #error unexpected platform in os_sysinfo.c
+ #endif
+@@ -474,6 +476,16 @@
+ 
+    *size = ((uint64_t)vm_stats.free_count + (uint64_t)vm_stats.inactive_count) * PAGE_SIZE;
+    return true;
++#elif DETECT_OS_KOSMOS
++   /* The machine's free pages, as Nebula counts them. */
++   const long free_pages = sysconf(_SC_AVPHYS_PAGES);
++   const long page_size = sysconf(_SC_PAGESIZE);
++
++   if (free_pages <= 0 || page_size <= 0)
++      return false;
++
++   *size = (uint64_t)free_pages * (uint64_t)page_size;
++   return true;
+ #else
+    return false;
+ #endif
+--- a/src/util/log.c
++++ b/src/util/log.c
+@@ -31,6 +31,9 @@
+ #include "util/ralloc.h"
+ #include "util/u_debug.h"
+ 
++#if DETECT_OS_KOSMOS
++#include "util/u_process.h"
++#endif
+ #if DETECT_OS_POSIX
+ #include <syslog.h>
+ #include "util/u_process.h"

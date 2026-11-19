@@ -60,13 +60,17 @@ before we continue"). Eight readers found 205 findings
   and lists in pages.
 - **0.12.0** marks the review done.
 
-**3D, G1 begun (0.12.1, `testing.md` 18.921):** LLVM 23.1.2 built for
-Kosmos on both architectures - seven patches in `runtime/patches/llvm/`,
-3:00 from nothing - and `x86-llvm` has it compile and run two functions
-inside Kosmos and write an AArch64 object. Its JIT needs no double
-mapping (`gpu3d.md` §5.2 corrected). **Next: Mesa's half of G1** - a Meson
-cross file, `util`, NIR and the Vulkan runtime against `runtime/posix`;
-the source is unpacked in `build/upstream/mesa`.
+**3D, G1 done (0.12.1-0.12.2, `testing.md` 18.921-18.922):** LLVM 23.1.2
+built for Kosmos on both architectures - seven patches in
+`runtime/patches/llvm/`, 3:00 from nothing - and `x86-llvm` has it compile
+and run two functions inside Kosmos and write an AArch64 object; its JIT
+needs no double mapping (`gpu3d.md` §5.2 corrected). Mesa 26.2.5 by its own
+Meson (`tools/mesa_build.py`), configured for `lavapipe`, two patches in
+`runtime/patches/mesa/`, its trial links answered by
+`tools/mesa_trial_ld.py`; `x86-mesa` has NIR build, fold, print and
+serialize a shader. **Next: G2, `lavapipe` headless** - its Gallium and
+Vulkan driver built and linked with LLVM, a triangle and a cube rendered
+to an image and held to a reference, and a minute of dEQP-VK.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 
@@ -107,7 +111,7 @@ In this order, agreed on 18 November 2026 (`roadmap.md`, *A daily driver*,
 1. **The review's batches 5 to 8, then 0.12.0** - done.
 2. **3D, G1 to G5, in QEMU** (`docs/gpu3d.md` section 6; Diego, 18
    November: "Yes do the 3d api work after the cleanup is done"): Mesa and
-   LLVM built for Kosmos (LLVM's half done, 0.12.1), `lavapipe` headless, a window and `vkcube`, GL
+   LLVM built for Kosmos (G1 done, 0.12.2), `lavapipe` headless, a window and `vkcube`, GL
    and GL ES by Zink with TinyGL retired, WebGL in JetSki.
 3. **The daily-driver list**, in order: (1) keys - Control-W given back,
    the desktop's keys on Super, press and release delivered, layouts and

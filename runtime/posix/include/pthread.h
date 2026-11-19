@@ -82,6 +82,22 @@ typedef struct {
 #define PTHREAD_RWLOCK_INITIALIZER \
     { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0 }
 
+/* **A barrier**: `count` threads wait at it, and all go on when the last
+ * arrives - one of them told PTHREAD_BARRIER_SERIAL_THREAD. On the layer's
+ * own mutex and condition variable (`pthread.c`); Mesa's threads meet at
+ * them (`docs/gpu3d.md` G1). */
+typedef struct {
+    pthread_mutex_t lock;
+    pthread_cond_t  passed;
+    unsigned        count, waiting, round;
+} pthread_barrier_t;
+
+typedef struct {
+    int unused;
+} pthread_barrierattr_t;
+
+#define PTHREAD_BARRIER_SERIAL_THREAD (-1)
+
 typedef volatile uint32_t pthread_once_t;
 #define PTHREAD_ONCE_INIT 0
 
@@ -173,6 +189,10 @@ int pthread_rwlock_tryrdlock(pthread_rwlock_t *l);
 int pthread_rwlock_wrlock(pthread_rwlock_t *l);
 int pthread_rwlock_trywrlock(pthread_rwlock_t *l);
 int pthread_rwlock_unlock(pthread_rwlock_t *l);
+
+int pthread_barrier_init(pthread_barrier_t *b, const pthread_barrierattr_t *a, unsigned count);
+int pthread_barrier_destroy(pthread_barrier_t *b);
+int pthread_barrier_wait(pthread_barrier_t *b);
 
 int pthread_once(pthread_once_t *once, void (*init)(void));
 

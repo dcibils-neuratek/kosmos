@@ -38101,3 +38101,69 @@ moment a dozen suites had started) and `x86-cafesa3d-2`'s plane opened
 again (165,592 pixels differing) failed under the load, and pass alone,
 60 and 74 checks in 257 s. The Cafesa3D check had not failed before; its
 log is kept under `build/gate/failed/` for the next time.
+
+## 18.922 Mesa on Kosmos
+
+**In short:** the second half of G1 (`gpu3d.md` §6). Mesa - the graphics
+library whose software Vulkan driver, `lavapipe`, is G2 - is built for
+Kosmos on both architectures, and its shader compiler runs inside it: a
+suite has Mesa build a small compute shader from three numbers, simplify
+it down to the one number the answer must be, print it, and pack it and
+unpack it again unchanged. With LLVM (18.921), G1 is done.
+
+- **The source** is Mesa 26.2.5's release, fetched and checked by
+  `tools/upstream.py`; a copy in `build/mesa/tree` has the patches applied,
+  cut by `upstream.patched_copy`, which WebKit's and LLVM's builds now
+  share rather than each carrying its own.
+- **Built by its own Meson** (`tools/mesa_build.py`), with a cross file for
+  a system called `kosmos` and Kosmos's clang. Three things Meson does had
+  to be answered: it drops an `-isystem` that names the compiler's own
+  headers, so those are a clone under `build/mesa/`; it would download
+  zlib, so it is told not to and given W5's; and it decides whether a
+  function exists by linking a trial program, which cannot really link
+  here - so `tools/mesa_trial_ld.py` links it with what is undefined
+  ignored and then fails it, by name, on any symbol the trial calls that no
+  library on the line defines. Without that every check said yes.
+- **Configured for `lavapipe`**, `llvmpipe` and LLVM's ORC JIT, though G1
+  builds only the libraries: Mesa builds NIR as headers alone unless some
+  driver wants it. LLVM is a port subproject of three lines that hands Meson
+  the archives 18.921 built.
+- **Two patches**, `runtime/patches/mesa/`: Kosmos is an operating system
+  Mesa does not know - POSIX-shaped, as Fuchsia is to it, with its clock,
+  its sleep, its free memory and its process name; and there is no
+  `dlopen` and there are no signals, so those are left out rather than
+  imitated.
+- **The libc and the POSIX layer grew what Mesa asks for**, all of it
+  portable and none of it one of the four forbidden assumptions: `qsort_r`
+  and `strtok_r`, `fegetenv` and its three companions, `SCN*PTR`;
+  `open_memstream`, `asprintf` and `vasprintf`, `mkstemps`,
+  `pthread_barrier_*`, and `alloca.h`.
+- **Code outside Mesa that includes Mesa's headers is compiled as Mesa
+  was.** NIR's structures and inline functions are shaped by what Meson
+  found - the byte order, the threads, `MESA_DEBUG` - and the test kit
+  failed in thirty places without them. `mesa_build.py` reads the defines
+  from the compile of one of NIR's own files and writes them as a response
+  file, `defines.txt`, that the Makefile hands the compiler.
+- **`x86-mesa`** (`tools/run_mesa.py`, `user/kits/mesatest/`) passes:
+  "mesa fold=15.0000/2-rounds print="shader: MESA_SHADER_COMPUTE"/long
+  blob=same" - (1.5 + 2.25) x 4, folded by NIR's passes in two rounds -
+  from an image of 38.0 MB, in 0.2 s. **The control**: `open_memstream`
+  refusing every stream, and the suite fails naming the step,
+  "print=no-memstream"; restored, it passes.
+- **AArch64 builds and links too**: 430 steps of Mesa's, 4:00 with the
+  test userland rebuilt in front of it after the libc's headers changed
+  (1418 s of processor), and no work at all when nothing changed.
+- **The sizes**: `mesatest.elf` is 49.5 MB, 38.0 MB stripped of debugging
+  (49.0 and 37.4 for AArch64);
+  NIR is 11.9 MB of archive and `util` 4.7 MB. No LLVM is linked yet -
+  that is `lavapipe`'s, in G2.
+
+**The gate.** 145 suites in 1414 s, 140 passing - over the budget for the
+same reason as 18.921's: `images` took 677 s, because the libc's and the
+POSIX layer's headers changed and every image includes them. Five failed
+under that load and pass alone, 5 suites in 261 s: `x86-profile` (its
+spinners sampled 206 and 225 times against about 507), `x86-servers` (the
+second boot's telnetd not listening within 120 s), `x86-desktops`,
+`x86-starlight` (a window unrolled over 281 ms against 150) and
+`x86-cafesa3d-2`, which hung for 720 s and passes alone in 243 s. Their
+logs are kept under `build/gate/failed/`.

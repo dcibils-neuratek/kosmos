@@ -102,6 +102,24 @@ int feraiseexcept(int excepts)
     return 0;
 }
 
+/* The environment: `fnstenv`'s image of the x87 unit, which `fnstenv` also
+ * masks every x87 exception in, so it is loaded straight back (Intel SDM
+ * vol. 2, FNSTENV), and MXCSR. */
+int fegetenv(fenv_t *env)
+{
+    __asm__ volatile("fnstenv %0" : "=m"(env->x87));
+    __asm__ volatile("fldenv %0" : : "m"(env->x87));
+    __asm__ volatile("stmxcsr %0" : "=m"(env->mxcsr));
+    return 0;
+}
+
+int fesetenv(const fenv_t *env)
+{
+    __asm__ volatile("fldenv %0" : : "m"(env->x87));
+    __asm__ volatile("ldmxcsr %0" : : "m"(env->mxcsr));
+    return 0;
+}
+
 #elif defined(__aarch64__)
 
 int fegetround(void)
@@ -154,6 +172,25 @@ int feraiseexcept(int excepts)
     return 0;
 }
 
+/* The environment: FPCR and FPSR. */
+int fegetenv(fenv_t *env)
+{
+    unsigned long fpcr, fpsr;
+
+    __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+    __asm__ volatile("mrs %0, fpsr" : "=r"(fpsr));
+    env->fpcr = (unsigned int)fpcr;
+    env->fpsr = (unsigned int)fpsr;
+    return 0;
+}
+
+int fesetenv(const fenv_t *env)
+{
+    __asm__ volatile("msr fpcr, %0" : : "r"((unsigned long)env->fpcr));
+    __asm__ volatile("msr fpsr, %0" : : "r"((unsigned long)env->fpsr));
+    return 0;
+}
+
 #else
 #error "fenv.c: which architecture is this?"
 #endif
@@ -177,5 +214,27 @@ int fesetexceptflag(const fexcept_t *flags, int excepts)
     excepts &= FE_ALL_EXCEPT;
     feclearexcept(excepts);
     feraiseexcept((int)*flags & excepts);
+    return 0;
+}
+
+/*
+ * **Held and updated** (`docs/gpu3d.md` G1, for Mesa's constant folding):
+ * on the two above, so the same on either processor. Holding needs only
+ * the flags cleared - every exception is already masked, which is the
+ * "non-stop" mode the standard asks a hold to install.
+ */
+int feholdexcept(fenv_t *env)
+{
+    fegetenv(env);
+    feclearexcept(FE_ALL_EXCEPT);
+    return 0;
+}
+
+int feupdateenv(const fenv_t *env)
+{
+    int raised = fetestexcept(FE_ALL_EXCEPT);
+
+    fesetenv(env);
+    feraiseexcept(raised);
     return 0;
 }

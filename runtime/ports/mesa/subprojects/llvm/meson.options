@@ -1,0 +1,3 @@
+# Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+option('libs', type : 'string', description : 'a file naming the libraries, one a line')
+option('include', type : 'string', description : 'the include directories, separated by colons')

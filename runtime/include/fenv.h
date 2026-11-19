@@ -77,6 +77,15 @@ int feraiseexcept(int excepts);
 int fegetexceptflag(fexcept_t *flags, int excepts);
 int fesetexceptflag(const fexcept_t *flags, int excepts);
 
+/* The whole environment - rounding mode, flags, masks - as a value: read,
+ * set back, held (read, then the flags cleared: nothing traps here, every
+ * exception being masked) and updated (set back with the flags raised
+ * since kept). 0 for done. Mesa's NIR folds constants inside a hold. */
+int fegetenv(fenv_t *env);
+int fesetenv(const fenv_t *env);
+int feholdexcept(fenv_t *env);
+int feupdateenv(const fenv_t *env);
+
 __END_DECLS
 
 #endif /* FENV_H */

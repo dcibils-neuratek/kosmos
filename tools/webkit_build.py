@@ -49,56 +49,17 @@ def fingerprint():
     h.update(o["commit"].encode())
     for pattern in o["paths"]:
         h.update(pattern.encode())
-    for name in sorted(os.listdir(PATCHES)):
-        if name.endswith(".patch"):
-            h.update(name.encode())
-            with open(os.path.join(PATCHES, name), "rb") as f:
-                h.update(f.read())
-    for path in port_files():
-        h.update(path.encode())
-        with open(os.path.join(PORT, path), "rb") as f:
-            h.update(f.read())
-    return h.hexdigest()
+    return upstream.patches_digest(h, PATCHES, PORT).hexdigest()
 
 
-def port_files():
-    """Kosmos's own files for WebKit, by their place in its tree."""
-    found = []
-    for folder, _, names in os.walk(PORT):
-        for name in names:
-            found.append(os.path.relpath(os.path.join(folder, name), PORT))
-    return sorted(found)
-
-
-def patched_source():
-    stamp = os.path.join(SRC, ".patched")
-    want = fingerprint()
-
-    if os.path.exists(stamp) and open(stamp).read() == want:
-        return SRC
-
-    release = upstream.where("webkit") if os.path.exists(
-        os.path.join(upstream.UNPACKED, "webkit", ".unpacked")) else None
-    if release is None:
-        upstream.unpack("webkit")
-        release = upstream.where("webkit")
-
-    # **Cut beside the copy, then only what differs is carried into it**
-    # (`docs/w7.md` W7a): a copy cut again from nothing gives every file a
-    # new time, and ninja then builds all of WebKit again - an hour and more
-    # - for one port file. So the new copy is cut at `src.next`, and rsync,
-    # comparing contents rather than times, writes into `src` only the
-    # files whose bytes changed, and removes what went.
-    cut = SRC + ".next"
-    shutil.rmtree(cut, ignore_errors=True)
-    os.makedirs(os.path.dirname(SRC), exist_ok=True)
-    subprocess.run(["cp", "-Rc", release, cut], check=True)
-
-    # What the release does not carry, from WebKit's git at its tag's
-    # commit (`docs/w6.md`): laid over the copy before the patches, so a
-    # patch may change those too. A file the release already has is the
-    # release's - the overlay only adds - and one that differed would mean
-    # the two were not cut from the same source, which is refused.
+def lay_overlay(cut):
+    """
+    What the release does not carry, from WebKit's git at its tag's commit
+    (`docs/w6.md`): laid over the copy before the patches, so a patch may
+    change those too. A file the release already has is the release's - the
+    overlay only adds - and one that differed would mean the two were not
+    cut from the same source, which is refused.
+    """
     overlay = upstream.webkit_overlay()
     added = 0
     for folder, dirs, names in os.walk(overlay):
@@ -117,31 +78,18 @@ def patched_source():
     print("webkit_build: %d files from WebKit's git at %s"
           % (added, upstream.WEBKIT_OVERLAY["commit"][:12]))
 
-    for name in sorted(os.listdir(PATCHES)):
-        if name.endswith(".patch"):
-            with open(os.path.join(PATCHES, name), "rb") as f:
-                r = subprocess.run(["patch", "-s", "-p1", "-d", cut], stdin=f)
-            if r.returncode != 0:
-                sys.exit("webkit_build: %s does not apply" % name)
 
-    # Kosmos's own files - a platform's sources WebKit has none of - in the
-    # places the patches' CMake lists name them.
-    for path in port_files():
-        os.makedirs(os.path.dirname(os.path.join(cut, path)), exist_ok=True)
-        shutil.copy2(os.path.join(PORT, path), os.path.join(cut, path))
-
-    if os.path.isdir(SRC):
-        r = subprocess.run(["rsync", "-rl", "--checksum", "--delete",
-                            "--exclude", "/.patched", cut + "/", SRC + "/"])
-        if r.returncode != 0:
-            sys.exit("webkit_build: the new copy did not carry into %s" % SRC)
-        shutil.rmtree(cut)
-    else:
-        os.rename(cut, SRC)
-
-    with open(stamp, "w") as f:
-        f.write(want)
-    return SRC
+def patched_source():
+    """The release, its overlay, `runtime/patches/webkit/` and the port's
+    own files (`runtime/ports/webkit/`), as `upstream.patched_copy` cuts it."""
+    want = fingerprint()
+    stamp = os.path.join(SRC, ".patched")
+    if os.path.exists(stamp) and open(stamp).read() == want:
+        return SRC
+    if not os.path.exists(os.path.join(upstream.UNPACKED, "webkit", ".unpacked")):
+        upstream.unpack("webkit")
+    return upstream.patched_copy(upstream.where("webkit"), SRC, want, PATCHES,
+                                 port=PORT, overlay=lay_overlay, who="webkit_build")
 
 
 def configure(arch, out):

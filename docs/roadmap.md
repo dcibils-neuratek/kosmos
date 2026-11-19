@@ -11986,7 +11986,18 @@ Kosmos, `lavapipe` headless, a window and `vkcube`, GL and GL ES by Zink
 with TinyGL retired, and WebGL in JetSki - all of it in QEMU. G6 to G9, on
 the M700's GPU, come after the daily-driver items below. **G1's LLVM half built
 in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
-JIT running inside Kosmos; Mesa's half next.
+JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
+18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and
+serializing a shader inside Kosmos. **G1 done; G2, `lavapipe` headless, next.**
+**And then a flight simulator - ASKED on 19 November 2026** (Diego: "after
+the 3d api is done and running on gpu, i want to build a simple flight
+simulator app that shows the 3d api capabilities"). An application of
+Kosmos's own, after G9, when Vulkan runs on the M700's GPU: simple to fly,
+and made to show what the 3D API does. Like every app, it starts with its
+feature set, mockup, architecture and diagram in `docs/`, agreed before any
+code. The question for each piece is which kit supplies it - terrain,
+sky, models, the camera, input, sound - so that a second 3D application
+finds them already there.
 Then, in order: (1) keys - Control-W given back, the desktop's keys on
 Super, press and release delivered, layouts and dead keys out of Nebula,
 Latin American first; (2) the clipboard redone; (3) JetSki's remaining

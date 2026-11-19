@@ -73,6 +73,10 @@ void   kosmos_exit_disarm(void);
 void   kosmos_call_on_stack(void (*fn)(void *), void *arg, void *top);
 void   qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
+/* `qsort` with `arg` handed to every comparison, last - POSIX 2024's and
+ * glibc's order (`user/init/misc_user.c`). */
+void   qsort_r(void *base, size_t count, size_t size,
+               int (*compare)(const void *, const void *, void *), void *arg);
 void  *bsearch(const void *key, const void *base, size_t count, size_t size,
                int (*compare)(const void *, const void *));
 

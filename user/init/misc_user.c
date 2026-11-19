@@ -306,6 +306,12 @@ char *getenv(const char *name)
  *
  * Not stable, which the standard does not ask of `qsort` either: two
  * elements that compare equal may come out in either order.
+ *
+ * **`qsort_r` is the sort, and `qsort` one way into it** (`docs/gpu3d.md`
+ * G1): the comparison is handed `arg` as well, POSIX 2024's and glibc's
+ * order of arguments, which Mesa sorts with. `qsort`'s comparison, which
+ * takes no argument, travels as that argument, in a struct, since a
+ * function pointer is not a data pointer.
  */
 
 /* Two elements exchanged a piece at a time, because the element size is a
@@ -333,18 +339,18 @@ static void sort_swap(unsigned char *a, unsigned char *b, size_t size)
  * `count / 2`, which is the test that also keeps `2 * root + 1` from
  * overflowing.
  */
-static void sort_sift(unsigned char *a, size_t root, size_t count,
-                      size_t size, int (*compare)(const void *, const void *))
+static void sort_sift(unsigned char *a, size_t root, size_t count, size_t size,
+                      int (*compare)(const void *, const void *, void *), void *arg)
 {
     while (root < count / 2) {
         size_t child = 2 * root + 1;
 
         if (child + 1 < count
-            && compare(a + child * size, a + (child + 1) * size) < 0) {
+            && compare(a + child * size, a + (child + 1) * size, arg) < 0) {
             child++;
         }
 
-        if (compare(a + root * size, a + child * size) >= 0) {
+        if (compare(a + root * size, a + child * size, arg) >= 0) {
             return;
         }
 
@@ -353,8 +359,8 @@ static void sort_sift(unsigned char *a, size_t root, size_t count,
     }
 }
 
-void qsort(void *base, size_t count, size_t size,
-           int (*compare)(const void *, const void *))
+void qsort_r(void *base, size_t count, size_t size,
+             int (*compare)(const void *, const void *, void *), void *arg)
 {
     unsigned char *a = base;
     size_t i;
@@ -365,14 +371,31 @@ void qsort(void *base, size_t count, size_t size,
 
     /* The heap, built from the last parent up to the root. */
     for (i = count / 2; i > 0; i--) {
-        sort_sift(a, i - 1, count, size, compare);
+        sort_sift(a, i - 1, count, size, compare, arg);
     }
 
     /* The largest to the end, and the heap rebuilt over what is left. */
     for (i = count - 1; i > 0; i--) {
         sort_swap(a, a + i * size, size);
-        sort_sift(a, 0, i, size, compare);
+        sort_sift(a, 0, i, size, compare, arg);
     }
+}
+
+struct plain_compare {
+    int (*compare)(const void *, const void *);
+};
+
+static int by_plain(const void *x, const void *y, void *arg)
+{
+    return ((const struct plain_compare *)arg)->compare(x, y);
+}
+
+void qsort(void *base, size_t count, size_t size,
+           int (*compare)(const void *, const void *))
+{
+    struct plain_compare plain = { compare };
+
+    qsort_r(base, count, size, by_plain, &plain);
 }
 
 /*

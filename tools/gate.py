@@ -106,6 +106,8 @@ RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",
 WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py", "tools/upstream.py"]
 W5 = ["tools/w5_build.py", "tools/upstream.py"]
 LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
+# Mesa is configured for lavapipe, which stands on LLVM, and links W5's zlib.
+MESA = ["tools/mesa_build.py", "tools/mesa_trial_ld.py"] + LLVM + W5
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],
              ["qemu-system-x86_64", "--version"], ["qemu-system-aarch64", "--version"]]
@@ -627,6 +629,15 @@ SUITES = [
     Suite("x86-llvm", ["python3", "tools/run_llvm.py", X86,
                        "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_llvm.py", "user/kits/llvmtest", *LLVM)),
+
+    # **Mesa** (`docs/gpu3d.md` G1): `mesatest.elf`, Mesa's `util`, NIR and
+    # SPIR-V libraries in one image - a compute shader built with NIR's
+    # builder from three numbers chosen here, folded by NIR's passes to the
+    # constant this side computes, printed into a stream in memory, and
+    # serialized and read back to print the same.
+    Suite("x86-mesa", ["python3", "tools/run_mesa.py", X86,
+                       "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_mesa.py", "user/kits/mesatest", *MESA)),
 
     # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
     # its interpreter, driven through its C API - a script using closures,

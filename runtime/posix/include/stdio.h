@@ -9,6 +9,7 @@
  */
 #include_next <stdio.h>
 
+#include <stdarg.h>
 #include <sys/cdefs.h>
 #include <sys/types.h>
 
@@ -33,6 +34,16 @@ ssize_t getdelim(char **line, size_t *room, int delimiter, FILE *f);
 int     fseeko(FILE *f, off_t offset, int whence);
 off_t   ftello(FILE *f);
 void    perror(const char *s);
+
+/* The text printed into memory `malloc` gave, `*out` freed by the caller;
+ * its length, or -1 with `*out` unchanged. */
+int     asprintf(char **out, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int     vasprintf(char **out, const char *fmt, va_list ap);
+
+/* A stream written into memory that grows: `*text` and `*length` say what
+ * was written, a nought after it, at every `fflush` and `fclose`; the
+ * caller frees `*text` (`stdio.c`). */
+FILE   *open_memstream(char **text, size_t *length);
 
 __END_DECLS
 

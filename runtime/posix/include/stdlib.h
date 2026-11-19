@@ -7,6 +7,9 @@
 
 #include <sys/cdefs.h>
 
+/* `alloca`, which glibc's and the BSDs' `<stdlib.h>` bring too. */
+#include <alloca.h>
+
 __BEGIN_DECLS
 
 /* `path` made whole and found: into `resolved` (PATH_MAX bytes), or a new
@@ -18,6 +21,8 @@ char *realpath(const char *path, char *resolved);
 int   mkstemp(char *pattern);
 int   mkostemp(char *pattern, int flags);   /* O_CLOEXEC, O_APPEND */
 char *mkdtemp(char *pattern);
+/* `mkstemp` whose six `X`s come before a suffix `suffix` bytes long. */
+int   mkstemps(char *pattern, int suffix);
 
 /* **There is no environment** (`getenv`, `user/init/misc_user.c`), so
  * nothing can be put into one: both refuse with ENOTSUP, as `flock` does,

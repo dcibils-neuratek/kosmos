@@ -25,7 +25,6 @@ headers, as `make cxx-runtimes` installed them.
 
 import hashlib
 import os
-import shutil
 import subprocess
 import sys
 
@@ -39,54 +38,19 @@ PATCHES = os.path.join(ROOT, "runtime", "patches", "llvm")
 SRC = os.path.join(ROOT, "build", "llvm", "tree")
 
 
-def patches():
-    return sorted(n for n in os.listdir(PATCHES) if n.endswith(".patch"))
-
-
 def fingerprint():
     """What the copy is made from: the release and every patch, in order."""
     h = hashlib.sha256(upstream.unpacked_as("llvm").encode())
-    for name in patches():
-        h.update(name.encode())
-        with open(os.path.join(PATCHES, name), "rb") as f:
-            h.update(f.read())
-    return h.hexdigest()
+    return upstream.patches_digest(h, PATCHES).hexdigest()
 
 
 def patched_source():
-    stamp = os.path.join(SRC, ".patched")
     want = fingerprint()
-    if os.path.exists(stamp) and open(stamp).read() == want:
-        return SRC
-
-    upstream.unpack("llvm")
-    release = upstream.where("llvm")
-
-    cut = SRC + ".next"
-    shutil.rmtree(cut, ignore_errors=True)
-    os.makedirs(os.path.dirname(SRC), exist_ok=True)
-    subprocess.run(["cp", "-Rc", release, cut], check=True)
-
-    for name in patches():
-        with open(os.path.join(PATCHES, name), "rb") as f:
-            r = subprocess.run(["patch", "-s", "-p1", "-d", cut], stdin=f)
-        if r.returncode != 0:
-            sys.exit("llvm_build: %s does not apply" % name)
-
-    # Only what differs is carried into the copy ninja built from, so a
-    # patch to one file rebuilds that file and what includes it.
-    if os.path.isdir(SRC):
-        r = subprocess.run(["rsync", "-rl", "--checksum", "--delete",
-                            "--exclude", "/.patched", cut + "/", SRC + "/"])
-        if r.returncode != 0:
-            sys.exit("llvm_build: the new copy did not carry into %s" % SRC)
-        shutil.rmtree(cut)
-    else:
-        os.rename(cut, SRC)
-
-    with open(stamp, "w") as f:
-        f.write(want)
-    return SRC
+    if not os.path.exists(os.path.join(SRC, ".patched")) or \
+            open(os.path.join(SRC, ".patched")).read() != want:
+        upstream.unpack("llvm")
+    return upstream.patched_copy(upstream.where("llvm"), SRC, want, PATCHES,
+                                 who="llvm_build")
 
 
 def configure(arch, out):

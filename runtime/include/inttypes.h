@@ -90,6 +90,11 @@ __BEGIN_DECLS
 #define SCNu64      "lu"
 #define SCNx64      "lx"
 
+/* A pointer's width is a `long`'s here; Mesa's NIR prints one with these. */
+#define SCNdPTR     "ld"
+#define SCNuPTR     "lu"
+#define SCNxPTR     "lx"
+
 /*
  * The widest integer from text: `long` is the widest here (LP64, above), so
  * these are `strtoll` and `strtoull` under C99's names for them. OpenSSL's

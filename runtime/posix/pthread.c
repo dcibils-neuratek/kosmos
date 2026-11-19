@@ -1209,3 +1209,55 @@ int sem_getvalue(sem_t *s, int *value)
     *value = (int)__atomic_load_n(&s->count, __ATOMIC_RELAXED);
     return 0;
 }
+
+/*
+ *--------------------------------------------------------------------------
+ * Barriers: `count` threads, and a round that ends when the last arrives.
+ * The round's number is what a waiter watches, so a thread woken for any
+ * other reason waits again, and one that comes round to the next use of the
+ * barrier before the others have left cannot be mistaken for the last.
+ */
+
+int pthread_barrier_init(pthread_barrier_t *b, const pthread_barrierattr_t *a, unsigned count)
+{
+    (void)a;
+
+    if (count == 0) {
+        return EINVAL;
+    }
+
+    pthread_mutex_init(&b->lock, NULL);
+    pthread_cond_init(&b->passed, NULL);
+    b->count = count;
+    b->waiting = 0;
+    b->round = 0;
+    return 0;
+}
+
+int pthread_barrier_destroy(pthread_barrier_t *b)
+{
+    return b->waiting != 0 ? EBUSY : 0;
+}
+
+int pthread_barrier_wait(pthread_barrier_t *b)
+{
+    unsigned round;
+
+    pthread_mutex_lock(&b->lock);
+    round = b->round;
+
+    if (++b->waiting == b->count) {
+        b->waiting = 0;
+        b->round++;
+        pthread_cond_broadcast(&b->passed);
+        pthread_mutex_unlock(&b->lock);
+        return PTHREAD_BARRIER_SERIAL_THREAD;
+    }
+
+    while (b->round == round) {
+        pthread_cond_wait(&b->passed, &b->lock);
+    }
+
+    pthread_mutex_unlock(&b->lock);
+    return 0;
+}

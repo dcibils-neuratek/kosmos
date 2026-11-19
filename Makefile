@@ -4577,6 +4577,61 @@ $(UBUILD)/apps/llvmtest.elf: $(USER_OBJS) $(LLVMTEST_OBJS) $(POSIX_OBJS) $(LLVM_
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_llvmtest_kit$$' \
 	    || { echo "apps: the system's image has LLVM's test kit in it"; rm -f $@; exit 1; }
 
+#
+# **Mesa** (`docs/gpu3d.md` G1): its utilities, NIR, SPIR-V's front end and
+# the Vulkan runtime, configured for lavapipe (G2) on the LLVM above, from
+# the release fetched and held to its sum with `runtime/patches/mesa/` and
+# `runtime/ports/mesa/` applied; `tools/mesa_build.py` cuts the copy,
+# writes Meson's cross file, configures and has ninja build, each only when
+# what it stands on moved. Meson's checks link against this userland's
+# runtime objects, so those come first.
+#
+MESA_DIR := build/mesa/$(ARCH)
+MESA_BUILD := $(MESA_DIR)/build
+MESA_LIBS := $(MESA_BUILD)/src/compiler/nir/libnir.a $(MESA_BUILD)/src/compiler/spirv/libvtn.a \
+             $(MESA_BUILD)/src/compiler/libcompiler.a $(MESA_BUILD)/src/util/libmesa_util.a \
+             $(MESA_BUILD)/src/util/blake3/libblake3.a $(MESA_BUILD)/src/c11/impl/libmesa_util_c11.a \
+             build/w5/$(ARCH)/install/lib/libz.a
+
+$(MESA_DIR)/.built: tools/mesa_build.py tools/mesa_trial_ld.py tools/upstream.py $(LLVM_DIR)/.built \
+                    $(wildcard runtime/patches/mesa/*.patch) \
+                    $(shell find runtime/ports/mesa -type f 2>/dev/null) \
+                    $(USER_OBJS) $(POSIX_OBJS) \
+                    $(wildcard runtime/include/*.h runtime/include/sys/*.h \
+                               runtime/posix/include/*.h runtime/posix/include/*/*.h)
+	@mkdir -p $(MESA_DIR)
+	@python3 tools/mesa_build.py $(ARCH) $(UBUILD) > build/mesa-$(ARCH).log 2>&1 \
+	    || { tail -60 build/mesa-$(ARCH).log; exit 1; }
+	@touch $@
+
+#
+# **Mesa's test image**: `mesatest.c` - NIR's builder, passes, printer and
+# serializer, `docs/gpu3d.md` G1 - with Mesa's libraries and the POSIX
+# layer. Compiled with what decides Mesa's structures' shapes as Mesa was:
+# the defines Meson gave NIR (`defines.txt`, `tools/mesa_build.py`), its
+# headers and its generated ones.
+#
+MESATEST_OBJS := $(UBUILD)/user/kits/mesatest/mesatest.c.o
+MESA_INCLUDES := -isystem build/mesa/tree/include -isystem build/mesa/tree/src \
+                 -isystem build/mesa/tree/src/compiler/nir -isystem $(MESA_BUILD)/src \
+                 -isystem $(MESA_BUILD)/src/compiler -isystem $(MESA_BUILD)/src/compiler/nir
+
+$(UBUILD)/user/kits/mesatest/mesatest.c.o: user/kits/mesatest/mesatest.c $(MESA_DIR)/.built
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) @$(MESA_DIR)/defines.txt \
+	    $(MESA_INCLUDES) -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers \
+	    -c $< -o $@
+
+$(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group $(MESA_LIBS) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_mesatest_kit$$' \
+	    || { echo "apps: mesatest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_mesatest_kit$$' \
+	    || { echo "apps: the system's image has Mesa's test kit in it"; rm -f $@; exit 1; }
+
 # WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
@@ -4592,7 +4647,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/picturetest.elf $(UBUILD)/apps/texttest.elf $(UBUILD)/apps/sqltest.elf \
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
-            $(UBUILD)/apps/llvmtest.elf \
+            $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf \
             $(WEBCORE_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

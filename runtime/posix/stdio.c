@@ -37,7 +37,7 @@
 
 #define BUFFER 4096
 
-enum { CONSOLE = 1, DESCRIPTOR, PROVIDED };
+enum { CONSOLE = 1, DESCRIPTOR, PROVIDED, MEMORY };
 enum { IDLE, READING, WRITING };
 
 struct _kosmos_file {
@@ -52,6 +52,10 @@ struct _kosmos_file {
     /* A provided file: its bytes and where the reader is. */
     const unsigned char *bytes;
     size_t  length, at;
+
+    /* `open_memstream`'s: what was written, where its writer is told. */
+    char   *memory, **memory_out;
+    size_t  memory_length, memory_room, *memory_length_out;
 
     /* A descriptor's buffer: `start` to `end` is read ahead, or `0` to
      * `end` waits to be written. */
@@ -203,6 +207,74 @@ static FILE *stream(int kind, int fd, int readable, int writable, int append)
     return f;
 }
 
+/*
+ * **`open_memstream`**: a stream whose writes land in memory that grows,
+ * doubling, always with a nought after what was written, and which its
+ * writer is told of - `*text` and `*length` - at every write, `fflush` and
+ * `fclose`, as POSIX promises for the last two. Write only, as POSIX has it;
+ * the memory is the caller's to free, after the stream is closed.
+ */
+static int memory_tell(FILE *f)
+{
+    *f->memory_out = f->memory;
+    *f->memory_length_out = f->memory_length;
+    return 0;
+}
+
+static size_t memory_write(FILE *f, const void *from, size_t want)
+{
+    if (f->memory_length + want + 1 > f->memory_room) {
+        size_t room = f->memory_room;
+        char *grown;
+
+        while (f->memory_length + want + 1 > room) {
+            room *= 2;
+        }
+
+        if ((grown = realloc(f->memory, room)) == NULL) {
+            f->error = 1;
+            errno = ENOMEM;
+            return 0;
+        }
+
+        f->memory = grown;
+        f->memory_room = room;
+    }
+
+    memcpy(f->memory + f->memory_length, from, want);
+    f->memory_length += want;
+    f->memory[f->memory_length] = '\0';
+    memory_tell(f);
+    return want;
+}
+
+FILE *open_memstream(char **text, size_t *length)
+{
+    FILE *f;
+
+    if (text == NULL || length == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    if ((f = stream(MEMORY, -1, 0, 1, 0)) == NULL) {
+        return NULL;
+    }
+
+    f->memory_room = 256;
+    if ((f->memory = malloc(f->memory_room)) == NULL) {
+        free(f);
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    f->memory[0] = '\0';
+    f->memory_out = text;
+    f->memory_length_out = length;
+    memory_tell(f);
+    return f;
+}
+
 FILE *fopen(const char *path, const char *mode)
 {
     int readable, writable, append, flags, fd;
@@ -334,7 +406,7 @@ FILE *tmpfile(void)
  * `mkdir` refusing one that exists for a folder. A hundred tries, as
  * `tmpfile` gives itself, before EEXIST.
  */
-static int fill_template(char *pattern)
+static int fill_template(char *pattern, size_t suffix)
 {
     static const char letters[] =
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -342,7 +414,7 @@ static int fill_template(char *pattern)
     size_t n = pattern != NULL ? strlen(pattern) : 0;
     int i;
 
-    if (n < 6 || strcmp(pattern + n - 6, "XXXXXX") != 0) {
+    if (n < 6 + suffix || strncmp(pattern + n - suffix - 6, "XXXXXX", 6) != 0) {
         errno = EINVAL;
         return -1;
     }
@@ -352,7 +424,7 @@ static int fill_template(char *pattern)
     }
 
     for (i = 0; i < 6; i++) {
-        pattern[n - 6 + i] = letters[noise[i] % (sizeof letters - 1)];
+        pattern[n - suffix - 6 + i] = letters[noise[i] % (sizeof letters - 1)];
     }
 
     return 0;
@@ -361,6 +433,32 @@ static int fill_template(char *pattern)
 int mkstemp(char *pattern)
 {
     return mkostemp(pattern, 0);
+}
+
+/* And with `suffix` bytes after the `X`s - Mesa's log names its file so. */
+int mkstemps(char *pattern, int suffix)
+{
+    int tries;
+
+    if (suffix < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (tries = 0; tries < 100; tries++) {
+        int fd;
+
+        if (fill_template(pattern, (size_t)suffix) != 0) {
+            return -1;
+        }
+
+        if ((fd = open(pattern, O_RDWR | O_CREAT | O_EXCL, 0600)) >= 0 || errno != EEXIST) {
+            return fd;
+        }
+    }
+
+    errno = EEXIST;
+    return -1;
 }
 
 /* And with `flags` beside O_RDWR: O_CLOEXEC and O_APPEND, as Linux's. */
@@ -376,7 +474,7 @@ int mkostemp(char *pattern, int flags)
     for (tries = 0; tries < 100; tries++) {
         int fd;
 
-        if (fill_template(pattern) != 0) {
+        if (fill_template(pattern, 0) != 0) {
             return -1;
         }
 
@@ -394,7 +492,7 @@ char *mkdtemp(char *pattern)
     int tries;
 
     for (tries = 0; tries < 100; tries++) {
-        if (fill_template(pattern) != 0) {
+        if (fill_template(pattern, 0) != 0) {
             return NULL;
         }
 
@@ -422,6 +520,10 @@ int fclose(FILE *f)
 
     if (f->kind == CONSOLE) {
         return 0;
+    }
+
+    if (f->kind == MEMORY) {
+        memory_tell(f);                 /* the memory stays the caller's */
     }
 
     if (f->kind == DESCRIPTOR) {
@@ -691,6 +793,10 @@ size_t fwrite(const void *b, size_t size, size_t count, FILE *f)
         return write(f->fd, b, want) == (ssize_t)want ? count : 0;
     }
 
+    if (f->kind == MEMORY) {
+        return memory_write(f, b, want) / size;
+    }
+
     unread(f);
 
     if (want >= BUFFER) {
@@ -760,6 +866,10 @@ int fflush(FILE *f)
                                            and files drain as they fill */
     }
 
+    if (f->kind == MEMORY) {
+        return memory_tell(f);
+    }
+
     if (f->kind != DESCRIPTOR) {
         return 0;
     }
@@ -798,6 +908,42 @@ int vfprintf(FILE *f, const char *fmt, va_list ap)
         free(text);
     }
 
+    return n;
+}
+
+/* **`asprintf`**: printed once to learn the length and once into memory
+ * of exactly that size. */
+int vasprintf(char **out, const char *fmt, va_list ap)
+{
+    va_list again;
+    char *text;
+    int n;
+
+    va_copy(again, ap);
+    n = vsnprintf(NULL, 0, fmt, ap);
+
+    if (n < 0 || (text = malloc((size_t)n + 1)) == NULL) {
+        va_end(again);
+        if (n >= 0) {
+            errno = ENOMEM;
+        }
+        return -1;
+    }
+
+    (void)vsnprintf(text, (size_t)n + 1, fmt, again);
+    va_end(again);
+    *out = text;
+    return n;
+}
+
+int asprintf(char **out, const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, fmt);
+    n = vasprintf(out, fmt, ap);
+    va_end(ap);
     return n;
 }
 
@@ -856,6 +1002,10 @@ off_t ftello(FILE *f)
 
     if (f->kind == PROVIDED) {
         return (off_t)f->at - (f->ungot >= 0 ? 1 : 0);
+    }
+
+    if (f->kind == MEMORY) {
+        return (off_t)f->memory_length;
     }
 
     if (f->kind != DESCRIPTOR) {

@@ -540,35 +540,43 @@ size_t strcspn(const char *s, const char *reject)
 }
 
 /*
- * `strtok`: the next token of `s`, or of the string the last call was
- * cutting when `s` is NULL, its end overwritten with a nought. The place it
- * stopped is the process's one copy, as ISO C has it - OpenSSL's
- * `sslapitest` reads its arguments with it (`docs/w5.md` W5d).
+ * `strtok_r`: the next token of `s`, or of the string `*next` says the last
+ * call was cutting when `s` is NULL, its end overwritten with a nought and
+ * where it stopped kept in `*next` - the caller's, so two strings can be
+ * cut at once (Mesa does, `docs/gpu3d.md` G1). `strtok` is the same with
+ * the process's one place, as ISO C has it - OpenSSL's `sslapitest` reads
+ * its arguments with it (`docs/w5.md` W5d).
  */
-char *strtok(char *s, const char *separators)
+char *strtok_r(char *s, const char *separators, char **next)
 {
-    static char *next;
     char *token;
 
-    if (s == NULL && (s = next) == NULL) {
+    if (s == NULL && (s = *next) == NULL) {
         return NULL;
     }
 
     s += strspn(s, separators);
     if (*s == '\0') {
-        next = NULL;
+        *next = NULL;
         return NULL;
     }
 
     token = s;
     s += strcspn(s, separators);
     if (*s == '\0') {
-        next = NULL;
+        *next = NULL;
     } else {
         *s = '\0';
-        next = s + 1;
+        *next = s + 1;
     }
     return token;
+}
+
+char *strtok(char *s, const char *separators)
+{
+    static char *next;
+
+    return strtok_r(s, separators, &next);
 }
 
 char *strstr(const char *haystack, const char *needle)

@@ -4725,3 +4725,33 @@ which is how the test is known to be testing something.
 
 **Next.** Mesa's half of the same step: its utilities, its shader language
 NIR and its Vulkan runtime, built against Kosmos's POSIX layer.
+
+## 19 November 2026 - Mesa's shader compiler runs inside Kosmos
+
+**In short.** The second half of the first step towards 3D: Mesa, the
+graphics library whose software Vulkan driver comes next, now builds for
+Kosmos, and its shader compiler runs inside it. A test has it build a tiny
+shader, simplify it to a single number, print it and pack it up and unpack
+it again unchanged. 0.12.2.
+
+**What.** Mesa 26.2.5's release, fetched and checked, is built by its own
+build system, Meson, told that there is a system called Kosmos. Two patches
+teach Mesa about it: a POSIX-like system with no dynamic loading and no
+signals. Kosmos's C library and POSIX layer gained the dozen ordinary
+functions Mesa uses - sorting with a context, a stream that writes into
+memory, a barrier for threads and the like.
+
+**Why.** Meson finds out what a system has by compiling and linking tiny
+test programs, and a Kosmos program cannot be linked on its own like that.
+The first attempt told it to ignore what was missing, and every question
+came back yes - which looks like success and is the opposite. So a small
+linker wrapper links the test, then checks itself that everything the
+test calls really exists in Kosmos's libraries, and fails by name when it
+does not. Getting that honest is what made the rest of the port honest.
+
+**Measured.** The test program is 38 MB and runs in 0.2 s. Breaking the
+memory stream makes it fail at exactly that step, which is how the test is
+known to be testing something.
+
+**Next.** G2: `lavapipe` itself, Mesa's Vulkan driver on LLVM, drawing a
+triangle and a cube into a picture that is checked against a reference.

@@ -537,6 +537,86 @@ def where(name):
     return os.path.join(into, top) if top else into
 
 
+def patched_copy(release, dest, want, patches, port=None, overlay=None, who="upstream"):
+    """
+    **A release's copy with Kosmos's changes in it**, for a build to run on:
+    `release` cloned file by file into `dest` (free on this Mac's file
+    system until a file changes), `overlay(cut)` given the copy first if
+    there is one, every `.patch` in `patches` applied in order, and the
+    files under `port` - Kosmos's own sources for a platform the release
+    has none of - laid in at their places. `want` is the fingerprint of all
+    that, and a copy whose `.patched` says it is cut again.
+
+    **Cut beside the copy, then only what differs is carried into it**
+    (`docs/w7.md` W7a): a copy cut again from nothing gives every file a
+    new time, and ninja then builds all of WebKit again - an hour and more
+    - for one port file. So the new copy is cut at `dest.next`, and rsync,
+    comparing contents rather than times, writes into `dest` only the
+    files whose bytes changed, and removes what went.
+
+    WebKit's, LLVM's and Mesa's builds all use it.
+    """
+    stamp = os.path.join(dest, ".patched")
+    if os.path.exists(stamp) and open(stamp).read() == want:
+        return dest
+
+    cut = dest + ".next"
+    shutil.rmtree(cut, ignore_errors=True)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    subprocess.run(["cp", "-Rc", release, cut], check=True)
+
+    if overlay:
+        overlay(cut)
+
+    for name in sorted(os.listdir(patches)):
+        if name.endswith(".patch"):
+            with open(os.path.join(patches, name), "rb") as f:
+                r = subprocess.run(["patch", "-s", "-p1", "-d", cut], stdin=f)
+            if r.returncode != 0:
+                sys.exit("%s: %s does not apply" % (who, name))
+
+    for path in port_files(port):
+        os.makedirs(os.path.dirname(os.path.join(cut, path)), exist_ok=True)
+        shutil.copy2(os.path.join(port, path), os.path.join(cut, path))
+
+    if os.path.isdir(dest):
+        r = subprocess.run(["rsync", "-rl", "--checksum", "--delete",
+                            "--exclude", "/.patched", cut + "/", dest + "/"])
+        if r.returncode != 0:
+            sys.exit("%s: the new copy did not carry into %s" % (who, dest))
+        shutil.rmtree(cut)
+    else:
+        os.rename(cut, dest)
+
+    with open(stamp, "w") as f:
+        f.write(want)
+    return dest
+
+
+def port_files(port):
+    """Kosmos's own files for a release, by their place in its tree."""
+    found = []
+    if port and os.path.isdir(port):
+        for folder, _, names in os.walk(port):
+            for name in names:
+                found.append(os.path.relpath(os.path.join(folder, name), port))
+    return sorted(found)
+
+
+def patches_digest(h, patches, port=None):
+    """Every patch and port file, by name and bytes, into the hash `h`."""
+    for name in sorted(os.listdir(patches)):
+        if name.endswith(".patch"):
+            h.update(name.encode())
+            with open(os.path.join(patches, name), "rb") as f:
+                h.update(f.read())
+    for path in port_files(port):
+        h.update(path.encode())
+        with open(os.path.join(port, path), "rb") as f:
+            h.update(f.read())
+    return h
+
+
 def main():
     names = list(RELEASES) + list(GIT)
     if len(sys.argv) != 3 or sys.argv[1] not in ("fetch", "unpack", "path") \

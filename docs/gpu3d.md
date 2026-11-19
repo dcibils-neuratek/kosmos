@@ -444,7 +444,11 @@ so `lavapipe` is built for both.
    image's size. **LLVM's half built in 0.12.1** (`testing.md` 18.921):
    LLVM 23.1.2 with seven patches in `runtime/patches/llvm/`, its JIT on
    JITLink's own memory manager, `setUpInactivePlatform` and no process
-   symbols, since Kosmos has no `dlopen`. Mesa's half next.
+   symbols, since Kosmos has no `dlopen`. **Mesa's half built in 0.12.2**
+   (`testing.md` 18.922): Mesa 26.2.5 by its own Meson, configured for
+   `lavapipe` with two patches in `runtime/patches/mesa/`, its trial links
+   answered by `tools/mesa_trial_ld.py`; `x86-mesa` has NIR build, fold,
+   print and serialize a shader. G1 is done.
 2. **G2 - `lavapipe`, headless.** Vulkan in QEMU: a triangle and a textured
    cube rendered to an image, read back, held to a reference picture.
    *Test* `x86-vulkan`: the pictures, and a short run of the Khronos
@@ -481,6 +485,9 @@ so `lavapipe` is built for both.
    preemption, GPU time per program in GPU Monitor; full-screen flips for
    a game; the GPU compositor sampling swapchain images. *Test on the
    M700*: the desktop's frame time held while a program saturates the GPU.
+   **After G9, a flight simulator** (Diego, 19 November 2026): a simple
+   application of Kosmos's own that shows what the API does, designed first
+   as every app is (`roadmap.md`).
 10. **Later, by machine**: the T14's Gen12 on the same `anv` (new context
     layouts, no GuC needed on Tiger Lake as i915 runs it); the Pi 5's
     `v3dv` when the board is here, its kernel half the smallest of all;
