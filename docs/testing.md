@@ -38227,3 +38227,55 @@ that was never written, which is what a full disk looks like
 (`FileNotFoundError`): 2.7 GB were free after the gate. With 1 GB of
 scratch removed it passes alone, 76 checks in 154 s. `x86-vulkan` took
 11 s.
+
+## 18.924 A textured cube by Vulkan
+
+**In short:** G2's second picture (`gpu3d.md` §6). Vulkan draws a cube in
+three dimensions on Kosmos - its corners from a vertex buffer, turned and
+projected by a matrix, its faces checkerboards read from a texture, the
+nearest face kept by a depth buffer - and the runner, which chose all of
+it, casts a ray through every pixel at the same cube and checks the
+picture against what the ray hits.
+
+- **The kit has one opening.** `vulkantest.c` opens the instance, the
+  device, its queue and a command buffer in one place, with helpers for a
+  buffer the processor maps, an image and its view, a layout barrier, a
+  pipeline and a submit; `triangle` and `cube` are each a page of what
+  they draw. The triangle is unchanged and still passes.
+- **The cube** (`cube(yaw, pitch, distance, focal, colours)`): 24 corners
+  and 36 indices in one host-visible buffer, four corners to a face, its
+  texture running along the next axis round and the one after - the rule
+  the runner's ray cast uses too, so the two cannot disagree about which
+  way a face's checks run. An 8 by 8 checkerboard of the caller's two
+  colours goes up through a staging buffer, sampled nearest; the matrix is
+  a push constant, `D32_SFLOAT` depth with `LESS`, no culling - so only the
+  depth test keeps the back faces behind. 64 by 64, read back as a mask of
+  `a`, `b`, `.` and `?`.
+- **The reference** (`tools/run_vulkan.py`, `cube_expected`): for each
+  pixel, a ray from the eye through its centre and four points 0.3 of a
+  pixel from it, into the cube's own space by the transposed rotation,
+  meeting the cube by slabs; the face it enters by and the check there are
+  the answer. Where all five agree that answer is required; where they do
+  not, an edge of the cube or of a check is between them and either is
+  allowed. Never `?`.
+- **`x86-vulkan` passes**: the cube turned 0.6 about y and 0.45 about x,
+  4 in front of the eye, through a lens of 1.8, 1430 pixels of checks (717
+  of one colour, 713 of the other) on three faces - z = -1, x = +1 and y =
+  -1, 827, 464 and 139 pixels by the ray cast - every one where it must
+  be, with the triangle, in 2.1 s. Eight runs out of eight.
+- **Two controls**: the depth test off, and 182 pixels are named wrong,
+  back faces over front ones; the x = +1 face's texture running backwards,
+  and 282. A first try at the second flipped y = +1, a face the camera
+  does not see, and passed - which is what made the runner's count of
+  pixels per face worth having. That build's run also once said the
+  triangle was "not a picture from llvmpipe", with its words cut off by
+  the command that ran it; eight runs of the real build and the gate's
+  have not said it again.
+
+**Left for G2**: a minute of dEQP-VK.
+
+**The gate.** 146 suites in 617 s, 144 passing. `x86-network` (the second
+lookup of a boot unanswered) and `x86-queries` (`cd /home` not answered in
+the mount's spelling) failed under the load and pass alone, 36 and 38
+checks in 51 s. `x86-vulkan` took 10 s, and the triangle said nothing but
+its picture.

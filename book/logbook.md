@@ -4785,3 +4785,31 @@ which is how it is known to be looking.
 
 **Next.** A textured cube held to a reference picture, and a
 minute of Khronos's own conformance tests.
+
+## 19 November 2026 - Vulkan draws a cube on Kosmos
+
+**In short.** Vulkan now draws something three-dimensional on Kosmos: a
+cube, turned in space, its faces checkerboards taken from a texture, the
+near faces hiding the far ones. Every pixel is checked. 0.12.4.
+
+**What.** The triangle was a flat shape drawn in pixels. The cube uses
+what real 3D programs use: a list of corners in memory, a matrix that
+turns and places them and gives them perspective, a picture (a texture)
+painted onto each face, and a depth buffer, which remembers how far away
+each pixel is so that the back of the cube cannot paint over the front.
+
+**How it is checked.** The test chooses the angle, the distance, the lens
+and the two colours, and then works out the answer by itself: for every
+pixel it follows a line from the eye through that pixel and asks which
+face of the cube it meets first, and which square of the checkerboard.
+Where a pixel sits exactly on an edge, either side is accepted; nowhere
+else is.
+
+**Measured.** 1430 pixels of cube on three faces, all correct, in about
+two seconds inside QEMU. Turning the depth buffer off makes 182 pixels
+wrong; painting one face's checks backwards makes 282 wrong. A first
+attempt at that second check flipped a face the camera cannot see, and
+the test rightly passed - a reminder that a control has to be aimed at
+something the test is looking at.
+
+**Next.** A minute of Khronos's own Vulkan conformance tests.

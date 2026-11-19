@@ -70,9 +70,9 @@ Meson (`tools/mesa_build.py`), configured for `lavapipe`, two patches in
 `tools/mesa_trial_ld.py`; `x86-mesa` has NIR build, fold, print and
 serialize a shader. **G2 begun (0.12.3, `testing.md` 18.923):** Vulkan
 on Kosmos - `lavapipe` linked into `vulkantest.elf` with no loader draws a
-triangle the runner chose, every pixel where its edge functions say.
-**Next: G2's textured cube**, held to a reference picture, then a minute
-of dEQP-VK.
+triangle the runner chose, every pixel where its edge functions say;
+and in 0.12.4 (18.924) a textured cube with a depth buffer, every pixel
+where a ray cast through it says. **Next: G2's minute of dEQP-VK.**
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 
