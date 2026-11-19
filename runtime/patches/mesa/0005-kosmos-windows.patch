@@ -1,0 +1,264 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Kosmos's windows as a Vulkan platform (docs/gpu3d.md G3):
+
+- VK_KOSMOS_surface in Mesa's copy of the registry - its platform
+  (VK_USE_PLATFORM_KOSMOS), tag, struct, command and extension - which the
+  generators read for the entrypoints and the extension tables; its sType
+  in vulkan_core.h, and vulkan.h including vulkan_kosmos.h for it. The
+  header and the WSI are Kosmos's own, in runtime/ports/mesa/. The number,
+  1000, is no registered extension's: the extension is not Khronos's.
+- VK_ICD_WSI_PLATFORM_KOSMOS and its surface, which carries the Window
+  Kit's window; and the WSI's tables of platforms as long as it needs -
+  they were sized to Metal, the last before it, and the WSI writing its
+  platform's entry wrote past them into the device's other fields, which
+  lavapipe then freed (a double free in the first program to make a
+  sampler after an instance had been).
+- The platform's define for a system called kosmos, as each window system
+  has its own, and wsi_common_kosmos.c built for it; wsi_common.c starting
+  and finishing it beside the headless platform.
+- lavapipe told it has a window platform, which turns on VK_KHR_surface,
+  VK_KHR_swapchain and the rest that come with one, and listing
+  VK_KOSMOS_surface.
+
+diff -ruN a/include/vulkan/vk_icd.h b/include/vulkan/vk_icd.h
+--- a/include/vulkan/vk_icd.h	2026-11-19 17:32:15.857532132 -0300
++++ b/include/vulkan/vk_icd.h	2026-11-19 17:32:15.939598816 -0300
+@@ -119,6 +119,7 @@
+     VK_ICD_WSI_PLATFORM_GGP,
+     VK_ICD_WSI_PLATFORM_SCREEN,
+     VK_ICD_WSI_PLATFORM_FUCHSIA,
++    VK_ICD_WSI_PLATFORM_KOSMOS,
+ } VkIcdWsiPlatform;
+ 
+ typedef struct {
+@@ -216,6 +217,13 @@
+     VkIcdSurfaceBase base;
+ } VkIcdSurfaceHeadless;
+ 
++#ifdef VK_USE_PLATFORM_KOSMOS
++typedef struct {
++    VkIcdSurfaceBase base;
++    struct kw_window *window;
++} VkIcdSurfaceKosmos;
++#endif
++
+ #ifdef VK_USE_PLATFORM_METAL_EXT
+ typedef struct {
+     VkIcdSurfaceBase base;
+diff -ruN a/include/vulkan/vulkan.h b/include/vulkan/vulkan.h
+--- a/include/vulkan/vulkan.h	2026-11-19 17:32:15.857767251 -0300
++++ b/include/vulkan/vulkan.h	2026-11-19 17:32:15.938757089 -0300
+@@ -85,6 +85,11 @@
+ #endif
+ 
+ 
++#ifdef VK_USE_PLATFORM_KOSMOS
++#include "vulkan_kosmos.h"
++#endif
++
++
+ #ifdef VK_USE_PLATFORM_SCI
+ #include <nvscisync.h>
+ #include <nvscibuf.h>
+diff -ruN a/include/vulkan/vulkan_core.h b/include/vulkan/vulkan_core.h
+--- a/include/vulkan/vulkan_core.h	2026-11-19 17:32:15.875990870 -0300
++++ b/include/vulkan/vulkan_core.h	2026-11-19 17:32:15.938490139 -0300
+@@ -1029,6 +1029,7 @@
+     VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT = 1000376002,
+     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT = 1000377000,
+     VK_STRUCTURE_TYPE_SCREEN_SURFACE_CREATE_INFO_QNX = 1000378000,
++    VK_STRUCTURE_TYPE_KOSMOS_SURFACE_CREATE_INFO_KOSMOS = 1000999000,
+     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COLOR_WRITE_ENABLE_FEATURES_EXT = 1000381000,
+     VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT = 1000381001,
+     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVES_GENERATED_QUERY_FEATURES_EXT = 1000382000,
+diff -ruN a/src/gallium/frontends/lavapipe/lvp_device.c b/src/gallium/frontends/lavapipe/lvp_device.c
+--- a/src/gallium/frontends/lavapipe/lvp_device.c	2026-11-19 17:32:15.878655797 -0300
++++ b/src/gallium/frontends/lavapipe/lvp_device.c	2026-11-19 17:32:15.941221146 -0300
+@@ -62,7 +62,8 @@
+     defined(VK_USE_PLATFORM_WIN32_KHR) || \
+     defined(VK_USE_PLATFORM_XCB_KHR) || \
+     defined(VK_USE_PLATFORM_XLIB_KHR) || \
+-    defined(VK_USE_PLATFORM_METAL_EXT)
++    defined(VK_USE_PLATFORM_METAL_EXT) || \
++    defined(VK_USE_PLATFORM_KOSMOS)
+ #define LVP_USE_WSI_PLATFORM
+ #endif
+ 
+@@ -125,6 +126,9 @@
+ #ifdef VK_USE_PLATFORM_METAL_EXT
+    .EXT_metal_surface                        = true,
+ #endif
++#ifdef VK_USE_PLATFORM_KOSMOS
++   .KOSMOS_surface                           = true,
++#endif
+ /* A surface extension needs VK_KHR_surface, which comes with a window
+  * platform: with none - Kosmos's lavapipe, until it has one - neither. */
+ #if !defined(VK_USE_PLATFORM_WIN32_KHR) && defined(LVP_USE_WSI_PLATFORM)
+diff -ruN a/src/vulkan/meson.build b/src/vulkan/meson.build
+--- a/src/vulkan/meson.build	2026-11-19 17:32:15.878929039 -0300
++++ b/src/vulkan/meson.build	2026-11-19 17:32:15.939813893 -0300
+@@ -68,6 +68,9 @@
+ if with_platform_windows
+   vulkan_wsi_list += '-DVK_USE_PLATFORM_WIN32_KHR'
+ endif
++if host_machine.system() == 'kosmos'
++  vulkan_wsi_list += '-DVK_USE_PLATFORM_KOSMOS'
++endif
+ if with_platform_macos
+   vulkan_wsi_list += '-DVK_USE_PLATFORM_MACOS_MVK'
+   vulkan_wsi_list += '-DVK_USE_PLATFORM_METAL_EXT'
+diff -ruN a/src/vulkan/registry/vk.xml b/src/vulkan/registry/vk.xml
+--- a/src/vulkan/registry/vk.xml	2026-11-19 17:32:15.922799657 -0300
++++ b/src/vulkan/registry/vk.xml	2026-11-19 17:32:15.937252714 -0300
+@@ -35,6 +35,7 @@
+         <platform name="sci" protect="VK_USE_PLATFORM_SCI" comment="NVIDIA SCI" />
+         <platform name="provisional" protect="VK_ENABLE_BETA_EXTENSIONS" comment="Enable declarations for beta/provisional extensions" />
+         <platform name="screen" protect="VK_USE_PLATFORM_SCREEN_QNX" comment="QNX Screen Graphics Subsystem" />
++        <platform name="kosmos" protect="VK_USE_PLATFORM_KOSMOS" comment="Kosmos's windows, the Window Kit's" />
+         <platform name="ohos" protect="VK_USE_PLATFORM_OHOS" comment="Open Harmony OS" />
+     </platforms>
+ 
+@@ -73,6 +74,7 @@
+         <tag name="HUAWEI" author="Huawei Technologies Co. Ltd." contact="Pan Gao @PanGao-h, Juntao Li @Lawrenceleehw" />
+         <tag name="OHOS" author="Huawei Technologies Co. Ltd." contact="Weilan Chen @wchen-h" />
+         <tag name="VALVE" author="Valve Corporation" contact="Pierre-Loup Griffais @plagman, Joshua Ashton @Joshua-Ashton, Hans-Kristian Arntzen @HansKristian-Work" />
++        <tag name="KOSMOS" author="Kosmos" contact="Diego Cibils" />
+         <tag name="QNX" author="BlackBerry Limited" contact="Mike Gorchak @mgorchak-blackberry, Aaron Ruby @aruby-blackberry" />
+         <tag name="JUICE" author="Juice Technologies, Inc." contact="David McCloskey @damcclos, Dean Beeler @canadacow" />
+         <tag name="FB" author="Facebook, Inc" contact="Artem Bolgar @artyom17" />
+@@ -145,6 +147,7 @@
+         <type requires="screen/screen.h" name="_screen_context" />
+         <type requires="screen/screen.h" name="_screen_window" />
+         <type requires="screen/screen.h" name="_screen_buffer" />
++        <type requires="kosmos_window.h" name="kw_window" />
+         <type requires="nvscisync.h" name="NvSciSyncAttrList" />
+         <type requires="nvscisync.h" name="NvSciSyncObj" />
+         <type requires="nvscisync.h" name="NvSciSyncFence" />
+@@ -459,6 +462,7 @@
+         <type category="bitmask">typedef <type>VkFlags</type> <name>VkStreamDescriptorSurfaceCreateFlagsGGP</name>;</type>
+         <type category="bitmask">typedef <type>VkFlags</type> <name>VkHeadlessSurfaceCreateFlagsEXT</name>;</type>
+         <type category="bitmask">typedef <type>VkFlags</type> <name>VkScreenSurfaceCreateFlagsQNX</name>;</type>
++        <type category="bitmask">typedef <type>VkFlags</type> <name>VkKosmosSurfaceCreateFlagsKOSMOS</name>;</type>
+         <type requires="VkPeerMemoryFeatureFlagBits" category="bitmask">typedef <type>VkFlags</type> <name>VkPeerMemoryFeatureFlags</name>;</type>
+         <type category="bitmask" name="VkPeerMemoryFeatureFlagsKHR" alias="VkPeerMemoryFeatureFlags" />
+         <type requires="VkMemoryAllocateFlagBits" category="bitmask">typedef <type>VkFlags</type> <name>VkMemoryAllocateFlags</name>;</type>
+@@ -2491,6 +2495,12 @@
+             <member noautovalidity="true">struct <type>_screen_context</type>*    <name>context</name></member>
+             <member noautovalidity="true">struct <type>_screen_window</type>*     <name>window</name></member>
+         </type>
++        <type category="struct" name="VkKosmosSurfaceCreateInfoKOSMOS">
++            <member values="VK_STRUCTURE_TYPE_KOSMOS_SURFACE_CREATE_INFO_KOSMOS"><type>VkStructureType</type> <name>sType</name></member>
++            <member optional="true">const <type>void</type>*                      <name>pNext</name></member>
++            <member optional="true"><type>VkKosmosSurfaceCreateFlagsKOSMOS</type> <name>flags</name></member>
++            <member noautovalidity="true">struct <type>kw_window</type>*          <name>window</name></member>
++        </type>
+         <type category="struct" name="VkSurfaceFormatKHR" returnedonly="true">
+             <member><type>VkFormat</type>                         <name>format</name><comment>Supported pair of rendering format</comment></member>
+             <member><type>VkColorSpaceKHR</type>                  <name>colorSpace</name><comment>and color space for the surface</comment></member>
+@@ -16017,6 +16027,13 @@
+             <param optional="true">const <type>VkAllocationCallbacks</type>* <name>pAllocator</name></param>
+             <param><type>VkSurfaceKHR</type>* <name>pSurface</name></param>
+         </command>
++        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INITIALIZATION_FAILED">
++            <proto><type>VkResult</type> <name>vkCreateKosmosSurfaceKOSMOS</name></proto>
++            <param><type>VkInstance</type> <name>instance</name></param>
++            <param>const <type>VkKosmosSurfaceCreateInfoKOSMOS</type>* <name>pCreateInfo</name></param>
++            <param optional="true">const <type>VkAllocationCallbacks</type>* <name>pAllocator</name></param>
++            <param><type>VkSurfaceKHR</type>* <name>pSurface</name></param>
++        </command>
+         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY,VK_ERROR_UNKNOWN,VK_ERROR_VALIDATION_FAILED">
+             <proto><type>VkResult</type> <name>vkCreateScreenSurfaceQNX</name></proto>
+             <param><type>VkInstance</type> <name>instance</name></param>
+@@ -27772,6 +27789,16 @@
+                 <command name="vkGetPhysicalDeviceScreenPresentationSupportQNX" />
+             </require>
+         </extension>
++        <extension name="VK_KOSMOS_surface" number="1000" type="instance" depends="VK_KHR_surface" platform="kosmos" author="KOSMOS" contact="Diego Cibils" supported="vulkan" nofeatures="true">
++            <require>
++                <enum value="1" name="VK_KOSMOS_SURFACE_SPEC_VERSION" />
++                <enum value="&quot;VK_KOSMOS_surface&quot;" name="VK_KOSMOS_SURFACE_EXTENSION_NAME" />
++                <enum offset="0" extends="VkStructureType" name="VK_STRUCTURE_TYPE_KOSMOS_SURFACE_CREATE_INFO_KOSMOS" />
++                <type name="VkKosmosSurfaceCreateFlagsKOSMOS" />
++                <type name="VkKosmosSurfaceCreateInfoKOSMOS" />
++                <command name="vkCreateKosmosSurfaceKOSMOS" />
++            </require>
++        </extension>
+         <extension name="VK_KHR_extension_380" number="380" author="KHR" contact="James Jones @cubanismo" supported="disabled">
+             <require>
+                 <enum value="0" name="VK_KHR_EXTENSION_380_SPEC_VERSION" />
+diff -ruN a/src/vulkan/wsi/meson.build b/src/vulkan/wsi/meson.build
+--- a/src/vulkan/wsi/meson.build	2026-11-19 17:32:15.924250741 -0300
++++ b/src/vulkan/wsi/meson.build	2026-11-19 17:32:15.939996805 -0300
+@@ -34,6 +34,10 @@
+   files_vulkan_wsi += files('wsi_common_headless.c')
+ endif
+ 
++if host_machine.system() == 'kosmos'
++  files_vulkan_wsi += files('wsi_common_kosmos.c')
++endif
++
+ if with_platform_macos
+   files_vulkan_wsi += files('wsi_common_metal.c', 'wsi_common_metal_layer.m')
+ endif
+diff -ruN a/src/vulkan/wsi/wsi_common.c b/src/vulkan/wsi/wsi_common.c
+--- a/src/vulkan/wsi/wsi_common.c	2026-11-19 17:32:15.926531220 -0300
++++ b/src/vulkan/wsi/wsi_common.c	2026-11-19 17:32:15.940791117 -0300
+@@ -269,6 +269,12 @@
+       goto fail;
+ #endif
+ 
++#ifdef VK_USE_PLATFORM_KOSMOS
++   result = wsi_kosmos_init_wsi(wsi, alloc, pdevice);
++   if (result != VK_SUCCESS)
++      goto fail;
++#endif
++
+ #ifndef VK_USE_PLATFORM_WIN32_KHR
+    result = wsi_headless_init_wsi(wsi, alloc, pdevice);
+    if (result != VK_SUCCESS)
+@@ -343,6 +349,9 @@
+ #ifndef VK_USE_PLATFORM_WIN32_KHR
+    wsi_headless_finish_wsi(wsi, alloc);
+ #endif
++#ifdef VK_USE_PLATFORM_KOSMOS
++   wsi_kosmos_finish_wsi(wsi, alloc);
++#endif
+ #ifdef VK_USE_PLATFORM_DISPLAY_KHR
+    wsi_display_finish_wsi(wsi, alloc);
+ #endif
+diff -ruN a/src/vulkan/wsi/wsi_common.h b/src/vulkan/wsi/wsi_common.h
+--- a/src/vulkan/wsi/wsi_common.h	2026-11-19 17:32:15.851997952 -0300
++++ b/src/vulkan/wsi/wsi_common.h	2026-11-19 17:32:15.940218591 -0300
+@@ -52,7 +52,12 @@
+ 
+ struct driOptionCache;
+ 
++/* Kosmos's platform is past Metal, so the tables are as long as it needs. */
++#ifdef VK_USE_PLATFORM_KOSMOS
++#define VK_ICD_WSI_PLATFORM_MAX (VK_ICD_WSI_PLATFORM_KOSMOS + 1)
++#else
+ #define VK_ICD_WSI_PLATFORM_MAX (VK_ICD_WSI_PLATFORM_METAL + 1)
++#endif
+ 
+ struct wsi_device {
+    /* Allocator for the instance */
+diff -ruN a/src/vulkan/wsi/wsi_common_private.h b/src/vulkan/wsi/wsi_common_private.h
+--- a/src/vulkan/wsi/wsi_common_private.h	2026-11-19 17:32:15.927085621 -0300
++++ b/src/vulkan/wsi/wsi_common_private.h	2026-11-19 17:32:15.940405710 -0300
+@@ -582,6 +582,15 @@
+ void wsi_headless_finish_wsi(struct wsi_device *wsi_device,
+                              const VkAllocationCallbacks *alloc);
+ 
++#ifdef VK_USE_PLATFORM_KOSMOS
++VkResult wsi_kosmos_init_wsi(struct wsi_device *wsi_device,
++                             const VkAllocationCallbacks *alloc,
++                             VkPhysicalDevice physical_device);
++
++void wsi_kosmos_finish_wsi(struct wsi_device *wsi_device,
++                           const VkAllocationCallbacks *alloc);
++#endif
++
+ VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_swapchain, base, VkSwapchainKHR,
+                                VK_OBJECT_TYPE_SWAPCHAIN_KHR)
+ 

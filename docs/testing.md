@@ -38396,3 +38396,71 @@ written, the disk at 2.2 GB free: they pass alone, 7 suites in 216 s. The
 gate's 893 s is over its ten minutes; the disk, and the new suite's 320 MB
 of image and `/Home` beside a gate's others, are the first things to look
 at.
+
+## 18.927 The cube in a window, by Vulkan
+
+**In short:** a Vulkan program draws into a Kosmos window now. Mesa has a
+window system for Kosmos - `VK_KOSMOS_surface`, a surface over a Window Kit
+window, and a swapchain onto it - and `x86-vulkan` opens a window on the
+desktop, presents the textured cube of 18.924 into it thirty times, and
+finds it on the screen QEMU scans out, every pixel where the offscreen
+cube's ray cast says. It is G3 (`docs/gpu3d.md`), the demo left to do.
+
+- **Mesa's patch 0005** (`runtime/patches/mesa/0005-kosmos-windows.patch`)
+  declares the extension in Mesa's copy of the registry, where its
+  generators read it - the platform `kosmos`, the struct
+  `VkKosmosSurfaceCreateInfoKOSMOS` holding a `struct kw_window *`,
+  `vkCreateKosmosSurfaceKOSMOS` - and gives the ICD a surface of that
+  platform. The header is `runtime/ports/mesa/include/vulkan/vulkan_kosmos.h`,
+  in Khronos's platform headers' shape. lavapipe turns on its WSI for it.
+- **The window system** is `wsi_common_kosmos.c`, beside Mesa's
+  Wayland and X11 ones. A surface answers its window's size as its only
+  extent, B8G8R8A8 in UNORM and sRGB, and FIFO and IMMEDIATE. Swapchain
+  images are Mesa's CPU images; a present copies their rows into
+  `kw_surface()`'s back buffer at its pitch and calls `kw_commit`, and a
+  window whose size changed answers `VK_SUBOPTIMAL_KHR`. Zero copy waits
+  for a window whose pixels begin on a page (`gpu3d.md` §5.5, `roadmap.md`).
+- **A double free, found on the way**: Mesa sizes its table of platforms
+  by `VK_ICD_WSI_PLATFORM_MAX`, which upstream defines as Metal's plus one.
+  Kosmos's platform comes after Metal, so `wsi[KOSMOS]` wrote past the
+  table into the next field, and the device's teardown freed it twice. The
+  control that found it was the old `vulkantest.c` against the new Mesa,
+  which failed the same way - so it was Mesa's, not the test's. 0005
+  defines the maximum as Kosmos's plus one where the platform is on.
+- **`vulkantest.elf`'s `kit.window`** opens a 64 by 64 window, makes a
+  swapchain of two images, and for each frame acquires, draws the cube
+  turning toward the offscreen one's angle, moves the image to
+  `PRESENT_SRC` and presents; `kit.hold` keeps the window up until it is
+  closed or a time passes. The cube is the same scene the offscreen
+  test draws, `scene_make` and `scene_draw` now shared by both.
+- **Found on the screen.** `run_vulkan.py` starts the program with `wm`,
+  takes a screendump, and looks for a 64 by 64 square every pixel of which
+  is one the reference allows, starting from the places that put the
+  reference's first certain pixel on its colour. The first run failed
+  with every one of the cube's 1430 pixels seen: wm rounds a window's
+  bottom corners, and the desktop shows through there where the reference
+  has the cleared black. So a pixel outside a radius of 12 in a bottom
+  corner may be the desktop's, and nowhere else may.
+- **Controls.** The same screenshot with the window's 64 by 64 mirrored
+  left to right is refused; and the conformance suite, which now runs over
+  a lavapipe advertising `VK_KHR_surface`, `VK_KHR_swapchain` and
+  `VK_KOSMOS_surface`, is unchanged.
+
+```
+x86-vulkan       PASS  and in a window, through VK_KOSMOS_surface: 30 frames
+                       presented from a swapchain of 2 images in 0.6 s, the
+                       last one on the screen, every pixel where it must be
+x86-vulkan-cts   PASS  the minute's 9 groups: 3565 cases, 1439 passed,
+                       2126 not supported, none failed, 41.9 s in the suite
+```
+
+The window is 64 by 110 with its title band, at 40,40, its pixels at
+40,86. 0.6 s for thirty frames is llvmpipe under TCG, a regression number
+and nothing more.
+
+**The gate**: 137 of 146 suites passed in 630 s. Nine failed together
+between 129 and 599 s with "No space left on device" and screendumps that
+were never written, the disk at 2.1 GB free, and they pass alone: 9 suites
+in 356 s. It is the second gate running that the disk has stopped, and room
+for the gate is Diego's to choose (old stick images and their symbols in
+`build/x86_64/` hold 3 GB).

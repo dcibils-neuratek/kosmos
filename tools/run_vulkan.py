@@ -13,6 +13,16 @@ worked out here - the triangle's from its edges, the cube's by casting a
 ray through each pixel at the same cube - and not by anything in the
 guest.
 
+**And the cube in a window** (G3): the same cube, through
+VK_KOSMOS_surface and a swapchain, presented into a Kosmos window on the
+desktop for `FRAMES` frames, turning to the angle the offscreen one was
+drawn at - and then found in what QEMU scans out, every pixel of the
+window held to the same reference. That is the swapchain, the WSI's copy
+into the window's buffer, the byte order (B8G8R8A8 into a word of
+0xAARRGGBB) and the compositor, with nothing in the guest saying where the
+window is: the cube is looked for in the whole screen.
+`KOSMOS_VULKAN_SHOT` keeps that screen as a PNG.
+
 Usage: run_vulkan.py IMAGE [APPS]
 """
 
@@ -63,6 +73,19 @@ print("vulkantest triangle: " .. kit.triangle(%s))
 print("vulkantest cube: " .. kit.cube(%s))
 """ % (arguments([c for p in CORNERS for c in p] + list(COLOUR)),
        arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])))
+
+# The window: FRAMES frames, STEP further in yaw each, the last at YAW.
+FRAMES, STEP = 30, 0.05
+
+WINDOW = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- Vulkan's window (`tools/run_vulkan.py`, `docs/gpu3d.md` G3).
+-- kosmos: application
+-- kosmos: image vulkantest.elf
+local kit = use("vulkantest.elf")
+print("vulkantest window: " .. kit.window(%s))
+kit.hold(90)
+""" % arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])
+                + [FRAMES, STEP])
 
 # A pixel's centre a quarter of a pixel or more inside every edge must be
 # the triangle's; that far outside any edge, the clear colour's. Nearer an
@@ -199,6 +222,70 @@ def cube_drawn():
             for row in cube_expected()]
 
 
+# ---------------------------------------------------------------- the window
+
+def letter(rgb):
+    """What a pixel of the screen is, in the picture's letters."""
+    if rgb == COLOURS[0]:
+        return "a"
+    if rgb == COLOURS[1]:
+        return "b"
+    if rgb == (0, 0, 0):
+        return "."
+    return "?"
+
+
+# **The window's rounded bottom corners.** wm cuts a window's corners on a
+# radius of its look's, and the desktop shows through there - where the
+# reference has the cleared black. Ten pixels at the time of writing; a
+# pixel outside a circle of `ROUNDED` in a bottom corner may be the
+# desktop's, and nowhere else may.
+ROUNDED = 12
+
+
+def corner(x, y):
+    """Whether (x, y) of the square lies outside its bottom corners' rounding."""
+    cy = CUBE - ROUNDED
+    if y < cy:
+        return False
+    cx = ROUNDED if x < ROUNDED else CUBE - 1 - ROUNDED if x > CUBE - 1 - ROUNDED else None
+    return cx is not None and (x - cx) ** 2 + (y - cy) ** 2 > (ROUNDED - 1) ** 2
+
+
+def find_cube(width, height, at):
+    """Where on the screen the window's cube is, as (x, y) of its top left,
+    or None: the place every pixel of the CUBE square is one the reference
+    allows. The cube's own colours are rare on a desktop, so the places
+    tried are those that put the reference's first certain check pixel on
+    one of them."""
+    want = cube_expected()
+    first = next((x, y, next(iter(want[y][x]))) for y in range(CUBE) for x in range(CUBE)
+                 if len(want[y][x]) == 1 and next(iter(want[y][x])) in "ab")
+    fx, fy, fc = first
+    for sy in range(height):
+        for sx in range(width):
+            if letter(at(sx, sy)) != fc:
+                continue
+            ox, oy = sx - fx, sy - fy
+            if ox < 0 or oy < 0 or ox + CUBE > width or oy + CUBE > height:
+                continue
+            if all(letter(at(ox + x, oy + y)) in want[y][x]
+                   or (want[y][x] == {"."} and corner(x, y)
+                       and letter(at(ox + x, oy + y)) == "?")
+                   for y in range(CUBE) for x in range(CUBE)):
+                return ox, oy
+    return None
+
+
+def window_wrong(width, height, at):
+    """None if the cube is on the screen whole, or the nearest it came."""
+    if find_cube(width, height, at) is not None:
+        return None
+    seen = sum(1 for y in range(height) for x in range(width) if letter(at(x, y)) in "ab")
+    return "no %d by %d square on the screen is the cube (%d pixels of its colours seen)" % (
+        CUBE, CUBE, seen)
+
+
 def main():
     built = os.path.join(APPS, "vulkantest.elf")
 
@@ -212,12 +299,14 @@ def main():
 
     with open(os.path.join(WORK, "vulkantest.lua"), "w") as f:
         f.write(PROGRAM)
+    with open(os.path.join(WORK, "vkwindow.lua"), "w") as f:
+        f.write(WINDOW)
 
     megabytes = os.path.getsize(image) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)]
                    + ["%s:/Home/apps/vulkan/%s" % (os.path.join(WORK, n), n)
-                      for n in ("vulkantest.lua", "vulkantest.elf")],
+                      for n in ("vulkantest.lua", "vkwindow.lua", "vulkantest.elf")],
                    check=True, capture_output=True, cwd=ROOT)
     os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -225,6 +314,7 @@ def main():
 
     guest = R.Guest(IMAGE, 180)
     said = {}
+    screen = None
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
@@ -242,6 +332,25 @@ def main():
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
+
+        # The window, on a desktop started for it.
+        if len(said) == 2:
+            mark = len(guest.seen)
+            guest.type("wm /Home/apps/vulkan/vkwindow.lua")
+            prefix = "vulkantest window: "
+            until = time.monotonic() + 180
+            while time.monotonic() < until and "window" not in said:
+                for line in guest.seen[mark:].split("\n")[1:-1]:
+                    if prefix in line:
+                        said["window"] = line[line.index(prefix) + len(prefix):].strip()
+                if "window" not in said:
+                    time.sleep(0.2)
+                    guest._read_available()
+            if "window" in said and " frames=" in said["window"]:
+                time.sleep(1.0)                 # the compositor's next pass
+                screen = guest.screendump()
+                if os.environ.get("KOSMOS_VULKAN_SHOT"):
+                    R.write_png(os.environ["KOSMOS_VULKAN_SHOT"], screen)
     finally:
         guest.close()
 
@@ -257,6 +366,17 @@ def main():
             print("FAIL: Vulkan on Kosmos did not draw the %s: %s" % (name, wrong))
             print("  wanted:\n    " + "\n    ".join(want()))
             print("  said:   %s" % said.get(name))
+    if not failed:
+        m = re.match(r"vulkan device=llvmpipe/1\.\d+ extent=(\d+)x(\d+) images=(\d+)"
+                     r" frames=(\d+) ms=(\d+)$", said.get("window", ""))
+        wrong = None if m else "the window did not draw: %s" % said.get("window", "nothing said")
+        if m and screen is not None:
+            width, height, at = R.pixel_reader(screen)
+            wrong = window_wrong(width, height, at)
+        if wrong:
+            failed = True
+            print("FAIL: Vulkan on Kosmos, the cube in a window: %s" % wrong)
+            print("  said: %s" % said.get("window"))
     if failed:
         if len(said) < 2:
             print("--- the guest's last words ---\n" + guest.seen[mark:][-1500:])
@@ -272,6 +392,10 @@ def main():
           % (os.path.getsize(image) / 1e6, took, CORNERS, COLOUR, count("triangle", "#"),
              YAW, PITCH, DISTANCE, FOCAL, count("cube", "ab"), count("cube", "a"),
              count("cube", "b")))
+    m = re.search(r"images=(\d+) frames=(\d+) ms=(\d+)", said["window"])
+    print("PASS: and in a window, through VK_KOSMOS_surface: %s frames presented from a"
+          " swapchain of %s images in %.1f s, the last one on the screen, every pixel"
+          " where it must be" % (m.group(2), m.group(1), int(m.group(3)) / 1000.0))
     return 0
 
 if __name__ == "__main__":

@@ -249,8 +249,11 @@ It fits the principles without bending them:
   processor's `lavapipe`, the way the loader would - but there is no
   loader and no `dlopen`: every Mesa driver is linked in and chosen at run
   time, since *nothing here is linked dynamically*. Its one Kosmos
-  extension is the surface: **`VK_KHR_kosmos_surface`**, a swapchain into a
-  Kosmos window.
+  extension is the surface: **`VK_KOSMOS_surface`**, a swapchain into a
+  Kosmos window. It was written `VK_KHR_kosmos_surface` here until it was
+  built (G3, 0.12.7): an extension is named `KHR` only when Khronos ratifies
+  it, so a platform's own takes its vendor's tag, as `VK_GGP_` and `VK_QNX_`
+  do.
 - **The GL Kit** keeps its name and its door and gains Mesa: GL 4.6
   compatibility and GL ES 3.2 by Zink, EGL with a Kosmos platform.
   `kosmos_gl_run` keeps its shape, so TinyGL's demos - which are GL 1.1
@@ -343,7 +346,14 @@ the page or composes the image's previous frame until it is reached.
 - **With `lavapipe`**, a swapchain image *is* a shared surface: linear,
   in a region, its pitch the surface's, and presenting is the message the
   window manager already takes - "buffer 2 is live" - which is why
-  `cube3d` holds 60 frames a second today. No copy.
+  `cube3d` holds 60 frames a second today. No copy. **As built in G3 it
+  copies once**, and that is a departure: a Kosmos window's buffer begins
+  under its title band, at an offset no page boundary falls on, so it
+  cannot be handed to lavapipe as an image's memory. Swapchain images are
+  Mesa's own CPU images, and a present copies their rows into the window's
+  back buffer and commits it - 64 by 64 pixels, 16 KB a frame, for the
+  test's window. A window whose pixels start on a page is the zero-copy
+  path, and it is in the roadmap.
 - **With `anv`**, swapchain images are GPU buffers (`GPU_OP_BUFFER_NEW`).
   The processor's compositor reading them is slow - write-combining or
   uncached reads, and tiled layouts it cannot read at all - so the
@@ -469,7 +479,7 @@ so `lavapipe` is built for both.
    lavapipe listing extensions without what they depend on and counting
    the machine's memory as the process's; Mesa's patch 0004 answers each.
    G2 is done.
-3. **G3 - a window.** `VK_KHR_kosmos_surface`, swapchain images as shared
+3. **G3 - a window.** `VK_KOSMOS_surface`, swapchain images as shared
    surfaces, presenting as `cube3d` does. *Demo*: `vkcube`. *Test*: the
    picture QEMU scans out, as `make screenshot` checks; frames a second
    under `-icount` as a regression number only.

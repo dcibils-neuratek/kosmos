@@ -4873,3 +4873,34 @@ minute on an old processor makes two tests fail, and the run names them -
 so it is known to be looking.
 
 **Next.** A window and a spinning cube on the screen, by Vulkan.
+
+## 19 November 2026 - A Vulkan cube in a window
+
+**In short.** A program drawing with Vulkan now puts its picture in an
+ordinary Kosmos window on the desktop, and the gate checks every pixel of
+it on the screen. The 3D API's third step. 0.12.7.
+
+**What.** Until today Vulkan on Kosmos drew into memory, and a test read
+the memory back. A real program wants a window, and Vulkan reaches a
+window through a "surface", which each operating system supplies for
+itself - Windows has one, Wayland has one, and now Kosmos has
+`VK_KOSMOS_surface`. A program opens a window, hands it to Vulkan, and
+gets a short ring of images: it draws into one while the window shows the
+last, and "presents" each when it is done.
+
+**Why it matters.** This is the shape every Vulkan program on Kosmos -
+games, Cafesa3D one day, the flight simulator - will use, and it is the
+same on the software renderer today and on the M700's GPU after G7.
+
+**What went wrong on the way.** Mesa keeps a small table with one slot per
+window system, sized to the last one it knew. Kosmos's came after it, so
+writing Kosmos's slot spilled into the next thing in memory, and the
+program crashed as it closed. It was found by running the old test with
+the new Mesa: it crashed too, so the fault was Mesa's table and not the
+new test.
+
+**Measured.** 30 frames in 0.6 seconds under emulation, which says nothing
+about speed; and the 3565 conformance tests still pass with none failing.
+
+**Next.** `intelgpu` for many programs at once (G6), then Vulkan on the
+M700's GPU (G7).

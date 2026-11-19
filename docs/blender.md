@@ -276,7 +276,7 @@ window without GL 4.3 or Vulkan. `source/blender/gpu/` has `opengl/`,
 give it: G1 (Mesa and LLVM build), G2 (`lavapipe`), G3 (a Vulkan surface in
 a window), G4 (GL by Zink, EGL with a display). Blender would add only a
 `GHOST_ContextKosmos` - an EGL context on the EGL Kit, or a Vulkan surface
-from `VK_KHR_kosmos_surface` - and libepoxy's static table. §4 has what it
+from `VK_KOSMOS_surface` - and libepoxy's static table. §4 has what it
 would feel like.
 
 - **Effort, Blender's own share**: 1 to 2 weeks, after G1 to G4.

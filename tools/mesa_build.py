@@ -172,6 +172,8 @@ def cross_file(arch, out, runtime):
              "-D__kosmos__", "-isystem" + clang_headers(out),
              "-isystem" + os.path.join(ROOT, "runtime", "include"),
              "-isystem" + os.path.join(ROOT, "user", "include"),
+             # The Window Kit's header, for VK_KOSMOS_surface's WSI (G3).
+             "-isystem" + os.path.join(ROOT, "user", "kits", "window"),
              "-isystem" + os.path.join(ROOT, "runtime", "posix", "refused"),
              "-DKOSMOS_USER", "-DKOSMOS_USER_BASE=" + base,
              "-ffunction-sections", "-fdata-sections", "-fno-stack-protector"]

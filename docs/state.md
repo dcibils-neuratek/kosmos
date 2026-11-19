@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.12.6. Pushed to 0.11.507; 0.11.508 to
-0.12.6 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-19, at 0.12.7. Pushed to 0.11.507; 0.11.508 to
+0.12.7 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -79,8 +79,12 @@ Kosmos (`tools/cts_build.py`, `runtime/patches/cts/`, `runtime/ports/cts/`)
 and a minute of it in `x86-vulkan-cts` - 3565 cases, none failing - with
 Mesa's patch 0004 doing what the loader does on Linux. It found three
 things in Kosmos for the roadmap: stacks compiled in, llvmpipe without
-SSE4.1, and a `malloc` that cannot say NULL. **Next: G3, a window and
-`vkcube`.**
+SSE4.1, and a `malloc` that cannot say NULL. **G3 (0.12.7, 18.927):**
+`VK_KOSMOS_surface` in Mesa's WSI (`wsi_common_kosmos.c`, patch 0005), a
+swapchain over a Window Kit window, the cube presented into it and found
+on the screen by `x86-vulkan`; presenting copies once until a window's
+pixels start on a page, and `vkcube` as an application is a follow-up
+(`roadmap.md`). **Next: G6, `intelgpu` for many programs.**
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

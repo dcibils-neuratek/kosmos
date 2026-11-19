@@ -642,10 +642,13 @@ SUITES = [
     # **Vulkan** (`docs/gpu3d.md` G2): `vulkantest.elf`, `lavapipe` on
     # llvmpipe and LLVM's JIT with no loader - a triangle whose corners and
     # colour are chosen here, drawn into an image and read back as a mask,
-    # every pixel held to edge functions this side computes.
+    # every pixel held to edge functions this side computes; and since G3
+    # the textured cube in a window through VK_KOSMOS_surface, found on the
+    # screen - so it stands on the Window Kit and the window manager too.
     Suite("x86-vulkan", ["python3", "tools/run_vulkan.py", X86,
                          "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_vulkan.py", "user/kits/vulkantest", *MESA)),
+          watch=library("tools/run_vulkan.py", "user/kits/vulkantest", "user/kits/window",
+                        "user/lib/wm", "user/lib/wmproto.lua", *MESA)),
 
     # **Khronos's conformance suite** (`docs/gpu3d.md` G2, `testing.md`
     # 18.926): `vkcts.elf`, dEQP-VK's `info` and `api` groups from

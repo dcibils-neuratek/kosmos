@@ -12023,11 +12023,20 @@ of memory, which it never can, and is left out of the minute. Committing as
 (d) **more of dEQP-VK**, a group at a time - `api.info`, `descriptor_pool`,
 the rest of `object_management` first - each with its library added to
 `runtime/patches/cts/0003`, toward the mustpass list.
+**G3 - a window - BUILT in 0.12.7** (`testing.md` 18.927): `VK_KOSMOS_surface`
+in Mesa's WSI (`wsi_common_kosmos.c`, patch 0005), a swapchain of FIFO and
+IMMEDIATE over a Window Kit window, held in `x86-vulkan` to the offscreen
+cube's picture. **Two follow-ups it leaves**: (a) **no copy at present** -
+a window whose pixels begin on a page, so a swapchain image can be the
+window's own buffer, as `gpu3d.md` §5.5 drew it; today a present copies
+the image's rows into the back buffer; (b) **`vkcube`, the demo**, an
+application in `/Kosmos/Apps` that turns the cube in a window of any size
+and follows its resizing, `VK_SUBOPTIMAL_KHR` answered by a new swapchain.
 **And then a flight simulator - ASKED on 19 November 2026, after G7 since
 the same day's reorder** (Diego: "after
 the 3d api is done and running on gpu, i want to build a simple flight
 simulator app that shows the 3d api capabilities"). An application of
-Kosmos's own, after G9, when Vulkan runs on the M700's GPU: simple to fly,
+Kosmos's own, after G7, when Vulkan runs on the M700's GPU: simple to fly,
 and made to show what the 3D API does. Like every app, it starts with its
 feature set, mockup, architecture and diagram in `docs/`, agreed before any
 code. The question for each piece is which kit supplies it - terrain,
