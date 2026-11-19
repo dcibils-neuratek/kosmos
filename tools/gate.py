@@ -647,6 +647,15 @@ SUITES = [
                          "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_vulkan.py", "user/kits/vulkantest", *MESA)),
 
+    # **Khronos's conformance suite** (`docs/gpu3d.md` G2, `testing.md`
+    # 18.926): `vkcts.elf`, dEQP-VK's `info` and `api` groups from
+    # VK-GL-CTS with lavapipe - a minute of its cases, each judged by the
+    # suite itself, none allowed to fail or lose the device.
+    Suite("x86-vulkan-cts", ["python3", "tools/run_vkcts.py", X86,
+                             "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_vkcts.py", "user/kits/vkcts", "tools/cts_build.py",
+                        "tools/cxx_source.py", *MESA)),
+
     # **JavaScriptCore** (`docs/w4.md` W4d): `jsc.elf`, WebKit's engine with
     # its interpreter, driven through its C API - a script using closures,
     # classes, generators, a Proxy, a regular expression, Intl, a BigInt,

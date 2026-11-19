@@ -1,0 +1,41 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The external memory, fence and semaphore tests that hand a file descriptor
+to another process over a Unix socket (SCM_RIGHTS) take the branch every
+platform without that takes, and report themselves not supported: a
+descriptor that crosses from one process to another is one of the things
+the POSIX layer forbids (`design.md` section 17).
+
+diff -ruN a/external/vulkancts/modules/vulkan/api/vktApiExternalMemoryTests.cpp b/external/vulkancts/modules/vulkan/api/vktApiExternalMemoryTests.cpp
+--- a/external/vulkancts/modules/vulkan/api/vktApiExternalMemoryTests.cpp	2026-11-19 15:29:28.636925083 -0300
++++ b/external/vulkancts/modules/vulkan/api/vktApiExternalMemoryTests.cpp	2026-11-19 15:29:28.637902005 -0300
+@@ -1647,7 +1647,8 @@
+ 
+ tcu::TestStatus testSemaphoreFdSendOverSocket(Context &context, const SemaphoreTestConfig config)
+ {
+-#if (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)
++/* A descriptor does not cross from one process to another on Kosmos. */
++#if ((DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)) && !defined(__kosmos__)
+     const Transference transference(getHandelTypeTransferences(config.externalType));
+     const InstanceWrapper instance(createTestInstance(context, config.externalType, 0u, 0u));
+     const auto &vki(instance.getDriver());
+@@ -2723,7 +2724,8 @@
+ 
+ tcu::TestStatus testFenceFdSendOverSocket(Context &context, const FenceTestConfig config)
+ {
+-#if (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)
++/* A descriptor does not cross from one process to another on Kosmos. */
++#if ((DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)) && !defined(__kosmos__)
+     const Transference transference(getHandelTypeTransferences(config.externalType));
+     const InstanceWrapper instance(createTestInstance(context, 0u, 0u, config.externalType));
+     const auto &vki(instance.getDriver());
+@@ -3548,7 +3550,8 @@
+ 
+ tcu::TestStatus testMemoryFdSendOverSocket(Context &context, MemoryTestConfig config)
+ {
+-#if (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)
++/* A descriptor does not cross from one process to another on Kosmos. */
++#if ((DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_UNIX)) && !defined(__kosmos__)
+     const InstanceWrapper instance(createTestInstance(context, 0u, config.externalType, 0u));
+     const auto &vki(instance.getDriver());
+     const vk::VkPhysicalDevice physicalDevice(instance.getPhysicalDevice());

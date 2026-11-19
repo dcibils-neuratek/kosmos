@@ -7,8 +7,8 @@ and nothing older: every session before 19 November 2026 is in
 `docs/state-history.md`, moved there whole, and every revision is in
 `testing.md` section 18 and `book/logbook.md`.
 
-Last updated: 2026-11-19, at 0.12.1. Pushed to 0.11.507; 0.11.508 to
-0.12.0 are committed on `main`, and go out with `make prepush`.
+Last updated: 2026-11-19, at 0.12.6. Pushed to 0.11.507; 0.11.508 to
+0.12.6 are committed on `main`, and go out with `make prepush`.
 
 ---
 
@@ -72,7 +72,15 @@ serialize a shader. **G2 begun (0.12.3, `testing.md` 18.923):** Vulkan
 on Kosmos - `lavapipe` linked into `vulkantest.elf` with no loader draws a
 triangle the runner chose, every pixel where its edge functions say;
 and in 0.12.4 (18.924) a textured cube with a depth buffer, every pixel
-where a ray cast through it says. **Next: G2's minute of dEQP-VK.**
+where a ray cast through it says; in 0.12.5 (18.925) libc++'s locales,
+iostreams over the one "C" locale. **G2 done (0.12.6, 18.926):**
+Khronos's conformance suite, dEQP-VK from VK-GL-CTS 1.4.7.1, built for
+Kosmos (`tools/cts_build.py`, `runtime/patches/cts/`, `runtime/ports/cts/`)
+and a minute of it in `x86-vulkan-cts` - 3565 cases, none failing - with
+Mesa's patch 0004 doing what the loader does on Linux. It found three
+things in Kosmos for the roadmap: stacks compiled in, llvmpipe without
+SSE4.1, and a `malloc` that cannot say NULL. **Next: G3, a window and
+`vkcube`.**
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

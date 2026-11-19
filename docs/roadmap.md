@@ -11996,6 +11996,27 @@ leaves**: the patches written because there were none - LLVM's
 `0003-no-iostreams`, the disassembler's half of Mesa's 0003, WebKit's
 WTF 0003 (Int128's printing) and 0004's `char8_t` path - can each go,
 taken out one at a time with its suite.
+**And four it found, running Khronos's conformance suite** (`testing.md`
+18.926), each to be done on its own: (a) **the stacks are compiled in** -
+a process's first thread has 256 KB and every other a megabyte
+(`kosmos.h`, `USER_MAIN_STACK_PAGES`, `USER_THREAD_SLOT`), where Linux
+gives a first thread eight; dEQP-VK keeps a 320 KB array on the stack, and
+runs on a thread of its own for it. *No compiled-in limits* says derive
+them or grow them, as the pools do - a Nebula change, with the whole gate;
+(b) **llvmpipe on a processor without SSE4.1** draws a colour of 1e9 white
+where it clamps it to 1 on one with - `dEQP-VK.api.smoke.asm_triangle` on
+QEMU's default x86-64 processor; every machine Kosmos runs on has SSE4.1,
+so the suite runs on `-cpu max`, and whether this is lavapipe's or ours is
+to be found out; (c) **a malloc that cannot say NULL** - the heap's pages
+are committed on first touch (`RESERVE_RW`), so a process that outgrows the
+machine is not refused by `malloc` but ended by a page the kernel will not
+give on touching it. `api.command_buffers` met it on 512 MB and runs on 2 GB;
+`api.object_management.max_concurrent` allocates until the driver says out
+of memory, which it never can, and is left out of the minute. Committing as
+`grow` asks, or `malloc` asking whether there is room, are the two ways in;
+(d) **more of dEQP-VK**, a group at a time - `api.info`, `descriptor_pool`,
+the rest of `object_management` first - each with its library added to
+`runtime/patches/cts/0003`, toward the mustpass list.
 **And then a flight simulator - ASKED on 19 November 2026** (Diego: "after
 the 3d api is done and running on gpu, i want to build a simple flight
 simulator app that shows the 3d api capabilities"). An application of

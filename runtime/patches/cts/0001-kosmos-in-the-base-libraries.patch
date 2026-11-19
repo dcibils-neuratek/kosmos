@@ -1,0 +1,234 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The CTS's base libraries (delibs and qphelper) on Kosmos, which builds them
+as DE_OS_UNIX - the POSIX layer inside the process - less the four things
+that layer does not have and will not (`design.md` section 17): signals,
+so no crash handler and a thread for a timer rather than a signal; a
+process started by its command line, so deProcess says it cannot; a
+library opened by name, so deDynamicLibrary finds nothing (lavapipe is in
+the image, handed over by the platform); and Linux's own system calls, so
+the processor count is sysconf's. Each change is under __kosmos__ and
+leaves every other platform as it was.
+
+diff -ruN a/framework/delibs/debase/deDefs.c b/framework/delibs/debase/deDefs.c
+--- a/framework/delibs/debase/deDefs.c	2026-11-19 15:29:28.633959318 -0300
++++ b/framework/delibs/debase/deDefs.c	2026-11-19 15:29:28.634326262 -0300
+@@ -59,6 +59,10 @@
+ #include <stdlib.h>
+ #endif
+ 
++#if defined(__kosmos__)
++#include <stdlib.h>
++#endif
++
+ #if (DE_OS == DE_OS_ANDROID)
+ #include <android/log.h>
+ #endif
+@@ -128,6 +132,9 @@
+     fprintf(stderr, "Assertion '%s' failed at %s:%d\n", reason, file, line);
+     raise(SIGTRAP);
+     abort();
++#elif defined(__kosmos__)
++    fprintf(stderr, "Assertion '%s' failed at %s:%d\n", reason, file, line);
++    abort();
+ #elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_FUCHSIA)
+     __assert_fail(reason, file, (unsigned int)line, "Unknown function");
+ #elif (DE_OS == DE_OS_QNX)
+diff -ruN a/framework/delibs/dethread/unix/deThreadUnix.c b/framework/delibs/dethread/unix/deThreadUnix.c
+--- a/framework/delibs/dethread/unix/deThreadUnix.c	2026-11-19 15:29:28.635470387 -0300
++++ b/framework/delibs/dethread/unix/deThreadUnix.c	2026-11-19 15:29:28.635704794 -0300
+@@ -36,7 +36,7 @@
+ #include <unistd.h>
+ #include <pthread.h>
+ #include <sched.h>
+-#if (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID)
++#if ((DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID)) && !defined(__kosmos__)
+ #include <sys/syscall.h>
+ #endif
+ 
+@@ -161,7 +161,8 @@
+     sched_yield();
+ }
+ 
+-#if (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID)
++/* On Kosmos, sysconf's count: there is no affinity to ask about. */
++#if ((DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID)) && !defined(__kosmos__)
+ 
+ uint32_t deGetNumAvailableLogicalCores(void)
+ {
+diff -ruN a/framework/delibs/deutil/deDynamicLibrary.c b/framework/delibs/deutil/deDynamicLibrary.c
+--- a/framework/delibs/deutil/deDynamicLibrary.c	2026-11-19 15:29:28.636382144 -0300
++++ b/framework/delibs/deutil/deDynamicLibrary.c	2026-11-19 15:29:28.636544597 -0300
+@@ -24,7 +24,29 @@
+ #include "deDynamicLibrary.h"
+ #include "deMemory.h"
+ 
+-#if (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_SYMBIAN) || \
++#if defined(__kosmos__)
++
++/* Nothing is linked dynamically on Kosmos: the driver is in the image, and
++ * the platform hands its entry point over without opening anything. */
++
++deDynamicLibrary *deDynamicLibrary_open(const char *fileName)
++{
++    DE_UNREF(fileName);
++    return NULL;
++}
++
++deFunctionPtr deDynamicLibrary_getFunction(const deDynamicLibrary *library, const char *symbolName)
++{
++    DE_UNREF(library);
++    DE_UNREF(symbolName);
++    return NULL;
++}
++
++void deDynamicLibrary_close(deDynamicLibrary *library)
++{
++    DE_UNREF(library);
++}
++#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_SYMBIAN) || \
+     (DE_OS == DE_OS_IOS) || (DE_OS == DE_OS_QNX) || (DE_OS == DE_OS_FUCHSIA)
+ /* Posix implementation. */
+ 
+diff -ruN a/framework/delibs/deutil/deProcess.c b/framework/delibs/deutil/deProcess.c
+--- a/framework/delibs/deutil/deProcess.c	2026-11-19 15:29:28.635914162 -0300
++++ b/framework/delibs/deutil/deProcess.c	2026-11-19 15:29:28.636208693 -0300
+@@ -25,7 +25,109 @@
+ #include "deMemory.h"
+ #include "deString.h"
+ 
+-#if (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_IOS) || (DE_OS == DE_OS_ANDROID) || \
++#if defined(__kosmos__)
++
++/* A process does not start another by a command line here, and nothing in
++ * the Vulkan suite run on Kosmos asks one to: every call says so. */
++
++#include "deMemory.h"
++
++struct deProcess_s
++{
++    int unused;
++};
++
++deProcess *deProcess_create(void)
++{
++    return (deProcess *)deCalloc(sizeof(deProcess));
++}
++
++void deProcess_destroy(deProcess *process)
++{
++    deFree(process);
++}
++
++bool deProcess_start(deProcess *process, const char *commandLine, const char *workingDirectory)
++{
++    DE_UNREF(process);
++    DE_UNREF(commandLine);
++    DE_UNREF(workingDirectory);
++    return false;
++}
++
++bool deProcess_isRunning(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++bool deProcess_waitForFinish(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++const char *deProcess_getLastError(const deProcess *process)
++{
++    DE_UNREF(process);
++    return "Kosmos does not start a process by its command line";
++}
++
++int deProcess_getExitCode(const deProcess *process)
++{
++    DE_UNREF(process);
++    return -1;
++}
++
++bool deProcess_terminate(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++bool deProcess_kill(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++deFile *deProcess_getStdIn(deProcess *process)
++{
++    DE_UNREF(process);
++    return NULL;
++}
++
++deFile *deProcess_getStdOut(deProcess *process)
++{
++    DE_UNREF(process);
++    return NULL;
++}
++
++deFile *deProcess_getStdErr(deProcess *process)
++{
++    DE_UNREF(process);
++    return NULL;
++}
++
++bool deProcess_closeStdIn(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++bool deProcess_closeStdOut(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++bool deProcess_closeStdErr(deProcess *process)
++{
++    DE_UNREF(process);
++    return false;
++}
++
++#elif (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_IOS) || (DE_OS == DE_OS_ANDROID) || \
+     (DE_OS == DE_OS_SYMBIAN) || (DE_OS == DE_OS_QNX)
+ 
+ #include "deCommandLine.h"
+diff -ruN a/framework/delibs/deutil/deTimer.c b/framework/delibs/deutil/deTimer.c
+--- a/framework/delibs/deutil/deTimer.c	2026-11-19 15:29:28.634991738 -0300
++++ b/framework/delibs/deutil/deTimer.c	2026-11-19 15:29:28.635200313 -0300
+@@ -153,7 +153,9 @@
+     }
+ }
+ 
+-#elif (DE_OS == DE_OS_UNIX || DE_OS == DE_OS_ANDROID || DE_OS == DE_OS_SYMBIAN || DE_OS == DE_OS_QNX)
++/* Kosmos's timers are not signals: the thread-based one below. */
++#elif (DE_OS == DE_OS_UNIX || DE_OS == DE_OS_ANDROID || DE_OS == DE_OS_SYMBIAN || DE_OS == DE_OS_QNX) && \
++    !defined(__kosmos__)
+ 
+ #include <signal.h>
+ #include <time.h>
+diff -ruN a/framework/qphelper/qpCrashHandler.h b/framework/qphelper/qpCrashHandler.h
+--- a/framework/qphelper/qpCrashHandler.h	2026-11-19 15:29:28.634565670 -0300
++++ b/framework/qphelper/qpCrashHandler.h	2026-11-19 15:29:28.634759288 -0300
+@@ -25,7 +25,9 @@
+ 
+ #include "deDefs.h"
+ 
+-#if (DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_IOS)
++/* Kosmos has no signals: a fault ends the process, and the kernel says where. */
++#if ((DE_OS == DE_OS_UNIX) || (DE_OS == DE_OS_ANDROID) || (DE_OS == DE_OS_OSX) || (DE_OS == DE_OS_IOS)) && \
++    !defined(__kosmos__)
+ #define QP_USE_SIGNAL_HANDLER 1
+ #endif
+ 

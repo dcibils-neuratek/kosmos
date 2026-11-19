@@ -4837,3 +4837,39 @@ writes a file and reads it back. Pointing the file at a folder that does
 not exist makes the test fail, so it is known to be looking.
 
 **Next.** The Vulkan conformance tests themselves.
+
+## 19 November 2026 - Khronos's Vulkan tests pass on Kosmos
+
+**In short.** Kosmos now runs the official test suite that every Vulkan
+driver in the world is held to, and a minute of it - 3565 tests - passes
+with none failing, every time the gate runs. The 3D API's second step is
+done. 0.12.6.
+
+**What.** Khronos, the group behind Vulkan, publishes a conformance suite:
+tens of thousands of small programs, each asking a driver one precise
+question and judging its answer. A driver that wants to call itself
+Vulkan has to pass it. Kosmos now builds that suite as an application of
+its own and runs two of its groups - what the driver says about itself,
+and the API's rules - inside QEMU.
+
+**What it found.** On Linux there is a small program between an
+application and the driver, the Vulkan "loader", and it answers some
+questions before the driver ever sees them: "is there a debugging layer
+called X?" (no), "destroy this device" when the device is nothing (do
+nothing). Kosmos has no loader, so those questions reached the driver,
+which crashed on one and answered another wrongly. The driver now does
+the loader's part. It also found two small mistakes in the driver itself.
+
+And three things about Kosmos, written into the roadmap: a program's
+stack has a fixed size, smaller than Linux's, so the suite runs on a
+thread of its own; the software renderer draws wrongly on processors
+older than any Kosmos runs on; and when memory runs out, a program is
+stopped rather than told - so the tests that use memory up on purpose are
+left out for now.
+
+**Measured.** 3565 tests in 41 seconds: 1439 pass, 2126 ask for things the
+software driver does not offer and say so, none fail. Running the same
+minute on an old processor makes two tests fail, and the run names them -
+so it is known to be looking.
+
+**Next.** A window and a spinning cube on the screen, by Vulkan.

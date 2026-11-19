@@ -1,0 +1,32 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Amber, which some of the API tests are written in, on Kosmos: it chooses
+what it calls by platform and stops at one it does not know, and Kosmos is
+its POSIX one - all it asks of the platform is usleep, which the layer has.
+And `<cctype>` where Amber calls isalnum, which glibc's headers bring in
+without being asked and libc++'s do not.
+
+diff -ruN a/external/amber/src/src/platform.h b/external/amber/src/src/platform.h
+--- a/external/amber/src/src/platform.h	2026-11-19 15:39:07.238480057 -0300
++++ b/external/amber/src/src/platform.h	2026-11-19 15:39:07.238832335 -0300
+@@ -33,6 +33,9 @@
+ #elif defined(__QNX__)
+ #define AMBER_PLATFORM_QNX 1
+ #define AMBER_PLATFORM_POSIX 1
++#elif defined(__kosmos__)
++// Kosmos: the POSIX layer inside the process (`design.md` section 17).
++#define AMBER_PLATFORM_POSIX 1
+ #else
+ #error "Unknown platform."
+ #endif
+diff -ruN a/external/amber/src/src/vkscript/parser.cc b/external/amber/src/src/vkscript/parser.cc
+--- a/external/amber/src/src/vkscript/parser.cc	2026-11-19 15:39:07.238993038 -0300
++++ b/external/amber/src/src/vkscript/parser.cc	2026-11-19 15:39:07.239222113 -0300
+@@ -16,6 +16,7 @@
+ 
+ #include <algorithm>
+ #include <cassert>
++#include <cctype>
+ #include <limits>
+ #include <tuple>
+ #include <utility>

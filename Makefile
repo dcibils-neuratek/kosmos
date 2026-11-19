@@ -4672,11 +4672,48 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_vulkantest_kit$$' \
 	    || { echo "apps: the system's image has Vulkan's test kit in it"; rm -f $@; exit 1; }
 
+#
+# **Khronos's Vulkan conformance suite** (`docs/gpu3d.md` G2): dEQP-VK's
+# `info` and `api` groups from VK-GL-CTS 1.4.7.1, built by
+# `tools/cts_build.py` with the CTS's own CMake for a target of Kosmos's
+# (`runtime/ports/cts/`) and `runtime/patches/cts/` applied, each only when
+# what it stands on moved. `deqpvk.txt` is what upstream's `deqp-vk` links,
+# read from that link; `tcuKosmosMain.cpp` stands where its `main` was, and
+# lavapipe is linked in as `vulkantest.elf` has it. x86-64 only for now, as
+# the suites are (`CLAUDE.md`, *x86-64 only, for now*).
+#
+CTS_DIR := build/cts/$(ARCH)
+
+$(CTS_DIR)/.built: tools/cts_build.py tools/upstream.py $(CXXRT)/.built \
+                   $(wildcard runtime/patches/cts/*.patch) \
+                   $(shell find runtime/ports/cts -type f 2>/dev/null) \
+                   $(wildcard runtime/include/*.h runtime/include/sys/*.h \
+                              runtime/posix/include/*.h runtime/posix/include/*/*.h)
+	@mkdir -p $(CTS_DIR)
+	@python3 tools/cts_build.py $(ARCH) > build/cts-$(ARCH).log 2>&1 \
+	    || { tail -60 build/cts-$(ARCH).log; exit 1; }
+	@touch $@
+
+VKCTS_OBJS := $(UBUILD)/user/kits/vkcts/vkcts_kit.c.o
+
+$(UBUILD)/apps/vkcts.elf: $(USER_OBJS) $(VKCTS_OBJS) $(POSIX_OBJS) $(CTS_DIR)/.built $(MESA_DIR)/.built \
+                          $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(VKCTS_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(CTS_DIR)/deqpvk.txt @$(MESA_DIR)/lavapipe.txt $(LLVM_DIR)/lib/libLLVM*.a \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_vkcts_kit$$' \
+	    || { echo "apps: vkcts.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_vkcts_kit$$' \
+	    || { echo "apps: the system's image has the Vulkan conformance kit in it"; rm -f $@; exit 1; }
+
 # WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
 WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf $(UBUILD)/apps/webkit2test.elf \
                  $(UBUILD)/apps/webkit.elf)
+VKCTS_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/vkcts.elf)
 
 .PHONY: apps app-images
 apps:
@@ -4688,7 +4725,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
-            $(WEBCORE_IMAGE) \
+            $(WEBCORE_IMAGE) $(VKCTS_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

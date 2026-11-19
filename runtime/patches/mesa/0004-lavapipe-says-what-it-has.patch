@@ -1,0 +1,198 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+lavapipe and the Vulkan runtime saying what they have, as Khronos's conformance suite reads it
+(docs/gpu3d.md G2):
+
+- VK_EXT_headless_surface, VK_EXT_hdr_metadata and
+  VK_EXT_multisampled_render_to_swapchain were advertised whatever the
+  build, and they need VK_KHR_surface and VK_KHR_swapchain,
+  which come only with a window platform. Kosmos's lavapipe has none yet,
+  and dEQP-VK.info's extension_dependencies cases fail an implementation
+  that lists an extension without what it depends on; with this, each is
+  listed with its dependency or not at all.
+- VK_EXT_memory_budget's heapUsage is "how much memory the process is
+  currently using in that heap"; lavapipe answered with the whole machine's
+  used memory, which moves when the allocator maps pages rather than when
+  the process allocates. On Kosmos it is what this process's devices hold,
+  counted where they allocate and free - so a second instance in the same
+  process sees the first's, as dEQP-VK.info.device_memory_budget_multi_instance
+  holds it to.
+- vkCreateInstance answers VK_ERROR_LAYER_NOT_PRESENT for a layer that is
+  not there. On Linux the loader does, and the driver never sees the name;
+  on Kosmos the Vulkan runtime is the whole of Vulkan - one driver, linked
+  in, no loader and no layers - so it refuses every layer itself, as
+  dEQP-VK.api.device_init.create_instance_layer_name_abuse holds it to.
+  And the loader's other answers, for the same reason: vkDestroyDevice
+  with no device does nothing, as vkDestroyInstance with no instance
+  already did here (dEQP-VK.api.null_handle.destroy_device read through
+  the null pointer), and asking for the layers into an array of any size
+  is VK_SUCCESS and a count of none - the driver's lavapipe and the
+  runtime's answered VK_ERROR_LAYER_NOT_PRESENT.
+
+diff -ruN a/src/gallium/frontends/lavapipe/lvp_device.c b/src/gallium/frontends/lavapipe/lvp_device.c
+--- a/src/gallium/frontends/lavapipe/lvp_device.c	2026-11-19 16:09:52.878658812 -0300
++++ b/src/gallium/frontends/lavapipe/lvp_device.c	2026-11-19 16:09:52.879464241 -0300
+@@ -66,6 +66,12 @@
+ #define LVP_USE_WSI_PLATFORM
+ #endif
+ 
++#ifdef __kosmos__
++/* What this process's devices hold, all of them, in bytes: VK_EXT_memory_budget's
++ * heapUsage, which the specification makes the process's own. */
++static uint64_t lvp_memory_used;
++#endif
++
+ #if LLVM_VERSION_MAJOR >= 10
+ #define LVP_API_VERSION VK_MAKE_VERSION(1, 4, VK_HEADER_VERSION)
+ #else
+@@ -119,7 +125,9 @@
+ #ifdef VK_USE_PLATFORM_METAL_EXT
+    .EXT_metal_surface                        = true,
+ #endif
+-#ifndef VK_USE_PLATFORM_WIN32_KHR
++/* A surface extension needs VK_KHR_surface, which comes with a window
++ * platform: with none - Kosmos's lavapipe, until it has one - neither. */
++#if !defined(VK_USE_PLATFORM_WIN32_KHR) && defined(LVP_USE_WSI_PLATFORM)
+    .EXT_headless_surface                     = true,
+ #endif
+ };
+@@ -249,7 +257,9 @@
+    .EXT_external_memory_host              = true,
+    .EXT_fragment_shader_interlock         = true,
+    .EXT_graphics_pipeline_library         = true,
+-   .EXT_hdr_metadata = true,
++#ifdef LVP_USE_WSI_PLATFORM
++   .EXT_hdr_metadata = true,   /* which needs VK_KHR_swapchain */
++#endif
+    .EXT_host_image_copy                   = true,
+    .EXT_host_query_reset                  = true,
+    .EXT_image_2d_view_of_3d               = true,
+@@ -266,7 +276,9 @@
+ #endif
+    .EXT_mesh_shader                       = true,
+    .EXT_multisampled_render_to_single_sampled = true,
+-   .EXT_multisampled_render_to_swapchain = true,
++#ifdef LVP_USE_WSI_PLATFORM
++   .EXT_multisampled_render_to_swapchain = true,   /* and so does this */
++#endif
+    .EXT_multi_draw                        = true,
+    .EXT_mutable_descriptor_type           = true,
+    .EXT_nested_command_buffer             = true,
+@@ -1792,11 +1804,15 @@
+    VkPhysicalDeviceMemoryBudgetPropertiesEXT *props = vk_find_struct(pMemoryProperties, PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+    if (props) {
+       props->heapBudget[0] = pMemoryProperties->memoryProperties.memoryHeaps[0].size;
++#ifdef __kosmos__
++      props->heapUsage[0] = p_atomic_read(&lvp_memory_used);
++#else
+       if (os_get_available_system_memory(&props->heapUsage[0])) {
+          props->heapUsage[0] = props->heapBudget[0] - props->heapUsage[0];
+       } else {
+          props->heapUsage[0] = 0;
+       }
++#endif
+       memset(&props->heapBudget[1], 0, sizeof(props->heapBudget[0]) * (VK_MAX_MEMORY_HEAPS - 1));
+       memset(&props->heapUsage[1], 0, sizeof(props->heapUsage[0]) * (VK_MAX_MEMORY_HEAPS - 1));
+    }
+@@ -2064,6 +2080,9 @@
+ {
+    VK_FROM_HANDLE(lvp_device, device, _device);
+ 
++   if (!device)
++      return;
++
+    lvp_device_finish_accel_struct_state(device);
+ 
+    vk_meta_device_finish(&device->vk, &device->meta);
+@@ -2110,13 +2129,9 @@
+    uint32_t*                                   pPropertyCount,
+    VkLayerProperties*                          pProperties)
+ {
+-   if (pProperties == NULL) {
+-      *pPropertyCount = 0;
+-      return VK_SUCCESS;
+-   }
+-
+-   /* None supported at this time */
+-   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
++   /* None: an array of none is filled, and that is a success. */
++   *pPropertyCount = 0;
++   return VK_SUCCESS;
+ }
+ 
+ VKAPI_ATTR VkResult VKAPI_CALL lvp_EnumerateDeviceLayerProperties(
+@@ -2124,13 +2139,9 @@
+    uint32_t*                                   pPropertyCount,
+    VkLayerProperties*                          pProperties)
+ {
+-   if (pProperties == NULL) {
+-      *pPropertyCount = 0;
+-      return VK_SUCCESS;
+-   }
+-
+-   /* None supported at this time */
+-   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
++   /* None: an array of none is filled, and that is a success. */
++   *pPropertyCount = 0;
++   return VK_SUCCESS;
+ }
+ 
+ static void
+@@ -2280,6 +2291,9 @@
+    }
+ 
+    *pMem = lvp_device_memory_to_handle(mem);
++#ifdef __kosmos__
++   p_atomic_add(&lvp_memory_used, mem->vk.size);
++#endif
+ 
+    return VK_SUCCESS;
+ 
+@@ -2319,6 +2333,9 @@
+       break;
+    }
+ 
++#ifdef __kosmos__
++   p_atomic_add(&lvp_memory_used, -(int64_t)mem->vk.size);
++#endif
+    vk_device_memory_destroy(&device->vk, pAllocator, &mem->vk);
+ }
+ 
+diff -ruN a/src/vulkan/runtime/vk_instance.c b/src/vulkan/runtime/vk_instance.c
+--- a/src/vulkan/runtime/vk_instance.c	2026-11-19 16:09:52.880032583 -0300
++++ b/src/vulkan/runtime/vk_instance.c	2026-11-19 16:09:52.880250878 -0300
+@@ -149,6 +149,14 @@
+ 
+    instance->supported_extensions = supported_extensions;
+ 
++#ifdef __kosmos__
++   /* Kosmos has no loader and no layer: what a loader answers for a layer
++    * it does not have, this answers for every one. */
++   if (pCreateInfo->enabledLayerCount > 0)
++      return vk_errorf(instance, VK_ERROR_LAYER_NOT_PRESENT,
++                       "there are no layers on Kosmos");
++#endif
++
+    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+       int idx;
+       for (idx = 0; idx < VK_INSTANCE_EXTENSION_COUNT; idx++) {
+diff -ruN a/src/vulkan/runtime/vk_physical_device.c b/src/vulkan/runtime/vk_physical_device.c
+--- a/src/vulkan/runtime/vk_physical_device.c	2026-11-19 16:09:52.879657244 -0300
++++ b/src/vulkan/runtime/vk_physical_device.c	2026-11-19 16:09:52.879938040 -0300
+@@ -71,13 +71,9 @@
+                                          uint32_t *pPropertyCount,
+                                          VkLayerProperties *pProperties)
+ {
+-   if (pProperties == NULL) {
+-      *pPropertyCount = 0;
+-      return VK_SUCCESS;
+-   }
+-
+-   /* None supported at this time */
+-   return VK_ERROR_LAYER_NOT_PRESENT;
++   /* None: an array of none is filled, and that is a success. */
++   *pPropertyCount = 0;
++   return VK_SUCCESS;
+ }
+ 
+ VKAPI_ATTR VkResult VKAPI_CALL

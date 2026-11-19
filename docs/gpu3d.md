@@ -459,7 +459,16 @@ so `lavapipe` is built for both.
    vertex buffer, a matrix, a texture and a depth buffer, held to a ray cast
    through every pixel. dEQP-VK next: the suite writes every message
    through a C++ string stream, so libc++'s locales were turned on for it
-   (Diego, 19 November 2026; `testing.md` 18.925).
+   (Diego, 19 November 2026; `testing.md` 18.925). **And the suite in
+   0.12.6** (18.926): VK-GL-CTS 1.4.7.1 built by its own CMake for a
+   target of Kosmos's (`tools/cts_build.py`, `runtime/ports/cts/`), its
+   `info` and `api` groups in `vkcts.elf` with lavapipe, and a minute of
+   them in `x86-vulkan-cts`. It found four things the Vulkan loader
+   answers on Linux and nothing answered here - a layer that is not
+   there, a device that is none, layers counted into an empty array - and
+   lavapipe listing extensions without what they depend on and counting
+   the machine's memory as the process's; Mesa's patch 0004 answers each.
+   G2 is done.
 3. **G3 - a window.** `VK_KHR_kosmos_surface`, swapchain images as shared
    surfaces, presenting as `cube3d` does. *Demo*: `vkcube`. *Test*: the
    picture QEMU scans out, as `make screenshot` checks; frames a second

@@ -2836,6 +2836,7 @@ void kosmos_wtftest_kit(lua_State *L) __attribute__((weak));
 void kosmos_llvmtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_mesatest_kit(lua_State *L) __attribute__((weak));
 void kosmos_vulkantest_kit(lua_State *L) __attribute__((weak));
+void kosmos_vkcts_kit(lua_State *L) __attribute__((weak));
 void kosmos_jsc_kit(lua_State *L) __attribute__((weak));
 void kosmos_picturetest_kit(lua_State *L) __attribute__((weak));
 void kosmos_texttest_kit(lua_State *L) __attribute__((weak));
@@ -2919,6 +2920,9 @@ static const struct {
     { "llvmtest", kosmos_llvmtest_kit, 1 },
     { "mesatest", kosmos_mesatest_kit, 1 },
     { "vulkantest", kosmos_vulkantest_kit, 1 },
+    /* Khronos's Vulkan conformance suite, dEQP-VK's info and api groups
+     * (`docs/gpu3d.md` G2). */
+    { "vkcts",    kosmos_vkcts_kit, 1 },
     /* JavaScriptCore, installed in /Home/Apps/JSC (`docs/w4.md` W4d). */
     { "jsc",      kosmos_jsc_kit, 1 },
     /* zlib, libpng, libjpeg-turbo and libwebp, in no image but their

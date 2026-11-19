@@ -1,0 +1,101 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+The groups of dEQP-VK that Kosmos builds and runs (`docs/gpu3d.md` G2):
+`info` and `api`. Under __kosmos__ the package registers those two, the
+GLSL, Amber and experimental groups register nothing, and the module links
+only the libraries the two are made of and the helpers the API tests
+borrow from five other groups - so a group is added here, with its
+library, when Kosmos runs it.
+
+diff -ruN a/external/vulkancts/modules/vulkan/CMakeLists.txt b/external/vulkancts/modules/vulkan/CMakeLists.txt
+--- a/external/vulkancts/modules/vulkan/CMakeLists.txt	2026-11-19 15:37:24.183421296 -0300
++++ b/external/vulkancts/modules/vulkan/CMakeLists.txt	2026-11-19 15:37:24.183602081 -0300
+@@ -208,6 +208,27 @@
+ 	deqp-vk-video
+ )
+ 
++# Kosmos's package is the groups vktTestPackage.cpp registers there, and
++# only their libraries are linked - with the helpers the API tests borrow
++# from other groups: image, Y'CbCr and pipeline's util libraries, Amber's,
++# and WSI's native objects, a library of one file so the WSI group itself
++# is not built.
++if (DEQP_TARGET STREQUAL "kosmos")
++	add_library(deqp-vk-wsi-native STATIC wsi/vktNativeObjectsUtil.cpp)
++	target_link_libraries(deqp-vk-wsi-native tcutil vkutil)
++	set(DEQP_VK_LIBS
++		tcutil
++		vkutil
++		deqp-vk-api
++		deqp-vk-image-util
++		deqp-vk-ycbcr-util
++		deqp-vk-pipeline-util
++		deqp-vk-amber
++		deqp-vk-wsi-native
++		deqp-vk-custom-instances-devices-util
++		)
++endif ()
++
+ set(DEQP_VKSC_LIBS
+ 	tcutil
+ 	vkscutil
+diff -ruN a/external/vulkancts/modules/vulkan/vktTestPackage.cpp b/external/vulkancts/modules/vulkan/vktTestPackage.cpp
+--- a/external/vulkancts/modules/vulkan/vktTestPackage.cpp	2026-11-19 15:37:24.182638367 -0300
++++ b/external/vulkancts/modules/vulkan/vktTestPackage.cpp	2026-11-19 15:37:24.183184847 -0300
+@@ -1292,6 +1292,9 @@
+ 
+ void createGlslTests(tcu::TestCaseGroup *glslTests)
+ {
++#if defined(__kosmos__)
++    DE_UNREF(glslTests);
++#else
+     tcu::TestContext &testCtx = glslTests->getTestContext();
+ 
+     // ShaderLibrary-based tests
+@@ -1364,6 +1367,7 @@
+     glslTests->addChild(cts_amber::createLogicalCopyGroup(testCtx));
+     glslTests->addChild(shaderexecutor::createShaderExpectAssumeTests(testCtx));
+ #endif // CTS_USES_VULKANSC
++#endif // __kosmos__
+ }
+ 
+ // TestPackage
+@@ -1433,6 +1437,7 @@
+ {
+     addRootChild("info", m_caseListFilter, info::createTests);
+     addRootChild("api", m_caseListFilter, api::createTests);
++#if !defined(__kosmos__)
+     addRootChild("memory", m_caseListFilter, memory::createTests);
+     addRootChild("pipeline", m_caseListFilter, pipeline::createTests);
+     addRootChild("binding_model", m_caseListFilter, BindingModel::createTests);
+@@ -1487,6 +1492,7 @@
+     addRootChild("tensor", m_caseListFilter, tensor::createTests);
+     addRootChild("data_graph", m_caseListFilter, dataGraph::createTests);
+     addRootChild("postmortem", m_caseListFilter, postmortem::createTests);
++#endif // __kosmos__
+ }
+ 
+ std::string pathToTestName(const std::string path)
+@@ -1505,6 +1511,7 @@
+ 
+ void AmberTestPackage::init()
+ {
++#if !defined(__kosmos__)
+     if (getTestContext().getCommandLine().getAmberTestPath())
+     {
+         std::string amberTestPath = getTestContext().getCommandLine().getAmberTestPath();
+@@ -1539,12 +1546,15 @@
+             file.close();
+         }
+     }
++#endif // __kosmos__
+ }
+ 
+ void ExperimentalTestPackage::init(void)
+ {
++#if !defined(__kosmos__)
+     addRootChild("postmortem", m_caseListFilter, postmortem::createTestsExperimental);
+     addRootChild("reconvergence", m_caseListFilter, Reconvergence::createTestsExperimental);
++#endif
+ }
+ 
+ #endif

@@ -38327,3 +38327,72 @@ the load and pass alone, 60 checks in 237 s and 221 of 221.
 AArch64's runtimes and its C++ images - `cxxtest`, `jsc`, `llvmtest`,
 `mesatest`, `vulkantest` - build against them as well; its suites wait
 with ARM's.
+
+## 18.926 Khronos's Vulkan conformance suite on Kosmos
+
+**In short:** the suite every Vulkan driver is held to - dEQP-VK, from
+Khronos's VK-GL-CTS 1.4.7.1 - is built for Kosmos and runs on it, and a
+minute of it is in the gate as `x86-vulkan-cts`: 3565 cases in 41 s, 1439
+passing, 2126 not supported by lavapipe, none failing. It is G2's last
+piece (`docs/gpu3d.md`). Getting there found four things Linux's Vulkan
+loader does and nothing did here, two in lavapipe itself, and three in
+Kosmos that go to the roadmap.
+
+- **Built by its own CMake, for a target of Kosmos's.** `tools/cts_build.py`
+  fetches the release and six externals at their commits (glslang,
+  SPIRV-Tools and its headers, Amber, jsoncpp, VulkanSC's pcutil;
+  `tools/upstream.py`), clones them into `build/cts/tree/`, applies
+  `runtime/patches/cts/` and lays in `runtime/ports/cts/` - the
+  `kosmos` target and its platform - then configures with the Kosmos
+  toolchain on `DE_OS_UNIX`, which inside a process is the POSIX layer.
+  The link list is read from upstream's own `deqp-vk` link, 28 archives,
+  into `deqpvk.txt`, as lavapipe's is.
+- **What the patches say.** 0001: the base libraries without signals,
+  `fork`, `dlopen` or `sys/syscall.h` - a process cannot be started by its
+  command line, and an assertion prints and aborts. 0002: external memory
+  shared over a socket, which needs a descriptor to cross processes, is
+  "not supported" - the one thing *Compatibility inside a process* forbids.
+  0003: the `info` and `api` groups only, and the utility libraries they
+  stand on. 0004: Amber told Kosmos is POSIX.
+- **`vkcts.elf`**, the kit `vkcts`: `kit.run{...}` takes the suite's own
+  options and answers the counts, or nil and the reason. `tcuKosmosMain.cpp`
+  replaces `tcuMain`, and runs the suite on a thread of its own: dEQP-VK
+  keeps a 320 KB array on the stack in `allocateManyPrimaryBuffersTest`,
+  and a first thread here has 256 KB.
+- **What the loader does on Linux, done by Mesa here** (`runtime/patches/mesa/0004`):
+  an instance asking for a layer is refused with `VK_ERROR_LAYER_NOT_PRESENT`;
+  `vkDestroyDevice(NULL)` does nothing rather than fault in
+  `simple_mtx_destroy` (`api.null_handle`); the layers counted are none,
+  with `VK_SUCCESS`, at the instance and the device
+  (`api.device_init.layer_name_abuse`). And two of lavapipe's own: it
+  listed `EXT_headless_surface`, `EXT_hdr_metadata` and
+  `EXT_multisampled_render_to_swapchain` without the surface and swapchain
+  they depend on (`info.*_extension_dependencies`), and its memory budget
+  counted the machine's use for the process's, which a second instance
+  cannot see change - it counts what it allocated now.
+- **The processor and the memory.** On QEMU's default `qemu64`, which has
+  nothing after SSE2, llvmpipe wrote a colour of 1e9 where it meant 1 -
+  `api.smoke.asm_triangle` - and `info.device_mandatory_features` failed;
+  it is not Kosmos's parsing of floats (a probe read 1065353216 as
+  the float whose bits are 0x4e7e0000, as it must). Every machine Kosmos runs
+  on has SSE4.1, so the suite runs on `-cpu max`. And the command buffers'
+  cases record thousands of draws: on the harness's 512 MB the heap met
+  the kernel's reserve, and a page refused on first touch ended the
+  process - 2 GB for this suite. Both are in `roadmap.md`, with the stacks.
+- **What is not in the minute, measured.** `api.descriptor_pool`, six
+  cases and 23 s; `api.info`, past two minutes; and
+  `api.object_management` past `single`, whose `max_concurrent` cases
+  allocate until the driver says out of memory - which on Kosmos it
+  cannot, `malloc` never answering NULL.
+- **Control**: the same minute on `qemu64` fails, naming
+  `dEQP-VK.api.smoke.asm_triangle (Fail)` and
+  `dEQP-VK.info.device_mandatory_features (Fail)` from the suite's own log.
+
+**The gate** (`ALL=1`, Mesa having changed). 147 suites in 893 s, 140
+passing; `x86-vulkan-cts` took 116 s under the load. Seven -
+`x86-display-1` to `-4`, `x86-usb-2`, `x86-cafesa3d-1`, `x86-mail-6` -
+failed together between 400 and 470 s with a screendump that was never
+written, the disk at 2.2 GB free: they pass alone, 7 suites in 216 s. The
+gate's 893 s is over its ten minutes; the disk, and the new suite's 320 MB
+of image and `/Home` beside a gate's others, are the first things to look
+at.

@@ -219,6 +219,48 @@ TEST262 = {
 }
 
 
+# **The Vulkan conformance suite** (`docs/gpu3d.md` G2): Khronos's VK-GL-CTS
+# at the commit its release tag `vulkan-cts-1.4.7.1` names, and the three of
+# its externals the Vulkan tests compile with, each at the commit that
+# release's `external/fetch_sources.py` pins - glslang for the shaders it
+# writes in GLSL, SPIRV-Tools to assemble and validate SPIR-V, SPIR-V's
+# headers, and three its CMake adds whatever is built: Amber (a test
+# language some groups are written in), jsoncpp (the framework reads and
+# writes JSON with it) and Vulkan SC's pipeline-cache utilities. The rest -
+# the validation layers, video's samples and generator - are for tests
+# Kosmos does not build. A commit is the publisher's sum, as test262's is.
+CTS = {
+    "vk-gl-cts": {
+        "url": "https://github.com/KhronosGroup/VK-GL-CTS.git",
+        "commit": "0d18b347943e5e843529a05c95220e27fe30c538",
+    },
+    "glslang": {
+        "url": "https://github.com/KhronosGroup/glslang.git",
+        "commit": "2ff6f609379ce43c4291c732cf6a19dd2461a680",
+    },
+    "spirv-tools": {
+        "url": "https://github.com/KhronosGroup/SPIRV-Tools.git",
+        "commit": "1d0401cd2b68ae34cda9ff625bedd1be4ed6214a",
+    },
+    "spirv-headers": {
+        "url": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+        "commit": "cb42dec3830d3ac67fa449ecdc0c0f73d5e74498",
+    },
+    "amber": {
+        "url": "https://github.com/google/amber.git",
+        "commit": "c9f1e2871ccbb0b0564c4a33e359801144f6b7c1",
+    },
+    "jsoncpp": {
+        "url": "https://github.com/open-source-parsers/jsoncpp.git",
+        "commit": "89e2973c754a9c02a49974d839779b151e95afd6",
+    },
+    "vulkansc-pcutil": {
+        "url": "https://github.com/KhronosGroup/VulkanSC-pcutil.git",
+        "commit": "f67d9e8e1c04f179ebeb837d21ab06192ad43fa0",
+    },
+}
+
+
 # **What WebKitGTK's release does not carry** (`docs/w6.md`, decided by
 # Diego 13 November 2026): its tarball is cut for GTK, and WebKit on curl -
 # the PlayStation port's shape, which JetSki's follows - needs files it
