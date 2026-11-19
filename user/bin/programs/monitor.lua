@@ -17,9 +17,10 @@
 -- compositor exists to stop needing.
 --
 -- Control-C stops it, and so does running out of seconds. The second one
--- matters because the first is cooperative: this program is stoppable
--- because it asks once a second whether it should stop, and a program that
--- never asks still cannot be stopped from outside.
+-- matters because the first is cooperative: Control-C reaches this program
+-- because it asks once a second whether it should stop. A program that
+-- never asks is ended from outside instead - `kill`, or Processes - which
+-- is the kernel ending it rather than it agreeing to stop.
 
 local RESERVED_ROWS = 2       -- matches kernel/console.c
 

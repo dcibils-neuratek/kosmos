@@ -26,13 +26,14 @@
 -- the screen to every program it launches - its own comment calls that
 -- "wrong and staying for now" - so this program starts life in the same band
 -- as the window manager. A workload that outranks the desktop is not a
--- workload, it is a denial of service: with three of these running, `cores`
--- stopped answering its own buttons and the machine looked hung.
+-- workload, it is a denial of service: with three of these running, the
+-- window watching them stopped answering its own buttons and the machine
+-- looked hung.
 --
--- Which is exactly the failure `cores` predicted in writing and attributed
--- to the wrong cause. Its header said "a spinner runs at NORMAL and this
--- window runs at DISPLAY, so the buttons keep answering while a core is
--- pinned" - and the spinner did not run at NORMAL, so they did not.
+-- That window had predicted the failure in writing and given it the wrong
+-- cause. Its header said "a spinner runs at NORMAL and this window runs at
+-- DISPLAY, so the buttons keep answering while a core is pinned" - and the
+-- spinner did not run at NORMAL, so they did not.
 --
 -- `sys.step_down` only ever gives a band up, so this grants nothing and can
 -- be refused without consequence: an older kernel without it leaves this

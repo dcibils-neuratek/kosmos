@@ -1,5 +1,5 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
--- Query time against file count. The most important number in M7.
+-- Query time against file count: whether a query uses the index.
 --
 --   qbench          the three sizes below
 --
@@ -17,11 +17,13 @@
 -- And it measures a *control* at every size: a `getattr`, which is one
 -- round trip that touches no index and returns a fixed answer. Without it
 -- this benchmark lies. The first version had no control, came out sloped,
--- and said so - but the slope was not in the index at all. A filesystem
--- with eight hundred more nodes in it is a Lua process with a much larger
--- live heap, and every allocation on the round trip pays a share of a
--- collection over that heap. The control rises for the same reason and by
--- the same amount, and what is left after subtracting it is the query.
+-- and said so - but the slope was not in the index at all. `/Temporary`
+-- was a Lua process then, and eight hundred more nodes were a much larger
+-- live heap, so every allocation on the round trip paid a share of a
+-- collection over it. It is `ramfs.c` now, but anything that grows with
+-- the filesystem and is not the index still shows up in both: the control
+-- rises for the same reason and by the same amount, and what is left after
+-- subtracting it is the query.
 --
 -- QEMU numbers are not performance numbers. This one does not need to be:
 -- it is a ratio between two measurements taken the same way in the same

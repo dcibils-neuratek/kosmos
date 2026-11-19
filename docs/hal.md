@@ -340,7 +340,7 @@ write `VIRTIO_INPUT_CFG_EV_BITS` into the selector and `EV_ABS` into the
 sub-selector, then read the length that comes back. Non-zero means the device
 has absolute axes to describe, and a keyboard has none.
 
-Two consequences worth knowing before touching `hal/qemu-virt/input.c`:
+Two consequences worth knowing before touching `hal/virtio/input.c`, where the probing is (each board binds it in its own `input_bind.c`):
 
 **Configuration space is bytes.** The first three fields of a virtio config
 space are single bytes - selector, sub-selector, length - and reading them

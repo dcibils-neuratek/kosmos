@@ -13,9 +13,14 @@
 #               them: a name, or a name and its words after a colon
 #   background  those of them that open no window when they start, and are
 #               ready as soon as they are running
-#   chrome      which title bar the kit draws: astra, or platinum
+#   chrome      which title bar the kit draws: astra, platinum, or
+#               starlight
 #   menus       where an application's menus go: in its window, or on the
 #               screen - the bar across the top
+#   look        the look it wears, by its key (`user/themes`) - `starlight`;
+#               left out, whichever look is in force stays
+#
+# and its style, below: cut, star, plate, flat, title_bars and shadow.
 
 name       = Astra
 says       = The Deskbar, the dock and the launcher pad

@@ -20,11 +20,14 @@
 # `arch/` and not a refactor: `kernel/` has no architecture-specific
 # instruction left in it, and what a port has to supply is six headers.
 #
-# It is a *bring-up* today and the target below says so - what builds is the
-# boot path, the serial port and enough C to report that long mode is on.
-# The kernel itself follows, one piece at a time, which is the order this
-# project used on ARM and for the same reason: a kernel that cannot print is
-# a kernel debugged by bisecting a hang.
+# It began as a bring-up - the boot path, the serial port and enough C to
+# report that long mode was on - and grew one piece at a time from there,
+# the order this project used on ARM and for the same reason: a kernel that
+# cannot print is a kernel debugged by bisecting a hang. It is the whole
+# system now, SMP and the desktop included, and the processor `make test`
+# runs its suites on and the ThinkPad, M700 and Mac Pro sticks are built
+# for (`make x86-build`, `make MEGA=1 x86-usb-image`). The default stays
+# `aarch64`, which every path written before there was a second one assumes.
 #
 ARCH    ?= aarch64
 
@@ -94,16 +97,19 @@ endif
 endif
 
 #
-# **Composed, not chosen.** This was a chain of else-ifs, so `DOOM=1 WEB=1`
-# called itself `-doom` and put a build with the browser in it into the same
-# directory as one without - two different binaries under one name, which
-# `make` settles by timestamp and gets wrong.
+# **Composed, not chosen.** This was a chain of else-ifs, so a build with
+# Doom and the browser in it called itself `-doom` and shared a directory
+# with one that had no browser - two different binaries under one name,
+# which `make` settles by timestamp and gets wrong. Each switch that changes
+# what the userland image carries adds its own part now: `-test`, `-bench`,
+# `-web`, `-ffmpeg`. Doom and Quake are installed applications with images
+# of their own (`docs/elf.md` step 5) and are no part of it.
 #
 # It has to come *after* the block above, because `:=` expands where it
-# stands: with FULL setting DOOM and WEB below this line, neither was
-# visible here and the full build went into the lean build's directory -
-# which is the collision this name exists to prevent, arrived at from the
-# other direction.
+# stands: when `FULL` set `WEB` below this line, `WEB` was not visible here
+# and the full build went into the lean build's directory - which is the
+# collision this name exists to prevent, arrived at from the other
+# direction.
 #
 #
 # The architecture is part of it, and only when it is not the default.
@@ -1374,7 +1380,8 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 #
 # There was one, `$(BUILD)/flags`, carrying every flag in the build - and
 # `BUILD` is only ever `build`, `build/test` or `build/bench`. It does *not*
-# vary with `DOOM`, `WEB` or `QUAKE`; `UBUILD` does. So the
+# vary with the userland's variant - `WEB` and `FFMPEG`, and `DOOM` and
+# `QUAKE` while those were switches; `UBUILD` does. So the
 # userland flags were recorded in a file the kernel's objects also depended
 # on, and every switch between variants rewrote it.
 #
@@ -5216,7 +5223,7 @@ $(X86_BUILD)/%.c.o: %.c
 # The same two steps the ARM image takes, with the arch carried through
 # `VARIANT` so the objects of the two never meet.
 # `$(UBUILD)`, not a written-out path: inside the recursive call above it is
-# `build-user-x86_64`, and naming it literally is how the two came to
+# `build/user-x86_64`, and naming it literally is how the two came to
 # disagree once already.
 # **What this image was built as**, rewritten only when it changes. Make
 # compares times and not variants: `build/x86_64` is one directory for the
@@ -5237,18 +5244,6 @@ $(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py $(HOSTDIR)/imagesums 
 	python3 tools/bin2c.py --incbin $(HOSTDIR)/imagesums $< init_image $@
 
 .PHONY: x86 x86-build
-#
-# `FULL=0` is passed through, and it has to be.
-#
-# Inside the recursive call, `FULL` decides `WEB` and the rest, which decide
-# `VARIANT`, which decides `UBUILD` - so leaving it out built the userland
-# into `build-user-x86_64-doom-web` while the rule below named
-# `build-user-x86_64`. The image then linked against whatever `init_bin.c`
-# happened to be lying there, which was one built before the user region
-# moved, and the machine faulted at an address from the previous layout.
-#
-# Doom and the browser are not off here because they would fail: they are
-# off because nothing has drawn a pixel on this architecture yet.
 #
 # `FULL` is passed through rather than forced, and it has to be *passed*.
 #
@@ -6260,11 +6255,13 @@ ide-tutorial-shots: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory $(TARGET)
 	python3 tools/ide_tutorial_shots.py $(TARGET) docs/ide-tutorial
 
-# Everything in one image, linked. `MEGA=1` is where Doom and Quake meet in
-# a single link - where a name both of them define shows up - and the image
-# that comes closest to its heap, which `user/user.ld` asserts. Built rather
-# than booted: the checks before it boot their own images, and `shot` builds
-# the ordinary one again after it.
+# The full ARM image, linked. `MEGA=1` is `FULL=1` now, the default, and
+# Doom and Quake are images of their own, so what this step proves is that
+# the AArch64 system image with the browser and FFmpeg in it still links -
+# and still ends inside the gigabyte below its heap, which `user/user.ld`
+# asserts. The suites before it build images of their own, x86-64's but for
+# the sandboxes', and `shot` after it builds x86-64's. Built rather than
+# booted.
 .PHONY: mega
 mega:
 	@$(MAKE) --no-print-directory MEGA=1 $(TARGET)

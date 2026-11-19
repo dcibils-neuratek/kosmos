@@ -409,7 +409,7 @@ void hal_timer_init(unsigned hz)
      * And what the cycle counter turned out to be running at, which the
      * processor could not say. `arch/x86_64/cpu.h` explains why the board
      * is the one that can answer and why the answer matters: it reaches
-     * userland as `/dev/cpu`'s `counter_hz`, and a zero there is a
+     * userland as `/Devices/cpu`'s `counter_hz`, and a zero there is a
      * division nobody guarded against.
      */
     cpu_set_counter_hz(tsc_hz);

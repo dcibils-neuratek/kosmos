@@ -91,7 +91,7 @@ def plain(guest):
 
 
 def boot(image, telnet, web):
-    """A desktop started as `wm compose-check`, Telnet on."""
+    """A desktop started as `wm Astra.desktop`, Telnet and the web server on."""
     board = "X86_ARGS" if R.machine(image) == "x86_64" else "QEMU_ARGS"
     saved = getattr(R, board)
     forward = "hostfwd=tcp::%d-:23,hostfwd=tcp::%d-:8080" % (telnet, web)

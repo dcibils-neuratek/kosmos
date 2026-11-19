@@ -674,36 +674,34 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   per-*thread* and returned a process onto another process's stack. One
   core was enough to prove it wrong.
 
-- **Every message blocks.** `SYS_CALL`, `SYS_RECEIVE` and `SYS_REPLY` are
-  the whole IPC surface, so a request to a server deschedules the caller
-  until the reply comes back - by construction, with no way to say
-  otherwise. Half a browser frame is an application waiting on a `commit`
-  whose handler swaps an index and records a rectangle. A non-blocking send
-  is a change to the IPC model rather than an optimisation: a syscall, a
-  fixed-size queue in the endpoint struct because there is no allocator, a
-  decision about what a full queue does, and backpressure.
+- **Every call blocks, and one message does not.** `SYS_CALL`,
+  `SYS_RECEIVE` and `SYS_REPLY` deschedule a caller until the reply comes
+  back. Since 0.11.227 there is a fourth, `SYS_PULSE`: a one-way message of
+  a code and a value, kept in a ring of 32 in the endpoint; a full ring
+  merges a pulse into one of the same code, or refuses it with
+  `IPC_ERR_FULL`, and the sender never blocks (`docs/pulses.md`). This
+  bullet said there was no way to say otherwise; what is left is that a
+  pulse carries a number and not a payload, which is what keeps it bounded.
 
-- **An address is four numbers.** There is no resolver, so the browser
-  reaches `188.184.67.127/` and not a name. UDP exists in the stack only as
-  far as DNS will need it, and there are no sockets, because nothing else
-  has asked for any.
+- **An address is a name now.** This said there was no resolver and no
+  sockets. The network stack resolves a name (`NET_OP_RESOLVE`,
+  `user/include/netproto.h`), and ported code has process-private POSIX
+  sockets on the Network Kit (`runtime/posix/`, `design.md` §17.1).
 
-- **The screen is one framebuffer with no flush.** `hal_fb_init` asks the
-  firmware for a linear framebuffer and lets it choose where the pixels
-  live, which is the one operation QEMU's ramfb and the Pi's mailbox both
-  perform. virtio-gpu does not fit it - it needs an explicit flush after
-  drawing - and that is precisely what will grow the interface a
-  `hal_fb_flush`, with two implementations behind it rather than one.
+- **The screen is told what was drawn.** This said `hal_fb_init` was the
+  whole interface and virtio-gpu would grow it a flush. It did, on 29
+  September 2026: `hal_fb_flush` (`hal/hal.h`) sends virtio-gpu the
+  rectangle and ramfb and a firmware screen ignore it, and `hal_cursor_set`
+  and `hal_cursor_move` followed on 1 October.
 
 - **The terminal cannot be selected from.** The clipboard reaches
   `ui.editor` and `ui.field`; the terminal draws its own scrollback through
   `ui.view`, so it has no anchor and no cursor. The honest fix is lifting
   that machinery out of the editor rather than writing it twice.
 
-- **`tests/tests.c` has run on one board.** 127 checks, the largest single
-  test asset here, and no x86-64 image target builds it - so the suite that
-  most directly exercises the kernel has never run on the second
-  architecture. Everything else in `make test` runs on both.
+- **`tests/tests.c` runs on both boards.** This said no x86-64 image
+  target built it; the x86-64 kernel links it under `TEST` as the AArch64
+  one does (`Makefile`, `X86_SRCS += tests/tests.c`).
 
 ---
 

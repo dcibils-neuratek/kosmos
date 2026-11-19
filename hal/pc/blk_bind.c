@@ -7,7 +7,7 @@
  * when somebody put it on the boot stick for this boot: a disk image carried
  * beside the kernel is a statement about what this machine should mount, and
  * a ThinkPad with an NVMe drive would otherwise never see it. The cost is
- * said out loud rather than discovered: on such a boot the drive's `/home`
+ * said out loud rather than discovered: on such a boot the drive's `/Home`
  * is not mounted, and what is written goes to memory.
  *
  *

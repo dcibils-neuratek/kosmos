@@ -618,13 +618,15 @@ static void flips_start(void)
     say_text(&line, "windowserver: page flips, between the firmware's screen and buffer ");
     say_dec(&line, buffer_id[1]);
     /*
-     * **Composing's opaque parts stay the processor's for now** (6b,
-     * `testing.md` 18.669): on the M700 they worked - 0 pixels different -
-     * and took the processor's composing from 0.80 ms a frame to 0.43, but
-     * the blitter could not keep up with them and the copy to the screen
-     * behind them, and the screen got 42 frames a second rather than 57.
-     * Diego: "it has some choppy moments". Responsiveness first: off, until
-     * the blitter copies faster (XY_FAST_COPY_BLT, next).
+     * **Composing's opaque parts on the blitter at rendering mode 4 and
+     * above, and not by default** - the machine starts at 2, Page flips
+     * (`rendering`, `docs/rendering.md`). On the M700 they worked (6b,
+     * `testing.md` 18.669) - 0 pixels different - and took the processor's
+     * composing from 0.80 ms a frame to 0.43, but the blitter could not keep
+     * up with them and the copy to the screen behind them, and the screen got
+     * 42 frames a second rather than 57. Diego: "it has some choppy
+     * moments". Responsiveness first: a mode to choose, not the one the
+     * machine starts in.
      */
     blit_composing = blitting && rendering >= 4;
     say_text(&line, blitting ? "; the copy into them on the blitter" : "; the copy into them here");

@@ -6,7 +6,7 @@
 --
 -- Each one is `spin`, started detached: this program asks for them to be
 -- *started*, not finished, so it comes back to the prompt immediately
--- while they run. Watch with `htop 5` or `monitor watch`.
+-- while they run. Watch with `htop 5`, or System Monitor on the desktop.
 --
 -- It is a program, in /Kosmos/Programs, launching other programs there.
 -- Nothing about that is special-cased anywhere: `run` is a function this
@@ -31,4 +31,4 @@ for i = 1, n do
 end
 
 print(("%d process%s burning for ten seconds."):format(n, n == 1 and "" or "es"))
-print("Watch with `htop 5`, or `monitor watch` on the screen.")
+print("Watch with `htop 5` or `monitor` here, or Processes on the desktop.")

@@ -383,8 +383,8 @@ long irq_wait(struct irq_line *line, unsigned long ticks)
  * of requests cannot hold off a mouse.
  *
  * **Two, because the xHCI driver's clients come in on two**: the disk
- * server's write endpoint and `/dev/blocks`. With one on the wait, a read on
- * `/dev/blocks` waited out the driver's 50 ms deadline - 17 a second, the
+ * server's write endpoint and `/Devices/blocks`. With one on the wait, a read on
+ * `/Devices/blocks` waited out the driver's 50 ms deadline - 17 a second, the
  * ThinkPad's number and QEMU's alike, where `/home` on the same stick read
  * 938 (`testing.md` §18.71).
  *
@@ -413,7 +413,7 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
     /*
      * **No lines and some endpoints is a wait**, and it is what a driver with
      * no hardware to watch has: the xHCI server on a machine with no
-     * controller still answers `/dev/blocks` and the network stack, and
+     * controller still answers `/Devices/blocks` and the network stack, and
      * polling those two would be twenty wakes a second on a machine where
      * nothing is happening at all. What is refused is a wait on nothing.
      */
@@ -433,7 +433,7 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
      * its lock would be taken twice.
      *
      * Written for two until 22 September, when a driver needed three: the
-     * xHCI server watches the disk server's writes, `/dev/blocks`, and - once
+     * xHCI server watches the disk server's writes, `/Devices/blocks`, and - once
      * a USB Ethernet adapter is plugged in - the network stack's frames
      * (`usb.md` 7d). The argument does not change with the number: take them
      * in a total order every caller agrees on, and two waits naming the same

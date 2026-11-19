@@ -25,10 +25,10 @@
  */
 
 #define KEY_OP_LIST     1u  /* the entry after `id`, of the kinds this door sees */
-#define KEY_OP_GET      2u  /* smb: the secret kept for (service, account) */
-#define KEY_OP_PUT      3u  /* smb: a secret for (service, account), new or replacing;
+#define KEY_OP_GET      2u  /* a kind's own door: the secret kept for (service, account) */
+#define KEY_OP_PUT      3u  /* a kind's own door: a secret for (service, account), new or replacing;
                                * none: the entry there kept, its shares and title changed */
-#define KEY_OP_FORGET   4u  /* by id: manage, any; smb, its own kind */
+#define KEY_OP_FORGET   4u  /* by id: manage, any; a kind's own door, its own kind */
 #define KEY_OP_EDIT     5u  /* manage: a title, notes, the at-start switch */
 #define KEY_OP_STATE    6u  /* manage: how many, and how the file opened */
 #define KEY_OP_REVEAL   7u  /* manage: the secret of `id`, for Show */
@@ -36,7 +36,7 @@
 #define KEY_KIND_SMB    1u  /* a share's password */
 #define KEY_KIND_WIFI   2u  /* later */
 #define KEY_KIND_WEB    3u  /* later */
-#define KEY_KIND_MAIL   4u  /* later */
+#define KEY_KIND_MAIL   4u  /* a mail account's password, through the `mail` door */
 #define KEY_KIND_SHARING 5u /* this machine's own account, the one a visitor signs
                              * in to smbd with: its NT hash, never the password
                              * (`docs/sharing.md` N12c) */

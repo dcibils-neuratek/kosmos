@@ -1,5 +1,9 @@
 <!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
-# Mail's HTML on WebKit, before it is built
+# Mail's HTML on WebKit
+
+*W1, one WebKit image, built in 0.11.435, and W2, views, in 0.11.436
+(`testing.md` 18.831, 18.833); WebKit's content rule lists, W4's first half, on
+since 0.11.442 (`adblock.md` B1). W3, W5 and W6 are not built.*
 
 **Decided, 15 November 2026.** JetSki replaces the old browser ("we should
 delete our old browser code and app as now jetski is much better
@@ -144,8 +148,9 @@ rather than followed (`JETSKI_ASKED`). What changes:
   reaches it.
 - **Remote loads held**: WebKit's content rule lists, a rule that blocks
   every `http:` and `https:` load, taken off when Load Pictures is
-  pressed. The option is compiled out of this build today
-  (`ENABLE_CONTENT_EXTENSIONS 0`), and W4 turns it on. It is WebKit's own
+  pressed. The option was compiled out of this build when this was
+  written, and is on since 0.11.442 (`ENABLE_CONTENT_EXTENSIONS`,
+  `adblock.md` B1). It is WebKit's own
   mechanism, the one Safari's content blockers use, rather than one of
   Kosmos's in the network process.
 

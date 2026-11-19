@@ -1,7 +1,9 @@
 # Pulses: one-way messages in Nebula
 
-*Designed 14 October 2026. Nothing here is built. **QNX's shape chosen** -
-Diego: "Qnx sounds better".*
+*Designed 14 October 2026; P1 to P4 built in 0.11.227-0.11.230 (*Steps*,
+below), and Tracker and `autod` use them. Not yet: the Open/Save window,
+the desktop's icons and `/Drives`. **QNX's shape chosen** - Diego: "Qnx
+sounds better".*
 
 Diego, 14 October 2026, asked why `maild` tells `autod` about new mail
 through a file rather than by publish and subscribe: "Go ahead with files

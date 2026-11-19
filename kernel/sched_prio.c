@@ -26,17 +26,36 @@
  *     compiled in and never questioned.
  *
  * What is deliberately not borrowed: two hundred and fifty six levels,
- * where five say everything this system has to say; and hard guarantees,
+ * where seven say everything this system has to say (`SCHED_PRIORITIES` is
+ * eight, `sched.h` names seven); and hard guarantees,
  * which would mean bounding every kernel operation and is a promise nothing
  * here needs. Kosmos wants a desktop that feels alive, not an airbag that
  * fires in time.
  *
  * **Starvation is real and is accepted, with eyes open.** Strict priority
  * means a busy high thread can hold the CPU forever and the levels below it
- * never run. QNX answers with adaptive partitioning; the answer here is
- * that the only threads above `PRIO_NORMAL` are the ones that read input
- * and put pixels on the screen, and both block almost immediately. If that
- * stops being true, this comment is where to start.
+ * never run. QNX answers with adaptive partitioning. The answer here is a
+ * different one for each band above `SCHED_PRIO_NORMAL`, and `sched.h` has
+ * them:
+ *
+ *   * **GAME and AUDIO are held to a budget.** A thread in either that runs
+ *     longer than its budget without sleeping - a second for a game,
+ *     longer than a whole ring takes to play for sound - drops back until
+ *     it next sleeps (`thread_tick`). A game in game mode can also be given
+ *     a core of its own (`thread_reserve_core`), so what it holds off is
+ *     only what chose to share that core.
+ *
+ *   * **DISPLAY is held by blocking alone**: whatever was handed the screen,
+ *     and the userland drivers (`process_grant_devices`), which wait on
+ *     their hardware or their clients almost at once. Nothing enforces that
+ *     they do, which is why neither is put higher.
+ *
+ *   * **INPUT is granted to nothing** in the running system - only the
+ *     guest tests put a thread there - because the console owner was tried
+ *     there and starved the machine (`process_grant_console` has why).
+ *
+ * If a thread in one of those bands stops blocking and has no budget, this
+ * comment is where to start.
  */
 
 #include <stddef.h>

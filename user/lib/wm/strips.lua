@@ -9,14 +9,20 @@
 -- A menu bar above a window that draws its own pixels.
 --
 -- Diego chose this on 18 September for the Super Nintendo's File menu (the
--- README's decision log): a direct window's contents are the application's
--- own memory, so the kit cannot draw a menu bar into them - `window:paint`
--- returns at once for one - and the alternative was each application
--- painting an imitation of one into its game. So the window manager draws
--- the strip, as the kit draws `ui.menubar`: the same gradient and groove,
--- the same titles in the same places. The application's buffer is the area
--- below it, and everything it is told about the pointer is in the buffer's
--- own coordinates.
+-- README's decision log): a direct window's contents were the
+-- application's own memory, so the kit could not draw a menu bar into
+-- them, and the alternative was each application painting an imitation of
+-- one into its game. So the window manager draws the strip, as the kit
+-- draws `ui.menubar`: the same gradient and groove, the same titles in the
+-- same places. The application's buffer is the area below it, and
+-- everything it is told about the pointer is in the buffer's own
+-- coordinates.
+--
+-- **Since the kit's band** (`ui.window`, step 2) the kit draws an ordinary
+-- direct window's title and menu titles into the top of its own surface,
+-- the Super Nintendo's among them, and sends no `menubar`. What still gets
+-- this strip is a direct window with no band: one with a header of its
+-- own, or full screen - Video's, when it fills the screen.
 --
 -- **Only the strip is here.** A press on a title is posted as a `menubar`
 -- event with where the menu should open, and the application opens an

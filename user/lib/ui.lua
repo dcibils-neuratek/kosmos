@@ -14,15 +14,16 @@
 --
 -- `ui.md` 16.2 and 16.6. A view is a rectangle with children and a draw
 -- handler, and drawing produces *commands* rather than pixels: `gc:fill`
--- and `gc:text` append tables to a list, and the list goes to the window
--- manager in a message. Nothing here ever touches a pixel, and nothing here
--- computes a pixel offset - `gfx.md` 19.3, and the pitch is not width * 4.
+-- and `gc:text` append tables to a list, and `paint.lua` runs the list
+-- into the window's own region, in this process, with the C primitives
+-- (`ui.paint_ops`); the window manager is told only that a frame is
+-- finished, and where. Nothing in Lua here touches a pixel or computes a
+-- pixel offset - `gfx.md` 19.3, and the pitch is not width * 4.
 --
--- Because the commands are data rather than calls, a view that has not
--- changed can have its list resent without re-running its handler, and a
--- window's drawing can be logged, replayed, or inspected from the shell.
--- BeOS could do none of that: it handed the application a pointer into the
--- app_server's buffer with a lock around it.
+-- The region holds two buffers and `commit` swaps them, so the window
+-- server only ever shows a finished frame and nobody takes a lock - where
+-- BeOS handed the application a pointer into the app_server's buffer with
+-- a lock around it.
 --------------------------------------------------------------------------
 
 local theme = use("/Kosmos/Libraries/theme.lua")
@@ -98,9 +99,9 @@ end
 local GW, GH = gfx.font.w, gfx.font.h
 
 --
--- **The fixed layout** (`theme.metrics`, `roadmap.md` 5x): a row is 24
--- pixels, a button 28, a field 26, whatever face is in force. Widgets are
--- those sizes; the words in them are placed by the face - centred in the
+-- **The fixed layout** (`theme.metrics`, `roadmap.md` 5x): a row, a
+-- button and a field are each the height `theme.metrics` says, whatever
+-- face is in force. Widgets are those sizes; the words in them are placed by the face - centred in the
 -- box by `gfx.height()`, asked when drawn - and a look's faces are chosen
 -- to fit. `GH` is the face as it stood when this file loaded, and it used
 -- to size rows too, which is how a larger face moved everything below it.
@@ -7593,9 +7594,9 @@ end
 
 --
 -- **A view drawn into a surface**, for a window whose pixels its program
--- draws: the same commands a kit window sends the window manager, made the
--- same way and replayed by `/Kosmos/Libraries/paint.lua`, which is the window manager's
--- own - so a widget looks the same in either kind of window. Cafesa3D's
+-- draws: the same commands a kit window paints into its own region, made
+-- the same way and run by `/Kosmos/Libraries/paint.lua` - so a widget looks
+-- the same in either kind of window. Cafesa3D's
 -- Script panel is the first to want it, for the IDE's editor (`roadmap.md`
 -- 6n, step 6). `x`, `y` is where the view's own corner lands in the surface,
 -- and nothing is drawn outside the view.
@@ -7723,7 +7724,7 @@ do
   --
   --
   -- At a scale (D2c), each command made the screen's pixels by `paint.scale`
-  -- - the window manager's own arithmetic - and its text drawn in its role's
+  -- - the window manager's `scale.px` sum - and its text drawn in its role's
   -- face at the scale: the faces this process lays out in stay at points.
   --
   local scaled = {}
@@ -7877,11 +7878,10 @@ function ui.window(spec)
   -- `direct = true` asks for a window whose pixels this process draws
   -- itself, into memory both it and the compositor can see.
   --
-  -- `gfx.md` 19.4. The ordinary path sends drawing commands and the
-  -- compositor owns every pixel, which is what lets a hung application keep
-  -- a window. This is for the cases where that is the wrong trade - a video
-  -- frame, a rendered scene - where the whole surface changes every frame
-  -- and describing it costs more than copying it.
+  -- `gfx.md` 19.4. Every window has such a region now; what `direct` adds
+  -- is that the application draws into it with its own hand rather than
+  -- the kit painting widgets there - a video frame, a rendered scene, where
+  -- the whole surface changes every frame.
   --
   -- Two buffers in one region: this process draws into the one the
   -- compositor is not showing, and `commit` swaps them. No locks, because
@@ -7894,10 +7894,10 @@ function ui.window(spec)
   -- **An ordinary window that draws itself** (`docs/astra-display.md` D2,
   -- decided 9 October: "every window draws itself"): its frame's commands
   -- run here, into a region of its own, and committed - rather than sent
-  -- for the window manager to carry out. Asked for by `draws_itself` while
-  -- it is proved, window by window; the window manager declines it at a
-  -- scale, where the region would be shown stretched, and the window sends
-  -- its drawing as before.
+  -- for the window manager to carry out. `draws_itself` tells the window
+  -- manager so; at a scale the region is made in the screen's pixels and
+  -- the commands drawn scaled (D2c), so it is shown as it is, never
+  -- stretched.
   --
   -- **Every window the kit draws** since D2d - one with the kit's header or
   -- one of its own, a popup, a tip, a banner, a strip, the backdrop, a full
@@ -8032,11 +8032,13 @@ function ui.window(spec)
     header = (spec.header or auto_head or band) or nil,
 
     --
-    -- **A menu bar, for a window that draws its own pixels.** The kit cannot
-    -- draw one into memory the application owns, so the window manager
-    -- draws the strip above it and says when a title is pressed; the menus
-    -- themselves are this kit's, opened by `direct_event`. Only the titles
-    -- go: the items stay here, where their `on_choose` can run.
+    -- **A menu bar, for a window that draws its own pixels and has no
+    -- band** - one with a header of its own, or full screen. With a band
+    -- the kit draws the menus' titles there itself; without one the window
+    -- manager draws the strip above the window and says when a title is
+    -- pressed, and the menu itself is this kit's, opened by
+    -- `direct_event`. Only the titles go: the items stay here, where their
+    -- `on_choose` can run.
     --
     menubar = (spec.direct and spec.menubar and not band) and (function()
       local titles = {}

@@ -2923,8 +2923,9 @@ static const struct {
     { "curltest", kosmos_curltest_kit, 1 },
     /* Skia, in no image but its test's (`docs/w5.md` W5e). */
     { "skiatest", kosmos_skiatest_kit, 1 },
-    /* Brotli, woff2, libavif and dav1d, in no image but their test's
-     * (`docs/w5.md` W5f). */
+    /* Brotli, woff2, libavif and dav1d (`docs/w5.md` W5f) have no row:
+     * `formattest` is the project kit of their test's image
+     * (`kosmos_project_kit`, below). */
     /* WebCore, in no image but its test's (`docs/w6.md` W6b). */
     { "webcoretest", kosmos_webcoretest_kit, 1 },
     /* WebKit2, its three processes, in no image but its test's

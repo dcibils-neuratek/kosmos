@@ -1213,8 +1213,8 @@ void kmain(void)
      *
      * So a plain boot sets nothing here and `thread_cpu_count` answers
      * `smp_online()`. The option stays, as a way to *narrow*:
-     * `opt/kosmos/smp=1` - `make SMPWORK=1 qemu`, or the word on GRUB's
-     * line - homes every new thread on core zero again, and `=2` halves the
+     * `opt/kosmos/smp=1` - `make SMPWORK=1 qemu`, or the word in a stick's
+     * `\boot\kosmos.cmdline` - homes every new thread on core zero again, and `=2` halves the
      * search space when something breaks. It cannot widen past the
      * processors that arrived; `thread_cpu_count` sees to that.
      */

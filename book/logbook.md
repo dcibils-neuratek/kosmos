@@ -4488,3 +4488,169 @@ into looked like one behind. The star was drawn under the plate, which
 covered the corner it sits in. And a change to the gallery's test machine
 gave two machines one network port, which three other suites caught at
 once.
+
+## 18 November 2026 - Glass that shows what is really behind it
+
+**In short.** Liquid Glass's floating pieces - the dock, its tips,
+notifications' banners and menus - can now show what is truly under them,
+blurred, rather than the wallpaper's glass. It is a choice in Appearance,
+*Glass shows what is behind*, and off until it is measured on the M700.
+The same day the dock's pill and the banners got the bent, lit rim windows
+already had, and a glass window stays glass while it is being resized.
+0.11.487 to 0.11.491.
+
+**What.** Until now every glass surface read one picture made once, the
+wallpaper blurred, which is why glass cost a copy rather than a blur. Live
+glass copies what is on the screen under each floating piece from the
+frame being composed and blurs that, so a window passing under the dock
+shows through it. The rims needed each strip to say where its glass is
+inside its picture - a banner's card sits inside a margin for its shadow
+- so the edge is bent at the glass and not at the picture's border.
+
+**Why it matters.** It is the difference between glass and a picture of
+glass. It is also the first effect that costs something every frame, which
+is why it is off: the bar is under a millisecond a pass more on the M700.
+
+**Measured.** With it on, the dock's row over About moved 61.6 levels; over
+the bare wallpaper, 0.0 - the check that it really reads what is behind.
+
+## 18 November 2026 - Starlight's night sky
+
+**In short.** Under Starlight the dock, menus and banners are now glass
+too, but a glass of Starlight's own: it shades from a violet dusk at the
+top of the screen to night at the bottom, with a faint dust of stars in
+it, and a thin amber horizon runs along the top of each piece. Its windows
+stay solid. 0.11.492.
+
+**What.** The gradient and the star dust are put into the wallpaper's
+blurred copy once, when it is made, so they cost nothing a frame; the
+horizon is one row of pixels per piece.
+
+**Measured.** Shading the glass for a 1920 by 1080 screen takes 1.3 ms,
+once.
+
+## 18 November 2026 - Windows that roll up, and a plate that lights from the left
+
+**In short.** A Starlight window closing now rolls back up into its title
+plate in about a tenth of a second, the other half of the unroll it opens
+with; and a window coming to the front no longer turns amber at once - the
+amber sweeps in from the left. With these Starlight's motion, S4, is
+built. 0.11.497 and 0.11.498.
+
+**What.** The window is really closed the moment you ask: its program is
+told, its memory given back, and nothing can click or type into it. What
+rolls up is a copy of its last picture, shortened a little each frame and
+then let go. The sweep draws the plate as it was behind, and the plate in
+front copied over it as far as the sweep has reached; only the plate is
+redrawn while it runs.
+
+**Measured.** The roll is 120 ms, the sweep 90 ms.
+
+## 18 November 2026 - A look is colours; a desktop is a shape
+
+**In short.** Choosing a look in Appearance now changes colours and
+transparency and nothing else. Whether windows have the star, the amber
+plate, the cut corner, bevels, room for a title bar and how deep their
+shadow is belongs to the desktop - Astra, Starlight or Pewter. 0.11.496
+and 0.11.506.
+
+**What.** Diego chose Liquid Glass on Astra and got Starlight's amber plate
+and star, because the looks carried those. He said "the theme is colors and
+transparency", and then of the last three, "yes move all three to the
+desktop". So each `.desktop` file names six keys of style and every look
+is worn over them.
+
+**Why it matters.** A desktop keeps its character whatever colours a person
+picks, and a look can be added without deciding how windows are built.
+
+## 18 November 2026 - JetSki saves, has a menu, and remembers
+
+**In short.** JetSki, the browser, can save a page (Control-S: one MHTML
+file with everything in it, or the HTML alone), has a menu behind its three
+dots with every command and its key, and keeps favorites - the star beside
+the address - and a history of every page shown, a file a day. Its one
+file of nearly three thousand lines is now six. 0.11.500 to 0.11.504.
+
+**What.** The Save window is the system's own, opening at Downloads with
+the page's name. Favorites are files in `/Home/Favorites`, which Tracker
+shows as it shows any file; history is a file a day in JetSki's settings
+folder, thirty days kept. Both are the libraries the old browser had, which
+had had nobody using them since it went. The menu's rows and the keys are
+one function each, so a row can never do something its key does not; Print,
+Page source and History's list are there and greyed until each is built.
+
+**Why.** The browser is most of a working day, and these are the basics a
+person reaches for without thinking. The split was forced: the main file
+had used up all the room Lua gives one chunk, and the star only fitted by
+squeezing names together.
+
+**Measured.** A saved page of the IDE tutorial: 4,793 bytes as MHTML,
+3,974 as HTML. JetSki's main file went from 2,938 lines to 2,164.
+
+## 18 November 2026 - Tests that fail only when the machine is busy
+
+**In short.** A run of the whole test gate kept failing one suite at a time
+- a film's sound, a tone's pitch, a drag, a profiler's count, a program
+dying in `malloc` - each passing when run alone. Most were the tests, not
+Kosmos, and were fixed or explained; one is now instrumented to say exactly
+why the next time. 0.11.493 to 0.11.505.
+
+**What.** The film test's program was written to a temporary folder, and
+only a program the system image carries may ask for the audio band, so its
+sound ran below the desktop and stalled under load; it now plays through
+`listen`, a new program anyone can use, which is in the band. The
+profiler's test counted ticks a busy Mac never delivered. The tone was QEMU's
+sound model slowed by the host, the drag a test reading the first of many
+queued moves. The `malloc` death came and went on identical binaries, so
+the kernel now records which of three reasons it refused a page for.
+
+**Why it matters.** A test that fails for no reason teaches people to ignore
+failures. Each one either fixed at its cause or made to say its cause is
+the only way the gate stays worth reading.
+
+## 18 November 2026 - A dock button for something that is gone
+
+**In short.** Diego could not open the browser on the M700. JetSki was fine;
+he was pressing an old dock button for the browser removed in 0.11.461,
+which wrote an error to the log and showed nothing. Now such a button is
+drawn faded, its tip says the program is not installed, and pressing it
+says the same. 0.11.507.
+
+**Why it matters.** Nothing on the desktop should fail silently. The dock
+checks on its own clock, never while drawing or on a press, and keeps the
+button, since installing the program again brings it back.
+
+## 19 November 2026 - The review before 0.12.0, first half
+
+**In short.** Before the next minor version, the whole tree was read by
+eight helpers in parallel, one an area, and they reported 205 findings
+without changing anything. The first four batches are done: six real bugs
+fixed, about two thousand lines the old browser left behind removed, dead
+code elsewhere removed, and second copies of the same helper merged into
+one. Diego took all seven decisions left to him. 0.11.508 to 0.11.515.
+
+**What.** The bugs: any program could take away another's name in
+`/Running`, and it kept a capability slot for every request it did not
+store; what an interrupt wakes was written three times and had drifted, so
+on ARM a key could wait for the next tick; Telnet could split a command
+over two reads. Diego's decisions: Paint moves to Demos until it is
+redesigned, the web kit's own HTML layout goes (Mail draws with NetSurf),
+one release image for every screen size, and the kernel's limit of eight
+processors goes - the Mac Pro has twenty-four, and the kernel now asks the
+machine how many it has and allocates for those. The merging changed two
+outputs on purpose: UTF-8 is read by one rule everywhere, and a PNG is
+written through the Compress Kit.
+
+**Why.** Complexity accumulates by addition; nothing removes code when the
+idea behind it changes. `CLAUDE.md` asks for this review before every
+minor version, and there had not been one since 0.11.0.
+
+**Measured.** About 3,800 lines left the tree with Diego's decisions and
+about 580 with the merging; a PNG is 19% smaller and written 29% faster.
+The gate had grown to 12:41 against a ten-minute budget, because it ran ten
+suites at once on ten cores while each suite mostly waits; twelve at once
+brought it to 9:48 with every suite, and 8:21 on a normal day.
+
+**Next.** Batches 5 to 8 - comments and documents, work nobody reads,
+things to measure before changing, tests nothing runs - then 0.12.0, and
+then a 3D API, in QEMU first.

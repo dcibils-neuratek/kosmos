@@ -2606,7 +2606,7 @@ win:add(bar)
 -- opens what Preferences' Startup page ticked, and `maild` and `autod`,
 -- once this window is up - as this file did - or, when a desktop was
 -- chosen, once that desktop's programs have arrived. A desktop with no
--- Deskbar, as Pewter will be, opens them too, and the chooser's loader
+-- Deskbar, as Pewter is, opens them too, and the chooser's loader
 -- lists them as they start.
 --------------------------------------------------------------------------
 

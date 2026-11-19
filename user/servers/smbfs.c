@@ -2415,7 +2415,7 @@ static bool folder_ask(struct folder *f)
     }
 
     /* A chain on another of the server's shares is running: this one waits
-     * for it, and is begun by the loop when it ends (`chains_waiting`). */
+     * for it, and is begun by the loop when it ends (`trees_wanted`). */
     if (!chain_take(s, f->tree)) {
         f->asking = true;
         f->deferred = true;
@@ -2934,7 +2934,7 @@ static void handle_closed(struct smb2_context *smb2, int status, void *data,
 }
 
 /* The open sent - now, or, when another share's chain runs, by the loop
- * once it ends (`chains_waiting`). False when libsmb2 would not take it. */
+ * once it ends (`trees_wanted`). False when libsmb2 would not take it. */
 static bool handle_open(struct handle *f)
 {
     struct server *s = f->server;

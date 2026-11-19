@@ -2,7 +2,7 @@
 /*
  * The scanf family's one scanner, bounded by a length rather than a NUL.
  *
- * `sscanf` and `vsscanf` lived in `user/lib/misc_user.c`, next to the
+ * `sscanf` and `vsscanf` lived in `user/init/misc_user.c`, next to the
  * `strtol` they call, and read until a NUL. That was enough for Doom, which
  * parses the lines of a config file. It is not enough for `fscanf`: a file
  * here is bytes in memory (`stdio.c`), and a file inside a pak - Quake's

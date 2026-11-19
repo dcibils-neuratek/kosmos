@@ -13,14 +13,15 @@
 -- open and read; `themes.plex` still gives the text, read from its file the
 -- first time it is asked for.
 --
--- **Six looks, and nothing else to choose** (`roadmap.md` 5y). Diego, 22
+-- **A few looks, and nothing else to choose** (`roadmap.md` 5y). Diego, 22
 -- September 2026: "Too many config options make the system vulnerable to
 -- changes and complicated", and "Let's just make 3 or 4 good design options
 -- in colors and fonts and stick to those". Each is a whole - its colours,
 -- its faces, its Deskbar - designed together and approved: Plex, Plex
 -- Night, Classic and Studio in `docs/looks.html` ("Those 4 looks are
 -- great"), Endeavour on 23 September and Night on 3 October, each in its
--- own file. Somebody picks a look, not its parts. They share their faces,
+-- own file - six then, and fourteen now (`themes.order`, below). Somebody
+-- picks a look, not its parts. They share their faces,
 -- IBM Plex at the sizes the fixed layout holds, and differ in colour.
 --
 -- The four this file held before - Photon, BeOS, Platinum, IRIX, each a
@@ -29,9 +30,9 @@
 -- values and notes kept; the others are in the history.
 --
 -- Where a system used a pinstripe there is a flat colour that reads as it.
--- The chrome - window tabs and menu bars - is shaded from the one colour
--- named here, by `theme.chrome`, so a palette names one surface and gets
--- both ends of it.
+-- The chrome - the menu bars - is shaded from the one colour named here,
+-- by `theme.chrome`, so a palette names one surface and gets both ends of
+-- it.
 
 local themes = {}
 
@@ -45,8 +46,8 @@ local themes = {}
 -- amber minimise sits on its own colour there; Endeavour's tab is a light
 -- blue the three read cleanly on. Being first is the whole of being the
 -- default: the window manager and Preferences both take `order[1]`.
--- Night, the sixth, last (`roadmap.md`, a dock at the bottom): offered
--- beside the others, never the default.
+-- Night, the sixth (`roadmap.md`, a dock at the bottom): offered beside
+-- the others, never the default.
 --
 -- **Five more on 8 October** (Diego: "add 5 more theme colors, 3 dark ones
 -- and 2 light ones with different tones that make the desktop look cool.

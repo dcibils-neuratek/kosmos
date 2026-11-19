@@ -100,7 +100,7 @@ struct addrspace;
 
 /*
  * **How many endpoints one wait can watch**: two, for a driver whose clients
- * come in on two - the xHCI driver's write endpoint and `/dev/blocks`
+ * come in on two - the xHCI driver's write endpoint and `/Devices/blocks`
  * (`irq_wait_any`). `ipc.watching` has a slot for each, so a thread that dies
  * watching both is taken off both.
  */
@@ -108,10 +108,10 @@ struct addrspace;
  * How many endpoints one thread can have a wait watching at once.
  *
  * Two until 22 September, which was what the xHCI driver needed then: the
- * disk server's writes and `/dev/blocks`. A USB Ethernet adapter adds the
+ * disk server's writes and `/Devices/blocks`. A USB Ethernet adapter adds the
  * network stack's frames, and an endpoint that is not watched waits out the
  * driver's whole watch interval - which is the fault that made this two
- * rather than one (`usb.md` 7d). And four since 24 September: `/dev/camera`
+ * rather than one (`usb.md` 7d). And four since 24 September: `/Devices/camera`
  * is the same driver's fourth (`usb.md` §11 8d), eight bytes a thread.
  * Eight since 28 September: `/Devices/midi` is its fifth (`usb.md` §12), and
  * room for the next three rather than one more step of one.

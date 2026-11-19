@@ -1,5 +1,8 @@
 # The Playback Kit: a song's and a film's sound on a thread of its own
 
+*Built: steps 1 to 5 (`testing.md` 18.754-18.757), and a door from C for
+JetSki (below, 14 November).*
+
 Agreed on 10 November 2026 (Diego: "yes, build the C playback thread for
 music and video"), from `roadmap.md` 6zw: `x86-film`'s gaps under the
 gate's load are not a test's fault but the player's. This is the design,
@@ -113,7 +116,7 @@ remainder, the input ring. The pass allocates nothing.
 | The ring to the audio server | `audioring.h`, `audio.open` | no |
 | MP3 decoding | `minimp3.h`, the MP3 Kit's | no - its core moved to a `.c` both kits link |
 | AAC decoding | `aac_core.h` | no |
-| Converting to the device | `sys.pcm`'s resampler | **moved** from `sys_user.c` to `user/lib/c/pcm.c`, one copy that `sys.pcm` and this kit both call |
+| Converting to the device | `sys.pcm`'s resampler | **moved** from `sys_user.c` to `user/include/pcmconvert.h`, one copy that `sys_user.c` (`sys.pcm`) and `playback_core.c` both include |
 | The input ring | this kit | yes |
 | Demuxing an MP4, finding a song's frames | `video.lua`, `media.lua`, as now | no |
 | The clock the picture follows | `stream:position()`, as now | no |
@@ -171,7 +174,7 @@ seconds.
 
 ## Steps
 
-1. **The resampler and MP3's core shared** - `pcm.c` from `sys_user.c`,
+1. **The resampler and MP3's core shared** - `pcmconvert.h` from `sys_user.c`,
    `sys.pcm` calling it, held byte for byte by a host test against the old
    path's output; `minimp3`'s implementation in one `.c`.
 2. **The kit on the Mac** - the input ring, decode, convert, write into an

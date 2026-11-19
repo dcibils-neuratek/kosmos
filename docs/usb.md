@@ -1828,11 +1828,16 @@ disk's partitions are the kernel's and not read.
   space. Whether a volume's sector count fits its partition is checked there,
   since only the caller knows the partition.
 
-  **What it does not do yet is open one.** A FAT volume is named, sized and
-  listed; asking for its contents answers `DRIVES_ERR_UNREADABLE` until the
-  directory walk is written. kfs volumes are listed and never opened, because
-  kfs's reader is `user/lib/kfs.lua` and this server is C - reading one here
-  means kfs in C, which is its own piece of work behind Disk Benchmark.
+  **What it did not do at first was open one.** A FAT volume's contents
+  answered `DRIVES_ERR_UNREADABLE` until the directory walk was written; it
+  is read now (`walk_next` in `drives.c`). A kfs volume is still listed and
+  not opened, and the reason changed: this said kfs's reader was
+  `user/lib/kfs.lua`, and the format has been C since 29 September
+  (`user/servers/kfs.c`, which this server already uses to read a kfs
+  volume's superblock and free space). What is left is that the volume
+  Kosmos started from is already open as `/Home`, through the disk server,
+  and opening a second Kosmos volume here - a stick with Kosmos on it, say -
+  is a piece of work of its own that nothing has asked for yet.
 - **exFAT is 6f.** FAT12 is refused, short names are not read through a code
   page, and nothing is written.
 

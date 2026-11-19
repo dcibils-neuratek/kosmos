@@ -220,10 +220,18 @@ void pmm_init(void)
  * **One lock for the whole allocator, and that is the right grain here.**
  * The bitmap is one array, the cursor is one word, and the free count is one
  * number - there is nothing to partition. Per-CPU free lists are the usual
- * next step and they are an optimisation for contention that does not exist
- * yet: a page is allocated when a process starts or a region is made, not on
- * any hot path. `docs/smp.md` names it as the thing to do if this ever shows
- * up in a profile.
+ * next step, and an optimisation for contention nobody has measured yet.
+ *
+ * **That is not because pages are taken rarely.** This said a page was
+ * allocated when a process starts or a region is made, not on any hot path,
+ * and it stopped being true when memory began to be given on touch: a
+ * reservation's page on its first fault (`reserve.c`, behind `malloc` and
+ * JavaScriptCore's heap), a region's (`memobj_fill`), an image's writable
+ * half, its heap and a thread's stack below its eager pages
+ * (`process_fill`) - each taken here from a fault, on whichever core
+ * touched it. A page load in JetSki on four cores is where contention would
+ * show, and how long this lock is held there is the number to measure
+ * before anything replaces it.
  *
  * Held across the scan *and* the `set_used`, because those two together are
  * the claim - the same window `alloc_thread` had.

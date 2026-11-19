@@ -1,6 +1,7 @@
 # Kosmos
 
-A microkernel desktop operating system with a userland written entirely in Lua.
+A microkernel desktop operating system: servers, drivers and kits in C, and
+the applications and the libraries they use in Lua.
 
 A personal learning project. No users to serve, no compatibility to maintain, no deadline. That is precisely what makes it possible to take decisions a commercial OS cannot take.
 
@@ -36,14 +37,16 @@ You need QEMU, and it is the only thing this cannot fetch for you:
 Ubuntu. Everything else - the newest image, the runner, a disk to keep files
 on - it works out and downloads.
 
-`-r 1280x720` asks for the smaller build, because the framebuffer size is
-compiled in and a different resolution is a different image. On **Windows**,
+`-r 1280x720` asks for another screen size: the size is a boot option, and
+the size an image was built with is only its default. On **Windows**,
 use WSL and the same command, or run QEMU natively with the flags
 [the website](https://dcibils-neuratek.github.io/kosmos/) spells out - the
 shell script will not run there. Only macOS is actually tested.
 
 That boots straight to the desktop. Some other things to try once it is up,
-or to pass instead of `wm`:
+or to pass instead of `wm` - in the newest published release, v0.10.187 of
+28 September 2026, which still has the old browser; the tree has moved on
+since (*Building it*, below):
 
 ```sh
 -b "wm browser"      the browser, on a page inside the image
@@ -96,11 +99,11 @@ On Linux, reading a file, reading a sensor, listing processes, watching for chan
 
 ## What it is NOT
 
-**It is not a daily driver, and chasing that would kill the project.** A daily driver needs a browser, and a modern browser is 30 million lines that assume POSIX, threads, a JIT, a GPU and a full network stack. Porting Chromium is more work than the whole system. That was the wall Haiku hit, with 20 years and dozens of contributors.
+**It is not a daily driver, and chasing that would kill the project.** This paragraph gave the browser as the reason: a daily driver needs one, a modern browser is 30 million lines that assume POSIX, threads, a JIT, a GPU and a full network stack, and porting one is more work than the whole system - the wall Haiku hit, with 20 years and dozens of contributors. In November 2026 the wall was climbed instead: WebKit, with JavaScriptCore and its JIT, runs on Kosmos as JetSki, in WebKit2's processes over Nebula's endpoints and regions, with threads, a futex and a POSIX layer inside its own processes ([docs/webkit.md](docs/webkit.md), [docs/w7.md](docs/w7.md)). Diego decided it on 11 November (the decision log, below). What stays true is the rest of the paragraph: the experiment is the design, and chasing parity with Linux for its own sake is what kills projects like this one.
 
 **It is not a BeOS clone.** BeOS was monolithic, with drivers and the filesystem inside the kernel. Kosmos takes its concurrency model, its live queries and its design sensibility. The architecture is QNX.
 
-**It does not pursue system-level compatibility.** Computational libraries (SQLite, zlib, monocypher, Doom) can be ported with a libc shim inside the process, subject to its capabilities. What does not fit is a POSIX personality: `fork`, signals, BSD sockets, or a global tree. The moment that exists, the namespace design becomes decorative and the experiment loses its result.
+**It does not pursue system-level compatibility.** Libraries and programs (SQLite, zlib, curl, OpenSSL, WebKit, Doom) are ported with a libc and a POSIX layer inside the process, subject to its capabilities - and since 11 November 2026 the POSIX *names* are allowed there: a process-private `socket()` on the Network Kit, descriptors private to one process and resolved against its namespace, `poll`, pthreads, `mmap` (`runtime/posix/`, linked by ported code only). What does not fit is a POSIX personality: `fork`, `exec`, signals, a global tree, a descriptor that crosses between processes, `ioctl`, or ambient authority. This said "BSD sockets" were forbidden; it was the name that was forbidden, and the name was never the problem. The moment a personality exists, the namespace design becomes decorative and the experiment loses its result ([design.md](docs/design.md) section 17).
 
 ---
 
@@ -156,8 +159,15 @@ Reading order if you come back after months: `state.md`, then `design.md`, then 
 make qemu
 ```
 
-That is the whole system at 1920x1080 - browser, Doom, network, every demo.
-`FULL=0` gives a leaner image. Toolchain and prerequisites in
+That is the AArch64 system at 1920x1080, under QEMU's `virt` - network,
+every demo, FFmpeg's decoders - and `make x86` is the same for x86-64 under
+QEMU's `q35`. `FULL=0` gives a leaner image. Two things are not in the
+image: Doom, Quake and the Super Nintendo are applications installed in
+`/Home/Apps` with images of their own (`make apps`, then `make
+install-apps` for the QEMU disk), and the browser, JetSki, is WebKit,
+built for x86-64 only and installed on the disk as a system application.
+On AArch64 there is no browser since 0.11.461. The full list of targets is
+in [CLAUDE.md](CLAUDE.md), *Build*; toolchain and prerequisites in
 [docs/setup.md](docs/setup.md).
 
 ---
@@ -175,8 +185,8 @@ where it lives and which language it is written in.
 | **board** | what a particular machine's hardware is and where | `hal/` | C |
 | **server** | a process that *owns* something and rents it out by message | `user/servers/` | C |
 | **driver** | a process that *drives hardware* | `user/drivers/` | C |
-| **kit** | *reusable* code that runs inside your process - `use("/kits/pdf")` | `user/kits/` | C |
-| **library** | the same position, in Lua - `use("/lib/ui.lua")` | `user/lib/` | Lua |
+| **kit** | *reusable* code that runs inside your process - `use("/Kosmos/Kits/pdf")` | `user/kits/` | C |
+| **library** | the same position, in Lua - `use("/Kosmos/Libraries/ui.lua")` | `user/lib/` | Lua |
 | **program** | you type its name and it prints | `user/bin/programs/` | Lua |
 | **app** | it opens a window and appears in the Deskbar | `user/bin/apps/` | Lua |
 | **tool** | does not run on Kosmos at all - it runs here, on the Mac | `tools/` | Python, C, Lua |
@@ -187,7 +197,7 @@ twice:
 - **A kit is code you run; a server is someone you ask.** Inflate is a kit,
   because it computes. The disk is a server, because it owns. That is the
   whole test.
-- **A driver drives hardware.** `/drives` reads FAT off blocks somebody
+- **A driver drives hardware.** `/Drives` reads FAT off blocks somebody
   else fetched, so it is a server; `e1000` owns a card, so it is not. Diego
   settled it in one line on 23 September, and `tools/test_layout.py` now
   keeps it true mechanically rather than by memory.
@@ -195,8 +205,10 @@ twice:
   `gfx`, `gl`, `game` are machinery anything may call. The binding to one
   vendored engine is not, however much C it is: `doom_kosmos.c` exists for
   Doom and could never have a second caller, so it lives in
-  `user/bin/apps/doom/` beside `doom.lua`. The same for Quake, the Super
-  Nintendo, Lite XL and the browser. They were kits for a while because
+  `user/installed/Doom/` beside `doom.lua`. The same for Quake and the
+  Super Nintendo, in `user/installed/`, and for Fractal's C in
+  `user/bin/apps/fractal/`. Lite XL and the old browser had folders of their
+  own as well, and both have left the tree. They were kits for a while because
   making them kits fixed a *different* problem - a global named `doom` hid
   the `doom` program from the prompt - and fixing one thing parked them in
   the wrong category. The check is a name collision, because that is what it
@@ -218,28 +230,11 @@ arch/           aarch64/ and x86_64/ - what depends on the CPU
 hal/            qemu-virt/, pc/ - what depends on the board
 kernel/         EL1: mmu, sched, ipc, caps, exceptions
 lua/            upstream/ untouched + kosmos/ for freestanding
-runtime/        minimal libc, and upstream/ for what is vendored
+runtime/        minimal libc, the POSIX layer and C++ runtime ported code
+                links, and upstream/ for what is vendored
 assets/         vendored data: fonts, icons, images, with their licences
-user/           everything at EL0:
-  init/           the first process, the roles it becomes, and the
-                  environment every process is born with (sys, Lua, panic)
-  servers/        a process that owns something: audio, devices, binfs,
-                  appfs, console, ramfs, net, drives
-  drivers/        a process that drives hardware, by device kind:
-                  net/ usb/ display/ power/
-  kits/           reusable C that runs inside your process, one directory
-                  each: gfx/ gl/ pdf/ compress/ game/ network/ console/ mp3/
-  lib/            the same position in Lua: ui, theme, files, kfs, media
-  bin/            apps/      53, graphical, listed in the Deskbar. One
-                             `.lua`, or a directory of its own where the
-                             app has parts nothing else can use - doom/
-                             quake/ snes/ litexl/ browser/ each own the C
-                             that binds their engine
-                  programs/  64, console, typed at the prompt
-                  both served flat at /bin
-  include/        the protocol headers both sides of a message compile
-                  against
-  tests/          the Lua suite
+user/           everything at EL0: init/, servers/, drivers/, kits/, lib/,
+                bin/apps/ and bin/programs/, installed/, include/, tests/
 tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json
 tools/          host-side test runners and scripts - the workshop
@@ -248,6 +243,12 @@ book/           the long-form account, written alongside
 builds/         released images somebody can download and run
 build/          everything generated, and nothing else. Ignored.
 ```
+
+What is under `user/`, directory by directory, is in [CLAUDE.md](CLAUDE.md),
+*Layout*, and what lives where at runtime in [docs/layout.md](docs/layout.md).
+This block used to list both again, with counts of applications and
+programs, and went stale the way a second copy does: it still named
+`kfs`, Lite XL and the browser's folder months after they had gone.
 
 ---
 

@@ -17,14 +17,17 @@
  * close from either side - and, since the HTTP server, listens: LISTEN and
  * SYN_RECEIVED hand a caller a connection it did not ask for. What is not
  * here is CLOSING and simultaneous open, which nothing does on purpose (the
- * states are below). One segment in flight on a retransmission timer, and a
- * window that is the ring's free space rather than a number this end made
- * up.
+ * states are below). A window of segments in flight, as many as the
+ * congestion window (`cwnd`, RFC 5681), the far end's window and the ring
+ * allow, sent again from the oldest on one retransmission timer (`struct
+ * conn` has the account); and a window offered that is the ring's free space
+ * rather than a number this end made up.
  *
- * **UDP as far as DNS and DHCP need it, and no further**: a resolver that
- * sends a question and recognises its answer, and a client that asks for an
- * address and keeps its lease. There are no UDP sockets, because nothing has
- * asked for one.
+ * **UDP for DNS and DHCP, and a port a program binds**: a resolver that
+ * sends a question and recognises its answer, a client that asks for an
+ * address and keeps its lease, and a bound port's datagrams in a ring
+ * (`NET_OP_UDP_BIND`, which `mdnsd` and the Network Kit use), with the
+ * multicast groups it joins said to the network in IGMP.
  *
  * **A connection's bytes never travel in a message.** `tcpring.h` is the
  * region both sides hold, and that decision was written down before a byte
@@ -38,11 +41,11 @@
  * a number, but the machine decides the number. The ARP cache is the one
  * table that stays fixed, at sixteen entries.
  *
- * **Written against RFC 768, 791, 792, 793, 826 and 2131 from knowledge**,
- * so the field offsets are the part to distrust. What establishes them is a
- * reply coming back from a real host: a wrong offset produces no answer at
- * all rather than a wrong one, because the far end is checking the same
- * fields.
+ * **Written against RFC 768, 791, 792, 793, 826, 1112, 2131, 2236 and 5681
+ * from knowledge**, so the field offsets are the part to distrust. What
+ * establishes them is a reply coming back from a real host: a wrong offset
+ * produces no answer at all rather than a wrong one, because the far end is
+ * checking the same fields.
  */
 
 #include <stdbool.h>

@@ -372,9 +372,9 @@ theme.tokens = {
   --     ground and only its floating surfaces are glass - Starlight's,
   --     whose plate is on a header. `yes` when not said.
   --
-  -- What the scene does with them arrives a step at a time (LG2 the blur,
-  -- LG3 the lens); until then a glass look is its tints said as solid
-  -- colours.
+  -- The window server's scene draws them (`user/kits/gfx/scene.c`): the
+  -- blur since LG2 and the lens since LG3 (`lens.c`), and the rest of
+  -- Liquid Glass's steps on top.
   --
   "glass", "glass_tint", "glass_blur", "bevel", "refraction", "split",
   "specular", "rim_front", "glass_top", "glass_bottom", "grain", "horizon", "glass_windows",
@@ -412,9 +412,9 @@ local STYLED = {}
 -- widget layout and just use fonts that adhere to the widget and windows
 -- layout", and "And that layout is fixed".
 --
--- So a list or menu row is 24 pixels, a button 28, a field 26, a window's
--- tab 26 and the Deskbar 32, whatever face is in force; the kit places
--- words inside those boxes, and a look's faces are chosen to fit them
+-- So a list or menu row, a button, a field, a title and the Deskbar each
+-- have one height - `theme.metrics` below - whatever face is in force; the
+-- kit places words inside those boxes, and a look's faces are chosen to fit them
 -- (`tools/test_theme.lua` holds each to its box). The same morning a theme
 -- could pad a row, a button and a field; that was the other direction and
 -- it is gone.
@@ -427,10 +427,14 @@ local STYLED = {}
 -- that moves every size here together rather than one of them
 -- (`roadmap.md` 5z).
 --
--- **`tab` is the window manager's `TAB_H`**, which reads it. It said 20
--- here, with a comment that `wm.lua` agreed, while `wm.lua` had drawn 26
--- since the tab grew for the ThinkPad - two numbers for one thing, and the
--- test that held the title face to its box was holding it to the wrong one.
+-- **`tab` is a title's height**: the box `tools/test_theme.lua` holds the
+-- title face to, and the step the window manager cascades new windows by
+-- (`OUT.cascade`), so the one underneath keeps a title's height showing.
+-- It was the window manager's `TAB_H` while windows wore a tab, which one
+-- chrome (7 October) took away. It said 20 here then, with a comment that
+-- `wm.lua` agreed, while `wm.lua` had drawn 26 since the tab grew for the
+-- ThinkPad - two numbers for one thing, and the test that held the title
+-- face to its box was holding it to the wrong one.
 --
 --
 -- **The drawings' numbers since 24 September** (`roadmap.md` 5zp), measured
@@ -448,7 +452,7 @@ theme.metrics = {
   row     = 32,   -- a list, a tree or a menu row
   button  = 31,   -- a button: the dropdown's height, so a header has one
   field   = 31,   -- a one-line field, the same
-  tab     = 26,   -- a window's title tab
+  tab     = 26,   -- a title's height, and the cascade's step
   deskbar = 32,   -- the Deskbar
   gap     = 12,   -- between widgets, and from a window's edge
 
@@ -463,11 +467,13 @@ theme.metrics = {
   -- on a bigger screen.
   --
   -- Zero for either is a square, hard-edged window, which is what this drew
-  -- until 23 September and what a look may still ask for: the metrics are
-  -- the same table a theme may set, so a look that wants 1995 can have it.
+  -- until 23 September. Neither is a look's to say any more: the corner is
+  -- every look's (`theme.read` sets it to `CORNER`), and the shadow is the
+  -- desktop's style (`theme.wear`): a desktop may say `shadow = 0`, and
+  -- nothing squares the corner.
   --
   corner  = theme.CORNER,   -- a window's rounded corner: the drawings' `.win`
-  shadow  = theme.SHADOW,   -- how far its shadow reaches - and a look's own, if it says
+  shadow  = theme.SHADOW,   -- how far its shadow reaches, until a desktop says
 }
 
 -- The five roles and their faces are defined at the end of this file;
@@ -950,16 +956,17 @@ end
 --
 -- **The ramp is measured over `[y0, y0 + span)`, not over the rectangle
 -- being painted**, and that is why this takes nine arguments rather than
--- seven. The window manager composes clipped to the damage rectangle, so a
--- title bar arrives here in slices - ten rows of it when ten rows were
--- disturbed. A ramp that ran over each slice would restart at every damage
--- boundary, and the bar would break into bands that moved as you dragged
--- it. Passing the band's own extent separately is what makes a partial
--- repaint indistinguishable from a whole one.
+-- seven. It was written for a window manager that composed in Lua, clipped
+-- to the damage rectangle, so a title bar arrived here in slices; a ramp
+-- that ran over each slice would restart at every damage boundary. Nothing
+-- composes in Lua any more, and every caller today - `ui.menubar`, the
+-- menu bar across the screen, the window manager's strip - paints a whole
+-- band and passes its own extent, so a slice is something the arguments
+-- allow rather than something that arrives.
 --
 -- `dst` is anything with `fill(x, y, w, h, colour)`, which is both a
--- surface and a `gc`. The window manager composes onto one and every widget
--- draws through the other, and neither needs to know which this is.
+-- surface and a `gc`. The window manager's strip paints onto one and the
+-- kit's widgets through the other, and neither needs to know which this is.
 --
 function theme.vgradient(dst, x, y, w, h, top, bottom, y0, span)
   if w <= 0 or h <= 0 then return end

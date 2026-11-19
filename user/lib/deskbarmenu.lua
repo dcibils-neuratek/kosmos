@@ -227,9 +227,9 @@ end
 --
 -- **The applications installed in `/Home/Apps`** (`docs/elf.md` step 5), as
 -- sections to merge with the menu that ships: each filed by its header's
--- `section` - Doom under Demos - as `binfs` files the shipped ones, the
--- first letter a capital and a group after a slash a submenu, and named by
--- its folder. "The Deskbar lists the folders in /Home/Apps, so there is
+-- `section` - Doom under Applications - as `binfs` files the shipped
+-- ones, the first letter a capital and a group after a slash a submenu,
+-- and named by its folder. "The Deskbar lists the folders in /Home/Apps, so there is
 -- nothing to unregister": deleting the folder takes it out of the menu.
 --
 -- `apps` is `filetypes.installed`'s list; `declared` is

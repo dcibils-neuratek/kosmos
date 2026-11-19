@@ -94,11 +94,11 @@ it is a real result rather than a QEMU number.
 be a fast one.** That is what to optimise for now - not more features, and
 not another subsystem, but the speed and the feel of the ones that exist.
 
-**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware is on the wishlist and the serial cable is not here yet. Do not write Pi code, but do respect the `arch/` vs `hal/` separation.
+**The machines it runs on today: QEMU's `virt` (AArch64) and `q35` (x86-64), and three PCs** - a ThinkPad T14, a ThinkCentre M700 and a Mac Pro 2013, booted from a stick or, the M700, over the network (`docs/boot.md`, `docs/thinkpad.md`). The suites run on x86-64 only for now (*How to work here*). The Pi 5 is not here yet: do not write Pi code, but do respect the `arch/` vs `hal/` separation. This said "QEMU `virt` aarch64, and nothing else" and "real hardware is on the wishlist" long after the T14 had booted.
 
 **Kosmos is 64-bit, and only 64-bit.** AArch64 everywhere: `HCR_EL2.RW` is set so EL1 runs AArch64 rather than AArch32, the virtual address space is 39 bits through three levels of long-descriptor tables, and processes use addresses from 256 GB, above the 4 GB line and above any RAM (`arch/aarch64/mmu.h`; on x86-64 they start at 1 GB, which its code model needs). It said "above the 4 GB line" for months while ARM's started at 2 GB, and past a gigabyte of RAM the kernel's map ran into them (`testing.md` 18.641). There is no 32-bit path and there is not going to be one.
 
-**That is a constraint on *word size*, not on architecture.** More than one `arch/` is expected: AArch64 today, **x86-64 later**, which is a second instruction set, a different interrupt controller, a different boot protocol and a different memory model - and none of that disturbs the 64-bit assumptions, which is exactly why the line is drawn here and not around ARM. A board like the Pi 5 is a new `hal/`; a machine like an x86-64 PC is a new `arch/`; a 32-bit machine is neither, because it is out of scope. `hal.md` records the Pi 1 argument and why it was answered no.
+**That is a constraint on *word size*, not on architecture.** There are two `arch/`s: AArch64 and **x86-64**, which is a second instruction set, a different interrupt controller, a different boot protocol and a different memory model - and none of that disturbs the 64-bit assumptions, which is exactly why the line is drawn here and not around ARM. A board like the Pi 5 is a new `hal/`; a machine like an x86-64 PC is a new `arch/`; a 32-bit machine is neither, because it is out of scope. `hal.md` records the Pi 1 argument and why it was answered no.
 
 - The layers and how a command crosses them: `docs/architecture.md`
 - Every module from Nebula to the applications, as one picture: `docs/stack.png`, drawn from `docs/stack.html`
@@ -106,31 +106,31 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Where things live, drawn - `/Kosmos` and `/Home`, agreed 27 September and kept as documentation: `docs/layout.html`
 - Design and the reasoning behind every decision: `docs/design.md`
 - Current state and next step: `docs/state.md` — **read it before proposing anything**
-- Milestones: `docs/roadmap.md`
+- What is built and what is wanted: `docs/roadmap.md`
 - Targets and HAL: `docs/hal.md`
 - Where a driver lives, and where its code comes from: `docs/drivers.md`
 - How USB works, from the host controller up, written as it is built: `docs/usb.md`
-- How drives, places and the Open/Save window should look, before they are built: `docs/drives.html`
+- How drives, places and the Open/Save window should look - drawn first, and built in September (`roadmap.md` 6c-6e): `docs/drives.html`
 - How Disk Benchmark should look, before it is built: `docs/diskbench.html`
-- How Music should look, after VOX, before it is built: `docs/music.html`
-- What Tracker's right click offers - Pin to sidebar, Compress, Info, Open with, File types - before it is built: `docs/rightclick.html`
+- Music in the system's own look - its feature set and architecture, the window, the diagram - agreed, to be built (the page after VOX it replaces was built on 15 September): `docs/music.md`, `docs/music.html`, `docs/music-architecture.png`
+- What Tracker's right click offers - Pin to sidebar, Compress, Info, Open with, File types - drawn first, and built on 27 and 28 September: `docs/rightclick.html`
 - The Servers app - Web, Command line by Telnet, Screen by VNC - as drawn and then built (the screen looked at; keys and the pointer next): `docs/servers.html`
 - Remote Screen, a VNC client - another computer's screen in a Kosmos window - agreed, to be built: `docs/screens.md`, `docs/screens.html`, `docs/screens-architecture.png`
-- Pulses, one-way messages in Nebula, and Tracker live - agreed, to be built: `docs/pulses.md`
-- Linux on Kosmos - Alpine in a sandbox, its screen and input in a Kosmos window, Chromium there - before it is built: `docs/linux.md`, `docs/linux.html`, `docs/linux-architecture.png`
+- Pulses, one-way messages in Nebula, and Tracker live - agreed, P1 to P4 built in 0.11.227-0.11.230: `docs/pulses.md`
+- Linux on Kosmos - Alpine in a sandbox, its screen and input in a Kosmos window, a browser there (Epiphany, not Chromium: decision 4) - L1 to L3 built, and L4's path, Epiphany in `cage`: `docs/linux.md`, `docs/linux.html`, `docs/linux-architecture.png`
 - How Cafesa3D renders across several machines, before it is built: `docs/renderfarm.md`
 - Video in hardware on the M700 - what it takes, for Diego to decide: `docs/m700-gpu.md`
 - The desktop on the M700's GPU, 2D first - the plan, for Diego to decide: `docs/m700-2d.md`
-- `diskfs` in C and speaking a declared shape, written before it is built: `docs/diskfs.md`
-- Maps - its feature set and architecture, the window, the diagram, before it is built: `docs/maps.md`, `docs/maps.html`, `docs/maps-architecture.png`
-- Astra in Mac OS 9.2's manner - "Pewter", a desktop of its own with a menu bar, reimagined for 2026, and desktops as files chosen at every boot - agreed, to be built: `docs/pewter.md`, `docs/pewter.html`, `docs/desktops.html`, `docs/pewter-architecture.png`
+- `diskfs` in C and speaking a declared shape, written before it was built - steps 1 to 4 built, from 29 September: `docs/diskfs.md`
+- Maps - its feature set and architecture, the window, the diagram - M1 to M6 built, from 8 October: `docs/maps.md`, `docs/maps.html`, `docs/maps-architecture.png`
+- Astra in Mac OS 9.2's manner - "Pewter", a desktop of its own with a menu bar, reimagined for 2026, and desktops as files chosen at every boot - agreed, P1 to P4 built on 8 November, P5 and P6 to be built: `docs/pewter.md`, `docs/pewter.html`, `docs/desktops.html`, `docs/pewter-architecture.png`
 - A third desktop in the Solaris desktop's manner - Corona, CDE with a 1999 / 2026 switch, a playable mockup, not coded: `docs/corona.html`
-- Shortcuts - an index of every system-wide key, grouped and searchable - before it is built: `docs/shortcuts.md`, `docs/shortcuts.html`, `docs/shortcuts-architecture.png`
-- Automations - tasks run on a trigger, and every application scriptable by its controls' names - before it is built: `docs/automations.md`, `docs/automations.html`, `docs/automations-architecture.png`
-- Packages - every package from a server, installed, updated and removed with dependencies, APT's shape - before its window is built: `docs/packages.md`, `docs/packages.html`, `docs/packages-architecture.png`
-- Bluetooth - keyboards and mice, the host stack, and the Bluetooth app - its feature set and architecture, the window, the diagram, B1 built and the rest before it is: `docs/bluetooth.md`, `docs/bluetooth.html`, `docs/bluetooth-architecture.png`
-- Mail's HTML on WebKit - one WebKit image JetSki and Mail share, the WebKit Kit as one door, held pictures - agreed, to be built: `docs/mailweb.md`, `docs/mailweb.html`, `docs/mailweb-architecture.png`
-- Kosmos Write as drawn: `docs/write.html`; its kits - the document, its file, pages, PDF - before they are built: `docs/write.md`
+- Shortcuts - an index of every system-wide key, grouped and searchable - K1 to K4 built: `docs/shortcuts.md`, `docs/shortcuts.html`, `docs/shortcuts-architecture.png`
+- Automations - tasks run on a trigger, and every application scriptable by its controls' names - A1 to A4 built, consent (A5) and scripts (A6) to be: `docs/automations.md`, `docs/automations.html`, `docs/automations-architecture.png`
+- Packages - every package from a server, installed, updated and removed with dependencies, APT's shape - P1 to P3 built, the window among them; P4, powers asked for, to be: `docs/packages.md`, `docs/packages.html`, `docs/packages-architecture.png`
+- Bluetooth - keyboards and mice, the host stack, and the Bluetooth app - its feature set and architecture, the window, the diagram - B1, B2 and B4 built, B3 waiting on the T14, the rest to be: `docs/bluetooth.md`, `docs/bluetooth.html`, `docs/bluetooth-architecture.png`
+- Mail's HTML on WebKit - one WebKit image JetSki and Mail share, the WebKit Kit as one door, held pictures - agreed, W1 and W2 built, and W4's first half: `docs/mailweb.md`, `docs/mailweb.html`, `docs/mailweb-architecture.png`
+- Kosmos Write as drawn: `docs/write.html`; its kits - the document, its file, pages, PDF - written before they were built, and built by 5 October: `docs/write.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
@@ -140,21 +140,32 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Toolchain and build: `docs/setup.md`
 - The first real machine, a ThinkPad T14: `docs/thinkpad.md`
 - How a PC boots, and why the loader is Kosmos's own: `docs/boot.md`
-- Threads in a process, written before they are built: `docs/threads.md`
+- Threads in a process, written before they were built - steps 0 to 3 built, the rest in parts: `docs/threads.md`
 - LuaJIT, measured against Lua 5.4 for Diego to decide: `docs/luajit.md`
 - Virtual machines and sandboxes - small operating systems for a task - explored for Diego to decide: `docs/virtualization.md`, drawn in `docs/sandboxes.html`; the Sandboxes application's feature set and architecture: `docs/sandboxes.md`, `docs/sandboxes-architecture.png`
 - The Scheduler redesigned and a game mode, investigated for Diego to decide: `docs/scheduler.md`, drawn in `docs/scheduler.html`
-- Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 to X3 built: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
-- The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed, to be built: `docs/playback.md`, `docs/playback-architecture.png`
-- Video and sound in JetSki - YouTube's player, MSE, a Media Kit of demuxers and decoders - agreed, M1 begun: `docs/media.md`
+- Xavier - an assistant answering in a window and aloud, on an LLM engine run here - agreed, X1 and X3 to X6 built, X2 under way: `docs/xavier.md`, drawn in `docs/xavier.html`, its architecture `docs/xavier-architecture.png`
+- The Playback Kit - a song's and a film's sound on a thread of its own, in the audio band - agreed and built: `docs/playback.md`, `docs/playback-architecture.png`
+- Video and sound in JetSki - YouTube's player, MSE, a Media Kit of demuxers and decoders - agreed, M1 begun and M2 to M4 built: `docs/media.md`
 - JetSki's POSIX layer inside the process, and the Storage Kit its files go through - agreed and built: `docs/w3.md`
 - JavaScriptCore's JIT - the code pool mapped twice, written through one mapping and run from the other - step 1 (Baseline and DFG) built: `docs/jit.md`
 - JavaScriptCore on Kosmos, JetSki's W4 - its source fetched, not committed - built, test262 counted (`make test262`): `docs/w4.md`
 - JetSki W7 - a browser to use every day: WebKit2's processes, pages from the network, the window, then tabs and the rest - the order, being built: `docs/w7.md`
-- The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a (pictures), W5b (text) and W5c (SQLite, libxml2, libpsl) built: `docs/w5.md`
+- The libraries WebCore stands on, JetSki's W5 - agreed, fetched, zlib as the one deflate; W5a to W5e built: `docs/w5.md`
 - The Debug Kit - a function's name from an address, for a page that stopped and any crash - built: `docs/debug.md`
-- Blocking in JetSki - adverts and trackers kept out on WebKit's own content blocker, the filter lists converted by a Lua library, third-party cookies refused - designed, for Diego to agree: `docs/adblock.md`, `docs/adblock.html`, `docs/adblock-architecture.png`
+- Blocking in JetSki - adverts and trackers kept out on WebKit's own content blocker, the filter lists converted by a Lua library, third-party cookies refused - agreed on 16 November, B1, B2 and B4 built, B3 not: `docs/adblock.md`, `docs/adblock.html`, `docs/adblock-architecture.png`
 - The review before 0.12.0 - eight batches, 205 findings, and Diego's seven decisions - being done: `docs/cleanup.md`, `docs/cleanup-findings.md`
+- Network Monitor - feature set, architecture, window, diagram - built (N1-N3): `docs/netmonitor.md`, `docs/netmonitor.html`, `docs/netmonitor-architecture.png`
+- Disk Monitor - built (D1-D3): `docs/diskmonitor.md`, `docs/diskmonitor.html`, `docs/diskmonitor-architecture.png`
+- GPU Monitor - built (`gpumon.lua`; G2 the window, `testing.md` 18.665): `docs/gpumonitor.md`, `docs/gpumonitor.html`, `docs/gpumonitor-architecture.png`
+- This Machine, redesigned - every device as a card - built (M1-M4): `docs/machine.md`, `docs/machine.html`, `docs/machine-architecture.png`
+- Rendering modes - how the desktop is drawn, chosen in Preferences - R1 and R2 built, R3 with GPU composing: `docs/rendering.md`, `docs/rendering.html`, `docs/rendering-architecture.png`
+- The keyring and Passwords - agreed, K1-K7 built, K9 (the lock) later: `docs/keyring.md`, `docs/keyring.html`, `docs/keyring-architecture.png`
+- Kosmos Mail - built (M0-M6); the next Mail, N1-N5, agreed: `docs/mail.md`, `docs/mail.html`, `docs/mail-architecture.png`
+- Kosmos Sheets - designed and agreed, after Write; not built: `docs/sheets.md`, `docs/sheets.html`, `docs/sheets-architecture.png`
+- Kosmos Present - designed and agreed, after Write; not built: `docs/present.md`, `docs/present.html`, `docs/present-architecture.png`
+- The Graph Kit - a program as a graph of tasks - designed 1 November, for Diego to decide, not built: `docs/graph.md`, `docs/graph-architecture.png`
+- Everything `state.md` said before 19 November 2026, moved whole: `docs/state-history.md`
 - Glossary: `docs/glossary.md`
 
 ---
@@ -217,37 +228,54 @@ that is a line in `LICENSE` and a decision Diego makes then.
 ## Build
 
 ```
-make qemu        # build and run under QEMU virt, in a window
+make qemu        # the AArch64 system, built and run under QEMU virt, in a window
 make fast        # the same, on this Mac's own cores (hvf); 4-14x
-make FB=1280x800 qemu    # the same, at that display size
-make FULL=0 qemu         # without the browser and FFmpeg, and quicker to link
-make MEGA=1 qemu         # the same as FULL now; kept for the stick's command
-make install-apps        # Doom, Quake, the Super Nintendo into the QEMU disk's /Home/Apps
 make serial      # the same, serial only, no window
-make test        # every suite, side by side, in under ten minutes; 0 or 1
-make test ONLY=x86-jetski,host     # only the suites for what changed
+make FB=1280x800 qemu    # the same, at that display size
+make FULL=0 qemu         # the lean image: no FFmpeg, no web kit, no wallpapers, no filter lists
+make MEGA=1 qemu         # the same as FULL now; kept for the stick's command
+make x86         # the x86-64 system, built and run under QEMU q35
+make x86-build   # the same, built only
+make MEGA=1 x86-usb-image    # a stick for a PC, /Home from ~/Kosmos/home (How to work here)
+make netboot     # what a boot server hands the M700
+make apps        # installed applications' images: Doom, Quake, SNES, JSC; JetSki with ARCH=x86_64
+make install-apps        # the AArch64 ones into the QEMU disk's /Home/Apps
+make test        # the suites what changed reaches, side by side; 0 or 1
+make test ALL=1  # every suite, whatever changed, as make prepush does
+make test ONLY=x86-jetski,host     # only these suites
+make prepush     # every suite, a MEGA link and make shot - before every push
 make screenshot  # boot, screendump, and check the picture QEMU scans out
 make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
 make clean
 ```
 
-**`make qemu` is the whole system, at 1920x1080**: the browser, the
-network, every demo. The thing to do with an operating system you are
-building is use it, and a build that leaves half of it out tells you about
-half of it. `FULL=0` gives the lean image; `make test` and `make bench`
-build their own and are unaffected, because a suite's value is being quick
-enough to run without thinking about it.
+**`make qemu` is the whole system, at 1920x1080**: the network, every
+demo, FFmpeg's decoders, the wallpapers - and `make x86` is the same
+`FULL=1` system for x86-64. The thing to do with an operating system you are building is use it, and a
+build that leaves half of it out tells you about half of it. `FULL=0` gives
+the lean image; `make test` and `make bench` build their own and are
+unaffected, because a suite's value is being quick enough to run without
+thinking about it.
 
-Doom, Quake and the Super Nintendo are not in it: each is an application
-installed in `/Home/Apps` with an image of its own - `doom.elf`, `quake.elf`,
-`snes.elf` - which `make apps` links, a stick carries and `make
+**The browser is not in the image, and not on AArch64 at all.** This said
+"the browser" was in `make qemu`, and that stopped being true when the old
+browser's application went in 0.11.461: JetSki is WebKit, an image of its
+own, built for x86-64 only while AArch64's suites wait, and installed on the
+disk as `/Home/System/Apps/JetSki`, seen as `/Kosmos/Apps/JetSki`, with
+`webkit.elf` in `/Home/System/WebKit` (`tools/installed.py`). What `WEB`
+still puts in a `FULL=1` image is the NetSurf parsing stack Mail draws a
+message's HTML with, until `docs/mailweb.md` replaces it.
+
+Doom, Quake and the Super Nintendo are not in it either: each is an
+application installed in `/Home/Apps` with an image of its own - `doom.elf`,
+`quake.elf`, `snes.elf` - which `make apps` links, a stick carries and `make
 install-apps` puts on the QEMU disk (`docs/elf.md` step 5). Nothing here is
 linked dynamically, so `doom.elf` and `quake.elf` are the GPL works, and
 what the system's image carries is in `LICENSE`, which the About window
 shows.
 
-Toolchain: `aarch64-elf-gcc` and `x86_64-elf-gcc` (Homebrew, GCC 16.2), clang for C++, `qemu-system-aarch64`.
+Toolchain: `aarch64-elf-gcc` and `x86_64-elf-gcc` (Homebrew, GCC 16.2), clang for C++, `qemu-system-aarch64` and `qemu-system-x86_64`.
 
 Mandatory flags, not to be changed without discussion:
 
@@ -465,8 +493,8 @@ almost nothing:
 - The quantum is a variable that can be changed and measured, not a constant
   compiled in and never questioned.
 
-Not borrowed: 256 priority levels, where six say everything this system has
-to say, and hard guarantees, which would mean bounding every kernel
+Not borrowed: 256 priority levels, where seven say everything this system has
+to say (IDLE, LOW, NORMAL, GAME, DISPLAY, AUDIO, INPUT, in `kernel/sched.h`), and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
 
@@ -509,7 +537,8 @@ hardware does not broadcast for it. `docs/smp.md` is the map of what exists
 and what is left.
 
 **New threads spread across every processor that arrived, by default.**
-Each is homed on the least busy core when it is created and never moves.
+Each is homed on the least busy core when it is created, and moves only
+when asked (`thread_move`, below).
 `opt/kosmos/smp=N` narrows that - `make SMPWORK=1 qemu`, or the word in a
 stick's `\boot\kosmos.cmdline` (`make usb KOSMOS_ARGS=...`) - and `=1` homes
 everything on core zero again, for
@@ -574,7 +603,7 @@ between an intention and a fact.
 
 **No hardware addresses outside `hal/`.** Not one.
 
-**Upstream Lua is not modified.** It lives in `lua/upstream/` exactly as shipped. Freestanding changes go in `lua/patches/` and are applied during the build.
+**Upstream Lua is not modified.** It lives in `lua/upstream/` exactly as shipped. What a freestanding build needs is `lua/kosmos/kosmos_lua.h`, forced in front of every Lua translation unit with `-include`: every hook it sets is guarded upstream by `#if !defined`, so arriving first is enough. This said changes "go in `lua/patches/` and are applied during the build"; there is no such directory and nothing has ever needed one.
 
 **Vendored data is not modified either, and carries its licence.** `assets/fonts/` holds the BDF the font's author ships, byte for byte, next to that font's licence text; `tools/bdf2c.py` converts it during the build. The rule is the same one `lua/upstream/` follows: what is in the tree should be what the author released, and everything done to it should be a build step somebody can read. Anything vendored records its licence beside it, and the generated file repeats the notice.
 
@@ -585,7 +614,7 @@ between an intention and a fact.
 - **program**: console-based. Prints, reads lines, run by name at the prompt,
   or by its file (`./hello.lua`).
 - **app**: graphical. Opens a window, driven with the pointer, listed in the
-  Deskbar, and marked `-- kosmos: application` on its first line.
+  Deskbar, and marked `-- kosmos: application` in its opening comment.
 
 Graphical is the intended way to use this system. "Let us build an app"
 means a window, every time.
@@ -781,7 +810,7 @@ A distinction that matters and is easy to blur:
 - **`arch/`** is "which CPU are you". Page tables, the exception vector, context switch, barriers. It is not abstracted across architectures, it is reimplemented.
 - **`hal/`** is "which peripheral do you have". UART, timer, interrupt controller, framebuffer. Common interface, one implementation per board.
 
-The HAL interface as it actually stands. Every entry arrived with the thing that needed it and none of it was written ahead of a caller:
+The HAL interface, a selection: the entries this section talks about, as `hal/hal.h` declares them. Every entry arrived with the thing that needed it and none of it was written ahead of a caller. This called itself "the HAL interface as it actually stands" while it named 26 of what are now 82 functions; the rest are families - `hal_blk_*` (a disk), `hal_net_*` (frames in and out), `hal_snd_*` (sound), `hal_key_event` and `hal_key_push` (key transitions), a `hal_*_describe` for every device the board reports on, `hal_rtc_seconds`, `hal_power_off` and `hal_restart`, `hal_battery_read`, `hal_firmware_table` and `hal_machine_ident` - and `hal/hal.h` is where to read them:
 
 ```c
 void          hal_early_init(void);
@@ -791,7 +820,7 @@ int           hal_getchar(void);            /* M5, non-blocking */
 void          hal_ram_range(struct memrange *out);
 
 void          hal_irq_init(void);           /* M1 */
-void          hal_irq_handle(void);         /* called from the IRQ vector */
+bool          hal_irq_handle(void);         /* called from the IRQ vector */
 
 void          hal_timer_init(unsigned hz);  /* M1 */
 unsigned long hal_ticks(void);
@@ -806,7 +835,7 @@ void          hal_cursor_hide(void);
 bool          hal_keyboard_init(void);      /* M6; false when there is none  */
 bool          hal_pointer_init(void);       /* M6; false when there is none  */
 bool          hal_pointer_poll(struct pointer_state *out);
-bool          hal_pointer_move(int dx, int dy, uint32_t buttons); /* a mouse a process drives */
+bool          hal_pointer_move(int dx, int dy, int wheel, uint32_t buttons); /* a mouse a process drives */
 
 unsigned      hal_cpu_count(void);          /* how many processors exist */
 bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
@@ -819,7 +848,7 @@ bool          hal_entropy_init(void);                       /* HTTPS step 1 */
 size_t        hal_entropy(void *buf, size_t bytes);
 ```
 
-The last three arrived together, with the first driver outside the kernel -
+`hal_irq_available`, `hal_irq_set_masked` and `hal_device_find` arrived together, with the first driver outside the kernel -
 `user/drivers/power/powerbutton.c` - and each answers a question only the board
 can: which interrupt numbers the machine spends on itself and a process may
 therefore never claim, how this controller masks one line, and where a device
@@ -828,6 +857,8 @@ of a given kind is. The third is what keeps *no hardware addresses outside
 come from the board, through the kernel, as a value the driver is handed.
 
 There is deliberately no `hal_keyboard_getchar`. A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. Nothing above the HAL changes because a keyboard exists.
+
+What a stream of characters cannot say is that a key is *held* - which is the whole of moving in a game and half of a modifier in a shortcut - so the board also hands out key transitions, `hal_key_event`, in its own numbering. `hal/hal.h` calls that a departure from this paragraph and says why; characters still come from `hal_getchar` alone.
 
 The pointer *does* get its own pair, and the difference is the point: a character can come from any of several sources and be the same character, so merging them costs nothing. A position is like that only when it is relative. A tablet says where it is, and two of those would be two opinions to choose between. A TrackPoint and a mouse say how far they moved, and two of those are only more movement: **the board adds every relative device into the one position it reports, and holds each one's buttons** (`hal/pc/pointer.c`). `hal_pointer_move` is that for a device whose driver is a process - the ThinkPad's USB mouse.
 
@@ -916,9 +947,11 @@ every check under OVMF, which is necessary and not sufficient. So:
 - **The stick is built by `make MEGA=1 x86-usb-image`**, with `/Home` in a
   partition of its own - the default since 19 September, and the layout
   every stick since 0.10.62 has had. That `/Home` is made fresh from
-  `~/Kosmos/home` at 512 MB (`HOME_DIR`, `STICK_HOME_MB`; Diego, 19
-  September: "from now on we need to make the drive image at least 512mb"),
-  and never from the repository. `USB_HOME=disk` is the old layout, whose
+  `~/Kosmos/home` at 2048 MB (`HOME_DIR`, `STICK_HOME_MB`), and never from
+  the repository. It was 512 MB from 19 September (Diego: "from now on we
+  need to make the drive image at least 512mb"), and 2048 since 0.11.83, on
+  8 October: "i dont want a limit", "we can do a 2gb stick now"
+  (`docs/diskfs.md`, *No limit*). `USB_HOME=disk` is the old layout, whose
   disk the loader carries and which is still refused over 32 MB. Written to
   a stick with `bash tools/mkusb.sh <image>` - the image that was checked -
   rather than `make usb`, which builds a new one first.
@@ -997,7 +1030,7 @@ checks, in less time - parallel builds, suites run side by side, waits for
 the thing rather than for a number of seconds - and never fewer checks to
 make the number. A new test is written to fit inside the budget, and a
 suite that pushes the whole past ten minutes is the thing to fix, before
-anything else lands. `make test` is `tools/gate.py`: every suite side by side,
+anything else lands. `make test` is `tools/gate.py`: the suites side by side,
 4:37 on this Mac on 18 September, with each suite's time printed and the
 slowest named at the end - so the budget is watched rather than remembered.
 
@@ -1007,7 +1040,7 @@ slowest named at the end - so the budget is watched rather than remembered.
 full gate when a significant pice that affects other apps changed". So a
 change to one application is proved by its own suites -
 `make test ONLY=x86-jetski,host` - with their
-controls. The whole gate, `make test`, runs
+controls. The whole gate runs
 when a piece other applications stand on changed - the kit (`ui.lua`,
 `keys.lua`), `gfx`, the window manager, a server, a driver, the kernel, the
 libc, `files` and `filetypes` - and before every push, which `make prepush`
@@ -1022,8 +1055,21 @@ are held to their own tests, and those answer the same until the runtime,
 the toolchain, the library or its test changes. So each suite in
 `tools/gate.py` names what it stands on (`RUNTIME` and its own), the gate
 keeps a fingerprint of that from its last pass, and an unchanged one is
-skipped with its name printed. `make test LIBS=1` runs them all, naming one
-in `ONLY=` runs it, and `make prepush` runs them all before every push.
+skipped with its name printed.
+
+**And since 14 November every suite runs only when what it stands on
+changed** - Diego: "why do we run the entire gate and rebuild all every
+time? cant we just be smart on what needs to be rebuilt and just run the
+gates that are specific?". So `make test` is no longer "every suite": a
+suite that names nothing stands on the whole tree less what is written
+about it - `docs/`, `book/`, `README.md` and `CLAUDE.md`, but for the pages
+the image carries - and a library's suite on what it names. A change to the
+documents runs nothing, a change to a library's test kit runs its suites,
+and a change nothing claims runs everything, which is the safe way round
+(`tools/gate.py`, `WRITING`). So the whole gate after a shared piece
+changed is what `make test` does by itself. `make test ALL=1` (`LIBS=1` is
+its older name) runs every suite whatever changed, naming one in `ONLY=`
+runs it, and `make prepush` runs `ALL=1` before every push.
 
 **x86-64 only, for now.** Diego, 8 October 2026: "from now on lets do tests
 on x86 only and leave arm for a later period. i will tell you when to resume
@@ -1113,10 +1159,11 @@ by writing more code.
 **A version number is the moment to do it**, because it is the only moment
 that arrives on its own.
 
-**A push carries a picture. `make prepush`** runs the suites, the display
-harness, a MEGA link and `make shot`, which puts a
-1920x1080 screenshot of the desktop into `docs/screenshots/` under the date
-and the revision - every application that draws something of its own with
+**A push carries a picture. `make prepush`** runs every suite (`make test
+ALL=1`, the display harness among them), a MEGA link and `make shot`, which
+puts a 1920x1080 screenshot of the x86-64 desktop into `docs/screenshots/`,
+named by the date, the hour and the commit's short hash
+(`2026-11-18-2157-0559d522.png`) - every application that draws something of its own with
 nothing on a disk, tiled, and the newest one given room (`OPEN` in
 `tools/run_gallery.py`) - and the same desktop again in Liquid Glass,
 beside it as `-liquidglass.png` (`testing.md` 18.885), so the series stays
@@ -1145,31 +1192,39 @@ something you look at.
 ```
 boot/           assembly entry, linker scripts, efi/: the UEFI loader
 arch/           aarch64/ and x86_64/
-hal/            qemu-virt/, pc/  (pi5/ when the board is here)
+hal/            qemu-virt/, pc/, and what both share: fwcfg/ virtio/
+                keys.c (pi5/ when the board is here)
 kernel/         mmu, sched, ipc, caps, exceptions
-assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
+assets/         vendored data: fonts/ (BDF + its licence), icons/, images/,
+                wallpapers/, filters/, hyphenation/, ca/, www/
 lua/            upstream/ + kosmos/
-runtime/        minimal libc, bindings, serializer, and upstream/
+runtime/        minimal libc, bindings, serializer, upstream/, and what
+                ported code links: posix/, cxx/, ports/, patches/
 user/           everything at EL0:
   init/           the first process, the roles it becomes, and the
                   environment every process is born with: `sys`, Lua's,
                   panic, and `say`
   servers/        C. A process that owns something and rents it out
   drivers/        C. A process that drives hardware, by device kind:
-                  net/ usb/ display/ power/
+                  net/ usb/ display/ power/ storage/ bluetooth/
   kits/           C that runs inside your own process, one directory per
-                  kit: gfx/ gl/ pdf/ compress/ game/ network/ console/
-                  mp3/ record/ 3d/ ffmpeg/ crypto/ tls/ compute/ - an app's own engine C lives
-                  with the app, in bin/apps/browser/ and installed/
-  lib/            the same position, in Lua. All .lua and nothing else
+                  kit - `kits` at the prompt lists them - and the test kits
+                  the library suites run (apptest/, icutest/, ...). An
+                  app's own engine C lives with the app, in bin/apps/fractal/
+                  and installed/
+  lib/            the same position, in Lua
   include/        the protocol headers both sides compile against
   bin/            apps/ and programs/, in Lua, served from the image as
                   /Kosmos/Apps and /Kosmos/Programs. An app opens a
                   window; a program prints
-  installed/      applications the build installs into /Home/Apps rather
-                  than serves from /Kosmos, one folder each - Doom/, Quake/,
-                  SNES/ - its Lua and the C `make apps` links into its own
-                  image
+  installed/      applications the build installs on the disk rather than
+                  serves from the image, one folder each, its Lua and the
+                  C `make apps` links into its own image: Doom/, Quake/,
+                  SNES/, JSC/ into /Home/Apps, and JetSki/ into
+                  /Home/System/Apps, seen as /Kosmos/Apps (tools/installed.py)
+  desktops/ themes/ pages/       the desktops, the looks, and the pages
+                  the menu opens, carried in the image as files
+  templates/ tutorial/ examples/ what the IDE starts from and teaches with
   tests/          the Lua suite
 tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json

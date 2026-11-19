@@ -9,9 +9,9 @@
 -- **Tracker in backdrop mode, and the only reason this file exists is that
 -- there was no way to ask for it.** `tracker desktop` has drawn the icon
 -- desktop for as long as Tracker has had one, but the Deskbar and the
--- Startup panel both list what is in `/bin` marked as an application - so
--- `tracker` appeared once, started a window, and the backdrop was reachable
--- only by knowing to type `wm tracker:desktop`.
+-- Startup panel, since removed, both listed what was in `/bin` marked as an
+-- application - so `tracker` appeared once, started a window, and the
+-- backdrop was reachable only by knowing to type `wm tracker:desktop`.
 --
 -- What that cost is not cosmetic. **The desktop is where a drag lands.**
 -- Without one running, the area behind the windows belongs to no window at

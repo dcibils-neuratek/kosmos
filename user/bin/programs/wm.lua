@@ -41,18 +41,20 @@
 -- The definition of done for this milestone is BeOS's test: drag a window
 -- with a hung application inside it and have the window keep moving. That
 -- is not a performance question, it is a question about who owns the
--- pixels. Here the application owns none of them. It sends a list of
--- drawing commands - `ui.md` 16.6, commands and not a shared buffer - and
--- this process renders them into a surface it owns and keeps.
+-- pixels. Here the application owns none of the screen's. It draws into a
+-- region of its own, which holds two buffers, and says when one is
+-- finished (`handlers.commit`); the window server composes the finished one
+-- onto the screen.
 --
 -- So an application that stops answering changes nothing. Its window still
--- has its last contents, because those contents were never in its address
--- space, and this process never waits for it: every request is taken with a
--- non-blocking receive, and one that is not there is simply not there.
+-- shows the last buffer it committed, which the application no longer
+-- writes, and this process never waits for it: every request is taken with
+-- a non-blocking receive, and one that is not there is simply not there.
 --
--- The BeOS app_server did the opposite - it handed the application a
--- pointer into its own buffer with a lock around it - and that is exactly
--- the arrangement that makes a hung application freeze a desktop.
+-- The BeOS app_server handed the application a pointer into its buffer
+-- with a lock around it - and a lock held by a hung application is exactly
+-- the arrangement that freezes a desktop. Here there is no lock: two
+-- buffers and an index, each side touching only its own.
 --------------------------------------------------------------------------
 
 local KEY_TAB    = 9
@@ -188,8 +190,8 @@ OUT.EDGE       = 4
 OUT.BOX        = 20
 
 -- How far each window steps down and across from the one already in its
--- corner. A tab's height, so the one underneath always has a strip of its
--- own title bar showing - which is the whole point: a window you can see a
+-- corner. A title's height (`theme.metrics.tab`) and a little, so the one
+-- underneath always has a strip of its own title bar showing - which is the whole point: a window you can see a
 -- piece of is a window you can pick up.
 
 
@@ -906,8 +908,9 @@ local function step(what)
   --
   -- Unbounded is *correct* here because the kernel's ring is bounded: it
   -- holds 64 KB and evicts the oldest, so what survives is the last few
-  -- hundred passes before you pressed Control-C. That is the state worth
-  -- having, and a prefix of the boot is the state that is not.
+  -- hundred passes before you ended the desktop with Control-W Q. That is
+  -- the state worth having, and a prefix of the boot is the state that is
+  -- not.
   --
   if TRACE then
     local now = sys.ticks()
@@ -1771,10 +1774,11 @@ function OUT.wants_head(req)
   --
   -- **Every ordinary window, since one chrome's step 3** (8 October; Diego:
   -- "we need to get rid of the old window chrome as we are staying with the
-  -- new one only"). A window that draws no header of its own - one sending
-  -- commands, as `hello-win` teaches - has its top rows for its title bar
-  -- and the three drawn over them; it moves by Super and a drag, as every
-  -- window does. Nothing is given the old tab any more.
+  -- new one only"). A window that draws no header of its own - `hello-win`,
+  -- which paints only its own picture into its region, is one - has its
+  -- top rows for its title bar and the three drawn over them; it moves by
+  -- Super and a drag, as every window does. Nothing is given the old tab
+  -- any more.
   --
   return not req.kind and not req.backdrop and not req.strip and not req.fullscreen
          and not req.popup and not req.tip and not req.banner
@@ -3800,15 +3804,12 @@ end
 --------------------------------------------------------------------------
 -- A window whose pixels the application draws itself.
 --
--- `gfx.md` 19.4. Everything else here sends drawing *commands* and this
--- process owns every pixel, which is what lets a hung application keep a
--- window. That is right for a window of widgets and wrong for a video
--- frame or a rendered scene, where the pixels change wholesale thirty
--- times a second and describing them costs more than copying them.
---
--- So an application may hand over a region of memory instead. It draws into
--- that region with the same C primitives everything else uses, and says
--- when it is finished.
+-- `gfx.md` 19.4. Every window is drawn this way: the application hands
+-- over a region of memory, draws into it with the same C primitives
+-- everything else uses - the kit painting its widgets there, or a video
+-- frame or a rendered scene written straight in - and says when it is
+-- finished. Sending drawing commands for this process to render was the
+-- other way once, and it is gone.
 --
 -- **Two buffers and an index, because there are no locks.** If the
 -- application wrote the buffer while this process read it there would be

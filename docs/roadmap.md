@@ -761,7 +761,8 @@ formatted with `/Models` at its root and mounted there, its blocks guarded
 by the USB driver with the others; the LLM server handed that drive where
 the machine has it and `/Home/Models` where it does not (a machine with one
 disk, every QEMU suite); and `tools/sandboxes_drive.py` made the one tool
-that adds a drive to a stick in use, for either. On the M700: the stick on
+that adds a drive to a stick in use, for either - `tools/stick_drive.py
+--drive sandboxes|models` since 0.11.322. On the M700: the stick on
 the Mac once, with `sudo` (Diego's), then phi-2 moved over.
 
 **Every server starts with the machine by default - AGREED and built 8
@@ -870,9 +871,14 @@ by the window manager; Control is local, each application's: N new, O
 open, S save, F find. Not Control W (the desktop's prefix) nor C, X, V and
 A (text editing's); the Terminal's own keys are Control Shift, since Control
 is the program's inside it. Mail's Control N for a new message first, then
-one application at a time. **The browser's keys move with it**: its tabs are
-on Super today - Super W closes one, Super D keeps the page, Super Shift ]
-goes to the next (`tools/run_browser.py`) - and become Control's. Not listed in Shortcuts (`docs/shortcuts.md`,
+one application at a time. **The browser's keys moved with it**: the old
+browser's tabs were on Super - Super W closed one, Super D kept the page,
+Super Shift ] went to the next - and it went in 0.11.461. JetSki's are
+Control's (Control-T a new tab, Control-L, Control-O, Control-D a
+favorite, Control-S, Control-Shift-J the downloads), with Super-1 to 9 for a tab still on
+Super, and a tab closed only by its close while Control-W is the desktop's
+prefix (`jetski.lua`'s header) - which the daily-driver order's keys item
+(Control-W given back) changes. Not listed in Shortcuts (`docs/shortcuts.md`,
 *Global and local*).
 
 **Quick Look in Tracker: the space bar previews a file** - Diego, 10
@@ -9958,7 +9964,8 @@ disks on a drive of their own, `/Sandboxes`, a partition of its own rather
 than files in `/Home` (his idea: "and not just 1 big drive", "that pollutes
 the home?"), 32 GB; 2 GB of memory, one core until L6. **L1a built**
 (`testing.md` 18.636): `/Sandboxes`, a second disk server on its own
-partition, guarded as `/Home` is, and `tools/sandboxes_drive.py` to add it
+partition, guarded as `/Home` is, and `tools/sandboxes_drive.py` (now
+`tools/stick_drive.py --drive sandboxes`) to add it
 to the M700's stick without touching `/Home` (Diego runs it once, with
 `sudo`, when the stick is at the Mac). **L1b built** (`testing.md`
 18.637): virtio-blk in the monitor, written in place, `sandbox disk new`

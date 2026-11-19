@@ -31,7 +31,8 @@ static _Thread_local int zeroed;        /* .tbss: begins as 0 */
  * a whole function: it reads the register once and keeps it, so a function
  * that changed the pointer halfway would go on reading the old one. That
  * is what the first version of this did, and it read 99 from somewhere that
- * was not its copy. pthreads will begin a thread the same way (W3).
+ * was not its copy. `pthread_create`'s threads begin the same way
+ * (`runtime/posix/pthread.c`, W3).
  */
 __attribute__((noinline))
 static int second_work(void)

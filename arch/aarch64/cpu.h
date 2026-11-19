@@ -92,7 +92,7 @@ void cpu_identify(struct cpu_info *out);
  * numbered list, because the kernel has no business knowing that word three
  * is called PFR0 - and on the other machine it is not.
  *
- * These indices are this architecture's, and userland reading /dev/cpu uses
+ * These indices are this architecture's, and userland reading /Devices/cpu uses
  * the same ones after checking `cpu_arch`.
  */
 #define CPU_RAW_MIDR    0

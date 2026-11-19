@@ -162,9 +162,13 @@ On screen you see the system. In the terminal you have the full log — scrollab
 
 ```
 lua/upstream/     Lua 5.4.x exactly as shipped, untouched
-lua/patches/      the freestanding changes, applied during the build
 lua/kosmos/       the build configuration and the table serialiser, for the user image
 ```
+
+There is no `lua/patches/`. Every hook Kosmos overrides is guarded
+upstream by `#if !defined`, so `-include lua/kosmos/kosmos_lua.h` in front
+of every translation unit is enough, and nothing has had to be patched
+(`Makefile`, `LUA_FLAGS`).
 
 **Never edit `upstream/` directly.** When a new version comes out, you update without fighting your own changes. Ten minutes now, a week at milestone 4.
 

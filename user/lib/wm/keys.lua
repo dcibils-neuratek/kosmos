@@ -43,45 +43,32 @@ return function(ctx)
   -- the arrows are how every list is used. A window manager that keeps them
   -- has decided that no application may have a second control.
   --
-  -- There are no modifiers to escape into. A virtio keyboard gives Control
-  -- plus a letter and nothing else - no Alt, no Super, and Control plus an
-  -- arrow is a terminal escape sequence this system does not speak. So this
-  -- takes the approach screen and tmux took for exactly the same reason:
-  -- **one** key is reserved, and it introduces a command rather than being
-  -- one.
+  -- When this was written there were no modifiers to escape into: a virtio
+  -- keyboard gave Control plus a letter and nothing else. So it took the
+  -- approach screen and tmux took for the same reason: **one** key is
+  -- reserved, and it introduces a command rather than being one.
   --
   --   Control-W then an arrow    move the focused window
   --   Control-W then Tab         focus the next window
+  --   Control-W then Q           end the desktop
+  --   Control-W then C           send a literal Control-C to the application
   --   Control-W then Control-W   send a literal Control-W to the application
-  --
-  --   Control-W then a           select everything in the focused control
-  --   Control-W then c           copy the selection to the clipboard
-  --   Control-W then x           cut it
-  --   Control-W then v           paste
   --
   -- One key out of the application's vocabulary instead of five, and the one
   -- taken is the one applications want least.
   --
-  -- **The clipboard four are here rather than as four more reserved keys**,
-  -- and the reason is the paragraph above: there are no modifiers, so
-  -- Control-C is a key an application can see, and in this system it is
-  -- already the key that stops one. Nine checks in the display harness use
-  -- it to get the screen back from the desktop, from `plasma`, from `cube3d`
-  -- and from a terminal window, so it is not available and should not be.
-  --
-  -- Which leaves the choice between inventing a triple out of whatever
-  -- control codes are unclaimed - and every candidate carries somebody's
-  -- prior, `^Y` being paste to half the world and copy to nobody - or
-  -- putting them behind the prefix that exists precisely because this
-  -- machine has no Meta key. Behind the prefix the letters can be the ones
-  -- everybody already knows, which is the whole point of a prefix.
+  -- **Super and Alt exist now** (below, and `alt_tab`), and the clipboard's
+  -- four that were behind the prefix - `Control-W c` to copy - are the
+  -- ordinary Control-A, C, X and V, in `EDIT_KEYS` (`wm.lua` has why they
+  -- moved). The prefix keeps what needs two deliberate presses, or a key
+  -- the window manager would otherwise have taken from the application.
   --
   -- **What crosses to the application is the intent, not the text.** This
-  -- process does not know what a selection is; a text field does. So the
-  -- prefix posts `{type = "copy"}` and the application answers by sending
-  -- back a `clip_put` with whatever it decided that meant. The window
-  -- manager holds the bytes and stays ignorant of them, which is the same
-  -- division it already keeps with pixels.
+  -- process does not know what a selection is; a text field does. So a copy
+  -- key posts `{type = "copy"}` and the application answers by sending back
+  -- a `clip_put` with whatever it decided that meant. The window manager
+  -- holds the bytes and stays ignorant of them, which is the same division
+  -- it already keeps with pixels.
   --
   --------------------------------------------------------------------------
   -- Round the open windows, without the pointer.
@@ -225,8 +212,8 @@ return function(ctx)
   -- keystroke back - which is what makes an unbound combination reach the
   -- application instead of vanishing.
   --
-  -- A table rather than a chain of comparisons, for the reason `CLIP_KEYS`
-  -- above gives: it is a lookup, and both cases of a letter being the same
+  -- A table rather than a chain of comparisons, for the reason `EDIT_KEYS`
+  -- in `wm.lua` gives: it is a lookup, and both cases of a letter being the same
   -- entry should be visible rather than argued. Nobody should have to notice
   -- the shift key to give a command.
   --
@@ -475,7 +462,7 @@ return function(ctx)
   -- keyboard needs in the same list. Named here rather than discovered,
   -- which is a copy and is admitted as one: the alternative is restructuring
   -- `prefixed` around a table to serve a window, and the four clipboard keys
-  -- already live in `CLIP_KEYS`.
+  -- already live in `EDIT_BINDINGS`, in `wm.lua`.
   --
   local PREFIX_BINDINGS = {
     -- And Alt+Tab, dispatched in `alt_tab` and named here for the same
@@ -947,7 +934,7 @@ return function(ctx)
     -- what a selection is; a text field does. So it posts `{type = "copy"}`
     -- and the application answers with whatever it decided that meant - which
     -- is why an application not built on the widget kit at all gets these
-    -- without a line of its own, if it reads the intent - as Lite XL did.
+    -- without a line of its own, if it reads the intent.
     --
     local edit = EDIT_KEYS[c]
 

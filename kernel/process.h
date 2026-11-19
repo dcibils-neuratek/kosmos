@@ -364,7 +364,8 @@ _Static_assert(USER_SCREEN_MAX >= 7680UL * 4320UL * 4UL,
  * (`docs/w2.md` part 2, agreed by Diego on 11 November 2026). Until then
  * the stacks ran to the end of the address space, half a million slots;
  * now 57,344 - threads *at once*, since an index is given back when its
- * thread is collected (`process_thread_start`). Above them, to the end of
+ * thread is collected (`process_thread_wait`), and `process_thread_create`
+ * takes the lowest one free. Above them, to the end of
  * what a process may address, is `SYS_RESERVE`'s: 192 GB on AArch64, whose
  * user half is 256 GB through three levels of tables, and 447 GB on x86-64.
  */
@@ -554,12 +555,13 @@ struct process {
      * handed a capability naming one register range and cannot express any
      * other, which is the whole point of moving drivers out of the kernel.
      *
-     * So this is held by init and, **for now, by the two drivers init
-     * starts** - the power button and the USB host controllers - because
+     * So this is held by init and, **for now, by every userland driver
+     * init starts** - `init.lua` spawns AHCI, e1000, xHCI, the power
+     * button, the backlight and the Intel GPU with `SPAWN_DEVICES` - because
      * there is no devices server yet to hold it for them and hand each the
      * capabilities for its own device. This comment said "a USB driver never
-     * has it", which was that plan written down as a fact: `init.lua` has
-     * spawned the xHCI driver with `SPAWN_DEVICES` since the driver existed.
+     * has it", which was that plan written down as a fact, and then "the two
+     * drivers init starts" while there were six.
      * `SYS_POINTER_MOVE` is gated on it too, and moves with it once that
      * server is here.
      *

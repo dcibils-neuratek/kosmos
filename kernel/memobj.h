@@ -121,7 +121,7 @@ struct memobj {
      * is a page holding up to 512 pointers to directory pages, each holding
      * up to 512 pointers to index pages, each holding up to 512 page
      * pointers. Use `memobj_page` and `memobj_fill` rather than reaching
-     * in, so the arithmetic lives in one place (`memobj.c`, `index_page`).
+     * in, so the arithmetic lives in one place (`memobj.c`, `index_slot` and `page_slot`).
      */
     void ****top;
     size_t   dirs;                  /* directory pages in use, under `top` */

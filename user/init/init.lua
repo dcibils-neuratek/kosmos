@@ -57,6 +57,20 @@ local ROLE_SMBD       = 29 -- this machine's folders, shared over SMB (`sharing.
 local ROLE_VMM        = 30 -- a sandbox's monitor (`docs/virtualization.md` V3)
 
 --
+-- **Most of these roles never reach this file.** Every server and driver
+-- among them is C, and `user/init/main.c` dispatches it before the
+-- interpreter is opened - `/Devices`, `/bin` and `/Kosmos/Libraries` (one
+-- `binfs.c` over two arrays, the programs' emitted by `tools/progs2c.py`),
+-- `/Running`, `/Home`, the console, audio and the rest - so a process
+-- serving one never has a `lua_State` at all. A server runs on behalf of
+-- another process and therefore does not get a collector, and the way to
+-- mean that is for there to be no collector in the process, rather than a
+-- promise not to allocate. The roles this file answers are the first
+-- process, the shell, a program's runner, the self-test and the spawn test,
+-- each an `if role ==` below, and the clients, which fall through to the
+-- end.
+
+--
 -- **A program's own image** (`docs/elf.md` step 4). A program whose header
 -- says `-- kosmos: image doom.elf` runs in that image - the file of that name
 -- beside it - rather than in this process's own: the way a program with C in
@@ -4463,14 +4477,6 @@ end
 -- somewhere else, and nothing in the shell knows /bin is special.
 --------------------------------------------------------------------------
 
---
--- No `binfs` here: /bin is served by `user/servers/binfs.c`, and `main.c`
--- dispatches role 11 before the interpreter is opened. The program store it
--- reads is the array `tools/progs2c.py` now emits beside the Lua chunk -
--- which also means /bin no longer costs a Lua `load` of four hundred
--- kilobytes at boot to get a table of sources.
---
-
 --------------------------------------------------------------------------
 -- /Running: the registry of what is running and what it exposes.
 --
@@ -4495,24 +4501,6 @@ end
 -- that forwarded would be one process that any application could stop, and
 -- it would be holding every other application's door.
 --------------------------------------------------------------------------
-
---
--- No `appfs` here: /Running is served by `user/servers/appfs.c`, and `main.c`
--- dispatches role 14 before the interpreter is opened.
---
-
---
--- No `diskfs` here: /Home is served by `user/servers/diskfs.c`
--- (`docs/diskfs.md` step 3), and `main.c` dispatches role 15 before the
--- interpreter is opened. Its Lua - `diskfs_handlers`, `/Home` on a stick's
--- partition, the exit codes it died with, and `kfs.lua` and `blockcache.lua`
--- under them - went in step 4, once nothing ran it.
---
-
---
--- No `devices_main`: the devices server is C. `user/servers/devices.c` is
--- the whole of it and `main.c` dispatches role 9 before Lua is opened.
---
 
 local RUNNER_ROLE = ROLE_RUNNER
 
@@ -7060,33 +7048,6 @@ if role == ROLE_SELFTEST then
   line("selftest: done")
   return
 end
-
---
--- No branch for ROLE_DEVICES: the devices server is C, and
--- `user/init/main.c` dispatches it before the interpreter is opened.
---
-
-
---
--- No branch for ROLE_DISKFS: the disk server is C, and `main.c` dispatches
--- it before the interpreter is opened (`docs/diskfs.md` steps 3 and 4).
---
-
---
--- No branch for ROLE_AUDIO here, and its absence is the point.
---
--- The audio server is C and `user/init/main.c` dispatches it before the
--- interpreter is opened, so a process serving /Devices/audio never has a
--- `lua_State` at all. `CLAUDE.md` says a server runs on behalf of another
--- process and therefore does not get a collector; the way to mean that is
--- for there to be no collector in the process, rather than a promise not to
--- allocate that somebody adds a `print` to next month.
---
-
---
--- No branch for ROLE_LIBFS or ROLE_BINFS: both are served by
--- `user/servers/binfs.c`, which is the same code over a different array.
---
 
 
 if role == ROLE_RUNNER then

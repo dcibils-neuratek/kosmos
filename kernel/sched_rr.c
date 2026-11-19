@@ -11,9 +11,12 @@
  * own `sched.next`. No allocation, and enqueue and pick are both constant
  * time.
  *
- * This is the policy the IPC benchmark at the end of M3 is measured against,
- * so it is deliberately the simplest thing that is fair: any number it
- * produces is a property of the IPC path rather than of clever scheduling.
+ * It was the machine's policy until `sched_priority` replaced it, and the
+ * one the IPC benchmark at the end of M3 was measured against. Now it is
+ * the second entry in `thread.c`'s list of policies: one a person can
+ * switch to (`sched_switch_to`) to feel the difference, and the fair
+ * control the guest tests hold the scheduler seam and a policy switch on
+ * every core to. So it stays deliberately the simplest thing that is fair.
  */
 
 #include <stddef.h>

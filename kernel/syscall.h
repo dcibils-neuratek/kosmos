@@ -404,7 +404,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * `IRQ_WAIT_CALLER`, and on the second `IRQ_WAIT_CALLER + 1`, to be collected
  * with a receive that does not block - so a driver with clients of its own
  * waits for them and its devices on one wait. The xHCI driver's are the disk
- * server's write endpoint and `/dev/blocks`, whose reads waited out the
+ * server's write endpoint and `/Devices/blocks`, whose reads waited out the
  * driver's 50 ms deadline while the wait could watch only one. A line with an
  * interrupt is answered first, and one endpoint named twice is refused.
  * `kernel/irq.c` has the rest.
@@ -1330,7 +1330,7 @@ struct sysinfo {
      * The processor, raw, and what to make of it.
      *
      * `arch/<name>/cpu.c` decodes the same words for the boot log and
-     * userland decodes them again for /dev/cpu, because the two want
+     * userland decodes them again for /Devices/cpu, because the two want
      * different amounts of detail and neither should constrain the other.
      * What each word *is* depends on `cpu_arch`, and each architecture's
      * cpu.h names the indices.

@@ -815,6 +815,18 @@ A file create is about sixty milliseconds and roughly fifteen block
 operations at three milliseconds each, none of which cares what language
 asked for them.
 
+**It was built, and the prediction was wrong.** Not as `kfs.store` alone:
+the whole disk server moved to C on 29 September 2026 (`docs/diskfs.md`
+step 3), held to the Lua format block for block, and was measured against
+the Lua server on one disk (`testing.md` 18.283): `getattr` 350 to 235 us,
+a 4 KB read 410 to 276, `setattr` 1,912 to 548, random 4 KB reads 1,796 to
+3,824 IOPS - one and a half to three and a half times, not fifteen
+percent. Part of that is the shape rather than the interpreter: a query
+scans once rather than walking an index, and attributes are read when
+asked for. The servers were C by then on other grounds (*Language split*
+in `CLAUDE.md`); what stays true of this section is the argument against a
+wholesale C userland, for the policy code above the servers.
+
 ### Why C and not Rust
 
 Lua is 30k lines of C and it is the system's central piece. With a Rust kernel, that C exists anyway but inside an `unsafe extern`, with raw pointers and a raw allocator. You get all of Rust's costs and no guarantee where it matters most, because the real risk surface is the kernel↔Lua interface.
@@ -1054,10 +1066,12 @@ bytes. The path is walked twice while an index exists (8.3c), and each walk
 read the root's inode block and its directory again, and two more blocks
 for every directory deeper.
 
-**Around the four disk calls, not inside kfs.** `user/lib/blockcache.lua`
-wraps `sys.disk_read`, `sys.disk_write`, `sys.disk_write_from` and passes
-`sys.disk_read_into` through, in the disk server, after the stick's calls
-and the device's counters. Every block kfs reads or writes passes through
+**Around the disk calls, not inside kfs.** The cache was
+`user/lib/blockcache.lua` in the Lua server, wrapping `sys.disk_read`,
+`sys.disk_write`, `sys.disk_write_from` and passing `sys.disk_read_into`
+through; since the disk server is C (`docs/diskfs.md` steps 3 and 4) it is
+`user/servers/diskcache.c`, under the same rules, wrapping the server's
+`struct kfs_disk` after the stick's calls and the device's counters. Every block kfs reads or writes passes through
 one of them - the journal, the bitmap, an inode, a directory, a file's bytes
 - so a cache there is told of every write by the writing itself. Inside
 kfs it would have had to be told by each of seven places that write, and
@@ -1075,9 +1089,10 @@ least recently used going first.
 
 Measured under QEMU (`testing.md` 18.271): random 4 KB reads 1787 to 3215
 IOPS on the ARM board's disk and 795 to 2324 on a stick's `/Home`. A read of
-a file whose path is known is one disk call. The same `kfs.lua` suite runs
-on the Mac a second time through the cache (`KFS_CACHE=1`), journal,
-recovery and power losses included.
+a file whose path is known is one disk call. While the format was `kfs.lua`,
+its suite ran on the Mac a second time through the cache (`KFS_CACHE=1`),
+journal, recovery and power losses included; `kfs.lua`, `blockcache.lua`
+and that suite went in `diskfs.md` step 4, and `kfs.c` is held by its own.
 
 The spelling walk 8.3c says is paid "because kfs has no block cache" costs
 no disk calls now; it still costs a second walk in Lua, which is where a

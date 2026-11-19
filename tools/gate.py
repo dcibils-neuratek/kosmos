@@ -22,10 +22,13 @@ sharing nothing; the Mac has ten cores and the gate used about one. So:
      its own (`--parts`, `--phases`).
 
 A suite marked `alone` runs after the rest on a quiet machine, for a check
-about timing that cannot share. Two do: x86's HDA sessions, whose ring
-underran once with five other machines running and passed alone; and
-Groove under heavy load, whose audio server was held off 38 ms inside the
-gate - longer than the device holds - and 9 to 14 alone. Sound on the ARM board otherwise, scheduling latency, the
+about timing that cannot share. Three do: x86's HDA sessions
+(`x86-sound`), whose ring underran once with five other machines running
+and passed alone; Groove under heavy load (`arm-synth-load`), whose audio
+server was held off 38 ms inside the gate - longer than the device holds -
+and 9 to 14 alone; and the Video app's sound with every core busy
+(`x86-film-load`), for the same reason. Sound on the ARM board otherwise,
+scheduling latency, the
 idle desktop and the compositor's budget have all passed shared; a run
 where one does not is the evidence for marking it.
 
@@ -37,7 +40,7 @@ happens; the end says which were slowest, so the next thing to make faster
 is a number rather than an opinion. A failed suite's log is kept whole, and
 its last lines are printed with the path to the rest.
 
-Usage: gate.py [--jobs N] [--at-once N] [--arm] [--libs] [--only NAME,...]
+Usage: gate.py [--jobs N] [--at-once N] [--arm] [--all] [--only NAME,...]
 """
 
 import argparse
@@ -90,7 +93,7 @@ class Suite:
 #
 # **What it does not see, on purpose**: the Makefile, which changes with
 # almost every commit, and the kernel and servers the guest runs on, which
-# every other suite holds. `make test LIBS=1` runs them all, naming one in
+# every other suite holds. `make test ALL=1` runs them all, naming one in
 # `ONLY=` runs it, and `make prepush` runs them all before every push.
 #
 RUNTIME = ["runtime", "user/include", "user/init", "user/user.ld",

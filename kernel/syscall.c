@@ -2364,7 +2364,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          * **An array rather than two arguments**, which is what they were
          * until 22 September. A syscall has five, all five were spoken for,
          * and the xHCI driver needed a third endpoint - the network stack's
-         * frames beside the disk server's writes and `/dev/blocks`
+         * frames beside the disk server's writes and `/Devices/blocks`
          * (`usb.md` 7d). Reading them out of the caller's memory costs one
          * `process_may_read` and takes the ceiling off.
          *
@@ -2584,7 +2584,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          * Not a wall clock and not pretending to be one: it counts from
          * whenever the machine started, at whatever rate the board's
          * counter runs, and says nothing
-         * about what time it is. A date is `/dev/clock`'s job.
+         * about what time it is. A date is `/Devices/clock`'s job.
          *
          * No permission check. It is not authority - every process can
          * already time itself by counting yields, only worse - and a

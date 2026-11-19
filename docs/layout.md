@@ -14,17 +14,17 @@ halves of this document:
 | directory | what it is | the rule for putting something here |
 |---|---|---|
 | `boot/` | the assembly entry points and the linker scripts, and `efi/`: Kosmos's own UEFI loader | the first instructions the machine runs, before there is a C stack - and on a PC, the loader that puts the kernel in memory at all (`boot.md`) |
-| `arch/aarch64/` | **which CPU you are.** Page tables, exception vector, context switch, barriers | it is different on another architecture and is *reimplemented*, not abstracted |
-| `hal/qemu-virt/` | **which peripherals you have.** UART, timer, interrupt controller, framebuffer, keyboard, block device | it is different on another board behind the same interface |
+| `arch/aarch64/`, `arch/x86_64/` | **which CPU you are.** Page tables, exception vector, context switch, barriers | it is different on another architecture and is *reimplemented*, not abstracted |
+| `hal/qemu-virt/`, `hal/pc/`, and `hal/virtio/` and `hal/fwcfg/` that both share | **which peripherals you have.** UART, timer, interrupt controller, framebuffer, keyboard, block device | it is different on another board behind the same interface |
 | `kernel/` | Nebula: threads, address spaces, IPC, capabilities, physical memory, and `pool.c`, where every kernel object lives and how the pools grow | it must run at EL1, or it defines the isolation boundary |
-| `lua/upstream/` | Lua 5.4, exactly as shipped | never edited; changes are patches applied at build time |
+| `lua/upstream/` | Lua 5.4, exactly as shipped | never edited; what Kosmos needs is forced in front of it by `-include lua/kosmos/kosmos_lua.h`, so there are no patches to apply |
 | `lua/kosmos/` | our additions to the interpreter: the serializer, the freestanding header | it is C that belongs to the language rather than to the system |
 | `runtime/libc/` | the freestanding libc: `memcpy`, `malloc`, `snprintf`, `setjmp` | a C program needs it and it has no operating system to ask |
-| `runtime/upstream/` | vendored C: `stb`, `puff`, `miniz`, Lua's maths from musl, TinyGL, Doom, Quake, the Super Nintendo's core and more, each with its licence | somebody else wrote it; it keeps their licence and is not edited |
-| `user/init/` | `init.lua` — init, the servers, the shell, the namespace client | it is the first process, or something the first process serves |
+| `runtime/upstream/` | vendored C: `stb`, `miniz`, Lua's maths from musl, TinyGL, Doom, Quake, the Super Nintendo's core and more, each with its licence | somebody else wrote it; it keeps their licence and is not edited |
+| `user/init/` | `init.lua` and the C it runs on — init, the shell, the namespace client, and the environment every process is born with | it is the first process, or something the first process serves; the servers it starts are C in `user/servers/` |
 | `user/servers/`, `user/drivers/` | C: a process that owns something and rents it out, or drives hardware | something else's correctness or timing depends on it (`CLAUDE.md`) |
 | `user/kits/` | C that runs inside the caller's process, one directory per kit | a loop over bytes a Lua program asks for |
-| `user/lib/` | Lua libraries: `ui.lua`, `kfs.lua`, `theme.lua`, `zip.lua` | more than one program needs it |
+| `user/lib/` | Lua libraries: `ui.lua`, `theme.lua`, `zip.lua`, `files.lua` and the rest | more than one program needs it |
 | `user/include/` | the protocol headers both sides of a boundary compile against | it is a declared shape crossing into a server |
 | `user/bin/` | programs and applications, in Lua, in `apps/` and `programs/` | it is something a person runs |
 | `user/tests/` | guest-side tests | it can only be answered by a running machine |
@@ -163,9 +163,9 @@ the image.
 | `/Home` | the disk Kosmos started from, journalled - or memory, on a machine with none | done |
 | a person's preferences | `/Home/Preferences`: the look, the keyboard, Tracker's, the Terminal's, what starts at login, what opens what - moved there from dotfiles at the top of `/Home` by the shell, once (6s d) | done |
 | a person's places | Home, Desktop, Documents, Photos, Movies, Captures, Music, what they pin, the Trash (6w) | done |
-| the browser's own | `/Home/Preferences/browser`, a folder rather than one table: `history/`, a file a day named by its date, thirty kept (6zz d4), and its settings beside it (d5) | settings, with d5 |
-| a person's favorites | `/Home/Favorites`, a file each - empty, its page in its `address` attribute and `type = "favorite"` - and folders of them, NetPositive's way (6zz d3): Tracker shows, renames and moves them and opens one in the browser | done |
-| what can be fetched again | `/Home/Cache`, a folder an application each - the browser's in `/Home/Cache/Browser` (6zz k): nothing in it is anybody's work, so it can be emptied whole, and it outlives a restart where `/Temporary` does not. Diego's choice, 1 October 2026 | the browser's, being built |
+| the browser's own | `/Home/Settings/JetSki`, a folder rather than one table: `settings`, `tabs`, `History/` - a file a day named by its date (`history.lua`) - and WebKit's `Cache/`. It was `/Home/Preferences/browser` until the old browser went in 0.11.461 | done |
+| a person's favorites | `/Home/Favorites`, a file each - empty, its page in its `address` attribute and `type = "favorite"` - and folders of them, NetPositive's way (6zz d3): Tracker shows, renames and moves them and opens one in JetSki, whose star makes one (18.902) | done |
+| what can be fetched again | `/Home/Cache`, a folder an application each - Maps' in `/Home/Cache/Maps` (6zz k): nothing in it is anybody's work, so it can be emptied whole, and it outlives a restart where `/Temporary` does not. Diego's choice, 1 October 2026. JetSki's is WebKit's, in `/Home/Settings/JetSki/Cache` | Maps' done |
 | `/Temporary` | the ramfs | done |
 | fonts and pictures | inside the image | files, when the image stops carrying them |
 

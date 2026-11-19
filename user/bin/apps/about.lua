@@ -258,7 +258,7 @@ win:add(ui.text{
 })
 
 --------------------------------------------------------------------------
--- Uptime, which is the only thing on this window that changes.
+-- Uptime and free memory, the two things on this window that change.
 --------------------------------------------------------------------------
 
 local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }

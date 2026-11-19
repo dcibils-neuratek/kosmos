@@ -2,17 +2,18 @@
 --
 -- Drawing commands onto a surface.
 --
--- A window that sends drawing rather than owning pixels sends a list of
--- commands - `fill`, `text`, `tint` and the rest - which `ui.lua`'s drawing
--- context makes, and the window manager draws them into the window's
--- surface. These are those drawings, one function a command.
+-- A kit widget draws as a list of commands - `fill`, `text`, `tint` and
+-- the rest - which `ui.lua`'s drawing context makes, and the kit paints
+-- them into the window's own region, in the application's process
+-- (`ui.paint_ops`, `ui.paint_view`). These are those drawings, one function
+-- a command.
 --
 -- **In a library since 27 September** (`roadmap.md` 6n, step 6): they were
--- a table inside `wm.lua`, and a program that draws its own pixels could not
--- draw a kit widget - so Cafesa3D could not hold the IDE's editor in its
--- Script panel. Now the window manager and `ui.paint_view` replay the same
--- commands through the same functions, and a widget looks the same in
--- either kind of window.
+-- a table inside `wm.lua`, which drew every window's commands then, and a
+-- program that draws its own pixels could not draw a kit widget - so
+-- Cafesa3D could not hold the IDE's editor in its Script panel. Every
+-- window draws itself now (`docs/astra-display.md` D2), and the window
+-- manager no longer loads this file.
 --
 -- `paint.new(picture, sized)` makes the table: `picture(name)` is a decoded
 -- picture or nil, and `sized(role, px)` the face for a role at a size - each
@@ -231,7 +232,8 @@ end
 
 -- A list of commands into a surface, in order; one it does not know is
 -- skipped, as the window manager always skipped it.
--- Points to pixels, to the nearest: the window manager's `scale.px`.
+-- Points to pixels, to the nearest: the same sum as the window manager's
+-- `scale.px`.
 local function px(v, pct)
   return math.floor(v * pct / 100 + 0.5)
 end

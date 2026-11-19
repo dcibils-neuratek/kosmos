@@ -127,15 +127,17 @@ ring. Then each step is tried on the M700 before the next, as X1-X3 were.
    stopped and started, the file there.
    - **L1a, `/Sandboxes`: built** (`testing.md` 18.636) - a second disk
      server on the partition `opt/kosmos/sandboxes` names, the USB driver
-     guarding both drives, and `tools/sandboxes_drive.py` to give a stick
-     in use the partition with `/Home` left as it is (the table moved to
-     the stick's end; run once with `sudo` on the unmounted stick).
+     guarding both drives, and `tools/sandboxes_drive.py` - since 0.11.322
+     `tools/stick_drive.py --drive sandboxes`, one tool for this drive and
+     `/Models` - to give a stick in use the partition with `/Home` left as
+     it is (the table moved to the stick's end; run once with `sudo` on the
+     unmounted stick).
    - **L1b, virtio-blk: built** (`testing.md` 18.637) - `vmmblk.c` in the
      monitor on a file named in the setup, written in place
      (`DISK_IN_PLACE`), `sandbox disk new` and `--disk`; Alpine writes and
      reads back its disk under QEMU. One C door to the disk protocol,
      `diskask.c`, for it and the four that had copies. **On the M700**: once
-     the stick has `/Sandboxes` (`tools/sandboxes_drive.py`), `sandbox disk
+     the stick has `/Sandboxes` (`tools/stick_drive.py --drive sandboxes`), `sandbox disk
      new /Sandboxes/linux.img 4096` and a sandbox given it.
    - What L1 leaves for later, measured first: the vCPU waits while its
      disk is read or written (one thread); the region is mapped by the disk

@@ -37791,3 +37791,51 @@ global and fails only when reached - with none new.
 **The gate.** 132 suites in 615 s (10:15), 131 passing; `host` failed,
 because `test_automate.lua` stands in for `use` and knew only `files.lua`.
 It loads the real `markup.lua` now, and `host` passes, 41 s.
+
+## 18.916 Comments and documents made true
+
+**In short:** batch 5 of the review changes what the system says about
+itself, not what it does. Comments in about fifty files described things
+that had since changed. `state.md` was thirteen thousand lines of every
+session since September and is now a hundred. `CLAUDE.md`'s Build, Layout and HAL
+sections and its map of documents, and the README, say what is in
+the tree today. Three applications lose a variable nothing read.
+
+What changed, by kind (`cleanup.md` batch 5's findings):
+
+- **`docs/state.md`** is where the work is and what comes next, and nothing
+  older; everything it said before 19 November is `docs/state-history.md`,
+  moved whole.
+- **`CLAUDE.md`**: the machines it runs on today, the Build block (`make x86`,
+  `netboot`, `apps`, `prepush`, `ALL=1`), the browser's paragraph, the
+  Layout, the seven priority bands, the stick's `/Home` at 2048 MB, a thread
+  that moves when asked, and the map's statuses, with eleven documents
+  nothing linked to - the four monitors, This Machine, rendering modes, the
+  keyring, Mail, Sheets, Present, the Graph Kit - and `state-history.md`.
+- **README**: the userland is C and Lua, not "entirely Lua", and the screen's
+  size is a boot option rather than compiled in.
+- **The other documents**: `pulses.md`, `mailweb.md`, `playback.md` and
+  `usb.md` say what is built; `architecture.md`'s list of what is missing
+  loses four things that exist (pulses, name resolution, `hal_fb_flush`,
+  x86's guest suite); `layout.md`, `design.md` 8.3d, `hal.md`, `linux.md`,
+  `setup.md` and the roadmap's keys corrected; eight logbook entries for
+  0.11.487 to 0.11.515.
+- **Comments**: `/dev/...` written for `/Devices/...` in the kernel and the
+  HAL, GRUB's line for a stick's `kosmos.cmdline`, the Makefile's
+  `FULL` paragraph that was there twice, `gate.py`'s `LIBS=1`, tombstones
+  in `init.lua` folded, and stale reasons in the window manager, the
+  themes, the kit, the scheduler's policies and the servers.
+- **Code, the little there is**: Gallery, Log View and Terminal each held
+  `local theme = ui.theme` and never read it, under a comment explaining
+  why it must be the kit's; and `benchmark` pointed at `monitor watch`,
+  which is not a thing `monitor` takes.
+
+Two findings were checked and are still true, so they stay: `spin.lua`
+says the screen is granted to every program, and `init.lua` still does;
+Disk Benchmark's random write says a write replaces the whole file, and
+there is still no partial write.
+
+**Checked** with both architectures built and `luac -p` over every changed
+Lua file; `luac -l` finds no global `theme` read in the three applications.
+
+**The gate.** 132 suites in 639 s (10:38), every one passing.

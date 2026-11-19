@@ -108,7 +108,8 @@ struct drives_part {
  * a volume would offer the whole drive as one.
  *
  * Extended partitions are named and not followed: `type` keeps 0x05 or 0x0F
- * and `drives_fs_of` calls them OTHER. Following the chain is more sectors to
+ * and `identify` in `drives.c` calls them `FS_KIND_OTHER`, as it does any
+ * volume it cannot read. Following the chain is more sectors to
  * read and no drive Diego owns needs it.
  */
 unsigned mbr_partitions(const uint8_t *sector, unsigned size,
@@ -164,7 +165,8 @@ bool gpt_entry_array(const uint8_t *header, unsigned size, unsigned most_bytes,
  * a number that is occasionally stale is better there than a spinner.
  *
  * So the hint is read when it is there and believed when it is possible, and
- * `drives_free` says which it gave. `FSI_LeadSig` and the sector's place in
+ * `measure_free` in `drives.c` says which it gave, in `free_exact`.
+ * `FSI_LeadSig` and the sector's place in
  * `BPB_FSInfo` are the fields `tools/test_fat.py` already reads to find
  * mtools's own FSInfo; 0xFFFFFFFF is the specification's "unknown".
  */
