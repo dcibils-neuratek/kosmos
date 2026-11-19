@@ -38462,5 +38462,6 @@ and nothing more.
 between 129 and 599 s with "No space left on device" and screendumps that
 were never written, the disk at 2.1 GB free, and they pass alone: 9 suites
 in 356 s. It is the second gate running that the disk has stopped, and room
-for the gate is Diego's to choose (old stick images and their symbols in
-`build/x86_64/` hold 3 GB).
+for the gate was Diego's to choose: he chose the old development sticks
+(0.11.313, 0.11.363, 0.11.391, their symbols, and the boot partitions left
+of 0.11.83 and 0.11.149) deleted, the two stable ones kept - 5.0 GB free.
