@@ -38544,3 +38544,95 @@ with the protocol (G6e).
 after 18.927's room. 10:58 is just past the ten minutes; the slowest are
 `x86-dock` at 361 s and `x86-cafesa3d-2` at 330 s, and they are the first
 to split if the next gates stay over.
+
+## 18.929 The desktop's GPU work on contexts, and a hang reset
+
+**In short:** G6d (`docs/gpu3d.md`). On the M700 the render engine and the
+blitter, which draw the desktop, now run on execlists in contexts of the
+driver's own, through a page table that mirrors the global GTT - and every
+check they passed on their rings passes there: 50 of 50 stores on each
+engine, a 800 by 600 copy and a 1720 by 1440 one exact, the 3D pipeline's
+4096 of 4096 pixels, the execution units' fill, sixteen runs, and the
+desktop with the cube at 121 frames a second. A batch that jumps to
+itself for ever, given to either engine, is found by the driver's hang
+watch 3 s later and the engine reset; a store after it lands. With the
+reset's `GDRST` taken out, the engine stays stuck, which is the control.
+
+- **The mirror** (`AP` in `intelgpu.c`). On execlists every address a
+  command does not mark as the global GTT's goes through the context's page
+  table - a copy's source and destination, surface states, kernels. So the
+  page table maps each GPU address to the page the GTT maps it to, i915's
+  aliasing PPGTT: `gtt_write` makes every entry in both, with the PAT index
+  read from the GTT entry's bits 3, 4 and 7, and the firmware's framebuffer,
+  in the GTT before the driver ran, is copied in once. Its tables come in
+  runs of 64 contiguous write-combining pages; a 4 GB GTT mapped whole would
+  need 2054, so the number of runs is the GTT's own size.
+- **Submission.** A context is laid out and its descriptor written only
+  while its engine is idle: the image's register page filled as G6b's are,
+  restore inhibited, head where the last run's ring ended and the tail
+  where the ring's is now. Work given while the engine runs waits for the
+  status buffer's active-to-idle - read by every wait (`fence_reached`) and
+  by the driver's loop, which comes back within a tick while an engine is
+  busy. Resubmitting a running context would be a lite restore, and the
+  tail written into an image the engine may be saving at that moment can be
+  lost; waiting for idle cannot be wrong.
+- **The TLB.** The first command of a request is preceded, when the mirror
+  has changed since that engine last invalidated, by a PIPE_CONTROL with
+  TLB invalidation and a post-sync write on the render engine, and on the
+  blitter an `MI_FLUSH_DW` with `MI_INVALIDATE_TLB` and a store, both to the
+  status page's scratch qword (i915's `gen8_emit_flush_rcs` and `_xcs`).
+- **The hang watch and the reset.** An engine that is active, with work
+  given and its fence not moved for `GPU_HANG_MS`, 3000 ms, is reset as
+  `intel_reset.c` (Linux 6.12, fetched into `build/downloads/i915/`, 45338
+  bytes) resets one on Gen9: `STOP_RING` and `MODE_IDLE` waited for;
+  `RING_RESET_CTL`'s request and `READY_TO_RESET` waited for, or a
+  catastrophic error's bit cleared instead; `GDRST` given the engine's domain
+  (render 1 << 1, blitter 1 << 3, `intel_gt_regs.h`) and waited on to
+  clear, twice; the request withdrawn; `enable_execlists` again. What was
+  given and not done is dropped, its fence written as reached so nobody
+  waits for ever, and the render engine's starting state run again before
+  the next 3D work.
+
+```
+gpu engine 50:         50 of 50, 11 us fastest, 65 slowest, 12 on average;
+                       mode 00008000 (run list)
+gpu engine render 50:  50 of 50, 14 us fastest, 38 slowest, 14 on average
+gpu draw:              480000 of 480000 pixels pass, 0 outside changed, 1030 us
+gpu draw big:          a 1720x1440 copy, 2476800 right, 26286 us
+gpu render:            4096 of 4096 right, 4096 exact, 463 us
+gpu compute:           256 of 256 right, 0 written past, 78 us
+gpu runs:              16384 of 16384 words right, as one list and as 16 runs
+gpu el2 5:             5 of 5 - the video engine's G6c, beside them
+gpu hang:              the blitter spun until the driver reset it, 3015 ms
+                       after it was given; then it wrote 4b6f7301
+gpu hang render:       the render engine, 3011 ms; then it wrote 4b6f7301
+                       - and gpu render after it, 4096 of 4096
+[62.449] intelgpu: the render engine hung - its fence still for 3000 ms - and
+         was reset (1 time; it stopped, was ready, came out of reset);
+         1 request dropped, mode 00008000
+control, no GDRST:     the blitter: its number never came - 3011 ms waited;
+                       gpu engine 3 after it: never came, head 0000001c
+                       (inside the spinner), ctl 00003001
+```
+
+**What it costs**: a store's round trip is 11-14 us, where the legacy
+ring's tail took 3-4 (18.680's `gpu engine`). The difference is a context
+loaded at every submission, which a frame of 16 ms does not feel; a lite
+restore would take it back, and is owed in `roadmap.md` if a frame ever
+asks.
+
+**The gate**: 146 of 147 suites passed in 641 s (10:41). `x86-vulkan`
+failed, and not on Vulkan: the triangle was drawn right, but an `e1000:`
+line from the network driver landed on the serial console in the middle of
+the picture's last row. The line was 1200 characters, sent in several
+writes, and another process's line fitted between two of them. Run alone,
+it passed. The fix is to the class of problem: `run_vulkan.py`'s guest program now says every
+result in numbered pieces of 100 characters, each a line of its own, and
+`gather` puts a result together only when every piece has arrived whole.
+Checked with a log that has an interleaved line between two pieces, which
+is assembled, and a result missing its second piece, which is not; then
+`x86-vulkan` passed in 25 s. 10:41 is over the ten minutes again, with
+`x86-dock` at 356 s and `x86-cafesa3d-2` at 326 s, so splitting them is
+owed before the next shared change. The driver's comments above
+`engine_start` still describe the legacy ring; they are fixed with G6e,
+which edits the same code.

@@ -117,6 +117,27 @@ function gpu.execlist_test(contexts)
 end
 
 --
+-- **A hang, caught and reset** (`docs/gpu3d.md` G6d): a batch that spins
+-- for ever given to the blitter, or the render engine with "render"; the
+-- driver's watch resets the engine, and a store after shows it works.
+-- Answers { value, resets, reset_ms, mode, esr }, or nil and why.
+function gpu.hang_test(which)
+  local reply, why = fs.raw("/Devices/gpu",
+    string.pack(REQUEST, 27, 0, which == "render" and 1 or 0, 0, 0, 0, 0, 0), nil, "gpu")
+
+  if not reply then return nil, tostring(why) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local err, value, resets, reset_ms, _, mode, esr = string.unpack(REPLY, reply)
+
+  gpu.last_hang = { value = value, resets = resets, reset_ms = reset_ms, mode = mode, esr = esr }
+
+  if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
+
+  return gpu.last_hang
+end
+
+--
 -- **The first program on the execution units** (`m700-2d.md` 7b): the
 -- render engine runs a kernel that fills a 64 by 4 surface with `colour`,
 -- a byte. Answers { right, past, elapsed_us, ... } - how many of the 256

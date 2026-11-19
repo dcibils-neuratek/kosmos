@@ -46,8 +46,8 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" and words[1] ~= "el" and words[1] ~= "el2" and words[1] ~= "elshared" then
-  print("gpu: gpu [cursor [seconds] | engine [render] [n] | el [n] | el2 [n] | compute [colour] | kernel [colour]]")
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" and words[1] ~= "el" and words[1] ~= "el2" and words[1] ~= "elshared" and words[1] ~= "hang" then
+  print("gpu: gpu [cursor [seconds] | engine [render] [n] | el [n] | el2 [n] | hang [render] | compute [colour] | kernel [colour]]")
   return
 end
 
@@ -451,6 +451,23 @@ if words[1] == "compute" then
           :format(c.right, c.past, c.head, c.tail, c.esr))
   end
 
+  return
+end
+
+if words[1] == "hang" then
+  local which = words[2] == "render" and "render" or nil
+  local r, why = gpu.hang_test(which)
+  local h = gpu.last_hang
+  local name = which and "the render engine" or "the blitter"
+
+  if r then
+    print(("gpu: %s spun until the driver reset it, %d ms after it was given; reset %d time%s since boot; then it wrote %08x")
+          :format(name, r.reset_ms, r.resets, r.resets == 1 and "" or "s", r.value))
+  else
+    print("gpu: " .. name .. ": " .. tostring(why)
+          .. (h and (" - %d ms waited, %d resets since boot, the store read %08x"):format(h.reset_ms, h.resets, h.value) or ""))
+  end
+  if h then print(("gpu: mode %08x, errors %08x"):format(h.mode, h.esr)) end
   return
 end
 

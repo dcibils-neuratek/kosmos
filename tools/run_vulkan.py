@@ -69,8 +69,18 @@ PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Vulkan's test program (`tools/run_vulkan.py`).
 -- kosmos: image vulkantest.elf
 local kit = use("vulkantest.elf")
-print("vulkantest triangle: " .. kit.triangle(%s))
-print("vulkantest cube: " .. kit.cube(%s))
+-- Said in pieces of 100 characters, each a line of its own and numbered:
+-- a line of 1200 goes to the console in several writes, and another
+-- process's line can land between them (18.929's gate, an e1000 line in
+-- the middle of the triangle's last row).
+local function tell(name, s)
+  local n = (#s + 99) // 100
+  for k = 1, n do
+    print(("vulkantest %%s %%d/%%d: %%s"):format(name, k, n, s:sub(100 * k - 99, 100 * k)))
+  end
+end
+tell("triangle", kit.triangle(%s))
+tell("cube", kit.cube(%s))
 """ % (arguments([c for p in CORNERS for c in p] + list(COLOUR)),
        arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])))
 
@@ -82,7 +92,17 @@ WINDOW = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: image vulkantest.elf
 local kit = use("vulkantest.elf")
-print("vulkantest window: " .. kit.window(%s))
+-- Said in pieces of 100 characters, each a line of its own and numbered:
+-- a line of 1200 goes to the console in several writes, and another
+-- process's line can land between them (18.929's gate, an e1000 line in
+-- the middle of the triangle's last row).
+local function tell(name, s)
+  local n = (#s + 99) // 100
+  for k = 1, n do
+    print(("vulkantest %%s %%d/%%d: %%s"):format(name, k, n, s:sub(100 * k - 99, 100 * k)))
+  end
+end
+tell("window", kit.window(%s))
 kit.hold(90)
 """ % arguments([YAW, PITCH, DISTANCE, FOCAL] + list(COLOURS[0]) + list(COLOURS[1])
                 + [FRAMES, STEP])
@@ -135,6 +155,22 @@ def compare(got, want, size):
     if wrong:
         return "%d pixels wrong: %s" % (len(wrong), ", ".join(wrong[:8]))
     return None
+
+
+def gather(seen, names):
+    """What each of `names` said, put together from its numbered pieces -
+    only once every piece has arrived whole, each on a line of its own."""
+    pieces = {}
+    for line in seen.split("\n")[1:-1]:
+        m = re.search(r"vulkantest (\w+) (\d+)/(\d+): (.*)$", line.rstrip("\r"))
+        if m and m.group(1) in names:
+            pieces.setdefault(m.group(1), {})[int(m.group(2))] = (int(m.group(3)), m.group(4))
+    whole = {}
+    for name, got in pieces.items():
+        n = next(iter(got.values()))[0]
+        if all(k in got and got[k][0] == n for k in range(1, n + 1)):
+            whole[name] = "".join(got[k][1] for k in range(1, n + 1)).strip()
+    return whole
 
 
 def picture(said):
@@ -323,11 +359,7 @@ def main():
         guest.type("run /Home/apps/vulkan/vulkantest.lua")
 
         while time.monotonic() < started + 240 and len(said) < 2:
-            for line in guest.seen[mark:].split("\n")[1:-1]:
-                for name in ("triangle", "cube"):
-                    prefix = "vulkantest %s: " % name
-                    if line.strip().startswith(prefix):
-                        said[name] = line.strip()[len(prefix):]
+            said.update(gather(guest.seen[mark:], ("triangle", "cube")))
             if len(said) < 2:
                 time.sleep(0.2)
                 guest._read_available()
@@ -337,12 +369,9 @@ def main():
         if len(said) == 2:
             mark = len(guest.seen)
             guest.type("wm /Home/apps/vulkan/vkwindow.lua")
-            prefix = "vulkantest window: "
             until = time.monotonic() + 180
             while time.monotonic() < until and "window" not in said:
-                for line in guest.seen[mark:].split("\n")[1:-1]:
-                    if prefix in line:
-                        said["window"] = line[line.index(prefix) + len(prefix):].strip()
+                said.update(gather(guest.seen[mark:], ("window",)))
                 if "window" not in said:
                     time.sleep(0.2)
                     guest._read_available()

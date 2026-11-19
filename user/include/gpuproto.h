@@ -176,6 +176,17 @@
  * low half, RING_MODE, RING_ESR and the time.
  */
 #define GPU_OP_EXECLIST_TEST 26u
+/*
+ * **A hang, caught and reset** (`docs/gpu3d.md` G6d): on the blitter
+ * (`x` 0) or the render engine (1), a batch that jumps to itself for ever,
+ * given as any work is - and the driver's watch, which resets an engine
+ * whose fence has not moved for GPU_HANG_MS, left to find it. Then one
+ * store, to show the engine works again. The reply: the store's value,
+ * the engine's resets since boot in `head`, the milliseconds the reset
+ * took to come in `tail`.
+ */
+#define GPU_OP_HANG_TEST     27u
+#define GPU_HANG_MS          3000u
 #define GPU_RUN_STEPS        32u
 #define GPU_RUN_BUFFERS      8u
 #define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */

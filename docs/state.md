@@ -89,10 +89,15 @@ pixels start on a page, and `vkcube` as an application is a follow-up
 `test_intelgpu_lrc`; on the M700 the video engine on execlists, one
 context and then two at the same GPU address on pages of their own, each
 holding only its own number (`gpu el`, `gpu el2`, the control `gpu
-elshared`). **Next: G6d**, the render engine and the blitter on
-execlists, the hang timer and an engine reset; then G6e, the protocol.
-The M700 runs 0.12.8, restarted as needed (Diego, 19 November: "Reboot
-m700 as needed").
+elshared`). **G6d (0.12.9, 18.929):** the render engine and the
+blitter on execlists, in contexts of the driver's own through a page
+table mirroring the global GTT; a hang watch that resets an engine whose
+fence is still for 3 s (`gpu hang`, `gpu hang render`; the control, no
+`GDRST`, stays stuck); the legacy ring gone. A submission is now 11-14 us
+against 3-4 on the ring - a context loaded each time. **Next: G6e**, the
+protocol - contexts for programs, kept across runs - and a stand-in
+engine under QEMU. The M700 runs 0.12.9, restarted as needed (Diego, 19
+November: "Reboot m700 as needed").
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

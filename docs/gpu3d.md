@@ -528,9 +528,27 @@ so `lavapipe` is built for both.
    - **G6c - two contexts, one address.** Two contexts each with its own
      page table, the same GPU address in both mapped to different pages;
      each writes its own value, and neither page holds the other's.
-   - **G6d - the render engine and the blitter on execlists**: the
-     desktop's compositing and copies move to contexts of the driver's
-     own; the hang timer, an engine reset, and the legacy ring gone.
+   - **G6d - the render engine and the blitter on execlists** - built in
+     0.12.9 (`testing.md` 18.929). The desktop's compositing and copies
+     run in two contexts of the driver's own, one an engine, through a
+     page table that mirrors the global GTT entry for entry (i915's
+     aliasing PPGTT): every entry `gtt_write` makes is made there too,
+     and the firmware's framebuffer is copied in once, so every address
+     the driver already gives means the same page either way. A context
+     is submitted only while its engine is idle - its image laid out
+     afresh, restore inhibited, from where the last run's ring ended -
+     and work given while it runs goes when the status buffer says it
+     went idle: from any wait, or from the driver's loop, which comes
+     back within a tick while an engine is busy. A request begins with
+     the engine's TLB invalidated when the mirror changed. **The hang
+     watch**: an engine whose fence has not moved for `GPU_HANG_MS`,
+     3 s, is reset as i915 resets one on Gen9 - the ring stopped,
+     `RING_RESET_CTL`, `GDRST` twice, execlists on again - its work
+     dropped and its fence written as reached. The legacy ring is gone.
+     *Test*: every engine, copy, 3D, compute and run check on the M700
+     as before, and `gpu hang` / `gpu hang render` - a batch that jumps
+     to itself, reset by the watch, a store after; *control*, the reset
+     without `GDRST`, after which the engine stays stuck.
    - **G6e - the protocol**: `GPU_OP_CONTEXT_NEW`, `_BIND`, `_EXEC`,
      `_FENCE_WAIT` (§5.3) for many programs at once, and under QEMU a
      stand-in engine that runs only `MI_` commands, so the gate holds it.

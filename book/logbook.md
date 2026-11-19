@@ -4934,3 +4934,39 @@ check saw at once that one write had landed on the other's page.
 **Next.** The render engine and the blitter - the ones that draw the
 desktop - move onto contexts too, with a timer that notices a stuck engine
 and a reset that frees it.
+
+## 19 November 2026 - The desktop's drawing in contexts, and a stuck GPU freed
+
+**In short.** The parts of the M700's graphics chip that draw the desktop
+now run their work the way modern drivers do, each in a context with its
+own view of memory, and the driver can notice when one of them gets stuck
+and reset it without restarting anything. 0.12.9.
+
+**What.** Yesterday's step tried contexts on the video engine, which
+nothing on the desktop uses. Today the two that matter moved: the render
+engine, which composes windows and runs 3D and compute, and the blitter,
+which copies pictures. Their memory goes through a page table that mirrors
+the one the driver already kept, entry for entry, so every address it
+hands them still means the same page. Nothing that draws had to change.
+
+**The stuck engine.** A GPU can be given work that never ends - a bug in a
+shader, or a program's mistake - and until now that would have frozen the
+screen until a restart. Now the driver watches: if an engine has work and
+has finished nothing for three seconds, it is stopped and reset the way
+Intel's Linux driver does it, the unfinished work is dropped, and the
+engine carries on with whatever comes next. It was tried on purpose, on
+both engines, with a command that loops for ever: each was freed after 3.0
+seconds and wrote its next number at once. With the reset itself taken out,
+the engine stayed stuck - which is how we know it was the reset that freed
+it.
+
+**Measured.** Every GPU check that passed before passes on contexts: the
+copies exact to the pixel, the 3D picture 4096 pixels of 4096, the compute
+fill, and the desktop with the spinning cube at about 120 frames a second.
+The price: handing the GPU a piece of work now takes 11 to 14 millionths
+of a second instead of 3 to 4, because the engine loads a context each
+time. A frame lasts 16 thousandths, so nobody can feel it, and there is a
+known way to take it back if a frame ever needs it.
+
+**Next.** Contexts for programs rather than only the driver's own - the
+protocol that will let a Vulkan program on Kosmos send the GPU its own work.

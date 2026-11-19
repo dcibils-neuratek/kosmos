@@ -11990,7 +11990,12 @@ chose "GPU first: G3, G6, G7, then simulator"): G3, a window and `vkcube`;
 then G6, `intelgpu` for many programs, and G7, `anv` on the M700; then
 the flight simulator, designed first. G4, G5, G8, G9 and the daily-driver
 list follow it, in their order; the simulator takes G9's full-screen flip
-when that lands. **G1's LLVM half built
+when that lands. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
+0.12.9** (18.929): the render engine and the blitter on execlists, a hang
+watch and an engine reset; G6e, the protocol, next. Owed from G6d: a
+submission costs 11-14 us where the ring's tail cost 3-4, a context
+loaded each time - a lite restore, or the context-switch interrupt
+rather than a tick, if a frame ever asks for it. **G1's LLVM half built
 in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
 JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
 18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and
