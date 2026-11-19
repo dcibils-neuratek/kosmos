@@ -400,9 +400,9 @@ local known = {}
 
 for _, k in ipairs(theme.tokens) do known[k] = true end
 
--- A desktop's style, which a look is told it may not say (`theme.STYLE`).
-local STYLED = { cut = true, star = true, plate = true,
-                 flat = true, title_bars = true, shadow = true }
+-- A desktop's style, which a look is told it may not say: `theme.STYLE`'s
+-- keys, filled in where that list is (below), so there is one list.
+local STYLED = {}
 
 --
 -- **The fixed layout** (`roadmap.md` 5x), the same in every look and at
@@ -720,6 +720,8 @@ end
 -- chooses the theme; applying a palette never touches them.
 --
 theme.STYLE = { "cut", "star", "plate", "flat", "title_bars", "shadow" }
+
+for _, k in ipairs(theme.STYLE) do STYLED[k] = true end
 
 -- What each is where nothing says it: a desktop file that leaves one out,
 -- and a window manager started with no desktop - the harness's, which

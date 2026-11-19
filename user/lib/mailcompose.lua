@@ -41,6 +41,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local keys = use("/Kosmos/Libraries/keys.lua")
 local files = use("/Kosmos/Libraries/files.lua")
+local markup = use("/Kosmos/Libraries/markup.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local docview = use("/Kosmos/Libraries/docview.lua")
@@ -272,12 +273,7 @@ local function plain_text_of(m)
   regions.free(r)
 
   if p == html then
-    text = text:gsub("<[Ss][Tt][Yy][Ll][Ee].-</[Ss][Tt][Yy][Ll][Ee]>", "")
-               :gsub("<[Bb][Rr]%s*/?>", "\n"):gsub("</?[Pp][^>]*>", "\n\n")
-               :gsub("</?[Dd][Ii][Vv][^>]*>", "\n"):gsub("<[^>]*>", "")
-               :gsub("&nbsp;", " "):gsub("&lt;", "<"):gsub("&gt;", ">")
-               :gsub("&quot;", '"'):gsub("&#39;", "'"):gsub("&amp;", "&")
-               :gsub("\n\n\n+", "\n\n")
+    text = markup.text(text)
   end
 
   return (text:gsub("\r\n", "\n"):gsub("%s+$", ""))

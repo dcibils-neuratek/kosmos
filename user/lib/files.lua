@@ -297,23 +297,38 @@ end
 -- and rounding "999 B" to "1.0 KB" would be a lie about a small file.
 --------------------------------------------------------------------------
 
-local UNITS = { "KB", "MB", "GB", "TB" }
-
-function files.size(n)
+local function said(n, step, units)
   n = tonumber(n) or 0
 
-  if n < 1024 then return ("%d B"):format(n) end
+  if n < step then return ("%d %s"):format(math.floor(n), units[1]) end
 
-  local scaled = n / 1024
+  local scaled = n / step
 
-  for i = 1, #UNITS do
-    if scaled < 1024 or i == #UNITS then
-      return ((scaled < 10) and "%.1f %s" or "%.0f %s")
-             :format(scaled, UNITS[i])
+  for i = 2, #units do
+    if scaled < step or i == #units then
+      return ((scaled < 10) and "%.1f %s" or "%.0f %s"):format(scaled, units[i])
     end
 
-    scaled = scaled / 1024
+    scaled = scaled / step
   end
+end
+
+local BYTES = { "B", "KB", "MB", "GB", "TB" }
+local BYTES_A_SECOND = { "B/s", "KB/s", "MB/s", "GB/s", "TB/s" }
+local BITS_A_SECOND = { "b/s", "Kb/s", "Mb/s", "Gb/s", "Tb/s" }
+
+function files.size(n) return said(n, 1024, BYTES) end
+
+--
+-- **A rate, said the same way**: bytes a second in the units a size is, or
+-- - a link is sold that way - bits a second, in thousands. The monitors and
+-- JetSki's downloads each had their own, and said a rate three ways
+-- (`cleanup.md` finding 45).
+--
+function files.rate(bytes_a_second, bits)
+  if bits then return said((tonumber(bytes_a_second) or 0) * 8, 1000, BITS_A_SECOND) end
+
+  return said(bytes_a_second, 1024, BYTES_A_SECOND)
 end
 
 --------------------------------------------------------------------------

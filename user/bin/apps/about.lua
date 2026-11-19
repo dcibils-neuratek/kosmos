@@ -19,6 +19,7 @@
 local ui = use("/Kosmos/Libraries/ui.lua")
 local licences = use("/Kosmos/Libraries/licences.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
+local pulse = use("/Kosmos/Libraries/pulse.lua")
 
 local W, H = 620, 420
 
@@ -128,8 +129,9 @@ local using   = cpu.cores or 1
 -- Its name for a person when it gives one - "Intel(R) Core(TM) i7-6700 CPU
 -- @ 3.40GHz" - and its signature when it does not (Diego, 8 October: "why
 -- the app about this machine ... does not show the real name of the cpu").
-local called = cpu.name or ("%s %s"):format(cpu.implementer or "", cpu.part or "unknown")
-                           :gsub("^%s+", "")
+-- Said as Monitor and neofetch say it (`pulse.name`).
+local called = pulse.name()
+if called == "" then called = "unknown" end
 
 fact("Processor:", (present == using)
      and ("%s, %d core%s"):format(called, using, (using == 1) and "" or "s")

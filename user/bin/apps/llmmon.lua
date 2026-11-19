@@ -236,12 +236,7 @@ win:add(ui.header{ x = 0, y = 0, w = W, title = "LLM Monitor", title_bar = true 
 --------------------------------------------------------------------------
 
 local function heading(g, x, y, left, right, colour)
-  g:text(x + 3, y + (L.group - gfx.height("heading")) // 2, left, theme.text, theme.window, "heading")
-
-  if right then
-    g:text(x + M.inner - gfx.measure(right), y + (L.group - gfx.height()) // 2, right,
-           colour or theme.text_dim, theme.window, "ui")
-  end
+  ui.group_heading(g, x, y, M.inner, L.group, left, right, colour)
 end
 
 local BIG = ui.sized("title", 24)
@@ -532,16 +527,8 @@ local function telling(r)
   return bl, bh
 end
 
-local function mix(a, b, t)
-  local out = 0xff000000
-
-  for _, k in ipairs({ 16, 8, 0 }) do
-    local ca, cb = (a >> k) & 255, (b >> k) & 255
-    out = out | (math.floor(ca + (cb - ca) * t + 0.5) << k)
-  end
-
-  return out
-end
+-- `b` over `a` by `t`, nought to one: `theme.mix`, in thousandths.
+local function mix(a, b, t) return theme.mix(a, b, math.floor(t * 1000 + 0.5)) end
 
 local function shown_text(text) return (text:gsub("\n", "\u{21b5}")) end
 local function quoted(text) return '"' .. shown_text(text) .. '"' end

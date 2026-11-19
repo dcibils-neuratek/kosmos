@@ -20,6 +20,7 @@
 -- writing are the theme's `io_in` and `io_out`, as in every monitor.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local drivelist = use("/Kosmos/Libraries/drivelist.lua")
 local netshares = use("/Kosmos/Libraries/netshares.lua")
 local theme = ui.theme
@@ -55,22 +56,8 @@ local GRAPH_GROUND = 0xff16181d
 -- How numbers are said.
 --------------------------------------------------------------------------
 
-local function scaled(v, step, units)
-  local i = 1
-
-  while v >= step and i < #units do v, i = v / step, i + 1 end
-
-  return (i == 1 or v >= 100) and ("%.0f %s"):format(v, units[i])
-         or ("%.1f %s"):format(v, units[i])
-end
-
-local function rate(b)
-  if bits then return scaled((b or 0) * 8, 1000, { "b/s", "Kb/s", "Mb/s", "Gb/s" }) end
-
-  return scaled(b or 0, 1024, { "B/s", "KB/s", "MB/s", "GB/s" })
-end
-
-local function amount(b) return scaled(b or 0, 1024, { "B", "KB", "MB", "GB", "TB" }) end
+local function rate(b) return files.rate(b, bits) end
+local amount = files.size
 
 --------------------------------------------------------------------------
 -- The drives: `/Home`, the sticks' volumes, the shares connected, and
@@ -410,13 +397,8 @@ win:add(list)
 -- The chosen drive, on the right.
 --------------------------------------------------------------------------
 
-local function heading(g, x, y, left, right)
-  g:text(x + 3, y + (L.group - gfx.height("heading")) // 2, left, theme.text, theme.window, "heading")
-
-  if right then
-    g:text(x + INNER - gfx.measure(right), y + (L.group - gfx.height()) // 2, right,
-           theme.text_dim, theme.window, "ui")
-  end
+local function heading(g, x, y, left, right, colour)
+  ui.group_heading(g, x, y, INNER, L.group, left, right, colour)
 end
 
 local function draw_totals(g, x, y, s)

@@ -4639,6 +4639,21 @@ function ui.device_picture(g, x, y, size, kind, label, maker)
 end
 
 --
+-- **A group's heading** on a monitor's page: its name at the left in the
+-- heading face, and a value dim at the right - or in `colour` - both
+-- centred in a band `h` high and `w` wide. GPU, LLM, Network and Disk
+-- Monitor each had this, body for body (`cleanup.md` finding 47).
+--
+function ui.group_heading(g, x, y, w, h, left, right, colour)
+  g:text(x + 3, y + (h - gfx.height("heading")) // 2, left, theme.text, theme.window, "heading")
+
+  if right then
+    g:text(x + w - gfx.measure(right), y + (h - gfx.height()) // 2, right,
+           colour or theme.text_dim, theme.window, "ui")
+  end
+end
+
+--
 -- **A device's card**: its picture at the left, its maker small above its
 -- model large and a line of facts under them, and at the right what it is
 -- doing now - a list of lines, each `{ text, colour, face }`, the first the

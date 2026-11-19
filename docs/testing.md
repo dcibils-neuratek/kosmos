@@ -37737,3 +37737,57 @@ picture, Mail, SMB, sandbox and 3D suites in the guest - are what hold them.
 
 **The gate.** 132 suites, every library suite run, every one passing, in
 616 s (10:16).
+
+## 18.915 One copy, the Lua half: sizes and rates, a group's heading, the mix, HTML as text, a program's grants
+
+**In short.** The rest of `cleanup.md`'s batch 4, in the libraries and
+applications. Each second copy goes and its callers use the one the kit
+has; about 250 lines leave the tree. Two of them had already drifted far
+enough to matter: the shell and a program's runner handed a starting
+program different things, and three HTML-to-text copies disagreed about
+scripts and table rows.
+
+- **Sizes and rates through `files`** (45, 46): `files.size` is said by a
+  helper both use, and `files.rate(bytes_a_second, bits)` is new - bytes in
+  the units a size is, or bits in thousands. Network Monitor and Disk
+  Monitor had the same three functions line for line, and JetSki's
+  downloads its own `amount`, so a download's size read differently there
+  and in Tracker. A monitor's rate now has one decimal under ten, as a
+  size has, where it had one under a hundred.
+- **`ui.group_heading`** (47): GPU, LLM, Network and Disk Monitor's
+  `heading`, body for body, is one function in the kit beside
+  `ui.meter_card`.
+- **`OUT.SLOT` holds `shade`** (62), so the scene reads the table the
+  drawing and the press read and `SCENE_SLOT` goes; and **`scale.outside`**
+  (81) works out the corner and the shadow, which were written out in
+  seven places.
+- **`theme.mix`** (80) for the Deskbar's `halfway`, the launcher pad's mix
+  in 255ths - its five amounts said in thousandths now, 14/255 as 55 and
+  so on - and LLM Monitor's in fractions. **`STYLED`** (82) is filled from
+  `theme.STYLE`, so a seventh style key is added in one place.
+- **`markup.text`** (190), beside `markup.escape`: Mail's, the most
+  complete of three - styles and scripts out, paragraphs, breaks, blocks
+  and table rows as lines, entities undone, spaces and blank lines
+  collapsed - for Mail, a reply's quote and an automation's `has`. The
+  automation keeps its tags-as-spaces, so two cells' words do not run
+  together.
+- **`spawn_grants`** (191, 192) in `init.lua`: the flags a starting program
+  may have and the capabilities it declared, from a table of what the
+  starter holds - the shell's own, or what a runner's request carried. The
+  two copies had drifted: the window server's door went from the shell
+  and not from a runner, and their capabilities went on the end in
+  different orders, which the request's named indices made harmless and
+  nothing checked. The 25-line comment about the screen, word for word at
+  both, is once now, and no longer lists the Deskbar among the programs
+  that draw.
+- **`pulse.name`** (193, 200) in neofetch and About, which composed the
+  processor's name their own ways; neofetch no longer appends an ARM
+  core's revision.
+
+**Checked** with `luac -p` over every file, and each file's free names
+against what it had before - a local lost in a merge reads in Lua as a
+global and fails only when reached - with none new.
+
+**The gate.** 132 suites in 615 s (10:15), 131 passing; `host` failed,
+because `test_automate.lua` stands in for `use` and knew only `files.lua`.
+It loads the real `markup.lua` now, and `host` passes, 41 s.

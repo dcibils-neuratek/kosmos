@@ -220,12 +220,7 @@ win:add(ui.header{ x = 0, y = 0, w = W, title = "GPU Monitor", right = { more },
 --------------------------------------------------------------------------
 
 local function heading(g, x, y, left, right, colour)
-  g:text(x + 3, y + (L.group - gfx.height("heading")) // 2, left, theme.text, theme.window, "heading")
-
-  if right then
-    g:text(x + M.inner - gfx.measure(right), y + (L.group - gfx.height()) // 2, right,
-           colour or theme.text_dim, theme.window, "ui")
-  end
+  ui.group_heading(g, x, y, M.inner, L.group, left, right, colour)
 end
 
 local function graph(g, x, y, h, list, colour, top)

@@ -252,9 +252,18 @@ function scale.valid(pct)
   return false
 end
 
-function scale.chrome()
+--
+-- **A window's corner and shadow**, in pixels: the look's own (Night's are
+-- rounder) at this scale, or nought where the setting is off. Asked again
+-- whenever any of the three changes - the scale, the look, a setting.
+--
+function scale.outside()
   OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
   OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+end
+
+function scale.chrome()
+  scale.outside()
   OUT.EDGE    = scale.px(4)
   OUT.BOX     = scale.px(20)
   OUT.cascade = scale.px(theme.metrics.tab) + scale.px(8)
@@ -528,8 +537,7 @@ local function load_appearance()
 
       -- Its corner and shadow, which `scale.chrome` above read before the
       -- look was known (Night's are rounder).
-      OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
-      OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+      scale.outside()
       print("wm: theme " .. tostring(saved.palette))
     else
       print("wm: theme " .. tostring(saved.palette) .. " would not load: "
@@ -1879,10 +1887,11 @@ OUT.LIGHTS = {
 -- minimize, red - close". They were minimise, maximise, close - Windows's
 -- order in macOS's colours. Close stays outermost.
 --
--- One table that the drawing and the press both read, so a box cannot be
--- drawn in one slot and pressed in another.
+-- One table that the drawing, the scene and the press all read, so a box
+-- cannot be drawn in one slot and pressed in another. `shade` is
+-- Platinum's collapse, in minimise's slot (below).
 --
-OUT.SLOT = { maximise = 0, minimise = 1, close = 2 }
+OUT.SLOT = { maximise = 0, minimise = 1, shade = 1, close = 2 }
 OUT.IN_SLOT = { [0] = "maximise", [1] = "minimise", [2] = "close" }
 
 --
@@ -2817,7 +2826,6 @@ end
 -- pass, a call a window and no tables made, so the scene cannot fall out of
 -- step with what this process decided.
 --
-local SCENE_SLOT = { maximise = 0, minimise = 1, shade = 1, close = 2 }
 local stamp_picture, stamp_made = nil, {}
 
 local function stamp_now()
@@ -3006,7 +3014,7 @@ function OUT.describe()
         if OUT.hover_boxes == win then flags = flags | 128 end
 
         if OUT.held_box and OUT.held_box.win == win then
-          held = SCENE_SLOT[OUT.held_box.slot] or -1
+          held = OUT.SLOT[OUT.held_box.slot] or -1
         end
       end
     end
@@ -5001,7 +5009,7 @@ function D.start(name, watcher)
   print(("wm: style cut %s, star %s, plate %s, flat %s, title bars %s, shadow %d"):format(
         yn(theme.cut), yn(theme.star), yn(theme.plate), yn(theme.flat),
         yn(theme.title_bars), theme.shadow))
-  OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+  scale.outside()
 
   --
   -- **And the look it wears** (`look`, Starlight's): applied before its
@@ -5013,8 +5021,7 @@ function D.start(name, watcher)
 
     if palette then
       theme.apply(palette)
-      OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
-      OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+      scale.outside()
       add_damage(0, 0, W, H)
       OUT.glass_wallpaper()
       print(("wm: look %s, the desktop's"):format(d.look))
@@ -7206,8 +7213,7 @@ handlers.theme = function(req)
 
     -- A look's own corner and shadow (Night's are rounder), in force at
     -- once rather than at the next scale change.
-    OUT.corner = OUT.want_corner and scale.px(theme.metrics.corner or 0) or 0
-    OUT.shadow = OUT.want_shadow and scale.px(theme.metrics.shadow or 0) or 0
+    scale.outside()
     add_damage(0, 0, W, H)
     OUT.glass_wallpaper()
   end
@@ -7240,8 +7246,7 @@ handlers.theme = function(req)
   --
   if req.corner ~= nil then
     OUT.want_corner = req.corner and true or false
-    OUT.corner = OUT.want_corner
-                 and scale.px(theme.metrics.corner or 0) or 0
+    scale.outside()
     add_damage(0, 0, W, H)
   end
 
@@ -7253,8 +7258,7 @@ handlers.theme = function(req)
 
   if req.shadow ~= nil then
     OUT.want_shadow = req.shadow and true or false
-    OUT.shadow = OUT.want_shadow
-                 and scale.px(theme.metrics.shadow or 0) or 0
+    scale.outside()
     add_damage(0, 0, W, H)
   end
 

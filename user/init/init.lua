@@ -4546,6 +4546,107 @@ local function keyring_grant(path)
 end
 
 --
+-- **What a program is handed when it starts**: the flags it may have and
+-- the capabilities it declared, from what the starter holds. The shell's
+-- `run_program` and every program's runner start programs, and they did
+-- this in two blocks written apart that had drifted - the window
+-- server's door went from one and not the other, and their capabilities
+-- went on the end in different orders (`cleanup.md` finding 191). `held`
+-- names what the starter has, `caps` is the list so far, and what comes
+-- back is the flags and, by name, the index each capability landed at,
+-- which the request says to the child.
+--
+-- A declaration is a request, never a grant: the kernel refuses a flag the
+-- starter does not hold, so a program that asks for authority nobody gave
+-- it simply does not get it.
+--
+  -- The screen to everything, which is wrong and is staying for now.
+  --
+  -- Two things follow from it and neither was meant. Every program has
+  -- the framebuffer mapped into its address space and could draw over
+  -- the desktop without going near the window manager - ambient
+  -- authority, in a system whose first principle is that what you were
+  -- not handed you cannot reach. And `process_grant_screen` promotes to
+  -- SCHED_PRIO_DISPLAY, so every program runs in the compositor's band,
+  -- which means nothing once everything is in it. The comment there says
+  -- "whoever was handed the screen is the one drawing it", and that was
+  -- true when only the desktop was handed it.
+  --
+  -- Granting it only to programs that declare `kosmos: needs screen` was
+  -- tried, and it is the right change - but it uncovers something worse
+  -- underneath, so it is not this change. With programs at NORMAL rather
+  -- than DISPLAY, one that spins on `sys.yield()` instead of blocking is
+  -- starved outright while the desktop runs: `say 3 hello` never reaches
+  -- its own deadline, and the display harness caught it. A thread that
+  -- *blocks* is woken and runs; a thread that only yields is not.
+  --
+  -- So the scheduler has to answer for that first. The declarations are
+  -- already in the three programs that draw (`wm`, `monitor`, `edit`), so the change is one line here once yielding at NORMAL is
+  -- fair. See `docs/state.md`.
+--
+-- **But not to a program at a prompt while the desktop composes**
+-- (15 October 2026). `monitor`, run at a prompt reached by telnet on the
+-- M700, drew its bar into the screen's last rows beneath the desktop, which
+-- never paints over them - so it stayed after it ended, and VNC, which
+-- shows the desktop's picture, never saw it. While the window server is
+-- running the screen is its own: a console program - what the store calls
+-- a `program`, `monitor` and `edit` among them, which would draw on it - is
+-- not handed it, and says so. Anything else still is: an application asks
+-- it for its size, and a file of somebody's own in `/Home` or `/Temporary`
+-- says nothing of what it is (an installed application's among them), so
+-- it is not refused for what it might be - the first version refused all
+-- but applications in the store, and a window from `/Temporary` kept a
+-- picture after it closed (`testing.md` 18.648).
+--
+-- What every program is given where the starter has it, as `/Network` and
+-- `/Home` are: `/Discovery` (`docs/sharing.md` N11c), `/Sandboxes`
+-- (`docs/linux.md` L1), `/Models`, the GPU's and USB's drivers, and the
+-- SATA disks' blocks.
+local SPAWN_ALWAYS = { "mdns", "sandboxes", "models", "gpu", "usb", "disks" }
+
+-- Only to a program that declares it; and the four below only to a file
+-- the image serves (`keyring_grant`, `windowserver_grant`).
+local SPAWN_DECLARED = { camera = "camera", midi = "midi", bluetooth = "bluetooth",
+                         tiles = "tiles" }
+local SPAWN_GRANTED = {
+  keyring = { "keyring", keyring_grant },
+  ["keyring-mail"] = { "mailkeys", keyring_grant },        -- Mail's (`docs/mail.md` M0)
+  sharing = { "sharing", keyring_grant },                  -- smbd's (`docs/sharing.md` N12c)
+  windowserver = { "windowserver", windowserver_grant },
+}
+
+local function spawn_grants(ns, path, caps, held)
+  local attrs = ns.getattr(path)
+  local desktop = (attrs and attrs.kind == "program") and ns.getattr("/Running/wm") ~= nil
+  local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
+  local at = {}
+
+  local function give(name)
+    if held[name] and at[name] == nil then
+      caps[#caps + 1] = held[name]
+      at[name] = #caps - 1
+    end
+  end
+
+  for _, name in ipairs(SPAWN_ALWAYS) do give(name) end
+
+  for _, want in ipairs(attrs and attrs.needs or {}) do
+    if want == "processes" then flags = flags | SPAWN_PROCCTL end
+    if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end         -- its threads may take the band
+    if want == "profile" then flags = flags | SPAWN_PROFILE end          -- where every processor is
+    if want == "network" and may_pass_net() then flags = flags | SPAWN_NET end
+
+    if SPAWN_DECLARED[want] then give(SPAWN_DECLARED[want]) end
+
+    local granted = SPAWN_GRANTED[want]
+
+    if granted and held[granted[1]] and granted[2](path) then give(granted[1]) end
+  end
+
+  return flags, at
+end
+
+--
 -- **The program store's folders** (`binfs.c`, `view_of`): one store in the
 -- image, shown as a folder for each root a mount gives. Written once, for
 -- the shell's namespace and every program's runner alike - it was written
@@ -5407,135 +5508,21 @@ query. `find` and `watch` are built on exactly these two calls.
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint for the program" end
 
-    -- What the program declared, and what this process may actually hand
-    -- on. A declaration is a request, never a grant: the kernel refuses a
-    -- flag the parent does not hold, so a program that asks for authority
-    -- nobody gave this shell simply does not get it.
-    --
-    -- The screen to everything, which is wrong and is staying for now.
-    --
-    -- Two things follow from it and neither was meant. Every program has
-    -- the framebuffer mapped into its address space and could draw over
-    -- the desktop without going near the window manager - ambient
-    -- authority, in a system whose first principle is that what you were
-    -- not handed you cannot reach. And `process_grant_screen` promotes to
-    -- SCHED_PRIO_DISPLAY, so every program runs in the compositor's band,
-    -- which means nothing once everything is in it. The comment there says
-    -- "whoever was handed the screen is the one drawing it", and that was
-    -- true when only the desktop was handed it.
-    --
-    -- Granting it only to programs that declare `kosmos: needs screen` was
-    -- tried, and it is the right change - but it uncovers something worse
-    -- underneath, so it is not this change. With programs at NORMAL rather
-    -- than DISPLAY, one that spins on `sys.yield()` instead of blocking is
-    -- starved outright while the desktop runs: `say 3 hello` never reaches
-    -- its own deadline, and the display harness caught it. A thread that
-    -- *blocks* is woken and runs; a thread that only yields is not.
-    --
-    -- So the scheduler has to answer for that first. The declarations are
-    -- already in the four programs that draw (`wm`, `deskbar`, `monitor`,
-    -- `edit`), so the change is one line here once yielding at NORMAL is
-    -- fair. See `docs/state.md`.
-    --
-    -- **But not to a program at a prompt while the desktop composes**
-    -- (15 October 2026). `monitor`, run at a prompt reached by telnet on
-    -- the M700, drew its bar into the screen's last rows beneath the
-    -- desktop, which never paints over them - so it stayed after it ended,
-    -- and VNC, which shows the desktop's picture, never saw it. While the
-    -- window server is running the screen is its own: a console program -
-    -- what the store calls a `program`, `monitor` and `edit` among them,
-    -- which would draw on it - is not handed it, and says so. Anything else
-    -- still is: an application asks it for its size, and a file of
-    -- somebody's own in `/Home` or `/Temporary` says nothing of what it is
-    -- (an installed application's among them), so it is not refused for
-    -- what it might be - the first version refused all but applications in
-    -- the store, and a window from `/Temporary` kept a picture after it
-    -- closed (`testing.md` 18.648).
-    --
-    local attrs = ns.getattr(path)
-    local desktop = (attrs and attrs.kind == "program")
-                    and ns.getattr("/Running/wm") ~= nil
-    local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
-    local camera, midi, keyring, tiles, mailkeys, window = nil, nil, nil, nil, nil, nil
-    local bluetooth = nil
-    local sharing = nil
-    -- /Discovery (`docs/sharing.md` N11c) to every program, as `/Network`
-    -- is: what is on the network is part of having it.
-    local mdns = mdns_cap
-    -- And `/Sandboxes` (`docs/linux.md` L1), where the machine has one, as
-    -- `/Home` is: a drive, to every program.
-    local sandboxes = sandboxes_cap
-    -- And `/Models`, the same way.
-    local models = models_cap
-    -- And the GPU's driver, as the backlight's is: a device of the machine.
-    local gpu = gpu_cap
-    local usb = usb_cap
-    -- And the SATA disks' blocks, as the sticks' are.
-    local disks = disks_cap
-
-    for _, want in ipairs(attrs and attrs.needs or {}) do
-      if want == "processes" then flags = flags | SPAWN_PROCCTL end
-      if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
-      if want == "profile" then flags = flags | SPAWN_PROFILE end
-      if want == "network" and may_pass_net() then
-        flags = flags | SPAWN_NET
-      end
-
-      if want == "camera" then camera = camera_cap end
-      if want == "midi" then midi = midi_cap end
-      if want == "bluetooth" then bluetooth = bluetooth_cap end
-      if want == "keyring" and keyring_cap and keyring_grant(path) then
-        keyring = keyring_cap
-      end
-      if want == "tiles" then tiles = tiles_cap end
-      -- Mail's passwords (`docs/mail.md` M0): the system's own, as `keyring`.
-      if want == "keyring-mail" and mail_keys_cap and keyring_grant(path) then
-        mailkeys = mail_keys_cap
-      end
-      if want == "windowserver" and window_cap and windowserver_grant(path) then
-        window = window_cap
-      end
-      -- smbd's door (`docs/sharing.md` N12c): the system's own, as `keyring`.
-      if want == "sharing" and sharing_cap and keyring_grant(path) then
-        sharing = sharing_cap
-      end
-    end
-
-    -- The camera and MIDI last, and only when declared: everything before
-    -- them keeps its number, and a program that did not ask never holds
-    -- either. Their places are said in the request, as the rest are.
+    -- What the program declared, and what this shell may hand on
+    -- (`spawn_grants`). The camera, MIDI and the rest go on the end, so
+    -- everything before them keeps its number; their places are said in
+    -- the request.
     local caps = { ep, console_cap, ramfs_cap, bin_cap, devices_cap,
                    lib_cap, app_cap, disk_cap, audio_cap, net_cap,
                    blocks_cap, drives_cap, backlight_cap, notify_cap,
                    share_cap }
-    local camera_at, midi_at = nil, nil
-
-    if camera then caps[#caps + 1] = camera; camera_at = #caps - 1 end
-    if midi then caps[#caps + 1] = midi; midi_at = #caps - 1 end
-    local keyring_at = nil
-    if keyring then caps[#caps + 1] = keyring; keyring_at = #caps - 1 end
-    local tiles_at = nil
-    if tiles then caps[#caps + 1] = tiles; tiles_at = #caps - 1 end
-    local mailkeys_at = nil
-    if mailkeys then caps[#caps + 1] = mailkeys; mailkeys_at = #caps - 1 end
-    local window_at = nil
-    if window then caps[#caps + 1] = window; window_at = #caps - 1 end
-    local mdns_at = nil
-    if mdns then caps[#caps + 1] = mdns; mdns_at = #caps - 1 end
-    local sharing_at = nil
-    if sharing then caps[#caps + 1] = sharing; sharing_at = #caps - 1 end
-    local sandboxes_at = nil
-    if sandboxes then caps[#caps + 1] = sandboxes; sandboxes_at = #caps - 1 end
-    local models_at = nil
-    if models then caps[#caps + 1] = models; models_at = #caps - 1 end
-    local gpu_at = nil
-    if gpu then caps[#caps + 1] = gpu; gpu_at = #caps - 1 end
-    local usb_at = nil
-    if usb then caps[#caps + 1] = usb; usb_at = #caps - 1 end
-    local disks_at = nil
-    if disks then caps[#caps + 1] = disks; disks_at = #caps - 1 end
-    local bluetooth_at = nil
-    if bluetooth then caps[#caps + 1] = bluetooth; bluetooth_at = #caps - 1 end
+    local flags, at = spawn_grants(ns, path, caps, {
+      camera = camera_cap, midi = midi_cap, bluetooth = bluetooth_cap,
+      keyring = keyring_cap, tiles = tiles_cap, mailkeys = mail_keys_cap,
+      windowserver = window_cap, sharing = sharing_cap, mdns = mdns_cap,
+      sandboxes = sandboxes_cap, models = models_cap, gpu = gpu_cap,
+      usb = usb_cap, disks = disks_cap,
+    })
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags)
@@ -5553,11 +5540,11 @@ query. `find` and `watch` are built on exactly these two calls.
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = share_cap and 14 or nil,
-      camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at, windowserver = window_at, mdns = mdns_at,
-      sharing = sharing_at, sandboxes = sandboxes_at, models = models_at,
-      gpu = gpu_at, usb = usb_at, disks = disks_at,
-      bluetooth = bluetooth_at,
+      camera = at.camera, midi = at.midi, keyring = at.keyring, tiles = at.tiles,
+      mailkeys = at.mailkeys, windowserver = at.windowserver, mdns = at.mdns,
+      sharing = at.sharing, sandboxes = at.sandboxes, models = at.models,
+      gpu = at.gpu, usb = at.usb, disks = at.disks,
+      bluetooth = at.bluetooth,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -7357,151 +7344,16 @@ if role == ROLE_RUNNER then
       end
     end
 
-    -- What the child declared it needs. The kernel refuses any flag this
-    -- process does not itself hold, so a program cannot ask its way to
-    -- authority the desktop was never given.
-    --
-    -- The screen to everything, which is wrong and is staying for now.
-    --
-    -- Two things follow from it and neither was meant. Every program has
-    -- the framebuffer mapped into its address space and could draw over
-    -- the desktop without going near the window manager - ambient
-    -- authority, in a system whose first principle is that what you were
-    -- not handed you cannot reach. And `process_grant_screen` promotes to
-    -- SCHED_PRIO_DISPLAY, so every program runs in the compositor's band,
-    -- which means nothing once everything is in it. The comment there says
-    -- "whoever was handed the screen is the one drawing it", and that was
-    -- true when only the desktop was handed it.
-    --
-    -- Granting it only to programs that declare `kosmos: needs screen` was
-    -- tried, and it is the right change - but it uncovers something worse
-    -- underneath, so it is not this change. With programs at NORMAL rather
-    -- than DISPLAY, one that spins on `sys.yield()` instead of blocking is
-    -- starved outright while the desktop runs: `say 3 hello` never reaches
-    -- its own deadline, and the display harness caught it. A thread that
-    -- *blocks* is woken and runs; a thread that only yields is not.
-    --
-    -- So the scheduler has to answer for that first. The declarations are
-    -- already in the four programs that draw (`wm`, `deskbar`, `monitor`,
-    -- `edit`), so the change is one line here once yielding at NORMAL is
-    -- fair. See `docs/state.md`.
-    --
-    -- And not to a program while the desktop composes, as the shell's
-    -- `run_program` above: this is how a Telnet session or a Terminal
-    -- starts one (`testing.md` 18.648).
-    local attrs = ns.getattr(path)
-    local desktop = (attrs and attrs.kind == "program")
-                    and ns.getattr("/Running/wm") ~= nil
-    local flags = (may_pass_screen() and not desktop) and SPAWN_SCREEN or 0
-    local camera_at, midi_at, keyring_at, tiles_at, mailkeys_at = nil, nil, nil, nil, nil
-    local mdns_at, sharing_at = nil, nil
-    local bluetooth_at = nil
-
-    -- /Discovery on, to whatever this starts, as `/Network` is (N11c).
-    if req.mdns then
-      caps[#caps + 1] = req.mdns
-      mdns_at = #caps - 1
-    end
-
-    -- And `/Sandboxes`, as `/Home` is (`docs/linux.md` L1).
-    local sandboxes_at = nil
-
-    if req.sandboxes then
-      caps[#caps + 1] = req.sandboxes
-      sandboxes_at = #caps - 1
-    end
-
-    -- And `/Models`, as `/Sandboxes` is.
-    local models_at = nil
-
-    if req.models then
-      caps[#caps + 1] = req.models
-      models_at = #caps - 1
-    end
-
-    -- And the GPU's driver (`docs/m700-2d.md`).
-    local gpu_at, usb_at = nil, nil
-
-    if req.usb then
-      caps[#caps + 1] = req.usb
-      usb_at = #caps - 1
-    end
-
-    if req.gpu then
-      caps[#caps + 1] = req.gpu
-      gpu_at = #caps - 1
-    end
-
-    -- And the SATA disks' blocks (A2), as `/Devices/blocks` is.
-    local disks_at = nil
-
-    if req.disks then
-      caps[#caps + 1] = req.disks
-      disks_at = #caps - 1
-    end
-
-    for _, want in ipairs(attrs and attrs.needs or {}) do
-      if want == "processes" then flags = flags | SPAWN_PROCCTL end
-
-      -- A program that makes sound: its threads may take the audio band.
-      if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end
-
-      -- A program that sees where every processor is: `profile`, and what
-      -- starts it - the window manager and a Terminal.
-      if want == "profile" then flags = flags | SPAWN_PROFILE end
-
-      if want == "network" and may_pass_net() then
-        flags = flags | SPAWN_NET
-      end
-
-      -- The camera, only to a program that declares it, and only from a
-      -- program that holds it: on the end, after the shares, with its
-      -- index named in the request the way theirs are.
-      if want == "camera" and req.camera then
-        caps[#caps + 1] = req.camera
-        camera_at = #caps - 1
-      end
-
-      if want == "midi" and req.midi then
-        caps[#caps + 1] = req.midi
-        midi_at = #caps - 1
-      end
-
-      -- Bluetooth (`bluetooth.md` B4), as MIDI: declared, and held.
-      if want == "bluetooth" and req.bluetooth then
-        caps[#caps + 1] = req.bluetooth
-        bluetooth_at = #caps - 1
-      end
-
-      -- The keyring's `manage` door: only from a launcher that holds it,
-      -- and only to a file the image serves (`keyring_grant`).
-      if want == "keyring" and req.keyring and keyring_grant(path) then
-        caps[#caps + 1] = req.keyring
-        keyring_at = #caps - 1
-      end
-
-      -- The map's tiles (`docs/maps.md` M6d): only to a program that
-      -- declares it, and only from one that holds it.
-      if want == "tiles" and req.tiles then
-        caps[#caps + 1] = req.tiles
-        tiles_at = #caps - 1
-      end
-
-
-
-      -- Mail's passwords, only from a launcher that holds them, and only
-      -- to a file the image serves (`keyring_grant`, `docs/mail.md` M0).
-      if want == "keyring-mail" and req.mailkeys and keyring_grant(path) then
-        caps[#caps + 1] = req.mailkeys
-        mailkeys_at = #caps - 1
-      end
-
-      -- smbd's door, the same way (`docs/sharing.md` N12c).
-      if want == "sharing" and req.sharing and keyring_grant(path) then
-        caps[#caps + 1] = req.sharing
-        sharing_at = #caps - 1
-      end
-    end
+    -- What the child declared it needs, from what the request handed this
+    -- runner (`spawn_grants`): a Telnet session or a Terminal starting one
+    -- is held to the same as the shell (`testing.md` 18.648).
+    local flags, at = spawn_grants(ns, path, caps, {
+      camera = req.camera, midi = req.midi, bluetooth = req.bluetooth,
+      keyring = req.keyring, tiles = req.tiles, mailkeys = req.mailkeys,
+      windowserver = req.windowserver, sharing = req.sharing, mdns = req.mdns,
+      sandboxes = req.sandboxes, models = req.models, gpu = req.gpu,
+      usb = req.usb, disks = req.disks,
+    })
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
     local id, why = IMAGES.spawn(ns, path, RUNNER_ROLE, caps, flags, pace)
@@ -7522,10 +7374,10 @@ if role == ROLE_RUNNER then
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       backlight = 12, notify = 13, share = req.share and 14 or nil,
-      camera = camera_at, midi = midi_at, keyring = keyring_at, tiles = tiles_at,
-      mailkeys = mailkeys_at, mdns = mdns_at, sharing = sharing_at,
-      sandboxes = sandboxes_at, models = models_at, gpu = gpu_at, usb = usb_at,
-      disks = disks_at, bluetooth = bluetooth_at,
+      camera = at.camera, midi = at.midi, keyring = at.keyring, tiles = at.tiles,
+      mailkeys = at.mailkeys, windowserver = at.windowserver, mdns = at.mdns,
+      sharing = at.sharing, sandboxes = at.sandboxes, models = at.models,
+      gpu = at.gpu, usb = at.usb, disks = at.disks, bluetooth = at.bluetooth,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others

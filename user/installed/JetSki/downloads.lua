@@ -25,19 +25,13 @@ return function(J)
 
   local panel = ui.view{ w = 460, h = 10, hidden = true }
 
-  local function amount(n)
-    if not n then return "?" end
-    if n < 1024 then return ("%d bytes"):format(n) end
-    if n < 1024 * 1024 then return ("%.0f KB"):format(n / 1024) end
-    if n < 1024 * 1024 * 1024 then return ("%.1f MB"):format(n / 1048576) end
-    return ("%.2f GB"):format(n / 1073741824)
-  end
+  local function amount(n) return n and files.size(n) or "?" end
 
   -- What a row says under its name.
   local function dl_words(d)
     local from = J.host_of(d.address)
     if d.state == "downloading" then
-      local rate = d.seconds > 0.5 and (" - %s/s"):format(amount(d.received / d.seconds)) or ""
+      local rate = d.seconds > 0.5 and (" - %s"):format(files.rate(d.received / d.seconds)) or ""
       if d.expected then
         return ("%s of %s%s"):format(amount(d.received), amount(d.expected), rate)
       end

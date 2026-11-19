@@ -118,6 +118,7 @@ end
 --------------------------------------------------------------------------
 
 local hardware = use("/Kosmos/Libraries/hardware.lua")
+local pulse = use("/Kosmos/Libraries/pulse.lua")
 
 local b      = sys.build()
 local cpu    = fs.read("/Devices/cpu")    or {}
@@ -193,15 +194,11 @@ end
 
 --
 -- The processor, named by whichever decoder in the devices server matched
--- the architecture - ARM's out of MIDR_EL1, x86's out of CPUID. Both fill
--- the same three field names precisely so that this does not have to know
--- which machine it is on.
+-- the architecture - ARM's out of MIDR_EL1, x86's out of CPUID - and said
+-- as About and Monitor say it (`pulse.name`).
 --
-local model = cpu.name
-  or cpu.implementer
-  and (("%s %s %s"):format(cpu.implementer, cpu.part or "",
-                           cpu.revision or ""):gsub("%s+", " "):gsub(" $", ""))
-  or (cpu.arch or "unknown")
+local model = pulse.name()
+if model == "" then model = cpu.arch or "unknown" end
 
 --
 -- Both counts when they differ, which on this machine they do unless it

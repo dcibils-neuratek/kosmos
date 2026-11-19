@@ -43,6 +43,7 @@ local ui = use("/Kosmos/Libraries/ui.lua")
 local wmproto = use("/Kosmos/Libraries/wmproto.lua")
 local keys = use("/Kosmos/Libraries/keys.lua")
 local files = use("/Kosmos/Libraries/files.lua")
+local markup = use("/Kosmos/Libraries/markup.lua")
 local regions = use("/Kosmos/Libraries/regions.lua")
 local clock = use("/Kosmos/Libraries/clock.lua")
 local richtext = use("/Kosmos/Libraries/richtext.lua")
@@ -551,22 +552,8 @@ local function paragraphs(text)
   return out, links
 end
 
--- HTML as text, until HTML is drawn (M5): the tags taken out, its blocks
--- as lines, its few entities undone.
-local function html_text(html)
-  local t = html:gsub("<[Ss][Tt][Yy][Ll][Ee].-</[Ss][Tt][Yy][Ll][Ee]>", "")
-                :gsub("<[Ss][Cc][Rr][Ii][Pp][Tt].-</[Ss][Cc][Rr][Ii][Pp][Tt]>", "")
-                :gsub("<[Bb][Rr]%s*/?>", "\n")
-                :gsub("</?[Pp][^>]*>", "\n\n")
-                :gsub("</?[Dd][Ii][Vv][^>]*>", "\n")
-                :gsub("</?[Tt][Rr][^>]*>", "\n")
-                :gsub("<[^>]*>", "")
-                :gsub("&nbsp;", " "):gsub("&lt;", "<"):gsub("&gt;", ">")
-                :gsub("&quot;", '"'):gsub("&#39;", "'"):gsub("&amp;", "&")
-                :gsub("[ \t]+", " "):gsub("\n[ \t]+", "\n"):gsub("\n\n\n+", "\n\n")
-
-  return t
-end
+-- HTML as text, until HTML is drawn (M5): `markup.text`.
+local html_text = markup.text
 
 -- A part's content as a string: into a region by the kit, read out once.
 local function part_text(m, p)

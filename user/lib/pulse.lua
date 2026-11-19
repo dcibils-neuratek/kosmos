@@ -7,8 +7,8 @@
 --   pulse.speeds(before, after, hz)  each core's MHz between two readings
 --   pulse.heat(before, after, seconds, load)  how hot, how much power, why held
 --
--- Monitor and `clocks` use it; About and neofetch can say the name the same
--- way. It was also the panel BeOS's Pulse drew - a bar a processor - for
+-- Monitor, Processes, `clocks`, About and neofetch use it, so the name is
+-- said one way everywhere (`cleanup.md` findings 193, 200). It was also the panel BeOS's Pulse drew - a bar a processor - for
 -- the Processor Cores app, which went on 12 October 2026 (Diego: "remove the
 -- processor cores app which is useless now") once Monitor showed every core
 -- better; the panel, and `ui.leds` it drew with, went with it.

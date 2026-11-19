@@ -21,6 +21,7 @@
 -- and `io_out`, blue and orange, as in every monitor.
 
 local ui = use("/Kosmos/Libraries/ui.lua")
+local files = use("/Kosmos/Libraries/files.lua")
 local hardware = use("/Kosmos/Libraries/hardware.lua")
 local theme = ui.theme
 local L = ui.layout
@@ -67,18 +68,8 @@ local function scaled(v, step, units)
          or ("%.1f %s"):format(v, units[i])
 end
 
--- A rate, in bytes a second or - a link is sold that way - in bits.
-local function rate(bytes_a_second)
-  if bits then
-    return scaled((bytes_a_second or 0) * 8, 1000, { "b/s", "Kb/s", "Mb/s", "Gb/s" })
-  end
-
-  return scaled(bytes_a_second or 0, 1024, { "B/s", "KB/s", "MB/s", "GB/s" })
-end
-
-local function amount(bytes)
-  return scaled(bytes or 0, 1024, { "B", "KB", "MB", "GB", "TB" })
-end
+local function rate(bytes_a_second) return files.rate(bytes_a_second, bits) end
+local amount = files.size
 
 local function count(n)
   return n < 1000 and tostring(n) or scaled(n, 1000, { "", "K", "M", "G" })
@@ -273,13 +264,8 @@ win:add(ui.header{ x = 0, y = 0, w = W, title = "Network Monitor",
 -- The page.
 --------------------------------------------------------------------------
 
-local function heading(g, x, y, left, right)
-  g:text(x + 3, y + (L.group - gfx.height("heading")) // 2, left, theme.text, theme.window, "heading")
-
-  if right then
-    g:text(x + M.inner - gfx.measure(right), y + (L.group - gfx.height()) // 2, right,
-           theme.text_dim, theme.window, "ui")
-  end
+local function heading(g, x, y, left, right, colour)
+  ui.group_heading(g, x, y, M.inner, L.group, left, right, colour)
 end
 
 local function draw_totals(g, x, y)

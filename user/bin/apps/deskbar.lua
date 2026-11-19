@@ -977,19 +977,9 @@ end
 -- in. A button on a coloured bar should be that colour, darker; anything
 -- else looks like a different material.
 --
--- Halfway between two colours, channel by channel: a name dimmed toward the
--- face it sits on, which reads as "not yet" in every look.
-local function halfway(a, b)
-  local out = 0xff000000
-
-  for shift = 0, 16, 8 do
-    local ca, cb = (a >> shift) & 0xff, (b >> shift) & 0xff
-
-    out = out | (((ca + cb) // 2) << shift)
-  end
-
-  return out
-end
+-- Halfway between two colours: a name dimmed toward the face it sits on,
+-- which reads as "not yet" in every look.
+local function halfway(a, b) return theme.mix(a, b, 500) end
 
 local function lit(colour, k)
   local a = colour & 0xff000000

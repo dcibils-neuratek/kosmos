@@ -36,6 +36,7 @@
 local auto = {}
 
 local files = use("/Kosmos/Libraries/files.lua")
+local markup = use("/Kosmos/Libraries/markup.lua")
 
 -- How long a control or a window is waited for when it is not there yet.
 auto.PATIENCE = 5
@@ -428,10 +429,10 @@ function auto.mail(m)
   return mailout.send(m)
 end
 
--- What a page's text says, tags left out, for `has` and `lacks`.
+-- What a page's text says, tags left out, for `has` and `lacks`: a space
+-- after every tag first, so two cells' words do not run together.
 local function words_of(body)
-  return (body:gsub("<script.-</script>", " "):gsub("<style.-</style>", " "):gsub("<[^>]*>", " ")
-              :gsub("&nbsp;", " "):gsub("&amp;", "&"):gsub("%s+", " "))
+  return (markup.text((body:gsub(">", "> "))):gsub("%s+", " "))
 end
 
 local SEEN = "/Temporary/automate"

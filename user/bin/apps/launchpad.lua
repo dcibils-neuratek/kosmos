@@ -155,15 +155,10 @@ local function grid_mode(ax, ay)
     return icon_of[program]
   end
 
-  -- `b` over `a` by `t` of 255, opaque: the tiles and the chosen cell are
-  -- the drawing's whites at a tenth and a twelfth over the panel.
-  local function mix(a, b, t)
-    local function ch(shift)
-      return (((a >> shift) & 0xff) * (255 - t) + ((b >> shift) & 0xff) * t) // 255
-    end
-
-    return 0xff000000 | (ch(16) << 16) | (ch(8) << 8) | ch(0)
-  end
+  -- `b` over `a` by `t` thousandths, opaque (`theme.mix`): the tiles and
+  -- the chosen cell are the drawing's whites at a tenth and a twelfth over
+  -- the panel.
+  local mix = theme.mix
 
   local function search(text)
     typed = text
@@ -301,8 +296,8 @@ local function grid_mode(ax, ay)
     -- The sections: a column of their own, the chosen one lit with the
     -- accent's bar at its edge, and a rule under All. While something is
     -- typed the search is every application, and no section is lit.
-    local column = mix(face, 0xff000000, 14)
-    local lit = mix(face, 0xffffffff, 22)
+    local column = mix(face, 0xff000000, 55)
+    local lit = mix(face, 0xffffffff, 86)
     local RI = grid.ROW_IN
 
     g:fill(0, sy + sh_ + 10, grid.SIDE_W, self.h - (sy + sh_ + 10), column)
@@ -344,7 +339,7 @@ local function grid_mode(ax, ay)
     -- The tiles that show: a round tile, its picture, its name under it -
     -- and the row after the last whole one, cut by the panel's edge, which
     -- says there is more below without anything to say it.
-    local tile, chosen = mix(face, 0xffd6e4ff, 26), mix(face, 0xffffffff, 20)
+    local tile, chosen = mix(face, 0xffd6e4ff, 102), mix(face, 0xffffffff, 78)
 
     for i = top * grid.COLS + 1, math.min(#list, (top + rows + 1) * grid.COLS) do
       local item = list[i]
@@ -380,7 +375,7 @@ local function grid_mode(ax, ay)
     if thumb_y then
       local tx_ = self.w - P // 2 - 3
 
-      g:fill_round(tx_, grid.TOP, 4, rows * grid.CELL_H, mix(face, 0xffffffff, 10), 2)
+      g:fill_round(tx_, grid.TOP, 4, rows * grid.CELL_H, mix(face, 0xffffffff, 39), 2)
       g:fill_round(tx_, grid.TOP + thumb_y, 4, thumb_len, theme.text_dim, 2)
     end
 

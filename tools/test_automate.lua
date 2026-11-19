@@ -11,6 +11,7 @@ sys = { info = function() return { tick_hz = 250 } end, ticks = function() retur
         sleep = function() end }
 use = function(path)
   if path == "/Kosmos/Libraries/files.lua" then return {} end
+  if path == "/Kosmos/Libraries/markup.lua" then return dofile("user/lib/markup.lua") end
   error("no " .. path)
 end
 
