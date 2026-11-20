@@ -456,7 +456,16 @@ int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
         .depthWriteEnable = shape->depth != VK_FORMAT_UNDEFINED && !shape->depth_off,
         .depthCompareOp = VK_COMPARE_OP_LESS,
     };
+    /* Blended, the classic "over": the source by its alpha, what is
+     * there by the rest of it. */
     VkPipelineColorBlendAttachmentState blend = {
+        .blendEnable = shape->blend ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };

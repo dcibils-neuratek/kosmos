@@ -39732,3 +39732,36 @@ is that, its `tg3:` lines numbered 1 to 10 in `drivers.md` and its
 `amdgpu:` lines in `amdgpu.md`.
 The gate: 152 of 154 in 724 s, `x86-jetski` (a tone heard at 417 Hz of 440) and
 `x86-display-1` (a key's echo late) passing alone, 144 s - the load's, not this change's.
+
+## 18.951 Flight's strip, and the 3D Kit's overlays (0.12.31)
+
+**In short:** Flight's chase view carries a strip of instruments along its
+bottom - speed in knots, altitude in feet, heading, climb in feet a minute,
+throttle and flaps - and what draws it is new in the 3D Kit: **an overlay**,
+a gfx surface laid over the frame as a screen-space quad, blended
+(`SRC_ALPHA`, `ONE_MINUS_SRC_ALPHA`) with no depth test, after the scene.
+`w:overlay(surface, x, y)` hands one over (nil takes it away); its texture
+is made once and refreshed in place, outside a frame, and Flight redraws
+the strip only when its words change. The Vulkan Kit's pipeline shape gains
+`blend`, which every existing pipeline leaves 0. gfx's pixels are
+0xAARRGGBB in memory order B, G, R, A, which is `VK_FORMAT_B8G8R8A8_UNORM`,
+so the rows are copied as they are.
+
+**Held by `x86-flight`**, which now reads the strip twice. Flight says its
+words once on the log (`flight strip SPEED 107 kt  ALTITUDE 1970 ft
+HEADING 000`), and the speed is held to the flight model's within 15 kt;
+and the chase view's screen is looked at for the band - a stretch the
+window's width, at least half dark, light beyond both ends, 34 to 46 rows
+tall with at least 20 white pixels of words. **Controls**: the strip never
+handed to the window (`w:overlay` replaced by `true`) fails the screen
+check - the nearest band is 46 rows with no words; a speed drawn wrong
+fails the words'. The band test allowed light beyond only one end for a
+while, so a piece of the Log's dark panel passed for the strip in that
+control; both ends are demanded now. At a size other than the gate's
+(`KOSMOS_FLIGHT_SIZE=1280x720`, for a picture) the window touches the Log
+panel and the place is said, not held. Pixels read under the band, red
+68,28,34 from the checker's 255,0,0 at 0xb8 of alpha, are the blend's
+arithmetic.
+The gate: 152 of 153 in 612 s, `x86-llmmon` failing once on mdnsd's
+"listening" line printed into the middle of an answer it compares, and
+passing 18 of 18 alone - the log's interleaving, not this change.

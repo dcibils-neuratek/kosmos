@@ -19,6 +19,8 @@
 #include "k3d_ground_frag.h"
 #include "k3d_model_vert.h"
 #include "k3d_model_frag.h"
+#include "k3d_overlay_vert.h"
+#include "k3d_overlay_frag.h"
 
 /* The shaders' push constants, as they declare them (std430: vec4s). */
 struct mesh_push {
@@ -94,6 +96,8 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
         !pipeline_layout(v, &r->ground_layout, sizeof(struct mesh_push), both,
                          r->imagery_layout) ||
         !pipeline_layout(v, &r->model_layout, sizeof(struct model_push), both,
+                         r->imagery_layout) ||
+        !pipeline_layout(v, &r->overlay_layout, 4 * sizeof(float), VK_SHADER_STAGE_VERTEX_BIT,
                          r->imagery_layout)) {
         return 0;
     }
@@ -137,12 +141,12 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
      * behind its front ones in the depth buffer anyway. */
     struct kvk_pipeline_shape mesh = {
         k3d_mesh_vert, sizeof(k3d_mesh_vert), k3d_mesh_frag, sizeof(k3d_mesh_frag), &input,
-        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
     };
     /* The sky: no depth test, drawn first, under everything. */
     struct kvk_pipeline_shape sky = {
         k3d_sky_vert, sizeof(k3d_sky_vert), k3d_sky_frag, sizeof(k3d_sky_frag), &none,
-        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1,
+        width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 0,
     };
 
     VkVertexInputBindingDescription ground_stream = { 0, sizeof(struct k3d_terrain_vertex),
@@ -161,7 +165,7 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
     };
     struct kvk_pipeline_shape ground = {
         k3d_ground_vert, sizeof(k3d_ground_vert), k3d_ground_frag, sizeof(k3d_ground_frag),
-        &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+        &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
     };
 
     VkVertexInputBindingDescription model_stream = { 0, sizeof(struct k3d_vk_model_vertex),
@@ -183,13 +187,20 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
      * side the eye is on. */
     struct kvk_pipeline_shape model = {
         k3d_model_vert, sizeof(k3d_model_vert), k3d_model_frag, sizeof(k3d_model_frag),
-        &model_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+        &model_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
+    };
+
+    /* An overlay: over everything, untested, blended by its alpha. */
+    struct kvk_pipeline_shape overlay = {
+        k3d_overlay_vert, sizeof(k3d_overlay_vert), k3d_overlay_frag, sizeof(k3d_overlay_frag),
+        &none, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1, 1,
     };
 
     if (!kvk_pipeline(v, &r->mesh, r->mesh_layout, &mesh) ||
         !kvk_pipeline(v, &r->sky, r->sky_layout, &sky) ||
         !kvk_pipeline(v, &r->ground, r->ground_layout, &ground) ||
-        !kvk_pipeline(v, &r->model, r->model_layout, &model)) {
+        !kvk_pipeline(v, &r->model, r->model_layout, &model) ||
+        !kvk_pipeline(v, &r->overlay, r->overlay_layout, &overlay)) {
         return 0;
     }
 
@@ -210,6 +221,12 @@ void k3d_vk_close(struct k3d_vk *r)
         return;
     }
     k3d_vk_texture_free(r, &r->white);
+    if (r->overlay != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, r->overlay, NULL);
+    }
+    if (r->overlay_layout != VK_NULL_HANDLE) {
+        v->vkDestroyPipelineLayout(v->device, r->overlay_layout, NULL);
+    }
     if (r->model != VK_NULL_HANDLE) {
         v->vkDestroyPipeline(v->device, r->model, NULL);
     }
@@ -316,6 +333,8 @@ static int texture_make(struct k3d_vk *r, struct k3d_vk_texture *t, VkSampler sa
     if (!kvk_submit(v)) {
         goto out;
     }
+    t->width = width;
+    t->height = height;
     made = 1;
 
 out:
@@ -330,6 +349,34 @@ int k3d_vk_texture(struct k3d_vk *r, struct k3d_vk_texture *t, const void *texel
                    uint32_t width, uint32_t height, VkFormat format)
 {
     return texture_make(r, t, r->skin, texels, width, height, format);
+}
+
+/*
+ * New texels for a texture that exists: the image's contents replaced as
+ * it was first filled, through a buffer for the copy. Outside a frame -
+ * `kvk_submit` waits for the queue, so nothing still reads the old ones.
+ */
+int k3d_vk_texture_refresh(struct k3d_vk *r, struct k3d_vk_texture *t, const void *texels)
+{
+    struct kvk *v = r->v;
+    struct kvk_buffer upload = { 0 };
+    int done = 0;
+
+    if (texels == NULL || t->image.image == VK_NULL_HANDLE || t->width == 0) {
+        refuse(v, "texture-not-made");
+        return 0;
+    }
+    if (!kvk_buffer_make(v, &upload, (VkDeviceSize)t->width * t->height * 4,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "texture-upload")) {
+        return 0;
+    }
+    memcpy(upload.bytes, texels, (size_t)t->width * t->height * 4);
+    if (kvk_begin(v)) {
+        kvk_image_upload(v, t->image.image, t->width, t->height, upload.buffer);
+        done = kvk_submit(v);
+    }
+    kvk_buffer_free(v, &upload);
+    return done;
 }
 
 void k3d_vk_texture_free(struct k3d_vk *r, struct k3d_vk_texture *t)
@@ -612,6 +659,17 @@ int k3d_vk_draw_models(struct k3d_vk *r, VkImage target, VkImageView view_of,
                        uint32_t grounds_count, const struct k3d_vk_model_draw *models,
                        uint32_t models_count)
 {
+    return k3d_vk_draw_scene(r, target, view_of, view, meshes, count, grounds, grounds_count,
+                             models, models_count, NULL, 0);
+}
+
+int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
+                      const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
+                      uint32_t count, const struct k3d_vk_ground *grounds,
+                      uint32_t grounds_count, const struct k3d_vk_model_draw *models,
+                      uint32_t models_count, const struct k3d_vk_overlay *overlays,
+                      uint32_t overlays_count)
+{
     struct kvk *v = r->v;
     const VkShaderStageFlags both = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     struct mesh_push mp;
@@ -743,6 +801,30 @@ int k3d_vk_draw_models(struct k3d_vk *r, VkImage target, VkImageView view_of,
             v->vkCmdBindIndexBuffer(v->cmd, d->model->buffer.buffer, d->model->indices_at,
                                     VK_INDEX_TYPE_UINT32);
             v->vkCmdDrawIndexed(v->cmd, d->model->count, 1, 0, 0, 0);
+        }
+    }
+
+    /* The overlays over all of it, each its rectangle in clip space -
+     * Vulkan's, whose y runs down as a picture's does. */
+    if (overlays_count > 0) {
+        v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->overlay);
+        for (uint32_t i = 0; i < overlays_count; i++) {
+            const struct k3d_vk_overlay *o = &overlays[i];
+            float rect[4];
+
+            if (o->texture == NULL || o->texture->set == VK_NULL_HANDLE || o->width == 0 ||
+                o->height == 0) {
+                continue;
+            }
+            rect[0] = 2.0f * (float)o->x / (float)r->width - 1.0f;
+            rect[1] = 2.0f * (float)o->y / (float)r->height - 1.0f;
+            rect[2] = 2.0f * (float)(o->x + (int32_t)o->width) / (float)r->width - 1.0f;
+            rect[3] = 2.0f * (float)(o->y + (int32_t)o->height) / (float)r->height - 1.0f;
+            v->vkCmdPushConstants(v->cmd, r->overlay_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                  sizeof(rect), rect);
+            v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                       r->overlay_layout, 0, 1, &o->texture->set, 0, NULL);
+            v->vkCmdDraw(v->cmd, 6, 1, 0, 0);
         }
     }
     v->vkCmdEndRendering(v->cmd);

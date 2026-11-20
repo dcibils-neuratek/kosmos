@@ -603,6 +603,11 @@ struct window {
      * nothing a frame. */
     uint8_t held[KEYCODES / 8], went_down[KEYCODES / 8];
     int closing;
+    /* The overlay `w:overlay` gave, on the device: one picture, refreshed
+     * in place while its size stays, made again when it changes. */
+    struct k3d_vk_texture overlay;
+    struct k3d_vk_overlay laid;     /* texture NULL: none */
+    uint32_t *packed;               /* its rows without the pitch, for the copy */
 };
 
 /* Everything the window manager has said, taken in: the keys' transitions
@@ -669,8 +674,10 @@ static void window_close(struct window *w)
         v->vkDeviceWaitIdle(v->device);
     }
     if (w->renderer.v != NULL) {
+        k3d_vk_texture_free(&w->renderer, &w->overlay);
         k3d_vk_close(&w->renderer);
     }
+    free(w->packed);
     kvk_swapchain_close(v, &w->chain);
     kvk_close(v);
     if (w->window != NULL) {
@@ -745,6 +752,63 @@ static int l_window_device(lua_State *L)
 
 /* w:closed(wait) -> true once the window was asked to close, waiting up to
  * `wait` seconds for it. */
+/*
+ * w:overlay(surface, x, y) - a gfx surface laid over every frame from now
+ * on at (x, y), by its alpha: a strip of instruments, a menu. Called again
+ * when the picture changed, which copies it to the device again; with no
+ * surface, the overlay is taken away. The pixels cross once, here, in C -
+ * never as a Lua string - and a frame that changed nothing copies nothing.
+ */
+static int l_window_overlay(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    unsigned width, height, pitch;
+    uint32_t *pixels;
+
+    if (lua_isnoneornil(L, 2)) {
+        w->laid.texture = NULL;
+        return 0;
+    }
+    pixels = kosmos_surface_pixels(L, 2, &width, &height, &pitch);
+    if (width > w->renderer.width || height > w->renderer.height) {
+        return luaL_error(L, "an overlay larger than the window");
+    }
+    if (w->overlay.width != width || w->overlay.height != height) {
+        uint32_t *packed = realloc(w->packed, (size_t)width * height * 4);
+
+        if (packed == NULL) {
+            return luaL_error(L, "no memory for the overlay");
+        }
+        w->packed = packed;
+    }
+    for (unsigned row = 0; row < height; row++) {
+        memcpy(w->packed + (size_t)row * width, (const uint8_t *)pixels + (size_t)row * pitch,
+               (size_t)width * 4);
+    }
+
+    int done;
+
+    if (w->overlay.width == width && w->overlay.height == height) {
+        done = k3d_vk_texture_refresh(&w->renderer, &w->overlay, w->packed);
+    } else {
+        k3d_vk_texture_free(&w->renderer, &w->overlay);
+        /* gfx's pixels are 0xAARRGGBB, which is B, G, R, A in memory. */
+        done = k3d_vk_texture(&w->renderer, &w->overlay, w->packed, width, height,
+                              VK_FORMAT_B8G8R8A8_UNORM);
+    }
+    if (!done) {
+        w->laid.texture = NULL;
+        lua_pushnil(L);
+        lua_pushstring(L, w->v.why[0] ? w->v.why : "overlay");
+        w->v.why[0] = '\0';
+        return 2;
+    }
+    w->laid = (struct k3d_vk_overlay){ &w->overlay, (int32_t)luaL_optinteger(L, 3, 0),
+                                       (int32_t)luaL_optinteger(L, 4, 0), width, height };
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_window_closed(lua_State *L)
 {
     struct window *w = window_check(L, 1);
@@ -1087,8 +1151,9 @@ static int l_window_draw(lua_State *L)
         plane = model_draws(model_check(L, 4), &nplane);
     }
     if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
-        !k3d_vk_draw_models(&w->renderer, c->images[index], c->views[index], &view, NULL, 0,
-                            w->drawn, count, plane, nplane)) {
+        !k3d_vk_draw_scene(&w->renderer, c->images[index], c->views[index], &view, NULL, 0,
+                           w->drawn, count, plane, nplane, &w->laid,
+                           w->laid.texture != NULL ? 1 : 0)) {
         lua_pushnil(L);
         lua_pushstring(L, v->why[0] ? v->why : "draw");
         v->why[0] = '\0';
@@ -1465,6 +1530,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "held", l_window_held },
         { "pressed", l_window_pressed },
         { "model", l_window_model },
+        { "overlay", l_window_overlay },
         { "close", l_window_close },
         { "__gc", l_window_gc },
         { NULL, NULL },

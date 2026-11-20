@@ -83,6 +83,7 @@ struct k3d_vk_texture {
     struct kvk_image image;
     VkDescriptorPool pool;
     VkDescriptorSet set;
+    uint32_t width, height;         /* what `k3d_vk_texture_refresh` holds to */
 };
 
 struct k3d_vk_ground {
@@ -119,13 +120,25 @@ struct k3d_vk_model_draw {
     float matrix[16];               /* the world from the model, column-major */
 };
 
+/*
+ * **An overlay**: a picture laid over the finished frame at a place in
+ * pixels from its top left, by its alpha - a game's instruments, a menu, a
+ * message. Drawn last, in the order given, never depth-tested; a picture
+ * texel for pixel, so text in it stays text.
+ */
+struct k3d_vk_overlay {
+    const struct k3d_vk_texture *texture;
+    int32_t x, y;
+    uint32_t width, height;
+};
+
 struct k3d_vk {
     struct kvk *v;
     uint32_t width, height;
     VkFormat format;
     struct kvk_image depth;
-    VkPipelineLayout mesh_layout, sky_layout, ground_layout, model_layout;
-    VkPipeline mesh, sky, ground, model;
+    VkPipelineLayout mesh_layout, sky_layout, ground_layout, model_layout, overlay_layout;
+    VkPipeline mesh, sky, ground, model, overlay;
     VkDescriptorSetLayout imagery_layout;
     VkSampler imagery;              /* linear, clamped to the edge */
     VkSampler skin;                 /* linear, repeating: a model's uv may
@@ -164,6 +177,10 @@ int  k3d_vk_texture(struct k3d_vk *r, struct k3d_vk_texture *t, const void *texe
                     uint32_t width, uint32_t height, VkFormat format);
 void k3d_vk_texture_free(struct k3d_vk *r, struct k3d_vk_texture *t);
 
+/* The same texture's texels replaced, its size and format kept - an
+ * overlay redrawn - outside a frame, waited for. 1, or 0 with `why`. */
+int  k3d_vk_texture_refresh(struct k3d_vk *r, struct k3d_vk_texture *t, const void *texels);
+
 /* A model of `nv` corners and `ni` indices, three to a triangle. */
 int  k3d_vk_model(struct k3d_vk *r, struct k3d_vk_model *m,
                   const struct k3d_vk_model_vertex *vertices, uint32_t nv,
@@ -190,5 +207,14 @@ int k3d_vk_draw_models(struct k3d_vk *r, VkImage target, VkImageView view_of,
                        uint32_t count, const struct k3d_vk_ground *grounds,
                        uint32_t grounds_count, const struct k3d_vk_model_draw *models,
                        uint32_t models_count);
+
+/* The same, with `overlays_count` pictures laid over the finished frame
+ * (`struct k3d_vk_overlay`); `k3d_vk_draw_models` is this with none. */
+int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
+                      const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
+                      uint32_t count, const struct k3d_vk_ground *grounds,
+                      uint32_t grounds_count, const struct k3d_vk_model_draw *models,
+                      uint32_t models_count, const struct k3d_vk_overlay *overlays,
+                      uint32_t overlays_count);
 
 #endif

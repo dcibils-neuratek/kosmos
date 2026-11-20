@@ -310,8 +310,13 @@ ends on the M700:
   - **F5d - the aircraft.** The Cessna's GLB read by the 3D Kit
     (`k3d_glb.c`), drawn by the renderer's textured models with a matrix
     each, its control surfaces and propeller turned about their hinges.
-  - **F5e - the chase view's strip**: speed, altitude, heading, climb,
-    throttle and flaps.
+  - **F5e - the chase view's strip** (built, 0.12.31, `testing.md`
+    18.951): speed in knots, altitude in feet, heading, climb in feet a
+    minute, throttle and flaps, drawn with the UI kit's font into a gfx
+    surface and laid over the frame by the 3D Kit - `w:overlay(surface, x,
+    y)`, a screen-space quad blended over the scene with no depth test,
+    its texture refreshed in place only when the words change. Hidden in
+    the cockpit, which will have its own instruments.
   Then the cockpit and tower views' detail, the pause sheet, the panel and
   the island.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze

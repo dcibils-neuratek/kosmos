@@ -160,6 +160,64 @@ def states(text):
     return out
 
 
+def strip_band(R, data, across):
+    """The strip on the screen: a stack of 34 to 46 rows each holding a
+    stretch as wide as Flight's window, `across`, that is at least half dark
+    - the band laid over the ground by its alpha - starting at the same x to
+    four pixels, with words in it. Every stack is found and a strip-shaped
+    one kept, so a taller dark panel elsewhere - the Log's - is not taken
+    for it. (left, top, rows, white pixels) of the one kept, or else of the
+    tallest; None when there is no stack at all."""
+    width, height, px = R.parse_ppm(data)
+
+    def light(r, g, b):
+        return min(r, g, b) > 200
+
+    def stretches(y):
+        """Where a stretch `across` wide is at least half dark, with lighter
+        pixels just outside both ends - a window's width of band and no more
+        - counted with a prefix sum so a 1080-row screen stays quick. Both
+        ends: allowing one let a piece of the Log's panel pass for the strip
+        (its control, 20 November)."""
+        row = px[y * width * 3:(y + 1) * width * 3]
+        dark = [max(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]) < 90 for x in range(width)]
+        sums = [0]
+        for d in dark:
+            sums.append(sums[-1] + d)
+        out = []
+        for left in range(2, width - across - 2):
+            if sums[left + across] - sums[left] >= 0.5 * across \
+                    and not dark[left - 2] and not dark[left + across + 1]:
+                if not out or left - out[-1] > 8:
+                    out.append(left)
+        return out
+
+    def words(left, top, rows):
+        white = 0
+        for y in range(top, top + rows):
+            row = px[y * width * 3:(y + 1) * width * 3]
+            white += sum(1 for x in range(left, min(width, left + across))
+                         if light(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]))
+        return white
+
+    stacks, runs = [], {}
+    for y in range(height + 1):
+        now = {}
+        for left in (stretches(y) if y < height else []):
+            key = next((k for k in runs if abs(k - left) <= 4), left)
+            top, rows = runs.get(key, (y, 0))
+            now[key] = (top, rows + 1)
+        stacks += [(k, top, rows) for k, (top, rows) in runs.items() if k not in now]
+        runs = now
+    if not stacks:
+        return None
+    shaped = [(k, t, r, words(k, t, r)) for k, t, r in stacks if 34 <= r <= 46]
+    shaped = [b for b in shaped if b[3] >= 20]
+    if shaped:
+        return max(shaped, key=lambda b: b[3])
+    k, t, r = max(stacks, key=lambda b: b[2])
+    return k, t, r, words(k, t, r)
+
 def main():
     built = os.path.join(APPS, "k3dvk.elf")
     if not os.path.exists(built):
@@ -251,9 +309,9 @@ def main():
         keys(False, "right")
         level = wait_frames(6, "let go")
 
+        chase = guest.screendump()                          # the strip is looked for in it
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):            # the chase view, for a person
-            R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-chase.png"),
-                        guest.screendump())
+            R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-chase.png"), chase)
 
         # The yoke back: it climbs.
         start = level
@@ -311,6 +369,25 @@ def main():
                      % (rolled["roll"], level["roll"]))
     if climbed["y"] <= start["y"]:
         fails.append("the yoke back, it did not climb: %d m then %d m" % (start["y"], climbed["y"]))
+    # The strip (F5e): said once, in the flight model's numbers, and on the
+    # screen as a band with words in it.
+    s = re.search(r"flight strip SPEED (\d+) kt  ALTITUDE (-?\d+) ft  HEADING (\d+)", seen)
+    print("flight: %s" % (s.group(0) if s else "no strip line"))
+    if not s:
+        fails.append("the strip was never drawn: %r" % re.findall(r"flight strip.*", seen))
+    elif abs(int(s.group(1)) - before["v"] * 1.94384) > 15:
+        fails.append("the strip's speed, %s kt, is not the flight's %.0f" % (s.group(1),
+                                                                             before["v"] * 1.94384))
+    band = strip_band(R, chase, WIDTH)
+    print("flight: the strip on the screen %r (left, top row, rows, white pixels)" % (band,))
+    # At the gate's size the window stands clear of the desktop's dark
+    # panels; a larger one for a picture (KOSMOS_FLIGHT_SIZE) may touch the
+    # Log's, which no band test can tell from the strip - said, not held.
+    if os.environ.get("KOSMOS_FLIGHT_SIZE"):
+        print("flight: the strip's place on the screen is not held at %dx%d" % (WIDTH, HEIGHT))
+    elif band is None or not 34 <= band[2] <= 46 or band[3] < 20:
+        fails.append("no strip on the chase view's screen - a dark band 30 to 48 rows tall with "
+                     "words in it: %r" % (band,))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \

@@ -287,6 +287,69 @@ end
 local frame = 0
 local function down(w, code) return w:held(code) end
 
+-- **The strip** (F5e): what a pilot reads, along the foot of the chase and
+-- tower views - speed, altitude, heading, climb, throttle and flaps, in the
+-- units a Cessna's own instruments use. Drawn in a gfx surface with the
+-- system's fonts and laid over the frame by the 3D Kit (`w:overlay`), and
+-- only when what it says changed: a frame that changes nothing copies
+-- nothing to the device. The cockpit will have its panel instead.
+local STRIP_H = 40
+local CELL = 170                     -- the least a label and its value take
+local BAND, LABEL, VALUE, WARN = 0xb8101820, 0xff8fa4b8, 0xffffffff, 0xffffb020
+local strip, strip_face, strip_said
+-- `ground_h` is nil until the ground under the aircraft has arrived.
+local function strip_words(ground_h)
+  local words = {
+    { "SPEED", ("%d kt"):format(math.floor(S.v * 1.94384 + 0.5)) },
+    { "ALTITUDE", ("%d ft"):format(math.floor(S.y * 3.28084 / 10 + 0.5) * 10) },
+    { "HEADING", ("%03d\u{b0}"):format(math.floor(math.deg(S.psi) % 360 + 0.5) % 360) },
+    { "CLIMB", ("%+d fpm"):format(math.floor(S.v * math.sin(S.gamma) * 196.85 / 50 + 0.5) * 50) },
+    { "THROTTLE", ("%d%%"):format(math.floor(S.throttle * 100 + 0.5)) },
+    { "FLAPS", ("%d\u{b0}"):format(math.floor(S.flaps * 30 + 0.5)) },
+  }
+  local state = S.paused and "PAUSED" or S.alpha > PLANE.stall and "STALL"
+                or ground_h and (S.y - ground_h) < 3 and "ON THE GROUND" or nil
+  return words, state
+end
+
+local function draw_strip(w, ground_h)
+  if S.view == 2 then
+    if strip_said then w:overlay(nil) strip_said = nil end
+    return
+  end
+  local words, state = strip_words(ground_h)
+  local parts = {}
+  for i, p in ipairs(words) do parts[i] = p[1] .. " " .. p[2] end
+  local key = table.concat(parts, "  ") .. (state and ("  " .. state) or "")
+  if key == strip_said then return end
+
+  if not strip then
+    strip = gfx.surface{ w = settings.width, h = STRIP_H }
+    strip_face = gfx.face("ibmplexsans-medium", 18) or gfx.face("ibmplexsans", 18)
+  end
+  -- As many cells as the width holds, the most wanted first - speed, then
+  -- altitude, then heading - spread evenly; the state on the right where
+  -- there is room for it.
+  local width = settings.width
+  local room = width - 32 - (width >= 900 and 184 or 0)
+  local shown_n = math.max(1, math.min(#words, math.floor(room / CELL)))
+  local cell = math.floor(room / shown_n)
+  local y = math.floor((STRIP_H - (strip_face and 22 or 16)) / 2)
+  strip:fill(0, 0, width, STRIP_H, BAND)
+  for i = 1, shown_n do
+    local x = 16 + (i - 1) * cell
+    x = strip:text(x, y + 3, words[i][1], LABEL) + 8
+    strip:text(x, y, words[i][2], VALUE, nil, strip_face)
+  end
+  if state and width >= 900 then
+    strip:text(width - 184, y, state, WARN, nil, strip_face)
+  end
+  local ok, why = w:overlay(strip, 0, settings.height - STRIP_H)
+  if not ok then say("strip failed=" .. tostring(why)) end
+  if not strip_said then say("strip " .. key) end
+  strip_said = key
+end
+
 -- The window and the terrain.
 local w, why = k.window("Flight", settings.width, settings.height)
 if not w then say("failed=" .. tostring(why)) return end
@@ -335,6 +398,7 @@ while not w:closed(0) do
     fly(dt, pitch, roll, g:height(S.x, S.z))
     if plane then place(plane, pitch, roll, dt) end
   end
+  draw_strip(w, g:height(S.x, S.z))
 
   look()
   feed(g, view.eye)

@@ -158,6 +158,8 @@ struct kvk_pipeline_shape {
     int depth_off;                  /* drawn into a picture with a depth buffer
                                      * without testing it or writing it - a sky
                                      * drawn first, behind everything */
+    int blend;                      /* laid over what is there by its alpha -
+                                     * the 3D Kit's overlays; 0 replaces it */
 };
 
 int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,

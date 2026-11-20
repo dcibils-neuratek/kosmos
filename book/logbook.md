@@ -5464,3 +5464,20 @@ and Vulkan on them. 0.12.30.
   Linux's own files on this Mac - 82 checks for the network, 279 for the
   graphics engines. **What is not**: anything on the real chips. The Mac
   Pro's boot is the test.
+
+## 20 November 2026 - Flight's instruments
+
+**In short.** Flight's chase view now shows a strip of instruments along
+its bottom: speed, altitude, heading, climb, throttle and flaps. 0.12.31.
+
+- **What it is**: the same row of numbers a pilot glances at, drawn in the
+  system's own font on a dark band you can see the ground through.
+- **How it is drawn**: the 3D Kit gained *overlays* - a flat picture laid
+  over the 3D frame by the graphics card, after the scene. Any program
+  drawing 3D can use one now: a game's score, a viewer's caption.
+- **Why it costs nothing**: the picture is redrawn and handed to the card
+  only when one of its numbers changes, not every frame.
+- **How it is checked**: the test reads the words Flight says it drew, and
+  looks for the band on the screen - and with the strip switched off, the
+  test fails, as it should.
+

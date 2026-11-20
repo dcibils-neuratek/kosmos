@@ -184,7 +184,7 @@ static void triangle(const struct triangle *t, const uint8_t colour[3])
     };
     struct kvk_pipeline_shape shape = {
         triangle_vert, sizeof(triangle_vert), triangle_frag, sizeof(triangle_frag), &none,
-        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE, 0,
+        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE, 0, 0,
     };
     if (!kvk_pipeline(&v, &pipeline, layout, &shape) ||
         !kvk_begin(&v)) {
@@ -448,7 +448,7 @@ static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t 
     };
     struct kvk_pipeline_shape shape = {
         cube_vert, sizeof(cube_vert), cube_frag, sizeof(cube_frag), &input,
-        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0, 0,
     };
     if (!kvk_pipeline(v, &s->pipeline, s->layout, &shape) ||
         !kvk_begin(v)) {
