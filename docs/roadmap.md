@@ -12054,7 +12054,9 @@ November 2026): a Cessna 172 from Sketchfab by Viva_1, CC Attribution, as a
 `.glb` with 2k textures - credited in `LICENSE` and the About window, as
 every vendored asset is. Also wanted, for F5: PNG and JPEG readers with no
 Lua in them (`png.c`, `jpeg.c` split into a core and the binding), so the
-terrain's builder decodes the tiles' bytes as well.
+terrain's builder decodes the tiles' bytes as well. And for the gate's ten minutes (`testing.md` 18.947): 641 s at
+0.12.27, `x86-dock` the slowest at 359 s - split it in halves that run side
+by side, as the browser's and Cafesa3D's suites were.
 Also wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a
