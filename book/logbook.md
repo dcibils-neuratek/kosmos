@@ -5185,3 +5185,28 @@ was 13.5. Khronos's tests all still pass, and a little faster.
 **Next.** G7 is finished. The next step is OpenGL and WebGL on the
 M700's GPU (G8), or the flight simulator once Diego has agreed its
 design.
+
+## 20 November 2026 - The GPU was running slow for Vulkan
+
+**In short.** The M700's graphics chip was drawing Vulkan's pictures at
+its slowest speed, about a tenth of its fastest. The driver only asked
+for full speed when it ran Kosmos's own compute work, and Vulkan's work
+comes another way. It now asks whenever the chip starts. A spinning cube
+in a window a thousand pixels across went from 72 frames a second to
+388. 0.12.17.
+
+**How it was found.** The cube was fast in a small window and slow in a
+large one, so each frame was timed in three parts: waiting for the chip,
+copying the picture into the window, and handing the window over.
+Waiting for the chip was ten of the fourteen milliseconds, at the same
+cost for every pixel at every size. That pointed at the chip's speed, not
+at memory. The driver's log had no line saying it had asked for its
+clock, which it says every time it does.
+
+**Visible impact.** Anything drawn with Vulkan on the M700 is about five
+times faster at large sizes. The chip still goes to sleep when there is
+nothing to draw.
+
+**Next.** At large sizes, copying the finished picture into the window
+now takes almost as long as drawing it. Drawing straight into the window
+removes that copy.

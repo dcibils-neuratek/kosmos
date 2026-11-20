@@ -12043,13 +12043,16 @@ is a race, not a saving. Cutting dock's sleeps alone is about 60
 suite-seconds, five seconds of gate. The minute is spread across many
 suites.
 Owed from G7c:
-- **Frames a second that measure the GPU.** The cube is 64 by 64 pixels,
-  so 66-127 frames a second is the round trip from submission to present.
-  A window at 1920 by 1080 is the figure G7c asked for.
+- ~~**Frames a second that measure the GPU.**~~ Done (`testing.md`
+  18.936): `window` takes a side, and the GT now runs at its full clock
+  for Vulkan. A 1024 square runs at 388 frames a second, and 1200 at 274.
+  The screen holds a window to its own height, so 1920 by 1080 needs a
+  window that is not square.
 - **The copy on presenting.** Each frame is copied twice: by the GPU into
-  a linear buffer, and by the processor into the window. Rendering
-  straight into the window's buffer, or the compositor sampling the
-  GPU's image (G9), removes the second copy.
+  a linear buffer, and by the processor into the window. At 1024 the
+  processor's copy is 0.8 ms against the GPU's 1.05 (18.936), so it is
+  now almost half a frame. Rendering straight into the window's buffer,
+  or the compositor sampling the GPU's image (G9), removes it.
 - **Restarting a machine whose telnetd is wedged.** The Terminal's
   `restart` says "this process does not hold that device", and the
   launcher pad's Restart button did nothing when clicked over VNC. Both

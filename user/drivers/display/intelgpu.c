@@ -47,6 +47,7 @@ static bool irq_armed;
 static unsigned long irq_count;
 static long mocs_console;                   /* defined below, where it is set */
 static void irq_say(const char *what);
+static void rps_up(long console);
 
 static uint32_t reg(uintptr_t regs, uint32_t offset)
 {
@@ -1238,6 +1239,11 @@ static uint32_t engine_start(struct engine *e)
     e->next_value = 0x4b6f7301u;                             /* "Kos" and a count */
     e->ready = true;
     irq_arm();
+
+    /* The GT's clock, asked for as the first engine starts, whatever its
+     * work: only the compute paths asked, so Vulkan's frames ran at the
+     * GT's least (`testing.md` 18.936). Asked once; one clock for all. */
+    rps_up(mocs_console);
     return GPU_OK;
 }
 

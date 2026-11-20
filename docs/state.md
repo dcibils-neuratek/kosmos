@@ -158,6 +158,13 @@ built for Kosmos with a kernel-driver type of its own.
 - Submit to fence is 0.22 ms where it was 8, and the cube window runs at
   1,522 frames a second where it ran at 73.
 
+**The GT's clock for Vulkan (0.12.17, 18.936).** Only the compute paths
+asked for it, so Vulkan's frames ran at the GT's least. `engine_start`
+asks now. A cube window 1024 pixels square runs at 388 frames a second
+where it ran at 72, and `window` takes a side to measure it. At that size
+the processor's copy into the window is now almost half a frame (roadmap,
+owed from G7c).
+
 **G7 is done.** Next is G8 (GL and WebGL on the M700), or the flight
 simulator, once Diego has agreed its design (`docs/flight.md`).
 

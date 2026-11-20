@@ -39119,3 +39119,56 @@ dock's 353 s ends long before the queue does. The minute has to come out
 of the suite-seconds themselves. The twelve longest suites hold 2,728 of
 the 7,102, and `run_dock.py` alone sleeps for fixed times at sixty places,
 93 s of them. That is `roadmap.md`'s, *The gate in ten minutes again*.
+
+## 18.936 The GT's clock for Vulkan, and the cube window at any size
+
+**In short:** the M700's GPU drew Vulkan's frames at its slowest clock.
+Only the driver's compute paths asked the GT for its full clock, and
+Vulkan's work goes through a program's own context, which never asked.
+So a cube in a window 1024 pixels square ran at 72 frames a second, and
+10.7 ms of each 14 ms frame was the GPU. `intelgpu` now asks for the clock
+as the first engine starts, whatever the work. The same window runs at 388
+frames a second, and a 1200 square at 274. `vulkantest`'s `window` takes
+the window's side as a new last argument, so the figure can be measured
+at more than 64 pixels.
+
+- **Where the time went**, measured by timing `queue_present`
+  (`wsi_common_kosmos.c`) in three parts for one run, then taken out: the
+  wait for the GPU's fence, the processor's copy into the window, and
+  `kw_commit`. At 1024: fence 10,740 us, copy 769, commit 888 a frame.
+  The fence was 10 ns a pixel at every size from 256 up. That is a
+  clock, not a cache.
+- **The log said so**: no "the GT asked for ... MHz" line in a boot that
+  ran only Vulkan. `rps_up` was called from `run` and `runs`, which are the
+  GPU Kit's kernels, and from nowhere Vulkan's submissions reach. It is
+  now called at the end of `engine_start` too. It still asks once, and
+  the GT still falls asleep in RC6 between work (`gpustat`: "asleep, 100%
+  of 1.0 s in RC6" while idle).
+- **The copy is now most of what is left** at a large size: 0.8 ms at
+  1024 and 1.2 ms at 1200, against the GPU's 1.05 and 1.4. Rendering
+  straight into the window's surface removes it. That goes into the
+  roadmap among G7c's owed items.
+- **A window larger than the screen** is held to it by the window server:
+  a 1400 square came back 1400 by 1282 and `window` refused it
+  ("window-not-1400x1400"). It does not draw into a size it was not given.
+
+```
+M700 (0.12.16 + this, netbooted), the cube, 300 frames, frames a second:
+  side       before (the GT's least)     after (1100 MHz)
+  64         1522                         3896
+  256         706                         3297
+  512         273                         1587
+  1024         72                          388
+  1200          -                          274
+  a frame at 1024, before: fence 10740 us, copy 769, commit 888
+                    after:  fence  1048 us, copy 815, commit 280
+  the log, after: "intelgpu: the GT asked for 1150 MHz, and running at 1100 MHz"
+  control: the build before this change (0.12.15 + G7e) - no such line, 72 at 1024
+```
+
+The gate: 124 of 125 suites in 632 s. `x86-queries` failed one check
+("cd /home did not answer in the mount's own spelling, /Home: got None",
+kept as `build/gate/failed/0.12.17-1120-031530-x86-queries.log`), and
+passed alone, all 38 of its checks, in 21 s. Nothing it checks stands on
+the GPU's driver. It is the first time it has failed, so it is recorded
+here and watched, not fixed blind.

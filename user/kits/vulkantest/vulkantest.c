@@ -14,8 +14,8 @@
  *         lens of `focal` (the clip space's x and y over the eye's z),
  *         each face an 8 by 8 checkerboard of the two colours read from a
  *         texture, nearest texel, with a depth buffer, in a `CUBE` square;
- *     window(yaw, pitch, distance, focal, r0, g0, b0, r1, g1, b1, frames, step)
- *         the same cube in a `CUBE` square window (G3), through
+ *     window(yaw, pitch, distance, focal, r0, g0, b0, r1, g1, b1, frames, step[, side])
+ *         the same cube in a square window `side` across, `CUBE` unless said (G3), through
  *         VK_KOSMOS_surface and a swapchain: `frames` frames presented, the
  *         cube turned `step` further in yaw each, to `yaw` at the last -
  *         what it says is the surface's extent, the swapchain's images and
@@ -1099,7 +1099,7 @@ static double seconds(void)
 }
 
 static void window(double yaw, double pitch, double distance, double focal,
-                   const uint8_t colours[2][3], int frames, double step)
+                   const uint8_t colours[2][3], int frames, double step, uint32_t size)
 {
     struct vk *v = &shown.v;
     PFN_vkGetInstanceProcAddr gipa = vk_icdGetInstanceProcAddr;
@@ -1119,7 +1119,7 @@ static void window(double yaw, double pitch, double distance, double focal,
         goto done;
     }
 
-    shown.window = kw_open("Vulkan cube", CUBE, CUBE, 0);
+    shown.window = kw_open("Vulkan cube", size, size, 0);
     if (shown.window == NULL) {
         say(" failed=window/%s", kw_why());
         goto done;
@@ -1168,8 +1168,8 @@ static void window(double yaw, double pitch, double distance, double focal,
         say(" failed=no-B8G8R8A8_UNORM");
         goto done;
     }
-    if (caps.currentExtent.width != CUBE || caps.currentExtent.height != CUBE) {
-        say(" failed=window-not-%ux%u", CUBE, CUBE);
+    if (caps.currentExtent.width != size || caps.currentExtent.height != size) {
+        say(" failed=window-not-%ux%u", size, size);
         goto done;
     }
 
@@ -1206,7 +1206,7 @@ static void window(double yaw, double pitch, double distance, double focal,
 
     VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
     STEP(v->vkCreateFence(v->device, &fci, NULL, &shown.fence), "fence");
-    if (!scene_make(v, &shown.s, format, CUBE, colours)) {
+    if (!scene_make(v, &shown.s, format, size, colours)) {
         goto done;
     }
 
@@ -1332,17 +1332,22 @@ static int l_window(lua_State *L)
     double distance = luaL_checknumber(L, 3), focal = luaL_checknumber(L, 4);
     lua_Integer frames = luaL_checkinteger(L, 11);
     double step = luaL_checknumber(L, 12);
+    /* The window's side, `CUBE` unless said: G7c's frames a second are
+     * measured on a large one too (`testing.md` 18.936). */
+    lua_Integer size = luaL_optinteger(L, 13, CUBE);
     uint8_t colours[2][3];
 
     luaL_argcheck(L, distance > NEAR + 2.0 && distance < FAR - 2.0, 3,
                   "the cube must be between the near and far planes");
     luaL_argcheck(L, frames >= 1 && frames <= 100000, 11, "frames from 1");
+    luaL_argcheck(L, size >= 16 && size <= 4096, 13, "a side from 16 to 4096");
     for (int i = 0; i < 6; i++) {
         colours[i / 3][i % 3] = byte_at(L, 5 + i);
     }
 
     hand_console(L);
-    window(yaw, pitch, distance, focal, (const uint8_t (*)[3])colours, (int)frames, step);
+    window(yaw, pitch, distance, focal, (const uint8_t (*)[3])colours, (int)frames, step,
+           (uint32_t)size);
     lua_pushstring(L, said);
     return 1;
 }
