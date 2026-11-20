@@ -3335,13 +3335,18 @@ $(GEN)/wallpapers.c: $(WALLPAPER_FILES) $(WALLPAPER_LIST) tools/assets2c.py
 FILTER_LISTS := $(if $(FILTERS),$(sort $(wildcard assets/filters/*.txt)))
 FILTER_RULES := $(patsubst assets/filters/%.txt,$(GEN)/filters/%.json.gz,$(FILTER_LISTS))
 
+# Which lists the table in `$(GEN)` was made from: written by the rule that
+# makes it, and only compared here. `FILTERS=` changes the lists without
+# changing `$(GEN)`, and every make parses this file - `make FILTERS=
+# x86-build` among them, at the AArch64 default - so a list rewritten at
+# parse time was emptied and filled again on every gate, and AArch64's
+# 10 MB table compiled and its image relinked each time: 18 s with nothing
+# changed (`testing.md` 18.937).
 FILTER_LIST := $(GEN)/filters.list
-$(shell mkdir -p $(GEN); [ "$$(cat $(FILTER_LIST) 2>/dev/null)" = '$(FILTER_LISTS)' ] \
-        || printf '%s' '$(FILTER_LISTS)' > $(FILTER_LIST))
+FILTER_STALE := $(shell [ "$$(cat $(FILTER_LIST) 2>/dev/null)" = '$(FILTER_LISTS)' ] || echo filters-stale)
 
-$(FILTER_LIST):
-	@mkdir -p $(dir $@)
-	@printf '%s' '$(FILTER_LISTS)' > $@
+.PHONY: filters-stale
+filters-stale:
 
 $(GEN)/filters/%.json.gz: assets/filters/%.txt user/lib/filters.lua user/lib/json.lua \
                           tools/filters_build.lua $(HOSTDIR)/lua
@@ -3350,9 +3355,10 @@ $(GEN)/filters/%.json.gz: assets/filters/%.txt user/lib/filters.lua user/lib/jso
 	$(HOSTDIR)/lua tools/filters_build.lua $< $(@:.gz=)
 	gzip -9 -n -f $(@:.gz=)
 
-$(GEN)/filters.c: $(FILTER_RULES) $(FILTER_LIST) tools/assets2c.py
+$(GEN)/filters.c: $(FILTER_RULES) $(FILTER_STALE) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py filters_table $@ $(FILTER_RULES)
+	@printf '%s' '$(FILTER_LISTS)' > $(FILTER_LIST)
 
 $(GEN)/fonts.c: $(FONT_FILES) $(FONT_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
@@ -6386,24 +6392,37 @@ GATE_ARM_APPS ?= 1
 # where B1's two rules take 72 ms. `FILTERS=` on the command line empties
 # the table; the lists' conversion is held by `tools/test_filters.lua`, and
 # their compile is measured on the M700.
+#
+# **The order, and what runs beside what** (`testing.md` 18.937). The two
+# x86-64 builds stay one after the other: they share `build/gen-x86_64` and
+# Mesa's stamp. Once they are done, AArch64's test image and applications
+# are built beside the sticks - which only read `build/x86_64`, and are
+# made fresh every gate because the suites boot them and write to them -
+# and the four sticks are made side by side, each one's own temporary
+# files named after it.
 gate-images: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/llm_answer
-	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
-	@$(if $(filter 1,$(GATE_ARM_APPS)),$(MAKE) --no-print-directory -j$(J) TEST=1 apps,echo "gate-images: ARM's applications left out - no suite chosen reads them")
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory -j$(J) FILTERS= x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory -j$(J) ARCH=x86_64 TEST=1 apps >/dev/null && \
-	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
-	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
-	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
-	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
-	    python3 tools/netboot.py build/x86_64/kosmos.bin --loader $(EFI_LOADER) --stick build/x86_64/kosmos-uefi-home.img --out build/x86_64/netboot-test >/dev/null && \
-	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-video.img --loader $(EFI_LOADER) video=1024x768 >/dev/null && \
-	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
-	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null; \
+	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null; \
 	else \
 	    echo "SKIP: the x86-64 images, because x86_64-elf-gcc is not installed."; \
 	fi
+	@( $(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf && \
+	   $(if $(filter 1,$(GATE_ARM_APPS)),$(MAKE) --no-print-directory -j$(J) TEST=1 apps,echo "gate-images: ARM's applications left out - no suite chosen reads them") ) & arm=$$!; \
+	sticks=0; \
+	if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
+	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
+	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && { \
+	        python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null & s1=$$!; \
+	        python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-video.img --loader $(EFI_LOADER) video=1024x768 >/dev/null & s2=$$!; \
+	        python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null & s3=$$!; \
+	        python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
+	        python3 tools/netboot.py build/x86_64/kosmos.bin --loader $(EFI_LOADER) --stick build/x86_64/kosmos-uefi-home.img --out build/x86_64/netboot-test >/dev/null; \
+	        s4=$$?; wait $$s1 && wait $$s2 && wait $$s3 && [ $$s4 = 0 ]; } || sticks=1; \
+	fi; \
+	wait $$arm && [ $$sticks = 0 ]
 
 # **The tests, in five to ten minutes** - Diego, 18 September 2026: "i dont
 # want 40 minutes tests any more, 5 to 10 minutes max from now on". The same

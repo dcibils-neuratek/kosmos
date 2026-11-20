@@ -12029,7 +12029,9 @@ a tick. **G7e built in 0.12.15** (`testing.md` 18.935): the GPU's interrupt.
 Submit to fence is 0.22 ms in the middle, against 8 ms. **G7 done; G8, GL
 and WebGL on the M700, next** - and the flight simulator after G7, once
 Diego has agreed its design.
-**The gate in ten minutes again** (`testing.md` 18.935; Diego's rule, *How to
+**The gate in ten minutes again** - back to 548 s in 0.12.18 (`testing.md`
+18.937: the images' step 137 s to 43, a filter list every make rewrote).
+What follows is the room still to win. (`testing.md` 18.935; Diego's rule, *How to
 work here*). 10:24 to 11:16 over the last three gates. It is held by
 capacity, 7,102 suite-seconds over twelve slots plus 60 s of images, so
 splitting a long suite gains nothing. The suite-seconds have to come down:
@@ -12053,6 +12055,17 @@ Owed from G7c:
   processor's copy is 0.8 ms against the GPU's 1.05 (18.936), so it is
   now almost half a frame. Rendering straight into the window's buffer,
   or the compositor sampling the GPU's image (G9), removes it.
+  The shape found on 20 November, not built. Mesa's WSI already asks a
+  backend for the memory its blit lands in (`alloc_shm`, imported as host
+  memory). Three pieces would hand it the window's own two buffers:
+  `kw_surface` says the region and offset its pixels lie in (the surface
+  knows both: `region_plus_one`, `offset`); anv's Kosmos backend binds a
+  pointer it is handed when it lies in such a region (`gem_create_userptr`,
+  which refuses everything now); and acquire hands the application the
+  swapchain image whose buffer the window will show next, `draw_into`.
+  Open: the surface starts under the band, not on a page, and anv wants a
+  host pointer on one; and the pitch is the window's, which Mesa's linear
+  stride must equal.
 - **Restarting a machine whose telnetd is wedged.** The Terminal's
   `restart` says "this process does not hold that device", and the
   launcher pad's Restart button did nothing when clicked over VNC. Both

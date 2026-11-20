@@ -5210,3 +5210,14 @@ nothing to draw.
 **Next.** At large sizes, copying the finished picture into the window
 now takes almost as long as drawing it. Drawing straight into the window
 removes that copy.
+
+## 20 November 2026 - The tests back under ten minutes
+
+**In short.** Before running its tests, the gate builds every system image
+they use. That step had grown to over two minutes, mostly by redoing work
+for nothing. A small file saying which ad-block lists one image was built
+with was rewritten by every build, including builds of other images. So
+the 10 MB table made from those lists was compiled again every time.
+Fixing that, and building some images side by side, took the step from
+137 seconds to 43. The whole gate is 9 minutes 8 seconds, inside Diego's
+ten. 0.12.18.

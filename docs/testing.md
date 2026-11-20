@@ -39172,3 +39172,51 @@ kept as `build/gate/failed/0.12.17-1120-031530-x86-queries.log`), and
 passed alone, all 38 of its checks, in 21 s. Nothing it checks stands on
 the GPU's driver. It is the first time it has failed, so it is recorded
 here and watched, not fixed blind.
+
+## 18.937 The gate's images: a list rewritten by every make
+
+**In short:** before any suite starts, the gate builds every image the
+suites boot. That step took 137 s on the 0.12.17 gate, and 89 s after any
+commit. Every make, the wrapper `make FILTERS= x86-build` among them,
+rewrote the AArch64 filter list as it read the Makefile, emptying it, and
+the next AArch64 build regenerated its 10 MB filter table, compiled it and
+relinked the image. The list is now written only by the rule that makes
+the table. The step also builds AArch64's images beside the x86-64 sticks
+and makes the four sticks side by side. After a commit it takes 46 s, and
+10 s when nothing changed. The gate went from 632 s to 548, inside its ten
+minutes again.
+
+- **What showed it**: `filters.list` was newer than the `filters.c` made
+  from it (03:21:18 against 03:21:11). And `make gate-images` run twice
+  with nothing changed compiled `filters.c` and linked `kosmos.elf` both
+  times, 18.6 s each.
+- **The fix** (`Makefile`, the filter lists): the comparison at parse time
+  stays and writes nothing. It names a phony prerequisite,
+  `filters-stale`, when the lists differ, and the table's rule writes the
+  list after making the table. `FILTERS=` still changes the table when an
+  image is built with it, since the lists then differ.
+- **The order** (`gate-images`): the two x86-64 builds, the applications
+  and the loader first, one after the other as before (they share
+  `build/gen-x86_64` and Mesa's stamp). Then AArch64's test image and
+  applications in the background while the sticks are made, which only
+  read `build/x86_64`. The sticks are still made fresh every gate, since
+  the suites boot them and write to them. Three at once, and the `/Home`
+  stick with the netboot tree after it; `mkusb_image.py` names its
+  temporary files after its output, so they do not meet.
+- **The relinks after a commit remain**, about 43 s of the 46: a commit
+  changes `version.c`, and every image that carries the runtime says which
+  build it speaks. That is what the step is for.
+
+```
+make gate-images, this Mac:            before     after
+  nothing changed                       18.6 s     10.2 s
+  after a commit (KOSMOS_BUILD= set)    89.1 s     45.7 s
+the gate:  0.12.17  images 137 s, 632 s in all (5,713 suite-seconds)
+           0.12.18  images  43 s, 548 s in all (5,827 suite-seconds)
+```
+
+The gate: 124 of 125 suites in 548 s. `x86-notify` failed at its start:
+"the guest never telnetd listening within 120s"
+(`build/gate/failed/0.12.18-1120-033607-x86-notify.log`, the desktop
+loaded, and 123 s spent). Alone it passed, all 20 of its checks, in 65 s.
+Every other suite booted the same image.

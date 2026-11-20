@@ -168,12 +168,9 @@ owed from G7c).
 **G7 is done.** Next is G8 (GL and WebGL on the M700), or the flight
 simulator, once Diego has agreed its design (`docs/flight.md`).
 
-**The gate is a minute over its ten** (10:24 to 11:16). It is held by
-capacity, 7,102 suite-seconds over twelve slots, not by its longest suite,
-so splitting `x86-dock` would not help; `roadmap.md`, *The gate in ten
-minutes again*. The M700
-runs this build at 192.168.1.35 and is restarted as needed (Diego, 19 November:
-"Reboot m700 as needed").
+**The gate is inside its ten minutes again** (0.12.18, 18.937): 548 s.
+Its image step was 137 s, because every make rewrote AArch64's filter
+list and the 10 MB table was compiled again. It is 43 s now.
 
 **Flight, designed for Diego to agree** (19 November): a flight simulator
 over a real city - Esri's satellite imagery on Mapzen's elevation tiles,
