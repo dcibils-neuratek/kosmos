@@ -1,0 +1,885 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+anv on Kosmos's GPU driver (docs/gpu3d.md G7a): a third kernel-driver type,
+INTEL_KMD_TYPE_KOSMOS, beside i915 and Xe. Its code is Kosmos's own, in
+runtime/ports/mesa/ (dev/kosmos/, common/kosmos/, vulkan/kosmos/); what is
+here is every shared file's choice by the type, and what Kosmos lacks:
+
+- the type, chosen for any capability Mesa is handed as an fd; the device's
+  PCI id from the driver's stats and the rest from Mesa's own table, in
+  place of DRM's and virtio's paths; engines, hwconfig, the timestamp
+  register and protected contexts answered without an ioctl;
+- anv finding its device by asking for /Devices/gpu (the instance's
+  enumerate hook) rather than opening DRM nodes, keeping the capability for
+  the process rather than closing it, no device numbers, Kosmos's backend,
+  memory types, parameters and sync types (a point and Mesa's timelines
+  over it - three in the table, not two), and Xe's side of every other
+  choice: no relocations, addresses chosen by anv and bound;
+- a buffer object's mapping given back as a region leaving the share
+  window;
+- no build-id in a static image: the driver named by Mesa's version;
+- util's futex on Nebula's, os_mman.h and vk_image's DRM-format modifier
+  path for a system called kosmos, drm.h's request encoding from the
+  refused sys/ioctl.h, and no regex, sysfs or fifos for anv's debug
+  options, the OA counters or INTEL_MEASURE's control file.
+
+i915's and Xe's code stays in the build, compiled against the refused ioctl,
+and is never reached.
+
+diff -ruN a/include/drm-uapi/drm.h b/include/drm-uapi/drm.h
+--- a/include/drm-uapi/drm.h
++++ b/include/drm-uapi/drm.h
+@@ -47,7 +47,12 @@
+ #include <sys/types.h>
+ #if defined(__GNU__)
+ #include <sys/ioctl.h>
+-#elif !defined(__kosmos__)
++#elif defined(__kosmos__)
++/* Kosmos: the refused header, for `_IO`'s encoding of a request's number;
++ * its `ioctl` refuses, and the Intel driver's own path never reaches one
++ * (docs/gpu3d.md G7a). */
++#include <sys/ioctl.h>
++#else
+ #include <sys/ioccom.h>
+ #endif
+ typedef int8_t   __s8;
+diff -ruN a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -1771,7 +1771,9 @@
+ 
+ if cc.has_function('dl_iterate_phdr')
+   pre_args += '-DHAVE_DL_ITERATE_PHDR'
+-elif with_intel_vk or with_intel_hasvk
++elif (with_intel_vk or with_intel_hasvk) and host_machine.system() != 'kosmos'
++  # Kosmos: an image is static and carries no build-id; anv is named by
++  # its version instead (anv_physical_device_init_uuids).
+   error('Intel "Anvil" Vulkan driver requires the dl_iterate_phdr function')
+ endif
+ 
+diff -ruN a/src/intel/common/intel_engine.c b/src/intel/common/intel_engine.c
+--- a/src/intel/common/intel_engine.c
++++ b/src/intel/common/intel_engine.c
+@@ -28,6 +28,7 @@
+ #include "intel_engine.h"
+ #include "i915/intel_engine.h"
+ #include "xe/intel_engine.h"
++#include "kosmos/intel_engine.h"
+ 
+ struct intel_query_engine_info *
+ intel_engine_get_info(int fd, enum intel_kmd_type type)
+@@ -37,6 +38,8 @@
+       return i915_engine_get_info(fd);
+    case INTEL_KMD_TYPE_XE:
+       return xe_engine_get_info(fd);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return intel_kosmos_engine_get_info(fd);
+    default:
+       UNREACHABLE("Missing");
+       return NULL;
+@@ -84,6 +87,8 @@
+       return i915_engines_is_guc_semaphore_functional(fd, info);
+    case INTEL_KMD_TYPE_XE:
+       return xe_engines_is_guc_semaphore_functional(fd, info);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return false;                     /* no GuC */
+    default:
+       UNREACHABLE("Missing");
+       return false;
+diff -ruN a/src/intel/common/intel_gem.c b/src/intel/common/intel_gem.c
+--- a/src/intel/common/intel_gem.c
++++ b/src/intel/common/intel_gem.c
+@@ -109,6 +109,8 @@
+       return i915_gem_read_render_timestamp(fd, value);
+    case INTEL_KMD_TYPE_XE:
+       return xe_gem_read_render_timestamp(fd, value);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return false;                     /* no register reads for a program */
+    default:
+       UNREACHABLE("Missing");
+       return false;
+@@ -135,6 +137,8 @@
+                                                      cpu_timestamp,
+                                                      gpu_timestamp,
+                                                      cpu_delta);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return false;
+    default:
+       UNREACHABLE("Missing");
+       return false;
+@@ -156,6 +160,8 @@
+       return i915_gem_supports_protected_context(fd);
+    case INTEL_KMD_TYPE_XE:
+       return xe_gem_supports_protected_exec_queue(fd);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return false;
+    default:
+       UNREACHABLE("Missing");
+       return false;
+@@ -196,6 +202,8 @@
+       return i915_gem_can_render_on_fd(fd);
+    case INTEL_KMD_TYPE_XE:
+       return xe_gem_can_render_on_fd(fd);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return fd >= 0;
+    default:
+       UNREACHABLE("Missing");
+       return false;
+diff -ruN a/src/intel/common/intel_measure.c b/src/intel/common/intel_measure.c
+--- a/src/intel/common/intel_measure.c
++++ b/src/intel/common/intel_measure.c
+@@ -144,6 +144,11 @@
+          config.end_frame = config.start_frame + count_frame;
+       }
+ 
++#if defined(__kosmos__)
++      /* Kosmos: no fifos; measuring runs without a control file. */
++      if (control_path)
++         fprintf(stderr, "INTEL_MEASURE control= needs a fifo, which Kosmos has none of\n");
++#else
+       if (control_path) {
+          control_path += 8;
+          if (mkfifoat(AT_FDCWD, control_path, O_CREAT | S_IRUSR | S_IWUSR)) {
+@@ -167,6 +172,7 @@
+           */
+          config.enabled = false;
+       }
++#endif
+ 
+       if (interval_s) {
+          interval_s += 9;
+diff -ruN a/src/intel/common/meson.build b/src/intel/common/meson.build
+--- a/src/intel/common/meson.build
++++ b/src/intel/common/meson.build
+@@ -49,6 +49,14 @@
+ 
+ libintel_common_links = [libisl]
+ 
++# Kosmos's kernel-driver type (docs/gpu3d.md G7a).
++if host_machine.system() == 'kosmos'
++  files_libintel_common += files(
++    'kosmos/intel_engine.c',
++    'kosmos/intel_engine.h',
++  )
++endif
++
+ libintel_common = static_library(
+   'intel_common',
+   [files_libintel_common, genX_xml_h, sha1_h],
+diff -ruN a/src/intel/dev/intel_device_info.c b/src/intel/dev/intel_device_info.c
+--- a/src/intel/dev/intel_device_info.c
++++ b/src/intel/dev/intel_device_info.c
+@@ -35,6 +35,7 @@
+ #include "intel_wa.h"
+ #include "i915/intel_device_info.h"
+ #include "xe/intel_device_info.h"
++#include "kosmos/intel_device_info.h"
+ #include "virtio/intel_virtio.h"
+ 
+ #include "common/intel_gem.h"
+@@ -1919,6 +1920,14 @@
+     * rely on an ioctl to get PCI device id for the next step when skipping
+     * this drm query.
+     */
++#if defined(__kosmos__)
++   uint32_t kosmos_device, kosmos_revision;
++   if (!intel_device_info_kosmos_get_pci_id(fd, &kosmos_device, &kosmos_revision) ||
++       !intel_device_info_init_common(kosmos_device, false, devinfo))
++      return false;
++   devinfo->pci_device_id = kosmos_device;
++   devinfo->pci_revision_id = kosmos_revision;
++#else
+    if (is_intel_virtio_fd(fd)) {
+       if (!intel_virtio_get_pci_device_info(fd, devinfo))
+          return false;
+@@ -1948,6 +1957,7 @@
+       devinfo->pci_revision_id = drmdev->deviceinfo.pci->revision_id;
+       drmFreeDevice(&drmdev);
+    }
++#endif
+ 
+    if ((min_ver > 0 && devinfo->ver < min_ver) || (max_ver > 0 && devinfo->ver > max_ver))
+       return false;
+@@ -1974,6 +1984,12 @@
+    case INTEL_KMD_TYPE_I915:
+       ret = intel_device_info_i915_get_info_from_fd(fd, devinfo);
+       break;
++   case INTEL_KMD_TYPE_KOSMOS:
++      /* The table's topology, as for a kernel without topology queries. */
++      ret = intel_device_info_kosmos_get_info_from_fd(fd, devinfo);
++      if (ret)
++         fill_masks(devinfo);
++      break;
+    case INTEL_KMD_TYPE_XE:
+       ret = intel_device_info_xe_get_info_from_fd(fd, devinfo);
+       if (devinfo->verx10 < 200) {
+@@ -2028,6 +2044,9 @@
+    case INTEL_KMD_TYPE_XE:
+       ret = intel_device_info_xe_query_regions(fd, devinfo, true);
+       break;
++   case INTEL_KMD_TYPE_KOSMOS:
++      ret = intel_device_info_compute_system_memory(devinfo, true);
++      break;
+    default:
+       ret = false;
+    }
+diff -ruN a/src/intel/dev/intel_hwconfig.c b/src/intel/dev/intel_hwconfig.c
+--- a/src/intel/dev/intel_hwconfig.c
++++ b/src/intel/dev/intel_hwconfig.c
+@@ -374,6 +374,8 @@
+       return intel_device_info_i915_query_hwconfig(fd, hwconfig_len);
+    case INTEL_KMD_TYPE_XE:
+       return intel_device_info_xe_query_hwconfig(fd, hwconfig_len);
++   case INTEL_KMD_TYPE_KOSMOS:
++      return NULL;                      /* Gen9 has no hwconfig table */
+    default:
+       UNREACHABLE("unknown kmd type");
+       return NULL;
+diff -ruN a/src/intel/dev/intel_kmd.c b/src/intel/dev/intel_kmd.c
+--- a/src/intel/dev/intel_kmd.c
++++ b/src/intel/dev/intel_kmd.c
+@@ -32,6 +32,10 @@
+ intel_get_kmd_type(int fd)
+ {
+    enum intel_kmd_type type = INTEL_KMD_TYPE_INVALID;
++#if defined(__kosmos__)
++   /* Kosmos: the fd is the process's capability to /Devices/gpu. */
++   return fd >= 0 ? INTEL_KMD_TYPE_KOSMOS : INTEL_KMD_TYPE_INVALID;
++#endif
+    drmVersionPtr version = drmGetVersion(fd);
+ 
+    if (!version)
+diff -ruN a/src/intel/dev/intel_kmd.h b/src/intel/dev/intel_kmd.h
+--- a/src/intel/dev/intel_kmd.h
++++ b/src/intel/dev/intel_kmd.h
+@@ -32,6 +32,7 @@
+    INTEL_KMD_TYPE_I915,
+    INTEL_KMD_TYPE_XE,
+    INTEL_KMD_TYPE_STUB, /* Only used by ANV to run tests */
++   INTEL_KMD_TYPE_KOSMOS, /* Kosmos's GPU driver, through the GPU Kit */
+    INTEL_KMD_TYPE_LAST
+ };
+ 
+diff -ruN a/src/intel/dev/meson.build b/src/intel/dev/meson.build
+--- a/src/intel/dev/meson.build
++++ b/src/intel/dev/meson.build
+@@ -18,6 +18,14 @@
+   'intel_kmd.h',
+ )
+ 
++# Kosmos's kernel-driver type (docs/gpu3d.md G7a).
++if host_machine.system() == 'kosmos'
++  files_libintel_dev += files(
++    'kosmos/intel_device_info.c',
++    'kosmos/intel_device_info.h',
++  )
++endif
++
+ inc_intel_dev_virtio = []
+ link_intel_dev_virtio = []
+ 
+diff -ruN a/src/intel/perf/intel_perf.c b/src/intel/perf/intel_perf.c
+--- a/src/intel/perf/intel_perf.c
++++ b/src/intel/perf/intel_perf.c
+@@ -130,7 +130,10 @@
+ static bool
+ is_dir_or_link(const struct dirent *entry, const char *parent_dir)
+ {
+-#ifdef HAVE_DIRENT_D_TYPE
++#if defined(__kosmos__)
++   /* Kosmos: no sysfs, so no OA counters' configurations to find. */
++   return false;
++#elif defined(HAVE_DIRENT_D_TYPE)
+    return entry->d_type == DT_DIR || entry->d_type == DT_LNK;
+ #else
+    struct stat st;
+@@ -155,6 +158,13 @@
+    if (INTEL_DEBUG(DEBUG_NO_OACONFIG))
+       return true;
+ 
++#if defined(__kosmos__)
++   /* Kosmos: no sysfs; the OA counters are not offered. */
++   (void)sb; (void)min; (void)maj; (void)drmdir; (void)drm_entry; (void)len;
++   (void)fd;
++   return false;
++#else
++
+    if (fstat(fd, &sb)) {
+       DBG("Failed to stat DRM fd\n");
+       return false;
+@@ -204,6 +214,7 @@
+        maj, min);
+ 
+    return false;
++#endif
+ }
+ 
+ static bool
+@@ -756,6 +767,9 @@
+    /* TODO: Support performance metrics */
+    if (devinfo->is_virtio)
+       return false;
++   /* Kosmos: the OA unit is not offered to programs. */
++   if (devinfo->kmd_type == INTEL_KMD_TYPE_KOSMOS)
++      return false;
+ 
+    perf->devinfo = devinfo;
+ 
+diff -ruN a/src/intel/vulkan/anv_allocator.c b/src/intel/vulkan/anv_allocator.c
+--- a/src/intel/vulkan/anv_allocator.c
++++ b/src/intel/vulkan/anv_allocator.c
+@@ -29,6 +29,7 @@
+ 
+ #include "anv_private.h"
+ #include "anv_slab_bo.h"
++#include "kosmos/anv_kosmos.h"
+ 
+ #include "common/intel_aux_map.h"
+ #include "util/anon_file.h"
+@@ -1911,7 +1912,11 @@
+       }
+    } else {
+       VG(VALGRIND_FREELIKE_BLOCK(map, 0));
++#if DETECT_OS_KOSMOS
++      anv_kosmos_unmap(map, map_size);   /* a region, out of the share window */
++#else
+       munmap(map, map_size);
++#endif
+    }
+    return VK_SUCCESS;
+ }
+diff -ruN a/src/intel/vulkan/anv_batch_chain.c b/src/intel/vulkan/anv_batch_chain.c
+--- a/src/intel/vulkan/anv_batch_chain.c
++++ b/src/intel/vulkan/anv_batch_chain.c
+@@ -27,7 +27,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ 
+-#include <xf86drm.h>
++#include "util/libdrm.h"
+ 
+ #include "anv_private.h"
+ #include "anv_measure.h"
+diff -ruN a/src/intel/vulkan/anv_device.c b/src/intel/vulkan/anv_device.c
+--- a/src/intel/vulkan/anv_device.c
++++ b/src/intel/vulkan/anv_device.c
+@@ -27,7 +27,7 @@
+ #include <fcntl.h>
+ #include "drm-uapi/drm_fourcc.h"
+ #include "drm-uapi/drm.h"
+-#include <xf86drm.h>
++#include "util/libdrm.h"
+ 
+ #include "anv_private.h"
+ #include "anv_measure.h"
+@@ -48,6 +48,7 @@
+ 
+ #include "i915/anv_device.h"
+ #include "xe/anv_device.h"
++#include "kosmos/anv_kosmos.h"
+ 
+ #include "genxml/gen70_pack.h"
+ #include "genxml/genX_bits.h"
+@@ -261,6 +262,10 @@
+       return anv_i915_device_setup_context(device, pCreateInfo, num_queues);
+    case INTEL_KMD_TYPE_XE:
+       return anv_xe_device_setup_vm(device);
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      return anv_kosmos_device_setup(device);
++#endif
+    default:
+       UNREACHABLE("Missing");
+       return VK_ERROR_UNKNOWN;
+@@ -278,6 +283,10 @@
+          return intel_gem_destroy_context(device->fd, device->context_id);
+    case INTEL_KMD_TYPE_XE:
+       return anv_xe_device_destroy_vm(device);
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      return anv_kosmos_device_destroy(device);
++#endif
+    default:
+       UNREACHABLE("Missing");
+       return false;
+@@ -814,7 +823,11 @@
+    device->kmd_backend = anv_kmd_backend_get(device->info->kmd_type);
+ 
+    /* XXX(chadv): Can we dup() physicalDevice->fd here? */
++#if DETECT_OS_KOSMOS
++   device->fd = physical_device->local_fd;     /* one capability, shared */
++#else
+    device->fd = open(physical_device->path, O_RDWR | O_CLOEXEC);
++#endif
+    if (device->fd == -1) {
+       result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
+       goto fail_device;
+@@ -832,17 +845,26 @@
+    case INTEL_KMD_TYPE_XE:
+       device->vk.check_status = anv_xe_device_check_status;
+       break;
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      device->vk.check_status = anv_kosmos_device_check_status;
++      break;
++#endif
+    default:
+       UNREACHABLE("Missing");
+    }
+ 
++#if !DETECT_OS_KOSMOS
+    device->vk.copy_sync_payloads = vk_drm_syncobj_copy_payloads;
++#endif
+    device->vk.command_buffer_ops = &anv_cmd_buffer_ops;
+ 
++#if !DETECT_OS_KOSMOS
+    if (physical_device->info.is_virtio)
+       device->vk.sync = intel_virtio_sync_provider(device->fd);
+    else
+       vk_device_set_drm_fd(&device->vk, device->fd);
++#endif
+ 
+    uint32_t num_queues = 0;
+    for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
+@@ -1356,8 +1378,10 @@
+  fail_context_id:
+    anv_device_destroy_context_or_vm(device);
+  fail_fd:
++#if !DETECT_OS_KOSMOS
+    intel_virtio_unref_fd(device->fd);
+    close(device->fd);
++#endif
+  fail_device:
+    vk_device_finish(&device->vk);
+  fail_alloc:
+@@ -1510,7 +1534,9 @@
+       }
+    }
+ 
++#if !DETECT_OS_KOSMOS
+    close(device->fd);
++#endif
+ 
+    vk_device_finish(&device->vk);
+    vk_free(&device->vk.alloc, device);
+diff -ruN a/src/intel/vulkan/anv_gem.c b/src/intel/vulkan/anv_gem.c
+--- a/src/intel/vulkan/anv_gem.c
++++ b/src/intel/vulkan/anv_gem.c
+@@ -122,6 +122,9 @@
+                                                             alloc_flags,
+                                                             bo_flags);
+    case INTEL_KMD_TYPE_XE:
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++#endif
+       *bo_flags = device->kmd_backend->bo_alloc_flags_to_bo_flags(device, alloc_flags);
+       return VK_SUCCESS;
+    default:
+diff -ruN a/src/intel/vulkan/anv_instance.c b/src/intel/vulkan/anv_instance.c
+--- a/src/intel/vulkan/anv_instance.c
++++ b/src/intel/vulkan/anv_instance.c
+@@ -3,6 +3,7 @@
+  */
+ 
+ #include "anv_private.h"
++#include "kosmos/anv_kosmos.h"
+ #include "anv_api_version.h"
+ 
+ static const struct debug_control debug_control[] = {
+@@ -248,6 +249,9 @@
+       goto fail_init;
+ 
+    instance->vk.physical_devices.try_create_for_drm = anv_physical_device_try_create;
++#if DETECT_OS_KOSMOS
++   instance->vk.physical_devices.enumerate = anv_kosmos_enumerate;
++#endif
+    instance->vk.physical_devices.destroy = anv_physical_device_destroy;
+ 
+    VG(VALGRIND_CREATE_MEMPOOL(instance, 0, false));
+diff -ruN a/src/intel/vulkan/anv_kmd_backend.c b/src/intel/vulkan/anv_kmd_backend.c
+--- a/src/intel/vulkan/anv_kmd_backend.c
++++ b/src/intel/vulkan/anv_kmd_backend.c
+@@ -36,6 +36,10 @@
+       return anv_xe_kmd_backend_get();
+    case INTEL_KMD_TYPE_STUB:
+       return anv_stub_kmd_backend_get();
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      return anv_kosmos_kmd_backend_get();
++#endif
+    default:
+       return NULL;
+    }
+diff -ruN a/src/intel/vulkan/anv_kmd_backend.h b/src/intel/vulkan/anv_kmd_backend.h
+--- a/src/intel/vulkan/anv_kmd_backend.h
++++ b/src/intel/vulkan/anv_kmd_backend.h
+@@ -136,3 +136,4 @@
+ const struct anv_kmd_backend *anv_i915_kmd_backend_get(void);
+ const struct anv_kmd_backend *anv_xe_kmd_backend_get(void);
+ const struct anv_kmd_backend *anv_stub_kmd_backend_get(void);
++const struct anv_kmd_backend *anv_kosmos_kmd_backend_get(void);
+diff -ruN a/src/intel/vulkan/anv_physical_device.c b/src/intel/vulkan/anv_physical_device.c
+--- a/src/intel/vulkan/anv_physical_device.c
++++ b/src/intel/vulkan/anv_physical_device.c
+@@ -9,6 +9,10 @@
+ #include "dev/intel_debug.h"
+ #include "i915/anv_device.h"
+ #include "xe/anv_device.h"
++#include "kosmos/anv_kosmos.h"
++#if DETECT_OS_KOSMOS
++#include <kosmos_gpu.h>
++#endif
+ 
+ #include "common/intel_common.h"
+ #include "common/intel_uuid.h"
+@@ -24,7 +28,7 @@
+ #include "util/mesa-blake3.h"
+ #include "util/os_misc.h"
+ 
+-#include <xf86drm.h>
++#include "util/libdrm.h"
+ #include <fcntl.h>
+ #ifdef MAJOR_IN_SYSMACROS
+ #include <sys/sysmacros.h>
+@@ -2440,6 +2444,11 @@
+    case INTEL_KMD_TYPE_XE:
+       result = anv_xe_physical_device_init_memory_types(device);
+       break;
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      result = anv_kosmos_physical_device_init_memory_types(device);
++      break;
++#endif
+    case INTEL_KMD_TYPE_I915:
+    default:
+       result = anv_i915_physical_device_init_memory_types(device);
+@@ -2546,9 +2555,22 @@
+    return VK_SUCCESS;
+ }
+ 
++#if DETECT_OS_KOSMOS
++/* Kosmos: an image is static and has no build-id note, so the driver is
++ * named by Mesa's version - which is what a build-id stands for when the
++ * driver cannot be swapped out from under the program that holds it. */
++static const char anv_kosmos_build[] = "anv on Kosmos, Mesa " PACKAGE_VERSION MESA_GIT_SHA1;
++#endif
++
+ static VkResult
+ anv_physical_device_init_uuids(struct anv_physical_device *device)
+ {
++#if DETECT_OS_KOSMOS
++   _mesa_blake3_compute(anv_kosmos_build, sizeof(anv_kosmos_build) - 1,
++                        device->driver_build_sha1);
++   const void *build_id = anv_kosmos_build;
++   unsigned build_id_len = sizeof(anv_kosmos_build) - 1;
++#else
+    const struct build_id_note *note =
+       build_id_find_nhdr_for_addr(anv_physical_device_init_uuids);
+    if (!note) {
+@@ -2563,6 +2585,8 @@
+    }
+ 
+    copy_build_id_to_sha1(device->driver_build_sha1, note);
++   const void *build_id = build_id_data(note);
++#endif
+ 
+    blake3_hasher blake3_ctx;
+    uint8_t blake3[BLAKE3_KEY_LEN];
+@@ -2572,7 +2596,7 @@
+     * invalid.  It needs both a driver build and the PCI ID of the device.
+     */
+    _mesa_blake3_init(&blake3_ctx);
+-   _mesa_blake3_update(&blake3_ctx, build_id_data(note), build_id_len);
++   _mesa_blake3_update(&blake3_ctx, build_id, build_id_len);
+    brw_device_blake3_update(&blake3_ctx, &device->info);
+    bool always_use_bindless = device->instance->drirc.features.always_bindless;
+    _mesa_blake3_update(&blake3_ctx, &always_use_bindless,
+@@ -2806,6 +2830,10 @@
+       return anv_i915_physical_device_get_parameters(device);
+    case INTEL_KMD_TYPE_XE:
+       return anv_xe_physical_device_get_parameters(device);
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      return anv_kosmos_physical_device_get_parameters(device);
++#endif
+    default:
+       UNREACHABLE("Missing");
+       return VK_ERROR_UNKNOWN;
+@@ -2820,13 +2848,28 @@
+    struct anv_instance *instance =
+       container_of(vk_instance, struct anv_instance, vk);
+ 
++#if DETECT_OS_KOSMOS
++   /* Kosmos: no DRM device, and nothing to open - the capability the
++    * program was granted, or none. */
++   const char *primary_path = "/Devices/gpu";
++   const char *path = "/Devices/gpu";
++   (void)drm_device;
++#else
+    const char *primary_path = drm_device->nodes[DRM_NODE_PRIMARY];
+    const char *path = drm_device->nodes[DRM_NODE_RENDER];
++#endif
+    VkResult result;
+    int fd;
+    int master_fd = -1;
+    int ret;
+ 
++#if DETECT_OS_KOSMOS
++   (void)ret;
++   fd = (int)kg_device();
++   if (fd < 0)
++      return VK_ERROR_INCOMPATIBLE_DRIVER;
++   const bool is_virtio = false;
++#else
+    fd = open(path, O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+       if (errno == ENOMEM) {
+@@ -2852,6 +2895,7 @@
+          goto fail_fd;
+       }
+    }
++#endif
+ 
+    struct intel_device_info devinfo;
+    if (!intel_get_device_info_from_fd(fd, &devinfo, 9, -1)) {
+@@ -2986,6 +3030,9 @@
+       (device->info.ver < 20 ||
+        instance->drirc.features.fake_image_compression_control_xe2_plus);
+ 
++#if DETECT_OS_KOSMOS
++   anv_kosmos_physical_device_init_sync_types(device);
++#else
+    if (is_virtio) {
+       struct util_sync_provider *sync = intel_virtio_sync_provider(fd);
+       device->sync_syncobj_type = vk_drm_syncobj_get_type_from_provider(sync);
+@@ -3000,6 +3047,7 @@
+    device->sync_types[0] = &device->sync_syncobj_type;
+    device->sync_types[1] = NULL;
+    device->vk.supported_sync_types = device->sync_types;
++#endif
+ 
+    device->vk.pipeline_cache_import_ops = anv_cache_import_ops;
+ 
+@@ -3015,7 +3063,8 @@
+                                                                device->info.kmd_type,
+                                                                &u64_ignore);
+ 
+-   device->uses_relocs = device->info.kmd_type != INTEL_KMD_TYPE_XE;
++   device->uses_relocs = device->info.kmd_type != INTEL_KMD_TYPE_XE &&
++                         device->info.kmd_type != INTEL_KMD_TYPE_KOSMOS;
+ 
+    /* While xe.ko can use both vm_bind and TR-TT, i915.ko only has TR-TT. */
+    if (!ANV_DEBUG(NO_SPARSE)) {
+@@ -3095,6 +3144,16 @@
+    anv_shader_init_uuid(device);
+ 
+    /* Gather major/minor before WSI. */
++#if DETECT_OS_KOSMOS
++   /* Kosmos: no device node, so no numbers - a display is not reached
++    * through this device, and nothing compares them. */
++   device->has_master = false;
++   device->master_major = 0;
++   device->master_minor = 0;
++   device->has_local = false;
++   device->local_major = 0;
++   device->local_minor = 0;
++#else
+    struct stat st;
+ 
+    if (stat(primary_path, &st) == 0) {
+@@ -3116,6 +3175,7 @@
+       device->local_major = 0;
+       device->local_minor = 0;
+    }
++#endif
+ 
+    device->has_small_bar = anv_physical_device_has_vram(device) &&
+                            device->vram_non_mappable.size != 0;
+@@ -3152,8 +3212,10 @@
+ fail_alloc:
+    vk_free(&instance->vk.alloc, device);
+ fail_fd:
++#if !DETECT_OS_KOSMOS           /* the GPU Kit's capability, kept for the process */
+    intel_virtio_unref_fd(fd);
+    close(fd);
++#endif
+    if (master_fd != -1)
+       close(master_fd);
+    return result;
+@@ -3172,8 +3234,10 @@
+    ralloc_free(device->compiler);
+    release_physical_device_budget(device->memory.heaps_budget);
+    intel_perf_free(device->perf);
++#if !DETECT_OS_KOSMOS
+    intel_virtio_unref_fd(device->local_fd);
+    close(device->local_fd);
++#endif
+    if (device->master_fd >= 0)
+       close(device->master_fd);
+    vk_physical_device_finish(&device->vk);
+diff -ruN a/src/intel/vulkan/anv_private.h b/src/intel/vulkan/anv_private.h
+--- a/src/intel/vulkan/anv_private.h
++++ b/src/intel/vulkan/anv_private.h
+@@ -1684,7 +1684,7 @@
+     uint8_t                                     rt_uuid[VK_UUID_SIZE];
+ 
+     struct vk_sync_type                         sync_syncobj_type;
+-    const struct vk_sync_type *                 sync_types[2];
++    const struct vk_sync_type *                 sync_types[3]; /* Kosmos: point, timeline, NULL */
+ 
+     struct wsi_device                       wsi_device;
+     int                                         local_fd;
+diff -ruN a/src/intel/vulkan/anv_util.c b/src/intel/vulkan/anv_util.c
+--- a/src/intel/vulkan/anv_util.c
++++ b/src/intel/vulkan/anv_util.c
+@@ -38,7 +38,8 @@
+ #include "compiler/jay/jay.h"
+ #include "shaders/float64_spv.h"
+ 
+-#ifdef NO_REGEX
++#if defined(NO_REGEX) || defined(__kosmos__)
++/* Kosmos: no regex.h; the attach option never matches (patch 0003). */
+ typedef int regex_t;
+ #define REG_EXTENDED 0
+ #define REG_NOSUB 0
+@@ -46,6 +47,7 @@
+ static inline int regcomp(regex_t *r, const char *s, int f) { return 0; }
+ static inline int regexec(regex_t *r, const char *s, int n, void *p, int f) { return REG_NOMATCH; }
+ static inline void regfree(regex_t* r) {}
++static inline size_t regerror(int e, const regex_t *r, char *b, size_t n) { if (n) b[0] = 0; return 0; }
+ #else
+ #include <regex.h>
+ #endif
+diff -ruN a/src/intel/vulkan/meson.build b/src/intel/vulkan/meson.build
+--- a/src/intel/vulkan/meson.build
++++ b/src/intel/vulkan/meson.build
+@@ -286,6 +286,11 @@
+ 
+ anv_deps += idep_intel_driver_ds_headers
+ 
++# Kosmos: the third kernel-driver type (docs/gpu3d.md G7).
++if host_machine.system() == 'kosmos'
++  libanv_files += files('kosmos/anv_kosmos.c')
++endif
++
+ libanv_common = static_library(
+   'anv_common',
+   [
+diff -ruN a/src/util/futex.c b/src/util/futex.c
+--- a/src/util/futex.c
++++ b/src/util/futex.c
+@@ -114,6 +114,48 @@
+    return futex(addr, FUTEX_WAIT, value, &tsrel, NULL);
+ }
+ 
++#elif defined(__kosmos__)
++
++/* Kosmos: Nebula's futex, whose wait is bounded in scheduler ticks from
++ * now where Mesa's deadline is an instant on CLOCK_MONOTONIC - the POSIX
++ * layer's conversion, as its pthreads use. */
++#include <errno.h>
++#include <time.h>
++#include <kosmos.h>
++
++unsigned long posix_ticks_for_ns(long long ns);
++
++int futex_wake(uint32_t *addr, int32_t count)
++{
++   return (int)kosmos_futex_wake(addr, (unsigned long)count);
++}
++
++int futex_wait(uint32_t *addr, int32_t value, const struct timespec *timeout)
++{
++   unsigned long ticks = 0;
++   if (timeout) {
++      struct timespec now;
++      clock_gettime(CLOCK_MONOTONIC, &now);
++      long long ns = (long long)(timeout->tv_sec - now.tv_sec) * 1000000000LL +
++                     (timeout->tv_nsec - now.tv_nsec);
++      if (ns <= 0) {
++         errno = ETIMEDOUT;
++         return -1;
++      }
++      ticks = posix_ticks_for_ns(ns);
++   }
++   long r = kosmos_futex_wait(addr, (uint32_t)value, ticks);
++   if (r == SYS_TIMED_OUT) {
++      errno = ETIMEDOUT;
++      return -1;
++   }
++   if (r == SYS_NO_CHANGE) {
++      errno = EAGAIN;
++      return -1;
++   }
++   return 0;
++}
++
+ #elif defined(_WIN32) && !defined(WINDOWS_NO_FUTEX)
+ 
+ #include <windows.h>
+diff -ruN a/src/util/futex.h b/src/util/futex.h
+--- a/src/util/futex.h
++++ b/src/util/futex.h
+@@ -33,6 +33,8 @@
+ #define UTIL_FUTEX_SUPPORTED 1
+ #elif defined(__OpenBSD__)
+ #define UTIL_FUTEX_SUPPORTED 1
++#elif defined(__kosmos__)
++#define UTIL_FUTEX_SUPPORTED 1
+ #elif defined(_WIN32) && !defined(WINDOWS_NO_FUTEX)
+ #define UTIL_FUTEX_SUPPORTED 1
+ #else
+diff -ruN a/src/util/os_mman.h b/src/util/os_mman.h
+--- a/src/util/os_mman.h
++++ b/src/util/os_mman.h
+@@ -40,7 +40,7 @@
+ 
+ #include "util/detect_os.h"
+ 
+-#if DETECT_OS_POSIX
++#if DETECT_OS_POSIX || DETECT_OS_KOSMOS
+ #  include <sys/mman.h>
+ #else
+ #  error Unsupported OS
+diff -ruN a/src/vulkan/runtime/vk_image.c b/src/vulkan/runtime/vk_image.c
+--- a/src/vulkan/runtime/vk_image.c
++++ b/src/vulkan/runtime/vk_image.c
+@@ -23,7 +23,7 @@
+ 
+ #include "vk_image.h"
+ 
+-#if DETECT_OS_LINUX || DETECT_OS_BSD
++#if DETECT_OS_LINUX || DETECT_OS_BSD || DETECT_OS_KOSMOS
+ #include <drm-uapi/drm_fourcc.h>
+ #endif
+ 
+@@ -105,7 +105,7 @@
+       vk_find_struct_const(pCreateInfo->pNext, WSI_IMAGE_CREATE_INFO_MESA);
+    image->wsi_legacy_scanout = wsi_info && wsi_info->scanout;
+ 
+-#if DETECT_OS_LINUX || DETECT_OS_BSD
++#if DETECT_OS_LINUX || DETECT_OS_BSD || DETECT_OS_KOSMOS
+    image->drm_format_mod = ((1ULL << 56) - 1) /* DRM_FORMAT_MOD_INVALID */;
+ #endif
+ 
+@@ -185,7 +185,7 @@
+    vk_object_free(device, alloc, image);
+ }
+ 
+-#if DETECT_OS_LINUX || DETECT_OS_BSD
++#if DETECT_OS_LINUX || DETECT_OS_BSD || DETECT_OS_KOSMOS
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_common_GetImageDrmFormatModifierPropertiesEXT(UNUSED VkDevice device,
+                                                  VkImage _image,
+diff -ruN a/src/vulkan/runtime/vk_image.h b/src/vulkan/runtime/vk_image.h
+--- a/src/vulkan/runtime/vk_image.h
++++ b/src/vulkan/runtime/vk_image.h
+@@ -77,7 +77,7 @@
+    /* wsi_image_create_info::scanout */
+    bool wsi_legacy_scanout;
+ 
+-#if DETECT_OS_LINUX || DETECT_OS_BSD
++#if DETECT_OS_LINUX || DETECT_OS_BSD || DETECT_OS_KOSMOS
+    /* VK_EXT_drm_format_modifier
+     *
+     * Initialized by vk_image_create/init() to DRM_FORMAT_MOD_INVALID.  It's

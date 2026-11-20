@@ -20,6 +20,28 @@
 
 #include <errno.h>
 
+/*
+ * **A request's number, as Linux encodes it** - direction, size, type and
+ * number in one word - for a port whose headers name requests: Mesa's DRM
+ * headers, which declare i915's and Xe's whole interface as constants
+ * (`docs/gpu3d.md` G7a). Arithmetic, and no door: the numbers are only
+ * ever handed to the `ioctl` below, which refuses them.
+ */
+#define _IOC_NONE  0U
+#define _IOC_WRITE 1U
+#define _IOC_READ  2U
+#define _IOC(dir, type, nr, size) \
+    (((unsigned long)(dir) << 30) | ((unsigned long)(size) << 16) | \
+     ((unsigned long)(type) << 8) | (unsigned long)(nr))
+#define _IO(type, nr)         _IOC(_IOC_NONE, (type), (nr), 0)
+#define _IOR(type, nr, t)     _IOC(_IOC_READ, (type), (nr), sizeof(t))
+#define _IOW(type, nr, t)     _IOC(_IOC_WRITE, (type), (nr), sizeof(t))
+#define _IOWR(type, nr, t)    _IOC(_IOC_READ | _IOC_WRITE, (type), (nr), sizeof(t))
+#define _IOC_NR(nr)           ((nr) & 0xff)
+#define _IOC_TYPE(nr)         (((nr) >> 8) & 0xff)
+#define _IOC_SIZE(nr)         (((nr) >> 16) & 0x3fff)
+#define _IOC_DIR(nr)          (((nr) >> 30) & 0x3)
+
 static inline int ioctl(int fd, unsigned long request, ...)
 {
     (void)fd;

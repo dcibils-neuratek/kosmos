@@ -159,6 +159,15 @@ move and resize of a strip, or the suite asks the Deskbar (`cells`) for
 where it is. Until then a phase that changes the pins runs where the next
 phase says the place afresh.
 
+**Cafesa3D's plane, saved and opened again, differs by the same 165,592
+pixels every time it fails** (found 19 November 2026, `testing.md` 18.931,
+and before it 18.921 and 18.925). It has failed only under the gate's load
+after a change to the libc's headers, and it passes alone. A difference
+that is exactly the same three times is not noise: something on the save
+or open path loses a race in one particular way. The suite should first
+say what differs (where, and whether the whole model, the camera or the
+materials), and then the race should be fixed rather than waited out.
+
 **A gate that runs what a change reaches - AGREED and BUILT on 14 November
 2026.** Diego, after a 20-minute gate for W5f: "why do we run the entire
 gate and rebuild all every time? cant we just be smart on what needs to be
@@ -11995,6 +12004,23 @@ when that lands. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
 contexts - the protocol, the stand-in under QEMU, images kept across runs
 and the engines' default state. **G6 done; G7, `anv` on the M700, next.**
+G7 in four steps (`gpu3d.md`): G7a `anv` built with a Kosmos kernel-driver
+type and the device described; G7b memory and submission over G6e's
+protocol; G7c `vkcube` in a window; G7d dEQP-VK on the M700. **G7a built in 0.12.11**
+(`testing.md` 18.931): `anv` lists the M700's GPU, "Intel(R) HD Graphics
+530 (SKL GT2)", finds none under QEMU without an error, and `brw` compiles
+SPIR-V to Gen9 in a Kosmos process (`x86-anv`). **G7b next.**
+Owed from G7a:
+- **The device's revision and topology from the driver.** `GPU_OP_STATS`
+  says the PCI id and nothing else, so the revision is nought and the
+  slices and subslices are Mesa's table's for the id - right for the
+  M700's HD 530, and a guess for a part fused differently.
+- **`gpu.lua` and the Compute Kit onto the GPU Kit.** The GPU Kit
+  (`user/kits/gpu/`) is the one C door to `/Devices/gpu`, `anv` its first
+  user; the Lua side still packs the same requests itself.
+- **A piece of a buffer object mapped, and one placed** (`gem_mmap`'s
+  offset and `VK_EXT_map_memory_placed`): a region is mapped whole, where
+  the share window puts it.
 Owed from G6d and G6e:
 - **The submission's cost**: 11-18 us, where the ring's tail cost 3-4, a
   context loaded each time. A lite restore, or the context-switch

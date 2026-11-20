@@ -103,6 +103,12 @@ __BEGIN_DECLS
 long long          strtoll(const char *s, char **end, int base);
 unsigned long long strtoull(const char *s, char **end, int base);
 
+/* Mesa's Intel compiler asks it (`docs/gpu3d.md` G7a). */
+static inline intmax_t imaxabs(intmax_t j)
+{
+    return j < 0 ? -j : j;
+}
+
 static inline intmax_t strtoimax(const char *s, char **end, int base)
 {
     return (intmax_t)strtoll(s, end, base);

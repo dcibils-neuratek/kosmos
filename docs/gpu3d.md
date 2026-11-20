@@ -574,6 +574,76 @@ so `lavapipe` is built for both.
 7. **G7 - `anv` on the M700.** `anv_kosmos.c`, the backend; `vkcube`, then
    a dEQP-VK subset run on the machine by a program that says what passed.
    *Measure*: submit-to-fence latency, `vkcube` frames a second.
+
+   **G7 in steps** (19 November 2026, after a trial build of Mesa 26.2.5
+   with `-Dvulkan-drivers=swrast,intel`). What the trial found:
+   - **Most of Intel's half builds for Kosmos as it is.** ISL, BLORP,
+     the generated `genxml`, NIR's Intel passes and Intel's internal
+     shaders compiled unchanged. The rest failed in a few bounded kinds:
+     the i915 and Xe code, which is DRM `ioctl`s; one DRM-only field in
+     `vk_image`; `os_mman.h` and `util/futex.h`, which name POSIX and
+     Linux; two `errno` values (`ECANCELED`, `ENOBUFS`) and `imaxabs`,
+     which the libc lacks; and `anv`'s build-id, which a static image
+     has none of.
+   - **Two tools run on the Mac during the build.** `anv` carries
+     kernels written in OpenCL C - its query copies, indirect draws and
+     BLORP's - which Mesa compiles to SPIR-V with `mesa_clc` and turns
+     into NIR-building C with `vtn_bindgen2`. A cross build uses copies
+     of those built natively (`-Dmesa-clc=system`), against Homebrew's
+     LLVM 23, SPIRV-LLVM-Translator 23.1.2 and SPIRV-Tools, all three
+     already on the Mac.
+   - **The kernel driver is a type of its own, `INTEL_KMD_TYPE_KOSMOS`**,
+     beside i915 and Xe, in directories of its own (`dev/kosmos/`,
+     `common/kosmos/`, `vulkan/kosmos/`). **i915's and Xe's code stays in
+     the build**, compiled against the refused `ioctl` - which answers
+     `ENOTTY` and is never reached, since every choice by the type sends a
+     Kosmos device to Kosmos's code - as SQLite's and OpenSSL's are
+     (`runtime/posix/refused/sys/ioctl.h`). Leaving it out would have meant
+     editing every file that names it, for no gain. Twelve shared files
+     choose by the type, and Kosmos takes Xe's side of most choices: no
+     relocations, addresses chosen by `anv` and bound, one address space
+     per process.
+   - **The device is found by asking, not by opening.** `anv` enumerates
+     DRM nodes; on Kosmos it asks for `/Devices/gpu` (Mesa's `enumerate`
+     hook), and a program granted no GPU, or on a machine whose GPU the
+     driver does not know, is told there is no device. The capability is
+     held for the life of the process and never closed, by the physical
+     device or the logical one.
+   - **A `vk_sync` is a point, and timelines are Mesa's emulation over
+     it.** A point is `{context, value}` once a submission will signal
+     it; the processor reads its context's fence page to know whether it
+     is reached, and a thread that must wait makes an endpoint, asks for
+     `GPU_OP_FENCE_WAIT`'s pulse for each point, and receives with its
+     deadline. A point signalled or submitted on the processor pulses
+     every endpoint waiting at that moment, so no wait is a loop on a
+     clock.
+
+   The steps:
+   - **G7a - `anv` built, and the device described.** The Kosmos type's
+     device info: `8086:1912` from `/Devices/gpu`, Mesa's own table for
+     it, and the topology and memory the driver reports. *Test under
+     QEMU*: an image with `anv` linked that enumerates no Intel device
+     where there is none, without an error, and Intel's compiler
+     compiling a SPIR-V compute shader to Gen9 instructions in a Kosmos
+     process. *On the M700*: the device listed as Mesa names it.
+     **Built in 0.12.11** (`testing.md` 18.931). `lavapipe` is not beside it: one image cannot link both, since each
+     carries Mesa's runtime and `vk_icdGetInstanceProcAddr`, so
+     `anvtest.elf` is an image of its own beside `vulkantest.elf` - and a
+     loader choosing between them is what G7c's program will need.
+   - **G7b - memory and submission.** A buffer object is a region,
+     mapped for the processor and bound in the program's context at the
+     address `anv` chose (`GPU_OP_BIND`). A queue is a context, and
+     `queue_exec` hands it the first batch of the chain (`GPU_OP_EXEC`).
+     A `vk_sync` is a point on a context's timeline: met when the fence
+     page says so, waited for by `GPU_OP_FENCE_WAIT`'s pulse. *Test on
+     the M700*: `vkCmdFillBuffer`, then a compute dispatch writing a
+     buffer, read back right.
+   - **G7c - `vkcube` in a window**, its swapchain images rendered by
+     the GPU and presented through `VK_KOSMOS_surface` (G3). *Measure*:
+     frames a second.
+   - **G7d - dEQP-VK on the M700**, the subset `x86-vulkan-cts` runs on
+     `lavapipe`, by a program that says what passed. *Measure*:
+     submit-to-fence latency.
 8. **G8 - GL and WebGL on the M700.** Zink over `anv`; `glgears` at 1920 by
    1080 against TinyGL's figure; a Quake GL port (QuakeSpasm) installed in
    `/Home/Apps`; WebGL in JetSki. *Measure*: frames a second, and Zink

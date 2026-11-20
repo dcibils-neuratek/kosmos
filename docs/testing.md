@@ -38741,3 +38741,75 @@ x86-gpumon (QEMU):     20 checks; gpu contexts right on the stand-in, 2343 us;
 passing - x86-gpumon, x86-vulkan-cts and the display suites among them.
 The slowest were x86-dock (352 s) and x86-cafesa3d-2 (342 s), which are
 the two to split, as `roadmap.md` already says.
+
+## 18.931 Intel's Vulkan driver built for Kosmos, and the M700's GPU listed
+
+**In short:** G7a (`docs/gpu3d.md` §5.3). Mesa's `anv`, Intel's Vulkan
+driver, now builds for Kosmos with a kernel-driver type of its own,
+`INTEL_KMD_TYPE_KOSMOS`, beside i915 and Xe. It finds its GPU by asking for
+`/Devices/gpu` rather than by opening a DRM node. On the M700 it lists the
+GPU as Mesa names it: "Intel(R) HD Graphics 530 (SKL GT2)", `8086:1912`,
+Vulkan 1.4, one heap of 6037 MB. Under QEMU, where there is no Intel GPU,
+it lists none and does not count that as an error. Intel's shader compiler,
+`brw`, runs inside a Kosmos process too: a SPIR-V compute shader becomes 20
+Gen9 instructions at SIMD16, 288 bytes, with no spills. That is the same
+on both machines, since the compiler does not touch the GPU. Making a
+logical device is still refused, and that is G7b's work.
+
+- **Where the edits live**: `runtime/patches/mesa/0006-anv-on-kosmos.patch`
+  changes 28 of Mesa's files. Each is a choice made by the type, a header
+  Kosmos does not have, or a feature Kosmos lacks (sysfs, a FIFO, `regex`).
+  The Kosmos half itself lives in
+  `runtime/ports/mesa/src/intel/vulkan/kosmos/`, in about 450 lines:
+  enumeration, the device's parameters, its memory types, the buffer
+  backend and a `vk_sync` that is a point on a context's timeline.
+  i915's and Xe's code stays in the build, compiled against the refused
+  `ioctl`, so nothing upstream had to be deleted.
+- **The memory types are Xe's for a part sharing the last-level cache**:
+  device-local, plus device-local, host-visible, coherent and cached. The
+  M700 shows four types, because Mesa copies each non-protected type once
+  for descriptor buffers.
+- **`anvtest.elf` is an image of its own**, 58.7 MB stripped. It cannot
+  sit beside `lavapipe`: both carry Mesa's Vulkan runtime and
+  `vk_icdGetInstanceProcAddr`. Choosing between them is a loader's job,
+  and G7c will need one.
+- **Found on the way**: the compiler died with a page fault in
+  `linear_zalloc_child`, reading address `0x4`. NIR's types live in one
+  table every compiler shares, which `glsl_type_singleton_init_or_ref`
+  makes. A Vulkan driver makes it when its instance is created; a compiler
+  called on its own, as the kit calls it, has to make it first.
+  Separately, Mesa 26 has no SHA-1, so `anv`'s build id is a BLAKE3 hash
+  of the driver's name and version.
+
+```
+x86-anv (QEMU):     PASS: anv on Kosmos, from a 58.7 MB image, in 0.4 s:
+                    devices=0; 8086:1912 gen=9 simd=16 instrs=20 sends=2
+                    spills=0 fills=0 bytes=288
+  control:          KOSMOS_ANV_DEVICE=0x9a49 (Tiger Lake) -
+                    FAIL: compile: generation 12, where 8086:9a49 is Gen9
+M700 (0.12.10 running, anvtest.elf of 0.12.11 put in /Home/Tests/anv):
+  anvtest devices:  devices=1 [name="Intel(R) HD Graphics 530 (SKL GT2)"
+                    id=8086:1912 driver="Intel open-source Mesa driver"
+                    api=1.4 memory=L,LVCH,L,LVCH heap=6037MB]
+  anvtest compile:  gen=9 simd=16 instrs=20 sends=2 spills=0 fills=0 bytes=288
+```
+
+**What is not done yet**, and in `roadmap.md`:
+- **The revision and topology are Mesa's table's, not the driver's.**
+  The driver knows the slice and subslice counts, and `anv` should be
+  told them.
+- **A buffer object is mapped whole and only where Kosmos chooses.**
+  `anv` asks for neither a part of one nor a placed address yet. Both
+  will matter once there are many.
+- **`gpu.lua` and the Compute Kit do not use the GPU Kit yet.** It is
+  what `anv` asks through, and they should ask through it too.
+
+**The gate** (`ALL=1`; the libc's headers and the Makefile changed): 148
+suites in 793 s (13:13), 146 passing, `x86-anv` among them. Two failed
+under the load, as they have twice before after a change to the libc's
+headers (18.921, 18.925). `x86-display-1`'s `wmlatency` came out at 0.90
+ticks a round trip. `x86-cafesa3d-2`'s reopened plane differed by
+165,592 pixels, the same count as both times before, which is why it is
+now in `roadmap.md` as a race to find. Run alone, both pass: 60 and 74
+checks in 254 s. The gate is over its ten-minute budget, and `x86-dock`
+(364 s) and `x86-cafesa3d-2` (346 s) are still the suites to split.

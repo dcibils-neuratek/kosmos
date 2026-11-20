@@ -650,6 +650,14 @@ SUITES = [
           watch=library("tools/run_vulkan.py", "user/kits/vulkantest", "user/kits/window",
                         "user/lib/wm", "user/lib/wmproto.lua", *MESA)),
 
+    # **Intel's Vulkan driver** (`docs/gpu3d.md` G7a): `anvtest.elf`, anv
+    # with Kosmos's kernel-driver type and Intel's compiler under it - no
+    # device under QEMU and no error for it, and a SPIR-V compute shader
+    # compiled to the HD 530's Gen9 instructions in a Kosmos process.
+    Suite("x86-anv", ["python3", "tools/run_anv.py", X86,
+                      "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_anv.py", "user/kits/anvtest", "user/kits/gpu", *MESA)),
+
     # **Khronos's conformance suite** (`docs/gpu3d.md` G2, `testing.md`
     # 18.926): `vkcts.elf`, dEQP-VK's `info` and `api` groups from
     # VK-GL-CTS with lavapipe - a minute of its cases, each judged by the

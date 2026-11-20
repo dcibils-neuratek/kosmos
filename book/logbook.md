@@ -5020,3 +5020,40 @@ that microseconds, and is on the list.
 
 **Next.** G7: Mesa's Intel Vulkan driver, `anv`, speaking this protocol on
 the M700 - `vkcube` on the real GPU.
+
+## 19 November 2026 - Intel's Vulkan driver meets the M700
+
+**In short.** Mesa's Vulkan driver for Intel graphics, the one Linux
+uses, now builds for Kosmos and finds the M700's GPU: "Intel(R) HD
+Graphics 530", Vulkan 1.4, six gigabytes it can use. Its shader compiler
+runs inside a Kosmos program and turns a small compute shader into twenty
+of the GPU's own instructions. Nothing is drawn with it yet; that is the
+next three steps. 0.12.11.
+
+**What.** On Linux the driver finds a GPU by opening a device file and
+talks to the kernel through `ioctl`, a call that Kosmos has on purpose
+never had. Mesa already supports two Linux kernel drivers for Intel, i915
+and Xe, and picks between them in a few dozen places. Kosmos becomes a
+third choice. It finds the GPU by asking the namespace for
+`/Devices/gpu`, and does the kernel driver's part with Kosmos's own
+operations: a buffer is a shared region, and "is this work done?" is a
+number on a page, or a pulse.
+
+**Why it was done this way.** Removing i915's and Xe's code would have
+meant editing every file that mentions them. Instead it stays in the
+build, compiled against an `ioctl` that refuses, and is never called.
+What Kosmos changes is 28 of Mesa's files, each change one choice made
+by the new type, plus about 450 lines of its own.
+
+**Something the compiler taught.** It crashed on its first run. All of a
+compiler's types live in one shared table, and a Vulkan driver builds
+that table when a program starts using it. Calling the compiler directly,
+as the test does, skipped that step, so the table was never made.
+
+**Measured.** On the M700 the device is listed with its real name, PCI
+id, Vulkan version and memory. In the emulator, which has no Intel GPU,
+no device is listed and there is no error, which is the right answer for
+a machine without one. The compute shader becomes 20 Gen9 instructions
+(288 bytes, no spills) on both. Told to compile for a newer Intel GPU
+instead, the test fails as it should, so the check really looks at which
+GPU it compiled for.

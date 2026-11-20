@@ -2836,6 +2836,7 @@ void kosmos_wtftest_kit(lua_State *L) __attribute__((weak));
 void kosmos_llvmtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_mesatest_kit(lua_State *L) __attribute__((weak));
 void kosmos_vulkantest_kit(lua_State *L) __attribute__((weak));
+void kosmos_anvtest_kit(lua_State *L) __attribute__((weak));
 void kosmos_vkcts_kit(lua_State *L) __attribute__((weak));
 void kosmos_jsc_kit(lua_State *L) __attribute__((weak));
 void kosmos_picturetest_kit(lua_State *L) __attribute__((weak));
@@ -2920,6 +2921,8 @@ static const struct {
     { "llvmtest", kosmos_llvmtest_kit, 1 },
     { "mesatest", kosmos_mesatest_kit, 1 },
     { "vulkantest", kosmos_vulkantest_kit, 1 },
+    /* Intel's Vulkan driver and compiler (`docs/gpu3d.md` G7a). */
+    { "anvtest", kosmos_anvtest_kit, 1 },
     /* Khronos's Vulkan conformance suite, dEQP-VK's info and api groups
      * (`docs/gpu3d.md` G2). */
     { "vkcts",    kosmos_vkcts_kit, 1 },

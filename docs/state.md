@@ -107,9 +107,25 @@ against 3-4 on the ring - a context loaded each time. **G6e (0.12.10,
 - **Checked** with `gpu contexts` and `gpu contexts hang`, two programs at
   once.
 
-**G6 is done. Next: G7**, `anv` on the M700 (`anv_kosmos.c`), then
-`vkcube` and a dEQP-VK subset. The M700 runs 0.12.10, restarted as needed
-(Diego, 19 November: "Reboot m700 as needed").
+**G6 is done. G7a (0.12.11, 18.931):** Intel's Vulkan driver, `anv`,
+built for Kosmos with a kernel-driver type of its own.
+- **On the M700** it lists "Intel(R) HD Graphics 530 (SKL GT2)",
+  `8086:1912`, Vulkan 1.4, a 6037 MB heap.
+- **Under QEMU** it lists no device, and does not count that as an
+  error (`x86-anv`).
+- **`brw`**, Intel's compiler, turns a SPIR-V compute shader into 20
+  Gen9 instructions inside a Kosmos process.
+- **Where the code is**: Mesa's 28 edited files are
+  `runtime/patches/mesa/0006-anv-on-kosmos.patch`, and the Kosmos half
+  is `runtime/ports/mesa/src/intel/vulkan/kosmos/`.
+- **The test image** is `anvtest.elf` (`user/kits/anvtest/`), kept apart
+  from `lavapipe`'s.
+
+**Next: G7b**: buffer objects bound with `GPU_OP_BIND`, a queue as a
+context, and `vkCmdFillBuffer` and a compute dispatch read back on the
+M700. Then G7c (`vkcube`) and G7d (dEQP-VK). The M700 runs 0.12.10, with
+`anvtest.elf` in `/Home/Tests/anv`, and is restarted as needed (Diego,
+19 November: "Reboot m700 as needed").
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

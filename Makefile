@@ -884,6 +884,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/map/mapdraw.c \
              user/kits/map/map_kosmos.c \
              user/kits/window/window.c \
+             user/kits/gpu/gpu.c \
              user/kits/kitenv.c \
              user/kits/compute/compute_kosmos.c \
              user/kits/compute/compute_core.c \
@@ -4695,6 +4696,44 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 	    || { echo "apps: the system's image has Vulkan's test kit in it"; rm -f $@; exit 1; }
 
 #
+# **`anv`'s test image** (`docs/gpu3d.md` G7a): `anvtest.c` with Intel's
+# Vulkan driver linked in as `lavapipe` is in `vulkantest.elf` - its
+# object and archives the list `mesa_build.py` read from `anv`'s own link
+# (`anv.txt`), x86-64 only, as `anv` is. The kit reaches Intel's compiler
+# too, so it is compiled with Mesa's defines and its Intel headers; its
+# shader is SPIR-V compiled on the host.
+#
+ANVTEST_OBJS := $(UBUILD)/user/kits/anvtest/anvtest.c.o
+ANVTEST_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/anvtest.elf)
+
+$(UBUILD)/gen/anvtest/store_comp.h: user/kits/anvtest/store.comp
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn store_comp -o $@ $<
+
+$(UBUILD)/user/kits/anvtest/anvtest.c.o: user/kits/anvtest/anvtest.c $(UBUILD)/gen/anvtest/store_comp.h \
+        $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) @$(MESA_DIR)/defines.txt $(MESA_INCLUDES) \
+	    -isystem build/mesa/tree/src/intel -isystem $(MESA_BUILD)/src/intel \
+	    -isystem $(MESA_BUILD)/src/intel/compiler/gen -isystem $(MESA_BUILD)/src/intel/compiler/brw \
+	    -isystem build/mesa/tree/src/compiler -isystem $(MESA_BUILD)/src/compiler/spirv \
+	    -isystem runtime/posix/refused -I $(UBUILD)/gen/anvtest \
+	    -Wno-unused-parameter -Wno-sign-compare -Wno-missing-field-initializers \
+	    -c $< -o $@
+
+$(UBUILD)/apps/anvtest.elf: $(USER_OBJS) $(ANVTEST_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                            $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(ANVTEST_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/anv.txt \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_anvtest_kit$$' \
+	    || { echo "apps: anvtest.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_anvtest_kit$$' \
+	    || { echo "apps: the system's image has anv's test kit in it"; rm -f $@; exit 1; }
+
+#
 # **Khronos's Vulkan conformance suite** (`docs/gpu3d.md` G2): dEQP-VK's
 # `info` and `api` groups from VK-GL-CTS 1.4.7.1, built by
 # `tools/cts_build.py` with the CTS's own CMake for a target of Kosmos's
@@ -4747,7 +4786,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
-            $(WEBCORE_IMAGE) $(VKCTS_IMAGE) \
+            $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \
             $(UBUILD)/apps-tcc/apptest.elf

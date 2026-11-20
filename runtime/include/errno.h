@@ -127,10 +127,16 @@ int *__errno(void);
 #define EALREADY        114
 #define EINPROGRESS     115
 
+/* Two more of Linux's, for Mesa's Intel driver (`docs/gpu3d.md` G7a):
+ * work that was dropped rather than done, and a request too large for
+ * what holds it. */
+#define ENOBUFS         105
+#define ECANCELED       125
+
 /* The largest number above, under BSD's name: C++'s library asks it, to
  * know which numbers `strerror` has a sentence for. A new code above it
  * moves it. */
-#define ELAST        EINPROGRESS
+#define ELAST        ECANCELED
 
 __END_DECLS
 

@@ -2,8 +2,10 @@
 """
 **Mesa for Kosmos** (`docs/gpu3d.md` G1): Mesa 26.2.5's libraries -
 `util`, the shader compilers' NIR and SPIR-V, and on them the Vulkan
-runtime and `lavapipe` (G2) - configured with Meson for Kosmos and built
-for one architecture into `build/mesa/<arch>/`.
+runtime, `lavapipe` (G2) and, on x86-64, Intel's `anv` (G7) - configured
+with Meson for Kosmos and built for one architecture into
+`build/mesa/<arch>/`, with `lavapipe.txt` and `anv.txt` saying what each
+driver's image links.
 
     python3 tools/mesa_build.py x86_64|aarch64 RUNTIME [target ...]
 
@@ -92,6 +94,69 @@ OPTIONS = [
     "-Ddefault_library=static", "-Dbuildtype=release", "-Db_ndebug=true",
 ]
 
+# **`anv`, Intel's Vulkan driver** (`docs/gpu3d.md` G7), on x86-64 only -
+# the M700's HD 530 is the GPU it is for - with Kosmos's kernel-driver type
+# (patch `0006`, `runtime/ports/mesa/src/intel/`). No ray tracing (Gen9 has
+# none) and no `elk`, the compiler for the generations before Gen9 that
+# `hasvk` drives. `anv` carries kernels written in OpenCL C, compiled during
+# the build by two of Mesa's tools that run on the Mac (`host_tools`).
+INTEL = ["-Dintel-rt=disabled", "-Dintel-elk=false",
+         "-Dmesa-clc=system", "-Dprecomp-compiler=system"]
+
+
+def options(arch):
+    if arch != "x86_64":
+        return OPTIONS
+    return [o.replace("-Dvulkan-drivers=swrast", "-Dvulkan-drivers=swrast,intel")
+            for o in OPTIONS] + INTEL
+
+
+# **The tools that run on the Mac**: `mesa_clc`, which compiles OpenCL C to
+# SPIR-V on Homebrew's LLVM 23 and SPIRV-LLVM-Translator, and
+# `vtn_bindgen2`, which turns that SPIR-V into C that builds the kernels'
+# NIR. Built natively from the same copy of the source into
+# `build/mesa/host/`, and found by the cross build on its `PATH`.
+HOST = os.path.join(ROOT, "build", "mesa", "host")
+HOST_TOOLS = ["src/compiler/clc/mesa_clc", "src/compiler/spirv/vtn_bindgen2"]
+HOST_OPTIONS = [
+    "-Dmesa-clc=enabled", "-Dinstall-mesa-clc=true", "-Dmesa-clc-bundle-headers=enabled",
+    "-Dplatforms=", "-Dgallium-drivers=", "-Dvulkan-drivers=",
+    "-Dopengl=false", "-Dgles1=disabled", "-Dgles2=disabled",
+    "-Degl=disabled", "-Dgbm=disabled", "-Dglx=disabled",
+    "-Dllvm=enabled", "-Dshared-llvm=enabled",
+    "-Dzstd=disabled", "-Dexpat=disabled", "-Dxmlconfig=disabled",
+    "-Dvalgrind=disabled", "-Dlibunwind=disabled",
+    "-Dbuild-tests=false", "-Dshader-cache=disabled", "-Dbuildtype=release",
+]
+
+
+def host_tools():
+    """The two tools built for the Mac, once per cut of the source; the
+    directories they are in, for the cross build's `PATH`."""
+    build = os.path.join(HOST, "build")
+    stamp = os.path.join(HOST, ".built")
+    want = open(os.path.join(SRC, ".patched")).read() + " ".join(HOST_OPTIONS)
+    if not (os.path.exists(stamp) and open(stamp).read() == want
+            and all(os.path.exists(os.path.join(build, t)) for t in HOST_TOOLS)):
+        shutil.rmtree(build, ignore_errors=True)
+        os.makedirs(HOST, exist_ok=True)
+        env = dict(os.environ)
+        env["PATH"] = ":".join([os.path.join(VENV, "bin"), BISON, os.path.join(LLVM, "bin"),
+                                env["PATH"]])
+        log = os.path.join(HOST, "build.log")
+        with open(log, "w") as f:
+            r = subprocess.run(["meson", "setup", build, SRC, "--wrap-mode=nodownload"]
+                               + HOST_OPTIONS, stdout=f, stderr=subprocess.STDOUT, env=env)
+            if r.returncode == 0:
+                r = subprocess.run(["ninja", "-C", build] + HOST_TOOLS,
+                                   stdout=f, stderr=subprocess.STDOUT, env=env)
+        if r.returncode != 0:
+            print(open(log).read()[-6000:])
+            sys.exit("mesa_build: the Mac's tools did not build (%s)" % log)
+        with open(stamp, "w") as f:
+            f.write(want)
+    return [os.path.dirname(os.path.join(build, t)) for t in HOST_TOOLS]
+
 
 def fingerprint():
     """What the copy is made from: the release and every patch, in order."""
@@ -174,6 +239,12 @@ def cross_file(arch, out, runtime):
              "-isystem" + os.path.join(ROOT, "user", "include"),
              # The Window Kit's header, for VK_KOSMOS_surface's WSI (G3).
              "-isystem" + os.path.join(ROOT, "user", "kits", "window"),
+             # The GPU Kit's, for anv's Kosmos kernel-driver type (G7a).
+             "-isystem" + os.path.join(ROOT, "user", "kits", "gpu"),
+             # And the kernel's, last: `kosmos.h` names its `syscall.h`, and
+             # after every other directory none of the kernel's own headers
+             # (`sched.h` among them) can stand in for the libc's.
+             "-idirafter" + os.path.join(ROOT, "kernel"),
              "-isystem" + os.path.join(ROOT, "runtime", "posix", "refused"),
              "-DKOSMOS_USER", "-DKOSMOS_USER_BASE=" + base,
              "-ffunction-sections", "-fdata-sections", "-fno-stack-protector"]
@@ -219,7 +290,8 @@ def cross_file(arch, out, runtime):
 def environment(arch):
     env = dict(os.environ)
     env["KOSMOS_TRIAL_LD"] = "/opt/homebrew/bin/%s-elf-ld" % arch
-    env["PATH"] = os.path.join(VENV, "bin") + ":" + BISON + ":" + env["PATH"]
+    tools = host_tools() if arch == "x86_64" else []
+    env["PATH"] = ":".join([os.path.join(VENV, "bin"), BISON] + tools + [env["PATH"]])
     return env
 
 
@@ -259,7 +331,7 @@ def configure(arch, out, runtime):
                "--wrap-mode=nodownload", "--force-fallback-for=llvm",
                "-Dllvm:libs=" + llvm_libraries(arch, out),
                "-Dllvm:include=" + os.path.join(SRC_LLVM, "llvm", "include") + ":" +
-               os.path.join(ROOT, "build", "llvm", arch, "include")] + OPTIONS
+               os.path.join(ROOT, "build", "llvm", arch, "include")] + options(arch)
     log = os.path.join(out, "meson.log")
     with open(log, "w") as f:
         r = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, env=environment(arch))
@@ -288,15 +360,21 @@ def main():
     # file that does not, as `LLVM_KEEP_GOING` does.
     keep = ["-k", "0"] if os.environ.get("MESA_KEEP_GOING") else []
     lavapipe = lavapipe_archives(build)
-    targets = sys.argv[3:] or (LIBRARIES + [a for a in lavapipe if a.endswith(".a")]
+    anv = link_inputs(build, ANV) if arch == "x86_64" else []
+    targets = sys.argv[3:] or (LIBRARIES + [a for a in lavapipe + anv if not a.startswith("-")]
                                + [LAVAPIPE_TARGET])
     r = subprocess.run(["ninja", "-C", build] + keep + targets, env=environment(arch))
     if r.returncode == 0:
         defines(build, out)
-        write_if_changed(os.path.join(out, "lavapipe.txt"),
-                         "".join((a if a.startswith("-") else os.path.join(build, a)) + "\n"
-                                 for a in [LAVAPIPE_TARGET] + lavapipe))
+        write_if_changed(os.path.join(out, "lavapipe.txt"), listing(build, [LAVAPIPE_TARGET] + lavapipe))
+        if anv:
+            write_if_changed(os.path.join(out, "anv.txt"), listing(build, anv))
     sys.exit(r.returncode)
+
+
+def listing(build, words):
+    """A response file for the link: each archive or object by its path."""
+    return "".join((a if a.startswith("-") else os.path.join(build, a)) + "\n" for a in words)
 
 
 # `lavapipe_target.c`, which names the software winsys and llvmpipe for
@@ -306,19 +384,33 @@ LAVAPIPE = "src/gallium/targets/lavapipe/libvulkan_lvp.so"
 LAVAPIPE_TARGET = LAVAPIPE + ".p/lavapipe_target.c.o"
 
 
+# `anv`, linked into an image as Mesa's shared library would have it: its
+# own object (`anv_gem.c`, the kernel-driver choices outside the archives)
+# and the archives, `libanv_common` whole.
+ANV = "src/intel/vulkan/libvulkan_intel.so"
+
+
 def lavapipe_archives(build):
     """Mesa's archives `lavapipe` links, in the order its link names them,
     read from that link's command - so the list is Meson's for this
     architecture (x86-64's has `clflush` and `simd` and AArch64's does not)
     rather than one written here. LLVM's and the C++ runtimes' are not
     Mesa's and are named by the Makefile."""
-    r = subprocess.run(["ninja", "-C", build, "-t", "commands", LAVAPIPE],
+    return link_inputs(build, LAVAPIPE, objects=False)
+
+
+def link_inputs(build, target, objects=True):
+    """What `target`'s link names of Mesa's: its archives, in order, the
+    whole-archive markers around them, and - `objects` - its own objects."""
+    r = subprocess.run(["ninja", "-C", build, "-t", "commands", target],
                        capture_output=True, text=True)
     if r.returncode != 0 or not r.stdout.strip():
-        sys.exit("mesa_build: no command for %s" % LAVAPIPE)
+        sys.exit("mesa_build: no command for %s" % target)
     found = []
     for word in shlex.split(r.stdout.strip().splitlines()[-1]):
-        if word.startswith("src/") and word.endswith(".a") and word not in found:
+        if objects and word.startswith("src/") and word.endswith(".o") and word not in found:
+            found.append(word)
+        elif word.startswith("src/") and word.endswith(".a") and word not in found:
             found.append(word)
         elif word in ("-Wl,--whole-archive", "-Wl,--no-whole-archive"):
             # What Meson links whole - `liblavapipe_st`, whose dispatch
@@ -326,7 +418,7 @@ def lavapipe_archives(build):
             # nothing out of an archive: without this they are NULL.
             found.append(word)
     if not [w for w in found if w.endswith(".a")]:
-        sys.exit("mesa_build: %s's link names no archive of Mesa's" % LAVAPIPE)
+        sys.exit("mesa_build: %s's link names no archive of Mesa's" % target)
     return found
 
 
