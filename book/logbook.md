@@ -5339,3 +5339,20 @@ together with no gap. 0.12.24.
   cover the ground exactly once - whether there is room for hundreds or
   only twenty-five. Breaking the numbering, the triangles' direction, or
   how an edge is lit each makes it fail.
+
+## 20 November 2026 - Ground you can see
+
+**In short.** The flight simulator's ground is drawn: F4b. Each piece of
+it is painted with its own picture, blended smoothly between the
+picture's dots, lit by the sun and fading into haze. 0.12.25.
+
+- **What a person sees**: still a test picture - 2.5 km up over Montevideo,
+  looking towards the horizon, the ground made of 262 pieces.
+- **How it is proved**: the pictures are made from a rule the test knows,
+  so for every pixel it works out what must be there - which piece, which
+  spot of its picture, how lit - and checks. All 8320 that are not on an
+  edge match. Painting a piece with its neighbour's picture, not blending,
+  or turning the picture sideways each makes it fail.
+- **Found on the way**: the first test could not tell blending from not
+  blending, because its pictures changed too gently. A pattern was added so
+  it can.

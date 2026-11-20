@@ -39496,3 +39496,42 @@ holds either way.
 **It is linked into `vulkantest.elf`** too, where F4b draws it, so it
 builds freestanding; the system's image does not carry it until an
 application uses it.
+
+## 18.945 The ground on Vulkan (Flight F4b)
+
+**In short:** the terrain is drawn. `k3d_vk.c` gained a ground: a chunk's
+mesh from `k3d_terrain.c` with its imagery as a texture, sampled linearly
+and clamped at its edge, lit and hazed as a mesh is. `vulkantest`'s new
+`kit.terrain` chooses the chunks for an eye 2500 m over Montevideo - 262 of
+them, zoom 11 to 15 - builds each over a tilted plane, gives each imagery
+whose every texel the suite can work out, and draws them into a 96 by 96
+picture. `x86-k3d-ground` holds every pixel to a ray: where it meets the
+plane, which of the 262 chunks the guest listed holds that place, the
+imagery there under the sampler's bilinear rule, the light and the haze -
+or the sky past the ground's edge.
+
+**The imagery** is red from a texel's centre's metres east, green from its
+metres south, blue from its chunk's zoom, plus a check of 20 between
+neighbouring texels. The check is there because the first version did not
+have it, and a control showed it was needed: with the gradient alone,
+neighbouring texels differed by less than the tolerance, and drawing with
+nearest sampling passed. With the check, it fails.
+
+**Measured**: 8320 pixels judged, every one within 3 - sky 4419, and the
+ground at zoom 12 in 120, 13 in 420, 14 in 1269 and 15 in 2092, from 68 of
+the chunks; 896 on an edge between chunks, or between the ground and the
+sky, left out. 7.1 s in the guest.
+
+**One door for a texture.** The cube's kit uploaded its checks with its own
+copy and barriers, and made its descriptor set by hand; the terrain needed
+both, so the Vulkan Kit's base has them now - `kvk_image_upload` and
+`kvk_sampled_layout` / `kvk_sampled_set`, a pool for each set so there is
+no count to guess - and the cube uses them. `x86-vulkan` passes on them.
+
+**Controls**, each built and run from the restored source:
+
+| broken | pixels wrong, of 8320 |
+|---|---|
+| each chunk drawn with the next one's imagery | 3095 |
+| the sampler nearest rather than linear | 3263 (passed before the check) |
+| the imagery's two coordinates swapped in the shader | 272 |

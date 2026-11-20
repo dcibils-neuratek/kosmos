@@ -14,6 +14,8 @@
 #include "k3d_mesh_frag.h"
 #include "k3d_sky_vert.h"
 #include "k3d_sky_frag.h"
+#include "k3d_ground_vert.h"
+#include "k3d_ground_frag.h"
 
 /* The shaders' push constants, as they declare them (std430: vec4s). */
 struct mesh_push {
@@ -37,12 +39,16 @@ static void refuse(struct kvk *v, const char *why)
     v->why[sizeof(v->why) - 1] = '\0';
 }
 
+/* A pipeline's layout: its push constants, and a set of `set`'s layout
+ * when there is one. */
 static int pipeline_layout(struct kvk *v, VkPipelineLayout *out, uint32_t bytes,
-                           VkShaderStageFlags stages)
+                           VkShaderStageFlags stages, VkDescriptorSetLayout set)
 {
     VkPushConstantRange range = { stages, 0, bytes };
     VkPipelineLayoutCreateInfo plci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = set != VK_NULL_HANDLE ? 1 : 0,
+        .pSetLayouts = &set,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &range,
     };
@@ -68,11 +74,27 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
     if (!kvk_image_make(v, &r->depth, VK_FORMAT_D32_SFLOAT, width, height,
                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
                         "depth") ||
-        !pipeline_layout(v, &r->mesh_layout, sizeof(struct mesh_push), both) ||
+        !pipeline_layout(v, &r->mesh_layout, sizeof(struct mesh_push), both, VK_NULL_HANDLE) ||
         !pipeline_layout(v, &r->sky_layout, sizeof(struct sky_push),
-                         VK_SHADER_STAGE_FRAGMENT_BIT)) {
+                         VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE) ||
+        !kvk_sampled_layout(v, &r->imagery_layout) ||
+        !pipeline_layout(v, &r->ground_layout, sizeof(struct mesh_push), both,
+                         r->imagery_layout)) {
         return 0;
     }
+
+    /* Imagery between its texels, and its edge beyond them: a chunk's
+     * outermost half-texel is its own edge's colour, not its neighbour's. */
+    VkSamplerCreateInfo sci = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    KVK_STEP(v, v->vkCreateSampler(v->device, &sci, NULL, &r->imagery), "sampler");
 
     VkVertexInputBindingDescription stream = { 0, sizeof(struct k3d_vk_vertex),
                                                VK_VERTEX_INPUT_RATE_VERTEX };
@@ -104,11 +126,34 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
         width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 1,
     };
 
+    VkVertexInputBindingDescription ground_stream = { 0, sizeof(struct k3d_terrain_vertex),
+                                                      VK_VERTEX_INPUT_RATE_VERTEX };
+    VkVertexInputAttributeDescription ground_attributes[3] = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct k3d_terrain_vertex, position) },
+        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct k3d_terrain_vertex, normal) },
+        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(struct k3d_terrain_vertex, uv) },
+    };
+    VkPipelineVertexInputStateCreateInfo ground_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &ground_stream,
+        .vertexAttributeDescriptionCount = 3,
+        .pVertexAttributeDescriptions = ground_attributes,
+    };
+    struct kvk_pipeline_shape ground = {
+        k3d_ground_vert, sizeof(k3d_ground_vert), k3d_ground_frag, sizeof(k3d_ground_frag),
+        &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+    };
+
     if (!kvk_pipeline(v, &r->mesh, r->mesh_layout, &mesh) ||
-        !kvk_pipeline(v, &r->sky, r->sky_layout, &sky)) {
+        !kvk_pipeline(v, &r->sky, r->sky_layout, &sky) ||
+        !kvk_pipeline(v, &r->ground, r->ground_layout, &ground)) {
         return 0;
     }
     return 1;
+
+done:
+    return 0;
 }
 
 void k3d_vk_close(struct k3d_vk *r)
@@ -117,6 +162,18 @@ void k3d_vk_close(struct k3d_vk *r)
 
     if (v == NULL || v->device == VK_NULL_HANDLE) {
         return;
+    }
+    if (r->ground != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, r->ground, NULL);
+    }
+    if (r->ground_layout != VK_NULL_HANDLE) {
+        v->vkDestroyPipelineLayout(v->device, r->ground_layout, NULL);
+    }
+    if (r->imagery_layout != VK_NULL_HANDLE) {
+        v->vkDestroyDescriptorSetLayout(v->device, r->imagery_layout, NULL);
+    }
+    if (r->imagery != VK_NULL_HANDLE) {
+        v->vkDestroySampler(v->device, r->imagery, NULL);
     }
     if (r->sky != VK_NULL_HANDLE) {
         v->vkDestroyPipeline(v->device, r->sky, NULL);
@@ -170,6 +227,74 @@ void k3d_vk_mesh_free(struct k3d_vk *r, struct k3d_vk_mesh *m)
 {
     kvk_buffer_free(r->v, &m->buffer);
     memset(m, 0, sizeof(*m));
+}
+
+int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
+                  const struct k3d_terrain_vertex *vertices, uint32_t nv,
+                  const uint32_t *indices, uint32_t ni, const uint8_t *rgba,
+                  uint32_t width, uint32_t height)
+{
+    struct kvk *v = r->v;
+    VkDeviceSize vbytes = (VkDeviceSize)nv * sizeof(*vertices);
+    VkDeviceSize ibytes = (VkDeviceSize)ni * sizeof(*indices);
+    struct kvk_buffer upload = { 0 };
+    int made = 0;
+
+    memset(g, 0, sizeof(*g));
+    if (nv == 0 || ni == 0 || ni % 3 != 0 || width == 0 || height == 0) {
+        refuse(v, "ground-not-a-ground");
+        return 0;
+    }
+    for (uint32_t i = 0; i < ni; i++) {
+        if (indices[i] >= nv) {
+            refuse(v, "ground-index-outside");
+            return 0;
+        }
+    }
+    g->indices_at = (vbytes + 3) & ~(VkDeviceSize)3;
+    if (!kvk_buffer_make(v, &g->buffer, g->indices_at + ibytes,
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                         "ground") ||
+        !kvk_image_make(v, &g->imagery, VK_FORMAT_R8G8B8A8_UNORM, width, height,
+                        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, "imagery") ||
+        !kvk_buffer_make(v, &upload, (VkDeviceSize)width * height * 4,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "imagery-upload") ||
+        !kvk_sampled_set(v, r->imagery_layout, r->imagery, g->imagery.view, &g->pool,
+                         &g->set)) {
+        goto out;
+    }
+    memcpy(g->buffer.bytes, vertices, (size_t)vbytes);
+    memcpy((uint8_t *)g->buffer.bytes + g->indices_at, indices, (size_t)ibytes);
+    memcpy(upload.bytes, rgba, (size_t)width * height * 4);
+    if (!kvk_begin(v)) {
+        goto out;
+    }
+    kvk_image_upload(v, g->imagery.image, width, height, upload.buffer);
+    if (!kvk_submit(v)) {
+        goto out;
+    }
+    g->count = ni;
+    made = 1;
+
+out:
+    kvk_buffer_free(v, &upload);
+    if (!made) {
+        k3d_vk_ground_free(r, g);
+    }
+    return made;
+}
+
+void k3d_vk_ground_free(struct k3d_vk *r, struct k3d_vk_ground *g)
+{
+    struct kvk *v = r->v;
+
+    if (v != NULL && v->device != VK_NULL_HANDLE && g->pool != VK_NULL_HANDLE) {
+        v->vkDestroyDescriptorPool(v->device, g->pool, NULL);
+    }
+    kvk_image_free(v, &g->imagery);
+    kvk_buffer_free(v, &g->buffer);
+    memset(g, 0, sizeof(*g));
 }
 
 /* ---- the view's arithmetic, in double, kept to float at the end ---- */
@@ -343,7 +468,7 @@ int k3d_vk_clip(const struct k3d_vk_view *view, uint32_t width, uint32_t height,
 
 int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
                 const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
-                uint32_t count)
+                uint32_t count, const struct k3d_vk_ground *grounds, uint32_t grounds_count)
 {
     struct kvk *v = r->v;
     struct mesh_push mp;
@@ -417,6 +542,23 @@ int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
     v->vkCmdPushConstants(v->cmd, r->sky_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp),
                           &sp);
     v->vkCmdDraw(v->cmd, 3, 1, 0, 0);
+
+    if (grounds_count > 0) {
+        v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->ground);
+        v->vkCmdPushConstants(v->cmd, r->ground_layout,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                              sizeof(mp), &mp);
+        for (uint32_t i = 0; i < grounds_count; i++) {
+            VkDeviceSize at = 0;
+
+            v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                       r->ground_layout, 0, 1, &grounds[i].set, 0, NULL);
+            v->vkCmdBindVertexBuffers(v->cmd, 0, 1, &grounds[i].buffer.buffer, &at);
+            v->vkCmdBindIndexBuffer(v->cmd, grounds[i].buffer.buffer, grounds[i].indices_at,
+                                    VK_INDEX_TYPE_UINT32);
+            v->vkCmdDrawIndexed(v->cmd, grounds[i].count, 1, 0, 0, 0);
+        }
+    }
 
     v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->mesh);
     v->vkCmdPushConstants(v->cmd, r->mesh_layout,

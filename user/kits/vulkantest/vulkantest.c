@@ -417,47 +417,11 @@ static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t 
     };
     STEP(v->vkCreateSampler(v->device, &sci, NULL, &s->sampler), "sampler");
 
-    VkDescriptorSetLayoutBinding binding = {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-    };
-    VkDescriptorSetLayoutCreateInfo dslci = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &binding,
-    };
-    STEP(v->vkCreateDescriptorSetLayout(v->device, &dslci, NULL, &s->set_layout), "set-layout");
-    VkDescriptorPoolSize pool_size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
-    VkDescriptorPoolCreateInfo dpci = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = 1,
-        .poolSizeCount = 1,
-        .pPoolSizes = &pool_size,
-    };
-    STEP(v->vkCreateDescriptorPool(v->device, &dpci, NULL, &s->descriptors), "descriptor-pool");
-    VkDescriptorSetAllocateInfo dsai = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = s->descriptors,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &s->set_layout,
-    };
-    STEP(v->vkAllocateDescriptorSets(v->device, &dsai, &s->set), "descriptor-set");
-    VkDescriptorImageInfo texture = {
-        .sampler = s->sampler,
-        .imageView = s->checks.view,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    };
-    VkWriteDescriptorSet write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = s->set,
-        .dstBinding = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &texture,
-    };
-    v->vkUpdateDescriptorSets(v->device, 1, &write, 0, NULL);
+    if (!kvk_sampled_layout(v, &s->set_layout) ||
+        !kvk_sampled_set(v, s->set_layout, s->sampler, s->checks.view, &s->descriptors,
+                         &s->set)) {
+        return 0;
+    }
 
     VkPushConstantRange range = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 * sizeof(float) };
     VkPipelineLayoutCreateInfo plci = {
@@ -492,19 +456,7 @@ static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t 
     }
 
     /* The texture, from the buffer the checks were written into. */
-    kvk_barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-    VkBufferImageCopy region = {
-        .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-        .imageExtent = { CHECKS, CHECKS, 1 },
-    };
-    v->vkCmdCopyBufferToImage(v->cmd, s->upload.buffer, s->checks.image,
-                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    kvk_barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            VK_ACCESS_SHADER_READ_BIT);
+    kvk_image_upload(v, s->checks.image, CHECKS, CHECKS, s->upload.buffer);
     return kvk_submit(v);
 
 done:
@@ -997,7 +949,7 @@ static int l_scene(lua_State *L)
     if (!scene_meshes(&r, meshes, boxes, nboxes)) {
         goto done;
     }
-    if (!kvk_begin(&v) || !k3d_vk_draw(&r, target.image, target.view, &view, meshes, nboxes)) {
+    if (!kvk_begin(&v) || !k3d_vk_draw(&r, target.image, target.view, &view, meshes, nboxes, NULL, 0)) {
         goto done;
     }
     kvk_copy_out(&v, target.image, size, size, readback.buffer);
@@ -1120,7 +1072,7 @@ static int l_scene_window(lua_State *L)
         at.eye[2] = view.target[2] + (float)(sin(a) * ex + cos(a) * ez);
         if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
             !k3d_vk_draw(&drawn.r, c->images[index], c->views[index], &at, drawn.meshes,
-                         drawn.count)) {
+                         drawn.count, NULL, 0)) {
             goto done;
         }
         kvk_barrier(v, c->images[index], VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1143,6 +1095,196 @@ done:
     return 1;
 }
 
+
+/*
+ * ----------------------------------------------------------------- terrain
+ *
+ * **F4b**: the ground, drawn - the chunks `k3d_terrain.c` chooses for the
+ * eye, each its mesh and its imagery, by the renderer. The heights are a
+ * plane the caller tilts and the imagery a colour the caller can work out
+ * at any place: red and green from where a texel's centre is, east and
+ * south, blue from its chunk's zoom and a check of 20 between neighbouring
+ * texels, which only the sampler's filtering blends - so a picture of it can be held to a
+ * ray through the plane without a tile of real data.
+ */
+
+struct plane {
+    const struct k3d_place *place;
+    double h0, gx, gz;              /* metres at the origin, and a metre's rise
+                                     * east and south */
+};
+
+static float plane_height(void *context, double mx, double my)
+{
+    const struct plane *p = context;
+    double x, z;
+
+    k3d_place_world(p->place, mx, my, &x, &z);
+    return (float)(p->h0 + p->gx * x + p->gz * z);
+}
+
+static uint8_t channel(double c)
+{
+    c = floor(c + 0.5);
+    return (uint8_t)(c < 0.0 ? 0.0 : c > 255.0 ? 255.0 : c);
+}
+
+/* A chunk's imagery, `texels` a side: each texel the colour at its centre. */
+static void imagery_of(const struct k3d_place *p, struct k3d_tile t, unsigned root,
+                       uint32_t texels, double red, double green, uint8_t *rgba)
+{
+    double n = ldexp(1.0, t.z);
+
+    for (uint32_t j = 0; j < texels; j++) {
+        for (uint32_t i = 0; i < texels; i++) {
+            double mx = (t.x + (i + 0.5) / texels) / n, my = (t.y + (j + 0.5) / texels) / n;
+            double x, z;
+            uint8_t *q = rgba + ((size_t)j * texels + i) * 4;
+
+            k3d_place_world(p, mx, my, &x, &z);
+            q[0] = channel(128.0 + red * x);
+            q[1] = channel(128.0 + green * z);
+            q[2] = channel(40.0 + 30.0 * (t.z - root) + 20.0 * ((i + j) & 1));
+            q[3] = 255;
+        }
+    }
+}
+
+static double field(lua_State *L, int table, const char *name)
+{
+    double value;
+
+    lua_getfield(L, table, name);
+    value = luaL_checknumber(L, -1);
+    lua_pop(L, 1);
+    return value;
+}
+
+/* kit.terrain{ the scene's fields, terrain = { lon, lat, root, deepest,
+ * radius, split, most, h0, gx, gz, texels, red, green } } -> what was
+ * said - the chunks among it, as zoom/x/y - and the picture's bytes, RGB. */
+static int l_terrain(lua_State *L)
+{
+    struct k3d_vk_view view;
+    struct kvk v;
+    struct k3d_vk r = { 0 };
+    struct k3d_vk_ground *grounds = NULL;
+    struct k3d_tile *tiles = NULL;
+    struct k3d_terrain_vertex *corners = NULL;
+    uint32_t *idx = NULL;
+    uint8_t *rgba = NULL;
+    struct kvk_image target = { 0 };
+    struct kvk_buffer readback = { 0 };
+    float boxes[BOXES_MAX][9];
+    uint32_t nboxes, size, chunks = 0, made = 0;
+    struct k3d_place place;
+    struct k3d_choice choice;
+    struct plane plane;
+    luaL_Buffer out;
+
+    scene_args(L, 1, &view, boxes, &nboxes, &size, SCENE_MAX);
+    luaL_argcheck(L, nboxes == 0, 1, "a terrain's scene has no boxes");
+    lua_getfield(L, 1, "terrain");
+    luaL_checktype(L, -1, LUA_TTABLE);
+    int t = lua_gettop(L);
+    k3d_place_at(&place, field(L, t, "lon"), field(L, t, "lat"));
+    choice.root = (unsigned)field(L, t, "root");
+    choice.deepest = (unsigned)field(L, t, "deepest");
+    choice.radius = (unsigned)field(L, t, "radius");
+    choice.split = field(L, t, "split");
+    unsigned most = (unsigned)field(L, t, "most");
+    plane = (struct plane){ &place, field(L, t, "h0"), field(L, t, "gx"), field(L, t, "gz") };
+    uint32_t texels = (uint32_t)field(L, t, "texels");
+    double red = field(L, t, "red"), green = field(L, t, "green");
+    lua_pop(L, 1);
+    luaL_argcheck(L, choice.root <= choice.deepest && choice.deepest <= 24, 1,
+                  "zooms from root to deepest, at most 24");
+    luaL_argcheck(L, most >= 1 && most <= 4096, 1, "most from 1 to 4096");
+    luaL_argcheck(L, texels >= 2 && texels <= 256, 1, "texels from 2 to 256");
+
+    hand_console(L);
+    said[0] = '\0';
+    say("vulkan");
+    luaL_buffinit(L, &out);
+
+    tiles = calloc(most, sizeof(*tiles));
+    grounds = calloc(most, sizeof(*grounds));
+    corners = malloc(sizeof(*corners) * K3D_CHUNK_VERTICES);
+    idx = malloc(sizeof(*idx) * K3D_CHUNK_INDICES);
+    rgba = malloc((size_t)texels * texels * 4);
+    if (tiles == NULL || grounds == NULL || corners == NULL || idx == NULL || rgba == NULL) {
+        say(" failed=memory");
+        goto finished;
+    }
+    double eye[3] = { view.eye[0], view.eye[1], view.eye[2] };
+    chunks = k3d_terrain_choose(&place, &choice, eye, tiles, most);
+
+    if (!kvk_open(&v, "vulkantest", 0)) {
+        if (v.device_name[0]) {
+            say(" device=%s", v.device_name);
+        }
+        goto done;
+    }
+    say(" device=%s", v.device_name);
+    if (!kvk_image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, size, size,
+                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, "image") ||
+        !kvk_buffer_make(&v, &readback, (VkDeviceSize)size * size * 4,
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT, "buffer") ||
+        !k3d_vk_open(&r, &v, VK_FORMAT_R8G8B8A8_UNORM, size, size)) {
+        goto done;
+    }
+    for (; made < chunks; made++) {
+        k3d_terrain_chunk(&place, tiles[made], plane_height, &plane, 20.0f, corners, idx,
+                          NULL, NULL);
+        imagery_of(&place, tiles[made], choice.root, texels, red, green, rgba);
+        if (!k3d_vk_ground(&r, &grounds[made], corners, K3D_CHUNK_VERTICES, idx,
+                           K3D_CHUNK_INDICES, rgba, texels, texels)) {
+            goto done;
+        }
+    }
+    if (!kvk_begin(&v) ||
+        !k3d_vk_draw(&r, target.image, target.view, &view, NULL, 0, grounds, chunks)) {
+        goto done;
+    }
+    kvk_copy_out(&v, target.image, size, size, readback.buffer);
+    if (!kvk_submit(&v)) {
+        goto done;
+    }
+
+    say(" terrain=%ux%u chunks=%u tiles=", size, size, chunks);
+    for (uint32_t k = 0; k < chunks; k++) {
+        say("%s%u/%u/%u", k ? "," : "", tiles[k].z, tiles[k].x, tiles[k].y);
+    }
+    for (uint32_t i = 0; i < size * size; i++) {
+        luaL_addlstring(&out, (const char *)readback.bytes + (size_t)i * 4, 3);
+    }
+
+done:
+    said_failure(&v);
+    if (v.device != VK_NULL_HANDLE) {
+        if (r.v != NULL) {
+            for (uint32_t k = 0; k < made; k++) {
+                k3d_vk_ground_free(&r, &grounds[k]);
+            }
+            k3d_vk_close(&r);
+        }
+        kvk_buffer_free(&v, &readback);
+        kvk_image_free(&v, &target);
+    }
+    kvk_close(&v);
+finished:
+    free(tiles);
+    free(grounds);
+    free(corners);
+    free(idx);
+    free(rgba);
+    luaL_pushresult(&out);
+    lua_pushstring(L, said);
+    lua_insert(L, -2);
+    return 2;
+}
+
 static int l_hold(lua_State *L)
 {
     lua_pushboolean(L, hold(luaL_checknumber(L, 1)));
@@ -1162,6 +1304,8 @@ void kosmos_vulkantest_kit(lua_State *L)
     lua_setfield(L, -2, "scene");
     lua_pushcfunction(L, l_scene_window);
     lua_setfield(L, -2, "scene_window");
+    lua_pushcfunction(L, l_terrain);
+    lua_setfield(L, -2, "terrain");
     lua_pushcfunction(L, l_hold);
     lua_setfield(L, -2, "hold");
     lua_pushinteger(L, TRIANGLE);

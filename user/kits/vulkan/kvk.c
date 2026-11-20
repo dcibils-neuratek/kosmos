@@ -327,6 +327,84 @@ void kvk_copy_out(struct kvk *v, VkImage image, uint32_t width, uint32_t height,
                               &region);
 }
 
+void kvk_image_upload(struct kvk *v, VkImage image, uint32_t width, uint32_t height,
+                      VkBuffer from)
+{
+    kvk_barrier(v, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+    VkBufferImageCopy region = {
+        .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+        .imageExtent = { width, height, 1 },
+    };
+    v->vkCmdCopyBufferToImage(v->cmd, from, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                              &region);
+    kvk_barrier(v, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT);
+}
+
+int kvk_sampled_layout(struct kvk *v, VkDescriptorSetLayout *out)
+{
+    VkDescriptorSetLayoutBinding binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    VkDescriptorSetLayoutCreateInfo dslci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &binding,
+    };
+
+    KVK_STEP(v, v->vkCreateDescriptorSetLayout(v->device, &dslci, NULL, out), "set-layout");
+    return 1;
+
+done:
+    return 0;
+}
+
+int kvk_sampled_set(struct kvk *v, VkDescriptorSetLayout layout, VkSampler sampler,
+                    VkImageView view, VkDescriptorPool *pool, VkDescriptorSet *set)
+{
+    VkDescriptorPoolSize size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+    VkDescriptorPoolCreateInfo dpci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &size,
+    };
+
+    KVK_STEP(v, v->vkCreateDescriptorPool(v->device, &dpci, NULL, pool), "descriptor-pool");
+    VkDescriptorSetAllocateInfo dsai = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = *pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &layout,
+    };
+    KVK_STEP(v, v->vkAllocateDescriptorSets(v->device, &dsai, set), "descriptor-set");
+    VkDescriptorImageInfo image = {
+        .sampler = sampler,
+        .imageView = view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    VkWriteDescriptorSet write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = *set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &image,
+    };
+    v->vkUpdateDescriptorSets(v->device, 1, &write, 0, NULL);
+    return 1;
+
+done:
+    return 0;
+}
+
 int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
                  const struct kvk_pipeline_shape *shape)
 {

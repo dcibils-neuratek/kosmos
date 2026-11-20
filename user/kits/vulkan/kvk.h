@@ -129,6 +129,20 @@ int kvk_submit(struct kvk *v);
  * drawing, into a buffer the processor reads. */
 void kvk_copy_out(struct kvk *v, VkImage image, uint32_t width, uint32_t height, VkBuffer out);
 
+/* A colour image `width` by `height` filled from `from`, a buffer holding
+ * its pixels packed row after row: recorded, the image going from nothing
+ * to ready for fragment shaders to sample. */
+void kvk_image_upload(struct kvk *v, VkImage image, uint32_t width, uint32_t height,
+                      VkBuffer from);
+
+/* **A sampled image's descriptor set**: the layout of one - a combined
+ * image and sampler at binding 0, for fragment shaders - and one set of it
+ * in a pool of its own, which goes when the pool does. A pool a set means
+ * no count to guess; a few hundred is what a terrain holds. */
+int kvk_sampled_layout(struct kvk *v, VkDescriptorSetLayout *out);
+int kvk_sampled_set(struct kvk *v, VkDescriptorSetLayout layout, VkSampler sampler,
+                    VkImageView view, VkDescriptorPool *pool, VkDescriptorSet *set);
+
 /* A pipeline drawing triangles into one colour image of `format`, `width`
  * by `height`, with a depth buffer when `depth` is not
  * VK_FORMAT_UNDEFINED, and faces culled as `cull` says. */

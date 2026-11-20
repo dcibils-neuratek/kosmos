@@ -110,7 +110,8 @@ LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
 # The 3D Kit's Vulkan renderer, linked into every Vulkan test image.
 K3D_VK = ("user/kits/3d/k3d_vk.c", "user/kits/3d/k3d_vk.h", "user/kits/3d/k3d_mesh.vert",
           "user/kits/3d/k3d_mesh.frag", "user/kits/3d/k3d_sky.vert", "user/kits/3d/k3d_sky.frag",
-          "user/kits/3d/k3d_terrain.c", "user/kits/3d/k3d_terrain.h")
+          "user/kits/3d/k3d_terrain.c", "user/kits/3d/k3d_terrain.h",
+          "user/kits/3d/k3d_ground.vert", "user/kits/3d/k3d_ground.frag")
 MESA = ["tools/mesa_build.py", "tools/mesa_trial_ld.py"] + LLVM + W5
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],
@@ -667,6 +668,16 @@ SUITES = [
     Suite("x86-k3d-vulkan", ["python3", "tools/run_k3dvk.py", X86,
                              "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_k3dvk.py", "user/kits/vulkantest", "user/kits/vulkan",
+                        *K3D_VK, *MESA)),
+
+    # **The ground on Vulkan** (`docs/flight.md` F4b): the terrain's chunks
+    # for an eye 2500 m up, each its mesh over a tilted plane and imagery
+    # this side can work out anywhere, drawn by `k3d_vk.c` - every pixel
+    # held to a ray through the plane and the chunk the guest said holds it.
+    Suite("x86-k3d-ground", ["python3", "tools/run_k3dground.py", X86,
+                             "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_k3dground.py", "tools/run_k3dvk.py",
+                        "user/kits/vulkantest", "user/kits/vulkan", "user/kits/map/mercator.c",
                         *K3D_VK, *MESA)),
 
     # **Intel's Vulkan driver** (`docs/gpu3d.md` G7a): `anvtest.elf`, anv

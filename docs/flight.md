@@ -266,8 +266,11 @@ ends on the M700:
   quadtree over the map's tiles, split while the eye is nearer than
   `split` sides, the roots covered once whatever the room), and a chunk's
   mesh (65 by 65 samples, normals from the ring beyond its edges, skirts),
-  held on the Mac by `test_terrain`; **F4b** imagery as textures in
-  `k3d_vk.c` and chunks drawn, held to a reference as F3b is; **F4c** the
+  held on the Mac by `test_terrain`; **F4b built in 0.12.25** (18.945),
+  imagery as textures in `k3d_vk.c` and chunks drawn - 262 chunks from 2500
+  m up, held pixel by pixel to a ray through a tilted plane and the chunk
+  the guest said holds it (`x86-k3d-ground`), the Vulkan base gaining the
+  texture upload the cube had kept to itself; **F4c** the
   suite over a served city; **F4d** decoding on a thread of its own.
 - **F5 - Flight.** `flight.lua`: the aircraft, the three views, the strip
   and the cockpit, the pause sheet with search, the graphics panel, the

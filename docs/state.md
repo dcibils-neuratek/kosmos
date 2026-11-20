@@ -179,8 +179,9 @@ to a ray cast on the host; **F3c**'s first half (0.12.23, 18.943) puts it
 in a window through the swapchain, found on the screen and held to the
 same reference; its second half, the same scene on the M700 by `anv`,
 waits for the M700 to be booted. **F4a** (0.12.24, 18.944), the terrain's
-chunks and meshes in C, held on the Mac; F4b, imagery and chunks drawn, is
-next. After
+chunks and meshes in C, held on the Mac; **F4b** (0.12.25, 18.945), the
+chunks drawn with their imagery by the renderer; F4c, the suite over a
+served city, is next. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

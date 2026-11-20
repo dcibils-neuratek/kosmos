@@ -12045,7 +12045,8 @@ renderer on it (`k3d_vk.c`: a sky, meshes with depth, the sun and haze);
 **F3c's first half in 0.12.23** (18.943), the renderer in a window through
 the swapchain; its second half, the scene on the M700 by `anv`, when the
 M700 is booted. **F4a built in 0.12.24** (18.944), the terrain's chunks and
-meshes (`k3d_terrain.c`); F4b next, imagery as textures and chunks drawn.
+meshes (`k3d_terrain.c`); **F4b built in 0.12.25** (18.945), imagery as
+textures and chunks drawn; F4c next, a fixed path over a served city.
 Also wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a
