@@ -729,6 +729,19 @@ bool pci_take_interrupt(struct pci_device *dev)
     return msi_enable(dev) || msix_enable(dev);
 }
 
+void pci_set_master(struct pci_device *dev)
+{
+    uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,
+                                       PCI_COMMAND);
+
+    if ((command & COMMAND_MASTER) == 0) {
+        /* The status half is written back as read, as pci_enable writes
+         * it: its write-one-to-clear bits read as nought unless set. */
+        pci_config_write(dev->bus, dev->slot, dev->function, PCI_COMMAND,
+                         command | COMMAND_MASTER);
+    }
+}
+
 void pci_enable(struct pci_device *dev)
 {
     uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,

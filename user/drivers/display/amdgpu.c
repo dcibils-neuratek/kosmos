@@ -43,7 +43,11 @@
 
 #include "kosmos.h"
 #include "gpuproto.h"
+#include "amdgpu_cp.h"
 #include "amdgpu_decode.h"
+#include "amdgpu_fw.h"
+#include "amdgpu_ih.h"
+#include "amdgpu_vm.h"
 #include "mmio.h"
 #include "init/say.h"
 
@@ -79,12 +83,29 @@
 #define WORK_RING1              0x01000u
 #define WORK_WORDS              0x02000u    /* engine e's words at e * 0x100 */
 #define WORK_TEST               0x10000u    /* engine e: source at + e * 0x20000, its copy 64 KB on */
-#define WORK_BYTES              0x50000u
+#define WORK_IH                 0x50000u    /* the interrupt ring, AMDGPU_IH_RING_BYTES (V1) */
+#define WORK_IH_DUMMY           0x60000u    /* the IH's dummy read */
+#define WORK_GART               0x61000u    /* the GART's table: GTT_BYTES / 4096 entries (V2) */
+#define WORK_PD1                0x81000u    /* VMID 1's page directory, its one table after */
+#define WORK_PT1                0x82000u
+#define WORK_PD2                0x8a000u    /* VMID 2's */
+#define WORK_PT2                0x8b000u
+#define WORK_GFX_RING           0x93000u    /* the CP's ring 0 (V3) */
+#define WORK_RLC_SR             0x94000u    /* the RLC's save-and-restore and clear-state pages */
+#define WORK_RLC_CS             0x95000u
+#define WORK_BYTES              0x96000u
 #define RING_BYTES              0x1000u
 #define TEST_BYTES              0x10000u
 #define TEST_PATTERN            0x00c0ffeeu
 #define WRITE_VALUE             0xdeadbeefu
 #define WAIT_TICKS              50u         /* a DMA test's longest wait: 200 ms at 250 a second */
+#define GTT_BYTES               (64u << 20) /* the GART's span: 16384 pages, a 128 KB table */
+#define VM_GIGABYTES            8u          /* contexts 1-15: radeon's default, a 4 KB directory */
+#define GFX_RING_BYTES          0x1000u
+#define SYS_PAGES               8u          /* system pages the V2 test writes to through the GPU */
+#define VA_TARGET               0x100000u   /* in VMIDs 1 and 2: a page each, a different one */
+#define VA_IBS                  0x101000u   /* in both: the page of indirect buffers */
+#define VA_UNMAPPED             0x200000u   /* in neither: the fault's control */
 
 struct engine_result {
     uint32_t error;
@@ -122,6 +143,17 @@ struct card {
     uintptr_t       work_at;            /* mapped, or 0 */
     unsigned        cus, cus_max;
     uint32_t        flips;
+    /* V1: interrupts. */
+    long            irq;                /* the MSI's capability, or -1: entries are polled */
+    bool            ih_on;
+    uint32_t        ih_rptr;
+    unsigned long   ih_entries;         /* read since the ring went on */
+    /* V2: the GART and programs' address spaces. */
+    bool            gart_on;
+    uint64_t        gtt_start, gtt_end;
+    struct amdgpu_vm_geometry vm;
+    uint8_t        *sys;                /* SYS_PAGES of system memory, mapped */
+    uint64_t        sys_bus;            /* where they are, to the GPU */
 };
 
 static struct card CARD[CARDS_MAX];
@@ -191,6 +223,112 @@ static unsigned long counter_us(unsigned long t0, unsigned long t1)
     return (t1 - t0) / (unsigned long)(machine.counter_hz / 1000000u);
 }
 
+/*
+ * A register past the 76 KB mapped - DB_DEPTH_INFO, at 0x2803c, which the
+ * RLC's stop reads - through MM_INDEX and MM_DATA, at 0 and 4, as radeon's
+ * `r100_mm_rreg` does beyond its mapping (`radeon.h` 2455-2470,
+ * `radeon_reg.h` 1228-1229). One thread asks, so the pair needs no lock.
+ */
+static uint32_t rd_any(const struct card *c, uint32_t offset)
+{
+    if (offset < AMDGPU_REGS_BYTES) {
+        return rd(c, offset);
+    }
+
+    wr(c, 0x0u, offset);
+    return rd(c, 0x4u);
+}
+
+static void wr_any(const struct card *c, uint32_t offset, uint32_t value)
+{
+    if (offset < AMDGPU_REGS_BYTES) {
+        wr(c, offset, value);
+        return;
+    }
+
+    wr(c, 0x0u, offset);
+    wr(c, 0x4u, value);
+}
+
+static bool counter_known(void)
+{
+    return machine_known && machine.counter_hz >= 1000000u;
+}
+
+/* Linux's udelay: on the counter, and a tick - longer, which is safe -
+ * where the counter's rate is not known. */
+static void spin_us(uint32_t us)
+{
+    unsigned long t0 = kosmos_ticks();
+
+    if (!counter_known()) {
+        kosmos_sleep(1);
+        return;
+    }
+
+    while (counter_us(t0, kosmos_ticks()) < us) {
+    }
+}
+
+/*
+ * A register read until it answers, for at most `us`: spun for the first
+ * millisecond, as Linux's loops of udelay(1) are, and a tick apart after,
+ * so a register that never answers costs the core a millisecond and the
+ * request its bound.
+ */
+static bool poll_reg(const struct card *c, uint32_t reg, uint32_t mask, uint32_t value, uint32_t us)
+{
+    unsigned long t0 = kosmos_ticks(), slept = 0;
+    unsigned long bound_ticks = 1u + us / 4000u;        /* ticks are 4 ms at the least rate here */
+
+    for (;;) {
+        unsigned long el;
+
+        if ((rd_any(c, reg) & mask) == value) {
+            return true;
+        }
+
+        el = counter_known() ? counter_us(t0, kosmos_ticks()) : 1000u + slept * 4000u;
+
+        if (el >= us || slept > bound_ticks) {
+            return false;
+        }
+
+        if (el >= 1000u) {
+            kosmos_sleep(1);
+            slept++;
+        }
+    }
+}
+
+/* A program (`amdgpu_ih.h`) performed: -1, or the entry it stopped at. */
+static int run(const struct card *c, const struct amdgpu_prog *p)
+{
+    unsigned k;
+
+    if (p->overflow) {
+        return 0;
+    }
+
+    for (k = 0; k < p->n; k++) {
+        uint32_t reg = p->w[k].reg, value = p->w[k].value;
+
+        if (reg == AMDGPU_WR_DELAY) {
+            spin_us(value);
+        } else if (reg == AMDGPU_WR_POLL) {
+            if (k + 1u >= p->n
+                || !poll_reg(c, value, p->w[k + 1u].reg, p->w[k + 1u].value, AMDGPU_POLL_US)) {
+                return (int)k;
+            }
+            k++;
+        } else {
+            wr_any(c, reg, value);
+        }
+    }
+
+    return -1;
+}
+
 /*--------------------------------------------------------------------------
  * Found and named.
  *------------------------------------------------------------------------*/
@@ -208,6 +346,7 @@ static bool find(long console, unsigned i, struct card *c)
 
     memset(c, 0, sizeof *c);
     c->crtc = -1;
+    c->irq = -1;
 
     if (kosmos_dev_find(DEV_AMD_GPU, i, &c->regs_dev) != 0) {
         return false;
@@ -604,6 +743,12 @@ static void work_place(long console, unsigned i, struct card *c)
         at = ((end + 0xfffffu) & ~(uint64_t)0xfffffu) + 0x100000u;
     }
 
+    /* Once the interrupt ring or the GART's table is in it, it stays: the
+     * card is reading there. */
+    if ((c->ih_on || c->gart_on) && c->work_at != 0) {
+        at = c->work;
+    }
+
     mc = ((uint64_t)c->hdp_base << 8) + at;
 
     if (at + WORK_BYTES > c->aperture || mc < c->fb_start || mc + WORK_BYTES - 1u > c->fb_end) {
@@ -689,6 +834,258 @@ static uint64_t work_mc(const struct card *c, uint32_t offset)
     return ((uint64_t)c->hdp_base << 8) + c->work + offset;
 }
 
+/*--------------------------------------------------------------------------
+ * **Interrupts** (`docs/amdgpu.md` V1): the IH's ring, 64 KB in the work
+ * area, set up as `si_ih_irq_init` does, every source but the engines'
+ * masked as `si_disable_interrupt_state` leaves them - so it is on from boot
+ * and nothing raises an entry until a test asks for one. The MSI is claimed
+ * when the board told one (`dev_info.intid`); without it, entries are read
+ * by polling the write pointer, which is what radeon does without write-back.
+ *------------------------------------------------------------------------*/
+
+static void ih_start(long console, unsigned i)
+{
+    struct card *c = &CARD[i];
+    struct say_line line;
+    struct amdgpu_ih_cfg cfg;
+    struct amdgpu_prog p;
+    uint32_t k;
+    int stop;
+
+    if (c->ih_on || !c->work_ok || !c->untranslated) {
+        return;
+    }
+
+    if (rd(c, AMDGPU_IH_RB_CNTL) & AMDGPU_IH_RB_ENABLE) {
+        begin(&line, i);
+        say_text(&line, "IH already on - somebody else's; left alone, and no interrupts here");
+        say_send(console, &line);
+        return;
+    }
+
+    for (k = 0; k < AMDGPU_IH_RING_BYTES; k += 4) {
+        vram_wr(c, WORK_IH + k, 0);
+    }
+    for (k = 0; k < 4096u; k += 4) {
+        vram_wr(c, WORK_IH_DUMMY + k, 0);
+    }
+    hdp_flush(c);
+
+    if (c->irq < 0 && c->regs_dev.intid != 0) {
+        c->irq = kosmos_irq_claim(c->regs_dev.intid);
+    }
+
+    memset(&cfg, 0, sizeof cfg);
+    cfg.ring_mc = work_mc(c, WORK_IH);
+    cfg.ring_bytes = AMDGPU_IH_RING_BYTES;
+    cfg.wptr_mc = work_mc(c, WORK_WORDS + 0xf0u);
+    cfg.writeback = false;
+    cfg.dummy_mc = work_mc(c, WORK_IH_DUMMY);
+    cfg.in_vram = true;
+    cfg.msi = c->irq >= 0;
+    cfg.crtcs = amdgpu_family_info(c->family)->crtcs;
+    cfg.ih_rb_cntl = rd(c, AMDGPU_IH_RB_CNTL);
+    cfg.ih_cntl = rd(c, AMDGPU_IH_CNTL);
+    cfg.interrupt_cntl = rd(c, AMDGPU_INTERRUPT_CNTL);
+    cfg.cp_int_cntl_ring0 = rd(c, AMDGPU_CP_INT_CNTL_RING0);
+    cfg.dma_cntl[0] = rd(c, AMDGPU_DMA_CNTL);
+    cfg.dma_cntl[1] = rd(c, AMDGPU_DMA_CNTL + AMDGPU_DMA1_OFFSET);
+
+    if (!amdgpu_ih_setup(&p, &cfg) || (stop = run(c, &p)) >= 0) {
+        begin(&line, i);
+        say_text(&line, "IH NOT set up: the program was refused");
+        say_send(console, &line);
+        return;
+    }
+
+    c->ih_on = true;
+    c->ih_rptr = 0;
+    c->ih_entries = 0;
+
+    begin(&line, i);
+    say_text(&line, "IH on: a 64 KB ring at MC ");
+    say_hex(&line, (unsigned long)cfg.ring_mc, 10);
+    if (c->irq >= 0) {
+        say_text(&line, ", its MSI vector ");
+        say_dec(&line, c->regs_dev.intid);
+    } else {
+        say_text(&line, c->regs_dev.intid != 0 ? ", its MSI NOT CLAIMED - entries are polled"
+                                               : ", no MSI told by the board - entries are polled");
+    }
+    say_send(console, &line);
+}
+
+/*
+ * The entries since the last read, read: each counted, the first `say` of
+ * them said, and `want`'s first copied out. The read pointer is written
+ * back, and an overflow cleared as `si_get_ih_wptr` clears it.
+ */
+static unsigned ih_drain(long console, unsigned i, uint32_t want, struct amdgpu_iv *found,
+                         unsigned say)
+{
+    struct card *c = &CARD[i];
+    uint32_t raw, wptr, rptr, dw[4], k;
+    unsigned n = 0, seen = 0;
+    bool overflow;
+
+    if (!c->ih_on) {
+        return 0;
+    }
+
+    hdp_invalidate(c);
+    raw = rd(c, AMDGPU_IH_RB_WPTR);
+    wptr = amdgpu_ih_wptr(raw, AMDGPU_IH_RING_BYTES, &overflow);
+    rptr = c->ih_rptr;
+
+    if (overflow) {
+        uint32_t cntl = rd(c, AMDGPU_IH_RB_CNTL);
+
+        rptr = (wptr + AMDGPU_IV_BYTES) & (AMDGPU_IH_RING_BYTES - 1u);
+        wr(c, AMDGPU_IH_RB_CNTL, cntl | AMDGPU_IH_WPTR_OVERFLOW_CLEAR);
+        wr(c, AMDGPU_IH_RB_CNTL, cntl & ~AMDGPU_IH_WPTR_OVERFLOW_CLEAR);
+    }
+
+    while (rptr != wptr && n < AMDGPU_IH_RING_BYTES / AMDGPU_IV_BYTES) {
+        struct amdgpu_iv iv;
+
+        for (k = 0; k < 4; k++) {
+            dw[k] = vram_rd(c, WORK_IH + rptr + k * 4u);
+        }
+        amdgpu_ih_decode(dw, &iv);
+        n++;
+
+        if (iv.src_id == want && seen == 0 && found != NULL) {
+            *found = iv;
+            seen = 1;
+        }
+
+        if (n <= say) {
+            struct say_line line;
+            const char *name = amdgpu_ih_source_name(iv.src_id);
+
+            begin(&line, i);
+            say_text(&line, "IH entry: source ");
+            say_dec(&line, iv.src_id);
+            say_text(&line, name != NULL ? " (" : "");
+            say_text(&line, name != NULL ? name : "");
+            say_text(&line, name != NULL ? ")" : "");
+            say_text(&line, ", data ");
+            say_hex(&line, iv.src_data, 7);
+            say_text(&line, ", ring ");
+            say_dec(&line, iv.ring_id);
+            say_text(&line, ", VMID ");
+            say_dec(&line, iv.vmid);
+            say_send(console, &line);
+        }
+
+        rptr = amdgpu_ih_next(rptr, AMDGPU_IH_RING_BYTES);
+    }
+
+    wr(c, AMDGPU_IH_RB_RPTR, rptr);
+    c->ih_rptr = rptr;
+    c->ih_entries += n;
+    return seen;
+}
+
+/*
+ * An entry from `want` waited for, at most `ticks`: the MSI where there is
+ * one - and whether it was heard - and the ring read after each wake or
+ * each tick.
+ */
+static bool ih_wait(long console, unsigned i, uint32_t want, unsigned ticks,
+                    struct amdgpu_iv *found, bool *heard)
+{
+    struct card *c = &CARD[i];
+    unsigned t;
+
+    *heard = false;
+
+    for (t = 0; t <= ticks; t++) {
+        if (c->irq >= 0) {
+            if (kosmos_irq_wait_for(c->irq, 1) >= 0) {
+                *heard = true;
+                (void)kosmos_irq_ack(c->irq);
+            }
+        } else if (t > 0) {
+            kosmos_sleep(1);
+        }
+
+        if (ih_drain(console, i, want, found, 4)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*--------------------------------------------------------------------------
+ * A DMA engine's ring started and stopped as `si_dma_start` and
+ * `si_dma_stop` do: in VRAM, its read pointer written back beside the
+ * engine's words, `n` dwords of commands already in it. Every test of an
+ * engine goes through these two.
+ *------------------------------------------------------------------------*/
+
+static void dma_start(const struct card *c, unsigned e, uint32_t ring, uint32_t words, uint32_t n)
+{
+    const uint32_t at = e ? AMDGPU_DMA1_OFFSET : 0u;
+    uint32_t rb_cntl = amdgpu_dma_rb_size(RING_BYTES), cntl;
+
+    wr(c, AMDGPU_DMA_SEM_INCOMPLETE + at, 0);
+    wr(c, AMDGPU_DMA_SEM_WAIT_FAIL + at, 0);
+    wr(c, AMDGPU_DMA_RB_CNTL + at, rb_cntl);
+    wr(c, AMDGPU_DMA_RB_RPTR + at, 0);
+    wr(c, AMDGPU_DMA_RB_WPTR + at, 0);
+    wr(c, AMDGPU_DMA_RB_RPTR_ADDR_LO + at, (uint32_t)work_mc(c, words + 0x80u));
+    wr(c, AMDGPU_DMA_RB_RPTR_ADDR_HI + at, (uint32_t)(work_mc(c, words + 0x80u) >> 32) & 0xffu);
+    wr(c, AMDGPU_DMA_RB_BASE + at, (uint32_t)(work_mc(c, ring) >> 8));
+    wr(c, AMDGPU_DMA_IB_CNTL + at, AMDGPU_DMA_IB_ENABLE | AMDGPU_CMD_VMID_FORCE);
+    cntl = rd(c, AMDGPU_DMA_CNTL + at) & ~AMDGPU_CTXEMPTY_INT;
+    /* The trap reaches the IH only with TRAP_ENABLE (`si_irq_set`, 6060-6089). */
+    cntl = c->ih_on ? cntl | AMDGPU_DMA_TRAP_ENABLE : cntl & ~AMDGPU_DMA_TRAP_ENABLE;
+    wr(c, AMDGPU_DMA_CNTL + at, cntl);
+    wr(c, AMDGPU_DMA_RB_WPTR + at, 0);
+    wr(c, AMDGPU_DMA_RB_CNTL + at, rb_cntl | AMDGPU_DMA_RB_ENABLE);
+    wr(c, AMDGPU_DMA_RB_WPTR + at, amdgpu_dma_wptr(n));
+}
+
+static void dma_stop(const struct card *c, unsigned e)
+{
+    const uint32_t at = e ? AMDGPU_DMA1_OFFSET : 0u;
+
+    wr(c, AMDGPU_DMA_RB_CNTL + at, rd(c, AMDGPU_DMA_RB_CNTL + at) & ~AMDGPU_DMA_RB_ENABLE);
+    wr(c, AMDGPU_DMA_CNTL + at, rd(c, AMDGPU_DMA_CNTL + at) & ~AMDGPU_DMA_TRAP_ENABLE);
+}
+
+/* The commands into the ring, padded to eight and the rest nought. */
+static void dma_fill_ring(const struct card *c, uint32_t ring, const uint32_t *cmd, uint32_t n)
+{
+    uint32_t k;
+
+    for (k = 0; k < RING_BYTES; k += 4) {
+        vram_wr(c, ring + k, k / 4 < n ? cmd[k / 4] : 0u);
+    }
+    hdp_flush(c);
+}
+
+/* A word of the work area waited for, at most WAIT_TICKS. */
+static bool word_wait(const struct card *c, uint32_t offset, uint32_t value, unsigned long *t1)
+{
+    unsigned long waited;
+
+    for (waited = 0; waited <= WAIT_TICKS; waited++) {
+        hdp_invalidate(c);
+
+        if (vram_rd(c, offset) == value) {
+            *t1 = kosmos_ticks();
+            return true;
+        }
+
+        kosmos_sleep(1);
+    }
+
+    return false;
+}
+
 static void engine_test(long console, unsigned i, unsigned e, struct engine_result *res)
 {
     struct card *c = &CARD[i];
@@ -698,7 +1095,9 @@ static void engine_test(long console, unsigned i, unsigned e, struct engine_resu
     const uint32_t words = WORK_WORDS + e * 0x100u;
     const uint32_t src = WORK_TEST + e * 0x20000u, dst = src + TEST_BYTES;
     uint32_t cmd[24], n = 0, k, rb_cntl, reset;
-    unsigned long t0, t1 = 0, waited;
+    unsigned long t0, t1 = 0;
+    struct amdgpu_iv iv;
+    bool trapped = false, heard = false;
 
     memset(res, 0, sizeof *res);
 
@@ -734,43 +1133,24 @@ static void engine_test(long console, unsigned i, unsigned e, struct engine_resu
     n += amdgpu_dma_copy(cmd + n, work_mc(c, dst), work_mc(c, src), TEST_BYTES);
     n += amdgpu_dma_fence(cmd + n, work_mc(c, words + 4), 1);
 
+    /* V1: the fence's interrupt, as `si_dma_ring_emit_fence` raises it. */
+    if (c->ih_on) {
+        (void)ih_drain(console, i, ~0u, NULL, 0);       /* whatever came before, not this test's */
+        n += amdgpu_dma_trap(cmd + n);
+    }
+
     while ((n & 7u) != 0) {
         n += amdgpu_dma_nop(cmd + n);
     }
 
-    for (k = 0; k < RING_BYTES; k += 4) {
-        vram_wr(c, ring + k, k / 4 < n ? cmd[k / 4] : 0u);
-    }
-
-    hdp_flush(c);
-
-    /* `si_dma_start`, in its order. */
-    wr(c, AMDGPU_DMA_SEM_INCOMPLETE + at, 0);
-    wr(c, AMDGPU_DMA_SEM_WAIT_FAIL + at, 0);
-    rb_cntl = amdgpu_dma_rb_size(RING_BYTES);
-    wr(c, AMDGPU_DMA_RB_CNTL + at, rb_cntl);
-    wr(c, AMDGPU_DMA_RB_RPTR + at, 0);
-    wr(c, AMDGPU_DMA_RB_WPTR + at, 0);
-    wr(c, AMDGPU_DMA_RB_RPTR_ADDR_LO + at, (uint32_t)work_mc(c, words + 0x80u));
-    wr(c, AMDGPU_DMA_RB_RPTR_ADDR_HI + at, (uint32_t)(work_mc(c, words + 0x80u) >> 32) & 0xffu);
-    wr(c, AMDGPU_DMA_RB_BASE + at, (uint32_t)(work_mc(c, ring) >> 8));
-    wr(c, AMDGPU_DMA_IB_CNTL + at, AMDGPU_DMA_IB_ENABLE | AMDGPU_CMD_VMID_FORCE);
-    wr(c, AMDGPU_DMA_CNTL + at, rd(c, AMDGPU_DMA_CNTL + at) & ~AMDGPU_CTXEMPTY_INT);
-    wr(c, AMDGPU_DMA_RB_WPTR + at, 0);
-    wr(c, AMDGPU_DMA_RB_CNTL + at, rb_cntl | AMDGPU_DMA_RB_ENABLE);
+    dma_fill_ring(c, ring, cmd, n);
 
     t0 = kosmos_ticks();
-    wr(c, AMDGPU_DMA_RB_WPTR + at, amdgpu_dma_wptr(n));
+    dma_start(c, e, ring, words, n);
+    (void)word_wait(c, words + 4, 1u, &t1);
 
-    for (waited = 0; waited <= WAIT_TICKS; waited++) {
-        hdp_invalidate(c);
-
-        if (vram_rd(c, words + 4) == 1u) {
-            t1 = kosmos_ticks();
-            break;
-        }
-
-        kosmos_sleep(1);
+    if (c->ih_on) {
+        trapped = ih_wait(console, i, e ? AMDGPU_SRC_DMA1_TRAP : AMDGPU_SRC_DMA0_TRAP, 10, &iv, &heard);
     }
 
     hdp_invalidate(c);
@@ -789,7 +1169,7 @@ static void engine_test(long console, unsigned i, unsigned e, struct engine_resu
     }
 
     /* Off again: `si_dma_stop`. */
-    wr(c, AMDGPU_DMA_RB_CNTL + at, rd(c, AMDGPU_DMA_RB_CNTL + at) & ~AMDGPU_DMA_RB_ENABLE);
+    dma_stop(c, e);
 
     res->error = res->fence != 1u ? GPU_ERR_NO_ANSWER
                : res->value != WRITE_VALUE || res->filled != TEST_BYTES / 4u || res->copied != TEST_BYTES / 4u
@@ -818,6 +1198,559 @@ static void engine_test(long console, unsigned i, unsigned e, struct engine_resu
     say_text(&line, ", SRBM2 ");
     say_hex(&line, res->srbm2, 8);
     say_send(console, &line);
+
+    if (c->ih_on) {
+        begin(&line, i);
+        say_text(&line, "DMA ");
+        say_dec(&line, e);
+        if (trapped) {
+            say_text(&line, "'s trap reached the IH: source ");
+            say_dec(&line, iv.src_id);
+            say_text(&line, ", ring ");
+            say_dec(&line, iv.ring_id);
+            say_text(&line, c->irq < 0 ? "; no MSI to hear" : heard ? "; its MSI heard" : "; its MSI NOT HEARD");
+        } else {
+            say_text(&line, "'s trap did NOT reach the IH; wptr ");
+            say_hex(&line, rd(c, AMDGPU_IH_RB_WPTR), 5);
+            say_text(&line, ", IH_RB_CNTL ");
+            say_hex(&line, rd(c, AMDGPU_IH_RB_CNTL), 8);
+            say_text(&line, ", IH_CNTL ");
+            say_hex(&line, rd(c, AMDGPU_IH_CNTL), 8);
+        }
+        say_send(console, &line);
+    }
+}
+
+/*--------------------------------------------------------------------------
+ * **The GART and programs' address spaces** (`docs/amdgpu.md` V2), asked
+ * for with GPU_OP_ENGINE_TEST `x` 2 - never at boot, since it turns the
+ * memory controller's translation on under a screen the firmware drew.
+ *
+ * SYS_PAGES pages of system memory, one physical run. The GART spans
+ * GTT_BYTES where `radeon_gtt_location` puts it; every entry points at
+ * page 4, the dummy, and GTT pages 0 and 1 at pages 0 and 2 - so a write
+ * that lands where it should proves the table is read rather than the
+ * address taken as it is. Then VMIDs 1 and 2, a page directory and a table
+ * each in VRAM, the same address in both on a page of its own - 1 and 5 -
+ * and the same page of indirect buffers, 3; DMA 0 runs one buffer in each,
+ * and a third in VMID 1 at an address neither maps, which must fault.
+ *------------------------------------------------------------------------*/
+
+#define SYS_GTT0     0u     /* GTT page 0 */
+#define SYS_VMID1    1u     /* VA_TARGET in VMID 1 */
+#define SYS_GTT1     2u     /* GTT page 1 */
+#define SYS_IBS      3u     /* VA_IBS in both */
+#define SYS_DUMMY    4u     /* every other GTT page, and where faults go */
+#define SYS_VMID2    5u     /* VA_TARGET in VMID 2 */
+
+static uint32_t *sys_word(const struct card *c, unsigned page, uint32_t offset)
+{
+    return (uint32_t *)(void *)(c->sys + page * 4096u + offset);
+}
+
+static void vram_wr64(const struct card *c, uint32_t offset, uint64_t value)
+{
+    vram_wr(c, offset, (uint32_t)value);
+    vram_wr(c, offset + 4u, (uint32_t)(value >> 32));
+}
+
+static bool sys_pages(long console, unsigned i)
+{
+    struct card *c = &CARD[i];
+    struct say_line line;
+    long region, at, bus;
+
+    if (c->sys != NULL) {
+        return true;
+    }
+
+    region = kosmos_mem_create_flags(SYS_PAGES, MEM_CONTIGUOUS);
+    if (region < 0 || (at = kosmos_mem_map(region)) < 0 || (bus = kosmos_mem_phys(region)) < 0) {
+        begin(&line, i);
+        say_text(&line, "no system pages for the GART test");
+        say_send(console, &line);
+        return false;
+    }
+
+    c->sys = (uint8_t *)(uintptr_t)at;
+    c->sys_bus = (uint64_t)bus;
+    return true;
+}
+
+/* The GART on: placed, its table filled, the aperture and the program. */
+static bool gart_on(long console, unsigned i)
+{
+    struct card *c = &CARD[i];
+    struct say_line line;
+    struct amdgpu_gart_cfg cfg;
+    struct amdgpu_prog p;
+    uint64_t size = GTT_BYTES, dummy;
+    uint32_t k, entries;
+
+    if (c->gart_on) {
+        return true;
+    }
+
+    amdgpu_gtt_place(c->fb_start, c->fb_end, (1ull << 40) - 1u, &size, &c->gtt_start, &c->gtt_end);
+    entries = (uint32_t)(size / 4096u);
+
+    if (size != GTT_BYTES || !amdgpu_vm_geometry(VM_GIGABYTES, &c->vm)) {
+        begin(&line, i);
+        say_text(&line, "no room for the GTT beside VRAM");
+        say_send(console, &line);
+        return false;
+    }
+
+    /* Every entry the dummy page, valid - where radeon leaves an unbound
+     * entry invalid and lets a fault default there, which context 0 is not
+     * told to do for anything but its range. */
+    dummy = amdgpu_pte(c->sys_bus + SYS_DUMMY * 4096u, AMDGPU_PTE_SYSTEM_RW);
+    for (k = 0; k < entries; k++) {
+        vram_wr64(c, WORK_GART + k * 8u, dummy);
+    }
+    vram_wr64(c, WORK_GART + 0u, amdgpu_pte(c->sys_bus + SYS_GTT0 * 4096u, AMDGPU_PTE_SYSTEM_RW));
+    vram_wr64(c, WORK_GART + 8u, amdgpu_pte(c->sys_bus + SYS_GTT1 * 4096u, AMDGPU_PTE_SYSTEM_RW));
+    hdp_flush(c);
+
+    /* VRAM untranslated under NOT_IN_SYS: the aperture is VRAM. */
+    amdgpu_prog_clear(&p);
+    amdgpu_sys_aperture(&p, c->fb_start, c->fb_end, work_mc(c, WORK_IH_DUMMY),
+                        rd(c, AMDGPU_MC_VM_SYS_APER_LOW), rd(c, AMDGPU_MC_VM_SYS_APER_HIGH));
+    if (p.n != 0) {
+        begin(&line, i);
+        say_text(&line, "the system aperture set to VRAM, as `si_mc_program` sets it");
+        say_send(console, &line);
+        (void)run(c, &p);
+    }
+
+    cfg.table_mc = work_mc(c, WORK_GART);
+    cfg.gtt_start = c->gtt_start;
+    cfg.gtt_end = c->gtt_end;
+    cfg.dummy_page = c->sys_bus + SYS_DUMMY * 4096u;
+    cfg.vm = &c->vm;
+
+    if (!amdgpu_gart_enable(&p, &cfg) || run(c, &p) >= 0) {
+        begin(&line, i);
+        say_text(&line, "the GART NOT enabled: its program was refused");
+        say_send(console, &line);
+        return false;
+    }
+
+    c->gart_on = true;
+    c->sys_low = c->fb_start;
+    c->sys_high = c->fb_end;
+    c->sys_set = true;
+
+    begin(&line, i);
+    say_text(&line, "GART on: ");
+    say_mb(&line, size);
+    say_text(&line, " at MC ");
+    say_hex(&line, (unsigned long)c->gtt_start, 10);
+    say_text(&line, ", its table at MC ");
+    say_hex(&line, (unsigned long)cfg.table_mc, 10);
+    say_text(&line, "; programs' contexts ");
+    say_dec(&line, c->vm.gigabytes);
+    say_text(&line, " GB, block ");
+    say_dec(&line, c->vm.block_size);
+    say_send(console, &line);
+    return true;
+}
+
+/* A program's page directory and its one table: VA_TARGET on `target`,
+ * VA_IBS on SYS_IBS, nothing else. */
+static void vm_tables(const struct card *c, uint32_t pd, uint32_t pt, unsigned target)
+{
+    uint32_t de, te, k;
+
+    for (k = 0; k < c->vm.pd_entries * 8u; k += 4) {
+        vram_wr(c, pd + k, 0);
+    }
+    for (k = 0; k < c->vm.pt_entries * 8u; k += 4) {
+        vram_wr(c, pt + k, 0);
+    }
+
+    (void)amdgpu_vm_index(&c->vm, VA_TARGET, &de, &te);
+    vram_wr64(c, pd + de * 8u, amdgpu_pde(work_mc(c, pt)));
+    vram_wr64(c, pt + te * 8u, amdgpu_pte(c->sys_bus + target * 4096u, AMDGPU_PTE_SYSTEM_RW));
+    (void)amdgpu_vm_index(&c->vm, VA_IBS, &de, &te);
+    vram_wr64(c, pt + te * 8u, amdgpu_pte(c->sys_bus + SYS_IBS * 4096u, AMDGPU_PTE_SYSTEM_RW));
+    hdp_flush(c);
+}
+
+/* An indirect buffer of eight: one WRITE, padded with NOPs. */
+static void ib_write(const struct card *c, uint32_t offset, uint64_t va, uint32_t value)
+{
+    uint32_t *ib = sys_word(c, SYS_IBS, offset);
+    unsigned n = amdgpu_dma_write(ib, va, value);
+
+    while (n < 8u) {
+        n += amdgpu_dma_nop(ib + n);
+    }
+}
+
+static void gart_test(long console, unsigned i, struct gpu_reply *rep)
+{
+    struct card *c = &CARD[i];
+    struct say_line line;
+    struct amdgpu_iv iv;
+    struct amdgpu_vm_fault f;
+    uint32_t cmd[128], n = 0, k, status, addr;
+    unsigned long t0, t1 = 0;
+    long command = config(i, PCI_COMMAND_WORD);
+    bool fenced, faulted, heard, gtt_ok, vm_ok;
+    uint32_t got[6];
+
+    rep->error = GPU_ERR_NO_RING;
+
+    if (!c->posted || !c->work_ok || !c->untranslated || !c->ih_on) {
+        begin(&line, i);
+        say_text(&line, "no GART test: ");
+        say_text(&line, !c->posted ? "the card is not posted" : !c->work_ok ? "no work area"
+                        : !c->untranslated ? "its addresses may be translated" : "no interrupt ring");
+        say_send(console, &line);
+        return;
+    }
+
+    if (command < 0 || ((uint32_t)command & 0x4u) == 0) {
+        begin(&line, i);
+        say_text(&line, "no GART test: bus master is off, so the card cannot reach system memory");
+        say_send(console, &line);
+        return;
+    }
+
+    if ((rd(c, AMDGPU_DMA_RB_CNTL) & AMDGPU_DMA_RB_ENABLE) || !sys_pages(console, i) || !gart_on(console, i)) {
+        rep->error = GPU_ERR_NO_MEMORY;
+        return;
+    }
+
+    memset(&iv, 0, sizeof iv);
+    memset(c->sys, 0, SYS_PAGES * 4096u);
+    vm_tables(c, WORK_PD1, WORK_PT1, SYS_VMID1);
+    vm_tables(c, WORK_PD2, WORK_PT2, SYS_VMID2);
+    ib_write(c, 0x000u, VA_TARGET, 0x11111111u);
+    ib_write(c, 0x100u, VA_TARGET, 0x22222222u);
+    ib_write(c, 0x200u, VA_UNMAPPED + 0x800u, 0x33333333u);   /* off word 0, if it lands in the dummy */
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);         /* the buffers before the engine is told */
+
+    vram_wr(c, WORK_WORDS + 8u, 0);
+    (void)ih_drain(console, i, ~0u, NULL, 0);
+    wr(c, AMDGPU_VM_CONTEXT1_CNTL2, rd(c, AMDGPU_VM_CONTEXT1_CNTL2) | 1u);   /* any old fault let go */
+
+    /* V2a: through the GART, three pages: 0 and 1 mapped, 2 the dummy's. */
+    n += amdgpu_dma_write(cmd + n, c->gtt_start + 0x000u, 0x6a770000u);
+    n += amdgpu_dma_write(cmd + n, c->gtt_start + 0x1000u, 0x6a770001u);
+    n += amdgpu_dma_write(cmd + n, c->gtt_start + 0x2000u, 0x6a770002u);
+
+    /* V2b: VMID 1, VMID 2, and VMID 1 again at an address it does not map. */
+    n += amdgpu_dma_vm_flush(cmd + n, 1, work_mc(c, WORK_PD1));
+    n += amdgpu_dma_ib(cmd + n, n, 1, VA_IBS + 0x000u, 8);
+    n += amdgpu_dma_vm_flush(cmd + n, 2, work_mc(c, WORK_PD2));
+    n += amdgpu_dma_ib(cmd + n, n, 2, VA_IBS + 0x100u, 8);
+    n += amdgpu_dma_ib(cmd + n, n, 1, VA_IBS + 0x200u, 8);
+
+    n += amdgpu_dma_fence(cmd + n, work_mc(c, WORK_WORDS + 8u), 2);
+    n += amdgpu_dma_trap(cmd + n);
+    while ((n & 7u) != 0) {
+        n += amdgpu_dma_nop(cmd + n);
+    }
+
+    dma_fill_ring(c, WORK_RING0, cmd, n);
+    t0 = kosmos_ticks();
+    dma_start(c, 0, WORK_RING0, WORK_WORDS, n);
+    fenced = word_wait(c, WORK_WORDS + 8u, 2u, &t1);
+    faulted = ih_wait(console, i, AMDGPU_SRC_VM_FAULT, 10, &iv, &heard)
+              || ih_drain(console, i, AMDGPU_SRC_VM_FAULT2, &iv, 4);
+    status = rd(c, AMDGPU_VM_CONTEXT1_FAULT_STATUS);
+    addr = rd(c, AMDGPU_VM_CONTEXT1_FAULT_ADDR);
+    wr(c, AMDGPU_VM_CONTEXT1_CNTL2, rd(c, AMDGPU_VM_CONTEXT1_CNTL2) | 1u);
+    dma_stop(c, 0);
+
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    got[0] = *sys_word(c, SYS_GTT0, 0);
+    got[1] = *sys_word(c, SYS_GTT1, 0);
+    got[2] = *sys_word(c, SYS_DUMMY, 0);
+    got[3] = *sys_word(c, SYS_VMID1, 0);
+    got[4] = *sys_word(c, SYS_VMID2, 0);
+    got[5] = *sys_word(c, SYS_DUMMY, 0x800u);
+    amdgpu_vm_fault_decode(status, addr, &f);
+
+    gtt_ok = got[0] == 0x6a770000u && got[1] == 0x6a770001u && got[2] == 0x6a770002u;
+    vm_ok = got[3] == 0x11111111u && got[4] == 0x22222222u;
+    /* Nothing else written: every word but the five targets' first, and
+     * the page of buffers, still nought. */
+    for (k = 0; k < SYS_PAGES * 1024u; k++) {
+        bool target = k == SYS_GTT0 * 1024u || k == SYS_GTT1 * 1024u || k == SYS_DUMMY * 1024u
+                      || k == SYS_VMID1 * 1024u || k == SYS_VMID2 * 1024u || k / 1024u == SYS_IBS
+                      || k == SYS_DUMMY * 1024u + 0x200u;      /* the fault's write, if it lands */
+
+        if (!target && ((const uint32_t *)(const void *)c->sys)[k] != 0) {
+            gtt_ok = vm_ok = false;                 /* a write landed where nothing maps */
+        }
+    }
+
+    begin(&line, i);
+    say_text(&line, gtt_ok ? "GART works: " : "GART FAILED: ");
+    say_text(&line, "GTT pages 0, 1, 2 wrote ");
+    say_hex(&line, got[0], 8);
+    say_text(&line, " ");
+    say_hex(&line, got[1], 8);
+    say_text(&line, " ");
+    say_hex(&line, got[2], 8);
+    say_text(&line, " to system pages 0, 2 and the dummy; fence ");
+    say_text(&line, fenced ? "reached, " : "NOT REACHED, ");
+    say_dec(&line, t1 ? counter_us(t0, t1) : 0u);
+    say_text(&line, " us");
+    say_send(console, &line);
+
+    begin(&line, i);
+    say_text(&line, vm_ok ? "VMIDs work: " : "VMIDs FAILED: ");
+    say_text(&line, "the same address wrote ");
+    say_hex(&line, got[3], 8);
+    say_text(&line, " in VMID 1 and ");
+    say_hex(&line, got[4], 8);
+    say_text(&line, " in VMID 2, each to its own page");
+    say_send(console, &line);
+
+    begin(&line, i);
+    faulted = faulted && f.vmid == 1u && f.address == VA_UNMAPPED;
+    if (faulted) {
+        say_text(&line, "the control faulted as it should: source ");
+    } else {
+        say_text(&line, iv.src_id == AMDGPU_SRC_VM_FAULT || iv.src_id == AMDGPU_SRC_VM_FAULT2
+                        ? "the control faulted ELSEWHERE: source " : "the control did NOT fault: source ");
+    }
+    say_dec(&line, faulted ? iv.src_id : 0u);
+    say_text(&line, ", VMID ");
+    say_dec(&line, f.vmid);
+    say_text(&line, f.write ? " writing " : " reading ");
+    say_hex(&line, (unsigned long)f.address, 10);
+    say_text(&line, ", client ");
+    say_hex(&line, f.client, 2);
+    say_text(&line, ", protections ");
+    say_hex(&line, f.protections, 1);
+    say_text(&line, got[5] == 0x33333333u ? "; its write went to the dummy page" : "; its write went nowhere seen");
+    say_text(&line, c->irq < 0 ? "" : heard ? "; MSI heard" : "; MSI not heard");
+    say_send(console, &line);
+
+    rep->error = !fenced ? GPU_ERR_NO_ANSWER : gtt_ok && vm_ok && faulted ? GPU_OK : GPU_ERR_UNCHANGED;
+    rep->engine.value = got[0];
+    rep->engine.head = status;
+    rep->engine.tail = addr;
+    rep->engine.ctl = got[3];
+    rep->engine.mode = got[4];
+    rep->engine.esr = faulted ? iv.src_id : 0u;
+    rep->engine.elapsed_us = t1 ? (uint32_t)counter_us(t0, t1) : 0u;
+}
+
+/*--------------------------------------------------------------------------
+ * **The command processor** (`docs/amdgpu.md` V3), asked for with
+ * GPU_OP_ENGINE_TEST `x` 3: the RLC and the CP's three given their
+ * microcode, the ring 0 set up, ME_INITIALIZE, the ring test Linux makes -
+ * SCRATCH_REG0 written by the CP - and an end-of-pipe fence with its
+ * interrupt. The clear state (`si_cs_data`) is V5's, so CLEAR_STATE is not
+ * sent and nothing is drawn; the CP is halted again after, as the DMA test
+ * leaves its engine.
+ *------------------------------------------------------------------------*/
+
+static bool load_fw(long console, unsigned i, enum amdgpu_fw_kind kind, struct amdgpu_fw *fw)
+{
+    static const char *const names[] = { "PFP", "ME", "CE", "RLC" };
+    struct card *c = &CARD[i];
+    struct say_line line;
+    const uint8_t *bytes;
+    size_t len;
+    const char *why;
+
+    if (!amdgpu_fw_image(c->family, kind, &bytes, &len)) {
+        begin(&line, i);
+        say_text(&line, "no CP test: the ");
+        say_text(&line, names[kind]);
+        say_text(&line, "'s firmware is not in this image");
+        say_send(console, &line);
+        return false;
+    }
+
+    why = amdgpu_fw_parse(kind, bytes, len, fw);
+    if (why != NULL) {
+        begin(&line, i);
+        say_text(&line, "no CP test: the ");
+        say_text(&line, names[kind]);
+        say_text(&line, "'s firmware has ");
+        say_text(&line, why);
+        say_send(console, &line);
+        return false;
+    }
+
+    return true;
+}
+
+static void ucode(const struct card *c, uint32_t addr_reg, uint32_t data_reg, const struct amdgpu_fw *fw)
+{
+    uint32_t k;
+
+    wr(c, addr_reg, 0);
+    for (k = 0; k < fw->count; k++) {
+        wr(c, data_reg, amdgpu_fw_word(fw, k));
+    }
+    wr(c, addr_reg, 0);
+}
+
+static void cp_test(long console, unsigned i, struct gpu_reply *rep)
+{
+    struct card *c = &CARD[i];
+    struct say_line line;
+    struct amdgpu_fw pfp, me, ce, rlc;
+    struct amdgpu_prog p;
+    struct amdgpu_iv iv;
+    uint32_t ring[64], n = 0, k, me_cntl, scratch, fence, cp_int;
+    unsigned long t0, t1 = 0;
+    bool ring_ok, fenced, eop = false, heard = false;
+    int stop;
+
+    rep->error = GPU_ERR_NO_RING;
+
+    if (!c->posted || !c->work_ok || !c->untranslated || !c->ih_on) {
+        begin(&line, i);
+        say_text(&line, "no CP test: ");
+        say_text(&line, !c->posted ? "the card is not posted" : !c->work_ok ? "no work area"
+                        : !c->untranslated ? "its addresses may be translated" : "no interrupt ring");
+        say_send(console, &line);
+        return;
+    }
+
+    if (!load_fw(console, i, AMDGPU_FW_PFP, &pfp) || !load_fw(console, i, AMDGPU_FW_ME, &me)
+        || !load_fw(console, i, AMDGPU_FW_CE, &ce) || !load_fw(console, i, AMDGPU_FW_RLC, &rlc)) {
+        rep->error = GPU_ERR_NO_DEVICE;
+        return;
+    }
+
+    me_cntl = rd(c, AMDGPU_CP_ME_CNTL);
+
+    /* The RLC (`gfx_v6_0_rlc_resume`). */
+    for (k = 0; k < 4096u; k += 4) {
+        vram_wr(c, WORK_RLC_SR + k, 0);
+        vram_wr(c, WORK_RLC_CS + k, 0);
+    }
+    hdp_flush(c);
+
+    amdgpu_rlc_stop(&p, rd(c, AMDGPU_CP_INT_CNTL_RING0), rd(c, AMDGPU_GRBM_SOFT_RESET));
+    if ((stop = run(c, &p)) >= 0) {
+        begin(&line, i);
+        say_text(&line, "CP test stopped: the RLC would not stop - waiting on register ");
+        say_hex(&line, p.w[stop].value, 5);
+        say_send(console, &line);
+        return;
+    }
+    (void)amdgpu_rlc_prepare(&p, work_mc(c, WORK_RLC_SR), work_mc(c, WORK_RLC_CS));
+    (void)run(c, &p);
+    for (k = 0; k < rlc.count; k++) {
+        wr(c, AMDGPU_RLC_UCODE_ADDR, k);
+        wr(c, AMDGPU_RLC_UCODE_DATA, amdgpu_fw_word(&rlc, k));
+    }
+    wr(c, AMDGPU_RLC_UCODE_ADDR, 0);
+    cp_int = rd(c, AMDGPU_CP_INT_CNTL_RING0);
+    amdgpu_rlc_start(&p, cp_int);
+    (void)run(c, &p);
+
+    /* The CP's microcode (`gfx_v6_0_cp_gfx_load_microcode`). */
+    amdgpu_cp_halt(&p);
+    (void)run(c, &p);
+    ucode(c, AMDGPU_CP_PFP_UCODE_ADDR, AMDGPU_CP_PFP_UCODE_DATA, &pfp);
+    ucode(c, AMDGPU_CP_CE_UCODE_ADDR, AMDGPU_CP_CE_UCODE_DATA, &ce);
+    ucode(c, AMDGPU_CP_ME_RAM_WADDR, AMDGPU_CP_ME_RAM_DATA, &me);
+    amdgpu_cp_loaded(&p);
+    (void)run(c, &p);
+
+    /* Its ring (`gfx_v6_0_cp_gfx_resume`), then `_cp_gfx_start`'s first
+     * packets committed while it is halted, and it is let go. */
+    for (k = 0; k < GFX_RING_BYTES; k += 4) {
+        vram_wr(c, WORK_GFX_RING + k, 0);
+    }
+    vram_wr(c, WORK_WORDS + 0xc0u, 0);
+    if (!amdgpu_cp_resume(&p, work_mc(c, WORK_GFX_RING), GFX_RING_BYTES, work_mc(c, WORK_WORDS + 0xa0u))) {
+        return;
+    }
+    (void)run(c, &p);
+
+    n += amdgpu_pm4_me_init(ring + n, 8);
+    for (k = 0; k < n; k++) {
+        vram_wr(c, WORK_GFX_RING + k * 4u, ring[k]);
+    }
+    hdp_flush(c);
+    wr(c, AMDGPU_CP_RB0_WPTR, n);
+    amdgpu_cp_run(&p);
+    (void)run(c, &p);
+
+    /* The ring test (`gfx_v6_0_ring_test_ring`). */
+    wr(c, AMDGPU_SCRATCH_REG0, 0xcafedeadu);
+    k = n;
+    n += amdgpu_pm4_ring_test(ring + n);
+    for (; k < n; k++) {
+        vram_wr(c, WORK_GFX_RING + k * 4u, ring[k]);
+    }
+    hdp_flush(c);
+    t0 = kosmos_ticks();
+    wr(c, AMDGPU_CP_RB0_WPTR, n);
+    ring_ok = poll_reg(c, AMDGPU_SCRATCH_REG0, 0xffffffffu, 0xdeadbeefu, AMDGPU_POLL_US);
+    t1 = kosmos_ticks();
+    scratch = rd(c, AMDGPU_SCRATCH_REG0);
+
+    /* A fence with its interrupt (`gfx_v6_0_ring_emit_fence`, and
+     * TIME_STAMP_INT_ENABLE as `si_irq_set` turns it on). */
+    (void)ih_drain(console, i, ~0u, NULL, 0);
+    wr(c, AMDGPU_CP_INT_CNTL_RING0, rd(c, AMDGPU_CP_INT_CNTL_RING0) | AMDGPU_TIME_STAMP_INT_ENABLE);
+    k = n;
+    n += amdgpu_pm4_fence(ring + n, work_mc(c, WORK_WORDS + 0xc0u), 1, false, true);
+    for (; k < n; k++) {
+        vram_wr(c, WORK_GFX_RING + k * 4u, ring[k]);
+    }
+    hdp_flush(c);
+    wr(c, AMDGPU_CP_RB0_WPTR, n);
+    fenced = ring_ok && word_wait(c, WORK_WORDS + 0xc0u, 1u, &t1);
+    fence = vram_rd(c, WORK_WORDS + 0xc0u);
+    if (fenced) {
+        eop = ih_wait(console, i, AMDGPU_SRC_CP_EOP, 10, &iv, &heard);
+    }
+
+    /* Halted again, its interrupt off. */
+    wr(c, AMDGPU_CP_INT_CNTL_RING0, rd(c, AMDGPU_CP_INT_CNTL_RING0) & ~AMDGPU_TIME_STAMP_INT_ENABLE);
+    amdgpu_cp_halt(&p);
+    (void)run(c, &p);
+
+    begin(&line, i);
+    say_text(&line, "CP: microcode PFP ");
+    say_hex(&line, pfp.ucode_version, 2);
+    say_text(&line, ", ME ");
+    say_hex(&line, me.ucode_version, 2);
+    say_text(&line, ", CE ");
+    say_hex(&line, ce.ucode_version, 2);
+    say_text(&line, ", RLC ");
+    say_hex(&line, rlc.ucode_version, 2);
+    say_text(&line, " loaded (it was ");
+    say_text(&line, (me_cntl & (AMDGPU_CP_ME_HALT | AMDGPU_CP_PFP_HALT)) ? "halted)" : "RUNNING)");
+    say_send(console, &line);
+
+    begin(&line, i);
+    say_text(&line, ring_ok ? "CP ring works: SCRATCH_REG0 " : "CP ring FAILED: SCRATCH_REG0 ");
+    say_hex(&line, scratch, 8);
+    say_text(&line, ", rptr ");
+    say_hex(&line, rd(c, AMDGPU_CP_RB0_RPTR), 4);
+    say_text(&line, ", ");
+    say_dec(&line, ring_ok ? counter_us(t0, t1) : 0u);
+    say_text(&line, " us; EOP fence ");
+    say_text(&line, fenced ? "reached" : "NOT REACHED");
+    say_text(&line, eop ? ", source 181 in the IH" : ", NO source 181 in the IH");
+    say_text(&line, c->irq < 0 ? "" : heard ? ", MSI heard" : ", MSI not heard");
+    say_send(console, &line);
+
+    rep->error = !ring_ok ? GPU_ERR_NO_ANSWER : fenced && eop ? GPU_OK : GPU_ERR_UNCHANGED;
+    rep->engine.value = scratch;
+    rep->engine.head = rd(c, AMDGPU_CP_RB0_RPTR);
+    rep->engine.tail = n;
+    rep->engine.ctl = rd(c, AMDGPU_CP_RB0_CNTL);
+    rep->engine.mode = fence;
+    rep->engine.esr = rd(c, AMDGPU_GRBM_STATUS);
+    rep->engine.elapsed_us = ring_ok ? (uint32_t)counter_us(t0, t1) : 0u;
 }
 
 /*--------------------------------------------------------------------------
@@ -1005,6 +1938,24 @@ static void engines(long console, unsigned e, struct gpu_reply *rep)
             continue;
         }
 
+        /* `x` 2: the GART and VMIDs (V2); 3: the CP (V3). The first card
+         * that answers either is the reply. */
+        if (e >= 2u) {
+            struct gpu_reply one;
+
+            memset(&one, 0, sizeof one);
+            if (e == 2u) {
+                gart_test(console, i, &one);
+            } else {
+                cp_test(console, i, &one);
+            }
+            if (first || (rep->error != GPU_OK && one.error == GPU_OK)) {
+                *rep = one;
+                first = false;
+            }
+            continue;
+        }
+
         engine_test(console, i, e, &res);
 
         if (first || (rep->error != GPU_OK && res.error == GPU_OK)) {
@@ -1094,7 +2045,13 @@ bool amdgpu_server(long console, long endpoint)
     machine_known = kosmos_sysinfo(&machine) == 0;
     look(console);
 
-    /* The DMA engines' first work, wherever it is safe to try (step 3a). */
+    /* V1: the interrupt ring, wherever the work area is VRAM untranslated. */
+    for (i = 0; i < ncards; i++) {
+        ih_start(console, i);
+    }
+
+    /* The DMA engines' first work, wherever it is safe to try (step 3a),
+     * and their traps reaching the IH (V1). */
     for (i = 0; i < AMDGPU_DMA_ENGINES; i++) {
         struct gpu_reply rep;
 
@@ -1138,7 +2095,7 @@ bool amdgpu_server(long console, long endpoint)
             case GPU_OP_STATS:
                 break;
             case GPU_OP_ENGINE_TEST:
-                engines(console, rq.x == 1 ? 1u : 0u, &rep);
+                engines(console, rq.x >= 0 && rq.x <= 3 ? (unsigned)rq.x : 0u, &rep);
                 break;
             case GPU_OP_CURSOR_TEST:
                 flip_test(console, rq.seconds < 1 ? 1u : rq.seconds > 30 ? 30u : rq.seconds, &rep);

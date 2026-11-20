@@ -63,6 +63,9 @@
  * and one command put in it - `MI_STORE_DWORD_IMM`, a number written to a
  * page of memory - and then whether the number arrived. The first time
  * Kosmos submits work to the GPU. Answered in `gpu_reply`'s `engine`.
+ * On the Mac Pro's AMD GPU (`amdgpu.md`): `x` 0 and 1 are its two DMA
+ * engines' first work (step 3a), 2 the GART and programs' VMIDs (V2),
+ * 3 the command processor brought up and its ring tested (V3).
  */
 #define GPU_OP_ENGINE_TEST   10u
 
@@ -289,7 +292,7 @@ _Static_assert(sizeof(struct gpu_ctx_request) == 40 + GPU_EXEC_WAITS * 16,
 #define GPU_BUFFER_CURSOR    1u     /*                  the pointer */
 
 #define GPU_OK               0u
-#define GPU_ERR_NO_DEVICE    1u     /* no Intel GPU this driver knows */
+#define GPU_ERR_NO_DEVICE    1u     /* no GPU this driver knows */
 #define GPU_ERR_BAD_OP       2u
 #define GPU_ERR_NO_PIPE      3u     /* no pipe running to show it on */
 #define GPU_ERR_NO_MEMORY    4u     /* no contiguous pages for the picture */

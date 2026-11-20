@@ -1,3 +1,4 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
 # The Mac Pro's GPUs
 
 The Mac Pro 2013 has two AMD FirePro cards, and until now Kosmos used them
@@ -23,6 +24,12 @@ a driver as we did with the intel gpu".
 - **Step 3a, the DMA engines** - built: each engine's ring set up in VRAM,
   a number written, 64 KB filled and copied, a fence - at boot, where the
   memory controller says an address reaches VRAM untranslated.
+- **3D and Vulkan, V1 to V10** - the road to radv on these cards, below.
+  V1 (interrupts) is built and runs at boot; V2 (the GART and programs'
+  address spaces) and V3 (the command processor and its microcode) are
+  built and run when asked (`gpu engine gart`, `gpu engine cp`); V4's
+  packets are built; V5 to V10 are planned. Held by
+  `tools/test_amdgpu_engine.c`, 279 checks.
 - **None of it is verified on the machine yet.** QEMU has no AMD GPU; the
   decode is held on the Mac by `tools/test_amdgpu_decode.c`, 56 checks with
   controls, and the driver by the Mac Pro's boot tonight.
@@ -280,7 +287,9 @@ on that card; the screen is never written at boot.
 
 ## Next steps
 
-Named as Intel's were, `m700-2d.md` and `gpu3d.md`:
+Named as Intel's were, `m700-2d.md` and `gpu3d.md`. A1, A2, A4 and A6 are
+now *3D and Vulkan*'s V1, V2, V3 and V7, below, where they are built and
+planned in detail; A3 and A5 stand as written.
 
 - **A1. Interrupts.** The card's MSI, the IH ring (`si_irq_init`), so a
   fence and a vertical blank are heard rather than polled. The kind needs
@@ -319,6 +328,513 @@ Named as Intel's were, `m700-2d.md` and `gpu3d.md`:
   would talk to it through a Kosmos winsys of its own, as anv talks to
   `intelgpu_ctx` - not through a DRM device.
 
+## 3D and Vulkan
+
+Diego, 20 November 2026: "For the AMD gpu driver we need full 3d and vulkan
+hardware support". What follows is the road from the DMA engines of 3a to
+radv drawing a frame on the Mac Pro and Flight on top of it, in the order it
+has to be built. Each step says what proves it - a host test with controls,
+and the exact `amdgpu:` line the Mac Pro's boot or a typed `gpu` command
+shows - and every register is named with the Linux v6.12 file and line it
+is from. Where a datum is missing, the step says so.
+
+**Built so far: V1, V2 and V3's code, the packets V4 needs, and their
+checks.** None of it has run on the card yet. The pure parts are held on
+the Mac by `tools/test_amdgpu_engine.c`: 279 checks, and every byte offset
+the new code uses is read back from amdgpu's own `*_d.h` headers, which
+number the registers in dwords from AMD's register database, separately
+from radeon's byte offsets. Eleven controls each break one line of the
+code and each turns red (*The checks*, below).
+
+| Step | What | State | Seen on the Mac Pro |
+|---|---|---|---|
+| V1 | The IH ring and the card's MSI; the DMA engines' traps | built, held | at boot |
+| V2a | The GART: context 0 over system pages | built, held | `gpu engine gart` (x 2) |
+| V2b | Programs' address spaces: VMIDs 1-15, two levels | built, held | the same command |
+| V3 | The RLC and the CP's microcode, ring 0, ME_INITIALIZE, the ring test, an EOP fence | built, held; firmware put in the image by a Makefile patch | `gpu engine cp` (x 3) |
+| V4 | Indirect buffers in a VMID, fences a process can see | packets built and held; the verb to come | - |
+| V5 | The GFX engine set up: `si_gpu_init`, the tiling table, the clear state | to build | - |
+| V6 | `gpuproto.h`'s context verbs on this driver | to build | - |
+| V7 | `radv_kosmos`: radv's winsys on the GPU Kit | to build | - |
+| V8 | A spinning cube (`vkcube`'s equivalent) by radv on the card | to build | - |
+| V9 | Buffers in VRAM | to build | - |
+| V10 | The 3D Kit's Vulkan path, and Flight, on radv | to build | - |
+
+### The shape of the code
+
+Everything that can be computed without the card is: an interrupt entry
+decoded, a page table entry built, a ring's control word, a PM4 packet.
+Bringing a block up is a **program** - `struct amdgpu_prog` in `amdgpu_ih.h`,
+a list of register writes in Linux's order, with a delay or a bounded poll
+where Linux has a `udelay` or a loop - computed by a pure function and
+performed by the driver's `run`. That is why the order and every value is
+held on the Mac, and why the Mac Pro only has to say whether the card
+agrees.
+
+| File | What |
+|---|---|
+| `amdgpu_ih.h`, `.c` | programs; the IH set up and its entries read (V1) |
+| `amdgpu_vm.h`, `.c` | the GART and VMIDs: entries, geometry, the enable program, a table walk, a fault (V2) |
+| `amdgpu_cp.h`, `.c` | firmware checked, the RLC and CP brought up, PM4 packets (V3, V4) |
+| `amdgpu_fw.h`, `.c` | the firmware in the image by `.incbin`, when the build names it |
+| `amdgpu_decode.c` | the DMA engine's TRAP, INDIRECT_BUFFER, SRBM_WRITE and VM flush added |
+| `amdgpu.c` | the driver: V1 at boot, V2 and V3 on request |
+
+**Nothing waits on the card without a bound.** A program's poll is
+`AMDGPU_POLL_US`, Linux's `usec_timeout`, 100 ms: spun for the first
+millisecond, a tick apart after. A fence word is waited for 50 ticks, an
+interrupt entry ten. **Nothing at boot writes the display**: V1 masks the
+display controllers' interrupts and touches no other display register.
+
+### V1. Interrupts
+
+The IH is a ring in memory the GPU writes a 16-byte entry into for every
+event, raising its MSI after. 64 KB, as `si_ih_sw_init` sizes it, in the
+driver's work area in VRAM (`WORK_IH`, BAR 0 + 0x50000 past the work area's
+start); with no GART at boot it cannot be anywhere else.
+
+- **Set up as `si_ih_irq_init`** (amdgpu `si_ih.c` 62-99): ring and
+  interrupts off, the pointers nought, INTERRUPT_CNTL2 the dummy read's
+  page >> 8, INTERRUPT_CNTL without DUMMY_RD_OVERRIDE and - the ring being
+  in VRAM - with IH_REQ_NONSNOOP_EN, which radeon's `si.c` 5985-5986 says a
+  ring in VRAM wants and amdgpu, whose ring is in RAM, clears. IH_RB_BASE
+  the ring >> 8, IH_RB_CNTL OVERFLOW_ENABLE, OVERFLOW_CLEAR and the size
+  (log2 of its dwords << 1, `si_ih.c` 77-81) - no write-back, so the write
+  pointer is read from IH_RB_WPTR as radeon does without it - then IH_CNTL
+  with MC_WRREQ_CREDIT 16, MC_WR_CLEAN_CNT 16, VMID 0, and RPTR_REARM only
+  with an MSI (`si_ih.c` 90-93).
+- **Every other source quiet**, `si_disable_interrupt_state` (radeon `si.c`
+  5928-5956): CP ring 0 keeps only CNTX_BUSY and CNTX_EMPTY, rings 1 and 2
+  nought, both DMA engines' TRAP_ENABLE off, GRBM and SRBM interrupts off,
+  each display controller's INT_MASK and GRPH_INT_CONTROL nought. The
+  hot-plug pins and the DAC are the display's and are left alone.
+- **Then on**, `si_ih_enable_interrupts` (`si_ih.c` 35-45): IH_CNTL's
+  ENABLE_INTR, then the ring's RB_ENABLE.
+- **The proof**: 3a's DMA test, at boot, puts a TRAP after its fence
+  (`si_dma_ring_emit_fence`, amdgpu `si_dma.c` 91-111) with DMA_CNTL's
+  TRAP_ENABLE set (`si_irq_set`, radeon `si.c` 6060-6089), and the entry
+  must arrive: source 224 for DMA 0 and 244 for DMA 1 (`si_irq_process`,
+  6266-6411). An entry is `src_id` in dword 0 7:0, `src_data` dword 1 27:0,
+  ring dword 2 7:0, VMID 15:8 (`si_ih_decode_iv`, `si_ih.c` 132-151).
+- **Registers**: IH_RB_CNTL 0x3e00 ... IH_CNTL 0x3e18 (radeon `sid.h`
+  651-685; amdgpu `oss_1_0_d.h` 225-235, dwords 0xF80-0xF86),
+  INTERRUPT_CNTL 0x5468 and _CNTL2 0x546c (`bif_3_0_d.h` 633-634),
+  CP_INT_CNTL_RING0-2 0xc1a8-0xc1b0 (`sid.h` 1276-1278), DMA_CNTL 0xd02c
+  (amdgpu `sid.h` 1897, dword 0x340b), INT_MASK 0x6b40 (`dce_6_0_d.h`
+  4495), GRPH_INT_CONTROL 0x685c (`dce_6_0_d.h` 3831).
+- **What the kernel must give**: the MSI. `hal/pc/devices.c` hands the AMD
+  kinds `.intid = 0` today; the patch takes the MSI with `pci_take_
+  interrupt` once and keeps it, as `intel_gpu_interrupt` does, and turns
+  bus mastering on - which MSI needs (an MSI is a write by the device), the
+  GART needs, and `pci_take_interrupt` does not do. Without it the driver
+  polls the ring, and the line says so.
+
+The Mac Pro's lines, at boot, per card:
+
+```
+amdgpu: card 0: IH on: a 64 KB ring at MC 0xf400250000, its MSI vector 50
+amdgpu: card 0: DMA 0 works: word deadbeef, fence 1, ...
+amdgpu: card 0: IH entry: source 224 (DMA 0's trap), data 0000000, ring 0, VMID 0
+amdgpu: card 0: DMA 0's trap reached the IH: source 224, ring 0; its MSI heard
+```
+
+and the same for DMA 1 with 244. Without the kernel's patch the first reads
+`no MSI told by the board - entries are polled` and the last `no MSI to
+hear`. A ring that stays empty says `DMA 0's trap did NOT reach the IH`,
+with IH_RB_WPTR, IH_RB_CNTL and IH_CNTL as read.
+
+### V2. The GART, and programs' address spaces
+
+**Asked for, never at boot**: `gpu engine gart` (GPU_OP_ENGINE_TEST with
+`x` 2). It turns the memory controller's translation on under a screen the
+firmware drew, and the first time should be watched.
+
+**V2a, the GART.** Context 0 of the MC's VM, one level (depth 0), mapping
+GTT_BYTES - 64 MB, a 128 KB table in the work area - page for page to
+system memory.
+
+- **Where it goes**: `radeon_gtt_location` (`radeon_device.c` 603-625) -
+  after VRAM when there is more room above it than below, in a 40-bit MC
+  space, alignment nought on Southern Islands.
+- **The order**, `gmc_v6_0_gart_enable` (amdgpu `gmc_v6_0.c` 457-545) with
+  `si_pcie_gart_enable`'s values (radeon `si.c` 4265-4350):
+  MC_VM_MX_L1_TLB_CNTL = 0xA << 7 | ENABLE_L1_TLB | ENABLE_L1_FRAGMENT_
+  PROCESSING | SYSTEM_ACCESS_MODE_NOT_IN_SYS | ENABLE_ADVANCED_DRIVER_MODEL
+  = 0x55b; VM_L2_CNTL = ENABLE_L2_CACHE | L2_FRAGMENT | PTE and PDE0 LRU by
+  write | EFFECTIVE_L2_QUEUE_SIZE(7) | CONTEXT1_IDENTITY_ACCESS_MODE(1);
+  VM_L2_CNTL2 both invalidates; VM_L2_CNTL3 BIGK_ASSOCIATIVITY |
+  BANK_SELECT(4) | BIGK_FRAGMENT_SIZE(4) (radeon's; amdgpu writes its
+  fragment size there); context 0's START, END in pages, BASE the table >>
+  12, PROTECTION_FAULT_DEFAULT the dummy page >> 12, CNTL2 nought, CNTL
+  ENABLE | DEPTH(0) | RANGE_PROTECTION_FAULT_ENABLE_DEFAULT; 0x15d4, 0x15d8
+  and 0x15dc nought (named nowhere; both drivers clear them); and the flush,
+  HDP_MEM_COHERENCY_FLUSH_CNTL then VM_INVALIDATE_REQUEST bit 0
+  (`si_pcie_gart_tlb_flush`, 4255-4262).
+- **Entries**: 64 bits, the address in 39:12 (`gmc_v6_0_get_vm_pde`'s
+  check, 0xFFFFFF0000000FFF), VALID 0, SYSTEM 1, SNOOPED 2, READABLE 5,
+  WRITEABLE 6, FRAGMENT 11:7 (radeon `radeon.h` 847-855, amdgpu
+  `amdgpu_vm.h` 57-70). EXECUTABLE, bit 4, is stripped on SI (`gmc_v6_0.c`
+  372-377). A page of system memory is 0x67 in the low bits.
+- **A choice that differs from Linux**: every entry not bound points at the
+  dummy page, *valid*. radeon leaves an unbound entry invalid (RADEON_GART_
+  PAGE_DUMMY is 0, `radeon.h` 599) and lets a fault default to the dummy
+  page - but context 0 is told to default only range faults, and where an
+  invalid entry inside the range writes is not written anywhere this
+  driver has read. A valid entry to a page this driver owns writes
+  somewhere known.
+- **The system aperture** must be VRAM so that, under NOT_IN_SYS, a VRAM
+  address - the rings, the IH, the work area - is not translated. `si_mc_
+  program` sets it so (`si.c` 4144-4150); the driver writes it only when the
+  firmware did not.
+- **The proof**: SYS_PAGES pages of system memory, one physical run
+  (`kosmos_mem_create_flags(.., MEM_CONTIGUOUS)` and `kosmos_mem_phys`). GTT
+  page 0 is system page 0, GTT page 1 is system page **2**, every other the
+  dummy, page 4. DMA 0 writes a different number to GTT pages 0, 1 and 2,
+  and they must arrive at system pages 0, 2 and 4 - which says the table is
+  read, and not the address taken as it is - with every other word nought.
+
+**V2b, programs' address spaces.** Contexts 1 to 15, two levels: a page
+directory of PDEs, each the MC address of a page table in VRAM with VALID
+(amdgpu `amdgpu_gmc.c` 113-114), and tables of PTEs.
+
+- **The geometry**, radeon's rule when none is given (`radeon_device.c`
+  1179-1190): bits = log2(GB) + 18; the block - log2 of a table's entries,
+  VM_CONTEXT1_CNTL taking it less 9 - is bits - 9 up to 8 GB and
+  (bits + 3) / 2 above. The test uses **8 GB**, radeon's default
+  (`radeon_drv.c` 139): a 4 KB directory and 32 KB tables. amdgpu uses 64
+  GB (`amdgpu_vm_adjust_size(adev, 64, 9, 1, 40)`, `gmc_v6_0.c` 826) -
+  block 13, 16 KB and 64 KB - which is what radv will be handed (V7); the
+  geometry is one number in the driver.
+- **Contexts 1-15**: START nought, END max_pfn - 1, every VMID's base the
+  GART's table until a program's is written (`gmc_v6_0.c` 517-527), the
+  fault default the dummy page, CNTL2 = 4, and CNTL = ENABLE | DEPTH(1) |
+  BLOCK_SIZE(block - 9) | every fault with its interrupt and to the default
+  page (radeon `si.c` 4325-4342) - 0x040db6db at block 13.
+- **VMID n's base**: VM_CONTEXT0_PAGE_TABLE_BASE_ADDR + 4n for 0-7
+  (0x153c), VM_CONTEXT8_... + 4(n - 8) for 8-15 (0x1438), the directory's
+  MC address >> 12 (`si.c` 4317-4323).
+- **Flushed from the DMA ring** before an IB runs in a VMID (`si_dma_vm_
+  flush`, radeon `si_dma.c` 185-215): SRBM_WRITE of the base, of the HDP
+  flush and of VM_INVALIDATE_REQUEST 1 << vmid, then POLL_REG_MEM on
+  VM_INVALIDATE_REQUEST. **One datum disagrees**: radeon puts
+  VM_INVALIDATE_REQUEST's byte offset (0x1478) in the poll, amdgpu its dword
+  (0x51e, amdgpu `si_dma.c` 445). The driver follows amdgpu; the poll's
+  function is "always", so the wrong one would cost a read of the wrong
+  register and not a hang, and the card will say which is right.
+- **The DMA engine's IB** (`si_dma_ring_emit_ib`, amdgpu `si_dma.c`
+  62-77): NOPs until the ring's write pointer is 5 modulo 8, then
+  DMA_IB_PACKET(4, vmid, 0) - (4 << 28) | (vmid << 20) - the address 32-byte
+  aligned, and (length << 12) | the high byte.
+- **The proof**: VMIDs 1 and 2 each map VA 0x100000 to a page of its own
+  (system pages 1 and 5) and VA 0x101000 to the same page of indirect
+  buffers. DMA 0 flushes VMID 1, runs an IB there that writes 0x11111111 to
+  VA 0x100000, flushes VMID 2, runs one that writes 0x22222222 to the same
+  VA; each must land on its own page. **The control**: a third IB in VMID 1
+  writes VA 0x200800, which neither maps, and an IH entry from source 146
+  or 147 must come, with VM_CONTEXT1_PROTECTION_FAULT_STATUS (0x14dc) saying
+  VMID 1 (28:25) wrote (24), and _ADDR (0x14fc) page 0x200 (`sid.h`
+  420-435); the fault is let go by setting VM_CONTEXT1_CNTL2 bit 0, as
+  `si_irq_process` does (`si.c` 6350-6355).
+
+The lines, after `gpu engine gart`:
+
+```
+amdgpu: card 0: GART on: 64 MB at MC 0xf500000000, its table at MC 0xf400261000; programs' contexts 8 GB, block 12
+amdgpu: card 0: GART works: GTT pages 0, 1, 2 wrote 6a770000 6a770001 6a770002 to system pages 0, 2 and the dummy; fence reached, N us
+amdgpu: card 0: VMIDs work: the same address wrote 11111111 in VMID 1 and 22222222 in VMID 2, each to its own page
+amdgpu: card 0: IH entry: source 146 (a VM fault), ...
+amdgpu: card 0: the control faulted as it should: source 146, VMID 1 writing 0x0000200000, client .., protections ..; its write went to the dummy page; MSI heard
+```
+
+(The MC addresses are what this card's FB_LOCATION puts them at; the
+numbers above are illustrations.) It needs bus mastering on, and says
+`bus master is off` and stops where the firmware left it off and the
+kernel's patch is not in.
+
+**Not known, and what will tell**: whether a PTE for a page *in VRAM* is the
+VRAM offset or the MC address. amdgpu writes `vram_base_offset` plus the
+offset (nought on a discrete card, `gmc_v6_0.c` 873; `amdgpu_gmc.c`
+1051-1053), which reads as the offset, but `amdgpu_vm.c` - where a VRAM
+PTE is built - was not fetched. V2 maps only system pages for that reason;
+V9 settles it on the card with a control: one PTE each way, and which one
+the engine's write lands through.
+
+### V3. The command processor
+
+The CP is three processors - the PFP that fetches, the ME that executes,
+the CE that holds constants - and the RLC beside them, and none does
+anything until its microcode is written into it a word at a time.
+
+- **The firmware**: AMD's, linux-firmware `radeon/`, downloaded into
+  `build/downloads/radeon-firmware/` (12 files, 266 KB). The four the CP
+  needs per chip: `tahiti_pfp.bin`, `_me.bin`, `_ce.bin`, `_rlc.bin` (8832,
+  8832, 8832 and 8448 bytes), or `pitcairn_*` (a D300); the PFP, ME and CE
+  are byte for byte the same for both chips, the RLC is not (`ucode_version`
+  0xd on Tahiti, 0x7 on Pitcairn). They are the new kind, with a header
+  (`radeon_ucode.h` 156-198): size, header size, version 1.0, IP 6.0, the
+  version, the payload's length and offset (0x100), a crc32. The payload
+  must be exactly SI_PFP/PM4/CE_UCODE_SIZE 2144 dwords or SI_RLC_UCODE_SIZE
+  2048 (`radeon_ucode.h` 35-37, 51; `si.c` 1668-1671 requires it). **The
+  crc32 is not checked**: it is not zlib's crc32 over the payload, and what
+  it is over is written in nothing fetched. The MC and SMC firmware are not
+  needed for a card the firmware posted - both Mac Pro cards' memory
+  controllers run (step 1).
+- **Carried in the image** by `amdgpu_fw.c`: `.incbin` of the eight files
+  between labels in `.rodata` when the build passes
+  `-DAMDGPU_FW_DIR="build/downloads/radeon-firmware"`, 70 KB; without it
+  `amdgpu_fw_image` answers no and the driver says `the PFP's firmware is
+  not in this image`. Nothing is weak, so a build without the files has
+  nothing to resolve.
+- **The RLC** (`gfx_v6_0_rlc_resume`, amdgpu `gfx_v6_0.c` 2480-2524):
+  stopped - RLC_CNTL nought, the GUI idle interrupt off with Linux's read of
+  DB_DEPTH_INFO and its wait for RLC_STAT & 0xf to say clock and power on
+  (2214-2239), both SERDES masters idle (2398-2413) - and reset, GRBM_SOFT_
+  RESET's SOFT_RESET_RLC for 50 us (2457-2463). Without power gating
+  (`gfx_v6_0_init_pg`, 2896-2899) the save-and-restore and clear-state
+  buffers' addresses >> 8; RL_BASE, RL_SIZE, LB_CNTL nought, LB_CNTR_MAX
+  all ones, LB_CNTR_INIT nought, LB_INIT_CU_MASK all ones, MC_CNTL and
+  UCODE_CNTL nought; for each word i, RLC_UCODE_ADDR i and RLC_UCODE_DATA
+  it; ADDR nought. Load balancing off - Linux has it only for DDR3
+  (2465-2474), and these cards are GDDR5 - which selects every SE and SH
+  and writes SPI_LB_CU_MASK 0xff (2388-2396). Then RLC_ENABLE, and the GUI
+  idle interrupt back.
+- **DB_DEPTH_INFO is at 0x2803c**, past the 76 KB the driver maps, and is
+  read through MM_INDEX and MM_DATA (0 and 4) as radeon reads past its
+  mapping (`radeon.h` 2455-2470).
+- **The CP's microcode** (`gfx_v6_0_cp_gfx_load_microcode`, 1927-1980):
+  halted - CP_ME_CNTL ME, PFP and CE halt, SCRATCH_UMSK nought, 50 us
+  (1914-1925) - then PFP_UCODE_ADDR nought, the PFP's words into
+  PFP_UCODE_DATA, ADDR nought; the CE's the same; ME_RAM_WADDR nought, the
+  ME's into ME_RAM_DATA, WADDR nought; then the four address registers
+  nought.
+- **Ring 0** (`gfx_v6_0_cp_gfx_resume`, 2047-2099): SEM_WAIT_TIMER,
+  SEM_INCOMPLETE_TIMER_CNTL, RB_WPTR_DELAY, CP_DEBUG and SCRATCH_ADDR
+  nought; CP_RB0_CNTL = (log2(4096 / 8) << 8) | log2(ring / 8), then with
+  RB_RPTR_WR_ENA; WPTR nought; the read pointer's write-back address;
+  SCRATCH_UMSK nought; 1 ms; CNTL without RPTR_WR_ENA; RB0_BASE the ring >>
+  8. A 4 KB ring in the work area.
+- **The first packets** (`gfx_v6_0_cp_gfx_start`, 1982-2045), committed
+  while the CP is halted, then CP_ME_CNTL nought: PACKET3(ME_INITIALIZE, 5)
+  1, 0, max_hw_contexts - 1 = 7 (8 on every SI part, 1579-1613),
+  DEVICE_ID(1) << 16, 0, 0; PACKET3(SET_BASE, 2) CE_PARTITION_BASE (3),
+  0xc000, 0xe000. A type-3 header is (3 << 30) | (op << 8) | (count - 1)
+  << 16 (`sid.h` 1595-1597, RADEON_PACKET_TYPE3 3, `radeon_reg.h` 3719).
+- **The proof, Linux's ring test** (`gfx_v6_0_ring_test_ring`, 1766-1794):
+  SCRATCH_REG0 (0x8500) set to 0xCAFEDEAD by the processor, then
+  SET_CONFIG_REG of it, 0xDEADBEEF, by the CP; the register must read
+  0xDEADBEEF. **Then an end-of-pipe fence** (`gfx_v6_0_ring_emit_fence`,
+  1803-1829): SET_CONFIG_REG CP_COHER_CNTL2 nought, SURFACE_SYNC of TCL1,
+  TC, SH_KCACHE and SH_ICACHE, then EVENT_WRITE_EOP of
+  CACHE_FLUSH_AND_INV_TS_EVENT (20, `sid.h` 1390) with EVENT_INDEX 5,
+  DATA_SEL 1 and INT_SEL 2, writing 1 to a word - with CP_INT_CNTL_RING0's
+  TIME_STAMP_INT_ENABLE (bit 26) on, so source 181 must reach the IH.
+- **Not sent yet**: the clear state. `gfx_v6_0_cp_gfx_start` follows
+  SET_BASE with PREAMBLE_CNTL BEGIN_CLEAR_STATE, the context registers of
+  `si_cs_data` (`clearstate_si.h`, AMD's, MIT), PREAMBLE_CNTL
+  END_CLEAR_STATE, CLEAR_STATE, and SET_CONTEXT_REG 0x316 = 0xe, 0x10. That
+  is drawing's, V5's. The CP is halted again after the test.
+
+The lines, after `gpu engine cp`:
+
+```
+amdgpu: card 0: CP: microcode PFP 4f, ME 8e, CE 39, RLC 0d loaded (it was halted)
+amdgpu: card 0: IH entry: source 181 (a CP end of pipe), ...
+amdgpu: card 0: CP ring works: SCRATCH_REG0 deadbeef, rptr 001c, N us; EOP fence reached, source 181 in the IH, MSI heard
+```
+
+The versions are the Tahiti files' (0x4f, 0x8e, 0x39, 0xd); a Pitcairn
+card says RLC 07. `the RLC would not stop - waiting on register 0c34c` is
+RLC_STAT not reading clock and power on in 100 ms.
+
+### V4. Indirect buffers and fences a process can see
+
+What radv submits is an indirect buffer: its commands in its own memory,
+run by the GFX ring in its VMID.
+
+- **The packets, built and held**: PACKET3(INDIRECT_BUFFER, 2) (0x32;
+  INDIRECT_BUFFER_CONST 0x31 for the CE, after SWITCH_BUFFER 0x8b, the
+  first of a frame) - the address dword aligned, its high 16 bits, and
+  length | vmid << 24 (`gfx_v6_0_ring_emit_ib`, 1831-1863); the VM flush
+  on the GFX ring (`si_vm_flush`, radeon `si.c` 5056-5099) - WRITE_DATA by
+  the PFP (ENGINE_SEL 1, DST_SEL 0) of the VMID's base, of the HDP flush and
+  of the invalidate, WAIT_REG_MEM "always" on VM_INVALIDATE_REQUEST, and
+  PFP_SYNC_ME; the fence of V3 with DATA_SEL 2 for a 64-bit value.
+- **What is left**: a VMID per submission, not per context - amdgpu's
+  `amdgpu_vmid_grab`: a context's page directory is given whichever of
+  VMIDs 1-7 is free or least recently used (amdgpu keeps 1-7 for GFX,
+  `gmc_v6_0.c` 860-863) and flushed into it, so the number of contexts is
+  not limited to fifteen. The fence page `gpuproto.h` already gives a
+  context (CONTEXT_NEW), written by the EOP's 64-bit value through the GART,
+  and the pulse to FENCE_WAIT's endpoint on source 181.
+- **The proof, to be written**: an IB in VMID 1 that writes a number, and
+  its EOP fence on a page bound in the same context; then two contexts
+  whose IBs write the same VA to different pages, as V2b does with the DMA
+  engine.
+- **The line**: `amdgpu: card 0: IB in VMID 1 ran: word ..., fence 1 on the
+  context's page, source 181`.
+
+### V5. The GFX engine set up for drawing
+
+What radv expects the kernel to have done, and reads back:
+
+- `si_gpu_init` (radeon `si.c` 3069 on): GB_ADDR_CONFIG (0x98f8), the
+  render backends - CC_RB_BACKEND_DISABLE (0x98f4) and
+  GC_USER_RB_BACKEND_DISABLE (0x9b7c) - and the raster config they decide,
+  and the tiling table, `si_tiling_mode_table_init` (`si.c` 2469 on): 32
+  GB_TILE_MODEn from 0x9910, one table for Tahiti and Pitcairn, another for
+  Verde, Oland and Hainan. radv learns all of these from the kernel
+  (`ac_query_gpu_info`, Mesa `ac_gpu_info.c` 1438) and computes every
+  surface's layout from them.
+- The clear state: `clearstate_si.h` and `clearstate_defs.h` vendored as
+  AMD shipped them, the RLC's clear-state buffer filled from them as
+  `gfx_v6_0_rlc_init` does, and `gfx_v6_0_cp_gfx_start`'s second half sent.
+- **The proof**: GB_ADDR_CONFIG and the tile modes read back as written,
+  and a CLEAR_STATE followed by the ring test still answering. **Missing
+  datum**: the golden registers (`si_init_golden_registers`, `si.c` 1208) - a list per
+  chip of register values AMD says to set; fetched with `si.c` but not yet
+  read line by line.
+
+### V6. The context verbs on this driver
+
+`gpuproto.h`'s programs' contexts (`gpu3d.md` §5.3) are the right shape for
+an AMD GPU as they are: a context is a page table and a timeline, BIND puts a
+region at an address the caller chose, EXEC runs a batch and signals, and
+FENCE_WAIT pulses. They are reused, and only four things differ:
+
+| Verb | On the AMD GPU |
+|---|---|
+| CONTEXT_NEW (`engine`) | a page directory in VRAM and a fence page in the GART; `GPU_ENGINE_RENDER` the GFX ring, `GPU_ENGINE_COPY` a DMA engine |
+| BIND (`flags`) | GPU_CACHE_WB is a system page SYSTEM \| SNOOPED, GPU_CACHE_UC SYSTEM without SNOOPED; GPU_CACHE_WB_ELLC is Intel's and is refused |
+| EXEC | an INDIRECT_BUFFER on the GFX ring, or DMA_IB_PACKET on a DMA engine; `gpu` the IB's VA in the context |
+| CONTEXT_STATE | `words[5]`, the faults, from source 146/147 entries with the context's VMID |
+| **new: QUERY** | what radv's `radeon_info` needs and only the driver knows - below |
+
+- **GPU_OP_QUERY, new.** A declared struct of what `ac_query_gpu_info`
+  fills from `amdgpu_query_info`: the device and revision ids, the family,
+  VRAM and GART sizes, the CU and RB masks per SE and SH, GB_ADDR_CONFIG,
+  the 32 tile modes, the max engine and memory clocks, the CP's and RLC's
+  firmware versions, the VA range given to contexts. Mesa's own
+  derivations then run on it unchanged (V7).
+- **GPU_ERR_NO_DEVICE's comment** says "no Intel GPU this driver knows";
+  it becomes "no GPU".
+- **The context core is the Intel driver's** - `intelgpu_ctx.c` is
+  hardware-free in everything but its page table, `igpu_ppgtt`. The kits
+  premise asks for one core and two backends: a GPU-neutral `gpu_ctx.c`
+  (the contexts, their bindings, the timelines, the waits and pulses), and
+  the page table and the submission behind a small table of functions -
+  Intel's PPGTT and ring, AMD's VMID tables and IB. Proposed as a patch,
+  not done: it is the Intel driver's file.
+
+### V7. radv on Kosmos
+
+radv is Mesa's Vulkan driver for AMD, and supports Southern Islands
+(`radv_is_gpu_supported`, Mesa 26.2.5 `radv_physical_device.c` 2504) with
+ACO compiling its shaders. It talks to the kernel through a **winsys**,
+`struct radeon_winsys` (`radv_radeon_winsys.h` 228 on, 44 functions), whose
+one implementation is amdgpu's DRM interface (`winsys/amdgpu/`).
+
+- **A `radv_kosmos` winsys at that seam**, as anv got `anv_kosmos`
+  (`runtime/ports/mesa/src/intel/vulkan/kosmos/`): `winsys/kosmos/`, on
+  the GPU Kit (`kosmos_gpu.h`), its fd the capability to `/Devices/gpu`.
+  - **A buffer object is a region**, its handle the region's capability
+    plus one; `buffer_create` makes one, `buffer_map` maps it, and every BO
+    is **resident** - BIND at creation - so radv's per-submission BO lists
+    are empty (`is_local` on every BO, radv's own fast path).
+  - **Virtual addresses** radv chooses, in the range QUERY gave; BIND at
+    them, softpinned, as anv's are.
+  - **A context per queue**, CONTEXT_NEW; `cs_submit` is EXEC of the IB
+    with the context's timeline value; radv's command streams are built by
+    its own `radv_cs` code, which is not the winsys's.
+  - **Sync**: today `info->syncobj_sync_type = vk_drm_syncobj_get_type(fd)`
+    (`radv_amdgpu_winsys.c` 363). anv's "point" `vk_sync` type -
+    `anv_kosmos.c` 132-320, a point on a context's timeline waited for by
+    the fence page and FENCE_WAIT's pulse - has nothing Intel's in it: it
+    moves to `src/vulkan/runtime/vk_kosmos_sync.c` and both drivers use it.
+  - **GFX6 specifics radv already knows**: `can_chain_ib2` is false before
+    GFX7 (`ac_gpu_info.c` 1150), so radv sends one IB per submission
+    rather than chaining; and compute queues are not offered on GFX6
+    (`radv_physical_device.c` 146-147, "may hang"), so only the GFX queue
+    and the DMA (transfer) queue exist.
+- **`radeon_info` from QUERY**: `ac_query_gpu_info` (Mesa `ac_gpu_info.c`
+  1438) fills it by `ac_drm_query_*` (`ac_linux_drm.h`, about 45
+  functions, plain structs). A query-only Kosmos `ac_drm_device` answers
+  those from the QUERY reply, so Mesa's derivations - every limit and
+  feature radv reads - are Mesa's and not a copy of them.
+- **Patched in radv**: `radv_physical_device_try_create` (2518 on) opens a
+  DRM device - the enumerate hook becomes Kosmos's, as anv's did; the
+  winsys is chosen at `radv_device.c` 1347; the rest is the freestanding
+  build anv's port already solved (`0001-kosmos-is-an-os.patch`,
+  `0006-anv-on-kosmos.patch`).
+- **GTT first**: every BO in system pages, an APU's shape. VRAM BOs are V9.
+
+### V8. A spinning cube
+
+The order to the first frame, each a check before the next: `vulkaninfo`'s
+equivalent naming the device and its limits from QUERY; a buffer filled by
+`vkCmdFillBuffer` on the transfer queue (the DMA engine, as 3a); a compute-
+free clear of an image by the GFX queue (`vkCmdClearColorImage`); a
+triangle; then the cube - the 3D Kit's own spinning cube, which `make test`
+already draws on lavapipe and the M700's anv - into a window by
+`wsi_common_kosmos.c`. **The line**: GPU Monitor's frame count rising with
+the cube's, and the IH's source-181 count rising with it.
+
+### V9. Buffers in VRAM
+
+A region over a range of BAR 0 - a new kind of memory object in the kernel,
+write-combined - so radv's DEVICE_LOCAL heap is VRAM and the compositor can
+flip to a buffer the GPU drew. Settles V2's open question first (a VRAM PTE,
+two ways, a control). BAR 0 is 256 MB; the rest of VRAM is reachable by the
+engines only, which radv already handles as a heap without CPU access.
+
+### V10. The 3D Kit and Flight
+
+The 3D Kit's Vulkan path - `user/kits/3d/k3d_vk*.c` - asks for "a Vulkan
+device" and gets lavapipe, anv or radv as the loader finds them; nothing in
+the Kit or in Flight names a vendor. **The proof** is Flight over its city
+on the Mac Pro at the frame rate its F-steps hold on the M700, and the
+gallery screenshot's Cafesa3D rendered by radv.
+
+### The checks
+
+`tools/test_amdgpu_engine.c`, by hand (the lane builds nothing with make):
+
+```
+cc -std=c11 -Wall -Wextra -Werror -O1 -o build/host/test_amdgpu_engine \
+   tools/test_amdgpu_engine.c user/drivers/display/amdgpu_ih.c \
+   user/drivers/display/amdgpu_vm.c user/drivers/display/amdgpu_cp.c \
+   user/drivers/display/amdgpu_decode.c
+build/host/test_amdgpu_engine build/downloads/linux-amd build/downloads/radeon-firmware
+```
+
+279 checks: the IH program's order and values; an entry decoded; the
+write pointer's overflow; the VM geometry at 8, 64 and 1024 GB and three
+refusals; a PTE and a PDE; a two-level walk over a model of VRAM, with a
+missing table and a missing page; the GTT placed above and below VRAM; the
+GART program in order to its last write; the system aperture left alone or
+written; a fault decoded; the DMA IB's padding at three ring positions and
+its VM flush; the RLC's stop, prepare and start, the CP's halt, load and
+resume; every PM4 packet; 85 offsets against amdgpu's dword headers; and
+the eight firmware files parsed, each also cut short, given another IP
+version and taken as another engine's - which must be refused.
+
+**Controls**, each a copy of the code with one line broken, built and run
+(the tree is never edited for them):
+
+| Broken | Turned red |
+|---|---|
+| context 1 given DEPTH(0) | CONTEXT1_CNTL, and the order after it |
+| the IH ring never given RB_ENABLE | "and last, the ring on" |
+| EOP event 21 for 20 | the EVENT_WRITE_EOP check |
+| CP_RB0_WPTR 0xc118 for 0xc114 | its offset against `gfx_6_0_d.h` |
+| the DMA IB padded to 4 for 5 | the padding, header, address and length |
+| the firmware's IP version not checked | "as IP 7.0 refused", all eight |
+| the block size always bits - 9 | 64 GB, 1 TB, the index and the walk |
+| the RPTR_WR_ENA write dropped | CP resume's order |
+| a poll's mask taken as a write | "a poll's mask and value are not a write" (the first version of this check did not bite, and was rewritten) |
+| the VMID bases >> 8 for >> 12 | context 0's base and the order after |
+| the IV's VMID from 23:16 | the entry's decode |
+
+
 ## Files
 
 - `user/drivers/display/amdgpu.c` - the driver.
@@ -328,3 +844,9 @@ Named as Intel's were, `m700-2d.md` and `gpu3d.md`:
 - `tools/test_amdgpu_decode.c` - 56 checks; four of the decode's lines
   broken one at a time (NOOFCHAN's shift, the fill's high byte, a
   controller's offset, the copy's operands) each turn one or more red.
+- `user/drivers/display/amdgpu_ih.h`, `.c` - programs, and the IH (V1).
+- `user/drivers/display/amdgpu_vm.h`, `.c` - the GART and VMIDs (V2).
+- `user/drivers/display/amdgpu_cp.h`, `.c` - the firmware, the RLC and the
+  CP, PM4 (V3, V4).
+- `user/drivers/display/amdgpu_fw.h`, `.c` - the firmware in the image.
+- `tools/test_amdgpu_engine.c` - 279 checks, eleven controls (*The checks*).

@@ -355,6 +355,143 @@ int main(void)
     check(tg3_mac_mode_for(0u, &link) == 0x00000008u,
           "a link that is down did not leave the port in GMII");
 
+    /*
+     * NVRAM_CFG1, as `tg3_get_57780_nvram_info` reads it: the vendor in
+     * bits 25:22 and 1:0 (NVRAM_CFG1_5752VENDOR_MASK 0x03c00003), the page
+     * size in 30:28 (NVRAM_CFG1_5752PAGE_SIZE_MASK 0x70000000).
+     *
+     * An AT45DB021D (FLASH_57780VENDOR_ATMEL_AT45DB021D 0x00400002) with
+     * 264-byte pages (FLASH_5752PAGE_SIZE_264 0x50000000): Atmel, buffered,
+     * flash, and a page of 264 - so addresses are translated, page number
+     * << ATMEL_AT45DB0X1B_PAGE_POS (9) plus the offset in the page. Offset
+     * 0x7c is in page 0 and stays 0x7c; 512 is page 1, offset 248, so
+     * (1 << 9) + 248 = 760 = 0x2f8. Bits outside both masks (0x0c000000)
+     * change nothing.
+     */
+    {
+        struct tg3_nvram nv;
+
+        tg3_decode_nvram_cfg1(0x0C000000u | 0x50000000u | 0x00400002u, &nv);
+        check(nv.present && nv.flash && nv.translate && nv.page_bytes == 264u,
+              "an AT45DB021D with 264-byte pages did not read as translated "
+              "Atmel flash");
+        check(tg3_nvram_phys_addr(&nv, 0x7Cu) == 0x7Cu
+              && tg3_nvram_phys_addr(&nv, 512u) == 0x2F8u,
+              "Atmel page addressing did not put 0x7c at 0x7c and 512 at 0x2f8");
+
+        /* The same part with 256-byte pages (code 0): NO_NVRAM_ADDR_TRANS. */
+        tg3_decode_nvram_cfg1(0x00400002u, &nv);
+        check(nv.present && !nv.translate && nv.page_bytes == 256u
+              && tg3_nvram_phys_addr(&nv, 512u) == 512u,
+              "an Atmel flash with 256-byte pages was translated");
+
+        /* An ST M45PE20 (0x02400002), 512-byte pages (0x10000000): flash,
+         * JEDEC_ST, never translated. */
+        tg3_decode_nvram_cfg1(0x10000000u | 0x02400002u, &nv);
+        check(nv.present && nv.flash && !nv.translate && nv.page_bytes == 512u,
+              "an ST M45PE20 did not read as untranslated flash of 512-byte "
+              "pages");
+
+        /* FLASH_5787VENDOR_ATMEL_EEPROM_376KHZ (0x03000002) with
+         * COMPAT_BYPASS (0x80000000) set: an EEPROM, not flash, and the
+         * bypass bit is to be cleared on the way back. */
+        tg3_decode_nvram_cfg1(0x80000000u | 0x03000002u, &nv);
+        check(nv.present && !nv.flash && !nv.translate
+              && nv.cfg1_write == 0x03000002u,
+              "the 376 kHz EEPROM was not an EEPROM, or COMPAT_BYPASS was "
+              "not cleared");
+        tg3_decode_nvram_cfg1(0x10000000u | 0x02400002u, &nv);
+        check(nv.cfg1_write == 0x12400002u,
+              "NVRAM_CFG1 was to be rewritten for a part Linux leaves alone");
+
+        /* A vendor field naming nothing: TG3_FLAG_NO_NVRAM. */
+        tg3_decode_nvram_cfg1(0u, &nv);
+        check(!nv.present, "a vendor field of 0 was taken for an NVRAM part");
+        tg3_decode_nvram_cfg1(0x01000001u, &nv);
+        check(!nv.present, "vendor 0x01000001, in no table, was taken for one");
+    }
+
+    /* NVRAM_CMD_RD 0 | GO 0x10 | FIRST 0x80 | LAST 0x100 | DONE 0x8. */
+    check(tg3_nvram_read_cmd() == 0x198u,
+          "a one-word NVRAM read is not RD | GO | FIRST | LAST | DONE, 0x198");
+    check(tg3_nvram_done(0x00000008u) && !tg3_nvram_done(0x00000190u),
+          "NVRAM_CMD_DONE was misread");
+
+    /* The EEE patch: a 57766 with no NVRAM, and nothing else. */
+    tg3_decode_rev(0xF0000000u, 0x57766000u, &rev);
+    check(tg3_wants_eee_patch(&rev, false) && !tg3_wants_eee_patch(&rev, true),
+          "a 57766 wanted its patch with NVRAM, or not without");
+    tg3_decode_rev(0xF0000000u, 0x57785100u, &rev);
+    check(!tg3_wants_eee_patch(&rev, false),
+          "a 57762 (ASIC_REV_57765) was said to want tg357766.bin");
+
+    /*
+     * Configuration space, a word at a time: the capability pointer is the
+     * low byte at 0x34 (PCI_CAPABILITY_LIST); each capability is its id,
+     * then the next pointer. Power management at 0x48, MSI (0x05) at 0x50,
+     * PCI Express (0x10, PCI_CAP_ID_EXP) at 0xac, which ends the list.
+     */
+    {
+        uint32_t cfg[64];
+
+        memset(cfg, 0, sizeof(cfg));
+        cfg[0x34 / 4] = 0x00000048u;
+        cfg[0x48 / 4] = 0xC8035001u;        /* PM, next 0x50 */
+        cfg[0x50 / 4] = 0x0080AC05u;        /* MSI, next 0xac */
+        cfg[0xAC / 4] = 0x00020010u;        /* PCIe, next 0 */
+        check(tg3_pci_cap(cfg, 0x10u) == 0xACu && tg3_pci_cap(cfg, 0x05u) == 0x50u,
+              "the capability list did not lead to PCIe at 0xac and MSI at 0x50");
+        check(tg3_pci_cap(cfg, 0x11u) == 0,
+              "an MSI-X capability that is not there was found");
+
+        cfg[0xAC / 4] = 0x0002AC10u;        /* PCIe pointing at itself */
+        check(tg3_pci_cap(cfg, 0x11u) == 0,
+              "a capability list that loops did not end");
+    }
+
+    /*
+     * Device Control after the reset: 0x2810 is a 512-byte read request
+     * (bits 14:12 = 2), no-snoop (0x0800) and relaxed ordering (0x0010);
+     * both cleared leave 0x2000. Device Status in the top half: CED | NFED
+     * | FED | URD = 0xf, written to clear them.
+     */
+    check(tg3_pcie_devctl_after_reset(0x00092810u) == 0x000F2000u,
+          "DEVCTL 0x2810 did not become 0x2000 with DEVSTA's errors cleared");
+
+    /* PCI_COMMAND: memory 0x2, master 0x4; 0x0406 has both and INTx off. */
+    check(tg3_pci_command_ok(0x00100406u) && !tg3_pci_command_ok(0x00100404u)
+          && !tg3_pci_command_ok(0x00000002u),
+          "the command register's memory and bus master bits were misread");
+
+    /* `tg3_init_one`: HOSTCC_MODE_ENABLE and WDMAC_MODE_ENABLE are both
+     * 0x2; anything else in those registers is not "running". */
+    check(!tg3_chip_busy(0u, 0u) && tg3_chip_busy(0x2u, 0u)
+          && tg3_chip_busy(0u, 0x3FEu) && !tg3_chip_busy(0x300u, 0x20000000u),
+          "a chip left running, or one left idle, was misjudged");
+
+    /*
+     * GRC_LOCAL_CTRL: INT_ON_ATTN 0x8 | AUTO_SEEPROM 0x01000000 |
+     * GPIO_UART_SEL 0x10, and the GPIO mask OE0-OE2 | OUTPUT0-OUTPUT2 =
+     * 0x0001f800 kept from what was there.
+     */
+    check(tg3_grc_local_ctrl(0xFFFFFFFFu) == 0x0101F818u
+          && tg3_grc_local_ctrl(0u) == 0x01000018u,
+          "GRC_LOCAL_CTRL did not keep exactly the six GPIO bits");
+
+    /* MII_ADVERTISE: CSMA 0x1 | 10HALF 0x20 | 10FULL 0x40 | 100HALF 0x80 |
+     * 100FULL 0x100 = 0x1e1, no pause; MII_CTRL1000 1000HALF 0x100 |
+     * 1000FULL 0x200. */
+    check(tg3_mii_advertise() == 0x01E1u,
+          "MII_ADVERTISE is not 10 and 100 at both duplexes, 0x1e1");
+    check(tg3_mii_ctrl1000(false) == 0x0300u && tg3_mii_ctrl1000(true) == 0,
+          "MII_CTRL1000 is not both gigabit duplexes, or not none on a "
+          "10/100 chip");
+
+    /* The return ring is 1024 on this class (TG3_RX_RET_MAX_SIZE_5700:
+     * JUMBO_CAPABLE and not 5780_CLASS, `tg3_rx_ret_ring_size`). */
+    check(tg3_ring_ready(5u, 1020u, 1024u) == 9u,
+          "nine return entries across a 1024-entry wrap did not count as nine");
+
     if (fails == 0) {
         printf("test_tg3decode: %d checks, all passed\n", checks);
         return 0;

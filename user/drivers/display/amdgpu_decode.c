@@ -332,6 +332,51 @@ unsigned amdgpu_dma_nop(uint32_t *out)
     return 1;
 }
 
+unsigned amdgpu_dma_trap(uint32_t *out)
+{
+    out[0] = amdgpu_dma_header(AMDGPU_DMA_TRAP, 0, 0, 0, 0);
+    return 1;
+}
+
+unsigned amdgpu_dma_ib(uint32_t *out, uint32_t at, unsigned vmid, uint64_t addr, uint32_t dwords)
+{
+    unsigned n = 0;
+
+    while (((at + n) & 7u) != 5u) {
+        out[n++] = amdgpu_dma_header(AMDGPU_DMA_NOP, 0, 0, 0, 0);
+    }
+
+    out[n++] = ((uint32_t)AMDGPU_DMA_IB << 28) | ((uint32_t)(vmid & 0xfu) << 20);
+    out[n++] = (uint32_t)addr & 0xffffffe0u;
+    out[n++] = (dwords << 12) | ((uint32_t)(addr >> 32) & 0xffu);
+    return n;
+}
+
+unsigned amdgpu_dma_srbm_write(uint32_t *out, uint32_t reg, uint32_t value)
+{
+    out[0] = amdgpu_dma_header(AMDGPU_DMA_SRBM_WRITE, 0, 0, 0, 0);
+    out[1] = (0xfu << 16) | (reg >> 2);
+    out[2] = value;
+    return 3;
+}
+
+unsigned amdgpu_dma_vm_flush(uint32_t *out, unsigned vmid, uint64_t pd_mc)
+{
+    uint32_t base = vmid < 8u ? 0x153cu + (vmid << 2) : 0x1438u + ((vmid - 8u) << 2);
+    unsigned n = 0;
+
+    n += amdgpu_dma_srbm_write(out + n, base, (uint32_t)(pd_mc >> 12));
+    n += amdgpu_dma_srbm_write(out + n, AMDGPU_HDP_MEM_FLUSH, 1);
+    n += amdgpu_dma_srbm_write(out + n, 0x1478u, 1u << (vmid & 0xfu));
+    out[n++] = amdgpu_dma_header(AMDGPU_DMA_POLL_REG_MEM, 0, 0, 0, 0);
+    out[n++] = 0x1478u >> 2;
+    out[n++] = 0xffu << 16;             /* retries */
+    out[n++] = 1u << (vmid & 0xfu);     /* mask */
+    out[n++] = 0;                       /* value */
+    out[n++] = (0u << 28) | 0x20u;      /* func: always; the poll interval */
+    return n;
+}
+
 /* `si_dma_start`: rb_bufsz = order_base_2(ring_size / 4), rb_cntl = it << 1. */
 uint32_t amdgpu_dma_rb_size(uint32_t bytes)
 {

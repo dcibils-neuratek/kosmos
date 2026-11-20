@@ -358,7 +358,7 @@ generalises: a device a firmware has *used* - for its own network boot, its
 own disk - carries that use in state no register dump shows, and QEMU's
 models carry none of it.
 
-### Broadcom Ethernet - read, decoded, a draft unproved
+### Broadcom Ethernet - read, decoded, written, not yet run
 
 Diego, 14 November 2026 (`roadmap.md`). The Mac Pro 2013 has a **BCM57762**
 and the iMac 2019 a Broadcom gigabit controller of the same **57765 family**
@@ -366,21 +366,26 @@ and the iMac 2019 a Broadcom gigabit controller of the same **57765 family**
 Linux's `tg3`, so one driver, `user/drivers/net/tg3.c`, serves the two Macs.
 
 **Where it comes from.** Linux's `drivers/net/ethernet/broadcom/tg3.c` and
-`tg3.h` (master aacb7797, read 14 November), and Broadcom's *BCM57785
+`tg3.h` (master aacb7797, read 14 November; v6.12, with `pci_regs.h` and
+`mii.h`, on 20 November, fetched into `build/downloads/linux-tg3/`), and
+Broadcom's *BCM57785
 Programmer's Reference Guide*, 57785-PG105-R, March 2012
 (docs.broadcom.com/doc/1211168564335) - the 57765 family's own guide, whose
 Table 2 (p. 47) lists the 57762 and the 57766 among its members. The PRG is
 cited by page below; Linux by function or `tg3.h` macro. Neither is in the
 tree.
 
-**What is built.** `tg3_decode.c` says what the registers, the descriptors
-and the status block mean, and `tools/test_tg3decode.c` holds it to 60
-vectors worked out by hand from those two sources. `tg3.c` is a draft on
-it in `e1000.c`'s shape, **never run**: QEMU has no model of the chip, so
-the Mac Pro is where it is proved, its screen console the log. Before it
-can run, the kernel needs a Broadcom device kind (a vendor 0x14E4 match in
-`hal/pc/devices.c`, `DEV_BROADCOM_ETHERNET`, configuration reads for it) -
-and probably a configuration write (below).
+**What is built.** `tg3_decode.c` says what the registers, the descriptors,
+the status block, NVRAM's configuration word and the PCI capabilities mean,
+and `tools/test_tg3decode.c` holds it to 82 vectors worked out by hand from
+those sources. `tg3.c` is the driver on it, in `e1000.c`'s shape and Linux's
+order, **never run**: QEMU has no model of the chip, so the Mac Pro is where
+it is proved, its screen console the log. Every `#define` in both files was
+compared with Linux's headers by a script, not by eye. Before it can run,
+the kernel needs the device kind - **7**, which `kernel/syscall.h` already
+keeps for it - a vendor 0x14E4 match in `hal/pc/devices.c`, and
+**`SYS_DEV_CONFIG_SET`**, a configuration write (below); init's ROLE_E1000
+tries `tg3_server` first and `e1000_server` when it returns false.
 
 **The identifiers** (`TG3PCI_DEVICE_TIGON3_*`, vendor 0x14E4): 57761
 0x16B0, 57765 0x16B4, 57781 0x16B1, 57785 0x16B5, 57791 0x16B2, 57795
@@ -431,8 +436,10 @@ receive producer ring of 512 thirty-two-byte entries, its control block at
 RCVDBDI_STD_BD by MMIO, NIC address 0x6000, buffers of 1536; jumbo
 disabled; one receive return ring, whose control block is in NIC SRAM at
 0x200 (send's at 0x100), the others disabled. The return ring is 1024 in
-Linux (TG3_RX_RET_MAX_SIZE_5700) and 32 to 512 in the PRG (p. 147, step
-36); the draft takes 512. Control blocks in SRAM are reached through the
+Linux (TG3_RX_RET_MAX_SIZE_5700, because the class is JUMBO_CAPABLE and not
+5780_CLASS) and 32 to 512 in the PRG (p. 147, step 36); the 14 November
+draft took 512, and the driver now takes Linux's 1024 - the chip writes as
+far as its control block says, so the host's ring must be that size. Control blocks in SRAM are reached through the
 memory window, TG3PCI_MEM_WIN_BASE_ADDR / _DATA at 0x7C / 0x84, by MMIO.
 The **status block** is 0x50 bytes the chip writes by DMA (`struct
 tg3_hw_status`): the status word (UPDATED, LINK_CHG, ERROR), the tag, the
@@ -464,18 +471,65 @@ class can lose an MSI, which Linux catches on a timer
 MAC_ADDR_0. Linux has nothing Apple-specific; on a Mac the boot code is
 expected to fill the mailbox and the MAC registers from the chip's own
 storage (self-boot parts may have no NVRAM and keep it in OTP; PRG Table
-3, p. 63). 00:10:18:00:00:00 is the unprogrammed default and means "ask
-the platform". The draft reads the mailbox, then the registers.
+3, p. 63). 00:10:18:00:00:00 is Broadcom's default, which the driver accepts and
+says (Linux v6.12 has no check for it; an earlier note here said it did).
+The driver reads them in Linux's order and before the reset, as Linux does:
+the mailbox, NVRAM (its part decoded from NVRAM_CFG1 as
+`tg3_get_57780_nvram_info` does, Atmel's page addressing translated), then
+MAC_ADDR_0.
 
-**What did not fit `e1000.c`'s shape.** A configuration write: the reset
-can clear what Linux restores through configuration space, and Kosmos's
-SYS_DEV_CONFIG only reads. The draft writes MISC_HOST_CTRL and PCISTATE
-through their MMIO mirror and says whether PCI_COMMAND survived; if
-memory decode did not, the kernel has to grow a write. Rings whose size is
-the chip's (512) rather than the driver's, configured in NIC SRAM through
-a window. A status block in place of descriptor write-back. Tagged
+**What did not fit `e1000.c`'s shape.** A configuration write: Linux says
+"GRC_MISC_CFG core clock reset will clear the memory enable bit in PCI
+register 4", and puts it back through configuration space with
+MISC_HOST_CTRL and PCISTATE, after clearing PCIe Device Control's relaxed
+ordering and no-snoop and Device Status's errors. Kosmos's SYS_DEV_CONFIG
+only reads, so the kernel grows `SYS_DEV_CONFIG_SET`, which writes only a
+word a driver has business with: never the header's identity, BARs or
+capability pointer, never MSI's or MSI-X's registers, and the command
+register only with memory and bus master on and I/O off. Built without it,
+the driver tries the MMIO mirror and stops, saying so, if memory decoding
+did not survive. Rings whose size is the chip's rather than the driver's,
+configured in NIC SRAM through a window. A status block in place of descriptor write-back. Tagged
 interrupts. A PHY driven over MDIO where e1000 only sets CTRL.SLU. A boot
 CPU whose answer is waited for.
+
+**Decisions, 20 November.** *No firmware*: the 57762 needs none, and the
+57766's `tg357766.bin` is wanted only without NVRAM and is the EEE patch,
+so EEE is off on both and the log says whether Linux would have loaded it.
+*No pause frames advertised*, where Linux advertises them: the driver does
+not program the MAC's flow control, so it does not offer it. *Two ports*:
+the Mac Pro's are two devices; one process drives the first with a cable
+in it, the first if neither has, and says which. *A chip the firmware left
+running* (host coalescing or write DMA on) is halted first, as
+`tg3_init_one` does, block by block, naming any that would not stop.
+*The boot code's silence is not fatal*: `tg3_poll_fw` reports "No firmware
+running" and goes on, and so does this. *The NVRAM lock is not released
+after the reset*: "chip reset below will undo the nvram lock". *A tagged
+frame arrives whole* (RX_MODE_KEEP_VLAN_TAG, as Linux without VLAN support),
+since the stack knows no VLANs. *Nothing waits on hardware in a request*:
+the waits in bring-up answer the stack "no adapter" every few
+milliseconds. *A backstop*: the PHY's link is read once a second as well as
+on the status block's link-change bit, which is the path nobody has seen
+work.
+
+**What to read on the Mac Pro's screen**, in order - each line `tg3: N`,
+and a fault `tg3: STOP at N: what` with the register that said so:
+
+1. `tg3: 1 port 0: 14e4:1682 at bb:dd.f, a BCM57762, a link|no link, MI mode ...` - once a port;
+2. `tg3: 2 driving port N, revision ..., command ..., PCIe, config writes`;
+3. `tg3: 3 NVRAM: <part>, CFG1 ..., pages of N; no firmware wanted`;
+4. `tg3: 4 MAC xx:xx:xx:xx:xx:xx from the boot code's mailbox|NVRAM|MAC_ADDR_0`;
+5. `tg3: 5 idle as found`, or `the firmware left it running (...); halting; every block stopped`;
+6. `tg3: 6 reset; command register ..., put back as ...`, then `tg3: 6 the boot code answered`;
+7. `tg3: 7 rings: send 512, standard 512 with 64 posted, return 1024; host memory at ...`;
+8. `tg3: 8 PHY 5c0d8a40 (the BCM57765's); a link already|no link; negotiating ...`;
+9. `tg3: 9 interrupt N by MSI, claimed`;
+10. `tg3: 10 ready: answering the network stack as xx:xx:...`;
+
+then `tg3: link up at 1000 Mb/s, full duplex`, `tg3: the network stack has
+it`, `tg3: the first status block from the chip, tag ...`, `tg3: the first
+frame in, N bytes` and `tg3: the first frame out was sent by the chip`. A
+photograph that stops between two of these says where to look.
 
 ### SATA (AHCI) - the M700's drive, found and read
 

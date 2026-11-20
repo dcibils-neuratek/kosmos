@@ -77,7 +77,7 @@ end
 -- request's `x`, 1 for it.
 --
 function gpu.engine_test(engine)
-  local which = engine == "render" and 1 or 0
+  local which = math.type(engine) == "integer" and engine or engine == "render" and 1 or 0
   local reply, why = fs.raw("/Devices/gpu", string.pack(REQUEST, 10, 0, which, 0, 0, 0, 0, 0), nil, "gpu")
 
   if not reply then return nil, tostring(why) end

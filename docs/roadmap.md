@@ -12034,7 +12034,7 @@ agreed on 20 November (Diego: "Yes to all", the six recommendations taken) - any
 elevation tiles and its satellite imagery from Esri, through the `tiles`
 server grown to several sources (F1), the Map Kit's elevation (F2), the 3D
 Kit on Vulkan and its terrain (F3, F4), `flight.lua` (F5), sound,
-weather and shadows (F6), and a game controller's sticks and triggers handed to programs (F7; Diego, 20 November: "I would add gamepad support as well") - which the Super Nintendo, Doom and Quake gain too; Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
+weather and shadows (F6) - and buildings, OpenStreetMap's outlines stood up with the photograph's roofs (Diego, 20 November: "for f6 yes do buildings") - and a game controller's sticks and triggers handed to programs (F7; Diego, 20 November: "I would add gamepad support as well") - which the Super Nintendo, Doom and Quake gain too; Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 0.12.9** (18.929): the render engine and the blitter on execlists, a hang
 watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
 contexts - the protocol, the stand-in under QEMU, images kept across runs

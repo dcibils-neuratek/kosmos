@@ -5441,3 +5441,26 @@ own, written to be tried on the machine tonight. 0.12.29.
 - **How it was built**: a helper wrote the driver beside the Flight work,
   touching none of the kernel; the main session added what the kernel
   needed to find the cards and folded it in.
+
+## 20 November 2026 - The Mac Pro gets its network, and its GPUs' engines wake
+
+**In short.** The Mac Pro has an Ethernet driver now, and the AMD driver
+reaches the cards' command processors - the first steps towards full 3D
+and Vulkan on them. 0.12.30.
+
+- **Why the network first**: every step of the graphics work has to be
+  tried on the Mac Pro itself, and without the network each try was a USB
+  stick written and booted. With it, the Mac Pro can be reached over
+  Telnet and its screen watched, as the M700's was while its GPU was
+  brought up.
+- **What the graphics driver can do now**: hear the card's interrupts,
+  give the card a map of memory it can reach and separate maps for
+  separate programs, and start the card's command processor with AMD's own
+  firmware and give it its first commands. That is the engine that draws 3D.
+- **What comes next**: the 3D engine's setup, programs' work on it, and
+  then Mesa's AMD Vulkan driver on top - the same road the M700's Intel GPU
+  took.
+- **What is known**: the arithmetic of both drivers, checked against
+  Linux's own files on this Mac - 82 checks for the network, 279 for the
+  graphics engines. **What is not**: anything on the real chips. The Mac
+  Pro's boot is the test.

@@ -232,7 +232,10 @@ const char *amdgpu_array_mode_name(unsigned mode);
 #define AMDGPU_DMA_WRITE           0x2u
 #define AMDGPU_DMA_COPY            0x3u
 #define AMDGPU_DMA_FENCE           0x6u
+#define AMDGPU_DMA_IB              0x4u
 #define AMDGPU_DMA_TRAP            0x7u
+#define AMDGPU_DMA_SRBM_WRITE      0x9u
+#define AMDGPU_DMA_POLL_REG_MEM    0xeu
 #define AMDGPU_DMA_FILL            0xdu
 #define AMDGPU_DMA_NOP             0xfu
 
@@ -242,6 +245,32 @@ unsigned amdgpu_dma_fill(uint32_t *out, uint64_t addr, uint32_t value, uint32_t 
 unsigned amdgpu_dma_copy(uint32_t *out, uint64_t dst, uint64_t src, uint32_t bytes);
 unsigned amdgpu_dma_fence(uint32_t *out, uint64_t addr, uint32_t seq);
 unsigned amdgpu_dma_nop(uint32_t *out);
+
+/* TRAP: the engine raises an IH entry, source 224 or 244 (`si_dma.c` 110). */
+unsigned amdgpu_dma_trap(uint32_t *out);
+
+/*
+ * An indirect buffer of `dwords` at `addr`, run in `vmid` (`si_dma_ring_emit_ib`,
+ * `si_dma.c` 62-77): NOPs first until the header lands where the ring's
+ * write pointer, in dwords, is 5 modulo 8, so the packet ends on an
+ * 8-dword boundary. `at` is the ring position the first word goes to.
+ * The buffer is 32-byte aligned.
+ */
+unsigned amdgpu_dma_ib(uint32_t *out, uint32_t at, unsigned vmid, uint64_t addr, uint32_t dwords);
+
+/* SRBM_WRITE: a register, its byte offset, written from the ring with all
+ * four byte enables (`si_dma_ring_emit_wreg`, 451-457). */
+unsigned amdgpu_dma_srbm_write(uint32_t *out, uint32_t reg, uint32_t value);
+
+/*
+ * A program's page directory given to `vmid` and its TLB flushed, from the
+ * DMA ring (`si_dma_vm_flush`, radeon `si_dma.c` 185-215): the base, the
+ * HDP flushed, the invalidate, and a POLL_REG_MEM on VM_INVALIDATE_REQUEST.
+ * The poll's register is amdgpu's dword (`si_dma.c` 445, its `sid.h`'s
+ * 0x51E); radeon writes the byte offset there, which one of the two must
+ * have wrong, and the card is what will say.
+ */
+unsigned amdgpu_dma_vm_flush(uint32_t *out, unsigned vmid, uint64_t pd_mc);
 
 /* DMA_RB_CNTL's size field for a ring of `bytes`, a power of two: log2 dwords << 1. */
 uint32_t amdgpu_dma_rb_size(uint32_t bytes);

@@ -41,6 +41,17 @@ bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
     return false;
 }
 
+/* The one device this board tells a driver about is not on PCI. */
+bool hal_device_config_write(unsigned kind, unsigned index, unsigned offset,
+                             uint32_t value)
+{
+    (void)kind;
+    (void)index;
+    (void)offset;
+    (void)value;
+    return false;
+}
+
 /*
  * What this machine is called: nothing is read, and that is said.
  *

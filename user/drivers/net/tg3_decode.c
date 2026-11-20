@@ -102,6 +102,69 @@
 #define MAC_MODE_PORT_MODE_GMII     0x00000008u
 #define MAC_MODE_PORT_MODE_MII      0x00000004u
 
+/* tg3.h, NVRAM_CFG1 and NVRAM_CMD. */
+#define NVRAM_CFG1_COMPAT_BYPASS            0x80000000u
+#define NVRAM_CFG1_5752VENDOR_MASK          0x03C00003u
+#define FLASH_5752VENDOR_ATMEL_FLASH_BUFFERED 0x02000003u
+#define FLASH_5752VENDOR_ST_M45PE10         0x02400000u
+#define FLASH_5752VENDOR_ST_M45PE20         0x02400002u
+#define FLASH_5752VENDOR_ST_M45PE40         0x02400001u
+#define FLASH_5787VENDOR_ATMEL_EEPROM_376KHZ 0x03000002u
+#define FLASH_5787VENDOR_MICRO_EEPROM_376KHZ 0x02000000u
+#define FLASH_57780VENDOR_ATMEL_AT45DB011D  0x00400000u
+#define FLASH_57780VENDOR_ATMEL_AT45DB011B  0x03400000u
+#define FLASH_57780VENDOR_ATMEL_AT45DB021D  0x00400002u
+#define FLASH_57780VENDOR_ATMEL_AT45DB021B  0x03400002u
+#define FLASH_57780VENDOR_ATMEL_AT45DB041D  0x00400001u
+#define FLASH_57780VENDOR_ATMEL_AT45DB041B  0x03400001u
+#define NVRAM_CFG1_5752PAGE_SIZE_MASK       0x70000000u
+#define FLASH_5752PAGE_SIZE_256             0x00000000u
+#define FLASH_5752PAGE_SIZE_512             0x10000000u
+#define FLASH_5752PAGE_SIZE_1K              0x20000000u
+#define FLASH_5752PAGE_SIZE_2K              0x30000000u
+#define FLASH_5752PAGE_SIZE_4K              0x40000000u
+#define FLASH_5752PAGE_SIZE_264             0x50000000u
+#define FLASH_5752PAGE_SIZE_528             0x60000000u
+#define ATMEL_AT45DB0X1B_PAGE_POS           9u
+#define NVRAM_CMD_DONE                      0x00000008u
+#define NVRAM_CMD_GO                        0x00000010u
+#define NVRAM_CMD_RD                        0x00000000u
+#define NVRAM_CMD_FIRST                     0x00000080u
+#define NVRAM_CMD_LAST                      0x00000100u
+
+/* pci_regs.h (include/uapi/linux, v6.12). */
+#define PCI_CAPABILITY_LIST         0x34u
+#define PCI_COMMAND_MEMORY          0x0002u
+#define PCI_COMMAND_MASTER          0x0004u
+#define PCI_EXP_DEVCTL_RELAX_EN     0x0010u
+#define PCI_EXP_DEVCTL_NOSNOOP_EN   0x0800u
+#define PCI_EXP_DEVSTA_CED          0x0001u
+#define PCI_EXP_DEVSTA_NFED         0x0002u
+#define PCI_EXP_DEVSTA_FED          0x0004u
+#define PCI_EXP_DEVSTA_URD          0x0008u
+
+/* tg3.h, the enables the busy test reads, and GRC_LOCAL_CTRL. */
+#define HOSTCC_MODE_ENABLE          0x00000002u
+#define WDMAC_MODE_ENABLE           0x00000002u
+#define GRC_LCLCTRL_INT_ON_ATTN     0x00000008u
+#define GRC_LCLCTRL_GPIO_UART_SEL   0x00000010u
+#define GRC_LCLCTRL_GPIO_OE0        0x00000800u
+#define GRC_LCLCTRL_GPIO_OE1        0x00001000u
+#define GRC_LCLCTRL_GPIO_OE2        0x00002000u
+#define GRC_LCLCTRL_GPIO_OUTPUT0    0x00004000u
+#define GRC_LCLCTRL_GPIO_OUTPUT1    0x00008000u
+#define GRC_LCLCTRL_GPIO_OUTPUT2    0x00010000u
+#define GRC_LCLCTRL_AUTO_SEEPROM    0x01000000u
+
+/* mii.h (include/uapi/linux, v6.12). */
+#define ADVERTISE_CSMA              0x0001u
+#define ADVERTISE_10HALF            0x0020u
+#define ADVERTISE_10FULL            0x0040u
+#define ADVERTISE_100HALF           0x0080u
+#define ADVERTISE_100FULL           0x0100u
+#define ADVERTISE_1000HALF          0x0100u     /* in MII_CTRL1000 */
+#define ADVERTISE_1000FULL          0x0200u
+
 /* The 57766's largest single buffer, and the short-DMA bound. */
 #define TG3_TX_BD_DMA_MAX_2K        2048u
 #define SHORT_DMA_LIMIT             8u
@@ -261,6 +324,169 @@ uint32_t tg3_backoff_seed(const uint8_t mac[6])
     /* TX_BACKOFF_SEED_MASK */
     return ((uint32_t)mac[0] + mac[1] + mac[2] + mac[3] + mac[4] + mac[5])
            & 0x3FFu;
+}
+
+/*------------------------------------------------------------------- NVRAM */
+
+/* `tg3_nvram_get_pagesize`: a code the table does not name leaves the size
+ * as it was, which for a fresh `tp` is 0. */
+static unsigned nvram_page(uint32_t cfg1)
+{
+    switch (cfg1 & NVRAM_CFG1_5752PAGE_SIZE_MASK) {
+    case FLASH_5752PAGE_SIZE_256: return 256u;
+    case FLASH_5752PAGE_SIZE_512: return 512u;
+    case FLASH_5752PAGE_SIZE_1K:  return 1024u;
+    case FLASH_5752PAGE_SIZE_2K:  return 2048u;
+    case FLASH_5752PAGE_SIZE_4K:  return 4096u;
+    case FLASH_5752PAGE_SIZE_264: return 264u;
+    case FLASH_5752PAGE_SIZE_528: return 528u;
+    default:                      return 0u;
+    }
+}
+
+void tg3_decode_nvram_cfg1(uint32_t cfg1, struct tg3_nvram *out)
+{
+    bool atmel = false;
+
+    if (out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->cfg1_write = cfg1;
+    out->part = "nothing (no NVRAM)";
+
+    switch (cfg1 & NVRAM_CFG1_5752VENDOR_MASK) {
+    case FLASH_5787VENDOR_ATMEL_EEPROM_376KHZ:
+    case FLASH_5787VENDOR_MICRO_EEPROM_376KHZ:
+        /* A serial EEPROM: buffered, not flash, so never translated; Linux
+         * clears COMPAT_BYPASS and returns before the page size. */
+        out->present = true;
+        out->part = "a serial EEPROM";
+        out->cfg1_write = cfg1 & ~NVRAM_CFG1_COMPAT_BYPASS;
+        return;
+
+    case FLASH_5752VENDOR_ATMEL_FLASH_BUFFERED:
+    case FLASH_57780VENDOR_ATMEL_AT45DB011D:
+    case FLASH_57780VENDOR_ATMEL_AT45DB011B:
+    case FLASH_57780VENDOR_ATMEL_AT45DB021D:
+    case FLASH_57780VENDOR_ATMEL_AT45DB021B:
+    case FLASH_57780VENDOR_ATMEL_AT45DB041D:
+    case FLASH_57780VENDOR_ATMEL_AT45DB041B:
+        atmel = true;
+        out->part = "an Atmel AT45DB flash";
+        break;
+
+    case FLASH_5752VENDOR_ST_M45PE10:
+    case FLASH_5752VENDOR_ST_M45PE20:
+    case FLASH_5752VENDOR_ST_M45PE40:
+        out->part = "an ST M45PE flash";
+        break;
+
+    default:
+        return;                         /* TG3_FLAG_NO_NVRAM */
+    }
+
+    out->present = true;
+    out->flash = true;
+    out->page_bytes = nvram_page(cfg1);
+    out->translate = atmel && (out->page_bytes == 264u || out->page_bytes == 528u);
+}
+
+uint32_t tg3_nvram_phys_addr(const struct tg3_nvram *nv, uint32_t addr)
+{
+    if (nv == NULL || !nv->translate || nv->page_bytes == 0) {
+        return addr;
+    }
+
+    return ((addr / nv->page_bytes) << ATMEL_AT45DB0X1B_PAGE_POS)
+           + (addr % nv->page_bytes);
+}
+
+uint32_t tg3_nvram_read_cmd(void)
+{
+    return NVRAM_CMD_RD | NVRAM_CMD_GO | NVRAM_CMD_FIRST | NVRAM_CMD_LAST
+           | NVRAM_CMD_DONE;
+}
+
+bool tg3_nvram_done(uint32_t nvram_cmd)
+{
+    return (nvram_cmd & NVRAM_CMD_DONE) != 0;
+}
+
+bool tg3_wants_eee_patch(const struct tg3_rev *rev, bool has_nvram)
+{
+    return rev != NULL && rev->is_57766 && !has_nvram;
+}
+
+/*------------------------------------------------------------ PCI and PCIe */
+
+unsigned tg3_pci_cap(const uint32_t cfg[64], unsigned id)
+{
+    unsigned at, guard;
+
+    if (cfg == NULL) {
+        return 0;
+    }
+
+    at = (unsigned)(cfg[PCI_CAPABILITY_LIST / 4u] & 0xFCu);
+
+    /* 48 is how many four-byte capabilities fit above 0x40. */
+    for (guard = 0; at >= 0x40u && at <= 0xFCu && guard < 48u; guard++) {
+        uint32_t word = cfg[at / 4u];
+
+        if ((word & 0xFFu) == id) {
+            return at;
+        }
+
+        at = (unsigned)((word >> 8) & 0xFCu);
+    }
+
+    return 0;
+}
+
+uint32_t tg3_pcie_devctl_after_reset(uint32_t word_at_cap8)
+{
+    uint32_t devctl = word_at_cap8 & 0xFFFFu;
+
+    devctl &= ~(PCI_EXP_DEVCTL_RELAX_EN | PCI_EXP_DEVCTL_NOSNOOP_EN);
+    return devctl | ((uint32_t)(PCI_EXP_DEVSTA_CED | PCI_EXP_DEVSTA_NFED
+                                | PCI_EXP_DEVSTA_FED | PCI_EXP_DEVSTA_URD) << 16);
+}
+
+bool tg3_pci_command_ok(uint32_t command_word)
+{
+    return (command_word & (PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER))
+           == (PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
+}
+
+/*----------------------------------------------------------- the bring-up */
+
+bool tg3_chip_busy(uint32_t hostcc_mode, uint32_t wdmac_mode)
+{
+    return (hostcc_mode & HOSTCC_MODE_ENABLE) != 0
+           || (wdmac_mode & WDMAC_MODE_ENABLE) != 0;
+}
+
+uint32_t tg3_grc_local_ctrl(uint32_t now)
+{
+    const uint32_t gpio = GRC_LCLCTRL_GPIO_OE0 | GRC_LCLCTRL_GPIO_OE1
+                          | GRC_LCLCTRL_GPIO_OE2 | GRC_LCLCTRL_GPIO_OUTPUT0
+                          | GRC_LCLCTRL_GPIO_OUTPUT1 | GRC_LCLCTRL_GPIO_OUTPUT2;
+
+    return GRC_LCLCTRL_INT_ON_ATTN | GRC_LCLCTRL_AUTO_SEEPROM
+           | GRC_LCLCTRL_GPIO_UART_SEL | (now & gpio);
+}
+
+uint16_t tg3_mii_advertise(void)
+{
+    return (uint16_t)(ADVERTISE_CSMA | ADVERTISE_10HALF | ADVERTISE_10FULL
+                      | ADVERTISE_100HALF | ADVERTISE_100FULL);
+}
+
+uint16_t tg3_mii_ctrl1000(bool fast_only)
+{
+    return fast_only ? 0u : (uint16_t)(ADVERTISE_1000HALF | ADVERTISE_1000FULL);
 }
 
 /*------------------------------------------------------------- descriptors */

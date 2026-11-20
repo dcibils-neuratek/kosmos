@@ -342,6 +342,13 @@ work under the GPL as a whole. Kosmos's own sources stay MIT either way.
       of it (docs/w6.md W6b). The same terms as JavaScriptCore's above, and
       the same answer to the LGPL's static link.
 
+  AMD Radeon microcode, radeon/tahiti_{pfp,me,ce,rlc}.bin and
+      radeon/pitcairn_{pfp,me,ce,rlc}.bin, from linux-firmware,
+      redistributable under AMD's terms in linux-firmware's LICENSE.radeon
+      Not in the tree: downloaded into build/downloads/radeon-firmware/ and
+      carried, unmodified, in the system's image for the Mac Pro's GPUs
+      (user/drivers/display/amdgpu_fw.c, docs/amdgpu.md V3).
+
   doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
       runtime/upstream/doom/, in LICENSE.doomgeneric. Not in the system's
       image in any build: `make apps` links it into doom.elf, Doom's own

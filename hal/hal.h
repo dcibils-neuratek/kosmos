@@ -314,6 +314,7 @@ void hal_irq_set_masked(unsigned intid, bool masked);
 #define HAL_DEV_INTEL_ETHERNET   4u     /* an Intel Ethernet controller, on PCI */
 #define HAL_DEV_AHCI             5u     /* a SATA controller in AHCI mode, on PCI */
 #define HAL_DEV_INTEL_GPU        6u     /* an Intel GPU's register window, on PCI */
+#define HAL_DEV_BROADCOM_ETHERNET 7u    /* a Broadcom 57765-class Ethernet controller, on PCI */
 #define HAL_DEV_AMD_GPU          8u     /* an AMD GPU's registers (BAR 2 on Southern Islands), on PCI */
 #define HAL_DEV_AMD_VRAM         9u     /* the same card's VRAM aperture, BAR 0 */
 
@@ -343,6 +344,18 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
  */
 bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
                        uint32_t *out);
+
+/*
+ * One word of a found device's configuration space, **written**
+ * (`SYS_DEV_CONFIG_SET`): only of a device `hal_device_find` has found and
+ * kept, only a word aligned below 0x100, and only the words a driver has
+ * business with - never the header's identity, BARs or capability pointer,
+ * never MSI's or MSI-X's own registers, and the command register only with
+ * memory and bus master staying on and I/O staying off. False for anything
+ * else, and where the board has no such space.
+ */
+bool hal_device_config_write(unsigned kind, unsigned index, unsigned offset,
+                             uint32_t value);
 
 /*
  * **What the firmware says this machine is.**

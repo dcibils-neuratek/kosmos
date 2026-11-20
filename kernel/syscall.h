@@ -723,7 +723,20 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * memory type a read-only mapping could not keep.
  */
 #define SYS_MEM_READONLY 82 /* (cap)                  -> cap or error       */
-#define SYS_MAX         83
+/*
+ * **One word of a found device's configuration space, written** - the
+ * other half of `SYS_DEV_CONFIG`, for a chip whose reset clears its own
+ * command register (`tg3.c`, the Broadcom 57765 class: Linux puts it back
+ * through configuration space in `tg3_restore_pci_state`, with two
+ * registers of the chip's own and PCIe's Device Control). Device
+ * authority, as reading is; and the board writes only a device it has
+ * found and kept, and only a word a driver has business with
+ * (`hal_device_config_write`), so this is never a way to move a BAR or
+ * take an interrupt somebody else was given. 0, or SYS_ERR_DENIED without
+ * device authority, or SYS_ERR_NO_DEVICE when the board refuses.
+ */
+#define SYS_DEV_CONFIG_SET 83 /* (kind, index, offset, value) -> 0 or error */
+#define SYS_MAX         84
 
 #define RESERVE_NONE    0
 #define RESERVE_READ    1
@@ -1927,6 +1940,16 @@ void syscall_dispatch(struct syscall_frame *sc);
 #define DEV_INTEL_GPU        6u
 
 /*
+ * **A Broadcom 57765-class Ethernet controller** (`docs/drivers.md`,
+ * *Broadcom Ethernet*): the Mac Pro 2013's two BCM57762s and the iMac
+ * 2019's BCM57766. `base` and `size` are its first BAR (64 KB), `intid` the
+ * interrupt it raises - an MSI where the board could switch it to one -
+ * `where` its place on PCI and `line` its device identifier. Two kept:
+ * index 0 and 1, one a port.
+ */
+#define DEV_BROADCOM_ETHERNET 7u
+
+/*
  * **An AMD GPU** (`docs/amdgpu.md`): `DEV_AMD_GPU` is its register window -
  * BAR 2 on Southern Islands, the Mac Pro 2013's FirePro D300/D500/D700
  * (`radeon_device.c`: BAR 5 only from Bonaire) - and `DEV_AMD_VRAM` the
@@ -1935,7 +1958,6 @@ void syscall_dispatch(struct syscall_frame *sc);
  * firmware lit the screen through one of them, so `size` is 0 for the
  * aperture (the driver reads CONFIG_APER_SIZE) and the register window's
  * documented 256 KB for BAR 2. Two cards on the Mac Pro: index 0 and 1.
- * Seven is the Broadcom Ethernet lane's (`tg3.c`).
  */
 #define DEV_AMD_GPU          8u
 #define DEV_AMD_VRAM         9u

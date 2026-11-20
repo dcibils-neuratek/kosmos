@@ -87,6 +87,7 @@ void xhci_server(long console, long blocks, long writes, long frames,
  * transport's, the USB driver's HCI door. */
 void bluetooth_server(long console, long endpoint, long transport);
 void e1000_server(long console, long frames);
+bool tg3_server(long console, long frames);        /* false: no Broadcom 57765 class */
 void ahci_server(long console, long disks, long writes);
 /* The POSIX layer's, where an image has it (`runtime/posix/fd.c`). */
 extern void posix_changes_kept(void) __attribute__((weak));
@@ -1904,8 +1905,13 @@ int main(unsigned long arg)
     }
 
     if (arg == ROLE_E1000) {
-        named("e1000");
-        e1000_server(0, 1);
+        /* The Mac Pro's and the iMac's Broadcom first; it names itself
+         * "tg3" when it has one, and returns at once, touching nothing,
+         * when it has not. */
+        if (!tg3_server(0, 1)) {
+            named("e1000");
+            e1000_server(0, 1);
+        }
     }
 
     if (arg == ROLE_AHCI) {

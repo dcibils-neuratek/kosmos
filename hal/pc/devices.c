@@ -199,6 +199,39 @@ static bool nth_amd_gpu(unsigned index, struct pci_device *out)
     return false;
 }
 
+/*
+ * **Broadcom Ethernet**, class 2 subclass 0 with Broadcom's vendor
+ * identifier 14E4h: the 57765 class `tg3.c` drives - the Mac Pro 2013's two
+ * BCM57762 ports and the iMac 2019's BCM57766. Subclass 0 only, so a Mac's
+ * Broadcom wireless (class 0280h) is not taken for it. Which chip of the
+ * family it is, the driver decides from the device id; the board finds
+ * every Broadcom Ethernet controller, as it does Intel's.
+ */
+#define BROADCOM            0x14E4u
+#define BROADCOM_KEPT       2u
+
+static struct hal_device broadcom_kept[BROADCOM_KEPT];
+static bool broadcom_known[BROADCOM_KEPT];
+
+static bool nth_broadcom_ethernet(unsigned index, struct pci_device *out)
+{
+    unsigned from = 0, at, seen = 0;
+
+    while (pci_find_class(CLASS_NETWORK, SUBCLASS_ETHERNET, from, out, &at)) {
+        if (out->vendor == BROADCOM) {
+            if (seen == index) {
+                return true;
+            }
+
+            seen++;
+        }
+
+        from = at + 1;
+    }
+
+    return false;
+}
+
 static bool nth_intel_ethernet(unsigned index, struct pci_device *out)
 {
     unsigned from = 0, at, seen = 0;
@@ -340,10 +373,18 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
                 unsigned where = ((unsigned)pci.bus << 8) | ((unsigned)pci.slot << 3)
                                | (unsigned)pci.function;
                 unsigned id = ((unsigned)pci.vendor << 16) | pci.device;
+                unsigned vector;
+
+                /* Its MSI, taken once and kept as the Intel GPU's is, and
+                 * bus mastering on - which the MSI needs and the GART
+                 * (docs/amdgpu.md V1, V2); decoding left as the firmware
+                 * left it. Nought when it has no MSI: the driver polls. */
+                pci_set_master(&pci);
+                vector = pci_take_interrupt(&pci) ? pci.irq : 0u;
 
                 amd_kept[index] = (struct hal_device){
                     .base = (unsigned long)pci.bar[AMD_REGS_BAR], .size = AMD_REGS_BYTES,
-                    .intid = 0, .line = pci.device, .where = where, .id = id };
+                    .intid = vector, .line = pci.device, .where = where, .id = id };
                 amd_vram_kept[index] = (struct hal_device){
                     .base = (unsigned long)pci.bar[AMD_VRAM_BAR], .size = 0,
                     .intid = 0, .line = pci.device, .where = where, .id = id };
@@ -395,6 +436,42 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
         if (ether_known[index]) {
             *out = ether_kept[index];
+            found = true;
+        }
+
+        spin_unlock(&devices_lock, flags);
+        return found;
+    }
+
+    if (out != NULL && kind == HAL_DEV_BROADCOM_ETHERNET
+        && index < BROADCOM_KEPT) {
+        bool found = false;
+
+        flags = spin_lock(&devices_lock);
+
+        if (!broadcom_known[index]) {
+            struct pci_device pci;
+            uint64_t size;
+
+            if (nth_broadcom_ethernet(index, &pci) && pci.bar[0] != 0
+                && (size = pci_bar_size(&pci, 0)) != 0) {
+                pci_enable(&pci);
+
+                broadcom_kept[index].base  = (unsigned long)pci.bar[0];
+                broadcom_kept[index].size  = (unsigned long)size;
+                broadcom_kept[index].intid = pci.irq;
+                broadcom_kept[index].line  = pci.device;
+                broadcom_kept[index].where = ((unsigned)pci.bus << 8)
+                                           | ((unsigned)pci.slot << 3)
+                                           | (unsigned)pci.function;
+                broadcom_kept[index].id    = ((unsigned)pci.vendor << 16)
+                                           | pci.device;
+                broadcom_known[index] = true;
+            }
+        }
+
+        if (broadcom_known[index]) {
+            *out = broadcom_kept[index];
             found = true;
         }
 
@@ -473,6 +550,31 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
     return found;
 }
 
+/* Where on PCI a found and kept device is, or false. Called with devices_lock held. */
+static bool kept_where(unsigned kind, unsigned index, unsigned *where)
+{
+    if (kind == HAL_DEV_INTEL_ETHERNET && index < ETHERNET_KEPT
+        && ether_known[index]) {
+        *where = ether_kept[index].where;
+        return true;
+    } else if (kind == HAL_DEV_XHCI && index < XHCI_KEPT && xhci_known[index]) {
+        *where = xhci_kept[index].where;
+        return true;
+    } else if (kind == HAL_DEV_AHCI && index < AHCI_KEPT && ahci_known[index]) {
+        *where = ahci_kept[index].where;
+        return true;
+    } else if (kind == HAL_DEV_AMD_GPU && index < AMD_GPU_KEPT && amd_known[index]) {
+        *where = amd_kept[index].where;
+        return true;
+    } else if (kind == HAL_DEV_BROADCOM_ETHERNET && index < BROADCOM_KEPT
+               && broadcom_known[index]) {
+        *where = broadcom_kept[index].where;
+        return true;
+    }
+
+    return false;
+}
+
 /*
  * **One word of a found device's configuration space** (`SYS_DEV_CONFIG`,
  * `testing.md` 18.347). Only of a device found and kept above - so only
@@ -486,29 +588,14 @@ bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
 {
     unsigned long flags;
     unsigned where = 0;
-    bool known = false;
+    bool known;
 
     if (out == NULL || offset > 252u || (offset & 3u) != 0) {
         return false;
     }
 
     flags = spin_lock(&devices_lock);
-
-    if (kind == HAL_DEV_INTEL_ETHERNET && index < ETHERNET_KEPT
-        && ether_known[index]) {
-        where = ether_kept[index].where;
-        known = true;
-    } else if (kind == HAL_DEV_XHCI && index < XHCI_KEPT && xhci_known[index]) {
-        where = xhci_kept[index].where;
-        known = true;
-    } else if (kind == HAL_DEV_AHCI && index < AHCI_KEPT && ahci_known[index]) {
-        where = ahci_kept[index].where;
-        known = true;
-    } else if (kind == HAL_DEV_AMD_GPU && index < AMD_GPU_KEPT && amd_known[index]) {
-        where = amd_kept[index].where;
-        known = true;
-    }
-
+    known = kept_where(kind, index, &where);
     spin_unlock(&devices_lock, flags);
 
     if (!known) {
@@ -517,5 +604,84 @@ bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
 
     *out = pci_config_read((uint8_t)(where >> 8), (uint8_t)((where >> 3) & 0x1Fu),
                            (uint8_t)(where & 0x7u), (uint8_t)offset);
+    return true;
+}
+
+/*
+ * **One word of a found device's configuration space, written**
+ * (`SYS_DEV_CONFIG_SET`). Only of a device found and kept above, only an
+ * aligned word below 0x100, and only one a driver has business with:
+ *
+ *  - never 00h (identity), 08h (class), 0Ch (header type, BIST) or 10h-3Ch
+ *    (BARs, subsystem, expansion ROM, capability pointer, interrupt line):
+ *    the board placed the device and owns where it is;
+ *  - the command register (04h) only with memory and bus master on and
+ *    I/O off - what `pci_enable` set - so a driver can put back what a
+ *    reset cleared and nothing else; the status half is RW1C, and a driver
+ *    writes it as 0 or as the errors it means to clear;
+ *  - never inside MSI's or MSI-X's capability (its header word included):
+ *    the board chose the vector, and a driver that could rewrite it could
+ *    raise somebody else's interrupt;
+ *  - anything else - a chip's own registers above 40h, PCIe's Device
+ *    Control, power management's control word - is the driver's.
+ */
+#define PCI_COMMAND_IO_BIT      0x1u
+#define PCI_COMMAND_MEMORY_BIT  0x2u
+#define PCI_COMMAND_MASTER_BIT  0x4u
+#define CAP_ID_MSI_WRITE        0x05u
+#define CAP_ID_MSIX_WRITE       0x11u
+
+static bool in_capability(unsigned where, unsigned offset, uint8_t id,
+                          unsigned bytes)
+{
+    uint8_t bus = (uint8_t)(where >> 8), slot = (uint8_t)((where >> 3) & 0x1Fu);
+    uint8_t fn = (uint8_t)(where & 0x7u);
+    unsigned at = pci_config_read(bus, slot, fn, 0x34) & 0xFCu, guard;
+
+    for (guard = 0; at >= 0x40u && guard < 48u; guard++) {
+        uint32_t cap = pci_config_read(bus, slot, fn, (uint8_t)at);
+
+        if ((cap & 0xFFu) == id) {
+            return offset >= at && offset < at + bytes;
+        }
+
+        at = (cap >> 8) & 0xFCu;
+    }
+
+    return false;
+}
+
+bool hal_device_config_write(unsigned kind, unsigned index, unsigned offset,
+                             uint32_t value)
+{
+    unsigned long flags;
+    unsigned where = 0;
+    bool known;
+
+    if (offset > 252u || (offset & 3u) != 0 || offset == 0x00u
+        || offset == 0x08u || offset == 0x0Cu
+        || (offset >= 0x10u && offset <= 0x3Cu)) {
+        return false;
+    }
+
+    if (offset == 0x04u
+        && ((value & PCI_COMMAND_MEMORY_BIT) == 0
+            || (value & PCI_COMMAND_MASTER_BIT) == 0
+            || (value & PCI_COMMAND_IO_BIT) != 0)) {
+        return false;
+    }
+
+    flags = spin_lock(&devices_lock);
+    known = kept_where(kind, index, &where);
+    spin_unlock(&devices_lock, flags);
+
+    if (!known
+        || in_capability(where, offset, CAP_ID_MSI_WRITE, 24u)     /* 64-bit, masked: 24 bytes */
+        || in_capability(where, offset, CAP_ID_MSIX_WRITE, 12u)) {
+        return false;
+    }
+
+    pci_config_write((uint8_t)(where >> 8), (uint8_t)((where >> 3) & 0x1Fu),
+                     (uint8_t)(where & 0x7u), (uint8_t)offset, value);
     return true;
 }

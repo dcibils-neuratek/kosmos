@@ -163,7 +163,7 @@ local SYSTEM = { ["/Kosmos/Programs/wm.lua"] = true }
 
 -- And the processes built into the image, by what a person calls them.
 local BUILT_IN = { xhci = "USB", drives = "Drives", diskfs = "Disk", net = "Network",
-                   audio = "Sound", e1000 = "Network" }
+                   audio = "Sound", e1000 = "Network", tg3 = "Network" }
 
 function notify.who(entry, names)
   if SYSTEM[entry.from] then return "System" end

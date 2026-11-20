@@ -137,8 +137,8 @@ end
 --
 --
 -- **The network cards this system drives, by name** - the chips the e1000
--- driver takes (`user/drivers/net/e1000.c`), named as Linux's `e1000e` and
--- `e1000` name them in `hw.h`. Only these: a card not here keeps its vendor
+-- and tg3 drivers take (`user/drivers/net/e1000.c`, `tg3.c`), named as
+-- Linux's `e1000e` and `e1000` name them in `hw.h`, and `tg3.h` its own. Only these: a card not here keeps its vendor
 -- and two numbers, which is true, rather than a guessed model, which is not.
 -- The M700 read "Intel 8086:15b8" in Network Monitor's card on 12 October.
 --
@@ -151,6 +151,10 @@ hardware.NETWORK_NAMES = {
     [0x15b9] = "Ethernet I219-LM",
     [0x15d7] = "Ethernet I219-LM", [0x15d8] = "Ethernet I219-V",
     [0x15e3] = "Ethernet I219-LM", [0x15d6] = "Ethernet I219-V",
+  },
+  [0x14e4] = {
+    [0x1682] = "BCM57762 Gigabit Ethernet",     -- the Mac Pro 2013's two ports
+    [0x1686] = "BCM57766 Gigabit Ethernet",     -- the iMac 2019's, believed
   },
 }
 

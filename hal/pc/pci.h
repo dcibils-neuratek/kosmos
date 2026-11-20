@@ -113,4 +113,13 @@ void pci_enable(struct pci_device *dev);
  */
 bool pci_take_interrupt(struct pci_device *dev);
 
+/*
+ * **Bus mastering on**, and nothing else in the command register: for a
+ * device the firmware drives whose driver will have it fetch and write
+ * memory - and whose MSI, a write by the device, needs it - but whose I/O
+ * decoding `pci_enable` would turn off (the Mac Pro's GPUs, docs/amdgpu.md
+ * V1). Linux's `pci_set_master`.
+ */
+void pci_set_master(struct pci_device *dev);
+
 #endif /* HAL_PC_PCI_H */

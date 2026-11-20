@@ -195,7 +195,13 @@ mac pro later tonight so we need the gpu drivers done") has its driver
 and named, the display read back and a flip on demand (`gpu cursor 5`), and
 each DMA engine's first fill, copy and fence - none of it run on the machine
 yet; the Mac Pro's boot is its test, its `amdgpu:` lines read in the order
-`amdgpu.md` gives. After
+`amdgpu.md` gives. **Full 3D and Vulkan on the cards** was agreed the same
+evening: `amdgpu.md`, *3D and Vulkan*, V1 to V10, with V1-V3 (the interrupt
+ring, the GART and VMIDs, the command processor) built in 0.12.30, and the
+Mac Pro's Ethernet (`tg3.c`, 18.950) with them, so the card's steps can be
+tried over Telnet rather than a stick each. V4 onward next; V6 waits on
+`amdgpu.md`'s proposal of one context core for both GPUs (`gpu_ctx.c`).
+After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

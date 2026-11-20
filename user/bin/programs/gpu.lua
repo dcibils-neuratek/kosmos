@@ -14,6 +14,7 @@
 --                       number written to memory - and whether it came
 --                       (`docs/m700-2d.md` step 5)
 --   gpu engine render [n]   the same on the render engine (step 7a)
+--   gpu engine gart|cp      the AMD GPU's GART and VMIDs, its command processor
 --   gpu el [n]          the video engine on execlists: one context, a page
 --                       table of its own, a number written where only it
 --                       maps (`docs/gpu3d.md` G6b)
@@ -657,14 +658,19 @@ end
 
 if words[1] == "engine" then
   -- `gpu engine 300`: that many in a row, past the ring's 256 and round.
-  local render = words[2] == "render"
+  -- `gpu engine gart` and `gpu engine cp` on the Mac Pro's AMD GPU
+  -- (docs/amdgpu.md V2, V3); an Intel GPU answers them as its blitter's.
+  local which = words[2]
+  local x = which == "render" and 1 or which == "gart" and 2 or which == "cp" and 3 or 0
+  local render = x ~= 0
   local times = math.tointeger(tonumber(words[render and 3 or 2] or "")) or 1
-  local who = render and "the render engine" or "the blitter"
+  local who = ({ [0] = "the blitter", "the render engine", "the GART and VMIDs",
+                 "the command processor" })[x]
   local r, why
   local done, fastest, slowest, total = 0, math.huge, 0, 0
 
   for _ = 1, math.max(1, times) do
-    r, why = gpu.engine_test(render and "render" or nil)
+    r, why = gpu.engine_test(x)
     if not r then break end
     done = done + 1
     fastest, slowest = math.min(fastest, r.elapsed_us), math.max(slowest, r.elapsed_us)

@@ -122,6 +122,8 @@ _Static_assert(DEV_AHCI == HAL_DEV_AHCI,
                "the SATA controller's kind differs across the boundary");
 _Static_assert(DEV_INTEL_GPU == HAL_DEV_INTEL_GPU,
                "the Intel GPU's kind differs across the boundary");
+_Static_assert(DEV_BROADCOM_ETHERNET == HAL_DEV_BROADCOM_ETHERNET,
+               "the Broadcom Ethernet controller's kind differs across the boundary");
 _Static_assert(DEV_AMD_GPU == HAL_DEV_AMD_GPU,
                "the AMD GPU's kind differs across the boundary");
 _Static_assert(DEV_AMD_VRAM == HAL_DEV_AMD_VRAM,
@@ -2278,6 +2280,27 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
 
         result = (long)word;
+        break;
+    }
+
+    case SYS_DEV_CONFIG_SET: {
+        /*
+         * One word of a found device's configuration space, written
+         * (`syscall.h`). Device authority, as reading is; what may be
+         * written is the board's to decide (`hal_device_config_write`).
+         */
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!hal_device_config_write((unsigned)sc->arg[0], (unsigned)sc->arg[1],
+                                     (unsigned)sc->arg[2], (uint32_t)sc->arg[3])) {
+            result = SYS_ERR_NO_DEVICE;
+            break;
+        }
+
+        result = 0;
         break;
     }
 

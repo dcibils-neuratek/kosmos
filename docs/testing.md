@@ -39705,3 +39705,30 @@ This Machine name the cards (`gpu.vendor`, the 6600h-68FFh range, and
 single register is read right on the card: that is the Mac Pro's boot,
 and `amdgpu.md`, *What tonight's boot will tell us*, is the order to read
 its lines in.
+
+## 18.950 The Mac Pro's Ethernet, and its GPUs' engines (0.12.30)
+
+**In short:** two lanes folded at once. **The Broadcom Ethernet driver**,
+`user/drivers/net/tg3.c`, for the Mac Pro's BCM57762s and the iMac's
+BCM57766, follows Linux's `tg3` bring-up step by step - halt what the
+firmware left running, the MAC from the boot code's mailbox or NVRAM, the
+core-clock reset and the command register put back, rings, PHY, MSI - and
+init's network role tries it before `e1000`, which runs as before when it
+returns false. The reset clears the chip's own memory decoding, so the
+kernel gains **`SYS_DEV_CONFIG_SET`**, a configuration word written: only
+of a device found and kept, never the header's identity, BARs or capability
+pointer, never inside MSI or MSI-X, and the command register only with
+memory and bus master on and I/O off. **The AMD driver's V1 to V3**
+(`amdgpu.md`, *3D and Vulkan*): the interrupt ring and the card's MSI at
+boot, the GART and programs' VMIDs on `gpu engine gart`, and the command
+processor with its microcode and a ring test on `gpu engine cp`; the board
+now gives the card bus mastering and its MSI, decoding left as the firmware
+left it. Held here by `test_tg3decode` (82 checks, four controls, every
+constant compared by script with Linux v6.12's headers) and
+`test_amdgpu_engine` (279 checks with the downloaded headers and firmware,
+eleven controls); that both stand aside where their hardware is absent by
+every x86 suite. **Neither has run on its hardware**: the Mac Pro's boot
+is that, its `tg3:` lines numbered 1 to 10 in `drivers.md` and its
+`amdgpu:` lines in `amdgpu.md`.
+The gate: 152 of 154 in 724 s, `x86-jetski` (a tone heard at 417 Hz of 440) and
+`x86-display-1` (a key's echo late) passing alone, 144 s - the load's, not this change's.

@@ -315,8 +315,10 @@ ends on the M700:
   Then the cockpit and tower views' detail, the pause sheet, the panel and
   the island.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
-  and low cloud; the sun's shadow map. Then, if Diego agrees, buildings
-  from OpenStreetMap's outlines (*Questions*).
+  and low cloud; the sun's shadow map. Then buildings from
+  OpenStreetMap's outlines and heights, through the Map Kit that reads them
+  for Maps, stood up as blocks with the photograph's roofs on top (agreed,
+  *Questions* 2).
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two
@@ -340,7 +342,8 @@ decision. The mockup asks them too:
    Esri's, with Sentinel-2 where Esri has nothing; the source is one line.
 2. **Buildings**: OpenStreetMap's outlines and heights - which the Map Kit
    already reads for Maps - stood up as blocks with the photograph's roofs
-   on top? *Recommended*: yes, after the flat city flies (F6).
+   on top? *Recommended*: yes, after the flat city flies (F6). **Yes -
+   Diego, 20 November 2026: "for f6 yes do buildings".**
 3. **One aircraft or two?** *Recommended*: one light trainer, flown well.
 4. **Controls**: keyboard, and the mouse as a yoke? *Recommended*: both,
    keyboard by default. **And a game controller** (Diego, 20 November: "I
