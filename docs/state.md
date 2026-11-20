@@ -144,8 +144,15 @@ built for Kosmos with a kernel-driver type of its own.
   It is fixed, and `x86-servers` holds it, with the lines sent behind a
   running program.
 
-**Next: G7d** - dEQP-VK on the M700. The M700 runs
-0.12.12 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
+**G7d (0.12.14, 18.934):** dEQP-VK on the M700's GPU.
+- 3,565 cases: 1,441 passed, 2,124 not supported, none failed. The first
+  run failed three, a queue at HIGH priority taken when the device offers
+  MEDIUM; that is refused now.
+- telnetd's put limit comes from free memory, not 64 MB.
+- **Submit to fence is 8 ms**: `intelgpu` hears a fence on its next tick.
+
+**Next: G7e** - the GPU's interrupt, so `intelgpu` hears a fence when it is
+written. The M700 runs 0.12.13 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
 "Reboot m700 as needed").
 
 **Flight, designed for Diego to agree** (19 November): a flight simulator

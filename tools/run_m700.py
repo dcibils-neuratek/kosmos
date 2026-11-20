@@ -344,7 +344,59 @@ class Suite:
         self.note("vulkan device us", number(r"device=(\d+)us", out, int))
         self.note("vulkan fill us", g[4])
         self.note("vulkan dispatch us", g[9])
+        lat = re.search(r"latency=(\d+)/(\d+)/(\d+)us", out)
+
+        if self.check(lat is not None, "no submit-to-fence latency was said: " + out.strip()[-200:]):
+            self.note("vulkan submit to fence us", int(lat.group(2)))
+            self.note("vulkan submit to fence worst us", int(lat.group(3)))
+
         self.vulkan_cube()
+        self.vulkan_cts()
+
+    def vulkan_cts(self):
+        """**Khronos's conformance suite on the GPU** (`docs/gpu3d.md` G7d):
+        dEQP-VK linked against `anv` (`vkcts-anv.elf`), over the cases
+        `x86-vulkan-cts` runs on lavapipe - `run_vkcts.CASES`, and its
+        program - put as `vkcts.elf`, whose name chooses its kit. Held as
+        there: the run came to its end, executed cases, and none failed or
+        lost the device. The log is read back and a failing case named."""
+        import run_vkcts as C
+
+        image = os.path.join(ROOT, "build", "user-x86_64", "apps", "vkcts-anv.elf")
+
+        if not self.check(os.path.exists(image), "no vkcts-anv.elf - `make ARCH=x86_64 apps`"):
+            return
+
+        stripped = os.path.join(self.folder, "vkcts.elf")
+        os.system("x86_64-elf-strip -o '%s' '%s'" % (stripped, image))
+        self.m.run("mkdir /Home/Temporary/cts")
+
+        with open(stripped, "rb") as f:
+            self.m.session.put(f.read(), "/Home/Temporary/cts/vkcts.elf")
+
+        os.remove(stripped)
+        self.m.put(C.PROGRAM.replace("/Home/apps/vkcts", "/Home/Temporary/cts"),
+                   "/Home/Temporary/cts/vkcts.lua")
+        out, _ = self.test("dEQP-VK on the GPU", "/Home/Temporary/cts/vkcts.lua")
+        m = C.SAID.search(out)
+
+        if not self.check(m is not None, "dEQP-VK did not finish: " + out.strip()[-240:]):
+            return
+
+        executed, passed, failed, unsupported, warnings, waived, lost = map(int, m.groups()[:7])
+        named = []
+
+        if failed or lost:
+            qpa = self.m.session.get("/Home/Temporary/cts/vkcts.qpa").decode(errors="replace")
+            named = C.failures(qpa)[:12]
+
+        self.check(m.group(8) == "true", "dEQP-VK's run did not come to its end")
+        self.check(executed > 0, "dEQP-VK executed no case")
+        self.check(failed == 0 and lost == 0, "dEQP-VK: %d failed and %d lost the device: %s"
+                   % (failed, lost, ", ".join(named) or "the log names none"))
+        self.note("vulkan cts passed", passed)
+        self.note("vulkan cts not supported", unsupported)
+        self.note("vulkan cts ms", int(m.group(9)))
 
     def vulkan_cube(self):
         """**The cube, drawn by the GPU and in a window** (G7c): `vulkantest`'s

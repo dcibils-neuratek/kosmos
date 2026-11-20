@@ -38974,3 +38974,68 @@ holds. Run alone straight after, it passed all 10 checks in 8 s. It has
 failed the same way in earlier gates (above, and 37900), and nothing that
 changed here reaches sound. The gate is still a little over its
 ten-minute budget.
+
+## 18.934 Khronos's conformance suite on the M700's GPU
+
+**In short:** G7d (`docs/gpu3d.md` §6). dEQP-VK, linked against Intel's
+driver `anv` instead of lavapipe, runs on the M700's HD 530 over the same
+3,565 cases `x86-vulkan-cts` runs under QEMU: 1,441 passed, 2,124 not
+supported, none failed and none lost the device, in 70 s. The first run
+failed three, all on the same mistake: Kosmos let a queue ask for a
+higher priority than the device has. The submit-to-fence latency G7d
+asked for is measured too, and it is the finding: 8 ms in the middle, 177
+µs at best, because the driver hears a fence on its next scheduler tick.
+The GPU's interrupt is the fix, and it is next.
+
+- **`vkcts-anv.elf`** is dEQP-VK's objects with `anv` in place of lavapipe
+  and LLVM, 80 MB stripped. The kit is chosen by the image's name, so the
+  M700 suite puts it as `vkcts.elf` beside the same program `run_vkcts.py`
+  writes, and `vkcts`'s kit answers.
+- **Not supported**, and rightly: sparse binding (2,044 of the
+  `api.buffer.suballocation` cases - `anv` offers it only with VM control,
+  which Kosmos's backend does not), an exclusive compute queue (65 - one
+  queue family), protected memory (8).
+- **The priority.** `create_device_global_priority_khr` and the two
+  `_query` cases ask for a queue at HIGH and expect `VK_ERROR_NOT_PERMITTED`:
+  the device says MEDIUM is the most it has. i915's and Xe's backends
+  refuse; Kosmos's took it. `anv_kosmos_create_engine` now refuses a
+  priority above the device's.
+- **telnetd's `put` takes what fits the machine.** It refused anything
+  over 64 MB, a number compiled in, and the image is 80. A put holds about
+  3.3 times its file while it arrives, so it now refuses a file only when
+  four times it is not free (`pages_free`, as `http.lua` sizes its room).
+  The 80 MB put took 5.3 s.
+- **Submit to fence** (`anvtest`'s `run`, said as `latency=least/middle/
+  most`): a one-word fill, recorded once and submitted 100 times, each
+  waited for. A fill, not an empty buffer, because an empty submission
+  signals without the GPU. `intelgpu` takes no interrupt from the GPU.
+  While an engine is busy it polls its fences, coming back "within a
+  tick", and a tick is 4 ms (`TICK_HZ` 250). So a frame waits one or two
+  ticks to hear that its work is done, on work the GPU finished in a
+  fraction of a millisecond.
+
+```
+M700 (0.12.13, netbooted; the M700 suite's Vulkan checks, 13 of 13):
+  Vulkan on the GPU:    device=3626us fill=5364us dispatch=6692us
+                        latency=177/7999/12308us (least/middle/most, 100 submits)
+  the cube on the GPU:  as the reference; 300 frames, 73.6 a second at 64x64
+  dEQP-VK on the GPU:   executed 3565 passed 1441 failed 0 not_supported 2124
+                        warnings 0 waived 0 device_lost 0 complete true, 70.4 s
+  before the fix:       failed 3 - dEQP-VK.api.device_init.create_device_global_
+                        priority_khr.basic, ..._query.basic, ..._query_khr.basic:
+                        "device creation must fail but not, globalPriority =
+                        VK_QUEUE_GLOBAL_PRIORITY_HIGH"
+lavapipe under QEMU (18.926), the same cases: 1439 passed, 2126 not supported
+```
+
+`anv` passes two cases more than lavapipe and is excused two fewer.
+Neither number is a score of the hardware: they are the cases the minute
+holds, chosen to fit QEMU.
+
+**The gate** (Mesa, `anvtest`, telnetd and the Makefile changed): 147 of
+148 suites passed in 645 s (10:45). `x86-display-1` failed 5 s into its
+run: the pixel it read at the bar's place came back empty, `()`, which
+is a screen read that brought nothing, not a wrong pixel. Run alone
+straight after, it passed all 74 checks. It failed under load in 18.931
+too. The gate is still over its ten-minute budget, and `x86-dock` (352 s)
+and `x86-cafesa3d-2` (330 s) are still the suites to split.

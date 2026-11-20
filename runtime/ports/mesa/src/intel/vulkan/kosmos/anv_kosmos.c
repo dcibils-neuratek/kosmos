@@ -515,7 +515,18 @@ VkResult
 anv_kosmos_create_engine(struct anv_device *device, struct anv_queue *queue,
                          const VkDeviceQueueCreateInfo *pCreateInfo)
 {
-   (void)pCreateInfo;
+   /* **A priority above the device's is refused**, as Xe's and i915's
+    * backends refuse it (dEQP-VK's `create_device_global_priority*`,
+    * `testing.md` 18.934). The device's context runs at the one priority
+    * there is, MEDIUM, and the spec lets a driver deny anything higher
+    * with VK_ERROR_NOT_PERMITTED; LOW is taken and runs as MEDIUM. Bands
+    * for a context are G9's. */
+   const VkDeviceQueueGlobalPriorityCreateInfo *asked =
+      vk_find_struct_const(pCreateInfo->pNext, DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO);
+
+   if (asked != NULL &&
+       asked->globalPriority > device->physical->max_context_priority)
+      return vk_error(device, VK_ERROR_NOT_PERMITTED);
 
    /* The render engine is the one family offered (`intel_engine.c`, and
     * no VM control); its queues share the device's context. */

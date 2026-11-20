@@ -5133,3 +5133,28 @@ on 640 pixels, and a screen without the cube finds no window.
 
 **Next.** G7d: the Vulkan conformance tests (dEQP-VK) on the M700, and
 what share of them pass.
+
+## 20 November 2026 - Khronos's own tests, on the M700's GPU
+
+**In short.** Khronos, the group that writes the Vulkan standard, ships
+a suite of tests every Vulkan driver is held to. Kosmos ran the same
+3,565 of them on the M700's graphics chip that it already runs on the
+software renderer. None failed. Running them found one real mistake, now
+fixed, and showed why the GPU answers slowly. 0.12.14.
+
+**What.** The tests ask the driver thousands of questions: make this,
+refuse that, report what you can do. 1,441 passed. 2,124 were features
+this driver honestly says it lacks, mostly "sparse" memory, which Kosmos
+does not offer yet. The first run failed three. A program may ask for a
+queue at high priority, and a driver that has no high priority must
+refuse it. Kosmos had said yes.
+
+**Something found.** A new measurement times how long one tiny piece of
+GPU work takes, from handing it over to hearing it is done. At best it
+was 0.18 ms, but usually 8 ms, half a frame. The GPU finishes almost at
+once. Kosmos's GPU driver only notices when it next looks, and it looks
+on the system's clock tick, every 4 ms. The GPU can raise an interrupt
+the moment it writes "done", and the driver has never listened for it.
+That is next.
+
+**Next.** G7e: the GPU's interrupt, and the same measurement again.

@@ -355,9 +355,21 @@ local function launch(s, text)
     local said = files.words(rest)
     local where, size = said[1], tonumber(said[2] or "")
 
-    if #said ~= 2 or not size or size ~= math.floor(size) or size < 0
-       or size > 64 * 1024 * 1024 then
+    if #said ~= 2 or not size or size ~= math.floor(size) or size < 0 then
       send(s, "put: put <path> <size>, then the file in base64, then END\n")
+      return prompt(s)
+    end
+
+    -- **What fits, from the machine** and not a number compiled in: while
+    -- it arrives a put holds its lines, their concatenation and the bytes
+    -- decoded - about 3.3 times the file - so a file is taken when four
+    -- times it is free. It was 64 MB, and dEQP-VK on `anv` is 80
+    -- (`testing.md` 18.934).
+    local room = ((sys.info() or {}).pages_free or 65536) * 4096 // 4
+
+    if size > room then
+      send(s, ("put: %d bytes is more than this machine has room to take (%d)\n")
+                :format(size, room))
       return prompt(s)
     end
 

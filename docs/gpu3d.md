@@ -656,6 +656,19 @@ so `lavapipe` is built for both.
    - **G7d - dEQP-VK on the M700**, the subset `x86-vulkan-cts` runs on
      `lavapipe`, by a program that says what passed. *Measure*:
      submit-to-fence latency.
+     **Built in 0.12.14** (`testing.md` 18.934): `vkcts-anv.elf` on the
+     HD 530, 3,565 cases - 1,441 passed, 2,124 not supported, none failed
+     - once a queue asking for more than MEDIUM was refused. Submit to
+     fence: 8 ms in the middle, 177 µs at best, because `intelgpu` hears
+     a fence on its next tick and not from the GPU's interrupt; that
+     interrupt is G7e.
+   - **G7e - the GPU's interrupt.** The render engine's user interrupt at
+     the end of each batch (`MI_USER_INTERRUPT`), the GT's interrupt
+     registers armed (`GEN8_GT_IER`/`IMR`/`IIR`, the master control), and
+     `intelgpu` waiting on its line and its endpoint at once
+     (`kosmos_irq_wait_any`, as `e1000` does), so a fence is heard when the
+     GPU writes it. *Measure*: submit-to-fence latency, against 18.934's 8
+     ms.
 8. **G8 - GL and WebGL on the M700.** Zink over `anv`; `glgears` at 1920 by
    1080 against TinyGL's figure; a Quake GL port (QuakeSpasm) installed in
    `/Home/Apps`; WebGL in JetSki. *Measure*: frames a second, and Zink

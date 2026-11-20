@@ -646,6 +646,40 @@ static void run(void)
     }
     say(" dispatch=%u/%u,%u/%u %.0fus", right, WORDS / 2u, kept, WORDS / 2u, took);
 
+    /* 3. **Submit to fence** (G7d's measure): one small piece of work,
+     * recorded once and submitted LATENCY times, each waited for - what a
+     * frame pays to reach the GPU and hear back, with nothing in it worth
+     * the GPU's time. A fill of one word, not an empty buffer: an empty
+     * submission signals without the GPU (`anv_kosmos.c`). Said as the
+     * least, the middle and the most. */
+    enum { LATENCY = 100 };
+    double waits[LATENCY];
+    VkCommandBufferBeginInfo again = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+
+    vkResetCommandBuffer(cmd, 0);
+    vkBeginCommandBuffer(cmd, &again);
+    vkCmdFillBuffer(cmd, buf, 0, 4, FILLED);
+    vkEndCommandBuffer(cmd);
+    for (i = 0; i < LATENCY; i++) {
+        vkResetFences(dev, 1, &fence);
+        t0 = now_us();
+        if ((r = vkQueueSubmit(queue, 1, &submit, fence)) != VK_SUCCESS ||
+            (r = vkWaitForFences(dev, 1, &fence, VK_TRUE, 5000000000ull)) != VK_SUCCESS) {
+            say(" failed=latency/%d", (int)r);
+            goto pipeline;
+        }
+        waits[i] = now_us() - t0;
+    }
+    for (i = 1; i < LATENCY; i++) {             /* a hundred: insertion */
+        double w = waits[i];
+        uint32_t j = i;
+        for (; j > 0 && waits[j - 1] > w; j--) {
+            waits[j] = waits[j - 1];
+        }
+        waits[j] = w;
+    }
+    say(" latency=%.0f/%.0f/%.0fus", waits[0], waits[LATENCY / 2], waits[LATENCY - 1]);
+
 pipeline:
     vkDestroyPipeline(dev, pipeline, NULL);
 layout:

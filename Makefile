@@ -4775,12 +4775,26 @@ $(UBUILD)/apps/vkcts.elf: $(USER_OBJS) $(VKCTS_OBJS) $(POSIX_OBJS) $(CTS_DIR)/.b
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_vkcts_kit$$' \
 	    || { echo "apps: the system's image has the Vulkan conformance kit in it"; rm -f $@; exit 1; }
 
+# **The same suite on Intel's driver** (`docs/gpu3d.md` G7d): dEQP-VK linked
+# against `anv` instead of lavapipe, so with no LLVM, for the M700's GPU.
+# Its kit is `vkcts`'s, chosen by the image's name, so the M700 suite puts
+# it there as `vkcts.elf` beside its program (`tools/run_m700.py`).
+$(UBUILD)/apps/vkcts-anv.elf: $(USER_OBJS) $(VKCTS_OBJS) $(POSIX_OBJS) $(CTS_DIR)/.built $(MESA_DIR)/.built \
+                              $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(VKCTS_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(CTS_DIR)/deqpvk.txt @$(MESA_DIR)/anv.txt \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_vkcts_kit$$' \
+	    || { echo "apps: vkcts-anv.elf does not have its kit"; rm -f $@; exit 1; }
+
 # WebCore's images - its own and WebKit2's - on x86-64 only: AArch64's
 # WebKit is built without WebCore while its suites wait (`CLAUDE.md`, *x86-64 only, for now*), and
 # an image with nothing to link from would stop every other one here.
 WEBCORE_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/webcoretest.elf $(UBUILD)/apps/webkit2test.elf \
                  $(UBUILD)/apps/webkit.elf)
-VKCTS_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/vkcts.elf)
+VKCTS_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/vkcts.elf $(UBUILD)/apps/vkcts-anv.elf)
 
 .PHONY: apps app-images
 apps:

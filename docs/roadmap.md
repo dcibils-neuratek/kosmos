@@ -12022,7 +12022,11 @@ SPIR-V to Gen9 in a Kosmos process (`x86-anv`). **G7b built in 0.12.12**
 compute dispatch read back right, checked by the M700 suite's *Vulkan on
 the GPU*. **G7c built in 0.12.13** (`testing.md` 18.933): the cube drawn by
 `anv`, matched to the reference, and presented in a window the M700 suite
-finds on the screen. **G7d next.**
+finds on the screen. **G7d built in 0.12.14** (`testing.md` 18.934): dEQP-VK on
+`anv` on the HD 530, 1,441 of the 3,565 cases passed and none failed;
+submit to fence 8 ms in the middle, because the driver polls its fences on
+a tick. **G7e next**: the GPU's interrupt, so a fence is heard when it is
+written (`gpu3d.md`).
 Owed from G7c:
 - **Frames a second that measure the GPU.** The cube is 64 by 64 pixels,
   so 66-127 frames a second is the round trip from submission to present.
