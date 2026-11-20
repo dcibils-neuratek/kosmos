@@ -103,4 +103,14 @@ uint64_t pci_bar_size(const struct pci_device *dev, unsigned index);
  */
 void pci_enable(struct pci_device *dev);
 
+/*
+ * **Only the interrupt**: an MSI where the device can take one, or MSI-X,
+ * and the device counted as taken - its command register left as it is.
+ * For a device the firmware already drives and Kosmos must not unsettle:
+ * the integrated GPU, whose screen the firmware lit and whose I/O decoding
+ * `pci_enable` would turn off (`docs/gpu3d.md` G7e). True, with `dev->irq`
+ * the vector, when it has one; false leaves it on no interrupt at all.
+ */
+bool pci_take_interrupt(struct pci_device *dev);
+
 #endif /* HAL_PC_PCI_H */

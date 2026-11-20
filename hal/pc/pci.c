@@ -722,6 +722,13 @@ static bool was_taken(uint16_t where)
     return found;
 }
 
+bool pci_take_interrupt(struct pci_device *dev)
+{
+    take(dev);
+
+    return msi_enable(dev) || msix_enable(dev);
+}
+
 void pci_enable(struct pci_device *dev)
 {
     uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,

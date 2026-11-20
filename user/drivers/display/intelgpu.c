@@ -41,6 +41,13 @@
 #include "mmio.h"
 #include "init/say.h"
 
+/* The GPU's interrupt, when it has one (G7e; `irq_arm`, below). */
+static long gpu_irq = -1;                       /* the line's capability */
+static bool irq_armed;
+static unsigned long irq_count;
+static long mocs_console;                   /* defined below, where it is set */
+static void irq_say(const char *what);
+
 static uint32_t reg(uintptr_t regs, uint32_t offset)
 {
     return mmio_read32(regs + offset);
@@ -202,6 +209,20 @@ static void look(long console)
     G.regs = regs;
     G.pipe = -1;
 
+    if (irq_armed) {
+        irq_say("intelgpu: the engines' interrupts");
+    }
+
+    if (gpu_irq < 0 && dev.intid != 0) {
+        gpu_irq = kosmos_irq_claim(dev.intid);
+        say_begin(&line);
+        say_text(&line, gpu_irq >= 0 ? "intelgpu: its interrupt is vector "
+                                     : "intelgpu: its interrupt could not be claimed, vector ");
+        say_dec(&line, dev.intid);
+        say_text(&line, gpu_irq >= 0 ? "; fences are heard from it" : "; fences are polled");
+        say_send(console, &line);
+    }
+
     for (pipe = 0; pipe < IGPU_PIPES; pipe++) {
         uint32_t step = pipe * IGPU_PIPE_STRIDE;
         uint32_t conf = reg(regs, IGPU_TRANSCONF_A + step);
@@ -332,6 +353,135 @@ static uint32_t holder_of_request(void)
 static void wreg(uint32_t offset, uint32_t value)
 {
     mmio_write32(G.regs + offset, value);
+}
+
+/*
+ * **The GPU's interrupt** (`docs/gpu3d.md` G7e). Without it this driver
+ * heard a fence only when it next looked, on the scheduler's tick - 4 ms -
+ * so a frame's work, done by the GPU in a fraction of a millisecond, was
+ * heard 8 ms after it was handed over (`testing.md` 18.934). The render
+ * and copy engines' user and context-switch interrupts are armed in the
+ * GT's first bank, the master control let through, and the server waits on
+ * the line and its endpoint at once. The offsets and bits are Linux 6.12's
+ * (`i915_reg.h`: GEN8_MASTER_IRQ, GEN8_GT_IMR/IIR/IER(0),
+ * GT_RENDER_USER_INTERRUPT, GT_CONTEXT_SWITCH_INTERRUPT, the RCS shift 0
+ * and the BCS shift 16), the order its `gen3_irq_init` and
+ * `gen8_irq_handler` keep.
+ */
+#define IGPU_MASTER_IRQ          0x44200u
+#define IGPU_MASTER_IRQ_CONTROL  (1u << 31)
+#define IGPU_MASTER_GT0          0x3u           /* GEN8_GT_RCS_IRQ | GEN8_GT_BCS_IRQ */
+#define IGPU_GT_IMR0             0x44304u
+#define IGPU_GT_IIR0             0x44308u
+#define IGPU_GT_IER0             0x4430cu
+#define IGPU_GT_USER             (1u << 0)
+#define IGPU_GT_CONTEXT_SWITCH   (1u << 8)
+#define IGPU_GT_WANTED           ((IGPU_GT_USER | IGPU_GT_CONTEXT_SWITCH) \
+                                  | (IGPU_GT_USER | IGPU_GT_CONTEXT_SWITCH) << 16)
+/* Each engine's own mask, RING_IMR (base + 0xa8, `intel_engine_regs.h`),
+ * written as `gen8_logical_ring_enable_irq` writes it - with the bank's
+ * shift, so the blitter's bits at 16 - and without it the bank hears
+ * nothing however it is armed: IER and IMR as asked and IIR nought after
+ * the GPU's work, on the M700. */
+#define IGPU_RING_IMR            0xa8u
+
+/* Once, the first time an engine starts - the GT awake, as writes to it
+ * need. What is pending is cleared first, twice as Linux does, since IIR
+ * can hold two events. */
+static void irq_say(const char *what)
+{
+    struct say_line line;
+
+    say_begin(&line);
+    say_text(&line, what);
+    say_text(&line, ": IER ");
+    say_hex(&line, reg(G.regs, IGPU_GT_IER0), 8);
+    say_text(&line, " IMR ");
+    say_hex(&line, reg(G.regs, IGPU_GT_IMR0), 8);
+    say_text(&line, " IIR ");
+    say_hex(&line, reg(G.regs, IGPU_GT_IIR0), 8);
+    say_text(&line, " ISR ");
+    say_hex(&line, reg(G.regs, IGPU_GT_IMR0 - 4u), 8);
+    say_text(&line, " master ");
+    say_hex(&line, reg(G.regs, IGPU_MASTER_IRQ), 8);
+    say_text(&line, " RCS ");
+    say_hex(&line, reg(G.regs, IGPU_RENDER_BASE + IGPU_RING_IMR), 8);
+    say_text(&line, " BCS ");
+    say_hex(&line, reg(G.regs, IGPU_BLT_BASE + IGPU_RING_IMR), 8);
+    say_text(&line, ", ");
+    say_dec(&line, irq_count);
+    say_text(&line, " heard");
+    say_send(mocs_console, &line);
+}
+
+static void irq_arm(void)
+{
+    if (irq_armed || gpu_irq < 0) {
+        return;
+    }
+    wreg(IGPU_GT_IIR0, 0xffffffffu);
+    wreg(IGPU_GT_IIR0, 0xffffffffu);
+    wreg(IGPU_GT_IER0, IGPU_GT_WANTED);
+    wreg(IGPU_GT_IMR0, ~IGPU_GT_WANTED);
+    (void)reg(G.regs, IGPU_GT_IMR0);            /* posted */
+    wreg(IGPU_RENDER_BASE + IGPU_RING_IMR, ~(IGPU_GT_USER | IGPU_GT_CONTEXT_SWITCH));
+    wreg(IGPU_BLT_BASE + IGPU_RING_IMR, ~((IGPU_GT_USER | IGPU_GT_CONTEXT_SWITCH) << 16));
+    (void)reg(G.regs, IGPU_BLT_BASE + IGPU_RING_IMR);
+    wreg(IGPU_MASTER_IRQ, IGPU_MASTER_IRQ_CONTROL);
+    irq_armed = true;
+    irq_say("intelgpu: the engines' interrupts armed");
+}
+
+/* An interrupt came: the master closed while the bank is read and
+ * cleared, then opened again, so one arriving meanwhile raises another.
+ * What it was for is not decided here - the loop polls the engines and the
+ * contexts after every wake, and those read the fences. */
+static void irq_service(void)
+{
+    static unsigned long stray;
+    uint32_t master;
+
+    wreg(IGPU_MASTER_IRQ, 0);
+    master = reg(G.regs, IGPU_MASTER_IRQ);
+    if ((master & IGPU_MASTER_GT0) != 0) {
+        uint32_t iir = reg(G.regs, IGPU_GT_IIR0);
+
+        if (iir != 0) {
+            wreg(IGPU_GT_IIR0, iir);
+        }
+        /* The first, said: that the line is live at all. The count after
+         * is `gpu`'s to say (`irq_say`). */
+        if (irq_count == 0) {
+            struct say_line line;
+
+            say_begin(&line);
+            say_text(&line, "intelgpu: the first interrupt, master ");
+            say_hex(&line, master, 8);
+            say_text(&line, ", bank ");
+            say_hex(&line, iir, 8);
+            say_text(&line, ", count ");
+            say_dec(&line, irq_count + 1u);
+            say_send(mocs_console, &line);
+        }
+    } else if (++stray >= 1000u) {
+        /* **A thousand that were not the engines'** - the display's, or
+         * something this driver never armed: rather than a storm on a
+         * thread in the display band, the master stays closed and the
+         * fences are polled again, as before G7e. */
+        struct say_line line;
+
+        irq_armed = false;
+        (void)kosmos_irq_ack(gpu_irq);
+        say_begin(&line);
+        say_text(&line, "intelgpu: a thousand interrupts not the engines', master ");
+        say_hex(&line, master, 8);
+        say_text(&line, " - closed, and fences polled");
+        say_send(mocs_console, &line);
+        return;
+    }
+    wreg(IGPU_MASTER_IRQ, IGPU_MASTER_IRQ_CONTROL);
+    irq_count++;
+    (void)kosmos_irq_ack(gpu_irq);
 }
 
 /* The picture out of the processor's caches, so the display engine - which
@@ -1087,6 +1237,7 @@ static uint32_t engine_start(struct engine *e)
     e->issued = 0;
     e->next_value = 0x4b6f7301u;                             /* "Kos" and a count */
     e->ready = true;
+    irq_arm();
     return GPU_OK;
 }
 
@@ -5021,9 +5172,23 @@ void intelgpu_server(long console, long endpoint)
          * was handed as it ran, so that work goes when the engine goes idle
          * and a hang is seen, even if nobody asks for anything (G6d). */
         {
-            long got = kosmos_receive(endpoint, &msg, &sender, 0,
-                                      el_waiting(&RCS) || el_waiting(&BCS) || RCS.active || BCS.active
-                                          || ctx_busy ? 1u : 0u);
+            const bool busy = el_waiting(&RCS) || el_waiting(&BCS) || RCS.active || BCS.active
+                              || ctx_busy;
+            long got;
+
+            if (irq_armed) {
+                /* The line and the endpoint at once; the tick still, while
+                 * work is out, so a hang is seen when nothing interrupts. */
+                const long lines[1] = { gpu_irq };
+                const long ends[1] = { endpoint };
+
+                if (kosmos_irq_wait_any(lines, 1, busy ? 1u : 0u, ends, 1) == 0) {
+                    irq_service();
+                }
+                got = kosmos_receive(endpoint, &msg, &sender, 1, 0);
+            } else {
+                got = kosmos_receive(endpoint, &msg, &sender, 0, busy ? 1u : 0u);
+            }
 
             el_poll(&RCS);
             el_poll(&BCS);

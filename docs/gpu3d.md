@@ -669,6 +669,9 @@ so `lavapipe` is built for both.
      (`kosmos_irq_wait_any`, as `e1000` does), so a fence is heard when the
      GPU writes it. *Measure*: submit-to-fence latency, against 18.934's 8
      ms.
+     **Built in 0.12.15** (`testing.md` 18.935): an MSI from the HAL, the
+     GT's bank and each engine's `RING_IMR` armed. Submit to fence 0.22 ms
+     in the middle and 0.26 ms at worst, against 8 and 13.5.
 8. **G8 - GL and WebGL on the M700.** Zink over `anv`; `glgears` at 1920 by
    1080 against TinyGL's figure; a Quake GL port (QuakeSpasm) installed in
    `/Home/Apps`; WebGL in JetSki. *Measure*: frames a second, and Zink

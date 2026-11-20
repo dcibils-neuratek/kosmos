@@ -151,8 +151,16 @@ built for Kosmos with a kernel-driver type of its own.
 - telnetd's put limit comes from free memory, not 64 MB.
 - **Submit to fence is 8 ms**: `intelgpu` hears a fence on its next tick.
 
-**Next: G7e** - the GPU's interrupt, so `intelgpu` hears a fence when it is
-written. The M700 runs 0.12.13 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
+**G7e (0.12.15, 18.935):** the GPU's interrupt.
+- The HAL gives the GPU an MSI, without touching its command register.
+- `intelgpu` arms the GT's bank and each engine's `RING_IMR`, and waits on
+  the line and its endpoint together.
+- Submit to fence is 0.22 ms where it was 8, and the cube window runs at
+  1,522 frames a second where it ran at 73.
+
+**G7 is done.** Next is G8 (GL and WebGL on the M700), or the flight
+simulator, once Diego has agreed its design (`docs/flight.md`). The M700
+runs this build at 192.168.1.35 and is restarted as needed (Diego, 19 November:
 "Reboot m700 as needed").
 
 **Flight, designed for Diego to agree** (19 November): a flight simulator

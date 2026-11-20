@@ -5158,3 +5158,30 @@ the moment it writes "done", and the driver has never listened for it.
 That is next.
 
 **Next.** G7e: the GPU's interrupt, and the same measurement again.
+
+## 20 November 2026 - The GPU says when it is done
+
+**In short.** Kosmos's GPU driver now listens for the M700's graphics
+chip to say "done", instead of checking every 4 ms. A small piece of GPU
+work used to take 8 ms to be heard as finished. Now it takes a fifth of
+a millisecond. The spinning cube's window went from 73 frames a second
+to more than 1,500. 0.12.15.
+
+**What.** Hardware can interrupt the processor to say something
+happened. Kosmos's disk, network and USB drivers already listened for
+theirs. The GPU's driver never had: the layer that hands drivers their
+devices gave the GPU no interrupt at all. Now it hands one over, and the
+driver switches the GPU's "work done" signals on.
+
+**Something that hid.** With every main switch on, nothing came. Each of
+the GPU's engines has a small mask of its own as well, and it was still
+closed. Linux's driver writes it, and once Kosmos did the same, the
+signals arrived at the first piece of work.
+
+**Measured.** From handing the GPU work to hearing it was done: 8 ms
+before, 0.22 ms now, and the worst of a hundred tries 0.26 ms where it
+was 13.5. Khronos's tests all still pass, and a little faster.
+
+**Next.** G7 is finished. The next step is OpenGL and WebGL on the
+M700's GPU (G8), or the flight simulator once Diego has agreed its
+design.

@@ -201,6 +201,34 @@ static bool intel_gpu_base(uint64_t *base, uint32_t *id_out)
  */
 #define IGD_GTTMMADR_BYTES  0x1000000u
 
+/*
+ * **Its interrupt, an MSI taken once and kept** (`docs/gpu3d.md` G7e):
+ * the driver arms the engines' interrupts and waits on this, so a fence is
+ * heard when the GPU writes it rather than at the next tick. Taken the
+ * first time the device is asked for and the same vector handed every
+ * time after, as the controllers below keep theirs. Nought when it has
+ * none, and the driver polls as before.
+ */
+static unsigned intel_gpu_interrupt(uint32_t id)
+{
+    static bool asked;
+    static unsigned vector;
+    unsigned long flags = spin_lock(&devices_lock);
+
+    if (!asked) {
+        struct pci_device pci = {
+            .bus = 0, .slot = IGD_SLOT, .function = 0,
+            .vendor = (uint16_t)id, .device = (uint16_t)(id >> 16),
+        };
+
+        asked = true;
+        vector = pci_take_interrupt(&pci) ? pci.irq : 0u;
+    }
+
+    spin_unlock(&devices_lock, flags);
+    return vector;
+}
+
 static bool intel_gpu(struct hal_device *out)
 {
     uint64_t base;
@@ -212,7 +240,7 @@ static bool intel_gpu(struct hal_device *out)
 
     out->base  = (unsigned long)base;
     out->size  = IGD_GTTMMADR_BYTES;
-    out->intid = 0;
+    out->intid = intel_gpu_interrupt(id);
     out->line  = id >> 16;
     out->where = IGD_SLOT << 3;
     out->id    = (id & 0xFFFFu) << 16 | id >> 16;

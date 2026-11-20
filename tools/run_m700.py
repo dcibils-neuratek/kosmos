@@ -262,7 +262,10 @@ class Suite:
         self.check(", a keyboard," in xhci or ": a keyboard" in xhci,
                    "no USB keyboard was named")
         self.check(": a mouse," in xhci, "no USB mouse was named")
-        self.check(": a stick:" in xhci, "no USB stick was named")
+        # A stick, when one is plugged in - a note, not a check: `/Home` has
+        # been on the SATA disk since 15 November, and the stick that held it
+        # came out (`testing.md` 18.935).
+        self.note("usb stick", "named" if ": a stick:" in xhci else "none plugged in")
 
         out, took = self.test("the machine", "neofetch")
         self.note("neofetch s", round(took, 1))
@@ -349,6 +352,11 @@ class Suite:
         if self.check(lat is not None, "no submit-to-fence latency was said: " + out.strip()[-200:]):
             self.note("vulkan submit to fence us", int(lat.group(2)))
             self.note("vulkan submit to fence worst us", int(lat.group(3)))
+            # Heard from the GPU's interrupt (G7e), not on the next tick: the
+            # middle was 8 ms when the driver polled (`testing.md` 18.934),
+            # and 0.22 ms with the interrupt (18.935).
+            self.check(int(lat.group(2)) < 2000, "submit to fence is %s us in the middle - "
+                       "is intelgpu hearing the GPU's interrupt?" % lat.group(2))
 
         self.vulkan_cube()
         self.vulkan_cts()

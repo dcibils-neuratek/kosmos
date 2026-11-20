@@ -39039,3 +39039,74 @@ is a screen read that brought nothing, not a wrong pixel. Run alone
 straight after, it passed all 74 checks. It failed under load in 18.931
 too. The gate is still over its ten-minute budget, and `x86-dock` (352 s)
 and `x86-cafesa3d-2` (330 s) are still the suites to split.
+
+## 18.935 The GPU's interrupt
+
+**In short:** G7e (`docs/gpu3d.md` §6). `intelgpu` now hears the M700's
+GPU say it has finished, instead of looking on the scheduler's next tick.
+Handing the GPU a small piece of work and hearing it is done took 8 ms in
+the middle (18.934). It now takes 0.22 ms, and the worst of a hundred is
+0.26 ms where it was 13.5. The Vulkan fill went from 7.3 ms to 0.35, the
+dispatch from 6.7 to 0.24, and the 64-by-64 cube window from 73 frames a
+second to 1,522. dEQP-VK still passes all it ran, and the desktop draws
+as before.
+
+- **The HAL gives the GPU an MSI.** The GPU's entry handed `intid` 0, so
+  its driver had no interrupt to wait on. `intel_gpu_interrupt` now takes
+  an MSI for 00:02.0 the first time the device is asked for, and hands the
+  same vector every time after. It goes through `pci_take_interrupt`,
+  which is new: an MSI and the device counted as taken, with the command
+  register left alone. `pci_enable` would have turned off the I/O decoding
+  of a VGA device whose screen the firmware lit.
+- **The driver arms the GT's first bank**: the render and copy engines'
+  user and context-switch interrupts in `GEN8_GT_IER(0)`/`IMR(0)`, IIR
+  cleared twice first, and the master control (0x44200, bit 31) let
+  through. Linux 6.12's offsets and order are used (`build/downloads/i915-6.12`,
+  fetched from torvalds/linux at v6.12: `i915_reg.h`, `intel_gt_irq.c`,
+  `i915_irq.c`, `gen8_engine_cs.c`).
+- **And each engine's own mask**, `RING_IMR` at base + 0xa8, written as
+  `gen8_logical_ring_enable_irq` writes it, the blitter's bits shifted to
+  16 as Gen8 and 9 have them. Without it the bank heard nothing: IER
+  `01010101`, IMR `fefefefe`, the master `80000000`, and IIR nought after
+  the GPU's work, with none heard. That run is the control. With it, the
+  first interrupt arrived as the engines started (master `00000001`, the
+  render bank's bit, IIR `00000100`, the context switch), and 208 were
+  heard in the first eighteen seconds.
+- **The loop waits on the line and the endpoint at once**
+  (`kosmos_irq_wait_any`, as `e1000`'s does), then polls the engines and
+  the contexts as before, which read the fences and pulse the waiters. The
+  tick stays while work is out, so a hang is still seen when nothing
+  interrupts.
+- **A guard**: after a thousand interrupts that carry none of the
+  engines' bits, the driver closes the master and polls again, and says
+  so. A storm on a thread in the display band would otherwise stop the
+  desktop. It did not fire.
+
+```
+M700 (0.12.14 + this, netbooted), anvtest run, least/middle/most of 100:
+  polled (18.934):   latency=164/7998/13537us  fill=7272us dispatch=6685us
+  RING_IMR left masked: latency=163/7998/8064us - IIR nought, 0 heard
+  with the interrupt: latency=219/221/242us   fill=346us  dispatch=233us
+  the M700 suite, Vulkan:  13 of 13 - submit to fence 222 us (worst 255),
+                     fill 361, dispatch 238, window 1522.8 frames a second
+                     (73.6), dEQP-VK 1441 passed, 0 failed, 65.9 s (70.4)
+  the whole M700 suite: 172 of 174; the two that failed are not this:
+                     "no address from DHCP in the log" - the line is there,
+                     `log` asked again; and "no USB stick was named" - none
+                     is plugged in, /Home is on SATA since 15 November, so
+                     that is a note now
+```
+
+The M700 suite now holds submit to fence under 2 ms in the middle, which
+the polled driver's 8 ms fails.
+
+**The gate** (the PC HAL and a driver changed, so every suite): 145 of
+148 passed in 676 s (11:16). Three suites failed, all waiting under the
+gate's load. `x86-smbd` and `x86-autod` each waited 120 s for a guest
+that had not yet said it was ready. `x86-film` timed a 3.00 s film at
+2.83 s by its own clock. None of them reaches the change: QEMU has no
+Intel GPU, so the HAL hands it nothing new and `intelgpu` finds nothing
+to drive. Run alone straight after, all three passed: 38, 18 and 16
+checks, in 107 s. The gate is over its ten-minute budget again, by a
+minute, and that is the next thing to fix: `x86-dock` (353 s) and
+`x86-cafesa3d-2` (335 s) are to be split.

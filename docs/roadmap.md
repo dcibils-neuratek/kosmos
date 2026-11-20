@@ -12025,8 +12025,10 @@ the GPU*. **G7c built in 0.12.13** (`testing.md` 18.933): the cube drawn by
 finds on the screen. **G7d built in 0.12.14** (`testing.md` 18.934): dEQP-VK on
 `anv` on the HD 530, 1,441 of the 3,565 cases passed and none failed;
 submit to fence 8 ms in the middle, because the driver polls its fences on
-a tick. **G7e next**: the GPU's interrupt, so a fence is heard when it is
-written (`gpu3d.md`).
+a tick. **G7e built in 0.12.15** (`testing.md` 18.935): the GPU's interrupt.
+Submit to fence is 0.22 ms in the middle, against 8 ms. **G7 done; G8, GL
+and WebGL on the M700, next** - and the flight simulator after G7, once
+Diego has agreed its design.
 Owed from G7c:
 - **Frames a second that measure the GPU.** The cube is 64 by 64 pixels,
   so 66-127 frames a second is the round trip from submission to present.
