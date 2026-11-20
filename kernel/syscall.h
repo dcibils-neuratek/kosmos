@@ -1926,6 +1926,20 @@ void syscall_dispatch(struct syscall_frame *sc);
  */
 #define DEV_INTEL_GPU        6u
 
+/*
+ * **An AMD GPU** (`docs/amdgpu.md`): `DEV_AMD_GPU` is its register window -
+ * BAR 2 on Southern Islands, the Mac Pro 2013's FirePro D300/D500/D700
+ * (`radeon_device.c`: BAR 5 only from Bonaire) - and `DEV_AMD_VRAM` the
+ * same card's VRAM aperture, BAR 0, at the same `index`. `where` is its
+ * place on PCI, `id` vendor << 16 | device. Neither sized nor enabled: the
+ * firmware lit the screen through one of them, so `size` is 0 for the
+ * aperture (the driver reads CONFIG_APER_SIZE) and the register window's
+ * documented 256 KB for BAR 2. Two cards on the Mac Pro: index 0 and 1.
+ * Seven is the Broadcom Ethernet lane's (`tg3.c`).
+ */
+#define DEV_AMD_GPU          8u
+#define DEV_AMD_VRAM         9u
+
 struct dev_info {
     uint32_t kind;
     uint32_t intid;         /* for SYS_IRQ_CLAIM */

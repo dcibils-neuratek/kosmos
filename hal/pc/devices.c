@@ -152,6 +152,53 @@ static bool nth_xhci(unsigned index, struct pci_device *out)
     return false;
 }
 
+/*
+ * **An AMD GPU**: vendor 1002h and class 03h - VGA (0300h) for the card the
+ * firmware shows the screen on, and possibly "other display" (0380h) for
+ * the Mac Pro's second; matched by class alone, so both are found, and the
+ * HD Audio function every Radeon carries beside it (class 04h) is not.
+ * BAR 0 is the VRAM aperture and BAR 2 the registers on Southern Islands
+ * (`radeon_device.c`, `amdgpu_device.c`), both 64-bit, which `pci_device`
+ * already folds into bar[0] and bar[2].
+ *
+ * **Neither sized nor enabled**, for the Intel GPU's reason: the firmware's
+ * screen is scanned out of one card's BAR 0 and the kernel console writes
+ * there, and sizing a BAR turns the card's memory decoding off. The
+ * register BAR's size is the 256 KB every SI card reports (from lspci, not
+ * an AMD document - the driver maps only the first 76 KB of it); the
+ * aperture's is left 0 and the driver reads it from the card.
+ */
+#define AMD                 0x1002u
+#define AMD_GPU_KEPT        2u
+#define AMD_VRAM_BAR        0u
+#define AMD_REGS_BAR        2u
+#define AMD_REGS_BYTES      0x40000u
+
+static struct hal_device amd_kept[AMD_GPU_KEPT], amd_vram_kept[AMD_GPU_KEPT];
+static bool amd_known[AMD_GPU_KEPT];
+
+static bool nth_amd_gpu(unsigned index, struct pci_device *out)
+{
+    unsigned from = 0, at, seen = 0;
+
+    while (pci_find(AMD, 0xFFFFu, from, out, &at)) {
+        uint32_t word = pci_config_read(out->bus, out->slot, out->function,
+                                        PCI_CLASS_WORD);
+
+        if ((word >> 24) == CLASS_DISPLAY) {
+            if (seen == index) {
+                return true;
+            }
+
+            seen++;
+        }
+
+        from = at + 1;
+    }
+
+    return false;
+}
+
 static bool nth_intel_ethernet(unsigned index, struct pci_device *out)
 {
     unsigned from = 0, at, seen = 0;
@@ -278,6 +325,39 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
     if (out != NULL && kind == HAL_DEV_INTEL_GPU) {
         return index == 0 && intel_gpu(out);
+    }
+
+    if (out != NULL && (kind == HAL_DEV_AMD_GPU || kind == HAL_DEV_AMD_VRAM)
+        && index < AMD_GPU_KEPT) {
+        bool got = false;
+
+        flags = spin_lock(&devices_lock);
+
+        if (!amd_known[index]) {
+            struct pci_device pci;
+
+            if (nth_amd_gpu(index, &pci) && pci.bar[AMD_REGS_BAR] != 0) {
+                unsigned where = ((unsigned)pci.bus << 8) | ((unsigned)pci.slot << 3)
+                               | (unsigned)pci.function;
+                unsigned id = ((unsigned)pci.vendor << 16) | pci.device;
+
+                amd_kept[index] = (struct hal_device){
+                    .base = (unsigned long)pci.bar[AMD_REGS_BAR], .size = AMD_REGS_BYTES,
+                    .intid = 0, .line = pci.device, .where = where, .id = id };
+                amd_vram_kept[index] = (struct hal_device){
+                    .base = (unsigned long)pci.bar[AMD_VRAM_BAR], .size = 0,
+                    .intid = 0, .line = pci.device, .where = where, .id = id };
+                amd_known[index] = true;
+            }
+        }
+
+        if (amd_known[index] && (kind == HAL_DEV_AMD_GPU || amd_vram_kept[index].base != 0)) {
+            *out = kind == HAL_DEV_AMD_GPU ? amd_kept[index] : amd_vram_kept[index];
+            got = true;
+        }
+
+        spin_unlock(&devices_lock, flags);
+        return got;
     }
 
     /*
@@ -423,6 +503,9 @@ bool hal_device_config(unsigned kind, unsigned index, unsigned offset,
         known = true;
     } else if (kind == HAL_DEV_AHCI && index < AHCI_KEPT && ahci_known[index]) {
         where = ahci_kept[index].where;
+        known = true;
+    } else if (kind == HAL_DEV_AMD_GPU && index < AMD_GPU_KEPT && amd_known[index]) {
+        where = amd_kept[index].where;
         known = true;
     }
 

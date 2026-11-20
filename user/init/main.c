@@ -77,6 +77,7 @@ void net_server(long endpoint, long console, long frames, long frames2);
 void powerbutton_server(long console);
 void backlight_server(long console, long endpoint);
 void intelgpu_server(long console, long endpoint);
+bool amdgpu_server(long console, long endpoint);   /* false: no AMD GPU */
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify, long usb, long hci,
                  long bluetooth);
@@ -1883,7 +1884,12 @@ int main(unsigned long arg)
 
     if (arg == ROLE_INTELGPU) {
         named("intelgpu");
-        intelgpu_server(0, 1);
+        /* The GPU's driver: AMD's where the board has an AMD GPU (the Mac
+         * Pro, `docs/amdgpu.md`), which names itself; Intel's everywhere
+         * else, the no-GPU stand-in included. One process, one door. */
+        if (!amdgpu_server(0, 1)) {
+            intelgpu_server(0, 1);
+        }
     }
 
     if (arg == ROLE_XHCI) {

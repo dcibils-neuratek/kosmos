@@ -39682,3 +39682,26 @@ reports, each built from a broken copy - a node's matrix ignored (10
 checks fail), the lightest joint taken (4), Paeth's tie broken (5), red and
 blue swapped (every JPEG), one inflater shared (16 to 30 of 192 decodes
 wrong across threads).
+
+## 18.949 A driver for the Mac Pro's AMD GPUs (0.12.29)
+
+**In short:** the Mac Pro 2013's two FirePro cards have a driver of their
+own, `user/drivers/display/amdgpu.c`, written in a lane from Linux's
+radeon and amdgpu sources and folded in here. The kernel learns two device
+kinds at one index - `DEV_AMD_GPU`, BAR 2, the registers, and
+`DEV_AMD_VRAM`, BAR 0, the aperture - found by vendor 1002h and class 03h,
+neither sized nor enabled, for the Intel GPU's reason. The GPU role runs
+`amdgpu_server` first and Intel's driver when it says there is no AMD card,
+so `/Devices/gpu` stays one door. **What holds it here is the decode, not
+the driver**: QEMU has no AMD GPU, so `test_amdgpu_decode` - 56 checks, in
+the host suite - holds the registers, the PCI ids, the decoding and the DMA
+packets to Linux's headers, and its controls are four of the decode's lines
+broken one at a time (a channel count's shift, the fill's high byte, a
+controller's offset, the copy's operands), each turning checks red. That
+the driver stands aside where there is no card is held by every x86 suite,
+which boot with the role and an Intel stand-in behind it. GPU Monitor and
+This Machine name the cards (`gpu.vendor`, the 6600h-68FFh range, and
+`amdgpu` in the driver column). **What none of this shows** is that a
+single register is read right on the card: that is the Mac Pro's boot,
+and `amdgpu.md`, *What tonight's boot will tell us*, is the order to read
+its lines in.

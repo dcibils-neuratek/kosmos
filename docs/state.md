@@ -190,8 +190,12 @@ keys, the flight model, real tiles, and the Cessna 172 (Sketchfab, CC BY)
 drawn by the 3D Kit's GLB reader and textured models. F5e, the strip, is
 next, then the cockpit, the pause sheet, the panel and the island. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
-mac pro later tonight so we need the gpu drivers done") is being written
-beside it: `docs/amdgpu.md`, Southern Islands, identify and display first. After
+mac pro later tonight so we need the gpu drivers done") has its driver
+(0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found
+and named, the display read back and a flip on demand (`gpu cursor 5`), and
+each DMA engine's first fill, copy and fence - none of it run on the machine
+yet; the Mac Pro's boot is its test, its `amdgpu:` lines read in the order
+`amdgpu.md` gives. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

@@ -5416,3 +5416,28 @@ flown with the arrow keys. 0.12.28.
   once - the renderer's textured models, the aircraft file's reader, the
   picture decoders made usable from any thread, and the slowest test split
   in two - and the main session folded each in.
+
+## 20 November 2026 - A driver for the Mac Pro's graphics cards
+
+**In short.** The Mac Pro's two AMD FirePro cards have a driver of their
+own, written to be tried on the machine tonight. 0.12.29.
+
+- **What it does**: at boot it finds both cards and says which they are -
+  a D300, D500 or D700 - how much memory each has, how many compute units,
+  and how the firmware left them. It reads back the screen the firmware lit
+  and checks it is the same one Kosmos draws on, and it gives each card's
+  copy engines their first work: fill a block of the card's memory, copy
+  it, and say how long that took. Typed `gpu cursor 5`, it shows colour
+  bars for five seconds by switching the screen to a picture of its own,
+  and back.
+- **Why it matters**: until now the cards were only a screen the firmware
+  left behind. This is the same first road the M700's Intel GPU took
+  before the desktop was composed on it.
+- **What is not known yet**: whether any of it is right on the card. QEMU
+  has no AMD GPU, so what is tested here is the arithmetic - 56 checks
+  against Linux's own register files - and the Mac Pro's boot is the test
+  of the rest. Every line it prints begins `amdgpu:`, and anything that
+  surprises it is said in capitals and stops it touching that card.
+- **How it was built**: a helper wrote the driver beside the Flight work,
+  touching none of the kernel; the main session added what the kernel
+  needed to find the cards and folded it in.

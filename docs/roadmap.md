@@ -208,6 +208,25 @@ more; Broadcom BCM57762 Ethernet, which has no driver, so no netboot and
 no Telnet there yet; no serial port at all (`hal.md`'s old reason for
 ruling it out, which the loader's log and the screen console now answer).
 
+**The Mac Pro's AMD GPUs, driven** - Diego, 20 November 2026: "i want you
+to work on gettiing our amd gpu for mac pro driven by a driver as we did
+with the intel gpu". `docs/amdgpu.md`. Steps 1 (find and identify), 2 (the
+display read back, a flip on demand) and 3a (the DMA engines' first work)
+built in 0.12.29, unverified until the Mac Pro boots; then A1 interrupts,
+A2 a GART, A3 the compositor on the DMA engine, A4 the graphics ring and
+its microcode, A5 compute and the second card for Xavier, A6 Vulkan by
+radv.
+**And full 3D and Vulkan on them, AGREED the same evening** (Diego: "For
+the AMD gpu driver we need full 3d and vulkan hardware support"): the
+Intel road of `gpu3d.md` taken on AMD - interrupts and fences, the VM per
+program (the MC's contexts 1 to 15), the graphics ring with its microcode,
+PM4 submission, then Mesa's `radv` over a Kosmos winsys of its own beside
+`anv_kosmos`, ACO as its compiler, so the 3D Kit, Flight and Zink's GL run
+on the FirePros. Planned in `amdgpu.md`, *3D and Vulkan*, before it is
+built. **The Mac Pro's Ethernet (`tg3`) goes with it**, because every step
+proved on the card is otherwise a stick written and booted; with the
+network it is Telnet and the remote loop, as the M700's GPU had.
+
 **Broadcom Ethernet, for the Mac Pro and the iMac** - Diego, 14 November
 2026: "We should do the ethernet driver then for the Mac Pro and iMac",
 **after the browser**. The Mac Pro 2013's BCM57762 and the iMac 2019's

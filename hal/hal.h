@@ -314,6 +314,8 @@ void hal_irq_set_masked(unsigned intid, bool masked);
 #define HAL_DEV_INTEL_ETHERNET   4u     /* an Intel Ethernet controller, on PCI */
 #define HAL_DEV_AHCI             5u     /* a SATA controller in AHCI mode, on PCI */
 #define HAL_DEV_INTEL_GPU        6u     /* an Intel GPU's register window, on PCI */
+#define HAL_DEV_AMD_GPU          8u     /* an AMD GPU's registers (BAR 2 on Southern Islands), on PCI */
+#define HAL_DEV_AMD_VRAM         9u     /* the same card's VRAM aperture, BAR 0 */
 
 struct hal_device {
     unsigned long base;

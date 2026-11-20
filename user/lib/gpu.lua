@@ -25,7 +25,7 @@ assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, 0) == 32,
        "gpu: the request layout does not match gpuproto.h")
 
 gpu.ERRORS = {
-  [1] = "no Intel GPU this driver knows",
+  [1] = "no GPU this driver knows",
   [2] = "a request the driver does not know",
   [3] = "no pipe running to show it on",
   [4] = "no contiguous pages for the picture",
@@ -273,7 +273,16 @@ gpu.MODELS = {
   [0x1902] = "HD Graphics 510", [0x1912] = "HD Graphics 530", [0x191B] = "HD Graphics 530",
   [0x5912] = "HD Graphics 630", [0x591B] = "HD Graphics 630", [0x3E92] = "UHD Graphics 630",
   [0x9BC5] = "UHD Graphics 630", [0x9B41] = "UHD Graphics", [0x9A49] = "Iris Xe Graphics",
+  -- The Mac Pro 2013's AMD cards (docs/amdgpu.md); no id here collides.
+  [0x6798] = "FirePro D700 (Tahiti XT)", [0x679E] = "FirePro D500 (Tahiti LE)",
+  [0x6810] = "FirePro D300 (Pitcairn)",
 }
+
+-- Whose card a device id is: the driver's reply has no vendor word, and
+-- Southern Islands' ids are 6600h to 68FFh, which Intel has never used.
+function gpu.vendor(device)
+  return (device >= 0x6600 and device <= 0x68FF) and 0x1002 or 0x8086
+end
 
 gpu.KINDS = { [0] = "scanned out", [1] = "cursor plane", [2] = "shared" }
 
@@ -289,7 +298,7 @@ function gpu.stats()
 
   if err ~= 0 then return nil, gpu.ERRORS[err] or ("gpu error " .. err), err end
 
-  local s = { device = device, model = gpu.MODELS[device] or ("Intel GPU 8086:%04x"):format(device),
+  local s = { device = device, model = gpu.MODELS[device] or ("GPU %04x:%04x"):format(gpu.vendor(device), device),
               width = width, height = height, mhz = mhz, max_mhz = max_mhz, min_mhz = min_mhz,
               rpstat = rpstat, rc6 = rc6, flips = flips, frames = frames,
               underrun = underrun ~= 0, cursor = desktop & 1 ~= 0, page_flips = desktop & 2 ~= 0,

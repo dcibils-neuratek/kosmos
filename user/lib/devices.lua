@@ -116,6 +116,7 @@ function devices.driver_of(d)
   if (class >> 8) == 0x0403 then return "hda" end
   if (class >> 16) == 0x02 and d.vendor == 0x8086 then return "e1000" end
   if (class >> 16) == 0x03 and d.vendor == 0x8086 then return "intelgpu" end
+  if (class >> 16) == 0x03 and d.vendor == 0x1002 then return "amdgpu" end
 
   return nil
 end

@@ -122,6 +122,10 @@ _Static_assert(DEV_AHCI == HAL_DEV_AHCI,
                "the SATA controller's kind differs across the boundary");
 _Static_assert(DEV_INTEL_GPU == HAL_DEV_INTEL_GPU,
                "the Intel GPU's kind differs across the boundary");
+_Static_assert(DEV_AMD_GPU == HAL_DEV_AMD_GPU,
+               "the AMD GPU's kind differs across the boundary");
+_Static_assert(DEV_AMD_VRAM == HAL_DEV_AMD_VRAM,
+               "the AMD GPU's aperture's kind differs across the boundary");
 
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {

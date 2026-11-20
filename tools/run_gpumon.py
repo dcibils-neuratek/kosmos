@@ -64,8 +64,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpustat")
         got = said("gpustat: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpustat did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpustat did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -76,8 +76,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu engine")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu engine did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu engine did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -87,8 +87,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu draw")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu draw did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu draw did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -98,8 +98,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu render blend")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu render blend did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu render blend did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -109,8 +109,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu render")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu render did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu render did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -120,8 +120,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu state")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu state did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu state did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -131,8 +131,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu compute")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu compute did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu compute did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -150,7 +150,7 @@ def main():
               "the Compute Kit did not say the kernel's mistake by its line: %r" % got)
         got = said("gpu: no Intel", mark, 30)
         check(got == "GPU this driver knows",
-              "gpu kernel did not say there is no Intel GPU here: %r" % got)
+              "gpu kernel did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -160,8 +160,8 @@ def main():
         mark = len(guest.seen)
         guest.type("gpu engine render")
         got = said("gpu: ", mark, 30)
-        check(got == "no Intel GPU this driver knows",
-              "gpu engine render did not say there is no Intel GPU here: %r" % got)
+        check(got == "no GPU this driver knows",
+              "gpu engine render did not say there is no GPU here: %r" % got)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
@@ -228,7 +228,7 @@ def main():
               "Preferences' Displays page did not list the six modes: %r" % listed)
 
         opened = said("gpumon: ", mark, 90)
-        check(opened == "no GPU: no Intel GPU this driver knows",
+        check(opened == "no GPU: no GPU this driver knows",
               "GPU Monitor did not say it has no GPU to watch: %r" % opened)
 
         # Drawn, and still running a few samples later: a window whose

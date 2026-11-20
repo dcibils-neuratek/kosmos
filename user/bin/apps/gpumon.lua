@@ -340,7 +340,7 @@ local function side(g, x, y)
   -- driver serves (`docs/gpu3d.md` G7); this said "not yet" from before
   -- G7 until Diego asked why (20 November). GL ES is G8's.
   for _, kv in ipairs({ { "Vulkan", s and "1.4, Mesa anv" or "-" }, { "OpenGL ES", "not yet" },
-                        { "Device", s and ("8086:%04x"):format(s.device) or "-" } }) do
+                        { "Device", s and ("%04x:%04x"):format(gpu.vendor(s.device), s.device) or "-" } }) do
     g:text(x, y, kv[1], theme.text_dim, ground, "label")
     g:text(x + 84, y, kv[2], theme.text, ground, "label")
     y = y + gfx.height("label") + 6
@@ -367,7 +367,7 @@ function body:draw(g)
   ui.meter_card(g, x, M.card, M.inner, CARD_H, {
     picture = function(pg, px, py) ui.processor_chip(pg, px, py, CHIP, "intel", "GPU") end,
     size = CHIP, maker = "Intel", model = s.model,
-    facts = ("8086:%04x \u{b7} %d to %d MHz"):format(s.device, s.min_mhz, s.max_mhz),
+    facts = ("%04x:%04x \u{b7} %d to %d MHz"):format(gpu.vendor(s.device), s.device, s.min_mhz, s.max_mhz),
     rates = { { clock_words(s), "clock, now", GPU_COLOUR },
               { rate and ("%.0f%%"):format(rate.asleep * 100) or "-", "asleep" } },
   })
