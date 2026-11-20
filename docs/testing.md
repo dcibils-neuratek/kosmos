@@ -39367,3 +39367,48 @@ build with the FULL list and linked into no test image. Removed, 8 of 8
 and 187 objects. **That is twice now**, so the roadmap holds the item:
 find which build writes a FULL list's objects into the test variant's
 directory.
+
+## 18.942 The 3D Kit on Vulkan (Flight F3b)
+
+**In short:** the renderer Flight's terrain will be drawn by is built, and
+it draws what a ray cast on the Mac says it must. `user/kits/3d/k3d_vk.c`,
+on the Vulkan Kit's base, draws a sky from the horizon's colour to the
+zenith's, then meshes with a depth buffer, each surface lit by the sun and
+an ambient share and hazed by its distance from the eye. A new suite,
+`x86-k3d-vulkan`, has `vulkantest.elf` draw a scene the suite chose - a
+ground, a near red box and a far blue one - into a 64 by 64 image in
+memory with `lavapipe`, and holds every pixel to the colour a ray through
+its centre gives: which box it meets first, how that face is lit, how much
+haze its distance gives it, or the sky's colour where it meets nothing.
+
+**The rule it is held to is written in `k3d_vk.h`**, where a test can read
+it: the direction of each pixel's centre from the eye, depth from near to
+far, the light, the haze and the sky. The suite computes the picture from
+that and from nothing the guest says.
+
+**What it leaves out, and why:** 119 pixels whose centre is within a third
+of a pixel of a silhouette, where which side wins is the rasterizer's tie
+rule rather than the renderer's. Each of the sky, the ground and both boxes
+must still be judged in at least 20 pixels - 1504, 2321, 110 and 42 - so a
+scene that lost one would fail. Every other pixel must be within 3 of 255 a
+channel; it was in 3.3 s, 9 s for the suite.
+
+**The sky is drawn first and behind everything**, so the Vulkan Kit's
+pipeline shape gained `depth_off`: a pipeline drawn into a picture with a
+depth buffer that neither tests nor writes it. The cube's and the
+triangle's pipelines say 0, as they behaved before.
+
+**Controls**, each from the restored source, each built and run:
+
+| broken | pixels wrong |
+|---|---|
+| the haze left out of the mesh shader | 1059 of 3977 |
+| the sun's share left out (ambient only) | 2417 of 3977 |
+| the sky depth-tested (`depth_off` 0) | 1504 of 3977 - every sky pixel |
+
+Restored, it passes again: 3977 pixels, none wrong.
+
+**The suite watches** its own script, `vulkantest`, the Vulkan Kit, the 3D
+Kit's Vulkan files (`k3d_vk.*` and its four shaders, not the rest of the
+3D Kit) and Mesa; `x86-vulkan` and `x86-anv` watch those files too, since
+both images link the renderer.

@@ -12040,7 +12040,9 @@ and WebGL on the M700, next** - and the flight simulator after G7, agreed on
 several sources, one library (`tiles.lua`) as the door, Maps on it. **F2 built in 0.12.20** (18.940): the Map Kit's
 Mercator and elevation, Maps' arithmetic moved onto it; F3, the 3D Kit on
 Vulkan, under way: **F3a built in 0.12.21** (18.941), the Vulkan Kit's base
-(`kvk.c`) out of `vulkantest.c`. Also wanted: `anvtest.c`'s `run()` opens
+(`kvk.c`) out of `vulkantest.c`; **F3b built in 0.12.22** (18.942), the
+renderer on it (`k3d_vk.c`: a sky, meshes with depth, the sun and haze);
+F3c next, the renderer in a window and on the M700. Also wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a
 compute queue, and is proved on the M700, since QEMU has no Intel GPU.

@@ -374,8 +374,8 @@ int kvk_pipeline(struct kvk *v, VkPipeline *out, VkPipelineLayout layout,
     };
     VkPipelineDepthStencilStateCreateInfo depths = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = shape->depth != VK_FORMAT_UNDEFINED,
-        .depthWriteEnable = shape->depth != VK_FORMAT_UNDEFINED,
+        .depthTestEnable = shape->depth != VK_FORMAT_UNDEFINED && !shape->depth_off,
+        .depthWriteEnable = shape->depth != VK_FORMAT_UNDEFINED && !shape->depth_off,
         .depthCompareOp = VK_COMPARE_OP_LESS,
     };
     VkPipelineColorBlendAttachmentState blend = {

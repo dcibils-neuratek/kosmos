@@ -5297,3 +5297,18 @@ renderer that comes next both stand on. 0.12.21.
   by pixel, pass on the moved code. Turning the depth test the wrong way
   round inside the kit makes 1389 of their pixels wrong.
 - **What it took away**: the cube's kit went from 1376 lines to 850.
+
+## 20 November 2026 - A picture checked by a ray
+
+**In short.** The renderer the flight simulator's world will be drawn by
+is built: F3b. It draws a sky, then shapes in front of one another, lit by
+the sun and fading into haze with distance, using Vulkan. 0.12.22.
+
+- **What a person sees**: nothing yet - it draws into memory for its test.
+  F3c puts it in a window, and on the M700's own GPU.
+- **How it is proved**: the test chooses a small scene - a ground and two
+  boxes - and works out on the Mac, by casting a ray through every pixel,
+  what colour each must be. Kosmos draws it and every pixel is compared;
+  all 3977 that are not on an edge match. Leaving out the haze, the
+  sunlight, or drawing the sky the wrong way makes between 1059 and 2417
+  pixels wrong.

@@ -107,6 +107,9 @@ WEBKIT = ["tools/webkit_build.py", "tools/icu_build.py", "tools/upstream.py"]
 W5 = ["tools/w5_build.py", "tools/upstream.py"]
 LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
 # Mesa is configured for lavapipe, which stands on LLVM, and links W5's zlib.
+# The 3D Kit's Vulkan renderer, linked into every Vulkan test image.
+K3D_VK = ("user/kits/3d/k3d_vk.c", "user/kits/3d/k3d_vk.h", "user/kits/3d/k3d_mesh.vert",
+          "user/kits/3d/k3d_mesh.frag", "user/kits/3d/k3d_sky.vert", "user/kits/3d/k3d_sky.frag")
 MESA = ["tools/mesa_build.py", "tools/mesa_trial_ld.py"] + LLVM + W5
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],
@@ -653,8 +656,17 @@ SUITES = [
     Suite("x86-vulkan", ["python3", "tools/run_vulkan.py", X86,
                          "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_vulkan.py", "user/kits/vulkantest", "user/kits/vulkan",
-                        "user/kits/window",
+                        "user/kits/window", *K3D_VK,
                         "user/lib/wm", "user/lib/wmproto.lua", *MESA)),
+
+    # **The 3D Kit on Vulkan** (`docs/flight.md` F3b): `k3d_vk.c`, the
+    # renderer Flight's terrain is drawn by, in `vulkantest.elf` - a scene of
+    # boxes under a sun, a sky and haze, chosen here, every pixel held to a
+    # ray this side casts through its centre.
+    Suite("x86-k3d-vulkan", ["python3", "tools/run_k3dvk.py", X86,
+                             "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_k3dvk.py", "user/kits/vulkantest", "user/kits/vulkan",
+                        *K3D_VK, *MESA)),
 
     # **Intel's Vulkan driver** (`docs/gpu3d.md` G7a): `anvtest.elf`, anv
     # with Kosmos's kernel-driver type and Intel's compiler under it - no
@@ -663,7 +675,7 @@ SUITES = [
     Suite("x86-anv", ["python3", "tools/run_anv.py", X86,
                       "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_anv.py", "user/kits/anvtest", "user/kits/vulkantest",
-                        "user/kits/vulkan", "user/kits/gpu", *MESA)),
+                        "user/kits/vulkan", "user/kits/gpu", *K3D_VK, *MESA)),
 
     # **Khronos's conformance suite** (`docs/gpu3d.md` G2, `testing.md`
     # 18.926): `vkcts.elf`, dEQP-VK's `info` and `api` groups from

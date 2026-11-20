@@ -248,9 +248,13 @@ ends on the M700:
   18.941): the Vulkan Kit's base, `user/kits/vulkan/kvk.c` - the device,
   memory, recording, a pipeline and a window's swapchain - moved out of
   `vulkantest.c`, which now stands on it, so the 3D Kit's renderer does not
-  start as a second copy. Then: `k3d_vk.c`: a mesh, a camera, depth, a
-  sky and haze, drawn by `lavapipe` in QEMU and `anv` on the M700, held to
-  a reference picture; Cafesa3D's Solid view is its second user later.
+  start as a second copy. **F3b built in 0.12.22** (18.942): the
+  renderer, `user/kits/3d/k3d_vk.c` - a sky from horizon to zenith, then
+  meshes with a depth buffer, lit by the sun and hazed by distance - drawn
+  by `lavapipe` in QEMU and held, pixel by pixel, to a ray the suite casts
+  through each pixel's centre (`x86-k3d-vulkan`). Then **F3c**: the same
+  renderer into a window's swapchain, and on the M700 by `anv`. Cafesa3D's
+  Solid view is its second user later.
 - **F4 - the terrain.** `k3d_terrain.c`: chunks, levels, skirts, imagery
   as textures, decoding on its own thread; a suite flying a fixed path over
   a served city and checking the picture and the frame time.

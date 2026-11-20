@@ -4681,8 +4681,14 @@ $(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_
 # The Vulkan Kit's base, `kvk.c` (`user/kits/vulkan/`): the device, memory,
 # recording, a pipeline and a window's swapchain, once, for `vulkantest.c`
 # and the 3D Kit's Vulkan half (`docs/flight.md` F3).
+#
+# The 3D Kit's renderer on that base, `k3d_vk.c` (F3b): a sky, then meshes
+# with a depth buffer, lit by the sun and hazed by distance - its shaders
+# compiled as the cube's are.
 KVK_OBJS := $(UBUILD)/user/kits/vulkan/kvk.c.o
-VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS)
+K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o
+K3D_VK_SPV := $(foreach s,mesh sky,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
+VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
 VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
 
 $(UBUILD)/gen/vulkantest/triangle_%.h: user/kits/vulkantest/triangle.%
@@ -4694,7 +4700,7 @@ $(UBUILD)/gen/vulkantest/cube_%.h: user/kits/vulkantest/cube.%
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn cube_$* -o $@ $<
 
 $(UBUILD)/user/kits/vulkantest/vulkantest.c.o: user/kits/vulkantest/vulkantest.c $(VULKANTEST_SPV) \
-        user/kits/vulkan/kvk.h $(MESA_DIR)/.built $(UFLAGS_FILE)
+        user/kits/vulkan/kvk.h user/kits/3d/k3d_vk.h $(MESA_DIR)/.built $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -I $(UBUILD)/gen/vulkantest \
 	    -Wno-unused-parameter -c $< -o $@
@@ -4703,6 +4709,20 @@ $(UBUILD)/user/kits/vulkan/kvk.c.o: user/kits/vulkan/kvk.c user/kits/vulkan/kvk.
         $(MESA_DIR)/.built $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -c $< -o $@
+
+$(UBUILD)/gen/k3d/k3d_mesh_%.h: user/kits/3d/k3d_mesh.%
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_mesh_$* -o $@ $<
+
+$(UBUILD)/gen/k3d/k3d_sky_%.h: user/kits/3d/k3d_sky.%
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn k3d_sky_$* -o $@ $<
+
+$(UBUILD)/user/kits/3d/k3d_vk.c.o: user/kits/3d/k3d_vk.c user/kits/3d/k3d_vk.h $(K3D_VK_SPV) \
+        user/kits/vulkan/kvk.h $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -I $(UBUILD)/gen/k3d \
+	    -c $< -o $@
 
 $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
                                $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld

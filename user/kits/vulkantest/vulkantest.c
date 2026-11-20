@@ -54,6 +54,7 @@
 /* The device, memory, recording, a pipeline and a window's swapchain:
  * the Vulkan Kit's base, shared with the 3D Kit (`docs/flight.md` F3). */
 #include "kits/vulkan/kvk.h"
+#include "kits/3d/k3d_vk.h"
 
 #include "triangle_vert.h"
 #include "triangle_frag.h"
@@ -183,7 +184,7 @@ static void triangle(const struct triangle *t, const uint8_t colour[3])
     };
     struct kvk_pipeline_shape shape = {
         triangle_vert, sizeof(triangle_vert), triangle_frag, sizeof(triangle_frag), &none,
-        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE,
+        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE, 0,
     };
     if (!kvk_pipeline(&v, &pipeline, layout, &shape) ||
         !kvk_begin(&v)) {
@@ -483,7 +484,7 @@ static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t 
     };
     struct kvk_pipeline_shape shape = {
         cube_vert, sizeof(cube_vert), cube_frag, sizeof(cube_frag), &input,
-        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE,
+        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
     };
     if (!kvk_pipeline(v, &s->pipeline, s->layout, &shape) ||
         !kvk_begin(v)) {
@@ -826,6 +827,184 @@ static int l_window(lua_State *L)
     return 1;
 }
 
+/*
+ * ------------------------------------------------------------------- scene
+ *
+ * **F3b**: the 3D Kit's renderer (`kits/3d/k3d_vk.c`) on this device, held
+ * to a picture the caller works out for itself: boxes the caller places,
+ * lit by a sun it chooses, hazed and under a sky of its colours, through a
+ * lens it chooses - drawn into an image in memory and read back as bytes.
+ */
+
+#define SCENE_MAX 128               /* a side, in pixels */
+#define BOXES_MAX 16
+
+/* A box from (x0, y0, z0) to (x1, y1, z1), each face its own four corners
+ * with that face's normal, so each is lit flat. */
+static void box_mesh(const float lo[3], const float hi[3], const uint8_t rgb[3],
+                     struct k3d_vk_vertex v[24], uint32_t idx[36])
+{
+    /* For each face: the axis it faces along, its sign, and its corners as
+     * (lo or hi) on each axis, counter-clockwise from outside. */
+    static const struct { int axis; float sign; uint8_t c[4][3]; } faces[6] = {
+        { 0, -1, { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 0, 1, 0 } } },
+        { 0, +1, { { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 0, 1 } } },
+        { 1, -1, { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 0, 0, 1 } } },
+        { 1, +1, { { 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 }, { 1, 1, 0 } } },
+        { 2, -1, { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }, { 1, 0, 0 } } },
+        { 2, +1, { { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 } } },
+    };
+
+    for (int f = 0; f < 6; f++) {
+        for (int k = 0; k < 4; k++) {
+            struct k3d_vk_vertex *p = &v[f * 4 + k];
+
+            for (int a = 0; a < 3; a++) {
+                p->position[a] = faces[f].c[k][a] ? hi[a] : lo[a];
+                p->normal[a] = a == faces[f].axis ? faces[f].sign : 0.0f;
+            }
+            p->colour[0] = rgb[0], p->colour[1] = rgb[1], p->colour[2] = rgb[2];
+            p->colour[3] = 255;
+        }
+        static const uint32_t two[6] = { 0, 1, 2, 0, 2, 3 };
+        for (int k = 0; k < 6; k++) {
+            idx[f * 6 + k] = (uint32_t)(f * 4) + two[k];
+        }
+    }
+}
+
+/* A field of the caller's table: `n` numbers. */
+static void numbers(lua_State *L, int table, const char *name, float *out, int n)
+{
+    lua_getfield(L, table, name);
+    if (n == 1) {
+        out[0] = (float)luaL_checknumber(L, -1);
+    } else {
+        luaL_checktype(L, -1, LUA_TTABLE);
+        for (int i = 0; i < n; i++) {
+            lua_rawgeti(L, -1, i + 1);
+            out[i] = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+}
+
+/* kit.scene{ size, eye, target, focal, near, far, sun, ambient, zenith,
+ * horizon, haze, haze_start, haze_end, boxes = { {x0, y0, z0, x1, y1, z1,
+ * r, g, b}, ... } } -> what was said, and the picture's bytes, RGB, a row
+ * at a time from the top. */
+static int l_scene(lua_State *L)
+{
+    struct k3d_vk_view view;
+    struct kvk v;
+    struct k3d_vk r = { 0 };
+    struct k3d_vk_mesh meshes[BOXES_MAX];
+    struct kvk_image target = { 0 };
+    struct kvk_buffer readback = { 0 };
+    uint32_t nboxes = 0, size;
+    float boxes[BOXES_MAX][9];
+    luaL_Buffer out;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    memset(&view, 0, sizeof(view));
+    memset(meshes, 0, sizeof(meshes));
+    lua_getfield(L, 1, "size");
+    size = (uint32_t)luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    luaL_argcheck(L, size >= 4 && size <= SCENE_MAX, 1, "a scene is 4 to 128 pixels a side");
+    numbers(L, 1, "eye", view.eye, 3);
+    numbers(L, 1, "target", view.target, 3);
+    numbers(L, 1, "focal", &view.focal, 1);
+    numbers(L, 1, "near", &view.near, 1);
+    numbers(L, 1, "far", &view.far, 1);
+    numbers(L, 1, "sun", view.sun, 3);
+    numbers(L, 1, "ambient", &view.ambient, 1);
+    numbers(L, 1, "zenith", view.zenith, 3);
+    numbers(L, 1, "horizon", view.horizon, 3);
+    numbers(L, 1, "haze", view.haze, 3);
+    numbers(L, 1, "haze_start", &view.haze_start, 1);
+    numbers(L, 1, "haze_end", &view.haze_end, 1);
+    lua_getfield(L, 1, "boxes");
+    luaL_checktype(L, -1, LUA_TTABLE);
+    nboxes = (uint32_t)lua_rawlen(L, -1);
+    luaL_argcheck(L, nboxes <= BOXES_MAX, 1, "at most 16 boxes");
+    for (uint32_t b = 0; b < nboxes; b++) {
+        lua_rawgeti(L, -1, (lua_Integer)b + 1);
+        luaL_checktype(L, -1, LUA_TTABLE);
+        for (int k = 0; k < 9; k++) {
+            lua_rawgeti(L, -1, k + 1);
+            boxes[b][k] = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+    hand_console(L);
+    said[0] = '\0';
+    say("vulkan");
+    luaL_buffinit(L, &out);
+    if (!kvk_open(&v, "vulkantest", 0)) {
+        if (v.device_name[0]) {
+            say(" device=%s", v.device_name);
+        }
+        goto done;
+    }
+    say(" device=%s", v.device_name);
+
+    if (!kvk_image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, size, size,
+                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, "image") ||
+        !kvk_buffer_make(&v, &readback, (VkDeviceSize)size * size * 4,
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT, "buffer") ||
+        !k3d_vk_open(&r, &v, VK_FORMAT_R8G8B8A8_UNORM, size, size)) {
+        goto done;
+    }
+    for (uint32_t b = 0; b < nboxes; b++) {
+        struct k3d_vk_vertex corners[24];
+        uint32_t idx[36];
+        uint8_t rgb[3] = { (uint8_t)boxes[b][6], (uint8_t)boxes[b][7], (uint8_t)boxes[b][8] };
+
+        box_mesh(&boxes[b][0], &boxes[b][3], rgb, corners, idx);
+        if (!k3d_vk_mesh(&r, &meshes[b], corners, 24, idx, 36)) {
+            goto done;
+        }
+    }
+    if (!kvk_begin(&v) || !k3d_vk_draw(&r, target.image, target.view, &view, meshes, nboxes)) {
+        goto done;
+    }
+    kvk_copy_out(&v, target.image, size, size, readback.buffer);
+    if (!kvk_submit(&v)) {
+        goto done;
+    }
+
+    say(" scene=%ux%u boxes=%u", size, size, nboxes);
+    for (uint32_t i = 0; i < size * size; i++) {
+        const uint8_t *p = (const uint8_t *)readback.bytes + (size_t)i * 4;
+
+        luaL_addlstring(&out, (const char *)p, 3);
+    }
+
+done:
+    said_failure(&v);
+    if (v.device != VK_NULL_HANDLE) {
+        if (r.v != NULL) {
+            for (uint32_t b = 0; b < nboxes; b++) {
+                k3d_vk_mesh_free(&r, &meshes[b]);
+            }
+            k3d_vk_close(&r);
+        }
+        kvk_buffer_free(&v, &readback);
+        kvk_image_free(&v, &target);
+    }
+    kvk_close(&v);
+    luaL_pushresult(&out);          /* the buffer's, before anything else is pushed */
+    lua_pushstring(L, said);
+    lua_insert(L, -2);
+    return 2;
+}
+
 static int l_hold(lua_State *L)
 {
     lua_pushboolean(L, hold(luaL_checknumber(L, 1)));
@@ -841,6 +1020,8 @@ void kosmos_vulkantest_kit(lua_State *L)
     lua_setfield(L, -2, "cube");
     lua_pushcfunction(L, l_window);
     lua_setfield(L, -2, "window");
+    lua_pushcfunction(L, l_scene);
+    lua_setfield(L, -2, "scene");
     lua_pushcfunction(L, l_hold);
     lua_setfield(L, -2, "hold");
     lua_pushinteger(L, TRIANGLE);
