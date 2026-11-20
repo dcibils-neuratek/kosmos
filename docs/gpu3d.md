@@ -646,6 +646,13 @@ so `lavapipe` is built for both.
    - **G7c - `vkcube` in a window**, its swapchain images rendered by
      the GPU and presented through `VK_KOSMOS_surface` (G3). *Measure*:
      frames a second.
+     **Built in 0.12.13** (`testing.md` 18.933): `vulkantest`'s cube on
+     `anv`, its picture as the reference pixel for pixel, and 300 frames
+     presented in a window found on the screen by VNC. The swapchain is
+     Mesa's buffer blit, the GPU's tiled image copied into a linear buffer
+     the processor reads, and the backend waits on its fence before
+     copying. 66-127 frames a second at 64 by 64 - the round trip, not the
+     GPU; a large window's number is owed.
    - **G7d - dEQP-VK on the M700**, the subset `x86-vulkan-cts` runs on
      `lavapipe`, by a program that says what passed. *Measure*:
      submit-to-fence latency.

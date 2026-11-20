@@ -344,6 +344,62 @@ class Suite:
         self.note("vulkan device us", number(r"device=(\d+)us", out, int))
         self.note("vulkan fill us", g[4])
         self.note("vulkan dispatch us", g[9])
+        self.vulkan_cube()
+
+    def vulkan_cube(self):
+        """**The cube, drawn by the GPU and in a window** (G7c): `vulkantest`'s
+        cube on `anv` - its picture held to `run_vulkan.py`'s reference, made
+        from the geometry and not from any renderer - and then 300 frames of
+        it presented through `VK_KOSMOS_surface`, and the window found on
+        the screen by VNC while it is held open."""
+        import threading
+        import run_vulkan as RV
+
+        args = ", ".join(repr(v) for v in [RV.YAW, RV.PITCH, RV.DISTANCE, RV.FOCAL]
+                         + list(RV.COLOURS[0]) + list(RV.COLOURS[1]))
+        self.m.put("-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.\n"
+                   "-- kosmos: application\n"
+                   "-- kosmos: image anvtest.elf\n"
+                   "local kit = use(\"anvtest.elf\")\n"
+                   "print(\"anvtest cube: \" .. kit.cube(%s))\n"
+                   "print(\"anvtest window: \" .. kit.window(%s, 300, %r))\n"
+                   "kit.hold(15)\n" % (args, args, RV.STEP),
+                   "/Home/Temporary/anv/anvcube.lua")
+        said = {}
+
+        def run():
+            session = T.Session(self.m.host, timeout=120.0)
+            said["out"] = session.run("/Home/Temporary/anv/anvcube.lua").decode(errors="replace")
+
+        runner = threading.Thread(target=run)
+        started = time.monotonic()
+        runner.start()
+        found = None
+        viewer = self.m.screen()
+
+        while found is None and time.monotonic() < started + 12 and runner.is_alive():
+            time.sleep(1.5)
+            viewer.request(False)
+            viewer.update()
+            frame, width = bytes(viewer.frame), viewer.width
+            at = lambda x, y: tuple(frame[(y * width + x) * 3:(y * width + x) * 3 + 3])
+            found = RV.find_cube(width, viewer.height, at)
+
+        runner.join()
+        out = said.get("out", "")
+        self.outputs["the cube on the GPU"] = out
+        print("  %-28s %5.1f s" % ("the cube on the GPU", time.monotonic() - started))
+        m = re.search(r"anvtest cube: vulkan device=\S+ picture=([#ab.?/]+)", out)
+        wrong = (RV.compare(m.group(1).split("/"), RV.cube_expected(), RV.CUBE) if m
+                 else "no picture: " + out.strip()[-200:])
+        self.check(wrong is None, "the GPU's cube is not the reference's: %s" % wrong)
+        w = re.search(r"anvtest window: .*frames=(\d+) ms=(\d+)", out)
+
+        if self.check(w is not None, "the window did not present: " + out.strip()[-200:]):
+            self.note("vulkan window frames a second", round(int(w.group(1)) * 1000.0
+                                                             / max(1, int(w.group(2))), 1))
+
+        self.check(found is not None, "the cube's window was not found on the screen")
 
     # ---- real performance ----
 

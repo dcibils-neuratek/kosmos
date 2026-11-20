@@ -12020,7 +12020,21 @@ protocol; G7c `vkcube` in a window; G7d dEQP-VK on the M700. **G7a built in 0.12
 SPIR-V to Gen9 in a Kosmos process (`x86-anv`). **G7b built in 0.12.12**
 (`testing.md` 18.932): a device on the HD 530, `vkCmdFillBuffer` and a
 compute dispatch read back right, checked by the M700 suite's *Vulkan on
-the GPU*. **G7c next.**
+the GPU*. **G7c built in 0.12.13** (`testing.md` 18.933): the cube drawn by
+`anv`, matched to the reference, and presented in a window the M700 suite
+finds on the screen. **G7d next.**
+Owed from G7c:
+- **Frames a second that measure the GPU.** The cube is 64 by 64 pixels,
+  so 66-127 frames a second is the round trip from submission to present.
+  A window at 1920 by 1080 is the figure G7c asked for.
+- **The copy on presenting.** Each frame is copied twice: by the GPU into
+  a linear buffer, and by the processor into the window. Rendering
+  straight into the window's buffer, or the compositor sampling the
+  GPU's image (G9), removes the second copy.
+- **Restarting a machine whose telnetd is wedged.** The Terminal's
+  `restart` says "this process does not hold that device", and the
+  launcher pad's Restart button did nothing when clicked over VNC. Both
+  should restart the machine.
 Owed from G7b:
 - **Unbinding waits for the whole context to go idle.** The driver
   refuses an unbind while the context is busy, so a program freeing

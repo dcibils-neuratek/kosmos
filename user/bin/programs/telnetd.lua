@@ -530,15 +530,30 @@ while true do
 
     serve_console(s)
 
-    -- A file coming in takes every line until its END.
-    while s.receiving and #s.lines > 0 do
-      local line = table.remove(s.lines, 1)
+    -- A file coming in takes every line until its END, in one pass over
+    -- what has arrived. It took them one `table.remove(s.lines, 1)` at a
+    -- time, which moves every line behind the first: a 58 MB file is a
+    -- million lines of base64, and arriving faster than they were taken they
+    -- piled up until each took longer than the last - and this loop, which
+    -- is every session's and the listener's, stopped answering anybody
+    -- (`testing.md` 18.933). What follows END is kept for what comes next.
+    if s.receiving and #s.lines > 0 then
+      local lines, parts = s.lines, s.receiving.parts
+      local rest = {}
 
-      if line == "END" then
-        put_done(s)
-        prompt(s)
-      else
-        s.receiving.parts[#s.receiving.parts + 1] = line
+      s.lines = rest
+
+      for k = 1, #lines do
+        local line = lines[k]
+
+        if not s.receiving then
+          rest[#rest + 1] = line
+        elseif line == "END" then
+          put_done(s)
+          prompt(s)
+        else
+          parts[#parts + 1] = line
+        end
       end
     end
 

@@ -410,6 +410,19 @@ diff -ruN a/src/intel/vulkan/anv_allocator.c b/src/intel/vulkan/anv_allocator.c
     }
     return VK_SUCCESS;
  }
+diff -ruN a/src/intel/vulkan/anv_api_version.h b/src/intel/vulkan/anv_api_version.h
+--- a/src/intel/vulkan/anv_api_version.h
++++ b/src/intel/vulkan/anv_api_version.h
+@@ -7,7 +7,8 @@
+ #if defined(VK_USE_PLATFORM_WAYLAND_KHR) ||     \
+     defined(VK_USE_PLATFORM_XCB_KHR) || \
+     defined(VK_USE_PLATFORM_XLIB_KHR) || \
+-    defined(VK_USE_PLATFORM_DISPLAY_KHR)
++    defined(VK_USE_PLATFORM_DISPLAY_KHR) || \
++    defined(VK_USE_PLATFORM_KOSMOS)
+ #define ANV_USE_WSI_PLATFORM
+ #endif
+ 
 diff -ruN a/src/intel/vulkan/anv_batch_chain.c b/src/intel/vulkan/anv_batch_chain.c
 --- a/src/intel/vulkan/anv_batch_chain.c
 +++ b/src/intel/vulkan/anv_batch_chain.c
@@ -548,7 +561,17 @@ diff -ruN a/src/intel/vulkan/anv_instance.c b/src/intel/vulkan/anv_instance.c
  #include "anv_api_version.h"
  
  static const struct debug_control debug_control[] = {
-@@ -248,6 +249,9 @@
+@@ -74,6 +75,9 @@
+    .EXT_display_surface_counter              = true,
+    .EXT_acquire_drm_display                  = true,
+ #endif
++#ifdef VK_USE_PLATFORM_KOSMOS
++   .KOSMOS_surface                           = true,
++#endif
+ #ifndef VK_USE_PLATFORM_WIN32_KHR
+    .EXT_headless_surface                     = true,
+ #endif
+@@ -248,6 +252,9 @@
        goto fail_init;
  
     instance->vk.physical_devices.try_create_for_drm = anv_physical_device_try_create;

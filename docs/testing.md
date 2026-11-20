@@ -38900,3 +38900,77 @@ among them with `run failed=no-device`. `x86-cafesa3d-2` and
 `x86-display-1`, which failed under load in 18.931, passed this time. The
 gate is still over its ten-minute budget, and `x86-dock` (359 s) and
 `x86-cafesa3d-2` (333 s) are still the suites to split.
+
+## 18.933 A cube drawn by the M700's GPU, in a window
+
+**In short:** G7c (`docs/gpu3d.md` §6). `vulkantest`'s cube is now drawn
+by Intel's Vulkan driver, `anv`, on the M700's HD 530. Its picture
+matches `run_vulkan.py`'s reference pixel for pixel, the reference being
+computed from the geometry rather than taken from any renderer. 300 frames of it are then presented in
+an Astra window through `VK_KOSMOS_surface`, and the window is found on
+the M700's screen over VNC while it is held open. At 64 by 64 pixels the
+window ran at 66 to 127 frames a second over three runs. At that size the
+number measures the round trip from submission to present, not the GPU.
+On the way, telnetd was found taking a large `put` in time quadratic in
+its lines, and that is fixed.
+
+- **The swapchain on a GPU.** Kosmos's WSI refused any device that was not
+  the processor's. On `anv`, a `WSI_IMAGE_TYPE_CPU` swapchain is Mesa's
+  buffer-blit path: the GPU draws into its own tiled image, then copies it
+  into a linear buffer that the processor maps. `queue_present` copies
+  that buffer into the window. Mesa waits on the image's fence only for a
+  software device, so the Kosmos backend now waits on it itself before
+  copying.
+- **`anv` offers `VK_KOSMOS_surface`.** The instance lists the extension,
+  and `anv_api_version.h` counts Kosmos among the platforms that have a
+  window system (patch 0006).
+- **One image, both kits.** An image's kit is chosen by the name it is
+  asked for, so `anvtest.elf` now carries `vulkantest`'s kit as well. Its
+  table is `vulkantest`'s - `cube`, `window`, `hold` - plus `devices`,
+  `compile` and `run`. The same Lua draws the cube on lavapipe under QEMU
+  and on `anv` on the M700.
+- **The M700 suite** has *the cube on the GPU*: the picture, the window
+  presenting, and the window found on the screen. The frame rate is kept
+  as a number beside each run's.
+
+**telnetd's `put`.** A `put` is base64 lines, 76 characters each, and the
+loop that received them took each line with `table.remove(s.lines, 1)`.
+Each call shifts every line behind it, so a burst of n lines cost n²/2
+moves. On the M700, a 58 MB put (about 800,000 lines) arrived faster than
+it was taken, the lines piled up, and telnetd stopped answering anyone -
+one Lua loop serves every session. Under QEMU the lines came a TCP window
+at a time and never piled up, so nothing caught it. The loop now takes a
+whole burst in one pass. *The check* (`x86-servers`) sends 4 MB while the
+session is still running `jitter 5`, so all 57,000 lines are waiting at
+once when the put starts. A second session must then be answered.
+
+```
+M700 (0.12.12, netbooted):
+  Vulkan on the GPU:    device=6219us fill=6135us dispatch=6670us, 4 of 4 checks
+  the cube on the GPU:  picture as the reference; window presented
+                        (extent=64x64 images=2 frames=300 ms=4547);
+                        found on the screen by VNC - 3 of 3 checks
+  controls:             the reference made at yaw + 0.3 - 640 pixels wrong;
+                        a screen without the cube - no window found
+  before the fix:       VK_ERROR_INITIALIZATION_FAILED from the swapchain
+x86-servers (QEMU):     36 checks pass, the 4 MB put among them (221 s)
+  control (HEAD's telnetd):  22 of 36 fail - "a 4 MB put sent behind a
+                        program did not finish: timed out", "no session was
+                        answered after a 4 MB put: timed out", and every
+                        check after them
+```
+
+While telnetd was wedged it could not be asked to restart the machine,
+and nothing else could do it either: the Terminal's `restart` says "this
+process does not hold that device", and the launcher pad's Restart button,
+clicked over VNC, did nothing. telnetd answered again on its own about four
+hours later, once it had worked through the lines, and restarted the
+machine onto this build. Both of those are in `roadmap.md`.
+
+**The gate** (telnetd and the Mesa WSI changed): 146 of 147 suites passed
+in 624 s (10:24). `x86-film-load` failed: under the gate's load, the
+film's sound thread was away for 41.4 ms, against the 23.2 ms the device
+holds. Run alone straight after, it passed all 10 checks in 8 s. It has
+failed the same way in earlier gates (above, and 37900), and nothing that
+changed here reaches sound. The gate is still a little over its
+ten-minute budget.

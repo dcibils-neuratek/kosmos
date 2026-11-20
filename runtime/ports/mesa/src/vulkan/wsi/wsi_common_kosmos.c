@@ -8,7 +8,10 @@
  * **The images are the device's, and presenting copies.** A swapchain
  * image is a CPU image of Mesa's (`WSI_IMAGE_TYPE_CPU`, linear, in memory
  * the device maps), as Win32's software path has; `queue_present` copies
- * its rows into the window's buffer to draw into and commits it. The
+ * its rows into the window's buffer to draw into and commits it. On a GPU
+ * (G7c, `anv`) the image is the GPU's own, tiled, and Mesa's buffer blit
+ * copies each frame into a linear buffer the processor maps; that buffer
+ * is what is copied, once its fence has signalled. The
  * design was the image *as* the window's buffer, with no copy
  * (`gpu3d.md` 5.5), and that waits on one thing: a window's buffer starts
  * under the header's band, on no page's boundary, so lavapipe cannot take
@@ -287,6 +290,18 @@ wsi_kosmos_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
    assert(image_index < chain->base.image_count);
    image->acquired = false;
 
+   /* A GPU's frame is drawn into its own image and copied by the GPU into
+    * the buffer the processor reads (the swapchain's buffer blit), and
+    * that copy has finished only when the image's fence says so. Mesa
+    * waits for a software device's fence itself, and for nobody else's. */
+   if (!chain->base.wsi->sw) {
+      VkResult r = chain->base.wsi->WaitForFences(chain->base.device, 1,
+                                                  &chain->base.fences[image_index],
+                                                  true, UINT64_MAX);
+      if (r != VK_SUCCESS)
+         return r;
+   }
+
    if (s.pixels == NULL)
       return VK_ERROR_SURFACE_LOST_KHR;
 
@@ -337,11 +352,6 @@ wsi_kosmos_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    VkResult result;
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR);
-
-   /* Only the processor's device: a GPU's images are G7's, and go to the
-    * screen another way (`gpu3d.md` 5.5). */
-   if (!wsi_device->sw)
-      return VK_ERROR_INITIALIZATION_FAILED;
 
    uint32_t num_images = MAX2(pCreateInfo->minImageCount, 2);
    size_t size = sizeof(*chain) + num_images * sizeof(chain->images[0]);

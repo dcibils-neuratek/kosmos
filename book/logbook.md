@@ -5099,3 +5099,37 @@ held nothing, and the check failed as it should. The M700's own test
 suite now runs this every time.
 
 **Next.** G7c: the spinning cube, `vkcube`, drawn by the GPU in a window.
+
+## 20 November 2026 - A cube drawn by the M700's GPU, in a window
+
+**In short.** The M700's graphics chip has now drawn a picture through
+Vulkan, and it shows in a window on the desktop. The picture is a small
+cube in two colours. It matches, pixel for pixel, a reference worked out
+from the cube's geometry. 0.12.13.
+
+**What.** A Vulkan program draws into "swapchain" images and hands each
+one to the window system to show. Kosmos's window system only accepted
+images drawn by the processor. On a GPU, Mesa's driver draws into the
+GPU's own image, in its own tiled layout, then has the GPU copy it into
+a plain buffer the processor can read. Kosmos now copies that buffer
+into the window, but only after the GPU says the copy is finished. Mesa
+waits for that only on software devices.
+
+**Something found on the way.** Programs are sent to the M700 over
+Telnet. A 58 MB send left Telnet answering nobody. The receiving loop
+took each 76-character line off the front of a list, which moves every
+line behind it, so 800,000 lines cost hundreds of billions of moves.
+QEMU never caught it: its network delivered the lines a few at a time,
+so they never piled up. The loop now takes the whole pile in one pass.
+A new check makes them pile up in QEMU, by sending 4 MB while the
+session is still busy with another program. That check fails on the old
+loop and passes on the new one.
+
+**Measured.** 300 frames in 4.5 s, about 66 a second at 64 by 64 pixels.
+At that size the number is the round trip, not the GPU's drawing speed.
+A full-size window is next on the list for that. Two checks show the
+test can fail: a reference made at a slightly different angle disagrees
+on 640 pixels, and a screen without the cube finds no window.
+
+**Next.** G7d: the Vulkan conformance tests (dEQP-VK) on the M700, and
+what share of them pass.

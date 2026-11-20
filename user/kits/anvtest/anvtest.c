@@ -702,9 +702,16 @@ static int l_run(lua_State *L)
     return 1;
 }
 
+void kosmos_vulkantest_kit(lua_State *L);
+
+/*
+ * `vulkantest`'s table - the triangle, the cube, the cube in a window and
+ * `hold` (G2, G3) - on `anv` rather than `lavapipe`, since its source is
+ * linked into this image too (G7c); and this kit's own three beside them.
+ */
 void kosmos_anvtest_kit(lua_State *L)
 {
-    lua_newtable(L);
+    kosmos_vulkantest_kit(L);
     lua_pushcfunction(L, l_devices);
     lua_setfield(L, -2, "devices");
     lua_pushcfunction(L, l_compile);

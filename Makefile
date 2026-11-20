@@ -4703,9 +4703,12 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 # (`anv.txt`), x86-64 only, as `anv` is. The kit reaches Intel's compiler
 # too, so it is compiled with Mesa's defines and its Intel headers; its
 # shaders are SPIR-V compiled on the host - `store.comp` for the compiler
-# alone, `write.comp` for a dispatch on the GPU (G7b).
+# alone, `write.comp` for a dispatch on the GPU (G7b). And `vulkantest.c`
+# beside it (G7c): the triangle, the cube and the cube in a window are
+# plain Vulkan, so the one source runs on whichever driver the image has -
+# `lavapipe` in `vulkantest.elf`, `anv` here.
 #
-ANVTEST_OBJS := $(UBUILD)/user/kits/anvtest/anvtest.c.o
+ANVTEST_OBJS := $(UBUILD)/user/kits/anvtest/anvtest.c.o $(VULKANTEST_OBJS)
 ANVTEST_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/anvtest.elf)
 
 $(UBUILD)/gen/anvtest/%_comp.h: user/kits/anvtest/%.comp

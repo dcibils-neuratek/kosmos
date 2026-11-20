@@ -630,6 +630,49 @@ def main():
         session = connect(telnet)
         said["help"] = session.run("help").decode(errors="replace")
 
+        # **A large file by `put`, and the door still open after it**
+        # (`testing.md` 18.933): 4 MB - some seventy thousand lines of base64
+        # sent in one go - written whole, and a second session answered
+        # straight after. Taken a line at a time from the front of a list, a
+        # put's lines piled up faster than they were taken, and on the M700 a
+        # 58 MB one stopped telnetd answering anyone.
+        #
+        # Sent while the session is still running a program (`jitter 5`),
+        # so every line of it is waiting at once when the put begins - which
+        # is what the M700's network does to a put and QEMU's does not: sent
+        # after the prompt, the lines came a window at a time and the old
+        # code passed this (the control).
+        import base64
+
+        big = os.urandom(4 << 20)
+        text = base64.b64encode(big)
+        started = time.monotonic()
+
+        try:
+            session.sock.sendall(b"jitter 5\r\n" + ("put /Temporary/big.bin %d\r\n" % len(big)).encode()
+                                 + b"".join(text[at:at + 76] + b"\r\n"
+                                            for at in range(0, len(text), 76))
+                                 + b"END\r\n")
+            answer = session.until_prompt() + session.until_prompt()
+            took = time.monotonic() - started
+
+            if ("put: /Temporary/big.bin, %d bytes" % len(big)).encode() not in answer:
+                fails.append("a 4 MB put did not arrive whole: %r" % answer[-200:])
+            elif took > 60:
+                fails.append("a 4 MB put took %.0f s" % took)
+        except (IOError, OSError) as e:
+            fails.append("a 4 MB put sent behind a program did not finish: %s" % e)
+
+        try:
+            other = connect(telnet, 20)
+            answered = other.run("pwd").decode(errors="replace")
+            other.close()
+
+            if "/Home" not in answered:
+                fails.append("a session after the put said %r to pwd" % answered.strip())
+        except (IOError, OSError) as e:
+            fails.append("no session was answered after a 4 MB put: %s" % e)
+
         # **The screen is the desktop's** (`testing.md` 18.648): `monitor`,
         # which draws a bar into the screen's last rows, run at this prompt
         # while the desktop composes - refused, and saying why, where on the

@@ -133,9 +133,19 @@ built for Kosmos with a kernel-driver type of its own.
   it panics, and `strerror` knows sixteen codes, in `strerror.c`.
 - **The M700 suite** has *Vulkan on the GPU* (`tools/run_m700.py`).
 
-**Next: G7c** - `vkcube` in a window, its frames drawn by the GPU and
-presented through `VK_KOSMOS_surface`. Then G7d (dEQP-VK). The M700 runs
-0.12.10 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
+**G7c (0.12.13, 18.933):** a cube drawn by the M700's GPU, in a window.
+- `vulkantest`'s cube on `anv` matches the reference pixel for pixel. 300
+  frames of it are presented through `VK_KOSMOS_surface`, and the window is
+  found on the screen by VNC.
+- The swapchain is Mesa's buffer blit: the GPU's image is copied into a
+  buffer the processor reads, behind the image's fence.
+- `anvtest.elf` carries `vulkantest`'s kit too.
+- **telnetd** took a big `put` in quadratic time and wedged on the M700.
+  It is fixed, and `x86-servers` holds it, with the lines sent behind a
+  running program.
+
+**Next: G7d** - dEQP-VK on the M700. The M700 runs
+0.12.12 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
 "Reboot m700 as needed").
 
 **Flight, designed for Diego to agree** (19 November): a flight simulator
