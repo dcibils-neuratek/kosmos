@@ -293,17 +293,6 @@ __attribute__((weak)) char *fgets(char *s, int size, FILE *f)
 }
 __attribute__((weak)) int  ungetc(int c, FILE *f) { (void)c; (void)f; return EOF; }
 
-char *strerror(int errnum)
-{
-    switch (errnum) {
-    case 0:      return "no error";
-    case ENOENT: return "no such path in this namespace";
-    case EDOM:   return "argument outside the domain";
-    case ERANGE: return "result outside the representable range";
-    default:     return "unknown error";
-    }
-}
-
 /*
  *--------------------------------------------------------------------------
  * The functions that print, added because a link error asked.

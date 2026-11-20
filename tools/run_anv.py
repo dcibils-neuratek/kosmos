@@ -14,7 +14,11 @@ to two answers:
   compiled on the host, through Mesa's SPIR-V front end, NIR and `brw` for
   the M700's HD 530 (`8086:1912`, Mesa's own table): generation 9, a SIMD
   width Gen9 has, the store and the thread's end among the sends, no
-  spills, and code whose size is a whole number of instructions.
+  spills, and code whose size is a whole number of instructions;
+- **a run with nothing to run on** (G7b): `run()`, which on the M700 fills
+  and dispatches into a buffer (`tools/run_m700.py`, *Vulkan on the GPU*),
+  here makes its instance and its messenger, finds no device and says so,
+  with nothing from Mesa and without dying.
 
 `KOSMOS_ANV_DEVICE` names a PCI id for the compile other than the HD
 530's; `KOSMOS_ANV_SERIAL` keeps the guest's console.
@@ -48,15 +52,18 @@ PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 local kit = use("anvtest.elf")
 print("anvtest devices: " .. kit.devices())
 print("anvtest compile: " .. kit.compile(%d))
+print("anvtest run: " .. kit.run())
 """ % DEVICE
 
 COMPILED = re.compile(r"gen=(\d+) simd=(\d+) instrs=(\d+) sends=(\d+) "
                       r"spills=(\d+) fills=(\d+) bytes=(\d+)$")
 
 
-def judge(devices, compiled):
-    """What is wrong with the two answers, or nothing."""
+def judge(devices, compiled, ran):
+    """What is wrong with the three answers, or nothing."""
     wrong = []
+    if ran != "failed=no-device":
+        wrong.append("run: wanted no device found and nothing more, said %r" % ran)
     if devices != "devices=0":
         wrong.append("devices: wanted none found and no error, said %r" % devices)
     m = COMPILED.match(compiled or "")
@@ -112,14 +119,14 @@ def main():
         started = time.monotonic()
         guest.type("run /Home/apps/anv/anvtest.lua")
 
-        while time.monotonic() < started + 240 and "compile" not in said:
+        while time.monotonic() < started + 240 and "run" not in said:
             for line in guest.seen[mark:].split("\n")[1:-1]:
                 line = line.strip()
-                for what in ("devices", "compile"):
+                for what in ("devices", "compile", "run"):
                     head = "anvtest %s: " % what
                     if line.startswith(head) and what not in said:
                         said[what] = line[len(head):]
-            if "compile" not in said:
+            if "run" not in said:
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
@@ -130,17 +137,18 @@ def main():
         with open(os.environ["KOSMOS_ANV_SERIAL"], "w") as f:
             f.write(guest.seen)
 
-    wrong = judge(said.get("devices"), said.get("compile"))
+    wrong = judge(said.get("devices"), said.get("compile"), said.get("run"))
     if wrong:
         print("FAIL: anv on Kosmos did not say what it must")
         for w in wrong:
             print("  " + w)
-        if "compile" not in said:
+        if "run" not in said:
             print("--- the guest's last words ---\n" + guest.seen[mark:][-1500:])
         return 1
 
-    print("PASS: anv on Kosmos, from a %.1f MB image, in %.1f s: %s; 8086:%04x %s"
-          % (os.path.getsize(image) / 1e6, took, said["devices"], DEVICE, said["compile"]))
+    print("PASS: anv on Kosmos, from a %.1f MB image, in %.1f s: %s; 8086:%04x %s; run %s"
+          % (os.path.getsize(image) / 1e6, took, said["devices"], DEVICE, said["compile"],
+             said["run"]))
     return 0
 
 

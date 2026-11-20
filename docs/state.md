@@ -121,11 +121,28 @@ built for Kosmos with a kernel-driver type of its own.
 - **The test image** is `anvtest.elf` (`user/kits/anvtest/`), kept apart
   from `lavapipe`'s.
 
-**Next: G7b**: buffer objects bound with `GPU_OP_BIND`, a queue as a
-context, and `vkCmdFillBuffer` and a compute dispatch read back on the
-M700. Then G7c (`vkcube`) and G7d (dEQP-VK). The M700 runs 0.12.10, with
-`anvtest.elf` in `/Home/Tests/anv`, and is restarted as needed (Diego,
-19 November: "Reboot m700 as needed").
+**G7b (0.12.12, 18.932):** Vulkan's first work on the M700's GPU.
+- **On the M700** `anv` makes a device in 4.4 ms, and a 64 KB buffer
+  filled half by `vkCmdFillBuffer` and half by a compute shader reads back
+  right: 16,384 of 16,384 words. The control, every batch made trivial,
+  reads back nothing.
+- **How**: one context a device, buffers bound into it, submissions
+  with a point on its timeline; a slab's buffers share one mapping;
+  unbinding waits for idle.
+- **The C library** learned `%m`, names an unsupported conversion when
+  it panics, and `strerror` knows sixteen codes, in `strerror.c`.
+- **The M700 suite** has *Vulkan on the GPU* (`tools/run_m700.py`).
+
+**Next: G7c** - `vkcube` in a window, its frames drawn by the GPU and
+presented through `VK_KOSMOS_surface`. Then G7d (dEQP-VK). The M700 runs
+0.12.10 at 192.168.1.35 and is restarted as needed (Diego, 19 November:
+"Reboot m700 as needed").
+
+**Flight, designed for Diego to agree** (19 November): a flight simulator
+over a real city - Esri's satellite imagery on Mapzen's elevation tiles,
+any city searched by name - in `docs/flight.md`, `flight.html` and
+`flight-architecture.png`, with six questions for him. No code before he
+agrees; it follows G7.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

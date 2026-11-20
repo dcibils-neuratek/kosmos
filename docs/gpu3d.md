@@ -638,6 +638,11 @@ so `lavapipe` is built for both.
      page says so, waited for by `GPU_OP_FENCE_WAIT`'s pulse. *Test on
      the M700*: `vkCmdFillBuffer`, then a compute dispatch writing a
      buffer, read back right.
+     **Built in 0.12.12** (`testing.md` 18.932): one context a device,
+     since `anv` binds before any queue exists; a slab's buffers share
+     one mapping of their region; unbinding waits for the context to go
+     idle. On the M700 both halves of a 64 KB buffer read back right,
+     the fill in 3-4 ms and the dispatch in 6.5 ms, recording to answer.
    - **G7c - `vkcube` in a window**, its swapchain images rendered by
      the GPU and presented through `VK_KOSMOS_surface` (G3). *Measure*:
      frames a second.

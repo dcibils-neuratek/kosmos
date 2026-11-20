@@ -305,6 +305,46 @@ class Suite:
         self.note("sound worst latency us", number(r"worst latency \d+ frames, (\d+) us",
                                                    out, int))
 
+    def vulkan(self):
+        """**Vulkan on the GPU** (`docs/gpu3d.md` G7b): Intel's driver, `anv`,
+        makes a device on the HD 530, fills half a 64 KB buffer with
+        `vkCmdFillBuffer` and the other half by a compute shader, and the
+        processor reads every word back - right, and the other half left
+        alone. The image is put from this Mac, since nothing installs it."""
+        image = os.path.join(ROOT, "build", "user-x86_64", "apps", "anvtest.elf")
+
+        if not self.check(os.path.exists(image), "no anvtest.elf - `make ARCH=x86_64 apps`"):
+            return
+
+        stripped = os.path.join(self.folder, "anvtest.elf")
+        os.system("x86_64-elf-objcopy --strip-debug '%s' '%s'" % (image, stripped))
+        self.m.run("mkdir /Home/Temporary")
+        self.m.run("mkdir /Home/Temporary/anv")
+
+        with open(stripped, "rb") as f:
+            self.m.session.put(f.read(), "/Home/Temporary/anv/anvtest.elf")
+
+        self.m.put("-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.\n"
+                   "-- kosmos: image anvtest.elf\n"
+                   'print("anvtest run: " .. use("anvtest.elf").run())\n',
+                   "/Home/Temporary/anv/anvrun.lua")
+        os.remove(stripped)
+        out, _ = self.test("Vulkan on the GPU", "/Home/Temporary/anv/anvrun.lua")
+        m = re.search(r"fill=(\d+)/(\d+),(\d+)/(\d+) (\d+)us .*dispatch=(\d+)/(\d+),(\d+)/(\d+) (\d+)us", out)
+
+        if not self.check(m is not None and "mesa=" not in out,
+                          "anv did not fill and dispatch cleanly: " + out.strip()[-240:]):
+            return
+
+        g = [int(x) for x in m.groups()]
+        self.check(g[0] == g[1] and g[2] == g[3], "a fill read back %d/%d, the rest %d/%d"
+                   % tuple(g[0:4]))
+        self.check(g[5] == g[6] and g[7] == g[8], "a dispatch read back %d/%d, the rest %d/%d"
+                   % tuple(g[5:9]))
+        self.note("vulkan device us", number(r"device=(\d+)us", out, int))
+        self.note("vulkan fill us", g[4])
+        self.note("vulkan dispatch us", g[9])
+
     # ---- real performance ----
 
     def performance(self):
@@ -495,6 +535,7 @@ def main(argv):
     s.usb_and_disk()
     s.sound()
     s.sandboxes()
+    s.vulkan()
     print("m700: real performance")
     s.performance()
     print("m700: every application")

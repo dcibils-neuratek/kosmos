@@ -31,6 +31,7 @@
 #include "futex.h"
 #include "reserve.h"
 
+#include <errno.h>
 #include <string.h>
 #include <setjmp.h>
 #include <stdlib.h>
@@ -4978,6 +4979,33 @@ static bool test_snprintf_star(void)
     snprintf(b, sizeof(b), "%*d|", -5, 42);         if (!str_is(b, "42   |"))  return false;
     snprintf(b, sizeof(b), "%*.*s|%d", 6, 2, "xyz", 7);
     return str_is(b, "    xy|7");
+}
+
+/*
+ * The one `errno` of the C library the suite links: the kernel image has
+ * no process to keep one per, and `snprintf`'s `%m` reads it.
+ */
+static int suite_errno;
+
+int *__errno(void)
+{
+    return &suite_errno;
+}
+
+static bool test_snprintf_m(void)
+{
+    /* glibc's `%m`, the sentence for `errno` and no argument taken: Mesa's
+     * "mmap failed: %m" panicked here and hid the failure it was saying
+     * (`testing.md` 18.932). What follows it must still be read from the
+     * arguments, which is what shows none was taken. */
+    char b[96];
+
+    errno = EINVAL;
+    snprintf(b, sizeof(b), "mmap failed: %m (%d)", 7);
+    if (!str_is(b, "mmap failed: invalid argument (7)")) return false;
+    errno = ENOMEM;
+    snprintf(b, sizeof(b), "[%-15m]");
+    return str_is(b, "[out of memory  ]");
 }
 
 static bool test_snprintf_truncates_and_reports_the_full_length(void)
@@ -11927,6 +11955,7 @@ static const struct test tests[] = {
     { "heap: many sizes, in no order",         test_heap_many_sizes_in_no_order },
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
     { "snprintf: a width and a precision of *", test_snprintf_star },
+    { "snprintf: %m says errno's sentence", test_snprintf_m },
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
     { "snprintf: floats",                      test_snprintf_floats },
     { "snprintf: rounded at the precision",    test_snprintf_rounds },

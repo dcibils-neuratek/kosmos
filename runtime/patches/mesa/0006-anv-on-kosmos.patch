@@ -336,7 +336,69 @@ diff -ruN a/src/intel/vulkan/anv_allocator.c b/src/intel/vulkan/anv_allocator.c
  
  #include "common/intel_aux_map.h"
  #include "util/anon_file.h"
-@@ -1911,7 +1912,11 @@
+@@ -132,9 +133,17 @@
+     * with pages until we either map and fault on one of them or we use
+     * userptr and send a chunk of it off to the GPU.
+     */
++#if DETECT_OS_KOSMOS
++   /* Kosmos has no anonymous file to map again larger. It needs none: an
++    * anonymous mapping is addresses only until a page is touched, so the
++    * whole table is reserved once and growing moves only its end - and
++    * with one map there is no old one for a reader to be left holding. */
++   table->fd = -1;
++#else
+    table->fd = os_create_anonymous_file(BLOCK_POOL_MEMFD_SIZE, "state table");
+    if (table->fd == -1)
+       return vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
++#endif
+ 
+    if (!u_vector_init(&table->cleanups, 8,
+                       sizeof(struct anv_state_table_cleanup))) {
+@@ -146,6 +155,19 @@
+    table->state.end = 0;
+    table->size = 0;
+ 
++#if DETECT_OS_KOSMOS
++   struct anv_state_table_cleanup *whole = u_vector_add(&table->cleanups);
++   void *reserved = whole == NULL ? MAP_FAILED :
++      mmap(NULL, BLOCK_POOL_MEMFD_SIZE, PROT_READ | PROT_WRITE,
++           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++   if (reserved == MAP_FAILED) {
++      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
++      goto fail_cleanups;
++   }
++   *whole = (struct anv_state_table_cleanup){ reserved, BLOCK_POOL_MEMFD_SIZE };
++   table->map = reserved;
++#endif
++
+    uint32_t initial_size = initial_entries * ANV_STATE_ENTRY_SIZE;
+    result = anv_state_table_expand_range(table, initial_size);
+    if (result != VK_SUCCESS)
+@@ -174,6 +196,13 @@
+    if (size > BLOCK_POOL_MEMFD_SIZE)
+       return vk_error(table->device, VK_ERROR_OUT_OF_HOST_MEMORY);
+ 
++#if DETECT_OS_KOSMOS
++   (void)cleanup;
++   (void)map;
++   table->size = size;                  /* the reservation holds it already */
++   return VK_SUCCESS;
++#endif
++
+    cleanup = u_vector_add(&table->cleanups);
+    if (!cleanup)
+       return vk_error(table->device, VK_ERROR_OUT_OF_HOST_MEMORY);
+@@ -249,7 +278,8 @@
+ 
+    u_vector_finish(&table->cleanups);
+ 
+-   close(table->fd);
++   if (table->fd >= 0)
++      close(table->fd);
+ }
+ 
+ VkResult
+@@ -1911,7 +1941,11 @@
        }
     } else {
        VG(VALGRIND_FREELIKE_BLOCK(map, 0));
@@ -729,6 +791,40 @@ diff -ruN a/src/intel/vulkan/anv_private.h b/src/intel/vulkan/anv_private.h
  
      struct wsi_device                       wsi_device;
      int                                         local_fd;
+diff -ruN a/src/intel/vulkan/anv_queue.c b/src/intel/vulkan/anv_queue.c
+--- a/src/intel/vulkan/anv_queue.c
++++ b/src/intel/vulkan/anv_queue.c
+@@ -29,6 +29,7 @@
+ 
+ #include "i915/anv_queue.h"
+ #include "xe/anv_queue.h"
++#include "kosmos/anv_kosmos.h"
+ 
+ #include "vk_common_entrypoints.h"
+ 
+@@ -42,6 +43,10 @@
+       return anv_i915_create_engine(device, queue, pCreateInfo);
+    case INTEL_KMD_TYPE_XE:
+       return anv_xe_create_engine(device, queue, pCreateInfo);
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      return anv_kosmos_create_engine(device, queue, pCreateInfo);
++#endif
+    default:
+       UNREACHABLE("Missing");
+       return VK_ERROR_UNKNOWN;
+@@ -59,6 +64,11 @@
+    case INTEL_KMD_TYPE_XE:
+       anv_xe_destroy_engine(device, queue);
+       break;
++#if DETECT_OS_KOSMOS
++   case INTEL_KMD_TYPE_KOSMOS:
++      anv_kosmos_destroy_engine(device, queue);
++      break;
++#endif
+    default:
+       UNREACHABLE("Missing");
+    }
 diff -ruN a/src/intel/vulkan/anv_util.c b/src/intel/vulkan/anv_util.c
 --- a/src/intel/vulkan/anv_util.c
 +++ b/src/intel/vulkan/anv_util.c

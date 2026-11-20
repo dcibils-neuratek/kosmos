@@ -1,0 +1,624 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<!--
+  Flight, drawn before it is written. Diego, 19 November 2026: "after the
+  3d api is done and running on gpu, i want to build a simple flight
+  simulator app that shows the 3d api capabilities"; the same night, "Draw
+  mockup".
+
+  The window in Kosmos's own chrome, in the Night look and a light one. The
+  scene below is rendered live by this page - a height field traced column
+  by column, as a placeholder for what Vulkan will draw - so the views and
+  the time of day can be tried rather than imagined. Vela Island, its
+  airfield VLA and the Kestrel trainer are invented for the drawing.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos Flight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f2f4f8; --ink: #182030; --muted: #5a6577; --rule: #dbe1ea; --card: #ffffff; --accent: #2a55c9;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --ground: #0d121a; --ink: #e6edf3; --muted: #98a4b5; --rule: #263142; --card: #151c27; --accent: #a8c7fa; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 1180px; margin: 0 auto; padding: 40px 16px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 40px)/1.1 var(--display); margin: 0 0 10px; text-wrap: balance; }
+  h2 { font: 600 23px/1.2 var(--display); margin: 44px 0 10px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  .lede { font-size: 18px; color: var(--muted); }
+  .said { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-style: italic; margin: 16px 0; }
+  code { font: .88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+  .hint { font-size: 14px; color: var(--muted); margin: 14px 0 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .bar button { font: 500 14px var(--body); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: var(--accent); color: var(--ground); border-color: transparent; }
+  .bar button:focus-visible, .win [role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
+  .note b { display: block; font-family: var(--display); font-size: 17px; margin-bottom: 4px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  ol.q li { margin: 10px 0; }
+  .rec { color: var(--muted); }
+
+  /* ---- The window, drawn at 1160 by 720 and scaled to the page ---- */
+  .shell { width: 100%; overflow: hidden; border-radius: 14px; }
+  .stage { width: 1160px; height: 720px; transform-origin: 0 0; position: relative; font: 14px/1.35 var(--body); }
+  .win { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; display: grid; grid-template-rows: 46px 1fr;
+         background: var(--w-window); color: var(--w-text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .win.night { --w-window: #1e2636; --w-raised: #2a3446; --w-sunken: #161d2b; --w-line: #313b4e; --w-text: #e6eaf2; --w-dim: #a3adbf;
+               --w-accent: #a8c7fa; --w-on: #0a1b38; --w-glass: rgba(22, 29, 43, .74); --w-glass-line: rgba(255,255,255,.12); }
+  .win.day { --w-window: #f6f5f4; --w-raised: #ffffff; --w-sunken: #ffffff; --w-line: #e3e0dd; --w-text: #241f31; --w-dim: #77767b;
+             --w-accent: #3584e4; --w-on: #ffffff; --w-glass: rgba(255, 255, 255, .78); --w-glass-line: rgba(0,0,0,.10); }
+
+  .head { display: flex; align-items: center; gap: 12px; padding: 0 12px 0 18px; border-bottom: 1px solid var(--w-line); background: var(--w-window); }
+  .head .t { font-weight: 600; font-size: 15px; }
+  .head .sub { color: var(--w-dim); font-size: 13.5px; }
+  .head .sp { flex: 1; }
+  .seg { display: flex; background: var(--w-sunken); border: 1px solid var(--w-line); border-radius: 9px; padding: 2px; }
+  .seg span { padding: 4px 12px; border-radius: 7px; font-size: 13px; color: var(--w-dim); cursor: pointer; user-select: none; }
+  .seg span.on { background: var(--w-raised); color: var(--w-text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .ib { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--w-text); cursor: pointer; }
+  .ib svg { width: 17px; height: 17px; }
+  .lights { display: flex; gap: 8px; margin-left: 6px; }
+  .lights i { width: 16px; height: 16px; border-radius: 50%; display: block; }
+
+  .view { position: relative; overflow: hidden; background: #000; }
+  .view canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: auto; }
+  .glass { position: absolute; background: var(--w-glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+           border: 1px solid var(--w-glass-line); border-radius: 14px; color: var(--w-text); box-shadow: 0 10px 30px rgba(0,0,0,.22); }
+
+  /* The aircraft, from behind and above (chase view) */
+  .plane { position: absolute; left: 50%; top: 58%; width: 260px; margin-left: -130px; transform-origin: 50% 50%; pointer-events: none; }
+
+  /* The instrument strip, chase view */
+  .strip { left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 2px; padding: 8px 10px; }
+  .strip .g { width: 92px; padding: 2px 8px; }
+  .strip .g + .g { border-left: 1px solid var(--w-glass-line); }
+  .strip .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--w-dim); }
+  .strip .v { font: 500 21px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+  .strip .u { font-size: 11px; color: var(--w-dim); }
+  .strip .meter { height: 5px; border-radius: 3px; background: var(--w-sunken); margin-top: 6px; overflow: hidden; }
+  .strip .meter i { display: block; height: 100%; background: var(--w-accent); }
+
+  /* The graphics panel: what the 3D API is doing, frame by frame */
+  .gfx { right: 16px; top: 16px; width: 262px; padding: 12px 14px 12px; font-size: 13px; }
+  .gfx .hd { display: flex; align-items: baseline; justify-content: space-between; }
+  .gfx .hd b { font-size: 14px; }
+  .gfx .dev { color: var(--w-dim); font-size: 12px; margin: 1px 0 8px; }
+  .gfx .big { display: flex; gap: 14px; align-items: baseline; }
+  .gfx .big span { font: 500 26px/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .gfx .big em { font-style: normal; color: var(--w-dim); font-size: 12px; }
+  .gfx svg.spark { display: block; width: 100%; height: 38px; margin: 8px 0 6px; }
+  .gfx dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 0 0 8px; font-size: 12.5px; }
+  .gfx dt { color: var(--w-dim); }
+  .gfx dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .gfx .tg { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; border-top: 1px solid var(--w-glass-line); padding-top: 8px; font-size: 12.5px; }
+  .sw { width: 30px; height: 18px; border-radius: 9px; background: var(--w-sunken); border: 1px solid var(--w-line); position: relative; cursor: pointer; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--w-dim); transition: left .15s; }
+  .sw.on { background: var(--w-accent); border-color: transparent; }
+  .sw.on::after { left: 14px; background: var(--w-on); }
+  .chip { font: 12px var(--mono); padding: 1px 7px; border-radius: 6px; background: var(--w-sunken); border: 1px solid var(--w-line); }
+
+  /* The place: where, and the airfield */
+  .where { left: 16px; top: 16px; padding: 10px 14px; font-size: 13px; }
+  .where b { display: block; font-size: 14px; }
+  .where span { color: var(--w-dim); }
+
+  /* The cockpit's panel */
+  .panel { position: absolute; left: 0; right: 0; bottom: 0; height: 270px; pointer-events: none; }
+  .panel svg { width: 100%; height: 100%; display: block; }
+
+  /* Pause sheet */
+  .sheet { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 430px; padding: 18px 20px 16px; display: none; }
+  .sheet.show { display: block; }
+  .sheet h3 { margin: 0 0 4px; font-size: 18px; }
+  .sheet p { margin: 0 0 12px; color: var(--w-dim); font-size: 13px; }
+  .sheet .row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--w-glass-line); font-size: 13px; }
+  .sheet .row .k { color: var(--w-dim); }
+  .sheet .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sheet .opts span { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--w-line); font-size: 12.5px; }
+  .sheet .opts span.on { background: var(--w-accent); color: var(--w-on); border-color: transparent; }
+  .sheet .go { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .sheet .go span { padding: 7px 16px; border-radius: 9px; background: var(--w-raised); font-weight: 500; font-size: 13.5px; }
+  .sheet .go span.p { background: var(--w-accent); color: var(--w-on); }
+  .status { left: 50%; top: 45%; transform: translateX(-50%); padding: 10px 16px; font-size: 13.5px; }
+  .credit { position: absolute; right: 12px; bottom: 6px; font-size: 10.5px; color: rgba(255,255,255,.82); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .sheet .search { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 9px; background: var(--w-sunken); border: 1px solid var(--w-line); color: var(--w-dim); }
+  .sheet .search svg { width: 14px; height: 14px; }
+  .keys { position: absolute; left: 16px; bottom: 16px; padding: 8px 12px; font-size: 12px; color: var(--w-dim); display: flex; gap: 12px; }
+  .keys kbd { font: 11px var(--mono); padding: 0 5px; border-radius: 4px; border: 1px solid var(--w-line); background: var(--w-sunken); color: var(--w-text); }
+  @media (prefers-reduced-motion: reduce) { .sw::after { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Flight</h1>
+<p class="lede">A small flight simulator of Kosmos's own: a light trainer over a real city you choose - its actual terrain under its actual satellite images - drawn by Vulkan on the GPU, with a graphics panel open to show what the 3D API does every frame.</p>
+<p class="said">"after the 3d api is done and running on gpu, i want to build a simple flight simulator app that shows the 3d api capabilities"; and the night it was drawn, "Can we use real world maps for the flight simulator?", "So i can choose a city to fly", "And see the actual satellite images" - Diego, 19 November 2026</p>
+
+<p class="hint">The scene is rendered live by this page from the real tiles - Esri's satellite imagery over Mapzen's elevation, fetched as the Map Kit would - as a stand-in for what Vulkan will draw. Choose a city below; try the views and the time of day in the window's header, the switches in the graphics panel, and the pause button. Offline, it flies over an invented island instead.</p>
+<div class="bar" role="group" aria-label="Look">
+  <button type="button" data-look="night" aria-pressed="true">Night look</button>
+  <button type="button" data-look="day" aria-pressed="false">Light look</button>
+  <button type="button" id="pausebtn" aria-pressed="false">Show the pause sheet</button>
+  <button type="button" id="still" aria-pressed="false">Hold the frame</button>
+</div>
+<div class="bar" role="group" aria-label="City" id="cities">
+  <button type="button" data-city="rio" aria-pressed="true">Rio de Janeiro</button>
+  <button type="button" data-city="sf" aria-pressed="false">San Francisco</button>
+  <button type="button" data-city="cpt" aria-pressed="false">Cape Town</button>
+  <button type="button" data-city="hkg" aria-pressed="false">Hong Kong</button>
+  <button type="button" data-city="mvd" aria-pressed="false">Montevideo</button>
+</div>
+
+<div class="shell" id="shell">
+  <div class="stage" id="stage">
+    <div class="win night" id="win">
+      <div class="head">
+        <span class="t">Flight</span>
+        <span class="sub">Kestrel over <span id="cityname">Rio de Janeiro</span></span>
+        <span class="sp"></span>
+        <div class="seg" id="views" aria-label="View">
+          <span class="on" data-view="chase" role="button" tabindex="0">Chase</span>
+          <span data-view="cockpit" role="button" tabindex="0">Cockpit</span>
+          <span data-view="tower" role="button" tabindex="0">Tower</span>
+        </div>
+        <div class="seg" id="times" aria-label="Time of day">
+          <span data-time="dawn" role="button" tabindex="0">Dawn</span>
+          <span class="on" data-time="noon" role="button" tabindex="0">Noon</span>
+          <span data-time="dusk" role="button" tabindex="0">Dusk</span>
+        </div>
+        <span class="ib" id="pauseib" role="button" tabindex="0" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></span>
+        <span class="ib" aria-label="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></span>
+        <div class="lights"><i style="background:#2bc04f"></i><i style="background:#f5bd2e"></i><i style="background:#ff5f57"></i></div>
+      </div>
+
+      <div class="view" id="view">
+        <canvas id="scene" width="1160" height="674"></canvas>
+
+        <svg class="plane" id="plane" viewBox="0 0 260 110" aria-hidden="true">
+          <defs>
+            <linearGradient id="body" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f4f6f9"/><stop offset="1" stop-color="#b9c2cf"/></linearGradient>
+            <linearGradient id="wing" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#eef1f5"/><stop offset="1" stop-color="#a4afbe"/></linearGradient>
+          </defs>
+          <ellipse cx="130" cy="92" rx="78" ry="7" fill="rgba(0,0,0,.18)"/>
+          <path d="M8 58 L120 50 L140 50 L252 58 L252 64 L140 62 L120 62 L8 64 Z" fill="url(#wing)" stroke="#7d8898" stroke-width="1"/>
+          <rect x="6" y="57" width="16" height="7" rx="2" fill="#d9483b"/>
+          <rect x="238" y="57" width="16" height="7" rx="2" fill="#2f9e5a"/>
+          <path d="M118 74 Q130 30 142 74 Q130 84 118 74 Z" fill="url(#body)" stroke="#7d8898" stroke-width="1"/>
+          <path d="M123 52 Q130 38 137 52 Z" fill="#2a3446" opacity=".85"/>
+          <path d="M96 80 L164 80 L164 84 L96 84 Z" fill="url(#wing)" stroke="#7d8898" stroke-width="1"/>
+          <path d="M128 50 L130 16 L132 50 Z" fill="url(#body)" stroke="#7d8898" stroke-width="1"/>
+          <path d="M127 22 L133 22 L132 44 L128 44 Z" fill="#2a55c9" opacity=".9"/>
+        </svg>
+
+        <div class="panel" id="panel" hidden>
+          <svg viewBox="0 0 1160 270" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 40 Q580 -10 1160 40 L1160 270 L0 270 Z" fill="#1b1f27"/>
+            <path d="M0 40 Q580 -10 1160 40" fill="none" stroke="#3b4250" stroke-width="3"/>
+          </svg>
+        </div>
+        <svg id="gauges" style="display:none;position:absolute;left:50%;bottom:22px;width:720px;height:220px;margin-left:-360px" viewBox="0 0 720 220" aria-hidden="true"></svg>
+
+        <div class="glass where" id="where">
+          <b id="wherename">SDU · Santos Dumont</b>
+          <span id="wherenote">Sugarloaf and Corcovado, Guanabara Bay</span>
+        </div>
+
+        <div class="glass gfx" id="gfx">
+          <div class="hd"><b>Graphics</b><span class="chip">F3</span></div>
+          <div class="dev">Vulkan 1.4 · anv · HD Graphics 530 (Gen9)</div>
+          <div class="big"><span id="fps">60</span><em>frames a second</em></div>
+          <svg class="spark" id="spark" viewBox="0 0 234 38" preserveAspectRatio="none" aria-label="Frame time, last 2 seconds"></svg>
+          <dl>
+            <dt>GPU a frame</dt><dd id="gpu">5.8 ms</dd>
+            <dt>Processor a frame</dt><dd>1.1 ms</dd>
+            <dt>Draw calls</dt><dd id="draws">184</dd>
+            <dt>Triangles</dt><dd id="tris">1.42 M</dd>
+            <dt>Terrain tiles</dt><dd>96 of 1024</dd>
+            <dt>Presented by</dt><dd>a copy to the window</dd>
+          </dl>
+          <div class="tg">
+            <span>Shadows</span><span class="sw on" data-sw="shadows" role="button" tabindex="0" aria-label="Shadows"></span>
+            <span>Water reflections</span><span class="sw on" data-sw="water" role="button" tabindex="0" aria-label="Water reflections"></span>
+            <span>Haze</span><span class="sw on" data-sw="haze" role="button" tabindex="0" aria-label="Haze"></span>
+            <span>Wireframe</span><span class="sw" data-sw="wire" role="button" tabindex="0" aria-label="Wireframe"></span>
+            <span>Anti-aliasing</span><span class="chip">MSAA 4×</span>
+          </div>
+        </div>
+
+        <div class="glass strip" id="strip">
+          <div class="g"><div class="k">Speed</div><div class="v" id="ias">96</div><div class="u">knots</div></div>
+          <div class="g"><div class="k">Altitude</div><div class="v" id="alt">1,450</div><div class="u">feet</div></div>
+          <div class="g"><div class="k">Heading</div><div class="v" id="hdg">272°</div><div class="u">west</div></div>
+          <div class="g"><div class="k">Climb</div><div class="v" id="vs">+120</div><div class="u">feet a minute</div></div>
+          <div class="g"><div class="k">Throttle</div><div class="v">72%</div><div class="meter"><i style="width:72%"></i></div></div>
+          <div class="g"><div class="k">Flaps</div><div class="v">10°</div><div class="meter"><i style="width:33%"></i></div></div>
+        </div>
+
+        <div class="glass keys" id="keys">
+          <span><kbd>↑</kbd><kbd>↓</kbd> pitch</span><span><kbd>←</kbd><kbd>→</kbd> roll</span>
+          <span><kbd>A</kbd><kbd>Z</kbd> throttle</span><span><kbd>F</kbd> flaps</span><span><kbd>V</kbd> view</span><span><kbd>P</kbd> pause</span>
+        </div>
+
+        <div class="glass status" id="status">Fetching the imagery and terrain…</div>
+        <div class="credit" id="credit">Imagery Esri, Maxar, Earthstar Geographics · Elevation Mapzen terrain tiles, AWS</div>
+
+        <div class="glass sheet" id="sheet">
+          <h3>Paused</h3>
+          <p>Where in the world, from where, and in what weather. The flight goes on from where it stopped.</p>
+          <div class="row"><span class="k">City</span><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><span>Search a city or an airport</span></div></div>
+          <div class="row"><span class="k">Recent</span><div class="opts"><span class="on">Rio de Janeiro</span><span>Montevideo</span><span>Cape Town</span></div></div>
+          <div class="row"><span class="k">Start</span><div class="opts"><span class="on">Over the city, 1,500 ft</span><span>On the runway</span><span>Final approach</span></div></div>
+          <div class="row"><span class="k">Weather</span><div class="opts"><span class="on">Clear</span><span>Scattered cloud</span><span>Overcast</span><span>Fog</span></div></div>
+          <div class="row"><span class="k">Wind</span><div class="opts"><span>Calm</span><span class="on">Light, 9 kt</span><span>Gusty, 22 kt</span></div></div>
+          <div class="row"><span class="k">Controls</span><div class="opts"><span class="on">Keyboard</span><span>Mouse as yoke</span></div></div>
+          <div class="go"><span>Restart</span><span class="p">Fly on</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>What is in the window</h2>
+<div class="notes">
+  <div class="note"><b>The scene</b><p>The city's ground from elevation tiles, its satellite images laid over it, the sea, the sky and the sun, drawn by Vulkan on the M700's GPU through <code>anv</code>, and by <code>lavapipe</code> where there is no GPU. Haze fades the far hills into the sky.</p></div>
+  <div class="note"><b>Any city</b><p>Searched by name or airport in the pause sheet. The tiles come through the Map Kit - the kit Maps already fetches and caches with - so a city flown once is there offline, and Maps gains a satellite view from the same door.</p></div>
+  <div class="note"><b>Three views</b><p>Chase, behind and above the Kestrel; Cockpit, the six instruments under the windscreen; Tower, the airfield's camera following the aircraft. <kbd>V</kbd> steps through them.</p></div>
+  <div class="note"><b>The graphics panel</b><p>Why it exists: frames a second, GPU and processor time per frame, draw calls, triangles and terrain tiles, the device and how the frame reaches the screen - and switches that turn each effect off so its cost is seen. <kbd>F3</kbd> hides it.</p></div>
+  <div class="note"><b>The instruments</b><p>Speed, altitude, heading, climb, throttle and flaps in a strip in the chase and tower views; in the cockpit, the six round instruments drawn as part of the 3D scene.</p></div>
+  <div class="note"><b>Time of day</b><p>Dawn, noon and dusk move the sun, and with it the sky's colours, the light on the slopes and the length of the shadows - the same scene lit three ways.</p></div>
+  <div class="note"><b>Pause</b><p>Where to start - on the runway, over the bay, on final approach - the weather and the wind, and whether the mouse is the yoke. Nothing else to configure.</p></div>
+</div>
+
+<h2>Questions for Diego</h2>
+<ol class="q">
+  <li><b>The imagery.</b> Esri's World Imagery, sharp to about half a metre in cities, or Sentinel-2 cloudless, open data at 10 metres - a city's blocks, not its streets?<br><span class="rec">Recommended: Esri's, as drawn here, with Sentinel-2 where Esri has nothing; the source is one line in the Map Kit, so it can change.</span></li>
+  <li><b>Buildings.</b> The satellite image is flat: towers are painted on the ground. OpenStreetMap has building outlines and many heights, which the Map Kit already reads for Maps; they could stand up as blocks with the photograph's roof on top.<br><span class="rec">Recommended: yes, as the second step, once the flat city flies.</span></li>
+  <li><b>The aircraft.</b> One light trainer, gentle to fly, or a choice of two (a trainer and something fast)?<br><span class="rec">Recommended: one, flown well; a second is a model file and a table of numbers later.</span></li>
+  <li><b>Controls.</b> Keyboard, and the mouse as a yoke? Kosmos has no gamepad driver yet.<br><span class="rec">Recommended: both, keyboard by default.</span></li>
+  <li><b>Sound.</b> The engine's note following the throttle, and the wind with speed, through the Synth Kit?<br><span class="rec">Recommended: yes, it is what makes it feel flown.</span></li>
+  <li><b>The graphics panel</b> open on the first start, since showing the API is the point?<br><span class="rec">Recommended: yes, open until it is closed, and remembered.</span></li>
+</ol>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var shell = document.getElementById("shell"), stage = document.getElementById("stage"), win = document.getElementById("win");
+  function fit() { var k = Math.min(1, shell.clientWidth / 1160); stage.style.transform = "scale(" + k + ")"; shell.style.height = (720 * k) + "px"; }
+  window.addEventListener("resize", fit); fit();
+
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- The ground: a height field and its colours, N by N ---- */
+  var N = 1024, M = N - 1;
+  var height = new Float32Array(N * N), photo = new Uint32Array(N * N), water = new Uint8Array(N * N);
+  var color = new Uint32Array(N * N), mpp = 17.5, VEX = 1.6, real = false;
+
+  var CITIES = {
+    rio:  { name: "Rio de Janeiro", code: "SDU · Santos Dumont", lat: -22.955, lon: -43.205, note: "Sugarloaf and Corcovado, Guanabara Bay" },
+    sf:   { name: "San Francisco", code: "SFO · San Francisco Intl", lat: 37.785, lon: -122.44, note: "the Golden Gate, Twin Peaks, the bay" },
+    cpt:  { name: "Cape Town", code: "CPT · Cape Town Intl", lat: -33.945, lon: 18.43, note: "Table Mountain, Lion's Head, the bay" },
+    hkg:  { name: "Hong Kong", code: "HKG · Chek Lap Kok", lat: 22.29, lon: 114.165, note: "Victoria Peak and the harbour" },
+    mvd:  { name: "Montevideo", code: "MVD · Carrasco", lat: -34.905, lon: -56.18, note: "the Rambla, the Cerro, the River Plate" }
+  };
+  var city = "rio";
+
+  function hash(x, y) { var h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function smooth(t) { return t * t * (3 - 2 * t); }
+  function noise(x, y) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = smooth(xf), v = smooth(yf);
+    var a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  function fbm(x, y) { var s = 0, amp = 0.5, f = 1; for (var o = 0; o < 6; o++) { s += amp * noise(x * f, y * f); f *= 2.03; amp *= 0.5; } return s; }
+
+  /* Offline, or a source that would not answer: an invented island, so the
+   * window still shows something flown over. */
+  function island() {
+    real = false; mpp = 17.5;
+    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+      var dx = (x - 512) / 512, dy = (y - 540) / 512, r = Math.sqrt(dx * dx * 0.9 + dy * dy * 1.4);
+      var fall = Math.max(0, 1 - r * 1.25);
+      var m = ((fbm(x / 140, y / 140) * 1.25 - 0.15) * fall * 230 + fall * fall * 60) * 3;
+      var ridge = 1 - Math.abs(noise(x / 92 + 9, y / 92 + 3) * 2 - 1);
+      m += ridge * ridge * fall * fall * 330;
+      var i = y * N + x, n = noise(x / 12, y / 12) * 0.18 + 0.91, c;
+      water[i] = m <= 0 ? 1 : 0;
+      height[i] = Math.max(m, 0) / mpp * VEX;
+      if (m <= 0) c = [28, 92, 150];
+      else if (m < 15) c = [214 * n, 198 * n, 150 * n];
+      else if (m > 600) c = [236 * n, 238 * n, 242 * n];
+      else if (m > 450) c = [120 * n, 116 * n, 104 * n];
+      else c = noise(x / 44, y / 44) > 0.55 ? [58 * n, 98 * n, 52 * n] : [92 * n, 132 * n, 66 * n];
+      photo[i] = (255 << 24) | ((c[2] | 0) << 16) | ((c[1] | 0) << 8) | (c[0] | 0);
+    }
+  }
+
+  /* The real place: elevation from Mapzen's terrain tiles (zoom 12, two by
+   * two) under satellite imagery (zoom 14, eight by eight), the same Web
+   * Mercator squares - what the Map Kit would fetch and cache. */
+  function tileOf(lat, lon, z) {
+    var n = Math.pow(2, z), r = lat * Math.PI / 180;
+    return { x: (lon + 180) / 360 * n, y: (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n };
+  }
+  function load(url) {
+    return new Promise(function (ok, no) {
+      var im = new Image(); im.crossOrigin = "anonymous";
+      im.onload = function () { ok(im); }; im.onerror = no; im.src = url;
+    });
+  }
+  function fetchCity(key) {
+    var c = CITIES[key], t = tileOf(c.lat, c.lon, 12), tx = Math.floor(t.x - 0.5), ty = Math.floor(t.y - 0.5);
+    mpp = 40075016 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, 12) / 512;
+    var elev = document.createElement("canvas"); elev.width = elev.height = 512;
+    var ectx = elev.getContext("2d");
+    var sat = document.createElement("canvas"); sat.width = sat.height = N;
+    var sctx = sat.getContext("2d");
+    var jobs = [];
+    for (var j = 0; j < 2; j++) for (var i = 0; i < 2; i++) (function (i, j) {
+      jobs.push(load("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/12/" + (tx + i) + "/" + (ty + j) + ".png")
+        .then(function (im) { ectx.drawImage(im, i * 256, j * 256); }));
+    })(i, j);
+    for (j = 0; j < 8; j++) for (i = 0; i < 8; i++) (function (i, j) {
+      jobs.push(load("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/14/" + (ty * 4 + j) + "/" + (tx * 4 + i))
+        .then(function (im) { sctx.drawImage(im, i * 128, j * 128, 128, 128); }));
+    })(i, j);
+    return Promise.all(jobs).then(function () {
+      var e = ectx.getImageData(0, 0, 512, 512).data, s = new Uint32Array(sctx.getImageData(0, 0, N, N).data.buffer);
+      function metres(x, y) { var k = (Math.min(511, y) * 512 + Math.min(511, x)) * 4; return e[k] * 256 + e[k + 1] + e[k + 2] / 256 - 32768; }
+      for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+        var gx = x / 2, gy = y / 2, x0 = gx | 0, y0 = gy | 0, fx0 = gx - x0, fy0 = gy - y0;
+        var m = metres(x0, y0) * (1 - fx0) * (1 - fy0) + metres(x0 + 1, y0) * fx0 * (1 - fy0) +
+                metres(x0, y0 + 1) * (1 - fx0) * fy0 + metres(x0 + 1, y0 + 1) * fx0 * fy0;
+        var idx = y * N + x;
+        water[idx] = m <= 0.5 ? 1 : 0;
+        height[idx] = Math.max(m, 0) / mpp * VEX;
+        photo[idx] = s[idx];
+      }
+      real = true;
+    });
+  }
+
+  var TIMES = {
+    dawn: { sun: [-0.75, 0.25, 0.35], tint: [1.10, 0.88, 0.76], amb: 0.62, top: [52, 70, 118], hor: [246, 176, 132], haze: [228, 170, 140] },
+    noon: { sun: [0.25, 0.85, 0.45], tint: [1.0, 1.0, 1.0], amb: 0.78, top: [58, 120, 206], hor: [178, 212, 240], haze: [190, 214, 236] },
+    dusk: { sun: [0.8, 0.18, -0.35], tint: [1.12, 0.80, 0.66], amb: 0.52, top: [38, 40, 84], hor: [236, 132, 96], haze: [196, 120, 112] }
+  };
+  var time = "noon", fx = { shadows: true, water: true, haze: true, wire: false };
+
+  /* The photograph lit by the hour: the slope toward the sun, and a short
+   * march toward it for shadows - what the terrain shader will do. */
+  function paint() {
+    var t = TIMES[time], s = t.sun, sl = Math.sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+    var sx = s[0] / sl, sy = s[1] / sl, sz = s[2] / sl;
+    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+      var i = y * N + x, h = height[i];
+      var hx = height[y * N + ((x + 1) & M)] - height[y * N + ((x - 1) & M)];
+      var hy = height[((y + 1) & M) * N + x] - height[((y - 1) & M) * N + x];
+      var nx = -hx, ny = 2, nz = -hy, nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      var lit = Math.max(0, (nx * sx + ny * sy + nz * sz) / nl);
+      if (fx.shadows && !water[i]) {
+        for (var k = 3; k < 72; k += 5) {
+          var qx = (x + sx * k) & M, qz = (y + sz * k) & M;
+          if (height[qz * N + qx] > h + sy * k * 1.1) { lit *= 0.45; break; }
+        }
+      }
+      var p = photo[i], r = p & 255, g = (p >> 8) & 255, b = (p >> 16) & 255;
+      var l = water[i] ? (fx.water ? 1.12 : 0.95) : t.amb + lit * 0.42;
+      r = r * l * t.tint[0]; g = g * l * t.tint[1]; b = b * l * t.tint[2];
+      if (water[i] && fx.water) { r += 10; g += 16; b += 24; }
+      color[i] = (255 << 24) | (Math.min(255, b | 0) << 16) | (Math.min(255, g | 0) << 8) | Math.min(255, r | 0);
+    }
+  }
+
+  /* ---- The frame: columns traced front to back ---- */
+  var cv = document.getElementById("scene"), W = 580, H = 337;
+  var off = document.createElement("canvas"); off.width = W; off.height = H;
+  var octx = off.getContext("2d"), img = octx.createImageData(W, H), px = new Uint32Array(img.data.buffer);
+  var ctx = cv.getContext("2d"), ybuf = new Float32Array(W);
+  var view = "chase", cam = { x: 512, y: 512, a: Math.PI / 2, h: 60 }, t0 = performance.now(), held = false, roll = 0, pitch = 0;
+
+  function mix(a, b, k) { return a + (b - a) * k; }
+  function render() {
+    var t = TIMES[time], horizon = H * 0.36 + pitch, top = t.top, hor = t.hor;
+    for (var row = 0; row < H; row++) {
+      var k = Math.min(1, Math.max(0, row / (horizon + 30)));
+      k = k * k;
+      px.fill((255 << 24) | ((mix(top[2], hor[2], k) | 0) << 16) | ((mix(top[1], hor[1], k) | 0) << 8) | (mix(top[0], hor[0], k) | 0), row * W, row * W + W);
+    }
+    var sinA = Math.sin(cam.a), cosA = Math.cos(cam.a), far = 900, haze = t.haze;
+    for (var i = 0; i < W; i++) ybuf[i] = H;
+    var dz = 0.5, z = 1;
+    while (z < far) {
+      var plx = -cosA * z - sinA * z, ply = sinA * z - cosA * z;
+      var prx = cosA * z - sinA * z, pry = -sinA * z - cosA * z;
+      var stepx = (prx - plx) / W, stepy = (pry - ply) / W;
+      plx += cam.x; ply += cam.y;
+      var inv = 260 / z, f = fx.haze ? Math.min(1, Math.pow(z / far, 1.5)) : Math.min(1, Math.pow(z / far, 6));
+      for (i = 0; i < W; i++) {
+        var mi = ((ply | 0) & M) * N + ((plx | 0) & M);
+        var hs = (cam.h - height[mi]) * inv + horizon;
+        if (hs < ybuf[i]) {
+          var c = color[mi], cr = c & 255, cg = (c >> 8) & 255, cb = (c >> 16) & 255;
+          if (fx.wire && ((((plx | 0) & 15) === 0) || (((ply | 0) & 15) === 0))) { cr = 140; cg = 230; cb = 255; }
+          cr = mix(cr, haze[0], f); cg = mix(cg, haze[1], f); cb = mix(cb, haze[2], f);
+          var val = (255 << 24) | ((cb | 0) << 16) | ((cg | 0) << 8) | (cr | 0);
+          var from = Math.max(0, hs | 0), to = ybuf[i] | 0;
+          for (var yy = from; yy < to; yy++) px[yy * W + i] = val;
+          ybuf[i] = hs;
+        }
+        plx += stepx; ply += stepy;
+      }
+      z += dz; dz += 0.006;
+    }
+    octx.putImageData(img, 0, 0);
+    var sun = t.sun, sxp = W / 2 + sun[0] * 160, syp = horizon - sun[1] * 240;
+    var grd = octx.createRadialGradient(sxp, syp, 2, sxp, syp, 46);
+    grd.addColorStop(0, "rgba(255,250,235,.95)"); grd.addColorStop(0.18, "rgba(255,240,210,.55)"); grd.addColorStop(1, "rgba(255,230,200,0)");
+    octx.fillStyle = grd; octx.beginPath(); octx.arc(sxp, syp, 46, 0, 7); octx.fill();
+
+    ctx.save();
+    ctx.fillStyle = "rgb(" + top.join(",") + ")"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.translate(cv.width / 2, cv.height / 2); ctx.rotate(roll); ctx.scale(1.12, 1.12);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, -cv.width / 2, -cv.height / 2, cv.width, cv.height);
+    ctx.restore();
+  }
+
+  /* ---- The flight: a gentle circuit over the city, which the page only pretends ---- */
+  var spark = document.getElementById("spark"), frames = [], ready = false;
+  function ground() { return height[((cam.y | 0) & M) * N + ((cam.x | 0) & M)]; }
+  var CRUISE = function () { return 457 / mpp * VEX; };      /* 1,500 ft above the ground */
+  function tick(now) {
+    var s = (now - t0) / 1000;
+    if (ready && !held) {
+      if (view === "tower") {
+        cam.x = 470; cam.y = 600; cam.h = ground() + 8; cam.a = Math.PI / 2 + Math.sin(s * 0.15) * 0.5; roll = 0; pitch = 12;
+      } else {
+        roll = Math.sin(s * 0.3) * 0.15;
+        cam.a += -roll * 0.004;
+        cam.x += -Math.sin(cam.a) * 0.35; cam.y += -Math.cos(cam.a) * 0.35;
+        cam.h += (Math.max(ground() + CRUISE(), CRUISE()) - cam.h) * 0.02;
+        if (Math.hypot(cam.x - 512, cam.y - 512) > 300) cam.a += 0.008;
+        pitch = view === "cockpit" ? -40 : 0;
+      }
+    }
+    var a0 = performance.now();
+    if (ready) render();
+    frames.push(performance.now() - a0); if (frames.length > 60) frames.shift();
+    if (ready) drawHud(s);
+    if (!reduced) requestAnimationFrame(tick);
+  }
+
+  function drawHud(s) {
+    var plane = document.getElementById("plane");
+    plane.style.transform = "rotate(" + (roll * 57.3) + "deg)";
+    var hdg = ((360 - (cam.a * 57.3) % 360) + 360 + 90) % 360;
+    document.getElementById("hdg").textContent = (Math.round(hdg) % 360 + "").padStart(3, "0") + "°";
+    document.getElementById("alt").textContent = Math.round(cam.h / VEX * mpp * 3.28 / 10) * 10 + "";
+    document.getElementById("alt").textContent = Number(document.getElementById("alt").textContent).toLocaleString("en-US");
+    document.getElementById("ias").textContent = Math.round(96 + Math.sin(s * 0.5) * 3);
+    var vs = Math.round(Math.cos(s * 0.4) * 160 / 10) * 10;
+    document.getElementById("vs").textContent = (vs >= 0 ? "+" : "") + vs;
+    var pts = frames.map(function (f, i) { var ms = 4.6 + (f % 1.7); return (i * 234 / 59).toFixed(1) + "," + (38 - ms / 16.7 * 34).toFixed(1); }).join(" ");
+    spark.innerHTML = '<line x1="0" x2="234" y1="4" y2="4" stroke="currentColor" stroke-opacity=".28" stroke-dasharray="3 3"/>' +
+      '<text x="232" y="13" text-anchor="end" font-size="9" fill="currentColor" fill-opacity=".6">16.7 ms</text>' +
+      '<polyline points="' + pts + '" fill="none" stroke="var(--w-accent)" stroke-width="1.6"/>';
+    var cost = (fx.shadows ? 1.4 : 0) + (fx.water ? 0.9 : 0) + (fx.haze ? 0.3 : 0) + (fx.wire ? 1.1 : 0);
+    document.getElementById("gpu").textContent = (3.2 + cost).toFixed(1) + " ms";
+    document.getElementById("draws").textContent = 140 + (fx.shadows ? 32 : 0) + (fx.water ? 12 : 0);
+    document.getElementById("tris").textContent = (fx.water ? 1.42 : 1.06).toFixed(2) + " M";
+  }
+
+  /* Choosing a city: fetched, lit, and the flight begun over its middle. */
+  function fly(key) {
+    city = key; ready = false;
+    var c = CITIES[key], status = document.getElementById("status");
+    status.textContent = "Fetching " + c.name + "'s imagery and terrain…"; status.style.display = "";
+    document.getElementById("cityname").textContent = c.name;
+    document.getElementById("wherename").textContent = c.code;
+    document.getElementById("wherenote").textContent = c.note;
+    fetchCity(key).catch(function () { island(); }).then(function () {
+      paint();
+      cam.x = 512; cam.y = 512; cam.a = Math.PI / 2; cam.h = ground() + CRUISE();
+      if (!real) { document.getElementById("wherename").textContent = "Offline: an invented island"; document.getElementById("wherenote").textContent = "the imagery and terrain could not be fetched"; }
+      document.getElementById("credit").style.display = real ? "" : "none";
+      status.style.display = "none"; ready = true;
+      if (reduced || held) { render(); drawHud(0); }
+    });
+  }
+
+  /* ---- The cockpit's six ---- */
+  function gauges() {
+    var g = document.getElementById("gauges"), names = ["Airspeed", "Attitude", "Altitude", "Turn", "Heading", "Climb"], out = "";
+    for (var i = 0; i < 6; i++) {
+      var cx = 60 + (i % 3) * 120 + (i < 3 ? 0 : 0) + (i >= 3 ? 0 : 0), cy = i < 3 ? 56 : 160;
+      cx = 120 + (i % 3) * 240; cx = 90 + (i % 3) * 270;
+      out += '<circle cx="' + cx + '" cy="' + cy + '" r="48" fill="#0d1015" stroke="#59606d" stroke-width="3"/>';
+      for (var t = 0; t < 12; t++) {
+        var a = t / 12 * Math.PI * 2, x1 = cx + Math.cos(a) * 40, y1 = cy + Math.sin(a) * 40, x2 = cx + Math.cos(a) * 46, y2 = cy + Math.sin(a) * 46;
+        out += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#d8dde6" stroke-width="2"/>';
+      }
+      if (i === 1) {
+        out += '<clipPath id="ai"><circle cx="' + cx + '" cy="' + cy + '" r="38"/></clipPath><g clip-path="url(#ai)"><rect x="' + (cx - 40) + '" y="' + (cy - 40) + '" width="80" height="40" fill="#3c7fd6"/><rect x="' + (cx - 40) + '" y="' + cy + '" width="80" height="40" fill="#7a5532"/></g>' +
+               '<path d="M' + (cx - 22) + ' ' + cy + ' h14 l8 6 l8 -6 h14" fill="none" stroke="#f5bd2e" stroke-width="3"/>';
+      } else {
+        var na = [-0.6, 0, 0.9, 0, -1.3, 0.3][i];
+        out += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + Math.cos(na - 1.57) * 34).toFixed(1) + '" y2="' + (cy + Math.sin(na - 1.57) * 34).toFixed(1) + '" stroke="#f4f6f9" stroke-width="3" stroke-linecap="round"/><circle cx="' + cx + '" cy="' + cy + '" r="4" fill="#f4f6f9"/>';
+      }
+      out += '<text x="' + cx + '" y="' + (cy + 24) + '" text-anchor="middle" font-size="9" fill="#a3adbf" font-family="IBM Plex Sans, sans-serif">' + names[i].toUpperCase() + '</text>';
+    }
+    g.innerHTML = out;
+  }
+  gauges();
+
+  /* ---- The controls ---- */
+  function choose(group, attr, fn) {
+    Array.prototype.forEach.call(document.querySelectorAll("#" + group + " span"), function (el) {
+      function go() {
+        Array.prototype.forEach.call(document.querySelectorAll("#" + group + " span"), function (o) { o.classList.toggle("on", o === el); });
+        fn(el.getAttribute(attr));
+      }
+      el.addEventListener("click", go);
+      el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    });
+  }
+  function setView(v) {
+    view = v;
+    var cockpit = v === "cockpit";
+    document.getElementById("plane").style.display = v === "chase" ? "" : "none";
+    document.getElementById("panel").hidden = !cockpit;
+    document.getElementById("gauges").style.display = cockpit ? "" : "none";
+    document.getElementById("strip").style.display = cockpit ? "none" : "";
+    document.getElementById("keys").style.display = cockpit ? "none" : "";
+    if (v !== "tower") { cam.h = Math.max(cam.h, 150); }
+    if (reduced || held) render(), drawHud(0);
+  }
+  choose("views", "data-view", setView);
+  choose("times", "data-time", function (t) { time = t; paint(); if (reduced || held) render(); });
+  Array.prototype.forEach.call(document.querySelectorAll(".sw"), function (el) {
+    function go() { el.classList.toggle("on"); fx[el.getAttribute("data-sw")] = el.classList.contains("on"); paint(); if (reduced || held) render(), drawHud(0); }
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+  var sheet = document.getElementById("sheet"), pb = document.getElementById("pausebtn");
+  function pause() { var on = !sheet.classList.contains("show"); sheet.classList.toggle("show", on); pb.setAttribute("aria-pressed", on); held = on || document.getElementById("still").getAttribute("aria-pressed") === "true"; }
+  pb.addEventListener("click", pause);
+  document.getElementById("pauseib").addEventListener("click", pause);
+  document.getElementById("still").addEventListener("click", function () {
+    var on = this.getAttribute("aria-pressed") !== "true"; this.setAttribute("aria-pressed", on); held = on || sheet.classList.contains("show");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("#cities button"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll("#cities button"), function (o) { o.setAttribute("aria-pressed", o === b); });
+      fly(b.getAttribute("data-city"));
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".bar [data-look]"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".bar [data-look]"), function (o) { o.setAttribute("aria-pressed", o === b); });
+      win.className = "win " + b.getAttribute("data-look");
+    });
+  });
+
+  fly("rio");
+  if (!reduced) requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

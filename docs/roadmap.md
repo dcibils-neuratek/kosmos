@@ -11999,7 +11999,15 @@ chose "GPU first: G3, G6, G7, then simulator"): G3, a window and `vkcube`;
 then G6, `intelgpu` for many programs, and G7, `anv` on the M700; then
 the flight simulator, designed first. G4, G5, G8, G9 and the daily-driver
 list follow it, in their order; the simulator takes G9's full-screen flip
-when that lands. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
+when that lands. **The simulator flies over real places** (Diego, 19
+November 2026: "Can we use real world maps for the flight simulator?", "So
+i can choose q city to fly", "And see the actual satellite images"):
+designed in `docs/flight.md`, `flight.html` and `flight-architecture.png`,
+for Diego to agree - any city searched by name, its terrain from Mapzen's
+elevation tiles and its satellite imagery from Esri, through the `tiles`
+server grown to several sources (F1), the Map Kit's elevation (F2), the 3D
+Kit on Vulkan and its terrain (F3, F4), `flight.lua` (F5), and sound,
+weather and shadows (F6); Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 0.12.9** (18.929): the render engine and the blitter on execlists, a hang
 watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
 contexts - the protocol, the stand-in under QEMU, images kept across runs
@@ -12009,7 +12017,24 @@ type and the device described; G7b memory and submission over G6e's
 protocol; G7c `vkcube` in a window; G7d dEQP-VK on the M700. **G7a built in 0.12.11**
 (`testing.md` 18.931): `anv` lists the M700's GPU, "Intel(R) HD Graphics
 530 (SKL GT2)", finds none under QEMU without an error, and `brw` compiles
-SPIR-V to Gen9 in a Kosmos process (`x86-anv`). **G7b next.**
+SPIR-V to Gen9 in a Kosmos process (`x86-anv`). **G7b built in 0.12.12**
+(`testing.md` 18.932): a device on the HD 530, `vkCmdFillBuffer` and a
+compute dispatch read back right, checked by the M700 suite's *Vulkan on
+the GPU*. **G7c next.**
+Owed from G7b:
+- **Unbinding waits for the whole context to go idle.** The driver
+  refuses an unbind while the context is busy, so a program freeing
+  memory mid-frame waits for the GPU. A buffer's own last use, from the
+  timeline, is the finer answer.
+- **Binding scans every binding for overlap.** It is linear in the
+  context's bindings; a tree when a program binds thousands.
+- **What the GPU reads where nothing is bound.** `anv`'s null bindings
+  are accepted and do nothing, as i915's are. i915 points unbound pages
+  at a scratch page, and whether `intelgpu` does the same, so a prefetch
+  past a buffer's end reads zeros and not a fault, is to be checked.
+- **Several queues.** One context a device means one queue; a second
+  queue needs a second address space shared by two contexts, which the
+  GPU Kit does not offer yet.
 Owed from G7a:
 - **The device's revision and topology from the driver.** `GPU_OP_STATS`
   says the PCI id and nothing else, so the revision is nought and the

@@ -5057,3 +5057,45 @@ a machine without one. The compute shader becomes 20 Gen9 instructions
 (288 bytes, no spills) on both. Told to compile for a newer Intel GPU
 instead, the test fails as it should, so the check really looks at which
 GPU it compiled for.
+
+## 20 November 2026 - The M700's GPU does Vulkan's work
+
+**In short.** For the first time a Vulkan program on Kosmos has had real
+work done by the M700's graphics chip. It filled half a buffer with a
+fixed value and had a small compute shader write the other half, and
+every one of the 16,384 numbers came back right. Making the device takes
+four milliseconds, and each piece of work about four to six and a half.
+0.12.12.
+
+**What.** Yesterday the driver could see the GPU but could not use it.
+Using it takes three things. The driver's memory has to be placed in
+the GPU's own address space: each buffer is a Kosmos shared region,
+bound where the driver asks. Its work has to be handed over: a list of
+commands, run in the program's own "room" on the GPU, made in G6. And it
+has to know when the work is done: a number on a page the GPU writes,
+or a pulse that wakes it.
+
+**Something that hid itself.** The first runs died with no message.
+Getting a message out showed the C library itself had crashed while
+formatting one. Mesa had written `%m`, a Linux shorthand for "the reason
+the last call failed", which Kosmos's formatter did not know. So the
+error report crashed instead of reporting the error. With `%m` added,
+the real error appeared: the driver hands out small buffers carved from
+bigger ones, and maps one by mapping its big buffer at an offset, which
+Kosmos had refused. Now a big buffer is mapped once and shared by all
+the small ones carved from it.
+
+**Why it was done this way.** The Linux driver gives each program
+several queues, each able to use the memory. Kosmos gives a program one
+GPU room per device, made as the device is, because the driver places
+memory before any queue exists. One queue is enough for now, and the
+roadmap says what a second would need.
+
+**Measured.** On the M700: the device in 4.4 ms, the fill in 3-4 ms and
+the compute shader in 6.5 ms, each timed from writing the commands to
+reading the answer. To prove the check reads real GPU work, every batch
+was swapped for an empty one. The GPU still said "done", but the buffer
+held nothing, and the check failed as it should. The M700's own test
+suite now runs this every time.
+
+**Next.** G7c: the spinning cube, `vkcube`, drawn by the GPU in a window.

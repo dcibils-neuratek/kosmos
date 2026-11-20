@@ -1,0 +1,26 @@
+// Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+// The compute shader G7b runs on the M700's GPU (`anvtest.c`,
+// `docs/gpu3d.md`): each invocation writes a word worked out from its
+// index into a buffer whose address it is handed as a push constant - a
+// buffer device address, so there is no descriptor set to make.
+#version 460
+#extension GL_EXT_buffer_reference : require
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430) buffer Words {
+    uint v[];
+};
+
+layout(push_constant) uniform Where {
+    Words words;
+    uint count;
+} where;
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i < where.count) {
+        where.words.v[i] = i * 3u + 7u;
+    }
+}

@@ -11,14 +11,15 @@
  *
  * - a buffer object is a **region**, its handle the region's capability
  *   plus one (so a valid handle is never nought);
- * - binding it is `GPU_OP_BIND` at the address `anv` chose for it, into
- *   each of the device's contexts - Xe's model, softpinned, no relocations;
+ * - binding it is `GPU_OP_BIND` at the address `anv` chose for it, in
+ *   the device's context - Xe's model, softpinned, no relocations;
  * - a queue is a **context**, and a submission `GPU_OP_EXEC`;
  * - a `vk_sync` is a **point on a context's timeline**, waited for by the
  *   fence page and `GPU_OP_FENCE_WAIT`'s pulse.
  *
  * G7a is the physical device - enumerated, described, its sync types
- * named. Creating a logical device is G7b's, and refuses until then.
+ * named; G7b the logical device, one context on the render engine that
+ * its queue submits to, and its buffer objects bound there.
  */
 
 #include <stdint.h>
@@ -32,6 +33,7 @@ struct anv_physical_device;
 struct anv_device;
 struct anv_kmd_backend;
 struct vk_device;
+struct anv_queue;
 
 /* The device, where there is one: Mesa's `enumerate` hook. */
 VkResult anv_kosmos_enumerate(struct vk_instance *instance);
@@ -47,6 +49,11 @@ void anv_kosmos_physical_device_init_sync_types(struct anv_physical_device *devi
 VkResult anv_kosmos_device_setup(struct anv_device *device);
 bool anv_kosmos_device_destroy(struct anv_device *device);
 VkResult anv_kosmos_device_check_status(struct vk_device *device);
+
+/* A queue: the device's context, on the render engine. */
+VkResult anv_kosmos_create_engine(struct anv_device *device, struct anv_queue *queue,
+                                  const VkDeviceQueueCreateInfo *pCreateInfo);
+void anv_kosmos_destroy_engine(struct anv_device *device, struct anv_queue *queue);
 
 const struct anv_kmd_backend *anv_kosmos_kmd_backend_get(void);
 

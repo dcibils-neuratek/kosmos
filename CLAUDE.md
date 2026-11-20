@@ -164,6 +164,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Kosmos Mail - built (M0-M6); the next Mail, N1-N5, agreed: `docs/mail.md`, `docs/mail.html`, `docs/mail-architecture.png`
 - Kosmos Sheets - designed and agreed, after Write; not built: `docs/sheets.md`, `docs/sheets.html`, `docs/sheets-architecture.png`
 - Kosmos Present - designed and agreed, after Write; not built: `docs/present.md`, `docs/present.html`, `docs/present-architecture.png`
+- Flight - a flight simulator over a real city, its terrain and satellite imagery from tiles, drawn by Vulkan - designed 19 November, for Diego to agree, not built (after G7): `docs/flight.md`, `docs/flight.html`, `docs/flight-architecture.png`
 - The Graph Kit - a program as a graph of tasks - designed 1 November, for Diego to decide, not built: `docs/graph.md`, `docs/graph-architecture.png`
 - Everything `state.md` said before 19 November 2026, moved whole: `docs/state-history.md`
 - Glossary: `docs/glossary.md`

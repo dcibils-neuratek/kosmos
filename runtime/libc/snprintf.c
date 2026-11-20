@@ -25,6 +25,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <errno.h>
+#include <string.h>
 #include <math.h>
 #include <panic.h>
 
@@ -502,9 +504,45 @@ static void format_double_digits(struct out *o, const struct spec *sp,
     }
 }
 
+/*
+ * The panic for a conversion this does not have, saying which and in what:
+ * "unsupported conversion specifier" alone sent G7b hunting through Mesa
+ * for a format string (`testing.md` 18.932). Composed by hand, since the
+ * formatter is what failed; the format is cut at sixty characters.
+ */
+static void unsupported(const char *start, const char *at) __attribute__((noreturn));
+
+static void unsupported(const char *start, const char *at)
+{
+    static char said[160];
+    static const char head[] = "vsnprintf: unsupported conversion specifier '";
+    size_t n = 0, i;
+
+    for (i = 0; head[i] != '\0'; i++) {
+        said[n++] = head[i];
+    }
+
+    said[n++] = (*at >= 32 && *at < 127) ? *at : '?';
+    said[n++] = '\'';
+    said[n++] = ' ';
+    said[n++] = 'i';
+    said[n++] = 'n';
+    said[n++] = ' ';
+    said[n++] = '"';
+
+    for (i = 0; start[i] != '\0' && i < 60; i++) {
+        said[n++] = (start[i] >= 32 && start[i] < 127) ? start[i] : '?';
+    }
+
+    said[n++] = '"';
+    said[n] = '\0';
+    panic(said);
+}
+
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
 {
     struct out o = { buf, size, 0 };
+    const char *start;
 
     while (*fmt != '\0') {
         struct spec sp = { false, false, false, false, false, 0, -1 };
@@ -515,6 +553,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
             continue;
         }
 
+        start = fmt;
         fmt++;
 
         for (;;) {
@@ -644,6 +683,24 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
             emit(&o, '%');
             break;
 
+        case 'm': {
+            /* glibc's: the sentence for `errno`, taking no argument. Ported
+             * code writes it after a call that failed - Mesa's "...: %m" -
+             * and this panicked on it, hiding the failure it was reporting
+             * (`testing.md` 18.932). */
+            const char *s = strerror(errno);
+            size_t n = 0;
+
+            while (s[n] != '\0') {
+                n++;
+            }
+
+            if (!sp.left) { pad(&o, &sp, n, ' '); }
+            emit_str(&o, s, n);
+            if (sp.left)  { pad(&o, &sp, n, ' '); }
+            break;
+        }
+
         default:
             /*
              * An unsupported conversion. Printing it literally would produce
@@ -651,7 +708,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
              * argument has already been left unconsumed, so everything after
              * it would be garbage too.
              */
-            panic("vsnprintf: unsupported conversion specifier");
+            unsupported(start, fmt);
         }
 
         fmt++;

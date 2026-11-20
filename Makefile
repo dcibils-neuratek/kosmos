@@ -370,7 +370,7 @@ ifdef TEST
   # here and they call it directly. The shipping image needs none of it.
   SRCS      += runtime/libc/malloc.c \
                runtime/libc/math.c runtime/libc/snprintf.c \
-               runtime/libc/strtod.c
+               runtime/libc/strtod.c runtime/libc/strerror.c
   TESTDEFS  := -DKOSMOS_TEST -Itests
   # The user side needs the define too: main.c grows a chunk to dispatch to.
   UTESTDEFS := -DKOSMOS_TEST
@@ -583,6 +583,7 @@ USER_LIBC := runtime/libc/string.c \
              runtime/libc/math.c \
              runtime/libc/fenv.c \
              runtime/libc/snprintf.c \
+             runtime/libc/strerror.c \
              runtime/libc/strtod.c \
              runtime/libc/stdio.c \
              runtime/libc/scan.c \
@@ -4701,16 +4702,18 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 # object and archives the list `mesa_build.py` read from `anv`'s own link
 # (`anv.txt`), x86-64 only, as `anv` is. The kit reaches Intel's compiler
 # too, so it is compiled with Mesa's defines and its Intel headers; its
-# shader is SPIR-V compiled on the host.
+# shaders are SPIR-V compiled on the host - `store.comp` for the compiler
+# alone, `write.comp` for a dispatch on the GPU (G7b).
 #
 ANVTEST_OBJS := $(UBUILD)/user/kits/anvtest/anvtest.c.o
 ANVTEST_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/anvtest.elf)
 
-$(UBUILD)/gen/anvtest/store_comp.h: user/kits/anvtest/store.comp
+$(UBUILD)/gen/anvtest/%_comp.h: user/kits/anvtest/%.comp
 	@mkdir -p $(dir $@)
-	glslangValidator -V --target-env vulkan1.3 --quiet --vn store_comp -o $@ $<
+	glslangValidator -V --target-env vulkan1.3 --quiet --vn $*_comp -o $@ $<
 
 $(UBUILD)/user/kits/anvtest/anvtest.c.o: user/kits/anvtest/anvtest.c $(UBUILD)/gen/anvtest/store_comp.h \
+        $(UBUILD)/gen/anvtest/write_comp.h \
         $(MESA_DIR)/.built $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) @$(MESA_DIR)/defines.txt $(MESA_INCLUDES) \
@@ -5408,7 +5411,7 @@ ifdef TEST
               user/hello-x86_64.S user/faulty-x86_64.S user/pointer-x86_64.S \
               runtime/libc/malloc.c \
               runtime/libc/math.c runtime/libc/snprintf.c \
-              runtime/libc/strtod.c
+              runtime/libc/strtod.c runtime/libc/strerror.c
 
   # `-Iuser` because the blobs include `syscall.h` from there, and `-Itests`
   # for the suite's own headers. `$(TESTDEFS)` carries `-DKOSMOS_TEST`.

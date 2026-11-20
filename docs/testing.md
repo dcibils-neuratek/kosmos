@@ -38813,3 +38813,90 @@ ticks a round trip. `x86-cafesa3d-2`'s reopened plane differed by
 now in `roadmap.md` as a race to find. Run alone, both pass: 60 and 74
 checks in 254 s. The gate is over its ten-minute budget, and `x86-dock`
 (364 s) and `x86-cafesa3d-2` (346 s) are still the suites to split.
+
+## 18.932 Vulkan's first work on the M700's GPU
+
+**In short:** G7b (`docs/gpu3d.md` §6). Intel's Vulkan driver, `anv`, now
+makes a device on the M700's HD 530 and runs work on it. A 64 KB buffer is
+filled half by `vkCmdFillBuffer` and half by a compute shader that writes
+`i * 3 + 7` into each word. The processor reads all 16,384 words back
+right, and each half leaves the other alone. Making the device takes
+4.4 ms, the fill 3-4 ms and the dispatch 6.5 ms, each counted from
+recording the commands to reading the answer. The submissions go over
+G6e's protocol: one context of the device's own, buffers bound into its
+address space, and a batch run with a point on its timeline. The GPU's
+driver, `intelgpu`, needed no change.
+
+- **One context a device.** `anv` binds buffers before any queue exists,
+  so the context belongs to the device: it is made when the device is,
+  and its id is the device's `vm_id`. Kosmos offers one queue family with
+  one queue. The GPU Kit offers no way to make another address space,
+  so that is all there is.
+- **A submission** is `kg_exec`: the batch's address and length, the next
+  point on the context's timeline, and up to four waits on other
+  contexts. A wait on the same context is already implied, since the
+  engine runs one batch after another. Waits past four are waited on the
+  processor first. A submission with nothing in it signals at the point
+  already given.
+- **Unbinding waits for the context to go idle.** The driver refuses to
+  unbind from a busy context (`GPU_ERR_BUSY`), so `anv` waits on the fence
+  and asks again. That is correct, and slow if a program frees memory
+  while the GPU is busy; it is in `roadmap.md`.
+- **The null bindings**, which `anv` asks for so a prefetch past a
+  buffer's end reads zeros, are accepted and do nothing, as i915's
+  backend does. Whether the driver's unbound pages read a scratch page,
+  as i915's do, is open and in `roadmap.md`.
+- **The state tables** reserve 2 GB of addresses with one anonymous
+  `mmap`, where Linux uses a `memfd`. Kosmos hands a page out only when it
+  is first touched, so the reservation costs nothing until it is used.
+- **A slab's buffers share one mapping.** `anv` hands out small buffers
+  from a larger one and maps each as its slab at the buffer's offset.
+  Nebula maps a region only whole. So the backend maps a region once, the
+  first time any of its buffers is mapped, returns that address plus the
+  offset, and unmaps it when the last of its buffers lets go. That is one
+  mapping a slab, not one a buffer.
+
+**Found on the way, in the C library**, which is why the whole gate ran:
+- **`%m`**, glibc's sentence for `errno`, made `vsnprintf` panic. That
+  happened inside `anv`'s "mmap failed: %m", so it hid the very failure
+  being reported. It now prints the sentence and takes no argument. A
+  guest test holds it, and the argument after it is still read, which
+  shows none was taken.
+- **The panic named nothing.** It said "unsupported conversion
+  specifier", and since the panic ended the process before the Lua side
+  could drain the spill ring, it did not even say that. It now names the
+  specifier and the format: `'m' in "%m"`. The test kit also hands the
+  console to the C library, as `vulkantest` does, so a panic inside Mesa
+  is heard.
+- **`strerror`** knew four codes and said "unknown error" for EINVAL and
+  ENOMEM. It now knows the sixteen that ported code reports most. It
+  moved out of `stdio.c` into `strerror.c`, which needs nothing, so the
+  test kernel can link it.
+
+```
+M700 (0.12.10 running; anvtest.elf put by the M700 suite):
+  Vulkan on the GPU:  anvtest run: device=4606us fill=8192/8192,8192/8192
+                      3921us pipeline=1412us dispatch=8192/8192,8192/8192 6464us
+                      4 of 4 checks
+  control:            every batch replaced by anv's trivial batch, so the
+                      fences still signal and nothing is drawn -
+                      FAIL: a fill read back 0/8192, the rest 8192/8192
+                      FAIL: a dispatch read back 0/8192, the rest 0/8192
+  before the fixes:   panic: vsnprintf: unsupported conversion specifier (exit 70);
+                      then 'm' in "%m"; then mesa="mmap failed: unknown error
+                      (VK_ERROR_MEMORY_MAP_FAILED)" - a slab's buffer mapped at
+                      an offset, which the backend refused
+x86-anv (QEMU):       devices=0, Gen9's instructions as before, and run()
+                      says failed=no-device and nothing more
+```
+
+The M700 suite, `tools/run_m700.py`, now has *Vulkan on the GPU*. It puts
+the stripped image from this Mac, since nothing installs it, and keeps the
+three times as numbers beside each run's.
+
+**The gate** (the C library and the Makefile changed, so every suite that
+stands on them): 148 suites in 705 s (11:44), every one passing, `x86-anv`
+among them with `run failed=no-device`. `x86-cafesa3d-2` and
+`x86-display-1`, which failed under load in 18.931, passed this time. The
+gate is still over its ten-minute budget, and `x86-dock` (359 s) and
+`x86-cafesa3d-2` (333 s) are still the suites to split.

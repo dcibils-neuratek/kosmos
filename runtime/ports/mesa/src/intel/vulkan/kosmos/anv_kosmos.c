@@ -20,9 +20,17 @@
  *    endpoint that is waiting, so nothing waits for a clock to come round.
  *    Timelines are Mesa's emulation over the point (`vk_sync_timeline`).
  *
- * 3. **The buffer objects**: regions, created, mapped and dropped here.
- *    Binding and submission are G7b's, and refuse with a sentence until
- *    then - as does creating a logical device, which needs both.
+ * 3. **The buffer objects**: regions, created, mapped and dropped here,
+ *    and bound in the device's context at the address `anv` chose.
+ *
+ * 4. **The logical device and its queue** (G7b): the device makes one
+ *    context on the render engine - its page table is the device's
+ *    address space, Xe's VM - and every queue submits to it, so `anv`'s
+ *    buffer objects, bound before any queue exists, are where each
+ *    queue's batches look. `anv` offers one queue without VM control
+ *    (`has_vm_control` false), so one context is exact rather than a
+ *    limit. A submission is `GPU_OP_EXEC` with the next value of the
+ *    context's timeline, which every signalled point is given.
  */
 
 #include <errno.h>
@@ -39,6 +47,7 @@
 
 #include "util/os_time.h"
 #include "util/simple_mtx.h"
+#include "util/stack_array.h"
 #include "vk_sync_timeline.h"
 
 unsigned long posix_ticks_for_ns(long long ns);
@@ -55,6 +64,7 @@ unsigned long posix_ticks_for_ns(long long ns);
 struct kosmos_fence {
    uint32_t context;
    const void *map;
+   uint64_t given;          /* the last value a submission was given */
 };
 
 static simple_mtx_t lock = SIMPLE_MTX_INITIALIZER;
@@ -80,15 +90,23 @@ grow(void **array, uint32_t *room, uint32_t need, size_t size)
    return true;
 }
 
+/* A context's entry; NULL for one not known. Called with the lock held. */
+static struct kosmos_fence *
+entry_of(uint32_t context)
+{
+   for (uint32_t i = 0; i < fence_count; i++) {
+      if (fences[i].context == context)
+         return &fences[i];
+   }
+   return NULL;
+}
+
 /* The page a context's timeline is read from; NULL for one not known. */
 static const void *
 fence_of(uint32_t context)
 {
-   for (uint32_t i = 0; i < fence_count; i++) {
-      if (fences[i].context == context)
-         return fences[i].map;
-   }
-   return NULL;
+   const struct kosmos_fence *f = entry_of(context);
+   return f != NULL ? f->map : NULL;
 }
 
 /* Every waiting thread told that something changed on the processor's
@@ -194,6 +212,9 @@ point_wait_many(struct vk_device *device, uint32_t count,
                 enum vk_sync_wait_flags flags, uint64_t abs_timeout_ns)
 {
    const bool any = (flags & VK_SYNC_WAIT_ANY) != 0;
+   /* PENDING asks only that a submission will signal it - what Mesa's
+    * submit thread waits for before it hands on a wait. */
+   const bool pending = (flags & VK_SYNC_WAIT_PENDING) != 0;
    long gpu = kg_device();
    long endpoint = -1;
    bool *asked = NULL;
@@ -205,7 +226,8 @@ point_wait_many(struct vk_device *device, uint32_t count,
 
       simple_mtx_lock(&lock);
       for (uint32_t i = 0; i < count; i++) {
-         if (point_reached_locked(to_point(waits[i].sync)))
+         const struct kosmos_point *p = to_point(waits[i].sync);
+         if (pending ? p->cpu_signaled || p->submitted : point_reached_locked(p))
             reached++;
       }
       if (any ? reached > 0 || count == 0 : reached == count) {
@@ -240,7 +262,7 @@ point_wait_many(struct vk_device *device, uint32_t count,
        * driver pulses at once if it is already reached. */
       for (uint32_t i = 0; i < count; i++) {
          const struct kosmos_point *p = to_point(waits[i].sync);
-         if (!asked[i] && p->submitted && !p->cpu_signaled) {
+         if (!pending && !asked[i] && p->submitted && !p->cpu_signaled) {
             asked[i] = true;
             if (kg_fence_wait(gpu, p->context, p->value, endpoint, 1) != GPU_OK)
                result = VK_ERROR_DEVICE_LOST;
@@ -378,25 +400,138 @@ anv_kosmos_physical_device_init_memory_types(struct anv_physical_device *device)
 
 /* --- The logical device: G7b -------------------------------------------- */
 
+/* The device's context's fence entry registered; false when out of memory. */
+static bool
+fence_register(uint32_t context, const void *map)
+{
+   bool ok;
+   simple_mtx_lock(&lock);
+   ok = grow((void **)&fences, &fence_room, fence_count + 1, sizeof(*fences));
+   if (ok)
+      fences[fence_count++] = (struct kosmos_fence){ context, map, 0 };
+   simple_mtx_unlock(&lock);
+   return ok;
+}
+
+static void
+fence_forget(uint32_t context)
+{
+   simple_mtx_lock(&lock);
+   for (uint32_t i = 0; i < fence_count; i++) {
+      if (fences[i].context == context) {
+         fences[i] = fences[--fence_count];
+         break;
+      }
+   }
+   simple_mtx_unlock(&lock);
+}
+
+/* Until the context has done everything it was given, or it has hung: a
+ * thread's own endpoint and the driver's pulse, never a loop on a clock. */
+static VkResult
+context_idle(struct anv_device *device)
+{
+   const uint32_t context = device->vm_id;
+   const void *map;
+   uint64_t given;
+
+   simple_mtx_lock(&lock);
+   struct kosmos_fence *f = entry_of(context);
+   map = f != NULL ? f->map : NULL;
+   given = f != NULL ? f->given : 0;
+   simple_mtx_unlock(&lock);
+
+   if (map == NULL || kg_reached(map) >= given)
+      return VK_SUCCESS;
+
+   long endpoint = kosmos_endpoint();
+   if (endpoint < 0)
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   VkResult result = VK_SUCCESS;
+   if (kg_fence_wait(kg_device(), context, given, endpoint, 1) != GPU_OK) {
+      result = vk_device_set_lost(&device->vk, "the GPU would not wait for its context");
+   } else {
+      while (kg_reached(map) < given) {
+         struct message msg;
+         uint64_t sender;
+         (void)kosmos_receive(endpoint, &msg, &sender, 0, 0);
+      }
+   }
+   (void)kosmos_endpoint_destroy(endpoint);
+   return result;
+}
+
 VkResult
 anv_kosmos_device_setup(struct anv_device *device)
 {
-   return vk_errorf(device, VK_ERROR_FEATURE_NOT_PRESENT,
-                    "a logical device on Kosmos's GPU is G7b's (docs/gpu3d.md)");
+   uint32_t context;
+   long fence;
+   uint32_t error = kg_context_new(kg_device(), GPU_ENGINE_RENDER, &context, &fence);
+
+   if (error != GPU_OK) {
+      return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                       "the GPU gave no context: %s", kg_why(error));
+   }
+
+   const void *map = kg_fence_map(fence);
+   if (map == NULL || !fence_register(context, map)) {
+      (void)kg_context_forget(kg_device(), context);
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   device->vm_id = context;
+   return VK_SUCCESS;
 }
 
 bool
 anv_kosmos_device_destroy(struct anv_device *device)
 {
-   (void)device;
-   return true;
+   /* Its work finished first: forgetting a context the GPU still runs
+    * would be refused, and its regions held. */
+   (void)context_idle(device);
+   fence_forget(device->vm_id);
+   return kg_context_forget(kg_device(), device->vm_id) == GPU_OK;
 }
 
 VkResult
-anv_kosmos_device_check_status(struct vk_device *device)
+anv_kosmos_device_check_status(struct vk_device *vk_device)
+{
+   struct anv_device *device = container_of(vk_device, struct anv_device, vk);
+   struct kg_state state;
+
+   if (kg_context_state(kg_device(), device->vm_id, &state) != GPU_OK)
+      return vk_device_set_lost(vk_device, "the GPU no longer knows the device's context");
+   if (state.hangs != 0)
+      return vk_device_set_lost(vk_device, "the GPU hung, %u times, and was reset", state.hangs);
+   if (state.faults != 0) {
+      return vk_device_set_lost(vk_device, "the GPU refused a command (%08x), %u times",
+                                state.fault_word, state.faults);
+   }
+   return VK_SUCCESS;
+}
+
+VkResult
+anv_kosmos_create_engine(struct anv_device *device, struct anv_queue *queue,
+                         const VkDeviceQueueCreateInfo *pCreateInfo)
+{
+   (void)pCreateInfo;
+
+   /* The render engine is the one family offered (`intel_engine.c`, and
+    * no VM control); its queues share the device's context. */
+   if (queue->family->engine_class != INTEL_ENGINE_CLASS_RENDER) {
+      return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                       "only the render engine takes a queue on Kosmos");
+   }
+   queue->exec_queue_id = device->vm_id;
+   return VK_SUCCESS;
+}
+
+void
+anv_kosmos_destroy_engine(struct anv_device *device, struct anv_queue *queue)
 {
    (void)device;
-   return VK_SUCCESS;
+   (void)queue;
 }
 
 /* --- Buffer objects ----------------------------------------------------- */
@@ -433,12 +568,52 @@ kosmos_gem_create_userptr(struct anv_device *device, void *mem, uint64_t size)
    return 0;
 }
 
-static void
-kosmos_gem_close(struct anv_device *device, struct anv_bo *bo)
+
+/*
+ * A region's one mapping, and how many maps share it. Nebula maps a region
+ * whole, at an address of its choosing, and has no map of a piece of one -
+ * but anv maps pieces: a small buffer sub-allocated from a slab is mapped
+ * as its slab at the buffer's offset (`anv_device_map_bo`). So a region is
+ * mapped once, the first time anything in it is, each map is its address
+ * plus the offset, and it leaves the share window with its last map - one
+ * mapping a slab rather than one a buffer, since a slab holds hundreds.
+ * The table grows and is searched in order: maps are few - buffers the
+ * processor reads, not every buffer - and a map is not on a frame's path.
+ */
+struct kosmos_mapping {
+   uint32_t handle;           /* the region's gem handle; 0 is a free slot */
+   uintptr_t base;
+   uint64_t pages;
+   uint32_t users;
+};
+
+static simple_mtx_t maps_lock = SIMPLE_MTX_INITIALIZER;
+static struct kosmos_mapping *maps;
+static uint32_t maps_count;
+
+static struct kosmos_mapping *
+mapping_slot(uint32_t handle)
 {
-   (void)device;
-   if (bo->gem_handle != 0)
-      (void)kosmos_cap_drop((long)bo->gem_handle - 1);
+   struct kosmos_mapping *free_slot = NULL;
+
+   for (uint32_t i = 0; i < maps_count; i++) {
+      if (maps[i].handle == handle)
+         return &maps[i];
+      if (maps[i].handle == 0 && free_slot == NULL)
+         free_slot = &maps[i];
+   }
+   if (free_slot != NULL)
+      return free_slot;
+
+   uint32_t grown = maps_count ? maps_count * 2 : 16;
+   struct kosmos_mapping *more = realloc(maps, grown * sizeof(*more));
+   if (more == NULL)
+      return NULL;
+   memset(more + maps_count, 0, (grown - maps_count) * sizeof(*more));
+   maps = more;
+   free_slot = &maps[maps_count];
+   maps_count = grown;
+   return free_slot;
 }
 
 static void *
@@ -446,46 +621,228 @@ kosmos_gem_mmap(struct anv_device *device, struct anv_bo *bo,
                 uint64_t offset, uint64_t size, void *placed_addr)
 {
    (void)device;
-   (void)size;
 
-   /* A region is mapped whole, where the window puts it. A piece of one,
-    * or one at an address of the program's choosing, is G7b's question. */
-   if (offset != 0 || placed_addr != NULL || bo->gem_handle == 0) {
+   /* At an address of the program's choosing (VK_EXT_map_memory_placed)
+    * is not offered. */
+   if (placed_addr != NULL || bo->gem_handle == 0) {
       errno = EINVAL;
       return MAP_FAILED;
    }
 
-   long at = kosmos_mem_map((long)bo->gem_handle - 1);
-   if (at < 0) {
+   long cap = (long)bo->gem_handle - 1;
+   void *map = MAP_FAILED;
+
+   simple_mtx_lock(&maps_lock);
+   struct kosmos_mapping *m = mapping_slot(bo->gem_handle);
+   if (m == NULL) {
       errno = ENOMEM;
-      return MAP_FAILED;
+   } else if (m->handle == 0) {
+      long pages = kosmos_mem_size(cap);
+      long at = pages > 0 ? kosmos_mem_map(cap) : -1;
+      if (at < 0) {
+         errno = ENOMEM;
+      } else {
+         *m = (struct kosmos_mapping){ bo->gem_handle, (uintptr_t)at, (uint64_t)pages, 0 };
+      }
    }
-   return (void *)(uintptr_t)at;
+   if (m != NULL && m->handle != 0) {
+      if (offset + size > m->pages * PAGE) {
+         errno = EINVAL;
+         if (m->users == 0) {
+            (void)kosmos_share_unmap(m->base, m->pages);
+            m->handle = 0;
+         }
+      } else {
+         m->users++;
+         map = (void *)(m->base + offset);
+      }
+   }
+   simple_mtx_unlock(&maps_lock);
+   return map;
 }
 
 void
 anv_kosmos_unmap(void *map, uint64_t size)
 {
-   (void)kosmos_share_unmap((unsigned long)(uintptr_t)map,
-                            (unsigned long)((size + PAGE - 1) / PAGE));
+   uintptr_t at = (uintptr_t)map;
+
+   simple_mtx_lock(&maps_lock);
+   for (uint32_t i = 0; i < maps_count; i++) {
+      struct kosmos_mapping *m = &maps[i];
+      if (m->handle != 0 && at >= m->base && at + size <= m->base + m->pages * PAGE) {
+         if (--m->users == 0) {
+            (void)kosmos_share_unmap(m->base, m->pages);
+            m->handle = 0;
+         }
+         break;
+      }
+   }
+   simple_mtx_unlock(&maps_lock);
+}
+
+/* A region closed while still mapped - which anv does not do - leaves the
+ * share window with it, so the handle, a capability index the next region
+ * may be given, never finds a stale mapping. */
+static void
+kosmos_gem_close(struct anv_device *device, struct anv_bo *bo)
+{
+   (void)device;
+   if (bo->gem_handle == 0)
+      return;
+
+   simple_mtx_lock(&maps_lock);
+   for (uint32_t i = 0; i < maps_count; i++) {
+      if (maps[i].handle == bo->gem_handle) {
+         (void)kosmos_share_unmap(maps[i].base, maps[i].pages);
+         maps[i].handle = 0;
+      }
+   }
+   simple_mtx_unlock(&maps_lock);
+   (void)kosmos_cap_drop((long)bo->gem_handle - 1);
 }
 
 static VkResult
 kosmos_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit,
                enum anv_vm_bind_flags flags)
 {
-   (void)submit;
    (void)flags;
-   return vk_errorf(device, VK_ERROR_FEATURE_NOT_PRESENT,
-                    "sparse binding is not offered on Kosmos");
+
+   /* A null binding - the device's null-initialised heap, made to read
+    * zeros where the GPU prefetches past a buffer's end - is accepted and
+    * does nothing, as i915's backend does: what the driver's page table
+    * holds where nothing is bound is the driver's to say. Memory bound
+    * piece by piece, sparse binding, is not offered. */
+   for (uint32_t i = 0; i < submit->binds_len; i++) {
+      if (submit->binds[i].bo != NULL) {
+         return vk_errorf(device, VK_ERROR_FEATURE_NOT_PRESENT,
+                          "sparse binding is not offered on Kosmos");
+      }
+   }
+   return VK_SUCCESS;
 }
 
 static VkResult
 kosmos_vm_bind_bo(struct anv_device *device, struct anv_bo *bo)
 {
-   (void)bo;
-   return vk_errorf(device, VK_ERROR_FEATURE_NOT_PRESENT,
-                    "binding a buffer object is G7b's (docs/gpu3d.md)");
+   /* Write-back in the LLC, which the HD 530 shares with the processor:
+    * what `anv`'s coherent, cached memory types promise. */
+   uint32_t error = kg_bind(kg_device(), device->vm_id, intel_48b_address(bo->offset),
+                            (long)bo->gem_handle - 1, 0, 0, GPU_CACHE_WB);
+
+   if (error != GPU_OK) {
+      return vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                       "a buffer of %"PRIu64" bytes at 0x%"PRIx64" was not bound: %s",
+                       bo->size, bo->offset, kg_why(error));
+   }
+   return VK_SUCCESS;
+}
+
+static VkResult
+kosmos_vm_unbind_bo(struct anv_device *device, struct anv_bo *bo)
+{
+   const uint64_t at = intel_48b_address(bo->offset);
+   uint32_t error = kg_unbind(kg_device(), device->vm_id, at);
+
+   /* Busy is the context running other work, which may still be reading
+    * nothing of this buffer's - Vulkan says it is done with - but the
+    * driver unbinds only an idle context. So: idle, then again. */
+   if (error == GPU_ERR_BUSY) {
+      VkResult result = context_idle(device);
+      if (result != VK_SUCCESS)
+         return result;
+      error = kg_unbind(kg_device(), device->vm_id, at);
+   }
+
+   if (error != GPU_OK) {
+      return vk_errorf(device, VK_ERROR_UNKNOWN, "a buffer at 0x%"PRIx64" was not unbound: %s",
+                       bo->offset, kg_why(error));
+   }
+   return VK_SUCCESS;
+}
+
+/* --- Submission ------------------------------------------------------------- */
+
+/*
+ * One submission to the device's context: `batch` (0: none), after the
+ * waits, and every signal made a point at the value it was given.
+ *
+ * A wait already reached, or one on this context - which runs in order -
+ * needs nothing. One on another context is handed to the driver, which
+ * holds the batch until it is met; past the four a request carries, the
+ * rest are waited for here first. A submission with no batch and nothing
+ * to wait for signals at the value last given, which is reached exactly
+ * when everything before it is done.
+ */
+static VkResult
+kosmos_submit(struct anv_device *device, struct anv_bo *batch,
+              uint32_t wait_count, const struct vk_sync_wait *waits,
+              uint32_t signal_count, const struct vk_sync_signal *signals)
+{
+   const uint32_t context = device->vm_id;
+   struct kg_wait handed[GPU_EXEC_WAITS];
+   uint32_t nhanded = 0;
+
+   for (uint32_t i = 0; i < wait_count; i++) {
+      const struct kosmos_point *p = to_point(waits[i].sync);
+      bool here = false;
+
+      simple_mtx_lock(&lock);
+      if (point_reached_locked(p) || (p->submitted && p->context == context)) {
+         here = true;
+      } else if (p->submitted && nhanded < GPU_EXEC_WAITS) {
+         handed[nhanded++] = (struct kg_wait){ p->context, p->value };
+         here = true;
+      }
+      simple_mtx_unlock(&lock);
+
+      if (!here) {
+         VkResult result = vk_sync_wait(&device->vk, waits[i].sync, 0,
+                                        VK_SYNC_WAIT_COMPLETE, UINT64_MAX);
+         if (result != VK_SUCCESS)
+            return result;
+      }
+   }
+
+   if (batch == NULL && nhanded != 0)
+      batch = device->trivial_batch_bo;
+
+   uint64_t value;
+   simple_mtx_lock(&lock);
+   struct kosmos_fence *f = entry_of(context);
+   if (f == NULL) {
+      simple_mtx_unlock(&lock);
+      return vk_device_set_lost(&device->vk, "the device's context is gone");
+   }
+
+   if (batch != NULL) {
+      value = f->given + 1;
+      uint32_t error = kg_exec(kg_device(), context, intel_48b_address(batch->offset),
+                               (uint32_t)batch->size, value, handed, nhanded);
+      if (error != GPU_OK) {
+         simple_mtx_unlock(&lock);
+         return vk_device_set_lost(&device->vk, "the GPU refused a submission: %s",
+                                   kg_why(error));
+      }
+      f->given = value;
+   } else {
+      value = f->given;
+   }
+
+   for (uint32_t i = 0; i < signal_count; i++) {
+      struct kosmos_point *p = to_point(signals[i].sync);
+      if (value == 0) {
+         p->cpu_signaled = true;      /* nothing was ever given: done */
+      } else {
+         p->submitted = true;
+         p->context = context;
+         p->value = value;
+      }
+   }
+   /* A thread waiting for one of these to be submitted looks again. */
+   if (signal_count != 0)
+      wake_waiters_locked();
+   simple_mtx_unlock(&lock);
+   return VK_SUCCESS;
 }
 
 static VkResult
@@ -500,11 +857,25 @@ kosmos_queue_exec_locked(struct anv_queue *queue,
                          uint32_t perf_query_pass,
                          struct anv_utrace_submit *utrace_submit)
 {
-   (void)wait_count; (void)waits; (void)cmd_buffer_count; (void)cmd_buffers;
-   (void)signal_count; (void)signals; (void)perf_query_pool;
-   (void)perf_query_pass; (void)utrace_submit;
-   return vk_errorf(queue, VK_ERROR_FEATURE_NOT_PRESENT,
-                    "submission is G7b's (docs/gpu3d.md)");
+   struct anv_device *device = queue->device;
+   struct anv_bo *batch = NULL;
+   (void)perf_query_pass;
+
+   /* No performance counters here (the OA unit is the driver's), and no
+    * trace points: both are offered by neither the device nor the build. */
+   if (perf_query_pool != NULL)
+      return vk_error(queue, VK_ERROR_FEATURE_NOT_PRESENT);
+   (void)utrace_submit;
+
+   if (cmd_buffer_count != 0) {
+      anv_cmd_buffer_chain_command_buffers(cmd_buffers, cmd_buffer_count);
+      struct anv_batch_bo *first = list_first_entry(&cmd_buffers[0]->batch_bos,
+                                                    struct anv_batch_bo, link);
+      batch = first->bo;
+   }
+
+   VkResult result = kosmos_submit(device, batch, wait_count, waits, signal_count, signals);
+   return anv_queue_post_submit(queue, result);
 }
 
 static VkResult
@@ -514,9 +885,22 @@ kosmos_queue_exec_async(struct anv_async_submit *submit,
                         uint32_t signal_count,
                         const struct vk_sync_signal *signals)
 {
-   (void)submit; (void)wait_count; (void)waits;
-   (void)signal_count; (void)signals;
-   return VK_ERROR_FEATURE_NOT_PRESENT;
+   struct anv_queue *queue = submit->queue;
+   struct anv_device *device = queue->device;
+   STACK_ARRAY(struct vk_sync_signal, all, signal_count + 1);
+   uint32_t n = 0;
+
+   for (uint32_t i = 0; i < signal_count; i++)
+      all[n++] = signals[i];
+   if (submit->signal.sync != NULL)
+      all[n++] = submit->signal;
+
+   struct anv_bo *batch = util_dynarray_num_elements(&submit->batch_bos, struct anv_bo *) != 0
+      ? *util_dynarray_element(&submit->batch_bos, struct anv_bo *, 0) : NULL;
+
+   VkResult result = kosmos_submit(device, batch, wait_count, waits, n, all);
+   STACK_ARRAY_FINISH(all);
+   return anv_queue_post_submit(queue, result);
 }
 
 static uint32_t
@@ -538,25 +922,10 @@ anv_kosmos_kmd_backend_get(void)
       .gem_mmap = kosmos_gem_mmap,
       .vm_bind = kosmos_vm_bind,
       .vm_bind_bo = kosmos_vm_bind_bo,
-      .vm_unbind_bo = kosmos_vm_bind_bo,
+      .vm_unbind_bo = kosmos_vm_unbind_bo,
       .queue_exec_locked = kosmos_queue_exec_locked,
       .queue_exec_async = kosmos_queue_exec_async,
       .bo_alloc_flags_to_bo_flags = kosmos_bo_alloc_flags_to_bo_flags,
    };
    return &backend;
-}
-
-/* Used by G7b's queue as it makes a context; kept here beside the table
- * the points read. */
-bool anv_kosmos_fence_register(uint32_t context, const void *map);
-bool
-anv_kosmos_fence_register(uint32_t context, const void *map)
-{
-   bool ok;
-   simple_mtx_lock(&lock);
-   ok = grow((void **)&fences, &fence_room, fence_count + 1, sizeof(*fences));
-   if (ok)
-      fences[fence_count++] = (struct kosmos_fence){ context, map };
-   simple_mtx_unlock(&lock);
-   return ok;
 }
