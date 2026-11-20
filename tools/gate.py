@@ -507,8 +507,13 @@ SUITES = [
     # with its strip at the top, a maximised window ending above it, the
     # Kosmos menu upwards and its button dark once the menu is dismissed,
     # the whole width, and the top again. One board: it is Lua over the
-    # window manager, the same on both.
-    Suite("x86-dock", ["python3", "tools/run_dock.py", X86], x86=True),
+    # window manager, the same on both. In two halves side by side since 20
+    # November (`--part`): the dock floating - its icons, the Kosmos menu,
+    # the launcher - with the wallpaper; and the bar moved - the whole
+    # width, the top and the captures there, its size, four times by one
+    # program, a missing pin. It was the gate's longest suite, at 359 s.
+    Suite("x86-dock-1", ["python3", "tools/run_dock.py", X86, "--part", "1"], x86=True),
+    Suite("x86-dock-2", ["python3", "tools/run_dock.py", X86, "--part", "2"], x86=True),
     # Preferences' Mouse page (6zi): the double click's speed told to every
     # window, and the pointer's kept and applied at the desktop's start,
     # on a PS/2 mouse as the M700's is relative.
@@ -684,6 +689,16 @@ SUITES = [
     # Kit's door for Lua that Flight names - a window drawn by Vulkan and a
     # terrain fed the tiles it asks for, frame after frame along a fixed
     # path - the last frame found on the screen and held to a ray.
+    # **Flight, flown** (`docs/flight.md` F5): the application installed in
+    # /Home, opened on the desktop, its tiles fetched by `tiles` from this
+    # Mac, the keys held through QEMU's keyboard, and the Cessna drawn.
+    Suite("x86-flight", ["python3", "tools/run_flight.py", X86,
+                         "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_flight.py", "user/installed/Flight", "assets/models/cessna172",
+                        "user/kits/3d", "user/kits/vulkan", "user/kits/map", "user/kits/window",
+                        "user/kits/gfx/picture_decode.c", "user/servers/tiles.c", "user/lib/tiles.lua",
+                        "user/bin/programs/wm.lua", "user/include/wmproto.h", *MESA)),
+
     Suite("x86-flightpath", ["python3", "tools/run_flightpath.py", X86,
                              "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_flightpath.py", "tools/run_k3dground.py",

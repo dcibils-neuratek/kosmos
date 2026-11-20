@@ -185,8 +185,13 @@ chunks drawn with their imagery by the renderer; **F4c** (0.12.26,
 fed the tiles it asks for, a fixed path flown and its last frame held to a
 ray on the screen; **F4d** (0.12.27, 18.947), the chunks built on a thread
 of the terrain's own, ancestors drawn while they are, and what the eye has
-left given back; F5, Flight itself, is next - with a Cessna 172 from
-Sketchfab (CC BY) as the aircraft, a `.glb`. After
+left given back; **F5a-F5d** (0.12.28, 18.948), Flight playable - held
+keys, the flight model, real tiles, and the Cessna 172 (Sketchfab, CC BY)
+drawn by the 3D Kit's GLB reader and textured models. F5e, the strip, is
+next, then the cockpit, the pause sheet, the panel and the island. **The
+Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
+mac pro later tonight so we need the gpu drivers done") is being written
+beside it: `docs/amdgpu.md`, Southern Islands, identify and display first. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

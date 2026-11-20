@@ -292,6 +292,28 @@ ends on the M700:
 - **F5 - Flight.** `flight.lua`: the aircraft, the three views, the strip
   and the cockpit, the pause sheet with search, the graphics panel, the
   island offline; in the dated screenshot, as every new application is.
+  **Playable first** (Diego, 20 November, asking what was left for it to
+  be playable), in this order, each with its suite:
+  - **F5a - the keys.** `WM_EV_RAWKEY` in `wmproto.h` and `KW_RAWKEY` in
+    the Window Kit, a key's going down and coming up - Quake III's Q1
+    wants the same (`quake3e.md`) - and the door's `w:held(code)` and
+    `w:pressed(code)`, a bit a key, read with no allocation a frame.
+  - **F5b - the flight model.** `flight.lua`, in `user/installed/Flight`
+    on `k3dvk.elf`: a point mass with an attitude - lift, drag, thrust and
+    weight in the path's frame, the yoke asking for an angle of attack,
+    a bank turning it - and the ground from the terrain's own heights,
+    `g:height(x, z)`, so it lands on and flies into what is drawn.
+  - **F5c - real tiles.** Esri's imagery and Mapzen's terrarium elevation
+    asked of `tiles` as the terrain wants them, read from the cache when
+    they arrive; a tile there is none of is the sea. `x86-flight` serves
+    hills from the Mac and holds the keys down through QEMU's keyboard.
+  - **F5d - the aircraft.** The Cessna's GLB read by the 3D Kit
+    (`k3d_glb.c`), drawn by the renderer's textured models with a matrix
+    each, its control surfaces and propeller turned about their hinges.
+  - **F5e - the chase view's strip**: speed, altitude, heading, climb,
+    throttle and flaps.
+  Then the cockpit and tower views' detail, the pause sheet, the panel and
+  the island.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then, if Diego agrees, buildings
   from OpenStreetMap's outlines (*Questions*).

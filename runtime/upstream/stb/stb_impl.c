@@ -30,9 +30,9 @@
  * And JPEG, for the same reason and with the same bargain.
  *
  * **Only JPEG.** `STBI_ONLY_JPEG` is what keeps this from becoming a second
- * PNG decoder sitting beside the one in `user/lib/png.c`, and a second
- * decoder for a format is worse than none: two answers to one question, one
- * of which is never exercised. PNG is ours, understood line by line, and it
+ * PNG decoder sitting beside the one in `user/kits/gfx/picture_decode.c`,
+ * and a second decoder for a format is worse than none: two answers to one
+ * question, one of which is never exercised. PNG is ours, understood line by line, and it
  * is the format everything in the image is stored in. JPEG is somebody
  * else's, because a JPEG decoder is a discrete cosine transform and a
  * Huffman decoder and four chroma subsampling layouts, and writing that from

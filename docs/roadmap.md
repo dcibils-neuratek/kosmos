@@ -12049,14 +12049,28 @@ meshes (`k3d_terrain.c`); **F4b built in 0.12.25** (18.945), imagery as
 textures and chunks drawn; **F4c built in 0.12.26** (18.946), the door
 for Lua in `k3dvk.elf` and a fixed path flown through it; **F4d built in
 0.12.27** (18.947), chunks built on a thread of the terrain's own, ancestors
-drawn meanwhile, and chunks given back; F5 next. The aircraft (Diego, 20
+drawn meanwhile, and chunks given back. **F5, playable first** (Diego, 20
+November: what was left for it to be playable), F5a to F5d **built in
+0.12.28** (18.948): key transitions to a window (`WM_EV_RAWKEY`, the door's
+`held` and `pressed`), the flight model, real tiles from `tiles`, and the
+Cessna drawn - read by the 3D Kit's GLB reader (`k3d_glb.c`), textured,
+its control surfaces and propeller moving. F5e next, the strip; then the
+cockpit's and tower's detail, the pause sheet with search, the graphics
+panel and the island offline. **Found on the way**: a program installed
+in `/Home` was never given what its header declares - the disk does not
+read headers as the image's store does - so `needs tiles` reached
+nothing; init reads it now, for the declared-only grants. The aircraft (Diego, 20
 November 2026): a Cessna 172 from Sketchfab by Viva_1, CC Attribution, as a
 `.glb` with 2k textures - credited in `LICENSE` and the About window, as
-every vendored asset is. Also wanted, for F5: PNG and JPEG readers with no
-Lua in them (`png.c`, `jpeg.c` split into a core and the binding), so the
-terrain's builder decodes the tiles' bytes as well. And for the gate's ten minutes (`testing.md` 18.947): 641 s at
-0.12.27, `x86-dock` the slowest at 359 s - split it in halves that run side
-by side, as the browser's and Cafesa3D's suites were.
+every vendored asset is. **PNG and JPEG readers with no Lua in them, built
+in 0.12.28** (`picture_decode.c`, one decoder each, `gfx.png` and
+`gfx.jpeg` on them, a workspace a decode so any thread may); still wanted,
+the terrain's builder decoding the tiles' bytes itself, so a turn into new
+ground does not decode on the frame's thread. **`x86-dock` split in halves
+in 0.12.28** (`x86-dock-1`, `x86-dock-2`, 145 s and 112 s side by side,
+against 242 s whole). Found splitting it, wanted: on the whole-width dock a
+lens a press opens stays open after the pointer leaves - the wait for "the
+icons settled" never ended, and was 120 s of the suite.
 Also wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a

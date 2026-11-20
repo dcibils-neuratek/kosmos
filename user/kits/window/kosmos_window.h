@@ -42,6 +42,7 @@
 #define KW_WHEEL    3           /* amount, x, y */
 #define KW_RESIZE   4           /* width, height: the new surface's size */
 #define KW_CLOSE    5           /* the close box, or the window manager gone */
+#define KW_RAWKEY   6           /* key: the keycode; action: KW_PRESS or KW_RELEASE */
 
 /* A pointer event's action, and its button. */
 #define KW_PRESS    1

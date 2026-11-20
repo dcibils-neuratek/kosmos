@@ -50,6 +50,7 @@ struct wm_frame_request {           /* "<I4I4i4i4I4I4I4" */
 #define WM_EV_WHEEL      3u     /* a, b: x, y; c: steps */
 #define WM_EV_RESIZE     4u     /* a, b: the new width and height */
 #define WM_EV_CLOSE      5u
+#define WM_EV_RAWKEY     6u     /* a: the keycode; action: press or release */
 
 #define WM_ACT_PRESS     1u
 #define WM_ACT_RELEASE   2u

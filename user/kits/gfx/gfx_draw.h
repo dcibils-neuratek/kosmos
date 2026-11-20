@@ -64,6 +64,24 @@ uint32_t *gfx_surface_map(unsigned width, unsigned height, unsigned *pitch,
 void gfx_surface_new(struct lua_State *L, uint32_t *pixels, unsigned width,
                      unsigned height, unsigned pitch, size_t pages);
 
+/*
+ * A decoded picture into a surface (`png.c`, `jpeg.c`): `gfx_surface_room`
+ * is the `room` `picture_decode.h`'s decoders are handed, mapping the
+ * surface's pages into `landing`; `gfx_picture_push` then pushes the
+ * surface over them, or raises "<format>: <why>" for a decode that failed.
+ */
+struct gfx_picture_landing {
+    uint32_t *pixels;
+    unsigned  pitch;
+    size_t    pages;
+};
+
+uint32_t *gfx_surface_room(void *landing, unsigned w, unsigned h,
+                           unsigned *pitch);
+int gfx_picture_push(struct lua_State *L, int result,
+                     struct gfx_picture_landing *landing, unsigned w,
+                     unsigned h, const char *format, const char *why);
+
 void gfx_draw_fill(struct surface *s, long x, long y, long w, long h,
                    uint32_t colour);
 

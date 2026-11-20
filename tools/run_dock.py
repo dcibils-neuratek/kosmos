@@ -42,7 +42,21 @@ the look named Night. One boot, driven over Telnet and by QEMU's pointer:
 All of it at 1720x1440, the M700's screen, which no shipped wallpaper is
 the size of - so a fill has to resample, and a centred picture leaves bands.
 
-Usage: run_dock.py IMAGE
+Usage: run_dock.py IMAGE [--part 1|2]
+
+**In two halves, side by side** (`tools/gate.py`), as Cafesa3D's are: `--part
+1` is the dock floating - 1 to 3, its tip, lens, pins, transparency, the
+Kosmos menu, the launcher, the shortcuts and focus following the pointer -
+and then 6, the wallpaper, which needs no place of the bar's; `--part 2` is
+the bar moved - 4 and 5, then 6b's captures with the bar at the top, the
+dock's size, 7, and a pin to no program. Each boots its own machine and its own `/Home` disk, and both
+start with the dock floating as 1 and 2 leave it; the second takes the
+Kosmos button's unlit colour for itself, which the whole width's button is
+found by. The look, the login items opened once and nothing dying are
+checked in both. With no `--part`, the whole in one boot, in the order the halves run. Split on 20
+November 2026, when this was the gate's longest suite at 359 seconds of a
+641-second gate. The serial line is `build/dock/serial-1.txt` and
+`serial-2.txt` for the halves.
 """
 
 import os
@@ -180,6 +194,7 @@ def last_dock(seen):
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    part = int(sys.argv[sys.argv.index("--part") + 1]) if "--part" in sys.argv else 0
 
     telnet, web = random.randint(20000, 40000), random.randint(40001, 60000)
     # A USB keyboard, which QEMU's keys then go to: the M700's path, where
@@ -234,105 +249,6 @@ def main():
         said["dock"] = last_dock(guest.seen)
         said["room dock"] = room(session)
 
-        # The bell, at the strip's right beside the network and the sound
-        # (8 October): a press on it asks for what has been said.
-        bells = re.findall(r"deskbar: the bell at (\d+)", guest.seen[mark:])
-        strip_at = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said["strip"])
-
-        if bells and strip_at:
-            sx_, sy_, sw_, sh_ = (int(v) for v in strip_at.groups())
-            said["bell x"] = int(bells[-1])
-            mark_b = len(guest.seen)
-            click(sx_ + said["bell x"] + 9, sy_ + sh_ // 2, width, height)
-            try:
-                said["bell"] = guest.wait_for_line("deskbar: the notifications' history asked for",
-                                                   "the bell pressed", mark_b)
-            except Exception:              # noqa: BLE001 - its check says
-                said["bell"] = None
-            time.sleep(3)
-            guest.sendkey("esc")
-            time.sleep(1)
-
-        # The place it already has: answered, and nothing started again.
-        mark = len(guest.seen)
-        said["same"] = session.run("setprop /Running/Deskbar/bar dock").decode(errors="replace")
-        time.sleep(2)
-        guest._read_available()
-        said["same again"] = "deskbar: again" in guest.seen[mark:]
-
-        # ---- 2b: a name over the icon under the pointer ----
-        session.put(FOCUS.encode(), "/Temporary/focus.lua")
-        dx, dy, dw, dh = said["dock"]
-        over = dx + dw - PAD - 25                 # the last cell, always an application
-
-        if BREAK == "flat":
-            session.run("setprop /Running/Deskbar/magnify 0")
-            time.sleep(1)
-
-        mark = len(guest.seen)
-        guest.mouse_to(*R._to_tablet(over, dy + dh // 2, width, height))
-        said["tip name"] = guest.wait_for_line("deskbar: tip ", "a name over an icon", mark)
-        said["tip"] = guest.wait_for_line("wm: window Deskbar tip at ", "the tip's window", mark)
-        time.sleep(1)
-        said["tip focus"] = session.run("/Temporary/focus.lua").decode(errors="replace")
-
-        # ---- 2b': the icons magnified under the pointer (Diego, 8 and 17
-        # November) - the one under it grown by half at the default 50%,
-        # drawn by a lens over the dock, standing above the dock's top
-        # edge; and gone when the pointer leaves. Taken with the tip's
-        # pointer, which is already over the last cell.
-        mark_m = mark
-        said["magnified"] = None
-
-        try:
-            said["magnified"] = guest.wait_for_line("deskbar: magnified ", "an icon magnified", mark_m)
-        except Exception:                  # noqa: BLE001 - its check says
-            pass
-
-        said["lens"] = "wm: window Deskbar lens at " in guest.seen[mark_m:]
-        session.put(MAGNIFIED.encode(), "/Temporary/magnified.lua")
-        said["magnified cells"] = session.run("/Temporary/magnified.lua").decode(errors="replace")
-        _, _, at_m = R.pixel_reader(guest.screendump())
-        above_with = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
-
-        mark = len(guest.seen)
-        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
-        time.sleep(2)
-
-        try:
-            guest.wait_for("deskbar: the icons settled", "the icons settled")
-        except Exception:                  # noqa: BLE001 - its check says
-            pass
-
-        guest._read_available()
-        said["tip gone"] = "wm: closed Deskbar tip" in guest.seen[mark:]
-        said["lens gone"] = "deskbar: the icons settled" in guest.seen[mark:] \
-            and "wm: closed Deskbar lens" in guest.seen[mark:]
-        said["tip over"] = over
-        _, _, at_m = R.pixel_reader(guest.screendump())
-        above_without = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
-        said["above changed"] = sum(1 for a_, b_ in zip(above_with, above_without) if a_ != b_)
-
-        # ---- 2b'': the dock drawn with its icons once the lens has gone
-        # (Diego, 20 November: "whenever i move the mouse out of the dock it
-        # disappears"). As the dock says it, not as a picture shows it: the
-        # bar repaints once a second whenever its loop wakes, and this
-        # suite's own traffic wakes it, so a picture saw the dock put back.
-        settled = re.search(r"deskbar: the icons settled, the dock drawn (with|without) them",
-                            guest.seen[mark:])
-        said["drawn with"] = settled.group(1) if settled else None
-
-        # The setting, as Appearance's slider tells it.
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/magnify 80")
-        try:
-            said["magnify set"] = guest.wait_for_line("deskbar: the dock magnifies 80%",
-                                                      "the magnification set", mark)
-        except Exception:                  # noqa: BLE001 - its check says
-            said["magnify set"] = None
-        session.run("setprop /Running/Deskbar/magnify %d" % (0 if BREAK == "flat" else 50))
-
-        # ---- 2c: the dock arranged by hand ----
         session.put(CELLS.encode(), "/Temporary/cells.lua")
 
         def cells():
@@ -340,8 +256,8 @@ def main():
             c = re.search(r"CELLS (.*)", out)
             found = {}
 
-            for part in (c.group(1).split("; ") if c else []):
-                bits = part.split(" ")
+            for piece in (c.group(1).split("; ") if c else []):
+                bits = piece.split(" ")
 
                 if len(bits) == 3:
                     found[bits[0]] = (int(bits[1]), int(bits[2]))
@@ -357,13 +273,19 @@ def main():
             guest._read_available()
             return last_dock(guest.seen)
 
-        def maybe(text, what, since):
+        def maybe(text, what, since, seconds=None):
             """A line, or None when it never comes - so a check that fails
-            fails alone rather than stopping those after it."""
+            fails alone rather than stopping those after it. `seconds`, for
+            a wait no check reads, bounds it below the guest's own."""
+            kept = guest.timeout
+            if seconds is not None:
+                guest.timeout = seconds
             try:
                 return guest.wait_for_line(text, what, since)
             except Exception:              # noqa: BLE001 - its check says
                 return None
+            finally:
+                guest.timeout = kept
 
         def drag_from_to(x0, y0, x1, y1):
             guest.mouse_to(*R._to_tablet(x0, y0, width, height))
@@ -380,595 +302,716 @@ def main():
             guest.mouse_button(False)
             time.sleep(1.5)
 
-        found, said["pins before"], _ = cells()
-        dx, dy, dw, dh = said["dock"]
-        mid = dy + dh // 2
+        # **The later half's own start** (`--part 2`): the Kosmos button's
+        # colour unlit, which the whole width finds its button by - taken
+        # by the first half in 3, after the pointer has left the dock and
+        # the transparency is back at its 25.
+        if part == 2:
+            guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+            time.sleep(2)
+            dx, dy, dw, dh = said["dock"]
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["unlit"] = at(dx + PAD + 8, dy + dh // 2)
 
-        if "terminal" in found and "tracker" in found:
-            mark = len(guest.seen)
-            tx, tw = found["terminal"]
-            rx, _ = found["tracker"]
-            drag_from_to(dx + tx + tw // 2, mid, dx + rx + 4, mid)
-            said["moved"] = maybe("deskbar: moved terminal - the dock is ", "Terminal moved", mark)
+        if part != 2:
+            # The bell, at the strip's right beside the network and the sound
+            # (8 October): a press on it asks for what has been said.
+            bells = re.findall(r"deskbar: the bell at (\d+)", guest.seen[mark:])
+            strip_at = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said["strip"])
 
-        found, _, _ = cells()
-        dx, dy, dw, dh = dock_now()
-
-        if "music" in found:
-            mark = len(guest.seen)
-            mx, mw = found["music"]
-            drag_from_to(dx + mx + mw // 2, mid, dx + mx + mw // 2, dy - 120)
-            said["removed"] = maybe("deskbar: removed music - the dock is ", "Music taken out", mark)
-
-        found, _, _ = cells()
-        dx, dy, dw, dh = dock_now()
-        loose = [n for n in found if n in ("logview", "sysmon", "procs")]
-
-        if loose:
-            mark = len(guest.seen)
-            lx, lw = found[loose[0]]
-            click(dx + lx + lw // 2, mid, width, height, "right")
-            menu = maybe("wm: menu of Deskbar at ", "an icon's menu", mark)
-            m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", menu or "")
-
-            if m:
-                mx_, my_, mw_, mh_ = (int(v) for v in m.groups())
-                click(mx_ + mw_ // 2, my_ + mh_ * 3 // 6, width, height)  # the second of three rows
-                said["kept"] = maybe("deskbar: kept ", "Keep in Dock", mark)
-            said["kept name"] = loose[0]
-
-        mark = len(guest.seen)
-        said["pin"] = session.run("setprop /Running/Deskbar/pin calc").decode(errors="replace")
-        said["pinned"] = maybe("deskbar: kept calc - the dock is ", "calc added", mark)
-        time.sleep(2)
-        found, said["pins after"], said["pins kept"] = cells()
-        dx, dy, dw, dh = dock_now()
-
-        if "calc" in found:
-            mark = len(guest.seen)
-            cx, cw = found["calc"]
-            click(dx + cx + cw // 2, mid, width, height)
-            said["launched"] = maybe("deskbar: the dock launched ", "a click on a pin", mark)
-
-            if said["launched"]:
-                guest.wait_for("wm: window Calculator at ", "the Calculator from the dock")
-            time.sleep(1)
-
-        # ---- 2d: how much shows through the dock ----
-        # Diego, 4 October: a slider from 100% to 0%, 25% unless said, and
-        # the icons as they are. The pill sampled in its end's padding and an
-        # icon at its middle, at 0, 100 and 25; then the slider in
-        # Preferences pressed at its middle.
-        dx, dy, dw, dh = dock_now()
-        found, _, _ = cells()
-        cell = found.get("terminal") or found.get("tracker")
-
-        # Away from the dock, so its icons are not magnified over the pill.
-        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
-        time.sleep(1)
-
-        def dock_at(percent):
-            mark_ = len(guest.seen)
-            session.run("setprop /Running/Deskbar/transparency %d" % percent)
-            heard = maybe("deskbar: the dock %d%% transparent" % percent, "the transparency", mark_)
-            time.sleep(1)
-            shot_ = guest.screendump()
-
-            if os.environ.get("KOSMOS_DOCK_SHOTS"):
-                with open(os.path.join(ROOT, "build", "dock", "clear-%d.ppm" % percent), "wb") as f_:
-                    f_.write(shot_)
-
-            _, _, at_ = R.pixel_reader(shot_)
-            pill = at_(dx + dw - 5, dy + dh // 2)
-            icon = at_(dx + cell[0] + cell[1] // 2, dy + dh // 2) if cell else None
-            return heard is not None, pill, icon
-
-        said["clear 0"] = dock_at(0)
-        said["clear 100"] = dock_at(100)
-        said["clear 25"] = dock_at(25)
-
-        mark = len(guest.seen)
-        session.run("/Temporary/prefs.lua")
-        prefs = maybe("wm: window Preferences at ", "Preferences", mark)
-        slider = maybe("preferences slider: dock_transparency at ", "the slider", mark)
-        p_ = re.match(r"(\d+),(\d+)", prefs or "")
-        s_ = re.match(r"(\d+),(\d+), (\d+) wide", slider or "")
-
-        if p_ and s_:
-            time.sleep(1)
-            mark = len(guest.seen)
-            click(int(p_.group(1)) + int(s_.group(1)) + int(s_.group(3)) // 2,
-                  int(p_.group(2)) + int(s_.group(2)), width, height)
-            said["slid"] = maybe("deskbar: the dock ", "the slider pressed", mark)
-            said["slid kept"] = session.run("/Temporary/clear.lua").decode(errors="replace")
-
-        # **Preferences made taller by its grip** (Diego, 8 October: "when
-        # resizing the preferences app it breaks the layout"): its page and
-        # its sidebar's ground kept the height they opened at, so below the
-        # old bottom there was no ground and no labels. Dragged 160 down,
-        # the page says its new height, and the sidebar's ground near the
-        # new bottom is the colour it is near the old one.
-        win_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", prefs or "")
-
-        if win_:
-            wx, wy, ww, wh = (int(v) for v in win_.groups())
-
-            # Room below it to grow into: where a window opens depends on
-            # what else is open (on 12 October it opened at 734 of a 1440
-            # screen, and 160 taller ran off it), so it is moved up by its
-            # header first when there is not.
-            if wy + wh + 200 > height:
-                mark = len(guest.seen)
-                drag_from_to(wx + ww // 2, wy + 20, wx + ww // 2, 140)
-                moved_ = re.match(r"(\d+),(\d+)",
-                                  maybe("wm: moved Preferences by its header to ",
-                                        "Preferences moved up", mark) or "")
-                if moved_:
-                    wx, wy = int(moved_.group(1)), int(moved_.group(2))
+            if bells and strip_at:
+                sx_, sy_, sw_, sh_ = (int(v) for v in strip_at.groups())
+                said["bell x"] = int(bells[-1])
+                mark_b = len(guest.seen)
+                click(sx_ + said["bell x"] + 9, sy_ + sh_ // 2, width, height)
+                try:
+                    said["bell"] = guest.wait_for_line("deskbar: the notifications' history asked for",
+                                                       "the bell pressed", mark_b)
+                except Exception:              # noqa: BLE001 - its check says
+                    said["bell"] = None
+                time.sleep(3)
+                guest.sendkey("esc")
                 time.sleep(1)
 
-            _, _, at_ = R.pixel_reader(guest.screendump())
-            ground = at_(wx + 12, wy + wh - 30)
+            # The place it already has: answered, and nothing started again.
             mark = len(guest.seen)
-            drag_from_to(wx + ww - 6, wy + wh - 6, wx + ww - 6, wy + wh + 154)
-            said["prefs resized"] = maybe("preferences: resized to ", "Preferences resized", mark)
-            time.sleep(1)
-            _, _, at_ = R.pixel_reader(guest.screendump())
-            said["prefs ground"] = (ground, at_(wx + 12, wy + wh + 130))
-
-        session.run("/Temporary/close.lua Preferences")
-        dock_at(25)
-        time.sleep(1)
-
-        # ---- 3: the Kosmos button and its menu ----
-        dx, dy, dw, dh = said["dock"]
-        bx, by = dx + PAD + 8, dy + dh // 2         # inside the button, clear of its words
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["unlit"] = at(bx, by)
-
-        # The button wears the rocket (Haiku's Launchbox; Diego, 11
-        # October), not the three cubes: red where its picture is, and none
-        # of the cubes' strong blue.
-        left = button_left(at, said["dock"], said["unlit"])
-        said["rocket"] = [0, 0]
-        if left is not None:
-            for yy in range(by - 16, by + 16):
-                for xx in range(left + 8, left + 16 + 34):
-                    r, g, b = at(xx, yy)[:3]
-                    if b > 140 and b > r + 60 and b > g + 20:
-                        said["rocket"][0] += 1
-                    if r > 150 and r > g + 60 and r > b + 60:
-                        said["rocket"][1] += 1
-        mark = len(guest.seen)
-        click(dx + PAD + 40, by, width, height, "right")       # the right button: the menu
-        said["menu"] = guest.wait_for_line("wm: menu of Deskbar at ", "the Kosmos menu", mark)
-        time.sleep(1)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["lit"] = at(bx, by)
-        said["button"] = button_left(at, said["dock"], said["lit"])
-
-        # Restart and Shut Down, the menu's last two rows, wear the three
-        # cubes: colour in their picture's column, where the menu is grey.
-        m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said["menu"] or "")
-        said["power pictures"] = 0
-
-        if m:
-            mx, my, mw, mh = (int(v) for v in m.groups())
-
-            for y in range(my + mh - 70, my + mh - 4):
-                for x in range(mx + 4, mx + 40):
-                    r, g, b = at(x, y)
-
-                    if max(r, g, b) - min(r, g, b) > 80:
-                        said["power pictures"] += 1
-        click(width // 2, STRIP_H // 2, width, height)    # the strip's middle: nothing there
-        time.sleep(1.5)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["dismissed"] = at(bx, by)
-
-        # ---- 3a: pressed and slid off, it opens nothing - a click is a
-        # press and a release (Diego, 9 October: "that is in all kosmos") ----
-        mark = len(guest.seen)
-        kx, ky = kosmos_button()
-        guest.mouse_to(*R._to_tablet(kx, ky, width, height))
-        time.sleep(0.3)
-        guest.mouse_button(True)
-        time.sleep(0.3)
-        guest.mouse_to(*R._to_tablet(kx + 300, ky - 300, width, height))
-        time.sleep(0.3)
-        guest.mouse_button(False)
-        time.sleep(2)
-        guest._read_available()
-        said["slid off"] = "launchpad: the grid at " in guest.seen[mark:]
-
-        # ---- 3b: the launcher, the left button's ----
-        mark = len(guest.seen)
-        click(*kosmos_button(), width, height)
-        said["grid"] = guest.wait_for_line("launchpad: the grid at ", "the launcher grid", mark)
-        said["dock place"] = re.findall(r"launchpad: the dock's place in (\d+) ms", guest.seen[mark:])
-        time.sleep(2)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["grid lit"] = at(bx, by)
-        said["grid dock"] = last_dock(guest.seen)
-
-        for key in ("c", "a", "l", "c", "ret"):
-            guest.sendkey(key)
-            time.sleep(0.3)
-
-        said["opened"] = guest.wait_for_line("launchpad: opened ", "a tile opened by its name", mark)
-        guest.wait_for("wm: window Calculator at ", "the Calculator")
-        time.sleep(3)                                   # the dock a cell wider
-
-        # A second press on the button closes it, and starts nothing - after
-        # its sections: the rows in Diego's order, Demos shown by the pointer
-        # resting on it with no click, and Down to the next (7 October,
-        # `docs/launcher.html`).
-        mark = len(guest.seen)
-        click(*kosmos_button(), width, height)
-        at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher grid again", mark)
-        said["pills"] = guest.wait_for_line("launchpad: rows ", "the sections' rows", mark)
-        time.sleep(2)
-        gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
-        pill = re.search(r"Demos (\d+),(\d+) (\d+)x(\d+)", said["pills"])
-
-        if pill:
-            px, py, pw, ph = (int(v) for v in pill.groups())
-            # Moved onto it, the button never pressed.
-            guest.mouse_to(*R._to_tablet(gx + px + 60, gy + py + ph // 2, width, height))
-            said["demos"] = guest.wait_for_line("launchpad: Demos, ", "Demos shown by resting on it", mark)
-            # The launcher kept as it looked, for whoever reads the run after.
-            time.sleep(1.5)
-            w_, h_, rgb_ = R.parse_ppm(guest.screendump())
-            m_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", at_grid)
-
-            if m_:
-                lx, ly, lw, lh = (int(v) for v in m_.groups())
-                rows_ = [rgb_[((y_ * w_) + lx) * 3:((y_ * w_) + lx + lw) * 3]
-                         for y_ in range(ly, min(h_, ly + lh))]
-                os.makedirs(os.path.join(ROOT, "build", "dock"), exist_ok=True)
-                V.png(os.path.join(ROOT, "build", "dock", "launcher.png"), lw, len(rows_),
-                      b"".join(rows_))
-            guest.sendkey("down")
-            said["tabbed"] = guest.wait_for_line("launchpad: Preferences, ", "Down to the next section", mark)
-
-        click(*kosmos_button(), width, height)
-        time.sleep(3)
-        guest._read_available()
-        said["second"] = guest.seen[mark:]
-
-        # ---- 3c: Super and the key left of 1 - º on Diego's keyboard ----
-        mark = len(guest.seen)
-        guest.sendkey("meta_l-grave_accent")
-        said["modal"] = guest.wait_for_line("wm: window Shortcuts at ", "the shortcuts, modal", mark)
-        said["keycaps"] = guest.wait_for_line("shortcuts: groups ", "the shortcuts drawn", mark)
-        time.sleep(2)
-        # Kept for a person to look at, as the gallery's pictures are.
-        R.write_png("build/x86_64/dock-shortcuts.png", guest.screendump())
-        guest.sendkey("esc")
-        time.sleep(2)
-        guest._read_available()
-        said["modal closed"] = "wm: closed Shortcuts" in guest.seen[mark:]
-
-        # ---- 3d: the Windows key alone, on the USB keyboard ----
-        mark = len(guest.seen)
-        guest.sendkey("meta_l")
-        said["super grid"] = guest.wait_for_line("launchpad: the grid at ", "the grid from Super alone", mark)
-        time.sleep(2)
-        guest.sendkey("meta_l")
-        time.sleep(2)
-        guest._read_available()
-        said["super closed"] = ("deskbar: the launcher closed" in guest.seen[mark:]
-                                and "wm: closed Open" in guest.seen[mark:])
-
-        # And a press anywhere outside it.
-        mark = len(guest.seen)
-        click(*kosmos_button(), width, height)
-        guest.wait_for_line("launchpad: the grid at ", "the launcher grid a third time", mark)
-        time.sleep(2)
-        click(width // 2, STRIP_H // 2, width, height)
-        time.sleep(3)
-        guest._read_available()
-        said["outside"] = guest.seen[mark:]
-
-        # ---- 3e: Recently used and the power row (`docs/launcher.html`,
-        # agreed 8 October) ----
-        # The Calculator started above is in Recently used, a row under All
-        # shown by resting on it; Shut Down at the foot closes the launcher
-        # and opens the window that asks, which Escape closes having done
-        # nothing.
-        mark = len(guest.seen)
-        click(*kosmos_button(), width, height)
-        at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher a fourth time", mark)
-        rows4 = guest.wait_for_line("launchpad: rows ", "the rows again", mark)
-        power4 = maybe("launchpad: power ", "the power row", mark)
-        time.sleep(2)
-        gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
-        rec = re.search(r"Recently used (\d+),(\d+) (\d+)x(\d+)", rows4)
-
-        if rec:
-            rx, ry, rw, rh = (int(v) for v in rec.groups())
-            guest.mouse_to(*R._to_tablet(gx + rx + 60, gy + ry + rh // 2, width, height))
-            said["recent"] = maybe("launchpad: Recently used, ", "Recently used shown", mark)
-
-        off = re.search(r"shutdown (\d+),(\d+)", power4 or "")
-
-        if off:
-            mark = len(guest.seen)
-            click(gx + int(off.group(1)) + 20, gy + int(off.group(2)) + 19, width, height)
-            said["asked"] = maybe("power: asking to ", "the window that asks", mark)
-            guest.wait_for("wm: window Shut Down at ", "the window that asks, open")
+            said["same"] = session.run("setprop /Running/Deskbar/bar dock").decode(errors="replace")
             time.sleep(2)
+            guest._read_available()
+            said["same again"] = "deskbar: again" in guest.seen[mark:]
+
+            # ---- 2b: a name over the icon under the pointer ----
+            session.put(FOCUS.encode(), "/Temporary/focus.lua")
+            dx, dy, dw, dh = said["dock"]
+            over = dx + dw - PAD - 25                 # the last cell, always an application
+
+            if BREAK == "flat":
+                session.run("setprop /Running/Deskbar/magnify 0")
+                time.sleep(1)
+
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(over, dy + dh // 2, width, height))
+            said["tip name"] = guest.wait_for_line("deskbar: tip ", "a name over an icon", mark)
+            said["tip"] = guest.wait_for_line("wm: window Deskbar tip at ", "the tip's window", mark)
+            time.sleep(1)
+            said["tip focus"] = session.run("/Temporary/focus.lua").decode(errors="replace")
+
+            # ---- 2b': the icons magnified under the pointer (Diego, 8 and 17
+            # November) - the one under it grown by half at the default 50%,
+            # drawn by a lens over the dock, standing above the dock's top
+            # edge; and gone when the pointer leaves. Taken with the tip's
+            # pointer, which is already over the last cell.
+            mark_m = mark
+            said["magnified"] = None
+
+            try:
+                said["magnified"] = guest.wait_for_line("deskbar: magnified ", "an icon magnified", mark_m)
+            except Exception:                  # noqa: BLE001 - its check says
+                pass
+
+            said["lens"] = "wm: window Deskbar lens at " in guest.seen[mark_m:]
+            session.put(MAGNIFIED.encode(), "/Temporary/magnified.lua")
+            said["magnified cells"] = session.run("/Temporary/magnified.lua").decode(errors="replace")
+            _, _, at_m = R.pixel_reader(guest.screendump())
+            above_with = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
+
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+            time.sleep(2)
+
+            try:
+                guest.wait_for("deskbar: the icons settled", "the icons settled")
+            except Exception:                  # noqa: BLE001 - its check says
+                pass
+
+            guest._read_available()
+            said["tip gone"] = "wm: closed Deskbar tip" in guest.seen[mark:]
+            said["lens gone"] = "deskbar: the icons settled" in guest.seen[mark:] \
+                and "wm: closed Deskbar lens" in guest.seen[mark:]
+            said["tip over"] = over
+            _, _, at_m = R.pixel_reader(guest.screendump())
+            above_without = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
+            said["above changed"] = sum(1 for a_, b_ in zip(above_with, above_without) if a_ != b_)
+
+            # ---- 2b'': the dock drawn with its icons once the lens has gone
+            # (Diego, 20 November: "whenever i move the mouse out of the dock it
+            # disappears"). As the dock says it, not as a picture shows it: the
+            # bar repaints once a second whenever its loop wakes, and this
+            # suite's own traffic wakes it, so a picture saw the dock put back.
+            settled = re.search(r"deskbar: the icons settled, the dock drawn (with|without) them",
+                                guest.seen[mark:])
+            said["drawn with"] = settled.group(1) if settled else None
+
+            # The setting, as Appearance's slider tells it.
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/magnify 80")
+            try:
+                said["magnify set"] = guest.wait_for_line("deskbar: the dock magnifies 80%",
+                                                          "the magnification set", mark)
+            except Exception:                  # noqa: BLE001 - its check says
+                said["magnify set"] = None
+            session.run("setprop /Running/Deskbar/magnify %d" % (0 if BREAK == "flat" else 50))
+
+            # ---- 2c: the dock arranged by hand ----
+            found, said["pins before"], _ = cells()
+            dx, dy, dw, dh = said["dock"]
+            mid = dy + dh // 2
+
+            if "terminal" in found and "tracker" in found:
+                mark = len(guest.seen)
+                tx, tw = found["terminal"]
+                rx, _ = found["tracker"]
+                drag_from_to(dx + tx + tw // 2, mid, dx + rx + 4, mid)
+                said["moved"] = maybe("deskbar: moved terminal - the dock is ", "Terminal moved", mark)
+
+            found, _, _ = cells()
+            dx, dy, dw, dh = dock_now()
+
+            if "music" in found:
+                mark = len(guest.seen)
+                mx, mw = found["music"]
+                drag_from_to(dx + mx + mw // 2, mid, dx + mx + mw // 2, dy - 120)
+                said["removed"] = maybe("deskbar: removed music - the dock is ", "Music taken out", mark)
+
+            found, _, _ = cells()
+            dx, dy, dw, dh = dock_now()
+            loose = [n for n in found if n in ("logview", "sysmon", "procs")]
+
+            if loose:
+                mark = len(guest.seen)
+                lx, lw = found[loose[0]]
+                click(dx + lx + lw // 2, mid, width, height, "right")
+                menu = maybe("wm: menu of Deskbar at ", "an icon's menu", mark)
+                m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", menu or "")
+
+                if m:
+                    mx_, my_, mw_, mh_ = (int(v) for v in m.groups())
+                    click(mx_ + mw_ // 2, my_ + mh_ * 3 // 6, width, height)  # the second of three rows
+                    said["kept"] = maybe("deskbar: kept ", "Keep in Dock", mark)
+                said["kept name"] = loose[0]
+
+            mark = len(guest.seen)
+            said["pin"] = session.run("setprop /Running/Deskbar/pin calc").decode(errors="replace")
+            said["pinned"] = maybe("deskbar: kept calc - the dock is ", "calc added", mark)
+            time.sleep(2)
+            found, said["pins after"], said["pins kept"] = cells()
+            dx, dy, dw, dh = dock_now()
+
+            if "calc" in found:
+                mark = len(guest.seen)
+                cx, cw = found["calc"]
+                click(dx + cx + cw // 2, mid, width, height)
+                said["launched"] = maybe("deskbar: the dock launched ", "a click on a pin", mark)
+
+                if said["launched"]:
+                    guest.wait_for("wm: window Calculator at ", "the Calculator from the dock")
+                time.sleep(1)
+
+            # ---- 2d: how much shows through the dock ----
+            # Diego, 4 October: a slider from 100% to 0%, 25% unless said, and
+            # the icons as they are. The pill sampled in its end's padding and an
+            # icon at its middle, at 0, 100 and 25; then the slider in
+            # Preferences pressed at its middle.
+            dx, dy, dw, dh = dock_now()
+            found, _, _ = cells()
+            cell = found.get("terminal") or found.get("tracker")
+
+            # Away from the dock, so its icons are not magnified over the pill.
+            guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+            time.sleep(1)
+
+            def dock_at(percent):
+                mark_ = len(guest.seen)
+                session.run("setprop /Running/Deskbar/transparency %d" % percent)
+                heard = maybe("deskbar: the dock %d%% transparent" % percent, "the transparency", mark_)
+                time.sleep(1)
+                shot_ = guest.screendump()
+
+                if os.environ.get("KOSMOS_DOCK_SHOTS"):
+                    with open(os.path.join(ROOT, "build", "dock", "clear-%d.ppm" % percent), "wb") as f_:
+                        f_.write(shot_)
+
+                _, _, at_ = R.pixel_reader(shot_)
+                pill = at_(dx + dw - 5, dy + dh // 2)
+                icon = at_(dx + cell[0] + cell[1] // 2, dy + dh // 2) if cell else None
+                return heard is not None, pill, icon
+
+            said["clear 0"] = dock_at(0)
+            said["clear 100"] = dock_at(100)
+            said["clear 25"] = dock_at(25)
+
+            mark = len(guest.seen)
+            session.run("/Temporary/prefs.lua")
+            prefs = maybe("wm: window Preferences at ", "Preferences", mark)
+            slider = maybe("preferences slider: dock_transparency at ", "the slider", mark)
+            p_ = re.match(r"(\d+),(\d+)", prefs or "")
+            s_ = re.match(r"(\d+),(\d+), (\d+) wide", slider or "")
+
+            if p_ and s_:
+                time.sleep(1)
+                mark = len(guest.seen)
+                click(int(p_.group(1)) + int(s_.group(1)) + int(s_.group(3)) // 2,
+                      int(p_.group(2)) + int(s_.group(2)), width, height)
+                said["slid"] = maybe("deskbar: the dock ", "the slider pressed", mark)
+                said["slid kept"] = session.run("/Temporary/clear.lua").decode(errors="replace")
+
+            # **Preferences made taller by its grip** (Diego, 8 October: "when
+            # resizing the preferences app it breaks the layout"): its page and
+            # its sidebar's ground kept the height they opened at, so below the
+            # old bottom there was no ground and no labels. Dragged 160 down,
+            # the page says its new height, and the sidebar's ground near the
+            # new bottom is the colour it is near the old one.
+            win_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", prefs or "")
+
+            if win_:
+                wx, wy, ww, wh = (int(v) for v in win_.groups())
+
+                # Room below it to grow into: where a window opens depends on
+                # what else is open (on 12 October it opened at 734 of a 1440
+                # screen, and 160 taller ran off it), so it is moved up by its
+                # header first when there is not.
+                if wy + wh + 200 > height:
+                    mark = len(guest.seen)
+                    drag_from_to(wx + ww // 2, wy + 20, wx + ww // 2, 140)
+                    moved_ = re.match(r"(\d+),(\d+)",
+                                      maybe("wm: moved Preferences by its header to ",
+                                            "Preferences moved up", mark) or "")
+                    if moved_:
+                        wx, wy = int(moved_.group(1)), int(moved_.group(2))
+                    time.sleep(1)
+
+                _, _, at_ = R.pixel_reader(guest.screendump())
+                ground = at_(wx + 12, wy + wh - 30)
+                mark = len(guest.seen)
+                drag_from_to(wx + ww - 6, wy + wh - 6, wx + ww - 6, wy + wh + 154)
+                said["prefs resized"] = maybe("preferences: resized to ", "Preferences resized", mark)
+                time.sleep(1)
+                _, _, at_ = R.pixel_reader(guest.screendump())
+                said["prefs ground"] = (ground, at_(wx + 12, wy + wh + 130))
+
+            session.run("/Temporary/close.lua Preferences")
+            dock_at(25)
+            time.sleep(1)
+
+            # ---- 3: the Kosmos button and its menu ----
+            dx, dy, dw, dh = said["dock"]
+            bx, by = dx + PAD + 8, dy + dh // 2         # inside the button, clear of its words
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["unlit"] = at(bx, by)
+
+            # The button wears the rocket (Haiku's Launchbox; Diego, 11
+            # October), not the three cubes: red where its picture is, and none
+            # of the cubes' strong blue.
+            left = button_left(at, said["dock"], said["unlit"])
+            said["rocket"] = [0, 0]
+            if left is not None:
+                for yy in range(by - 16, by + 16):
+                    for xx in range(left + 8, left + 16 + 34):
+                        r, g, b = at(xx, yy)[:3]
+                        if b > 140 and b > r + 60 and b > g + 20:
+                            said["rocket"][0] += 1
+                        if r > 150 and r > g + 60 and r > b + 60:
+                            said["rocket"][1] += 1
+            mark = len(guest.seen)
+            click(dx + PAD + 40, by, width, height, "right")       # the right button: the menu
+            said["menu"] = guest.wait_for_line("wm: menu of Deskbar at ", "the Kosmos menu", mark)
+            time.sleep(1)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["lit"] = at(bx, by)
+            said["button"] = button_left(at, said["dock"], said["lit"])
+
+            # Restart and Shut Down, the menu's last two rows, wear the three
+            # cubes: colour in their picture's column, where the menu is grey.
+            m = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said["menu"] or "")
+            said["power pictures"] = 0
+
+            if m:
+                mx, my, mw, mh = (int(v) for v in m.groups())
+
+                for y in range(my + mh - 70, my + mh - 4):
+                    for x in range(mx + 4, mx + 40):
+                        r, g, b = at(x, y)
+
+                        if max(r, g, b) - min(r, g, b) > 80:
+                            said["power pictures"] += 1
+            click(width // 2, STRIP_H // 2, width, height)    # the strip's middle: nothing there
+            time.sleep(1.5)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["dismissed"] = at(bx, by)
+
+            # ---- 3a: pressed and slid off, it opens nothing - a click is a
+            # press and a release (Diego, 9 October: "that is in all kosmos") ----
+            mark = len(guest.seen)
+            kx, ky = kosmos_button()
+            guest.mouse_to(*R._to_tablet(kx, ky, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.3)
+            guest.mouse_to(*R._to_tablet(kx + 300, ky - 300, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(False)
+            time.sleep(2)
+            guest._read_available()
+            said["slid off"] = "launchpad: the grid at " in guest.seen[mark:]
+
+            # ---- 3b: the launcher, the left button's ----
+            mark = len(guest.seen)
+            click(*kosmos_button(), width, height)
+            said["grid"] = guest.wait_for_line("launchpad: the grid at ", "the launcher grid", mark)
+            said["dock place"] = re.findall(r"launchpad: the dock's place in (\d+) ms", guest.seen[mark:])
+            time.sleep(2)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["grid lit"] = at(bx, by)
+            said["grid dock"] = last_dock(guest.seen)
+
+            for key in ("c", "a", "l", "c", "ret"):
+                guest.sendkey(key)
+                time.sleep(0.3)
+
+            said["opened"] = guest.wait_for_line("launchpad: opened ", "a tile opened by its name", mark)
+            guest.wait_for("wm: window Calculator at ", "the Calculator")
+            time.sleep(3)                                   # the dock a cell wider
+
+            # A second press on the button closes it, and starts nothing - after
+            # its sections: the rows in Diego's order, Demos shown by the pointer
+            # resting on it with no click, and Down to the next (7 October,
+            # `docs/launcher.html`).
+            mark = len(guest.seen)
+            click(*kosmos_button(), width, height)
+            at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher grid again", mark)
+            said["pills"] = guest.wait_for_line("launchpad: rows ", "the sections' rows", mark)
+            time.sleep(2)
+            gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
+            pill = re.search(r"Demos (\d+),(\d+) (\d+)x(\d+)", said["pills"])
+
+            if pill:
+                px, py, pw, ph = (int(v) for v in pill.groups())
+                # Moved onto it, the button never pressed.
+                guest.mouse_to(*R._to_tablet(gx + px + 60, gy + py + ph // 2, width, height))
+                said["demos"] = guest.wait_for_line("launchpad: Demos, ", "Demos shown by resting on it", mark)
+                # The launcher kept as it looked, for whoever reads the run after.
+                time.sleep(1.5)
+                w_, h_, rgb_ = R.parse_ppm(guest.screendump())
+                m_ = re.match(r"(\d+),(\d+) (\d+)x(\d+)", at_grid)
+
+                if m_:
+                    lx, ly, lw, lh = (int(v) for v in m_.groups())
+                    rows_ = [rgb_[((y_ * w_) + lx) * 3:((y_ * w_) + lx + lw) * 3]
+                             for y_ in range(ly, min(h_, ly + lh))]
+                    os.makedirs(os.path.join(ROOT, "build", "dock"), exist_ok=True)
+                    V.png(os.path.join(ROOT, "build", "dock", "launcher.png"), lw, len(rows_),
+                          b"".join(rows_))
+                guest.sendkey("down")
+                said["tabbed"] = guest.wait_for_line("launchpad: Preferences, ", "Down to the next section", mark)
+
+            click(*kosmos_button(), width, height)
+            time.sleep(3)
+            guest._read_available()
+            said["second"] = guest.seen[mark:]
+
+            # ---- 3c: Super and the key left of 1 - º on Diego's keyboard ----
+            mark = len(guest.seen)
+            guest.sendkey("meta_l-grave_accent")
+            said["modal"] = guest.wait_for_line("wm: window Shortcuts at ", "the shortcuts, modal", mark)
+            said["keycaps"] = guest.wait_for_line("shortcuts: groups ", "the shortcuts drawn", mark)
+            time.sleep(2)
+            # Kept for a person to look at, as the gallery's pictures are.
+            R.write_png("build/x86_64/dock-shortcuts.png", guest.screendump())
             guest.sendkey("esc")
             time.sleep(2)
             guest._read_available()
-            said["not off"] = ("wm: closed Shut Down" in guest.seen[mark:]
-                               and "power: off" not in guest.seen[mark:]
-                               and "wm: closed Open" in guest.seen[mark:])
+            said["modal closed"] = "wm: closed Shortcuts" in guest.seen[mark:]
 
-        # ---- 3f: focus follows the pointer (agreed 7 October) ----
-        # Turned on as Preferences turns it on, at a quarter of a second;
-        # the Clock opened in front of the Calculator; the pointer rested on
-        # a part of the Calculator the Clock does not cover, and the
-        # Calculator comes to the front. Then off again.
-        session.put(FOLLOW.encode(), "/Temporary/follow.lua")
-        mark = len(guest.seen)
-        session.run("/Temporary/follow.lua on")
-        said["follows on"] = maybe("wm: focus follows the pointer on", "focus following turned on", mark)
-        session.run("open clock")
-        clock = maybe("wm: window clock at ", "the Clock", mark)
-        time.sleep(2)
-        calc = re.findall(r"wm: window Calculator at (\d+),(\d+) (\d+)x(\d+)", guest.seen)
-        ck = re.match(r"(\d+),(\d+) (\d+)x(\d+)", clock or "")
-
-        if calc and ck:
-            cx, cy, cw, ch = (int(v) for v in calc[-1])
-            kx, ky, kw, kh = (int(v) for v in ck.groups())
-            spot = None
-
-            for fx in (0.15, 0.5, 0.85):
-                for fy in (0.3, 0.6, 0.9):
-                    px, py = cx + int(cw * fx), cy + int(ch * fy)
-
-                    if not (kx <= px < kx + kw and ky <= py < ky + kh) and spot is None:
-                        spot = (px, py)
-
-            said["follow spot"] = (spot, calc[-1], ck.groups())
-
-            if spot:
-                mark = len(guest.seen)
-                guest.mouse_to(*R._to_tablet(spot[0], spot[1], width, height))
-                said["followed"] = maybe("wm: focus followed the pointer to ", "focus following the pointer", mark)
-
-        session.run("/Temporary/follow.lua off")
-        session.run("/Temporary/close.lua clock")
-        time.sleep(1)
-
-        # ---- 4: the whole width ----
-        mark = len(guest.seen)
-        said["whole"] = session.run("setprop /Running/Deskbar/dock whole").decode(errors="replace")
-        guest.wait_for("deskbar: a dock, the whole width", "the dock along the foot")
-        said["along"] = guest.wait_for_line("wm: window Deskbar at ", "the dock's window", mark)
-        time.sleep(1)
-        said["room whole"] = room(session)
-
-        # Its Kosmos button is in the middle of the bar, and its menu has to
-        # open there (Diego's photograph: "way off the kosmos button").
-        whole_dock = (0, height - DOCK_H, width, DOCK_H)
-        _, _, at = R.pixel_reader(guest.screendump())
-        start = button_left(at, whole_dock, said["unlit"])
-        said["whole button"] = start
-
-        if start is not None:
+            # ---- 3d: the Windows key alone, on the USB keyboard ----
             mark = len(guest.seen)
-            click(start + 40, height - DOCK_H // 2, width, height, "right")
-            said["whole menu"] = guest.wait_for_line("wm: menu of Deskbar at ",
-                                                     "the Kosmos menu, the whole width", mark)
+            guest.sendkey("meta_l")
+            said["super grid"] = guest.wait_for_line("launchpad: the grid at ", "the grid from Super alone", mark)
+            time.sleep(2)
+            guest.sendkey("meta_l")
+            time.sleep(2)
+            guest._read_available()
+            said["super closed"] = ("deskbar: the launcher closed" in guest.seen[mark:]
+                                    and "wm: closed Open" in guest.seen[mark:])
+
+            # And a press anywhere outside it.
+            mark = len(guest.seen)
+            click(*kosmos_button(), width, height)
+            guest.wait_for_line("launchpad: the grid at ", "the launcher grid a third time", mark)
+            time.sleep(2)
             click(width // 2, STRIP_H // 2, width, height)
+            time.sleep(3)
+            guest._read_available()
+            said["outside"] = guest.seen[mark:]
+
+            # ---- 3e: Recently used and the power row (`docs/launcher.html`,
+            # agreed 8 October) ----
+            # The Calculator started above is in Recently used, a row under All
+            # shown by resting on it; Shut Down at the foot closes the launcher
+            # and opens the window that asks, which Escape closes having done
+            # nothing.
+            mark = len(guest.seen)
+            click(*kosmos_button(), width, height)
+            at_grid = guest.wait_for_line("launchpad: the grid at ", "the launcher a fourth time", mark)
+            rows4 = guest.wait_for_line("launchpad: rows ", "the rows again", mark)
+            power4 = maybe("launchpad: power ", "the power row", mark)
+            time.sleep(2)
+            gx, gy = (int(v) for v in re.match(r"(\d+),(\d+)", at_grid).groups())
+            rec = re.search(r"Recently used (\d+),(\d+) (\d+)x(\d+)", rows4)
+
+            if rec:
+                rx, ry, rw, rh = (int(v) for v in rec.groups())
+                guest.mouse_to(*R._to_tablet(gx + rx + 60, gy + ry + rh // 2, width, height))
+                said["recent"] = maybe("launchpad: Recently used, ", "Recently used shown", mark)
+
+            off = re.search(r"shutdown (\d+),(\d+)", power4 or "")
+
+            if off:
+                mark = len(guest.seen)
+                click(gx + int(off.group(1)) + 20, gy + int(off.group(2)) + 19, width, height)
+                said["asked"] = maybe("power: asking to ", "the window that asks", mark)
+                guest.wait_for("wm: window Shut Down at ", "the window that asks, open")
+                time.sleep(2)
+                guest.sendkey("esc")
+                time.sleep(2)
+                guest._read_available()
+                said["not off"] = ("wm: closed Shut Down" in guest.seen[mark:]
+                                   and "power: off" not in guest.seen[mark:]
+                                   and "wm: closed Open" in guest.seen[mark:])
+
+            # ---- 3f: focus follows the pointer (agreed 7 October) ----
+            # Turned on as Preferences turns it on, at a quarter of a second;
+            # the Clock opened in front of the Calculator; the pointer rested on
+            # a part of the Calculator the Clock does not cover, and the
+            # Calculator comes to the front. Then off again.
+            session.put(FOLLOW.encode(), "/Temporary/follow.lua")
+            mark = len(guest.seen)
+            session.run("/Temporary/follow.lua on")
+            said["follows on"] = maybe("wm: focus follows the pointer on", "focus following turned on", mark)
+            session.run("open clock")
+            clock = maybe("wm: window clock at ", "the Clock", mark)
+            time.sleep(2)
+            calc = re.findall(r"wm: window Calculator at (\d+),(\d+) (\d+)x(\d+)", guest.seen)
+            ck = re.match(r"(\d+),(\d+) (\d+)x(\d+)", clock or "")
+
+            if calc and ck:
+                cx, cy, cw, ch = (int(v) for v in calc[-1])
+                kx, ky, kw, kh = (int(v) for v in ck.groups())
+                spot = None
+
+                for fx in (0.15, 0.5, 0.85):
+                    for fy in (0.3, 0.6, 0.9):
+                        px, py = cx + int(cw * fx), cy + int(ch * fy)
+
+                        if not (kx <= px < kx + kw and ky <= py < ky + kh) and spot is None:
+                            spot = (px, py)
+
+                said["follow spot"] = (spot, calc[-1], ck.groups())
+
+                if spot:
+                    mark = len(guest.seen)
+                    guest.mouse_to(*R._to_tablet(spot[0], spot[1], width, height))
+                    said["followed"] = maybe("wm: focus followed the pointer to ", "focus following the pointer", mark)
+
+            session.run("/Temporary/follow.lua off")
+            session.run("/Temporary/close.lua clock")
             time.sleep(1)
 
-        # ---- 5: back to the top ----
-        mark = len(guest.seen)
-        said["top"] = session.run("setprop /Running/Deskbar/bar top").decode(errors="replace")
-        said["again"] = guest.wait_for_line("wm: window Deskbar at ", "the bar again", mark)
-        time.sleep(1)
-        said["room again"] = room(session)
+            # ---- 6: the wallpaper ----
+            # In the first half since the split, so the two take about as
+            # long: with the dock floating and centred, as 3f leaves it, the
+            # bottom left corner is as clear of it as it was of the bar. Its
+            # captures, 6b, stay in the second, after 5, where they were.
+            session.put(WALL.encode(), "/Temporary/wall.lua")
+            session.put(FIT.encode(), "/Temporary/fit.lua")
+            corner = (6, height - 6)                  # clear of the dock, the stamp and the icons
+            # A picture shorter than this screen - the image's 1920 by 1080 test
+            # picture, since every wallpaper it carries is at least 1440 tall -
+            # filled, then centred.
+            said["wall"] = session.run("/Temporary/wall.lua test-screen.jpg").decode(errors="replace")
+            time.sleep(2)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["filled"] = at(*corner)
+            said["centre"] = session.run("/Temporary/fit.lua centre").decode(errors="replace")
+            time.sleep(2)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["centred"] = at(*corner)
+            said["sideways"] = session.run("/Temporary/fit.lua sideways").decode(errors="replace")
 
-        # ---- 6: the wallpaper ----
-        session.put(WALL.encode(), "/Temporary/wall.lua")
-        session.put(FIT.encode(), "/Temporary/fit.lua")
-        corner = (6, height - 6)                  # clear of the dock, the stamp and the icons
-        # A picture shorter than this screen - the image's 1920 by 1080 test
-        # picture, since every wallpaper it carries is at least 1440 tall -
-        # filled, then centred.
-        said["wall"] = session.run("/Temporary/wall.lua test-screen.jpg").decode(errors="replace")
-        time.sleep(2)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["filled"] = at(*corner)
-        said["centre"] = session.run("/Temporary/fit.lua centre").decode(errors="replace")
-        time.sleep(2)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["centred"] = at(*corner)
-        said["sideways"] = session.run("/Temporary/fit.lua sideways").decode(errors="replace")
-
-        # And the widest the image carries, 5120 by 1440, filling again: never
-        # shrunk, its middle at its own size - Diego, 12 October: "for 1920 we
-        # dont need to scale it, we just render the part that fits".
-        mark = len(guest.seen)
-        session.run("/Temporary/fit.lua fill")
-        said["wide"] = session.run("/Temporary/wall.lua wallpaper/white-turbine.jpg").decode(errors="replace")
-        said["wide line"] = guest.wait_for_line("wm: the wallpaper, 5120x1440, at its own size",
-                                                "the wide wallpaper", mark)
-        time.sleep(2)
-        _, _, at = R.pixel_reader(guest.screendump())
-        said["wide corner"] = at(*corner)
-
-        # ---- 6b: a picture of the screen, by Print Screen, Control Alt 1
-        # and Super Shift 3 - each saved into /Home/Captures ----
-        shots = []
-
-        for keys_ in ("print", "ctrl-alt-1", "meta_l-shift-3"):
+            # And the widest the image carries, 5120 by 1440, filling again: never
+            # shrunk, its middle at its own size - Diego, 12 October: "for 1920 we
+            # dont need to scale it, we just render the part that fits".
             mark = len(guest.seen)
-            guest.sendkey(keys_)
+            session.run("/Temporary/fit.lua fill")
+            said["wide"] = session.run("/Temporary/wall.lua wallpaper/white-turbine.jpg").decode(errors="replace")
+            said["wide line"] = guest.wait_for_line("wm: the wallpaper, 5120x1440, at its own size",
+                                                    "the wide wallpaper", mark)
+            time.sleep(2)
+            _, _, at = R.pixel_reader(guest.screendump())
+            said["wide corner"] = at(*corner)
 
-            try:
-                shots.append((keys_, guest.wait_for_line("screenshot: ", "a screenshot by " + keys_, mark)))
-            except Exception:              # noqa: BLE001 - said below
-                shots.append((keys_, None))
-
-            time.sleep(1.2)                # another second, another name
-
-        said["shots"] = shots
-        # Each said as a notification, which opens the picture when pressed.
-        guest._read_available()
-        said["shot notes"] = len(re.findall(
-            r'notify: \d+ "Screenshot saved" from /Kosmos/Programs/screenshot\.lua',
-            guest.seen))
-        said["shot opens"] = session.run("notify --list").decode(errors="replace")
-        first = re.match(r"(\S+), (\d+)x(\d+), (\d+) bytes", shots[0][1] or "")
-
-        if first:
-            # Its first 24 bytes, read where it is: the signature, and the
-            # width and height in its IHDR. The whole of it over Telnet is
-            # longer than a session waits under emulation.
-            head = ('local s = fs.read(%r) or ""\n'
-                    'print("PNGHEAD " .. s:sub(1, 24):gsub(".", function(c) '
-                    'return ("%%02x"):format(c:byte()) end))\n' % first.group(1))
-            session.put(head.encode(), "/Temporary/pnghead.lua")
-            out = session.run("/Temporary/pnghead.lua").decode(errors="replace")
-            m = re.search(r"PNGHEAD ([0-9a-f]+)", out)
-            said["png"] = bytes.fromhex(m.group(1)) if m else out.encode()
-
-            # **And shown**: the capture opened in Photo, and its picture on
-            # the screen rather than a black frame - which is what every
-            # capture looked like on the M700 once windows painted
-            # themselves and the kit could not read a file (10 October).
+        if part != 1:
+            # ---- 4: the whole width ----
             mark = len(guest.seen)
-            session.put(('local r = fs.send("/Running/wm", { type = "launch", program = "photo", '
-                         'args = %r })\nprint("PHOTO " .. tostring(r and r.ok))\n'
-                         % first.group(1)).encode(), "/Temporary/photo.lua")
-            session.run("/Temporary/photo.lua")
-            at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
-                           guest.seen[mark:]) or None
-            deadline = time.monotonic() + 30
-            while not at and time.monotonic() < deadline:
-                time.sleep(0.5)
-                guest._read_available()
-                at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
-                               guest.seen[mark:])
-            said["photo said"] = [l for l in guest.seen[mark:].splitlines()
-                                  if "hoto" in l or "PHOTO" in l][-6:]
-            if at:
-                time.sleep(4)
-                sw, sh, px = R.parse_ppm(guest.screendump())
-                x0, y0, ww, wh = (int(v) for v in at.groups())
-                colours = set()
-                for gy in range(y0 + 60, y0 + wh - 10, max(1, (wh - 70) // 12)):
-                    for gx in range(x0 + 10, x0 + ww - 10, max(1, (ww - 20) // 12)):
-                        k = (gy * sw + gx) * 3
-                        colours.add(bytes(px[k:k + 3]))
-                said["photo colours"] = len(colours)
-                # Closed again, so what follows sees the desktop it expects:
-                # by its handle, and waited for, rather than a key that
-                # closes whatever happens to be in front.
-                session.put(('local wm = use("/Kosmos/Libraries/wmproto.lua")\n'
-                             'for _, w in ipairs((wm.windows() or {}).windows or {}) do\n'
-                             '  if tostring(w.title):match("^Photo") then\n'
-                             '    fs.send("/Running/wm", { type = "close", window = w.handle })\n'
-                             '  end\n'
-                             'end\n').encode(), "/Temporary/close_photo.lua")
-                gone = len(guest.seen)
-                session.run("/Temporary/close_photo.lua")
-                deadline = time.monotonic() + 15
-                while "wm: closed Photo" not in guest.seen[gone:] and time.monotonic() < deadline:
-                    time.sleep(0.3)
-                    guest._read_available()
+            said["whole"] = session.run("setprop /Running/Deskbar/dock whole").decode(errors="replace")
+            guest.wait_for("deskbar: a dock, the whole width", "the dock along the foot")
+            said["along"] = guest.wait_for_line("wm: window Deskbar at ", "the dock's window", mark)
+            time.sleep(1)
+            said["room whole"] = room(session)
+
+            # Its Kosmos button is in the middle of the bar, and its menu has to
+            # open there (Diego's photograph: "way off the kosmos button").
+            whole_dock = (0, height - DOCK_H, width, DOCK_H)
+            _, _, at = R.pixel_reader(guest.screendump())
+            start = button_left(at, whole_dock, said["unlit"])
+            said["whole button"] = start
+
+            if start is not None:
+                mark = len(guest.seen)
+                click(start + 40, height - DOCK_H // 2, width, height, "right")
+                said["whole menu"] = guest.wait_for_line("wm: menu of Deskbar at ",
+                                                         "the Kosmos menu, the whole width", mark)
+                click(width // 2, STRIP_H // 2, width, height)
                 time.sleep(1)
 
-        # Where the window manager put the dock: a floating one is "the dock
-        # at", one the whole width is the Deskbar's window - either is
-        # "x,y WxH" after it.
-        def dock_line(since, what):
-            deadline = time.monotonic() + 60
-
-            while time.monotonic() < deadline:
-                guest._read_available()
-                m = re.search(r"(?:wm: the dock at |wm: window Deskbar at )(\d+,\d+ \d+x\d+)",
-                              guest.seen[since:])
-
-                if m and not m.group(1).startswith("0,0 "):
-                    return m.group(1)
-
-                time.sleep(0.3)
-
-            raise R.Failure("the guest never said " + what)
-
-        # ---- 6c: the dock's size, a setting (7 October) - Large, the dock
-        # started again at 72 tall, and Medium back at 60 ----
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/bar dock")
-        guest.wait_for_line("deskbar: again, the bar dock", "the bar a dock for its size", mark)
-        time.sleep(2)
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/size large")
-        said["large"] = dock_line(mark, "the dock at its Large size")
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/size medium")
-        said["medium"] = dock_line(mark, "the dock at its Medium size")
-        time.sleep(2)
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/bar top")
-        guest.wait_for_line("wm: window Deskbar at 0,0 ", "the bar back at the top", mark)
-        time.sleep(2)
-
-        # ---- 7: one program moving the bar four times ----
-        session.put(SWITCH.encode(), "/Temporary/switch.lua")
-        mark = len(guest.seen)
-        said["switch"] = session.run("/Temporary/switch.lua").decode(errors="replace")
-        guest._read_available()
-        said["switched"] = guest.seen[mark:]
-
-        # ---- 8: a pin whose program is not there (0.11.507) ----
-        # Diego's dock on the M700 kept `browser` from before JetSki, and a
-        # press said nothing on the screen. Pinned, it is found missing on
-        # the dock's own clock; pressed, it says so and launches nothing.
-        # Last, since 7 leaves the bar at the top: the dock first, and the
-        # pin then says the dock's place afresh (`roadmap.md`, the dock
-        # suite's place from a log line).
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/bar dock")
-        maybe("deskbar: the dock's jetski", "the dock back, its pins looked for", mark)
-        time.sleep(2)
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/pin ghostapp")
-        # The dock comes back as it was kept - the whole width, after 7 -
-        # so along the foot, where a cell's place is the screen's.
-        whole_ = (0, height - DOCK_H, width, DOCK_H)
-        mid = whole_[1] + whole_[3] // 2
-        said["ghost found"] = maybe("deskbar: the dock's ghostapp names no program there is",
-                                    "the missing pin found missing", mark)
-        time.sleep(1)
-        found, _, _ = cells()
-        dx, dy, dw, dh = whole_
-
-        if "ghostapp" in found:
-            gx, gw = found["ghostapp"]
+            # ---- 5: back to the top ----
             mark = len(guest.seen)
-            click(dx + gx + gw // 2, mid, width, height)
-            said["ghost pressed"] = maybe("deskbar: the dock's ghostapp is not installed, so not launched",
-                                          "the missing pin pressed", mark)
+            said["top"] = session.run("setprop /Running/Deskbar/bar top").decode(errors="replace")
+            said["again"] = guest.wait_for_line("wm: window Deskbar at ", "the bar again", mark)
             time.sleep(1)
-            said["ghost launched"] = "wm: launching ghostapp" in guest.seen[mark:]
-        # Off the dock and settled before it is taken out, so the dock does
-        # not shrink under a resting pointer and leave the lens open over
-        # what comes after.
-        mark = len(guest.seen)
-        guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
-        maybe("deskbar: the icons settled", "the icons settled off the dock", mark)
-        mark = len(guest.seen)
-        session.run("setprop /Running/Deskbar/unpin ghostapp")
-        said["ghost unpinned"] = maybe("deskbar: removed ghostapp - the dock is ",
-                                       "the missing pin taken out", mark)
-        time.sleep(1)
+            said["room again"] = room(session)
+
+            # ---- 6b: a picture of the screen, by Print Screen, Control Alt 1
+            # and Super Shift 3 - each saved into /Home/Captures ----
+            shots = []
+
+            for keys_ in ("print", "ctrl-alt-1", "meta_l-shift-3"):
+                mark = len(guest.seen)
+                guest.sendkey(keys_)
+
+                try:
+                    shots.append((keys_, guest.wait_for_line("screenshot: ", "a screenshot by " + keys_, mark)))
+                except Exception:              # noqa: BLE001 - said below
+                    shots.append((keys_, None))
+
+                time.sleep(1.2)                # another second, another name
+
+            said["shots"] = shots
+            # Each said as a notification, which opens the picture when pressed.
+            guest._read_available()
+            said["shot notes"] = len(re.findall(
+                r'notify: \d+ "Screenshot saved" from /Kosmos/Programs/screenshot\.lua',
+                guest.seen))
+            said["shot opens"] = session.run("notify --list").decode(errors="replace")
+            first = re.match(r"(\S+), (\d+)x(\d+), (\d+) bytes", shots[0][1] or "")
+
+            if first:
+                # Its first 24 bytes, read where it is: the signature, and the
+                # width and height in its IHDR. The whole of it over Telnet is
+                # longer than a session waits under emulation.
+                head = ('local s = fs.read(%r) or ""\n'
+                        'print("PNGHEAD " .. s:sub(1, 24):gsub(".", function(c) '
+                        'return ("%%02x"):format(c:byte()) end))\n' % first.group(1))
+                session.put(head.encode(), "/Temporary/pnghead.lua")
+                out = session.run("/Temporary/pnghead.lua").decode(errors="replace")
+                m = re.search(r"PNGHEAD ([0-9a-f]+)", out)
+                said["png"] = bytes.fromhex(m.group(1)) if m else out.encode()
+
+                # **And shown**: the capture opened in Photo, and its picture on
+                # the screen rather than a black frame - which is what every
+                # capture looked like on the M700 once windows painted
+                # themselves and the kit could not read a file (10 October).
+                mark = len(guest.seen)
+                session.put(('local r = fs.send("/Running/wm", { type = "launch", program = "photo", '
+                             'args = %r })\nprint("PHOTO " .. tostring(r and r.ok))\n'
+                             % first.group(1)).encode(), "/Temporary/photo.lua")
+                session.run("/Temporary/photo.lua")
+                at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
+                               guest.seen[mark:]) or None
+                deadline = time.monotonic() + 30
+                while not at and time.monotonic() < deadline:
+                    time.sleep(0.5)
+                    guest._read_available()
+                    at = re.search(r"wm: window Photo at (\d+),(\d+) (\d+)x(\d+)",
+                                   guest.seen[mark:])
+                said["photo said"] = [l for l in guest.seen[mark:].splitlines()
+                                      if "hoto" in l or "PHOTO" in l][-6:]
+                if at:
+                    time.sleep(4)
+                    sw, sh, px = R.parse_ppm(guest.screendump())
+                    x0, y0, ww, wh = (int(v) for v in at.groups())
+                    colours = set()
+                    for gy in range(y0 + 60, y0 + wh - 10, max(1, (wh - 70) // 12)):
+                        for gx in range(x0 + 10, x0 + ww - 10, max(1, (ww - 20) // 12)):
+                            k = (gy * sw + gx) * 3
+                            colours.add(bytes(px[k:k + 3]))
+                    said["photo colours"] = len(colours)
+                    # Closed again, so what follows sees the desktop it expects:
+                    # by its handle, and waited for, rather than a key that
+                    # closes whatever happens to be in front.
+                    session.put(('local wm = use("/Kosmos/Libraries/wmproto.lua")\n'
+                                 'for _, w in ipairs((wm.windows() or {}).windows or {}) do\n'
+                                 '  if tostring(w.title):match("^Photo") then\n'
+                                 '    fs.send("/Running/wm", { type = "close", window = w.handle })\n'
+                                 '  end\n'
+                                 'end\n').encode(), "/Temporary/close_photo.lua")
+                    gone = len(guest.seen)
+                    session.run("/Temporary/close_photo.lua")
+                    deadline = time.monotonic() + 15
+                    while "wm: closed Photo" not in guest.seen[gone:] and time.monotonic() < deadline:
+                        time.sleep(0.3)
+                        guest._read_available()
+                    time.sleep(1)
+
+            # Where the window manager put the dock: a floating one is "the dock
+            # at", one the whole width is the Deskbar's window - either is
+            # "x,y WxH" after it.
+            def dock_line(since, what):
+                deadline = time.monotonic() + 60
+
+                while time.monotonic() < deadline:
+                    guest._read_available()
+                    m = re.search(r"(?:wm: the dock at |wm: window Deskbar at )(\d+,\d+ \d+x\d+)",
+                                  guest.seen[since:])
+
+                    if m and not m.group(1).startswith("0,0 "):
+                        return m.group(1)
+
+                    time.sleep(0.3)
+
+                raise R.Failure("the guest never said " + what)
+
+            # ---- 6c: the dock's size, a setting (7 October) - Large, the dock
+            # started again at 72 tall, and Medium back at 60 ----
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/bar dock")
+            guest.wait_for_line("deskbar: again, the bar dock", "the bar a dock for its size", mark)
+            time.sleep(2)
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/size large")
+            said["large"] = dock_line(mark, "the dock at its Large size")
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/size medium")
+            said["medium"] = dock_line(mark, "the dock at its Medium size")
+            time.sleep(2)
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/bar top")
+            guest.wait_for_line("wm: window Deskbar at 0,0 ", "the bar back at the top", mark)
+            time.sleep(2)
+
+            # ---- 7: one program moving the bar four times ----
+            session.put(SWITCH.encode(), "/Temporary/switch.lua")
+            mark = len(guest.seen)
+            said["switch"] = session.run("/Temporary/switch.lua").decode(errors="replace")
+            guest._read_available()
+            said["switched"] = guest.seen[mark:]
+
+            # ---- 8: a pin whose program is not there (0.11.507) ----
+            # Diego's dock on the M700 kept `browser` from before JetSki, and a
+            # press said nothing on the screen. Pinned, it is found missing on
+            # the dock's own clock; pressed, it says so and launches nothing.
+            # Last, since 7 leaves the bar at the top: the dock first, and the
+            # pin then says the dock's place afresh (`roadmap.md`, the dock
+            # suite's place from a log line).
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/bar dock")
+            maybe("deskbar: the dock's jetski", "the dock back, its pins looked for", mark)
+            time.sleep(2)
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/pin ghostapp")
+            # The dock comes back as it was kept - the whole width, after 7 -
+            # so along the foot, where a cell's place is the screen's.
+            whole_ = (0, height - DOCK_H, width, DOCK_H)
+            mid = whole_[1] + whole_[3] // 2
+            said["ghost found"] = maybe("deskbar: the dock's ghostapp names no program there is",
+                                        "the missing pin found missing", mark)
+            time.sleep(1)
+            found, _, _ = cells()
+            dx, dy, dw, dh = whole_
+
+            if "ghostapp" in found:
+                gx, gw = found["ghostapp"]
+                mark = len(guest.seen)
+                click(dx + gx + gw // 2, mid, width, height)
+                said["ghost pressed"] = maybe("deskbar: the dock's ghostapp is not installed, so not launched",
+                                              "the missing pin pressed", mark)
+                time.sleep(1)
+                said["ghost launched"] = "wm: launching ghostapp" in guest.seen[mark:]
+            # Off the dock and settled before it is taken out, so the dock does
+            # not shrink under a resting pointer and leave the lens open over
+            # what comes after.
+            mark = len(guest.seen)
+            guest.mouse_to(*R._to_tablet(width // 2, height // 3, width, height))
+            # **Bounded, because along the whole width it does not come**
+            # (20 November): the lens opened by the press stays open after
+            # the pointer has gone, and this waited the guest's 120 s for
+            # nothing - a third of the suite. No check reads it; the floating
+            # dock's settling is held in 2b'.
+            maybe("deskbar: the icons settled", "the icons settled off the dock", mark, 15)
+            mark = len(guest.seen)
+            session.run("setprop /Running/Deskbar/unpin ghostapp")
+            said["ghost unpinned"] = maybe("deskbar: removed ghostapp - the dock is ",
+                                           "the missing pin taken out", mark)
+            time.sleep(1)
     except Exception as e:                  # noqa: BLE001 - said below
         fails.append("the boot stopped: %s: %s" % (type(e).__name__, e))
     finally:
@@ -976,7 +1019,8 @@ def main():
         try:
             os.makedirs(os.path.join(ROOT, "build", "dock"), exist_ok=True)
 
-            with open(os.path.join(ROOT, "build", "dock", "serial.txt"), "w") as f_:
+            with open(os.path.join(ROOT, "build", "dock", "serial%s.txt"
+                                   % ("-%d" % part if part else "")), "w") as f_:
                 f_.write(guest.seen)
         except Exception:                  # noqa: BLE001
             pass
@@ -987,391 +1031,407 @@ def main():
     if "LOOK true" not in said.get("look", ""):
         fails.append("Night was not applied: %r" % said.get("look"))
 
-    if "is now dock" not in said.get("bar", ""):
-        fails.append("the write that moved the bar was not answered: %r" % said.get("bar"))
-
-    if "is now dock" not in said.get("same", "") or said.get("same again") is not False:
-        fails.append("the place the bar already had started it again: %r"
-                     % said.get("same"))
-
     if seen.count(" at login") != 1:
         fails.append("the login items were opened %d times, not once"
                      % seen.count(" at login"))
 
-    if said.get("strip", "").split(" ")[:2] != ["0,0", "%dx%d" % (width, STRIP_H)]:
-        fails.append("the strip was not across the top: %r" % said.get("strip"))
-
     dock = said.get("dock")
 
-    if not dock or dock[1] != height - DOCK_H - GAP or dock[3] != DOCK_H \
-       or abs(dock[0] - (width - dock[2]) // 2) > 1:
-        fails.append("the floating dock was not centred %d above the edge of a "
-                     "%dx%d screen: %r" % (GAP, width, height, dock))
-
     top, docked = said.get("room top"), said.get("room dock")
-
-    if not top or not docked or not dock or docked[1] + docked[3] > dock[1] - GAP:
-        fails.append("a maximised window would not end above the dock: room %r, "
-                     "dock %r" % (docked, dock))
-
-    if not (said.get("moved") or "").startswith("terminal,tracker,"):
-        fails.append("Terminal dragged before Tracker did not go first: %r (it was %r)"
-                     % (said.get("moved"), said.get("pins before")))
-
-    if "music" in (said.get("removed") or "music"):
-        fails.append("Music dragged up off the dock was not taken out: %r" % said.get("removed"))
-
-    if not (said.get("kept") or "").startswith(str(said.get("kept name")) + " - "):
-        fails.append("Keep in Dock on a running application's menu did not pin it: %r"
-                     % said.get("kept"))
-
-    if not (said.get("pinned") or "").endswith(",calc") or "is now" not in said.get("pin", ""):
-        fails.append("setprop /Running/Deskbar/pin calc did not add it at the end: %r, %r"
-                     % (said.get("pin"), said.get("pinned")))
-
-    if not said.get("pins kept") or said.get("pins kept") != said.get("pins after"):
-        fails.append("the dock's pins were not written to /Home/Preferences/dock: %r kept, %r shown"
-                     % (said.get("pins kept"), said.get("pins after")))
-
-    if (said.get("launched") or "") != "calc":
-        fails.append("a click on a pinned icon did not open it on the release: %r"
-                     % said.get("launched"))
-
-    if said.get("ghost found") is None or said.get("ghost pressed") is None \
-       or said.get("ghost launched") or said.get("ghost unpinned") is None:
-        fails.append("a pin to no program was not found missing, said so when pressed, "
-                     "launched nothing and came out: found %r, pressed %r, launched %r, out %r"
-                     % (said.get("ghost found"), said.get("ghost pressed"),
-                        said.get("ghost launched"), said.get("ghost unpinned")))
-
-    tip = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("tip", ""))
-
-    if not tip or not dock or not re.match(r"[A-Z]", said.get("tip name", "")) \
-       or abs(int(tip.group(1)) + int(tip.group(3)) // 2 - said.get("tip over", 0)) > 3 \
-       or int(tip.group(2)) + int(tip.group(4)) > dock[1]:
-        fails.append("no name over the icon under the pointer, centred over it "
-                     "and above the dock: %r at %r, the pointer at %r, dock %r"
-                     % (said.get("tip name"), said.get("tip"), said.get("tip over"), dock))
-
-    if "FOCUS Deskbar tip" in said.get("tip focus", "") or "FOCUS" not in said.get("tip focus", ""):
-        fails.append("the tip took the focus: %r" % said.get("tip focus"))
-
-    if not said.get("tip gone"):
-        fails.append("the tip stayed when the pointer left the dock")
-
-    m_ = re.match(r"(\w+) to (\d+) px", said.get("magnified") or "")
-
-    if not m_ or int(m_.group(2)) != 54 or not said.get("lens"):
-        fails.append("the icon under the pointer was not magnified to 54 px by a lens: %r, lens %r"
-                     % (said.get("magnified"), said.get("lens")))
-
-    if not re.search(r"\w+ \d+ \d+ 54\b", said.get("magnified cells") or ""):
-        fails.append("/Running/Deskbar/magnified did not list a cell at 54 px: %r"
-                     % said.get("magnified cells"))
-
-    if said.get("above changed", 0) < 3:
-        fails.append("nothing of the grown icon stood above the dock's top edge: %d of 18 "
-                     "pixels changed" % said.get("above changed", 0))
-
-    if said.get("magnified") and not said.get("lens gone"):
-        fails.append("the icons did not settle and the lens close when the pointer left")
-
-    if said.get("magnified") and said.get("drawn with") != "with":
-        fails.append("the lens closed over a dock drawn without its icons, so the dock was "
-                     "left empty: %r" % said.get("drawn with"))
-
-    if said.get("magnify set") is None:
-        fails.append("setprop /Running/Deskbar/magnify 80 was not heard by the dock")
-
-    menu = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("menu", ""))
-
-    if not menu or not dock or int(menu.group(2)) + int(menu.group(4)) > dock[1]:
-        fails.append("the Kosmos menu did not open upwards from above the dock: "
-                     "%r, dock %r" % (said.get("menu"), dock))
 
     def menu_over(menu, button):
         m = re.match(r"(\d+),", menu or "")
         return m is not None and button is not None and abs(int(m.group(1)) - button) <= 2
 
-    if not menu_over(said.get("menu"), said.get("button")):
-        fails.append("the floating dock's Kosmos menu did not open over its "
-                     "button: the menu %r, the button from %r"
-                     % (said.get("menu"), said.get("button")))
-
-    if not menu_over(said.get("whole menu"), said.get("whole button")):
-        fails.append("along the whole width the Kosmos menu did not open over "
-                     "its button: the menu %r, the button from %r"
-                     % (said.get("whole menu"), said.get("whole button")))
-
-    blue, red = said.get("rocket", [0, 0])
-    if blue > 4 or red < 10:
-        fails.append("the dock's Kosmos button does not wear the rocket: %d blue "
-                     "pixels where its picture is, %d red" % (blue, red))
-
-    if said.get("power pictures", 0) < 50:
-        fails.append("Restart and Shut Down wore no picture in the Kosmos menu: "
-                     "%d coloured pixels where the three cubes go"
-                     % said.get("power pictures", 0))
-
-    if said.get("slid off") is not False:
-        fails.append("the Kosmos button, pressed and slid off before the release, opened the launcher")
-
-    if not said.get("lit") or said.get("lit") == said.get("unlit"):
-        fails.append("the Kosmos button was not lit while its menu was open: "
-                     "%r, then %r" % (said.get("unlit"), said.get("lit")))
-
-    if not said.get("dismissed") or said.get("dismissed") != said.get("unlit"):
-        fails.append("the Kosmos button stayed lit after its menu was dismissed: "
-                     "%r, lit %r, after %r" % (said.get("unlit"), said.get("lit"),
-                                               said.get("dismissed")))
-
-    along = said.get("along", "").split(" ")[:2]
-
-    if "is now whole" not in said.get("whole", "") \
-       or along != ["0,%d" % (height - DOCK_H), "%dx%d" % (width, DOCK_H)]:
-        fails.append("the whole-width dock was not along the foot: %r, %r"
-                     % (said.get("whole"), said.get("along")))
-
-    whole = said.get("room whole")
-
-    if not whole or not docked or whole[1] + whole[3] > height - DOCK_H \
-       or whole[3] <= docked[3]:
-        fails.append("the whole-width dock did not give back the gap: room %r, "
-                     "floating %r" % (whole, docked))
-
-    again = said.get("room again")
-
-    if "is now top" not in said.get("top", "") \
-       or not said.get("again", "").startswith("0,0 ") \
-       or not again or again != top:
-        fails.append("the bar at the top again did not give all the room back: "
-                     "%r, %r, room %r, at first %r"
-                     % (said.get("top"), said.get("again"), again, top))
-
-    desk = (0x0b, 0x12, 0x20)                    # Night's desktop
-
-    if "WALL true" not in said.get("wall", "") \
-       or "fills the screen from 1290x1080 of it" not in seen \
-       or not said.get("filled") or said.get("filled") == desk:
-        fails.append("a 1920x1080 picture did not fill a 1720x1440 screen: %r, "
-                     "the corner %r" % (said.get("wall"), said.get("filled")))
-
-    if "FIT true" not in said.get("centre", "") or said.get("centred") != desk:
-        fails.append("the wallpaper centred did not leave the desktop's colour "
-                     "below it: %r, the corner %r" % (said.get("centre"), said.get("centred")))
-
-    if "WALL true" not in said.get("wide", "") or said.get("wide line") is None \
-       or not said.get("wide corner") or said.get("wide corner") == desk:
-        fails.append("the 5120x1440 wallpaper was not shown at its own size covering "
-                     "the screen: %r, %r, the corner %r"
-                     % (said.get("wide"), said.get("wide line"), said.get("wide corner")))
-
-    if "a wallpaper fills or is centred" not in said.get("sideways", ""):
-        fails.append("a wallpaper fit that is neither was not refused: %r"
-                     % said.get("sideways"))
-
-    grid = re.match(r"(\d+),(\d+) (\d+)x(\d+), (\d+) applications", said.get("grid", ""))
-    gd = said.get("grid dock")
-
-    if not grid or not gd \
-       or abs(int(grid.group(1)) + int(grid.group(3)) // 2 - (gd[0] + gd[2] // 2)) > 1 \
-       or int(grid.group(2)) + int(grid.group(4)) != gd[1] - 12 \
-       or int(grid.group(5)) < 40:
-        fails.append("the launcher grid was not above the dock, centred on it, "
-                     "with every application: %r, the dock %r" % (said.get("grid"), gd))
-
-    # **The launcher finds the dock at once** (Diego, 10 October: "the app
-    # launcher takes like a full second to show"): from the window manager,
-    # which answers as it runs, and not from the Deskbar, which answered
-    # between its waits - 840 ms of every press.
-    place = said.get("dock place") or []
-
-    if not place or int(place[-1]) > 100:
-        fails.append("the launcher waited to learn where the dock is: %r ms" % (place,))
-
-    if not said.get("grid lit") or said.get("grid lit") != said.get("lit"):
-        fails.append("the Kosmos button was not lit while the launcher was open: %r"
-                     % (said.get("grid lit"),))
-
-    if "calc" not in said.get("opened", "").lower():
-        fails.append("typing calc and Return in the launcher did not open the "
-                     "Calculator: %r" % said.get("opened"))
-
-    second = said.get("second", "")
-
-    if "wm: closed Open" not in second or second.count("launchpad: the grid at") != 1:
-        fails.append("a second press on the Kosmos button did not close the "
-                     "launcher, or opened another: %d grids, closed %s"
-                     % (second.count("launchpad: the grid at"), "wm: closed Open" in second))
-
-    # A row's name is everything before its place - "Recently used" is two
-    # words - and Recently used is under All once anything was started.
-    order = [re.sub(r" -?\d+,\d+ .*$", "", p) for p in said.get("pills", "").split("; ")]
-
-    if order != ["All", "Recently used", "Applications", "System", "Development", "Demos",
-                 "Preferences"]:
-        fails.append("the sections' rows were not All, Recently used and the five in Diego's order: %r"
-                     % said.get("pills"))
-
-    demos = re.match(r"(\d+)", said.get("demos", ""))
-    every = int(grid.group(5)) if grid else 0
-
-    if not demos or not 0 < int(demos.group(1)) < every:
-        fails.append("resting on Demos, with no click, did not show Demos alone: %r of %d"
-                     % (said.get("demos"), every))
-
-    if not said.get("tabbed"):
-        fails.append("Down did not step from Demos to Preferences")
-
-    if not said.get("modal") or not said.get("modal closed"):
-        fails.append("Super and the key left of 1 did not open the shortcuts "
-                     "over everything, or Escape did not close them: %r, closed %s"
-                     % (said.get("modal"), said.get("modal closed")))
-
-    # Every key drawn as keycaps (`g:keycaps`, `docs/shortcuts.md` K1): the
-    # window manager's lists spelled as chords `keys.caps` reads, the edit
-    # keys among them from `wm.lua`'s own table.
-    caps = re.search(r"All (\d+), The desktop \d+, Windows \d+, The screen \d+, "
-                     r"Text \d+, Yours \d+; (\d+) not keys", said.get("keycaps") or "")
-    if not caps or int(caps.group(1)) < 20 or caps.group(2) != "0":
-        fails.append("the shortcuts were not every key drawn as keycaps: %r" % said.get("keycaps"))
-
-    if "wm: closed Open" not in said.get("outside", ""):
-        fails.append("a press outside the launcher did not close it")
-
-    if not said.get("super grid") or not said.get("super closed"):
-        fails.append("the Windows key alone on a USB keyboard did not open the "
-                     "grid and close it again: %r, closed %s"
-                     % (said.get("super grid"), said.get("super closed")))
-
-    for keys_, line in said.get("shots", []):
-        if not line or not re.match(r"/Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png, %dx%d, \d+ bytes"
-                                    % (width, height), line):
-            fails.append("%s did not save a picture of the %dx%d screen into "
-                         "Captures: %r" % (keys_, width, height, line))
-
-    if said.get("shot notes") != 3:
-        fails.append("three screenshots were not said as three notifications: %r"
-                     % said.get("shot notes"))
-
-    if not re.search(r"Screenshot saved\s+\S.*-> /Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png",
-                     said.get("shot opens", "")):
-        fails.append("a screenshot's notification does not open its picture: %r"
-                     % said.get("shot opens", "")[-300:])
-
-    if said.get("photo colours", 0) < 8:
-        fails.append("a capture opened in Photo was not drawn - %r colours in its frame: %r"
-                     % (said.get("photo colours"), said.get("photo said")))
-
-    png = said.get("png") or b""
-
-    if png[:8] != b"\x89PNG\r\n\x1a\n" or png[16:24] != struct.pack(">II", width, height):
-        fails.append("the screenshot read back is not a %dx%d PNG: %r"
-                     % (width, height, png[:32]))
-
-    tall = [re.search(r"\d+,\d+ \d+x(\d+)", said.get(k) or "") for k in ("large", "medium")]
-
-    if not all(tall) or [int(m.group(1)) for m in tall] != [72, 60]:
-        fails.append("the dock's size, Large and then Medium, did not make it 72 and "
-                     "then 60 tall: %r, %r" % (said.get("large"), said.get("medium")))
-
-    took = re.findall(r"SWITCH (\w+) (\w+) (true|false)", said.get("switch", ""))
-    moved = re.findall(r"deskbar: again, the bar (\w+) and the dock (\w+)",
-                       said.get("switched", ""))
-
-    if [t[2] for t in took] != ["true"] * 4 \
-       or moved != [("dock", "whole"), ("dock", "floating"), ("dock", "whole"),
-                    ("top", "whole")]:
-        fails.append("one program moving the bar four times was not heard every "
-                     "time - as Preferences was not: %r, the Deskbar said %r"
-                     % (said.get("switch"), moved))
-
     if " died: " in seen:
         fails.append("something died: " + seen[seen.find(" died: ") - 80:][:400])
 
-    # ---- 2d ----
-    c0, c100, c25 = said.get("clear 0"), said.get("clear 100"), said.get("clear 25")
+    if part != 2:
+        if "is now dock" not in said.get("bar", ""):
+            fails.append("the write that moved the bar was not answered: %r" % said.get("bar"))
 
-    if not (c0 and c100 and c25 and c0[0] and c100[0] and c25[0]):
-        fails.append("the dock's transparency was not taken as it was set: %r"
-                     % ((c0, c100, c25),))
-    elif not (c0[1] != c25[1] != c100[1] and c0[1] != c100[1]):
-        fails.append("the dock's pill did not change with its transparency - 0, 25, "
-                     "100: %r %r %r" % (c0[1], c25[1], c100[1]))
-    elif not (c0[2] is not None and c0[2] == c100[2] == c25[2]):
-        fails.append("the dock's icon changed with the pill's transparency: %r %r %r"
-                     % (c0[2], c25[2], c100[2]))
+        if "is now dock" not in said.get("same", "") or said.get("same again") is not False:
+            fails.append("the place the bar already had started it again: %r"
+                         % said.get("same"))
 
-    # Pressed at its middle, the slider says about half - a pixel either
-    # side of the middle is a percent - and the file keeps what it says.
-    slid = re.match(r"(\d+)% transparent", said.get("slid") or "")
-    kept = re.search(r"CLEAR (\d+)", said.get("slid kept") or "")
+        if said.get("strip", "").split(" ")[:2] != ["0,0", "%dx%d" % (width, STRIP_H)]:
+            fails.append("the strip was not across the top: %r" % said.get("strip"))
 
-    if not (slid and kept and 45 <= int(slid.group(1)) <= 55
-            and kept.group(1) == slid.group(1)):
-        fails.append("the slider in Preferences, pressed at its middle, did not make "
-                     "the dock about half transparent and keep it: %r"
-                     % ((said.get("slid"), said.get("slid kept")),))
+        if not dock or dock[1] != height - DOCK_H - GAP or dock[3] != DOCK_H \
+           or abs(dock[0] - (width - dock[2]) // 2) > 1:
+            fails.append("the floating dock was not centred %d above the edge of a "
+                         "%dx%d screen: %r" % (GAP, width, height, dock))
 
-    if said.get("follows on") is None or (said.get("followed") or "").strip() != "Calculator":
-        fails.append("with focus following the pointer, resting on the Calculator behind the "
-                     "Clock did not bring it forward: %r"
-                     % ((said.get("follows on"), said.get("followed"), said.get("follow spot")),))
+        if not top or not docked or not dock or docked[1] + docked[3] > dock[1] - GAP:
+            fails.append("a maximised window would not end above the dock: room %r, "
+                         "dock %r" % (docked, dock))
 
-    if said.get("bell") is None or not said.get("bell x") or said["bell x"] < width // 2:
-        fails.append("the bell was not at the strip's right, or a press on it did not ask for "
-                     "the notifications' history: %r at %r" % (said.get("bell"), said.get("bell x")))
+        if not (said.get("moved") or "").startswith("terminal,tracker,"):
+            fails.append("Terminal dragged before Tracker did not go first: %r (it was %r)"
+                         % (said.get("moved"), said.get("pins before")))
 
-    recent_ = re.match(r"(\d+)", said.get("recent") or "")
+        if "music" in (said.get("removed") or "music"):
+            fails.append("Music dragged up off the dock was not taken out: %r" % said.get("removed"))
 
-    if not recent_ or int(recent_.group(1)) < 1:
-        fails.append("Recently used was not a row under All holding the Calculator "
-                     "started a moment before: %r" % said.get("recent"))
+        if not (said.get("kept") or "").startswith(str(said.get("kept name")) + " - "):
+            fails.append("Keep in Dock on a running application's menu did not pin it: %r"
+                         % said.get("kept"))
 
-    if said.get("asked") != "shutdown, 30 s" or not said.get("not off"):
-        fails.append("Shut Down at the launcher's foot did not close it and open the "
-                     "window that asks, or Escape there did not leave the machine on: %r"
-                     % ((said.get("asked"), said.get("not off")),))
+        if not (said.get("pinned") or "").endswith(",calc") or "is now" not in said.get("pin", ""):
+            fails.append("setprop /Running/Deskbar/pin calc did not add it at the end: %r, %r"
+                         % (said.get("pin"), said.get("pinned")))
 
-    grown = re.match(r"(\d+)x(\d+)", said.get("prefs resized") or "")
-    g0, g1 = said.get("prefs ground") or (None, None)
+        if not said.get("pins kept") or said.get("pins kept") != said.get("pins after"):
+            fails.append("the dock's pins were not written to /Home/Preferences/dock: %r kept, %r shown"
+                         % (said.get("pins kept"), said.get("pins after")))
 
-    if not grown or g0 is None or g0 != g1:
-        fails.append("Preferences made 160 taller did not lay itself out at "
-                     "the new height - its sidebar's ground near the new bottom "
-                     "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
+        if (said.get("launched") or "") != "calc":
+            fails.append("a click on a pinned icon did not open it on the release: %r"
+                         % said.get("launched"))
 
-    checks = 58
+        tip = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("tip", ""))
+
+        if not tip or not dock or not re.match(r"[A-Z]", said.get("tip name", "")) \
+           or abs(int(tip.group(1)) + int(tip.group(3)) // 2 - said.get("tip over", 0)) > 3 \
+           or int(tip.group(2)) + int(tip.group(4)) > dock[1]:
+            fails.append("no name over the icon under the pointer, centred over it "
+                         "and above the dock: %r at %r, the pointer at %r, dock %r"
+                         % (said.get("tip name"), said.get("tip"), said.get("tip over"), dock))
+
+        if "FOCUS Deskbar tip" in said.get("tip focus", "") or "FOCUS" not in said.get("tip focus", ""):
+            fails.append("the tip took the focus: %r" % said.get("tip focus"))
+
+        if not said.get("tip gone"):
+            fails.append("the tip stayed when the pointer left the dock")
+
+        m_ = re.match(r"(\w+) to (\d+) px", said.get("magnified") or "")
+
+        if not m_ or int(m_.group(2)) != 54 or not said.get("lens"):
+            fails.append("the icon under the pointer was not magnified to 54 px by a lens: %r, lens %r"
+                         % (said.get("magnified"), said.get("lens")))
+
+        if not re.search(r"\w+ \d+ \d+ 54\b", said.get("magnified cells") or ""):
+            fails.append("/Running/Deskbar/magnified did not list a cell at 54 px: %r"
+                         % said.get("magnified cells"))
+
+        if said.get("above changed", 0) < 3:
+            fails.append("nothing of the grown icon stood above the dock's top edge: %d of 18 "
+                         "pixels changed" % said.get("above changed", 0))
+
+        if said.get("magnified") and not said.get("lens gone"):
+            fails.append("the icons did not settle and the lens close when the pointer left")
+
+        if said.get("magnified") and said.get("drawn with") != "with":
+            fails.append("the lens closed over a dock drawn without its icons, so the dock was "
+                         "left empty: %r" % said.get("drawn with"))
+
+        if said.get("magnify set") is None:
+            fails.append("setprop /Running/Deskbar/magnify 80 was not heard by the dock")
+
+        menu = re.match(r"(\d+),(\d+) (\d+)x(\d+)", said.get("menu", ""))
+
+        if not menu or not dock or int(menu.group(2)) + int(menu.group(4)) > dock[1]:
+            fails.append("the Kosmos menu did not open upwards from above the dock: "
+                         "%r, dock %r" % (said.get("menu"), dock))
+
+        if not menu_over(said.get("menu"), said.get("button")):
+            fails.append("the floating dock's Kosmos menu did not open over its "
+                         "button: the menu %r, the button from %r"
+                         % (said.get("menu"), said.get("button")))
+
+        blue, red = said.get("rocket", [0, 0])
+        if blue > 4 or red < 10:
+            fails.append("the dock's Kosmos button does not wear the rocket: %d blue "
+                         "pixels where its picture is, %d red" % (blue, red))
+
+        if said.get("power pictures", 0) < 50:
+            fails.append("Restart and Shut Down wore no picture in the Kosmos menu: "
+                         "%d coloured pixels where the three cubes go"
+                         % said.get("power pictures", 0))
+
+        if said.get("slid off") is not False:
+            fails.append("the Kosmos button, pressed and slid off before the release, opened the launcher")
+
+        if not said.get("lit") or said.get("lit") == said.get("unlit"):
+            fails.append("the Kosmos button was not lit while its menu was open: "
+                         "%r, then %r" % (said.get("unlit"), said.get("lit")))
+
+        if not said.get("dismissed") or said.get("dismissed") != said.get("unlit"):
+            fails.append("the Kosmos button stayed lit after its menu was dismissed: "
+                         "%r, lit %r, after %r" % (said.get("unlit"), said.get("lit"),
+                                                   said.get("dismissed")))
+
+        grid = re.match(r"(\d+),(\d+) (\d+)x(\d+), (\d+) applications", said.get("grid", ""))
+        gd = said.get("grid dock")
+
+        if not grid or not gd \
+           or abs(int(grid.group(1)) + int(grid.group(3)) // 2 - (gd[0] + gd[2] // 2)) > 1 \
+           or int(grid.group(2)) + int(grid.group(4)) != gd[1] - 12 \
+           or int(grid.group(5)) < 40:
+            fails.append("the launcher grid was not above the dock, centred on it, "
+                         "with every application: %r, the dock %r" % (said.get("grid"), gd))
+
+        # **The launcher finds the dock at once** (Diego, 10 October: "the app
+        # launcher takes like a full second to show"): from the window manager,
+        # which answers as it runs, and not from the Deskbar, which answered
+        # between its waits - 840 ms of every press.
+        place = said.get("dock place") or []
+
+        if not place or int(place[-1]) > 100:
+            fails.append("the launcher waited to learn where the dock is: %r ms" % (place,))
+
+        if not said.get("grid lit") or said.get("grid lit") != said.get("lit"):
+            fails.append("the Kosmos button was not lit while the launcher was open: %r"
+                         % (said.get("grid lit"),))
+
+        if "calc" not in said.get("opened", "").lower():
+            fails.append("typing calc and Return in the launcher did not open the "
+                         "Calculator: %r" % said.get("opened"))
+
+        second = said.get("second", "")
+
+        if "wm: closed Open" not in second or second.count("launchpad: the grid at") != 1:
+            fails.append("a second press on the Kosmos button did not close the "
+                         "launcher, or opened another: %d grids, closed %s"
+                         % (second.count("launchpad: the grid at"), "wm: closed Open" in second))
+
+        # A row's name is everything before its place - "Recently used" is two
+        # words - and Recently used is under All once anything was started.
+        order = [re.sub(r" -?\d+,\d+ .*$", "", p) for p in said.get("pills", "").split("; ")]
+
+        if order != ["All", "Recently used", "Applications", "System", "Development", "Demos",
+                     "Preferences"]:
+            fails.append("the sections' rows were not All, Recently used and the five in Diego's order: %r"
+                         % said.get("pills"))
+
+        demos = re.match(r"(\d+)", said.get("demos", ""))
+        every = int(grid.group(5)) if grid else 0
+
+        if not demos or not 0 < int(demos.group(1)) < every:
+            fails.append("resting on Demos, with no click, did not show Demos alone: %r of %d"
+                         % (said.get("demos"), every))
+
+        if not said.get("tabbed"):
+            fails.append("Down did not step from Demos to Preferences")
+
+        if not said.get("modal") or not said.get("modal closed"):
+            fails.append("Super and the key left of 1 did not open the shortcuts "
+                         "over everything, or Escape did not close them: %r, closed %s"
+                         % (said.get("modal"), said.get("modal closed")))
+
+        # Every key drawn as keycaps (`g:keycaps`, `docs/shortcuts.md` K1): the
+        # window manager's lists spelled as chords `keys.caps` reads, the edit
+        # keys among them from `wm.lua`'s own table.
+        caps = re.search(r"All (\d+), The desktop \d+, Windows \d+, The screen \d+, "
+                         r"Text \d+, Yours \d+; (\d+) not keys", said.get("keycaps") or "")
+        if not caps or int(caps.group(1)) < 20 or caps.group(2) != "0":
+            fails.append("the shortcuts were not every key drawn as keycaps: %r" % said.get("keycaps"))
+
+        if "wm: closed Open" not in said.get("outside", ""):
+            fails.append("a press outside the launcher did not close it")
+
+        if not said.get("super grid") or not said.get("super closed"):
+            fails.append("the Windows key alone on a USB keyboard did not open the "
+                         "grid and close it again: %r, closed %s"
+                         % (said.get("super grid"), said.get("super closed")))
+
+        # ---- 2d ----
+        c0, c100, c25 = said.get("clear 0"), said.get("clear 100"), said.get("clear 25")
+
+        if not (c0 and c100 and c25 and c0[0] and c100[0] and c25[0]):
+            fails.append("the dock's transparency was not taken as it was set: %r"
+                         % ((c0, c100, c25),))
+        elif not (c0[1] != c25[1] != c100[1] and c0[1] != c100[1]):
+            fails.append("the dock's pill did not change with its transparency - 0, 25, "
+                         "100: %r %r %r" % (c0[1], c25[1], c100[1]))
+        elif not (c0[2] is not None and c0[2] == c100[2] == c25[2]):
+            fails.append("the dock's icon changed with the pill's transparency: %r %r %r"
+                         % (c0[2], c25[2], c100[2]))
+
+        # Pressed at its middle, the slider says about half - a pixel either
+        # side of the middle is a percent - and the file keeps what it says.
+        slid = re.match(r"(\d+)% transparent", said.get("slid") or "")
+        kept = re.search(r"CLEAR (\d+)", said.get("slid kept") or "")
+
+        if not (slid and kept and 45 <= int(slid.group(1)) <= 55
+                and kept.group(1) == slid.group(1)):
+            fails.append("the slider in Preferences, pressed at its middle, did not make "
+                         "the dock about half transparent and keep it: %r"
+                         % ((said.get("slid"), said.get("slid kept")),))
+
+        if said.get("follows on") is None or (said.get("followed") or "").strip() != "Calculator":
+            fails.append("with focus following the pointer, resting on the Calculator behind the "
+                         "Clock did not bring it forward: %r"
+                         % ((said.get("follows on"), said.get("followed"), said.get("follow spot")),))
+
+        if said.get("bell") is None or not said.get("bell x") or said["bell x"] < width // 2:
+            fails.append("the bell was not at the strip's right, or a press on it did not ask for "
+                         "the notifications' history: %r at %r" % (said.get("bell"), said.get("bell x")))
+
+        recent_ = re.match(r"(\d+)", said.get("recent") or "")
+
+        if not recent_ or int(recent_.group(1)) < 1:
+            fails.append("Recently used was not a row under All holding the Calculator "
+                         "started a moment before: %r" % said.get("recent"))
+
+        if said.get("asked") != "shutdown, 30 s" or not said.get("not off"):
+            fails.append("Shut Down at the launcher's foot did not close it and open the "
+                         "window that asks, or Escape there did not leave the machine on: %r"
+                         % ((said.get("asked"), said.get("not off")),))
+
+        grown = re.match(r"(\d+)x(\d+)", said.get("prefs resized") or "")
+        g0, g1 = said.get("prefs ground") or (None, None)
+
+        if not grown or g0 is None or g0 != g1:
+            fails.append("Preferences made 160 taller did not lay itself out at "
+                         "the new height - its sidebar's ground near the new bottom "
+                         "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
+
+        desk = (0x0b, 0x12, 0x20)                    # Night's desktop
+
+        if "WALL true" not in said.get("wall", "") \
+           or "fills the screen from 1290x1080 of it" not in seen \
+           or not said.get("filled") or said.get("filled") == desk:
+            fails.append("a 1920x1080 picture did not fill a 1720x1440 screen: %r, "
+                         "the corner %r" % (said.get("wall"), said.get("filled")))
+
+        if "FIT true" not in said.get("centre", "") or said.get("centred") != desk:
+            fails.append("the wallpaper centred did not leave the desktop's colour "
+                         "below it: %r, the corner %r" % (said.get("centre"), said.get("centred")))
+
+        if "WALL true" not in said.get("wide", "") or said.get("wide line") is None \
+           or not said.get("wide corner") or said.get("wide corner") == desk:
+            fails.append("the 5120x1440 wallpaper was not shown at its own size covering "
+                         "the screen: %r, %r, the corner %r"
+                         % (said.get("wide"), said.get("wide line"), said.get("wide corner")))
+
+        if "a wallpaper fills or is centred" not in said.get("sideways", ""):
+            fails.append("a wallpaper fit that is neither was not refused: %r"
+                         % said.get("sideways"))
+
+    if part != 1:
+        for keys_, line in said.get("shots", []):
+            if not line or not re.match(r"/Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png, %dx%d, \d+ bytes"
+                                        % (width, height), line):
+                fails.append("%s did not save a picture of the %dx%d screen into "
+                             "Captures: %r" % (keys_, width, height, line))
+
+        if said.get("shot notes") != 3:
+            fails.append("three screenshots were not said as three notifications: %r"
+                         % said.get("shot notes"))
+
+        if not re.search(r"Screenshot saved\s+\S.*-> /Home/Captures/screenshot-\d{4}-\d\d-\d\d-\d{6}\.png",
+                         said.get("shot opens", "")):
+            fails.append("a screenshot's notification does not open its picture: %r"
+                         % said.get("shot opens", "")[-300:])
+
+        if said.get("photo colours", 0) < 8:
+            fails.append("a capture opened in Photo was not drawn - %r colours in its frame: %r"
+                         % (said.get("photo colours"), said.get("photo said")))
+
+        png = said.get("png") or b""
+
+        if png[:8] != b"\x89PNG\r\n\x1a\n" or png[16:24] != struct.pack(">II", width, height):
+            fails.append("the screenshot read back is not a %dx%d PNG: %r"
+                         % (width, height, png[:32]))
+
+        if said.get("ghost found") is None or said.get("ghost pressed") is None \
+           or said.get("ghost launched") or said.get("ghost unpinned") is None:
+            fails.append("a pin to no program was not found missing, said so when pressed, "
+                         "launched nothing and came out: found %r, pressed %r, launched %r, out %r"
+                         % (said.get("ghost found"), said.get("ghost pressed"),
+                            said.get("ghost launched"), said.get("ghost unpinned")))
+
+        if not menu_over(said.get("whole menu"), said.get("whole button")):
+            fails.append("along the whole width the Kosmos menu did not open over "
+                         "its button: the menu %r, the button from %r"
+                         % (said.get("whole menu"), said.get("whole button")))
+
+        along = said.get("along", "").split(" ")[:2]
+
+        if "is now whole" not in said.get("whole", "") \
+           or along != ["0,%d" % (height - DOCK_H), "%dx%d" % (width, DOCK_H)]:
+            fails.append("the whole-width dock was not along the foot: %r, %r"
+                         % (said.get("whole"), said.get("along")))
+
+        whole = said.get("room whole")
+
+        if not whole or not docked or whole[1] + whole[3] > height - DOCK_H \
+           or whole[3] <= docked[3]:
+            fails.append("the whole-width dock did not give back the gap: room %r, "
+                         "floating %r" % (whole, docked))
+
+        again = said.get("room again")
+
+        if "is now top" not in said.get("top", "") \
+           or not said.get("again", "").startswith("0,0 ") \
+           or not again or again != top:
+            fails.append("the bar at the top again did not give all the room back: "
+                         "%r, %r, room %r, at first %r"
+                         % (said.get("top"), said.get("again"), again, top))
+
+        tall = [re.search(r"\d+,\d+ \d+x(\d+)", said.get(k) or "") for k in ("large", "medium")]
+
+        if not all(tall) or [int(m.group(1)) for m in tall] != [72, 60]:
+            fails.append("the dock's size, Large and then Medium, did not make it 72 and "
+                         "then 60 tall: %r, %r" % (said.get("large"), said.get("medium")))
+
+        took = re.findall(r"SWITCH (\w+) (\w+) (true|false)", said.get("switch", ""))
+        moved = re.findall(r"deskbar: again, the bar (\w+) and the dock (\w+)",
+                           said.get("switched", ""))
+
+        if [t[2] for t in took] != ["true"] * 4 \
+           or moved != [("dock", "whole"), ("dock", "floating"), ("dock", "whole"),
+                        ("top", "whole")]:
+            fails.append("one program moving the bar four times was not heard every "
+                         "time - as Preferences was not: %r, the Deskbar said %r"
+                         % (said.get("switch"), moved))
+
+
+    # Counted as the blocks above are: three every boot answers - the
+    # look, the login items once, nothing dead - and each half's own.
+    # (This said 58 for the whole while the blocks were 65.)
+    checks = 3 + (50 if part != 2 else 0) + (12 if part != 1 else 0)
 
     if fails:
-        print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))
+        print("FAIL: %d of %d checks on the dock%s:"
+              % (len(fails), checks, " part %d" % part if part else ""))
 
         for f in fails:
             print("  " + f)
 
         return 1
 
-    print("PASS: %d checks on the desktop at the M700's 1720x1440 - the Deskbar "
-          "as a dock, in Night (the look applied; "
-          "the write moving the bar answered, and the same place asked "
-          "for again starting nothing; the login items opened once; the "
-          "strip across the top; the dock centred %d above the edge; a "
-          "maximised window ending above it; a name over the icon under the "
-          "pointer, centred, not taking the focus, gone when it leaves; the Kosmos menu, the right "
-          "button's, opening upwards over its button, floating and along the "
-          "whole width, Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
-          "application, the button lit while it is open, a name typed and "
-          "Return opening it, its sections in Diego's order, Demos shown by resting on it and Down, the "
-          "Windows key alone on a USB keyboard opening and closing it, and "
-          "a second press or one outside closing it; Super and º opening the "
-          "shortcuts over everything and Escape closing them; "
-          "its button lit while it is open and dark once it is dismissed; the "
-          "whole width along the foot, giving the gap back; the bar at the "
-          "top again with all the room back) - and a 1920x1080 wallpaper "
-          "filling the screen, centred leaving the desktop below it, and a "
-          "fit that is neither refused; Print Screen, Control Alt 1 and Super "
-          "Shift 3 each saving a PNG of the screen into Captures; and one program moving the bar four "
-          "times, heard each time by the Deskbar that started since." % (checks, GAP))
+    floating = ("the Deskbar as a dock, in Night (the look applied; "
+                "the write moving the bar answered, and the same place asked "
+                "for again starting nothing; the login items opened once; the "
+                "strip across the top; the dock centred %d above the edge; a "
+                "maximised window ending above it; a name over the icon under the "
+                "pointer, centred, not taking the focus, gone when it leaves; the "
+                "icons magnified under it; the dock arranged by hand and its "
+                "transparency; the Kosmos menu, the right "
+                "button's, opening upwards over its button, "
+                "Restart and Shut Down in it wearing a picture; the launcher grid above the dock with every "
+                "application, the button lit while it is open, a name typed and "
+                "Return opening it, its sections in Diego's order, Demos shown by resting on it and Down, the "
+                "Windows key alone on a USB keyboard opening and closing it, and "
+                "a second press or one outside closing it; Super and º opening the "
+                "shortcuts over everything and Escape closing them; "
+                "its button lit while it is open and dark once it is dismissed; "
+                "focus following the pointer) - and a 1920x1080 wallpaper "
+                "filling the screen, centred leaving the desktop below it, and a "
+                "fit that is neither refused" % GAP)
+    rest = ("the whole width along the foot, giving the gap back and its Kosmos "
+            "menu over its button; the bar at the "
+            "top again with all the room back; Print Screen, Control Alt 1 and "
+            "Super Shift 3 each saving a PNG of the screen into Captures, said "
+            "and opened in Photo; the dock's "
+            "size; one program moving the bar four "
+            "times, heard each time by the Deskbar that started since; and a pin "
+            "to no program")
+    print("PASS: %d checks on the desktop at the M700's 1720x1440%s - %s."
+          % (checks, " part %d" % part if part else "",
+             {1: floating, 2: rest}.get(part, floating + "; " + rest)))
     return 0
 
 

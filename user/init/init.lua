@@ -4629,6 +4629,27 @@ local function spawn_grants(ns, path, caps, held)
 
   for _, name in ipairs(SPAWN_ALWAYS) do give(name) end
 
+  -- **A program installed in `/Home` says what it needs in its own
+  -- header**, which the disk does not read for it as the image's store
+  -- does: read here as its `kosmos: image` is (`IMAGES.named`), and only
+  -- for what is given to any program that declares it - the camera, MIDI,
+  -- Bluetooth and the tiles. Nothing a declaration alone may not have:
+  -- the processes, audio's band, the network and the keyring stay the
+  -- image's to say. Flight, installed, asks the tiles this way.
+  if attrs and attrs.needs == nil and attrs.kind ~= "program" then
+    local source = ns.read(path)
+
+    for line in (type(source) == "string" and source .. "\n" or ""):gmatch("(.-)\n") do
+      if line ~= "" and not line:match("^%-%-") then break end
+
+      local words = line:match("^%-%-%s*kosmos:%s*needs%s+(.+)$")
+
+      for want in (words or ""):gmatch("%S+") do
+        if SPAWN_DECLARED[want] then give(SPAWN_DECLARED[want]) end
+      end
+    end
+  end
+
   for _, want in ipairs(attrs and attrs.needs or {}) do
     if want == "processes" then flags = flags | SPAWN_PROCCTL end
     if want == "audio" then flags = flags | SPAWN_AUDIO_BAND end         -- its threads may take the band

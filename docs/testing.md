@@ -39625,3 +39625,60 @@ effect is the frame time, which TCG does not measure faithfully.
 That is 41 s past the ten minutes, as 0.12.26's 649 s was; the slowest are
 `x86-dock` 359 s and `x86-cafesa3d-2` 317 s, and splitting `x86-dock` as
 the browser's suite was split is the next thing for the budget.
+
+## 18.948 Flight, flown (Flight F5a-F5d)
+
+**In short:** Flight is an application one can fly. Installed in
+`/Home/Apps/Flight` - `flight.lua`, `k3dvk.elf` and the Cessna's GLB - it
+opens a Vulkan window, asks `tiles` for Esri's imagery and Mapzen's
+elevation as its terrain wants them, flies a point mass with an attitude on
+the arrows and A/Z, and draws a Cessna 172 behind which the chase view
+rides. `x86-flight` boots the desktop as a machine does, opens Flight over
+Telnet, serves hills and a JPEG from the Mac, and holds keys down through
+QEMU's keyboard: the right arrow rolled it 24 degrees and turned it 4, let
+go it rolled back, the yoke back climbed it, `V` changed the view; 329
+tiles handed, the Cessna's 77,317 triangles and 28 textures on the device,
+8.15 m long and 10.92 m across. About a second a frame under TCG and
+`lavapipe` at 800 by 500 - QEMU's number, not the M700's.
+
+**What it took, in pieces**, several written by agents beside the session
+and folded in here (Diego, 20 November: "launch agents in parallel"):
+
+- **Keys that are held** (F5a): the window's frame protocol carried only
+  characters, which cannot say a key is still down. `WM_EV_RAWKEY` carries
+  the keycode and press or release, the Window Kit hands it on as
+  `KW_RAWKEY`, and the door keeps a bit a key - `w:held(code)`, and
+  `w:pressed(code)` for a toggle - so reading them allocates nothing.
+  Quake III's Q1 wanted the same (`quake3e.md`).
+- **Textured models in the renderer**: `k3d_vk_model` with a matrix and a
+  tint each, textures as objects of their own since glTF shares them, one
+  upload for ground and model alike, and the view's `up` for a camera that
+  rolls.
+- **The GLB reader** (`k3d_glb.c`, `test_glb`, 50 checks against an
+  independent Python reading of the file): parts, textures, and the six
+  movable nodes with a pivot and a hinge each; skinning resolved rigidly,
+  a vertex to its heaviest joint.
+- **PNG and JPEG with no Lua state** (`picture_decode.c`,
+  `test_picture_decode`, 236 checks): the one decoder of each, now plain C;
+  the shared inflate workspace, which two threads would have torn, gone.
+- **The ground under the aircraft**: `g:height(x, z)`, from the same
+  heights its chunks are built from.
+- **How many chunks to keep, from the machine's memory**: the first run
+  died of it at 512 MB - 300 chunks of mesh and texture are about 150 MB on
+  `lavapipe` - so Flight keeps a quarter of what `/Devices/memory` says is
+  free, and the suite's guest has 1.5 GB, as every machine Flight is for
+  has more.
+
+**Found**: a program installed in `/Home` was never given what its header
+declares. `spawn_grants` read `needs` from the store's attributes, which
+the disk does not have, so Flight's `needs tiles` reached nothing - and
+neither would any installed application's camera, MIDI or Bluetooth. Init
+reads the header now, as it reads `kosmos: image`, for those declared-only
+grants and nothing stronger.
+
+**Controls**: the suite's checks each name the state before the key and
+after; the GLB reader's and the decoders' controls are in their agents'
+reports, each built from a broken copy - a node's matrix ignored (10
+checks fail), the lightest joint taken (4), Paeth's tie broken (5), red and
+blue swapped (every JPEG), one inflater shared (16 to 30 of 192 decodes
+wrong across threads).

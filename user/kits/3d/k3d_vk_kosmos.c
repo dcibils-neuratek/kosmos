@@ -47,9 +47,14 @@
 #include "kits/gfx/gfx_draw.h"
 #include "kits/map/elevation.h"
 #include "k3d_vk.h"
+#include "k3d_glb.h"
+#include "kits/gfx/picture_decode.h"
+#include "storage.h"
 
 #define WINDOW  "k3dvk.window"
 #define TERRAIN "k3dvk.terrain"
+#define MODEL   "k3dvk.model"
+#define KEYCODES 512           /* evdev's, more than a keyboard has */
 
 /* What Mesa or LLVM says - an abort's last words among it - goes to the
  * console rather than nowhere (`runtime/posix/fd.c`), as `vulkantest.c`
@@ -500,6 +505,33 @@ static struct k3d_tile tile_args(lua_State *L, int first)
 }
 
 /* g:elevation(z, x, y, surface): a terrarium tile's heights, kept. */
+/* g:height(x, z) -> the ground's metres at a place in the frame (x east,
+ * z south), from the deepest elevation tile held over it - or nil while
+ * none is. What an aircraft stands on, lands on and flies into: the
+ * same heights the chunks are built from, so it touches the ground it
+ * sees. */
+static int l_terrain_height(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    double mx = g->place.ox + luaL_checknumber(L, 2) / g->place.metres;
+    double my = g->place.oy + luaL_checknumber(L, 3) / g->place.metres;
+
+    if (mx < 0 || mx >= 1 || my < 0 || my >= 1) {
+        return 0;
+    }
+    for (int z = (int)g->elevation; z >= 0; z--) {
+        double n = ldexp(1.0, z);
+        struct k3d_tile t = { (uint32_t)(mx * n), (uint32_t)(my * n), (uint8_t)z };
+        struct heights *h = heights_of(g, t);
+
+        if (h != NULL) {
+            lua_pushnumber(L, map_heights_sample(&h->h, mx * n - t.x, my * n - t.y));
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int l_terrain_elevation(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
@@ -566,7 +598,38 @@ struct window {
     struct k3d_vk_ground *drawn;    /* the frame's, `drawn_room` of them */
     unsigned drawn_room;
     char said[160];
+    /* The keys, by keycode: which are down now, and which went down since
+     * `pressed` last asked - a bit each, so reading them allocates
+     * nothing a frame. */
+    uint8_t held[KEYCODES / 8], went_down[KEYCODES / 8];
+    int closing;
 };
+
+/* Everything the window manager has said, taken in: the keys' transitions
+ * into `held` and `went_down`, a close into `closing`. Waits up to
+ * `wait` seconds for the first. */
+static void take_events(struct window *w, double wait)
+{
+    double until = seconds() + wait;
+    struct kw_event e;
+
+    do {
+        while (w->window != NULL && kw_poll(w->window, &e, 10)) {
+            if (e.type == KW_CLOSE) {
+                w->closing = 1;
+            } else if (e.type == KW_RAWKEY && e.key >= 0 && e.key < KEYCODES) {
+                uint8_t bit = (uint8_t)(1u << (e.key & 7));
+
+                if (e.action == KW_PRESS) {
+                    w->held[e.key >> 3] |= bit;
+                    w->went_down[e.key >> 3] |= bit;
+                } else {
+                    w->held[e.key >> 3] &= (uint8_t)~bit;
+                }
+            }
+        }
+    } while (!w->closing && seconds() < until);
+}
 
 /* A window's grounds are freed while it is open; once it is closed its
  * device has gone and taken them. Either way the chunks that had them are
@@ -685,19 +748,48 @@ static int l_window_device(lua_State *L)
 static int l_window_closed(lua_State *L)
 {
     struct window *w = window_check(L, 1);
-    double until = seconds() + luaL_optnumber(L, 2, 0.0);
-    struct kw_event e;
 
-    do {
-        while (kw_poll(w->window, &e, 10)) {
-            if (e.type == KW_CLOSE) {
-                window_close(w);
-                lua_pushboolean(L, 1);
-                return 1;
-            }
-        }
-    } while (seconds() < until);
+    take_events(w, luaL_optnumber(L, 2, 0.0));
+    if (w->closing) {
+        window_close(w);
+        lua_pushboolean(L, 1);
+        return 1;
+    }
     lua_pushboolean(L, 0);
+    return 1;
+}
+
+static int keycode(lua_State *L, int at)
+{
+    lua_Integer code = luaL_checkinteger(L, at);
+
+    luaL_argcheck(L, code >= 0 && code < KEYCODES, at, "a keycode");
+    return (int)code;
+}
+
+/* w:held(code) -> whether that key is down now, as of the last
+ * `closed`: evdev's numbering, as `rawkey` events carry it (`keys.lua`). */
+static int l_window_held(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    int code = keycode(L, 2);
+
+    lua_pushboolean(L, (w->held[code >> 3] >> (code & 7)) & 1);
+    return 1;
+}
+
+/* w:pressed(code) -> whether that key went down since this last asked
+ * about it: a toggle's question - the view, the flaps, pause - which a
+ * key held past one frame must answer once. */
+static int l_window_pressed(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    int code = keycode(L, 2);
+    uint8_t bit = (uint8_t)(1u << (code & 7));
+    int was = (w->went_down[code >> 3] & bit) != 0;
+
+    w->went_down[code >> 3] &= (uint8_t)~bit;
+    lua_pushboolean(L, was);
     return 1;
 }
 
@@ -908,6 +1000,10 @@ static void give_back(struct window *w, struct terrain *g)
 /* w:draw(terrain, view) -> "drawn=D of N ready=R building=B fallback=F
  * held=H freed=X uploads=U ms=T chunks=z/x/y,...", a frame drawn and
  * presented, `chunks` the ground it drew; nil and why when it could not be. */
+struct model;
+static struct model *model_check(lua_State *L, int index);
+static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n);
+
 static int l_window_draw(lua_State *L)
 {
     struct window *w = window_check(L, 1);
@@ -934,6 +1030,14 @@ static int l_window_draw(lua_State *L)
     numbers(L, 3, "haze", view.haze, 3);
     numbers(L, 3, "haze_start", &view.haze_start, 1);
     numbers(L, 3, "haze_end", &view.haze_end, 1);
+    /* The camera's up, when it rolls - the cockpit's; the world's without. */
+    lua_getfield(L, 3, "up");
+    if (!lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        numbers(L, 3, "up", view.up, 3);
+    } else {
+        lua_pop(L, 1);
+    }
 
     /* Grounds are the renderer's: a terrain drawn in another window, or in
      * this one opened again, uploads its chunks again. */
@@ -975,9 +1079,16 @@ static int l_window_draw(lua_State *L)
     for (unsigned k = 0; k < count; k++) {
         w->drawn[k] = chunk_of(g, g->drawn[k])->ground;
     }
+    /* The aircraft, or whatever model the frame is given. */
+    const struct k3d_vk_model_draw *plane = NULL;
+    uint32_t nplane = 0;
+
+    if (!lua_isnoneornil(L, 4)) {
+        plane = model_draws(model_check(L, 4), &nplane);
+    }
     if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
-        !k3d_vk_draw(&w->renderer, c->images[index], c->views[index], &view, NULL, 0, w->drawn,
-                     count)) {
+        !k3d_vk_draw_models(&w->renderer, c->images[index], c->views[index], &view, NULL, 0,
+                            w->drawn, count, plane, nplane)) {
         lua_pushnil(L);
         lua_pushstring(L, v->why[0] ? v->why : "draw");
         v->why[0] = '\0';
@@ -1013,12 +1124,337 @@ static int l_window_draw(lua_State *L)
     return 1;
 }
 
+/*
+ * **A model**: a glTF binary read by the 3D Kit (`k3d_glb.c`) and put on
+ * the window's device - a renderer model a part and a texture a picture -
+ * drawn each frame where `place` says, its movable parts each turned about
+ * their hinge by `turn`. The file is read here, in C, through the Storage
+ * Kit: the Cessna is seventeen megabytes and a process's Lua heap two, so
+ * none of it is a Lua string; its pictures are decoded by gfx's cores
+ * (`picture_decode.c`) and given to the GPU, and only what is drawn stays.
+ */
+struct model {
+    unsigned serial;                /* the window's; 0 once freed */
+    struct window *owner;
+    struct k3d_glb glb;
+    struct k3d_vk_model *parts;     /* glb.nparts */
+    struct k3d_vk_texture *textures;/* glb.ntextures; set == 0: none */
+    float place[16];                /* the world from the model */
+    float angle[K3D_GLB_MOVABLES];  /* radians about each movable's hinge */
+    bool spins[K3D_GLB_MOVABLES];   /* about its own Z rather than its hinge */
+    struct k3d_vk_model_draw *draws;/* the frame's, glb.nparts */
+};
+
+_Static_assert(sizeof(struct k3d_glb_vertex) == sizeof(struct k3d_vk_model_vertex),
+               "the GLB reader's vertex is the renderer's");
+
+static void model_free(struct model *m)
+{
+    struct window *w = m->owner;
+    int open = w != NULL && w->serial != 0 && w->serial == m->serial;
+
+    if (open) {
+        w->v.vkDeviceWaitIdle(w->v.device);
+        for (uint32_t i = 0; m->parts != NULL && i < m->glb.nparts; i++) {
+            k3d_vk_model_free(&w->renderer, &m->parts[i]);
+        }
+        for (uint32_t i = 0; m->textures != NULL && i < m->glb.ntextures; i++) {
+            if (m->textures[i].set != VK_NULL_HANDLE) {
+                k3d_vk_texture_free(&w->renderer, &m->textures[i]);
+            }
+        }
+    }
+    free(m->parts);
+    free(m->textures);
+    free(m->draws);
+    k3d_glb_free(&m->glb);
+    memset(m, 0, sizeof(*m));
+}
+
+static int l_model_gc(lua_State *L)
+{
+    model_free(luaL_checkudata(L, 1, MODEL));
+    return 0;
+}
+
+static struct model *model_check(lua_State *L, int index)
+{
+    struct model *m = luaL_checkudata(L, index, MODEL);
+
+    if (m->serial == 0 || m->owner == NULL || m->owner->serial != m->serial) {
+        luaL_error(L, "the model's window is closed");
+    }
+    return m;
+}
+
+/* The whole file, read through the Storage Kit; NULL and why. */
+static uint8_t *read_whole(const char *path, size_t *n, const char **why)
+{
+    struct storage_stat st;
+    uint8_t *bytes;
+
+    if (storage_stat(path, &st) != STORAGE_OK || st.kind != STORAGE_KIND_FILE) {
+        *why = "no such file";
+        return NULL;
+    }
+    if ((bytes = malloc(st.size ? st.size : 1)) == NULL) {
+        *why = "no memory for the file";
+        return NULL;
+    }
+    for (uint64_t at = 0; at < st.size;) {
+        long got = storage_read(path, at, bytes + at, (size_t)(st.size - at));
+
+        if (got <= 0) {
+            free(bytes);
+            *why = "the file could not be read";
+            return NULL;
+        }
+        at += (uint64_t)got;
+    }
+    *n = (size_t)st.size;
+    return bytes;
+}
+
+/* w:model(path, {names...}) -> a model, or nil and why. `names` are the
+ * nodes that move - a control surface, a propeller - in the order `turn`
+ * numbers them from 1. */
+static int l_window_model(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    const char *path = luaL_checkstring(L, 2);
+    const char *names[K3D_GLB_MOVABLES];
+    unsigned count = 0;
+    const char *why = NULL;
+    size_t n = 0;
+    uint8_t *bytes;
+    struct model *m;
+
+    if (!lua_isnoneornil(L, 3)) {
+        luaL_checktype(L, 3, LUA_TTABLE);
+        count = (unsigned)lua_rawlen(L, 3);
+        luaL_argcheck(L, count <= K3D_GLB_MOVABLES, 3, "at most 16 names");
+        for (unsigned i = 0; i < count; i++) {
+            lua_rawgeti(L, 3, (lua_Integer)i + 1);
+            names[i] = luaL_checkstring(L, -1);
+            lua_pop(L, 1);          /* the table keeps the string alive */
+        }
+    }
+
+    m = lua_newuserdatauv(L, sizeof(*m), 1);
+    memset(m, 0, sizeof(*m));
+    luaL_setmetatable(L, MODEL);
+    lua_pushvalue(L, 1);
+    lua_setiuservalue(L, -2, 1);    /* the window outlives its models */
+
+    if ((bytes = read_whole(path, &n, &why)) == NULL) {
+        goto refused;
+    }
+    if (!k3d_glb_read(bytes, n, names, count, &m->glb, &why)) {
+        free(bytes);
+        goto refused;
+    }
+    m->owner = w;
+    m->serial = w->serial;
+    m->parts = calloc(m->glb.nparts ? m->glb.nparts : 1, sizeof(*m->parts));
+    m->draws = calloc(m->glb.nparts ? m->glb.nparts : 1, sizeof(*m->draws));
+    m->textures = calloc(m->glb.ntextures ? m->glb.ntextures : 1, sizeof(*m->textures));
+    if (m->parts == NULL || m->draws == NULL || m->textures == NULL) {
+        free(bytes);
+        why = "no memory for the model";
+        goto refused;
+    }
+    /* Only the pictures a part is drawn with - its base colour. A glTF
+     * carries normal and roughness maps as well, which this renderer does
+     * not read yet: the Cessna's 28 are 10 it uses, and decoding the other
+     * 18 was memory spent on nothing. */
+    for (uint32_t i = 0; i < m->glb.ntextures; i++) {
+        const struct k3d_glb_texture *t = &m->glb.textures[i];
+        uint32_t *px = NULL;
+        unsigned tw = 0, th = 0;
+        const char *said = NULL;
+        bool used = false;
+
+        for (uint32_t k = 0; k < m->glb.nparts && !used; k++) {
+            used = m->glb.parts[k].texture == (int)i;
+        }
+        if (t->length == 0 || !used) {
+            continue;
+        }
+        if (gfx_png_decode(bytes + t->offset, t->length, &px, &tw, &th, &said) != GFX_PICTURE_OK &&
+            gfx_jpeg_decode(bytes + t->offset, t->length, &px, &tw, &th, &said) != GFX_PICTURE_OK) {
+            continue;               /* drawn in its colour alone */
+        }
+        if (!k3d_vk_texture(&w->renderer, &m->textures[i], px, tw, th, VK_FORMAT_B8G8R8A8_UNORM)) {
+            memset(&m->textures[i], 0, sizeof(m->textures[i]));
+        }
+        gfx_picture_free(px);
+    }
+    free(bytes);                    /* the textures are on the device now */
+    for (uint32_t i = 0; i < m->glb.nparts; i++) {
+        const struct k3d_glb_part *p = &m->glb.parts[i];
+
+        if (!k3d_vk_model(&w->renderer, &m->parts[i],
+                          (const struct k3d_vk_model_vertex *)p->vertices, p->nvertices,
+                          p->indices, p->nindices)) {
+            why = w->v.why[0] ? w->v.why : "a part would not go on the device";
+            goto refused;
+        }
+    }
+    for (int i = 0; i < 16; i++) {
+        m->place[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+    }
+    return 1;
+
+refused:;
+    char copy[160];
+
+    snprintf(copy, sizeof(copy), "%s", why ? why : "refused");
+    model_free(m);
+    lua_pushnil(L);
+    lua_pushstring(L, copy);
+    return 2;
+}
+
+/* m:place(t): the world from the model, sixteen numbers column-major in a
+ * table the caller keeps and refills - no table made a frame. */
+static int l_model_place(lua_State *L)
+{
+    struct model *m = model_check(L, 1);
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+    for (int i = 0; i < 16; i++) {
+        lua_rawgeti(L, 2, i + 1);
+        m->place[i] = (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+    }
+    return 0;
+}
+
+/* m:turn(i, radians): the i-th named part turned about its hinge. */
+static int turn(lua_State *L, bool spin)
+{
+    struct model *m = model_check(L, 1);
+    lua_Integer i = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, i >= 1 && i <= (lua_Integer)m->glb.nmovables, 2, "a named part");
+    m->angle[i - 1] = (float)luaL_checknumber(L, 3);
+    m->spins[i - 1] = spin;
+    return 0;
+}
+
+static int l_model_turn(lua_State *L) { return turn(L, false); }
+
+/* m:spin(i, radians): the same about the part's own Z - a propeller's. */
+static int l_model_spin(lua_State *L) { return turn(L, true); }
+
+/* m:info() -> "parts=16 triangles=77317 textures=28 size=8.15x2.70x10.92" */
+static int l_model_info(lua_State *L)
+{
+    struct model *m = model_check(L, 1);
+    unsigned textured = 0, used = 0;
+
+    for (uint32_t i = 0; i < m->glb.ntextures; i++) {
+        bool wanted = false;
+
+        for (uint32_t k = 0; k < m->glb.nparts && !wanted; k++) {
+            wanted = m->glb.parts[k].texture == (int)i;
+        }
+        used += wanted;
+        textured += m->textures[i].set != VK_NULL_HANDLE;
+    }
+    char said[160];
+
+    snprintf(said, sizeof(said), "parts=%u triangles=%u textures=%u of %u used, %u in the file "
+             "size=%.2fx%.2fx%.2f", (unsigned)m->glb.nparts, (unsigned)m->glb.triangles, textured,
+             used, (unsigned)m->glb.ntextures, m->glb.hi[0] - m->glb.lo[0],
+             m->glb.hi[1] - m->glb.lo[1], m->glb.hi[2] - m->glb.lo[2]);
+    lua_pushstring(L, said);
+    return 1;
+}
+
+static void multiply(const float a[16], const float b[16], float out[16])
+{
+    float r[16];
+
+    for (int c = 0; c < 4; c++) {
+        for (int row = 0; row < 4; row++) {
+            float sum = 0;
+
+            for (int k = 0; k < 4; k++) {
+                sum += a[k * 4 + row] * b[c * 4 + k];
+            }
+            r[c * 4 + row] = sum;
+        }
+    }
+    memcpy(out, r, sizeof(r));
+}
+
+/* A turn of `angle` about the line through `pivot` along unit `axis`. */
+static void hinge_turn(const float pivot[3], const float axis[3], float angle, float out[16])
+{
+    float c = cosf(angle), s = sinf(angle), t = 1 - c;
+    float x = axis[0], y = axis[1], z = axis[2];
+    float r[9] = { t * x * x + c,     t * x * y + s * z, t * x * z - s * y,
+                   t * x * y - s * z, t * y * y + c,     t * y * z + s * x,
+                   t * x * z + s * y, t * y * z - s * x, t * z * z + c };
+
+    for (int col = 0; col < 3; col++) {
+        for (int row = 0; row < 3; row++) {
+            out[col * 4 + row] = r[col * 3 + row];
+        }
+        out[col * 4 + 3] = 0;
+    }
+    /* p - R p: the pivot stays where it is. */
+    for (int row = 0; row < 3; row++) {
+        out[12 + row] = pivot[row] - (r[row] * pivot[0] + r[3 + row] * pivot[1] +
+                                      r[6 + row] * pivot[2]);
+    }
+    out[15] = 1;
+}
+
+/* The frame's draws for a model: each part where the model is, its own
+ * matrix after, and a movable part turned about its hinge between. */
+static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n)
+{
+    float turned[K3D_GLB_MOVABLES][16];
+
+    for (unsigned i = 0; i < m->glb.nmovables; i++) {
+        const struct k3d_glb_movable *mv = &m->glb.movables[i];
+        /* A propeller spins about its node's own Z, the line of flight
+         * (`k3d_glb.h`): its shape cannot say so. The rest about the
+         * hinge they are longest along. */
+        const float *axis = m->spins[i] ? mv->axes[2] : mv->hinge;
+
+        hinge_turn(mv->pivot, axis, m->angle[i], turned[i]);
+    }
+    for (uint32_t i = 0; i < m->glb.nparts; i++) {
+        const struct k3d_glb_part *p = &m->glb.parts[i];
+        struct k3d_vk_model_draw *d = &m->draws[i];
+        float at[16];
+
+        d->model = &m->parts[i];
+        d->texture = (p->texture >= 0 && (uint32_t)p->texture < m->glb.ntextures &&
+                      m->textures[p->texture].set != VK_NULL_HANDLE)
+                         ? &m->textures[p->texture] : NULL;
+        memcpy(d->tint, p->colour, sizeof(d->tint));
+        if (p->movable >= 0 && (unsigned)p->movable < m->glb.nmovables) {
+            multiply(turned[p->movable], p->matrix, at);
+        } else {
+            memcpy(at, p->matrix, sizeof(at));
+        }
+        multiply(m->place, at, d->matrix);
+    }
+    *n = m->glb.nparts;
+    return m->draws;
+}
+
 void kosmos_k3dvk_kit(lua_State *L)
 {
     static const luaL_Reg terrain[] = {
         { "wanted", l_terrain_wanted },
         { "elevation", l_terrain_elevation },
         { "imagery", l_terrain_imagery },
+        { "height", l_terrain_height },
         { "__gc", l_terrain_gc },
         { NULL, NULL },
     };
@@ -1026,6 +1462,9 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "draw", l_window_draw },
         { "device", l_window_device },
         { "closed", l_window_closed },
+        { "held", l_window_held },
+        { "pressed", l_window_pressed },
+        { "model", l_window_model },
         { "close", l_window_close },
         { "__gc", l_window_gc },
         { NULL, NULL },
@@ -1033,6 +1472,20 @@ void kosmos_k3dvk_kit(lua_State *L)
 
     luaL_newmetatable(L, TERRAIN);
     luaL_setfuncs(L, terrain, 0);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+    lua_pop(L, 1);
+    static const luaL_Reg model[] = {
+        { "place", l_model_place },
+        { "turn", l_model_turn },
+        { "spin", l_model_spin },
+        { "info", l_model_info },
+        { "__gc", l_model_gc },
+        { NULL, NULL },
+    };
+
+    luaL_newmetatable(L, MODEL);
+    luaL_setfuncs(L, model, 0);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");
     lua_pop(L, 1);

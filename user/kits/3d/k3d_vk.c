@@ -1,7 +1,8 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The 3D Kit on Vulkan (`k3d_vk.h`): a sky, then meshes lit by the sun and
- * hazed by distance, into a picture with a depth buffer.
+ * The 3D Kit on Vulkan (`k3d_vk.h`): a sky, then grounds, meshes and
+ * models lit by the sun and hazed by distance, into a picture with a depth
+ * buffer.
  */
 
 #include <math.h>
@@ -16,6 +17,8 @@
 #include "k3d_sky_frag.h"
 #include "k3d_ground_vert.h"
 #include "k3d_ground_frag.h"
+#include "k3d_model_vert.h"
+#include "k3d_model_frag.h"
 
 /* The shaders' push constants, as they declare them (std430: vec4s). */
 struct mesh_push {
@@ -24,6 +27,16 @@ struct mesh_push {
     float sun[4];       /* w: ambient */
     float haze[4];
     float range[4];     /* start, end */
+};
+
+/* A model's: the view's, then its own matrix and tint, 208 bytes. That is
+ * past the 128 Vulkan 1.3 promises and inside the 256 that 1.4 does and
+ * that lavapipe and anv give; the view is pushed once and only the last 80
+ * bytes for each model. */
+struct model_push {
+    struct mesh_push view;
+    float model[16];
+    float tint[4];
 };
 
 struct sky_push {
@@ -79,6 +92,8 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
                          VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE) ||
         !kvk_sampled_layout(v, &r->imagery_layout) ||
         !pipeline_layout(v, &r->ground_layout, sizeof(struct mesh_push), both,
+                         r->imagery_layout) ||
+        !pipeline_layout(v, &r->model_layout, sizeof(struct model_push), both,
                          r->imagery_layout)) {
         return 0;
     }
@@ -95,6 +110,10 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     };
     KVK_STEP(v, v->vkCreateSampler(v->device, &sci, NULL, &r->imagery), "sampler");
+    /* A model's skin repeats: glTF's default wrap, and what a texture
+     * tiled across a fuselage counts on. */
+    sci.addressModeU = sci.addressModeV = sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    KVK_STEP(v, v->vkCreateSampler(v->device, &sci, NULL, &r->skin), "sampler");
 
     VkVertexInputBindingDescription stream = { 0, sizeof(struct k3d_vk_vertex),
                                                VK_VERTEX_INPUT_RATE_VERTEX };
@@ -145,12 +164,39 @@ int k3d_vk_open(struct k3d_vk *r, struct kvk *v, VkFormat format,
         &ground_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
     };
 
+    VkVertexInputBindingDescription model_stream = { 0, sizeof(struct k3d_vk_model_vertex),
+                                                     VK_VERTEX_INPUT_RATE_VERTEX };
+    VkVertexInputAttributeDescription model_attributes[3] = {
+        { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct k3d_vk_model_vertex, position) },
+        { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(struct k3d_vk_model_vertex, normal) },
+        { 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(struct k3d_vk_model_vertex, uv) },
+    };
+    VkPipelineVertexInputStateCreateInfo model_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &model_stream,
+        .vertexAttributeDescriptionCount = 3,
+        .pVertexAttributeDescriptions = model_attributes,
+    };
+    /* Not culled either: a glTF model's thin parts are often one sheet
+     * meant to be seen from both sides, which the shader lights as the
+     * side the eye is on. */
+    struct kvk_pipeline_shape model = {
+        k3d_model_vert, sizeof(k3d_model_vert), k3d_model_frag, sizeof(k3d_model_frag),
+        &model_input, width, height, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE, 0,
+    };
+
     if (!kvk_pipeline(v, &r->mesh, r->mesh_layout, &mesh) ||
         !kvk_pipeline(v, &r->sky, r->sky_layout, &sky) ||
-        !kvk_pipeline(v, &r->ground, r->ground_layout, &ground)) {
+        !kvk_pipeline(v, &r->ground, r->ground_layout, &ground) ||
+        !kvk_pipeline(v, &r->model, r->model_layout, &model)) {
         return 0;
     }
-    return 1;
+
+    /* What an untextured model wears: white, so its tint is its colour and
+     * one pipeline draws both kinds. */
+    static const uint8_t white[4] = { 255, 255, 255, 255 };
+    return k3d_vk_texture(r, &r->white, white, 1, 1, VK_FORMAT_R8G8B8A8_UNORM);
 
 done:
     return 0;
@@ -162,6 +208,16 @@ void k3d_vk_close(struct k3d_vk *r)
 
     if (v == NULL || v->device == VK_NULL_HANDLE) {
         return;
+    }
+    k3d_vk_texture_free(r, &r->white);
+    if (r->model != VK_NULL_HANDLE) {
+        v->vkDestroyPipeline(v->device, r->model, NULL);
+    }
+    if (r->model_layout != VK_NULL_HANDLE) {
+        v->vkDestroyPipelineLayout(v->device, r->model_layout, NULL);
+    }
+    if (r->skin != VK_NULL_HANDLE) {
+        v->vkDestroySampler(v->device, r->skin, NULL);
     }
     if (r->ground != VK_NULL_HANDLE) {
         v->vkDestroyPipeline(v->device, r->ground, NULL);
@@ -229,6 +285,64 @@ void k3d_vk_mesh_free(struct k3d_vk *r, struct k3d_vk_mesh *m)
     memset(m, 0, sizeof(*m));
 }
 
+/* A picture uploaded and its set, sampled by `sampler`: the one way a
+ * texture is made here, for a ground's imagery and a model's skin alike. */
+static int texture_make(struct k3d_vk *r, struct k3d_vk_texture *t, VkSampler sampler,
+                        const void *texels, uint32_t width, uint32_t height, VkFormat format)
+{
+    struct kvk *v = r->v;
+    struct kvk_buffer upload = { 0 };
+    int made = 0;
+
+    memset(t, 0, sizeof(*t));
+    if (texels == NULL || width == 0 || height == 0 ||
+        (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_B8G8R8A8_UNORM)) {
+        refuse(v, "texture-not-a-picture");
+        return 0;
+    }
+    if (!kvk_image_make(v, &t->image, format, width, height,
+                        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, "texture") ||
+        !kvk_buffer_make(v, &upload, (VkDeviceSize)width * height * 4,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "texture-upload") ||
+        !kvk_sampled_set(v, r->imagery_layout, sampler, t->image.view, &t->pool, &t->set)) {
+        goto out;
+    }
+    memcpy(upload.bytes, texels, (size_t)width * height * 4);
+    if (!kvk_begin(v)) {
+        goto out;
+    }
+    kvk_image_upload(v, t->image.image, width, height, upload.buffer);
+    if (!kvk_submit(v)) {
+        goto out;
+    }
+    made = 1;
+
+out:
+    kvk_buffer_free(v, &upload);
+    if (!made) {
+        k3d_vk_texture_free(r, t);
+    }
+    return made;
+}
+
+int k3d_vk_texture(struct k3d_vk *r, struct k3d_vk_texture *t, const void *texels,
+                   uint32_t width, uint32_t height, VkFormat format)
+{
+    return texture_make(r, t, r->skin, texels, width, height, format);
+}
+
+void k3d_vk_texture_free(struct k3d_vk *r, struct k3d_vk_texture *t)
+{
+    struct kvk *v = r->v;
+
+    if (v != NULL && v->device != VK_NULL_HANDLE && t->pool != VK_NULL_HANDLE) {
+        v->vkDestroyDescriptorPool(v->device, t->pool, NULL);
+    }
+    kvk_image_free(v, &t->image);
+    memset(t, 0, sizeof(*t));
+}
+
 int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
                   const struct k3d_terrain_vertex *vertices, uint32_t nv,
                   const uint32_t *indices, uint32_t ni, const void *texels,
@@ -237,8 +351,6 @@ int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
     struct kvk *v = r->v;
     VkDeviceSize vbytes = (VkDeviceSize)nv * sizeof(*vertices);
     VkDeviceSize ibytes = (VkDeviceSize)ni * sizeof(*indices);
-    struct kvk_buffer upload = { 0 };
-    int made = 0;
 
     memset(g, 0, sizeof(*g));
     if (nv == 0 || ni == 0 || ni % 3 != 0 || width == 0 || height == 0 ||
@@ -255,47 +367,60 @@ int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
     g->indices_at = (vbytes + 3) & ~(VkDeviceSize)3;
     if (!kvk_buffer_make(v, &g->buffer, g->indices_at + ibytes,
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                         "ground") ||
-        !kvk_image_make(v, &g->imagery, format, width, height,
-                        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                        VK_IMAGE_ASPECT_COLOR_BIT, "imagery") ||
-        !kvk_buffer_make(v, &upload, (VkDeviceSize)width * height * 4,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "imagery-upload") ||
-        !kvk_sampled_set(v, r->imagery_layout, r->imagery, g->imagery.view, &g->pool,
-                         &g->set)) {
-        goto out;
+                         "ground")) {
+        return 0;
     }
     memcpy(g->buffer.bytes, vertices, (size_t)vbytes);
     memcpy((uint8_t *)g->buffer.bytes + g->indices_at, indices, (size_t)ibytes);
-    memcpy(upload.bytes, texels, (size_t)width * height * 4);
-    if (!kvk_begin(v)) {
-        goto out;
-    }
-    kvk_image_upload(v, g->imagery.image, width, height, upload.buffer);
-    if (!kvk_submit(v)) {
-        goto out;
+    if (!texture_make(r, &g->imagery, r->imagery, texels, width, height, format)) {
+        k3d_vk_ground_free(r, g);
+        return 0;
     }
     g->count = ni;
-    made = 1;
-
-out:
-    kvk_buffer_free(v, &upload);
-    if (!made) {
-        k3d_vk_ground_free(r, g);
-    }
-    return made;
+    return 1;
 }
 
 void k3d_vk_ground_free(struct k3d_vk *r, struct k3d_vk_ground *g)
 {
-    struct kvk *v = r->v;
-
-    if (v != NULL && v->device != VK_NULL_HANDLE && g->pool != VK_NULL_HANDLE) {
-        v->vkDestroyDescriptorPool(v->device, g->pool, NULL);
-    }
-    kvk_image_free(v, &g->imagery);
-    kvk_buffer_free(v, &g->buffer);
+    k3d_vk_texture_free(r, &g->imagery);
+    kvk_buffer_free(r->v, &g->buffer);
     memset(g, 0, sizeof(*g));
+}
+
+int k3d_vk_model(struct k3d_vk *r, struct k3d_vk_model *m,
+                 const struct k3d_vk_model_vertex *vertices, uint32_t nv,
+                 const uint32_t *indices, uint32_t ni)
+{
+    VkDeviceSize vbytes = (VkDeviceSize)nv * sizeof(*vertices);
+    VkDeviceSize ibytes = (VkDeviceSize)ni * sizeof(*indices);
+
+    memset(m, 0, sizeof(*m));
+    if (nv == 0 || ni == 0 || ni % 3 != 0) {
+        refuse(r->v, "model-not-triangles");
+        return 0;
+    }
+    for (uint32_t i = 0; i < ni; i++) {
+        if (indices[i] >= nv) {
+            refuse(r->v, "model-index-outside");
+            return 0;
+        }
+    }
+    m->indices_at = (vbytes + 3) & ~(VkDeviceSize)3;
+    if (!kvk_buffer_make(r->v, &m->buffer, m->indices_at + ibytes,
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                         "model")) {
+        return 0;
+    }
+    memcpy(m->buffer.bytes, vertices, (size_t)vbytes);
+    memcpy((uint8_t *)m->buffer.bytes + m->indices_at, indices, (size_t)ibytes);
+    m->count = ni;
+    return 1;
+}
+
+void k3d_vk_model_free(struct k3d_vk *r, struct k3d_vk_model *m)
+{
+    kvk_buffer_free(r->v, &m->buffer);
+    memset(m, 0, sizeof(*m));
 }
 
 /* ---- the view's arithmetic, in double, kept to float at the end ---- */
@@ -319,18 +444,24 @@ static int unit(double a[3])
 }
 
 /* The eye's frame: forward, right, up; 0 when there is none. Looking
- * straight up or down has no right, and is refused rather than guessed. */
+ * along the up the view gives - straight up or down, for the world's - has
+ * no right, and is refused rather than guessed. The view's up need not be
+ * square to forward: only the plane the two make is taken from it, so a
+ * cockpit hands the aircraft's up as it is. */
 static int frame(const struct k3d_vk_view *view, double f[3], double rt[3], double u[3])
 {
-    static const double world_up[3] = { 0, 1, 0 };
+    double above[3] = { view->up[0], view->up[1], view->up[2] };
 
+    if (above[0] == 0 && above[1] == 0 && above[2] == 0) {
+        above[1] = 1;               /* the world's, as before there was a choice */
+    }
     for (int i = 0; i < 3; i++) {
         f[i] = (double)view->target[i] - view->eye[i];
     }
     if (!unit(f)) {
         return 0;
     }
-    cross(f, world_up, rt);
+    cross(f, above, rt);
     if (!unit(rt)) {
         return 0;
     }
@@ -471,7 +602,18 @@ int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
                 const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
                 uint32_t count, const struct k3d_vk_ground *grounds, uint32_t grounds_count)
 {
+    return k3d_vk_draw_models(r, target, view_of, view, meshes, count, grounds, grounds_count,
+                              NULL, 0);
+}
+
+int k3d_vk_draw_models(struct k3d_vk *r, VkImage target, VkImageView view_of,
+                       const struct k3d_vk_view *view, const struct k3d_vk_mesh *meshes,
+                       uint32_t count, const struct k3d_vk_ground *grounds,
+                       uint32_t grounds_count, const struct k3d_vk_model_draw *models,
+                       uint32_t models_count)
+{
     struct kvk *v = r->v;
+    const VkShaderStageFlags both = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     struct mesh_push mp;
     struct sky_push sp;
     double m[4][4], inv[4][4], sun[3] = { view->sun[0], view->sun[1], view->sun[2] };
@@ -553,7 +695,8 @@ int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
             VkDeviceSize at = 0;
 
             v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                       r->ground_layout, 0, 1, &grounds[i].set, 0, NULL);
+                                       r->ground_layout, 0, 1, &grounds[i].imagery.set, 0,
+                                       NULL);
             v->vkCmdBindVertexBuffers(v->cmd, 0, 1, &grounds[i].buffer.buffer, &at);
             v->vkCmdBindIndexBuffer(v->cmd, grounds[i].buffer.buffer, grounds[i].indices_at,
                                     VK_INDEX_TYPE_UINT32);
@@ -572,6 +715,35 @@ int k3d_vk_draw(struct k3d_vk *r, VkImage target, VkImageView view_of,
         v->vkCmdBindIndexBuffer(v->cmd, meshes[i].buffer.buffer, meshes[i].indices_at,
                                 VK_INDEX_TYPE_UINT32);
         v->vkCmdDrawIndexed(v->cmd, meshes[i].count, 1, 0, 0, 0);
+    }
+
+    /* The models last, so the ground's and the meshes' depth is there for
+     * them to be hidden by. The view goes once; each model then replaces
+     * only its own matrix and tint, the bytes after the view's. */
+    if (models_count > 0) {
+        v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->model);
+        v->vkCmdPushConstants(v->cmd, r->model_layout, both, 0, sizeof(mp), &mp);
+        for (uint32_t i = 0; i < models_count; i++) {
+            const struct k3d_vk_model_draw *d = &models[i];
+            const struct k3d_vk_texture *skin = d->texture != NULL ? d->texture : &r->white;
+            struct model_push own;
+            VkDeviceSize at = 0;
+
+            if (d->model == NULL || d->model->count == 0) {
+                continue;
+            }
+            memcpy(own.model, d->matrix, sizeof(own.model));
+            memcpy(own.tint, d->tint, sizeof(own.tint));
+            v->vkCmdPushConstants(v->cmd, r->model_layout, both,
+                                  offsetof(struct model_push, model),
+                                  sizeof(own) - offsetof(struct model_push, model), own.model);
+            v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                       r->model_layout, 0, 1, &skin->set, 0, NULL);
+            v->vkCmdBindVertexBuffers(v->cmd, 0, 1, &d->model->buffer.buffer, &at);
+            v->vkCmdBindIndexBuffer(v->cmd, d->model->buffer.buffer, d->model->indices_at,
+                                    VK_INDEX_TYPE_UINT32);
+            v->vkCmdDrawIndexed(v->cmd, d->model->count, 1, 0, 0, 0);
+        }
     }
     v->vkCmdEndRendering(v->cmd);
     return 1;

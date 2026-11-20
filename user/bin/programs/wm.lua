@@ -6667,7 +6667,7 @@ local frame = {
   HEAD = "<i4I4I4",                             -- struct wm_frame_reply's
   EVENT = "<I2I2I2I2i4i4i4",                    -- struct wm_frame_event
   OPS = { [1] = "commit", [2] = "poll" },
-  TYPES = { key = 1, mouse = 2, wheel = 3, resize = 4, close = 5 },
+  TYPES = { key = 1, mouse = 2, wheel = 3, resize = 4, close = 5, rawkey = 6 },
   ACTIONS = { press = 1, release = 2, move = 3 },
   NO_WINDOW = 1, NO_SURFACE = 2, BAD = 3,
 }
@@ -6703,6 +6703,9 @@ function frame.reply(reply)
         a, b, c = whole(ev.x), whole(ev.y), whole(ev.n)
       elseif t == 4 then
         a, b = whole(ev.w), whole(ev.h)
+      elseif t == 6 then
+        act = ev.down and 1 or 2
+        a = whole(ev.code)
       end
 
       parts[#parts + 1] = string.pack(frame.EVENT, t, act, button, 0, a, b, c)

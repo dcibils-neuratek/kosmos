@@ -61,6 +61,12 @@ DATA = {
     "Quake": [("id1/pak0.pak", "id1/pak0.pak")],
 }
 
+# What an application carries from the tree's own vendored assets, beside
+# its program: Flight's aircraft (`assets/models/cessna172`, CC BY 4.0).
+ASSETS = {
+    "Flight": [("assets/models/cessna172/cessna_172.glb", "cessna_172.glb")],
+}
+
 
 def inspector():
     """WebKit's Web Inspector, its front end's pages (`tools/inspector.py`)."""
@@ -153,6 +159,9 @@ def pairs(arch, home, apps=None):
 
         if name in MADE:
             mine.extend(MADE[name]())
+
+        for there, here in ASSETS.get(name, []):
+            mine.append((os.path.join(ROOT, there), here))
 
         for there, here in DATA.get(name, []):
             source = os.path.join(home, there) if home else ""

@@ -394,6 +394,13 @@ int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms)
                 case WM_EV_CLOSE:
                     ev.type = KW_CLOSE;
                     break;
+                case WM_EV_RAWKEY:
+                    /* What the key did, down and up: held keys, which a
+                     * character cannot say (a game's, Flight's yoke). */
+                    ev.type = KW_RAWKEY;
+                    ev.key = f->a;
+                    ev.action = f->action == WM_ACT_PRESS ? KW_PRESS : KW_RELEASE;
+                    break;
                 default:
                     continue;
                 }

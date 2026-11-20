@@ -5394,3 +5394,25 @@ away. 0.12.27.
   Viva_1, free with credit. It has moving parts - the flaps, the ailerons,
   the rudder, the elevator and the propeller - so they can move with the
   controls. It is in the tree, with its licence beside it, for F5.
+
+## 20 November 2026 - Flight flies
+
+**In short.** Flight is playable: a Cessna 172 over a real city's tiles,
+flown with the arrow keys. 0.12.28.
+
+- **What a person sees**: a window with the sky and the ground, and the
+  Cessna in front of the camera, its wings, tail and propeller textured.
+  The arrows bank and pitch it, A and Z the throttle, F the flaps, V the
+  view. The ground is the real place's satellite photograph over its real
+  hills, fetched as you fly.
+- **How it is proved**: the test boots the desktop, opens Flight, serves
+  it hills and pictures from the Mac, and presses the keys through the
+  virtual machine's own keyboard - and checks that the aircraft rolled,
+  turned, rolled back, climbed, and changed view.
+- **Found on the way**: applications installed on the disk were never
+  given the permissions their own header asks for; now they are, for the
+  ones any program may ask.
+- **How it was built**: four helpers worked beside the main session at
+  once - the renderer's textured models, the aircraft file's reader, the
+  picture decoders made usable from any thread, and the slowest test split
+  in two - and the main session folded each in.
