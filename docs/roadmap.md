@@ -12075,7 +12075,8 @@ November: what was left for it to be playable), F5a to F5d **built in
 Cessna drawn - read by the 3D Kit's GLB reader (`k3d_glb.c`), textured,
 its control surfaces and propeller moving. F5e **built in 0.12.31**
 (18.951), the strip, laid over the frame by the 3D Kit's overlays; F5f
-**built in 0.12.32** (18.952), the cockpit's six instruments; then the
+**built in 0.12.32** (18.952), the cockpit's six instruments; F5g **built
+in 0.12.33** (18.953), the graphics panel; then the
 cockpit's and tower's detail, the pause sheet with search, the graphics
 panel and the island offline. **Found on the way**: a program installed
 in `/Home` was never given what its header declares - the disk does not

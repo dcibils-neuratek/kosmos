@@ -39790,3 +39790,40 @@ the dials' light in it, under a row of sky: 0.61 and 247 light pixels.
 in the same control; a band search like the strip's failed the other way,
 the panel's block running on into the light window below Flight's.
 The gate: 131 of 131 in 515 s.
+
+## 18.953 Flight's graphics panel, the device's time, and four overlays (0.12.33)
+
+**In short:** Flight has the graphics panel its design calls the reason it
+exists - top right, the frames a second and a sparkline of the last 120
+frames, the device's time for a frame, the processor's part, the draw calls
+and triangles, the terrain's chunks, the device, how a frame reaches the
+screen - and three pieces under it that any 3D program now has. **The
+Vulkan Kit keeps the device's time**: two timestamps in a query pool where
+the queue keeps time (`timestampValidBits`), written at the top and the
+foot of a recording and read after it, by `timestampPeriod` -
+`kvk_time_start`, `kvk_time_end`, `kvk_time_ms`. **The 3D Kit counts** the
+draw calls and triangles `k3d_vk_draw_scene` recorded, and a window says
+them with the device's time in `w:stats()`, four numbers and a string,
+nothing allocated. **A window holds four overlays**, drawn in their places'
+order: the strip or the cockpit's panel in the first, the graphics panel in
+the second. `F3` hides it, remembered in Flight's preferences; under 480
+wide it is the frames a second alone.
+
+**Held by `x86-flight`**: Flight says the panel once with its figures
+(`flight graphics 64x18 at 92,4 device=llvmpipe/1.4 draws=18
+triangles=77320 gpu_ms=1329.65 frame_ms=1429.90 processor_ms=...`) - at
+least two draws and a hundred triangles; the device's time more than
+nothing and **inside the frame's**, which waits for the device, so it
+cannot be more; the processor's part more than nothing - and the box is
+looked at on the chase view's screen where Flight put it, placed from the
+strip's band, near-black with its words light in it (0.89, 17 light
+pixels). **Controls**, both in one run: the box never handed to the window
+reads 0.0 and fails; the device's time read a hundred times too large,
+143671 ms against a 1532 ms frame, fails the inside-the-frame check. At
+1280x720 the panel is 262 by 266 and reads 18 draws and 77,320 triangles at
+the first frame said, 240 and 2.00 M once the ground has come; lavapipe
+under TCG takes 2 s a frame there, nineteen twentieths of it the device's -
+QEMU's number, not a speed.
+The gate: 129 of 131 in 516 s, `x86-modelspage` (a step's key missing
+under load) and `x86-profile` (237 samples of a spinner where about 502
+were its share) passing alone in 30 s - the load's, not this change's.

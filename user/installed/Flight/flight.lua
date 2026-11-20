@@ -36,12 +36,13 @@ local settings = prefs.open("flight", {
   elevation = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
   width = 1280, height = 720,
   model = "/Home/Apps/Flight/cessna_172.glb",    -- the aircraft (assets/models/cessna172)
+  graphics = true,                               -- the graphics panel open (F3)
   frames = 0,                                    -- stop after this many, 0 never
   report = 120,                                  -- a line on the console every this many
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19 }
+              v = 47, p = 25, r = 19, f3 = 61 }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -583,6 +584,131 @@ local function draw_panel(w, dt)
   panel_said = key
 end
 
+-- **The graphics panel** (F5g), the reason Flight exists: what the 3D API
+-- did for the last frames - frames a second and a sparkline of their
+-- times, the device's time and the processor's, the draw calls and
+-- triangles the 3D Kit recorded, the terrain's chunks, the device and how
+-- a frame reaches the screen. Top right, in the overlay's second place, so
+-- it lies over the strip or the panel; redrawn four times a second, not
+-- every frame. `F3` hides it, and that is remembered. In a window too
+-- narrow for it, only the frames a second, in a small box.
+local GLASS, DIM, BRIGHT, LINE = 0xd8141820, 0xff9aa6b8, 0xfff4f6f9, 0xff3a4250
+local SPARK, BUDGET = 0xff5ab0ff, 0xff4a5262
+local TIMES = 120                                  -- the sparkline's frames
+local times, times_at, times_n = {}, 0, 0
+local processor_ms = nil                           -- the frame less the device's, smoothed
+for i = 1, TIMES do times[i] = 0 end
+local spark_xy = {}
+local graphics, graphics_said, graphics_next = nil, false, 0
+local face_big, face_small, face_mono
+local recent = { n = 0, since = 0, fps = 0 }
+
+local function count_of(n)
+  if n >= 1e6 then return ("%.2f M"):format(n / 1e6) end
+  if n >= 1e4 then return ("%.1f k"):format(n / 1e3) end
+  return tostring(n)
+end
+
+local function draw_graphics(w, said, took, t)
+  times_at = times_at % TIMES + 1
+  times[times_at] = took
+  times_n = math.min(TIMES, times_n + 1)
+  -- The processor's part of a frame: the frame less the device's time,
+  -- which it waits for, every frame - smoothed over about a second's worth.
+  local draws, triangles, gpu_ms, presented = w:stats()
+  local own = math.max(0, took * 1000 - (gpu_ms or 0))
+  processor_ms = processor_ms and processor_ms + (own - processor_ms) * 0.1 or own
+  recent.n = recent.n + 1
+  if t - recent.since >= 1 then
+    recent.fps = recent.n / (t - recent.since)
+    recent.n, recent.since = 0, t
+  end
+  if not settings.graphics then
+    if graphics then w:overlay(nil, 0, 0, 2) graphics = nil end
+    return
+  end
+  if t < graphics_next then return end
+  graphics_next = t + 0.25
+
+  local full = settings.width >= 480
+  if not graphics then
+    face_small = gfx.face("ibmplexsans", 13) or gfx.face("ibmplexsans", 12)
+    face_big = gfx.face("ibmplexmono-medium", 26) or gfx.face("ibmplexmono", 26)
+    face_mono = gfx.face("ibmplexmono", 13)
+    if full then
+      graphics = gfx.surface{ w = 262, h = 266 }
+    else
+      graphics = gfx.surface{ w = math.min(settings.width - 8, 64), h = 18 }
+    end
+  end
+  local gw, gh = graphics:size()
+  graphics:fill(0, 0, gw, gh, GLASS)
+  local fps = ("%.1f"):format(recent.fps)
+
+  if not full then
+    graphics:text(4, 1, fps .. " fps", BRIGHT, nil, face_small)
+  else
+    local x, right = 14, gw - 14
+    graphics:text(x, 10, "Graphics", BRIGHT, nil, face_small)
+    local chip = gfx.measure("F3", face_mono)
+    graphics:fill_round(right - chip - 10, 9, chip + 10, 20, LINE, 5)
+    graphics:text(right - chip - 5, 10, "F3", DIM, nil, face_mono)
+    -- "llvmpipe/1.4 1280x720": the device, the API, the picture's size.
+    local api, name = w:device():match("^(%S-)/(%S+)")
+    graphics:text(x, 32, ("Vulkan %s \u{b7} %s"):format(name or "?", api or w:device()), DIM, nil,
+                  face_small)
+    local after = graphics:text(x, 52, fps, BRIGHT, nil, face_big)
+    graphics:text(after + 10, 62, "frames a second", DIM, nil, face_small)
+
+    -- The sparkline: the last frames' times, oldest on the left, against
+    -- a line at a 60th of a second - as many as have been flown, up to
+    -- two minutes' at sixty.
+    local sx, sy, sw, sh = x, 92, right - x, 38
+    local most = 1 / 30
+    for i = 1, TIMES do if times[i] > most then most = times[i] end end
+    local first = times_n < TIMES and 1 or times_at + 1
+    local budget = sy + sh - math.floor(sh * (1 / 60) / most + 0.5)
+    graphics:fill(sx, budget, sw, 1, BUDGET)
+    local n = 0
+    for i = 1, times_n do
+      local v = times[(first + i - 2) % TIMES + 1]
+      spark_xy[n + 1] = sx + (i - 1) * sw / (TIMES - 1)
+      spark_xy[n + 2] = sy + sh - sh * v / most
+      n = n + 2
+    end
+    for i = n + 1, #spark_xy do spark_xy[i] = nil end
+    if n >= 4 then graphics:polyline(spark_xy, 1.5, SPARK) end
+
+    local drawn, chosen = said:match("^drawn=(%d+) of (%d+)")
+    local rows = {
+      { "GPU a frame", gpu_ms and ("%.1f ms"):format(gpu_ms) or "not kept" },
+      { "Processor a frame", ("%.1f ms"):format(processor_ms) },
+      { "Draw calls", tostring(draws) },
+      { "Triangles", count_of(triangles) },
+      { "Terrain tiles", ("%s of %s"):format(drawn or "?", chosen or "?") },
+      { "Presented by", presented },
+    }
+    local y = 140
+    for _, row in ipairs(rows) do
+      graphics:text(x, y, row[1], DIM, nil, face_small)
+      local wide = gfx.measure(row[2], face_mono)
+      graphics:text(right - wide, y, row[2], BRIGHT, nil, face_mono)
+      y = y + 20
+    end
+  end
+  local gx, gy = settings.width - gw - (full and 16 or 4), full and 16 or 4
+  local ok, why = w:overlay(graphics, gx, gy, 2)
+  if not ok then say("graphics failed=" .. tostring(why)) end
+  if not graphics_said and recent.fps > 0 then
+    say(("graphics %dx%d at %d,%d device=%s draws=%d triangles=%d gpu_ms=%s frame_ms=%.2f "
+         .. "processor_ms=%.2f presented=%s")
+        :format(gw, gh, gx, gy, w:device():match("^%S+"), draws, triangles,
+                gpu_ms and ("%.2f"):format(gpu_ms) or "none", took * 1000, processor_ms,
+                presented))
+    graphics_said = true
+  end
+end
+
 -- The window and the terrain.
 local w, why = k.window("Flight", settings.width, settings.height)
 if not w then say("failed=" .. tostring(why)) return end
@@ -617,6 +743,10 @@ while not w:closed(0) do
 
   if w:pressed(KEY.v) then S.view = S.view % 3 + 1 end
   if w:pressed(KEY.p) then S.paused = not S.paused end
+  if w:pressed(KEY.f3) then
+    settings:set("graphics", not settings.graphics)
+    graphics_next = 0
+  end
   if w:pressed(KEY.f) then S.flaps = (S.flaps + 0.5) % 1.5 end
   if w:pressed(KEY.r) or S.crashed then
     if S.crashed then say("crashed") end
@@ -642,6 +772,7 @@ while not w:closed(0) do
 
   frame = frame + 1
   local took = now() - t
+  draw_graphics(w, said, took, t)
   total, slowest = total + took, math.max(slowest, took)
   if frame % settings.report == 0 or frame == settings.frames then
     say(("frame=%d view=%d x=%.0f y=%.0f z=%.0f v=%.1f heading=%.0f roll=%.0f ground=%s "

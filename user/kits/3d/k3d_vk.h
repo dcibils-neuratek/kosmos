@@ -144,6 +144,10 @@ struct k3d_vk {
     VkSampler skin;                 /* linear, repeating: a model's uv may
                                      * leave 0 to 1 and glTF wraps it */
     struct k3d_vk_texture white;    /* 1 by 1, what an untextured model wears */
+    /* What the last `k3d_vk_draw_scene` recorded: its draw calls and the
+     * triangles they draw - a graphics panel's figures. */
+    uint32_t draws;
+    uint64_t triangles;
 };
 
 /* The renderer for pictures of `format`, `width` by `height`: 1, or 0 with

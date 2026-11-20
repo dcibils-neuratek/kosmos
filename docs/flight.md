@@ -327,8 +327,20 @@ ends on the M700:
     over the frame by the same `w:overlay`, redrawn only when a needle
     would move. Lua says where each needle points, gfx's discs, lines and
     polygons draw it.
-  Then the tower view's detail, the pause sheet, the panel and the
-  island.
+  - **F5g - the graphics panel** (built, 0.12.33, `testing.md` 18.953):
+    top right, over the strip or the cockpit's panel, in the overlay's
+    second place (`w:overlay(surface, x, y, place)`, four places). Frames
+    a second, a sparkline of the last 120 frames' times against a 60th of
+    a second, the device's time for a frame from Vulkan's timestamps (the
+    Vulkan Kit's `kvk_time_*`), the processor's part - the frame less the
+    device's, which it waits for - the draw calls and triangles the 3D Kit
+    recorded (`w:stats()`), the terrain's chunks drawn of those chosen,
+    the device and how a frame reaches the screen. Redrawn four times a
+    second; `F3` hides it and that is remembered (`prefs`, `graphics`).
+    A window under 480 wide shows the frames a second alone. The
+    switches - shadows, water, haze, wireframe - come with the effects
+    they turn off, in F6.
+  Then the tower view's detail, the pause sheet and the island.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then buildings from
   OpenStreetMap's outlines and heights, through the Map Kit that reads them

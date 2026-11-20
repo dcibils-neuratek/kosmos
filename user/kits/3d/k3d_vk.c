@@ -738,11 +738,15 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
         .pDepthAttachment = &depth,
     };
     v->vkCmdBeginRendering(v->cmd, &ri);
+    r->draws = 0;
+    r->triangles = 0;
 
     v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->sky);
     v->vkCmdPushConstants(v->cmd, r->sky_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp),
                           &sp);
     v->vkCmdDraw(v->cmd, 3, 1, 0, 0);
+    r->draws++;
+    r->triangles++;
 
     if (grounds_count > 0) {
         v->vkCmdBindPipeline(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->ground);
@@ -759,6 +763,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
             v->vkCmdBindIndexBuffer(v->cmd, grounds[i].buffer.buffer, grounds[i].indices_at,
                                     VK_INDEX_TYPE_UINT32);
             v->vkCmdDrawIndexed(v->cmd, grounds[i].count, 1, 0, 0, 0);
+            r->draws++;
+            r->triangles += grounds[i].count / 3;
         }
     }
 
@@ -773,6 +779,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
         v->vkCmdBindIndexBuffer(v->cmd, meshes[i].buffer.buffer, meshes[i].indices_at,
                                 VK_INDEX_TYPE_UINT32);
         v->vkCmdDrawIndexed(v->cmd, meshes[i].count, 1, 0, 0, 0);
+        r->draws++;
+        r->triangles += meshes[i].count / 3;
     }
 
     /* The models last, so the ground's and the meshes' depth is there for
@@ -801,6 +809,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
             v->vkCmdBindIndexBuffer(v->cmd, d->model->buffer.buffer, d->model->indices_at,
                                     VK_INDEX_TYPE_UINT32);
             v->vkCmdDrawIndexed(v->cmd, d->model->count, 1, 0, 0, 0);
+            r->draws++;
+            r->triangles += d->model->count / 3;
         }
     }
 
@@ -825,6 +835,8 @@ int k3d_vk_draw_scene(struct k3d_vk *r, VkImage target, VkImageView view_of,
             v->vkCmdBindDescriptorSets(v->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                        r->overlay_layout, 0, 1, &o->texture->set, 0, NULL);
             v->vkCmdDraw(v->cmd, 6, 1, 0, 0);
+            r->draws++;
+            r->triangles += 2;
         }
     }
     v->vkCmdEndRendering(v->cmd);

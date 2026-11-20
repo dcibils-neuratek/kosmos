@@ -128,6 +128,32 @@ int kvk_open(struct kvk *v, const char *program, int windowed)
     PFN_vkGetDeviceQueue get_queue = (PFN_vkGetDeviceQueue)gdpa(v->device, "vkGetDeviceQueue");
     get_queue(v->device, 0, 0, &v->queue);
 
+    /* The queue's clock: how many bits of a stamp it keeps (none, and it
+     * keeps no time) and how long a tick is. */
+    {
+        PFN_vkGetPhysicalDeviceQueueFamilyProperties families =
+            (PFN_vkGetPhysicalDeviceQueueFamilyProperties)gipa(
+                v->instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+        VkQueueFamilyProperties family;
+        uint32_t nfamilies = 1;
+
+        if (families != NULL) {
+            families(v->physical, &nfamilies, &family);
+            v->stamp_bits = nfamilies > 0 ? family.timestampValidBits : 0;
+        }
+        v->stamp_ns = props.limits.timestampPeriod;
+        if (v->stamp_bits > 0 && v->stamp_ns > 0) {
+            VkQueryPoolCreateInfo qpci = {
+                .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                .queryCount = 2,
+            };
+            if (v->vkCreateQueryPool(v->device, &qpci, NULL, &v->stamps) != VK_SUCCESS) {
+                v->stamps = VK_NULL_HANDLE;
+            }
+        }
+    }
+
     /* Recorded again after each submit - an upload, then a frame, then the
      * next frame - which Vulkan allows only of a buffer whose pool says so;
      * without it lavapipe freed a buffer twice. */
@@ -157,6 +183,9 @@ void kvk_close(struct kvk *v)
     if (v->device != VK_NULL_HANDLE) {
         if (v->pool != VK_NULL_HANDLE) {
             v->vkDestroyCommandPool(v->device, v->pool, NULL);
+        }
+        if (v->stamps != VK_NULL_HANDLE) {
+            v->vkDestroyQueryPool(v->device, v->stamps, NULL);
         }
         v->vkDestroyDevice(v->device, NULL);
     }
@@ -297,6 +326,35 @@ int kvk_submit(struct kvk *v)
 
 done:
     return 0;
+}
+
+int kvk_time_start(struct kvk *v)
+{
+    if (v->stamps != VK_NULL_HANDLE) {
+        v->vkCmdResetQueryPool(v->cmd, v->stamps, 0, 2);
+        v->vkCmdWriteTimestamp(v->cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, v->stamps, 0);
+    }
+    return 1;
+}
+
+void kvk_time_end(struct kvk *v)
+{
+    if (v->stamps != VK_NULL_HANDLE) {
+        v->vkCmdWriteTimestamp(v->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, v->stamps, 1);
+    }
+}
+
+double kvk_time_ms(struct kvk *v)
+{
+    uint64_t at[2];
+    uint64_t mask = v->stamp_bits >= 64 ? ~(uint64_t)0 : ((uint64_t)1 << v->stamp_bits) - 1;
+
+    if (v->stamps == VK_NULL_HANDLE ||
+        v->vkGetQueryPoolResults(v->device, v->stamps, 0, 2, sizeof(at), at, sizeof(at[0]),
+                                 VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) {
+        return -1;
+    }
+    return (double)((at[1] - at[0]) & mask) * v->stamp_ns / 1e6;
 }
 
 int kvk_begin(struct kvk *v)

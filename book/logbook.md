@@ -5496,3 +5496,22 @@ every small aeroplane has. 0.12.32.
   the panel where it must be on the screen; with the panel switched off,
   the test fails.
 
+## 20 November 2026 - Flight's graphics panel
+
+**In short.** Flight shows what the graphics card does for every frame,
+in a panel in its top right corner. 0.12.33.
+
+- **What it shows**: frames a second, a line of the last frames' times,
+  how long the graphics device took for a frame and how long the
+  processor did, how many draw calls and triangles a frame has, and how
+  many pieces of the ground are drawn.
+- **Why it matters**: Flight exists to show what a 3D API does, and this
+  is where it is read. On the Mac Pro's and the M700's own GPUs it will
+  say how fast each really is.
+- **What it stands on**: the graphics device now times itself (Vulkan's
+  timestamps), and the 3D Kit counts what it asked for - both there for
+  any program that draws 3D.
+- **How it is checked**: the device's time must fit inside the frame's,
+  since a frame waits for the device; a fault that made it a hundred
+  times too large fails the test.
+

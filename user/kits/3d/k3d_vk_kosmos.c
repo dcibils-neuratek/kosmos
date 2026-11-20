@@ -55,6 +55,7 @@
 #define TERRAIN "k3dvk.terrain"
 #define MODEL   "k3dvk.model"
 #define KEYCODES 512           /* evdev's, more than a keyboard has */
+#define OVERLAYS 4             /* a window's overlay places: a strip, a panel */
 
 /* What Mesa or LLVM says - an abort's last words among it - goes to the
  * console rather than nowhere (`runtime/posix/fd.c`), as `vulkantest.c`
@@ -603,11 +604,19 @@ struct window {
      * nothing a frame. */
     uint8_t held[KEYCODES / 8], went_down[KEYCODES / 8];
     int closing;
-    /* The overlay `w:overlay` gave, on the device: one picture, refreshed
-     * in place while its size stays, made again when it changes. */
-    struct k3d_vk_texture overlay;
-    struct k3d_vk_overlay laid;     /* texture NULL: none */
-    uint32_t *packed;               /* its rows without the pitch, for the copy */
+    /* The overlays `w:overlay` gave, on the device, in their places: a
+     * picture each, refreshed in place while its size stays, made again
+     * when it changes, and drawn in the places' order. */
+    struct k3d_vk_texture overlay[OVERLAYS];
+    struct k3d_vk_overlay laid[OVERLAYS];   /* texture NULL: none there */
+    struct k3d_vk_overlay frame_laid[OVERLAYS];  /* the frame's, those there */
+    uint32_t *packed;               /* a picture's rows without the pitch */
+    size_t packed_room;             /* in pixels */
+    /* What the last frame cost, for `w:stats`: the draws and triangles the
+     * renderer recorded, and the device's own time for the frame. */
+    uint32_t draws;
+    uint64_t triangles;
+    double gpu_ms;                  /* < 0: the device keeps no time */
 };
 
 /* Everything the window manager has said, taken in: the keys' transitions
@@ -674,7 +683,9 @@ static void window_close(struct window *w)
         v->vkDeviceWaitIdle(v->device);
     }
     if (w->renderer.v != NULL) {
-        k3d_vk_texture_free(&w->renderer, &w->overlay);
+        for (int i = 0; i < OVERLAYS; i++) {
+            k3d_vk_texture_free(&w->renderer, &w->overlay[i]);
+        }
         k3d_vk_close(&w->renderer);
     }
     free(w->packed);
@@ -753,33 +764,41 @@ static int l_window_device(lua_State *L)
 /* w:closed(wait) -> true once the window was asked to close, waiting up to
  * `wait` seconds for it. */
 /*
- * w:overlay(surface, x, y) - a gfx surface laid over every frame from now
- * on at (x, y), by its alpha: a strip of instruments, a menu. Called again
- * when the picture changed, which copies it to the device again; with no
- * surface, the overlay is taken away. The pixels cross once, here, in C -
- * never as a Lua string - and a frame that changed nothing copies nothing.
+ * w:overlay(surface, x, y, place) - a gfx surface laid over every frame
+ * from now on at (x, y), by its alpha: a strip of instruments, a panel of
+ * figures. `place` is 1 to 4, 1 when it is not given; the places are drawn
+ * in order, so a higher one lies over a lower. Called again when the
+ * picture changed, which copies it to the device again; with no surface,
+ * that place is emptied. The pixels cross once, here, in C - never as a
+ * Lua string - and a frame that changed nothing copies nothing.
  */
 static int l_window_overlay(lua_State *L)
 {
     struct window *w = window_check(L, 1);
+    lua_Integer place = luaL_optinteger(L, 5, 1);
     unsigned width, height, pitch;
     uint32_t *pixels;
 
+    luaL_argcheck(L, place >= 1 && place <= OVERLAYS, 5, "a place from 1 to 4");
+    struct k3d_vk_texture *t = &w->overlay[place - 1];
+    struct k3d_vk_overlay *laid = &w->laid[place - 1];
+
     if (lua_isnoneornil(L, 2)) {
-        w->laid.texture = NULL;
+        laid->texture = NULL;
         return 0;
     }
     pixels = kosmos_surface_pixels(L, 2, &width, &height, &pitch);
     if (width > w->renderer.width || height > w->renderer.height) {
         return luaL_error(L, "an overlay larger than the window");
     }
-    if (w->overlay.width != width || w->overlay.height != height) {
+    if ((size_t)width * height > w->packed_room) {
         uint32_t *packed = realloc(w->packed, (size_t)width * height * 4);
 
         if (packed == NULL) {
             return luaL_error(L, "no memory for the overlay");
         }
         w->packed = packed;
+        w->packed_room = (size_t)width * height;
     }
     for (unsigned row = 0; row < height; row++) {
         memcpy(w->packed + (size_t)row * width, (const uint8_t *)pixels + (size_t)row * pitch,
@@ -788,25 +807,46 @@ static int l_window_overlay(lua_State *L)
 
     int done;
 
-    if (w->overlay.width == width && w->overlay.height == height) {
-        done = k3d_vk_texture_refresh(&w->renderer, &w->overlay, w->packed);
+    if (t->width == width && t->height == height) {
+        done = k3d_vk_texture_refresh(&w->renderer, t, w->packed);
     } else {
-        k3d_vk_texture_free(&w->renderer, &w->overlay);
+        k3d_vk_texture_free(&w->renderer, t);
         /* gfx's pixels are 0xAARRGGBB, which is B, G, R, A in memory. */
-        done = k3d_vk_texture(&w->renderer, &w->overlay, w->packed, width, height,
+        done = k3d_vk_texture(&w->renderer, t, w->packed, width, height,
                               VK_FORMAT_B8G8R8A8_UNORM);
     }
     if (!done) {
-        w->laid.texture = NULL;
+        laid->texture = NULL;
         lua_pushnil(L);
         lua_pushstring(L, w->v.why[0] ? w->v.why : "overlay");
         w->v.why[0] = '\0';
         return 2;
     }
-    w->laid = (struct k3d_vk_overlay){ &w->overlay, (int32_t)luaL_optinteger(L, 3, 0),
-                                       (int32_t)luaL_optinteger(L, 4, 0), width, height };
+    *laid = (struct k3d_vk_overlay){ t, (int32_t)luaL_optinteger(L, 3, 0),
+                                     (int32_t)luaL_optinteger(L, 4, 0), width, height };
     lua_pushboolean(L, 1);
     return 1;
+}
+
+/* w:stats() -> draws, triangles, gpu_ms, presented: what the last frame
+ * recorded, the device's time for it (nil where the device keeps none),
+ * and how a frame reaches the screen. Numbers only, so a frame that asks
+ * allocates nothing. */
+static int l_window_stats(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+
+    lua_pushinteger(L, (lua_Integer)w->draws);
+    lua_pushinteger(L, (lua_Integer)w->triangles);
+    if (w->gpu_ms >= 0) {
+        lua_pushnumber(L, w->gpu_ms);
+    } else {
+        lua_pushnil(L);
+    }
+    /* VK_KOSMOS_surface: the swapchain's image copied into the window's
+     * shared surface, which the window manager composes. */
+    lua_pushliteral(L, "a copy to the window");
+    return 4;
 }
 
 static int l_window_closed(lua_State *L)
@@ -1150,10 +1190,16 @@ static int l_window_draw(lua_State *L)
     if (!lua_isnoneornil(L, 4)) {
         plane = model_draws(model_check(L, 4), &nplane);
     }
-    if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
+    uint32_t laid = 0;
+
+    for (int i = 0; i < OVERLAYS; i++) {
+        if (w->laid[i].texture != NULL) {
+            w->frame_laid[laid++] = w->laid[i];
+        }
+    }
+    if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) || !kvk_time_start(v) ||
         !k3d_vk_draw_scene(&w->renderer, c->images[index], c->views[index], &view, NULL, 0,
-                           w->drawn, count, plane, nplane, &w->laid,
-                           w->laid.texture != NULL ? 1 : 0)) {
+                           w->drawn, count, plane, nplane, w->frame_laid, laid)) {
         lua_pushnil(L);
         lua_pushstring(L, v->why[0] ? v->why : "draw");
         v->why[0] = '\0';
@@ -1163,12 +1209,16 @@ static int l_window_draw(lua_State *L)
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
+    kvk_time_end(v);
     if (!kvk_submit(v) || !kvk_present(v, c, (uint32_t)index)) {
         lua_pushnil(L);
         lua_pushstring(L, v->why);
         v->why[0] = '\0';
         return 2;
     }
+    w->draws = w->renderer.draws;
+    w->triangles = w->renderer.triangles;
+    w->gpu_ms = kvk_time_ms(v);
     give_back(w, g);
 
     char head[160];
@@ -1531,6 +1581,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "pressed", l_window_pressed },
         { "model", l_window_model },
         { "overlay", l_window_overlay },
+        { "stats", l_window_stats },
         { "close", l_window_close },
         { "__gc", l_window_gc },
         { NULL, NULL },

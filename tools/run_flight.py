@@ -220,14 +220,19 @@ def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None):
     k, t, r = max(stacks, key=lambda b: b[2])
     return k, t, r, words(k, t, r)
 
-def panel_seen(R, data, band, pw, ph):
-    """The panel's rectangle on the screen, from the strip's band: (the
+def panel_seen(R, data, band, pw, ph, at=None):
+    """The panel's rectangle on the screen, from the strip's band - centred
+    on the window's foot, or at `at`, (x, y) in the window: (the
     fraction of it that is the panel's near-black - its ground and the
     dials' faces, which neither the sky nor the gate's ground has - its
     light pixels, the fraction of the row just above it that is the sky)."""
     width, height, px = R.parse_ppm(data)
-    left = band[0] + (WIDTH - pw) // 2
-    top = band[1] + 40 - ph                         # the strip's foot, less the panel
+    if at is None:
+        left = band[0] + (WIDTH - pw) // 2
+        top = band[1] + 40 - ph                     # the strip's foot, less the panel
+    else:
+        left = band[0] + at[0]
+        top = band[1] + 40 - HEIGHT + at[1]         # the window's top, and down
     def pixel(x, y):
         i = (y * width + x) * 3
         return px[i], px[i + 1], px[i + 2]
@@ -441,6 +446,41 @@ def main():
         elif block is None or block[0] < 0.3 or block[1] < 12 or block[2] < 0.5:
             fails.append("no panel on the cockpit's screen - a near-black block %dx%d with "
                          "dials in it: %r" % (pw, ph, block))
+    # The graphics panel (F5g): said once with the 3D Kit's figures for a
+    # frame - its draw calls, at least the sky's and the ground's, the
+    # triangles, and the device's own time for it - and on the chase view's
+    # screen where it says, near-black with its words light in it. At the
+    # gate's size it is the frames a second alone, in a small box.
+    gr = re.search(r"flight graphics (\d+)x(\d+) at (\d+),(\d+) device=(\S+) draws=(\d+) "
+                   r"triangles=(\d+) gpu_ms=(\S+) frame_ms=([\d.]+) processor_ms=([\d.]+) "
+                   r"presented=([^\r\n]*)", seen)
+    print("flight: %s" % (gr.group(0) if gr else "no graphics line"))
+    if not gr:
+        fails.append("the graphics panel never said what it showed: %r"
+                     % re.findall(r"flight graphics.*", seen))
+    else:
+        if int(gr.group(6)) < 2 or int(gr.group(7)) < 100:
+            fails.append("the graphics panel's figures are not a frame's: %d draws, %d triangles"
+                         % (int(gr.group(6)), int(gr.group(7))))
+        # The frame waits for the device, so the device's time for it is
+        # inside the frame's.
+        if gr.group(8) == "none" or not 0 < float(gr.group(8)) <= float(gr.group(9)):
+            fails.append("the device's time for a frame, %s ms, is not inside the frame's %s ms"
+                         % (gr.group(8), gr.group(9)))
+        # And the processor's part is what is left of the frames, so more
+        # than nothing: Lua flew and the 3D Kit recorded.
+        if not 0 < float(gr.group(10)) < float(gr.group(9)) * 10:
+            fails.append("the processor's time a frame, %s ms, is not a part of the frames'"
+                         % gr.group(10))
+        gw, gh, gx, gy = (int(gr.group(i)) for i in range(1, 5))
+        box = panel_seen(R, chase, band, gw, gh, (gx, gy)) if band else None
+        print("flight: the graphics panel on the screen %r (near-black fraction, light pixels, "
+              "sky above)" % (box,))
+        if os.environ.get("KOSMOS_FLIGHT_SIZE"):
+            pass
+        elif box is None or box[0] < 0.3 or box[1] < 8:
+            fails.append("no graphics panel on the chase view's screen - a near-black box "
+                         "%dx%d at %d,%d with words in it: %r" % (gw, gh, gx, gy, box))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \

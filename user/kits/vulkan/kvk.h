@@ -52,7 +52,9 @@ struct kw_window;
     X(vkAllocateDescriptorSets) X(vkUpdateDescriptorSets) X(vkDestroyDevice)  \
     X(vkCreateFence) X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences)    \
     X(vkDeviceWaitIdle) X(vkCreateSwapchainKHR) X(vkDestroySwapchainKHR)     \
-    X(vkGetSwapchainImagesKHR) X(vkAcquireNextImageKHR) X(vkQueuePresentKHR)
+    X(vkGetSwapchainImagesKHR) X(vkAcquireNextImageKHR) X(vkQueuePresentKHR)  \
+    X(vkCreateQueryPool) X(vkDestroyQueryPool) X(vkCmdResetQueryPool)        \
+    X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)
 
 struct kvk {
     VkInstance instance;
@@ -63,6 +65,12 @@ struct kvk {
     VkCommandPool pool;
     VkCommandBuffer cmd;
     char device_name[64];       /* "llvmpipe/1.4": to its first space, and the API */
+    /* The device's clock, for a recording's time (`kvk_time_*`): two
+     * timestamps, nanoseconds a tick, and the bits a stamp keeps - no pool
+     * where the queue keeps no time. */
+    VkQueryPool stamps;
+    double stamp_ns;
+    uint32_t stamp_bits;
     char why[96];               /* the step that failed and its VkResult */
 #define KVK_DECLARE(name) PFN_##name name;
     KVK_FUNCTIONS(KVK_DECLARE)
@@ -87,6 +95,15 @@ void kvk_failed(struct kvk *v, const char *what, VkResult r);
  * swapchains. `device_name` is set as soon as the device is found, so a
  * failure after it can still say which device it was. */
 int  kvk_open(struct kvk *v, const char *program, int windowed);
+
+/* The device's own time for what a recording does between `kvk_time_start`
+ * (first in it, outside any rendering) and `kvk_time_end`, read after its
+ * submission has finished: milliseconds, or -1 where the device keeps no
+ * time or the stamps are not there. Start always answers 1, so it can sit
+ * in a chain of steps. */
+int    kvk_time_start(struct kvk *v);
+void   kvk_time_end(struct kvk *v);
+double kvk_time_ms(struct kvk *v);
 void kvk_close(struct kvk *v);
 
 uint32_t kvk_memory_type(const struct kvk *v, uint32_t bits, VkMemoryPropertyFlags want);
