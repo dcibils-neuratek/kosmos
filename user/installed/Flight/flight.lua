@@ -313,10 +313,7 @@ local function strip_words(ground_h)
 end
 
 local function draw_strip(w, ground_h)
-  if S.view == 2 then
-    if strip_said then w:overlay(nil) strip_said = nil end
-    return
-  end
+  if S.view == 2 then strip_said = nil return end    -- the panel's overlay now
   local words, state = strip_words(ground_h)
   local parts = {}
   for i, p in ipairs(words) do parts[i] = p[1] .. " " .. p[2] end
@@ -348,6 +345,242 @@ local function draw_strip(w, ground_h)
   if not ok then say("strip failed=" .. tostring(why)) end
   if not strip_said then say("strip " .. key) end
   strip_said = key
+end
+
+-- **The panel** (F5f): the cockpit's six round instruments, in the order
+-- every trainer's panel has them - airspeed, attitude, altitude above;
+-- turn, heading, climb below - on a dark panel at the foot of the view.
+-- Drawn as the strip is, in a gfx surface laid over the frame, and only
+-- when a needle would move by a pixel's worth: a degree, ten feet, fifty
+-- feet a minute. Lua says where each needle points; gfx draws it.
+local PANEL_BG, RIM, FACE, TICK = 0xe8161a20, 0xff59606d, 0xff0d1015, 0xffd8dde6
+local NEEDLE, AMBER, SKY, EARTH = 0xfff4f6f9, 0xfff5bd2e, 0xff3c7fd6, 0xff7a5532
+local GREEN, YELLOW, RED = 0xff35b04a, 0xffe8c230, 0xffe04040
+local panel, panel_face, panel_said, panel_geo
+local turn_rate, last_psi = 0, nil
+
+local function round(v) return math.floor(v + 0.5) end
+-- A point `l` from the centre at `a`, clockwise from twelve o'clock.
+local function at(cx, cy, a, l) return cx + math.sin(a) * l, cy - math.cos(a) * l end
+
+-- The panel's size from the window's: two rows of three dials under the
+-- lower 40% of the view, as large as that and the width allow.
+local function panel_layout()
+  local width, height = settings.width, settings.height
+  local ph = math.min(280, math.floor(height * 0.4))
+  local pad = math.max(4, math.floor(ph / 20))
+  local r = math.floor((ph - 3 * pad) / 4)
+  r = math.max(4, math.min(r, math.floor((width - 4 * pad) / 6)))
+  local pw = 3 * (2 * r + pad) + pad
+  ph = 2 * (2 * r + pad) + pad
+  return { r = r, pad = pad, w = pw, h = ph, x = math.floor((width - pw) / 2),
+           y = height - ph, words = r >= 30 }
+end
+
+local function dial(s, cx, cy, r)
+  s:disc(cx, cy, r + math.max(1, r // 18), RIM, true)
+  s:disc(cx, cy, r, FACE, true)
+end
+
+-- Ticks round a dial: `n` intervals from `from` to `to`, every `long`th longer.
+local function ticks(s, cx, cy, r, from, to, n, long, colour)
+  for i = 0, n do
+    local a = from + (to - from) * i / n
+    local x1, y1 = at(cx, cy, a, r - ((i % long == 0) and r * 0.2 or r * 0.1))
+    local x2, y2 = at(cx, cy, a, r - 1)
+    s:line(round(x1), round(y1), round(x2), round(y2), (i % long == 0) and 2 or 1, colour or TICK)
+  end
+end
+
+local function needle(s, cx, cy, a, l, wide, colour)
+  local tx, ty = at(cx, cy, a, l)
+  local lx, ly = at(cx, cy, a - math.pi / 2, wide)
+  local rx, ry = at(cx, cy, a + math.pi / 2, wide)
+  local bx, by = at(cx, cy, a + math.pi, l * 0.2)
+  s:polygon({ tx, ty, rx, ry, bx, by, lx, ly }, colour or NEEDLE)
+end
+
+local function word(s, x, y, text, colour)
+  if not panel_geo.words then return end
+  local wide = gfx.measure(text, panel_face)
+  s:text(round(x - wide / 2), round(y - 9), text, colour or TICK, nil, panel_face)
+end
+
+local function airspeed(s, cx, cy, r, kt)
+  local function a(v) return math.rad(math.min(v, 200) / 200 * 320) end
+  -- The coloured arcs a Cessna's has: green to the caution speed, yellow to
+  -- the never-exceed, as short strokes along the rim.
+  for v = 48, 162, 3 do
+    local x1, y1 = at(cx, cy, a(v), r - 3)
+    local x2, y2 = at(cx, cy, a(v + 3), r - 3)
+    s:line(round(x1), round(y1), round(x2), round(y2), math.max(2, r // 14), v < 129 and GREEN or YELLOW)
+  end
+  local x1, y1 = at(cx, cy, a(163), r - 1)
+  local x2, y2 = at(cx, cy, a(163), r * 0.75)
+  s:line(round(x1), round(y1), round(x2), round(y2), 2, RED)
+  ticks(s, cx, cy, r, 0, a(200), 20, 2)
+  for v = 40, 200, 40 do
+    local x, y = at(cx, cy, a(v), r * 0.66)
+    word(s, x, y, tostring(v))
+  end
+  word(s, cx, cy + r * 0.42, "KNOTS")
+  needle(s, cx, cy, a(kt), r * 0.85, math.max(2, r / 16))
+end
+
+local function attitude(s, cx, cy, r, pitch, roll)
+  local ri = r - 1
+  s:disc(cx, cy, ri, SKY, true)
+  -- The ground: the dial's circle cut by the horizon, which leans against
+  -- the bank and drops as the nose rises - two pixels a degree of a 54.
+  local d = math.max(-ri * 0.8, math.min(ri * 0.8, pitch * r / 27))
+  local nx, ny = math.sin(roll), math.cos(roll)            -- towards the ground
+  local px, py = cx + nx * d, cy + ny * d
+  local pts, cut = {}, {}
+  local function side(x, y) return (x - px) * nx + (y - py) * ny end
+  for i = 0, 35 do
+    local a1, a2 = math.rad(i * 10), math.rad((i + 1) * 10)
+    local x1, y1 = cx + math.cos(a1) * ri, cy + math.sin(a1) * ri
+    local x2, y2 = cx + math.cos(a2) * ri, cy + math.sin(a2) * ri
+    local s1, s2 = side(x1, y1), side(x2, y2)
+    if s1 >= 0 then pts[#pts + 1] = x1 pts[#pts + 1] = y1 end
+    if (s1 >= 0) ~= (s2 >= 0) then
+      local f = s1 / (s1 - s2)
+      local x, y = x1 + (x2 - x1) * f, y1 + (y2 - y1) * f
+      pts[#pts + 1] = x pts[#pts + 1] = y
+      cut[#cut + 1] = x cut[#cut + 1] = y
+    end
+  end
+  if #pts >= 6 then s:polygon(pts, EARTH) end
+  if #cut == 4 then
+    s:line(round(cut[1]), round(cut[2]), round(cut[3]), round(cut[4]), 2, NEEDLE)
+  end
+  -- The bank scale, fixed, and its pointer turning with the horizon.
+  for _, b in ipairs({ -60, -30, -20, -10, 0, 10, 20, 30, 60 }) do
+    local x1, y1 = at(cx, cy, math.rad(b), r - 1)
+    local x2, y2 = at(cx, cy, math.rad(b), r * (b % 30 == 0 and 0.8 or 0.88))
+    s:line(round(x1), round(y1), round(x2), round(y2), 1, NEEDLE)
+  end
+  local tx, ty = at(cx, cy, -roll, r * 0.78)
+  local lx, ly = at(cx, cy, -roll - 0.08, r * 0.66)
+  local rx, ry = at(cx, cy, -roll + 0.08, r * 0.66)
+  s:polygon({ tx, ty, rx, ry, lx, ly }, AMBER)
+  -- The aircraft, fixed in the middle.
+  local wing, gap = r * 0.42, r * 0.14
+  local t = math.max(2, r // 18)
+  s:line(round(cx - wing), round(cy), round(cx - gap), round(cy), t, AMBER)
+  s:line(round(cx + gap), round(cy), round(cx + wing), round(cy), t, AMBER)
+  s:disc(round(cx), round(cy), math.max(1, r // 18), AMBER, true)
+end
+
+local function altimeter(s, cx, cy, r, ft)
+  ticks(s, cx, cy, r, 0, 2 * math.pi, 50, 5)
+  for i = 0, 9 do
+    local x, y = at(cx, cy, math.rad(i * 36), r * 0.68)
+    word(s, x, y, tostring(i))
+  end
+  word(s, cx, cy + r * 0.42, "FEET")
+  needle(s, cx, cy, (ft % 10000) / 10000 * 2 * math.pi, r * 0.5, math.max(2, r / 10))
+  needle(s, cx, cy, (ft % 1000) / 1000 * 2 * math.pi, r * 0.85, math.max(2, r / 18))
+end
+
+local function turn(s, cx, cy, r, rate)
+  -- A standard-rate turn, three degrees a second - two minutes round -
+  -- leans the little aircraft to the marks, twenty degrees.
+  for _, m in ipairs({ -90, -110, 90, 110 }) do
+    local x1, y1 = at(cx, cy, math.rad(m), r - 1)
+    local x2, y2 = at(cx, cy, math.rad(m), r * 0.8)
+    s:line(round(x1), round(y1), round(x2), round(y2), 2, NEEDLE)
+  end
+  word(s, cx - r * 0.62, cy + r * 0.5, "L")
+  word(s, cx + r * 0.62, cy + r * 0.5, "R")
+  word(s, cx, cy + r * 0.42, "2 MIN")
+  local a = math.rad(math.max(-45, math.min(45, rate / 3 * 20)))
+  local x1, y1 = at(cx, cy, a - math.pi / 2, r * 0.7)
+  local x2, y2 = at(cx, cy, a + math.pi / 2, r * 0.7)
+  s:line(round(x1), round(y1), round(x2), round(y2), math.max(2, r // 14), NEEDLE)
+  local fx, fy = at(cx, cy, a, r * 0.22)
+  s:line(round(cx), round(cy), round(fx), round(fy), math.max(2, r // 18), NEEDLE)
+  s:disc(round(cx), round(cy), math.max(2, r // 10), NEEDLE, true)
+end
+
+local LETTERS = { [0] = "N", [9] = "E", [18] = "S", [27] = "W" }
+local function heading(s, cx, cy, r, psi)
+  -- The card turns under a fixed lubber line, as a heading indicator's does.
+  for i = 0, 35 do
+    local a = math.rad(i * 10) - psi
+    local x1, y1 = at(cx, cy, a, r - 1)
+    local x2, y2 = at(cx, cy, a, r * (i % 3 == 0 and 0.8 or 0.9))
+    s:line(round(x1), round(y1), round(x2), round(y2), i % 3 == 0 and 2 or 1, TICK)
+    if i % 3 == 0 then
+      local x, y = at(cx, cy, a, r * 0.64)
+      word(s, x, y, LETTERS[i] or tostring(i), LETTERS[i] and AMBER or TICK)
+    end
+  end
+  local tx, ty = at(cx, cy, 0, r * 0.82)
+  s:polygon({ tx, ty, tx + r * 0.08, ty - r * 0.14, tx - r * 0.08, ty - r * 0.14 }, AMBER)
+  -- The aircraft, nose up the dial.
+  s:line(round(cx), round(cy - r * 0.3), round(cx), round(cy + r * 0.25), math.max(2, r // 18), AMBER)
+  s:line(round(cx - r * 0.25), round(cy - r * 0.06), round(cx + r * 0.25), round(cy - r * 0.06),
+         math.max(2, r // 18), AMBER)
+  s:line(round(cx - r * 0.1), round(cy + r * 0.22), round(cx + r * 0.1), round(cy + r * 0.22),
+         math.max(1, r // 27), AMBER)
+end
+
+local function climb(s, cx, cy, r, fpm)
+  -- Nought at nine o'clock; up is clockwise, two thousand feet a minute at
+  -- 170 degrees either way.
+  local function a(f) return math.rad(-90 + math.max(-1, math.min(1, f / 2000)) * 170) end
+  ticks(s, cx, cy, r, a(-2000), a(2000), 20, 5)
+  for _, f in ipairs({ -2000, -1000, 0, 1000, 2000 }) do
+    local x, y = at(cx, cy, a(f), r * 0.66)
+    word(s, x, y, tostring(math.abs(f) // 1000))
+  end
+  word(s, cx + r * 0.1, cy - r * 0.32, "UP")
+  word(s, cx + r * 0.1, cy + r * 0.32, "DOWN")
+  needle(s, cx, cy, a(fpm), r * 0.85, math.max(2, r / 16))
+end
+
+local function draw_panel(w, dt)
+  -- The turn's rate, from the heading's change, smoothed over a few frames.
+  if last_psi and dt > 0 then
+    local d = (S.psi - last_psi + math.pi) % (2 * math.pi) - math.pi
+    turn_rate = turn_rate + (math.deg(d) / dt - turn_rate) * math.min(1, 4 * dt)
+  end
+  last_psi = S.psi
+  if S.view ~= 2 then panel_said = nil return end      -- the strip's overlay now
+
+  local kt = S.v * 1.94384
+  local ft = S.y * 3.28084
+  local pitch = math.deg(S.gamma + S.alpha)
+  local fpm = S.v * math.sin(S.gamma) * 196.85
+  local key = ("AIRSPEED %d kt  PITCH %d  ROLL %d  ALTITUDE %d ft  HEADING %03d  TURN %.1f  CLIMB %+d fpm")
+      :format(round(kt), round(pitch), round(math.deg(S.phi)), round(ft / 10) * 10,
+              round(math.deg(S.psi) % 360) % 360, round(turn_rate * 2) / 2, round(fpm / 50) * 50)
+  if key == panel_said then return end
+
+  if not panel then
+    panel_geo = panel_layout()
+    panel = gfx.surface{ w = panel_geo.w, h = panel_geo.h }
+    panel_face = gfx.face("ibmplexsans-medium", math.max(10, math.min(15, panel_geo.r // 4)))
+                 or gfx.face("ibmplexsans", 13)
+  end
+  local P = panel_geo
+  local r, pad = P.r, P.pad
+  panel:fill(0, 0, P.w, P.h, PANEL_BG)
+  local draw = { airspeed, attitude, altimeter, turn, heading, climb }
+  local args = {
+    { kt }, { pitch, S.phi }, { ft }, { turn_rate }, { S.psi }, { fpm },
+  }
+  for i = 1, 6 do
+    local cx = pad + r + ((i - 1) % 3) * (2 * r + pad)
+    local cy = pad + r + (i > 3 and (2 * r + pad) or 0)
+    dial(panel, cx, cy, r)
+    draw[i](panel, cx, cy, r, table.unpack(args[i]))
+  end
+  local ok, why = w:overlay(panel, P.x, P.y)
+  if not ok then say("panel failed=" .. tostring(why)) end
+  if not panel_said then say(("panel %dx%d %s"):format(P.w, P.h, key)) end
+  panel_said = key
 end
 
 -- The window and the terrain.
@@ -399,6 +632,7 @@ while not w:closed(0) do
     if plane then place(plane, pitch, roll, dt) end
   end
   draw_strip(w, g:height(S.x, S.z))
+  draw_panel(w, dt)
 
   look()
   feed(g, view.eye)

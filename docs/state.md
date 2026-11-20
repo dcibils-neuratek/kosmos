@@ -189,8 +189,9 @@ left given back; **F5a-F5d** (0.12.28, 18.948), Flight playable - held
 keys, the flight model, real tiles, and the Cessna 172 (Sketchfab, CC BY)
 drawn by the 3D Kit's GLB reader and textured models; **F5e** (0.12.31,
 18.951), the chase view's strip of instruments, laid over the Vulkan frame
-by the 3D Kit's new overlays (`w:overlay`). Next the cockpit, the pause
-sheet, the panel and the island. **The
+by the 3D Kit's new overlays (`w:overlay`); **F5f** (0.12.32, 18.952), the
+cockpit's six round instruments on the same overlay. Next the tower view,
+the pause sheet, the panel and the island. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

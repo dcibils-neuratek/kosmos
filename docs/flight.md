@@ -317,8 +317,18 @@ ends on the M700:
     y)`, a screen-space quad blended over the scene with no depth test,
     its texture refreshed in place only when the words change. Hidden in
     the cockpit, which will have its own instruments.
-  Then the cockpit and tower views' detail, the pause sheet, the panel and
-  the island.
+  - **F5f - the cockpit's panel** (built, 0.12.32, `testing.md` 18.952):
+    the six round instruments in a trainer's order - airspeed with its
+    green and yellow arcs and red line, the attitude indicator, the
+    altimeter's two hands; the turn coordinator, the heading indicator's
+    turning card, the vertical speed - on a dark panel at the foot of the
+    view, sized from the window. The mockup drew them as part of the 3D
+    scene; they are the strip's kind of thing instead, a gfx surface laid
+    over the frame by the same `w:overlay`, redrawn only when a needle
+    would move. Lua says where each needle points, gfx's discs, lines and
+    polygons draw it.
+  Then the tower view's detail, the pause sheet, the panel and the
+  island.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then buildings from
   OpenStreetMap's outlines and heights, through the Map Kit that reads them

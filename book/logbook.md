@@ -5481,3 +5481,18 @@ its bottom: speed, altitude, heading, climb, throttle and flaps. 0.12.31.
   looks for the band on the screen - and with the strip switched off, the
   test fails, as it should.
 
+## 20 November 2026 - Flight's cockpit
+
+**In short.** Flight's cockpit view now has the six round instruments
+every small aeroplane has. 0.12.32.
+
+- **What they are**: airspeed, the artificial horizon and the altimeter
+  on top; the turn coordinator, the heading and the climb rate below -
+  the same six, in the same places, that a pilot learns on.
+- **How they are drawn**: like the strip in the chase view, as a flat
+  picture laid over the 3D frame, and only redrawn when a needle would
+  visibly move.
+- **How it is checked**: the test switches to the cockpit and looks for
+  the panel where it must be on the screen; with the panel switched off,
+  the test fails.
+

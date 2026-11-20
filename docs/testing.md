@@ -39765,3 +39765,28 @@ arithmetic.
 The gate: 152 of 153 in 612 s, `x86-llmmon` failing once on mdnsd's
 "listening" line printed into the middle of an answer it compares, and
 passing 18 of 18 alone - the log's interleaving, not this change.
+
+## 18.952 Flight's cockpit panel (0.12.32)
+
+**In short:** the cockpit view has its six round instruments - airspeed,
+attitude, altitude above; turn, heading, climb below - on a dark panel at
+the foot of the view, laid over the frame with the overlay 18.951 added,
+and redrawn only when a needle would move: a knot, a degree, ten feet,
+fifty feet a minute, half a degree a second of turn. Its size comes from
+the window - two rows of three dials in the lower 40% - so it is 410 by 278
+at 1280x720 and 58 by 40 at the gate's 160x100, where the dials' words are
+left out. The turn rate is the heading's change a frame, smoothed.
+
+**Held by `x86-flight`**, after `V`: Flight says the panel once with what
+it reads (`flight panel 58x40 AIRSPEED 105 kt  PITCH 18  ROLL 20  ALTITUDE
+1980 ft  HEADING 010  TURN 10.0  CLIMB +1800 fpm` - the yoke held back in a
+20 degree bank turns it at over three times the standard rate), the
+airspeed is held to the flight model's within 15 kt, and the panel's
+rectangle on the screen - placed from the strip's band, which says where
+the window's picture is - must be at least 30% the panel's near-black with
+the dials' light in it, under a row of sky: 0.61 and 247 light pixels.
+**Control**: the panel never handed to the window reads 0.01 and fails.
+"Not the sky" was the first test and the ground under the panel passed it
+in the same control; a band search like the strip's failed the other way,
+the panel's block running on into the light window below Flight's.
+The gate: 131 of 131 in 515 s.

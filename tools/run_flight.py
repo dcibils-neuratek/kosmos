@@ -160,7 +160,7 @@ def states(text):
     return out
 
 
-def strip_band(R, data, across):
+def strip_band(R, data, across, tall=(34, 46), white_least=20, inside=None):
     """The strip on the screen: a stack of 34 to 46 rows each holding a
     stretch as wide as Flight's window, `across`, that is at least half dark
     - the band laid over the ground by its alpha - starting at the same x to
@@ -169,6 +169,8 @@ def strip_band(R, data, across):
     for it. (left, top, rows, white pixels) of the one kept, or else of the
     tallest; None when there is no stack at all."""
     width, height, px = R.parse_ppm(data)
+    if inside is None:
+        inside = lambda r, g, b: max(r, g, b) < 90
 
     def light(r, g, b):
         return min(r, g, b) > 200
@@ -180,7 +182,7 @@ def strip_band(R, data, across):
         ends: allowing one let a piece of the Log's panel pass for the strip
         (its control, 20 November)."""
         row = px[y * width * 3:(y + 1) * width * 3]
-        dark = [max(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]) < 90 for x in range(width)]
+        dark = [inside(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]) for x in range(width)]
         sums = [0]
         for d in dark:
             sums.append(sums[-1] + d)
@@ -211,12 +213,34 @@ def strip_band(R, data, across):
         runs = now
     if not stacks:
         return None
-    shaped = [(k, t, r, words(k, t, r)) for k, t, r in stacks if 34 <= r <= 46]
-    shaped = [b for b in shaped if b[3] >= 20]
+    shaped = [(k, t, r, words(k, t, r)) for k, t, r in stacks if tall[0] <= r <= tall[1]]
+    shaped = [b for b in shaped if b[3] >= white_least]
     if shaped:
         return max(shaped, key=lambda b: b[3])
     k, t, r = max(stacks, key=lambda b: b[2])
     return k, t, r, words(k, t, r)
+
+def panel_seen(R, data, band, pw, ph):
+    """The panel's rectangle on the screen, from the strip's band: (the
+    fraction of it that is the panel's near-black - its ground and the
+    dials' faces, which neither the sky nor the gate's ground has - its
+    light pixels, the fraction of the row just above it that is the sky)."""
+    width, height, px = R.parse_ppm(data)
+    left = band[0] + (WIDTH - pw) // 2
+    top = band[1] + 40 - ph                         # the strip's foot, less the panel
+    def pixel(x, y):
+        i = (y * width + x) * 3
+        return px[i], px[i + 1], px[i + 2]
+    def sky(r, g, b):
+        return max(r, g, b) >= 90 and b - r >= 30
+    black = light = 0
+    for y in range(top, top + ph):
+        for x in range(left, left + pw):
+            r, g, b = pixel(x, y)
+            black += max(r, g, b) < 70 and max(r, g, b) - min(r, g, b) < 24
+            light += min(r, g, b) > 200
+    above = sum(sky(*pixel(x, top - 2)) for x in range(left, left + pw))
+    return round(black / (pw * ph), 2), light, round(above / pw, 2)
 
 def main():
     built = os.path.join(APPS, "k3dvk.elf")
@@ -388,6 +412,35 @@ def main():
     elif band is None or not 34 <= band[2] <= 46 or band[3] < 20:
         fails.append("no strip on the chase view's screen - a dark band 30 to 48 rows tall with "
                      "words in it: %r" % (band,))
+    # The panel (F5f): the cockpit's six dials, said once with what they
+    # read, and on the screen as a dark block the panel's size with the
+    # dials' ticks and needles light in it.
+    p = re.search(r"flight panel (\d+)x(\d+) AIRSPEED (\d+) kt", seen)
+    whole = re.search(r"flight panel [^\r\n]*", seen)
+    print("flight: %s" % (whole.group(0) if whole else "no panel line"))
+    if not p:
+        fails.append("the cockpit's panel was never drawn: %r" % re.findall(r"flight panel.*", seen))
+    else:
+        pw, ph = int(p.group(1)), int(p.group(2))
+        if abs(int(p.group(3)) - viewed["v"] * 1.94384) > 15:
+            fails.append("the panel's airspeed, %s kt, is not the flight's %.0f"
+                         % (p.group(3), viewed["v"] * 1.94384))
+        # Where it must be: the strip found the window's picture - its left
+        # edge, and its foot STRIP_H rows below the band's top - and the
+        # panel is centred on that foot. Looked at there: a good part of it
+        # the panel's near-black - at the gate's size a dial is fourteen
+        # pixels across and half of it ticks and needle - with the dials'
+        # light in it, and the row above it the sky's. "Not the sky" was
+        # tried first, and the ground under the panel passed for it (its
+        # control, 20 November).
+        block = panel_seen(R, screen, band, pw, ph) if band else None
+        print("flight: the panel on the screen %r (near-black fraction, light pixels, "
+              "sky above)" % (block,))
+        if os.environ.get("KOSMOS_FLIGHT_SIZE"):
+            pass
+        elif block is None or block[0] < 0.3 or block[1] < 12 or block[2] < 0.5:
+            fails.append("no panel on the cockpit's screen - a near-black block %dx%d with "
+                         "dials in it: %r" % (pw, ph, block))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \
