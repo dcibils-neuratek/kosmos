@@ -192,8 +192,14 @@ drawn by the 3D Kit's GLB reader and textured models; **F5e** (0.12.31,
 by the 3D Kit's new overlays (`w:overlay`); **F5f** (0.12.32, 18.952), the
 cockpit's six round instruments on the same overlay; **F5g** (0.12.33,
 18.953), the graphics panel - frames, the device's time by Vulkan's
-timestamps, draw calls and triangles. Next the tower view, the pause sheet
-and the island. **The
+timestamps, draw calls and triangles; **0.12.34** (18.954), Flight flown on
+the M700 for Diego - on lavapipe at 85-89 ms a frame, all eight cores since
+Mesa counts Kosmos's (patch 0007), and an image per GPU chosen by init,
+`k3dvk-anv.elf`, not yet named by Flight because **anv hangs the render
+engine on the 3D Kit's first frame** (the sky alone; first suspect: its
+push constants go to the fragment stage only, which nothing run on anv
+had done). Next that hang, then the tower view, the pause sheet and the
+island. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

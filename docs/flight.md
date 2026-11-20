@@ -341,6 +341,12 @@ ends on the M700:
     switches - shadows, water, haze, wireframe - come with the effects
     they turn off, in F6.
   Then the tower view's detail, the pause sheet and the island.
+  - **On the M700** (0.12.34, `testing.md` 18.954): flown there on
+    lavapipe, at 85-89 ms a frame since Mesa counts Kosmos's processors.
+    Mesa's Intel driver is linked as an image of its own, `k3dvk-anv.elf`,
+    which init chooses on an Intel GPU when a program's header names it;
+    Flight's does not yet, because anv hangs the render engine on the
+    3D Kit's first frame. That is the next piece.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then buildings from
   OpenStreetMap's outlines and heights, through the Map Kit that reads them

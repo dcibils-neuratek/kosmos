@@ -110,19 +110,25 @@ def webkit(arch, apps, staged, objcopy):
     return ["%s:%s/%s" % (here, WEBKIT, inside) for here, inside in mine]
 
 
-def image_of(program):
-    """The image a program's header names, or None."""
+def images_of(program):
+    """The images a program's header names: its plain one first, then any
+    a GPU has (`-- kosmos: image on intel-gpu k3dvk-anv.elf`, which init
+    chooses on a machine with that GPU - `IMAGES.named`)."""
+    plain, gpus = [], []
     with open(program, encoding="utf-8") as f:
         for line in f:
             if not line.startswith("--"):
                 break
 
+            gpu = re.match(r"--\s*kosmos:\s*image\s+on\s+\S+\s+(\S+)", line)
             got = re.match(r"--\s*kosmos:\s*image\s+(\S+)", line)
 
-            if got:
-                return got.group(1)
+            if gpu:
+                gpus.append(gpu.group(1))
+            elif got and not plain:
+                plain.append(got.group(1))
 
-    return None
+    return plain + gpus
 
 
 def pairs(arch, home, apps=None):
@@ -151,10 +157,17 @@ def pairs(arch, home, apps=None):
                 mine.append((os.path.join(folder, file), file))
 
         program = os.path.join(folder, name.lower() + ".lua")
-        image = os.path.exists(program) and image_of(program)
+        images = images_of(program) if os.path.exists(program) else []
 
         # A system image is not beside its program: it is WebKit's folder's.
-        if image and image not in SYSTEM_IMAGES:
+        # A GPU's image is built for the architectures whose drivers exist -
+        # anv for x86-64 - and left out where it is not, which init answers
+        # with the plain one.
+        for n, image in enumerate(images):
+            if image in SYSTEM_IMAGES:
+                continue
+            if n > 0 and not os.path.exists(os.path.join(apps, image)):
+                continue
             mine.append((stripped(image, apps, staged, objcopy), image))
 
         if name in MADE:

@@ -8,6 +8,7 @@
 -- kosmos: section applications
 -- kosmos: needs tiles
 -- kosmos: image k3dvk.elf
+-- (kosmos: image on intel-gpu k3dvk-anv.elf - named again when anv draws the scene; testing.md 18.954)
 --
 -- What is here is the application's own and nothing else (`CLAUDE.md`,
 -- *Kits supply, applications orchestrate*): the flight model, the camera,
@@ -298,6 +299,7 @@ local STRIP_H = 40
 local CELL = 170                     -- the least a label and its value take
 local BAND, LABEL, VALUE, WARN = 0xb8101820, 0xff8fa4b8, 0xffffffff, 0xffffb020
 local strip, strip_face, strip_said
+local strip_redrawn = 0               -- times laid again: the report says it
 -- `ground_h` is nil until the ground under the aircraft has arrived.
 local function strip_words(ground_h)
   local words = {
@@ -345,7 +347,7 @@ local function draw_strip(w, ground_h)
   local ok, why = w:overlay(strip, 0, settings.height - STRIP_H)
   if not ok then say("strip failed=" .. tostring(why)) end
   if not strip_said then say("strip " .. key) end
-  strip_said = key
+  strip_said, strip_redrawn = key, strip_redrawn + 1
 end
 
 -- **The panel** (F5f): the cockpit's six round instruments, in the order
@@ -780,6 +782,9 @@ while not w:closed(0) do
         :format(frame, S.view, S.x, S.y, S.z, S.v, math.deg(S.psi) % 360, math.deg(S.phi),
                 tostring(S.ground), S.throttle, handed, 1000 * total / frame,
                 1000 * slowest, said))
+    -- What the strip shows now and how often it was laid again, so a
+    -- strip that stopped following the flight is seen in the log.
+    say(("strip redrawn=%d shows %s"):format(strip_redrawn, strip_said or "nothing"))
   end
   if frame == settings.frames then say("done") w:closed(120) break end
 end

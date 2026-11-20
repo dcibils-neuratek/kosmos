@@ -247,6 +247,20 @@ def panel_seen(R, data, band, pw, ph, at=None):
     above = sum(sky(*pixel(x, top - 2)) for x in range(left, left + pw))
     return round(black / (pw * ph), 2), light, round(above / pw, 2)
 
+def strip_words_at(R, data, band):
+    """The strip's light pixels - its words - as a set of places in the
+    band: what changes when its numbers do, and what the ground behind its
+    dark band, which shows through by the band's alpha, never lights."""
+    width, height, px = R.parse_ppm(data)
+    left, top, rows = band[0], band[1], band[2]
+    out = set()
+    for y in range(top, top + rows):
+        for x in range(left, min(width, left + WIDTH)):
+            i = (y * width + x) * 3
+            if min(px[i], px[i + 1], px[i + 2]) > 200:
+                out.add((x - left, y - top))
+    return out
+
 def main():
     built = os.path.join(APPS, "k3dvk.elf")
     if not os.path.exists(built):
@@ -347,6 +361,7 @@ def main():
         keys(True, "down")
         climbed = wait_frames(5, "the down arrow held")
         keys(False, "down")
+        later = guest.screendump()                          # the strip again, the numbers moved
 
         # V: the next view.
         keys(True, "v")
@@ -417,6 +432,34 @@ def main():
     elif band is None or not 34 <= band[2] <= 46 or band[3] < 20:
         fails.append("no strip on the chase view's screen - a dark band 30 to 48 rows tall with "
                      "words in it: %r" % (band,))
+    else:
+        # And it follows the flight: after the roll and the climb its
+        # numbers are others, with the graphics panel in its own place over
+        # the same frame. On the M700 it kept its first numbers for as long
+        # as the graphics panel was shown (20 November).
+        first, again = strip_words_at(R, chase, band), strip_words_at(R, later, band)
+        print("flight: the strip's words %d then %d light pixels, %d of them moved"
+              % (len(first), len(again), len(first ^ again)))
+    # And it follows the flight: laid again as its numbers change, and the
+    # last it was laid saying the speed the flight model has at that report.
+    # On the M700 it kept 105 kt while the flight went on at 140 (20 November).
+    # Each "strip redrawn" line follows its frame's report, so it is
+    # paired with the report just before it; in the cockpit there is no
+    # strip, and it says nothing.
+    pairs, last = [], None
+    for line in seen.splitlines():
+        st = states(line)
+        if st:
+            last = st[0]
+        m = re.search(r"flight strip redrawn=(\d+) shows SPEED (\d+) kt", line)
+        if m and last:
+            pairs.append((last["frame"], int(m.group(1)), int(m.group(2)),
+                          round(last["v"] * 1.94384)))
+    print("flight: the strip (frame, times laid, its kt, the flight's kt) %r" % (pairs,))
+    if len(pairs) < 2 or pairs[-1][1] <= pairs[0][1]:
+        fails.append("the strip was not laid again as the flight went on: %r" % (pairs,))
+    elif any(abs(p[2] - p[3]) > 15 for p in pairs):
+        fails.append("the strip showed another speed than the flight's: %r" % (pairs,))
     # The panel (F5f): the cockpit's six dials, said once with what they
     # read, and on the screen as a dark block the panel's size with the
     # dials' ticks and needles light in it.

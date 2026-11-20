@@ -103,20 +103,56 @@ local IMAGES = { WINDOW = 256 * 1024, made = {}, window = nil,
 
 -- The name in a program's header, or nil. The header is the comment its file
 -- opens with, blank lines and all.
+-- **An image for a GPU** (Flight on the M700, 20 November 2026): a
+-- program whose image links a Vulkan driver names one per driver -
+-- `-- kosmos: image k3dvk.elf`, and `-- kosmos: image on intel-gpu
+-- k3dvk-anv.elf` for a machine with an Intel display controller - because
+-- two of Mesa's drivers cannot be linked into one image: each carries its
+-- own copy of Mesa's Vulkan runtime. The machine's own line wins when the
+-- machine has that GPU; the plain line is the rest's, and the one used
+-- when the GPU's image is not there. Asked of the PCI bus once.
+IMAGES.GPUS = {
+  ["intel-gpu"] = function(d) return d.vendor == 0x8086 and (d.class >> 16) == 0x03 end,
+}
+local gpus_here
+
+local function has_gpu(kind)
+  if not gpus_here then
+    gpus_here = {}
+    for _, d in ipairs(sys.bus and sys.bus() or {}) do
+      for name, is in pairs(IMAGES.GPUS) do
+        if is(d) then gpus_here[name] = true end
+      end
+    end
+  end
+  return gpus_here[kind] == true
+end
+
+-- The image `path` names, and the plain one when that was a GPU's.
 function IMAGES.named(ns, path)
   local source = ns.read(path)
 
   if type(source) ~= "string" then return nil end
 
+  local plain, chosen
+
   for line in (source .. "\n"):gmatch("(.-)\n") do
     if line ~= "" and not line:match("^%-%-") then break end
 
-    local name = line:match("^%-%-%s*kosmos:%s*image%s+(%S+)")
+    local kind, gpu_image = line:match("^%-%-%s*kosmos:%s*image%s+on%s+(%S+)%s+(%S+)")
 
-    if name then return name end
+    if kind then
+      if not chosen and IMAGES.GPUS[kind] and has_gpu(kind) then chosen = gpu_image end
+    else
+      local name = line:match("^%-%-%s*kosmos:%s*image%s+(%S+)")
+
+      if name and not plain then plain = name end
+    end
   end
 
-  return nil
+  if chosen then return chosen, plain end
+
+  return plain
 end
 
 -- The image `file` holds, made the first time and kept: the region and its
@@ -198,7 +234,7 @@ end
 -- process's otherwise: the child's id, or nil and why. `pace` is
 -- `IMAGES.load`'s.
 function IMAGES.spawn(ns, path, role, caps, flags, pace)
-  local image = IMAGES.named(ns, path)
+  local image, plain = IMAGES.named(ns, path)
 
   if not image then
     local id, why = sys.spawn(role, caps, flags)
@@ -230,8 +266,15 @@ function IMAGES.spawn(ns, path, role, caps, flags, pace)
     return nil, image .. ": an image is a file beside its program, or in its build folder"
   end
 
-  local region, length = IMAGES.load(ns, (path:match("^(.*)/[^/]*$") or "") .. "/" .. image,
-                                     pace)
+  local folder = (path:match("^(.*)/[^/]*$") or "") .. "/"
+  local region, length = IMAGES.load(ns, folder .. image, pace)
+
+  -- A GPU's image that is not there: the plain one, as a machine without
+  -- that GPU would have.
+  if not region and plain and not plain:find("/", 1, true) then
+    image = plain
+    region, length = IMAGES.load(ns, folder .. plain, pace)
+  end
 
   if not region then return nil, length end
 

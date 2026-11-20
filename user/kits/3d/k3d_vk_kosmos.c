@@ -1158,9 +1158,11 @@ static int l_window_draw(lua_State *L)
     }
     collect(g);
     n = k3d_terrain_choose(&g->place, &g->choice, eye, g->chosen, g->most);
+    /* Which part of a frame failed is said before the step's own words: on
+     * the M700 a hang read only "wait/-4", from an upload or the frame. */
     if (!advance(w, g, n, &uploaded)) {
         lua_pushnil(L);
-        lua_pushstring(L, v->why);
+        lua_pushfstring(L, "uploading the ground: %s", v->why);
         v->why[0] = '\0';
         return 2;
     }
@@ -1201,7 +1203,7 @@ static int l_window_draw(lua_State *L)
         !k3d_vk_draw_scene(&w->renderer, c->images[index], c->views[index], &view, NULL, 0,
                            w->drawn, count, plane, nplane, w->frame_laid, laid)) {
         lua_pushnil(L);
-        lua_pushstring(L, v->why[0] ? v->why : "draw");
+        lua_pushfstring(L, "recording the frame: %s", v->why[0] ? v->why : "draw");
         v->why[0] = '\0';
         return 2;
     }
@@ -1212,7 +1214,7 @@ static int l_window_draw(lua_State *L)
     kvk_time_end(v);
     if (!kvk_submit(v) || !kvk_present(v, c, (uint32_t)index)) {
         lua_pushnil(L);
-        lua_pushstring(L, v->why);
+        lua_pushfstring(L, "drawing the frame: %s", v->why);
         v->why[0] = '\0';
         return 2;
     }

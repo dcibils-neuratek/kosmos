@@ -4848,6 +4848,23 @@ $(UBUILD)/apps/k3dvk.elf: $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.
 	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_k3dvk_kit$$' \
 	    || { echo "apps: the system's image has the 3D Kit's Vulkan door in it"; rm -f $@; exit 1; }
 
+# The same door with Intel's driver, `anv`, in place of lavapipe: what a
+# machine with an Intel GPU starts Flight in (`-- kosmos: image on
+# intel-gpu`, init's `IMAGES.named`). Two of Mesa's drivers cannot share an
+# image - each carries its own copy of Mesa's Vulkan runtime - so it is an
+# image of its own, x86-64's alone as anv is.
+K3DVK_ANV_IMAGE := $(if $(filter x86_64,$(ARCH)),$(UBUILD)/apps/k3dvk-anv.elf)
+
+$(UBUILD)/apps/k3dvk-anv.elf: $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                              $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/anv.txt \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_k3dvk_kit$$' \
+	    || { echo "apps: k3dvk-anv.elf does not have its kit"; rm -f $@; exit 1; }
+
 #
 # **`anv`'s test image** (`docs/gpu3d.md` G7a): `anvtest.c` with Intel's
 # Vulkan driver linked in as `lavapipe` is in `vulkantest.elf` - its
@@ -4958,7 +4975,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
-            $(UBUILD)/apps/k3dvk.elf \
+            $(UBUILD)/apps/k3dvk.elf $(K3DVK_ANV_IMAGE) \
             $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

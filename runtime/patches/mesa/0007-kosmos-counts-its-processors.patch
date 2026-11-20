@@ -1,0 +1,40 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Mesa counting Kosmos's processors (docs/flight.md, 20 November 2026)
+
+Mesa counts the processors only on a system it takes for POSIX, and Kosmos
+is POSIX_LITE (0001), so it counted none and said one. llvmpipe then made
+no rasterising threads and drew every pixel on the caller's own thread:
+on the M700 Flight held one of its eight threads and the machine read
+about an eighth busy, at 130 ms a frame. Kosmos's sysconf answers
+_SC_NPROCESSORS_ONLN and _SC_NPROCESSORS_CONF from the kernel
+(runtime/posix/process.c), so the count is asked there.
+
+--- a/src/util/u_cpu_detect.c
++++ b/src/util/u_cpu_detect.c
+@@ -41,6 +41,10 @@
+ #include "os_file.h"
+ #include "c11/threads.h"
+ 
++#if DETECT_OS_KOSMOS
++#include <unistd.h>
++#endif
++
+ #include <stdio.h>
+ #include <inttypes.h>
+ 
+@@ -847,6 +851,14 @@
+       total_cpus = ncpu;
+    }
+ #  endif /* DETECT_OS_BSD */
++#elif DETECT_OS_KOSMOS
++   /* Kosmos: the processors the machine started, from the kernel. */
++   available_cpus = sysconf(_SC_NPROCESSORS_ONLN);
++   total_cpus = sysconf(_SC_NPROCESSORS_CONF);
++   if (available_cpus < 1)
++      available_cpus = 1;
++   if (total_cpus < 1)
++      total_cpus = 1;
+ #endif /* DETECT_OS_POSIX */
+ 
+    util_cpu_caps.nr_cpus = MAX2(1, available_cpus);

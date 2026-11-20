@@ -39827,3 +39827,53 @@ QEMU's number, not a speed.
 The gate: 129 of 131 in 516 s, `x86-modelspage` (a step's key missing
 under load) and `x86-profile` (237 samples of a spinner where about 502
 were its share) passing alone in 30 s - the load's, not this change's.
+
+## 18.954 Flight on the M700: lavapipe on every core, the strip's witness, and an image per GPU (0.12.34)
+
+**In short:** Flight flew on the M700 for Diego over Montevideo, and it was
+slow - 135 ms a frame - with the machine reading about an eighth busy.
+That eighth was the answer: **Mesa thought the M700 had one processor.**
+It counts them only on a system it takes for POSIX, Kosmos is POSIX_LITE
+to it (patch 0001), so it counted none, said one, and llvmpipe made no
+rasterising threads - every pixel was drawn on Flight's own thread.
+`runtime/patches/mesa/0007-kosmos-counts-its-processors.patch` asks
+Kosmos's `sysconf`, which answers from the kernel. On the M700 the same
+flight went **from 135 ms a frame to 85-89 ms** - 7 to 11 frames a second -
+and the cores' meter shows the rasterising spread over all eight. Not
+eight times: llvmpipe still shades vertices and bins triangles on one
+thread, one core stays full, and Flight gives it about 2 M triangles a
+frame (219 terrain chunks of 65 by 65 against the design's ~150). The
+cure for software drawing is fewer triangles far away; the cure for the
+M700 is its GPU.
+
+**The GPU's own driver is built and not yet used.** `k3dvk-anv.elf` is the
+3D Kit linked against Mesa's Intel driver rather than lavapipe - two Mesa
+drivers cannot share one image, since each bundles the whole Vulkan runtime
+(1,387 `vk_` symbols in lavapipe's alone) - and init chooses it for a
+program whose header says `-- kosmos: image on intel-gpu k3dvk-anv.elf` on
+a machine whose bus has an Intel display controller (`IMAGES.GPUS`), and
+falls back to the plain image when that file is not there. On the M700 it
+**hangs the render engine** on the 3D Kit's first frame - the sky alone,
+with or without timestamps (`VK_ERROR_DEVICE_LOST`, intelgpu's "render
+engine hung, reset") - while `vulkantest`'s cube draws there at 64 and
+720. So Flight's header does not name it until anv draws the 3D Kit's
+scene; the mechanism stays, in init and `tools/installed.py`'s
+`images_of`. `w:draw`'s failures now say which step failed - uploading
+the ground, recording, drawing.
+
+**The strip.** On the M700 the strip once kept 105 kt and 1990 ft while
+the flight went on at 140 kt; toggling F3 brought it back, and it has not
+been seen again - later with the graphics panel showing it followed
+(97 kt, 2490 ft, then 99 kt, 2510 ft eight seconds on). Nothing held it:
+the gate looked at the strip once, early. Now **Flight says, after every
+report, how many times the strip was laid and what it shows** (`flight
+strip redrawn=150 shows SPEED 103 kt ...`), and `x86-flight` pairs each
+with the report before it: the count must grow over the flight, and the
+strip's speed must be the flight's to 15 kt at every report - `[(2, 1,
+107, 107), (4, 2, 107, 107), ...]`.
+**Control**: the strip's count held at nought - laid, never counted -
+fails (`the strip was not laid again as the flight went on: [(2, 0, 107,
+107), ...]`). The speed half bites less in QEMU, where the gate's flight
+holds 107 kt; on the M700 it is what would have caught 105 against 140.
+The gate: 154 of 154 in 656 s - over the ten minutes again, from the
+number of suites rather than from this change.

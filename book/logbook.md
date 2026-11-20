@@ -5515,3 +5515,25 @@ in a panel in its top right corner. 0.12.33.
   since a frame waits for the device; a fault that made it a hundred
   times too large fails the test.
 
+
+## 20 November 2026 - Flight on the M700, and why it was slow
+
+**In short.** Flight flew on the M700, slowly, and the machine looked
+idle while it did. The graphics library thought the M700 had one
+processor. Told the truth, it draws on all eight: from 7 frames a second
+to 11. 0.12.34.
+
+- **What happened**: Flight runs on the processor for now (its software
+  renderer, lavapipe), because the M700's own graphics driver hangs the
+  card on Flight's first frame. And it ran on one of the eight
+  processors only, which is why the machine read an eighth busy.
+- **Why**: Mesa asks how many processors there are only on systems it
+  recognises, and Kosmos is not one of them, so it assumed one. A
+  six-line change asks Kosmos.
+- **What is still slow, and why**: part of the work cannot be shared out -
+  preparing two million triangles a frame happens on one processor. The
+  answer is the graphics card, and fewer triangles far away when there is
+  none.
+- **Also**: the strip at the bottom once stopped following the flight.
+  It has not happened since, and Flight now says in its log what the
+  strip shows, so the test holds it to the flight's real speed.
