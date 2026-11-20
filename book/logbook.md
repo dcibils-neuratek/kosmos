@@ -5375,3 +5375,22 @@ them over, and draws a frame - the way Flight will, every frame. 0.12.26.
 - **What it costs today**: under emulation a frame takes about 1.7 s,
   most of it building new pieces as the eye moves. F4d moves that work
   off the frame, which is the next step.
+
+## 20 November 2026 - Building the ground on the side
+
+**In short.** The pieces of ground are now made on a helper thread, so a
+frame does not wait for them: F4d. While a piece is being made, a coarser
+one already made stands in for it. And pieces left behind are thrown
+away. 0.12.27.
+
+- **What a person will feel**: flying over new ground no longer makes the
+  picture stall while it is prepared - it starts a little blurry and
+  sharpens. Under emulation, frames got 2.4 times quicker.
+- **How it is proved**: the same flight as before, then checking that the
+  stand-ins happened, that pieces were given back, and that once all is
+  built every pixel is exactly right. Turning off the stand-ins, the
+  giving back, or giving a piece its neighbour's picture each makes it fail.
+- **And the aeroplane**: Diego chose a Cessna 172 from Sketchfab, by
+  Viva_1, free with credit. It has moving parts - the flaps, the ailerons,
+  the rudder, the elevator and the propeller - so they can move with the
+  controls. It is in the tree, with its licence beside it, for F5.

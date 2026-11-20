@@ -39583,3 +39583,45 @@ now counts a command's output from its own line's echo. Not reproduced
 on demand - it needs the gate's load - so the control is the failed log
 kept as `build/gate/failed/0.12.26-1120-102456-x86-midi.log`, whose
 outputs are each one check late, exactly as described.
+
+## 18.947 The terrain's chunks built off the frame (Flight F4d)
+
+**In short:** a chunk's mesh is no longer made on the frame's thread. The
+terrain has a builder, a thread of its own (pthreads, `runtime/posix/`),
+which takes a job once both a chunk's tiles are here and makes its mesh;
+the frame collects what is finished and uploads at most `uploads` (16) of
+them. A chunk not built yet is drawn by its nearest built ancestor, which
+covers its siblings until it is, so the ground is neither drawn twice in
+one place nor left with a hole where something coarser is ready. Chunks
+past `keep` are given back, the least lately drawn first and never one
+being built, and with them their pictures; heights past `keep` go when no
+job is reading them.
+
+**Measured**, the same path as 18.946 with `keep` 300: 11 of the 16 frames
+drew an ancestor for a chunk still being built; 70 chunks given back, 300
+held; at the last eye, 3 more frames until all 262 chosen chunks were
+drawn themselves, and then all 8229 judged pixels within 3 of the ray.
+Path frames under TCG: the first 924-937 ms (was 2936-3030), then 702 ms
+on average (was 1577-1669) and 1156-1159 at most (was 1722-2006). The
+suite: 17.3 s (was 28.6-30.2).
+
+**Controls**, each built and run from the restored source:
+
+| broken in the door | what the suite said |
+|---|---|
+| no ancestor stands in | no frame of the path drew one - fails |
+| nothing given back | 369 held, keep 300, 0 freed - fails |
+| a chunk uploaded with its east-west neighbour's picture | 0 of 8229 judged pixels right |
+
+A first version of the third control, the root's picture, passed: the
+roots are uploaded first and their pictures dropped, so the control fell
+back to the right one every time - a control that did not bite because it
+broke nothing, replaced by the neighbour's.
+
+Not held by a check: that the frame uploads at most `uploads` - its
+effect is the frame time, which TCG does not measure faithfully.
+
+**The gate for 0.12.27**: 152 suites in 641 s, `x86-flightpath` 30 s.
+That is 41 s past the ten minutes, as 0.12.26's 649 s was; the slowest are
+`x86-dock` 359 s and `x86-cafesa3d-2` 317 s, and splitting `x86-dock` as
+the browser's suite was split is the next thing for the budget.

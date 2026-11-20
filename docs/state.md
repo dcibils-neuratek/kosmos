@@ -183,8 +183,10 @@ chunks and meshes in C, held on the Mac; **F4b** (0.12.25, 18.945), the
 chunks drawn with their imagery by the renderer; **F4c** (0.12.26,
 18.946), the door Flight draws through - `k3dvk.elf`, a window and a terrain
 fed the tiles it asks for, a fixed path flown and its last frame held to a
-ray on the screen; F4d, decoding and building off the frame's thread, is
-next. After
+ray on the screen; **F4d** (0.12.27, 18.947), the chunks built on a thread
+of the terrain's own, ancestors drawn while they are, and what the eye has
+left given back; F5, Flight itself, is next - with a Cessna 172 from
+Sketchfab (CC BY) as the aircraft, a `.glb`. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

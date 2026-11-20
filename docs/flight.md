@@ -280,8 +280,15 @@ ends on the M700:
   and keeps it. Its suite flies a fixed path north over Montevideo, the
   tiles made in the guest as Flight's loop will be handed them, and holds
   the last frame on the screen to a ray (`x86-flightpath`); the tiles are
-  fetched in F5, with the tiles server. **F4d** decoding and building on a
-  thread of its own, and the chunks a frame leaves behind given back.
+  fetched in F5, with the tiles server. **F4d built in 0.12.27** (18.947):
+  a chunk's mesh made by the terrain's builder, a thread of its own, the
+  frame uploading at most `uploads` finished ones; a chunk not built yet
+  drawn by its nearest built ancestor, which covers its siblings until it
+  is; chunks past `keep` given back, the least lately drawn first, and
+  heights no job is reading. The path's frames 2.4 times quicker under TCG
+  (1669 ms to 702 on average). Decoding stays on the Lua thread until the
+  tiles arrive as bytes, in F5: gfx's PNG and JPEG readers are bound to
+  Lua, and one of each with no Lua in it is the piece that moves it.
 - **F5 - Flight.** `flight.lua`: the aircraft, the three views, the strip
   and the cockpit, the pause sheet with search, the graphics panel, the
   island offline; in the dated screenshot, as every new application is.

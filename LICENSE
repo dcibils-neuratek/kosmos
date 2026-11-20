@@ -150,6 +150,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       WallpaperAccess for personal use; each one's id there is in the
       README. In `FULL=1` images only
 
+  "Cessna 172", by Viva_1, CC BY 4.0
+      assets/models/cessna172/cessna_172.glb, from Sketchfab, unmodified:
+      Flight's aircraft. The terms in the LICENSE beside it, where it came
+      from and its hash in the README there
+
   Project Wycheproof's test vectors, by Google and C2SP, Apache 2.0
       tools/vectors/wycheproof/, under the LICENSE beside them, the commit
       and each file's hash in the README there. Not in the system's

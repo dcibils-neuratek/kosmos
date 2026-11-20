@@ -1,32 +1,39 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * **The 3D Kit on Vulkan, for Lua** (`docs/flight.md` F4c): the door an
- * application draws a terrain through - Flight first, and Cafesa3D's Solid
- * view after it. It lives in an image of its own, `k3dvk.elf`, with Mesa
- * linked in, because the system's image does not carry a Vulkan driver;
- * an application says `-- kosmos: image k3dvk.elf` and reaches it as
- * `use("k3dvk.elf")`.
+ * **The 3D Kit on Vulkan, for Lua** (`docs/flight.md` F4c, F4d): the door
+ * an application draws a terrain through - Flight first, and Cafesa3D's
+ * Solid view after it. It lives in an image of its own, `k3dvk.elf`, with
+ * Mesa linked in, because the system's image does not carry a Vulkan
+ * driver; an application says `-- kosmos: image k3dvk.elf` and reaches it
+ * as `use("k3dvk.elf")`.
  *
  *     local k = use("k3dvk.elf")
  *     local w = k.window("Flight", 640, 400)
  *     local g = k.terrain{ lon = .., lat = .., root = 12, deepest = 16,
- *                          radius = 2, split = 2, most = 400, elevation = 14 }
+ *                          radius = 2, split = 2, most = 400, elevation = 14,
+ *                          keep = 800, uploads = 16 }
  *     for _, t in ipairs(g:wanted(eye)) do ... end   -- { kind, z, x, y }
  *     g:elevation(z, x, y, gfx.png(bytes))          -- a terrarium tile
  *     g:imagery(z, x, y, gfx.jpeg(bytes))           -- the picture over it
  *     local said = w:draw(g, view)                  -- a frame, presented
  *
  * A tile's pixels stay in C: Lua hands over the surface gfx decoded and
- * this reads it where it lies (`kosmos_surface_pixels`). A chunk is built -
- * its mesh from the heights of the elevation tile over it, its imagery
- * from the picture at its own zoom - the first frame both have come, and
- * kept; a chunk whose tiles have not come is not drawn. F4d moves the
- * decoding and the building off the frame's thread, and gives the chunks
- * a frame leaves behind back.
+ * this reads it where it lies (`kosmos_surface_pixels`).
+ *
+ * **A chunk is built off the frame's thread** (F4d). Once both its tiles
+ * are here - the heights of the elevation tile over it, the picture at its
+ * own zoom - a job goes to the terrain's builder, a thread of its own,
+ * which makes the mesh; the frame collects what was built and uploads at
+ * most `uploads` of them, so a frame's cost does not grow with what the eye
+ * has just come upon. A chunk not ready yet is drawn by its nearest ready
+ * ancestor, and its ready siblings wait for it, so the ground is never
+ * drawn twice in one place and never has a hole where something coarser is
+ * ready. And what the eye has left is given back: chunks past `keep`, the
+ * least lately drawn first, and heights no chunk is waiting on.
  */
 
 #include <math.h>
-#include <stdarg.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +46,6 @@
 #include "kits/window/kosmos_window.h"
 #include "kits/gfx/gfx_draw.h"
 #include "kits/map/elevation.h"
-#include "kits/map/mercator.h"
 #include "k3d_vk.h"
 
 #define WINDOW  "k3dvk.window"
@@ -68,21 +74,41 @@ static double seconds(void)
 
 /* ------------------------------------------------------------ a terrain */
 
-/* An elevation tile's heights, or a chunk built: kept in a list that grows. */
+/* An elevation tile's heights. A job holds a copy of `h`, whose samples
+ * stay where they are, so `busy` counts the jobs reading them and the
+ * heights are not given back while one is. */
 struct heights {
     struct k3d_tile at;
     struct map_heights h;
+    unsigned busy;
+    unsigned used;                  /* the frame that last wanted them */
 };
 
+/* A chunk's picture, kept until its chunk is uploaded. */
 struct picture {
     struct k3d_tile at;
     uint32_t *pixels;               /* 0xAARRGGBB, packed */
     unsigned width, height;
 };
 
+/* A mesh to build, and once built, built: the builder's only business. */
+struct job {
+    struct job *next;
+    struct k3d_place place;
+    struct k3d_tile at, from;       /* the chunk, and the elevation tile */
+    struct map_heights h;
+    struct k3d_terrain_vertex *corners;
+    uint32_t *indices;              /* NULL when memory was out */
+};
+
+enum { WAITING, BUILDING, MESHED, READY };
+
 struct chunk {
     struct k3d_tile at;
-    struct k3d_vk_ground ground;
+    int state;
+    struct job *job;                /* BUILDING and MESHED */
+    struct k3d_vk_ground ground;    /* READY */
+    unsigned used;                  /* the frame that last drew or chose it */
 };
 
 struct window;
@@ -91,6 +117,7 @@ struct terrain {
     struct k3d_place place;
     struct k3d_choice choice;
     unsigned most, elevation;       /* chunks at most; the elevation's deepest zoom */
+    unsigned keep, uploads;         /* chunks held at most; uploaded in a frame */
     struct heights *heights;
     unsigned nheights, heights_room;
     struct picture *pictures;
@@ -98,7 +125,17 @@ struct terrain {
     struct chunk *chunks;
     unsigned nchunks, chunks_room;
     struct k3d_tile *chosen;        /* `most` of them */
-    /* The window the chunks were built in - held as the terrain's user
+    struct k3d_tile *drawn;         /* the frame's, `most` of them */
+    unsigned frame, freed;
+
+    /* The builder. `todo` in, `done` out, both under `lock`. */
+    pthread_mutex_t lock;
+    pthread_cond_t wake;
+    pthread_t builder;
+    int started, stop;
+    struct job *todo, *todo_last, *done;
+
+    /* The window the chunks were uploaded in - held as the terrain's user
      * value, so it is not collected first - and which opening of it. */
     struct window *owner;
     unsigned serial;
@@ -119,11 +156,11 @@ static struct k3d_tile above(struct k3d_tile t, unsigned z)
     return (struct k3d_tile){ t.x >> up, t.y >> up, (uint8_t)z };
 }
 
-static struct map_heights *heights_of(struct terrain *g, struct k3d_tile t)
+static struct heights *heights_of(struct terrain *g, struct k3d_tile t)
 {
     for (unsigned i = 0; i < g->nheights; i++) {
         if (same(g->heights[i].at, t)) {
-            return &g->heights[i].h;
+            return &g->heights[i];
         }
     }
     return NULL;
@@ -166,6 +203,127 @@ static int room(void **list, unsigned *room_of, unsigned count, size_t size)
     return 1;
 }
 
+static void job_free(struct job *j)
+{
+    if (j != NULL) {
+        free(j->corners);
+        free(j->indices);
+        free(j);
+    }
+}
+
+/* The heights under a place, from the elevation tile over the chunk - a
+ * chunk asks only inside its own. */
+struct sampler {
+    const struct map_heights *h;
+    struct k3d_tile at;
+};
+
+static float sampled(void *context, double mx, double my)
+{
+    const struct sampler *s = context;
+    double n = ldexp(1.0, s->at.z);
+
+    return map_heights_sample(s->h, mx * n - s->at.x, my * n - s->at.y);
+}
+
+/* The builder: a job at a time, the lock never held while it works. */
+static void *builder(void *context)
+{
+    struct terrain *g = context;
+
+    pthread_mutex_lock(&g->lock);
+    for (;;) {
+        while (!g->stop && g->todo == NULL) {
+            pthread_cond_wait(&g->wake, &g->lock);
+        }
+        if (g->stop) {
+            break;
+        }
+        struct job *j = g->todo;
+
+        g->todo = j->next;
+        if (g->todo == NULL) {
+            g->todo_last = NULL;
+        }
+        pthread_mutex_unlock(&g->lock);
+
+        j->corners = malloc(sizeof(*j->corners) * K3D_CHUNK_VERTICES);
+        j->indices = malloc(sizeof(*j->indices) * K3D_CHUNK_INDICES);
+        if (j->corners != NULL && j->indices != NULL) {
+            struct sampler s = { &j->h, j->from };
+
+            k3d_terrain_chunk(&j->place, j->at, sampled, &s, 20.0f, j->corners, j->indices,
+                              NULL, NULL);
+        } else {
+            free(j->indices);
+            j->indices = NULL;
+        }
+
+        pthread_mutex_lock(&g->lock);
+        j->next = g->done;
+        g->done = j;
+    }
+    pthread_mutex_unlock(&g->lock);
+    return NULL;
+}
+
+static int send_job(struct terrain *g, struct job *j)
+{
+    if (!g->started) {
+        if (pthread_mutex_init(&g->lock, NULL) != 0 || pthread_cond_init(&g->wake, NULL) != 0 ||
+            pthread_create(&g->builder, NULL, builder, g) != 0) {
+            return 0;
+        }
+        g->started = 1;
+    }
+    j->next = NULL;
+    pthread_mutex_lock(&g->lock);
+    if (g->todo_last != NULL) {
+        g->todo_last->next = j;
+    } else {
+        g->todo = j;
+    }
+    g->todo_last = j;
+    pthread_cond_signal(&g->wake);
+    pthread_mutex_unlock(&g->lock);
+    return 1;
+}
+
+/* What the builder has finished, made MESHED. */
+static void collect(struct terrain *g)
+{
+    struct job *done;
+
+    if (!g->started) {
+        return;
+    }
+    pthread_mutex_lock(&g->lock);
+    done = g->done;
+    g->done = NULL;
+    pthread_mutex_unlock(&g->lock);
+
+    while (done != NULL) {
+        struct job *j = done;
+        struct chunk *c = chunk_of(g, j->at);
+        struct heights *h = heights_of(g, j->from);
+
+        done = j->next;
+        if (h != NULL && h->busy > 0) {
+            h->busy--;
+        }
+        if (c != NULL && c->state == BUILDING && c->job == j && j->indices != NULL) {
+            c->state = MESHED;
+        } else {
+            if (c != NULL && c->job == j) {
+                c->job = NULL;
+                c->state = WAITING;     /* memory was out: asked again */
+            }
+            job_free(j);
+        }
+    }
+}
+
 static struct terrain *terrain_check(lua_State *L, int index)
 {
     return luaL_checkudata(L, index, TERRAIN);
@@ -181,7 +339,17 @@ static double field(lua_State *L, int table, const char *name)
     return value;
 }
 
-static void terrain_free_chunks(struct terrain *g);
+static double field_or(lua_State *L, int table, const char *name, double otherwise)
+{
+    double value;
+
+    lua_getfield(L, table, name);
+    value = luaL_optnumber(L, -1, otherwise);
+    lua_pop(L, 1);
+    return value;
+}
+
+static void terrain_forget_grounds(struct terrain *g);
 
 static int l_terrain(lua_State *L)
 {
@@ -202,8 +370,15 @@ static int l_terrain(lua_State *L)
                   "zooms from root to deepest, at most 24");
     luaL_argcheck(L, g->most >= 1 && g->most <= 65536, 1, "most from 1");
     luaL_argcheck(L, g->elevation >= g->choice.root, 1, "the elevation's zoom from the root's");
+    g->keep = (unsigned)field_or(L, 1, "keep", 2.0 * g->most);
+    g->uploads = (unsigned)field_or(L, 1, "uploads", 16);
+    /* Not less than `most` needs to be: a chunk of the frame is never given
+     * back, so `keep` is how many beyond the frame's are held, at most. */
+    luaL_argcheck(L, g->keep >= 1, 1, "keep from 1");
+    luaL_argcheck(L, g->uploads >= 1, 1, "uploads from 1");
     g->chosen = calloc(g->most, sizeof(*g->chosen));
-    if (g->chosen == NULL) {
+    g->drawn = calloc(g->most, sizeof(*g->drawn));
+    if (g->chosen == NULL || g->drawn == NULL) {
         return luaL_error(L, "out of memory for a terrain");
     }
     return 1;
@@ -213,7 +388,30 @@ static int l_terrain_gc(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
 
-    terrain_free_chunks(g);
+    if (g->started) {
+        pthread_mutex_lock(&g->lock);
+        g->stop = 1;
+        pthread_cond_broadcast(&g->wake);
+        pthread_mutex_unlock(&g->lock);
+        pthread_join(g->builder, NULL);
+        for (struct job *j = g->todo, *next; j != NULL; j = next) {
+            next = j->next;
+            job_free(j);
+        }
+        for (struct job *j = g->done, *next; j != NULL; j = next) {
+            next = j->next;
+            job_free(j);
+        }
+        pthread_cond_destroy(&g->wake);
+        pthread_mutex_destroy(&g->lock);
+    }
+    terrain_forget_grounds(g);
+    for (unsigned i = 0; i < g->nchunks; i++) {
+        /* A BUILDING chunk's job was freed with the lists above. */
+        if (g->chunks[i].state == MESHED) {
+            job_free(g->chunks[i].job);
+        }
+    }
     for (unsigned i = 0; i < g->nheights; i++) {
         map_heights_free(&g->heights[i].h);
     }
@@ -224,6 +422,7 @@ static int l_terrain_gc(lua_State *L)
     free(g->pictures);
     free(g->chunks);
     free(g->chosen);
+    free(g->drawn);
     memset(g, 0, sizeof(*g));
     return 0;
 }
@@ -238,8 +437,23 @@ static void eye_of(lua_State *L, int index, double eye[3])
     }
 }
 
+static void push_tile(lua_State *L, const char *kind, struct k3d_tile t, unsigned *listed)
+{
+    lua_createtable(L, 4, 0);
+    lua_pushstring(L, kind);
+    lua_rawseti(L, -2, 1);
+    lua_pushinteger(L, t.z);
+    lua_rawseti(L, -2, 2);
+    lua_pushinteger(L, t.x);
+    lua_rawseti(L, -2, 3);
+    lua_pushinteger(L, t.y);
+    lua_rawseti(L, -2, 4);
+    lua_rawseti(L, -2, (lua_Integer)++*listed);
+}
+
 /* g:wanted{x, y, z} -> the tiles the chunks for that eye need and have not
- * been given: { "e", z, x, y } and { "i", z, x, y }, each once. */
+ * been given: { "e", z, x, y } and { "i", z, x, y }, each once. A chunk
+ * built, or being built, needs nothing. */
 static int l_terrain_wanted(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
@@ -250,30 +464,25 @@ static int l_terrain_wanted(lua_State *L)
     n = k3d_terrain_choose(&g->place, &g->choice, eye, g->chosen, g->most);
     lua_newtable(L);
     for (unsigned k = 0; k < n; k++) {
-        struct k3d_tile want[2] = { above(g->chosen[k], g->elevation), g->chosen[k] };
+        struct k3d_tile t = g->chosen[k], e = above(t, g->elevation);
+        struct chunk *c = chunk_of(g, t);
+        int earlier = 0;
 
-        for (int kind = 0; kind < 2; kind++) {
-            int have = kind == 0 ? heights_of(g, want[0]) != NULL
-                                 : picture_of(g, want[1]) != NULL;
-            int earlier = 0;
+        if (c != NULL && c->state != WAITING) {
+            continue;
+        }
+        /* Several chunks share one elevation tile: listed once. */
+        for (unsigned j = 0; j < k && !earlier; j++) {
+            struct chunk *o = chunk_of(g, g->chosen[j]);
 
-            /* Several chunks share one elevation tile: listed once. */
-            for (unsigned j = 0; j < k && !earlier && kind == 0; j++) {
-                earlier = same(above(g->chosen[j], g->elevation), want[0]);
-            }
-            if (have || earlier) {
-                continue;
-            }
-            lua_createtable(L, 4, 0);
-            lua_pushstring(L, kind == 0 ? "e" : "i");
-            lua_rawseti(L, -2, 1);
-            lua_pushinteger(L, want[kind].z);
-            lua_rawseti(L, -2, 2);
-            lua_pushinteger(L, want[kind].x);
-            lua_rawseti(L, -2, 3);
-            lua_pushinteger(L, want[kind].y);
-            lua_rawseti(L, -2, 4);
-            lua_rawseti(L, -2, (lua_Integer)++listed);
+            earlier = (o == NULL || o->state == WAITING) &&
+                      same(above(g->chosen[j], g->elevation), e);
+        }
+        if (heights_of(g, e) == NULL && !earlier) {
+            push_tile(L, "e", e, &listed);
+        }
+        if (picture_of(g, t) == NULL) {
+            push_tile(L, "i", t, &listed);
         }
     }
     return 1;
@@ -307,6 +516,7 @@ static int l_terrain_elevation(lua_State *L)
     struct heights *e = &g->heights[g->nheights];
     memset(e, 0, sizeof(*e));
     e->at = t;
+    e->used = g->frame;
     if (!map_heights_terrarium(&e->h, px, w, h, pitch)) {
         return luaL_error(L, "an elevation tile is at least 2 by 2, and needs memory");
     }
@@ -314,7 +524,8 @@ static int l_terrain_elevation(lua_State *L)
     return 0;
 }
 
-/* g:imagery(z, x, y, surface): the picture over a tile, kept. */
+/* g:imagery(z, x, y, surface): the picture over a tile, kept until its
+ * chunk is uploaded. */
 static int l_terrain_imagery(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
@@ -344,21 +555,6 @@ static int l_terrain_imagery(lua_State *L)
     return 0;
 }
 
-/* The heights under a place, from the elevation tile over it at the
- * terrain's elevation zoom - a chunk asks only inside its own. */
-struct sampler {
-    const struct map_heights *h;
-    struct k3d_tile at;
-};
-
-static float sampled(void *context, double mx, double my)
-{
-    const struct sampler *s = context;
-    double n = ldexp(1.0, s->at.z);
-
-    return map_heights_sample(s->h, mx * n - s->at.x, my * n - s->at.y);
-}
-
 /* ------------------------------------------------------------- a window */
 
 struct window {
@@ -367,25 +563,29 @@ struct window {
     struct kw_window *window;
     struct kvk_swapchain chain;
     struct k3d_vk renderer;
-    struct k3d_terrain_vertex *corners;
-    uint32_t *indices;
     struct k3d_vk_ground *drawn;    /* the frame's, `drawn_room` of them */
     unsigned drawn_room;
     char said[160];
 };
 
-/* A window's chunks are freed while it is open; once it is closed its
- * device has gone and taken them. */
-static void terrain_free_chunks(struct terrain *g)
+/* A window's grounds are freed while it is open; once it is closed its
+ * device has gone and taken them. Either way the chunks that had them are
+ * forgotten, and built again for the next window. */
+static void terrain_forget_grounds(struct terrain *g)
 {
     struct window *w = g->owner;
+    int open = w != NULL && w->serial != 0 && w->serial == g->serial;
 
-    if (w != NULL && w->serial != 0 && w->serial == g->serial) {
-        for (unsigned i = 0; i < g->nchunks; i++) {
-            k3d_vk_ground_free(&w->renderer, &g->chunks[i].ground);
+    for (unsigned i = 0; i < g->nchunks;) {
+        if (g->chunks[i].state == READY) {
+            if (open) {
+                k3d_vk_ground_free(&w->renderer, &g->chunks[i].ground);
+            }
+            g->chunks[i] = g->chunks[--g->nchunks];
+        } else {
+            i++;
         }
     }
-    g->nchunks = 0;
 }
 
 static struct window *window_check(lua_State *L, int index)
@@ -413,8 +613,6 @@ static void window_close(struct window *w)
     if (w->window != NULL) {
         kw_close(w->window);
     }
-    free(w->corners);
-    free(w->indices);
     free(w->drawn);
     memset(w, 0, sizeof(*w));
 }
@@ -426,23 +624,18 @@ static int l_window(lua_State *L)
     const char *title = luaL_checkstring(L, 1);
     lua_Integer width = luaL_checkinteger(L, 2), height = luaL_checkinteger(L, 3);
     struct window *w;
+    static unsigned opened;
 
     luaL_argcheck(L, width >= 16 && width <= 8192, 2, "a width from 16");
     luaL_argcheck(L, height >= 16 && height <= 8192, 3, "a height from 16");
     hand_console(L);
-    static unsigned opened;
-
     w = lua_newuserdatauv(L, sizeof(*w), 0);
     memset(w, 0, sizeof(*w));
     luaL_setmetatable(L, WINDOW);
     w->serial = ++opened ? opened : ++opened;
 
     const char *why = NULL;
-    w->corners = malloc(sizeof(*w->corners) * K3D_CHUNK_VERTICES);
-    w->indices = malloc(sizeof(*w->indices) * K3D_CHUNK_INDICES);
-    if (w->corners == NULL || w->indices == NULL) {
-        why = "memory";
-    } else if (!kvk_open(&w->v, "k3dvk", 1)) {
+    if (!kvk_open(&w->v, "k3dvk", 1)) {
         why = w->v.why;
     } else if ((w->window = kw_open(title, (unsigned)width, (unsigned)height, 0)) == NULL) {
         why = kw_why();
@@ -525,40 +718,196 @@ static void numbers(lua_State *L, int table, const char *name, float *out, int n
     lua_pop(L, 1);
 }
 
-/* Its chunk built, from its tiles, the first time both have come: 1 when
- * it can be drawn. */
-static int chunk_ready(struct window *w, struct terrain *g, struct k3d_tile t,
-                       struct k3d_vk_ground **out)
+static void drop_picture(struct terrain *g, struct k3d_tile t)
 {
-    struct chunk *c = chunk_of(g, t);
-
-    if (c == NULL) {
-        struct k3d_tile e = above(t, g->elevation);
-        struct map_heights *h = heights_of(g, e);
-        struct picture *p = picture_of(g, t);
-
-        if (h == NULL || p == NULL ||
-            !room((void **)&g->chunks, &g->chunks_room, g->nchunks, sizeof(*g->chunks))) {
-            return 0;
+    for (unsigned i = 0; i < g->npictures; i++) {
+        if (same(g->pictures[i].at, t)) {
+            free(g->pictures[i].pixels);
+            g->pictures[i] = g->pictures[--g->npictures];
+            return;
         }
-        struct sampler s = { h, e };
-
-        k3d_terrain_chunk(&g->place, t, sampled, &s, 20.0f, w->corners, w->indices, NULL, NULL);
-        c = &g->chunks[g->nchunks];
-        c->at = t;
-        if (!k3d_vk_ground(&w->renderer, &c->ground, w->corners, K3D_CHUNK_VERTICES, w->indices,
-                           K3D_CHUNK_INDICES, p->pixels, p->width, p->height,
-                           VK_FORMAT_B8G8R8A8_UNORM)) {
-            return 0;
-        }
-        g->nchunks++;
     }
-    *out = &c->ground;
+}
+
+/* The chosen chunks moved on: a waiting one sent to the builder once its
+ * tiles are both here, a built one uploaded while the frame has uploads to
+ * spend. 0 with `why` when Vulkan refused an upload. */
+static int advance(struct window *w, struct terrain *g, unsigned n, unsigned *uploaded)
+{
+    /* Every chosen chunk has an entry first, so none moves under a pointer
+     * held below. */
+    for (unsigned k = 0; k < n; k++) {
+        struct chunk *c = chunk_of(g, g->chosen[k]);
+
+        if (c == NULL) {
+            if (!room((void **)&g->chunks, &g->chunks_room, g->nchunks, sizeof(*g->chunks))) {
+                return 1;
+            }
+            c = &g->chunks[g->nchunks++];
+            memset(c, 0, sizeof(*c));
+            c->at = g->chosen[k];
+            c->state = WAITING;
+        }
+        c->used = g->frame;
+    }
+    /* Coarse before fine: a root's job before its children's, so there is
+     * an ancestor to draw while they are built. */
+    for (unsigned z = g->choice.root; z <= g->choice.deepest; z++) {
+        for (unsigned k = 0; k < n; k++) {
+            struct k3d_tile t = g->chosen[k];
+            struct chunk *c;
+
+            if (t.z != z || (c = chunk_of(g, t)) == NULL) {
+                continue;
+            }
+            if (c->state == WAITING) {
+                struct heights *h = heights_of(g, above(t, g->elevation));
+                struct job *j;
+
+                if (h != NULL) {
+                    h->used = g->frame;
+                }
+                if (h == NULL || picture_of(g, t) == NULL ||
+                    (j = calloc(1, sizeof(*j))) == NULL) {
+                    continue;
+                }
+                j->place = g->place;
+                j->at = t;
+                j->from = h->at;
+                j->h = h->h;
+                if (!send_job(g, j)) {
+                    free(j);
+                    continue;
+                }
+                h->busy++;
+                c->job = j;
+                c->state = BUILDING;
+            } else if (c->state == MESHED && *uploaded < g->uploads) {
+                struct picture *p = picture_of(g, t);
+                struct job *j = c->job;
+
+                if (p == NULL) {
+                    continue;           /* given back meanwhile: asked again */
+                }
+                if (!k3d_vk_ground(&w->renderer, &c->ground, j->corners, K3D_CHUNK_VERTICES,
+                                   j->indices, K3D_CHUNK_INDICES, p->pixels, p->width,
+                                   p->height, VK_FORMAT_B8G8R8A8_UNORM)) {
+                    return 0;
+                }
+                job_free(j);
+                c->job = NULL;
+                c->state = READY;
+                drop_picture(g, t);
+                ++*uploaded;
+            }
+        }
+    }
     return 1;
 }
 
-/* w:draw(terrain, view) -> "drawn=N of M ms=T chunks=z/x/y,...", a frame
- * drawn and presented; nil and why when it could not be. */
+/* The frame's ground: each chosen chunk if it is ready, or else its
+ * nearest ready ancestor - and nothing under a tile already drawn. */
+static unsigned ground_of(struct terrain *g, unsigned n, unsigned *fallback)
+{
+    unsigned count = 0;
+
+    *fallback = 0;
+    for (unsigned k = 0; k < n; k++) {
+        struct k3d_tile t = g->chosen[k];
+        int found = 0;
+
+        for (int z = t.z; z >= (int)g->choice.root && !found; z--) {
+            struct k3d_tile a = above(t, (unsigned)z);
+            struct chunk *c = chunk_of(g, a);
+
+            if (c == NULL || c->state != READY) {
+                continue;
+            }
+            found = 1;
+            c->used = g->frame;
+            int listed = 0;
+            for (unsigned i = 0; i < count && !listed; i++) {
+                listed = same(g->drawn[i], a);
+            }
+            if (!listed && count < g->most) {
+                g->drawn[count++] = a;
+            }
+        }
+    }
+    /* A tile with an ancestor drawn is covered by it. */
+    unsigned kept = 0;
+    for (unsigned i = 0; i < count; i++) {
+        struct k3d_tile t = g->drawn[i];
+        int covered = 0;
+
+        for (unsigned j = 0; j < count && !covered; j++) {
+            covered = g->drawn[j].z < t.z && same(above(t, g->drawn[j].z), g->drawn[j]);
+        }
+        if (!covered) {
+            int chosen = 0;
+
+            for (unsigned k = 0; k < n && !chosen; k++) {
+                chosen = same(g->chosen[k], t);
+            }
+            *fallback += !chosen;
+            g->drawn[kept++] = t;
+        }
+    }
+    return kept;
+}
+
+/* What the eye has left, given back: chunks past `keep`, the least lately
+ * used first - never one being built - and heights past `keep` that no
+ * job is reading and no chunk of this frame wants. */
+static void give_back(struct window *w, struct terrain *g)
+{
+    while (g->nchunks > g->keep) {
+        unsigned oldest = g->nchunks;
+
+        for (unsigned i = 0; i < g->nchunks; i++) {
+            struct chunk *c = &g->chunks[i];
+
+            if (c->used != g->frame && c->state != BUILDING &&
+                (oldest == g->nchunks || c->used < g->chunks[oldest].used)) {
+                oldest = i;
+            }
+        }
+        if (oldest == g->nchunks) {
+            break;
+        }
+        struct chunk *c = &g->chunks[oldest];
+
+        if (c->state == READY) {
+            k3d_vk_ground_free(&w->renderer, &c->ground);
+        } else if (c->state == MESHED) {
+            job_free(c->job);
+        }
+        drop_picture(g, c->at);
+        g->chunks[oldest] = g->chunks[--g->nchunks];
+        g->freed++;
+    }
+    while (g->nheights > g->keep) {
+        unsigned oldest = g->nheights;
+
+        for (unsigned i = 0; i < g->nheights; i++) {
+            struct heights *h = &g->heights[i];
+
+            if (h->busy == 0 && h->used != g->frame &&
+                (oldest == g->nheights || h->used < g->heights[oldest].used)) {
+                oldest = i;
+            }
+        }
+        if (oldest == g->nheights) {
+            break;
+        }
+        map_heights_free(&g->heights[oldest].h);
+        g->heights[oldest] = g->heights[--g->nheights];
+    }
+}
+
+/* w:draw(terrain, view) -> "drawn=D of N ready=R building=B fallback=F
+ * held=H freed=X uploads=U ms=T chunks=z/x/y,...", a frame drawn and
+ * presented, `chunks` the ground it drew; nil and why when it could not be. */
 static int l_window_draw(lua_State *L)
 {
     struct window *w = window_check(L, 1);
@@ -567,7 +916,7 @@ static int l_window_draw(lua_State *L)
     struct kvk_swapchain *c = &w->chain;
     struct k3d_vk_view view;
     double eye[3], started = seconds();
-    unsigned n, drawn = 0;
+    unsigned n, count, fallback, ready = 0, building = 0, uploaded = 0;
     int index;
     luaL_Buffer out;
 
@@ -586,41 +935,49 @@ static int l_window_draw(lua_State *L)
     numbers(L, 3, "haze_start", &view.haze_start, 1);
     numbers(L, 3, "haze_end", &view.haze_end, 1);
 
-    /* Chunks are the renderer's: a terrain drawn in another window, or in
-     * this one opened again, starts its chunks again. */
+    /* Grounds are the renderer's: a terrain drawn in another window, or in
+     * this one opened again, uploads its chunks again. */
     if (g->owner != w || g->serial != w->serial) {
-        terrain_free_chunks(g);
+        terrain_forget_grounds(g);
         g->owner = w;
         g->serial = w->serial;
         lua_pushvalue(L, 1);
         lua_setiuservalue(L, 2, 1);
     }
+    g->frame++;
     for (int i = 0; i < 3; i++) {
         eye[i] = view.eye[i];
     }
+    collect(g);
     n = k3d_terrain_choose(&g->place, &g->choice, eye, g->chosen, g->most);
-    if (n > w->drawn_room) {
-        struct k3d_vk_ground *bigger = realloc(w->drawn, (size_t)n * sizeof(*w->drawn));
+    if (!advance(w, g, n, &uploaded)) {
+        lua_pushnil(L);
+        lua_pushstring(L, v->why);
+        v->why[0] = '\0';
+        return 2;
+    }
+    count = ground_of(g, n, &fallback);
+    for (unsigned k = 0; k < n; k++) {
+        struct chunk *ch = chunk_of(g, g->chosen[k]);
+
+        ready += ch != NULL && ch->state == READY;
+        building += ch != NULL && (ch->state == BUILDING || ch->state == MESHED);
+    }
+    if (count > w->drawn_room) {
+        struct k3d_vk_ground *bigger = realloc(w->drawn, (size_t)count * sizeof(*w->drawn));
 
         if (bigger == NULL) {
             return luaL_error(L, "out of memory for a frame");
         }
         w->drawn = bigger;
-        w->drawn_room = n;
+        w->drawn_room = count;
     }
-    for (unsigned k = 0; k < n; k++) {
-        struct k3d_vk_ground *ground;
-
-        if (chunk_ready(w, g, g->chosen[k], &ground)) {
-            w->drawn[drawn++] = *ground;
-        } else if (v->why[0]) {
-            break;
-        }
+    for (unsigned k = 0; k < count; k++) {
+        w->drawn[k] = chunk_of(g, g->drawn[k])->ground;
     }
-    if (v->why[0] ||
-        (index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
+    if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
         !k3d_vk_draw(&w->renderer, c->images[index], c->views[index], &view, NULL, 0, w->drawn,
-                     drawn)) {
+                     count)) {
         lua_pushnil(L);
         lua_pushstring(L, v->why[0] ? v->why : "draw");
         v->why[0] = '\0';
@@ -636,17 +993,20 @@ static int l_window_draw(lua_State *L)
         v->why[0] = '\0';
         return 2;
     }
+    give_back(w, g);
 
-    char head[64];
+    char head[160];
     luaL_buffinit(L, &out);
-    snprintf(head, sizeof(head), "drawn=%u of %u ms=%.1f chunks=", drawn, n,
-             (seconds() - started) * 1000.0);
+    snprintf(head, sizeof(head),
+             "drawn=%u of %u ready=%u building=%u fallback=%u held=%u freed=%u uploads=%u "
+             "ms=%.1f chunks=", count, n, ready, building, fallback, g->nchunks, g->freed,
+             uploaded, (seconds() - started) * 1000.0);
     luaL_addstring(&out, head);
-    for (unsigned k = 0; k < n; k++) {
+    for (unsigned k = 0; k < count; k++) {
         char one[40];
 
-        snprintf(one, sizeof(one), "%s%u/%u/%u", k ? "," : "", g->chosen[k].z, g->chosen[k].x,
-                 g->chosen[k].y);
+        snprintf(one, sizeof(one), "%s%u/%u/%u", k ? "," : "", g->drawn[k].z, g->drawn[k].x,
+                 g->drawn[k].y);
         luaL_addstring(&out, one);
     }
     luaL_pushresult(&out);

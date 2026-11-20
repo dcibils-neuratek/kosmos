@@ -12047,8 +12047,14 @@ the swapchain; its second half, the scene on the M700 by `anv`, when the
 M700 is booted. **F4a built in 0.12.24** (18.944), the terrain's chunks and
 meshes (`k3d_terrain.c`); **F4b built in 0.12.25** (18.945), imagery as
 textures and chunks drawn; **F4c built in 0.12.26** (18.946), the door
-for Lua in `k3dvk.elf` and a fixed path flown through it; F4d next, the
-decoding and building off the frame's thread and chunks given back.
+for Lua in `k3dvk.elf` and a fixed path flown through it; **F4d built in
+0.12.27** (18.947), chunks built on a thread of the terrain's own, ancestors
+drawn meanwhile, and chunks given back; F5 next. The aircraft (Diego, 20
+November 2026): a Cessna 172 from Sketchfab by Viva_1, CC Attribution, as a
+`.glb` with 2k textures - credited in `LICENSE` and the About window, as
+every vendored asset is. Also wanted, for F5: PNG and JPEG readers with no
+Lua in them (`png.c`, `jpeg.c` split into a core and the binding), so the
+terrain's builder decodes the tiles' bytes as well.
 Also wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a

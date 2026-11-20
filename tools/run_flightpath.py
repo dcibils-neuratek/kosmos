@@ -55,7 +55,9 @@ FRAMES = 16
 START = 6000.0
 # The terrain, as the door takes it, and the plane its elevation tiles hold.
 TERRAIN = dict(lon=-56.1990, lat=-34.9064, root=11, deepest=15, radius=2, split=2.0,
-               most=400, elevation=13)
+               most=400, elevation=13, keep=300, uploads=16)
+# Frames at the last eye, at most, for every chosen chunk to be built.
+SETTLE = 400
 PLANE = dict(h0=300.0, gx=0.01, gz=-0.005)
 ELEVATION_SIDE = 16
 SCENE = dict(
@@ -91,7 +93,7 @@ end
 local T = %(terrain)s
 local P = %(plane)s
 local V = %(scene)s
-local E, FRAMES, START, ROOT = %(side)d, %(frames)d, %(start)r, %(root)d
+local E, FRAMES, START, ROOT, SETTLE = %(side)d, %(frames)d, %(start)r, %(root)d, %(settle)d
 
 -- Web Mercator and the metres the terrain counts, as `k3d_terrain.c` has them.
 local EQUATOR = 40075016.68557849
@@ -131,9 +133,8 @@ if not w then
   return
 end
 local g = k.terrain(T)
-local times, given, last = {}, { e = 0, i = 0 }, nil
-for f = 0, FRAMES - 1 do
-  local ahead = START * (FRAMES - 1 - f) / (FRAMES - 1)
+local times, given, last, stood = {}, { e = 0, i = 0 }, nil, 0
+local function frame(ahead)
   local view = {}
   for key, v in pairs(V) do view[key] = v end
   view.eye = { V.eye[1], V.eye[2], V.eye[3] + ahead }
@@ -148,18 +149,33 @@ for f = 0, FRAMES - 1 do
   end
   local said, failed = w:draw(g, view)
   if not said then
-    tell("path", "failed=" .. tostring(failed) .. " frame=" .. f)
-    return
+    tell("path", "failed=" .. tostring(failed))
+    error("drawn nothing")
   end
-  times[#times + 1] = said:match("ms=([%%d.]+)")
   last = said
+  return said
 end
-tell("path", ("device=%%s frames=%%d elevation=%%d imagery=%%d ms=%%s")
-  :format(w:device(), FRAMES, given.e, given.i, table.concat(times, ",")))
+-- The path: each frame drawn with what is built, ancestors standing in.
+for f = 0, FRAMES - 1 do
+  local said = frame(START * (FRAMES - 1 - f) / (FRAMES - 1))
+  times[#times + 1] = said:match("ms=([%%d.]+)")
+  if tonumber(said:match("fallback=(%%d+)")) > 0 then stood = stood + 1 end
+end
+-- Then at the last eye until every chosen chunk is built and drawn itself.
+local settled = 0
+while settled < SETTLE do
+  local d, n, r, f = last:match("drawn=(%%d+) of (%%d+) ready=(%%d+) building=%%d+ fallback=(%%d+)")
+  if d == n and r == n and f == "0" then break end
+  frame(0)
+  settled = settled + 1
+end
+tell("path", ("device=%%s frames=%%d stood=%%d settled=%%d elevation=%%d imagery=%%d ms=%%s")
+  :format(w:device(), FRAMES, stood, settled, given.e, given.i, table.concat(times, ",")))
 tell("last", last)
 w:closed(90)
 """ % dict(terrain=lua_table(TERRAIN), plane=lua_table(PLANE), scene=lua_table(SCENE),
-           side=ELEVATION_SIDE, frames=FRAMES, start=START, root=TERRAIN["root"], window=WINDOW)
+           side=ELEVATION_SIDE, frames=FRAMES, start=START, root=TERRAIN["root"], window=WINDOW,
+           settle=SETTLE)
 
 
 def reference(chunks):
@@ -251,9 +267,12 @@ def main():
     finally:
         guest.close()
 
-    p = re.match(r"device=(llvmpipe/1\.\d+) (\d+)x(\d+) frames=(\d+) elevation=(\d+) "
-                 r"imagery=(\d+) ms=([\d.,]+)$", said.get("path", ""))
-    m = re.match(r"drawn=(\d+) of (\d+) ms=[\d.]+ chunks=([\d/,]+)$", said.get("last", ""))
+    p = re.match(r"device=(llvmpipe/1\.\d+) (\d+)x(\d+) frames=(\d+) stood=(\d+) "
+                 r"settled=(\d+) elevation=(\d+) imagery=(\d+) ms=([\d.,]+)$",
+                 said.get("path", ""))
+    m = re.match(r"drawn=(\d+) of (\d+) ready=(\d+) building=(\d+) fallback=(\d+) "
+                 r"held=(\d+) freed=(\d+) uploads=\d+ ms=[\d.]+ chunks=([\d/,]+)$",
+                 said.get("last", ""))
     if not p or not m or screen is None:
         print("FAIL: the path over the city was not flown: %r, %r"
               % (said.get("path"), said.get("last")))
@@ -263,11 +282,21 @@ def main():
         print("FAIL: the window's picture is %sx%s, not %dx%d"
               % (p.group(2), p.group(3), WINDOW, WINDOW))
         return 1
-    if m.group(1) != m.group(2):
-        print("FAIL: the last frame drew %s of its %s chunks, with every tile given"
-              % (m.group(1), m.group(2)))
+    if not (m.group(1) == m.group(2) == m.group(3) and m.group(5) == "0"):
+        print("FAIL: after %s frames at the last eye, it drew %s of its %s chunks, %s ready, "
+              "%s standing in for others" % (p.group(6), m.group(1), m.group(2), m.group(3),
+                                            m.group(5)))
         return 1
-    chunks = set(tuple(int(n) for n in s.split("/")) for s in m.group(3).split(","))
+    held, freed = int(m.group(6)), int(m.group(7))
+    if held > TERRAIN["keep"] or freed == 0:
+        print("FAIL: chunks are not given back: %d held, keep %d, %d freed"
+              % (held, TERRAIN["keep"], freed))
+        return 1
+    if int(p.group(5)) == 0:
+        print("FAIL: no frame of the path drew an ancestor for a chunk still being built - "
+              "the path proves nothing about the builder")
+        return 1
+    chunks = set(tuple(int(n) for n in s.split("/")) for s in m.group(8).split(","))
     if len(chunks) != int(m.group(2)):
         print("FAIL: %s chunks said, %d listed" % (m.group(2), len(chunks)))
         return 1
@@ -300,16 +329,19 @@ def main():
         print("FAIL: the last frame holds too little to prove much: " + ", ".join(thin))
         return 1
 
-    ms = [float(t) for t in p.group(7).split(",")]
+    ms = [float(t) for t in p.group(9).split(",")]
     later = ms[1:] or ms
     print("PASS: a path over the city through `k3dvk.elf`, in %.1f s: %s frames on %s, "
-          "%s elevation and %s imagery tiles made and given as they were wanted; the last "
-          "frame's %s chunks found on the screen at %s, all %d judged pixels within %d of a "
-          "ray through the plane (sky %d; ground by zoom %s from %d chunks). Frames, under "
-          "TCG: the first %.0f ms, then %.0f ms on average and %.0f at most"
-          % (took, p.group(4), p.group(1), p.group(5), p.group(6), m.group(2), place, count,
-             TOLERANCE, sky, ", ".join("%d: %d" % (z, zooms[z]) for z in sorted(zooms)),
-             len(used), ms[0], sum(later) / len(later), max(later)))
+          "%s elevation and %s imagery tiles made and given as they were wanted, chunks "
+          "built on the builder's thread - %s frames drew an ancestor for one still being "
+          "built, %d chunks given back, %d held of %d; at the last eye, %s frames until all "
+          "%s were drawn themselves, found on the screen at %s, all %d judged pixels within "
+          "%d of a ray through the plane (sky %d; ground by zoom %s from %d chunks). Path "
+          "frames, under TCG: the first %.0f ms, then %.0f ms on average and %.0f at most"
+          % (took, p.group(4), p.group(1), p.group(7), p.group(8), p.group(5), freed, held,
+             TERRAIN["keep"], p.group(6), m.group(2), place, count, TOLERANCE, sky,
+             ", ".join("%d: %d" % (z, zooms[z]) for z in sorted(zooms)), len(used), ms[0],
+             sum(later) / len(later), max(later)))
     return 0
 
 
