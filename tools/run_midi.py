@@ -113,16 +113,27 @@ def main():
         if not ok:
             failed.append(complaint)
 
+    # What a command said: everything after its own line came back, up to
+    # `until`. Counted from the echo, not from when it was typed - under a
+    # loaded gate the last command's "process N (midi) ended" can arrive
+    # after the next is typed, and a wait counted from the typing took it
+    # for this one's, so every later check read its predecessor's answer
+    # (`testing.md` 18.946).
     def run(line, until, seconds=30):
         mark = len(guest.seen)
         guest.type(line)
         deadline = time.monotonic() + seconds
 
-        while time.monotonic() < deadline and until not in guest.seen[mark:]:
+        def after():
+            seen = guest.seen[mark:]
+            at = seen.find(line)
+            return seen[at + len(line):] if at >= 0 else ""
+
+        while time.monotonic() < deadline and until not in after():
             time.sleep(0.2)
             guest._read_available()
 
-        return guest.seen[mark:]
+        return after()
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")

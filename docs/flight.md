@@ -270,8 +270,18 @@ ends on the M700:
   imagery as textures in `k3d_vk.c` and chunks drawn - 262 chunks from 2500
   m up, held pixel by pixel to a ray through a tilted plane and the chunk
   the guest said holds it (`x86-k3d-ground`), the Vulkan base gaining the
-  texture upload the cube had kept to itself; **F4c** the
-  suite over a served city; **F4d** decoding on a thread of its own.
+  texture upload the cube had kept to itself; **F4c built in 0.12.26**
+  (18.946), the 3D Kit's door for Lua, `k3d_vk_kosmos.c` in an image of
+  its own, `k3dvk.elf`, which Flight names: `k.window`, `k.terrain`,
+  `g:wanted(eye)` for the tiles its chunks still need, `g:elevation` and
+  `g:imagery` taking the gfx surfaces they were decoded into - read where
+  they lie, so a tile's pixels never cross into Lua - and `w:draw(g,
+  view)`, which builds a chunk the first frame both its tiles are there
+  and keeps it. Its suite flies a fixed path north over Montevideo, the
+  tiles made in the guest as Flight's loop will be handed them, and holds
+  the last frame on the screen to a ray (`x86-flightpath`); the tiles are
+  fetched in F5, with the tiles server. **F4d** decoding and building on a
+  thread of its own, and the chunks a frame leaves behind given back.
 - **F5 - Flight.** `flight.lua`: the aircraft, the three views, the strip
   and the cockpit, the pause sheet with search, the graphics panel, the
   island offline; in the dated screenshot, as every new application is.

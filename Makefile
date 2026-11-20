@@ -4751,6 +4751,31 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 	    || { echo "apps: the system's image has Vulkan's test kit in it"; rm -f $@; exit 1; }
 
 #
+# **The 3D Kit on Vulkan, for Lua** (`docs/flight.md` F4c): `k3dvk.elf`,
+# the image Flight - and Cafesa3D's Solid view after it - names, with the
+# renderer, the terrain and lavapipe linked in as `vulkantest.elf` has
+# them. The system's image carries no Vulkan driver, so neither has it.
+K3DVK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk_kosmos.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
+
+$(UBUILD)/user/kits/3d/k3d_vk_kosmos.c.o: user/kits/3d/k3d_vk_kosmos.c user/kits/3d/k3d_vk.h \
+        user/kits/3d/k3d_terrain.h user/kits/vulkan/kvk.h user/kits/map/elevation.h \
+        $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -c $< -o $@
+
+$(UBUILD)/apps/k3dvk.elf: $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
+                          $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) $(K3DVK_OBJS) $(POSIX_OBJS) \
+	    -Wl,--start-group @$(MESA_DIR)/lavapipe.txt $(LLVM_DIR)/lib/libLLVM*.a \
+	    build/w5/$(ARCH)/install/lib/libz.a $(CXXRT_LIBS) $(CXXRT_UNWIND) -Wl,--end-group \
+	    -Wl,-z,noexecstack -o $@ $(LIBS)
+	@$(NM) $@ | grep -q ' T kosmos_k3dvk_kit$$' \
+	    || { echo "apps: k3dvk.elf does not have its kit"; rm -f $@; exit 1; }
+	@! $(NM) $(UBUILD)/init.elf | grep -q ' T kosmos_k3dvk_kit$$' \
+	    || { echo "apps: the system's image has the 3D Kit's Vulkan door in it"; rm -f $@; exit 1; }
+
+#
 # **`anv`'s test image** (`docs/gpu3d.md` G7a): `anvtest.c` with Intel's
 # Vulkan driver linked in as `lavapipe` is in `vulkantest.elf` - its
 # object and archives the list `mesa_build.py` read from `anv`'s own link
@@ -4860,6 +4885,7 @@ app-images: $(UBUILD)/apps/apptest.elf $(UBUILD)/apps/cxxtest.elf $(UBUILD)/apps
             $(UBUILD)/apps/xmltest.elf $(UBUILD)/apps/ssltest.elf $(UBUILD)/apps/curltest.elf \
             $(UBUILD)/apps/skiatest.elf $(UBUILD)/apps/formattest.elf $(UBUILD)/apps/mediatest.elf \
             $(UBUILD)/apps/llvmtest.elf $(UBUILD)/apps/mesatest.elf $(UBUILD)/apps/vulkantest.elf \
+            $(UBUILD)/apps/k3dvk.elf \
             $(WEBCORE_IMAGE) $(VKCTS_IMAGE) $(ANVTEST_IMAGE) \
             $(UBUILD)/apps/doom.elf \
             $(UBUILD)/apps/quake.elf $(UBUILD)/apps/snes.elf \

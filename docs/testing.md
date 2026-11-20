@@ -39535,3 +39535,51 @@ no count to guess - and the cube uses them. `x86-vulkan` passes on them.
 | each chunk drawn with the next one's imagery | 3095 |
 | the sampler nearest rather than linear | 3263 (passed before the check) |
 | the imagery's two coordinates swapped in the shader | 272 |
+
+## 18.946 A path over a city, through the 3D Kit's door (Flight F4c)
+
+**In short:** Flight has a door to draw through. `k3d_vk_kosmos.c`, in an
+image of its own, `k3dvk.elf`, gives Lua a window drawn by Vulkan and a
+terrain that says which tiles its chunks still want; a program hands it
+each tile as the gfx surface it was decoded into, and the door reads the
+pixels where they lie, builds a chunk the first frame both its tiles are
+there, and keeps it. `x86-flightpath` flies 16 frames north over
+Montevideo, 6 km to the scene's eye 2500 m up, the tiles made in the guest
+as Flight's loop will be handed them - elevation in terrarium's encoding,
+a tilted plane at each sample's centre; imagery a colour by zoom with a
+check by tile - and finds the last frame on the screen, every pixel held
+to a ray through the plane and the chunk the guest said holds it
+(`run_k3dground.py`'s reference, with this terrain).
+
+**Measured**: 177 elevation and 369 imagery tiles given as they were
+wanted; the last frame's 262 chunks found on the screen, all 8229 judged
+pixels within 3 (sky 4388; the ground at zoom 12 in 117, 13 in 360, 14 in
+1105 and 15 in 2356, from 66 chunks). Under TCG, at 96 by 96: the first
+frame 2.9-3.0 s, which builds every chunk, then 1.6-1.7 s on average and
+2.0 at most, new chunks built on the frame's thread as the eye moves -
+which is what F4d takes off it. 29-30 s in all.
+
+**The imagery is uploaded as gfx keeps it**: `k3d_vk_ground` takes a
+format, B8G8R8A8 for a decoded picture (0xAARRGGBB in memory) and
+R8G8B8A8 for the F4b suite's, so no pixel is swizzled on the way.
+
+**Controls**, each built and run from the restored source:
+
+| broken in the door | the nearest square on the screen |
+|---|---|
+| imagery uploaded as R8G8B8A8 | 0 of 8229 judged pixels right |
+| heights ignored (0 m) | 4388 - the sky only |
+| heights sampled with the chunk's tile, not its elevation tile's | 7492 |
+| a built chunk found by its zoom alone | 0 |
+
+**The gate for 0.12.26**: 152 suites in 649 s; `x86-flightpath` 50 s.
+`x86-midi` failed 2 of its 10 checks, and passed alone in 13 s. The cause
+was the suite's: each check typed a command and waited for "ended" in
+what came after the typing, and under the loaded gate the previous
+command's `process N (midi) ended` arrived after the next command was
+typed - so that wait returned at once, and the check read its
+predecessor's answer, and the next one its predecessor's. `run_midi.py`
+now counts a command's output from its own line's echo. Not reproduced
+on demand - it needs the gate's load - so the control is the failed log
+kept as `build/gate/failed/0.12.26-1120-102456-x86-midi.log`, whose
+outputs are each one check late, exactly as described.

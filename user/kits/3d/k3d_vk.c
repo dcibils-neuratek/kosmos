@@ -231,8 +231,8 @@ void k3d_vk_mesh_free(struct k3d_vk *r, struct k3d_vk_mesh *m)
 
 int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
                   const struct k3d_terrain_vertex *vertices, uint32_t nv,
-                  const uint32_t *indices, uint32_t ni, const uint8_t *rgba,
-                  uint32_t width, uint32_t height)
+                  const uint32_t *indices, uint32_t ni, const void *texels,
+                  uint32_t width, uint32_t height, VkFormat format)
 {
     struct kvk *v = r->v;
     VkDeviceSize vbytes = (VkDeviceSize)nv * sizeof(*vertices);
@@ -241,7 +241,8 @@ int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
     int made = 0;
 
     memset(g, 0, sizeof(*g));
-    if (nv == 0 || ni == 0 || ni % 3 != 0 || width == 0 || height == 0) {
+    if (nv == 0 || ni == 0 || ni % 3 != 0 || width == 0 || height == 0 ||
+        (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_B8G8R8A8_UNORM)) {
         refuse(v, "ground-not-a-ground");
         return 0;
     }
@@ -255,7 +256,7 @@ int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
     if (!kvk_buffer_make(v, &g->buffer, g->indices_at + ibytes,
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                          "ground") ||
-        !kvk_image_make(v, &g->imagery, VK_FORMAT_R8G8B8A8_UNORM, width, height,
+        !kvk_image_make(v, &g->imagery, format, width, height,
                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT, "imagery") ||
         !kvk_buffer_make(v, &upload, (VkDeviceSize)width * height * 4,
@@ -266,7 +267,7 @@ int k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
     }
     memcpy(g->buffer.bytes, vertices, (size_t)vbytes);
     memcpy((uint8_t *)g->buffer.bytes + g->indices_at, indices, (size_t)ibytes);
-    memcpy(upload.bytes, rgba, (size_t)width * height * 4);
+    memcpy(upload.bytes, texels, (size_t)width * height * 4);
     if (!kvk_begin(v)) {
         goto out;
     }

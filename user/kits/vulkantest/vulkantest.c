@@ -1239,7 +1239,7 @@ static int l_terrain(lua_State *L)
                           NULL, NULL);
         imagery_of(&place, tiles[made], choice.root, texels, red, green, rgba);
         if (!k3d_vk_ground(&r, &grounds[made], corners, K3D_CHUNK_VERTICES, idx,
-                           K3D_CHUNK_INDICES, rgba, texels, texels)) {
+                           K3D_CHUNK_INDICES, rgba, texels, texels, VK_FORMAT_R8G8B8A8_UNORM)) {
             goto done;
         }
     }

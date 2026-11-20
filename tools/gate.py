@@ -680,6 +680,18 @@ SUITES = [
                         "user/kits/vulkantest", "user/kits/vulkan", "user/kits/map/mercator.c",
                         *K3D_VK, *MESA)),
 
+    # **A path over a city** (`docs/flight.md` F4c): `k3dvk.elf`, the 3D
+    # Kit's door for Lua that Flight names - a window drawn by Vulkan and a
+    # terrain fed the tiles it asks for, frame after frame along a fixed
+    # path - the last frame found on the screen and held to a ray.
+    Suite("x86-flightpath", ["python3", "tools/run_flightpath.py", X86,
+                             "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_flightpath.py", "tools/run_k3dground.py",
+                        "tools/run_k3dvk.py", "user/kits/3d/k3d_vk_kosmos.c",
+                        "user/kits/vulkan", "user/kits/map/mercator.c",
+                        "user/kits/map/elevation.c", "user/kits/window", "user/lib/wm",
+                        *K3D_VK, *MESA)),
+
     # **Intel's Vulkan driver** (`docs/gpu3d.md` G7a): `anvtest.elf`, anv
     # with Kosmos's kernel-driver type and Intel's compiler under it - no
     # device under QEMU and no error for it, and a SPIR-V compute shader

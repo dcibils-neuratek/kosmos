@@ -5356,3 +5356,22 @@ picture's dots, lit by the sun and fading into haze. 0.12.25.
 - **Found on the way**: the first test could not tell blending from not
   blending, because its pictures changed too gently. A pattern was added so
   it can.
+
+## 20 November 2026 - A path over a city
+
+**In short.** The flight simulator can now be written in Lua: F4c. A
+program opens a window, asks the ground which map tiles it needs, hands
+them over, and draws a frame - the way Flight will, every frame. 0.12.26.
+
+- **What a person sees**: still a test - a small window flying north over
+  Montevideo at 2.5 km, sixteen frames, the ground in a colour per detail
+  level.
+- **How it is proved**: the test knows what the ground and the pictures
+  are, so for the last frame it works out every pixel and finds the
+  window on the screen that matches. All 8229 that are not on an edge do.
+  Uploading the pictures in the wrong byte order, ignoring the heights,
+  reading heights from the wrong tile, or mixing up the pieces each makes
+  it fail.
+- **What it costs today**: under emulation a frame takes about 1.7 s,
+  most of it building new pieces as the eye moves. F4d moves that work
+  off the frame, which is the next step.

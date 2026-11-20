@@ -96,12 +96,14 @@ int  k3d_vk_mesh(struct k3d_vk *r, struct k3d_vk_mesh *m,
 void k3d_vk_mesh_free(struct k3d_vk *r, struct k3d_vk_mesh *m);
 
 /* A ground of `nv` vertices and `ni` indices, with its imagery `width` by
- * `height`, RGBA a row at a time from the north: uploaded now, in a
- * submission of its own, so not inside a recording. */
+ * `height`, four bytes a texel packed a row at a time from the north, in
+ * `format` - R8G8B8A8 as a test writes it, or B8G8R8A8 as gfx keeps a
+ * decoded picture (0xAARRGGBB): uploaded now, in a submission of its own,
+ * so not inside a recording. */
 int  k3d_vk_ground(struct k3d_vk *r, struct k3d_vk_ground *g,
                    const struct k3d_terrain_vertex *vertices, uint32_t nv,
-                   const uint32_t *indices, uint32_t ni, const uint8_t *rgba,
-                   uint32_t width, uint32_t height);
+                   const uint32_t *indices, uint32_t ni, const void *texels,
+                   uint32_t width, uint32_t height, VkFormat format);
 void k3d_vk_ground_free(struct k3d_vk *r, struct k3d_vk_ground *g);
 
 /* The world to clip space for `view`, column-major as Vulkan reads it; 0
