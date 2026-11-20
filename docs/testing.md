@@ -39334,3 +39334,36 @@ from the kit, so there is one copy of the arithmetic.
   not answer the sample's height", "between two samples is not halfway").
   `x86-tiles` failed one, the new one: -475.5 where -477 was served. With
   the half pixel back, all pass; Maps' 27 checks pass on the kit.
+
+## 18.941 The Vulkan Kit's base, out of the cube's kit (Flight F3a)
+
+**In short:** every C program that draws with Vulkan starts with the same
+few hundred lines: the instance and the device through the driver's one
+door, buffers and images in the device's memory, barriers, recording and
+submitting, a graphics pipeline, and a window's swapchain. They were
+`vulkantest.c`'s own, and the 3D Kit's renderer (F3b) needs every one.
+They are now the Vulkan Kit's base, `user/kits/vulkan/kvk.c` and `kvk.h`,
+and `vulkantest.c` stands on them: 1376 lines to 850, and nothing it
+says has changed. A failed step is kept in `why` ("device/-3") for the
+caller to say, so the base prints nothing of its own.
+
+- **What proves it**: `x86-vulkan` unchanged - the triangle and the cube
+  held to their references pixel for pixel, and the cube in a window
+  through `VK_KOSMOS_surface` found on the screen - and `x86-anv`, whose
+  image carries the same kit.
+- **The control**: `kvk.c`'s depth test turned from less to greater.
+  `x86-vulkan` failed on the cube, 1389 pixels wrong; put back, it passes.
+- **Not yet moved**: `anvtest.c`'s `run()` opens its own instance and
+  device with a compute queue and debug messages. It is a second copy and
+  is on the roadmap to move once the base takes a compute queue; only the
+  M700 can prove it.
+
+**The gate, 123 of 125 in 542 s, and the two that failed each passed on
+their own.** `x86-film-load` measured the audio server away 37.4 ms under
+the whole gate's load, against the device's 23.2; alone it passes, 18 s.
+`rebuilds` failed the way 18.822 describes: `tcc_kosmos.c.o` and
+`web_netsurf.c.o` in `build/user-x86_64-test/`, compiled at 08:55 by a
+build with the FULL list and linked into no test image. Removed, 8 of 8
+and 187 objects. **That is twice now**, so the roadmap holds the item:
+find which build writes a FULL list's objects into the test variant's
+directory.

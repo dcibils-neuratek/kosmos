@@ -652,7 +652,8 @@ SUITES = [
     # screen - so it stands on the Window Kit and the window manager too.
     Suite("x86-vulkan", ["python3", "tools/run_vulkan.py", X86,
                          "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_vulkan.py", "user/kits/vulkantest", "user/kits/window",
+          watch=library("tools/run_vulkan.py", "user/kits/vulkantest", "user/kits/vulkan",
+                        "user/kits/window",
                         "user/lib/wm", "user/lib/wmproto.lua", *MESA)),
 
     # **Intel's Vulkan driver** (`docs/gpu3d.md` G7a): `anvtest.elf`, anv
@@ -661,7 +662,8 @@ SUITES = [
     # compiled to the HD 530's Gen9 instructions in a Kosmos process.
     Suite("x86-anv", ["python3", "tools/run_anv.py", X86,
                       "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_anv.py", "user/kits/anvtest", "user/kits/gpu", *MESA)),
+          watch=library("tools/run_anv.py", "user/kits/anvtest", "user/kits/vulkantest",
+                        "user/kits/vulkan", "user/kits/gpu", *MESA)),
 
     # **Khronos's conformance suite** (`docs/gpu3d.md` G2, `testing.md`
     # 18.926): `vkcts.elf`, dEQP-VK's `info` and `api` groups from

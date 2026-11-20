@@ -12039,10 +12039,14 @@ and WebGL on the M700, next** - and the flight simulator after G7, agreed on
 20 November. **F1 built in 0.12.19** (`testing.md` 18.938): `tiles` with
 several sources, one library (`tiles.lua`) as the door, Maps on it. **F2 built in 0.12.20** (18.940): the Map Kit's
 Mercator and elevation, Maps' arithmetic moved onto it; F3, the 3D Kit on
-Vulkan, next.
+Vulkan, under way: **F3a built in 0.12.21** (18.941), the Vulkan Kit's base
+(`kvk.c`) out of `vulkantest.c`. Also wanted: `anvtest.c`'s `run()` opens
+its own instance and device, a second copy of the same setup with a compute
+queue and debug messages; it moves onto `kvk.c` when the base takes a
+compute queue, and is proved on the M700, since QEMU has no Intel GPU.
 **The gate in ten minutes again** - back to 548 s in 0.12.18 (`testing.md`
 18.937: the images' step 137 s to 43, a filter list every make rewrote).
-What follows is the room still to win. (`testing.md` 18.935; Diego's rule, *How to
+What follows is the room still to win. **A FULL list's objects in the test variant's directory** (`testing.md` 18.822, 18.941, twice): `tcc_kosmos.c.o` and `web_netsurf.c.o` appear in `build/user-x86_64-test/`, linked into nothing, and `rebuilds` rightly fails; find the build that writes them there. (`testing.md` 18.935; Diego's rule, *How to
 work here*). 10:24 to 11:16 over the last three gates. It is held by
 capacity, 7,102 suite-seconds over twelve slots plus 60 s of images, so
 splitting a long suite gains nothing. The suite-seconds have to come down:

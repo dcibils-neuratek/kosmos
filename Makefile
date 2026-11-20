@@ -4678,7 +4678,11 @@ $(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_
 # into arrays; Mesa's archives are the list `mesa_build.py` read from
 # lavapipe's own link (`lavapipe.txt`), with LLVM's and the C++ runtimes.
 #
-VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o
+# The Vulkan Kit's base, `kvk.c` (`user/kits/vulkan/`): the device, memory,
+# recording, a pipeline and a window's swapchain, once, for `vulkantest.c`
+# and the 3D Kit's Vulkan half (`docs/flight.md` F3).
+KVK_OBJS := $(UBUILD)/user/kits/vulkan/kvk.c.o
+VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS)
 VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
 
 $(UBUILD)/gen/vulkantest/triangle_%.h: user/kits/vulkantest/triangle.%
@@ -4690,10 +4694,15 @@ $(UBUILD)/gen/vulkantest/cube_%.h: user/kits/vulkantest/cube.%
 	glslangValidator -V --target-env vulkan1.3 --quiet --vn cube_$* -o $@ $<
 
 $(UBUILD)/user/kits/vulkantest/vulkantest.c.o: user/kits/vulkantest/vulkantest.c $(VULKANTEST_SPV) \
-        $(MESA_DIR)/.built $(UFLAGS_FILE)
+        user/kits/vulkan/kvk.h $(MESA_DIR)/.built $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -I $(UBUILD)/gen/vulkantest \
 	    -Wno-unused-parameter -c $< -o $@
+
+$(UBUILD)/user/kits/vulkan/kvk.c.o: user/kits/vulkan/kvk.c user/kits/vulkan/kvk.h \
+        $(MESA_DIR)/.built $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -c $< -o $@
 
 $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(MESA_DIR)/.built \
                                $(LLVM_DIR)/.built $(CXXRT_LIBS) $(UBUILD)/init.elf user/user.ld

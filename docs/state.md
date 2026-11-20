@@ -171,7 +171,9 @@ game controller's sticks added as F7. **F1 is built** (0.12.19,
 protocol is one library, `tiles.lua`, and a `tiles` program fetches from
 the prompt. **F2 is built** (0.12.20, 18.940): the Map Kit's Web
 Mercator and a terrarium tile's heights, kept in C, with Maps' tile and
-scale arithmetic moved onto them. Next is F3, the 3D Kit on Vulkan; after
+scale arithmetic moved onto them. F3, the 3D Kit on Vulkan, is under way: **F3a** (0.12.21, 18.941) moved the
+Vulkan setup into the Vulkan Kit's base, `user/kits/vulkan/kvk.c`, with the
+cube's kit on it; F3b, the renderer on it, is next. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

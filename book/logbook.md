@@ -5281,3 +5281,19 @@ asks the kit, so Flight will not need its own copy. 0.12.20.
   tile the test serves is read through the kit, and must give back the
   heights that were written into it, to the metre. Moving the point a
   height is read at by half a pixel makes both fail.
+
+## 20 November 2026 - One door to Vulkan
+
+**In short.** The third step of the flight simulator, F3, draws Flight's
+world with the GPU, and its first part is built. Every C program that
+draws with Vulkan starts with the same few hundred lines: open the
+device, make buffers and images, record and submit work, build a
+pipeline, and put a picture in a window. They were the spinning cube's
+own; they are now a kit of their own, `kvk.c`, which the cube and the
+renderer that comes next both stand on. 0.12.21.
+
+- **What a person sees**: nothing new. The cube draws exactly as it did.
+- **How it is proved**: the cube's suites, which compare its picture pixel
+  by pixel, pass on the moved code. Turning the depth test the wrong way
+  round inside the kit makes 1389 of their pixels wrong.
+- **What it took away**: the cube's kit went from 1376 lines to 850.

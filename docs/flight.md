@@ -244,7 +244,11 @@ ends on the M700:
   kit; `test_map` holds both to places and heights worked out by hand, and
   `x86-tiles` reads every served elevation tile through the kit to the
   metre.
-- **F3 - the 3D Kit on Vulkan.** `k3d_vk.c`: a mesh, a camera, depth, a
+- **F3 - the 3D Kit on Vulkan.** **F3a built in 0.12.21** (`testing.md`
+  18.941): the Vulkan Kit's base, `user/kits/vulkan/kvk.c` - the device,
+  memory, recording, a pipeline and a window's swapchain - moved out of
+  `vulkantest.c`, which now stands on it, so the 3D Kit's renderer does not
+  start as a second copy. Then: `k3d_vk.c`: a mesh, a camera, depth, a
   sky and haze, drawn by `lavapipe` in QEMU and `anv` on the M700, held to
   a reference picture; Cafesa3D's Solid view is its second user later.
 - **F4 - the terrain.** `k3d_terrain.c`: chunks, levels, skirts, imagery

@@ -51,9 +51,9 @@
 #include "kits/kitenv.h"
 #include "kits/window/kosmos_window.h"
 
-/* VK_KOSMOS_surface: a Kosmos window as a Vulkan surface (G3). */
-#define VK_USE_PLATFORM_KOSMOS
-#include <vulkan/vulkan.h>
+/* The device, memory, recording, a pipeline and a window's swapchain:
+ * the Vulkan Kit's base, shared with the 3D Kit (`docs/flight.md` F3). */
+#include "kits/vulkan/kvk.h"
 
 #include "triangle_vert.h"
 #include "triangle_frag.h"
@@ -86,6 +86,15 @@ static void say(const char *fmt, ...)
     va_end(ap);
 }
 
+/* A step the Vulkan Kit refused, said as this kit's own were: once, where
+ * the call gave up. */
+static void said_failure(const struct kvk *v)
+{
+    if (v->why[0]) {
+        say(" failed=%s", v->why);
+    }
+}
+
 #define STEP(call, what)                                         \
     do {                                                         \
         VkResult r_ = (call);                                    \
@@ -94,445 +103,6 @@ static void say(const char *fmt, ...)
             goto done;                                           \
         }                                                        \
     } while (0)
-
-/*
- * The device, opened once a call and closed after it, and the functions
- * this kit uses, each looked up through the one door.
- */
-#define FUNCTIONS(X)                                                        \
-    X(vkCreateImage) X(vkDestroyImage) X(vkCreateImageView)                 \
-    X(vkDestroyImageView) X(vkCreateBuffer) X(vkDestroyBuffer)              \
-    X(vkGetImageMemoryRequirements) X(vkGetBufferMemoryRequirements)        \
-    X(vkAllocateMemory) X(vkFreeMemory) X(vkBindImageMemory)                \
-    X(vkBindBufferMemory) X(vkMapMemory) X(vkCreateShaderModule)            \
-    X(vkDestroyShaderModule) X(vkCreatePipelineLayout)                      \
-    X(vkDestroyPipelineLayout) X(vkCreateGraphicsPipelines)                 \
-    X(vkDestroyPipeline) X(vkCreateCommandPool) X(vkDestroyCommandPool)     \
-    X(vkAllocateCommandBuffers) X(vkBeginCommandBuffer)                     \
-    X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) X(vkCmdBeginRendering)    \
-    X(vkCmdEndRendering) X(vkCmdBindPipeline) X(vkCmdPushConstants)         \
-    X(vkCmdDraw) X(vkCmdDrawIndexed) X(vkCmdBindVertexBuffers)              \
-    X(vkCmdBindIndexBuffer) X(vkCmdBindDescriptorSets)                      \
-    X(vkCmdCopyImageToBuffer) X(vkCmdCopyBufferToImage) X(vkQueueSubmit)   \
-    X(vkQueueWaitIdle) X(vkCreateSampler) X(vkDestroySampler)               \
-    X(vkCreateDescriptorSetLayout) X(vkDestroyDescriptorSetLayout)          \
-    X(vkCreateDescriptorPool) X(vkDestroyDescriptorPool)                    \
-    X(vkAllocateDescriptorSets) X(vkUpdateDescriptorSets) X(vkDestroyDevice)  \
-    X(vkCreateFence) X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences)    \
-    X(vkDeviceWaitIdle) X(vkCreateSwapchainKHR) X(vkDestroySwapchainKHR)     \
-    X(vkGetSwapchainImagesKHR) X(vkAcquireNextImageKHR) X(vkQueuePresentKHR)
-
-struct vk {
-    VkInstance instance;
-    VkPhysicalDevice physical;
-    VkPhysicalDeviceMemoryProperties memory;
-    VkDevice device;
-    VkQueue queue;
-    VkCommandPool pool;
-    VkCommandBuffer cmd;
-#define DECLARE(name) PFN_##name name;
-    FUNCTIONS(DECLARE)
-#undef DECLARE
-};
-
-static uint32_t memory_type(const struct vk *v, uint32_t bits, VkMemoryPropertyFlags want)
-{
-    for (uint32_t i = 0; i < v->memory.memoryTypeCount; i++) {
-        if ((bits & (1u << i)) && (v->memory.memoryTypes[i].propertyFlags & want) == want) {
-            return i;
-        }
-    }
-    return UINT32_MAX;
-}
-
-/* The instance, the device, its queue and a command buffer: 1, or 0 with
- * the step that failed said. `windowed`, and the instance has surfaces and
- * the device swapchains. */
-static int vk_open(struct vk *v, int windowed)
-{
-    PFN_vkGetInstanceProcAddr gipa = vk_icdGetInstanceProcAddr;
-    PFN_vkCreateInstance create_instance =
-        (PFN_vkCreateInstance)gipa(VK_NULL_HANDLE, "vkCreateInstance");
-    uint32_t count = 1;
-
-    memset(v, 0, sizeof(*v));
-    if (create_instance == NULL) {
-        say(" failed=no-vkCreateInstance");
-        return 0;
-    }
-
-    VkApplicationInfo app = {
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "vulkantest",
-        .apiVersion = VK_API_VERSION_1_3,
-    };
-    VkInstanceCreateInfo ici = {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &app,
-    };
-    static const char *const surfaces[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME, VK_KOSMOS_SURFACE_EXTENSION_NAME,
-    };
-    if (windowed) {
-        ici.enabledExtensionCount = 2;
-        ici.ppEnabledExtensionNames = surfaces;
-    }
-    STEP(create_instance(&ici, NULL, &v->instance), "instance");
-
-    PFN_vkEnumeratePhysicalDevices enumerate =
-        (PFN_vkEnumeratePhysicalDevices)gipa(v->instance, "vkEnumeratePhysicalDevices");
-    PFN_vkGetPhysicalDeviceProperties properties =
-        (PFN_vkGetPhysicalDeviceProperties)gipa(v->instance, "vkGetPhysicalDeviceProperties");
-    PFN_vkGetPhysicalDeviceMemoryProperties memory =
-        (PFN_vkGetPhysicalDeviceMemoryProperties)gipa(v->instance,
-                                                      "vkGetPhysicalDeviceMemoryProperties");
-    PFN_vkCreateDevice create_device =
-        (PFN_vkCreateDevice)gipa(v->instance, "vkCreateDevice");
-    PFN_vkGetDeviceProcAddr gdpa =
-        (PFN_vkGetDeviceProcAddr)gipa(v->instance, "vkGetDeviceProcAddr");
-
-    STEP(enumerate(v->instance, &count, &v->physical), "physical-device");
-    if (count == 0) {
-        say(" failed=no-device");
-        goto done;
-    }
-
-    VkPhysicalDeviceProperties props;
-    properties(v->physical, &props);
-    memory(v->physical, &v->memory);
-    /* "llvmpipe (LLVM 23.1.2, 256 bits)": the name to its first space. */
-    {
-        char name[64];
-        size_t n = strcspn(props.deviceName, " ");
-        if (n >= sizeof(name)) {
-            n = sizeof(name) - 1;
-        }
-        memcpy(name, props.deviceName, n);
-        name[n] = '\0';
-        say(" device=%s/%u.%u", name, VK_API_VERSION_MAJOR(props.apiVersion),
-            VK_API_VERSION_MINOR(props.apiVersion));
-    }
-
-    float priority = 1.0f;
-    VkDeviceQueueCreateInfo qci = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = 0,
-        .queueCount = 1,
-        .pQueuePriorities = &priority,
-    };
-    VkPhysicalDeviceVulkan13Features v13 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-        .dynamicRendering = VK_TRUE,
-        .synchronization2 = VK_TRUE,
-    };
-    VkDeviceCreateInfo dci = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &v13,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &qci,
-    };
-    static const char *const swapchain[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    if (windowed) {
-        dci.enabledExtensionCount = 1;
-        dci.ppEnabledExtensionNames = swapchain;
-    }
-    STEP(create_device(v->physical, &dci, NULL, &v->device), "device");
-
-#define LOOK_UP(name) v->name = (PFN_##name)gdpa(v->device, #name);
-    FUNCTIONS(LOOK_UP)
-#undef LOOK_UP
-    PFN_vkGetDeviceQueue get_queue = (PFN_vkGetDeviceQueue)gdpa(v->device, "vkGetDeviceQueue");
-    get_queue(v->device, 0, 0, &v->queue);
-
-    /* Recorded again after each submit - the texture's upload, then the
-     * frame, then the next frame - which Vulkan allows only of a buffer
-     * whose pool says so; without it lavapipe freed a buffer twice. */
-    VkCommandPoolCreateInfo cpci = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = 0,
-    };
-    STEP(v->vkCreateCommandPool(v->device, &cpci, NULL, &v->pool), "command-pool");
-    VkCommandBufferAllocateInfo cbai = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = v->pool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-    STEP(v->vkAllocateCommandBuffers(v->device, &cbai, &v->cmd), "command-buffer");
-    return 1;
-
-done:
-    return 0;
-}
-
-static void vk_close(struct vk *v)
-{
-    PFN_vkGetInstanceProcAddr gipa = vk_icdGetInstanceProcAddr;
-
-    if (v->device != VK_NULL_HANDLE) {
-        if (v->pool != VK_NULL_HANDLE) {
-            v->vkDestroyCommandPool(v->device, v->pool, NULL);
-        }
-        v->vkDestroyDevice(v->device, NULL);
-    }
-    if (v->instance != VK_NULL_HANDLE) {
-        ((PFN_vkDestroyInstance)gipa(v->instance, "vkDestroyInstance"))(v->instance, NULL);
-    }
-}
-
-/* A buffer the processor can write and read, and its memory mapped. */
-struct buffer {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-    void *bytes;
-};
-
-static int buffer_make(struct vk *v, struct buffer *b, VkDeviceSize size,
-                       VkBufferUsageFlags usage, const char *what)
-{
-    VkMemoryRequirements need;
-    VkBufferCreateInfo bci = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = size,
-        .usage = usage,
-    };
-
-    memset(b, 0, sizeof(*b));
-    STEP(v->vkCreateBuffer(v->device, &bci, NULL, &b->buffer), what);
-    v->vkGetBufferMemoryRequirements(v->device, b->buffer, &need);
-    VkMemoryAllocateInfo mai = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = need.size,
-        .memoryTypeIndex = memory_type(v, need.memoryTypeBits,
-                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-    };
-    STEP(v->vkAllocateMemory(v->device, &mai, NULL, &b->memory), what);
-    STEP(v->vkBindBufferMemory(v->device, b->buffer, b->memory, 0), what);
-    STEP(v->vkMapMemory(v->device, b->memory, 0, VK_WHOLE_SIZE, 0, &b->bytes), what);
-    return 1;
-
-done:
-    return 0;
-}
-
-static void buffer_free(struct vk *v, struct buffer *b)
-{
-    if (b->buffer != VK_NULL_HANDLE) {
-        v->vkDestroyBuffer(v->device, b->buffer, NULL);
-    }
-    if (b->memory != VK_NULL_HANDLE) {
-        v->vkFreeMemory(v->device, b->memory, NULL);
-    }
-}
-
-/* An image in the device's own memory, and a view of all of it. */
-struct image {
-    VkImage image;
-    VkDeviceMemory memory;
-    VkImageView view;
-};
-
-static int image_make(struct vk *v, struct image *i, VkFormat format, uint32_t width,
-                      uint32_t height, VkImageUsageFlags usage, VkImageAspectFlags aspect,
-                      const char *what)
-{
-    VkMemoryRequirements need;
-    VkImageCreateInfo imci = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = format,
-        .extent = { width, height, 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = usage,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-
-    memset(i, 0, sizeof(*i));
-    STEP(v->vkCreateImage(v->device, &imci, NULL, &i->image), what);
-    v->vkGetImageMemoryRequirements(v->device, i->image, &need);
-    VkMemoryAllocateInfo mai = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = need.size,
-        .memoryTypeIndex = memory_type(v, need.memoryTypeBits, 0),
-    };
-    STEP(v->vkAllocateMemory(v->device, &mai, NULL, &i->memory), what);
-    STEP(v->vkBindImageMemory(v->device, i->image, i->memory, 0), what);
-    VkImageViewCreateInfo vci = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = i->image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = format,
-        .subresourceRange = { aspect, 0, 1, 0, 1 },
-    };
-    STEP(v->vkCreateImageView(v->device, &vci, NULL, &i->view), what);
-    return 1;
-
-done:
-    return 0;
-}
-
-static void image_free(struct vk *v, struct image *i)
-{
-    if (i->view != VK_NULL_HANDLE) {
-        v->vkDestroyImageView(v->device, i->view, NULL);
-    }
-    if (i->image != VK_NULL_HANDLE) {
-        v->vkDestroyImage(v->device, i->image, NULL);
-    }
-    if (i->memory != VK_NULL_HANDLE) {
-        v->vkFreeMemory(v->device, i->memory, NULL);
-    }
-}
-
-/* An image's layout changed, with the stages and accesses either side. */
-static void barrier(struct vk *v, VkImage image, VkImageAspectFlags aspect,
-                    VkImageLayout from, VkImageLayout to,
-                    VkPipelineStageFlags after, VkAccessFlags written,
-                    VkPipelineStageFlags before, VkAccessFlags read)
-{
-    VkImageMemoryBarrier b = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = written,
-        .dstAccessMask = read,
-        .oldLayout = from,
-        .newLayout = to,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresourceRange = { aspect, 0, 1, 0, 1 },
-    };
-    v->vkCmdPipelineBarrier(v->cmd, after, before, 0, 0, NULL, 0, NULL, 1, &b);
-}
-
-static int submit(struct vk *v)
-{
-    VkSubmitInfo s = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &v->cmd,
-    };
-
-    STEP(v->vkEndCommandBuffer(v->cmd), "end");
-    STEP(v->vkQueueSubmit(v->queue, 1, &s, VK_NULL_HANDLE), "submit");
-    STEP(v->vkQueueWaitIdle(v->queue), "wait");
-    return 1;
-
-done:
-    return 0;
-}
-
-static int begin(struct vk *v)
-{
-    VkCommandBufferBeginInfo b = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-
-    STEP(v->vkBeginCommandBuffer(v->cmd, &b), "begin");
-    return 1;
-
-done:
-    return 0;
-}
-
-/* A pipeline drawing triangles into one colour image of `format`, with a
- * depth buffer when `depth` is not VK_FORMAT_UNDEFINED. */
-static int pipeline_make(struct vk *v, VkPipeline *out, VkPipelineLayout layout,
-                         const uint32_t *vert, size_t vert_bytes,
-                         const uint32_t *frag, size_t frag_bytes,
-                         const VkPipelineVertexInputStateCreateInfo *input,
-                         uint32_t size, VkFormat format, VkFormat depth)
-{
-    VkShaderModule modules[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
-    VkShaderModuleCreateInfo smci = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_bytes,
-        .pCode = vert,
-    };
-    int made = 0;
-
-    STEP(v->vkCreateShaderModule(v->device, &smci, NULL, &modules[0]), "vertex-shader");
-    smci.codeSize = frag_bytes;
-    smci.pCode = frag;
-    STEP(v->vkCreateShaderModule(v->device, &smci, NULL, &modules[1]), "fragment-shader");
-
-    VkPipelineShaderStageCreateInfo stages[2] = {
-        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-          .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = modules[0], .pName = "main" },
-        { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-          .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = modules[1], .pName = "main" },
-    };
-    VkPipelineInputAssemblyStateCreateInfo assembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    };
-    VkViewport viewport = { 0, 0, (float)size, (float)size, 0, 1 };
-    VkRect2D scissor = { { 0, 0 }, { size, size } };
-    VkPipelineViewportStateCreateInfo viewports = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .viewportCount = 1, .pViewports = &viewport,
-        .scissorCount = 1, .pScissors = &scissor,
-    };
-    VkPipelineRasterizationStateCreateInfo raster = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_NONE,
-        .lineWidth = 1.0f,
-    };
-    VkPipelineMultisampleStateCreateInfo multisample = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-    };
-    VkPipelineDepthStencilStateCreateInfo depths = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = depth != VK_FORMAT_UNDEFINED,
-        .depthWriteEnable = depth != VK_FORMAT_UNDEFINED,
-        .depthCompareOp = VK_COMPARE_OP_LESS,
-    };
-    VkPipelineColorBlendAttachmentState blend = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-    };
-    VkPipelineColorBlendStateCreateInfo blending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1, .pAttachments = &blend,
-    };
-    VkPipelineRenderingCreateInfo rendering = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &format,
-        .depthAttachmentFormat = depth,
-    };
-    VkGraphicsPipelineCreateInfo gpci = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = &rendering,
-        .stageCount = 2, .pStages = stages,
-        .pVertexInputState = input,
-        .pInputAssemblyState = &assembly,
-        .pViewportState = &viewports,
-        .pRasterizationState = &raster,
-        .pMultisampleState = &multisample,
-        .pDepthStencilState = &depths,
-        .pColorBlendState = &blending,
-        .layout = layout,
-    };
-    STEP(v->vkCreateGraphicsPipelines(v->device, VK_NULL_HANDLE, 1, &gpci, NULL, out),
-         "pipeline");
-    made = 1;
-
-done:
-    for (int i = 0; i < 2; i++) {
-        if (modules[i] != VK_NULL_HANDLE) {
-            v->vkDestroyShaderModule(v->device, modules[i], NULL);
-        }
-    }
-    return made;
-}
 
 /* The picture, as the caller reads it: a letter for each of `n` colours
  * exactly, `.` for opaque black, `?` for anything else. */
@@ -562,20 +132,6 @@ static void say_picture(const uint8_t *pixels, uint32_t size, const uint8_t (*co
 }
 
 /* Record a copy of `image` into `out` for the processor to read. */
-static void copy_out(struct vk *v, VkImage image, uint32_t size, VkBuffer out)
-{
-    barrier(v, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT);
-    VkBufferImageCopy region = {
-        .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-        .imageExtent = { size, size, 1 },
-    };
-    v->vkCmdCopyImageToBuffer(v->cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, out, 1,
-                              &region);
-}
-
 /*
  * ---------------------------------------------------------------- triangle
  */
@@ -589,22 +145,26 @@ struct triangle {
 
 static void triangle(const struct triangle *t, const uint8_t colour[3])
 {
-    struct vk v;
-    struct image target = { 0 };
-    struct buffer readback = { 0 };
+    struct kvk v;
+    struct kvk_image target = { 0 };
+    struct kvk_buffer readback = { 0 };
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
 
     said[0] = '\0';
     say("vulkan");
-    if (!vk_open(&v, 0)) {
+    if (!kvk_open(&v, "vulkantest", 0)) {
+        if (v.device_name[0]) {
+            say(" device=%s", v.device_name);
+        }
         goto done;
     }
+    say(" device=%s", v.device_name);
 
-    if (!image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, TRIANGLE, TRIANGLE,
+    if (!kvk_image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, TRIANGLE, TRIANGLE,
                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                     VK_IMAGE_ASPECT_COLOR_BIT, "image") ||
-        !buffer_make(&v, &readback, TRIANGLE * TRIANGLE * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        !kvk_buffer_make(&v, &readback, TRIANGLE * TRIANGLE * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                      "buffer")) {
         goto done;
     }
@@ -621,14 +181,16 @@ static void triangle(const struct triangle *t, const uint8_t colour[3])
     VkPipelineVertexInputStateCreateInfo none = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
     };
-    if (!pipeline_make(&v, &pipeline, layout, triangle_vert, sizeof(triangle_vert),
-                       triangle_frag, sizeof(triangle_frag), &none, TRIANGLE,
-                       VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED) ||
-        !begin(&v)) {
+    struct kvk_pipeline_shape shape = {
+        triangle_vert, sizeof(triangle_vert), triangle_frag, sizeof(triangle_frag), &none,
+        TRIANGLE, TRIANGLE, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_UNDEFINED, VK_CULL_MODE_NONE,
+    };
+    if (!kvk_pipeline(&v, &pipeline, layout, &shape) ||
+        !kvk_begin(&v)) {
         goto done;
     }
 
-    barrier(&v, target.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+    kvk_barrier(&v, target.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
     VkRenderingAttachmentInfo attachment = {
@@ -651,14 +213,15 @@ static void triangle(const struct triangle *t, const uint8_t colour[3])
     v.vkCmdPushConstants(v.cmd, layout, range.stageFlags, 0, sizeof(*t), t);
     v.vkCmdDraw(v.cmd, 3, 1, 0, 0);
     v.vkCmdEndRendering(v.cmd);
-    copy_out(&v, target.image, TRIANGLE, readback.buffer);
-    if (!submit(&v)) {
+    kvk_copy_out(&v, target.image, TRIANGLE, TRIANGLE, readback.buffer);
+    if (!kvk_submit(&v)) {
         goto done;
     }
 
     say_picture(readback.bytes, TRIANGLE, (const uint8_t (*)[3])colour, "#", 1);
 
 done:
+    said_failure(&v);
     if (v.device != VK_NULL_HANDLE) {
         if (pipeline != VK_NULL_HANDLE) {
             v.vkDestroyPipeline(v.device, pipeline, NULL);
@@ -666,10 +229,10 @@ done:
         if (layout != VK_NULL_HANDLE) {
             v.vkDestroyPipelineLayout(v.device, layout, NULL);
         }
-        buffer_free(&v, &readback);
-        image_free(&v, &target);
+        kvk_buffer_free(&v, &readback);
+        kvk_image_free(&v, &target);
     }
-    vk_close(&v);
+    kvk_close(&v);
 }
 
 /*
@@ -764,8 +327,8 @@ static void cube_transform(double yaw, double pitch, double distance, double foc
  * window only adds where the pixels go.
  */
 struct scene {
-    struct image depth, checks;
-    struct buffer mesh, upload;
+    struct kvk_image depth, checks;
+    struct kvk_buffer mesh, upload;
     VkSampler sampler;
     VkDescriptorSetLayout set_layout;
     VkDescriptorPool descriptors;
@@ -776,7 +339,7 @@ struct scene {
     VkDeviceSize indices_at;
 };
 
-static void scene_free(struct vk *v, struct scene *s)
+static void scene_free(struct kvk *v, struct scene *s)
 {
     if (v->device == VK_NULL_HANDLE) {
         return;
@@ -796,15 +359,15 @@ static void scene_free(struct vk *v, struct scene *s)
     if (s->sampler != VK_NULL_HANDLE) {
         v->vkDestroySampler(v->device, s->sampler, NULL);
     }
-    buffer_free(v, &s->upload);
-    buffer_free(v, &s->mesh);
-    image_free(v, &s->checks);
-    image_free(v, &s->depth);
+    kvk_buffer_free(v, &s->upload);
+    kvk_buffer_free(v, &s->mesh);
+    kvk_image_free(v, &s->checks);
+    kvk_image_free(v, &s->depth);
 }
 
 /* The scene for a `size` square target of `format`, its texture uploaded:
  * 1, or 0 with the step that failed said. */
-static int scene_make(struct vk *v, struct scene *s, VkFormat format, uint32_t size,
+static int scene_make(struct kvk *v, struct scene *s, VkFormat format, uint32_t size,
                       const uint8_t colours[2][3])
 {
     struct vertex vertices[24];
@@ -815,16 +378,16 @@ static int scene_make(struct vk *v, struct scene *s, VkFormat format, uint32_t s
     s->indices_at = sizeof(vertices);
     cube_mesh(vertices, indices);
 
-    if (!image_make(v, &s->depth, VK_FORMAT_D32_SFLOAT, size, size,
+    if (!kvk_image_make(v, &s->depth, VK_FORMAT_D32_SFLOAT, size, size,
                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
                     "depth") ||
-        !image_make(v, &s->checks, VK_FORMAT_R8G8B8A8_UNORM, CHECKS, CHECKS,
+        !kvk_image_make(v, &s->checks, VK_FORMAT_R8G8B8A8_UNORM, CHECKS, CHECKS,
                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                     VK_IMAGE_ASPECT_COLOR_BIT, "texture") ||
-        !buffer_make(v, &s->mesh, sizeof(vertices) + sizeof(indices),
+        !kvk_buffer_make(v, &s->mesh, sizeof(vertices) + sizeof(indices),
                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                      "mesh") ||
-        !buffer_make(v, &s->upload, CHECKS * CHECKS * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        !kvk_buffer_make(v, &s->upload, CHECKS * CHECKS * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      "upload")) {
         return 0;
     }
@@ -918,14 +481,17 @@ static int scene_make(struct vk *v, struct scene *s, VkFormat format, uint32_t s
         .vertexAttributeDescriptionCount = 2,
         .pVertexAttributeDescriptions = attributes,
     };
-    if (!pipeline_make(v, &s->pipeline, s->layout, cube_vert, sizeof(cube_vert), cube_frag,
-                       sizeof(cube_frag), &input, size, format, VK_FORMAT_D32_SFLOAT) ||
-        !begin(v)) {
+    struct kvk_pipeline_shape shape = {
+        cube_vert, sizeof(cube_vert), cube_frag, sizeof(cube_frag), &input,
+        size, size, format, VK_FORMAT_D32_SFLOAT, VK_CULL_MODE_NONE,
+    };
+    if (!kvk_pipeline(v, &s->pipeline, s->layout, &shape) ||
+        !kvk_begin(v)) {
         return 0;
     }
 
     /* The texture, from the buffer the checks were written into. */
-    barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+    kvk_barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
     VkBufferImageCopy region = {
@@ -934,11 +500,11 @@ static int scene_make(struct vk *v, struct scene *s, VkFormat format, uint32_t s
     };
     v->vkCmdCopyBufferToImage(v->cmd, s->upload.buffer, s->checks.image,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    kvk_barrier(v, s->checks.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT);
-    return submit(v);
+    return kvk_submit(v);
 
 done:
     return 0;
@@ -946,15 +512,15 @@ done:
 
 /* Record the cube, turned by `transform`, into `target` through `view`:
  * from nothing to a colour attachment, cleared to opaque black, drawn. */
-static void scene_draw(struct vk *v, struct scene *s, VkImage target, VkImageView view,
+static void scene_draw(struct kvk *v, struct scene *s, VkImage target, VkImageView view,
                        const float transform[16])
 {
     VkDeviceSize at = 0;
 
-    barrier(v, target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+    kvk_barrier(v, target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-    barrier(v, s->depth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+    kvk_barrier(v, s->depth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
             VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
@@ -998,45 +564,50 @@ static void scene_draw(struct vk *v, struct scene *s, VkImage target, VkImageVie
 static void cube(double yaw, double pitch, double distance, double focal,
                  const uint8_t colours[2][3])
 {
-    struct vk v;
+    struct kvk v;
     struct scene s = { 0 };
-    struct image target = { 0 };
-    struct buffer readback = { 0 };
+    struct kvk_image target = { 0 };
+    struct kvk_buffer readback = { 0 };
     float transform[16];
 
     said[0] = '\0';
     say("vulkan");
-    if (!vk_open(&v, 0)) {
+    if (!kvk_open(&v, "vulkantest", 0)) {
+        if (v.device_name[0]) {
+            say(" device=%s", v.device_name);
+        }
         goto done;
     }
+    say(" device=%s", v.device_name);
 
     cube_transform(yaw, pitch, distance, focal, transform);
 
-    if (!image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, CUBE, CUBE,
+    if (!kvk_image_make(&v, &target, VK_FORMAT_R8G8B8A8_UNORM, CUBE, CUBE,
                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                     VK_IMAGE_ASPECT_COLOR_BIT, "image") ||
-        !buffer_make(&v, &readback, CUBE * CUBE * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        !kvk_buffer_make(&v, &readback, CUBE * CUBE * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                      "buffer") ||
         !scene_make(&v, &s, VK_FORMAT_R8G8B8A8_UNORM, CUBE, colours) ||
-        !begin(&v)) {
+        !kvk_begin(&v)) {
         goto done;
     }
 
     scene_draw(&v, &s, target.image, target.view, transform);
-    copy_out(&v, target.image, CUBE, readback.buffer);
-    if (!submit(&v)) {
+    kvk_copy_out(&v, target.image, CUBE, CUBE, readback.buffer);
+    if (!kvk_submit(&v)) {
         goto done;
     }
 
     say_picture(readback.bytes, CUBE, colours, "ab", 2);
 
 done:
+    said_failure(&v);
     if (v.device != VK_NULL_HANDLE) {
         scene_free(&v, &s);
-        buffer_free(&v, &readback);
-        image_free(&v, &target);
+        kvk_buffer_free(&v, &readback);
+        kvk_image_free(&v, &target);
     }
-    vk_close(&v);
+    kvk_close(&v);
 }
 
 /*
@@ -1049,41 +620,23 @@ done:
  * stays open, holding its last frame, until `hold` asks it to go.
  */
 
-#define SWAPCHAIN_MAX 8
-
 static struct {
-    struct vk v;
+    struct kvk v;
     struct kw_window *window;
-    VkSurfaceKHR surface;
-    VkSwapchainKHR swapchain;
-    VkImageView views[SWAPCHAIN_MAX];
-    uint32_t count;
+    struct kvk_swapchain chain;
     struct scene s;
-    VkFence fence;
-    PFN_vkDestroySurfaceKHR destroy_surface;
 } shown;
 
 static void window_close(void)
 {
-    struct vk *v = &shown.v;
+    struct kvk *v = &shown.v;
 
     if (v->device != VK_NULL_HANDLE) {
         v->vkDeviceWaitIdle(v->device);
         scene_free(v, &shown.s);
-        for (uint32_t i = 0; i < shown.count; i++) {
-            v->vkDestroyImageView(v->device, shown.views[i], NULL);
-        }
-        if (shown.fence != VK_NULL_HANDLE) {
-            v->vkDestroyFence(v->device, shown.fence, NULL);
-        }
-        if (shown.swapchain != VK_NULL_HANDLE) {
-            v->vkDestroySwapchainKHR(v->device, shown.swapchain, NULL);
-        }
     }
-    if (shown.surface != VK_NULL_HANDLE) {
-        shown.destroy_surface(v->instance, shown.surface, NULL);
-    }
-    vk_close(v);
+    kvk_swapchain_close(v, &shown.chain);
+    kvk_close(v);
     if (shown.window != NULL) {
         kw_close(shown.window);
     }
@@ -1101,13 +654,8 @@ static double seconds(void)
 static void window(double yaw, double pitch, double distance, double focal,
                    const uint8_t colours[2][3], int frames, double step, uint32_t size)
 {
-    struct vk *v = &shown.v;
-    PFN_vkGetInstanceProcAddr gipa = vk_icdGetInstanceProcAddr;
-    VkImage images[SWAPCHAIN_MAX];
-    VkSurfaceCapabilitiesKHR caps;
-    VkSurfaceFormatKHR formats[8];
-    uint32_t nformats = 8;
-    VkFormat format = VK_FORMAT_UNDEFINED;
+    struct kvk *v = &shown.v;
+    struct kvk_swapchain *c = &shown.chain;
     double started;
 
     said[0] = '\0';
@@ -1115,9 +663,13 @@ static void window(double yaw, double pitch, double distance, double focal,
     if (shown.window != NULL) {
         window_close();
     }
-    if (!vk_open(v, 1)) {
+    if (!kvk_open(v, "vulkantest", 1)) {
+        if (v->device_name[0]) {
+            say(" device=%s", v->device_name);
+        }
         goto done;
     }
+    say(" device=%s", v->device_name);
 
     shown.window = kw_open("Vulkan cube", size, size, 0);
     if (shown.window == NULL) {
@@ -1125,124 +677,46 @@ static void window(double yaw, double pitch, double distance, double focal,
         goto done;
     }
 
-    PFN_vkCreateKosmosSurfaceKOSMOS create_surface =
-        (PFN_vkCreateKosmosSurfaceKOSMOS)gipa(v->instance, "vkCreateKosmosSurfaceKOSMOS");
-    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR get_caps =
-        (PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)gipa(
-            v->instance, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
-    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR get_formats =
-        (PFN_vkGetPhysicalDeviceSurfaceFormatsKHR)gipa(
-            v->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR");
-    PFN_vkGetPhysicalDeviceSurfaceSupportKHR get_support =
-        (PFN_vkGetPhysicalDeviceSurfaceSupportKHR)gipa(
-            v->instance, "vkGetPhysicalDeviceSurfaceSupportKHR");
-    shown.destroy_surface =
-        (PFN_vkDestroySurfaceKHR)gipa(v->instance, "vkDestroySurfaceKHR");
-    if (create_surface == NULL || get_caps == NULL || get_formats == NULL ||
-        get_support == NULL || shown.destroy_surface == NULL) {
-        say(" failed=no-surface-functions");
+    int opened = kvk_swapchain_open(v, c, shown.window);
+    if (c->extent.width != 0) {
+        say(" extent=%ux%u", c->extent.width, c->extent.height);
+    }
+    if (!opened) {
         goto done;
     }
-
-    VkKosmosSurfaceCreateInfoKOSMOS sci = {
-        .sType = VK_STRUCTURE_TYPE_KOSMOS_SURFACE_CREATE_INFO_KOSMOS,
-        .window = shown.window,
-    };
-    STEP(create_surface(v->instance, &sci, NULL, &shown.surface), "surface");
-
-    VkBool32 supported = VK_FALSE;
-    STEP(get_support(v->physical, 0, shown.surface, &supported), "support");
-    if (!supported) {
-        say(" failed=queue-cannot-present");
-        goto done;
-    }
-    STEP(get_caps(v->physical, shown.surface, &caps), "capabilities");
-    STEP(get_formats(v->physical, shown.surface, &nformats, formats), "formats");
-    for (uint32_t i = 0; i < nformats; i++) {
-        if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) {
-            format = formats[i].format;
-        }
-    }
-    say(" extent=%ux%u", caps.currentExtent.width, caps.currentExtent.height);
-    if (format == VK_FORMAT_UNDEFINED) {
-        say(" failed=no-B8G8R8A8_UNORM");
-        goto done;
-    }
-    if (caps.currentExtent.width != size || caps.currentExtent.height != size) {
+    if (c->extent.width != size || c->extent.height != size) {
         say(" failed=window-not-%ux%u", size, size);
         goto done;
     }
+    say(" images=%u", c->count);
 
-    VkSwapchainCreateInfoKHR swci = {
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = shown.surface,
-        .minImageCount = caps.minImageCount < 2 ? 2 : caps.minImageCount,
-        .imageFormat = format,
-        .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-        .imageExtent = caps.currentExtent,
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE,
-    };
-    STEP(v->vkCreateSwapchainKHR(v->device, &swci, NULL, &shown.swapchain), "swapchain");
-    shown.count = SWAPCHAIN_MAX;
-    STEP(v->vkGetSwapchainImagesKHR(v->device, shown.swapchain, &shown.count, images),
-         "swapchain-images");
-    for (uint32_t i = 0; i < shown.count; i++) {
-        VkImageViewCreateInfo vci = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = images[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = format,
-            .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
-        };
-        STEP(v->vkCreateImageView(v->device, &vci, NULL, &shown.views[i]), "swapchain-view");
-    }
-    say(" images=%u", shown.count);
-
-    VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-    STEP(v->vkCreateFence(v->device, &fci, NULL, &shown.fence), "fence");
-    if (!scene_make(v, &shown.s, format, size, colours)) {
+    if (!scene_make(v, &shown.s, c->format, size, colours)) {
         goto done;
     }
 
     started = seconds();
     for (int f = 0; f < frames; f++) {
         float transform[16];
-        uint32_t index;
+        int index;
 
         cube_transform(yaw - step * (frames - 1 - f), pitch, distance, focal, transform);
-        STEP(v->vkAcquireNextImageKHR(v->device, shown.swapchain, UINT64_MAX, VK_NULL_HANDLE,
-                                      shown.fence, &index), "acquire");
-        STEP(v->vkWaitForFences(v->device, 1, &shown.fence, VK_TRUE, UINT64_MAX), "acquired");
-        STEP(v->vkResetFences(v->device, 1, &shown.fence), "fence-reset");
-        if (!begin(v)) {
+        if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v)) {
             goto done;
         }
-        scene_draw(v, &shown.s, images[index], shown.views[index], transform);
-        barrier(v, images[index], VK_IMAGE_ASPECT_COLOR_BIT,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
-        if (!submit(v)) {
+        scene_draw(v, &shown.s, c->images[index], c->views[index], transform);
+        kvk_barrier(v, c->images[index], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
+        if (!kvk_submit(v) || !kvk_present(v, c, (uint32_t)index)) {
             goto done;
         }
-        VkPresentInfoKHR pi = {
-            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .swapchainCount = 1,
-            .pSwapchains = &shown.swapchain,
-            .pImageIndices = &index,
-        };
-        STEP(v->vkQueuePresentKHR(v->queue, &pi), "present");
     }
     say(" frames=%d ms=%d", frames, (int)((seconds() - started) * 1000.0));
     return;
 
 done:
+    said_failure(v);
     window_close();
 }
 
