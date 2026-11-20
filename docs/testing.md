@@ -39107,6 +39107,15 @@ that had not yet said it was ready. `x86-film` timed a 3.00 s film at
 2.83 s by its own clock. None of them reaches the change: QEMU has no
 Intel GPU, so the HAL hands it nothing new and `intelgpu` finds nothing
 to drive. Run alone straight after, all three passed: 38, 18 and 16
-checks, in 107 s. The gate is over its ten-minute budget again, by a
-minute, and that is the next thing to fix: `x86-dock` (353 s) and
-`x86-cafesa3d-2` (335 s) are to be split.
+checks, in 107 s.
+
+**Over the budget, and what this file kept saying about it was wrong.**
+The gate is over ten minutes by a minute, and 18.932 to here named
+`x86-dock` and `x86-cafesa3d-2` as "the suites to split". Splitting does
+not shorten this gate. The 148 suites ran 7,102 seconds between them,
+which at twelve at once is 592 s, and the images take about 60 s before
+any suite starts. The gate is held by capacity, not by its longest suite:
+dock's 353 s ends long before the queue does. The minute has to come out
+of the suite-seconds themselves. The twelve longest suites hold 2,728 of
+the 7,102, and `run_dock.py` alone sleeps for fixed times at sixty places,
+93 s of them. That is `roadmap.md`'s, *The gate in ten minutes again*.

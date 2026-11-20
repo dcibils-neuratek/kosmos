@@ -159,7 +159,12 @@ built for Kosmos with a kernel-driver type of its own.
   1,522 frames a second where it ran at 73.
 
 **G7 is done.** Next is G8 (GL and WebGL on the M700), or the flight
-simulator, once Diego has agreed its design (`docs/flight.md`). The M700
+simulator, once Diego has agreed its design (`docs/flight.md`).
+
+**The gate is a minute over its ten** (10:24 to 11:16). It is held by
+capacity, 7,102 suite-seconds over twelve slots, not by its longest suite,
+so splitting `x86-dock` would not help; `roadmap.md`, *The gate in ten
+minutes again*. The M700
 runs this build at 192.168.1.35 and is restarted as needed (Diego, 19 November:
 "Reboot m700 as needed").
 

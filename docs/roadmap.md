@@ -12029,6 +12029,19 @@ a tick. **G7e built in 0.12.15** (`testing.md` 18.935): the GPU's interrupt.
 Submit to fence is 0.22 ms in the middle, against 8 ms. **G7 done; G8, GL
 and WebGL on the M700, next** - and the flight simulator after G7, once
 Diego has agreed its design.
+**The gate in ten minutes again** (`testing.md` 18.935; Diego's rule, *How to
+work here*). 10:24 to 11:16 over the last three gates. It is held by
+capacity, 7,102 suite-seconds over twelve slots plus 60 s of images, so
+splitting a long suite gains nothing. The suite-seconds have to come down:
+the fixed sleeps in the twelve longest suites made waits for the thing they
+wait for - `run_dock.py` first, 93 s of sleeps at sixty places - then the
+images' 60 s. Measured on 20 November with nothing changed: the image
+without filter lists 9 s, the test image 8 s, the x86-64 test applications
+19 s, one after another. The first two build into separate directories
+but share `build/gen-x86_64` and Mesa's stamp, so running them side by side
+is a race, not a saving. Cutting dock's sleeps alone is about 60
+suite-seconds, five seconds of gate. The minute is spread across many
+suites.
 Owed from G7c:
 - **Frames a second that measure the GPU.** The cube is 64 by 64 pixels,
   so 66-127 frames a second is the round trip from submission to present.
