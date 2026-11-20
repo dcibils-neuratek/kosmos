@@ -39,6 +39,8 @@ gpu.ERRORS = {
   [12] = "the engine is busy with what it was given before",
   [13] = "the kernel was refused",
   [14] = "that kernel or buffer is another program's",
+  [15] = "no such context",
+  [16] = "that binding is over another, or out of range",
 }
 
 
@@ -332,6 +334,126 @@ function gpu.desktop_words(s)
 
   return s.model:gsub("^U?HD Graphics ", "HD "):gsub("^Iris Xe Graphics", "Iris Xe")
          .. " - " .. (#parts > 0 and table.concat(parts, ", ") or "software")
+end
+
+--
+-- **Programs' own contexts** (`docs/gpu3d.md` §5.3, G6e) - the 3D half,
+-- `gpuproto.h`'s `struct gpu_ctx_request` written a second time: a context
+-- with a page table of its own, regions bound in it at addresses the
+-- caller chooses, batches run in it in order, and a timeline whose value
+-- reached is in a fence page the caller reads without asking - or is
+-- pulsed when it comes. Where there is no Intel GPU the driver's stand-in
+-- runs a batch's MI_ commands on the processor.
+--
+--   local c = gpu.context("render")          -- or "copy", the blitter
+--   c:bind(0x100000000, region)             -- all its pages, there
+--   c:exec(0x200000, bytes, 1)              -- a batch, signalling 1
+--   c:wait(1, endpoint, code)               -- a pulse when 1 is reached
+--   c:reached(), c:state(), c:unbind(at), c:forget()
+--
+local CTX = "<I4I4I8I4I4I4I4I8" .. ("I4I4I8"):rep(4)
+
+assert(#string.pack(CTX, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) == 104,
+       "gpu: the context request does not match gpuproto.h")
+
+gpu.ENGINES = { render = 0, copy = 1 }
+gpu.CACHES = { wb = 0, uc = 1, wb_ellc = 2 }
+
+local function ctx_call(op, f, pass)
+  local args = { op, f.context or 0, f.gpu or 0, f.first_page or 0, f.pages or 0, f.flags or 0,
+                 f.engine or 0, f.signal or 0 }
+
+  for i = 1, 4 do
+    local w = (f.waits or {})[i] or {}
+
+    args[#args + 1] = w.context or 0
+    args[#args + 1] = 0
+    args[#args + 1] = w.value or 0
+  end
+
+  local reply, cap = fs.raw("/Devices/gpu", string.pack(CTX, table.unpack(args)), pass, "gpu")
+
+  if not reply then return nil, tostring(cap) end
+  if #reply < 32 then return nil, "the GPU's driver sent a reply of the wrong size" end
+
+  local r = { string.unpack(REPLY, reply) }
+
+  if r[1] ~= 0 then return nil, gpu.ERRORS[r[1]] or ("gpu error " .. tostring(r[1])), r[1] end
+
+  return r, cap
+end
+
+local Context = {}
+Context.__index = Context
+
+function gpu.context(engine)
+  local r, cap = ctx_call(28, { engine = gpu.ENGINES[engine or "render"] or 0 })
+
+  if not r then return nil, cap end
+
+  return setmetatable({ id = r[2], fence = cap, engine = engine or "render" }, Context)
+end
+
+-- The region's pages `first_page` on, `pages` of them (nil: the rest), at
+-- `at`; `cache` one of gpu.CACHES' names, "wb" by default.
+function Context:bind(at, region, first_page, pages, cache)
+  local r, why, code = ctx_call(30, { context = self.id, gpu = at, first_page = first_page or 0,
+                                      pages = pages or 0, flags = gpu.CACHES[cache or "wb"] or 0 },
+                                region)
+
+  if not r then return nil, why, code end
+  return true
+end
+
+function Context:unbind(at)
+  local r, why, code = ctx_call(31, { context = self.id, gpu = at })
+
+  if not r then return nil, why, code end
+  return true
+end
+
+-- A batch of `bytes` at `at`, after `waits` - a list of { context = c,
+-- value = v } - signalling `signal`. Answered at once.
+function Context:exec(at, bytes, signal, waits)
+  local w = {}
+
+  for i, x in ipairs(waits or {}) do
+    w[i] = { context = type(x.context) == "table" and x.context.id or x.context, value = x.value }
+  end
+
+  local r, why, code = ctx_call(32, { context = self.id, gpu = at, pages = bytes, signal = signal,
+                                      flags = #w, waits = w })
+
+  if not r then return nil, why, code end
+  return r[2] | r[3] << 32
+end
+
+-- A pulse of `code` to `endpoint` once the timeline reaches `value`.
+function Context:wait(value, endpoint, code)
+  local r, why, err = ctx_call(33, { context = self.id, signal = value, flags = code or 0 }, endpoint)
+
+  if not r then return nil, why, err end
+  return true
+end
+
+-- The value reached, read from the fence page: nobody asked.
+function Context:reached()
+  return sys.region_load32(self.fence, 0) | sys.region_load32(self.fence, 4) << 32
+end
+
+function Context:state()
+  local r, why, code = ctx_call(34, { context = self.id })
+
+  if not r then return nil, why, code end
+  return { reached = r[2] | r[3] << 32, given = r[4] | r[5] << 32, hangs = r[6], faults = r[7],
+           fault_word = r[8] }
+end
+
+function Context:forget()
+  local r, why, code = ctx_call(29, { context = self.id })
+
+  if not r then return nil, why, code end
+  return true
 end
 
 return gpu

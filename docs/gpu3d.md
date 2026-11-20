@@ -549,9 +549,28 @@ so `lavapipe` is built for both.
      as before, and `gpu hang` / `gpu hang render` - a batch that jumps
      to itself, reset by the watch, a store after; *control*, the reset
      without `GDRST`, after which the engine stays stuck.
-   - **G6e - the protocol**: `GPU_OP_CONTEXT_NEW`, `_BIND`, `_EXEC`,
-     `_FENCE_WAIT` (§5.3) for many programs at once, and under QEMU a
-     stand-in engine that runs only `MI_` commands, so the gate holds it.
+   - **G6e - the protocol** - built in 0.12.10 (`testing.md` 18.930).
+     `GPU_OP_CONTEXT_NEW`, `_FORGET`, `_BIND`, `_UNBIND`, `_EXEC`,
+     `_FENCE_WAIT` and `_CONTEXT_STATE` (§5.3), in one declared shape,
+     `struct gpu_ctx_request`, for many programs at once.
+     - **The core** is `intelgpu_ctx.c` and touches no hardware: a
+       context's bindings, its timeline, its queue of work whose waits are
+       not met, and the pulses it owes.
+     - **An engine is a backend.** On the M700 each context gets its own
+       ring, image, fence page and page table, taking turns after the
+       driver's own work. Elsewhere, the **stand-in** runs a batch's `MI_`
+       commands on the processor through the same page table.
+     - **Kept across runs**: an image is restored when another context ran
+       in between, and its restore is inhibited when the same one ran last,
+       since the engine still holds its state. Restoring the render
+       engine's 22 pages cost 88 us a submission.
+     - **The default state**: a new program's context begins from the
+       engine's default state, recorded once as the engine starts (i915's
+       `default_state`). Without it, the M700 showed one program's
+       registers in the next one's first run.
+     - **The fence page** is write-back, so it can be handed read-only.
+     - **Pulses** come from the driver's loop, a tick at most after the
+       value is reached; the engines' interrupt is owed.
 7. **G7 - `anv` on the M700.** `anv_kosmos.c`, the backend; `vkcube`, then
    a dEQP-VK subset run on the machine by a program that says what passed.
    *Measure*: submit-to-fence latency, `vkcube` frames a second.

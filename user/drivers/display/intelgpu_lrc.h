@@ -95,6 +95,23 @@ int igpu_lrc_find(const uint32_t *state, uint32_t base, uint32_t offset);
 bool igpu_lrc_set_tail(uint32_t *state, uint32_t base, uint32_t tail);
 
 /*
+ * **Kept across runs** (G6e). The context control an image the engine has
+ * saved back is submitted with again - as a new one's, but its registers
+ * restored from it - and the one that inhibits the restore, for an image
+ * never run, or one whose state the engine still holds because it was the
+ * last context there: restoring 22 pages of the render engine's state took
+ * 88 us a submission on the M700 (`testing.md` 18.930).
+ */
+uint32_t igpu_lrc_restore_control(void);
+uint32_t igpu_lrc_inhibit_control(void);
+
+/* What a context's own image says - its control, restored or inhibited,
+ * no batch, its page table, STOP_RING off and its ring - written over a
+ * state page already laid out: a new one (`igpu_lrc_fill` is the layout
+ * and this), or a copy of the engine's default state. */
+bool igpu_lrc_patch(uint32_t *state, const struct igpu_lrc_init *in, bool restore);
+
+/*
  * A context's descriptor, as an element of the submit port takes it
  * (`lrc_descriptor`): the image's address in the global GTT, valid,
  * privileged, a 48-bit four-level page table, and `id` - 21 bits, the

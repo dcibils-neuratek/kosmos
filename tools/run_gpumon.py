@@ -12,6 +12,10 @@ QEMU has none, so this holds what every machine without one must do:
   software` where it has not - and nothing that names an Intel GPU;
 - **GPU Monitor** opens, says it has no GPU to watch, and draws its window.
 
+- **programs' contexts** (G6e): answered by the driver's stand-in, which
+  runs a batch's MI_ commands on the processor through each context's own
+  page table - two contexts, one address, each its own page and register.
+
 What it shows on a machine that has one - the clock, RC6, flips, the
 buffers and their holders - is the M700's to show (`testing.md` 18.664).
 
@@ -158,6 +162,35 @@ def main():
         got = said("gpu: ", mark, 30)
         check(got == "no Intel GPU this driver knows",
               "gpu engine render did not say there is no Intel GPU here: %r" % got)
+
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        # Programs' own contexts (`docs/gpu3d.md` G6e), on the stand-in: two
+        # contexts, a buffer each bound at the same GPU address, each batch
+        # storing its own number there and keeping its own register across
+        # the other's run - told by pulses - and what must be refused.
+        mark = len(guest.seen)
+        guest.type("gpu contexts")
+        got = said("gpu: contexts ", mark, 60)
+        check(got is not None and got.startswith("right: ")
+              and "pages 11111111/a0a0a0a0 and 22222222/b0b0b0b0, 4 of 4 pulses, 2 of 2 refused" in got,
+              "two programs' contexts did not each keep their own page and register: %r" % got)
+        standin = said("intelgpu: programs' contexts on the ", mark, 30)
+        deadline = time.monotonic() + 30
+        while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        # And a batch that jumps to itself, stopped by the stand-in's count
+        # of commands, the context working after.
+        mark = len(guest.seen)
+        guest.type("gpu contexts hang")
+        hang = said("gpu: contexts hang ", mark, 60)
+        check(hang is not None and hang.startswith("right: ") and "1 hang, 0 faults; then it wrote 4b6f7349" in hang,
+              "a program's batch jumping to itself was not stopped, or its context did not work after: %r" % hang)
+        check(standin is not None and standin.startswith("stand-in"),
+              "the driver did not say the contexts run on the stand-in: %r" % standin)
 
         deadline = time.monotonic() + 30
         while guest.seen.find("kosmos> ", mark + 1) < 0 and time.monotonic() < deadline:

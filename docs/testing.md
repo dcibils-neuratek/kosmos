@@ -38636,3 +38636,108 @@ is assembled, and a result missing its second piece, which is not; then
 owed before the next shared change. The driver's comments above
 `engine_start` still describe the legacy ring; they are fixed with G6e,
 which edits the same code.
+
+## 18.930 Programs' own contexts on the GPU, and a stand-in where there is none
+
+**In short:** G6e (`docs/gpu3d.md` §5.3). `/Devices/gpu` now gives a
+program contexts of its own: `CONTEXT_NEW`, `BIND`, `UNBIND`, `EXEC`,
+`FENCE_WAIT`, `CONTEXT_STATE`, `CONTEXT_FORGET`, in one declared shape,
+`struct gpu_ctx_request`. On the M700, two contexts bind a buffer each at
+the same GPU address, `0x100000000`; each batch stores its own number
+there and sets a general register; then each reads its register back
+after the other has run. Both pages hold only their own number, both
+registers come back as they were set, and four pulses say so, twice in a
+row and with two programs doing it at the same time. A program's batch
+that jumps to itself is reset by the driver's watch after 3010 ms, and
+its next store lands. Under QEMU, where there is no Intel GPU, a stand-in
+runs the same batches on the processor and `x86-gpumon` holds the same
+answers.
+
+- **The core is hardware-free.** `intelgpu_ctx.c` keeps a context's
+  bindings, its timeline, the work it was given and not yet sent, and who
+  to pulse. An engine is a backend, handed one exec at a time once its
+  waits are met, so all of it runs on the Mac. `test_intelgpu_ctx` holds
+  it with a backend of the test's own (83 checks):
+  - which contexts are whose;
+  - bindings over others, off a page or past 2^48 refused;
+  - each context's page table walked back to its own pages;
+  - a timeline that may only go forward;
+  - waits on another context held until its value comes;
+  - unbinding and forgetting refused while work is outstanding;
+  - forty more contexts with no count compiled in;
+  - what the stand-in refuses.
+- **The stand-in** runs `MI_NOOP`, `MI_ARB_CHECK`, `MI_BATCH_BUFFER_END`
+  and `_START` (chained, or one level down), `MI_STORE_DWORD_IMM`,
+  `MI_LOAD_REGISTER_IMM`, `MI_STORE_REGISTER_MEM` and `MI_LOAD_REGISTER_MEM`
+  on the engine's general registers. It reads every address through the
+  context's own page table, and holds the walk's answer to the binding's
+  page.
+  - **It refuses**, as faults: a 3D command, the global GTT, an address
+    nothing is bound at, any other register, and a batch with no end.
+  - **A hang** is a batch still running after 65,536 commands.
+  - **Two controls bite.** With the walk's check taken out, a store through
+    an entry the binding does not say lands. With the registers wiped at
+    each run, a register is not kept across runs; under QEMU too, where
+    `x86-gpumon` then fails with `pages 11111111/00000000 and
+    22222222/00000000`.
+- **On the M700** each context has a ring, an image and a fence page in
+  the global GTT, and a page table over pages of its own.
+  - **A request** is built as i915 builds one: the TLB and the read caches
+    invalidated, then the program's batch started from its page table with
+    bit 8 set, so the engine runs it unprivileged, then the caches flushed
+    and the timeline's value written to the fence page as a qword.
+  - **The fence page** is write-back. Nebula will not make a
+    write-combining region read-only (`SYS_MEM_READONLY`), so the first
+    try was refused at `CONTEXT_NEW`, and the GPU writes it through the
+    LLC as i915 keeps a status page.
+  - **The engines take turns**: the driver's own work - the desktop's -
+    first, then programs' contexts in turn.
+- **Kept across runs, and what that cost.** Restoring every context's
+  image from what the engine saved - the desktop's own included, so that
+  no program's state reaches the desktop's - took the render engine's
+  store from 14 us to 102 us, 88 us of restoring 22 pages. So an image is
+  restored only when another context ran in between. When the same context
+  ran last, the engine still holds its state and the restore is inhibited.
+  The render engine is back at 18 us.
+- **The engine's default state** (i915's `default_state`): a context that
+  runs nothing is submitted once as each engine starts, and its saved image
+  is kept. A program's new context begins from it, restored. **The control
+  bites on the M700**: with it off, the second context's first read of its
+  register gave `a0a0a0a0`, the first context's value - one program's
+  registers reaching another's - where with it on both read `00000000`.
+
+```
+gpu contexts (M700):   right: 1 and 2, one address, pages 11111111/a0a0a0a0 and
+                       22222222/b0b0b0b0, 4 of 4 pulses, 2 of 2 refused,
+                       15195 us; each began with 00000000
+  two at once:         right: 3 and 4 ... 31503 us, and right: 1 and 2 ... 14888 us
+  default state off:   wrong: ... each began with a0a0a0a0
+                       the second context began with a0a0a0a0, the first with
+                       00000000: not both the engine's default
+gpu contexts hang:     right: stopped after 3010 ms, 1 hang, 0 faults; then it
+                       wrote 4b6f7349
+[26.605] intelgpu: the render engine, in program context 1, hung - its fence
+         still for 3000 ms - and was reset (1 time; it stopped, was ready,
+         came out of reset); 1 request dropped
+gpu engine 50:         50 of 50, 10 us fastest, 11 on average
+gpu engine render 50:  50 of 50, 16 us fastest, 18 on average (102 restoring
+                       every time; 14 in 0.12.9)
+gpu draw / draw big / render / compute / runs / el2: all right, as in 18.929
+x86-gpumon (QEMU):     20 checks; gpu contexts right on the stand-in, 2343 us;
+                       gpu contexts hang right
+```
+
+**What it costs**:
+- **A pulse waits for the driver's loop**, which comes back every
+  scheduler tick, 4 ms, while anything is outstanding, so four runs and
+  their pulses took 15-31 ms. The engines' interrupt (`MI_USER_INTERRUPT`)
+  would take that to microseconds, and is owed in `roadmap.md`.
+- **A context outlives a program that dies holding it**, as a buffer does
+  today.
+- **A wait is only on the caller's own contexts, and only for a value
+  already given.**
+
+**The gate**: `make test ALL=1`, 147 suites in 660 s (10:59), every one
+passing - x86-gpumon, x86-vulkan-cts and the display suites among them.
+The slowest were x86-dock (352 s) and x86-cafesa3d-2 (342 s), which are
+the two to split, as `roadmap.md` already says.

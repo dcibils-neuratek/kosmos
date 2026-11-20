@@ -22,6 +22,14 @@
 --                       each holding only its own number (G6c)
 --   gpu elshared        its control: two contexts given one page table,
 --                       which the check must call a failure
+--   gpu contexts        programs' own contexts (G6e): two, each with a
+--                       buffer bound at the same address, each storing its
+--                       own number there and keeping its own register
+--                       across the other's run, told by pulses - on the
+--                       GPU's engines, or the stand-in where there is none
+--   gpu contexts hang   a program's batch that jumps to itself, stopped -
+--                       by the driver's watch on the GPU, by the stand-in's
+--                       count of commands - and the context working after
 --   gpu compute [colour]    the first program on the execution units: a
 --                       64 by 4 surface filled with a byte (step 7b)
 --   gpu state           the render engine's starting state, run once (7c)
@@ -46,8 +54,8 @@ local gpu = use("/Kosmos/Libraries/gpu.lua")
 local words = use("/Kosmos/Libraries/files.lua").words(args, 3)
 local seconds = math.tointeger(tonumber(words[2] or "")) or 10
 
-if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" and words[1] ~= "el" and words[1] ~= "el2" and words[1] ~= "elshared" and words[1] ~= "hang" then
-  print("gpu: gpu [cursor [seconds] | engine [render] [n] | el [n] | el2 [n] | hang [render] | compute [colour] | kernel [colour]]")
+if words[1] and words[1] ~= "cursor" and words[1] ~= "engine" and words[1] ~= "compute" and words[1] ~= "state" and words[1] ~= "render" and words[1] ~= "draw" and words[1] ~= "kernel" and words[1] ~= "read" and words[1] ~= "kc" and words[1] ~= "runs" and words[1] ~= "el" and words[1] ~= "el2" and words[1] ~= "elshared" and words[1] ~= "hang" and words[1] ~= "contexts" then
+  print("gpu: gpu [cursor [seconds] | engine [render] [n] | el [n] | el2 [n] | hang [render] | contexts | compute [colour] | kernel [colour]]")
   return
 end
 
@@ -451,6 +459,152 @@ if words[1] == "compute" then
           :format(c.right, c.past, c.head, c.tail, c.esr))
   end
 
+  return
+end
+
+if words[1] == "contexts" and words[2] == "hang" then
+  local ARB, BB_START, STORE, BB_END = 0x05 << 23, 0x31 << 23 | 1 << 8 | 1, 0x20 << 23 | 2, 0x0a << 23
+  local BUF, BATCH = 0x100000000, 0x200000
+  local ep = sys.endpoint()
+  local c, why = gpu.context("render")
+
+  if not c then print("gpu: " .. tostring(why)); return end
+
+  local buf, bat = sys.memory(1), sys.memory(1)
+
+  assert(c:bind(BUF, buf) and c:bind(BATCH, bat))
+  sys.region_write(bat, 0, string.pack("<I4I4I4I4", ARB, BB_START, BATCH & 0xffffffff, BATCH >> 32))
+
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+  local t0 = sys.ticks()
+
+  assert(c:exec(BATCH, 16, 1))
+  assert(c:wait(1, ep, 1))
+
+  local m = sys.receive(ep, false, 2500)
+  local ms = (sys.ticks() - t0) * 1000 // hz
+  local st = c:state() or {}
+
+  -- And after: a store, which must land.
+  sys.region_write(bat, 0, string.pack("<I4I4I4I4I4", STORE, BUF & 0xffffffff, BUF >> 32, 0x4b6f7349, BB_END))
+  assert(c:exec(BATCH, 20, 2))
+  assert(c:wait(2, ep, 2))
+
+  local after = sys.receive(ep, false, 2500)
+  local value = sys.region_load32(buf, 0)
+  local right = m and m.pulse and after and after.pulse and st.hangs == 1 and value == 0x4b6f7349
+
+  print(("gpu: contexts hang %s: stopped after %d ms, %d hang%s, %d fault%s; then it wrote %08x")
+        :format(right and "right" or "wrong", ms, st.hangs or -1, st.hangs == 1 and "" or "s",
+                st.faults or -1, st.faults == 1 and "" or "s", value))
+  c:forget()
+  return
+end
+
+if words[1] == "contexts" then
+  -- Commands, by hand from `intel_gpu_commands.h`: MI_INSTR(op, length).
+  local LRI1, STORE, SRM, BB_END = 0x22 << 23 | 1, 0x20 << 23 | 2, 0x24 << 23 | 2, 0x0a << 23
+  local GPR0 = 0x2600                       -- the render engine's CS_GPR(0)
+  local BUF, BATCH = 0x100000000, 0x200000  -- the same addresses in both contexts
+  local ep = sys.endpoint()
+  local c, bufs, bats = {}, {}, {}
+  local mine = { 0x11111111, 0x22222222 }
+  local regs = { 0xa0a0a0a0, 0xb0b0b0b0 }
+  local failed, pulses = {}, 0
+
+  local function fail(why) failed[#failed + 1] = why end
+
+  for i = 1, 2 do
+    local why
+
+    c[i], why = gpu.context("render")
+    if not c[i] then print("gpu: " .. tostring(why)); return end
+
+    bufs[i], bats[i] = sys.memory(1), sys.memory(1)
+
+    local ok, err = c[i]:bind(BUF, bufs[i])
+    if ok then ok, err = c[i]:bind(BATCH, bats[i]) end
+    if not ok then print("gpu: context " .. c[i].id .. ": " .. tostring(err)); return end
+  end
+
+  -- What a context must be refused: a binding over its own, a value that
+  -- does not move on.
+  local refused = 0
+
+  if not c[1]:bind(BUF, bufs[2]) then refused = refused + 1 else fail("a binding over another was taken") end
+
+  -- Each run's batch, written, given, and waited for by a pulse.
+  local function run(i, words_, signal)
+    sys.region_write(bats[i], 0, string.pack("<" .. ("I4"):rep(#words_), table.unpack(words_)))
+
+    local v, why = c[i]:exec(BATCH, #words_ * 4, signal)
+    if not v then fail(("context %d's batch %d: %s"):format(c[i].id, signal, tostring(why))); return end
+
+    local ok, err = c[i]:wait(signal, ep, i)
+    if not ok then fail("a wait: " .. tostring(err)) end
+  end
+
+  local function told(n)
+    for _ = 1, n do
+      local m = sys.receive(ep, false, 1000)
+
+      if m and m.pulse then pulses = pulses + 1 else fail("a pulse did not come") end
+    end
+  end
+
+  local t0 = sys.ticks()
+
+  -- The register read before it is set: a new context begins from the
+  -- engine's default state, never from the other's, which ran just before.
+  for i = 1, 2 do
+    run(i, { SRM, GPR0, (BUF + 8) & 0xffffffff, BUF >> 32,
+             LRI1, GPR0, regs[i], STORE, BUF & 0xffffffff, BUF >> 32, mine[i], BB_END }, 1)
+  end
+  told(2)
+
+  for i = 1, 2 do
+    run(i, { SRM, GPR0, (BUF + 4) & 0xffffffff, BUF >> 32, BB_END, 0 }, 2)
+  end
+  told(2)
+
+  local elapsed = sys.ticks() - t0
+
+  if c[1]:exec(BATCH, 20, 2) then fail("a value that does not move on was taken") else refused = refused + 1 end
+
+  local got = {}
+  local first = { sys.region_load32(bufs[1], 8), sys.region_load32(bufs[2], 8) }
+
+  if first[2] == regs[1] or first[1] ~= first[2] then
+    fail(("the second context began with %08x, the first with %08x: not both the engine's default")
+         :format(first[2], first[1]))
+  end
+
+  for i = 1, 2 do
+    local stored, kept = sys.region_load32(bufs[i], 0), sys.region_load32(bufs[i], 4)
+    local st = c[i]:state() or {}
+
+    got[i] = ("%08x/%08x"):format(stored, kept)
+    if stored ~= mine[i] then fail(("context %d's page holds %08x, not %08x"):format(c[i].id, stored, mine[i])) end
+    if kept ~= regs[i] then fail(("context %d's register came back %08x, not %08x"):format(c[i].id, kept, regs[i])) end
+    if c[i]:reached() ~= 2 then fail(("context %d's fence page says %d"):format(c[i].id, c[i]:reached())) end
+    if (st.faults or 1) ~= 0 or (st.hangs or 1) ~= 0 then
+      fail(("context %d: %s faults, %s hangs, the last refused %08x"):format(c[i].id, tostring(st.faults),
+           tostring(st.hangs), st.fault_word or 0))
+    end
+  end
+
+  for i = 1, 2 do
+    local ok, why = c[i]:forget()
+    if not ok then fail("forget: " .. tostring(why)) end
+  end
+
+  local hz = (fs.read("/Devices/cpu") or {}).counter_hz or 1
+
+  print(("gpu: contexts %s: %d and %d, one address, pages %s and %s, %d of 4 pulses, %d of 2 refused, %d us; each began with %08x")
+        :format(#failed == 0 and "right" or "wrong", c[1].id, c[2].id, got[1], got[2], pulses, refused,
+                elapsed * 1000000 // hz, first[2]))
+
+  for _, why in ipairs(failed) do print("gpu: contexts: " .. why) end
   return
 end
 

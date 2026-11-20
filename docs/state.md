@@ -94,10 +94,22 @@ blitter on execlists, in contexts of the driver's own through a page
 table mirroring the global GTT; a hang watch that resets an engine whose
 fence is still for 3 s (`gpu hang`, `gpu hang render`; the control, no
 `GDRST`, stays stuck); the legacy ring gone. A submission is now 11-14 us
-against 3-4 on the ring - a context loaded each time. **Next: G6e**, the
-protocol - contexts for programs, kept across runs - and a stand-in
-engine under QEMU. The M700 runs 0.12.9, restarted as needed (Diego, 19
-November: "Reboot m700 as needed").
+against 3-4 on the ring - a context loaded each time. **G6e (0.12.10,
+18.930):** programs' own contexts in `/Devices/gpu`.
+- **What a program can do**: bind regions at addresses it chooses, give
+  batches in order, read a fence page or be pulsed.
+- **The core** is `intelgpu_ctx.c`, held on the Mac by `test_intelgpu_ctx`.
+- **On the M700**: execlists, each context with its own ring, image and
+  page table. A context's image is restored only after a switch, and a new
+  context begins from the engine's default state. The control showed one
+  program's register reaching the next without it.
+- **Under QEMU**: a stand-in runs `MI_` commands, held by `x86-gpumon`.
+- **Checked** with `gpu contexts` and `gpu contexts hang`, two programs at
+  once.
+
+**G6 is done. Next: G7**, `anv` on the M700 (`anv_kosmos.c`), then
+`vkcube` and a dEQP-VK subset. The M700 runs 0.12.10, restarted as needed
+(Diego, 19 November: "Reboot m700 as needed").
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

@@ -24,6 +24,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "kosmos.h"
@@ -32,6 +33,7 @@
 #include "intelgpu_fill.h"
 #include "intelgpu_kernel.h"
 #include "intelgpu_lrc.h"
+#include "intelgpu_ctx.h"
 #include "intelgpu_renderstate.h"
 #include "intelgpu_render.h"
 #include "intelgpu_blend.h"
@@ -790,12 +792,13 @@ static void buffers_init(void)
 }
 
 /*--------------------------------------------------------------------------
- * **The blitter's first work** (`docs/m700-2d.md` step 5): forcewake, a
- * ring, one command, and the number it writes looked for. The sequence is
- * i915's legacy `xcs_resume` (`intel_ring_submission.c`, Linux 6.12): stop
- * the ring, point the status page, start, head and tail at nought, the
- * size and RING_VALID, wait for it to take, take STOP_RING away - and then
- * the tail moved past what was written is the doorbell.
+ * **The engines' work** (`docs/m700-2d.md` step 5, `docs/gpu3d.md` G6d):
+ * forcewake, a ring, commands, and the fence they write looked for. Each
+ * engine's ring belongs to a context, submitted on execlists - its image
+ * in memory says where the ring is and how far to run it, and the submit
+ * port is the doorbell (`el_go`). Until G6d the ring was the engine's own,
+ * programmed as i915's legacy `xcs_resume` does and rung by moving its
+ * tail register; that path is gone.
  *------------------------------------------------------------------------*/
 
 /* Pages of our own, write-combining and in one run, entered in GTT slots
@@ -878,12 +881,12 @@ static uint32_t run_fence_at[RUN_TS_SLOTS];
 #define RING_ROOM    (RING_DWORDS - 256u)   /* what may be in flight, a margin kept */
 
 /*
- * **An engine with a ring** (`m700-2d.md` 5 and 7a): the blitter at
- * 0x22000 and the render engine at 0x2000, two of one thing - the same ring
- * registers at their own base, started the same way (i915's `xcs_resume`
- * is one function for every engine), each with its own ring, status page
- * and fence. Only the fence's command differs, MI_FLUSH_DW against
- * PIPE_CONTROL (`submit`).
+ * **An engine** (`m700-2d.md` 5 and 7a, `gpu3d.md` G6d and G6e): the
+ * blitter at 0x22000 and the render engine at 0x2000, two of one thing -
+ * the same registers at their own base, started the same way, each with a
+ * status page, the driver's own context (a ring, an image, a fence) and
+ * programs' contexts taking turns after it. Only the fence's command
+ * differs, MI_FLUSH_DW against PIPE_CONTROL (`submit`).
  */
 struct engine {
     uint32_t          base;             /* where its registers are */
@@ -913,15 +916,65 @@ struct engine {
     bool              open;             /* a request begun: commands emitted since submit */
     uint32_t          gtt_seen;         /* the mirror's generation its TLB last saw */
     uint32_t          submissions;      /* contexts submitted, since boot */
-    uint32_t          watch_fence;      /* the fence last seen moving, and when */
+    uint64_t          watch_fence;      /* the fence last seen moving, and when */
     unsigned long     watch_since;
     uint32_t          resets;           /* hangs reset, since boot */
+
+    /* Kept across runs (G6e): once the engine has saved the image back,
+     * the next submission restores it rather than laying it out again -
+     * so neither a program's state nor the desktop's leaks into the other
+     * - with these two dwords of its state page written first. */
+    bool              own_ran;
+    int               own_tail_at, own_control_at;
+    uint32_t          running;          /* whose context it was given: 0 the driver's, or a program's id */
+    uint32_t          last;             /* whose ran last - so whose state the engine holds - or ~0u */
+    unsigned          turn;             /* the program's context looked at first next time */
+
+    /* **The engine's default state** (G6e, i915's `engine->default_state`):
+     * the image a context saved having run nothing, recorded once as the
+     * engine starts. A program's new context begins from it, restored -
+     * never from whatever the last context left in the engine. */
+    uint32_t         *golden;
+    unsigned          golden_pages;
 };
 
 static unsigned long counter_per_ms;    /* the processor's counter, for the hang watch */
 
 static struct engine BCS = { .base = IGPU_BLT_BASE, .name = "the blitter" };
 static struct engine RCS = { .base = IGPU_RENDER_BASE, .render = true, .name = "the render engine" };
+
+/*
+ * **A program's context on the M700** (G6e): a ring, an image and a fence
+ * page in the global GTT, a page table of its own over pages from a pool
+ * of its own, and where its ring and its timeline have got to. The
+ * stand-in, where there is no Intel GPU, uses the pool and the fence.
+ */
+struct ptpool {
+    long     *caps;
+    uint8_t **cpu;
+    uint64_t *phys;
+    unsigned  n, room, used;            /* chunks, and pages taken from the last */
+    bool      wc;                       /* write-combining: the GPU's to walk */
+};
+
+struct hwctx {
+    struct ptpool      pool;
+    volatile uint32_t *ring, *image, *fence;
+    uint32_t           ring_gtt, image_gtt, fence_gtt;
+    long               ring_cap, image_cap, fence_cap, fence_ro;
+    uint32_t           tail, sent;      /* in dwords */
+    uint32_t           in_flight;       /* dwords given since it was last idle */
+    uint64_t           given;           /* the last value its ring will write */
+    bool               ran;             /* its image is the engine's save: restore it */
+    int                tail_at, control_at;
+};
+
+static struct igpu_ctxs CTXS;
+
+static bool gtt_alloc(unsigned long pages, volatile uint32_t **cpu, uint32_t *gtt, long *cap,
+                      unsigned long flags);
+static void gtt_free(unsigned long pages, volatile uint32_t *cpu, uint32_t gtt, long cap);
+static void golden_capture(struct engine *e);
 
 static uint32_t eng(const struct engine *e, uint32_t offset)
 {
@@ -995,10 +1048,13 @@ static uint32_t engine_start(struct engine *e)
      */
     e->sent = 0;
     e->open = false;
+    e->last = ~0u;
 
     if (!el_enable(e)) {
         return GPU_ERR_NO_RING;
     }
+
+    golden_capture(e);
 
     /*
      * **The engine's clock's rate, measured** rather than worked out from
@@ -1035,20 +1091,152 @@ static uint32_t engine_start(struct engine *e)
 }
 
 /*
- * **A submission** (G6d): the context's image laid out afresh, from where
- * the last one's ring ended to the tail now, its restore inhibited as a
- * context never run is - so nothing the engine saved back is relied on -
- * and its descriptor written to the submit port. Only ever while the
- * engine is idle: the image is the engine's to write until it says it has
- * gone idle, and writing the tail into it while it is saving would lose
- * the tail.
+ * **A context's image, ready to be submitted** (G6d, G6e). The first time:
+ * laid out afresh with its restore inhibited, as a context never run is -
+ * or, for a program's, the engine's default state copied in and restored,
+ * so it begins from nothing another context left. After that: the image
+ * the engine saved when it went idle, with only its tail and its context
+ * control written - restored when another context ran in between, and
+ * inhibited when this one was the last, whose state the engine still holds
+ * (`igpu_lrc_inhibit_control`). Only ever while the engine is idle: the
+ * image is the engine's to write until it says it has gone idle, and
+ * writing the tail into it while it is saving would lose the tail.
  */
-static void el_go(struct engine *e)
+static bool image_ready(struct engine *e, volatile uint32_t *image, bool *ran, int *tail_at,
+                        int *control_at, bool same, bool from_default, const struct igpu_lrc_init *in)
 {
     static uint32_t state[1024];
-    struct igpu_lrc_init in;
+    unsigned i, pages = e->render ? IGPU_LRC_PAGES_RENDER : IGPU_LRC_PAGES_OTHER;
+    bool restore = from_default && e->golden != NULL;
+
+    if (*ran) {
+        image[IGPU_LRC_STATE_PAGE * 1024u + (unsigned)*tail_at] = in->tail;
+        image[IGPU_LRC_STATE_PAGE * 1024u + (unsigned)*control_at] =
+            same ? igpu_lrc_inhibit_control() : igpu_lrc_restore_control();
+        return true;
+    }
+
+    if (restore) {
+        memcpy(state, e->golden + IGPU_LRC_STATE_PAGE * 1024u, sizeof state);
+        if (!igpu_lrc_patch(state, in, true)) {
+            return false;
+        }
+    } else if (!igpu_lrc_fill(state, e->render ? IGPU_LRC_RENDER : IGPU_LRC_OTHER, in)) {
+        return false;
+    }
+
+    *tail_at = igpu_lrc_find(state, in->base, 0x030u);         /* RING_TAIL */
+    *control_at = igpu_lrc_find(state, in->base, 0x244u);      /* CONTEXT_CONTROL */
+
+    if (*tail_at < 0 || *control_at < 0) {
+        return false;
+    }
+
+    for (i = 0; i < 1024u; i++) {
+        image[i] = 0;                                           /* the per-process status page */
+        image[IGPU_LRC_STATE_PAGE * 1024u + i] = state[i];
+    }
+
+    for (i = (IGPU_LRC_STATE_PAGE + 1u) * 1024u; restore && i < pages * 1024u; i++) {
+        image[i] = e->golden[i];                                /* the engine's own state, by default */
+    }
+
+    return true;
+}
+
+/* The submit port written with one context's descriptor. */
+static void el_submit(struct engine *e, uint32_t image_gtt, uint32_t id)
+{
     uint32_t words[4];
     unsigned i;
+
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");    /* the image and the tables out before the port */
+#endif
+
+    (void)forcewake(true);
+    igpu_elsp_words(igpu_lrc_descriptor(image_gtt, id), 0, words);
+
+    for (i = 0; i < 4u; i++) {
+        eng_write(e, IGPU_RING_ELSP, words[i]);
+    }
+
+    e->active = true;
+    e->submissions++;
+}
+
+/*
+ * **The engine's default state, recorded** (i915's `__engines_record_defaults`):
+ * a context laid out with its restore inhibited, given a ring of two
+ * MI_NOOPs, submitted, and its image read back once the engine says it
+ * went idle - the state the engine saves having run nothing. Kept in the
+ * processor's memory, since reading write-combining pages is slow and a
+ * new context's image is copied from it every time. Without it, a
+ * program's first run would begin from whatever the context before it
+ * left in the engine's registers.
+ */
+static void golden_capture(struct engine *e)
+{
+    unsigned pages = e->render ? IGPU_LRC_PAGES_RENDER : IGPU_LRC_PAGES_OTHER, i, n;
+    volatile uint32_t *image, *ring;
+    uint32_t image_gtt, ring_gtt;
+    long image_cap, ring_cap;
+    struct igpu_lrc_init in;
+    struct igpu_csb_event ev[IGPU_CSB_ENTRIES];
+    bool idle = false;
+    bool ran = false;
+    int tail_at, control_at;
+
+    if (e->golden != NULL || !gtt_alloc(pages, &image, &image_gtt, &image_cap, MEM_WRITE_COMBINE)) {
+        return;
+    }
+
+    if (!gtt_alloc(1, &ring, &ring_gtt, &ring_cap, MEM_WRITE_COMBINE)) {
+        gtt_free(pages, image, image_gtt, image_cap);
+        return;
+    }
+
+    ring[0] = ring[1] = IGPU_MI_NOOP;
+    in.base = e->base;
+    in.ring_ggtt = ring_gtt;
+    in.ring_pages = 1;
+    in.head = 0;
+    in.tail = 8;
+    in.pml4 = AP.pt.pml4_phys;
+
+    if (image_ready(e, image, &ran, &tail_at, &control_at, false, false, &in)) {
+        el_submit(e, image_gtt, 3u);
+        e->running = 0;
+
+        for (i = 0; i < 5000 + 50 && !idle; i++) {
+            n = igpu_csb_read(e->status, &e->csb_read, ev);
+            while (n-- > 0) {
+                idle = idle || (ev[n].status & IGPU_CSB_ACTIVE_IDLE) != 0;
+            }
+            if (!idle && i >= 5000) {
+                kosmos_sleep(1);
+            }
+        }
+
+        e->active = false;
+        e->last = ~0u;
+    }
+
+    if (idle && (e->golden = malloc(pages * 4096u)) != NULL) {
+        for (i = 0; i < pages * 1024u; i++) {
+            e->golden[i] = image[i];
+        }
+        e->golden_pages = pages;
+    }
+
+    gtt_free(1, ring, ring_gtt, ring_cap);
+    gtt_free(pages, image, image_gtt, image_cap);
+}
+
+/* The driver's own context: the desktop's copies and drawing. */
+static void el_go(struct engine *e)
+{
+    struct igpu_lrc_init in;
 
     in.base = e->base;
     in.ring_ggtt = e->ring_gtt;
@@ -1057,29 +1245,70 @@ static void el_go(struct engine *e)
     in.tail = e->tail * 4u;
     in.pml4 = AP.pt.pml4_phys;
 
-    if (!igpu_lrc_fill(state, e->render ? IGPU_LRC_RENDER : IGPU_LRC_OTHER, &in)) {
+    if (!image_ready(e, e->image, &e->own_ran, &e->own_tail_at, &e->own_control_at, e->last == 0,
+                     false, &in)) {
         return;
     }
 
-    for (i = 0; i < 1024u; i++) {
-        e->image[i] = 0;                                    /* the per-process status page */
-        e->image[IGPU_LRC_STATE_PAGE * 1024u + i] = state[i];
-    }
-
-#if defined(__x86_64__)
-    __asm__ volatile("sfence" ::: "memory");    /* the image and the tables out before the port */
-#endif
-
-    (void)forcewake(true);
-    igpu_elsp_words(igpu_lrc_descriptor(e->image_gtt, e->render ? 1u : 2u), 0, words);
-
-    for (i = 0; i < 4u; i++) {
-        eng_write(e, IGPU_RING_ELSP, words[i]);
-    }
-
+    el_submit(e, e->image_gtt, e->render ? 1u : 2u);
+    e->own_ran = true;
+    e->running = 0;
+    e->last = 0;
     e->sent = e->tail;
-    e->active = true;
-    e->submissions++;
+}
+
+/*
+ * A program's context (G6e), submitted the same way under an id of its
+ * own - 16 past the driver's, so the status buffer names it apart - with
+ * its own page table's root in its image.
+ */
+#define PROGRAM_CTX_ID 16u
+
+static void hw_go(struct engine *e, uint32_t id)
+{
+    struct igpu_ctx *c = &CTXS.list[id - 1u];
+    struct hwctx *h = c->hw;
+    struct igpu_lrc_init in;
+
+    in.base = e->base;
+    in.ring_ggtt = h->ring_gtt;
+    in.ring_pages = RING_PAGES;
+    in.head = h->sent * 4u;
+    in.tail = h->tail * 4u;
+    in.pml4 = c->pt.pml4_phys;
+
+    if (!image_ready(e, h->image, &h->ran, &h->tail_at, &h->control_at, e->last == id, true, &in)) {
+        return;
+    }
+
+    el_submit(e, h->image_gtt, PROGRAM_CTX_ID + id);
+    h->ran = true;
+    h->sent = h->tail;
+    e->running = id;
+    e->last = id;
+}
+
+/* A program's context on this engine with work in its ring, the one after
+ * the last served first; 0 for none. */
+static uint32_t hw_next(struct engine *e, bool peek)
+{
+    unsigned k;
+
+    for (k = 0; k < CTXS.n; k++) {
+        unsigned i = (e->turn + k) % CTXS.n;
+        struct igpu_ctx *c = &CTXS.list[i];
+        struct hwctx *h = c->hw;
+
+        if (c->used && h != NULL && h->ring != NULL && (c->engine == GPU_ENGINE_COPY) == !e->render
+            && h->sent != h->tail) {
+            if (!peek) {
+                e->turn = i + 1u;
+            }
+            return i + 1u;
+        }
+    }
+
+    return 0;
 }
 
 /*
@@ -1109,7 +1338,10 @@ static void engine_reset(struct engine *e)
 {
     struct say_line line;
     uint32_t ack, request = 0, mask = 0, want = 0, domain = e->render ? GDRST_RENDER : GDRST_BLT;
-    uint32_t lost = e->issued - e->status[FENCE_AT];
+    struct igpu_ctx *program = e->running != 0 ? &CTXS.list[e->running - 1u] : NULL;
+    struct hwctx *ph = program != NULL ? program->hw : NULL;
+    uint64_t lost = program != NULL ? ph->given - igpu_ctx_reached(program)
+                                    : (uint64_t)(e->issued - e->status[FENCE_AT]);
     bool stopped, ready = true, cleared = true;
     unsigned i, k;
 
@@ -1148,20 +1380,44 @@ static void engine_reset(struct engine *e)
 
     eng_write(e, RING_RESET_CTL, RESET_CTL_REQUEST << 16);
 
-    e->sent = e->tail;
-    e->open = false;
-    e->status[FENCE_AT] = e->issued;
-    e->resets++;
+    /*
+     * The work of the context that hung is dropped and its timeline written
+     * as reached, so nobody waits for it for ever - a program's counted as
+     * its hang, which CONTEXT_STATE says - and its image, which the engine
+     * was saving or never saved, laid out again the next time. The other
+     * contexts' images are as the engine last saved them.
+     */
+    if (program != NULL) {
+        ph->sent = ph->tail;
+        ph->in_flight = 0;
+        ph->ran = false;
+        ph->fence[1] = (uint32_t)(ph->given >> 32);
+        ph->fence[0] = (uint32_t)ph->given;
+        program->hangs++;
+    } else {
+        e->sent = e->tail;
+        e->open = false;
+        e->status[FENCE_AT] = e->issued;
+        e->own_ran = false;
 
-    if (e->render) {
-        rs_done = false;                   /* the starting state is the engine's, and went with it */
+        if (e->render) {
+            rs_done = false;               /* the starting state is the context's, and went with it */
+        }
     }
+
+    e->resets++;
+    e->last = ~0u;                          /* the engine holds nobody's state now */
 
     (void)el_enable(e);
 
     say_begin(&line);
     say_text(&line, "intelgpu: ");
     say_text(&line, e->name);
+    if (program != NULL) {
+        say_text(&line, ", in program context ");
+        say_dec(&line, e->running);
+        say_text(&line, ",");
+    }
     say_text(&line, " hung - its fence still for ");
     say_dec(&line, GPU_HANG_MS);
     say_text(&line, " ms - and was reset (");
@@ -1177,13 +1433,29 @@ static void engine_reset(struct engine *e)
     say_send(mocs_console, &line);
 }
 
-/* The hang watch: work given, and the fence not moved for GPU_HANG_MS. */
+/* The hang watch: work given, and the fence of the context the engine
+ * runs - the driver's own or a program's - not moved for GPU_HANG_MS. */
 static void el_watch(struct engine *e)
 {
-    uint32_t fence = e->status[FENCE_AT];
+    uint64_t fence, want;
     unsigned long now;
 
-    if (!e->active || fence == e->issued || counter_per_ms == 0) {
+    if (!e->active || counter_per_ms == 0) {
+        e->watch_since = 0;
+        return;
+    }
+
+    if (e->running != 0) {
+        struct igpu_ctx *c = &CTXS.list[e->running - 1u];
+
+        fence = igpu_ctx_reached(c);
+        want = ((struct hwctx *)c->hw)->given;
+    } else {
+        fence = e->status[FENCE_AT];
+        want = e->issued;
+    }
+
+    if (fence == want) {
         e->watch_since = 0;
         return;
     }
@@ -1219,17 +1491,24 @@ static void el_poll(struct engine *e)
 
     el_watch(e);
 
-    if (!e->active && e->sent != e->tail && !e->open) {
-        el_go(e);
+    /* The driver's own work first - the desktop's - then a program's. */
+    if (!e->active && !e->open) {
+        uint32_t id;
+
+        if (e->sent != e->tail) {
+            el_go(e);
+        } else if ((id = hw_next(e, false)) != 0) {
+            hw_go(e, id);
+        }
     }
 }
 
 /* Whether an engine has work handed it and not yet sent, which the
  * driver's loop comes back for within a tick rather than waiting for the
  * next request. */
-static bool el_waiting(const struct engine *e)
+static bool el_waiting(struct engine *e)
 {
-    return e->ready && e->sent != e->tail && !e->open;
+    return e->ready && ((e->sent != e->tail && !e->open) || hw_next(e, true) != 0);
 }
 
 /* The fence the engine has reached - its status buffer read first, so work
@@ -1280,7 +1559,10 @@ static bool engine_idle(struct engine *e)
             e->busy_since = 0;
         }
 
-        if (engine_quiet(&BCS) && engine_quiet(&RCS)) {
+        /* Not while a program's context runs: its work is not the
+         * driver's fence's to say. */
+        if (engine_quiet(&BCS) && engine_quiet(&RCS) && !(BCS.active && BCS.running != 0)
+            && !(RCS.active && RCS.running != 0)) {
             (void)forcewake(false);
         }
 
@@ -4169,6 +4451,560 @@ static void stats(struct gpu_stats *st)
     }
 }
 
+/*--------------------------------------------------------------------------
+ * **Programs' contexts** (`docs/gpu3d.md` §5.3, G6e): the 3D half's
+ * verbs, kept by `intelgpu_ctx.c` and run by one of two backends - the
+ * M700's engines on execlists, or, where there is no Intel GPU, the
+ * stand-in that runs a batch's MI_ commands on the processor.
+ *------------------------------------------------------------------------*/
+
+/* GTT pages as `gtt_pages` gives them, with their region kept so that they
+ * can be given back: a context's ring, image and fence go when it does. */
+static bool gtt_alloc(unsigned long pages, volatile uint32_t **cpu, uint32_t *gtt, long *cap,
+                      unsigned long flags)
+{
+    long region = kosmos_mem_create_flags(pages, MEM_CONTIGUOUS | flags);
+    long at, phys;
+    unsigned long i, first;
+
+    buffers_init();
+    *cap = region;
+
+    if (region < 0) {
+        return false;
+    }
+
+    if ((at = kosmos_mem_map(region)) < 0 || (phys = kosmos_mem_phys(region)) < 0
+        || !igpu_slots_take(&slots, pages, &first)) {
+        (void)kosmos_cap_drop(region);
+        *cap = -1;
+        return false;
+    }
+
+    for (i = 0; i < pages; i++) {
+        (void)gtt_write(first + i, (uint64_t)(phys + (long)(i * 4096u)) | 1u, NULL);
+    }
+
+    wreg(GFX_FLSH_CNTL, 1u);
+    (void)reg(G.regs, GFX_FLSH_CNTL);
+
+    *cpu = (volatile uint32_t *)at;
+    *gtt = (uint32_t)(first << 12);
+    return true;
+}
+
+static void gtt_free(unsigned long pages, volatile uint32_t *cpu, uint32_t gtt, long cap)
+{
+    unsigned long i, first = gtt >> 12;
+
+    if (cap < 0) {
+        return;
+    }
+
+    for (i = 0; i < pages; i++) {
+        (void)gtt_write(first + i, 0, NULL);
+    }
+
+    wreg(GFX_FLSH_CNTL, 1u);
+    (void)reg(G.regs, GFX_FLSH_CNTL);
+    igpu_slots_give(&slots, first, pages);
+    kosmos_share_unmap((unsigned long)(uintptr_t)cpu, pages);
+    (void)kosmos_cap_drop(cap);
+}
+
+/* A context's page-table pages: runs of PT_CHUNK, one physical run each,
+ * write-combining when the GPU walks them. */
+#define PT_CHUNK 16u
+
+static void *pool_page(void *ctx, uint64_t *phys)
+{
+    struct ptpool *p = ctx;
+    uint8_t *page;
+
+    if (p->n == 0 || p->used == PT_CHUNK) {
+        long region, at, base;
+
+        if (p->n == p->room) {
+            unsigned room = p->room == 0 ? 4u : p->room * 2u;
+            long *caps = realloc(p->caps, room * sizeof *caps);
+            uint8_t **cpu = caps != NULL ? realloc(p->cpu, room * sizeof *cpu) : NULL;
+            uint64_t *ph = cpu != NULL ? realloc(p->phys, room * sizeof *ph) : NULL;
+
+            if (caps != NULL) {
+                p->caps = caps;
+            }
+            if (cpu != NULL) {
+                p->cpu = cpu;
+            }
+            if (ph == NULL) {
+                return NULL;
+            }
+            p->phys = ph;
+            p->room = room;
+        }
+
+        region = kosmos_mem_create_flags(PT_CHUNK, MEM_CONTIGUOUS | (p->wc ? MEM_WRITE_COMBINE : 0u));
+        if (region < 0) {
+            return NULL;
+        }
+        if ((at = kosmos_mem_map(region)) < 0 || (base = kosmos_mem_phys(region)) < 0) {
+            (void)kosmos_cap_drop(region);
+            return NULL;
+        }
+
+        p->caps[p->n] = region;
+        p->cpu[p->n] = (uint8_t *)at;
+        p->phys[p->n] = (uint64_t)base;
+        p->n++;
+        p->used = 0;
+    }
+
+    page = p->cpu[p->n - 1u] + p->used * 4096u;
+    *phys = p->phys[p->n - 1u] + p->used * 4096u;
+    p->used++;
+    memset(page, 0, 4096);
+    return page;
+}
+
+static void *pool_cpu(void *ctx, uint64_t phys)
+{
+    struct ptpool *p = ctx;
+    unsigned i;
+
+    for (i = 0; i < p->n; i++) {
+        if (phys >= p->phys[i] && phys < p->phys[i] + PT_CHUNK * 4096u) {
+            return p->cpu[i] + (phys - p->phys[i]);
+        }
+    }
+
+    return NULL;
+}
+
+static void pool_free(struct ptpool *p)
+{
+    unsigned i;
+
+    for (i = 0; i < p->n; i++) {
+        kosmos_share_unmap((unsigned long)(uintptr_t)p->cpu[i], PT_CHUNK);
+        (void)kosmos_cap_drop(p->caps[i]);
+    }
+
+    free(p->caps);
+    free(p->cpu);
+    free(p->phys);
+}
+
+static struct engine *engine_of(const struct igpu_ctx *c)
+{
+    return c->engine == GPU_ENGINE_COPY ? &BCS : &RCS;
+}
+
+/* A context's page table and its fence, common to both backends: the fence
+ * page in the global GTT when the GPU writes it, a plain page when the
+ * stand-in does. */
+static bool ctx_setup(struct igpu_ctx *c, bool gpu, long *fence_cap)
+{
+    struct hwctx *h = calloc(1, sizeof *h);
+    struct igpu_pt_pages pages;
+
+    if (h == NULL) {
+        return false;
+    }
+
+    h->ring_cap = h->image_cap = h->fence_cap = h->fence_ro = -1;
+    h->pool.wc = gpu;
+    c->hw = h;
+    pages.page = pool_page;
+    pages.cpu = pool_cpu;
+    pages.ctx = &h->pool;
+
+    if (!igpu_ppgtt_init(&c->pt, &pages)) {
+        return false;
+    }
+
+    if (gpu) {
+        /* Write-back, not write-combining: a region the caller is handed
+         * read-only cannot be the other (`SYS_MEM_READONLY`), and the GPU
+         * writes it through the LLC the processor reads, as i915 keeps a
+         * status page on a machine with one. */
+        if (!gtt_alloc(1, &h->fence, &h->fence_gtt, &h->fence_cap, 0)) {
+            return false;
+        }
+    } else {
+        long at;
+
+        if ((h->fence_cap = kosmos_mem_create(1)) < 0 || (at = kosmos_mem_map(h->fence_cap)) < 0) {
+            return false;
+        }
+        h->fence = (volatile uint32_t *)at;
+    }
+
+    h->fence[0] = h->fence[1] = 0;
+    c->fence = (volatile uint64_t *)h->fence;
+
+    if ((h->fence_ro = kosmos_mem_readonly(h->fence_cap)) < 0) {
+        return false;
+    }
+
+    *fence_cap = h->fence_ro;
+    return true;
+}
+
+static void ctx_teardown(struct igpu_ctx *c, bool gpu)
+{
+    struct hwctx *h = c->hw;
+
+    if (h == NULL) {
+        return;
+    }
+
+    if (gpu) {
+        struct engine *e = engine_of(c);
+        uint32_t id = (uint32_t)(c - CTXS.list) + 1u;
+        unsigned i;
+
+        /* Its image is the engine's until the engine says it went idle,
+         * which follows the fence within microseconds. */
+        for (i = 0; i < 250 && e->active && e->running == id; i++) {
+            el_poll(e);
+            if (e->active && e->running == id) {
+                kosmos_sleep(1);
+            }
+        }
+        if (e->running == id) {
+            e->running = 0;
+        }
+
+        gtt_free(RING_PAGES, h->ring, h->ring_gtt, h->ring_cap);
+        gtt_free(e->render ? IGPU_LRC_PAGES_RENDER : IGPU_LRC_PAGES_OTHER, h->image, h->image_gtt,
+                 h->image_cap);
+        gtt_free(1, h->fence, h->fence_gtt, h->fence_cap);
+    } else if (h->fence_cap >= 0) {
+        kosmos_share_unmap((unsigned long)(uintptr_t)h->fence, 1);
+        (void)kosmos_cap_drop(h->fence_cap);
+    }
+
+    if (h->fence_ro >= 0) {
+        (void)kosmos_cap_drop(h->fence_ro);
+    }
+
+    pool_free(&h->pool);
+    free(h);
+    c->hw = NULL;
+}
+
+/*---- the M700's engines ----*/
+
+static bool hw_setup(void *env, struct igpu_ctx *c, long *fence_cap)
+{
+    struct engine *e = engine_of(c);
+    struct hwctx *h;
+
+    (void)env;
+
+    if (engine_start(e) != GPU_OK || !ctx_setup(c, true, fence_cap)) {
+        ctx_teardown(c, true);
+        return false;
+    }
+
+    h = c->hw;
+
+    if (!gtt_alloc(RING_PAGES, &h->ring, &h->ring_gtt, &h->ring_cap, MEM_WRITE_COMBINE)
+        || !gtt_alloc(e->render ? IGPU_LRC_PAGES_RENDER : IGPU_LRC_PAGES_OTHER, &h->image, &h->image_gtt,
+                      &h->image_cap, MEM_WRITE_COMBINE)) {
+        ctx_teardown(c, true);
+        return false;
+    }
+
+    return true;
+}
+
+static void hw_teardown(void *env, struct igpu_ctx *c)
+{
+    (void)env;
+    ctx_teardown(c, true);
+}
+
+/* Commands into a program's ring, wrapping as `ring_put` does. */
+static void hw_put(struct hwctx *h, const uint32_t *dw, uint32_t n)
+{
+    uint32_t i;
+
+    if (h->tail + n > RING_DWORDS) {
+        h->in_flight += RING_DWORDS - h->tail;
+        while (h->tail < RING_DWORDS) {
+            h->ring[h->tail++] = IGPU_MI_NOOP;
+        }
+        h->tail = 0;
+    }
+
+    h->in_flight += n;
+    for (i = 0; i < n; i++) {
+        h->ring[h->tail++] = dw[i];
+    }
+    h->tail %= RING_DWORDS;
+}
+
+/*
+ * One exec into the context's ring, as i915 builds a request: the TLB and
+ * the read caches invalidated (`gen8_emit_flush_rcs` with EMIT_INVALIDATE,
+ * or the blitter's MI_FLUSH_DW), the program's batch started from its own
+ * page table - bit 8, so the engine runs it unprivileged - then the caches
+ * flushed and the timeline's value written to the fence page as a qword
+ * (`gen8_emit_fini_breadcrumb`). False while the ring has no room: the
+ * work is offered again from the driver's loop.
+ */
+#define IGPU_MI_BB_PPGTT     (1u << 8)
+#define IGPU_MI_FLUSH_DW_QW  (((0x26u << 23) | 3u) | (1u << 14))   /* five dwords: a qword stored */
+
+static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
+{
+    struct engine *e = engine_of(c);
+    struct hwctx *h = c->hw;
+    uint32_t dw[40], n = 0;
+
+    (void)env;
+
+    if (igpu_ctx_reached(c) >= h->given) {
+        h->in_flight = 0;
+    }
+
+    if (h->in_flight + 64u > RING_ROOM) {
+        return false;
+    }
+
+    if (e->render) {
+        dw[n++] = IGPU_PIPE_CONTROL;
+        dw[n++] = IGPU_PC_CS_STALL | IGPU_PC_TLB_INVALIDATE | IGPU_PC_INVALIDATE | IGPU_PC_VF_INVALIDATE
+                | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT;
+        dw[n++] = h->fence_gtt + 64u;                       /* a scratch qword past the fence */
+        dw[n++] = 0;
+        dw[n++] = 0;
+        dw[n++] = 0;
+    } else {
+        dw[n++] = IGPU_MI_FLUSH_DW_STORE | IGPU_MI_INVALIDATE_TLB;
+        dw[n++] = (h->fence_gtt + 64u) | IGPU_MI_FLUSH_DW_GTT;
+        dw[n++] = 0;
+        dw[n++] = 0;
+    }
+
+    dw[n++] = IGPU_MI_BB_START | IGPU_MI_BB_PPGTT;
+    dw[n++] = (uint32_t)x->batch;
+    dw[n++] = (uint32_t)(x->batch >> 32) & 0xffffu;
+
+    if (e->render) {
+        dw[n++] = IGPU_PIPE_CONTROL;
+        dw[n++] = IGPU_PC_CS_STALL | IGPU_PC_TLB_INVALIDATE | IGPU_PC_RT_FLUSH | IGPU_PC_DEPTH_FLUSH
+                | IGPU_PC_DC_FLUSH;
+        dw[n++] = 0;
+        dw[n++] = 0;
+        dw[n++] = 0;
+        dw[n++] = 0;
+        dw[n++] = IGPU_PIPE_CONTROL;
+        dw[n++] = IGPU_PC_FLUSH_ENABLE | IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT;
+        dw[n++] = h->fence_gtt;
+        dw[n++] = 0;
+        dw[n++] = (uint32_t)x->signal;
+        dw[n++] = (uint32_t)(x->signal >> 32);
+    } else {
+        dw[n++] = IGPU_MI_FLUSH_DW_QW;
+        dw[n++] = h->fence_gtt | IGPU_MI_FLUSH_DW_GTT;
+        dw[n++] = 0;
+        dw[n++] = (uint32_t)x->signal;
+        dw[n++] = (uint32_t)(x->signal >> 32);
+    }
+
+    if ((n & 1u) != 0) {
+        dw[n++] = IGPU_MI_NOOP;                              /* the tail is in qwords */
+    }
+
+    hw_put(h, dw, n);
+    h->given = x->signal;
+
+#if defined(__x86_64__)
+    __asm__ volatile("sfence" ::: "memory");
+#endif
+
+    (void)forcewake(true);
+    el_poll(e);                                              /* sent now if the engine is idle */
+    return true;
+}
+
+static long ctx_page_phys(long cap, unsigned long index)
+{
+    return kosmos_mem_page_phys(cap, index);
+}
+
+static long ctx_region_pages(long cap)
+{
+    return kosmos_mem_size(cap);
+}
+
+static long ctx_drop(long cap)
+{
+    return kosmos_cap_drop(cap);
+}
+
+static const struct igpu_ctx_backend HW_BACKEND = {
+    NULL, hw_setup, hw_teardown, hw_give, NULL, NULL,
+    ctx_page_phys, ctx_region_pages, kosmos_pulse, ctx_drop,
+};
+
+/*---- the stand-in ----*/
+
+static bool standin_setup(void *env, struct igpu_ctx *c, long *fence_cap)
+{
+    (void)env;
+
+    if (!ctx_setup(c, false, fence_cap)) {
+        ctx_teardown(c, false);
+        return false;
+    }
+
+    return true;
+}
+
+static void standin_teardown(void *env, struct igpu_ctx *c)
+{
+    (void)env;
+    ctx_teardown(c, false);
+}
+
+/* Run at once, on the processor: the engine is never busy, and the value
+ * written as reached whatever the batch did - a fault or a hang is the
+ * context's to report, as a reset's would be. */
+static bool standin_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
+{
+    struct hwctx *h = c->hw;
+
+    (void)env;
+    (void)igpu_standin_run(c, x->batch, x->length);
+    h->fence[1] = (uint32_t)(x->signal >> 32);
+    h->fence[0] = (uint32_t)x->signal;
+    return true;
+}
+
+static uint8_t *standin_map(void *env, long cap)
+{
+    long at = kosmos_mem_map(cap);
+
+    (void)env;
+    return at < 0 ? NULL : (uint8_t *)at;
+}
+
+static void standin_unmap(void *env, uint8_t *cpu, long cap)
+{
+    long pages = kosmos_mem_size(cap);
+
+    (void)env;
+    if (pages > 0) {
+        kosmos_share_unmap((unsigned long)(uintptr_t)cpu, (unsigned long)pages);
+    }
+}
+
+static const struct igpu_ctx_backend STANDIN_BACKEND = {
+    NULL, standin_setup, standin_teardown, standin_give, standin_map, standin_unmap,
+    ctx_page_phys, ctx_region_pages, kosmos_pulse, ctx_drop,
+};
+
+/*---- the verbs ----*/
+
+static bool ctx_busy;                       /* work or waiters outstanding, from the last poll */
+
+static uint32_t ctx_request(long console, const struct gpu_ctx_request *q, long *cap,
+                            struct gpu_reply *rep, long *pass)
+{
+    const uint32_t who = holder_of_request();
+    uint32_t error = GPU_OK, id;
+    struct igpu_ctx *c;
+    struct say_line line;
+
+    if (CTXS.be == NULL) {
+        CTXS.be = G.found ? &HW_BACKEND : &STANDIN_BACKEND;
+        say_begin(&line);
+        say_text(&line, G.found ? "intelgpu: programs' contexts on the GPU's engines, on execlists"
+                                : "intelgpu: programs' contexts on the stand-in: no Intel GPU, so a batch's"
+                                  " MI_ commands are run by the processor");
+        say_send(console, &line);
+    }
+
+    switch (q->op) {
+    case GPU_OP_CONTEXT_NEW: {
+        long fence = -1;
+
+        error = igpu_ctx_new(&CTXS, who, q->engine, &id, &fence);
+        if (error == GPU_OK) {
+            rep->words[0] = id;
+            *pass = fence;                  /* a copy: the context keeps its own */
+        }
+        break;
+    }
+    case GPU_OP_CONTEXT_FORGET:
+        error = igpu_ctx_forget(&CTXS, q->context, who);
+        break;
+    case GPU_OP_BIND:
+        error = igpu_ctx_bind(&CTXS, q->context, who, q->gpu, *cap, q->first_page, q->pages, q->flags);
+        if (error == GPU_OK) {
+            *cap = -1;                      /* the context's now */
+        }
+        break;
+    case GPU_OP_UNBIND:
+        error = igpu_ctx_unbind(&CTXS, q->context, who, q->gpu);
+        break;
+    case GPU_OP_EXEC: {
+        struct igpu_exec x;
+        uint32_t i;
+
+        memset(&x, 0, sizeof x);
+        x.batch = q->gpu;
+        x.length = q->pages;
+        x.signal = q->signal;
+        x.nwaits = q->flags;
+
+        if (x.nwaits > GPU_EXEC_WAITS) {
+            error = GPU_ERR_BAD_OP;
+            break;
+        }
+        for (i = 0; i < x.nwaits; i++) {
+            x.waits[i].context = q->waits[i].context;
+            x.waits[i].value = q->waits[i].value;
+        }
+
+        error = igpu_ctx_exec(&CTXS, q->context, who, &x);
+        if (error == GPU_OK) {
+            rep->words[0] = (uint32_t)x.signal;
+            rep->words[1] = (uint32_t)(x.signal >> 32);
+        }
+        break;
+    }
+    case GPU_OP_FENCE_WAIT:
+        error = igpu_ctx_fence_wait(&CTXS, q->context, who, q->signal, *cap, q->flags);
+        if (error == GPU_OK) {
+            *cap = -1;                      /* the context's, until it is pulsed */
+        }
+        break;
+    case GPU_OP_CONTEXT_STATE:
+        if ((c = igpu_ctx_get(&CTXS, q->context, who, &error)) != NULL) {
+            uint64_t reached = igpu_ctx_reached(c);
+
+            rep->words[0] = (uint32_t)reached;
+            rep->words[1] = (uint32_t)(reached >> 32);
+            rep->words[2] = (uint32_t)c->queued;
+            rep->words[3] = (uint32_t)(c->queued >> 32);
+            rep->words[4] = c->hangs;
+            rep->words[5] = c->faults;
+            rep->words[6] = c->fault_word;
+        }
+        break;
+    default:
+        error = GPU_ERR_BAD_OP;
+        break;
+    }
+
+    ctx_busy = igpu_ctxs_poll(&CTXS);
+    return error;
+}
+
 void intelgpu_server(long console, long endpoint)
 {
     mocs_console = console;
@@ -4187,10 +5023,16 @@ void intelgpu_server(long console, long endpoint)
         {
             long got = kosmos_receive(endpoint, &msg, &sender, 0,
                                       el_waiting(&RCS) || el_waiting(&BCS) || RCS.active || BCS.active
-                                          ? 1u : 0u);
+                                          || ctx_busy ? 1u : 0u);
 
             el_poll(&RCS);
             el_poll(&BCS);
+
+            /* Programs' contexts: pulses for values reached, and work
+             * whose waits are met given to its engine (G6e). */
+            if (CTXS.be != NULL) {
+                ctx_busy = igpu_ctxs_poll(&CTXS);
+            }
 
             if (got != 0) {
                 continue;
@@ -4321,6 +5163,21 @@ void intelgpu_server(long console, long endpoint)
                 memset(&q, 0, sizeof q);
                 memcpy(&q, msg.data, msg.length < sizeof q ? msg.length : sizeof q);
                 rep.error = msg.length == sizeof q ? run(&q, &rep) : GPU_ERR_BAD_OP;
+                break;
+            }
+            case GPU_OP_CONTEXT_NEW:
+            case GPU_OP_CONTEXT_FORGET:
+            case GPU_OP_BIND:
+            case GPU_OP_UNBIND:
+            case GPU_OP_EXEC:
+            case GPU_OP_FENCE_WAIT:
+            case GPU_OP_CONTEXT_STATE: {
+                static struct gpu_ctx_request q;
+
+                memset(&q, 0, sizeof q);
+                memcpy(&q, msg.data, msg.length < sizeof q ? msg.length : sizeof q);
+                rep.error = msg.length == sizeof q ? ctx_request(console, &q, &cap, &rep, &pass)
+                                                   : GPU_ERR_BAD_OP;
                 break;
             }
             case GPU_OP_FLIPPED:

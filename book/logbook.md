@@ -4970,3 +4970,53 @@ known way to take it back if a frame ever needs it.
 
 **Next.** Contexts for programs rather than only the driver's own - the
 protocol that will let a Vulkan program on Kosmos send the GPU its own work.
+
+## 19 November 2026 - Programs given the GPU, each in a room of its own
+
+**In short.** A program on Kosmos can now send the GPU work of its own, in
+a context that is only its own: memory it placed where it chose, commands
+run in order, and a note back when they are done. Two programs at once,
+using the same addresses, never saw each other's memory or registers. A
+program whose work loops for ever is stopped after three seconds and can
+carry on. And on a machine with no Intel GPU - the emulator the tests run
+in - the same requests are answered by a stand-in, so the tests hold all
+of it. 0.12.10.
+
+**What.** This is the door Mesa's Vulkan driver for Intel will use, next.
+A program asks for a context, hands the driver pieces of its memory with
+the address the GPU should see each at, and gives it batches of commands
+to run in that context. Each batch says a number the context's timeline
+reaches when it is done. The program reads that number from a page the
+driver handed it read-only, or asks to be woken when it comes. Nothing
+here waits on the GPU: every request is answered at once.
+
+**Why a stand-in.** The emulator has no Intel GPU, and a protocol only one
+machine can run is a protocol the tests never see. So the bookkeeping -
+whose context, which memory where, what may run - is written without
+touching hardware, and an "engine" is something it hands work to. On the
+M700 that is the real engines. In the emulator it is a few hundred lines
+that run the simple commands - store a number, set a register, read it
+back - on the processor, through the same page tables.
+
+**Two things the M700 taught.**
+- **The cost.** At first every context was saved and restored whole each
+  time it ran. On the render engine that cost 88 millionths of a second
+  per piece of work, seven times what it had been. Now a context is
+  restored only when another one ran in between. If it was the last to
+  run, the engine still holds its state, and the cost is back to 18.
+- **The leak.** A new context took over whatever the previous one left
+  in the engine's registers. The test showed it: the second program read
+  the first one's number. Now each engine's empty state is recorded once
+  when it starts, and every new context begins from it. With that turned
+  off on purpose, the leak came back - which is how we know it is what
+  closed it.
+
+**Measured.** Two contexts, one address, each its own page and register,
+four wake-ups of four, on the M700 and in the emulator. A looping batch is
+stopped after 3,010 ms, and the context's next store lands. Every earlier
+GPU check still passes. A wake-up can be up to 4 ms late, because the
+driver looks at the GPU once a tick. The GPU's own interrupt would make
+that microseconds, and is on the list.
+
+**Next.** G7: Mesa's Intel Vulkan driver, `anv`, speaking this protocol on
+the M700 - `vkcube` on the real GPU.

@@ -105,6 +105,34 @@ static void image(enum igpu_lrc_kind kind, uint32_t base, const char *name)
      * the bit), save and RS enabled (mask 0x00060000). */
     CHECK(state[CTX_CONTEXT_CONTROL] == 0x000f0009u, "%s: context control %#x", name,
           state[CTX_CONTEXT_CONTROL]);
+    /* And run again (G6e): the same masks, the restore no longer inhibited. */
+    CHECK(igpu_lrc_restore_control() == 0x000f0008u, "%s: a saved image's context control %#x", name,
+          igpu_lrc_restore_control());
+    CHECK(igpu_lrc_inhibit_control() == 0x000f0009u, "%s: an inhibited context control %#x", name,
+          igpu_lrc_inhibit_control());
+    {
+        /* Patched over a copy whose registers hold something else - the
+         * engine's default state - it says what a new image says, but the
+         * control restored, and leaves every other register as it was. */
+        static uint32_t copy[1024];
+        struct igpu_lrc_init other = in;
+        unsigned i, differ = 0;
+
+        for (i = 0; i < 1024u; i++) {
+            copy[i] = state[i];
+        }
+        copy[CTX_TIMESTAMP] = 0x12345678u;
+        other.ring_ggtt = 0x00def000u;
+        CHECK(igpu_lrc_patch(copy, &other, true), "%s: the patch refused", name);
+        CHECK(copy[CTX_CONTEXT_CONTROL] == 0x000f0008u && copy[CTX_RING_START] == 0x00def000u
+              && copy[CTX_TIMESTAMP] == 0x12345678u,
+              "%s: the patch wrote control %#x, ring %#x, timestamp %#x", name, copy[CTX_CONTEXT_CONTROL],
+              copy[CTX_RING_START], copy[CTX_TIMESTAMP]);
+        for (i = 0; i < 1024u; i++) {
+            differ += copy[i] != state[i];
+        }
+        CHECK(differ == 3, "%s: the patch changed %u dwords, not control, ring and timestamp", name, differ);
+    }
     CHECK(state[CTX_RING_START] == 0x00abc000u, "%s: ring start %#x", name, state[CTX_RING_START]);
     CHECK(state[CTX_RING_HEAD] == 0x40u && state[CTX_RING_TAIL] == 0x80u, "%s: head %#x tail %#x",
           name, state[CTX_RING_HEAD], state[CTX_RING_TAIL]);

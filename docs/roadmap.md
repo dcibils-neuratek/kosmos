@@ -11992,10 +11992,19 @@ the flight simulator, designed first. G4, G5, G8, G9 and the daily-driver
 list follow it, in their order; the simulator takes G9's full-screen flip
 when that lands. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 0.12.9** (18.929): the render engine and the blitter on execlists, a hang
-watch and an engine reset; G6e, the protocol, next. Owed from G6d: a
-submission costs 11-14 us where the ring's tail cost 3-4, a context
-loaded each time - a lite restore, or the context-switch interrupt
-rather than a tick, if a frame ever asks for it. **G1's LLVM half built
+watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
+contexts - the protocol, the stand-in under QEMU, images kept across runs
+and the engines' default state. **G6 done; G7, `anv` on the M700, next.**
+Owed from G6d and G6e:
+- **The submission's cost**: 11-18 us, where the ring's tail cost 3-4, a
+  context loaded each time. A lite restore, or the context-switch
+  interrupt rather than a tick, if a frame ever asks for it.
+- **Fences pulsed from the engines' interrupt** (`MI_USER_INTERRUPT`)
+  rather than the driver's loop: a pulse comes up to a tick, 4 ms, late.
+- **A program's contexts let go when it dies**, and its buffers with them.
+- **Waits across programs**, for a fence handed on (the window manager's
+  present), and **a wait before its signal** - Vulkan allows both, and
+  G6e refuses both. **G1's LLVM half built
 in 0.12.1** (`testing.md` 18.921): LLVM 23.1.2 for both architectures, its
 JIT running inside Kosmos. **Mesa's half built in 0.12.2** (`testing.md`
 18.922): Mesa 26.2.5 by its own Meson, NIR building, folding, printing and

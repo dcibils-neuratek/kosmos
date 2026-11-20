@@ -187,6 +187,71 @@
  */
 #define GPU_OP_HANG_TEST     27u
 #define GPU_HANG_MS          3000u
+
+/*
+ * **Programs' own contexts** (`docs/gpu3d.md` §5.3, G6e): the 3D half,
+ * what Mesa's `anv` will stand on. Every verb is `struct gpu_ctx_request`'s
+ * shape, answered in `gpu_reply`'s words.
+ *
+ * - `CONTEXT_NEW` (`engine`): a hardware context of the caller's, with a
+ *   page table of its own and a **fence page** - handed back read-only
+ *   beside the reply, its first qword the timeline's value reached, so the
+ *   caller looks without asking. `words[0]` is its id. `CONTEXT_FORGET`
+ *   lets go of one whose work is done.
+ * - `BIND` (`context`, `gpu`, `first_page`, `pages`, `flags` GPU_CACHE_*):
+ *   the region that comes with the message, those of its pages - 0 is the
+ *   rest - entered in the context's page table at `gpu`, which the caller
+ *   chose ("softpin"); the driver holds the region while it is bound.
+ *   `UNBIND` (`context`, `gpu`) undoes one, once the context is idle.
+ * - `EXEC` (`context`, `gpu` the batch, `pages` its length in bytes,
+ *   `signal`, `flags` the waits): the batch run in the context once each
+ *   wait - another context of the caller's reaching a value - is met, and
+ *   the timeline written as `signal` when it is done. `signal` is greater
+ *   than every value given before; answered at once.
+ * - `FENCE_WAIT` (`context`, `signal` the value, `flags` a code): a pulse
+ *   to the endpoint that comes with the message once the timeline reaches
+ *   the value - at once if it has - carrying the value reached.
+ * - `CONTEXT_STATE` (`context`): what a context has come to - the value
+ *   reached in `words[0]` and `[1]`, the last value given in `[2]` and
+ *   `[3]`, its hangs `[4]`, its faults `[5]`, the last refused dword `[6]`.
+ *
+ * Where there is no Intel GPU - QEMU - these are answered by a stand-in
+ * that runs a batch's MI_ commands on the processor (`intelgpu_ctx.h`).
+ */
+#define GPU_OP_CONTEXT_NEW    28u
+#define GPU_OP_CONTEXT_FORGET 29u
+#define GPU_OP_BIND           30u
+#define GPU_OP_UNBIND         31u
+#define GPU_OP_EXEC           32u
+#define GPU_OP_FENCE_WAIT     33u
+#define GPU_OP_CONTEXT_STATE  34u
+
+#define GPU_ENGINE_RENDER     0u
+#define GPU_ENGINE_COPY       1u    /* the blitter */
+
+#define GPU_CACHE_WB          0u    /* write-back in the LLC: what a CPU reads */
+#define GPU_CACHE_UC          1u    /* uncached: what scanout or a device reads */
+#define GPU_CACHE_WB_ELLC     2u    /* write-back in the LLC and eLLC */
+
+#define GPU_EXEC_WAITS        4u
+
+struct gpu_ctx_request {
+    uint32_t op;
+    uint32_t context;
+    uint64_t gpu;                   /* BIND, UNBIND: the address; EXEC: the batch's */
+    uint32_t first_page;            /* BIND */
+    uint32_t pages;                 /* BIND: how many, 0 the rest; EXEC: the batch's bytes */
+    uint32_t flags;                 /* BIND: GPU_CACHE_*; EXEC: waits; FENCE_WAIT: the code */
+    uint32_t engine;                /* CONTEXT_NEW: GPU_ENGINE_* */
+    uint64_t signal;                /* EXEC: the value once done; FENCE_WAIT: the value */
+    struct {
+        uint32_t context, reserved;
+        uint64_t value;
+    } waits[GPU_EXEC_WAITS];
+};
+
+_Static_assert(sizeof(struct gpu_ctx_request) == 40 + GPU_EXEC_WAITS * 16,
+               "gpu.lua packs \"<I4I4I8I4I4I4I4I8\" and four of \"I4I4I8\"");
 #define GPU_RUN_STEPS        32u
 #define GPU_RUN_BUFFERS      8u
 #define GPU_RUN_CONSTANTS    256u   /* bytes: r1 onwards, eight registers */
@@ -238,6 +303,8 @@
 #define GPU_ERR_BUSY         12u    /* the blitter has too much in flight, or is reading it */
 #define GPU_ERR_KERNEL       13u    /* a kernel refused: words[1] where, words[2] why */
 #define GPU_ERR_NOT_YOURS    14u    /* a kernel or buffer somebody else holds */
+#define GPU_ERR_NO_CONTEXT   15u    /* no such context */
+#define GPU_ERR_OVERLAP      16u    /* a binding over one already there, or out of range */
 
 struct gpu_request {
     uint32_t op;

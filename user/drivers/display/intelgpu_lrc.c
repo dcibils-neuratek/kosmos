@@ -172,22 +172,37 @@ int igpu_lrc_find(const uint32_t *state, uint32_t base, uint32_t offset)
 
 bool igpu_lrc_fill(uint32_t *state, enum igpu_lrc_kind kind, const struct igpu_lrc_init *in)
 {
-    int at;
-
     if (in->ring_pages == 0 || in->ring_pages > 512u || (in->ring_ggtt & 0xfffu) != 0) {
         return false;
     }
 
     memset(state, 0, 4096);
     lay_out(state, kind == IGPU_LRC_RENDER ? gen9_rcs_offsets : gen9_xcs_offsets, in->base);
+    return igpu_lrc_patch(state, in, false);
+}
+
+/*
+ * What a context's own image says, written over a laid-out one - a new
+ * image, or one copied from the engine's default state (G6e): the context
+ * control, no batch running, the page table, STOP_RING off, and the ring.
+ */
+bool igpu_lrc_patch(uint32_t *state, const struct igpu_lrc_init *in, bool restore)
+{
+    int at;
+
+    if (in->ring_pages == 0 || in->ring_pages > 512u || (in->ring_ggtt & 0xfffu) != 0) {
+        return false;
+    }
 
     /* `init_common_regs`, for a context never run: switching to it does
      * not restore what is in an image it never saved, saving it back is
-     * on, and so is the engine's own context state. */
+     * on, and so is the engine's own context state. An image copied from
+     * the engine's default state is restored: that is what it is for. */
     if ((at = igpu_lrc_find(state, in->base, R_CONTEXT_CONTROL)) < 0) {
         return false;
     }
-    state[at] = MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
+    state[at] = restore ? igpu_lrc_restore_control()
+              : MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
               | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT)
               | CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT
               | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
@@ -229,6 +244,22 @@ bool igpu_lrc_fill(uint32_t *state, enum igpu_lrc_kind kind, const struct igpu_l
     state[at] = ((in->ring_pages - 1u) << 12) | RING_VALID;
 
     return igpu_lrc_set_tail(state, in->base, in->tail);
+}
+
+/* The context control a never-run image is given: its restore inhibited. */
+uint32_t igpu_lrc_inhibit_control(void)
+{
+    return MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
+         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT)
+         | CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT
+         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
+}
+
+uint32_t igpu_lrc_restore_control(void)
+{
+    return MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH)
+         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT)
+         | MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
 }
 
 bool igpu_lrc_set_tail(uint32_t *state, uint32_t base, uint32_t tail)
