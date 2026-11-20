@@ -9,7 +9,9 @@
  */
 
 #include "kits/compress/gzip.h"
+#include "elevation.h"
 #include "mapdraw.h"
+#include "mercator.h"
 #include "mvt.h"
 #include "pmtiles.h"
 
@@ -66,16 +68,6 @@ static int tile(struct pmtiles *a, unsigned z, uint32_t x, uint32_t y, struct mv
     r = mvt_decode(t, bytes, n);
     free(g.bytes);
     return r;
-}
-
-/* The tile at zoom `z` holding longitude and latitude (lon, lat). */
-static void tile_of(double lon, double lat, unsigned z, uint32_t *x, uint32_t *y)
-{
-    double n = (double)(1u << z);
-    double r = lat * M_PI / 180.0;
-
-    *x = (uint32_t)((lon + 180.0) / 360.0 * n);
-    *y = (uint32_t)((1.0 - log(tan(r) + 1.0 / cos(r)) / M_PI) / 2.0 * n);
 }
 
 static const struct mvt_feature *named(const struct mvt_tile *t, const char *name)
@@ -179,7 +171,7 @@ int main(int argc, char **argv)
 
         /* Null Island is where four tiles meet; the city's name stands on
          * the south-east one's corner. */
-        tile_of(0.0001, -0.0001, 11, &x, &y);
+        map_tile_of(0.0001, -0.0001, 11, &x, &y);
         check(tile(&a, 11, x, y, &t) == MVT_OK, "zoom 11's tile over Null Island did not decode");
         check(named(&t, "Port Alder") != NULL && named(&t, "Port Alder")->layer == L_PLACE
               && strcmp(named(&t, "Port Alder")->klass, "city") == 0,
@@ -202,7 +194,7 @@ int main(int argc, char **argv)
         const struct mvt_feature *m;
         int inside = 1, clockwise = 1;
 
-        tile_of(lon, lat, 16, &x, &y);
+        map_tile_of(lon, lat, 16, &x, &y);
         check(tile(&a, 16, x, y, &t) == MVT_OK, "zoom 16's tile at the market did not decode");
         m = named(&t, "Lantern Street Market");
         check(m != NULL && m->layer == L_POI && m->type == MVT_POINT
@@ -275,7 +267,7 @@ int main(int argc, char **argv)
         check(map_width(&rules[2], 16) == 10.0f && map_width(&rules[2], 10) == 2.0f
               && map_width(&rules[2], 20) == 18.0f, "a rule's width does not follow its stops");
 
-        tile_of(lon, lat, 16, &x, &y);
+        map_tile_of(lon, lat, 16, &x, &y);
         tile(&a, 16, x, y, &t);
 
         drew = map_draw(&t, &m, &style, &path, &px[0][0], S * 4, S, S, 0, 0, S, 16.0f,
@@ -464,11 +456,96 @@ int main(int argc, char **argv)
         mvt_free(&t);
     }
 
+    /* F2. Web Mercator and terrarium heights (`mercator.c`, `elevation.c`),
+     * held to places and heights worked out by hand. */
+    {
+        uint32_t tx, ty;
+        double w, s, e, n, x, y, lon, lat;
+
+        map_tile_of(13.4050, 52.52, 12, &tx, &ty);
+        check(tx == 2200 && ty == 1343, "Berlin is not in tile 12/2200/1343");
+        map_tile_of(-56.1645, -34.9011, 12, &tx, &ty);
+        check(tx == 1408 && ty == 2472, "Montevideo is not in tile 12/1408/2472");
+        map_tile_of(0, 0, 12, &tx, &ty);
+        check(tx == 2048 && ty == 2048, "Null Island is not in tile 12/2048/2048");
+        map_tile_of(180.0, 90.0, 3, &tx, &ty);
+        check(tx == 7 && ty == 0, "the world's north-east corner fell outside the world");
+        map_tile_of(-180.0, -90.0, 3, &tx, &ty);
+        check(tx == 0 && ty == 7, "the world's south-west corner fell outside the world");
+
+        map_tile_bounds(12, 2200, 1343, &w, &s, &e, &n);
+        check(fabs(w - 13.359375) < 1e-9 && fabs(e - 13.447265625) < 1e-9
+              && fabs(s - 52.48278) < 1e-5 && fabs(n - 52.53627) < 1e-5,
+              "tile 12/2200/1343's edges are not Berlin's");
+        check(w <= 13.4050 && 13.4050 < e && s <= 52.52 && 52.52 < n,
+              "Berlin is not inside the tile it was said to be in");
+
+        map_project(-56.1645, -34.9011, &x, &y);
+        map_unproject(x, y, &lon, &lat);
+        check(fabs(lon + 56.1645) < 1e-9 && fabs(lat + 34.9011) < 1e-9,
+              "a place projected and back is not the place");
+        map_project(0, 89.9, &x, &y);
+        check(fabs(y) < 1e-6, "a latitude past 85.0511 was not taken as the top");
+
+        check(fabs(map_metres_per_pixel(0, 0, 256) - 156543.03392804097) < 1e-6,
+              "a pixel at the equator at zoom 0 is not 156,543 metres");
+        check(fabs(map_metres_per_pixel(60, 12, 256) - 19.1092570) < 1e-6,
+              "a pixel at latitude 60 at zoom 12 is not 19.109 metres");
+        check(fabs(map_metres_per_pixel(0, 1, 512) - map_metres_per_pixel(0, 2, 256)) < 1e-9,
+              "a 512-pixel tile is not a 256-pixel tile a zoom further in");
+    }
+    {
+        /* 0xAARRGGBB, as gfx keeps a pixel. */
+        static const uint32_t px[2 * 3] = {
+            0xff800000u, 0xff806480u,       /* 0 m, 100.5 m   */
+            0xffa29000u, 0xff7e5200u,       /* 8848 m, -430 m */
+            0xff800a00u, 0xff801400u,       /* 10 m, 20 m     */
+        };
+        struct map_heights h;
+
+        check(map_terrarium(0xff800000u) == 0.0f && map_terrarium(0xff806480u) == 100.5f
+              && map_terrarium(0xffa29000u) == 8848.0f && map_terrarium(0xff7e5200u) == -430.0f,
+              "terrarium pixels are not 0, 100.5, 8848 and -430 metres");
+        check(map_terrarium(0x00800000u) == 0.0f, "a pixel's alpha changed its height");
+
+        check(map_heights_terrarium(&h, px, 2, 3, 2 * 4), "a 2 by 3 tile's heights were refused");
+        check(h.width == 2 && h.height == 3 && h.lowest == -430.0f && h.highest == 8848.0f,
+              "a tile's size, lowest and highest are not kept");
+        check(map_heights_at(&h, 1, 2) == 20.0f && map_heights_at(&h, 9, 9) == 20.0f,
+              "a sample, or one beyond the edge, is not the edge's");
+        check(map_heights_sample(&h, 0.25, 1.0 / 6.0) == 0.0f
+              && map_heights_sample(&h, 0.75, 1.0 / 6.0) == 100.5f,
+              "a sample's centre does not answer the sample's height");
+        check(fabs(map_heights_sample(&h, 0.5, 5.0 / 6.0) - 15.0) < 1e-4,
+              "between two samples is not halfway between their heights");
+        check(map_heights_sample(&h, -1.0, 2.0) == 10.0f,
+              "beyond the tile is not the nearest edge's height");
+        map_heights_free(&h);
+        check(h.metres == NULL, "freed heights were kept");
+
+        {
+            /* A pitch wider than the row: the second row starts 16 bytes in. */
+            static const uint32_t wide[2 * 4] = {
+                0xff800000u, 0xff800100u, 0xdeadbeefu, 0xdeadbeefu,
+                0xff800200u, 0xff800300u, 0xdeadbeefu, 0xdeadbeefu,
+            };
+
+            check(map_heights_terrarium(&h, wide, 2, 2, 16) && h.highest == 3.0f
+                  && map_heights_at(&h, 0, 1) == 2.0f,
+                  "a tile whose pitch is wider than its row was read across the gap");
+            map_heights_free(&h);
+        }
+
+        check(!map_heights_terrarium(&h, px, 1, 3, 4) && h.metres == NULL,
+              "a tile one pixel wide was taken");
+    }
+
     if (fails == 0) {
         printf("PASS: %d checks on the Map Kit's reading (the specification's tile numbers, "
                "Port Alder's header and directory, its zoom 11 and zoom 16 tiles decoded, "
                "zoom 16 drawn in a style, what is not there, bad bytes refused, a place named in "
-               "English, else in Latin, else in its own script; borders by level)\n", checks);
+               "English, else in Latin, else in its own script; borders by level; Web Mercator's "
+               "tiles and metres, and a terrarium tile's heights)\n", checks);
         return 0;
     }
 

@@ -39304,3 +39304,33 @@ yet"; it now says "1.4, Mesa anv" when the GPU is there.
   arrived so far, and the sidebar's line was still arriving. Fourteen
   suites carried the same helper; each now searches only up to the last
   line end, so a pattern ending in `[^\r\n]*` cannot match a line cut short.
+
+## 18.940 The Map Kit's Mercator and elevation (Flight F2)
+
+**In short:** Flight needs two things from a map that Maps had been doing
+for itself in Lua: which tiles cover a place, and how high the ground is.
+Both are now in the Map Kit, in C. `mercator.c` answers which tile a place
+is in, a tile's edges, and how many metres a pixel covers. `elevation.c`
+turns a terrarium elevation tile's pixels into heights, kept as floats in
+C rather than 65,536 Lua numbers, and samples between them. Lua reaches
+them as `map.tile_of`, `map.tile_bounds`, `map.metres_per_pixel` and
+`map.elevation(surface)`. Maps now takes its tile range and its scale bar
+from the kit, so there is one copy of the arithmetic.
+
+- **On the Mac** (`test_map`, now 58 checks): Berlin in tile 12/2200/1343
+  with its edges, Montevideo in 12/1408/2472, Null Island, the world's
+  corners kept inside it, a place projected and back, a latitude past
+  85.0511 taken as the top; 156,543 metres a pixel at the equator at zoom
+  0 and 19.109 at latitude 60 at zoom 12; terrarium pixels for 0, 100.5,
+  8848 and -430 metres; a sample's centre, halfway between two, beyond the
+  edge, a pitch wider than the row, and a tile too small refused.
+- **In the guest** (`x86-tiles`, now 11 checks): every elevation tile the
+  suite served is read back through `map.elevation`, and three samples, a
+  sample's centre, halfway to the next, the lowest and the highest must be
+  the heights the server wrote, to the metre; and the tile its own centre
+  falls in must be itself.
+- **The control**: the sample centre's half a pixel taken out of
+  `elevation.c`. The host test failed two checks ("a sample's centre does
+  not answer the sample's height", "between two samples is not halfway").
+  `x86-tiles` failed one, the new one: -475.5 where -477 was served. With
+  the half pixel back, all pass; Maps' 27 checks pass on the kit.

@@ -22,6 +22,15 @@
  *       line = c, width = { 12, 1, 16, 6 }, minzoom = 12 }, ... } }
  *   map.project(lon, lat)                     x, y across the world, 0 to 1
  *   map.unproject(x, y)                       lon, lat
+ *   map.tile_of(lon, lat, z)                  x, y of the tile holding a place
+ *   map.tile_bounds(z, x, y)                  west, south, east, north
+ *   map.metres_per_pixel(lat, z [, size])     the ground a pixel covers
+ *   local heights, why = map.elevation(surface)   a terrarium tile gfx decoded,
+ *                                             to metres kept in C (`docs/flight.md`
+ *                                             F2): heights:size(), :range() ->
+ *                                             lowest, highest, :at(x, y) from 0,
+ *                                             :sample(u, v) 0 to 1 across, between
+ *                                             the four samples around it
  *
  * **Lua decides, C draws** (`CLAUDE.md`): which tiles and where is the
  * caller's; decoding and drawing a tile, a few thousand points every frame
@@ -38,6 +47,8 @@
 
 #include "kits/compress/gzip.h"
 #include "kits/gfx/gfx_draw.h"
+#include "elevation.h"
+#include "mercator.h"
 
 #include "mapdraw.h"
 #include "mvt.h"
@@ -50,6 +61,7 @@
 #define REGION "kosmos.map.region"
 #define TILE   "kosmos.map.tile"
 #define STYLE  "kosmos.map.style"
+#define HEIGHTS "kosmos.map.heights"
 
 struct region { struct pmtiles a; int open; };
 struct tile   { struct mvt_tile t; struct map_matches m; int live; };
@@ -596,29 +608,148 @@ static int l_style(lua_State *L)
     return 1;
 }
 
-/* ---- positions ---- */
+/* ---- positions (`mercator.c`) ---- */
 
 static int l_project(lua_State *L)
 {
-    double lon = luaL_checknumber(L, 1), lat = luaL_checknumber(L, 2);
-    double r;
+    double x, y;
 
-    if (lat > 85.05112878) lat = 85.05112878;
-    if (lat < -85.05112878) lat = -85.05112878;
-
-    r = lat * M_PI / 180.0;
-    lua_pushnumber(L, (lon + 180.0) / 360.0);
-    lua_pushnumber(L, (1.0 - log(tan(r) + 1.0 / cos(r)) / M_PI) / 2.0);
+    map_project(luaL_checknumber(L, 1), luaL_checknumber(L, 2), &x, &y);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
     return 2;
 }
 
 static int l_unproject(lua_State *L)
 {
-    double x = luaL_checknumber(L, 1), y = luaL_checknumber(L, 2);
+    double lon, lat;
 
-    lua_pushnumber(L, x * 360.0 - 180.0);
-    lua_pushnumber(L, atan(sinh(M_PI * (1.0 - 2.0 * y))) * 180.0 / M_PI);
+    map_unproject(luaL_checknumber(L, 1), luaL_checknumber(L, 2), &lon, &lat);
+    lua_pushnumber(L, lon);
+    lua_pushnumber(L, lat);
     return 2;
+}
+
+static unsigned zoom_arg(lua_State *L, int index)
+{
+    lua_Integer z = luaL_checkinteger(L, index);
+
+    luaL_argcheck(L, z >= 0 && z <= 30, index, "a zoom is 0 to 30");
+    return (unsigned)z;
+}
+
+/* map.tile_of(lon, lat, z) -> x, y */
+static int l_tile_of(lua_State *L)
+{
+    uint32_t x, y;
+
+    map_tile_of(luaL_checknumber(L, 1), luaL_checknumber(L, 2), zoom_arg(L, 3), &x, &y);
+    lua_pushinteger(L, x);
+    lua_pushinteger(L, y);
+    return 2;
+}
+
+/* map.tile_bounds(z, x, y) -> west, south, east, north */
+static int l_tile_bounds(lua_State *L)
+{
+    unsigned z = zoom_arg(L, 1);
+    lua_Integer x = luaL_checkinteger(L, 2), y = luaL_checkinteger(L, 3);
+    double w, s, e, n;
+
+    luaL_argcheck(L, x >= 0 && x < ((lua_Integer)1 << z), 2, "no such tile at this zoom");
+    luaL_argcheck(L, y >= 0 && y < ((lua_Integer)1 << z), 3, "no such tile at this zoom");
+    map_tile_bounds(z, (uint32_t)x, (uint32_t)y, &w, &s, &e, &n);
+    lua_pushnumber(L, w);
+    lua_pushnumber(L, s);
+    lua_pushnumber(L, e);
+    lua_pushnumber(L, n);
+    return 4;
+}
+
+/* map.metres_per_pixel(lat, z [, size]) */
+static int l_metres_per_pixel(lua_State *L)
+{
+    lua_Integer size = luaL_optinteger(L, 3, 256);
+
+    luaL_argcheck(L, size > 0 && size <= 4096, 3, "a tile is 1 to 4096 pixels");
+    lua_pushnumber(L, map_metres_per_pixel(luaL_checknumber(L, 1), zoom_arg(L, 2),
+                                           (unsigned)size));
+    return 1;
+}
+
+/* ---- heights (`elevation.c`) ---- */
+
+static struct map_heights *heights_check(lua_State *L)
+{
+    struct map_heights *h = luaL_checkudata(L, 1, HEIGHTS);
+
+    luaL_argcheck(L, h->metres != NULL, 1, "the heights were freed");
+    return h;
+}
+
+/* map.elevation(surface) -> heights, from a terrarium tile gfx decoded. */
+static int l_elevation(lua_State *L)
+{
+    unsigned w, h, pitch;
+    const uint32_t *px = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
+    struct map_heights *out = lua_newuserdatauv(L, sizeof *out, 0);
+
+    memset(out, 0, sizeof *out);
+    luaL_setmetatable(L, HEIGHTS);
+
+    if (!map_heights_terrarium(out, px, w, h, pitch)) {
+        lua_pushnil(L);
+        lua_pushstring(L, w < 2 || h < 2 ? "an elevation tile is at least 2 by 2"
+                                         : "out of memory for the heights");
+        return 2;
+    }
+
+    return 1;
+}
+
+static int l_heights_size(lua_State *L)
+{
+    struct map_heights *h = heights_check(L);
+
+    lua_pushinteger(L, h->width);
+    lua_pushinteger(L, h->height);
+    return 2;
+}
+
+static int l_heights_range(lua_State *L)
+{
+    struct map_heights *h = heights_check(L);
+
+    lua_pushnumber(L, h->lowest);
+    lua_pushnumber(L, h->highest);
+    return 2;
+}
+
+/* heights:at(x, y), a sample counted from 0 */
+static int l_heights_at(lua_State *L)
+{
+    struct map_heights *h = heights_check(L);
+    lua_Integer x = luaL_checkinteger(L, 2), y = luaL_checkinteger(L, 3);
+
+    luaL_argcheck(L, x >= 0 && (lua_Unsigned)x < h->width, 2, "outside the tile");
+    luaL_argcheck(L, y >= 0 && (lua_Unsigned)y < h->height, 3, "outside the tile");
+    lua_pushnumber(L, map_heights_at(h, (unsigned)x, (unsigned)y));
+    return 1;
+}
+
+/* heights:sample(u, v), 0 to 1 across the tile */
+static int l_heights_sample(lua_State *L)
+{
+    struct map_heights *h = heights_check(L);
+
+    lua_pushnumber(L, map_heights_sample(h, luaL_checknumber(L, 2), luaL_checknumber(L, 3)));
+    return 1;
+}
+
+static int l_heights_gc(lua_State *L)
+{
+    map_heights_free(luaL_checkudata(L, 1, HEIGHTS));
+    return 0;
 }
 
 void kosmos_map_kit(lua_State *L)
@@ -631,8 +762,12 @@ void kosmos_map_kit(lua_State *L)
         { "__gc", l_tile_gc }, { NULL, NULL }
     };
     static const luaL_Reg style[] = { { "__gc", l_style_gc }, { NULL, NULL } };
+    static const luaL_Reg heights[] = {
+        { "size", l_heights_size }, { "range", l_heights_range }, { "at", l_heights_at },
+        { "sample", l_heights_sample }, { "__gc", l_heights_gc }, { NULL, NULL }
+    };
     static const struct { const char *name; const luaL_Reg *methods; } kinds[] = {
-        { REGION, region }, { TILE, tile }, { STYLE, style },
+        { REGION, region }, { TILE, tile }, { STYLE, style }, { HEIGHTS, heights },
     };
 
     for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
@@ -656,4 +791,12 @@ void kosmos_map_kit(lua_State *L)
     lua_setfield(L, -2, "project");
     lua_pushcfunction(L, l_unproject);
     lua_setfield(L, -2, "unproject");
+    lua_pushcfunction(L, l_tile_of);
+    lua_setfield(L, -2, "tile_of");
+    lua_pushcfunction(L, l_tile_bounds);
+    lua_setfield(L, -2, "tile_bounds");
+    lua_pushcfunction(L, l_metres_per_pixel);
+    lua_setfield(L, -2, "metres_per_pixel");
+    lua_pushcfunction(L, l_elevation);
+    lua_setfield(L, -2, "elevation");
 }

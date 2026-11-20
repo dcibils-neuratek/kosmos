@@ -883,6 +883,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/kits/map/pmtiles.c \
              user/kits/map/mvt.c \
              user/kits/map/mapdraw.c \
+             user/kits/map/mercator.c \
+             user/kits/map/elevation.c \
              user/kits/map/map_kosmos.c \
              user/kits/window/window.c \
              user/kits/gpu/gpu.c \
@@ -2528,8 +2530,11 @@ $(HOSTDIR)/port-alder.pmtiles: tools/mapcity.py
 	python3 tools/mapcity.py $@ >/dev/null
 
 # **The Map Kit's reading** (`user/kits/map/pmtiles.c`, `mvt.c`): an archive
-# opened and a tile decoded, held to the specification and to Port Alder.
-MAP_PURE := user/kits/map/pmtiles.c user/kits/map/mvt.c user/kits/map/mapdraw.c
+# opened and a tile decoded, held to the specification and to Port Alder;
+# and Web Mercator and a terrarium tile's heights (`mercator.c`,
+# `elevation.c`, `docs/flight.md` F2), held to places worked out by hand.
+MAP_PURE := user/kits/map/pmtiles.c user/kits/map/mvt.c user/kits/map/mapdraw.c \
+            user/kits/map/mercator.c user/kits/map/elevation.c
 
 $(HOSTDIR)/test_map: tools/test_map.c $(MAP_PURE) $(wildcard user/kits/map/*.h) \
                      user/kits/compress/gzip.c user/kits/compress/gzip.h

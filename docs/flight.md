@@ -235,9 +235,15 @@ ends on the M700:
   `tiles.lua`, with Maps moved onto it and its suite unchanged, and a
   `tiles` program; `x86-tiles` serving PNG and slow JPEG tiles from the
   Mac. On the M700 with Esri and Mapzen next.
-- **F2 - the Map Kit's elevation and Mercator.** `map.elevation(png)` to
-  heights, tile and metre arithmetic out of Maps into the kit; a host test
-  holding heights to a terrarium tile's known values.
+- **F2 - the Map Kit's elevation and Mercator.** **Built in 0.12.20**
+  (`testing.md` 18.940): `mercator.c` (a place's tile, a tile's edges,
+  metres a pixel) and `elevation.c` (a terrarium tile's pixels to heights
+  kept in C, sampled between the four around a point), as
+  `map.tile_of`, `map.tile_bounds`, `map.metres_per_pixel` and
+  `map.elevation(surface)`; Maps' tile range and scale bar moved onto the
+  kit; `test_map` holds both to places and heights worked out by hand, and
+  `x86-tiles` reads every served elevation tile through the kit to the
+  metre.
 - **F3 - the 3D Kit on Vulkan.** `k3d_vk.c`: a mesh, a camera, depth, a
   sky and haze, drawn by `lavapipe` in QEMU and `anv` on the M700, held to
   a reference picture; Cafesa3D's Solid view is its second user later.

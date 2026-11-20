@@ -139,6 +139,7 @@ def tile_server():
 # What the cache holds, read where `tiles` said each tile is kept and
 # decoded by its name - a program that needs nothing, run at the prompt.
 READER = r"""
+local map = use("/Kosmos/Kits/map")
 for _, path in ipairs({ @PATHS@ }) do
   local bytes = fs.read(path)
   local kind = path:match("%.(%a+)$")
@@ -155,6 +156,20 @@ for _, path in ipairs({ @PATHS@ }) do
 
   print(("READ %s %d %s %s"):format(path, bytes and #bytes or -1,
         s and table.concat({ s:size() }, "x") or "none", table.concat(heights, ",")))
+
+  -- The Map Kit's own reading of the same tile (F2): heights kept in C, a
+  -- sample's centre, halfway between two, the range, and the tile's place.
+  if s and kind == "png" then
+    local z, x, y = path:match("/(%d+)/(%d+)%-(%d+)%.png$")
+    local h, why = map.elevation(s)
+    local lo, hi = h:range()
+    local w, so, e, n = map.tile_bounds(tonumber(z), tonumber(x), tonumber(y))
+    local tx, ty = map.tile_of((w + e) / 2, (so + n) / 2, tonumber(z))
+
+    print(("KIT %s/%s/%s %s %s,%s,%s %s %s %s,%s %d,%d"):format(z, x, y,
+          table.concat({ h:size() }, "x"), h:at(0, 0), h:at(10, 3), h:at(255, 255),
+          h:sample(10.5 / 256, 3.5 / 256), h:sample(11 / 256, 3.5 / 256), lo, hi, tx, ty))
+  end
 end
 print("READ done")
 """
@@ -255,6 +270,24 @@ def main():
                          "served (%s): %r" % (z, x, y, want, read[-900:]))
             break
 
+    # The Map Kit's heights (F2), to the metre the server wrote: three
+    # samples, a sample's centre, halfway to the next one east (one metre
+    # more, half way), the lowest and highest, and the tile its own centre is
+    # in. Lua prints floats with a point, so they are read as numbers.
+    for (z, x, y) in TILES:
+        m = re.search(r"KIT %d/%d/%d (\S+) (\S+),(\S+),(\S+) (\S+) (\S+) (\S+),(\S+) (\d+),(\d+)"
+                      % (z, x, y), read)
+        h = lambda px, py: height(z, x, y, px, py)
+        want = ["256x256", h(0, 0), h(10, 3), h(255, 255), h(10, 3), h(10, 3) + 1,
+                h(0, 0), h(255, 255), x, y]
+        got = m and [m.group(1)] + [float(v) for v in m.groups()[1:8]] + \
+            [int(m.group(9)), int(m.group(10))]
+
+        if not got or got != want:
+            fails.append("the Map Kit's heights of tile %d/%d/%d are not the ones served: "
+                         "%r, wanted %r: %r" % (z, x, y, got, want, read[-900:]))
+            break
+
     for (z, x, y) in TILES:
         if not re.search(r"READ \S+/%d/%d-%d\.jpg %d 128x128" % (z, x, y, len(JPEG)), read):
             fails.append("imagery tile %d/%d/%d was not in the cache as a .jpg that decodes: %r"
@@ -271,7 +304,7 @@ def main():
         fails.append("the imagery was not asked for with y before x, as its template says: %r"
                      % esri[:6])
 
-    checks = 10
+    checks = 11
 
     if fails:
         print("FAIL: %d of %d checks on the tiles server's sources:" % (len(fails), checks))
@@ -284,7 +317,8 @@ def main():
     print("PASS: %d checks on the tiles server with several sources (two numbers and two "
           "folders, the same one asked again the same, a bad format and an unknown source "
           "refused, elevation all come while the slow imagery was at %s of %d, PNG heights "
-          "and JPEG pictures decoded from the cache by their format, a 404 kept empty)"
+          "and JPEG pictures decoded from the cache by their format, the Map Kit's heights of each "
+          "PNG to the metre, a 404 kept empty)"
           % (checks, imagery_before, len(TILES) + 1))
     return 0
 

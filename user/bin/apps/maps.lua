@@ -476,10 +476,8 @@ local function build_index()
 
   local z = math.min(info.max_zoom, 14)
   local n = 1 << z
-  local x0, y0 = map.project(info.west, info.north)
-  local x1, y1 = map.project(info.east, info.south)
-  local tx0, ty0 = math.floor(x0 * n), math.floor(y0 * n)
-  local tx1, ty1 = math.floor(x1 * n), math.floor(y1 * n)
+  local tx0, ty0 = map.tile_of(info.west, info.north, z)
+  local tx1, ty1 = map.tile_of(info.east, info.south, z)
   local mx_, my_ = (tx0 + tx1) // 2, (ty0 + ty1) // 2
   local seen, tiles = {}, 0
 
@@ -846,8 +844,10 @@ local function draw_controls(s)
   s:triangle(nx, ny + 13, nx - 6, ny, nx + 6, ny, theme.text_dim)
 
   -- The scale: a round distance and the bar as long as it is.
-  local metres_per_point = 40075016.7 / (TILE * 2 ^ zoom)
-                           * math.cos(math.rad(select(2, map.unproject(cx, cy))))
+  -- The Map Kit's metres at zoom 0, halved for every level in: the zoom is
+  -- fractional here, and a pixel's ground halves smoothly between levels.
+  local metres_per_point = map.metres_per_pixel(select(2, map.unproject(cx, cy)), 0, TILE)
+                           / 2 ^ zoom
   local want = metres_per_point * 100
   local nice = 1
 

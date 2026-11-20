@@ -5265,3 +5265,19 @@ eighteen applications had been setting to no effect. 0.12.19.
   something wakes it, the test woke it, and the icons were back before
   the picture was taken. A check that reads what a program says it did
   cannot be raced that way.
+
+## 20 November 2026 - Where a place is, and how high
+
+**In short.** The second step of the flight simulator, F2, is built. A map
+kit now knows which tile of the world covers a place, how many metres a
+pixel of it is, and how high the ground is, read from the elevation tiles
+the tile server fetches. Maps had been doing the first two itself; it now
+asks the kit, so Flight will not need its own copy. 0.12.20.
+
+- **What a person sees**: nothing new yet. Maps' scale bar comes from the
+  kit now and reads the same.
+- **How it is proved**: on the Mac, against places and heights worked out
+  by hand, Berlin and Montevideo among them; in Kosmos, every elevation
+  tile the test serves is read through the kit, and must give back the
+  heights that were written into it, to the metre. Moving the point a
+  height is read at by half a pixel makes both fail.

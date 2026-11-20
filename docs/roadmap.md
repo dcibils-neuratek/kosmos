@@ -12037,8 +12037,9 @@ a tick. **G7e built in 0.12.15** (`testing.md` 18.935): the GPU's interrupt.
 Submit to fence is 0.22 ms in the middle, against 8 ms. **G7 done; G8, GL
 and WebGL on the M700, next** - and the flight simulator after G7, agreed on
 20 November. **F1 built in 0.12.19** (`testing.md` 18.938): `tiles` with
-several sources, one library (`tiles.lua`) as the door, Maps on it; F2,
-the Map Kit's elevation and Mercator, next.
+several sources, one library (`tiles.lua`) as the door, Maps on it. **F2 built in 0.12.20** (18.940): the Map Kit's
+Mercator and elevation, Maps' arithmetic moved onto it; F3, the 3D Kit on
+Vulkan, next.
 **The gate in ten minutes again** - back to 548 s in 0.12.18 (`testing.md`
 18.937: the images' step 137 s to 43, a filter list every make rewrote).
 What follows is the room still to win. (`testing.md` 18.935; Diego's rule, *How to
