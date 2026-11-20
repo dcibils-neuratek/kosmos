@@ -5325,3 +5325,17 @@ the desktop, not just into memory: the first half of F3c. 0.12.23.
   out on the Mac. All 8966 match. Stopping the camera one step later, or
   never showing a frame, makes it fail.
 - **Next**: the same scene on the M700's own Intel GPU.
+
+## 20 November 2026 - The ground in pieces
+
+**In short.** The flight simulator's ground can now be cut into pieces
+and each piece built as a mesh: F4a. Near the aircraft the pieces are
+small and detailed, far away large and coarse, and they always fit
+together with no gap. 0.12.24.
+
+- **What a person sees**: nothing yet; F4b draws it with satellite images.
+- **How it is proved**: on the Mac, against a flat slope and a round hill
+  whose every height is known, and by checking that the chosen pieces
+  cover the ground exactly once - whether there is room for hundreds or
+  only twenty-five. Breaking the numbering, the triangles' direction, or
+  how an edge is lit each makes it fail.

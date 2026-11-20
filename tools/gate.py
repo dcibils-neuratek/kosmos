@@ -109,7 +109,8 @@ LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
 # Mesa is configured for lavapipe, which stands on LLVM, and links W5's zlib.
 # The 3D Kit's Vulkan renderer, linked into every Vulkan test image.
 K3D_VK = ("user/kits/3d/k3d_vk.c", "user/kits/3d/k3d_vk.h", "user/kits/3d/k3d_mesh.vert",
-          "user/kits/3d/k3d_mesh.frag", "user/kits/3d/k3d_sky.vert", "user/kits/3d/k3d_sky.frag")
+          "user/kits/3d/k3d_mesh.frag", "user/kits/3d/k3d_sky.vert", "user/kits/3d/k3d_sky.frag",
+          "user/kits/3d/k3d_terrain.c", "user/kits/3d/k3d_terrain.h")
 MESA = ["tools/mesa_build.py", "tools/mesa_trial_ld.py"] + LLVM + W5
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
              ["x86_64-elf-gcc", "--version"], ["aarch64-elf-gcc", "--version"],

@@ -260,7 +260,15 @@ ends on the M700:
   Solid view is its second user later.
 - **F4 - the terrain.** `k3d_terrain.c`: chunks, levels, skirts, imagery
   as textures, decoding on its own thread; a suite flying a fixed path over
-  a served city and checking the picture and the frame time.
+  a served city and checking the picture and the frame time. In four:
+  **F4a built in 0.12.24** (`testing.md` 18.944) - the frame (metres from
+  an origin, x east, y up, z south), the chunks chosen for an eye (a
+  quadtree over the map's tiles, split while the eye is nearer than
+  `split` sides, the roots covered once whatever the room), and a chunk's
+  mesh (65 by 65 samples, normals from the ring beyond its edges, skirts),
+  held on the Mac by `test_terrain`; **F4b** imagery as textures in
+  `k3d_vk.c` and chunks drawn, held to a reference as F3b is; **F4c** the
+  suite over a served city; **F4d** decoding on a thread of its own.
 - **F5 - Flight.** `flight.lua`: the aircraft, the three views, the strip
   and the cockpit, the pause sheet with search, the graphics panel, the
   island offline; in the dated screenshot, as every new application is.

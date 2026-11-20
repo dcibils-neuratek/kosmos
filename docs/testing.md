@@ -39446,3 +39446,53 @@ Restored, it passes again, the window at the same place.
 **The gate**: 127 of 128 in 543 s. `x86-controls` failed in 0 s - QEMU
 exited before the Deskbar's line, with nothing of the guest's in its log -
 and passes alone in 34 s; it stands on none of this change.
+
+## 18.944 The terrain's chunks and meshes (Flight F4a)
+
+**In short:** the 3D Kit has a terrain, in C and on the host first.
+`user/kits/3d/k3d_terrain.c` decides which chunks of the ground to draw
+from where the eye is, and builds each one's mesh from a height function -
+the Map Kit's elevation tiles in Flight, a plane or a hill in the test.
+`tools/test_terrain.c` (in `make host-check`) holds it with 31 checks.
+
+**The frame**: metres from an origin place, x east, y up, z south, at the
+Mercator scale of the origin's latitude. A hundredth of a degree east of
+the Palacio Salvo is 913 m east (1113.19 m x cos 34.9), a hundredth north
+about 1111 m north, and a
+zoom 14 tile's side is the Map Kit's metres a pixel times 256.
+
+**The chunks**: the leaves of a quadtree over the zoom 11 tiles within two
+of the eye's, a chunk split while the eye is nearer than two of its sides,
+to zoom 16. Every choice is marked into a grid of zoom 16 tiles over the
+roots: each cell exactly once, so no gap and no overlap - from 400 m up,
+from 5 km up (fewer chunks, none at 16), and with room for only 25, 26, 28,
+40 or 100 chunks, where it stays covered and within the room. Every chunk
+left whole was too far to split, and every split had a parent near enough.
+At the world's corner the roots outside it are left out.
+
+**The mesh**: a zoom 15 chunk on a plane rising 0.1 east and falling 0.05
+south: all 4225 samples where they belong, at the plane's height, with its
+normal, and at their place on the imagery; the 8192 grid triangles face up
+and add up to the tile's area; every skirt triangle faces out and every
+skirt vertex hangs 30 m under its edge. On a round hill, the east
+neighbour's west edge is this chunk's east edge to the bit, positions and
+normals, and the normals are the hill's slope to 0.001 with samples 15.7 m
+apart.
+
+**Controls**, each a copy of the kit with one thing broken:
+
+| broken | what failed |
+|---|---|
+| a split's children numbered (x+1, y) twice | 6 checks: chunks overlap, with room and without |
+| the grid's triangles wound the other way | 4096 grid triangles face down |
+| the normals from the chunk's own samples, no ring beyond its edges | 3: 256 wrong normals, 65 of 65 edge samples differ from the neighbour's, the hill off its slope by 0.056 |
+
+A fourth control did not bite and is recorded as a poor one: a sample's
+place as tile + i / 64 rather than (tile x 64 + i) / 64. With 64 cells the
+two are the same bits - a division by a power of two is exact - so the
+integer form guards a side that is not a power of two, and the seam check
+holds either way.
+
+**It is linked into `vulkantest.elf`** too, where F4b draws it, so it
+builds freestanding; the system's image does not carry it until an
+application uses it.

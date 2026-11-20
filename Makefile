@@ -2700,6 +2700,15 @@ $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -o $@ \
 	        tools/test_k3d.c $(K3D_CORE) -lm
 
+# Its terrain (`k3d_terrain.c`, `docs/flight.md` F4a): the frame, the
+# chunks chosen for an eye, and a chunk's mesh on a known plane and hill.
+$(HOSTDIR)/test_terrain: tools/test_terrain.c user/kits/3d/k3d_terrain.c user/kits/3d/k3d_terrain.h \
+                         user/kits/map/mercator.c user/kits/map/mercator.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -Iuser -Iuser/kits/map \
+	        -Iuser/kits/3d -o $@ tools/test_terrain.c user/kits/3d/k3d_terrain.c \
+	        user/kits/map/mercator.c -lm
+
 # Its FBX reader (`tools/test_fbx.c`): Blender's, Maya's and 3ds Max's own
 # files, each against the OBJ its program exported of the same scene, and
 # damaged copies refused. ufbx is an object of its own, being a megabyte of
@@ -4686,7 +4695,7 @@ $(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_
 # with a depth buffer, lit by the sun and hazed by distance - its shaders
 # compiled as the cube's are.
 KVK_OBJS := $(UBUILD)/user/kits/vulkan/kvk.c.o
-K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o
+K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o $(UBUILD)/user/kits/3d/k3d_terrain.c.o
 K3D_VK_SPV := $(foreach s,mesh sky,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
 VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
 VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
@@ -5977,7 +5986,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
+host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_progcount $(HOSTDIR)/test_keyfile $(HOSTDIR)/test_ntlmname $(HOSTDIR)/libsmb2/smb2-ls-async $(HOSTDIR)/libsmb2/smb2-cat-async $(HOSTDIR)/smb_fsattr $(HOSTDIR)/test_ramstore $(HOSTDIR)/test_clock $(HOSTDIR)/test_crypto $(HOSTDIR)/test_crypto_x86 $(HOSTDIR)/test_smbsign $(HOSTDIR)/test_smbsign_x86 $(HOSTDIR)/test_e1000decode $(HOSTDIR)/test_tg3decode $(HOSTDIR)/test_ahcidecode $(HOSTDIR)/test_x86dev $(HOSTDIR)/lua $(HOSTDIR)/test_diskcache $(HOSTDIR)/test_audioring $(HOSTDIR)/test_tcpreasm $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_i8042drain $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_uvcdecode $(HOSTDIR)/test_mididecode $(HOSTDIR)/test_btdecode $(HOSTDIR)/test_depth $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_intelgpu_decode $(HOSTDIR)/test_intelgpu_lrc $(HOSTDIR)/test_intelgpu_ctx $(HOSTDIR)/test_intelgpu_kernel $(HOSTDIR)/test_eu_emu $(HOSTDIR)/eu_run $(HOSTDIR)/test_compute $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_batterydecode $(HOSTDIR)/test_paddecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/test_dnsmsg $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_string $(HOSTDIR)/test_string_kernel $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_elfimage $(HOSTDIR)/test_debug $(HOSTDIR)/test_snesblit $(HOSTDIR)/test_shadow $(HOSTDIR)/test_draw $(HOSTDIR)/test_yuv $(HOSTDIR)/test_yuv_x86 $(HOSTDIR)/test_pack $(HOSTDIR)/test_pack_x86 $(HOSTDIR)/test_blur $(HOSTDIR)/test_blur_x86 $(HOSTDIR)/test_lens $(HOSTDIR)/test_lens_x86 $(HOSTDIR)/test_zrle $(HOSTDIR)/test_zsync $(HOSTDIR)/test_raster $(HOSTDIR)/test_raster_x86 $(HOSTDIR)/test_path $(HOSTDIR)/test_map $(HOSTDIR)/port-alder.pmtiles $(HOSTDIR)/test_httpc $(HOSTDIR)/test_diskdoor $(HOSTDIR)/test_folderwatch $(HOSTDIR)/test_smbpath $(HOSTDIR)/test_smbrpc $(HOSTDIR)/test_mail $(HOSTDIR)/test_rows $(HOSTDIR)/test_rows_x86 $(HOSTDIR)/test_gunzip $(HOSTDIR)/test_glob $(HOSTDIR)/test_inet $(HOSTDIR)/test_k3d $(HOSTDIR)/test_terrain $(HOSTDIR)/test_fbx $(HOSTDIR)/test_trace $(HOSTDIR)/test_k3d_gpu $(HOSTDIR)/test_record $(HOSTDIR)/test_time $(HOSTDIR)/test_h264 $(HOSTDIR)/test_aac $(HOSTDIR)/test_synth $(HOSTDIR)/test_llm $(HOSTDIR)/test_llmdot $(HOSTDIR)/test_llmdot_x86
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -6205,6 +6214,7 @@ host-check: $(HOSTDIR)/test_pcmconvert $(HOSTDIR)/test_playback $(HOSTDIR)/test_
 	$(HOSTDIR)/test_draw
 	$(HOSTDIR)/test_yuv
 	$(HOSTDIR)/test_k3d
+	$(HOSTDIR)/test_terrain
 	@# Its FBX reader, against the programs' own files (`roadmap.md` 4l).
 	python3 tools/fetch_conformance.py fbx
 	$(HOSTDIR)/test_fbx
