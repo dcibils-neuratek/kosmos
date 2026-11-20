@@ -175,8 +175,10 @@ scale arithmetic moved onto them. F3, the 3D Kit on Vulkan, is under way: **F3a*
 Vulkan setup into the Vulkan Kit's base, `user/kits/vulkan/kvk.c`, with the
 cube's kit on it; **F3b** (0.12.22, 18.942) is the renderer on it,
 `user/kits/3d/k3d_vk.c` - sky, depth, sun and haze - held pixel by pixel
-to a ray cast on the host; F3c, that renderer in a window and on the M700,
-is next. After
+to a ray cast on the host; **F3c**'s first half (0.12.23, 18.943) puts it
+in a window through the swapchain, found on the screen and held to the
+same reference; its second half, the same scene on the M700 by `anv`, is
+next. After
 Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
 November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
 the same day: "add quake3e to the roadmap after flight").

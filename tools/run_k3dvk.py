@@ -16,6 +16,14 @@ A pixel whose centre is within a third of a pixel of a silhouette is left
 out: which side wins there is the rasterizer's tie rule, not the renderer.
 Every other pixel must be within TOLERANCE of each channel.
 
+**And in a window** (F3c): the same scene at WINDOW pixels a side, drawn
+through the swapchain into a Kosmos window for FRAMES frames with the eye
+going round the target, the last at the scene's own eye - found on the
+screen QEMU scans out and held to the same reference, pixel by pixel. That
+is the renderer's pictures arriving whole through VK_KOSMOS_surface, the
+window's buffer and the compositor, in the swapchain's format rather than
+the one this script asked for.
+
 Usage: run_k3dvk.py IMAGE [APPS]
 """
 
@@ -54,6 +62,10 @@ SCENE = dict(
     ],
 )
 
+# The window's side, and its frames: STEP radians round the target each.
+WINDOW = 96
+FRAMES, STEP = 30, 0.04
+
 # llvmpipe's float arithmetic and an 8-bit store either side of the
 # shader's: two in 255 a channel is rounding, more is the renderer.
 TOLERANCE = 3
@@ -86,6 +98,21 @@ tell("scene", said)
 tell("pixels", (bytes:gsub(".", function(c) return ("%%02x"):format(c:byte()) end)))
 """ % lua_table(dict(SCENE, size=SIZE))
 
+WINDOW_PROGRAM = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- The 3D Kit on Vulkan in a window (`tools/run_k3dvk.py`, F3c).
+-- kosmos: application
+-- kosmos: image vulkantest.elf
+local kit = use("vulkantest.elf")
+local function tell(name, s)
+  local n = (#s + 99) // 100
+  for k = 1, n do
+    print(("vulkantest %%s %%d/%%d: %%s"):format(name, k, n, s:sub(100 * k - 99, 100 * k)))
+  end
+end
+tell("window", kit.scene_window(%s, %d, %r))
+kit.hold(90)
+""" % (lua_table(dict(SCENE, size=WINDOW)), FRAMES, STEP)
+
 
 
 # ------------------------------------------------------------ the reference
@@ -113,11 +140,11 @@ def frame():
     return f, r, cross(r, f)
 
 
-def ray(px, py):
+def ray(px, py, size):
     """The direction through (px, py) of the picture, `k3d_vk.h`'s rule."""
     f, r, u = frame()
-    x = (px / SIZE) * 2.0 - 1.0
-    y = (py / SIZE) * 2.0 - 1.0
+    x = (px / size) * 2.0 - 1.0
+    y = (py / size) * 2.0 - 1.0
     focal = SCENE["focal"]
     return [f[i] + r[i] * x / focal - u[i] * y / focal for i in range(3)]
 
@@ -148,11 +175,11 @@ def hit(origin, d):
     return best
 
 
-def shade(px, py):
+def shade(px, py, size):
     """The colour a pixel's centre must be, 0 to 1 a channel, and what it
     met (a box's number, or -1 for the sky)."""
     eye = SCENE["eye"]
-    d = ray(px, py)
+    d = ray(px, py, size)
     h = hit(eye, d)
     if h is None:
         look = unit(d)
@@ -170,20 +197,65 @@ def shade(px, py):
     return [(box[6 + i] / 255.0) * lit * (1 - hz) + SCENE["haze"][i] * hz for i in range(3)], b
 
 
-def reference():
+def reference(size):
     """Per pixel: the bytes it must be, or None where a silhouette passes
     within a third of a pixel of its centre."""
     want = []
-    for py in range(SIZE):
+    for py in range(size):
         row = []
-        for px in range(SIZE):
-            colour, what = shade(px + 0.5, py + 0.5)
-            near_edge = any(shade(px + 0.5 + dx, py + 0.5 + dy)[1] != what
+        for px in range(size):
+            colour, what = shade(px + 0.5, py + 0.5, size)
+            near_edge = any(shade(px + 0.5 + dx, py + 0.5 + dy, size)[1] != what
                             for dx, dy in ((-0.34, 0), (0.34, 0), (0, -0.34), (0, 0.34)))
             row.append(None if near_edge else
                        (tuple(round(min(max(c, 0.0), 1.0) * 255) for c in colour), what))
         want.append(row)
     return want
+
+
+# --------------------------------------------------------------- the window
+
+# **The window's rounded bottom corners**, as `run_vulkan.py` has them: wm
+# cuts them on a radius of its look's and the desktop shows through, so a
+# pixel outside a circle of ROUNDED in a bottom corner is not judged.
+ROUNDED = 12
+
+
+def corner(x, y, size):
+    cy = size - ROUNDED
+    if y < cy:
+        return False
+    cx = ROUNDED if x < ROUNDED else size - 1 - ROUNDED if x > size - 1 - ROUNDED else None
+    return cx is not None and (x - cx) ** 2 + (y - cy) ** 2 > (ROUNDED - 1) ** 2
+
+
+def close(a, b):
+    return all(abs(a[i] - b[i]) <= TOLERANCE for i in range(3))
+
+
+def find_window(width, height, at, want, size):
+    """Where on the screen the scene's square is, as (x, y) of its top left,
+    or None, and how many of its judged pixels the best place had right.
+    The places tried put the reference's first judged pixel of the near box
+    on a pixel of its colour - red, rare on a desktop."""
+    judged = [(x, y, want[y][x][0]) for y in range(size) for x in range(size)
+              if want[y][x] is not None and not corner(x, y, size)]
+    fx, fy, fc = next((x, y, c) for x, y, c in judged if want[y][x][1] == 1)
+    best = 0
+    for sy in range(fy, height - size + fy + 1):
+        for sx in range(fx, width - size + fx + 1):
+            if not close(at(sx, sy), fc):
+                continue
+            ox, oy = sx - fx, sy - fy
+            right = 0
+            for x, y, c in judged:
+                if not close(at(ox + x, oy + y), c):
+                    break
+                right += 1
+            if right == len(judged):
+                return (ox, oy), right, len(judged)
+            best = max(best, right)
+    return None, best, len(judged)
 
 
 # ------------------------------------------------------------------ the run
@@ -207,12 +279,14 @@ def main():
                     "--strip-debug", built, image], check=True)
     with open(os.path.join(WORK, "k3dvk.lua"), "w") as f:
         f.write(PROGRAM)
+    with open(os.path.join(WORK, "k3dwin.lua"), "w") as f:
+        f.write(WINDOW_PROGRAM)
 
     megabytes = os.path.getsize(image) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK,
                     str(megabytes + 32)]
                    + ["%s:/Home/apps/vulkan/%s" % (os.path.join(WORK, n), n)
-                      for n in ("k3dvk.lua", "vulkantest.elf")],
+                      for n in ("k3dvk.lua", "k3dwin.lua", "vulkantest.elf")],
                    check=True, capture_output=True, cwd=ROOT)
     os.environ["KOSMOS_DISK"] = HOME_DISK
 
@@ -221,6 +295,7 @@ def main():
     guest = R.Guest(IMAGE, 180)
     said = {}
     mark = 0
+    screen = None
 
     try:
         guest.wait_for("kosmos> ", "reached a prompt")
@@ -233,6 +308,22 @@ def main():
                 time.sleep(0.2)
                 guest._read_available()
         took = time.monotonic() - started
+
+        # The window, on a desktop started for it.
+        if len(said) == 2:
+            mark = len(guest.seen)
+            guest.type("wm /Home/apps/vulkan/k3dwin.lua")
+            until = time.monotonic() + 180
+            while time.monotonic() < until and "window" not in said:
+                said.update(gather(guest.seen[mark:], ("window",)))
+                if "window" not in said:
+                    time.sleep(0.2)
+                    guest._read_available()
+            if " frames=" in said.get("window", ""):
+                time.sleep(1.0)                 # the compositor's next pass
+                screen = guest.screendump()
+                if os.environ.get("KOSMOS_K3D_SHOT"):
+                    R.write_png(os.environ["KOSMOS_K3D_SHOT"], screen)
     finally:
         guest.close()
 
@@ -246,7 +337,7 @@ def main():
         return 1
 
     got = bytes.fromhex(pixels)
-    want = reference()
+    want = reference(SIZE)
     wrong, judged, seen = [], 0, {}
     for py in range(SIZE):
         for px in range(SIZE):
@@ -273,6 +364,25 @@ def main():
           "ground %d, near box %d, far box %d; %d on a silhouette left out)"
           % (took, SIZE, SIZE, m.group(3), judged, TOLERANCE, seen.get(-1, 0), seen.get(0, 0),
              seen.get(1, 0), seen.get(2, 0), SIZE * SIZE - judged))
+
+    w = re.match(r"vulkan device=llvmpipe/1\.\d+ extent=(\d+)x(\d+) images=(\d+)"
+                 r" scene=(\d+)x(\d+) boxes=(\d+) frames=(\d+) ms=(\d+)$",
+                 said.get("window", ""))
+    if not w or screen is None:
+        print("FAIL: the 3D Kit on Vulkan did not draw in a window: %s"
+              % said.get("window", "nothing said"))
+        return 1
+    width, height, at = R.pixel_reader(screen)
+    place, right, count = find_window(width, height, at, reference(WINDOW), WINDOW)
+    if place is None:
+        print("FAIL: no %d by %d square on the screen is the scene: the nearest had %d of its "
+              "%d judged pixels right" % (WINDOW, WINDOW, right, count))
+        return 1
+    frames, ms = int(w.group(7)), int(w.group(8))
+    print("PASS: and in a window, through the swapchain: %d frames round the target in %d ms "
+          "(%.1f a second, under TCG), the last found on the screen at %s, all %d of its "
+          "judged pixels within %d of the reference" % (frames, ms, frames * 1000.0 / max(ms, 1),
+                                                        place, count, TOLERANCE))
     return 0
 
 

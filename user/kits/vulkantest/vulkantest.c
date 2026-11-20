@@ -628,10 +628,13 @@ static struct {
     struct scene s;
 } shown;
 
+static void drawn_free(struct kvk *v);   /* the scene's, below */
+
 static void window_close(void)
 {
     struct kvk *v = &shown.v;
 
+    drawn_free(v);
     if (v->device != VK_NULL_HANDLE) {
         v->vkDeviceWaitIdle(v->device);
         scene_free(v, &shown.s);
@@ -894,6 +897,68 @@ static void numbers(lua_State *L, int table, const char *name, float *out, int n
  * horizon, haze, haze_start, haze_end, boxes = { {x0, y0, z0, x1, y1, z1,
  * r, g, b}, ... } } -> what was said, and the picture's bytes, RGB, a row
  * at a time from the top. */
+/* The caller's scene, read from the table at `arg`: the view, the boxes
+ * and the picture's side. */
+static void scene_args(lua_State *L, int arg, struct k3d_vk_view *view,
+                       float boxes[BOXES_MAX][9], uint32_t *count, uint32_t *side,
+                       uint32_t most)
+{
+    uint32_t nboxes, size;
+
+    luaL_checktype(L, arg, LUA_TTABLE);
+    memset(view, 0, sizeof(*view));
+    lua_getfield(L, arg, "size");
+    size = (uint32_t)luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    luaL_argcheck(L, size >= 4 && size <= most, arg, "a scene's side is out of range");
+    numbers(L, arg, "eye", view->eye, 3);
+    numbers(L, arg, "target", view->target, 3);
+    numbers(L, arg, "focal", &view->focal, 1);
+    numbers(L, arg, "near", &view->near, 1);
+    numbers(L, arg, "far", &view->far, 1);
+    numbers(L, arg, "sun", view->sun, 3);
+    numbers(L, arg, "ambient", &view->ambient, 1);
+    numbers(L, arg, "zenith", view->zenith, 3);
+    numbers(L, arg, "horizon", view->horizon, 3);
+    numbers(L, arg, "haze", view->haze, 3);
+    numbers(L, arg, "haze_start", &view->haze_start, 1);
+    numbers(L, arg, "haze_end", &view->haze_end, 1);
+    lua_getfield(L, arg, "boxes");
+    luaL_checktype(L, -1, LUA_TTABLE);
+    nboxes = (uint32_t)lua_rawlen(L, -1);
+    luaL_argcheck(L, nboxes <= BOXES_MAX, arg, "at most 16 boxes");
+    for (uint32_t b = 0; b < nboxes; b++) {
+        lua_rawgeti(L, -1, (lua_Integer)b + 1);
+        luaL_checktype(L, -1, LUA_TTABLE);
+        for (int k = 0; k < 9; k++) {
+            lua_rawgeti(L, -1, k + 1);
+            boxes[b][k] = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    *count = nboxes;
+    *side = size;
+}
+
+/* Each box a mesh of the renderer's: 1, or 0 with `why`. */
+static int scene_meshes(struct k3d_vk *r, struct k3d_vk_mesh *meshes,
+                        float boxes[BOXES_MAX][9], uint32_t nboxes)
+{
+    for (uint32_t b = 0; b < nboxes; b++) {
+        struct k3d_vk_vertex corners[24];
+        uint32_t idx[36];
+        uint8_t rgb[3] = { (uint8_t)boxes[b][6], (uint8_t)boxes[b][7], (uint8_t)boxes[b][8] };
+
+        box_mesh(&boxes[b][0], &boxes[b][3], rgb, corners, idx);
+        if (!k3d_vk_mesh(r, &meshes[b], corners, 24, idx, 36)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int l_scene(lua_State *L)
 {
     struct k3d_vk_view view;
@@ -906,40 +971,8 @@ static int l_scene(lua_State *L)
     float boxes[BOXES_MAX][9];
     luaL_Buffer out;
 
-    luaL_checktype(L, 1, LUA_TTABLE);
-    memset(&view, 0, sizeof(view));
     memset(meshes, 0, sizeof(meshes));
-    lua_getfield(L, 1, "size");
-    size = (uint32_t)luaL_checkinteger(L, -1);
-    lua_pop(L, 1);
-    luaL_argcheck(L, size >= 4 && size <= SCENE_MAX, 1, "a scene is 4 to 128 pixels a side");
-    numbers(L, 1, "eye", view.eye, 3);
-    numbers(L, 1, "target", view.target, 3);
-    numbers(L, 1, "focal", &view.focal, 1);
-    numbers(L, 1, "near", &view.near, 1);
-    numbers(L, 1, "far", &view.far, 1);
-    numbers(L, 1, "sun", view.sun, 3);
-    numbers(L, 1, "ambient", &view.ambient, 1);
-    numbers(L, 1, "zenith", view.zenith, 3);
-    numbers(L, 1, "horizon", view.horizon, 3);
-    numbers(L, 1, "haze", view.haze, 3);
-    numbers(L, 1, "haze_start", &view.haze_start, 1);
-    numbers(L, 1, "haze_end", &view.haze_end, 1);
-    lua_getfield(L, 1, "boxes");
-    luaL_checktype(L, -1, LUA_TTABLE);
-    nboxes = (uint32_t)lua_rawlen(L, -1);
-    luaL_argcheck(L, nboxes <= BOXES_MAX, 1, "at most 16 boxes");
-    for (uint32_t b = 0; b < nboxes; b++) {
-        lua_rawgeti(L, -1, (lua_Integer)b + 1);
-        luaL_checktype(L, -1, LUA_TTABLE);
-        for (int k = 0; k < 9; k++) {
-            lua_rawgeti(L, -1, k + 1);
-            boxes[b][k] = (float)luaL_checknumber(L, -1);
-            lua_pop(L, 1);
-        }
-        lua_pop(L, 1);
-    }
-    lua_pop(L, 1);
+    scene_args(L, 1, &view, boxes, &nboxes, &size, SCENE_MAX);
 
     hand_console(L);
     said[0] = '\0';
@@ -961,15 +994,8 @@ static int l_scene(lua_State *L)
         !k3d_vk_open(&r, &v, VK_FORMAT_R8G8B8A8_UNORM, size, size)) {
         goto done;
     }
-    for (uint32_t b = 0; b < nboxes; b++) {
-        struct k3d_vk_vertex corners[24];
-        uint32_t idx[36];
-        uint8_t rgb[3] = { (uint8_t)boxes[b][6], (uint8_t)boxes[b][7], (uint8_t)boxes[b][8] };
-
-        box_mesh(&boxes[b][0], &boxes[b][3], rgb, corners, idx);
-        if (!k3d_vk_mesh(&r, &meshes[b], corners, 24, idx, 36)) {
-            goto done;
-        }
+    if (!scene_meshes(&r, meshes, boxes, nboxes)) {
+        goto done;
     }
     if (!kvk_begin(&v) || !k3d_vk_draw(&r, target.image, target.view, &view, meshes, nboxes)) {
         goto done;
@@ -1005,6 +1031,118 @@ done:
     return 2;
 }
 
+
+/*
+ * **F3c**: the same scene in a window, through the swapchain - `frames`
+ * frames with the eye going round the target about the world's up, `step`
+ * radians a frame, the last at the eye the caller gave, so the window holds
+ * the picture the caller works out. It stays open until `hold`.
+ */
+static struct {
+    struct k3d_vk r;
+    struct k3d_vk_mesh meshes[BOXES_MAX];
+    uint32_t count;
+} drawn;
+
+static void drawn_free(struct kvk *v)
+{
+    if (v->device != VK_NULL_HANDLE && drawn.r.v != NULL) {
+        v->vkDeviceWaitIdle(v->device);
+        for (uint32_t b = 0; b < drawn.count; b++) {
+            k3d_vk_mesh_free(&drawn.r, &drawn.meshes[b]);
+        }
+        k3d_vk_close(&drawn.r);
+    }
+    memset(&drawn, 0, sizeof(drawn));
+}
+
+static int l_scene_window(lua_State *L)
+{
+    struct kvk *v = &shown.v;
+    struct kvk_swapchain *c = &shown.chain;
+    struct k3d_vk_view view;
+    float boxes[BOXES_MAX][9];
+    uint32_t nboxes, size;
+    lua_Integer frames = luaL_checkinteger(L, 2);
+    double step = luaL_checknumber(L, 3), started;
+
+    luaL_argcheck(L, frames >= 1 && frames <= 100000, 2, "frames from 1");
+    scene_args(L, 1, &view, boxes, &nboxes, &size, 4096);
+
+    hand_console(L);
+    said[0] = '\0';
+    say("vulkan");
+    if (shown.window != NULL) {
+        window_close();
+    }
+    if (!kvk_open(v, "vulkantest", 1)) {
+        if (v->device_name[0]) {
+            say(" device=%s", v->device_name);
+        }
+        goto done;
+    }
+    say(" device=%s", v->device_name);
+
+    shown.window = kw_open("Vulkan scene", size, size, 0);
+    if (shown.window == NULL) {
+        say(" failed=window/%s", kw_why());
+        goto done;
+    }
+    int opened = kvk_swapchain_open(v, c, shown.window);
+    if (c->extent.width != 0) {
+        say(" extent=%ux%u", c->extent.width, c->extent.height);
+    }
+    if (!opened) {
+        goto done;
+    }
+    if (c->extent.width != size || c->extent.height != size) {
+        say(" failed=window-not-%ux%u", size, size);
+        goto done;
+    }
+    say(" images=%u", c->count);
+
+    if (!k3d_vk_open(&drawn.r, v, c->format, size, size)) {
+        goto done;
+    }
+    drawn.count = nboxes;
+    if (!scene_meshes(&drawn.r, drawn.meshes, boxes, nboxes)) {
+        goto done;
+    }
+
+    float ex = view.eye[0] - view.target[0], ez = view.eye[2] - view.target[2];
+    started = seconds();
+    for (lua_Integer f = 0; f < frames; f++) {
+        struct k3d_vk_view at = view;
+        double a = -step * (double)(frames - 1 - f);
+        int index;
+
+        at.eye[0] = view.target[0] + (float)(cos(a) * ex - sin(a) * ez);
+        at.eye[2] = view.target[2] + (float)(sin(a) * ex + cos(a) * ez);
+        if ((index = kvk_acquire(v, c)) < 0 || !kvk_begin(v) ||
+            !k3d_vk_draw(&drawn.r, c->images[index], c->views[index], &at, drawn.meshes,
+                         drawn.count)) {
+            goto done;
+        }
+        kvk_barrier(v, c->images[index], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0);
+        if (!kvk_submit(v) || !kvk_present(v, c, (uint32_t)index)) {
+            goto done;
+        }
+    }
+    say(" scene=%ux%u boxes=%u frames=%d ms=%d", size, size, nboxes, (int)frames,
+        (int)((seconds() - started) * 1000.0));
+    lua_pushstring(L, said);
+    return 1;
+
+done:
+    said_failure(v);
+    window_close();
+    lua_pushstring(L, said);
+    return 1;
+}
+
 static int l_hold(lua_State *L)
 {
     lua_pushboolean(L, hold(luaL_checknumber(L, 1)));
@@ -1022,6 +1160,8 @@ void kosmos_vulkantest_kit(lua_State *L)
     lua_setfield(L, -2, "window");
     lua_pushcfunction(L, l_scene);
     lua_setfield(L, -2, "scene");
+    lua_pushcfunction(L, l_scene_window);
+    lua_setfield(L, -2, "scene_window");
     lua_pushcfunction(L, l_hold);
     lua_setfield(L, -2, "hold");
     lua_pushinteger(L, TRIANGLE);

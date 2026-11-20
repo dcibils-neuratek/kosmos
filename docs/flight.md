@@ -252,8 +252,11 @@ ends on the M700:
   renderer, `user/kits/3d/k3d_vk.c` - a sky from horizon to zenith, then
   meshes with a depth buffer, lit by the sun and hazed by distance - drawn
   by `lavapipe` in QEMU and held, pixel by pixel, to a ray the suite casts
-  through each pixel's centre (`x86-k3d-vulkan`). Then **F3c**: the same
-  renderer into a window's swapchain, and on the M700 by `anv`. Cafesa3D's
+  through each pixel's centre (`x86-k3d-vulkan`). **F3c, its first half,
+  in 0.12.23** (18.943): the same renderer into a Kosmos window through the
+  swapchain, the eye going round the scene, the last frame found on the
+  screen and held to the same reference. Its second half: the scene on the
+  M700 by `anv`, the same check on Intel's GPU. Cafesa3D's
   Solid view is its second user later.
 - **F4 - the terrain.** `k3d_terrain.c`: chunks, levels, skirts, imagery
   as textures, decoding on its own thread; a suite flying a fixed path over

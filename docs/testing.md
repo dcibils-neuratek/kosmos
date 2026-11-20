@@ -39412,3 +39412,37 @@ Restored, it passes again: 3977 pixels, none wrong.
 Kit's Vulkan files (`k3d_vk.*` and its four shaders, not the rest of the
 3D Kit) and Mesa; `x86-vulkan` and `x86-anv` watch those files too, since
 both images link the renderer.
+
+## 18.943 The 3D Kit on Vulkan in a window (Flight F3c, first half)
+
+**In short:** the renderer from 18.942 now draws into a Kosmos window, and
+what arrives on the screen is still what a ray cast on the Mac says it
+must be. `vulkantest`'s kit gained `scene_window`: the same scene table,
+drawn at 96 pixels a side through the window's swapchain for 30 frames,
+the eye going round the target 0.04 radians a frame and the last frame at
+the scene's own eye. `x86-k3d-vulkan` starts a desktop for it, takes the
+screen QEMU scans out, finds the window's square there and holds every
+judged pixel to the reference at that size.
+
+**What that adds over the picture in memory**: the swapchain's own format
+(the renderer's pipelines are made for it, not for the RGBA the first half
+asks for), presenting, VK_KOSMOS_surface's copy into the window's buffer,
+and the compositor. The window's rounded bottom corners are not judged, as
+in `run_vulkan.py`; the 1-pixel edges round each silhouette are not either.
+
+**Measured**: 8966 pixels judged, all within 3. Thirty frames in 964 ms -
+31 a second at 96 by 96 under TCG, which says the path runs and nothing
+about speed.
+
+**Controls**, each built and run from the restored source:
+
+| broken | what the suite said |
+|---|---|
+| the last frame one step further round | no 96 by 96 square on the screen is the scene: the nearest had 2936 of 8966 right |
+| the window never presented to | did not draw in a window: `failed=acquire/2` |
+
+Restored, it passes again, the window at the same place.
+
+**The gate**: 127 of 128 in 543 s. `x86-controls` failed in 0 s - QEMU
+exited before the Deskbar's line, with nothing of the guest's in its log -
+and passes alone in 34 s; it stands on none of this change.

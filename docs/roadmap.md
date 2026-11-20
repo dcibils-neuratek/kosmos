@@ -12042,7 +12042,9 @@ Mercator and elevation, Maps' arithmetic moved onto it; F3, the 3D Kit on
 Vulkan, under way: **F3a built in 0.12.21** (18.941), the Vulkan Kit's base
 (`kvk.c`) out of `vulkantest.c`; **F3b built in 0.12.22** (18.942), the
 renderer on it (`k3d_vk.c`: a sky, meshes with depth, the sun and haze);
-F3c next, the renderer in a window and on the M700. Also wanted: `anvtest.c`'s `run()` opens
+**F3c's first half in 0.12.23** (18.943), the renderer in a window through
+the swapchain; its second half next, the scene on the M700 by `anv`. Also
+wanted: `anvtest.c`'s `run()` opens
 its own instance and device, a second copy of the same setup with a compute
 queue and debug messages; it moves onto `kvk.c` when the base takes a
 compute queue, and is proved on the M700, since QEMU has no Intel GPU.

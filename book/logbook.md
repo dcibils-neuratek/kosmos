@@ -5312,3 +5312,16 @@ the sun and fading into haze with distance, using Vulkan. 0.12.22.
   all 3977 that are not on an edge match. Leaving out the haze, the
   sunlight, or drawing the sky the wrong way makes between 1059 and 2417
   pixels wrong.
+
+## 20 November 2026 - The picture in a window
+
+**In short.** The flight simulator's renderer now draws into a window on
+the desktop, not just into memory: the first half of F3c. 0.12.23.
+
+- **What a person sees**: a small window with a sky, green ground and two
+  boxes, the camera turning round them for a second and stopping.
+- **How it is proved**: the test takes a picture of QEMU's screen, finds
+  the window in it, and checks every pixel against the colour it worked
+  out on the Mac. All 8966 match. Stopping the camera one step later, or
+  never showing a frame, makes it fail.
+- **Next**: the same scene on the M700's own Intel GPU.
