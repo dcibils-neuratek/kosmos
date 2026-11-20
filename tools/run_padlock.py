@@ -128,7 +128,10 @@ def said(guest, mark, pattern, seconds):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         guest._read_available()
-        m = re.search(pattern, guest.seen[mark:])
+        # Only whole lines: one still arriving can match short
+        # (testing.md 18.939).
+        text = guest.seen[mark:]
+        m = re.search(pattern, text[:text.rfind("\n") + 1])
         if m:
             return m
         time.sleep(0.25)

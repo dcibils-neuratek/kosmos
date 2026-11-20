@@ -520,6 +520,11 @@ SUITES = [
     # and the window as it grows. x86-64 only, for now (`CLAUDE.md`).
     Suite("x86-maps", ["python3", "tools/run_maps.py", X86], x86=True),
 
+    # **The tiles server's sources** (`docs/flight.md` F1): elevation PNGs and
+    # slow imagery JPEGs served from the Mac at once, the elevation all come
+    # while the imagery is still coming, each kept and decoded by its format.
+    Suite("x86-tiles", ["python3", "tools/run_tiles.py", X86], x86=True),
+
     # **Notifications on the desktop** (`roadmap.md`, *Notifications*, step
     # 2): a banner that keeps nobody's keys, gone by itself; an alert, its
     # cross; a press that opens; Do Not Disturb; the history from the clock.

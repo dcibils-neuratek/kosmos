@@ -82,7 +82,10 @@ def line(guest, pattern, mark, seconds=60):
     end = time.time() + seconds
     while time.time() < end:
         guest._read_available()
-        m = re.search(pattern, guest.seen[mark:])
+        # Only whole lines: one still arriving can match short
+        # (testing.md 18.939).
+        text = guest.seen[mark:]
+        m = re.search(pattern, text[:text.rfind("\n") + 1])
         if m:
             return m
         time.sleep(0.2)

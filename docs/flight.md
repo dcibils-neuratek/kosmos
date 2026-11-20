@@ -13,7 +13,8 @@ simulator"; and that night, the mockup drawn, "Can we use real world maps
 for the flight simulator?", "So i can choose q city to fly", "And see the
 actual satellite images", "Of the city", "Really cool".
 
-**Designed, not agreed and not built.** The four things every application
+**Agreed on 20 November 2026, being built from F1** (Diego, shown the
+design: "Yes to all" - every recommendation below taken). The four things every application
 has before its code (`CLAUDE.md`, *How to work here*): this feature set and
 architecture, the window in `docs/flight.html`, and the diagram in
 `docs/flight-architecture.png`, drawn from `docs/flight-architecture.html`.
@@ -68,7 +69,9 @@ when that lands.
    hides it.
 8. **Controls**: arrows for pitch and roll, `A` and `Z` for the throttle,
    `F` for flaps, `V` for the view, `P` to pause; the mouse as the yoke
-   when the pause sheet says so.
+   when the pause sheet says so; and **a game controller** - the left stick
+   the yoke, the triggers the throttle, the face buttons flaps, view and
+   pause - used as soon as one is plugged in (F7).
 9. **Weather and wind** in the pause sheet: clear, haze or low cloud, and
    a wind's direction and strength.
 10. **Sound**: the engine's note following the throttle and the wind
@@ -117,10 +120,17 @@ doors at no further cost.
 under way for the old one is let go (`tiles.c`). The simulator wants two at
 once - imagery and elevation - and Maps, open beside it, a third. So
 `SOURCE` answers with a **source number**, `WANT` and `ARRIVED` name one,
-and each source keeps its own connection, queue and cache folder; the
-cache's file takes the extension the bytes came with (`.jpg`, `.png`,
-`.pbf`) rather than always `.pbf`. A declared shape still: a number added
-to two structs, both sides rebuilt.
+and each source keeps its own connection, queue, arrivals and cache
+folder. **Built in F1 so that the caller names the format** - `SOURCE`
+carries "pbf", "png" or "jpg", and a tile is kept as `<x>-<y>.<format>` -
+rather than the extension being read from the bytes as this first said: a
+caller looks for a tile in the cache before asking, on the next run too,
+and has to know its name without the server, and a tile there is none of
+is an empty file with no bytes to read a format from. The caller chose the
+source, so it knows what the source sends. The same address and format
+asked again is the same source, so Maps and Flight wanting the same
+imagery share one cache. A declared shape still: a number and a format
+added to the request, a number to the reply, both sides rebuilt.
 
 **The sources**, each one line, changeable without code:
 
@@ -219,10 +229,12 @@ Each leaves a permanent test, x86-64 under QEMU with `lavapipe` and tiles
 served from the Mac (the tests never depend on the internet), and each
 ends on the M700:
 
-- **F1 - `tiles` with several sources.** Source numbers, a connection and
-  a queue each, the cache's extension from the bytes. Maps moved onto it
-  and its suite unchanged; a new suite serving JPEG and PNG tiles from the
-  Mac.
+- **F1 - `tiles` with several sources.** **Built in 0.12.19**
+  (`testing.md` 18.938): source numbers, a connection, queue and arrivals
+  each, the format named by the caller; the protocol in one library,
+  `tiles.lua`, with Maps moved onto it and its suite unchanged, and a
+  `tiles` program; `x86-tiles` serving PNG and slow JPEG tiles from the
+  Mac. On the M700 with Esri and Mapzen next.
 - **F2 - the Map Kit's elevation and Mercator.** `map.elevation(png)` to
   heights, tile and metre arithmetic out of Maps into the kit; a host test
   holding heights to a terrarium tile's known values.
@@ -238,10 +250,23 @@ ends on the M700:
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then, if Diego agrees, buildings
   from OpenStreetMap's outlines (*Questions*).
+- **F7 - a game controller's sticks and triggers.** Today a pad reaches a
+  program as keys only. The driver already keeps the analogue values
+  (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two
+  triggers, the buttons - kept by the driver as the latest values and read
+  by the focused window once a frame, never a message per report (a pad
+  reports hundreds of times a second, so it is a stream: *Control by
+  message, data by shared memory*). A door every application reaches the
+  same way, so the Super Nintendo, Doom and Quake gain it too; Flight maps
+  the left stick to the yoke, the triggers to the throttle. HID-class pads
+  (PlayStation's, generic ones) and Bluetooth pads after X-input, held by
+  `tools/test_paddecode.c` with recorded reports, since QEMU has no
+  controller to plug in, and on the M700 with the 8BitDo.
 
 ## Questions for Diego
 
-The mockup asks them too, each with a recommendation:
+Answered on 20 November 2026: "Yes to all", so each recommendation is the
+decision. The mockup asks them too:
 
 1. **The imagery**: Esri's World Imagery, sharp to about half a metre in
    cities, or Sentinel-2 cloudless, open data at 10 m? *Recommended*:
@@ -250,8 +275,13 @@ The mockup asks them too, each with a recommendation:
    already reads for Maps - stood up as blocks with the photograph's roofs
    on top? *Recommended*: yes, after the flat city flies (F6).
 3. **One aircraft or two?** *Recommended*: one light trainer, flown well.
-4. **Controls**: keyboard, and the mouse as a yoke? There is no gamepad
-   driver. *Recommended*: both, keyboard by default.
+4. **Controls**: keyboard, and the mouse as a yoke? *Recommended*: both,
+   keyboard by default. **And a game controller** (Diego, 20 November: "I
+   would add gamepad support as well"). This said there was no gamepad
+   driver, which was wrong: the USB driver reads X-input pads, the 8BitDo
+   SN30 Pro among them (`pad_decode.h`), and the Super Nintendo, Doom and
+   Quake play with one - but only as keys, the sticks past a threshold.
+   Flying wants the sticks themselves, so that is step F7.
 5. **Sound** through the Synth Kit? *Recommended*: yes.
 6. **The graphics panel open on the first start?** *Recommended*: yes,
    open until it is closed, and remembered.

@@ -11997,17 +11997,25 @@ the M700's GPU, came after the daily-driver items below. **Reordered on 19
 November 2026, GPU first** (Diego, asked how far the flight simulator was,
 chose "GPU first: G3, G6, G7, then simulator"): G3, a window and `vkcube`;
 then G6, `intelgpu` for many programs, and G7, `anv` on the M700; then
-the flight simulator, designed first. G4, G5, G8, G9 and the daily-driver
-list follow it, in their order; the simulator takes G9's full-screen flip
+the flight simulator, designed first. **G4 and G5 straight after Flight**
+(Diego, 20 November 2026, asked whether GL ES still made sense with
+Vulkan there: "do G4 and G5 after flight") - GL and GL ES by Zink over
+Vulkan, then WebGL in JetSki on ANGLE's Vulkan backend, both in QEMU - **then
+Quake3e on Vulkan** (Diego, 20 November 2026: "add quake3e to the roadmap
+after flight"; `docs/quake3e.md`, Q0 to Q6: the design agreed, key
+transitions and pointer capture as kits with Quake 1 their second user, a
+dedicated server, the client on `lavapipe`, `anv` on the M700, the QVM
+JIT, UDP and multiplayer) -
+then G8, G9 and the daily-driver list, in their order; the simulator takes G9's full-screen flip
 when that lands. **The simulator flies over real places** (Diego, 19
 November 2026: "Can we use real world maps for the flight simulator?", "So
 i can choose q city to fly", "And see the actual satellite images"):
 designed in `docs/flight.md`, `flight.html` and `flight-architecture.png`,
-for Diego to agree - any city searched by name, its terrain from Mapzen's
+agreed on 20 November (Diego: "Yes to all", the six recommendations taken) - any city searched by name, its terrain from Mapzen's
 elevation tiles and its satellite imagery from Esri, through the `tiles`
 server grown to several sources (F1), the Map Kit's elevation (F2), the 3D
-Kit on Vulkan and its terrain (F3, F4), `flight.lua` (F5), and sound,
-weather and shadows (F6); Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
+Kit on Vulkan and its terrain (F3, F4), `flight.lua` (F5), sound,
+weather and shadows (F6), and a game controller's sticks and triggers handed to programs (F7; Diego, 20 November: "I would add gamepad support as well") - which the Super Nintendo, Doom and Quake gain too; Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 0.12.9** (18.929): the render engine and the blitter on execlists, a hang
 watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
 contexts - the protocol, the stand-in under QEMU, images kept across runs
@@ -12027,8 +12035,10 @@ finds on the screen. **G7d built in 0.12.14** (`testing.md` 18.934): dEQP-VK on
 submit to fence 8 ms in the middle, because the driver polls its fences on
 a tick. **G7e built in 0.12.15** (`testing.md` 18.935): the GPU's interrupt.
 Submit to fence is 0.22 ms in the middle, against 8 ms. **G7 done; G8, GL
-and WebGL on the M700, next** - and the flight simulator after G7, once
-Diego has agreed its design.
+and WebGL on the M700, next** - and the flight simulator after G7, agreed on
+20 November. **F1 built in 0.12.19** (`testing.md` 18.938): `tiles` with
+several sources, one library (`tiles.lua`) as the door, Maps on it; F2,
+the Map Kit's elevation and Mercator, next.
 **The gate in ten minutes again** - back to 548 s in 0.12.18 (`testing.md`
 18.937: the images' step 137 s to 43, a filter list every make rewrote).
 What follows is the room still to win. (`testing.md` 18.935; Diego's rule, *How to

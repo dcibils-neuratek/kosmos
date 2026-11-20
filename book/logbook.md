@@ -5221,3 +5221,47 @@ the 10 MB table made from those lists was compiled again every time.
 Fixing that, and building some images side by side, took the step from
 137 seconds to 43. The whole gate is 9 minutes 8 seconds, inside Diego's
 ten. 0.12.18.
+
+## 20 November 2026 - Flight agreed, and the tile server learns to fetch from several places
+
+**In short.** Diego agreed the flight simulator's design ("Yes to all")
+and asked for gamepad support too, now step F7. The first step, F1, is
+built. The server that fetches map tiles from the internet could follow
+only one source at a time. Flight needs two at once: the satellite
+photographs of a city and its elevation. Now it keeps as many as are
+asked for, each fetching on its own, so a slow photo server does not hold
+up the elevation. The protocol's code moved out of Maps into one shared
+library, so Flight will not need a copy of it. 0.12.19.
+
+- **What a person sees**: nothing yet in Maps, which works as before. At
+  the prompt, `open tiles fetch png URL 12/1200/1500` fetches tiles and
+  says where each is kept, which is useful when a map shows grey.
+- **How it is proved**: a test serves elevation and slowed-down satellite
+  tiles at once. All the elevation arrives while the satellite tiles are
+  still coming, and every tile decodes from the cache. Changed to one
+  queue, the test catches it.
+- **What was learned**: only programs carried in the system image are
+  handed the services they declare, and only by a starter that holds
+  them. The test first tried a program on the disk, which is correctly
+  refused.
+
+## 20 November 2026 - The dock that vanished
+
+**In short.** Diego noticed that moving the pointer off the dock made it
+disappear, and that it came back only when the pointer came close again.
+The magnifying lens over the dock thought it was still on screen after it
+had shrunk away, so the dock drew itself without its icons. The repaint
+that should have put them back was asked for by a flag the UI kit never
+looked at. Both are fixed, and the kit now honours that flag, which
+eighteen applications had been setting to no effect. 0.12.19.
+
+- **What a person sees**: the dock stays put when the pointer leaves it.
+  GPU Monitor's Vulkan row says "1.4, Mesa anv" instead of "not yet".
+- **How it is proved**: the dock's test now asks the Deskbar itself
+  whether its last paint, as the lens closed, drew the icons. With the
+  old code put back, that check fails, and only that one.
+- **What was learned**: a first check looked at the dock's pixels and
+  passed on the broken code too. The Deskbar repaints once a second when
+  something wakes it, the test woke it, and the icons were back before
+  the picture was taken. A check that reads what a program says it did
+  cannot be raced that way.

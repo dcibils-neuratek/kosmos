@@ -76,7 +76,11 @@ def main():
         end = time.time() + seconds
         while time.time() < end:
             guest._read_available()
-            m = re.search(pattern, guest.seen[mark:])
+            # Only whole lines: a line still arriving matched "Home,
+            # Desktop, Do" once, and the check read that as the sidebar
+            # (testing.md 18.939).
+            text = guest.seen[mark:]
+            m = re.search(pattern, text[:text.rfind("\n") + 1])
             if m:
                 return m
             time.sleep(0.1)

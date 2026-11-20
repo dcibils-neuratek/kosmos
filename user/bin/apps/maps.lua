@@ -184,55 +184,25 @@ local TILE = 512
 --------------------------------------------------------------------------
 
 local NET_MAX = 14                     -- OpenFreeMap's deepest; drawn larger past it
-local TILES_REQUEST = "<I4I4I4I4" .. string.rep("I4", 192)
-local TILES_SOURCE = "<I4I4I4I4c768"
-local TILES_REPLY = "<I4I4I4I4I4I4I4I4c64c128" .. string.rep("I4", 192)
-local OP_SOURCE, OP_WANT, OP_ARRIVED, OP_FIND, OP_FINDER = 1, 2, 3, 4, 5
-local ZEROS = {}
+local tiles = use("/Kosmos/Libraries/tiles.lua")      -- the door to /Tiles
 
-for i = 1, 192 do ZEROS[i] = 0 end
-
-local net = nil                        -- { dir, since, outstanding, failed, ... }
+local net = nil                        -- { source, dir, outstanding, failed, ... }
 local on_found                         -- a search answered: the search's, below
 
-local function zstring(s) return (s:gsub("%z.*$", "")) end
-
--- One exchange with `/Tiles`; the reply as a table, or nil and why.
-local function tiles_ask(packed)
-  local reply, why = fs.raw("/Tiles", packed, nil, "tiles")
-
-  if type(reply) ~= "string" or #reply < 992 then return nil, why or "no answer" end
-
-  local v = { string.unpack(TILES_REPLY, reply) }
-  local out = { status = v[1], count = v[2], seq = v[3], outstanding = v[4], failed = v[5],
-                found = v[6], found_status = v[7], cache = zstring(v[9]), why = zstring(v[10]),
-                tiles = {} }
-
-  for i = 1, out.count do
-    local at = 10 + (i - 1) * 3
-
-    out.tiles[i] = { z = v[at + 1], x = v[at + 2], y = v[at + 3] }
-  end
-
-  return out
-end
-
 do
-  local said, why = tiles_ask(string.pack(TILES_SOURCE, OP_SOURCE, 0, 0, 0, source))
+  local said, why = tiles.source(source, "pbf")
 
-  if said and said.status == 0 then
-    net = { dir = said.cache, since = 0, outstanding = 0, failed = said.failed,
+  if said then
+    net = { source = said, dir = said.cache, outstanding = 0, failed = said.failed,
             asked = {}, sent = "", polled = 0, came = 0, finding = nil }
     MIN_ZOOM, MAX_ZOOM = 1, 19
     print(("maps: tiles from %s into %s"):format(source, said.cache))
 
     if finder then
-      local f = tiles_ask(string.pack(TILES_SOURCE, OP_FINDER, 0, 0, 0, finder))
-
-      print("maps: places from " .. finder .. ((f and f.status == 0) and "" or ", refused"))
+      print("maps: places from " .. finder .. (tiles.finder(finder) and "" or ", refused"))
     end
   else
-    print("maps: no tiles from the network: " .. tostring(said and said.why or why))
+    print("maps: no tiles from the network: " .. tostring(why))
   end
 end
 
@@ -293,7 +263,7 @@ local function net_tile(z, x, y)
     return nil
   end
 
-  local bytes = fs.read(net.dir .. "/" .. z .. "/" .. x .. "-" .. y .. ".pbf")
+  local bytes = fs.read(net.source:path(z, x, y))
 
   if type(bytes) == "string" then
     t = #bytes > 0 and map.decode(bytes) or false
@@ -345,11 +315,7 @@ local function send_wants(cx_tile, cy_tile)
 
   net.sent = sent
 
-  local count = #ids // 3
-
-  for i = #ids + 1, 192 do ids[i] = 0 end
-
-  local said = tiles_ask(string.pack(TILES_REQUEST, OP_WANT, count, 0, 0, table.unpack(ids)))
+  local said = net.source:want(ids)
 
   if said then net.outstanding = said.outstanding end
 end
@@ -369,12 +335,11 @@ local function poll_arrived()
 
   net.polled = now
 
-  local said = tiles_ask(string.pack(TILES_REQUEST, OP_ARRIVED, 0, net.since, 0,
-                                     table.unpack(ZEROS)))
+  local came, said = net.source:arrived()
 
-  if not said then return false end
+  if not came then return false end
 
-  net.since, net.outstanding = said.seq, said.outstanding
+  net.outstanding = said.outstanding
 
   -- The search asked for, answered (`on_found`, with the search, below).
   if net.finding and said.found >= net.finding then
@@ -591,15 +556,15 @@ end
 local function find_in_world(text)
   if not net or text == "" then return false end
 
-  local said = tiles_ask(string.pack(TILES_SOURCE, OP_FIND, 0, 0, 0, text))
+  local number = tiles.find(text)
 
-  if not said or said.status ~= 0 then
+  if not number then
     world.said = "the search could not be asked"
     return false
   end
 
-  world.asked, world.results, world.said = said.seq, nil, nil
-  net.finding = said.seq
+  world.asked, world.results, world.said = number, nil, nil
+  net.finding = number
   print(("maps: searching the world for %q"):format(text))
   return true
 end

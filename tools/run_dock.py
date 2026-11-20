@@ -313,6 +313,15 @@ def main():
         above_without = [at_m(over + ix, dy - iy) for ix in (-20, -16, -12, 12, 16, 20) for iy in (1, 2, 3)]
         said["above changed"] = sum(1 for a_, b_ in zip(above_with, above_without) if a_ != b_)
 
+        # ---- 2b'': the dock drawn with its icons once the lens has gone
+        # (Diego, 20 November: "whenever i move the mouse out of the dock it
+        # disappears"). As the dock says it, not as a picture shows it: the
+        # bar repaints once a second whenever its loop wakes, and this
+        # suite's own traffic wakes it, so a picture saw the dock put back.
+        settled = re.search(r"deskbar: the icons settled, the dock drawn (with|without) them",
+                            guest.seen[mark:])
+        said["drawn with"] = settled.group(1) if settled else None
+
         # The setting, as Appearance's slider tells it.
         mark = len(guest.seen)
         session.run("setprop /Running/Deskbar/magnify 80")
@@ -1067,6 +1076,10 @@ def main():
     if said.get("magnified") and not said.get("lens gone"):
         fails.append("the icons did not settle and the lens close when the pointer left")
 
+    if said.get("magnified") and said.get("drawn with") != "with":
+        fails.append("the lens closed over a dock drawn without its icons, so the dock was "
+                     "left empty: %r" % said.get("drawn with"))
+
     if said.get("magnify set") is None:
         fails.append("setprop /Running/Deskbar/magnify 80 was not heard by the dock")
 
@@ -1328,7 +1341,7 @@ def main():
                      "the new height - its sidebar's ground near the new bottom "
                      "%r, near the old %r: %r" % (g1, g0, said.get("prefs resized")))
 
-    checks = 57
+    checks = 58
 
     if fails:
         print("FAIL: %d of %d checks on the dock:" % (len(fails), checks))

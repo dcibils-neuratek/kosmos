@@ -46,6 +46,7 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep);
 #define ARRIVED_KEPT 512u                    /* what `arrived` can look back on */
 
 static long console = -1;
+static uint32_t finder_failed;          /* searches that failed */
 static unsigned long counter_hz = 62500000ul;      /* from sysinfo, at start */
 
 /*
@@ -60,168 +61,6 @@ static unsigned long counter_hz = 62500000ul;      /* from sysinfo, at start */
 static bool too_long(unsigned long since)
 {
     return kosmos_ticks() - since > FETCH_SECONDS * counter_hz;
-}
-
-/* ------------------------------------------------------------------------
- * The source: where tiles come from.
- * --------------------------------------------------------------------- */
-
-static struct {
-    bool     set;
-    bool     ready;             /* the template is known */
-    char     template_path[512];    /* "/planet/2025.../{z}/{x}/{y}.pbf" */
-    char     tilejson_path[512];    /* when the source was a TileJSON */
-    char     key[17];           /* the cache folder's name, from the URL */
-    bool     paused;            /* would not answer: tried again at the next ask */
-} src;
-
-static uint32_t failed;
-static char why[128] = "";
-
-static void note(const char *text)
-{
-    snprintf(why, sizeof why, "%s", text);
-}
-
-/* A name for the cache folder: the source URL's FNV-1a, sixteen hex digits. */
-static void make_key(const char *url)
-{
-    uint64_t h = 1469598103934665603ull;
-
-    for (const char *p = url; *p; p++) {
-        h = (h ^ (uint8_t)*p) * 1099511628211ull;
-    }
-
-    snprintf(src.key, sizeof src.key, "%016llx", (unsigned long long)h);
-}
-
-/* "https://host[:port]/path" taken apart. */
-static bool parse_url(const char *url, bool *tls, char *host, size_t host_room,
-                      uint16_t *port, char *path, size_t path_room)
-{
-    const char *p, *slash, *colon;
-    size_t hn;
-
-    if (strncmp(url, "https://", 8) == 0) {
-        *tls = true, p = url + 8, *port = 443;
-    } else if (strncmp(url, "http://", 7) == 0) {
-        *tls = false, p = url + 7, *port = 80;
-    } else {
-        return false;
-    }
-
-    slash = strchr(p, '/');
-    hn = slash ? (size_t)(slash - p) : strlen(p);
-    colon = memchr(p, ':', hn);
-
-    if (colon) {
-        long n = strtol(colon + 1, NULL, 10);
-
-        if (n <= 0 || n > 65535) return false;
-
-        *port = (uint16_t)n;
-        hn = (size_t)(colon - p);
-    }
-
-    if (hn == 0 || hn >= host_room) return false;
-
-    memcpy(host, p, hn);
-    host[hn] = '\0';
-    snprintf(path, path_room, "%s", slash ? slash : "/");
-    return true;
-}
-
-/* ------------------------------------------------------------------------
- * The disk, through this server's door.
- * --------------------------------------------------------------------- */
-
-static struct diskask disk = { .ep = -1 };
-
-/* The folders down to `path`, made where they are not (an error from one
- * that is there already is not one). */
-static void folders(const char *path)
-{
-    char at[DISK_PATH_MAX];
-    size_t n = strlen(path);
-
-    if (n >= sizeof at) return;
-
-    for (size_t i = 1; i <= n; i++) {
-        if (path[i] == '/' || path[i] == '\0') {
-            memcpy(at, path, i);
-            at[i] = '\0';
-            (void)diskask(&disk, DISK_OP_MKDIR, at, 0, 0, 0, -1, NULL, 0);
-        }
-    }
-}
-
-/* One region, kept and grown, that each tile is written from. */
-static long region_cap = -1;
-static uint8_t *region_at;
-static size_t region_pages;
-
-static bool region_room(size_t bytes)
-{
-    size_t pages = (bytes + 4095u) / 4096u;
-    long at;
-
-    if (pages == 0) pages = 1;
-    if (region_cap >= 0 && pages <= region_pages) return true;
-
-    if (region_cap >= 0) {
-        kosmos_share_unmap((unsigned long)(uintptr_t)region_at, region_pages);
-        kosmos_cap_drop(region_cap);
-        region_cap = -1;
-    }
-
-    if ((region_cap = kosmos_mem_create(pages)) < 0) return false;
-
-    if ((at = kosmos_mem_map(region_cap)) < 0) {
-        kosmos_cap_drop(region_cap);
-        region_cap = -1;
-        return false;
-    }
-
-    region_at = (uint8_t *)(uintptr_t)at;
-    region_pages = pages;
-    return true;
-}
-
-/* `n` bytes into the cache at `dir`/`name`, the folders made first. */
-static bool cache_put(const char *dir, const char *name, const uint8_t *bytes, size_t n)
-{
-    char path[DISK_PATH_MAX];
-
-    snprintf(path, sizeof path, "%s/%s", dir, name);
-    folders(dir);
-
-    if (!region_room(n)) {
-        note("no memory for a tile on its way to the cache");
-        return false;
-    }
-
-    memcpy(region_at, bytes, n);
-
-    uint32_t e = diskask(&disk, DISK_OP_WRITE, path, DISK_REGION, 0, (uint64_t)n, region_cap, NULL, 0);
-
-    if (e != 0) {
-        char text[96];
-
-        snprintf(text, sizeof text, "a tile would not go into the cache: disk error %u", (unsigned)e);
-        note(text);
-        return false;
-    }
-
-    return true;
-}
-
-static bool cache_write(const struct tiles_id *t, const uint8_t *bytes, size_t n)
-{
-    char dir[DISK_PATH_MAX], name[48];
-
-    snprintf(dir, sizeof dir, CACHE_ROOT "/%s/%u", src.key, (unsigned)t->z);
-    snprintf(name, sizeof name, "%u-%u.pbf", (unsigned)t->x, (unsigned)t->y);
-    return cache_put(dir, name, bytes, n);
 }
 
 /* ------------------------------------------------------------------------
@@ -242,7 +81,13 @@ struct link {
     bool     secure_on;
     struct httpc http;
     bool     ready;             /* `http` is over an open connection */
+    char     why[128];          /* the last failure's reason */
 };
+
+static void note(struct link *l, const char *text)
+{
+    snprintf(l->why, sizeof l->why, "%s", text);
+}
 
 static size_t tls_net_write(void *user, const unsigned char *p, size_t n)
 {
@@ -340,7 +185,7 @@ static bool link_dial(struct link *l)
         uint32_t s = net_client_resolve(l->host, l->address, 250);
 
         if (s != NET_OK) {
-            note("the source's name was not found");
+            note(l, "the source's name was not found");
             return false;
         }
 
@@ -348,7 +193,7 @@ static bool link_dial(struct link *l)
     }
 
     if (net_client_connect(&l->conn, l->address, l->port) != NET_OK) {
-        note("the source would not connect");
+        note(l, "the source would not connect");
         return false;
     }
 
@@ -357,7 +202,7 @@ static bool link_dial(struct link *l)
         const char *whyt = NULL;
 
         if (tls_core_open(&l->secure, l->host, NULL, NULL, 0, 0, t, &whyt) != 0) {
-            note(whyt ? whyt : "TLS would not begin");
+            note(l, whyt ? whyt : "TLS would not begin");
             net_client_close(&l->conn);
             return false;
         }
@@ -380,29 +225,274 @@ static bool link_waiting(const struct link *l)
                         || l->http.state == HTTPC_BODY);
 }
 
-static struct link tl;          /* the tiles' source */
 
 /* ------------------------------------------------------------------------
- * What is wanted, what is under way, what has come.
+ * The disk, through this server's door.
  * --------------------------------------------------------------------- */
 
-static struct tiles_id wanted[TILES_MAX];
-static uint32_t wanted_count;
+static struct diskask disk = { .ep = -1 };
 
-static struct {
-    bool            busy;
-    bool            tilejson;   /* fetching the source's TileJSON */
-    struct tiles_id tile;
-    unsigned long   since;      /* counter ticks, when it began */
-} now;
-
-static struct tiles_id arrived[ARRIVED_KEPT];
-static uint32_t arrived_seq;            /* how many have ever arrived */
-
-static void came(const struct tiles_id *t)
+/* The folders down to `path`, made where they are not (an error from one
+ * that is there already is not one). */
+static void folders(const char *path)
 {
-    arrived[arrived_seq % ARRIVED_KEPT] = *t;
-    arrived_seq++;
+    char at[DISK_PATH_MAX];
+    size_t n = strlen(path);
+
+    if (n >= sizeof at) return;
+
+    for (size_t i = 1; i <= n; i++) {
+        if (path[i] == '/' || path[i] == '\0') {
+            memcpy(at, path, i);
+            at[i] = '\0';
+            (void)diskask(&disk, DISK_OP_MKDIR, at, 0, 0, 0, -1, NULL, 0);
+        }
+    }
+}
+
+/* One region, kept and grown, that each tile is written from. */
+static long region_cap = -1;
+static uint8_t *region_at;
+static size_t region_pages;
+
+static bool region_room(size_t bytes)
+{
+    size_t pages = (bytes + 4095u) / 4096u;
+    long at;
+
+    if (pages == 0) pages = 1;
+    if (region_cap >= 0 && pages <= region_pages) return true;
+
+    if (region_cap >= 0) {
+        kosmos_share_unmap((unsigned long)(uintptr_t)region_at, region_pages);
+        kosmos_cap_drop(region_cap);
+        region_cap = -1;
+    }
+
+    if ((region_cap = kosmos_mem_create(pages)) < 0) return false;
+
+    if ((at = kosmos_mem_map(region_cap)) < 0) {
+        kosmos_cap_drop(region_cap);
+        region_cap = -1;
+        return false;
+    }
+
+    region_at = (uint8_t *)(uintptr_t)at;
+    region_pages = pages;
+    return true;
+}
+
+/* `n` bytes into the cache at `dir`/`name`, the folders made first; what
+ * went wrong said on `l`. */
+static bool cache_put(struct link *l, const char *dir, const char *name,
+                      const uint8_t *bytes, size_t n)
+{
+    char path[DISK_PATH_MAX];
+
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    folders(dir);
+
+    if (!region_room(n)) {
+        note(l, "no memory for a tile on its way to the cache");
+        return false;
+    }
+
+    memcpy(region_at, bytes, n);
+
+    uint32_t e = diskask(&disk, DISK_OP_WRITE, path, DISK_REGION, 0, (uint64_t)n, region_cap, NULL, 0);
+
+    if (e != 0) {
+        char text[96];
+
+        snprintf(text, sizeof text, "a tile would not go into the cache: disk error %u", (unsigned)e);
+        note(l, text);
+        return false;
+    }
+
+    return true;
+}
+
+/* ------------------------------------------------------------------------
+ * The sources: where tiles come from (`docs/flight.md` F1). As many as are
+ * asked for, each made once and kept: a source is an address and a format,
+ * and asking for the same one again is answered with the same number - so
+ * Maps and Flight, both wanting the same imagery, share its cache and its
+ * connection. Each has its own connection, queue and arrivals, so tiles
+ * from one never wait behind another's.
+ * --------------------------------------------------------------------- */
+
+struct source {
+    struct source *next;
+    uint32_t number;            /* what callers name it by; from 1 */
+    char     url[TILES_URL_MAX + 1];
+    char     format[TILES_FORMAT_MAX + 1];
+    bool     ready;             /* the template is known */
+    bool     paused;            /* would not answer: tried again at the next ask */
+    char     template_path[512];    /* "/planet/2025.../{z}/{x}/{y}.pbf" */
+    char     tilejson_path[512];    /* when the source was a TileJSON */
+    char     key[17];           /* the cache folder's name, from the URL */
+    uint32_t failed;            /* fetches that failed */
+    struct link link;
+
+    struct tiles_id wanted[TILES_MAX];
+    uint32_t wanted_count;
+
+    struct {
+        bool            busy;
+        bool            tilejson;   /* fetching the source's TileJSON */
+        struct tiles_id tile;
+        unsigned long   since;      /* counter ticks, when it began */
+    } now;
+
+    struct tiles_id arrived[ARRIVED_KEPT];
+    uint32_t arrived_seq;           /* how many have ever arrived */
+};
+
+static struct source *sources;      /* newest first */
+static uint32_t source_count;
+
+static struct source *source_numbered(uint32_t number)
+{
+    for (struct source *s = sources; s; s = s->next) {
+        if (s->number == number) return s;
+    }
+
+    return NULL;
+}
+
+/* A name for the cache folder: the source URL's FNV-1a, sixteen hex digits -
+ * the address alone, so Maps' folder from before there were formats is the
+ * folder still. */
+static void make_key(struct source *s)
+{
+    uint64_t h = 1469598103934665603ull;
+
+    for (const char *p = s->url; *p; p++) {
+        h = (h ^ (uint8_t)*p) * 1099511628211ull;
+    }
+
+    snprintf(s->key, sizeof s->key, "%016llx", (unsigned long long)h);
+}
+
+/* "https://host[:port]/path" taken apart. */
+static bool parse_url(const char *url, bool *tls, char *host, size_t host_room,
+                      uint16_t *port, char *path, size_t path_room)
+{
+    const char *p, *slash, *colon;
+    size_t hn;
+
+    if (strncmp(url, "https://", 8) == 0) {
+        *tls = true, p = url + 8, *port = 443;
+    } else if (strncmp(url, "http://", 7) == 0) {
+        *tls = false, p = url + 7, *port = 80;
+    } else {
+        return false;
+    }
+
+    slash = strchr(p, '/');
+    hn = slash ? (size_t)(slash - p) : strlen(p);
+    colon = memchr(p, ':', hn);
+
+    if (colon) {
+        long n = strtol(colon + 1, NULL, 10);
+
+        if (n <= 0 || n > 65535) return false;
+
+        *port = (uint16_t)n;
+        hn = (size_t)(colon - p);
+    }
+
+    if (hn == 0 || hn >= host_room) return false;
+
+    memcpy(host, p, hn);
+    host[hn] = '\0';
+    snprintf(path, path_room, "%s", slash ? slash : "/");
+    return true;
+}
+
+/* A format is letters and digits, one to seven of them: it becomes part of
+ * a path, so nothing else is let through. */
+static bool format_ok(const char *f)
+{
+    size_t n = 0;
+
+    for (; f[n]; n++) {
+        char c = f[n];
+
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+    }
+
+    return n >= 1 && n < TILES_FORMAT_MAX;
+}
+
+/* The source for this address and format: the one there is, or a new one.
+ * NULL, and `why` said, when the address cannot be read or memory is out. */
+static struct source *source_for(const char *url, const char *format, const char **why)
+{
+    bool tls_;
+    char host[256], path[512];
+    uint16_t port;
+    struct source *s;
+
+    if (!format_ok(format)) {
+        *why = "a format is one to seven lower-case letters and digits";
+        return NULL;
+    }
+
+    if (strlen(url) > TILES_URL_MAX
+        || !parse_url(url, &tls_, host, sizeof host, &port, path, sizeof path)) {
+        *why = "not an http or https address";
+        return NULL;
+    }
+
+    for (s = sources; s; s = s->next) {
+        if (strcmp(s->url, url) == 0 && strcmp(s->format, format) == 0) {
+            s->paused = false;
+            return s;
+        }
+    }
+
+    if ((s = calloc(1, sizeof *s)) == NULL) {
+        *why = "no memory for another source";
+        return NULL;
+    }
+
+    snprintf(s->url, sizeof s->url, "%s", url);
+    snprintf(s->format, sizeof s->format, "%s", format);
+    make_key(s);
+    link_reset(&s->link, TILE_MOST);
+    link_aim(&s->link, tls_, host, port);
+
+    if (strstr(path, "{z}") != NULL) {
+        snprintf(s->template_path, sizeof s->template_path, "%s", path);
+        s->ready = true;
+    } else {
+        snprintf(s->tilejson_path, sizeof s->tilejson_path, "%s", path);
+    }
+
+    s->number = ++source_count;
+    s->next = sources;
+    sources = s;
+
+    {
+        char line[TILES_URL_MAX + 64];
+
+        snprintf(line, sizeof line, "tiles: source %u is %s, as .%s\n",
+                 (unsigned)s->number, s->url, s->format);
+        say(console, line);
+    }
+
+    return s;
+}
+
+/* ------------------------------------------------------------------------
+ * What is wanted, what is under way, what has come - for each source.
+ * --------------------------------------------------------------------- */
+
+static void came(struct source *s, const struct tiles_id *t)
+{
+    s->arrived[s->arrived_seq % ARRIVED_KEPT] = *t;
+    s->arrived_seq++;
 }
 
 static bool same(const struct tiles_id *a, const struct tiles_id *b)
@@ -413,21 +503,30 @@ static bool same(const struct tiles_id *a, const struct tiles_id *b)
 /* Whether a tile came lately, so is in the cache already: the application
  * asks for what it has not yet heard came, and hears only when it asks, so
  * a tile can be asked for again in between - fetched twice, without this. */
-static bool came_lately(const struct tiles_id *t)
+static bool came_lately(const struct source *s, const struct tiles_id *t)
 {
-    uint32_t kept = arrived_seq < ARRIVED_KEPT ? arrived_seq : ARRIVED_KEPT;
+    uint32_t kept = s->arrived_seq < ARRIVED_KEPT ? s->arrived_seq : ARRIVED_KEPT;
 
     for (uint32_t k = 1; k <= kept; k++) {
-        if (same(&arrived[(arrived_seq - k) % ARRIVED_KEPT], t)) return true;
+        if (same(&s->arrived[(s->arrived_seq - k) % ARRIVED_KEPT], t)) return true;
     }
 
     return false;
 }
 
-/* `{z}`, `{x}` and `{y}` filled in. */
-static bool tile_path(const struct tiles_id *t, char *out, size_t room)
+static bool cache_write(struct source *s, const struct tiles_id *t, const uint8_t *bytes, size_t n)
 {
-    const char *p = src.template_path;
+    char dir[DISK_PATH_MAX], name[48];
+
+    snprintf(dir, sizeof dir, CACHE_ROOT "/%s/%u", s->key, (unsigned)t->z);
+    snprintf(name, sizeof name, "%u-%u.%s", (unsigned)t->x, (unsigned)t->y, s->format);
+    return cache_put(&s->link, dir, name, bytes, n);
+}
+
+/* `{z}`, `{x}` and `{y}` filled in. */
+static bool tile_path(const struct source *s, const struct tiles_id *t, char *out, size_t room)
+{
+    const char *p = s->template_path;
     size_t o = 0;
 
     while (*p && o + 12 < room) {
@@ -450,7 +549,7 @@ static bool tile_path(const struct tiles_id *t, char *out, size_t room)
  * The TileJSON's first tile URL: `"tiles": [ "https://..." ]`, its `\/`
  * unescaped. A reader of the one field this needs, not of JSON.
  */
-static bool tilejson_template(const uint8_t *body, size_t n)
+static bool tilejson_template(struct source *s, const uint8_t *body, size_t n)
 {
     char url[512];
     const char *at = NULL;
@@ -479,119 +578,126 @@ static bool tilejson_template(const uint8_t *body, size_t n)
         char host[256];
         uint16_t port;
 
-        if (!parse_url(url, &tls_, host, sizeof host, &port, src.template_path,
-                       sizeof src.template_path)) {
+        if (!parse_url(url, &tls_, host, sizeof host, &port, s->template_path,
+                       sizeof s->template_path)) {
             return false;
         }
 
         /* The tiles on another host than the TileJSON's: not followed - the
          * connection is kept to one host. */
-        if (strcmp(host, tl.host) != 0 || port != tl.port || tls_ != tl.tls) {
+        if (strcmp(host, s->link.host) != 0 || port != s->link.port || tls_ != s->link.tls) {
             return false;
         }
     }
 
-    return strstr(src.template_path, "{z}") != NULL;
+    return strstr(s->template_path, "{z}") != NULL;
+}
+
+/* Whether a source has fetching to do. */
+static bool source_work(const struct source *s)
+{
+    return s->now.busy || (!s->paused && (s->wanted_count > 0 || !s->ready));
 }
 
 /* The next fetch begun, if there is one to begin. */
-static void begin(void)
+static void begin(struct source *s)
 {
     char path[600];
 
-    if (now.busy || !src.set) return;
+    if (s->now.busy) return;
 
-    if (!tl.ready && !link_dial(&tl)) {
-        failed++;
-        wanted_count = 0;           /* the source is not answering: let go, */
-        src.paused = true;          /* until somebody asks again */
+    if (!s->link.ready && !link_dial(&s->link)) {
+        s->failed++;
+        s->wanted_count = 0;        /* the source is not answering: let go, */
+        s->paused = true;           /* until somebody asks again */
         return;
     }
 
-    if (!src.ready) {
-        if (httpc_get(&tl.http, src.tilejson_path) != 0) return;
+    if (!s->ready) {
+        if (httpc_get(&s->link.http, s->tilejson_path) != 0) return;
 
-        now.busy = true;
-        now.since = kosmos_ticks();
-        now.tilejson = true;
+        s->now.busy = true;
+        s->now.since = kosmos_ticks();
+        s->now.tilejson = true;
         return;
     }
 
-    if (wanted_count == 0) return;
+    if (s->wanted_count == 0) return;
 
-    now.tile = wanted[0];
-    memmove(wanted, wanted + 1, (wanted_count - 1) * sizeof wanted[0]);
-    wanted_count--;
+    s->now.tile = s->wanted[0];
+    memmove(s->wanted, s->wanted + 1, (s->wanted_count - 1) * sizeof s->wanted[0]);
+    s->wanted_count--;
 
-    if (!tile_path(&now.tile, path, sizeof path) || httpc_get(&tl.http, path) != 0) {
-        failed++;
-        note("a tile's address is too long");
+    if (!tile_path(s, &s->now.tile, path, sizeof path) || httpc_get(&s->link.http, path) != 0) {
+        s->failed++;
+        note(&s->link, "a tile's address is too long");
         return;
     }
 
-    now.busy = true;
-    now.since = kosmos_ticks();
-    now.tilejson = false;
+    s->now.busy = true;
+    s->now.since = kosmos_ticks();
+    s->now.tilejson = false;
 }
 
 /* The fetch under way, moved on; what it came to, kept. */
-static void step(void)
+static void step(struct source *s)
 {
+    struct link *l = &s->link;
     int r;
 
-    begin();
+    begin(s);
 
-    if (!now.busy) return;
+    if (!s->now.busy) return;
 
-    r = httpc_step(&tl.http);
+    r = httpc_step(&l->http);
 
-    if (r != HTTPC_DONE && r != HTTPC_FAILED && too_long(now.since)) {
-        failed++;
-        note("the source did not answer within twenty seconds");
+    if (r != HTTPC_DONE && r != HTTPC_FAILED && too_long(s->now.since)) {
+        s->failed++;
+        note(l, "the source did not answer within twenty seconds");
         say(console, "tiles: the source did not answer within twenty seconds; tried again\n");
-        now.busy = false;
-        link_hang_up(&tl);
+        s->now.busy = false;
+        link_hang_up(l);
         return;
     }
 
     if (r == HTTPC_DONE) {
-        now.busy = false;
+        s->now.busy = false;
 
-        if (now.tilejson) {
-            if (tl.http.status != 200 || !tilejson_template(tl.http.body, tl.http.body_len)) {
-                failed++;
-                note("the source's TileJSON names no tiles this can fetch");
-                src.set = false;
+        if (s->now.tilejson) {
+            if (l->http.status != 200 || !tilejson_template(s, l->http.body, l->http.body_len)) {
+                s->failed++;
+                note(l, "the source's TileJSON names no tiles this can fetch");
+                s->paused = true;
             } else {
-                src.ready = true;
+                s->ready = true;
                 say(console, "tiles: the source's tiles are at ");
-                say(console, src.template_path);
+                say(console, s->template_path);
                 say(console, "\n");
             }
-        } else if (tl.http.status == 200 || tl.http.status == 204 || tl.http.status == 404) {
+        } else if (l->http.status == 200 || l->http.status == 204 || l->http.status == 404) {
             /* A tile there is none of - the sea, beyond the data - is kept
              * as an empty file, so it is not asked for again. */
-            size_t n = tl.http.status == 200 ? tl.http.body_len : 0;
+            size_t n = l->http.status == 200 ? l->http.body_len : 0;
 
-            if (cache_write(&now.tile, tl.http.body, n)) {
-                came(&now.tile);
+            if (cache_write(s, &s->now.tile, l->http.body, n)) {
+                came(s, &s->now.tile);
             } else {
-                failed++;
+                s->failed++;
             }
         } else {
             char text[64];
 
-            failed++;
-            snprintf(text, sizeof text, "the source answered %d", tl.http.status);
-            note(text);
+            s->failed++;
+            snprintf(text, sizeof text, "the source answered %d", l->http.status);
+            note(l, text);
         }
 
-        if (!httpc_reusable(&tl.http)) link_hang_up(&tl);
+        if (!httpc_reusable(&l->http)) link_hang_up(l);
     } else if (r == HTTPC_FAILED) {
-        failed++;
-        note(tl.http.why ? tl.http.why : "a fetch failed");
-        now.busy = false;
-        link_hang_up(&tl);
+        s->failed++;
+        note(l, l->http.why ? l->http.why : "a fetch failed");
+        s->now.busy = false;
+        link_hang_up(l);
     }
 }
 
@@ -688,15 +794,15 @@ static void finder_step(void)
         finder.began_once = true;
 
         if (!query(path, sizeof path, finder.base, finder.words)) {
-            note("a search too long to ask");
-            failed++;
+            note(&finder.link, "a search too long to ask");
+            finder_failed++;
             finder_answered(0);
             return;
         }
 
         if ((!finder.link.ready && !link_dial(&finder.link))
             || httpc_get(&finder.link.http, path) != 0) {
-            failed++;
+            finder_failed++;
             link_hang_up(&finder.link);
             finder_answered(0);
             return;
@@ -708,8 +814,8 @@ static void finder_step(void)
     int r = httpc_step(&finder.link.http);
 
     if (r != HTTPC_DONE && r != HTTPC_FAILED && too_long(finder.began)) {
-        failed++;
-        note("the finder did not answer within twenty seconds");
+        finder_failed++;
+        note(&finder.link, "the finder did not answer within twenty seconds");
         say(console, "tiles: the finder did not answer within twenty seconds\n");
         link_hang_up(&finder.link);
         finder_answered(0);
@@ -722,9 +828,9 @@ static void finder_step(void)
 
         snprintf(name, sizeof name, "%u.json", (unsigned)finder.now);
 
-        if (!cache_put(CACHE_ROOT "/places", name, finder.link.http.body,
+        if (!cache_put(&finder.link, CACHE_ROOT "/places", name, finder.link.http.body,
                        status == 200 ? finder.link.http.body_len : 0)) {
-            failed++;
+            finder_failed++;
             status = 0;
         }
 
@@ -732,8 +838,8 @@ static void finder_step(void)
 
         finder_answered(status);
     } else if (r == HTTPC_FAILED) {
-        failed++;
-        note(finder.link.http.why ? finder.link.http.why : "a search failed");
+        finder_failed++;
+        note(&finder.link, finder.link.http.why ? finder.link.http.why : "a search failed");
         link_hang_up(&finder.link);
         finder_answered(0);
     }
@@ -743,10 +849,24 @@ static void finder_step(void)
  * The door.
  * --------------------------------------------------------------------- */
 
+/* The source a request names, or the reply refused. */
+static struct source *named(const struct tiles_request *rq, struct tiles_reply *rp)
+{
+    struct source *s = source_numbered(rq->source);
+
+    if (s == NULL) {
+        rp->status = TILES_ERR_SOURCE;
+        snprintf(rp->why, sizeof rp->why, "no source %u", (unsigned)rq->source);
+    }
+
+    return s;
+}
+
 static void answer(const struct message *in, struct message *out)
 {
     const struct tiles_request *rq = (const struct tiles_request *)in->data;
     struct tiles_reply *rp = (struct tiles_reply *)out->data;
+    struct source *s = NULL;
 
     memset(out, 0, sizeof *out);
     out->length = sizeof *rp;
@@ -758,41 +878,19 @@ static void answer(const struct message *in, struct message *out)
 
     switch (rq->op) {
     case TILES_OP_SOURCE: {
-        char url[sizeof rq->u.url + 1];
-        char path[512];
+        char url[sizeof rq->u.url + 1], format[TILES_FORMAT_MAX + 1];
+        const char *why = NULL;
 
         memcpy(url, rq->u.url, sizeof rq->u.url);
         url[sizeof rq->u.url] = '\0';
+        memcpy(format, rq->format, TILES_FORMAT_MAX);
+        format[TILES_FORMAT_MAX] = '\0';
 
-        bool tls_;
-        char host[256];
-        uint16_t port;
-
-        if (!parse_url(url, &tls_, host, sizeof host, &port, path, sizeof path)) {
+        if ((s = source_for(url, format, &why)) == NULL) {
             rp->status = TILES_ERR_SOURCE;
-            snprintf(rp->why, sizeof rp->why, "not an http or https address");
+            snprintf(rp->why, sizeof rp->why, "%s", why);
             return;
         }
-
-        /* A new source: what was under way for the old one is let go. */
-        link_aim(&tl, tls_, host, port);
-        now.busy = false;
-        wanted_count = 0;
-        src.set = true;
-        src.paused = false;
-        make_key(url);
-
-        if (strstr(path, "{z}") != NULL) {
-            snprintf(src.template_path, sizeof src.template_path, "%s", path);
-            src.ready = true;
-        } else {
-            snprintf(src.tilejson_path, sizeof src.tilejson_path, "%s", path);
-            src.ready = false;
-        }
-
-        say(console, "tiles: the source is ");
-        say(console, url);
-        say(console, "\n");
         break;
     }
 
@@ -802,26 +900,30 @@ static void answer(const struct message *in, struct message *out)
             return;
         }
 
+        if ((s = named(rq, rp)) == NULL) return;
+
         /* The new list, less the one already under way. */
-        wanted_count = 0;
-        src.paused = false;
+        s->wanted_count = 0;
+        s->paused = false;
 
         for (uint32_t i = 0; i < rq->count; i++) {
             if (rq->u.tiles[i].z > 22) continue;
-            if (now.busy && !now.tilejson && same(&rq->u.tiles[i], &now.tile)) continue;
-            if (came_lately(&rq->u.tiles[i])) continue;
+            if (s->now.busy && !s->now.tilejson && same(&rq->u.tiles[i], &s->now.tile)) continue;
+            if (came_lately(s, &rq->u.tiles[i])) continue;
 
-            wanted[wanted_count++] = rq->u.tiles[i];
+            s->wanted[s->wanted_count++] = rq->u.tiles[i];
         }
         break;
 
     case TILES_OP_ARRIVED: {
         uint32_t from = rq->since;
 
-        if (arrived_seq - from > ARRIVED_KEPT) from = arrived_seq - ARRIVED_KEPT;
+        if ((s = named(rq, rp)) == NULL) return;
 
-        while (from < arrived_seq && rp->count < TILES_MAX) {
-            rp->tiles[rp->count++] = arrived[from % ARRIVED_KEPT];
+        if (s->arrived_seq - from > ARRIVED_KEPT) from = s->arrived_seq - ARRIVED_KEPT;
+
+        while (from < s->arrived_seq && rp->count < TILES_MAX) {
+            rp->tiles[rp->count++] = s->arrived[from % ARRIVED_KEPT];
             from++;
         }
 
@@ -866,11 +968,29 @@ static void answer(const struct message *in, struct message *out)
 
     rp->found = finder.done;
     rp->found_status = finder.done_status;
-    rp->outstanding = wanted_count + (now.busy ? 1u : 0u);
-    rp->failed = failed;
-    snprintf(rp->why, sizeof rp->why, "%s", why);
 
-    if (src.set) snprintf(rp->cache, sizeof rp->cache, CACHE_ROOT "/%s", src.key);
+    /* What is said of failures is the source's when one is named, and the
+     * finder's for a search. */
+    if (s != NULL) {
+        rp->source = s->number;
+        rp->outstanding = s->wanted_count + (s->now.busy ? 1u : 0u);
+        rp->failed = s->failed;
+        snprintf(rp->why, sizeof rp->why, "%s", s->link.why);
+        snprintf(rp->cache, sizeof rp->cache, CACHE_ROOT "/%s", s->key);
+    } else {
+        rp->failed = finder_failed;
+        snprintf(rp->why, sizeof rp->why, "%s", finder.link.why);
+    }
+}
+
+/* Whether any source, or the finder, has something to do. */
+static bool any_work(void)
+{
+    for (struct source *s = sources; s; s = s->next) {
+        if (source_work(s)) return true;
+    }
+
+    return finder_work();
 }
 
 void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep)
@@ -880,7 +1000,6 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep)
     console = console_ep;
     disk.ep = disk_ep;
     net_client_start(net_ep);
-    link_reset(&tl, TILE_MOST);
     link_reset(&finder.link, FIND_MOST);
     (void)finder_aim("https://nominatim.openstreetmap.org/search");
 
@@ -896,9 +1015,7 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep)
 
     for (;;) {
         uint64_t sender = 0;
-        bool busy = now.busy || (src.set && !src.paused && (wanted_count > 0 || !src.ready))
-                    || finder_work();
-        long r = kosmos_receive(endpoint, &in, &sender, 0, busy ? 1ul : 0ul);
+        long r = kosmos_receive(endpoint, &in, &sender, 0, any_work() ? 1ul : 0ul);
 
         if (r == 0) {
             answer(&in, &out);
@@ -906,19 +1023,20 @@ void tiles_server(long endpoint, long net_ep, long disk_ep, long console_ep)
         }
 
         /* Steps while they finish things - a tile done, the next begun -
-         * and back to the door as soon as one is waiting on the network. */
-        for (int i = 0; i < 32; i++) {
-            bool tiles = now.busy || (src.set && !src.paused && (wanted_count > 0 || !src.ready));
+         * and back to the door as soon as every one under way is waiting
+         * on the network. */
+        for (int i = 0; i < 32 && any_work(); i++) {
+            bool waiting = true;
 
-            if (!tiles && !finder_work()) break;
-
-            if (tiles) step();
-            if (finder_work()) finder_step();
-
-            if ((!now.busy || link_waiting(&tl))
-                && (finder.now == 0 || link_waiting(&finder.link))) {
-                break;
+            for (struct source *s = sources; s; s = s->next) {
+                if (source_work(s)) step(s);
+                if (s->now.busy && !link_waiting(&s->link)) waiting = false;
             }
+
+            if (finder_work()) finder_step();
+            if (finder.now != 0 && !link_waiting(&finder.link)) waiting = false;
+
+            if (waiting) break;
         }
     }
 }

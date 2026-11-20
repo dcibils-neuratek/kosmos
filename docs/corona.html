@@ -10,6 +10,23 @@
   it a 2026 pass too" - so the switch at the Front Panel's right end flips it
   between CDE as Solaris drew it and CDE reimagined for 2026. Every picture
   here is drawn fresh, in CSS and SVG.
+
+  Brought back on 20 November 2026 and taken further - Diego: "i want to
+  keep investigating new desktop UI ideas beyond astra and pewter and
+  starlight. we did one similar to CDE and IRIX which i want to bring back
+  to have that old unix feel but modernized to fit kosmos ultra speed and
+  multimedia oriented features". So Corona is now CDE and IRIX together:
+  CDE's Front Panel, workspaces and Motif frames, and IRIX's Toolchest at
+  the top left, its Desks Overview, its sculpted icons down the right of
+  the backdrop and the Indigo Magic blue-grey - and in 2026 a media
+  workstation: what is playing and its levels in the Front Panel, a record
+  button, the processors, the GPU and the sound's deadline as meters, live
+  desk miniatures, and a song or a film dropped on the panel played.
+  docs/corona.md is the feature set, the architecture and the steps;
+  docs/corona-architecture.png the picture of what it stands on.
+
+  The sound is the browser's own, synthesised (Web Audio) - there are no
+  recordings in this page - and starts only when Play is pressed.
 -->
 <html lang="en">
 <head>
@@ -253,12 +270,113 @@
   body.night .helpv h3 { color: #e3a3c3; }
   body.night .sbody input[type=search] { background: #15171d; color: #dde1ea; }
   body.night .sbody .dt, body.night .sbody .lbl, body.night .sbody .nt small, body.night .sbody .none, body.night .sbody .ctl small, body.night .menu .it .k { color: #aab; }
-  @media (prefers-reduced-motion: reduce) { #lock .msg { transition: none; } .banner, #desk.sl-r, #desk.sl-l { animation: none; } }
+  /* ---------- IRIX: the Toolchest, top left ---------- */
+  #tchest { position: fixed; left: 8px; top: 8px; z-index: 500001; padding: 4px; width: 138px; background: var(--bg); box-shadow: inset 2px 2px 0 var(--top), inset -2px -2px 0 var(--bot), 0 0 0 1px #000; }
+  #tchest .tt { display: flex; height: 20px; margin-bottom: 2px; }
+  #tchest .tt .b { width: 20px; display: flex; align-items: center; justify-content: center; }
+  #tchest .tt .t { flex: 1; display: flex; align-items: center; justify-content: center; font-weight: 700; font-style: italic; letter-spacing: .02em; }
+  #tchest .ti { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; margin-top: 3px; font-weight: 600; }
+  #tchest .ti::after { content: ""; width: 0; height: 0; border: 4px solid transparent; border-left: 6px solid currentColor; margin-right: -4px; }
+  #tchest .ti.open { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); background: var(--field); }
+  #tchest.min .ti { display: none; }
+  body.e26 #tchest { border-radius: 4px; box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot), 0 0 0 1px rgba(0,0,0,.5), 0 10px 26px rgba(0,0,0,.28); }
+  body.e26 #tchest .ti { border-radius: 2px; }
+
+  /* ---------- IRIX: sculpted icons down the right of the backdrop ---------- */
+  .sicon { position: absolute; right: 12px; width: 92px; display: flex; flex-direction: column; align-items: center; z-index: 1; }
+  .sicon .p { position: relative; width: 72px; height: 62px; display: flex; align-items: flex-end; justify-content: center; }
+  .sicon .p svg { width: 60px; height: 60px; position: relative; z-index: 1; filter: drop-shadow(2px 3px 0 rgba(0,0,0,.28)); }
+  .sicon .p::before { content: ""; position: absolute; left: 6px; right: 6px; bottom: -2px; height: 16px; border-radius: 50%; transform: skewX(-30deg); background: transparent; }
+  .sicon.sel .p::before { background: var(--act); box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+  .sicon .l { margin-top: 4px; padding: 1px 5px; max-width: 92px; text-align: center; font-size: 11px; color: #fff; text-shadow: 0 1px 1px #000, 0 0 3px #000; }
+  .sicon.sel .l { background: var(--act); color: var(--act-ink); text-shadow: none; }
+  .sicon .badge { position: absolute; right: 4px; top: 2px; z-index: 2; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #c8323c; color: #fff; font: 700 10.5px/18px var(--sys); text-align: center; box-shadow: 0 0 0 1px #000; }
+  .sicon .badge.play { background: #2f8f5a; }
+  body.e26 .sicon .p svg { transition: transform .12s ease-out; }
+  body.e26 .sicon:hover .p svg { transform: translateY(-3px); }
+  .launchfx { position: fixed; z-index: 400000; border: 2px solid #fff; mix-blend-mode: difference; pointer-events: none; transition: all .22s ease-in; }
+
+  /* ---------- 2026: the media controls in the Front Panel ---------- */
+  .fp.media { width: 236px; }
+  .fp.media .cv { flex-direction: row; align-items: stretch; justify-content: flex-start; gap: 6px; padding: 5px 6px; }
+  .np-cover { width: 44px; flex: none; border: 1px solid #000; position: relative; overflow: hidden; }
+  .np-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,.35), transparent 45%); }
+  .np-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .np-t { font-weight: 700; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
+  .np-a { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; line-height: 1.1; }
+  .np-bar { height: 5px; margin-top: auto; box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); background: var(--field); position: relative; cursor: pointer; }
+  .np-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--act); }
+  .np-tr { display: flex; gap: 3px; align-items: center; }
+  .np-tr button { border: 0; padding: 0; width: 22px; height: 17px; background: var(--bg); box-shadow: inset 1px 1px 0 var(--top), inset -1px -1px 0 var(--bot); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .np-tr button:active { box-shadow: inset 1px 1px 0 var(--bot), inset -1px -1px 0 var(--top); }
+  .np-tr small { margin-left: auto; font: 10px var(--mono); }
+  .np-lv { width: 18px; flex: none; background: #0b1418; border: 1px solid #000; }
+  .fp.rec .cv svg { width: 34px; height: 34px; }
+  .fp.rec.on .cv { background: #7a1f24; color: #fff; }
+  .fp.rec.on .cv small { font-family: var(--mono); }
+  .fp.rec.on .dot { animation: recp 1s steps(2) infinite; }
+  @keyframes recp { 50% { opacity: .25; } }
+  .fp.load .cv canvas { width: 56px; height: 40px; }
+  .fp.load { width: 70px; }
+  .drop-ok { outline: 2px dashed var(--act-top) !important; outline-offset: -3px; }
+  #recframe { position: fixed; inset: 0; z-index: 1900000; pointer-events: none; border: 3px solid rgba(214,40,52,.85); display: none; }
+  #recframe.on { display: block; }
+  #recframe b { position: absolute; right: 10px; top: 8px; background: #c8323c; color: #fff; font: 700 11px var(--mono); padding: 3px 8px; border-radius: 3px; box-shadow: 0 0 0 1px #000; }
+  body.e26 .wsb .mini i.k-music { background: #7b5fb0; }
+  body.e26 .wsb .mini i.k-movie, #ovw .scr i.k-movie, .dk-mini i.k-movie { background: linear-gradient(90deg, #20406a, #b0466a, #e0a040, #20406a); background-size: 300% 100%; animation: film 2.4s linear infinite; color: #fff; }
+  body.e26 .wsb .mini i.k-term { background: #1b2a2a; }
+  @keyframes film { to { background-position: 300% 0; } }
+  .wsb { position: relative; }
+  .wsb .note { position: absolute; right: 3px; top: 2px; font-size: 10px; line-height: 1; color: #fff; background: #2f8f5a; border-radius: 6px; padding: 1px 3px; box-shadow: 0 0 0 1px #000; }
+
+  /* ---------- the media applications ---------- */
+  .mus { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1.25fr; grid-template-rows: auto 1fr; gap: 6px; padding: 6px; }
+  .mus .now { grid-column: span 2; display: grid; grid-template-columns: 76px 1fr; gap: 10px; padding: 8px; }
+  .mus .now .cov { width: 76px; height: 76px; border: 1px solid #000; position: relative; }
+  .mus .now h3 { margin: 0; font-size: 15px; }
+  .mus .now .sub2 { font-size: 11.5px; opacity: .8; }
+  .mus .now .tr { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .mus .now .tr .btn { min-width: 0; padding: 3px 10px; }
+  .mus .now .tr small { font: 11px var(--mono); margin-left: 6px; }
+  .mus .list { overflow: auto; padding: 2px; }
+  .mus .tk { display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; padding: 3px 6px; white-space: nowrap; }
+  .mus .tk span { overflow: hidden; text-overflow: ellipsis; }
+  .mus .tk.on { background: var(--sel); color: var(--sel-ink); }
+  .mus canvas { width: 100%; height: 100%; background: #0b1418; display: block; }
+  .mov { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .mov canvas { flex: 1; min-height: 0; width: 100%; background: #000; display: block; }
+  .mov .bar { display: flex; gap: 6px; align-items: center; padding: 4px 6px; flex: none; }
+  .mov .bar .btn { min-width: 0; padding: 2px 10px; }
+  .mov .bar .np-bar { flex: 1; margin: 0; height: 7px; }
+  .mov .bar small { font: 11px var(--mono); }
+  .apan { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .apan .chs { flex: 1; display: flex; gap: 6px; padding: 8px; min-height: 0; }
+  .apan .ch { flex: 1; display: grid; grid-template-rows: auto 1fr auto auto; justify-items: center; gap: 4px; padding: 6px 4px; min-width: 0; }
+  .apan .ch b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .apan .ch .fd { display: flex; gap: 6px; align-items: stretch; min-height: 0; height: 100%; }
+  .apan .ch canvas { width: 12px; height: 100%; background: #0b1418; border: 1px solid #000; }
+  .apan .ch input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 100%; accent-color: var(--act); }
+  .apan .ch small { font: 10.5px var(--mono); }
+  .apan .ch label { font-size: 10.5px; display: flex; gap: 3px; align-items: center; }
+  .apan .ft { padding: 5px 10px; font-size: 11px; flex: none; border-top: 1px solid var(--bot); }
+  .desks { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .desks .dl { flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .desks .dr { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center; padding: 5px; }
+  .desks .dr.cur { box-shadow: inset 2px 2px 0 var(--bot), inset -2px -2px 0 var(--top); background: var(--field); }
+  .dk-mini { width: 112px; height: 63px; position: relative; overflow: hidden; border: 1px solid #000; }
+  .dk-mini i { position: absolute; background: var(--bg); border: 1px solid rgba(0,0,0,.7); }
+  .dk-mini i.a { background: var(--act); }
+  .desks .dr b { font-size: 13px; } .desks .dr small { display: block; opacity: .8; }
+  .gl { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
+
+  @media (prefers-reduced-motion: reduce) { #lock .msg { transition: none; } .banner, #desk.sl-r, #desk.sl-l { animation: none; } .fp.rec.on .dot, .wsb .mini i.k-movie { animation: none; } }
 </style>
 </head>
 <body>
 <div id="desk"></div>
 <div id="panel"></div>
+<div id="tchest"></div>
+<div id="recframe"><b>REC 0:00</b></div>
 <div id="toast" class="rz"></div>
 <div id="banners" aria-live="polite"></div>
 <div id="lock"><div class="msg">Kosmos - this display is locked<br><small>Click to unlock (in the mockup, nothing is asked)</small></div></div>
@@ -296,6 +414,26 @@ const ICO = {
 };
 ICO.find = `<svg viewBox="0 0 40 40"><circle cx="17" cy="17" r="10" fill="#dfe9f5" stroke="#000" stroke-width="2.4"/><path d="M24.5 24.5l9 9" stroke="#000" stroke-width="4.5" stroke-linecap="round"/><path d="M12 14a6 6 0 016-5" stroke="#fff" stroke-width="2" fill="none"/></svg>`;
 ICO.status = `<svg viewBox="0 0 40 40"><path d="M6 15a20 20 0 0128 0M10 19a14 14 0 0120 0M14 23a8 8 0 0112 0" stroke="#000" stroke-width="2.2" fill="none"/><circle cx="20" cy="27" r="2.2"/><rect x="8" y="31" width="20" height="6" fill="#fff" stroke="#000"/><rect x="9.5" y="32.5" width="13" height="3" fill="#3a3"/><rect x="28" y="32.6" width="2" height="2.8"/></svg>`;
+ICO.song = `<svg viewBox="0 0 40 40"><path d="M9 4h16l7 7v25H9z" fill="#fff" stroke="#000"/><path d="M25 4v7h7" fill="#ddd" stroke="#000"/><path d="M18 28V15l9-2v12" stroke="#000" stroke-width="1.8" fill="none"/><ellipse cx="16" cy="28" rx="3" ry="2.3" fill="#7b5fb0" stroke="#000"/><ellipse cx="25" cy="25" rx="3" ry="2.3" fill="#7b5fb0" stroke="#000"/></svg>`;
+ICO.film = `<svg viewBox="0 0 40 40"><rect x="5" y="8" width="30" height="24" fill="#20262e" stroke="#000"/><g fill="#e8e8e8">${[0,1,2,3,4].map(i=>`<rect x="${7.5+i*5.6}" y="10" width="3" height="2.6"/><rect x="${7.5+i*5.6}" y="27.4" width="3" height="2.6"/>`).join("")}</g><rect x="8" y="14" width="24" height="12" fill="#b0466a"/><path d="M8 26l8-8 5 5 4-3 7 6z" fill="#e0a040"/></svg>`;
+ICO.music = `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#2b2140" stroke="#000"/><circle cx="20" cy="20" r="11" fill="none" stroke="#7b5fb0" stroke-width="1.5"/><circle cx="20" cy="20" r="3.4" fill="#e0a040" stroke="#000"/><path d="M8 13a14 14 0 018-6" stroke="#fff" stroke-width="1.6" fill="none" opacity=".6"/></svg>`;
+ICO.apanel = `<svg viewBox="0 0 40 40"><rect x="4" y="5" width="32" height="30" fill="#aeb2c3" stroke="#000"/>${[10,20,30].map((x,i)=>`<path d="M${x} 9v22" stroke="#222" stroke-width="2"/><rect x="${x-4}" y="${[22,13,18][i]}" width="8" height="5" fill="#e1e3ec" stroke="#000"/>`).join("")}</svg>`;
+ICO.rec = `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#3a3d46" stroke="#000"/><circle cx="20" cy="20" r="12" fill="none" stroke="#777" stroke-width="1.4"/><circle class="dot" cx="20" cy="20" r="7.5" fill="#d8323e" stroke="#000"/><circle cx="17.5" cy="17.5" r="2" fill="#fff" opacity=".55"/></svg>`;
+ICO.desks = `<svg viewBox="0 0 40 40"><rect x="4" y="6" width="15" height="12" fill="#3f7d86" stroke="#000"/><rect x="21" y="6" width="15" height="12" fill="#4a5f86" stroke="#000"/><rect x="4" y="21" width="15" height="12" fill="#8a7a5a" stroke="#000"/><rect x="21" y="21" width="15" height="12" fill="#4f6e52" stroke="#000"/><rect x="7" y="9" width="8" height="5" fill="#fff" stroke="#000"/></svg>`;
+ICO.gpu = `<svg viewBox="0 0 40 40"><rect x="9" y="9" width="22" height="22" fill="#2f5d8f" stroke="#000"/><rect x="14" y="14" width="12" height="12" fill="#6f95c2" stroke="#000"/>${[12,17,22,27].map(x=>`<path d="M${x} 4v5M${x} 31v5M4 ${x}h5M31 ${x}h5" stroke="#000" stroke-width="1.6"/>`).join("")}</svg>`;
+// IRIX's sculpted icons: a slab drawn in isometric, lit from the top left,
+// with its glyph laid on the top face. Drawn fresh; none is SGI's.
+const shade = (h, f) => { const n = parseInt(h.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(clamp(f > 0 ? v + (255 - v) * f : v * (1 + f), 0, 255))); return "#" + c.map(v => v.toString(16).padStart(2, "0")).join(""); };
+function iso(c, glyph = "", h = 16) {
+  const top = `30,14 52,25 30,36 8,25`, L = `8,25 30,36 30,${36 + h} 8,${25 + h}`, R = `30,36 52,25 52,${25 + h} 30,${36 + h}`;
+  return `<svg viewBox="0 0 60 60"><polygon points="${L}" fill="${shade(c, -.28)}" stroke="#000" stroke-linejoin="round"/><polygon points="${R}" fill="${shade(c, -.5)}" stroke="#000" stroke-linejoin="round"/><polygon points="${top}" fill="${shade(c, .28)}" stroke="#000" stroke-linejoin="round"/><path d="M10 25L30 15" stroke="#fff" stroke-opacity=".7"/><g transform="matrix(1.1 -.55 1.1 .55 8 25)">${glyph}</g></svg>`;
+}
+ICO.s_home = iso("#c99a4a", `<path d="M5 11l5-5 5 5v5H5z" fill="#fff" stroke="#000" stroke-width=".8"/><rect x="8.5" y="12" width="3" height="4" fill="#a65d82" stroke="#000" stroke-width=".5"/>`);
+ICO.s_media = iso("#6b55a0", `<circle cx="10" cy="10" r="6.5" fill="#20182e" stroke="#000" stroke-width=".7"/><circle cx="10" cy="10" r="4.2" fill="none" stroke="#b9a6e6" stroke-width=".6"/><circle cx="10" cy="10" r="1.6" fill="#e0a040" stroke="#000" stroke-width=".4"/>`);
+ICO.s_film = iso("#2c3440", `<rect x="3" y="5" width="14" height="10" fill="#b0466a" stroke="#000" stroke-width=".6"/><path d="M3 15l5-5 3 3 3-2 3 4z" fill="#e0a040"/>${[0,1,2,3].map(i=>`<rect x="${4+i*3.5}" y="2.5" width="1.6" height="1.4" fill="#ddd"/><rect x="${4+i*3.5}" y="16.2" width="1.6" height="1.4" fill="#ddd"/>`).join("")}`);
+ICO.s_capture = iso("#9a2f36", `<circle cx="10" cy="10" r="6" fill="#2a2a2e" stroke="#000" stroke-width=".7"/><circle cx="10" cy="10" r="3.6" fill="#d8323e" stroke="#000" stroke-width=".5"/><circle cx="8.6" cy="8.6" r="1" fill="#fff" opacity=".7"/>`);
+ICO.s_drive = iso("#9ea3ad", `<rect x="4" y="7" width="12" height="2" fill="#333"/><circle cx="15" cy="14" r="1.2" fill="#3c3"/>`, 9);
+ICO.s_trash = `<svg viewBox="0 0 60 60"><path d="M14 20h32l-4 32H18z" fill="#8f96a3" stroke="#000"/><path d="M14 20h32l-1 6H15z" fill="#5d6370"/><path d="M22 28l1 20M30 28v20M38 28l-1 20" stroke="#4a4f5a" stroke-width="2"/><path d="M16 22l3 28" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/><ellipse cx="30" cy="20" rx="17" ry="5" fill="#b9bfca" stroke="#000"/><rect x="25" y="12" width="10" height="5" rx="2" fill="#b9bfca" stroke="#000"/></svg>`;
 const picOf = k => ICO[k] || ICO.doc;
 
 /* ============================================================ files */
@@ -307,11 +445,13 @@ const FS = { name: "/", kids: {
       "letter-to-ana.txt": { text: "Ana,\n\nThe machine in the corner boots in four seconds now, and the\nfour little buttons in the middle of the panel are back.\nYou remember them: One, Two, Three, Four.\n\nD.\n" },
       "todo.txt": { text: "- rename workspace Three\n- try the Style Manager's palettes\n- watch the Performance Meter while Orbits runs\n" },
     } },
-    Projects: { kids: { kosmos: { kids: { "notes.txt": { text: "Nebula: threads, address spaces, IPC, capabilities.\nNothing else.\n" }, "VERSION": { text: "0.11.316\n" } } } } },
+    Projects: { kids: { kosmos: { kids: { "notes.txt": { text: "Nebula: threads, address spaces, IPC, capabilities.\nNothing else.\n" }, "VERSION": { text: "0.12.18\n" } } } } },
     Pictures: { kids: { "workspace-one.png": { bin: true, size: 812345 } } },
-    Music: { kids: { "night-shift.mp3": { bin: true, size: 6400000 } } },
+    Music: { kids: { "night-shift.mp3": { bin: true, size: 6400000, song: 0 }, "indigo-magic.flac": { bin: true, size: 31200000, song: 1 }, "front-panel.mp3": { bin: true, size: 5100000, song: 2 } } },
+    Movies: { kids: { "orbits.mp4": { bin: true, size: 48200000, film: true } } },
+    Captures: { kids: {} },
   } },
-  Kosmos: { kids: { Apps: { kids: {} }, Kits: { kids: {} }, Desktops: { kids: { "Astra.desktop": { text: "name = astra\nshell = notifications, desktop, deskbar\nchrome = astra\nmenus = window\n" }, "Pewter.desktop": { text: "name = pewter\nshell = notifications, pewterdesk, menubar, controlstrip\nchrome = platinum\nmenus = screen\n" }, "Corona.desktop": { text: "name = corona\nshell = notifications, frontpanel, workspaces\nchrome = motif\nmenus = window\n" } } } } },
+  Kosmos: { kids: { Apps: { kids: {} }, Kits: { kids: {} }, Desktops: { kids: { "Astra.desktop": { text: "name = astra\nshell = notifications, desktop, deskbar\nchrome = astra\nmenus = window\n" }, "Pewter.desktop": { text: "name = pewter\nshell = notifications, pewterdesk, menubar, controlstrip\nchrome = platinum\nmenus = screen\n" }, "Corona.desktop": { text: "name       = Corona\nsays       = CDE and IRIX: the Front Panel, the Toolchest, desks\nshell      = notifications, desktop:corona, toolchest, frontpanel\nbackground = notifications\nchrome     = motif\nmenus      = window\nlook       = indigo\ndesks      = 4\nflat       = no\ntitle_bars = yes\n" } } } } },
 } };
 function nodeAt(path) {
   let n = FS;
@@ -325,13 +465,15 @@ const fsize = n => isDir(n) ? Object.keys(n.kids).length + " items" : (n.bin ? n
 
 /* ============================================================ state */
 const S = { ws: 0, wsNames: ["One", "Two", "Three", "Four"], wins: new Map(), z: 10, focus: null, seq: 0,
-  backs: ["teal", "slate", "sand", "moss"], palette: "kosmos", pointerFocus: false, panelMin: false, trash: [],
-  era: "2026", notes: [], wsPal: [null, null, null, null], palOnly: false, hold: false, vol: 70, bright: 80 };
+  backs: ["indigo", "slate", "sand", "night"], palette: "indigo", pointerFocus: false, panelMin: false, trash: [],
+  era: "2026", notes: [], wsPal: [null, null, null, null], palOnly: false, hold: false, vol: 70, bright: 80,
+  palChosen: false, recOn: false, recT0: 0, captures: 0, iconSel: null };
 
 function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("on"), 2200); }
 let AC = null;
 function beep(f = 880, d = .08) {
-  try { AC = AC || new AudioContext(); const o = AC.createOscillator(), g = AC.createGain(); o.type = "square"; o.frequency.value = f; g.gain.value = .03; o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
+  // Through the Audio Panel's System channel once the sound has started.
+  try { const C = AU.ctx || (AC = AC || new AudioContext()); const o = C.createOscillator(), g = C.createGain(); o.type = "square"; o.frequency.value = f; g.gain.value = .03; o.connect(g); g.connect(AU.ctx ? AU.bus.system : C.destination); o.start(); o.stop(C.currentTime + d); } catch (e) {}
 }
 
 /* ============================================================ windows */
@@ -347,7 +489,7 @@ function makeWin(o) {
   const W = Math.max(innerWidth, 640), H = Math.max(innerHeight, 480) - 110;
   const w0 = Math.max(200, Math.min(o.w || 520, W - 20)), h0 = Math.max(120, Math.min(o.h || 340, H - 20));
   const n = S.wins.size;
-  const x = o.x != null ? o.x : clamp(110 + (n % 6) * 32, 4, W - w0 - 4), y = o.y != null ? o.y : clamp(24 + (n % 6) * 28, 4, H - h0);
+  const x = o.x != null ? o.x : clamp(170 + (n % 6) * 32, 4, W - w0 - 4), y = o.y != null ? o.y : clamp(24 + (n % 6) * 28, 4, H - h0);
   Object.assign(el.style, { left: x + "px", top: y + "px", width: w0 + "px", height: h0 + "px" });
   el.innerHTML = `<div class="tb"><button class="b wm" title="Window menu"><i class="ic-menu"></i></button><div class="t">${esc(o.title)}</div><button class="b mn" title="Minimize"><i class="ic-min"></i></button><button class="b mx" title="Maximize"><i class="ic-max"></i></button></div>
     <div class="client">${o.menus ? `<div class="mbar"></div>` : ""}<div class="body"></div></div>
@@ -408,7 +550,7 @@ function placeIcons() {
   // Down the left edge, as the workspace manager places them.
   const ics = $$(".dicon").filter(ic => { const w = S.wins.get(ic.dataset.id); return w && (w.ws === -1 || w.ws === S.ws); });
   $$(".dicon").forEach(ic => ic.style.display = "none");
-  ics.forEach((ic, i) => { ic.style.display = ""; ic.style.left = "8px"; ic.style.top = (10 + i * 82) + "px"; });
+  ics.forEach((ic, i) => { ic.style.display = ""; ic.style.left = "8px"; ic.style.top = ($("#tchest").offsetHeight + 24 + i * 82) + "px"; });
 }
 function maximize(w) {
   const el = w.el;
@@ -554,6 +696,7 @@ addEventListener("keydown", e => { if (e.key === "Escape") { closeMenus(); close
 
 /* ============================================================ workspaces */
 const BACKS = {
+  indigo: ["#4b6890", "radial-gradient(ellipse at 18% 8%, rgba(255,255,255,.2), transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(10,20,40,.35), transparent 60%)"],
   teal: ["#3f7d86", "radial-gradient(rgba(255,255,255,.07) 1px, transparent 1.3px) 0 0/7px 7px"],
   slate: ["#56668a", "repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 9px)"],
   sand: ["#8a7a5c", "repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 1px, transparent 1px 4px), repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 5px)"],
@@ -581,16 +724,20 @@ const wsLabel = i => S.era === "2026" ? `<div class="mini"></div><span>${esc(S.w
 // A workspace's windows, drawn small, from where each one is.
 function wsRects(i, W, H, labels) {
   const sx = W / innerWidth, sy = H / innerHeight;
-  return [...S.wins.values()].filter(w => !w.min && !w.dialog && (w.ws === i || w.ws === -1))
+  return [...S.wins.values()].filter(w => !w.min && !w.dialog && w.app !== "desks" && (w.ws === i || w.ws === -1))
     .sort((a, b) => +a.el.style.zIndex - +b.el.style.zIndex)
-    .map(w => { const st = w.el.style; return `<i class="${w === S.focus && i === S.ws ? "a" : ""}" style="left:${parseFloat(st.left) * sx}px;top:${parseFloat(st.top) * sy}px;width:${parseFloat(st.width) * sx}px;height:${parseFloat(st.height) * sy}px">${labels ? esc(w.title) : ""}</i>`; }).join("");
+    .map(w => { const st = w.el.style; return `<i class="${w === S.focus && i === S.ws ? "a" : ""} k-${w.app}${w.app === "movie" && !(w.mv && w.mv.on) ? "-still" : ""}" style="left:${parseFloat(st.left) * sx}px;top:${parseFloat(st.top) * sy}px;width:${parseFloat(st.width) * sx}px;height:${parseFloat(st.height) * sy}px">${labels ? esc(w.title) : ""}</i>`; }).join("");
 }
 const backCss = i => { const b = BACKS[S.backs[i]]; return `background:${b[1]}, ${b[0]};background-color:${b[0]}`; };
 function refreshMinis() {
+  refreshDesks();
   if (S.era !== "2026") return;
   $$(".wsb .mini").forEach((m, i) => { m.setAttribute("style", backCss(i)); m.innerHTML = wsRects(i, m.clientWidth, m.clientHeight); });
+  // A note on the desk whose window is making the sound.
+  const sounding = new Set([...S.wins.values()].filter(w => (w.app === "music" && AU.on) || (w.app === "movie" && w.mv && w.mv.on)).map(w => w.ws));
+  $$(".wsb").forEach((b, i) => { const n = $(".note", b), on = sounding.has(i) || sounding.has(-1); if (on && !n) b.insertAdjacentHTML("beforeend", `<span class="note">♪</span>`); else if (!on && n) n.outerHTML = ""; });
 }
-setInterval(refreshMinis, 800);
+setInterval(refreshMinis, 400);
 let OVW = null;
 function overview() {
   if (OVW) return endOverview();
@@ -646,6 +793,11 @@ const APPS = {
   printer: { name: "Print Manager", icon: "printer", open: () => dialog({ title: "Print Manager", icon: "printer", msg: "No printers are set up.<br><small>Kosmos has no printing yet. A document is a PDF, and Write makes one.</small>" }) },
   web: { name: "Web Browser", icon: "globe", open: () => dialog({ title: "Web Browser", icon: "globe", msg: "Kosmos's browser would open here, in Motif's frame.<br><small>It is not in this mockup.</small>" }) },
   clockapp: { name: "Clock", icon: "clock", open: openClock },
+  music: { name: "Music", icon: "music", open: () => openMusic() },
+  movie: { name: "Movie Player", icon: "film", open: () => openMovie() },
+  apanel: { name: "Audio Panel", icon: "apanel", open: openAPanel },
+  desks: { name: "Desks Overview", icon: "desks", open: openDesks },
+  find: { name: "Find", icon: "find", open: openFind },
 };
 function launch(k) { busy(() => APPS[k].open()); }
 
@@ -659,7 +811,7 @@ function openTerm() {
     { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }, { t: "About Terminal", a: () => dialog({ title: "About Terminal", icon: "term", msg: "Terminal, in Corona's frame.<br><small>Kosmos's own Terminal would be here, and its shell is Kosmos's, not a Unix one.</small>" }) }] },
   ], init: w => {
     const t = document.createElement("div"); t.className = "term"; t.tabIndex = 0; w.body.appendChild(t);
-    let out = `Kosmos 0.11.316 (Nebula) - Corona, workspace ${S.wsNames[S.ws]}\nType help for what this mockup answers.\n\n`;
+    let out = `Kosmos 0.12.18 (Nebula) - Corona, workspace ${S.wsNames[S.ws]}\nType help for what this mockup answers.\n\n`;
     const prompt = () => `kosmos:${st.cwd}% `;
     const draw = () => { t.innerHTML = esc(out + prompt() + st.line) + `<span class="cur"> </span>`; t.scrollTop = t.scrollHeight; };
     const run = cmd => {
@@ -667,12 +819,13 @@ function openTerm() {
       const res = p => p ? (p.startsWith("/") ? p : join(st.cwd, p)).replace(/\/\.$/, "") : st.cwd;
       switch (c) {
         case undefined: case "": return "";
-        case "help": return "ls  cd  pwd  cat  uname  date  ps  who  prstat  echo  clear  open  exit\n";
+        case "help": return "ls  cd  pwd  cat  uname  date  ps  who  prstat  echo  clear  open  play  exit\n";
+        case "play": { const p = res(arg); if (!isMedia(p)) return `play: ${arg}: not a song or a film\n`; playFile(p); return `playing ${p.split("/").pop()}\n`; }
         case "pwd": return st.cwd + "\n";
         case "ls": { const n = nodeAt(res(arg)); if (!n) return `ls: ${arg}: no such file\n`; if (!isDir(n)) return arg + "\n"; return Object.keys(n.kids).map(k => isDir(n.kids[k]) ? k + "/" : k).join("   ") + "\n"; }
         case "cd": { if (arg === "..") { st.cwd = parent(st.cwd); return ""; } const p = arg ? res(arg) : "/Home"; const n = nodeAt(p); if (!isDir(n)) return `cd: ${arg}: not a folder\n`; st.cwd = p; return ""; }
         case "cat": { const n = nodeAt(res(arg)); if (!n || isDir(n)) return `cat: ${arg}: no such file\n`; return n.bin ? `cat: ${arg}: not text\n` : n.text; }
-        case "uname": return a[0] === "-a" ? "Kosmos kosmos 0.11.316 Nebula x86_64 4 processors\n" : "Kosmos\n";
+        case "uname": return a[0] === "-a" ? "Kosmos kosmos 0.12.18 Nebula x86_64 4 processors\n" : "Kosmos\n";
         case "date": return new Date().toString() + "\n";
         case "who": return "diego    workspace " + S.wsNames[S.ws] + "\n";
         case "echo": return arg + "\n";
@@ -680,7 +833,8 @@ function openTerm() {
         case "exit": closeWin(w); return "";
         case "open": { const n = nodeAt(res(arg)); if (!n) return `open: ${arg}: no such file\n`; isDir(n) ? openFiles(res(arg)) : openEditor(res(arg)); return ""; }
         case "ps": case "prstat": {
-          const rows = [["1", "init", "0", "0.1"], ["2", "binfs", "0", "0.0"], ["3", "diskfs", "1", "0.4"], ["4", "net", "2", "0.2"], ["5", "audio", "3", "0.3"], ["6", "notify", "0", "0.0"], ["7", "wm", "1", "2.8"], ["8", "frontpanel", "2", "0.3"]];
+          const rows = [["1", "init", "0", "0.1"], ["2", "binfs", "0", "0.0"], ["3", "diskfs", "1", "0.4"], ["4", "net", "2", "0.2"], ["5", "audio", "3", "0.3"], ["6", "notify", "0", "0.0"], ["7", "wm", "1", "2.8"], ["8", "frontpanel", "2", "0.3"], ["9", "toolchest", "3", "0.0"], ["10", "tracker desktop corona", "0", "0.1"]];
+          if (AU.on) rows.push(["31", "music (sound: AUDIO band)", "2", "0.6"]);
           [...S.wins.values()].forEach((x, i) => rows.push([String(20 + i), x.app, String(i % 4), (Math.random() * 2).toFixed(1)]));
           return "  PID  PROGRAM          CPU   %\n" + rows.map(r => `${r[0].padStart(5)}  ${r[1].padEnd(16)} ${r[2].padStart(3)} ${r[3].padStart(4)}`).join("\n") + "\n\nEach in its own address space. A crash takes only itself.\n";
         }
@@ -706,7 +860,7 @@ function openFiles(path) {
   const st = { path, sel: null };
   makeWin({ app: "files", icon: "files", title: "File Manager - " + path.split("/").pop(), w: 520, h: 360, menus: w => [
     { t: "File", items: [{ t: "New Folder…", a: () => newFolder(w, st) }, { t: "New File…", a: () => newFile(w, st) }, { sep: true }, { t: "Go Home", a: () => go(w, st, "/Home") }, { t: "Go Up", a: () => go(w, st, parent(st.path)), d: st.path === "/" }, { sep: true }, { t: "Close", a: () => closeWin(w) }] },
-    { t: "Selected", items: [{ t: "Open", a: () => openSel(w, st), d: !st.sel }, { t: "Put in Trash", a: () => trashSel(w, st), d: !st.sel }, { t: "Properties…", a: () => props(st), d: !st.sel }] },
+    { t: "Selected", items: [{ t: "Open", a: () => openSel(w, st), d: !st.sel }, { t: "Play", a: () => playFile(join(st.path, st.sel)), d: !st.sel || !isMedia(join(st.path, st.sel)) }, { t: "Put in Trash", a: () => trashSel(w, st), d: !st.sel }, { t: "Properties…", a: () => props(st), d: !st.sel }] },
     { t: "View", items: [{ t: "Open New View", a: () => openFiles(st.path) }, { t: "Clean Up", a: () => render(w, st) }] },
     { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
   ], init: w => {
@@ -729,7 +883,8 @@ function render(w, st) {
 function fileIcon(k, n, w, st, up) {
   const d = document.createElement("div"); d.className = "fi";
   const kind = isDir(n) ? "folder" : /\.(txt|desktop)$|VERSION/.test(k) ? "doc" : /\.mp3$/.test(k) ? "perf" : "doc";
-  d.innerHTML = `${picOf(up ? "folder" : kind)}<span>${esc(up ? "(go up)" : k)}</span>`;
+  d.innerHTML = `${picOf(up ? "folder" : n.song != null ? "song" : n.film ? "film" : kind)}<span>${esc(up ? "(go up)" : k)}</span>`;
+  if (!up) { d.draggable = true; d.ondragstart = e => { e.dataTransfer.setData("text/plain", join(st.path, k)); DRAGGED = join(st.path, k); }; }
   d.onmousedown = e => { e.stopPropagation(); if (up) return; st.sel = k; $$(".fi", d.parentNode).forEach(x => x.classList.toggle("sel", x === d)); buildMbar(w); };
   d.ondblclick = () => up ? go(w, st, parent(st.path)) : openSel(w, st);
   d.oncontextmenu = e => { e.preventDefault(); if (up) return; d.onmousedown(e); openMenu([{ t: "Open", a: () => openSel(w, st) }, { t: "Put in Trash", a: () => trashSel(w, st) }, { t: "Properties…", a: () => props(st) }], e.clientX, e.clientY, { title: k, noTear: true }); };
@@ -737,7 +892,7 @@ function fileIcon(k, n, w, st, up) {
 }
 function openSel(w, st) {
   const p = join(st.path, st.sel), n = nodeAt(p); if (!n) return;
-  if (isDir(n)) go(w, st, p); else if (n.bin) dialog({ title: "File Manager", icon: "warn", msg: `“${esc(st.sel)}” is not text.<br><small>Kosmos would open it in Photo or Music.</small>` }); else openEditor(p);
+  if (isDir(n)) go(w, st, p); else if (n.song != null || n.film) playFile(p); else if (n.bin) dialog({ title: "File Manager", icon: "warn", msg: `“${esc(st.sel)}” is not text.<br><small>Kosmos would open it in Photo or Music.</small>` }); else openEditor(p);
 }
 function trashSel(w, st) {
   const n = nodeAt(st.path); S.trash.push({ name: st.sel, from: st.path, node: n.kids[st.sel] }); delete n.kids[st.sel]; st.sel = null; render(w, st); refreshTrash(); beep(300, .05);
@@ -776,7 +931,7 @@ function saveAs(w) {
 // ---------- Mailer
 const MAIL = [
   { f: "Nebula", s: "Four processors in use", d: "Today", n: true, b: "Every processor that arrived is in use, and new threads go to the least\nbusy one.\n\nThe Performance Meter in the Front Panel's subpanel shows each one.\n" },
-  { f: "Packages", s: "Three updates are ready", d: "Today", n: true, b: "Tracker 0.11.316, Terminal 0.11.316 and the Crypto Kit have updates.\n\nThey go in at the next restart. Nothing has to quit for it now.\n" },
+  { f: "Packages", s: "Three updates are ready", d: "Today", n: true, b: "Tracker 0.12.18, Terminal 0.12.18 and the Crypto Kit have updates.\n\nThey go in at the next restart. Nothing has to quit for it now.\n" },
   { f: "Ana", s: "Re: the four buttons", d: "Yesterday", b: "I remember them! I used to put the mail in Two and everything\nelse in One, and never used Three or Four.\n\n- A\n" },
   { f: "Corona", s: "Welcome", d: "Yesterday", b: "This is a mockup of a third desktop for Kosmos, in the manner of the\nSolaris desktop. Open the Help Viewer from the Front Panel for what to try.\n" },
 ];
@@ -841,17 +996,19 @@ function clockSvg(big) {
 
 // ---------- Style Manager
 const PALETTES = {
-  kosmos: { n: "Kosmos", bg: "#aeb2c3", top: "#e1e3ec", bot: "#5f6478", field: "#c9ccd8", act: "#a65d82", acttop: "#d39cb8", actbot: "#63304b", sel: "#6c7fa8" },
+  indigo: { n: "Indigo Magic", bg: "#9ea8b8", top: "#dde3ec", bot: "#535c6c", field: "#bcc5d2", act: "#3a5f92", acttop: "#7c9cc8", actbot: "#1c3254", sel: "#3a5f92" },
+  kosmos: { n: "Solaris", bg: "#aeb2c3", top: "#e1e3ec", bot: "#5f6478", field: "#c9ccd8", act: "#a65d82", acttop: "#d39cb8", actbot: "#63304b", sel: "#6c7fa8" },
   sand: { n: "Sand", bg: "#c7bba3", top: "#ece5d6", bot: "#776c56", field: "#ddd3bf", act: "#8a6a3e", acttop: "#c2a072", actbot: "#4a3820", sel: "#8a6a3e" },
   ocean: { n: "Ocean", bg: "#9fb5bd", top: "#dbe7eb", bot: "#4f6870", field: "#bfd0d6", act: "#2f6f8a", acttop: "#6fa8c0", actbot: "#173d4e", sel: "#2f6f8a" },
   orchid: { n: "Orchid", bg: "#b9aec4", top: "#e8e2ee", bot: "#635873", field: "#d0c7d9", act: "#7a4f9a", acttop: "#b08bcc", actbot: "#3f2556", sel: "#7a4f9a" },
   lichen: { n: "Lichen", bg: "#a9b59e", top: "#e0e7d8", bot: "#5a6650", field: "#c6cfbc", act: "#5c7a3a", acttop: "#93b06e", actbot: "#2f421c", sel: "#5c7a3a" },
+  indigonight: { n: "Indigo Night", e26: true, bg: "#323a48", top: "#56627a", bot: "#171b23", field: "#262c37", act: "#5b86c4", acttop: "#93b4e2", actbot: "#283f66", sel: "#5b86c4", ink: "#e4e9f2" },
   night: { n: "Night", e26: true, bg: "#3b3f4b", top: "#5d6272", bot: "#1d1f26", field: "#2b2e37", act: "#c0729a", acttop: "#e3a3c3", actbot: "#6e3354", sel: "#c0729a", ink: "#e6e8ee" },
   charcoal: { n: "Charcoal", bg: "#7d808a", top: "#b5b8c2", bot: "#3c3e45", field: "#959aa5", act: "#b4573c", acttop: "#e08f75", actbot: "#6b2a18", sel: "#b4573c" },
 };
 // In 2026 a workspace can have a palette of its own: work in Ocean, music in Night.
 function curPal() { return (S.era === "2026" && S.wsPal[S.ws]) || (PALETTES[S.palette].e26 && S.era !== "2026" ? "kosmos" : S.palette); }
-function applyPalette(k) { if (S.era === "2026" && S.palOnly) S.wsPal[S.ws] = k; else S.palette = k; paint(); }
+function applyPalette(k) { if (S.era === "2026" && S.palOnly) S.wsPal[S.ws] = k; else { S.palette = k; S.palChosen = true; } paint(); }
 function paint() {
   const p = PALETTES[curPal()]; const r = document.documentElement.style;
   r.setProperty("--bg", p.bg); r.setProperty("--panel", p.bg); r.setProperty("--inact", p.bg); r.setProperty("--top", p.top); r.setProperty("--bot", p.bot);
@@ -909,8 +1066,8 @@ function openAppMgr() {
 
 // ---------- Performance Meter: every processor, as Kosmos has them
 function openPerf() {
-  makeWin({ key: "perf", app: "perf", icon: "perf", title: "Performance Meter", w: 440, h: 400, init: w => {
-    const names = ["Processor 0", "Processor 1", "Processor 2", "Processor 3", "Memory", "Disk"];
+  makeWin({ key: "perf", app: "perf", icon: "perf", title: "Performance Meter", w: 440, h: S.era === "2026" ? 500 : 400, init: w => {
+    const names = ["Processor 0", "Processor 1", "Processor 2", "Processor 3", "Memory", "Disk", ...(S.era === "2026" ? ["GPU", "Sound's deadline used"] : [])];
     w.body.innerHTML = `<div class="pm">${names.map(n => `<div class="g rz"><b><span>${n}</span><span class="v"></span></b><canvas></canvas></div>`).join("")}</div>`;
     const hist = names.map(() => []); let base = [22, 14, 9, 30, 41, 5];
     const tick = () => {
@@ -920,13 +1077,13 @@ function openPerf() {
         const c = $("canvas", g), W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
         if (c.width !== W) { c.width = W; c.height = H; }
         base[i] = clamp(base[i] + (Math.random() - .5) * 18, 2, 95);
-        const v = i === 4 ? clamp(30 + S.wins.size * 3, 0, 95) : clamp(base[i] * .7 + load * .5 + (Math.random() * 6), 0, 100);
+        const v = i === 4 ? clamp(30 + S.wins.size * 3, 0, 95) : i === 6 ? LOAD.gpu : i === 7 ? LOAD.au : i < 4 ? LOAD.cpu[i] : clamp(base[i] * .7 + load * .5 + (Math.random() * 6), 0, 100);
         hist[i].push(v); if (hist[i].length > W / 3) hist[i].shift();
         $(".v", g).textContent = Math.round(v) + "%";
         const x = c.getContext("2d"); x.clearRect(0, 0, W, H);
         x.strokeStyle = "rgba(127,224,160,.18)"; for (let y = H / 4; y < H; y += H / 4) { x.beginPath(); x.moveTo(0, y); x.lineTo(W, y); x.stroke(); }
         x.beginPath(); hist[i].forEach((h, j) => { const px = W - (hist[i].length - j) * 3, py = H - h / 100 * H; j ? x.lineTo(px, py) : x.moveTo(px, py); });
-        x.strokeStyle = i === 4 ? "#ffcf4a" : "#7fe0a0"; x.lineWidth = 1.5; x.stroke();
+        x.strokeStyle = i === 4 ? "#ffcf4a" : i === 6 ? "#6f95c2" : i === 7 ? "#c9a0ff" : "#7fe0a0"; x.lineWidth = 1.5; x.stroke();
       });
       setTimeout(tick, 500);
     };
@@ -963,51 +1120,472 @@ function openHelp() {
     { t: "Help", help: true, items: [{ t: "About Help Viewer", d: true }] },
   ], init: w => {
     w.body.innerHTML = `<div class="helpv">
-      <h2>Corona: Kosmos in the Solaris desktop's manner</h2>
-      <div style="color:#555">A mockup of a third desktop, to get the feel before any of it is built. "Corona" is a working name.</div>
-      <h3>From the Solaris desktop</h3>
+      <h2>Corona: CDE and IRIX, for a media workstation</h2>
+      <div style="color:#555">A mockup of a third desktop for Kosmos, to get the feel before any of it is built. The design is <code>docs/corona.md</code>.</div>
+      <h3>From the Solaris desktop (CDE)</h3>
       <ul>
-        <li><b>The Front Panel</b> at the bottom: the clock, the calendar, your home folder, the text editor and mail at the left; the padlock, the busy light, four workspaces and Exit in the middle; the printer, the Style Manager, applications, help and the Trash Can at the right.</li>
+        <li><b>The Front Panel</b> at the bottom: the clock, the date, your home folder, the text editor and mail at the left; the padlock, the busy light, four workspaces and Exit in the middle; the Style Manager, applications and the Trash Can at the right.</li>
         <li><b>Subpanels</b>: the small arrow above a control opens its list. Personal Applications holds the Terminal and the Performance Meter.</li>
         <li><b>Four workspaces</b>, each with its own windows and backdrop. Double-click a workspace's button to rename it.</li>
-        <li><b>Motif windows</b>: take hold of the frame to resize, the title bar to move (an outline moves, then the window). The button at the left of the title bar is the <b>window menu</b>: Move, Size, Minimize, Maximize, Lower, Occupy Workspace, Close. Double-click it to close.</li>
-        <li><b>Minimized windows</b> become icons down the left of the workspace. Double-click one to restore it.</li>
+        <li><b>Motif windows</b>: take hold of the frame to resize, the title bar to move. The button at the left of the title bar is the <b>window menu</b>: Move, Size, Minimize, Maximize, Lower, Occupy Workspace, Close. Double-click it to close.</li>
+        <li><b>Minimized windows</b> become icons down the left of the workspace, under the Toolchest.</li>
         <li><b>The Workspace Menu</b>: press the right button on the backdrop.</li>
         <li><b>The Style Manager</b>: palettes chosen whole, a backdrop for each workspace, and whether the active window is the one you click or the one you point at.</li>
       </ul>
-      <h3>From Kosmos</h3>
+      <h3>From IRIX (Indigo Magic)</h3>
       <ul>
-        <li>The applications are Kosmos's, in Motif's frame: in the real desktop, Kosmos's Terminal, Tracker and Write, not these stand-ins.</li>
-        <li>The <b>Performance Meter</b> shows each of the four processors, because every one of them is in use.</li>
-        <li>Every program in its own address space: <code>ps</code> in the Terminal says so.</li>
-        <li>Exit ends the session; in Kosmos the desktop chooser would come back.</li>
+        <li><b>The Toolchest</b>, at the top left: Desktop, Selected, Find, Media, System and Help, each a menu. It is Kosmos's own menu, in IRIX's shape.</li>
+        <li><b>The Desks Overview</b>: every desk drawn small with its windows, from the Toolchest's Desktop menu or the Applications subpanel. A click goes there.</li>
+        <li><b>Sculpted icons</b> down the right of the backdrop: your home, Music, Movies, Captures, the drive and the Trash. A click lays a coloured plate under one; a double-click opens it, the outline growing from the icon.</li>
+        <li><b>The Indigo Magic palette</b>, SGI's blue-grey, is the 2026 default; Solaris's is 1999's. Both are in the Style Manager.</li>
+        <li><b>The Audio Panel</b>: a fader and a meter for every stream that is making a sound, as IRIX's apanel was.</li>
       </ul>
       <h3>The switch: 1999 and 2026</h3>
       <ul>
-        <li>At the Front Panel's right end. <b>1999</b> is CDE as Solaris drew it. <b>2026</b> keeps its manner and every part of it, reimagined for today's screens.</li>
+        <li>At the Front Panel's right end. <b>1999</b> is CDE and IRIX as they were. <b>2026</b> keeps their manner and every part of them, and makes the panel a media workstation's.</li>
       </ul>
-      <h3>In 2026</h3>
+      <h3>In 2026: a media workstation</h3>
       <ul>
-        <li><b>The four buttons show their workspaces</b>, windows and all, drawn small. Drag a window by its title onto one to send it there.</li>
-        <li><b>Every workspace at once</b>: F3. Click one to go to it. <kbd>Alt</kbd>+1 to 4, or <kbd>Alt</kbd>+arrows, slide between them.</li>
-        <li><b>Windows move themselves</b> rather than an outline, and snap to half the screen at the left or right edge, or fill it at the top.</li>
-        <li><b>Find</b>, in the Front Panel: applications and files, as you type.</li>
-        <li><b>Today</b>, the subpanel above the calendar: the day's appointments and the notifications that came. Banners rise above the panel.</li>
-        <li><b>Status</b>: the network, volume, brightness, the battery, and holding notifications until you say.</li>
-        <li><b>Processors</b>: four bars in the panel, live. Click them for the Performance Meter.</li>
-        <li><b>A palette for one workspace</b>: Style Manager, Color, "Only for workspace". And Night, a dark one.</li>
+        <li><b>Now Playing</b>, in the Front Panel: the song, its cover, the transport, where it is, and its two levels, live. Its arrow lists what is next and what is making a sound. The wheel over it is the volume.</li>
+        <li><b>Drag to play</b>: drag a song or a film from the File Manager, or the Music icon, onto Now Playing. A song plays; a film opens in the Movie Player. Drop a file on the Trash to throw it away, or on a workspace's button to open it there.</li>
+        <li><b>Record</b>: the red button records the screen, with the sound, into Captures; press it again to stop. Its arrow takes a picture of the screen instead.</li>
+        <li><b>CPU GPU ♪</b>: the four processors, the graphics processor, and how much of the sound's deadline the mix is using - the three things a media machine runs out of. Click for the Performance Meter, which has all of them over time.</li>
+        <li><b>The four buttons show their workspaces</b>, live: windows where they are, a film moving in its window, and a note on the desk that is making the sound. Drag a window by its title onto one to send it there.</li>
+        <li><b>Every workspace at once</b>: F3. <kbd>Alt</kbd>+1 to 4, or <kbd>Alt</kbd>+arrows, slide between them.</li>
+        <li><b>Windows move themselves</b> and snap to half the screen at the left or right edge, or fill it at the top.</li>
+        <li><b>Find</b>, <b>Today</b> above the date, and <b>Status</b>: the network, volume, brightness, the battery, and holding notifications.</li>
+        <li><b>A palette for one workspace</b>: Style Manager, Color, "Only for workspace". And the night palettes.</li>
       </ul>
       <h3>Try</h3>
       <ul>
-        <li>Open the Terminal from the subpanel above the editor, and type <code>ls</code>, <code>cat Documents/readme.txt</code>, <code>ps</code>.</li>
-        <li>Put a window in every workspace: window menu, Occupy All Workspaces, then click Two.</li>
-        <li>Style Manager, Color, and try Charcoal or Ocean.</li>
-        <li>Click the padlock.</li>
+        <li>Press Play in the Front Panel, and watch its meters, the note on workspace Two, and Music's spectrum there.</li>
+        <li>Open Home in the File Manager, then Movies, and drag <code>orbits.mp4</code> onto Now Playing.</li>
+        <li>Press Record, wait a few seconds, press it again, and open Captures from the backdrop.</li>
+        <li>Toolchest, Media, Audio Panel: mute Music and see its meter go on moving.</li>
         <li>Press F3. Then drag the Help Viewer onto Three.</li>
+        <li>In the Terminal: <code>ps</code>, and <code>play Music/front-panel.mp3</code>.</li>
       </ul>
     </div>`;
   } });
 }
+
+/* ============================================================ the sound: a media workstation's */
+// Synthesised here, so the page carries no recordings. In Kosmos each of
+// these is a stream the audio server mixes; the Audio Panel's channels are
+// those streams and its meters the peaks the mix already measures.
+const SONGS = [
+  { t: "Night Shift", a: "Ana Ortiz - Late Desks", len: 204, bpm: 92, root: 220, scale: [0, 3, 5, 7, 10], pat: [0, 2, 4, 2, 3, 1, 4, 2, 0, 4, 3, 1, 2, 4, 1, 3], col: ["#2b2140", "#b0466a"] },
+  { t: "Indigo Magic", a: "The Toolchest - Six Point Five", len: 251, bpm: 108, root: 196, scale: [0, 2, 4, 7, 9], pat: [0, 4, 2, 4, 1, 3, 2, 4, 0, 2, 3, 4, 1, 4, 2, 3], col: ["#1c3254", "#7c9cc8"] },
+  { t: "Front Panel", a: "Corona Ensemble", len: 187, bpm: 120, root: 262, scale: [0, 2, 3, 7, 8], pat: [0, 0, 3, 2, 4, 3, 2, 1, 0, 0, 4, 3, 2, 3, 1, 2], col: ["#3a2a10", "#e0a040"] },
+];
+const AU = { ctx: null, master: null, an: [], bus: null, ban: {}, on: false, song: 0, off: 0, t0: 0, next: 0, step: 0, timer: null, mute: {}, gain: { music: 80, movie: 80, system: 60 } };
+const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+function auInit() {
+  if (AU.ctx) return true;
+  try {
+    const C = new (window.AudioContext || window.webkitAudioContext)(); AU.ctx = C;
+    AU.master = C.createGain(); AU.master.connect(C.destination);
+    const sp = C.createChannelSplitter(2); AU.master.connect(sp);
+    AU.an = [0, 1].map(i => { const a = C.createAnalyser(); a.fftSize = 512; sp.connect(a, i); return a; });
+    AU.bus = {}; ["music", "movie", "system"].forEach(k => { const g = C.createGain(), a = C.createAnalyser(); a.fftSize = 512; g.connect(a); g.connect(AU.master); AU.bus[k] = g; AU.ban[k] = a; });
+    auGains(); return true;
+  } catch (e) { return false; }
+}
+function auGains() {
+  if (!AU.ctx) return;
+  AU.master.gain.value = AU.mute.master ? 0 : S.vol / 100 * .3;
+  Object.keys(AU.bus).forEach(k => AU.bus[k].gain.value = AU.mute[k] ? 0 : AU.gain[k] / 100);
+}
+const musicPos = () => AU.on ? AU.off + (AU.ctx.currentTime - AU.t0) : AU.off;
+function tone(f, at, d, type, vol, pan, bus = "music") {
+  const C = AU.ctx, o = C.createOscillator(), g = C.createGain(), p = C.createStereoPanner ? C.createStereoPanner() : null;
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + .012); g.gain.exponentialRampToValueAtTime(.0008, at + d);
+  o.connect(g); if (p) { p.pan.value = pan; g.connect(p); p.connect(AU.bus[bus]); } else g.connect(AU.bus[bus]);
+  o.start(at); o.stop(at + d + .05);
+}
+function schedule() {
+  const C = AU.ctx, sg = SONGS[AU.song], eighth = 60 / sg.bpm / 2;
+  while (AU.next < C.currentTime + .15) {
+    const i = AU.step % sg.pat.length, deg = sg.scale[sg.pat[i]], f = sg.root * Math.pow(2, deg / 12);
+    tone(f * (AU.step % 32 > 15 ? 2 : 1), AU.next, eighth * 1.8, "triangle", .22, Math.sin(AU.step / 3) * .6);
+    if (AU.step % 4 === 0) tone(sg.root / 2 * Math.pow(2, sg.scale[sg.pat[(AU.step / 4 | 0) % 4]] / 12), AU.next, eighth * 3.6, "sine", .32, 0);
+    if (AU.step % 8 === 4) tone(1800, AU.next, .05, "square", .03, .3);
+    AU.step++; AU.next += eighth;
+  }
+  if (musicPos() >= sg.len) nextSong(1);
+}
+function playSong(i, at = 0) {
+  if (!auInit()) { toast("This browser will not make a sound"); return; }
+  AU.ctx.resume();
+  clearInterval(AU.timer);
+  AU.song = (i + SONGS.length) % SONGS.length; AU.off = at; AU.t0 = AU.ctx.currentTime; AU.next = AU.ctx.currentTime + .05; AU.step = 0; AU.on = true;
+  AU.timer = setInterval(schedule, 25); schedule();
+  refreshNow();
+}
+function pauseMusic() { if (!AU.on) return; AU.off = musicPos(); AU.on = false; clearInterval(AU.timer); refreshNow(); }
+function togglePlay() { AU.on ? pauseMusic() : playSong(AU.song, AU.off); }
+function nextSong(d) { playSong(AU.song + d, 0); notify("music", "Now playing", `${SONGS[AU.song].t} - ${SONGS[AU.song].a}`); }
+function seekMusic(frac) { const sg = SONGS[AU.song]; if (AU.on) playSong(AU.song, frac * sg.len); else { AU.off = frac * sg.len; refreshNow(); } }
+function playFile(path) {
+  const n = nodeAt(path); if (!n) return;
+  if (n.film) { openMovie(path); return; }
+  if (n.song != null) { playSong(n.song); notify("music", "Now playing", `${SONGS[n.song].t} - ${SONGS[n.song].a}`); return; }
+  toast(`${path.split("/").pop()} has no sound to play`);
+}
+const isMedia = p => { const n = nodeAt(p); return !!(n && (n.song != null || n.film)); };
+const coverCss = i => `background:radial-gradient(circle at 30% 30%, ${SONGS[i].col[1]}, ${SONGS[i].col[0]} 70%)`;
+// What every view of the song shows, from what is already known: nothing
+// here asks anybody, so a press paints its new state at once.
+function refreshNow() {
+  const sg = SONGS[AU.song], started = AU.on || AU.off > 0;
+  $$(".fp.media").forEach(m => {
+    $(".np-t", m).textContent = started ? sg.t : "Nothing playing";
+    $(".np-a", m).textContent = started ? sg.a : "Drop a song or a film here";
+    $(".np-cover", m).setAttribute("style", started ? coverCss(AU.song) : "background:var(--field)");
+    $(".pp", m).innerHTML = AU.on ? PAUSE_SVG : PLAY_SVG;
+  });
+  S.wins.forEach(w => { if (w.app === "music" && w.drawNow) w.drawNow(); });
+  refreshIcons();
+}
+const PLAY_SVG = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1l7 4-7 4z"/></svg>`;
+const PAUSE_SVG = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1h2v8H2zM6 1h2v8H6z"/></svg>`;
+const PREV_SVG = `<svg width="11" height="10" viewBox="0 0 11 10"><path d="M1 1h1.6v8H1zM10 1L3 5l7 4z"/></svg>`;
+const NEXT_SVG = `<svg width="11" height="10" viewBox="0 0 11 10"><path d="M8.4 1H10v8H8.4zM1 1l7 4-7 4z"/></svg>`;
+function level(a) {
+  if (!a || !AU.ctx) return 0;
+  const b = level.buf || (level.buf = new Float32Array(512)); a.getFloatTimeDomainData(b);
+  let pk = 0; for (let i = 0; i < b.length; i++) pk = Math.max(pk, Math.abs(b[i]));
+  return clamp(pk * 2.2, 0, 1);
+}
+function meterBar(x, X, Y, W, H, v) {
+  // Segments, green to amber to red, as a desk's meters are.
+  const n = Math.max(4, Math.floor(H / 4)), lit = Math.round(v * n);
+  for (let i = 0; i < n; i++) { const y = Y + H - (i + 1) * (H / n); x.fillStyle = i >= lit ? "#16262b" : i > n * .85 ? "#e8484f" : i > n * .65 ? "#ffcf4a" : "#5fd08a"; x.fillRect(X, y + 1, W, H / n - 1); }
+}
+
+// ---------- Music: a library, what is playing, and its spectrum
+function openMusic() {
+  return makeWin({ key: "music", app: "music", icon: "music", title: "Music", w: 580, h: 380, menus: [
+    { t: "File", items: [{ t: "Open Library Folder", a: () => openFiles("/Home/Music") }, { sep: true }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Controls", items: [{ t: "Play / Pause", k: "Space", a: togglePlay }, { t: "Next", a: () => nextSong(1) }, { t: "Previous", a: () => nextSong(-1) }, { sep: true }, { t: "Audio Panel…", a: () => launch("apanel") }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.body.innerHTML = `<div class="mus"><div class="now sk"><div class="cov"></div><div><h3></h3><div class="sub2"></div><div class="np-bar" style="margin-top:10px;height:7px"><i></i></div><div class="tr"><button class="btn pv">${PREV_SVG}</button><button class="btn pp"></button><button class="btn nx">${NEXT_SVG}</button><small class="tm"></small><small style="margin-left:auto;opacity:.7">drop a song here to play it</small></div></div></div><div class="list sk"></div><div class="sk" style="padding:2px;min-height:0;position:relative"><canvas class="spec"></canvas></div></div>`;
+    const list = $(".list", w.body);
+    list.innerHTML = SONGS.map((sg, i) => `<div class="tk" data-i="${i}"><span>${i + 1}</span><span><b>${esc(sg.t)}</b> - ${esc(sg.a)}</span><span>${fmtT(sg.len)}</span></div>`).join("");
+    $$(".tk", list).forEach(r => { r.ondblclick = () => playSong(+r.dataset.i); r.onmousedown = () => { $$(".tk", list).forEach(x => x.classList.toggle("on", x === r)); }; });
+    $(".pp", w.body).onclick = togglePlay; $(".pv", w.body).onclick = () => nextSong(-1); $(".nx", w.body).onclick = () => nextSong(1);
+    $(".now .np-bar", w.body).onclick = e => { const r = e.currentTarget.getBoundingClientRect(); seekMusic((e.clientX - r.left) / r.width); };
+    w.drawNow = () => {
+      const sg = SONGS[AU.song];
+      $(".cov", w.body).setAttribute("style", coverCss(AU.song)); $("h3", w.body).textContent = sg.t; $(".sub2", w.body).textContent = sg.a;
+      $(".pp", w.body).innerHTML = (AU.on ? PAUSE_SVG : PLAY_SVG) + (AU.on ? " Pause" : " Play");
+      $$(".tk", list).forEach(x => x.classList.toggle("on", +x.dataset.i === AU.song));
+    };
+    dropTarget(w.el, isMedia, playFile);
+    w.drawNow();
+  } });
+}
+
+// ---------- Movie Player: a film drawn as it plays, its sound in its own stream
+const STARS = Array.from({ length: 140 }, () => [Math.random(), Math.random(), Math.random()]);
+function openMovie(path = "/Home/Movies/orbits.mp4") {
+  return makeWin({ key: "movie", app: "movie", icon: "film", title: "Movie Player - " + path.split("/").pop(), w: 560, h: 380, menus: [
+    { t: "File", items: [{ t: "Open Movies Folder", a: () => openFiles("/Home/Movies") }, { sep: true }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Play", items: [{ t: "Play / Pause", a: () => S.focus && S.focus.mv && S.focus.mv.toggle() }, { t: "Back to the Start", a: () => { const m = S.focus && S.focus.mv; if (m) { m.t = 0; } } }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    w.body.innerHTML = `<div class="mov"><canvas></canvas><div class="bar"><button class="btn pp"></button><div class="np-bar"><i></i></div><small class="tc">00:00:00:00</small></div></div>`;
+    const mv = w.mv = { on: false, t: 0, len: 96, last: 0, drone: null };
+    mv.toggle = () => {
+      mv.on = !mv.on; mv.last = performance.now();
+      if (mv.on && auInit()) { AU.ctx.resume(); const C = AU.ctx, o = C.createOscillator(), o2 = C.createOscillator(), g = C.createGain(); o.type = "sawtooth"; o.frequency.value = 55; o2.type = "sine"; o2.frequency.value = 82.5; g.gain.value = .05; o.connect(g); o2.connect(g); g.connect(AU.bus.movie); o.start(); o2.start(); mv.drone = [o, o2]; }
+      else if (mv.drone) { mv.drone.forEach(o => o.stop()); mv.drone = null; }
+      $(".pp", w.body).innerHTML = mv.on ? PAUSE_SVG : PLAY_SVG;
+    };
+    $(".pp", w.body).innerHTML = PLAY_SVG; $(".pp", w.body).onclick = mv.toggle;
+    $(".np-bar", w.body).onclick = e => { const r = e.currentTarget.getBoundingClientRect(); mv.t = (e.clientX - r.left) / r.width * mv.len; };
+    w.onClose = () => { if (mv.drone) mv.drone.forEach(o => o.stop()); return true; };
+    setTimeout(mv.toggle, 300);
+  } });
+}
+function drawFilm(w) {
+  const mv = w.mv, c = $("canvas", w.body); if (!c) return;
+  const now = performance.now(); if (mv.on) { mv.t += (now - mv.last) / 1000; if (mv.t >= mv.len) mv.t = 0; } mv.last = now;
+  const W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
+  if (c.width !== W) { c.width = W; c.height = H; }
+  const x = c.getContext("2d"), t = mv.t;
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#050816"); g.addColorStop(1, "#1a1030"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  STARS.forEach(([sx, sy, b]) => { x.fillStyle = `rgba(255,255,255,${.25 + b * .6 * (.7 + .3 * Math.sin(t * 2 + b * 9))})`; x.fillRect(((sx * W - t * 6 * b) % W + W) % W, sy * H, 1.4, 1.4); });
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .2;
+  const back = (a, d, r, col) => { const ax = cx + Math.cos(a) * d, ay = cy + Math.sin(a) * d * .32; return { ax, ay, r, col, z: Math.sin(a) }; };
+  const moons = [back(t * .9, R * 2, R * .14, "#e0a040"), back(t * .55 + 2, R * 2.7, R * .1, "#9fd0ff"), back(-t * 1.3 + 4, R * 1.55, R * .07, "#e8e8e8")];
+  const moon = m => { x.beginPath(); x.arc(m.ax, m.ay, m.r * (1 + m.z * .15), 0, 7); x.fillStyle = m.col; x.fill(); };
+  moons.filter(m => m.z < 0).forEach(moon);
+  const pg = x.createRadialGradient(cx - R * .4, cy - R * .4, R * .1, cx, cy, R); pg.addColorStop(0, "#9fc4ff"); pg.addColorStop(.6, "#2f5d8f"); pg.addColorStop(1, "#0c1a33");
+  x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fillStyle = pg; x.fill();
+  x.strokeStyle = "rgba(224,160,64,.55)"; x.lineWidth = 3; x.beginPath(); x.ellipse(cx, cy, R * 1.6, R * .35, -.2, 0, 7); x.stroke();
+  moons.filter(m => m.z >= 0).forEach(moon);
+  if (t < 3.2) { x.globalAlpha = Math.min(1, (3.2 - t) / 1.2); x.fillStyle = "#fff"; x.font = `700 ${Math.round(H / 8)}px IBM Plex Sans, sans-serif`; x.textAlign = "center"; x.fillText("ORBITS", cx, cy + R * 1.9); x.globalAlpha = 1; }
+  const fr = Math.floor((t % 1) * 24), tc = `00:${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}:${String(fr).padStart(2, "0")}`;
+  $(".tc", w.body).textContent = tc; $(".np-bar i", w.body).style.width = (t / mv.len * 100) + "%";
+}
+
+// ---------- Audio Panel: a fader and a meter for every stream, as IRIX's apanel was
+function openAPanel() {
+  makeWin({ key: "apanel", app: "apanel", icon: "apanel", title: "Audio Panel", w: 430, h: 330, menus: [
+    { t: "File", items: [{ t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => {
+    const ch = [["master", "Master"], ["music", "Music"], ["movie", "Movie Player"], ["system", "System"]];
+    w.body.innerHTML = `<div class="apan"><div class="chs">${ch.map(([k, n]) => `<div class="ch rz" data-k="${k}"><b>${n}</b><div class="fd"><canvas width="12" height="160"></canvas><input type="range" min="0" max="100" value="${k === "master" ? S.vol : AU.gain[k]}"></div><small class="v">${k === "master" ? S.vol : AU.gain[k]}</small><label><input type="checkbox" ${AU.mute[k] ? "checked" : ""}> Mute</label></div>`).join("")}</div><div class="ft">Mixed at 48,000 Hz. The worst gap between the mix's turns: <b class="gap">0.6 ms</b> of the 23 ms the device holds; nothing starved. Each meter is measured before its fader, so a muted stream still shows it is making a sound.</div></div>`;
+    $$(".ch", w.body).forEach(c => {
+      const k = c.dataset.k, r = $("input[type=range]", c), m = $("input[type=checkbox]", c);
+      r.oninput = () => { if (k === "master") S.vol = +r.value; else AU.gain[k] = +r.value; $(".v", c).textContent = r.value; auGains(); };
+      m.onchange = () => { AU.mute[k] = m.checked; auGains(); };
+    });
+  } });
+}
+
+// ---------- Desks Overview: IRIX's list of desks, each drawn small
+function openDesks() {
+  makeWin({ key: "desks", app: "desks", icon: "desks", title: "Desks Overview", w: 330, h: 380, menus: [
+    { t: "Desks", items: [{ t: "New Desk…", d: true }, { t: "Rename Current…", a: () => renameDesk(S.ws) }, { sep: true }, { t: "Close", a: () => closeWin(S.focus) }] },
+    { t: "Help", help: true, items: [{ t: "Overview…", a: () => launch("help") }] },
+  ], init: w => { w.body.innerHTML = `<div class="desks"><div class="dl"></div><div class="fm-st">Double-click a desk's name to rename it. Drop a window's title on a desk to send it there.</div></div>`; w.ws = -1; w.draw = () => drawDesks(w); w.draw(); } });
+}
+function drawDesks(w) {
+  const dl = $(".dl", w.body); if (!dl) return;
+  const sig = S.ws + "|" + S.wsNames.join() + "|" + [...S.wins.values()].map(x => x.id + x.ws + x.el.style.left + x.el.style.top + x.el.style.width + (x === S.focus) + x.min).join();
+  if (w.sig === sig) return; w.sig = sig;
+  dl.innerHTML = S.wsNames.map((n, i) => { const k = [...S.wins.values()].filter(x => !x.min && !x.dialog && x.app !== "desks" && (x.ws === i || x.ws === -1)).length; return `<div class="dr${i === S.ws ? " cur" : " rz"}" data-i="${i}"><div class="dk-mini" style="${backCss(i)}">${wsRects(i, 112, 63)}</div><div><b>${esc(n)}</b><small>${k === 1 ? "1 window" : k + " windows"}${i === S.ws ? " · you are here" : ""}</small></div></div>`; }).join("");
+  $$(".dr", dl).forEach(r => { r.onclick = () => goWs(+r.dataset.i); $("b", r).ondblclick = e => { e.stopPropagation(); renameDesk(+r.dataset.i); }; });
+}
+function refreshDesks() { S.wins.forEach(w => { if (w.app === "desks" && w.draw) w.draw(); }); }
+function renameDesk(i) {
+  dialog({ title: "Rename Desk", icon: "desks", msg: `A new name for desk ${i + 1}:`, extra: `<input class="sk" id="dn" value="${esc(S.wsNames[i])}" maxlength="12" style="margin-top:8px;width:200px;border:0;padding:4px 6px;font:12px var(--sys)">`,
+    buttons: [{ t: "OK", def: true, a: d => { S.wsNames[i] = ($("#dn", d.el).value || "").trim() || S.wsNames[i]; buildPanel(); show(); } }, { t: "Cancel" }] });
+}
+
+// ---------- Find, as a window: the same search the Front Panel's Find holds
+function openFind() {
+  makeWin({ key: "find", app: "find", icon: "find", title: "Find an Icon", w: 380, h: 300, init: w => { w.body.innerHTML = `<div class="sbody" style="position:absolute;inset:4px;overflow:auto"></div>`; findPanel($(".sbody", w.body), () => {}); } });
+}
+
+/* ============================================================ the Toolchest (IRIX) */
+function chestMenus() {
+  const sel = S.iconSel && SICONS.find(i => i.k === S.iconSel);
+  return [
+    { t: "Desktop", items: [
+      { t: "Open Terminal", a: () => launch("term") },
+      { t: "Home Folder", a: () => launch("files") },
+      { t: "Desks", sub: [{ t: "Desks Overview", a: () => launch("desks") }, { sep: true }, ...S.wsNames.map((n, i) => ({ t: n, chk: i === S.ws, a: () => goWs(i) }))] },
+      { t: "Customize", sub: [{ t: "Color…", a: styleColor }, { t: "Backdrop…", a: styleBackdrop }, { t: "Window Behaviour…", a: styleWindow }, { sep: true }, { t: "Style Manager", a: () => launch("style") }] },
+      { sep: true },
+      { t: "Log Out…", a: logout },
+    ] },
+    { t: "Selected", items: [
+      { t: sel ? `Open “${sel.n}”` : "Open", d: !sel, a: () => openIcon(sel) },
+      { t: "Get Info", d: !sel, a: () => sel && dialog({ title: "Info", icon: sel.ic, msg: `<b>${esc(sel.n)}</b><br>${esc(sel.path || "the Trash")}<br><small>Handed to whatever opens it, and to nothing else.</small>` }) },
+      { t: "Put in Trash", d: true },
+    ] },
+    { t: "Find", items: [
+      { t: "An Icon or a File…", a: () => launch("find") },
+      { t: "Applications", a: () => launch("apps") },
+      { t: "Media Library", a: () => openFiles("/Home/Music") },
+    ] },
+    { t: S.era === "2026" ? "Media" : "Media Tools", items: [
+      { t: "Music", a: () => launch("music") },
+      { t: "Movie Player", a: () => launch("movie") },
+      { t: "Audio Panel", a: () => launch("apanel") },
+      ...(S.era === "2026" ? [{ sep: true }, { t: S.recOn ? "Stop Recording" : "Record the Screen", a: toggleRec }, { t: "Take a Picture of the Screen", a: screenshot }] : []),
+      { sep: true },
+      { t: "Captures Folder", a: () => openFiles("/Home/Captures") },
+    ] },
+    { t: "System", items: [
+      { t: "Performance Meter", a: () => launch("perf") },
+      { t: "This Machine", a: () => dialog({ title: "This Machine", icon: "gpu", msg: "<b>kosmos</b>, a ThinkCentre M700<br>4 processors, 16 GB, Intel HD 530<br><small>Kosmos's This Machine would open here, a card a device.</small>" }) },
+      { sep: true },
+      { t: "Restart Workspace Manager…", a: restartWm },
+    ] },
+    { t: "Help", items: [
+      { t: "Help Viewer", a: () => launch("help") },
+      { t: "About Corona", a: () => dialog({ title: "About Corona", icon: "panel", msg: "<b>Corona</b>, a desktop for Kosmos<br>CDE's Front Panel and IRIX's Toolchest, for a media workstation.<br><small>A mockup, drawn before it is built (docs/corona.md).</small>" }) },
+    ] },
+  ];
+}
+function buildChest() {
+  const c = $("#tchest");
+  c.innerHTML = `<div class="tt"><div class="b rz1"><i class="ic-menu" style="width:9px"></i></div><div class="t rz1">Toolchest</div><div class="b rz1"><i class="ic-min"></i></div></div>` + chestMenus().map((m, i) => `<div class="ti rz" data-i="${i}">${esc(m.t)}</div>`).join("");
+  $$(".ti", c).forEach(b => b.onmousedown = e => {
+    e.stopPropagation();
+    if (b.classList.contains("open")) { closeMenus(); return; }
+    const r = b.getBoundingClientRect();
+    openMenu(chestMenus()[+b.dataset.i].items, r.right + 1, r.top - 4, { owner: b });
+  });
+  const [mb, nb] = $$(".tt .b", c);
+  mb.onmousedown = e => { e.stopPropagation(); openMenu([{ t: c.classList.contains("min") ? "Restore" : "Minimize", a: () => c.classList.toggle("min") }, { t: "Move", d: true }], e.clientX, e.clientY, { title: "Toolchest", noTear: true }); };
+  nb.onclick = () => c.classList.toggle("min");
+}
+
+/* ============================================================ sculpted icons on the backdrop */
+const SICONS = [
+  { k: "home", n: "diego", ic: "s_home", path: "/Home" },
+  { k: "music", n: "Music", ic: "s_media", path: "/Home/Music" },
+  { k: "movies", n: "Movies", ic: "s_film", path: "/Home/Movies" },
+  { k: "captures", n: "Captures", ic: "s_capture", path: "/Home/Captures" },
+  { k: "drive", n: "Kosmos HD", ic: "s_drive", path: "/" },
+  { k: "trash", n: "Trash", ic: "s_trash" },
+];
+function buildIcons() {
+  $$(".sicon").forEach(x => x.outerHTML = "");
+  SICONS.forEach((it, i) => {
+    const d = document.createElement("div"); d.className = "sicon"; d.dataset.k = it.k; d.style.top = (14 + i * 100) + "px";
+    d.innerHTML = `<div class="p">${picOf(it.ic)}</div><div class="l">${esc(it.n)}</div>`;
+    d.onmousedown = e => { e.stopPropagation(); S.iconSel = it.k; $$(".sicon").forEach(x => x.classList.toggle("sel", x === d)); };
+    d.ondblclick = () => openIcon(it, d);
+    if (it.path) { d.draggable = true; d.ondragstart = e => { e.dataTransfer.setData("text/plain", it.path); DRAGGED = it.path; }; }
+    if (it.k === "trash") dropTarget(d, p => p.startsWith("/Home/") && !SICONS.some(s => s.path === p), trashPath);
+    if (it.k === "music") dropTarget(d, isMedia, playFile);
+    $("#desk").appendChild(d);
+  });
+  refreshIcons();
+}
+function refreshIcons() {
+  const badge = (k, txt, cls) => { const d = $(`.sicon[data-k="${k}"] .p`); if (!d) return; const b = $(".badge", d); if (!txt) { if (b) b.outerHTML = ""; return; } if (b) { b.textContent = txt; b.className = "badge " + (cls || ""); } else d.insertAdjacentHTML("beforeend", `<span class="badge ${cls || ""}">${txt}</span>`); };
+  badge("captures", S.era === "2026" && S.captures ? String(S.captures) : "");
+  badge("music", S.era === "2026" && AU.on ? "▶" : "", "play");
+  const t = $(`.sicon[data-k="trash"] .p svg`); if (t) t.style.opacity = S.trash.length ? 1 : .85;
+}
+function openIcon(it, from) {
+  if (!it) return;
+  const go = () => it.k === "trash" ? launch("trash") : openFiles(it.path);
+  if (!from) return go();
+  // IRIX's launch: the outline grows from the icon to where the window will be.
+  const r = from.getBoundingClientRect(), fx = document.createElement("div"); fx.className = "launchfx";
+  Object.assign(fx.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+  document.body.appendChild(fx);
+  requestAnimationFrame(() => Object.assign(fx.style, { left: innerWidth / 2 - 260 + "px", top: "60px", width: "520px", height: "360px", opacity: .2 }));
+  setTimeout(() => { fx.outerHTML = ""; go(); }, 230);
+}
+function trashPath(p) {
+  const n = nodeAt(parent(p)), k = p.split("/").pop(); if (!n || !n.kids[k]) return;
+  S.trash.push({ name: k, from: parent(p), node: n.kids[k] }); delete n.kids[k]; refreshTrash(); refreshFiles(); beep(300, .05);
+}
+
+/* ============================================================ drag a file onto something */
+// A file's path is what is carried, as the window manager's `drag` carries
+// a string; whoever it is dropped on decides what it means.
+let DRAGGED = null;
+function dropTarget(el, ok, done) {
+  el.addEventListener("dragover", e => { if (DRAGGED && ok(DRAGGED)) { e.preventDefault(); el.classList.add("drop-ok"); } });
+  el.addEventListener("dragleave", () => el.classList.remove("drop-ok"));
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("drop-ok"); const p = DRAGGED; DRAGGED = null; if (p && ok(p)) done(p); });
+}
+addEventListener("dragend", () => { DRAGGED = null; $$(".drop-ok").forEach(x => x.classList.remove("drop-ok")); });
+
+/* ============================================================ recording the screen */
+function toggleRec() {
+  if (!S.recOn) {
+    S.recOn = true; S.recT0 = Date.now(); $("#recframe").classList.add("on"); beep(990, .06);
+    notify("rec", "Recording the screen", "the whole screen, 30 frames a second. Press the button again to stop.");
+  } else {
+    S.recOn = false; $("#recframe").classList.remove("on");
+    const s = Math.max(1, Math.round((Date.now() - S.recT0) / 1000)), d = new Date(), pad = v => String(v).padStart(2, "0");
+    const name = `screen-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.mp4`;
+    nodeAt("/Home/Captures").kids[name] = { bin: true, size: s * 1150000, film: true };
+    S.captures++; refreshFiles(); refreshIcons(); beep(660, .06);
+    notify("rec", "Screen recorded", `${fmtT(s)} in Captures, as ${name}: H.264 by the Record Kit.`);
+  }
+  refreshRec();
+}
+function refreshRec() {
+  const c = $("#fp-rec"); if (!c) return;
+  c.classList.toggle("on", S.recOn);
+  const s = (Date.now() - S.recT0) / 1000;
+  $(".cv small", c).textContent = S.recOn ? fmtT(s) : "Record";
+  $("#recframe b").textContent = "REC " + fmtT(S.recOn ? s : 0);
+}
+setInterval(() => { if (S.recOn) refreshRec(); }, 500);
+function screenshot() {
+  const d = new Date(), pad = v => String(v).padStart(2, "0");
+  const name = `screenshot-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
+  nodeAt("/Home/Captures").kids[name] = { bin: true, size: 2400000 };
+  S.captures++; refreshFiles(); refreshIcons();
+  document.body.style.opacity = ".4"; setTimeout(() => document.body.style.opacity = "", 90);
+  notify("rec", "Screenshot", `${name}, in Captures.`);
+}
+function recPanel(b) {
+  b.innerHTML = `<div class="ctl"><span>What</span><span><label><input type="radio" name="rw" checked> The whole screen</label><br><label><input type="radio" name="rw"> The window in front</label><br><label><input type="radio" name="rw"> The camera</label></span><small></small></div>
+    <div class="ctl"><span>Sound</span><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" checked> what this desk plays</label><small></small></div>
+    <div class="ctl"><span>Rate</span><span>30 frames a second</span><small>H.264</small></div>
+    <div class="row" data-a="rec">${ICO.rec}<span>${S.recOn ? "Stop recording" : "Start recording"}</span></div>
+    <div class="row" data-a="shot">${picOf("perf")}<span>Take a picture of the screen</span></div>
+    <div class="row" data-a="dir">${picOf("folder")}<span>Captures folder</span></div>`;
+  $$(".row", b).forEach(r => r.onclick = () => { closeSub(); ({ rec: toggleRec, shot: screenshot, dir: () => openFiles("/Home/Captures") })[r.dataset.a](); });
+}
+function mediaPanel(b, place) {
+  const sg = SONGS[AU.song];
+  b.innerHTML = `<div class="lbl">Up next</div>${SONGS.map((x, i) => `<div class="row" data-i="${i}"><span class="np-cover" style="width:22px;height:22px;flex:none;${coverCss(i)}"></span><span>${esc(x.t)}</span><small>${i === AU.song && (AU.on || AU.off) ? (AU.on ? "playing" : "paused") : fmtT(x.len)}</small></div>`).join("")}
+    <div class="lbl">Making a sound</div>
+    <div class="ctl"><span>Volume</span><input type="range" min="0" max="100" value="${S.vol}" class="v"><small class="vv">${S.vol}</small></div>
+    <div class="ctl"><span>Music</span><span>${AU.on ? esc(sg.t) : "quiet"}</span><small>${AU.gain.music}</small></div>
+    <div class="ctl"><span>Movie Player</span><span>${[...S.wins.values()].some(w => w.mv && w.mv.on) ? "orbits.mp4" : "quiet"}</span><small>${AU.gain.movie}</small></div>
+    <div class="row" data-a="ap">${ICO.apanel}<span>Audio Panel</span></div><div class="row" data-a="mu">${ICO.music}<span>Music</span></div>`;
+  $$(".row[data-i]", b).forEach(r => r.onclick = () => { playSong(+r.dataset.i); mediaPanel(b, place); place(); });
+  $(".row[data-a=ap]", b).onclick = () => { closeSub(); launch("apanel"); };
+  $(".row[data-a=mu]", b).onclick = () => { closeSub(); launch("music"); };
+  $(".v", b).oninput = e => { S.vol = +e.target.value; $(".vv", b).textContent = S.vol; auGains(); };
+}
+
+/* ============================================================ load: the processors, the GPU and the sound */
+const LOAD = { cpu: [20, 12, 30, 8], gpu: 6, au: 4 };
+function stepLoad() {
+  const films = [...S.wins.values()].filter(w => w.mv && w.mv.on).length;
+  LOAD.cpu = LOAD.cpu.map(v => clamp(v + (Math.random() - .5) * 22 + S.wins.size * .4 + (AU.on ? 1.5 : 0) + films * 3, 3, 96));
+  LOAD.gpu = clamp(LOAD.gpu * .6 + (4 + films * 26 + (OVW ? 18 : 0) + (S.recOn ? 14 : 0) + Math.random() * 6) * .4, 1, 99);
+  LOAD.au = clamp(LOAD.au * .5 + (2 + (AU.on ? 9 : 0) + films * 6 + Math.random() * 3) * .5, 1, 99);
+  const c = $(".fpload"); if (!c) return;
+  const x = c.getContext("2d"); x.fillStyle = "#0f1d22"; x.fillRect(0, 0, 56, 40);
+  LOAD.cpu.forEach((v, i) => { const h = v / 100 * 34; x.fillStyle = v > 75 ? "#ffcf4a" : "#7fe0a0"; x.fillRect(3 + i * 8, 37 - h, 6, h); });
+  x.fillStyle = "#6f95c2"; x.fillRect(37, 37 - LOAD.gpu / 100 * 34, 7, LOAD.gpu / 100 * 34);
+  x.fillStyle = LOAD.au > 60 ? "#e8484f" : "#c9a0ff"; x.fillRect(47, 37 - LOAD.au / 100 * 34, 7, LOAD.au / 100 * 34);
+  x.fillStyle = "rgba(255,255,255,.18)"; x.fillRect(35, 3, 1, 34); x.fillRect(45, 3, 1, 34);
+}
+setInterval(stepLoad, 600);
+
+/* ============================================================ every frame: meters, spectra, films */
+function frame() {
+  const L = level(AU.an[0]), R = level(AU.an[1]);
+  $$(".np-lv").forEach(c => { const x = c.getContext("2d"); x.fillStyle = "#0b1418"; x.fillRect(0, 0, 18, 52); meterBar(x, 2, 2, 6, 48, L); meterBar(x, 10, 2, 6, 48, R); });
+  if (AU.ctx || AU.off) {
+    const sg = SONGS[AU.song], p = musicPos() / sg.len * 100;
+    $$(".fp.media .np-bar i").forEach(i => i.style.width = p + "%");
+    $$(".fp.media .np-tm").forEach(t => t.textContent = fmtT(musicPos()));
+  }
+  S.wins.forEach(w => {
+    if (w.app === "music") {
+      const sg = SONGS[AU.song]; $(".now .np-bar i", w.body).style.width = (musicPos() / sg.len * 100) + "%";
+      $(".tm", w.body).textContent = `${fmtT(musicPos())} / ${fmtT(sg.len)}`;
+      const c = $(".spec", w.body), W = c.clientWidth, H = c.clientHeight;
+      if (W && H) {
+        if (c.width !== W) { c.width = W; c.height = H; }
+        const x = c.getContext("2d"); x.fillStyle = "#0b1418"; x.fillRect(0, 0, W, H);
+        const a = AU.ban.music, n = 48;
+        if (a) { const d = frame.fb || (frame.fb = new Uint8Array(256)); a.getByteFrequencyData(d); for (let i = 0; i < n; i++) { const v = d[2 + i * 3] / 255, h = v * (H - 6); x.fillStyle = `hsl(${250 - v * 130},70%,${45 + v * 20}%)`; x.fillRect(3 + i * (W - 6) / n, H - 3 - h, (W - 6) / n - 2, h); } }
+        x.fillStyle = "rgba(255,255,255,.35)"; x.font = "10px IBM Plex Mono, monospace"; x.fillText("spectrum, from the stream's own samples", 6, 13);
+      }
+    } else if (w.app === "movie" && w.mv && visible(w)) drawFilm(w);
+    else if (w.app === "movie" && w.mv && w.mv.on) { const now = performance.now(); w.mv.t = (w.mv.t + (now - w.mv.last) / 1000) % w.mv.len; w.mv.last = now; }
+    else if (w.app === "apanel") {
+      $$(".ch", w.body).forEach(ch => { const k = ch.dataset.k, c = $("canvas", ch), x = c.getContext("2d"); const v = k === "master" ? Math.max(L, R) : level(AU.ban[k]); x.fillStyle = "#0b1418"; x.fillRect(0, 0, 12, 160); meterBar(x, 1, 1, 10, 158, v); });
+      const g = $(".gap", w.body); if (g && Math.random() < .05) g.textContent = (0.4 + LOAD.au / 60 + Math.random() * .3).toFixed(1) + " ms";
+    }
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
 
 /* ============================================================ the Front Panel */
 const ARROW_UP = `<svg viewBox="0 0 11 8"><path d="M1 7L5.5 1 10 7z" fill="var(--top)" stroke="var(--bot)"/></svg>`;
@@ -1015,17 +1593,20 @@ const ARROW_DN = `<svg viewBox="0 0 11 8"><path d="M1 1L5.5 7 10 1z" fill="var(-
 const FPL = [
   { id: "clock", label: "", art: () => `<svg viewBox="0 0 100 100" class="fpclock">${clockSvg()}</svg>`, a: () => launch("clockapp"), sub: null },
   { id: "cal", label: "", art: () => calArt(), a: () => launch("cal"), sub: () => S.era === "2026" ? { t: "Today", wide: true, html: todayPanel } : null },
-  { id: "files", label: "Home", art: () => ICO.files, a: () => launch("files"), sub: { t: "Files", items: [["files", "Home Folder"], ["trash", "Trash Can"]] } },
-  { id: "editor", label: "Text Editor", art: () => ICO.editor, a: () => launch("editor"), sub: { t: "Personal Applications", items: [["term", "Terminal"], ["editor", "Text Editor"], ["perf", "Performance Meter"], ["web", "Web Browser"]] } },
+  { id: "files", label: "Home", art: () => ICO.files, a: () => launch("files"), sub: { t: "Files", items: [["files", "Home Folder"], ["music", "Music"], ["trash", "Trash Can"]] } },
+  { id: "editor", label: "Text Editor", art: () => ICO.editor, a: () => launch("editor"), sub: { t: "Personal Applications", items: [["term", "Terminal"], ["editor", "Text Editor"], ["perf", "Performance Meter"], ["web", "Web Browser"], ["help", "Help Viewer"]] } },
   { id: "mail", label: "Mail", art: () => ICO.mail, a: () => launch("mail"), sub: { t: "Mail", items: [["mail", "Mailer"]] } },
+  { id: "audio", era: "1999", label: "Audio", art: () => ICO.apanel, a: () => launch("apanel"), sub: { t: "Media Tools", items: [["music", "Music"], ["movie", "Movie Player"], ["apanel", "Audio Panel"]] } },
   { id: "find", era: "2026", label: "Find", art: () => ICO.find, a: e => toggleSub(FPL.find(c => c.id === "find"), $("#fp-find")), sub: { t: "Find", wide: true, html: findPanel } },
+  { id: "media", era: "2026", cls: "media", label: "", art: () => `<div class="np-cover"></div><div class="np-mid"><div class="np-t">Nothing playing</div><div class="np-a">Drop a song or a film here</div><div class="np-tr"><button class="pv" title="Previous">${PREV_SVG}</button><button class="pp" title="Play">${PLAY_SVG}</button><button class="nx" title="Next">${NEXT_SVG}</button><small class="np-tm">0:00</small></div><div class="np-bar"><i></i></div></div><canvas class="np-lv" width="18" height="52"></canvas>`, a: () => launch("music"), sub: { t: "Now Playing", wide: true, html: mediaPanel } },
   { id: "SWITCH" },
-  { id: "printer", label: "Printer", art: () => ICO.printer, a: () => launch("printer"), sub: { t: "Personal Printers", items: [["printer", "Print Manager"]] } },
+  { id: "rec", era: "2026", cls: "rec", label: "Record", art: () => ICO.rec, a: toggleRec, sub: { t: "Capture", wide: true, html: recPanel } },
+  { id: "load", era: "2026", cls: "load", label: "CPU GPU ♪", art: () => `<canvas class="fpload" width="56" height="40"></canvas>`, a: () => launch("perf"), sub: null },
+  { id: "printer", era: "1999", label: "Printer", art: () => ICO.printer, a: () => launch("printer"), sub: { t: "Personal Printers", items: [["printer", "Print Manager"]] } },
   { id: "style", label: "Style", art: () => ICO.style, a: () => launch("style"), sub: { t: "Tools", items: [["style", "Style Manager"], ["perf", "Performance Meter"]] } },
-  { id: "apps", label: "Applications", art: () => ICO.apps, a: () => launch("apps"), sub: { t: "Applications", items: [["apps", "Application Manager"], ["term", "Terminal"], ["files", "File Manager"]] } },
-  { id: "help", label: "Help", art: () => ICO.help, a: () => launch("help"), sub: { t: "Help", items: [["help", "Help Viewer"]] } },
+  { id: "apps", label: "Applications", art: () => ICO.apps, a: () => launch("apps"), sub: { t: "Applications", items: [["apps", "Application Manager"], ["music", "Music"], ["movie", "Movie Player"], ["apanel", "Audio Panel"], ["desks", "Desks Overview"]] } },
+  { id: "help", era: "1999", label: "Help", art: () => ICO.help, a: () => launch("help"), sub: { t: "Help", items: [["help", "Help Viewer"]] } },
   { id: "trash", label: "Trash", art: () => ICO.trash, a: () => launch("trash"), sub: null },
-  { id: "meter", era: "2026", label: "Processors", art: () => `<canvas class="fpmeter" width="44" height="38"></canvas>`, a: () => launch("perf"), sub: null },
   { id: "status", era: "2026", label: "Status", art: () => ICO.status, a: e => toggleSub(FPL.find(c => c.id === "status"), $("#fp-status")), sub: { t: "Status", wide: true, html: statusPanel } },
 ];
 function calArt() {
@@ -1040,10 +1621,18 @@ function buildPanel() {
   FPL.filter(c => !c.era || c.era === S.era).forEach(c => {
     if (c.id === "SWITCH") { p.appendChild(buildSwitch()); return; }
     const sub = typeof c.sub === "function" ? c.sub() : c.sub;
-    const d = document.createElement("div"); d.className = "fp"; d.id = "fp-" + c.id;
+    const d = document.createElement("div"); d.className = "fp" + (c.cls ? " " + c.cls : ""); d.id = "fp-" + c.id;
     d.innerHTML = `<div class="arr rz1${sub ? "" : " none"}">${ARROW_UP}</div><div class="cv rz" data-tip="${esc(c.label)}">${c.art()}${c.label ? `<small>${esc(c.label)}</small>` : ""}</div>`;
     $(".cv", d).onclick = e => { e.stopPropagation(); c.a(e); };
     if (sub) $(".arr", d).onclick = e => { e.stopPropagation(); toggleSub(c, d); };
+    if (c.id === "media") {
+      const on = (k, f) => { $(k, d).onclick = e => { e.stopPropagation(); f(); }; };
+      on(".pp", togglePlay); on(".pv", () => nextSong(-1)); on(".nx", () => nextSong(1));
+      $(".np-bar", d).onclick = e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); seekMusic((e.clientX - r.left) / r.width); };
+      d.addEventListener("wheel", e => { e.preventDefault(); S.vol = clamp(S.vol + (e.deltaY < 0 ? 5 : -5), 0, 100); auGains(); toast("Volume " + S.vol); }, { passive: false });
+      dropTarget($(".cv", d), isMedia, playFile);
+    }
+    if (c.id === "trash") dropTarget($(".cv", d), p => p.startsWith("/Home/") && !SICONS.some(s => s.path === p), trashPath);
     p.appendChild(d);
   });
   const era = document.createElement("div"); era.className = "era";
@@ -1052,11 +1641,21 @@ function buildPanel() {
   p.appendChild(era);
   const R = hdl("r"); p.appendChild(R);
   $(".hb", R).onclick = minPanel;
+  refreshNow(); refreshRec(); fitPanel();
 }
+// On a screen narrower than the panel, the panel is drawn smaller rather
+// than squeezed: every control keeps its shape.
+function fitPanel() {
+  const p = $("#panel"); p.style.maxWidth = "none"; p.style.transform = "translateX(-50%)"; p.style.transformOrigin = "50% 100%";
+  const k = Math.min(1, (innerWidth - 8) / p.offsetWidth);
+  p.style.transform = `translateX(-50%) scale(${k})`;
+}
+addEventListener("resize", () => { fitPanel(); refreshMinis(); });
 function buildSwitch() {
   const s = document.createElement("div"); s.className = "sw sk";
   s.innerHTML = `<div class="side"><div class="cv rz" id="lockb" title="Lock the display">${ICO.lock.replace('viewBox', 'width="26" height="26" viewBox')}</div><div class="busy-l"></div></div><div class="wsg">${S.wsNames.map((n, i) => `<div class="wsb rz" data-i="${i}" title="${S.era === "2026" ? "Drop a window here to send it to this workspace" : ""}">${wsLabel(i)}</div>`).join("")}</div><div class="side"><div class="cv rz" id="exitb" title="Exit">${ICO.exit.replace('viewBox', 'width="26" height="26" viewBox')}</div><small style="text-align:center;font-size:9.5px">Exit</small></div>`;
   $$(".wsb", s).forEach(b => {
+    dropTarget(b, () => S.era === "2026", path => { goWs(+b.dataset.i); const n = nodeAt(path); isDir(n) ? openFiles(path) : n.bin ? playFile(path) : openEditor(path); });
     b.onclick = () => goWs(+b.dataset.i);
     b.ondblclick = () => {
       const i = +b.dataset.i; b.innerHTML = `<input value="${esc(S.wsNames[i])}" maxlength="12">`; const inp = $("input", b); inp.focus(); inp.select();
@@ -1154,19 +1753,15 @@ function banner(n) {
   setTimeout(() => d.remove(), 5500);
   beep(1320, .04);
 }
-// The panel's meter: the four processors, live.
-const METER = [20, 12, 30, 8];
-setInterval(() => {
-  const c = $(".fpmeter"); if (!c) return;
-  const x = c.getContext("2d"); x.clearRect(0, 0, 44, 38); x.fillStyle = "#0f1d22"; x.fillRect(0, 0, 44, 38);
-  METER.forEach((v, i) => { METER[i] = clamp(v + (Math.random() - .5) * 22 + S.wins.size * .4, 3, 96); const h = METER[i] / 100 * 32; x.fillStyle = METER[i] > 75 ? "#ffcf4a" : "#7fe0a0"; x.fillRect(4 + i * 10, 35 - h, 7, h); });
-}, 600);
 // Things that happen while the mockup is open.
 setTimeout(() => { MAIL.unshift({ f: "Ana", s: "Corona!", d: "Today", n: true, b: "You put the four buttons back. Can workspace Two be mine?\n\n- A\n" }); S.wins.forEach(w => { if (w.app === "mail") { closeWin(w); openMail(); } }); notify("mail", "Mail from Ana", "Corona!"); }, 22000);
 setTimeout(() => notify("apps", "Three updates are ready", "They go in at the next restart. Nothing has to quit for it now."), 48000);
 
 function setEra(e) {
   S.era = e; document.body.classList.toggle("e26", e === "2026");
+  if (!S.palChosen) S.palette = e === "2026" ? "indigo" : "kosmos";
+  if (e !== "2026" && PALETTES[S.palette].e26) S.palette = "kosmos";
+  buildChest();
   closeSub(); closeMenus(); endOverview();
   buildPanel(); show();
   if (e !== "2026") document.body.style.filter = "";
@@ -1212,7 +1807,7 @@ function lockScreen() {
   L.onclick = () => L.classList.remove("on");
 }
 function logout() {
-  dialog({ title: "Logout Confirmation", icon: "exit", msg: "Continue logout?<br><small>Every application is asked to quit. One with a document unsaved asks its own question.</small>", buttons: [{ t: "OK", def: true, a: () => { [...S.wins.values()].forEach(w => { w.el.remove(); }); S.wins.clear(); $$(".dicon").forEach(x => x.remove()); $("#ended").classList.add("on"); } }, { t: "Cancel" }] });
+  dialog({ title: "Logout Confirmation", icon: "exit", msg: "Continue logout?<br><small>Every application is asked to quit. One with a document unsaved asks its own question.</small>", buttons: [{ t: "OK", def: true, a: () => { pauseMusic(); if (S.recOn) toggleRec(); [...S.wins.values()].forEach(w => { if (w.mv && w.mv.drone) w.mv.drone.forEach(o => o.stop()); w.el.remove(); }); S.wins.clear(); $$(".dicon").forEach(x => x.remove()); $("#ended").classList.add("on"); } }, { t: "Cancel" }] });
 }
 $("#again").onclick = () => { $("#ended").classList.remove("on"); startSession(); };
 
@@ -1226,9 +1821,9 @@ setInterval(() => {
 }, 1000);
 
 function startSession() {
-  S.ws = 0; document.body.classList.toggle("e26", S.era === "2026"); buildPanel(); show();
+  S.ws = 0; document.body.classList.toggle("e26", S.era === "2026"); buildChest(); buildPanel(); buildIcons(); show();
   // What a session comes back to: the File Manager in One, the Help Viewer over it.
-  const go = () => { openFiles("/Home"); setTimeout(() => openHelp(), 60); };
+  const go = () => { const m = openMusic(); m.ws = 1; Object.assign(m.el.style, { left: "190px", top: "70px" }); openFiles("/Home"); setTimeout(() => { openHelp(); show(); }, 60); };
   // A page opened in a hidden tab has no size yet; wait until it has one.
   if (innerWidth > 0) go(); else addEventListener("resize", function once() { if (innerWidth > 0) { removeEventListener("resize", once); go(); } });
 }

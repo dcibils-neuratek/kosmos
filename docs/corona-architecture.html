@@ -1,0 +1,182 @@
+<!doctype html>
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  Corona, CDE and IRIX for a media workstation, as one picture: the
+  applications unchanged on top, the shell programs Corona.desktop names,
+  the kits and libraries, the window manager with desks in it, the audio
+  server's meter page and stream descriptions, and Nebula at the bottom.
+  Levels moving (L) and a song dropped on the Front Panel (D) drawn through
+  it. Drawn on 20 November 2026, before any of it is built; docs/corona.md
+  is the argument and docs/corona.html the desktop.
+
+  Rendered to docs/corona-architecture.png by headless Chrome at twice its
+  size, as docs/pewter-architecture.png is (H from the title):
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+      --disable-gpu --screenshot=docs/corona-architecture.png \
+      --window-size=1400,H --hide-scrollbars --force-device-scale-factor=2 \
+      file:///Users/diego/Code/kosmos/docs/corona-architecture.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kosmos Corona architecture</title>
+<style>
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Plex"; src: url("../assets/fonts/IBMPlexSans-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Plex Mono"; src: url("../assets/fonts/IBMPlexMono-Regular.ttf"); }
+  :root {
+    --ink: #1b2330; --dim: #5b6677; --paper: #fbfaf7;
+    --app: #e8f0fd; --app-line: #9fbbe8; --app-ink: #1d3f7a;
+    --lua: #e9f4ef; --lua-line: #9fd4c1; --lua-ink: #0b5a46;
+    --c: #fbefe4; --c-line: #efb98e; --c-ink: #7a3a10;
+    --srv: #fdf6dc; --srv-line: #e2cf7f; --srv-ink: #6b5410;
+    --kern: #efedfb; --kern-line: #b9b2ee; --kern-ink: #3c3489;
+    --new: #2a55c9; --later: #8a8578; --path-f: #d81b60; --path-d: #0a7d5a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1400px; background: var(--paper); color: var(--ink); font: 400 15px/1.45 "Plex", "Helvetica Neue", sans-serif; padding: 40px 48px 48px; }
+  h1 { font-weight: 600; font-size: 30px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 16px; margin-bottom: 26px; max-width: 980px; }
+  .legend { display: flex; gap: 22px; font-size: 13.5px; color: var(--dim); margin-bottom: 22px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+  .grid { display: grid; grid-template-columns: 1fr 380px; gap: 26px; }
+  .layer { border-radius: 14px; border: 1.5px solid; padding: 14px 18px 16px; margin-bottom: 14px; position: relative; }
+  .layer h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; margin-bottom: 10px; }
+  .row { display: grid; gap: 10px; }
+  .box { background: #fff; border: 1.5px solid; border-radius: 10px; padding: 10px 12px; position: relative; }
+  .box b { font-weight: 600; display: block; font-size: 15.5px; }
+  .box p { font-size: 13px; color: var(--dim); margin-top: 3px; }
+  .box code, p code { font: 12.5px "Plex Mono", monospace; }
+  .new { border-color: var(--new) !important; box-shadow: 0 0 0 2px rgba(42,85,201,.15); }
+  .tag { position: absolute; top: -10px; right: 10px; font: 600 11px "Plex"; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; color: #fff; background: var(--new); }
+  .tag.later { background: var(--later); }
+  .later-box { border-style: dashed !important; opacity: .85; }
+  .app { background: var(--app); border-color: var(--app-line); } .app h2 { color: var(--app-ink); } .app .box { border-color: var(--app-line); }
+  .lua { background: var(--lua); border-color: var(--lua-line); } .lua h2 { color: var(--lua-ink); } .lua .box { border-color: var(--lua-line); }
+  .c { background: var(--c); border-color: var(--c-line); } .c h2 { color: var(--c-ink); } .c .box { border-color: var(--c-line); }
+  .srv { background: var(--srv); border-color: var(--srv-line); } .srv h2 { color: var(--srv-ink); } .srv .box { border-color: var(--srv-line); }
+  .kern { background: var(--kern); border-color: var(--kern-line); } .kern h2 { color: var(--kern-ink); } .kern .box { border-color: var(--kern-line); }
+  .f { color: var(--path-f); font-weight: 600; font: 600 13px "Plex Mono", monospace; }
+  .side h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .side ol { padding-left: 22px; font-size: 14px; }
+  .side ol li { margin-bottom: 8px; }
+  .side .card { background: #fff; border: 1.5px solid #e2ded3; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .side table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .side td { padding: 4px 0; border-bottom: 1px solid #eee9de; vertical-align: top; }
+  .side td:first-child { color: var(--dim); width: 44%; }
+  .d { color: var(--path-d); font: 600 13px "Plex Mono", monospace; }
+</style>
+</head>
+<body>
+<h1>Corona - what it stands on</h1>
+<p class="sub">A third desktop for Kosmos: CDE's Front Panel, workspaces and Motif frames with IRIX's Toolchest, Desks Overview and sculpted icons - and in 2026 a media workstation's, with what is playing, its levels, a record button and the processors, the GPU and the sound's deadline in the panel. One window manager under every desktop, a file naming Corona's shell, and every new piece built below the desktop so that Astra, Pewter and the applications can use it too.</p>
+<div class="legend">
+  <span><i style="border-color:var(--new);background:#fff"></i>new</span>
+  <span><i style="border-color:var(--app-line);background:var(--app)"></i>applications</span>
+  <span><i style="border-color:var(--lua-line);background:var(--lua)"></i>Lua libraries and kit</span>
+  <span><i style="border-color:var(--c-line);background:var(--c)"></i>C kits</span>
+  <span><i style="border-color:var(--srv-line);background:var(--srv)"></i>servers</span>
+  <span><i style="border-color:var(--kern-line);background:var(--kern)"></i>Nebula</span>
+  <span class="f">L</span><span>levels moving, every frame</span>
+  <span class="d">D</span><span>a song dropped on the Front Panel</span>
+</div>
+<div class="grid">
+  <div>
+    <div class="layer app"><h2>Applications - the same programs on every desktop</h2>
+      <div class="row" style="grid-template-columns:repeat(6,1fr)">
+        <div class="box"><b>Music</b><p>plays through media.lua <span class="d">D4</span></p></div>
+        <div class="box"><b>Video</b><p>the Movie Player</p></div>
+        <div class="box"><b>Mixer</b><p>the Audio Panel; reads the meter page</p></div>
+        <div class="box"><b>System and GPU Monitor</b><p>the Performance Meter</p></div>
+        <div class="box"><b>Tracker, Terminal, Mail</b><p>unchanged, in Motif's frame</p></div>
+        <div class="box"><b>Preferences</b><p>the Style Manager</p></div>
+      </div>
+    </div>
+    <div class="layer app"><h2>The shell - what Corona.desktop names</h2>
+      <div class="row" style="grid-template-columns:1.4fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW</span><b>frontpanel.lua</b><p>a bottom strip: clock, date, Home, editor, Mail, Find; <strong>Now Playing</strong> <span class="f">L3</span> <span class="d">D1</span>; desk buttons, live; Record; CPU GPU &#9834;; Status, Style, Trash. Subpanels are folders of launchers</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>toolchest.lua</b><p>IRIX's Toolchest at the top left: Desktop, Selected, Find, Media, System, Help - the Kosmos menu's items in its shape</p></div>
+        <div class="box new"><span class="tag">NEW</span><b>screenrec</b><p>a program, like <code>screenshot</code>: borrows <code>/Running/wm/remote</code>, hands frames to the Record Kit</p></div>
+      </div>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr;margin-top:10px">
+        <div class="box new"><span class="tag">NEW MODE</span><b>tracker desktop corona</b><p>sculpted icons from the right, as Pewter's P4; minimised windows as icons down the left</p></div>
+        <div class="box"><b>notifications</b><p>banners, risen above the panel</p></div>
+        <div class="box"><b>screenshot</b><p>a picture of the screen, into Captures</p></div>
+      </div>
+    </div>
+    <div class="layer lua"><h2>Lua libraries and the UI kit (in each application's process)</h2>
+      <div class="row" style="grid-template-columns:1.2fr 1.2fr 1fr 1fr">
+        <div class="box new"><span class="tag">NEW CHROME</span><b>UI kit - <code>ui.lua</code></b><p><code>ui.header</code> with <code>chrome = motif</code>: the window-menu box at the left, minimise and maximise at the right, a bevelled frame</p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>media.lua</b><p>describes the stream it plays <span class="d">D4</span>, and answers <code>transport</code> posts for any player <span class="d">D3</span></p></div>
+        <div class="box"><b>indicators.lua, kosmosmenu.lua, deskbarmenu.lua</b><p>clock, battery, network; the menu; folders as menus</p></div>
+        <div class="box"><b>desktops.lua, filetypes.lua, audio.lua, gpu.lua</b><p>the file, <code>desks</code> one key more; what opens a file <span class="d">D2</span>; the load's sources</p></div>
+      </div>
+    </div>
+    <div class="layer c"><h2>C kits</h2>
+      <div class="row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="box"><b>gfx</b><p>every frame and meter, as now; <code>stretch</code> for desks drawn small</p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>Record Kit</b><p>BGRA in, converted with the vector types; the file out in pieces as it grows; H.264 by <code>minih264e</code></p></div>
+        <div class="box"><b>Playback Kit</b><p>a song's sound on its thread, in the AUDIO band</p></div>
+      </div>
+    </div>
+    <div class="layer srv"><h2>Servers</h2>
+      <div class="row" style="grid-template-columns:1.5fr 1.2fr">
+        <div class="box new"><span class="tag">GROWS</span><b>window manager - one, for every desktop</b><p>As it is: composing, input, focus, drag and drop, strips, Magnet, launching.<br><i>New:</i> <strong>desks</strong> - a desk on every window, <code>handlers.desk</code>, only the current desk composed, <code>desks = N</code> in a desktop's file; <strong>desks drawn small</strong> into a picture the panel lends, for its buttons, F3 and the Desks Overview; resizing from every edge; <code>SC_MOTIF</code>'s boxes. Drops carried as a string <span class="d">D1</span>.</p></div>
+        <div class="box new"><span class="tag">GROWS</span><b>audio server</b><p>As it is: the mix, every stream's peak before its gain, <code>late</code> and <code>starved</code>.<br><i>New:</i> the <strong>meter page</strong>, a region written once a period <span class="f">L1</span>; <code>struct audio_describe</code> - title, artist, length, the player's name <span class="d">D5</span>.</p></div>
+      </div>
+    </div>
+    <div class="layer kern"><h2>Nebula</h2>
+      <div class="row" style="grid-template-columns:1fr"><div class="box"><b>threads, address spaces, IPC, capabilities</b><p>posts between the panel, the window manager and a player; the meter page and each window's region, shared; the AUDIO band the mix runs in</p></div></div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>L - levels moving, every frame</h3>
+      <ol>
+        <li><b>L1</b> The mix, in the AUDIO band, writes each stream's peak and the master's left and right into the meter page once a period, under a sequence count.</li>
+        <li><b>L2</b> No message: the Front Panel mapped the page once, read-only.</li>
+        <li><b>L3</b> Each frame it reads a few dozen bytes and draws two meters, 18 by 52 points, into its own surface; the window manager composes that rectangle.</li>
+      </ol>
+    </div>
+    <div class="card"><h3>D - a song dropped on the Front Panel</h3>
+      <ol>
+        <li><b>D1</b> Tracker starts a <code>drag</code> of kind <code>files</code>; dropped on Now Playing, the window manager hands the panel the path.</li>
+        <li><b>D2</b> <code>filetypes.lua</code>: a song is Music's, a film Video's.</li>
+        <li><b>D3</b> The panel posts <code>transport{ play = path }</code> to Music's name, launching it if it is not running, and paints the song at once.</li>
+        <li><b>D4</b> Music's <code>media.lua</code> opens the file on the Playback Kit and describes its stream.</li>
+        <li><b>D5</b> The audio server carries the description; the panel, Pewter's bar and the lock screen read it.</li>
+      </ol>
+    </div>
+    <div class="card"><h3>Corona.desktop</h3>
+      <table>
+        <tr><td><code>shell</code></td><td>notifications, desktop:corona, toolchest, frontpanel</td></tr>
+        <tr><td><code>chrome</code></td><td>motif (Astra: astra, Pewter: platinum)</td></tr>
+        <tr><td><code>menus</code></td><td>window</td></tr>
+        <tr><td><code>look</code></td><td>indigo - Indigo Magic</td></tr>
+        <tr><td><code>desks</code></td><td>4 (new; Astra says none)</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>Who else wants what is new</h3>
+      <table>
+        <tr><td>Desks</td><td>Astra (<code>astra.md</code> &sect;5 #7)</td></tr>
+        <tr><td>Desks drawn small</td><td>Astra's Overview, the switcher</td></tr>
+        <tr><td>A described stream, the transport</td><td>Pewter's bar, the Deskbar, media keys, the lock screen, Xavier</td></tr>
+        <tr><td>The meter page</td><td>Mixer, Groove</td></tr>
+        <tr><td>BGRA into the Record Kit</td><td>Remote Screen, recorded lessons</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3>Region or message, C or Lua</h3>
+      <table>
+        <tr><td>Levels, desks' pictures, recorded frames</td><td>regions</td></tr>
+        <tr><td>What plays, presses, drops, desk changes</td><td>messages, once each</td></tr>
+        <tr><td>The panel, the Toolchest, the desktop</td><td>Lua: applications</td></tr>
+        <tr><td>Scaling, the mix's meters, encoding</td><td>C</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<script>document.title = document.title + " - " + document.body.scrollHeight;</script>
+</body>
+</html>

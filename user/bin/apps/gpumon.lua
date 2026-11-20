@@ -336,7 +336,10 @@ local function side(g, x, y)
 
   y = y + 14
 
-  for _, kv in ipairs({ { "Vulkan", "not yet" }, { "OpenGL ES", "not yet" },
+  -- Vulkan is Mesa's `anv` in an application's own image, on every GPU this
+  -- driver serves (`docs/gpu3d.md` G7); this said "not yet" from before
+  -- G7 until Diego asked why (20 November). GL ES is G8's.
+  for _, kv in ipairs({ { "Vulkan", s and "1.4, Mesa anv" or "-" }, { "OpenGL ES", "not yet" },
                         { "Device", s and ("8086:%04x"):format(s.device) or "-" } }) do
     g:text(x, y, kv[1], theme.text_dim, ground, "label")
     g:text(x + 84, y, kv[2], theme.text, ground, "label")

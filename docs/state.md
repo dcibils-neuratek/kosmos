@@ -165,18 +165,23 @@ where it ran at 72, and `window` takes a side to measure it. At that size
 the processor's copy into the window is now almost half a frame (roadmap,
 owed from G7c).
 
-**G7 is done.** Next is G8 (GL and WebGL on the M700), or the flight
-simulator, once Diego has agreed its design (`docs/flight.md`).
+**G7 is done. Flight is agreed** (20 November, `docs/flight.md`), with a
+game controller's sticks added as F7. **F1 is built** (0.12.19,
+`testing.md` 18.938): `/Tiles` keeps several sources at once, the
+protocol is one library, `tiles.lua`, and a `tiles` program fetches from
+the prompt. Next is F2, the Map Kit's elevation and Mercator; after
+Flight, G4 and G5 (GL by Zink, WebGL in JetSki), Diego's order of 20
+November, and then Quake3e on Vulkan (`docs/quake3e.md`, Q0 to Q6; Diego,
+the same day: "add quake3e to the roadmap after flight").
 
 **The gate is inside its ten minutes again** (0.12.18, 18.937): 548 s.
 Its image step was 137 s, because every make rewrote AArch64's filter
 list and the 10 MB table was compiled again. It is 43 s now.
 
-**Flight, designed for Diego to agree** (19 November): a flight simulator
+**Flight, agreed** (designed 19 November, agreed 20: "Yes to all"): a flight simulator
 over a real city - Esri's satellite imagery on Mapzen's elevation tiles,
 any city searched by name - in `docs/flight.md`, `flight.html` and
-`flight-architecture.png`, with six questions for him. No code before he
-agrees; it follows G7.
+`flight-architecture.png`, its six questions answered as recommended. F1 to F6.
 
 **Before the review, 18 and 19 November (0.11.493-0.11.507):**
 

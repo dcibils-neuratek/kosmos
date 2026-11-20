@@ -2169,7 +2169,10 @@ def gallery_layout(guest, mark, seconds=30):
 
     while time.monotonic() < deadline:
         guest._read_available()
-        m = re.search(pattern, guest.seen[mark:])
+        # Only whole lines: one still arriving can match short
+        # (testing.md 18.939).
+        text = guest.seen[mark:]
+        m = re.search(pattern, text[:text.rfind("\n") + 1])
 
         if m:
             v = [int(g) for g in m.groups()]
@@ -5834,7 +5837,10 @@ def check_scale(guest):
 
         while time.monotonic() < deadline:
             guest._read_available()
-            m = re.search(pattern, guest.seen[mark:])
+            # Only whole lines: one still arriving can match short
+            # (testing.md 18.939).
+            text = guest.seen[mark:]
+            m = re.search(pattern, text[:text.rfind("\n") + 1])
 
             if m:
                 return m

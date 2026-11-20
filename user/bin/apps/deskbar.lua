@@ -617,6 +617,7 @@ end
 -- Woken twelve times a second while something breathes, and not otherwise:
 -- a bar that animates for nothing is a bar that keeps the machine awake.
 local lens_live = false      -- the dock's icons magnified (`lens`): passes at 60 a second
+local dock_drew_icons = true  -- the dock's last paint drew its icons, not the lens
 
 local function pace_breathing()
   win.poll_wait_ticks = lens_live and math.max(1, tick_hz // 60)
@@ -1868,7 +1869,10 @@ if DOCKED then
     local cy = self.h // 2
 
     -- While the icons are magnified, the lens above draws them all
-    -- (`lens`, below), and the dock only its ground.
+    -- (`lens`, below), and the dock only its ground. Which of the two
+    -- this paint was is kept, for the lens to say as it closes.
+    dock_drew_icons = not lens_drawing()
+
     for _, it in ipairs(lens_drawing() and {} or shown) do
       local x = it.x + off
 
@@ -2222,10 +2226,17 @@ if DOCKED then
     return x0, win.origin_y - lift, x1 - x0, H + lift, lift
   end
 
+  -- **Said as the lens closes: whether the dock's last paint drew its
+  -- icons.** If it did not, the dock is left empty on the screen until
+  -- something repaints it - which on a quiet desktop is the pointer coming
+  -- back (Diego, 20 November; `testing.md` 18.939). Said rather than
+  -- looked for in a picture, since the bar's once-a-second repaint comes
+  -- whenever its loop wakes, and a test's own traffic wakes it.
   local function close_lens()
     if lens then
       lens:close()
-      print("deskbar: the icons settled")
+      print("deskbar: the icons settled, the dock drawn "
+            .. (dock_drew_icons and "with them" or "without them"))
     end
 
     lens, lens_cells, lens_px, lens_amount, lens_want = nil, nil, nil, 0, 0
@@ -2284,9 +2295,12 @@ if DOCKED then
   -- A pass of it, from the dock's frame (`dock_frame`): grown or settled a
   -- step, drawn, and closed once settled. True while it still moves.
   local function lens_frame()
+    -- Closed, and true: the pass that closes the lens repaints the dock,
+    -- with nothing over it now - a close from `lens_hover` (magnifying
+    -- turned off, a drag begun) included.
     if lens_closing then
       close_lens()
-      return false
+      return true
     end
 
     if not lens then return false end
@@ -2325,9 +2339,16 @@ if DOCKED then
       end
     end
 
+    -- **The dock its icons again first, and the lens gone the pass after.**
+    -- Not painted any more, so the repaint this pass asks for (true) draws
+    -- the dock's ground and icons under the lens, which shows the same row
+    -- at rest - and the lens closes on the next pass, with no frame that
+    -- shows neither. This said `win.dirty = true`, which the kit never
+    -- reads, and left `painted` set: the repaint drew the dock empty, the
+    -- lens closed over nothing, and the dock was gone until the pointer
+    -- came back over it (Diego, 20 November; `testing.md` 18.939).
     if lens_amount <= 0 and lens_want <= 0 then
-      -- The dock its icons again first, and the lens gone the pass after.
-      win.dirty = true
+      lens.painted = false
       lens_closing = true
       return true
     end

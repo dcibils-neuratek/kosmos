@@ -39220,3 +39220,87 @@ The gate: 124 of 125 suites in 548 s. `x86-notify` failed at its start:
 (`build/gate/failed/0.12.18-1120-033607-x86-notify.log`, the desktop
 loaded, and 123 s spent). Alone it passed, all 20 of its checks, in 65 s.
 Every other suite booted the same image.
+
+## 18.938 The tiles server with several sources (Flight F1)
+
+**In short:** `/Tiles` kept one source of tiles at a time, and Flight wants
+two at once: a city's satellite imagery and its elevation. It now keeps as
+many sources as are asked for. `SOURCE` answers with a number, `WANT` and
+`ARRIVED` name the source, and each source has its own connection, queue,
+arrivals and cache folder, so a slow one does not hold the others back.
+The caller names the format its tiles are kept under (`.png`, `.jpg`,
+`.pbf`). The protocol's packing moved out of Maps into one library,
+`tiles.lua`, which Maps now uses and Flight will. A `tiles` program on
+that library fetches tiles from the prompt (`open tiles fetch ...`). A new
+suite, `x86-tiles`, 10 checks in 30 s.
+
+- **What the suite serves** (`tools/run_tiles.py`): a server on the Mac
+  serves elevation as terrarium PNGs by `{z}/{x}/{y}.png`, each pixel's
+  height known, and imagery as a JPEG by `{z}/{y}/{x}` with no extension,
+  as Esri addresses it, two seconds a tile, with one tile a 404. The
+  `tiles` program fetches four of each, plus the missing one. A program
+  run at the prompt then reads the cache where `tiles` said each tile is
+  kept, and decodes it by its name.
+- **What it checks**: two numbers and two folders; the same address and
+  format asked again is the same source; a format with a path in it, and a
+  source there is none of, refused; every tile of both said to come; the
+  elevation all come while at most one imagery tile has; every PNG's
+  heights as served at three pixels and every JPEG 128 by 128; the 404
+  kept as an empty `.jpg`; Esri's order, `y` before `x`, asked for.
+- **The control**: the server's loop changed to step only the first
+  source with work, as one queue would. Exactly one check failed: "the
+  elevation waited behind the slow imagery: 5 imagery tiles before it was
+  done".
+- **The format, named by the caller, not read from the bytes** as
+  `docs/flight.md` first said. A caller looks for a tile in the cache
+  before it asks, on later runs too, so it has to know the name without
+  the server. And a tile there is none of is an empty file, with no bytes
+  to read a format from.
+- **What it took to reach `/Tiles` from a suite**: three tries. A program
+  in `/Temporary` and one in `/Home` were both refused, opened or not.
+  `/Tiles` is handed only to a program in the image that declares
+  `kosmos: needs tiles` (the store's `needs`, read by `binfs`), by a
+  starter that holds it. The window manager does; the prompt's shell does
+  not. Disk programs are never handed declared doors, which `x86-servers`
+  holds. So the suite opens the `tiles` program, and its lines come on the
+  console.
+- **Maps**: moved onto the library, its suite unchanged, 27 checks
+  passing; its cache folder is the same, since a source's folder is still
+  named from its address alone.
+
+## 18.939 The dock left empty after the lens, and `win.dirty` honoured
+
+**In short:** Diego saw the dock vanish when the pointer left it, and come
+back only when the pointer came within about 20 pixels of it again. Two
+faults made it. The magnifying lens, once it had settled back, still
+counted as painted (`lens.painted` stayed set). The dock skips its own
+ground and icons while the lens is drawing, so it painted itself empty.
+And the repaint that would have mended it was asked for by setting
+`win.dirty`, which `ui.lua`'s loop never read. Approaching the dock opened
+the lens again, which is why it came back. Both are fixed. `win.dirty` is
+now honoured by the kit: a window that sets it is painted on the next
+pass. Eighteen applications and the tutorial set it, in 80 places, and
+until now it did nothing. Separately, GPU Monitor's Vulkan row said "not
+yet"; it now says "1.4, Mesa anv" when the GPU is there.
+
+- **The fix** (`deskbar.lua`): when the lens has settled it clears
+  `lens.painted` and closes, and the frame that closes it asks for a paint
+  (`return true`, where it returned `false`).
+- **The check** (`tools/run_dock.py`, now 58 checks): the deskbar prints,
+  as the lens closes, whether its last paint drew the dock's icons ("the
+  icons settled, the dock drawn with them"). The suite requires "with"
+  after a magnification. It reads the deskbar's own fact rather than the
+  screen. A first check on the pixels of the dock's row passed on the
+  broken deskbar too: the deskbar repaints once a second when its loop
+  wakes, the suite's own traffic woke it, and the dock was back before the
+  screen was read. That check is gone.
+- **The control**: the two lines put back as they were. Exactly one check
+  failed: "the lens closed over a dock drawn without its icons, so the
+  dock was left empty: 'without'". With the fix, 58 of 58.
+- **A suite that read half a line**: the gate over this change failed one
+  check, in `x86-wallpapers`: "Tracker's places do not hold Wallpapers
+  beside Photos: 'Home, Desktop, Do'". The serial log has the whole line,
+  with Wallpapers in it. The suite's `line()` helper had searched what had
+  arrived so far, and the sidebar's line was still arriving. Fourteen
+  suites carried the same helper; each now searches only up to the last
+  line end, so a pattern ending in `[^\r\n]*` cannot match a line cut short.

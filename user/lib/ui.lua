@@ -10852,6 +10852,16 @@ function window:run()
       end
     end
 
+    -- **A window that asked to be drawn again**: `win.dirty = true`, which
+    -- is how the tutorial and eighteen applications ask - from a timer, a
+    -- property, a menu, a frame. Nothing read it until 20 November 2026:
+    -- it worked only where something else on the same pass repainted, and
+    -- the dock's lens left the dock empty for it (`testing.md` 18.939).
+    if self.dirty then
+      self.dirty = false
+      changed = true
+    end
+
     if changed then self:paint() end
 
     sys.yield()

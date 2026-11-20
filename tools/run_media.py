@@ -415,7 +415,10 @@ def whole_line(guest, mark, pattern, seconds=60):
 
     while time.monotonic() < deadline:
         guest._read_available()
-        found = re.search(pattern, guest.seen[mark:])
+        # Only whole lines: one still arriving can match short
+        # (testing.md 18.939).
+        text = guest.seen[mark:]
+        found = re.search(pattern, text[:text.rfind("\n") + 1])
 
         if found:
             return found
