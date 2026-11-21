@@ -1119,19 +1119,18 @@ struct hwctx {
     uint64_t           given;           /* the last value its ring will write */
     bool               ran;             /* its image is the engine's save: restore it */
     int                tail_at, control_at;
-    /* Each exec's engine clock before and after its batch, on the fence
-     * page from CTX_TS_AT (`hw_give`), and the value that says it ran:
-     * counted into the engine's busy time once the fence passes it, so a
-     * program's work - the 3D Kit's frames - is seen by GPU Monitor as the
-     * driver's own copies and runs are. */
-    uint32_t           subs, counted;
-    uint64_t           sub_signal[64];
+    /* The context's own running time, CTX_TIMESTAMP, which the engine
+     * saves into the image's register state each time it switches the
+     * context out (i915's `lrc_update_runtime`): `ts_at` is its dword in
+     * the state page plus one, 0 while unknown, and `ts_seen` the value
+     * last added to the engine's busy count - so a program's work, the 3D
+     * Kit's frames, is seen by GPU Monitor as the driver's own copies and
+     * runs are, without a command added to its ring. */
+    uint32_t           ts_at, ts_seen;
 };
 
 static void ctxs_count(void);
 
-#define CTX_TS_AT    64u                /* dwords into the fence page: 64 pairs, to byte 768 */
-#define CTX_TS_SLOTS 64u
 
 static struct igpu_ctxs CTXS;
 
@@ -1503,8 +1502,20 @@ static void hw_go(struct engine *e, uint32_t id)
     in.tail = h->tail * 4u;
     in.pml4 = c->pt.pml4_phys;
 
+    bool fresh = !h->ran;
+
     if (!image_ready(e, h->image, &h->ran, &h->tail_at, &h->control_at, e->last == id, true, &in)) {
         return;
+    }
+
+    /* A fresh image - the first run, or after a reset - holds the
+     * register state as written: where CTX_TIMESTAMP is, and from what. */
+    if (fresh) {
+        int at = igpu_lrc_find((const uint32_t *)(h->image + IGPU_LRC_STATE_PAGE * 1024u),
+                               e->base, 0x3a8u);       /* RING_CTX_TIMESTAMP */
+
+        h->ts_at = at < 0 ? 0u : (uint32_t)at + 1u;
+        h->ts_seen = at < 0 ? 0u : h->image[IGPU_LRC_STATE_PAGE * 1024u + (uint32_t)at];
     }
 
     el_submit(e, h->image_gtt, PROGRAM_CTX_ID + id);
@@ -5060,28 +5071,21 @@ static void hw_put(struct hwctx *h, const uint32_t *dw, uint32_t n)
 #define IGPU_MI_BB_PPGTT     (1u << 8)
 #define IGPU_MI_FLUSH_DW_QW  (((0x26u << 23) | 3u) | (1u << 14))   /* five dwords: a qword stored */
 
-/* The execs a context's fence has passed, their time added to their
- * engine's busy count, by the engine's own clock (CTX_TS_AT). */
+/* A context's running time since it was last counted, added to its
+ * engine's busy count - from the image the engine last saved, so a context
+ * running now is counted up to its last switch and the rest next time. */
 static void ctx_count(struct igpu_ctx *c)
 {
     struct hwctx *h = c->hw;
-    struct engine *e;
-    uint64_t reached;
+    uint32_t now;
 
-    if (h == NULL || h->fence_gtt == 0) {
-        return;                                 /* the stand-in's: nothing ran on the GPU */
+    if (h == NULL || h->fence_gtt == 0 || !h->ran || h->ts_at == 0) {
+        return;                                 /* the stand-in's, or not run yet */
     }
 
-    e = engine_of(c);
-    reached = igpu_ctx_reached(c);
-
-    while (h->counted != h->subs && h->sub_signal[h->counted % CTX_TS_SLOTS] <= reached) {
-        volatile uint32_t *t = &h->fence[CTX_TS_AT + 2u * (h->counted % CTX_TS_SLOTS)];
-
-        e->busy_ts += (uint32_t)(t[1] - t[0]);
-        t[0] = t[1] = 0;
-        h->counted++;
-    }
+    now = h->image[IGPU_LRC_STATE_PAGE * 1024u + h->ts_at - 1u];
+    engine_of(c)->busy_ts += (uint32_t)(now - h->ts_seen);
+    h->ts_seen = now;
 }
 
 /* Every context's, before the engines' busy time is said. */
@@ -5098,7 +5102,7 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
 {
     struct engine *e = engine_of(c);
     struct hwctx *h = c->hw;
-    uint32_t dw[48], n = 0, slot;
+    uint32_t dw[40], n = 0;
 
     (void)env;
 
@@ -5106,15 +5110,9 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         h->in_flight = 0;
     }
 
-    ctx_count(c);
-
-    /* No room for its times until older execs are counted: offered again,
-     * as a full ring's is. */
-    if (h->in_flight + 64u > RING_ROOM || h->subs - h->counted >= CTX_TS_SLOTS) {
+    if (h->in_flight + 64u > RING_ROOM) {
         return false;
     }
-
-    slot = CTX_TS_AT + 2u * (h->subs % CTX_TS_SLOTS);
 
     if (e->render) {
         dw[n++] = IGPU_PIPE_CONTROL;
@@ -5131,13 +5129,6 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         dw[n++] = 0;
     }
 
-    /* The engine's clock as the batch starts - RING_TIMESTAMP, stored as
-     * the driver's own runs store it (GPU_OP_RUN_TIME) ... */
-    dw[n++] = IGPU_MI_STORE_REG_MEM;
-    dw[n++] = e->base + IGPU_RING_TIMESTAMP;
-    dw[n++] = h->fence_gtt + slot * 4u;
-    dw[n++] = 0;
-
     dw[n++] = IGPU_MI_BB_START | IGPU_MI_BB_PPGTT;
     dw[n++] = (uint32_t)x->batch;
     dw[n++] = (uint32_t)(x->batch >> 32) & 0xffffu;
@@ -5150,16 +5141,6 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         dw[n++] = 0;
         dw[n++] = 0;
         dw[n++] = 0;
-    }
-
-    /* ... and as it has finished: after the render engine's stall, so its
-     * last pixel is written; the blitter runs its commands in order. */
-    dw[n++] = IGPU_MI_STORE_REG_MEM;
-    dw[n++] = e->base + IGPU_RING_TIMESTAMP;
-    dw[n++] = h->fence_gtt + (slot + 1u) * 4u;
-    dw[n++] = 0;
-
-    if (e->render) {
         dw[n++] = IGPU_PIPE_CONTROL;
         dw[n++] = IGPU_PC_FLUSH_ENABLE | IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT;
         dw[n++] = h->fence_gtt;
@@ -5180,8 +5161,6 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
 
     hw_put(h, dw, n);
     h->given = x->signal;
-    h->sub_signal[h->subs % CTX_TS_SLOTS] = x->signal;
-    h->subs++;
 
 #if defined(__x86_64__)
     __asm__ volatile("sfence" ::: "memory");

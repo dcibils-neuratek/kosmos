@@ -40779,7 +40779,8 @@ then passed alone.
   `busy_ts` once its fence has passed. The stats call counts every
   context first. An exec is refused while 64 are still uncounted. Not
   yet seen on the M700: QEMU has no Intel GPU, so this needs the
-  machine.
+  machine. **On the M700 it hung the render engine** on every start of
+  Flight, and 0.12.51 replaces it (18.971).
 - **Seen once, not yet understood.** One `x86-flight` run in three
   rendered the engine's 117,248 samples at a peak of 0.000, and the
   sound card's loudest sample was 0. The runs before and after heard
@@ -40787,3 +40788,53 @@ then passed alone.
   parameters, not the engine's. Kept as
   `build/gate/failed/0.12.49-1121-073722-x86-flight.log`, to look at if
   it comes back.
+
+## 18.971 GPU Monitor counts a program's work from its context's own clock (0.12.51)
+
+**In short:** 0.12.50 timed Vulkan's work with two `MI_STORE_REGISTER_MEM`
+commands added around each batch in the context's ring. On the M700 the
+render engine then hung on every start of Flight: four starts in four,
+each "its fence still for 3000 ms", with a page fault in the program's
+page table and the engine stopped at a PIPE_CONTROL inside Flight's
+batch. Flight failed with "drawing the frame: wait/-4". Now the driver
+adds no command. It reads `CTX_TIMESTAMP`, which the engine saves into
+the context's image each time it switches the context out (i915's
+`lrc_update_runtime`). With Flight in front, `gpustat` read render 37 to
+42% busy, against 0% in 0.12.49. Flight counted about 24 frames a
+second at 15 ms of GPU each, about 36%.
+
+- **Finding it.** The hang had been seen once before, with 0.12.49, and
+  this batch's zoom 17 was the first suspect. Three controls on the M700
+  settled it:
+  - this batch's Flight with zoom 15 as the deepest: it hung;
+  - 0.12.49's Flight on 0.12.50's driver: it hung;
+  - 0.12.50's Flight on 0.12.49's driver: no hang in three starts, at
+    27.8 frames a second and 2.9 ms of processor at 1,870 ft.
+
+  So the ring commands caused it. Why they make the program's batch
+  fault is not understood. Both are global-GTT stores into the context's
+  own fence page, the way the driver's own runs store the clock.
+- **The count** (`intelgpu.c`). The first time a context's image is
+  written (its first run, or after a reset), `igpu_lrc_find` gives
+  `RING_CTX_TIMESTAMP`'s dword (base + 0x3a8, in the layout's list), and
+  its value is kept as `ts_seen`. `ctx_count` adds the saved value minus
+  `ts_seen` to the engine's `busy_ts` and keeps the new value. The stats
+  call does this for every context first. A context running now is
+  counted up to its last switch, and the rest at the next count.
+  `hw_give` is 0.12.49's again, byte for byte.
+- **Checked on the M700.** No hang in three starts, and two more after
+  ending Flight and starting it again, so a context in a slot freed by an
+  earlier one counts too: 40.9% and 42.1%. A debug line during the test
+  showed the register's address in the image (`000023a8`) and the value
+  moving (0x127 to 0x7170). One reading of 0% came with three Flights
+  started in a row on an earlier boot of this same code. It did not
+  happen again on the next boot's five starts, and it is not explained.
+- **Not held by a suite.** QEMU has no Intel GPU, and its stand-in runs a
+  batch's commands on the processor (`fence_gtt` is 0), so nothing here
+  can be tested in the gate. What the gate holds is that the stand-in is
+  unchanged.
+- **The gate.** `make test` ran 131 suites, the ones the driver
+  reaches. `x86-smbd` failed once, with "the guest never the visitor on
+  the page within 120s", after it had signed in and opened Projects. It
+  passed alone in 89 s and does not touch the GPU. Every other suite
+  passed.

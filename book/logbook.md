@@ -5967,3 +5967,23 @@ game.
 **Measured.** On the M700 at 600 m, the processor took 19.6 ms a frame
 with the sharpest pictures everywhere, and 3.5 ms with them only near
 the ground.
+
+## 21 November 2026 - GPU Monitor sees the game, the second time
+
+**In short:** the first way of measuring the game's work on the graphics
+chip made the chip stop on the M700 whenever Flight started. The second
+way adds nothing to the chip's work and reads about 40% busy for
+Flight.
+
+**What happened.** To time the game's drawing, the driver had started
+asking the chip to note its clock before and after each piece of work.
+On the real machine the chip then stopped, three seconds after Flight
+opened, every time. The first suspect was the sharper ground pictures,
+but Flight with them turned down stopped too. Then the old Flight on the
+new driver stopped, and the new Flight on the old driver flew, so the
+fault was the clock notes. The chip already keeps a running time for
+every program's work, saved each time it switches between programs, and
+now the driver reads that instead.
+
+**Measured.** With Flight in front on the M700, the graphics engine was
+37 to 42% busy. Before, it read 0%.
