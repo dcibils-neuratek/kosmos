@@ -28,7 +28,7 @@ local FIELDS = {
   -- height; the pilot's eye ahead of the aircraft's point and above it.
   optional = {
     speeds = { cruise = 55, cruise_throttle = 0.7, approach = 36, approach_throttle = 0.35,
-               approach_flaps = 0.5 },
+               approach_flaps = 0.5, ceiling_ft = 8000 },
     chase = { back = 28, high = 7 },
     eye = { ahead = 0, high = 1.0 },
   },
@@ -255,7 +255,10 @@ function M.engage(AP, S, P)
   local trim = 0.03 + 0.04 * S.flaps
   AP.pitch_i = math.max(-1, math.min(1, (S.alpha - trim) / P.alpha_most))
   AP.throttle_i = S.throttle
-  AP.vs_most = AP.vs_most or 5
+  -- The steepest climb or descent it flies: 5 m/s, or for a fast aircraft
+  -- a 3.4 degree path at its speed - a 747 on a 3 degree glide path comes
+  -- down at 7 m/s.
+  AP.vs_most = math.max(5, 0.06 * S.v)
 end
 
 -- The thrust the engine would give at full throttle, here and now: what
@@ -278,7 +281,12 @@ function M.autopilot(AP, S, P, dt)
   local roll = clamp((bank - S.phi) / (P.roll_rate * AP_GAIN.roll_s), -1, 1)
   -- Altitude, through the rate of climb.
   local vs = S.v * math.sin(S.gamma)
-  local vs_want = clamp((AP.alt - S.y) * AP_GAIN.alt, -AP.vs_most, AP.vs_most)
+  -- `vs_path` is a climb or descent the height itself is moving at - the
+  -- route's 3 degree path (F10c) - handed in so the loop holds the error
+  -- alone: without it a moving height is followed a rate over the gain
+  -- behind, 90 m for a 747 coming down at 7 m/s.
+  local vs_want = clamp((AP.alt - S.y) * AP_GAIN.alt + (AP.vs_path or 0),
+                        -AP.vs_most, AP.vs_most)
   local ve = vs_want - vs
   AP.pitch_i = clamp(AP.pitch_i + AP_GAIN.pitch_i * ve * dt, -1, 1)
   local pitch = clamp(AP.pitch_i + AP_GAIN.pitch_p * ve, -1, 1)
@@ -295,6 +303,116 @@ function M.autopilot(AP, S, P, dt)
   AP.throttle_i = clamp(AP.throttle_i + AP_GAIN.throttle_i * (a_want - AP.a) * per * dt, 0, 1)
   S.throttle = clamp(AP.throttle_i + AP_GAIN.throttle_p * (a_want - AP.a) * per, 0, 1)
   return pitch, roll
+end
+
+
+-- **The route** (F10c): from one airport to another, made before the
+-- flight and flown by `M.guide`. `geo` is the Airports library, whose
+-- `bearing`, `km` and `ahead` this takes rather than copies. Each
+-- airport's runway end is the one most nearly into the wind, or with no
+-- wind most nearly along the track; the final fix is 10 nm out on the
+-- arrival's centre line, and an initial fix 15 nm out, where the
+-- aircraft turns onto it; the cruise is 40 ft a nm of the distance, in
+-- 500s, over 3,000 ft above the higher field and never above the
+-- aircraft's ceiling; and the top of descent is as far from the final
+-- fix as a 3 degree path - 318 ft a nm - takes from the cruise down to
+-- 3,000 ft over the arrival field.
+local NM = 1.852
+M.FIX_NM, M.IAF_NM, M.FT_PER_NM = 10, 15, 318
+
+local function best_end(airport, want, geo)
+  local best, off
+  for _, r in ipairs(airport.runways) do
+    for _, e in ipairs(r.ends) do
+      local o = math.abs((e.heading - want + 180) % 360 - 180)
+      -- The longest runway wins a tie within ten degrees.
+      if not best or o < off - 10 then best, off = e, o end
+    end
+  end
+  return best
+end
+
+function M.route(from, to, P, wind_from, geo)
+  local track = geo.bearing(from.lon, from.lat, to.lon, to.lat)
+  local nm = geo.km(from.lon, from.lat, to.lon, to.lat) / NM
+  -- The departure's end only a take-off needs (F10d): a route begun in
+  -- the air, from no airport, has none.
+  local dep = best_end(from, wind_from or track, geo)
+  local arr = best_end(to, wind_from or track, geo)
+  if not arr then return nil, (to.iata or to.ident or "?") .. " has no runway" end
+  local back = (arr.heading + 180) % 360
+  local fix = { geo.ahead(arr.lon, arr.lat, back, M.FIX_NM * NM) }
+  local iaf = { geo.ahead(arr.lon, arr.lat, back, M.IAF_NM * NM) }
+  local high = math.max(from.feet, to.feet) + 3000
+  local cruise = math.max(high, math.min(P.speeds.ceiling_ft, math.ceil(nm * 40 / 500) * 500))
+  local final_ft = to.feet + 3000
+  return { from = from, to = to, dep = dep, arr = arr, nm = nm, track = track,
+           fix = fix, iaf = iaf, cruise_ft = cruise, final_ft = final_ft,
+           tod_nm = (cruise - final_ft) / M.FT_PER_NM, phase = nil }
+end
+
+-- Where the aircraft is against the arrival's centre line: kilometres out
+-- along it from the threshold, and to its right looking along the
+-- approach - flat, which ten miles out is exact enough.
+local function on_final(plan, lon, lat, geo)
+  local e = plan.arr
+  local d = geo.km(e.lon, e.lat, lon, lat)
+  local t = math.rad(geo.bearing(e.lon, e.lat, lon, lat) - (e.heading + 180))
+  return d * math.cos(t), -d * math.sin(t)
+end
+M.on_final = on_final
+
+-- Each frame: what the autopilot holds for where the aircraft is. Two
+-- phases, said as each starts, since they answer separate questions: the
+-- way, "enroute" to the initial fix, "intercept" onto the centre line
+-- within 3 nm of it, and "final" from the final fix; and the height,
+-- "climb", "cruise" and "descent" once the route left to the final fix -
+-- by the initial fix while on the way to it - is the top of descent's.
+-- On the final, the flaps go to the approach's.
+function M.guide(plan, AP, S, P, lon, lat, geo, say)
+  local m = 0.3048
+  local along, right = on_final(plan, lon, lat, geo)
+  local to_fix = geo.km(lon, lat, plan.fix[1], plan.fix[2]) / NM
+  local to_iaf = geo.km(lon, lat, plan.iaf[1], plan.iaf[2]) / NM
+  local way = plan.way or "enroute"
+  if way == "enroute" and to_iaf < 3 then way = "intercept" end
+  if way == "intercept" and along <= M.FIX_NM * NM then way = "final" end
+  local left = way == "enroute" and to_iaf + (M.IAF_NM - M.FIX_NM) or to_fix
+  plan.left = left                       -- what the strip says is left
+  local height = plan.height or "climb"
+  if height ~= "descent" and left <= plan.tod_nm then height = "descent" end
+  if height == "climb" and S.y >= plan.cruise_ft * m - 15 then height = "cruise" end
+  for _, k in ipairs{ "way", "height" } do
+    local now = k == "way" and way or height
+    if plan[k] ~= now then
+      plan[k] = now
+      if say then say(("route %s, %.0f nm to the fix, %.0f ft"):format(now, left, S.y / m)) end
+    end
+  end
+
+  if way == "enroute" then
+    AP.heading = math.rad(geo.bearing(lon, lat, plan.iaf[1], plan.iaf[2]))
+  else
+    -- Onto the centre line: aim at a point on it 4 km nearer the runway
+    -- than the aircraft's own place along it.
+    AP.heading = math.rad(plan.arr.heading - math.deg(math.atan(right, math.min(4, along))))
+  end
+  AP.vs_path = nil
+  if height == "descent" and way ~= "final" then
+    -- On the 3 degree path from the cruise to the final fix's height,
+    -- the path's own rate handed to the autopilot; held at the fix's
+    -- height after it - the glide path to the runway is F10d's.
+    local want = plan.final_ft + math.max(0, left) * M.FT_PER_NM
+    AP.alt = math.min(plan.cruise_ft, want) * m
+    if want < plan.cruise_ft then AP.vs_path = -S.v * M.FT_PER_NM * m / (NM * 1000) end
+  elseif height == "descent" then
+    AP.alt = plan.final_ft * m
+  else
+    AP.alt = plan.cruise_ft * m
+  end
+  AP.speed = way == "final" and P.speeds.approach or P.speeds.cruise
+  if way == "final" then S.flaps = P.speeds.approach_flaps end
+  return way, height
 end
 
 return M

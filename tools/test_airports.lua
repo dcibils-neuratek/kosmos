@@ -72,6 +72,18 @@ for line in db.text:gmatch("\n([^\n]+)") do
 end
 check(lines > 5000 and bad == 0, ("%d of %d lines did not parse to runways"):format(bad, lines))
 
+-- A place along a heading (F10c): 10 nm out from SDU's 02R threshold on
+-- the reciprocal of its heading is 18.52 km away, back on that bearing.
+do
+  local e = sdu and sdu.runways[1].ends[1]
+  local back = e and (e.heading + 180) % 360
+  local lon, lat
+  if e then lon, lat = airports.ahead(e.lon, e.lat, back, 18.52) end
+  check(lon and math.abs(airports.km(e.lon, e.lat, lon, lat) - 18.52) < 0.01
+        and math.abs((airports.bearing(e.lon, e.lat, lon, lat) - back + 180) % 360 - 180) < 0.1,
+        "ahead did not put a place 18.52 km out on the bearing asked")
+end
+
 if fails > 0 then
   print(("FAIL: %d of %d checks on the Airports library"):format(fails, fails + checks))
   os.exit(1)

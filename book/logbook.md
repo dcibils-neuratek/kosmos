@@ -6176,3 +6176,35 @@ up a tenth, and arrive exactly. The control holds the controllers'
 slow corrections still; it misses 7 of the 18 checks. In QEMU, the
 right arrow under the autopilot turned the held heading 12 degrees and
 nothing else; with that line removed, nought, and the suite failed.
+
+## 21 November 2026 - A route to Ezeiza
+
+**In short:** tell Flight an airport and press Q, and it flies there by
+itself. It picks the runway, climbs to a cruise height for the
+distance, follows the great circle, comes down on a three-degree path,
+and lines up ten nautical miles out. The landing itself is the next
+step.
+
+**What.** A plan made once: the runway most nearly into the wind; a
+fix ten miles out on its centre line and another fifteen out to turn
+on at; a cruise height of 40 ft a mile of the distance; and where to
+start down so as to be 3,000 ft over the field at the fix. Then each
+frame the plan tells the autopilot what heading, height and speed to
+hold.
+
+**Why the Airports library grew.** The great circles were already
+there - `bearing` and `km` - and the route takes them rather than a
+copy. The one thing missing, a place so many kilometres along a
+heading, went into the same library as `airports.ahead`, where Maps can
+have it too.
+
+**What the measurement found.** Following a height that moves - the
+three-degree path down - the autopilot ran behind it by its descent
+rate over its gain, and the 747 arrived 283 ft high. Telling it the
+path's own rate as well left it only the error to correct: 3 ft.
+
+**Measurements.** Carrasco to Ezeiza is 124 nm, so a 5,000 ft cruise,
+descending 6 nm before the fix. The Cessna takes 64 minutes and the
+747 27, both arriving within 0.02 nm of the fix, at 3,067 ft for
+3,067 and 3,070, heading 282 for runway 29's 282. With the top of
+descent taken away they arrive at 5,000 ft, and the check fails.

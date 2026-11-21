@@ -57,6 +57,16 @@ local function km(lon1, lat1, lon2, lat2)
 end
 airports.km = km
 
+-- The place `km` kilometres from another along a true heading, on a
+-- sphere: Flight's route puts its final fix 10 nm out from a threshold
+-- with it (`docs/flight.md` F10c). Longitude, latitude.
+function airports.ahead(lon, lat, heading, kilometres)
+  local d, t, p1 = kilometres / 6371, math.rad(heading), math.rad(lat)
+  local p2 = math.asin(math.sin(p1) * math.cos(d) + math.cos(p1) * math.sin(d) * math.cos(t))
+  local l = math.atan(math.sin(t) * math.sin(d) * math.cos(p1), math.cos(d) - math.sin(p1) * math.sin(p2))
+  return (lon + math.deg(l) + 540) % 360 - 180, math.deg(p2)
+end
+
 local SIZES = { l = "large", m = "medium", s = "small" }
 local RANK = { l = 1, m = 2, s = 3 }
 

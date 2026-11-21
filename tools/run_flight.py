@@ -234,6 +234,7 @@ prefs.open("flight", {}):set{
   vector = "%(base)s/vec/{z}/{x}/{y}.pbf", buildings = true, shadows = %(shadows)s,
   lon = %(lon)r, lat = %(lat)r, width = %(width)d, height = %(height)d,
   report = 2, frames = 0, finder = "%(base)s/search",
+  fly_to = "EZE",                 -- Q engages on the route to Ezeiza (F10c)
 }
 local s = prefs.open("flight", {})
 s:reset("city") s:reset("place") s:reset("recent") s:reset("start") s:reset("time") s:reset("weather") s:reset("wind") s:reset("wind_from")
@@ -1322,6 +1323,18 @@ def main():
         fails.append("X did not step 2x, 3x, 4x and back to 1x: %r" % (rates,))
     held = re.findall(r"flight autopilot (on|off): heading (\d+), (\d+) ft, (\d+) kt", seen)
     print("flight: the autopilot said %r" % (held,))
+    # The route (F10c): with `fly_to` set, Q made a plan to Ezeiza and the
+    # autopilot took the route's bearing and cruise as what it holds; the
+    # right arrow then left the route.
+    route = re.search(r"flight route (\w+) to EZE (\w+), (\d+) nm, cruise (\d+) ft, bearing (\d+)", seen)
+    print("flight: the route %r" % (route.groups() if route else None,))
+    if not route:
+        fails.append("Q with fly_to = EZE made no route")
+    elif held and (held[0][1] != route.group(5) or held[0][2] != route.group(4)):
+        fails.append("the autopilot did not hold the route's bearing and cruise: %r %r"
+                     % (route.groups(), held[0]))
+    if "flight route left" not in seen:
+        fails.append("the arrows under the route did not leave it")
     if [h[0] for h in held] != ["on", "off"]:
         fails.append("Q did not switch the autopilot on and off: %r" % (held,))
     else:

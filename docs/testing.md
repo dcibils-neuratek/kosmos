@@ -41092,3 +41092,42 @@ only the key.
   only on the engine heard silent (rendered, peak 0: the roadmap's flake,
   its third gate in a day), with the autopilot's and the keys' checks
   passing in the same run; alone it passed in 3:30.
+
+## 18.980 Flight's route, Carrasco to Ezeiza (0.12.60)
+
+**In short:** with `fly_to` set, Q flies a route to that airport, and the
+host test flies Carrasco to Ezeiza with both aircraft to the final fix,
+10 nm out on runway 29. Both arrive on it to 0.02 nm, 3 ft and 0 degrees.
+
+- **The host test**, `tools/test_flightmodel.lua`, now takes the airports
+  file. Each aircraft starts 1,500 ft over Carrasco, heading along the
+  track, its autopilot engaged and the plan setting what it holds:
+  - the plan: MVD 25 to EZE 29, 124 nm, a 5,000 ft cruise, descending
+    6 nm from the fix;
+  - the Cessna: at the fix after 64 minutes, 0.02 nm off it, 3,067 ft
+    for 3,067, heading 282 for 282;
+  - the 747: after 27 minutes, 0.00 nm off it, 3,070 ft, heading 282;
+  - both: each of the six phases once, the way's and the height's each
+    in their order.
+
+  29 checks, nought failed, in 0.87 s.
+- **Two controls**, both run by `make`, which fails if either passes:
+  - `frozen` (18.979): 9 of 29 fail; the 747 arrives 4,763 ft high;
+  - `no-descent`, the top of descent taken away: both arrive at
+    5,000 ft, and the descent is never said; 4 fail.
+- **Found on the way**: the descent and the intercept began in one frame
+  on a route this short, so the phase is now two; and the 3 degree path
+  was followed 283 ft high by the 747 until the path's own rate was
+  handed to the autopilot.
+- **`airports.ahead`**, new in the Airports library: 18.52 km out from
+  SDU's 02R threshold on its reciprocal is 18.52 km away on that bearing.
+  Its control, the longitude term broken, fails the check. 13 checks.
+- **In QEMU**, `x86-flight`, its setup `fly_to = "EZE"`: Q makes the
+  route, the autopilot holds the route's bearing and cruise, and the
+  right arrow leaves the route with "route left".
+  In the gate: the route MVD to EZE 29, 124 nm, a 5,000 ft cruise,
+  bearing 270; the autopilot on at 270, 5,000 ft, and off at 283 after
+  the arrow left the route.
+- **The gate**: 131 of 132 suites passed in 660 s. `x86-jetski` failed
+  its menu check (two rows missing as it was read: its known flake) and
+  passed alone in 2:25.

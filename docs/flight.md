@@ -832,6 +832,21 @@ ends on the M700:
         of descent away, so the aircraft arrives at its cruise height
         and the height check fails. `x86-flight` holds the key: with
         `fly_to` set, Q holds the heading to the fix.
+      - **Built in 0.12.60** (`testing.md` 18.980), as written, with
+        two things the first run found:
+        - **The phases are two, not one.** On Carrasco to Ezeiza the
+          top of descent is 6 nm from the final fix, inside the initial
+          fix, so the descent and the intercept began in the same frame
+          and one was never said. The way (enroute, intercept, final)
+          and the height (climb, cruise, descent) are now each a phase
+          of their own.
+        - **A moving height needs its rate.** The altitude hold followed
+          the 3 degree path a rate over its gain behind, and the 747
+          arrived 283 ft high. The path's own descent rate is now handed
+          to the autopilot (`vs_path`), and the 747 arrives 3 ft high.
+
+        The arrows under a route leave it, and the autopilot holds what
+        the keys then set.
   - **F10d - the take-off and the landing.** Lined up, full power,
     rotate at the aircraft's speed and climb on the runway's heading;
     and at the end a three-degree glide path to the touchdown zone, the

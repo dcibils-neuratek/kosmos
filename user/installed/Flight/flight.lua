@@ -59,6 +59,7 @@ local settings = prefs.open("flight", {
   frames = 0,                                    -- stop after this many, 0 never
   report = 120,                                  -- a line on the console every this many
   anchor_after = 40000,                          -- metres from the terrain's centre to move it (F10a)
+  fly_to = "",                                   -- an airport's code: Q flies there (F10c)
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
@@ -1282,6 +1283,10 @@ function PAD.controls(w, dt)
       if w:pressed(code) then ap.on = false say("autopilot off: the throttle taken") end
     end
   end
+  if ap.on and ap.plan and (roll ~= 0 or pitch ~= 0 or pt ~= 0) then
+    ap.plan, ap.vs_path = nil, nil
+    say("route left: the autopilot holds what the keys set")
+  end
   if ap.on then
     ap.heading = ap.heading + roll * math.rad(20) * dt
     ap.alt = math.max(150, ap.alt + pitch * 91.44 * dt)   -- down, nose up: higher
@@ -1337,7 +1342,9 @@ local function strip_words(ground_h)
   if S.rate > 1 then
     state = state and ("%dx  %s"):format(S.rate, state) or ("TIME %dx"):format(S.rate)
   end
-  state = state or ap and "AUTOPILOT" or nil
+  state = state or ap and (ap.plan and ("NAV %s %d nm"):format(ap.plan.to.iata or ap.plan.to.ident,
+                                          math.floor((ap.plan.left or 0) + 0.5))
+                           or "AUTOPILOT") or nil
   return words, state
 end
 
@@ -2385,6 +2392,33 @@ if plane then say("aircraft " .. plane:info()) else say("no aircraft: " .. tostr
 -- Another aircraft chosen in the sheet (F12): read, its model put in the
 -- old one's place, and the flight started again in it. A file that will
 -- not fly leaves the one flying.
+-- **The route** (F10c): with `fly_to` set, engaging the autopilot makes
+-- a plan from the nearest airport - or, with none within 50 km, from
+-- where the aircraft is - to that one, and each frame the plan sets what
+-- the autopilot holds. Both are `model.lua`'s, handed the Airports library
+-- for its great circles.
+function AIRCRAFT.route(ap)
+  if (settings.fly_to or "") == "" then return end
+  local db = airports_here()
+  local to = db and db:find(settings.fly_to)
+  if not to then say("route: no airport " .. tostring(settings.fly_to)) return end
+  local lon, lat = ANCHOR.lonlat(S.x, S.z)
+  local from = db:near(lon, lat, 50, 1)[1] or { lon = lon, lat = lat, feet = 0, runways = {} }
+  local plan, why = AIRCRAFT.model.route(from, to, PLANE,
+                                         (settings.wind or 0) > 0 and settings.wind_from or nil, airports)
+  if not plan then say("route: " .. tostring(why)) return end
+  ap.plan = plan
+  AIRCRAFT.guide(ap)
+  say(("route %s to %s %s, %.0f nm, cruise %d ft, bearing %03d"):format(from.iata or from.ident or "here",
+      to.iata or to.ident, plan.arr.name, plan.nm, plan.cruise_ft,
+      math.floor(math.deg(ap.heading) % 360 + 0.5) % 360))
+end
+
+function AIRCRAFT.guide(ap)
+  local lon, lat = ANCHOR.lonlat(S.x, S.z)
+  AIRCRAFT.model.guide(ap.plan, ap, S, PLANE, lon, lat, airports, say)
+end
+
 function AIRCRAFT.switch(g)
   local a, refused = AIRCRAFT.read(settings.aircraft)
   if not a then
@@ -2615,7 +2649,7 @@ while not w:closed(0) do
       end
       if ap.on then ap.on = false said("off")
       elseif S.ground then say("autopilot: not on the ground")
-      else AIRCRAFT.model.engage(ap, S, PLANE) said("on") end
+      else AIRCRAFT.model.engage(ap, S, PLANE) AIRCRAFT.route(ap) said("on") end
     end
     if w:pressed(KEY.h) then
       settings:set("shadows", not settings.shadows)
@@ -2646,6 +2680,7 @@ while not w:closed(0) do
     -- (A count in S, not a for's: the main chunk is at Lua's 200 locals.)
     S.steps = S.rate
     WIND.kt, WIND.from = settings.wind, settings.wind_from
+    if S.ap.on and S.ap.plan then AIRCRAFT.guide(S.ap) end
     repeat
       if S.ap.on then pitch, roll = AIRCRAFT.model.autopilot(S.ap, S, PLANE, dt) end
       AIRCRAFT.model.fly(S, PLANE, WIND, dt, pitch, roll, g:height(S.x, S.z), brake, say)

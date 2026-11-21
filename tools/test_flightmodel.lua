@@ -5,15 +5,31 @@
 -- in well under a second. The autopilot holds what it was engaged on, then
 -- follows a new heading, height and speed, and must arrive at each and stay.
 --
---     build/host/lua tools/test_flightmodel.lua [frozen]
+--     build/host/lua tools/test_flightmodel.lua build/airports/airports.tsv [frozen|no-descent]
 --
--- `frozen` is the control: the autopilot's two integrators held where
+-- Then the route (F10c): Carrasco to Ezeiza on the real airports file,
+-- each aircraft taken from 1,500 ft over Carrasco to Ezeiza's final fix,
+-- 10 nm out, by `M.route` and `M.guide` alone.
+--
+-- `frozen` is the first control: the autopilot's two integrators held where
 -- engaging put them, so the yoke and throttle answer only the error now.
 -- A held climb or speed needs a pitch and a power that are not where the
 -- aircraft began, so without the integrators it settles off the mark, and
 -- the checks that it arrived must fail.
+-- `no-descent` is the second: the route's top of descent taken away, so
+-- the aircraft arrives at its cruise height and must fail the fix's.
 local M = dofile("user/installed/Flight/model.lua")
-local frozen = arg[1] == "frozen"
+fs = { read = function(path)
+  local f = io.open(path, "rb")
+  if not f then return nil, "no file" end
+  local text = f:read("a")
+  f:close()
+  return text
+end }
+local airports = dofile("user/lib/airports.lua")
+local db = assert(airports.open(arg[1]))
+local control = arg[2]
+local frozen = control == "frozen"
 if frozen then M.AP_GAIN.pitch_i, M.AP_GAIN.throttle_i = 0, 0 end
 
 local fails, checks = 0, 0
@@ -84,5 +100,67 @@ for _, key in ipairs{ "cessna172", "b747" } do
   ::next::
 end
 
-print(("flight model: %d checks, %d failed%s"):format(checks + fails, fails, frozen and " (frozen, the control)" or ""))
+-- **The route** (F10c): Carrasco to Ezeiza, the wind calm.
+local mvd, eze = db:find("MVD"), db:find("EZE")
+check(mvd and eze, "Carrasco or Ezeiza is not in the airports file")
+for _, key in ipairs{ "cessna172", "b747" } do
+  local P = mvd and eze and M.aircraft(read("user/installed/Flight/Aircraft/" .. key .. ".lua"), key, "")
+  if not P then goto skip end
+  do
+    local plan = assert(M.route(mvd, eze, P, nil, airports))
+    if control == "no-descent" then plan.tod_nm = -1e9 end
+    -- Positions as longitude and latitude, moved by the model's metres:
+    -- Flight's own frame does the same around its anchor.
+    local lon0, lat0 = mvd.lon, mvd.lat
+    local S = { x = 0, z = 0, y = mvd.feet * 0.3048 + 457, v = P.speeds.cruise,
+                psi = math.rad(plan.track), phi = 0, gamma = 0, alpha = 0.04, flaps = 0,
+                throttle = P.speeds.cruise_throttle, ground = false }
+    local W, AP, dt = { kt = 0, from = 270 }, {}, 1 / 30
+    local phases = {}
+    local function say(s) local p = s:match("^route (%a+)") if p then phases[#phases + 1] = p end end
+    M.engage(AP, S, P)
+    local R = 6371000
+    local function lonlat()
+      return lon0 + math.deg(S.x / (R * math.cos(math.rad(lat0)))), lat0 - math.deg(S.z / R)
+    end
+    local closest, at = math.huge, nil
+    local t = 0
+    while t < 3 * 3600 do
+      local lon, lat = lonlat()
+      M.guide(plan, AP, S, P, lon, lat, airports, say)
+      local pitch, roll = M.autopilot(AP, S, P, dt)
+      M.fly(S, P, W, dt, pitch, roll, 0, false, say)
+      t = t + dt
+      if S.crashed then break end
+      local d = airports.km(lon, lat, plan.fix[1], plan.fix[2]) / 1.852
+      if d < closest then
+        closest = d
+        local along, right = M.on_final(plan, lon, lat, airports)
+        at = { nm = d, ft = S.y / 0.3048, heading = math.deg(S.psi) % 360, right = right / 1.852,
+               t = t }
+      elseif closest < 2 and d > closest + 1 then
+        break                                   -- past the fix, and going away
+      end
+    end
+    print(("%s route %s %s to %s %s, %.0f nm, cruise %d ft, descent %.0f nm out; at the fix after %.0f min: "
+           .. "%.2f nm off it, %.2f nm right of the line, %.0f ft for %d, heading %.0f for %.0f; phases %s")
+          :format(key, mvd.iata, plan.dep.name, eze.iata, plan.arr.name, plan.nm, plan.cruise_ft,
+                  plan.tod_nm, at and at.t / 60 or 0, at and at.nm or -1, at and at.right or 0,
+                  at and at.ft or 0, plan.final_ft, at and at.heading or 0, plan.arr.heading,
+                  table.concat(phases, ",")))
+    check(not S.crashed, key .. " crashed on the route: " .. tostring(S.crashed))
+    check(at and at.nm < 1, key .. " did not pass within a nautical mile of the final fix")
+    check(at and math.abs(at.ft - plan.final_ft) < 300, key .. " was not at 3,000 ft over Ezeiza at the fix")
+    check(at and off(at.heading, plan.arr.heading) < 20, key .. " was not lined up with the runway at the fix")
+    -- Each phase once; the way's in its order and the height's in its own.
+    local seen = table.concat(phases, ",")
+    local function before(a, b) return (seen:find(a, 1, true) or 1e9) < (seen:find(b, 1, true) or -1) end
+    check(#phases == 6 and before("enroute", "intercept") and before("intercept", "final")
+          and before("climb", "cruise") and before("cruise", "descent"),
+          key .. " did not fly each phase once, in order: " .. seen)
+  end
+  ::skip::
+end
+
+print(("flight model: %d checks, %d failed%s"):format(checks + fails, fails, control and (" (" .. control .. ", a control)") or ""))
 os.exit(fails == 0 and 0 or 1)
