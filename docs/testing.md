@@ -40925,3 +40925,19 @@ the minimap is the seventh.
   from the library.
 - **The gate.** `make test` ran 131 suites, the ones the 3D Kit, Maps
   and the new library reach, in 9:15. All passed.
+
+## 18.975 The time faster in Flight (0.12.55)
+
+**In short:** X steps Flight's time 1x, 2x, 3x, 4x and back to 1x
+(F11). The flight model is stepped that many times a frame, each step
+with the frame's own time, so it stays as stable as at 1x. The strip
+shows `TIME X 2x` while faster, and the tiles are asked for from two
+seconds ahead of where the extra steps carry it.
+
+- **Held by** `x86-flight`. Flying straight, it measures how far a
+  frame carries the aircraft for its speed: 0.0527 s at 1x (the
+  control: TCG's frames are capped at 0.05 s) and 0.0973 s at 2x, 1.85
+  times. A ratio outside 1.6 to 2.4 fails. X three more times must say
+  3x, 4x and 1x in that order. The Keys page now holds 18 keys.
+- **The gate.** Only `x86-flight` stands on what changed. It passed in
+  3:24.

@@ -707,8 +707,36 @@ def main():
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):            # the chase view, for a person
             R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-chase.png"), chase)
 
+        # The time faster (F11): X once is 2x, the model stepped twice a
+        # frame, so a frame carries it twice as far for its speed. The
+        # control is the same measure at 1x just before; then X three more
+        # times is 3x, 4x and back to 1x.
+        def carried(what):
+            a = wait_frames(1, what)
+            b = wait_frames(3, what + " on")
+            frames = max(1, b["frame"] - a["frame"])
+            speed = max(1.0, (a["v"] + b["v"]) / 2)
+            return math.hypot(b["x"] - a["x"], b["z"] - a["z"]) / (frames * speed), b
+        def press_x(rate):
+            have = guest.seen.count("flight time %dx" % rate)
+            keys(True, "x")
+            time.sleep(0.1)
+            keys(False, "x")
+            until = time.monotonic() + 60
+            while guest.seen.count("flight time %dx" % rate) == have and time.monotonic() < until:
+                guest._read_available()
+                time.sleep(0.1)
+        faster = {}
+        faster["1x"], _ = carried("at 1x")
+        press_x(2)
+        wait_frames(1, "2x taken")
+        faster["2x"], _ = carried("at 2x")
+        for rate in (3, 4, 1):
+            press_x(rate)
+        faster["back"] = wait_frames(1, "back at 1x")
+
         # The yoke back: it climbs.
-        start = unpadded
+        start = faster["back"]
         keys(True, "down")
         climbed = wait_frames(5, "the down arrow held")
         keys(False, "down")
@@ -1113,10 +1141,19 @@ def main():
     # The window here is 160 by 100, too small for the page (as for the
     # sheet), so what is held is that F1 opens it with every key and closes
     # it; the page's drawing is seen on the M700.
+    # The time faster (F11): a frame at 2x carries it twice the 1x one.
+    rates = re.findall(r"flight time (\d)x", seen)
+    ratio = faster["2x"] / faster["1x"] if faster.get("1x") else 0
+    print("flight: a frame carries %.4f s of speed at 1x, %.4f at 2x - %.2f times; "
+          "the time stepped %r" % (faster.get("1x", 0), faster.get("2x", 0), ratio, rates))
+    if not 1.6 <= ratio <= 2.4:
+        fails.append("X did not make the time 2x: a frame carried it %.2f times as far" % ratio)
+    if rates != ["2", "3", "4", "1"]:
+        fails.append("X did not step 2x, 3x, 4x and back to 1x: %r" % (rates,))
     shown = re.findall(r"flight keys shown: (\d+) keys in (\d+) groups", seen)
     print("flight: keys shown %r, none before F1: %s" % (shown, keys_before == 0))
-    if keys_before != 0 or shown != [("17", "4")]:
-        fails.append("F1 did not show the 17 keys in 4 groups once, after none: %r (before %d)"
+    if keys_before != 0 or shown != [("18", "4")]:
+        fails.append("F1 did not show the 18 keys in 4 groups once, after none: %r (before %d)"
                      % (shown, keys_before))
     if "flight keys closed" not in seen:
         fails.append("F1 again did not close the keys")

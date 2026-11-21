@@ -767,6 +767,12 @@ ends on the M700:
   it stays as stable as at 1x; the sound, the sky and the frame rate are
   not changed. A key steps 1x, 2x, 3x, 4x, and the strip says it. The
   tiles are asked for further ahead, since the ground goes by faster.
+  - **Built in 0.12.55** (`testing.md` 18.975). X steps 1x, 2x, 3x, 4x
+    and back to 1x, and the Keys page lists it. The strip shows
+    `TIME X 2x` while it is faster and nothing at 1x. Each step asks for
+    the ground under the wheels again, and a crash ends the frame's
+    steps. The tiles are asked for from a point ahead of the eye, as far
+    as the extra steps carry it in two seconds.
 - **F12 - aircraft of their own** - asked by Diego on 21 November 2026:
   "I will be adding more planes as well with different capabilities like
   jet engines, a Boeing 747 and other types so each plane has specific

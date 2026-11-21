@@ -6042,3 +6042,19 @@ first one's, not a copy.
 aircraft has moved a few points on it. The picture is then laid over
 the frame by the 3D Kit, which now holds eight such overlays instead of
 six.
+
+## 21 November 2026 - Time, faster
+
+**In short:** press X in Flight and time runs twice as fast, then three
+times, then four, then back to normal.
+
+**How.** Each frame, the aircraft's physics is worked out two, three or
+four times in a row rather than once. The obvious shortcut would be one
+step twice as long, but long steps are where a simulation turns
+unstable: the flare and the wheels on the runway start to wobble. Lots
+of short steps keep it flying the same way, only sooner. The engine's
+sound, the sky and the frame rate don't change.
+
+**Visible.** The strip at the bottom says TIME X 2x (or 3x, 4x) while
+time is faster. The map tiles are fetched further ahead, since the
+ground arrives sooner.

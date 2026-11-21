@@ -66,7 +66,7 @@ local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f =
               -- main row's and the keypad's), and 1 to 9 and 0 to set it at
               -- once - 0 idle, 1 a tenth, 9 nine tenths; Shift-less = is +.
               pgup = 104, pgdn = 109, minus = 12, equal = 13, kpplus = 78, kpminus = 74,
-              f1 = 59, esc = 1, space = 57,
+              f1 = 59, esc = 1, space = 57, x = 45,
               digits = { 11, 2, 3, 4, 5, 6, 7, 8, 9, 10 } }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -88,7 +88,7 @@ local PLANE = {
 local G = 9.81
 
 -- The state, one table for the whole flight; `start` fills it (below).
-local S = { view = 1 }                -- 1 chase, 2 cockpit, 3 tower
+local S = { view = 1, rate = 1 }      -- 1 chase, 2 cockpit, 3 tower; the time 1x-4x
 
 -- **The wind** (F6, W2): a strength and the bearing it blows from, chosen
 -- in the pause sheet, with gusts - two slow waves on the strength, a fifth
@@ -1299,6 +1299,8 @@ local function strip_words(ground_h)
     { "THROTTLE A/Z", ("%d%%"):format(math.floor(S.throttle * 100 + 0.5)) },
     { "FLAPS", ("%d\u{b0}"):format(math.floor(S.flaps * 30 + 0.5)) },
   }
+  -- The time faster (F11), said only while it is: at 1x it is not news.
+  if S.rate > 1 then words[#words + 1] = { "TIME X", ("%dx"):format(S.rate) } end
   local state = S.paused and "PAUSED" or S.alpha > PLANE.stall and "STALL"
     or S.ground and (S.braking or 0) > 0 and "BRAKES"
                 or ground_h and (S.y - ground_h) < 3 and "ON THE GROUND" or nil
@@ -2268,6 +2270,7 @@ SHEET.keys = { open = false, groups = {
   { "The flight", {
     { "P", "pause: the place, the start, the time, the weather, the wind" },
     { "R", "start again, from the same place and start" },
+    { "X", "the time faster: 1x, 2x, 3x, 4x, and back to 1x" },
     { "F1", "these keys; F1 or Esc closes them" } } },
   { "A gamepad", {
     { "left stick", "the yoke: pitch and roll, as far as it is pushed" },
@@ -2477,6 +2480,11 @@ while not w:closed(0) do
       graphics_next = 0
     end
     if f then S.flaps = (S.flaps + 0.5) % 1.5 end
+    -- The time faster (F11): X steps 1x, 2x, 3x, 4x and round again.
+    if w:pressed(KEY.x) then
+      S.rate = S.rate % 4 + 1
+      say(("time %dx"):format(S.rate))
+    end
     if w:pressed(KEY.h) then
       settings:set("shadows", not settings.shadows)
       say("shadows " .. (settings.shadows and "on" or "off"))
@@ -2494,7 +2502,16 @@ while not w:closed(0) do
 
   if not S.paused then
     local pitch, roll, brake = PAD.controls(w, dt)
-    fly(dt, pitch, roll, g:height(S.x, S.z), brake)
+    -- The time faster is the model stepped again with the same frame's
+    -- time (F11), never one step of two or four times the length: a step
+    -- of 0.2 s is where the flare and the wheels stop being stable. The
+    -- ground is asked for under each step, since it moves under the last.
+    -- (A count in S, not a for's: the main chunk is at Lua's 200 locals.)
+    S.steps = S.rate
+    repeat
+      fly(dt, pitch, roll, g:height(S.x, S.z), brake)
+      S.steps = S.steps - 1
+    until S.steps == 0 or S.crashed
     if S.landed then
       say(("landed at %.0f fpm %s"):format(S.landed,
           runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))
@@ -2538,7 +2555,16 @@ while not w:closed(0) do
   SHEET.keys.draw(w)
 
   look(g)
-  feed(g, view.eye)
+  -- Faster, the ground goes by faster: the tiles are asked for as far
+  -- ahead as the extra steps will carry it in two seconds, so they are in
+  -- when it arrives (F11). At 1x this is the eye itself.
+  if S.rate > 1 then
+    local ahead = S.v * math.cos(S.gamma) * (S.rate - 1) * 2
+    local e = view.eye
+    feed(g, { e[1] + math.sin(S.psi) * ahead, e[2], e[3] - math.cos(S.psi) * ahead })
+  else
+    feed(g, view.eye)
+  end
   if not offline.on and net.imagery and net.elevation and handed == offline.handed
      and t - offline.since > 6
      and ((net.imagery.failed or 0) > 0 or (net.elevation.failed or 0) > 0) then
