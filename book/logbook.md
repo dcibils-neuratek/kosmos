@@ -6004,3 +6004,18 @@ flaps and views step through their positions.
 
 **Measured.** In the landing test, into a 25-knot wind, the aircraft
 would roll about 170 m at idle and about 95 m with the brakes.
+
+## 21 November 2026 - The runways light up
+
+**In short:** from dusk to dawn, and under low cloud, Flight's runways
+are lit the way real ones are.
+
+**What changed.**
+- White lights run along both edges, turning yellow for the last 600
+  metres.
+- White lights run down the middle.
+- A green row marks where the runway begins and a red row where it ends.
+- A line of lights leads in from 900 metres out, with a crossbar at 300.
+
+Each light glows its own colour whatever the sun is doing, and only the
+distance's haze dims it. In daylight they're switched off.

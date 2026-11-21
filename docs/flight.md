@@ -665,6 +665,15 @@ ends on the M700:
       - *What it costs*: about a hundred lights a kilometre of runway, six
         triangles each. That is a few thousand triangles over a city's
         airports, and one draw.
+      - **Built in 0.12.53.** The flag rides in the tint: `light = true`
+        sets the part's alpha to 2, which no colour has, and
+        `k3d_model.frag` draws such a part as its colour hazed, with no
+        light from the sun and no new push constant. The edge lights
+        are 1.5 m outside the edges. The threshold's green row is 1.5 m
+        before it and the end's red row 1.5 m inside. Each end's last
+        600 m of edge lights are yellow from either direction, since
+        one set of lights serves both. 913 lights near Montevideo and
+        1,487 near Rio, in four colours, one part each.
 - **F5k - the minimap** - asked by Diego on 21 November 2026: "We
   should add a small map that shows where we are and heading so the user
   can orientate itself". Written before the code:

@@ -555,6 +555,88 @@ local function runway_parts()
   return { hard, paint }, #hard.indices / 6, #paint.indices / 6
 end
 
+-- **The runway's lights** (F8c; Diego, 21 November: "the runway should
+-- have lights as real runways"), laid as ICAO's Annex 14 has them for a
+-- precision runway: edge lights every 60 m a side, white and yellow over
+-- each end's last 600 m; the centre line's every 30 m; a row of green
+-- across each threshold, just outside it, and of red just inside, the
+-- end seen from the other way; and an approach line 900 m out from each
+-- threshold, a light every 30 m, with a crossbar 300 m out. Each is three
+-- quads 1.2 m a side crossed - two upright, one flat - 0.6 m over the
+-- ground, so a row reads as a line out to the far end; a part a colour,
+-- each a `light`, drawn its own colour and hazed (`k3d_model.frag`).
+local LAMP = 0.6
+local function light_parts()
+  local colours = {
+    white = { 1.0, 0.93, 0.78, 1 }, yellow = { 1.0, 0.78, 0.25, 1 },
+    green = { 0.25, 1.0, 0.45, 1 }, red = { 1.0, 0.18, 0.12, 1 } }
+  local parts, count = {}, 0
+  for name, c in pairs(colours) do
+    parts[name] = { vertices = {}, indices = {}, colour = c, light = true }
+  end
+  local function lamp(part, x, y, z)
+    local v, i = part.vertices, part.indices
+    local n = #v / 3
+    y = y + LAMP
+    for _, q in ipairs{ { LAMP, 0, 0, 0, LAMP, 0 }, { 0, 0, LAMP, 0, LAMP, 0 },
+                        { LAMP, 0, 0, 0, 0, LAMP } } do
+      local ax, ay, az, bx, by, bz = q[1], q[2], q[3], q[4], q[5], q[6]
+      for _, k in ipairs{ { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+        v[#v + 1] = x + k[1] * ax + k[2] * bx
+        v[#v + 1] = y + k[1] * ay + k[2] * by
+        v[#v + 1] = z + k[1] * az + k[2] * bz
+      end
+      local b = n
+      i[#i + 1], i[#i + 2], i[#i + 3] = b + 1, b + 2, b + 3
+      i[#i + 1], i[#i + 2], i[#i + 3] = b + 1, b + 3, b + 4
+      n = n + 4
+    end
+    count = count + 1
+  end
+  for _, r in ipairs(RUNWAYS) do
+    local dx, dz = r.x2 - r.x1, r.z2 - r.z1
+    local len = math.sqrt(dx * dx + dz * dz)
+    if len > 100 then
+      local ux, uz = dx / len, dz / len
+      local nx, nz = -uz, ux
+      local half = r.width / 2
+      -- `a` metres along from the first end (negative before it), `c`
+      -- across; the height is the runway's, held at its ends beyond them.
+      local function at(part, a, c)
+        local t = math.max(0, math.min(1, a / len))
+        lamp(part, r.x1 + ux * a + nx * c, r.h1 + (r.h2 - r.h1) * t, r.z1 + uz * a + nz * c)
+      end
+      for a = 0, len, 60 do
+        local part = (a < 600 or a > len - 600) and parts.yellow or parts.white
+        at(part, a, -half - 1.5)
+        at(part, a, half + 1.5)
+      end
+      for a = 15, len - 15, 30 do at(parts.white, a, 0) end
+      for _, from in ipairs{ 0, len } do
+        local out = from == 0 and -1 or 1
+        for c = -half, half + 0.1, 3 do
+          at(parts.green, from + out * 1.5, c)
+          at(parts.red, from - out * 1.5, c)
+        end
+        for d = 30, 900, 30 do at(parts.white, from + out * d, 0) end
+        for c = -15, 15.1, 1.5 do at(parts.white, from + out * 300, c) end
+      end
+    end
+  end
+  local out = {}
+  for _, name in ipairs{ "white", "yellow", "green", "red" } do
+    if #parts[name].indices > 0 then out[#out + 1] = parts[name] end
+  end
+  if count == 0 then return nil end
+  return out, count
+end
+
+-- The lights are lit from dusk to dawn, and under the cloud deck.
+local function lights_lit()
+  return settings.time == "dusk" or settings.time == "night" or settings.time == "dawn"
+      or settings.weather == "cloud"
+end
+
 -- **The cloud deck** (W1): one grid 60 km a side over the terrain's centre,
 -- a point every 500 m, its height lumped by a few long waves of where it
 -- stands so the light on it has patches, as an overcast's base does. The
@@ -588,6 +670,7 @@ local deck_at = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }
 -- The shape for the runways `flats_here` found, made again when they are
 -- other runways: the frame's models are the aircraft and it.
 local strips, strips_of, drawn = nil, nil, {}
+local lamps = { shape = nil, lit = nil }
 function frame_models(w, with_plane)
   if strips_of ~= RUNWAYS then
     strips_of, strips = RUNWAYS, nil
@@ -598,10 +681,24 @@ function frame_models(w, with_plane)
       say(strips and ("runways drawn %d strips %d marks"):format(hard, paint)
           or ("runways not drawn: " .. tostring(why)))
     end
+    lamps.shape, lamps.lit = nil, nil
+    local lparts, n = light_parts()
+    if lparts then
+      local why
+      lamps.shape, why = w:shape(lparts)
+      say(lamps.shape and ("runway lights made %d lights in %d colours"):format(n, #lparts)
+          or ("runway lights not made: " .. tostring(why)))
+    end
+  end
+  local lit = lights_lit() and settings.runways and lamps.shape ~= nil
+  if lit ~= lamps.lit then
+    lamps.lit = lit
+    say("runway lights " .. (lit and "on" or "off"))
   end
   for i = #drawn, 1, -1 do drawn[i] = nil end
   if with_plane then drawn[#drawn + 1] = with_plane end
   if strips and settings.runways then drawn[#drawn + 1] = strips end
+  if lamps.lit then drawn[#drawn + 1] = lamps.shape end
   if settings.weather == "cloud" and DECK.h then
     if not DECK.shape then
       local why

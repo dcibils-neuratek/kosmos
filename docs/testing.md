@@ -40885,3 +40885,23 @@ the brakes slow the roll against rolling without them: 1.50 m/s² free,
   of the first's strength for the second. "squeak at 0.51" for this
   landing at 255 fpm. The suite fails if the sound is on and no squeak
   is said.
+
+## 18.973 The runway's lights (0.12.53)
+
+**In short:** Flight's runways have lights laid out as ICAO's Annex 14
+has them for a precision runway: edge, centre line, threshold green,
+end red, and an approach line with a crossbar 300 m out. They are lit
+from dusk to dawn and under the cloud deck. The 3D Kit's `w:shape` takes
+`light = true` for a part. That part is drawn its own colour and hazed,
+not lit by the sun. The flag reaches `k3d_model.frag` as the tint's
+alpha set to 2, so no push constant was added.
+
+- **Held by** `x86-flight`. It requires the lights made in four colours
+  (913 near Montevideo, 1,487 near Rio), "off" at noon as the control,
+  and "on" once T has stepped to dusk. `x86-flight-land` holds them on
+  under the cloud deck.
+- **The gate.** `make test` ran 128 suites, the ones the model shader
+  reaches, Cafesa3D's among them. `x86-network` failed once on its
+  second lookup ("the first lookup of this boot answered and the second
+  did not") and passed alone in 33 s. It does not touch the 3D Kit.
+  Every other suite passed.

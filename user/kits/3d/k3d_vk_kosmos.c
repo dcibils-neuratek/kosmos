@@ -2542,6 +2542,14 @@ static int l_window_shape(lua_State *L)
             }
         }
         lua_pop(L, 1);
+        /* A light (Flight's runways, F8c): drawn its own colour, not lit
+         * by the sun, still hazed - said to the shader as a tint whose
+         * alpha is 2, which no colour has (`k3d_model.frag`). */
+        lua_getfield(L, -1, "light");
+        if (lua_toboolean(L, -1)) {
+            p->colour[3] = 2.0f;
+        }
+        lua_pop(L, 1);
         lua_getfield(L, -1, "pull");
         m->pull[i] = lua_isnil(L, -1) ? 0.0f : (float)luaL_checknumber(L, -1);
         lua_pop(L, 1);

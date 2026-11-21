@@ -28,6 +28,14 @@ void main()
 {
     vec4 albedo = texture(skin, across) * v.tint;
 
+    // A light - a tint whose alpha is 2, `w:shape`'s `light = true` - is
+    // its own colour whatever the sun does, and only the distance's haze
+    // comes between it and the eye: a runway's lamps at night.
+    if (v.tint.a > 1.5) {
+        colour = vec4(k3d_hazed(world, albedo.rgb), 1.0);
+        return;
+    }
+
     // Nothing is blended yet, so a texel mostly transparent is a hole -
     // glTF's MASK at its default cutoff - rather than an opaque pane.
     if (albedo.a < 0.5) {

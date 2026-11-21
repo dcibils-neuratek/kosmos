@@ -459,6 +459,10 @@ def land_checks(seen, roll=None):
     if not wind or not touch or int(touch.group(1)) - int(touch.group(2)) < 15:
         fails.append("the landing was not into the wind: %r"
                      % (touch.group(0) if touch else wind and wind.group(0)))
+    # Under the cloud deck the runway's lights are on (F8c).
+    if not re.search(r"flight runway lights on", seen):
+        fails.append("the runway lights were not on under the cloud: %r"
+                     % re.findall(r"flight runway lights[^\r\n]*", seen))
     # The tyres (Diego: "the landing sound like wheels squeaking"): struck
     # at touchdown, as hard as the sink rate - when the sound is on.
     squeak = re.search(r"flight squeak at ([\d.]+)", seen)
@@ -1154,6 +1158,15 @@ def main():
                          "dusk" % (before_o, after_o))
     else:
         fails.append("no pictures at noon and dusk")
+    # The runway's lights (F8c): made for the runways near, off at noon -
+    # the control - and on once T has stepped to dusk.
+    made = re.findall(r"flight runway lights made (\d+) lights in (\d+) colours", seen)
+    switched = re.findall(r"flight runway lights (on|off)\r?\n", seen)
+    print("flight: lights made %r, switched %r" % (made, switched))
+    if not made or int(made[0][0]) < 200 or made[0][1] != "4":
+        fails.append("the runway lights were not made, four colours: %r" % (made,))
+    if not switched or switched[0] != "off" or "on" not in switched:
+        fails.append("the runway lights were not off at noon and on at dusk: %r" % (switched,))
     # The propeller and the engine (F6c): the propeller turns forwards, by
     # at most a sixth of a turn a frame - a third of the way from one blade
     # to the next - and never stands still; and the engine is heard, the
