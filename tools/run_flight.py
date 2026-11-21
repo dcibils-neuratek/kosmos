@@ -62,8 +62,16 @@ NO_ROOFS = "--no-roofs" in sys.argv
 # `--no-shadows` (S2) is the shadows' control: Flight's `shadows` setting
 # off, so nothing is drawn into the sun's map and the suite must fail.
 NO_SHADOWS = "--no-shadows" in sys.argv
+# `--clear` (W1) is the weather's control: the landing flown in a clear sky
+# rather than under the low cloud it asks for, so no deck is made and the
+# landing suite must fail.
+CLEAR = "--clear" in sys.argv
+# `--calm` (W2) is the wind's control: the landing flown in still air rather
+# than into 25 kt down the runway, so the wheels meet the ground at the
+# air's speed and the landing suite must fail.
+CALM = "--calm" in sys.argv
 sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs",
-                                             "--no-shadows")]
+                                             "--no-shadows", "--clear", "--calm")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
@@ -215,7 +223,7 @@ prefs.open("flight", {}):set{
   report = 2, frames = 0, finder = "%(base)s/search",
 }
 local s = prefs.open("flight", {})
-s:reset("city") s:reset("place") s:reset("recent") s:reset("start") s:reset("time")
+s:reset("city") s:reset("place") s:reset("recent") s:reset("start") s:reset("time") s:reset("weather") s:reset("wind") s:reset("wind_from")
 print("flight setup done")
 """
 
@@ -427,6 +435,26 @@ def land_checks(seen):
                           % re.findall(r"flight runways not drawn[^\r\n]*", seen)))
     if not drawn or int(drawn.group(1)) < 4 or int(drawn.group(2)) < 40 * int(drawn.group(1)):
         fails.append("the runways near Rio were not drawn, strips and paint")
+    # The weather (W1): flown under an overcast deck 900 m over the field -
+    # made, placed, and the sky the deck's grey with the sun's share a
+    # quarter.
+    deck = re.search(r"flight cloud deck made (\d+) triangles at (-?\d+) m", seen)
+    under = re.search(r"flight weather cloud under haze=(\d+)-(\d+) sun=([\d.]+)", seen)
+    print("flight: %s; %s" % (deck.group(0) if deck else "no cloud deck made",
+                              under.group(0) if under else "never under a deck"))
+    if not deck or int(deck.group(1)) < 10000 or not under or float(under.group(3)) > 0.3:
+        fails.append("the landing was not flown under a cloud deck: %r"
+                     % re.findall(r"flight (?:weather|cloud)[^\r\n]*", seen))
+    # The wind (W2): 25 kt from the north, down SDU's 02R - the wheels meet
+    # the runway at the air's speed less the headwind.
+    wind = re.search(r"flight wind from (\d+) at (\d+) kt", seen)
+    touch = re.search(r"flight touched down at (\d+) kt through the air, (\d+) kt over the ground",
+                      seen)
+    print("flight: %s; %s" % (wind.group(0) if wind else "no wind line",
+                              touch.group(0) if touch else "no touchdown speeds"))
+    if not wind or not touch or int(touch.group(1)) - int(touch.group(2)) < 15:
+        fails.append("the landing was not into the wind: %r"
+                     % (touch.group(0) if touch else wind and wind.group(0)))
     if crashed or not landed:
         fails.append("it did not land: %r" % (crashed.group(0) if crashed else "no touchdown"))
     elif int(landed.group(1)) >= 600 or landed.group(2).strip() != "on SDU 02R/20L":
@@ -463,7 +491,8 @@ def main():
             # 150 m out on a three-degree path: eight metres up, four seconds
             # of flying, eighty frames at the gate's pace.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "final", final = 150,'
-                    ' lon = -43.205, lat = -22.955 }\n')
+                    ' lon = -43.205, lat = -22.955, weather = "%s", wind = %d,'
+                    ' wind_from = 0 }\n' % ("clear" if CLEAR else "cloud", 0 if CALM else 25))
     files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
              (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
               FOLDER + "/flight.lua"),
@@ -673,6 +702,9 @@ def main():
         sheet_key("right", "right to the runway")
         sheet_key("ret", "choosing the runway")
         sheet_key("down", "down to Time")
+        sheet_key("down", "down to Weather")
+        sheet_key("down", "down to Wind")
+        sheet_key("down", "down to From")
         sheet_key("down", "down to the buttons")
         sheet_key("left", "left to Restart")
         sheet_key("ret", "Restart")

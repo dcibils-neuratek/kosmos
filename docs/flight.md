@@ -498,14 +498,17 @@ ends on the M700:
       shadow shows from morning to afternoon.
     - Later: the terrain casting (a hill across a valley), and cascades,
       so the buildings far off keep their shadows as well.
-  - **Weather and wind, as they will be built** (written 21 November,
-    before the code; the feature set's item 9). Two rows in the pause
+  - **Weather and wind, W1 and W2 built in 0.12.48** (`testing.md`
+    18.968; written 21 November, before the code; the feature set's
+    item 9). The deck went to 900 m (3,000 ft) when it was flown: at
+    600 m, the "over the city" start was inside it, and the window was
+    white. Two rows in the pause
     sheet, remembered like the time of day:
     - *Weather*: **Clear**, **Haze** or **Low cloud**.
       - Clear is the sky as it is now.
       - Haze brings the haze in from 4-40 km to 1.5-12 km, greys its
         colour, and takes a fifth of the sun's share.
-      - Low cloud is an overcast deck 600 m over the field. Under it the
+      - Low cloud is an overcast deck 900 m over the field. Under it the
         sun's share is a quarter, so shadows go and the ambient rises. The
         sky is grey and the haze is 3-20 km. Above it the sky is clear,
         the sun lights the deck's top, and the ground is hidden.
@@ -517,23 +520,24 @@ ends on the M700:
       - Inside the deck, within 60 m of it, the haze closes to 80 m:
         flying through cloud is white.
     - *Wind*: **Calm**, **10 kt** or **25 kt**, from **N**, **E**, **S**
-      or **W**.
+      or **W** (the sheet's Wind and From rows).
       - The flight model's speed is airspeed already. The wind is added
         to the ground track, so the aircraft drifts and crabs into the
         wind on final.
       - On the runway, the headwind's share is added to the airspeed the
         wings see, so a take-off into the wind is shorter.
       - Gusts are a slow sum of two sines on the strength, at ±20%.
-      - The wind sound follows the airspeed, as it does now. The panel's
-        line gains "wind 270/25".
+      - The wind sound follows the airspeed, as it does now.
     - *What supplies it*: nothing new below Flight. The haze, the sun's
       share and the ambient are the view's existing fields. The deck is a
       mesh (`w:shape`). The wind is Flight's own physics.
-    - *Checked*: `run_flight.py` starts in Low cloud with 25 kt from the
-      W. It reads the log's `weather cloud deck=%d m` line and the
-      `wind from %d at %d kt` line, and that the ground track drifts east
-      of the heading over twenty seconds. The control, `--no-wind`, flies
-      calm and must fail the drift check.
+    - *Checked*: `x86-flight-land` flies its final to SDU's 02R under
+      the deck, into 25 kt from the north. It reads that the deck was
+      made and the flight was under it, with the sun's share a quarter.
+      And it reads the touchdown: 73 kt through the air and 45 kt over
+      the ground. Two controls: `--clear` makes no deck, and `--calm`
+      touches down at the same speed through the air and over the
+      ground. Both must fail.
     - Steps: **W1** the weather row (haze and the deck); **W2** the wind.
 - **Diego's evening list, 20 November 2026**, taken before the rest of F6
   and in this order: "Make sure we can takeoff and land in real airport
@@ -653,6 +657,51 @@ ends on the M700:
   (PlayStation's, generic ones) and Bluetooth pads after X-input, held by
   `tools/test_paddecode.c` with recorded reports, since QEMU has no
   controller to plug in, and on the M700 with the 8BitDo.
+  - **As it will be built** (written 21 November, before the code, from
+    how keys and the pointer travel today):
+    - *Today*: the xHCI driver turns a pad's changes into keys
+      (`kosmos_key_push`), and the console server reads them
+      (`SYS_KEY_EVENT`). The window manager reads the console once a pass
+      (`con.wait`) and posts `rawkey` events to the focused window, which
+      takes them in its per-frame poll (`struct wm_frame_reply`,
+      `wmproto.h`). Nothing on the input path shares memory.
+    - *The pad's region*: init makes one page and hands it to two
+      processes. The xHCI driver gets it writable and the window manager
+      read-only, so nobody else can name it. Its shape is `padring.h`:
+      four pads, each `struct pad_state` (buttons, four 16-bit stick
+      axes, two 8-bit triggers) with a sequence count. The driver bumps
+      the count to odd, writes, and bumps it to even again; a reader
+      keeps a copy only when the count was even and the same before and
+      after. One writer, no lock, the latest values only, and a report
+      costs no message.
+    - *To the window*: the window manager reads the region once a pass,
+      and `struct wm_frame_reply` gains a pad block, 16 bytes a pad, for
+      the focused window only. The reply is 252 bytes of a 2,048-byte
+      message, so it has room. It is a value read once a frame, as the
+      pointer's position is.
+    - *Kits*: the Window Kit's `kw_poll` keeps the latest pad state, and
+      the 3D Kit's window gains `w:pad(n)`, which returns the sticks as
+      -1 to 1, the triggers as 0 to 1, and the buttons. The Lua protocol
+      the Super Nintendo, Doom and Quake poll with gains the same in its
+      reply, so Quake's `IN_Move` can take the right stick later.
+    - *Keys stay*: a pad still presses keys as now, so nothing that
+      plays with one today changes.
+    - *Flight*: the left stick is the yoke, proportional (the arrows are
+      full deflection), and the triggers are the throttle (right more,
+      left less). A is the brakes and B the flaps.
+    - *Checked*: QEMU has no pad to plug in, so the driver half is held
+      by `tools/test_paddecode.c` as now. Above the driver, a test mode
+      lets the guest suite write the region the way the driver would:
+      `opt/kosmos/pad=test`, which makes init hand the region to the
+      shell's test program as well. `x86-flight` then holds the left
+      stick right and reads that Flight rolled right. The control holds
+      it centred.
+    - *What is new below Flight*: `padring.h`, init's page, the window
+      manager's read, a block in the frame reply, and two kit methods.
+      None of it is in the kernel.
+    - Steps: **F7a** the region, the driver and the window manager;
+      **F7b** the kits, Flight and the suite; **F7c** on the M700 with
+      the 8BitDo.
 
 ## Questions for Diego
 

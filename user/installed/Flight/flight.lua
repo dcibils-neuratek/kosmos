@@ -50,6 +50,8 @@ local settings = prefs.open("flight", {
   runways = true,                                -- the runways drawn over the imagery (F8b)
   buildings = true,                              -- the city's buildings stood up (F6, B3)
   shadows = true,                                -- the sun's shadows (F6, S2, H)
+  weather = "clear",                             -- one of DECK.choices (F6, W1)
+  wind = 0, wind_from = 270,                     -- knots, and the bearing it blows from (W2)
   vector = "https://tiles.openfreemap.org/planet",   -- where their outlines come from, as Maps'
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
@@ -81,13 +83,39 @@ local G = 9.81
 -- The state, one table for the whole flight; `start` fills it (below).
 local S = { view = 1 }                -- 1 chase, 2 cockpit, 3 tower
 
+-- **The wind** (F6, W2): a strength and the bearing it blows from, chosen
+-- in the pause sheet, with gusts - two slow waves on the strength, a fifth
+-- of it at most. The flight model's speed is the air's; the wind carries
+-- the air, so it is added to the track in the air, and on the wheels the
+-- headwind's share is what the wings feel on top of the ground speed.
+local WIND = { strengths = { { key = 0, name = "Calm" }, { key = 10, name = "10 kt" },
+                             { key = 25, name = "25 kt" } },
+               froms = { { key = 0, name = "N" }, { key = 90, name = "E" },
+                         { key = 180, name = "S" }, { key = 270, name = "W" } },
+               t = 0, x = 0, z = 0 }
+
+-- The wind's velocity now, metres a second east (x) and south (z).
+function WIND.now(dt)
+  WIND.t = WIND.t + dt
+  local v = (settings.wind or 0) * 0.5144
+  v = v * (1 + 0.12 * math.sin(0.7 * WIND.t) + 0.08 * math.sin(1.9 * WIND.t + 1))
+  local from = math.rad(settings.wind_from or 270)
+  WIND.x, WIND.z = -v * math.sin(from), v * math.cos(from)
+  return WIND.x, WIND.z
+end
+
 -- One step of the flight model, `dt` seconds: speed, climb and heading from
 -- the forces in the path's frame, as a point mass with an attitude - which
 -- is how a trainer feels, and a few dozen multiplications.
 local function fly(dt, pitch, roll, ground_h, brake)
   local P = PLANE
   local rho = 1.225 * math.exp(-S.y / 8500)
-  local q = 0.5 * rho * S.v * S.v
+  -- On its wheels S.v is the ground's speed; the wings feel the headwind's
+  -- share on top of it (W2).
+  local wx, wz = WIND.now(dt)
+  local head = -(wx * math.sin(S.psi) - wz * math.cos(S.psi))
+  local air = S.ground and math.max(0, S.v + head) or S.v
+  local q = 0.5 * rho * air * air
 
   -- The yoke sets the angle of attack it asks for; the aircraft gets there
   -- quickly but not at once, as a real one's pitch does.
@@ -99,7 +127,7 @@ local function fly(dt, pitch, roll, ground_h, brake)
   if S.alpha > P.stall then cl = cl * 0.55 end   -- stalled
   local cd = P.cd0 + P.k * cl * cl + P.flaps_cd * S.flaps
   local lift, drag = q * P.wing * cl, q * P.wing * cd
-  local thrust = S.throttle * math.min(P.static, P.power / math.max(S.v, 1))
+  local thrust = S.throttle * math.min(P.static, P.power / math.max(air, 1))
   local m = P.mass
 
   if S.ground then
@@ -109,7 +137,10 @@ local function fly(dt, pitch, roll, ground_h, brake)
     local friction = (0.04 + 0.45 * (brake or 0)) * math.max(0, m * G - lift)
     S.v = math.max(0, S.v + (thrust - drag - friction) / m * dt)
     S.gamma = 0
-    if lift > m * G * 1.02 and pitch > 0 then S.ground = false end
+    if lift > m * G * 1.02 and pitch > 0 then
+      S.ground = false
+      S.v = air                          -- the air's speed from here on
+    end
     S.psi = S.psi + roll * math.rad(10) * dt * math.min(1, S.v / 10)
     -- On its wheels it follows the ground, which a start on a runway
     -- reckons from the airfield's elevation before the tiles are in.
@@ -131,6 +162,9 @@ local function fly(dt, pitch, roll, ground_h, brake)
   local horizontal = S.v * math.cos(S.gamma)
   S.x = S.x + horizontal * math.sin(S.psi) * dt
   S.z = S.z - horizontal * math.cos(S.psi) * dt
+  if not S.ground then                  -- the air it flies in moves
+    S.x, S.z = S.x + wx * dt, S.z + wz * dt
+  end
   S.y = S.y + S.v * math.sin(S.gamma) * dt
 
   -- The ground: touched gently it is a landing, hard it is the end - and
@@ -144,6 +178,10 @@ local function fly(dt, pitch, roll, ground_h, brake)
                     :format(sink * 196.85, math.deg(math.abs(S.phi)))
       else
         S.landed = sink * 196.85
+        -- What the wheels meet is the ground's speed: the air's, less the
+        -- headwind - a landing into the wind is slower over the runway.
+        S.touch_air, S.touch_ground = S.v, math.max(0, S.v - head)
+        S.v = S.touch_ground
       end
     end
     S.y = ground_h + P.gear
@@ -172,6 +210,66 @@ local view = {
 -- four over, the afternoon at fifteen and the day from thirty-five. Dusk
 -- is the sun three degrees up in the west, orange along the horizon.
 -- `T` steps through them while flying; the sheet chooses one.
+-- **The weather** (F6, W1; `docs/flight.md`, *Weather and wind*): clear,
+-- haze, or an overcast deck 900 m over the field (3,000 ft). What the time of day
+-- makes of the sky is kept in DECK.sky, and the weather is laid over it every
+-- frame, since under, in and over the deck are three skies.
+-- One table, since Flight's main chunk is near Lua's 200 locals: the
+-- choices, the sky the hour made, and the deck.
+local DECK = { above = 900, thick = 60, h = nil, shape = nil, said = nil,
+               choices = { { key = "clear", name = "Clear" }, { key = "haze", name = "Haze" },
+                           { key = "cloud", name = "Low cloud" } },
+               sky = { zenith = {}, horizon = {}, haze = {}, light = {}, ambient = 0.35, glow = 0.3 } }
+
+-- The view's sky from DECK.sky and the weather, for an eye `eye_y` metres up
+-- (nil before there is one). Whether the sun's shadows are to be drawn.
+function DECK.weather_sky(eye_y)
+  for _, k in ipairs({ "zenith", "horizon", "haze", "light" }) do
+    for i = 1, 3 do view[k][i] = DECK.sky[k][i] end
+  end
+  view.ambient, view.glow = DECK.sky.ambient, DECK.sky.glow
+  view.haze_start, view.haze_end = 4000, 40000
+  local function grey(c, f)          -- towards its own brightness, by f
+    local l = 0.3 * c[1] + 0.55 * c[2] + 0.15 * c[3]
+    for i = 1, 3 do c[i] = c[i] + (l - c[i]) * f end
+  end
+  local key = settings.weather
+  if key == "haze" then
+    view.haze_start, view.haze_end = 1500, 12000
+    grey(view.haze, 0.5)
+    for i = 1, 3 do
+      view.horizon[i] = view.horizon[i] + (view.haze[i] - view.horizon[i]) * 0.6
+      view.light[i] = view.light[i] * 0.8
+    end
+    view.ambient = math.min(0.7, view.ambient + 0.08)
+    return true
+  end
+  if key ~= "cloud" or not DECK.h or not eye_y then return true end
+  local over = eye_y - DECK.h
+  if over > DECK.thick then return true end   -- above it: the sky is clear
+  -- Under it, or in it: the sun's light through a deck is a quarter of
+  -- it, spread from the whole sky, so the ambient rises and no shadow is
+  -- sharp enough to draw. How bright the grey is follows the hour.
+  local bright = 0.3 * DECK.sky.light[1] + 0.55 * DECK.sky.light[2] + 0.15 * DECK.sky.light[3]
+  local g = 0.18 + 0.5 * bright * math.max(0.2, DECK.sky.ambient / 0.35)
+  g = math.min(0.78, g)
+  for i = 1, 3 do
+    view.light[i] = view.light[i] * 0.25
+    view.zenith[i] = g * (0.92 + 0.04 * i)
+    view.horizon[i] = g * (0.98 + 0.02 * i)
+    view.haze[i] = g * (0.97 + 0.02 * i)
+  end
+  view.ambient = math.min(0.8, view.ambient + 0.3)
+  view.glow = 0
+  view.haze_start, view.haze_end = 3000, 20000
+  if over > -DECK.thick then
+    -- In it: white, eighty metres.
+    for i = 1, 3 do view.haze[i] = math.min(0.92, g + 0.15) end
+    view.haze_start, view.haze_end = 0, 80
+  end
+  return false
+end
+
 local HOURS = { { key = "dawn", name = "Dawn", hour = 6.25 },
                 { key = "morning", name = "Morning", hour = 9 },
                 { key = "noon", name = "Noon", hour = 12 },
@@ -213,6 +311,10 @@ local function set_time(key)
     for i = 1, 3 do view[k3][i] = mix(a[k3][i], b[k3][i]) end
   end
   view.ambient, view.glow = mix(a.ambient, b.ambient), mix(a.glow, b.glow)
+  for _, k3 in ipairs({ "zenith", "horizon", "haze", "light" }) do
+    for i = 1, 3 do DECK.sky[k3][i] = view[k3][i] end
+  end
+  DECK.sky.ambient, DECK.sky.glow = view.ambient, view.glow
   -- What lights the ground: the sun held just over the horizon through the
   -- twilight, and at night the moon, opposite it.
   if height < -6 then
@@ -440,6 +542,36 @@ local function runway_parts()
   return { hard, paint }, #hard.indices / 6, #paint.indices / 6
 end
 
+-- **The cloud deck** (W1): one grid 60 km a side over the terrain's centre,
+-- a point every 500 m, its height lumped by a few long waves of where it
+-- stands so the light on it has patches, as an overcast's base does. The
+-- haze hides its edge. A shape of the 3D Kit's, made once and placed at
+-- the deck's height.
+local DECK_CELLS, DECK_SIDE = 120, 60000
+local function deck_parts()
+  local v, idx = {}, {}
+  local n, step, half = DECK_CELLS, DECK_SIDE / DECK_CELLS, DECK_SIDE / 2
+  for j = 0, n do
+    for i = 0, n do
+      local x, z = i * step - half, j * step - half
+      local y = 28 * math.sin(x / 1700 + 0.7) * math.sin(z / 2300 + 1.9)
+              + 16 * math.sin((x + 1.3 * z) / 830) + 9 * math.sin((1.7 * x - z) / 470 + 0.4)
+      v[#v + 1], v[#v + 2], v[#v + 3] = x, y, z
+    end
+  end
+  for j = 0, n - 1 do
+    for i = 0, n - 1 do
+      local a = j * (n + 1) + i + 1
+      local b, c, d = a + 1, a + n + 1, a + n + 2
+      -- Wound to face up: x east, z south.
+      idx[#idx + 1], idx[#idx + 2], idx[#idx + 3] = a, c, b
+      idx[#idx + 1], idx[#idx + 2], idx[#idx + 3] = b, c, d
+    end
+  end
+  return { { vertices = v, indices = idx, colour = { 0.86, 0.87, 0.90, 1 } } }
+end
+local deck_at = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }
+
 -- The shape for the runways `flats_here` found, made again when they are
 -- other runways: the frame's models are the aircraft and it.
 local strips, strips_of, drawn = nil, nil, {}
@@ -457,6 +589,19 @@ function frame_models(w, with_plane)
   for i = #drawn, 1, -1 do drawn[i] = nil end
   if with_plane then drawn[#drawn + 1] = with_plane end
   if strips and settings.runways then drawn[#drawn + 1] = strips end
+  if settings.weather == "cloud" and DECK.h then
+    if not DECK.shape then
+      local why
+      DECK.shape, why = w:shape(deck_parts())
+      if not DECK.shape then say("cloud deck not made: " .. tostring(why)) DECK.h = nil
+      else say(("cloud deck made %d triangles at %.0f m"):format(2 * DECK_CELLS * DECK_CELLS, DECK.h)) end
+    end
+    if DECK.shape then
+      deck_at[14] = DECK.h
+      DECK.shape:place(deck_at)
+      drawn[#drawn + 1] = DECK.shape
+    end
+  end
   return drawn
 end
 end
@@ -509,6 +654,7 @@ local function start(g)
     end
   end
   S.started, S.ground_said, S.landed = how, nil, nil
+  say(("wind from %03d at %d kt"):format(settings.wind_from or 270, settings.wind or 0))
   say(("started %s at x=%.0f y=%.0f z=%.0f heading=%.0f in %s"):format(how, S.x, S.y, S.z,
       math.deg(S.psi) % 360, here and here.name or "no place known"))
 end
@@ -557,7 +703,27 @@ local function look(g)
   -- where the eye looks, and wider the higher it flies - 400 m a side on a
   -- runway, 0.4 m a texel, to 2 km at 1,600 m above the ground. The
   -- tower's box is the aircraft's own, since that is what it watches.
-  if settings.shadows then
+  -- The weather's sky, for where the eye is; the deck over the field
+  -- once the field's height is known.
+  if settings.weather == "cloud" and not DECK.h then
+    local field = g:height(tower.x or 0, tower.z or 0)
+    if field then
+      DECK.h = field + DECK.above
+      say(("weather cloud deck=%.0f m"):format(DECK.h))
+    end
+  end
+  local sunny = DECK.weather_sky(e[2])
+  local state = settings.weather
+  if state == "cloud" then
+    state = not DECK.h and "cloud waiting" or e[2] > DECK.h + DECK.thick and "cloud over"
+            or e[2] > DECK.h - DECK.thick and "cloud in" or "cloud under"
+  end
+  if state ~= DECK.said then
+    DECK.said = state
+    say(("weather %s haze=%.0f-%.0f sun=%.2f ambient=%.2f"):format(state, view.haze_start,
+        view.haze_end, view.light[2], view.ambient))
+  end
+  if settings.shadows and sunny then
     local ground = g:height(S.x, S.z) or 0
     local radius = math.max(400, math.min(2000, 400 + (S.y - ground)))
     local ahead = S.view == 3 and 0 or radius * 0.5
@@ -1128,7 +1294,7 @@ end
 local GLASS, DIM, BRIGHT, LINE = 0xd8141820, 0xff9aa6b8, 0xfff4f6f9, 0xff3a4250
 local SPARK, BUDGET = 0xff5ab0ff, 0xff4a5262
 local TIMES = 120                                  -- the sparkline's frames
-local times, times_at, times_n = {}, 0, 0
+local times = { at = 0, n = 0 }                   -- and where the next goes, and how many
 local processor_ms = nil                           -- the frame less the device's, smoothed
 for i = 1, TIMES do times[i] = 0 end
 local spark_xy = {}
@@ -1144,9 +1310,9 @@ local function count_of(n)
 end
 
 local function draw_graphics(w, said, took, t)
-  times_at = times_at % TIMES + 1
-  times[times_at] = took
-  times_n = math.min(TIMES, times_n + 1)
+  times.at = times.at % TIMES + 1
+  times[times.at] = took
+  times.n = math.min(TIMES, times.n + 1)
   -- The processor's part of a frame: the frame less the device's time,
   -- which it waits for, every frame - smoothed over about a second's worth.
   local draws, triangles, gpu_ms, presented, shadowed = w:stats()
@@ -1200,11 +1366,11 @@ local function draw_graphics(w, said, took, t)
     local sx, sy, sw, sh = x, 92, right - x, 38
     local most = 1 / 30
     for i = 1, TIMES do if times[i] > most then most = times[i] end end
-    local first = times_n < TIMES and 1 or times_at + 1
+    local first = times.n < TIMES and 1 or times.at + 1
     local budget = sy + sh - math.floor(sh * (1 / 60) / most + 0.5)
     graphics:fill(sx, budget, sw, 1, BUDGET)
     local n = 0
-    for i = 1, times_n do
+    for i = 1, times.n do
       local v = times[(first + i - 2) % TIMES + 1]
       spark_xy[n + 1] = sx + (i - 1) * sw / (TIMES - 1)
       spark_xy[n + 2] = sy + sh - sh * v / most
@@ -1412,6 +1578,9 @@ local function sheet_rows()
   rows[#rows + 1] = { kind = "places", label = "Recent", items = recent() }
   rows[#rows + 1] = { kind = "starts", label = "Start", items = STARTS }
   rows[#rows + 1] = { kind = "times", label = "Time", items = HOURS }
+  rows[#rows + 1] = { kind = "weathers", label = "Weather", items = DECK.choices }
+  rows[#rows + 1] = { kind = "winds", label = "Wind", items = WIND.strengths }
+  rows[#rows + 1] = { kind = "froms", label = "From", items = WIND.froms }
   rows[#rows + 1] = { kind = "buttons", items = { { name = "Restart" }, { name = "Fly on" } } }
   return rows
 end
@@ -1428,6 +1597,9 @@ local function chosen(row, item)
     return item.key == (usable(row, item) and SHEET.start or "city")
   end
   if row.kind == "times" then return item.key == settings.time end
+  if row.kind == "weathers" then return item.key == settings.weather end
+  if row.kind == "winds" then return item.key == settings.wind end
+  if row.kind == "froms" then return item.key == settings.wind_from end
   return item.name == "Fly on"
 end
 
@@ -1499,6 +1671,13 @@ local function choose(w, row, i)
     if usable(row, item) then SHEET.start = item.key end
   elseif row.kind == "times" then
     set_time(item.key)                 -- at once, under the sheet
+  elseif row.kind == "weathers" then
+    settings:set("weather", item.key)  -- at once too, from the next frame
+    DECK.h = nil
+    say("weather " .. item.key)
+  elseif row.kind == "winds" or row.kind == "froms" then
+    settings:set(row.kind == "winds" and "wind" or "wind_from", item.key)
+    say(("wind from %03d at %d kt"):format(settings.wind_from, settings.wind))
   elseif item.name == "Restart" then
     restart(SHEET.place, SHEET.start)
     sheet_close(w)
@@ -1588,7 +1767,8 @@ local function draw_sheet(w)
   local rows = sheet_rows()
   local width, height = settings.width, settings.height
   local sw = math.min(460, width - 32)
-  local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time,
+  local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time, settings.weather,
+                  settings.wind, settings.wind_from,
                   SHEET.place and SHEET.place.name or "-", SHEET.start or "-" }
   for _, r in ipairs(rows) do
     parts[#parts + 1] = (r.label or r.kind) .. ":" .. tostring(SHEET.cols[r.label or r.kind])
@@ -1782,6 +1962,7 @@ restart = function(place, how)
     place_tower()
     place_said = nil
     set_time(settings.time)            -- the sun stands elsewhere at another latitude
+    DECK.h = nil                       -- and the deck over another field
     say(("restarted in %s at %.4f %.4f"):format(here and here.name or "?", settings.lat,
         settings.lon))
   end
@@ -1855,6 +2036,8 @@ while not w:closed(0) do
     if S.landed then
       say(("landed at %.0f fpm %s"):format(S.landed,
           runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))
+      say(("touched down at %.0f kt through the air, %.0f kt over the ground"):format(
+          (S.touch_air or 0) * 1.944, (S.touch_ground or 0) * 1.944))
       S.landed = nil
     end
     -- On a runway's start, the ground under the wheels once its tiles are

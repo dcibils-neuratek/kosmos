@@ -5884,3 +5884,29 @@ holds the picture to a version with no shadows, and it has to fail, and
 it does. The panel check in Flight's suite that had failed now and then
 is explained: under load, the Monitor's graphs look like Flight's window
 to it. It now finds the window by its real place on the screen.
+
+## 21 November 2026 - Flight's weather and wind
+
+**In short:** Flight can be flown in haze or under low cloud, and in a
+wind of 10 or 25 knots from any of the four quarters, all chosen in the
+pause sheet.
+
+**What changed.** Low cloud is a grey ceiling 900 metres (3,000 feet)
+over the airfield. Under it, the sky goes grey, the sunlight is a
+quarter of what it was and comes from the whole sky, so there are no
+shadows, and the distance fades sooner. Fly up into it and the window
+goes white. Fly out of the top, and the sky above is clear. Haze brings
+the distance in and dims the sun a little. The wind moves the air the
+aircraft flies in. In the air it drifts with it, so a crosswind on final
+has to be flown against. On the ground, the wings feel the headwind on
+top of the speed over the runway, so a take-off into the wind is shorter
+and a landing into it meets the runway slower.
+
+**Measured.** Under the cloud over London, the M700's graphics card took
+10.2 ms a frame. A clear sky with shadows took 13.3 ms, so overcast is
+the cheaper of the two.
+
+**Checked.** The landing test now comes in under the cloud and into a
+25-knot headwind. It touched down at 73 knots through the air and 45
+over the ground. Each half has a control that turns it off, and each
+control fails the test, as it has to.

@@ -40614,3 +40614,59 @@ can win. The suite now takes Flight's left edge from the window
 manager's list, and prefers stacks within 6 px of it. After the raise
 click the pointer is moved to the corner, since that was the first
 suspect, though it was not the cause. Three runs alone then passed.
+
+## 18.968 Flight's weather and wind (0.12.48)
+
+**In short:** Flight's pause sheet has three new rows. Weather is Clear,
+Haze or Low cloud. Wind is Calm, 10 kt or 25 kt, and From is N, E, S or
+W. Low cloud is an overcast deck 900 m over the field, a 3D Kit shape of
+28,800 triangles. Under it the sky is grey, the sun's share is a quarter
+and there are no shadows. In it, the haze closes to 80 m. Over it, the
+sky is clear. The wind carries the aircraft in the air. On the wheels,
+the headwind adds to what the wings feel, and a landing into the wind
+meets the runway slower. On the M700 over London under the deck, the
+GPU took 10.2 ms a frame and the processor 3.9 ms, against 13.3 ms and
+3.1 ms in a clear sky with shadows.
+
+- **The weather** (`flight.lua`, `DECK`). What the time of day makes of
+  the sky is kept, and the weather is laid over it every frame, because
+  under, in and over the deck are three skies.
+  - Haze brings the haze in to 1.5-12 km, greys it, and takes a fifth of
+    the sun's share.
+  - The deck is one grid, 60 km a side over the terrain's centre, a
+    point every 500 m. Its height is lumped by three long waves, so its
+    light has patches. It is placed 900 m over the field's height, read
+    at the tower, and made again when the place changes.
+  - The log says each change, as `weather cloud under haze=3000-20000
+    sun=0.25`, followed by the ambient share.
+- **The wind** (`WIND`). It is the bearing it blows from and a strength,
+  with gusts of two slow waves, a fifth of it at most.
+  - The flight model's speed was always the air's. In the air, the wind
+    is added to the track.
+  - On the wheels, S.v is the ground's speed, and the headwind is added
+    for lift and thrust. At lift-off the speed becomes the air's, and at
+    touchdown the ground's again.
+  - `touched down at %d kt through the air, %d kt over the ground` is
+    said beside the landing line.
+- **The sheet** has three more rows, and they fit in the 720-high window.
+  `x86-flight` walks the sheet by its keys, so it needed three more
+  Downs to reach Restart. The first gate failed there, with "the sheet
+  did not answer left to Restart". With them, the gate passed 129
+  suites in 9:31.
+
+**Checked by `x86-flight-land`**, which now flies its final under the
+deck and into 25 kt from the north. It read `cloud deck made 28800
+triangles at 603 m` (Rio's field at 3 m, before the deck went to 900),
+`weather cloud under haze=3000-20000 sun=0.25`, and `touched down at 73
+kt through the air, 45 kt over the ground`. The landing still came in
+at 255 fpm on SDU 02R/20L. **Controls:** `--clear` flies with no deck
+and fails with "the landing was not flown under a cloud deck". `--calm`
+touches down at 73 kt both ways and fails with "the landing was not into
+the wind".
+
+**On the M700.** The first try put the deck at 600 m, and the "over the
+city" start, about 540 m up, was inside it: the window was white, as it
+should be in cloud. The deck went to 900 m. A processor time of 25 ms a
+frame, first blamed on the weather, was three earlier copies of Flight
+still running, opened by `open` over telnet. With them ended it was
+3.9 ms.
