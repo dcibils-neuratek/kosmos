@@ -84,8 +84,19 @@ local AIRCRAFT = {
   folder = "/Home/Apps/Flight",
   needs = { "mass", "wing", "cl0", "cla", "stall", "cd0", "k", "flaps_cl", "flaps_cd",
             "roll_rate", "alpha_most", "gear" },
-  engines = { propeller = { "power", "static", "prop_drag", "idle_rpm", "full_rpm" } },
+  engines = { propeller = { "power", "static", "prop_drag", "idle_rpm", "full_rpm" },
+              jet = { "static", "idle", "lapse", "spool_s", "idle_rpm", "full_rpm" } },
   parts = { "elevator", "flaps", "right", "left", "rudder", "prop" },
+  -- What a file may leave out, and the Cessna's numbers for it: the speeds
+  -- a flight starts at in the air and on a final approach, m/s, with the
+  -- throttle and flaps there; the chase camera's distance behind and
+  -- height; the pilot's eye ahead of the aircraft's point and above it.
+  optional = {
+    speeds = { cruise = 55, cruise_throttle = 0.7, approach = 36, approach_throttle = 0.35,
+               approach_flaps = 0.5 },
+    chase = { back = 28, high = 7 },
+    eye = { ahead = 0, high = 1.0 },
+  },
 }
 
 function AIRCRAFT.read(key)
@@ -107,15 +118,49 @@ function AIRCRAFT.read(key)
   for _, f in ipairs(wants) do
     if type(e[f]) ~= "number" then return nil, "no engine." .. f end
   end
-  if type(a.moving) ~= "table" then return nil, "no moving parts" end
-  a.parts = {}
-  for i, part in ipairs(AIRCRAFT.parts) do
-    if type(a.moving[part]) ~= "string" then return nil, "no moving." .. part end
-    a.parts[i] = a.moving[part]
+  -- The moving parts its model has, each by its name there: a model with
+  -- none - the 747's - moves none, and the rest of it flies the same.
+  if a.moving ~= nil and type(a.moving) ~= "table" then return nil, "moving is not a table" end
+  a.parts, a.surface = {}, {}
+  for _, part in ipairs(AIRCRAFT.parts) do
+    local name = a.moving and a.moving[part]
+    if name ~= nil then
+      if type(name) ~= "string" then return nil, "moving." .. part .. " is not a name" end
+      a.parts[#a.parts + 1] = name
+      a.surface[part] = #a.parts
+    end
+  end
+  -- **Its pose** (`pose`): a model drawn in a frame of its own, as most
+  -- are, says which way is its nose and which is up in that frame, how
+  -- many metres one of its units is, and the point that sits on the
+  -- runway. Without one the model is Flight's frame already: +x the nose,
+  -- +y up, metres, the wheels at nought - the Cessna's.
+  local pose = a.pose
+  if pose ~= nil then
+    local function vec(v) return type(v) == "table" and type(v[1]) == "number"
+                                 and type(v[2]) == "number" and type(v[3]) == "number" end
+    if type(pose) ~= "table" or not vec(pose.forward) or not vec(pose.up) or not vec(pose.origin)
+       or type(pose.scale) ~= "number" then
+      return nil, "pose needs forward, up, origin and scale"
+    end
+    local f, u = pose.forward, pose.up
+    local r = { f[2] * u[3] - f[3] * u[2], f[3] * u[1] - f[1] * u[3], f[1] * u[2] - f[2] * u[1] }
+    a.axes = { f, u, r }
   end
   local sd = a.sound
   if type(sd) ~= "table" or type(sd.note) ~= "number" or type(sd.hz) ~= "number" then
     return nil, "no sound's note and hz"
+  end
+  for name, defaults in pairs(AIRCRAFT.optional) do
+    local given = a[name]
+    if given ~= nil and type(given) ~= "table" then return nil, name .. " is not a table" end
+    local t = {}
+    for f, v in pairs(defaults) do
+      local x = given and given[f]
+      if x ~= nil and type(x) ~= "number" then return nil, name .. "." .. f .. " is not a number" end
+      t[f] = x or v
+    end
+    a[name] = t
   end
   a.key, a.path = key, AIRCRAFT.folder .. "/" .. a.model
   return a
@@ -138,6 +183,18 @@ function AIRCRAFT.list()
 end
 
 local PLANE, PLANE_WHY = AIRCRAFT.read(settings.aircraft)
+-- An aircraft chosen once and since removed or broken: the Cessna, which
+-- Flight carries, rather than no flight at all.
+if not PLANE and settings.aircraft ~= "cessna172" then
+  say(("aircraft %s refused: %s; the Cessna instead"):format(tostring(settings.aircraft),
+      tostring(PLANE_WHY)))
+  settings:set("aircraft", "cessna172")
+  PLANE, PLANE_WHY = AIRCRAFT.read("cessna172")
+end
+if not PLANE then
+  say(("no aircraft %s: %s"):format(tostring(settings.aircraft), tostring(PLANE_WHY)))
+  return
+end
 local G = 9.81
 
 -- The state, one table for the whole flight; `start` fills it (below).
@@ -169,6 +226,7 @@ end
 -- is how a trainer feels, and a few dozen multiplications.
 local function fly(dt, pitch, roll, ground_h, brake)
   local P = PLANE
+  S.simt = (S.simt or 0) + dt          -- the flight's own seconds, the time faster's too
   local rho = 1.225 * math.exp(-S.y / 8500)
   -- On its wheels S.v is the ground's speed; the wings feel the headwind's
   -- share on top of it (W2).
@@ -187,7 +245,20 @@ local function fly(dt, pitch, roll, ground_h, brake)
   if S.alpha > P.stall then cl = cl * 0.55 end   -- stalled
   local cd = P.cd0 + P.k * cl * cl + P.flaps_cd * S.flaps
   local lift, drag = q * P.wing * cl, q * P.wing * cd
-  local thrust = S.throttle * math.min(P.engine.static, P.engine.power / math.max(air, 1))
+  -- **The engine's thrust** (F12): a propeller's falls as the speed rises,
+  -- its power spread over more metres a second; a jet's spools towards the
+  -- throttle over seconds, idles at a share of its thrust, thins with the
+  -- air and falls a little with speed.
+  local en, thrust = P.engine, 0
+  if en.kind == "jet" then
+    S.spool = (S.spool or S.throttle)
+    S.spool = S.spool + (S.throttle - S.spool) * math.min(1, dt / en.spool_s)
+    thrust = (en.idle + (1 - en.idle) * S.spool) * en.static * (rho / 1.225) ^ 0.75
+             * math.max(0.5, 1 - en.lapse * air)
+  else
+    S.spool = S.throttle
+    thrust = S.throttle * math.min(en.static, en.power / math.max(air, 1))
+  end
   local m = P.mass
 
   if S.ground then
@@ -200,12 +271,16 @@ local function fly(dt, pitch, roll, ground_h, brake)
     -- about a kilometre on 0.04 g of rolling alone (Diego, 21 November:
     -- "i am at 0% throttle and the plane is still running on the floor");
     -- with it a C172's roll is a few hundred metres, brakes off.
-    local windmill = (1 - S.throttle) * 0.5 * rho * air * air * P.engine.prop_drag
+    local windmill = en.prop_drag and (1 - S.throttle) * 0.5 * rho * air * air * en.prop_drag or 0
     S.v = math.max(0, S.v + (thrust - drag - windmill - friction) / m * dt)
     S.gamma = 0
     if lift > m * G * 1.02 and pitch > 0 then
       S.ground = false
       S.v = air                          -- the air's speed from here on
+      local r = S.rolled
+      say(("lifted off at %.0f kt after %s"):format(air * 1.94384, r and ("%.0f m on the runway in %.1f s")
+          :format(math.sqrt((S.x - r.x) ^ 2 + (S.z - r.z) ^ 2), S.simt - r.t) or "a roll not started from rest"))
+      S.rolled = nil
     end
     S.psi = S.psi + roll * math.rad(10) * dt * math.min(1, S.v / 10)
     -- On its wheels it follows the ground, which a start on a runway
@@ -785,16 +860,18 @@ local FOCAL = 1.4                                -- the chase's and the cockpit'
 local function start(g)
   local h = g and g:height(0, 0)
   S.x, S.y, S.z = 0, math.max(h or 0, 0) + 457, 0   -- metres east, up, south
-  S.v = 55                           -- airspeed, m/s
+  S.v = PLANE.speeds.cruise          -- airspeed, m/s
   S.gamma = 0                        -- the path's climb, radians
   S.psi = 0                          -- heading: 0 north, clockwise
   S.phi = 0                          -- roll
   S.alpha = 0.02                     -- angle of attack
-  S.throttle = 0.7
+  S.throttle = PLANE.speeds.cruise_throttle
   S.flaps = 0
   S.ground = false
   S.crashed = false
   S.paused = false
+  S.spool = nil                      -- a jet's spool, taken from the throttle at once
+  S.spool_q, S.simt, S.rolled = 0, 0, nil
   local rw = here and here.runway
   local how = rw and settings.start or "city"
   if how ~= "city" then
@@ -804,6 +881,7 @@ local function start(g)
     if how == "runway" then
       S.x, S.z, S.y = tx, tz, elevation + PLANE.gear
       S.v, S.throttle, S.alpha, S.ground = 0, 0, 0, true
+      S.rolled = { x = S.x, z = S.z, t = 0 }    -- where a take-off's roll begins
     else
       -- The path aims at the touchdown zone, 300 m past the threshold, as
       -- a runway's glide path does (F8): aimed at the threshold itself the
@@ -812,7 +890,9 @@ local function start(g)
       local ax, az = tx + math.sin(psi) * 300, tz - math.cos(psi) * 300
       S.x, S.z = ax - math.sin(psi) * back, az + math.cos(psi) * back
       S.y = elevation + back * math.tan(math.rad(3)) + PLANE.gear
-      S.v, S.gamma, S.flaps, S.throttle = 36, -math.rad(3), 0.5, 0.35
+      local sp = PLANE.speeds
+      S.v, S.gamma, S.flaps, S.throttle = sp.approach, -math.rad(3), sp.approach_flaps,
+                                          sp.approach_throttle
     end
   end
   S.started, S.ground_said, S.landed, S.rollout = how, nil, nil, nil
@@ -831,8 +911,9 @@ local function look(g)
   view.focal = FOCAL
   if S.view == 2 then
     -- The cockpit: the pilot's eye, rolling with the wings.
-    e[1], e[2], e[3] = S.x, S.y + 1.0, S.z
-    t[1], t[2], t[3] = S.x + fx * 100, S.y + 1.0 + fy * 100, S.z + fz * 100
+    local ahead, high = PLANE.eye.ahead, PLANE.eye.high
+    e[1], e[2], e[3] = S.x + fx * ahead, S.y + high + fy * ahead, S.z + fz * ahead
+    t[1], t[2], t[3] = e[1] + fx * 100, e[2] + fy * 100, e[3] + fz * 100
     -- Up: the world's, leaning towards the lower wing as it banks - right
     -- for a right bank, which turns it right.
     local c, s = math.cos(S.phi), math.sin(S.phi)
@@ -861,8 +942,12 @@ local function look(g)
     -- climb the aim rose while the eye did not and the aircraft left the
     -- bottom of the picture (Diego, 21 November: "when flying a lot of
     -- times the plane is out of frame", "in chase view").
-    e[1], e[2], e[3] = S.x - fx * 28, S.y - fy * 28 + 7, S.z - fz * 28
-    t[1], t[2], t[3] = S.x + fx * 12, S.y + fy * 12 + 2, S.z + fz * 12
+    -- How far behind and above is the aircraft's own (`chase`): the
+    -- Cessna's 28 m and 7 m, and as much further for a bigger one.
+    local back, high = PLANE.chase.back, PLANE.chase.high
+    local ahead = back * 0.43
+    e[1], e[2], e[3] = S.x - fx * back, S.y - fy * back + high, S.z - fz * back
+    t[1], t[2], t[3] = S.x + fx * ahead, S.y + fy * ahead + high * 0.29, S.z + fz * ahead
     u[1], u[2], u[3] = 0, 1, 0
     -- Climbing away from a runway the eye behind is lower than the
     -- aircraft: never under the ground there.
@@ -910,7 +995,6 @@ end
 -- world from it has the aircraft's forward, up and right as its columns,
 -- and its wheels' place as the fourth. One table, refilled a frame.
 local placed = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 }
-local SURFACE = { elevator = 1, flaps = 2, right = 3, left = 4, rudder = 5, prop = 6 }
 
 local function place(plane, pitch, roll, dt)
   local ch, sh = math.cos(S.psi), math.sin(S.psi)
@@ -923,16 +1007,40 @@ local function place(plane, pitch, roll, dt)
   local rx, rz = ch, sh                                  -- right, level
   local Ux, Uy, Uz = ux * cp + rx * sp, uy * cp, uz * cp + rz * sp
   local Rx, Ry, Rz = rx * cp - ux * sp, -uy * sp, rz * cp - uz * sp
-  placed[1], placed[2], placed[3] = fx, fy, fz
-  placed[5], placed[6], placed[7] = Ux, Uy, Uz
-  placed[9], placed[10], placed[11] = Rx, Ry, Rz
-  placed[13], placed[14], placed[15] = S.x, S.y - PLANE.gear, S.z
+  local tx, ty, tz = S.x, S.y - PLANE.gear, S.z
+  local axes = PLANE.axes
+  if axes then
+    -- The model's own frame into Flight's: each of its axes is where its
+    -- forward, up and right parts take it, scaled to metres, and the
+    -- origin moved to the point it stands on.
+    local sc, o = PLANE.pose.scale, PLANE.pose.origin
+    local f, u, r = axes[1], axes[2], axes[3]
+    for k = 1, 3 do
+      local i = (k - 1) * 4
+      placed[i + 1] = sc * (fx * f[k] + Ux * u[k] + Rx * r[k])
+      placed[i + 2] = sc * (fy * f[k] + Uy * u[k] + Ry * r[k])
+      placed[i + 3] = sc * (fz * f[k] + Uz * u[k] + Rz * r[k])
+    end
+    local of = o[1] * f[1] + o[2] * f[2] + o[3] * f[3]
+    local ou = o[1] * u[1] + o[2] * u[2] + o[3] * u[3]
+    local orr = o[1] * r[1] + o[2] * r[2] + o[3] * r[3]
+    tx = tx - sc * (fx * of + Ux * ou + Rx * orr)
+    ty = ty - sc * (fy * of + Uy * ou + Ry * orr)
+    tz = tz - sc * (fz * of + Uz * ou + Rz * orr)
+  else
+    placed[1], placed[2], placed[3] = fx, fy, fz
+    placed[5], placed[6], placed[7] = Ux, Uy, Uz
+    placed[9], placed[10], placed[11] = Rx, Ry, Rz
+  end
+  placed[13], placed[14], placed[15] = tx, ty, tz
   plane:place(placed)
-  -- The surfaces follow the yoke, and the propeller the throttle.
-  plane:turn(SURFACE.elevator, math.rad(20) * pitch)
-  plane:turn(SURFACE.right, math.rad(15) * roll)
-  plane:turn(SURFACE.left, -math.rad(15) * roll)
-  plane:turn(SURFACE.flaps, -math.rad(30) * S.flaps)
+  -- The surfaces follow the yoke, and the propeller the throttle - those
+  -- of them the model has.
+  local sf = PLANE.surface
+  if sf.elevator then plane:turn(sf.elevator, math.rad(20) * pitch) end
+  if sf.right then plane:turn(sf.right, math.rad(15) * roll) end
+  if sf.left then plane:turn(sf.left, -math.rad(15) * roll) end
+  if sf.flaps then plane:turn(sf.flaps, -math.rad(30) * S.flaps) end
   -- **The propeller as it is seen** (F6c). Turned at its true rate - 40
   -- turns a second at full power - two blades come round to where they
   -- were between one frame and the next, and it stood still or crawled
@@ -943,7 +1051,7 @@ local function place(plane, pitch, roll, dt)
   local turns = math.min(3 + 9 * S.throttle, (1 / 6) / math.max(dt, 1e-3))
   S.prop_step = turns * dt
   S.prop = ((S.prop or 0) + turns * 2 * math.pi * dt) % (2 * math.pi)
-  plane:spin(SURFACE.prop, S.prop)
+  if sf.prop then plane:spin(sf.prop, S.prop) end
 end
 
 -- **The engine and the wind, heard** (F6c), on the Synth Kit - the
@@ -1001,6 +1109,17 @@ local function engine_start()
     return
   end
   engine.out, engine.on, engine.sent = out, true, 0
+  -- The engine's voice is the aircraft's (`sound.voice`): what it names
+  -- over the piston's, the piston's kept aside to start from each time.
+  local e = engine_song.tracks[1]
+  if not engine.base then
+    engine.base = {}
+    for key, v in pairs(e.params) do engine.base[key] = v end
+  end
+  for key, v in pairs(engine.base) do e.params[key] = v end
+  for key, v in pairs(type(PLANE.sound.voice) == "table" and PLANE.sound.voice or {}) do
+    if type(v) == "number" and e.params[key] ~= nil then e.params[key] = v end
+  end
   synth.song(engine_song)
   synth.note_on(1, PLANE.sound.note, 0.8)
   synth.note_on(2, 24, 0.8)
@@ -1031,11 +1150,11 @@ local function engine_sound(t)
   end
   if not engine.on or t - engine.sent < 0.1 then return end
   local en = PLANE.engine
-  local rpm = math.min(en.full_rpm + 50, en.idle_rpm + (en.full_rpm - en.idle_rpm) * S.throttle
-                                         + 8 * S.v)
+  local rpm = math.min(en.full_rpm + 50, en.idle_rpm + (en.full_rpm - en.idle_rpm) * (S.spool or S.throttle)
+                                         + (en.kind == "jet" and 0 or 8 * S.v))
   local hz = rpm / 30
   local e, wind = engine_song.tracks[1], engine_song.tracks[2]
-  local cut = math.floor(250 + 1400 * S.throttle + 4 * S.v)
+  local cut = math.floor(250 + 1400 * (S.spool or S.throttle) + 4 * S.v)
   local wcut = math.floor(300 + 30 * S.v)
   local wvol = math.min(0.2, S.v / 70 * 0.2)
   e.params.lfoR = math.floor(hz / 6 * 10 + 0.5) / 10
@@ -1352,11 +1471,15 @@ local function strip_words(ground_h)
     { "THROTTLE A/Z", ("%d%%"):format(math.floor(S.throttle * 100 + 0.5)) },
     { "FLAPS", ("%d\u{b0}"):format(math.floor(S.flaps * 30 + 0.5)) },
   }
-  -- The time faster (F11), said only while it is: at 1x it is not news.
-  if S.rate > 1 then words[#words + 1] = { "TIME X", ("%dx"):format(S.rate) } end
   local state = S.paused and "PAUSED" or S.alpha > PLANE.stall and "STALL"
     or S.ground and (S.braking or 0) > 0 and "BRAKES"
                 or ground_h and (S.y - ground_h) < 3 and "ON THE GROUND" or nil
+  -- The time faster (F11), said only while it is, in the state's place on
+  -- the right: as a seventh cell it was the one a 1280-point window had
+  -- no room for, and went unseen at the window's own size.
+  if S.rate > 1 then
+    state = state and ("%dx  %s"):format(S.rate, state) or ("TIME %dx"):format(S.rate)
+  end
   return words, state
 end
 
@@ -2386,10 +2509,6 @@ function SHEET.keys.draw(w)
 end
 
 -- The window and the terrain.
-if not PLANE then
-  say(("no aircraft %s: %s"):format(tostring(settings.aircraft), tostring(PLANE_WHY)))
-  return
-end
 do
   local list, refused = AIRCRAFT.list()
   local names = {}
@@ -2421,6 +2540,7 @@ function AIRCRAFT.switch(g)
     return
   end
   PLANE, plane = a, m
+  engine_stop()                      -- heard again in the new one's voice
   say(("aircraft %s from Aircraft/%s.lua, %s engine"):format(a.name, a.key, a.engine.kind))
   -- Started again where it is, and still paused if the sheet is up.
   local paused = S.paused
@@ -2609,6 +2729,13 @@ while not w:closed(0) do
       fly(dt, pitch, roll, g:height(S.x, S.z), brake)
       S.steps = S.steps - 1
     until S.steps == 0 or S.crashed
+    -- The engine's spool said at each quarter it passes, in the flight's
+    -- own seconds: a jet's lags the throttle, a propeller's is it.
+    if S.spool and math.floor(S.spool * 4 + 1e-6) ~= S.spool_q then
+      S.spool_q = math.floor(S.spool * 4 + 1e-6)
+      say(("spool %.2f at %.1f s, throttle %.2f, %s"):format(S.spool, S.simt, S.throttle,
+          PLANE.engine.kind))
+    end
     if S.landed then
       say(("landed at %.0f fpm %s"):format(S.landed,
           runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))

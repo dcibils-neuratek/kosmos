@@ -769,7 +769,10 @@ ends on the M700:
   tiles are asked for further ahead, since the ground goes by faster.
   - **Built in 0.12.55** (`testing.md` 18.975). X steps 1x, 2x, 3x, 4x
     and back to 1x, and the Keys page lists it. The strip shows
-    `TIME X 2x` while it is faster and nothing at 1x. Each step asks for
+    `TIME 2x` in the state's place on the right while it is faster, or
+    `2x  BRAKES` beside another state, and nothing at 1x. It was a
+    seventh cell at first, which a 1280-point window had no room for
+    (seen in 0.12.57's picture). Each step asks for
     the ground under the wheels again, and a crash ends the frame's
     steps. The tiles are asked for from a point ahead of the eye, as far
     as the extra steps carry it in two seconds.
@@ -806,7 +809,8 @@ ends on the M700:
     file that won't fly leaves the current one flying.
     `tools/installed.py`'s `aircraft()` is the one list of the files,
     used by the install, Flight's suite and the gallery.
-  - **F12b, next**: a jet engine in the flight model, as
+  - **F12b, built in 0.12.57** (`testing.md` 18.977): a jet engine in
+    the flight model, as
     `kind = "jet"` - thrust that falls with the air's density and a
     little with speed, and spools up over seconds rather than at once.
     Then the 747 as a file: its numbers, a glTF of it under a licence
@@ -816,6 +820,25 @@ ends on the M700:
     licence beside it. It has no moving parts, so an aircraft file's
     `moving` becomes optional, each part named only if its model has
     one.
+    As built:
+    - **The jet.** A first-order spool towards the throttle over
+      `spool_s` (6 s for the 747). Its thrust is
+      `(idle + (1 - idle) * spool) * static * (rho / 1.225)^0.75`, times
+      `max(0.5, 1 - lapse * airspeed)`. A jet has no propeller drag on the
+      ground; its idle thrust (6%) is smaller than the rolling friction.
+    - **What a file may leave out**, with the Cessna's values standing
+      in: `moving` (each part), `pose` (the model's nose, up, units and
+      the point on the runway), `speeds` (the starts' speed, throttle and
+      flaps), `chase` (the camera's distance and height) and `eye` (the
+      pilot's, ahead and above). `sound.voice` names synth parameters
+      over the piston's.
+    - **The 747's pose** was found from its geometry: up is the airframe's
+      flattest axis, ahead is towards the cockpit's glass, 41.13 m a unit
+      for its 70.7 m, and its origin a metre under the belly, since the
+      model has no wheels. It is 300 t on 525 m² of wing and four 282 kN
+      jets, at 250 kt in the air and 144 kt on a final.
+    - An aircraft that was chosen and has since gone or broken falls back
+      to the Cessna, with the reason said.
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two

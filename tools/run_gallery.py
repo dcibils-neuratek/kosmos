@@ -210,10 +210,10 @@ def flight_disk(apps):
         f.write(FLIGHT_SETUP)
 
     files = [(setup, FLIGHT + "/setup.lua"), (image, FLIGHT + "/k3dvk.elf"),
-             (os.path.join(root, "user/installed/Flight/flight.lua"), FLIGHT + "/flight.lua"),
-             (os.path.join(root, "assets/models/cessna172/cessna_172.glb"),
-              FLIGHT + "/cessna_172.glb")]
+             (os.path.join(root, "user/installed/Flight/flight.lua"), FLIGHT + "/flight.lua")]
     import installed                                         # noqa: E402
+    files += [(os.path.join(root, there), FLIGHT + "/" + here)
+              for there, here in installed.ASSETS["Flight"]]
     files += [(here, FLIGHT + "/" + inside) for here, inside in installed.flight_made()]
     disk = os.path.join(work, "home.img")
     subprocess.run([os.path.join(root, "build/host/lua"), os.path.join(root, "tools/kfs.lua"),

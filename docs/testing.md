@@ -40965,3 +40965,50 @@ Aircraft row; choosing one loads its model and starts again.
   timed out waiting for its visitor, as it has once before. `x86-jetski`
   found 'Add to favorites' and 'Settings' missing from its menu's
   picture. Both passed alone, in 2:24 together.
+
+## 18.977 Flight's 747, on jets (0.12.57)
+
+**In short:** the flight model has a jet engine (F12b). It spools
+towards the throttle over seconds, idles at a share of its thrust, and
+thins with the air. The Boeing 747 is `Aircraft/b747.lua`, on Miha
+Lunar's low-poly model (CC BY 3.0, `assets/models/b747/`, unmodified),
+which its file turns and scales into Flight's frame (`pose`). An
+aircraft file may now leave out its moving parts, pose, speeds, chase
+camera and eye, and the Cessna's values stand in.
+
+- **Held by** `x86-flight-747`, a new suite. The 747 starts on Rio's
+  runway (SDU, 1,323 m). The suite sets 4x, flaps 15, throttle at nine
+  tenths and the yoke back. It must be flown from its file on a jet,
+  with its 1,904-triangle model. The spool must go from a quarter to
+  three quarters in 6 to 12 s of flight time: it went from 0.26 at
+  2.8 s to 0.75 at 11.6 s, 8.8 s, as a six-second spool towards 0.9
+  predicts. It must lift off at 120-175 kt within the runway: it did at
+  136 kt after 1,080 m, in 34.6 s.
+- **Its control**, `--instant-spool`, is the same 747 with
+  `spool_s = 0.05`. The spool reached 0.90 in 1.1 s, and the suite
+  failed on it as it must.
+- `x86-flight` now lists `Boeing 747 (b747)` first in its aircraft
+  files. The Cessna's model is placed as before (no `pose`), and
+  `x86-flight-land` passed unchanged. The three suites took 5:48
+  together.
+- **The strip's TIME, moved.** The picture of the 747 at 1280x720 had no
+  `TIME X 4x`: 0.12.55 made it a seventh cell, and six of 170 points are
+  all a 1280-point window holds, so it was dropped. It is now said in
+  the state's place on the right - `TIME 4x`, or `4x  BRAKES` beside
+  another state.
+- **The gate.** `make test` ran 130 suites in 10:50, and four failed:
+  - `x86-smbd` and `x86-network` failed on timeouts, the load flakes seen
+    before.
+  - `x86-flight` heard a silent engine (`rendered=212736 peak=0.000`), the
+    flake seen once in three runs on 21 November, before any of this
+    work. The song is taken before the commands and keeps its voices, so
+    it is not a song lost over a note. Its cause is still open
+    (`roadmap.md`).
+  - `x86-flight-747` ran out of its 420 s. The roll is about 170 frames,
+    and beside the other suites a frame took near three seconds. It now
+    waits up to 260 frames, not a fixed time.
+
+  All four then passed alone in 4:43: the 747 lifted off at 136 kt
+  after 1,080 m, and the engine was heard at peak 0.224. The 747's suite
+  is 4:32 alone, so it is the one to watch against the ten-minute
+  budget.

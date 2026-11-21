@@ -695,7 +695,7 @@ SUITES = [
     # Mac, the keys held through QEMU's keyboard, and the Cessna drawn.
     Suite("x86-flight", ["python3", "tools/run_flight.py", X86,
                          "build/user-x86_64-test/apps"], x86=True,
-          watch=library("tools/run_flight.py", "user/installed/Flight", "assets/models/cessna172",
+          watch=library("tools/run_flight.py", "user/installed/Flight", "assets/models",
                         "user/kits/3d", "user/kits/vulkan", "user/kits/map", "user/kits/window",
                         "user/kits/gfx/picture_decode.c", "user/servers/tiles.c", "user/lib/tiles.lua",
                         "user/bin/programs/wm.lua", "user/include/wmproto.h", "user/lib/airports.lua",
@@ -710,6 +710,16 @@ SUITES = [
                         "user/kits/vulkan", "user/kits/window", "user/servers/tiles.c",
                         "user/lib/tiles.lua", "user/lib/airports.lua", "tools/airports.py",
                         "tools/installed.py", "user/bin/programs/wm.lua", *MESA)),
+
+    # **The 747** (F12b): a second aircraft, from its own file, on jets -
+    # taken off Rio's runway at 4x, its spool lagging the throttle.
+    Suite("x86-flight-747", ["python3", "tools/run_flight.py", "--b747", X86,
+                             "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_flight.py", "user/installed/Flight", "assets/models",
+                        "user/kits/3d", "user/kits/vulkan", "user/kits/window",
+                        "user/servers/tiles.c", "user/lib/tiles.lua", "user/lib/airports.lua",
+                        "tools/airports.py", "tools/installed.py", "user/bin/programs/wm.lua",
+                        *MESA)),
 
     Suite("x86-flight-land", ["python3", "tools/run_flight.py", "--land", X86,
                               "build/user-x86_64-test/apps"], x86=True,

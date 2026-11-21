@@ -62,9 +62,11 @@ DATA = {
 }
 
 # What an application carries from the tree's own vendored assets, beside
-# its program: Flight's aircraft (`assets/models/cessna172`, CC BY 4.0).
+# its program: Flight's aircraft (`assets/models/cessna172`, CC BY 4.0, and
+# `assets/models/b747`, CC BY 3.0).
 ASSETS = {
-    "Flight": [("assets/models/cessna172/cessna_172.glb", "cessna_172.glb")],
+    "Flight": [("assets/models/cessna172/cessna_172.glb", "cessna_172.glb"),
+               ("assets/models/b747/boeing_747.glb", "boeing_747.glb")],
 }
 
 

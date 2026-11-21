@@ -155,6 +155,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       Flight's aircraft. The terms in the LICENSE beside it, where it came
       from and its hash in the README there
 
+  "Boeing 747", by Miha Lunar, CC BY 3.0
+      assets/models/b747/boeing_747.glb, from Poly Pizza, unmodified:
+      Flight's second aircraft. The terms in the LICENSE beside it, where
+      it came from and its hash in the README there
+
   Project Wycheproof's test vectors, by Google and C2SP, Apache 2.0
       tools/vectors/wycheproof/, under the LICENSE beside them, the commit
       and each file's hash in the README there. Not in the system's

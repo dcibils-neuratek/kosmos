@@ -6082,3 +6082,31 @@ doesn't surface as a strange crash in mid-air.
 harder at speed, weakens in thin air, and takes seconds to spool up.
 That goes into the flight model next, and then the 747 can be written
 as its file.
+
+## 21 November 2026 - A jumbo jet
+
+**In short:** Flight has a second aircraft, a Boeing 747, and it flies
+on jet engines that behave like jets.
+
+**How a jet differs.** A propeller answers the throttle at once. A jet
+takes seconds to spool up, so opening the throttle on the runway
+gives a slow surge, not a kick. Its thrust also weakens as the air
+thins with height. Flight now models both.
+
+**The 747 itself** is a file like the Cessna's. It weighs 300 tonnes,
+has 525 square metres of wing and four engines of 282 kN each, and
+takes off at about 136 knots after a kilometre of runway. Its 3D model
+is a small, free one (CC BY 3.0). It was drawn in a frame of its own, tilted and
+about two units long, so its file says which way its nose and its top
+point, and how many metres one unit is. Those were worked out from
+the shape: the flattest axis of an airliner is up, and the cockpit's
+glass is at the front.
+
+**A fix found by looking.** The picture of the 747 showed the strip
+without "TIME 4x": as a seventh box it didn't fit a normal-sized window,
+so it was simply left off. It now sits on the right, where the strip
+says BRAKES or PAUSED.
+
+**Choosing it.** Pause, then the Aircraft row. The chase camera sits
+110 m behind it instead of the Cessna's 28, and the cockpit view is 27 m
+forward on the flight deck.

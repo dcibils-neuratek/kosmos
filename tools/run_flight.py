@@ -74,8 +74,16 @@ CALM = "--calm" in sys.argv
 # pad with its stick in the middle rather than full left, so nothing rolls
 # it and the suite must fail.
 NO_PAD = "--no-pad" in sys.argv
+# `--b747` (F12b): the 747 on Rio's runway, taken off at 4x with flaps 15,
+# the throttle at nine tenths and the yoke back - its jets spooling up over
+# seconds, and off the ground before the runway ends. `--instant-spool` is
+# its control: the same 747 with jets that follow the throttle in a
+# twentieth of a second, which the spool's check must refuse.
+B747 = "--b747" in sys.argv or "--instant-spool" in sys.argv
+INSTANT = "--instant-spool" in sys.argv
 sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs",
-                                             "--no-shadows", "--clear", "--calm", "--no-pad")]
+                                             "--no-shadows", "--clear", "--calm", "--no-pad",
+                                             "--b747", "--instant-spool")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
@@ -84,7 +92,8 @@ APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
 # when the suite ends.
 KEPT = os.path.join(ROOT, "build", "flight-failed")
 os.makedirs(KEPT, exist_ok=True)
-WORK = scratch.directory("flight-island" if ISLAND else "flight-land" if LAND else "flight")
+WORK = scratch.directory("flight-island" if ISLAND else "flight-land" if LAND
+                         else "flight-747" if B747 else "flight")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 FOLDER = "/Home/Apps/Flight"
@@ -418,6 +427,45 @@ def island_checks(seen, island, asked, guest):
     return 0
 
 
+def b747_checks(seen):
+    """The 747 (F12b): flown from its own file on a jet engine, its spool
+    following the throttle over seconds, off Rio's 1,323 m runway."""
+    fails = []
+    flown = re.search(r"flight aircraft (Boeing 747) from Aircraft/(\w+)\.lua, (\w+) engine", seen)
+    model = re.search(r"flight aircraft parts=(\d+) triangles=(\d+)", seen)
+    print("flight: %s; %s" % (flown.group(0) if flown else "no 747 flown",
+                              model.group(0) if model else "no model line"))
+    if not flown or flown.group(3) != "jet":
+        fails.append("the 747 was not flown on a jet: %r" % re.findall(r"flight aircraft[^\r\n]*", seen))
+    if not model or model.group(2) != "1904":
+        fails.append("the 747's model, 1,904 triangles, was not loaded: %r"
+                     % (model.group(0) if model else None))
+    # The spool: from a quarter to three quarters of the way, as a jet's
+    # six-second spool towards nine tenths takes, 8.8 s - and no time at
+    # all for one that follows the throttle at once (the control).
+    quarters = {float(q): float(t) for q, t, kind in re.findall(
+        r"flight spool ([\d.]+) at ([\d.]+) s, throttle 0\.90, (\w+)", seen) if kind == "jet"}
+    q1 = next((t for q, t in sorted(quarters.items()) if 0.25 <= q < 0.5), None)
+    q3 = next((t for q, t in sorted(quarters.items()) if 0.75 <= q < 1.0), None)
+    print("flight: the jets' spool %r" % (sorted(quarters.items()),))
+    if q1 is None or q3 is None or not 6 <= q3 - q1 <= 12:
+        fails.append("the jets did not spool from a quarter to three quarters in 6 to 12 s: %r"
+                     % (sorted(quarters.items()),))
+    off = re.search(r"flight lifted off at (\d+) kt after (\d+) m on the runway in ([\d.]+) s", seen)
+    crashed = re.search(r"flight crashed: ([^\r\n]*)", seen)
+    print("flight: %s" % (off.group(0) if off else crashed.group(0) if crashed else "never left the ground"))
+    if crashed or not off:
+        fails.append("the 747 did not take off: %r" % (crashed.group(0) if crashed else None))
+    elif not 120 <= int(off.group(1)) <= 175 or int(off.group(2)) > 1323:
+        fails.append("the 747 did not lift off at 120-175 kt within SDU's 1,323 m: %r" % off.group(0))
+    if fails:
+        for f in fails:
+            print("FAIL: " + f)
+        return 1
+    print("PASS: Flight's 747 took off on its jets - %s" % off.group(0))
+    return 0
+
+
 def land_checks(seen, roll=None):
     """A landing (F8): begun on final to SDU's 02R, the flight touched down
     under 600 feet a minute, on SDU 02R/20L, and did not crash."""
@@ -524,6 +572,9 @@ def main():
             # Begun on Rio's runway, as the M700 was: going offline has to
             # take the flight off a field that is not there.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway" }\n')
+        if B747:
+            f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway", aircraft = "%s",'
+                    ' weather = "clear", wind = 0 }\n' % ("b747instant" if INSTANT else "b747"))
         if LAND:
             # 150 m out on a three-degree path: eight metres up, four seconds
             # of flying, eighty frames at the gate's pace.
@@ -535,19 +586,24 @@ def main():
                         % os.environ["KOSMOS_FLIGHT_TIME"])
     files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
              (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
-              FOLDER + "/flight.lua"),
-             (os.path.join(ROOT, "assets", "models", "cessna172", "cessna_172.glb"),
-              FOLDER + "/cessna_172.glb")]
-    # Its airports (F8), as `installed.py` puts them beside it.
+              FOLDER + "/flight.lua")]
+    # Its aircraft's models, its airports (F8) and its aircraft files
+    # (F12), as `installed.py` puts them beside it.
     import installed                                         # noqa: E402
+    files += [(os.path.join(ROOT, there), FOLDER + "/" + here)
+              for there, here in installed.ASSETS["Flight"]]
     files += [(here, FOLDER + "/" + inside) for here, inside in installed.flight_made()]
     # Two aircraft files more (F12): the Cessna under another name, to be
     # chosen in the sheet and flown, and the Cessna with its mass left out -
     # the control, which must be refused by that number's name.
     cessna = open(os.path.join(ROOT, "user", "installed", "Flight", "Aircraft",
                                "cessna172.lua")).read()
-    for name, text in (("testplane", cessna.replace('name = "Cessna 172"', 'name = "Test Cessna"')),
-                       ("nomass", cessna.replace("mass = 1043, ", ""))):
+    jumbo = open(os.path.join(ROOT, "user", "installed", "Flight", "Aircraft", "b747.lua")).read()
+    made_files = [("testplane", cessna.replace('name = "Cessna 172"', 'name = "Test Cessna"')),
+                  ("nomass", cessna.replace("mass = 1043, ", ""))]
+    if INSTANT:
+        made_files.append(("b747instant", jumbo.replace("spool_s = 6", "spool_s = 0.05")))
+    for name, text in made_files:
         if text == cessna:
             raise SystemExit("run_flight: the Cessna's file no longer has what %s changes" % name)
         made = os.path.join(WORK, name + ".lua")
@@ -625,6 +681,48 @@ def main():
             raise R.Failure("the settings were not written: %r" % said[-300:])
         session.run("open " + FOLDER + "/flight.lua")
         guest.wait_for("flight device=", "the window opened")
+
+        if B747:
+            # The time 4x, the flaps a step, the throttle at nine tenths and
+            # the yoke back: on the wheels it only raises the nose, and
+            # once the wings carry it, it climbs away.
+            guest.wait_for("flight started runway", "on Rio's runway")
+            wait_frames(2, "on the runway")
+            for rate in (2, 3, 4):
+                have = guest.seen.count("flight time %dx" % rate)
+                keys(True, "x")
+                time.sleep(0.1)
+                keys(False, "x")
+                until = time.monotonic() + 60
+                while guest.seen.count("flight time %dx" % rate) == have and time.monotonic() < until:
+                    guest._read_available()
+                    time.sleep(0.1)
+            for k in ("f", "9"):
+                keys(True, k)
+                time.sleep(0.1)
+                keys(False, k)
+                wait_frames(1, "pressed " + k)
+            keys(True, "down")
+            # Waited for by frames, not seconds: the roll is about 170
+            # frames at 4x, and a frame under TCG is one second alone and
+            # three beside the gate's other suites - 420 s ran out under
+            # load. 260 frames, and a wall that only a stuck machine meets.
+            rolling = latest()
+            first = rolling[-1]["frame"] if rolling else 0
+            until = time.monotonic() + 1500
+            while time.monotonic() < until and not re.search(
+                    r"flight (lifted off at|crashed:)", guest.seen[mark:]):
+                guest._read_available()
+                now_at = latest()
+                if now_at and now_at[-1]["frame"] - first > 260:
+                    break
+                time.sleep(0.2)
+            wait_frames(2, "climbing away")
+            keys(False, "down")
+            if os.environ.get("KOSMOS_FLIGHT_SHOT"):        # the 747 climbing, for a person
+                time.sleep(3)
+                R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], guest.screendump())
+            return b747_checks(guest.seen[mark:])
 
         if LAND:
             if os.environ.get("KOSMOS_FLIGHT_PUSH"):        # the control: the yoke forward
@@ -1164,7 +1262,7 @@ def main():
     listed = re.search(r"flight aircraft files: ([^\r\n]*)", seen)
     print("flight: aircraft files %s" % (listed.group(1) if listed else "- no line"))
     if not listed or listed.group(1).strip() != \
-            "Cessna 172 (cessna172), Test Cessna (testplane); nomass refused: no mass":
+            "Boeing 747 (b747), Cessna 172 (cessna172), Test Cessna (testplane); nomass refused: no mass":
         fails.append("the aircraft files were not the Cessna and the test's, with nomass refused: %r"
                      % (listed.group(1) if listed else None))
     flown = re.findall(r"flight aircraft (.+?) from Aircraft/(\w+)\.lua, (\w+) engine", seen)
