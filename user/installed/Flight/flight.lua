@@ -1037,6 +1037,71 @@ SEA:fill(0, 0, 2, 2, 0xFF1E3C5A)
 
 local handed = 0
 
+-- **The minimap** (F5k; Diego, 21 November: "We should add a small map
+-- that shows where we are and heading so the user can orientate itself"):
+-- a square of map in the lower left corner, north up, the aircraft at its
+-- middle as an arrow along its heading, the runways known as bars, and
+-- the scale under it. Drawn by the Map Kit in Maps' own style
+-- (`mapstyle.lua`) from the vector tiles the buildings already come from -
+-- zoom 13 below 600 m over the ground, 12 above - asked in the same list,
+-- each decoded once and kept while it is under the map. Drawn again twice
+-- a second, or when the aircraft has moved five points on it.
+local MINI = { side = 220, tile = 256, kept = {}, wanted = {}, z = 12, map = use("/Kosmos/Kits/map") }
+MINI.colours, MINI.style = use("/Kosmos/Libraries/mapstyle.lua").style_for(true)
+
+-- The aircraft's place across the world, 0 to 1, as the Map Kit's.
+function MINI.world(x, z)
+  local ox, oy = MINI.map.project(settings.lon, settings.lat)
+  local scale = 40075016.68557849 * math.cos(math.rad(settings.lat))
+  return ox + x / scale, oy + z / scale, scale
+end
+
+-- The tiles under the map now, `MINI.wanted` as { z, x, y }; and where
+-- the map's top left is, in pixels of zoom `z`.
+function MINI.under(ground_h)
+  local above = S.y - (ground_h or 0)
+  local z = above < 600 and 13 or 12
+  local wx, wy = MINI.world(S.x, S.z)
+  local px = MINI.tile * (1 << z)
+  local left, top = wx * px - MINI.side / 2, wy * px - MINI.side / 2
+  local want = MINI.wanted
+  for i = #want, 1, -1 do want[i] = nil end
+  for ty = math.floor(top / MINI.tile), math.floor((top + MINI.side) / MINI.tile) do
+    for tx = math.floor(left / MINI.tile), math.floor((left + MINI.side) / MINI.tile) do
+      want[#want + 1] = { z, tx, ty }
+    end
+  end
+  MINI.z, MINI.left, MINI.top, MINI.px = z, left, top, px
+  -- Kept while under the map: past two dozen, those not under it go.
+  MINI.count = (MINI.count or 0)
+  if MINI.count > 24 then
+    local under = {}
+    for _, tw in ipairs(want) do under[(tw[1] << 50) | (tw[2] << 25) | tw[3]] = true end
+    MINI.count = 0
+    for id in pairs(MINI.kept) do
+      if under[id] then MINI.count = MINI.count + 1 else MINI.kept[id] = nil end
+    end
+  end
+  return want
+end
+
+-- One tile of the map: kept, read from the cache and decoded, or false
+-- while it has not come (asked for in `feed`).
+function MINI.get(z, x, y)
+  local id = (z << 50) | (x << 25) | y
+  local t = MINI.kept[id]
+  if t ~= nil then return t end
+  if not net.vector then return false end
+  local bytes = fs.read(net.vector:path(z, x, y))
+  if type(bytes) ~= "string" then return false end
+  t = #bytes > 0 and MINI.map.decode(bytes) or false
+  MINI.kept[id] = t
+  MINI.count = (MINI.count or 0) + 1
+  MINI.decoded = (MINI.decoded or 0) + 1
+  say(("minimap tile %d/%d/%d decoded%s, %d kept"):format(z, x, y, t and "" or " (empty)", MINI.count))
+  return t
+end
+
 local function hand(g, kind, z, x, y)
   -- A vector tile is read by the terrain itself, never a Lua string: a
   -- city's is most of a megabyte.
@@ -1066,8 +1131,7 @@ local function hand(g, kind, z, x, y)
 end
 
 local asked = { e = {}, i = {}, v = {} }   -- flat lists of z, x, y, reused
-local asking = { e = 0, i = 0, v = 0, budget = {} }
-local polled = 0
+local asking = { e = 0, i = 0, v = 0, budget = {}, polled = 0 }
 -- Tiles looked for in the cache and not there: not looked for again until
 -- the server says one has come, so a frame does not ask the disk for every
 -- tile still on its way.
@@ -1133,11 +1197,25 @@ local function feed(g, eye)
       asking[kind] = asking[kind] + 1
     end
   end
+  -- The minimap's tiles (F5k), in the buildings' list: each not yet here
+  -- is asked for, as the terrain's are.
+  if net.vector then
+    for _, tw in ipairs(MINI.wanted) do
+      local id = key(tw[1], tw[2], tw[3])
+      if MINI.kept[id] == nil and (missing.v[id] or not MINI.get(tw[1], tw[2], tw[3]))
+         and asking.v < tiles.MAX then
+        missing.v[id] = true
+        local list, n = asked.v, asking.v * 3
+        list[n + 1], list[n + 2], list[n + 3] = tw[1], tw[2], tw[3]
+        asking.v = asking.v + 1
+      end
+    end
+  end
   -- Ask the server on our own clock, never more than five times a second:
   -- each ask is an exchange, and a tile is a hundred milliseconds away.
   local t = now()
-  if t - polled < 0.2 then return end
-  polled = t
+  if t - asking.polled < 0.2 then return end
+  asking.polled = t
   for kind, src in pairs({ e = net.elevation, i = net.imagery, v = net.vector or false }) do
     if not src then goto next_source end
     local list = asked[kind]
@@ -1766,6 +1844,85 @@ local STARTS = { { key = "city", name = "Over the city, 1,500 ft" },
                  { key = "final", name = "Final approach" } }
 local ACCENT, ON, RAISED, SUNKEN = 0xff4c8dff, 0xffffffff, 0xff2a313c, 0xff0c0f14
 local SHEET = { open = false, focus = 1, cols = {}, text = "", hits = {} }
+
+-- The minimap drawn (F5k), here where the sheet's colours and the
+-- strip's height are known.
+function MINI.draw(w, ground_h, t)
+  local side = MINI.side
+  local width, height = settings.width, settings.height
+  if width < 600 or height < 420 then
+    if not MINI.small_said then say(("minimap not laid: %dx%d"):format(width, height)) end
+    MINI.small_said = true
+    MINI.under(ground_h)
+    return
+  end
+  local want = MINI.under(ground_h)
+  local moved = MINI.drawn_left and (math.abs(MINI.left - MINI.drawn_left)
+                + math.abs(MINI.top - MINI.drawn_top) >= 5 or MINI.z ~= MINI.drawn_z)
+  local came = 0
+  for _, tw in ipairs(want) do if MINI.kept[(tw[1] << 50) | (tw[2] << 25) | tw[3]] then came = came + 1 end end
+  if MINI.drawn_left and not moved and came == MINI.drawn_came and t - MINI.drawn_t < 0.5 then
+    return
+  end
+  MINI.drawn_left, MINI.drawn_top, MINI.drawn_z, MINI.drawn_t, MINI.drawn_came =
+    MINI.left, MINI.top, MINI.z, t, came
+  local hgt = side + 22
+  if not MINI.surface then
+    MINI.surface = gfx.surface{ w = side, h = hgt }
+    MINI.face = gfx.face("ibmplexsans-medium", 12)
+  end
+  local s, c = MINI.surface, MINI.colours
+  s:fill(0, 0, side, hgt, GLASS)
+  s:fill(0, 0, side, side, 0xff000000 | c.land)
+  for _, tw in ipairs(want) do
+    local tile = MINI.get(tw[1], tw[2], tw[3])
+    if tile then
+      tile:draw(s, tw[2] * MINI.tile - MINI.left, tw[3] * MINI.tile - MINI.top, MINI.tile,
+                tw[1], MINI.style, 0, 0, side, side)
+    end
+  end
+  -- The runways, at their width where that is more than two pixels.
+  local _, _, scale = MINI.world(0, 0)
+  local per_m = MINI.px / scale
+  local function at(x, z)
+    local wx, wy = MINI.world(x, z)
+    return math.floor(wx * MINI.px - MINI.left + 0.5), math.floor(wy * MINI.px - MINI.top + 0.5)
+  end
+  for _, r in ipairs(RUNWAYS) do
+    local x0, y0 = at(r.x1, r.z1)
+    local x1, y1 = at(r.x2, r.z2)
+    s:line(x0, y0, x1, y1, math.max(3, math.floor(r.width * per_m + 0.5)), 0xffd8dce4)
+  end
+  -- The aircraft: an arrow along its heading, x east and the map's y south.
+  local fx, fy = math.sin(S.psi), -math.cos(S.psi)
+  local rx, ry = -fy, fx
+  local cx, cy = side / 2, side / 2
+  s:polygon({ cx + 12 * fx, cy + 12 * fy,
+              cx - 8 * fx + 7 * rx, cy - 8 * fy + 7 * ry,
+              cx - 3 * fx, cy - 3 * fy,
+              cx - 8 * fx - 7 * rx, cy - 8 * fy - 7 * ry }, 0xffffc23d)
+  -- North, and a frame.
+  s:text(side - 18, 4, "N", BRIGHT, nil, MINI.face)
+  s:fill(0, 0, side, 1, LINE) s:fill(0, side - 1, side, 1, LINE)
+  s:fill(0, 0, 1, side, LINE) s:fill(side - 1, 0, 1, side, LINE)
+  -- The scale: a bar a round distance long, near a quarter of the map.
+  local metres = side / 4 / per_m
+  local nice = 100
+  for _, m in ipairs{ 100, 200, 500, 1000, 2000, 5000, 10000, 20000 } do
+    if m <= metres then nice = m end
+  end
+  local bar = math.floor(nice * per_m + 0.5)
+  s:fill(8, side + 10, bar, 2, BRIGHT)
+  s:text(14 + bar, side + 3, nice >= 1000 and ("%d km"):format(nice // 1000) or ("%d m"):format(nice),
+         BRIGHT, nil, MINI.face)
+  local ok, why = w:overlay(s, 16, height - STRIP_H - hgt - 12, 7)
+  if not MINI.said or MINI.said ~= MINI.z then
+    MINI.said = MINI.z
+    say(("minimap zoom %d, %d tiles under it, %d of them here%s"):format(MINI.z, #want, came,
+        ok and "" or (" failed=" .. tostring(why))))
+  end
+end
+
 local decode = keys.decoder()
 local sheet_face, sheet_bold, sheet_title, sheet_surface
 
@@ -2376,6 +2533,7 @@ while not w:closed(0) do
   engine_sound(t)
   draw_strip(w, g:height(S.x, S.z))
   draw_panel(w, dt)
+  MINI.draw(w, g:height(S.x, S.z), t)
   draw_sheet(w)
   SHEET.keys.draw(w)
 

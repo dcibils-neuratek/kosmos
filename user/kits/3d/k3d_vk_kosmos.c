@@ -60,7 +60,7 @@
 #define TERRAIN "k3dvk.terrain"
 #define MODEL   "k3dvk.model"
 #define KEYCODES 512           /* evdev's, more than a keyboard has */
-#define OVERLAYS 6             /* a window's overlay places: a strip, a panel, a sheet */
+#define OVERLAYS 8             /* a window's overlay places: a strip, a panel, a sheet, a map */
 #define TYPED 64               /* characters held for `w:typed`, as UTF-8 bytes */
 
 /* What Mesa or LLVM says - an abort's last words among it - goes to the
@@ -1499,7 +1499,7 @@ static int l_window_device(lua_State *L)
 /*
  * w:overlay(surface, x, y, place) - a gfx surface laid over every frame
  * from now on at (x, y), by its alpha: a strip of instruments, a panel of
- * figures. `place` is 1 to 6, 1 when it is not given; the places are drawn
+ * figures. `place` is 1 to 8, 1 when it is not given; the places are drawn
  * in order, so a higher one lies over a lower. Called again when the
  * picture changed, which copies it to the device again; with no surface,
  * that place is emptied. The pixels cross once, here, in C - never as a
@@ -1512,7 +1512,7 @@ static int l_window_overlay(lua_State *L)
     unsigned width, height, pitch;
     uint32_t *pixels;
 
-    luaL_argcheck(L, place >= 1 && place <= OVERLAYS, 5, "a place from 1 to 6");
+    luaL_argcheck(L, place >= 1 && place <= OVERLAYS, 5, "a place from 1 to 8");
     struct k3d_vk_texture *t = &w->overlay[place - 1];
     struct k3d_vk_overlay *laid = &w->laid[place - 1];
 

@@ -692,6 +692,13 @@ ends on the M700:
     aircraft has moved five points on it, into a gfx surface laid over
     the frame by the 3D Kit (`w:overlay`, a seventh place). A tile is
     decoded once and kept while it is under the map.
+  - **Built in 0.12.54** (`testing.md` 18.974). The 3D Kit lays eight
+    overlays now, not six, and the minimap is the seventh. It goes up
+    beside the strip only when the window is at least 600 by 420; in a
+    smaller one Flight says "minimap not laid". A tile is decoded once
+    and up to 24 are kept. The runways are drawn at least 3 points wide,
+    so one shows at zoom 12. Under the map is a scale bar, the longest
+    of 100 m to 20 km that fits a third of its width.
 - **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
   HTTP, the nearest to the airport chosen by its code. Played by a new
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream

@@ -530,6 +530,9 @@ def main():
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "final", final = 150,'
                     ' lon = -43.205, lat = -22.955, weather = "%s", wind = %d,'
                     ' wind_from = 0 }\n' % ("clear" if CLEAR else "cloud", 0 if CALM else 25))
+            if os.environ.get("KOSMOS_FLIGHT_TIME"):            # a picture's hour, for a person
+                f.write('prefs.open("flight", {}):set{ time = "%s" }\n'
+                        % os.environ["KOSMOS_FLIGHT_TIME"])
     files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
              (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
               FOLDER + "/flight.lua"),
@@ -1158,6 +1161,14 @@ def main():
                          "dusk" % (before_o, after_o))
     else:
         fails.append("no pictures at noon and dusk")
+    # The minimap (F5k): its tiles chosen at the zoom the height says -
+    # 13 at 457 m over Montevideo, below 600 - asked in the buildings' list
+    # and decoded from the cache. The window here is too small to lay it
+    # ("minimap not laid"), so its drawing is seen in a picture run.
+    mini = re.findall(r"flight minimap tile (\d+)/(\d+)/(\d+) decoded", seen)
+    print("flight: minimap tiles decoded %d, zooms %r" % (len(mini), sorted({m[0] for m in mini})))
+    if not mini or {m[0] for m in mini} - {"12", "13"} or "13" not in {m[0] for m in mini}:
+        fails.append("the minimap's tiles were not decoded at zoom 13 under 600 m: %r" % (mini[:6],))
     # The runway's lights (F8c): made for the runways near, off at noon -
     # the control - and on once T has stepped to dusk.
     made = re.findall(r"flight runway lights made (\d+) lights in (\d+) colours", seen)

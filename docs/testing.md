@@ -40905,3 +40905,23 @@ alpha set to 2, so no push constant was added.
   second lookup ("the first lookup of this boot answered and the second
   did not") and passed alone in 33 s. It does not touch the 3D Kit.
   Every other suite passed.
+
+## 18.974 Flight's minimap (0.12.54)
+
+**In short:** Flight draws a 220-point map in its lower left corner:
+OpenMapTiles' vector tiles drawn by the Map Kit in Maps' dark style,
+north up, with the aircraft's arrow, the runways and a scale bar. Maps'
+`style_for` moved into `user/lib/mapstyle.lua`, so both applications
+draw a map from one source. The 3D Kit's overlays went from 6 to 8, and
+the minimap is the seventh.
+
+- **Held by** `x86-flight`. It requires minimap tiles decoded at zoom
+  12 or 13, including 13 on the ground. It got 6 tiles, all at zoom 13.
+  The test window is 160 by 100, so the minimap is not laid there, and
+  Flight logs that. A 1280x720 picture run (`KOSMOS_FLIGHT_SIZE`) shows
+  it laid: the arrow, the runway, N and a 500 m bar. The test's tile
+  server has no zoom-13 vector content, so its land is empty.
+- **Maps** is held by its own suite, against the same style now read
+  from the library.
+- **The gate.** `make test` ran 131 suites, the ones the 3D Kit, Maps
+  and the new library reach, in 9:15. All passed.

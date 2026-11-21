@@ -6019,3 +6019,26 @@ are lit the way real ones are.
 
 Each light glows its own colour whatever the sun is doing, and only the
 distance's haze dims it. In daylight they're switched off.
+
+## 21 November 2026 - A map in the corner
+
+**In short:** Flight has a small map in its lower left corner. It shows
+where the aircraft is, which way it's pointing, and where the runways
+are.
+
+**What it is.** A square of map 220 points across, always north up,
+with the aircraft at the centre as an orange arrow turned to its
+heading. Under it is a scale bar, so you can judge how far the runway
+is. Below 600 m it zooms in.
+
+**Why it's made this way.** Maps already draws a map from the same
+vector tiles Flight fetches for its buildings. So the minimap doesn't
+copy any of that: it asks the Map Kit to draw the tiles, and Maps'
+colours moved into a small library both applications now use. That's
+the premise at work: the second application to want a map got the
+first one's, not a copy.
+
+**What it costs.** It's drawn again twice a second, or sooner once the
+aircraft has moved a few points on it. The picture is then laid over
+the frame by the 3D Kit, which now holds eight such overlays instead of
+six.
