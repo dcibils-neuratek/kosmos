@@ -55,7 +55,8 @@
 #define TERRAIN "k3dvk.terrain"
 #define MODEL   "k3dvk.model"
 #define KEYCODES 512           /* evdev's, more than a keyboard has */
-#define OVERLAYS 4             /* a window's overlay places: a strip, a panel */
+#define OVERLAYS 6             /* a window's overlay places: a strip, a panel, a sheet */
+#define TYPED 64               /* characters held for `w:typed`, as UTF-8 bytes */
 
 /* What Mesa or LLVM says - an abort's last words among it - goes to the
  * console rather than nowhere (`runtime/posix/fd.c`), as `vulkantest.c`
@@ -603,6 +604,13 @@ struct window {
      * `pressed` last asked - a bit each, so reading them allocates
      * nothing a frame. */
     uint8_t held[KEYCODES / 8], went_down[KEYCODES / 8];
+    /* What was typed since `typed` last asked, as UTF-8 - the characters
+     * the window manager composed, with Return, Escape and Backspace as
+     * theirs - and the last left press since `clicked` asked. A search
+     * field's and a sheet's; a frame that typed nothing allocates nothing. */
+    char typed[TYPED];
+    unsigned typed_n;
+    int clicked, click_x, click_y;
     int closing;
     /* The overlays `w:overlay` gave, on the device, in their places: a
      * picture each, refreshed in place while its size stays, made again
@@ -631,6 +639,37 @@ static void take_events(struct window *w, double wait)
         while (w->window != NULL && kw_poll(w->window, &e, 10)) {
             if (e.type == KW_CLOSE) {
                 w->closing = 1;
+            } else if (e.type == KW_KEY && e.key > 0 && e.key < 0x110000) {
+                /* A character, as UTF-8; keys.lua's negative codes - the
+                 * arrows, F1 - are not, and a held key is `held`'s. When
+                 * nobody asks, the oldest are let go. */
+                char u[4];
+                unsigned n = 0, c = (unsigned)e.key;
+
+                if (c < 0x80) {
+                    u[n++] = (char)c;
+                } else if (c < 0x800) {
+                    u[n++] = (char)(0xc0 | (c >> 6));
+                    u[n++] = (char)(0x80 | (c & 0x3f));
+                } else if (c < 0x10000) {
+                    u[n++] = (char)(0xe0 | (c >> 12));
+                    u[n++] = (char)(0x80 | ((c >> 6) & 0x3f));
+                    u[n++] = (char)(0x80 | (c & 0x3f));
+                } else {
+                    u[n++] = (char)(0xf0 | (c >> 18));
+                    u[n++] = (char)(0x80 | ((c >> 12) & 0x3f));
+                    u[n++] = (char)(0x80 | ((c >> 6) & 0x3f));
+                    u[n++] = (char)(0x80 | (c & 0x3f));
+                }
+                if (w->typed_n + n > TYPED) {
+                    w->typed_n = 0;
+                }
+                memcpy(w->typed + w->typed_n, u, n);
+                w->typed_n += n;
+            } else if (e.type == KW_POINTER && e.action == KW_PRESS && e.button == KW_LEFT) {
+                w->clicked = 1;
+                w->click_x = e.x;
+                w->click_y = e.y;
             } else if (e.type == KW_RAWKEY && e.key >= 0 && e.key < KEYCODES) {
                 uint8_t bit = (uint8_t)(1u << (e.key & 7));
 
@@ -766,7 +805,7 @@ static int l_window_device(lua_State *L)
 /*
  * w:overlay(surface, x, y, place) - a gfx surface laid over every frame
  * from now on at (x, y), by its alpha: a strip of instruments, a panel of
- * figures. `place` is 1 to 4, 1 when it is not given; the places are drawn
+ * figures. `place` is 1 to 6, 1 when it is not given; the places are drawn
  * in order, so a higher one lies over a lower. Called again when the
  * picture changed, which copies it to the device again; with no surface,
  * that place is emptied. The pixels cross once, here, in C - never as a
@@ -779,7 +818,7 @@ static int l_window_overlay(lua_State *L)
     unsigned width, height, pitch;
     uint32_t *pixels;
 
-    luaL_argcheck(L, place >= 1 && place <= OVERLAYS, 5, "a place from 1 to 4");
+    luaL_argcheck(L, place >= 1 && place <= OVERLAYS, 5, "a place from 1 to 6");
     struct k3d_vk_texture *t = &w->overlay[place - 1];
     struct k3d_vk_overlay *laid = &w->laid[place - 1];
 
@@ -895,6 +934,38 @@ static int l_window_pressed(lua_State *L)
     w->went_down[code >> 3] &= (uint8_t)~bit;
     lua_pushboolean(L, was);
     return 1;
+}
+
+/* w:typed() -> what was typed since this last asked, as UTF-8 - Return
+ * as "\r", Escape as "\27", Backspace as the window manager sends it -
+ * or nil when nothing was, so asking every frame allocates nothing. */
+static int l_window_typed(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+
+    if (w->typed_n == 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushlstring(L, w->typed, w->typed_n);
+    w->typed_n = 0;
+    return 1;
+}
+
+/* w:clicked() -> x, y of the last left press in the picture since this
+ * last asked, or nil: a sheet's buttons and choices. */
+static int l_window_clicked(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+
+    if (!w->clicked) {
+        lua_pushnil(L);
+        return 1;
+    }
+    w->clicked = 0;
+    lua_pushinteger(L, w->click_x);
+    lua_pushinteger(L, w->click_y);
+    return 2;
 }
 
 /* The view's fields, as `vulkantest`'s scene has them. */
@@ -1581,6 +1652,8 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "closed", l_window_closed },
         { "held", l_window_held },
         { "pressed", l_window_pressed },
+        { "typed", l_window_typed },
+        { "clicked", l_window_clicked },
         { "model", l_window_model },
         { "overlay", l_window_overlay },
         { "stats", l_window_stats },

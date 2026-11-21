@@ -532,12 +532,11 @@ local card = nil                       -- the place whose card is open
 --------------------------------------------------------------------------
 -- Places in the world, looked up by name (`docs/maps.md` M6e): asked of
 -- the tiles server, which asks Nominatim and writes its answer into the
--- cache; read here with the system's JSON reader. Asked when Return is
+-- cache; read by `tiles.places`, which Flight's search reads too. Asked when Return is
 -- pressed, never as each key is typed - Nominatim's policy, and a search a
 -- keystroke would be a request a keystroke.
 --------------------------------------------------------------------------
 
-local json = use("/Kosmos/Libraries/json.lua")
 local world = { asked = nil, results = nil, said = nil }   -- the last search's
 
 -- How close to go, by Nominatim's `place_rank`: a country from afar, a
@@ -567,37 +566,20 @@ local function find_in_world(text)
   return true
 end
 
--- The answer, once the server says it came: places, or nil and why.
+-- The answer, once the server says it came: places, or nil and why -
+-- read by `tiles.places`, and placed on the map here.
 local function read_found(number, status)
-  if status ~= 200 then return nil, "the search could not be answered" end
+  local list, why = tiles.places(number, status)
 
-  local text = fs.read(net.dir:gsub("/[^/]*$", "") .. "/places/" .. number .. ".json")
-
-  if type(text) ~= "string" then return nil, "the answer could not be read" end
-
-  local list, why = json.decode(text)
-
-  if type(list) ~= "table" then return nil, "the answer is not JSON: " .. tostring(why) end
+  if not list then return nil, why end
 
   local out = {}
 
   for _, r in ipairs(list) do
-    local lat, lon = tonumber(r.lat), tonumber(r.lon)
-    local name = type(r.name) == "string" and r.name ~= "" and r.name
-                 or tostring(r.display_name or ""):match("^[^,]+") or "?"
+    local x, y = map.project(r.lon, r.lat)
 
-    if lat and lon then
-      local x, y = map.project(lon, lat)
-      local where = tostring(r.display_name or ""):gsub("^[^,]*,%s*", "")
-
-      -- What a person would call it: Nominatim's `type` is "administrative"
-      -- for a city drawn as a boundary, and its `addresstype` says "city".
-      local class = (r.type == "administrative" or not r.type) and r.addresstype or r.type
-
-      out[#out + 1] = { name = name, class = tostring(class or "place"),
-                        layer = "world", where = where, x = x, y = y,
-                        zoom = zoom_for_rank(r.place_rank) }
-    end
+    out[#out + 1] = { name = r.name, class = r.class, layer = "world", where = r.where,
+                      x = x, y = y, zoom = zoom_for_rank(r.rank) }
   end
 
   return out

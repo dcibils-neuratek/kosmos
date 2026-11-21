@@ -12084,8 +12084,11 @@ driver giving none of i915's Skylake registers, the whitelist above all
 (`intelgpu_wa.h`); and on lavapipe, still, fewer
 far triangles (219 chunks, 2 M triangles, against the design's ~150);
 F5h **built in 0.12.36** (18.956), the place box, the credit and the
-tower on the city's airfield; then F5i, the pause sheet with search, and
-F5j, the island offline. **Found on the way**: a program installed
+tower on the city's airfield; F5i **built in 0.12.37** (18.957), the
+pause sheet with search, Recent and the runway and final-approach starts;
+then F5j, the island offline, and the imagery deeper near the eye when it
+is low (on a runway at zoom 15 it is 4.5 m a texel, blurred at wheel
+height). **Found on the way**: a program installed
 in `/Home` was never given what its header declares - the disk does not
 read headers as the image's store does - so `needs tiles` reached
 nothing; init reads it now, for the declared-only grants. The aircraft (Diego, 20

@@ -39993,3 +39993,64 @@ the Cessna 14 pixels tall 13 km from the field. At 400 it is a sixth of
 the picture's height at 14 km, which is why the cap is 400. The graphics
 panel was not shown because the machine's preferences have it hidden
 (`F3`); that was left as it was.
+
+## 18.957 Flight's pause sheet (F5i, 0.12.37)
+
+**In short:** `P` in Flight now opens the pause sheet from the mockup.
+From it you can search for a city, choose one of the recent places or
+the five cities, start over the city, on its runway or on final
+approach, and Restart there, or Fly on from where you stopped. Restart in
+another city builds a new terrain centred on it.
+
+**The pieces.**
+
+- **The 3D Kit's window** has two new doors, used by any program on it,
+  not only Flight. `w:typed()` returns the characters since it was last
+  asked, as UTF-8, or nil, so a frame that typed nothing allocates
+  nothing. `w:clicked()` returns the last left press. There are six
+  overlay places, up from four.
+- **The arrows reach a window as a terminal's escape sequences**, `ESC [
+  B` byte by byte. The first sheet took the Escape at the head of Down
+  for Escape and closed. `keys.lua`'s decoder, which the UI kit decodes
+  with, now decodes what `w:typed` hands Flight, and the arrows are read
+  as held keys.
+- **`tiles.places(number, status)`** reads a search's answer: Nominatim's
+  JSON, as the tiles server writes it. It was inside Maps. Flight's
+  search would have been its second copy, so Maps now reads it there too,
+  and places the result on its map itself.
+- **Runways** come from OurAirports' `runways.csv`, which is public
+  domain. For each of the five cities, the main runway's threshold, its
+  true heading and its elevation in feet are written into the cities'
+  table: SDU 02R, SFO 28L, CPT 01, HKG 07R, MVD 07. On the ground the
+  aircraft now follows the terrain's height, so a start reckoned from the
+  airfield's elevation settles onto the tiles once they are in.
+
+**The suite** (`x86-flight`) drives the sheet through QEMU's keyboard.
+Each key waits for the sheet to say it changed, since two presses in one
+frame count as one. The sequence is P, "paris", Return, down to Recent,
+left to Rio, Return, down to Start, right to On the runway, Return, down
+to the buttons, left to Restart, Return. The Mac answers the search in
+Nominatim's shape. It checks five things:
+
+- the finder was asked `q=paris`;
+- the sheet found Paris at 48.857 2.352;
+- the start is `runway` in Rio de Janeiro at x=4356 z=-4298, along 357
+  degrees: 02R's threshold, worked out in Python in the terrain's
+  projection about Rio's centre;
+- the next report is stopped there, on the ground;
+- the place box says Santos Dumont, and the tower moved to its field.
+
+1:39 for the suite. `x86-maps` passes with its world search read through
+`tiles.places` ("2 found in the world, first Montevideo").
+
+**Control.** With Restart told to keep the place it had, the suite failed
+three times over: no runway start in Rio, the place box still Carrasco,
+and the tower not moved.
+
+**On the M700**, on the HD 530, the sheet is drawn over the paused frame
+as the mockup draws it. Clicking Rio, On the runway and Restart put the
+Cessna on 02R, stopped, at 357, under "SDU · Santos Dumont"; Rio's tiles
+came within about forty seconds. Stopped on a runway, the imagery is the
+terrain's deepest, zoom 15, about 4.5 m a texel, and it is blurred at
+wheel height. Deeper imagery near the eye when it is low is in the
+roadmap.

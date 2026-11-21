@@ -95,7 +95,7 @@ def terrarium(z, x, y):
 
 
 def tile_server():
-    asked = {"elev": 0, "img": 0}
+    asked = {"elev": 0, "img": 0, "search": None}
     made = {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -120,6 +120,13 @@ def tile_server():
                     made[key] = terrarium(*key)
                 self.send(200, made[key], "image/png")
                 return
+            if self.path.startswith("/search?q="):
+                # Nominatim's shape, as the tiles server asks it (F5i).
+                asked["search"] = self.path
+                body = (b'[{"lat":"48.8566","lon":"2.3522","name":"Paris","type":"city",'
+                        b'"place_rank":16,"display_name":"Paris, Ile-de-France, France"}]')
+                self.send(200, body, "application/json")
+                return
             if re.match(r"^/img/(\d+)/(\d+)/(\d+)$", self.path):
                 asked["img"] += 1
                 self.send(200, JPEG, "image/jpeg")
@@ -138,8 +145,10 @@ prefs.open("flight", {}):set{
   imagery = "%(base)s/img/{z}/{y}/{x}", imagery_format = "jpg",
   elevation = "%(base)s/elev/{z}/{x}/{y}.png",
   lon = %(lon)r, lat = %(lat)r, width = %(width)d, height = %(height)d,
-  report = 2, frames = 0,
+  report = 2, frames = 0, finder = "%(base)s/search",
 }
+local s = prefs.open("flight", {})
+s:reset("city") s:reset("place") s:reset("recent") s:reset("start")
 print("flight setup done")
 """
 
@@ -156,6 +165,7 @@ def states(text):
             g = m.groups()
             out.append(dict(frame=int(g[0]), view=int(g[1]), x=int(g[2]), y=int(g[3]),
                             z=int(g[4]), v=float(g[5]), heading=int(g[6]), roll=int(g[7]),
+                            ground=g[8],
                             tiles=int(g[9]), mean=float(g[10]), drawn=g[12]))
     return out
 
@@ -379,6 +389,49 @@ def main():
         time.sleep(0.2)
         keys(False, "v")
         towered = wait_frames(2, "V pressed for the tower")
+
+        # The pause sheet (F5i), by the keyboard as a person would: P, a
+        # search for "paris", Rio chosen from Recent, the runway, Restart.
+        # Each key waits for the sheet to say it changed - two presses in
+        # one frame are one.
+        def sheet_key(name, what):
+            have = guest.seen.count("flight sheet")
+            keys(True, name)
+            time.sleep(0.1)
+            keys(False, name)
+            until = time.monotonic() + 30
+            while time.monotonic() < until:
+                guest._read_available()
+                if guest.seen.count("flight sheet") > have:
+                    return
+                time.sleep(0.1)
+            raise R.Failure("the sheet did not answer " + what)
+
+        sheet_key("p", "P")
+        for c in "paris":
+            sheet_key(c, "typing " + c)
+        keys(True, "ret")
+        time.sleep(0.1)
+        keys(False, "ret")
+        until = time.monotonic() + 60
+        while time.monotonic() < until and "flight sheet found" not in guest.seen[mark:]:
+            guest._read_available()
+            time.sleep(0.2)
+        time.sleep(1.0)                                     # the found row, drawn
+        guest._read_available()
+        sheet_key("down", "down to Found")
+        sheet_key("down", "down to Recent")
+        for _ in range(4):
+            sheet_key("left", "left along Recent")
+        sheet_key("ret", "choosing Rio")
+        sheet_key("down", "down to Start")
+        sheet_key("right", "right to the runway")
+        sheet_key("ret", "choosing the runway")
+        sheet_key("down", "down to the buttons")
+        sheet_key("left", "left to Restart")
+        sheet_key("ret", "Restart")
+        guest.wait_for("flight started runway", "the restart")
+        rio = wait_frames(3, "on Rio's runway")
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):
             time.sleep(1.0)
             R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-tower.png"),
@@ -392,6 +445,11 @@ def main():
 
     if fails:
         print("FAIL: " + fails[0])
+        # The sheet's and the start's lines, which a frame's report - two
+        # thousand characters of chunks - would push out of the last words.
+        said = re.findall(r"flight (?:sheet|started|restarted|place|tower)[^\r\n]*|"
+                          r"[^\r\n]*(?:error|traceback)[^\r\n]*", seen)
+        print("--- what the sheet said ---\n" + "\n".join(said[-30:]))
         print("--- the guest's last words ---\n" + seen[-2000:])
         return 1
 
@@ -574,6 +632,46 @@ def main():
     if not cr or not re.fullmatch(r"Imagery 10\.0\.2\.2 .{1,3} Elevation 10\.0\.2\.2", cr.group(1)):
         fails.append("the credit did not name the sources the tiles came from: %r"
                      % re.findall(r"flight credit.*", seen))
+    # The sheet (F5i): the search asked the finder and found Paris; Rio
+    # and its runway chosen and restarted on: a new terrain centred on Rio,
+    # the aircraft on 02R's threshold, stopped and along its heading, the
+    # place box and the tower Santos Dumont's. Each from the positions
+    # worked out here, in the terrain's projection about Rio's centre.
+    print("flight: the finder was asked %r" % (asked["search"],))
+    found = re.search(r"flight sheet found (\d+) first ([^\r\n]*)", seen)
+    print("flight: %s" % (found.group(0) if found else "no sheet found line"))
+    if not asked["search"] or "q=paris" not in asked["search"]:
+        fails.append("the sheet's search did not ask the finder for paris: %r" % (asked["search"],))
+    if not found or found.group(1) != "1" or not found.group(2).startswith("Paris at 48.857 2.352"):
+        fails.append("the sheet did not find Paris where the finder said: %r"
+                     % (found.group(0) if found else re.findall(r"flight sheet.*", seen)[-5:]))
+    ro, rr = mercator(-43.205, -22.955), mercator(-43.1625, -22.916389)
+    rscale = EQUATOR * math.cos(math.radians(-22.955))
+    rx, rz = (rr[0] - ro[0]) * rscale, (rr[1] - ro[1]) * rscale
+    st = re.search(r"flight started runway at x=(-?\d+) y=(-?\d+) z=(-?\d+) heading=(\d+) "
+                   r"in ([^\r\n]*)", seen)
+    print("flight: %s (02R's threshold at x=%.0f z=%.0f)" % (st.group(0) if st else "no start line",
+                                                           rx, rz))
+    print("flight: on the runway %r" % ({k: rio[k] for k in ("x", "y", "z", "v", "heading",
+                                                               "ground")},))
+    if not st or st.group(5).strip() != "Rio de Janeiro":
+        fails.append("Restart did not start on a runway in Rio: %r"
+                     % re.findall(r"flight (?:started|restarted|sheet).*", seen)[-6:])
+    else:
+        if abs(int(st.group(1)) - rx) > 5 or abs(int(st.group(3)) - rz) > 5 or st.group(4) != "357":
+            fails.append("the start is not 02R's threshold along 357: %r" % st.group(0))
+        if rio["ground"] != "true" or rio["v"] > 5 or abs(rio["x"] - rx) > 10 \
+                or abs(rio["z"] - rz) > 10:
+            fails.append("after Restart it is not stopped on Rio's runway: %r" % (rio,))
+    pls = re.findall(r"flight place (.*?) - ", seen)
+    if len(pls) < 2 or not re.fullmatch(r"SDU .{1,3} Santos Dumont", pls[-1]):
+        fails.append("the place box did not follow to Santos Dumont: %r" % (pls,))
+    sx, sz = mercator(-43.1631, -22.9105)
+    sx, sz = (sx - ro[0]) * rscale, (sz - ro[1]) * rscale
+    tws = re.findall(r"flight tower at x=(-?\d+) z=(-?\d+)", seen)
+    if len(tws) < 2 or abs(int(tws[-1][0]) - sx) > 5 or abs(int(tws[-1][1]) - sz) > 5:
+        fails.append("the tower did not move to Santos Dumont's field (%.0f, %.0f): %r"
+                     % (sx, sz, tws))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \

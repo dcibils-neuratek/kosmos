@@ -5596,3 +5596,38 @@ own coordinates, worked out separately in the test: x=12251, z=-7522, to
 the metre. Its control, with the tower put back at the start, fails. The
 first lens limit, 50, left the aircraft 14 pixels tall at that distance
 on the M700, so it went up to 400.
+
+## 20 November 2026 - Flight's pause sheet
+
+**In short:** pressing P in Flight now opens a sheet over the paused
+picture. You can type a city to search for, pick one of the five cities
+or a recent place, choose to start in the air, on the runway or on final
+approach, and press Restart to fly there.
+
+**What changed.** Until now Flight always started over Montevideo, and
+changing that meant editing a settings file. The sheet is the mockup's
+pause window. Starting "on the runway" puts the aircraft on the real
+runway's end, pointing the way the runway points. Those positions come
+from OurAirports, a public list of every runway in the world. "Final
+approach" starts five kilometres out, slowed down and descending toward
+the runway.
+
+**Why it is built the way it is.** Two pieces are shared rather than
+Flight's own. Reading a search's answer was inside Maps, and Flight would
+have copied it, so it moved into the tiles library, which both use. And
+the 3D window can now hand a program what was typed and where it was
+clicked, which any game or tool on it can use.
+
+**A bug found on the way.** The arrow keys reach a window as short
+coded sequences that begin with the Escape character. The first version
+of the sheet read that Escape as "close". The fix was the keyboard
+decoder the rest of the system already uses.
+
+**What you see.** On the M700: the sheet in the middle of the window,
+the cities as round buttons, the start options, and Restart and Fly on.
+Clicking Rio, On the runway and Restart put the Cessna at the end of
+Santos Dumont's runway, still, with "SDU · Santos Dumont" in the corner.
+
+**What it showed.** Sitting on a runway, the satellite picture is blurry,
+because the terrain's sharpest level is too coarse to look at from wheel
+height. Sharper imagery near the ground is next on the list.

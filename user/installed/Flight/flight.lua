@@ -29,6 +29,7 @@
 local k = use("k3dvk.elf")
 local tiles = use("/Kosmos/Libraries/tiles.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
+local keys = use("/Kosmos/Libraries/keys.lua")
 
 local settings = prefs.open("flight", {
   city = "mvd",                                  -- which of CITIES, or none
@@ -39,6 +40,10 @@ local settings = prefs.open("flight", {
   width = 1280, height = 720,
   model = "/Home/Apps/Flight/cessna_172.glb",    -- the aircraft (assets/models/cessna172)
   graphics = true,                               -- the graphics panel open (F3)
+  start = "city",                                -- "city", "runway" or "final" (F5i)
+  place = false,                                 -- a place searched for: { name, note, lon, lat }
+  recent = false,                                -- the sheet's Recent: { key } or places
+  finder = false,                                -- places looked up there, not Nominatim
   frames = 0,                                    -- stop after this many, 0 never
   report = 120,                                  -- a line on the console every this many
 })
@@ -63,23 +68,8 @@ local PLANE = {
 }
 local G = 9.81
 
--- The state, one table for the whole flight.
-local S = {}
-local function start()
-  S.x, S.y, S.z = 0, 600, 0          -- metres east, up, south of the origin
-  S.v = 55                           -- airspeed, m/s
-  S.gamma = 0                        -- the path's climb, radians
-  S.psi = 0                          -- heading: 0 north, clockwise
-  S.phi = 0                          -- roll
-  S.alpha = 0.02                     -- angle of attack
-  S.throttle = 0.7
-  S.flaps = 0
-  S.ground = false
-  S.crashed = false
-  S.view = 1                         -- 1 chase, 2 cockpit, 3 tower
-  S.paused = false
-end
-start()
+-- The state, one table for the whole flight; `start` fills it (below).
+local S = { view = 1 }                -- 1 chase, 2 cockpit, 3 tower
 
 -- One step of the flight model, `dt` seconds: speed, climb and heading from
 -- the forces in the path's frame, as a point mass with an attitude - which
@@ -110,6 +100,9 @@ local function fly(dt, pitch, roll, ground_h)
     S.gamma = 0
     if lift > m * G * 1.02 and pitch > 0 then S.ground = false end
     S.psi = S.psi + roll * math.rad(10) * dt * math.min(1, S.v / 10)
+    -- On its wheels it follows the ground, which a start on a runway
+    -- reckons from the airfield's elevation before the tiles are in.
+    if ground_h then S.y = ground_h + P.gear end
   else
     S.phi = S.phi + roll * P.roll_rate * dt
     -- Let go of the ailerons and a trainer rolls back towards level.
@@ -151,25 +144,42 @@ local view = {
 
 -- **The cities** (F5h): where each is flown from, its airfield and a line
 -- about it - the place box says them, and the tower stands on the
--- airfield. The five the pause sheet offers on a first start (F5i).
+-- airfield. The five the pause sheet offers on a first start (F5i), each
+-- with its longest-used runway's threshold, true heading and elevation in
+-- feet, from OurAirports' `runways.csv` (public domain), for the sheet's
+-- runway and final-approach starts.
 local CITIES = {
   rio = { name = "Rio de Janeiro", code = "SDU \u{b7} Santos Dumont",
           note = "Sugarloaf and Corcovado, Guanabara Bay",
-          lon = -43.205, lat = -22.955, field = { -43.1631, -22.9105 } },
+          lon = -43.205, lat = -22.955, field = { -43.1631, -22.9105 },
+          runway = { name = "02R", lon = -43.1625, lat = -22.916389, heading = 357, feet = 9 } },
   sf  = { name = "San Francisco", code = "SFO \u{b7} San Francisco Intl",
           note = "the Golden Gate, Twin Peaks, the bay",
-          lon = -122.44, lat = 37.785, field = { -122.3790, 37.6213 } },
+          lon = -122.44, lat = 37.785, field = { -122.3790, 37.6213 },
+          runway = { name = "28L", lon = -122.358367, lat = 37.61172, heading = 298, feet = 13 } },
   cpt = { name = "Cape Town", code = "CPT \u{b7} Cape Town Intl",
           note = "Table Mountain, Lion's Head, the bay",
-          lon = 18.43, lat = -33.945, field = { 18.6017, -33.9648 } },
+          lon = 18.43, lat = -33.945, field = { 18.6017, -33.9648 },
+          runway = { name = "01", lon = 18.608900, lat = -33.987701, heading = 346, feet = 144 } },
   hkg = { name = "Hong Kong", code = "HKG \u{b7} Chek Lap Kok",
           note = "Victoria Peak and the harbour",
-          lon = 114.165, lat = 22.29, field = { 113.9185, 22.3080 } },
+          lon = 114.165, lat = 22.29, field = { 113.9185, 22.3080 },
+          runway = { name = "07R", lon = 113.898003, lat = 22.2962, heading = 71, feet = 28 } },
   mvd = { name = "Montevideo", code = "MVD \u{b7} Carrasco",
           note = "the Rambla, the Cerro, the River Plate",
-          lon = -56.1650, lat = -34.9060, field = { -56.0308, -34.8384 } },
+          lon = -56.1650, lat = -34.9060, field = { -56.0308, -34.8384 },
+          runway = { name = "07", lon = -56.040001, lat = -34.844002, heading = 53, feet = 49 } },
 }
-local city = CITIES[settings.city]
+for key, c in pairs(CITIES) do c.key = key end
+local ORDER = { "rio", "sf", "cpt", "hkg", "mvd" }    -- the mockup's, and Recent's first
+
+-- Where the flight is: one of the cities, a place searched for - a name, a
+-- line, a longitude and latitude, and no airfield - or nowhere known.
+local here
+local function where_now()
+  return CITIES[settings.city] or (type(settings.place) == "table" and settings.place) or nil
+end
+here = where_now()
 
 -- A place's metres east and south of where the terrain is centred, in the
 -- terrain's own projection - Web Mercator, scaled at the centre's latitude
@@ -188,8 +198,51 @@ end
 -- The tower: on the city's airfield, or where the flight began when the
 -- place has none; its foot from the terrain's heights once they are in.
 local tower = { x = 0, z = 0, ground = nil, focal = 1.4 }
-if city then tower.x, tower.z = metres_at(city.field[1], city.field[2]) end
+local function place_tower()
+  tower.x, tower.z, tower.ground, tower.said = 0, 0, nil, nil
+  if here and here.field then tower.x, tower.z = metres_at(here.field[1], here.field[2]) end
+end
+place_tower()
 local FOCAL = 1.4                                -- the chase's and the cockpit's
+
+-- **The start** (F5i): over the city at 1,500 feet, heading north; or on
+-- the runway's threshold, stopped, along it; or five kilometres out on a
+-- three-degree path to it, slowed and with half flaps - the last two only
+-- where the place has a runway. The view is kept.
+local function start(g)
+  local h = g and g:height(0, 0)
+  S.x, S.y, S.z = 0, math.max(h or 0, 0) + 457, 0   -- metres east, up, south
+  S.v = 55                           -- airspeed, m/s
+  S.gamma = 0                        -- the path's climb, radians
+  S.psi = 0                          -- heading: 0 north, clockwise
+  S.phi = 0                          -- roll
+  S.alpha = 0.02                     -- angle of attack
+  S.throttle = 0.7
+  S.flaps = 0
+  S.ground = false
+  S.crashed = false
+  S.paused = false
+  local rw = here and here.runway
+  local how = rw and settings.start or "city"
+  if how ~= "city" then
+    local tx, tz = metres_at(rw.lon, rw.lat)
+    local psi, elevation = math.rad(rw.heading), rw.feet * 0.3048
+    S.psi = psi
+    if how == "runway" then
+      S.x, S.z, S.y = tx, tz, elevation + PLANE.gear
+      S.v, S.throttle, S.alpha, S.ground = 0, 0, 0, true
+    else
+      local back = 5000
+      S.x, S.z = tx - math.sin(psi) * back, tz + math.cos(psi) * back
+      S.y = elevation + back * math.tan(math.rad(3)) + PLANE.gear
+      S.v, S.gamma, S.flaps, S.throttle = 36, -math.rad(3), 0.5, 0.35
+    end
+  end
+  S.started = how
+  say(("started %s at x=%.0f y=%.0f z=%.0f heading=%.0f in %s"):format(how, S.x, S.y, S.z,
+      math.deg(S.psi) % 360, here and here.name or "no place known"))
+end
+start()
 
 local function look(g)
   local ch, sh = math.cos(S.psi), math.sin(S.psi)
@@ -785,8 +838,10 @@ local place_said, credit, credit_view
 local function draw_place(w)
   local width, height = settings.width, settings.height
   if not place_said then
-    local name = city and city.code or ("%.3f, %.3f"):format(settings.lat, settings.lon)
-    local note = city and city.note or "no airfield here; the tower is where the flight began"
+    local name = here and (here.code or here.name) or ("%.3f, %.3f"):format(settings.lat, settings.lon)
+    local note = here and here.field and here.note
+                 or (here and here.note and here.note ~= "" and here.note .. "; " or "")
+                    .. "no airfield here; the tower is where the flight began"
     local bold = gfx.face("ibmplexsans-medium", 15) or gfx.face("ibmplexsans", 15)
     local small = gfx.face("ibmplexsans", 13)
     local bw = math.max(gfx.measure(name, bold), gfx.measure(note, small)) + 28
@@ -828,6 +883,311 @@ local function draw_place(w)
   credit_view = S.view
 end
 
+-- **The pause sheet** (F5i): where in the world and from where. `P`
+-- opens it and pauses; `Escape` or Fly on closes it and flies on from
+-- where it stopped; Restart starts again with what it says - another city,
+-- a place searched for, another start. Its rows, as the mockup draws
+-- them: the search field, what the search found, Recent - the five cities
+-- first, then each place flown - and Start. Weather, wind and the
+-- controls join it with what they change (F6, F7).
+--
+-- Typed characters go to the field (`w:typed`), the arrows move between
+-- rows and choices, Return searches, chooses or presses; a click does the
+-- same where it lands (`w:clicked`). A search is asked when Return is
+-- pressed, never a keystroke at a time - Nominatim's policy, as Maps' -
+-- and its places are read by `tiles.places`, the reader Maps uses.
+--
+-- Drawn in a gfx surface in the overlay's fifth place, centred, and
+-- redrawn only when what it says changed.
+local STARTS = { { key = "city", name = "Over the city, 1,500 ft" },
+                 { key = "runway", name = "On the runway" },
+                 { key = "final", name = "Final approach" } }
+local ACCENT, ON, RAISED, SUNKEN = 0xff4c8dff, 0xffffffff, 0xff2a313c, 0xff0c0f14
+local SHEET = { open = false, focus = 1, cols = {}, text = "", hits = {} }
+local decode = keys.decoder()
+local sheet_face, sheet_bold, sheet_title, sheet_surface
+
+local function same_place(a, b)
+  return a and b and math.abs(a.lon - b.lon) < 1e-4 and math.abs(a.lat - b.lat) < 1e-4
+end
+
+-- Recent: what `settings.recent` keeps - { key = "rio" } for a city, the
+-- place itself otherwise - each made a place again.
+local function recent()
+  local out = {}
+  for _, e in ipairs(type(settings.recent) == "table" and settings.recent or {}) do
+    local p = e.key and CITIES[e.key] or (e.lon and e.lat and e) or nil
+    if p then out[#out + 1] = p end
+  end
+  if #out == 0 then for _, k in ipairs(ORDER) do out[#out + 1] = CITIES[k] end end
+  return out
+end
+
+local function sheet_rows()
+  local rows = { { kind = "field", label = "City" } }
+  if SHEET.found and #SHEET.found > 0 then
+    rows[#rows + 1] = { kind = "places", label = "Found", items = SHEET.found }
+  end
+  rows[#rows + 1] = { kind = "places", label = "Recent", items = recent() }
+  rows[#rows + 1] = { kind = "starts", label = "Start", items = STARTS }
+  rows[#rows + 1] = { kind = "buttons", items = { { name = "Restart" }, { name = "Fly on" } } }
+  return rows
+end
+
+-- Whether a choice can be taken: a runway's starts need a runway.
+local function usable(row, item)
+  if row.kind ~= "starts" or item.key == "city" then return true end
+  return SHEET.place ~= nil and SHEET.place.runway ~= nil
+end
+
+local function chosen(row, item)
+  if row.kind == "places" then return same_place(item, SHEET.place) end
+  if row.kind == "starts" then
+    return item.key == (usable(row, item) and SHEET.start or "city")
+  end
+  return item.name == "Fly on"
+end
+
+local function sheet_open()
+  SHEET.open, SHEET.focus, SHEET.cols, SHEET.text = true, 1, {}, ""
+  SHEET.place, SHEET.start = here, settings.start
+  SHEET.found, SHEET.asked, SHEET.said, SHEET.drawn = nil, nil, nil, nil
+  S.paused = true
+end
+
+local function sheet_close(w)
+  SHEET.open, S.paused = false, false
+  w:overlay(nil, 0, 0, 5)
+  say("sheet closed")
+end
+
+local restart                          -- the terrain's, below
+
+local function search(text)
+  if text == "" then return end
+  if settings.finder and not SHEET.finder_told then
+    SHEET.finder_told = true
+    if not tiles.finder(settings.finder) then say("sheet finder refused " .. settings.finder) end
+  end
+  local n, why = tiles.find(text)
+  if not n then SHEET.said = "the search could not be asked: " .. tostring(why) return end
+  SHEET.asked, SHEET.found, SHEET.said = n, nil, "Searching\u{2026}"
+  say(("sheet searching %q"):format(text))
+end
+
+local function sheet_found()
+  if not SHEET.asked then return end
+  local done, status = tiles.found()
+  if done < SHEET.asked then return end
+  local list, why = tiles.places(SHEET.asked, status)
+  SHEET.asked = nil
+  if not list then SHEET.said = why return end
+  SHEET.found = {}
+  for i = 1, math.min(4, #list) do
+    local r = list[i]
+    SHEET.found[i] = { name = r.name, note = r.where, lon = r.lon, lat = r.lat }
+  end
+  SHEET.said = #list == 0 and "Nowhere is called that" or nil
+  say(("sheet found %d%s"):format(#list, list[1] and (" first " .. list[1].name .. (" at %.3f %.3f")
+      :format(list[1].lat, list[1].lon)) or ""))
+end
+
+-- What a row's choice does: a place or a start chosen, a button pressed.
+local function choose(w, row, i)
+  local item = row.items and row.items[i]
+  if row.kind == "field" then search(SHEET.text) return end
+  if not item then return end
+  if row.kind == "places" then
+    SHEET.place = item
+  elseif row.kind == "starts" then
+    if usable(row, item) then SHEET.start = item.key end
+  elseif item.name == "Restart" then
+    restart(SHEET.place, SHEET.start)
+    sheet_close(w)
+  else
+    sheet_close(w)
+  end
+end
+
+local function sheet_input(w)
+  local rows = sheet_rows()
+  SHEET.focus = math.max(1, math.min(#rows, SHEET.focus))
+  local row = rows[SHEET.focus]
+  local function col(r) return SHEET.cols[r.label or r.kind] end
+  local function default(r)
+    for i, item in ipairs(r.items or {}) do if chosen(r, item) then return i end end
+    return 1
+  end
+  if row.items and not col(row) then SHEET.cols[row.label or row.kind] = default(row) end
+
+  if w:pressed(KEY.up) then SHEET.focus = math.max(1, SHEET.focus - 1) end
+  if w:pressed(KEY.down) then SHEET.focus = math.min(#rows, SHEET.focus + 1) end
+  row = rows[SHEET.focus]
+  if row.items and not col(row) then SHEET.cols[row.label or row.kind] = default(row) end
+  if row.items then
+    local c = col(row)
+    if w:pressed(KEY.left) then c = math.max(1, c - 1) end
+    if w:pressed(KEY.right) then c = math.min(#row.items, c + 1) end
+    SHEET.cols[row.label or row.kind] = c
+  else
+    w:pressed(KEY.left) w:pressed(KEY.right)
+  end
+
+  -- What was typed is the window manager's bytes, a terminal's: the
+  -- arrows arrive as escape sequences, which `keys.lua`'s decoder turns
+  -- into keys - so an arrow's Escape is not taken for Escape. The arrows
+  -- themselves are read as held keys, above.
+  local typed = w:typed()
+  if typed then
+    local function key(c)
+      if c == keys.ENTER or c == 10 then
+        choose(w, row, col(row))
+      elseif c == keys.ESCAPE then
+        sheet_close(w)
+      elseif c == 8 or c == 127 then
+        SHEET.text = SHEET.text:gsub("[%z\1-\127\194-\244][\128-\191]*$", "")
+        SHEET.focus = 1
+      elseif c >= 32 and c < 256 and #SHEET.text < 60 then
+        SHEET.text, SHEET.focus = SHEET.text .. string.char(c), 1
+      end
+    end
+    for i = 1, #typed + 1 do
+      local a, b = decode(i <= #typed and typed:byte(i) or nil)
+      if a then key(a) end
+      if b and SHEET.open then key(b) end
+      if not SHEET.open then return end
+    end
+  end
+
+  local cx, cy = w:clicked()
+  if cx and SHEET.at then
+    local x, y = cx - SHEET.at[1], cy - SHEET.at[2]
+    for _, h in ipairs(SHEET.hits) do
+      if x >= h[1] and x < h[1] + h[3] and y >= h[2] and y < h[2] + h[4] then
+        SHEET.focus = h[5]
+        local r = rows[h[5]]
+        if r and r.items then SHEET.cols[r.label or r.kind] = h[6] end
+        if r then choose(w, r, h[6]) end
+        if not SHEET.open then return end
+        break
+      end
+    end
+  end
+  sheet_found()
+end
+
+local function chip(s, x, y, text, on, focused, dim, face)
+  local wide = gfx.measure(text, face) + 20
+  if focused then s:fill_round(x - 2, y - 2, wide + 4, 28, ACCENT, 14) end
+  s:fill_round(x, y, wide, 24, on and ACCENT or (focused and RAISED or LINE), 12)
+  if not on then s:fill_round(x + 1, y + 1, wide - 2, 22, focused and RAISED or SUNKEN, 11) end
+  s:text(x + 10, y + 3, text, dim and LINE or (on and ON or BRIGHT), nil, face)
+  return wide
+end
+
+local function draw_sheet(w)
+  if not SHEET.open then return end
+  local rows = sheet_rows()
+  local width, height = settings.width, settings.height
+  local sw = math.min(460, width - 32)
+  local parts = { SHEET.focus, SHEET.text, SHEET.said or "",
+                  SHEET.place and SHEET.place.name or "-", SHEET.start or "-" }
+  for _, r in ipairs(rows) do
+    parts[#parts + 1] = (r.label or r.kind) .. ":" .. tostring(SHEET.cols[r.label or r.kind])
+    for _, item in ipairs(r.items or {}) do parts[#parts + 1] = item.name end
+  end
+  local key = table.concat(parts, "|")
+  if key == SHEET.drawn then return end
+  SHEET.drawn = key
+  local focus = rows[SHEET.focus]
+  say(("sheet focus=%s:%s place=%s start=%s text=%q found=%d%s"):format(
+      focus.label or focus.kind, tostring(SHEET.cols[focus.label or focus.kind] or "-"),
+      SHEET.place and SHEET.place.name or "none", SHEET.start, SHEET.text,
+      SHEET.found and #SHEET.found or 0, SHEET.said and (" said=" .. SHEET.said) or ""))
+  if sw < 300 or height < 300 then
+    if not SHEET.small_said then say(("sheet not laid: %dx%d"):format(width, height)) end
+    SHEET.small_said = true
+    return
+  end
+
+  if not sheet_face then
+    sheet_face = gfx.face("ibmplexsans", 13)
+    sheet_bold = gfx.face("ibmplexsans-medium", 13) or sheet_face
+    sheet_title = gfx.face("ibmplexsans-medium", 18) or sheet_bold
+  end
+  -- The rows' heights first: chips flow onto as many lines as they need.
+  local left, inner = 110, sw - 110 - 18
+  local function lines(r)
+    if not r.items or r.kind == "buttons" then return 1 end
+    local n, x = 1, 0
+    for _, item in ipairs(r.items) do
+      local wide = gfx.measure(item.name, sheet_face) + 20
+      if x > 0 and x + wide > inner then n, x = n + 1, 0 end
+      x = x + wide + 6
+    end
+    return n
+  end
+  local sh = 70
+  for _, r in ipairs(rows) do sh = sh + (r.kind == "buttons" and 48 or lines(r) * 30 + 10) end
+  sh = math.min(sh, height - 16)
+  if not sheet_surface or select(2, sheet_surface:size()) ~= sh or sheet_surface:size() ~= sw then
+    sheet_surface = gfx.surface{ w = sw, h = sh }
+  end
+  local s = sheet_surface
+  s:fill(0, 0, sw, sh, GLASS)
+  s:text(18, 14, "Paused", BRIGHT, nil, sheet_title)
+  s:text(18, 42, "Where in the world, and from where. Fly on goes on from here.", DIM, nil,
+         sheet_face)
+  local hits, y = {}, 70
+  for ri, r in ipairs(rows) do
+    local focused_row = ri == SHEET.focus
+    if r.kind ~= "buttons" then
+      s:fill(18, y - 4, sw - 36, 1, LINE)
+      s:text(18, y + 4, r.label, DIM, nil, sheet_face)
+    end
+    if r.kind == "field" then
+      local fw = inner
+      s:fill_round(left, y, fw, 26, focused_row and ACCENT or LINE, 8)
+      s:fill_round(left + 1, y + 1, fw - 2, 24, SUNKEN, 7)
+      local shown = SHEET.text ~= "" and SHEET.text or (SHEET.said or "Search a city or an airport")
+      local after = s:text(left + 10, y + 4, shown, SHEET.text ~= "" and BRIGHT or DIM, nil, sheet_face)
+      if focused_row and SHEET.text ~= "" then s:fill(after + 1, y + 6, 1, 15, BRIGHT) end
+      hits[#hits + 1] = { left, y, fw, 26, ri, 1 }
+      y = y + 40
+    elseif r.kind == "buttons" then
+      local x = sw - 18
+      for i = #r.items, 1, -1 do
+        local item = r.items[i]
+        local wide = gfx.measure(item.name, sheet_bold) + 32
+        x = x - wide
+        local focused = focused_row and SHEET.cols[r.kind] == i
+        if focused then s:fill_round(x - 2, y + 4, wide + 4, 36, BRIGHT, 11) end
+        s:fill_round(x, y + 6, wide, 32, item.name == "Fly on" and ACCENT or RAISED, 9)
+        s:text(x + 16, y + 13, item.name, ON, nil, sheet_bold)
+        hits[#hits + 1] = { x, y + 6, wide, 32, ri, i }
+        x = x - 8
+      end
+      y = y + 48
+    else
+      local x, line = 0, 0
+      for i, item in ipairs(r.items) do
+        local wide = gfx.measure(item.name, sheet_face) + 20
+        if x > 0 and x + wide > inner then x, line = 0, line + 1 end
+        local cx, cy = left + x, y + line * 30
+        chip(s, cx, cy, item.name, chosen(r, item), focused_row and SHEET.cols[r.label] == i,
+             not usable(r, item), sheet_face)
+        hits[#hits + 1] = { cx, cy, wide, 24, ri, i }
+        x = x + wide + 6
+      end
+      y = y + (line + 1) * 30 + 10
+    end
+  end
+  SHEET.hits = hits
+  SHEET.at = { (width - sw) // 2, (height - sh) // 2 }
+  local ok, why = w:overlay(s, SHEET.at[1], SHEET.at[2], 5)
+  if not ok then say("sheet failed=" .. tostring(why)) end
+end
+
 -- The window and the terrain.
 local w, why = k.window("Flight", settings.width, settings.height)
 if not w then say("failed=" .. tostring(why)) return end
@@ -848,10 +1208,48 @@ if not ok then say("failed=no tiles: " .. tostring(why)) return end
 -- free, in chunks, between enough for one view and twice that.
 local free_mb = (fs.read("/Devices/memory") or {}).free_mb or 512
 local keep = math.max(120, math.min(600, math.floor(free_mb / 4 / 0.5)))
-local g = k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 15,
-                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
-                     keep = keep, uploads = 8 }
+local function terrain()
+  return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 15,
+                    radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
+                    keep = keep, uploads = 8 }
+end
+local g = terrain()
 say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))
+
+-- Restart (the sheet's): somewhere else is a terrain centred there - the
+-- old one let go, its chunks with it - and the place box, the tower and
+-- Recent follow; the same place starts again on the terrain it has.
+restart = function(place, how)
+  settings:set("start", how or "city")
+  if place and not same_place(place, here) then
+    if place.key then
+      settings:set{ city = place.key, lon = place.lon, lat = place.lat }
+      settings:reset("place")
+    else
+      settings:set{ city = "", lon = place.lon, lat = place.lat,
+                    place = { name = place.name, note = place.note, lon = place.lon,
+                              lat = place.lat } }
+    end
+    local kept = { place.key and { key = place.key } or settings.place }
+    for _, p in ipairs(recent()) do
+      if #kept < 8 and not same_place(p, place) then
+        kept[#kept + 1] = p.key and { key = p.key } or { name = p.name, note = p.note,
+                                                          lon = p.lon, lat = p.lat }
+      end
+    end
+    settings:set("recent", kept)
+    here = where_now()
+    g = nil
+    collectgarbage()
+    g = terrain()
+    missing.e, missing.i = {}, {}
+    place_tower()
+    place_said = nil
+    say(("restarted in %s at %.4f %.4f"):format(here and here.name or "?", settings.lat,
+        settings.lon))
+  end
+  start(g)
+end
 
 local last = now()
 local slowest, total = 0, 0
@@ -860,16 +1258,31 @@ while not w:closed(0) do
   local dt = math.min(0.05, t - last)
   last = t
 
-  if w:pressed(KEY.v) then S.view = S.view % 3 + 1 end
-  if w:pressed(KEY.p) then S.paused = not S.paused end
-  if w:pressed(KEY.f3) then
-    settings:set("graphics", not settings.graphics)
-    graphics_next = 0
-  end
-  if w:pressed(KEY.f) then S.flaps = (S.flaps + 0.5) % 1.5 end
-  if w:pressed(KEY.r) or S.crashed then
-    if S.crashed then say("crashed") end
-    start()
+  -- With the sheet open, the keys are its own: the letters a search.
+  local v, p, f3, f, r = w:pressed(KEY.v), w:pressed(KEY.p), w:pressed(KEY.f3),
+                         w:pressed(KEY.f), w:pressed(KEY.r)
+  if SHEET.open then
+    sheet_input(w)
+  else
+    if v then S.view = S.view % 3 + 1 end
+    if p then
+      sheet_open()
+      w:typed()                            -- the P that opened it
+      w:clicked()
+      -- The arrows flown with went down long ago, and are not the sheet's.
+      w:pressed(KEY.up) w:pressed(KEY.down) w:pressed(KEY.left) w:pressed(KEY.right)
+    end
+    if f3 then
+      settings:set("graphics", not settings.graphics)
+      graphics_next = 0
+    end
+    if f then S.flaps = (S.flaps + 0.5) % 1.5 end
+    if r or S.crashed then
+      if S.crashed then say("crashed") end
+      start(g)
+    end
+    w:typed()
+    w:clicked()
   end
 
   if not S.paused then
@@ -882,6 +1295,7 @@ while not w:closed(0) do
   end
   draw_strip(w, g:height(S.x, S.z))
   draw_panel(w, dt)
+  draw_sheet(w)
 
   look(g)
   feed(g, view.eye)

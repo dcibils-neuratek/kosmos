@@ -202,8 +202,10 @@ giving the render engine none of i915's Skylake registers - now in
 needed, held to a control - and the hang report says where the engine
 stood and whether it faulted; **F5h** (0.12.36, 18.956), the place box,
 the imagery's credit, and the tower on the city's airfield with a lens
-that follows the distance. Next F5i, the pause sheet, and F5j, the
-island. **The
+that follows the distance; **F5i** (0.12.37, 18.957), the pause sheet -
+search, Recent, the start on a runway or on final, Restart in another
+city - and the 3D Kit's `w:typed` and `w:clicked`. Next F5j, the island,
+and the imagery deeper near the ground. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

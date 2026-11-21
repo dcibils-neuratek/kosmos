@@ -16,6 +16,9 @@
 --   local n = tiles.find(words)             a search's number
 --   tiles.found()                           the last search answered, and
 --                                           its HTTP status (0: not asked)
+--   tiles.places(n, status)                 that search's places: { { name,
+--                                           where, class, rank, lat, lon } },
+--                                           or nil and why
 --
 -- **Why a library**: the protocol is a declared shape, packed with
 -- `string.pack` to `tileproto.h`, and it was packed inside Maps alone -
@@ -48,6 +51,7 @@ local REPLY = "<I4I4I4I4I4I4I4I4c64c128" .. string.rep("I4", MAX * 3)
 local REPLY_BYTES = 992
 
 tiles.MAX = MAX
+local CACHE = "/Home/Cache/Maps"                            -- tiles.c's CACHE_ROOT
 
 local ZEROS = {}
 
@@ -160,6 +164,46 @@ end
 -- The last search answered, and how: as the last answer to anything said.
 function tiles.found()
   return finding.found, finding.status
+end
+
+-- A search's places, once `found` says it was answered, read from where the
+-- server wrote Nominatim's answer: what a person would call each, where it
+-- is, its kind and Nominatim's `place_rank`, and its longitude and
+-- latitude. Maps and Flight both read them here, so the answer's shape is
+-- known in one place.
+local json
+function tiles.places(number, status)
+  if status ~= 200 then return nil, "the search could not be answered" end
+
+  local text = fs.read(CACHE .. "/places/" .. number .. ".json")
+
+  if type(text) ~= "string" then return nil, "the answer could not be read" end
+
+  json = json or use("/Kosmos/Libraries/json.lua")
+
+  local list, why = json.decode(text)
+
+  if type(list) ~= "table" then return nil, "the answer is not JSON: " .. tostring(why) end
+
+  local out = {}
+
+  for _, r in ipairs(list) do
+    local lat, lon = tonumber(r.lat), tonumber(r.lon)
+
+    if lat and lon then
+      local name = type(r.name) == "string" and r.name ~= "" and r.name
+                   or tostring(r.display_name or ""):match("^[^,]+") or "?"
+      local where = tostring(r.display_name or ""):gsub("^[^,]*,%s*", "")
+      -- What a person would call it: Nominatim's `type` is "administrative"
+      -- for a city drawn as a boundary, and its `addresstype` says "city".
+      local class = (r.type == "administrative" or not r.type) and r.addresstype or r.type
+
+      out[#out + 1] = { name = name, where = where, class = tostring(class or "place"),
+                        rank = tonumber(r.place_rank) or 30, lat = lat, lon = lon }
+    end
+  end
+
+  return out
 end
 
 return tiles

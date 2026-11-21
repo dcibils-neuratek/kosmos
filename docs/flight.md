@@ -351,10 +351,26 @@ ends on the M700:
     airfield, placed in the terrain's own projection, and its lens follows
     the distance - a sixtieth of it, from 1.4 to 400 - so the Cessna stays
     about the same size from the circuit to 24 km.
-  - **F5i - the pause sheet**: where, from where and in what weather -
-    search by name or airport through `tiles`' `FIND`, the recent ones,
-    the five cities, the start (over the city at 1,500 ft, on the runway,
-    on final), weather, wind and controls; Restart and Fly on.
+  - **F5i - the pause sheet** (built, 0.12.37, `testing.md` 18.957): `P`
+    opens it over the paused frame, in the overlay's fifth place (six now).
+    Its rows are the search field, what the search found, Recent (the five
+    cities first, then each place flown) and Start: over the city at 1,500
+    ft, on the runway's threshold, or five kilometres out on a three-degree
+    final. The last two take the runway's threshold, true heading and
+    elevation from OurAirports' `runways.csv`, for the five cities. The
+    buttons are Restart and Fly on, and Escape flies on. Restart somewhere
+    else makes a terrain centred there, and the place box, the tower and
+    Recent follow. It is driven by keys (the arrows, Return, typing) or the
+    mouse, through two new doors on the 3D Kit's window: `w:typed()`, the
+    characters since it was last asked, decoded by `keys.lua`'s decoder,
+    since the arrows arrive as escape sequences; and `w:clicked()`, the
+    last left press. The search is asked on Return, never a keystroke at a
+    time, and its places are read by `tiles.places`. That reader moved out
+    of Maps, so Flight is not its second copy. Weather, wind and the
+    controls join the sheet with what they change (F6, F7). **Found on the
+    M700**: stopped on a runway, the imagery at zoom 15, the terrain's
+    deepest, is about 4.5 m a texel and blurred at wheel height. Deeper
+    levels near the eye when it is low are wanted.
   - **F5j - the island**: with no network and nothing cached, an invented
     island, so the window always has something to fly over; the place box
     says so and the credit goes.
