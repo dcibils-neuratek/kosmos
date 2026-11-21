@@ -373,6 +373,16 @@ def main():
         screen = guest.screendump()
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):
             R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], screen)
+
+        # V again: the tower, on Carrasco's field (F5h).
+        keys(True, "v")
+        time.sleep(0.2)
+        keys(False, "v")
+        towered = wait_frames(2, "V pressed for the tower")
+        if os.environ.get("KOSMOS_FLIGHT_SHOT"):
+            time.sleep(1.0)
+            R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-tower.png"),
+                        guest.screendump())
     except R.Failure as e:
         fails.append("the flight stopped: %s" % e)
     finally:
@@ -524,6 +534,46 @@ def main():
         elif box is None or box[0] < 0.3 or box[1] < 8:
             fails.append("no graphics panel on the chase view's screen - a near-black box "
                          "%dx%d at %d,%d with words in it: %r" % (gw, gh, gx, gy, box))
+    # The tower (F5h): on the city's airfield - Carrasco, MVD, about 14 km
+    # east-north-east of the bay - in the terrain's own projection, and its
+    # lens a sixtieth of the distance to the aircraft, between 1.4 and 400.
+    # It stood where the flight began until F5h, and that is its control.
+    def mercator(lon, lat):
+        r = math.radians(lat)
+        return (lon + 180) / 360, (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2
+    ox, oy = mercator(LON, LAT)
+    fx, fy = mercator(-56.0308, -34.8384)
+    scale = EQUATOR * math.cos(math.radians(LAT))
+    want_x, want_z = (fx - ox) * scale, (fy - oy) * scale
+    tw = re.search(r"flight tower at x=(-?\d+) z=(-?\d+) ground=(\S+) distance=(\d+) "
+                   r"focal=([\d.]+)", seen)
+    print("flight: %s (Carrasco at x=%.0f z=%.0f)" % (tw.group(0) if tw else "no tower line",
+                                                      want_x, want_z))
+    if towered["view"] != 3:
+        fails.append("V twice did not reach the tower: view %d" % towered["view"])
+    if not tw:
+        fails.append("the tower never said where it stood: %r" % re.findall(r"flight tower.*", seen))
+    else:
+        tx, tz, d, f = int(tw.group(1)), int(tw.group(2)), int(tw.group(4)), float(tw.group(5))
+        if abs(tx - want_x) > 5 or abs(tz - want_z) > 5:
+            fails.append("the tower is not on Carrasco's field: x=%d z=%d, the field %.0f %.0f"
+                         % (tx, tz, want_x, want_z))
+        if abs(f - max(1.4, min(400.0, d / 60.0))) > 0.06:
+            fails.append("the tower's lens, %.1f, does not follow its distance, %d m" % (f, d))
+    # The place box and the credit (F5h): what they say, from the city and
+    # from the sources - the gate's tiles are the Mac's, so the credit names
+    # its address; at the gate's size neither fits the window, and says so.
+    pl = re.search(r"flight place (.*?) - (.*?) (laid at|not laid)", seen)
+    cr = re.search(r"flight credit (Imagery .*?) (laid at|not laid)", seen)
+    print("flight: %s" % (pl.group(0) if pl else "no place line"))
+    print("flight: %s" % (cr.group(0) if cr else "no credit line"))
+    # The dot between is one character, however the console's bytes are read.
+    if not pl or not re.fullmatch(r"MVD .{1,3} Carrasco", pl.group(1)):
+        fails.append("the place box did not say Montevideo's airfield: %r"
+                     % re.findall(r"flight place.*", seen))
+    if not cr or not re.fullmatch(r"Imagery 10\.0\.2\.2 .{1,3} Elevation 10\.0\.2\.2", cr.group(1)):
+        fails.append("the credit did not name the sources the tiles came from: %r"
+                     % re.findall(r"flight credit.*", seen))
     if viewed["view"] == before["view"]:
         fails.append("V did not change the view: still %d" % viewed["view"])
     if not re.match(r"drawn=\d+ of \d+ ready=\d+", viewed["drawn"]) or \

@@ -12083,9 +12083,9 @@ M700's GPU draws Flight, about 10 ms a frame - the hang was Kosmos's Intel
 driver giving none of i915's Skylake registers, the whitelist above all
 (`intelgpu_wa.h`); and on lavapipe, still, fewer
 far triangles (219 chunks, 2 M triangles, against the design's ~150);
-then the
-cockpit's and tower's detail, the pause sheet with search, the graphics
-panel and the island offline. **Found on the way**: a program installed
+F5h **built in 0.12.36** (18.956), the place box, the credit and the
+tower on the city's airfield; then F5i, the pause sheet with search, and
+F5j, the island offline. **Found on the way**: a program installed
 in `/Home` was never given what its header declares - the disk does not
 read headers as the image's store does - so `needs tiles` reached
 nothing; init reads it now, for the declared-only grants. The aircraft (Diego, 20

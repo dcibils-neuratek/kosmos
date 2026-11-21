@@ -39946,3 +39946,50 @@ written again with `tools/netboot.py --words` and that GUID; without it
 header names `k3dvk-anv.elf` again. `tools/run_m700_anv.py` is the check
 on the machine: the 3D Kit's scene with the sky and one box, which must
 finish, and no hang reported.
+
+## 18.956 Flight's place box, credit and tower (F5h, 0.12.36)
+
+**In short:** Flight now says where it is and whose pictures it flies
+over, and its tower view stands on the city's airfield. The place box at
+the top left gives the airfield and a line about the place (`MVD ·
+Carrasco`, "the Rambla, the Cerro, the River Plate"). The credit at the
+bottom right names the imagery's and the elevation's sources: Esri's and
+Mapzen's names for theirs, and the host for any other. The tower stands
+thirty metres over the field, and its lens follows the distance, so the
+Cessna holds its size out to 24 km.
+
+**What is in it.** `flight.lua` has the five cities in a table, as the
+mockup lists them: name, airfield, a line, and the airfield's longitude
+and latitude. The tower's place is reckoned in the terrain's own
+projection, Web Mercator scaled at the centre's latitude
+(`k3d_terrain.c`), so it stands where the tiles draw the field. Its foot
+comes from `g:height` once the ground there has arrived. Its lens is a
+sixtieth of the distance, from 1.4 to 400. The place box and the credit
+go in the overlay's third and fourth places. Each is drawn once; the
+credit is laid again only when the view moves it, above the strip, or
+beside the panel in the cockpit. A window too small for either goes
+without it, and says so.
+
+**The suite** (`x86-flight`) presses V a second time after the cockpit.
+It checks four things:
+
+- the view reported is 3;
+- the tower says it stands at x=12251 z=-7522, which is Carrasco's field
+  reckoned in Python from the same projection, to 5 m;
+- its lens is the sixtieth of its distance: 238.4 at 14,307 m;
+- the place line says `MVD · Carrasco`, and the credit names
+  `10.0.2.2`, the Mac the gate's tiles come from, for both sources.
+
+At the gate's 160 by 100, neither box fits, and both say so. 1:33 for
+the suite.
+
+**Control.** With the tower's placing taken out, so that it stood where
+the flight began as it did until now, the suite failed: "the tower is not
+on Carrasco's field: x=0 z=0, the field 12251 -7522".
+
+**On the M700**, on the HD 530 through anv, both boxes are where the
+mockup has them. The tower first had a cap of 50 on its lens, which left
+the Cessna 14 pixels tall 13 km from the field. At 400 it is a sixth of
+the picture's height at 14 km, which is why the cap is 400. The graphics
+panel was not shown because the machine's preferences have it hidden
+(`F3`); that was left as it was.

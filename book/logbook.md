@@ -5564,3 +5564,35 @@ registers Linux sets up on this kind of card before anything runs. 0.12.35.
 - **Also**: the investigation left tools behind - the driver now says
   where the card stood and why when it hangs, and a program can have
   Mesa's Intel driver write out every batch it sends.
+
+## 20 November 2026 - Flight says where it is
+
+**In short:** Flight now shows a small box at the top left saying which
+airfield it is flying from, and a line at the bottom right crediting
+whose satellite pictures and whose heights it is drawing. The third view,
+the tower, now really is a tower on the airfield, with a zoom lens that
+follows the aircraft.
+
+**What changed.** Until today the tower view sat wherever the flight
+happened to start. In Montevideo that is the middle of the bay, which is
+nowhere a tower would be. Now each city in Flight has its airfield
+written down: Carrasco for Montevideo, Santos Dumont for Rio, and so on.
+The camera stands thirty metres over that field. The further away the
+aircraft flies, the more the lens zooms in, so the aircraft stays about
+the same size on the screen out to 24 km.
+
+**Why.** The satellite imagery and elevation data belong to Esri and to
+Mapzen, and their terms ask that they be credited where the picture is
+shown. The place box is what the mockup drew, so that a person knows
+where they are without looking it up.
+
+**What you see.** On the M700, Flight's window now has the airfield's
+name in a dark box in the corner, and a thin credit line just above the
+instruments. Pressing V twice shows the Cessna from Carrasco, small
+against the hazy sky but whole, 14 km away.
+
+**Measured.** The suite checks the tower's position against the field's
+own coordinates, worked out separately in the test: x=12251, z=-7522, to
+the metre. Its control, with the tower put back at the start, fails. The
+first lens limit, 50, left the aircraft 14 pixels tall at that distance
+on the M700, so it went up to 400.

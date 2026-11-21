@@ -340,7 +340,25 @@ ends on the M700:
     A window under 480 wide shows the frames a second alone. The
     switches - shadows, water, haze, wireframe - come with the effects
     they turn off, in F6.
-  Then the tower view's detail, the pause sheet and the island.
+  - **F5h - the place, the credit and the tower** (built, 0.12.36,
+    `testing.md` 18.956): the five cities in a table of their own - name,
+    airfield, a line about the place - the place box top left saying the
+    airfield and the line, as the mockup draws it; the credit bottom right
+    naming whose imagery and whose elevation, from the sources' own hosts
+    (Esri's and Mapzen's names for theirs, the host for any other), above
+    the strip or beside the panel. Both in the overlay's third and fourth
+    places, drawn once. The tower stands thirty metres over the city's
+    airfield, placed in the terrain's own projection, and its lens follows
+    the distance - a sixtieth of it, from 1.4 to 400 - so the Cessna stays
+    about the same size from the circuit to 24 km.
+  - **F5i - the pause sheet**: where, from where and in what weather -
+    search by name or airport through `tiles`' `FIND`, the recent ones,
+    the five cities, the start (over the city at 1,500 ft, on the runway,
+    on final), weather, wind and controls; Restart and Fly on.
+  - **F5j - the island**: with no network and nothing cached, an invented
+    island, so the window always has something to fly over; the place box
+    says so and the credit goes.
+  Then Flight in the dated screenshot.
   - **On the M700** (0.12.34, `testing.md` 18.954): flown there on
     lavapipe, at 85-89 ms a frame since Mesa counts Kosmos's processors.
     Mesa's Intel driver is linked as an image of its own, `k3dvk-anv.elf`,

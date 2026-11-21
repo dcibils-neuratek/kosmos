@@ -200,7 +200,9 @@ about 10 ms a frame against lavapipe's 85-89: the hang was `intelgpu`
 giving the render engine none of i915's Skylake registers - now in
 `user/drivers/display/intelgpu_wa.h`, the whitelist being the one the frame
 needed, held to a control - and the hang report says where the engine
-stood and whether it faulted. Next the tower view, the pause sheet and the
+stood and whether it faulted; **F5h** (0.12.36, 18.956), the place box,
+the imagery's credit, and the tower on the city's airfield with a lens
+that follows the distance. Next F5i, the pause sheet, and F5j, the
 island. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver

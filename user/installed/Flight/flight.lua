@@ -31,6 +31,7 @@ local tiles = use("/Kosmos/Libraries/tiles.lua")
 local prefs = use("/Kosmos/Libraries/prefs.lua")
 
 local settings = prefs.open("flight", {
+  city = "mvd",                                  -- which of CITIES, or none
   lon = -56.1650, lat = -34.9060,                -- over Montevideo's bay
   imagery = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   imagery_format = "jpg",
@@ -148,12 +149,55 @@ local view = {
   haze = { 0.72, 0.78, 0.86 }, haze_start = 4000, haze_end = 40000,
 }
 
-local function look()
+-- **The cities** (F5h): where each is flown from, its airfield and a line
+-- about it - the place box says them, and the tower stands on the
+-- airfield. The five the pause sheet offers on a first start (F5i).
+local CITIES = {
+  rio = { name = "Rio de Janeiro", code = "SDU \u{b7} Santos Dumont",
+          note = "Sugarloaf and Corcovado, Guanabara Bay",
+          lon = -43.205, lat = -22.955, field = { -43.1631, -22.9105 } },
+  sf  = { name = "San Francisco", code = "SFO \u{b7} San Francisco Intl",
+          note = "the Golden Gate, Twin Peaks, the bay",
+          lon = -122.44, lat = 37.785, field = { -122.3790, 37.6213 } },
+  cpt = { name = "Cape Town", code = "CPT \u{b7} Cape Town Intl",
+          note = "Table Mountain, Lion's Head, the bay",
+          lon = 18.43, lat = -33.945, field = { 18.6017, -33.9648 } },
+  hkg = { name = "Hong Kong", code = "HKG \u{b7} Chek Lap Kok",
+          note = "Victoria Peak and the harbour",
+          lon = 114.165, lat = 22.29, field = { 113.9185, 22.3080 } },
+  mvd = { name = "Montevideo", code = "MVD \u{b7} Carrasco",
+          note = "the Rambla, the Cerro, the River Plate",
+          lon = -56.1650, lat = -34.9060, field = { -56.0308, -34.8384 } },
+}
+local city = CITIES[settings.city]
+
+-- A place's metres east and south of where the terrain is centred, in the
+-- terrain's own projection - Web Mercator, scaled at the centre's latitude
+-- (`k3d_terrain.c`) - so the tower stands where its tiles draw the field.
+local function metres_at(lon, lat)
+  local function mercator(lo, la)
+    local r = math.rad(la)
+    return (lo + 180) / 360, (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2
+  end
+  local ox, oy = mercator(settings.lon, settings.lat)
+  local mx, my = mercator(lon, lat)
+  local scale = 40075016.68557849 * math.cos(math.rad(settings.lat))
+  return (mx - ox) * scale, (my - oy) * scale
+end
+
+-- The tower: on the city's airfield, or where the flight began when the
+-- place has none; its foot from the terrain's heights once they are in.
+local tower = { x = 0, z = 0, ground = nil, focal = 1.4 }
+if city then tower.x, tower.z = metres_at(city.field[1], city.field[2]) end
+local FOCAL = 1.4                                -- the chase's and the cockpit's
+
+local function look(g)
   local ch, sh = math.cos(S.psi), math.sin(S.psi)
   local theta = S.gamma + S.alpha
   local fx, fy, fz = sh * math.cos(theta), math.sin(theta), -ch * math.cos(theta)
   local e, t, u = view.eye, view.target, view.up
 
+  view.focal = FOCAL
   if S.view == 2 then
     -- The cockpit: the pilot's eye, rolling with the wings.
     e[1], e[2], e[3] = S.x, S.y + 1.0, S.z
@@ -163,10 +207,19 @@ local function look()
     local c, s = math.cos(S.phi), math.sin(S.phi)
     u[1], u[2], u[3] = s * ch, c, s * sh
   elseif S.view == 3 then
-    -- The tower: where the flight began, following it.
-    e[1], e[2], e[3] = 0, (S.ground_at_start or 0) + 30, 0
+    -- The tower: the airfield's camera, thirty metres up, following the
+    -- aircraft with a longer lens the further it is - a sixtieth of the
+    -- distance, so the Cessna stays about a sixth of the picture's height
+    -- out to 24 km. A cap of 50 left it 14 pixels tall 13 km from
+    -- Carrasco, on the M700 (20 November).
+    if not tower.ground then tower.ground = g:height(tower.x, tower.z) end
+    e[1], e[2], e[3] = tower.x, (tower.ground or 0) + 30, tower.z
     t[1], t[2], t[3] = S.x, S.y, S.z
     u[1], u[2], u[3] = 0, 1, 0
+    local dx, dy, dz = S.x - e[1], S.y - e[2], S.z - e[3]
+    tower.distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    tower.focal = math.max(FOCAL, math.min(400, tower.distance / 60))
+    view.focal = tower.focal
   else
     -- Chase: behind and a little above, along the heading, level.
     e[1], e[2], e[3] = S.x - sh * 28, S.y + 7, S.z + ch * 28
@@ -711,6 +764,70 @@ local function draw_graphics(w, said, took, t)
   end
 end
 
+-- **The place box and the credit** (F5h). Top left, where and from which
+-- airfield, as the mockup has it; bottom right, whose imagery and whose
+-- elevation, as their terms ask - over the strip in the chase and the
+-- tower, in the corner beside the panel in the cockpit. Each is drawn once
+-- and laid in the overlay's third and fourth places; the credit is laid
+-- again only when the view moves it. A window too small for one goes
+-- without it, and says so.
+local WHO = {
+  ["server.arcgisonline.com"] = "Esri, Maxar, Earthstar Geographics",
+  ["s3.amazonaws.com"] = "Mapzen terrain tiles, AWS",
+}
+local function whose(url)
+  local host = url:match("^%a+://([^/:]+)") or url
+  return WHO[host] or host
+end
+local CREDIT_BAND, CREDIT_WORDS = 0x90101820, 0xffe0e6ee
+local place_said, credit, credit_view
+
+local function draw_place(w)
+  local width, height = settings.width, settings.height
+  if not place_said then
+    local name = city and city.code or ("%.3f, %.3f"):format(settings.lat, settings.lon)
+    local note = city and city.note or "no airfield here; the tower is where the flight began"
+    local bold = gfx.face("ibmplexsans-medium", 15) or gfx.face("ibmplexsans", 15)
+    local small = gfx.face("ibmplexsans", 13)
+    local bw = math.max(gfx.measure(name, bold), gfx.measure(note, small)) + 28
+    local bh = 52
+    if width >= 480 and bw + 32 <= width then
+      local box = gfx.surface{ w = bw, h = bh }
+      box:fill(0, 0, bw, bh, GLASS)
+      box:text(14, 8, name, BRIGHT, nil, bold)
+      box:text(14, 28, note, DIM, nil, small)
+      local ok, why = w:overlay(box, 16, 16, 3)
+      if not ok then say("place failed=" .. tostring(why)) end
+      say(("place %s - %s laid at 16,16 %dx%d"):format(name, note, bw, bh))
+    else
+      say(("place %s - %s not laid: %d wide"):format(name, note, width))
+    end
+    place_said = true
+  end
+
+  if credit_view == S.view then return end
+  local words = ("Imagery %s \u{b7} Elevation %s"):format(whose(settings.imagery),
+                                                          whose(settings.elevation))
+  local face = gfx.face("ibmplexsans", 11) or gfx.face("ibmplexsans", 12)
+  local cw, ch = gfx.measure(words, face) + 12, 17
+  local foot = S.view == 2 and 0 or STRIP_H
+  if cw + 16 > width or ch + foot + 8 > height then
+    if not credit_view then say(("credit %s not laid: %d wide"):format(words, width)) end
+    credit_view = S.view
+    return
+  end
+  if not credit then
+    credit = gfx.surface{ w = cw, h = ch }
+    credit:fill(0, 0, cw, ch, CREDIT_BAND)
+    credit:text(6, 1, words, CREDIT_WORDS, nil, face)
+  end
+  local cx, cy = width - cw - 8, height - foot - ch - 4
+  local ok, why = w:overlay(credit, cx, cy, 4)
+  if not ok then say("credit failed=" .. tostring(why)) end
+  if not credit_view then say(("credit %s laid at %d,%d"):format(words, cx, cy)) end
+  credit_view = S.view
+end
+
 -- The window and the terrain.
 local w, why = k.window("Flight", settings.width, settings.height)
 if not w then say("failed=" .. tostring(why)) return end
@@ -766,8 +883,17 @@ while not w:closed(0) do
   draw_strip(w, g:height(S.x, S.z))
   draw_panel(w, dt)
 
-  look()
+  look(g)
   feed(g, view.eye)
+  draw_place(w)
+  if S.view == 3 and not tower.said then
+    say(("tower at x=%.0f z=%.0f ground=%s distance=%.0f focal=%.1f")
+        :format(tower.x, tower.z, tower.ground and ("%.0f"):format(tower.ground) or "none",
+                tower.distance, tower.focal))
+    tower.said = true
+  elseif S.view ~= 3 then
+    tower.said = nil
+  end
   -- The aircraft is not drawn from inside it.
   local said, failed = w:draw(g, view, S.view ~= 2 and plane or nil)
   if not said then say("failed=" .. tostring(failed)) break end
