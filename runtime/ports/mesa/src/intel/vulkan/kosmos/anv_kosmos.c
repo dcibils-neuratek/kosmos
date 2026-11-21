@@ -34,6 +34,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -45,6 +46,7 @@
 #include "anv_kmd_backend.h"
 #include "kosmos/anv_kosmos.h"
 
+#include "util/os_misc.h"
 #include "util/os_time.h"
 #include "util/simple_mtx.h"
 #include "util/stack_array.h"
@@ -732,6 +734,8 @@ kosmos_vm_bind(struct anv_device *device, struct anv_sparse_submission *submit,
    return VK_SUCCESS;
 }
 
+static FILE *batch_out(struct anv_device *device);   /* INTEL_DEBUG=bat's file, below */
+
 static VkResult
 kosmos_vm_bind_bo(struct anv_device *device, struct anv_bo *bo)
 {
@@ -739,6 +743,14 @@ kosmos_vm_bind_bo(struct anv_device *device, struct anv_bo *bo)
     * what `anv`'s coherent, cached memory types promise. */
    uint32_t error = kg_bind(kg_device(), device->vm_id, intel_48b_address(bo->offset),
                             (long)bo->gem_handle - 1, 0, 0, GPU_CACHE_WB);
+
+   FILE *out = batch_out(device);
+   if (out != NULL) {
+      fprintf(out, "bind 0x%" PRIx64 " size 0x%" PRIx64 " handle %u: %s\n",
+              intel_48b_address(bo->offset), bo->size, bo->gem_handle,
+              error == GPU_OK ? "bound" : kg_why(error));
+      fflush(out);
+   }
 
    if (error != GPU_OK) {
       return vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY,
@@ -856,6 +868,48 @@ kosmos_submit(struct anv_device *device, struct anv_bo *batch,
    return VK_SUCCESS;
 }
 
+/*
+ * Where INTEL_DEBUG=bat decodes to. Mesa's decoder writes to standard
+ * error, which a Kosmos program run from Telnet does not reliably carry
+ * thousands of lines on; with KOSMOS_INTEL_BATCH_FILE set (through
+ * kosmos_mesa_option, patch 0008) it writes to that file instead, opened
+ * at the first batch and flushed after each, so a batch that hangs the GPU
+ * has already been written.
+ */
+static FILE *batch_file;
+
+static FILE *
+batch_out(struct anv_device *device)
+{
+   if (!INTEL_DEBUG(DEBUG_BATCH))
+      return NULL;
+   if (batch_file == NULL) {
+      const char *path = os_get_option("KOSMOS_INTEL_BATCH_FILE");
+      batch_file = path != NULL ? fopen(path, "w") : NULL;
+      if (batch_file == NULL)
+         batch_file = stderr;
+      for (uint32_t i = 0; i < ARRAY_SIZE(device->decoder); i++)
+         device->decoder[i].fp = batch_file;
+   }
+   return batch_file;
+}
+
+/* A batch's dwords, eight a line with their GPU address - what the
+ * decoder, a stub in a release build, would have read. */
+static void
+batch_dump(FILE *out, const struct anv_bo *bo)
+{
+   const uint32_t *dw = bo->map;
+   if (dw == NULL)
+      return;
+   for (uint64_t i = 0; i < bo->size / 4; i += 8) {
+      fprintf(out, "%011" PRIx64 ":", bo->offset + i * 4);
+      for (uint64_t k = i; k < i + 8 && k < bo->size / 4; k++)
+         fprintf(out, " %08x", dw[k]);
+      fprintf(out, "\n");
+   }
+}
+
 static VkResult
 kosmos_queue_exec_locked(struct anv_queue *queue,
                          uint32_t wait_count,
@@ -870,7 +924,6 @@ kosmos_queue_exec_locked(struct anv_queue *queue,
 {
    struct anv_device *device = queue->device;
    struct anv_bo *batch = NULL;
-   (void)perf_query_pass;
 
    /* No performance counters here (the OA unit is the driver's), and no
     * trace points: both are offered by neither the device nor the build. */
@@ -883,6 +936,27 @@ kosmos_queue_exec_locked(struct anv_queue *queue,
       struct anv_batch_bo *first = list_first_entry(&cmd_buffers[0]->batch_bos,
                                                     struct anv_batch_bo, link);
       batch = first->bo;
+   }
+
+   /* INTEL_DEBUG=bat, which a Kosmos program sets through
+    * kosmos_mesa_option (Mesa patch 0008): every batch decoded to the
+    * console before it is given, as i915's backend does. */
+   FILE *out = batch_out(device);
+   if (out != NULL) {
+      fprintf(out, "Batch of a program's on queue %d at 0x%" PRIx64 "\n",
+              (int)(queue - device->queues), batch != NULL ? batch->offset : 0);
+   }
+   anv_cmd_buffer_exec_batch_debug(queue, cmd_buffer_count, cmd_buffers, perf_query_pool,
+                                   perf_query_pass);
+   if (out != NULL) {
+      for (uint32_t i = 0; i < cmd_buffer_count; i++) {
+         list_for_each_entry(struct anv_batch_bo, bbo, &cmd_buffers[i]->batch_bos, link) {
+            fprintf(out, "batch bo at 0x%" PRIx64 " size %" PRIu64 " used %u\n",
+                    bbo->bo->offset, bbo->bo->size, bbo->length);
+            batch_dump(out, bbo->bo);
+         }
+      }
+      fflush(out);
    }
 
    VkResult result = kosmos_submit(device, batch, wait_count, waits, signal_count, signals);
@@ -908,6 +982,16 @@ kosmos_queue_exec_async(struct anv_async_submit *submit,
 
    struct anv_bo *batch = util_dynarray_num_elements(&submit->batch_bos, struct anv_bo *) != 0
       ? *util_dynarray_element(&submit->batch_bos, struct anv_bo *, 0) : NULL;
+
+   /* The driver's own work - copies, clears, the device's first state -
+    * decoded as a program's is above. */
+   FILE *out = batch_out(device);
+   if (out != NULL && batch != NULL) {
+      fprintf(out, "Batch of the driver's own on queue %d at 0x%" PRIx64 "\n",
+              (int)(queue - device->queues), batch->offset);
+      batch_dump(out, batch);
+      fflush(out);
+   }
 
    VkResult result = kosmos_submit(device, batch, wait_count, waits, n, all);
    STACK_ARRAY_FINISH(all);

@@ -39877,3 +39877,72 @@ fails (`the strip was not laid again as the flight went on: [(2, 0, 107,
 holds 107 kt; on the M700 it is what would have caught 105 against 140.
 The gate: 154 of 154 in 656 s - over the ten minutes again, from the
 number of suites rather than from this change.
+
+## 18.955 The M700's GPU draws Flight: i915's whitelist, Skylake's workarounds (0.12.35)
+
+**In short:** Flight now flies on the M700's own graphics card, the HD
+530, through Mesa's Intel driver (`k3dvk-anv.elf`), at **about 10 ms a
+frame where lavapipe took 85-89** (18.954). What had hung the card was not
+in anv or the 3D Kit: **Kosmos's Intel driver gave the render engine none
+of the registers i915 gives a Skylake GT before anything runs on it**, and
+one list of them, the whitelist, is what a program's batch needs.
+
+**How it was found.** anv's batches were dumped on the M700 - Mesa's batch
+decoder is a stub in a release build, so the backend writes each batch and
+each bind to the file `KOSMOS_INTEL_BATCH_FILE` names, set from the
+program through `kit.option` and patch 0008, since Kosmos has no
+environment - and the driver's hang report grew the registers i915's
+error capture reads: ACTHD, BBADDR, IPEHR, IPEIR, INSTDONE, then the page
+fault registers, SC/sampler/row INSTDONE and L3CNTLREG. Then, on the
+M700, one change at a time:
+
+- the scene with no boxes finished; with one box it hung, the command
+  streamer standing for good at the PIPE_CONTROL after the box's indexed
+  draw (`acthd 73fbf2c00`, IPEHR a PIPE_CONTROL);
+- INTEL_DEBUG `nohiz`, `noccs` and `nofc` each still hung;
+- every unit reported done but the command streamer (INSTDONE ffdfffff,
+  bit 21; SC, sampler and row ffffffff), no page fault was recorded, and
+  L3CNTLREG held what anv wrote (60000060);
+- the box with the sky taken out finished; the sky alone finished. Only
+  the sky followed by the box hung.
+
+**i915's Skylake lists**, from Linux 6.12 (`intel_workarounds.c`,
+`intel_clock_gating.c`, `intel_lrc.c`), are now in
+`user/drivers/display/intelgpu_wa.h`: the context's, run as one
+MI_LOAD_REGISTER_IMM in the request that records the render engine's
+default state, so every program's context has them; the GT's and the
+engine's, written over MMIO at every engine enable, since a reset clears
+the engine's; the three of i915's indirect context batch, in both; and the
+**whitelist**, RING_FORCE_TO_NONPRIV's slots naming the five registers an
+unprivileged batch may write (CTX_PREEMPT_REG, CS_CHICKEN1, HDC_CHICKEN1,
+COMMON_SLICE_CHICKEN2, L3SQCREG4), the rest RING_NOPID. The driver says
+what the context's left in the engine: `row chicken ffff8120, cache mode
+1 000029c2, hdc chicken0 00008830, cs chicken1 00000004, ecochk 02000100`
+- each bit asked for set.
+
+**Controls, one at a time, each on a fresh boot of the M700**: without
+the gather-at-set-shader bit the frame finished; without the two
+provoking-vertex fixes as well it finished; **without the whitelist as
+well it hung again**, at the same `acthd 73fbf2c00`. So the whitelist is
+what the frame needed; the rest are carried as i915 carries them. The
+3D Kit's 1x1 white texture, whose upload had hung, finished from the first
+run with the context's workarounds; no control has tied that to one of
+them.
+
+**What misled on the way.** Every bisect build named as a make target
+(`make ARCH=x86_64 build/user-x86_64/apps/anvtest.elf`) said "Nothing to
+be done" and built nothing; `make ARCH=x86_64 apps` builds. And init keeps
+an image it made under its file's name, size and mtime: a stripped build
+the same size put over the old one ran the old one until the machine
+restarted - a fresh name, or a restart, is a fresh image. One further
+trap, in the M700's notes and missed once here: `make netboot` names the
+stick's /Home, and the M700's is its SATA partition, so the layout is
+written again with `tools/netboot.py --words` and that GUID; without it
+`install` has no disk to write to (`no such operation: write_at`).
+
+**On the M700**: Flight over Montevideo, `flight device=Intel(R)/1.4
+1280x720`, `mean_ms=9.9`, 216 of 216 chunks drawn, the strip following
+(`SPEED 98 kt ... CLIMB +850 fpm`), and no hang in the log. Flight's
+header names `k3dvk-anv.elf` again. `tools/run_m700_anv.py` is the check
+on the machine: the 3D Kit's scene with the sky and one box, which must
+finish, and no hang reported.

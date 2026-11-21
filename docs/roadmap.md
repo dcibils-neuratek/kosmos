@@ -12078,8 +12078,10 @@ its control surfaces and propeller moving. F5e **built in 0.12.31**
 **built in 0.12.32** (18.952), the cockpit's six instruments; F5g **built
 in 0.12.33** (18.953), the graphics panel; **0.12.34** (18.954) Flight
 on the M700 - lavapipe on all its cores (Mesa patch 0007) and an image
-per GPU (`k3dvk-anv.elf`, chosen by init), **anv hanging the render engine
-on the 3D Kit's first frame** to be found next, and on lavapipe fewer
+per GPU (`k3dvk-anv.elf`, chosen by init); **0.12.35** (18.955) the
+M700's GPU draws Flight, about 10 ms a frame - the hang was Kosmos's Intel
+driver giving none of i915's Skylake registers, the whitelist above all
+(`intelgpu_wa.h`); and on lavapipe, still, fewer
 far triangles (219 chunks, 2 M triangles, against the design's ~150);
 then the
 cockpit's and tower's detail, the pause sheet with search, the graphics

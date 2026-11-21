@@ -1,0 +1,43 @@
+Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+
+Mesa's options from the program (testing.md 18.955, 20 November 2026)
+
+Mesa reads its options - INTEL_DEBUG, LP_NUM_THREADS and the rest - from
+the environment, and a Kosmos process has none (getenv answers nothing,
+user/init/misc_user.c). So a program that wants to tell Mesa something
+defines kosmos_mesa_option(name), answering a name with its value or
+NULL, and os_get_option asks it after getenv. Weak, so a program that
+defines none gives Mesa no options, as before. Found it wanted the day
+anv hung the M700's render engine on the 3D Kit's first submission and
+INTEL_DEBUG=bat was the way to read the batch.
+
+--- a/src/util/os_misc.c
++++ b/src/util/os_misc.c
+@@ -38,6 +38,12 @@
+ 
+ #include <stdarg.h>
+ 
++#if DETECT_OS_KOSMOS
++/* Mesa's options, from the program that links it (patch 0008). Weak: a
++ * program that defines none gives Mesa none. */
++extern const char *kosmos_mesa_option(const char *name) __attribute__((weak));
++#endif
++
+ 
+ #if DETECT_OS_WINDOWS
+ 
+@@ -244,6 +250,14 @@
+       opt = os_get_android_option(name);
+    }
+ #endif
++#if DETECT_OS_KOSMOS
++   /* Kosmos has no environment: a program that wants Mesa told something
++    * - INTEL_DEBUG, LP_NUM_THREADS - answers here, and one that does not
++    * leaves every option unset. */
++   if (!opt && kosmos_mesa_option != NULL) {
++      opt = kosmos_mesa_option(name);
++   }
++#endif
+    return opt;
+ }
+ 

@@ -35,6 +35,7 @@
 #include "intelgpu_lrc.h"
 #include "intelgpu_ctx.h"
 #include "intelgpu_renderstate.h"
+#include "intelgpu_wa.h"
 #include "intelgpu_render.h"
 #include "intelgpu_blend.h"
 #include "kits/gfx/surface.h"          /* over(): the compositor's blend, to hold the GPU's to */
@@ -1143,6 +1144,25 @@ static bool el_enable(struct engine *e)
 {
     unsigned i;
 
+    /* Skylake's GT and engine workarounds (`intelgpu_wa.h`): at every
+     * enable, since a reset clears the engine's own. */
+    for (i = 0; i < sizeof(intelgpu_wa_mmio) / sizeof(intelgpu_wa_mmio[0]); i++) {
+        const struct igpu_wa_mmio *w = &intelgpu_wa_mmio[i];
+
+        wreg(w->reg, w->masked == 1 ? IGPU_WA_MASKED(w->set)
+                   : w->masked == 2 ? IGPU_WA_MASKED_OFF(w->set)
+                   : (reg(G.regs, w->reg) & ~w->clear) | w->set);
+    }
+
+    if (e->render) {
+        const unsigned listed = sizeof(intelgpu_wa_whitelist) / sizeof(intelgpu_wa_whitelist[0]);
+
+        for (i = 0; i < IGPU_NONPRIV_SLOTS; i++) {
+            eng_write(e, IGPU_NONPRIV_AT + 4u * i,
+                      i < listed ? intelgpu_wa_whitelist[i] : e->base + IGPU_RING_NOPID);
+        }
+    }
+
     eng_write(e, IGPU_RING_HWSTAM, ~0u);
     eng_write(e, IGPU_RING_MODE, (IGPU_GFX_RUN_LIST_ENABLE << 16) | IGPU_GFX_RUN_LIST_ENABLE);
     eng_write(e, IGPU_RING_MI_MODE, IGPU_STOP_RING << 16);     /* masked: STOP_RING off */
@@ -1353,12 +1373,29 @@ static void golden_capture(struct engine *e)
         return;
     }
 
-    ring[0] = ring[1] = IGPU_MI_NOOP;
+    /* The render engine's context workarounds (`intelgpu_wa.h`), as i915's
+     * `intel_engine_emit_ctx_wa` runs them in the request that records the
+     * default state: one MI_LOAD_REGISTER_IMM, so the image saved holds
+     * them and every context made from it does. Other engines: two NOOPs. */
+    n = 0;
+    if (e->render) {
+        const unsigned count = sizeof(intelgpu_wa_ctx) / sizeof(intelgpu_wa_ctx[0]);
+
+        ring[n++] = IGPU_MI_LRI(count);
+        for (i = 0; i < count; i++) {
+            ring[n++] = intelgpu_wa_ctx[i].reg;
+            ring[n++] = intelgpu_wa_ctx[i].value;
+        }
+    }
+    ring[n++] = IGPU_MI_NOOP;
+    if (n % 2u != 0) {
+        ring[n++] = IGPU_MI_NOOP;               /* the tail on a quadword */
+    }
     in.base = e->base;
     in.ring_ggtt = ring_gtt;
     in.ring_pages = 1;
     in.head = 0;
-    in.tail = 8;
+    in.tail = n * 4u;
     in.pml4 = AP.pt.pml4_phys;
 
     if (image_ready(e, image, &ran, &tail_at, &control_at, false, false, &in)) {
@@ -1384,6 +1421,26 @@ static void golden_capture(struct engine *e)
             e->golden[i] = image[i];
         }
         e->golden_pages = pages;
+    }
+
+    /* What the workarounds left in the registers, read back: the engine
+     * holds the context it just ran, so a write that did not take shows. */
+    if (e->render) {
+        struct say_line line;
+
+        say_begin(&line);
+        say_text(&line, "intelgpu: the render engine's workarounds: row chicken ");
+        say_hex(&line, reg(G.regs, 0xe4f0u), 8);
+        say_text(&line, ", cache mode 1 ");
+        say_hex(&line, reg(G.regs, 0x7004u), 8);
+        say_text(&line, ", hdc chicken0 ");
+        say_hex(&line, reg(G.regs, 0x7300u), 8);
+        say_text(&line, ", cs chicken1 ");
+        say_hex(&line, reg(G.regs, 0x2580u), 8);
+        say_text(&line, ", ecochk ");
+        say_hex(&line, reg(G.regs, 0x4090u), 8);
+        say_text(&line, idle ? "" : " - the recording did not go idle");
+        say_send(mocs_console, &line);
     }
 
     gtt_free(1, ring, ring_gtt, ring_cap);
@@ -1487,6 +1544,16 @@ static uint32_t hw_next(struct engine *e, bool peek)
 #define RESET_CTL_READY     (1u << 1)
 #define RESET_CTL_CAT_ERROR (1u << 2)
 #define RING_MODE_IDLE      (1u << 9)       /* in MI_MODE */
+/* Where a hung engine stood, read before it is stopped - i915's error
+ * capture (`i915_gpu_error.c`, Gen8+): the address it was fetching and
+ * its top half, the instruction it was executing and the one before, the
+ * units done, and the batch it was in. */
+#define RING_ACTHD_UDW      0x5cu
+#define RING_IPEIR          0x64u
+#define RING_IPEHR          0x68u
+#define RING_INSTDONE       0x6cu
+#define RING_BBADDR         0x140u
+#define RING_BBADDR_UDW     0x168u
 
 static long mocs_console;                   /* where the driver says things; set at start */
 static bool rs_done;                        /* the render engine's starting state run */
@@ -1503,6 +1570,24 @@ static void engine_reset(struct engine *e)
     unsigned i, k;
 
     (void)forcewake(true);
+
+    uint64_t acthd = (uint64_t)eng(e, RING_ACTHD_UDW) << 32 | eng(e, IGPU_RING_ACTHD);
+    uint64_t bbaddr = (uint64_t)eng(e, RING_BBADDR_UDW) << 32 | eng(e, RING_BBADDR);
+    uint32_t ipehr = eng(e, RING_IPEHR), ipeir = eng(e, RING_IPEIR);
+    uint32_t instdone = eng(e, RING_INSTDONE), head = eng(e, IGPU_RING_HEAD);
+    /* A page fault the GT recorded (i915's `gen8_check_faults`): RING_FAULT
+     * valid in bit 0, its type in 2:1, the source in 10:3, the GGTT in 11;
+     * the address in FAULT_TLB_DATA0's pages and DATA1's bits 47:44. A
+     * fault on Gen9 is not recovered from: the engine waits for the page. */
+    uint32_t fault = reg(G.regs, 0x4094u);
+    /* The units RING_INSTDONE does not cover (i915's error capture): the
+     * slice's (SC_INSTDONE), the samplers' and the EU rows', each bit 1 for
+     * a unit done; and the L3's split, URB included (L3CNTLREG), which a
+     * program's batch sets. */
+    uint32_t sc_done = reg(G.regs, 0x7100u), sampler_done = reg(G.regs, 0xe160u);
+    uint32_t row_done = reg(G.regs, 0xe164u), l3 = reg(G.regs, 0x7034u);
+    uint64_t fault_at = ((uint64_t)(reg(G.regs, 0x4b14u) & 0xfu) << 44)
+                      | ((uint64_t)reg(G.regs, 0x4b10u) << 12);
 
     eng_write(e, IGPU_RING_MI_MODE, IGPU_STOP_RING << 16 | IGPU_STOP_RING);
     for (i = 0; i < 20000 && (eng(e, IGPU_RING_MI_MODE) & RING_MODE_IDLE) == 0; i++) {
@@ -1588,6 +1673,54 @@ static void engine_reset(struct engine *e)
     say_text(&line, lost == 1 ? " request dropped, mode " : " requests dropped, mode ");
     say_hex(&line, eng(e, IGPU_RING_MODE), 8);
     say_send(mocs_console, &line);
+
+    /* A line of its own: the one above is near what a line holds. */
+    say_begin(&line);
+    say_text(&line, "intelgpu: ");
+    say_text(&line, e->name);
+    say_text(&line, " stood at acthd ");
+    say_hex(&line, (uint32_t)(acthd >> 32), 4);
+    say_hex(&line, (uint32_t)acthd, 8);
+    say_text(&line, " batch ");
+    say_hex(&line, (uint32_t)(bbaddr >> 32), 4);
+    say_hex(&line, (uint32_t)bbaddr, 8);
+    say_text(&line, " ipehr ");
+    say_hex(&line, ipehr, 8);
+    say_text(&line, " ipeir ");
+    say_hex(&line, ipeir, 8);
+    say_text(&line, " instdone ");
+    say_hex(&line, instdone, 8);
+    say_text(&line, " head ");
+    say_hex(&line, head, 8);
+    say_send(mocs_console, &line);
+
+    say_begin(&line);
+    say_text(&line, "intelgpu: ");
+    say_text(&line, e->name);
+    if ((fault & 1u) != 0) {
+        say_text(&line, " faulted at ");
+        say_hex(&line, (uint32_t)(fault_at >> 32), 4);
+        say_hex(&line, (uint32_t)fault_at, 8);
+        say_text(&line, (fault & (1u << 11)) != 0 ? " in the GGTT" : " in its page table");
+        say_text(&line, ", type ");
+        say_dec(&line, (fault >> 1) & 3u);
+        say_text(&line, ", source ");
+        say_hex(&line, (fault >> 3) & 0xffu, 2);
+    } else {
+        say_text(&line, " recorded no page fault");
+    }
+    say_text(&line, "; sc ");
+    say_hex(&line, sc_done, 8);
+    say_text(&line, " sampler ");
+    say_hex(&line, sampler_done, 8);
+    say_text(&line, " row ");
+    say_hex(&line, row_done, 8);
+    say_text(&line, " l3 ");
+    say_hex(&line, l3, 8);
+    say_send(mocs_console, &line);
+    if ((fault & 1u) != 0) {
+        wreg(0x4094u, fault & ~1u);             /* cleared, as i915 does */
+    }
 }
 
 /* The hang watch: work given, and the fence of the context the engine

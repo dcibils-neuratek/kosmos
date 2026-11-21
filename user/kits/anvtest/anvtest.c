@@ -739,6 +739,45 @@ static int l_run(lua_State *L)
 void kosmos_vulkantest_kit(lua_State *L);
 
 /*
+ * Mesa's options, which a Kosmos process has no environment to carry
+ * (Mesa patch 0008): `kit.option("INTEL_DEBUG", "bat")` before a device is
+ * opened, and anv decodes every batch it submits into the console - how
+ * the render engine's hang on the 3D Kit's first submission was read
+ * (`testing.md` 18.955). Up to eight, each name and value up to 63 bytes.
+ */
+static char option_name[8][64], option_value[8][64];
+static unsigned options;
+
+const char *kosmos_mesa_option(const char *name);
+const char *kosmos_mesa_option(const char *name)
+{
+    for (unsigned i = 0; i < options; i++) {
+        if (strcmp(option_name[i], name) == 0) {
+            return option_value[i];
+        }
+    }
+    return NULL;
+}
+
+static int l_option(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1), *value = luaL_checkstring(L, 2);
+    unsigned i;
+
+    luaL_argcheck(L, strlen(name) < 64, 1, "a name of up to 63 bytes");
+    luaL_argcheck(L, strlen(value) < 64, 2, "a value of up to 63 bytes");
+    for (i = 0; i < options && strcmp(option_name[i], name) != 0; i++) {
+    }
+    if (i == options) {
+        luaL_argcheck(L, options < 8, 1, "eight options at most");
+        options++;
+    }
+    strcpy(option_name[i], name);
+    strcpy(option_value[i], value);
+    return 0;
+}
+
+/*
  * `vulkantest`'s table - the triangle, the cube, the cube in a window and
  * `hold` (G2, G3) - on `anv` rather than `lavapipe`, since its source is
  * linked into this image too (G7c); and this kit's own three beside them.
@@ -752,4 +791,6 @@ void kosmos_anvtest_kit(lua_State *L)
     lua_setfield(L, -2, "compile");
     lua_pushcfunction(L, l_run);
     lua_setfield(L, -2, "run");
+    lua_pushcfunction(L, l_option);
+    lua_setfield(L, -2, "option");
 }

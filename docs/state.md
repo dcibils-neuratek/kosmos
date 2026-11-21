@@ -195,10 +195,12 @@ cockpit's six round instruments on the same overlay; **F5g** (0.12.33,
 timestamps, draw calls and triangles; **0.12.34** (18.954), Flight flown on
 the M700 for Diego - on lavapipe at 85-89 ms a frame, all eight cores since
 Mesa counts Kosmos's (patch 0007), and an image per GPU chosen by init,
-`k3dvk-anv.elf`, not yet named by Flight because **anv hangs the render
-engine on the 3D Kit's first frame** (the sky alone; first suspect: its
-push constants go to the fragment stage only, which nothing run on anv
-had done). Next that hang, then the tower view, the pause sheet and the
+`k3dvk-anv.elf`; **0.12.35** (18.955), **the M700's GPU draws Flight**,
+about 10 ms a frame against lavapipe's 85-89: the hang was `intelgpu`
+giving the render engine none of i915's Skylake registers - now in
+`user/drivers/display/intelgpu_wa.h`, the whitelist being the one the frame
+needed, held to a control - and the hang report says where the engine
+stood and whether it faulted. Next the tower view, the pause sheet and the
 island. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver

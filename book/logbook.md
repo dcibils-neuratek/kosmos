@@ -5537,3 +5537,30 @@ to 11. 0.12.34.
 - **Also**: the strip at the bottom once stopped following the flight.
   It has not happened since, and Flight now says in its log what the
   strip shows, so the test holds it to the flight's real speed.
+
+## 20 November 2026 - The M700's own GPU draws Flight
+
+**In short.** Flight now runs on the M700's graphics card instead of its
+processor: a frame every 10 ms where it took 85 to 89. What had been
+hanging the card was Kosmos's own Intel driver, which left out a list of
+registers Linux sets up on this kind of card before anything runs. 0.12.35.
+
+- **What happened**: Mesa's Intel driver, which Flight uses on the M700,
+  hung the card on Flight's first frame, so Flight was drawn by the
+  processor instead, slowly.
+- **Why**: Linux, before a program's work reaches an Intel card of this
+  generation, sets a few dozen registers the hardware needs - workarounds
+  Intel documents - and grants a program's work permission to write five
+  more. Kosmos's driver did none of it. The permission, the "whitelist",
+  is what Flight's frames needed: without it the card stopped after the
+  sky when the next thing was drawn.
+- **How it was found**: by elimination, on the machine. The card's own
+  registers say where it stopped; the frame was cut down until one change
+  made it stop or not - no buildings, no sky, one setting at a time - and
+  each of Linux's lists was put back and taken out again to see which one
+  mattered.
+- **Visible impact**: Flight flies smoothly on the M700, about a hundred
+  frames a second, with the same picture.
+- **Also**: the investigation left tools behind - the driver now says
+  where the card stood and why when it hangs, and a program can have
+  Mesa's Intel driver write out every batch it sends.

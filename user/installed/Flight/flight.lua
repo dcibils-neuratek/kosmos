@@ -8,7 +8,7 @@
 -- kosmos: section applications
 -- kosmos: needs tiles
 -- kosmos: image k3dvk.elf
--- (kosmos: image on intel-gpu k3dvk-anv.elf - named again when anv draws the scene; testing.md 18.954)
+-- kosmos: image on intel-gpu k3dvk-anv.elf
 --
 -- What is here is the application's own and nothing else (`CLAUDE.md`,
 -- *Kits supply, applications orchestrate*): the flight model, the camera,

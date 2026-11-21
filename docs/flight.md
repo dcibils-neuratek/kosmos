@@ -344,9 +344,11 @@ ends on the M700:
   - **On the M700** (0.12.34, `testing.md` 18.954): flown there on
     lavapipe, at 85-89 ms a frame since Mesa counts Kosmos's processors.
     Mesa's Intel driver is linked as an image of its own, `k3dvk-anv.elf`,
-    which init chooses on an Intel GPU when a program's header names it;
-    Flight's does not yet, because anv hangs the render engine on the
-    3D Kit's first frame. That is the next piece.
+    which init chooses on an Intel GPU when a program's header names it.
+  - **On the M700's GPU** (0.12.35, `testing.md` 18.955): Flight's
+    header names it, and anv draws Flight at about 10 ms a frame. The
+    hang it had was Kosmos's Intel driver leaving out i915's Skylake
+    registers; the whitelist is what the frame needed.
 - **F6 - sound, weather, shadows.** The Synth Kit's engine and wind; haze
   and low cloud; the sun's shadow map. Then buildings from
   OpenStreetMap's outlines and heights, through the Map Kit that reads them
