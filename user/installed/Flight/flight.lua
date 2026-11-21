@@ -61,7 +61,12 @@ local settings = prefs.open("flight", {
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50, b = 48, h = 35 }
+              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50, b = 48, h = 35,
+              -- The throttle's other keys: Page Up and Down, + and - (the
+              -- main row's and the keypad's), and 1 to 9 and 0 to set it at
+              -- once - 0 idle, 1 a tenth, 9 nine tenths; Shift-less = is +.
+              pgup = 104, pgdn = 109, minus = 12, equal = 13, kpplus = 78, kpminus = 74,
+              digits = { 11, 2, 3, 4, 5, 6, 7, 8, 9, 10 } }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -693,10 +698,18 @@ local function look(g)
     tower.focal = math.max(FOCAL, math.min(400, tower.distance / 60))
     view.focal = tower.focal
   else
-    -- Chase: behind and a little above, along the heading, level.
-    e[1], e[2], e[3] = S.x - sh * 28, S.y + 7, S.z + ch * 28
-    t[1], t[2], t[3] = S.x + sh * 40, S.y + fy * 40, S.z - ch * 40
+    -- Chase: behind along the nose - its pitch too - and a little above,
+    -- looking at a point just ahead of the aircraft, with the horizon
+    -- level. It looked 40 m ahead from a fixed 7 m above, so in a steep
+    -- climb the aim rose while the eye did not and the aircraft left the
+    -- bottom of the picture (Diego, 21 November: "when flying a lot of
+    -- times the plane is out of frame", "in chase view").
+    e[1], e[2], e[3] = S.x - fx * 28, S.y - fy * 28 + 7, S.z - fz * 28
+    t[1], t[2], t[3] = S.x + fx * 12, S.y + fy * 12 + 2, S.z + fz * 12
     u[1], u[2], u[3] = 0, 1, 0
+    -- Climbing away from a runway the eye behind is lower than the
+    -- aircraft: never under the ground there.
+    e[2] = math.max(e[2], (g:height(e[1], e[3]) or -1e9) + 2)
   end
   -- **The sun's shadows** (S2): the 3D Kit's map over a box on the ground
   -- under the aircraft, reaching further ahead than behind since that is
@@ -801,8 +814,12 @@ local engine_song = {
         lfoR = 10, lfoC = 0.12, lfoP = 0, lvl = 0.9, uni = 1, det = 0, glide = 0 } },
     { type = "synth", vol = 0, params = {
         w1 = 4, w2 = 4, oct2 = -2, mix = 1, sub = 0, noise = 1, mono = 2,
-        ftype = 2, cut = 600, res = 0.2, env = 0, aA = 0.8, aD = 1, aS = 1, aR = 0.8,
-        lfoR = 0.3, lfoC = 0.2, lfoP = 0, lvl = 0.6, uni = 1, det = 0, glide = 0 } },
+        -- No sweep: band-passed noise whose cutoff a slow LFO swings is
+        -- the sea on a beach, which is what Diego heard (21 November: "some
+        -- weird sea waves sound beyond the propeller sound"). The wind is a
+        -- steady rush that follows the airspeed alone.
+        ftype = 2, cut = 600, res = 0.1, env = 0, aA = 0.8, aD = 1, aS = 1, aR = 0.8,
+        lfoR = 0.3, lfoC = 0, lfoP = 0, lvl = 0.6, uni = 1, det = 0, glide = 0 } },
   },
 }
 
@@ -842,7 +859,7 @@ local function engine_sound(t)
   local e, wind = engine_song.tracks[1], engine_song.tracks[2]
   local cut = math.floor(250 + 1400 * S.throttle + 4 * S.v)
   local wcut = math.floor(300 + 30 * S.v)
-  local wvol = math.min(0.45, S.v / 70 * 0.45)
+  local wvol = math.min(0.2, S.v / 70 * 0.2)
   e.params.lfoR = math.floor(hz / 6 * 10 + 0.5) / 10
   if math.abs(e.params.cut - cut) > 15 or math.abs(wind.vol - wvol) > 0.01
      or math.abs(wind.params.cut - wcut) > 15 or engine.sent == 0 then
@@ -924,7 +941,7 @@ local function hand(g, kind, z, x, y)
 end
 
 local asked = { e = {}, i = {}, v = {} }   -- flat lists of z, x, y, reused
-local asking = { e = 0, i = 0, v = 0 }
+local asking = { e = 0, i = 0, v = 0, budget = {} }
 local polled = 0
 -- Tiles looked for in the cache and not there: not looked for again until
 -- the server says one has come, so a frame does not ask the disk for every
@@ -950,16 +967,41 @@ local function feed_invented(g, eye)
   offline.made = offline.made + made
 end
 
+-- **The finest zooms only near the ground**: zoom 17 under 150 m above
+-- it, 16 under 400, and 15 above - the eye's height over the terrain under
+-- it, so a high field is low as a low one is. At cruise a zoom-17 chunk is
+-- 190 m and changes under the eye every few seconds, each one a picture to
+-- decode; on the M700 that was 19.6 ms of processor a frame at 600 m,
+-- against 3.5 with 15 the deepest.
 local function feed(g, eye)
+  do
+    local above = eye[2] - (g:height(eye[1], eye[3]) or 0)
+    g:deepest(above < 150 and 17 or above < 400 and 16 or 15)
+  end
   if offline.on then return feed_invented(g, eye) end
   asking.e, asking.i, asking.v = 0, 0, 0
+  -- **A budget of pictures a frame**: each tile handed is read from the
+  -- cache and decoded here, on the frame's thread, about a millisecond
+  -- apiece on the M700. Without a limit a turn low over a city handed
+  -- dozens in one frame - 21.8 ms of processor at 100 m with zoom 17 near
+  -- the eye. What is over the budget is handed in the frames after, and
+  -- draws its parent meanwhile. A budget for each kind, so the imagery
+  -- of a wide view does not starve the buildings and their roofs.
+  -- Elevation has none: the ground under the wheels and the runways
+  -- levelled wait on it, and it stops at zoom 13, so a view wants few - a
+  -- budget of four held the height under Rio's 02R back past the suite's
+  -- wait under TCG, where a frame is four seconds.
+  local budget = asking.budget
+  budget.e, budget.i, budget.r, budget.v = math.huge, 8, 8, 2
   for _, t in ipairs(g:wanted(eye)) do
     -- A roof's piece ("r") is the imagery source's, asked in its one list:
     -- a source's `want` replaces the list before it.
     local kind = t[1] == "r" and "i" or t[1]
     local id = key(t[2], t[3], t[4])
     local gone = missing[kind]
-    if (gone[id] or not hand(g, t[1], t[2], t[3], t[4])) and asking[kind] < tiles.MAX then
+    local tried = not gone[id] and budget[t[1]] > 0
+    if tried then budget[t[1]] = budget[t[1]] - 1 end
+    if (gone[id] or (tried and not hand(g, t[1], t[2], t[3], t[4]))) and asking[kind] < tiles.MAX then
       gone[id] = true
       local list, n = asked[kind], asking[kind] * 3
       list[n + 1], list[n + 2], list[n + 3] = t[2], t[3], t[4]
@@ -1020,7 +1062,11 @@ function PAD.controls(w, dt)
 
   local pitch = clamp(key(KEY.down) - key(KEY.up) + pp)
   local roll = clamp(key(KEY.right) - key(KEY.left) + pr)
-  pt = clamp(pt + key(KEY.a) - key(KEY.z))
+  pt = clamp(pt + key(KEY.a) - key(KEY.z) + key(KEY.pgup) - key(KEY.pgdn)
+             + key(KEY.equal) + key(KEY.kpplus) - key(KEY.minus) - key(KEY.kpminus))
+  for i, code in ipairs(KEY.digits) do
+    if w:pressed(code) then S.throttle = (i - 1) / 10 end
+  end
   S.throttle = math.max(0, math.min(1, S.throttle + 0.5 * pt * dt))
   return pitch, roll, math.max(pb, key(KEY.b))
 end
@@ -1043,7 +1089,10 @@ local function strip_words(ground_h)
     { "ALTITUDE", ("%d ft"):format(math.floor(S.y * 3.28084 / 10 + 0.5) * 10) },
     { "HEADING", ("%03d\u{b0}"):format(math.floor(math.deg(S.psi) % 360 + 0.5) % 360) },
     { "CLIMB", ("%+d fpm"):format(math.floor(S.v * math.sin(S.gamma) * 196.85 / 50 + 0.5) * 50) },
-    { "THROTTLE", ("%d%%"):format(math.floor(S.throttle * 100 + 0.5)) },
+    -- The keys beside it, since a landing is flown on it (Diego, 21
+    -- November: "the aircraft needs a throttle"): it had A and Z, said
+    -- only in the sheet.
+    { "THROTTLE A/Z", ("%d%%"):format(math.floor(S.throttle * 100 + 0.5)) },
     { "FLAPS", ("%d\u{b0}"):format(math.floor(S.flaps * 30 + 0.5)) },
   }
   local state = S.paused and "PAUSED" or S.alpha > PLANE.stall and "STALL"
@@ -1874,7 +1923,7 @@ local function draw_sheet(w)
     elseif r.kind == "buttons" then
       -- The keys, said once where a person looks for them (F6b).
       s:fill(18, y - 4, sw - 36, 1, LINE)
-      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} B brakes \u{b7} F flaps",
+      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z or 0-9 throttle \u{b7} B brakes \u{b7} F flaps",
              DIM, nil, sheet_face)
       s:text(18, y + 22, "V view \u{b7} T time \u{b7} M sound \u{b7} H shadows \u{b7} P pause \u{b7} R again \u{b7} F3 graphics",
              DIM, nil, sheet_face)
@@ -1933,8 +1982,13 @@ if not ok then say("no tiles: " .. tostring(why)) end
 -- free, in chunks, between enough for one view and twice that.
 local free_mb = (fs.read("/Devices/memory") or {}).free_mb or 512
 local keep = math.max(120, math.min(600, math.floor(free_mb / 4 / 0.5)))
+-- **Deeper near the eye** (F6, the imagery deeper): chunks go to zoom 17,
+-- about 0.8 m a texel at London's latitude against 4.5 m at 15. A chunk is
+-- split only when the eye is within twice its side, its height counted, so
+-- the deeper zooms are under the wheels on a runway and on a low final,
+-- and at cruise they are not asked for at all.
 local function terrain()
-  return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 15,
+  return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 17,
                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
                     keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil,
                     buildings = settings.buildings and not offline.on and 14 or nil,

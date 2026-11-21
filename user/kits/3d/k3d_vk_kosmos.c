@@ -178,6 +178,7 @@ struct terrain {
     struct k3d_place place;
     struct k3d_choice choice;
     unsigned most, elevation;       /* chunks at most; the elevation's deepest zoom */
+    unsigned deepest_most;          /* what `deepest` may be set to: the terrain's own */
     unsigned keep, uploads;         /* chunks held at most; uploaded in a frame */
     struct heights *heights;
     unsigned nheights, heights_room;
@@ -688,6 +689,7 @@ static int l_terrain(lua_State *L)
     g->elevation = (unsigned)field(L, 1, "elevation");
     luaL_argcheck(L, g->choice.root <= g->choice.deepest && g->choice.deepest <= 24, 1,
                   "zooms from root to deepest, at most 24");
+    g->deepest_most = g->choice.deepest;
     luaL_argcheck(L, g->most >= 1 && g->most <= 65536, 1, "most from 1");
     luaL_argcheck(L, g->elevation >= g->choice.root, 1, "the elevation's zoom from the root's");
     g->keep = (unsigned)field_or(L, 1, "keep", 2.0 * g->most);
@@ -884,6 +886,24 @@ static unsigned buildings_about(const struct terrain *g, const double eye[3],
 /* g:wanted{x, y, z} -> the tiles the chunks for that eye need and have not
  * been given: { "e", z, x, y } and { "i", z, x, y }, each once. A chunk
  * built, or being built, needs nothing. */
+/* g:deepest(z): the deepest zoom chosen from now on, between the root and
+ * the `deepest` the terrain was made with - so a program asks for the
+ * finest levels only where they are seen: Flight near the ground, where
+ * zoom 17 is under the wheels, and not at cruise, where its small chunks
+ * would take the room the distance needs and change under the eye every
+ * few seconds. Chunks deeper than it are no longer chosen and are given
+ * back as any unwanted chunk is. */
+static int l_terrain_deepest(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    lua_Integer z = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, z >= (lua_Integer)g->choice.root && z <= (lua_Integer)g->deepest_most, 2,
+                  "a zoom from the root's to the deepest the terrain was made with");
+    g->choice.deepest = (unsigned)z;
+    return 0;
+}
+
 static int l_terrain_wanted(lua_State *L)
 {
     struct terrain *g = terrain_check(L, 1);
@@ -2786,6 +2806,7 @@ void kosmos_k3dvk_kit(lua_State *L)
 {
     static const luaL_Reg terrain[] = {
         { "wanted", l_terrain_wanted },
+        { "deepest", l_terrain_deepest },
         { "elevation", l_terrain_elevation },
         { "imagery", l_terrain_imagery },
         { "invent", l_terrain_invent },

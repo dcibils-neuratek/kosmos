@@ -5934,3 +5934,36 @@ is started in a test mode. The Flight test pushes the stick full left,
 and the aircraft rolled from 19 degrees right to 20 left. Its control
 leaves the stick centred, and the test fails, as it has to. Next is the
 real 8BitDo on the M700.
+
+## 21 November 2026 - Diego's first flight's notes
+
+**In short:** after flying it on the M700, Diego sent five notes, and
+all five are fixed: a throttle you can find, a wind that no longer
+sounds like the sea, a chase camera that keeps the aircraft in view,
+less work for the processor high up, and a GPU Monitor that sees the
+game.
+
+**What changed.**
+- **The throttle.** It was on A and Z, and only the pause sheet said
+  so. Now Page Up and Page Down and + and - work too, and the digits
+  set it at once, 0 for idle and 9 for nine tenths, which is how a
+  landing is flown.
+- **The wind.** Its rush was a noise whose tone rose and fell slowly,
+  and that was the sea Diego heard. It is a steady rush now, quieter,
+  and it follows the airspeed.
+- **The chase camera.** It aimed along the nose but stayed at one
+  height, so in a climb the aircraft slid out of the bottom of the
+  picture. Now the camera sits behind along the nose, so the aircraft
+  stays in view.
+- **Detail.** The sharpest pictures of the ground are asked for only
+  near it. High up they changed under the aircraft every few seconds,
+  and each one is a picture to decode. Pictures are also handed over a
+  few per frame rather than all at once.
+- **GPU Monitor.** It was right that the driver was idle, but it wasn't
+  counting the game's own drawing, which goes to the graphics chip
+  another way. Now the chip stamps the time before and after each piece
+  of the game's drawing, and the Monitor adds those up.
+
+**Measured.** On the M700 at 600 m, the processor took 19.6 ms a frame
+with the sharpest pictures everywhere, and 3.5 ms with them only near
+the ground.

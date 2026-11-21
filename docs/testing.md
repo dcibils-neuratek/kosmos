@@ -40722,3 +40722,68 @@ drifts back, from 22 to 17, and the suite fails with "the pad's stick
 full left did not roll it left". The whole gate (`ALL=1`) passed 157 suites
 in 10:44. The driver's decoding is held by
 `tools/test_paddecode.c` as before, since QEMU has no pad to plug in.
+
+## 18.970 Diego's first flight's notes: the throttle, the wind, the chase, the GPU's load (0.12.50)
+
+**In short:** five fixes from Diego's first flights on the M700, made
+on 21 November. The throttle now has keys a person finds. The wind no
+longer sounds like the sea. The chase camera keeps the aircraft in the
+picture in a climb. The finest imagery is asked for only near the
+ground, with a budget of pictures decoded per frame. And GPU Monitor
+counts the Intel engine's time spent on Vulkan's work, which it had
+read as 0%. The gate passed 156 of 157 suites. `x86-flight` failed its
+runway-ground check, which led to the elevation-budget fix below, and
+then passed alone.
+
+- **The throttle.** A and Z were the only throttle keys, and only the
+  pause sheet named them. Now Page Up and Page Down, + and - (on the
+  main row and the keypad) and 0 to 9 also work. The digits set it at
+  once: 0 is idle and 9 is nine tenths. The strip says "THROTTLE A/Z".
+- **The wind's sound.** The wind track was band-passed noise whose
+  cutoff a slow LFO swept (`lfoC = 0.2`). Diego heard that as sea waves
+  ("some weird sea waves sound beyond the propeller sound"). The sweep
+  is gone (`lfoC = 0`), the resonance is 0.1, and the level is at most
+  0.2 rather than 0.45.
+- **The chase camera.** The eye was 28 m behind at a fixed 7 m above,
+  aimed 40 m ahead along the nose's pitch. In a steep climb the aim rose
+  and the eye did not, so the aircraft left the bottom of the picture.
+  Now the eye sits behind along the nose, pitch included, and aims 12 m
+  ahead and 2 m up. It is never below the ground plus 2 m.
+- **The deepest zoom by height** (`g:deepest(z)`, a new setter in the
+  3D Kit's terrain, held between the root and the constructor's
+  deepest). Flight builds its terrain with zoom 17 as the deepest. Each
+  frame it sets the deepest from the eye's height over the ground under
+  it: 17 under 150 m, 16 under 400 m, and 15 above. With 17 everywhere,
+  the M700's processor spent 19.6 ms a frame at 600 m. With 15 as the
+  deepest it spent 3.5 ms.
+- **A budget of pictures a frame.** Each tile Flight hands to the
+  terrain is read and decoded on the frame's thread. Low over London
+  that was 21.8 ms in one frame. Now each kind has its own budget per
+  frame: 8 imagery tiles, 8 roof pieces and 2 vector tiles. Whatever is
+  over budget waits for the next frames, and its parent tile is drawn
+  meanwhile.
+  - A single budget of 6 for all kinds starved the buildings: none were
+    asked for and no roofs were made, which `x86-flight` caught.
+  - A budget of 4 elevation tiles held the height under Rio's 02R back
+    past the suite's wait under TCG, where a frame takes 4 s. The
+    result was "no runway ground line". Elevation has no budget now: it
+    stops at zoom 13, a view wants few tiles, and the ground under the
+    wheels and the levelled runways wait on it.
+- **GPU Monitor's 0%** (`intelgpu.c`). The render engine's busy time
+  (`busy_ts`) counted only the driver's own copies and runs. A
+  context's execs, which carry all of Vulkan's work (`GPU_OP_EXEC` →
+  `igpu_ctx_exec` → `hw_give`), were never timed. Now `hw_give` writes
+  the engine's `RING_TIMESTAMP` into the context's fence page before
+  the batch and again after the render flush, in one of 64 slots
+  (`CTX_TS_AT`). `ctx_count` adds each finished exec's difference to
+  `busy_ts` once its fence has passed. The stats call counts every
+  context first. An exec is refused while 64 are still uncounted. Not
+  yet seen on the M700: QEMU has no Intel GPU, so this needs the
+  machine.
+- **Seen once, not yet understood.** One `x86-flight` run in three
+  rendered the engine's 117,248 samples at a peak of 0.000, and the
+  sound card's loudest sample was 0. The runs before and after heard
+  it, at 0.494. The change in this batch touches the wind track's
+  parameters, not the engine's. Kept as
+  `build/gate/failed/0.12.49-1121-073722-x86-flight.log`, to look at if
+  it comes back.

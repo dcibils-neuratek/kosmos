@@ -621,6 +621,47 @@ ends on the M700:
       tells about a metre apart at 3 km; the asphalt comes 12 m nearer
       there. The runway numbers are not painted yet, and the invented
       island's runway is still to use the same door.
+    - **The runway's lights (F8c)** - asked by Diego on 21 November
+      2026, with a photograph of a runway at night: "the runway should
+      have lights as real runways". Written before the code:
+      - *Which*: as ICAO's Annex 14 lays them out for a precision
+        runway. Edge lights every 60 m along both sides, white, and
+        yellow over the last 600 m. Centre-line lights every 30 m,
+        white. A row of green across each threshold, seen from the
+        approach. A row of red across each end, seen from the runway.
+        And an approach light system: a line of white lights 900 m out
+        from each threshold, every 30 m, with a crossbar 300 m out.
+      - *How they glow*: a shape's part may be a **light** - drawn its
+        own colour, not lit by the sun, and still hazed by distance. That
+        is one new field in `w:shape` (`light = true`) and a branch in
+        the model shader; nothing else in the 3D Kit changes.
+      - *How they are seen*: a real light is a point, and a 30 cm fitting
+        is under a pixel past 300 m. Each is drawn as three small quads
+        crossed - two upright, one flat - 1.2 m a side, so a row of them
+        reads as a line of light out to the far end.
+      - *When*: from dusk to dawn and under the cloud deck, as a pilot
+        sees them lit. In daylight the shape is left out of the frame.
+      - *What it costs*: about a hundred lights a kilometre of runway, six
+        triangles each. That is a few thousand triangles over a city's
+        airports, and one draw.
+- **F5k - the minimap** - asked by Diego on 21 November 2026: "We
+  should add a small map that shows where we are and heading so the user
+  can orientate itself". Written before the code:
+  - *What it shows*: a square of map, 220 points a side, in the lower
+    left corner over the strip. North is up, with the aircraft at the
+    centre as an arrow turned to its heading. Each runway known is
+    drawn as a bar, and the scale is said under it in kilometres.
+  - *What it is made of*: the Map Kit, not a copy of it. Flight already
+    fetches OpenMapTiles' vector tiles for its buildings, and the Map
+    Kit's `tile:draw` draws one into a surface in Maps' colours. **Maps'
+    style moves into a library** (`user/lib/mapstyle.lua`), so Maps and
+    Flight draw a map one way, light and dark. The minimap's tiles are
+    zoom 12 at cruise and 13 below 600 m, asked of the same `tiles`
+    source in the same list as the buildings'.
+  - *What it costs*: it is drawn again twice a second, or when the
+    aircraft has moved five points on it, into a gfx surface laid over
+    the frame by the 3D Kit (`w:overlay`, a seventh place). A tile is
+    decoded once and kept while it is under the map.
 - **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
   HTTP, the nearest to the airport chosen by its code. Played by a new
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream
@@ -645,6 +686,69 @@ ends on the M700:
       itself - Xavier's voice saying the tower's lines with the real
       airport's runway and the aircraft's state, which needs nobody's
       stream.
+    - **A switch for it, by the airspace** - asked by Diego on 21
+      November 2026: "I should be able to turn on and off the atc system
+      to hear air traffic control conversations based on the air space I
+      am geographically". The switch is a row in the sheet (Off, On) and
+      a key; with it on, the station is the one for the airspace the
+      aircraft is in - the nearest airport with a feed, chosen again as
+      the flight crosses into another's - played by `radio.lua` as the
+      radio station is. **It still waits on the source** above: a list
+      of feeds by airport is what it needs, and none can be used yet.
+- **F10 - flying itself, from one airport to another** - asked by Diego on
+  21 November 2026: "Flight from Montevideo to Buenos Aires and it will
+  takeoff in Carrasco, navigate to Buenos Aires and land in Ezeiza
+  airport". Written before the code, in four steps:
+  - **F10a - the world follows a long flight.** The terrain is anchored to
+    one place (`k3d_place_at`) and a flight of 200 km leaves it. When the
+    aircraft is 20 km from the anchor, the terrain is anchored again
+    under it and every position - the aircraft, the runways, the tower,
+    the deck - is moved by the same metres, so nothing on screen jumps.
+    The tiles are Web Mercator's and do not move; only the frame's origin
+    does.
+  - **F10b - the autopilot.** Modes as a real one has them: hold a
+    heading, hold an altitude, hold a speed with the throttle, and climb
+    or descend at a rate - each a small controller over the yoke and the
+    throttle the keys and the pad already drive, so the flight model is
+    not touched. A key switches it on and off, and the strip says the
+    modes held.
+  - **F10c - the route.** A flight plan is two airports from the
+    Airports library: the departure's runway into the wind, a climb to a
+    cruise height for the distance, a great-circle track to the arrival,
+    a descent so as to be 3,000 ft over the field 10 nm out, and the
+    runway into the wind there.
+  - **F10d - the take-off and the landing.** Lined up, full power,
+    rotate at the aircraft's speed and climb on the runway's heading;
+    and at the end a three-degree glide path to the touchdown zone, the
+    flare, the throttle closed and the brakes - what `x86-flight-land`
+    holds the hand-flown final to, flown by the autopilot. The sheet
+    gains "Fly to", an airport typed as the place is, and Flight flies
+    there by itself, the time faster if it is asked (F11).
+- **F11 - the time faster** - asked by Diego on 21 November 2026: "I
+  should be able to speed up the game by 2x, 3x, 4x". The flight model
+  is stepped two, three or four times a frame with the frame's time, so
+  it stays as stable as at 1x; the sound, the sky and the frame rate are
+  not changed. A key steps 1x, 2x, 3x, 4x, and the strip says it. The
+  tiles are asked for further ahead, since the ground goes by faster.
+- **F12 - aircraft of their own** - asked by Diego on 21 November 2026:
+  "I will be adding more planes as well with different capabilities like
+  jet engines, a Boeing 747 and other types so each plane has specific
+  features like speed, weight etc". Today the Cessna's numbers are a table
+  in `flight.lua` (`PLANE`). F12 makes **an aircraft a file of its own** in
+  Flight's folder, `Aircraft/<name>.lua`, returning its numbers. The file
+  holds:
+  - mass, wing area, lift and drag;
+  - its engines - a propeller's power, or a jet's thrust and how that
+    falls with speed and height;
+  - flap settings, the speeds to rotate and approach at, a ceiling;
+  - its model (a glTF file beside it), the cockpit's eye, where the
+    wheels are;
+  - its sound: piston or jet, the engine's notes.
+
+  The sheet gains an Aircraft row listing the files there, so a new
+  aircraft is a file added and nothing in Flight changed. The Cessna
+  becomes the first file, and a 747 the second, which needs a jet engine
+  model in the flight model and a 747's glTF.
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two

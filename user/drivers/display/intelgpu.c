@@ -1119,7 +1119,19 @@ struct hwctx {
     uint64_t           given;           /* the last value its ring will write */
     bool               ran;             /* its image is the engine's save: restore it */
     int                tail_at, control_at;
+    /* Each exec's engine clock before and after its batch, on the fence
+     * page from CTX_TS_AT (`hw_give`), and the value that says it ran:
+     * counted into the engine's busy time once the fence passes it, so a
+     * program's work - the 3D Kit's frames - is seen by GPU Monitor as the
+     * driver's own copies and runs are. */
+    uint32_t           subs, counted;
+    uint64_t           sub_signal[64];
 };
+
+static void ctxs_count(void);
+
+#define CTX_TS_AT    64u                /* dwords into the fence page: 64 pairs, to byte 768 */
+#define CTX_TS_SLOTS 64u
 
 static struct igpu_ctxs CTXS;
 
@@ -4692,6 +4704,7 @@ static void stats(struct gpu_stats *st)
     st->rc6 = reg(G.regs, IGPU_RC6_RESIDENCY);
     (void)engine_idle(&BCS);
     (void)engine_idle(&RCS);
+    ctxs_count();
     st->blitter_busy_us = BCS.ts_hz ? (uint32_t)(BCS.busy_ts * 1000000u / BCS.ts_hz) : 0u;
     st->render_busy_us = RCS.ts_hz ? (uint32_t)(RCS.busy_ts * 1000000u / RCS.ts_hz) : 0u;
 
@@ -5047,11 +5060,45 @@ static void hw_put(struct hwctx *h, const uint32_t *dw, uint32_t n)
 #define IGPU_MI_BB_PPGTT     (1u << 8)
 #define IGPU_MI_FLUSH_DW_QW  (((0x26u << 23) | 3u) | (1u << 14))   /* five dwords: a qword stored */
 
+/* The execs a context's fence has passed, their time added to their
+ * engine's busy count, by the engine's own clock (CTX_TS_AT). */
+static void ctx_count(struct igpu_ctx *c)
+{
+    struct hwctx *h = c->hw;
+    struct engine *e;
+    uint64_t reached;
+
+    if (h == NULL || h->fence_gtt == 0) {
+        return;                                 /* the stand-in's: nothing ran on the GPU */
+    }
+
+    e = engine_of(c);
+    reached = igpu_ctx_reached(c);
+
+    while (h->counted != h->subs && h->sub_signal[h->counted % CTX_TS_SLOTS] <= reached) {
+        volatile uint32_t *t = &h->fence[CTX_TS_AT + 2u * (h->counted % CTX_TS_SLOTS)];
+
+        e->busy_ts += (uint32_t)(t[1] - t[0]);
+        t[0] = t[1] = 0;
+        h->counted++;
+    }
+}
+
+/* Every context's, before the engines' busy time is said. */
+static void ctxs_count(void)
+{
+    for (unsigned i = 0; i < CTXS.n; i++) {
+        if (CTXS.list[i].used) {
+            ctx_count(&CTXS.list[i]);
+        }
+    }
+}
+
 static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
 {
     struct engine *e = engine_of(c);
     struct hwctx *h = c->hw;
-    uint32_t dw[40], n = 0;
+    uint32_t dw[48], n = 0, slot;
 
     (void)env;
 
@@ -5059,9 +5106,15 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         h->in_flight = 0;
     }
 
-    if (h->in_flight + 64u > RING_ROOM) {
+    ctx_count(c);
+
+    /* No room for its times until older execs are counted: offered again,
+     * as a full ring's is. */
+    if (h->in_flight + 64u > RING_ROOM || h->subs - h->counted >= CTX_TS_SLOTS) {
         return false;
     }
+
+    slot = CTX_TS_AT + 2u * (h->subs % CTX_TS_SLOTS);
 
     if (e->render) {
         dw[n++] = IGPU_PIPE_CONTROL;
@@ -5078,6 +5131,13 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         dw[n++] = 0;
     }
 
+    /* The engine's clock as the batch starts - RING_TIMESTAMP, stored as
+     * the driver's own runs store it (GPU_OP_RUN_TIME) ... */
+    dw[n++] = IGPU_MI_STORE_REG_MEM;
+    dw[n++] = e->base + IGPU_RING_TIMESTAMP;
+    dw[n++] = h->fence_gtt + slot * 4u;
+    dw[n++] = 0;
+
     dw[n++] = IGPU_MI_BB_START | IGPU_MI_BB_PPGTT;
     dw[n++] = (uint32_t)x->batch;
     dw[n++] = (uint32_t)(x->batch >> 32) & 0xffffu;
@@ -5090,6 +5150,16 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
         dw[n++] = 0;
         dw[n++] = 0;
         dw[n++] = 0;
+    }
+
+    /* ... and as it has finished: after the render engine's stall, so its
+     * last pixel is written; the blitter runs its commands in order. */
+    dw[n++] = IGPU_MI_STORE_REG_MEM;
+    dw[n++] = e->base + IGPU_RING_TIMESTAMP;
+    dw[n++] = h->fence_gtt + (slot + 1u) * 4u;
+    dw[n++] = 0;
+
+    if (e->render) {
         dw[n++] = IGPU_PIPE_CONTROL;
         dw[n++] = IGPU_PC_FLUSH_ENABLE | IGPU_PC_CS_STALL | IGPU_PC_QW_WRITE | IGPU_PC_GLOBAL_GTT;
         dw[n++] = h->fence_gtt;
@@ -5110,6 +5180,8 @@ static bool hw_give(void *env, struct igpu_ctx *c, const struct igpu_exec *x)
 
     hw_put(h, dw, n);
     h->given = x->signal;
+    h->sub_signal[h->subs % CTX_TS_SLOTS] = x->signal;
+    h->subs++;
 
 #if defined(__x86_64__)
     __asm__ volatile("sfence" ::: "memory");
