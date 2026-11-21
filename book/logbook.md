@@ -6110,3 +6110,30 @@ says BRAKES or PAUSED.
 **Choosing it.** Pause, then the Aircraft row. The chase camera sits
 110 m behind it instead of the Cessna's 28, and the cockpit view is 27 m
 forward on the flight deck.
+
+## 21 November 2026 - The world moves with the aircraft
+
+**In short:** on a long flight, Flight now recentres its world under the
+aircraft every 40 km. The next step, flying itself from Carrasco to
+Ezeiza, needs Ezeiza's runways to be there when it arrives.
+
+**Measured before changing anything.** The plan said the terrain had to
+move because far from its centre the numbers would lose precision. The
+measurement said otherwise: 230 km out, positions are still good to
+about 3 centimetres, and the ground's detail already follows the eye.
+What didn't follow was the runways. Flight levels the ground under
+them, paints them and lights them only within 30 km of the world's
+centre. An aircraft arriving at Ezeiza from Montevideo would have found
+a field with no runway on it.
+
+**How it's done.** When the aircraft is 40 km out, the world's centre
+jumps to it. Everything that had a position, the aircraft and where its
+take-off roll began among them, goes through its latitude and longitude
+to its place in the new frame, so nothing on the screen moves. Then the
+runways near the new centre are made.
+
+**How it was tested.** In the test, the world moves every 400 m. A
+747's take-off roll crosses three moves, and the length it measures,
+about a kilometre, has to come out the same. With one line removed so
+the roll's starting point is left behind, it measured six kilometres and
+the test failed, as it should.

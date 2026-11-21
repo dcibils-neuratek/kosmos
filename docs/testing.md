@@ -41012,3 +41012,37 @@ camera and eye, and the Cessna's values stand in.
   after 1,080 m, and the engine was heard at peak 0.224. The 747's suite
   is 4:32 alone, so it is the one to watch against the ten-minute
   budget.
+
+## 18.978 The terrain follows a long flight (0.12.58)
+
+**In short:** Flight's terrain is centred again under the aircraft once
+it is `anchor_after` metres (40 km) from the centre (F10a). The aircraft
+and every kept point are carried through their longitude and latitude,
+the chunks are made again around the new centre, and the runways
+levelled, drawn and lit are the new centre's. Restart returns the centre
+to the place the flight began.
+
+- **Measured before it was built.** The terrain asks for its tiles
+  around the eye, not its centre. Its vertices are floats relative to the
+  centre, so 230 km out (Carrasco to Ezeiza) they are placed to about
+  3 cm. What does not follow the aircraft is what is made near the
+  centre: the runways (within 30 km), their lights and the tower. A
+  landing at Ezeiza would have none of them.
+- **Held by** `x86-flight-747`, which sets `anchor_after = 400`. The
+  terrain moved three times in the roll, first 6,119 m to the
+  threshold, then 408 m and 407 m. Each time SDU 02R/20L was under the
+  wheels before and after. The roll across the moves was 1,052 m; it
+  must be within 1,000-1,160 m of the 1,080 m it is unmoved.
+- **The control** left the start of the roll behind when the frame
+  moved (one line removed for the run, then restored). The roll then
+  measured 5,965 m, and the suite failed on both the roll check and the
+  runway's length.
+- **Found on the way.** The 747 suite had set Rio as its city but not
+  its longitude and latitude, so its 0.12.57 flights ran 1,700 km from
+  the terrain's centre. It passed because the tiles follow the eye. It
+  now sets them, as the landing suite does. And Lua 5.4 has no
+  `math.sinh`: the inverse Mercator is `2 atan(e^y) - pi/2`.
+- **The gate**: 127 of 128 suites passed in 593 s. `x86-network` failed
+  its twenty-at-once check with a connection reset, the load flake it
+  has had before (18.977), and passed alone in 43 s with 36 checks.
+  Flight's suites, `x86-flight` and `x86-flight-747`, passed in the gate.

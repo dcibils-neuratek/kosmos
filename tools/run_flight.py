@@ -458,6 +458,19 @@ def b747_checks(seen):
         fails.append("the 747 did not take off: %r" % (crashed.group(0) if crashed else None))
     elif not 120 <= int(off.group(1)) <= 175 or int(off.group(2)) > 1323:
         fails.append("the 747 did not lift off at 120-175 kt within SDU's 1,323 m: %r" % off.group(0))
+    # The terrain moved under it (F10a), every 400 m here: on the runway the
+    # same runway is under the wheels after as before, found among the new
+    # centre's - and the roll measured across the moves is the 1,080 m it
+    # is unmoved, since where the roll began moved with the frame.
+    moves = re.findall(r"flight anchored again at (-?[\d.]+) (-?[\d.]+), (\d+) m from the last; "
+                       r"on ([^\r\n]*?) before, ([^\r\n]*?) after", seen)
+    print("flight: the terrain moved %d times: %r" % (len(moves), moves[:4]))
+    on_runway = [m for m in moves if m[3] != "no runway"]
+    if len(on_runway) < 2 or any(m[3] != "SDU 02R/20L" or m[4] != m[3] for m in on_runway):
+        fails.append("the terrain did not move twice in the roll, the runway the same under it: %r"
+                     % (moves,))
+    if off and not 1000 <= int(off.group(2)) <= 1160:
+        fails.append("the roll across the moves was not the 1,080 m it is unmoved: %r" % off.group(0))
     if fails:
         for f in fails:
             print("FAIL: " + f)
@@ -573,8 +586,12 @@ def main():
             # take the flight off a field that is not there.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway" }\n')
         if B747:
+            # The terrain moved every 400 m (F10a) - twice in the roll -
+            # where a flight moves it every 40 km.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway", aircraft = "%s",'
-                    ' weather = "clear", wind = 0 }\n' % ("b747instant" if INSTANT else "b747"))
+                    ' weather = "clear", wind = 0, anchor_after = 400, lon = -43.205,'
+                    ' lat = -22.955 }\n'
+                    % ("b747instant" if INSTANT else "b747"))
         if LAND:
             # 150 m out on a three-degree path: eight metres up, four seconds
             # of flying, eighty frames at the gate's pace.

@@ -58,6 +58,7 @@ local settings = prefs.open("flight", {
   finder = false,                                -- places looked up there, not Nominatim
   frames = 0,                                    -- stop after this many, 0 never
   report = 120,                                  -- a line on the console every this many
+  anchor_after = 40000,                          -- metres from the terrain's centre to move it (F10a)
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
@@ -196,6 +197,14 @@ if not PLANE then
   return
 end
 local G = 9.81
+
+-- **Where the terrain is centred** (F10a): the place's own longitude and
+-- latitude at first, and moved under the aircraft once it has flown
+-- `settings.anchor_after` metres from it - the runways levelled, drawn
+-- and lit, and the cloud deck, are those near the centre, and a flight
+-- from Carrasco to Ezeiza leaves Carrasco's 230 km behind. `settings`
+-- keeps the place the flight began in; this is the frame's origin.
+local ANCHOR = { lon = settings.lon, lat = settings.lat }
 
 -- The state, one table for the whole flight; `start` fills it (below).
 local S = { view = 1, rate = 1 }      -- 1 chase, 2 cockpit, 3 tower; the time 1x-4x
@@ -437,7 +446,7 @@ end
 
 local function set_time(key)
   local t = time_of(key)
-  local lat, h = math.rad(settings.lat), math.rad((t.hour - 12) * 15)
+  local lat, h = math.rad(ANCHOR.lat), math.rad((t.hour - 12) * 15)
   -- East, up and north at the equinox, then the world's x east, y up, z south.
   local east, up, north = -math.sin(h), math.cos(lat) * math.cos(h), -math.sin(lat) * math.cos(h)
   local height = math.deg(math.asin(math.max(-1, math.min(1, up))))
@@ -517,10 +526,21 @@ local function metres_at(lon, lat)
     local r = math.rad(la)
     return (lo + 180) / 360, (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2
   end
-  local ox, oy = mercator(settings.lon, settings.lat)
+  local ox, oy = mercator(ANCHOR.lon, ANCHOR.lat)
   local mx, my = mercator(lon, lat)
-  local scale = 40075016.68557849 * math.cos(math.rad(settings.lat))
+  local scale = 40075016.68557849 * math.cos(math.rad(ANCHOR.lat))
   return (mx - ox) * scale, (my - oy) * scale
+end
+
+-- And back: where a point of the frame is on the Earth.
+function ANCHOR.lonlat(x, z)
+  local r = math.rad(ANCHOR.lat)
+  local ox = (ANCHOR.lon + 180) / 360
+  local oy = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2
+  local scale = 40075016.68557849 * math.cos(r)
+  local mx, my = ox + x / scale, oy + z / scale
+  -- Latitude from Mercator's y: 2 atan(e^y) - pi/2, Lua having no sinh.
+  return mx * 360 - 180, math.deg(2 * math.atan(math.exp(math.pi * (1 - 2 * my))) - math.pi / 2)
 end
 
 -- **The airports** (F8): every paved runway OurAirports has, beside
@@ -571,7 +591,7 @@ local function flats_here()
   RUNWAYS = {}
   local db = airports_here()
   if not db then return nil end
-  local list, near = {}, db:near(settings.lon, settings.lat, 30, 24)
+  local list, near = {}, db:near(ANCHOR.lon, ANCHOR.lat, 30, 24)
   for _, a in ipairs(near) do
     for _, r in ipairs(a.runways) do
       local x1, z1 = metres_at(r.ends[1].lon, r.ends[1].lat)
@@ -1223,8 +1243,8 @@ MINI.colours, MINI.style = use("/Kosmos/Libraries/mapstyle.lua").style_for(true)
 
 -- The aircraft's place across the world, 0 to 1, as the Map Kit's.
 function MINI.world(x, z)
-  local ox, oy = MINI.map.project(settings.lon, settings.lat)
-  local scale = 40075016.68557849 * math.cos(math.rad(settings.lat))
+  local ox, oy = MINI.map.project(ANCHOR.lon, ANCHOR.lat)
+  local scale = 40075016.68557849 * math.cos(math.rad(ANCHOR.lat))
   return ox + x / scale, oy + z / scale, scale
 end
 
@@ -2568,7 +2588,7 @@ local keep = math.max(120, math.min(600, math.floor(free_mb / 4 / 0.5)))
 -- the deeper zooms are under the wheels on a runway and on a low final,
 -- and at cruise they are not asked for at all.
 local function terrain()
-  return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 17,
+  return k.terrain{ lon = ANCHOR.lon, lat = ANCHOR.lat, root = 11, deepest = 17,
                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
                     keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil,
                     buildings = settings.buildings and not offline.on and 14 or nil,
@@ -2592,7 +2612,7 @@ go_offline = function(reason, restarting)
   RUNWAYS = {}
   here = { name = "an invented island", code = "Offline: an invented island",
            note = "the imagery and terrain could not be fetched", invented = true,
-           lon = settings.lon, lat = settings.lat }
+           lon = ANCHOR.lon, lat = ANCHOR.lat }
   place_tower()
   place_said = nil
   say("offline: " .. reason .. "; an invented island instead")
@@ -2606,6 +2626,8 @@ offline.since = now()
 -- Recent follow; the same place starts again on the terrain it has.
 restart = function(place, how)
   settings:set("start", how or "city")
+  -- A flight that moved the terrain starts again over its own place.
+  local moved = ANCHOR.lon ~= settings.lon or ANCHOR.lat ~= settings.lat
   if place and not same_place(place, here) then
     if place.key then
       settings:set{ city = place.key, lon = place.lon, lat = place.lat }
@@ -2628,6 +2650,7 @@ restart = function(place, how)
     end
     settings:set("recent", kept)
     here = where_now()
+    ANCHOR.lon, ANCHOR.lat, moved = settings.lon, settings.lat, false
     g = nil
     collectgarbage()
     g = terrain()
@@ -2638,6 +2661,16 @@ restart = function(place, how)
     DECK.h = nil                       -- and the deck over another field
     say(("restarted in %s at %.4f %.4f"):format(here and here.name or "?", settings.lat,
         settings.lon))
+  end
+  if moved then
+    ANCHOR.lon, ANCHOR.lat = settings.lon, settings.lat
+    g = nil
+    collectgarbage()
+    g = terrain()
+    missing.e, missing.i = {}, {}
+    place_tower()
+    DECK.h = nil
+    say(("anchored back at %.5f %.5f"):format(ANCHOR.lat, ANCHOR.lon))
   end
   if offline.on and not (net.imagery and net.elevation) then
     go_offline("still no /Tiles", true)      -- an island here, then
@@ -2652,6 +2685,37 @@ restart = function(place, how)
   end
   offline.since, offline.handed = now(), handed
   start(g)
+end
+
+-- **The terrain moved under the aircraft** (F10a): centred again where it
+-- is, and everything placed in the frame moved by the same metres, so the
+-- aircraft is where it was on the Earth. The tiles are the Earth's and do
+-- not move; the chunks are made again around the new centre, from tiles
+-- the cache already holds. The runways, their lights and the deck are
+-- the new centre's; the tower stays at its field.
+function ANCHOR.move()
+  -- Every kept point to where it is on the Earth, under the old centre...
+  local lon, lat = ANCHOR.lonlat(S.x, S.z)
+  local far = math.sqrt(S.x * S.x + S.z * S.z)
+  local on = runway_at(S.x, S.z)
+  local kept = {}
+  for _, p in ipairs{ S.rollout or false, S.rolled or false } do
+    if p then kept[#kept + 1] = { p, ANCHOR.lonlat(p.x, p.z) } end
+  end
+  -- ... and back into the frame under the new one, the aircraft at nought.
+  ANCHOR.lon, ANCHOR.lat = lon, lat
+  S.x, S.z = metres_at(lon, lat)
+  for _, k in ipairs(kept) do k[1].x, k[1].z = metres_at(k[2], k[3]) end
+  g = nil
+  collectgarbage()
+  g = terrain()
+  missing.e, missing.i = {}, {}
+  place_tower()
+  DECK.h = nil
+  -- What says the frame moved and not the aircraft: the runway under it
+  -- is the same one, found among the new centre's runways.
+  say(("anchored again at %.6f %.6f, %.0f m from the last; on %s before, %s after")
+      :format(lat, lon, far, on or "no runway", runway_at(S.x, S.z) or "no runway"))
 end
 
 local last = now()
@@ -2717,6 +2781,10 @@ while not w:closed(0) do
   end
 
   if settings.aircraft ~= PLANE.key then AIRCRAFT.switch(g) end
+  if not offline.on and (math.abs(S.x) > settings.anchor_after
+                         or math.abs(S.z) > settings.anchor_after) then
+    ANCHOR.move()
+  end
   if not S.paused then
     local pitch, roll, brake = PAD.controls(w, dt)
     -- The time faster is the model stepped again with the same frame's

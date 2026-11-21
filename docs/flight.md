@@ -743,6 +743,22 @@ ends on the M700:
     the deck - is moved by the same metres, so nothing on screen jumps.
     The tiles are Web Mercator's and do not move; only the frame's origin
     does.
+    - **Built in 0.12.58** (`testing.md` 18.978). `ANCHOR` is the
+      terrain's centre, apart from `settings.lon/lat`, which stay the place
+      the flight began in. Once the aircraft is `anchor_after` metres
+      (40 km) from it along either axis, `ANCHOR.move` does the move:
+      - every kept point - the aircraft, where a roll or a roll-out
+        began - goes to longitude and latitude under the old centre, then
+        back into the frame under the new one;
+      - the terrain is made again there, from tiles the cache holds;
+      - the runways near the new centre are levelled, drawn and lit, the
+        tower is placed again at its field, and the deck is set again.
+
+      Restart returns the centre to the place. What the measurement showed
+      first: the terrain picks its tiles around the eye, and its vertices
+      are floats relative to the centre, so 230 km out they are placed to
+      about 3 cm. Precision was never the reason to move it. The runways
+      were: they are made only within 30 km of the centre.
   - **F10b - the autopilot.** Modes as a real one has them: hold a
     heading, hold an altitude, hold a speed with the throttle, and climb
     or descend at a rate - each a small controller over the yoke and the
