@@ -961,6 +961,15 @@ def main():
         sheet_key("down", "down to Aircraft")
         sheet_key("right", "right to the Test Cessna")
         sheet_key("ret", "choosing the Test Cessna")
+        # Fly to (F10d-2): None, EZE from the setup, then the airports the
+        # search for "paris" found; right once from EZE, the first of them.
+        sheet_key("down", "down to Fly to")
+        sheet_key("right", "right to the first airport found")
+        sheet_key("ret", "choosing it to fly to")
+        if os.environ.get("KOSMOS_FLIGHT_SHOT"):            # the sheet with Fly to, for a person
+            wait_frames(1, "the sheet redrawn")             # the choice is drawn a frame on
+            R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-sheet.png"),
+                        guest.screendump())
         guest.wait_for("flight aircraft Test Cessna from", "the Test Cessna flown")
         sheet_key("down", "down to Time")
         sheet_key("down", "down to Weather")
@@ -1293,6 +1302,13 @@ def main():
     if not fields or fields.group(1) != "3" or fields.group(2) != "LFPB":
         fails.append("the sheet did not find Paris's three airports, Le Bourget first: %r"
                      % re.findall(r"flight sheet airports.*", seen))
+    # Fly to (F10d-2): Le Bourget, the first airport found, chosen on the
+    # Fly to row - offered there because the City field found it.
+    flown_to = re.findall(r"flight fly to (\w+)", seen)
+    print("flight: fly to %r" % (flown_to,))
+    if flown_to != ["LFPB"]:
+        fails.append("the Fly to row did not choose Le Bourget, the first airport found: %r"
+                     % (flown_to,))
     flats = re.findall(r"flight flats (\d+) runways of (\d+) airports within 30 km", seen)
     print("flight: flats %r" % (flats,))
     if not flats or flats[-1] != ("5", "3"):

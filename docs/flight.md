@@ -907,6 +907,10 @@ ends on the M700:
         chosen before, each with its distance. One field rather than
         two, since a second would need typing to follow the focus,
         which the sheet has never had.
+        **Built in 0.12.62** (`testing.md` 18.982). The airport `fly_to`
+        names is marked chosen by its ident, whichever code it was typed
+        in: `EZE` and `SAEZ` are one airport, and the first run, marking
+        by the code, left the cursor on None.
 - **F11 - the time faster** - asked by Diego on 21 November 2026: "I
   should be able to speed up the game by 2x, 3x, 4x". The flight model
   is stepped two, three or four times a frame with the frame's time, so

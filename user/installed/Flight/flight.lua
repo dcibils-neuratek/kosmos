@@ -1985,6 +1985,36 @@ local function recent()
   return out
 end
 
+-- **Fly to** (F10d-2): None, the airport chosen before, and every airport
+-- the City field's search found, each with its distance from the
+-- aircraft - an airport typed as a place is. Made again only when what
+-- it is made from changed.
+function SHEET.fly_items()
+  local lon, lat = ANCHOR.lonlat(S.x, S.z)
+  local made = ("%s|%d|%d|%d"):format(settings.fly_to or "", #(SHEET.airports or {}),
+                                      math.floor(lon * 20), math.floor(lat * 20))
+  if SHEET.fly_made == made then return SHEET.fly end
+  local items, seen = { { key = "", name = "None" } }, {}
+  local function add(a)
+    if not a or seen[a.ident] then return end
+    seen[a.ident] = true
+    -- The code and the distance alone: the Found row above names each in
+    -- full, and with the town as well this row took four lines and put
+    -- the sheet's buttons under a 720-point window's edge.
+    items[#items + 1] = { key = a.ident, name = ("%s  %.0f nm"):format(a.iata or a.ident,
+                          airports.km(lon, lat, a.lon, a.lat) / 1.852) }
+  end
+  local db = airports_here()
+  -- What `fly_to` names, by whichever code it was typed in - EZE or SAEZ -
+  -- is the item marked chosen, by its ident.
+  local now = db and (settings.fly_to or "") ~= "" and db:find(settings.fly_to)
+  SHEET.fly_ident = now and now.ident or nil
+  add(now)
+  for _, p in ipairs(SHEET.airports or {}) do add(db and db:find(p.airport)) end
+  SHEET.fly, SHEET.fly_made = items, made
+  return items
+end
+
 local function sheet_rows()
   local rows = { { kind = "field", label = "City" } }
   if SHEET.found and #SHEET.found > 0 then
@@ -1993,6 +2023,7 @@ local function sheet_rows()
   rows[#rows + 1] = { kind = "places", label = "Recent", items = recent() }
   rows[#rows + 1] = { kind = "starts", label = "Start", items = STARTS }
   rows[#rows + 1] = { kind = "aircraft", label = "Aircraft", items = AIRCRAFT.items or {} }
+  rows[#rows + 1] = { kind = "flyto", label = "Fly to", items = SHEET.fly_items() }
   rows[#rows + 1] = { kind = "times", label = "Time", items = HOURS }
   rows[#rows + 1] = { kind = "weathers", label = "Weather", items = DECK.choices }
   rows[#rows + 1] = { kind = "winds", label = "Wind", items = WIND.strengths }
@@ -2014,6 +2045,10 @@ local function chosen(row, item)
   end
   if row.kind == "times" then return item.key == settings.time end
   if row.kind == "aircraft" then return item.key == settings.aircraft end
+  if row.kind == "flyto" then
+    if item.key == "" then return (settings.fly_to or "") == "" end
+    return item.key == SHEET.fly_ident
+  end
   if row.kind == "weathers" then return item.key == settings.weather end
   if row.kind == "winds" then return item.key == settings.wind end
   if row.kind == "froms" then return item.key == settings.wind_from end
@@ -2093,6 +2128,14 @@ local function choose(w, row, i)
   elseif row.kind == "aircraft" then
     settings:set("aircraft", item.key) -- flown from the next frame, started again
     say("aircraft chosen " .. item.key)
+  elseif row.kind == "flyto" then
+    settings:set("fly_to", item.key)   -- Q flies there (F10c)
+    -- The row is made again around the choice - the one chosen before
+    -- leaves it - so the cursor follows the item, not its old place.
+    for c, it in ipairs(SHEET.fly_items()) do
+      if it.key == item.key then SHEET.cols[row.label] = c end
+    end
+    say("fly to " .. (item.key ~= "" and item.key or "none"))
   elseif row.kind == "weathers" then
     settings:set("weather", item.key)  -- at once too, from the next frame
     DECK.h = nil
@@ -2192,7 +2235,7 @@ local function draw_sheet(w)
   local rows = sheet_rows()
   local width, height = settings.width, settings.height
   local sw = math.min(460, width - 32)
-  local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time, settings.weather,
+  local parts = { SHEET.focus, SHEET.text, SHEET.said or "", settings.time, settings.weather, settings.fly_to or "",
                   settings.wind, settings.wind_from, settings.aircraft,
                   SHEET.place and SHEET.place.name or "-", SHEET.start or "-" }
   for _, r in ipairs(rows) do

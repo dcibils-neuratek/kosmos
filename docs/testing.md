@@ -41176,3 +41176,24 @@ lands at 311 fpm and the 747 at 316, both on the centre line. In QEMU the
 - **The gate**: 130 of 131 suites passed in 633 s, Flight's among them.
   `arm-sandboxwin` failed once, its shell giving no prompt in the Console
   tab under the gate's load, and passed alone in 43 s with its 19 checks.
+
+## 18.982 Fly to, in Flight's sheet (0.12.62)
+
+**In short:** the pause sheet has a Fly to row. An airport typed in the
+City field is offered there as well, and choosing it sets where Q flies.
+
+- **In QEMU**, `x86-flight`'s sheet: after "paris" is searched for and the
+  Test Cessna chosen, down to Fly to, right once from Ezeiza (the setup's
+  `fly_to`), Return. `fly_to` became LFPB, Le Bourget, the first of the
+  three airports the search found.
+- **Found by it**: the setup's `fly_to` is `EZE`, an IATA code, and the
+  row's items are keyed by ICAO ident, so nothing on it was marked
+  chosen; the cursor began on None and one press right chose SAEZ. The
+  check refused it, which stands as its control. Fixed: the airport
+  `fly_to` names is found and marked by its ident.
+- **Suites**: `x86-flight` passed alone in 4:16.
+- **The gate**: 129 of 130 suites passed in 636 s, Flight's among them
+  with Fly to choosing LFPB. `x86-xavier` failed once: the follow-up read
+  15 tokens where it reads 10, with 115 kept, and answered nonsense -
+  which is not how slowness looks, so it is on the roadmap to find. Alone
+  it passed in 1:55 with its 37 checks.
