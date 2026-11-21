@@ -40670,3 +40670,55 @@ should be in cloud. The deck went to 900 m. A processor time of 25 ms a
 frame, first blamed on the weather, was three earlier copies of Flight
 still running, opened by `open` over telnet. With them ended it was
 3.9 ms.
+
+## 18.969 A game controller's sticks, handed to the window in front (0.12.49)
+
+**In short:** a game controller's sticks, triggers and buttons now reach
+an application as numbers, not only as keys. The USB driver writes each
+pad's latest state into one page that init makes (`padring.h`). The
+window manager reads it, read-only, and puts it in the frame reply of
+the window in front, and only that one. The Window Kit keeps it
+(`kw_pad`), the 3D Kit's window answers `w:pad(n)`, and Flight flies on
+it: the left stick is the yoke, the right trigger opens the throttle and
+the left closes it, A brakes and B steps the flaps. Through `padtest`,
+`x86-flight` holds the stick full left and Flight rolled from 19 degrees
+right to 20 left. The control, `--no-pad`, centres the stick and fails.
+
+- **The page** (`user/include/padring.h`). It holds four slots of 20
+  bytes, each with buttons, four 16-bit axes, two 8-bit triggers, a
+  present flag and a sequence count. The driver makes the count odd,
+  writes the slot and makes it even. A reader keeps a copy only when the
+  count was even and the same before and after. There is one writer and
+  no lock, and a report costs no message (*Control by message, data by
+  shared memory*).
+- **Who holds it.** init makes it (`sys.memory(1)`) and gives it to the
+  xHCI driver writable, as an eleventh capability. The window manager
+  gets a read-only twin (`sys.memory_readonly`, new in `sys`), granted
+  by `kosmos: needs pad` to `wm.lua` alone. Under `opt/kosmos/pad=test`
+  the writable one also goes down every spawn line, so `padtest` reaches
+  it through a Telnet session. Only `padtest` is handed it, as
+  `pad_write`. The first run failed here, with "no pads' page to write":
+  telnetd stood between the shell and `padtest` and did not hold it.
+- **The driver** (`xhci.c`). A pad takes a free slot on its first report
+  (`pad_publish`) and clears it on unplug (`pad_unpublish`). Keys are
+  still pressed as before, so nothing that played with a pad changes.
+- **The reply** (`wmproto.h`). `struct wm_frame_reply` carries
+  `pads[4]` in its head, ahead of the events: `WM_FRAME_HEAD` is 92
+  bytes and a whole reply 332. `wm.lua`'s `frame.pads(win)` reads each
+  slot's count with `region_load32`, and the 20 bytes only when the
+  count moved. Every window but the focused one is answered zeros.
+- **Flight** (`PAD.read`, `PAD.controls`). The middle tenth of the stick
+  counts as nothing. The pad's deflection is added to the arrows' and
+  clamped. The main chunk was at Lua's 200 locals again, so `down` went
+  and the controls became one function.
+
+**Checked by `x86-flight`**, booted with `opt/kosmos/pad=test`. After
+the arrow checks, it runs `padtest 0 -1 0 0 0 0 0` over Telnet and waits
+six frames. Flight must log `pad in front` and roll at least 8 degrees
+left of where it was. It read 19 degrees, then -20. Then `padtest 0 off`
+unplugs the pad, and the climb is measured from there. The suite passed
+in 3:08. **Control:** `--no-pad` writes the stick centred. The roll only
+drifts back, from 22 to 17, and the suite fails with "the pad's stick
+full left did not roll it left". The whole gate (`ALL=1`) passed 157 suites
+in 10:44. The driver's decoding is held by
+`tools/test_paddecode.c` as before, since QEMU has no pad to plug in.

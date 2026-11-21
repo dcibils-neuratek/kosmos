@@ -70,8 +70,12 @@ CLEAR = "--clear" in sys.argv
 # than into 25 kt down the runway, so the wheels meet the ground at the
 # air's speed and the landing suite must fail.
 CALM = "--calm" in sys.argv
+# `--no-pad` (F7) is the game controller's control: `padtest` writes the
+# pad with its stick in the middle rather than full left, so nothing rolls
+# it and the suite must fail.
+NO_PAD = "--no-pad" in sys.argv
 sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer", "--no-roofs",
-                                             "--no-shadows", "--clear", "--calm")]
+                                             "--no-shadows", "--clear", "--calm", "--no-pad")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
@@ -532,7 +536,8 @@ def main():
         R.X86_ARGS = R.X86_ARGS + ["-smp", "2"]
     R.X86_ARGS = R.X86_ARGS + ["-audiodev", "wav,id=snd0,path=%s" % heard,
                                "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"]
-    guest = SV.boot(IMAGE, telnet, web)
+    # The pads' page writable by `padtest` (F7): a pad QEMU cannot plug in.
+    guest = SV.boot(IMAGE, telnet, web, extra=["-fw_cfg", "name=opt/kosmos/pad,string=test"])
     fails = []
     screen = None
     noon_screen = dusk_screen = None
@@ -636,12 +641,21 @@ def main():
         keys(False, "right")
         level = wait_frames(6, "let go")
 
+        # A game controller's left stick full left (F7): it rolls left -
+        # through the pads' page, the window manager and the 3D Kit, with
+        # no key down. Then the pad unplugged, and the yoke let go.
+        pad_said = session.run("padtest 0 %s 0 0 0 0 0" % ("0" if NO_PAD else "-1")).decode(
+            errors="replace")
+        padded = wait_frames(6, "the pad's stick left")
+        session.run("padtest 0 off")
+        unpadded = wait_frames(4, "the pad unplugged")
+
         chase = guest.screendump()                          # the strip is looked for in it
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):            # the chase view, for a person
             R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"].replace(".png", "-chase.png"), chase)
 
         # The yoke back: it climbs.
-        start = level
+        start = unpadded
         keys(True, "down")
         climbed = wait_frames(5, "the down arrow held")
         keys(False, "down")
@@ -750,6 +764,8 @@ def main():
 
     print("flight: straight %r" % before)
     print("flight: rolled   %r" % rolled)
+    print("flight: padded   %r" % padded)
+    print("flight: padtest  %r" % pad_said.strip()[-120:])
     print("flight: level    %r" % level)
     print("flight: climbed  %r" % climbed)
     print("flight: viewed   %r" % viewed)
@@ -810,6 +826,11 @@ def main():
     turned = (level["heading"] - before["heading"] + 540) % 360 - 180
     if turned < 2:
         fails.append("rolled right, it did not turn east: %d degrees" % turned)
+    if "flight pad in front" not in seen:
+        fails.append("Flight never saw the pad: %r" % pad_said.strip()[-200:])
+    if padded["roll"] > level["roll"] - 8:
+        fails.append("the pad's stick full left did not roll it left: %d degrees, from %d"
+                     % (padded["roll"], level["roll"]))
     if abs(level["roll"]) >= abs(rolled["roll"]):
         fails.append("let go, it did not roll back towards level: %d then %d"
                      % (rolled["roll"], level["roll"]))

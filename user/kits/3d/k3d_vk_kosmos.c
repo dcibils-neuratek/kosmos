@@ -1598,6 +1598,32 @@ static int l_window_held(lua_State *L)
     return 1;
 }
 
+/* w:pad(n) -> nil, or game controller n's lx, ly, rx, ry (-1 to 1, up and
+ * right positive), lt, rt (0 to 1) and buttons (`pad_decode.h`'s bits: A
+ * is 1, B 2), as the window manager last said - and only while this window
+ * is in front (`docs/flight.md`, F7). Numbers rather than a table, so a
+ * frame that asks makes nothing for the collector. */
+static int l_window_pad(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    lua_Integer n = luaL_optinteger(L, 2, 1);
+    struct kw_pad p;
+
+    if (w->window == NULL || n < 1 || !kw_pad(w->window, (unsigned)(n - 1), &p)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushnumber(L, p.lx);
+    lua_pushnumber(L, p.ly);
+    lua_pushnumber(L, p.rx);
+    lua_pushnumber(L, p.ry);
+    lua_pushnumber(L, p.lt);
+    lua_pushnumber(L, p.rt);
+    lua_pushinteger(L, (lua_Integer)p.buttons);
+    return 7;
+}
+
 /* w:pressed(code) -> whether that key went down since this last asked
  * about it: a toggle's question - the view, the flaps, pause - which a
  * key held past one frame must answer once. */
@@ -2777,6 +2803,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "closed", l_window_closed },
         { "held", l_window_held },
         { "pressed", l_window_pressed },
+        { "pad", l_window_pad },
         { "typed", l_window_typed },
         { "clicked", l_window_clicked },
         { "model", l_window_model },

@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
--- kosmos: needs processes screen network audio camera midi bluetooth profile keyring tiles keyring-mail windowserver sharing
+-- kosmos: needs processes screen network audio camera midi bluetooth profile keyring tiles keyring-mail windowserver sharing pad
 --
 -- `network` is here so the desktop can *pass it on*. The kernel refuses a
 -- spawn that hands over authority the parent does not hold, so without this
@@ -6676,13 +6676,50 @@ function frame.whole(v)
   return math.tointeger(math.floor(tonumber(v) or 0)) or 0
 end
 
+-- **The game controllers, for the window in front** (`padring.h`,
+-- `docs/flight.md` F7): init hands this process the pads' page read-only as
+-- `pad`, and each slot is read when a reply is made - its count first, the
+-- twenty bytes only when the count moved and is even, and the count again,
+-- so a slot the driver was half-way through writing is the one before it.
+-- Every other window is answered zeros: a window not in front does not get
+-- to watch a stick.
+frame.PADS, frame.SLOT = 4, 20
+frame.NO_PADS = string.rep("\0", frame.PADS * frame.SLOT)
+frame.pad_seq, frame.pad_bytes = {}, {}
+
+for i = 0, frame.PADS - 1 do frame.pad_bytes[i] = string.rep("\0", frame.SLOT) end
+
+function frame.pads(win)
+  if not pad or win == nil or win ~= focused_window() then return frame.NO_PADS end
+
+  local seq, bytes = frame.pad_seq, frame.pad_bytes
+
+  for i = 0, frame.PADS - 1 do
+    local at = 8 + frame.SLOT * i
+    local ok, before = pcall(sys.region_load32, pad, at)
+
+    if not ok or type(before) ~= "number" then return frame.NO_PADS end
+
+    if before % 2 == 0 and before ~= seq[i] then
+      local got = sys.region_read(pad, at, frame.SLOT)
+
+      if type(got) == "string" and #got == frame.SLOT
+         and sys.region_load32(pad, at) == before then
+        seq[i], bytes[i] = before, got
+      end
+    end
+  end
+
+  return bytes[0] .. bytes[1] .. bytes[2] .. bytes[3]
+end
+
 -- A table handler's answer, as `struct wm_frame_reply`. Only the events the
 -- shape has go: a move, a menu's press, anything else is a table's.
-function frame.reply(reply)
+function frame.reply(reply, win)
   local whole = frame.whole
 
   if type(reply) ~= "table" or not reply.ok then
-    return string.pack(frame.HEAD, frame.BAD, 0, 0)
+    return string.pack(frame.HEAD, frame.BAD, 0, 0) .. frame.NO_PADS
   end
 
   local parts = {}
@@ -6713,12 +6750,12 @@ function frame.reply(reply)
   end
 
   return string.pack(frame.HEAD, 0, whole(reply.draw_into), #parts)
-         .. table.concat(parts)
+         .. frame.pads(win) .. table.concat(parts)
 end
 
 -- An answer to a table or to a struct, whichever it was asked as.
-function frame.answer(who, reply, raw)
-  if raw then return pcall(sys.reply_raw, who, frame.reply(reply)) end
+function frame.answer(who, reply, raw, win)
+  if raw then return pcall(sys.reply_raw, who, frame.reply(reply, win)) end
 
   return pcall(sys.reply, who, reply)
 end
@@ -6728,7 +6765,8 @@ end
 -- not there is answered with why, never acted on.
 function frame.request(bytes, who)
   local function refuse(code)
-    replied(pcall(sys.reply_raw, who, string.pack(frame.HEAD, code, 0, 0)), nil, "a frame")
+    replied(pcall(sys.reply_raw, who, string.pack(frame.HEAD, code, 0, 0) .. frame.NO_PADS),
+            nil, "a frame")
   end
 
   if #bytes < string.packsize(frame.REQUEST) then return refuse(frame.BAD) end
@@ -6746,7 +6784,7 @@ function frame.request(bytes, who)
 
   if ok and result == DEFER then return end
 
-  replied(frame.answer(who, ok and result or nil, true))
+  replied(frame.answer(who, ok and result or nil, true, win))
 end
 
 local function answer_waiting()
@@ -6767,7 +6805,7 @@ local function answer_waiting()
       end
 
       do
-        local ok, err = frame.answer(w.who, events_for(w.win), w.raw)
+        local ok, err = frame.answer(w.who, events_for(w.win), w.raw, w.win)
         replied(ok, err, w.win.title)
       end
     else

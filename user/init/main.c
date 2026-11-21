@@ -80,7 +80,7 @@ void intelgpu_server(long console, long endpoint);
 bool amdgpu_server(long console, long endpoint);   /* false: no AMD GPU */
 void xhci_server(long console, long blocks, long writes, long frames,
                  long camera, long midi, long notify, long usb, long hci,
-                 long bluetooth);
+                 long bluetooth, long pads);
 
 /* The Bluetooth host stack (`bluetooth.md` B2): the console's endpoint,
  * its own - `/Devices/bluetooth`, which its transport pulses too - and the
@@ -1895,7 +1895,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_XHCI) {
         named("xhci");
-        xhci_server(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        xhci_server(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     if (arg == ROLE_BLUETOOTH) {

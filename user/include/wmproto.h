@@ -26,6 +26,8 @@
 
 #include <stdint.h>
 
+#include "padring.h"            /* struct pad_slot: the pads a reply carries */
+
 /* The tag a frame request carries: "WMFRAME1". */
 #define WM_FRAME_TAG     0x31454d4152464d57ull
 
@@ -70,16 +72,25 @@ struct wm_frame_event {             /* "<I2I2I2I2i4i4i4" */
 #define WM_FRAME_NO_SURFACE  2  /* a window that does not draw its own pixels */
 #define WM_FRAME_BAD         3  /* not a request this shape has */
 
-struct wm_frame_reply {             /* "<i4I4I4" and `count` events */
+/* The pads ride in the head, fixed in place, so the events after them stay
+ * a count's worth (`docs/flight.md`, F7): the game controllers' latest
+ * state, as the window manager read it from `padring.h`'s page this pass -
+ * for the focused window only, and zeros for every other, so a window that
+ * is not in front cannot watch a stick. A slot's `seq` is the driver's, and
+ * says only whether it moved since the last answer. */
+struct wm_frame_reply {             /* "<i4I4I4", the pads, `count` events */
     int32_t  error;
     uint32_t draw_into;             /* commit: the buffer to draw into next */
     uint32_t count;                 /* poll: how many events follow */
+    struct pad_slot pads[PAD_RING_PADS];
     struct wm_frame_event events[WM_FRAME_EVENTS];
 };
 
+#define WM_FRAME_HEAD  (12u + 20u * PAD_RING_PADS)
+
 _Static_assert(sizeof(struct wm_frame_request) == 28, "wm_frame_request is 28 bytes");
 _Static_assert(sizeof(struct wm_frame_event) == 20, "wm_frame_event is 20 bytes");
-_Static_assert(sizeof(struct wm_frame_reply) == 12 + 20 * WM_FRAME_EVENTS,
-               "wm_frame_reply is its head and its events");
+_Static_assert(sizeof(struct wm_frame_reply) == WM_FRAME_HEAD + 20 * WM_FRAME_EVENTS,
+               "wm_frame_reply is its head, its pads and its events");
 
 #endif /* KOSMOS_WMPROTO_H */

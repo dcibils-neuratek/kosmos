@@ -45,6 +45,7 @@ struct kw_window {
     int band;                   /* the header's band above the surface: its rows */
     unsigned head, count;
     struct kw_event queue[QUEUE];
+    struct pad_slot pads[PAD_RING_PADS];    /* the last answer's */
 };
 
 static char why[160] = "";
@@ -225,12 +226,43 @@ static long frame_call(struct kw_window *w, const struct wm_frame_request *rq,
     memset(rp, 0, sizeof *rp);
     memcpy(rp, reply.data, reply.length < sizeof *rp ? reply.length : sizeof *rp);
 
-    if (reply.length < 12 || rp->count > WM_FRAME_EVENTS
-        || reply.length < 12 + rp->count * sizeof(struct wm_frame_event)) {
+    if (reply.length < WM_FRAME_HEAD || rp->count > WM_FRAME_EVENTS
+        || reply.length < WM_FRAME_HEAD + rp->count * sizeof(struct wm_frame_event)) {
         return WM_FRAME_BAD;
     }
 
+    if (rp->error == 0) {
+        memcpy(w->pads, rp->pads, sizeof w->pads);
+    }
+
     return rp->error;
+}
+
+static float axis(int16_t v)
+{
+    return v < 0 ? (float)v / 32768.0f : (float)v / 32767.0f;
+}
+
+int kw_pad(struct kw_window *w, unsigned n, struct kw_pad *out)
+{
+    const struct pad_slot *p;
+
+    memset(out, 0, sizeof *out);
+
+    if (w == NULL || n >= PAD_RING_PADS || !w->pads[n].present) {
+        return 0;
+    }
+
+    p = &w->pads[n];
+    out->present = 1;
+    out->buttons = p->buttons;
+    out->lx = axis(p->lx);
+    out->ly = axis(p->ly);
+    out->rx = axis(p->rx);
+    out->ry = axis(p->ry);
+    out->lt = (float)p->lt / 255.0f;
+    out->rt = (float)p->rt / 255.0f;
+    return 1;
 }
 
 int kw_commit(struct kw_window *w, unsigned x, unsigned y, unsigned width,

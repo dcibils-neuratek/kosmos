@@ -66,8 +66,11 @@ ENVIRONMENTS = {
     # console capability of its own - the runner hands it one and this is
     # the only door to it, exactly as `print` is.
     #
+    # `pad` and `pad_write` are the game controllers' page (`padring.h`),
+    # a region's capability: nil for every program but the desktop, and
+    # `padtest` under `opt/kosmos/pad=test`, which init grants them to.
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted", "use", "write"},
+                  "interrupted", "use", "write", "pad", "pad_write"},
 
     # An installed application (`docs/elf.md` step 5) is a program like
     # any other, run from `/Home/Apps` rather than served from the image.

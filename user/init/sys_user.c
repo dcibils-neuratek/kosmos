@@ -1556,6 +1556,23 @@ static int l_memory(lua_State *L)
 }
 
 /*
+ * A second capability to a region that may only read it
+ * (`kosmos_mem_readonly`): init hands the game controllers' page to the
+ * USB driver as it is and to the window manager this way (`padring.h`).
+ */
+static int l_memory_readonly(lua_State *L)
+{
+    long cap = kosmos_mem_readonly((long)luaL_checkinteger(L, 1));
+
+    if (cap < 0) {
+        return fail(L, cap);
+    }
+
+    lua_pushinteger(L, (lua_Integer)cap);
+    return 1;
+}
+
+/*
  * Through `region_of`, so the mapping is remembered with every other one and
  * `sys.release` takes it down. **It called the kernel itself until 5 October
  * 2026**, and nothing recorded the address: a mapping holds its region
@@ -3317,6 +3334,7 @@ static const luaL_Reg sys_functions[] = {
     { "asset",    l_asset },
     { "memory",      l_memory },
     { "memory_map",  l_memory_map },
+    { "memory_readonly", l_memory_readonly },
     { "memory_size", l_memory_size },
     { "region_write", l_region_write },
     { "ring_push",    l_ring_push },

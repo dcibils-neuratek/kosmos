@@ -984,7 +984,46 @@ local function feed(g, eye)
 end
 
 local frame = 0
-local function down(w, code) return w:held(code) end
+-- **A game controller** (F7): the left stick is the yoke, the right trigger
+-- opens the throttle and the left one closes it, A holds the brakes and B
+-- steps the flaps - added to the keys, so either flies. `w:pad` answers only
+-- while this window is in front; the stick's middle tenth is nothing, so a
+-- pad at rest does not fly the aeroplane.
+local PAD = { dead = 0.1, was = 0, said = false }
+
+function PAD.read(w)
+  local lx, ly, _, _, lt, rt, buttons = w:pad(1)
+
+  if not lx then return 0, 0, 0, 0 end
+  if not PAD.said then
+    say("pad in front")
+    PAD.said = true
+  end
+
+  local function stick(v)
+    if math.abs(v) < PAD.dead then return 0 end
+    return (v - (v > 0 and PAD.dead or -PAD.dead)) / (1 - PAD.dead)
+  end
+
+  local pressed = buttons & ~PAD.was
+  PAD.was = buttons
+  if pressed & 2 ~= 0 then S.flaps = (S.flaps + 0.5) % 1.5 end
+
+  return -stick(ly), stick(lx), rt - lt, (buttons & 1 ~= 0) and 1 or 0
+end
+
+-- The keys and the pad together: the yoke, the throttle moved, the brakes.
+function PAD.controls(w, dt)
+  local pp, pr, pt, pb = PAD.read(w)
+  local function key(code) return w:held(code) and 1 or 0 end
+  local function clamp(v) return math.max(-1, math.min(1, v)) end
+
+  local pitch = clamp(key(KEY.down) - key(KEY.up) + pp)
+  local roll = clamp(key(KEY.right) - key(KEY.left) + pr)
+  pt = clamp(pt + key(KEY.a) - key(KEY.z))
+  S.throttle = math.max(0, math.min(1, S.throttle + 0.5 * pt * dt))
+  return pitch, roll, math.max(pb, key(KEY.b))
+end
 
 -- **The strip** (F5e): what a pilot reads, along the foot of the chase and
 -- tower views - speed, altitude, heading, climb, throttle and flaps, in the
@@ -2028,11 +2067,8 @@ while not w:closed(0) do
   end
 
   if not S.paused then
-    local pitch = (down(w, KEY.down) and 1 or 0) - (down(w, KEY.up) and 1 or 0)
-    local roll = (down(w, KEY.right) and 1 or 0) - (down(w, KEY.left) and 1 or 0)
-    if down(w, KEY.a) then S.throttle = math.min(1, S.throttle + 0.5 * dt) end
-    if down(w, KEY.z) then S.throttle = math.max(0, S.throttle - 0.5 * dt) end
-    fly(dt, pitch, roll, g:height(S.x, S.z), down(w, KEY.b) and 1 or 0)
+    local pitch, roll, brake = PAD.controls(w, dt)
+    fly(dt, pitch, roll, g:height(S.x, S.z), brake)
     if S.landed then
       say(("landed at %.0f fpm %s"):format(S.landed,
           runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))

@@ -5910,3 +5910,27 @@ the cheaper of the two.
 25-knot headwind. It touched down at 73 knots through the air and 45
 over the ground. Each half has a control that turns it off, and each
 control fails the test, as it has to.
+
+## 21 November 2026 - A gamepad flies Flight
+
+**In short:** a game controller's sticks and triggers now reach programs
+as how far they are pushed, not only as key presses, and Flight flies on
+them.
+
+**What changed.** Until now a gamepad was a keyboard with odd keys. Each
+button was a key, and the stick was the arrow keys, all or nothing. Now
+the USB driver also writes each pad's position, many times a second,
+into one page of memory. Only the driver can write that page, and only
+the desktop can read it. The desktop hands the numbers to the window in
+front with each frame. A window behind it gets nothing, so it can't
+watch someone's stick. In Flight, the left stick is the yoke, and half a
+push is half the controls. The right trigger opens the throttle and the
+left closes it. A is the brakes and B the flaps. The keys still work as
+well.
+
+**Checked.** QEMU can't plug in a gamepad, so a small test program
+writes the page the way the driver would. It only works when the machine
+is started in a test mode. The Flight test pushes the stick full left,
+and the aircraft rolled from 19 degrees right to 20 left. Its control
+leaves the stick centred, and the test fails, as it has to. Next is the
+real 8BitDo on the M700.

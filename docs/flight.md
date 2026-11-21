@@ -675,9 +675,10 @@ ends on the M700:
       after. One writer, no lock, the latest values only, and a report
       costs no message.
     - *To the window*: the window manager reads the region once a pass,
-      and `struct wm_frame_reply` gains a pad block, 16 bytes a pad, for
-      the focused window only. The reply is 252 bytes of a 2,048-byte
-      message, so it has room. It is a value read once a frame, as the
+      and `struct wm_frame_reply` gains a pad block, 20 bytes a pad (a
+      slot as the page holds it), in the head ahead of the events, for
+      the focused window only - every other window is answered zeros.
+      The reply is 332 bytes of a 2,048-byte message, so it has room. It is a value read once a frame, as the
       pointer's position is.
     - *Kits*: the Window Kit's `kw_poll` keeps the latest pad state, and
       the 3D Kit's window gains `w:pad(n)`, which returns the sticks as
@@ -694,14 +695,16 @@ ends on the M700:
       lets the guest suite write the region the way the driver would:
       `opt/kosmos/pad=test`, which makes init hand the region to the
       shell's test program as well. `x86-flight` then holds the left
-      stick right and reads that Flight rolled right. The control holds
-      it centred.
+      stick full left (`padtest 0 -1 0 0 0 0 0`) and reads that Flight
+      rolled left; the control (`--no-pad`) writes it centred.
     - *What is new below Flight*: `padring.h`, init's page, the window
       manager's read, a block in the frame reply, and two kit methods.
       None of it is in the kernel.
     - Steps: **F7a** the region, the driver and the window manager;
-      **F7b** the kits, Flight and the suite; **F7c** on the M700 with
-      the 8BitDo.
+      **F7b** the kits, Flight and the suite - **both built in 0.12.49**
+      (`testing.md` 18.969; the Lua protocol's pads for the Super
+      Nintendo, Doom and Quake are still to come); **F7c** on the M700
+      with the 8BitDo.
 
 ## Questions for Diego
 

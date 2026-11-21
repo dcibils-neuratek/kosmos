@@ -4577,6 +4577,13 @@ local function windowserver_grant(path)
   return path == "/Kosmos/Programs/wm.lua"
 end
 
+-- The pads' page goes to the desktop alone (`padring.h`), and its
+-- writable twin to `padtest` alone, and only when the boot line put the
+-- machine in the pads' test mode.
+local function padtest_grant(path)
+  return path == "/Kosmos/Programs/padtest.lua" and sys.boot("opt/kosmos/pad") == "test"
+end
+
 local function keyring_grant(path)
   if type(path) ~= "string" or path:find("//", 1, true)
      or path:find("/%.%.?/") or path:find("/%.%.?$") then
@@ -4655,6 +4662,8 @@ local SPAWN_GRANTED = {
   ["keyring-mail"] = { "mailkeys", keyring_grant },        -- Mail's (`docs/mail.md` M0)
   sharing = { "sharing", keyring_grant },                  -- smbd's (`docs/sharing.md` N12c)
   windowserver = { "windowserver", windowserver_grant },
+  pad = { "pad", windowserver_grant },                     -- the desktop's (F7)
+  ["pad-test"] = { "padtest", padtest_grant },             -- the suite's (F7)
 }
 
 local function spawn_grants(ns, path, caps, held)
@@ -4671,6 +4680,12 @@ local function spawn_grants(ns, path, caps, held)
   end
 
   for _, name in ipairs(SPAWN_ALWAYS) do give(name) end
+
+  -- In the pads' test mode the writable page goes down every line, so
+  -- `padtest` reaches it through whatever started it - a Telnet session, a
+  -- Terminal - as `/Sandboxes` does; only `padtest` is handed it as
+  -- `pad_write`. On a machine in use the mode is off and nothing carries it.
+  if sys.boot("opt/kosmos/pad") == "test" then give("padtest") end
 
   -- **A program installed in `/Home` says what it needs in its own
   -- header**, which the disk does not read for it as the image's store
@@ -4741,7 +4756,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           midi_cap, notify_cap, share_cap, keyring_cap, tiles_cap,
                           mail_keys_cap, window_cap, mdns_cap, sharing_cap,
                           usb_cap, gpu_cap, bluetooth_cap, models_cap, disks_cap,
-                          sandboxes_cap)
+                          pad_cap, padtest_cap, sandboxes_cap)
   local ns = new_namespace()
   ns.mount("/Devices/console", console_cap, nil, "console")
   ns.mount("/Temporary", ramfs_cap, nil, "ram")
@@ -5584,7 +5599,7 @@ query. `find` and `watch` are built on exactly these two calls.
       keyring = keyring_cap, tiles = tiles_cap, mailkeys = mail_keys_cap,
       windowserver = window_cap, sharing = sharing_cap, mdns = mdns_cap,
       sandboxes = sandboxes_cap, models = models_cap, gpu = gpu_cap,
-      usb = usb_cap, disks = disks_cap,
+      usb = usb_cap, disks = disks_cap, pad = pad_cap, padtest = padtest_cap,
     })
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -5607,7 +5622,7 @@ query. `find` and `watch` are built on exactly these two calls.
       mailkeys = at.mailkeys, windowserver = at.windowserver, mdns = at.mdns,
       sharing = at.sharing, sandboxes = at.sandboxes, models = at.models,
       gpu = at.gpu, usb = at.usb, disks = at.disks,
-      bluetooth = at.bluetooth,
+      bluetooth = at.bluetooth, pad = at.pad, padtest = at.padtest,
       home_in_memory = home_in_memory or nil,
       protostamp = sys.protostamp,
     })
@@ -6642,11 +6657,25 @@ if role == ROLE_INIT then
 
   local usb_driver = false
 
+  --
+  -- **The game controllers' page** (`padring.h`, `docs/flight.md` F7): the
+  -- USB driver writes each pad's latest state into it, and the window
+  -- manager reads it - handed a capability that may only read - for the
+  -- focused window. Nobody else is given it. `opt/kosmos/pad=test` hands
+  -- the writable one to the shell as well, for `padtest` alone, so a suite
+  -- on a machine with no pad to plug in can move the sticks.
+  --
+  local PAD_REGION = sys.memory(1)
+  local PAD_READ = PAD_REGION and sys.memory_readonly(PAD_REGION)
+  local PAD_TEST = sys.boot("opt/kosmos/pad") == "test" and PAD_REGION or PAD_READ
+
+  if not PAD_READ then line("init: no page for the game controllers") end
+
   do
     local _, err = sys.spawn(ROLE_XHCI,
                              { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP,
                                FRAMES_EP, CAMERA_EP, MIDI_EP, NOTIFY_EP, USB_EP,
-                               HCI_EP, BLUETOOTH_EP },
+                               HCI_EP, BLUETOOTH_EP, PAD_REGION },
                              SPAWN_DEVICES)
 
     if err then
@@ -6985,6 +7014,10 @@ if role == ROLE_INIT then
                         -- Before `/Sandboxes`, which a machine may not have:
                         -- a list with a gap in it ends at the gap.
                         USB_EP, GPU_EP, BLUETOOTH_EP, MODELS_EP, DISKS_EP,
+                        -- The pads' page, read-only, and for `padtest` the
+                        -- writable one under `opt/kosmos/pad=test` (the
+                        -- read-only one again otherwise, so no gap).
+                        PAD_READ, PAD_TEST,
                         SANDBOXES_EP },
                       -- The screen, and authority over processes.
                       --
@@ -7059,7 +7092,7 @@ if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
   shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-             22, 23, 24, 25, 26, 27)
+             22, 23, 24, 25, 26, 27, 28, 29)
   return
 end
 
@@ -7388,7 +7421,7 @@ if role == ROLE_RUNNER then
       keyring = req.keyring, tiles = req.tiles, mailkeys = req.mailkeys,
       windowserver = req.windowserver, sharing = req.sharing, mdns = req.mdns,
       sandboxes = req.sandboxes, models = req.models, gpu = req.gpu,
-      usb = req.usb, disks = req.disks,
+      usb = req.usb, disks = req.disks, pad = req.pad, padtest = req.padtest,
     })
 
     -- In the program's own image when it names one (`IMAGES.spawn`).
@@ -7414,6 +7447,7 @@ if role == ROLE_RUNNER then
       mailkeys = at.mailkeys, windowserver = at.windowserver, mdns = at.mdns,
       sharing = at.sharing, sandboxes = at.sandboxes, models = at.models,
       gpu = at.gpu, usb = at.usb, disks = at.disks, bluetooth = at.bluetooth,
+      pad = at.pad, padtest = at.padtest,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Which protocols the system speaks, for an image built for others
@@ -7450,6 +7484,12 @@ if role == ROLE_RUNNER then
   local env = {
     fs = ns,
     args = req.args or "",
+
+    -- The game controllers' page, for the desktop that was granted it,
+    -- and its writable twin for `padtest` (`padring.h`): a region's
+    -- capability, not a door, so it is handed over as a number.
+    pad = req.pad,
+    pad_write = padtest_grant(req.path) and req.padtest or nil,
 
     -- Where the caller thought it was. The working directory is the
     -- shell's idea and servers know nothing about it, so it travels with

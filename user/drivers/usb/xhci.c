@@ -92,6 +92,7 @@
 #include "../bluetooth/btsim.h"
 #include "hciproto.h"
 #include "hciring.h"
+#include "padring.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -452,6 +453,7 @@ struct mouse {
     uint8_t       seq;
     uint16_t      vendor, product;
     struct pad_state state;
+    unsigned      pad_slot;     /* its slot in the pads' page, plus one; 0 none */
 };
 
 /*
@@ -2322,6 +2324,67 @@ static void pad_keys(struct controller *c, struct mouse *m, uint32_t now)
     }
 }
 
+/*
+ * **The pads' page** (`padring.h`, `docs/flight.md` F7): init's, mapped
+ * once, and written with each report - the latest state only, a slot a
+ * pad, so a report costs the window manager no message. NULL when init
+ * had none to give.
+ */
+static volatile struct pad_ring *pads;
+static bool pad_taken[PAD_RING_PADS];
+
+static void pads_map(long cap)
+{
+    long at = cap < 0 ? -1 : kosmos_mem_map(cap);
+
+    if (at < 0) {
+        return;
+    }
+
+    pads = (volatile struct pad_ring *)(uintptr_t)at;
+    pads->pads = PAD_RING_PADS;
+    RING_BARRIER();
+    pads->magic = PAD_RING_MAGIC;
+}
+
+/* Its state into its slot, a slot given the first time; none when all
+ * four are taken, and then the pad is keys alone, as before. */
+static void pad_publish(struct mouse *m, const struct pad_state *s)
+{
+    if (pads == NULL) {
+        return;
+    }
+
+    if (m->pad_slot == 0) {
+        for (unsigned i = 0; i < PAD_RING_PADS; i++) {
+            if (!pad_taken[i]) {
+                pad_taken[i] = true;
+                m->pad_slot = i + 1u;
+                break;
+            }
+        }
+
+        if (m->pad_slot == 0) {
+            return;
+        }
+    }
+
+    pad_ring_write(pads, m->pad_slot - 1u, s->buttons, s->lx, s->ly, s->rx, s->ry,
+                   s->lt, s->rt, 1);
+}
+
+/* A pad gone: its slot says so, and is free for the next. */
+static void pad_unpublish(struct mouse *m)
+{
+    if (pads == NULL || m->pad_slot == 0) {
+        return;
+    }
+
+    pad_ring_write(pads, m->pad_slot - 1u, 0, 0, 0, 0, 0, 0, 0, 0);
+    pad_taken[m->pad_slot - 1u] = false;
+    m->pad_slot = 0;
+}
+
 static void pad_report(struct controller *c, unsigned slot, unsigned got)
 {
     struct mouse *m = &c->mouse[slot];
@@ -2367,6 +2430,7 @@ static void pad_report(struct controller *c, unsigned slot, unsigned got)
         say_send(console, &line);
     }
 
+    pad_publish(m, &s);
     pad_keys(c, m, pad_pressed(&s, m->pressed));
 }
 
@@ -7025,6 +7089,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
 
         if (m->pad) {
             pad_keys(c, m, 0);          /* a pad unplugged mid-press */
+            pad_unpublish(m);
         }
 
         memset(m, 0, sizeof(*m));
@@ -9184,7 +9249,7 @@ static long camera_endpoint_now(void)
 void xhci_server(long console_cap, long blocks_cap, long writes_cap,
                  long frames_cap, long camera_cap, long midi_cap,
                  long notify_cap, long usb_cap, long hci_cap,
-                 long bluetooth_cap)
+                 long bluetooth_cap, long pads_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -9206,6 +9271,7 @@ void xhci_server(long console_cap, long blocks_cap, long writes_cap,
     hci_endpoint = hci_cap;
     bluetooth_endpoint = bluetooth_cap;
     hci_options();
+    pads_map(pads_cap);
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

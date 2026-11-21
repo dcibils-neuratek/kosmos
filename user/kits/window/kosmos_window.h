@@ -84,6 +84,20 @@ int kw_commit(struct kw_window *w, unsigned x, unsigned y, unsigned width,
  * milliseconds. 0 answers at once. */
 int kw_poll(struct kw_window *w, struct kw_event *e, unsigned wait_ms);
 
+/* A game controller as the window manager last said it was, for the focused
+ * window (`docs/flight.md`, F7): sticks from -1 to 1, up and right
+ * positive, triggers from 0 to 1, and `buttons` as `pad_decode.h`'s
+ * `enum pad_bit` bits - south (A) is bit 0, east (B) bit 1. */
+struct kw_pad {
+    int present;                /* 0: no pad in this slot, or not in front */
+    uint32_t buttons;
+    float lx, ly, rx, ry;
+    float lt, rt;
+};
+
+/* Pad `n`, from 0, as of the last commit or poll: 1 when one is there. */
+int kw_pad(struct kw_window *w, unsigned n, struct kw_pad *out);
+
 /* Closed and let go. The window is not to be used after. */
 void kw_close(struct kw_window *w);
 
