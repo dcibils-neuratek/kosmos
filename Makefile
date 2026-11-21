@@ -6757,8 +6757,11 @@ prepush:
 # whatever `-m` says (`hal/qemu-virt/memory.c`), and twenty applications
 # did not fit in it - Cafesa3D's view refused, Groove's window, Maps gone
 # (12 October). The gallery gives its machine a gigabyte.
+# And `apps`, since Flight joins the picture from a /Home made for it, on
+# the k3dvk.elf it links (`tools/run_gallery.py`, FLIGHT).
 shot:
 	@$(MAKE) --no-print-directory x86-build
+	@$(MAKE) --no-print-directory ARCH=x86_64 apps
 	@mkdir -p $(SHOTDIR)
 	python3 tools/run_gallery.py build/x86_64/kosmos.elf \
 	  --out $(SHOTDIR)/$$(date +%Y-%m-%d-%H%M)-$$(git rev-parse --short HEAD).png

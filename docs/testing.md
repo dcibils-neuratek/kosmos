@@ -40110,3 +40110,37 @@ the sea to the horizon, at 1940 ft. Before the restart was added, the
 same run left the Cessna stopped on open sea, on Rio's runway's
 coordinates, past the island's shore.
 
+## 18.959 Flight in the dated screenshot (0.12.39)
+
+**In short:** `make shot`'s picture now has Flight in it, flying over its
+invented island, in both the usual look and Liquid Glass. Getting it in
+needed three changes.
+
+- **A disk for Flight.** Flight is installed in `/Home/Apps`, not
+  carried in the image, so `run_gallery.py` makes a `/Home` with it on
+  it: `k3dvk.elf`, `flight.lua`, the Cessna, and a setup file that
+  points the imagery and elevation at a port nobody serves. Flight goes
+  offline, so the picture is the same every time. `make shot` builds the
+  apps first. Flight is added in the gallery's own list, not in `OPEN`,
+  which `run_platinum.py` opens on a machine with no disk.
+- **`tile` lays out on paper first.** With 28 windows the grid had
+  exactly as many cells as the windows needed. A big window's two by two
+  can leave a gap at the end of a row, and the last window, Automations,
+  had "no room". Now every place is found before anything moves, and a
+  grid that does not fit gets one more column and is tried again.
+- **2 GB for the gallery's x86 machine.** In 1 GB the Liquid Glass
+  picture asked for pages after Flight's terrain had taken its share.
+  The kernel refused them ("no room past the reserve"), the window
+  manager ended, and the glass never came. With 2 GB, Processes shows
+  1048 of 2043 MB in use. The suites keep their small machines, where
+  running out is what they look for.
+
+**Checked** by running `run_gallery.py` to the end. It wrote both
+pictures with every window arranged and none ended, and Flight shows
+"Offline: an invented island" over the beach and the sea. The full
+`make test` ran every suite afterwards, since `tile` is claimed by none:
+153 of 155 passed. `x86-jetski` (its menu missing two items) and
+`x86-tcc` (a keyring line mixed into a program's output) failed under
+the whole gate's load and passed on their own, in 2:25. Both are in the
+roadmap as flakes to fix. `make shot` then wrote both pictures.
+

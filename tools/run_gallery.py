@@ -41,6 +41,13 @@ for _args in (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS):
     if "-m" in _args:
         _args[_args.index("-m") + 1] = "1G"
 
+# **Two on x86, since Flight joined** (20 November): its terrain holds
+# chunks for the memory it finds, and in one gigabyte the Liquid Glass
+# picture's glass asked for pages after it and the window manager ended
+# for want of them. The ARM board reads 512 MB whatever this says.
+if "-m" in run_screenshot.X86_ARGS:
+    run_screenshot.X86_ARGS[run_screenshot.X86_ARGS.index("-m") + 1] = "2G"
+
 # And four processors on x86, as the ARM board has: twenty applications
 # starting at once on one emulated core did not all open in four minutes.
 if "-smp" not in run_screenshot.X86_ARGS:
@@ -159,6 +166,60 @@ OPEN = ["tracker", "gallery", "music", "preferences", "terminal", "calc",
 # maximised, opened after the rest were arranged and lay over all of them.
 OPEN.append("tile:%d" % len(OPEN))
 
+#
+# **And Flight** (`docs/flight.md`), which is installed in `/Home/Apps`
+# rather than carried in the image, so it comes on a `/Home` of its own,
+# made here - and it is not in `OPEN`, which `run_platinum.py` opens on a
+# machine with no disk. Its sources point at a port nobody serves, so the
+# picture is the same every time: Flight offline, over its invented island
+# (F5j), with "Offline: an invented island" in its corner. 640 by 420 is
+# big enough that `tile` gives it two cells by two.
+#
+FLIGHT = "/Home/Apps/Flight"
+FLIGHT_SETUP = """-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- Flight's settings for the dated screenshot (`tools/run_gallery.py`).
+local prefs = use("/Kosmos/Libraries/prefs.lua")
+prefs.open("flight", {}):set{
+  imagery = "http://10.0.2.2:9/img/{z}/{y}/{x}",
+  elevation = "http://10.0.2.2:9/elev/{z}/{x}/{y}.png",
+  width = 640, height = 420, graphics = false,
+}
+print("flight" .. "-ready")
+"""
+ON_DISK = ["flight"]
+GALLERY = OPEN[:-1] + ON_DISK + ["tile:%d" % (len(OPEN) - 1 + len(ON_DISK))]
+
+
+def flight_disk(apps):
+    """A `/Home` with Flight installed on it, for `KOSMOS_DISK`."""
+    import scratch
+    import subprocess
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    built = os.path.join(apps, "k3dvk.elf")
+
+    if not os.path.exists(built):
+        raise Failure("no %s - `make ARCH=x86_64 apps` builds it" % built)
+
+    work = scratch.directory("gallery-home")
+    image = os.path.join(work, "k3dvk.elf")
+    subprocess.run(["x86_64-elf-objcopy", "--strip-debug", built, image], check=True)
+
+    setup = os.path.join(work, "setup.lua")
+    with open(setup, "w") as f:
+        f.write(FLIGHT_SETUP)
+
+    files = [(setup, FLIGHT + "/setup.lua"), (image, FLIGHT + "/k3dvk.elf"),
+             (os.path.join(root, "user/installed/Flight/flight.lua"), FLIGHT + "/flight.lua"),
+             (os.path.join(root, "assets/models/cessna172/cessna_172.glb"),
+              FLIGHT + "/cessna_172.glb")]
+    disk = os.path.join(work, "home.img")
+    subprocess.run([os.path.join(root, "build/host/lua"), os.path.join(root, "tools/kfs.lua"),
+                    "create", disk, str(os.path.getsize(image) // (1 << 20) + 80)]
+                   + ["%s:%s" % f for f in files], check=True, capture_output=True, cwd=root)
+    run_screenshot.X86_ARGS += ["-drive", "file=%s,format=raw,if=none,id=disk" % disk,
+                                "-device", "virtio-blk-pci,drive=disk"]
+
 # The program that makes Write's page, on one line: what is typed is
 # entered at its end.
 WRITE = ('local wd = use("/Kosmos/Libraries/writedoc.lua") '
@@ -202,8 +263,11 @@ def main():
     ap.add_argument("--timeout", type=int, default=240)
     ap.add_argument("--settle", type=int, default=40,
                     help="seconds to let every application draw its first frame")
+    ap.add_argument("--apps", default="build/user-x86_64/apps",
+                    help="where `make ARCH=x86_64 apps` put k3dvk.elf, Flight's image")
     args = ap.parse_args()
 
+    flight_disk(args.apps)
     telnet = with_telnet()
     guest = Guest(args.image, args.timeout)
 
@@ -222,7 +286,12 @@ def main():
         if not width:
             raise Failure("the boot never announced a display geometry.")
 
-        names = ",".join(OPEN)
+        names = ",".join(GALLERY)
+
+        # Flight's settings first: they make `/Home/Preferences` on the
+        # new disk, which the login set below is written into.
+        guest.type("run " + FLIGHT + "/setup.lua")
+        guest.wait_for("flight-ready", "written Flight's settings")
 
         # The Deskbar opens its login set as well, and that is what put
         # Tracker, Monitor and Processes in the picture twice: emptied here,
@@ -257,7 +326,7 @@ def main():
         arranged = [int(l.split()[1]) for l in guest.seen.splitlines()
                     if l.startswith("tile: ") and l.split()[1].isdigit()]
 
-        if not arranged or arranged[-1] < len(OPEN) - 1:
+        if not arranged or arranged[-1] < len(GALLERY) - 1:
             said = [l for l in guest.seen.splitlines() if l.startswith("tile: ")]
             opened = [l.split(" at ")[0][len("wm: window "):] for l in guest.seen.splitlines()
                       if l.startswith("wm: window ") and " at " in l]
@@ -266,7 +335,7 @@ def main():
                        or l.startswith("maps") or l.startswith("writer") or "(maps)" in l or "(writer)" in l]
             print("opened: %s\ntrouble: %s" % (opened, trouble[-12:]), file=sys.stderr)
             raise Failure("tile did not arrange all %d windows: %s"
-                          % (len(OPEN) - 1, said or "it said nothing in five minutes"))
+                          % (len(GALLERY) - 1, said or "it said nothing in five minutes"))
 
         time.sleep(args.settle)
         guest._read_available()
@@ -275,7 +344,7 @@ def main():
         # on 12 October it counted twenty while Cafesa3D and Groove had
         # opened and gone: a picture without them passed for one with them.
         import re as _re
-        apps = {o.split(":")[0] for o in OPEN if not o.startswith("tile")}
+        apps = {o.split(":")[0] for o in GALLERY if not o.startswith("tile")}
         gone = sorted({m for m in _re.findall(r"process \d+ \(([^)]+)\) ended", guest.seen)
                        if m in apps})
 
@@ -328,6 +397,7 @@ def main():
             guest._read_available()
 
         if "wm: the wallpaper's glass, " not in guest.seen[mark:]:
+            print(guest.seen[mark:][-3000:], file=sys.stderr)
             raise Failure("the desktop in Liquid Glass made no glass in two minutes")
 
         time.sleep(args.settle)

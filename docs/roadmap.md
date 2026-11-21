@@ -12087,9 +12087,18 @@ F5h **built in 0.12.36** (18.956), the place box, the credit and the
 tower on the city's airfield; F5i **built in 0.12.37** (18.957), the
 pause sheet with search, Recent and the runway and final-approach starts;
 F5j **built in 0.12.38** (18.958), the island offline, invented in C
-(`k3d_island.c`) and handed through `g:invent`; then Flight in the dated
-screenshot, and the imagery deeper near the eye when it
-is low (on a runway at zoom 15 it is 4.5 m a texel, blurred at wheel
+(`k3d_island.c`) and handed through `g:invent`; Flight in the dated
+screenshot **in 0.12.39** (18.959); then the imagery deeper near the eye
+when it is low. **Agreed 20 November 2026, Diego's evening list** (`flight.md`, in
+this order): F6a the time of day, dusk among it; F6b the views named on
+the strip; F6c the propeller drawn so it is seen to turn, and the
+engine's sound; F8 real airports - every paved runway from OurAirports,
+taking off and landing on it; F9 live air traffic control through a new
+Radio Kit, which Music's Radio source wants too. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
+menu check read the menu without "Add to favorites" and "Settings", and
+`x86-tcc` had a keyring line inside a program's output. Both happened under
+the whole gate's load, and both passed alone. Wait for the thing, not
+for a time (on a runway at zoom 15 it is 4.5 m a texel, blurred at wheel
 height). **Found on the way**: a program installed
 in `/Home` was never given what its header declares - the disk does not
 read headers as the image's store does - so `needs tiles` reached

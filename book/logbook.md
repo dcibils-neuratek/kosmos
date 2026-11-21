@@ -5661,3 +5661,23 @@ the island's middle, because the runway it was on does not exist there.
 Cessna 1900 feet up, grass below, the shore ahead and the sea out to the
 horizon.
 
+## 20 November 2026 - Flight in the daily picture
+
+**In short:** the screenshot of the desktop taken before every push now
+includes Flight, flying over its invented island.
+
+**What changed.** The daily picture opens every application that can
+draw something without files of its own. Flight is installed on a disk
+rather than built into the system, so the picture's machine now gets a
+small disk with Flight on it. Flight is told to fetch its map tiles from
+an address that never answers, so it always shows the island, and the
+picture looks the same every day.
+
+**Two problems found on the way.** The program that arranges the windows
+in a grid sometimes left the last one with nowhere to go. It now works
+the whole arrangement out before moving anything, and adds a column when
+the windows do not fit. And the picture's machine ran out of memory: with
+Flight's terrain loaded, switching to the Liquid Glass look asked for
+more and the window manager stopped. The machine now has 2 GB, as a real
+computer running all of this would.
+

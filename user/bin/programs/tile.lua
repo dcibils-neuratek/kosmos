@@ -148,60 +148,87 @@ end
 
 across, down = grid_for(cells)
 
-local cell_w, cell_h = usable_w // across, usable_h // down
-local taken = {}
+--
+-- **Laid out on paper first, and the grid grown until it fits.** Exactly
+-- as many cells as the windows need is not always room: a big window's
+-- two by two leaves a gap where a row ends at an odd column, and on 20
+-- November, with Flight beside Cafesa3D and Groove, the last window had
+-- nowhere to go. So the places are found before anything moves, and a
+-- grid they do not fit in gets one more column - a screen being wider
+-- than tall - and is tried again.
+--
+local function layout()
+  local taken, at = {}, {}
 
-local function free(col, row, n)
-  if col + n > across or row + n > down then return false end
+  local function free(col, row, n)
+    if col + n > across or row + n > down then return false end
 
-  for r = row, row + n - 1 do
-    for c = col, col + n - 1 do
-      if taken[r * across + c] then return false end
+    for r = row, row + n - 1 do
+      for c = col, col + n - 1 do
+        if taken[r * across + c] then return false end
+      end
     end
+
+    return true
   end
 
-  return true
-end
+  -- The first cells, reading across, with room for `n` by `n`.
+  local function find(n)
+    for row = 0, down - 1 do
+      for col = 0, across - 1 do
+        if free(col, row, n) then
+          for r = row, row + n - 1 do
+            for c = col, col + n - 1 do taken[r * across + c] = true end
+          end
 
--- The first cells, reading across, with room for `n` by `n`.
-local function place(w, n)
-  for row = 0, down - 1 do
-    for col = 0, across - 1 do
-      if free(col, row, n) then
-        for r = row, row + n - 1 do
-          for c = col, col + n - 1 do taken[r * across + c] = true end
+          return col, row
         end
-
-        local ok, why = fs.send("/Running/wm", {
-          type = "move",
-          window = w.handle,
-          x = 30 + col * cell_w,
-          y = 60 + row * cell_h,
-        })
-
-        if not ok then
-          print(("tile: %s would not move: %s"):format(w.title, tostring(why)))
-        end
-
-        -- Raised in the order placed, the big first, so each small window
-        -- lies over the big one's overflow rather than under it: the one
-        -- that opened last - Cafesa3D, reading its scene - was on top of
-        -- everything, and covered most of the screen.
-        fs.send("/Running/wm", { type = "raise", window = w.handle })
-        return
       end
     end
   end
 
-  print(("tile: no room for %s"):format(w.title))
+  -- The big first, so each small window lies over the big one's overflow
+  -- rather than under it.
+  for pass = 1, 2 do
+    for _, w in ipairs(wins) do
+      if (pass == 1) == big[w] then
+        local col, row = find(big[w] and 2 or 1)
+
+        if not col then return nil end
+
+        at[#at + 1] = { w = w, col = col, row = row }
+      end
+    end
+  end
+
+  return at
 end
 
-for _, w in ipairs(wins) do
-  if big[w] then place(w, 2) end
+local at = layout()
+
+while not at do
+  across = across + 1
+  at = layout()
 end
 
-for _, w in ipairs(wins) do
-  if not big[w] then place(w, 1) end
+local cell_w, cell_h = usable_w // across, usable_h // down
+
+-- Raised in the order placed, the big first: the one that opened last -
+-- Cafesa3D, reading its scene - was on top of everything, and covered
+-- most of the screen.
+for _, a in ipairs(at) do
+  local ok, why = fs.send("/Running/wm", {
+    type = "move",
+    window = a.w.handle,
+    x = 30 + a.col * cell_w,
+    y = 60 + a.row * cell_h,
+  })
+
+  if not ok then
+    print(("tile: %s would not move: %s"):format(a.w.title, tostring(why)))
+  end
+
+  fs.send("/Running/wm", { type = "raise", window = a.w.handle })
 end
 
 print(("tile: %d windows, %dx%d"):format(#wins, across, down))

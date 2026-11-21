@@ -206,8 +206,10 @@ that follows the distance; **F5i** (0.12.37, 18.957), the pause sheet -
 search, Recent, the start on a runway or on final, Restart in another
 city - and the 3D Kit's `w:typed` and `w:clicked`; **F5j** (0.12.38,
 18.958), the island: with nothing fetched, Flight says it is offline and
-flies over an island invented in C (`k3d_island.c`, `g:invent`). Next
-Flight in the dated screenshot, and the imagery deeper near the ground. **The
+flies over an island invented in C (`k3d_island.c`, `g:invent`);
+**0.12.39** (18.959), Flight in the dated screenshot, on its island, with
+`tile` laying out on paper first and the gallery's machine at 2 GB. Next
+the imagery deeper near the ground, then F6. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

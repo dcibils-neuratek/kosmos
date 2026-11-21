@@ -79,10 +79,22 @@ when that lands.
 11. **Credit**: whose imagery and whose elevation, in the window's corner,
     as their terms ask.
 
-Not in it, on purpose: airports' runways as real geometry, other traffic,
-air traffic control, navigation radios, a choice of aircraft. One aircraft
-flown well; the rest is a model file and a table of numbers later, if it is
-ever wanted.
+12. **Real airports** (F8): take off from and land on any airport's runway,
+    found by its name or code in the pause sheet - its runways drawn where
+    they are, the ground flat under them, the wheels rolling, braking and
+    touching down, and a landing told from a crash by how fast it came
+    down.
+13. **Air traffic control on the radio** (F9): the live audio of the
+    nearest airport's tower or approach, where a public feed exists,
+    tuned in the pause sheet.
+
+Not in it, on purpose: other traffic, navigation radios, a choice of
+aircraft. One aircraft flown well; the rest is a model file and a table of
+numbers later, if it is ever wanted. **This said runways as real geometry
+and air traffic control were left out too**, until Diego, 20 November
+2026: "Make sure we can takeoff and land in real airport locations", and
+"some real ATC radio could be nice if there is any stream of audio public
+we can tune into".
 
 ## Where each piece comes from
 
@@ -386,7 +398,10 @@ ends on the M700:
     at every tile's edge. Restart asks the network again. **Found on the
     M700**: before the restart was added, a Cessna left on Rio's runway sat
     stopped on open sea past the island's shore.
-  Then Flight in the dated screenshot.
+  - **Flight in the dated screenshot**, **0.12.39** (`testing.md`
+    18.959): `make shot` makes a `/Home` with Flight installed and its
+    sources at a dead port, so the picture shows Flight on its island
+    every time, the same in both looks.
   - **On the M700** (0.12.34, `testing.md` 18.954): flown there on
     lavapipe, at 85-89 ms a frame since Mesa counts Kosmos's processors.
     Mesa's Intel driver is linked as an image of its own, `k3dvk-anv.elf`,
@@ -400,6 +415,40 @@ ends on the M700:
   OpenStreetMap's outlines and heights, through the Map Kit that reads them
   for Maps, stood up as blocks with the photograph's roofs on top (agreed,
   *Questions* 2).
+- **Diego's evening list, 20 November 2026**, taken before the rest of F6
+  and in this order: "Make sure we can takeoff and land in real airport
+  locations", "Also don't know how to change cockpit to chase view",
+  "Also engine sound and propeller animation is needed", "I love playing
+  in dusk", "We neee to chose what time of day to play in", "Also some
+  real ATC radio could be nice if there is any stream of audio public we
+  can tune into".
+  - **F6a - time of day.** Dawn, morning, noon, afternoon, dusk and night
+    in the pause sheet, remembered: the sun's height and bearing from the
+    hour, and the sky, the horizon, the haze and the light on the slopes
+    coloured from them - dusk's orange low in the west. `T` steps through
+    them while flying.
+  - **F6b - the views, said.** `V` steps chase, cockpit and tower, and
+    nothing on the screen said so. The strip names the view with its key,
+    clicking it changes it, and the pause sheet lists the keys.
+  - **F6c - the propeller and the engine.** The propeller turned 30 times
+    a second, which a frame of 10 to 60 a second samples into standing
+    still or turning backwards; it is drawn at a rate the eye can follow
+    at low power and as a blurred disc above it. The engine's note, from
+    the Synth Kit, follows the power and the propeller's speed, with the
+    wind rising with the airspeed.
+- **F8 - real airports.** OurAirports' `airports.csv` and `runways.csv`
+  (public domain), the paved runways of every airport with a code, made
+  small by a build step into a file Flight carries, and searched by the
+  pause sheet beside Nominatim: "SBRJ", "Heathrow". The runway drawn as a
+  strip with its number and centreline, the terrain flattened under it to
+  the threshold's elevation, and the ground: wheels with rolling friction,
+  `B` for the brakes, rotation at the trainer's speed, and a touchdown
+  under about 600 feet a minute a landing and over it a crash.
+- **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
+  HTTP, the nearest to the airport chosen by its code. Played by a new
+  **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream
+  of the audio server - since Music's Radio source wants exactly that
+  door; Flight is its first user, and the volume is a row in the sheet.
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two
