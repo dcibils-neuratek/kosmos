@@ -40838,3 +40838,50 @@ second at 15 ms of GPU each, about 36%.
   the page within 120s", after it had signed in and opened Projects. It
   passed alone in 89 s and does not touch the GPU. Every other suite
   passed.
+
+## 18.972 The keys on F1, the brakes on Space, the tyres heard (0.12.52)
+
+**In short:** four requests Diego made while flying, on 21 November.
+- **F1** shows every key: 17 of them in four groups, the gamepad's among
+  them.
+- The **brakes** are on Space as well as B, and the strip says BRAKES.
+- An **idling propeller** holds the aircraft back on the runway.
+- The **tyres chirp** at touchdown.
+
+`x86-flight` holds that F1 shows the keys and F1 closes them, with none
+shown before the key. `x86-flight-land` holds the squeak, and how much
+the brakes slow the roll against rolling without them: 1.50 m/s² free,
+2.33 braked. That reckons 172 m and 95 m from 22 m/s, into the test's
+25 kt headwind.
+
+- **The keys** (`SHEET.keys`, held in the sheet's table because the main
+  chunk is at Lua's 200 locals). F1 shows them where the pause sheet
+  sits, overlay place 5, and pauses the flight. F1, Esc, P or a click
+  closes them. The sheet gains a Keys button, and its two lines of keys
+  become one ending "F1 all the keys". The suite's window is 160 by 100,
+  where neither the sheet nor this page can be laid ("keys not laid:
+  160x100", as for the sheet). So the suite holds the open, the count
+  and the close ("keys shown: 17 keys in 4 groups"), and the page
+  itself is seen on the M700. The first run waited for "keys laid" and
+  failed on exactly that.
+- **The roll.** The friction on the wheels was 0.04 of the weight they
+  carry, plus 0.45 more with the brakes. At idle nothing else slowed the
+  aircraft but the air, and Diego coasted down the runway. The windmill
+  drag is (1 − throttle) × q × 0.8 m², on the ground only, so the
+  approach and the glide are unchanged.
+  - A first value of 1.6 m² made the free roll 127 m, shorter than a
+    C172's.
+  - The brakes add less than on a calm day here: into 25 kt the wings
+    still carry part of the weight.
+- **The measure** (`land_checks`). Under TCG a frame is the step's
+  0.05 s cap, so a stop is minutes of wall time away. After touchdown
+  the suite closes the throttle (0), reads the speed over six frames
+  free and then six with Space held, and reckons each roll as v²/2a.
+  The check is that the braked roll is under 250 m and its slowing at
+  least 0.5 m/s² more than the free roll's, which is the control. The
+  first form asked for twice the free slowing and failed into the
+  headwind (3.00 against 2.00).
+- **The squeak.** Two chirps 0.12 s apart on a third synth track, 0.6
+  of the first's strength for the second. "squeak at 0.51" for this
+  landing at 255 fpm. The suite fails if the sound is on and no squeak
+  is said.

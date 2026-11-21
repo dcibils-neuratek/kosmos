@@ -66,6 +66,7 @@ local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f =
               -- main row's and the keypad's), and 1 to 9 and 0 to set it at
               -- once - 0 idle, 1 a tenth, 9 nine tenths; Shift-less = is +.
               pgup = 104, pgdn = 109, minus = 12, equal = 13, kpplus = 78, kpminus = 74,
+              f1 = 59, esc = 1, space = 57,
               digits = { 11, 2, 3, 4, 5, 6, 7, 8, 9, 10 } }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
@@ -80,6 +81,7 @@ local PLANE = {
   cd0 = 0.030, k = 0.050,                        -- drag: CD0 + k CL^2
   flaps_cl = 0.45, flaps_cd = 0.030,
   power = 96000, static = 2600,                  -- W at the propeller, N standing
+  prop_drag = 0.8,                               -- m2: the idling propeller's drag on the ground
   roll_rate = math.rad(70), alpha_most = math.rad(12),
   gear = 1.4,                                    -- the eye's height on its wheels
 }
@@ -140,7 +142,13 @@ local function fly(dt, pitch, roll, ground_h, brake)
     -- about half a g on a dry runway - and off when lift is enough.
     S.phi = 0
     local friction = (0.04 + 0.45 * (brake or 0)) * math.max(0, m * G - lift)
-    S.v = math.max(0, S.v + (thrust - drag - friction) / m * dt)
+    -- An idling propeller holds the aircraft back, a windmill's drag that
+    -- fades as the throttle opens. Without it a landing at idle coasted
+    -- about a kilometre on 0.04 g of rolling alone (Diego, 21 November:
+    -- "i am at 0% throttle and the plane is still running on the floor");
+    -- with it a C172's roll is a few hundred metres, brakes off.
+    local windmill = (1 - S.throttle) * 0.5 * rho * air * air * P.prop_drag
+    S.v = math.max(0, S.v + (thrust - drag - windmill - friction) / m * dt)
     S.gamma = 0
     if lift > m * G * 1.02 and pitch > 0 then
       S.ground = false
@@ -658,7 +666,7 @@ local function start(g)
       S.v, S.gamma, S.flaps, S.throttle = 36, -math.rad(3), 0.5, 0.35
     end
   end
-  S.started, S.ground_said, S.landed = how, nil, nil
+  S.started, S.ground_said, S.landed, S.rollout = how, nil, nil, nil
   say(("wind from %03d at %d kt"):format(settings.wind_from or 270, settings.wind or 0))
   say(("started %s at x=%.0f y=%.0f z=%.0f heading=%.0f in %s"):format(how, S.x, S.y, S.z,
       math.deg(S.psi) % 360, here and here.name or "no place known"))
@@ -820,6 +828,15 @@ local engine_song = {
         -- steady rush that follows the airspeed alone.
         ftype = 2, cut = 600, res = 0.1, env = 0, aA = 0.8, aD = 1, aS = 1, aR = 0.8,
         lfoR = 0.3, lfoC = 0, lfoP = 0, lvl = 0.6, uni = 1, det = 0, glide = 0 } },
+    -- The tyres meeting the runway (Diego, 21 November: "we need a way to
+    -- hear the landing sound like wheels squeaking"): a short high chirp,
+    -- a square and a little noise through a band-pass around 1.8 kHz,
+    -- struck at touchdown as hard as the landing was and gone in a third
+    -- of a second; a second, softer, for the other wheel.
+    { type = "synth", vol = 0.5, params = {
+        w1 = 3, w2 = 1, oct2 = 0, mix = 0.3, sub = 0, noise = 0.35, mono = 1,
+        ftype = 2, cut = 1800, res = 0.55, env = 0, aA = 0.004, aD = 0.22, aS = 0, aR = 0.08,
+        lfoR = 18, lfoC = 0.25, lfoP = 0, lvl = 0.9, uni = 1, det = 0, glide = 0 } },
   },
 }
 
@@ -853,6 +870,17 @@ local engine_state = {}
 local function engine_sound(t)
   if not settings.sound then engine_stop() return end
   engine_start()
+  local sq = engine.squeak
+  if engine.on and sq then
+    if not sq.second and t - sq.t > 0.12 then
+      synth.note_off(3, 90)
+      synth.note_on(3, 88, sq.hard * 0.6)
+      sq.second = true
+    elseif t - sq.t > 0.5 then
+      synth.note_off(3, 88)
+      engine.squeak = nil
+    end
+  end
   if not engine.on or t - engine.sent < 0.1 then return end
   local rpm = math.min(2750, 700 + 2000 * S.throttle + 8 * S.v)
   local hz = rpm / 30
@@ -1068,7 +1096,8 @@ function PAD.controls(w, dt)
     if w:pressed(code) then S.throttle = (i - 1) / 10 end
   end
   S.throttle = math.max(0, math.min(1, S.throttle + 0.5 * pt * dt))
-  return pitch, roll, math.max(pb, key(KEY.b))
+  S.braking = math.max(pb, key(KEY.b), key(KEY.space))
+  return pitch, roll, S.braking
 end
 
 -- **The strip** (F5e): what a pilot reads, along the foot of the chase and
@@ -1096,6 +1125,7 @@ local function strip_words(ground_h)
     { "FLAPS", ("%d\u{b0}"):format(math.floor(S.flaps * 30 + 0.5)) },
   }
   local state = S.paused and "PAUSED" or S.alpha > PLANE.stall and "STALL"
+    or S.ground and (S.braking or 0) > 0 and "BRAKES"
                 or ground_h and (S.y - ground_h) < 3 and "ON THE GROUND" or nil
   return words, state
 end
@@ -1669,7 +1699,7 @@ local function sheet_rows()
   rows[#rows + 1] = { kind = "weathers", label = "Weather", items = DECK.choices }
   rows[#rows + 1] = { kind = "winds", label = "Wind", items = WIND.strengths }
   rows[#rows + 1] = { kind = "froms", label = "From", items = WIND.froms }
-  rows[#rows + 1] = { kind = "buttons", items = { { name = "Restart" }, { name = "Fly on" } } }
+  rows[#rows + 1] = { kind = "buttons", items = { { name = "Keys" }, { name = "Restart" }, { name = "Fly on" } } }
   return rows
 end
 
@@ -1769,6 +1799,9 @@ local function choose(w, row, i)
   elseif item.name == "Restart" then
     restart(SHEET.place, SHEET.start)
     sheet_close(w)
+  elseif item.name == "Keys" then
+    sheet_close(w)
+    SHEET.keys.show()
   else
     sheet_close(w)
   end
@@ -1893,7 +1926,7 @@ local function draw_sheet(w)
     end
     return n
   end
-  local sh = 70 + 44                  -- and the keys, above the buttons
+  local sh = 70 + 26                  -- and the keys' line, above the buttons
   for _, r in ipairs(rows) do sh = sh + (r.kind == "buttons" and 48 or lines(r) * 30 + 10) end
   sh = math.min(sh, height - 16)
   if not sheet_surface or select(2, sheet_surface:size()) ~= sh or sheet_surface:size() ~= sw then
@@ -1923,11 +1956,9 @@ local function draw_sheet(w)
     elseif r.kind == "buttons" then
       -- The keys, said once where a person looks for them (F6b).
       s:fill(18, y - 4, sw - 36, 1, LINE)
-      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z or 0-9 throttle \u{b7} B brakes \u{b7} F flaps",
+      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z or 0-9 throttle \u{b7} F flaps \u{b7} F1 all the keys",
              DIM, nil, sheet_face)
-      s:text(18, y + 22, "V view \u{b7} T time \u{b7} M sound \u{b7} H shadows \u{b7} P pause \u{b7} R again \u{b7} F3 graphics",
-             DIM, nil, sheet_face)
-      y = y + 44
+      y = y + 26
       local x = sw - 18
       for i = #r.items, 1, -1 do
         local item = r.items[i]
@@ -1959,6 +1990,82 @@ local function draw_sheet(w)
   SHEET.at = { (width - sw) // 2, (height - sh) // 2 }
   local ok, why = w:overlay(s, SHEET.at[1], SHEET.at[2], 5)
   if not ok then say("sheet failed=" .. tostring(why)) end
+end
+
+-- **The keys, all of them** (F6h; Diego, 21 November: "we need a help
+-- screen to show all the commands"): F1 opens them where the pause sheet
+-- sits, paused under it, and F1 or Esc - or a click - closes them. The
+-- sheet's Keys button opens them too. What a key steps through is said
+-- beside it, since the flaps and the views step and do not say so.
+SHEET.keys = { open = false, groups = {
+  { "Flying", {
+    { "\u{2191} \u{2193}", "pitch: nose down, nose up" },
+    { "\u{2190} \u{2192}", "roll left, roll right" },
+    { "A  Z", "throttle up, down - also Page Up and Down, + and -" },
+    { "0 to 9", "throttle at once: 0 idle, 5 half, 9 nine tenths" },
+    { "F", "flaps a step: 0\u{b0}, 15\u{b0}, 30\u{b0}, then up again" },
+    { "B  Space", "brakes, while held, on the ground" } } },
+  { "The view and the world", {
+    { "V", "view: chase, cockpit, tower - or click the view's chip" },
+    { "T", "time of day: dawn, morning, noon, afternoon, dusk, night" },
+    { "H", "shadows on and off" },
+    { "M", "sound on and off" },
+    { "F3", "the graphics panel: frames, GPU and processor times" } } },
+  { "The flight", {
+    { "P", "pause: the place, the start, the time, the weather, the wind" },
+    { "R", "start again, from the same place and start" },
+    { "F1", "these keys; F1 or Esc closes them" } } },
+  { "A gamepad", {
+    { "left stick", "the yoke: pitch and roll, as far as it is pushed" },
+    { "triggers", "right opens the throttle, left closes it" },
+    { "A  B", "A brakes, B a step of flaps" } } } } }
+
+function SHEET.keys.show()
+  SHEET.keys.open, SHEET.keys.drawn, S.paused = true, false, true
+  local n = 0
+  for _, gr in ipairs(SHEET.keys.groups) do n = n + #gr[2] end
+  say(("keys shown: %d keys in %d groups"):format(n, #SHEET.keys.groups))
+end
+
+function SHEET.keys.close(w)
+  SHEET.keys.open, S.paused = false, false
+  w:overlay(nil, 0, 0, 5)
+  say("keys closed")
+end
+
+function SHEET.keys.draw(w)
+  if not SHEET.keys.open or SHEET.keys.drawn then return end
+  SHEET.keys.drawn = true
+  if not sheet_face then
+    sheet_face = gfx.face("ibmplexsans", 13)
+    sheet_bold = gfx.face("ibmplexsans-medium", 13) or sheet_face
+    sheet_title = gfx.face("ibmplexsans-medium", 18) or sheet_bold
+  end
+  local width, height = settings.width, settings.height
+  local sw, rows = math.min(560, width - 32), 0
+  for _, gr in ipairs(SHEET.keys.groups) do rows = rows + #gr[2] end
+  local sh = math.min(height - 16, 70 + #SHEET.keys.groups * 34 + rows * 22 + 12)
+  if sw < 300 or sh < 200 then say(("keys not laid: %dx%d"):format(width, height)) return end
+  if not SHEET.keys.surface or SHEET.keys.surface:size() ~= sw or select(2, SHEET.keys.surface:size()) ~= sh then
+    SHEET.keys.surface = gfx.surface{ w = sw, h = sh }
+  end
+  local s = SHEET.keys.surface
+  s:fill(0, 0, sw, sh, GLASS)
+  s:text(18, 14, "Keys", BRIGHT, nil, sheet_title)
+  s:text(18, 42, "Paused while these are shown. F1 or Esc goes back to flying.", DIM, nil, sheet_face)
+  local y, cap = 70, 120
+  for _, gr in ipairs(SHEET.keys.groups) do
+    s:fill(18, y, sw - 36, 1, LINE)
+    s:text(18, y + 8, gr[1], ACCENT, nil, sheet_bold)
+    y = y + 34
+    for _, it in ipairs(gr[2]) do
+      s:text(30, y, it[1], BRIGHT, nil, sheet_bold)
+      s:text(18 + cap, y, it[2], DIM, nil, sheet_face)
+      y = y + 22
+    end
+  end
+  local ok, why = w:overlay(s, (width - sw) // 2, (height - sh) // 2, 5)
+  say(("keys laid %dx%d %d keys%s"):format(sw, sh, rows, ok and "" or (" failed=" .. tostring(why))))
 end
 
 -- The window and the terrain.
@@ -2084,8 +2191,19 @@ while not w:closed(0) do
   -- With the sheet open, the keys are its own: the letters a search.
   local v, p, f3, f, r = w:pressed(KEY.v), w:pressed(KEY.p), w:pressed(KEY.f3),
                          w:pressed(KEY.f), w:pressed(KEY.r)
-  if SHEET.open then
+  -- F1 kept in the keys' own table: the main chunk is at Lua's 200 locals.
+  SHEET.keys.f1 = w:pressed(KEY.f1)
+  if SHEET.keys.open then
+    if SHEET.keys.f1 or w:pressed(KEY.esc) or p or w:clicked() then SHEET.keys.close(w) end
+    w:typed()
+  elseif SHEET.open and SHEET.keys.f1 then
+    sheet_close(w)
+    SHEET.keys.show()
+  elseif SHEET.open then
     sheet_input(w)
+  elseif SHEET.keys.f1 then
+    SHEET.keys.show()
+    w:typed()
   else
     local cx, cy = w:clicked()
     if v or on_view_chip(cx, cy) then S.view = S.view % 3 + 1 end
@@ -2128,7 +2246,22 @@ while not w:closed(0) do
           runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))
       say(("touched down at %.0f kt through the air, %.0f kt over the ground"):format(
           (S.touch_air or 0) * 1.944, (S.touch_ground or 0) * 1.944))
+      -- The squeak, as hard as the sink rate: a greaser at 100 fpm is a
+      -- whisper, 500 fpm a bark.
+      if engine.on then
+        local hard = math.max(0.25, math.min(1, S.landed / 500))
+        synth.note_on(3, 90, hard)
+        engine.squeak = { t = t, hard = hard }
+        say(("squeak at %.2f"):format(hard))
+      end
       S.landed = nil
+      S.rollout = { x = S.x, z = S.z, t = t }
+    end
+    -- Said once it has stopped: how far the landing rolled, and how long.
+    if S.rollout and S.ground and S.v == 0 then
+      say(("rolled out %.0f m in %.1f s"):format(
+          math.sqrt((S.x - S.rollout.x) ^ 2 + (S.z - S.rollout.z) ^ 2), t - S.rollout.t))
+      S.rollout = nil
     end
     -- On a runway's start, the ground under the wheels once its tiles are
     -- in: the runway's own height, levelled (F8).
@@ -2147,6 +2280,7 @@ while not w:closed(0) do
   draw_strip(w, g:height(S.x, S.z))
   draw_panel(w, dt)
   draw_sheet(w)
+  SHEET.keys.draw(w)
 
   look(g)
   feed(g, view.eye)

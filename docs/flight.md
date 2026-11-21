@@ -562,6 +562,27 @@ ends on the M700:
     under the graphics panel when that is open, and a click on it changes
     the view. The pause sheet lists every key. (This said the strip would
     name it; the cockpit has no strip, and the chip is in every view.)
+  - **F6h - the keys, all of them** - asked by Diego on 21 November
+    2026: "we need a help screen to show all the commands". F1 opens a
+    Keys page where the pause sheet sits, and the flight pauses under it.
+    It lists every key in four groups - flying (the arrows, the throttle's
+    keys, the flaps, the brakes), the view and the world (V, T, H, M, F3),
+    the flight (P, R, F1), and a gamepad's (the left stick, the triggers,
+    A and B) - each with what it does and, where it steps, what it steps
+    through (the flaps' 0, 15 and 30 degrees, the views' three). F1 or Esc
+    closes it, and the pause sheet's Keys button opens it. The sheet's two
+    lines of keys become one, pointing at F1. **Built in 0.12.52.**
+  - **F8d - stopping on the runway, and the tyres** - asked by Diego on
+    21 November 2026, flying: "we need a way to hear the landing sound
+    like wheels squeaking", "a way to stop the plane in the runway", "i
+    am at 0% throttle and the plane is still running on the floor".
+    **Built in 0.12.52.** The brakes are B or Space, held, and the strip
+    says BRAKES while they are on. An idling propeller now has a
+    windmill's drag on the ground (0.8 m², fading as the throttle opens),
+    so a landing at idle stops: rolling on 0.04 g alone it had coasted
+    about a kilometre. At touchdown the tyres chirp twice on a third
+    Synth Kit track - a square and noise through a band-pass at 1.8 kHz,
+    struck as hard as the sink rate (a quarter at 100 fpm, full at 500).
   - **F6c - the propeller and the engine**, **built in 0.12.41**
     (`testing.md` 18.961). The propeller turned at its true rate, up to 40
     turns a second, which frames at 10 to 60 a second sample into standing

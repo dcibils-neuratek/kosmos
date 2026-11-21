@@ -418,7 +418,7 @@ def island_checks(seen, island, asked, guest):
     return 0
 
 
-def land_checks(seen):
+def land_checks(seen, roll=None):
     """A landing (F8): begun on final to SDU's 02R, the flight touched down
     under 600 feet a minute, on SDU 02R/20L, and did not crash."""
     fails = []
@@ -459,6 +459,35 @@ def land_checks(seen):
     if not wind or not touch or int(touch.group(1)) - int(touch.group(2)) < 15:
         fails.append("the landing was not into the wind: %r"
                      % (touch.group(0) if touch else wind and wind.group(0)))
+    # The tyres (Diego: "the landing sound like wheels squeaking"): struck
+    # at touchdown, as hard as the sink rate - when the sound is on.
+    squeak = re.search(r"flight squeak at ([\d.]+)", seen)
+    sound = "flight sound on" in seen
+    print("flight: %s (sound %s)" % (squeak.group(0) if squeak else "no squeak", sound))
+    if landed and sound and not squeak:
+        fails.append("the tyres were not heard at touchdown")
+    # Stopping on the runway at idle: each half's slowing, from the frames'
+    # speeds, and the distance it would roll from the speed it had. A
+    # C172's braked roll is about 180 m and its free one some 400: braked
+    # under 250 m, and slowing at least 0.5 m/s2 more than without.
+    def slowing(pair):
+        a, b = pair
+        return (a["v"] - b["v"]) / ((b["frame"] - a["frame"]) * 0.05), a["v"]
+    if landed and roll:
+        free, v0 = slowing(roll["free"])
+        braked, v1 = slowing(roll["braked"])
+        print("flight: rolling at idle %.2f m/s2 (would roll %.0f m from %.1f m/s), "
+              "braked %.2f m/s2 (%.0f m from %.1f)"
+              % (free, v0 * v0 / (2 * max(free, 0.01)), v0,
+                 braked, v1 * v1 / (2 * max(braked, 0.01)), v1))
+        # The control is the free roll: into this landing's 25 kt the
+        # wings still carry some of the weight, so the brakes add less
+        # than on a calm day - but they must add.
+        if braked < free + 0.5 or v1 * v1 / (2 * max(braked, 0.01)) > 250:
+            fails.append("the brakes did not stop it within 250 m: %.2f m/s2 braked, %.2f free"
+                         % (braked, free))
+    elif landed:
+        fails.append("the roll was not measured")
     if crashed or not landed:
         fails.append("it did not land: %r" % (crashed.group(0) if crashed else "no touchdown"))
     elif int(landed.group(1)) >= 600 or landed.group(2).strip() != "on SDU 02R/20L":
@@ -585,10 +614,27 @@ def main():
                     r"flight (landed at|crashed:)", guest.seen[mark:]):
                 guest._read_available()
                 time.sleep(0.2)
+            # Down: the throttle closed (0), and the slowing measured
+            # first without the brakes - the control - then with Space
+            # held (Diego, 21 November: "a way to stop the plane in the
+            # runway"). Under TCG a frame is 0.05 s of flight, the cap on
+            # its step, so the stop itself is minutes away; its distance
+            # is reckoned from the slowing.
+            roll = {}
+            if re.search(r"flight landed at", guest.seen[mark:]):
+                keys(True, "0")
+                time.sleep(0.2)
+                keys(False, "0")
+                wait_frames(2, "the throttle closed")
+                roll["free"] = (wait_frames(1, "rolling"), wait_frames(6, "rolling on"))
+                keys(True, "spc")
+                wait_frames(2, "the brakes on")
+                roll["braked"] = (wait_frames(1, "braking"), wait_frames(6, "braking on"))
+                keys(False, "spc")
             if os.environ.get("KOSMOS_FLIGHT_SHOT"):        # on the runway, for a person
                 time.sleep(3)
                 R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], guest.screendump())
-            return land_checks(guest.seen[mark:])
+            return land_checks(guest.seen[mark:], roll)
 
         if ISLAND:
             guest.wait_for("flight offline:", "went offline")
@@ -724,6 +770,19 @@ def main():
         sheet_key("ret", "Restart")
         guest.wait_for("flight started runway", "the restart")
         rio = wait_frames(3, "on Rio's runway")
+
+        # The keys (F6h): F1 lays every key where the sheet sits, and F1
+        # again closes it. Its control is the count before: no page laid
+        # until F1 is pressed.
+        keys_before = guest.seen.count("flight keys shown")
+        keys(True, "f1")
+        time.sleep(0.1)
+        keys(False, "f1")
+        guest.wait_for("flight keys shown", "the keys page")
+        keys(True, "f1")
+        time.sleep(0.1)
+        keys(False, "f1")
+        guest.wait_for("flight keys closed", "the keys page closed")
 
         # The time of day (F6a): T twice from noon is dusk, and the
         # horizon turns orange. Counted against the frame at noon, since
@@ -1044,6 +1103,16 @@ def main():
             abs(float(under.group(2)) - 2.74) > 0.01 or under.group(3).strip() != "SDU 02R/20L":
         fails.append("the ground on 02R's threshold is not the runway's 2.74 m on SDU 02R/20L: %r"
                      % (under.group(0) if under else re.findall(r"flight runway.*", seen)))
+    # The window here is 160 by 100, too small for the page (as for the
+    # sheet), so what is held is that F1 opens it with every key and closes
+    # it; the page's drawing is seen on the M700.
+    shown = re.findall(r"flight keys shown: (\d+) keys in (\d+) groups", seen)
+    print("flight: keys shown %r, none before F1: %s" % (shown, keys_before == 0))
+    if keys_before != 0 or shown != [("17", "4")]:
+        fails.append("F1 did not show the 17 keys in 4 groups once, after none: %r (before %d)"
+                     % (shown, keys_before))
+    if "flight keys closed" not in seen:
+        fails.append("F1 again did not close the keys")
     pls = re.findall(r"flight place (.*?) - ", seen)
     if len(pls) < 2 or not re.fullmatch(r"SDU .{1,3} Santos Dumont", pls[-1]):
         fails.append("the place box did not follow to Santos Dumont: %r" % (pls,))

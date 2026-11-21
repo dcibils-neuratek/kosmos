@@ -5987,3 +5987,20 @@ now the driver reads that instead.
 
 **Measured.** With Flight in front on the M700, the graphics engine was
 37 to 42% busy. Before, it read 0%.
+
+## 21 November 2026 - Brakes, tyres and a list of keys
+
+**In short:** Flight now stops on the runway, the tyres squeak when you
+land, and F1 lists every key.
+
+**What changed.** Diego landed at idle and the aircraft kept rolling,
+because nothing but the wheels' light friction slowed it. A real
+propeller at idle acts like a windmill and holds the aircraft back, and
+now Flight's does too. The brakes were on B, held, and nothing said so.
+Now Space works as well, and the bottom strip says BRAKES while they're
+on. At touchdown the tyres chirp twice, louder for a harder landing.
+And F1 opens a page with every key and what it does, including how the
+flaps and views step through their positions.
+
+**Measured.** In the landing test, into a 25-knot wind, the aircraft
+would roll about 170 m at idle and about 95 m with the brakes.
