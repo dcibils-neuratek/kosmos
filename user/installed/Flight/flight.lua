@@ -48,6 +48,8 @@ local settings = prefs.open("flight", {
   time = "noon",                                 -- the time of day, one of HOURS (F6a)
   sound = true,                                  -- the engine and the wind heard (F6c, M)
   runways = true,                                -- the runways drawn over the imagery (F8b)
+  buildings = true,                              -- the city's buildings stood up (F6, B3)
+  vector = "https://tiles.openfreemap.org/planet",   -- where their outlines come from, as Maps'
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
   finder = false,                                -- places looked up there, not Nominatim
@@ -532,7 +534,10 @@ local function look(g)
     -- out to 24 km. A cap of 50 left it 14 pixels tall 13 km from
     -- Carrasco, on the M700 (20 November).
     if not tower.ground then tower.ground = g:height(tower.x, tower.z) end
-    e[1], e[2], e[3] = tower.x, (tower.ground or 0) + 30, tower.z
+    -- Above whatever is built there (B3): at Heathrow the field's point is
+    -- among the terminals, and an eye 30 m up stood inside one.
+    local roof = g:top(tower.x, tower.z, 15)
+    e[1], e[2], e[3] = tower.x, math.max((tower.ground or 0) + 30, (roof or -1e9) + 8), tower.z
     t[1], t[2], t[3] = S.x, S.y, S.z
     u[1], u[2], u[3] = 0, 1, 0
     local dx, dy, dz = S.x - e[1], S.y - e[2], S.z - e[3]
@@ -684,6 +689,13 @@ local function sources()
   if not net.imagery then return nil, why end
   net.elevation, why = tiles.source(settings.elevation, "png")
   if not net.elevation then return nil, why end
+  -- The buildings' outlines, the map's own vector tiles, shared with Maps'
+  -- cache; a flight without them is still a flight.
+  net.vector = nil
+  if settings.buildings then
+    net.vector, why = tiles.source(settings.vector, "pbf")
+    if not net.vector then say("buildings none: " .. tostring(why)) end
+  end
   return true
 end
 
@@ -699,6 +711,13 @@ SEA:fill(0, 0, 2, 2, 0xFF1E3C5A)
 local handed = 0
 
 local function hand(g, kind, z, x, y)
+  -- A vector tile is read by the terrain itself, never a Lua string: a
+  -- city's is most of a megabyte.
+  if kind == "v" then
+    if not net.vector or not g:buildings(z, x, y, net.vector:path(z, x, y)) then return false end
+    handed = handed + 1
+    return true
+  end
   local src = kind == "e" and net.elevation or net.imagery
   local bytes = fs.read(src:path(z, x, y))
   if not bytes then return false end
@@ -714,13 +733,13 @@ local function hand(g, kind, z, x, y)
   return true
 end
 
-local asked = { e = {}, i = {} }        -- flat lists of z, x, y, reused
-local asking = { e = 0, i = 0 }
+local asked = { e = {}, i = {}, v = {} }   -- flat lists of z, x, y, reused
+local asking = { e = 0, i = 0, v = 0 }
 local polled = 0
 -- Tiles looked for in the cache and not there: not looked for again until
 -- the server says one has come, so a frame does not ask the disk for every
 -- tile still on its way.
-local missing = { e = {}, i = {} }
+local missing = { e = {}, i = {}, v = {} }
 local function key(z, x, y) return (z << 50) | (x << 25) | y end
 
 -- **Offline, an invented island** (F5j): with no `/Tiles`, or nothing
@@ -743,7 +762,7 @@ end
 
 local function feed(g, eye)
   if offline.on then return feed_invented(g, eye) end
-  asking.e, asking.i = 0, 0
+  asking.e, asking.i, asking.v = 0, 0, 0
   for _, t in ipairs(g:wanted(eye)) do
     local kind = t[1]
     local id = key(t[2], t[3], t[4])
@@ -760,13 +779,15 @@ local function feed(g, eye)
   local t = now()
   if t - polled < 0.2 then return end
   polled = t
-  for kind, src in pairs({ e = net.elevation, i = net.imagery }) do
+  for kind, src in pairs({ e = net.elevation, i = net.imagery, v = net.vector or false }) do
+    if not src then goto next_source end
     local list = asked[kind]
     for i = asking[kind] * 3 + 1, #list do list[i] = nil end
     src:want(list)
     -- What has come is read from the cache the next time it is wanted.
     local came = src:arrived()
     for _, c in ipairs(came or {}) do missing[kind][key(c.z, c.x, c.y)] = nil end
+    ::next_source::
   end
 end
 
@@ -1659,7 +1680,9 @@ local keep = math.max(120, math.min(600, math.floor(free_mb / 4 / 0.5)))
 local function terrain()
   return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 15,
                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
-                    keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil }
+                    keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil,
+                    buildings = settings.buildings and not offline.on and 14 or nil,
+                    buildings_radius = 1 }
 end
 local g = terrain()
 say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))
@@ -1847,6 +1870,7 @@ while not w:closed(0) do
     -- What the strip shows now and how often it was laid again, so a
     -- strip that stopped following the flight is seen in the log.
     say(("strip redrawn=%d shows %s"):format(strip_redrawn, strip_said or "nothing"))
+    say("buildings " .. g:built())
     say(("propeller %.3f turns a frame at throttle %.2f, engine %s")
         :format(S.prop_step or 0, S.throttle,
                 engine.on and ("%.0f rpm"):format(engine.rpm or 0) or "silent"))

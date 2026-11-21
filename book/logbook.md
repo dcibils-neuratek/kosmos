@@ -5797,3 +5797,29 @@ speak the tower's lines itself.
 redirected to it, plays it, and the sound card's recording has seven
 seconds of tone in it. The station hangs up partway, and the radio calls
 it back on its own.
+
+## 21 November 2026 - Flight's cities stand up
+
+**In short:** Flight now draws every building in a city at its real
+height. Over London that is nearly 47,000 of them, and the M700 still
+draws a frame in under 12 ms.
+
+**What changed.** The map that Maps draws already knew every building's
+outline. Its reader had been throwing away how tall each one is, and now
+it keeps that. The 3D Kit gained a small piece that turns a flat outline,
+courtyards included, into a solid block: a roof cut into triangles and a
+wall along each edge. Flight's terrain asks for the map's tiles around
+the aircraft and makes every building solid on a thread of its own, set
+on the lowest ground under it so that nothing floats on a hill. Each
+tile's buildings go to the graphics card as one piece and are drawn in a
+single call.
+
+**What you see.** Fly over a city and the city is there: streets of
+houses, office blocks and towers, in a plain light stone colour for now.
+The next step puts the satellite photograph's roofs on top of them.
+
+**Checked.** A host test holds the block maker to areas a person can
+check on paper, such as a courtyard of 84 square metres. Flight's suite
+serves tiles of known buildings and counts that all of them, and all
+their triangles, came out. On the M700, Heathrow and the City of London
+were flown and photographed.

@@ -134,7 +134,9 @@ static long keep(struct mvt_tile *t, const uint8_t *s, size_t n)
 }
 
 /* A value from a layer's table: a string's bytes, or an integer. */
-struct value { const uint8_t *s; size_t n; int64_t i; int is_string, is_int; };
+/* A value: a string, an integer, or a number with a fraction - `d` holds
+ * every number, so a height given either way is read the same. */
+struct value { const uint8_t *s; size_t n; int64_t i; double d; int is_string, is_int, is_number; };
 
 static int read_value(struct pb v, struct value *out)
 {
@@ -153,7 +155,22 @@ static int read_value(struct pb v, struct value *out)
             out->i = (int64_t)((x >> 1) ^ (~(x & 1) + 1)), out->is_int = 1;
         } else if (f == 7 && w == 0) {
             out->i = (int64_t)x, out->is_int = 1;
+        } else if (f == 2 && w == 5) {
+            uint32_t bits = (uint32_t)x;
+            float fl;
+
+            memcpy(&fl, &bits, sizeof fl);
+            out->d = fl, out->is_number = 1;
+        } else if (f == 3 && w == 1) {
+            double db;
+
+            memcpy(&db, &x, sizeof db);
+            out->d = db, out->is_number = 1;
         }
+    }
+
+    if (out->is_int) {
+        out->d = (double)out->i, out->is_number = 1;
     }
 
     return 1;
@@ -333,6 +350,12 @@ static int layer(struct mvt_tile *t, struct pb l, struct pending **pend, size_t 
                             ft->brunnel = (val->n == 6 && memcmp(val->s, "bridge", 6) == 0) ? 1
                                         : (val->n == 6 && memcmp(val->s, "tunnel", 6) == 0) ? 2 : 0;
                         }
+                    } else if (val->is_number && is_key(k, "render_height")) {
+                        /* A building's height and where its walls begin
+                         * (OpenMapTiles), for a map that stands them up. */
+                        ft->height = val->d > 0 && val->d < 2000 ? (float)val->d : 0.0f;
+                    } else if (val->is_number && is_key(k, "render_min_height")) {
+                        ft->min_height = val->d > 0 && val->d < 2000 ? (float)val->d : 0.0f;
                     } else if (val->is_int && is_key(k, "rank")) {
                         ft->rank = (int32_t)val->i;
                     } else if (val->is_int && is_key(k, "admin_level")) {

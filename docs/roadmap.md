@@ -12034,7 +12034,7 @@ agreed on 20 November (Diego: "Yes to all", the six recommendations taken) - any
 elevation tiles and its satellite imagery from Esri, through the `tiles`
 server grown to several sources (F1), the Map Kit's elevation (F2), the 3D
 Kit on Vulkan and its terrain (F3, F4), `flight.lua` (F5), sound,
-weather and shadows (F6) - and buildings, OpenStreetMap's outlines stood up with the photograph's roofs (Diego, 20 November: "for f6 yes do buildings") - and a game controller's sticks and triggers handed to programs (F7; Diego, 20 November: "I would add gamepad support as well") - which the Super Nintendo, Doom and Quake gain too; Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
+weather and shadows (F6) - and buildings, OpenStreetMap's outlines stood up with the photograph's roofs (Diego, 20 November: "for f6 yes do buildings") - **B1-B3 built in 0.12.45** (18.965: heights read, `k3d_extrude.c`, the buildings stood up by the terrain, drawn plain); B4 the roofs from the imagery next; and **the tower view in the real tower**, wanted: it stands on the field's reference point, which at Heathrow is among the terminals, 2.2 km from the runway - OpenStreetMap tags the tower (`aeroway=control_tower`) and the vector tiles' `aeroway` layer may carry it - and a game controller's sticks and triggers handed to programs (F7; Diego, 20 November: "I would add gamepad support as well") - which the Super Nintendo, Doom and Quake gain too; Maps gains a satellite view from the same doors. **G6a-G6c built in 0.12.8** (`testing.md` 18.928) and **G6d in
 0.12.9** (18.929): the render engine and the blitter on execlists, a hang
 watch and an engine reset; **G6e in 0.12.10** (18.930), programs' own
 contexts - the protocol, the stand-in under QEMU, images kept across runs
@@ -12103,7 +12103,7 @@ prompt, `x86-radio`; **its source waits on Diego**: LiveATC prohibits third-part
 use of its streams, so permission, another source, or ATC spoken by Kosmos. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
 menu check read the menu without "Add to favorites" and "Settings", and
 `x86-tcc` had a keyring line inside a program's output. In the 0.12.42 gate `x86-smbd`'s Servers page never showed the visitor within 120 s,
-and it passed alone (38 checks); in 0.12.43's first `x86-flight` the engine rendered at a
+and it passed alone (38 checks); in 0.12.45's second gate `x86-flight`'s cockpit panel check read the row above the panel as 0.12 sky (pitch 21, roll 18) and passed alone at 1.0 (pitch 23, roll 15) - the panel is an overlay and the suite's buildings stand far below that row, so a frame taken mid-switch is the likelier cause (18.965); in 0.12.43's first `x86-flight` the engine rendered at a
 peak of 0 and passed straight after (18.963). **Found on the M700, 21 November**: with no
 `servers` file in `/Home/Preferences`, the Servers window shows "Screen by VNC, at start" on,
 but wm reads only the saved file and does not start vncd - one default, in one place, wanted.

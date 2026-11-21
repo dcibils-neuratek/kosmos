@@ -51,7 +51,11 @@ ISLAND = "--island" in sys.argv
 # `--land` (F8): on a short final to Rio's 02R, hands off, until the wheels
 # touch - a landing under 600 feet a minute, on the runway.
 LAND = "--land" in sys.argv
-sys.argv = [a for a in sys.argv if a not in ("--island", "--land")]
+# `--wrong-layer` (F6, B3) is the buildings' control: the served vector
+# tiles name their layer `buildings`, which OpenMapTiles' is not, so none
+# is stood up and the suite must fail.
+WRONG_LAYER = "--wrong-layer" in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--island", "--land", "--wrong-layer")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
@@ -101,8 +105,41 @@ def terrarium(z, x, y):
             + chunk(b"IEND", b""))
 
 
+# **The buildings' tile** (F6, B3): every zoom-14 vector tile the same - a
+# block of 6 by 6 boxes in its middle, 20 by 15 m and from 10 to 30 m
+# tall, and one with a courtyard - so how many are stood up and of how many
+# triangles is known: a box is a roof of 2 and 4 walls of 2, 10; the
+# courtyard a roof of 8 and 8 walls, 24.
+BUILDINGS_A_TILE = 37
+TRIANGLES_A_TILE = 36 * 10 + 24
+
+
+def vector_tile():
+    import mapcity                                           # noqa: E402
+    feats = []
+    for i in range(6):
+        for j in range(6):
+            x0, y0 = 1800 + 100 * i, 1800 + 100 * j
+            ring = [(x0, y0), (x0 + 40, y0), (x0 + 40, y0 + 30), (x0, y0 + 30)]
+            if mapcity.signed_area(ring) < 0:
+                ring = ring[::-1]
+            feats.append(("polygon", mapcity.geometry("polygon", [ring]),
+                          {"render_height": 10 + (i + j) % 5 * 5}))
+    outer = [(2600, 2600), (2720, 2600), (2720, 2720), (2600, 2720)]
+    hole = [(2640, 2640), (2680, 2640), (2680, 2680), (2640, 2680)]
+    if mapcity.signed_area(outer) < 0:
+        outer = outer[::-1]
+    if mapcity.signed_area(hole) > 0:
+        hole = hole[::-1]
+    feats.append(("polygon", mapcity.geometry("polygon", [outer, hole]),
+                  {"render_height": 12.5, "render_min_height": 0}))
+    name = "buildings" if WRONG_LAYER else "building"
+    return mapcity.gz(mapcity.lendelim(3, mapcity.layer_bytes(name, feats)))
+
+
 def tile_server():
-    asked = {"elev": 0, "img": 0, "search": None}
+    asked = {"elev": 0, "img": 0, "vec": 0, "search": None}
+    vector = vector_tile()
     made = {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -134,6 +171,10 @@ def tile_server():
                         b'"place_rank":16,"display_name":"Paris, Ile-de-France, France"}]')
                 self.send(200, body, "application/json")
                 return
+            if re.match(r"^/vec/14/(\d+)/(\d+)\.pbf$", self.path):
+                asked["vec"] += 1
+                self.send(200, vector, "application/x-protobuf")
+                return
             if re.match(r"^/img/(\d+)/(\d+)/(\d+)$", self.path):
                 asked["img"] += 1
                 self.send(200, JPEG, "image/jpeg")
@@ -151,6 +192,7 @@ local prefs = use("/Kosmos/Libraries/prefs.lua")
 prefs.open("flight", {}):set{
   imagery = "%(base)s/img/{z}/{y}/{x}", imagery_format = "jpg",
   elevation = "%(base)s/elev/{z}/{x}/{y}.png",
+  vector = "%(base)s/vec/{z}/{x}/{y}.pbf", buildings = true,
   lon = %(lon)r, lat = %(lat)r, width = %(width)d, height = %(height)d,
   report = 2, frames = 0, finder = "%(base)s/search",
 }
@@ -654,6 +696,24 @@ def main():
                      "textures its parts are drawn with: %r" % (a.group(0) if a else re.findall(r"flight no aircraft.*", seen)))
     elif abs(float(a.group(5)) - 8.15) > 0.05 or abs(float(a.group(7)) - 10.92) > 0.05:
         fails.append("the Cessna is not 8.15 m long and 10.92 m across: %r" % a.group(0))
+    # The buildings (B3): every served tile's 37 stood up, none refused, and
+    # of the triangles they make - so the reader, the extruder and the
+    # upload each had the whole of it.
+    b = re.findall(r"flight buildings tiles=(\d+) ready=(\d+) buildings=(\d+) refused=(\d+) "
+                   r"triangles=(\d+)", seen)
+    print("flight: the Mac served %d vector tiles; buildings %r" % (asked["vec"], b[-1] if b else None))
+    if not b:
+        fails.append("Flight said nothing of its buildings")
+    else:
+        tiles_, ready, made, refused, triangles = map(int, b[-1])
+        if asked["vec"] == 0 or ready == 0:
+            fails.append("no tile of buildings was stood up: %d asked, %r" % (asked["vec"], b[-1]))
+        elif made != ready * BUILDINGS_A_TILE or refused != 0 or \
+                triangles != ready * TRIANGLES_A_TILE:
+            fails.append("the buildings are not the tiles': %d tiles ready, %d buildings of %d, "
+                         "%d refused, %d triangles of %d" % (ready, made, ready * BUILDINGS_A_TILE,
+                                                             refused, triangles,
+                                                             ready * TRIANGLES_A_TILE))
     if asked["elev"] == 0 or asked["img"] == 0 or viewed["tiles"] == 0:
         fails.append("tiles were not fetched and handed: %d elevation, %d imagery asked, %d handed"
                      % (asked["elev"], asked["img"], viewed["tiles"]))

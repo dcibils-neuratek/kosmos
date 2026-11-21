@@ -40409,3 +40409,82 @@ The gaps are the 5 s wait before calling back, and they are counted as
 them, so no frame sync. The player passes over them, no frame is heard,
 and the suite fails on its own checks: "under three seconds of frames
 were heard: 0" and "the sound card heard no station: 0.0 s, loudest 0".
+
+## 18.965 Flight's buildings stood up (0.12.45)
+
+**In short:** Flight stands every building of the map's vector tiles up
+to its real height: OpenFreeMap's `building` layer at zoom 14, three
+tiles by three around the eye. Over the City of London the M700 holds
+46,906 buildings, 770,445 triangles, in 15 tiles, none refused, and a
+frame takes 11.6 ms. The walls and roofs are a plain light concrete, lit
+as the aircraft is. The photograph's roofs on top are B4 (`flight.md`,
+*Buildings, as they will be built*).
+
+- **B1, the Map Kit's MVT reader** keeps `render_height` and
+  `render_min_height` for each feature, read whether a value is given as
+  an integer, a float or a double. `test_map` holds Port Alder's
+  buildings to the heights `mapcity.py` wrote, at zoom 16: 59 checks. The
+  control renames the key, and the check fails with "of 59 buildings 0
+  have a height".
+- **B2, `k3d_extrude.c`**, new in the 3D Kit: a polygon with holes made
+  solid. The rings are cleaned and wound one way. The holes are bridged
+  into the outer ring, east to west. The roof is clipped into ears facing
+  up, with the point's own x and z as its (u, v) for B4. The walls are a
+  quad per edge, facing out of the solid. A footprint of over 4,096
+  points, under three points, of no area or no height is refused, and
+  nothing of it is appended. `test_extrude`, new in `host`, checks 28
+  things:
+  - a courtyard is 84 m² of roof in 8 triangles, with 16 wall triangles
+    facing out;
+  - an L given clockwise, with its first point repeated, is 5 m² in 4
+    triangles;
+  - two courtyards and a point on a straight edge are 164 m²;
+  - a thousand-point tower's roof is its polygon's area, in 998
+    triangles;
+  - every triangle's winding agrees with its stored normal;
+  - every roof triangle lies inside the footprint and outside its holes;
+  - each refusal appends nothing.
+
+  Control: `--bad` winds one roof triangle down, and the check fails with
+  "every roof triangle faces up: 1 of 8 down".
+- **B3, the terrain** (`k3d_vk_kosmos.c`):
+  - `g:wanted` lists `{ "v", 14, x, y }` for the vector tiles around the
+    eye, nearest first. `g:buildings(z, x, y, path)` reads one in C, so a
+    city's megabyte never becomes a Lua string.
+  - The builder's thread inflates the tile and decodes it, and stands
+    each polygon on the lowest ground under its outer ring. The heights
+    are the ones the chunks are built from, runways' flats included. A
+    building whose middle is past the tile's edge belongs to the
+    neighbour, so none is drawn twice.
+  - Each tile goes on the device as one model and is drawn in one call.
+  - `g:built()` reports what is held, and `g:top(x, z, r)` answers the
+    highest roof near a place. The tower view stands above it, because
+    Heathrow's field point is among the terminals.
+  - Flight asks `tiles` for the vector tiles at Maps' own source and
+    shares its cache. The new settings are `buildings = true` and
+    `vector`.
+
+**Checked by `x86-flight`**, which now serves every zoom-14 vector tile
+the same: 36 boxes, 20 by 15 m and 10 to 30 m tall, and one courtyard.
+That makes 37 buildings and 384 triangles a tile. Flight's last report
+said 9 tiles held and 3 ready, 111 buildings, 0 refused and 1152
+triangles: exactly three tiles' worth. **Control:** `--wrong-layer`
+names the layer `buildings`, which OpenMapTiles' is not, and the suite
+fails with "no tile of buildings was stood up: 27 asked".
+
+**Seen on the M700**, netbooted with this build. At Heathrow, 2,895
+buildings stood in 15 tiles at about 10 ms a frame, the control tower
+among them on the horizon at dusk. From the field's point the tower view
+looks 2.2 km across the terminals with a long lens, so a terminal now
+stands between it and the runway. That is right, and it is also a reason
+to put the tower camera in the real tower (`roadmap.md`).
+
+The suites again on the last code (`x86-flight`, `-land`, `-island`,
+`x86-flightpath`, `host`): four passed. `x86-flight`'s buildings read 8
+tiles ready, 296 buildings and 3072 triangles, eight tiles' worth
+exactly. Its cockpit panel check failed once, reading the row above the
+panel as 0.12 sky. Run alone straight after, it passed with 9 tiles, 333
+buildings and 3456 triangles, and the sky above the panel at 1.0. The
+panel is laid over the frame, and the suite's buildings stand about 12
+degrees below that row, so this is listed with the gate's flakes
+(`roadmap.md`).

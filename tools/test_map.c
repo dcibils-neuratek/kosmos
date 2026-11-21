@@ -229,6 +229,35 @@ int main(int argc, char **argv)
 
         check(inside, "a point of zoom 16's tile lies outside the tile and its buffer");
         check(clockwise, "a building's outer ring is not wound clockwise");
+
+        /* Its heights (Flight's buildings, F6): every building has one,
+         * given whole or as a double, and a podium's walls begin above
+         * the ground and below the roof. */
+        {
+            size_t tall = 0, fraction = 0, raised = 0, wrong = 0, buildings = 0;
+
+            for (size_t i = 0; i < t.nfeatures; i++) {
+                const struct mvt_feature *ft = &t.features[i];
+
+                if (ft->layer != L_BUILDING) continue;
+                buildings++;
+                tall += ft->height > 0;
+                fraction += ft->height != (float)(int)ft->height;
+                raised += ft->min_height == 4.0f;
+                wrong += ft->min_height >= ft->height;
+            }
+            snprintf(said, sizeof said, "of %zu buildings %zu have a height, %zu a fraction, "
+                     "%zu raised, %zu wrong", buildings, tall, fraction, raised, wrong);
+            check(buildings > 4 && tall == buildings && fraction > 0 && raised > 0 && wrong == 0,
+                  said);
+            /* A road has none. */
+            for (size_t i = 0; i < t.nfeatures; i++) {
+                if (t.features[i].layer == L_TRANSPORTATION && t.features[i].height != 0) {
+                    check(0, "a road has a height");
+                    break;
+                }
+            }
+        }
         mvt_free(&t);
     }
 

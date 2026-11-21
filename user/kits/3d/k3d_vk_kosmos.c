@@ -50,6 +50,9 @@
 #include "k3d_vk.h"
 #include "k3d_glb.h"
 #include "k3d_island.h"
+#include "k3d_extrude.h"
+#include "kits/map/mvt.h"
+#include "kits/compress/gzip.h"
 #include "kits/gfx/picture_decode.h"
 #include "storage.h"
 
@@ -110,6 +113,16 @@ struct job {
     unsigned nflats;
     struct k3d_terrain_vertex *corners;
     uint32_t *indices;              /* NULL when memory was out */
+    /* A tile's buildings instead (B3): its vector tile's bytes, the
+     * terrain's, read and not freed by the builder; what they made. */
+    int buildings;
+    const uint8_t *bytes;
+    size_t nbytes;
+    struct k3d_extruded solid;
+    struct box *boxes;              /* each building's extent and top */
+    size_t nboxes, boxes_room;
+    unsigned made, refused;
+    int failed;                     /* not a vector tile, or memory was out */
 };
 
 enum { WAITING, BUILDING, MESHED, READY };
@@ -120,6 +133,33 @@ struct chunk {
     struct job *job;                /* BUILDING and MESHED */
     struct k3d_vk_ground ground;    /* READY */
     unsigned used;                  /* the frame that last drew or chose it */
+};
+
+/* A building's extent on the ground and its roof's height, in the frame's
+ * metres: what `g:top` answers from. */
+struct box {
+    float x0, z0, x1, z1, top;
+};
+
+/*
+ * **A tile's buildings** (`docs/flight.md` F6, B3): the map's vector tile
+ * at zoom `buildings`, its footprints stood up by the builder from the
+ * lowest ground under each, and put on the device as one model - so a
+ * city's thousands of buildings are one draw. Its bytes are held while the
+ * tile is, so a window opened again builds it again without asking.
+ */
+struct btile {
+    struct k3d_tile at;
+    int state;                      /* WAITING with or without bytes, BUILDING,
+                                     * MESHED, READY */
+    uint8_t *bytes;                 /* NULL until they come */
+    size_t nbytes;
+    struct job *job;                /* BUILDING and MESHED */
+    struct k3d_vk_model model;      /* READY, when `triangles` */
+    struct box *boxes;              /* from MESHED on, kept with the bytes */
+    size_t nboxes;
+    unsigned made, refused, triangles;
+    unsigned used;
 };
 
 struct window;
@@ -140,6 +180,12 @@ struct terrain {
     unsigned frame, freed;
     struct k3d_flat *flats;         /* the runways' ground, given when it is made */
     unsigned nflats;
+    /* The buildings: their zoom (0, none), how many tiles out from the
+     * eye's, how many held at most; and the builder's inflater. */
+    unsigned bzoom, bradius, bkeep;
+    struct btile *btiles;
+    unsigned nbtiles, btiles_room;
+    struct gunzip_work *work;
 
     /* The builder. `todo` in, `done` out, both under `lock`. */
     pthread_mutex_t lock;
@@ -221,8 +267,20 @@ static void job_free(struct job *j)
     if (j != NULL) {
         free(j->corners);
         free(j->indices);
+        k3d_extruded_free(&j->solid);
+        free(j->boxes);
         free(j);
     }
+}
+
+static struct btile *btile_of(struct terrain *g, struct k3d_tile t)
+{
+    for (unsigned i = 0; i < g->nbtiles; i++) {
+        if (same(g->btiles[i].at, t)) {
+            return &g->btiles[i];
+        }
+    }
+    return NULL;
 }
 
 /* The heights under a place, from the elevation tile over the chunk - a
@@ -241,6 +299,211 @@ static float sampled(void *context, double mx, double my)
 
     return k3d_flatten(s->flats, s->nflats, mx, my,
                        map_heights_sample(s->h, mx * n - s->at.x, my * n - s->at.y));
+}
+
+/*
+ * **A tile's buildings, stood up** (B3), on the builder's thread. The
+ * vector tile is inflated if it came gzipped, decoded by the Map Kit's
+ * reader, and each polygon of its `building` layer - an outer ring and the
+ * holes after it, the outer's winding telling which is which - is made
+ * solid by the 3D Kit's extruder in the frame's metres. A building stands
+ * on the lowest ground under its outer ring, the same heights the chunks
+ * are built from, so none floats on a slope; one whose middle is past the
+ * tile's edge is its neighbour's, which has it too, so none is drawn twice.
+ */
+struct inflated {
+    uint8_t *bytes;
+    size_t n, room;
+    int short_of_memory;
+};
+
+static int inflated_put(void *user, const uint8_t *bytes, size_t n)
+{
+    struct inflated *o = user;
+
+    if (o->n + n > o->room) {
+        size_t room = o->room ? o->room : 256 * 1024;
+        uint8_t *bigger;
+
+        while (room < o->n + n) {
+            room *= 2;
+        }
+        if (room > 64u << 20 || (bigger = realloc(o->bytes, room)) == NULL) {
+            o->short_of_memory = 1;
+            return 0;
+        }
+        o->bytes = bigger;
+        o->room = room;
+    }
+    memcpy(o->bytes + o->n, bytes, n);
+    o->n += n;
+    return 1;
+}
+
+/* Twice a ring's signed area, in the tile's units. */
+static double ring_area(const struct mvt_tile *t, const struct mvt_part *r)
+{
+    const float *q = &t->xy[2 * r->first];
+    double a = 0;
+
+    for (uint32_t i = 0; i < r->count; i++) {
+        uint32_t k = (i + 1) % r->count;
+
+        a += (double)q[2 * i] * q[2 * k + 1] - (double)q[2 * k] * q[2 * i + 1];
+    }
+    return a;
+}
+
+#define BUILDING_HEIGHT 6.0f        /* metres, for a footprint that says none */
+
+static void build_buildings(struct job *j, struct gunzip_work **work)
+{
+    const uint8_t *bytes = j->bytes;
+    size_t n = j->nbytes, got;
+    struct inflated in = { 0 };
+    struct mvt_tile t;
+    struct sampler sm = { &j->h, j->from, j->flats, j->nflats };
+    double *xz = NULL;
+    struct k3d_ring *rings = NULL;
+    size_t xz_room = 0, rings_room = 0;
+
+    memset(&t, 0, sizeof(t));
+    if (n >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b) {
+        if (*work == NULL && (*work = malloc(sizeof(**work))) == NULL) {
+            j->failed = 1;
+            return;
+        }
+        if (kosmos_gunzip(bytes, n, *work, inflated_put, &in, &got) != GUNZIP_WHOLE) {
+            free(in.bytes);
+            j->failed = 1;
+            return;
+        }
+        bytes = in.bytes, n = in.n;
+    }
+    if (mvt_decode(&t, bytes, n) != MVT_OK) {
+        mvt_free(&t);
+        free(in.bytes);
+        j->failed = 1;
+        return;
+    }
+    free(in.bytes);
+
+    double side = (double)t.extent * ldexp(1.0, j->at.z);
+
+    for (size_t fi = 0; fi < t.nfeatures; fi++) {
+        const struct mvt_feature *f = &t.features[fi];
+        uint32_t p = 0;
+        double outer_sign;
+
+        if (f->layer != L_BUILDING || f->type != MVT_POLYGON || f->nparts == 0) {
+            continue;
+        }
+        outer_sign = ring_area(&t, &t.parts[f->part0]);
+
+        while (p < f->nparts) {
+            /* One polygon: the ring at `p` and the holes after it, which
+             * wind the other way. */
+            uint32_t first = p, points = t.parts[f->part0 + p].count;
+
+            for (p++; p < f->nparts &&
+                      (ring_area(&t, &t.parts[f->part0 + p]) > 0) != (outer_sign > 0); p++) {
+                points += t.parts[f->part0 + p].count;
+            }
+
+            unsigned nrings = p - first;
+            const struct mvt_part *outer = &t.parts[f->part0 + first];
+            double cx = 0, cy = 0;
+
+            if (outer->count < 3) {
+                continue;
+            }
+            for (uint32_t i = 0; i < outer->count; i++) {
+                cx += t.xy[2 * (outer->first + i)];
+                cy += t.xy[2 * (outer->first + i) + 1];
+            }
+            cx /= outer->count, cy /= outer->count;
+            if (cx < 0 || cy < 0 || cx >= t.extent || cy >= t.extent) {
+                continue;                   /* the neighbour's */
+            }
+            if (points * 2 > xz_room) {
+                double *bigger = realloc(xz, sizeof(*xz) * points * 2);
+
+                if (bigger == NULL) {
+                    j->failed = 1;
+                    break;
+                }
+                xz = bigger, xz_room = points * 2;
+            }
+            if (nrings > rings_room) {
+                struct k3d_ring *bigger = realloc(rings, sizeof(*rings) * nrings);
+
+                if (bigger == NULL) {
+                    j->failed = 1;
+                    break;
+                }
+                rings = bigger, rings_room = nrings;
+            }
+
+            float ground = INFINITY;
+            size_t at = 0;
+
+            for (unsigned r = 0; r < nrings; r++) {
+                const struct mvt_part *pt = &t.parts[f->part0 + first + r];
+
+                rings[r].xz = &xz[at];
+                rings[r].n = pt->count;
+                for (uint32_t i = 0; i < pt->count; i++) {
+                    double mx = (j->at.x * (double)t.extent + t.xy[2 * (pt->first + i)]) / side;
+                    double my = (j->at.y * (double)t.extent + t.xy[2 * (pt->first + i) + 1]) / side;
+
+                    k3d_place_world(&j->place, mx, my, &xz[at], &xz[at + 1]);
+                    at += 2;
+                    if (r == 0) {
+                        float h = sampled(&sm, mx, my);
+
+                        if (h < ground) {
+                            ground = h;
+                        }
+                    }
+                }
+            }
+            float tall = f->height > 0 ? f->height : BUILDING_HEIGHT;
+            float from = f->min_height > 0 && f->min_height < tall ? f->min_height : 0;
+
+            if (isfinite(ground) &&
+                k3d_extrude(&j->solid, rings, nrings, 0, 0, ground + from, ground + tall)) {
+                j->made++;
+                if (j->nboxes == j->boxes_room) {
+                    size_t more = j->boxes_room ? j->boxes_room * 2 : 256;
+                    struct box *bigger = realloc(j->boxes, more * sizeof(*bigger));
+
+                    if (bigger != NULL) {
+                        j->boxes = bigger, j->boxes_room = more;
+                    }
+                }
+                if (j->nboxes < j->boxes_room) {
+                    struct box *bx = &j->boxes[j->nboxes++];
+
+                    bx->x0 = bx->z0 = INFINITY, bx->x1 = bx->z1 = -INFINITY;
+                    bx->top = ground + tall;
+                    for (unsigned i = 0; i < rings[0].n; i++) {
+                        float x = (float)rings[0].xz[2 * i], z = (float)rings[0].xz[2 * i + 1];
+
+                        bx->x0 = fminf(bx->x0, x), bx->x1 = fmaxf(bx->x1, x);
+                        bx->z0 = fminf(bx->z0, z), bx->z1 = fmaxf(bx->z1, z);
+                    }
+                }
+            } else {
+                j->refused++;
+            }
+        }
+        if (j->failed) {
+            break;
+        }
+    }
+    free(xz);
+    free(rings);
+    mvt_free(&t);
 }
 
 /* The builder: a job at a time, the lock never held while it works. */
@@ -264,9 +527,10 @@ static void *builder(void *context)
         }
         pthread_mutex_unlock(&g->lock);
 
-        j->corners = malloc(sizeof(*j->corners) * K3D_CHUNK_VERTICES);
-        j->indices = malloc(sizeof(*j->indices) * K3D_CHUNK_INDICES);
-        if (j->corners != NULL && j->indices != NULL) {
+        if (j->buildings) {
+            build_buildings(j, &g->work);
+        } else if ((j->corners = malloc(sizeof(*j->corners) * K3D_CHUNK_VERTICES)) != NULL &&
+                   (j->indices = malloc(sizeof(*j->indices) * K3D_CHUNK_INDICES)) != NULL) {
             struct sampler s = { &j->h, j->from, j->flats, j->nflats };
 
             k3d_terrain_chunk(&j->place, j->at, sampled, &s, 20.0f, j->corners, j->indices,
@@ -327,6 +591,23 @@ static void collect(struct terrain *g)
         done = j->next;
         if (h != NULL && h->busy > 0) {
             h->busy--;
+        }
+        if (j->buildings) {
+            struct btile *b = btile_of(g, j->at);
+
+            if (b != NULL && b->state == BUILDING && b->job == j) {
+                b->made = j->made;
+                b->refused = j->refused;
+                free(b->boxes);
+                b->boxes = j->boxes, b->nboxes = j->nboxes;
+                j->boxes = NULL, j->nboxes = 0;
+                /* A tile that would not decode is kept as one with none,
+                 * and not asked for again. */
+                b->state = MESHED;
+            } else {
+                job_free(j);
+            }
+            continue;
         }
         if (c != NULL && c->state == BUILDING && c->job == j && j->indices != NULL) {
             c->state = MESHED;
@@ -392,6 +673,15 @@ static int l_terrain(lua_State *L)
      * back, so `keep` is how many beyond the frame's are held, at most. */
     luaL_argcheck(L, g->keep >= 1, 1, "keep from 1");
     luaL_argcheck(L, g->uploads >= 1, 1, "uploads from 1");
+    /* The buildings (B3): `buildings = 14` the vector tiles' zoom, at or
+     * deeper than the elevation's so one elevation tile is under each;
+     * `buildings_radius` tiles out from the eye's each way. */
+    g->bzoom = (unsigned)field_or(L, 1, "buildings", 0);
+    g->bradius = (unsigned)field_or(L, 1, "buildings_radius", 1);
+    luaL_argcheck(L, g->bzoom == 0 || (g->bzoom >= g->elevation && g->bzoom <= 16), 1,
+                  "buildings at a zoom from the elevation's to 16");
+    luaL_argcheck(L, g->bradius <= 4, 1, "buildings_radius at most 4");
+    g->bkeep = (2 * g->bradius + 1) * (2 * g->bradius + 1) * 2;
     g->chosen = calloc(g->most, sizeof(*g->chosen));
     g->drawn = calloc(g->most, sizeof(*g->drawn));
     if (g->chosen == NULL || g->drawn == NULL) {
@@ -476,6 +766,15 @@ static int l_terrain_gc(lua_State *L)
             job_free(g->chunks[i].job);
         }
     }
+    for (unsigned i = 0; i < g->nbtiles; i++) {
+        if (g->btiles[i].state == MESHED) {
+            job_free(g->btiles[i].job);
+        }
+        free(g->btiles[i].bytes);
+        free(g->btiles[i].boxes);
+    }
+    free(g->btiles);
+    free(g->work);
     for (unsigned i = 0; i < g->nheights; i++) {
         map_heights_free(&g->heights[i].h);
     }
@@ -517,6 +816,33 @@ static void push_tile(lua_State *L, const char *kind, struct k3d_tile t, unsigne
     lua_rawseti(L, -2, (lua_Integer)++*listed);
 }
 
+/* The building tiles within `bradius` of the eye's, nearest first: how
+ * many, at most 81. */
+static unsigned buildings_about(const struct terrain *g, const double eye[3],
+                                struct k3d_tile *out)
+{
+    double n = ldexp(1.0, g->bzoom);
+    double mx = (g->place.ox + eye[0] / g->place.metres) * n;
+    double my = (g->place.oy + eye[2] / g->place.metres) * n;
+    int r = (int)g->bradius, cx = (int)floor(mx), cy = (int)floor(my);
+    unsigned count = 0;
+
+    for (int ring = 0; ring <= r; ring++) {
+        for (int dy = -ring; dy <= ring; dy++) {
+            for (int dx = -ring; dx <= ring; dx++) {
+                int x = cx + dx, y = cy + dy;
+
+                if ((abs(dx) != ring && abs(dy) != ring) || x < 0 || y < 0 || x >= (int)n ||
+                    y >= (int)n) {
+                    continue;
+                }
+                out[count++] = (struct k3d_tile){ (uint32_t)x, (uint32_t)y, (uint8_t)g->bzoom };
+            }
+        }
+    }
+    return count;
+}
+
 /* g:wanted{x, y, z} -> the tiles the chunks for that eye need and have not
  * been given: { "e", z, x, y } and { "i", z, x, y }, each once. A chunk
  * built, or being built, needs nothing. */
@@ -549,6 +875,20 @@ static int l_terrain_wanted(lua_State *L)
         }
         if (picture_of(g, t) == NULL) {
             push_tile(L, "i", t, &listed);
+        }
+    }
+    /* The vector tiles about the eye's, nearest first, whose bytes have
+     * not come: { "v", z, x, y }. */
+    if (g->bzoom > 0) {
+        struct k3d_tile around[81];
+        unsigned na = buildings_about(g, eye, around);
+
+        for (unsigned k = 0; k < na; k++) {
+            struct btile *b = btile_of(g, around[k]);
+
+            if (b == NULL || b->bytes == NULL) {
+                push_tile(L, "v", around[k], &listed);
+            }
         }
     }
     return 1;
@@ -647,6 +987,97 @@ static int l_terrain_imagery(lua_State *L)
     }
     g->npictures++;
     return 0;
+}
+
+/* g:buildings(z, x, y, path) -> true once the vector tile at `path` is
+ * held, for the buildings over it - read here, gzipped or not, so a city's
+ * megabyte never passes through Lua; false while there is no such file.
+ * An empty file is a tile with none. */
+static uint8_t *read_whole(const char *path, size_t *n, const char **why);
+
+static int l_terrain_buildings(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    struct k3d_tile t = tile_args(L, 2);
+    const char *path = luaL_checkstring(L, 5), *why = NULL;
+    struct btile *b = btile_of(g, t);
+    uint8_t *bytes;
+    size_t n = 0;
+
+    luaL_argcheck(L, g->bzoom > 0 && t.z == g->bzoom, 2, "a tile at the buildings' zoom");
+    if (b != NULL && b->bytes != NULL) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if ((bytes = read_whole(path, &n, &why)) == NULL) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    if (b == NULL) {
+        if (!room((void **)&g->btiles, &g->btiles_room, g->nbtiles, sizeof(*g->btiles))) {
+            free(bytes);
+            return luaL_error(L, "out of memory for buildings");
+        }
+        b = &g->btiles[g->nbtiles++];
+        memset(b, 0, sizeof(*b));
+        b->at = t;
+        b->state = WAITING;
+        b->used = g->frame;
+    }
+    b->bytes = bytes;
+    b->nbytes = n;
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* g:top(x, z, r) -> the highest roof of a building within `r` metres of
+ * a place in the frame (x east, z south) each way, or nil where none
+ * stands: what a camera put on an airfield must be above. */
+static int l_terrain_top(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    float x = (float)luaL_checknumber(L, 2), z = (float)luaL_checknumber(L, 3);
+    float r = (float)luaL_optnumber(L, 4, 0), top = -INFINITY;
+
+    for (unsigned i = 0; i < g->nbtiles; i++) {
+        const struct btile *b = &g->btiles[i];
+
+        for (size_t k = 0; k < b->nboxes; k++) {
+            const struct box *bx = &b->boxes[k];
+
+            if (x + r >= bx->x0 && x - r <= bx->x1 && z + r >= bx->z0 && z - r <= bx->z1 &&
+                bx->top > top) {
+                top = bx->top;
+            }
+        }
+    }
+    if (!isfinite(top)) {
+        return 0;
+    }
+    lua_pushnumber(L, top);
+    return 1;
+}
+
+/* g:built() -> "tiles=T ready=R buildings=B refused=F triangles=N": the
+ * buildings held, as a line to print. */
+static int l_terrain_built(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    unsigned ready = 0, made = 0, refused = 0, triangles = 0;
+
+    for (unsigned i = 0; i < g->nbtiles; i++) {
+        const struct btile *b = &g->btiles[i];
+
+        if (b->state == READY) {
+            ready++;
+            made += b->made;
+            refused += b->refused;
+            triangles += b->triangles;
+        }
+    }
+    lua_pushfstring(L, "tiles=%d ready=%d buildings=%d refused=%d triangles=%d", (int)g->nbtiles,
+                    (int)ready, (int)made, (int)refused, (int)triangles);
+    return 1;
 }
 
 /* g:invent(kind, z, x, y): an invented island's tile, made here, as though
@@ -816,6 +1247,18 @@ static void terrain_forget_grounds(struct terrain *g)
             g->chunks[i] = g->chunks[--g->nchunks];
         } else {
             i++;
+        }
+    }
+    /* A tile's buildings are built again from the bytes it keeps. */
+    for (unsigned i = 0; i < g->nbtiles; i++) {
+        struct btile *b = &g->btiles[i];
+
+        if (b->state == READY) {
+            if (open && b->triangles > 0) {
+                k3d_vk_model_free(&w->renderer, &b->model);
+            }
+            b->state = WAITING;
+            b->triangles = 0;
         }
     }
 }
@@ -1291,6 +1734,131 @@ static void give_back(struct window *w, struct terrain *g)
     }
 }
 
+/*
+ * The buildings about the eye moved on, as the chunks are: a tile whose
+ * bytes have come sent to the builder once the heights under it are here,
+ * a built one put on the device while the frame has uploads to spend - its
+ * roofs and walls one model - and the tiles past `bkeep` given back, the
+ * least lately wanted first. How many are drawn, in `drawn`, at most 81.
+ */
+static int advance_buildings(struct window *w, struct terrain *g, const double eye[3],
+                             unsigned *uploaded, struct btile **drawn, unsigned *ndrawn)
+{
+    struct k3d_tile around[81];
+    unsigned na = buildings_about(g, eye, around);
+
+    *ndrawn = 0;
+    for (unsigned k = 0; k < na; k++) {
+        struct btile *b = btile_of(g, around[k]);
+
+        if (b == NULL) {
+            continue;
+        }
+        b->used = g->frame;
+        if (b->state == WAITING && b->bytes != NULL) {
+            struct heights *h = heights_of(g, above(b->at, g->elevation));
+            struct job *j;
+
+            if (h == NULL || (j = calloc(1, sizeof(*j))) == NULL) {
+                continue;
+            }
+            h->used = g->frame;
+            j->buildings = 1;
+            j->place = g->place;
+            j->at = b->at;
+            j->from = h->at;
+            j->h = h->h;
+            j->flats = g->flats;
+            j->nflats = g->nflats;
+            j->bytes = b->bytes;
+            j->nbytes = b->nbytes;
+            if (!send_job(g, j)) {
+                free(j);
+                continue;
+            }
+            h->busy++;
+            b->job = j;
+            b->state = BUILDING;
+        } else if (b->state == MESHED && *uploaded < g->uploads) {
+            struct job *j = b->job;
+            struct k3d_extruded *e = &j->solid;
+            size_t nv = e->nroof + e->nwall, ni = e->nroof_index + e->nwall_index;
+
+            if (ni > 0 && nv < UINT32_MAX && ni < UINT32_MAX) {
+                struct k3d_vk_model_vertex *v = malloc(sizeof(*v) * nv);
+                uint32_t *ix = malloc(sizeof(*ix) * ni);
+                int ok;
+
+                _Static_assert(sizeof(struct k3d_vk_model_vertex) ==
+                               sizeof(struct k3d_extrude_vertex),
+                               "an extruded corner is a model's corner");
+                if (v == NULL || ix == NULL) {
+                    free(v);
+                    free(ix);
+                    continue;
+                }
+                if (e->nroof > 0) {
+                    memcpy(v, e->roof, sizeof(*v) * e->nroof);
+                }
+                if (e->nwall > 0) {
+                    memcpy(v + e->nroof, e->wall, sizeof(*v) * e->nwall);
+                }
+                if (e->nroof_index > 0) {
+                    memcpy(ix, e->roof_index, sizeof(*ix) * e->nroof_index);
+                }
+                for (size_t i = 0; i < e->nwall_index; i++) {
+                    ix[e->nroof_index + i] = e->wall_index[i] + (uint32_t)e->nroof;
+                }
+                ok = k3d_vk_model(&w->renderer, &b->model, v, (uint32_t)nv, ix, (uint32_t)ni);
+                free(v);
+                free(ix);
+                if (!ok) {
+                    return 0;
+                }
+                b->triangles = (unsigned)(ni / 3);
+            }
+            job_free(j);
+            b->job = NULL;
+            b->state = READY;
+            ++*uploaded;
+        }
+    }
+    while (g->nbtiles > g->bkeep) {
+        unsigned oldest = g->nbtiles;
+
+        for (unsigned i = 0; i < g->nbtiles; i++) {
+            struct btile *b = &g->btiles[i];
+
+            if (b->used != g->frame && b->state != BUILDING &&
+                (oldest == g->nbtiles || b->used < g->btiles[oldest].used)) {
+                oldest = i;
+            }
+        }
+        if (oldest == g->nbtiles) {
+            break;
+        }
+        struct btile *b = &g->btiles[oldest];
+
+        if (b->state == READY && b->triangles > 0) {
+            k3d_vk_model_free(&w->renderer, &b->model);
+        } else if (b->state == MESHED) {
+            job_free(b->job);
+        }
+        free(b->bytes);
+        free(b->boxes);
+        g->btiles[oldest] = g->btiles[--g->nbtiles];
+    }
+    /* What is drawn, once nothing more moves in the list. */
+    for (unsigned k = 0; k < na; k++) {
+        struct btile *b = btile_of(g, around[k]);
+
+        if (b != NULL && b->state == READY && b->triangles > 0) {
+            drawn[(*ndrawn)++] = b;
+        }
+    }
+    return 1;
+}
+
 /* w:draw(terrain, view) -> "drawn=D of N ready=R building=B fallback=F
  * held=H freed=X uploads=U ms=T chunks=z/x/y,...", a frame drawn and
  * presented, `chunks` the ground it drew; nil and why when it could not be. */
@@ -1420,6 +1988,47 @@ static int l_window_draw(lua_State *L)
         plane = w->models;
     } else if (!lua_isnoneornil(L, 4)) {
         plane = model_draws(model_check(L, 4), &nplane, at);
+    }
+    /* The buildings about the eye (B3), after the models given: plain, a
+     * light concrete lit as the aircraft is, where they stand. */
+    if (g->bzoom > 0) {
+        struct btile *standing[81];
+        unsigned nstanding = 0, spent = uploaded;
+
+        if (!advance_buildings(w, g, eye, &spent, standing, &nstanding)) {
+            lua_pushnil(L);
+            lua_pushfstring(L, "uploading the buildings: %s", v->why);
+            v->why[0] = '\0';
+            return 2;
+        }
+        if (nstanding > 0) {
+            if (nplane + nstanding > w->models_room) {
+                unsigned more = (nplane + nstanding) * 2;
+                struct k3d_vk_model_draw *bigger = malloc(more * sizeof(*bigger));
+
+                if (bigger == NULL) {
+                    return luaL_error(L, "out of memory for a frame's models");
+                }
+                if (nplane > 0) {
+                    memcpy(bigger, plane, nplane * sizeof(*plane));
+                }
+                free(w->models);
+                w->models = bigger;
+                w->models_room = more;
+            } else if (plane != w->models && nplane > 0) {
+                memmove(w->models, plane, nplane * sizeof(*plane));
+            }
+            for (unsigned i = 0; i < nstanding; i++) {
+                struct k3d_vk_model_draw *d = &w->models[nplane + i];
+
+                memset(d, 0, sizeof(*d));
+                d->model = &standing[i]->model;
+                d->tint[0] = 0.62f, d->tint[1] = 0.60f, d->tint[2] = 0.56f, d->tint[3] = 1.0f;
+                d->matrix[0] = d->matrix[5] = d->matrix[10] = d->matrix[15] = 1.0f;
+            }
+            plane = w->models;
+            nplane += nstanding;
+        }
     }
     uint32_t laid = 0;
 
@@ -2001,6 +2610,9 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "elevation", l_terrain_elevation },
         { "imagery", l_terrain_imagery },
         { "invent", l_terrain_invent },
+        { "buildings", l_terrain_buildings },
+        { "built", l_terrain_built },
+        { "top", l_terrain_top },
         { "height", l_terrain_height },
         { "__gc", l_terrain_gc },
         { NULL, NULL },

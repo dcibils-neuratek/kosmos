@@ -415,6 +415,46 @@ ends on the M700:
   OpenStreetMap's outlines and heights, through the Map Kit that reads them
   for Maps, stood up as blocks with the photograph's roofs on top (agreed,
   *Questions* 2).
+  - **Buildings, as they will be built** (written 21 November, before the
+    code). Every piece is supplied by something that exists or is a kit
+    other programs want:
+    - *The outlines and heights*: OpenFreeMap's vector tiles, OpenMapTiles'
+      schema, which Maps already reads through `tiles` from the same
+      source. At zoom 14 its `building` layer carries each footprint and
+      `render_height` and `render_min_height` in metres. **The Map Kit's
+      MVT reader** (`mvt.c`) keeps those two numbers per feature, which it
+      throws away today, and reads a value given as a float or a double
+      as well as an integer.
+    - *Footprints made solid*: **a new piece of the 3D Kit**,
+      `k3d_extrude.c` - a polygon with holes, in metres, triangulated by
+      ear clipping into a roof, and its rings stood up into walls between
+      two heights - since Maps' 3D view and Cafesa3D's import want the
+      same. C, held by a host test to areas and to a roof's triangles
+      covering its footprint exactly.
+    - *Where they stand*: inside the terrain (`k3d_terrain.c`), which
+      knows the ground's height under every footprint and builds chunks
+      on its own thread already. A building sits on the lowest ground under
+      its footprint, so none floats on a slope. The vector tile is a third
+      thing a chunk asks `tiles` for, beside its elevation and imagery,
+      only at zoom 14 and only within a few kilometres of the eye.
+    - *The roofs*: drawn by the ground's pipeline with the chunk's own
+      imagery, a roof's corners given the picture's coordinates of where
+      they stand - so the photograph's roof is on top, as agreed. The
+      walls are lit plain, a light concrete, by the model pipeline's
+      lighting.
+    - *The busiest path*: a dense city's z14 tile is a few thousand
+      buildings, some 60,000 triangles. Extruded on the builder's thread,
+      uploaded once with the chunk, and drawn in one call - the frame
+      pays the triangles and nothing else.
+    - Steps: **B1** the MVT reader keeping heights, with its host test;
+      **B2** `k3d_extrude.c` and its host test; **B3** the terrain asking
+      for vector tiles and standing the buildings up, drawn plain; **B4**
+      the roofs from the imagery.
+      **B1 to B3 built in 0.12.45** (`testing.md` 18.965). Over the City
+      of London the M700 held 46,906 buildings, 770,445 triangles, at
+      11.6 ms a frame. The terrain also answers `g:top(x, z, r)`, the
+      highest roof near a place, and the tower view stands above it. B4
+      is next.
 - **Diego's evening list, 20 November 2026**, taken before the rest of F6
   and in this order: "Make sure we can takeoff and land in real airport
   locations", "Also don't know how to change cockpit to chase view",

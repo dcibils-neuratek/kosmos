@@ -176,8 +176,16 @@ for i in range(-11, 11):
         for bx, by in ((0, 0), (1, 0), (0, 1), (1, 1)):
             px0 = x0 + 18 + bx * 60
             py0 = y0 + 18 + by * 60
+            # Heights as OpenMapTiles gives them (Flight's buildings, F6):
+            # whole metres mostly, a fraction now and then - which a tile
+            # carries as a double - and a few raised on a podium.
+            k = i + j + bx + by
+            height = 6 + k % 5 * 7 if k % 4 else 12.5 + k % 3
+            props = {"render_height": height}
+            if k % 7 == 3:
+                props["render_min_height"] = 4
             add("building", "polygon", [leaned(rect(px0, py0, px0 + 48 - (i + j) % 3 * 6,
-                                                    py0 + 48 - (i * j) % 2 * 8))], {}, 14)
+                                                    py0 + 48 - (i * j) % 2 * 8))], props, 14)
 
 # Places.
 add("place", "point", (0, 0), {"name": "Port Alder", "class": "city", "rank": 1}, 11)
@@ -379,6 +387,8 @@ def value(v):
         return lendelim(1, v.encode())
     if isinstance(v, int):
         return key(5, 0) + varint(v)
+    if isinstance(v, float):
+        return key(3, 1) + struct.pack("<d", v)
     raise TypeError(v)
 
 
