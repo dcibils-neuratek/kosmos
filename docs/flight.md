@@ -459,6 +459,27 @@ ends on the M700:
   the threshold's elevation, and the ground: wheels with rolling friction,
   `B` for the brakes, rotation at the trainer's speed, and a touchdown
   under about 600 feet a minute a landing and over it a crash.
+  - **F8a, built in 0.12.42** (`testing.md` 18.962): everything above but
+    the strip drawn.
+    - **The data.** `tools/airports.py` fetches the two files at a pinned
+      commit and checks their sums. It keeps 9,498 airports and 11,753
+      runways in 1.7 MB: open, paved, at least 1,500 feet, both ends
+      known.
+    - **The Airports library** (`user/lib/airports.lua`) answers by code,
+      by name or by nearness. It is a library because a map or the Radio
+      Kit asks the same questions.
+    - **The sheet.** It finds airports at once, the large ones first, and
+      the finder's places after them. A found place gets the nearest
+      field within 25 km, so "On the runway" works anywhere near one.
+    - **The ground.** The 3D Kit's terrain takes `flats`, and every
+      runway within 30 km of the centre is level in the chunks and in
+      `g:height` alike: Santos Dumont's 02R read 106 m on the suite's
+      hill without them.
+    - **Final approach.** A final-approach start aims 300 m past the
+      threshold, at the touchdown zone.
+    - **The strip itself** (F8b) is still the imagery's. It needs the
+      3D Kit to draw a mesh of Flight's making, and it is what the
+      invented island's runway wants too.
 - **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
   HTTP, the nearest to the airport chosen by its code. Played by a new
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream

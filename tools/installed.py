@@ -76,7 +76,19 @@ def inspector():
 
 
 # What the build makes for an application's folder besides its image.
-MADE = {}
+def airports():
+    """Flight's airports (`docs/flight.md` F8), made by `tools/airports.py`
+    from OurAirports when it is missing or older than the script."""
+    made = os.path.join(ROOT, "build", "airports", "airports.tsv")
+    script = os.path.join(ROOT, "tools", "airports.py")
+
+    if not os.path.exists(made) or os.path.getmtime(made) < os.path.getmtime(script):
+        os.makedirs(os.path.dirname(made), exist_ok=True)
+        subprocess.run([sys.executable, script, made], check=True, stdout=sys.stderr)
+    return [(made, "airports.tsv")]
+
+
+MADE = {"Flight": airports}
 
 
 def stripped(image, apps, staged, objcopy):

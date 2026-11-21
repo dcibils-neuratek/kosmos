@@ -5726,3 +5726,29 @@ sound off.
 **Measured.** In the test machine the sound card received samples up to
 9829 of a possible 32767. The old propeller moved one and a half turns
 between frames there, and the new one a sixth.
+
+## 21 November 2026 - Flight at real airports
+
+**In short:** Flight now knows 9,498 real airports and their runways. You
+can start on any of them, take off, and land again.
+
+**What changed.** The pause sheet's search now finds airports by their
+codes, SBRJ or SDU, or by their names, Heathrow. Big airports come first,
+so "paris" offers Charles de Gaulle, Orly and Le Bourget rather than
+Paris, Texas. Choosing one starts the flight on its longest runway, or on
+final approach to it. Any other place you search for is given the nearest
+airfield.
+
+**Why the ground needed work.** The elevation tiles are about 20 metres a
+sample, so a runway followed whatever hill was under it. In the test's
+landscape the Cessna stood 106 metres underground on Rio's runway. Now
+every runway near the flight is made level, both in the ground that is
+drawn and in the ground the wheels touch.
+
+**Landing.** B is the brakes. Touch down at under 600 feet a minute with
+the wings near level and it is a landing, and Flight names the runway.
+Harder than that is a crash. A new test flies a short final into Santos
+Dumont with nobody at the controls, and lands at 255 feet a minute.
+
+**Data.** The airports come from OurAirports, which is public domain,
+made small into a 1.7 MB file that Flight carries.

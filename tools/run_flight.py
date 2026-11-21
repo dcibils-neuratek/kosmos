@@ -48,12 +48,15 @@ import scratch                                               # noqa: E402
 # `--island` (F5j): the sources at a port nobody serves, so nothing comes
 # and Flight flies over its invented island instead.
 ISLAND = "--island" in sys.argv
-sys.argv = [a for a in sys.argv if a != "--island"]
+# `--land` (F8): on a short final to Rio's 02R, hands off, until the wheels
+# touch - a landing under 600 feet a minute, on the runway.
+LAND = "--land" in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--island", "--land")]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
     ROOT, "build", "user-x86_64-test" if X86 else "user-test", "apps")
-WORK = scratch.directory("flight-island" if "--island" in sys.argv else "flight")
+WORK = scratch.directory("flight-island" if ISLAND else "flight-land" if LAND else "flight")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 FOLDER = "/Home/Apps/Flight"
@@ -335,6 +338,33 @@ def island_checks(seen, island, asked, guest):
     return 0
 
 
+def land_checks(seen):
+    """A landing (F8): begun on final to SDU's 02R, the flight touched down
+    under 600 feet a minute, on SDU 02R/20L, and did not crash."""
+    fails = []
+    st = re.search(r"flight started final at x=(-?\d+) y=(-?\d+) z=(-?\d+) heading=(\d+) "
+                   r"in ([^\r\n]*)", seen)
+    print("flight: %s" % (st.group(0) if st else "no start line"))
+    if not st or st.group(5).strip() != "Rio de Janeiro" or st.group(4) != "357":
+        fails.append("the flight did not begin on final to Rio's 02R: %r"
+                     % re.findall(r"flight (?:started|restarted).*", seen))
+    landed = re.search(r"flight landed at (\d+) fpm ([^\r\n]*)", seen)
+    crashed = re.search(r"flight crashed: ([^\r\n]*)", seen)
+    print("flight: %s" % (landed.group(0) if landed else crashed.group(0) if crashed
+                          else "neither landed nor crashed"))
+    if crashed or not landed:
+        fails.append("it did not land: %r" % (crashed.group(0) if crashed else "no touchdown"))
+    elif int(landed.group(1)) >= 600 or landed.group(2).strip() != "on SDU 02R/20L":
+        fails.append("the landing was not under 600 fpm on SDU 02R/20L: %r" % landed.group(0))
+    if fails:
+        for f in fails:
+            print("FAIL: " + f)
+        return 1
+    print("PASS: Flight landed on SDU's 02R from a short final, hands off - %s fpm, %s"
+          % (landed.group(1), landed.group(2).strip()))
+    return 0
+
+
 def main():
     built = os.path.join(APPS, "k3dvk.elf")
     if not os.path.exists(built):
@@ -353,11 +383,19 @@ def main():
             # Begun on Rio's runway, as the M700 was: going offline has to
             # take the flight off a field that is not there.
             f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway" }\n')
+        if LAND:
+            # 150 m out on a three-degree path: eight metres up, four seconds
+            # of flying, eighty frames at the gate's pace.
+            f.write('prefs.open("flight", {}):set{ city = "rio", start = "final", final = 150,'
+                    ' lon = -43.205, lat = -22.955 }\n')
     files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
              (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
               FOLDER + "/flight.lua"),
              (os.path.join(ROOT, "assets", "models", "cessna172", "cessna_172.glb"),
               FOLDER + "/cessna_172.glb")]
+    # Its airports (F8), as `installed.py` puts them beside it.
+    import installed                                         # noqa: E402
+    files += [(here, FOLDER + "/" + inside) for here, inside in installed.airports()]
     megabytes = os.path.getsize(image) // (1 << 20)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", HOME_DISK, str(megabytes + 80)]
                    + ["%s:%s" % f for f in files], check=True, capture_output=True, cwd=ROOT)
@@ -381,6 +419,12 @@ def main():
     heard = os.path.join(WORK, "heard.wav")
     if os.path.exists(heard):
         os.remove(heard)
+    # And two processors, as every machine Flight is for has more: the sound
+    # is a thread in the audio band and the audio server's mixing, a
+    # quarter of one TCG processor, which on one left Flight 0.8 frames a
+    # second and the overlays' pictures taken before they were drawn.
+    if "-smp" not in R.X86_ARGS:
+        R.X86_ARGS = R.X86_ARGS + ["-smp", "2"]
     R.X86_ARGS = R.X86_ARGS + ["-audiodev", "wav,id=snd0,path=%s" % heard,
                                "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0"]
     guest = SV.boot(IMAGE, telnet, web)
@@ -422,6 +466,16 @@ def main():
         session.run("open " + FOLDER + "/flight.lua")
         guest.wait_for("flight device=", "the window opened")
 
+        if LAND:
+            if os.environ.get("KOSMOS_FLIGHT_PUSH"):        # the control: the yoke forward
+                keys(True, "up")
+            until = time.monotonic() + 300
+            while time.monotonic() < until and not re.search(
+                    r"flight (landed at|crashed:)", guest.seen[mark:]):
+                guest._read_available()
+                time.sleep(0.2)
+            return land_checks(guest.seen[mark:])
+
         if ISLAND:
             guest.wait_for("flight offline:", "went offline")
             island = wait_frames(8, "over the island")
@@ -438,6 +492,19 @@ def main():
 
         # Flying straight while the tiles come.
         before = wait_frames(6, "flying straight")
+        # Flight in front and with the keys: the session's own windows open
+        # beside it and, on a slow machine, one can open after it and over
+        # it - which took the panels' pictures and the keys both. A click
+        # inside its picture, clear of the view chip, raises and focuses it.
+        win = re.search(r"wm: window Flight at (\d+),(\d+) (\d+)x(\d+)", guest.seen[mark:])
+        if win:
+            wx, wy, ww, wh = (int(v) for v in win.groups())
+            guest.mouse_to((wx + ww * 0.8) * 32767 / 1919, (wy + wh * 0.7) * 32767 / 1079)
+            time.sleep(0.2)
+            guest.mouse_button(True)
+            time.sleep(0.1)
+            guest.mouse_button(False)
+            wait_frames(2, "Flight raised")
         if os.environ.get("KOSMOS_FLIGHT_SHOT"):
             # A picture for a person: the ground built first.
             until = time.monotonic() + 240
@@ -772,6 +839,27 @@ def main():
         if rio["ground"] != "true" or rio["v"] > 5 or abs(rio["x"] - rx) > 10 \
                 or abs(rio["z"] - rz) > 10:
             fails.append("after Restart it is not stopped on Rio's runway: %r" % (rio,))
+    # Real airports (F8): "paris" found Paris's three large fields from the
+    # airports file before the finder answered; Rio's terrain levelled the
+    # five runways of its three fields within 30 km; and on 02R's
+    # threshold the ground under the wheels is the runway's own 9 feet,
+    # 2.74 m, whatever the elevation tiles said - on SDU's 02R/20L.
+    fields = re.search(r"flight sheet airports (\d+) first (\w+) runway (\w+)", seen)
+    print("flight: %s" % (fields.group(0) if fields else "no airports line"))
+    if not fields or fields.group(1) != "3" or fields.group(2) != "LFPB":
+        fails.append("the sheet did not find Paris's three airports, Le Bourget first: %r"
+                     % re.findall(r"flight sheet airports.*", seen))
+    flats = re.findall(r"flight flats (\d+) runways of (\d+) airports within 30 km", seen)
+    print("flight: flats %r" % (flats,))
+    if not flats or flats[-1] != ("5", "3"):
+        fails.append("Rio's terrain did not level the 5 runways of its 3 airports: %r" % (flats,))
+    under = re.search(r"flight runway ground (-?[\d.]+) m under the wheels, the runway "
+                      r"(-?[\d.]+) m, ([^\r\n]*)", seen)
+    print("flight: %s" % (under.group(0) if under else "no runway ground line"))
+    if not under or abs(float(under.group(1)) - 2.74) > 0.05 or \
+            abs(float(under.group(2)) - 2.74) > 0.01 or under.group(3).strip() != "SDU 02R/20L":
+        fails.append("the ground on 02R's threshold is not the runway's 2.74 m on SDU 02R/20L: %r"
+                     % (under.group(0) if under else re.findall(r"flight runway.*", seen)))
     pls = re.findall(r"flight place (.*?) - ", seen)
     if len(pls) < 2 or not re.fullmatch(r"SDU .{1,3} Santos Dumont", pls[-1]):
         fails.append("the place box did not follow to Santos Dumont: %r" % (pls,))

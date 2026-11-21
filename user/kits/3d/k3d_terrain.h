@@ -96,4 +96,25 @@ void k3d_terrain_chunk(const struct k3d_place *p, struct k3d_tile t, k3d_height_
                        void *context, float skirt, struct k3d_terrain_vertex *vertices,
                        uint32_t *indices, float *lowest, float *highest);
 
+/*
+ * **A flat** (`docs/flight.md` F8): a runway's ground, level across and
+ * straight along - the elevation tiles are 20 m a sample at best and put a
+ * runway on whatever the hill under it does. A segment from `a` to `b`
+ * across the world (0 to 1, as `k3d_height_fn` takes), the heights at its
+ * ends, and two half-widths in the same units: inside `half` of the
+ * segment the ground is the segment's height, the line between its ends;
+ * over the next `margin` it blends back to the tiles' with a smoothstep;
+ * beyond, the tiles' own. Its ends are round, which a runway's stopway
+ * does not mind.
+ */
+struct k3d_flat {
+    double ax, ay, bx, by;
+    double half, margin;
+    float ha, hb;
+};
+
+/* The height `h` the tiles give at (mx, my), as `n` flats leave it - each
+ * in turn, so where two meet the later one's is the ground. */
+float k3d_flatten(const struct k3d_flat *flats, unsigned n, double mx, double my, float h);
+
 #endif

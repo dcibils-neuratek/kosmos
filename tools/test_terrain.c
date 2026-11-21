@@ -456,18 +456,88 @@ static void island(void)
     check(opaque, "the island's picture is not opaque");
 }
 
+/* A runway's flat (F8): level inside, the tiles' beyond, a smoothstep
+ * between that meets both, the heights along it the line between its
+ * ends, and a hill's chunk flat where a flat lies over it. */
+static float hill_under(void *context, double mx, double my)
+{
+    (void)context;
+    return (float)(100.0 + 4e6 * (mx - 0.3) + 2e6 * (my - 0.6));
+}
+
+struct flattened {
+    const struct k3d_flat *f;
+    unsigned n;
+};
+
+static float hill_flattened(void *context, double mx, double my)
+{
+    const struct flattened *c = context;
+
+    return k3d_flatten(c->f, c->n, mx, my, hill_under(NULL, mx, my));
+}
+
+static void flats(void)
+{
+    double u = 1.0 / 40e6;                          /* about a metre */
+    struct k3d_flat f = { 0.3, 0.6, 0.3 + 2000 * u, 0.6, 30 * u, 150 * u, 10.0f, 20.0f };
+
+    check(k3d_flatten(&f, 1, 0.3, 0.6, 500.0f) == 10.0f, "a flat's end is not its height");
+    check(fabsf(k3d_flatten(&f, 1, 0.3 + 1000 * u, 0.6 + 29 * u, 500.0f) - 15.0f) < 1e-3f,
+          "a flat's middle, inside its half-width, is not halfway between its ends");
+    check(k3d_flatten(&f, 1, 0.3 + 1000 * u, 0.6 + 181 * u, 500.0f) == 500.0f,
+          "beyond a flat's margin the ground is not the tiles'");
+    float in = k3d_flatten(&f, 1, 0.3 + 1000 * u, 0.6 + 31 * u, 500.0f);
+    float mid = k3d_flatten(&f, 1, 0.3 + 1000 * u, 0.6 + 105 * u, 500.0f);
+    float out = k3d_flatten(&f, 1, 0.3 + 1000 * u, 0.6 + 179 * u, 500.0f);
+    check(in > 15.0f && in < 16.0f && fabsf(mid - 257.5f) < 1.0f && out > 499.0f && out < 500.0f,
+          "a flat's margin does not blend from its height to the tiles' with a smoothstep");
+    check(k3d_flatten(&f, 0, 0.3, 0.6, 500.0f) == 500.0f, "no flats changed the ground");
+
+    /* A chunk of a hill under a flat: the samples within its half-width
+     * are level along it, and a chunk away from it is the hill. */
+    struct k3d_place p;
+    k3d_place_at(&p, -56.0, -34.8);
+    double n = ldexp(1.0, 15);
+    struct k3d_tile t = { (uint32_t)(p.ox * n), (uint32_t)(p.oy * n), 15 };
+    double side = 1.0 / n;
+    double cx = (t.x + 0.5) * side, cy = (t.y + 0.5) * side;
+    struct k3d_flat g = { cx - 0.3 * side, cy, cx + 0.3 * side, cy, 0.05 * side, 0.1 * side,
+                          42.0f, 42.0f };
+    struct flattened c = { &g, 1 };
+    static struct k3d_terrain_vertex v[K3D_CHUNK_VERTICES];
+    static uint32_t idx[K3D_CHUNK_INDICES];
+    k3d_terrain_chunk(&p, t, hill_flattened, &c, 20.0f, v, idx, NULL, NULL);
+    int level = 0, off = 0;
+    for (unsigned j = 0; j < K3D_CHUNK_SIDE; j++) {
+        for (unsigned i = 0; i < K3D_CHUNK_SIDE; i++) {
+            double mx = (t.x * 64.0 + i) / (64.0 * n), my = (t.y * 64.0 + j) / (64.0 * n);
+            float y = v[j * K3D_CHUNK_SIDE + i].position[1];
+
+            if (fabs(my - cy) < 0.04 * side && fabs(mx - cx) < 0.29 * side) {
+                level++;
+                off += fabsf(y - 42.0f) > 1e-3f;
+            } else if (fabs(my - cy) > 0.16 * side) {
+                off += fabsf(y - hill_under(NULL, mx, my)) > 1e-2f;
+            }
+        }
+    }
+    check(level > 20 && off == 0, "a chunk under a flat is not level along it and the hill beyond");
+}
+
 int main(void)
 {
     frame();
     chunks();
     mesh();
     island();
+    flats();
     if (fails) {
         printf("FAIL: %d of %d checks on the 3D Kit's terrain.\n", fails, checks + fails);
         return 1;
     }
     printf("PASS: %d checks on the 3D Kit's terrain (the frame, the chunks chosen - covered "
            "once, deeper nearer, and with little room - and a chunk's mesh on a plane and a "
-           "hill, its seams the same bits, and the invented island).\n", checks);
+           "hill, its seams the same bits, the invented island, and a runway's flat).\n", checks);
     return 0;
 }

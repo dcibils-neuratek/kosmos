@@ -106,6 +106,8 @@ struct job {
     struct k3d_place place;
     struct k3d_tile at, from;       /* the chunk, and the elevation tile */
     struct map_heights h;
+    const struct k3d_flat *flats;   /* the terrain's, never changed after it is made */
+    unsigned nflats;
     struct k3d_terrain_vertex *corners;
     uint32_t *indices;              /* NULL when memory was out */
 };
@@ -136,6 +138,8 @@ struct terrain {
     struct k3d_tile *chosen;        /* `most` of them */
     struct k3d_tile *drawn;         /* the frame's, `most` of them */
     unsigned frame, freed;
+    struct k3d_flat *flats;         /* the runways' ground, given when it is made */
+    unsigned nflats;
 
     /* The builder. `todo` in, `done` out, both under `lock`. */
     pthread_mutex_t lock;
@@ -226,6 +230,8 @@ static void job_free(struct job *j)
 struct sampler {
     const struct map_heights *h;
     struct k3d_tile at;
+    const struct k3d_flat *flats;
+    unsigned nflats;
 };
 
 static float sampled(void *context, double mx, double my)
@@ -233,7 +239,8 @@ static float sampled(void *context, double mx, double my)
     const struct sampler *s = context;
     double n = ldexp(1.0, s->at.z);
 
-    return map_heights_sample(s->h, mx * n - s->at.x, my * n - s->at.y);
+    return k3d_flatten(s->flats, s->nflats, mx, my,
+                       map_heights_sample(s->h, mx * n - s->at.x, my * n - s->at.y));
 }
 
 /* The builder: a job at a time, the lock never held while it works. */
@@ -260,7 +267,7 @@ static void *builder(void *context)
         j->corners = malloc(sizeof(*j->corners) * K3D_CHUNK_VERTICES);
         j->indices = malloc(sizeof(*j->indices) * K3D_CHUNK_INDICES);
         if (j->corners != NULL && j->indices != NULL) {
-            struct sampler s = { &j->h, j->from };
+            struct sampler s = { &j->h, j->from, j->flats, j->nflats };
 
             k3d_terrain_chunk(&j->place, j->at, sampled, &s, 20.0f, j->corners, j->indices,
                               NULL, NULL);
@@ -390,6 +397,54 @@ static int l_terrain(lua_State *L)
     if (g->chosen == NULL || g->drawn == NULL) {
         return luaL_error(L, "out of memory for a terrain");
     }
+    /*
+     * **The runways' ground** (F8): `flats = { { x1, z1, x2, z2, width,
+     * h1, h2 }, ... }`, each a runway's ends in the frame's metres, its
+     * width and the heights at its ends. Given here and never after, so the
+     * builder's thread reads them without a lock: a new place is a new
+     * terrain. The ground is the runway's for half its width and 30 m
+     * beside it, and blends back to the tiles' over 150 m more - three
+     * samples of the finest chunk at least, so a runway is level whatever
+     * the samples' spacing.
+     */
+    lua_getfield(L, 1, "flats");
+    if (lua_type(L, -1) == LUA_TTABLE) {
+        lua_Integer count = luaL_len(L, -1);
+
+        luaL_argcheck(L, count >= 0 && count <= 4096, 1, "at most 4096 flats");
+        if (count > 0) {
+            g->flats = calloc((size_t)count, sizeof(*g->flats));
+            if (g->flats == NULL) {
+                return luaL_error(L, "out of memory for a terrain's flats");
+            }
+        }
+        for (lua_Integer i = 1; i <= count; i++) {
+            double v[7];
+
+            lua_geti(L, -1, i);
+            luaL_argcheck(L, lua_type(L, -1) == LUA_TTABLE, 1, "a flat is a table of 7 numbers");
+            for (int k = 0; k < 7; k++) {
+                lua_geti(L, -1, k + 1);
+                luaL_argcheck(L, lua_type(L, -1) == LUA_TNUMBER, 1,
+                              "a flat is x1, z1, x2, z2, width, h1, h2");
+                v[k] = lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+            luaL_argcheck(L, v[4] > 0 && v[4] < 1000, 1, "a flat's width from 0 to 1000 m");
+            struct k3d_flat *f = &g->flats[g->nflats++];
+
+            f->ax = g->place.ox + v[0] / g->place.metres;
+            f->ay = g->place.oy + v[1] / g->place.metres;
+            f->bx = g->place.ox + v[2] / g->place.metres;
+            f->by = g->place.oy + v[3] / g->place.metres;
+            f->half = (v[4] / 2 + 30) / g->place.metres;
+            f->margin = 150 / g->place.metres;
+            f->ha = (float)v[5];
+            f->hb = (float)v[6];
+        }
+    }
+    lua_pop(L, 1);
     return 1;
 }
 
@@ -430,6 +485,8 @@ static int l_terrain_gc(lua_State *L)
     free(g->heights);
     free(g->pictures);
     free(g->chunks);
+    free(g->flats);
+    g->flats = NULL;
     free(g->chosen);
     free(g->drawn);
     memset(g, 0, sizeof(*g));
@@ -529,7 +586,8 @@ static int l_terrain_height(lua_State *L)
         struct heights *h = heights_of(g, t);
 
         if (h != NULL) {
-            lua_pushnumber(L, map_heights_sample(&h->h, mx * n - t.x, my * n - t.y));
+            lua_pushnumber(L, k3d_flatten(g->flats, g->nflats, mx, my,
+                                          map_heights_sample(&h->h, mx * n - t.x, my * n - t.y)));
             return 1;
         }
     }
@@ -1098,6 +1156,8 @@ static int advance(struct window *w, struct terrain *g, unsigned n, unsigned *up
                 j->at = t;
                 j->from = h->at;
                 j->h = h->h;
+                j->flats = g->flats;
+                j->nflats = g->nflats;
                 if (!send_job(g, j)) {
                     free(j);
                     continue;

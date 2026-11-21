@@ -224,3 +224,36 @@ void k3d_terrain_chunk(const struct k3d_place *p, struct k3d_tile t, k3d_height_
         *highest = high;
     }
 }
+
+float k3d_flatten(const struct k3d_flat *flats, unsigned n, double mx, double my, float h)
+{
+    for (unsigned i = 0; i < n; i++) {
+        const struct k3d_flat *f = &flats[i];
+        double dx = f->bx - f->ax, dy = f->by - f->ay;
+        double along = dx * dx + dy * dy;
+        double t = along > 0 ? ((mx - f->ax) * dx + (my - f->ay) * dy) / along : 0;
+
+        if (t < 0) {
+            t = 0;
+        } else if (t > 1) {
+            t = 1;
+        }
+        double ex = mx - (f->ax + t * dx), ey = my - (f->ay + t * dy);
+        double d = sqrt(ex * ex + ey * ey);
+
+        if (d >= f->half + f->margin) {
+            continue;
+        }
+        float level = (float)(f->ha + t * (f->hb - f->ha));
+
+        if (d <= f->half || f->margin <= 0) {
+            h = level;
+        } else {
+            double s = (d - f->half) / f->margin;
+
+            s = s * s * (3 - 2 * s);
+            h = (float)(level + s * (h - level));
+        }
+    }
+    return h;
+}

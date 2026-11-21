@@ -32,6 +32,7 @@ local prefs = use("/Kosmos/Libraries/prefs.lua")
 local keys = use("/Kosmos/Libraries/keys.lua")
 local audio = use("/Kosmos/Libraries/audio.lua")
 local synth = use("/Kosmos/Kits/synth")
+local airports = use("/Kosmos/Libraries/airports.lua")
 
 local settings = prefs.open("flight", {
   city = "mvd",                                  -- which of CITIES, or none
@@ -43,6 +44,7 @@ local settings = prefs.open("flight", {
   model = "/Home/Apps/Flight/cessna_172.glb",    -- the aircraft (assets/models/cessna172)
   graphics = true,                               -- the graphics panel open (F3)
   start = "city",                                -- "city", "runway" or "final" (F5i)
+  final = 5000,                                  -- metres out a final-approach start begins
   time = "noon",                                 -- the time of day, one of HOURS (F6a)
   sound = true,                                  -- the engine and the wind heard (F6c, M)
   place = false,                                 -- a place searched for: { name, note, lon, lat }
@@ -53,7 +55,7 @@ local settings = prefs.open("flight", {
 })
 
 local KEY = { up = 103, down = 108, left = 105, right = 106, a = 30, z = 44, f = 33,
-              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50 }
+              v = 47, p = 25, r = 19, f3 = 61, t = 20, m = 50, b = 48 }
 
 local counter_hz = (fs.read("/Devices/cpu") or {}).counter_hz or 62500000
 local function now() return sys.ticks() / counter_hz end
@@ -78,7 +80,7 @@ local S = { view = 1 }                -- 1 chase, 2 cockpit, 3 tower
 -- One step of the flight model, `dt` seconds: speed, climb and heading from
 -- the forces in the path's frame, as a point mass with an attitude - which
 -- is how a trainer feels, and a few dozen multiplications.
-local function fly(dt, pitch, roll, ground_h)
+local function fly(dt, pitch, roll, ground_h, brake)
   local P = PLANE
   local rho = 1.225 * math.exp(-S.y / 8500)
   local q = 0.5 * rho * S.v * S.v
@@ -97,9 +99,10 @@ local function fly(dt, pitch, roll, ground_h)
   local m = P.mass
 
   if S.ground then
-    -- Rolling: no bank, the wheels' friction, and off when lift is enough.
+    -- Rolling: no bank, the wheels' friction - and the brakes', B (F8),
+    -- about half a g on a dry runway - and off when lift is enough.
     S.phi = 0
-    local friction = 0.04 * math.max(0, m * G - lift)
+    local friction = (0.04 + 0.45 * (brake or 0)) * math.max(0, m * G - lift)
     S.v = math.max(0, S.v + (thrust - drag - friction) / m * dt)
     S.gamma = 0
     if lift > m * G * 1.02 and pitch > 0 then S.ground = false end
@@ -126,11 +129,18 @@ local function fly(dt, pitch, roll, ground_h)
   S.z = S.z - horizontal * math.cos(S.psi) * dt
   S.y = S.y + S.v * math.sin(S.gamma) * dt
 
-  -- The ground: touched gently it is a landing, hard it is the end.
+  -- The ground: touched gently it is a landing, hard it is the end - and
+  -- gently is under about 600 feet a minute (F8), a trainer's firm one,
+  -- and wings within twenty degrees of level.
   if ground_h and S.y < ground_h + P.gear then
     local sink = -S.v * math.sin(S.gamma)
-    if not S.ground and (sink > 4 or math.abs(S.phi) > math.rad(20)) then
-      S.crashed = true
+    if not S.ground then
+      if sink > 600 / 196.85 or math.abs(S.phi) > math.rad(20) then
+        S.crashed = ("touched down at %.0f fpm, %.0f degrees of bank")
+                    :format(sink * 196.85, math.deg(math.abs(S.phi)))
+      else
+        S.landed = sink * 196.85
+      end
     end
     S.y = ground_h + P.gear
     S.ground = true
@@ -245,10 +255,11 @@ local ORDER = { "rio", "sf", "cpt", "hkg", "mvd" }    -- the mockup's, and Recen
 -- Where the flight is: one of the cities, a place searched for - a name, a
 -- line, a longitude and latitude, and no airfield - or nowhere known.
 local here
+local with_field                       -- below, with the airports
 local function where_now()
-  return CITIES[settings.city] or (type(settings.place) == "table" and settings.place) or nil
+  return CITIES[settings.city]
+         or (type(settings.place) == "table" and with_field(settings.place)) or nil
 end
-here = where_now()
 
 -- A place's metres east and south of where the terrain is centred, in the
 -- terrain's own projection - Web Mercator, scaled at the centre's latitude
@@ -263,6 +274,88 @@ local function metres_at(lon, lat)
   local scale = 40075016.68557849 * math.cos(math.rad(settings.lat))
   return (mx - ox) * scale, (my - oy) * scale
 end
+
+-- **The airports** (F8): every paved runway OurAirports has, beside
+-- Flight's other files - asked by code or name in the sheet, the nearest
+-- one's runway given to any place found, and every runway near the
+-- terrain's centre levelled under it. Read the first time it is wanted.
+local airports_db, airports_why
+local function airports_here()
+  if airports_db == nil and airports_why == nil then
+    local folder = tostring(settings.model):match("^(.*)/") or "/Home/Apps/Flight"
+    airports_db, airports_why = airports.open(folder .. "/airports.tsv")
+    if not airports_db then say("airports none: " .. tostring(airports_why)) end
+  end
+  return airports_db
+end
+
+-- An airport, made a place: its longest runway's first end the runway a
+-- start lines up on.
+local function airport_place(a)
+  local e = a.runways[1].ends[1]
+  return { name = a.ident .. " \u{b7} " .. a.name,
+           code = (a.iata or a.ident) .. " \u{b7} " .. a.name,
+           note = a.town ~= "" and (a.town .. ", " .. a.country) or a.country,
+           lon = a.lon, lat = a.lat, field = { a.lon, a.lat }, airport = a.ident,
+           runway = { name = e.name, lon = e.lon, lat = e.lat, heading = e.heading,
+                      feet = e.feet } }
+end
+
+-- A place found without an airfield given the nearest one within 25 km,
+-- so a start on the runway is there wherever a field is near.
+with_field = function(p)
+  if not p or p.runway or p.invented or p.key then return p end
+  local db = airports_here()
+  local a = db and db:near(p.lon, p.lat, 25, 1)[1]
+  if a then
+    local f = airport_place(a)
+    p.field, p.runway, p.airport = f.field, f.runway, f.airport
+    p.note = (p.note and p.note ~= "" and (p.note .. "; ") or "")
+             .. ("%s %s, %.0f km"):format(a.iata or a.ident, a.name, a.km)
+  end
+  return p
+end
+
+-- The runways near the terrain's centre, as the 3D Kit's flats - their
+-- ends in the frame, their width and their ends' heights - and kept, to
+-- say which runway a landing was on.
+local RUNWAYS = {}
+local function flats_here()
+  RUNWAYS = {}
+  local db = airports_here()
+  if not db then return nil end
+  local list, near = {}, db:near(settings.lon, settings.lat, 30, 24)
+  for _, a in ipairs(near) do
+    for _, r in ipairs(a.runways) do
+      local x1, z1 = metres_at(r.ends[1].lon, r.ends[1].lat)
+      local x2, z2 = metres_at(r.ends[2].lon, r.ends[2].lat)
+      local width = math.max(10, math.min(900, (r.width or 75) * 0.3048))
+      list[#list + 1] = { x1, z1, x2, z2, width, r.ends[1].feet * 0.3048,
+                          r.ends[2].feet * 0.3048 }
+      RUNWAYS[#RUNWAYS + 1] = { x1 = x1, z1 = z1, x2 = x2, z2 = z2, width = width,
+                                name = (a.iata or a.ident) .. " " .. r.name }
+    end
+  end
+  say(("flats %d runways of %d airports within 30 km"):format(#list, #near))
+  return list
+end
+
+-- The runway under a place, if one is: within its half-width and ten
+-- metres, between its ends.
+local function runway_at(x, z)
+  for _, r in ipairs(RUNWAYS) do
+    local dx, dz = r.x2 - r.x1, r.z2 - r.z1
+    local len2 = dx * dx + dz * dz
+    local t = len2 > 0 and ((x - r.x1) * dx + (z - r.z1) * dz) / len2 or -1
+    if t >= 0 and t <= 1 then
+      local ex, ez = x - (r.x1 + t * dx), z - (r.z1 + t * dz)
+      if ex * ex + ez * ez <= (r.width / 2 + 10) ^ 2 then return r.name end
+    end
+  end
+  return nil
+end
+
+here = where_now()
 
 -- The tower: on the city's airfield, or where the flight began when the
 -- place has none; its foot from the terrain's heights once they are in.
@@ -301,13 +394,17 @@ local function start(g)
       S.x, S.z, S.y = tx, tz, elevation + PLANE.gear
       S.v, S.throttle, S.alpha, S.ground = 0, 0, 0, true
     else
-      local back = 5000
-      S.x, S.z = tx - math.sin(psi) * back, tz + math.cos(psi) * back
+      -- The path aims at the touchdown zone, 300 m past the threshold, as
+      -- a runway's glide path does (F8): aimed at the threshold itself the
+      -- wheels met the ground short of the runway.
+      local back = settings.final
+      local ax, az = tx + math.sin(psi) * 300, tz - math.cos(psi) * 300
+      S.x, S.z = ax - math.sin(psi) * back, az + math.cos(psi) * back
       S.y = elevation + back * math.tan(math.rad(3)) + PLANE.gear
       S.v, S.gamma, S.flaps, S.throttle = 36, -math.rad(3), 0.5, 0.35
     end
   end
-  S.started = how
+  S.started, S.ground_said, S.landed = how, nil, nil
   say(("started %s at x=%.0f y=%.0f z=%.0f heading=%.0f in %s"):format(how, S.x, S.y, S.z,
       math.deg(S.psi) % 360, here and here.name or "no place known"))
 end
@@ -1197,9 +1294,21 @@ local function search(text)
     SHEET.finder_told = true
     if not tiles.finder(settings.finder) then say("sheet finder refused " .. settings.finder) end
   end
+  -- The airports first (F8), from the file at once - a code or a name -
+  -- and the finder's places after them when they come.
+  local db = airports_here()
+  local fields = db and db:search(text, 3) or {}
+  SHEET.airports = {}
+  for i, a in ipairs(fields) do SHEET.airports[i] = airport_place(a) end
+  say(("sheet airports %d%s"):format(#fields, fields[1] and (" first " .. fields[1].ident
+      .. " runway " .. fields[1].runways[1].ends[1].name) or ""))
+  SHEET.found = #SHEET.airports > 0 and { table.unpack(SHEET.airports) } or nil
   local n, why = tiles.find(text)
-  if not n then SHEET.said = "the search could not be asked: " .. tostring(why) return end
-  SHEET.asked, SHEET.found, SHEET.said = n, nil, "Searching\u{2026}"
+  if not n then
+    SHEET.said = #SHEET.airports == 0 and ("the search could not be asked: " .. tostring(why)) or nil
+    return
+  end
+  SHEET.asked, SHEET.said = n, "Searching\u{2026}"
   say(("sheet searching %q"):format(text))
 end
 
@@ -1210,12 +1319,13 @@ local function sheet_found()
   local list, why = tiles.places(SHEET.asked, status)
   SHEET.asked = nil
   if not list then SHEET.said = why return end
-  SHEET.found = {}
+  SHEET.found = { table.unpack(SHEET.airports or {}) }
   for i = 1, math.min(4, #list) do
     local r = list[i]
-    SHEET.found[i] = { name = r.name, note = r.where, lon = r.lon, lat = r.lat }
+    SHEET.found[#SHEET.found + 1] = with_field{ name = r.name, note = r.where, lon = r.lon,
+                                                lat = r.lat }
   end
-  SHEET.said = #list == 0 and "Nowhere is called that" or nil
+  SHEET.said = #SHEET.found == 0 and "Nowhere is called that" or nil
   say(("sheet found %d%s"):format(#list, list[1] and (" first " .. list[1].name .. (" at %.3f %.3f")
       :format(list[1].lat, list[1].lon)) or ""))
 end
@@ -1387,9 +1497,9 @@ local function draw_sheet(w)
     elseif r.kind == "buttons" then
       -- The keys, said once where a person looks for them (F6b).
       s:fill(18, y - 4, sw - 36, 1, LINE)
-      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} F flaps \u{b7} M sound",
+      s:text(18, y + 4, "Arrows pitch and roll \u{b7} A Z throttle \u{b7} B brakes \u{b7} F flaps",
              DIM, nil, sheet_face)
-      s:text(18, y + 22, "V view \u{b7} T time of day \u{b7} P pause \u{b7} R start again \u{b7} F3 graphics",
+      s:text(18, y + 22, "V view \u{b7} T time \u{b7} M sound \u{b7} P pause \u{b7} R again \u{b7} F3 graphics",
              DIM, nil, sheet_face)
       y = y + 44
       local x = sw - 18
@@ -1449,7 +1559,7 @@ local keep = math.max(120, math.min(600, math.floor(free_mb / 4 / 0.5)))
 local function terrain()
   return k.terrain{ lon = settings.lon, lat = settings.lat, root = 11, deepest = 15,
                     radius = 1, split = 2.0, most = math.min(300, keep), elevation = 13,
-                    keep = keep, uploads = 8 }
+                    keep = keep, uploads = 8, flats = not offline.on and flats_here() or nil }
 end
 local g = terrain()
 say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))
@@ -1461,6 +1571,12 @@ say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))
 -- Restart starts the flight itself, so it says so and this does not.
 go_offline = function(reason, restarting)
   offline.on, offline.made = true, 0
+  -- The island has no runways: a terrain without the flats the real
+  -- place's would have levelled in its sea.
+  g = nil
+  collectgarbage()
+  g = terrain()
+  RUNWAYS = {}
   here = { name = "an invented island", code = "Offline: an invented island",
            note = "the imagery and terrain could not be fetched", invented = true,
            lon = settings.lon, lat = settings.lat }
@@ -1484,13 +1600,17 @@ restart = function(place, how)
     else
       settings:set{ city = "", lon = place.lon, lat = place.lat,
                     place = { name = place.name, note = place.note, lon = place.lon,
-                              lat = place.lat } }
+                              lat = place.lat, code = place.code, field = place.field,
+                              runway = place.runway, airport = place.airport } }
     end
     local kept = { place.key and { key = place.key } or settings.place }
     for _, p in ipairs(recent()) do
       if #kept < 8 and not same_place(p, place) then
         kept[#kept + 1] = p.key and { key = p.key } or { name = p.name, note = p.note,
-                                                          lon = p.lon, lat = p.lat }
+                                                          lon = p.lon, lat = p.lat,
+                                                          code = p.code, field = p.field,
+                                                          runway = p.runway,
+                                                          airport = p.airport }
       end
     end
     settings:set("recent", kept)
@@ -1556,7 +1676,7 @@ while not w:closed(0) do
       say("sound " .. (settings.sound and "wanted" or "off"))
     end
     if r or S.crashed then
-      if S.crashed then say("crashed") end
+      if S.crashed then say("crashed: " .. tostring(S.crashed)) end
       start(g)
     end
     w:typed()
@@ -1567,7 +1687,23 @@ while not w:closed(0) do
     local roll = (down(w, KEY.right) and 1 or 0) - (down(w, KEY.left) and 1 or 0)
     if down(w, KEY.a) then S.throttle = math.min(1, S.throttle + 0.5 * dt) end
     if down(w, KEY.z) then S.throttle = math.max(0, S.throttle - 0.5 * dt) end
-    fly(dt, pitch, roll, g:height(S.x, S.z))
+    fly(dt, pitch, roll, g:height(S.x, S.z), down(w, KEY.b) and 1 or 0)
+    if S.landed then
+      say(("landed at %.0f fpm %s"):format(S.landed,
+          runway_at(S.x, S.z) and ("on " .. runway_at(S.x, S.z)) or "off any runway"))
+      S.landed = nil
+    end
+    -- On a runway's start, the ground under the wheels once its tiles are
+    -- in: the runway's own height, levelled (F8).
+    if S.started == "runway" and not S.ground_said then
+      local h = g:height(S.x, S.z)
+      local rw = here and here.runway
+      if h and rw then
+        say(("runway ground %.2f m under the wheels, the runway %.2f m, %s")
+            :format(h, rw.feet * 0.3048, runway_at(S.x, S.z) or "no runway known here"))
+        S.ground_said = true
+      end
+    end
     if plane then place(plane, pitch, roll, dt) end
   end
   engine_sound(t)

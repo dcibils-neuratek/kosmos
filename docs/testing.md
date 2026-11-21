@@ -40247,3 +40247,89 @@ and the card's loudest sample was 9829. On the M700 the kit rendered
 - On the first run the machine had no sound card. Flight said "sound
   none: this machine has no sound device", and the suite failed with
   "the engine was not heard".
+
+## 18.962 Flight at real airports (0.12.42)
+
+**In short:** Flight can now start from, take off from and land at any
+of 9,498 real airports. The pause sheet finds an airport by its code or
+its name, and starts the flight on its runway or on final approach. The
+ground under every runway near the flight is level, B is the brakes, and
+a touchdown under 600 feet a minute is a landing, not a crash.
+
+- **The data.** `tools/airports.py` fetches OurAirports' `airports.csv`
+  and `runways.csv` (public domain) at a pinned commit into
+  `build/downloads` and checks their sha256. It keeps the open, paved
+  runways of 1,500 feet or more with both ends known: 9,498 airports and
+  11,753 runways in 1.7 MB, one line an airport. The size field puts
+  large airports first in a search. `installed.py` puts the file in
+  Flight's folder, and the suites' disks carry it too.
+- **The Airports library** (`user/lib/airports.lua`) holds the file as
+  one string and answers three questions: `find` a code (ICAO's, IATA's
+  or the local one), `search` a name (the large airports first, then the
+  medium and the small), and `near` a place. Each end of a runway gets a
+  true heading towards the other. `tools/test_airports.lua` holds it to
+  the real file in `make host-check`, with 12 checks:
+  - SDU and SBRJ are both Santos Dumont;
+  - 02R is the threshold Flight had by hand, and heads north;
+  - Heathrow's two runways head 090;
+  - "paris" finds Le Bourget, Charles de Gaulle and Orly before Paris,
+    Texas;
+  - Rio's two fields come nearest first;
+  - every line parses.
+- **The ground, levelled.** The 3D Kit's terrain takes `flats`, one per
+  runway: its ends, its width and its ends' heights.
+  - `k3d_flatten` makes the ground the runway's for half its width and
+    30 m more, then blends back to the tiles' over 150 m with a
+    smoothstep.
+  - Both the chunks' builder and `g:height` apply it, so the wheels
+    touch the ground that is drawn.
+  - Flats are given only when a terrain is made, so the builder's
+    thread reads them without a lock.
+  - Flight levels every runway within 30 km of the centre. The invented
+    island gets a terrain without them.
+  - `tools/test_terrain.c` adds 5 checks: the ends, the middle, the
+    margin's blend, beyond the margin, and a hill's chunk level along a
+    flat.
+- **The sheet.** Airports are listed at once, from the file. The finder's
+  places come after them. A place without an airfield gets the nearest
+  one within 25 km, so its "On the runway" start is usable.
+- **On the ground.** B brakes at about half a g. A touchdown under 600
+  feet a minute with the wings within 20 degrees of level is a landing,
+  and Flight says which runway it was on. A harder one is a crash, and
+  Flight says why. A final-approach start aims 300 m past the threshold,
+  at the touchdown zone.
+
+**Checked** by three suites:
+
+- `x86-flight`:
+  - "paris" found 3 airports, LFPB first.
+  - Rio's terrain levelled 5 runways of 3 airports.
+  - On 02R's threshold the ground under the wheels was 2.74 m, the
+    runway's 9 feet, on "SDU 02R/20L".
+- **`x86-flight-land`, new:** 150 m out on a three-degree final to SDU's
+  02R, hands off, the Cessna touched down at 255 fpm "on SDU 02R/20L".
+  Its first run, with the path aimed at the threshold itself, touched
+  down at 474 fpm, short of the runway: "off any runway".
+- `host`: `test_airports` and `test_terrain`.
+
+The full gate ran 135 suites in 553 s, since `installed.py` and the
+Makefile are claimed by none. Only `x86-smbd` failed: its Servers page did not
+show the visitor within 120 s. It passed alone, so it is a load flake and
+joins the others in the roadmap.
+
+**On the way.**
+
+- The suite's machine had one processor. The sound costs about a quarter
+  of it under TCG, and Flight fell to 0.8 frames a second. At that pace,
+  a window of the session's own opening after Flight could land on top of
+  it. The suite now runs two processors and clicks inside Flight's
+  picture before it looks at it or presses its keys.
+
+**Controls:**
+
+- Without flats, the ground under 02R read 106.06 m, the suite's hill,
+  and `x86-flight` failed.
+- With the yoke held forward from the final start, the suite failed with
+  "crashed: touched down at 2735 fpm".
+- With every flat ignored in `k3d_flatten`, 4 of `test_terrain`'s 69
+  checks failed.
