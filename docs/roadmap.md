@@ -12097,10 +12097,17 @@ taking off and landing on it, **F8a built in 0.12.42** (18.962: the data, the
 Airports library, the sheet, the runways levelled, B, the 600 fpm rule), F8b
 the runway drawn as a strip, **built in 0.12.43** (18.963: the 3D Kit's `w:shape`
 and a part's pull towards the eye; the numbers and the island's runway to follow); F9 live air traffic control through a new
-Radio Kit, which Music's Radio source wants too. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
+Radio Kit, which Music's Radio source wants too - **the radio built in 0.12.44**
+(18.964) as `radio.lua` over the download and Playback kits, `radio` at the
+prompt, `x86-radio`; **its source waits on Diego**: LiveATC prohibits third-party
+use of its streams, so permission, another source, or ATC spoken by Kosmos. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
 menu check read the menu without "Add to favorites" and "Settings", and
 `x86-tcc` had a keyring line inside a program's output. In the 0.12.42 gate `x86-smbd`'s Servers page never showed the visitor within 120 s,
-and it passed alone (38 checks). Both happened under
+and it passed alone (38 checks); in 0.12.43's first `x86-flight` the engine rendered at a
+peak of 0 and passed straight after (18.963). **Found on the M700, 21 November**: with no
+`servers` file in `/Home/Preferences`, the Servers window shows "Screen by VNC, at start" on,
+but wm reads only the saved file and does not start vncd - one default, in one place, wanted.
+These happened under
 the whole gate's load, and both passed alone. Wait for the thing, not
 for a time (on a runway at zoom 15 it is 4.5 m a texel, blurred at wheel
 height). **Found on the way**: a program installed

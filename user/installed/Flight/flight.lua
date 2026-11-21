@@ -369,7 +369,7 @@ here = where_now()
 -- cockpit a runway is narrower than that is sharp.
 local frame_models
 do
-local ASPHALT = { 0.055, 0.056, 0.062, 1 }
+local ASPHALT = { 0.13, 0.13, 0.14, 1 }
 local PAINT = { 0.78, 0.78, 0.76, 1 }
 local function runway_parts()
   local hard = { vertices = {}, indices = {}, colour = ASPHALT, pull = 0.004 }

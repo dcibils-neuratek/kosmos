@@ -221,10 +221,12 @@ by code or name, the nearest field's runway for any place, the runways
 levelled through the 3D Kit's `flats`, B for the brakes and a landing under
 600 fpm (`x86-flight-land`); **0.12.43** (18.963), F8b - the runways drawn
 over the imagery, asphalt and ICAO's paint, through the 3D Kit's new
-`w:shape` and a part's pull towards the eye. Next, in Diego's evening order
-(20 November): F9 ATC through a Radio Kit (LiveATC's playlists are behind a
-Cloudflare check, not to be got round: a public source is to be found or
-asked of Diego); then the rest of F6, F7, and the imagery deeper near the ground. **The
+`w:shape` and a part's pull towards the eye. **0.12.44** (18.964), F9's radio - `radio.lua` over the
+Network Kit's download and the Playback Kit, `radio` at the prompt,
+`x86-radio`. **Waiting on Diego**: where Flight's ATC comes from - LiveATC
+prohibits third-party use of its streams (and its playlists are behind a
+Cloudflare check, not to be got round), so permission, another source, or ATC
+spoken by Kosmos. Next, in Diego's evening order (20 November): then the rest of F6, F7, and the imagery deeper near the ground. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

@@ -502,6 +502,25 @@ ends on the M700:
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream
   of the audio server - since Music's Radio source wants exactly that
   door; Flight is its first user, and the volume is a row in the sheet.
+    - **The radio, built in 0.12.44** - and it is a library, not a new
+      kit. Everything it needs was already supplied: the Network Kit's
+      download (`download.c`) streams an HTTP or HTTPS body into a region
+      with no byte of it a Lua string, and the Playback Kit's MP3 player,
+      on its thread in the audio band, takes frames from an address. So
+      `/Kosmos/Libraries/radio.lua` only says where: how far the download
+      has filled the region and how far the player has taken it. It
+      follows redirects, and asks a station that stopped again after five
+      seconds. `radio <address> [seconds]` plays one at the prompt.
+      `x86-radio` holds it to a station on the Mac, heard on the sound
+      card.
+    - **The source is Diego's to choose.** LiveATC says on its own pages
+      that third-party use of its live streams is prohibited, and its
+      playlists sit behind a Cloudflare check. Neither is to be got
+      round, so Flight has no station yet. What is open: asking LiveATC
+      for permission, another public source, or ATC spoken by Kosmos
+      itself - Xavier's voice saying the tower's lines with the real
+      airport's runway and the aircraft's state, which needs nobody's
+      stream.
 - **F7 - a game controller's sticks and triggers.** Today a pad reaches a
   program as keys only. The driver already keeps the analogue values
   (`pad_decode.h`); F7 hands them on: the pad's state - two sticks, two

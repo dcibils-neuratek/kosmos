@@ -40367,3 +40367,45 @@ stops, and the suite fails: no runways drawn and no touchdown.
 **A flake:** in the first run of `x86-flight` the engine rendered 88,064
 frames at a peak of 0 and the sound card heard nothing. It passed on its
 own straight after.
+
+## 18.964 A radio station, heard (0.12.44)
+
+**In short:** `/Kosmos/Libraries/radio.lua` plays an MP3 station over
+HTTP or HTTPS, follows its redirects and calls it back when it stops.
+`radio <address> [seconds]` plays one at the prompt. It is F9's radio
+and Music's Radio source. Flight has no station yet, because LiveATC
+prohibits third-party use of its streams; where the tower's voice comes
+from is Diego's to choose (`flight.md` F9).
+
+- **No new C.** The Network Kit's download streams the body into a
+  64 KB region, and the Playback Kit's MP3 player takes frames from an
+  address in it, on its own thread in the audio band. The library steps
+  the download, hands the player what arrived in 4 KB pieces as far as it
+  has room, and empties the region once the player has had all of it.
+  Until then the download stops reading and the station waits; nothing
+  is lost.
+- **Calling back.** A failure, or a stream that ends, is asked for again
+  after 5 seconds, from the first address, so that its redirect is taken
+  again too.
+- Also in this revision: Flight's runway asphalt is lighter, 0.13
+  linear, after it looked black at dusk on the M700 (18.963).
+
+**Checked by `x86-radio`, new.** The Mac makes 4 s of a 660 Hz tone into
+a 128 kbit/s MP3 with ffmpeg and serves it with no length, again and
+again, at about its own rate, behind a 302 from `/tune`. It hangs up the
+first connection after 96 KB. `radio` runs for 10 s over Telnet, and an
+HD Audio card writes what it plays to a WAV:
+
+- the redirect followed to a 200, and 216,504 bytes came, more than
+  three regions;
+- 359,168 frames played and none refused;
+- the station was called back after it hung up: 4 connections;
+- the WAV holds 7.1 s of tone, loudest sample 2752.
+
+The gaps are the 5 s wait before calling back, and they are counted as
+`dry`.
+
+**Control:** `--garbage` sends the same number of bytes, with no 0xFF in
+them, so no frame sync. The player passes over them, no frame is heard,
+and the suite fails on its own checks: "under three seconds of frames
+were heard: 0" and "the sound card heard no station: 0.0 s, loudest 0".

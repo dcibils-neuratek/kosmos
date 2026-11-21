@@ -718,6 +718,17 @@ SUITES = [
                         "user/lib/tiles.lua", "user/lib/airports.lua", "tools/airports.py",
                         "tools/installed.py", "user/bin/programs/wm.lua", *MESA)),
 
+    # **The Radio library, heard** (F9): a station on this Mac - a tone as
+    # MP3, sent with no end - tuned through a redirect by `radio` over
+    # Telnet, its sound counted in the WAV QEMU's HD Audio card wrote, and
+    # asked again after the station hangs up.
+    Suite("x86-radio", ["python3", "tools/run_radio.py", X86], x86=True,
+          watch=library("tools/run_radio.py", "user/lib/radio.lua", "user/bin/programs/radio.lua",
+                        "user/lib/http.lua", "user/lib/netstream.lua", "user/lib/regions.lua",
+                        "user/lib/audio.lua", "user/kits/network", "user/kits/playback",
+                        "user/kits/tls", "user/servers/audio.c", "user/drivers",
+                        "user/bin/programs/telnetd.lua")),
+
     Suite("x86-flightpath", ["python3", "tools/run_flightpath.py", X86,
                              "build/user-x86_64-test/apps"], x86=True,
           watch=library("tools/run_flightpath.py", "tools/run_k3dground.py",

@@ -5773,3 +5773,27 @@ the picture is identical, but the card always knows which is on top.
 **Reusable.** The 3D Kit can now build a shape from a list of numbers, not
 only from a model file. The runways are its first user; buildings and the
 invented island's runway can use the same door.
+
+## 21 November 2026 - A radio, for the tower and for Music
+
+**In short:** Kosmos can now play an internet radio station - any MP3
+stream over HTTP or HTTPS - and keep playing it when the station drops.
+It is meant for Flight's air traffic control and Music's radio.
+
+**What changed.** No new machinery was needed. The network already knew
+how to pour a download into a block of memory without the Lua interpreter
+touching it, for the AI models. The music player already knew how to play
+MP3 taken straight from memory. The new radio library only connects the
+two and keeps them in step: how much has arrived, how much the player has
+had. Type `radio` and an address at the prompt and it plays.
+
+**The catch.** The obvious source of real air traffic control audio,
+LiveATC, does not allow other programs to use its streams. So Flight has
+a radio but no station yet, and the choice of where its tower's voice
+comes from is Diego's: ask LiveATC, find another source, or have Kosmos
+speak the tower's lines itself.
+
+**Checked.** A test station on the Mac sends a tone. The guest is
+redirected to it, plays it, and the sound card's recording has seven
+seconds of tone in it. The station hangs up partway, and the radio calls
+it back on its own.
