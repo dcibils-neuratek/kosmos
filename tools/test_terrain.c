@@ -9,6 +9,7 @@
  */
 
 #include "k3d_terrain.h"
+#include "k3d_island.h"
 #include "mercator.h"
 
 #include <math.h>
@@ -384,17 +385,89 @@ static void mesh(void)
     check(worst < 1e-3, what);
 }
 
+/* ------------------------------------------------------- the island */
+
+/* The invented island (F5j): land in the middle, the sea all round it,
+ * nowhere higher than Flight's start over it at 1,500 feet; a tile's
+ * heights and picture the island's own at each sample's centre, so two
+ * tiles of different zooms agree where they meet; and its colours what
+ * they say - blue sea, sand at the water's edge, green or rock inland. */
+static void island(void)
+{
+    struct k3d_place p;
+    char what[200];
+    float highest = -1e9f;
+    int sand = 0;
+
+    k3d_place_at(&p, -56.1650, -34.9060);
+    check(k3d_island_height(0, 0) > 100, "the island's middle is not land over 100 m");
+    for (int a = 0; a < 360; a += 15) {
+        double s = sin(a * DEG), c = cos(a * DEG);
+
+        snprintf(what, sizeof what, "12 km out at %d degrees is not the sea's floor: %.1f m", a,
+                 k3d_island_height(12000 * s, 12000 * c));
+        check(k3d_island_height(12000 * s, 12000 * c) < -25, what);
+        for (double r = 0; r < 12000; r += 25) {
+            float h = k3d_island_height(r * s, r * c);
+            uint32_t col = k3d_island_colour(r * s, r * c);
+
+            highest = fmaxf(highest, h);
+            if (h >= 0 && h < 5) {
+                sand += ((col >> 16) & 255) > 150 && ((col >> 8) & 255) > 140;
+            }
+        }
+    }
+    snprintf(what, sizeof what, "the island rises to %.0f m, over the 457 m start", highest);
+    check(highest > 150 && highest < 440, what);
+    check(sand > 10, "no sand where the island meets the sea");
+    uint32_t sea = k3d_island_colour(15000, 0), middle = k3d_island_colour(0, 0);
+    check((sea & 255) > ((sea >> 16) & 255) + 30, "the sea is not blue");
+    /* Inland is green, or rock where it is high: neither the sea's blue
+     * nor the sand's yellow. */
+    snprintf(what, sizeof what, "the island's middle, %.0f m, is %08x - not green or rock",
+             k3d_island_height(0, 0), middle);
+    check((middle & 255) <= ((middle >> 8) & 255) + 8 && ((middle >> 16) & 255) < 170, what);
+
+    /* A tile's samples: the island's height at their centres, the sea's
+     * surface at nought - a function of the place alone, so tiles of any
+     * zoom agree where they meet. */
+    struct k3d_tile t13 = { 2816, 4940, 13 };
+    static float a[65 * 65];
+    float lo, hi;
+    int wrong = 0;
+
+    k3d_island_heights(&p, t13, 65, a, &lo, &hi);
+    for (unsigned j = 0; j < 65; j += 8) {
+        for (unsigned i = 0; i < 65; i += 8) {
+            double x, z, n = ldexp(1.0, 13);
+
+            k3d_place_world(&p, (t13.x + (i + 0.5) / 65) / n, (t13.y + (j + 0.5) / 65) / n, &x, &z);
+            wrong += fabsf(a[j * 65 + i] - fmaxf(0.0f, k3d_island_height(x, z))) > 1e-3f;
+        }
+    }
+    check(wrong == 0, "a tile's heights are not the island's at their samples' centres");
+    check(lo >= 0 && hi >= lo, "a tile's lowest and highest are not its samples'");
+    static uint32_t px[64 * 64];
+    k3d_island_picture(&p, t13, 64, px);
+    int opaque = 1;
+    for (unsigned i = 0; i < 64 * 64; i++) {
+        opaque &= (px[i] >> 24) == 255;
+    }
+    check(opaque, "the island's picture is not opaque");
+}
+
 int main(void)
 {
     frame();
     chunks();
     mesh();
+    island();
     if (fails) {
         printf("FAIL: %d of %d checks on the 3D Kit's terrain.\n", fails, checks + fails);
         return 1;
     }
     printf("PASS: %d checks on the 3D Kit's terrain (the frame, the chunks chosen - covered "
            "once, deeper nearer, and with little room - and a chunk's mesh on a plane and a "
-           "hill, its seams the same bits).\n", checks);
+           "hill, its seams the same bits, and the invented island).\n", checks);
     return 0;
 }

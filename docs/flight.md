@@ -371,9 +371,21 @@ ends on the M700:
     M700**: stopped on a runway, the imagery at zoom 15, the terrain's
     deepest, is about 4.5 m a texel and blurred at wheel height. Deeper
     levels near the eye when it is low are wanted.
-  - **F5j - the island**: with no network and nothing cached, an invented
-    island, so the window always has something to fly over; the place box
-    says so and the credit goes.
+  - **F5j - the island**, **built in 0.12.38** (`testing.md` 18.958):
+    with no network and nothing cached, an invented island, so the window
+    always has something to fly over. The place box says "Offline: an
+    invented island", the credit goes, and the flight starts again over the
+    island's middle at the city's height, since a runway or an approach
+    belonged to a field that is not there. Flight goes offline when it has
+    no `/Tiles`, or when six seconds pass with fetches failing and nothing
+    handed. The island is made in C, `user/kits/3d/k3d_island.c`, a tile at
+    a time, six a frame, through the terrain's new `g:invent(kind, z, x, y)`:
+    value noise for the shape and the ridges, a sea floor below the shore,
+    and its colours - sea, sand, grass, rock - by height and slope. The
+    heights are the same function the picture is drawn from, so they meet
+    at every tile's edge. Restart asks the network again. **Found on the
+    M700**: before the restart was added, a Cessna left on Rio's runway sat
+    stopped on open sea past the island's shore.
   Then Flight in the dated screenshot.
   - **On the M700** (0.12.34, `testing.md` 18.954): flown there on
     lavapipe, at 85-89 ms a frame since Mesa counts Kosmos's processors.

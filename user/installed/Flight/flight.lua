@@ -364,7 +364,26 @@ local polled = 0
 local missing = { e = {}, i = {} }
 local function key(z, x, y) return (z << 50) | (x << 25) | y end
 
+-- **Offline, an invented island** (F5j): with no `/Tiles`, or nothing
+-- handed six seconds after a start and the sources saying their fetches
+-- failed, the terrain is handed the 3D Kit's island instead (`g:invent`,
+-- `k3d_island.c`) - made in C a tile at a time, a few a frame - and the
+-- place box says so. Restart tries the network again.
+local offline = { on = false, since = 0, handed = 0, made = 0 }
+local INVENT_A_FRAME = 6
+
+local function feed_invented(g, eye)
+  local made = 0
+  for _, t in ipairs(g:wanted(eye)) do
+    if made >= INVENT_A_FRAME then break end
+    g:invent(t[1], t[2], t[3], t[4])
+    made, handed = made + 1, handed + 1
+  end
+  offline.made = offline.made + made
+end
+
 local function feed(g, eye)
+  if offline.on then return feed_invented(g, eye) end
   asking.e, asking.i = 0, 0
   for _, t in ipairs(g:wanted(eye)) do
     local kind = t[1]
@@ -839,7 +858,7 @@ local function draw_place(w)
   local width, height = settings.width, settings.height
   if not place_said then
     local name = here and (here.code or here.name) or ("%.3f, %.3f"):format(settings.lat, settings.lon)
-    local note = here and here.field and here.note
+    local note = here and (here.field or here.invented) and here.note
                  or (here and here.note and here.note ~= "" and here.note .. "; " or "")
                     .. "no airfield here; the tower is where the flight began"
     local bold = gfx.face("ibmplexsans-medium", 15) or gfx.face("ibmplexsans", 15)
@@ -860,6 +879,10 @@ local function draw_place(w)
     place_said = true
   end
 
+  if offline.on then
+    if credit_view ~= "off" then w:overlay(nil, 0, 0, 4) credit_view = "off" end
+    return
+  end
   if credit_view == S.view then return end
   local words = ("Imagery %s \u{b7} Elevation %s"):format(whose(settings.imagery),
                                                           whose(settings.elevation))
@@ -1196,7 +1219,8 @@ plane, why = w:model(settings.model, MOVING)
 if plane then say("aircraft " .. plane:info()) else say("no aircraft: " .. tostring(why)) end
 local ok
 ok, why = sources()
-if not ok then say("failed=no tiles: " .. tostring(why)) return end
+local go_offline                       -- below, with the place box
+if not ok then say("no tiles: " .. tostring(why)) end
 
 -- Roots at zoom 11 - about 16 km a side here - one each way of the eye's:
 -- 50 km across, past the haze's end, and no further; split to zoom 15 near
@@ -1215,6 +1239,24 @@ local function terrain()
 end
 local g = terrain()
 say(("device=%s keep=%d free_mb=%d"):format(w:device(), keep, free_mb))
+
+-- The flight starts again over the island's middle, at the city's height:
+-- the runway or the approach it was on belonged to a field that is not
+-- there, and the island is in the terrain's centre, not under the field -
+-- on the M700 a Cessna left on Rio's runway sat stopped on open sea.
+-- Restart starts the flight itself, so it says so and this does not.
+go_offline = function(reason, restarting)
+  offline.on, offline.made = true, 0
+  here = { name = "an invented island", code = "Offline: an invented island",
+           note = "the imagery and terrain could not be fetched", invented = true,
+           lon = settings.lon, lat = settings.lat }
+  place_tower()
+  place_said = nil
+  say("offline: " .. reason .. "; an invented island instead")
+  if not restarting then start(g) end
+end
+if not ok then go_offline("no /Tiles") end
+offline.since = now()
 
 -- Restart (the sheet's): somewhere else is a terrain centred there - the
 -- old one let go, its chunks with it - and the place box, the tower and
@@ -1248,6 +1290,18 @@ restart = function(place, how)
     say(("restarted in %s at %.4f %.4f"):format(here and here.name or "?", settings.lat,
         settings.lon))
   end
+  if offline.on and not (net.imagery and net.elevation) then
+    go_offline("still no /Tiles", true)      -- an island here, then
+  elseif offline.on then                     -- the network asked again
+    offline.on = false
+    here = where_now()
+    place_tower()
+    place_said, credit_view = nil, nil
+    g = nil
+    collectgarbage()
+    g = terrain()
+  end
+  offline.since, offline.handed = now(), handed
   start(g)
 end
 
@@ -1299,6 +1353,13 @@ while not w:closed(0) do
 
   look(g)
   feed(g, view.eye)
+  if not offline.on and net.imagery and net.elevation and handed == offline.handed
+     and t - offline.since > 6
+     and ((net.imagery.failed or 0) > 0 or (net.elevation.failed or 0) > 0) then
+    go_offline(("nothing came, %d imagery and %d elevation fetches failed%s"):format(
+               net.imagery.failed or 0, net.elevation.failed or 0,
+               net.imagery.why and net.imagery.why ~= "" and (" (" .. net.imagery.why .. ")") or ""))
+  end
   draw_place(w)
   if S.view == 3 and not tower.said then
     say(("tower at x=%.0f z=%.0f ground=%s distance=%.0f focal=%.1f")

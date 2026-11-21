@@ -45,11 +45,15 @@ sys.path.insert(0, HERE)
 
 import scratch                                               # noqa: E402
 
+# `--island` (F5j): the sources at a port nobody serves, so nothing comes
+# and Flight flies over its invented island instead.
+ISLAND = "--island" in sys.argv
+sys.argv = [a for a in sys.argv if a != "--island"]
 IMAGE = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
 X86 = "x86_64" in IMAGE
 APPS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
     ROOT, "build", "user-x86_64-test" if X86 else "user-test", "apps")
-WORK = scratch.directory("flight")
+WORK = scratch.directory("flight-island" if "--island" in sys.argv else "flight")
 HOME_DISK = os.path.join(WORK, "home.img")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 FOLDER = "/Home/Apps/Flight"
@@ -271,6 +275,48 @@ def strip_words_at(R, data, band):
                 out.add((x - left, y - top))
     return out
 
+def island_checks(seen, island, asked, guest):
+    """The invented island (F5j): Flight said it went offline and why, the
+    place box says so, the credit is gone, and the terrain was handed the
+    island's tiles - drawn, with nothing asked of the Mac."""
+    fails = []
+    off = re.search(r"flight offline: ([^\r\n]*)", seen)
+    pl = re.findall(r"flight place (.*?) - (.*?) (?:laid at|not laid)", seen)
+    print("flight: %s" % (off.group(0) if off else "no offline line"))
+    print("flight: places %r" % (pl,))
+    print("flight: over the island %r" % ({k: island[k] for k in ("frame", "x", "y", "z",
+                                                                  "tiles")},))
+    print("flight: %s" % island["drawn"][:80])
+    if not off or "failed" not in off.group(1):
+        fails.append("Flight did not go offline because its fetches failed: %r"
+                     % (off.group(0) if off else None))
+    after = seen[off.end():] if off else ""
+    again = re.search(r"flight started (\w+) at x=(-?\d+) y=(-?\d+) z=(-?\d+)", after)
+    print("flight: then %s" % (again.group(0) if again else "no start"))
+    if not re.search(r"flight started runway at", seen[:off.start()] if off else seen):
+        fails.append("the flight did not begin on Rio's runway, so the move is not tested")
+    if not again or again.groups() != ("city", "0", again.group(3), "0") \
+            or int(again.group(3)) < 457 or island["y"] < 300:
+        fails.append("going offline did not start the flight again over the island's middle: "
+                     "%r, then y=%r" % (again.group(0) if again else None, island["y"]))
+    if not pl or pl[-1] != ("Offline: an invented island",
+                            "the imagery and terrain could not be fetched"):
+        fails.append("the place box did not say the island: %r" % (pl,))
+    drawn = re.match(r"drawn=(\d+) of (\d+)", island["drawn"])
+    if island["tiles"] < 20 or not drawn or int(drawn.group(1)) == 0:
+        fails.append("the island's tiles were not handed and drawn: %d handed, %r"
+                     % (island["tiles"], island["drawn"][:60]))
+    if asked["elev"] or asked["img"]:
+        fails.append("the Mac was asked for tiles: %r" % (asked,))
+    if fails:
+        for f in fails:
+            print("FAIL: " + f)
+        return 1
+    print("PASS: Flight flew over its invented island - %d tiles made, %s of the chunks drawn"
+          % (island["tiles"], drawn.group(0)))
+    return 0
+
+
 def main():
     built = os.path.join(APPS, "k3dvk.elf")
     if not os.path.exists(built):
@@ -283,7 +329,12 @@ def main():
     httpd, asked = tile_server()
     base = "http://10.0.2.2:%d" % httpd.server_address[1]
     with open(os.path.join(WORK, "setup.lua"), "w") as f:
-        f.write(SETUP % dict(base=base, lon=LON, lat=LAT, width=WIDTH, height=HEIGHT))
+        f.write(SETUP % dict(base="http://10.0.2.2:9" if ISLAND else base, lon=LON, lat=LAT,
+                             width=WIDTH, height=HEIGHT))
+        if ISLAND:
+            # Begun on Rio's runway, as the M700 was: going offline has to
+            # take the flight off a field that is not there.
+            f.write('prefs.open("flight", {}):set{ city = "rio", start = "runway" }\n')
     files = [(os.path.join(WORK, "setup.lua"), FOLDER + "/setup.lua"), (image, FOLDER + "/k3dvk.elf"),
              (os.path.join(ROOT, "user", "installed", "Flight", "flight.lua"),
               FOLDER + "/flight.lua"),
@@ -344,6 +395,20 @@ def main():
             raise R.Failure("the settings were not written: %r" % said[-300:])
         session.run("open " + FOLDER + "/flight.lua")
         guest.wait_for("flight device=", "the window opened")
+
+        if ISLAND:
+            guest.wait_for("flight offline:", "went offline")
+            island = wait_frames(8, "over the island")
+            if os.environ.get("KOSMOS_FLIGHT_SHOT"):        # the island built, for a person
+                until = time.monotonic() + 240
+                while time.monotonic() < until:
+                    m = re.match(r"drawn=(\d+) of (\d+) ready=\d+ building=(\d+)", island["drawn"])
+                    if m and m.group(1) == m.group(2) and m.group(3) == "0":
+                        break
+                    island = wait_frames(1, "the island built")
+                R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], guest.screendump())
+            seen = guest.seen[mark:]
+            return island_checks(seen, island, asked, guest)
 
         # Flying straight while the tiles come.
         before = wait_frames(6, "flying straight")

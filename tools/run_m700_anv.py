@@ -21,7 +21,9 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import scratch as temporary  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -61,19 +63,19 @@ def main(argv):
     stamp = int(os.path.getmtime(IMAGE))
     image = f"anvtest-{stamp}.elf"
 
-    with tempfile.TemporaryDirectory() as scratch:
-        stripped = os.path.join(scratch, image)
-        script = os.path.join(scratch, "anvscene.lua")
-        subprocess.run(["x86_64-elf-strip", "-o", stripped, IMAGE], check=True)
-        with open(script, "w") as f:
-            f.write(SCENE.format(image=image))
+    scratch = temporary.directory("m700-anv")
+    stripped = os.path.join(scratch, image)
+    script = os.path.join(scratch, "anvscene.lua")
+    subprocess.run(["x86_64-elf-strip", "-o", stripped, IMAGE], check=True)
+    with open(script, "w") as f:
+        f.write(SCENE.format(image=image))
 
-        before = hangs(address)
-        for local, remote in ((stripped, f"{FOLDER}/{image}"), (script, f"{FOLDER}/anvscene.lua")):
-            code, out = telnet(address, "put", local, remote)
-            if code != 0:
-                print(f"m700-anv: could not put {remote}: {out.strip()}")
-                return 1
+    before = hangs(address)
+    for local, remote in ((stripped, f"{FOLDER}/{image}"), (script, f"{FOLDER}/anvscene.lua")):
+        code, out = telnet(address, "put", local, remote)
+        if code != 0:
+            print(f"m700-anv: could not put {remote}: {out.strip()}")
+            return 1
 
     _, out = telnet(address, "run", f"{FOLDER}/anvscene.lua")
     said = re.search(r"k3d scene: .*", out)

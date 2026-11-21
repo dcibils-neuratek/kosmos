@@ -5631,3 +5631,33 @@ Santos Dumont's runway, still, with "SDU · Santos Dumont" in the corner.
 **What it showed.** Sitting on a runway, the satellite picture is blurry,
 because the terrain's sharpest level is too coarse to look at from wheel
 height. Sharper imagery near the ground is next on the list.
+
+## 20 November 2026 - Flight with no network
+
+**In short:** if Flight cannot download any map tiles, it no longer
+shows an empty sky. It makes up an island and you fly over that, with a
+note in the corner saying so.
+
+**What changed.** Flight's ground is built from satellite pictures and
+height maps fetched from the internet. With no network, or a server that
+does not answer, there was nothing to draw. Now, after six seconds with
+every download failing, Flight says it is offline and starts the flight
+again above an invented island: green hills, a beach and the sea around
+it.
+
+**Why it is built the way it is.** The island is made by a small piece
+of C in the 3D Kit, not by Flight. Making it means working out a height
+and a colour for every point, which is the kind of loop that belongs in
+C. It is handed to the terrain exactly as downloaded tiles are, so
+nothing else in the terrain had to change. The heights and the colours
+come from the same formula, so the hills and their picture always match.
+
+**A bug found on the way.** On the M700 the first version left the
+aircraft where it was: stopped on Rio's runway, which in the invented
+world is open sea. Going offline now always starts the flight again over
+the island's middle, because the runway it was on does not exist there.
+
+**What you see.** "Offline: an invented island" in the corner, the
+Cessna 1900 feet up, grass below, the shore ahead and the sea out to the
+horizon.
+

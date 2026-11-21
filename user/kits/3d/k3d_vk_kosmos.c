@@ -15,6 +15,7 @@
  *     for _, t in ipairs(g:wanted(eye)) do ... end   -- { kind, z, x, y }
  *     g:elevation(z, x, y, gfx.png(bytes))          -- a terrarium tile
  *     g:imagery(z, x, y, gfx.jpeg(bytes))           -- the picture over it
+ *     g:invent("e" or "i", z, x, y)                 -- an invented island's, instead
  *     local said = w:draw(g, view)                  -- a frame, presented
  *
  * A tile's pixels stay in C: Lua hands over the surface gfx decoded and
@@ -48,6 +49,7 @@
 #include "kits/map/elevation.h"
 #include "k3d_vk.h"
 #include "k3d_glb.h"
+#include "k3d_island.h"
 #include "kits/gfx/picture_decode.h"
 #include "storage.h"
 
@@ -585,6 +587,60 @@ static int l_terrain_imagery(lua_State *L)
     for (unsigned y = 0; y < h; y++) {
         memcpy(p->pixels + (size_t)y * w, (const uint8_t *)px + (size_t)y * pitch, (size_t)w * 4);
     }
+    g->npictures++;
+    return 0;
+}
+
+/* g:invent(kind, z, x, y): an invented island's tile, made here, as though
+ * it had arrived - "e" its heights, as `elevation` keeps a tile's, "i" its
+ * picture, as `imagery` does (`k3d_island.h`, `docs/flight.md` F5j). For a
+ * window with nothing else to fly over: the network gone and the cache
+ * empty. A tile at a time, a millisecond or so each, so the caller says
+ * how many a frame. */
+#define INVENTED_HEIGHTS 65
+#define INVENTED_PICTURE 128
+static int l_terrain_invent(lua_State *L)
+{
+    struct terrain *g = terrain_check(L, 1);
+    const char *kind = luaL_checkstring(L, 2);
+    struct k3d_tile t = tile_args(L, 3);
+
+    if (kind[0] == 'e' && kind[1] == '\0') {
+        if (heights_of(g, t) != NULL) {
+            return 0;
+        }
+        if (!room((void **)&g->heights, &g->heights_room, g->nheights, sizeof(*g->heights))) {
+            return luaL_error(L, "out of memory for heights");
+        }
+        struct heights *e = &g->heights[g->nheights];
+        memset(e, 0, sizeof(*e));
+        e->h.metres = malloc(sizeof(float) * INVENTED_HEIGHTS * INVENTED_HEIGHTS);
+        if (e->h.metres == NULL) {
+            return luaL_error(L, "out of memory for heights");
+        }
+        e->at = t;
+        e->used = g->frame;
+        e->h.width = e->h.height = INVENTED_HEIGHTS;
+        k3d_island_heights(&g->place, t, INVENTED_HEIGHTS, e->h.metres, &e->h.lowest,
+                           &e->h.highest);
+        g->nheights++;
+        return 0;
+    }
+    luaL_argcheck(L, kind[0] == 'i' && kind[1] == '\0', 2, "\"e\" or \"i\"");
+    if (picture_of(g, t) != NULL) {
+        return 0;
+    }
+    if (!room((void **)&g->pictures, &g->pictures_room, g->npictures, sizeof(*g->pictures))) {
+        return luaL_error(L, "out of memory for imagery");
+    }
+    struct picture *p = &g->pictures[g->npictures];
+    p->pixels = malloc(sizeof(uint32_t) * INVENTED_PICTURE * INVENTED_PICTURE);
+    if (p->pixels == NULL) {
+        return luaL_error(L, "out of memory for imagery");
+    }
+    p->at = t;
+    p->width = p->height = INVENTED_PICTURE;
+    k3d_island_picture(&g->place, t, INVENTED_PICTURE, p->pixels);
     g->npictures++;
     return 0;
 }
@@ -1642,6 +1698,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "wanted", l_terrain_wanted },
         { "elevation", l_terrain_elevation },
         { "imagery", l_terrain_imagery },
+        { "invent", l_terrain_invent },
         { "height", l_terrain_height },
         { "__gc", l_terrain_gc },
         { NULL, NULL },

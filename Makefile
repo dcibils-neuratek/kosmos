@@ -2760,11 +2760,12 @@ $(HOSTDIR)/test_k3d: tools/test_k3d.c $(K3D_CORE) user/kits/3d/k3d.h
 # Its terrain (`k3d_terrain.c`, `docs/flight.md` F4a): the frame, the
 # chunks chosen for an eye, and a chunk's mesh on a known plane and hill.
 $(HOSTDIR)/test_terrain: tools/test_terrain.c user/kits/3d/k3d_terrain.c user/kits/3d/k3d_terrain.h \
+                         user/kits/3d/k3d_island.c user/kits/3d/k3d_island.h \
                          user/kits/map/mercator.c user/kits/map/mercator.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -D_DEFAULT_SOURCE -Iuser -Iuser/kits/map \
 	        -Iuser/kits/3d -o $@ tools/test_terrain.c user/kits/3d/k3d_terrain.c \
-	        user/kits/map/mercator.c -lm
+	        user/kits/3d/k3d_island.c user/kits/map/mercator.c -lm
 
 # Its FBX reader (`tools/test_fbx.c`): Blender's, Maya's and 3ds Max's own
 # files, each against the OBJ its program exported of the same scene, and
@@ -4760,7 +4761,7 @@ $(UBUILD)/apps/mesatest.elf: $(USER_OBJS) $(MESATEST_OBJS) $(POSIX_OBJS) $(MESA_
 # compiled as the cube's are.
 KVK_OBJS := $(UBUILD)/user/kits/vulkan/kvk.c.o
 K3D_VK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk.c.o $(UBUILD)/user/kits/3d/k3d_terrain.c.o \
-               $(UBUILD)/user/kits/3d/k3d_glb.c.o
+               $(UBUILD)/user/kits/3d/k3d_island.c.o $(UBUILD)/user/kits/3d/k3d_glb.c.o
 K3D_VK_SPV := $(foreach s,mesh sky ground model overlay,$(foreach k,vert frag,$(UBUILD)/gen/k3d/k3d_$(s)_$(k).h))
 VULKANTEST_OBJS := $(UBUILD)/user/kits/vulkantest/vulkantest.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
 VULKANTEST_SPV := $(foreach s,triangle cube,$(foreach k,vert frag,$(UBUILD)/gen/vulkantest/$(s)_$(k).h))
@@ -4831,7 +4832,7 @@ $(UBUILD)/apps/vulkantest.elf: $(USER_OBJS) $(VULKANTEST_OBJS) $(POSIX_OBJS) $(M
 K3DVK_OBJS := $(UBUILD)/user/kits/3d/k3d_vk_kosmos.c.o $(KVK_OBJS) $(K3D_VK_OBJS)
 
 $(UBUILD)/user/kits/3d/k3d_vk_kosmos.c.o: user/kits/3d/k3d_vk_kosmos.c user/kits/3d/k3d_vk.h \
-        user/kits/3d/k3d_terrain.h user/kits/3d/k3d_glb.h user/kits/gfx/picture_decode.h user/kits/vulkan/kvk.h user/kits/map/elevation.h \
+        user/kits/3d/k3d_terrain.h user/kits/3d/k3d_island.h user/kits/3d/k3d_glb.h user/kits/gfx/picture_decode.h user/kits/vulkan/kvk.h user/kits/map/elevation.h \
         $(MESA_DIR)/.built $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(POSIX_CFLAGS) $(UCFLAGS) -isystem build/mesa/tree/include -c $< -o $@

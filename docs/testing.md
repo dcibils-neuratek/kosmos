@@ -40054,3 +40054,59 @@ came within about forty seconds. Stopped on a runway, the imagery is the
 terrain's deepest, zoom 15, about 4.5 m a texel, and it is blurred at
 wheel height. Deeper imagery near the eye when it is low is in the
 roadmap.
+
+## 18.958 Flight offline: an invented island (F5j, 0.12.38)
+
+**In short:** when Flight can fetch nothing, it says so and flies over an
+island it makes itself, so the window always has ground under it. The
+place box reads "Offline: an invented island", the credit goes, and the
+flight starts again above the island's middle.
+
+**The pieces.**
+
+- **`user/kits/3d/k3d_island.c`** is the island, in C because it is a
+  loop over every height and every pixel. Value noise in five octaves
+  gives the shape inside a 7 km radius and ridges on it. A sea floor at
+  -30 m takes over past the shore, and the highest ground is under 440
+  m, below the 457 m a flight starts at. The colours are sea, sand, grass
+  and rock, by height and slope, with a little grain.
+- **`g:invent(kind, z, x, y)`** is a new door on the 3D Kit's terrain. It
+  makes the island's tile where the network's would have gone: "e" makes
+  65 by 65 heights and "i" a 128 by 128 picture. The heights are sampled
+  at the centres the elevation tiles use, from the same function the
+  picture is coloured by, so the two agree at every edge.
+- **Flight goes offline** when `/Tiles` is missing, or when six seconds
+  pass with fetches failing and nothing handed. It then hands the
+  terrain six invented tiles a frame, and starts the flight again with
+  no runway under it. Restart tries the network again.
+
+**The host test** (`test_terrain`, 63 checks) holds the island to its
+shape: over 100 m in the middle, below -25 m 12 km out, the highest point
+between 150 and 440 m, sand on the shore, the sea blue and the middle
+green or rock, a tile's heights equal to the island at the sample
+centres, and the picture opaque.
+
+**The suite** (`x86-flight-island`, `tools/run_flight.py --island`) boots
+Flight with its sources at a port nobody serves. It starts on Rio's
+runway, as a person's last setting might. It checks five things:
+
+- Flight says it went offline because its fetches failed;
+- the flight starts again as `city` at x=0 z=0, at 457 m or more;
+- the place box says the island;
+- tiles were made and chunks drawn;
+- the Mac was asked for no tiles.
+
+40 s for the suite, beside `x86-flight` (60 s), which still passes.
+
+**Controls.** With nothing invented a frame, the suite failed: "0 handed,
+drawn=0 of 225". With the restart taken out of going offline, it failed
+with the flight "y=1", on the sea.
+
+**On the M700**, with its sources pointed at a dead address for one
+run and put back after, Flight said "nothing came, 1 imagery and 1
+elevation fetches failed (the source did not answer within twenty
+seconds)". It started again over the island: grass to a beach, then
+the sea to the horizon, at 1940 ft. Before the restart was added, the
+same run left the Cessna stopped on open sea, on Rio's runway's
+coordinates, past the island's shore.
+

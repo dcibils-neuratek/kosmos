@@ -111,6 +111,7 @@ LLVM = ["tools/llvm_build.py", "tools/upstream.py"]
 K3D_VK = ("user/kits/3d/k3d_vk.c", "user/kits/3d/k3d_vk.h", "user/kits/3d/k3d_mesh.vert",
           "user/kits/3d/k3d_mesh.frag", "user/kits/3d/k3d_sky.vert", "user/kits/3d/k3d_sky.frag",
           "user/kits/3d/k3d_terrain.c", "user/kits/3d/k3d_terrain.h",
+          "user/kits/3d/k3d_island.c", "user/kits/3d/k3d_island.h",
           "user/kits/3d/k3d_ground.vert", "user/kits/3d/k3d_ground.frag")
 MESA = ["tools/mesa_build.py", "tools/mesa_trial_ld.py"] + LLVM + W5
 TOOLCHAIN = [["/opt/homebrew/opt/llvm/bin/clang", "--version"],
@@ -698,6 +699,15 @@ SUITES = [
                         "user/kits/3d", "user/kits/vulkan", "user/kits/map", "user/kits/window",
                         "user/kits/gfx/picture_decode.c", "user/servers/tiles.c", "user/lib/tiles.lua",
                         "user/bin/programs/wm.lua", "user/include/wmproto.h", *MESA)),
+
+    # **Flight offline** (F5j): the same window with its sources at a port
+    # nobody serves - it says it went offline and flies over its invented
+    # island, and the Mac is asked for nothing.
+    Suite("x86-flight-island", ["python3", "tools/run_flight.py", "--island", X86,
+                                "build/user-x86_64-test/apps"], x86=True,
+          watch=library("tools/run_flight.py", "user/installed/Flight", "user/kits/3d",
+                        "user/kits/vulkan", "user/kits/window", "user/servers/tiles.c",
+                        "user/lib/tiles.lua", "user/bin/programs/wm.lua", *MESA)),
 
     Suite("x86-flightpath", ["python3", "tools/run_flightpath.py", X86,
                              "build/user-x86_64-test/apps"], x86=True,

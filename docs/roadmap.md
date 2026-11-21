@@ -12086,7 +12086,9 @@ far triangles (219 chunks, 2 M triangles, against the design's ~150);
 F5h **built in 0.12.36** (18.956), the place box, the credit and the
 tower on the city's airfield; F5i **built in 0.12.37** (18.957), the
 pause sheet with search, Recent and the runway and final-approach starts;
-then F5j, the island offline, and the imagery deeper near the eye when it
+F5j **built in 0.12.38** (18.958), the island offline, invented in C
+(`k3d_island.c`) and handed through `g:invent`; then Flight in the dated
+screenshot, and the imagery deeper near the eye when it
 is low (on a runway at zoom 15 it is 4.5 m a texel, blurred at wheel
 height). **Found on the way**: a program installed
 in `/Home` was never given what its header declares - the disk does not
