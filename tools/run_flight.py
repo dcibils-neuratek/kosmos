@@ -352,6 +352,13 @@ def land_checks(seen):
     crashed = re.search(r"flight crashed: ([^\r\n]*)", seen)
     print("flight: %s" % (landed.group(0) if landed else crashed.group(0) if crashed
                           else "neither landed nor crashed"))
+    # The runways drawn (F8b): Rio's fields within 30 km, each a strip of
+    # asphalt with its paint - SDU's two and Galeao's two at least.
+    drawn = re.search(r"flight runways drawn (\d+) strips (\d+) marks", seen)
+    print("flight: %s" % (drawn.group(0) if drawn else "no runways drawn: %r"
+                          % re.findall(r"flight runways not drawn[^\r\n]*", seen)))
+    if not drawn or int(drawn.group(1)) < 4 or int(drawn.group(2)) < 40 * int(drawn.group(1)):
+        fails.append("the runways near Rio were not drawn, strips and paint")
     if crashed or not landed:
         fails.append("it did not land: %r" % (crashed.group(0) if crashed else "no touchdown"))
     elif int(landed.group(1)) >= 600 or landed.group(2).strip() != "on SDU 02R/20L":
@@ -474,6 +481,9 @@ def main():
                     r"flight (landed at|crashed:)", guest.seen[mark:]):
                 guest._read_available()
                 time.sleep(0.2)
+            if os.environ.get("KOSMOS_FLIGHT_SHOT"):        # on the runway, for a person
+                time.sleep(3)
+                R.write_png(os.environ["KOSMOS_FLIGHT_SHOT"], guest.screendump())
             return land_checks(guest.seen[mark:])
 
         if ISLAND:

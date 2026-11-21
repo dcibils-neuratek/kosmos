@@ -219,8 +219,12 @@ can show, and the engine and the wind as two held notes on the Synth Kit
 OurAirports (`tools/airports.py`, the Airports library), found in the sheet
 by code or name, the nearest field's runway for any place, the runways
 levelled through the 3D Kit's `flats`, B for the brakes and a landing under
-600 fpm (`x86-flight-land`). Next, in Diego's evening order (20 November):
-F8b the runway drawn, F9 ATC through a Radio Kit; then the rest of F6, F7, and the imagery deeper near the ground. **The
+600 fpm (`x86-flight-land`); **0.12.43** (18.963), F8b - the runways drawn
+over the imagery, asphalt and ICAO's paint, through the 3D Kit's new
+`w:shape` and a part's pull towards the eye. Next, in Diego's evening order
+(20 November): F9 ATC through a Radio Kit (LiveATC's playlists are behind a
+Cloudflare check, not to be got round: a public source is to be found or
+asked of Diego); then the rest of F6, F7, and the imagery deeper near the ground. **The
 Mac Pro's AMD GPU** (Diego, 20 November: "i will be running kosmos on the
 mac pro later tonight so we need the gpu drivers done") has its driver
 (0.12.29, 18.949): `docs/amdgpu.md`, Southern Islands - both cards found

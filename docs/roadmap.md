@@ -12095,7 +12095,8 @@ this order): F6a the time of day, dusk among it, **built in 0.12.40**
 engine's sound, **built in 0.12.41** (18.961); F8 real airports - every paved runway from OurAirports,
 taking off and landing on it, **F8a built in 0.12.42** (18.962: the data, the
 Airports library, the sheet, the runways levelled, B, the 600 fpm rule), F8b
-the runway drawn as a strip still to build; F9 live air traffic control through a new
+the runway drawn as a strip, **built in 0.12.43** (18.963: the 3D Kit's `w:shape`
+and a part's pull towards the eye; the numbers and the island's runway to follow); F9 live air traffic control through a new
 Radio Kit, which Music's Radio source wants too. **Flakes seen in the 0.12.39 gate** (testing.md 18.959): `x86-jetski`'s
 menu check read the menu without "Add to favorites" and "Settings", and
 `x86-tcc` had a keyring line inside a program's output. In the 0.12.42 gate `x86-smbd`'s Servers page never showed the visitor within 120 s,

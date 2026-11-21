@@ -5752,3 +5752,24 @@ Dumont with nobody at the controls, and lands at 255 feet a minute.
 
 **Data.** The airports come from OurAirports, which is public domain,
 made small into a 1.7 MB file that Flight carries.
+
+## 21 November 2026 - Flight's runways drawn
+
+**In short:** the runways are now real surfaces in the picture - dark
+asphalt with white markings - rather than a smudge in a satellite photo.
+
+**What changed.** On the M700 at Heathrow the runway under the Cessna was
+just the satellite's picture of one, blurry at a metre a pixel. Every
+runway near the flight is now drawn on top: asphalt at its real width,
+edge lines, a dashed centre line, the striped "piano keys" at each end
+and the two big blocks pilots aim for when landing.
+
+**The trick that makes it work.** The runway lies exactly on the ground,
+and a graphics card that has to decide which of two surfaces at the same
+height is in front flickers between them. So the runway is drawn as if a
+fraction of a percent closer to your eye, along the same line of sight -
+the picture is identical, but the card always knows which is on top.
+
+**Reusable.** The 3D Kit can now build a shape from a list of numbers, not
+only from a model file. The runways are its first user; buildings and the
+invented island's runway can use the same door.

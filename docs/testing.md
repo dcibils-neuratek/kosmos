@@ -40333,3 +40333,37 @@ joins the others in the roadmap.
   "crashed: touched down at 2735 fpm".
 - With every flat ignored in `k3d_flatten`, 4 of `test_terrain`'s 69
   checks failed.
+
+## 18.963 Flight's runways drawn (0.12.43)
+
+**In short:** every runway within 30 km of the flight is now drawn
+over the satellite imagery - asphalt at its width between its two ends,
+with edge lines, a dashed centre line, piano keys and aiming-point
+blocks. On the M700 at Heathrow the runway had been a grey smear.
+
+- **The 3D Kit's `w:shape{ part, ... }`** makes a model from numbers
+  rather than a glTF file. A part is its vertices, its triangles counted
+  from one, a colour and a `pull`. Normals are the triangles' own,
+  summed at each vertex. Made once, on the device after that.
+- **`w:draw` takes a list of models**: the aircraft and the runways.
+- **The pull.** The runway lies exactly on the ground the flats level,
+  and a flat surface on flat ground fights it for each pixel in the
+  depth buffer. A part with a pull is scaled about the eye by one less
+  its pull: every point stays on its own ray, so the picture does not
+  move, and only its depth comes nearer. The asphalt is pulled 0.4%, the
+  paint 0.6%. With the near plane at 0.5 m a 32-bit depth buffer tells
+  about a metre apart at 3 km, and the asphalt there comes 12 m nearer.
+- **Flight** builds two parts for all its runways, the asphalt and the
+  paint, again whenever the terrain is made for another place. Its main
+  chunk had reached Lua's 200 locals, so the new code is in a `do` block.
+
+**Checked:** `x86-flight-land` now also reads "runways drawn 5 strips
+305 marks" around Rio - at least 4 strips and 40 marks a strip - and
+still lands at 256 fpm on SDU 02R/20L. `x86-flight` and `host` pass.
+
+**Control:** with `w:shape{}` given no parts, the Kit refuses it, Flight
+stops, and the suite fails: no runways drawn and no touchdown.
+
+**A flake:** in the first run of `x86-flight` the engine rendered 88,064
+frames at a peak of 0 and the sound card heard nothing. It passed on its
+own straight after.

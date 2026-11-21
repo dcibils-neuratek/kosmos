@@ -713,6 +713,8 @@ struct window {
     struct k3d_vk renderer;
     struct k3d_vk_ground *drawn;    /* the frame's, `drawn_room` of them */
     unsigned drawn_room;
+    struct k3d_vk_model_draw *models;   /* the frame's models' parts, `models_room` */
+    unsigned models_room;
     char said[160];
     /* The keys, by keycode: which are down now, and which went down since
      * `pressed` last asked - a bit each, so reading them allocates
@@ -848,6 +850,7 @@ static void window_close(struct window *w)
         kw_close(w->window);
     }
     free(w->drawn);
+    free(w->models);
     memset(w, 0, sizeof(*w));
 }
 
@@ -1293,7 +1296,8 @@ static void give_back(struct window *w, struct terrain *g)
  * presented, `chunks` the ground it drew; nil and why when it could not be. */
 struct model;
 static struct model *model_check(lua_State *L, int index);
-static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n);
+static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n,
+                                                    const float eye[3]);
 
 static int l_window_draw(lua_State *L)
 {
@@ -1384,12 +1388,38 @@ static int l_window_draw(lua_State *L)
     for (unsigned k = 0; k < count; k++) {
         w->drawn[k] = chunk_of(g, g->drawn[k])->ground;
     }
-    /* The aircraft, or whatever model the frame is given. */
+    /* The aircraft, or whatever models the frame is given: one, or a list
+     * of them - an aircraft and the runways a shape made (F8b). */
     const struct k3d_vk_model_draw *plane = NULL;
     uint32_t nplane = 0;
+    float at[3] = { (float)view.eye[0], (float)view.eye[1], (float)view.eye[2] };
 
-    if (!lua_isnoneornil(L, 4)) {
-        plane = model_draws(model_check(L, 4), &nplane);
+    if (lua_istable(L, 4)) {
+        lua_Integer many = (lua_Integer)lua_rawlen(L, 4);
+
+        for (lua_Integer i = 1; i <= many; i++) {
+            uint32_t some = 0;
+            const struct k3d_vk_model_draw *d;
+
+            lua_rawgeti(L, 4, i);
+            d = model_draws(model_check(L, -1), &some, at);
+            lua_pop(L, 1);
+            if (nplane + some > w->models_room) {
+                unsigned room = (nplane + some) * 2;
+                struct k3d_vk_model_draw *bigger = realloc(w->models, room * sizeof(*bigger));
+
+                if (bigger == NULL) {
+                    return luaL_error(L, "out of memory for a frame's models");
+                }
+                w->models = bigger;
+                w->models_room = room;
+            }
+            memcpy(w->models + nplane, d, some * sizeof(*d));
+            nplane += some;
+        }
+        plane = w->models;
+    } else if (!lua_isnoneornil(L, 4)) {
+        plane = model_draws(model_check(L, 4), &nplane, at);
     }
     uint32_t laid = 0;
 
@@ -1459,6 +1489,7 @@ struct model {
     float angle[K3D_GLB_MOVABLES];  /* radians about each movable's hinge */
     bool spins[K3D_GLB_MOVABLES];   /* about its own Z rather than its hinge */
     struct k3d_vk_model_draw *draws;/* the frame's, glb.nparts */
+    float *pull;                    /* a shape's, a part each; NULL: a file's */
 };
 
 _Static_assert(sizeof(struct k3d_glb_vertex) == sizeof(struct k3d_vk_model_vertex),
@@ -1483,6 +1514,7 @@ static void model_free(struct model *m)
     free(m->parts);
     free(m->textures);
     free(m->draws);
+    free(m->pull);
     k3d_glb_free(&m->glb);
     memset(m, 0, sizeof(*m));
 }
@@ -1631,6 +1663,188 @@ refused:;
     return 2;
 }
 
+/*
+ * w:shape{ part, ... } -> a model made of numbers rather than read from a
+ * file (`docs/flight.md` F8b): a runway, its markings, anything an
+ * application makes of a few triangles. A part is
+ *
+ *     { vertices = { x, y, z, ... }, indices = { 1, 2, 3, ... },
+ *       colour = { r, g, b, a }, pull = 0.004 }
+ *
+ * its vertices in the model's frame - the world's, until `place` says
+ * otherwise - its triangles by vertex, counted from one as Lua counts, its
+ * colour linear and untextured, and `pull` the share of the distance to
+ * the eye it is drawn nearer by (`model_draws`), so a surface lying on the
+ * ground is in front of the ground rather than fighting it for each pixel.
+ * Each vertex's normal is its triangles', summed. Made once: the numbers
+ * are Lua's only until they are on the device.
+ */
+static int l_window_shape(lua_State *L)
+{
+    struct window *w = window_check(L, 1);
+    const char *why = NULL;
+    lua_Integer parts;
+    struct model *m;
+
+    luaL_checktype(L, 2, LUA_TTABLE);
+    parts = (lua_Integer)lua_rawlen(L, 2);
+    luaL_argcheck(L, parts >= 1 && parts <= 4096, 2, "one part to 4096");
+
+    m = lua_newuserdatauv(L, sizeof(*m), 1);
+    memset(m, 0, sizeof(*m));
+    luaL_setmetatable(L, MODEL);
+    lua_pushvalue(L, 1);
+    lua_setiuservalue(L, -2, 1);
+    m->owner = w;
+    m->serial = w->serial;
+    m->glb.parts = calloc((size_t)parts, sizeof(*m->glb.parts));
+    m->parts = calloc((size_t)parts, sizeof(*m->parts));
+    m->draws = calloc((size_t)parts, sizeof(*m->draws));
+    m->pull = calloc((size_t)parts, sizeof(*m->pull));
+    m->textures = calloc(1, sizeof(*m->textures));
+    if (m->glb.parts == NULL || m->parts == NULL || m->draws == NULL || m->pull == NULL ||
+        m->textures == NULL) {
+        why = "no memory for the shape";
+        goto refused;
+    }
+    for (lua_Integer i = 0; i < parts; i++) {
+        struct k3d_glb_part *p = &m->glb.parts[i];
+        lua_Integer nv, ni;
+
+        m->glb.nparts = (uint32_t)i + 1;     /* what is freed if this one fails */
+        p->texture = -1;
+        p->movable = -1;
+        p->material = -1;
+        p->mesh = (int)i;
+        for (int k = 0; k < 16; k++) {
+            p->matrix[k] = (k % 5 == 0) ? 1.0f : 0.0f;
+        }
+        p->colour[0] = p->colour[1] = p->colour[2] = p->colour[3] = 1.0f;
+        lua_rawgeti(L, 2, i + 1);
+        luaL_checktype(L, -1, LUA_TTABLE);
+
+        lua_getfield(L, -1, "colour");
+        if (lua_istable(L, -1)) {
+            for (int k = 0; k < 4; k++) {
+                lua_rawgeti(L, -1, k + 1);
+                if (!lua_isnil(L, -1)) {
+                    p->colour[k] = (float)luaL_checknumber(L, -1);
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, -1, "pull");
+        m->pull[i] = lua_isnil(L, -1) ? 0.0f : (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+        if (m->pull[i] < 0.0f || m->pull[i] > 0.1f) {
+            why = "a part's pull is a share of the distance, 0 to 0.1";
+            lua_pop(L, 1);
+            goto refused;
+        }
+
+        lua_getfield(L, -1, "vertices");
+        luaL_checktype(L, -1, LUA_TTABLE);
+        nv = (lua_Integer)lua_rawlen(L, -1);
+        if (nv < 9 || nv % 3 != 0 || nv / 3 > 1 << 20) {
+            why = "a part's vertices are x, y, z three at a time, at least three of them";
+            lua_pop(L, 2);
+            goto refused;
+        }
+        p->nvertices = (uint32_t)(nv / 3);
+        p->vertices = calloc(p->nvertices, sizeof(*p->vertices));
+        if (p->vertices == NULL) {
+            why = "no memory for the shape";
+            lua_pop(L, 2);
+            goto refused;
+        }
+        for (lua_Integer k = 0; k < nv; k++) {
+            lua_rawgeti(L, -1, k + 1);
+            p->vertices[k / 3].position[k % 3] = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "indices");
+        luaL_checktype(L, -1, LUA_TTABLE);
+        ni = (lua_Integer)lua_rawlen(L, -1);
+        if (ni < 3 || ni % 3 != 0 || ni > 3 << 20) {
+            why = "a part's indices are triangles, three at a time";
+            lua_pop(L, 2);
+            goto refused;
+        }
+        p->nindices = (uint32_t)ni;
+        p->indices = calloc(p->nindices, sizeof(*p->indices));
+        if (p->indices == NULL) {
+            why = "no memory for the shape";
+            lua_pop(L, 2);
+            goto refused;
+        }
+        for (lua_Integer k = 0; k < ni; k++) {
+            lua_Integer at;
+
+            lua_rawgeti(L, -1, k + 1);
+            at = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            if (at < 1 || at > (lua_Integer)p->nvertices) {
+                why = "a part's index names no vertex of it";
+                lua_pop(L, 2);
+                goto refused;
+            }
+            p->indices[k] = (uint32_t)(at - 1);
+        }
+        lua_pop(L, 2);              /* the indices, the part */
+
+        /* Each vertex's normal: its triangles' faces, summed, each weighted
+         * by its area as an unnormalised cross product is. */
+        for (uint32_t t = 0; t < p->nindices; t += 3) {
+            const float *a = p->vertices[p->indices[t]].position;
+            const float *b = p->vertices[p->indices[t + 1]].position;
+            const float *c = p->vertices[p->indices[t + 2]].position;
+            float u[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+            float v[3] = { c[0] - a[0], c[1] - a[1], c[2] - a[2] };
+            float n[3] = { u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
+                           u[0] * v[1] - u[1] * v[0] };
+
+            for (int k = 0; k < 3; k++) {
+                for (int j = 0; j < 3; j++) {
+                    p->vertices[p->indices[t + k]].normal[j] += n[j];
+                }
+            }
+        }
+        for (uint32_t k = 0; k < p->nvertices; k++) {
+            float *n = p->vertices[k].normal;
+            float len = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
+            if (len > 0.0f) {
+                n[0] /= len, n[1] /= len, n[2] /= len;
+            } else {
+                n[0] = 0.0f, n[1] = 1.0f, n[2] = 0.0f;
+            }
+        }
+        m->glb.triangles += p->nindices / 3;
+        if (!k3d_vk_model(&w->renderer, &m->parts[i],
+                          (const struct k3d_vk_model_vertex *)p->vertices, p->nvertices,
+                          p->indices, p->nindices)) {
+            why = w->v.why[0] ? w->v.why : "a part would not go on the device";
+            goto refused;
+        }
+    }
+    for (int i = 0; i < 16; i++) {
+        m->place[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+    }
+    return 1;
+
+refused:;
+    char copy[160];
+
+    snprintf(copy, sizeof(copy), "%s", why ? why : "refused");
+    model_free(m);
+    lua_pushnil(L);
+    lua_pushstring(L, copy);
+    return 2;
+}
+
 /* m:place(t): the world from the model, sixteen numbers column-major in a
  * table the caller keeps and refills - no table made a frame. */
 static int l_model_place(lua_State *L)
@@ -1730,7 +1944,8 @@ static void hinge_turn(const float pivot[3], const float axis[3], float angle, f
 
 /* The frame's draws for a model: each part where the model is, its own
  * matrix after, and a movable part turned about its hinge between. */
-static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n)
+static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n,
+                                                    const float eye[3])
 {
     float turned[K3D_GLB_MOVABLES][16];
 
@@ -1759,6 +1974,21 @@ static const struct k3d_vk_model_draw *model_draws(struct model *m, uint32_t *n)
             memcpy(at, p->matrix, sizeof(at));
         }
         multiply(m->place, at, d->matrix);
+        /* A shape's part pulled towards the eye by its share of the
+         * distance (`w:shape`): the whole of it scaled about the eye, so
+         * every point stays on the ray it was seen along and only its
+         * depth comes nearer - a runway in front of the ground it lies on,
+         * at any distance the depth buffer can tell apart. */
+        if (m->pull != NULL && m->pull[i] > 0.0f) {
+            float s = 1.0f - m->pull[i], pull[16] = { 0 };
+
+            pull[0] = pull[5] = pull[10] = s;
+            pull[15] = 1.0f;
+            for (int k = 0; k < 3; k++) {
+                pull[12 + k] = eye[k] * m->pull[i];
+            }
+            multiply(pull, d->matrix, d->matrix);
+        }
     }
     *n = m->glb.nparts;
     return m->draws;
@@ -1784,6 +2014,7 @@ void kosmos_k3dvk_kit(lua_State *L)
         { "typed", l_window_typed },
         { "clicked", l_window_clicked },
         { "model", l_window_model },
+        { "shape", l_window_shape },
         { "overlay", l_window_overlay },
         { "stats", l_window_stats },
         { "close", l_window_close },

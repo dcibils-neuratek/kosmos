@@ -477,9 +477,26 @@ ends on the M700:
       hill without them.
     - **Final approach.** A final-approach start aims 300 m past the
       threshold, at the touchdown zone.
-    - **The strip itself** (F8b) is still the imagery's. It needs the
-      3D Kit to draw a mesh of Flight's making, and it is what the
-      invented island's runway wants too.
+    - **The strip itself (F8b), built in 0.12.43.** It was the imagery's
+      alone - a metre a texel at best, a grey smear from the cockpit on
+      the M700 at Heathrow. Now each runway within 30 km is drawn over
+      it: asphalt from its two ends at its width and its ends' heights,
+      and its paint at ICAO's sizes - edge lines, the centre line's 30 m
+      dashes, the threshold's piano keys and the aiming point's blocks.
+      The 3D Kit draws it through a new door, **`w:shape{ part, ... }`**:
+      a model made of numbers instead of read from a glTF file, a part
+      each colour, made once per terrain. `w:draw` now takes a list of
+      models - the aircraft and the runways.
+      **A flat thing on flat ground fights it for every pixel**, and the
+      runway lies exactly on the ground the flats level. So a shape's
+      part has a **pull**: the share of its distance to the eye that it is
+      drawn nearer by, applied as a scale about the eye. Every point stays
+      on the ray it was seen along, so the picture is the same and only
+      the depth comes forward: 0.4% for the asphalt, 0.6% for the paint
+      over it. A 32-bit depth buffer with the near plane at half a metre
+      tells about a metre apart at 3 km; the asphalt comes 12 m nearer
+      there. The runway numbers are not painted yet, and the invented
+      island's runway is still to use the same door.
 - **F9 - air traffic control.** LiveATC's public feeds, each an MP3 over
   HTTP, the nearest to the airport chosen by its code. Played by a new
   **Radio Kit** - an HTTP stream into the MP3 Kit's decoder into a stream

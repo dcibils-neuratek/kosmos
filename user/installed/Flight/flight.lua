@@ -47,6 +47,7 @@ local settings = prefs.open("flight", {
   final = 5000,                                  -- metres out a final-approach start begins
   time = "noon",                                 -- the time of day, one of HOURS (F6a)
   sound = true,                                  -- the engine and the wind heard (F6c, M)
+  runways = true,                                -- the runways drawn over the imagery (F8b)
   place = false,                                 -- a place searched for: { name, note, lon, lat }
   recent = false,                                -- the sheet's Recent: { key } or places
   finder = false,                                -- places looked up there, not Nominatim
@@ -333,6 +334,7 @@ local function flats_here()
       list[#list + 1] = { x1, z1, x2, z2, width, r.ends[1].feet * 0.3048,
                           r.ends[2].feet * 0.3048 }
       RUNWAYS[#RUNWAYS + 1] = { x1 = x1, z1 = z1, x2 = x2, z2 = z2, width = width,
+                                h1 = r.ends[1].feet * 0.3048, h2 = r.ends[2].feet * 0.3048,
                                 name = (a.iata or a.ident) .. " " .. r.name }
     end
   end
@@ -356,6 +358,104 @@ local function runway_at(x, z)
 end
 
 here = where_now()
+
+-- **The runways drawn** (F8b): each near runway a strip of asphalt from
+-- its two ends at its width, its paint over it - the edges, the centre
+-- line's dashes, the threshold's piano keys and the aiming point's two
+-- blocks, at ICAO's sizes - made once a terrain as a shape of the 3D
+-- Kit's, two parts for all of them: the asphalt, and the paint pulled a
+-- little nearer than it so the two never fight for a pixel. The imagery
+-- under it is a satellite's, a metre a texel at best, and from the
+-- cockpit a runway is narrower than that is sharp.
+local frame_models
+do
+local ASPHALT = { 0.055, 0.056, 0.062, 1 }
+local PAINT = { 0.78, 0.78, 0.76, 1 }
+local function runway_parts()
+  local hard = { vertices = {}, indices = {}, colour = ASPHALT, pull = 0.004 }
+  local paint = { vertices = {}, indices = {}, colour = PAINT, pull = 0.006 }
+  for _, r in ipairs(RUNWAYS) do
+    local dx, dz = r.x2 - r.x1, r.z2 - r.z1
+    local len = math.sqrt(dx * dx + dz * dz)
+    if len > 100 then
+      local ux, uz = dx / len, dz / len          -- along, from the first end
+      local nx, nz = -uz, ux                     -- across
+      -- A rectangle along the runway from `a` to `b` metres, across from
+      -- `c` to `d`, at the runway's height there, facing up.
+      local function quad(part, a, b, c, d)
+        local v, n = part.vertices, #part.vertices / 3
+        for _, at in ipairs{ { a, c }, { b, c }, { b, d }, { a, d } } do
+          local t = at[1] / len
+          v[#v + 1] = r.x1 + ux * at[1] + nx * at[2]
+          v[#v + 1] = r.h1 + (r.h2 - r.h1) * t
+          v[#v + 1] = r.z1 + uz * at[1] + nz * at[2]
+        end
+        -- Wound so its face is up: a cross product's y, x east and z south.
+        local i = part.indices
+        if uz * nx - ux * nz > 0 then
+          i[#i + 1], i[#i + 2], i[#i + 3] = n + 1, n + 2, n + 3
+          i[#i + 1], i[#i + 2], i[#i + 3] = n + 1, n + 3, n + 4
+        else
+          i[#i + 1], i[#i + 2], i[#i + 3] = n + 1, n + 3, n + 2
+          i[#i + 1], i[#i + 2], i[#i + 3] = n + 1, n + 4, n + 3
+        end
+      end
+      local half = r.width / 2
+      quad(hard, 0, len, -half, half)
+      -- The edges, and the centre line: 30 m of paint and 20 of none.
+      quad(paint, 0, len, -half + 0.5, -half + 1.4)
+      quad(paint, 0, len, half - 1.4, half - 0.5)
+      for a = 80, len - 110, 50 do quad(paint, a, a + 30, -0.45, 0.45) end
+      -- At each end the piano keys, 1.8 m wide and 1.8 apart, 6 m in and
+      -- 30 long; the aiming point's blocks 300 m in, 45 by 8.
+      local keys = math.max(2, math.floor((r.width - 6) / 3.6 / 2)) -- each side
+      for _, from in ipairs{ 0, len } do
+        local into = from == 0 and 1 or -1
+        local function along(a, b)
+          local p, q = from + into * a, from + into * b
+          return math.min(p, q), math.max(p, q)
+        end
+        local a, b = along(6, 36)
+        for k = 0, keys - 1 do
+          local c = 1.8 + k * 3.6
+          if c + 1.8 < half - 1.5 then
+            quad(paint, a, b, c, c + 1.8)
+            quad(paint, a, b, -c - 1.8, -c)
+          end
+        end
+        if len > 1200 then
+          a, b = along(300, 345)
+          local c = math.min(half - 3, 9)
+          quad(paint, a, b, c - 8 > 1 and c - 8 or 1.5, c)
+          quad(paint, a, b, -c, -(c - 8 > 1 and c - 8 or 1.5))
+        end
+      end
+    end
+  end
+  if #hard.indices == 0 then return nil end
+  return { hard, paint }, #hard.indices / 6, #paint.indices / 6
+end
+
+-- The shape for the runways `flats_here` found, made again when they are
+-- other runways: the frame's models are the aircraft and it.
+local strips, strips_of, drawn = nil, nil, {}
+function frame_models(w, with_plane)
+  if strips_of ~= RUNWAYS then
+    strips_of, strips = RUNWAYS, nil
+    local parts, hard, paint = runway_parts()
+    if parts then
+      local why
+      strips, why = w:shape(parts)
+      say(strips and ("runways drawn %d strips %d marks"):format(hard, paint)
+          or ("runways not drawn: " .. tostring(why)))
+    end
+  end
+  for i = #drawn, 1, -1 do drawn[i] = nil end
+  if with_plane then drawn[#drawn + 1] = with_plane end
+  if strips and settings.runways then drawn[#drawn + 1] = strips end
+  return drawn
+end
+end
 
 -- The tower: on the city's airfield, or where the flight began when the
 -- place has none; its foot from the terrain's heights once they are in.
@@ -1731,7 +1831,7 @@ while not w:closed(0) do
     tower.said = nil
   end
   -- The aircraft is not drawn from inside it.
-  local said, failed = w:draw(g, view, S.view ~= 2 and plane or nil)
+  local said, failed = w:draw(g, view, frame_models(w, S.view ~= 2 and plane or nil))
   if not said then say("failed=" .. tostring(failed)) break end
 
   frame = frame + 1
